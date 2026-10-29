@@ -1,21 +1,36 @@
-import { createHash, randomBytes } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { createWriteStream, existsSync } from 'node:fs'
 import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import type { MinecraftPluginResult, MinecraftPluginStatus } from '../shared/plugin-market'
 
 export const MINECRAFT_PLUGIN_ID = 'inkstone-minecraft'
 export const MINECRAFT_SKILL = 'inkstone-fabric-dev'
+export const MINECRAFT_PLUGIN_REPO = 'Yu-DaTouX/inkstone-minecraft-plugin'
+export const MINECRAFT_PLUGIN_ARCHIVE = `https://github.com/${MINECRAFT_PLUGIN_REPO}/releases/latest/download/inkstone-minecraft-plugin.zip`
+export const MINECRAFT_PLUGIN_LATEST = `https://api.github.com/repos/${MINECRAFT_PLUGIN_REPO}/releases/latest`
 const PLUGIN_PARTS = ['package.json', 'mcp', 'src', 'skills', 'templates', 'companion-mod']
 const SKIPPED_DIRS = new Set(['.gradle', 'run', '.inkstone', 'node_modules', 'out'])
-const SOURCE_STAMP = '.inkstone-source.json'
+const SKILL_STAMP = '.installed-by-inkstone'
+const ARCHIVE_LIMIT = 200 * 1024 * 1024
+const DOWNLOAD_TIMEOUT = 5 * 60_000
+const VERSION_TIMEOUT = 8000
+
+export type FetchLike = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<Response>
 
 export interface MinecraftPluginPaths {
-  source: string | null
   pluginDir: string
   skillsDir: string
   agentDir: string
   runtime: string
+  tempDir: string
+}
+
+export interface MinecraftInstallDeps {
+  fetch: FetchLike
 }
 
 type McpDocument = { mcpServers?: Record<string, unknown> } & Record<string, unknown>
@@ -39,40 +54,41 @@ export function copiesIntoPlugin(root: string, path: string): boolean {
   return inside.length === 1 || (inside.length === 2 && inside[1].endsWith('.jar'))
 }
 
-export async function minecraftSourceFingerprint(source: string): Promise<string> {
-  const hash = createHash('sha256')
-  const walk = async (path: string): Promise<void> => {
-    if (!copiesIntoPlugin(source, path)) return
-    const entries = await readdir(path, { withFileTypes: true }).catch(() => null)
-    if (!entries) {
-      hash.update(relative(source, path).split(sep).join('/')).update('\0').update(await readFile(path)).update('\0')
-      return
-    }
-    for (const entry of entries.map((item) => item.name).sort()) await walk(join(path, entry))
+async function installedVersion(pluginDir: string): Promise<string | undefined> {
+  try {
+    const pkg = JSON.parse(await readFile(join(pluginDir, 'package.json'), 'utf8')) as { version?: unknown }
+    return typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : undefined
+  } catch {
+    return undefined
   }
-  for (const part of PLUGIN_PARTS) if (existsSync(join(source, part))) await walk(join(source, part))
-  return hash.digest('hex')
 }
 
-async function installedFingerprint(pluginDir: string): Promise<string | undefined> {
+export async function latestMinecraftPluginVersion(request: FetchLike): Promise<string | undefined> {
   try {
-    const value = JSON.parse(await readFile(join(pluginDir, SOURCE_STAMP), 'utf8')) as { fingerprint?: unknown }
-    return typeof value.fingerprint === 'string' ? value.fingerprint : undefined
+    const response = await request(MINECRAFT_PLUGIN_LATEST, { signal: AbortSignal.timeout(VERSION_TIMEOUT), headers: { accept: 'application/vnd.github+json' } })
+    if (!response.ok) return undefined
+    const body = JSON.parse(await response.text()) as { tag_name?: unknown }
+    const tag = typeof body.tag_name === 'string' ? body.tag_name.trim() : ''
+    return /^v?\d[\w.+-]*$/.test(tag) ? tag.replace(/^v/, '') : undefined
   } catch {
     return undefined
   }
 }
 
 export async function refreshMinecraftPlugin(paths: MinecraftPluginPaths): Promise<'updated' | 'current' | 'skipped' | MinecraftPluginResult> {
-  if (!paths.source || !existsSync(serverScript(paths.source)) || !existsSync(serverScript(paths.pluginDir))) return 'skipped'
-  const { document } = await readMcp(paths.agentDir).catch(() => ({ document: undefined }))
+  if (!existsSync(serverScript(paths.pluginDir))) return 'skipped'
+  const { path, document } = await readMcp(paths.agentDir).catch(() => ({ path: join(paths.agentDir, 'mcp.json'), document: undefined as McpDocument | undefined }))
   const entry = document?.mcpServers?.[MINECRAFT_PLUGIN_ID]
   if (!isOurs(entry, paths.pluginDir)) return 'skipped'
-  const runtimeCurrent = (entry as { command?: unknown }).command === paths.runtime
-  const skillPresent = existsSync(join(paths.skillsDir, MINECRAFT_SKILL, 'SKILL.md'))
-  if (runtimeCurrent && skillPresent && (await installedFingerprint(paths.pluginDir)) === (await minecraftSourceFingerprint(paths.source))) return 'current'
-  const result = await installMinecraftPlugin(paths)
-  return result.ok ? 'updated' : result
+  if ((entry as { command?: unknown }).command === paths.runtime) return 'current'
+  try {
+    const servers = { ...(document?.mcpServers ?? {}) }
+    servers[MINECRAFT_PLUGIN_ID] = { ...(entry as Record<string, unknown>), command: paths.runtime }
+    await writeMcp(path, { ...(document ?? {}), mcpServers: servers })
+    return 'updated'
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 function isOurs(entry: unknown, pluginDir: string): boolean {
@@ -128,30 +144,70 @@ export async function minecraftPluginStatus(paths: MinecraftPluginPaths): Promis
   } catch {
   }
   return {
-    bundled: paths.source !== null && existsSync(serverScript(paths.source)),
     installed: existsSync(serverScript(paths.pluginDir)),
     configured,
     conflict,
     skill: existsSync(join(paths.skillsDir, MINECRAFT_SKILL, 'SKILL.md')),
-    pluginDir: paths.pluginDir
+    pluginDir: paths.pluginDir,
+    installedVersion: await installedVersion(paths.pluginDir)
   }
 }
-
-const SKILL_STAMP = '.installed-by-inkstone'
 
 async function skillIsOurs(paths: MinecraftPluginPaths): Promise<boolean> {
   const target = join(paths.skillsDir, MINECRAFT_SKILL)
   if (!existsSync(target)) return true
   if (existsSync(join(target, SKILL_STAMP))) return true
   const installed = await readFile(join(target, 'SKILL.md'), 'utf8').catch(() => null)
-  const bundled = await readFile(join(paths.pluginDir, 'skills', MINECRAFT_SKILL, 'SKILL.md'), 'utf8').catch(() => null)
-  return installed !== null && installed === bundled
+  const shipped = await readFile(join(paths.pluginDir, 'skills', MINECRAFT_SKILL, 'SKILL.md'), 'utf8').catch(() => null)
+  return installed !== null && installed === shipped
 }
 
-export async function installMinecraftPlugin(paths: MinecraftPluginPaths): Promise<MinecraftPluginResult> {
+function systemTar(): string {
+  if (process.platform !== 'win32') return 'tar'
+  return join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+}
+
+function extractArchive(archive: string, into: string): Promise<void> {
+  return new Promise((done, fail) => {
+    const child = spawn(systemTar(), ['-xf', archive, '-C', into], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
+    let stderr = ''
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString()).slice(-2000)
+    })
+    child.on('error', fail)
+    child.on('exit', (code) => (code === 0 ? done() : fail(new Error(`解压失败（${code}）：${stderr.trim()}`))))
+  })
+}
+
+async function downloadArchive(request: FetchLike, url: string, target: string): Promise<void> {
+  const response = await request(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT) })
+  if (!response.ok || !response.body) throw new Error(`下载插件失败：HTTP ${response.status}`)
+  const declared = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > ARCHIVE_LIMIT) throw new Error(`插件包超过 ${Math.round(ARCHIVE_LIMIT / 1024 / 1024)} MB，已停止下载`)
+  let received = 0
+  const counting = new TransformStream<Uint8Array, Uint8Array>({
+    transform: (chunk, controller) => {
+      received += chunk.byteLength
+      if (received > ARCHIVE_LIMIT) controller.error(new Error(`插件包超过 ${Math.round(ARCHIVE_LIMIT / 1024 / 1024)} MB，已停止下载`))
+      else controller.enqueue(chunk)
+    }
+  })
+  await pipeline(Readable.fromWeb(response.body.pipeThrough(counting) as import('node:stream/web').ReadableStream), createWriteStream(target))
+  if (!received) throw new Error('下载的插件包是空的')
+}
+
+async function contentRoot(dir: string): Promise<string> {
+  const entries = await readdir(dir)
+  if (entries.length === 1) {
+    const single = join(dir, entries[0])
+    if (existsSync(join(single, 'package.json'))) return single
+  }
+  return dir
+}
+
+export async function installMinecraftPlugin(paths: MinecraftPluginPaths, deps: MinecraftInstallDeps): Promise<MinecraftPluginResult> {
+  let work: string | null = null
   try {
-    const source = paths.source
-    if (!source || !existsSync(serverScript(source))) return { ok: false, error: '随包插件文件缺失，请更新砚', status: await minecraftPluginStatus(paths) }
     const { path, document } = await readMcp(paths.agentDir)
     const current = document?.mcpServers?.[MINECRAFT_PLUGIN_ID]
     if (current !== undefined && !isOurs(current, paths.pluginDir)) {
@@ -161,13 +217,21 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths): Promi
     if (!(await skillIsOurs(paths))) {
       return { ok: false, error: `${skillTarget} 里已有同名技能，不是砚装的，未改动`, status: await minecraftPluginStatus(paths) }
     }
+    work = join(paths.tempDir, `minecraft-plugin-${randomBytes(4).toString('hex')}`)
+    await mkdir(work, { recursive: true })
+    const archive = join(work, 'inkstone-minecraft-plugin.zip')
+    await downloadArchive(deps.fetch, MINECRAFT_PLUGIN_ARCHIVE, archive)
+    const unpacked = join(work, 'unpacked')
+    await mkdir(unpacked)
+    await extractArchive(archive, unpacked)
+    const source = await contentRoot(unpacked)
+    if (!existsSync(serverScript(source)) || !existsSync(join(source, 'package.json'))) throw new Error('下载的插件包里没有插件文件，未改动')
     const staging = `${paths.pluginDir}.${randomBytes(4).toString('hex')}.new`
     try {
       for (const part of PLUGIN_PARTS) {
         const from = join(source, part)
         if (existsSync(from)) await cp(from, join(staging, part), { recursive: true, filter: (item) => copiesIntoPlugin(source, item) })
       }
-      await writeFile(join(staging, SOURCE_STAMP), `${JSON.stringify({ fingerprint: await minecraftSourceFingerprint(source) })}\n`, 'utf8')
       await mkdir(join(paths.pluginDir, '..'), { recursive: true })
       const previous = `${paths.pluginDir}.${randomBytes(4).toString('hex')}.old`
       const hadPrevious = existsSync(paths.pluginDir)
@@ -182,14 +246,29 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths): Promi
     } finally {
       await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     }
-    await rm(skillTarget, { recursive: true, force: true })
-    await cp(join(paths.pluginDir, 'skills', MINECRAFT_SKILL), skillTarget, { recursive: true })
-    await writeFile(join(skillTarget, SKILL_STAMP), '', 'utf8')
+    await installSkill(paths)
     const enabled = current && typeof current === 'object' && (current as { enabled?: unknown }).enabled === false ? { enabled: false } : {}
     await writeMcp(path, { ...(document ?? {}), mcpServers: { ...(document?.mcpServers ?? {}), [MINECRAFT_PLUGIN_ID]: { ...minecraftMcpServer(paths), ...enabled } } })
     return { ok: true, path, status: await minecraftPluginStatus(paths) }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error), status: await minecraftPluginStatus(paths) }
+  } finally {
+    if (work) await rm(work, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+async function installSkill(paths: MinecraftPluginPaths): Promise<void> {
+  const from = join(paths.pluginDir, 'skills', MINECRAFT_SKILL)
+  if (!existsSync(from)) return
+  const target = join(paths.skillsDir, MINECRAFT_SKILL)
+  const staging = `${target}.${randomBytes(4).toString('hex')}.new`
+  try {
+    await cp(from, staging, { recursive: true })
+    await writeFile(join(staging, SKILL_STAMP), '', 'utf8')
+    await rm(target, { recursive: true, force: true })
+    await rename(staging, target)
+  } finally {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 

@@ -83,18 +83,27 @@ export function MinecraftPluginRow({ entry, copy }: { entry: PluginCatalogEntry;
   }
 
   const label = statusKey(status)
-  const unavailable = status !== null && !status.bundled
+  const installedVersion = status?.installedVersion
+  const latestVersion = status?.latestVersion
+  const updatable = installed === true && !!latestVersion && latestVersion !== installedVersion
 
   return (
     <Entry
       testId="caps-market-minecraft"
       name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`}
-      meta={[label ? t(label) : null, copy.desc, copy.target, copy.hint]}
+      meta={[
+        label ? t(label) : null,
+        installedVersion ? t('mcPlugin.installedVersion', { version: installedVersion }) : null,
+        updatable ? t('mcPlugin.latestVersion', { version: latestVersion }) : null,
+        copy.desc,
+        copy.target,
+        copy.hint
+      ]}
       actions={
         <>
           <Button
             variant="secondary"
-            isDisabled={!!busy || unavailable || status?.conflict === true}
+            isDisabled={!!busy || status?.conflict === true}
             onPress={() => void install()}
             data-testid="caps-minecraft-install"
           >
@@ -111,7 +120,6 @@ export function MinecraftPluginRow({ entry, copy }: { entry: PluginCatalogEntry;
         </>
       }
     >
-      {unavailable ? <Warn>{t('mcPlugin.notBundled')}</Warn> : null}
       {note ? (
         note.kind === 'err' ? (
           <Warn>{note.text}</Warn>

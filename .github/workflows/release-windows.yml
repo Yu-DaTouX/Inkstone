@@ -38,19 +38,6 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('integrations/inkstone-minecraft/companion-mod/**/*.gradle', 'integrations/inkstone-minecraft/companion-mod/**/gradle.properties', 'integrations/inkstone-minecraft/companion-mod/**/gradle-wrapper.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
-
       - name: Resolve version and tag
         id: meta
         run: |
@@ -76,13 +63,6 @@ jobs:
           YAN_PI_SRC="$(npm root -g)/@earendil-works/pi-coding-agent" npm run vendor:pi
 
       - run: npm run vendor:search-tools
-
-      - name: Build companion mod jars
-        working-directory: integrations/inkstone-minecraft/companion-mod
-        run: |
-          ./gradlew.bat build -q --no-daemon
-          (cd mc26 && ./gradlew.bat build -q --no-daemon)
-          ls build/libs/inkstone-companion-*.jar mc26/build/libs/inkstone-companion-mc26-*.jar
 
       - run: npm run typecheck
 

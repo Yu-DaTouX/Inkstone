@@ -110,7 +110,6 @@ npm run launch
 | `resources/` | 随包的 pi 扩展、技能、`yan` CLI、品牌素材；`pi-runtime/` 由脚本生成，不进 Git |
 | `scripts/` | 构建、测试、打包与设计检查脚本 |
 | `mobile/` | Android 客户端（React Native） |
-| `integrations/inkstone-minecraft/` | Minecraft 开发与交互插件；独立启动器另仓维护 |
 | `integrations/hermes-inkstone/` | Hermes 外部控制插件 |
 
 AI 协作约定见 [AGENTS.md](AGENTS.md)。

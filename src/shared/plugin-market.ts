@@ -20,12 +20,13 @@ export interface CodegraphStatus {
   indexed?: boolean
 }
 export interface MinecraftPluginStatus {
-  bundled: boolean
   installed: boolean
   configured: boolean
   conflict: boolean
   skill: boolean
   pluginDir: string
+  installedVersion?: string
+  latestVersion?: string
 }
 export interface MinecraftPluginResult {
   ok: boolean

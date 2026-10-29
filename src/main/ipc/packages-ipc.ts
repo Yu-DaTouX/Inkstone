@@ -6,8 +6,9 @@ import { resolvePi } from '../protocol'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
 import { loadPluginCatalog } from '../plugin-catalog'
-import { installMinecraftPlugin, minecraftPluginStatus, refreshMinecraftPlugin, removeMinecraftPlugin, type MinecraftPluginPaths } from '../minecraft-plugin'
-import { app, dialog } from 'electron'
+import { installMinecraftPlugin, latestMinecraftPluginVersion, minecraftPluginStatus, refreshMinecraftPlugin, removeMinecraftPlugin, type FetchLike, type MinecraftPluginPaths } from '../minecraft-plugin'
+import type { MinecraftPluginStatus } from '../../shared/plugin-market'
+import { app, dialog, net } from 'electron'
 import { join, resolve } from 'node:path'
 import { access } from 'node:fs/promises'
 
@@ -17,22 +18,39 @@ export interface PackagesIpcDeps {
   hasBusyCwd(cwd: string): boolean
 }
 
-async function bundledIntegration(name: string, marker: string): Promise<string | null> {
-  const candidates = [join(process.resourcesPath, 'integrations', name), join(app.getAppPath(), 'integrations', name), resolve(import.meta.dirname, '../../integrations', name)]
-  for (const candidate of candidates) {
-    if (await access(join(candidate, marker)).then(() => true, () => false)) return candidate
-  }
-  return null
-}
-
 async function minecraftPaths(): Promise<MinecraftPluginPaths> {
   return {
-    source: await bundledIntegration('inkstone-minecraft', join('mcp', 'server.ts')),
     pluginDir: join(YAN_DIR, 'plugins', 'inkstone-minecraft'),
     skillsDir: join(YAN_DIR, 'skills'),
     agentDir: PI_AGENT_DIR,
-    runtime: process.execPath
+    runtime: process.execPath,
+    tempDir: join(YAN_DIR, 'tmp')
   }
+}
+
+const pluginFetch: FetchLike = (url, init) => net.fetch(url, init)
+
+const LATEST_FRESH_MS = 6 * 60 * 60_000
+const LATEST_RETRY_MS = 10 * 60_000
+let latestCache: { version: string | undefined; expiresAt: number } | null = null
+let latestInflight: Promise<string | undefined> | null = null
+
+function cachedLatestVersion(): Promise<string | undefined> {
+  if (latestCache && latestCache.expiresAt > Date.now()) return Promise.resolve(latestCache.version)
+  latestInflight ??= latestMinecraftPluginVersion(pluginFetch)
+    .then((version) => {
+      latestCache = { version, expiresAt: Date.now() + (version ? LATEST_FRESH_MS : LATEST_RETRY_MS) }
+      return version
+    })
+    .finally(() => {
+      latestInflight = null
+    })
+  return latestInflight
+}
+
+async function minecraftStatus(paths: MinecraftPluginPaths): Promise<MinecraftPluginStatus> {
+  const [status, latestVersion] = await Promise.all([minecraftPluginStatus(paths), cachedLatestVersion()])
+  return { ...status, latestVersion }
 }
 
 let minecraftQueue: Promise<unknown> = Promise.resolve()
@@ -46,9 +64,9 @@ function queueMinecraft<T>(task: () => Promise<T>): Promise<T> {
 export function refreshMinecraftPluginOnStartup(): void {
   void queueMinecraft(async () => {
     const result = await refreshMinecraftPlugin(await minecraftPaths())
-    if (result === 'updated') console.log('[minecraft-plugin] \u5df2\u66f4\u65b0\u5230\u968f\u5305\u7248\u672c')
-    else if (typeof result === 'object') console.warn('[minecraft-plugin] \u66f4\u65b0\u5931\u8d25', result.error)
-  }).catch((error) => console.warn('[minecraft-plugin] \u66f4\u65b0\u68c0\u67e5\u5931\u8d25', error))
+    if (result === 'updated') console.log('[minecraft-plugin] \u5df2\u6309\u5f53\u524d\u8fd0\u884c\u65f6\u8def\u5f84\u6539\u5199 mcp.json')
+    else if (typeof result === 'object') console.warn('[minecraft-plugin] \u6539\u5199\u5931\u8d25', result.error)
+  }).catch((error) => console.warn('[minecraft-plugin] \u542f\u52a8\u68c0\u67e5\u5931\u8d25', error))
 }
 
 export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): void {
@@ -87,9 +105,15 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
 
   handle('yan:packages:minecraft', async (action: unknown) => {
     const paths = await minecraftPaths()
-    if (action === 'install') return queueMinecraft(() => installMinecraftPlugin(paths))
-    if (action === 'remove') return queueMinecraft(() => removeMinecraftPlugin(paths))
-    return queueMinecraft(async () => ({ ok: true, status: await minecraftPluginStatus(paths) }))
+    if (action === 'install') {
+      const result = await queueMinecraft(() => installMinecraftPlugin(paths, { fetch: pluginFetch }))
+      return { ...result, status: await minecraftStatus(paths) }
+    }
+    if (action === 'remove') {
+      const result = await queueMinecraft(() => removeMinecraftPlugin(paths))
+      return { ...result, status: await minecraftStatus(paths) }
+    }
+    return { ok: true, status: await minecraftStatus(paths) }
   })
 
   handle('yan:packages:codegraphStatus', async (cwd: unknown) =>

@@ -1,9 +1,0 @@
-.gradle/
-build/
-out/
-run/
-.inkstone/
-.idea/
-*.iml
-.vscode/
-bin/

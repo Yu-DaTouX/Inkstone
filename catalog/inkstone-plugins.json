@@ -42,19 +42,19 @@
       "id": "inkstone-minecraft",
       "kind": "mcp",
       "name": "Inkstone Minecraft",
-      "version": "0.1.0",
-      "url": "https://github.com/Yu-DaTouX/Inkstone/tree/main/integrations/inkstone-minecraft",
+      "version": "0.1.1",
+      "url": "https://github.com/Yu-DaTouX/inkstone-minecraft-plugin",
       "text": {
         "zh-CN": {
           "name": "Minecraft 模组开发",
           "desc": "让 agent 开发 Fabric 模组：编译与热替换、启动开发客户端、截图、执行命令、操作界面与输入、跑 GameTest、管理测试存档，共 22 个 mc_* 工具，附带开发技能。",
-          "target": "装到砚的数据目录，用砚自带的运行时启动，写入 pi 的 mcp.json 与技能目录；新会话生效。",
+          "target": "从 GitHub 下载后装到砚的数据目录，用砚自带的运行时启动，写入 pi 的 mcp.json 与技能目录；新会话生效。",
           "hint": "需要本机 Java（1.21.x 用 Java 21，26.x 用 Java 25）。支持 Minecraft 1.21–1.21.1 与 26.1.x。"
         },
         "en-US": {
           "name": "Minecraft mod development",
           "desc": "Lets the agent develop Fabric mods: build and hot-swap, run a dev client, take screenshots, run commands, drive screens and input, run GameTests and manage test worlds. 22 mc_* tools plus a development skill.",
-          "target": "Installs into Inkstone's data directory, runs on Inkstone's bundled runtime and writes pi's mcp.json and skills folder; applies to new sessions.",
+          "target": "Downloaded from GitHub into Inkstone's data directory, runs on Inkstone's bundled runtime and writes pi's mcp.json and skills folder; applies to new sessions.",
           "hint": "Needs a local Java (Java 21 for 1.21.x, Java 25 for 26.x). Supports Minecraft 1.21–1.21.1 and 26.1.x."
         }
       }
