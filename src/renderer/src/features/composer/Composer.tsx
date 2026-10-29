@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUp, Square } from 'lucide-react'
-import { Button } from '../../ui'
+import { Button, IconButton } from '../../ui'
 import type { Attachment } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
 import { currentThinkingLevels, useStore, pendingSendsForView } from '../../state/store'
@@ -564,21 +564,19 @@ export function Composer({ className }: { className?: string } = {}) {
               <PlusMenu onInsert={insertAtCursor} />
               <VoiceButton onText={insertAtCursor} scope={sessionId} />
               {submitAction === 'stop' ? (
-                <Button
+                <IconButton
                   variant="secondary"
-                  size="sm"
                   aria-label={t('composer.stop')}
-                  title={t('composer.stop')}
+                  tooltip={t('composer.stop')}
                   className="composer-send composer-stop"
                   data-testid="composer-stop"
                   onPress={() => void abort()}
                 >
                   <Square size={10} fill="currentColor" aria-hidden />
-                </Button>
+                </IconButton>
               ) : (
                 <Button
                   variant="primary"
-                  size="sm"
                   aria-label={t('composer.go')}
                   className="composer-send"
                   data-testid="composer-send"

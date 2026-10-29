@@ -1,14 +1,4 @@
 @layer patterns {
-  .ui-modal.uc-modal {
-    width: min(460px, 100%);
-  }
-
-  .uc-modal .ui-dialog__body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-12);
-  }
-
   .uc-lead,
   .uc-note {
     margin: 0;
@@ -59,12 +49,6 @@
   .uc-cost strong {
     font-weight: var(--w-semibold);
     color: var(--fg);
-  }
-
-  .uc-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-8);
   }
 
   .mtp-head-level.uc-head {

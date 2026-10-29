@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 import { createPortal } from 'react-dom'
 import { Folder } from 'lucide-react'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
-import { Kbd, Skeleton } from '../../ui'
+import { Button, Kbd, Skeleton } from '../../ui'
 import { InlineImage } from '../../ui/InlineImage'
 import { useT, type TFunc } from '../../i18n'
 import type { SlashCommand } from '../../../../shared/ipc'
@@ -235,9 +235,15 @@ export function ComposerMenu({
       {slashMode && slashMatches.length === 0 && completion.slashStatus === 'error' ? (
         <div className="cmp-state" data-testid="slash-error">
           <span>{t('composer.slashError')}</span>
-          <button type="button" tabIndex={-1} className="cmp-retry" onClick={() => completion.retrySlash()}>
+          <Button
+            variant="secondary"
+            size="xs"
+            excludeFromTabOrder
+            preventFocusOnPress
+            onPress={() => completion.retrySlash()}
+          >
             {t('composer.slashRetry')}
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -270,7 +276,12 @@ export function ComposerMenu({
       {!slashMode && offset > 0 && (completion.atLoading || completion.atMatches.length > 0) ? (
         <div className="cmp-group">{t('composer.file')}</div>
       ) : null}
-      {!slashMode && completion.atLoading ? <div className="cmp-state" data-testid="at-loading">{t('composer.pathLoading')}</div> : null}
+      {!slashMode && completion.atLoading ? (
+        <div className="cmp-state" data-testid="at-loading">
+          <Skeleton shape="text" width={96} />
+          {t('composer.pathLoading')}
+        </div>
+      ) : null}
       {!slashMode && !completion.atLoading && completion.atError ? (
         <div className="cmp-state" data-testid="at-error">
           {completion.atStatus === 'permission' ? t('composer.pathPermission') : t('composer.pathError')}

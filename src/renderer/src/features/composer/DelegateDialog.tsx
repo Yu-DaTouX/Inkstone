@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, ListBoxItem, Modal, ModalOverlay, Select, TextArea } from '../../ui'
+import { Button, Dialog, DialogFooter, ListBoxItem, Modal, ModalOverlay, Select, TextArea } from '../../ui'
 import { subagentModelError } from '../../../../shared/subagent-pi-launch'
 import { openSubagentPane } from '../session/subagent-actions'
 import type { SubagentRun } from '../../../../shared/ipc'
@@ -138,14 +138,14 @@ function DelegateForm({ onDone }: { onDone: () => void }): JSX.Element {
       {readOnlyError ? <p className="v3-delegate-hint" data-testid="v3-delegate-readonly-hint">{t('delegate.ccReadOnly')}</p> : null}
       {validationError ? <p className="v3-delegate-error" role="alert">{validationError}</p> : null}
       {error ? <p className="v3-delegate-error" role="alert" data-testid="v3-delegate-error">{error}</p> : null}
-      <div className="v3-delegate-actions">
-        <Button variant="secondary" onPress={onDone} isDisabled={busy}>
+      <DialogFooter>
+        <Button variant="ghost" onPress={onDone} isDisabled={busy}>
           {t('ui.cancel')}
         </Button>
         <Button type="submit" variant="primary" isDisabled={busy || !task.trim() || !!validationError} data-testid="v3-delegate-start">
           {t('delegate.start')}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   )
 }

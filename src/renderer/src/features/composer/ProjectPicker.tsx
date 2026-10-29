@@ -1,6 +1,5 @@
-import { Menu, MenuItem, MenuTrigger, Separator } from 'react-aria-components'
-import { Check, Folder, FolderOpen } from 'lucide-react'
-import { Button, Popover } from '../../ui'
+import { Folder, FolderOpen, FolderX } from 'lucide-react'
+import { Button, Menu, MenuItem, MenuSeparator, MenuTrigger, MiddleTruncate, Popover } from '../../ui'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { ProjectRecord } from '../../../../shared/ipc'
@@ -35,8 +34,13 @@ export function ProjectPicker() {
 
   return (
     <MenuTrigger>
-      <Button variant="ghost" className="composer-permission composer-project" aria-haspopup="menu" data-testid="composer-project">
-        <Folder size={13} aria-hidden />
+      <Button
+        variant="ghost"
+        className="composer-permission composer-project"
+        aria-haspopup="menu"
+        data-testid="composer-project"
+        icon={<Folder size={14} />}
+      >
         <span className="cp-label">{current ? projectLabel(current) : t('chat.pickProject')}</span>
       </Button>
       <Popover className="composer-permission-pop" placement="top start" offset={6}>
@@ -44,26 +48,30 @@ export function ProjectPicker() {
           {listed.map((project) => (
             <MenuItem
               key={project.id}
-              className="cpm-item"
               textValue={projectLabel(project)}
+              checked={project.id === currentProjectId}
+              icon={<Folder size={14} />}
+              description={<MiddleTruncate value={project.cwd} />}
               data-current={project.id === currentProjectId ? 'true' : undefined}
               onAction={() => openProject(project)}
             >
-              <Folder size={14} aria-hidden />
-              <span className="cpm-label">{projectLabel(project)}</span>
-              {project.id === currentProjectId ? <Check className="cpm-check" size={13} aria-hidden /> : null}
-              <span className="cpm-hint">{project.cwd}</span>
+              {projectLabel(project)}
             </MenuItem>
           ))}
           {currentProjectId ? (
-            <MenuItem className="cpm-item" textValue={noProject} onAction={() => void newSession({ scope: 'global' })}>
-              <span className="cpm-label">{noProject}</span>
+            <MenuItem textValue={noProject} checked={false} icon={<FolderX size={14} />} onAction={() => void newSession({ scope: 'global' })}>
+              {noProject}
             </MenuItem>
           ) : null}
-          {listed.length > 0 || currentProjectId ? <Separator className="cpm-sep" /> : null}
-          <MenuItem className="cpm-item" textValue={chooseFolder} onAction={() => void pickFolder()} data-testid="composer-project-browse">
-            <FolderOpen size={14} aria-hidden />
-            <span className="cpm-label">{chooseFolder}</span>
+          {listed.length > 0 || currentProjectId ? <MenuSeparator /> : null}
+          <MenuItem
+            textValue={chooseFolder}
+            checked={listed.length > 0 || currentProjectId ? false : undefined}
+            icon={<FolderOpen size={14} />}
+            onAction={() => void pickFolder()}
+            data-testid="composer-project-browse"
+          >
+            {chooseFolder}
           </MenuItem>
         </Menu>
       </Popover>

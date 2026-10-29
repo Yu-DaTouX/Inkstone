@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog } from 'react-aria-components'
-import { Button, Popover } from '../ui'
+import { Button, DialogFooter, Popover, Swatch, Tooltip, TooltipHint, TooltipTrigger, type DataTone } from '../ui'
 import { useT, type MessageKey } from '../i18n'
 import { useStore } from '../state/store'
 import type { ContextCategory } from '../state/context-breakdown'
@@ -16,6 +16,14 @@ function shortTokens(n: number): string {
 }
 
 const NO_MESSAGES: readonly UIMessage[] = []
+
+const CATEGORY_TONE: Record<ContextCategory, DataTone> = {
+  system: 8,
+  user: 1,
+  assistant: 2,
+  thinking: 3,
+  tools: 7
+}
 
 const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   system: 'ctx.cat.system',
@@ -85,27 +93,29 @@ export function ContextRing({ className }: { className?: string } = {}) {
   const tip = known
     ? t('ctx.tip', { used: shortTokens(tokens), win: shortTokens(windowSize), pct: Math.round(percent!) })
     : t('ctx.usageUnknown')
-  const title = known && limitNote ? `${tip}
-${limitNote}` : tip
 
   return (
     <div className={`ctx-ring-wrap ${className ?? ''}`}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="ctx-ring"
-        data-tone={ringPercent !== null ? ringTone : ''}
-        aria-label={t('rp.context')}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        title={title}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <ContextRingGlyph percent={ringPercent} tone={ringTone} />
-        <span className="ctx-ring-text ui-meta-num" data-testid="ctx-ring-text">
-          {text}
-        </span>
-      </button>
+      <TooltipTrigger isDisabled={open}>
+        <Button
+          ref={triggerRef}
+          variant="ghost"
+          className="ctx-ring"
+          data-tone={ringPercent !== null ? ringTone : ''}
+          aria-label={t('rp.context')}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          icon={<ContextRingGlyph percent={ringPercent} tone={ringTone} />}
+          onPress={() => setOpen((v) => !v)}
+        >
+          <span className="ctx-ring-text ui-meta-num" data-testid="ctx-ring-text">
+            {text}
+          </span>
+        </Button>
+        <Tooltip placement="top">
+          <TooltipHint label={tip} detail={known && limitNote ? limitNote : undefined} />
+        </Tooltip>
+      </TooltipTrigger>
       <Popover
         variant="panel"
         className="ctx-pop"
@@ -147,7 +157,7 @@ ${limitNote}` : tip
             <ul className="ctx-legend" data-testid="ctx-breakdown">
               {rows.map((r) => (
                 <li key={r.id} className={r.id === 'free' ? 'free' : undefined}>
-                  <i className={`ctx-swatch c-${r.id}`} aria-hidden />
+                  {r.id === 'free' ? <i className="ctx-swatch-free" aria-hidden /> : <Swatch tone={CATEGORY_TONE[r.id]} />}
                   <span className="ctx-legend-name">{t(r.id === 'system' && compacted ? 'ctx.cat.systemSummary' : CATEGORY_LABEL[r.id])}</span>
                   <span className="ctx-legend-num ui-meta-num">{shortTokens(r.tokens)}</span>
                   <span className="ctx-legend-num ui-meta-num">{`${share(r.tokens).toFixed(1)}%`}</span>
@@ -161,7 +171,7 @@ ${limitNote}` : tip
             </div>
           ) : null}
           <p className="ctx-note ctx-estimate-note">{t('ctx.estimateHint')}</p>
-          <div className="ctx-actions">
+          <DialogFooter>
             <Button
               size="sm"
               variant="secondary"
@@ -171,7 +181,7 @@ ${limitNote}` : tip
             >
               {t('status.compact')}
             </Button>
-          </div>
+          </DialogFooter>
         </Dialog>
       </Popover>
     </div>

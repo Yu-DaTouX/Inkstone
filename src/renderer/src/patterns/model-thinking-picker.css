@@ -12,10 +12,6 @@
   }
 
   .mtp-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-4);
-    color: var(--fg2);
     min-width: 0;
     max-width: 100%;
   }
@@ -118,34 +114,12 @@
 
   .mtp-rail-btn {
     position: relative;
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--fg2);
-    cursor: pointer;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
   }
 
-  .mtp-rail-btn:hover {
-    background: var(--hover);
-  }
-
-  .mtp-rail-btn:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus-inset);
-  }
-
-  .mtp-rail-btn[aria-pressed='true'] {
-    background: var(--hover);
-    color: var(--fg);
-  }
-
-  .mtp-rail-btn[aria-pressed='true']::after {
+  .mtp-rail-btn[data-selected]::after {
     content: '';
     position: absolute;
     top: 50%;
@@ -160,10 +134,7 @@
 
   .mtp-rail-sep {
     flex: none;
-    width: 24px;
-    height: var(--hair, 1px);
     margin: var(--s-2) 0;
-    background: var(--line);
   }
 
   .mtp-rail-fill {
@@ -180,55 +151,12 @@
   }
 
   .mtp-search {
-    position: relative;
-    display: flex;
-    align-items: center;
     flex: none;
-  }
-
-  .mtp-search-icon {
-    position: absolute;
-    left: var(--s-8);
-    color: var(--fg3);
-    pointer-events: none;
-  }
-
-  .mtp-search-input {
-    width: 100%;
-    min-height: var(--size-btn);
-    padding: 0 var(--s-8) 0 var(--s-24);
-    border: 0;
-    border-bottom: 1px solid var(--line);
-    border-radius: 0;
-    background: transparent;
-    color: var(--fg);
-    font: inherit;
-    font-size: var(--t-body);
-    outline: none;
-  }
-
-  .mtp-search-input:focus {
-    border-bottom-color: var(--accent);
   }
 
   .mtp-subhead {
-    display: flex;
-    align-items: center;
-    gap: var(--s-4);
     flex: none;
-    min-height: var(--size-btn-sm);
-    padding: 0 var(--s-4);
-    border: 0;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--fg2);
-    font: inherit;
-    font-size: var(--t-footnote);
-    cursor: pointer;
-  }
-
-  .mtp-subhead:hover {
-    background: var(--hover);
+    align-self: flex-start;
   }
 
   .mtp-subhead-note {
@@ -243,30 +171,8 @@
   }
 
   .mtp-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    outline: none;
-  }
-
-  .mtp-item {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-    min-height: var(--size-btn);
-    padding: var(--s-4) var(--s-4) var(--s-4) var(--s-8);
-    border-radius: var(--r-sm);
-    color: var(--fg);
-    cursor: pointer;
-    outline: none;
-  }
-
-  .mtp-item:is([data-hovered], [data-focused]) {
-    background: var(--hover);
-  }
-
-  .mtp-item[data-focus-visible] {
-    box-shadow: var(--ring-focus-inset);
+    max-height: none;
+    overflow: visible;
   }
 
   .mtp-item-main {
@@ -301,13 +207,8 @@
     color: var(--fail-t);
   }
 
-  .mtp-row-btn.ui-btn {
+  .mtp-row-btn {
     flex: none;
-    width: var(--size-btn-sm);
-    min-width: var(--size-btn-sm);
-    height: var(--size-btn-sm);
-    padding: 0;
-    color: var(--fg3);
     opacity: 0;
   }
 
@@ -339,14 +240,6 @@
   .mtp-hidden-toggle > svg {
     flex: none;
     color: var(--fg3);
-  }
-
-  .mtp-empty {
-    margin: 0;
-    padding: var(--s-16) var(--s-8);
-    color: var(--fg3);
-    font-size: var(--t-body);
-    text-align: center;
   }
 
   .mtp-think-pop {
@@ -594,7 +487,7 @@
     gap: var(--s-6);
     color: var(--fg3);
     font-size: var(--t-footnote);
-    line-height: 1.4;
+    line-height: var(--t-footnote-lh);
   }
 
   .mtp-thinking, .uc-card { flex-shrink: 0; min-width: 0; }

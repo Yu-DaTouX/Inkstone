@@ -470,33 +470,6 @@
     line-height: var(--t-footnote-lh);
   }
 
-  .composer-bar .ui-btn,
-  .composer-bar .ctx-ring {
-    height: var(--size-btn);
-    min-height: var(--size-btn);
-    padding: 0 var(--s-6);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-  }
-
-  .composer-bar .composer-permission {
-    gap: var(--s-4);
-    color: var(--fg2);
-  }
-
-  .composer-bar .ctx-ring {
-    color: var(--fg3);
-  }
-
-  .composer-bar .mtp-trigger {
-    color: var(--fg2);
-  }
-
-  .composer-bar .ctx-ring:hover,
-  .composer-bar .ctx-ring:focus-visible {
-    color: var(--fg);
-  }
-
   .composer-bar > * {
     flex: none;
   }
@@ -584,25 +557,15 @@
     }
   }
 
-  .composer-send.ui-btn {
-    flex: none;
-    width: 28px;
-    min-width: 28px;
-    height: 28px;
+  .composer-send {
+    width: var(--size-btn);
+    min-width: var(--size-btn);
     padding: 0;
     border-radius: var(--r-full);
     corner-shape: round;
   }
 
-  .composer-plus {
-    flex: none;
-  }
-
-  .composer-plus-glyph {
-    font-size: 18px;
-    line-height: 1;
-  }
-
+  .composer-plus,
   .composer-permission {
     flex: none;
   }
@@ -634,87 +597,14 @@
 
   .composer-plus-menu,
   .composer-permission-menu {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-2);
-    outline: none;
-  }
-
-  .cpm-item {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s-4) var(--s-8);
-    padding: var(--s-6) var(--s-8);
-    border-radius: var(--r-sm);
-    color: var(--fg);
-    font-size: var(--t-body);
-    line-height: 1.4;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .cpm-item > svg {
-    flex: none;
-  }
-
-  .cpm-item[data-hovered] {
-    background: var(--hover);
-  }
-
-  .cpm-item[data-focused] {
-    background: var(--hover);
-  }
-
-  .cpm-item[data-current='true'] {
-    color: var(--accent-t);
-  }
-
-  .cpm-check {
-    flex: none;
-    margin-left: auto;
-    color: var(--accent-t);
-  }
-
-  .cpm-label {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .cpm-hint {
-    flex-basis: 100%;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-  }
-
-  .cpm-sep {
-    height: 1px;
-    margin: var(--s-2) 0;
-    background: var(--line);
-    border: none;
-  }
-
-  .composer-perm-modal {
-    width: min(380px, calc(100vw - 32px));
-  }
-
-  .composer-perm-dialog .ui-dialog__body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-10);
+    max-height: none;
   }
 
   .composer-perm-body {
     margin: 0;
     color: var(--fg2);
-    font-size: var(--t-body);
-    line-height: 1.5;
-  }
-
-  .composer-perm-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-8);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    overflow-wrap: anywhere;
   }
 
   .cmp-menu {
@@ -824,16 +714,6 @@
     min-height: var(--size-btn);
   }
 
-  .cmp-retry {
-    padding: 0 var(--s-4);
-    border: 0;
-    border-radius: var(--r-xs);
-    background: var(--sel);
-    color: var(--fg);
-    font: inherit;
-    cursor: pointer;
-  }
-
   .cmp-hint {
     display: flex;
     flex-wrap: wrap;
@@ -867,7 +747,6 @@
     flex-direction: column;
     gap: var(--s-12);
     min-width: 0;
-    width: min(520px, 80vw);
   }
 
   .v3-delegate-row {
@@ -891,12 +770,6 @@
 
   .v3-delegate-error {
     color: var(--fail-t);
-  }
-
-  .v3-delegate-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-8);
   }
 
   @container (max-width: 480px) {

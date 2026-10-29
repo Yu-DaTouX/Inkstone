@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Menu, MenuItem, MenuTrigger } from 'react-aria-components'
-import { Check, ChevronDown, Shield } from 'lucide-react'
-import { Button, Dialog, Modal, ModalOverlay, Popover } from '../../ui'
+import { ChevronDown, Shield } from 'lucide-react'
+import { Button, Dialog, DialogFooter, Menu, MenuItem, MenuTrigger, Modal, ModalOverlay, Popover } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
@@ -26,18 +25,19 @@ export function PermissionToggle() {
           data-mode={permission}
           aria-haspopup="menu"
           data-testid="permission-picker"
+          icon={<Shield size={14} />}
+          trailingIcon={<ChevronDown className="cp-chev" size={12} />}
         >
-          <Shield size={13} aria-hidden />
           <span className="cp-label">{t(`permission.label.${permission}` as 'permission.label.danger')}</span>
-          <ChevronDown className="cp-chev" size={12} aria-hidden />
         </Button>
         <Popover className="composer-permission-pop" placement="top start" offset={6}>
           <Menu className="composer-permission-menu" aria-label={t('permission.title')}>
             {PERMISSION_MODES.map((mode) => (
               <MenuItem
                 key={mode}
-                className="cpm-item"
                 textValue={t(`permission.label.${mode}` as 'permission.label.danger')}
+                checked={mode === permission}
+                description={t(`permission.hint.${mode}` as 'permission.hint.danger')}
                 data-current={mode === permission ? 'true' : undefined}
                 onAction={() => {
                   if (mode === permission) return
@@ -45,9 +45,7 @@ export function PermissionToggle() {
                   else apply(mode)
                 }}
               >
-                <span className="cpm-label">{t(`permission.label.${mode}` as 'permission.label.danger')}</span>
-                {mode === permission ? <Check className="cpm-check" size={13} aria-hidden /> : null}
-                <span className="cpm-hint">{t(`permission.hint.${mode}` as 'permission.hint.danger')}</span>
+                {t(`permission.label.${mode}` as 'permission.label.danger')}
               </MenuItem>
             ))}
           </Menu>
@@ -55,16 +53,15 @@ export function PermissionToggle() {
       </MenuTrigger>
 
       <ModalOverlay isOpen={confirmAll} onOpenChange={setConfirmAll} isDismissable>
-        <Modal className="composer-perm-modal">
-          <Dialog className="composer-perm-dialog" title={t('permission.label.all')} showClose={false}>
+        <Modal data-dialog-size="sm">
+          <Dialog alert title={t('permission.label.all')}>
             <p className="composer-perm-body">{t('permission.desc.all')}</p>
-            <div className="composer-perm-actions">
-              <Button variant="secondary" size="sm" onPress={() => setConfirmAll(false)}>
+            <DialogFooter>
+              <Button variant="ghost" onPress={() => setConfirmAll(false)}>
                 {t('ui.cancel')}
               </Button>
               <Button
-                variant="danger"
-                size="sm"
+                variant="destructive"
                 data-testid="permission-confirm-all"
                 onPress={() => {
                   setConfirmAll(false)
@@ -73,7 +70,7 @@ export function PermissionToggle() {
               >
                 {t('ui.confirm')}
               </Button>
-            </div>
+            </DialogFooter>
           </Dialog>
         </Modal>
       </ModalOverlay>

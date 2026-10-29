@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Dialog, Input, ListBox, ListBoxItem, SearchField, SliderThumb, SliderTrack } from 'react-aria-components'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Gauge, Search, Settings2, Star } from 'lucide-react'
-import { Button, Kbd, Popover, Slider } from '../ui'
+import { Dialog, SliderThumb, SliderTrack } from 'react-aria-components'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Gauge, Settings2, Star } from 'lucide-react'
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  Kbd,
+  ListBox,
+  ListBoxItem,
+  Popover,
+  SearchField,
+  Separator,
+  Slider,
+  Toggle
+} from '../ui'
 import { PulseField, resolveColor } from './pulse-field'
 import { APPEARANCE_EVENT } from '../lib/appearance'
 import { requestSettingReveal } from '../features/settings/search/search-model'
@@ -291,7 +303,8 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const [hiddenView, setHiddenView] = useState(false)
   const triggerRef = useRef<HTMLSpanElement>(null)
   const thinkRef = useRef<HTMLSpanElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
+  const searchRef = useRef<HTMLDivElement>(null)
+  const focusSearch = (): void => searchRef.current?.querySelector<HTMLInputElement>('input')?.focus()
 
   const cur =
     session?.model && session.model.id !== 'unknown' && session.model.name !== 'unknown' ? session.model : undefined
@@ -408,7 +421,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
       <span className="mtp-anchor" ref={triggerRef}>
         <Button
           variant="ghost"
-          size="sm"
           className="mtp-trigger"
           data-state={cur ? 'ready' : 'unknown'}
           aria-haspopup="dialog"
@@ -430,7 +442,6 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
         <span className="mtp-anchor" ref={thinkRef}>
           <Button
             variant="ghost"
-            size="sm"
             className="mtp-trigger mtp-think-trigger"
             data-level={level}
             aria-haspopup="dialog"
@@ -465,62 +476,76 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
           <nav className="mtp-rail" aria-label={t('models.provider')}>
             {favoriteModels.length ? (
               <>
-                <button
-                  type="button"
+                <Toggle
+                  size="md"
+                  icon
                   className="mtp-rail-btn"
-                  aria-pressed={tab === FAVORITES_TAB && !q}
+                  isSelected={tab === FAVORITES_TAB && !q}
                   aria-label={t('models.favorites')}
-                  title={t('models.favorites')}
+                  tooltip={t('models.favorites')}
+                  tooltipPlacement="end"
                   data-testid="model-picker-tab-favorites"
-                  onClick={() => { setTab(FAVORITES_TAB); setHiddenView(false); setQuery(''); searchRef.current?.focus() }}
+                  onPress={() => { setTab(FAVORITES_TAB); setHiddenView(false); setQuery(''); focusSearch() }}
                 >
                   <Star size={16} fill="currentColor" aria-hidden />
-                </button>
-                <span className="mtp-rail-sep" aria-hidden />
+                </Toggle>
+                <Separator className="mtp-rail-sep" />
               </>
             ) : null}
             {brands.map((brand) => (
-              <button
+              <Toggle
                 key={brand}
-                type="button"
+                size="md"
+                icon
                 className="mtp-rail-btn"
-                aria-pressed={tab === brand && !q}
+                isSelected={tab === brand && !q}
                 aria-label={brandLabel(brand, otherLabel)}
-                title={brandLabel(brand, otherLabel)}
+                tooltip={brandLabel(brand, otherLabel)}
+                tooltipPlacement="end"
                 data-testid={`model-picker-tab-${brand}`}
-                onClick={() => { setTab(brand); setHiddenView(false); setQuery(''); searchRef.current?.focus() }}
+                onPress={() => { setTab(brand); setHiddenView(false); setQuery(''); focusSearch() }}
               >
                 <ModelBot className="mtp-bot" brand={brand} mood="icon" size={20} />
-              </button>
+              </Toggle>
             ))}
             <span className="mtp-rail-fill" />
-            <button
-              type="button"
+            <IconButton
               className="mtp-rail-btn"
               aria-label={text('pickerManage')}
-              title={text('pickerManage')}
+              tooltip={text('pickerManage')}
+              tooltipPlacement="end"
               data-testid="model-picker-manage"
-              onClick={() => {
+              onPress={() => {
                 setOpen(false)
                 openSettings('models')
                 requestSettingReveal({ section: 'models', id: 'models-visibility' })
               }}
             >
-              <Settings2 size={15} aria-hidden />
-            </button>
+              <Settings2 size={16} aria-hidden />
+            </IconButton>
           </nav>
 
           <div className="mtp-main">
-            <SearchField className="mtp-search" aria-label={t('picker.searchModel')} value={query} onChange={setQuery}>
-              <Search className="mtp-search-icon" size={14} aria-hidden />
-              <Input ref={searchRef} className="mtp-search-input" placeholder={t('picker.searchModel')} autoFocus />
-            </SearchField>
+            <SearchField
+              ref={searchRef}
+              className="mtp-search"
+              aria-label={t('picker.searchModel')}
+              placeholder={t('picker.searchModel')}
+              value={query}
+              onChange={setQuery}
+              autoFocus
+            />
             {hiddenView && !q ? (
-              <button type="button" className="mtp-subhead" onClick={() => setHiddenView(false)}>
-                <ChevronLeft size={14} aria-hidden />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mtp-subhead"
+                icon={<ChevronLeft size={14} />}
+                onPress={() => setHiddenView(false)}
+              >
                 <span>{tabLabel}</span>
                 <span className="mtp-subhead-note">{text('pickerHiddenTag')}</span>
-              </button>
+              </Button>
             ) : null}
             <div className="mtp-scroll">
               {rows.length || hiddenCount ? (
@@ -559,28 +584,28 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                         </span>
                         {jump >= 0 && jump < JUMP_LIMIT ? <Kbd>{jumpLabel(jump)}</Kbd> : null}
                         {fav ? null : (
-                          <Button
-                            variant="ghost"
+                          <IconButton
                             size="sm"
                             className="mtp-row-btn"
                             aria-label={`${modelHidden ? text('pickerShow') : text('pickerHide')}: ${m.name}`}
+                            tooltip={modelHidden ? text('pickerShow') : text('pickerHide')}
                             data-testid="model-picker-hide"
                             onPress={() => setModelHidden(m, !modelHidden)}
                           >
-                            {modelHidden ? <Eye size={13} aria-hidden /> : <EyeOff size={13} aria-hidden />}
-                          </Button>
+                            {modelHidden ? <Eye size={14} aria-hidden /> : <EyeOff size={14} aria-hidden />}
+                          </IconButton>
                         )}
-                        <Button
-                          variant="ghost"
+                        <IconButton
                           size="sm"
                           className="mtp-row-btn"
                           data-on={fav || undefined}
                           aria-label={`${fav ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}: ${m.name}`}
+                          tooltip={fav ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}
                           data-testid="model-picker-favorite"
                           onPress={() => toggleModelFavorite(m)}
                         >
-                          <Star size={13} fill={fav ? 'currentColor' : 'none'} aria-hidden />
-                        </Button>
+                          <Star size={14} fill={fav ? 'currentColor' : 'none'} aria-hidden />
+                        </IconButton>
                         <Check className="mtp-check" size={14} data-on={selectedKey === keyOf(m) || undefined} aria-hidden />
                       </ListBoxItem>
                     )
@@ -601,7 +626,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                   ) : null}
                 </ListBox>
               ) : (
-                <p className="mtp-empty">{models.length ? t('picker.noMatch') : t('picker.noModels')}</p>
+                <EmptyState size="sm" className="mtp-empty" title={models.length ? t('picker.noMatch') : t('picker.noModels')} />
               )}
             </div>
           </div>

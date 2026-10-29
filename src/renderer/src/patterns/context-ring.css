@@ -4,30 +4,6 @@
     align-items: center;
   }
 
-  .ctx-ring {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-4);
-    min-height: var(--size-btn);
-    padding: 0 var(--s-6);
-    border: none;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--fg2);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .ctx-ring:hover {
-    background: var(--hover);
-    color: var(--fg);
-  }
-
-  .ctx-ring:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
   .ctx-ring-svg {
     display: block;
     flex: none;
@@ -120,28 +96,23 @@
     min-width: 3px;
   }
 
-  .ctx-seg.c-system,
-  .ctx-swatch.c-system {
+  .ctx-seg.c-system {
     background: var(--data-8);
   }
 
-  .ctx-seg.c-user,
-  .ctx-swatch.c-user {
+  .ctx-seg.c-user {
     background: var(--data-1);
   }
 
-  .ctx-seg.c-assistant,
-  .ctx-swatch.c-assistant {
+  .ctx-seg.c-assistant {
     background: var(--data-2);
   }
 
-  .ctx-seg.c-thinking,
-  .ctx-swatch.c-thinking {
+  .ctx-seg.c-thinking {
     background: var(--data-3);
   }
 
-  .ctx-seg.c-tools,
-  .ctx-swatch.c-tools {
+  .ctx-seg.c-tools {
     background: var(--data-7);
   }
 
@@ -156,20 +127,17 @@
 
   .ctx-legend li {
     display: grid;
-    grid-template-columns: 10px minmax(0, 1fr) auto auto;
+    grid-template-columns: var(--s-8) minmax(0, 1fr) auto auto;
     align-items: center;
     gap: var(--s-8);
     font-size: var(--t-footnote);
     color: var(--fg2);
   }
 
-  .ctx-swatch {
-    width: 10px;
-    height: 10px;
+  .ctx-swatch-free {
+    width: var(--s-8);
+    height: var(--s-8);
     border-radius: var(--r-xs);
-  }
-
-  .ctx-legend li.free .ctx-swatch {
     background: var(--sunken);
     box-shadow: var(--ring-line2);
   }
@@ -192,12 +160,6 @@
   }
 
   .ctx-estimate-note {
-    line-height: var(--t-footnote-lh, 1.4);
-  }
-
-  .ctx-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-8);
+    line-height: var(--t-footnote-lh);
   }
 }

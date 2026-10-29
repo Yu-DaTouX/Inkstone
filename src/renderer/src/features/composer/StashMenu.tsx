@@ -127,7 +127,8 @@ export function StashPanel({ entries, highlightId, onHighlight, onRestore, onDel
                   size="sm"
                   className="ps-del"
                   aria-label={t('stash.delete')}
-                  title={`${t('stash.delete')} · ${t('stash.shortcutDelete')}`}
+                  tooltip={t('stash.delete')}
+                  tooltipShortcut={t('stash.shortcutDelete')}
                   data-stash-delete={entry.id}
                   onPress={() => onDelete(entry)}
                 >
@@ -262,13 +263,12 @@ export function StashMenuItem() {
   const count = usePromptStashEntries().length
   return (
     <MenuItem
-      className="cpm-item"
       textValue={t('stash.menu', { n: count })}
+      icon={<Bookmark size={14} />}
       onAction={requestPromptStashOpen}
       data-testid="composer-plus-stash"
     >
-      <Bookmark size={14} aria-hidden />
-      <span className="cpm-label">{t('stash.menu', { n: count })}</span>
+      {t('stash.menu', { n: count })}
     </MenuItem>
   )
 }
@@ -277,14 +277,13 @@ export function StashSaveMenuItem() {
   const t = useT()
   return (
     <MenuItem
-      className="cpm-item"
       textValue={t('stash.save')}
+      icon={<Bookmark size={14} />}
+      description={t('stash.shortcut')}
       onAction={requestPromptStashSave}
       data-testid="composer-plus-stash-save"
     >
-      <Bookmark size={14} aria-hidden />
-      <span className="cpm-label">{t('stash.save')}</span>
-      <span className="cpm-hint">{t('stash.shortcut')}</span>
+      {t('stash.save')}
     </MenuItem>
   )
 }
