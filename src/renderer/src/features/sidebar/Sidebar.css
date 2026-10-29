@@ -844,10 +844,11 @@
     flex: 1;
     color: var(--fg);
     mask-image: none;
+    text-overflow: ellipsis;
   }
 
-  .v3-srow[data-variant='card'][data-variant] > .v3-row .v3-row-title[data-overflowing] {
-    mask-image: linear-gradient(to left, transparent 0, var(--fg) var(--s-24));
+  .v3-srow[data-variant='card'] > .v3-row .v3-row-title-text {
+    display: inline;
   }
 
   .v3-srow[data-variant='card'] > .v3-row[data-muted] .v3-row-title {
@@ -915,17 +916,13 @@
     white-space: nowrap;
   }
 
-  .v3-crow-bot[data-idle] {
-    opacity: 0.45;
-    filter: grayscale(1);
+  .v3-crow-scope {
+    flex: none;
+    opacity: 0.7;
   }
 
   .v3-crow-meta[data-repeat] {
     opacity: 0.6;
-  }
-
-  .v3-crow-meta[data-repeat] .ui-badge {
-    filter: grayscale(1);
   }
 
   .v3-side .v3-srow > .v3-row:is([aria-current='true'], [aria-current='page']) {

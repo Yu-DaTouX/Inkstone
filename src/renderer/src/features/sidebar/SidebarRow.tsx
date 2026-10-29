@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { AlarmClock, GitBranch, MoreHorizontal, Pin } from 'lucide-react'
+import { AlarmClock, Folder, GitBranch, Globe, MoreHorizontal, Pin } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { IconButton, InlineRename, isImeComposing, ListRow, StatusSlot } from '../../ui'
@@ -206,7 +206,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
               ) : null}
               {card && !card.slim ? (
                 <span className="v3-crow-meta" data-repeat={card.repeatProject ? '' : undefined}>
-                  <ProjectBadge label={card.project} global={card.global} />
+                  {card.global ? <Globe size={11} className="v3-crow-scope" aria-hidden /> : <Folder size={11} className="v3-crow-scope" aria-hidden />}
                   <span className="v3-crow-project">{card.project}</span>
                   {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
                   <span className="v3-crow-ago">{card.ago}</span>
@@ -215,9 +215,9 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
               {card?.slim ? null : card ? (
                 <span className="v3-crow-line">
                   <FadeTitleBox boxRef={titleBoxRef} text={title} />
-                  {card.modelRef || cardHasBot(status) ? (
-                    <span className="v3-crow-bot" data-idle={cardHasBot(status) ? undefined : ''}>
-                      <StatusSlot label={cardHasBot(status) ? statusLabel : card.model} live={cardHasBot(status)}>
+                  {cardHasBot(status) ? (
+                    <span className="v3-crow-bot">
+                      <StatusSlot label={statusLabel} live>
                         <ModelBot brand={modelBrand(card.modelRef)} mood={botMood(status)} size={16} seedKey={item.id} />
                       </StatusSlot>
                     </span>

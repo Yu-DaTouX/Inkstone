@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, X } from 'lucide-react'
-import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover, RailRow, RailValue, StatusDot, type RailTone } from '../../ui'
+import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover, RailRow, RailValue, type RailTone } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -68,11 +68,6 @@ const GIT_REFRESH_WHILE_RUNNING_MS = 4_000
 function lastSegment(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean)
   return parts[parts.length - 1] ?? path
-}
-
-function parentFolder(path: string): string {
-  const parts = path.split(/[\\/]+/).filter(Boolean)
-  return parts.length > 1 ? parts[parts.length - 2] : ''
 }
 
 function useGitRepo(cwd: string | null, refreshKey: string): GitRepoState | null {
@@ -462,13 +457,14 @@ function ChangedRows({ files, text, onOpen }: { files: readonly RailChangedFile[
       render={(file) => {
         const name = outputName(file.path)
         const counted = file.added !== null && file.removed !== null
+        const unchangedLines = counted && file.added === 0 && file.removed === 0
         return (
           <RailRow
             key={file.path}
             label={name}
             title={counted ? `${file.path}\n${text.linesChanged(file.added ?? 0, file.removed ?? 0)}` : file.path}
             icon={<FileTypeIcon name={name} size={16} />}
-            value={counted ? <RailValue glyph={{ kind: 'delta', added: file.added ?? 0, removed: file.removed ?? 0 }} /> : outputFolder(file.path) || undefined}
+            value={unchangedLines ? undefined : counted ? <RailValue glyph={{ kind: 'delta', added: file.added ?? 0, removed: file.removed ?? 0 }} /> : outputFolder(file.path) || undefined}
             onPress={onOpen}
           />
         )
@@ -660,7 +656,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             <RailRowMenu
               label={projectName}
               icon={<Folder size={14} aria-hidden />}
-              value={parentFolder(cwd)}
+              value={cwd}
               title={cwd}
               menuLabel={rail.folderMenu}
               testId="wb-ov-path"
@@ -676,7 +672,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             <RailRowMenu
               label={branch}
               icon={<GitBranch size={14} aria-hidden />}
-              value={repo && repo.changedCount > 0 ? <StatusDot kind="awaiting" /> : undefined}
+              value={repo && repo.changedCount > 0 ? <RailValue glyph={{ kind: 'dot', status: 'awaiting' }} value={rail.dirty} /> : undefined}
               title={[`${text.branchLabel} ${branch}`, repo && repo.changedCount > 0 ? rail.dirty : ''].filter(Boolean).join('\n')}
               menuLabel={rail.branchMenu}
               testId="wb-rail-branch"

@@ -137,6 +137,17 @@
     font-weight: var(--w-medium);
   }
 
+  .wb-rs-main > .wb-rs-line {
+    justify-content: flex-start;
+    gap: var(--s-12);
+  }
+
+  .wb-overview .wb-tile-title {
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    font-weight: var(--w-medium);
+  }
+
   .wb-rs-toggle {
     align-self: start;
     justify-self: start;
@@ -157,5 +168,9 @@
 @layer patterns {
   .wb-rs-toggle {
     color: var(--fg3);
+  }
+
+  .wb-overview .wb-tile-title {
+    color: var(--fg2);
   }
 }

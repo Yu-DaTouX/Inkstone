@@ -17,6 +17,7 @@ export interface V3Text {
   newChatShortcut: string
   newSessionTitle: string
   toggleSidebar: string
+  panelToggles: string
   focusSearch: string
   statusRunning: string
   statusWaiting: string
@@ -61,6 +62,7 @@ const ZH: V3Text = {
   newChatShortcut: '新会话（{keys}）',
   newSessionTitle: '新建会话',
   toggleSidebar: '展开或收起侧栏（Ctrl+B）',
+  panelToggles: '面板开关',
   focusSearch: '查看会话',
   statusRunning: '运行中',
   statusWaiting: '等你确认',
@@ -105,6 +107,7 @@ const EN: V3Text = {
   newChatShortcut: 'New chat ({keys})',
   newSessionTitle: 'New session',
   toggleSidebar: 'Show or hide the sidebar (Ctrl+B)',
+  panelToggles: 'Panel toggles',
   focusSearch: 'View chats',
   statusRunning: 'Running',
   statusWaiting: 'Waiting for you',

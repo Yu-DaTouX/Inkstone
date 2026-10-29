@@ -112,9 +112,9 @@
     box-shadow: var(--ring-line2);
   }
   .ui-btn--primary {
-    background: var(--ink);
-    border-color: var(--ink);
-    color: var(--on-ink);
+    background: var(--btn-primary);
+    border-color: var(--btn-primary);
+    color: var(--on-btn-primary);
   }
   .ui-btn--ghost {
     color: var(--fg2);
@@ -134,8 +134,8 @@
     background: transparent;
   }
   .ui-btn--primary[data-pressed] {
-    background: var(--ink-hover);
-    border-color: var(--ink-hover);
+    background: var(--btn-primary-hover);
+    border-color: var(--btn-primary-hover);
   }
   .ui-btn--danger[data-pressed] {
     background: var(--fail-bg);
@@ -214,8 +214,8 @@
       background: var(--hover);
     }
     .ui-btn--primary:hover:not([data-disabled]):not([data-pending]) {
-      background: var(--ink-hover);
-      border-color: var(--ink-hover);
+      background: var(--btn-primary-hover);
+      border-color: var(--btn-primary-hover);
     }
     .ui-btn--ghost:hover:not([data-disabled]):not([data-pending]) {
       background: var(--hover);

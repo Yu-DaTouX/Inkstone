@@ -12,6 +12,7 @@ import { useHoverDelay } from '../lib/use-hover-delay'
 import { ProjectScriptsControl } from '../features/scripts/ProjectScriptsControl'
 import { v3Text, withShortcutKeys } from './v3-text'
 import { plainTitleText } from '../../../shared/title-text'
+import { sessionProjectLabel } from '../features/sidebar/sidebar-model'
 
 interface Props {
   narrow: boolean
@@ -62,6 +63,8 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const manualTitles = useStore((s) => s.manualTitles)
   const titles = useStore((s) => s.titles)
   const sessions = useStore((s) => s.sessions)
+  const projects = useStore((s) => s.settings?.projects)
+  const projectNames = useStore((s) => s.settings?.projectNames)
   const maximized = useStore((s) => s.maximized)
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
@@ -102,6 +105,14 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
     return !peekedSessionId && !hasMessages ? text.newSessionTitle : t('rail.untitled')
   }, [route, peekedSessionId, session?.conversationId, session?.sessionId, session?.sessionName, sessions, firstUserTitle, hasMessages, manualTitles, titles, t, lang, text.newSessionTitle])
 
+  const project = useMemo(() => {
+    if (route !== 'chat') return ''
+    const id = peekedSessionId ?? session?.conversationId ?? session?.sessionId
+    const summary = sessions.find((item) => item.id === id)
+    if (!summary || summary.scope === 'global') return ''
+    return sessionProjectLabel(summary, projects ?? [], projectNames ?? {}).label
+  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, sessions, projects, projectNames])
+
   return (
     <header className="v3-head">
       <div className="v3-head-left">
@@ -126,7 +137,13 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
             <SquarePen size={16} />
           </IconButton>
         ) : null}
-        <h1 className={route === 'chat' ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'} title={title}>
+        <h1 className={route === 'chat' ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'} title={project ? `${project} / ${title}` : title}>
+          {project ? (
+            <>
+              <span className="v3-head-crumb">{project}</span>
+              <span className="v3-head-crumb-sep" aria-hidden>/</span>
+            </>
+          ) : null}
           <span className="v3-head-title__text">{title}</span>
         </h1>
       </div>
@@ -137,35 +154,36 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
         {route === 'chat' ? (
           <>
             <ProjectScriptsControl />
-            <IconButton
-              tooltip={sessionBarLabel}
-              aria-label={sessionBarLabel}
-              aria-pressed={sessionBarOpen}
-              pressedTone="neutral"
-              className="v3-head-group-end"
-              onPress={onToggleSessionBar}
-              data-testid="v3-header-sessionbar"
-              data-active={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
-            >
-              <SquareMenu size={16} />
-            </IconButton>
-            {narrow
-              ? null
-              : TITLEBAR_PANES.map(({ tab, Icon }) => (
-                  <IconButton
-                    key={tab}
-                    tooltip={paneLabel(tab)}
-                    aria-label={paneLabel(tab)}
-                    aria-pressed={openPanes.has(tab)}
-                    pressedTone="neutral"
-                    className="v3-head-pane"
-                    data-testid={`wb-open-${tab}`}
-                    onPress={() => onTogglePane(tab)}
-                  >
-                    <Icon size={16} />
-                    {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
-                  </IconButton>
-                ))}
+            <div className="v3-head-toggles" role="group" aria-label={text.panelToggles}>
+              <IconButton
+                tooltip={sessionBarLabel}
+                aria-label={sessionBarLabel}
+                aria-pressed={sessionBarOpen}
+                pressedTone="neutral"
+                onPress={onToggleSessionBar}
+                data-testid="v3-header-sessionbar"
+                data-active={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
+              >
+                <SquareMenu size={16} />
+              </IconButton>
+              {narrow
+                ? null
+                : TITLEBAR_PANES.map(({ tab, Icon }) => (
+                    <IconButton
+                      key={tab}
+                      tooltip={paneLabel(tab)}
+                      aria-label={paneLabel(tab)}
+                      aria-pressed={openPanes.has(tab)}
+                      pressedTone="neutral"
+                      className="v3-head-pane"
+                      data-testid={`wb-open-${tab}`}
+                      onPress={() => onTogglePane(tab)}
+                    >
+                      <Icon size={16} />
+                      {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
+                    </IconButton>
+                  ))}
+            </div>
           </>
         ) : null}
         <MenuTrigger>

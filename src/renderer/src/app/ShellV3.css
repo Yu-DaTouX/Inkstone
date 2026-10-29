@@ -106,8 +106,14 @@
   .v3-chat[data-sessionbar='1'] .v3-composer .ctx-ring-wrap:has(> .ctx-ring:not([data-tone='ask'], [data-tone='fail'], [aria-expanded='true'])) {
     display: none;
   }
-  .v3-head-group-end {
+  .v3-head-toggles {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
     margin-inline-end: var(--s-8);
+    padding: var(--s-2);
+    border-radius: var(--r-md);
+    box-shadow: var(--ring-line);
   }
 
   .v3-chat {
@@ -230,11 +236,28 @@
     align-items: center;
     font-size: var(--t-body);
     line-height: var(--t-body-lh);
-    font-weight: var(--w-semibold);
+    font-weight: var(--w-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     -webkit-app-region: drag;
+  }
+
+  .v3-head-crumb {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: var(--w-regular);
+    color: var(--fg3);
+  }
+
+  .v3-head-crumb-sep {
+    flex: none;
+    margin-inline: var(--s-6);
+    font-weight: var(--w-regular);
+    color: var(--fg3);
   }
 
   .v3-head-title.v3-visually-hidden {
