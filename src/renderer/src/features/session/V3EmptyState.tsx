@@ -127,7 +127,7 @@ export function V3EmptyState({ usage }: V3EmptyStateProps = {}): JSX.Element {
                 trailing={
                   <span className="v3-empty-recent-meta">
                     {project ? <span className="v3-empty-recent-project">{project}</span> : null}
-                    <span className="v3-empty-recent-ago">{compactAgo(sessionActivityAt(item), now, langKey)}</span>
+                    <span className="v3-empty-recent-ago ui-num">{compactAgo(sessionActivityAt(item), now, langKey)}</span>
                   </span>
                 }
               >

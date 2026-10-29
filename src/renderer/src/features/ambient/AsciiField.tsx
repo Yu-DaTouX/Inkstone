@@ -26,6 +26,8 @@ import {
 import './ambient.css'
 
 const DARK_QUERY = '(prefers-color-scheme: dark)'
+const BAND_DROP_PX = 28
+const INK_GAIN = 2.4
 const glyphAtlases = new Map<string, HTMLCanvasElement>()
 
 function resolveToken(host: HTMLElement, token: string): string {
@@ -122,6 +124,8 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   const measure = (): void => {
     zones = zonesFor(host, width, height)
     anchor = anchorFor(host, width, height)
+    host.style.setProperty('--field-ax', `${Math.round(anchor.x)}px`)
+    host.style.setProperty('--field-ay', `${Math.round(anchor.y + BAND_DROP_PX)}px`)
   }
 
   const resize = (): void => {
@@ -157,7 +161,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     for (let tone = 0; tone < 2; tone++) {
       actx.fillStyle = tone ? colorAccent : colorFg
       for (let level = 0; level < ALPHA_LEVELS; level++) {
-        actx.globalAlpha = levelAlpha(level) * (tone ? 1.25 : 1)
+        actx.globalAlpha = Math.min(1, levelAlpha(level) * INK_GAIN * (tone ? 1.25 : 1))
         const cy = (tone * ALPHA_LEVELS + level) * cellPx + cellPx / 2
         for (let i = 0; i < CHARSET.length; i++) actx.fillText(CHARSET[i], i * cellPx + cellPx / 2, cy)
       }
