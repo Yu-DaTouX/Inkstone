@@ -155,6 +155,7 @@ const REQUIRED = {
 
 const EXCLUSIONS = [
   { test: (name) => name === 'cx', reason: '工具函数，不是可视控件，没有状态矩阵' },
+  { test: (name) => name === 'useScrollbarReveal', reason: '滚动时标记文档以显示悬浮滚动条的 hook，不是可视控件，没有状态矩阵' },
   {
     test: (name) => name === 'useSettingsNarrow',
     reason: '设置弹层的窄窗口判断 hook，不是可视控件；窄窗口版式由 SettingsTabBar / SettingsTab 的故事覆盖'
