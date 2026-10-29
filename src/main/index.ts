@@ -24,7 +24,8 @@ import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from 
 import { createRunsHost, type RunsHost } from './runs-host'
 import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
 import { createAuxWindows, registerAuxIpc, submitQuickAsk, type AuxWindows } from './windows'
-import { registerDeepLinkProtocol, windowDeepLinkRouter } from './deeplink'
+import { registerDeepLinkProtocol, windowDeepLinkRouter, type DeepLink } from './deeplink'
+import { approvalNoticeTitle, createAttentionNotices, noticeLang, terminalNoticeText } from './attention-notice'
 import { RunnerVisibility } from './runner-reclaim'
 import { getSettings, patchSettings, setGuardSettingsNoticeSink, updateSettings, validateRendererSettingsPatch } from './settings'
 import { syncNativeCompactionLines, type LineModel } from './native-compaction-line'
@@ -695,6 +696,18 @@ function approvalModel(request: ApprovalRequest): ModelRef {
   return agent?.getState()?.model
 }
 
+const attentionNotices = createAttentionNotices(
+  (options) => new Notification(options),
+  (link) => {
+    if (link && deepLinkRouter.open(link)) return
+    showMainWindow()
+  }
+)
+
+function sessionNoticeLink(sessionId?: string): DeepLink | undefined {
+  return sessionId ? { action: 'session', sessionId } : undefined
+}
+
 const approvals = new ApprovalBroker({
   canAsk: () => !!win && !win.isDestroyed(),
   open: (request) => {
@@ -704,15 +717,16 @@ const approvals = new ApprovalBroker({
       attention?.flash()
       void getSettings().then((settings) => {
         if (settings.sound?.enabled !== true || settings.sound.notifications === false || !Notification.isSupported()) return
-        const icon = botNotificationIcon(approvalModel(request), 'question')
-        const notice = new Notification({ title: '砚需要你确认', body: request.title, ...(icon ? { icon } : {}) })
-        notice.on('click', () => {
-          if (!win || win.isDestroyed()) return
-          if (win.isMinimized()) win.restore()
-          win.show()
-          win.focus()
+        const lang = noticeLang(settings.lang)
+        const subject = request.sessionId ? cachedTitlesSync()[request.sessionId] : undefined
+        attentionNotices.show({
+          key: request.sessionId ? `session:${request.sessionId}` : `approval:${request.id}`,
+          title: approvalNoticeTitle(lang, subject),
+          body: request.title,
+          icon: botNotificationIcon(approvalModel(request), 'question'),
+          link: sessionNoticeLink(request.sessionId)
         })
-        notice.show()
+        push({ ch: 'attention-sound', payload: { event: 'question' } })
       }).catch(() => undefined)
     }
     refreshTaskbar()
@@ -837,21 +851,9 @@ function notifyBlockedTerminal(id: string, status?: TerminalProgramStatus): void
   void getSettings().then((settings) => {
     if (blockedTerminalNotices.get(id)?.ticket !== ticket || !win || win.isDestroyed() || win.isFocused()) return
     if (settings.sound?.enabled !== true || settings.sound.notifications === false || !Notification.isSupported()) return
-    const title = status.kind === 'permission'
-      ? '终端在等你批准'
-      : status.kind === 'question'
-        ? '终端在等你回答'
-        : status.kind === 'auth'
-          ? '终端在等你登录'
-          : '终端在等你'
-    const notice = new Notification({ title, body: status.title || '切到该终端查看' })
-    notice.on('click', () => {
-      if (!win || win.isDestroyed()) return
-      if (win.isMinimized()) win.restore()
-      win.show()
-      win.focus()
-    })
-    notice.show()
+    const text = terminalNoticeText(noticeLang(settings.lang), status.kind, status.title)
+    attentionNotices.show({ key: `terminal:${id}`, title: text.title, body: text.body, icon: shellIconPath() })
+    push({ ch: 'attention-sound', payload: { event: 'question' } })
   }).catch(() => undefined)
 }
 
@@ -2839,22 +2841,16 @@ function registerIpc(): void {
       typeof n?.model?.provider === 'string' || typeof n?.model?.id === 'string' ? n.model : undefined,
       kind
     )
+    const sessionId = typeof n?.sessionId === 'string' && n.sessionId ? n.sessionId : undefined
 
     if (process.env.YAN_PROBE) {
-      push({ ch: 'log', payload: { text: `[通知] ${kind} | ${title} | ${body ?? ''}${icon ? ` | icon=${basename(icon)}` : ''}` } })
+      push({ ch: 'log', payload: { text: `[通知] ${kind} | ${title} | ${body ?? ''}${icon ? ` | icon=${basename(icon)}` : ''}${sessionId ? ` | session=${sessionId}` : ''}` } })
       return { shown: true, simulated: true }
     }
 
     if (!Notification.isSupported()) return { shown: false, error: '系统不支持通知' }
     try {
-      const notification = new Notification({ title, body, silent: true, ...(icon ? { icon } : {}) })
-      notification.on('click', () => {
-        if (!win || win.isDestroyed()) return
-        if (win.isMinimized()) win.restore()
-        win.show()
-        win.focus()
-      })
-      notification.show()
+      attentionNotices.show({ key: sessionId ? `session:${sessionId}` : `attention:${kind}`, title, body, icon, link: sessionNoticeLink(sessionId) })
       return { shown: true }
     } catch (error) {
       return { shown: false, error: error instanceof Error ? error.message : String(error) }
@@ -3184,7 +3180,16 @@ function registerIpc(): void {
 
   registerPeerHostIpc(ipc, { grants: peerGrants })
 
-  registerCollabIpc(ipc, { peerClient, peerHost: peerHostHandlers, worktreeLinks: worktreeOrigins, win: () => win })
+  registerCollabIpc(ipc, {
+    peerClient,
+    peerHost: peerHostHandlers,
+    worktreeLinks: worktreeOrigins,
+    win: () => win,
+    notice: (input) => {
+      attentionNotices.show({ ...input, icon: shellIconPath() })
+      push({ ch: 'attention-sound', payload: { event: 'question' } })
+    }
+  })
 
 
   registerOfficeIpc(ipc, async (requestedCwd) => {

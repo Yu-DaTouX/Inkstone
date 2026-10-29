@@ -61,7 +61,11 @@ const run = async (name, settings) => {
     peerClient: { status: async () => ({ peers: [], imports: [] }) },
     peerHost: {},
     worktreeLinks: { load: async () => undefined, links: () => [] },
-    win: () => null
+    win: () => null,
+    notice: (input) => {
+      globalThis.__notifyShown = (globalThis.__notifyShown ?? 0) + 1
+      globalThis.__notifyOptions = input
+    }
   })
   await service.receiveRequest(request)
   await new Promise((resolve) => setTimeout(resolve, 50))

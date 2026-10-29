@@ -106,17 +106,37 @@ function attentionTitle(event: SoundEvent): string {
   }
 }
 
-function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string, source?: ModelInfo | null): void {
+function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string, source?: ModelInfo | null, sessionId?: string): void {
   const model = source === undefined ? useStore.getState().session?.model : source
   const sound = settings?.sound
   if (!sound?.enabled || !sound.events?.[event]) return
   playSound(event, sound.volume)
   if (sound.notifications && typeof document !== 'undefined' && !document.hasFocus()) {
     void window.yan
-      .notifyAttention({ kind: event, title: title || attentionTitle(event), body, ...(model ? { model: { provider: model.provider, id: model.id } } : {}) })
+      .notifyAttention({
+        kind: event,
+        title: title || attentionTitle(event),
+        body,
+        ...(model ? { model: { provider: model.provider, id: model.id } } : {}),
+        ...(sessionId ? { sessionId } : {})
+      })
       .catch(() => {
       })
   }
+}
+
+function alertTurnSettled(
+  settings: AppSettings | null,
+  event: SoundEvent,
+  sessionId: string,
+  label: string,
+  messages: readonly UIMessage[],
+  source?: ModelInfo | null
+): void {
+  const reply = [...messages].reverse().find((msg) => msg.role === 'assistant' && msg.text.trim())?.text ?? ''
+  const excerpt = reply.replace(/[#>*_`|]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const body = excerpt.length > 120 ? `${excerpt.slice(0, 119)}…` : excerpt
+  alertAttention(settings, event, body || undefined, label ? `${attentionTitle(event)} · ${label}` : undefined, source, sessionId)
 }
 
 function readCommandUse(): Record<string, number> {
@@ -1315,7 +1335,16 @@ export const useStore = create<Store>((rawSet, get) => {
     )
     if (route.patch) set(route.patch)
     if (!route.project) {
-      if (m.ch === 'ui-request' && route.patch) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null)
+      if (m.ch === 'ui-request' && route.patch) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null, m.runtime?.sessionId || undefined)
+      if (m.ch === 'turn-settled' && route.patch?.sessionRuntimes && m.payload.sessionId) {
+        const event = attentionForOutcome(m.payload.outcome)
+        const sid = m.payload.sessionId
+        const runtime = route.patch.sessionRuntimes[sid]
+        if (event && !runtime?.session?.isAgentRunning) {
+          const label = s.manualTitles[sid] || s.titles[sid] || runtime?.session?.sessionName || ''
+          alertTurnSettled(s.settings, event, sid, label, runtime?.messages ?? [], runtime?.session?.model ?? null)
+        }
+      }
       return
     }
 
@@ -1466,10 +1495,12 @@ export const useStore = create<Store>((rawSet, get) => {
         if (!event || !s.session || s.session.sessionId !== m.payload.sessionId || s.session.isAgentRunning) break
         const sid = s.session.sessionId
         const label = (sid && (s.manualTitles[sid] || s.titles[sid])) || s.session.sessionName || ''
-        const reply = [...s.messages].reverse().find((msg) => msg.role === 'assistant' && msg.text.trim())?.text ?? ''
-        const excerpt = reply.replace(/[#>*_`|]+/g, ' ').replace(/\s+/g, ' ').trim()
-        const body = excerpt.length > 120 ? `${excerpt.slice(0, 119)}…` : excerpt
-        alertAttention(s.settings, event, body || undefined, label ? `${attentionTitle(event)} · ${label}` : undefined)
+        alertTurnSettled(s.settings, event, sid, label, s.messages)
+        break
+      }
+      case 'attention-sound': {
+        const sound = s.settings?.sound
+        if (sound?.enabled && sound.events?.[m.payload.event]) playSound(m.payload.event, sound.volume)
         break
       }
       case 'state': {

@@ -12,6 +12,7 @@ export interface DeepLinkTarget {
 export interface DeepLinkRouter {
   handleArgv(argv: readonly string[]): boolean
   handleOpenUrl(url: string): boolean
+  open(link: DeepLink): boolean
   flush(): boolean
   pending(): DeepLink | null
 }
@@ -59,6 +60,7 @@ export function createDeepLinkRouter(target: DeepLinkTarget): DeepLinkRouter {
       if (!parsed.ok) return false
       return deliver(parsed.link)
     },
+    open: deliver,
     flush: attempt,
     pending: () => pending
   }

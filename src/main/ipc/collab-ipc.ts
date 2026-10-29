@@ -12,12 +12,14 @@ import { YAN_DIR } from '../paths'
 import type { PeerClient } from '../peer-client'
 import type { PeerHostHandlers } from '../remote-server'
 import type { WorktreeLinkStore } from '../worktree-links'
+import { collabNoticeText, noticeLang, type AttentionNoticeInput } from '../attention-notice'
 
 export interface CollabIpcDeps {
   peerClient: PeerClient
   peerHost: PeerHostHandlers
   worktreeLinks: WorktreeLinkStore
   win(): BrowserWindow | null
+  notice(input: AttentionNoticeInput): void
 }
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -28,16 +30,14 @@ export async function activeProjects(): Promise<Array<{ id: string; name: string
     .map(({ id, name, cwd }) => ({ id, name: name.trim() || basename(cwd) || cwd, cwd }))
 }
 
-async function notifyIncoming(win: BrowserWindow | null, request: CollabMergeRequest): Promise<void> {
+async function notifyIncoming(deps: CollabIpcDeps, request: CollabMergeRequest): Promise<void> {
+  const win = deps.win()
   if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true)
   const settings = await getSettings()
   const sound = settings.sound
   if (sound?.enabled !== true || sound.notifications === false || !Notification.isSupported()) return
-  const en = settings.lang === 'en-US'
-  const peer = request.peerName.replace(/^(?:砚|Inkstone)\s*·\s*/, '')
-  const title = en ? 'Collaboration · Merge request' : '多人协作 · 合并请求'
-  const body = en ? `${peer}: ${request.title} (${request.branch})` : `${peer}：${request.title}（${request.branch}）`
-  new Notification({ title, body }).show()
+  const text = collabNoticeText(noticeLang(settings.lang), request.peerName, request.title, request.branch)
+  deps.notice({ key: `collab:${request.id}`, title: text.title, body: text.body })
 }
 
 export function registerCollabIpc(ipc: IpcRegistrar, deps: CollabIpcDeps): CollabService {
@@ -58,7 +58,7 @@ export function registerCollabIpc(ipc: IpcRegistrar, deps: CollabIpcDeps): Colla
       if (!created.ok || !created.path) return { ok: false, error: 'Could not create the worktree', code: 'worktree-create-failed' }
       return { ok: true, path: created.path, branch: created.branch ?? branch }
     },
-    notifyIncoming: (request) => void notifyIncoming(deps.win(), request)
+    notifyIncoming: (request) => void notifyIncoming(deps, request)
   })
 
   deps.peerHost.collab = createCollabHost({

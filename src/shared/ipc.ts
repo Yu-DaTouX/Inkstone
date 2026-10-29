@@ -846,6 +846,7 @@ export interface AttentionNotify {
   title: string
   body?: string
   model?: { provider?: string; id?: string }
+  sessionId?: string
 }
 
 export const SOUND_VOLUME_MIN = 0
@@ -1281,6 +1282,7 @@ export type MainPushBody =
   | { ch: 'agent-error'; payload: { message: string; text: string; source: 'auto-retry' | 'stop-reason' } }
   | { ch: 'quota-wait'; payload: { provider?: string } }
   | { ch: 'turn-settled'; payload: { sessionId?: string; outcome: TurnOutcome } }
+  | { ch: 'attention-sound'; payload: { event: SoundEvent } }
   | { ch: 'status'; payload: { key: string; text?: string } }
   | { ch: 'title'; payload: string }
   | { ch: 'win-state'; payload: { maximized: boolean; alwaysOnTop: boolean } }
