@@ -22,13 +22,14 @@
     --field-hover: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.14));
     --bubble: light-dark(#F0F0EE, #222221);
     --sunken: light-dark(#F4F4F2, #131313);
-    --fg: light-dark(#20211F, #E8E7E3);
+    --fg: light-dark(#20211F, #D4D3CE);
     --fg2: light-dark(#555750, #B5B4AE);
     --fg3: light-dark(#6B6A64, #999892);
+    --fg-ctl: light-dark(#555750, #C9C8C2);
     --line: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1));
     --line2: light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2));
     --line-ctl: light-dark(rgba(11,11,11,.48), rgba(255,255,255,.34));
-    --kbd-ink: light-dark(#6D6B67, #A5A49A);
+    --kbd-ink: light-dark(#6D6B67, #C2C1BA);
     --ink: light-dark(#0B0B0B, #FFFFFF);
     --ink-hover: light-dark(#2B2B29, #E6E5E1);
     --on-ink: light-dark(#FFFFFF, #0B0B0B);

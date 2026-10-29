@@ -26,8 +26,8 @@
   }
 
   .ctx-ring-text {
-    font-size: var(--t-footnote);
-    color: inherit;
+    font-size: var(--t-caption);
+    color: var(--fg3);
     font-variant-numeric: tabular-nums;
   }
 

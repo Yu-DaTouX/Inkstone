@@ -479,7 +479,7 @@ export interface AsciiBackgroundSettings {
 }
 
 export function asciiBackgroundEnabled(settings: AsciiBackgroundSettings | AppSettings | null | undefined): boolean {
-  return (settings as AsciiBackgroundSettings | null | undefined)?.asciiBackground !== false
+  return (settings as AsciiBackgroundSettings | null | undefined)?.asciiBackground === true
 }
 
 export function asciiBackgroundPatch(enabled: boolean): AsciiBackgroundSettings & Partial<AppSettings> {

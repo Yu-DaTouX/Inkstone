@@ -557,12 +557,14 @@
     }
   }
 
-  .composer-send {
-    width: var(--size-btn);
-    min-width: var(--size-btn);
-    padding: 0;
-    border-radius: var(--r-full);
-    corner-shape: round;
+  .composer-tools > .composer-group-sep {
+    align-self: center;
+    height: var(--s-16);
+    margin-inline: var(--s-6);
+  }
+
+  .composer-line-end > .ctx-ring-wrap {
+    margin-inline-end: var(--s-6);
   }
 
   .composer-plus,

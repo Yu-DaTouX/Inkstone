@@ -1,6 +1,8 @@
 @layer features {
   .v3-chat:has(.v3-empty-page) {
-    --home-lift: max(0px, 48vh - 10rem);
+    --home-lift: max(0px, 60vh - 9rem);
+    --col-window-shift: 0px;
+    --col-pad-shift: 0px;
   }
 
   .v3-chat:has(.v3-empty-page) > .v3-composer {
@@ -16,7 +18,7 @@
 
   .v3-empty.v3-empty-page {
     container-type: inline-size;
-    padding: 0 0 var(--home-lift, 0px);
+    padding: 0 0 calc(var(--home-lift, 0px) + var(--s-20));
   }
 
   .v3-empty-cols {

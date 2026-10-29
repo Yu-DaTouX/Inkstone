@@ -165,18 +165,24 @@
   }
   .start-strip-bars {
     display: inline-flex;
-    align-self: center;
+    flex: none;
+    align-self: baseline;
     align-items: flex-end;
     gap: var(--s-2);
-    height: 14px;
+    height: var(--s-12);
     margin-left: var(--s-6);
   }
   .start-strip-bars > span {
     width: 4px;
-    border-radius: var(--r-xs);
-    background: var(--accent);
+    min-height: 2px;
+    border-radius: 1px;
+    background: var(--fg3);
+    transition: background-color var(--dur-fast) var(--ease);
   }
   .start-strip-bars > span[data-zero] {
     background: var(--line2);
+  }
+  .start-strip:hover .start-strip-bars > span:not([data-zero]) {
+    background: var(--accent);
   }
 }

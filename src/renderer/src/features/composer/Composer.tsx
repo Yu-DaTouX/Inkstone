@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUp, Square } from 'lucide-react'
-import { Button, IconButton } from '../../ui'
+import { Button, IconButton, Separator } from '../../ui'
 import type { Attachment } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
 import { currentThinkingLevels, useStore, pendingSendsForView } from '../../state/store'
@@ -557,6 +557,7 @@ export function Composer({ className }: { className?: string } = {}) {
             <div className="composer-tools">
               <ModelThinkingPicker />
               <PermissionToggle />
+              {freshSession ? <Separator orientation="vertical" className="composer-group-sep" /> : null}
               {freshSession ? <ProjectPicker /> : null}
             </div>
             <div className="composer-line-end">
@@ -566,6 +567,7 @@ export function Composer({ className }: { className?: string } = {}) {
               {submitAction === 'stop' ? (
                 <IconButton
                   variant="secondary"
+                  round
                   aria-label={t('composer.stop')}
                   tooltip={t('composer.stop')}
                   className="composer-send composer-stop"
@@ -577,6 +579,7 @@ export function Composer({ className }: { className?: string } = {}) {
               ) : (
                 <Button
                   variant="primary"
+                  round
                   aria-label={t('composer.go')}
                   className="composer-send"
                   data-testid="composer-send"

@@ -9,7 +9,7 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--color-background-danger": "light-dark(#FCEBEB, rgba(236,126,126,.12))",
   "--color-background-success": "light-dark(#E6F4E4, rgba(50,215,75,.12))",
   "--color-background-warning": "light-dark(#FDF1D6, rgba(250,178,25,.12))",
-  "--color-text-primary": "light-dark(#20211F, #E8E7E3)",
+  "--color-text-primary": "light-dark(#20211F, #D4D3CE)",
   "--color-text-secondary": "light-dark(#555750, #B5B4AE)",
   "--color-text-tertiary": "light-dark(#6B6A64, #999892)",
   "--color-text-inverse": "light-dark(#FFFFFF, #0B0B0B)",

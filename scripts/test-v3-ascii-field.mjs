@@ -322,9 +322,9 @@ const H = 720
 }
 
 {
-  assert.equal(model.asciiBackgroundEnabled(undefined), true)
-  assert.equal(model.asciiBackgroundEnabled(null), true)
-  assert.equal(model.asciiBackgroundEnabled({}), true)
+  assert.equal(model.asciiBackgroundEnabled(undefined), false)
+  assert.equal(model.asciiBackgroundEnabled(null), false)
+  assert.equal(model.asciiBackgroundEnabled({}), false)
   assert.equal(model.asciiBackgroundEnabled({ asciiBackground: true }), true)
   assert.equal(model.asciiBackgroundEnabled({ asciiBackground: false }), false)
   assert.deepEqual(model.asciiBackgroundPatch(false), { asciiBackground: false })

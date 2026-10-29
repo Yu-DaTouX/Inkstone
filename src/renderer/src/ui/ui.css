@@ -119,6 +119,16 @@
   .ui-btn--ghost {
     color: var(--fg2);
   }
+  .ui-btn--ghost:where(.ui-icon-btn) {
+    color: var(--fg-ctl);
+  }
+  .ui-btn--round {
+    width: var(--size-btn);
+    min-width: var(--size-btn);
+    padding: 0;
+    border-radius: var(--r-full);
+    corner-shape: round;
+  }
   .ui-btn--danger {
     background: var(--surface);
     box-shadow: var(--ring-line2);
@@ -158,6 +168,12 @@
     background: var(--btn-primary-off);
     border-color: var(--btn-primary-off-edge);
     color: var(--on-btn-primary-off);
+  }
+  .ui-btn--primary.ui-btn--round[data-disabled]:not([data-pending]) {
+    opacity: 0.5;
+    background: var(--btn-primary);
+    border-color: var(--btn-primary);
+    color: var(--on-btn-primary);
   }
   .ui-btn[data-pending] {
     position: relative;

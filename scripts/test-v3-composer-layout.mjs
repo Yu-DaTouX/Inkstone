@@ -101,7 +101,7 @@ const STUBS = {
   'src/renderer/src/lib/composer-submit.ts': 'export async function submitComposerInput(){ return undefined }',
   'src/renderer/src/lib/v3-submit-ownership.ts': 'export function attachmentsAfterSubmit(a){ return a }\nexport async function runLocalCommandGuarded(){ return "ran" }',
   'src/renderer/src/features/composer/attachment-files.ts': 'export async function readFiles(){ return [] }',
-  'src/renderer/src/ui/index.ts': ['Button', 'Notice', 'IconButton', 'Menu', 'MenuItem', 'MenuSeparator', 'MenuTrigger', 'Popover', 'Tooltip', 'TooltipTrigger'].map((name) => `export function ${name}(){ return null }`).join('\n') + '\nexport function cx(){ return "" }',
+  'src/renderer/src/ui/index.ts': ['Button', 'Notice', 'IconButton', 'Menu', 'MenuItem', 'MenuSeparator', 'MenuTrigger', 'Popover', 'Separator', 'Tooltip', 'TooltipTrigger'].map((name) => `export function ${name}(){ return null }`).join('\n') + '\nexport function cx(){ return "" }',
   'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
   'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
   'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }\nexport function ImageRefWarning(){ return null }',
@@ -359,7 +359,8 @@ async function main() {
     ok(/data-empty="/.test(editorText) && /dataset\.empty/.test(editorText), '空态用 data-empty 驱动占位符')
 
     const tools = byClass(card, 'composer-tools')
-    ok(controlNames(tools).join('>') === 'ModelThinkingPicker>PermissionToggle>ProjectPicker', '状态行左侧：模型+思考→权限→新会话项目选择')
+    ok(controlNames(tools).join('>') === 'ModelThinkingPicker>PermissionToggle>Separator>ProjectPicker', '状态行左侧：模型+思考→权限｜新会话项目选择单独成组')
+    ok(byTestId(card, 'composer-send').props.round === true, '发送键是圆形主按钮，禁用时保持同形实心')
     const bar = byClass(card, 'composer-bar')
     const barControls = controlNames(bar)
     ok(barControls.join('>') === 'div>div', '状态行：左侧工具组→行尾按钮组', barControls)

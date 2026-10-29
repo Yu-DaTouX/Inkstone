@@ -842,17 +842,25 @@
 
   .v3-flat-seg {
     display: flex;
+    flex: none;
     align-items: center;
-    gap: var(--s-6);
+    gap: var(--s-4);
     min-width: 0;
-    padding: var(--s-8) var(--s-8) var(--s-2);
+    height: calc(var(--s-24) + var(--s-4));
+    margin-top: var(--s-10);
+    padding: 0 var(--s-8);
     color: var(--fg3);
     font-size: var(--t-caption);
+    font-weight: var(--w-medium);
     line-height: var(--s-16);
   }
 
   .v3-flat-seg:first-child {
-    padding-top: var(--s-2);
+    margin-top: 0;
+  }
+
+  .v3-flat-seg ~ .v3-srow {
+    margin-inline-start: var(--s-12);
   }
 
   .v3-srow[data-variant='card'][data-variant] > .v3-row .v3-row-title {

@@ -17,6 +17,7 @@ export interface ButtonProps extends RACButtonProps {
   icon?: ReactNode
   trailingIcon?: ReactNode
   block?: boolean
+  round?: boolean
   justify?: 'center' | 'start'
   title?: string
   tooltip?: ReactNode
@@ -31,6 +32,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     icon,
     trailingIcon,
     block,
+    round,
     justify = 'center',
     title,
     tooltip,
@@ -61,6 +63,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
           `ui-btn--${variant}`,
           size !== 'md' && `ui-btn--${size}`,
           block && 'ui-btn--block',
+          round && 'ui-btn--round',
           justify === 'start' && 'ui-btn--start',
           cn
         )

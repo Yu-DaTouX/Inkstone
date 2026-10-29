@@ -525,7 +525,7 @@ const lightVars = resolveMcpAppThemeVariables('light')
 const darkVars = resolveMcpAppThemeVariables('dark')
 ok(lightVars['--color-background-primary'] === '#FFFFFF', '浅色主背景是具体值')
 ok(darkVars['--color-background-primary'] === '#1C1C1B', '深色主背景是具体值')
-ok(lightVars['--color-text-primary'] === '#20211F' && darkVars['--color-text-primary'] === '#E8E7E3', '文字主色按主题取值')
+ok(lightVars['--color-text-primary'] === '#20211F' && darkVars['--color-text-primary'] === '#D4D3CE', '文字主色按主题取值')
 ok(
   lightVars['--shadow-hairline'] === '0 0 0 1px rgba(11,11,11,.1)' &&
     darkVars['--shadow-hairline'] === '0 0 0 1px rgba(255,255,255,.1)',
@@ -678,7 +678,7 @@ await (async () => {
   ok(context?.theme === MCP_APP_DEFAULT_THEME, '缺省主题回退到宿主默认（非浅色）', String(context?.theme))
   ok(context?.platform === 'desktop' && context?.displayMode === 'inline', '缺省仍有 platform / displayMode')
   ok(
-    context?.styles?.variables?.['--color-text-primary'] === '#E8E7E3',
+    context?.styles?.variables?.['--color-text-primary'] === '#D4D3CE',
     '首次 initialize 带 hostContext.styles.variables（深色具体值）',
     JSON.stringify(context?.styles?.variables?.['--color-text-primary'])
   )
@@ -706,7 +706,7 @@ await (async () => {
   ok(providerContext?.locale === 'zh-CN', '保留 provider 的 locale')
   ok(providerContext?.styles?.variables?.['--brand'] === undefined, 'provider 自定义变量不破坏官方握手 Schema')
   ok(
-    providerContext?.styles?.variables?.['--color-text-primary'] === '#E8E7E3',
+    providerContext?.styles?.variables?.['--color-text-primary'] === '#D4D3CE',
     '标准主题变量覆盖 provider 同名值'
   )
   ok(!('css' in (providerContext?.styles ?? {})), 'provider 的 styles.css 不透传')
