@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
@@ -8,6 +9,23 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
+
+function importedNames(fromPattern) {
+  const dir = join(ROOT, 'src/renderer/src/features/changes')
+  const names = new Set()
+  for (const entry of readdirSync(dir)) {
+    if (!/\.tsx?$/.test(entry)) continue
+    const source = readFileSync(join(dir, entry), 'utf8')
+    for (const match of source.matchAll(/import\s*(?:type\s*)?\{([^}]+)\}\s*from\s*(['"][^'"]+['"])/g)) {
+      if (!fromPattern.test(match[2])) continue
+      for (const part of match[1].split(',')) {
+        const name = part.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0].trim()
+        if (name && !part.trim().startsWith('type ')) names.add(name)
+      }
+    }
+  }
+  return [...names]
+}
 
 const REACT_SHIM = `const rt = () => globalThis.__V3_HOOKS
 export const Fragment = Symbol.for('v3.fragment')
@@ -35,19 +53,17 @@ export const jsxs = jsx
 export const jsxDEV = jsx
 `
 
-const UI_STUB = `export function Badge() { return null }
-export function Button() { return null }
-export function IconButton() { return null }
-export function Menu() { return null }
-export function MenuItem() { return null }
-export function MenuTrigger() { return null }
-export function Popover() { return null }
-export function TextField() { return null }
-export function cx() { return Array.prototype.filter.call(arguments, Boolean).join(' ') }`
+const UI_STUB = [...importedNames(/['"](?:\.\.\/)+ui['"]/), 'TextField']
+  .filter((name, index, all) => name !== 'cx' && all.indexOf(name) === index)
+  .map((name) => `export function ${name}() { return null }`)
+  .concat("export function cx() { return Array.prototype.filter.call(arguments, Boolean).join(' ') }")
+  .join('\n')
 
 const ICON_STUB = `export function FileTypeIcon() { return null }`
 
-const I18N_STUB = `export function useI18n() { return { lang: 'zh-CN', setLang() {}, toggleLang() {}, t: (k) => String(k) } }`
+const I18N_STUB = `export function useI18n() { return { lang: 'zh-CN', setLang() {}, toggleLang() {}, t: (k) => String(k) } }
+export function useT() { return (k) => String(k) }
+export function translate(_lang, key) { return String(key) }`
 
 const UI_TEXT_STUB = `export function uiText(key) { return String(key) }`
 
@@ -57,7 +73,7 @@ export function usePaneMenu() {}`
 
 const DIFF_STUB = `export function ChangesFileDiff() { return null }`
 
-const LUCIDE_STUB = ['ChevronDown', 'ChevronRight', 'GitCompare', 'List', 'RefreshCw']
+const LUCIDE_STUB = importedNames(/['"]lucide-react['"]/)
   .map((name) => `export function ${name}() { return null }`)
   .join('\n')
 
@@ -356,7 +372,7 @@ async function run() {
       assert.equal(reads.changes, 2, 'stale 失败后必须重新读改动列表')
       const alerts = []
       walk(after, (el) => {
-        if (el?.props?.role === 'alert') alerts.push(textOf(el))
+        if (el?.props?.role === 'alert' || (el?.props?.tone === 'fail' && el?.props?.role === undefined)) alerts.push(textOf(el))
       })
       assert.ok(
         alerts.some((line) => line.includes(STALE_MESSAGE)),

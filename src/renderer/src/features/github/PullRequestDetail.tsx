@@ -1,7 +1,26 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { ArrowLeft, Check, ChevronRight, Copy, ExternalLink, FileDiff, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Check, Copy, ExternalLink, FileDiff, RefreshCw } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
-import { Avatar, Badge, Button, Checkbox, IconButton, Notice, SegmentedControl, Spinner, StatusDot } from '../../ui'
+import {
+  Avatar,
+  Badge,
+  Button,
+  Checkbox,
+  Collapsible,
+  CollapsibleHeader,
+  CollapsiblePanel,
+  DiffStat,
+  IconButton,
+  MiddleTruncate,
+  Notice,
+  SegmentedControl,
+  Spinner,
+  StatusDot,
+  Tooltip,
+  TooltipHint,
+  TooltipTrigger
+} from '../../ui'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { DiffView } from '../diff'
 import { Markdown } from '../session/Markdown'
 import type { PrDetailTab } from '../../state/right-panel'
@@ -68,6 +87,17 @@ function reviewerTone(state: PrReviewerState): BadgeTone {
   return 'neutral'
 }
 
+function Tip({ label, children }: { label: string; children: ReactElement }): ReactElement {
+  return (
+    <TooltipTrigger>
+      {children}
+      <Tooltip>
+        <TooltipHint label={label} />
+      </Tooltip>
+    </TooltipTrigger>
+  )
+}
+
 function CopyCommand({ value, label, copiedLabel }: { value: string; label: string; copiedLabel: string }): ReactElement {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -76,18 +106,19 @@ function CopyCommand({ value, label, copiedLabel }: { value: string; label: stri
     return () => window.clearTimeout(timer)
   }, [copied])
   return (
-    <Button
-      size="sm"
-      variant="ghost"
-      className="gh-prd__checkout"
-      title={`${label}: ${value}`}
-      aria-label={copied ? copiedLabel : `${label}: ${value}`}
-      icon={copied ? <Check size={12} aria-hidden /> : <Copy size={12} aria-hidden />}
-      data-testid="gh-pr-checkout"
-      onPress={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => undefined)}
-    >
-      <code>{copied ? copiedLabel : value}</code>
-    </Button>
+    <Tip label={label}>
+      <Button
+        size="xs"
+        variant="ghost"
+        className="gh-prd__checkout"
+        aria-label={copied ? copiedLabel : `${label}: ${value}`}
+        icon={copied ? <Check size={12} aria-hidden /> : <Copy size={12} aria-hidden />}
+        data-testid="gh-pr-checkout"
+        onPress={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => undefined)}
+      >
+        <code>{copied ? copiedLabel : value}</code>
+      </Button>
+    </Tip>
   )
 }
 
@@ -239,43 +270,52 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
           : ''
     : ''
 
+  const note = (message: string): ReactElement => (
+    <Notice variant="hint" className="gh-pr-detail__note">
+      {message}
+    </Notice>
+  )
+
   return (
     <div className="gh-prd" data-testid={`gh-pr-detail-${number}`}>
       <header className="gh-prd__head">
         <div className="gh-prd__crumbs">
           {repo ? (
-            <Button size="sm" variant="plain" className="gh-prd__crumb" title={text.repoLink(repo.name)} onPress={() => openExternal(repo.url)} data-testid="gh-pr-repo-link">
-              {repo.name}
-            </Button>
+            <Tip label={text.repoLink(repo.name)}>
+              <Button size="sm" variant="plain" className="gh-prd__crumb" onPress={() => openExternal(repo.url)} data-testid="gh-pr-repo-link">
+                {repo.name}
+              </Button>
+            </Tip>
           ) : null}
           {repo ? <span className="gh-prd__sep" aria-hidden>/</span> : null}
-          <Button
-            size="sm"
-            variant="plain"
-            className="gh-prd__crumb"
-            title={text.prLink(number)}
-            isDisabled={!url}
-            trailingIcon={<ExternalLink size={12} aria-hidden />}
-            onPress={() => openExternal(url)}
-            data-testid="gh-pr-open-browser"
-          >
-            #{number}
-          </Button>
+          <Tip label={text.prLink(number)}>
+            <Button
+              size="sm"
+              variant="plain"
+              className="gh-prd__crumb"
+              isDisabled={!url}
+              trailingIcon={<ExternalLink size={12} aria-hidden />}
+              onPress={() => openExternal(url)}
+              data-testid="gh-pr-open-browser"
+            >
+              #{number}
+            </Button>
+          </Tip>
           {detail ? (
             <Badge tone={stateTone(detail.state)} className="gh-prd__state">
               {stateText(detail.state)}
             </Badge>
           ) : null}
           <span className="gh-prd__spacer" />
-          <IconButton size="sm" variant="ghost" aria-label={text.refresh} title={text.refresh} onPress={() => setReload((value) => value + 1)} data-testid="gh-pr-detail-refresh">
-            {loading ? <Spinner size={13} /> : <RefreshCw size={13} aria-hidden />}
+          <IconButton size="sm" variant="ghost" aria-label={text.refresh} tooltip={text.refresh} onPress={() => setReload((value) => value + 1)} data-testid="gh-pr-detail-refresh">
+            {loading ? <Spinner size="xs" /> : <RefreshCw size={14} aria-hidden />}
           </IconButton>
         </div>
         {title ? <h2 className="gh-prd__title">{title}</h2> : null}
         {detail ? (
           <>
             <div className="gh-prd__meta">
-              <Avatar name={detail.author || '?'} className="gh-prd__avatar" />
+              <Avatar name={detail.author || '?'} />
               <span className="gh-prd__author">{detail.author}</span>
               {updated ? <span className="gh-prd__dim">· {updated}</span> : null}
               <CopyCommand value={`gh pr checkout ${number}`} label={text.copyCheckout} copiedLabel={text.copied} />
@@ -283,14 +323,13 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
             <div className="gh-prd__refs">
               <span className="gh-prd__branches">
                 <code className="gh-prd__ref" title={detail.base}>{detail.base}</code>
-                <ArrowLeft size={13} aria-label={text.receives} className="gh-prd__arrow" />
+                <ArrowLeft size={12} aria-label={text.receives} className="gh-prd__arrow" />
                 <code className="gh-prd__ref" title={detail.head}>{detail.head}</code>
               </span>
               <span className="gh-prd__stat">
-                <FileDiff size={13} aria-hidden />
+                <FileDiff size={12} aria-hidden />
                 <span>{text.files(detail.changedFiles)}</span>
-                <span className="gh-pr-add">+{detail.additions}</span>
-                <span className="gh-pr-del">-{detail.deletions}</span>
+                <DiffStat added={detail.additions} removed={detail.deletions} />
               </span>
             </div>
           </>
@@ -314,14 +353,16 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
           </span>
         ) : null}
       </nav>
-      {notice ? <Notice tone="fail" compact>{notice}</Notice> : null}
+      {notice ? <Notice tone="fail" compact className="gh-prd__notice">{notice}</Notice> : null}
       {error ? (
-        <Notice tone="fail" compact data-testid="gh-pr-detail-error">
+        <Notice tone="fail" compact className="gh-prd__notice" data-testid="gh-pr-detail-error">
           {t('github.pr.detail.failed', { msg: error })}
         </Notice>
       ) : null}
       {loading && !detail ? (
-        <p className="gh-pr-detail__note"><Spinner size={14} /> {t('github.pr.detail.loading')}</p>
+        <Notice variant="hint" icon={<Spinner size="xs" />} className="gh-prd__notice">
+          {t('github.pr.detail.loading')}
+        </Notice>
       ) : null}
       {detail ? (
         <div className="gh-prd__body">
@@ -333,14 +374,14 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                   <ul className="gh-prd__people">
                     {detail.reviewers.map((reviewer) => (
                       <li key={reviewer.name} className="gh-prd__person">
-                        <Avatar name={reviewer.name} className="gh-prd__avatar" />
+                        <Avatar name={reviewer.name} />
                         <span className="gh-prd__author">{reviewer.name}</span>
                         <Badge tone={reviewerTone(reviewer.state)}>{text.reviewer[reviewer.state]}</Badge>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="gh-pr-detail__note">{text.noReviewers}</p>
+                  note(text.noReviewers)
                 )}
               </section>
               <section className="gh-prd__section" aria-label={text.labels}>
@@ -352,32 +393,29 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                     ))}
                   </div>
                 ) : (
-                  <p className="gh-pr-detail__note">{text.noLabels}</p>
+                  note(text.noLabels)
                 )}
               </section>
-              <section className="gh-prd__section" aria-label={text.description}>
-                <Button
-                  size="sm"
-                  variant="plain"
-                  className="gh-prd__fold"
-                  aria-expanded={descriptionOpen}
-                  icon={<ChevronRight size={14} aria-hidden className="gh-prd__chev" data-open={descriptionOpen ? '1' : undefined} />}
-                  onPress={() => setDescriptionOpen((value) => !value)}
-                  title={descriptionOpen ? text.hideDescription : text.showDescription}
+              <Collapsible className="gh-prd__section" isExpanded={descriptionOpen} onExpandedChange={setDescriptionOpen}>
+                <CollapsibleHeader
+                  tone="emphasized"
+                  aria-label={descriptionOpen ? text.hideDescription : text.showDescription}
                   data-testid="gh-pr-description-toggle"
                 >
                   {text.description}
-                </Button>
-                {descriptionOpen ? (
-                  detail.body ? (
-                    <div className="gh-prd__markdown">
-                      <Markdown text={detail.body} sourceCwd={cwd} />
-                    </div>
-                  ) : (
-                    <p className="gh-pr-detail__note">{t('github.pr.detail.noBody')}</p>
-                  )
-                ) : null}
-              </section>
+                </CollapsibleHeader>
+                <CollapsiblePanel>
+                  {descriptionOpen ? (
+                    detail.body ? (
+                      <div className="gh-prd__markdown">
+                        <Markdown text={detail.body} sourceCwd={cwd} />
+                      </div>
+                    ) : (
+                      note(t('github.pr.detail.noBody'))
+                    )
+                  ) : null}
+                </CollapsiblePanel>
+              </Collapsible>
               <section className="gh-prd__section" aria-label={t('github.pr.detail.checks')}>
                 <h3 className="gh-prd__heading">{t('github.pr.detail.checks')}</h3>
                 {detail.checkItems.length ? (
@@ -388,7 +426,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                         <span className="gh-pr-check__name" title={item.name}>{item.name}</span>
                         <span className="gh-pr-check__state">{item.detail}</span>
                         {item.url ? (
-                          <Button size="sm" variant="plain" onPress={() => openExternal(item.url)}>
+                          <Button size="xs" variant="plain" onPress={() => openExternal(item.url)}>
                             {t('github.pr.checks.details')}
                           </Button>
                         ) : null}
@@ -396,7 +434,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                     ))}
                   </ul>
                 ) : (
-                  <p className="gh-pr-detail__note">{t('github.pr.detail.noChecks')}</p>
+                  note(t('github.pr.detail.noChecks'))
                 )}
               </section>
             </>
@@ -409,7 +447,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                   return (
                     <li key={item.id} className="gh-pr-event" data-kind={item.kind}>
                       <div className="gh-pr-event__head">
-                        <Avatar name={item.author || '?'} className="gh-prd__avatar" />
+                        <Avatar name={item.author || '?'} />
                         <span className="gh-pr-event__author">{item.author}</span>
                         {review ? <Badge tone={review.tone}>{review.label}</Badge> : null}
                         {item.kind === 'commit' ? <Badge>{text.commit} {item.review}</Badge> : null}
@@ -425,7 +463,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                 })}
               </ol>
             ) : (
-              <p className="gh-pr-detail__note">{t('github.pr.detail.timelineEmpty')}</p>
+              note(t('github.pr.detail.timelineEmpty'))
             )
           ) : null}
           {tab === 'code' ? (
@@ -447,43 +485,42 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                     const read = viewedSet.has(file.key)
                     return (
                       <li key={file.key} className="gh-pr-file" data-read={read ? '1' : undefined} data-open={open ? '1' : undefined}>
-                        <div className="gh-pr-file__head">
-                          <IconButton
-                            size="sm"
-                            variant="ghost"
-                            aria-label={open ? t('github.pr.detail.collapse') : t('github.pr.detail.expand')}
-                            aria-expanded={open}
-                            onPress={() => toggleFile(file.key)}
+                        <Collapsible isExpanded={open} onExpandedChange={() => toggleFile(file.key)}>
+                          <CollapsibleHeader
+                            className="gh-pr-file__head"
+                            tone={read ? 'muted' : 'emphasized'}
+                            aria-label={`${open ? t('github.pr.detail.collapse') : t('github.pr.detail.expand')} ${file.path}`}
                             data-testid={`gh-pr-file-toggle-${file.path}`}
+                            icon={<FileTypeIcon name={file.path} size={12} />}
+                            accessory={<DiffStat added={file.additions} removed={file.deletions} />}
+                            actions={
+                              <Checkbox
+                                isSelected={read}
+                                onChange={(on) => setViewed((prev) => toggleViewed(prev, file.key, on))}
+                                data-testid={`gh-pr-file-read-${file.path}`}
+                              >
+                                {t('github.pr.detail.read')}
+                              </Checkbox>
+                            }
                           >
-                            <ChevronRight size={14} aria-hidden className="gh-pr-file__chev" />
-                          </IconButton>
-                          <button type="button" className="gh-pr-file__path" title={file.path} onClick={() => toggleFile(file.key)}>
-                            {file.path}
-                          </button>
-                          <span className="gh-pr-file__diff">
-                            <span className="gh-pr-add">+{file.additions}</span>
-                            <span className="gh-pr-del">-{file.deletions}</span>
-                          </span>
-                          <Checkbox isSelected={read} onChange={(on) => setViewed((prev) => toggleViewed(prev, file.key, on))} data-testid={`gh-pr-file-read-${file.path}`}>
-                            {t('github.pr.detail.read')}
-                          </Checkbox>
-                        </div>
-                        {open ? (
-                          file.patch ? (
-                            <div className="gh-pr-file__diffview">
-                              <DiffView patch={file.patch} embedded showFileHeader={false} lang={lang} />
-                            </div>
-                          ) : (
-                            <p className="gh-pr-detail__note">{t('github.pr.detail.diffMissing')}</p>
-                          )
-                        ) : null}
+                            <MiddleTruncate value={file.path} />
+                          </CollapsibleHeader>
+                          <CollapsiblePanel className="gh-pr-file__diffview">
+                            {open ? (
+                              file.patch ? (
+                                <DiffView patch={file.patch} title={file.path} embedded showFileHeader={false} lang={lang} />
+                              ) : (
+                                note(t('github.pr.detail.diffMissing'))
+                              )
+                            ) : null}
+                          </CollapsiblePanel>
+                        </Collapsible>
                       </li>
                     )
                   })}
                 </ul>
               ) : (
-                <p className="gh-pr-detail__note">{t('github.pr.detail.filesNone')}</p>
+                note(t('github.pr.detail.filesNone'))
               )}
             </section>
           ) : null}

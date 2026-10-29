@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
-import { Badge, EmptyState, IconButton, Notice, SearchField, Spinner, StatusDot, Tab, TabList, Tabs } from '../../ui'
+import { Badge, Button, DiffStat, EmptyState, IconButton, Notice, SearchField, Spinner, StatusDot, Toggle, ToggleGroup } from '../../ui'
 import type { GhPrListState, GithubStatus } from '../../../../shared/github'
 import type { PullRequestsPaneProps } from '../workbench/types'
 import { ageOf, filterByListState, filterPrRows, normalizePrRow, type PrChecks, type PrRow } from './pr-model'
@@ -130,37 +130,44 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
           ? t('github.pr.state.draft')
           : t('github.pr.state.open')
 
+  const loadingHint = (): ReactElement => (
+    <Notice variant="hint" icon={<Spinner size="xs" />} className="gh-pr-hint">
+      {t('github.pr.loading')}
+    </Notice>
+  )
+
   if (statusLoading && !status) {
     return (
       <div className="gh-pr-pane" data-testid="v3-wb-pulls">
-        <p className="gh-pr-hint"><Spinner size={14} /> {t('github.pr.loading')}</p>
+        {loadingHint()}
       </div>
     )
   }
 
+  const reload = (): void => setReloadToken((value) => value + 1)
+
   const hint = (title: string, body: string, detail?: string): ReactElement => (
-    <div className="gh-pr-hint-block" data-testid="gh-pr-hint">
-      <h2 className="gh-pr-hint-block__title">{title}</h2>
-      <p className="gh-pr-hint-block__body">{body}</p>
-      {detail ? <p className="gh-pr-hint-block__detail">{detail}</p> : null}
-      <div className="gh-pr-hint-block__actions">
-        <IconButton
-          size="sm"
-          variant="ghost"
-          aria-label={t('github.pr.refresh')}
-          title={t('github.pr.refresh')}
-          onPress={() => setReloadToken((value) => value + 1)}
-          data-testid="gh-pr-hint-refresh"
-        >
-          <RefreshCw size={14} aria-hidden />
-        </IconButton>
-        <span className="gh-pr-hint-block__action-label">{t('github.pr.refresh')}</span>
-      </div>
-    </div>
+    <EmptyState
+      size="sm"
+      className="gh-pr-empty"
+      data-testid="gh-pr-hint"
+      title={title}
+      description={
+        <>
+          {body}
+          {detail ? <code className="gh-pr-empty__detail">{detail}</code> : null}
+        </>
+      }
+      action={
+        <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onPress={reload} data-testid="gh-pr-hint-refresh">
+          {t('github.pr.refresh')}
+        </Button>
+      }
+    />
   )
 
   const content = (): ReactElement | null => {
-    if (!status) return <p className="gh-pr-hint"><Spinner size={14} /> {t('github.pr.loading')}</p>
+    if (!status) return loadingHint()
     if (status.error && !status.authed) return hint(t('github.pr.errorTitle'), status.error)
     if (!status.installed) return hint(t('github.pr.missingGhTitle'), t('github.pr.missingGhBody'))
     if (!status.authed) return hint(t('github.pr.signedOutTitle'), t('github.pr.signedOutBody'))
@@ -173,25 +180,30 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
       {ready ? (
         <>
           <div className="gh-pr-toolbar">
-            <Tabs
-              className="gh-pr-tabs"
-              selectedKey={listState}
-              onSelectionChange={(key) => setListState(key as GhPrListState)}
+            <ToggleGroup
+              variant="segmented"
+              size="xs"
+              aria-label={t('github.pr.filterLabel')}
+              selectionMode="single"
+              disallowEmptySelection
+              selectedKeys={[listState]}
+              onSelectionChange={(keys) => {
+                const next = [...keys][0]
+                if (next !== undefined) setListState(next as GhPrListState)
+              }}
             >
-              <TabList aria-label={t('github.pr.filterLabel')}>
-                {LIST_STATES.map((item) => (
-                  <Tab key={item.id} id={item.id} data-testid={`gh-pr-tab-${item.id}`}>
-                    {t(item.label)}
-                  </Tab>
-                ))}
-              </TabList>
-            </Tabs>
+              {LIST_STATES.map((item) => (
+                <Toggle key={item.id} id={item.id} data-testid={`gh-pr-tab-${item.id}`}>
+                  {t(item.label)}
+                </Toggle>
+              ))}
+            </ToggleGroup>
             <IconButton
               size="sm"
               variant="ghost"
               aria-label={t('github.pr.refresh')}
-              title={t('github.pr.refresh')}
-              onPress={() => setReloadToken((value) => value + 1)}
+              tooltip={t('github.pr.refresh')}
+              onPress={reload}
               data-testid="gh-pr-refresh"
             >
               <RefreshCw size={14} aria-hidden />
@@ -209,11 +221,9 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
               {t('github.pr.listFailed', { msg: listError })}
             </Notice>
           ) : null}
-          {listLoading && !rows.length ? (
-            <p className="gh-pr-hint"><Spinner size={14} /> {t('github.pr.loading')}</p>
-          ) : null}
+          {listLoading && !rows.length ? loadingHint() : null}
           {!listLoading && !shown.length ? (
-            <EmptyState className="gh-pr-empty" title={t('github.pr.emptyList')} description={status?.repo?.nameWithOwner} />
+            <EmptyState size="sm" className="gh-pr-empty" title={t('github.pr.emptyList')} description={status?.repo?.nameWithOwner} />
           ) : null}
           <ul className="gh-pr-list">
             {shown.map((row) => (
@@ -238,10 +248,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
                     <span className="gh-pr-row__branches" title={`${row.head} → ${row.base}`}>
                       {row.head} → {row.base}
                     </span>
-                    <span className="gh-pr-row__diff">
-                      <span className="gh-pr-add">+{row.additions}</span>
-                      <span className="gh-pr-del">-{row.deletions}</span>
-                    </span>
+                    <DiffStat added={row.additions} removed={row.deletions} />
                     <span className="gh-pr-row__time">{when(row.updatedAt)}</span>
                   </span>
                 </button>

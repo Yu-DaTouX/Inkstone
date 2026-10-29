@@ -1,7 +1,17 @@
-import { useEffect, useId, useMemo, useState, type ReactElement } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import type { GitChangePatch, GitChangesScope } from '../../../../shared/git'
-import { Button, cx } from '../../ui'
+import {
+  Badge,
+  Button,
+  Collapsible,
+  CollapsibleHeader,
+  CollapsiblePanel,
+  DiffStat,
+  MiddleTruncate,
+  Notice,
+  Spinner,
+  cx
+} from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { porcelainFileStatus } from '../../lib/file-status'
 import { DiffView, type DiffViewMode } from '../diff'
@@ -36,17 +46,12 @@ type PatchState =
   | { kind: 'image'; image: ChangesImagePair | null }
   | { kind: 'error'; message: string }
 
-function splitPath(path: string): { directory: string; base: string } {
-  const cut = path.lastIndexOf('/')
-  return cut === -1 ? { directory: '', base: path } : { directory: path.slice(0, cut), base: path.slice(cut + 1) }
-}
-
 export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
   const { item, entry, cwd, request, loader, schedule, tick, lang, text, mode, expanded, onToggle, onRetry, annotate } = props
   const [state, setState] = useState<PatchState>({ kind: 'idle' })
-  const bodyId = useId()
   const origin = useMemo(() => resolvePatchSource(item.path, entry), [item.path, entry])
   const hasBody = origin.kind !== 'binary' && origin.kind !== 'too-large'
+  const open = expanded || !hasBody
 
   useEffect(() => {
     if (origin.kind === 'inline') {
@@ -97,32 +102,49 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
   else if (status === 'renamed' && item.origPath) labels.push(text.fileRenamed(item.origPath))
   if (state.kind === 'binary') labels.push(text.fileBinary)
   const counts = item.added !== undefined || item.removed !== undefined
-  const { directory, base } = splitPath(item.path)
+
+  const note = (message: string): ReactElement => (
+    <Notice variant="hint" className="changes-file__note">
+      {message}
+    </Notice>
+  )
 
   const body = (): ReactElement | null => {
-    if (!expanded && hasBody) return null
-    if (state.kind === 'loading') return <p className="changes-file__note">{text.patchLoading}</p>
-    if (state.kind === 'error') {
+    if (state.kind === 'loading') {
       return (
-        <div className="changes-file__problem" role="alert">
-          <span>{text.patchError(state.message)}</span>
-          <Button size="sm" onPress={onRetry}>
-            {text.retry}
-          </Button>
-        </div>
+        <Notice variant="hint" icon={<Spinner size="xs" />} className="changes-file__note">
+          {text.patchLoading}
+        </Notice>
       )
     }
-    if (state.kind === 'binary') return <p className="changes-file__note">{text.patchBinary}</p>
-    if (state.kind === 'too-large') return <p className="changes-file__note">{text.patchTooLarge}</p>
+    if (state.kind === 'error') {
+      return (
+        <Notice
+          tone="fail"
+          compact
+          className="changes-file__note"
+          action={
+            <Button size="xs" onPress={onRetry}>
+              {text.retry}
+            </Button>
+          }
+        >
+          {text.patchError(state.message)}
+        </Notice>
+      )
+    }
+    if (state.kind === 'binary') return note(text.patchBinary)
+    if (state.kind === 'too-large') return note(text.patchTooLarge)
     if (state.kind === 'image') {
-      return state.image ? <ImageCompare before={state.image.before} after={state.image.after} text={text} /> : <p className="changes-file__note">{text.imageEmpty}</p>
+      return state.image ? <ImageCompare before={state.image.before} after={state.image.after} text={text} /> : note(text.imageEmpty)
     }
     if (state.kind === 'patch') {
       return (
         <>
-          {state.truncated ? <p className="changes-file__note">{text.patchTruncated}</p> : null}
+          {state.truncated ? note(text.patchTruncated) : null}
           <DiffView
             patch={state.patch}
+            title={item.path}
             lang={lang}
             mode={mode}
             showFileHeader={false}
@@ -136,7 +158,7 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
         </>
       )
     }
-    return <p className="changes-file__note">{text.noDiffChannel}</p>
+    return note(text.noDiffChannel)
   }
 
   return (
@@ -145,43 +167,34 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
       data-path={item.path}
       data-collapsed={hasBody && !expanded ? '' : undefined}
     >
-      <div className="changes-file__header">
-        <button
-          type="button"
-          className="changes-file__toggle"
-          aria-expanded={hasBody ? expanded : undefined}
-          aria-controls={hasBody ? bodyId : undefined}
-          aria-disabled={hasBody ? undefined : true}
-          onClick={() => {
-            if (hasBody) onToggle(item.path)
-          }}
+      <Collapsible
+        isExpanded={open}
+        isDisabled={!hasBody}
+        onExpandedChange={() => {
+          if (hasBody) onToggle(item.path)
+        }}
+      >
+        <CollapsibleHeader
+          className="changes-file__head"
+          tone="emphasized"
+          icon={<FileTypeIcon name={item.path} size={12} />}
+          accessory={
+            labels.length > 0 || counts ? (
+              <>
+                {labels.map((label) => (
+                  <Badge key={label} className="changes-file__label">
+                    {label}
+                  </Badge>
+                ))}
+                {counts ? <DiffStat added={item.added ?? 0} removed={item.removed ?? 0} /> : null}
+              </>
+            ) : undefined
+          }
         >
-          <span className="changes-file__caret" data-collapsed={hasBody && expanded ? undefined : ''} aria-hidden="true">
-            <ChevronDown size={16} />
-          </span>
-          <FileTypeIcon name={item.path} size={12} />
-          <span className="changes-file__path" title={item.path}>
-            <span className="changes-file__base">{base}</span>
-            {directory ? <span className="changes-file__dir">{directory}</span> : null}
-          </span>
-          {labels.map((label) => (
-            <span key={label} className="changes-file__label">
-              {label}
-            </span>
-          ))}
-          {counts ? (
-            <span className="changes-file__counts">
-              <span className="changes-file__count-add">+{item.added ?? 0}</span>
-              <span className="changes-file__count-del">−{item.removed ?? 0}</span>
-            </span>
-          ) : null}
-        </button>
-      </div>
-      {expanded || !hasBody ? (
-        <div className="changes-file__body" id={bodyId}>
-          {body()}
-        </div>
-      ) : null}
+          <MiddleTruncate value={item.path} className="changes-file__path" />
+        </CollapsibleHeader>
+        <CollapsiblePanel className="changes-file__body">{open ? body() : null}</CollapsiblePanel>
+      </Collapsible>
     </section>
   )
 }

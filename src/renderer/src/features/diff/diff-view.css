@@ -7,47 +7,36 @@
     min-height: 0;
     height: 100%;
     background: var(--bg);
-    font-family: var(--font-mono);
-    font-size: var(--t-code);
-    line-height: var(--t-code-lh);
   }
 
   .diff-view--embedded {
     height: auto;
-    min-height: 0;
-  }
-
-  .diff-view--embedded > .diff-view__body {
-    overflow: visible;
   }
 
   .diff-view__bar {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: space-between;
     gap: var(--s-8);
-    flex: 0 0 auto;
-    padding: var(--s-6) var(--s-8);
+    height: var(--size-bar);
+    padding: 0 var(--s-8);
     background: var(--surface);
     border-bottom: 1px solid var(--line);
-  }
-
-  .diff-view__modes {
-    display: flex;
-    gap: var(--s-4);
   }
 
   .diff-view__nav {
     display: flex;
     align-items: center;
-    gap: var(--s-4);
+    gap: var(--s-2);
   }
 
   .diff-view__nav-label {
     min-width: 8ch;
-    text-align: center;
     color: var(--fg3);
+    font: var(--t-caption) / var(--t-caption-lh) var(--font-ui);
     font-variant-numeric: tabular-nums;
+    text-align: center;
     user-select: none;
   }
 
@@ -55,228 +44,50 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    background: var(--bg);
+    overscroll-behavior: contain;
+    outline: none;
   }
 
-  .diff-view__empty,
-  .diff-view__note {
-    padding: var(--s-12) var(--s-12);
-    color: var(--fg3);
+  .diff-view__body:focus-visible {
+    box-shadow: var(--ring-focus-inset);
   }
 
-  .diff-view__degrade {
+  .diff-view__files {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: var(--s-8);
-    padding: var(--s-16) var(--s-16);
-  }
-
-  .diff-view__degrade-text {
-    margin: 0;
-    color: var(--fg2);
+    min-width: 0;
   }
 
   .diff-view__file {
-    position: sticky;
-    top: 0;
-    z-index: 4;
+    min-width: 0;
+  }
+
+  .diff-view__loading {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--s-8);
-    height: 32px;
-    padding: 0 var(--s-10);
-    background: var(--surface);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .diff-view__file-path {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--fg);
-  }
-
-  .diff-view__file-stat {
-    display: flex;
     gap: var(--s-6);
-    flex: 0 0 auto;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .diff-view__stat-add {
-    color: var(--add);
-  }
-
-  .diff-view__stat-del {
-    color: var(--del);
-  }
-
-  .diff-view__separator {
-    display: flex;
-    align-items: center;
-    height: 32px;
-    margin-block: var(--s-8);
-    padding-inline: var(--s-8);
-    user-select: none;
-  }
-
-  .diff-view__separator[data-first] {
-    margin-top: 0;
-  }
-
-  .diff-view__separator[data-last] {
-    margin-bottom: 0;
-  }
-
-  .diff-view__separator-text {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    padding-inline: 1ch;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    padding: var(--s-8) var(--s-10);
     color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
-  .diff-view__separator--expand {
-    justify-content: center;
+  .diff-view__notice {
+    margin: var(--s-8);
   }
 
-  .diff-view__separator-button {
-    max-width: 100%;
+  .diff-view__empty {
+    padding-block: var(--s-16);
   }
 
-  .diff-view__separator-button .ui-btn__label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .diff-view__line {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    min-height: var(--t-code-lh);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .diff-view__line--add {
-    background: var(--add-bg);
-  }
-
-  .diff-view__line--del {
-    background: var(--del-bg);
-  }
-
-  .diff-view__num {
-    box-sizing: content-box;
-    min-width: 3ch;
-    padding-left: calc(2ch + var(--s-4));
-    padding-right: 1ch;
-    text-align: right;
-    color: var(--fg3);
-    font-variant-numeric: tabular-nums;
-    user-select: none;
-  }
-
-  .diff-view__line--add .diff-view__num,
-  .diff-view__line--del .diff-view__num {
-    color: inherit;
-    opacity: 0.7;
-  }
-
-  .diff-view__code {
-    position: relative;
-    min-width: 0;
-    padding-inline: 2ch 1ch;
-    tab-size: 4;
-  }
-
-  .diff-view__sign {
-    position: absolute;
-    inset-inline-start: 0;
-    top: 0;
-    width: 1ch;
-    color: var(--fg3);
-    user-select: none;
-  }
-
-  .diff-view__line--add .diff-view__sign {
-    color: var(--add);
-  }
-
-  .diff-view__line--del .diff-view__sign {
-    color: var(--del);
-  }
-
-  .diff-view__text {
+  .diff-view__raw {
     flex: 1 1 auto;
-    min-width: 0;
-    padding-right: var(--s-12);
-    tab-size: 4;
-  }
-
-  .diff-view__gutter {
-    flex: 0 0 auto;
-    box-sizing: content-box;
-    min-width: 3ch;
-    padding-inline: var(--s-6) 1ch;
-    text-align: right;
-    color: var(--fg3);
-    font-variant-numeric: tabular-nums;
-    user-select: none;
-  }
-
-  .diff-view__noeol {
-    display: block;
-    color: var(--fg3);
-    font-style: italic;
-  }
-
-  .diff-view__split {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .diff-view__cell {
-    display: flex;
-    align-items: baseline;
-    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: var(--s-8) var(--s-10);
+    overflow: auto;
+    color: var(--fg2);
+    font: var(--t-code) / var(--t-code-lh) var(--font-mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    tab-size: 4;
-  }
-
-  .diff-view__cell + .diff-view__cell {
-    border-left: 1px solid var(--line);
-  }
-
-  .diff-view__cell--del {
-    background: var(--del-bg);
-  }
-
-  .diff-view__cell--add {
-    background: var(--add-bg);
-  }
-
-  .diff-view__cell--empty {
-    background: var(--sunken);
-  }
-
-  .diff-view__word {
-    border-radius: var(--r-xs);
-  }
-
-  .diff-view__cell--del .diff-view__word {
-    background: color-mix(in srgb, var(--del) 26%, transparent);
-  }
-
-  .diff-view__cell--add .diff-view__word {
-    background: color-mix(in srgb, var(--add) 26%, transparent);
   }
 }

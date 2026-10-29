@@ -47,6 +47,7 @@ export function DiffAnnotationEditor({
     <div
       className="diff-annotation"
       data-testid="diff-annotation"
+      contentEditable={false}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
@@ -77,11 +78,11 @@ export function DiffAnnotationEditor({
       />
       <span className="diff-annotation__actions">
         <span className="diff-annotation__hint">{labels.hint}</span>
-        <IconButton size="sm" aria-label={labels.submit} title={labels.submit} isDisabled={!canSubmit} onPress={onSubmit}>
-          <Check size={13} aria-hidden="true" />
+        <IconButton size="xs" aria-label={labels.submit} tooltip={labels.submit} isDisabled={!canSubmit} onPress={onSubmit}>
+          <Check size={12} aria-hidden="true" />
         </IconButton>
-        <IconButton size="sm" aria-label={labels.cancel} title={labels.cancel} onPress={onCancel}>
-          <X size={13} aria-hidden="true" />
+        <IconButton size="xs" aria-label={labels.cancel} tooltip={labels.cancel} onPress={onCancel}>
+          <X size={12} aria-hidden="true" />
         </IconButton>
       </span>
     </div>

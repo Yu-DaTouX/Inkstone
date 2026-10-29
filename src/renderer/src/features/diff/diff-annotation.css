@@ -1,69 +1,16 @@
 @layer features {
 
-  .diff-view__line > .diff-view__num,
-  .diff-view__cell > .diff-view__gutter {
-    position: relative;
-  }
-
-  .diff-view__cell > .diff-view__gutter[data-annotate] {
-    padding-inline-start: var(--s-16);
-  }
-
-  .diff-view__annotate {
-    position: absolute;
-    inset-inline-start: 0;
-    top: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 13px;
-    height: var(--t-code-lh);
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: var(--r-xs);
-    background: transparent;
-    color: var(--fg3);
-    cursor: pointer;
-    opacity: 0;
-    transition:
-      opacity var(--dur-fast) var(--ease),
-      background-color var(--dur-fast) var(--ease);
-  }
-
-  .diff-view__line:hover .diff-view__annotate,
-  .diff-view__cell:hover .diff-view__annotate,
-  .diff-view__annotate:focus-visible {
-    opacity: 1;
-  }
-
-  .diff-view__annotate:hover {
-    color: var(--fg);
-    background: var(--hover);
-  }
-
-  .diff-view__annotate:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
-  .diff-view__line[data-annotate-selected],
-  .diff-view__split[data-annotate-selected] {
-    box-shadow: inset 2px 0 0 var(--accent);
-  }
-
   .diff-annotation {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     gap: var(--s-6);
     padding: var(--s-6) var(--s-8);
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
+    border-block: 1px solid var(--line);
     background: var(--surface);
-    font-family: var(--font-ui);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
+    color: var(--fg);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+    white-space: normal;
   }
 
   .diff-annotation__label {

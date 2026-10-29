@@ -1,9 +1,25 @@
 import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, ChevronRight, FlaskConical, GitCompare, List, RefreshCw } from 'lucide-react'
+import { ChevronDown, FlaskConical, GitCompare, List, RefreshCw } from 'lucide-react'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitStatusEntry } from '../../../../shared/git'
-import { Button, Checkbox, IconButton, Menu, MenuItem, MenuTrigger, Popover, TextField, cx } from '../../ui'
+import {
+  Button,
+  Checkbox,
+  DiffStat,
+  EmptyState,
+  IconButton,
+  Menu,
+  MenuItem,
+  MenuTrigger,
+  Notice,
+  Popover,
+  Spinner,
+  TextField,
+  Toggle,
+  TreeRow,
+  cx
+} from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -502,7 +518,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
 
   const scopeMenu = source.changes ? (
     <MenuTrigger>
-      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={text.scopeLabel} icon={<GitCompare size={14} aria-hidden="true" />}>
+      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} icon={<GitCompare size={14} aria-hidden="true" />}>
         {scopeLabels[scope.kind]}
         <ChevronDown size={12} aria-hidden="true" />
       </Button>
@@ -515,7 +531,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
           onAction={(key) => chooseScope(String(key) as ChangesScopeKind)}
         >
           {SCOPE_KINDS.map((kind) => (
-            <MenuItem key={kind} id={kind} textValue={scopeLabels[kind]}>
+            <MenuItem key={kind} id={kind} textValue={scopeLabels[kind]} checked="selection">
               {scopeLabels[kind]}
             </MenuItem>
           ))}
@@ -525,21 +541,21 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   ) : null
 
   const refreshButton = (
-    <IconButton size="sm" aria-label={text.refresh} title={text.refresh} isDisabled={loading} onPress={refresh}>
+    <IconButton size="sm" aria-label={text.refresh} tooltip={text.refresh} isDisabled={loading} onPress={refresh}>
       <RefreshCw size={14} aria-hidden="true" />
     </IconButton>
   )
 
   const listToggle = fileList.canFit ? (
-    <IconButton
-      size="sm"
+    <Toggle
+      icon
       aria-label={fileList.shown ? text.hideFileList : text.showFileList}
-      title={fileList.shown ? text.hideFileList : text.showFileList}
-      aria-pressed={fileList.shown}
-      onPress={fileList.toggle}
+      tooltip={fileList.shown ? text.hideFileList : text.showFileList}
+      isSelected={fileList.shown}
+      onChange={fileList.toggle}
     >
       <List size={14} aria-hidden="true" />
-    </IconButton>
+    </Toggle>
   ) : null
 
   const displayMenu: PaneMenuItem[] = [
@@ -660,7 +676,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   return (
     <section className={cx('changes-pane', className)} aria-label={text.title}>
       {head}
-      {!owner.active ? <p className="changes-pane__hint">{text.inactiveHint}</p> : null}
+      {!owner.active ? hint(text.inactiveHint) : null}
       {repo ? (
         <div className="changes-pane__summary">
           <div className="changes-pane__repo">
@@ -695,7 +711,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             <div className="changes-pane__compare">
               {compareWith ? <span className="changes-pane__compare-label" title={compareWith}>{text.compareWith(compareWith)}</span> : null}
               {meta.added !== null && meta.removed !== null ? (
-                <span className="changes-pane__delta">{text.totalLines(meta.added, meta.removed)}</span>
+                <DiffStat added={meta.added} removed={meta.removed} aria-label={text.totalLines(meta.added, meta.removed)} />
               ) : null}
             </div>
           )}
@@ -720,36 +736,48 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
           ) : null}
         </div>
       ) : null}
-      {loading && !repo ? <p className="changes-pane__hint">{text.loading}</p> : null}
-      {!loading && problem ? <p className={error ? 'changes-pane__hint changes-pane__hint--error' : 'changes-pane__hint'} role={error ? 'alert' : undefined}>{problem}</p> : null}
+      {loading && !repo ? (
+        <Notice variant="hint" icon={<Spinner size="xs" />} className="changes-pane__hint">
+          {text.loading}
+        </Notice>
+      ) : null}
+      {!loading && problem ? (
+        error ? (
+          <Notice tone="fail" compact className="changes-pane__hint">
+            {problem}
+          </Notice>
+        ) : (
+          <EmptyState size="sm" title={problem} className="changes-pane__empty" />
+        )
+      ) : null}
       {repo ? (
         <>
-          {!hasEntries && hasTracked ? <p className="changes-pane__hint">{text.entriesLimited}</p> : null}
+          {!hasEntries && hasTracked ? hint(text.entriesLimited) : null}
           {listError ? (
-            <div className="changes-pane__problem" role="alert">
-              <span>{text.entriesFailed(listError)}</span>
-              <Button size="sm" onPress={refresh}>
-                {text.retry}
-              </Button>
-            </div>
+            <Notice
+              tone="fail"
+              compact
+              className="changes-pane__hint"
+              action={
+                <Button size="xs" onPress={refresh}>
+                  {text.retry}
+                </Button>
+              }
+            >
+              {text.entriesFailed(listError)}
+            </Notice>
           ) : null}
-          {!canDiff ? <p className="changes-pane__hint">{text.noDiffChannel}</p> : null}
-          {needsSha ? <p className="changes-pane__hint">{text.shaNeeded}</p> : null}
-          {subdir && !listError && !loading ? (
-            <p className="changes-pane__hint" data-testid="changes-subdir-hint">
-              {showEmpty && elsewhere > 0 ? text.subdirClean(subdir, elsewhere) : text.subdirScope(subdir)}
-            </p>
-          ) : null}
-          {hiddenTestCount > 0 ? (
-            <p className="changes-pane__hint" data-testid="changes-tests-hidden">
-              {t('changes.testsHidden', { count: hiddenTestCount })}
-            </p>
-          ) : null}
+          {!canDiff ? hint(text.noDiffChannel) : null}
+          {needsSha ? hint(text.shaNeeded) : null}
+          {subdir && !listError && !loading
+            ? hint(showEmpty && elsewhere > 0 ? text.subdirClean(subdir, elsewhere) : text.subdirScope(subdir), 'changes-subdir-hint')
+            : null}
+          {hiddenTestCount > 0 ? hint(t('changes.testsHidden', { count: hiddenTestCount }), 'changes-tests-hidden') : null}
           {showEmpty ? (
             scope.kind === 'working' ? (
-              !hasTracked && !listError && !subdir ? <p className="changes-pane__hint">{text.clean}</p> : null
+              !hasTracked && !listError && !subdir ? <EmptyState size="sm" title={text.clean} className="changes-pane__empty" /> : null
             ) : !loading && !listError && !needsSha ? (
-              <p className="changes-pane__hint">{text.scopeEmpty}</p>
+              <EmptyState size="sm" title={text.scopeEmpty} className="changes-pane__empty" />
             ) : null
           ) : (
             <div className="changes-pane__layout" ref={fileList.hostRef} data-dragging={fileList.dragging || undefined}>
@@ -760,80 +788,74 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                       {t('changes.viewedOf', { viewed: viewedPaths.size, total: shownItems.length })}
                     </span>
                     {testPaths.size > 0 ? (
-                      <IconButton
-                        size="sm"
+                      <Toggle
+                        icon
+                        size="xs"
                         aria-label={hideTests ? t('changes.showTests') : t('changes.hideTests')}
-                        title={hideTests ? t('changes.showTests') : t('changes.hideTests')}
-                        aria-pressed={hideTests}
+                        tooltip={hideTests ? t('changes.showTests') : t('changes.hideTests')}
+                        isSelected={hideTests}
                         data-testid="changes-hide-tests"
-                        onPress={toggleHideTests}
+                        onChange={toggleHideTests}
                       >
-                        <FlaskConical size={13} aria-hidden="true" />
-                      </IconButton>
+                        <FlaskConical size={12} aria-hidden="true" />
+                      </Toggle>
                     ) : null}
                   </div>
                   <div className="changes-pane__tree" role="tree" aria-label={text.filesTitle} onKeyDown={onTreeKeyDown}>
-                    {treeRows.map((row) =>
-                      row.kind === 'dir' ? (
-                        <button
-                          key={`dir:${row.path}`}
-                          type="button"
-                          role="treeitem"
-                          aria-level={row.depth + 1}
-                          aria-expanded={!collapsedDirs.has(row.path)}
-                          data-row-path={row.path}
-                          data-row-kind="dir"
-                          tabIndex={row.path === tabbableRowPath ? 0 : -1}
-                          className="changes-pane__folder"
-                          style={{ paddingLeft: `${8 + row.depth * 12}px` }}
-                          onClick={() => toggleDir(row.path)}
-                        >
-                          <ChevronRight size={12} aria-hidden="true" data-open={!collapsedDirs.has(row.path) || undefined} />
-                          <span className="changes-pane__folder-name">{row.name}</span>
-                        </button>
-                      ) : (
-                        <div
-                          key={`file:${row.path}`}
-                          role="treeitem"
-                          aria-level={row.depth + 1}
-                          aria-selected={activePath === row.path}
-                          data-row-path={row.path}
-                          data-row-kind="file"
-                          data-viewed={viewedPaths.has(row.path) ? '' : undefined}
-                          tabIndex={row.path === tabbableRowPath ? 0 : -1}
-                          className="changes-pane__row"
-                          style={{ paddingLeft: `${8 + row.depth * 12}px` }}
-                          title={row.path}
-                          onClick={() => selectFile(row.path)}
-                          onKeyDown={(event) => {
-                            if (event.target !== event.currentTarget) return
-                            if (event.key !== 'Enter' && event.key !== ' ') return
-                            event.preventDefault()
-                            selectFile(row.path)
-                          }}
-                        >
-                          <FileTypeIcon name={row.path} size={12} />
-                          <span className="changes-pane__row-name">{row.name}</span>
-                          {itemByPath.get(row.path)?.added !== undefined || itemByPath.get(row.path)?.removed !== undefined ? (
-                            <span className="changes-pane__row-counts">
-                              <span className="changes-pane__delta-add">+{itemByPath.get(row.path)?.added ?? 0}</span>
-                              <span className="changes-pane__delta-del">−{itemByPath.get(row.path)?.removed ?? 0}</span>
-                            </span>
-                          ) : null}
-                          <span className="changes-pane__row-viewed" onClick={(event) => event.stopPropagation()}>
-                            <Checkbox
-                              aria-label={
-                                viewedPaths.has(row.path)
-                                  ? t('changes.markUnviewed', { path: row.path })
-                                  : t('changes.markViewed', { path: row.path })
-                              }
-                              isSelected={viewedPaths.has(row.path)}
-                              onChange={(next) => toggleViewed(row.path, next)}
-                            />
-                          </span>
+                    {treeRows.map((row) => {
+                      if (row.kind === 'dir') {
+                        return (
+                          <TreeRow
+                            key={`dir:${row.path}`}
+                            role="treeitem"
+                            depth={row.depth}
+                            expanded={!collapsedDirs.has(row.path)}
+                            aria-level={row.depth + 1}
+                            data-row-path={row.path}
+                            data-row-kind="dir"
+                            tabIndex={row.path === tabbableRowPath ? 0 : -1}
+                            className="changes-pane__row"
+                            onClick={() => toggleDir(row.path)}
+                          >
+                            {row.name}
+                          </TreeRow>
+                        )
+                      }
+                      const entry = itemByPath.get(row.path)
+                      const seen = viewedPaths.has(row.path)
+                      const selected = activePath === row.path
+                      return (
+                        <div key={`file:${row.path}`} className="changes-pane__item" role="none" data-viewed={seen ? '' : undefined}>
+                          <TreeRow
+                            role="treeitem"
+                            depth={row.depth}
+                            aria-level={row.depth + 1}
+                            aria-selected={selected}
+                            data-selected={selected ? '' : undefined}
+                            data-row-path={row.path}
+                            data-row-kind="file"
+                            tabIndex={row.path === tabbableRowPath ? 0 : -1}
+                            className="changes-pane__row"
+                            muted={seen}
+                            icon={<FileTypeIcon name={row.path} size={12} />}
+                            trailing={
+                              entry?.added !== undefined || entry?.removed !== undefined ? (
+                                <DiffStat added={entry?.added ?? 0} removed={entry?.removed ?? 0} />
+                              ) : undefined
+                            }
+                            onClick={() => selectFile(row.path)}
+                          >
+                            {row.name}
+                          </TreeRow>
+                          <Checkbox
+                            className="changes-pane__viewed"
+                            aria-label={seen ? t('changes.markUnviewed', { path: row.path }) : t('changes.markViewed', { path: row.path })}
+                            isSelected={seen}
+                            onChange={(next) => toggleViewed(row.path, next)}
+                          />
                         </div>
                       )
-                    )}
+                    })}
                   </div>
                   <div
                     className="changes-pane__divider"
@@ -868,7 +890,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                 />
               ) : null}
               <div className="changes-pane__main" ref={scrollerRef} tabIndex={-1}>
-                {large ? <p className="changes-pane__banner">{text.largeDiffBanner}</p> : null}
+                {large ? hint(text.largeDiffBanner, undefined, 'changes-pane__banner') : null}
                 {shownItems.map((item) => (
                   <ChangesFileDiff
                     key={item.path}
@@ -896,7 +918,6 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               <TextField
                 aria-label={text.commitMessage}
                 className="changes-pane__commit-field"
-                inputClassName="changes-pane__commit-input"
                 placeholder={text.commitPlaceholder}
                 value={message}
                 onChange={setMessage}
@@ -909,11 +930,31 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               </Button>
             </div>
           ) : null}
-          {actionBusy ? <p className="changes-pane__hint">{text.commitBusy}</p> : null}
-          {actionError ? <p className="changes-pane__hint changes-pane__hint--error" role="alert">{actionError}</p> : null}
-          {actionNotice ? <p className="changes-pane__hint">{actionNotice}</p> : null}
+          {actionBusy ? (
+            <Notice variant="hint" icon={<Spinner size="xs" />} className="changes-pane__hint">
+              {text.commitBusy}
+            </Notice>
+          ) : null}
+          {actionError ? (
+            <Notice tone="fail" compact className="changes-pane__hint">
+              {actionError}
+            </Notice>
+          ) : null}
+          {actionNotice ? (
+            <Notice variant="hint" tone="ok" className="changes-pane__hint">
+              {actionNotice}
+            </Notice>
+          ) : null}
         </>
       ) : null}
     </section>
+  )
+}
+
+function hint(message: string, testId?: string, className = 'changes-pane__hint'): ReactElement {
+  return (
+    <Notice variant="hint" className={className} data-testid={testId}>
+      {message}
+    </Notice>
   )
 }

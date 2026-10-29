@@ -1,10 +1,6 @@
 export const DIFF_LIMITS = {
-  virtualizeAt: 300,
   maxBytes: 1_500_000,
-  hardMaxBytes: 12_000_000,
-  maxWordTokens: 400,
-  maxWordChars: 4000,
-  contextLines: 3
+  hardMaxBytes: 12_000_000
 } as const
 
 export function byteLength(text: string): number {
