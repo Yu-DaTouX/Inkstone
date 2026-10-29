@@ -47,14 +47,6 @@ export const MODELS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     more: true
   },
   {
-    id: 'models-opencode-proxy',
-    section: 'models',
-    zh: 'OpenCode 反代',
-    en: 'OpenCode proxy',
-    keywords: ['OpenCode', '反向代理', 'proxy', '插件市场', 'market'],
-    more: true
-  },
-  {
     id: 'models-thinking-levels',
     section: 'models',
     zh: '各模型默认思考档位',

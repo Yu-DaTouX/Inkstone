@@ -201,17 +201,6 @@ const CASES = {
   latds: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   latluna: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'openai-codex/gpt-6-luna' },
   lathaiku: { probe: 'scripts/probe/send-latency.js', delay: 9000, cost: 1, budget: 300000, model: 'claude-bridge/haiku' },
-  knowledgecli: {
-    probe: 'scripts/probe/knowledge-cli.js',
-    fixture: true,
-    fixtureSub: 'repo',
-    delay: 12000,
-    budget: 360000,
-    cost: 1,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    knowledgeSeed: true,
-    afterExit: 'knowledgeCli'
-  },
   compactdraft: { probe: 'scripts/probe/compact-draft.js', fixture: true, piSettings: { compaction: { enabled: false, reserveTokens: 4096, keepRecentTokens: 200 } }, delay: 12000, cost: 1, budget: 300000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   ultracodereview: { probe: 'scripts/probe/ultracode-review.js', fixture: true, delay: 12000, cost: 3, budget: 3900000, model: 'commandcode/deepseek/deepseek-v4.1-flash', afterExit: 'ultracodeReviewOutcome' },
@@ -971,97 +960,6 @@ function checkProbeSyntax(probe) {
   }
 }
 
-const KNOWLEDGE_FIXTURE_PROJECT_ID = 'proj-fixture'
-const KNOWLEDGE_FIXTURE_ENTRY_ID = 'kn-deploy'
-const KNOWLEDGE_FIXTURE_TEXT = '发布流程统一走 npm run dist，先跑完整门槛'
-const KNOWLEDGE_FIXTURE_CANDIDATE_ID = 'k-candidate01'
-const KNOWLEDGE_FIXTURE_CANDIDATE_TEXT = 'out/ 是构建产物目录，跑单测前先 build'
-
-async function seedProjectKnowledge(dataDir, opts = {}) {
-  const projectId = KNOWLEDGE_FIXTURE_PROJECT_ID
-  const { pathToFileURL } = await import('node:url')
-  const memory = await import(pathToFileURL(join(root, 'src/shared/project-memory.ts')).href)
-  const now = new Date().toISOString()
-  const entry = {
-    schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
-    id: KNOWLEDGE_FIXTURE_ENTRY_ID,
-    projectId,
-    revision: 1,
-    kind: 'decision',
-    status: 'active',
-    text: KNOWLEDGE_FIXTURE_TEXT,
-    textDigest: memory.textDigest(KNOWLEDGE_FIXTURE_TEXT),
-    tags: ['发布'],
-    evidence: [{ sessionId: 'fixture' }],
-    confidenceClass: 'user-confirmed',
-    createdAt: now,
-    updatedAt: now
-  }
-  const candidate = opts.withCandidate
-    ? {
-        ...entry,
-        id: KNOWLEDGE_FIXTURE_CANDIDATE_ID,
-        revision: 1,
-        kind: 'fact',
-        status: 'candidate',
-        text: KNOWLEDGE_FIXTURE_CANDIDATE_TEXT,
-        textDigest: memory.textDigest(KNOWLEDGE_FIXTURE_CANDIDATE_TEXT),
-        tags: [],
-        evidence: [{ sessionId: opts.sessionId ?? 'fixture' }],
-        confidenceClass: 'inferred'
-      }
-    : null
-  if (opts.sessionId) entry.evidence = [{ sessionId: opts.sessionId }]
-  const entries = [entry, ...(candidate ? [candidate] : [])]
-  const manifest = {
-    schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
-    projectId,
-    revision: 1,
-    updatedAt: now,
-    entries: entries.map((item) => memory.pointerOf(item))
-  }
-  const dir = join(dataDir, 'project-knowledge', projectId)
-  for (const item of entries) {
-    mkdirSync(join(dir, 'entries', item.id), { recursive: true })
-    writeFileSync(join(dir, 'entries', item.id, 'r1.json'), JSON.stringify(item, null, 2), 'utf8')
-  }
-  writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8')
-  console.log(
-    `  项目知识 fixture：${projectId}/${entry.id}${candidate ? ` + ${candidate.id}（候选）` : ''}（digest ${entry.textDigest.slice(0, 8)}${opts.sessionId ? `，来源会话 ${opts.sessionId}` : ''}）`
-  )
-}
-
-async function checkKnowledgeCli(sandboxRoot, _tempBefore, probeText) {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  if (!sandboxRoot) {
-    lines.push('  （非隔离运行：没有可检查的沙箱，跳过）')
-    return { ok: true, lines }
-  }
-
-  const manifestFile = join(sandboxRoot, 'data', 'project-knowledge', KNOWLEDGE_FIXTURE_PROJECT_ID, 'manifest.json')
-  try {
-    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
-    const entries = Array.isArray(manifest.entries) ? manifest.entries : []
-    const active = entries.filter((entry) => entry.status === 'active')
-    const candidates = entries.filter((entry) => entry.status === 'candidate')
-    lines.push(`  manifest：revision=${manifest.revision} 共 ${entries.length} 条（active ${active.length} / candidate ${candidates.length}）`)
-    for (const entry of entries) lines.push(`    ${entry.id} ${entry.status} ${entry.kind}`)
-    say(entries.length >= 2, '磁盘上真的多了一条（propose 写进去了）')
-    say(candidates.length >= 1, '新条目落成 candidate（模型不能自证 user-confirmed）')
-    say(active.length === 1, 'active 条目仍然只有 fixture 那一条')
-  } catch (error) {
-    say(false, '读 manifest 失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-
-  say(!/\[knowledgecli\]\s+[1-9]\d*\s+条失败/.test(probeText), '探针自身没有失败项')
-  return { ok, lines }
-}
-
 function checkUltracodeOutcome(sandboxRoot, _tempBefore, probeText, { review = false } = {}) {
   const lines = []
   let ok = true
@@ -1657,7 +1555,6 @@ const AFTER_EXIT = {
   subagentForkCache: checkSubagentForkCache,
   ultracodeOutcome: checkUltracodeOutcome,
   ultracodeReviewOutcome: (sandboxRoot, tempBefore, probeText) => checkUltracodeOutcome(sandboxRoot, tempBefore, probeText, { review: true }),
-  knowledgeCli: checkKnowledgeCli,
   sessionabArchive: checkSessionabArchive,
   atrefsendArchive: checkAtRefSend,
   browserBoundaryDownloads: checkBrowserBoundaryDownloads,
@@ -3692,33 +3589,7 @@ async function main() {
         if (c.freeRemotePort) {
           desktop.remoteAccess = { enabled: false, bind: 'tailscale', port: await freeLocalPort() }
         }
-        if (c.knowledgeSeed) {
-          desktop.projects = [
-            {
-              id: KNOWLEDGE_FIXTURE_PROJECT_ID,
-              cwd: caseCwd,
-              name: 'Fixture',
-              archived: false,
-              createdAt: Date.now(),
-              updatedAt: Date.now()
-            }
-          ]
-        }
         writeFileSync(join(sandboxRoot, 'data', 'desktop.json'), JSON.stringify(desktop, null, 2), 'utf8')
-        if (c.knowledgeSeed) {
-          let fixtureSessionId
-          try {
-            const file = readdirSync(join(sandboxRoot, 'sessions'), { recursive: true })
-              .map((name) => String(name))
-              .find((name) => name.endsWith('.jsonl'))
-            if (file) fixtureSessionId = basename(file).replace(/\.jsonl$/, '').split('_').slice(1).join('_')
-          } catch {
-          }
-          await seedProjectKnowledge(join(sandboxRoot, 'data'), {
-            withCandidate: c.knowledgeSeed === 'candidate',
-            sessionId: c.knowledgeSeed === 'candidate' ? fixtureSessionId : undefined
-          })
-        }
         if (c.contextGuardSeed && !contextGuardFixturePath) {
           contextGuardFixturePath = writeContextGuardSession(join(sandboxRoot, 'sessions'))
           console.log(`  上下文守卫 fixture：${basename(contextGuardFixturePath)}（仅本场景）`)

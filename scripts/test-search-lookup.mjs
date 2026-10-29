@@ -11,8 +11,6 @@ export async function runSearchLookupTests(ok) {
   globalThis.__lookupFixture = state
   const stubs = {
     './capability-server': `export class CapabilityCommandError extends Error { constructor(code, message) { super(message); this.code = code } }`,
-    './personal-memory': `export const memoryStoreOf = () => { throw Error('unexpected memory access') }`,
-    './project-memory-store': `export const commitKnowledge = fail, listKnowledge = fail, readKnowledge = fail; function fail() { throw Error('unexpected memory access') }`,
     './search/config': `export const resolveSearchKey = async () => globalThis.__lookupFixture.keys ? 'fixture-key' : ''; export const searchApiConfig = async () => ({ hintDismissed: true })`,
     './search/public-sources': `export const runWikipediaSearch = fail, runArxivSearch = fail, runHackerNewsSearch = fail; function fail() { throw Error('unexpected adapter') }`,
     './search/search': `export const searchDoctor = () => { throw Error('unexpected doctor') }; export const searchSummary = () => 'fixture'; export async function runSearch(input) { const s = globalThis.__lookupFixture; s.calls.push(['query', input]); await Promise.resolve(); return { query: input.text, items: s.empty ? [] : [{ title: 'Article', url: 'https://example.com/a' }], sources: [{ source: 'ddg', status: s.empty ? 'empty' : 'ok', count: s.empty ? 0 : 1 }], truncated: false, durationMs: 0 } }`,

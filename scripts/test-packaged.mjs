@@ -161,54 +161,6 @@ const LEGACY_SENTINELS = [
 for (const base of [dirs.YAN_PI_DIR, dirs.YAN_DATA_DIR]) {
   for (const sentinel of LEGACY_SENTINELS) writeFileSync(join(base, sentinel.name), sentinel.body, 'utf8')
 }
-const PACKAGED_KNOWLEDGE_ID = 'kn-packaged'
-const PACKAGED_KNOWLEDGE_TEXT = '打包态 fixture：项目知识写在 YAN_DIR 里，不碰安装目录'
-let knowledgeFixture = null
-try {
-  const { pathToFileURL } = await import('node:url')
-  const ids = await import(pathToFileURL(join(root, 'src', 'main', 'project-id.ts')).href)
-  const memory = await import(pathToFileURL(join(root, 'src', 'shared', 'project-memory.ts')).href)
-  const projectId = ids.legacyProjectId(root)
-  const now = new Date().toISOString()
-  const entry = {
-    schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
-    id: PACKAGED_KNOWLEDGE_ID,
-    projectId,
-    revision: 1,
-    kind: 'fact',
-    status: 'active',
-    text: PACKAGED_KNOWLEDGE_TEXT,
-    textDigest: memory.textDigest(PACKAGED_KNOWLEDGE_TEXT),
-    tags: [],
-    evidence: [{ sessionId: 'fixture' }],
-    confidenceClass: 'user-confirmed',
-    createdAt: now,
-    updatedAt: now
-  }
-  const dir = join(dirs.YAN_DATA_DIR, 'project-knowledge', projectId)
-  mkdirSync(join(dir, 'entries', entry.id), { recursive: true })
-  writeFileSync(join(dir, 'entries', entry.id, 'r1.json'), JSON.stringify(entry, null, 2), 'utf8')
-  writeFileSync(
-    join(dir, 'manifest.json'),
-    JSON.stringify(
-      {
-        schemaVersion: memory.PROJECT_KNOWLEDGE_SCHEMA_VERSION,
-        projectId,
-        revision: 1,
-        updatedAt: now,
-        entries: [memory.pointerOf(entry)]
-      },
-      null,
-      2
-    ),
-    'utf8'
-  )
-  knowledgeFixture = { projectId, id: entry.id }
-  console.log(C.dim(`  项目知识 fixture：${projectId.slice(0, 18)}…/${entry.id}`))
-} catch (error) {
-  fail('项目知识 fixture 没种下去（探针会红）', error instanceof Error ? error.message : String(error))
-}
-
 const delay = 9000
 const outFile = join(sandbox, 'probe.txt')
 
@@ -423,7 +375,6 @@ if (!exeFromArg) {
     runChecks.push([r.status === 0, `解包里的 yan.mjs 能跑（--help 退出码 ${r.status}）`])
     runChecks.push([/yan — 砚宿主能力 CLI/.test(out), '打出了自己的用法说明'])
     runChecks.push([/tasks apply/.test(out), '用法里含任务写入（模型能从 help 里发现它）'])
-    runChecks.push([/knowledge search/.test(out), '用法里含项目知识检索'])
     runChecks.push([/mcp describe/.test(out), '用法里含 MCP describe（模型能从 help 里发现它）'])
     const rMcp = spawnSync(exePath, [cliPath, 'mcp', 'describe', '--server', 'x', '--tool', 'y'], {
       env: cleanEnv({ ELECTRON_RUN_AS_NODE: '1' }),
@@ -452,21 +403,6 @@ if (!exeFromArg) {
 }
 
 {
-  const knRoot = join(dirs.YAN_DATA_DIR, 'project-knowledge')
-  const manifest = knowledgeFixture ? join(knRoot, knowledgeFixture.projectId, 'manifest.json') : ''
-  const inSandbox = Boolean(manifest) && existsSync(manifest)
-  runChecks.push([inSandbox, '项目知识写在隔离的 YAN_DIR 下（不是安装目录）'])
-  if (inSandbox) {
-    try {
-      const parsed = JSON.parse(readFileSync(manifest, 'utf8'))
-      const ids = (parsed.entries ?? []).map((entry) => entry.id)
-      runChecks.push([ids.includes(PACKAGED_KNOWLEDGE_ID), `fixture 条目仍在（${ids.join(', ') || '（空）'}）`])
-    } catch (error) {
-      runChecks.push([false, '读回项目知识 manifest 失败：' + (error instanceof Error ? error.message : String(error))])
-    }
-  }
-  runChecks.push([!existsSync(join(unpacked, 'project-knowledge')), '安装目录里没有被写进 project-knowledge'])
-  runChecks.push([!existsSync(join(root, 'project-knowledge')), '开发仓库根目录里没有被写进 project-knowledge'])
   for (const base of [dirs.YAN_PI_DIR, dirs.YAN_DATA_DIR]) {
     for (const sentinel of LEGACY_SENTINELS) {
       const path = join(base, sentinel.name)

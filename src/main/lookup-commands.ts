@@ -1,6 +1,5 @@
 import type { CapabilityRunOptions } from './agent'
 import { CapabilityCommandError } from './capability-server'
-import { memoryStoreOf } from './personal-memory'
 import { type AdapterRunner, runSearch, searchDoctor, searchSummary, type SearchPolicy } from './search/search'
 import { runArxivSearch, runHackerNewsSearch, runWikipediaSearch } from './search/public-sources'
 import { runBraveSearch } from './search/brave'
@@ -13,11 +12,6 @@ import { assertReadablePage, normalizeReadUrl, readPage, ReadPageError, type Rea
 import { resolveSearchKey, searchApiConfig } from './search/config'
 import { defaultSearchPlan, mapLimit, searchModifiers, searchQueries, tooManyQueries, TtlCache, type SearchKeys } from './search/plan'
 import { SEARCH_QUERIES_MAX, type SearchOutcome, type SearchQuery, type SearchSourceId } from '../shared/search'
-import { isSafeSessionId } from './session-id'
-import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
-import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
-import { searchProjectKnowledge } from '../shared/project-memory-search'
-import { paramNumber, paramString } from './command-params'
 import { SourceCooldown } from './search/cooldown'
 import { PageStore, pageRange, findInPage } from './search/page-store'
 
@@ -308,147 +302,6 @@ export class LookupCommands {
     if (local) return { page: local, via: 'local', ...(failures.length ? { note: `正文很短，${failures.join('；')}` } : {}) }
     if (failures.length === 0) throw localError as ReadPageError
     throw new ReadPageError(localError?.code ?? 'network_error', `${localError?.message}；${failures.join('；')}`)
-  }
-
-  async runKnowledgeCommand(action: string, params: Record<string, unknown>) {
-    const rawScope = paramString(params, ['scope'])
-    if (rawScope && rawScope !== 'project' && rawScope !== 'personal' && !(action === 'search' && rawScope === 'all')) {
-      throw new CapabilityCommandError('knowledge_bad_scope', 'scope 只能是 project、personal（search 另可用 all）')
-    }
-    const projectId = this.host.capabilityOpts()?.projectId
-    const wantsProject = rawScope === 'project' || (!rawScope && action === 'propose')
-    if (!projectId && wantsProject) {
-      throw new CapabilityCommandError('knowledge_no_project', '当前会话没有绑定项目身份，项目知识不可用（个人记忆可用 --scope personal）')
-    }
-    const claimed = typeof params.projectId === 'string' ? params.projectId.trim() : ''
-    if (claimed && projectId && claimed !== projectId) {
-      throw new CapabilityCommandError(
-        'knowledge_project_mismatch',
-        '项目知识只认宿主绑定的身份，不接受请求里的 projectId'
-      )
-    }
-    const projectStore = projectId ? memoryStoreOf('project', { projectId, cwd: this.host.cwd() }) : null
-    const personalStore = memoryStoreOf('personal', null)!
-    const storesFor = (scope: string): Array<{ scope: 'project' | 'personal'; store: NonNullable<typeof projectStore> }> => [
-      ...(projectStore && scope !== 'personal' ? [{ scope: 'project' as const, store: projectStore }] : []),
-      ...(scope !== 'project' ? [{ scope: 'personal' as const, store: personalStore }] : [])
-    ]
-
-    if (action === 'search') {
-      const queryText = paramString(params, ['queryText', 'query-text', 'query', 'text'])
-      if (!queryText) {
-        throw new CapabilityCommandError('knowledge_query_required', 'knowledge search 需要 queryText（或 --query-file）')
-      }
-      const scoped = storesFor(rawScope || 'all')
-      const lists = await Promise.all(scoped.map(({ store }) => listKnowledge(store.identity, store.opts)))
-      const scopeOf = new Map<string, string>()
-      lists.forEach((list, i) => list.forEach((entry) => scopeOf.set(entry.id, scoped[i].scope)))
-      const result = searchProjectKnowledge(lists.flat(), {
-        queryText,
-        limit: paramNumber(params, 'limit'),
-        tokenBudget: paramNumber(params, 'tokenBudget')
-      })
-      return {
-        data: {
-          hits: result.hits.map((hit) => ({ ...hit, scope: scopeOf.get(hit.id) })),
-          considered: result.considered,
-          dropped: result.dropped,
-          tokens: result.tokens,
-          reason: result.reason ?? null
-        },
-        summary: {
-          kind: 'knowledge',
-          action: 'search',
-          projectId: projectId ?? null,
-          scopes: scoped.map((item) => item.scope),
-          count: result.hits.length,
-          tokens: result.tokens,
-          ids: result.hits.map((hit) => hit.id)
-        }
-      }
-    }
-
-    if (action === 'read') {
-      const id = paramString(params, ['id'])
-      if (!id || !isSafeKnowledgeId(id)) {
-        throw new CapabilityCommandError('knowledge_id_required', 'knowledge read 需要合法的 id')
-      }
-      let entry: Awaited<ReturnType<typeof readKnowledge>>
-      let foundIn: 'project' | 'personal' | undefined
-      for (const { scope, store } of storesFor(rawScope || 'all')) {
-        entry = await readKnowledge(store.identity, id, store.opts)
-        if (entry) {
-          foundIn = scope
-          break
-        }
-      }
-      if (!entry) {
-        throw new CapabilityCommandError('knowledge_not_found', `找不到这条项目知识：${id}`)
-      }
-      return {
-        data: { ...entry, scope: foundIn },
-        summary: {
-          kind: 'knowledge',
-          action: 'read',
-          scope: foundIn,
-          id: entry.id,
-          status: entry.status,
-          revision: entry.revision
-        }
-      }
-    }
-
-    if (action === 'propose') {
-      const raw = params.draft && typeof params.draft === 'object' ? (params.draft as Record<string, unknown>) : params
-      const kind = paramString(raw, ['kind'])
-      const text = paramString(raw, ['text'])
-      if (!kind || !text) {
-        throw new CapabilityCommandError('knowledge_draft_invalid', 'knowledge propose 需要 kind 与 text')
-      }
-      const evidence = Array.isArray(raw.evidence) ? raw.evidence : []
-      for (const item of evidence) {
-        const file = (item as { file?: unknown })?.file
-        if (file !== undefined && !isSafeRelativeRef(file)) {
-          throw new CapabilityCommandError(
-            'knowledge_evidence_out_of_scope',
-            '证据里的 file 只能是项目内相对路径（不接受绝对路径 / .. / 空值）'
-          )
-        }
-      }
-      const sessionId = typeof raw.sessionId === 'string' && isSafeSessionId(raw.sessionId) ? raw.sessionId : this.host.capabilityOpts()?.sessionId
-      const target = rawScope === 'personal' ? personalStore : projectStore!
-      const outcome = await commitKnowledge({
-        identity: target.identity,
-        opts: target.opts,
-        request: {
-          id: raw.id,
-          kind,
-          text,
-          tags: raw.tags,
-          evidence: evidence.length > 0 ? evidence : sessionId ? [{ sessionId }] : [],
-          confidenceClass: raw.confidenceClass,
-          validFor: raw.validFor,
-          supersedes: raw.supersedes,
-          expectedRevision: raw.expectedRevision ?? 0
-        }
-      })
-      if (!outcome.ok) {
-        throw new CapabilityCommandError(`knowledge_${outcome.code}`, outcome.message)
-      }
-      return {
-        data: outcome.entry,
-        summary: {
-          kind: 'knowledge',
-          action: 'propose',
-          scope: rawScope === 'personal' ? 'personal' : 'project',
-          id: outcome.entry.id,
-          status: outcome.entry.status,
-          revision: outcome.entry.revision
-        }
-      }
-    }
-
-    throw new CapabilityCommandError('unknown_command', `未知的 knowledge 动作：${action}`)
   }
 }
 

@@ -116,7 +116,6 @@ import type {
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
 import type { ApiKeyPools } from '../shared/api-keys'
-import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
 import type { DesktopPetResult, DesktopPetStatus } from '../shared/desktop-pet'
 import type { RunSnapshot } from '../shared/runs'
 import type { ProjectPackageScripts } from '../shared/project-scripts'
@@ -323,15 +322,6 @@ const api: YanBridge = {
   gitRuntimeCancel: () => invoke<void>('yan:gitRuntimeCancel'),
   gitRuntimeRemove: () => invoke<void>('yan:gitRuntimeRemove'),
   customProviders: () => invoke<CustomProviderView[]>('yan:customProviders'),
-  opencodeProxy: {
-    status: () => invoke<OpenCodeProxyStatus>('yan:opencodeProxy:status'),
-    install: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:install'),
-    start: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:start'),
-    stop: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:stop'),
-    refresh: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:refresh'),
-    uninstall: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:uninstall'),
-    autoStart: (enabled) => invoke<OpenCodeProxyResult>('yan:opencodeProxy:autoStart', enabled)
-  },
   desktopPet: {
     status: () => invoke<DesktopPetStatus>('yan:desktopPet:status'),
     install: () => invoke<DesktopPetResult>('yan:desktopPet:install'),

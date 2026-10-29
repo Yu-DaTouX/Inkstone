@@ -26,8 +26,7 @@ const stubModules = {
   './sessions': 'export const listSessions = (...args) => globalThis.__rh.listSessions(...args)',
   './peer-grants': 'export class PeerGrantRegistry { constructor() {} }',
   './peer-client': 'export class PeerClient { constructor() {} }',
-  './paths': 'export const YAN_DIR = \'/tmp/yan-remote-chain-fixture\'',
-  './project-memory-store': 'export const listKnowledge = async () => []'
+  './paths': 'export const YAN_DIR = \'/tmp/yan-remote-chain-fixture\''
 }
 
 const stubPlugin = {

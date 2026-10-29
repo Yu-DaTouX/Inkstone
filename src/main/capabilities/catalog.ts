@@ -108,13 +108,6 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     'yan search --help'
   ),
   builtin(
-    'knowledge',
-    '项目知识库',
-    '检索 / 读取本项目已确认的知识条目，或把这次得到的结论提成待用户确认的知识建议。',
-    'read',
-    'yan knowledge search --query-file query.json'
-  ),
-  builtin(
     'schedule',
     '定时任务',
     '新建、列出、暂停或删除定时任务；新建后要用户在「定时任务」页确认过才会运行。',

@@ -12,7 +12,6 @@ export type ModelsTextKey =
   | 'showAllKeys'
   | 'hideAllKeys'
   | 'noAuthInfo'
-  | 'openCodeProxy'
   | 'pickerRecent'
   | 'pickerPriceHint'
   | 'pickerFavoriteCurrent'
@@ -63,7 +62,6 @@ const ZH: Record<ModelsTextKey, string> = {
   hideAllKeys: '收起未配置的服务商',
   noAuthInfo:
     '读不到凭证时，服务商按未登录显示。',
-  openCodeProxy: 'OpenCode 反代',
   pickerRecent: '最近使用',
   pickerPriceHint: '每百万 token 的输入 / 输出价（美元）',
   pickerFavoriteCurrent: '收藏当前模型',
@@ -115,7 +113,6 @@ const EN: Record<ModelsTextKey, string> = {
   hideAllKeys: 'Hide unconfigured providers',
   noAuthInfo:
     'Providers show as signed out when no credential is found.',
-  openCodeProxy: 'OpenCode proxy',
   pickerRecent: 'Recently used',
   pickerPriceHint: 'Input / output price per million tokens (USD)',
   pickerFavoriteCurrent: 'Favorite current model',

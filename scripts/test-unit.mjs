@@ -450,40 +450,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runTaskPlanStoreTests } = await import('./test-task-plan-store.mjs')
 
-const projectMemory = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/project-memory.ts'],
-    outfile: 'out/test/project-memory.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/project-memory.mjs'))
-)
-const projectMemoryStore = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/project-memory-store.ts'],
-    outfile: 'out/test/project-memory-store.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/project-memory-store.mjs'))
-)
-const { runProjectMemoryTests } = await import('./test-project-memory.mjs')
-
-const projectMemorySearch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/project-memory-search.ts'],
-    outfile: 'out/test/project-memory-search.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/project-memory-search.mjs'))
-)
-const { runProjectKnowledgeSearchTests } = await import('./test-project-memory-search.mjs')
-
 const capabilityCatalogShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/capabilities.ts'],
@@ -1510,7 +1476,6 @@ await runQuotaResumeTests(ok)
 await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
 await runTaskPlanStoreTests(ok)
-await runProjectMemoryTests(ok, { memory: projectMemory, store: projectMemoryStore })
 await runCapabilityCatalogTests(ok, {
   capabilities: capabilityCatalogShared,
   skill: capabilitySkillService,
@@ -1539,7 +1504,6 @@ await runMcpTests(ok, {
   toolService: mcpToolService
 })
 await runMcpRegistrationTests(ok, { shared: mcpRegistrationShared })
-runProjectKnowledgeSearchTests(ok, projectMemorySearch)
 await runExtensionInventoryTests(ok)
 
 await runSubagentIsolationTests(ok, subagentIsolation)
@@ -2005,7 +1969,7 @@ await runGitRepoTests(ok)
     JSON.stringify(unknown.body)
   )
 
-  const notImpl = await call({ ...me, command: 'knowledge.search' })
+  const notImpl = await call({ ...me, command: 'skill.read' })
   ok(
     notImpl.status === 200 && notImpl.body.ok === false && /not_implemented/.test(String(notImpl.body.error)),
     '能力服务：未实现命令走完整管道后如实报错',
@@ -2018,15 +1982,6 @@ await runGitRepoTests(ok)
     '能力服务：子代理命令已登记进宿主入口',
     JSON.stringify(subagentRegistered.body)
   )
-
-  for (const command of ['knowledge.search', 'knowledge.read', 'knowledge.propose']) {
-    const res = await call({ ...me, command })
-    ok(
-      res.status !== 400 || res.body.error !== 'unknown_command',
-      `能力服务：${command} 已登记进宿主入口`,
-      JSON.stringify(res.body)
-    )
-  }
 
   const badVersion = await call({ ...me, command: 'operations.status', apiVersion: 999 })
   ok(badVersion.status === 400, '能力服务：协议版本不一致被拒', JSON.stringify(badVersion.body))
@@ -2403,23 +2358,6 @@ await runGitRepoTests(ok)
     'yan CLI：子代理每个动作都在用法里（不漏文案）',
     subagentUndocumented.join(', ')
   )
-  const knowledgeActions = specActions('knowledge')
-  ok(
-    knowledgeActions.includes('search') && knowledgeActions.includes('read') && knowledgeActions.includes('propose'),
-    'yan CLI：项目知识动作表已登记',
-    knowledgeActions.join(', ')
-  )
-  const knowledgeUndocumented = knowledgeActions.filter((action) => !usageText('knowledge').includes(action))
-  ok(
-    knowledgeUndocumented.length === 0,
-    'yan CLI：项目知识每个动作都在用法里（不漏文案）',
-    knowledgeUndocumented.join(', ')
-  )
-  const knowledgeHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'knowledge', '--help'], {
-    encoding: 'utf8'
-  })
-  ok(knowledgeHelp.status === 0 && /search/.test(knowledgeHelp.stdout ?? ''), 'yan CLI：knowledge 分组帮助可按需读取')
-
   ok(!specActions('goal').length, 'yan CLI：目标命令已退役')
 }
 

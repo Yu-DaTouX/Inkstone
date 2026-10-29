@@ -1292,9 +1292,6 @@ export class AgentController extends EventEmitter {
     if (command.startsWith('mcp.')) {
       return runMcpCommand(this.commandHost, command.slice('mcp.'.length), params, signal)
     }
-    if (command.startsWith('knowledge.')) {
-      return this.lookup.runKnowledgeCommand(command.slice('knowledge.'.length), params)
-    }
     if (command.startsWith('search.')) {
       return this.lookup.runSearchCommand(command.slice('search.'.length), params, signal)
     }

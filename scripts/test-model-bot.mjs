@@ -54,7 +54,6 @@ try {
   expect('github-copilot/gpt-5.5', 'codex', 'Copilot 托管的 GPT')
   expect('opencode-go/qwen3.8-flash', 'qwen', 'OpenCode Go 托管的 Qwen')
   expect('opencode-go/minimax-m3', 'pi', 'OpenCode Go 托管的其他模型')
-  expect('opencode-proxy/big-pickle', 'pi', '砚 OpenCode 网关的免费模型')
   expect('amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0', 'claude', 'Bedrock 区域前缀')
   expect('amazon-bedrock/openai.gpt-oss-120b-1:0', 'codex', 'Bedrock 上的 OpenAI 开源权重')
 

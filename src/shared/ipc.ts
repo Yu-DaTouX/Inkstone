@@ -1836,7 +1836,6 @@ export interface YanBridge {
   gitRuntimeCancel(): Promise<void>
   gitRuntimeRemove(): Promise<void>
   customProviders(): Promise<CustomProviderView[]>
-  opencodeProxy: import('./opencode-proxy').OpenCodeProxyBridge
   desktopPet: import('./desktop-pet').DesktopPetBridge
   saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult>
   removeCustomProvider(id: string): Promise<CustomProviderResult>

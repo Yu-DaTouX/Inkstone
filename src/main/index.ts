@@ -82,8 +82,6 @@ import { loadMcpServersCached } from './mcp/config'
 import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { refreshMinecraftPluginOnStartup, registerPackagesIpc } from './ipc/packages-ipc'
-import { registerOpenCodeProxyIpc } from './ipc/opencode-ipc'
-import { autoStartOpenCodeProxy, stopOpenCodeProxySync } from './opencode-proxy'
 import { registerDesktopPetIpc } from './ipc/desktop-pet-ipc'
 import { autoStartDesktopPet, configureDesktopPet, feedDesktopPetRuns, stopDesktopPetSync } from './desktop-pet'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
@@ -1300,7 +1298,6 @@ async function runShutdown(): Promise<void> {
   agentRestartTimer = null
   scheduleService.stop()
   disposeKeepAwake()
-  stopOpenCodeProxySync()
   stopDesktopPetSync()
   attention?.dispose()
   auxWindows?.dispose()
@@ -3116,7 +3113,6 @@ function registerIpc(): void {
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   refreshMinecraftPluginOnStartup()
-  registerOpenCodeProxyIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
   registerDesktopPetIpc(ipc)
   registerCanvasCaptureIpc(ipc)
   registerHtmlEditIpc(ipc, { resolveFileContext })
@@ -3615,7 +3611,6 @@ app.whenReady().then(async () => {
   })
   registerIpc()
   void primeCachedTitles().catch(() => undefined)
-  void autoStartOpenCodeProxy().catch((error) => reportMainError('opencode-proxy-autostart', error))
   configureDesktopPet({
     runnerPath: () =>
       [

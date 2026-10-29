@@ -20,8 +20,6 @@ import { canRemoveCredential, credentialFromEnv, entryState, type ServiceState }
 import { SettingsGroup, SettingsReveal } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { PiThinkingLevelsGroup } from '../general/PiNativeSettings'
-import { OpenCodeProxyRow } from '../capabilities/OpenCodeProxyRow'
-import { ConfirmProvider } from '../capabilities/confirm'
 import { ClaudeCodeBridgeRow } from './ClaudeCodeBridgeRow'
 import { ApiKeyList } from './ApiKeyList'
 import { SubscriptionAccountList } from './SubscriptionAccountList'
@@ -550,11 +548,6 @@ export function ModelsSettings(): ReactElement {
         <div className="settings-rows ms-rows">
           <div data-setting-id="models-claude-code">
             <ClaudeCodeBridgeRow />
-          </div>
-          <div className="caps-list" data-setting-id="models-opencode-proxy">
-            <ConfirmProvider>
-              <OpenCodeProxyRow />
-            </ConfirmProvider>
           </div>
         </div>
       </SettingsGroup>

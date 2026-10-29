@@ -37,10 +37,3 @@ export const DOWNLOADS_DIR = envOrArg('YAN_DOWNLOADS_DIR', 'yan-downloads-dir') 
 export const YAN_DIR =
   envOrArg('YAN_DATA_DIR', 'yan-data-dir') ||
   (PORTABLE_DATA_DIR ? join(PORTABLE_DATA_DIR, 'yan') : join(PI_AGENT_DIR, 'yan'))
-
-export const PROJECT_KNOWLEDGE_DIRNAME = 'project-knowledge'
-export const PROJECT_KNOWLEDGE_ROOT = join(YAN_DIR, PROJECT_KNOWLEDGE_DIRNAME)
-
-export function projectKnowledgeDir(projectId: string): string {
-  return join(PROJECT_KNOWLEDGE_ROOT, projectId)
-}

@@ -21,7 +21,7 @@ try {
       api.onResolve({ filter: /^\.\/title$/ }, () => ({ path: 'title', namespace: 'fixture' }))
       api.onLoad({ filter: /^title$/, namespace: 'fixture' }, () => ({ contents: 'export const generateTitle=(o)=>{(globalThis.__titleCalls ??= []).push(o); return globalThis.__titleFixture.promise}; export const fallbackTitle=async(id,text)=>{(globalThis.__fallbackCalls ??= []).push([id,text]); return text ? { title: "截断:"+text } : null}; export const manualTitleOf=async()=>undefined; export const cachedTitles=async()=>({}); export const setManualTitle=async()=>({ok:true});', loader: 'js' }))
       api.onResolve({ filter: /^\.\/paths$/ }, () => ({ path: 'paths', namespace: 'fixture' }))
-      api.onLoad({ filter: /^paths$/, namespace: 'fixture' }, () => ({ contents: `export const YAN_DIR=${JSON.stringify(root)}; export const PI_AGENT_DIR=${JSON.stringify(root)}; export const PROJECT_KNOWLEDGE_ROOT=${JSON.stringify(join(root, 'knowledge'))}; export const projectKnowledgeDir=id=>PROJECT_KNOWLEDGE_ROOT+'/'+id;`, loader: 'js' }))
+      api.onLoad({ filter: /^paths$/, namespace: 'fixture' }, () => ({ contents: `export const YAN_DIR=${JSON.stringify(root)}; export const PI_AGENT_DIR=${JSON.stringify(root)}; `, loader: 'js' }))
       api.onResolve({ filter: /^[^./]|^@/ }, args => {
         if (args.namespace === 'fixture' || args.path.startsWith('node:')) return
         return { path: import.meta.resolve(args.path), external: true }
