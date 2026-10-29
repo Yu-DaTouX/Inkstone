@@ -5,20 +5,22 @@ import { buildApp, builtAppAge, connectCdp, holdProbe, isAlive, killTree, launch
 import { currentFile, debugDir, freePort, newRunDir, parseArgs, runsDir, sleep } from './lib/env.mjs'
 import { FAKE_TRIGGERS, startFakeModel } from './lib/fake-model.mjs'
 import { createSandbox, sandboxEnv } from './lib/sandbox.mjs'
+import { importUserData } from './lib/user-data.mjs'
 import { scenarioContext } from './lib/scenario-context.mjs'
 import { describeSamples, pickSamples, samplePaths } from './lib/sessions.mjs'
 
 const scenariosDir = join(debugDir, 'scenarios')
-const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bucket', 'keep'])
+const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bucket', 'keep', 'user-days'])
 
 const HELP = `砚调试工具：npm run debug -- <命令> [参数]
 
 隔离实例（数据全在 debug/runs/<时间>-<名字>/，不碰真实数据、不抢单实例锁）
-  up [--dev] [--build] [--no-fake] [--samples 1,2|all] [--port N]
+  up [--dev] [--build] [--no-fake] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N]
       起一个隔离实例并保持前台运行，Ctrl+C 或 down 结束
       --dev       用 electron-vite dev（渲染端热更新），默认跑 out/ 构建版
       --build     先 electron-vite build
       --no-fake   不配置假模型（在实例里自己登录模型）
+      --user-data 拷贝真实数据副本：最近 N 天会话、项目与标题等小文件、去密钥的模型列表；不拷凭据，关远程访问
       --samples   把 debug/data 里的大会话样本拷进实例
   ps                   看当前实例
   eval <表达式>        在当前实例渲染端求值；s 是 store 状态，如 eval "s.messages.length"
@@ -61,6 +63,7 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
   const fake = flags['no-fake'] ? null : await startFakeModel()
   const runDir = newRunDir(label)
   const box = createSandbox(runDir, { fakePort: fake?.port, samples })
+  if (flags['user-data']) console.log('导入真实数据副本：' + JSON.stringify(importUserData(box, { days: flags['user-days'] ? Number(flags['user-days']) : 7 })))
   const cdpPort = flags.port ? Number(flags.port) : await freePort()
   const app = launchApp(sandboxEnv(box, { fake: !!fake, cdpPort, probe }), { dev: !!flags.dev })
   return { fake, runDir, box, cdpPort, app }
