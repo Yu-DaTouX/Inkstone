@@ -283,11 +283,11 @@
 
   .v3-head-pane-open {
     position: absolute;
-    bottom: 2px;
+    bottom: var(--s-2);
     left: 50%;
-    width: 3px;
-    height: 3px;
-    margin-left: -1.5px;
+    width: var(--s-4);
+    height: var(--s-4);
+    translate: -50% 0;
     border-radius: var(--r-full);
     corner-shape: round;
     background: var(--fg3);

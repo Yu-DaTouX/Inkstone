@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -52,7 +53,7 @@ import {
 } from './files-search'
 import { FilesSearchResults } from './FilesSearchResults'
 import { useFilesTree } from './use-files-tree'
-import { filesSplitLayout, useFilesSplit } from './use-files-split'
+import { filesSplitLayout, shouldHandOffTreeFocus, useFilesSplit } from './use-files-split'
 import { canOpenTerminal, openFolderInTerminal } from './files-terminal'
 import type { FilesMenuTarget } from './files-menu'
 import type { FilesPaneProps } from '../workbench/types'
@@ -93,6 +94,10 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
   const filterRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
+  const treeColRef = useRef<HTMLDivElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const treeFocusRef = useRef(false)
+  const treeShownRef = useRef(true)
   const [tabsHost, setTabsHost] = useState<HTMLElement | null>(null)
   const [contentOptions, setContentOptions] = useState<ContentOptions>(DEFAULT_CONTENT_OPTIONS)
   const search = useFilesSearch(owner, true, query, retry, contentOptions)
@@ -108,6 +113,17 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
     narrowTree
   })
   const currentRel = previewPath ? toRelativePath(owner.cwd, previewPath) : null
+
+  useLayoutEffect(() => {
+    const wasTreeShown = treeShownRef.current
+    treeShownRef.current = layout.showTree
+    const active = document.activeElement
+    const focusInTree = !!active && !!treeColRef.current?.contains(active)
+    const focusLost = treeFocusRef.current && (!active || active === document.body)
+    if (!shouldHandOffTreeFocus({ wasTreeShown, treeShown: layout.showTree, previewShown: layout.showPreview, focusInTree, focusLost })) return
+    treeFocusRef.current = false
+    previewRef.current?.focus({ preventScroll: true })
+  }, [layout.showTree, layout.showPreview])
 
   const openFile = useCallback(
     (abs: string, options?: PreviewOpenOptions): void => {
@@ -374,14 +390,26 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
       </PaneTools>
 
       {Preview ? (
-        <div className="v3-files-preview" hidden={!layout.showPreview} data-testid="v3-files-preview">
+        <div className="v3-files-preview" ref={previewRef} tabIndex={-1} hidden={!layout.showPreview} data-testid="v3-files-preview">
           <PaneChromeContext.Provider value={previewChrome}>
             <Preview owner={owner} path={previewPath} treeShown={layout.showTree} onRevealInTree={revealInTree} />
           </PaneChromeContext.Provider>
         </div>
       ) : null}
 
-      <div className="v3-files-col" hidden={!layout.showTree} role="group" aria-label={text.treeLabel}>
+      <div
+        className="v3-files-col"
+        ref={treeColRef}
+        hidden={!layout.showTree}
+        role="group"
+        aria-label={text.treeLabel}
+        onFocus={() => {
+          treeFocusRef.current = true
+        }}
+        onBlur={(event) => {
+          treeFocusRef.current = !!event.relatedTarget && event.currentTarget.contains(event.relatedTarget as Node)
+        }}
+      >
         <div className="v3-files-filter" data-content={contentMode ? '1' : undefined} data-query={query ? '1' : undefined}>
           <InputGroup
             size="sm"

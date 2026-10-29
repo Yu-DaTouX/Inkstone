@@ -89,11 +89,12 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
     return (id && shortcutKeysText(id, shortcutOverrides)) || undefined
   }
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverrides))
-  const menuPanes: readonly WorkbenchTabId[] = route === 'chat' ? [...(narrow ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES] : []
-  const menuDot = route === 'chat' && narrow && TITLEBAR_PANES.some(({ tab }) => paneActive(tab))
+  const freshHome = route === 'chat' && !peekedSessionId && !hasMessages && openPanes.size === 0 && !activePane
+  const panesInMenu = narrow || freshHome
+  const menuPanes: readonly WorkbenchTabId[] = route === 'chat' ? [...(panesInMenu ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES] : []
+  const menuDot = route === 'chat' && panesInMenu && TITLEBAR_PANES.some(({ tab }) => paneActive(tab))
   const highlightPane = activePane && TITLEBAR_PANES.some(({ tab }) => tab === activePane) ? activePane : null
   const sessionBarLit = sessionBarShown && !activePane
-  const freshHome = route === 'chat' && !peekedSessionId && !hasMessages && openPanes.size === 0 && !activePane
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')

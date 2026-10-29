@@ -187,9 +187,10 @@ type ListOutcome =
 
 const SCOPE_KINDS: readonly ChangesScopeKind[] = ['working', 'branch', 'commit']
 
-function firstTextDiffPath(items: readonly ChangeItem[], patches: Record<string, GitChangePatch>): string | null {
+function firstTextDiffPath(items: readonly ChangeItem[], patches: Record<string, GitChangePatch>, hideTests: boolean): string | null {
   let fallback: string | null = null
   for (const item of items) {
+    if (hideTests && isTestFilePath(item.path)) continue
     const kind = resolvePatchSource(item.path, patches[item.path]).kind
     if (kind !== 'inline' && kind !== 'fetch') continue
     if ((item.added ?? 1) + (item.removed ?? 1) > 0) return item.path
@@ -252,6 +253,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const paneWidthRef = useRef(fileList.paneWidth)
   paneWidthRef.current = fileList.paneWidth
   const unsizedInitRef = useRef(false)
+  const hideTestsRef = useRef(hideTests)
+  hideTestsRef.current = hideTests
 
   const scope = scopeState.ownerId === ownerId ? scopeState.scope : WORKING_SCOPE
   const initKey = `${ownerId}|${scopeKey(scope)}|${generation}`
@@ -326,7 +329,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             unsizedInitRef.current = width <= 0
             setExpanded(
               isLargeDiff(listRes.items) || isCompactPane(width)
-                ? onlyFirst(firstTextDiffPath(listRes.items, listRes.patches))
+                ? onlyFirst(firstTextDiffPath(listRes.items, listRes.patches, hideTestsRef.current))
                 : new Set(listRes.items.map((item) => item.path))
             )
             setCollapsedDirs(new Set())
@@ -380,7 +383,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   useEffect(() => {
     if (!unsizedInitRef.current || fileList.paneWidth <= 0) return
     unsizedInitRef.current = false
-    if (fileList.compact) setExpanded(onlyFirst(firstTextDiffPath(items, patches)))
+    if (fileList.compact) setExpanded(onlyFirst(firstTextDiffPath(items, patches, hideTestsRef.current)))
   }, [fileList.paneWidth, fileList.compact, items, patches])
   const binaryPaths = useMemo(
     () => new Set(shownItems.filter((item) => resolvePatchSource(item.path, patches[item.path]).kind === 'binary').map((item) => item.path)),
@@ -614,12 +617,22 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       disabled: testPaths.size === 0,
       onAction: toggleHideTests
     },
-    { id: 'changes:collapse', label: text.collapseAll, onAction: () => setExpanded(new Set()) },
+    {
+      id: 'changes:collapse',
+      label: text.collapseAll,
+      onAction: () => {
+        setExpanded(new Set())
+        setBinaryOpen(false)
+      }
+    },
     {
       id: 'changes:expand',
       label: text.expandAll,
       disabled: large,
-      onAction: () => setExpanded(new Set(items.map((item) => item.path)))
+      onAction: () => {
+        setExpanded(new Set(items.map((item) => item.path)))
+        setBinaryOpen(true)
+      }
     },
     {
       id: 'changes:split',

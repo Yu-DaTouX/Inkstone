@@ -70,7 +70,7 @@ const UI_TEXT_STUB = `export function uiText(key) { return String(key) }`
 const CHROME_STUB = `export function PaneTools() { return null }
 export function PaneTitle() { return null }
 export function usePaneChrome() { return null }
-export function usePaneMenu() {}`
+export function usePaneMenu(id, items) { (globalThis.__V3_MENUS ??= {})[id] = items }`
 
 const DIFF_STUB = `export function ChangesFileDiff() { return null }`
 
@@ -127,6 +127,9 @@ async function buildBundle(outdir) {
     entry,
     `export { ChangesPane } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/ChangesPane.tsx'))}'
 export { Button } from '${posix(resolve(ROOT, 'src/renderer/src/ui/index.ts'))}'
+export { ChangesFileDiff } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/ChangesFileDiff.tsx'))}'
+export { ChangesBinaryGroup } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/ChangesBinaryGroup.tsx'))}'
+export { patchLineCounts } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/patch-line-counts.ts'))}'
 `
   )
   const outfile = join(outdir, 'changes-pane-bundle.mjs')
@@ -327,6 +330,29 @@ function fixtures(actionResult) {
   return { reads, source, action }
 }
 
+function reviewFixtures() {
+  const repo = { ...fixtures().source }
+  const entry = (path, added) => ({ x: '.', y: 'M', path, untracked: false, ignored: false, unmerged: false, staged: false, unstaged: true, added, removed: 0 })
+  const files = [entry('a.test.ts', 6000), entry('b.ts', 1), entry('z.bin', 0)]
+  const patches = {
+    'a.test.ts': { state: 'inline', patch: '@@ -0,0 +1 @@\n+t\n' },
+    'b.ts': { state: 'inline', patch: '@@ -1 +1 @@\n-a\n+b\n' },
+    'z.bin': { state: 'binary' }
+  }
+  return {
+    ...repo,
+    async changes() {
+      return { files, head: HEAD, scopeKind: 'working', baseRef: null, baseSha: null, targetSha: null, added: 6001, removed: 0, patches }
+    }
+  }
+}
+
+function expandedDiffs(tree, ChangesFileDiff) {
+  return findAllByType(tree, ChangesFileDiff)
+    .filter((el) => el.props.expanded)
+    .map((el) => el.props.item.path)
+}
+
 async function run() {
   const outdir = await mkdtemp(join(tmpdir(), 'yan-v3-changes-pane-'))
   const storage = new Map()
@@ -393,6 +419,51 @@ async function run() {
       await flush(globalThis.__V3_HOOKS, ChangesPane, props)
       assert.equal(reads.action, 1)
       assert.equal(reads.state, 1, '非 stale 失败不额外重读（面板只在状态真的过期时才刷新）')
+    }
+
+    {
+      const { ChangesFileDiff, ChangesBinaryGroup } = mod
+      globalThis.window = { yan: { git: { action: async () => ({ ok: true }) } }, addEventListener() {}, removeEventListener() {} }
+
+      storage.set('inkstone.changes.hideTestFiles', '0')
+      globalThis.__V3_HOOKS = makeHookRuntime()
+      const shownProps = { owner, gitSource: reviewFixtures() }
+      const shownTree = await flush(globalThis.__V3_HOOKS, ChangesPane, shownProps)
+      assert.deepEqual(expandedDiffs(shownTree, ChangesFileDiff), ['a.test.ts'], '大改动只展开第一个文本 diff')
+
+      storage.set('inkstone.changes.hideTestFiles', '1')
+      globalThis.__V3_HOOKS = makeHookRuntime()
+      globalThis.__V3_MENUS = {}
+      const props = { owner, gitSource: reviewFixtures() }
+      const tree = await flush(globalThis.__V3_HOOKS, ChangesPane, props)
+      assert.deepEqual(
+        findAllByType(tree, ChangesFileDiff).map((el) => el.props.item.path),
+        ['b.ts'],
+        '隐藏测试文件后只渲染非测试的文本 diff'
+      )
+      assert.deepEqual(expandedDiffs(tree, ChangesFileDiff), ['b.ts'], '隐藏测试文件且首项是测试文件时，默认展开第一个可见的文本 diff')
+      const binary = () => findAllByType(globalThis.__V3_HOOKS.render(ChangesPane, props), ChangesBinaryGroup)[0]
+      assert.equal(binary().props.expanded, false, '二进制分组默认收起')
+
+      const menuAction = (id) => globalThis.__V3_MENUS.changes.find((item) => item.id === id).onAction()
+      menuAction('changes:expand')
+      const expandedTree = globalThis.__V3_HOOKS.render(ChangesPane, props)
+      assert.equal(findAllByType(expandedTree, ChangesBinaryGroup)[0].props.expanded, true, '全部展开同时展开二进制分组')
+      assert.deepEqual(expandedDiffs(expandedTree, ChangesFileDiff), ['b.ts'])
+      menuAction('changes:collapse')
+      const collapsedTree = globalThis.__V3_HOOKS.render(ChangesPane, props)
+      assert.equal(findAllByType(collapsedTree, ChangesBinaryGroup)[0].props.expanded, false, '全部收起同时收起二进制分组')
+      assert.deepEqual(expandedDiffs(collapsedTree, ChangesFileDiff), [])
+      storage.delete('inkstone.changes.hideTestFiles')
+    }
+
+    {
+      const { patchLineCounts } = mod
+      const patch = 'diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,3 @@\n ctx\n-old\n+new\n+more\n@@ -9 +10 @@\n-x\n+y'
+      assert.deepEqual(patchLineCounts(patch), { added: 3, removed: 2 }, '补丁行数只统计 hunk 内的增删行，不算文件头')
+      assert.deepEqual(patchLineCounts(patch.replace(/\n/g, '\r\n')), { added: 3, removed: 2 }, 'CRLF 补丁同样计数')
+      assert.deepEqual(patchLineCounts(''), { added: 0, removed: 0 })
+      assert.deepEqual(patchLineCounts('+not a hunk\n'), { added: 0, removed: 0 }, '没有 hunk 头时不计数')
     }
 
     console.log('test-v3-changes-pane-actions: 全部通过')

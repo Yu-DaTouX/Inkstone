@@ -7,6 +7,7 @@ import { ChangePathLabel, ChangeStatusMark } from './ChangeEntryLabel'
 import { resolvePatchSource } from './changes-scope'
 import type { ChangeItem, ChangesAnnotate, ChangesImagePair, ChangesPatch, PatchLoader } from './types'
 import type { ChangesText } from './text'
+import { patchLineCounts } from './patch-line-counts'
 
 export interface ChangesFileDiffProps {
   item: ChangeItem
@@ -38,19 +39,6 @@ function samePatchText(patch: string): string {
   const text = patch.replace(/\r\n/g, '\n')
   const body = text.search(/^@@ /m)
   return (body < 0 ? text : text.slice(body)).trim()
-}
-
-function patchLineCounts(patch: string): { added: number; removed: number } {
-  let added = 0
-  let removed = 0
-  let inHunk = false
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('@@')) inHunk = true
-    else if (!inHunk) continue
-    else if (line.startsWith('+')) added += 1
-    else if (line.startsWith('-')) removed += 1
-  }
-  return { added, removed }
 }
 
 export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
@@ -114,7 +102,8 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
   }, [loader, schedule, cwd, item.path, request])
 
   const known = item.added !== undefined || item.removed !== undefined
-  const derived = useMemo(() => (!known && state.kind === 'patch' && !state.truncated ? patchLineCounts(state.patch) : null), [known, state])
+  const patchText = state.kind === 'patch' && !state.truncated ? state.patch : null
+  const derived = useMemo(() => (!known && patchText !== null ? patchLineCounts(patchText) : null), [known, patchText])
   const lineCounts = known ? { added: item.added ?? 0, removed: item.removed ?? 0 } : derived
   const counts = state.kind !== 'binary' && lineCounts !== null
 

@@ -56,6 +56,16 @@ export function filesSplitLayout(input: {
   return { split: false, narrow, showTree: tree, showPreview: !tree, treePressed: tree }
 }
 
+export function shouldHandOffTreeFocus(input: {
+  wasTreeShown: boolean
+  treeShown: boolean
+  previewShown: boolean
+  focusInTree: boolean
+  focusLost: boolean
+}): boolean {
+  return input.wasTreeShown && !input.treeShown && input.previewShown && (input.focusInTree || input.focusLost)
+}
+
 function readStored(key: string): string | null {
   try {
     return localStorage.getItem(key)

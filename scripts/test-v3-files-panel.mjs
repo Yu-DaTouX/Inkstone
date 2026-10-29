@@ -118,6 +118,14 @@ assert.equal(split.resolveTreeShown(true, 500, true), true, '手动打开后记�
 assert.equal(split.resolveTreeShown(false, 900, false), false, '手动收起后记住')
 assert.equal(split.readTreeShown('0'), false)
 assert.equal(split.readTreeShown(null), null)
+const handOff = (over) =>
+  split.shouldHandOffTreeFocus({ wasTreeShown: true, treeShown: false, previewShown: true, focusInTree: true, focusLost: false, ...over })
+assert.equal(handOff({}), true, '键盘在树里打开文件导致树收起时，焦点交给预览区')
+assert.equal(handOff({ focusInTree: false, focusLost: true }), true, '树里的焦点已被浏览器丢到 body 时也交给预览区')
+assert.equal(handOff({ focusInTree: false }), false, '焦点不在树里时不抢焦点')
+assert.equal(handOff({ wasTreeShown: false }), false, '树本来就收起时不动焦点')
+assert.equal(handOff({ treeShown: true }), false, '树仍显示时不动焦点')
+assert.equal(handOff({ previewShown: false }), false, '预览区不可见时不把焦点交过去')
 
 const base = { ok: true, path: 'a', abs: '/p/a', name: 'a', size: 1, kind: 'text', text: 'x' }
 assert.equal(issue.previewProblem(base), null)
