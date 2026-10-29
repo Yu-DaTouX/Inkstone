@@ -5,6 +5,7 @@
 @import './Settings.css';
 @import './Row.css';
 @import './Controls.css';
+@import './Terminal.css';
 
 @layer primitives {
   .ui-btn[data-focus-visible],
@@ -271,21 +272,42 @@
   .ui-btn.ui-icon-btn--neutral-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled], [data-active='partial']) {
     background: var(--press);
   }
-  .ui-btn.ui-icon-btn--outline-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled]) {
-    background: transparent;
-    box-shadow: var(--ring-line2);
+  .ui-btn.ui-icon-btn--mark-on {
+    position: relative;
+  }
+  .ui-btn.ui-icon-btn--mark-on::after {
+    content: '';
+    position: absolute;
+    inset: auto var(--s-6) 0;
+    height: 2px;
+    border-radius: var(--r-full);
+    background: var(--fg);
+    opacity: 0;
+    transform: scaleX(0.4);
+    transition: opacity var(--dur-snap) var(--ease), transform var(--dur-base) var(--ease-snap);
+    pointer-events: none;
+  }
+  .ui-btn.ui-icon-btn--mark-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled]) {
+    background: var(--hover);
     color: var(--fg);
   }
-  .ui-btn.ui-icon-btn--outline-on[data-active='partial']:not([data-disabled]) {
+  .ui-btn.ui-icon-btn--mark-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled])::after {
+    opacity: 1;
+    transform: none;
+  }
+  .ui-btn.ui-icon-btn--mark-on[data-active='partial']:not([data-disabled]) {
     background: transparent;
     box-shadow: none;
     color: var(--fg2);
-    outline: var(--hair, 1px) dashed var(--line-ctl);
-    outline-offset: calc(-1 * var(--hair, 1px));
+  }
+  .ui-btn.ui-icon-btn--mark-on[data-active='partial']:not([data-disabled])::after {
+    opacity: 1;
+    transform: none;
+    background: repeating-linear-gradient(to right, var(--fg3) 0 2px, transparent 2px 4px);
   }
   @media (hover: hover) {
-    .ui-btn.ui-icon-btn--outline-on:is([aria-pressed='true'], [data-active]):hover:not([data-disabled]) {
-      background: var(--hover);
+    .ui-btn.ui-icon-btn--mark-on:is([aria-pressed='true'], [data-active]):hover:not([data-disabled]) {
+      background: var(--press);
     }
   }
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary)[data-pressed]:not([data-disabled]):not([data-pending]) {
@@ -1547,7 +1569,9 @@
 @layer primitives {
   .ui-meta-num {
     color: var(--fg3);
+    font-family: var(--font-num);
     font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
   }
 
   .ui-notice {

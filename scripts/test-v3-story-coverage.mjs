@@ -15,7 +15,8 @@ const STORY_FILES = [
   join(UI_DIR, 'Table.stories.tsx'),
   join(UI_DIR, 'Splitter.stories.tsx'),
   join(UI_DIR, 'SourceCard.stories.tsx'),
-  join(UI_DIR, 'PanelTabs.stories.tsx')
+  join(UI_DIR, 'PanelTabs.stories.tsx'),
+  join(UI_DIR, 'V3Style.stories.tsx')
 ]
 
 const ALLOWED_STATES = new Set([
@@ -126,6 +127,9 @@ const REQUIRED = {
   ShimmerText: ['default', 'loading'],
   CompletionSweep: ['default', 'tone-success'],
   Separator: ['default', 'orientation-horizontal', 'orientation-vertical'],
+  AsciiRule: ['default', 'theme-light', 'theme-dark'],
+  AsciiSpark: ['default', 'tone-accent', 'loading'],
+  TermSpinner: ['default', 'loading'],
   Slider: ['default', 'disabled', 'invalid', 'orientation-vertical'],
   Tree: ['default', 'selected', 'disabled', 'empty'],
   TreeItem: ['default', 'selected', 'disabled'],

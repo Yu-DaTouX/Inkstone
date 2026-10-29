@@ -11,7 +11,7 @@ export interface IconButtonProps
   'aria-label': string
   variant?: 'ghost' | 'plain' | 'secondary' | 'danger'
   size?: ButtonSize
-  pressedTone?: 'accent' | 'neutral' | 'outline'
+  pressedTone?: 'accent' | 'neutral' | 'mark'
   children: ReactNode
 }
 
@@ -32,7 +32,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       ref={ref}
       variant={variant}
       size={size}
-      className={composeRenderProps(className, (cn) => cx('ui-icon-btn', pressedTone === 'neutral' && 'ui-icon-btn--neutral-on', pressedTone === 'outline' && 'ui-icon-btn--outline-on', cn))}
+      className={composeRenderProps(className, (cn) => cx('ui-icon-btn', pressedTone === 'neutral' && 'ui-icon-btn--neutral-on', pressedTone === 'mark' && 'ui-icon-btn--mark-on', cn))}
     >
       {children}
     </Button>

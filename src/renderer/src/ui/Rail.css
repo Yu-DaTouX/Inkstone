@@ -70,6 +70,8 @@
   .ui-rail-value__delta {
     display: inline-flex;
     gap: var(--s-4);
+    font-family: var(--font-num);
+    font-size: 0.94em;
   }
 
   .ui-rail-value__delta > [data-sign='add'] {

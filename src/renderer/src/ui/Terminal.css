@@ -1,0 +1,118 @@
+@layer primitives {
+  .ui-ascii-rule {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+    color: var(--ascii-dim);
+    font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);
+    letter-spacing: 0;
+    user-select: none;
+  }
+
+  .ui-ascii-rule[data-tone='ink'] {
+    color: var(--ascii-ink);
+  }
+
+  .ui-ascii-rule__label {
+    flex: none;
+    color: var(--fg3);
+    font-family: var(--font-ui);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
+
+  .ui-ascii-rule__fill {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--s-32)), transparent);
+  }
+
+  .ui-ascii-rule[data-align='center'] > .ui-ascii-rule__fill:first-child {
+    mask-image: linear-gradient(to left, #000 calc(100% - var(--s-32)), transparent);
+    direction: rtl;
+  }
+
+  .ui-ascii-spark {
+    display: inline-flex;
+    align-items: flex-end;
+    color: var(--ascii-ink);
+    font: var(--t-body) / 1 var(--font-mono);
+    letter-spacing: 0.08em;
+    white-space: pre;
+    user-select: none;
+  }
+
+  .ui-ascii-spark[data-tone='accent'] {
+    color: var(--accent-t);
+  }
+
+  .ui-ascii-spark__cell {
+    display: inline-block;
+    animation: ui-ascii-rise var(--dur-slow) var(--ease-spring) both;
+    animation-delay: calc(var(--i, 0) * var(--dur-stagger));
+  }
+
+  .ui-ascii-spark__cell[data-peak] {
+    color: var(--fg);
+  }
+
+  @keyframes ui-ascii-rise {
+    from {
+      opacity: 0;
+      transform: translateY(40%);
+    }
+  }
+
+  .ui-term-spinner {
+    display: inline-block;
+    flex: none;
+    width: 1ch;
+    height: 1em;
+    overflow: hidden;
+    color: var(--run-t);
+    font: inherit;
+    font-family: var(--font-mono);
+    line-height: 1;
+    vertical-align: -0.1em;
+  }
+
+  .ui-term-spinner__strip {
+    display: flex;
+    flex-direction: column;
+    animation: ui-term-spin calc(var(--dur-frame) * 10) steps(10) infinite;
+  }
+
+  .ui-term-spinner__strip > span {
+    display: block;
+    height: 1em;
+  }
+
+  @keyframes ui-term-spin {
+    to {
+      transform: translateY(-10em);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-ascii-spark__cell,
+    .ui-term-spinner__strip {
+      animation: none;
+    }
+  }
+
+  :root[data-reduce-motion='true'] :is(.ui-ascii-spark__cell, .ui-term-spinner__strip) {
+    animation: none;
+  }
+}
+
+@layer utilities {
+  .ui-num {
+    font-family: var(--font-num);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: normal;
+    letter-spacing: 0;
+  }
+}

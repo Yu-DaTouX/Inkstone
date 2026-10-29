@@ -203,10 +203,10 @@ export const ButtonStates: Story = {
         <IconButton aria-label="中性未按下" pressedTone="neutral" aria-pressed={false} onPress={() => undefined}>
           <GearGlyph />
         </IconButton>
-        <IconButton aria-label="描边按下" pressedTone="outline" aria-pressed onPress={() => undefined}>
+        <IconButton aria-label="标记按下" pressedTone="mark" aria-pressed onPress={() => undefined}>
           <GearGlyph />
         </IconButton>
-        <IconButton aria-label="描边部分" pressedTone="outline" aria-pressed data-active="partial" onPress={() => undefined}>
+        <IconButton aria-label="标记部分" pressedTone="mark" aria-pressed data-active="partial" onPress={() => undefined}>
           <GearGlyph />
         </IconButton>
       </Row>

@@ -141,7 +141,7 @@
     margin-inline-start: auto;
   }
 
-  .ui-card__time { font-variant-numeric: tabular-nums; }
+  .ui-card__time { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 
   @media (prefers-reduced-motion: reduce) {
     .ui-card__chev,
