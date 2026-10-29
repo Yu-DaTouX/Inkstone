@@ -8,7 +8,7 @@ import type { DevicePaneProps } from '../workbench/types'
 import './device.css'
 
 const POLL_MS = 3000
-const TAP_DISTANCE = 0.015
+const BOOT_WAIT_MS = 60_000
 
 export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
   const t = useT()
@@ -16,11 +16,12 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
   const [avds, setAvds] = useState<string[]>([])
   const [devices, setDevices] = useState<AndroidDevice[]>([])
   const [serial, setSerial] = useState<string | null>(null)
-  const [frameUrl, setFrameUrl] = useState<string | null>(null)
+  const [live, setLive] = useState(false)
+  const [bootingAt, setBootingAt] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [text, setText] = useState('')
-  const press = useRef<{ x: number; y: number; at: number } | null>(null)
-  const imageRef = useRef<HTMLImageElement | null>(null)
+  const press = useRef<{ pointer: number; frame: number; pending: { x: number; y: number } | null } | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -31,6 +32,7 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
       if (!ready) return
       const list = await window.yan.android.devices()
       setDevices(list)
+      setBootingAt((at) => (at === null || list.some((device) => device.emulator) || Date.now() - at > BOOT_WAIT_MS ? null : at))
       setSerial((current) => (current && list.some((device) => device.serial === current && device.state === 'device') ? current : list.find((device) => device.state === 'device')?.serial ?? null))
       setError('')
     } catch (cause) {
@@ -47,20 +49,40 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
 
   useEffect(() => {
     if (!visible || !serial) return undefined
-    let url: string | null = null
+    let decoder: VideoDecoder | null = null
+    let codec = ''
+    const close = (): void => {
+      if (decoder && decoder.state !== 'closed') decoder.close()
+      decoder = null
+    }
+    const draw = (image: VideoFrame): void => {
+      const canvas = canvasRef.current
+      const context = canvas?.getContext('2d')
+      if (canvas && context) {
+        if (canvas.width !== image.displayWidth) canvas.width = image.displayWidth
+        if (canvas.height !== image.displayHeight) canvas.height = image.displayHeight
+        context.drawImage(image, 0, 0)
+        setLive(true)
+      }
+      image.close()
+    }
     const off = window.yan.android.onFrame((frame) => {
       if (frame.serial !== serial) return
-      const next = URL.createObjectURL(new Blob([frame.png as BlobPart], { type: 'image/png' }))
-      setFrameUrl(next)
-      if (url) URL.revokeObjectURL(url)
-      url = next
+      if (frame.key && (!decoder || decoder.state === 'closed' || frame.codec !== codec)) {
+        close()
+        codec = frame.codec
+        decoder = new VideoDecoder({ output: draw, error: close })
+        decoder.configure({ codec, optimizeForLatency: true })
+      }
+      if (!decoder || decoder.state !== 'configured') return
+      decoder.decode(new EncodedVideoChunk({ type: frame.key ? 'key' : 'delta', timestamp: frame.sequence * 1000, data: frame.data }))
     })
     void window.yan.android.watch(serial)
     return () => {
       off()
       void window.yan.android.watch(null)
-      if (url) URL.revokeObjectURL(url)
-      setFrameUrl(null)
+      close()
+      setLive(false)
     }
   }, [visible, serial])
 
@@ -69,29 +91,47 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
     window.yan.android.control(serial, action).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
   }, [serial])
 
-  const point = (event: PointerEvent<HTMLImageElement> | WheelEvent<HTMLImageElement>): { x: number; y: number } | null => {
-    const rect = imageRef.current?.getBoundingClientRect()
+  const point = (event: PointerEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
+    const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect || !rect.width || !rect.height) return null
     return { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height }
   }
 
-  const onPointerDown = (event: PointerEvent<HTMLImageElement>): void => {
+  const onPointerDown = (event: PointerEvent<HTMLCanvasElement>): void => {
     const at = point(event)
-    if (!at) return
+    if (!at || event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
-    press.current = { ...at, at: performance.now() }
+    press.current = { pointer: event.pointerId, frame: 0, pending: null }
+    send({ kind: 'touch', phase: 'down', ...at })
   }
 
-  const onPointerUp = (event: PointerEvent<HTMLImageElement>): void => {
-    const start = press.current
+  const onPointerMove = (event: PointerEvent<HTMLCanvasElement>): void => {
+    const touch = press.current
+    const at = point(event)
+    if (!touch || touch.pointer !== event.pointerId || !at) return
+    touch.pending = at
+    if (touch.frame) return
+    touch.frame = requestAnimationFrame(() => {
+      touch.frame = 0
+      if (press.current !== touch || !touch.pending) return
+      send({ kind: 'touch', phase: 'move', ...touch.pending })
+      touch.pending = null
+    })
+  }
+
+  const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {
+    const touch = press.current
+    if (!touch || touch.pointer !== event.pointerId) return
     press.current = null
-    const end = point(event)
-    if (!start || !end) return
-    if (Math.hypot(end.x - start.x, end.y - start.y) < TAP_DISTANCE) send({ kind: 'tap', x: start.x, y: start.y })
-    else send({ kind: 'swipe', x: start.x, y: start.y, toX: end.x, toY: end.y, ms: Math.min(1500, Math.max(120, performance.now() - start.at)) })
+    if (touch.frame) cancelAnimationFrame(touch.frame)
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect || !rect.width || !rect.height) return
+    const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+    const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
+    send({ kind: 'touch', phase: 'up', x, y })
   }
 
-  const onWheel = (event: WheelEvent<HTMLImageElement>): void => {
+  const onWheel = (event: WheelEvent<HTMLCanvasElement>): void => {
     const at = point(event)
     if (!at) return
     const distance = event.deltaY > 0 ? -0.3 : 0.3
@@ -111,8 +151,9 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
   }
 
   const online = devices.filter((device) => device.state === 'device')
-  const pending = devices.filter((device) => device.state !== 'device')
-  const running = new Set(online.filter((device) => device.emulator).map((device) => device.serial))
+  const pending = devices.filter((device) => device.state !== 'device' && !device.emulator)
+  const starting = bootingAt !== null || devices.some((device) => device.emulator && device.state !== 'device')
+  const emulatorUp = starting || online.some((device) => device.emulator)
 
   return (
     <div className="device-pane" data-testid="device-pane">
@@ -139,20 +180,19 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
       {serial ? (
         <>
           <div className="device-pane__screen">
-            {frameUrl ? (
-              <img
-                ref={imageRef}
-                className="device-pane__frame"
-                src={frameUrl}
-                alt={t('android.pane.screen')}
-                draggable={false}
-                onPointerDown={onPointerDown}
-                onPointerUp={onPointerUp}
-                onWheel={onWheel}
-              />
-            ) : (
-              <p className="device-pane__hint">{t('android.pane.connecting')}</p>
-            )}
+            <canvas
+              ref={canvasRef}
+              className="device-pane__frame"
+              role="img"
+              aria-label={t('android.pane.screen')}
+              hidden={!live}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onWheel={onWheel}
+            />
+            {live ? null : <p className="device-pane__hint">{t('android.pane.connecting')}</p>}
           </div>
           <div className="device-pane__bar device-pane__bar--bottom">
             <IconButton aria-label={t('android.pane.back')} onPress={() => send({ kind: 'key', key: 'back' })}><ArrowLeft size={15} aria-hidden /></IconButton>
@@ -175,13 +215,13 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
         <EmptyState
           className="device-pane__empty"
           data-testid="device-pane-empty"
-          title={t('android.pane.noDevice')}
-          description={pending.length ? t('android.pane.unauthorized', { list: pending.map((device) => `${device.serial}（${device.state}）`).join('、') }) : t('android.pane.noDeviceBody')}
+          title={starting ? t('android.pane.starting') : t('android.pane.noDevice')}
+          description={starting ? t('android.pane.startingBody') : pending.length ? t('android.pane.unauthorized', { list: pending.map((device) => `${device.serial}（${device.state}）`).join('、') }) : t('android.pane.noDeviceBody')}
           action={
-            avds.filter((avd) => !running.has(avd)).length ? (
+            emulatorUp ? null : avds.length ? (
               <div className="device-pane__avds">
                 {avds.map((avd) => (
-                  <Button key={avd} variant="secondary" onPress={() => void window.yan.android.boot(avd).then(refresh, (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))}>
+                  <Button key={avd} variant="secondary" onPress={() => { setBootingAt(Date.now()); void window.yan.android.boot(avd).then(refresh, (cause: unknown) => { setBootingAt(null); setError(cause instanceof Error ? cause.message : String(cause)) }) }}>
                     {t('android.pane.boot', { name: avd })}
                   </Button>
                 ))}

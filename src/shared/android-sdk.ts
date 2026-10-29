@@ -42,6 +42,7 @@ export interface AndroidDevice {
 }
 
 export type AndroidControl =
+  | { kind: 'touch'; phase: 'down' | 'move' | 'up'; x: number; y: number }
   | { kind: 'tap'; x: number; y: number }
   | { kind: 'swipe'; x: number; y: number; toX: number; toY: number; ms?: number }
   | { kind: 'key'; key: 'back' | 'home' | 'recents' | 'power' | 'wake' | 'volume_up' | 'volume_down' }
@@ -49,8 +50,8 @@ export type AndroidControl =
 
 export interface AndroidFrame {
   serial: string
-  png: Uint8Array
-  width: number
-  height: number
+  data: Uint8Array
+  key: boolean
+  codec: string
   sequence: number
 }

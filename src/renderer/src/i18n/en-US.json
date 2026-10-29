@@ -2492,5 +2492,7 @@
   "android.pane.noDevice": "No device connected",
   "android.pane.noDeviceBody": "Plug in a phone with USB debugging on, or start an emulator.",
   "android.pane.unauthorized": "Waiting for authorization: {list}. Allow USB debugging on the phone.",
-  "android.pane.boot": "Start {name}"
+  "android.pane.boot": "Start {name}",
+  "android.pane.starting": "Emulator is starting",
+  "android.pane.startingBody": "The first boot can take a minute or two. The screen appears here once it finishes."
 }

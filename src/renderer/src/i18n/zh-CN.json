@@ -2492,5 +2492,7 @@
   "android.pane.noDevice": "没有连接的设备",
   "android.pane.noDeviceBody": "用 USB 连上开启了「USB 调试」的手机，或者启动一个模拟器。",
   "android.pane.unauthorized": "等待授权：{list}。请在手机上允许 USB 调试。",
-  "android.pane.boot": "启动 {name}"
+  "android.pane.boot": "启动 {name}",
+  "android.pane.starting": "模拟器正在启动",
+  "android.pane.startingBody": "首次开机可能要一两分钟，开机完成后画面会自动出现。"
 }

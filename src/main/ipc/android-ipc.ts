@@ -11,7 +11,7 @@ function isComponent(value: unknown): value is AndroidComponentId {
 
 function isControl(value: unknown): value is AndroidControl {
   const raw = value as { kind?: unknown } | null
-  return !!raw && ['tap', 'swipe', 'key', 'text'].includes(String(raw.kind))
+  return !!raw && ['touch', 'tap', 'swipe', 'key', 'text'].includes(String(raw.kind))
 }
 
 export function registerAndroidIpc(ipc: IpcRegistrar, window: () => BrowserWindow | null): void {

@@ -88,6 +88,14 @@ export function javaOnPath(): boolean {
   try { return spawnSync('java', ['-version'], { windowsHide: true, timeout: 5000 }).status === 0 } catch { return false }
 }
 
+export function emulatorEnv(): Record<string, string> {
+  const env = androidAgentEnv()
+  if (!env.PATH) return env
+  const own = join(env.ANDROID_HOME, 'platform-tools')
+  const path = env.PATH.split(delimiter).filter((dir) => dir === own || !existsSync(join(dir, exe('adb'))))
+  return { ...env, PATH: path.join(delimiter) }
+}
+
 export function androidAgentEnv(): Record<string, string> {
   const { root } = resolveSdkRoot()
   if (!adbPath(root)) return {}
