@@ -1,8 +1,18 @@
-import { useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+  type ReactNode
+} from 'react'
 import { VList, type VListHandle } from 'virtua'
-import { ChevronDown, ChevronUp, Columns2, Rows3 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Columns2, Plus, Rows3 } from 'lucide-react'
 import { Button, IconButton, cx } from '../../ui'
 import { alignHunk, type DiffSideRow } from './align'
+import { DiffAnnotationEditor, type DiffAnnotate, type DiffAnnotateLabels } from './DiffAnnotation'
 import { foldLines } from './fold'
 import {
   byteLength,
@@ -29,6 +39,7 @@ export interface DiffViewProps {
   className?: string
   maxBytes?: number
   lineSlot?: (line: DiffLine, side: 'new' | 'old') => ReactNode
+  annotate?: DiffAnnotate
 }
 
 type RenderRow =
@@ -51,7 +62,8 @@ export function DiffView({
   lang,
   className,
   maxBytes = DIFF_LIMITS.maxBytes,
-  lineSlot
+  lineSlot,
+  annotate
 }: DiffViewProps): ReactElement {
   const text = useMemo(() => diffViewText(lang ?? 'zh-CN'), [lang])
   const [internalMode, setInternalMode] = useState<DiffViewMode>(defaultMode)
@@ -59,12 +71,16 @@ export function DiffView({
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [hunkCursor, setHunkCursor] = useState(-1)
   const [forceLarge, setForceLarge] = useState(false)
+  const [selection, setSelection] = useState<{ from: number; to: number } | null>(null)
+  const [draft, setDraft] = useState<AnnotationDraft | null>(null)
   const [seenPatch, setSeenPatch] = useState(patch)
   if (seenPatch !== patch) {
     setSeenPatch(patch)
     setExpanded(new Set())
     setHunkCursor(-1)
     setForceLarge(false)
+    setSelection(null)
+    setDraft(null)
   }
 
   const parsed = useMemo(() => parsePatch(patch), [patch])
@@ -87,6 +103,8 @@ export function DiffView({
   const setMode = (next: DiffViewMode): void => {
     if (modeProp === undefined) setInternalMode(next)
     onModeChange?.(next)
+    setSelection(null)
+    setDraft(null)
   }
   const expandGap = (gapId: string): void => {
     setExpanded((prev) => {
@@ -99,6 +117,108 @@ export function DiffView({
     if (rows.length >= DIFF_LIMITS.virtualizeAt) vlistRef.current?.scrollToIndex(index, { align: 'start' })
     else bodyRef.current?.querySelector<HTMLElement>(`[data-row="${index}"]`)?.scrollIntoView({ block: 'start' })
   }
+  const dragRef = useRef<{ from: number; to: number } | null>(null)
+  const stopDragRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => stopDragRef.current?.(), [])
+
+  const openAnnotation = (from: number, to: number): void => {
+    const first = Math.max(0, Math.min(from, to))
+    const last = Math.min(rows.length - 1, Math.max(from, to))
+    if (!annotationRange(rows, first, last)) return
+    setSelection(null)
+    setDraft({ at: last, from: first, to: last, body: '' })
+  }
+
+  const beginAnnotation = (event: ReactPointerEvent<HTMLButtonElement>, index: number): void => {
+    if (!annotate || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    stopDragRef.current?.()
+    setDraft(null)
+    setSelection({ from: index, to: index })
+    dragRef.current = { from: index, to: index }
+    const move = (moveEvent: PointerEvent): void => {
+      const host = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest<HTMLElement>('[data-row]')
+      const value = host ? Number(host.dataset.row) : Number.NaN
+      if (!Number.isInteger(value)) return
+      const next = { from: index, to: Math.max(0, Math.min(rows.length - 1, value)) }
+      dragRef.current = next
+      setSelection(next)
+    }
+    const stop = (): void => {
+      stopDragRef.current = null
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', abort)
+      window.removeEventListener('keydown', escape, true)
+    }
+    const finish = (): void => {
+      const dragged = dragRef.current
+      stop()
+      dragRef.current = null
+      if (dragged) openAnnotation(dragged.from, dragged.to)
+      else setSelection(null)
+    }
+    const abort = (): void => {
+      stop()
+      dragRef.current = null
+      setSelection(null)
+    }
+    const escape = (press: KeyboardEvent): void => {
+      if (press.key !== 'Escape') return
+      press.preventDefault()
+      abort()
+    }
+    stopDragRef.current = stop
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', abort)
+    window.addEventListener('keydown', escape, true)
+  }
+
+  const annotationOf = (index?: number): RowAnnotate | undefined => {
+    if (!annotate || index === undefined) return undefined
+    return {
+      labels: annotate.labels,
+      selected:
+        selection !== null &&
+        index >= Math.min(selection.from, selection.to) &&
+        index <= Math.max(selection.from, selection.to),
+      start: (event: ReactPointerEvent<HTMLButtonElement>) => beginAnnotation(event, index),
+      open: () => openAnnotation(index, index)
+    }
+  }
+
+  const draftRange = draft ? annotationRange(rows, draft.from, draft.to) : null
+
+  const submitAnnotation = (): void => {
+    if (!annotate || !draft || !draftRange) return
+    const body = draft.body.trim()
+    if (!body) return
+    annotate.onSubmit({ start: draftRange.start, end: draftRange.end, code: draftRange.code, text: body })
+    setDraft(null)
+  }
+
+  const renderAnnotated = (row: RenderRow, index?: number): ReactElement => (
+    <Fragment key={row.key}>
+      {renderRow(row, text, expandGap, lineSlot, index, annotationOf(index))}
+      {annotate && draft && draftRange && draft.at === index ? (
+        <DiffAnnotationEditor
+          labels={annotate.labels}
+          range={
+            draftRange.start === draftRange.end
+              ? annotate.labels.line(draftRange.start)
+              : annotate.labels.lines(draftRange.start, draftRange.end)
+          }
+          value={draft.body}
+          onChange={(value) => setDraft((prev) => (prev ? { ...prev, body: value } : prev))}
+          onSubmit={submitAnnotation}
+          onCancel={() => setDraft(null)}
+        />
+      ) : null}
+    </Fragment>
+  )
+
   const goHunk = (delta: number): void => {
     if (hunkRows.length === 0) return
     const next = hunkCursor < 0 ? (delta > 0 ? 0 : hunkRows.length - 1) : Math.max(0, Math.min(hunkRows.length - 1, hunkCursor + delta))
@@ -132,11 +252,11 @@ export function DiffView({
       <div className="diff-view__empty">{text.empty}</div>
     ) : virtual ? (
       <VList ref={vlistRef} data={rows} className="diff-view__body" bufferSize={600}>
-        {(row: RenderRow) => renderRow(row, text, expandGap, lineSlot)}
+        {renderAnnotated}
       </VList>
     ) : (
       <div className="diff-view__body" ref={bodyRef}>
-        {rows.map((row, index) => renderRow(row, text, expandGap, lineSlot, index))}
+        {rows.map((row, index) => renderAnnotated(row, index))}
       </div>
     )
 
@@ -263,12 +383,77 @@ function buildRows(
 
 type LineSlot = (line: DiffLine, side: 'new' | 'old') => ReactNode
 
+interface AnnotationDraft {
+  at: number
+  from: number
+  to: number
+  body: string
+}
+
+interface RowAnnotate {
+  labels: DiffAnnotateLabels
+  selected: boolean
+  start: (event: ReactPointerEvent<HTMLButtonElement>) => void
+  open: () => void
+}
+
+interface AnnotationRange {
+  start: number
+  end: number
+  code: string
+}
+
+function lineOfRow(row: RenderRow): DiffLine | null {
+  if (row.kind === 'line') return row.line
+  if (row.kind === 'split') return row.row.right ?? row.row.left
+  return null
+}
+
+function annotationRange(rows: readonly RenderRow[], from: number, to: number): AnnotationRange | null {
+  const first = Math.max(0, Math.min(from, to))
+  const last = Math.min(rows.length - 1, Math.max(from, to))
+  const texts: string[] = []
+  let start: number | null = null
+  let end: number | null = null
+  for (let index = first; index <= last; index += 1) {
+    const row = rows[index]
+    const line = row ? lineOfRow(row) : null
+    if (!line) continue
+    const number = unifiedLineNumber(line)
+    if (number === null) continue
+    if (start === null) start = number
+    end = number
+    texts.push(line.text)
+  }
+  if (start === null || end === null) return null
+  return { start, end: Math.max(start, end), code: texts.join('\n') }
+}
+
+function annotateButton(annotate: RowAnnotate, number: number | null): ReactElement {
+  const label = number === null ? annotate.labels.add : `${annotate.labels.add} ${number}`
+  return (
+    <button
+      type="button"
+      className="diff-view__annotate"
+      aria-label={label}
+      title={label}
+      onPointerDown={annotate.start}
+      onClick={(event) => {
+        if (event.detail === 0) annotate.open()
+      }}
+    >
+      <Plus size={11} aria-hidden="true" />
+    </button>
+  )
+}
+
 function renderRow(
   row: RenderRow,
   text: DiffViewText,
   onExpand: (gapId: string) => void,
   lineSlot?: LineSlot,
-  rowIndex?: number
+  rowIndex?: number,
+  annotate?: RowAnnotate
 ): ReactElement {
   const attrs = rowIndex === undefined ? {} : { 'data-row': rowIndex }
   switch (row.kind) {
@@ -308,8 +493,12 @@ function renderRow(
           className={cx('diff-view__line', `diff-view__line--${row.line.kind}`)}
           data-old-line={row.line.oldLine ?? undefined}
           data-new-line={row.line.newLine ?? undefined}
+          data-annotate-selected={annotate?.selected ? '' : undefined}
         >
-          <span className="diff-view__num">{unifiedLineNumber(row.line) ?? ''}</span>
+          <span className="diff-view__num">
+            {annotate ? annotateButton(annotate, unifiedLineNumber(row.line)) : null}
+            {unifiedLineNumber(row.line) ?? ''}
+          </span>
           <span className="diff-view__code">
             <span className="diff-view__sign" aria-hidden="true">
               {row.line.kind === 'add' ? '+' : row.line.kind === 'del' ? '−' : ' '}
@@ -336,7 +525,7 @@ function renderRow(
         </div>
       )
     case 'split':
-      return <SplitRow key={row.key} {...attrs} row={row.row} lineSlot={lineSlot} />
+      return <SplitRow key={row.key} {...attrs} row={row.row} lineSlot={lineSlot} annotate={annotate} />
     case 'note':
       return (
         <div key={row.key} {...attrs} className="diff-view__note">
@@ -349,10 +538,12 @@ function renderRow(
 function SplitRow({
   row,
   lineSlot,
+  annotate,
   'data-row': dataRow
 }: {
   row: DiffSideRow
   lineSlot?: LineSlot
+  annotate?: RowAnnotate
   'data-row'?: number
 }): ReactElement {
   const diff = useMemo(
@@ -364,9 +555,13 @@ function SplitRow({
     if (!line) return <div className="diff-view__cell diff-view__cell--empty" />
     const sideClass = row.kind === 'context' ? 'diff-view__cell--context' : side === 'left' ? 'diff-view__cell--del' : 'diff-view__cell--add'
     const segments = diff ? (side === 'left' ? diff.left : diff.right) : null
+    const annotated = annotate && (row.right ? side === 'right' : side === 'left') ? annotate : undefined
     return (
       <div className={cx('diff-view__cell', sideClass)}>
-        <span className="diff-view__gutter">{side === 'left' ? line.oldLine ?? '' : line.newLine ?? ''}</span>
+        <span className="diff-view__gutter" data-annotate={annotated ? '' : undefined}>
+          {annotated ? annotateButton(annotated, side === 'left' ? line.oldLine : line.newLine) : null}
+          {side === 'left' ? line.oldLine ?? '' : line.newLine ?? ''}
+        </span>
         <span className="diff-view__text">
           {segments
             ? segments.map((segment, index) =>
@@ -387,7 +582,7 @@ function SplitRow({
     )
   }
   return (
-    <div className="diff-view__split" data-row={dataRow}>
+    <div className="diff-view__split" data-row={dataRow} data-annotate-selected={annotate?.selected ? '' : undefined}>
       {cell('left')}
       {cell('right')}
     </div>

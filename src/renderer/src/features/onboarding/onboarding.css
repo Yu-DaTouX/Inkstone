@@ -59,6 +59,7 @@
     height: 18px;
     border: 1px solid var(--line2);
     border-radius: var(--r-full);
+    corner-shape: round;
     font-size: var(--t-caption);
     line-height: 1;
     font-variant-numeric: tabular-nums;

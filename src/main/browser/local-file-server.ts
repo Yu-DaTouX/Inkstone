@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { closeSync, createReadStream, openSync, readSync, statSync } from 'node:fs'
+import { closeSync, createReadStream, openSync, readSync, realpathSync, statSync } from 'node:fs'
 import { declaredHtmlCharset } from '../html-charset'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
@@ -82,6 +82,7 @@ function rootKey(root: string): string {
 }
 
 function startRoot(root: string): Promise<LocalRoot> {
+  const realRoot = realpathSync(root)
   const prefix = `/${randomBytes(9).toString('hex')}`
   const server = createServer((req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -106,7 +107,17 @@ function startRoot(root: string): Promise<LocalRoot> {
       return
     }
     try {
-      if (statSync(target).isDirectory()) target = join(target, 'index.html')
+      const realTarget = realpathSync(target)
+      if (!inside(realRoot, realTarget)) {
+        res.writeHead(403).end()
+        return
+      }
+      if (statSync(realTarget).isDirectory()) target = join(target, 'index.html')
+      target = realpathSync(target)
+      if (!inside(realRoot, target) || !localRequestAllowed(realRoot, prefix, target, req.headers)) {
+        res.writeHead(403).end()
+        return
+      }
       if (!MIME[extname(target).toLowerCase()]) throw new Error('not a web asset')
       const stat = statSync(target)
       if (!stat.isFile()) throw new Error('not file')

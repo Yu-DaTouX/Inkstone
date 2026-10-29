@@ -27,6 +27,9 @@ import { FlatSessionList, FlatToolbar, ProjectScopeButton, WorkingShelf, useArch
 import { turnModelLabel } from '../session/turn-model-label'
 import { buildContentMatches } from './content-search'
 import { paneShowsSession, sessionStatusKind, sessionUnread, visiblePaneSessions } from './session-status'
+import { activeSessions, isSnoozed, snoozedSessions } from './session-snooze'
+import { useSnoozeClock } from './use-session-snooze'
+import { SnoozeShelf } from './SnoozeShelf'
 import './Sidebar.css'
 
 function toggleKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
@@ -78,6 +81,9 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   }
 
   const sessions = useStore((s) => s.sessions)
+  const snoozeNow = useSnoozeClock()
+  const listedSessions = useMemo(() => activeSessions(sessions, snoozeNow), [sessions, snoozeNow])
+  const snoozedRows = useMemo(() => snoozedSessions(sessions, snoozeNow), [sessions, snoozeNow])
   const session = useStore((s) => s.session)
   const settings = useStore((s) => s.settings)
   const titles = useStore((s) => s.titles)
@@ -122,7 +128,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const groups = useMemo(
     () =>
       buildSidebarGroups({
-        sessions,
+        sessions: listedSessions,
         query,
         projects: settings?.projects ?? [],
         projectNames: settings?.projectNames ?? {},
@@ -132,14 +138,14 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         manualTitles,
         pinnedLabel: flat ? undefined : text.pinnedGroup
       }),
-    [sessions, query, settings?.projects, settings?.projectNames, currentProjectId, currentCwd, titles, manualTitles, text.pinnedGroup, flat]
+    [listedSessions, query, settings?.projects, settings?.projectNames, currentProjectId, currentCwd, titles, manualTitles, text.pinnedGroup, flat]
   )
   const scopeGroups = useMemo(
     () =>
       flat
         ? withIdleProjects(
             buildSidebarGroups({
-              sessions,
+              sessions: listedSessions,
               query: '',
               projects: settings?.projects ?? [],
               projectNames: settings?.projectNames ?? {},
@@ -150,7 +156,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
             settings?.projectNames ?? {}
           )
         : [],
-    [flat, sessions, settings?.projects, settings?.projectNames, titles, manualTitles]
+    [flat, listedSessions, settings?.projects, settings?.projectNames, titles, manualTitles]
   )
 
   const archivedView = useMemo(
@@ -213,7 +219,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
       item,
       title: manualTitles[item.id] ?? titles[item.id] ?? item.title,
       isCurrent,
-      status: sessionStatusKind({ phase: run?.phase ?? null, unread, archived: !!item.archivedAt }),
+      status: sessionStatusKind({ phase: run?.phase ?? null, unread, archived: !!item.archivedAt, markedUnread: item.markedUnread }),
       code: run?.code,
       model: run?.model?.label || (item.model ? turnModelLabel(item.model, models).label : undefined),
       modelRef: run?.model ?? item.model
@@ -284,6 +290,11 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
       if (useStore.getState().peekedPath !== item.path) return
       markSessionRunsSeen(item)
     })
+  }
+
+  const openSnoozed = (item: SessionSummary): void => {
+    if (isSnoozed(item, Date.now())) void useStore.getState().setSessionSnoozed(item.id, null)
+    openSession(item)
   }
   const archivedSlimRow = useArchivedSlimRow(openSession)
 
@@ -419,7 +430,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           />
         ) : (
           <div className="v3-side-active" data-archive-restore data-drop-label={own.restoreDrop}>
-            {groups.length === 0 && !contentVisible ? (
+            {groups.length === 0 && snoozedRows.length === 0 && !contentVisible ? (
             <EmptyState size="sm" title={query ? t('rail.noMatch') : t('rail.empty')} />
           ) : flat ? (
             <FlatSessionList
@@ -487,6 +498,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
               )
             })
           )}
+          <SnoozeShelf rows={snoozedRows.map(rowState)} now={snoozeNow} onOpen={openSnoozed} />
           </div>
         )}
         {showArchived ? null : (

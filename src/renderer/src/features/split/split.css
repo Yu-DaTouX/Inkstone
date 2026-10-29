@@ -48,6 +48,7 @@
     position: relative;
     padding: var(--s-4) var(--s-10);
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--accent);
     color: var(--on-accent);
     white-space: nowrap;
@@ -90,6 +91,7 @@
 
   .v3-session-ghost[data-kind='label'] .v3-session-ghost-row {
     border-radius: var(--r-full);
+    corner-shape: round;
   }
 
   .v3-session-ghost-clone {

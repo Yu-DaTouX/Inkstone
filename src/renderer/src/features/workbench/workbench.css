@@ -51,6 +51,7 @@
   .wb-ctx-bar {
     background: var(--sunken);
     border-radius: var(--r-full);
+    corner-shape: round;
   }
 
   .wb-ctx-seg.c-system,
@@ -210,6 +211,7 @@
     position: absolute;
     z-index: 2;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--accent);
     pointer-events: none;
   }
@@ -269,6 +271,7 @@
 
   .wb-pane-sep-bar {
     border-radius: var(--r-full);
+    corner-shape: round;
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur-snap) ease;
@@ -311,6 +314,7 @@
     width: 32px;
     height: 3px;
     border-radius: var(--r-full);
+    corner-shape: round;
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur-fast) ease;
@@ -1260,10 +1264,10 @@
 
   .wb-tile:is([data-dragging='1'], [data-picked='1']) {
     background: var(--surface);
-    box-shadow: inset 0 0 0 1px var(--accent);
+    box-shadow: inset 0 0 0 var(--hair, 1px) var(--accent);
   }
 
   .wb-tile[data-dragging='1'] {
-    box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-pop);
+    box-shadow: inset 0 0 0 var(--hair, 1px) var(--accent), var(--shadow-pop);
   }
 }

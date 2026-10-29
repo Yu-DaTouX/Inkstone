@@ -10,6 +10,7 @@ import { deriveArtifactIdentityKey, useNearViewport, usePreviewSnapshot } from '
 import { artifactVersions } from '../artifacts/model'
 import type { AssistantArtifact, UIMessage } from '../../../../shared/ipc'
 import { Icon } from './Icon'
+import { ImageViewer } from '../composer/image-viewer'
 
 const HTML_ERROR_KEYS: Record<HtmlArtifactPreviewError, MessageKey> = {
   outside: 'artifact.htmlOutside',
@@ -112,6 +113,7 @@ function ArtifactCardView({
   const t = useT()
   const previewFile = useStore((s) => s.previewFile)
   const [showSource, setShowSource] = useState(false)
+  const [viewerOpen, setViewerOpen] = useState(false)
   const [text, setText] = useState<string | null>(null)
   const [readError, setReadError] = useState(false)
 
@@ -218,11 +220,18 @@ function ArtifactCardView({
               src={filePreviewUrl(artifact.path)}
               alt={artifact.filename}
               title={t('artifact.zoomHint')}
-              onClick={() => void previewFile(artifact.path)}
+              onClick={() => setViewerOpen(true)}
             />
           ) : (
             <Notice tone="fail" compact>{artifact.error || t('artifact.noPreview')}</Notice>
           )}
+          <ImageViewer
+            isOpen={viewerOpen}
+            src={filePreviewUrl(artifact.path)}
+            alt={artifact.filename}
+            caption={artifact.description}
+            onOpenChange={setViewerOpen}
+          />
         </div>
       ) : null}
 

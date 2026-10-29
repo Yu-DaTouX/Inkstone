@@ -197,6 +197,8 @@ async function listenOnFetchablePort(server: Server): Promise<number> {
 
 export class CapabilityServer {
   private server: Server | null = null
+  private generation = 0
+  private readonly pending = new Set<AbortController>()
   private token = ''
   private port = 0
   private ctx: CapabilityContext | null = null
@@ -223,8 +225,9 @@ export class CapabilityServer {
     mkdirSync(this.opsDir, { recursive: true })
     this.pruneOps()
 
+    const generation = ++this.generation
     this.server = createServer((req, res) => {
-      void this.handle(req, res).catch(() => {
+      void this.handle(req, res, generation).catch(() => {
         if (res.writableEnded || res.destroyed) return
         if (res.headersSent) {
           res.destroy()
@@ -244,14 +247,37 @@ export class CapabilityServer {
   }
 
   stop(): void {
+    this.generation++
     this.server?.close()
     this.server = null
     this.ctx = null
     this.token = ''
     this.ops = []
+    const pending = [...this.pending]
+    this.pending.clear()
+    for (const cancel of pending) cancel.abort()
   }
 
-  private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  private async handle(req: IncomingMessage, res: ServerResponse, generation: number): Promise<void> {
+    const cancel = new AbortController()
+    this.pending.add(cancel)
+    cancel.signal.addEventListener('abort', () => res.destroy(), { once: true })
+    req.on('aborted', () => cancel.abort())
+    res.on('close', () => {
+      if (!res.writableEnded) cancel.abort()
+    })
+    try {
+      if (generation !== this.generation) {
+        res.destroy()
+        return
+      }
+      await this.handleRequest(req, res, cancel, generation)
+    } finally {
+      this.pending.delete(cancel)
+    }
+  }
+
+  private async handleRequest(req: IncomingMessage, res: ServerResponse, cancel: AbortController, generation: number): Promise<void> {
     const reply = (status: number, body: unknown): void => {
       const text = JSON.stringify(body)
       res.writeHead(status, {
@@ -269,12 +295,6 @@ export class CapabilityServer {
       reply(401, { ok: false, error: 'unauthorized' })
       return
     }
-
-    const cancel = new AbortController()
-    req.on('aborted', () => cancel.abort())
-    res.on('close', () => {
-      if (!res.writableEnded) cancel.abort()
-    })
 
     const chunks: Buffer[] = []
     let bodyBytes = 0
@@ -318,6 +338,7 @@ export class CapabilityServer {
       return
     }
 
+    if (cancel.signal.aborted || generation !== this.generation) return
     const bound = this.ctx
     if (!bound) {
       reply(503, { ok: false, error: 'server_not_bound' })
@@ -355,6 +376,7 @@ export class CapabilityServer {
         command === 'operations.status'
           ? this.describeOps(params)
           : await this.handlers.run(command, params, bound, cancel.signal)
+      if (cancel.signal.aborted || generation !== this.generation) return
       const file = this.writeResult(opId, out)
       this.remember({ id: opId, command, at: Date.now(), ok: true, ...(file ? { resultFile: file.path, resultBytes: file.bytes } : {}) })
       reply(200, {
@@ -365,6 +387,7 @@ export class CapabilityServer {
         resultBytes: file?.bytes
       })
     } catch (err) {
+      if (cancel.signal.aborted || generation !== this.generation) return
       const message = err instanceof Error ? err.message : String(err)
       const code = err instanceof CapabilityCommandError ? err.code : undefined
       const data = err instanceof CapabilityCommandError ? err.data : undefined

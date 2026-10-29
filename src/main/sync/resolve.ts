@@ -18,7 +18,8 @@ function keyTail(key: string, prefix: string): string | undefined {
 }
 
 export function buildConflictCopy(conflict: ConflictRecord): SyncRecord | null {
-  const tag = deviceTag(conflict.remoteDeviceName)
+  const copyId = shortHash(conflict.id, 32)
+  const tag = `${deviceTag(conflict.remoteDeviceName)}-${copyId}`
   switch (conflict.kind) {
     case 'prompt': {
       const name = keyTail(conflict.key, 'prompt:')
@@ -33,7 +34,7 @@ export function buildConflictCopy(conflict: ConflictRecord): SyncRecord | null {
     case 'skill': {
       const name = keyTail(conflict.key, 'skill:')
       if (!name || !/^[\w.-]+$/.test(name)) return null
-      const suffix = asciiTag(conflict.remoteDeviceName, conflict.id)
+      const suffix = `${asciiTag(conflict.remoteDeviceName, conflict.id)}-${copyId}`
       return {
         key: `skill:${name}-from-${suffix}`,
         kind: 'skill',
@@ -69,7 +70,7 @@ export function buildConflictCopy(conflict: ConflictRecord): SyncRecord | null {
       }
       const id = typeof parsed.id === 'string' ? parsed.id : ''
       if (!id || !/^[\w.-]+$/.test(id)) return null
-      const nextId = `${id}-conflict-${shortHash(conflict.id, 6)}`
+      const nextId = `${id}-conflict-${copyId}`
       const name = typeof parsed.name === 'string' && parsed.name ? `${parsed.name}（${tag}）` : undefined
       return {
         key: `schedule:${nextId}`,

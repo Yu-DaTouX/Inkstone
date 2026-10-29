@@ -5,6 +5,7 @@ import { IconButton, Popover } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { DelegateDialog } from './DelegateDialog'
+import { StashMenuItem, StashSaveMenuItem } from './StashMenu'
 
 export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
   const t = useT()
@@ -20,7 +21,7 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
       <IconButton aria-label={t('composer.attach')} className="composer-plus" data-testid="composer-plus">
         <span className="composer-plus-glyph" aria-hidden>＋</span>
       </IconButton>
-      <Popover className="composer-plus-pop" placement="top start" offset={6}>
+      <Popover className="composer-plus-pop" placement="top end" offset={6}>
         <Menu className="composer-plus-menu" data-testid="composer-plus-menu">
           <MenuItem className="cpm-item" textValue={t('plus.files')} onAction={() => void pickFiles()}>
             <FileText size={14} aria-hidden />
@@ -50,6 +51,9 @@ export function PlusMenu({ onInsert }: { onInsert: (text: string) => void }) {
             <Mic size={14} aria-hidden />
             <span className="cpm-label">{t('set.voice')}</span>
           </MenuItem>
+          <Separator className="cpm-sep" />
+          <StashSaveMenuItem />
+          <StashMenuItem />
           <Separator className="cpm-sep" />
           <MenuItem
             className="cpm-item"

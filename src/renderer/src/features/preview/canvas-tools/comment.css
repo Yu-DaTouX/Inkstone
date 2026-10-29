@@ -27,6 +27,7 @@
     padding: 0 var(--s-4);
     border: 0;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--accent);
     color: var(--on-accent);
     font-family: var(--font-ui);
@@ -34,7 +35,7 @@
     font-weight: var(--w-medium);
     line-height: 1;
     font-variant-numeric: tabular-nums;
-    box-shadow: 0 0 0 1px var(--bg), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hair, 1px) var(--bg), var(--shadow-sm);
     cursor: pointer;
   }
 
@@ -236,6 +237,7 @@
     height: 18px;
     padding: 0 var(--s-4);
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--accent);
     color: var(--on-accent);
     font-size: var(--t-caption);

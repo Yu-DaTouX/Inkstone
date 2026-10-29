@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { lstat, mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises'
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { atomicWriteFile } from './atomic'
 import { canonicalJson, sha256Hex } from './canonical'
 import { findForbiddenFields, pickSyncSettings } from './settings-whitelist'
@@ -250,7 +250,7 @@ async function readBookmarks(paths: SyncPaths): Promise<ReadResult> {
   return { records, skipped }
 }
 
-async function applyBookmark(paths: SyncPaths, record: SyncRecord): Promise<void> {
+async function applyBookmark(paths: SyncPaths, record: SyncRecord, exclusive = false): Promise<void> {
   const { session, key, value } = parseBookmarkPayload(record)
   const file = interactionFile(paths, session)
   let values: Record<string, string> = {}
@@ -266,6 +266,7 @@ async function applyBookmark(paths: SyncPaths, record: SyncRecord): Promise<void
       throw new Error(`本机交互状态无法解析，拒绝覆盖：${file}`)
     }
   }
+  if (exclusive && Object.hasOwn(values, key)) throw new Error(`书签副本已存在：${key}`)
   values[key] = value
   await mkdir(paths.interactionStateDir, { recursive: true })
   await atomicWriteFile(file, JSON.stringify({ version: 1, session, values }))
@@ -306,7 +307,7 @@ async function readSchedules(paths: SyncPaths): Promise<ReadResult> {
   }
 }
 
-async function applySchedule(paths: SyncPaths, record: SyncRecord): Promise<void> {
+async function applySchedule(paths: SyncPaths, record: SyncRecord, exclusive = false): Promise<void> {
   const incoming = pickScheduleDefinition(JSON.parse(record.payload))
   if (!incoming) throw new Error(`定时任务记录形状无效：${record.key}`)
   let doc: { v?: unknown; tasks?: unknown } = { v: 1, tasks: [] }
@@ -320,6 +321,7 @@ async function applySchedule(paths: SyncPaths, record: SyncRecord): Promise<void
   }
   const tasks = Array.isArray(doc.tasks) ? (doc.tasks as Record<string, unknown>[]) : []
   const index = tasks.findIndex((task) => task && typeof task === 'object' && (task as Record<string, unknown>).id === incoming.id)
+  if (exclusive && index >= 0) throw new Error(`定时任务副本已存在：${String(incoming.id)}`)
   if (index >= 0) {
     const local = tasks[index]
     if (definitionSignature(local.prompt) !== definitionSignature(incoming.prompt) ||
@@ -348,6 +350,8 @@ export interface LocalStoreAppliers {
 }
 
 export class LocalStore {
+  private copyChain: Promise<unknown> = Promise.resolve()
+
   constructor(
     readonly paths: SyncPaths,
     private readonly appliers: LocalStoreAppliers = {}
@@ -364,6 +368,42 @@ export class LocalStore {
     return {
       records: parts.flatMap((part) => part.records),
       skipped: parts.flatMap((part) => part.skipped)
+    }
+  }
+
+  applyCopy(record: SyncRecord): Promise<void> {
+    const run = this.copyChain.then(() => this.createCopy(record))
+    this.copyChain = run.catch(() => undefined)
+    return run
+  }
+
+  private async createCopy(record: SyncRecord): Promise<void> {
+    if (record.kind === 'prompt') {
+      const name = promptNameFromKey(record.key)
+      if (!name) throw new Error(`提示词模板 key 非法：${record.key}`)
+      await mkdir(this.paths.promptsDir, { recursive: true })
+      await writeFile(join(this.paths.promptsDir, `${name}${PROMPT_SUFFIX}`), record.payload, { flag: 'wx', mode: 0o600 })
+      return
+    }
+    if (record.kind === 'skill') {
+      const name = skillNameFromKey(record.key)
+      if (!name) throw new Error(`技能 key 非法：${record.key}`)
+      await mkdir(this.paths.skillsDir, { recursive: true })
+      const file = await checkedSkillFile(this.paths, name)
+      await mkdir(dirname(file))
+      await writeFile(file, record.payload, { flag: 'wx', mode: 0o600 })
+      return
+    }
+    if (record.kind !== 'bookmark' && record.kind !== 'schedule') throw new Error('不支持此类同步副本')
+    if (record.kind === 'bookmark') await applyBookmark(this.paths, record, true)
+    else {
+      const current = await readSchedules(this.paths)
+      if (current.skipped.length || current.records.some((entry) => entry.key === record.key)) throw new Error('定时任务副本已存在或无法读取')
+      if (this.appliers.applySchedule) {
+        const definition = pickScheduleDefinition(JSON.parse(record.payload))
+        if (!definition) throw new Error(`定时任务记录形状无效：${record.key}`)
+        await this.appliers.applySchedule(definition)
+      } else await applySchedule(this.paths, record, true)
     }
   }
 

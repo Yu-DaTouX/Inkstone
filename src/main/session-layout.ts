@@ -28,6 +28,8 @@ export interface RememberSessionInput {
   opened?: boolean
   archived?: boolean
   pinned?: boolean
+  snoozedUntil?: number | null
+  markedUnread?: boolean
 }
 
 export interface MoveSessionInput {
@@ -92,6 +94,8 @@ function sanitizeEntry(item: unknown): SessionLayoutEntry | null {
     ...(Number.isFinite(o.lastOpenedAt) ? { lastOpenedAt: Number(o.lastOpenedAt) } : {}),
     ...(Number.isFinite(o.archivedAt) && Number(o.archivedAt) > 0 ? { archivedAt: Number(o.archivedAt) } : {}),
     ...(o.pinned === true ? { pinned: true } : {}),
+    ...(Number.isFinite(o.snoozedUntil) && Number(o.snoozedUntil) > 0 ? { snoozedUntil: Number(o.snoozedUntil) } : {}),
+    ...(o.markedUnread === true ? { markedUnread: true } : {}),
     moveHistory
   }
 }
@@ -111,7 +115,7 @@ function lastActivity(entry: SessionLayoutEntry): number {
 }
 
 function carriesUserState(entry: SessionLayoutEntry): boolean {
-  return !!entry.archivedAt || !!entry.pinned || !!entry.projectId || entry.scope === 'pending'
+  return !!entry.archivedAt || !!entry.pinned || !!entry.snoozedUntil || !!entry.markedUnread || !!entry.projectId || entry.scope === 'pending'
 }
 
 function keepWithinLimit(entries: SessionLayoutEntry[]): SessionLayoutEntry[] {
@@ -239,6 +243,8 @@ export async function decorateSessions(
         ...(entry.lastOpenedAt ? { lastOpenedAt: entry.lastOpenedAt } : {}),
         ...(entry.archivedAt ? { archivedAt: entry.archivedAt } : {}),
         ...(entry.pinned ? { pinned: true } : {}),
+        ...(entry.snoozedUntil ? { snoozedUntil: entry.snoozedUntil } : {}),
+        ...(entry.markedUnread ? { markedUnread: true } : {}),
         ...(entry.projectCandidates?.length ? { projectCandidates: entry.projectCandidates } : {})
       }
     })
@@ -258,6 +264,8 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
     const history = previous?.moveHistory ? [...previous.moveHistory] : []
     const archivedAt = input.archived === undefined ? previous?.archivedAt : input.archived ? previous?.archivedAt ?? at : undefined
     const pinned = input.pinned === undefined ? previous?.pinned : input.pinned
+    const snoozedUntil = input.snoozedUntil === undefined ? previous?.snoozedUntil : input.snoozedUntil ?? undefined
+    const markedUnread = input.markedUnread === undefined ? previous?.markedUnread : input.markedUnread ? true : undefined
     if (previous && (previous.projectId !== input.projectId || previous.scope !== nextScope)) {
       history.push({
         at,
@@ -281,6 +289,8 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
       ...(input.opened === false ? { lastOpenedAt: previous?.lastOpenedAt } : { lastOpenedAt: at }),
       ...(archivedAt ? { archivedAt } : {}),
       ...(pinned ? { pinned: true } : {}),
+      ...(snoozedUntil ? { snoozedUntil } : {}),
+      ...(markedUnread ? { markedUnread: true } : {}),
       moveHistory: history.slice(-MAX_HISTORY)
     }
     if (index >= 0) entries[index] = next
@@ -305,7 +315,7 @@ export async function moveSessionLayout(input: MoveSessionInput, projectId: stri
 
 export async function setSessionFlags(
   input: MoveSessionInput,
-  flags: { archived?: boolean; pinned?: boolean }
+  flags: { archived?: boolean; pinned?: boolean; snoozedUntil?: number | null; markedUnread?: boolean }
 ): Promise<SessionLayoutEntry> {
   const doc = await getSessionLayout()
   const index = findEntryIndex(doc.entries, input.sessionId, input.sessionFile)

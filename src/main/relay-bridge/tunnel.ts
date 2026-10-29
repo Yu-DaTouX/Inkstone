@@ -27,6 +27,7 @@ export interface TunnelHooks {
 
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const MAX_BODY_B64 = 1_200_000
+const VOICE_MAX_BODY_BYTES = 6 * 1024 * 1024
 const INLINE_RESPONSE = 600 * 1024
 const CHUNK = 512 * 1024
 const MAX_REQUESTS = 16
@@ -36,7 +37,7 @@ const REQUEST_TIMEOUT_MS = 120_000
 const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, 'last-event-id', 'accept']
 const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair'])
 
-type Pending = { req: ClientRequest; stream: boolean }
+type Pending = { req: ClientRequest; stream: boolean; finish?(error?: string): void }
 
 export class TunnelSession {
   private state: 'hello' | 'auth' | 'open' | 'closed' = 'hello'
@@ -85,7 +86,10 @@ export class TunnelSession {
     const wasOpen = this.state === 'open'
     this.state = 'closed'
     clearTimeout(this.timer)
-    for (const p of this.pending.values()) p.req.destroy()
+    for (const p of this.pending.values()) {
+      p.finish?.()
+      p.req.destroy()
+    }
     this.pending.clear()
     if (wasOpen) this.hooks.onClose?.(this)
   }
@@ -130,8 +134,10 @@ export class TunnelSession {
   private frame(msg: Record<string, unknown>): void {
     if (msg.t === 'ping') return this.post({ t: 'pong' })
     if (msg.t === 'abort' && typeof msg.id === 'string') {
-      this.pending.get(msg.id)?.req.destroy()
+      const pending = this.pending.get(msg.id)
       this.pending.delete(msg.id)
+      pending?.finish?.()
+      pending?.req.destroy()
       return
     }
     if (msg.t === 'req') return this.request(msg)
@@ -163,7 +169,9 @@ export class TunnelSession {
     if (!target) return this.fail(id, 503, '电脑上的远程服务没有运行')
 
     const body = typeof msg.body === 'string' ? msg.body : ''
-    const maxBytes = method === 'POST' && /^\/remote\/v1\/sessions\/[^/]+\/messages$/.test(url.pathname) ? REMOTE_MESSAGE_MAX_BYTES : null
+    const maxBytes = method !== 'POST' ? null
+      : url.pathname === '/remote/v1/voice/transcribe' ? VOICE_MAX_BODY_BYTES
+        : /^\/remote\/v1\/sessions\/[^/]+\/messages$/.test(url.pathname) ? REMOTE_MESSAGE_MAX_BYTES : null
     if (body.length > (maxBytes === null ? MAX_BODY_B64 : 4 * Math.ceil(maxBytes / 3))) return this.fail(id, 413, '请求太大')
     let payload = body ? Buffer.from(body, 'base64') : Buffer.alloc(0)
     if (maxBytes !== null && payload.length > maxBytes) return this.fail(id, 413, '请求太大')
@@ -189,6 +197,11 @@ export class TunnelSession {
     if (payload.length) headers['content-length'] = String(payload.length)
 
     const req = httpRequest({ host: target.host, port: target.port, method, path: `${url.pathname}${url.search}`, headers, timeout: REQUEST_TIMEOUT_MS }, (res) => {
+      const entry = this.pending.get(id)
+      if (!entry || entry.req !== req) {
+        res.destroy()
+        return
+      }
       const status = res.statusCode ?? 502
       const resHeaders: Record<string, string> = {}
       for (const name of ['content-type', 'cache-control', 'content-disposition', 'x-yan-idempotent-replay']) {
@@ -196,8 +209,7 @@ export class TunnelSession {
         if (typeof v === 'string') resHeaders[name] = v
       }
       const streaming = (resHeaders['content-type'] ?? '').startsWith('text/event-stream')
-      const entry = this.pending.get(id)
-      if (entry) entry.stream = streaming
+      entry.stream = streaming
       if (streaming && [...this.pending.values()].filter((p) => p.stream).length > MAX_STREAMS) {
         res.destroy()
         this.pending.delete(id)
@@ -213,17 +225,28 @@ export class TunnelSession {
           this.post({ t: 'chunk', id, data: Buffer.concat(buf).toString('base64') })
           buf = []
         }
+        let finished = false
+        const finish = (error?: string) => {
+          if (finished) return
+          finished = true
+          if (timer) clearTimeout(timer)
+          if (this.pending.get(id) === entry) {
+            flush()
+            this.pending.delete(id)
+            this.post({ t: 'end', id, ...(error ? { error } : {}) })
+          }
+          buf = []
+        }
+        entry.finish = finish
         res.on('data', (c: Buffer) => {
+          if (finished) return
           buf.push(c)
           timer ??= setTimeout(flush, COALESCE_MS)
         })
-        res.on('end', () => {
-          if (timer) clearTimeout(timer)
-          flush()
-          this.post({ t: 'end', id })
-          this.pending.delete(id)
-        })
-        res.on('error', () => this.pending.delete(id))
+        res.on('end', () => finish())
+        res.on('error', () => finish('电脑上的事件流异常断开'))
+        res.on('aborted', () => finish('电脑上的事件流异常断开'))
+        res.on('close', () => finish('电脑上的事件流异常断开'))
         return
       }
       const parts: Buffer[] = []
@@ -243,7 +266,9 @@ export class TunnelSession {
     })
     req.on('timeout', () => req.destroy(new Error('timeout')))
     req.on('error', () => {
-      if (!this.pending.has(id)) return
+      const entry = this.pending.get(id)
+      if (!entry || entry.req !== req) return
+      if (entry.finish) return entry.finish('电脑上的事件流异常断开')
       this.pending.delete(id)
       this.fail(id, 502, '电脑上的远程服务没有响应')
     })

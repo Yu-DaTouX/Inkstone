@@ -28,6 +28,7 @@ import { CommandPalette } from '../features/commands/CommandPalette'
 import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { SessionSwitcher, useSessionSwitcher } from '../features/commands/SessionSwitcher'
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
+import { runPrimaryProjectScript } from '../features/scripts/run-project-script'
 import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { BrowserSiteAskDialog } from '../features/browser/SiteAskDialog'
@@ -548,6 +549,10 @@ export default function ShellV3(): ReactElement {
           case 'openTerminal':
             event.preventDefault()
             void openWorkspaceTab('terminal')
+            return
+          case 'runProjectScript':
+            event.preventDefault()
+            void runPrimaryProjectScript()
             return
           case 'cycleTranscriptView': {
             if (ui.route.name !== 'chat') return

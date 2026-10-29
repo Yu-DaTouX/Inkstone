@@ -1,0 +1,137 @@
+@layer features {
+
+  .scripts-control {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .scripts-run {
+    max-width: 168px;
+  }
+
+  .scripts-run .ui-btn__label {
+    max-width: 128px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scripts-item-icon {
+    display: inline-flex;
+    flex: none;
+    color: var(--fg2);
+  }
+
+  .scripts-item-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scripts-item-keys {
+    display: inline-flex;
+    flex: none;
+    gap: var(--s-2);
+    margin-inline-start: auto;
+    padding-inline-start: var(--s-12);
+    color: var(--fg3);
+  }
+
+  .ui-modal.scripts-modal {
+    width: min(640px, 100%);
+  }
+
+  .scripts-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+    min-width: 0;
+  }
+
+  .scripts-dialog-project {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
+
+  .scripts-dialog-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+    min-height: 0;
+    max-height: min(46vh, 420px);
+    overflow: auto;
+    padding-inline-end: var(--s-2);
+  }
+
+  .scripts-dialog-empty {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+  }
+
+  .scripts-card {
+    display: grid;
+    gap: var(--s-8);
+    padding: var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface-0);
+  }
+
+  .scripts-card-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+    align-items: end;
+    gap: var(--s-8);
+  }
+
+  .scripts-card-tools {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+
+  .scripts-dialog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+  }
+
+  .scripts-import {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    padding: var(--s-10);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+  }
+
+  .scripts-import-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    max-height: 160px;
+    overflow: auto;
+  }
+
+  .scripts-import-name {
+    margin-inline-end: var(--s-8);
+  }
+
+  .scripts-import-command {
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-caption);
+  }
+
+  .scripts-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-8);
+  }
+}

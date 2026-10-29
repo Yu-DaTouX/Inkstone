@@ -432,8 +432,9 @@ export function createTools(context: McpContext): ToolDefinition[] {
         required: ['action']
       },
       run: async (args) => {
+        const action = args.action
+        if (typeof action !== 'string' || !['start', 'stop', 'restart', 'status', 'take_control'].includes(action)) return failure('action 必须是 start、stop、restart、status 或 take_control')
         const project = context.project(args)
-        const action = str(args, 'action') ?? 'status'
         if (action === 'take_control') return text(`已收回控制权\n${formatSession(await project.setControl('agent'))}`)
         if (['start', 'stop', 'restart'].includes(action) && (await userInControl(project))) return failure(USER_IN_CONTROL)
         if (action === 'status') return text(await statusText(project))

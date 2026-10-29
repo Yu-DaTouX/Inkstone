@@ -115,24 +115,40 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     }
   })
   handle('yan:deleteSession', async (path: string) => {
+    const tokens: string[] = []
     try {
       await host.sessionChains.load()
       const chain = host.sessionChains.chainOf(path)
       const targets = chain && chain.segments.length > 1 ? planHistoryRead(chain) : [path]
-      const current = host.ac()?.getState()?.sessionFile
       const affected = new Set<string>(targets.map((target) => resolve(target)))
       for (const item of await sessionsToDelete(resolve(path)).catch(() => [])) affected.add(item.path)
-      for (const target of affected) await host.runners()?.stopBySessionFile(target)
-      const tokens: string[] = []
-      for (const target of targets) {
-        tokens.push(await deleteSession(target, current))
-        closeTerminalsForOwner(target)
+      const current = host.ac()?.getState()?.sessionFile
+      if (current && affected.has(resolve(current))) {
+        return { ok: false, error: '不能删除当前正在使用的会话' }
       }
+      for (const target of affected) await host.runners()?.stopBySessionFile(target)
+      for (const target of targets) {
+        tokens.push(await deleteSession(target, host.ac()?.getState()?.sessionFile))
+      }
+      for (const target of targets) closeTerminalsForOwner(target)
       await host.sessionChains.forget(path).catch(() => false)
       host.pushRunners()
       return { ok: true, undoToken: tokens.join('|') }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      const remaining: string[] = []
+      for (const token of tokens.reverse()) {
+        try {
+          await restoreSession(token)
+        } catch {
+          remaining.push(token)
+        }
+      }
+      host.pushRunners()
+      return {
+        ok: false,
+        error: `${e instanceof Error ? e.message : String(e)}${remaining.length ? '；部分会话恢复失败，仍可使用撤销令牌重试恢复' : ''}`,
+        ...(remaining.length ? { undoToken: remaining.join('|') } : {})
+      }
     }
   })
   handle('yan:restoreSession', async (undoToken: string) => {
@@ -336,7 +352,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   }
   scheduleAutoArchiveSweep()
 
-  async function setFlags(sessionId: string, flags: { archived?: boolean; pinned?: boolean }): Promise<{ ok: boolean; error?: string }> {
+  async function setFlags(sessionId: string, flags: { archived?: boolean; pinned?: boolean; snoozedUntil?: number | null; markedUnread?: boolean }): Promise<{ ok: boolean; error?: string }> {
     const target = await locateSession(sessionId)
     if (!target) return { ok: false, error: '找不到这条会话' }
     try {
@@ -348,6 +364,10 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   }
   handle('yan:setSessionArchived', async (sessionId: string, archived: boolean) => setFlags(String(sessionId), { archived: archived === true }))
   handle('yan:setSessionPinned', async (sessionId: string, pinned: boolean) => setFlags(String(sessionId), { pinned: pinned === true }))
+  handle('yan:setSessionSnoozed', async (sessionId: string, until: number | null) =>
+    setFlags(String(sessionId), { snoozedUntil: typeof until === 'number' && Number.isFinite(until) && until > 0 ? until : null })
+  )
+  handle('yan:setSessionMarkedUnread', async (sessionId: string, marked: boolean) => setFlags(String(sessionId), { markedUnread: marked === true }))
 
   handle('yan:peekSession', async (path: string, opts?: { trackSync?: boolean }) => {
     if (typeof path !== 'string' || !path) return null

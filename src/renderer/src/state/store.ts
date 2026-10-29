@@ -74,6 +74,7 @@ import { keepRef } from './stable-ref'
 import {
   migratePathDraft,
   pruneSessionRuntimes,
+  seedRuntimeHistory,
   sessionRuntimeKey,
   updateSessionRuntime,
   updateSessionRuntimeAt,
@@ -288,6 +289,8 @@ export interface Store {
   moveSession: (sessionId: string, projectId: string | null, cwd?: string) => Promise<boolean>
   setSessionArchived: (sessionId: string, archived: boolean) => Promise<boolean>
   setSessionPinned: (sessionId: string, pinned: boolean) => Promise<boolean>
+  setSessionSnoozed: (sessionId: string, until: number | null) => Promise<boolean>
+  setSessionMarkedUnread: (sessionId: string, marked: boolean) => Promise<boolean>
   renameSession: (name: string) => Promise<void>
   setManualTitle: (sessionId: string, name: string) => Promise<void>
   regenerateTitle: (sessionId: string) => Promise<void>
@@ -329,9 +332,9 @@ export interface Store {
   cancelGitInstall: () => Promise<void>
   loadZoom: () => Promise<void>
 
-  addAttachments: (a: Attachment[]) => void
-  addFileRefs: (files: File[]) => Promise<void>
-  addFileRefPaths: (paths: string[]) => Promise<void>
+  addAttachments: (a: Attachment[], identity?: ComposerSubmitIdentity) => void
+  addFileRefs: (files: File[], identity?: ComposerSubmitIdentity) => Promise<void>
+  addFileRefPaths: (paths: string[], identity?: ComposerSubmitIdentity) => Promise<void>
   removeAttachment: (id: string) => void
   dropSentAttachments: (sentIds: readonly string[], draftKeys: readonly string[]) => void
   clearAttachments: () => void
@@ -1013,6 +1016,7 @@ function discardPendingMessagePatches(): void {
 }
 
 export const useStore = create<Store>((rawSet, get) => {
+  const releasingSends = new Set<PendingSend>()
   const set = (partial: Partial<Store>): void => {
     rawSet((state) => {
       const notices = partial.notices
@@ -1346,6 +1350,7 @@ export const useStore = create<Store>((rawSet, get) => {
         if (next) {
           set({
             messages: reuseIfSame(s.messages, next) as typeof s.messages,
+            sessionRuntimes: seedRuntimeHistory(get().sessionRuntimes, m.runtime, next),
             peekedPath: null,
             peekedSessionId: null,
             peekNote: null
@@ -1360,11 +1365,10 @@ export const useStore = create<Store>((rawSet, get) => {
           if (latest.activeRunnerId !== requestedFrom.runnerId) return
           if (latest.session?.sessionId !== requestedFrom.sessionId) return
           if (latest.peekedSessionId !== requestedFrom.peeked) return
+          const merged = mergeSyncHistory(list, latest.messages, syncProtectedTail(latest, m.runtime))
           set({
-            messages: reuseIfSame(
-              latest.messages,
-              mergeSyncHistory(list, latest.messages, syncProtectedTail(latest, m.runtime))
-            ) as typeof latest.messages,
+            messages: reuseIfSame(latest.messages, merged) as typeof latest.messages,
+            sessionRuntimes: seedRuntimeHistory(latest.sessionRuntimes, m.runtime, merged),
             ...(requestedFrom.peeked ? { peekedPath: null, peekedSessionId: null, peekNote: null } : {})
           })
         })
@@ -1783,10 +1787,13 @@ export const useStore = create<Store>((rawSet, get) => {
   releaseSend: async (id, mode) => {
     const item = pendingSendsForView(get()).find((p) => p.id === id)
     if (!item) return
-    const sessionId = get().session?.sessionId
-    const ok = await get().send(item.text, item.images, mode)
-    if (ok && get().session?.sessionId === sessionId) {
-      set({ pendingSends: get().pendingSends.filter((p) => p.id !== id) })
+    if (releasingSends.has(item)) return
+    releasingSends.add(item)
+    try {
+      const ok = await get().send(item.text, item.images, mode)
+      if (ok) set({ pendingSends: get().pendingSends.filter((p) => p !== item) })
+    } finally {
+      releasingSends.delete(item)
     }
   },
 
@@ -1796,7 +1803,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   restoreSend: (id) => {
     const item = pendingSendsForView(get()).find((p) => p.id === id)
-    if (!item) return
+    if (!item || releasingSends.has(item)) return
     const sessionId = get().session?.sessionId
     const current = get()
     set({
@@ -2166,6 +2173,26 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await window.yan.setSessionPinned(sessionId, pinned)
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.pinFailed')) })
+      return false
+    }
+    await get().refreshSessions()
+    return true
+  },
+
+  setSessionSnoozed: async (sessionId, until) => {
+    const res = await window.yan.setSessionSnoozed(sessionId, until)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.snoozeFailed')) })
+      return false
+    }
+    await get().refreshSessions()
+    return true
+  },
+
+  setSessionMarkedUnread: async (sessionId, marked) => {
+    const res = await window.yan.setSessionMarkedUnread(sessionId, marked)
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.markUnreadFailed')) })
       return false
     }
     await get().refreshSessions()
@@ -2623,9 +2650,13 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  addAttachments: (a) => {
-    if (!a.length) return
-    const existing = get().attachments
+  addAttachments: (a, identity = composerSubmitIdentity(get())) => {
+    if (!a.length || !identity.draftKey) return
+    const current = get()
+    const sameView = sameComposerView(current, identity)
+    const runtime = recoveryRuntimeFor(current, identity)
+    const draftKey = runtime ? sessionRuntimeKey(runtime) : identity.draftKey
+    const existing = sameView ? current.attachments : current.sessionRuntimes[draftKey]?.draftAttachments ?? []
     const seen = new Set(existing.map((e) => `${e.name}|${e.size}|${e.path ?? ''}`))
     const fresh: Attachment[] = []
     for (const x of a) {
@@ -2655,14 +2686,13 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.attach.imagesTooLarge')) })
     }
 
-    const draftKey = composerDraftKey(get())
-    const after: Partial<Store> = { attachments: next }
+    const after: Partial<Store> = sameView ? { attachments: next } : {}
     if (draftKey) after.sessionRuntimes = writeDraftAttachments(get(), draftKey, next)
     set(after)
 
-    const sessionId = get().session?.sessionId
-    if (sessionId) {
-      for (const x of fresh) {
+    const sessionId = runtime?.sessionId || identity.sessionId
+    if (sessionId && !sessionId.startsWith('pending:')) {
+      for (const x of fresh.filter((item) => next.includes(item))) {
         if (x.kind === 'file' || !x.data) continue
         void window.yan.sources
           .addImage({ sessionId, name: x.name, mimeType: x.mimeType, base64: x.data })
@@ -2673,7 +2703,7 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  addFileRefs: async (files) => {
+  addFileRefs: async (files, identity = composerSubmitIdentity(get())) => {
     if (!files.length) return
     const paths: string[] = []
     for (const f of files) {
@@ -2688,10 +2718,10 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
 
-    await get().addFileRefPaths(paths)
+    await get().addFileRefPaths(paths, identity)
   },
 
-  addFileRefPaths: async (paths) => {
+  addFileRefPaths: async (paths, identity = composerSubmitIdentity(get())) => {
     const unique = [...new Set(paths.filter(Boolean))]
     if (!unique.length) return
 
@@ -2722,7 +2752,7 @@ export const useStore = create<Store>((rawSet, get) => {
         isDirectory: info.isDirectory
       })
     }
-    if (refs.length) get().addAttachments(refs)
+    if (refs.length) get().addAttachments(refs, identity)
     if (errors.length) set({ notices: pushNotice(get().notices, 'error', errors.join(uiText('state.attach.refErrorsJoin'))) })
   },
 
@@ -2763,17 +2793,19 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   pickImages: async () => {
+    const identity = composerSubmitIdentity(get())
     try {
-      get().addAttachments(await window.yan.pickImages())
+      get().addAttachments(await window.yan.pickImages(), identity)
     } catch {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.error.pickFailed')) })
     }
   },
 
   pickFiles: async () => {
+    const identity = composerSubmitIdentity(get())
     try {
       const paths = await window.yan.pickFilePaths()
-      if (paths.length) await get().addFileRefPaths(paths)
+      if (paths.length) await get().addFileRefPaths(paths, identity)
     } catch {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.error.pickFailed')) })
     }

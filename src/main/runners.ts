@@ -510,7 +510,11 @@ export class RunnerRegistry {
         } catch (error) {
           failure = error instanceof Error ? error.message : String(error)
         }
+        if (failure === undefined && (this.disposed || this.runners.get(idle.id) !== idle || idle.agent !== previous)) {
+          failure = '运行实例在替换过程中被停止'
+        }
         if (failure !== undefined) {
+          this.notifyRunnerOrigin(idle, undefined, { sessionId: replacement?.getState()?.sessionId, generation })
           try {
             await replacement?.stop()
           } catch {

@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { Eye, FileDiff, FolderOpen, GitBranch, Globe, GripVertical, PanelRight, ScrollText, Smartphone, Terminal, type LucideIcon } from 'lucide-react'
+import { Eye, FileDiff, FolderOpen, GitBranch, GitPullRequest, Globe, GripVertical, PanelRight, ScrollText, Smartphone, Terminal, type LucideIcon } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { createTurnProjector } from '../../../shared/turns'
@@ -142,7 +142,8 @@ const TOOL_ICONS: Partial<Record<WorkbenchTabId, LucideIcon>> = {
   preview: Eye,
   logs: ScrollText,
   branch: GitBranch,
-  device: Smartphone
+  device: Smartphone,
+  pullRequests: GitPullRequest
 }
 
 function LiveChat(): JSX.Element {

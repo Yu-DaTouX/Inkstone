@@ -30,6 +30,7 @@ import type {
 } from './custom-provider'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from './checkpoints'
 import type { GitChangesOptions, GitChangesResult, GitDiffRequest, GitDiffResult, GitPathScreen, GitRefOption, GitRemoteIdentity, GitRepoState } from './git'
+import type { GithubBridge } from './github'
 export type {
   GitActionExpected,
   GitActionKind,
@@ -45,6 +46,8 @@ export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalKind, ApprovalReceipt, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
 import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
+import type { LocalServerSnapshot } from './local-servers'
+export type { LocalServerInfo, LocalServerSnapshot } from './local-servers'
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
@@ -610,6 +613,8 @@ export interface SessionSummary {
   lastOpenedAt?: number
   archivedAt?: number
   pinned?: boolean
+  snoozedUntil?: number
+  markedUnread?: boolean
   projectCandidates?: string[]
 }
 
@@ -639,6 +644,8 @@ export interface SessionLayoutEntry {
   lastOpenedAt?: number
   archivedAt?: number
   pinned?: boolean
+  snoozedUntil?: number
+  markedUnread?: boolean
   moveHistory: SessionMoveRecord[]
 }
 
@@ -803,6 +810,7 @@ export interface AppSettings {
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]
+  projectScripts?: import('./project-scripts').ProjectScriptsByProject
   providerBudgets: Record<string, number>
   rightPanelOpen: boolean
   workspaceMode?: WorkspaceMode
@@ -969,6 +977,7 @@ export interface TerminalStartRequest {
   cols?: number
   rows?: number
   owner?: string
+  title?: string
 }
 
 export interface TerminalAvailability {
@@ -1728,6 +1737,8 @@ export interface YanBridge {
 
   setSessionArchived(sessionId: string, archived: boolean): Promise<{ ok: boolean; error?: string }>
   setSessionPinned(sessionId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>
+  setSessionSnoozed(sessionId: string, until: number | null): Promise<{ ok: boolean; error?: string }>
+  setSessionMarkedUnread(sessionId: string, marked: boolean): Promise<{ ok: boolean; error?: string }>
   nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
   compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }>
   compactionInfo(cwd: string, contextWindow: number): Promise<CompactionInfo | null>
@@ -1955,6 +1966,7 @@ export interface YanBridge {
   mcpApp: McpAppBridge
   mcpApps: McpAppViewApi
   git: GitBridge
+  github: GithubBridge
 
   browser: {
     activateSession(sessionId: string): Promise<BrowserState>
@@ -1990,6 +2002,7 @@ export interface YanBridge {
     setPermission(permission: string, origin: string, allowed: boolean): Promise<{ ok: boolean; error?: string }>
     setBounds(bounds: BrowserBounds): Promise<void>
     setVisible(visible: boolean): Promise<void>
+    localServers(): Promise<LocalServerSnapshot>
   }
   office: {
     preview(path: string, cwd?: string): Promise<import('./office').OfficeDocumentView>
@@ -2058,6 +2071,10 @@ export interface YanBridge {
     kill(id: string): Promise<boolean>
     attach(id: string): Promise<TerminalSnapshot | null>
     clear(id: string): Promise<boolean>
+  }
+
+  projectScripts: {
+    read(projectId: string): Promise<import('./project-scripts').ProjectPackageScripts>
   }
 }
 

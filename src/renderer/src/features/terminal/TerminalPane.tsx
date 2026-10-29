@@ -20,6 +20,7 @@ import { TerminalFindBar } from './TerminalFindBar'
 import { TerminalViewMenu } from './TerminalViewMenu'
 import type { TerminalFindDirection } from './terminal-find'
 import { onActivateTerminal } from './terminal-activate'
+import { onTerminalTabRequest } from './terminal-requests'
 import type { TerminalPaneProps } from '../workbench/types'
 import type { TerminalAvailability, TerminalProgramStatus, TerminalSnapshot } from '../../../../shared/ipc'
 import './terminal.css'
@@ -232,6 +233,23 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         focusTerminal(id)
       }),
     [tabs, focusTerminal]
+  )
+
+  useEffect(
+    () =>
+      onTerminalTabRequest((request) => {
+        if (request.ownerKey !== ownerRef.current.key) return
+        if (loadedFor.current !== ownerRef.current.key) {
+          loadedFor.current = ownerRef.current.key
+          void load()
+        }
+        if (!tabs.some((tab) => tab.key === request.terminalId)) {
+          if (!canAddTerminalTab(tabs.length)) return
+          setTabs((previous) => [...previous, { key: request.terminalId, adopt: { id: request.terminalId } }])
+        }
+        setActive(request.terminalId)
+      }),
+    [tabs, load]
   )
 
   const newTab = useCallback((): void => {

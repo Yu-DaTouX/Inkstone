@@ -1,5 +1,5 @@
 import { useState, type JSX, type RefObject } from 'react'
-import { Columns2, Eye, FolderInput, FolderOpen, Globe, Pencil, Pin, PinOff, Archive, ArchiveRestore, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
+import { AlarmClock, Clock, Columns2, Eye, FolderInput, FolderOpen, Globe, Mail, MailOpen, Pencil, Pin, PinOff, Archive, ArchiveRestore, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { indexOfSession, useSplitView } from '../../state/split-view'
@@ -13,12 +13,15 @@ import { splitText } from '../split/split-text'
 import { useTranscriptViews } from '../../state/transcript-view'
 import { effectiveView, TRANSCRIPT_VIEWS, type TranscriptView } from '../session/transcript-view-model'
 import { transcriptViewText } from '../session/transcript-view-text'
+import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
+import { formatSnoozeWake, isSnoozed, pickSnoozeOption, resolveSnoozeOptions } from './session-snooze'
+import { CustomSnoozeDialog } from './CustomSnoozeDialog'
 
 export function openSessionInSplit(item: { id: string; path: string }): void {
   openInSplit(item)
 }
 
-type MenuKey = `move:${string}` | 'split' | 'split-below' | 'split-close' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete'
+type MenuKey = `move:${string}` | `snooze:${string}` | 'split' | 'split-below' | 'split-close' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
 
 export interface SessionMenuProps {
   item: SessionSummary
@@ -35,6 +38,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
   const { lang } = useI18n()
   const text = v3Text(lang)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [customSnooze, setCustomSnooze] = useState(false)
   const projects = useStore((s) => s.settings?.projects)
   const moveTargets = (projects ?? []).filter((project) => !project.archived && project.id !== item.projectId)
   const split = splitText(lang)
@@ -42,6 +46,8 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
   const viewText = transcriptViewText(lang)
   const currentView = useTranscriptViews((s) => effectiveView(s, item.id))
   const defaultView = useTranscriptViews((s) => s.defaultView)
+  const snoozed = isSnoozed(item, Date.now())
+  const snoozeOptions = snoozed ? [] : resolveSnoozeOptions(Date.now())
 
   const run = (key: MenuKey): void => {
     const store = useStore.getState()
@@ -50,7 +56,28 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
       void store.moveSession(item.id, target === 'global' ? null : target)
       return
     }
+    if (key.startsWith('snooze:')) {
+      const preset = key.slice('snooze:'.length)
+      if (preset === 'custom') {
+        setCustomSnooze(true)
+        return
+      }
+      const option = pickSnoozeOption(preset, Date.now())
+      if (option) void store.setSessionSnoozed(item.id, option.until)
+      return
+    }
     switch (key) {
+      case 'wake':
+        void store.setSessionSnoozed(item.id, null)
+        return
+      case 'unread':
+        if (item.markedUnread) {
+          markSessionRunsSeen({ id: item.id, path: item.path })
+          void store.setSessionMarkedUnread(item.id, false)
+        } else {
+          void store.setSessionMarkedUnread(item.id, true)
+        }
+        return
       case 'split':
         openInSplit(item)
         return
@@ -170,6 +197,46 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
             {item.pinned ? <PinOff size={14} aria-hidden /> : <Pin size={14} aria-hidden />}
             {item.pinned ? t('rail.unpin') : t('rail.pin')}
           </MenuItem>
+          {snoozed ? (
+            <MenuItem id="wake" textValue={t('rail.wakeNow')} data-testid="v3-session-wake">
+              <AlarmClock size={14} aria-hidden />
+              {t('rail.wakeNow')}
+            </MenuItem>
+          ) : (
+            <SubmenuTrigger>
+              <MenuItem id="snooze" textValue={t('rail.snooze')} data-testid="v3-session-snooze">
+                <Clock size={14} aria-hidden />
+                {t('rail.snooze')}
+              </MenuItem>
+              <Popover placement="end top" offset={2}>
+                <Menu
+                  aria-label={t('rail.snooze')}
+                  onAction={(key) => {
+                    onOpenChange(false)
+                    run(key as MenuKey)
+                  }}
+                  data-testid="v3-session-snooze-menu"
+                >
+                  {snoozeOptions.map((option) => {
+                    const wake = formatSnoozeWake(option.until, Date.now(), lang)
+                    return (
+                      <MenuItem key={option.id} id={`snooze:${option.id}`} textValue={`${t(option.labelKey)} ${wake}`}>
+                        {t(option.labelKey)}
+                        <span className="v3-menu-when">{wake}</span>
+                      </MenuItem>
+                    )
+                  })}
+                  <MenuItem id="snooze:custom" textValue={t('rail.snoozeCustom')} data-testid="v3-session-snooze-custom">
+                    {t('rail.snoozeCustom')}
+                  </MenuItem>
+                </Menu>
+              </Popover>
+            </SubmenuTrigger>
+          )}
+          <MenuItem id="unread" textValue={item.markedUnread ? t('rail.markRead') : t('rail.markUnread')} data-testid="v3-session-mark-unread">
+            {item.markedUnread ? <MailOpen size={14} aria-hidden /> : <Mail size={14} aria-hidden />}
+            {item.markedUnread ? t('rail.markRead') : t('rail.markUnread')}
+          </MenuItem>
           <MenuItem id="title" textValue={t('rail.regenerateTitle')}>
             <Sparkles size={14} aria-hidden />
             {t('rail.regenerateTitle')}
@@ -196,6 +263,12 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
           </MenuItem>
         </Menu>
       </Popover>
+
+      <CustomSnoozeDialog
+        open={customSnooze}
+        onOpenChange={setCustomSnooze}
+        onSubmit={(until) => void useStore.getState().setSessionSnoozed(item.id, until)}
+      />
 
       <ModalOverlay isDismissable isOpen={confirmDelete} onOpenChange={setConfirmDelete}>
         <Modal>

@@ -187,7 +187,7 @@
   .v3-step-target { min-width: 0; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-dollar { color: var(--fg3); }
   .v3-step-time { color: var(--fg3); font-size: var(--t-footnote); flex: none; }
-  .v3-dot { width: var(--size-dot); height: var(--size-dot); border-radius: var(--r-full); flex: none; background: var(--fg3); }
+  .v3-dot { width: var(--size-dot); height: var(--size-dot); border-radius: var(--r-full); corner-shape: round; flex: none; background: var(--fg3); }
   .v3-dot.run { background: var(--run); }
   .v3-dot.ok { background: var(--fg3); }
   .v3-dot.err { background: var(--fail); }
@@ -219,8 +219,8 @@
   .v3-empty-prompt { margin-right: var(--s-6); color: var(--fg3); }
   .v3-empty-hint { margin: 0; color: var(--fg3); font-size: var(--t-body); }
 
-  .v3-jump { display: inline-flex; align-items: center; justify-content: center; width: var(--size-send); height: var(--size-send); border: 0; border-radius: var(--r-full); background: var(--surface-3); color: var(--fg2); box-shadow: var(--shadow-ring), var(--shadow-comp); cursor: pointer; animation: v3-fade-in var(--dur-base) var(--ease) both; }
-  .v3-jump:hover { color: var(--fg); background: var(--hover); }
+  .v3-jump { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-4); height: 28px; padding: 0 var(--s-12) 0 var(--s-10); border: 0; border-radius: var(--r-full); corner-shape: round; background: color-mix(in srgb, var(--surface-3) 86%, transparent); backdrop-filter: blur(12px); color: var(--fg2); font: var(--t-footnote) / 1 var(--font-ui); white-space: nowrap; box-shadow: var(--shadow-ring), var(--shadow-comp); cursor: pointer; animation: v3-fade-in var(--dur-base) var(--ease) both; }
+  .v3-jump:hover { color: var(--fg); }
   .v3-jump:active { color: var(--fg); background: var(--press); }
 
 

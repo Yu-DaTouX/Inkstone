@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { unreadRunIdsForSession } from '../features/sidebar/sidebar-model'
 import { useRunsV3 } from './runs-v3'
 import { useStore } from './store'
@@ -16,6 +16,9 @@ export function useCurrentRunsSeen(): void {
   const sessionId = useStore((s) => s.session?.sessionId ?? null)
   const sessionFile = useStore((s) => s.session?.sessionFile ?? null)
   const runs = useRunsV3((s) => s.runs)
+  const markedUnread = useStore((s) =>
+    !!sessionId && s.sessions.some((item) => item.id === sessionId && item.markedUnread)
+  )
   const [attended, setAttended] = useState(windowAttended)
 
   useEffect(() => {
@@ -35,4 +38,12 @@ export function useCurrentRunsSeen(): void {
     if (unreadRunIdsForSession(runs, { id: sessionId, path: sessionFile }).length === 0) return
     markSessionRunsSeen({ id: sessionId, path: sessionFile })
   }, [attended, runs, sessionId, sessionFile])
+
+  const clearedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!attended || !sessionId) return
+    if (clearedFor.current === sessionId) return
+    clearedFor.current = sessionId
+    if (markedUnread) void useStore.getState().setSessionMarkedUnread(sessionId, false)
+  }, [attended, sessionId, markedUnread])
 }

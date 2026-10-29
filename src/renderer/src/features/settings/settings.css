@@ -314,6 +314,7 @@
     position: relative;
     height: 8px;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--sunken);
     box-shadow: var(--ring-line);
   }
@@ -337,6 +338,7 @@
     width: 2px;
     margin-left: -1px;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--mark-color);
     box-shadow: 0 0 0 2px var(--surface);
     transition: left var(--dur-base) var(--ease);
@@ -368,6 +370,7 @@
     width: 8px;
     height: 8px;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--mark-color);
   }
 

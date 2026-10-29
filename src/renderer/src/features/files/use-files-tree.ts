@@ -23,7 +23,8 @@ export interface FilesTreeController {
   rows: FileTreeRow[]
   status: FilesRootStatus
   highlight: string | null
-  reveal: (path: string) => void
+  reveal: (path: string, options?: { focus?: boolean }) => void
+  ensureDir: (path: string) => void
   viewWindow: FilesWindow
   scrollRef: RefObject<HTMLDivElement | null>
   onScroll: (event: UIEvent<HTMLDivElement>) => void
@@ -130,6 +131,7 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     return () => window.clearTimeout(timer)
   }, [highlight])
   const revealTarget = useRef<string | null>(null)
+  const revealFocus = useRef(true)
   const rowIndexOf = useCallback(
     (path: string): number => rows.findIndex((row) => row.focusable && row.path === path),
     [rows]
@@ -213,12 +215,21 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     dispatch({ type: 'collapseAll' })
   }, [])
 
-  const reveal = useCallback((path: string): void => {
+  const reveal = useCallback((path: string, options?: { focus?: boolean }): void => {
     revealTarget.current = path
-    pendingFocusRef.current = true
+    revealFocus.current = options?.focus !== false
+    pendingFocusRef.current = options?.focus !== false
     dispatch({ type: 'reveal', path })
     setHighlight(path)
   }, [])
+
+  const ensureDir = useCallback(
+    (path: string): void => {
+      if (state.listings[path] !== undefined || state.loading[path]) return
+      void load(path)
+    },
+    [state.listings, state.loading, load]
+  )
 
   useEffect(() => {
     const target = revealTarget.current
@@ -232,11 +243,12 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     if (top < el.scrollTop || top + rowHeight > el.scrollTop + el.clientHeight) {
       el.scrollTop = Math.max(0, top - el.clientHeight / 2 + rowHeight / 2)
     }
+    if (!revealFocus.current) return
     requestAnimationFrame(() => {
       const node = [...el.querySelectorAll<HTMLElement>('[data-tree-path]')].find((item) => item.dataset.treePath === target)
       node?.focus({ preventScroll: true })
     })
   }, [rowIndexOf, rowHeight])
 
-  return { state, rows, status, highlight, reveal, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh }
+  return { state, rows, status, highlight, reveal, ensureDir, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh }
 }

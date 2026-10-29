@@ -15,7 +15,7 @@ const MANIFEST = 'manifest.json'
 function allowed(path: string, version: 1 | 2): boolean {
   if (!path || path.includes('\\') || path.split('/').some((p) => !p || p === '.' || p === '..' || /[<>:"|?*\x00-\x1f]/.test(p) || /[. ]$/.test(p) || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(p))) return false
   if (path === 'yan/desktop.json' || /^sessions\/.+\.jsonl$/.test(path) || /^yan\/interaction-state\/[a-f0-9]{64}\.json$/.test(path)) return true
-  return version === 2 && (['yan/session-chains.json', 'yan/session-layout.json', 'yan/manual-titles.json', 'yan/titles.json'].includes(path) || /^yan\/(attachments|artifacts)\/.+/.test(path) && !path.endsWith('.tmp'))
+  return version === 2 && (['yan/session-chains.json', 'yan/session-layout.json', 'yan/manual-titles.json', 'yan/titles.json'].includes(path) || /^yan\/(attachments|artifacts|session-quotes)\/.+/.test(path) && !path.endsWith('.tmp'))
 }
 
 export async function hashBackupFile(file: string): Promise<string> {
@@ -48,7 +48,7 @@ async function scan(sessions: string, yan: string): Promise<Source[]> {
   await visit(sessions, 'sessions', 0)
   await visit(join(yan, 'desktop.json'), 'yan/desktop.json', 0)
   await visit(join(yan, 'interaction-state'), 'yan/interaction-state', 0)
-  for (const name of ['session-chains.json', 'session-layout.json', 'manual-titles.json', 'titles.json', 'attachments', 'artifacts']) await visit(join(yan, name), `yan/${name}`, 0)
+  for (const name of ['session-chains.json', 'session-layout.json', 'manual-titles.json', 'titles.json', 'attachments', 'artifacts', 'session-quotes']) await visit(join(yan, name), `yan/${name}`, 0)
   return files
 }
 

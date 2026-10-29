@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { composerSubmitIdentity } from '../../state/composer-recovery'
 import { isPasteAsTextShortcut, nextPastedTextName, pastedTextShouldAttach } from '../../../../shared/pasted-text'
 
 const BYPASS_MS = 1000
@@ -41,6 +42,7 @@ export function usePastedTextAttach(wrapRef: RefObject<HTMLElement | null>): (te
       bypassUntil.current = 0
       if (!pastedTextShouldAttach(text, bypass) || typeof window.yan?.savePastedText !== 'function') return false
       const store = useStore.getState()
+      const identity = composerSubmitIdentity(store)
       const name = nextPastedTextName(store.attachments.map((item) => item.name))
       void window.yan
         .savePastedText(text, name)
@@ -48,11 +50,11 @@ export function usePastedTextAttach(wrapRef: RefObject<HTMLElement | null>): (te
         .then(async (saved) => {
           const state = useStore.getState()
           if (!saved.ok) {
-            state.insertIntoComposer(text)
+            state.recoverComposerInput({ identity, text, attachments: [] })
             state.notify('warning', t('composer.pasteFailed'))
             return
           }
-          await state.addFileRefPaths([saved.path])
+          await state.addFileRefPaths([saved.path], identity)
           state.notify('info', t('composer.pasteAttached', { name: saved.name, size: pastedSizeLabel(saved.bytes) }))
         })
       return true

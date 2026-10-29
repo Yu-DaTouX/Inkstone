@@ -1,6 +1,8 @@
-export type PreviewFormat = 'markdown' | 'csv' | 'html' | 'svg' | 'image' | 'audio' | 'video' | 'pdf'
+export type PreviewFormat = 'markdown' | 'csv' | 'html' | 'svg' | 'image' | 'audio' | 'video' | 'pdf' | 'notebook' | 'font'
 
-const TEXT_FORMATS: ReadonlySet<PreviewFormat> = new Set(['markdown', 'csv', 'html', 'svg'])
+const TEXT_FORMATS: ReadonlySet<PreviewFormat> = new Set(['markdown', 'csv', 'html', 'svg', 'notebook'])
+
+const FONT_EXTENSIONS = new Set(['ttf', 'otf', 'woff', 'woff2'])
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'avif', 'ico'])
 
@@ -21,7 +23,9 @@ export function previewFormatOf(name: string): PreviewFormat | null {
   if (/\.svg$/i.test(value)) return 'svg'
   if (/\.(tsv|csv)$/i.test(value)) return 'csv'
   if (/\.(md|mdx|markdown)$/i.test(value)) return 'markdown'
+  if (/\.ipynb$/i.test(value)) return 'notebook'
   const ext = previewExtension(value)
+  if (FONT_EXTENSIONS.has(ext)) return 'font'
   if (IMAGE_EXTENSIONS.has(ext)) return 'image'
   if (VIDEO_EXTENSIONS.has(ext)) return 'video'
   if (AUDIO_EXTENSIONS.has(ext)) return 'audio'
@@ -39,6 +43,10 @@ export function previewFormatUsesText(format: PreviewFormat | null): boolean {
 
 export function previewFormatIsMedia(format: PreviewFormat | null): boolean {
   return format === 'image' || format === 'audio' || format === 'video' || format === 'pdf'
+}
+
+export function previewFormatIsFont(format: PreviewFormat | null): boolean {
+  return format === 'font'
 }
 
 export function previewFormatOpensAsSource(format: PreviewFormat | null): boolean {

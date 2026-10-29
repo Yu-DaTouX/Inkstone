@@ -10,7 +10,7 @@
     overflow: hidden;
     border-radius: var(--r-sm);
     background: color-mix(in srgb, var(--site-tone) 12%, var(--surface));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--site-tone) 12%, transparent);
+    box-shadow: inset 0 0 0 var(--hair, 1px) color-mix(in srgb, var(--site-tone) 12%, transparent);
     color: var(--site-tone);
     font-size: var(--t-caption);
     font-weight: var(--w-semibold);

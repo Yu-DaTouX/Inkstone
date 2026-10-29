@@ -1,6 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { composerSubmitIdentity } from '../../state/composer-recovery'
 import { SESSION_QUOTE_DROP_EVENT, type SessionDragItem } from '../split/split-drag'
 
 export function useSessionQuoteDrop(targetRef: RefObject<HTMLElement | null>): void {
@@ -12,6 +13,7 @@ export function useSessionQuoteDrop(targetRef: RefObject<HTMLElement | null>): v
       const item = (event as CustomEvent<SessionDragItem>).detail
       if (!item?.path) return
       const store = useStore.getState()
+      const identity = composerSubmitIdentity(store)
       void window.yan
         .quoteSession(item.path, item.title)
         .then(async (result) => {
@@ -19,7 +21,7 @@ export function useSessionQuoteDrop(targetRef: RefObject<HTMLElement | null>): v
             store.notify('error', t('composer.quoteFailed', { name: item.title }))
             return
           }
-          await useStore.getState().addFileRefPaths([result.path])
+          await useStore.getState().addFileRefPaths([result.path], identity)
         })
         .catch(() => store.notify('error', t('composer.quoteFailed', { name: item.title })))
     }

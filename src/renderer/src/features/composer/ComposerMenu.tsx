@@ -9,8 +9,8 @@ import type { SlashCommand } from '../../../../shared/ipc'
 import { firstClause, toAbsoluteFilePath, type CompletionState } from './useCompletion'
 import {
   highlightParts,
+  MENU_EDGE,
   menuMaxHeight,
-  menuMaxWidth,
   placeMenu,
   placeTooltip,
   tooltipMaxWidth,
@@ -26,6 +26,18 @@ function sourceLabel(t: TFunc, source: SlashCommand['source']): string {
     prompt: 'composer.src.prompt',
     compatibility: 'composer.src.compatibility'
   } as const)[source])
+}
+
+function baseName(path: string): string {
+  const trimmed = path.endsWith('/') ? path.slice(0, -1) : path
+  const at = trimmed.lastIndexOf('/')
+  return at < 0 ? path : path.slice(at + 1)
+}
+
+function dirName(path: string): string {
+  const trimmed = path.endsWith('/') ? path.slice(0, -1) : path
+  const at = trimmed.lastIndexOf('/')
+  return at < 0 ? '' : trimmed.slice(0, at)
 }
 
 function Hit({ text, query }: { text: string; query: string }) {
@@ -79,12 +91,13 @@ export function ComposerMenu({
     const rect = anchor()
     if (!list || !rect) return
     const viewport = { width: window.innerWidth, height: window.innerHeight }
-    list.style.maxWidth = `${menuMaxWidth(viewport)}px`
+    const width = Math.max(0, Math.min(rect.right - rect.left, viewport.width - MENU_EDGE * 2))
+    list.style.width = `${width}px`
     list.style.maxHeight = `${menuMaxHeight(rect)}px`
     const box = placeMenu({
       anchor: rect,
-      size: { width: list.offsetWidth, height: list.scrollHeight },
-      viewport
+      size: { width, height: list.scrollHeight },
+      viewport: { ...viewport, width: Math.max(viewport.width, width + MENU_EDGE * 2) }
     })
     list.style.left = `${box.left}px`
     list.style.top = `${box.top}px`
@@ -283,9 +296,11 @@ export function ComposerMenu({
             >
               <span className="cmp-name">
                 {path.endsWith('/') ? <Folder size={14} aria-hidden /> : <FileTypeIcon name={path} size={14} />}
-                <Hit text={path} query={query} />
+                <Hit text={baseName(path)} query={query} />
               </span>
-              <span className="cmp-src">{path.endsWith('/') ? t('composer.dir') : t('composer.file')}</span>
+              <span className="cmp-desc">
+                <Hit text={dirName(path)} query={query} />
+              </span>
             </button>
           ))
         : null}

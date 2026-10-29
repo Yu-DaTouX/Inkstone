@@ -41,8 +41,8 @@
   .composer::after {
     content: '';
     position: absolute;
-    inset: -1px;
-    padding: 1px;
+    inset: calc(-1 * var(--hair, 1px));
+    padding: var(--hair, 1px);
     border-radius: inherit;
     background: linear-gradient(135deg, var(--comp-rim-hi), var(--comp-rim-lo) 45%);
     mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0);
@@ -90,7 +90,7 @@
 
   .cborder {
     position: absolute;
-    inset: -1px;
+    inset: calc(-1 * var(--hair, 1px));
     z-index: 1;
     border: 1px solid var(--think-off, var(--fg3));
     border-radius: inherit;
@@ -278,8 +278,9 @@
     padding: 0;
     border: none;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--surface);
-    box-shadow: 0 0 0 1px var(--alpha-2);
+    box-shadow: 0 0 0 var(--hair, 1px) var(--alpha-2);
     color: var(--fg2);
     opacity: 0;
     pointer-events: none;
@@ -317,31 +318,29 @@
 
   .composer-line {
     display: flex;
-    align-items: flex-end;
-    gap: var(--s-4);
+    align-items: flex-start;
+    gap: var(--s-6);
     min-width: 0;
-  }
-
-  .composer-line > .composer-plus,
-  .composer-line-end {
-    flex: none;
-    margin-block: calc((var(--t-prose-lh) - var(--size-btn)) / 2);
+    padding: var(--s-4) var(--s-4) 0;
   }
 
   .composer-line > .composer-mode {
-    margin-bottom: calc((var(--t-prose-lh) - var(--size-icon)) / 2);
+    margin-top: calc((var(--t-prose-lh) - var(--size-icon)) / 2);
   }
 
   .composer-line > .composer-text {
     flex: 1 1 auto;
     min-width: 0;
+    min-height: calc(var(--t-prose-lh) * 2);
   }
 
   .composer-line-end {
     display: inline-flex;
+    flex: none;
     align-items: center;
     gap: var(--s-2);
     min-width: 0;
+    margin-left: auto;
   }
 
   .composer-text {
@@ -485,9 +484,12 @@
     color: var(--fg2);
   }
 
-  .composer-bar .ctx-ring,
-  .composer-bar .mtp-trigger {
+  .composer-bar .ctx-ring {
     color: var(--fg3);
+  }
+
+  .composer-bar .mtp-trigger {
+    color: var(--fg2);
   }
 
   .composer-bar .ctx-ring:hover,
@@ -499,7 +501,7 @@
     flex: none;
   }
 
-  .composer-bar > .mtp-wrap {
+  .composer-tools > .mtp-wrap {
     flex: 0 1 auto;
     min-width: 0;
   }
@@ -536,22 +538,6 @@
     white-space: nowrap;
   }
 
-  .composer-aux {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-2);
-    min-width: 0;
-    color: var(--fg3);
-  }
-
-  .composer-bar > .composer-aux {
-    margin-left: auto;
-  }
-
-  .composer-aux:empty {
-    display: none;
-  }
-
   .composer-voice {
     display: inline-flex;
     align-items: center;
@@ -564,6 +550,7 @@
     width: var(--s-6);
     height: var(--s-6);
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--fail);
     animation: v3-voice-pulse var(--dur-breathe) var(--ease) infinite;
   }
@@ -597,12 +584,14 @@
     }
   }
 
-  .composer-send {
+  .composer-send.ui-btn {
     flex: none;
-    width: var(--size-btn-sm);
-    min-width: var(--size-btn-sm);
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
     padding: 0;
     border-radius: var(--r-full);
+    corner-shape: round;
   }
 
   .composer-plus {
@@ -616,6 +605,11 @@
 
   .composer-permission {
     flex: none;
+  }
+
+  .cp-chev {
+    flex: none;
+    color: var(--fg3);
   }
 
   .cp-label {
@@ -729,10 +723,9 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
-    min-width: 240px;
-    max-width: 512px;
+    max-width: none;
     padding: var(--s-4);
-    border-radius: var(--r-lg);
+    border-radius: var(--r-side);
     background: var(--surface-3);
     box-shadow: var(--shadow-pop);
     color: var(--fg);
@@ -740,10 +733,6 @@
     font-size: var(--t-body);
     overflow: hidden auto;
     overscroll-behavior: contain;
-  }
-
-  .cmp-menu[data-kind='at'] {
-    min-width: min(420px, calc(100vw - var(--s-16)));
   }
 
   .cmp-group {
@@ -756,12 +745,12 @@
     display: grid;
     grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--s-6);
+    gap: var(--s-8);
     min-width: 0;
-    min-height: var(--size-btn);
-    padding: 0 var(--s-6);
+    min-height: calc(var(--size-btn) + var(--s-4));
+    padding: 0 var(--s-8);
     border: 0;
-    border-radius: var(--r-sm);
+    border-radius: var(--r-md);
     background: transparent;
     color: var(--fg);
     font: inherit;
@@ -770,7 +759,7 @@
   }
 
   .cmp-item[data-selected] {
-    background: var(--sel);
+    background: var(--hover);
   }
 
   .cmp-item:disabled {
@@ -781,7 +770,7 @@
   .cmp-name {
     display: inline-flex;
     align-items: center;
-    gap: var(--s-2);
+    gap: var(--s-8);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

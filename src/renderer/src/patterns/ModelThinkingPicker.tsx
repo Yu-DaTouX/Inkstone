@@ -1,34 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import {
-  Dialog,
-  Header,
-  Input,
-  ListBox,
-  ListBoxItem,
-  ListBoxSection,
-  SearchField,
-  Separator,
-  SliderThumb,
-  SliderTrack
-} from 'react-aria-components'
-import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Search, Star } from 'lucide-react'
-import { Button, Popover, Slider, Select, ListBoxItem as ProviderItem } from '../ui'
+import { Dialog, Input, ListBox, ListBoxItem, SearchField, SliderThumb, SliderTrack } from 'react-aria-components'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Gauge, Search, Settings2, Star } from 'lucide-react'
+import { Button, Kbd, Popover, Slider } from '../ui'
 import { PulseField, resolveColor } from './pulse-field'
 import { APPEARANCE_EVENT } from '../lib/appearance'
 import { requestSettingReveal } from '../features/settings/search/search-model'
 import { useT } from '../i18n'
 import { currentThinkingLevels, useStore } from '../state/store'
 import {
-  buildPickerSections,
   isFavorite,
   isHidden,
-  parseRecentModels,
-  recentModelsAfterPick,
-  RECENT_STORAGE_KEY,
   shortWindow,
+  sortByProviderThenNewest,
   toggleFavorite,
-  withHidden,
-  type PickerSection
+  withHidden
 } from '../features/settings/models/models-model'
 import { useModelsText } from '../features/settings/models/models-text'
 import {
@@ -36,10 +21,12 @@ import {
   thinkingDragAction,
   thinkingLevelIndex
 } from '../features/composer/composer-layout'
-import type { ModelChoice } from '../../../shared/model-selection'
+import type { ModelBrand } from '../../../shared/model-brand'
 import type { ModelInfo } from '../../../shared/ipc'
 import { levelLabel, ThinkingBadge } from './ThinkingBadge'
 import { UltracodeConfirmDialog } from './UltracodeConfirmDialog'
+import { ModelBot } from './ModelBot'
+import { brandLabel, brandOfModel, brandsOf } from './model-vendor'
 import './model-thinking-picker.css'
 import './ultracode.css'
 
@@ -272,6 +259,14 @@ export function ThinkingSection({
   )
 }
 
+const FAVORITES_TAB = '__favorites'
+const JUMP_LIMIT = 9
+
+function jumpLabel(index: number): string {
+  const mac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
+  return `${mac ? '⌘' : 'Ctrl+'}${index + 1}`
+}
+
 export function ModelThinkingPicker({ className }: { className?: string } = {}) {
   const t = useT()
   const text = useModelsText()
@@ -289,30 +284,19 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const openSettings = useStore((s) => s.openSettings)
 
   const [open, setOpen] = useState(false)
+  const [thinkOpen, setThinkOpen] = useState(false)
   const [confirmDeep, setConfirmDeep] = useState(false)
-  useEffect(() => {
-    if (open && !useStore.getState().models.length) void useStore.getState().reloadModels()
-  }, [open])
   const [query, setQuery] = useState('')
-  const [provider, setProvider] = useState('')
-  const [recent, setRecent] = useState<ModelChoice[]>(() => {
-    if (typeof localStorage === 'undefined') return []
-    try {
-      return parseRecentModels(localStorage.getItem(RECENT_STORAGE_KEY))
-    } catch {
-      return []
-    }
-  })
+  const [tab, setTab] = useState('')
+  const [hiddenView, setHiddenView] = useState(false)
   const triggerRef = useRef<HTMLSpanElement>(null)
+  const thinkRef = useRef<HTMLSpanElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const cur =
     session?.model && session.model.id !== 'unknown' && session.model.name !== 'unknown' ? session.model : undefined
   const level = session?.thinkingLevel ?? 'off'
   const deep = !!session?.ultracode
-  const requestUltracode = (): void => {
-    setOpen(false)
-    setConfirmDeep(true)
-  }
   const hasLevels = levels.length > 1
   const busy = !!session?.isStreaming || !!session?.isCompacting
   const thinkingStatus = session?.thinkingLevelsStatus ?? (levels.length ? 'known' : 'unknown')
@@ -330,31 +314,59 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
       ? t('picker.thinkUnsupportedShort')
       : t('picker.thinkUnknownShort')
 
+  const favorites = settings?.modelFavorites ?? EMPTY
+  const hidden = settings?.modelHidden ?? EMPTY
+  const providerOrder = settings?.modelProviderOrder ?? EMPTY
+
+  const ordered = useMemo(() => sortByProviderThenNewest(models, providerOrder), [models, providerOrder])
+  const brands = useMemo(() => brandsOf(models), [models])
+  const otherLabel = t('picker.otherModels')
+  const favoriteModels = useMemo(
+    () => favorites.map((choice) => models.find((m) => keyOf(m) === keyOf(choice))).filter((m): m is ModelInfo => !!m),
+    [favorites, models]
+  )
+
   useEffect(() => {
+    if (open && !useStore.getState().models.length) void useStore.getState().reloadModels()
     if (open) void loadAuthProviders()
-  }, [open, loadAuthProviders])
-
-  const [showHidden, setShowHidden] = useState(false)
-
-  useEffect(() => {
-    if (!open) setQuery('')
-    else setShowHidden(!!cur && isHidden(useStore.getState().settings?.modelHidden ?? [], cur))
+    if (!open) {
+      setQuery('')
+      setHiddenView(false)
+      return
+    }
+    const current = cur ? models.find((m) => keyOf(m) === keyOf(cur)) : undefined
+    setTab(current && !isFavorite(favorites, current) ? brandOfModel(current) : favoriteModels.length ? FAVORITES_TAB : brands[0] ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  const choose = async (m: ModelInfo): Promise<void> => {
+    setOpen(false)
+    if (cur && keyOf(cur) === keyOf(m)) return
+    const result = await setModel(m.provider, m.id, true)
+    if (!result.ok) notify('error', result.error ?? t('models.selectFailed'))
+  }
+
+  const chooseRef = useRef(choose)
+  chooseRef.current = choose
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+      const index = Number(event.key) - 1
+      if (!Number.isInteger(index) || index < 0 || index >= JUMP_LIMIT) return
+      const target = favoriteModels[index]
+      if (!target || busy) return
+      event.preventDefault()
+      void chooseRef.current(target)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [favoriteModels, busy])
 
   const needsAuth = (provider: string): boolean => {
     if (authProviders.length === 0) return false
     const info = authProviders.find((p) => p.id === provider || p.authKey === provider)
     return !!info && info.status !== 'ready'
   }
-
-  const favorites = settings?.modelFavorites ?? EMPTY
-  const hidden = settings?.modelHidden ?? EMPTY
-  const providerOrder = settings?.modelProviderOrder ?? EMPTY
-  const sections = useMemo(
-    () => buildPickerSections({ models: provider ? models.filter((m) => m.provider === provider) : models, favorites, recent, query, providerOrder, hidden }),
-    [models, favorites, recent, query, providerOrder, provider, hidden]
-  )
-  const hiddenOpen = showHidden || !!query.trim()
 
   const setModelHidden = (m: ModelInfo, hide: boolean): void => {
     const state = useStore.getState().settings
@@ -375,44 +387,21 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
       .catch(() => notify('error', t('models.selectFailed')))
   }
 
+  const q = query.trim().toLowerCase()
+  const hiddenOf = (m: ModelInfo): boolean => isHidden(hidden, m) && !isFavorite(favorites, m)
+  const inTab = ordered.filter((m) => brandOfModel(m) === tab)
+  const rows: ModelInfo[] = q
+    ? ordered.filter((m) => `${m.name} ${m.id} ${m.provider}`.toLowerCase().includes(q))
+    : hiddenView
+      ? inTab.filter(hiddenOf)
+      : tab === FAVORITES_TAB
+        ? favoriteModels
+        : inTab.filter((m) => !hiddenOf(m))
+  const hiddenCount = !q && !hiddenView && tab !== FAVORITES_TAB ? inTab.filter(hiddenOf).length : 0
+  const providerSpread = new Set(rows.map((m) => m.provider)).size > 1
+  const showProvider = !!q || tab === FAVORITES_TAB || providerSpread
   const selectedKey = cur ? keyOf(cur) : undefined
-
-  const sectionTitle = (section: PickerSection): string => {
-    if (section.kind === 'favorites') return t('models.favorites')
-    if (section.kind === 'recent') return text('pickerRecent')
-    if (section.kind === 'hidden') return text('pickerHiddenTag')
-    return section.id
-  }
-
-  const rememberRecent = (m: ModelInfo): void => {
-    setRecent((current) => {
-      const next = recentModelsAfterPick(current, m)
-      try {
-        localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(next))
-      } catch {
-      }
-      return next
-    })
-  }
-
-  const choose = async (m: ModelInfo): Promise<void> => {
-    if (cur && keyOf(cur) === keyOf(m)) {
-      setOpen(false)
-      return
-    }
-    const result = await setModel(m.provider, m.id, true)
-    if (!result.ok) {
-      notify('error', result.error ?? t('models.selectFailed'))
-      return
-    }
-    rememberRecent(m)
-    setOpen(false)
-  }
-
-  const curFavorite = cur ? isFavorite(favorites, cur) : false
-  const toggleCurrentFavorite = (): void => {
-    if (cur) toggleModelFavorite(cur)
-  }
+  const tabLabel = tab === FAVORITES_TAB ? t('models.favorites') : brands.includes(tab as ModelBrand) ? brandLabel(tab as ModelBrand, otherLabel) : ''
 
   return (
     <div className={`mtp-wrap ${className ?? ''}`}>
@@ -429,27 +418,42 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
           onPressStart={(e) => { if (e.pointerType === 'mouse') setOpen((v) => !v) }}
           onPress={(e) => { if (e.pointerType !== 'mouse') setOpen((v) => !v) }}
         >
+          {cur ? <ModelBot className="mtp-bot" brand={brandOfModel(cur)} mood="icon" size={16} /> : null}
           <span className="mtp-model" data-testid="model-picker-name">
             {cur ? cur.name : t('picker.notReady')}
           </span>
-          {hasLevels && level !== 'off' ? (
-            <>
-              <span className="mtp-trigger-sep" aria-hidden>·</span>
-              <ThinkingBadge level={level} data-testid="thinking-badge" />
-            </>
-          ) : null}
-          {deep ? (
-            <>
-              <span className="mtp-trigger-sep" aria-hidden>·</span>
-              <span className="uc-badge" data-testid="ultracode-badge" title={t('picker.deepDesc')}>Ultracode</span>
-            </>
-          ) : null}
           <ChevronDown className="mtp-chev" size={12} aria-hidden />
         </Button>
       </span>
 
+      {showThinkingSection ? (
+        <span className="mtp-anchor" ref={thinkRef}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mtp-trigger mtp-think-trigger"
+            data-level={level}
+            aria-haspopup="dialog"
+            aria-expanded={thinkOpen}
+            isDisabled={busy}
+            data-testid="thinking-picker"
+            onPressStart={(e) => { if (e.pointerType === 'mouse') setThinkOpen((v) => !v) }}
+            onPress={(e) => { if (e.pointerType !== 'mouse') setThinkOpen((v) => !v) }}
+          >
+            <Gauge className="mtp-think-icon" size={14} aria-hidden />
+            {deep ? (
+              <span className="uc-badge" data-testid="ultracode-badge" title={t('picker.deepDesc')}>Ultracode</span>
+            ) : hasLevels ? (
+              <ThinkingBadge level={level} data-testid="thinking-badge" />
+            ) : (
+              <span className="mtp-model">{capabilityShort}</span>
+            )}
+            <ChevronDown className="mtp-chev" size={12} aria-hidden />
+          </Button>
+        </span>
+      ) : null}
+
       <Popover
-        variant="panel"
         className="mtp-pop"
         isOpen={open}
         onOpenChange={setOpen}
@@ -458,108 +462,163 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
         offset={8}
       >
         <Dialog className="mtp-dialog" aria-label={t('picker.searchModel')}>
-          <SearchField className="mtp-search" aria-label={t('picker.searchModel')} value={query} onChange={setQuery}>
-            <Search className="mtp-search-icon" size={14} aria-hidden />
-            <Input className="mtp-search-input" placeholder={t('picker.searchModel')} autoFocus />
-          </SearchField>
-
-          <Select className="mtp-provider" label={t('models.provider')} selectedKey={provider || '__all'} onSelectionChange={(key) => setProvider(key === '__all' ? '' : String(key))}>
-            <ProviderItem id="__all" textValue={t('usage.all')}>{t('usage.all')}</ProviderItem>
-            {[...new Set(models.map((m) => m.provider))].map((id) => <ProviderItem key={id} id={id} textValue={id}>{id}</ProviderItem>)}
-          </Select>
-          <div className="mtp-scroll">
-            {sections.length ? (
-              <ListBox
-                className="mtp-list"
-                aria-label={t('picker.searchModel')}
-                selectionMode="single"
-                selectedKeys={selectedKey ? [selectedKey] : []}
-                onSelectionChange={(keys) => {
-                  const selected = [...keys][0]
-                  if (selected === HIDDEN_TOGGLE) {
-                    setShowHidden((value) => !value)
-                    return
-                  }
-                  const hit = models.find((model) => keyOf(model) === selected)
-                  if (hit) void choose(hit)
-                }}
+          <nav className="mtp-rail" aria-label={t('models.provider')}>
+            {favoriteModels.length ? (
+              <>
+                <button
+                  type="button"
+                  className="mtp-rail-btn"
+                  aria-pressed={tab === FAVORITES_TAB && !q}
+                  aria-label={t('models.favorites')}
+                  title={t('models.favorites')}
+                  data-testid="model-picker-tab-favorites"
+                  onClick={() => { setTab(FAVORITES_TAB); setHiddenView(false); setQuery(''); searchRef.current?.focus() }}
+                >
+                  <Star size={16} fill="currentColor" aria-hidden />
+                </button>
+                <span className="mtp-rail-sep" aria-hidden />
+              </>
+            ) : null}
+            {brands.map((brand) => (
+              <button
+                key={brand}
+                type="button"
+                className="mtp-rail-btn"
+                aria-pressed={tab === brand && !q}
+                aria-label={brandLabel(brand, otherLabel)}
+                title={brandLabel(brand, otherLabel)}
+                data-testid={`model-picker-tab-${brand}`}
+                onClick={() => { setTab(brand); setHiddenView(false); setQuery(''); searchRef.current?.focus() }}
               >
-                {sections.map((section) => (
-                  <ListBoxSection key={section.id} className="mtp-group" data-kind={section.kind}>
-                    {section.kind === 'hidden' ? (
-                      <ListBoxItem
-                        id={HIDDEN_TOGGLE}
-                        className="mtp-item mtp-hidden-toggle"
-                        textValue={text('pickerHidden').replace('{n}', String(section.models.length))}
-                        data-testid="model-picker-hidden-toggle"
-                      >
+                <ModelBot className="mtp-bot" brand={brand} mood="icon" size={20} />
+              </button>
+            ))}
+            <span className="mtp-rail-fill" />
+            <button
+              type="button"
+              className="mtp-rail-btn"
+              aria-label={text('pickerManage')}
+              title={text('pickerManage')}
+              data-testid="model-picker-manage"
+              onClick={() => {
+                setOpen(false)
+                openSettings('models')
+                requestSettingReveal({ section: 'models', id: 'models-visibility' })
+              }}
+            >
+              <Settings2 size={15} aria-hidden />
+            </button>
+          </nav>
+
+          <div className="mtp-main">
+            <SearchField className="mtp-search" aria-label={t('picker.searchModel')} value={query} onChange={setQuery}>
+              <Search className="mtp-search-icon" size={14} aria-hidden />
+              <Input ref={searchRef} className="mtp-search-input" placeholder={t('picker.searchModel')} autoFocus />
+            </SearchField>
+            {hiddenView && !q ? (
+              <button type="button" className="mtp-subhead" onClick={() => setHiddenView(false)}>
+                <ChevronLeft size={14} aria-hidden />
+                <span>{tabLabel}</span>
+                <span className="mtp-subhead-note">{text('pickerHiddenTag')}</span>
+              </button>
+            ) : null}
+            <div className="mtp-scroll">
+              {rows.length || hiddenCount ? (
+                <ListBox
+                  className="mtp-list"
+                  aria-label={t('picker.searchModel')}
+                  selectionMode="single"
+                  selectedKeys={selectedKey ? [selectedKey] : []}
+                  onSelectionChange={(keys) => {
+                    const key = keys === 'all' ? undefined : [...keys][0]
+                    if (key === HIDDEN_TOGGLE) {
+                      setHiddenView(true)
+                      return
+                    }
+                    const hit = models.find((model) => keyOf(model) === key)
+                    if (hit) void choose(hit)
+                  }}
+                >
+                  {rows.map((m) => {
+                    const fav = isFavorite(favorites, m)
+                    const jump = favoriteModels.findIndex((f) => keyOf(f) === keyOf(m))
+                    const modelHidden = hiddenOf(m)
+                    return (
+                      <ListBoxItem key={keyOf(m)} id={keyOf(m)} className="mtp-item" textValue={`${m.name} ${m.provider}`}>
+                        {q || tab === FAVORITES_TAB ? <ModelBot className="mtp-bot" brand={brandOfModel(m)} mood="icon" size={16} /> : null}
                         <span className="mtp-item-main">
-                          <span className="mtp-item-name">{text('pickerHidden').replace('{n}', String(section.models.length))}</span>
-                        </span>
-                        <ChevronRight className="mtp-hidden-chev" data-open={hiddenOpen ? '1' : undefined} size={14} aria-hidden />
-                      </ListBoxItem>
-                    ) : (
-                      <Header className="mtp-group-title">{sectionTitle(section)}</Header>
-                    )}
-                    {(section.kind === 'hidden' && !hiddenOpen ? [] : section.models).map((m) => {
-                      const modelHidden = section.kind === 'hidden'
-                      return (
-                        <ListBoxItem
-                          key={keyOf(m)}
-                          id={keyOf(m)}
-                          onAction={() => { if (keyOf(m) === selectedKey) setOpen(false) }}
-                          className="mtp-item"
-                          textValue={`${m.name} ${m.provider}`}
-                        >
-                          <span className="mtp-item-main">
-                            <span className="mtp-item-name">{m.name}</span>
-                            <span className="mtp-tags">
-                              {section.kind === 'favorites' || section.kind === 'recent' || modelHidden ? (
-                                <span className="mtp-tag">{m.provider}</span>
-                              ) : null}
-                              {isFavorite(favorites, m) ? (
-                                <Star className="mtp-fav" size={11} fill="currentColor" aria-hidden />
-                              ) : null}
-                              {shortWindow(m.contextWindow) ? (
-                                <span className="mtp-tag">{shortWindow(m.contextWindow)}</span>
-                              ) : null}
-                              {m.input?.includes('image') ? <span className="mtp-tag">{t('picker.image')}</span> : null}
-                              {m.reasoning ? <span className="mtp-tag">{t('picker.reasoning')}</span> : null}
-                              {needsAuth(m.provider) ? (
-                                <span className="mtp-tag mtp-tag-auth">{t('picker.needsAuth')}</span>
-                              ) : null}
+                          <span className="mtp-item-name">{m.name}</span>
+                          {showProvider || needsAuth(m.provider) || modelHidden ? (
+                            <span className="mtp-item-sub">
+                              {m.provider}
+                              {shortWindow(m.contextWindow) ? ` · ${shortWindow(m.contextWindow)}` : ''}
+                              {needsAuth(m.provider) ? <span className="mtp-tag-auth"> · {t('picker.needsAuth')}</span> : null}
+                              {modelHidden ? ` · ${text('pickerHiddenTag')}` : null}
                             </span>
-                          </span>
-                          {isFavorite(favorites, m) ? null : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="mtp-hide"
-                              aria-label={`${modelHidden ? text('pickerShow') : text('pickerHide')}: ${m.name}`}
-                              data-testid="model-picker-hide"
-                              onPress={() => setModelHidden(m, !modelHidden)}
-                            >
-                              {modelHidden ? <Eye size={14} aria-hidden /> : <EyeOff size={14} aria-hidden />}
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="sm" aria-label={`${isFavorite(favorites, m) ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}: ${m.name}`} onPress={() => toggleModelFavorite(m)}>
-                            <Star size={14} fill={isFavorite(favorites, m) ? 'currentColor' : 'none'} aria-hidden />
+                          ) : null}
+                        </span>
+                        {jump >= 0 && jump < JUMP_LIMIT ? <Kbd>{jumpLabel(jump)}</Kbd> : null}
+                        {fav ? null : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="mtp-row-btn"
+                            aria-label={`${modelHidden ? text('pickerShow') : text('pickerHide')}: ${m.name}`}
+                            data-testid="model-picker-hide"
+                            onPress={() => setModelHidden(m, !modelHidden)}
+                          >
+                            {modelHidden ? <Eye size={13} aria-hidden /> : <EyeOff size={13} aria-hidden />}
                           </Button>
-                          {cur && keyOf(cur) === keyOf(m) ? <Check size={14} aria-hidden /> : null}
-                        </ListBoxItem>
-                      )
-                    })}
-                  </ListBoxSection>
-                ))}
-              </ListBox>
-            ) : (
-              <p className="mtp-empty">{models.length ? t('picker.noMatch') : t('picker.noModels')}</p>
-            )}
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mtp-row-btn"
+                          data-on={fav || undefined}
+                          aria-label={`${fav ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}: ${m.name}`}
+                          data-testid="model-picker-favorite"
+                          onPress={() => toggleModelFavorite(m)}
+                        >
+                          <Star size={13} fill={fav ? 'currentColor' : 'none'} aria-hidden />
+                        </Button>
+                        <Check className="mtp-check" size={14} data-on={selectedKey === keyOf(m) || undefined} aria-hidden />
+                      </ListBoxItem>
+                    )
+                  })}
+                  {hiddenCount ? (
+                    <ListBoxItem
+                      id={HIDDEN_TOGGLE}
+                      className="mtp-item mtp-hidden-toggle"
+                      textValue={text('pickerHidden').replace('{n}', String(hiddenCount))}
+                      data-testid="model-picker-hidden-toggle"
+                    >
+                      <span className="mtp-item-main">
+                        <span className="mtp-item-name">{text('pickerHidden').replace(' · {n}', '').replace('{n}', '')}</span>
+                        <span className="mtp-item-sub">{t('picker.modelCount', { n: hiddenCount })}</span>
+                      </span>
+                      <ChevronRight size={14} aria-hidden />
+                    </ListBoxItem>
+                  ) : null}
+                </ListBox>
+              ) : (
+                <p className="mtp-empty">{models.length ? t('picker.noMatch') : t('picker.noModels')}</p>
+              )}
+            </div>
           </div>
+        </Dialog>
+      </Popover>
 
-          <Separator className="mtp-sep" />
-
-          {showThinkingSection ? (
+      {showThinkingSection ? (
+        <Popover
+          variant="panel"
+          className="mtp-think-pop"
+          isOpen={thinkOpen}
+          onOpenChange={setThinkOpen}
+          triggerRef={thinkRef}
+          placement="top start"
+          offset={8}
+        >
+          <Dialog className="mtp-think-dialog" aria-label={t('picker.think')}>
             <div className="mtp-thinking" data-testid="model-thinking-settings">
               <ThinkingSection
                 levels={levels}
@@ -569,7 +628,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                 fallback={capabilityNote}
                 fallbackShort={capabilityShort}
                 ultracode={deep}
-                onUltracodeRequest={session?.sessionId ? requestUltracode : undefined}
+                onUltracodeRequest={session?.sessionId ? () => { setThinkOpen(false); setConfirmDeep(true) } : undefined}
                 onUltracodeOff={() => void setUltracode(false)}
               />
               {!hasLevels ? (
@@ -582,7 +641,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                       className="mtp-capability-action"
                       data-testid="thinking-open-settings"
                       onPress={() => {
-                        setOpen(false)
+                        setThinkOpen(false)
                         openSettings('auth')
                       }}
                     >
@@ -592,37 +651,9 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                 </div>
               ) : null}
             </div>
-          ) : null}
-
-          <Separator className="mtp-sep" />
-
-          <div className="mtp-footer">
-            {cur ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                data-testid="model-picker-favorite"
-                onPress={toggleCurrentFavorite}
-              >
-                <Star size={13} fill={curFavorite ? 'currentColor' : 'none'} aria-hidden />
-                {curFavorite ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}
-              </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              data-testid="model-picker-manage"
-              onPress={() => {
-                setOpen(false)
-                openSettings('models')
-                requestSettingReveal({ section: 'models', id: 'models-visibility' })
-              }}
-            >
-              {text('pickerManage')}
-            </Button>
-          </div>
-        </Dialog>
-      </Popover>
+          </Dialog>
+        </Popover>
+      ) : null}
       <UltracodeConfirmDialog
         isOpen={confirmDeep}
         onCancel={() => setConfirmDeep(false)}

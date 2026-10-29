@@ -6,7 +6,7 @@
   .v3-qbody[hidden] { display: none; }
   .v3-qmsg { margin-bottom: var(--s-8); color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-qtimer-wrap { display: inline-flex; align-items: center; gap: var(--s-4); }
-  .v3-qtimer { display: inline-flex; align-items: center; gap: var(--s-4); height: var(--size-btn-sm); padding: 0 var(--s-6); border: 0; border-radius: var(--r-full); background: var(--alpha-1); color: var(--fg2); font-size: var(--t-footnote); font-variant-numeric: tabular-nums; cursor: pointer; }
+  .v3-qtimer { display: inline-flex; align-items: center; gap: var(--s-4); height: var(--size-btn-sm); padding: 0 var(--s-6); border: 0; border-radius: var(--r-full); corner-shape: round; background: var(--alpha-1); color: var(--fg2); font-size: var(--t-footnote); font-variant-numeric: tabular-nums; cursor: pointer; }
   .v3-qtimer:hover { background: var(--alpha-2); }
   .v3-qtimer:focus-visible { outline: none; box-shadow: var(--ring-focus); }
   .v3-qtimer.low { color: var(--fail-t); background: var(--fail-bg); }
@@ -19,7 +19,7 @@
   .v3-qoption-row:hover { background: var(--alpha-1); }
   .v3-qoption-row:active { background: var(--alpha-2); }
   .v3-qoption-row:focus-visible { outline: none; box-shadow: var(--ring-focus-inset); }
-  .v3-qoption-n { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: var(--r-full); box-shadow: var(--ring-line2); color: var(--fg3); font-size: var(--t-caption); font-variant-numeric: tabular-nums; }
+  .v3-qoption-n { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: var(--r-full); corner-shape: round; box-shadow: var(--ring-line2); color: var(--fg3); font-size: var(--t-caption); font-variant-numeric: tabular-nums; }
   .v3-qoption-t { min-width: 0; flex: 1; overflow-wrap: anywhere; }
   .v3-qfoot { margin-top: var(--s-10); }
 

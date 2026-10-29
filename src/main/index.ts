@@ -64,9 +64,11 @@ import { sessionActionAgent, SESSION_ACTION_CHANGED } from './ipc/session-action
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
+import { registerProjectScriptsIpc } from './ipc/project-scripts-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
+import { registerGithubIpc } from './ipc/github-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
 import { registerSearchOpsIpc } from './ipc/search-ops-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
@@ -105,7 +107,8 @@ import { registerWorkspaceIpc } from './ipc/workspace-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { lockDataRoot } from '../core/data-root-lock'
-import { sameRuntimeEnvelope } from '../core/run-state'
+import { executionBusy, sameRuntimeEnvelope } from '../core/run-state'
+import { isWithin } from './file-path-gate'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { SubagentService } from './subagent-service'
 import { LookupCommands } from './lookup-commands'
@@ -2350,14 +2353,23 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
   }
 }
 
-function samePathKind(a: string, b: string): boolean {
-  const norm = (v: string): string => String(v ?? '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-  return norm(a) === norm(b)
-}
-
 function registerIpc(): void {
   configureWriteContext({
-    hasRunningTask: (cwd) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, cwd))
+    hasRunningTask: (cwd) => {
+      const root = resolve(cwd)
+      const runnerBusy = (runners?.statuses() ?? []).some((st) => {
+        if (!isWithin(root, resolve(st.cwd))) return false
+        const agent = runners?.agentOf(st.id)
+        return runners?.hasExecutionAdmission(st.cwd) === true || (!!agent && executionBusy(
+          agent.getState(),
+          () => agent.hasRunningBash(),
+          () => agent.getPendingUiCount()
+        ))
+      })
+      return runnerBusy || (subagentService.current()?.list() ?? []).some((run) =>
+        (run.status === 'running' || run.status === 'starting') && isWithin(root, resolve(run.cwd))
+      )
+    }
   })
 
 
@@ -3092,6 +3104,16 @@ function registerIpc(): void {
     }
   })
 
+  registerGithubIpc(ipc, {
+    authorizeReadCwd: async (cwd: string) => {
+      const st = await getSettings()
+      const resolved = await resolveFileContext(st, st.cwd, { cwd })
+      return resolved.ok
+        ? { ok: true as const, cwd: resolved.context.cwd }
+        : { ok: false as const, error: resolved.error }
+    }
+  })
+
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   refreshMinecraftPluginOnStartup()
   registerOpenCodeProxyIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
@@ -3171,6 +3193,7 @@ function registerIpc(): void {
   })
 
   registerTerminalIpc(ipc, () => ac()?.getState()?.cwd)
+  registerProjectScriptsIpc(ipc)
 }
 
 function pushWinState(): void {

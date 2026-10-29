@@ -7,7 +7,7 @@ import { porcelainFileStatus } from '../../lib/file-status'
 import { DiffView, type DiffViewMode } from '../diff'
 import { ImageCompare } from './ImageCompare'
 import { resolvePatchSource } from './changes-scope'
-import type { ChangeItem, ChangesImagePair, ChangesPatch, PatchLoader } from './types'
+import type { ChangeItem, ChangesAnnotate, ChangesImagePair, ChangesPatch, PatchLoader } from './types'
 import type { ChangesText } from './text'
 
 export interface ChangesFileDiffProps {
@@ -24,6 +24,7 @@ export interface ChangesFileDiffProps {
   expanded: boolean
   onToggle: (path: string) => void
   onRetry: () => void
+  annotate?: ChangesAnnotate
 }
 
 type PatchState =
@@ -41,7 +42,7 @@ function splitPath(path: string): { directory: string; base: string } {
 }
 
 export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
-  const { item, entry, cwd, request, loader, schedule, tick, lang, text, mode, expanded, onToggle, onRetry } = props
+  const { item, entry, cwd, request, loader, schedule, tick, lang, text, mode, expanded, onToggle, onRetry, annotate } = props
   const [state, setState] = useState<PatchState>({ kind: 'idle' })
   const bodyId = useId()
   const origin = useMemo(() => resolvePatchSource(item.path, entry), [item.path, entry])
@@ -120,7 +121,18 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
       return (
         <>
           {state.truncated ? <p className="changes-file__note">{text.patchTruncated}</p> : null}
-          <DiffView patch={state.patch} lang={lang} mode={mode} showFileHeader={false} embedded />
+          <DiffView
+            patch={state.patch}
+            lang={lang}
+            mode={mode}
+            showFileHeader={false}
+            annotate={
+              annotate
+                ? { labels: annotate.labels, onSubmit: (annotation) => annotate.onComment(item.path, annotation) }
+                : undefined
+            }
+            embedded
+          />
         </>
       )
     }

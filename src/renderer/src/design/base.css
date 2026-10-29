@@ -87,6 +87,7 @@
     background-clip: padding-box;
     border: 3px solid transparent;
     border-radius: var(--r-full);
+    corner-shape: round;
   }
 
   ::-webkit-scrollbar-track {

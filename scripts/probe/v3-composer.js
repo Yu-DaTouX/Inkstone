@@ -70,8 +70,7 @@
       [...(line?.querySelectorAll('[data-testid]') ?? [])]
         .map((el) => el.getAttribute('data-testid'))
         .filter((id) => ['composer-plus', 'composer-mode', 'composer-input', 'voice-start', 'composer-send', 'composer-stop'].includes(id))
-    check(lineIds()[0] === 'composer-plus' && lineIds()[1] === 'composer-input', `输入行：＋ → 输入（实际 ${JSON.stringify(lineIds())}）`)
-    check(['composer-send', 'composer-stop'].includes(lineIds().at(-1)), '发送 / 停止在输入行最末位')
+    check(lineIds()[0] === 'composer-input', `输入行只放输入（实际 ${JSON.stringify(lineIds())}）`)
     check(!document.querySelector('.composer-prompt'), '输入行不再有 › 提示符')
     const bar = document.querySelector('.composer-bar')
     check(!!bar, '状态行 .composer-bar 存在')
@@ -81,8 +80,11 @@
     const leftIds = () =>
       [...(tools?.querySelectorAll('[data-testid]') ?? [])]
         .map((el) => el.getAttribute('data-testid'))
-        .filter((id) => ['permission-picker', 'composer-project'].includes(id))
-    check(leftIds()[0] === 'permission-picker', `状态行左侧以权限开头（实际 ${JSON.stringify(leftIds())}）`)
+        .filter((id) => ['model-picker', 'thinking-picker', 'permission-picker', 'composer-project'].includes(id))
+    check(
+      leftIds()[0] === 'model-picker' && leftIds()[1] === 'thinking-picker' && leftIds()[2] === 'permission-picker',
+      `状态行左侧：模型 → 思考 → 权限（实际 ${JSON.stringify(leftIds())}）`
+    )
     const permLabel = document.querySelector('.composer-permission .cp-label')
     check(!!permLabel && permLabel.getBoundingClientRect().width > 8, '权限文字可见')
     if (store.getState().messages.length === 0) {
@@ -103,26 +105,21 @@
       '输入 ! 后出现 bash 模式徽标'
     )
     check(
-      lineIds()[0] === 'composer-plus' && lineIds()[1] === 'composer-mode' && lineIds()[2] === 'composer-input',
-      `模式徽标作为输入前缀，紧跟＋（实际 ${JSON.stringify(lineIds())}）`
+      lineIds()[0] === 'composer-mode' && lineIds()[1] === 'composer-input',
+      `模式徽标作为输入前缀（实际 ${JSON.stringify(lineIds())}）`
     )
     setValue(textarea, '')
 
-    const rightLabels = () =>
-      [...(bar?.children ?? [])]
-        .filter((el) => el !== tools)
-        .flatMap((el) => (el.matches('.composer-aux') ? [...el.children] : [el]))
-        .map((el) => {
-          if (el.matches('.ctx-ring-wrap')) return 'context'
-          if (el.matches('.mtp-wrap')) return 'model'
-          return 'other:' + el.className
-        })
-    const right = rightLabels()
-    note(`状态行右侧顺序：${right.join(' → ')}`)
-    check(right.at(-1) === 'model', '模型+思考在状态行最右')
-    check(!right.includes('context') || right.indexOf('context') === right.length - 2, '上下文环（若显示）紧挨模型左侧')
-    const voice = line?.querySelector('.composer-line-end .composer-voice')
-    check(!!voice, '语音在输入行行尾、发送左侧')
+    const end = bar?.querySelector('.composer-line-end')
+    const rightIds = () =>
+      [...(end?.querySelectorAll('[data-testid]') ?? [])]
+        .map((el) => el.getAttribute('data-testid'))
+        .filter((id) => ['composer-plus', 'voice-start', 'composer-send', 'composer-stop'].includes(id))
+    note(`状态行右侧顺序：${JSON.stringify(rightIds())}`)
+    check(bar?.lastElementChild === end, '右侧控件组在状态行最末')
+    check(rightIds()[0] === 'composer-plus', '＋在右侧控件组开头')
+    check(['composer-send', 'composer-stop'].includes(rightIds().at(-1)), '发送 / 停止在状态行最末位')
+    check(!!end?.querySelector('.composer-voice'), '语音在发送左侧')
 
     out.push('')
     out.push('--- 2. 发送 · 停止切换 ---')
@@ -167,8 +164,8 @@
       await until(() => q('composer-border')?.getAttribute('data-level') === 'medium'),
       '顶边 data-level 初始为 medium'
     )
-    q('model-picker')?.click()
-    check(await until(() => !!q('thinking-stops')), '模型+思考浮层打开，档位滑杆出现')
+    q('thinking-picker')?.click()
+    check(await until(() => !!q('thinking-stops')), '思考浮层打开，档位滑杆出现')
     const commits = []
     const realSetThinking = store.getState().setThinking
     store.setState({ setThinking: async (level) => { commits.push(level) } })
@@ -205,7 +202,7 @@
 
     out.push('')
     out.push('--- 4. 顶边空闲不可见 · 运行中按档位换色 ---')
-    q('model-picker')?.click()
+    q('thinking-picker')?.click()
     await until(() => !q('thinking-stops'), 2000)
     const borderEl = q('composer-border')
     const composerEl = document.querySelector('.composer')

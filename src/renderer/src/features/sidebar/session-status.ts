@@ -32,10 +32,16 @@ export interface SessionStatusInput {
   phase: RunPhase | null
   unread: boolean
   archived: boolean
+  markedUnread?: boolean
 }
 
-export function sessionStatusKind({ phase, unread, archived }: SessionStatusInput): SessionStatusKind {
+export function sessionStatusKind({ phase, unread, archived, markedUnread }: SessionStatusInput): SessionStatusKind {
   if (archived) return 'archived'
+  const kind = runPhaseKind(phase, unread)
+  return kind === 'idle' && markedUnread ? 'unread' : kind
+}
+
+function runPhaseKind(phase: RunPhase | null, unread: boolean): SessionStatusKind {
   switch (phase?.kind) {
     case 'needs-you':
     case 'stalled':

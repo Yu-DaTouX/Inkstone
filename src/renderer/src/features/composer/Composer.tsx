@@ -10,7 +10,7 @@ import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-sub
 import { readFiles } from './attachment-files'
 import { fileReferencePath } from './file-refs'
 import { composerSubmitIdentity } from '../../state/composer-recovery'
-import { loadDraft, saveDraft } from './draft-store'
+import { loadDraft, restoreDraft, saveDraft } from './draft-store'
 import { ModelThinkingPicker } from '../../patterns/ModelThinkingPicker'
 import { ContextRing } from '../../patterns/ContextRing'
 import { AttachmentStrip, ImageRefWarning } from './AttachmentStrip'
@@ -31,6 +31,7 @@ import { CANVAS_SEND_TO_CHAT_EVENT, type CanvasSendToChatDetail } from '../previ
 import { ComposerMenu } from './ComposerMenu'
 import { PermissionToggle } from './PermissionToggle'
 import { PlusMenu } from './PlusMenu'
+import { PromptStash } from './PromptStash'
 import { ProjectPicker } from './ProjectPicker'
 import { QueueEditor } from './QueueEditor'
 import { IsolationMergeBar } from './IsolationMergeBar'
@@ -107,7 +108,6 @@ export function Composer({ className }: { className?: string } = {}) {
   const firstRun = useStore((s) => s.sessions.every((item) => (item.messageCount ?? 0) === 0))
   const conversationKey = useStore((s) => s.peekedSessionId ?? s.session?.conversationId) ?? runtimeKey
   const historyKey = runtimeKey || conversationKey
-  const cachedDraft = useStore((s) => (runtimeKey ? s.sessionRuntimes[runtimeKey]?.draft ?? '' : ''))
   const setSessionDraft = useStore((s) => s.setSessionDraft)
 
   const editorInject = useStore((s) => s.editorInject)
@@ -167,6 +167,7 @@ export function Composer({ className }: { className?: string } = {}) {
     requestAnimationFrame(() => editorRef.current?.focus({ preventScroll: true }))
   }, [composerFocus, sessionId, armStrayEnter])
 
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null)
   const hydratedKey = useRef<string | null>(null)
   const skipPersist = useRef(false)
   useEffect(() => {
@@ -175,24 +176,28 @@ export function Composer({ className }: { className?: string } = {}) {
     hydratedKey.current = conversationKey || null
     skipPersist.current = true
     const persisted = runtimeKey ? loadDraft(runtimeKey) : undefined
-    const restored = runtimeKey ? cachedDraft || persisted?.text || '' : ''
-    setValue(restored)
-    setCursor(runtimeKey ? restored.length : null)
     const state = useStore.getState()
-    const cachedAttachments = runtimeKey ? state.sessionRuntimes[runtimeKey]?.draftAttachments ?? [] : []
-    const ownAttachments = cachedAttachments.length ? cachedAttachments : persisted?.attachments ?? []
+    const restored = restoreDraft(runtimeKey ? state.sessionRuntimes[runtimeKey] : undefined, persisted)
+    setValue(restored.text)
+    setHydratedDraftKey(runtimeKey)
+    setCursor(runtimeKey ? restored.text.length : null)
+    const ownAttachments = restored.attachments
     if (leavingConversation || ownAttachments.length) {
       if (ownAttachments !== state.attachments && (ownAttachments.length || state.attachments.length)) useStore.setState({ attachments: ownAttachments })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationKey])
+  }, [conversationKey, runtimeKey])
   useEffect(() => {
-    if (!runtimeKey || hydratedKey.current !== conversationKey) return undefined
-    const timer = setTimeout(() => saveDraft(runtimeKey, { text: value, attachments }), 250)
-    return () => clearTimeout(timer)
-  }, [runtimeKey, conversationKey, value, attachments])
+    if (!runtimeKey || hydratedDraftKey !== runtimeKey || hydratedKey.current !== conversationKey) return undefined
+    const draft = { text: value, attachments }
+    const timer = setTimeout(() => saveDraft(runtimeKey, draft), 250)
+    return () => {
+      clearTimeout(timer)
+      saveDraft(runtimeKey, draft)
+    }
+  }, [runtimeKey, hydratedDraftKey, conversationKey, value, attachments])
   const latestDraft = useRef({ key: '', text: '', attachments })
-  latestDraft.current = { key: runtimeKey ?? '', text: value, attachments }
+  if (hydratedDraftKey === runtimeKey) latestDraft.current = { key: runtimeKey ?? '', text: value, attachments }
   useEffect(
     () => () => {
       const { key, text, attachments: saved } = latestDraft.current
@@ -205,9 +210,9 @@ export function Composer({ className }: { className?: string } = {}) {
       skipPersist.current = false
       return
     }
-    if (!runtimeKey || hydratedKey.current !== conversationKey) return
+    if (!runtimeKey || hydratedDraftKey !== runtimeKey || hydratedKey.current !== conversationKey) return
     setSessionDraft(value, runtimeKey)
-  }, [runtimeKey, conversationKey, setSessionDraft, value])
+  }, [runtimeKey, hydratedDraftKey, conversationKey, setSessionDraft, value])
 
   const insertAtCursor = useCallback((text: string): void => {
     editorRef.current?.insertText(text)
@@ -254,7 +259,7 @@ export function Composer({ className }: { className?: string } = {}) {
   const caretInCode = useCallback(() => editorRef.current?.caretInCode() ?? false, [])
   const caretAfterMention = useCallback(() => editorRef.current?.caretAfterMention() ?? false, [])
   const isComposing = useCallback(() => editorRef.current?.isComposing() ?? false, [])
-  const menuAnchor = useCallback(() => editorRef.current?.caretRect() ?? null, [])
+  const menuAnchor = useCallback(() => wrapRef.current?.querySelector('.composer')?.getBoundingClientRect() ?? null, [])
   const completion = useCompletion({
     value,
     cursor,
@@ -364,7 +369,8 @@ export function Composer({ className }: { className?: string } = {}) {
         return
       }
       e.preventDefault()
-      void readFiles(files, addAttachments, (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
+      const identity = composerSubmitIdentity(useStore.getState())
+      void readFiles(files, (items) => addAttachments(items, identity), (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
     },
     [addAttachments, attachPastedText, notify, t]
   )
@@ -392,7 +398,8 @@ export function Composer({ className }: { className?: string } = {}) {
       if (files.length === 0) return
       const images = files.filter((f) => f.type.startsWith('image/'))
       const others = files.filter((f) => !f.type.startsWith('image/'))
-      if (images.length) void readFiles(images, addAttachments, (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
+      const identity = composerSubmitIdentity(useStore.getState())
+      if (images.length) void readFiles(images, (items) => addAttachments(items, identity), (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
       if (others.length) void addFileRefs(others)
     },
     [addAttachments, addFileRefs, addFileRefPaths, notify, t]
@@ -508,6 +515,7 @@ export function Composer({ className }: { className?: string } = {}) {
       data-session-quote-drop
     >
       <FileDropOverlay state={fileDrop} />
+      <PromptStash value={value} onClear={clearAll} rootRef={wrapRef} />
       <IsolationMergeBar />
       <div className="composer" data-quote-label={t('composer.quoteDrop')}>
         <ComposerBorder />
@@ -523,7 +531,6 @@ export function Composer({ className }: { className?: string } = {}) {
             </div>
           ) : null}
           <div className="composer-line">
-            <PlusMenu onInsert={insertAtCursor} />
             {mode ? (
               <span className="composer-mode" data-mode={mode} data-testid="composer-mode">
                 {mode === 'bash' ? t('composer.bashMode') : t('composer.cmdMode')}
@@ -545,7 +552,16 @@ export function Composer({ className }: { className?: string } = {}) {
               onPaste={onPaste}
               onCompositionChange={setComposing}
             />
+          </div>
+          <div className="composer-bar">
+            <div className="composer-tools">
+              <ModelThinkingPicker />
+              <PermissionToggle />
+              {freshSession ? <ProjectPicker /> : null}
+            </div>
             <div className="composer-line-end">
+              <ContextRing />
+              <PlusMenu onInsert={insertAtCursor} />
               <VoiceButton onText={insertAtCursor} scope={sessionId} />
               {submitAction === 'stop' ? (
                 <Button
@@ -573,16 +589,6 @@ export function Composer({ className }: { className?: string } = {}) {
                 </Button>
               )}
             </div>
-          </div>
-          <div className="composer-bar">
-            <div className="composer-tools">
-              <PermissionToggle />
-              {freshSession ? <ProjectPicker /> : null}
-            </div>
-            <div className="composer-aux">
-              <ContextRing />
-            </div>
-            <ModelThinkingPicker />
           </div>
         </div>
       </div>

@@ -46,6 +46,7 @@
     left: 50%;
     transform: translate(-50%, -50%);
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--line2);
     opacity: 0;
     transition:

@@ -3,7 +3,7 @@ import { BookOpen, Code2, Copy, Download, FileText, Folder, FolderOpen, Image as
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge, Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
-import { OFFICE_MAX_LINES, type OfficeDocumentView } from '../../../../shared/office'
+import type { OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { latestArtifactVersions, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/LazyCodeEditor'
@@ -13,6 +13,10 @@ import { editorIsEditableKind } from '../editor/editable-kind'
 import { showPreview, usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
+import { filesText } from '../files/files-text'
+import { FileBreadcrumbs } from '../files/FileBreadcrumbs'
+import { breadcrumbParent } from '../files/breadcrumb-model'
+import { rootLabel, toAbsolutePath } from '../files/files-model'
 import { usePreviewFreshness } from './use-preview-freshness'
 import { prefersRenderedHtml, useLiveHtml } from './live-html'
 import { CodeView, type CodeComment, type CodeViewTarget, type CodeViewText } from './CodeView'
@@ -22,12 +26,16 @@ import { FILE_TAB_SIZES, type FileViewSettings } from './file-view-settings'
 import { previewBodyKind, previewNotes, previewProblem, type PreviewNote, type PreviewProblem } from './preview-issue'
 import {
   csvDelimiterOf,
+  previewFormatIsFont,
   previewFormatOf,
   previewFormatOpensAsSource,
   previewFormatUsesText,
   type PreviewFormat
 } from './preview-format'
 import { CsvTableView } from './CsvTableView'
+import { OfficeView } from './OfficeView'
+import { NotebookView } from './NotebookView'
+import { FontPreview } from './FontPreview'
 import { HtmlPreviewFrame, type PreviewFocus } from './HtmlPreviewFrame'
 import { HtmlCanvas } from './HtmlCanvas'
 import { MediaView } from './MediaView'
@@ -78,6 +86,8 @@ type PreviewView =
     }
   | { kind: 'media'; format: 'image' | 'audio' | 'video' | 'pdf'; name: string; abs: string; notes: PreviewNote[] }
   | { kind: 'office'; name: string; abs: string; view: OfficeDocumentView }
+  | { kind: 'notebook'; name: string; abs: string; text: string; notes: PreviewNote[] }
+  | { kind: 'font'; name: string; abs: string; notes: PreviewNote[] }
   | { kind: 'binary'; name: string; abs: string; bytes: number; media: boolean; notes: PreviewNote[] }
   | { kind: 'problem'; name: string; problem: PreviewProblem }
   | { kind: 'error'; name: string; message: string }
@@ -156,6 +166,23 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
       }
       if ((format === 'image' || format === 'audio' || format === 'video' || format === 'pdf') && result.abs) {
         setViewSlot({ key: expectedViewKey, view: { kind: 'media', format, name: result.name, abs: result.abs, notes } })
+        return
+      }
+      if (format === 'notebook' && result.abs) {
+        const source = await window.yan.readPreviewBytes(result.abs, cwd)
+        if (cancelled) return
+        if (!source.ok || !source.bytes) {
+          setViewSlot({ key: expectedViewKey, view: { kind: 'error', name: result.name, message: source.error || text.failed } })
+          return
+        }
+        setViewSlot({
+          key: expectedViewKey,
+          view: { kind: 'notebook', name: result.name, abs: result.abs, text: new TextDecoder('utf-8').decode(source.bytes), notes }
+        })
+        return
+      }
+      if (previewFormatIsFont(format) && result.abs) {
+        setViewSlot({ key: expectedViewKey, view: { kind: 'font', name: result.name, abs: result.abs, notes } })
         return
       }
       const capability = previewKindOf(result.name)
@@ -477,37 +504,23 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
 
   usePaneMenu('preview-view', activeAbs ? viewSettingsMenu(viewSettings, setViewSetting, text) : [])
 
-  const crumbNav = crumbs.length > 1 ? (
-    <nav className="v3-preview-crumbs" aria-label={text.crumbsLabel} data-testid="v3-preview-crumbs">
-      {crumbs.map((segment, index) => {
-        const isLast = index === crumbs.length - 1
-        const dir = crumbs.slice(0, index + 1).join('/')
-        return (
-          <span key={dir} className="v3-preview-crumb-item">
-            {index ? (
-              <span className="v3-preview-crumb-sep" aria-hidden>
-                /
-              </span>
-            ) : null}
-            {isLast ? (
-              <span className="v3-preview-crumb" title={segment}>
-                {segment}
-              </span>
-            ) : (
-              <button
-                type="button"
-                className="v3-preview-crumb"
-                title={dir}
-                onClick={() => void window.yan.revealPath(`${owner.cwd.replace(/[\\/]+$/, '')}/${dir}`)}
-              >
-                {segment}
-              </button>
-            )}
-          </span>
-        )
-      })}
-    </nav>
-  ) : null
+  const crumbPath = useMemo(() => {
+    if (!activeAbs || !crumbs.length) return null
+    return breadcrumbParent(crumbs.join('/')) ?? ''
+  }, [activeAbs, crumbs])
+
+  const crumbNav =
+    onRevealInTree && crumbPath !== null ? (
+      <FileBreadcrumbs
+        rootLabel={rootLabel(owner.cwd)}
+        path={crumbPath}
+        text={filesText(lang)}
+        label={text.crumbsLabel}
+        tail={name}
+        className="v3-preview-breadcrumbs"
+        onNavigate={(dir) => onRevealInTree(toAbsolutePath(owner.cwd, dir))}
+      />
+    ) : null
   const pathRow = chrome && activeAbs ? (
     <div className="v3-preview-pathbar" data-testid="v3-preview-pathbar">
       {crumbNav ?? (
@@ -787,7 +800,21 @@ function PreviewBody({
         </>
       )
     case 'office':
-      return <OfficeView view={view} text={text} />
+      return <OfficeView view={view.view} labels={text} />
+    case 'notebook':
+      return (
+        <>
+          <PreviewNotes notes={view.notes.filter((note) => note !== 'too_large')} text={text} />
+          <NotebookView text={view.text} name={view.name} labels={text} />
+        </>
+      )
+    case 'font':
+      return (
+        <>
+          <PreviewNotes notes={view.notes} text={text} />
+          <FontPreview abs={view.abs} name={view.name} cwd={cwd} />
+        </>
+      )
     case 'binary':
       return (
         <EmptyState
@@ -971,41 +998,6 @@ function MarkdownView({
         <Markdown text={view.text} sourceCwd={parentDir(view.abs)} />
       </div>
       {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
-    </div>
-  )
-}
-
-function OfficeView({
-  view,
-  text
-}: {
-  view: Extract<PreviewView, { kind: 'office' }>
-  text: PreviewText
-}): ReactElement {
-  if (!view.view.ok) {
-    return (
-      <Notice tone="fail" className="v3-preview-error" data-testid="v3-preview-office-error">
-        {view.view.error}
-      </Notice>
-    )
-  }
-  const total = view.view.sections.reduce((sum, section) => sum + section.lines.length, 0)
-  const shouldTruncate = total > OFFICE_MAX_LINES
-  return (
-    <div className="v3-preview-office" data-testid="v3-preview-office">
-      {view.view.sections.map((section, index) => (
-        <section key={index} className="v3-preview-office-section">
-          <h4 className="v3-preview-office-title">{section.title}</h4>
-          <pre className="v3-preview-code">
-            <code>{section.lines.join('\n')}</code>
-          </pre>
-        </section>
-      ))}
-      <div className="v3-preview-note">
-        {view.view.note}
-        {shouldTruncate ? ` ${text.truncated}` : ''}
-      </div>
-      <div className="v3-preview-hint">{text.officeNote}</div>
     </div>
   )
 }

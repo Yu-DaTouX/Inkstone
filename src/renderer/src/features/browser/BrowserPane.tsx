@@ -9,6 +9,7 @@ import type { BrowserPaneProps } from '../workbench/types'
 import { PaneTitle, usePaneChrome } from '../workbench/pane-chrome'
 import { browserText } from './browser-text'
 import { browserControlAllowed } from './ownership'
+import { LocalServerList } from './LocalServerList'
 import { useBrowserBoundsSync, useBrowserOverlayBlocker, useBrowserSurfaceActive } from './use-browser-surface'
 import './browser.css'
 
@@ -210,6 +211,10 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           />
           {importButton}
           {importStatus}
+          <LocalServerList
+            active={visible}
+            onOpen={(url) => void openBrowser(url, { key: owner.key, takeover: true })}
+          />
         </div>
       )
     }

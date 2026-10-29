@@ -135,6 +135,7 @@
     width: var(--s-12);
     height: var(--s-12);
     border-radius: var(--r-full);
+    corner-shape: round;
     pointer-events: none;
   }
   .ui-btn[data-pending]::before {
@@ -318,6 +319,7 @@
   }
   .ui-radio__dot {
     border-radius: var(--r-full);
+    corner-shape: round;
   }
   .ui-checkbox[data-selected] .ui-checkbox__box,
   .ui-checkbox[data-indeterminate] .ui-checkbox__box {
@@ -332,6 +334,7 @@
     width: 8px;
     height: 8px;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--ink);
     opacity: 0;
     transition: opacity var(--dur-fast) var(--ease);
@@ -780,6 +783,7 @@
     bottom: -1px;
     height: 2px;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--accent);
   }
   .ui-tab[data-disabled] {
@@ -963,6 +967,7 @@
     gap: var(--s-4);
     padding: 1px var(--s-6);
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--sunken);
     color: var(--fg2);
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
@@ -1120,6 +1125,7 @@
     border: 1.5px solid var(--line2);
     border-top-color: var(--fg);
     border-radius: var(--r-full);
+    corner-shape: round;
     animation: ui-spin var(--dur-spin) linear infinite;
   }
   .ui-skeleton {
@@ -1142,6 +1148,7 @@
     width: 32px;
     height: 32px;
     border-radius: var(--r-full);
+    corner-shape: round;
   }
   .ui-separator {
     border: none;

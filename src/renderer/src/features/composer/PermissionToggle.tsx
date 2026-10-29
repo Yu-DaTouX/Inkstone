@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Menu, MenuItem, MenuTrigger } from 'react-aria-components'
-import { Check, Shield } from 'lucide-react'
+import { Check, ChevronDown, Shield } from 'lucide-react'
 import { Button, Dialog, Modal, ModalOverlay, Popover } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -29,6 +29,7 @@ export function PermissionToggle() {
         >
           <Shield size={13} aria-hidden />
           <span className="cp-label">{t(`permission.label.${permission}` as 'permission.label.danger')}</span>
+          <ChevronDown className="cp-chev" size={12} aria-hidden />
         </Button>
         <Popover className="composer-permission-pop" placement="top start" offset={6}>
           <Menu className="composer-permission-menu" aria-label={t('permission.title')}>

@@ -95,6 +95,7 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
+    corner-shape: round;
     box-shadow: var(--ring-line2);
   }
 

@@ -164,6 +164,7 @@
     height: 6px;
     margin-left: 2px;
     border-radius: 50%;
+    corner-shape: round;
     background: var(--accent);
   }
 

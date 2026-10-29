@@ -10,6 +10,7 @@ import { workbenchText } from '../features/workbench/workbench-text'
 import { collabText } from '../features/collab/collab-text'
 import { useHoverDelay } from '../lib/use-hover-delay'
 import { IconTip } from './IconTip'
+import { ProjectScriptsControl } from '../features/scripts/ProjectScriptsControl'
 import { v3Text, withShortcutKeys } from './v3-text'
 import { plainTitleText } from '../../../shared/title-text'
 
@@ -38,7 +39,7 @@ const TITLEBAR_PANES = [
   { tab: 'files', Icon: Folder }
 ] as const
 
-const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs', 'device']
+const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs', 'device', 'pullRequests']
 const MENU_KEEP_ON_TOP = 'head:keep-on-top'
 const MENU_SETTINGS = 'head:settings'
 
@@ -138,6 +139,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
       <div className="v3-head-actions">
         {route === 'chat' ? (
           <>
+            <ProjectScriptsControl />
             <IconTip label={sessionBarLabel}>
               <IconButton
                 aria-label={sessionBarLabel}

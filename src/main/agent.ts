@@ -610,10 +610,23 @@ export class AgentController extends EventEmitter {
 
   private readonly entriesLite = new SessionEntriesLite()
 
+  private sessionReadCurrent(): () => boolean {
+    const rpc = this.rpc
+    const sessionId = this.state?.sessionId
+    const sessionFile = this.state?.sessionFile
+    const generation = this.capabilityOpts?.runnerGeneration
+    return () => !this.stopping && this.rpc === rpc && this.state?.sessionId === sessionId &&
+      this.state?.sessionFile === sessionFile && this.capabilityOpts?.runnerGeneration === generation
+  }
+
   private async sessionEntriesLite(): Promise<Record<string, unknown>[] | null> {
+    const current = this.sessionReadCurrent()
+    const rpc = this.rpc
     const lite = await this.entriesLite.entries(this.state?.sessionFile).catch(() => null)
+    if (!current()) return null
     if (lite) return lite
-    const res = await this.rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
+    const res = await rpc?.command<{ entries?: Record<string, unknown>[] }>('get_entries')
+    if (!current()) return null
     return res?.success ? (res.data?.entries ?? []) : null
   }
 
@@ -1198,10 +1211,13 @@ export class AgentController extends EventEmitter {
   }
 
   async refreshTodos(): Promise<SessionTodo[]> {
+    const current = this.sessionReadCurrent()
+    const sessionId = this.state?.sessionId
     try {
       const entries = await this.sessionEntriesLite()
-      if (!entries) return []
-      const hostEntries = await this.taskPlanEntries()
+      if (!current() || !entries) return []
+      const hostEntries = await this.taskPlanEntries(sessionId)
+      if (!current()) return []
       const snaps = todoSnapshotsFromEntries([...entries, ...hostEntries])
       const latest = snaps.length ? snaps[snaps.length - 1].todos : []
       this.push({ ch: 'todos', payload: latest })
@@ -1212,8 +1228,7 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async taskPlanEntries(): Promise<Record<string, unknown>[]> {
-    const sessionId = this.state?.sessionId
+  private async taskPlanEntries(sessionId = this.state?.sessionId): Promise<Record<string, unknown>[]> {
     if (!sessionId || !isSafeSessionId(sessionId)) return []
     try {
       return (await readTaskPlanLog(sessionId)).map(taskPlanLogEntry)

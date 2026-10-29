@@ -22,7 +22,8 @@ export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string
       fallbackCwd: fallbackCwd(),
       cols: request?.cols,
       rows: request?.rows,
-      owner: request?.owner
+      owner: request?.owner,
+      title: request?.title
     })
   )
   rawHandle('yan:terminal:write', (_e, id: string, data: string) => writeTerminal(String(id ?? ''), String(data ?? '')))

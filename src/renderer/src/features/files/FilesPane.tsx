@@ -14,10 +14,12 @@ import { ArrowUpRight, ChevronRight, ChevronsDownUp, List, RefreshCw, Search, X 
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, IconButton, SearchField, Spinner } from '../../ui'
+import type { DirEntry } from '../../../../shared/ipc'
 import {
   canAttachToContext,
   handleTreeKey,
   rangeSelected,
+  rootLabel,
   tabbablePath,
   toAbsolutePath,
   toRelativePath,
@@ -26,6 +28,8 @@ import {
   type FileTreeRow,
   type FilesRootStatus
 } from './files-model'
+import { breadcrumbDirectory, breadcrumbParent } from './breadcrumb-model'
+import { FileBreadcrumbs } from './FileBreadcrumbs'
 import { filesText, type FilesText } from './files-text'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { FilesRowMenu } from './FilesRowMenu'
@@ -72,7 +76,7 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
   const text = filesText(lang)
   const chrome = usePaneChrome()
   const tree = useFilesTree(owner)
-  const { state, rows, status, highlight, reveal, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh } = tree
+  const { state, rows, status, highlight, reveal, ensureDir, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh } = tree
   const [query, setQuery] = useState('')
   const [retry, setRetry] = useState(0)
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
@@ -124,15 +128,47 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
     })
   }, [showTreeNow])
 
+  const goToDirectory = useCallback(
+    (rel: string): void => {
+      setQuery('')
+      showTreeNow()
+      if (rel === '') {
+        focus('')
+        if (scrollRef.current) scrollRef.current.scrollTop = 0
+        return
+      }
+      reveal(rel, { focus: false })
+    },
+    [focus, reveal, showTreeNow]
+  )
+
   const revealInTree = useCallback(
     (abs: string): void => {
       const rel = toRelativePath(owner.cwd, abs)
-      if (rel === null || rel === '') return
+      if (rel === null) return
+      if (rel === '') {
+        goToDirectory('')
+        return
+      }
       setQuery('')
       showTreeNow()
       reveal(rel)
     },
-    [owner.cwd, reveal, showTreeNow]
+    [owner.cwd, reveal, showTreeNow, goToDirectory]
+  )
+
+  const currentDir = useMemo(() => {
+    const row = rows.find((item) => item.focusable && item.path === state.focusPath)
+    if (!row) return breadcrumbParent(state.focusPath) ?? ''
+    return breadcrumbDirectory(state.focusPath, row.dir)
+  }, [rows, state.focusPath])
+  const crumbEntries = useCallback(
+    (dir: string): readonly DirEntry[] | null | undefined => {
+      const listing = state.listings[dir]
+      if (listing === undefined) return undefined
+      return listing === null ? null : listing.entries
+    },
+    [state.listings]
   )
 
   useEffect(() => {
@@ -321,6 +357,18 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
       ) : null}
 
       <div className="v3-files-col" hidden={!layout.showTree} role="group" aria-label={text.treeLabel}>
+        {owner.cwd ? (
+          <FileBreadcrumbs
+            rootLabel={rootLabel(owner.cwd, state.listings['']?.rootName)}
+            path={currentDir}
+            text={text}
+            label={text.crumbsLabel}
+            browse
+            entries={crumbEntries}
+            onBrowse={ensureDir}
+            onNavigate={goToDirectory}
+          />
+        ) : null}
         <div className="v3-files-filter" data-content={contentMode ? '1' : undefined} data-query={query ? '1' : undefined}>
           <SearchField
             ref={filterRef}

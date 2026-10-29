@@ -1,12 +1,14 @@
 import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, ChevronRight, GitCompare, List, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, FlaskConical, GitCompare, List, RefreshCw } from 'lucide-react'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitStatusEntry } from '../../../../shared/git'
-import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, TextField, cx } from '../../ui'
+import { Button, Checkbox, IconButton, Menu, MenuItem, MenuTrigger, Popover, TextField, cx } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n } from '../../i18n'
+import { useStore } from '../../state/store'
 import type { DiffViewMode } from '../diff'
+import { serializeLineComment, type CommentLang } from '../preview/code-line-comment'
 import { changesText } from './text'
 import { PaneTools, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
 import {
@@ -22,8 +24,18 @@ import {
 import { ChangesFileDiff } from './ChangesFileDiff'
 import { buildFileTree, createLimitedQueue, flattenFileTree, isLargeDiff, sortChangeItems } from './file-list'
 import { useChangesFileList } from './use-file-list'
+import { isTestFilePath, readHideTestFiles, writeHideTestFiles } from './test-files'
+import {
+  patchHash,
+  readViewedFiles,
+  reconcileViewedFiles,
+  viewedPathsOf,
+  withFileViewed,
+  writeViewedFiles
+} from './viewed-files'
 import type {
   ChangeItem,
+  ChangesAnnotate,
   ChangesGitSource,
   ChangesOwner,
   ChangesPatch,
@@ -158,7 +170,7 @@ type ListOutcome =
 const SCOPE_KINDS: readonly ChangesScopeKind[] = ['working', 'branch', 'commit']
 
 export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: ChangesPaneProps): ReactElement {
-  const uiLang = useI18n().lang
+  const { lang: uiLang, t } = useI18n()
   const resolvedLang = lang ?? uiLang
   const text = useMemo(() => changesText(resolvedLang), [resolvedLang])
   const source = useMemo(() => gitSource ?? defaultGitSource(), [gitSource])
@@ -195,6 +207,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [actionNotice, setActionNotice] = useState('')
+  const [hideTests, setHideTests] = useState(readHideTestFiles)
+  const [viewed, setViewed] = useState(readViewedFiles)
 
   const seqRef = useRef(0)
   const initRef = useRef('')
@@ -292,18 +306,43 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     }
   }, [ownerKey, cwd, generation, tick, source, request])
 
-  const large = useMemo(() => isLargeDiff(items), [items])
+  const viewedRoot = repo?.root ?? ''
+  const patchHashes = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const [path, entry] of Object.entries(patches)) {
+      if (entry?.patch) map.set(path, patchHash(entry.patch))
+    }
+    return map
+  }, [patches])
+  const testPaths = useMemo(
+    () => new Set(items.filter((item) => isTestFilePath(item.path)).map((item) => item.path)),
+    [items]
+  )
+  const hiddenTestCount = hideTests ? testPaths.size : 0
+  const shownItems = useMemo(
+    () => (hideTests ? items.filter((item) => !testPaths.has(item.path)) : items),
+    [hideTests, items, testPaths]
+  )
+  const viewedCandidates = useMemo(
+    () => shownItems.map((item) => ({ path: item.path, hash: patchHashes.get(item.path) ?? null })),
+    [shownItems, patchHashes]
+  )
+  const viewedPaths = useMemo(
+    () => viewedPathsOf(viewed, viewedRoot, viewedCandidates),
+    [viewed, viewedRoot, viewedCandidates]
+  )
+
+  const large = useMemo(() => isLargeDiff(shownItems), [shownItems])
   const narrow = fileList.paneWidth > 0 && fileList.paneWidth < 560
   const mode: DiffViewMode = layout === 'split' && narrow ? 'unified' : layout
 
-  const treeRows = useMemo(() => flattenFileTree(buildFileTree(items), collapsedDirs), [items, collapsedDirs])
+  const treeRows = useMemo(() => flattenFileTree(buildFileTree(shownItems), collapsedDirs), [shownItems, collapsedDirs])
   const tabbableRowPath = useMemo(() => {
     const paths = treeRows.map((row) => row.path)
     if (activePath && paths.includes(activePath)) return activePath
     return paths[0] ?? null
   }, [treeRows, activePath])
   const itemByPath = useMemo(() => new Map(items.map((item) => [item.path, item])), [items])
-
   const selectFile = useCallback((path: string): void => {
     setActivePath(path)
     setExpanded((prev) => {
@@ -332,6 +371,34 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       return next
     })
   }, [])
+
+  const toggleHideTests = useCallback((): void => {
+    const next = !hideTests
+    setHideTests(next)
+    writeHideTestFiles(next)
+  }, [hideTests])
+
+  const toggleViewed = useCallback(
+    (path: string, next: boolean): void => {
+      setViewed((prev) => withFileViewed(prev, viewedRoot, path, patchHashes.get(path) ?? null, next))
+    },
+    [patchHashes, viewedRoot]
+  )
+
+  useEffect(() => {
+    writeViewedFiles(viewed)
+  }, [viewed])
+
+  useEffect(() => {
+    if (!viewedRoot || patchHashes.size === 0) return
+    setViewed((prev) =>
+      reconcileViewedFiles(
+        prev,
+        viewedRoot,
+        [...patchHashes].map(([path, hash]) => ({ path, hash }))
+      )
+    )
+  }, [patchHashes, viewedRoot])
 
   useEffect(() => {
     if (!reveal) return
@@ -479,6 +546,13 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     ...(fileList.canFit
       ? [{ id: 'changes:files', label: fileList.shown ? text.hideFileList : text.showFileList, checked: fileList.shown, onAction: fileList.toggle }]
       : []),
+    {
+      id: 'changes:tests',
+      label: hideTests ? t('changes.showTests') : t('changes.hideTests'),
+      checked: hideTests,
+      disabled: testPaths.size === 0,
+      onAction: toggleHideTests
+    },
     { id: 'changes:collapse', label: text.collapseAll, onAction: () => setExpanded(new Set()) },
     {
       id: 'changes:expand',
@@ -541,6 +615,32 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       else focus(index - 1)
     }
   }
+
+  const annotate = useMemo<ChangesAnnotate>(() => {
+    const commentLang: CommentLang = resolvedLang.toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN'
+    return {
+      labels: {
+        add: t('changes.annotateAdd'),
+        line: (line) => t('changes.annotateLine', { line }),
+        lines: (start, end) => t('changes.annotateLines', { start, end }),
+        placeholder: t('changes.annotatePlaceholder'),
+        submit: t('changes.annotateSubmit'),
+        cancel: t('changes.annotateCancel'),
+        hint: t('changes.annotateHint')
+      },
+      onComment: (path, annotation) => {
+        const serialized = serializeLineComment({
+          path,
+          start: annotation.start,
+          end: annotation.end,
+          code: annotation.code,
+          text: annotation.text,
+          lang: commentLang
+        })
+        if (serialized) useStore.getState().insertIntoComposer(serialized)
+      }
+    }
+  }, [resolvedLang, t])
 
   const head = (
     <PaneTools>
@@ -640,6 +740,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               {showEmpty && elsewhere > 0 ? text.subdirClean(subdir, elsewhere) : text.subdirScope(subdir)}
             </p>
           ) : null}
+          {hiddenTestCount > 0 ? (
+            <p className="changes-pane__hint" data-testid="changes-tests-hidden">
+              {t('changes.testsHidden', { count: hiddenTestCount })}
+            </p>
+          ) : null}
           {showEmpty ? (
             scope.kind === 'working' ? (
               !hasTracked && !listError && !subdir ? <p className="changes-pane__hint">{text.clean}</p> : null
@@ -650,6 +755,23 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             <div className="changes-pane__layout" ref={fileList.hostRef} data-dragging={fileList.dragging || undefined}>
               {fileList.shown ? (
                 <div className="changes-pane__files" style={{ width: fileList.width }}>
+                  <div className="changes-pane__files-head">
+                    <span className="changes-pane__files-stat">
+                      {t('changes.viewedOf', { viewed: viewedPaths.size, total: shownItems.length })}
+                    </span>
+                    {testPaths.size > 0 ? (
+                      <IconButton
+                        size="sm"
+                        aria-label={hideTests ? t('changes.showTests') : t('changes.hideTests')}
+                        title={hideTests ? t('changes.showTests') : t('changes.hideTests')}
+                        aria-pressed={hideTests}
+                        data-testid="changes-hide-tests"
+                        onPress={toggleHideTests}
+                      >
+                        <FlaskConical size={13} aria-hidden="true" />
+                      </IconButton>
+                    ) : null}
+                  </div>
                   <div className="changes-pane__tree" role="tree" aria-label={text.filesTitle} onKeyDown={onTreeKeyDown}>
                     {treeRows.map((row) =>
                       row.kind === 'dir' ? (
@@ -670,19 +792,25 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                           <span className="changes-pane__folder-name">{row.name}</span>
                         </button>
                       ) : (
-                        <button
+                        <div
                           key={`file:${row.path}`}
-                          type="button"
                           role="treeitem"
                           aria-level={row.depth + 1}
                           aria-selected={activePath === row.path}
                           data-row-path={row.path}
                           data-row-kind="file"
+                          data-viewed={viewedPaths.has(row.path) ? '' : undefined}
                           tabIndex={row.path === tabbableRowPath ? 0 : -1}
                           className="changes-pane__row"
                           style={{ paddingLeft: `${8 + row.depth * 12}px` }}
                           title={row.path}
                           onClick={() => selectFile(row.path)}
+                          onKeyDown={(event) => {
+                            if (event.target !== event.currentTarget) return
+                            if (event.key !== 'Enter' && event.key !== ' ') return
+                            event.preventDefault()
+                            selectFile(row.path)
+                          }}
                         >
                           <FileTypeIcon name={row.path} size={12} />
                           <span className="changes-pane__row-name">{row.name}</span>
@@ -692,7 +820,18 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                               <span className="changes-pane__delta-del">−{itemByPath.get(row.path)?.removed ?? 0}</span>
                             </span>
                           ) : null}
-                        </button>
+                          <span className="changes-pane__row-viewed" onClick={(event) => event.stopPropagation()}>
+                            <Checkbox
+                              aria-label={
+                                viewedPaths.has(row.path)
+                                  ? t('changes.markUnviewed', { path: row.path })
+                                  : t('changes.markViewed', { path: row.path })
+                              }
+                              isSelected={viewedPaths.has(row.path)}
+                              onChange={(next) => toggleViewed(row.path, next)}
+                            />
+                          </span>
+                        </div>
                       )
                     )}
                   </div>
@@ -730,7 +869,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               ) : null}
               <div className="changes-pane__main" ref={scrollerRef} tabIndex={-1}>
                 {large ? <p className="changes-pane__banner">{text.largeDiffBanner}</p> : null}
-                {items.map((item) => (
+                {shownItems.map((item) => (
                   <ChangesFileDiff
                     key={item.path}
                     item={item}
@@ -746,6 +885,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                     expanded={expanded.has(item.path)}
                     onToggle={toggleFile}
                     onRetry={refresh}
+                    annotate={annotate}
                   />
                 ))}
               </div>

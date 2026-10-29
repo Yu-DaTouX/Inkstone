@@ -45,6 +45,7 @@ export interface TerminalStartOptions {
   args?: string[]
   env?: NodeJS.ProcessEnv
   owner?: string
+  title?: string
 }
 
 interface TerminalEntry {
@@ -217,7 +218,7 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
 
   const info: TerminalSessionInfo = {
     id,
-    title: titleOf(shell, cwd),
+    title: options.title?.trim().slice(0, 60) || titleOf(shell, cwd),
     shell,
     cwd,
     cols,

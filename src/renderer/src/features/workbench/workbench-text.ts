@@ -132,7 +132,8 @@ const ZH: WorkbenchText = {
     branch: '分支',
     logs: '日志',
     quota: '额度',
-    device: '设备'
+    device: '设备',
+    pullRequests: 'Pull 请求'
   },
   overview: {
     title: '概览',
@@ -230,7 +231,8 @@ const EN: WorkbenchText = {
     branch: 'Branches',
     logs: 'Logs',
     quota: 'Quota',
-    device: 'Device'
+    device: 'Device',
+    pullRequests: 'Pull requests'
   },
   overview: {
     title: 'Overview',

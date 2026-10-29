@@ -96,6 +96,7 @@
     width: var(--size-dot-unread);
     height: var(--size-dot-unread);
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--fg3);
   }
   .ui-status__dot[data-kind='running'] {
@@ -103,7 +104,7 @@
   }
   .ui-status__dot:is([data-kind='awaiting'], [data-kind='pending']) {
     background: var(--ask);
-    box-shadow: inset 0 0 0 1px var(--ask-edge);
+    box-shadow: inset 0 0 0 var(--hair, 1px) var(--ask-edge);
   }
   .ui-status__dot[data-kind='pending'] {
     animation: ui-status-pulse var(--dur-breathe) ease-in-out infinite;
@@ -119,7 +120,7 @@
   }
   .ui-status__dot[data-kind='idle'] {
     background: transparent;
-    box-shadow: inset 0 0 0 1px var(--fg3);
+    box-shadow: inset 0 0 0 var(--hair, 1px) var(--fg3);
     opacity: 0.5;
   }
   @keyframes ui-status-pulse {
@@ -141,6 +142,7 @@
     width: var(--size-avatar);
     height: var(--size-avatar);
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--alpha-2);
     color: var(--fg2);
     font: var(--w-medium) var(--t-caption) / 1 var(--font-ui);

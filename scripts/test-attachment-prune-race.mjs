@@ -11,7 +11,7 @@ async function fixture(disappear) {
   let callback, afterScan = false, pruned = false
   runInNewContext(code, {
     handle: (_, fn) => { callback = fn }, deps: { isSessionBusy: () => false },
-    PI_AGENT_DIR: '/fixture', YAN_DIR: '/fixture', join, existsSync: () => true,
+    SESSIONS_DIR: '/fixture/sessions', YAN_DIR: '/fixture', join, existsSync: () => true,
     listSessionFiles: () => ['session.jsonl'],
     stat: async () => { if (disappear && afterScan) throw Object.assign(new Error('gone'), { code: 'ENOENT' }); return { size: 1, mtimeMs: 1, ctimeMs: 1 } },
     PRUNE_FINGERPRINT_BATCH: 32, clearSessionReadCache: () => {},
@@ -33,7 +33,7 @@ async function batchFixture(count, batch) {
   let secondBatchYielded = null
   runInNewContext(code, {
     handle: (_, fn) => { callback = fn }, deps: { isSessionBusy: () => false },
-    PI_AGENT_DIR: '/fixture', YAN_DIR: '/fixture', join, existsSync: () => true,
+    SESSIONS_DIR: '/fixture/sessions', YAN_DIR: '/fixture', join, existsSync: () => true,
     listSessionFiles: () => files,
     stat: () => {
       const index = seen++

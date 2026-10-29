@@ -13,6 +13,7 @@
     flex: none;
     height: 2px;
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--fg3);
     opacity: 0.5;
     transform-origin: left center;

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
@@ -143,7 +143,7 @@ export class SyncService {
 
       if (resolution === 'both') {
         const copy = buildConflictCopy(conflict)
-        if (copy) await this.store.apply(copy)
+        if (copy) await this.store.applyCopy(copy)
         else await this.preserveSettingsSnapshot(conflict)
       }
 
@@ -182,8 +182,8 @@ export class SyncService {
 
   private async preserveSettingsSnapshot(conflict: ConflictRecord): Promise<void> {
     const stamp = formatTime(conflict.remoteModifiedAt || this.now()).replace(/\D/g, '')
-    const target = join(this.dataDir, `desktop.remote-${stamp}-${shortHash(conflict.id, 6)}.json`)
-    await atomicWriteFile(target, conflict.remotePayload)
+    const target = join(this.dataDir, `desktop.remote-${stamp}-${shortHash(conflict.id, 32)}.json`)
+    await writeFile(target, conflict.remotePayload, { flag: 'wx', mode: 0o600 })
   }
 
   private async updateBaseline(key: string, entry: BaselineFile['records'][string]): Promise<void> {
@@ -232,6 +232,7 @@ export class SyncService {
     for (const record of localRead.records) local.set(record.key, record)
 
     const baseline = await this.readBaseline(deviceId, report)
+    const unresolved = (await this.folder.readConflicts()).filter((entry) => entry.localDeviceId === deviceId)
     const keys = new Set<string>([...local.keys(), ...remoteRead.records.keys(), ...Object.keys(baseline.records)])
     const next: BaselineFile = { v: 1, deviceId, records: {} }
 
@@ -245,6 +246,7 @@ export class SyncService {
           localRecord,
           remoteRecord,
           base,
+          unresolved: unresolved.filter((entry) => entry.key === key),
           deviceId,
           deviceName,
           report,
@@ -270,12 +272,13 @@ export class SyncService {
     localRecord?: SyncRecord
     remoteRecord?: RemoteRecord
     base?: BaselineFile['records'][string]
+    unresolved: ConflictRecord[]
     deviceId: string
     deviceName: string
     report: SyncReport
     next: BaselineFile
   }): Promise<void> {
-    const { key, localRecord, remoteRecord, base, deviceId, deviceName, report, next } = input
+    const { key, localRecord, remoteRecord, base, unresolved, deviceId, deviceName, report, next } = input
     const now = this.now()
     const localHash = localRecord ? sha256Hex(localRecord.payload) : undefined
     const remoteHash = remoteRecord?.hash
@@ -331,8 +334,20 @@ export class SyncService {
         suffix: `来自 ${remoteRecord.deviceName} · ${formatTime(now)}`
       }
       await this.folder.writeConflict(entry)
-      next.records[key] = { localHash, remoteHash, syncedAt: now }
+      if (base) next.records[key] = base
       report.conflicts.push(entry)
+      for (const previous of unresolved) await this.folder.removeConflict(previous.id)
+    }
+
+    if (unresolved.length) {
+      const unchanged = unresolved.find((entry) => entry.localHash === localHash && entry.remoteHash === remoteHash)
+      if (unchanged || !localRecord || !remoteRecord) {
+        report.conflicts.push(...(unchanged ? [unchanged] : unresolved))
+        if (base) next.records[key] = base
+      } else {
+        await conflict()
+      }
+      return
     }
 
     if (localRecord && remoteRecord) {

@@ -12,6 +12,7 @@ export type ShortcutId =
   | 'focusComposer'
   | 'copyLastReply'
   | 'openTerminal'
+  | 'runProjectScript'
   | 'workspaceTab1'
   | 'workspaceTab2'
   | 'workspaceTab3'
@@ -67,6 +68,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'focusComposer', keys: ['Ctrl', 'L'], purposeKey: 'focusComposer', rebindable: false, scope: 'global', terminalsYield: true, registeredBy: 'renderer' },
   { id: 'copyLastReply', keys: ['Ctrl', 'Shift', 'C'], purposeKey: 'copyLastReply', rebindable: false, scope: 'global', terminalsYield: true, registeredBy: 'renderer' },
   { id: 'openTerminal', keys: ['Ctrl', '`'], purposeKey: 'openTerminal', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'runProjectScript', keys: ['Ctrl', 'Shift', 'R'], purposeKey: 'runProjectScript', rebindable: false, scope: 'global', terminalsYield: true, registeredBy: 'renderer' },
   { id: 'workspaceTab1', keys: ['Alt', '1'], purposeKey: 'workspaceTab1', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'workspaceTab2', keys: ['Alt', '2'], purposeKey: 'workspaceTab2', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'workspaceTab3', keys: ['Alt', '3'], purposeKey: 'workspaceTab3', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },

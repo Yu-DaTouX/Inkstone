@@ -12,7 +12,7 @@ import {
   compactionSummary,
   compactionTokensText
 } from '../../state/compaction-view'
-import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
+import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, publishAccountQuotaReport, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { selectSubagentRuns, subagentScopeForView } from '../../state/subagent-view'
 import { useRunsV3 } from '../../state/runs-v3'
 import { sessionViewIdentity } from '../session/view-state'
@@ -155,6 +155,7 @@ function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: numbe
       .accountQuota()
       .then((report) => {
         if (id !== seq.current) return
+        publishAccountQuotaReport(report)
         const matches = (report.cards ?? []).filter((card) => card.provider.trim().toLowerCase() === want)
         setSnap({ provider, state: 'ready', card: matches.find((card) => card.active) ?? matches.find((card) => card.active === undefined) ?? null })
       })
@@ -194,28 +195,39 @@ function useQuotaTile(provider: string, running: boolean, t: TFunc, text: Overvi
   const live = liveQuotaSupported(provider)
   const entry = useLiveQuota((s) => (live ? s.entries[provider] : undefined))
   const runEnded = useRunEnded(running)
+  const authProviders = useStore((s) => s.authProviders)
   const account = useAccountQuotaCard(provider, !!provider && !live, runEnded)
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     if (!live) return undefined
     let alive = true
-    void refreshLive(provider).then(() => {
+    void refreshLive(provider, runEnded > 0 || authProviders.length > 0).then(() => {
       if (alive) setNow(Date.now())
     })
     return () => {
       alive = false
     }
-  }, [provider, live, runEnded])
+  }, [provider, live, runEnded, authProviders])
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now())
+    const refreshIfDue = (gap: number): void => {
       if (!live || document.visibilityState !== 'visible') return
       const fetchedAt = useLiveQuota.getState().entries[provider]?.fetchedAt ?? 0
-      if (Date.now() - fetchedAt >= LIVE_QUOTA_POLL_MS) void refreshLive(provider)
+      if (Date.now() - fetchedAt >= gap) void refreshLive(provider)
+    }
+    const timer = setInterval(() => {
+      setNow(Date.now())
+      refreshIfDue(LIVE_QUOTA_MIN_GAP_MS)
     }, QUOTA_TICK_MS)
-    return () => clearInterval(timer)
+    const onFocus = (): void => refreshIfDue(LIVE_QUOTA_MIN_GAP_MS)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
   }, [provider, live])
 
   const model = live

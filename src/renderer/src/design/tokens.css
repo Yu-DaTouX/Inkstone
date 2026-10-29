@@ -102,23 +102,23 @@
     --data-6: light-dark(#EB6834, #F07A48);
     --data-7: light-dark(#B5651D, #E39A57);
     --data-8: light-dark(#5B6577, #98A2B3);
-    --shadow-ring: inset 0 0 0 1px rgba(11,11,11,.1);
+    --shadow-ring: inset 0 0 0 var(--hair, 1px) rgba(11,11,11,.1);
     --shadow-sm: 0 1px 2px rgba(0,0,0,.05), 0 1px 1px rgba(0,0,0,.03);
     --shadow-md: 0 2px 6px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
     --shadow-lg: 0 0 0 .5px rgba(11,11,11,.12), 0 4px 12px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.05);
     --shadow-comp: 0 0 0 .5px rgba(31,31,30,.15), 0 4px 20px rgba(0,0,0,.035);
     --shadow-comp-float: 0 2px 6px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
     --shadow-pop: 0 0 0 .5px rgba(11,11,11,.12), 0 8px 24px rgba(0,0,0,.1), 0 2px 6px rgba(0,0,0,.05);
-    --shadow-card: inset 0 0 0 1px rgba(11,11,11,.1), 0 1px 2px rgba(0,0,0,.03);
-    --shadow-side: 0 0 0 .5px rgba(11,11,11,.08), inset 0 1px 0 0 rgba(255,255,255,.55), inset 0 -1px 0 0 rgba(11,11,11,.05), 0 2px 6px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.12);
-    --ring-focus: inset 0 0 0 1px var(--bg), 0 0 0 1px var(--accent), 0 0 6px 1px var(--focus-glow);
-    --ring-focus-inset: inset 0 0 0 1px var(--accent);
+    --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(11,11,11,.1), 0 1px 2px rgba(0,0,0,.03);
+    --shadow-side: 0 0 0 .5px rgba(11,11,11,.08), inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.55), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(11,11,11,.05), 0 2px 6px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.12);
+    --ring-focus: inset 0 0 0 var(--hair, 1px) var(--bg), 0 0 0 var(--hair, 1px) var(--accent), 0 0 6px 1px var(--focus-glow);
+    --ring-focus-inset: inset 0 0 0 var(--hair, 1px) var(--accent);
     --ring-outline: 1px solid var(--accent);
     --ring-off: 0 0 0 0 transparent;
-    --ring-line: inset 0 0 0 1px var(--line);
-    --ring-line2: inset 0 0 0 1px var(--line2);
-    --ring-ctl: inset 0 0 0 1px var(--line-ctl);
-    --ring-accent: inset 0 0 0 1px var(--accent);
+    --ring-line: inset 0 0 0 var(--hair, 1px) var(--line);
+    --ring-line2: inset 0 0 0 var(--hair, 1px) var(--line2);
+    --ring-ctl: inset 0 0 0 var(--hair, 1px) var(--line-ctl);
+    --ring-accent: inset 0 0 0 var(--hair, 1px) var(--accent);
     --ring-selected: inset 0 0 0 2px var(--accent);
     --ring-field: 0 0 0 3px var(--sel);
     --font-ui: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
@@ -212,27 +212,27 @@
   :root[data-theme='dark'] { color-scheme: dark; }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme='light']) {
-      --shadow-ring: inset 0 0 0 1px rgba(255,255,255,.1);
+      --shadow-ring: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
       --shadow-sm: 0 1px 2px rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.25);
       --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.3);
-      --shadow-lg: inset 0 0 0 1px rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
-      --shadow-comp: inset 0 0 0 1px rgba(255,255,255,.1);
+      --shadow-lg: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
+      --shadow-comp: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
       --shadow-comp-float: 0 2px 6px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
-      --shadow-pop: inset 0 0 0 1px rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
-      --shadow-card: inset 0 0 0 1px rgba(255,255,255,.1);
-      --shadow-side: inset 0 1px 0 0 rgba(255,255,255,.07), inset 0 -1px 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
+      --shadow-pop: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
+      --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
+      --shadow-side: inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.07), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
     }
   }
   :root[data-theme='dark'] {
-    --shadow-ring: inset 0 0 0 1px rgba(255,255,255,.1);
+    --shadow-ring: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
     --shadow-sm: 0 1px 2px rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.25);
     --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.3);
-    --shadow-lg: inset 0 0 0 1px rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
-    --shadow-comp: inset 0 0 0 1px rgba(255,255,255,.1);
+    --shadow-lg: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
+    --shadow-comp: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
     --shadow-comp-float: 0 2px 6px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
-    --shadow-pop: inset 0 0 0 1px rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
-    --shadow-card: inset 0 0 0 1px rgba(255,255,255,.1);
-    --shadow-side: inset 0 1px 0 0 rgba(255,255,255,.07), inset 0 -1px 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
+    --shadow-pop: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
+    --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
+    --shadow-side: inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.07), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
   }
   [data-density-scope='compact'] {
     --t-caption: 11px;

@@ -36,7 +36,7 @@ async function runShortcutsAndPalette() {
   assert.deepEqual(
     SHORTCUTS.map((def) => def.id),
     ['commandPalette', 'newSession', 'switchSessionNext', 'switchSessionPrevious', 'toggleSidebar', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack',
-      'stopRun', 'focusComposer', 'copyLastReply', 'openTerminal',
+      'stopRun', 'focusComposer', 'copyLastReply', 'openTerminal', 'runProjectScript',
       'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
       'workspaceClosePane', 'workspaceToggleMaximize',
       'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown', 'cycleTranscriptView',
@@ -212,6 +212,7 @@ async function runShortcutRegistry() {
     'focusComposer',
     'copyLastReply',
     'openTerminal',
+    'runProjectScript',
     'workspaceTab1',
     'workspaceTab2',
     'workspaceTab3',
@@ -254,7 +255,7 @@ async function runShortcutRegistry() {
   )
   assert.deepEqual(
     SHORTCUTS.filter((def) => def.terminalsYield).map((def) => def.id),
-    ['commandPalette', 'toggleSidebar', 'focusComposer', 'copyLastReply', 'cycleTranscriptView'],
+    ['commandPalette', 'toggleSidebar', 'focusComposer', 'copyLastReply', 'runProjectScript', 'cycleTranscriptView'],
     '终端让键只覆盖 xterm 真正会用的键'
   )
   assert.ok(SHORTCUTS.filter((def) => def.terminalsYield).every((def) => !def.rebindable), '终端让键保持固定')

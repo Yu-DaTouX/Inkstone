@@ -102,7 +102,7 @@ function matchElements(observation: BrowserObservation, query: unknown): Browser
 export async function runBrowserScript(
   code: string,
   browser: ScriptBrowser,
-  options: { signal?: AbortSignal; timeoutMs?: number } = {}
+  options: { signal?: AbortSignal; timeoutMs?: number; beforeAction?: () => void } = {}
 ): Promise<ScriptResult> {
   const logs: string[] = []
   let logChars = 0
@@ -111,6 +111,10 @@ export async function runBrowserScript(
 
   const guard = (): void => {
     if (stopped) throw new ScriptError('script_stopped', '脚本已结束或被取消，后续动作不再执行')
+  }
+  const actionGuard = (): void => {
+    guard()
+    options.beforeAction?.()
   }
   const fail = (res: { ok: boolean; error?: string; code?: string }, action: string): void => {
     const message = (res.error ?? `${action} 失败`).replace(/yan browser observe/g, 'page.observe() 或 page.find()')
@@ -122,7 +126,7 @@ export async function runBrowserScript(
     return lastObservation
   }
   const act = async (action: string, run: () => Promise<ActionResult>) => {
-    guard()
+    actionGuard()
     const res = await run()
     fail(res, action)
     if (res.observation) lastObservation = res.observation
@@ -130,7 +134,7 @@ export async function runBrowserScript(
     return { url: res.observation?.url ?? state.url, title: res.observation?.title ?? state.title, receipt: (res.receipt ?? {}) as BrowserActionReceipt }
   }
   const nav = async (action: string, run: () => Promise<{ ok: boolean; error?: string }>) => {
-    guard()
+    actionGuard()
     fail(await run(), action)
     lastObservation = null
     const state = browser.state()
@@ -179,19 +183,19 @@ export async function runBrowserScript(
       return (state.tabs ?? []).map((tab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.id === state.activeTabId }))
     },
     newPage: async (url?: unknown) => {
-      guard()
+      actionGuard()
       await browser.newTab(typeof url === 'string' && url ? url : undefined)
       lastObservation = null
       return { id: browser.state().activeTabId ?? null, url: browser.state().url }
     },
     switchTo: async (id: unknown) => {
-      guard()
+      actionGuard()
       await browser.switchTab(String(id ?? ''))
       lastObservation = null
       return { id: browser.state().activeTabId ?? null, url: browser.state().url }
     },
     closePage: async (id?: unknown) => {
-      guard()
+      actionGuard()
       await browser.closeTab(typeof id === 'string' && id ? id : undefined)
       lastObservation = null
       return { id: browser.state().activeTabId ?? null }

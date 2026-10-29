@@ -62,6 +62,12 @@ export interface FilesText {
   linkDangling: string
   linkCycle: string
   linkExternal: string
+  crumbsLabel: string
+  breadcrumbMore: string
+  browseFolders: string
+  subfoldersEmpty: string
+  subfoldersFailed: string
+  backToParent: string
 }
 
 const ZH: FilesText = {
@@ -125,7 +131,13 @@ const ZH: FilesText = {
   linkTo: '链接到 {target}',
   linkDangling: '链接目标不存在',
   linkCycle: '循环链接，无法展开',
-  linkExternal: '链接到工作目录之外：{target}'
+  linkExternal: '链接到工作目录之外：{target}',
+  crumbsLabel: '文件路径',
+  breadcrumbMore: '显示折叠的层级',
+  browseFolders: '浏览子文件夹',
+  subfoldersEmpty: '此文件夹没有子文件夹',
+  subfoldersFailed: '无法读取此文件夹的子文件夹。',
+  backToParent: '返回上级文件夹'
 }
 
 const EN: FilesText = {
@@ -189,7 +201,13 @@ const EN: FilesText = {
   linkTo: 'Link to {target}',
   linkDangling: 'Link target is missing',
   linkCycle: 'Circular link; cannot expand',
-  linkExternal: 'Links outside the working directory: {target}'
+  linkExternal: 'Links outside the working directory: {target}',
+  crumbsLabel: 'File path',
+  breadcrumbMore: 'Show folded levels',
+  browseFolders: 'Browse subfolders',
+  subfoldersEmpty: 'This folder has no subfolders',
+  subfoldersFailed: 'Couldn’t read the subfolders of this folder.',
+  backToParent: 'Back to parent folder'
 }
 
 export function filesText(lang: Lang): FilesText {

@@ -1,4 +1,5 @@
 import {
+  createReadStream,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -10,7 +11,8 @@ import {
   symlinkSync,
   writeFileSync
 } from 'node:fs'
-import { cp, lstat, readdir, rm, stat, statfs } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { cp, lstat, readlink, readdir, rm, stat, statfs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
@@ -83,15 +85,26 @@ export interface StorageMoveProgress {
   totalBytes: number
 }
 
-async function tally(dir: string): Promise<{ files: number; bytes: number; latestMtime: number }> {
+async function tally(dir: string): Promise<{ files: number; bytes: number; latestMtime: number; content: string }> {
+  const entries: Array<[string, string, string]> = []
+  const hash = async (file: string): Promise<string> => {
+    const digest = createHash('sha256')
+    for await (const chunk of createReadStream(file)) digest.update(chunk)
+    return digest.digest('hex')
+  }
   let files = 0
   let bytes = 0
   let latestMtime = 0
   const walk = async (d: string): Promise<void> => {
     for (const ent of await readdir(d, { withFileTypes: true })) {
       const p = join(d, ent.name)
-      if (ent.isDirectory()) await walk(p)
-      else if (ent.isFile()) {
+      if (ent.isDirectory()) {
+        entries.push([relative(dir, p), 'directory', ''])
+        await walk(p)
+      } else if (ent.isSymbolicLink()) {
+        entries.push([relative(dir, p), 'link', await readlink(p)])
+      } else if (ent.isFile()) {
+        entries.push([relative(dir, p), 'file', await hash(p)])
         const info = await stat(p)
         files++
         bytes += info.size
@@ -100,7 +113,7 @@ async function tally(dir: string): Promise<{ files: number; bytes: number; lates
     }
   }
   await walk(dir)
-  return { files, bytes, latestMtime }
+  return { files, bytes, latestMtime, content: JSON.stringify(entries.sort((a, b) => a[0].localeCompare(b[0]))) }
 }
 
 function isJunction(p: string): boolean {
@@ -226,6 +239,7 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
         await cp(join(from, name), join(to, name), {
           recursive: true,
           preserveTimestamps: true,
+          verbatimSymlinks: true,
           errorOnExist: true,
           force: false,
           filter: async (source) => {
@@ -237,12 +251,12 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
       }
       report({ phase: 'verify' })
       const [source, after] = await Promise.all([tally(from), tally(to)])
-      if (after.files !== source.files || after.bytes !== source.bytes) {
+      if (after.content !== source.content || source.content !== before.content) {
         await discardTarget()
         return write({ ok: false, error: `复制核对不一致（${source.files} → ${after.files} 个文件），已撤回，原数据未动` })
       }
       const recheck = await tally(from)
-      if (recheck.files !== before.files || recheck.bytes !== before.bytes || recheck.latestMtime !== before.latestMtime) {
+      if (recheck.files !== before.files || recheck.bytes !== before.bytes || recheck.latestMtime !== before.latestMtime || recheck.content !== before.content) {
         await discardTarget()
         return write({ ok: false, error: '迁移期间数据目录仍在被写入（可能还有别的 pi 或砚在运行），已撤回，原数据未动' })
       }
@@ -250,7 +264,7 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
       await discardTarget()
       throw error
     }
-    const backup = `${from}.迁移前备份-${Date.now()}`
+    const backup = `${from}.迁移前备份-${Date.now()}-${randomUUID()}`
     try {
       renameSync(from, backup)
     } catch (e) {
@@ -270,12 +284,7 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
       return write({ ok: false, error: `无法在原位置建立联接，已恢复原状：${why}` })
     }
     report({ phase: 'cleanup' })
-    try {
-      await rm(backup, { recursive: true, force: true, maxRetries: 3 })
-      return write({ ok: true })
-    } catch {
-      return write({ ok: true, leftover: backup })
-    }
+    return write({ ok: true, leftover: backup })
   } catch (e) {
     const stranded = !existsSync(from) ? findBackup(from) : undefined
     return write({ ok: false, ...(stranded ? { leftover: stranded } : {}), error: e instanceof Error ? e.message : String(e) })

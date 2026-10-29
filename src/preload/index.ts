@@ -119,6 +119,7 @@ import type { ApiKeyPools } from '../shared/api-keys'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
 import type { DesktopPetResult, DesktopPetStatus } from '../shared/desktop-pet'
 import type { RunSnapshot } from '../shared/runs'
+import type { ProjectPackageScripts } from '../shared/project-scripts'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../shared/checkpoints'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeDocumentView } from '../shared/office'
@@ -132,6 +133,7 @@ import { PANE_POPOUT_CHANNELS } from '../shared/pane-popout'
 import { PANE_BROWSER_CHANNELS } from '../shared/pane-popout'
 import type { PaneBrowserStateView } from '../shared/pane-popout'
 import type { BrowserLeaseResult } from '../main/windows/pane-browser-transfer'
+import type { LocalServerSnapshot } from '../shared/local-servers'
 import type {
   PaneActionEvent,
   PaneActionRequest,
@@ -199,6 +201,8 @@ const api: YanBridge = {
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry; cwdChanged?: boolean }>('yan:moveSession', sessionId, projectId, cwd),
   setSessionArchived: (sessionId, archived) => invoke<{ ok: boolean; error?: string }>('yan:setSessionArchived', sessionId, archived),
   setSessionPinned: (sessionId, pinned) => invoke<{ ok: boolean; error?: string }>('yan:setSessionPinned', sessionId, pinned),
+  setSessionSnoozed: (sessionId, until) => invoke<{ ok: boolean; error?: string }>('yan:setSessionSnoozed', sessionId, until),
+  setSessionMarkedUnread: (sessionId, marked) => invoke<{ ok: boolean; error?: string }>('yan:setSessionMarkedUnread', sessionId, marked),
   setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),
   nativeSession: (request) => invoke<Awaited<ReturnType<YanBridge['nativeSession']>>>('yan:nativeSession', request),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
@@ -508,6 +512,13 @@ const api: YanBridge = {
     diff: (req) => invoke<GitDiffResult>('yan:git:diff', req),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd)
   },
+  github: {
+    status: (cwd) => invoke<import('../shared/github').GithubStatus>('yan:github:status', cwd),
+    list: (cwd, state) => invoke<import('../shared/github').GhPrListResult>('yan:github:list', cwd, state),
+    detail: (cwd, number) => invoke<import('../shared/github').GhPrDetailResult>('yan:github:detail', cwd, number),
+    diff: (cwd, number) => invoke<import('../shared/github').GhPrDiffResult>('yan:github:diff', cwd, number),
+    openUrl: (url) => invoke<{ ok: boolean; error?: string }>('yan:github:openUrl', url)
+  },
 
   getSettings: () => invoke<AppSettings>('yan:getSettings'),
   patchSettings: (patch) => invoke<AppSettings>('yan:patchSettings', patch),
@@ -598,7 +609,8 @@ const api: YanBridge = {
     setPermission: (permission, origin, allowed) =>
       invoke<{ ok: boolean; error?: string }>('yan:browser:setPermission', permission, origin, allowed),
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
-    setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible)
+    setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible),
+    localServers: () => invoke<LocalServerSnapshot>('yan:browser:localServers')
   },
 
   office: {
@@ -686,6 +698,10 @@ const api: YanBridge = {
     kill: (id) => invoke<boolean>('yan:terminal:kill', id),
     attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id),
     clear: (id) => invoke<boolean>('yan:terminal:clear', id)
+  },
+
+  projectScripts: {
+    read: (projectId) => invoke<ProjectPackageScripts>('yan:projectScripts:read', projectId)
   },
 
   win: {

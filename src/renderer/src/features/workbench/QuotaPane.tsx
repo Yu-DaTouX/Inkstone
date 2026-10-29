@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { RefreshCw } from 'lucide-react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
+import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, publishAccountQuotaReport } from '../../state/live-quota'
 import { Badge, Button, Card, EmptyState, IconButton, Notice, Spinner } from '../../ui'
 import { money } from '../../../../shared/quota-mini'
 import { quotaReadingStale } from '../../../../shared/quota-forecast'
@@ -15,8 +16,6 @@ import {
 import { QuotaWindowRow, quotaReadAgo } from '../../patterns/QuotaWindowRow'
 import { workbenchPaneText } from './pane-text'
 import type { QuotaPaneProps } from './types'
-
-const AUTO_REFRESH_MS = 5 * 60_000
 
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
 const cap = (value?: string): string => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '')
@@ -43,6 +42,7 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
     try {
       const next = await window.yan.accountQuota()
       if (!alive.current || requestId !== loadId.current) return
+      publishAccountQuotaReport(next)
       setReport(next)
       setError('')
       checkedAt.current = next.checkedAt
@@ -59,18 +59,20 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
     void load()
     const tick = setInterval(() => setTick((value) => value + 1), 30_000)
     const poll = setInterval(() => {
-      if (document.visibilityState === 'visible' && Date.now() - checkedAt.current >= AUTO_REFRESH_MS) void load()
-    }, 60_000)
+      if (document.visibilityState === 'visible') void load()
+    }, LIVE_QUOTA_POLL_MS)
     const onFocus = (): void => {
-      if (Date.now() - checkedAt.current >= AUTO_REFRESH_MS) void load()
+      if (document.visibilityState === 'visible' && Date.now() - checkedAt.current >= LIVE_QUOTA_MIN_GAP_MS) void load()
     }
     window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
     return () => {
       alive.current = false
       loadId.current += 1
       clearInterval(tick)
       clearInterval(poll)
       window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
     }
   }, [load, authProviders])
 

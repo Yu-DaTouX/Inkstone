@@ -156,7 +156,7 @@
   .v3-asks > :is(.v3-approval, .v3-qcard) { margin-inline-start: max(0px, calc((100% - var(--size-chat)) / 2)); }
   .v3-msgmenu-anchor { position: fixed; width: 1px; height: 1px; pointer-events: none; }
 
-  .v3-jump { position: absolute; right: calc(var(--s-20) + var(--tiles-reserve, 0px)); bottom: calc(var(--s-8) + var(--composer-h, 0px)); z-index: 5; }
+  .v3-jump { position: absolute; left: calc(50% - var(--tiles-reserve, 0px) / 2); bottom: calc(var(--s-6) + var(--composer-h, 0px)); z-index: 5; translate: -50% 0; }
   .v3-asks:not(:empty) { margin-bottom: var(--composer-h, 0px); }
 
   @media (max-width: 720px) {

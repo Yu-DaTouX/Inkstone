@@ -194,7 +194,13 @@ export class AndroidDeviceService {
     const emulator = emulatorPath()
     if (!emulator) throw new Error('没有安装 Android 模拟器')
     const child = spawn(emulator, ['-avd', avd, '-no-boot-anim'], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PATH')), ...emulatorEnv() } })
-    child.unref()
+    await new Promise<void>((resolve, reject) => {
+      child.on('error', reject)
+      child.once('spawn', () => {
+        child.unref()
+        resolve()
+      })
+    })
   }
 
   watch(serial: string): void {

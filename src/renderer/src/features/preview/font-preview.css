@@ -1,0 +1,100 @@
+@layer features {
+  .v3-font {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-16);
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--s-16) var(--s-20);
+    color: var(--fg);
+  }
+
+  .v3-font--loading {
+    gap: var(--s-8);
+  }
+
+  .v3-font-head {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--s-16);
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .v3-font-name {
+    flex: 1 1 16rem;
+    min-width: 0;
+    margin: 0;
+    color: var(--fg);
+    font-size: var(--t-title);
+    font-weight: var(--w-regular);
+    line-height: var(--t-title-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .v3-font-sample {
+    flex: 0 1 22rem;
+    min-width: 12rem;
+  }
+
+  .v3-font-sizes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+    padding: var(--s-12) 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .v3-font-size-row {
+    display: grid;
+    grid-template-columns: minmax(0, 4rem) minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--s-12);
+    min-width: 0;
+  }
+
+  .v3-font-size-label {
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-caption);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v3-font-size-line {
+    margin: 0;
+    min-width: 0;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .v3-font-charset {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .v3-font-section {
+    margin: 0;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    font-weight: var(--w-semibold);
+  }
+
+  .v3-font-glyphs {
+    margin: 0;
+    min-width: 0;
+    font-size: var(--t-heading);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+
+  .v3-font-empty {
+    margin: var(--s-16);
+  }
+}

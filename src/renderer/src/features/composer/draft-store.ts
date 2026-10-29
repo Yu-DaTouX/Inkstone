@@ -13,6 +13,13 @@ export interface StoredDraft {
 
 export type DraftMap = Record<string, StoredDraft>
 
+export function restoreDraft(cached: { draft: string; draftAttachments: Attachment[]; draftInitialized?: boolean; draftAttachmentsInitialized?: boolean } | undefined, persisted: StoredDraft | undefined): { text: string; attachments: Attachment[] } {
+  return {
+    text: cached?.draftInitialized || cached?.draft ? cached.draft : persisted?.text ?? '',
+    attachments: cached?.draftAttachmentsInitialized || cached?.draftAttachments.length ? cached.draftAttachments : persisted?.attachments ?? []
+  }
+}
+
 function isAttachment(value: unknown): value is Attachment {
   if (!value || typeof value !== 'object') return false
   const item = value as Partial<Attachment>

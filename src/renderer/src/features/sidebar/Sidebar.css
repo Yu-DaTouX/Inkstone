@@ -1082,3 +1082,108 @@
     opacity: 0.7;
   }
 }
+
+@layer features {
+  .v3-snooze {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    margin-top: var(--s-6);
+    border-top: 1px solid var(--line);
+    padding-top: var(--s-2);
+  }
+
+  .v3-snooze-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: var(--s-6);
+    height: var(--d-row);
+    padding: 0 var(--s-8) 0 calc(var(--s-2) + var(--s-8));
+    border-radius: var(--r-sm);
+    color: var(--fg3);
+    font: inherit;
+    font-size: var(--t-footnote);
+    text-align: left;
+  }
+
+  .v3-snooze-head:hover {
+    color: var(--fg2);
+    background: var(--alpha-1);
+  }
+
+  .v3-snooze-head:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  .v3-snooze-label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .v3-snooze-rule {
+    min-width: var(--s-8);
+    height: 1px;
+    background: var(--line);
+  }
+
+  .v3-snooze-count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v3-snooze-chev {
+    transform: rotate(-90deg);
+    transition: transform var(--dur-snap) var(--ease);
+  }
+
+  .v3-snooze[data-open='1'] .v3-snooze-chev {
+    transform: rotate(90deg);
+  }
+
+  .v3-snooze-list {
+    min-width: 0;
+    padding-top: var(--s-2);
+  }
+
+  .v3-srow-wake {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin-inline-start: var(--s-6);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+
+  .v3-srow:hover .v3-srow-wake,
+  .v3-srow:focus-within .v3-srow-wake,
+  .v3-srow[data-menu='1'] .v3-srow-wake {
+    opacity: 0;
+  }
+
+  .v3-menu-when {
+    margin-inline-start: auto;
+    padding-inline-start: var(--s-12);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v3-snooze-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s-8);
+  }
+
+  .v3-snooze-error {
+    margin: 0;
+    color: var(--fail-t);
+    font-size: var(--t-footnote);
+  }
+}

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { GitBranch, MoreHorizontal, Pin } from 'lucide-react'
+import { AlarmClock, GitBranch, MoreHorizontal, Pin } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { IconButton, StatusSlot } from '../../ui'
@@ -32,6 +32,8 @@ export interface SidebarRowProps {
   status: SessionStatusKind
   code?: string
   card?: SidebarRowCard
+  snoozeLabel?: string
+  snoozeTitle?: string
   onOpen: () => void
 }
 
@@ -55,7 +57,7 @@ function FadeTitleBox({ boxRef, text }: { boxRef: RefObject<HTMLSpanElement | nu
   )
 }
 
-export function SidebarRow({ item, title, isCurrent, status, code, card, onOpen }: SidebarRowProps): JSX.Element {
+export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeLabel, snoozeTitle, onOpen }: SidebarRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   const statusWord = sessionStatusLabel(status, lang)
@@ -233,7 +235,12 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, onOpen 
                 <span className="v3-crow-branch-name">{card.branch}</span>
               </span>
             ) : null}
-            {card && !card.slim && cardHasBot(status) ? null : <SessionStatusIcon kind={status} label={statusLabel} />}
+            {snoozeLabel ? (
+              <span className="v3-srow-wake" title={snoozeTitle} data-testid="v3-session-snooze-wake">
+                <AlarmClock size={12} aria-hidden />
+                {snoozeLabel}
+              </span>
+            ) : card && !card.slim && cardHasBot(status) ? null : <SessionStatusIcon kind={status} label={statusLabel} />}
           </button>
         </SidebarTip>
       )}

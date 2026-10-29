@@ -7,8 +7,8 @@
     color: var(--fg2);
     font-weight: var(--w-medium);
   }
-  .ui-card[data-tone='ask'] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ask-edge) 45%, transparent); }
-  .ui-card[data-tone='fail'] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fail-t) 45%, transparent); }
+  .ui-card[data-tone='ask'] { box-shadow: inset 0 0 0 var(--hair, 1px) color-mix(in srgb, var(--ask-edge) 45%, transparent); }
+  .ui-card[data-tone='fail'] { box-shadow: inset 0 0 0 var(--hair, 1px) color-mix(in srgb, var(--fail-t) 45%, transparent); }
 
   .ui-card__head {
     display: flex;

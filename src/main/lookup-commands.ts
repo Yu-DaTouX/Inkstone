@@ -111,7 +111,10 @@ export class LookupCommands {
         const maxChars = this.searchNumber(params, ['max-chars', 'maxChars']) ?? 12_000
         const mode = this.searchString(params, ['action']) ?? 'read'
         if (!['read', 'find', 'links'].includes(mode)) throw new ReadPageError('bad_action', '读页 action 只能是 read、find 或 links')
-        const page = pageRange(snapshot, offset, maxChars)
+        if (mode === 'links' && (!Number.isSafeInteger(offset) || offset < 0 || offset > (snapshot.links?.length ?? 0))) {
+          throw new ReadPageError('bad_offset', `链接 offset 应在 0–${snapshot.links?.length ?? 0} 之间`)
+        }
+        const page = pageRange(snapshot, mode === 'links' ? 0 : offset, maxChars)
         const find = this.searchString(params, ['find', 'query'])
         if (mode === 'find' && !find) throw new ReadPageError('bad_find', '页内查询需要 find 或 query')
         const data = mode === 'find' ? findInPage(snapshot, find!, offset) : mode === 'links'

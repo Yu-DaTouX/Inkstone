@@ -1,4 +1,5 @@
 import { installFocusModality } from '../src/lib/focusModality'
+import { installHairline } from '../src/lib/hairline'
 
 const THEME_KEY = 'yan.theme'
 
@@ -13,6 +14,7 @@ function applyTheme(): void {
 
 applyTheme()
 installFocusModality()
+installHairline()
 window.addEventListener('storage', (event) => {
   if (event.key === null || event.key === THEME_KEY) applyTheme()
 })

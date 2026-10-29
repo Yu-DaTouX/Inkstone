@@ -2,6 +2,7 @@ import type { BrowserController } from '../browser'
 import type { IpcRegistrar } from './registrar'
 import type { PreviewSiteGate } from '../preview-site-gate'
 import { fetchRemoteImage } from '../remote-image'
+import { listLocalServers } from '../browser/local-servers'
 
 const CLOSED_STATE = { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
 const NOT_READY = { ok: false, error: '浏览器未初始化' }
@@ -76,6 +77,7 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:setPermission', (_e, permission: string, origin: string, allowed: boolean) =>
     browserOf()?.setPermission(String(permission ?? ''), String(origin ?? ''), Boolean(allowed)) ?? NOT_READY
   )
+  rawHandle('yan:browser:localServers', async () => ({ servers: await listLocalServers() }))
   rawHandle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
     browserOf()?.setBounds(bounds)
   })

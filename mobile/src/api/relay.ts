@@ -234,14 +234,17 @@ export class RelayTunnel {
       let timer: ReturnType<typeof setTimeout>
       const fail = (error: Error) => {
         clearTimeout(timer)
+        if (this.ws !== ws) return
         if (state !== 'open') reject(error)
         this.teardown(error)
       }
       timer = setTimeout(() => fail(new RelayError('连接电脑超时：请确认电脑上的砚在运行，并开启了中继接入')), HANDSHAKE_MS)
       ws.onopen = () => {
+        if (this.ws !== ws) return
         ws.send(JSON.stringify({ t: 'hi', v: PROTOCOL_VERSION, c: toB64u(p256.getPublicKey(clientSecret, false)), e: toB64u(p256.getPublicKey(ephSecret, false)) }))
       }
       ws.onmessage = (event) => {
+        if (this.ws !== ws) return
         const text = String(event.data)
         try {
           if (state === 'hello') {
@@ -303,9 +306,10 @@ export class RelayTunnel {
     if (msg.t === 'res') {
       p.status = Number(msg.status)
       p.headers = (msg.headers ?? {}) as Record<string, string>
+      p.onStart?.(p.status)
+      if (this.pending.get(id) !== p) return
       if (msg.stream) {
         p.stream = true
-        p.onStart?.(p.status)
         return
       }
       this.pending.delete(id)
@@ -316,7 +320,8 @@ export class RelayTunnel {
       else p.chunks.push(bytes)
     } else if (msg.t === 'end') {
       this.pending.delete(id)
-      p.resolve({ status: p.status ?? 502, headers: p.headers ?? {}, body: concat(...p.chunks) })
+      if (typeof msg.error === 'string') p.reject(new RelayError(msg.error))
+      else p.resolve({ status: p.status ?? 502, headers: p.headers ?? {}, body: concat(...p.chunks) })
     }
     } catch (error) {
       this.pending.delete(id)

@@ -31,15 +31,6 @@ import {
   type TextSelection
 } from './composer-text'
 
-export interface CaretRect {
-  left: number
-  top: number
-  right: number
-  bottom: number
-  width: number
-  height: number
-}
-
 export interface ComposerEditorChange {
   text: string
   cursor: number
@@ -58,7 +49,6 @@ export interface ComposerEditorHandle {
   isEmpty: () => boolean
   caretInCode: () => boolean
   caretAfterMention: () => boolean
-  caretRect: () => CaretRect | null
 }
 
 interface ComposerEditorProps {
@@ -396,20 +386,6 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       caretAfterMention: () => {
         const view = viewRef.current
         return view ? caretAfterMention(view.state) : false
-      },
-      caretRect: () => {
-        const view = viewRef.current
-        if (!view) return null
-        const coords = view.coordsAtPos(view.state.selection.from)
-        if (!coords) return null
-        return {
-          left: coords.left,
-          top: coords.top,
-          right: coords.right,
-          bottom: coords.bottom,
-          width: coords.right - coords.left,
-          height: coords.bottom - coords.top
-        }
       }
     }),
     [applyDocumentText, currentText, refreshStructure]

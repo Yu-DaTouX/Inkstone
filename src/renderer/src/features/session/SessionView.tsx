@@ -597,7 +597,8 @@ export function SessionView(): JSX.Element {
 
         {showJump && !stick ? (
           <button className="v3-jump" data-testid="v3-jump" onClick={jumpToBottom} aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')}>
-            <Icon name="arrow-down" size={16} />
+            <Icon name="arrow-down" size={14} />
+            <span>{t('chat.jumpToBottom')}</span>
           </button>
         ) : null}
 

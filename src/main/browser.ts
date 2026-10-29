@@ -44,7 +44,7 @@ import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 import { createCookieBridge, writeBridgeCookies, type BridgeCookie } from './browser/cookie-bridge'
 import type { BrowserActionOptions, BrowserActionReceipt, BrowserDialogRecord } from './browser/receipt'
-import { SCRIPT_GUIDE, runBrowserScript, type ScriptResult } from './browser/script-runner'
+import { SCRIPT_GUIDE, ScriptError, runBrowserScript, type ScriptResult } from './browser/script-runner'
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { PrivateDnsGuard } from './browser/network-policy'
@@ -940,20 +940,21 @@ export class BrowserController {
     const port = await pickFreePort()
     const profileDir = defaultProfileDir(YAN_DIR)
     let chrome: ChildProcess | null = null
+    let cdp: RawCdp | null = null
     try {
       await mkdir(profileDir, { recursive: true })
       const syncReport = await this.profileSyncReport(profileDir)
       chrome = launchChrome({
         profileDir,
         port,
-        url,
+        url: INITIAL_URL,
         headless: process.env.YAN_CHROME_HEADLESS === '1'
       })
       await waitForCdp(port, 20_000)
       const page = pickPageTarget(await listTargets(port))
       if (!page?.webSocketDebuggerUrl) throw new Error('Chrome 已启动，但没有可调试的页面目标')
 
-      const cdp = new RawCdp(page.webSocketDebuggerUrl)
+      cdp = new RawCdp(page.webSocketDebuggerUrl)
       await cdp.attach()
       const registry = new ElementRegistry()
       await this.enableExternalBoundary(cdp)
@@ -983,11 +984,15 @@ export class BrowserController {
         if (this.external?.chrome === chrome) void this.closeExternalChrome()
       })
       this.userControl = false
+      await this.navigateExternal(url)
       await this.syncExternalTabs()
       await this.syncExternalHistory()
       this.updateState()
       return { ok: true }
     } catch (error) {
+      if (this.external?.cdp === cdp) this.external.observer.dispose()
+      if (this.externalBoundaryCdp === cdp) this.externalBoundaryCdp = null
+      await cdp?.detach().catch(() => undefined)
       stopChrome(chrome)
       this.external = null
       this.updateState()
@@ -1102,7 +1107,13 @@ export class BrowserController {
     const previousCdp = ext.cdp
     const previousObserver = ext.observer
     const cdp = new RawCdp(target.webSocketDebuggerUrl)
-    await cdp.attach()
+    try {
+      await cdp.attach()
+      await this.enableExternalBoundary(cdp)
+    } catch (error) {
+      await cdp.detach().catch(() => undefined)
+      throw error
+    }
     const registry = new ElementRegistry()
     ext.cdp = cdp
     ext.registry = registry
@@ -1115,7 +1126,6 @@ export class BrowserController {
     ext.url = target.url
     ext.title = target.title
     await previousCdp.detach().catch(() => undefined)
-    await this.enableExternalBoundary(cdp)
     await this.setupExternalDownloads(cdp)
     await this.syncExternalTabs()
     await this.syncExternalHistory()
@@ -1173,14 +1183,15 @@ export class BrowserController {
 
   private async enableExternalBoundary(cdp: RawCdp): Promise<void> {
     if (this.externalBoundaryCdp === cdp) return
-    this.externalBoundaryCdp = cdp
-    cdp.on('Fetch.requestPaused', (params) => {
+    const unsubscribe = cdp.on('Fetch.requestPaused', (params) => {
       void this.handleExternalRequest(cdp, params)
     })
     try {
       await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
+      this.externalBoundaryCdp = cdp
     } catch (error) {
-      this.pushError(`外部 Chrome 的网络边界未能启用：${error instanceof Error ? error.message : String(error)}`)
+      unsubscribe()
+      throw new Error(`外部 Chrome 的网络边界未能启用：${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -1202,7 +1213,7 @@ export class BrowserController {
       try {
         blocked = await this.privateDns.resolves(new URL(url).hostname)
       } catch {
-        blocked = false
+        blocked = true
       }
     }
     try {
@@ -1292,7 +1303,12 @@ export class BrowserController {
       newTab: (url) => this.newTab(url),
       switchTab: (id) => this.switchTab(id),
       closeTab: (id) => this.closeTab(id)
-    }, { signal })
+    }, {
+      signal,
+      beforeAction: () => {
+        if (this.userControl) throw new ScriptError('USER_CONTROL_ACTIVE', 'USER_CONTROL_ACTIVE: 浏览器当前由用户接管，请等待用户交还 Agent 控制。')
+      }
+    })
   }
 
   async guide(): Promise<string> {

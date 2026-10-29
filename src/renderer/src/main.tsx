@@ -8,6 +8,7 @@ import { useLiveQuota } from './state/live-quota'
 import { installAudioUnlock } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
 import { installFocusModality } from './lib/focusModality'
+import { installHairline } from './lib/hairline'
 import { installDeepLinkNavigation } from './features/deeplink/navigation'
 import { installBrowserPreloadRecovery } from './lib/preload-recovery'
 
@@ -37,6 +38,8 @@ installBrowserPreloadRecovery()
 installMotionPreferenceReporter()
 
 installFocusModality()
+
+installHairline()
 
 installDeepLinkNavigation()
 

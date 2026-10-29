@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type JSX } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { formatCountdown, UI_TIMEOUT_EXTEND } from '../../../../shared/ui-timeout'
@@ -10,6 +10,7 @@ import { Icon } from './Icon'
 import { QuestionForm } from './QuestionForm'
 import { useSessionText } from './text'
 import { approvalSlotClaimed, useApprovalSlotVersion, useClaimApprovalSlot } from './approval-slot'
+import { claimDigitKeys, digitChoiceIndex } from './question-keys'
 import './question.css'
 
 const INTERACTIVE = new Set(['select', 'confirm', 'input', 'editor'])
@@ -114,6 +115,28 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
     target.focus({ preventScroll: true })
   }, [])
 
+  const digitOptions = useMemo(
+    () => (!req.form?.length && (req.method === 'select' || req.method === 'input') ? req.options ?? [] : []),
+    [req.form, req.method, req.options]
+  )
+  const pickDigit = useRef<(value: string) => void>(() => undefined)
+  useEffect(() => {
+    if (collapsed || busy || expired || digitOptions.length === 0) return undefined
+    const claim = claimDigitKeys()
+    const onKey = (event: KeyboardEvent): void => {
+      if (!claim.owns()) return
+      const index = digitChoiceIndex(event, digitOptions.length)
+      if (index === null) return
+      event.preventDefault()
+      pickDigit.current(digitOptions[index])
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      claim.release()
+    }
+  }, [collapsed, busy, expired, digitOptions])
+
   if (expired) return null
 
   const extend = (): void => {
@@ -129,6 +152,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
     setBusy(true)
     answerUi({ id: reqId, ...res })
   }
+  pickDigit.current = (value) => answer({ value })
 
   const title = req.title
     ?? (req.form?.length ? t('qf.title') : req.method === 'select' ? t('q.select') : req.method === 'confirm' ? t('q.confirm') : req.method === 'editor' ? t('q.editor') : t('q.input'))

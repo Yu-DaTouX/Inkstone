@@ -14,7 +14,8 @@ import { searchFileNames } from '../file-name-search'
 import type { FileNameSearchRequest } from '../../shared/file-name-search'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from '../attachments'
 import { clearSessionReadCache } from '../session-reader'
-import { PI_AGENT_DIR, YAN_DIR } from '../paths'
+import { YAN_DIR } from '../paths'
+import { SESSIONS_DIR } from '../sessions'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
 import { savePastedText } from '../pasted-text'
 import { saveSessionQuote } from '../session-quote'
@@ -278,7 +279,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   handle('yan:attachments:prune', async () => {
     if (deps.isSessionBusy()) throw new Error('会话正在运行，请结束后再清理附件')
     const before = Date.now()
-    const sessionsDir = join(PI_AGENT_DIR, 'sessions')
+    const sessionsDir = SESSIONS_DIR
     if (!existsSync(sessionsDir)) return { removed: 0, bytes: 0, kept: 0 }
     const fingerprint = async (): Promise<string> => {
       const files = listSessionFiles(sessionsDir).sort()

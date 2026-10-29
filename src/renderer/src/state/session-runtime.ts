@@ -32,6 +32,8 @@ export interface SessionRuntimeSnapshot {
   widgetPlacements: Record<string, 'aboveEditor' | 'belowEditor'>
   draft: string
   draftAttachments: Attachment[]
+  draftInitialized?: boolean
+  draftAttachmentsInitialized?: boolean
   models: ModelInfo[]
   thinkingLevels: string[]
   commands: SlashCommand[]
@@ -43,6 +45,18 @@ const touch = (): number => (lastTouched = Math.max(Date.now(), lastTouched + 1)
 
 export function sessionRuntimeKey(runtime: RuntimeEnvelope): string {
   return runtime.sessionId || `run:${runtime.runId}`
+}
+
+export function seedRuntimeHistory(
+  map: SessionRuntimeMap,
+  runtime: RuntimeEnvelope | undefined,
+  messages: UIMessage[]
+): SessionRuntimeMap {
+  if (!runtime) return map
+  const key = sessionRuntimeKey(runtime)
+  const entry = map[key]
+  if (!entry || entry.messagesLoaded) return map
+  return { ...map, [key]: { ...entry, messagesLoaded: true, messages } }
 }
 
 function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
@@ -71,6 +85,13 @@ export type SessionRuntimeDataPatch = Partial<
   Pick<SessionRuntimeSnapshot, 'draft' | 'draftAttachments' | 'models' | 'thinkingLevels' | 'commands' | 'uiRequests'>
 >
 
+function draftInitialization(patch: SessionRuntimeDataPatch): Partial<SessionRuntimeSnapshot> {
+  return {
+    ...('draft' in patch ? { draftInitialized: true } : {}),
+    ...('draftAttachments' in patch ? { draftAttachmentsInitialized: true } : {})
+  }
+}
+
 export function updateSessionRuntime(
   map: SessionRuntimeMap,
   runtime: RuntimeEnvelope,
@@ -80,7 +101,7 @@ export function updateSessionRuntime(
   const previous = map[key]
   if (previous && runtime.generation < previous.runtime.generation) return map
   const base = previous ? { ...previous, runtime } : emptyRuntime(runtime)
-  return { ...map, [key]: { ...base, ...patch, touchedAt: touch() } }
+  return { ...map, [key]: { ...base, ...patch, ...draftInitialization(patch), touchedAt: touch() } }
 }
 
 export function updateSessionRuntimeAt(
@@ -93,7 +114,7 @@ export function updateSessionRuntimeAt(
   const previous = map[key]
   if (previous && seed.generation < previous.runtime.generation) return map
   const base = previous ? { ...previous, runtime: previous.runtime } : emptyRuntime(seed)
-  return { ...map, [key]: { ...base, ...patch, touchedAt: touch() } }
+  return { ...map, [key]: { ...base, ...patch, ...draftInitialization(patch), touchedAt: touch() } }
 }
 
 function mergeMigratedRuntime(

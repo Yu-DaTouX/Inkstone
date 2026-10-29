@@ -190,6 +190,11 @@ export const Popover = stub
 export const Separator = stub
 export const SubmenuTrigger = stub
 export const Spinner = stub
+export const Tab = stub
+export const TabList = stub
+export const TabPanel = stub
+export const TabPanels = stub
+export const Tabs = stub
 `
 
 const I18N_STUB = `export function useI18n(){ return { lang: 'zh-CN', t: (k) => String(k) } }

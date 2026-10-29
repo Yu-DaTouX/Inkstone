@@ -308,11 +308,6 @@
     font-size: var(--t-footnote);
   }
 
-  .v3-preview-pathbar > .v3-preview-crumbs {
-    flex: 1;
-    padding: 0;
-  }
-
   .v3-preview-pathname {
     flex: 1;
     min-width: 0;
@@ -334,52 +329,6 @@
     flex-direction: column;
     gap: var(--s-4);
     padding: var(--s-4) var(--s-8) 0;
-  }
-
-  .v3-preview-crumbs {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: var(--s-2) var(--s-12);
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    overflow: hidden;
-  }
-
-  .v3-preview-crumb-item {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .v3-preview-crumb {
-    max-width: 160px;
-    padding: 0 2px;
-    border: 0;
-    border-radius: var(--r-xs);
-    background: transparent;
-    color: var(--fg3);
-    font: inherit;
-    font-size: var(--t-footnote);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  button.v3-preview-crumb {
-    cursor: pointer;
-  }
-
-  button.v3-preview-crumb:hover,
-  button.v3-preview-crumb:focus-visible {
-    background: var(--hover);
-    color: var(--fg);
-  }
-
-  .v3-preview-crumb-sep {
-    color: var(--fg3);
   }
 
   .v3-preview-editbar {
@@ -659,6 +608,7 @@
 
   .v3-preview-live {
     border-radius: var(--r-full);
+    corner-shape: round;
     background: var(--bg);
     box-shadow: var(--shadow-pop);
   }
