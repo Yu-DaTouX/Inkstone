@@ -57,6 +57,16 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
+  .ui-row__trail {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-4);
+    margin-inline-end: var(--s-4);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
+  }
   .ui-row--field {
     background: var(--field);
     color: var(--fg3);

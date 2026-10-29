@@ -64,6 +64,8 @@
     --find: light-dark(#FFD500, #B89A00);
     --find-current: light-dark(#FF9632, #D2722A);
     --on-find: #0B0B0B;
+    --qr-bg: #FFFFFF;
+    --qr-fg: #111111;
     --file-default: light-dark(#8E8D88, #85847E);
     --file-green: light-dark(#4E9F64, #6DBB83);
     --file-blue: light-dark(#3C82CF, #6EA5E6);
@@ -171,6 +173,10 @@
     --size-head: 40px;
     --size-btn: 24px;
     --size-btn-sm: 20px;
+    --size-btn-xs: 20px;
+    --size-btn-micro: 16px;
+    --size-bar: 32px;
+    --size-tree-indent: 12px;
     --size-send: 34px;
     --size-col: 720px;
     --size-chat: 768px;

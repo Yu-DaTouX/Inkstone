@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useRef, type ReactNode } from 'react'
+import { forwardRef, useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
 import { popModal, pushModal } from '../lib/modalLayer'
 import {
   Dialog as RACDialog,
@@ -10,10 +10,10 @@ import {
   type DialogProps as RACDialogProps,
   type ModalOverlayProps
 } from 'react-aria-components'
-import { X } from 'lucide-react'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
-import { IconButton } from './IconButton'
+import { Button } from './Button'
+import { CloseButton } from './IconButton'
 
 export { DialogTrigger }
 export type { DialogTriggerProps } from 'react-aria-components'
@@ -75,14 +75,12 @@ export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
                 <span />
               )}
               {showClose && !alert ? (
-                <IconButton
+                <CloseButton
                   aria-label={closeLabel ?? t('ui.close')}
-                  variant="ghost"
+                  size="md"
                   className="ui-dialog__close"
                   onPress={renderProps.close}
-                >
-                  <X size={16} aria-hidden="true" />
-                </IconButton>
+                />
               ) : null}
             </div>
           ) : null}
@@ -94,3 +92,105 @@ export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
     </RACDialog>
   )
 })
+
+export interface DialogFooterProps extends HTMLAttributes<HTMLDivElement> {
+  variant?: 'bar' | 'bare'
+  align?: 'end' | 'between'
+}
+
+export function DialogFooter({ variant = 'bare', align = 'end', className, ...rest }: DialogFooterProps) {
+  return (
+    <div
+      {...rest}
+      className={cx('ui-dialog__footer', `ui-dialog__footer--${variant}`, className)}
+      data-align={align === 'between' ? 'between' : undefined}
+    />
+  )
+}
+
+export type DialogSize = 'sm' | 'md' | 'lg' | 'xl'
+
+export interface ConfirmDialogProps {
+  isOpen: boolean
+  onOpenChange: (isOpen: boolean) => void
+  title: ReactNode
+  description?: ReactNode
+  children?: ReactNode
+  confirmLabel?: ReactNode
+  cancelLabel?: ReactNode
+  tone?: 'default' | 'danger'
+  onConfirm: () => void | Promise<unknown>
+  onCancel?: () => void
+  isConfirmDisabled?: boolean
+  isPending?: boolean
+  closeOnConfirm?: boolean
+  size?: DialogSize
+  footerVariant?: DialogFooterProps['variant']
+  'aria-label'?: string
+}
+
+export function ConfirmDialog({
+  isOpen,
+  onOpenChange,
+  title,
+  description,
+  children,
+  confirmLabel,
+  cancelLabel,
+  tone = 'default',
+  onConfirm,
+  onCancel,
+  isConfirmDisabled = false,
+  isPending: isPendingProp,
+  closeOnConfirm = true,
+  size = 'sm',
+  footerVariant = 'bare',
+  'aria-label': ariaLabel
+}: ConfirmDialogProps) {
+  const t = useOptionalT()
+  const [running, setRunning] = useState(false)
+  const pending = isPendingProp ?? running
+  const confirm = (): void => {
+    const result = onConfirm()
+    if (result != null && typeof (result as Promise<unknown>).then === 'function') {
+      setRunning(true)
+      ;(result as Promise<unknown>).then(
+        () => {
+          setRunning(false)
+          if (closeOnConfirm) onOpenChange(false)
+        },
+        () => setRunning(false)
+      )
+      return
+    }
+    if (closeOnConfirm) onOpenChange(false)
+  }
+  const cancel = (): void => {
+    onCancel?.()
+    onOpenChange(false)
+  }
+  return (
+    <ModalOverlay isOpen={isOpen} onOpenChange={(open) => (open ? onOpenChange(true) : cancel())} isDismissable={!pending}>
+      <Modal data-dialog-size={size}>
+        <Dialog alert title={title} aria-label={ariaLabel} className="ui-confirm">
+          {description != null ? <p className="ui-confirm__desc">{description}</p> : null}
+          {children}
+          <DialogFooter variant={footerVariant}>
+            <Button variant="ghost" onPress={cancel} isDisabled={pending}>
+              {cancelLabel ?? t('ui.cancel')}
+            </Button>
+            <Button
+              variant={tone === 'danger' ? 'destructive' : 'primary'}
+              onPress={confirm}
+              isDisabled={isConfirmDisabled}
+              isPending={pending}
+              autoFocus={tone !== 'danger'}
+            >
+              {confirmLabel ?? t('ui.confirm')}
+            </Button>
+          </DialogFooter>
+        </Dialog>
+      </Modal>
+    </ModalOverlay>
+  )
+}

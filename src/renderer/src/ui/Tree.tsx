@@ -14,6 +14,7 @@ import {
 } from 'react-aria-components'
 import { ChevronRight } from 'lucide-react'
 import { cx } from './cx'
+import { CHEVRON_ICON_SIZE } from './sizes'
 
 export type TreeProps<T extends object = object> = RACTreeProps<T>
 export type TreeItemProps<T extends object = object> = RACTreeItemProps<T>
@@ -50,7 +51,7 @@ export function TreeChevron({ className, children, ...props }: TreeChevronProps)
       slot="chevron"
       className={composeRenderProps(className, (cn) => cx('ui-tree__chevron', cn))}
     >
-      {composeRenderProps(children, (kids) => kids ?? <ChevronRight size={14} aria-hidden="true" />)}
+      {composeRenderProps(children, (kids) => kids ?? <ChevronRight size={CHEVRON_ICON_SIZE} aria-hidden="true" />)}
     </RACButton>
   )
 }

@@ -16,6 +16,33 @@ import {
   CardSummary,
   CardTime,
   CardTitle,
+  CloseButton,
+  Collapsible,
+  CollapsibleChevron,
+  CollapsibleHeader,
+  CollapsiblePanel,
+  CommandSurface,
+  CommandSurfaceBody,
+  CommandSurfaceFooter,
+  CommandSurfaceHeader,
+  CommandSurfacePanel,
+  ConfirmDialog,
+  DialogFooter,
+  DiffStat,
+  FindBar,
+  InlineRename,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+  KbdGroup,
+  ListRow,
+  MenuSeparator,
+  MiddleTruncate,
+  QrCode,
+  Toggle,
+  ToggleGroup,
+  TreeRow,
   EmptyState,
   Notice,
   PageHeader,
@@ -1039,4 +1066,682 @@ function GearGlyph() {
       />
     </svg>
   )
+}
+
+function ThemePair({ children, columns = 2 }: { children: () => ReactNode; columns?: 1 | 2 }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: 'var(--s-16)' }}>
+      {(['light', 'dark'] as const).map((mode) => (
+        <section
+          key={mode}
+          data-theme-sample={mode}
+          style={{
+            colorScheme: mode,
+            background: 'var(--bg)',
+            color: 'var(--fg)',
+            border: '1px solid var(--line)',
+            borderRadius: 'var(--r-md)',
+            padding: 'var(--s-16)',
+            display: 'grid',
+            gap: 'var(--s-12)',
+            alignContent: 'start',
+            minWidth: 0
+          }}
+        >
+          <span style={noteStyle}>{mode === 'light' ? '浅色' : '深色'}</span>
+          {children()}
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function FindBarDemo({ initial = '', count = 12, disabled = false }: { initial?: string; count?: number; disabled?: boolean }) {
+  const [value, setValue] = useState(initial)
+  const [index, setIndex] = useState(0)
+  const [options, setOptions] = useState({ case: false, word: true, regex: false })
+  const total = value ? count : null
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--r-sm)', background: 'var(--surface)', opacity: disabled ? 0.4 : 1 }}>
+      <FindBar
+        value={value}
+        onChange={setValue}
+        autoFocus={false}
+        matchIndex={index}
+        matchCount={total}
+        onNext={() => setIndex((i) => (total ? (i + 1) % total : 0))}
+        onPrevious={() => setIndex((i) => (total ? (i - 1 + total) % total : 0))}
+        onClose={() => setValue('')}
+        options={[
+          { id: 'case', label: '区分大小写', icon: <TextGlyph text="Aa" />, selected: options.case },
+          { id: 'word', label: '全词匹配', icon: <TextGlyph text="ab" />, selected: options.word },
+          { id: 'regex', label: '正则表达式', icon: <TextGlyph text=".*" />, selected: options.regex }
+        ]}
+        onOptionChange={(id, selected) => setOptions((prev) => ({ ...prev, [id]: selected }))}
+      />
+    </div>
+  )
+}
+
+export const InputGroupFindBarStates: Story = {
+  name: 'InputGroup / FindBar · 前缀、附加、计数与匹配选项',
+  parameters: {
+    stateMatrix: {
+      components: ['InputGroup', 'InputGroupAddon', 'InputGroupInput', 'InputGroupText', 'FindBar'],
+      states: STATES('default', 'focus', 'disabled', 'invalid', 'empty', 'selected'),
+      declared: STATES('focus')
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <>
+          <InputGroup aria-label="过滤文件">
+            <InputGroupAddon align="start">
+              <SearchGlyph />
+            </InputGroupAddon>
+            <InputGroupInput aria-label="过滤文件" placeholder="过滤文件…" />
+            <InputGroupAddon align="end">
+              <KbdGroup keys={['Ctrl', 'P']} />
+            </InputGroupAddon>
+          </InputGroup>
+          <InputGroup size="sm" aria-label="分支名">
+            <InputGroupInput aria-label="分支名" defaultValue="feature/inkstone-ui-batch0" />
+            <InputGroupAddon align="end">
+              <InputGroupText>3/12</InputGroupText>
+              <IconButton size="xs" aria-label="清除" tooltip="清除">
+                <CloseGlyph />
+              </IconButton>
+            </InputGroupAddon>
+          </InputGroup>
+          <InputGroup variant="ghost" aria-label="幽灵输入">
+            <InputGroupAddon align="start">
+              <SearchGlyph />
+            </InputGroupAddon>
+            <InputGroupInput aria-label="幽灵输入" placeholder="幽灵变体：悬停才显底色" />
+          </InputGroup>
+          <InputGroup isInvalid aria-label="错误">
+            <InputGroupInput aria-label="错误" defaultValue="无效的路径" />
+          </InputGroup>
+          <InputGroup isDisabled aria-label="禁用">
+            <InputGroupInput aria-label="禁用" placeholder="禁用" disabled />
+          </InputGroup>
+          <FindBarDemo initial="render" />
+          <FindBarDemo initial="不存在的词" count={0} />
+          <FindBarDemo />
+        </>
+      )}
+    </ThemePair>
+  )
+}
+
+function ConfirmDemo({ tone, label }: { tone: 'default' | 'danger'; label: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button variant={tone === 'danger' ? 'danger' : 'secondary'} onPress={() => setOpen(true)}>
+        {label}
+      </Button>
+      <ConfirmDialog
+        isOpen={open}
+        onOpenChange={setOpen}
+        tone={tone}
+        title={tone === 'danger' ? '删除这个会话？' : '重新连接设备？'}
+        description={tone === 'danger' ? '会话记录会从列表移除，pi 的会话文件不会被删除。' : '当前连接会断开，未发送的输入会保留。'}
+        confirmLabel={tone === 'danger' ? '删除' : '重新连接'}
+        onConfirm={() => new Promise((resolve) => setTimeout(resolve, 600))}
+      />
+    </>
+  )
+}
+
+export const DialogFooterConfirmStates: Story = {
+  name: 'DialogFooter / ConfirmDialog · 按钮区与危险确认',
+  parameters: {
+    stateMatrix: {
+      components: ['DialogFooter', 'ConfirmDialog'],
+      states: STATES('default', 'open', 'loading', 'tone-danger'),
+      declared: STATES('open', 'loading')
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <>
+          <div style={{ borderRadius: 'var(--r-lg)', background: 'var(--surface-3)', boxShadow: 'var(--shadow-lg)' }}>
+            <Dialog alert title="删除这个会话？" aria-label="删除会话">
+              <p style={bodyStyle}>bare 按钮区：只排列按钮，不加底色。</p>
+              <DialogFooter>
+                <Button variant="ghost">取消</Button>
+                <Button variant="destructive">删除</Button>
+              </DialogFooter>
+            </Dialog>
+          </div>
+          <div style={{ borderRadius: 'var(--r-lg)', background: 'var(--surface-3)', boxShadow: 'var(--shadow-lg)' }}>
+            <Dialog title="导出会话" aria-label="导出会话">
+              <p style={bodyStyle}>bar 按钮区：贴底、顶部分隔线与下沉底色（T3 默认）。</p>
+              <DialogFooter variant="bar" align="between">
+                <Button variant="ghost" size="sm">
+                  高级选项
+                </Button>
+                <span style={{ display: 'flex', gap: 'var(--s-8)' }}>
+                  <Button variant="ghost">取消</Button>
+                  <Button variant="primary">导出</Button>
+                </span>
+              </DialogFooter>
+            </Dialog>
+          </div>
+          <Row label="确认">
+            <ConfirmDemo tone="danger" label="危险确认" />
+            <ConfirmDemo tone="default" label="普通确认" />
+          </Row>
+        </>
+      )}
+    </ThemePair>
+  )
+}
+
+export const ConfirmDialogOpen: Story = {
+  name: 'ConfirmDialog · 展开（危险）',
+  parameters: {
+    stateMatrix: {
+      components: ['ConfirmDialog'],
+      states: STATES('open', 'tone-danger'),
+      declared: []
+    }
+  },
+  render: () => <ConfirmOpenDemo />
+}
+
+function ConfirmOpenDemo() {
+  const [open, setOpen] = useState(true)
+  return (
+    <>
+      <Button onPress={() => setOpen(true)}>重新打开</Button>
+      <ConfirmDialog
+        isOpen={open}
+        onOpenChange={setOpen}
+        tone="danger"
+        title="删除 3 个本地分支？"
+        description="已合并的分支会被删除，远端分支不受影响。此操作不能撤销。"
+        confirmLabel="删除分支"
+        onConfirm={() => undefined}
+      >
+        <Notice tone="ask" compact>
+          feature/old-ui 还有未推送的提交。
+        </Notice>
+      </ConfirmDialog>
+    </>
+  )
+}
+
+export const MenuSlotStates: Story = {
+  name: 'Menu · 图标 / 说明 / 勾选 / 快捷键 / 分隔线',
+  parameters: {
+    stateMatrix: {
+      components: ['Menu', 'MenuItem', 'MenuSeparator'],
+      states: STATES('default', 'selected', 'disabled', 'tone-danger'),
+      declared: []
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <div className="ui-popover" style={{ position: 'static', maxWidth: 300 }}>
+          <Menu aria-label="附加" onAction={() => undefined}>
+            <MenuItem icon={<GearGlyph />} description="png、jpg、webp，最多 10 张" shortcut="Ctrl+U">
+              添加图片
+            </MenuItem>
+            <MenuItem icon={<SearchGlyph />} shortcut="Ctrl+F">
+              在会话中查找
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem checked description="写入文件前不再询问">
+              自动批准
+            </MenuItem>
+            <MenuItem checked={false} description="可以读写项目外的路径">
+              不受限制
+            </MenuItem>
+            <MenuItem isDisabled icon={<GearGlyph />}>
+              禁用项
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem tone="danger" icon={<CloseGlyph />}>
+              删除会话
+            </MenuItem>
+          </Menu>
+        </div>
+      )}
+    </ThemePair>
+  )
+}
+
+export const ToggleStates: Story = {
+  name: 'Toggle / ToggleGroup · 图标开关与分组',
+  parameters: {
+    stateMatrix: {
+      components: ['Toggle', 'ToggleGroup'],
+      states: STATES('default', 'selected', 'disabled', 'focus', 'hover'),
+      declared: STATES('focus', 'hover')
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <>
+          <Row label="单个">
+            <Toggle icon size="xs" aria-label="区分大小写" tooltip="区分大小写">
+              <TextGlyph text="Aa" />
+            </Toggle>
+            <Toggle icon size="xs" aria-label="全词" defaultSelected tooltip="全词匹配">
+              <TextGlyph text="ab" />
+            </Toggle>
+            <Toggle icon size="sm" aria-label="设置" defaultSelected>
+              <GearGlyph />
+            </Toggle>
+            <Toggle size="sm" variant="outline" defaultSelected>
+              换行
+            </Toggle>
+            <Toggle size="sm" isDisabled>
+              禁用
+            </Toggle>
+          </Row>
+          <Row label="多选">
+            <ToggleGroup aria-label="匹配选项" selectionMode="multiple" defaultSelectedKeys={['word']} size="xs">
+              <Toggle id="case" icon aria-label="区分大小写">
+                <TextGlyph text="Aa" />
+              </Toggle>
+              <Toggle id="word" icon aria-label="全词">
+                <TextGlyph text="ab" />
+              </Toggle>
+              <Toggle id="regex" icon aria-label="正则">
+                <TextGlyph text=".*" />
+              </Toggle>
+            </ToggleGroup>
+          </Row>
+          <Row label="分段">
+            <ToggleGroup aria-label="视图" variant="segmented" selectionMode="single" disallowEmptySelection defaultSelectedKeys={['split']}>
+              <Toggle id="unified">合并</Toggle>
+              <Toggle id="split">并排</Toggle>
+              <Toggle id="raw">原文</Toggle>
+            </ToggleGroup>
+          </Row>
+        </>
+      )}
+    </ThemePair>
+  )
+}
+
+export const CollapsibleStates: Story = {
+  name: 'Collapsible / CollapsibleHeader · 统一箭头',
+  parameters: {
+    stateMatrix: {
+      components: ['Collapsible', 'CollapsibleHeader', 'CollapsiblePanel', 'CollapsibleChevron'],
+      states: STATES('default', 'open'),
+      declared: []
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <div style={{ display: 'grid', gap: 'var(--s-4)' }}>
+          <Collapsible defaultExpanded>
+            <CollapsibleHeader accessory={<DiffStat added={42} removed={7} />} actions={<IconButton size="xs" aria-label="刷新" tooltip="刷新"><GearGlyph /></IconButton>}>
+              已暂存
+            </CollapsibleHeader>
+            <CollapsiblePanel>
+              <p style={{ ...noteStyle, padding: '0 var(--s-8) var(--s-8) var(--s-24)' }}>展开时箭头向下（ChevronRight 旋转 90°）。</p>
+            </CollapsiblePanel>
+          </Collapsible>
+          <Collapsible>
+            <CollapsibleHeader accessory="12">未暂存</CollapsibleHeader>
+            <CollapsiblePanel>
+              <p style={noteStyle}>收起内容</p>
+            </CollapsiblePanel>
+          </Collapsible>
+          <Collapsible defaultExpanded>
+            <CollapsibleHeader chevron="end" rule tone="emphasized">
+              T3 小节标题（尾部箭头 + 分隔线）
+            </CollapsibleHeader>
+            <CollapsiblePanel>
+              <p style={{ ...noteStyle, padding: '0 var(--s-8) var(--s-8)' }}>同一套箭头大小与旋转方向。</p>
+            </CollapsiblePanel>
+          </Collapsible>
+          <Row label="箭头">
+            <CollapsibleChevron expanded={false} />
+            <CollapsibleChevron expanded />
+          </Row>
+        </div>
+      )}
+    </ThemePair>
+  )
+}
+
+function RenameDemo({ initial }: { initial: string }) {
+  const [value, setValue] = useState(initial)
+  const [editing, setEditing] = useState(true)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-8)', height: 'var(--d-row)', minWidth: 0 }}>
+      {editing ? (
+        <InlineRename
+          aria-label="重命名"
+          defaultValue={value}
+          select="stem"
+          autoFocus={false}
+          onCommit={(next) => {
+            setValue(next)
+            setEditing(false)
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <Button variant="ghost" size="sm" onPress={() => setEditing(true)}>
+          {value}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+export const TextUtilityStates: Story = {
+  name: 'MiddleTruncate / DiffStat / InlineRename / QrCode',
+  parameters: {
+    stateMatrix: {
+      components: ['MiddleTruncate', 'DiffStat', 'InlineRename', 'QrCode'],
+      states: STATES('default', 'empty', 'focus'),
+      declared: STATES('focus')
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <>
+          <div style={{ display: 'grid', gap: 'var(--s-4)', width: 220, fontSize: 'var(--t-body)' }}>
+            <MiddleTruncate value="src/renderer/src/features/changes/ChangesPane.tsx" />
+            <MiddleTruncate value="E:/pi-desktop/.local-docs/evidence/2026-10-29-c-route/ui-inventory.md" />
+            <MiddleTruncate value="short.ts" />
+          </div>
+          <Row label="行数">
+            <DiffStat added={128} removed={34} />
+            <DiffStat added={3} removed={0} hideZero />
+            <DiffStat added={0} removed={9} size="md" />
+          </Row>
+          <RenameDemo initial="设计稿-最终版.fig" />
+          <QrCode value="https://github.com/Yu-DaTouX/Inkstone" size={112} title="邀请链接二维码" />
+        </>
+      )}
+    </ThemePair>
+  )
+}
+
+export const RowComponentStates: Story = {
+  name: 'ListRow / TreeRow · 行组件与缩进令牌',
+  parameters: {
+    stateMatrix: {
+      components: ['ListRow', 'TreeRow'],
+      states: STATES('default', 'selected', 'disabled', 'hover'),
+      declared: STATES('hover')
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <div style={{ display: 'grid', gap: 'var(--s-12)', maxWidth: 280 }}>
+          <div style={{ display: 'grid', gap: 1 }}>
+            <ListRow icon={<GearGlyph />} trailing="3 分钟">
+              重构设置页
+            </ListRow>
+            <ListRow icon={<GearGlyph />} current trailing={<Badge tone="run">运行中</Badge>}>
+              UI 第 0 批
+            </ListRow>
+            <ListRow icon={<GearGlyph />} muted>
+              已归档会话
+            </ListRow>
+            <ListRow variant="field" icon={<SearchGlyph />}>
+              搜索会话
+            </ListRow>
+          </div>
+          <div role="tree" aria-label="改动文件" style={{ display: 'grid', gap: 1 }}>
+            <TreeRow role="treeitem" depth={0} expanded icon={<FolderGlyph />}>
+              src
+            </TreeRow>
+            <TreeRow role="treeitem" depth={1} expanded icon={<FolderGlyph />}>
+              renderer
+            </TreeRow>
+            <TreeRow role="treeitem" depth={2} icon={<FileGlyph />} trailing={<DiffStat added={12} removed={3} />} current>
+              Button.tsx
+            </TreeRow>
+            <TreeRow role="treeitem" depth={2} icon={<FileGlyph />} trailing={<DiffStat added={4} removed={0} hideZero />}>
+              tokens.json
+            </TreeRow>
+            <TreeRow role="treeitem" depth={1} expanded={false} icon={<FolderGlyph />}>
+              main
+            </TreeRow>
+          </div>
+        </div>
+      )}
+    </ThemePair>
+  )
+}
+
+export const CompactControlStates: Story = {
+  name: 'Button xs/micro · IconButton tooltip · CloseButton · Kbd · Spinner 档位',
+  parameters: {
+    stateMatrix: {
+      components: ['Button', 'IconButton', 'CloseButton', 'Kbd', 'KbdGroup', 'Spinner', 'Badge'],
+      states: STATES('default', 'disabled', 'loading', 'open', 'tone-danger'),
+      declared: STATES('open')
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <>
+          <Row label="尺寸">
+            <Button size="md">md 24</Button>
+            <Button size="sm">sm 20</Button>
+            <Button size="xs" icon={<GearGlyph />}>
+              xs 20
+            </Button>
+            <Button size="micro">micro 16</Button>
+            <Button size="xs" variant="ghost">
+              ghost xs
+            </Button>
+          </Row>
+          <Row label="图标">
+            <IconButton size="md" aria-label="设置" tooltip="设置" tooltipShortcut="Ctrl+,">
+              <GearGlyph />
+            </IconButton>
+            <IconButton size="sm" aria-label="设置 sm" tooltip="设置">
+              <GearGlyph />
+            </IconButton>
+            <IconButton size="xs" aria-label="设置 xs" tooltip="设置">
+              <GearGlyph />
+            </IconButton>
+            <IconButton size="micro" aria-label="设置 micro" tooltip="设置">
+              <GearGlyph />
+            </IconButton>
+          </Row>
+          <Row label="关闭">
+            <CloseButton size="md" />
+            <CloseButton />
+            <CloseButton size="xs" />
+            <CloseButton size="micro" />
+            <CloseButton isDisabled />
+          </Row>
+          <Row label="危险">
+            <Button variant="destructive">删除</Button>
+            <Button variant="destructive" size="sm">
+              删除
+            </Button>
+            <Button variant="destructive" isDisabled>
+              删除
+            </Button>
+            <Button variant="danger">次要危险</Button>
+          </Row>
+          <Row label="键位">
+            <Kbd>Ctrl</Kbd>
+            <Kbd>⇧</Kbd>
+            <KbdGroup keys={['Ctrl', 'Shift', 'P']} />
+            <KbdGroup>
+              <Kbd>Esc</Kbd>
+            </KbdGroup>
+          </Row>
+          <Row label="徽章">
+            <Badge>默认</Badge>
+            <Badge tone="accent">强调</Badge>
+            <Badge tone="ok">已完成</Badge>
+            <Badge tone="fail">失败</Badge>
+          </Row>
+          <Row label="加载">
+            <Spinner size="xs" />
+            <Spinner size="sm" />
+            <Spinner size="md" />
+            <Spinner size="lg" label="加载中" />
+          </Row>
+        </>
+      )}
+    </ThemePair>
+  )
+}
+
+export const EmptyNoticeVariantStates: Story = {
+  name: 'EmptyState 图标媒体 / Notice 行内提示',
+  parameters: {
+    stateMatrix: {
+      components: ['EmptyState', 'Notice'],
+      states: STATES('default', 'empty', 'tone-info', 'tone-fail', 'loading'),
+      declared: []
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <>
+          <EmptyState
+            media="icon"
+            icon={<FolderGlyph />}
+            title="没有改动"
+            description="工作区和暂存区都是干净的。"
+            action={<Button size="sm">刷新</Button>}
+          />
+          <Notice variant="hint">正在读取 git 状态…</Notice>
+          <Notice variant="hint" icon={<Spinner size="xs" />}>
+            加载中（带 Spinner）
+          </Notice>
+          <Notice variant="hint" tone="fail">
+            无法读取仓库：不是 git 目录。
+          </Notice>
+          <Notice variant="hint" tone="ask">
+            有 2 个文件冲突。
+          </Notice>
+        </>
+      )}
+    </ThemePair>
+  )
+}
+
+function CommandDemo() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button variant="secondary" onPress={() => setOpen(true)}>
+        打开命令面板
+      </Button>
+      <CommandSurface isOpen={open} onOpenChange={setOpen} aria-label="命令面板">
+        <CommandBody />
+      </CommandSurface>
+    </>
+  )
+}
+
+function CommandBody() {
+  return (
+    <>
+      <CommandSurfaceHeader>
+        <InputGroup aria-label="命令">
+          <InputGroupAddon align="start">
+            <SearchGlyph />
+          </InputGroupAddon>
+          <InputGroupInput aria-label="命令" placeholder="输入命令或搜索会话…" />
+        </InputGroup>
+      </CommandSurfaceHeader>
+      <CommandSurfaceBody>
+        <Menu aria-label="命令" onAction={() => undefined}>
+          <MenuItem icon={<GearGlyph />} shortcut="Ctrl+,">
+            打开设置
+          </MenuItem>
+          <MenuItem icon={<SearchGlyph />} shortcut="Ctrl+F">
+            在会话中查找
+          </MenuItem>
+          <MenuItem icon={<FolderGlyph />} description="E:/pi-desktop">
+            切换项目
+          </MenuItem>
+        </Menu>
+      </CommandSurfaceBody>
+      <CommandSurfaceFooter>
+        <span>
+          <Kbd>↑</Kbd> <Kbd>↓</Kbd> 选择
+        </span>
+        <span>
+          <Kbd>Enter</Kbd> 执行
+        </span>
+        <span>
+          <Kbd>Esc</Kbd> 关闭
+        </span>
+      </CommandSurfaceFooter>
+    </>
+  )
+}
+
+export const CommandSurfaceStates: Story = {
+  name: 'CommandSurface · 命令浮层壳',
+  parameters: {
+    stateMatrix: {
+      components: ['CommandSurface', 'CommandSurfacePanel', 'CommandSurfaceHeader', 'CommandSurfaceBody', 'CommandSurfaceFooter'],
+      states: STATES('default', 'open'),
+      declared: STATES('open')
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <>
+          <CommandSurfacePanel aria-label="命令面板（内联预览）">
+            <CommandBody />
+          </CommandSurfacePanel>
+          <CommandDemo />
+        </>
+      )}
+    </ThemePair>
+  )
+}
+
+function SearchGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function FolderGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 4.5A1.5 1.5 0 013.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function FileGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4 2h5l3 3v9H4z M9 2v3h3" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function TextGlyph({ text }: { text: string }) {
+  return <span style={{ font: 'var(--w-medium) var(--t-caption) / 1 var(--font-mono)' }}>{text}</span>
 }

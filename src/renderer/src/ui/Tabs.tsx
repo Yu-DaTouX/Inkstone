@@ -14,6 +14,7 @@ import {
 import { X } from 'lucide-react'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
+import { CLOSE_ICON_SIZE } from './sizes'
 
 export { TabPanels }
 export type TabsProps = RACTabsProps
@@ -69,7 +70,7 @@ export function Tab({ onClose, closeLabel, className, children, ...props }: TabP
                 onClose()
               }}
             >
-              <X size={13} />
+              <X size={CLOSE_ICON_SIZE.micro} />
             </span>
           ) : null}
         </>

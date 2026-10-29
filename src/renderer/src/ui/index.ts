@@ -3,7 +3,48 @@ import './ui.css'
 export { cx } from './cx'
 
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button'
-export { IconButton, type IconButtonProps } from './IconButton'
+export { CloseButton, IconButton, type CloseButtonProps, type IconButtonProps } from './IconButton'
+export {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+  type InputGroupAddonProps,
+  type InputGroupProps
+} from './InputGroup'
+export { FindBar, type FindBarLabels, type FindBarOption, type FindBarProps } from './FindBar'
+export {
+  Toggle,
+  ToggleGroup,
+  type ToggleGroupProps,
+  type ToggleProps,
+  type ToggleSize,
+  type ToggleVariant
+} from './Toggle'
+export {
+  Collapsible,
+  CollapsibleChevron,
+  CollapsibleHeader,
+  CollapsiblePanel,
+  type CollapsibleChevronProps,
+  type CollapsibleHeaderProps,
+  type CollapsiblePanelProps,
+  type CollapsibleProps
+} from './Collapsible'
+export { MiddleTruncate, type MiddleTruncateProps } from './MiddleTruncate'
+export { DiffStat, type DiffStatProps } from './DiffStat'
+export { InlineRename, type InlineRenameProps } from './InlineRename'
+export { ListRow, TreeRow, type ListRowProps, type TreeRowProps } from './Row'
+export { QrCode, type QrCodeProps } from './QrCode'
+export {
+  CommandSurface,
+  CommandSurfaceBody,
+  CommandSurfaceFooter,
+  CommandSurfaceHeader,
+  CommandSurfacePanel,
+  type CommandSurfaceProps
+} from './CommandSurface'
+export type { ControlSize, SpinnerSizeName } from './sizes'
 export { FileCard } from './FileCard'
 export {
   SearchField,
@@ -33,11 +74,16 @@ export {
   type ListBoxSectionProps
 } from './ListBox'
 export {
+  ConfirmDialog,
   Dialog,
+  DialogFooter,
   DialogTrigger,
   Modal,
   ModalOverlay,
+  type ConfirmDialogProps,
+  type DialogFooterProps,
   type DialogProps,
+  type DialogSize,
   type DialogTriggerProps
 } from './Dialog'
 export { Popover, type PopoverProps } from './Popover'
@@ -45,11 +91,13 @@ export {
   Menu,
   MenuItem,
   MenuSection,
+  MenuSeparator,
   MenuTrigger,
   SubmenuTrigger,
   type MenuItemProps,
   type MenuProps,
   type MenuSectionProps,
+  type MenuSeparatorProps,
   type MenuTriggerProps,
   type SubmenuTriggerProps
 } from './Menu'
@@ -73,7 +121,7 @@ export {
   type TooltipTriggerComponentProps
 } from './Tooltip'
 export { ToastRegion, showToast, toastQueue, type ShowToastOptions, type ToastContent, type ToastTone } from './Toast'
-export { Badge, Kbd, type BadgeProps, type BadgeTone } from './Badge'
+export { Badge, Kbd, KbdGroup, type BadgeProps, type BadgeTone, type KbdGroupProps, type KbdProps } from './Badge'
 export { StatusDot, StatusSlot, type StatusDotKind, type StatusDotProps, type StatusSlotProps, type StatusSlotTone } from './StatusDot'
 export { Avatar, avatarInitial, type AvatarProps } from './Avatar'
 export { SiteIcon, type SiteIconProps } from './SiteIcon'

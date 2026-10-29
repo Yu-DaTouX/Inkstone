@@ -6,8 +6,8 @@ import {
 } from 'react-aria-components'
 import { cx } from './cx'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'plain' | 'danger'
-export type ButtonSize = 'sm' | 'md'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'plain' | 'danger' | 'destructive'
+export type ButtonSize = 'micro' | 'xs' | 'sm' | 'md'
 
 export interface ButtonProps extends RACButtonProps {
   variant?: ButtonVariant
@@ -36,7 +36,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {...props}
       ref={attachRef}
       className={composeRenderProps(className, (cn) =>
-        cx('ui-btn', `ui-btn--${variant}`, size === 'sm' && 'ui-btn--sm', block && 'ui-btn--block', cn)
+        cx('ui-btn', `ui-btn--${variant}`, size !== 'md' && `ui-btn--${size}`, block && 'ui-btn--block', cn)
       )}
     >
       {composeRenderProps(children, (kids) => (

@@ -6,11 +6,11 @@ import {
   UNSTABLE_ToastRegion as RACToastRegion,
   composeRenderProps
 } from 'react-aria-components'
-import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react'
+import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { Button } from './Button'
-import { IconButton } from './IconButton'
+import { CloseButton } from './IconButton'
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger'
 
@@ -92,14 +92,12 @@ export function ToastRegion({ className }: { className?: string } = {}) {
               {toast.content.action.label}
             </Button>
           ) : null}
-          <IconButton
+          <CloseButton
             aria-label={t('ui.closeToast')}
-            variant="ghost"
+            size="md"
             className="ui-toast__close"
             onPress={() => toastQueue.close(toast.key)}
-          >
-            <X size={15} aria-hidden="true" />
-          </IconButton>
+          />
         </RACToast>
       )}
     </RACToastRegion>

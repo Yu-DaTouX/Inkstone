@@ -7,6 +7,9 @@ import {
   type ProgressBarProps as RACProgressBarProps
 } from 'react-aria-components'
 import { cx } from './cx'
+import { SPINNER_SIZE, type SpinnerSizeName } from './sizes'
+
+export type { SpinnerSizeName }
 
 export type ProgressTone = 'ink' | 'run' | 'ask' | 'fail' | 'muted'
 
@@ -117,10 +120,11 @@ export function MeterRing({ size = 24, strokeWidth = 3, className, ...props }: M
 export interface SpinnerProps {
   className?: string
   label?: string
-  size?: number
+  size?: SpinnerSizeName | number
 }
 
-export function Spinner({ className, label, size = 16 }: SpinnerProps) {
+export function Spinner({ className, label, size: sizeProp = 'md' }: SpinnerProps) {
+  const size = typeof sizeProp === 'number' ? sizeProp : SPINNER_SIZE[sizeProp]
   return (
     <span
       className={cx('ui-spinner', className)}

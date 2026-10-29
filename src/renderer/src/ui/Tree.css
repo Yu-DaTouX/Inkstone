@@ -32,7 +32,7 @@
     gap: var(--s-6);
     min-width: 0;
     min-height: var(--d-row);
-    padding-inline: calc(var(--s-8) + (var(--tree-item-level, 1) - 1) * var(--s-16)) var(--s-8);
+    padding-inline: calc(var(--s-8) + (var(--tree-item-level, 1) - 1) * var(--size-tree-indent)) var(--s-8);
     border-radius: var(--r-sm);
     color: var(--fg);
     cursor: default;
