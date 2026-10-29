@@ -40,6 +40,14 @@
 | --- | --- |
 | React / React DOM / Zustand / CodeMirror 6 / mermaid / xterm.js 等 npm 依赖 | 各自包内声明（多为 MIT） |
 | React Aria Components（`react-aria-components`） | Apache-2.0 |
+| Model Context Protocol SDK（`@modelcontextprotocol/sdk`、`@modelcontextprotocol/ext-apps`，MCP 连接与 MCP Apps 宿主） | MIT |
+| Model Context Protocol SDK v2（`@modelcontextprotocol/client`、`@modelcontextprotocol/core`，MCP Apps 宿主依赖） | Apache-2.0 |
+| [@pierre/diffs](https://www.npmjs.com/package/@pierre/diffs)（改动与差异视图） | Apache-2.0 |
+| [pele](https://github.com/obsidianmd/pele)（Mermaid 图渲染） | MIT |
+| [fff](https://github.com/dmtrKovalenko/fff)（`@ff-labs/fff-node` 及平台二进制包，文件名与内容搜索） | MIT |
+| node-html-markdown（网页正文转 Markdown） | MIT |
+| write-file-atomic | ISC |
+| dequal | MIT |
 | [PDF.js](https://mozilla.github.io/pdf.js/)（npm 包 `pdfjs-dist`，文件预览与联网 PDF 文字读取） | Apache-2.0 |
 | [Mozilla Readability](https://github.com/mozilla/readability)（`@mozilla/readability`，网页正文提取） | Apache-2.0（见包内 LICENSE） |
 | [LinkeDOM](https://github.com/WebReflection/linkedom)（`linkedom`，离线 HTML 解析） | ISC（见包内 LICENSE） |
