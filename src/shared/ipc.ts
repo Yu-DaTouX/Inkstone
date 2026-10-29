@@ -1548,6 +1548,10 @@ export interface WebSearchSourceView {
   domain: string
   snippet: string
   source: string
+  readState?: 'discovered' | 'read' | 'partial'
+  published?: string
+  fetchedAt?: string
+  cached?: boolean
 }
 
 export interface WebSearchPageView {
@@ -1555,6 +1559,10 @@ export interface WebSearchPageView {
   url: string
   domain: string
   excerpt: string
+  fetchedAt?: string
+  cached?: boolean
+  truncated?: boolean
+  sourceTruncated?: boolean
 }
 
 export type WebSearchOpView =
@@ -1563,9 +1571,11 @@ export type WebSearchOpView =
   | { ok: false; error: string }
 
 export const SEARCH_OPS_READ_CHANNEL = 'yan:searchOps:read'
+export const SEARCH_SITE_ICON_CHANNEL = 'yan:searchOps:siteIcon'
 
 export interface SearchOpsBridge {
   read(operationId: string): Promise<WebSearchOpView>
+  siteIcon(url: string): Promise<string | null>
 }
 
 export interface AttachmentUsage {

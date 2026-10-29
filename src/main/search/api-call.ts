@@ -26,7 +26,7 @@ export async function callApi(
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetchImpl(url, { ...init, signal: controller.signal, redirect: 'manual' })
+    const res = await fetchImpl(url, { ...init, signal: init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal, redirect: 'manual' })
     const text = await res.text()
     if (res.ok || passStatuses.includes(res.status)) return { ok: true, status: res.status, text }
     return { ok: false, status: res.status, code: httpErrorCode(res.status), message: httpErrorMessage(label, res.status), body: text }

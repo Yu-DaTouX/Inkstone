@@ -15,6 +15,10 @@ export type WebSearchTextKey =
   | 'empty'
   | 'moreSources'
   | 'showLess'
+  | 'discovered'
+  | 'read'
+  | 'partial'
+  | 'cached'
 
 const ZH: Record<WebSearchTextKey, string> = {
   searching: '搜索中',
@@ -30,7 +34,11 @@ const ZH: Record<WebSearchTextKey, string> = {
   openSource: '打开来源：{title}',
   empty: '没有可显示的来源',
   moreSources: '{n} 个更多来源',
-  showLess: '显示更少'
+  showLess: '显示更少',
+  discovered: '搜索命中',
+  read: '已取原文',
+  partial: '部分原文',
+  cached: '缓存'
 }
 
 const EN: Record<WebSearchTextKey, string> = {
@@ -47,7 +55,11 @@ const EN: Record<WebSearchTextKey, string> = {
   openSource: 'Open source: {title}',
   empty: 'No sources to show',
   moreSources: '{n} more sources',
-  showLess: 'Show less'
+  showLess: 'Show less',
+  discovered: 'Search result',
+  read: 'Text fetched',
+  partial: 'Partial text',
+  cached: 'Cached'
 }
 
 export function webSearchText(lang: string, key: WebSearchTextKey, vars?: Record<string, string | number>): string {

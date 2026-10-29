@@ -1,6 +1,6 @@
 import { callApi, parseJson } from './api-call'
 import { resolveSearchKey } from './config'
-import { normalizeReadUrl, READ_PAGE_MAX_CHARS_DEFAULT, READ_PAGE_MAX_CHARS_MAX, ReadPageError, type ReadPageResult } from './read-page'
+import { normalizeReadUrl, READ_PAGE_MAX_CHARS_DEFAULT, READ_PAGE_MAX_CHARS_MAX, ReadPageError, type ReadPageResult } from './page-types'
 
 const ENDPOINT = 'https://api.firecrawl.dev/v2/scrape'
 
@@ -14,7 +14,7 @@ const asText = (value: unknown): string => (Array.isArray(value) ? String(value[
 
 export async function firecrawlReadPage(
   rawUrl: string,
-  opts: { maxChars?: number; timeoutMs?: number } = {},
+  opts: { maxChars?: number; timeoutMs?: number; signal?: AbortSignal } = {},
   fetchImpl: typeof fetch = fetch
 ): Promise<ReadPageResult> {
   const url = normalizeReadUrl(rawUrl)
@@ -27,6 +27,7 @@ export async function firecrawlReadPage(
     ENDPOINT,
     {
       method: 'POST',
+      signal: opts.signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true, timeout: Math.max(1_000, timeoutMs - 2_000) })
     },
@@ -47,6 +48,7 @@ export async function firecrawlReadPage(
     title: asText(meta.title).trim(),
     text: text.length > maxChars ? text.slice(0, maxChars) : text,
     truncated: text.length > maxChars,
-    totalChars: text.length
+    totalChars: text.length,
+    format: 'markdown', extraction: 'remote', fetchedAt: new Date().toISOString()
   }
 }

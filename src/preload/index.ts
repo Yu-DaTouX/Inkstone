@@ -7,6 +7,7 @@ import {
   HTML_EDIT_APPLY_CHANNEL,
   HTML_EDIT_UNDO_CHANNEL,
   SEARCH_OPS_READ_CHANNEL,
+  SEARCH_SITE_ICON_CHANNEL,
   VIDEO_EXPORT_CANCEL_CHANNEL,
   VIDEO_EXPORT_PROGRESS_CHANNEL,
   VIDEO_EXPORT_START_CHANNEL
@@ -416,7 +417,8 @@ const api: YanBridge = {
     removeImage: (req) => invoke('yan:sources:removeImage', req)
   },
   searchOps: {
-    read: (operationId) => invoke<WebSearchOpView>(SEARCH_OPS_READ_CHANNEL, operationId)
+    read: (operationId) => invoke<WebSearchOpView>(SEARCH_OPS_READ_CHANNEL, operationId),
+    siteIcon: (url) => invoke<string | null>(SEARCH_SITE_ICON_CHANNEL, url)
   },
   packages: {
     search: (query, offset) => invoke('yan:packages:search', query, offset),

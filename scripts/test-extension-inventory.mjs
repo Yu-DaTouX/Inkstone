@@ -115,11 +115,11 @@ export async function runExtensionInventoryTests(ok) {
         const hostTool =
           (file === 'question.js' && toolCalls === 1 && /\.registerTool\(createQuestionTool\(\)\)/.test(source)) ||
           (file === 'wrap-up.js' && toolCalls === 1 && /\.registerTool\(createWrapUpTool\(\)\)/.test(source)) ||
-          (file === 'capability-guide.js' && toolCalls === 1 && /\.registerTool\(createTodosTool\(\)\)/.test(source))
+          (file === 'capability-guide.js' && toolCalls === 2 && /\.registerTool\(createTodosTool\(\)\)/.test(source) && /createWebTools\(\)/.test(source))
         const readOnlyTools =
           file === 'readonly-tools.js' &&
-          toolCalls === 3 &&
-          ['GIT_INSPECT_TOOL', 'WEB_SEARCH_TOOL', 'WEB_FETCH_TOOL'].every((name) => source.includes(`.registerTool(${name})`))
+          toolCalls === 4 &&
+          ['GIT_INSPECT_TOOL', 'WEB_SEARCH_TOOL', 'WEB_FETCH_TOOL', 'WEB_DOCS_TOOL'].every((name) => source.includes(`.registerTool(${name})`))
         if (toolCalls && !bashOverride && !mcpAppProxy && !hostTool && !readOnlyTools) offenders.push(`${file}:registerTool`)
 
         const commandCalls = source.match(/\.registerCommand\s*\(/g)?.length ?? 0

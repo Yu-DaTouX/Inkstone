@@ -116,7 +116,7 @@ try {
     for (const key of Object.keys(env)) if (!(key in saved)) delete process.env[key]
     Object.assign(process.env, saved)
   }
-  assert.deepEqual(registered.map((definition) => definition.name), ['question', 'todos'])
+  assert.deepEqual(registered.map((definition) => definition.name), ['question', 'todos', 'web_search', 'web_fetch', 'web_docs'])
   for (const definition of registered) {
     assert.equal(typeof definition.execute, 'function')
     assert.equal(definition.parameters.type, 'object')

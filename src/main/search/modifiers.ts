@@ -76,3 +76,7 @@ export function withOperators(query: string, operators: readonly string[], maxCh
   const room = Math.max(1, maxChars - Array.from(suffix).length - 1)
   return `${Array.from(query.trim()).slice(0, room).join('')} ${suffix}`
 }
+
+export function queryOperators(opts: Pick<SourceRequest, 'sites' | 'excludeSites' | 'language' | 'after' | 'before'>): string[] {
+  return [siteOperator(opts.sites), ...(opts.excludeSites ?? []).map((site) => `-site:${site}`), ...(opts.language ? [`lang:${opts.language}`] : []), ...(opts.after ? [`after:${opts.after}`] : []), ...(opts.before ? [`before:${opts.before}`] : [])]
+}

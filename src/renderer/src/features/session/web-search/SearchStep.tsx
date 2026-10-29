@@ -1,13 +1,14 @@
-import { useMemo, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
-import { Globe } from 'lucide-react'
+import { useId, useMemo, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
+import { ArrowUpRight, Globe } from 'lucide-react'
 import { useStore } from '../../../state/store'
-import { Avatar, Button, Card, ShimmerText, Skeleton } from '../../../ui'
+import { Button, Card, ShimmerText, Skeleton, SourceCard as SourceCardFrame } from '../../../ui'
 import type { UIToolCall, WebSearchSourceView } from '../../../../../shared/ipc'
 import { Icon } from '../Icon'
 import { useCitationIndex } from './citations'
-import { citationFor, domainOf, searchStepLabel, siteLabel, siteTone, type SearchStep } from './model'
+import { citationFor, domainOf, searchStepLabel, siteLabel, type SearchStep } from './model'
 import { useSearchOp } from './op-store'
 import { useWebSearchText } from './text'
+import { WebsiteIcon } from './WebsiteIcon'
 import './web-search.css'
 
 const MAX_SITES = 3
@@ -16,20 +17,20 @@ function pageSource(state: ReturnType<typeof useSearchOp>): WebSearchSourceView[
   if (state.status !== 'ready' || !state.view.ok) return []
   if (state.view.kind === 'fetch') {
     const page = state.view.page
-    return [{ title: page.title, url: page.url, domain: page.domain, snippet: page.excerpt, source: '' }]
+    return [{ title: page.title, url: page.url, domain: page.domain, snippet: page.excerpt, source: '', fetchedAt: page.fetchedAt, cached: page.cached, readState: page.truncated || page.sourceTruncated ? 'partial' : 'read' }]
   }
   return state.view.sources
 }
 
-function uniqueSites(sources: readonly WebSearchSourceView[]): { site: string; seed: string }[] {
-  const out: { site: string; seed: string }[] = []
+function uniqueSites(sources: readonly WebSearchSourceView[]): { site: string; url: string }[] {
+  const out: { site: string; url: string }[] = []
   const seen = new Set<string>()
   for (const source of sources) {
     const domain = source.domain || domainOf(source.url)
     const site = siteLabel(domain) || domain
-    if (!site || seen.has(site)) continue
-    seen.add(site)
-    out.push({ site, seed: domain || site })
+    if (!site || seen.has(domain)) continue
+    seen.add(domain)
+    out.push({ site, url: source.url })
     if (out.length >= MAX_SITES) break
   }
   return out
@@ -37,6 +38,7 @@ function uniqueSites(sources: readonly WebSearchSourceView[]): { site: string; s
 
 export function SearchStepView({ call, step, children, glow = true }: { call: UIToolCall; step: SearchStep; children: ReactNode; glow?: boolean }): JSX.Element {
   const tt = useWebSearchText()
+  const panelId = useId()
   const openLink = useStore((s) => s.openLink)
   const turnIndex = useCitationIndex()
   const [open, setOpen] = useState(step.command.action === 'query')
@@ -67,6 +69,7 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
         type="button"
         className="ws-cap"
         aria-expanded={expanded}
+        aria-controls={panelId}
         aria-label={`${label} ${searchStepLabel(step.command)}`.trim()}
         title={`${label} ${searchStepLabel(step.command)}`.trim()}
         onClick={() => {
@@ -88,42 +91,46 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
         </span>
         <span className="ws-cap-target" title={searchStepLabel(step.command)}>{searchStepLabel(step.command)}</span>
         {sites.length ? (
-          <span className="ws-cap-sites" aria-hidden="true">
-            {sites.map((site) => <Avatar key={site.site} name={site.site} className={`ws-site ws-tone-${siteTone(site.seed)}`} />)}
+          <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
+            {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
           </span>
         ) : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
-      {expanded ? (
-        <div className="ws-op" role="group" aria-label={tt('sources')} data-testid="ws-sources">
-          {sources.length ? (
-            <>
-              {(folded ? sources.slice(0, SOURCE_PREVIEW) : sources).map((source, i) => (
-                <SourceCard
-                  key={`${source.url}#${i}`}
-                  source={source}
-                  index={i < SOURCE_PREVIEW ? i : i - SOURCE_PREVIEW}
-                  n={citationFor(turnIndex, source.url)?.n ?? i + 1}
-                  onOpen={() => void openLink(source.url)}
-                />
-              ))}
-              {folded ? <MoreSourcesCard rest={sources.slice(SOURCE_PREVIEW)} onPress={() => setShowAll(true)} /> : null}
-              {showAll && sources.length > SOURCE_PREVIEW + 1 ? (
-                <Button variant="plain" size="sm" className="ws-less" onPress={() => setShowAll(false)}>
-                  <Icon name="chevron-up" size={14} />
-                  {tt('showLess')}
-                </Button>
-              ) : null}
-            </>
+      <div id={panelId} className="ui-source-reveal" data-open={expanded || pending} aria-hidden={!expanded || undefined} inert={!expanded}>
+        <div className="ui-source-reveal__inner">
+          {pending ? (
+            <div className="ws-op" aria-hidden="true" data-testid="ws-sources-pending">
+              {Array.from({ length: SOURCE_PREVIEW }, (_, i) => <PendingCard key={i} index={i} />)}
+            </div>
           ) : (
-            <div className="ws-empty">{tt('empty')}</div>
+            <div className="ws-op" role="group" aria-label={tt('sources')} data-testid="ws-sources" data-single={sources.length === 1 || undefined}>
+              {sources.length ? (
+                <>
+                  {(folded ? sources.slice(0, SOURCE_PREVIEW) : sources).map((source, i) => (
+                    <SourceCard
+                      key={`${source.url}#${i}`}
+                      source={source}
+                      index={i}
+                      n={citationFor(turnIndex, source.url)?.n ?? i + 1}
+                      onOpen={() => void openLink(source.url)}
+                    />
+                  ))}
+                  {folded ? <MoreSourcesCard rest={sources.slice(SOURCE_PREVIEW)} onPress={() => setShowAll(true)} /> : null}
+                  {showAll && sources.length > SOURCE_PREVIEW + 1 ? (
+                    <Button variant="plain" size="sm" className="ws-less" onPress={() => setShowAll(false)}>
+                      <Icon name="chevron-up" size={14} />
+                      {tt('showLess')}
+                    </Button>
+                  ) : null}
+                </>
+              ) : (
+                <div className="ws-empty">{tt('empty')}</div>
+              )}
+            </div>
           )}
         </div>
-      ) : pending ? (
-        <div className="ws-op" aria-hidden="true" data-testid="ws-sources-pending">
-          {Array.from({ length: SOURCE_PREVIEW }, (_, i) => <PendingCard key={i} index={i} />)}
-        </div>
-      ) : null}
+      </div>
     </>
   )
 }
@@ -132,15 +139,16 @@ const SOURCE_PREVIEW = 3
 
 function PendingCard({ index }: { index: number }): JSX.Element {
   return (
-    <Card padding="sm" quiet className="ws-source ws-source-pending" style={{ '--ws-i': index } as CSSProperties}>
+    <Card padding="sm" quiet className="ui-source-card ws-source ws-source-pending" style={{ '--source-index': index } as CSSProperties}>
+      <span className="ws-source-meta">
+        <Skeleton shape="circle" width={24} height={24} />
+        <Skeleton width="48%" />
+      </span>
       <span className="ws-source-pending-title">
         <Skeleton width="92%" />
         <Skeleton width="64%" />
       </span>
-      <span className="ws-source-meta">
-        <Skeleton shape="circle" width={15} height={15} />
-        <Skeleton width="48%" />
-      </span>
+      <Skeleton width="38%" />
     </Card>
   )
 }
@@ -149,12 +157,13 @@ function MoreSourcesCard({ rest, onPress }: { rest: WebSearchSourceView[]; onPre
   const tt = useWebSearchText()
   const sites = uniqueSites(rest).slice(0, 3)
   return (
-    <Card padding="sm" className="ws-source ws-more" interactive quiet style={{ '--ws-i': SOURCE_PREVIEW } as CSSProperties}>
-      <button type="button" className="ws-source-main" onClick={onPress} data-testid="ws-more">
-        <span className="ws-cap-sites ws-more-sites" aria-hidden="true">
-          {sites.map((site) => <Avatar key={site.site} name={site.site} className={`ws-site ws-tone-${siteTone(site.seed)}`} />)}
+    <Card padding="none" className="ui-source-card ws-source ws-more" interactive quiet style={{ '--source-index': SOURCE_PREVIEW } as CSSProperties}>
+      <button type="button" className="ui-source-card__link" onClick={onPress} data-testid="ws-more">
+        <span className="ui-source-stack" aria-hidden="true">
+          {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
         </span>
-        <span className="ws-more-label">{tt('moreSources', { n: rest.length })}</span>
+        <span className="ui-source-card__title">{tt('moreSources', { n: rest.length })}</span>
+        <span className="ui-source-card__foot"><span className="ui-source-card__domain">{sites.map((item) => item.site).join(' · ')}</span><ArrowUpRight size={14} className="ui-source-card__arrow" aria-hidden="true" /></span>
       </button>
     </Card>
   )
@@ -162,30 +171,25 @@ function MoreSourcesCard({ rest, onPress }: { rest: WebSearchSourceView[]; onPre
 
 function SourceCard({ source, n, index, onOpen }: { source: WebSearchSourceView; n: number; index: number; onOpen: () => void }): JSX.Element {
   const tt = useWebSearchText()
-  const domain = source.domain || domainOf(source.url)
-  const site = siteLabel(domain) || domain
+  const domain = domainOf(source.url) || source.domain
   const hint = [source.title, domain, source.snippet].filter(Boolean).join('\n')
   return (
-    <Card padding="sm" className="ws-source" interactive style={{ '--ws-i': index } as CSSProperties}>
-      <a
-        className="ws-source-main"
-        href={source.url}
-        aria-label={tt('openSource', { title: source.title })}
-        title={hint}
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          onOpen()
-        }}
-        onAuxClick={(event) => event.preventDefault()}
-      >
-        <span className="ws-source-title">{source.title}</span>
-        <span className="ws-source-meta">
-          <Avatar name={site} className={`ws-site ws-tone-${siteTone(domain || site)}`} />
-          <span className="ws-source-domain">{site}</span>
-          <span className="ws-source-n" aria-hidden>{n}</span>
-        </span>
-      </a>
-    </Card>
+    <SourceCardFrame
+      title={source.title}
+      domain={domain}
+      href={source.url}
+      icon={<WebsiteIcon url={source.url} />}
+      number={n}
+      index={index}
+      label={tt('openSource', { title: source.title })}
+      hint={hint}
+      status={tt(source.readState ?? 'discovered')}
+      statusTone={source.readState === 'read' ? 'ok' : source.readState === 'partial' ? 'ask' : 'muted'}
+      meta={source.published || source.cached ? <>
+        {source.published ? <time dateTime={source.published}>{source.published.slice(0, 10)}</time> : null}
+        {source.cached ? <span>{tt('cached')}</span> : null}
+      </> : undefined}
+      onOpen={onOpen}
+    />
   )
 }

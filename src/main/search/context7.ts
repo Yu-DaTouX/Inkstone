@@ -56,7 +56,7 @@ const libOf = (r: Record<string, unknown>): DocsLibrary | null =>
     : null
 
 export async function queryDocs(
-  input: { library?: string; libraryId?: string; query: string; maxChars?: number; timeoutMs?: number },
+  input: { library?: string; libraryId?: string; query: string; maxChars?: number; timeoutMs?: number; signal?: AbortSignal },
   fetchImpl: typeof fetch = fetch
 ): Promise<DocsResult> {
   const key = await resolveSearchKey('context7')
@@ -71,7 +71,7 @@ export async function queryDocs(
     const url = new URL(`${BASE}/libs/search`)
     url.searchParams.set('libraryName', input.library ?? '')
     url.searchParams.set('query', input.query)
-    const res = await callApi('Context7', url, { headers: headers(key) }, timeoutMs, fetchImpl)
+    const res = await callApi('Context7', url, { headers: headers(key), signal: input.signal }, timeoutMs, fetchImpl)
     if (!res.ok) throw failure(res)
     const body = parseJson<LibsBody>(res.text)
     const found = (body?.results ?? []).map(libOf).filter((l): l is DocsLibrary => !!l)
@@ -85,7 +85,7 @@ export async function queryDocs(
     const url = new URL(`${BASE}/context`)
     url.searchParams.set('libraryId', libraryId)
     url.searchParams.set('query', input.query)
-    const res = await callApi('Context7', url, { headers: headers(key) }, timeoutMs, fetchImpl, [301])
+    const res = await callApi('Context7', url, { headers: headers(key), signal: input.signal }, timeoutMs, fetchImpl, [301])
     if (!res.ok) throw failure(res)
     if (res.status === 301) {
       const redirect = parseJson<ErrBody>(res.text)?.redirectUrl

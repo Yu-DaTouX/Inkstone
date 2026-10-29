@@ -19,6 +19,7 @@ import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { paramNumber, paramString } from './command-params'
 import { SourceCooldown } from './search/cooldown'
+import { PageStore, pageRange, findInPage } from './search/page-store'
 
 const THIN_PAGE_CHARS = 200
 const SEARCH_CACHE_TTL_MS = 10 * 60_000
@@ -37,7 +38,9 @@ export class LookupCommands {
   private searchApiHintSent = false
   private readonly searchCache = new TtlCache<SearchOutcome>(SEARCH_CACHE_TTL_MS, SEARCH_CACHE_MAX)
   private readonly searchCooldown = new SourceCooldown()
-  private readonly fetchCache = new TtlCache<FetchedPage>(SEARCH_CACHE_TTL_MS, SEARCH_CACHE_MAX)
+  private readonly fetchCache = new TtlCache<FetchedPage>(SEARCH_CACHE_TTL_MS, 4)
+  private readonly pages = new PageStore()
+  private readonly pageRefs = new WeakMap<ReadPageResult, string>()
 
   constructor(private readonly host: LookupCommandsHost) {}
 
@@ -58,7 +61,8 @@ export class LookupCommands {
     return undefined
   }
 
-  async runSearchCommand(action: string, params: Record<string, unknown>) {
+  async runSearchCommand(action: string, params: Record<string, unknown>, signal?: AbortSignal) {
+    signal?.throwIfAborted()
     if (action === 'doctor') {
       const status = await searchDoctor()
       return {
@@ -80,36 +84,58 @@ export class LookupCommands {
     }
     if (action === 'fetch') {
       const url = this.searchString(params, ['url'])
-      if (!url) throw new CapabilityCommandError('search_url_required', 'search fetch 需要网址（--url）')
+      const pageRef = this.searchString(params, ['page-ref', 'pageRef'])
+      if (!url && !pageRef) throw new CapabilityCommandError('search_url_required', 'search fetch 需要网址（--url）或页面快照（--page-ref）')
       const via = this.searchString(params, ['via'])
       if (via && via !== 'local' && via !== 'firecrawl' && via !== 'deepseek') {
         throw new CapabilityCommandError('search_bad_via', '--via 只能是 local、firecrawl 或 deepseek')
       }
       try {
+        if (pageRef && (params.refresh === true || params.refresh === 'true')) throw new ReadPageError('bad_refresh', '页面快照固定不刷新；重新抓取时请只传 url，不传 pageRef')
         const read = {
-          maxChars: this.searchNumber(params, ['max-chars', 'maxChars']),
           timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
         }
-        const cacheKey = JSON.stringify({ url: normalizeReadUrl(url), maxChars: read.maxChars ?? null, timeoutMs: read.timeoutMs ?? null, via: via ?? null })
-        const { value: fetched, cached } = await this.fetchCache.getOrLoad(
-          cacheKey,
-          () => this.readWithFallback(url, read, via),
-          { refresh: params.refresh === true || params.refresh === 'true' }
-        )
-        const { page, via: usedVia, note } = fetched
+        let snapshot
+        let cached = true
+        if (pageRef) snapshot = this.pages.get(pageRef)
+        else {
+          const cacheKey = JSON.stringify({ url: normalizeReadUrl(url!), timeoutMs: read.timeoutMs ?? null, via: via ?? null })
+          const loaded = await this.fetchCache.getOrLoad(cacheKey, (requestSignal) => this.readWithFallback(url!, { ...read, signal: requestSignal }, via), { refresh: params.refresh === true || params.refresh === 'true', signal })
+          cached = loaded.cached
+          const { page, via: usedVia, note } = loaded.value
+          const existing = this.pageRefs.get(page)
+          try { snapshot = existing ? this.pages.get(existing) : undefined } catch { }
+          if (!snapshot) { snapshot = this.pages.put(page, usedVia, note); this.pageRefs.set(page, snapshot.pageRef) }
+        }
+        const offset = this.searchNumber(params, ['offset']) ?? 0
+        const maxChars = this.searchNumber(params, ['max-chars', 'maxChars']) ?? 12_000
+        const mode = this.searchString(params, ['action']) ?? 'read'
+        if (!['read', 'find', 'links'].includes(mode)) throw new ReadPageError('bad_action', '读页 action 只能是 read、find 或 links')
+        const page = pageRange(snapshot, offset, maxChars)
+        const find = this.searchString(params, ['find', 'query'])
+        if (mode === 'find' && !find) throw new ReadPageError('bad_find', '页内查询需要 find 或 query')
+        const data = mode === 'find' ? findInPage(snapshot, find!, offset) : mode === 'links'
+          ? { pageRef: snapshot.pageRef, url: snapshot.url, finalUrl: snapshot.finalUrl, title: snapshot.title, fetchedAt: snapshot.fetchedAt, links: (snapshot.links ?? []).slice(offset, offset + 100), totalLinks: snapshot.links?.length ?? 0, ...(offset + 100 < (snapshot.links?.length ?? 0) ? { nextOffset: offset + 100 } : {}) }
+          : page
         return {
-          data: { ...page, via: usedVia, ...(note ? { note } : {}), ...(cached ? { cached: true } : {}) },
+          data: { ...data, action: mode, cached, cacheAgeMs: Math.max(0, Date.now() - Date.parse(snapshot.fetchedAt)) },
           summary: {
             kind: 'search',
             action: 'fetch',
+            operation: mode,
             url: page.finalUrl,
             title: page.title,
             chars: page.text.length,
             totalChars: page.totalChars,
             truncated: page.truncated,
-            via: usedVia,
-            ...(note ? { note } : {}),
-            ...(cached ? { cached: true } : {})
+            via: snapshot.via,
+            pageRef: snapshot.pageRef,
+            fetchedAt: snapshot.fetchedAt,
+            offset: page.offset,
+            endOffset: page.endOffset,
+            sourceTruncated: page.sourceTruncated,
+            ...(snapshot.note ? { note: snapshot.note } : {}),
+            cached
           }
         }
       } catch (e) {
@@ -131,7 +157,8 @@ export class LookupCommands {
           ...(libraryId ? { libraryId } : {}),
           query,
           maxChars: this.searchNumber(params, ['max-chars', 'maxChars']),
-          timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
+          timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout']),
+          signal
         })
         return {
           data: docs,
@@ -193,15 +220,15 @@ export class LookupCommands {
     }
 
     const results = await mapLimit(queries, 2, async (text) => {
-      const plan: { sources: SearchSourceId[]; policy?: SearchPolicy } = keys ? defaultSearchPlan(text, keys) : { sources: explicitSources }
+      const plan: { sources: SearchSourceId[]; policy?: SearchPolicy } = keys ? defaultSearchPlan(text, keys, parsedModifiers.modifiers) : { sources: explicitSources }
       const input: SearchQuery = { text, sources: plan.sources, ...shared }
       const cacheKey = JSON.stringify({ input, policy: plan.policy ?? null })
       const { value: outcome, cached } = await this.searchCache.getOrLoad(
         cacheKey,
-        () => runSearch(input, { runner: searchRunner(), now: () => Date.now(), cooldown: this.searchCooldown }, plan.policy),
-        { refresh: params.refresh === true || params.refresh === 'true', accept: (result) => !result.error && result.items.length > 0 }
+        (requestSignal) => runSearch(input, { runner: searchRunner(), now: () => Date.now(), cooldown: this.searchCooldown, signal: requestSignal }, plan.policy),
+        { refresh: params.refresh === true || params.refresh === 'true', accept: (result) => !result.error && result.items.length > 0, signal }
       )
-      return { outcome, cached }
+      return { outcome: { ...outcome, cached, cacheAgeMs: outcome.fetchedAt ? Math.max(0, Date.now() - Date.parse(outcome.fetchedAt)) : 0 }, cached }
     })
 
     if (results.length === 1) {
@@ -237,21 +264,22 @@ export class LookupCommands {
 
   private async readWithFallback(
     url: string,
-    read: { maxChars?: number; timeoutMs?: number },
+    read: { maxChars?: number; timeoutMs?: number; signal?: AbortSignal },
     via: string | undefined
   ): Promise<FetchedPage> {
     const timeoutMs = Math.min(60_000, Math.max(5_000, Math.round(read.timeoutMs ?? 30_000)))
     const deadline = Date.now() + timeoutMs
     const remaining = (): number => Math.max(0, deadline - Date.now())
+    read.signal?.throwIfAborted()
     if (via === 'firecrawl') return { page: assertReadablePage(await firecrawlReadPage(url, { ...read, timeoutMs })), via: 'firecrawl' }
     if (via === 'deepseek') return { page: assertReadablePage(await fundedDeepseekReadPage(url, { ...read, timeoutMs })), via: 'deepseek' }
     let local: ReadPageResult | null = null
     let localError: ReadPageError | null = null
     try {
-      local = await readPage(url, { ...read, timeoutMs: Math.min(20_000, remaining()) })
+      local = await readPage(url, { ...read, snapshot: true, timeoutMs: Math.min(20_000, remaining()) })
       if (local.text.trim().length >= THIN_PAGE_CHARS || via === 'local') return { page: local, via: 'local' }
     } catch (e) {
-      if (!(e instanceof ReadPageError) || e.code === 'bad_url' || e.code === 'private_host' || via === 'local') throw e
+      if (read.signal?.aborted || !(e instanceof ReadPageError) || e.code === 'bad_url' || e.code === 'private_host' || via === 'local') throw e
       localError = e
     }
     const [firecrawlKey, deepseekKey] = await Promise.all([resolveSearchKey('firecrawl'), resolveDeepseekSearchKey()])
@@ -261,12 +289,13 @@ export class LookupCommands {
     ]
     const failures: string[] = []
     for (const remote of remotes) {
+      read.signal?.throwIfAborted()
       if (remaining() < 5_000) {
         failures.push('正文读取总时限已到，未继续请求后备来源')
         break
       }
       try {
-        const page = assertReadablePage(await remote.read(url, { ...read, timeoutMs: remaining() }))
+        const page = assertReadablePage(await remote.read(url, { ...read, maxChars: 40_000, timeoutMs: remaining() }))
         const why = local ? '本地读到的正文太短' : `本地读取失败（${localError?.message}）`
         return { page, via: remote.via, note: [why, ...failures, `已改用 ${remote.label}`].join('，') }
       } catch (e) {

@@ -370,7 +370,7 @@ async function run() {
       ok(detail?.action === 'query' && detail.query === 'electron 窗口', 'details.search 带动作与查询词', detail)
       ok(detail?.items?.length === 12, '来源细节最多 12 条', detail?.items?.length)
       ok(detail?.items?.every((entry) => entry.title && /^https:\/\//.test(entry.url)), '每条来源带标题与网址', detail?.items?.[0])
-      ok(detail?.items?.every((entry) => Object.keys(entry).sort().join(',') === 'snippet,title,url'), '来源细节不含正文 content', detail?.items?.[0])
+      ok(detail?.items?.every((entry) => !('content' in entry) && !('text' in entry) && entry.readState === 'discovered'), '来源细节不含正文，并标明只是搜索命中', detail?.items?.[0])
       ok(detail?.items?.every((entry) => entry.snippet.length <= 240), '摘要截到约 240 字', detail?.items?.[0]?.snippet?.length)
       ok(detail?.items?.[0]?.snippet?.endsWith('…'), '被截断的摘要带省略号', detail?.items?.[0]?.snippet)
       ok(searched.content?.[0]?.text?.includes('正文 1'), '给模型的文本仍包含正文，未被细节裁剪')

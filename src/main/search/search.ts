@@ -25,6 +25,7 @@ export interface SearchDeps {
   runner: AdapterRunner
   now: () => number
   cooldown?: SourceCooldown
+  signal?: AbortSignal
 }
 
 export interface SearchPolicy {
@@ -86,6 +87,7 @@ export function normalizeQuery(input: SearchQuery):
 }
 
 export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: SearchPolicy): Promise<SearchOutcome> {
+  deps.signal?.throwIfAborted()
   const started = deps.now()
   const parsed = normalizeQuery(input)
   if (!parsed.ok) {
@@ -109,6 +111,12 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
   const reserve = [...reserveAll]
   const primary = new Set<SearchSourceId>(policy?.primary ?? [])
   const stop = new AbortController()
+  let budgetExpired = false
+  const deadline = deps.now() + parsed.timeoutMs
+  const budgetTimer = setTimeout(() => { budgetExpired = true; stop.abort() }, parsed.timeoutMs)
+  const cancel = (): void => stop.abort(deps.signal?.reason)
+  deps.signal?.addEventListener('abort', cancel, { once: true })
+  if (deps.signal?.aborted) cancel()
   let pendingPrimary = parsed.sources.filter((s) => primary.has(s.id)).length
   let pendingAll = parsed.sources.length
   const cooldown = policy ? deps.cooldown : undefined
@@ -117,15 +125,13 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
     limitPerSource: parsed.limitPerSource,
     limitTotal: parsed.limitTotal,
     ...(input.sites?.length ? { sites: input.sites } : {}),
-    ...(input.recent ? { recent: input.recent } : {})
+    ...(input.recent ? { recent: input.recent } : {}),
+    excludeSites: input.excludeSites,
+    after: input.after,
+    before: input.before
   }
   let grace: NodeJS.Timeout | undefined
-  const modifiers = {
-    ...(input.recent ? { recent: input.recent } : {}),
-    ...(input.sites?.length ? { sites: input.sites } : {}),
-    ...(input.question ? { question: input.question } : {}),
-    ...(input.withContent ? { withContent: true } : {})
-  }
+  const { text: _text, sources: _sources, ...modifiers } = input
 
   const settle = (run: SourceRun): void => {
     pendingAll--
@@ -158,7 +164,7 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
     }
     let onAbort: (() => void) | undefined
     const aborted = new Promise<SourceRun>((resolve) => {
-      onAbort = () => resolve({ source: source.id, rows: null, skipped: true, elapsedMs: deps.now() - begun })
+      onAbort = () => resolve({ source: source.id, rows: null, ...(budgetExpired ? { timedOut: true, error: { code: 'timeout', message: '搜索总时限已到' } } : { skipped: true }), elapsedMs: deps.now() - begun })
       if (stop.signal.aborted) onAbort()
       else stop.signal.addEventListener('abort', onAbort, { once: true })
     })
@@ -166,7 +172,7 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
       const run = stop.signal.aborted
         ? await aborted
         : await Promise.race([
-            deps.runner(source, parsed.text, { limit: parsed.limitPerSource, timeoutMs: parsed.timeoutMs, signal: stop.signal, ...modifiers }),
+            deps.runner(source, parsed.text, { ...modifiers, limit: parsed.limitPerSource, timeoutMs: Math.max(1, deadline - deps.now()), signal: stop.signal }).catch((error) => ({ source: source.id, rows: null, elapsedMs: deps.now() - begun, error: { code: 'network_error', message: error instanceof Error ? error.message : String(error) } })),
             aborted
           ])
       runs.push(run)
@@ -183,24 +189,38 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
       inflight.add(task)
     }
   }
-  pump()
-  while (inflight.size) {
-    await Promise.race(inflight)
+  try {
     pump()
+    while (inflight.size) {
+      await Promise.race(inflight)
+      pump()
+    }
+  } finally {
+    if (grace) clearTimeout(grace)
+    clearTimeout(budgetTimer)
+    deps.signal?.removeEventListener('abort', cancel)
+    stop.abort()
   }
-  if (grace) clearTimeout(grace)
-  stop.abort()
+  deps.signal?.throwIfAborted()
 
   const order = new Map([...parsed.sources, ...reserveAll].map((s, i) => [s.id, i]))
   runs.sort((a, b) => (order.get(a.source) ?? 0) - (order.get(b.source) ?? 0))
 
   const merged = aggregate(runs, aggregateOptions)
+  for (const source of merged.sources) {
+    const unsupported: string[] = []
+    if (input.country && !['ddg', 'tavily', 'brave'].includes(source.source)) unsupported.push('country')
+    if ((input.after || input.before || input.language) && !['deepseek', 'tavily', 'brave'].includes(source.source)) unsupported.push('language/date（仅查询语法尽量表达）')
+    if (unsupported.length) source.message = [source.message, `此来源不保证支持 ${unsupported.join('、')}，请核对原文`].filter(Boolean).join('；')
+  }
   return {
     query: parsed.text,
     items: merged.items,
     sources: merged.sources,
     truncated: merged.truncated,
     durationMs: deps.now() - started,
+    fetchedAt: new Date(deps.now()).toISOString(),
+    coverage: input.coverage ?? 'fast',
     ...(parsed.ignoredSources.length ? { ignoredSources: parsed.ignoredSources } : {})
   }
 }

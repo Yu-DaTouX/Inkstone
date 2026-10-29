@@ -76,6 +76,8 @@ export { ToastRegion, showToast, toastQueue, type ShowToastOptions, type ToastCo
 export { Badge, Kbd, type BadgeProps, type BadgeTone } from './Badge'
 export { StatusDot, StatusSlot, type StatusDotKind, type StatusDotProps, type StatusSlotProps, type StatusSlotTone } from './StatusDot'
 export { Avatar, avatarInitial, type AvatarProps } from './Avatar'
+export { SiteIcon, type SiteIconProps } from './SiteIcon'
+export { SourceCard, type SourceCardProps } from './SourceCard'
 export { Meter, MeterRing, ProgressBar, Spinner, type MeterProps, type MeterRingProps, type ProgressBarProps, type ProgressTone, type SpinnerProps } from './Progress'
 export { MiniBars, Stat, StatGrid, type MiniBarsProps, type StatGridProps, type StatProps } from './Stat'
 export { SegmentBar, Swatch, type DataTone, type SegmentBarProps, type SegmentBarSegment, type SwatchProps } from './SegmentBar'

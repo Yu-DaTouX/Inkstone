@@ -36,6 +36,7 @@ export async function withHiddenPage<T>(
   fn: (win: BrowserWindow, signal: AbortSignal) => Promise<T>,
   external?: AbortSignal
 ): Promise<T> {
+  external?.throwIfAborted()
   const controller = new AbortController()
   let rejectCancelled: (reason: Error) => void = () => {}
   const cancelled = new Promise<never>((_resolve, reject) => {

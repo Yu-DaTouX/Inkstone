@@ -1,7 +1,7 @@
 import type { SourceRun } from './aggregate'
 import { callApi, parseJson, type ApiResult } from './api-call'
-import { isoDay, recencySince, siteOperator, withOperators, type SourceRequest } from './modifiers'
-import { normalizeReadUrl, READ_PAGE_MAX_CHARS_DEFAULT, READ_PAGE_MAX_CHARS_MAX, ReadPageError, type ReadPageResult } from './read-page'
+import { isoDay, recencySince, queryOperators, withOperators, type SourceRequest } from './modifiers'
+import { normalizeReadUrl, READ_PAGE_MAX_CHARS_DEFAULT, READ_PAGE_MAX_CHARS_MAX, ReadPageError, type ReadPageResult } from './page-types'
 import { resolveQuotaProviderSecret } from '../quota-credentials'
 
 const SEARCH_ENDPOINT = 'https://api.deepseek.com/v1/tools/search'
@@ -75,7 +75,7 @@ export async function runFundedDeepseekSearch(query: string, opts: SourceRequest
   return runDeepseekSearch(query, opts)
 }
 
-export async function fundedDeepseekReadPage(rawUrl: string, opts: { maxChars?: number; timeoutMs?: number } = {}): Promise<ReadPageResult> {
+export async function fundedDeepseekReadPage(rawUrl: string, opts: { maxChars?: number; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<ReadPageResult> {
   normalizeReadUrl(rawUrl)
   const key = await resolveDeepseekSearchKey()
   if (key && !(await deepseekHasBalance(key))) throw new ReadPageError('insufficient_balance', NO_BALANCE)
@@ -90,7 +90,7 @@ function withCallerAbort(fetchImpl: typeof fetch, signal?: AbortSignal): typeof 
 }
 
 export function deepseekSearchBody(query: string, opts: SourceRequest, now = Date.now()): Record<string, unknown> {
-  const operators = [siteOperator(opts.sites), opts.recent ? `after:${isoDay(recencySince(opts.recent, now))}` : '']
+  const operators = [...queryOperators(opts), opts.recent && !opts.after ? `after:${isoDay(recencySince(opts.recent, now))}` : '']
   const question = opts.question ? Array.from(opts.question.trim()).slice(0, QUERY_MAX_CHARS).join('') : ''
   return {
     query: withOperators(query, operators, QUERY_MAX_CHARS),
@@ -110,13 +110,15 @@ export async function runDeepseekSearch(
   const elapsed = (): number => Date.now() - started
   const key = await resolveKey()
   if (!key) return { source: 'deepseek', rows: null, unavailable: true, error: { code: 'api_key_missing', message: KEY_MISSING }, elapsedMs: 0 }
+  const requestBody = deepseekSearchBody(query, opts)
+  if (Array.from(String(requestBody.query)).length > QUERY_MAX_CHARS) return { source: 'deepseek', rows: null, error: { code: 'query_too_long', message: '搜索限定条件超过 DeepSeek 128 字符上限，请减少站点或条件' }, elapsedMs: elapsed() }
   const res = await callApi(
     'DeepSeek',
     SEARCH_ENDPOINT,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify(deepseekSearchBody(query, opts))
+      body: JSON.stringify(requestBody)
     },
     opts.timeoutMs,
     withCallerAbort(fetchImpl, opts.signal)
@@ -140,12 +142,12 @@ export async function runDeepseekSearch(
       published: typeof r.date === 'string' ? r.date.slice(0, 10) : undefined,
       ...(opts.withContent && typeof r.content === 'string' && r.content.trim() ? { content: r.content } : {})
     }))
-  return { source: 'deepseek', rows, elapsedMs: elapsed() }
+  return { source: 'deepseek', rows, elapsedMs: elapsed(), usage: { requests: rows.length ? 1 : 0 } }
 }
 
 export async function deepseekReadPage(
   rawUrl: string,
-  opts: { maxChars?: number; timeoutMs?: number } = {},
+  opts: { maxChars?: number; timeoutMs?: number; signal?: AbortSignal } = {},
   fetchImpl: typeof fetch = fetch,
   resolveKey: KeyResolver = resolveDeepseekSearchKey
 ): Promise<ReadPageResult> {
@@ -159,6 +161,7 @@ export async function deepseekReadPage(
     FETCH_ENDPOINT,
     {
       method: 'POST',
+      signal: opts.signal,
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({ url })
     },
@@ -179,6 +182,7 @@ export async function deepseekReadPage(
     title: typeof body.title === 'string' ? body.title.trim() : '',
     text: text.length > maxChars ? text.slice(0, maxChars) : text,
     truncated: text.length > maxChars,
-    totalChars: text.length
+    totalChars: text.length,
+    format: 'markdown', extraction: 'remote', fetchedAt: new Date().toISOString()
   }
 }
