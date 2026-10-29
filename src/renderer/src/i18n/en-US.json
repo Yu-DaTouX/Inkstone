@@ -663,6 +663,7 @@
   "picker.reasoning": "reasoning",
   "picker.searchModel": "Search models…",
   "picker.think": "Thinking effort",
+  "picker.thinkShort": "Thinking",
   "picker.thinkDesc": "Stronger is slower and pricier; it matters most on hard problems",
   "picker.thinkUnknown": "The provider did not report thinking levels",
   "picker.thinkUnknownShort": "unknown",

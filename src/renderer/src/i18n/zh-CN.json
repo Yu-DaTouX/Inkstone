@@ -663,6 +663,7 @@
   "picker.reasoning": "推理",
   "picker.searchModel": "搜索模型…",
   "picker.think": "思考强度",
+  "picker.thinkShort": "思考",
   "picker.thinkDesc": "越强越慢、越贵；对能否想清楚难题影响最大",
   "picker.thinkUnknown": "上游未提供思考档位信息",
   "picker.thinkUnknownShort": "未知",

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Dialog, SliderThumb, SliderTrack } from 'react-aria-components'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Gauge, Settings2, Star } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Settings2, Star } from 'lucide-react'
 import {
   Button,
   EmptyState,
@@ -451,7 +451,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
             onPressStart={(e) => { if (e.pointerType === 'mouse') setThinkOpen((v) => !v) }}
             onPress={(e) => { if (e.pointerType !== 'mouse') setThinkOpen((v) => !v) }}
           >
-            <Gauge className="mtp-think-icon" size={14} aria-hidden />
+            <span className="mtp-think-icon" aria-hidden>{t('picker.thinkShort')}</span>
             {deep ? (
               <span className="uc-badge" data-testid="ultracode-badge" title={t('picker.deepDesc')}>Ultracode</span>
             ) : hasLevels ? (

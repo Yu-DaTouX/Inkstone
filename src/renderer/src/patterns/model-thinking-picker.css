@@ -68,7 +68,7 @@
 
   .mtp-think-icon {
     flex: none;
-    color: var(--mtp-think-color, var(--fg3));
+    color: var(--fg3);
   }
 
   .mtp-think-trigger[data-level] {
