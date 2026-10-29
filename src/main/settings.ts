@@ -218,7 +218,8 @@ async function defaultWorkFolder(): Promise<string> {
 }
 
 function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
-  const { contextTrim: _contextTrim, contextTrimTokens: _contextTrimTokens, ...current } = parsed as Partial<AppSettings> & { contextTrim?: unknown; contextTrimTokens?: unknown }
+  const { contextTrim: _contextTrim, contextTrimTokens: _contextTrimTokens, ...remaining } = parsed as Partial<AppSettings> & { contextTrim?: unknown; contextTrimTokens?: unknown }
+  const current = Object.fromEntries(Object.entries(remaining).filter(([key]) => !/^(desktopPet|comfy)/i.test(key)))
   const settings = { ...DEFAULTS, ...current } as AppSettings
   if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark'
   if (!Array.isArray(settings.recentCwds)) settings.recentCwds = []

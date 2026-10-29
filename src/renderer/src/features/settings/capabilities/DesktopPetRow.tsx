@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import type { MessageKey } from '../../../i18n'
-import { DESKTOP_PET_VERSION, type DesktopPetResult, type DesktopPetStatus } from '../../../../../shared/desktop-pet'
+import { DESKTOP_PET_VERSION, type DesktopPetResult, type DesktopPetStatus } from '../../../../../../integrations/desktop-pet/contract.mjs'
 import type { PluginCatalogEntry, PluginCatalogText } from '../../../../../shared/plugin-catalog'
 import type { ModelInfo } from '../../../../../shared/ipc'
 import { Button, Checkbox, ListBoxItem, Notice, Select } from '../../../ui'
@@ -35,8 +35,9 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
 
   const load = useCallback(async (): Promise<void> => {
     try {
-      const next = await window.yan.desktopPet.status()
-      if (alive.current) setStatus(next)
+      const next = await window.yan.plugins.action('desktop-pet', 'status')
+      if (!next.ok) throw new Error(next.error)
+      if (alive.current) setStatus(next.status as DesktopPetStatus ?? null)
     } catch (error) {
       if (alive.current) setNote({ kind: 'err', text: errorText(error) })
     }
@@ -69,7 +70,8 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
     try {
       const result = await action()
       if (!alive.current) return
-      if (result.status) setStatus(result.status)
+      if (kind === 'uninstall' && result.ok) setStatus(null)
+      else if (result.status) setStatus(result.status)
       setNote(result.ok ? { kind: 'ok', text: t(okKey) } : { kind: 'err', text: result.error ?? t('pkg.failed') })
     } catch (error) {
       if (alive.current) setNote({ kind: 'err', text: errorText(error) })
@@ -85,7 +87,7 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
       detail: t('pet.installConfirm', { dir: status?.installDir ?? '' }),
       confirmLabel: t('pet.install'),
       tone: 'default',
-      action: () => run('install', () => window.yan.desktopPet.install(), 'pet.installedOk')
+      action: () => run('install', () => window.yan.plugins.action(entry.id, 'install') as Promise<DesktopPetResult>, 'pet.installedOk')
     })
   }
 
@@ -96,7 +98,7 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
       detail: status?.installDir ?? '',
       confirmLabel: t('pet.uninstall'),
       tone: 'danger',
-      action: () => run('uninstall', () => window.yan.desktopPet.uninstall(), 'pet.uninstalledOk')
+      action: () => run('uninstall', () => window.yan.plugins.action(entry.id, 'remove') as Promise<DesktopPetResult>, 'pet.uninstalledOk')
     })
   }
 
@@ -132,8 +134,8 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
                 isDisabled={!!busy}
                 onPress={() =>
                   running
-                    ? void run('stop', () => window.yan.desktopPet.stop(), 'pet.stoppedOk')
-                    : void run('start', () => window.yan.desktopPet.start(), 'pet.startedOk')
+                    ? void run('stop', () => window.yan.plugins.invoke(entry.id, 'stop') as Promise<DesktopPetResult>, 'pet.stoppedOk')
+                    : void run('start', () => window.yan.plugins.invoke(entry.id, 'start') as Promise<DesktopPetResult>, 'pet.startedOk')
                 }
                 data-testid="caps-pet-toggle"
               >
@@ -170,7 +172,7 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
             isDisabled={!!busy}
             onSelectionChange={(key) => {
               const next = String(key)
-              void run('model', () => window.yan.desktopPet.setModel(next === MODEL_OFF ? null : next), 'pet.modelOk')
+              void run('model', () => window.yan.plugins.invoke(entry.id, 'setModel', next === MODEL_OFF ? null : next) as Promise<DesktopPetResult>, 'pet.modelOk')
             }}
             data-testid="caps-pet-model"
           >
@@ -193,7 +195,7 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
           <Checkbox
             isSelected={status?.autoStart === true}
             isDisabled={!!busy}
-            onChange={(next) => void run('autoStart', () => window.yan.desktopPet.autoStart(next), 'ocp.autoStartOk')}
+            onChange={(next) => void run('autoStart', () => window.yan.plugins.invoke(entry.id, 'autoStart', next) as Promise<DesktopPetResult>, 'ocp.autoStartOk')}
             data-testid="caps-pet-autostart"
           >
             {t('ocp.autoStart')}

@@ -83,8 +83,9 @@ import { loadMcpServersCached } from './mcp/config'
 import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { refreshMinecraftPluginOnStartup, registerPackagesIpc } from './ipc/packages-ipc'
-import { registerDesktopPetIpc } from './ipc/desktop-pet-ipc'
-import { autoStartDesktopPet, configureDesktopPet, feedDesktopPetRuns, stopDesktopPetSync } from './desktop-pet'
+import { BundledPlugins } from './bundled-plugins'
+import { completePluginText } from './plugin-completion'
+import { configurePluginCommands } from './plugin-commands'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
 import { registerScheduleIpc } from './ipc/schedule-ipc'
 import { ScheduleService } from './schedule-service'
@@ -564,6 +565,26 @@ function syncAppViewForeground(): void {
 const stopRunner = async (agent: AgentController | null): Promise<QueueSnapshot> =>
   (await agent?.abort()) ?? { steering: [], followUp: [] }
 
+const bundledPlugins = new BundledPlugins({
+  sources: [
+    process.resourcesPath ? join(process.resourcesPath, 'integrations') : '',
+    join(__dirname_, '..', '..', 'integrations')
+  ].filter(Boolean),
+  dataDir: YAN_DIR,
+  runtime: process.execPath,
+  complete: completePluginText,
+  showWindow: showMainWindow,
+  confirm: async (plugin, title, detail, signal) => {
+    if (signal.aborted || !win || win.isDestroyed()) return false
+    const result = await dialog.showMessageBox(win, {
+      type: 'warning', title: `插件 ${plugin}：${title}`, message: title, detail,
+      buttons: ['拒绝', '允许本次'], defaultId: 0, cancelId: 0, noLink: true
+    })
+    return !signal.aborted && result.response === 1
+  }
+})
+configurePluginCommands((command, params, context, signal) => bundledPlugins.command(command, params, context, signal))
+
 function bundledSkillPaths(): string[] {
   const roots = [
     process.resourcesPath ? join(process.resourcesPath, 'yan-skills') : '',
@@ -624,7 +645,7 @@ function yanThinExtensions(): { -readonly [K in keyof typeof YAN_THIN_EXTENSION_
 }
 
 function providerExtensionPaths(): string[] {
-  return PROVIDER_EXTENSION_FILES.map(yanThinResourcePath).filter((p): p is string => !!p)
+  return [...PROVIDER_EXTENSION_FILES.map(yanThinResourcePath).filter((p): p is string => !!p), ...bundledPlugins.extensionPaths()]
 }
 
 function yanThinExtensionPaths(): string[] {
@@ -634,7 +655,7 @@ function yanThinExtensionPaths(): string[] {
 
 function push(msg: MainPush): void {
   remoteAccess?.publish(msg)
-  if (msg.ch === 'runs') feedDesktopPetRuns(msg.payload)
+  if (msg.ch === 'runs') bundledPlugins.publishRuns(msg.payload)
   if (msg.ch === 'runs') attention?.refreshTaskbar()
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
@@ -1295,7 +1316,7 @@ async function runShutdown(): Promise<void> {
   agentRestartTimer = null
   scheduleService.stop()
   disposeKeepAwake()
-  stopDesktopPetSync()
+  bundledPlugins.close()
   attention?.dispose()
   auxWindows?.dispose()
   await runShutdownSteps(
@@ -2037,7 +2058,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         scheduleHost: scheduleService,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
         providerExtensions: providerExtensionPaths(),
-        bundledSkills: bundledSkillPaths(),
+        bundledSkills: [...bundledSkillPaths(), ...bundledPlugins.skillPaths()],
         userSkills: () => userSkillPaths(),
         readHistory: (sessionFile) => readHistoryWithArtifacts(sessionFile),
         capability: {
@@ -2138,7 +2159,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           const response = await dialog.showMessageBox(win, {
             type: 'warning',
             title: '确认外部图像 API 请求',
-            message: `即将通过 ${({ compatible: 'OpenAI-compatible API', openai: 'OpenAI API', google: 'Google Gemini API', doubao: '火山方舟（豆包）API', local: '远程 SD WebUI / ComfyUI' } as const)[request.provider]} 生成图片`,
+            message: `即将通过 ${({ compatible: 'OpenAI-compatible API', openai: 'OpenAI API', google: 'Google Gemini API', doubao: '火山方舟（豆包）API', local: '远程 SD WebUI' } as const)[request.provider]} 生成图片`,
             detail: [
               `端点：${endpoint}`,
               `模型：${request.model}`,
@@ -3108,7 +3129,14 @@ function registerIpc(): void {
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   refreshMinecraftPluginOnStartup()
-  registerDesktopPetIpc(ipc)
+  ipc.handle('yan:plugins:action', async (id: unknown, action: unknown) => {
+    if (typeof id !== 'string' || !['status', 'install', 'remove'].includes(String(action))) return { ok: false, error: '无效插件操作' }
+    return bundledPlugins.action(id, String(action))
+  })
+  ipc.handle('yan:plugins:invoke', async (id: unknown, action: unknown, params: unknown) => {
+    if (typeof id !== 'string' || typeof action !== 'string') throw new Error('无效插件请求')
+    return bundledPlugins.invoke(id, action, params)
+  })
   registerCanvasCaptureIpc(ipc)
   registerHtmlEditIpc(ipc, { resolveFileContext })
   registerVideoExportIpc(ipc, { resolveFileContext })
@@ -3605,16 +3633,7 @@ app.whenReady().then(async () => {
   })
   registerIpc()
   void primeCachedTitles().catch(() => undefined)
-  configureDesktopPet({
-    runnerPath: () =>
-      [
-        process.resourcesPath ? join(process.resourcesPath, 'desktop-pet', 'runner.mjs') : '',
-        join(__dirname_, '..', '..', 'resources', 'desktop-pet', 'runner.mjs'),
-        join(process.cwd(), 'resources', 'desktop-pet', 'runner.mjs')
-      ].find((candidate) => !!candidate && existsSync(candidate)),
-    showMainWindow
-  })
-  void autoStartDesktopPet().catch((error) => reportMainError('desktop-pet-autostart', error))
+  void bundledPlugins.startInstalled().catch((error) => reportMainError('plugins-startup', error))
   trayLanguage = (await getSettings()).lang
   ensureTrayAssets()
   attention?.ensureTray()

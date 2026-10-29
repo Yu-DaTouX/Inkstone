@@ -1837,6 +1837,7 @@ export interface YanBridge {
   gitRuntimeRemove(): Promise<void>
   customProviders(): Promise<CustomProviderView[]>
   desktopPet: import('./desktop-pet').DesktopPetBridge
+  plugins: import('./bundled-plugins').BundledPluginsBridge
   saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult>
   removeCustomProvider(id: string): Promise<CustomProviderResult>
   discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>

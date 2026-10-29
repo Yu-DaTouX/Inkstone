@@ -481,9 +481,7 @@ export function CustomEndpointSettings(): ReactElement {
                     <span>{server.running ? server.baseUrl : server.installDir ?? server.baseUrl}</span>
                     {server.running || server.models.length ? (
                       <span>
-                        {server.kind === 'comfyui'
-                          ? t('customApi.localWorkflows', { n: server.models.length })
-                          : t('customApi.localModels', { n: server.models.length })}
+                        {t('customApi.localModels', { n: server.models.length })}
                       </span>
                     ) : null}
                     {!server.running ? <span className="ms-warn">{t('customApi.localStopped')}</span> : null}

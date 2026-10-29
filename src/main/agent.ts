@@ -2,6 +2,7 @@ import { isRestoredReadonly, RESTORED_READONLY_MESSAGE } from './restored-readon
 import { EventEmitter } from 'node:events'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
+import { runPluginCommand } from './plugin-commands'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -10,7 +11,6 @@ import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './ski
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
 import { runArtifactPreview } from './artifact-preview-command'
 import { runConsentRequestCommand } from './agent-commands/consent-request'
-import { runLocalImageServiceCommand } from './agent-commands/local-image-service'
 import { runMcpCommand } from './agent-commands/mcp-command'
 import { runOfficeReadCommand } from './agent-commands/office-read'
 import { runSkillRead } from './agent-commands/skill-read'
@@ -345,14 +345,6 @@ function imageFailureDetail(error: unknown): string {
     doubao_rate_limited: '火山方舟额度不足或请求过于频繁',
     doubao_image_result_missing: '火山方舟没有返回图片',
     local_service_missing: '本机没有可用的生图服务',
-    local_launch_unavailable: '没有能自动启动的本机 ComfyUI',
-    local_launch_denied: '没有得到用户确认，未启动本机 ComfyUI',
-    local_launch_failed: '本机 ComfyUI 启动失败',
-    local_launch_timeout: '本机 ComfyUI 启动超时',
-    local_workflow_missing: 'ComfyUI 里没有可用的已保存工作流',
-    local_workflow_unsupported: 'ComfyUI 工作流无法自动套用',
-    local_upload_failed: '参考图上传到 ComfyUI 失败',
-    local_workflow_failed: '本机 ComfyUI 工作流执行失败',
     local_timeout: '本机生图超时',
     image_source_outside_project: '参考图必须在当前项目或砚的产物目录内',
     image_source_missing: '找不到参考图',
@@ -1296,7 +1288,6 @@ export class AgentController extends EventEmitter {
       return this.lookup.runSearchCommand(command.slice('search.'.length), params, signal)
     }
     if (command === 'image.generate') return this.runImageCommand(params)
-    if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return runLocalImageServiceCommand(command)
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'artifact.preview') return runArtifactPreview(this.capabilityOpts?.previewHtml, params.path, this.cwd, params.at)
     if (command === 'artifact.exportVideo') return this.runArtifactExportVideoCommand(params)
@@ -1312,7 +1303,7 @@ export class AgentController extends EventEmitter {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
       default:
-        throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：${command}`)
+        return runPluginCommand(command, params, { cwd: this.cwd }, signal)
     }
   }
 
@@ -1791,22 +1782,7 @@ export class AgentController extends EventEmitter {
         cwd, availability, sessionFile, messageId,
         artifactDir: this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'),
         signal: controller.signal,
-        onProgress: (stage, detail) => { if (stage !== 'done') publishProgress(stage, detail) },
-        confirmComfyLaunch: async () => {
-          if ((await this.getPermissionMode?.()) === 'all') return true
-          publishProgress('confirming', '等待确认启动本机 ComfyUI')
-          const answer = this.confirmDanger ? await this.confirmDanger({
-            tool: 'yan image generate',
-            detail: `将在本机启动 ComfyUI（Python 进程，监听 127.0.0.1），用于生成：\n${prompt}`.slice(0, APPROVAL_DETAIL_MAX),
-            reasons: ['要在本机启动 ComfyUI 进程'],
-            cwd, owner: this.approvalOwner(), signal: controller.signal
-          }) : null
-          return answer?.decision === 'allow'
-        },
-        confirmCloudNodes: async (workflow) => {
-          publishProgress('confirming', '等待确认 ComfyUI 云端 API 节点')
-          return !!(await this.confirmExternalApi?.({ provider: 'local', endpoint: `ComfyUI 云端 API 节点（工作流 ${workflow}）`, model: workflow, prompt, cwd }))
-        }
+        onProgress: (stage, detail) => { if (stage !== 'done') publishProgress(stage, detail) }
       })
       checkCancelled()
       await this.attachArtifact(result.artifact, messageId, sessionFile)

@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
+import { createPetEventTranslator } from '../integrations/desktop-pet/events.mjs'
+import { startDesktopPetEdgeFix, desktopPetEdgeStatus, cancelDesktopPetEdgeFix } from '../integrations/desktop-pet/edges.mjs'
 
 const buildDir = join('.tmp', 'full-audit-1022', 'F6')
 await mkdir(buildDir, { recursive: true })
@@ -22,7 +24,7 @@ try {
     ].join('\n')
   )
   await build({
-    entryPoints: ['src/main/desktop-pet.ts'],
+    entryPoints: ['integrations/desktop-pet/controller.mjs'],
     outfile: bundle,
     bundle: true,
     format: 'esm',
@@ -30,6 +32,8 @@ try {
     alias: { electron: resolve(electronStub) },
     logLevel: 'silent'
   })
+  process.env.INKSTONE_DATA_ROOT = resolve(dir)
+  process.env.INKSTONE_PLUGIN_DATA = resolve(dir, 'plugin-data')
   const pet = await import(pathToFileURL(bundle).href)
 
   const source = {
@@ -60,7 +64,22 @@ try {
   const empty = pet.desktopPetEnv({ PATH: '', LANG: undefined })
   assert.deepEqual(empty, {}, '空值不写进环境，避免 fork 收到空字符串路径')
 
-  console.log('test-desktop-pet: 全部通过')
+  const translator = createPetEventTranslator()
+  const run = phase => ({ runId: 'r1', sessionId: 's1', kind: 'session', phase })
+  const translate = phase => translator.translate({ upsert: [run(phase)], remove: [] }).map(item => item.event.type)
+  assert.deepEqual(translate({ kind: 'running', activity: 'thinking' }), ['turn/start'])
+  assert.deepEqual(translate({ kind: 'running', activity: 'tool', tool: { callId: 'c1', name: 'read' } }), ['tool/call'])
+  assert.deepEqual(translate({ kind: 'needs-you', request: { id: 'a1', summary: '等待用户处理' } }), ['approval/asked'])
+  assert.deepEqual(translate({ kind: 'done' }), ['turn/end'])
+  assert.deepEqual(translate({ kind: 'done' }), [])
+  translate({ kind: 'running', activity: 'thinking' })
+  assert.equal(translator.translate({ upsert: [], remove: ['r1'] })[0].event.data.reason.kind, 'aborted')
+  assert.deepEqual(translator.translate({ upsert: [{ ...run({ kind: 'running' }), kind: 'subagent' }], remove: [] }), [])
+  startDesktopPetEdgeFix({ ffmpeg: null, version: 'fixture', sourceDir: dir, targetDir: join(dir, 'edges'), workDir: join(dir, 'work'), log: () => {} })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(desktopPetEdgeStatus().state, 'skipped')
+  await cancelDesktopPetEdgeFix()
+  console.log('test-desktop-pet: 环境隔离、运行态翻译、无 ffmpeg 退回全部通过')
 } finally {
   await rm(dir, { recursive: true, force: true })
 }

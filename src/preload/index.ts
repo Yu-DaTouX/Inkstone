@@ -299,14 +299,21 @@ const api: YanBridge = {
   gitRuntimeCancel: () => invoke<void>('yan:gitRuntimeCancel'),
   gitRuntimeRemove: () => invoke<void>('yan:gitRuntimeRemove'),
   customProviders: () => invoke<CustomProviderView[]>('yan:customProviders'),
+  plugins: {
+    action: (id, action) => invoke('yan:plugins:action', id, action),
+    invoke: (id, action, params) => invoke('yan:plugins:invoke', id, action, params)
+  },
   desktopPet: {
-    status: () => invoke<DesktopPetStatus>('yan:desktopPet:status'),
-    install: () => invoke<DesktopPetResult>('yan:desktopPet:install'),
-    start: () => invoke<DesktopPetResult>('yan:desktopPet:start'),
-    stop: () => invoke<DesktopPetResult>('yan:desktopPet:stop'),
-    uninstall: () => invoke<DesktopPetResult>('yan:desktopPet:uninstall'),
-    autoStart: (enabled) => invoke<DesktopPetResult>('yan:desktopPet:autoStart', enabled),
-    setModel: (model) => invoke<DesktopPetResult>('yan:desktopPet:setModel', model)
+    status: async () => {
+      const result = await invoke<{ status?: DesktopPetStatus }>('yan:plugins:action', 'desktop-pet', 'status')
+      return result.status ?? { installed: false, running: false, version: '', autoStart: false, model: null, installDir: '', edges: { state: 'idle', done: 0, total: 0 }, log: [] }
+    },
+    install: () => invoke<DesktopPetResult>('yan:plugins:action', 'desktop-pet', 'install'),
+    start: () => invoke<DesktopPetResult>('yan:plugins:invoke', 'desktop-pet', 'start'),
+    stop: () => invoke<DesktopPetResult>('yan:plugins:invoke', 'desktop-pet', 'stop'),
+    uninstall: () => invoke<DesktopPetResult>('yan:plugins:action', 'desktop-pet', 'remove'),
+    autoStart: (enabled) => invoke<DesktopPetResult>('yan:plugins:invoke', 'desktop-pet', 'autoStart', enabled),
+    setModel: (model) => invoke<DesktopPetResult>('yan:plugins:invoke', 'desktop-pet', 'setModel', model)
   },
   saveCustomProvider: (input) => invoke<CustomProviderResult>('yan:saveCustomProvider', input),
   discoverCustomModels: (input) => invoke<CustomProviderDiscoverResult>('yan:discoverCustomModels', input),

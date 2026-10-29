@@ -61,9 +61,12 @@ extraResources:
   - from: resources/bot-icons
     to: bot-icons
     filter: ['*.png']
-  - from: resources/desktop-pet
-    to: desktop-pet
-    filter: ['**/*.mjs']
+  - from: integrations/desktop-pet
+    to: integrations/desktop-pet
+    filter: ['**/*.mjs', 'inkstone-plugin.json']
+  - from: integrations/comfyui
+    to: integrations/comfyui
+    filter: ['**/*.mjs', 'inkstone-plugin.json', 'skills/**/*']
 
 asar: true
 beforePack: scripts/pi-runtime-before-pack.cjs

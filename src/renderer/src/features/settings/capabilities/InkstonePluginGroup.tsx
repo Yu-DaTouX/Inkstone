@@ -10,6 +10,45 @@ import { Button } from '../../../ui'
 import { DesktopPetRow } from './DesktopPetRow'
 import { MinecraftPluginRow } from './MinecraftPluginRow'
 import { Entry, Group } from './parts'
+import { useConfirm } from './confirm'
+
+function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElement {
+  const { t, lang } = useI18n()
+  const confirm = useConfirm()
+  const copy = pluginText(entry, lang)
+  const [installed, setInstalled] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+  useEffect(() => {
+    let alive = true
+    void window.yan.plugins.action(entry.id, 'status').then(result => {
+      if (alive) { setInstalled(result.installed === true); if (!result.ok) setNote(result.error ?? t('pkg.failed')) }
+    }).catch(error => { if (alive) setNote(String(error)) })
+    return () => { alive = false }
+  }, [entry.id, t])
+  const run = async (action: 'install' | 'remove'): Promise<void> => {
+    setBusy(true)
+    try {
+      const result = await window.yan.plugins.action(entry.id, action)
+      if (result.ok) setInstalled(result.installed === true)
+      setNote(result.ok ? copy.target ?? '' : result.error ?? t('pkg.failed'))
+    } catch (error) { setNote(String(error)) }
+    finally { setBusy(false) }
+  }
+  const choose = (action: 'install' | 'remove'): void => {
+    void confirm({
+      title: t(action === 'install' ? 'pet.install' : 'pet.uninstall'),
+      body: copy.desc, detail: copy.target ?? '', confirmLabel: t(action === 'install' ? 'pet.install' : 'pet.uninstall'),
+      tone: action === 'remove' ? 'danger' : 'default', action: () => run(action)
+    })
+  }
+  return <Entry name={copy.name ?? entry.name} meta={[copy.desc, copy.target, copy.hint, note]} testId={`caps-market-${entry.id}`}
+    actions={<>
+      <Button variant="secondary" isDisabled={busy} onPress={() => choose('install')}>{busy ? t('pkg.working') : t(installed ? 'pet.reinstall' : 'pet.install')}</Button>
+      {installed ? <Button variant="danger" isDisabled={busy} onPress={() => choose('remove')}>{t('pet.uninstall')}</Button> : null}
+      <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(entry.url)}>{t('market.source')}</Button>
+    </>} />
+}
 
 function catalogDate(timestamp: number | null, lang: string): string {
   if (!timestamp) return ''
@@ -87,7 +126,8 @@ export function InkstonePluginGroup(): ReactElement {
       <div className="caps-list" data-testid="caps-market-inkstone">
         {catalog.plugins.map((entry) => {
           const copy = pluginText(entry, lang)
-          if (entry.kind === 'pet') return <DesktopPetRow key={entry.id} entry={entry} copy={copy} />
+          if (entry.id === 'desktop-pet' && (entry.kind === 'pet' || entry.kind === 'bundled')) return <DesktopPetRow key={entry.id} entry={entry} copy={copy} />
+          if (entry.kind === 'bundled') return <BundledPluginRow key={entry.id} entry={entry} />
           if (entry.id === 'inkstone-minecraft') return <MinecraftPluginRow key={entry.id} entry={entry} copy={copy} />
           const metaParts = [copy.desc, copy.target, copy.hint]
           return (

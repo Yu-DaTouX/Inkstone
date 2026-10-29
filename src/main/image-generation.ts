@@ -1,14 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { setTimeout as delay } from 'node:timers/promises'
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { AssistantArtifact, ImageGenerationStage } from '../shared/ipc'
 import type { LocalModelServer } from '../shared/custom-provider'
 import { ArtifactStore } from './artifacts'
 import { hostImageCredentials, type ImageCredentialSource } from './image-credentials'
-import { detectLocalImageService, detectLocalModelServers, fetchComfyWorkflow, listComfyWorkflows, type ComfyWorkflowEntry } from './local-models'
-import { ComfyLaunchError, ensureComfyRunning, findLaunchableComfy, holdManagedComfy } from './comfy-launcher'
-import { applyRequest, toApiPrompt, usesApiNodes, workflowNodeTypes, WorkflowError, type ApiPrompt, type ObjectInfoEntry, type UiWorkflow } from './comfy-workflow'
+import { detectLocalImageService, detectLocalModelServers } from './local-models'
 
 export const IMAGE_PROVIDERS = ['auto', 'codex', 'openai', 'compatible', 'google', 'doubao', 'local', 'mock'] as const
 export type ImageProvider = (typeof IMAGE_PROVIDERS)[number]
@@ -45,7 +42,6 @@ export interface ImageAvailability {
   google: boolean
   doubao: boolean
   local: LocalModelServer | null
-  localLaunch?: string | null
 }
 
 export function isImageProvider(value: unknown): value is ImageProvider {
@@ -54,8 +50,7 @@ export function isImageProvider(value: unknown): value is ImageProvider {
 
 export async function detectImageProviders(
   credentials: ImageCredentialSource = hostImageCredentials,
-  detectLocal: () => Promise<LocalModelServer | null> = detectLocalImageService,
-  findLaunch: () => Promise<string | null> = findLaunchableComfy
+  detectLocal: () => Promise<LocalModelServer | null> = detectLocalImageService
 ): Promise<ImageAvailability> {
   const [codex, openai, google, doubao, local] = await Promise.all([
     credentials.hasCodex(),
@@ -70,8 +65,7 @@ export async function detectImageProviders(
     compatible: !!process.env.YAN_IMAGE_API_BASE?.trim() && !!process.env.YAN_IMAGE_API_KEY?.trim(),
     google: !!google,
     doubao: !!doubao,
-    local,
-    localLaunch: local ? null : await findLaunch().catch(() => null)
+    local
   }
 }
 
@@ -80,7 +74,7 @@ export function resolveImageProvider(requested: ImageProvider | undefined, avail
   const value = requested && requested !== 'auto' ? requested : isImageProvider(configured) ? configured : 'auto'
   if (value !== 'auto') return value
   for (const provider of AUTO_ORDER) {
-    if (provider === 'local' ? available.local || available.localLaunch : available[provider]) return provider
+    if (provider === 'local' ? available.local : available[provider]) return provider
   }
   return 'unavailable'
 }
@@ -124,7 +118,7 @@ export function imageProviderEndpoint(provider: ResolvedImageProvider, available
     case 'doubao':
       return envOr('YAN_IMAGE_DOUBAO_BASE', DOUBAO_BASE)
     case 'local':
-      return available?.local?.baseUrl ?? (available?.localLaunch ? 'http://127.0.0.1' : '')
+      return available?.local?.baseUrl ?? ''
     case 'codex':
       return 'https://chatgpt.com/backend-api/codex'
     default:
@@ -615,154 +609,6 @@ async function sdWebUiImage(req: ImageGenerationRequest, sources: SourceImage[],
   return { bytes: Buffer.from(b64.replace(/^data:[^,]+,/, ''), 'base64'), model: model || server.name }
 }
 
-const LOCAL_TIMEOUT_MS = 15 * 60_000
-
-export function comfyAbortRequests(promptId: string, managed: boolean): Array<{ path: string; body: string }> {
-  return [
-    ...(managed ? [{ path: '/interrupt', body: '{}' }] : []),
-    { path: '/queue', body: JSON.stringify({ delete: [promptId] }) }
-  ]
-}
-
-export function comfyCandidates(entries: ComfyWorkflowEntry[], wanted: string, edit: boolean): ComfyWorkflowEntry[] {
-  const normalize = (name: string): string => name.toLowerCase().replace(/\.json$/, '').replace(/^.*\//, '')
-  const named = wanted || process.env.YAN_COMFYUI_WORKFLOW?.trim() || ''
-  if (named) {
-    const hit = entries.find((entry) => entry.name === named || normalize(entry.name) === normalize(named))
-    if (hit) return [hit]
-  }
-  return entries.filter((entry) => entry.kind === (edit ? 'image-to-image' : 'text-to-image'))
-}
-
-async function comfyUpload(server: LocalModelServer, source: SourceImage, signal?: AbortSignal): Promise<string> {
-  const form = new FormData()
-  form.append('image', new Blob([new Uint8Array(source.bytes)], { type: source.mime }), `yan-${randomUUID().slice(0, 8)}-${source.name}`)
-  form.append('type', 'input')
-  form.append('overwrite', 'true')
-  const response = await fetch(`${server.baseUrl}/upload/image`, { method: 'POST', body: form, signal: imageSignal(60_000, signal) })
-  if (!response.ok) throw await httpError('local', response)
-  const json = (await response.json()) as { name?: string; subfolder?: string }
-  if (!json.name) throw new ImageProviderError('local_upload_failed')
-  return json.subfolder ? `${json.subfolder}/${json.name}` : json.name
-}
-
-async function comfyObjectInfo(server: LocalModelServer, types: string[], cache: Record<string, ObjectInfoEntry>, signal?: AbortSignal): Promise<Record<string, ObjectInfoEntry>> {
-  for (const type of types) {
-    if (cache[type]) continue
-    checkImageCancelled(signal)
-    const response = await fetch(`${server.baseUrl}/object_info/${encodeURIComponent(type)}`, { signal: imageSignal(10_000, signal) }).catch(() => null)
-    if (!response?.ok) continue
-    const entry = ((await response.json().catch(() => ({}))) as Record<string, ObjectInfoEntry>)[type]
-    if (entry) cache[type] = entry
-  }
-  return cache
-}
-
-async function buildComfyPrompt(
-  server: LocalModelServer,
-  candidates: ComfyWorkflowEntry[],
-  named: boolean,
-  request: { prompt: string; width?: number; height?: number; images?: string[] },
-  signal?: AbortSignal,
-  confirmCloudNodes?: (workflow: string) => Promise<boolean>
-): Promise<{ prompt: ApiPrompt; workflow: string }> {
-  const cache: Record<string, ObjectInfoEntry> = {}
-  const problems: string[] = []
-  for (const candidate of candidates) {
-    try {
-      checkImageCancelled(signal)
-      const workflow = (await waitForImage(fetchComfyWorkflow(server.baseUrl, candidate.name), signal)) as UiWorkflow | ApiPrompt
-      const info = await comfyObjectInfo(server, workflowNodeTypes(workflow), cache, signal)
-      const converted = toApiPrompt(workflow, info)
-      if (usesApiNodes(converted, info) && !(named && confirmCloudNodes && await waitForImage(confirmCloudNodes(candidate.name), signal))) {
-        problems.push(`${candidate.name}：用到 ComfyUI 云端 API 节点${named ? '，未获得确认' : ''}`)
-        continue
-      }
-      return { prompt: applyRequest(converted, { ...request, filenamePrefix: 'Inkstone/yan' }), workflow: candidate.name }
-    } catch (error) {
-      checkImageCancelled(signal)
-      problems.push(`${candidate.name}：${error instanceof WorkflowError ? error.reason ?? error.code : error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  throw new ImageProviderError(candidates.length ? 'local_workflow_unsupported' : 'local_workflow_missing', problems.slice(0, 3).join('；') || undefined)
-}
-
-async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], server: LocalModelServer, managed: boolean, report?: ImageProgressReporter, signal?: AbortSignal, confirmCloudNodes?: (workflow: string) => Promise<boolean>): Promise<Generated> {
-  const entries = await waitForImage(listComfyWorkflows(server.baseUrl).catch(() => []), signal)
-  const wanted = stringParam(req.model, '')
-  const candidates = comfyCandidates(entries, wanted, sources.length > 0)
-  const requestedWorkflow = wanted || process.env.YAN_COMFYUI_WORKFLOW?.trim() || ''
-  const namedHit = !!requestedWorkflow && candidates.length === 1 && entries.some((entry) => entry.name === candidates[0].name && (entry.name === requestedWorkflow || entry.name.toLowerCase().replace(/\.json$/, '').split('/').at(-1) === requestedWorkflow.toLowerCase().replace(/\.json$/, '').split('/').at(-1)))
-  if (!candidates.length) {
-    throw new ImageProviderError('local_workflow_missing', sources.length ? '没有可用的图生图工作流（含 LoadImage）' : '没有可用的文生图工作流')
-  }
-  report?.('requesting', `${server.name} · ${candidates[0].name}`)
-  const images: string[] = []
-  for (const source of sources) images.push(await comfyUpload(server, source, signal))
-  const size = parseSize(req.size)
-  const built = await buildComfyPrompt(server, candidates, namedHit, {
-    prompt: req.prompt,
-    ...(size ? { width: size.width, height: size.height } : {}),
-    ...(images.length ? { images } : {})
-  }, signal, confirmCloudNodes)
-  checkImageCancelled(signal)
-  const prompt = built.prompt
-  const chosen = { name: built.workflow }
-  const queued = await fetch(`${server.baseUrl}/prompt`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, client_id: `yan-${randomUUID()}` }),
-    signal: imageSignal(30_000, signal)
-  })
-  if (!queued.ok) throw await httpError('local', queued)
-  const promptId = ((await queued.json()) as { prompt_id?: string }).prompt_id
-  if (!promptId) throw new ImageProviderError('local_image_result_missing')
-  const abortPrompt = (): void => {
-    for (const request of comfyAbortRequests(promptId, managed)) {
-      void fetch(`${server.baseUrl}${request.path}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: request.body, signal: AbortSignal.timeout(5_000)
-      }).catch(() => undefined)
-    }
-  }
-  signal?.addEventListener('abort', abortPrompt, { once: true })
-  try {
-    if (signal?.aborted) { abortPrompt(); checkImageCancelled(signal) }
-    report?.('generating', `${server.name} · ${chosen.name}`)
-    const deadline = Date.now() + LOCAL_TIMEOUT_MS
-    while (Date.now() < deadline) {
-      await delay(1_000, undefined, { signal })
-      checkImageCancelled(signal)
-      const history = await fetch(`${server.baseUrl}/history/${encodeURIComponent(promptId)}`, { signal: imageSignal(10_000, signal) }).catch(() => null)
-      checkImageCancelled(signal)
-      if (!history?.ok) continue
-      const entry = ((await history.json()) as Record<string, {
-        status?: { status_str?: string; completed?: boolean; messages?: Array<[string, { exception_message?: string }]> }
-        outputs?: Record<string, { images?: Array<{ filename: string; subfolder?: string; type?: string }> }>
-      }>)[promptId]
-      if (!entry) continue
-      if (entry.status?.status_str === 'error') {
-        const failed = entry.status.messages?.find(([kind]) => kind === 'execution_error')?.[1]?.exception_message
-        throw new ImageProviderError('local_workflow_failed', failed?.slice(0, 200))
-      }
-      const outputs = Object.values(entry.outputs ?? {}).flatMap((output) => output.images ?? [])
-      const image = outputs.find((item) => item.type === 'output') ?? outputs[0]
-      if (!image) {
-        if (entry.status?.completed) throw new ImageProviderError('local_image_result_missing')
-        continue
-      }
-      const query = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder ?? '', type: image.type ?? 'output' })
-      const file = await fetch(`${server.baseUrl}/view?${query}`, { signal: imageSignal(30_000, signal) })
-      if (!file.ok) throw await httpError('local', file)
-      return { bytes: Buffer.from(await file.arrayBuffer()), model: chosen.name }
-    }
-    abortPrompt()
-    throw new ImageProviderError('local_timeout')
-  } finally {
-    signal?.removeEventListener('abort', abortPrompt)
-  }
-}
-
 function mockSvg(prompt: string): Buffer {
   const safe = Array.from(prompt).slice(0, 60).join('').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] ?? c))
   return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="180" fill="#101318"/><circle cx="512" cy="450" r="240" fill="#303A47"/><path d="M350 450h324v170H350z" fill="#F3F4F6"/><text x="512" y="820" fill="#98A2B3" font-size="34" text-anchor="middle" font-family="sans-serif">${safe}</text></svg>`, 'utf8')
@@ -784,7 +630,7 @@ async function unavailableHint(): Promise<string> {
     .map((server) => `${server.name}（${server.installDir}）`)
   const remote = '在设置-模型接入登录 ChatGPT，或配置 OpenAI / Google Gemini / 火山方舟 API key'
   if (stopped.length) return `本机已安装 ${stopped.join('、')}，但没有运行，启动后重试；或${remote}`
-  return `${remote}；或在本机安装 ComfyUI 等生图软件（需要独立显卡，首次要下载数 GB 模型）。请把这些选项告诉用户并询问，不要自行下载或安装`
+  return `${remote}；或启动本机 SD WebUI 图像服务。请把这些选项告诉用户并询问，不要自行下载或安装`
 }
 
 export interface ImageGenerationContext {
@@ -796,8 +642,6 @@ export interface ImageGenerationContext {
   credentials?: ImageCredentialSource
   availability?: ImageAvailability
   signal?: AbortSignal
-  confirmComfyLaunch?: () => Promise<boolean>
-  confirmCloudNodes?: (workflow: string) => Promise<boolean>
 }
 
 export async function generateImage(request: ImageGenerationRequest, context: ImageGenerationContext): Promise<ImageGenerationResult> {
@@ -841,27 +685,9 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
     if (!key) throw new ImageProviderError('doubao_api_key_missing')
     generated = await doubaoImage(req, sources, key, report, signal)
   } else if (provider === 'local') {
-    let server = availability.local
-    if (!server && (availability.localLaunch || request.provider === 'local')) {
-      if (context.confirmComfyLaunch && !(await waitForImage(context.confirmComfyLaunch(), signal))) throw new ImageProviderError('local_launch_denied')
-      try {
-        server = await waitForImage(ensureComfyRunning((detail) => {
-          if (!signal?.aborted) report('preparing', detail)
-        }), signal)
-      } catch (error) {
-        if (error instanceof ComfyLaunchError) throw new ImageProviderError(error.code, error.reason)
-        throw error
-      }
-    }
+    const server = availability.local
     if (!server) throw new ImageProviderError('local_service_missing')
-    if (server.kind === 'comfyui') {
-      const hold = holdManagedComfy(server.baseUrl)
-      try {
-        generated = await comfyImage(req, sources, server, hold.managed, report, signal, context.confirmCloudNodes)
-      } finally {
-        hold.release()
-      }
-    } else generated = await sdWebUiImage(req, sources, server, report, signal)
+    generated = await sdWebUiImage(req, sources, server, report, signal)
   } else {
     const key = provider === 'compatible' ? process.env.YAN_IMAGE_API_KEY?.trim() : await credentials.secret('openai')
     if (!key) throw new ImageProviderError(provider === 'compatible' ? 'compatible_api_key_missing' : 'openai_api_key_missing')

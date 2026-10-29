@@ -205,6 +205,8 @@ export async function runPluginMarketTests(ok) {
   await build({ entryPoints: ['src/shared/plugin-catalog.ts'], outfile: 'out/test/plugin-catalog-shared.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
   const catalog = await import(pathToFileURL('out/test/plugin-catalog-shared.mjs').href)
   ok(catalog.BUILTIN_PLUGIN_CATALOG.plugins.some((entry) => entry.id === 'inkstone-minecraft' && entry.kind === 'mcp'), '内置插件目录包含 Minecraft 插件')
+  ok(['desktop-pet', 'comfyui'].every(id => catalog.BUILTIN_PLUGIN_CATALOG.plugins.some(entry => entry.id === id && entry.kind === 'bundled')), '桌宠与 ComfyUI 作为随包可安装插件列出')
+  ok(catalog.normalizePluginCatalog({ schema: 1, plugins: [{ id: 'unknown', kind: 'bundled', name: 'x', url: 'https://example.com', text: { 'zh-CN': { desc: 'x' } } }] }).plugins.length === 0, '远程目录不能为未知随包插件增加可执行接入')
   ok(catalog.normalizePluginCatalog({ schema: 1, plugins: [{ id: 'other-mcp', kind: 'mcp', name: 'x', url: 'https://example.com', text: { 'zh-CN': { desc: 'x' } } }] }).plugins.length === 0, '远程目录不能加入没有代码支撑的 MCP 插件')
   if (process.argv.includes('--live')) {
     const live = await searchPiPackages('browser')

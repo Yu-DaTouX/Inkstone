@@ -138,7 +138,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'image',
     '生成图片',
-    '用设置里配置的图片服务商生成图片，也可启动 / 停止 / 查询本地 ComfyUI。',
+    '用设置里配置的图片服务商或本机 SD WebUI 生成图片。',
     'external-action',
     'yan image generate --request-file image.json'
   ),

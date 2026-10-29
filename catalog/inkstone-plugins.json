@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updatedAt": "2026-10-25",
+  "updatedAt": "2026-10-29",
   "plugins": [
     {
       "id": "hermes-inkstone",
@@ -23,7 +23,7 @@
     },
     {
       "id": "desktop-pet",
-      "kind": "pet",
+      "kind": "bundled",
       "name": "dsh 桌宠",
       "version": "0.3.7",
       "url": "https://github.com/PC2005-cloud/dsh-pet",
@@ -35,6 +35,25 @@
         "en-US": {
           "desc": "Brings the community dsh-pet desktop pet into Inkstone: it switches animations and bubbles while a session thinks, runs tools, waits for you, finishes or fails.",
           "target": "Installed with npm into Inkstone's data directory and run in a separate process; the pet window uses its own Electron, about 100 MB downloaded on first start. Community plugin, MIT licensed."
+        }
+      }
+    },
+    {
+      "id": "comfyui",
+      "kind": "bundled",
+      "name": "ComfyUI",
+      "version": "1.0.0",
+      "url": "https://github.com/Yu-DaTouX/Inkstone/tree/main/integrations/comfyui",
+      "text": {
+        "zh-CN": {
+          "desc": "用已保存的 ComfyUI 工作流文生图、图生图，支持子图和 API 格式，自动探测与按需启动本机服务。",
+          "target": "从随包 integrations 安装 pi 扩展和技能，在 pi 独立进程运行；新建或重载会话后生效。需要本机 ComfyUI 和可用模型。",
+          "hint": "提供 comfyui_generate 与 comfyui_service 工具。启动服务、远程服务和云端 API 节点需要用户确认。移除插件保留图片与用户数据。"
+        },
+        "en-US": {
+          "desc": "Generate or edit images using saved ComfyUI workflows, including subgraphs and API format, with local detection and on-demand startup.",
+          "target": "Installs a bundled pi extension and skill running in pi's separate process. Start or reload a session to apply. Requires ComfyUI and local models.",
+          "hint": "Provides comfyui_generate and comfyui_service. Starting a service, remote requests and cloud API nodes require confirmation. Removal preserves images and user data."
         }
       }
     },

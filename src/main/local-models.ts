@@ -1,10 +1,9 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename, unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join, relative } from 'node:path'
+import { join } from 'node:path'
 import type { LocalModelServer } from '../shared/custom-provider'
-import { classifyWorkflow, isApiPrompt, type UiWorkflow, type WorkflowKind } from './comfy-workflow'
 import { YAN_DIR } from './paths'
 
 const PROBE_TIMEOUT_MS = 1_500
@@ -125,7 +124,6 @@ async function probeChat(root: string, target?: ChatTarget): Promise<LocalModelS
   }
 }
 
-const COMFY_PORTS = [8188, 8000, 8189]
 const SDAPI_PORTS = [7860, 7861]
 
 async function probeSdApi(root: string): Promise<LocalModelServer | null> {
@@ -133,48 +131,6 @@ async function probeSdApi(root: string): Promise<LocalModelServer | null> {
   if (!Array.isArray(json)) return null
   const models = json.map((item) => (item as { title?: unknown } | null)?.title).filter((title): title is string => typeof title === 'string' && !!title)
   return { kind: 'sdwebui', purpose: 'image', name: 'Stable Diffusion WebUI', baseUrl: root, models, running: true }
-}
-
-export interface ComfyWorkflowEntry {
-  name: string
-  kind: WorkflowKind
-}
-
-export function sortWorkflows(entries: ComfyWorkflowEntry[]): ComfyWorkflowEntry[] {
-  return [...entries].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'text-to-image' ? -1 : 1))
-}
-
-export async function fetchComfyWorkflow(baseUrl: string, name: string, signal?: AbortSignal): Promise<unknown> {
-  const response = await fetch(`${baseUrl}/api/userdata/${encodeURIComponent(`workflows/${name}`)}`, { signal: signal ?? AbortSignal.timeout(10_000) })
-  if (!response.ok) throw new Error(`comfy_workflow_http_${response.status}`)
-  return await response.json()
-}
-
-function classify(json: unknown): WorkflowKind | null {
-  return json && typeof json === 'object' && (Array.isArray((json as UiWorkflow).nodes) || isApiPrompt(json)) ? classifyWorkflow(json as UiWorkflow) : null
-}
-
-export async function listComfyWorkflows(baseUrl: string): Promise<ComfyWorkflowEntry[]> {
-  const response = await fetch(`${baseUrl}/api/userdata?dir=workflows&recurse=true`, { signal: AbortSignal.timeout(5_000) })
-  if (!response.ok) return []
-  const names = ((await response.json().catch(() => [])) as unknown[]).filter((name): name is string => typeof name === 'string' && name.endsWith('.json')).slice(0, 100)
-  const deadline = AbortSignal.timeout(2_500)
-  const out = await Promise.all(names.map(async (name): Promise<ComfyWorkflowEntry | null> => {
-    try {
-      const kind = classify(await fetchComfyWorkflow(baseUrl, name, deadline))
-      return kind ? { name, kind } : null
-    } catch {
-      return null
-    }
-  }))
-  return sortWorkflows(out.filter((entry): entry is ComfyWorkflowEntry => !!entry))
-}
-
-async function probeComfy(root: string): Promise<LocalModelServer | null> {
-  const stats = (await getJson(`${root}/system_stats`)) as { system?: unknown } | undefined
-  if (!stats?.system) return null
-  const workflows = await listComfyWorkflows(root).catch(() => [])
-  return { kind: 'comfyui', purpose: 'image', name: 'ComfyUI', baseUrl: root, models: workflows.map((item) => item.name), running: true }
 }
 
 function windowsDrives(): string[] {
@@ -194,40 +150,8 @@ function installParents(): string[] {
   return [home, join(home, 'Documents'), join(home, 'Desktop'), join(home, 'AI'), ...drives, ...drives.map((drive) => join(drive, 'AI'))]
 }
 
-async function comfyDesktopBasePaths(): Promise<string[]> {
-  const out: string[] = []
-  for (const dir of appDataDirs()) {
-    try {
-      const config = JSON.parse(await readFile(join(dir, 'ComfyUI', 'config.json'), 'utf8')) as { basePath?: unknown }
-      if (typeof config.basePath === 'string' && config.basePath) out.push(config.basePath)
-    } catch {
-    }
-  }
-  return out
-}
-
 function installScanOff(): boolean {
   return process.env.YAN_LOCAL_INSTALL_SCAN?.trim().toLowerCase() === 'off'
-}
-
-export async function comfyInstallCandidates(): Promise<string[]> {
-  const configured = process.env.YAN_COMFYUI_DIR?.trim()
-  if (installScanOff()) return configured ? [configured] : []
-  const fromParents = installParents().flatMap((parent) => [
-    join(parent, 'ComfyUI'),
-    join(parent, 'ComfyUI_windows_portable', 'ComfyUI'),
-    join(parent, 'pinokio', 'api', 'comfy.git', 'app')
-  ])
-  const stabilityMatrix = appDataDirs().map((dir) => join(dir, 'StabilityMatrix', 'Packages', 'ComfyUI'))
-  return [...(configured ? [configured] : []), ...(await comfyDesktopBasePaths()), ...fromParents, ...stabilityMatrix]
-}
-
-export function isComfyInstall(dir: string): boolean {
-  try {
-    return existsSync(join(dir, 'user')) && (existsSync(join(dir, 'main.py')) || existsSync(join(dir, 'models')))
-  } catch {
-    return false
-  }
 }
 
 const SD_WEBUI_DIRS = ['stable-diffusion-webui', 'stable-diffusion-webui-forge', 'stable-diffusion-webui-reForge', 'sd-webui-forge', 'sd-webui-aki-v4', 'automatic']
@@ -266,47 +190,19 @@ function chatInstalls(): Array<{ kind: 'ollama' | 'lmstudio'; name: string; dir:
   return out
 }
 
-async function walkJson(dir: string, root: string, depth = 0): Promise<string[]> {
-  if (depth > 3) return []
-  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-  const out: string[] = []
-  for (const entry of entries) {
-    const path = join(dir, entry.name)
-    if (entry.isDirectory()) out.push(...(await walkJson(path, root, depth + 1)))
-    else if (entry.name.endsWith('.json')) out.push(relative(root, path).replace(/\\/g, '/'))
-  }
-  return out
-}
-
-export async function readInstalledWorkflows(installDir: string): Promise<ComfyWorkflowEntry[]> {
-  const root = join(installDir, 'user', 'default', 'workflows')
-  const out: ComfyWorkflowEntry[] = []
-  for (const name of await walkJson(root, root)) {
-    try {
-      const kind = classify(JSON.parse(await readFile(join(root, name), 'utf8')))
-      if (kind) out.push({ name, kind })
-    } catch {
-    }
-  }
-  return sortWorkflows(out)
-}
-
 interface Roots {
   chat: Array<{ root: string; target?: ChatTarget }>
-  comfy: string[]
   sdapi: string[]
 }
 
 async function probeRoots(): Promise<Roots> {
   const extra = await readLocalModelUrls()
-  const comfyEnv = process.env.YAN_COMFYUI_URL?.trim()
   const sdEnv = process.env.YAN_SDWEBUI_URL?.trim()
   return {
     chat: [
       ...CHAT_TARGETS.map((target) => ({ root: localServiceBase(target.env ? process.env[target.env] : undefined, target.port), target })),
       ...extra.map((root) => ({ root }))
     ],
-    comfy: [...(comfyEnv ? [localServiceBase(comfyEnv, 8188)] : []), ...COMFY_PORTS.map((port) => `http://127.0.0.1:${port}`), ...extra],
     sdapi: [...(sdEnv ? [localServiceBase(sdEnv, 7860)] : []), ...SDAPI_PORTS.map((port) => `http://127.0.0.1:${port}`), ...extra]
   }
 }
@@ -317,11 +213,8 @@ const unique = <T>(list: T[], key: (item: T) => string): T[] => {
 }
 
 async function runningImageServices(roots: Roots): Promise<LocalModelServer[]> {
-  const [sd, comfy] = await Promise.all([
-    Promise.all(unique(roots.sdapi, (root) => root).map(probeSdApi)),
-    Promise.all(unique(roots.comfy, (root) => root).map(probeComfy))
-  ])
-  return [...sd, ...comfy].filter((server): server is LocalModelServer => !!server)
+  const sd = await Promise.all(unique(roots.sdapi, (root) => root).map(probeSdApi))
+  return sd.filter((server): server is LocalModelServer => !!server)
 }
 
 async function discoverLocalModelServers(): Promise<LocalModelServer[]> {
@@ -336,10 +229,6 @@ async function discoverLocalModelServers(): Promise<LocalModelServer[]> {
   for (const app of chatInstalls()) {
     if (runningKinds.has(app.kind)) continue
     found.push({ kind: app.kind, purpose: 'chat', name: app.name, baseUrl: `http://127.0.0.1:${app.port}/v1`, models: [], suggestedId: app.suggestedId, running: false, installDir: app.dir })
-  }
-  if (!runningKinds.has('comfyui')) {
-    const dir = (await comfyInstallCandidates()).find(isComfyInstall)
-    if (dir) found.push({ kind: 'comfyui', purpose: 'image', name: 'ComfyUI', baseUrl: 'http://127.0.0.1:8188', models: (await readInstalledWorkflows(dir)).map((item) => item.name), running: false, installDir: dir })
   }
   if (!runningKinds.has('sdwebui')) {
     const dir = sdWebUiCandidates().find(isSdWebUiInstall)

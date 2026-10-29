@@ -80,6 +80,7 @@ export const KNOWN_COMMANDS = new Set([
   'artifact.exportVideo',
   'artifact.exportImage',
   'image.generate',
+  'plugin.invoke',
   'image.local.status',
   'image.local.start',
   'image.local.stop',

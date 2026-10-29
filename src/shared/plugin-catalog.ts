@@ -3,7 +3,7 @@ import builtinCatalog from '../../catalog/inkstone-plugins.json'
 export const PLUGIN_CATALOG_URL = 'https://raw.githubusercontent.com/Yu-DaTouX/Inkstone/main/catalog/inkstone-plugins.json'
 export const PLUGIN_CATALOG_SCHEMA = 1
 
-export type PluginCatalogKind = 'export' | 'mcp' | 'pet' | 'link'
+export type PluginCatalogKind = 'export' | 'mcp' | 'pet' | 'bundled' | 'link'
 export type PluginCatalogLang = 'zh-CN' | 'en-US'
 
 export interface PluginCatalogText {
@@ -32,9 +32,10 @@ export interface PluginCatalogView {
 const CODE_BACKED: Record<Exclude<PluginCatalogKind, 'link'>, readonly string[]> = {
   export: ['hermes-inkstone'],
   mcp: ['inkstone-minecraft'],
-  pet: ['desktop-pet']
+  pet: ['desktop-pet'],
+  bundled: ['desktop-pet', 'comfyui']
 }
-const KINDS: readonly PluginCatalogKind[] = ['export', 'mcp', 'pet', 'link']
+const KINDS: readonly PluginCatalogKind[] = ['export', 'mcp', 'pet', 'bundled', 'link']
 const LANGS: readonly PluginCatalogLang[] = ['zh-CN', 'en-US']
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/
 const MAX_ENTRIES = 40

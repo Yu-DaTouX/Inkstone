@@ -423,7 +423,7 @@ export function describeDiscoveredModels(
 }
 
 export interface LocalModelServer {
-  kind: 'ollama' | 'lmstudio' | 'openai' | 'sdwebui' | 'comfyui'
+  kind: 'ollama' | 'lmstudio' | 'openai' | 'sdwebui'
   purpose: 'chat' | 'image'
   name: string
   baseUrl: string

@@ -239,7 +239,6 @@ task-update.json：
           砚的预览离线，DESIGN.md 里引用的网络字体和外部链接不会生效，字体换系统字体栈。
 `,
   image: `yan image generate [选项]
-yan image local status | start | stop
 
 生成或编辑图片，并在对话中直接显示受控产物：
   yan image generate --prompt "深色圆角方形的砚应用图标"
@@ -251,18 +250,12 @@ yan image local status | start | stop
   只能是当前项目或砚产物目录里的 PNG/JPEG/WebP）。
   model 一般不填，由所选通道决定默认值（codex / openai 默认 gpt-image-2.5-flare，
   要细节更好、能多等一会时填 gpt-image-2.5-sunburst）。provider=local 用本机或设置里添加的
-  SD WebUI 系 / ComfyUI 服务；ComfyUI 套用它里面已保存的工作流（含子图与导出的 API 格式；
-  文生图 / 图生图按名称依次尝试，缺节点或要云端 API 节点的自动跳过，model 可填工作流文件名），
-  只替换提示词、种子与尺寸。ComfyUI 已安装但没开时砚会自己启动（约几十秒），
-  本机生图首次加载模型可能还要几分钟。google / doubao 不填 model 时自动用服务商列表里最新的一档。
+  SD WebUI 系服务。google / doubao 不填 model 时自动用服务商列表里最新的一档。
 
-本机 ComfyUI 的开关（只关砚自己启动的，用户自己开的不动）：
-  yan image local status   在不在运行、是谁开的、空闲多久后自动关
-  yan image local start    要连续出多张本机图时可先启动，省得第一张等
-  yan image local stop     用完马上关掉、释放显存；不关也会在空闲 10 分钟后自动关
+ComfyUI 出图与服务管理由插件市场的插件提供，使用插件注册的工具。
 
 provider=auto 依次选：ChatGPT 登录（砚内或 Codex CLI）→ OpenAI 兼容端点 → OpenAI
-→ Google Gemini → 火山方舟（豆包 Seedream）→ 本机 SD WebUI / ComfyUI（含已安装、可按需启动的 ComfyUI）。
+→ Google Gemini → 火山方舟（豆包 Seedream）→ 本机 SD WebUI。
 使用 OpenAI、兼容端点、Google、豆包前砚会弹出确认，拒绝后不会发送请求，也不会静默换供应商。
 一条通道都没有时（image_provider_unavailable），把报错里的选项告诉用户并询问；
 不要自己下载模型或安装生图软件。

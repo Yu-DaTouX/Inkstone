@@ -39,6 +39,13 @@ export async function runSettingsStoreTests(ok) {
 
   const FILE = join(temp, 'data', 'desktop.json')
 
+  await mkdir(join(temp, 'data'), { recursive: true })
+  const legacy = JSON.stringify({ cwd: temp, desktopPet: { autoStart: true }, desktopPetModel: 'old/model', comfyui: { url: 'http://127.0.0.1:8188' }, comfyModel: 'old' })
+  await writeFile(FILE, legacy)
+  const loadedLegacy = await getSettings()
+  ok(!Object.keys(loadedLegacy).some(key => /^(desktopPet|comfy)/i.test(key)), '旧桌宠和 ComfyUI 设置读入即丢弃')
+  ok(await readFile(FILE, 'utf8') === legacy, '读取旧插件设置不改写或删除用户磁盘文件')
+
   const first = await patchSettings({ theme: 'light' })
   ok(first.theme === 'light', '正常写入返回新值')
   const onDisk = JSON.parse(await readFile(FILE, 'utf8'))

@@ -32,7 +32,7 @@ try {
   globalThis.fetch = async () => { throw new Error('No network allowed in image boundary tests') }
   const outfile = join(compiled, 'fixture.mjs')
   await build({
-    stdin: { contents: "export * from './src/main/artifacts.ts'; export * from './src/main/image-generation.ts'; export * from './src/main/comfy-launcher.ts'; export * from './src/main/local-models.ts'; export { AgentController } from './src/main/agent.ts';", resolveDir: process.cwd(), sourcefile: 'image-boundary-fixture.ts' },
+    stdin: { contents: "export * from './src/main/artifacts.ts'; export * from './src/main/image-generation.ts'; export * from './src/main/local-models.ts'; export { AgentController } from './src/main/agent.ts';", resolveDir: process.cwd(), sourcefile: 'image-boundary-fixture.ts' },
     outfile, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent',
     plugins: [{ name: 'unused-electron', setup(b) {
       b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }))
@@ -176,60 +176,6 @@ try {
   await assert.rejects(generateImage({ provider: 'mock', prompt: 'x' }, { ...context, sessionFile: savingFile, signal: savingCancel.signal, onProgress: stage => { if (stage === 'saving') savingCancel.abort() } }), { code: 'image_cancelled' }); checks++
   ok((await new ArtifactStore(artifactDir).list(savingFile)).length === 0, 'cancel at the saving boundary must not commit a manifest')
 
-  const workflow = {
-    '1': { class_type: 'CLIPTextEncode', inputs: { text: 'saved' } },
-    '2': { class_type: 'KSampler', inputs: { positive: ['1', 0], seed: 123 } },
-    '3': { class_type: 'SaveImage', inputs: { images: ['2', 0], filename_prefix: 'fixture' } }
-  }
-  calls = []
-  const queued = deferred(), cancel = new AbortController()
-  globalThis.fetch = async (url, init = {}) => {
-    const href = String(url); calls.push({ url: href, init })
-    if (href.includes('/api/userdata?')) return Response.json(['fixture.json'])
-    if (href.includes('/api/userdata/')) return Response.json(workflow)
-    if (href.includes('/object_info/')) return Response.json({})
-    if (href.endsWith('/prompt')) return Response.json({ prompt_id: 'owned-prompt' })
-    if (href.endsWith('/queue')) return Response.json({})
-    throw new Error(`unexpected ComfyUI request: ${href}`)
-  }
-  const cp = generateImage({ provider: 'local', prompt: 'x' }, { ...context, signal: cancel.signal, availability: { ...none, local: { kind: 'comfyui', name: 'fixture', baseUrl: 'http://127.0.0.1:8188', models: ['fixture.json'], running: true } }, onProgress: stage => { if (stage === 'generating') queued.resolve() } })
-  const cr = assert.rejects(cp, { code: 'image_cancelled' })
-  await queued.promise; cancel.abort(); await cr; checks++
-  const deletes = calls.filter(c => c.url.endsWith('/queue'))
-  ok(deletes.length === 1 && JSON.stringify(JSON.parse(deletes[0].init.body)) === JSON.stringify({ delete: ['owned-prompt'] }), 'ComfyUI cancellation deletes only the owned queue item')
-  ok(!calls.some(c => c.url.endsWith('/interrupt') || c.url.includes('/history/')), 'canceling a queued ComfyUI job must not interrupt or keep polling')
-  await tick()
-  calls = []
-  const polling = deferred(), lateHistory = deferred(), runningCancel = new AbortController()
-  let pollingSignal
-  globalThis.fetch = async (url, init = {}) => {
-    const href = String(url); calls.push({ url: href, init })
-    if (href.includes('/api/userdata?')) return Response.json(['fixture.json'])
-    if (href.includes('/api/userdata/')) return Response.json(workflow)
-    if (href.includes('/object_info/')) return Response.json({})
-    if (href.endsWith('/prompt')) return Response.json({ prompt_id: 'running-owned-prompt' })
-    if (href.endsWith('/queue')) return Response.json({})
-    if (href.includes('/history/')) { pollingSignal = init.signal; polling.resolve(); return lateHistory.promise }
-    throw new Error(`unexpected ComfyUI request: ${href}`)
-  }
-  const runningFile = join(project, 'cancel-running-comfy.jsonl')
-  const runningPending = generateImage({ provider: 'local', prompt: 'x' }, { ...context, sessionFile: runningFile, signal: runningCancel.signal, availability: { ...none, local: { kind: 'comfyui', name: 'fixture', baseUrl: 'http://127.0.0.1:8188', models: ['fixture.json'], running: true } } })
-  const runningRejected = assert.rejects(runningPending, { code: 'image_cancelled' })
-  await polling.promise; runningCancel.abort(); await runningRejected; checks++
-  ok(pollingSignal.aborted, 'ComfyUI history request must observe cancellation')
-  lateHistory.resolve(Response.json({ 'running-owned-prompt': { outputs: { '3': { images: [{ filename: 'late.png', type: 'output' }] } } } })); await tick()
-  ok(!calls.some(c => c.url.endsWith('/interrupt') || c.url.includes('/view?')), 'active ComfyUI cancellation must not globally interrupt or fetch late output')
-  ok((await new ArtifactStore(artifactDir).list(runningFile)).length === 0, 'active canceled ComfyUI result must not be saved')
-
-  ok(
-    JSON.stringify(mod.comfyAbortRequests('p1', false)) === JSON.stringify([{ path: '/queue', body: '{"delete":["p1"]}' }]),
-    'external ComfyUI cancellation only removes the owned queue item'
-  )
-  ok(
-    JSON.stringify(mod.comfyAbortRequests('p1', true)) === JSON.stringify([{ path: '/interrupt', body: '{}' }, { path: '/queue', body: '{"delete":["p1"]}' }]),
-    'self-launched ComfyUI cancellation interrupts the running job before removing the queue item'
-  )
-
   {
     const probes = { count: 0 }
     globalThis.fetch = async () => { probes.count += 1; return Response.json({}, { status: 404 }) }
@@ -243,20 +189,6 @@ try {
     ok(probes.count > afterFirst, 'an explicit reset probes again')
   }
 
-  {
-    const installDir = join(root, 'fake-comfy')
-    const pythonPath = process.platform === 'win32' ? join(installDir, 'venv', 'Scripts', 'python.exe') : join(installDir, 'venv', 'bin', 'python')
-    await mkdir(join(pythonPath, '..'), { recursive: true })
-    await mkdir(join(installDir, 'user'), { recursive: true })
-    await writeFile(join(installDir, 'main.py'), '')
-    process.env.YAN_COMFYUI_DIR = installDir
-    delete process.env.YAN_COMFYUI_PYTHON
-    ok((await mod.findLaunchableComfy()) === null, 'a ComfyUI folder without Python is not launchable')
-    await writeFile(pythonPath, '')
-    ok((await mod.findLaunchableComfy()) === null, 'the launch folder scan is cached instead of rescanning every call')
-    const status = await mod.comfyStatus()
-    ok(status.installDir === installDir && status.launchable, 'a status refresh picks up the folder that became launchable')
-  }
   console.log(`image-generation-boundaries: ${checks} checks passed (no real network/model, no app build)`)
 } finally {
   globalThis.fetch = originalFetch
