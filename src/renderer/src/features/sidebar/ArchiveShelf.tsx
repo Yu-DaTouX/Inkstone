@@ -103,7 +103,7 @@ export function ArchiveShelf({
                 isCurrent={row.isCurrent}
                 status={row.status}
                 code={row.code}
-                onOpen={() => onOpen(row.item)}
+                onOpen={onOpen}
               />
             ))}
             {open && hidden > 0 ? (

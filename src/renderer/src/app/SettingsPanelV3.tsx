@@ -4,7 +4,8 @@ import { consumeSettingsHash, installSettingsDeepLink } from '../features/settin
 
 installSettingsDeepLink()
 
-const SettingsPage = lazy(() => import('../features/settings/root').then((m) => ({ default: m.SettingsPage })))
+const loadSettings = () => import('../features/settings/root').then((m) => ({ default: m.SettingsPage }))
+const SettingsPage = lazy(loadSettings)
 
 export interface SettingsPanelV3Props {
   onShowOnboarding?: () => void
@@ -16,6 +17,11 @@ function closeSettings(): void {
 
 export function SettingsPanelV3({ onShowOnboarding }: SettingsPanelV3Props = {}): ReactElement | null {
   const open = useStore((s) => s.settingsOpen)
+
+  useEffect(() => {
+    const idle = window.requestIdleCallback(() => { void loadSettings().catch(() => undefined) }, { timeout: 2000 })
+    return () => window.cancelIdleCallback(idle)
+  }, [])
 
   useEffect(() => {
     consumeSettingsHash()

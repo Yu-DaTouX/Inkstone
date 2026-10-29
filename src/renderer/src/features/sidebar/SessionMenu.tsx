@@ -1,20 +1,15 @@
-import { useState, type JSX, type RefObject } from 'react'
-import { AlarmClock, Clock, Eye, FolderInput, FolderOpen, Globe, Mail, MailOpen, Pencil, Pin, PinOff, Archive, ArchiveRestore, Sparkles, Trash2 } from 'lucide-react'
-import { useI18n, useT } from '../../i18n'
+import { useEffect, useRef, useState, type JSX, type RefObject } from 'react'
+import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, DialogFooter, Menu, MenuItem, Modal, ModalOverlay, Popover, SubmenuTrigger } from '../../ui'
+import { Button, Dialog, DialogFooter, Modal, ModalOverlay, Popover } from '../../ui'
 import { v3Text } from '../../app/v3-text'
-import { shortProject } from './sidebar-model'
 import type { SessionSummary } from '../../../../shared/ipc'
-
-import { useTranscriptViews } from '../../state/transcript-view'
-import { effectiveView, TRANSCRIPT_VIEWS, type TranscriptView } from '../session/transcript-view-model'
-import { transcriptViewText } from '../session/transcript-view-text'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
-import { formatSnoozeWake, isSnoozed, pickSnoozeOption, resolveSnoozeOptions } from './session-snooze'
+import { pickSnoozeOption } from './session-snooze'
 import { CustomSnoozeDialog } from './CustomSnoozeDialog'
+import { SessionMenuContent } from './SessionMenuContent'
 
-type MenuKey = `move:${string}` | `snooze:${string}` | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
+export type MenuKey = `move:${string}` | `snooze:${string}` | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
 
 export interface SessionMenuProps {
   item: SessionSummary
@@ -27,18 +22,46 @@ export interface SessionMenuProps {
 }
 
 export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange, onRename }: SessionMenuProps): JSX.Element {
-  const t = useT()
   const { lang } = useI18n()
   const text = v3Text(lang)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [customSnooze, setCustomSnooze] = useState(false)
-  const projects = useStore((s) => s.settings?.projects)
-  const moveTargets = (projects ?? []).filter((project) => !project.archived && project.id !== item.projectId)
-  const viewText = transcriptViewText(lang)
-  const currentView = useTranscriptViews((s) => effectiveView(s, item.id))
-  const defaultView = useTranscriptViews((s) => s.defaultView)
-  const snoozed = isSnoozed(item, Date.now())
-  const snoozeOptions = snoozed ? [] : resolveSnoozeOptions(Date.now())
+  const dialogOpen = confirmDelete || customSnooze
+  const [dialogReady, setDialogReady] = useState(false)
+  useEffect(() => {
+    setDialogReady(false)
+    if (!dialogOpen || open) return
+    let frame = 0
+    let idle = 0
+    const settle = (): void => {
+      idle = document.querySelector('.ui-popover') ? 0 : idle + 1
+      if (idle < 2) {
+        frame = requestAnimationFrame(settle)
+        return
+      }
+      setDialogReady(true)
+    }
+    frame = requestAnimationFrame(settle)
+    return () => cancelAnimationFrame(frame)
+  }, [dialogOpen, open])
+  const hadDialog = useRef(false)
+  useEffect(() => {
+    const restore = hadDialog.current && !dialogOpen
+    hadDialog.current = dialogOpen
+    if (!restore) return
+    let frame = 0
+    let idle = 0
+    const focus = (): void => {
+      idle = document.querySelector('[role="dialog"], .ui-popover') ? 0 : idle + 1
+      if (idle < 2) {
+        frame = requestAnimationFrame(focus)
+        return
+      }
+      anchor.current?.querySelector<HTMLElement>('.v3-row')?.focus()
+    }
+    frame = requestAnimationFrame(focus)
+    return () => cancelAnimationFrame(frame)
+  }, [dialogOpen, anchor])
 
   const run = (key: MenuKey): void => {
     const store = useStore.getState()
@@ -92,120 +115,16 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
   return (
     <>
       <Popover triggerRef={anchor} isOpen={open} onOpenChange={onOpenChange} placement="bottom end" offset={4}>
-        <Menu
-          aria-label={text.sessionMenu}
-          autoFocus="first"
-          onAction={(key) => run(key as MenuKey)}
-          onClose={() => onOpenChange(false)}
-          disabledKeys={isCurrent ? ['delete'] : []}
-          data-testid="v3-session-menu"
-        >
-          <MenuItem id="reveal" textValue={t('rail.reveal')} data-testid="v3-session-reveal" icon={<FolderOpen size={14} />}>
-            {t('rail.reveal')}
-          </MenuItem>
-          <SubmenuTrigger>
-            <MenuItem id="transcript-view" textValue={viewText.menu} data-testid="v3-session-transcript-view" icon={<Eye size={14} />}>
-              {viewText.menu} · {viewText.views[currentView]}
-            </MenuItem>
-            <Popover placement="end top" offset={2}>
-              <Menu
-                aria-label={viewText.menu}
-                selectionMode="single"
-                disallowEmptySelection
-                selectedKeys={[currentView]}
-                onAction={(key) => {
-                  onOpenChange(false)
-                  const store = useTranscriptViews.getState()
-                  if (key === 'make-default') store.setDefaultView(currentView)
-                  else store.setSessionView(item.id, key as TranscriptView)
-                }}
-                data-testid="v3-session-transcript-view-menu"
-              >
-                {TRANSCRIPT_VIEWS.map((view) => (
-                  <MenuItem key={view} id={view} textValue={viewText.views[view]} checked="selection">
-                    {viewText.views[view]}
-                  </MenuItem>
-                ))}
-                {currentView !== defaultView ? (
-                  <MenuItem id="make-default" textValue={viewText.makeDefault(viewText.views[currentView])}>
-                    {viewText.makeDefault(viewText.views[currentView])}
-                  </MenuItem>
-                ) : null}
-              </Menu>
-            </Popover>
-          </SubmenuTrigger>
-          <MenuItem id="rename" textValue={t('rail.rename')} icon={<Pencil size={14} />}>
-            {t('rail.rename')}
-          </MenuItem>
-          <MenuItem id="pin" textValue={item.pinned ? t('rail.unpin') : t('rail.pin')} icon={item.pinned ? <PinOff size={14} /> : <Pin size={14} />}>
-            {item.pinned ? t('rail.unpin') : t('rail.pin')}
-          </MenuItem>
-          {snoozed ? (
-            <MenuItem id="wake" textValue={t('rail.wakeNow')} data-testid="v3-session-wake" icon={<AlarmClock size={14} />}>
-              {t('rail.wakeNow')}
-            </MenuItem>
-          ) : (
-            <SubmenuTrigger>
-              <MenuItem id="snooze" textValue={t('rail.snooze')} data-testid="v3-session-snooze" icon={<Clock size={14} />}>
-                {t('rail.snooze')}
-              </MenuItem>
-              <Popover placement="end top" offset={2}>
-                <Menu
-                  aria-label={t('rail.snooze')}
-                  onAction={(key) => {
-                    onOpenChange(false)
-                    run(key as MenuKey)
-                  }}
-                  data-testid="v3-session-snooze-menu"
-                >
-                  {snoozeOptions.map((option) => {
-                    const wake = formatSnoozeWake(option.until, Date.now(), lang)
-                    return (
-                      <MenuItem key={option.id} id={`snooze:${option.id}`} textValue={`${t(option.labelKey)} ${wake}`}>
-                        {t(option.labelKey)}
-                        <span className="v3-menu-when">{wake}</span>
-                      </MenuItem>
-                    )
-                  })}
-                  <MenuItem id="snooze:custom" textValue={t('rail.snoozeCustom')} data-testid="v3-session-snooze-custom">
-                    {t('rail.snoozeCustom')}
-                  </MenuItem>
-                </Menu>
-              </Popover>
-            </SubmenuTrigger>
-          )}
-          <MenuItem id="unread" textValue={item.markedUnread ? t('rail.markRead') : t('rail.markUnread')} data-testid="v3-session-mark-unread" icon={item.markedUnread ? <MailOpen size={14} /> : <Mail size={14} />}>
-            {item.markedUnread ? t('rail.markRead') : t('rail.markUnread')}
-          </MenuItem>
-          <MenuItem id="title" textValue={t('rail.regenerateTitle')} icon={<Sparkles size={14} />}>
-            {t('rail.regenerateTitle')}
-          </MenuItem>
-          <MenuItem id="archive" textValue={t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')} icon={item.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />}>
-            {t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')}
-          </MenuItem>
-          {item.scope !== 'global' ? (
-            <MenuItem id="move:global" textValue={`${t('rail.moveSession')} ${t('rail.global')}`} icon={<Globe size={14} />}>
-              {t('rail.moveSession')} · {t('rail.global')}
-            </MenuItem>
-          ) : null}
-          {moveTargets.map((project) => (
-            <MenuItem key={project.id} id={`move:${project.id}`} textValue={`${t('rail.moveSession')} ${project.name || shortProject(project.cwd)}`} icon={<FolderInput size={14} />}>
-              {t('rail.moveSession')} · {project.name || shortProject(project.cwd)}
-            </MenuItem>
-          ))}
-          <MenuItem id="delete" textValue={t('rail.delete')} tone="danger" icon={<Trash2 size={14} />}>
-            {isCurrent ? t('rail.cantDeleteCurrent') : t('rail.delete')}
-          </MenuItem>
-        </Menu>
+        {open ? <SessionMenuContent item={item} title={title} isCurrent={isCurrent} anchor={anchor} open={open} onOpenChange={onOpenChange} onRename={onRename} onAction={run} /> : null}
       </Popover>
 
       <CustomSnoozeDialog
-        open={customSnooze}
+        open={customSnooze && dialogReady}
         onOpenChange={setCustomSnooze}
         onSubmit={(until) => void useStore.getState().setSessionSnoozed(item.id, until)}
       />
 
-      <ModalOverlay isDismissable isOpen={confirmDelete} onOpenChange={setConfirmDelete}>
+      <ModalOverlay isDismissable isOpen={confirmDelete && dialogReady} onOpenChange={setConfirmDelete}>
         <Modal>
           <Dialog title={text.deleteConfirmTitle} closeLabel={text.cancel} data-testid="v3-session-delete">
             {({ close }) => (

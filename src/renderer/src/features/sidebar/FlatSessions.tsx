@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { Archive, Check, Folder, FolderOpen, FolderPlus, Globe, Link, ListFilter, MoreHorizontal, Plus, Replace, Search } from 'lucide-react'
 import { useSessionDrag } from './session-drag'
 import { useI18n, useT } from '../../i18n'
@@ -388,7 +388,7 @@ interface FlatRowProps {
   now: number
   branch?: string | null
   slim?: boolean
-  onOpen: () => void
+  onOpen: (item: SessionSummary) => void
 }
 
 function FlatSegmentHead({ entry }: { entry: FlatEntry }): JSX.Element {
@@ -410,6 +410,16 @@ function startsSegment(list: readonly FlatEntry[], index: number): boolean {
 function FlatRow({ entry, row, now, branch, slim, onOpen }: FlatRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
+  const card = useMemo(() => ({
+    project: entry.group.label || text.projectFallback,
+    cwd: entry.group.cwd,
+    global: entry.session.scope === 'global',
+    ago: compactAgo(sessionActivityAt(entry.session), now, lang),
+    model: row.model,
+    modelRef: row.modelRef,
+    branch: branch ?? undefined,
+    slim
+  }), [entry.group.label, entry.group.cwd, entry.session, row.model, row.modelRef, text.projectFallback, now, lang, branch, slim])
   return (
     <SidebarRow
       item={entry.session}
@@ -417,51 +427,35 @@ function FlatRow({ entry, row, now, branch, slim, onOpen }: FlatRowProps): JSX.E
       isCurrent={row.isCurrent}
       status={row.status}
       code={row.code}
-      card={{
-        project: entry.group.label || text.projectFallback,
-        cwd: entry.group.cwd,
-        global: entry.session.scope === 'global',
-        ago: compactAgo(sessionActivityAt(entry.session), now, lang),
-        model: row.model,
-        modelRef: row.modelRef,
-        branch: branch ?? undefined,
-        slim
-      }}
+      card={card}
       onOpen={onOpen}
     />
   )
 }
 
-export function useArchivedSlimRow(onOpen: (item: SessionSummary) => void): (row: ArchiveShelfRow) => JSX.Element {
+function ArchivedSlimRow({ row, onOpen, now }: { row: ArchiveShelfRow; onOpen: (item: SessionSummary) => void; now: number }): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
-  const now = useMinuteClock()
   const projects = useStore((s) => s.settings?.projects)
   const projectNames = useStore((s) => s.settings?.projectNames)
-  return (row) => {
+  const card = useMemo(() => {
     const owner = sessionProjectLabel(row.item, projects ?? [], projectNames ?? {})
-    const project = owner.label || text.projectFallback
-    return (
-      <SidebarRow
-        key={row.item.path}
-        item={row.item}
-        title={row.title}
-        isCurrent={row.isCurrent}
-        status={row.status}
-        code={row.code}
-        card={{
-          project,
-          cwd: owner.cwd,
-          global: row.item.scope === 'global',
-          ago: compactAgo(sessionActivityAt(row.item), now, lang),
-          model: row.model,
-          modelRef: row.modelRef,
-          slim: true
-        }}
-        onOpen={() => onOpen(row.item)}
-      />
-    )
-  }
+    return {
+      project: owner.label || text.projectFallback,
+      cwd: owner.cwd,
+      global: row.item.scope === 'global',
+      ago: compactAgo(sessionActivityAt(row.item), now, lang),
+      model: row.model,
+      modelRef: row.modelRef,
+      slim: true
+    }
+  }, [row.item, row.model, row.modelRef, projects, projectNames, text.projectFallback, now, lang])
+  return <SidebarRow item={row.item} title={row.title} isCurrent={row.isCurrent} status={row.status} code={row.code} card={card} onOpen={onOpen} />
+}
+
+export function useArchivedSlimRow(onOpen: (item: SessionSummary) => void): (row: ArchiveShelfRow) => JSX.Element {
+  const now = useMinuteClock()
+  return (row) => <ArchivedSlimRow key={row.item.path} row={row} onOpen={onOpen} now={now} />
 }
 
 export function WorkingShelf({
@@ -503,7 +497,7 @@ export function WorkingShelf({
                   row={rowState(entry.session)}
                   now={now}
                   branch={branches.get(entry.session.cwd)}
-                  onOpen={() => onOpen(entry.session)}
+                  onOpen={onOpen}
                 />
               </Fragment>
             ))}
@@ -557,7 +551,7 @@ export function FlatSessionList({
         row={rowState(entry.session)}
         now={now}
         branch={branches.get(entry.session.cwd)}
-        onOpen={() => onOpen(entry.session)}
+        onOpen={onOpen}
       />
     </Fragment>
   )

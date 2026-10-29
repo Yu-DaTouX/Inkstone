@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { AlarmClock, MoreHorizontal, Pin } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -34,7 +34,7 @@ export interface SidebarRowProps {
   card?: SidebarRowCard
   snoozeLabel?: string
   snoozeTitle?: string
-  onOpen: () => void
+  onOpen: (item: SessionSummary) => void
 }
 
 function cardDetail(card: SidebarRowCard, status: string): string {
@@ -57,7 +57,7 @@ function FadeTitleBox({ boxRef, text }: { boxRef: RefObject<HTMLSpanElement | nu
   )
 }
 
-export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeLabel, snoozeTitle, onOpen }: SidebarRowProps): JSX.Element {
+export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, status, code, card, snoozeLabel, snoozeTitle, onOpen }: SidebarRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   const statusWord = sessionStatusLabel(status, lang)
@@ -187,7 +187,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
                 draggedRef.current = false
                 return
               }
-              onOpen()
+              onOpen(item)
             }}
             data-testid="v3-session-row"
           >
@@ -248,4 +248,4 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
       />
     </div>
   )
-}
+})

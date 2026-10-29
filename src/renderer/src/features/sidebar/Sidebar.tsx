@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Archive, PanelLeftClose, Search, Settings, FolderPlus, SquarePen, Unplug } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -28,6 +28,7 @@ import { sessionStatusKind, sessionUnread } from './session-status'
 import { activeSessions, isSnoozed, snoozedSessions } from './session-snooze'
 import { useSnoozeClock } from './use-session-snooze'
 import { SnoozeShelf } from './SnoozeShelf'
+import { createSidebarRunsSelector } from './sidebar-runs'
 import './Sidebar.css'
 
 function toggleKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
@@ -82,14 +83,13 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const snoozeNow = useSnoozeClock()
   const listedSessions = useMemo(() => activeSessions(sessions, snoozeNow), [sessions, snoozeNow])
   const snoozedRows = useMemo(() => snoozedSessions(sessions, snoozeNow), [sessions, snoozeNow])
-  const session = useStore((s) => s.session)
+  const currentSessionId = useStore((s) => s.session?.sessionId)
   const settings = useStore((s) => s.settings)
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
-  const runners = useStore((s) => s.runners)
   const models = useStore((s) => s.models)
-  const activeRunnerId = useStore((s) => s.activeRunnerId)
-  const runs = useRunsV3((s) => s.runs)
+  const selectRuns = useMemo(createSidebarRunsSelector, [])
+  const runs = useRunsV3(selectRuns)
   const conn = useStore((s) => s.conn)
   const connDetail = useStore((s) => s.connDetail)
   const [retrying, setRetrying] = useState(false)
@@ -114,9 +114,8 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     return () => window.clearInterval(id)
   }, [running, currentListed, refreshSessions])
 
-  const activeRunner = runners.find((r) => r.id === activeRunnerId || r.runId === activeRunnerId)
-  const currentProjectId = activeRunner?.projectId
-  const currentCwd = activeRunner?.cwd || session?.cwd
+  const currentProjectId = useStore((s) => s.runners.find((r) => r.id === s.activeRunnerId || r.runId === s.activeRunnerId)?.projectId)
+  const currentCwd = useStore((s) => s.runners.find((r) => r.id === s.activeRunnerId || r.runId === s.activeRunnerId)?.cwd || s.session?.cwd)
   const flat = settings?.sidebarLayout === 'flat'
   const [flatScope, setFlatScope] = useFlatScope()
 
@@ -194,16 +193,16 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const contentVisible = contentState.status === 'searching' || contentState.status === 'failed' || contentMatches.length > 0
 
   const isCurrentItem = (item: SessionSummary): boolean =>
-    session?.sessionId === item.id || (!!session?.sessionFile && session.sessionFile === item.path)
+    currentSessionId === item.id || (!!currentSessionFile && currentSessionFile === item.path)
 
-  const currentKey = session?.sessionId ?? session?.sessionFile ?? ''
+  const currentKey = currentSessionId ?? currentSessionFile ?? ''
   useEffect(() => {
     if (!currentKey || revealedRef.current === currentKey) return
     const group = groups.find((g) => g.list.some((item) => isCurrentItem(item)))
     if (!group) return
     revealedRef.current = currentKey
     setCollapsedKeys((prev) => (prev.has(group.slot) ? toggleKey(prev, group.slot) : prev))
-  }, [currentKey, groups, session?.sessionId, session?.sessionFile])
+  }, [currentKey, groups, currentSessionId, currentSessionFile])
 
   const rowState = (item: SessionSummary): ArchiveShelfRow => {
     const isCurrent = isCurrentItem(item)
@@ -279,18 +278,18 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     }
   }, [])
 
-  const openSession = (item: { id: string; path: string }): void => {
+  const openSession = useCallback((item: { id: string; path: string }): void => {
     useUiV3.getState().navigate({ name: 'chat' })
     void switchSession(item.path).then(() => {
       if (useStore.getState().peekedPath !== item.path) return
       markSessionRunsSeen(item)
     })
-  }
+  }, [switchSession])
 
-  const openSnoozed = (item: SessionSummary): void => {
+  const openSnoozed = useCallback((item: SessionSummary): void => {
     if (isSnoozed(item, Date.now())) void useStore.getState().setSessionSnoozed(item.id, null)
     openSession(item)
-  }
+  }, [openSession])
   const archivedSlimRow = useArchivedSlimRow(openSession)
 
   const createGlobal = (): void => {
@@ -467,7 +466,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                         isCurrent={row.isCurrent}
                         status={row.status}
                         code={row.code}
-                        onOpen={() => openSession(item)}
+                        onOpen={openSession}
                       />
                     )
                   })}
@@ -498,7 +497,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
             query={query}
             state={contentState}
             matches={contentMatches}
-            currentPath={session?.sessionFile}
+            currentPath={currentSessionFile}
             text={own}
             onOpen={(match) => openSession({ id: match.id ?? '', path: match.path })}
           />

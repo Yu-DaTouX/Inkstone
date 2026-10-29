@@ -131,6 +131,29 @@ check('自定义：日期与时间输入框回填本地值', () => {
   assert.equal(snooze.localTimeValue(at), '09:05')
 })
 
+check('格式化器：按 locale 与同日/跨日选项复用，不跨选项串用', () => {
+  const Original = Intl.DateTimeFormat
+  let count = 0
+  Intl.DateTimeFormat = function (...args) {
+    count++
+    return new Original(...args)
+  }
+  try {
+    const now = local(2026, 3, 5, 12)
+    for (const lang of ['zh-CN', 'en-US']) {
+      for (const until of [local(2026, 3, 5, 18), local(2026, 3, 9, 9)]) {
+        const expected = new Original(lang, { hour: '2-digit', minute: '2-digit', hour12: false, ...(until > local(2026, 3, 6, 0) ? { weekday: 'short' } : {}) }).format(until)
+        for (let n = 0; n < 100; n++) assert.equal(snooze.formatSnoozeWake(until, now, lang), expected)
+      }
+    }
+    assert.equal(count, 4, '400 次调用只建立 4 个格式化器')
+    assert.notEqual(snooze.formatSnoozeWake(local(2026, 3, 9, 9), now, 'en-US'), snooze.formatSnoozeWake(local(2026, 3, 9, 9), local(2026, 3, 9, 0), 'en-US'), '过午夜应切回只显示时间')
+    assert.equal(count, 4)
+  } finally {
+    Intl.DateTimeFormat = Original
+  }
+})
+
 check('唤醒时间文案：当天只给时间，跨天带上星期', () => {
   const now = local(2026, 3, 5, 12)
   const today = snooze.formatSnoozeWake(local(2026, 3, 5, 18), now, 'zh-CN')

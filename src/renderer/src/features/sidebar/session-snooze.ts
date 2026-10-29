@@ -116,12 +116,20 @@ export function customSnoozeUntil(date: string, time: string, now: number): numb
   return at > now ? at : null
 }
 
+const wakeFormatters = new Map<string, Intl.DateTimeFormat>()
+
 export function formatSnoozeWake(until: number, now: number, lang: string): string {
   const sameDay = startOfLocalDay(until).getTime() === startOfLocalDay(now).getTime()
-  return new Date(until).toLocaleString(lang, {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    ...(sameDay ? {} : { weekday: 'short' })
-  })
+  const key = `${lang}:${sameDay ? 'time' : 'weekday-time'}`
+  let formatter = wakeFormatters.get(key)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(lang, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      ...(sameDay ? {} : { weekday: 'short' })
+    })
+    wakeFormatters.set(key, formatter)
+  }
+  return formatter.format(until)
 }

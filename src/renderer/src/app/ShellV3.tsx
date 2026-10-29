@@ -51,6 +51,7 @@ import { useTerminalRunning } from '../features/terminal/use-terminal-running'
 import { PANEL_WIDTH_MIN, currentPanelEntry, panelRoom, toolSurface, useRightPanel, useRightPanelEntry, type PanelToolKind } from '../state/right-panel'
 import { railText } from '../features/workbench/rail-text'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
+import { createFrameBatch } from './frame-batch'
 import './ShellV3.css'
 
 let bootstrapStarted = false
@@ -114,10 +115,14 @@ export default function ShellV3(): ReactElement {
       setBodyWidth(body.clientWidth)
       body.style.setProperty('--sidebar-offset', `${Math.max(0, body.getBoundingClientRect().left)}px`)
     }
-    const observer = new ResizeObserver(updateSize)
+    const measure = createFrameBatch<void>(updateSize)
+    const observer = new ResizeObserver(() => measure.schedule())
     observer.observe(body)
     updateSize()
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      measure.cancel()
+    }
   }, [])
   useV3RouteSync()
   const { lang, setLang } = useI18n()
@@ -262,10 +267,14 @@ export default function ShellV3(): ReactElement {
     if (route.name !== 'chat') return
     const chat = chatRef.current
     if (!chat) return
+    const measure = createFrameBatch<void>(() => setMeasuredChatWidth(chat.clientWidth))
     setMeasuredChatWidth(chat.clientWidth)
-    const observer = new ResizeObserver(() => setMeasuredChatWidth(chat.clientWidth))
+    const observer = new ResizeObserver(() => measure.schedule())
     observer.observe(chat)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      measure.cancel()
+    }
   }, [route.name])
   const chatWidth = route.name === 'chat' ? measuredChatWidth : bodyWidth
   const toastInset = panelOpen && panelMode === 'inline' && !panelMaximized && chatWidth > 0 ? Math.max(0, bodyWidth - chatWidth) : 0

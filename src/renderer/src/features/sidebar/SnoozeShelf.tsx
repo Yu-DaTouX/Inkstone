@@ -52,7 +52,7 @@ export function SnoozeShelf({ rows, now, onOpen }: SnoozeShelfProps): JSX.Elemen
                   code={row.code}
                   snoozeLabel={label}
                   snoozeTitle={label ? t('rail.snoozeWakeAt', { time: label }) : undefined}
-                  onOpen={() => onOpen(row.item)}
+                  onOpen={onOpen}
                 />
               )
             })}

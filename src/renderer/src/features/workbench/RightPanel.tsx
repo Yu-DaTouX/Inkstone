@@ -27,6 +27,7 @@ import {
 import { Button, EmptyState, IconButton, Kbd, ListRow, Menu, MenuItem, MenuTrigger, PanelTab, PanelTabList, Popover, Separator, Sheet, Spinner, Splitter } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
+import { createFrameBatch } from '../../app/frame-batch'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import {
   PANEL_WIDTH_DEFAULT,
@@ -179,6 +180,8 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
   const mounted = entry.surfaces.filter((item) => visitedIds.has(item.id) || item.id === active?.id)
   const shownWidth = clampPanelWidth(width, room)
   const axis = 4000
+  const resize = useMemo(() => createFrameBatch<number>((next) => useRightPanel.getState().setWidth(next)), [])
+  useEffect(() => () => resize.flush(), [resize])
 
   const closeTab = (id: string): void => useRightPanel.getState().close(id)
 
@@ -226,8 +229,11 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
           aria-label={panel.resize}
           title={panel.resize}
           data-testid="rp-resizer"
-          onChange={(left) => useRightPanel.getState().setWidth(axis - left)}
-          onReset={() => useRightPanel.getState().setWidth(PANEL_WIDTH_DEFAULT)}
+          onChange={(left) => resize.schedule(axis - left)}
+          onReset={() => {
+            resize.cancel()
+            useRightPanel.getState().setWidth(PANEL_WIDTH_DEFAULT)
+          }}
         />
       ) : null}
       <div className="rp-bar" data-testid="rp-bar" ref={barRef}>

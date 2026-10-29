@@ -20,6 +20,41 @@ export async function runRightPanelTests(ok) {
     const outfile = join(dir, 'right-panel.mjs')
     await build({ entryPoints: ['src/renderer/src/state/right-panel.ts'], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
     const rp = await import(pathToFileURL(outfile).href)
+    const batchFile = join(dir, 'frame-batch.mjs')
+    await build({ entryPoints: ['src/renderer/src/app/frame-batch.ts'], outfile: batchFile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+    const { createFrameBatch } = await import(pathToFileURL(batchFile).href)
+    const frames = new Map()
+    let nextFrame = 0
+    const writes = []
+    const batch = createFrameBatch((width) => writes.push(width), (callback) => {
+      frames.set(++nextFrame, callback)
+      return nextFrame
+    }, (id) => frames.delete(id))
+    batch.schedule(730)
+    batch.schedule(780)
+    batch.schedule(900)
+    ok(frames.size === 1 && writes.length === 0, '拖宽：同帧只安排一次更新，事件路径不立即写宽')
+    ;[...frames.values()][0]()
+    ok(writes.join() === '900' && frames.size === 0, '拖宽：帧内只提交最新宽度')
+    batch.schedule(880)
+    batch.flush()
+    ok(writes.join() === '900,880' && frames.size === 0, '拖宽：结束时保留最终宽度且撤销排队帧')
+    batch.schedule(1000)
+    batch.cancel()
+    ok(frames.size === 0 && writes.join() === '900,880', '拖宽：重置前取消旧帧，避免旧值覆盖默认宽')
+    batch.flush()
+    ok(writes.length === 2, '拖宽：重复清理不会重复写入')
+    let measurements = 0
+    const measure = createFrameBatch(() => measurements++, (callback) => {
+      frames.set(++nextFrame, callback)
+      return nextFrame
+    }, (id) => frames.delete(id))
+    measure.schedule()
+    measure.schedule()
+    measure.schedule()
+    ok(frames.size === 1, '布局测量：同帧多次通知只安排一次读取')
+    ;[...frames.values()][0]()
+    ok(measurements === 1 && frames.size === 0, '布局测量：无参数请求仍正确执行一次')
     const store = rp.useRightPanel
 
     ok(Object.keys(store.getState().byKey).length === 0, '右栏：旧分块布局存档不读入，初始为空')
