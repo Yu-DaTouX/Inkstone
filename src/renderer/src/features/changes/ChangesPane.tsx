@@ -689,24 +689,17 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             </span>
           </div>
           {scope.kind === 'working' ? (
-            <dl className="changes-pane__stats">
-              <div>
-                <dt>{text.changed}</dt>
-                <dd>{repo.changedCount}</dd>
-              </div>
-              <div>
-                <dt>{text.staged}</dt>
-                <dd>{repo.stagedCount}</dd>
-              </div>
-              <div>
-                <dt>{text.unstaged}</dt>
-                <dd>{repo.unstagedCount}</dd>
-              </div>
-              <div>
-                <dt>{text.untracked}</dt>
-                <dd>{repo.untrackedCount}</dd>
-              </div>
-            </dl>
+            <p className="changes-pane__stats" data-testid="changes-stats">
+              {[
+                { label: text.changed, count: repo.changedCount, always: true },
+                { label: text.staged, count: repo.stagedCount },
+                { label: text.unstaged, count: repo.unstagedCount },
+                { label: text.untracked, count: repo.untrackedCount }
+              ]
+                .filter((part) => part.always || part.count > 0)
+                .map((part) => `${part.count} ${part.label}`)
+                .join(' \u00b7 ')}
+            </p>
           ) : (
             <div className="changes-pane__compare">
               {compareWith ? <span className="changes-pane__compare-label" title={compareWith}>{text.compareWith(compareWith)}</span> : null}
@@ -922,10 +915,10 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                 value={message}
                 onChange={setMessage}
               />
-              <Button size="sm" isDisabled={!canAct} onPress={() => void runAction('stage-all')}>
+              <Button isDisabled={!canAct} onPress={() => void runAction('stage-all')}>
                 {text.stageAll}
               </Button>
-              <Button size="sm" variant="primary" isDisabled={!canAct || !message.trim()} onPress={() => void runAction('commit')}>
+              <Button variant="primary" isDisabled={!canAct || !message.trim()} onPress={() => void runAction('commit')}>
                 {text.commitAction}
               </Button>
             </div>

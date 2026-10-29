@@ -161,14 +161,14 @@ async function main() {
 
   const css = await readFile(join(process.cwd(), 'src/renderer/src/features/session/v3-empty-state.css'), 'utf8')
   ok(css.includes("container-type: inline-size"), 'CSS：v3-empty-page 建立 inline-size 容器（按真实对话列宽度判定）')
-  ok(css.includes('grid-template-columns: minmax(0, 1fr) minmax(0, 23rem)'), 'CSS：两栏为 minmax(0,1fr) + 23rem')
-  ok(css.includes('@container (max-width: 760px)'), 'CSS：760px 容器查询存在')
-  const narrowBlock = css.slice(css.indexOf('@container (max-width: 760px)'))
+  ok(/\.v3-empty-cols\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/.test(css), 'CSS：问候与用量同列堆叠，共用左边线')
+  ok(css.includes("grid-template-areas: 'head head head' 'hero stats heat'"), 'CSS：用量压成一行，热力图并入统计行')
+  ok(css.includes('@container (max-width: 560px)'), 'CSS：560px 容器查询存在')
+  const narrowBlock = css.slice(css.indexOf('@container (max-width: 560px)'))
   ok(/\.start-usage\s*\{[^}]*display:\s*none/.test(narrowBlock), 'CSS：窄容器只收起 .start-usage，不隐藏问候')
   ok(/\.start-strip\s*\{[^}]*display:\s*flex/.test(narrowBlock), 'CSS：窄容器显示一行用量条，用量不整块消失')
   const fixedCaps = [...css.replace(/@container\s*\([^)]*\)/g, '').matchAll(/max-width\s*:\s*([^;}]+)/g)].filter((m) => m[1].trim() !== '100%')
   ok(fixedCaps.length === 0, 'CSS：除容器查询判定外没有固定 max-width 规则（避免旧 max-width 让统计永远隐藏）', fixedCaps.map((m) => m[0]))
-  ok(css.includes('.v3-empty-cols:not(:has(> .start-usage))'), 'CSS：无用量面板时收成单列（修正 U2R 对固定轨道的解释，不让空轨道留白）')
 
   const patternCss = await readFile(join(process.cwd(), 'src/renderer/src/patterns/usage-pattern.css'), 'utf8')
   const patternCode = patternCss.replace(/\/\*[\s\S]*?\*\//g, '')

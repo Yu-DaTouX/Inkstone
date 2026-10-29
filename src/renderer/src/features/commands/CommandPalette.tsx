@@ -1,5 +1,26 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
-import { Search, X } from 'lucide-react'
+import {
+  BarChart3,
+  CircleHelp,
+  Eye,
+  FileDiff,
+  Folder,
+  Globe,
+  MessageSquare,
+  MessageSquareText,
+  Moon,
+  PanelLeft,
+  PanelRight,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Square,
+  SquarePen,
+  SquareTerminal,
+  Sun,
+  X,
+  type LucideIcon
+} from 'lucide-react'
 import { useI18n } from '../../i18n'
 import type { UIMessage } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
@@ -19,6 +40,7 @@ import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
+  Kbd,
   KbdGroup,
   ListRow,
   Notice,
@@ -75,6 +97,30 @@ const SETTINGS_NAV = settingsNavEntries()
 function shortPath(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] || path
+}
+
+const ACTION_ICONS: Record<string, LucideIcon> = {
+  [COMMAND_ACTION_IDS.newSession]: SquarePen,
+  [COMMAND_ACTION_IDS.focusSearch]: Search,
+  [COMMAND_ACTION_IDS.toggleSidebar]: PanelLeft,
+  [COMMAND_ACTION_IDS.toggleWorkspace]: PanelRight,
+  [COMMAND_ACTION_IDS.openSettings]: Settings,
+  [COMMAND_ACTION_IDS.workspaceChanges]: FileDiff,
+  [COMMAND_ACTION_IDS.workspaceTerminal]: SquareTerminal,
+  [COMMAND_ACTION_IDS.workspaceFiles]: Folder,
+  [COMMAND_ACTION_IDS.workspaceBrowser]: Globe,
+  [COMMAND_ACTION_IDS.workspacePreview]: Eye,
+  [COMMAND_ACTION_IDS.settingsUsage]: BarChart3,
+  [COMMAND_ACTION_IDS.stopSession]: Square
+}
+
+function commandIcon(item: CommandItem, theme: string): LucideIcon {
+  if (item.group === 'session') return MessageSquare
+  if (item.group === 'message') return MessageSquareText
+  if (item.group === 'help') return CircleHelp
+  if (item.id === COMMAND_ACTION_IDS.toggleTheme) return theme === 'dark' ? Sun : Moon
+  if (item.id.startsWith(SETTINGS_COMMAND_PREFIX)) return SlidersHorizontal
+  return ACTION_ICONS[item.id] ?? SquarePen
 }
 
 function shortcutKeys(id: ShortcutId): readonly string[] | undefined {
@@ -518,6 +564,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
                   const index = optionIndex.get(item.id) ?? -1
                   const active = index === safeIndex
                   const aside = item.disabled && item.reason ? item.reason : item.meta
+                  const ItemIcon = commandIcon(item, theme)
                   return (
                     <ListRow
                       key={item.id}
@@ -531,6 +578,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
                       data-active={active ? 'true' : undefined}
                       data-selected={active ? '' : undefined}
                       className="cmd-option"
+                      icon={<ItemIcon size={16} />}
                       trailing={
                         aside || item.shortcut?.length ? (
                           <>
@@ -561,7 +609,21 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         </Notice>
       ) : null}
 
-      <CommandSurfaceFooter aria-hidden="true">{text.prefixHint}</CommandSurfaceFooter>
+      <CommandSurfaceFooter aria-hidden="true" className="cmd-foot">
+        <span className="cmd-foot__item">
+          <KbdGroup keys={['↑', '↓']} />
+          {text.footNavigate}
+        </span>
+        <span className="cmd-foot__item">
+          <Kbd>Enter</Kbd>
+          {text.footRun}
+        </span>
+        <span className="cmd-foot__item">
+          <Kbd>Esc</Kbd>
+          {text.footClose}
+        </span>
+        <span className="cmd-foot__prefix">{text.prefixHint}</span>
+      </CommandSurfaceFooter>
     </CommandSurface>
   )
 }

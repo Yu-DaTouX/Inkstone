@@ -329,7 +329,7 @@ export function ModelsSettings(): ReactElement {
         <div className="ms-service-main">
           <span className="ms-service-head">
             <span className="ms-service-name">{providerName(p)}</span>
-            <Badge tone={stateTone(state)}>{stateLabel(state)}</Badge>
+            {state === 'ready' ? <Badge tone={stateTone(state)}>{stateLabel(state)}</Badge> : null}
           </span>
           {providerHint(p) ? <p className="ms-service-hint">{providerHint(p)}</p> : null}
           {p.envVar ? <p className="ms-service-env">{t('auth.orEnv')} <code>{p.envVar}</code></p> : null}
@@ -480,9 +480,10 @@ export function ModelsSettings(): ReactElement {
           <>
             <span className="settings-row__line">{t('auth.summary', { ready: readyCount, total: authProviders.length })}</span>
             <span className="ms-safety settings-row__line" data-testid="ms-file-info">
-              {t('auth.safety')}
+              <span className="ms-safety-lead">{t('auth.safety')}</span>
               {fileInfo ? (
                 <span className="ms-file">
+                  <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
                   <MiddleTruncate className="ms-file-path" value={fileInfo.path} />
                   <span className="ms-file-count">
                     {' · '}

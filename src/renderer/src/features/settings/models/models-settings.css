@@ -5,7 +5,22 @@
   }
 
   .ms-safety {
-    overflow-wrap: anywhere;
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    white-space: nowrap;
+  }
+
+  .ms-safety-lead {
+    flex: none;
+  }
+
+  .ms-file-sep {
+    flex: none;
+    white-space: pre;
   }
 
   .ms-safety code {
@@ -14,6 +29,7 @@
 
   .ms-file {
     display: flex;
+    flex: 1 1 auto;
     align-items: baseline;
     min-width: 0;
   }

@@ -1,16 +1,22 @@
 @layer features {
+  .v3-stream-inner:has(> .v3-empty-page) {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 100%;
+  }
+
   .v3-empty.v3-empty-page {
     container-type: inline-size;
-    padding: 0;
+    padding: 0 0 12vh;
   }
 
   .v3-empty-cols {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 23rem);
-    align-items: start;
-    column-gap: var(--s-24);
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--s-24);
     width: 100%;
-    padding: var(--s-48) var(--s-20) var(--s-16);
+    padding: 0;
   }
 
   .v3-empty-main {
@@ -21,19 +27,52 @@
   }
 
   .v3-empty-cols > .start-usage {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas: 'head head head' 'hero stats heat';
+    align-items: end;
+    gap: var(--s-8) var(--s-32);
     min-width: 0;
-    width: max-content;
-    max-width: 100%;
-    margin-top: var(--s-32);
   }
 
-  .v3-empty-cols:not(:has(> .start-usage)) {
-    grid-template-columns: minmax(0, 1fr);
+  .v3-empty-cols > .start-usage > .start-usage-head {
+    grid-area: head;
+  }
+
+  .v3-empty-cols > .start-usage > .start-hero {
+    grid-area: hero;
+    flex-direction: column-reverse;
+  }
+
+  .v3-empty-cols > .start-usage > .start-hint {
+    grid-column: 1 / -1;
+  }
+
+  .v3-empty-cols > .start-usage > .start-stats {
+    grid-area: stats;
+    grid-template-columns: repeat(3, auto);
+    column-gap: var(--s-24);
+  }
+
+  .v3-empty-cols > .start-usage .start-hero-num {
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
+  }
+
+  .v3-empty-cols > .start-usage > .start-heat {
+    grid-area: heat;
+    grid-template-rows: repeat(7, var(--s-4));
+    grid-auto-columns: var(--s-4);
+    justify-self: start;
+    opacity: 0.7;
   }
 
   .v3-empty-main > .start-strip {
     display: none;
     margin-top: var(--s-12);
+  }
+
+  .v3-session:has(.v3-empty-page) > .v3-ascii-field[data-closing='0'] {
+    opacity: 0.12;
   }
 
   .v3-empty-waiting {
@@ -59,11 +98,7 @@
     line-height: var(--t-footnote-lh);
   }
 
-  @container (max-width: 760px) {
-    .v3-empty-cols {
-      grid-template-columns: minmax(0, 1fr);
-      padding: var(--s-32) var(--s-16);
-    }
+  @container (max-width: 560px) {
     .v3-empty-cols > .start-usage {
       display: none;
     }

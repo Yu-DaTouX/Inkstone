@@ -5,6 +5,9 @@ export interface CommandText {
   paletteLabel: string
   placeholder: string
   prefixHint: string
+  footNavigate: string
+  footRun: string
+  footClose: string
   groupAction: string
   groupSession: string
   groupMessage: string
@@ -44,6 +47,9 @@ const ZH: CommandText = {
   paletteLabel: '命令面板',
   placeholder: '搜索命令，或用 > 操作 @ 会话 # 消息 ? 帮助…',
   prefixHint: '> 操作 · @ 会话 · # 消息 · ? 帮助',
+  footNavigate: '选择',
+  footRun: '执行',
+  footClose: '关闭',
   groupAction: '命令',
   groupSession: '会话',
   groupMessage: '消息',
@@ -88,6 +94,9 @@ const EN: CommandText = {
   paletteLabel: 'Command palette',
   placeholder: 'Search commands, or > actions @ chats # messages ? help…',
   prefixHint: '> actions · @ chats · # messages · ? help',
+  footNavigate: 'Navigate',
+  footRun: 'Run',
+  footClose: 'Close',
   groupAction: 'Commands',
   groupSession: 'Chats',
   groupMessage: 'Messages',

@@ -1,17 +1,32 @@
 @layer features {
+  .cmd-surface .ui-command__body {
+    padding-bottom: var(--s-16);
+    scroll-padding-block: var(--s-4) var(--s-16);
+    mask-image: linear-gradient(to bottom, black calc(100% - var(--s-16)), transparent);
+  }
+
   .cmd-group + .cmd-group {
     margin-top: var(--s-6);
   }
 
   .cmd-group__label {
-    padding: var(--s-6) var(--s-8) var(--s-2);
+    padding: var(--s-8) var(--s-12) var(--s-4);
     color: var(--fg3);
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .cmd-option {
+    gap: var(--s-10);
+    height: calc(var(--s-32) + var(--s-4));
+    padding-inline: var(--s-12) var(--s-8);
     color: var(--fg);
     cursor: pointer;
+  }
+
+  .cmd-option > .ui-row__lead {
+    width: var(--s-16);
+    height: var(--s-16);
+    color: var(--fg2);
   }
 
   .cmd-option[aria-disabled='true'] {
@@ -28,5 +43,20 @@
   .cmd-error {
     flex: none;
     margin: var(--s-4) var(--s-12) var(--s-8);
+  }
+
+  .cmd-foot {
+    column-gap: var(--s-16);
+    padding-inline: var(--s-16);
+  }
+
+  .cmd-foot__item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  .cmd-foot__prefix {
+    margin-inline-start: auto;
   }
 }

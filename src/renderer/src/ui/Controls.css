@@ -466,6 +466,7 @@
     justify-content: center;
     padding: 12vh var(--s-16) var(--s-16);
     background: var(--scrim);
+    backdrop-filter: blur(3px);
   }
   .ui-command-overlay[data-entering] {
     animation: ui-fade-in var(--dur-snap) var(--ease);
@@ -480,8 +481,9 @@
     max-height: min(480px, 76vh);
     min-height: 0;
     overflow: hidden;
+    border: var(--hair, 1px) solid var(--line2);
     border-radius: var(--r-xl);
-    background: var(--surface-3);
+    background: color-mix(in srgb, var(--surface-3) 94%, var(--on-tip));
     box-shadow: var(--shadow-pop);
     color: var(--fg);
     font: var(--t-body) / var(--t-body-lh) var(--font-ui);
@@ -540,6 +542,6 @@
     border-top: var(--hair, 1px) solid var(--line);
     background: var(--sunken);
     color: var(--fg3);
-    font: var(--t-caption) / var(--t-caption-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 }
