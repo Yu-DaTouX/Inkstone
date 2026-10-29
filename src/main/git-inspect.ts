@@ -24,6 +24,7 @@ import type {
   GitChangesOptions,
   GitChangesResult,
   GitChangesScope,
+  GitDiffContents,
   GitDiffResult,
   GitImageSide,
   GitStatusEntry
@@ -36,6 +37,7 @@ export type AuthorizeReadCwd = (
 const MAX_CHANGES_FILES = 2000
 const MAX_DIFF_BYTES = 1_500_000
 const MAX_UNTRACKED_BYTES = 1_000_000
+const MAX_CONTENT_BYTES = 1_000_000
 const BINARY_SNIFF_BYTES = 8000
 const DIFF_TIMEOUT_MS = 15_000
 const QUERY_DEADLINE_MS = 20_000
@@ -752,9 +754,60 @@ async function readImageSides(
   return { before, after }
 }
 
+function textOf(bytes: Buffer): string | null {
+  if (bytes.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return null
+  return bytes.toString('utf8')
+}
+
+async function readBlobText(root: string, rev: string, rootRel: string, deadline: GitDeadline): Promise<string | null> {
+  const bytes = await gitBinary(root, ['cat-file', 'blob', `${rev}:${rootRel}`], MAX_CONTENT_BYTES, deadline)
+  return bytes ? textOf(bytes) : null
+}
+
+async function readWorkingText(abs: string): Promise<string | null> {
+  try {
+    const info = await lstat(abs)
+    if (info.isSymbolicLink() || !info.isFile() || info.size > MAX_CONTENT_BYTES) return null
+    return textOf(await readFile(abs))
+  } catch {
+    return null
+  }
+}
+
+function hasExpandableContext(result: GitDiffResult): boolean {
+  if (!result.ok || result.truncated || result.binary || result.untracked || !result.patch) return false
+  if (/^(new|deleted) file mode /m.test(result.patch)) return false
+  return (result.patch.match(/^diff --git /gm) ?? []).length === 1
+}
+
+async function readDiffContents(
+  target: DiffTarget,
+  range: ResolvedRange | null,
+  result: GitDiffResult
+): Promise<GitDiffContents | undefined> {
+  if (!hasExpandableContext(result)) return undefined
+  const { scope, rootRel, abs, deadline } = target
+  let pair: [Promise<string | null>, Promise<string | null>]
+  if (!range) {
+    if (result.staged === result.unstaged) return undefined
+    pair = result.staged
+      ? [readBlobText(scope.root, 'HEAD', rootRel, deadline), readBlobText(scope.root, '', rootRel, deadline)]
+      : [readBlobText(scope.root, '', rootRel, deadline), readWorkingText(abs)]
+  } else {
+    if (range.base === EMPTY_TREE) return undefined
+    pair = [
+      readBlobText(scope.root, range.base, rootRel, deadline),
+      range.target ? readBlobText(scope.root, range.target, rootRel, deadline) : readWorkingText(abs)
+    ]
+  }
+  const [before, after] = await Promise.all(pair)
+  return before !== null && after !== null ? { before, after } : undefined
+}
+
 export interface FileDiffOptions {
   scope?: unknown
   images?: boolean
+  contents?: boolean
 }
 
 export async function readFileDiff(
@@ -797,6 +850,10 @@ export async function readFileDiff(
     range = resolved
   }
   const result = range ? await readRangeDiff(target, range) : await readWorkingDiff(target)
+  if (options.contents && !imageMimeOf(rel)) {
+    const contents = await readDiffContents(target, range, result).catch(() => undefined)
+    return contents ? { ...result, contents } : result
+  }
   const mime = imageMimeOf(rel)
   if (!result.ok || !options.images || !mime) return result
   const unborn = range ? false : !(await gitRun(scope.root, [...READ_GLOBALS, 'rev-parse', '--verify', '--quiet', 'HEAD'], readOpts(deadline, 8000))).ok

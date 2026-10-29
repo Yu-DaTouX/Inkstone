@@ -247,6 +247,12 @@ export interface GitDiffRequest {
   path: string
   scope?: GitChangesScope
   images?: boolean
+  contents?: boolean
+}
+
+export interface GitDiffContents {
+  before: string
+  after: string
 }
 
 export interface GitDiffResult {
@@ -261,4 +267,5 @@ export interface GitDiffResult {
   bytes: number
   error?: string
   image?: { before: GitImageSide; after: GitImageSide }
+  contents?: GitDiffContents
 }

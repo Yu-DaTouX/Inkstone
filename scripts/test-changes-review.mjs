@@ -28,16 +28,22 @@ try {
   await build({
     entryPoints: [
       'src/renderer/src/features/changes/test-files.ts',
-      'src/renderer/src/features/changes/viewed-files.ts'
+      'src/renderer/src/features/changes/viewed-files.ts',
+      'src/renderer/src/features/diff/patch-files.ts',
+      'src/renderer/src/features/diff/annotation-keys.ts'
     ],
     outdir,
     bundle: true,
     format: 'esm',
     platform: 'node',
+    external: ['@pierre/diffs'],
     logLevel: 'silent'
   })
-  const tests = await import(pathToFileURL(join(outdir, 'test-files.js')).href)
-  const viewed = await import(pathToFileURL(join(outdir, 'viewed-files.js')).href)
+  const tests = await import(pathToFileURL(join(outdir, 'changes', 'test-files.js')).href)
+  const viewed = await import(pathToFileURL(join(outdir, 'changes', 'viewed-files.js')).href)
+  const patchFiles = await import(pathToFileURL(join(outdir, 'diff', 'patch-files.js')).href)
+  const keys = await import(pathToFileURL(join(outdir, 'diff', 'annotation-keys.js')).href)
+  const pierre = await import('@pierre/diffs')
 
   for (const path of [
     'src/foo.test.ts',
@@ -169,6 +175,112 @@ try {
   assert.deepEqual(viewed.readViewedFiles(fakeStorage({ [viewed.VIEWED_FILES_KEY]: 'broken' })), {}, '坏记录回退为空表')
   assert.deepEqual(viewed.readViewedFiles(hostile), {}, '读取抛错时安全回退')
   assert.doesNotThrow(() => viewed.writeViewedFiles({}, hostile), '写入抛错时不影响界面')
+
+  const before = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`)
+  const after = before.slice()
+  after[4] = 'line 5 changed'
+  after.splice(20, 1)
+  const beforeText = `${before.join('\n')}\n`
+  const afterText = `${after.join('\n')}\n`
+  const patch = [
+    'diff --git a/src/a.ts b/src/a.ts',
+    'index 1111111..2222222 100644',
+    '--- a/src/a.ts',
+    '+++ b/src/a.ts',
+    '@@ -4,3 +4,3 @@',
+    ' line 4',
+    '-line 5',
+    '+line 5 changed',
+    ' line 6',
+    '@@ -20,3 +20,2 @@',
+    ' line 20',
+    '-line 21',
+    ' line 22',
+    ''
+  ].join('\n')
+  const parsed = patchFiles.patchFiles(patch, 'src/a.ts', 'test')
+  ok(parsed.kind === 'files' && parsed.files.length === 1, '补丁解析成单文件')
+  const file = parsed.files[0]
+  ok(patchFiles.canExpandContext(file), '只有补丁的修改文件可以补全上下文')
+  ok(patchFiles.contentsMatchPatch(file, { before: beforeText, after: afterText }), '新旧全文与补丁一致时可展开')
+  ok(
+    patchFiles.contentsMatchPatch(file, { before: beforeText.replace(/\n/g, '\r\n'), after: afterText.replace(/\n/g, '\r\n') }),
+    'CRLF 全文按 LF 比对'
+  )
+  ok(!patchFiles.contentsMatchPatch(file, { before: beforeText, after: afterText.replace('line 5 changed', 'line 5 again') }), '工作区已变化时拒绝展开')
+  ok(!patchFiles.contentsMatchPatch(file, { before: 'x\n', after: 'y\n' }), '全文过短时拒绝展开')
+  const added = patchFiles.patchFiles('diff --git a/n.ts b/n.ts\nnew file mode 100644\n--- /dev/null\n+++ b/n.ts\n@@ -0,0 +1 @@\n+x\n', 'n.ts', 'test')
+  ok(!patchFiles.canExpandContext(added.files[0]), '新增文件不需要补全上下文')
+
+  const hydrated = pierre.hydratePartialDiff('clone', file, patchFiles.loadedFiles(file, { before: beforeText, after: afterText }))
+  ok(hydrated.isPartial === false, 'pierre 用全文把补丁补成完整 diff')
+  ok(file.isPartial === true, 'clone 模式不改原补丁对象')
+  ok(hydrated.hunks[0].collapsedBefore === 3, '首个分隔条前有 3 行未改动')
+  ok(hydrated.hunks[1].collapsedBefore === 13, '两段改动之间有 13 行未改动')
+  const lastEnd = hydrated.hunks[1].additionStart + hydrated.hunks[1].additionCount - 1
+  ok(after.length - lastEnd === 8, '末段之后还有 8 行未改动')
+  const expanded = patchFiles.annotationRange(hydrated, { start: 10, end: 11, side: 'additions', endSide: 'additions' })
+  ok(expanded?.code === 'line 10\nline 11', '展开后的未改动行也能取到批注代码')
+
+  const lines = patchFiles.keyboardLines([file])
+  assert.deepEqual(
+    lines.map((line) => `${line.kind}:${line.side}:${line.lineNumber}`),
+    [
+      'context:additions:4',
+      'deletion:deletions:5',
+      'addition:additions:5',
+      'context:additions:6',
+      'context:additions:20',
+      'deletion:deletions:21',
+      'context:additions:21'
+    ],
+    '键盘行序与统一视图一致'
+  )
+  checks++
+  ok(lines[2].text === 'line 5 changed', '键盘行带代码文本')
+  let cursor = patchFiles.moveKeyCursor(lines, null, 1, false)
+  ok(cursor.focus === 1 && cursor.anchor === 1, '首次按方向键落在第一处改动')
+  cursor = patchFiles.moveKeyCursor(lines, cursor, 1, false)
+  ok(cursor.focus === 2, '方向键下移一行')
+  ok(patchFiles.moveKeyCursor(lines, cursor, -99, false).focus === 0, '上移不越过首行')
+  ok(patchFiles.moveKeyCursor(lines, cursor, 99, false).focus === lines.length - 1, '下移不越过末行')
+  const extended = patchFiles.moveKeyCursor(lines, { anchor: 2, focus: 2 }, 1, true)
+  ok(extended.anchor === 2 && extended.focus === 3, 'Shift 扩选保持锚点')
+  ok(patchFiles.moveKeyCursor(lines, { anchor: 3, focus: 3 }, 2, true).focus === 3, '扩选不跨过未显示的折叠区')
+  const skipDeletion = patchFiles.moveKeyCursor(lines, { anchor: 4, focus: 4 }, 2, true)
+  ok(skipDeletion.focus === 6, '从新文件一侧扩选时跳过删除行')
+  const range = patchFiles.keyCursorRange(lines, skipDeletion)
+  assert.deepEqual(
+    { side: range.side, start: range.start, end: range.end, count: range.count },
+    { side: 'additions', start: 20, end: 21, count: 2 },
+    '扩选范围按同一侧行号计算'
+  )
+  checks++
+  const fromDeletion = patchFiles.moveKeyCursor(lines, { anchor: 1, focus: 1 }, 2, true)
+  ok(fromDeletion.focus === 3, '从删除行扩选跳过新增行、包含未改动行')
+  const oldRange = patchFiles.keyCursorRange(lines, fromDeletion)
+  assert.deepEqual(
+    { side: oldRange.side, start: oldRange.start, end: oldRange.end },
+    { side: 'deletions', start: 5, end: 6 },
+    '旧文件一侧的未改动行按旧行号计算'
+  )
+  checks++
+  ok(
+    patchFiles.annotationRange(file, { start: 5, end: 6, side: 'deletions', endSide: 'deletions' })?.code === 'line 5\nline 6',
+    '旧文件一侧的扩选可生成批注代码'
+  )
+  const single = patchFiles.keyCursorRange(lines, { anchor: 1, focus: 1 })
+  ok(single.side === 'deletions' && single.start === 5 && single.end === 5, '删除行选择落在旧文件一侧')
+  const resolved = patchFiles.annotationRange(file, { start: single.start, end: single.end, side: single.side, endSide: single.side })
+  ok(resolved?.code === 'line 5', '键盘选择可直接生成批注代码')
+  ok(patchFiles.moveKeyCursor([], null, 1, false) === null, '没有可选行时不建光标')
+
+  ok(keys.annotationKeyAction({ key: 'Enter', shiftKey: false }) === 'submit', 'Enter 发送批注')
+  ok(keys.annotationKeyAction({ key: 'Enter', shiftKey: true }) === null, 'Shift+Enter 换行')
+  ok(keys.annotationKeyAction({ key: 'Escape', shiftKey: false }) === 'cancel', 'Esc 取消批注')
+  ok(keys.annotationKeyAction({ key: 'Enter', shiftKey: false, isComposing: true }) === null, '输入法组字时 Enter 不发送')
+  ok(keys.annotationKeyAction({ key: 'Enter', shiftKey: false, keyCode: 229 }) === null, '输入法 keyCode 229 不发送')
+  ok(keys.annotationKeyAction({ key: 'Escape', shiftKey: false, isComposing: true }) === null, '输入法组字时 Esc 不取消')
 } finally {
   await rm(outdir, { recursive: true, force: true })
 }

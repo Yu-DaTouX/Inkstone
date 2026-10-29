@@ -142,6 +142,12 @@ export const DIFF_UNSAFE_CSS = `
   border-radius: var(--r-xs) !important;
 }
 
+[data-expand-button]:focus-visible {
+  outline: none !important;
+  color: var(--diffs-fg) !important;
+  box-shadow: var(--ring-focus-inset) !important;
+}
+
 [data-diff],
 [data-file] {
   transition: opacity var(--dur-base) var(--ease);

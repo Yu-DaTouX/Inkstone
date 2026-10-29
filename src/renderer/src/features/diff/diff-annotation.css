@@ -5,6 +5,7 @@
     flex-wrap: wrap;
     align-items: flex-start;
     gap: var(--s-6);
+    min-width: 0;
     padding: var(--s-6) var(--s-8);
     border-block: 1px solid var(--line);
     background: var(--surface);
@@ -26,13 +27,16 @@
 
   .diff-annotation__actions {
     display: flex;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--s-4);
+    min-width: 0;
   }
 
   .diff-annotation__hint {
+    min-width: 0;
     color: var(--fg3);
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 }

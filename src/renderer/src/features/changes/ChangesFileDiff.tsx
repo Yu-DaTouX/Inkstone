@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { GitChangePatch, GitChangesScope } from '../../../../shared/git'
 import {
   Badge,
@@ -14,7 +14,7 @@ import {
 } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { porcelainFileStatus } from '../../lib/file-status'
-import { DiffView, type DiffViewMode } from '../diff'
+import { DiffView, type DiffContents, type DiffViewMode } from '../diff'
 import { ImageCompare } from './ImageCompare'
 import { resolvePatchSource } from './changes-scope'
 import type { ChangeItem, ChangesAnnotate, ChangesImagePair, ChangesPatch, PatchLoader } from './types'
@@ -45,6 +45,12 @@ type PatchState =
   | { kind: 'too-large' }
   | { kind: 'image'; image: ChangesImagePair | null }
   | { kind: 'error'; message: string }
+
+function samePatchText(patch: string): string {
+  const text = patch.replace(/\r\n/g, '\n')
+  const body = text.search(/^@@ /m)
+  return (body < 0 ? text : text.slice(body)).trim()
+}
 
 export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
   const { item, entry, cwd, request, loader, schedule, tick, lang, text, mode, expanded, onToggle, onRetry, annotate } = props
@@ -94,6 +100,17 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
       alive = false
     }
   }, [origin, expanded, loader, cwd, item.path, request, schedule, tick])
+
+  const shownPatch = useRef('')
+  shownPatch.current = state.kind === 'patch' ? state.patch : ''
+  const canLoadContents = Boolean(loader) && origin.kind !== 'image' && state.kind === 'patch' && !state.truncated
+  const loadContents = useCallback(async (): Promise<DiffContents | null> => {
+    if (!loader) return null
+    const expected = samePatchText(shownPatch.current)
+    const value = await schedule(() => loader(cwd, item.path, { scope: request, contents: true }))
+    if (!value.contents || samePatchText(value.patch) !== expected) return null
+    return value.contents
+  }, [loader, schedule, cwd, item.path, request])
 
   const status = porcelainFileStatus(item.status)
   const labels: string[] = []
@@ -148,6 +165,7 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
             lang={lang}
             mode={mode}
             showFileHeader={false}
+            loadContents={canLoadContents ? loadContents : undefined}
             annotate={
               annotate
                 ? { labels: annotate.labels, onSubmit: (annotation) => annotate.onComment(item.path, annotation) }

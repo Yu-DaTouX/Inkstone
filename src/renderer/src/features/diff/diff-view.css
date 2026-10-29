@@ -52,10 +52,19 @@
     box-shadow: var(--ring-focus-inset);
   }
 
+  .diff-view__keys {
+    display: contents;
+  }
+
   .diff-view__files {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    outline: none;
+  }
+
+  .diff-view__files:focus-visible {
+    box-shadow: var(--ring-focus-inset);
   }
 
   .diff-view__file {

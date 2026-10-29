@@ -71,7 +71,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     const cwd = String(raw.cwd ?? '')
     const path = String(raw.path ?? '')
     try {
-      return await readFileDiff(cwd, path, authorizeReadCwd, { scope: raw.scope, images: raw.images === true })
+      return await readFileDiff(cwd, path, authorizeReadCwd, { scope: raw.scope, images: raw.images === true, contents: raw.contents === true })
     } catch (error) {
       return {
         ok: false,

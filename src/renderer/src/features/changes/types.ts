@@ -7,7 +7,7 @@ import type {
   GitStatusEntry
 } from '../../../../shared/git'
 import type { GitActionExpected } from '../../../../shared/git-actions'
-import type { DiffAnnotateLabels, DiffAnnotationPayload } from '../diff'
+import type { DiffAnnotateLabels, DiffAnnotationPayload, DiffContents } from '../diff'
 import type { WorkspaceOwner } from '../workbench/types'
 
 export type ChangesOwner = WorkspaceOwner
@@ -53,11 +53,13 @@ export interface ChangesPatch {
   truncated?: boolean
   binary?: boolean
   image?: ChangesImagePair
+  contents?: DiffContents
 }
 
 export interface PatchRequest {
   scope?: GitChangesScope
   images?: boolean
+  contents?: boolean
 }
 
 export type PatchLoader = (cwd: string, path: string, request?: PatchRequest) => Promise<ChangesPatch>

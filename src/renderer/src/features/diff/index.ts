@@ -7,3 +7,4 @@ export {
   type DiffAnnotationPayload
 } from './DiffAnnotation'
 export type { DiffViewMode } from './types'
+export type { DiffContents } from './patch-files'

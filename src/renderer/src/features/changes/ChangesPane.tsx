@@ -135,9 +135,9 @@ function defaultLoadPatch(): PatchLoader | undefined {
   return async (cwd, path, request): Promise<ChangesPatch> => {
     const git = bridge()
     if (!git?.diff) throw new Error(uiText('state.error.gitUnavailable'))
-    const res = await git.diff({ cwd, path, scope: request?.scope, images: request?.images })
+    const res = await git.diff({ cwd, path, scope: request?.scope, images: request?.images, contents: request?.contents })
     if (!res.ok) throw new Error(res.error ?? uiText('state.error.diffReadFailed'))
-    return { patch: res.patch, truncated: res.truncated, binary: res.binary, image: res.image }
+    return { patch: res.patch, truncated: res.truncated, binary: res.binary, image: res.image, contents: res.contents }
   }
 }
 
