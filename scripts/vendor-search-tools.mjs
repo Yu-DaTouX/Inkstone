@@ -29,6 +29,11 @@ export const SEARCH_TOOL_PINS = {
 
 const MANIFEST = 'search-tools.json'
 
+function systemTar() {
+  if (process.platform !== 'win32') return 'tar'
+  return join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+}
+
 function findFile(dir, name) {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry)
@@ -82,7 +87,7 @@ async function main() {
       await fetchPinned(pin, archive)
       const extracted = join(work, pin.binary.replace(/\W/g, '_'))
       mkdirSync(extracted)
-      execFileSync('tar', ['-xf', archive, '-C', extracted])
+      execFileSync(systemTar(), ['-xf', archive, '-C', extracted])
       const found = findFile(extracted, pin.binary)
       if (!found) throw new Error(`${pin.binary} not found in ${pin.url}`)
       copyFileSync(found, join(SEARCH_TOOLS_DIR, pin.binary))
