@@ -101,7 +101,7 @@ const STUBS = {
   'src/renderer/src/lib/composer-submit.ts': 'export async function submitComposerInput(){ return undefined }',
   'src/renderer/src/lib/v3-submit-ownership.ts': 'export function attachmentsAfterSubmit(a){ return a }\nexport async function runLocalCommandGuarded(){ return "ran" }',
   'src/renderer/src/features/composer/attachment-files.ts': 'export async function readFiles(){ return [] }',
-  'src/renderer/src/ui/index.ts': 'export function Button(){ return null }\nexport function Notice(){ return null }\nexport function cx(){ return "" }',
+  'src/renderer/src/ui/index.ts': ['Button', 'Notice', 'IconButton', 'Menu', 'MenuItem', 'MenuSeparator', 'MenuTrigger', 'Popover', 'Tooltip', 'TooltipTrigger'].map((name) => `export function ${name}(){ return null }`).join('\n') + '\nexport function cx(){ return "" }',
   'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
   'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
   'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }\nexport function ImageRefWarning(){ return null }',
@@ -322,7 +322,7 @@ async function main() {
     let tree = rt.render(Composer, {})
     const wrap = tree
     ok(typeof wrap.props.className === 'string' && wrap.props.className.includes('composer-wrap'), '根是框外的 composer-wrap')
-    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'FileDropOverlay')
+    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'FileDropOverlay' && nameOf(child) !== 'PromptStash')
     ok(nameOf(wrapChildren[0]) === 'IsolationMergeBar', '合入确认条留在输入框卡片外上方')
     ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片紧跟合入确认条')
     ok(!wrapChildren.some((child) => nameOf(child) === 'QueueEditor'), '排队不再挂在输入框外')
@@ -337,13 +337,13 @@ async function main() {
 
     const line = byClass(card, 'composer-line')
     const lineChildren = children(line)
-    ok(controlNames(line).join('>') === 'PlusMenu>#composer-input>div', '输入行：＋在最左，随后编辑器，行尾一组按钮；无模式时不显示徽标', controlNames(line))
+    ok(controlNames(line).join('>') === '#composer-input', '输入行只放编辑器；无模式时不显示徽标', controlNames(line))
     const editorNode = lineChildren.find((child) => child?.props?.['data-testid'] === 'composer-input')
     ok(typeof editorNode?.type === 'function', '编辑器门面 testid 保留')
     ok(typeof editorNode?.props.onChange === 'function' && typeof editorNode?.props.onKeyDown === 'function', '门面仍以 onChange / onKeyDown 回调上层')
     ok(byClass(line, 'composer-prompt') === null, '输入行不再渲染 › 提示符')
-    const lineEnd = byClass(line, 'composer-line-end')
-    ok(controlNames(lineEnd).join('>') === 'VoiceButton>#composer-send', '行尾：语音→发送', controlNames(lineEnd))
+    const lineEnd = byClass(card, 'composer-line-end')
+    ok(controlNames(lineEnd).join('>') === 'ContextRing>PlusMenu>VoiceButton>#composer-send', '行尾：上下文环→＋→语音→发送', controlNames(lineEnd))
 
     const editorText = await readFile(join(ROOT, 'src/renderer/src/features/composer/ComposerEditor.tsx'), 'utf8')
     ok(!/<textarea/.test(editorText), '编辑器门面不再渲染 textarea')
@@ -359,14 +359,13 @@ async function main() {
     ok(/data-empty="/.test(editorText) && /dataset\.empty/.test(editorText), '空态用 data-empty 驱动占位符')
 
     const tools = byClass(card, 'composer-tools')
-    ok(controlNames(tools).join('>') === 'PermissionToggle>ProjectPicker', '状态行左侧：权限在最左、新会话项目选择次之')
+    ok(controlNames(tools).join('>') === 'ModelThinkingPicker>PermissionToggle>ProjectPicker', '状态行左侧：模型+思考→权限→新会话项目选择')
     const bar = byClass(card, 'composer-bar')
     const barControls = controlNames(bar)
-    ok(barControls.join('>') === 'div>div>ModelThinkingPicker', '状态行：左组→上下文环→模型+思考，发送不在状态行', barControls)
-    ok(controlNames(byClass(card, 'composer-aux')).join('>') === 'ContextRing', '上下文环单独在状态行右侧')
+    ok(barControls.join('>') === 'div>div', '状态行：左侧工具组→行尾按钮组', barControls)
     const inputChildren = children(byClass(card, 'composer-input'))
     ok(inputChildren.indexOf(line) >= 0 && inputChildren.indexOf(line) < inputChildren.indexOf(bar), '状态行在输入行下方、框内最底部')
-    ok(byTestId(card, 'composer-send').props.size === 'sm', '发送键用小号按钮')
+    ok(byTestId(card, 'composer-send').props.variant === 'primary', '发送键是主按钮')
     ok(byTestId(card, 'composer-send') !== null && byTestId(card, 'composer-stop') === null, '空闲时发送键在发送位')
 
     const ta = byTestId(card, 'composer-input')
@@ -394,7 +393,7 @@ async function main() {
     ta4.props.onChange({ text: '!npm test', cursor: 9 })
     tree = rt.render(Composer, {})
     const line2 = byClass(tree, 'composer-line')
-    ok(controlNames(line2).slice(0, 3).join('>') === 'PlusMenu>#composer-mode>#composer-input', '输入 `!` 时模式徽标作为输入前缀，紧跟＋', controlNames(line2))
+    ok(controlNames(line2).join('>') === '#composer-mode>#composer-input', '输入 `!` 时模式徽标作为输入前缀', controlNames(line2))
 
     __state.settings = { sendKey: 'ctrlEnter' }
     tree = rt.render(Composer, {})
@@ -415,7 +414,6 @@ async function main() {
     ok(/\n\s*\.composer\s*\{[^}]*border-radius:\s*var\(--r-side\)/.test(composerCssText) && /\n\s*\.composer\s*\{[^}]*box-shadow:\s*var\(--shadow-comp-float\)/.test(composerCssText), '外框用左栏同款 12px 圆角与浮起阴影令牌')
     ok(/\n\s*\.composer::after\s*\{[^}]*var\(--comp-rim-hi\)[^}]*var\(--comp-rim-lo\)/.test(composerCssText), '外框 135° 高光描边取 comp-rim 令牌')
     ok(!/cp-label\s*\{[^}]*clip-path/.test(composerCssText), '窄屏下权限文字不再隐藏')
-    ok(/\n\s*\.composer-line\s*\{[^}]*align-items:\s*flex-end/.test(composerCssText), '多行时输入行按钮贴底对齐')
     ok(/\n\s*\.composer-queue\s*\{[^}]*border-bottom:\s*1px solid var\(--line\)/.test(composerCssText) && !/\.cq-pending\s*\{/.test(composerCssText), '排队行和计划行同款分隔线，去掉蓝色底')
     const queueSource = await readFile(join(ROOT, 'src/renderer/src/features/composer/QueueEditor.tsx'), 'utf8')
     const queueCssText = await readFile(join(ROOT, 'src/renderer/src/features/composer/queue-editor.css'), 'utf8')
