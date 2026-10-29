@@ -41,8 +41,8 @@ const TITLEBAR_PANES = [
 ] as const
 
 const HEAD_TEXT = {
-  'zh-CN': { sessionBar: '会话栏', changesDirty: '有未提交的改动' },
-  'en-US': { sessionBar: 'Session', changesDirty: 'uncommitted changes' }
+  'zh-CN': { changesDirty: '有未提交的改动' },
+  'en-US': { changesDirty: 'uncommitted changes' }
 } as const
 
 const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['browser', 'logs', 'device', 'pullRequests']
@@ -176,7 +176,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                 tooltip={sessionBarLabel}
                 aria-label={sessionBarLabel}
                 aria-pressed={sessionBarOpen}
-                pressedTone="outline"
+                pressedTone="mark"
                 className="v3-head-pane"
                 onPress={onToggleSessionBar}
                 data-testid="v3-header-sessionbar"
@@ -187,7 +187,6 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                 <span className="v3-head-pane-glyph">
                   <SquareMenu size={16} />
                 </span>
-                {sessionBarVisible ? <span className="v3-head-pane-label" aria-hidden>{headText.sessionBar}</span> : null}
               </IconButton>
               {narrow
                 ? null
@@ -197,7 +196,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                       tooltip={paneLabel(tab)}
                       aria-label={paneLabel(tab)}
                       aria-pressed={openPanes.has(tab)}
-                      pressedTone="outline"
+                      pressedTone="mark"
                       className="v3-head-pane"
                       data-testid={`wb-open-${tab}`}
                       data-open={openPanes.has(tab) ? '1' : undefined}
@@ -207,7 +206,6 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                         <Icon size={16} />
                         {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} data-tone={tab} /> : null}
                       </span>
-                      {openPanes.has(tab) ? <span className="v3-head-pane-label" aria-hidden>{toolText.tabs[tab]}</span> : null}
                     </IconButton>
                   ))}
             </div>

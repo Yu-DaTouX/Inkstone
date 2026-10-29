@@ -49,7 +49,7 @@
     --rail-gutter: calc(var(--s-8) + 28px + var(--s-8));
     --stream-scrollbar: 10px;
     --col-pl-min: calc(var(--s-20) + var(--rail-gutter) * var(--outline-on, 0));
-    --col-r: calc(var(--s-20) + var(--tiles-reserve));
+    --col-r: calc(var(--s-20) + (var(--rail-gutter) - var(--s-16)) * var(--outline-on, 0) + var(--tiles-reserve));
     --col-hidden-scrollbar: calc(var(--stream-scrollbar) * var(--tiles-on, 0));
     --col-window-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
     --col-pl-to: max(var(--col-pl-min), min((100% + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-window-shift), 100% - var(--col-r) - var(--size-chat)));
@@ -67,7 +67,7 @@
     --col-pad-r: var(--col-pad-r-at);
     transition-property: --col-pl-at, --col-pr-at, --col-pad-l-at, --col-pad-r-at;
     transition-duration: var(--dur-sheet);
-    transition-timing-function: ease-in-out;
+    transition-timing-function: var(--ease-inout);
   }
   .v3-root:has(.ui-splitter[data-dragging]) .v3-chat {
     transition: none;
@@ -148,10 +148,10 @@
     content: '';
     position: absolute;
     inset: 0 0 auto 0;
-    height: var(--s-20);
+    height: var(--s-12);
     z-index: 5;
     pointer-events: none;
-    background: linear-gradient(to bottom, var(--bg) 30%, color-mix(in srgb, var(--bg) 82%, transparent) 50%, color-mix(in srgb, var(--bg) 45%, transparent) 72%, color-mix(in srgb, var(--bg) 14%, transparent) 88%, transparent);
+    background: linear-gradient(to bottom, var(--bg), color-mix(in srgb, var(--bg) 60%, transparent) 45%, transparent);
   }
 
   @supports (animation-timeline: scroll()) {
@@ -164,7 +164,7 @@
 
   @keyframes v3-top-fade {
     to {
-      height: var(--s-48);
+      height: var(--s-24);
     }
   }
 
@@ -317,27 +317,9 @@
     position: relative;
   }
 
-  .v3-head-pane > .ui-btn__label {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-6);
-  }
-
-  .v3-head-pane[data-open='1'] {
-    width: auto;
-    padding-inline: var(--s-8) var(--s-10);
-  }
-
   .v3-head-pane-glyph {
     position: relative;
     display: inline-flex;
-  }
-
-  .v3-head-pane-label {
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    font-weight: var(--w-medium);
-    white-space: nowrap;
   }
 
   .v3-head-sep.ui-separator[aria-orientation='vertical'] {
