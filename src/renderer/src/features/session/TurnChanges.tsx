@@ -9,8 +9,8 @@ import { openPanelTool } from '../workbench/panel-actions'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import type { UIMessage } from '../../../../shared/ipc'
 import type { AssistantTurn } from '../../../../shared/turns'
-import { collectTurnChanges, groupChangesByDir, isInsideCwd, splitChangePath, type TurnChangeGroup, type TurnChanges as TurnChangeSet, type TurnFileChange, type TurnFileStatus } from './turn-changes'
-import { processSummary, type ProcessFileChange } from './turn-process'
+import { groupChangesByDir, splitChangePath, type TurnChangeGroup, type TurnFileChange, type TurnFileStatus } from './turn-changes'
+import { turnChangeSet } from './turn-process'
 import './turn-changes.css'
 
 const OPEN_GROUPS_UP_TO = 1
@@ -56,33 +56,13 @@ function promptBefore(messages: readonly UIMessage[], sourceIds: readonly string
   return null
 }
 
-function estimatedChanges(turn: AssistantTurn, cwd?: string): TurnChangeSet | null {
-  if (!turn.segments.length) return null
-  const summary = processSummary(turn.segments)
-  const rows = (list: readonly ProcessFileChange[], status: TurnFileStatus): TurnFileChange[] => list
-    .filter((file) => file.path !== file.base || /\.[^.]+$/.test(file.base))
-    .filter((file) => isInsideCwd(file.path, cwd))
-    .map((file) => ({ path: file.path, status, added: file.added ?? -1, removed: file.removed ?? -1 }))
-  const files = [...rows(summary.creates, 'created'), ...rows(summary.edits, 'modified')]
-  if (!files.length) return null
-  const counts: Record<TurnFileStatus, number> = { created: 0, modified: 0, deleted: 0 }
-  for (const file of files) counts[file.status] += 1
-  const known = files.every((file) => file.added >= 0 && file.removed >= 0)
-  return {
-    files,
-    counts,
-    added: known ? files.reduce((sum, file) => sum + file.added, 0) : -1,
-    removed: known ? files.reduce((sum, file) => sum + file.removed, 0) : -1
-  }
-}
-
 export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTurn; readOnly: boolean; rewindOwner: string | null }): JSX.Element | null {
   const { lang } = useI18n()
   const openRewind = useStore((s) => s.openRewind)
   const sessionCwd = useStore((s) => s.session?.cwd)
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({})
   const cwd = turn.response?.sourceCwd || sessionCwd || undefined
-  const changes = useMemo(() => collectTurnChanges(turn.tools, cwd) ?? estimatedChanges(turn, cwd), [turn, cwd])
+  const changes = useMemo(() => turnChangeSet(turn, cwd), [turn, cwd])
   const wantsCheckpoint = !!changes && !readOnly && !!rewindOwner
   const checkpoints = useStore((s) => s.checkpoints)
   const owned = useMemo(

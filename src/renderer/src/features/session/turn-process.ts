@@ -1,7 +1,7 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../shared/turns'
 import { countedProcessCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolCategory } from './tool-run-model'
-import { callPath, readFileDiff, readPiDiff } from './turn-changes'
+import { callPath, collectTurnChanges, isInsideCwd, readFileDiff, readPiDiff, type TurnChanges, type TurnFileChange, type TurnFileStatus } from './turn-changes'
 import { isHistoryQuestionCall } from './question-receipt'
 import { searchStepOf } from './web-search/model'
 
@@ -386,4 +386,25 @@ export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_
   })
   const tools = dropped.reduce((sum, segment) => sum + segment.tools.length, 0)
   return { shown, hidden: tools || dropped.length }
+}
+
+export function turnChangeSet(turn: AssistantTurn, cwd?: string): TurnChanges | null {
+  const collected = collectTurnChanges(turn.tools, cwd)
+  if (collected || !turn.segments.length || turn.tools.some((tool) => tool.status === 'running')) return collected
+  const summary = processSummary(turn.segments)
+  const rows = (list: readonly ProcessFileChange[], status: TurnFileStatus): TurnFileChange[] => list
+    .filter((file) => file.path !== file.base || /\.[^.]+$/.test(file.base))
+    .filter((file) => isInsideCwd(file.path, cwd))
+    .map((file) => ({ path: file.path, status, added: file.added ?? -1, removed: file.removed ?? -1 }))
+  const files = [...rows(summary.creates, 'created'), ...rows(summary.edits, 'modified')]
+  if (!files.length) return null
+  const counts: Record<TurnFileStatus, number> = { created: 0, modified: 0, deleted: 0 }
+  for (const file of files) counts[file.status] += 1
+  const known = files.every((file) => file.added >= 0 && file.removed >= 0)
+  return {
+    files,
+    counts,
+    added: known ? files.reduce((sum, file) => sum + file.added, 0) : -1,
+    removed: known ? files.reduce((sum, file) => sum + file.removed, 0) : -1
+  }
 }

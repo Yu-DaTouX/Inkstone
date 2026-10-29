@@ -163,6 +163,12 @@ const paths = (list) => list.map((item) => item.path)
   assert.equal(rail.sessionLineTotals(outside, CWD).files, 0, '项目外变动同样过滤')
   const running = [assistant([call('pending.md', 'created', 300, { status: 'running' })])]
   assert.equal(rail.sessionLineTotals(running, CWD).files, 0, '未完成的改动不提前计数')
+  const estimated = [assistant([{ id: 'est', name: 'edit', status: 'ok', args: { path: 'notes.md', edits: [{ oldText: 'a', newText: 'b\nc' }] } }])]
+  const estimatedTurn = turns.groupIntoTurns(estimated).find((turn) => turn.kind === 'assistant')
+  const estimatedCard = process.turnChangeSet(estimatedTurn, CWD)
+  const estimatedRail = rail.sessionLineTotals(estimated, CWD)
+  assert.ok(estimatedCard && estimatedCard.files.length === 1, '没有 diff 时对话卡退回估算')
+  assert.deepEqual([estimatedRail.files, estimatedRail.added, estimatedRail.removed], [estimatedCard.files.length, estimatedCard.added, estimatedCard.removed], '估算时右栏与对话卡同源')
   const unknown = rail.sessionLineTotals([assistant([call('binary.png', 'modified', 300, { details: { fileDiff: { ...diff('binary.png', 'modified').fileDiff, added: -1, removed: -1 } } })])], CWD)
   assert.equal(unknown.added, -1)
   assert.equal(unknown.entries[0].added, null, '无法计行时不伪造零行数')

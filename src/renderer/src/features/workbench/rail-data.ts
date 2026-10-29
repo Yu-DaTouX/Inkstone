@@ -4,6 +4,7 @@ import type { UIMessage, UIToolCall } from '../../../../shared/ipc'
 import { callPath, collectTurnChanges, isInsideCwd, readFileDiff } from '../session/turn-changes'
 import { groupIntoTurns } from '../../../../shared/turns'
 import { countedProcessCalls } from '../session/tool-run-model'
+import { turnChangeSet } from '../session/turn-process'
 
 export interface RailChangedFile {
   path: string
@@ -32,7 +33,7 @@ export function sessionLineTotals(messages: readonly UIMessage[], cwd?: string):
   const files = new Map<string, RailChangedFile>()
   let countable = true
   for (const turn of turns) {
-    const changes = collectTurnChanges(turn.tools, cwd)
+    const changes = turnChangeSet(turn, turn.response?.sourceCwd || cwd)
     if (!changes) continue
     if (changes.added < 0 || changes.removed < 0) countable = false
     for (const file of changes.files) {
