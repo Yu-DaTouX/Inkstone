@@ -269,7 +269,7 @@ export async function listAuthProviders(
 
   const base: AuthProviderInfo[] = CATALOG.map((c) => {
     if ((c.authKey && configured.has(c.authKey)) || configured.has(c.id)) {
-      return { ...c, status: 'ready' as const, source: 'auth.json' as const }
+      return { ...c, status: 'ready' as const, source: 'auth.json' as const, ...(fromEnv(c.envVar) ? { envShadowed: true } : {}) }
     }
     if (fromEnv(c.envVar)) {
       return { ...c, status: 'ready' as const, source: 'env' as const }

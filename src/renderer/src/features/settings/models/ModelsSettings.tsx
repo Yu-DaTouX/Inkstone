@@ -333,7 +333,8 @@ export function ModelsSettings(): ReactElement {
           </span>
           {providerHint(p) ? <p className="ms-service-hint">{providerHint(p)}</p> : null}
           {p.envVar ? <p className="ms-service-env">{t('auth.orEnv')} <code>{p.envVar}</code></p> : null}
-          {fromEnv ? <p className="ms-service-warn">{text('envLocked')}</p> : null}
+          {fromEnv ? <p className="ms-service-warn">{text('envActive')}</p> : null}
+          {p.envShadowed ? <p className="ms-service-env">{text('envShadowed')}</p> : null}
         </div>
 
         <div className="ms-service-actions">
@@ -394,7 +395,7 @@ export function ModelsSettings(): ReactElement {
               {acceptsKey && state !== 'unknown' ? (
                 <Button
                   variant="secondary"
-                  isDisabled={busy || codexLogging || !!oauth || fromEnv}
+                  isDisabled={busy || codexLogging || !!oauth}
                   data-testid={`ms-set-${p.id}`}
                   onPress={() => {
                     setEditing(p.id)
@@ -452,7 +453,7 @@ export function ModelsSettings(): ReactElement {
           />
         ) : null}
         {acceptsKey && (pools[authIdOf(p)]?.length ?? 0) > 0 ? (
-          <ApiKeyList provider={authIdOf(p)} keys={pools[authIdOf(p)] ?? []} disabled={busy || editingThis || fromEnv || codexLogging || !!oauth || !!pendingRemove} onDone={keyListDone} />
+          <ApiKeyList provider={authIdOf(p)} keys={pools[authIdOf(p)] ?? []} disabled={busy || editingThis || codexLogging || !!oauth || !!pendingRemove} onDone={keyListDone} />
         ) : null}
         {activeOauth ? <OAuthPanel provider={p.id} events={oauth?.events ?? EMPTY} t={t} /> : null}
         {p.id === 'openai-codex' && codexLogging ? (

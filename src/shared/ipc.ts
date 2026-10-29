@@ -744,6 +744,7 @@ export interface AuthProviderInfo {
   inAppLogin?: boolean
   status: AuthStatus
   source?: 'auth.json' | 'env'
+  envShadowed?: boolean
 }
 
 export interface ProjectRecord {
