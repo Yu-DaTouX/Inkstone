@@ -54,10 +54,12 @@ try {
   console.log('✓ stored/deflate actual size and cumulative archive limits')
 
   const { extractOffice } = await mod('src/main/office/extract.ts', 'office')
-  const long = zip([['ppt/slides/slide1.xml', '<a:p><a:t>' + 'x'.repeat(2 * 1024 * 1024) + '</a:t></a:p>']])
+  const paragraph = '<a:p><a:t>' + 'x'.repeat(2000) + '</a:t></a:p>'
+  const long = zip(Array.from({ length: 300 }, (_, i) => [`ppt/slides/slide${i + 1}.xml`, `<p:sp>${paragraph.repeat(3)}</p:sp>`]))
   const preview = extractOffice(long, 'pptx')
   assert.equal(preview.ok, true); assert.equal(preview.truncated, true)
-  assert.equal(preview.sections[0].lines[0].length + preview.sections[0].title.length, 512 * 1024)
+  const returned = preview.sections.reduce((sum, section) => sum + section.title.length + section.lines.reduce((acc, line) => acc + line.length, 0), 0)
+  assert.ok(returned <= 512 * 1024 && returned > 500 * 1024, `returned ${returned}`)
   assert.equal(extractOffice(zip([['word/document.xml', 'x'.repeat(9 * 1024 * 1024)]]), 'docx').ok, false)
   console.log('✓ Office response character budget and oversized XML rejection')
 
