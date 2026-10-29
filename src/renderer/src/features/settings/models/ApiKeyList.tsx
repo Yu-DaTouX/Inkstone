@@ -46,6 +46,7 @@ export function ApiKeyList({ provider, keys, disabled, onDone }: ApiKeyListProps
               }}
             >
               <TextField
+                className="ms-key-rename-field"
                 aria-label={text('keyRename')}
                 value={renaming.draft}
                 onChange={(draft) => setRenaming({ id: k.id, draft })}

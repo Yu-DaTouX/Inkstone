@@ -20,9 +20,7 @@
 
   .ms-file-path {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-family: var(--font-mono);
   }
 
   .ms-file-count {
@@ -47,7 +45,7 @@
   .ms-rows > * + *:not(.settings-reveal),
   .ms-rows .settings-reveal__inner > .ms-service + .ms-service,
   .ms-rows > .ms-service ~ .settings-reveal .settings-reveal__inner > .ms-service:first-child {
-    border-top: 1px solid var(--alpha-1);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .ms-rows > .settings-reveal[data-open='0']:first-child + .ms-rows-foot {
@@ -115,7 +113,7 @@
   }
 
   .ms-vis-row:hover {
-    background: var(--alpha-1);
+    background: var(--hover);
   }
 
   .ms-vis-row[data-hidden='1'] .ms-vis-name {
@@ -150,14 +148,6 @@
     color: var(--fg3);
     font-family: var(--font-mono);
     font-size: var(--t-footnote);
-  }
-
-  .ms-rows-foot__chevron {
-    transition: transform var(--dur-base) var(--ease);
-  }
-
-  .ms-rows-foot [aria-expanded='true'] .ms-rows-foot__chevron {
-    transform: rotate(180deg);
   }
 
   .ms-service-main {
@@ -224,7 +214,7 @@
     min-width: 0;
   }
 
-  .ms-key-edit .ui-field {
+  .ms-key-edit-input {
     flex: 1;
     min-width: 0;
   }
@@ -238,7 +228,7 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    border: 1px solid var(--alpha-1);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-md);
   }
 
@@ -252,7 +242,7 @@
   }
 
   .ms-key + .ms-key {
-    border-top: 1px solid var(--alpha-1);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .ms-key-label {
@@ -288,7 +278,7 @@
     min-width: 0;
   }
 
-  .ms-key-rename .ui-field {
+  .ms-key-rename-field {
     flex: 1;
     min-width: 0;
   }
@@ -299,13 +289,6 @@
     gap: var(--s-6);
     font-size: var(--t-footnote);
     color: var(--fg3);
-  }
-
-  .ms-cli code {
-    font-family: var(--font-mono);
-    padding: 2px var(--s-6);
-    border-radius: var(--r-sm);
-    background: var(--sunken);
   }
 
   .ms-oauth {
@@ -361,23 +344,37 @@
     color: var(--ask-t);
   }
 
+  .ms-overlay {
+    z-index: calc(var(--z-modal) + 100);
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .ms-modal {
+    max-width: 400px;
+  }
+
   .ms-confirm-body {
-    margin: 0 0 var(--s-8);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
+    margin: 0;
     color: var(--fg2);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    overflow-wrap: anywhere;
   }
 
   .ms-confirm-target {
-    margin: 0 0 var(--s-16);
-    font-size: var(--t-prose);
+    margin: 0;
     color: var(--fg);
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
+    overflow-wrap: anywhere;
   }
 
   .ms-confirm-actions {
     display: flex;
+    flex-wrap: wrap-reverse;
+    align-items: center;
     justify-content: flex-end;
     gap: var(--s-8);
+    margin-top: var(--s-8);
   }
 
   .ms-custom {
@@ -447,7 +444,7 @@
     flex-direction: column;
     gap: var(--s-8);
     padding: var(--s-12) var(--s-16);
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-md);
     background: var(--surface);
   }
@@ -482,8 +479,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .ms-service,
-    .ms-custom-row,
-    .ms-rows-foot__chevron {
+    .ms-custom-row {
       transition: none;
     }
   }

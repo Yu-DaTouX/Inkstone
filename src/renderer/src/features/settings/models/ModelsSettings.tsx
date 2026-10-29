@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { ChevronDown } from 'lucide-react'
 import type { AuthProviderInfo, OAuthLoginEvent } from '../../../../../shared/ipc'
 import { modelErrorText } from '../../../../../shared/model-errors'
 import { useI18n, useT, type MessageKey } from '../../../i18n'
@@ -8,7 +7,12 @@ import { refreshModelsAfterRestart } from '../../../state/refresh-models'
 import {
   Badge,
   Button,
+  CollapsibleChevron,
   Dialog,
+  DialogFooter,
+  EmptyState,
+  Kbd,
+  MiddleTruncate,
   Modal,
   ModalOverlay,
   Notice,
@@ -350,6 +354,7 @@ export function ModelsSettings(): ReactElement {
                 />
               ) : null}
               <TextField
+                className="ms-key-edit-input"
                 aria-label={providerName(p)}
                 type="password"
                 autoComplete="off"
@@ -430,9 +435,9 @@ export function ModelsSettings(): ReactElement {
               ) : null}
               {!isKey && state === 'missing' ? (
                 <span className="ms-cli" title={t('auth.cmdTip')}>
-                  <code>pi</code>
+                  <Kbd>pi</Kbd>
                   <span aria-hidden>→</span>
-                  <code>/login</code>
+                  <Kbd>/login</Kbd>
                 </span>
               ) : null}
             </>
@@ -480,7 +485,7 @@ export function ModelsSettings(): ReactElement {
               {t('auth.safety')}
               {fileInfo ? (
                 <span className="ms-file">
-                  <code className="ms-file-path" title={fileInfo.path}>{fileInfo.path}</code>
+                  <MiddleTruncate className="ms-file-path" value={fileInfo.path} />
                   <span className="ms-file-count">
                     {' · '}
                     {fileInfo.exists ? t(fileInfo.count === 1 ? 'auth.entry' : 'auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
@@ -505,7 +510,7 @@ export function ModelsSettings(): ReactElement {
         testId="ms-services"
         plain
       >
-        {authProviders.length === 0 ? <p className="ms-note">{text('noAuthInfo')}</p> : null}
+        {authProviders.length === 0 ? <EmptyState size="sm" align="start" title={text('noAuthInfo')} /> : null}
       </SettingsGroup>
 
       {subscriptions.length > 0 ? (
@@ -525,7 +530,7 @@ export function ModelsSettings(): ReactElement {
                   <Button
                     variant="ghost"
                     aria-expanded={showAllKeys}
-                    icon={<ChevronDown size={16} className="ms-rows-foot__chevron" aria-hidden />}
+                    icon={<CollapsibleChevron expanded={showAllKeys} />}
                     data-testid="ms-toggle-keys"
                     onPress={() => setShowAllKeys((v) => !v)}
                   >
@@ -556,36 +561,36 @@ export function ModelsSettings(): ReactElement {
 
       {pendingRemove ? (
         <ModalOverlay
-          className="ms-overlay"
+          className="settings-confirm-overlay"
           isOpen
           isDismissable
           onOpenChange={(open) => {
             if (!open) setPendingRemove(null)
           }}
         >
-          <Modal className="ms-modal">
-            <Dialog title={text('removeTitle')} closeLabel={t('ui.cancel')}>
-              <p className="ms-confirm-body">
+          <Modal data-dialog-size="sm">
+            <Dialog alert title={text('removeTitle')} closeLabel={t('ui.cancel')}>
+              <p className="settings-confirm-desc">
                 {accountsOf(pendingRemove).length > 0
                   ? text('removeBodyAccounts').replace('{n}', String(accountsOf(pendingRemove).length)).replace('{keys}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
                   : (pools[authIdOf(pendingRemove)]?.length ?? 0) >= 2
                     ? text('removeBodyMany').replace('{n}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
                     : text('removeBody')}
               </p>
-              <p className="ms-confirm-target">{providerName(pendingRemove)}</p>
-              <div className="ms-confirm-actions">
-                <Button variant="secondary" onPress={() => setPendingRemove(null)}>
+              <p className="settings-confirm-target">{providerName(pendingRemove)}</p>
+              <DialogFooter>
+                <Button variant="ghost" autoFocus onPress={() => setPendingRemove(null)}>
                   {t('ui.cancel')}
                 </Button>
                 <Button
-                  variant="danger"
+                  variant="destructive"
                   data-testid="ms-remove-confirm"
                   isDisabled={busy}
                   onPress={() => void confirmRemove(pendingRemove)}
                 >
                   {text('removeConfirm')}
                 </Button>
-              </div>
+              </DialogFooter>
             </Dialog>
           </Modal>
         </ModalOverlay>

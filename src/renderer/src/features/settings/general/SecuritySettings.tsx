@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../../shared/approval'
 import { useStore } from '../../../state/store'
-import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
+import { Button, Dialog, DialogFooter, EmptyState, MiddleTruncate, Modal, ModalOverlay, Switch } from '../../../ui'
 import { generalText } from './general-text'
 import { permissionNeedsConfirm } from './general-model'
 import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
@@ -20,18 +20,14 @@ export interface AllowRootsListProps {
 export function AllowRootsList({ roots, emptyText, removeText, onRemove }: AllowRootsListProps): ReactElement {
   if (roots.length === 0) {
     return (
-      <p className="settings-row__desc" data-testid="v3-security-roots-empty">
-        {emptyText}
-      </p>
+      <EmptyState size="sm" align="start" className="settings-list-empty" title={emptyText} data-testid="v3-security-roots-empty" />
     )
   }
   return (
     <ul className="settings-roots" data-testid="v3-security-roots">
       {roots.map((path) => (
         <li className="settings-root" key={path} data-testid="v3-security-root">
-          <span className="settings-root__path" title={path}>
-            {path}
-          </span>
+          <MiddleTruncate className="settings-root__path" value={path} />
           <Button variant="danger" onPress={() => onRemove(path)}>
             {removeText}
           </Button>
@@ -126,15 +122,15 @@ export function SecuritySettings(): ReactElement {
       <PiProjectTrustGroup title={labels.groupSecurityProjects} />
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmAll} onOpenChange={setConfirmAll}>
-        <Modal className="settings-confirm-modal">
-          <Dialog className="settings-confirm" title={text.securityAllConfirmTitle} aria-label={text.securityAllConfirmTitle}>
-            <p className="settings-row__desc">{text.securityAllConfirmBody}</p>
-            <div className="settings-actions">
-              <Button variant="secondary" onPress={() => setConfirmAll(false)}>
+        <Modal data-dialog-size="sm">
+          <Dialog alert title={text.securityAllConfirmTitle} aria-label={text.securityAllConfirmTitle}>
+            <p className="settings-confirm-desc">{text.securityAllConfirmBody}</p>
+            <DialogFooter>
+              <Button variant="ghost" autoFocus onPress={() => setConfirmAll(false)}>
                 {text.cancel}
               </Button>
               <Button
-                variant="danger"
+                variant="destructive"
                 data-testid="v3-security-all-confirm"
                 onPress={() => {
                   setConfirmAll(false)
@@ -143,7 +139,7 @@ export function SecuritySettings(): ReactElement {
               >
                 {text.securityAllConfirmContinue}
               </Button>
-            </div>
+            </DialogFooter>
           </Dialog>
         </Modal>
       </ModalOverlay>

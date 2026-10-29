@@ -36,7 +36,7 @@ export function SubscriptionAccountList({ provider, name, accounts, disabled, on
                 setRenaming(null)
               }
             }}>
-              <TextField aria-label={text('keyRename')} value={renaming.draft} onChange={(draft) => setRenaming({ key: account.key, draft })} maxLength={40} isDisabled={disabled} autoFocus />
+              <TextField className="ms-key-rename-field" aria-label={text('keyRename')} value={renaming.draft} onChange={(draft) => setRenaming({ key: account.key, draft })} maxLength={40} isDisabled={disabled} autoFocus />
               <Button variant="primary" size="sm" type="submit" isDisabled={disabled || !renaming.draft.trim()}>{t('auth.save')}</Button>
               <Button variant="secondary" size="sm" isDisabled={disabled} onPress={() => setRenaming(null)}>{t('ui.cancel')}</Button>
             </form>

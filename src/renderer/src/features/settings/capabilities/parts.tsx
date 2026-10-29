@@ -117,7 +117,7 @@ export function Group({
 }): ReactElement {
   return (
     <SettingSection className="caps-group" title={title} description={desc} actions={actions} plain data-setting-id={settingId}>
-      {card ? <div className="caps-card">{children}</div> : children}
+      <div className={card ? 'caps-card' : 'caps-group-body'}>{children}</div>
     </SettingSection>
   )
 }

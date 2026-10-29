@@ -1,6 +1,10 @@
 @layer features {
-  .settings-shortcut > .ui-setting-row__ctl {
+  .settings-shortcut-ctl {
+    display: inline-flex;
     flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
   }
 
   .settings-shortcut-fixed {
@@ -8,9 +12,9 @@
     font-size: var(--t-caption);
   }
 
-  .settings-shortcut > .ui-setting-row__ctl > .settings-shortcut-keys {
+  .settings-shortcut-fixed-keys {
     min-height: var(--size-btn);
-    padding: 0 calc(var(--s-8) + 1px);
+    padding: 0 calc(var(--s-8) + var(--hair, 1px));
   }
 
   .settings-shortcut-status {

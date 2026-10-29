@@ -20,17 +20,10 @@
   }
 
   .caps-stack > :is(.caps-meta, .caps-note) + :is(.caps-meta, .caps-note),
-  .caps-stack > .ui-setting-section + :is(.caps-meta, .caps-note) {
+  .caps-stack > :is(.caps-group, .settings-group) + :is(.caps-meta, .caps-note) {
     margin-top: calc(var(--s-24) * -1);
   }
 
-  .caps-group {
-    gap: var(--s-8);
-  }
-
-  .caps-group > .ui-setting-section__head {
-    margin-bottom: var(--s-8);
-  }
 
   .caps-subgroup {
     display: flex;
@@ -66,10 +59,11 @@
   }
 
   .caps-list > * + * {
-    border-top: 1px solid var(--alpha-1);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
-  .caps-card {
+  .caps-card,
+  .caps-group-body {
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
@@ -159,7 +153,7 @@
     gap: var(--s-6);
     margin-top: var(--s-4);
     padding-top: var(--s-8);
-    border-top: 1px dashed var(--line);
+    border-top: var(--hair, 1px) dashed var(--line);
   }
 
   .caps-detail {
@@ -204,20 +198,7 @@
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
-  .caps-overlay {
-    z-index: calc(var(--z-modal) + 100);
-    background: transparent;
-    backdrop-filter: none;
-  }
-
-  .caps-modal {
-    max-width: min(560px, calc(100vw - var(--s-32)));
-  }
-
   .caps-confirm-body {
-    margin: 0;
-    color: var(--fg2);
-    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
     white-space: pre-wrap;
   }
 
@@ -236,6 +217,8 @@
 
   .caps-confirm-actions {
     display: flex;
+    flex-wrap: wrap-reverse;
+    align-items: center;
     justify-content: flex-end;
     gap: var(--s-8);
   }

@@ -88,7 +88,7 @@ export function PromptTemplateForm({
 
   return (
     <ModalOverlay
-      className="caps-overlay"
+      className="settings-confirm-overlay"
       isOpen
       isDismissable={false}
       isKeyboardDismissDisabled={busy}
@@ -96,7 +96,7 @@ export function PromptTemplateForm({
         if (!open && !busy) onClose()
       }}
     >
-      <Modal className="caps-modal">
+      <Modal data-dialog-size="md">
         <Dialog title={text('promptCreate')} closeLabel={t('set.close')} showClose={!busy}>
           <form className="caps-stack" onSubmit={save} data-testid="caps-prompt-create-form">
             <TextField
@@ -128,7 +128,7 @@ export function PromptTemplateForm({
             {savedPath ? <Meta title={savedPath}>{text('promptSavedLocation', { path: savedPath })}</Meta> : null}
             {error ? <Warn>{error}</Warn> : null}
             <div className="caps-confirm-actions">
-              <Button variant="secondary" isDisabled={busy} onPress={onClose}>
+              <Button variant="ghost" isDisabled={busy} onPress={onClose}>
                 {t(savedPath ? 'set.close' : 'ui.cancel')}
               </Button>
               <Button

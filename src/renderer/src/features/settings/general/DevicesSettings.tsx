@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { QRCodeSVG } from 'qrcode.react'
 import { useI18n } from '../../../i18n'
 import {
   DEFAULT_REMOTE_ACCESS_SETTINGS,
@@ -11,7 +10,7 @@ import {
 import type { PeerGrantView } from '../../../../../shared/peer-protocol'
 import { pairInviteAddress, pairInviteLink } from '../../../../../shared/pair-invite'
 import { useStore } from '../../../state/store'
-import { Badge, Button, ListBoxItem, Notice, Select, Switch } from '../../../ui'
+import { Badge, Button, EmptyState, ListBoxItem, Notice, QrCode, Select, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { devicesDataText } from './devices-data-text'
 import { formatWhen } from './general-model'
@@ -95,9 +94,7 @@ export function DeviceList({
   ]
   if (entries.length === 0) {
     return (
-      <p className="settings-row__desc settings-list-empty" data-testid="v3-devices-empty">
-        {text.devicesNone}
-      </p>
+      <EmptyState size="sm" align="start" className="settings-list-empty" title={text.devicesNone} data-testid="v3-devices-empty" />
     )
   }
   const active = entries.filter((entry) => entry.revokedAt === null)
@@ -326,8 +323,8 @@ export function DevicesSettings(): ReactElement {
           {directPairing ? (
             <div className="settings-device dd-pairing" data-testid="v3-devices-pairing">
               {link ? (
-                <div className="settings-pair-qr" role="img" aria-label={text.devicesPairQr} data-testid="v3-devices-pairing-qr">
-                  <QRCodeSVG value={link} size={144} marginSize={2} bgColor="#ffffff" fgColor="#111111" />
+                <div className="settings-pair-qr" data-testid="v3-devices-pairing-qr">
+                  <QrCode value={link} title={text.devicesPairQr} />
                 </div>
               ) : null}
               <div className="settings-device__main">
@@ -448,9 +445,7 @@ export function DevicesSettings(): ReactElement {
 
       <SettingsGroup title={text.devicesPeer} description={text.devicesPeerDesc} settingId="devices-peer" plain>
         {grants.length === 0 ? (
-          <p className="settings-row__desc settings-list-empty" data-testid="v3-devices-peer-empty">
-            {text.devicesPeerNone}
-          </p>
+          <EmptyState size="sm" align="start" className="settings-list-empty" title={text.devicesPeerNone} data-testid="v3-devices-peer-empty" />
         ) : (
           <ul className="settings-devices" data-testid="v3-devices-peer">
             {grants.map((grant) => (

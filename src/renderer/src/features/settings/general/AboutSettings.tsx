@@ -3,7 +3,7 @@ import { useI18n } from '../../../i18n'
 import { BUILD_INFO, formatBuildTime } from '../../../../../shared/build-info'
 import type { AppUpdateStatus } from '../../../../../shared/app-update'
 import { useStore } from '../../../state/store'
-import { Button, Dialog, Modal, ModalOverlay, Notice, ProgressBar, Switch } from '../../../ui'
+import { Button, Dialog, DialogFooter, Modal, ModalOverlay, Notice, ProgressBar, Switch } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { generalText, type GeneralText } from './general-text'
 import { piSourceLabel, updatePercent, updateStatusDetail } from './general-model'
@@ -226,17 +226,17 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
       </SettingsGroup>
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmInstall} onOpenChange={setConfirmInstall}>
-        <Modal className="settings-confirm-modal">
-          <Dialog className="settings-confirm" title={text.aboutUpdateInstall} aria-label={text.aboutUpdateInstall}>
-            <p className="settings-row__desc">{text.aboutUpdateInstallConfirm}</p>
-            <div className="settings-actions">
-              <Button variant="secondary" onPress={() => setConfirmInstall(false)}>
+        <Modal data-dialog-size="sm">
+          <Dialog alert title={text.aboutUpdateInstall} aria-label={text.aboutUpdateInstall}>
+            <p className="settings-confirm-desc">{text.aboutUpdateInstallConfirm}</p>
+            <DialogFooter>
+              <Button variant="ghost" onPress={() => setConfirmInstall(false)}>
                 {text.cancel}
               </Button>
-              <Button variant="primary" data-testid="v3-about-update-install-confirm" onPress={install}>
+              <Button variant="primary" autoFocus data-testid="v3-about-update-install-confirm" onPress={install}>
                 {text.aboutUpdateInstall}
               </Button>
-            </div>
+            </DialogFooter>
           </Dialog>
         </Modal>
       </ModalOverlay>

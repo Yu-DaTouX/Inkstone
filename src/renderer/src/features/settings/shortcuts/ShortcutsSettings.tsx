@@ -10,16 +10,16 @@ import {
   type ShortcutOverrides
 } from '../../../app/shortcuts'
 import { shortcutText } from '../../commands/shortcut-text'
-import { Button, IconButton, Kbd, SettingRow } from '../../../ui'
+import { Button, cx, IconButton, Kbd, SettingRow } from '../../../ui'
 import { SettingsGroup } from '../root/controls'
 import { bindingFromKeyStroke, clearShortcutOverrides, rebindShortcut } from './bindings'
 import { shortcutsText } from './shortcuts-text'
 import { settingsText } from '../settings-text'
 import './shortcuts.css'
 
-function Keys({ tokens }: { tokens: readonly string[] }): ReactElement {
+function Keys({ tokens, className }: { tokens: readonly string[]; className?: string }): ReactElement {
   return (
-    <span className="settings-shortcut-keys">
+    <span className={cx('settings-shortcut-keys', className)}>
       {tokens.map((token, index) => (
         <Kbd key={`${token}-${index}`}>{token}</Kbd>
       ))}
@@ -149,36 +149,39 @@ export function ShortcutsSettings(): ReactElement {
               data-testid={`v3-shortcut-${def.id}`}
               data-modified={modified ? '1' : '0'}
             >
-              {def.rebindable ? (
-                <IconButton
-                  variant="ghost"
-                  isDisabled={!modified}
-                  aria-label={`${text.restoreDefault} · ${purpose}`}
-                  data-testid={`v3-shortcut-reset-${def.id}`}
-                  onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
-                >
-                  <RotateCcw size={16} />
-                </IconButton>
-              ) : null}
-              {def.rebindable ? (
-                <Button
-                  variant={recording ? 'primary' : 'secondary'}
-                  isDisabled={recordingId !== null && !recording}
-                  data-testid={`v3-shortcut-record-${def.id}`}
-                  aria-label={`${text.recording} · ${purpose}`}
-                  onPress={() => {
-                    setRecordingId(recording ? null : def.id)
-                    setNotice(null)
-                  }}
-                >
-                  {recording ? text.recording : <Keys tokens={def.keys} />}
-                </Button>
-              ) : (
-                <>
-                  <span className="settings-shortcut-fixed">{text.fixed}</span>
-                  <Keys tokens={def.keys} />
-                </>
-              )}
+              <span className="settings-shortcut-ctl">
+                {def.rebindable ? (
+                  <IconButton
+                    variant="ghost"
+                    isDisabled={!modified}
+                    tooltip={text.restoreDefault}
+                    aria-label={`${text.restoreDefault} · ${purpose}`}
+                    data-testid={`v3-shortcut-reset-${def.id}`}
+                    onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
+                  >
+                    <RotateCcw size={16} />
+                  </IconButton>
+                ) : null}
+                {def.rebindable ? (
+                  <Button
+                    variant={recording ? 'primary' : 'secondary'}
+                    isDisabled={recordingId !== null && !recording}
+                    data-testid={`v3-shortcut-record-${def.id}`}
+                    aria-label={`${text.recording} · ${purpose}`}
+                    onPress={() => {
+                      setRecordingId(recording ? null : def.id)
+                      setNotice(null)
+                    }}
+                  >
+                    {recording ? text.recording : <Keys tokens={def.keys} />}
+                  </Button>
+                ) : (
+                  <>
+                    <span className="settings-shortcut-fixed">{text.fixed}</span>
+                    <Keys className="settings-shortcut-fixed-keys" tokens={def.keys} />
+                  </>
+                )}
+              </span>
             </SettingRow>
           )
         })}
@@ -190,15 +193,19 @@ export function ShortcutsSettings(): ReactElement {
         settingId="shortcuts-composer"
       >
         <SettingRow className="settings-row settings-shortcut" label={t('sheet.inputSteer')} description={t('sheet.inputSteerNote')} data-testid="v3-shortcut-composer-steer">
-          <span className="settings-shortcut-fixed">{text.fixed}</span>
-          <Keys tokens={['Enter']} />
+          <span className="settings-shortcut-ctl">
+            <span className="settings-shortcut-fixed">{text.fixed}</span>
+            <Keys className="settings-shortcut-fixed-keys" tokens={['Enter']} />
+          </span>
         </SettingRow>
         <SettingRow className="settings-row settings-shortcut" label={t('sheet.inputQueue')} description={t('sheet.inputQueueNote')} data-testid="v3-shortcut-composer-queue">
-          <span className="settings-shortcut-fixed">{text.fixed}</span>
-          <span className="settings-shortcut-keys">
-            <Keys tokens={['Ctrl', 'Q']} />
-            <span className="settings-shortcut-fixed">{text.or}</span>
-            <Keys tokens={['Alt', 'Enter']} />
+          <span className="settings-shortcut-ctl">
+            <span className="settings-shortcut-fixed">{text.fixed}</span>
+            <span className="settings-shortcut-keys settings-shortcut-fixed-keys">
+              <Keys tokens={['Ctrl', 'Q']} />
+              <span className="settings-shortcut-fixed">{text.or}</span>
+              <Keys tokens={['Alt', 'Enter']} />
+            </span>
           </span>
         </SettingRow>
       </SettingsGroup>

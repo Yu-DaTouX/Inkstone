@@ -1,8 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { QRCodeSVG } from 'qrcode.react'
 import { useI18n, useT } from '../../../i18n'
 import type { RemoteAccessSettings, RemoteAccessStatus, RemoteRelaySettings } from '../../../../../shared/remote-protocol'
-import { Badge, Button, Switch, TextField } from '../../../ui'
+import { Badge, Button, QrCode, Switch, TextField } from '../../../ui'
 import { SettingsRow } from '../root/controls'
 import { devicesDataText } from './devices-data-text'
 
@@ -103,8 +102,8 @@ export function RelayPairingPanel({ pairing, secondsLeft, busy, onCancel }: Rela
 
   return (
     <div className="settings-device dd-pairing" data-testid="v3-relay-pairing">
-      <div className="settings-pair-qr" role="img" aria-label={t('remote.relayQr')} data-testid="v3-relay-qr">
-        <QRCodeSVG value={pairing.link} size={144} level="M" marginSize={2} bgColor="#ffffff" fgColor="#111111" />
+      <div className="settings-pair-qr" data-testid="v3-relay-qr">
+        <QrCode value={pairing.link} title={t('remote.relayQr')} />
       </div>
       <div className="settings-device__main">
         <span className="settings-row__desc">{t('remote.relayPhoneHint')}</span>

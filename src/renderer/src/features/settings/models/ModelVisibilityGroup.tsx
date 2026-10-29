@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactElement } from 'react'
 import { Star } from 'lucide-react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Button, IconButton, SearchField, Switch } from '../../../ui'
+import { Button, EmptyState, IconButton, SearchField, Switch } from '../../../ui'
 import { modelKey } from '../../../../../shared/model-selection'
 import type { ModelInfo } from '../../../../../shared/ipc'
 import { SettingsGroup } from '../root/controls'
@@ -82,8 +82,8 @@ export function ModelVisibilityGroup(): ReactElement {
           ) : null}
           <span className="ms-vis-count">{counter}</span>
         </div>
-        {models.length === 0 ? <p className="ms-note">{text('visNoModels')}</p> : null}
-        {models.length > 0 && shown.length === 0 ? <p className="ms-note">{text('visEmpty')}</p> : null}
+        {models.length === 0 ? <EmptyState size="sm" align="start" title={text('visNoModels')} /> : null}
+        {models.length > 0 && shown.length === 0 ? <EmptyState size="sm" align="start" title={text('visEmpty')} /> : null}
         {groups.map(([provider, list]) => {
           const allHidden = list.every((m) => isFavorite(favorites, m) || isHidden(hidden, m))
           return (
@@ -107,7 +107,7 @@ export function ModelVisibilityGroup(): ReactElement {
                       aria-label={`${favorite ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}: ${m.name}`}
                       onPress={() => toggleStar(m)}
                     >
-                      <Star size={13} fill={favorite ? 'currentColor' : 'none'} aria-hidden />
+                      <Star size={14} fill={favorite ? 'currentColor' : 'none'} aria-hidden />
                     </IconButton>
                     <span className="ms-vis-name">
                       <span className="ms-vis-label">{m.name}</span>

@@ -1,8 +1,23 @@
 @layer features {
 
   .settings-confirm-overlay {
+    z-index: calc(var(--z-modal) + 100);
     background: transparent;
     backdrop-filter: none;
+  }
+
+  .settings-confirm-desc {
+    margin: 0;
+    color: var(--fg2);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    overflow-wrap: anywhere;
+  }
+
+  .settings-confirm-target {
+    margin: 0;
+    color: var(--fg);
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
+    overflow-wrap: anywhere;
   }
 
   .settings-loading {
@@ -21,7 +36,7 @@
     min-width: 0;
   }
 
-  .settings-section > .ui-setting-section + :is(.settings-note, .ui-notice) {
+  .settings-section > .settings-group + .ui-notice {
     margin-top: calc(var(--s-24) * -1);
   }
 
@@ -30,16 +45,6 @@
     font-size: var(--t-heading);
     line-height: var(--t-heading-lh);
     font-weight: var(--t-heading-w);
-  }
-
-  .settings-note {
-    margin: 0;
-    padding: var(--s-10) var(--s-12);
-    border-radius: var(--r-md);
-    background: var(--sunken);
-    color: var(--fg2);
-    font-size: var(--t-footnote);
-    line-height: 1.5;
   }
 
   .settings-row__desc {
@@ -65,139 +70,11 @@
     gap: var(--s-8);
   }
 
-  .settings-usage-state {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-  }
-
   .settings-shortcut-keys {
     display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--s-4);
-  }
-
-  .settings-breakdown {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-8);
-  }
-
-  .settings-breakdown__cap {
-    color: var(--fg3);
-  }
-
-  .settings-bars {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-6);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .settings-bar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
-    align-items: center;
-    gap: var(--s-8);
-    font-size: var(--t-footnote);
-  }
-
-  .settings-bar[data-idle='1'],
-  .settings-table tr[data-idle='1'] {
-    opacity: 0.5;
-  }
-
-  .settings-bar__label {
-    color: var(--fg2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .settings-bar__track {
-    display: block;
-    height: 10px;
-    border-radius: var(--r-sm);
-    background: var(--sunken);
-    overflow: hidden;
-  }
-
-  .settings-bar__fill {
-    display: block;
-    height: 100%;
-    border-radius: var(--r-sm);
-  }
-
-  .settings-bar__value {
-    color: var(--fg);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-  }
-
-  .settings-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: var(--s-12);
-    margin: 0;
-  }
-
-  .settings-stat {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-2);
-    padding: var(--s-10) var(--s-12);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-  }
-
-  .settings-stat dt {
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-  }
-
-  .settings-stat dd {
-    margin: 0;
-    color: var(--fg);
-    font-size: var(--t-heading);
-    line-height: var(--t-heading-lh);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .settings-table-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-8);
-  }
-
-  .settings-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--t-footnote);
-  }
-
-  .settings-table th,
-  .settings-table td {
-    padding: var(--s-6) var(--s-8);
-    border-bottom: 1px solid var(--line);
-    text-align: left;
-  }
-
-  .settings-table th {
-    color: var(--fg3);
-    font-weight: 400;
-  }
-
-  .settings-table td {
-    color: var(--fg);
-    overflow-wrap: anywhere;
-  }
-
-  .settings-table__num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
   }
 
   .settings-main__col {
@@ -325,7 +202,7 @@
     border-radius: inherit;
     background: var(--usage-fill);
     transition:
-      width 600ms var(--ease),
+      width var(--dur-slow) var(--ease),
       background-color var(--dur-base) var(--ease);
     animation: settings-fill-in var(--dur-slow) var(--ease);
   }

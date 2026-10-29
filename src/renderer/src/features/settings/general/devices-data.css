@@ -42,7 +42,7 @@
   }
 
   .dd-conflict + .dd-conflict {
-    border-top: 1px solid var(--alpha-1);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .dd-conflict__head {
@@ -54,9 +54,12 @@
 
   .dd-conflict__key {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .dd-conflict__busy {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
   }
 
   .dd-conflict__sides {

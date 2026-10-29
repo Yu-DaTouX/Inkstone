@@ -5,7 +5,7 @@ import { Button, TextField } from '../../../ui'
 import { useCapsText } from './text'
 import { PackagesPanel } from './PackagesPanel'
 import { InkstonePluginGroup } from './InkstonePluginGroup'
-import { Empty, Entry, Group, Meta, Note, Panel, Warn } from './parts'
+import { Empty, Entry, Group, ListSkeleton, Meta, Note, Panel, Warn } from './parts'
 import { MARKET_PAGE_SIZE, marketRange } from './model'
 
 export function MarketSection(): ReactElement {
@@ -94,7 +94,11 @@ export function MarketSection(): ReactElement {
           </Button>
         </div>
 
-        {loading && !catalog?.entries.length ? <p className="caps-meta" role="status">{t('pkg.working')}</p> : null}
+        {loading && !catalog?.entries.length ? (
+          <div role="status" aria-label={t('pkg.working')}>
+            <ListSkeleton rows={2} />
+          </div>
+        ) : null}
         {status ? (
           catalog?.ok === false ? <Warn>{status}</Warn> : <Empty>{status}</Empty>
         ) : null}

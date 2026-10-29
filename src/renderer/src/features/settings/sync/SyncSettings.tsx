@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Badge, Button, Notice } from '../../../ui'
+import { Badge, Button, EmptyState, MiddleTruncate, Notice, Spinner } from '../../../ui'
 import {
   AUTO_SYNC_INTERVAL_MS,
   type SyncBridge,
@@ -204,9 +204,12 @@ export function SyncGroup({ panel, title }: { panel: SyncPanel; title?: string }
           <>
             {text.folderRecommend}
             <span className="settings-data" data-testid="v3-sync-folder">
-              <span className="settings-path" data-testid="v3-sync-folder-path" title={status?.syncRoot ?? ''}>
-                {status?.syncRoot ?? text.folderUnset}
-              </span>
+              <MiddleTruncate
+                className="settings-path"
+                data-testid="v3-sync-folder-path"
+                value={status?.syncRoot ?? text.folderUnset}
+                showTitle={Boolean(status?.syncRoot)}
+              />
             </span>
           </>
         }
@@ -247,7 +250,7 @@ export function SyncGroup({ panel, title }: { panel: SyncPanel; title?: string }
             {last ? (
               <span>
                 {fillTemplate(text.resultPushed, { n: last.pushed })} · {fillTemplate(text.resultPulled, { n: last.pulled })} ·{' '}
-                {fillTemplate(text.resultConflicts, { n: last.conflicts })} · {fillTemplate(text.resultSkipped, { n: last.skipped })}
+                {fillTemplate(text.resultConflicts, { n: Math.min(last.conflicts, conflicts.length) })} · {fillTemplate(text.resultSkipped, { n: last.skipped })}
               </span>
             ) : null}
             {errors.map((note, index) => (
@@ -297,18 +300,14 @@ export function SyncConflictsGroup({ panel }: { panel: SyncPanel }): ReactElemen
   return (
     <SettingsGroup title={text.conflictsTitle} description={text.conflictsHint} settingId="data-sync-conflicts" plain>
       {conflicts.length === 0 ? (
-        <p className="settings-row__desc settings-list-empty" data-testid="v3-sync-conflicts-none">
-          {text.conflictsNone}
-        </p>
+        <EmptyState size="sm" align="start" className="settings-list-empty" title={text.conflictsNone} data-testid="v3-sync-conflicts-none" />
       ) : (
         <ul className="dd-conflicts" data-testid="v3-sync-conflicts">
           {conflicts.map((conflict) => (
             <li className="settings-device dd-conflict" key={conflict.id} data-testid={`v3-sync-conflict-${conflict.id}`}>
               <div className="dd-conflict__head">
                 <Badge tone="ask">{text.kinds[conflict.kind]}</Badge>
-                <span className="settings-device__name dd-conflict__key" title={conflict.key}>
-                  {conflictTitle(text, conflict.key)}
-                </span>
+                <MiddleTruncate className="settings-device__name dd-conflict__key" value={conflictTitle(text, conflict.key)} />
               </div>
               <div className="dd-conflict__sides">
                 <div className="dd-conflict__side">
@@ -335,7 +334,12 @@ export function SyncConflictsGroup({ panel }: { panel: SyncPanel }): ReactElemen
                 <Button variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'both')}>
                   {text.keepBoth}
                 </Button>
-                {busy === conflict.id ? <span className="settings-row__desc">{text.resolving}</span> : null}
+                {busy === conflict.id ? (
+                  <span className="settings-row__desc dd-conflict__busy" role="status">
+                    <Spinner size="sm" />
+                    {text.resolving}
+                  </span>
+                ) : null}
               </div>
             </li>
           ))}

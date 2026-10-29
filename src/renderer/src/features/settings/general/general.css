@@ -22,7 +22,7 @@
 
   .settings-root + .settings-root,
   .settings-devices > .settings-device + .settings-device {
-    border-top: 1px solid var(--alpha-1);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .settings-roots {
@@ -39,12 +39,10 @@
     color: var(--fg2);
     font-family: var(--font-mono);
     font-size: var(--t-footnote);
-    overflow-wrap: anywhere;
   }
 
   .settings-list-empty {
-    margin: 0;
-    padding: var(--s-12) 0;
+    padding-block: var(--s-12);
   }
 
   .settings-row__line {
@@ -67,10 +65,8 @@
   }
 
   .settings-pair-qr {
+    display: flex;
     flex: none;
-    line-height: 0;
-    border-radius: var(--r-sm);
-    overflow: hidden;
   }
 
   .settings-device__main {
@@ -103,7 +99,7 @@
     opacity: 0.65;
   }
 
-  .ui-setting-row__ctl > .settings-relay-url {
+  .settings-relay-url {
     width: 280px;
     max-width: 100%;
     min-width: 0;
@@ -114,7 +110,7 @@
     max-width: 100%;
   }
 
-  .ui-setting-row__ctl > .settings-font-field {
+  .settings-font-field {
     width: 280px;
     max-width: 100%;
   }

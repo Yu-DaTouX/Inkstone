@@ -33,6 +33,7 @@ import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import {
   Button,
+  Notice,
   SettingsDialog,
   SettingsNav,
   SettingsNavGroup,
@@ -167,6 +168,17 @@ function useRevealScroll(foldedHint: string): void {
   }, [target, foldedHint])
 }
 
+function SettingsLoading({ label }: { label: string }): ReactElement {
+  return (
+    <div className="settings-loading" role="status">
+      <span className="v3-visually-hidden">{label}</span>
+      <Skeleton width="33%" height={20} />
+      <Skeleton width="66%" height={20} />
+      <Skeleton width="100%" height={20} />
+    </div>
+  )
+}
+
 function SubmoduleHost<P extends object>({
   component: Host,
   props
@@ -178,7 +190,7 @@ function SubmoduleHost<P extends object>({
   const text = settingsText(lang)
 
   return (
-    <Suspense fallback={<p className="settings-value">{text.loading}</p>}>
+    <Suspense fallback={<SettingsLoading label={text.loading} />}>
       <Host {...props} />
     </Suspense>
   )
@@ -200,9 +212,9 @@ function LegacyNotice({
   return (
     <section className="settings-section" data-testid="settings-legacy">
       <h3 className="settings-h2">{text.unknownTitle}</h3>
-      <p className="settings-note" role="note">
+      <Notice tone="info" compact role="note">
         {body}
-      </p>
+      </Notice>
       <div className="settings-actions">
         <Button variant="secondary" onPress={onDismiss}>
           {text.backToAppearance}
@@ -447,12 +459,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
       data-testid="settings-root"
     >
       {!settings ? (
-        <div className="settings-loading" role="status">
-          <span className="v3-visually-hidden">{text.loading}</span>
-          <Skeleton width="33%" height={20} />
-          <Skeleton width="66%" height={20} />
-          <Skeleton width="100%" height={20} />
-        </div>
+        <SettingsLoading label={text.loading} />
       ) : (
         <div
           className="settings-main__col"

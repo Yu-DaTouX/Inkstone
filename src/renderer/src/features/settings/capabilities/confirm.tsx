@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode
 } from 'react'
-import { Button, Dialog, Modal, ModalOverlay, Notice } from '../../../ui'
+import { Button, Dialog, DialogFooter, Modal, ModalOverlay, Notice } from '../../../ui'
 import { useT } from '../../../i18n'
 import { runConfirmAction } from './confirm-action'
 
@@ -76,7 +76,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
       {children}
       {pending ? (
         <ModalOverlay
-          className="caps-overlay"
+          className="settings-confirm-overlay"
           isOpen
           isDismissable={false}
           isKeyboardDismissDisabled={busy}
@@ -84,22 +84,22 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
             if (!open && !busy) settle(false)
           }}
         >
-          <Modal className="caps-modal">
+          <Modal data-dialog-size="md">
             <Dialog title={pending.title} alert closeLabel={t('set.close')}>
-              {pending.body ? <p className="caps-confirm-body">{pending.body}</p> : null}
+              {pending.body ? <p className="settings-confirm-desc caps-confirm-body">{pending.body}</p> : null}
               {pending.detail ? <pre className="caps-confirm-detail">{pending.detail}</pre> : null}
               {error ? (
                 <Notice tone="fail" compact>
                   {error}
                 </Notice>
               ) : null}
-              <div className="caps-confirm-actions">
-                <Button variant="secondary" isDisabled={busy} onPress={() => settle(false)}>
+              <DialogFooter>
+                <Button variant="ghost" isDisabled={busy} onPress={() => settle(false)}>
                   {pending.cancelLabel ?? t('ui.cancel')}
                 </Button>
                 <Button
                   autoFocus
-                  variant={pending.tone === 'danger' ? 'danger' : 'primary'}
+                  variant={pending.tone === 'danger' ? 'destructive' : 'primary'}
                   isPending={busy}
                   aria-busy={busy || undefined}
                   data-testid="caps-confirm-accept"
@@ -107,7 +107,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
                 >
                   {pending.confirmLabel}
                 </Button>
-              </div>
+              </DialogFooter>
             </Dialog>
           </Modal>
         </ModalOverlay>
