@@ -2,9 +2,11 @@ import { forwardRef, useCallback, type ReactNode } from 'react'
 import {
   Button as RACButton,
   composeRenderProps,
-  type ButtonProps as RACButtonProps
+  type ButtonProps as RACButtonProps,
+  type TooltipProps as RACTooltipProps
 } from 'react-aria-components'
 import { cx } from './cx'
+import { Tooltip, TooltipHint, TooltipTrigger } from './Tooltip'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'plain' | 'danger' | 'destructive'
 export type ButtonSize = 'micro' | 'xs' | 'sm' | 'md'
@@ -15,11 +17,29 @@ export interface ButtonProps extends RACButtonProps {
   icon?: ReactNode
   trailingIcon?: ReactNode
   block?: boolean
+  justify?: 'center' | 'start'
   title?: string
+  tooltip?: ReactNode
+  tooltipShortcut?: ReactNode
+  tooltipPlacement?: RACTooltipProps['placement']
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'md', icon, trailingIcon, block, title, className, children, ...props },
+  {
+    variant = 'secondary',
+    size = 'md',
+    icon,
+    trailingIcon,
+    block,
+    justify = 'center',
+    title,
+    tooltip,
+    tooltipShortcut,
+    tooltipPlacement,
+    className,
+    children,
+    ...props
+  },
   ref
 ) {
   const attachRef = useCallback(
@@ -31,12 +51,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     [ref, title]
   )
 
-  return (
+  const button = (
     <RACButton
       {...props}
       ref={attachRef}
       className={composeRenderProps(className, (cn) =>
-        cx('ui-btn', `ui-btn--${variant}`, size !== 'md' && `ui-btn--${size}`, block && 'ui-btn--block', cn)
+        cx(
+          'ui-btn',
+          `ui-btn--${variant}`,
+          size !== 'md' && `ui-btn--${size}`,
+          block && 'ui-btn--block',
+          justify === 'start' && 'ui-btn--start',
+          cn
+        )
       )}
     >
       {composeRenderProps(children, (kids) => (
@@ -55,5 +82,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         </>
       ))}
     </RACButton>
+  )
+  if (tooltip == null || tooltip === false) return button
+  return (
+    <TooltipTrigger>
+      {button}
+      <Tooltip placement={tooltipPlacement}>
+        <TooltipHint label={tooltip} shortcut={tooltipShortcut} />
+      </Tooltip>
+    </TooltipTrigger>
   )
 })

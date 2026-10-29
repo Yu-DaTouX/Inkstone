@@ -177,7 +177,7 @@
   .v3-process-note { color: var(--fg3); font-size: var(--t-footnote); }
   .v3-steps-list, .v3-steps-live { display: flex; flex-direction: column; min-width: 0; }
   .v3-step-head { position: relative; width: fit-content; max-width: 100%; border-radius: var(--r-xs); }
-  .v3-step-line { display: flex; align-items: center; gap: var(--s-6); min-width: 0; font-size: var(--t-body); font-weight: var(--w-regular); line-height: var(--t-body-lh); }
+  .v3-step-line { display: flex; align-items: center; gap: var(--s-6); min-width: 0; }
   .v3-step-line > svg { flex-shrink: 0; }
   .v3-steps-sum:focus-visible { outline: none; box-shadow: var(--ring-focus); }
   .v3-step-verb { color: var(--fg2); font-family: var(--font-mono); font-size: var(--t-footnote); flex: none; }

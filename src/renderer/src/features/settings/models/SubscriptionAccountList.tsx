@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react'
 import type { OAuthAccountView } from '../../../../../shared/oauth-accounts'
-import { Badge, Button, TextField } from '../../../ui'
+import { Badge, Button, TextField, TooltipText } from '../../../ui'
 import { useT } from '../../../i18n'
 import { useModelsText } from './models-text'
 
@@ -42,7 +42,13 @@ export function SubscriptionAccountList({ provider, name, accounts, disabled, on
             </form>
           ) : (
             <>
-              <span className="ms-key-label" title={account.email}>{account.label || account.email || `${name} · ${index + 1}`}</span>
+              {account.email ? (
+                <TooltipText className="ms-key-label" tooltip={account.email}>
+                  {account.label || account.email}
+                </TooltipText>
+              ) : (
+                <span className="ms-key-label">{account.label || `${name} · ${index + 1}`}</span>
+              )}
               {account.plan ? <span className="ms-key-mask">{account.plan}</span> : null}
               <span className="ms-key-actions">
                 {account.active ? (

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEv
 import { AlarmClock, GitBranch, MoreHorizontal, Pin } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton, InlineRename, ListRow, StatusSlot } from '../../ui'
+import { IconButton, InlineRename, isImeComposing, ListRow, StatusSlot } from '../../ui'
 import { ModelBot, type BotMood } from '../../patterns/ModelBot'
 import { modelBrand, type ModelRef } from '../../../../shared/model-brand'
 import { v3Text } from '../../app/v3-text'
@@ -133,7 +133,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
   }
 
   const noteRenameKey = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return
+    if (isImeComposing(event)) return
     if (event.key === 'Enter' || event.key === 'Escape') settledByKey.current = true
   }
 

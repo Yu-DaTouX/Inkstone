@@ -8,16 +8,14 @@ import {
   Badge,
   Button,
   CollapsibleChevron,
-  Dialog,
-  DialogFooter,
+  ConfirmDialog,
   EmptyState,
   Kbd,
   MiddleTruncate,
-  Modal,
-  ModalOverlay,
   Notice,
   Spinner,
   TextField,
+  TooltipText,
   type BadgeTone
 } from '../../../ui'
 import { canRemoveCredential, credentialFromEnv, entryState, type ServiceState } from './models-model'
@@ -434,11 +432,11 @@ export function ModelsSettings(): ReactElement {
                 )
               ) : null}
               {!isKey && state === 'missing' ? (
-                <span className="ms-cli" title={t('auth.cmdTip')}>
+                <TooltipText className="ms-cli" tooltip={t('auth.cmdTip')}>
                   <Kbd>pi</Kbd>
                   <span aria-hidden>→</span>
                   <Kbd>/login</Kbd>
-                </span>
+                </TooltipText>
               ) : null}
             </>
           )}
@@ -510,7 +508,7 @@ export function ModelsSettings(): ReactElement {
         testId="ms-services"
         plain
       >
-        {authProviders.length === 0 ? <EmptyState size="sm" align="start" title={text('noAuthInfo')} /> : null}
+        {authProviders.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('noAuthInfo')} /> : null}
       </SettingsGroup>
 
       {subscriptions.length > 0 ? (
@@ -560,40 +558,30 @@ export function ModelsSettings(): ReactElement {
       <PiThinkingLevelsGroup />
 
       {pendingRemove ? (
-        <ModalOverlay
-          className="settings-confirm-overlay"
+        <ConfirmDialog
+          overlayClassName="settings-confirm-overlay"
           isOpen
-          isDismissable
           onOpenChange={(open) => {
             if (!open) setPendingRemove(null)
           }}
+          title={text('removeTitle')}
+          description={
+            accountsOf(pendingRemove).length > 0
+              ? text('removeBodyAccounts').replace('{n}', String(accountsOf(pendingRemove).length)).replace('{keys}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
+              : (pools[authIdOf(pendingRemove)]?.length ?? 0) >= 2
+                ? text('removeBodyMany').replace('{n}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
+                : text('removeBody')
+          }
+          tone="danger"
+          cancelLabel={t('ui.cancel')}
+          confirmLabel={text('removeConfirm')}
+          confirmTestId="ms-remove-confirm"
+          isConfirmDisabled={busy}
+          closeOnConfirm={false}
+          onConfirm={() => void confirmRemove(pendingRemove)}
         >
-          <Modal data-dialog-size="sm">
-            <Dialog alert title={text('removeTitle')} closeLabel={t('ui.cancel')}>
-              <p className="settings-confirm-desc">
-                {accountsOf(pendingRemove).length > 0
-                  ? text('removeBodyAccounts').replace('{n}', String(accountsOf(pendingRemove).length)).replace('{keys}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
-                  : (pools[authIdOf(pendingRemove)]?.length ?? 0) >= 2
-                    ? text('removeBodyMany').replace('{n}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
-                    : text('removeBody')}
-              </p>
-              <p className="settings-confirm-target">{providerName(pendingRemove)}</p>
-              <DialogFooter>
-                <Button variant="ghost" autoFocus onPress={() => setPendingRemove(null)}>
-                  {t('ui.cancel')}
-                </Button>
-                <Button
-                  variant="destructive"
-                  data-testid="ms-remove-confirm"
-                  isDisabled={busy}
-                  onPress={() => void confirmRemove(pendingRemove)}
-                >
-                  {text('removeConfirm')}
-                </Button>
-              </DialogFooter>
-            </Dialog>
-          </Modal>
-        </ModalOverlay>
+          <p className="settings-confirm-target">{providerName(pendingRemove)}</p>
+        </ConfirmDialog>
       ) : null}
     </section>
   )

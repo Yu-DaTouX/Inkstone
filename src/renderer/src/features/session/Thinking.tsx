@@ -102,7 +102,7 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
 
   return (
     <Collapsible ref={rootRef} className={asStep ? 'v3-think v3-step' : 'v3-think'} data-live={live || undefined} data-open={open || undefined} data-row={asStep ? 'step' : undefined} data-testid="v3-thinking" isExpanded={open} onExpandedChange={toggle}>
-      <CollapsibleHeader className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} chevron="end" icon={<Icon name="brain" size={13} />} data-testid="v3-thinking-toggle">
+      <CollapsibleHeader className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} size="compact" chevron="end" icon={<Icon name="brain" size={13} />} data-testid="v3-thinking-toggle">
         <span className="v3-step-line">
           {asStep ? (
             <span className="v3-step-label">{label}</span>

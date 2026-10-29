@@ -51,6 +51,7 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
           isDisabled={sending}
           onChange={setText}
           className="sa-composer-field"
+          textAreaClassName="sa-composer-input"
           data-testid="v3-subagent-composer-input"
         />
         <IconButton

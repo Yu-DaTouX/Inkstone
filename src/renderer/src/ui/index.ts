@@ -33,8 +33,8 @@ export {
 } from './Collapsible'
 export { MiddleTruncate, type MiddleTruncateProps } from './MiddleTruncate'
 export { DiffStat, type DiffStatProps } from './DiffStat'
-export { InlineRename, type InlineRenameProps } from './InlineRename'
-export { ListRow, TreeRow, type ListRowProps, type TreeRowProps } from './Row'
+export { InlineRename, isImeComposing, type InlineRenameProps } from './InlineRename'
+export { ListRow, ListRowStatic, TreeRow, type ListRowProps, type ListRowStaticProps, type TreeRowProps } from './Row'
 export { QrCode, type QrCodeProps } from './QrCode'
 export {
   CommandSurface,
@@ -45,6 +45,7 @@ export {
   type CommandSurfaceProps
 } from './CommandSurface'
 export type { ControlSize, SpinnerSizeName } from './sizes'
+export { CONTROL_ICON_SIZE } from './sizes'
 export { FileCard } from './FileCard'
 export {
   SearchField,
@@ -115,13 +116,15 @@ export {
 export {
   Tooltip,
   TooltipHint,
+  TooltipText,
   TooltipTrigger,
   type TooltipHintProps,
+  type TooltipTextProps,
   type TooltipProps,
   type TooltipTriggerComponentProps
 } from './Tooltip'
 export { ToastRegion, showToast, toastQueue, type ShowToastOptions, type ToastContent, type ToastTone } from './Toast'
-export { Badge, Kbd, KbdGroup, type BadgeProps, type BadgeTone, type KbdGroupProps, type KbdProps } from './Badge'
+export { Badge, Kbd, KbdGroup, type BadgeDataTone, type BadgeProps, type BadgeTone, type KbdGroupProps, type KbdProps } from './Badge'
 export { StatusDot, StatusSlot, type StatusDotKind, type StatusDotProps, type StatusSlotProps, type StatusSlotTone } from './StatusDot'
 export { Avatar, avatarInitial, type AvatarProps } from './Avatar'
 export { SiteIcon, type SiteIconProps } from './SiteIcon'

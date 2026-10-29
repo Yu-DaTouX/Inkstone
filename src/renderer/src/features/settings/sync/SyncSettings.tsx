@@ -300,7 +300,7 @@ export function SyncConflictsGroup({ panel }: { panel: SyncPanel }): ReactElemen
   return (
     <SettingsGroup title={text.conflictsTitle} description={text.conflictsHint} settingId="data-sync-conflicts" plain>
       {conflicts.length === 0 ? (
-        <EmptyState size="sm" align="start" className="settings-list-empty" title={text.conflictsNone} data-testid="v3-sync-conflicts-none" />
+        <EmptyState size="sm" align="start" inset="none" className="settings-list-empty" title={text.conflictsNone} data-testid="v3-sync-conflicts-none" />
       ) : (
         <ul className="dd-conflicts" data-testid="v3-sync-conflicts">
           {conflicts.map((conflict) => (

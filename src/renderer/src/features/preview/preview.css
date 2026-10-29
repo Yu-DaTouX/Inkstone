@@ -146,20 +146,8 @@
     align-items: center;
   }
 
-  .v3-preview-tab {
-    position: relative;
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    border-radius: var(--r-sm);
-  }
-
   .v3-preview-tab[data-overflowed] {
     visibility: hidden;
-  }
-
-  .v3-preview-tab[data-preview] [role='tab'] {
-    font-style: italic;
   }
 
   .v3-preview-tab[data-menu-open] {

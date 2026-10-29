@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, Shield } from 'lucide-react'
-import { Button, Dialog, DialogFooter, Menu, MenuItem, MenuTrigger, Modal, ModalOverlay, Popover } from '../../ui'
+import { Button, ConfirmDialog, Menu, MenuItem, MenuTrigger, Popover } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
@@ -52,28 +52,17 @@ export function PermissionToggle() {
         </Popover>
       </MenuTrigger>
 
-      <ModalOverlay isOpen={confirmAll} onOpenChange={setConfirmAll} isDismissable>
-        <Modal data-dialog-size="sm">
-          <Dialog alert title={t('permission.label.all')}>
-            <p className="composer-perm-body">{t('permission.desc.all')}</p>
-            <DialogFooter>
-              <Button variant="ghost" onPress={() => setConfirmAll(false)}>
-                {t('ui.cancel')}
-              </Button>
-              <Button
-                variant="destructive"
-                data-testid="permission-confirm-all"
-                onPress={() => {
-                  setConfirmAll(false)
-                  apply('all')
-                }}
-              >
-                {t('ui.confirm')}
-              </Button>
-            </DialogFooter>
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
+      <ConfirmDialog
+        isOpen={confirmAll}
+        onOpenChange={setConfirmAll}
+        title={t('permission.label.all')}
+        description={t('permission.desc.all')}
+        tone="danger"
+        cancelLabel={t('ui.cancel')}
+        confirmLabel={t('ui.confirm')}
+        confirmTestId="permission-confirm-all"
+        onConfirm={() => apply('all')}
+      />
     </>
   )
 }

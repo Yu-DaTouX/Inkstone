@@ -82,8 +82,8 @@ export function ModelVisibilityGroup(): ReactElement {
           ) : null}
           <span className="ms-vis-count">{counter}</span>
         </div>
-        {models.length === 0 ? <EmptyState size="sm" align="start" title={text('visNoModels')} /> : null}
-        {models.length > 0 && shown.length === 0 ? <EmptyState size="sm" align="start" title={text('visEmpty')} /> : null}
+        {models.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('visNoModels')} /> : null}
+        {models.length > 0 && shown.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('visEmpty')} /> : null}
         {groups.map(([provider, list]) => {
           const allHidden = list.every((m) => isFavorite(favorites, m) || isHidden(hidden, m))
           return (

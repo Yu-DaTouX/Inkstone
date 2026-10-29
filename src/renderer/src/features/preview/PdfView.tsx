@@ -8,12 +8,11 @@ import {
   type PDFDocumentProxy
 } from 'pdfjs-dist'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import { Button, EmptyState, FindBar, IconButton, Separator, Skeleton, Toggle, Tooltip, TooltipHint, TooltipTrigger } from '../../ui'
+import { Button, EmptyState, FindBar, IconButton, Separator, Skeleton, Toggle } from '../../ui'
 import {
   compileFind,
   findShortcut,
   findStatus,
-  findStepKey,
   rememberedFindOptions,
   rememberFindOptions,
   stepFindIndex,
@@ -399,23 +398,19 @@ export function PdfView({
         <IconButton size="sm" aria-label={labels.pdfZoomOut} tooltip={labels.pdfZoomOut} onPress={() => zoomBy(-1)}>
           <ZoomOut size={14} />
         </IconButton>
-        <TooltipTrigger>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="v3-pdf-percent"
-            aria-label={labels.pdfZoomReset}
-            onPress={() => {
-              setFitWidth(false)
-              setZoom(1)
-            }}
-          >
-            {percent}
-          </Button>
-          <Tooltip>
-            <TooltipHint label={labels.pdfZoomReset} />
-          </Tooltip>
-        </TooltipTrigger>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="v3-pdf-percent"
+          aria-label={labels.pdfZoomReset}
+          tooltip={labels.pdfZoomReset}
+          onPress={() => {
+            setFitWidth(false)
+            setZoom(1)
+          }}
+        >
+          {percent}
+        </Button>
         <IconButton size="sm" aria-label={labels.pdfZoomIn} tooltip={labels.pdfZoomIn} onPress={() => zoomBy(1)}>
           <ZoomIn size={14} />
         </IconButton>
@@ -427,20 +422,6 @@ export function PdfView({
         <div
           className="v3-code-bar v3-code-bar--find"
           data-testid="v3-pdf-findbar"
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              closeFind()
-              return
-            }
-            if (event.key !== 'F3') return
-            const delta = findStepKey(event.key, event.shiftKey)
-            if (!delta) return
-            event.preventDefault()
-            event.stopPropagation()
-            stepFind(delta)
-          }}
         >
           <FindBar
             value={query}

@@ -284,6 +284,14 @@
   .ui-collapsible__head[data-tone='emphasized'] .ui-collapsible__trigger {
     color: var(--fg2);
   }
+  .ui-collapsible__head[data-size='compact'] .ui-collapsible__trigger {
+    gap: var(--s-6);
+    height: auto;
+    min-height: var(--d-row);
+    padding: 0;
+    border-radius: var(--r-xs);
+    font: var(--w-regular) var(--t-body) / var(--t-body-lh) var(--font-ui);
+  }
   .ui-collapsible__icon {
     display: inline-flex;
     flex: none;
@@ -340,6 +348,9 @@
   @media (hover: hover) {
     .ui-collapsible__trigger:hover:not([data-disabled]) {
       color: var(--fg);
+    }
+    .ui-collapsible__head[data-size='compact'][data-tone='muted'] .ui-collapsible__trigger:hover:not([data-disabled]) {
+      color: var(--fg2);
     }
   }
 

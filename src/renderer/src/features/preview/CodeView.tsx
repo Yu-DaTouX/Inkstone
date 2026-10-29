@@ -37,7 +37,6 @@ import {
   findMatches,
   findShortcut,
   findStatus,
-  findStepKey,
   firstMatchFromLine,
   matchesByLine,
   rememberFindOptions,
@@ -696,18 +695,6 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
     closeBar()
   }
 
-  const onFindBarKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (event.nativeEvent.isComposing || event.key !== 'F3') {
-      onBarKeyDown(event)
-      return
-    }
-    const delta = findStepKey(event.key, event.shiftKey)
-    if (!delta) return
-    event.preventDefault()
-    event.stopPropagation()
-    stepFind(delta)
-  }
-
   const onGotoInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
     if (event.nativeEvent.isComposing) return
     if (event.key !== 'Enter') return
@@ -768,7 +755,7 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
         </p>
       ) : null}
       {bar === 'find' ? (
-        <div className="v3-code-bar v3-code-bar--find" data-testid="v3-code-findbar" onKeyDown={onFindBarKeyDown}>
+        <div className="v3-code-bar v3-code-bar--find" data-testid="v3-code-findbar">
           <FindBar
             value={findQuery}
             onChange={(value) => {

@@ -1,5 +1,6 @@
 import { forwardRef, type ReactNode } from 'react'
 import {
+  Focusable,
   Tooltip as RACTooltip,
   TooltipTrigger as RACTooltipTrigger,
   composeRenderProps,
@@ -31,6 +32,39 @@ export const Tooltip = forwardRef<HTMLDivElement, TooltipVariantProps>(function 
     />
   )
 })
+
+export interface TooltipTextProps {
+  tooltip: ReactNode
+  tooltipShortcut?: ReactNode
+  tooltipDetail?: ReactNode
+  tooltipPlacement?: RACTooltipProps['placement']
+  className?: string
+  children: ReactNode
+  'data-testid'?: string
+}
+
+export function TooltipText({
+  tooltip,
+  tooltipShortcut,
+  tooltipDetail,
+  tooltipPlacement,
+  className,
+  children,
+  'data-testid': testId
+}: TooltipTextProps) {
+  return (
+    <TooltipTrigger>
+      <Focusable>
+        <span tabIndex={0} className={cx('ui-tooltip-text', className)} data-testid={testId}>
+          {children}
+        </span>
+      </Focusable>
+      <Tooltip placement={tooltipPlacement}>
+        <TooltipHint label={tooltip} shortcut={tooltipShortcut} detail={tooltipDetail} />
+      </Tooltip>
+    </TooltipTrigger>
+  )
+}
 
 export interface TooltipHintProps {
   label: ReactNode

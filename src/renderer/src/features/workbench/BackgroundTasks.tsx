@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Square } from 'lucide-react'
-import { Button, CollapsibleChevron, IconButton, ListRow, Notice, StatusDot, StatusSlot } from '../../ui'
+import { Button, CollapsibleChevron, IconButton, ListRow, ListRowStatic, Notice, StatusDot, StatusSlot } from '../../ui'
 import { useStore } from '../../state/store'
 import { useSubagentStopping } from '../../state/subagent-stopping'
 import { phaseWord, runTone, type RunLang } from '../../state/runs-v3'
@@ -183,15 +183,18 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
   return (
     <li className="wb-bg-row" data-state={snapshot.phase.kind} data-testid="wb-bg-row">
       <div className="wb-bg-line">
-        <span className="wb-bg-static" title={`${snapshot.code} ${snapshot.title}`}>
-          <span className="wb-bg-lead" aria-hidden>
+        <ListRowStatic
+          className="wb-bg-static"
+          title={`${snapshot.code} ${snapshot.title}`}
+          icon={
             <StatusSlot>
               <StatusDot kind={RUN_DOT[tone]} />
             </StatusSlot>
-          </span>
+          }
+          trailing={entry.live ? time : undefined}
+        >
           <span className="wb-bg-label">{snapshot.title || snapshot.code}</span>
-          {entry.live ? <span className="wb-bg-time">{time}</span> : null}
-        </span>
+        </ListRowStatic>
         {entry.live ? (
           <IconButton size="sm" aria-label={text.stopTask} tooltip={text.stopTask} isDisabled={stoppingRun} onPress={() => void stop()} data-testid="wb-bg-stop">
             <Square size={12} aria-hidden />

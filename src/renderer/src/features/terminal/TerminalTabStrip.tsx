@@ -73,15 +73,17 @@ export function TerminalTabStrip({
 
   return (
     <div className="term-tabbar" data-inline={inline ? '' : undefined}>
-      <div
-        className="term-tabs"
+      <PanelTabList
         ref={stripRef}
+        label={text.tabs}
+        className="term-tabs"
         data-testid="terminal-tabs"
         onKeyDownCapture={(event) => {
           keyboardMove.current = nextTerminalTabIndex(0, 2, event.key) !== null
         }}
+        onCloseFocused={onClose}
+        onContextMenuFocused={openTabMenu}
       >
-        <PanelTabList label={text.tabs} onCloseFocused={onClose} onContextMenuFocused={openTabMenu}>
           {tabs.map((tab) => (
             <PanelTab
               key={tab.key}
@@ -90,7 +92,9 @@ export function TerminalTabStrip({
               title={tab.detail || tab.label}
               icon={<SquareTerminal aria-hidden />}
               active={tab.key === active}
-              pending={tab.busy || bell === tab.key}
+              pending={tab.busy}
+              muted={tab.exited}
+              attention={bell === tab.key}
               closeLabel={text.closeTab}
               testId={`terminal-tab-${tab.key}`}
               onSelect={() => selectTab(tab.key)}
@@ -101,8 +105,7 @@ export function TerminalTabStrip({
               }}
             />
           ))}
-        </PanelTabList>
-      </div>
+      </PanelTabList>
       <IconButton
         size="sm"
         className="term-tab-new"

@@ -55,7 +55,7 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
   return (
     <Collapsible className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={open} onExpandedChange={setManual}>
       {headless ? null : (
-        <CollapsibleHeader className="v3-process-head" chevron="end" data-testid="v3-process-toggle">
+        <CollapsibleHeader className="v3-process-head" size="compact" chevron="end" data-testid="v3-process-toggle">
           <span className="v3-process-line">
             {processParts(summary, tt).map((part) => <span key={part} className="v3-process-count">{part}</span>)}
             {summary.failed ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}

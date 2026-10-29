@@ -149,11 +149,6 @@
     pointer-events: none;
   }
 
-  .term-view-hint {
-    margin-inline-start: var(--s-12);
-    color: var(--fg3);
-  }
-
   .term-pane-error {
     max-width: 100%;
     font-family: var(--font-mono);

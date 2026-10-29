@@ -70,7 +70,7 @@ export function RailCard({
           }
         }}
       >
-        <Button variant="plain" size="sm" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
+        <Button variant="plain" size="sm" justify="start" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
           <span className="wb-tile-title">{title}</span>
           <CollapsibleChevron expanded={open} className="wb-tile-chevron" />
           {!open && summary != null ? <span className="wb-tile-summary">{summary}</span> : null}

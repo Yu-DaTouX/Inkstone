@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode
 } from 'react'
-import { Button, Dialog, DialogFooter, Modal, ModalOverlay, Notice } from '../../../ui'
+import { ConfirmDialog, Notice } from '../../../ui'
 import { useT } from '../../../i18n'
 import { runConfirmAction } from './confirm-action'
 
@@ -75,42 +75,30 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
     <ConfirmContext.Provider value={value}>
       {children}
       {pending ? (
-        <ModalOverlay
-          className="settings-confirm-overlay"
+        <ConfirmDialog
+          overlayClassName="settings-confirm-overlay"
+          size="md"
           isOpen
-          isDismissable={false}
-          isKeyboardDismissDisabled={busy}
           onOpenChange={(open) => {
             if (!open && !busy) settle(false)
           }}
+          title={pending.title}
+          tone={pending.tone === 'danger' ? 'danger' : 'default'}
+          cancelLabel={pending.cancelLabel ?? t('ui.cancel')}
+          confirmLabel={pending.confirmLabel}
+          confirmTestId="caps-confirm-accept"
+          isPending={busy}
+          closeOnConfirm={false}
+          onConfirm={() => void accept()}
         >
-          <Modal data-dialog-size="md">
-            <Dialog title={pending.title} alert closeLabel={t('set.close')}>
-              {pending.body ? <p className="settings-confirm-desc caps-confirm-body">{pending.body}</p> : null}
-              {pending.detail ? <pre className="caps-confirm-detail">{pending.detail}</pre> : null}
-              {error ? (
-                <Notice tone="fail" compact>
-                  {error}
-                </Notice>
-              ) : null}
-              <DialogFooter>
-                <Button variant="ghost" isDisabled={busy} onPress={() => settle(false)}>
-                  {pending.cancelLabel ?? t('ui.cancel')}
-                </Button>
-                <Button
-                  autoFocus
-                  variant={pending.tone === 'danger' ? 'destructive' : 'primary'}
-                  isPending={busy}
-                  aria-busy={busy || undefined}
-                  data-testid="caps-confirm-accept"
-                  onPress={() => void accept()}
-                >
-                  {pending.confirmLabel}
-                </Button>
-              </DialogFooter>
-            </Dialog>
-          </Modal>
-        </ModalOverlay>
+          {pending.body ? <p className="settings-confirm-desc caps-confirm-body">{pending.body}</p> : null}
+          {pending.detail ? <pre className="caps-confirm-detail">{pending.detail}</pre> : null}
+          {error ? (
+            <Notice tone="fail" compact>
+              {error}
+            </Notice>
+          ) : null}
+        </ConfirmDialog>
       ) : null}
     </ConfirmContext.Provider>
   )

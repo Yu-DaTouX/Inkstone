@@ -82,10 +82,6 @@
     font-weight: var(--w-medium, 500);
   }
 
-  .v3-canvas-panel-empty {
-    padding-inline: var(--s-12);
-  }
-
   .v3-canvas-panel-body {
     display: flex;
     flex-direction: column;

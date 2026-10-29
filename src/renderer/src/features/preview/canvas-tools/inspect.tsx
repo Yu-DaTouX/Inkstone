@@ -118,7 +118,7 @@ function InspectPanel({ context }: CanvasToolPanelProps): ReactElement {
         ) : null}
       </div>
       {!info ? (
-        <EmptyState size="sm" align="start" className="v3-canvas-panel-empty" title={labels.canvasInspectEmpty} />
+        <EmptyState size="sm" align="start" title={labels.canvasInspectEmpty} />
       ) : (
         <div className="v3-canvas-panel-body">
           <div className="v3-canvas-panel-headline">

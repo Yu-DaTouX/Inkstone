@@ -527,6 +527,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
                       aria-selected={active}
                       aria-disabled={item.disabled || undefined}
                       muted={item.disabled}
+                      hoverHighlight={false}
                       data-active={active ? 'true' : undefined}
                       data-selected={active ? '' : undefined}
                       className="cmd-option"

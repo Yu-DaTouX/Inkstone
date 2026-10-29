@@ -53,8 +53,9 @@ export function TerminalFindBar({ query, noResults, text, onQuery, onStep, onClo
         onNext={() => onStep('next')}
         onPrevious={() => onStep('previous')}
         onClose={onClose}
-        matchCount={noResults && query !== '' ? 0 : null}
+        hasMatches={query === '' ? undefined : !noResults}
         status={noResults && query !== '' ? text.noResults : undefined}
+        spellCheck={false}
         placeholder={text.findPlaceholder}
         labels={{ input: text.find, previous: text.findPrev, next: text.findNext, close: text.findClose }}
         autoFocus={false}

@@ -29,6 +29,7 @@ export interface MenuItemProps<T extends object = object> extends RACMenuItemPro
   icon?: ReactNode
   description?: ReactNode
   shortcut?: ReactNode
+  trailingValue?: ReactNode
   checked?: boolean | 'selection'
   tone?: 'default' | 'danger'
 }
@@ -37,6 +38,7 @@ export function MenuItem<T extends object = object>({
   icon,
   description,
   shortcut,
+  trailingValue,
   checked,
   tone = 'default',
   className,
@@ -44,7 +46,7 @@ export function MenuItem<T extends object = object>({
   textValue,
   ...props
 }: MenuItemProps<T>) {
-  const slotted = icon != null || description != null || shortcut != null || checked !== undefined
+  const slotted = icon != null || description != null || shortcut != null || trailingValue != null || checked !== undefined
   const resolvedTextValue = textValue ?? (typeof children === 'string' ? children : undefined)
   return (
     <RACMenuItem
@@ -88,6 +90,7 @@ export function MenuItem<T extends object = object>({
                 </Text>
               ) : null}
             </span>
+            {trailingValue != null ? <span className="ui-menu__value">{trailingValue}</span> : null}
             {shortcut != null ? <Keyboard className="ui-menu__shortcut">{shortcut}</Keyboard> : null}
           </>
         )

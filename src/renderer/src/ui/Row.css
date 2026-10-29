@@ -19,13 +19,12 @@
       background-color var(--dur-fast) var(--ease),
       color var(--dur-fast) var(--ease);
   }
-  .ui-row:hover,
-  .ui-row[data-hovered],
+  .ui-row:not([data-no-hover]):is(:hover, [data-hovered]),
   .ui-row[data-menu='1'] {
-    background: var(--alpha-1);
+    background: var(--hover);
   }
-  .ui-row:active {
-    background: var(--alpha-2);
+  .ui-row:not(.ui-row--static):active {
+    background: var(--press);
   }
   .ui-row:is([aria-current='true'], [aria-current='page'], [data-selected]) {
     background: var(--alpha-1);
@@ -38,6 +37,59 @@
   .ui-row[data-muted] {
     color: var(--fg3);
     opacity: 0.5;
+  }
+  .ui-row--static {
+    cursor: default;
+    user-select: text;
+  }
+  .ui-row--two-line {
+    height: auto;
+    min-height: var(--d-row);
+    padding-block: var(--s-4);
+  }
+  .ui-row__text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .ui-row__text > .ui-row__label {
+    flex: none;
+  }
+  .ui-row__desc {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .ui-row-frame {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    border-radius: var(--r-sm);
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+  .ui-row-frame:not([data-no-hover]):hover {
+    background: var(--hover);
+  }
+  .ui-row-frame:has(> .ui-row:is([aria-current='true'], [aria-current='page'], [data-selected])) {
+    background: var(--alpha-1);
+  }
+  .ui-row-frame > .ui-row {
+    flex: 1;
+    background: transparent;
+  }
+  .ui-row-frame > .ui-row:is(:hover, [data-hovered], [aria-current='true'], [aria-current='page'], [data-selected]) {
+    background: transparent;
+  }
+  .ui-row__accessory {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-4);
+    padding-inline-end: var(--s-4);
   }
   .ui-row__lead {
     flex: none;

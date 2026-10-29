@@ -14,11 +14,7 @@ import {
   Notice,
   PanelTab,
   PanelTabList,
-  Spinner,
-  TextField,
-  Tooltip,
-  TooltipHint,
-  TooltipTrigger
+  TextField
 } from '../../ui'
 import { claimResource, releaseResource, resourceOwner } from '../../state/resource-owners'
 import { nextAddressInput } from '../../../../shared/browser-navigation'
@@ -142,14 +138,9 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     finally { setImportStarting(false) }
   }
   const importButton = (
-    <TooltipTrigger>
-      <Button variant="ghost" size="sm" className="v3-browser__import" aria-label={importId ? text.importCancel : text.importLogin} icon={<LogIn size={14} aria-hidden="true" />} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={() => void importLogin()}>
-        <span className="v3-browser__import-label">{importId ? text.importCancel : text.importLogin}</span>
-      </Button>
-      <Tooltip>
-        <TooltipHint label={text.importHint} />
-      </Tooltip>
-    </TooltipTrigger>
+    <Button variant="ghost" size="sm" className="v3-browser__import" aria-label={importId ? text.importCancel : text.importLogin} icon={<LogIn size={14} aria-hidden="true" />} tooltip={text.importHint} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={() => void importLogin()}>
+      <span className="v3-browser__import-label">{importId ? text.importCancel : text.importLogin}</span>
+    </Button>
   )
   const importStatus = importId || importNote ? (
     <Notice
@@ -376,7 +367,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
       {state.loading || state.loadError || error ? (
         <div className="v3-browser__status" data-testid="browser-pane-status" role="status">
           {state.loading ? (
-            <Notice variant="hint" icon={<Spinner size="xs" />}>
+            <Notice variant="hint" loading>
               {t('browser.loading')}
             </Notice>
           ) : null}

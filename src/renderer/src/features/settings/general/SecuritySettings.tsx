@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../../shared/approval'
 import { useStore } from '../../../state/store'
-import { Button, Dialog, DialogFooter, EmptyState, MiddleTruncate, Modal, ModalOverlay, Switch } from '../../../ui'
+import { Button, ConfirmDialog, EmptyState, MiddleTruncate, Switch } from '../../../ui'
 import { generalText } from './general-text'
 import { permissionNeedsConfirm } from './general-model'
 import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
@@ -20,7 +20,7 @@ export interface AllowRootsListProps {
 export function AllowRootsList({ roots, emptyText, removeText, onRemove }: AllowRootsListProps): ReactElement {
   if (roots.length === 0) {
     return (
-      <EmptyState size="sm" align="start" className="settings-list-empty" title={emptyText} data-testid="v3-security-roots-empty" />
+      <EmptyState size="sm" align="start" inset="none" className="settings-list-empty" title={emptyText} data-testid="v3-security-roots-empty" />
     )
   }
   return (
@@ -121,28 +121,18 @@ export function SecuritySettings(): ReactElement {
 
       <PiProjectTrustGroup title={labels.groupSecurityProjects} />
 
-      <ModalOverlay className="settings-confirm-overlay" isOpen={confirmAll} onOpenChange={setConfirmAll}>
-        <Modal data-dialog-size="sm">
-          <Dialog alert title={text.securityAllConfirmTitle} aria-label={text.securityAllConfirmTitle}>
-            <p className="settings-confirm-desc">{text.securityAllConfirmBody}</p>
-            <DialogFooter>
-              <Button variant="ghost" autoFocus onPress={() => setConfirmAll(false)}>
-                {text.cancel}
-              </Button>
-              <Button
-                variant="destructive"
-                data-testid="v3-security-all-confirm"
-                onPress={() => {
-                  setConfirmAll(false)
-                  apply('all')
-                }}
-              >
-                {text.securityAllConfirmContinue}
-              </Button>
-            </DialogFooter>
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
+      <ConfirmDialog
+        overlayClassName="settings-confirm-overlay"
+        isOpen={confirmAll}
+        onOpenChange={setConfirmAll}
+        title={text.securityAllConfirmTitle}
+        description={text.securityAllConfirmBody}
+        tone="danger"
+        cancelLabel={text.cancel}
+        confirmLabel={text.securityAllConfirmContinue}
+        confirmTestId="v3-security-all-confirm"
+        onConfirm={() => apply('all')}
+      />
     </section>
   )
 }

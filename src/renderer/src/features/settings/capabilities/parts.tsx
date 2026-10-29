@@ -34,7 +34,7 @@ export function Warn({ children }: { children: ReactNode }): ReactElement {
 }
 
 export function Empty({ children }: { children: ReactNode }): ReactElement {
-  return <EmptyState size="sm" align="start" title={children} />
+  return <EmptyState size="sm" align="start" inset="none" title={children} />
 }
 
 export type EntryMetaPart = ReactNode | false | null | undefined

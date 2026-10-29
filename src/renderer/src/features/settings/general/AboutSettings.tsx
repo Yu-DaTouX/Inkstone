@@ -3,7 +3,7 @@ import { useI18n } from '../../../i18n'
 import { BUILD_INFO, formatBuildTime } from '../../../../../shared/build-info'
 import type { AppUpdateStatus } from '../../../../../shared/app-update'
 import { useStore } from '../../../state/store'
-import { Button, Dialog, DialogFooter, Modal, ModalOverlay, Notice, ProgressBar, Switch } from '../../../ui'
+import { Button, ConfirmDialog, Notice, ProgressBar, Switch } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { generalText, type GeneralText } from './general-text'
 import { piSourceLabel, updatePercent, updateStatusDetail } from './general-model'
@@ -225,21 +225,18 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
         ) : null}
       </SettingsGroup>
 
-      <ModalOverlay className="settings-confirm-overlay" isOpen={confirmInstall} onOpenChange={setConfirmInstall}>
-        <Modal data-dialog-size="sm">
-          <Dialog alert title={text.aboutUpdateInstall} aria-label={text.aboutUpdateInstall}>
-            <p className="settings-confirm-desc">{text.aboutUpdateInstallConfirm}</p>
-            <DialogFooter>
-              <Button variant="ghost" onPress={() => setConfirmInstall(false)}>
-                {text.cancel}
-              </Button>
-              <Button variant="primary" autoFocus data-testid="v3-about-update-install-confirm" onPress={install}>
-                {text.aboutUpdateInstall}
-              </Button>
-            </DialogFooter>
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
+      <ConfirmDialog
+        overlayClassName="settings-confirm-overlay"
+        isOpen={confirmInstall}
+        onOpenChange={setConfirmInstall}
+        title={text.aboutUpdateInstall}
+        description={text.aboutUpdateInstallConfirm}
+        cancelLabel={text.cancel}
+        confirmLabel={text.aboutUpdateInstall}
+        confirmTestId="v3-about-update-install-confirm"
+        closeOnConfirm={false}
+        onConfirm={install}
+      />
     </section>
   )
 }

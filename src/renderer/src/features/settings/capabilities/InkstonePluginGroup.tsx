@@ -42,7 +42,8 @@ function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElemen
       tone: action === 'remove' ? 'danger' : 'default', action: () => run(action)
     })
   }
-  return <Entry name={copy.name ?? entry.name} meta={[copy.desc, copy.target, copy.hint, note]} testId={`caps-market-${entry.id}`}
+  const statusLabel = installed ? t('pkg.installed') : t('ocp.statusMissing')
+  return <Entry name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`} meta={[statusLabel, copy.desc, copy.target, copy.hint, note]} testId={`caps-market-${entry.id}`}
     actions={<>
       <Button variant="secondary" isDisabled={busy} onPress={() => choose('install')}>{busy ? t('pkg.working') : t(installed ? 'pet.reinstall' : 'pet.install')}</Button>
       {installed ? <Button variant="danger" isDisabled={busy} onPress={() => choose('remove')}>{t('pet.uninstall')}</Button> : null}

@@ -93,10 +93,6 @@
     line-height: var(--t-caption-lh);
   }
 
-  .v3-canvas-edit-empty {
-    padding-inline: var(--s-12);
-  }
-
   .v3-canvas-edit-body {
     display: flex;
     flex-direction: column;

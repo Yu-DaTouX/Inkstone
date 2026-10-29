@@ -827,31 +827,6 @@
     color: var(--fg2);
   }
 
-  .v3-pbadge {
-    --v3-pbadge: var(--data-8);
-    flex: none;
-    display: inline-flex;
-  }
-
-  .v3-pbadge-mark {
-    justify-content: center;
-    width: var(--s-16);
-    height: var(--s-16);
-    padding: 0;
-    background: color-mix(in srgb, var(--v3-pbadge) 16%, transparent);
-    color: var(--v3-pbadge);
-    font: var(--w-semibold) var(--t-caption) / 1 var(--font-mono);
-    letter-spacing: -0.06em;
-  }
-
-  .v3-pbadge[data-tone='1'] { --v3-pbadge: var(--data-1); }
-  .v3-pbadge[data-tone='2'] { --v3-pbadge: var(--data-2); }
-  .v3-pbadge[data-tone='3'] { --v3-pbadge: var(--data-3); }
-  .v3-pbadge[data-tone='4'] { --v3-pbadge: var(--data-4); }
-  .v3-pbadge[data-tone='5'] { --v3-pbadge: var(--data-5); }
-  .v3-pbadge[data-tone='6'] { --v3-pbadge: var(--data-6); }
-  .v3-pbadge[data-tone='7'] { --v3-pbadge: var(--data-7); }
-
   .v3-srow[data-variant='card'] > .v3-row {
     height: auto;
     padding-block: var(--s-6);

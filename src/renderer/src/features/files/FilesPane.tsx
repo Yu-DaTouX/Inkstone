@@ -13,6 +13,7 @@ import {
 import { ArrowUpRight, ChevronsDownUp, Folder, FolderOpen, List, RefreshCw, Search, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import {
   Button,
   EmptyState,
@@ -20,6 +21,7 @@ import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
+  isImeComposing,
   Spinner,
   Toggle,
   ToggleGroup,
@@ -41,7 +43,6 @@ import {
 import { breadcrumbDirectory, breadcrumbParent } from './breadcrumb-model'
 import { FileBreadcrumbs } from './FileBreadcrumbs'
 import { filesText, type FilesText } from './files-text'
-import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { FilesRowMenu } from './FilesRowMenu'
 import { useFilesSearch } from './use-files-search'
 import {
@@ -147,7 +148,7 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
   }
 
   const onFilterKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return
+    if (isImeComposing(event)) return
     if (event.key === 'Enter') {
       event.preventDefault()
       submitFilter()

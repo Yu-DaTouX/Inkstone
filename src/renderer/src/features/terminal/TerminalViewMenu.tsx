@@ -31,9 +31,8 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
       <Popover placement="bottom end" offset={4}>
         <Menu aria-label={text.viewMenu} autoFocus="first">
           <SubmenuTrigger>
-            <MenuItem id="font-size" textValue={text.fontSize}>
+            <MenuItem id="font-size" textValue={text.fontSize} trailingValue={String(view.fontSize)}>
               {text.fontSize}
-              <span className="term-view-hint">{String(view.fontSize)}</span>
             </MenuItem>
             <Popover placement="end top" offset={2}>
               <Menu aria-label={text.fontSize} onAction={(key) => onChange({ fontSize: Number(key) })}>
@@ -46,9 +45,8 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
             </Popover>
           </SubmenuTrigger>
           <SubmenuTrigger>
-            <MenuItem id="line-height" textValue={text.lineHeight}>
+            <MenuItem id="line-height" textValue={text.lineHeight} trailingValue={lineHeightLabel(view.lineHeight)}>
               {text.lineHeight}
-              <span className="term-view-hint">{lineHeightLabel(view.lineHeight)}</span>
             </MenuItem>
             <Popover placement="end top" offset={2}>
               <Menu aria-label={text.lineHeight} onAction={(key) => onChange({ lineHeight: Number(key) })}>
@@ -61,9 +59,8 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
             </Popover>
           </SubmenuTrigger>
           <SubmenuTrigger>
-            <MenuItem id="cursor-style" textValue={text.cursorStyle}>
+            <MenuItem id="cursor-style" textValue={text.cursorStyle} trailingValue={cursorLabel[view.cursorStyle]}>
               {text.cursorStyle}
-              <span className="term-view-hint">{cursorLabel[view.cursorStyle]}</span>
             </MenuItem>
             <Popover placement="end top" offset={2}>
               <Menu aria-label={text.cursorStyle} onAction={(key) => onChange({ cursorStyle: String(key) as TerminalViewSettings['cursorStyle'] })}>
@@ -79,9 +76,8 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
             {text.cursorBlink}
           </MenuItem>
           <SubmenuTrigger>
-            <MenuItem id="scrollback" textValue={text.scrollback}>
+            <MenuItem id="scrollback" textValue={text.scrollback} trailingValue={text.lines(view.scrollback)}>
               {text.scrollback}
-              <span className="term-view-hint">{text.lines(view.scrollback)}</span>
             </MenuItem>
             <Popover placement="end top" offset={2}>
               <Menu aria-label={text.scrollback} onAction={(key) => onChange({ scrollback: Number(key) })}>

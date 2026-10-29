@@ -279,7 +279,7 @@ export function StashSaveMenuItem() {
     <MenuItem
       textValue={t('stash.save')}
       icon={<Bookmark size={14} />}
-      description={t('stash.shortcut')}
+      shortcut={t('stash.shortcut')}
       onAction={requestPromptStashSave}
       data-testid="composer-plus-stash-save"
     >

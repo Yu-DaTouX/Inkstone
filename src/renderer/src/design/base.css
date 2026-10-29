@@ -41,7 +41,7 @@
     font-family: var(--font-mono);
   }
 
-  kbd {
+  kbd:not([class]) {
     display: inline-flex;
     box-sizing: border-box;
     align-items: center;

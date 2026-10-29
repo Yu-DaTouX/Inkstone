@@ -472,6 +472,7 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
         confirmLabel={t('sched.delete')}
         cancelLabel={t('sched.cancel')}
         isPending={!!confirming && busy === confirming.id}
+        data-testid="schedule-delete-dialog"
         onConfirm={confirmDelete}
       />
     </div>

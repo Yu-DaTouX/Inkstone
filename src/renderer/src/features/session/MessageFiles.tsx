@@ -15,7 +15,7 @@ export function MessageFiles({ files, sourceCwd }: { files: ReturnType<typeof sp
           else void previewFile(file.path, undefined, sourceCwd)
         }
         return (
-          <FileCard key={file.path} {...file} onPress={open} onContextMenu={(event) => {
+          <FileCard key={file.path} {...file} className="v3-user-file" onPress={open} onContextMenu={(event) => {
             openMessageMenu(event, tt('menuLink'), [
               { id: 'preview', label: tt('menuPreviewFile'), run: open },
               { id: 'reveal', label: tt('menuRevealFile'), run: () => void window.yan.revealPath(file.path) },

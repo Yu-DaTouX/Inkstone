@@ -94,7 +94,7 @@ export function DeviceList({
   ]
   if (entries.length === 0) {
     return (
-      <EmptyState size="sm" align="start" className="settings-list-empty" title={text.devicesNone} data-testid="v3-devices-empty" />
+      <EmptyState size="sm" align="start" inset="none" className="settings-list-empty" title={text.devicesNone} data-testid="v3-devices-empty" />
     )
   }
   const active = entries.filter((entry) => entry.revokedAt === null)
@@ -445,7 +445,7 @@ export function DevicesSettings(): ReactElement {
 
       <SettingsGroup title={text.devicesPeer} description={text.devicesPeerDesc} settingId="devices-peer" plain>
         {grants.length === 0 ? (
-          <EmptyState size="sm" align="start" className="settings-list-empty" title={text.devicesPeerNone} data-testid="v3-devices-peer-empty" />
+          <EmptyState size="sm" align="start" inset="none" className="settings-list-empty" title={text.devicesPeerNone} data-testid="v3-devices-peer-empty" />
         ) : (
           <ul className="settings-devices" data-testid="v3-devices-peer">
             {grants.map((grant) => (

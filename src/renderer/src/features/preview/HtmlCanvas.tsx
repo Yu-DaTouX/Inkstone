@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactElement } from 'react'
 import { ExternalLink, Maximize, Monitor, MousePointer2, Play, RotateCw, Square, ZoomIn, ZoomOut } from 'lucide-react'
-import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator, TextField, Toggle, ToggleGroup, Tooltip, TooltipHint, TooltipTrigger } from '../../ui'
+import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator, TextField, Toggle, ToggleGroup } from '../../ui'
 import type { PreviewText } from './preview-text'
 import { HtmlPreviewFrame, type PreviewFocus } from './HtmlPreviewFrame'
 import type { HtmlPreviewRect } from '../../../../shared/html-artifact-preview'
@@ -703,14 +703,9 @@ export function HtmlCanvas({
         <IconButton size="sm" aria-label={labels.canvasZoomOut} tooltip={labels.canvasZoomOut} onPress={() => zoomCenter(zoomStep(view.zoom, -1))}>
           <ZoomOut size={14} />
         </IconButton>
-        <TooltipTrigger>
-          <Button size="sm" variant="ghost" aria-label={labels.canvasZoomReset} data-testid="v3-canvas-zoom" onPress={() => zoomCenter(1)}>
-            {percent}
-          </Button>
-          <Tooltip>
-            <TooltipHint label={labels.canvasZoomReset} />
-          </Tooltip>
-        </TooltipTrigger>
+        <Button size="sm" variant="ghost" aria-label={labels.canvasZoomReset} tooltip={labels.canvasZoomReset} data-testid="v3-canvas-zoom" onPress={() => zoomCenter(1)}>
+          {percent}
+        </Button>
         <IconButton size="sm" aria-label={labels.canvasZoomIn} tooltip={labels.canvasZoomIn} onPress={() => zoomCenter(zoomStep(view.zoom, 1))}>
           <ZoomIn size={14} />
         </IconButton>

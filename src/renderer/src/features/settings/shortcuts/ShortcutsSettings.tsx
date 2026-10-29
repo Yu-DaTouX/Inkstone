@@ -10,7 +10,7 @@ import {
   type ShortcutOverrides
 } from '../../../app/shortcuts'
 import { shortcutText } from '../../commands/shortcut-text'
-import { Button, cx, IconButton, Kbd, SettingRow } from '../../../ui'
+import { Button, cx, IconButton, KbdGroup, SettingRow } from '../../../ui'
 import { SettingsGroup } from '../root/controls'
 import { bindingFromKeyStroke, clearShortcutOverrides, rebindShortcut } from './bindings'
 import { shortcutsText } from './shortcuts-text'
@@ -18,13 +18,7 @@ import { settingsText } from '../settings-text'
 import './shortcuts.css'
 
 function Keys({ tokens, className }: { tokens: readonly string[]; className?: string }): ReactElement {
-  return (
-    <span className={cx('settings-shortcut-keys', className)}>
-      {tokens.map((token, index) => (
-        <Kbd key={`${token}-${index}`}>{token}</Kbd>
-      ))}
-    </span>
-  )
+  return <KbdGroup className={cx('settings-shortcut-keys', className)} keys={tokens} />
 }
 
 interface RecordingNotice {

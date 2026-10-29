@@ -1,21 +1,17 @@
 import { forwardRef, type ReactNode } from 'react'
-import { composeRenderProps, type TooltipProps as RACTooltipProps } from 'react-aria-components'
+import { composeRenderProps } from 'react-aria-components'
 import { X } from 'lucide-react'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { Button, type ButtonProps, type ButtonSize } from './Button'
-import { Tooltip, TooltipHint, TooltipTrigger } from './Tooltip'
 import { CLOSE_ICON_SIZE } from './sizes'
 
 export interface IconButtonProps
-  extends Omit<ButtonProps, 'variant' | 'children' | 'icon' | 'trailingIcon' | 'block' | 'size'> {
+  extends Omit<ButtonProps, 'variant' | 'children' | 'icon' | 'trailingIcon' | 'block' | 'justify' | 'size'> {
   'aria-label': string
   variant?: 'ghost' | 'plain' | 'secondary' | 'danger'
   size?: ButtonSize
   pressedTone?: 'accent' | 'neutral'
-  tooltip?: ReactNode
-  tooltipShortcut?: ReactNode
-  tooltipPlacement?: RACTooltipProps['placement']
   children: ReactNode
 }
 
@@ -24,16 +20,13 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     variant = 'ghost',
     size = 'md',
     pressedTone = 'accent',
-    tooltip,
-    tooltipShortcut,
-    tooltipPlacement,
     className,
     children,
     ...props
   },
   ref
 ) {
-  const button = (
+  return (
     <Button
       {...props}
       ref={ref}
@@ -43,15 +36,6 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     >
       {children}
     </Button>
-  )
-  if (tooltip == null || tooltip === false) return button
-  return (
-    <TooltipTrigger>
-      {button}
-      <Tooltip placement={tooltipPlacement}>
-        <TooltipHint label={tooltip} shortcut={tooltipShortcut} />
-      </Tooltip>
-    </TooltipTrigger>
   )
 })
 

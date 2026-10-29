@@ -13,7 +13,6 @@ import {
   ModalOverlay,
   Notice,
   Select,
-  Spinner,
   TextField
 } from '../../ui'
 import { useT } from '../../i18n'
@@ -233,7 +232,7 @@ export function ProjectScriptsDialog({
 
               {importShown ? (
                 <Card padding="sm" quiet className="scripts-import" data-testid="scripts-import">
-                  {importLoading ? <Notice compact variant="hint" icon={<Spinner size="sm" />}>{t('script.importLoading')}</Notice> : null}
+                  {importLoading ? <Notice compact variant="hint" loading>{t('script.importLoading')}</Notice> : null}
                   {importError ? (
                     <Notice tone="fail" compact>
                       {importError}

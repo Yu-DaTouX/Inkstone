@@ -395,19 +395,9 @@
     flex: 1;
     min-width: 0;
     min-height: var(--size-btn);
-    justify-content: flex-start;
     gap: var(--s-4);
     margin-left: calc(-1 * var(--s-4));
     padding: 0 var(--s-4);
-  }
-
-  .wb-tile-toggle > .ui-btn__label {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: var(--s-4);
   }
 
   .wb-tile-title {
@@ -654,36 +644,6 @@
 
   .wb-bg-static {
     flex: 1;
-    display: flex;
-    align-items: center;
-    gap: var(--s-4);
-    min-width: 0;
-    height: var(--d-row);
-    padding: 0 var(--s-2);
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
-  }
-
-  .wb-bg-lead {
-    flex: none;
-    display: inline-grid;
-    place-items: center;
-    width: var(--s-24);
-    height: var(--s-24);
-  }
-
-  .wb-bg-label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-align: left;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .wb-bg-time {
-    flex: none;
-    font-size: var(--t-footnote);
-    font-variant-numeric: tabular-nums;
   }
 
   .wb-bg-detail {
@@ -773,7 +733,6 @@
 
   .wb-bg-section-title,
   .wb-bg-section-toggle,
-  .wb-bg-time,
   .wb-bg-detail,
   .wb-bg-earlier {
     color: var(--fg3);

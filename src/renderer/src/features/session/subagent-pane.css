@@ -159,7 +159,7 @@
     gap: var(--s-8);
   }
 
-  .sa-composer-field .ui-textarea {
+  .sa-composer-input {
     min-height: 0;
     max-height: 160px;
     resize: none;

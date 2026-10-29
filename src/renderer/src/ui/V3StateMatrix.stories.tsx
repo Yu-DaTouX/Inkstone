@@ -37,6 +37,10 @@ import {
   InputGroupText,
   KbdGroup,
   ListRow,
+  ListRowStatic,
+  TooltipText,
+  isImeComposing,
+  CONTROL_ICON_SIZE,
   MenuSeparator,
   MiddleTruncate,
   QrCode,
@@ -1189,6 +1193,9 @@ function ConfirmDemo({ tone, label }: { tone: 'default' | 'danger'; label: strin
         title={tone === 'danger' ? '删除这个会话？' : '重新连接设备？'}
         description={tone === 'danger' ? '会话记录会从列表移除，pi 的会话文件不会被删除。' : '当前连接会断开，未发送的输入会保留。'}
         confirmLabel={tone === 'danger' ? '删除' : '重新连接'}
+        confirmTestId={`confirm-${tone}`}
+        cancelTestId={`cancel-${tone}`}
+        data-testid={`dialog-${tone}`}
         onConfirm={() => new Promise((resolve) => setTimeout(resolve, 600))}
       />
     </>
@@ -1745,3 +1752,115 @@ function FileGlyph() {
 function TextGlyph({ text }: { text: string }) {
   return <span style={{ font: 'var(--w-medium) var(--t-caption) / 1 var(--font-mono)' }}>{text}</span>
 }
+
+function ImeProbe() {
+  const [last, setLast] = useState('—')
+  return (
+    <InputGroup size="sm">
+      <InputGroupInput
+        aria-label="输入法守卫"
+        placeholder="组字时回车不提交"
+        onKeyDown={(event) => {
+          if (isImeComposing(event)) return
+          if (event.key === 'Enter') setLast(event.currentTarget.value || '（空）')
+        }}
+      />
+      <InputGroupAddon align="end">
+        <InputGroupText>{last}</InputGroupText>
+      </InputGroupAddon>
+    </InputGroup>
+  )
+}
+
+export const GapFillStates: Story = {
+  name: '补缺 · 紧凑折叠、行变体、数据色徽标、提示文本、加载提示与菜单当前值',
+  parameters: {
+    stateMatrix: {
+      components: [
+        'CollapsibleHeader',
+        'ListRow',
+        'ListRowStatic',
+        'Badge',
+        'TooltipText',
+        'Notice',
+        'FindBar',
+        'Button',
+        'MenuItem',
+        'isImeComposing',
+        'CONTROL_ICON_SIZE'
+      ],
+      states: STATES('default', 'hover', 'selected', 'loading', 'empty', 'open', 'value-unknown'),
+      declared: STATES('hover', 'open')
+    }
+  },
+  render: () => (
+    <ThemePair>
+      {() => (
+        <div style={{ display: 'grid', gap: 'var(--s-16)', maxWidth: 360 }}>
+          <div style={{ display: 'grid' }}>
+            <Collapsible>
+              <CollapsibleHeader size="compact" chevron="end">读取 3 个文件 · 搜索 2 次</CollapsibleHeader>
+              <CollapsiblePanel>
+                <p style={{ margin: 0, color: 'var(--fg3)' }}>紧凑档：行高 --d-row，正文字号</p>
+              </CollapsiblePanel>
+            </Collapsible>
+            <Collapsible defaultExpanded>
+              <CollapsibleHeader size="compact" chevron="end" icon={<GearGlyph />}>思考 4 秒</CollapsibleHeader>
+              <CollapsiblePanel>
+                <p style={{ margin: 0, color: 'var(--fg3)' }}>展开内容</p>
+              </CollapsiblePanel>
+            </Collapsible>
+          </div>
+          <div style={{ display: 'grid', gap: 1 }}>
+            <ListRow icon={<span style={{ display: 'inline-grid', width: CONTROL_ICON_SIZE.md, height: CONTROL_ICON_SIZE.md }}><FileGlyph /></span>} description="src/renderer/src/ui" trailing="3 分钟">
+              两行内容 · Button.tsx
+            </ListRow>
+            <ListRow icon={<GearGlyph />} hoverHighlight={false} current>
+              不显示悬停底色（键盘选中）
+            </ListRow>
+            <ListRow icon={<GearGlyph />} accessory={<IconButton size="xs" aria-label="更多" tooltip="更多"><GearGlyph /></IconButton>}>
+              行尾附件不嵌在按钮里
+            </ListRow>
+            <ListRowStatic icon={<StatusSlot><StatusDot kind="running" /></StatusSlot>} trailing="02:14">
+              非交互行（定时任务）
+            </ListRowStatic>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--s-6)', alignItems: 'center' }}>
+            {(['data-1', 'data-2', 'data-3', 'data-4', 'data-5', 'data-6', 'data-7', 'data-8'] as const).map((tone, index) => (
+              <Badge key={tone} tone={tone} shape="square" aria-hidden="true">
+                {String.fromCharCode(65 + index)}
+              </Badge>
+            ))}
+            <Badge tone="data-3" data-testid="badge-data">数据色</Badge>
+          </div>
+          <p style={{ margin: 0, color: 'var(--fg2)' }}>
+            账号 <TooltipText tooltip="someone@example.com">个人订阅</TooltipText> 已登录
+          </p>
+          <Notice loading compact>正在连接终端…</Notice>
+          <Notice variant="hint" loading>页面加载中</Notice>
+          <div style={{ width: 260 }}>
+            <Notice tone="fail" compact action={<Button size="sm" variant="secondary">重试</Button>}>
+              窄容器里操作按钮换到正文下方
+            </Notice>
+          </div>
+          <FindBar value="error" onChange={() => undefined} onNext={() => undefined} onPrevious={() => undefined} hasMatches inputTestId="find-input" spellCheck={false} />
+          <FindBar value="nothing" onChange={() => undefined} onNext={() => undefined} onPrevious={() => undefined} hasMatches={false} status="无结果" />
+          <div style={{ display: 'flex', gap: 'var(--s-8)' }}>
+            <Button variant="secondary" tooltip="带提示的文字按钮" tooltipShortcut="Ctrl+R">运行</Button>
+            <Button variant="plain" justify="start" style={{ width: 160 }}>左对齐撑满</Button>
+          </div>
+          <Menu aria-label="终端视图">
+            <MenuItem id="font" textValue="字号" trailingValue="13">
+              字号
+            </MenuItem>
+            <MenuItem id="stash" textValue="暂存" shortcut="Ctrl+Shift+S">
+              暂存
+            </MenuItem>
+          </Menu>
+          <ImeProbe />
+        </div>
+      )}
+    </ThemePair>
+  )
+}
+

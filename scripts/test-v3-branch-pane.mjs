@@ -54,7 +54,8 @@ export function Dialog() { return null }
 export function DialogTrigger() { return null }
 export function Popover() { return null }
 export function TextField() { return null }
-export function Switch() { return null }`
+export function Switch() { return null }
+export function DialogFooter() { return null }`
 
 const TREE_STUB = `export function Tree() { return null }
 export function TreeItem() { return null }

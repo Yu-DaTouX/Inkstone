@@ -1,19 +1,23 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { cx } from './cx'
 
-export type BadgeTone = 'neutral' | 'accent' | 'ok' | 'run' | 'ask' | 'stall' | 'fail'
+export type BadgeDataTone = 'data-1' | 'data-2' | 'data-3' | 'data-4' | 'data-5' | 'data-6' | 'data-7' | 'data-8'
 
-export interface BadgeProps {
+export type BadgeTone = 'neutral' | 'accent' | 'ok' | 'run' | 'ask' | 'stall' | 'fail' | BadgeDataTone
+
+export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: BadgeTone
   overlay?: boolean
-  className?: string
-  title?: string
+  shape?: 'default' | 'square'
   children: ReactNode
 }
 
-export function Badge({ tone = 'neutral', overlay = false, className, children, ...rest }: BadgeProps) {
+export function Badge({ tone = 'neutral', overlay = false, shape = 'default', className, children, ...rest }: BadgeProps) {
   return (
-    <span className={cx('ui-badge', `ui-badge--${tone}`, overlay && 'ui-badge--overlay', className)} {...rest}>
+    <span
+      {...rest}
+      className={cx('ui-badge', `ui-badge--${tone}`, overlay && 'ui-badge--overlay', shape === 'square' && 'ui-badge--square', className)}
+    >
       {children}
     </span>
   )
@@ -31,15 +35,15 @@ export function Kbd({ className, children, ...rest }: KbdProps) {
   )
 }
 
-export interface KbdGroupProps extends HTMLAttributes<HTMLElement> {
+export interface KbdGroupProps extends HTMLAttributes<HTMLSpanElement> {
   keys?: readonly ReactNode[]
   children?: ReactNode
 }
 
 export function KbdGroup({ keys, className, children, ...rest }: KbdGroupProps) {
   return (
-    <kbd {...rest} className={cx('ui-kbd-group', className)}>
+    <span {...rest} className={cx('ui-kbd-group', className)}>
       {keys != null ? keys.map((key, index) => <Kbd key={index}>{key}</Kbd>) : children}
-    </kbd>
+    </span>
   )
 }

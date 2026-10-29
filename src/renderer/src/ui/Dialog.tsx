@@ -126,7 +126,12 @@ export interface ConfirmDialogProps {
   closeOnConfirm?: boolean
   size?: DialogSize
   footerVariant?: DialogFooterProps['variant']
+  overlayClassName?: string
+  className?: string
+  confirmTestId?: string
+  cancelTestId?: string
   'aria-label'?: string
+  'data-testid'?: string
 }
 
 export function ConfirmDialog({
@@ -145,7 +150,12 @@ export function ConfirmDialog({
   closeOnConfirm = true,
   size = 'sm',
   footerVariant = 'bare',
-  'aria-label': ariaLabel
+  overlayClassName,
+  className,
+  confirmTestId,
+  cancelTestId,
+  'aria-label': ariaLabel,
+  'data-testid': testId
 }: ConfirmDialogProps) {
   const t = useOptionalT()
   const [running, setRunning] = useState(false)
@@ -170,13 +180,13 @@ export function ConfirmDialog({
     onOpenChange(false)
   }
   return (
-    <ModalOverlay isOpen={isOpen} onOpenChange={(open) => (open ? onOpenChange(true) : cancel())} isDismissable={!pending}>
+    <ModalOverlay className={overlayClassName} isOpen={isOpen} onOpenChange={(open) => (open ? onOpenChange(true) : cancel())} isDismissable={!pending}>
       <Modal data-dialog-size={size}>
-        <Dialog alert title={title} aria-label={ariaLabel} className="ui-confirm">
+        <Dialog alert title={title} aria-label={ariaLabel} className={cx('ui-confirm', className)} data-testid={testId}>
           {description != null ? <p className="ui-confirm__desc">{description}</p> : null}
           {children}
           <DialogFooter variant={footerVariant}>
-            <Button variant="ghost" onPress={cancel} isDisabled={pending}>
+            <Button variant="ghost" onPress={cancel} isDisabled={pending} data-testid={cancelTestId}>
               {cancelLabel ?? t('ui.cancel')}
             </Button>
             <Button
@@ -185,6 +195,7 @@ export function ConfirmDialog({
               isDisabled={isConfirmDisabled}
               isPending={pending}
               autoFocus={tone !== 'danger'}
+              data-testid={confirmTestId}
             >
               {confirmLabel ?? t('ui.confirm')}
             </Button>

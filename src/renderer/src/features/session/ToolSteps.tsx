@@ -103,7 +103,7 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
 
   return (
     <Collapsible className="v3-step v3-step-group" data-state={summary.state} data-depth={0} isExpanded={open} onExpandedChange={setOpen}>
-      <CollapsibleHeader className="v3-step-head" chevron="end" data-testid="v3-step-group">
+      <CollapsibleHeader className="v3-step-head" size="compact" chevron="end" data-testid="v3-step-group">
         <span className="v3-step-line" title={label}>
           {running ? (
             <ShimmerText className="v3-steps-label" active={!open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
@@ -148,7 +148,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
 
   const step = (
     <>
-      <CollapsibleHeader className="v3-step-head" chevron="end" data-testid="v3-step">
+      <CollapsibleHeader className="v3-step-head" size="compact" chevron="end" data-testid="v3-step">
         <CompletionSweep done={!running && !call.cancelled && !denied} settledAt={call.endedAt} />
         <span className="v3-step-line" title={`${title.label} ${meta}`.trim()}>
           <span className="v3-step-label">

@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react'
 import { ChevronDown, Plus } from 'lucide-react'
-import { Button, IconButton, KbdGroup, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, Tooltip, TooltipHint, TooltipTrigger } from '../../ui'
+import { Button, IconButton, KbdGroup, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { SHORTCUTS, shortcutOverridesFromSettings } from '../../app/shortcuts'
@@ -70,21 +70,18 @@ export function ProjectScriptsControl(): ReactElement | null {
 
   return (
     <div className="scripts-control" data-testid="scripts-control">
-      <TooltipTrigger>
-        <Button
-          variant="ghost"
-          className="scripts-run"
-          aria-label={runLabel}
-          icon={scriptIconGlyph(primary.icon)}
-          onPress={() => run(primary)}
-          data-testid="scripts-run"
-        >
-          <span className="scripts-run-name">{primary.name}</span>
-        </Button>
-        <Tooltip>
-          <TooltipHint label={t('script.run', { name: primary.name })} shortcut={keys.length > 0 ? keysText : undefined} />
-        </Tooltip>
-      </TooltipTrigger>
+      <Button
+        variant="ghost"
+        className="scripts-run"
+        aria-label={runLabel}
+        icon={scriptIconGlyph(primary.icon)}
+        tooltip={t('script.run', { name: primary.name })}
+        tooltipShortcut={keys.length > 0 ? keysText : undefined}
+        onPress={() => run(primary)}
+        data-testid="scripts-run"
+      >
+        <span className="scripts-run-name">{primary.name}</span>
+      </Button>
       <MenuTrigger>
         <IconButton aria-label={t('script.menu')} tooltip={t('script.menu')} data-testid="scripts-menu-trigger">
           <ChevronDown size={14} />

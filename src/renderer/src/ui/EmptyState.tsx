@@ -9,6 +9,7 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLDivElement>, 't
   action?: ReactNode
   size?: 'sm' | 'md'
   align?: 'center' | 'start'
+  inset?: 'default' | 'none'
 }
 
 export function EmptyState({
@@ -19,11 +20,14 @@ export function EmptyState({
   action,
   size = 'md',
   align = 'center',
+  inset = 'default',
   className,
   ...rest
 }: EmptyStateProps) {
   return (
-    <div {...rest} className={cx('ui-empty', `ui-empty--${size}`, className)} data-align={align === 'start' ? 'start' : undefined}>
+    <div {...rest} className={cx('ui-empty', `ui-empty--${size}`, className)} data-align={align === 'start' ? 'start' : undefined}
+      data-inset={inset === 'none' ? 'none' : undefined}
+    >
       {icon != null ? (
         media === 'icon' ? (
           <span className="ui-empty__media" aria-hidden="true">

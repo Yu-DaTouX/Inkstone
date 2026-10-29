@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactElement } from 'react'
 import { ChevronLeft, ChevronRight, Clapperboard, Film, Pause, Play, SkipBack, SkipForward } from 'lucide-react'
-import { Button, CloseButton, IconButton, Slider, Tooltip, TooltipHint, TooltipTrigger } from '../../../ui'
+import { Button, CloseButton, IconButton, Slider } from '../../../ui'
 import type { CanvasTool, CanvasToolPanelProps } from './types'
 import {
   clampTimelineTime,
@@ -293,21 +293,17 @@ export function TimelinePanel({ context }: CanvasToolPanelProps): ReactElement |
         <span className="v3-canvas-timeline-count">{text.clipCount(clips.length)}</span>
         <div className="v3-canvas-timeline-export" data-testid="v3-canvas-timeline-export">
           {exporter.phase.kind === 'idle' ? (
-            <TooltipTrigger>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Film size={14} />}
-                data-testid="v3-canvas-timeline-export-start"
-                isDisabled={context.generating}
-                onPress={exporter.start}
-              >
-                {text.exportVideo}
-              </Button>
-              <Tooltip>
-                <TooltipHint label={text.exportHint} />
-              </Tooltip>
-            </TooltipTrigger>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Film size={14} />}
+              tooltip={text.exportHint}
+              data-testid="v3-canvas-timeline-export-start"
+              isDisabled={context.generating}
+              onPress={exporter.start}
+            >
+              {text.exportVideo}
+            </Button>
           ) : null}
           {exporter.phase.kind === 'running' ? (
             <>

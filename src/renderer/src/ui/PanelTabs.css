@@ -34,6 +34,28 @@
     background: var(--sel);
     color: var(--fg);
   }
+  .ui-ptab[data-muted] .ui-ptab__text,
+  .ui-ptab[data-muted] .ui-ptab__glyph {
+    opacity: 0.55;
+  }
+  .ui-ptab[data-preview] .ui-ptab__text {
+    font-style: italic;
+  }
+  .ui-ptab[data-attention] {
+    animation: ui-ptab-attention calc(var(--dur-base) * 3) var(--ease) 2;
+  }
+  @keyframes ui-ptab-attention {
+    50% {
+      background: var(--ask-bg);
+      color: var(--ask-t);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-ptab[data-attention] {
+      animation: none;
+      box-shadow: inset 0 0 0 var(--hair, 1px) var(--ask-edge);
+    }
+  }
 
   .ui-ptab__close {
     position: relative;

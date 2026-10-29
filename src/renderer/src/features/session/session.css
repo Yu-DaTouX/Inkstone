@@ -75,7 +75,7 @@
   .v3-user-images { display: flex; flex-wrap: wrap; gap: var(--s-6); justify-content: flex-end; }
   .v3-user-image { position: relative; }
   .v3-user-files { display: flex; flex-wrap: wrap; gap: var(--s-6); justify-content: flex-end; max-width: 100%; }
-  .v3-user-files .ui-file-card { width: min(240px, 100%); }
+  .v3-user-file { width: min(240px, 100%); }
   .v3-user-image-ref { position: absolute; top: var(--s-4); left: var(--s-4); pointer-events: none; }
   .v3-image-ref { background: transparent; color: var(--accent-t); font-weight: 500; }
 
@@ -83,7 +83,7 @@
 
   .v3-process { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
   .v3-process-head { width: fit-content; max-width: 100%; }
-  .v3-process-line { display: flex; align-items: center; column-gap: var(--s-6); min-width: 0; font-size: var(--t-body); font-weight: var(--w-regular); line-height: var(--t-body-lh); }
+  .v3-process-line { display: flex; align-items: center; column-gap: var(--s-6); min-width: 0; }
   .v3-step-panel[hidden] { display: none; }
   .v3-process-count { flex: none; white-space: nowrap; }
   .v3-process-count + .v3-process-count::before { content: '·'; margin-inline-end: var(--s-6); }

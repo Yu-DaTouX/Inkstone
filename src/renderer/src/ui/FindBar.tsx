@@ -13,6 +13,7 @@ export interface FindBarOption {
   label: string
   icon: ReactNode
   selected: boolean
+  testId?: string
 }
 
 export interface FindBarLabels {
@@ -30,6 +31,7 @@ export interface FindBarProps {
   onClose?: () => void
   matchIndex?: number | null
   matchCount?: number | null
+  hasMatches?: boolean
   status?: ReactNode
   options?: readonly FindBarOption[]
   onOptionChange?: (id: string, selected: boolean) => void
@@ -37,7 +39,10 @@ export interface FindBarProps {
   labels?: FindBarLabels
   autoFocus?: boolean
   inputRef?: Ref<HTMLInputElement>
+  inputTestId?: string
+  spellCheck?: boolean
   className?: string
+  'aria-label'?: string
   'data-testid'?: string
 }
 
@@ -50,6 +55,7 @@ export const FindBar = forwardRef<HTMLDivElement, FindBarProps>(function FindBar
     onClose,
     matchIndex,
     matchCount,
+    hasMatches,
     status,
     options,
     onOptionChange,
@@ -57,7 +63,10 @@ export const FindBar = forwardRef<HTMLDivElement, FindBarProps>(function FindBar
     labels,
     autoFocus = true,
     inputRef,
+    inputTestId,
+    spellCheck,
     className,
+    'aria-label': ariaLabel,
     'data-testid': testId
   },
   ref
@@ -65,21 +74,41 @@ export const FindBar = forwardRef<HTMLDivElement, FindBarProps>(function FindBar
   const t = useOptionalT()
   const hasQuery = value.length > 0
   const count = matchCount ?? null
-  const empty = hasQuery && count === 0
+  const empty = hasQuery && (count === 0 || (count == null && hasMatches === false))
   const counter =
     status ?? (hasQuery && count != null ? `${count === 0 ? 0 : (matchIndex ?? 0) + 1}/${count}` : null)
-  const navDisabled = !hasQuery || count === 0
+  const navDisabled = !hasQuery || empty
+  const inputLabel = labels?.input ?? t('chat.find')
   return (
-    <div ref={ref} role="search" className={cx('ui-findbar', className)} data-testid={testId}>
+    <div
+      ref={ref}
+      role="search"
+      aria-label={ariaLabel ?? inputLabel}
+      className={cx('ui-findbar', className)}
+      data-testid={testId}
+      onKeyDown={(event) => {
+        if (event.defaultPrevented || event.nativeEvent.isComposing) return
+        if (event.key === 'F3') {
+          event.preventDefault()
+          event.stopPropagation()
+          if (event.shiftKey) onPrevious()
+          else onNext()
+        } else if (event.key === 'Escape' && onClose) {
+          event.preventDefault()
+          event.stopPropagation()
+          onClose()
+        }
+      }}
+    >
       <RACTextField
-        aria-label={labels?.input ?? t('chat.find')}
+        aria-label={inputLabel}
         value={value}
         onChange={onChange}
         autoFocus={autoFocus}
         className="ui-findbar__field"
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.keyCode === 229) return
-          if (event.key === 'Enter') {
+          if (event.key === 'Enter' || event.key === 'F3') {
             event.preventDefault()
             if (event.shiftKey) onPrevious()
             else onNext()
@@ -95,7 +124,12 @@ export const FindBar = forwardRef<HTMLDivElement, FindBarProps>(function FindBar
           <InputGroupAddon align="start">
             <Search size={CONTROL_ICON_SIZE.sm} aria-hidden="true" />
           </InputGroupAddon>
-          <InputGroupInput ref={inputRef} placeholder={placeholder ?? t('chat.findPlaceholder')} />
+          <InputGroupInput
+            ref={inputRef}
+            placeholder={placeholder ?? t('chat.findPlaceholder')}
+            spellCheck={spellCheck}
+            data-testid={inputTestId}
+          />
           {counter != null || (options != null && options.length > 0) ? (
             <InputGroupAddon align="end">
               {counter != null ? (
@@ -111,6 +145,7 @@ export const FindBar = forwardRef<HTMLDivElement, FindBarProps>(function FindBar
                   aria-label={option.label}
                   tooltip={option.label}
                   isSelected={option.selected}
+                  data-testid={option.testId}
                   onChange={(selected) => onOptionChange?.(option.id, selected)}
                 >
                   {option.icon}

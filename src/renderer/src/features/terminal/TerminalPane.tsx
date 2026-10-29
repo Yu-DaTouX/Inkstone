@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
 import { Plus, RefreshCw, SquareTerminal } from 'lucide-react'
-import { Badge, Button, EmptyState, Menu, MenuItem, MenuSeparator, Notice, PaneHeader, Popover, Spinner, type BadgeTone } from '../../ui'
+import { Badge, Button, EmptyState, Menu, MenuItem, MenuSeparator, Notice, PaneHeader, Popover, type BadgeTone } from '../../ui'
 import { PaneTitle, PaneTools, usePaneChrome } from '../workbench/pane-chrome'
 import { useI18n, useT } from '../../i18n'
 import { resourceOwner } from '../../state/resource-owners'
@@ -488,7 +488,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
         {starting ? (
           <div className="term-pane-cover" data-testid="terminal-busy">
-            <Notice compact icon={<Spinner size="sm" />}>{text.connecting}</Notice>
+            <Notice compact loading>{text.connecting}</Notice>
           </div>
         ) : null}
 
@@ -552,7 +552,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
         {!inactive && !unavailable && !loadFailed && !failed && busy ? (
           <div className="term-pane-cover" data-testid="terminal-busy">
-            <Notice compact icon={<Spinner size="sm" />}>{activeState?.phase === 'starting' ? text.starting : text.connecting}</Notice>
+            <Notice compact loading>{activeState?.phase === 'starting' ? text.starting : text.connecting}</Notice>
           </div>
         ) : null}
 

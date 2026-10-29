@@ -262,7 +262,7 @@ function EditPanel({ context }: CanvasToolPanelProps): ReactElement {
           <span className="v3-canvas-edit-title">{text.panel}</span>
           {context.narrow ? <DockToggle labels={context.labels} expanded onToggle={context.toggleDock} /> : null}
         </div>
-        <EmptyState size="sm" align="start" className="v3-canvas-edit-empty" title={text.empty} />
+        <EmptyState size="sm" align="start" title={text.empty} />
       </aside>
     )
   }
@@ -278,7 +278,7 @@ function EditPanel({ context }: CanvasToolPanelProps): ReactElement {
           <code className="v3-canvas-edit-taglet">{info.tag}</code>
           {context.narrow ? <DockToggle labels={context.labels} expanded onToggle={context.toggleDock} /> : null}
         </div>
-        <EmptyState size="sm" align="start" className="v3-canvas-edit-empty" data-testid="v3-canvas-edit-generated" title={text.generated} />
+        <EmptyState size="sm" align="start" data-testid="v3-canvas-edit-generated" title={text.generated} />
       </aside>
     )
   }
