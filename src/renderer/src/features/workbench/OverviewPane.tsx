@@ -695,12 +695,18 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           ) : (
             <StatsGlance model={statsModel} text={rail} />
           ),
-          body: <div className="wb-ov-stats-slot"><RailStatsBody model={statsModel} breakdownLabel={rail.statsBreakdown} /></div>
+          body: (
+            <div className={agentRunning ? 'wb-ov-stats-slot' : undefined}>
+              <RailStatsBody model={statsModel} breakdownLabel={rail.statsBreakdown} />
+            </div>
+          )
         }
-      : {
-          summary: <RailValue value="—" />,
-          body: <div className="wb-ov-stats-slot" data-testid="wb-rail-stats-pending" aria-hidden />
-        },
+      : agentRunning
+        ? {
+            summary: <RailValue value="—" />,
+            body: <div className="wb-ov-stats-slot" data-testid="wb-rail-stats-pending" aria-hidden />
+          }
+        : undefined,
     context: {
       summary: !contextOpen || !contextData || !usage.known ? contextSummary : undefined,
       tone: contextKnown ? glyphTone(usage.tone) : undefined,
