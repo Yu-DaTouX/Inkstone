@@ -1,15 +1,15 @@
 @layer features {
-  .v3-chat:has(.v3-empty-page) {
+  .v3-chat[data-empty] {
     --home-lift: max(0px, 60vh - 9rem);
     --col-window-shift: 0px;
     --col-pad-shift: 0px;
   }
 
-  .v3-chat:has(.v3-empty-page) > .v3-composer {
+  .v3-chat[data-empty] > .v3-composer {
     bottom: var(--home-lift);
   }
 
-  .v3-stream-inner:has(> .v3-empty-page) {
+  .v3-session[data-empty] .v3-stream-inner {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -84,12 +84,12 @@
     color: var(--fg);
   }
 
-  .v3-session:has(.v3-empty-page) > .v3-ascii-field {
+  .v3-session[data-empty] > .v3-ascii-field {
     -webkit-mask-image: radial-gradient(var(--field-band-w, 620px) var(--field-band-h, 170px) at var(--field-ax, 50%) var(--field-ay, 40%), #000 0%, rgb(0 0 0 / 0.72) 30%, rgb(0 0 0 / 0.34) 58%, rgb(0 0 0 / 0.1) 80%, transparent 100%);
     mask-image: radial-gradient(var(--field-band-w, 620px) var(--field-band-h, 170px) at var(--field-ax, 50%) var(--field-ay, 40%), #000 0%, rgb(0 0 0 / 0.72) 30%, rgb(0 0 0 / 0.34) 58%, rgb(0 0 0 / 0.1) 80%, transparent 100%);
   }
 
-  .v3-session:has(.v3-empty-page) > .v3-ascii-field[data-closing='0'] {
+  .v3-session[data-empty] > .v3-ascii-field[data-closing='0'] {
     opacity: 1;
   }
 

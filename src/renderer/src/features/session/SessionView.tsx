@@ -67,6 +67,11 @@ function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
+const easeInOut = (progress: number): number => progress * progress * (3 - 2 * progress)
+const easeOut = (progress: number): number => 1 - (1 - progress) ** 3
+const navigationGlideMs = (distance: number): number => Math.min(2400, Math.max(400, 350 + Math.sqrt(distance) * 5.5))
+const latestGlideMs = (distance: number): number => Math.min(1100, Math.max(280, 220 + Math.sqrt(distance) * 3.2))
+
 type PendingTurn = { kind: 'pending'; id: string }
 type RenderItem = Turn | PendingTurn
 
@@ -268,6 +273,7 @@ export function SessionView(): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
   const asideProbeRef = useRef<HTMLDivElement | null>(null)
+  const asksRef = useRef<HTMLDivElement | null>(null)
   const [asideFits, setAsideFits] = useState(false)
   const vlistRef = useRef<VListHandle>(null)
   const settlingRef = useRef(false)
@@ -491,6 +497,30 @@ export function SessionView(): JSX.Element {
     return () => observer.disconnect()
   }, [])
 
+  const empty = !virtual && turns.length === 0 && !switchLoading
+
+  useLayoutEffect(() => {
+    const chat = empty ? hostRef.current?.closest<HTMLElement>('.v3-chat') : null
+    if (!chat) return undefined
+    chat.dataset.empty = ''
+    return () => {
+      delete chat.dataset.empty
+    }
+  }, [empty])
+
+  useLayoutEffect(() => {
+    const asks = asksRef.current
+    const session = asks?.parentElement
+    if (!asks || !session) return undefined
+    const sync = (): void => {
+      session.toggleAttribute('data-asks', asks.childNodes.length > 0)
+    }
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(asks, { childList: true })
+    return () => observer.disconnect()
+  }, [])
+
   useLayoutEffect(() => {
     if (!identity || switchLoading) return undefined
     const snap = readScrollSnapshot(identity)
@@ -684,33 +714,38 @@ export function SessionView(): JSX.Element {
     navRef.current = requestAnimationFrame(step)
   }, [endNavigation, readScroll, onVirtualScroll, revealTurn, virtual])
 
-  const navigateVirtual = useCallback((handle: VListHandle, target: number, turnId: string) => {
-    const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
-    if (!box) return
+  const glide = useCallback((box: HTMLElement, readOffset: () => number, destination: () => number, duration: (distance: number) => number, ease: (progress: number) => number, arrive: () => void) => {
     endNavigation()
     settlingRef.current = true
-    const destination = (): number => Math.max(0, Math.min(handle.getItemOffset(target), handle.scrollSize - handle.viewportSize))
-    const distance = Math.abs(destination() - handle.scrollOffset)
-    const duration = Math.min(2400, Math.max(400, 350 + Math.sqrt(distance) * 5.5))
+    const length = duration(Math.abs(destination() - readOffset()))
     const started = performance.now()
     let previous = 0
     const step = (now: number): void => {
       if (navRef.current === null) return
-      const progress = Math.min(1, (now - started) / duration)
+      const progress = Math.min(1, (now - started) / length)
       if (progress >= 1) {
-        handle.scrollToIndex(target, { align: 'start' })
-        followNavigation(() => handle.scrollOffset, turnId)
+        arrive()
         return
       }
-      const eased = progress * progress * (3 - 2 * progress)
+      const eased = ease(progress)
       const fraction = (eased - previous) / (1 - previous)
-      const offset = handle.scrollOffset
+      const offset = readOffset()
       box.scrollTo({ top: offset + (destination() - offset) * fraction, behavior: 'instant' })
       previous = eased
       navRef.current = requestAnimationFrame(step)
     }
     navRef.current = requestAnimationFrame(step)
-  }, [endNavigation, followNavigation])
+  }, [endNavigation])
+
+  const navigateVirtual = useCallback((handle: VListHandle, target: number, turnId: string) => {
+    const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+    if (!box) return
+    const destination = (): number => Math.max(0, Math.min(handle.getItemOffset(target), handle.scrollSize - handle.viewportSize))
+    glide(box, () => handle.scrollOffset, destination, navigationGlideMs, easeInOut, () => {
+      handle.scrollToIndex(target, { align: 'start' })
+      followNavigation(() => handle.scrollOffset, turnId)
+    })
+  }, [glide, followNavigation])
 
   useEffect(() => () => {
     endNavigation()
@@ -776,27 +811,37 @@ export function SessionView(): JSX.Element {
   const findScope = useCallback((): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null, [])
 
   const jumpToBottom = useCallback(() => {
+    endNavigation()
     setStickNow(true)
     setShowJump(false)
     intentRef.current = null
+    const instant = prefersReducedMotion()
     if (virtual) {
-      vlistRef.current?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
+      const handle = vlistRef.current
+      const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+      if (!handle) return
+      const pin = (): void => handle.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
+      if (instant || !box) {
+        pin()
+        return
+      }
+      glide(box, () => handle.scrollOffset, () => Math.max(0, handle.scrollSize - handle.viewportSize), latestGlideMs, easeOut, () => {
+        endNavigation()
+        pin()
+      })
       return
     }
     const el = streamRef.current
     if (!el) return
-    const smooth = typeof window.matchMedia === 'function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (!smooth) {
+    if (instant) {
       el.scrollTop = el.scrollHeight
       return
     }
-    settlingRef.current = true
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    window.setTimeout(() => {
-      settlingRef.current = false
-      if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight
-    }, 400)
-  }, [setStickNow, virtual])
+    glide(el, () => el.scrollTop, () => Math.max(0, el.scrollHeight - el.clientHeight), latestGlideMs, easeOut, () => {
+      endNavigation()
+      el.scrollTop = el.scrollHeight
+    })
+  }, [setStickNow, virtual, glide, endNavigation])
 
   const userCount = useMemo(() => countUserMessages(effectiveMessages), [effectiveMessages])
   const sentRef = useRef<{ identity: string | null; count: number }>({ identity: null, count: 0 })
@@ -808,7 +853,7 @@ export function SessionView(): JSX.Element {
   }, [identity, userCount, jumpToBottom])
 
   return (
-    <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'}>
+    <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-empty={empty ? '' : undefined}>
       <AsciiField active={turns.length === 0 && !switchLoading} enabled={asciiBackgroundEnabled(settings)} />
       <ToolExpansionScope.Provider value={identity}>
       <AsideFitScope.Provider value={asideFits}>
@@ -855,7 +900,7 @@ export function SessionView(): JSX.Element {
       </AsideFitScope.Provider>
       </ToolExpansionScope.Provider>
 
-      <div className="v3-asks">
+      <div className="v3-asks" ref={asksRef}>
         {viewActive || (approvals[0] && approvalMatchesView(approvals[0], subagents, view)) ? <ApprovalCard /> : null}
         {viewActive && uiRequests.length > 0 ? <QuestionCard /> : null}
         {viewActive ? <BrowserHandoffCard sessionId={view.sessionId} /> : null}

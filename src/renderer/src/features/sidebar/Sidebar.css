@@ -20,8 +20,8 @@
   .v3-side > * { min-width: var(--side-panel-w); }
 
   @media (prefers-reduced-transparency: no-preference) {
-    :root[data-material]:has(.v3-root),
-    :root[data-material]:has(.v3-root) body {
+    :root[data-material][data-shell],
+    :root[data-material][data-shell] body {
       background: transparent;
     }
     :root[data-material] .v3-root[data-narrow='0'] {
@@ -51,7 +51,7 @@
     :root[data-material] .v3-root[data-narrow='0']:not([data-sidebar-preview='1'], [data-sidebar-preview='leaving']) > .v3-side {
       background: var(--side-tint);
     }
-    :root[data-material] .v3-root:has(.v3-sidebar-resizer[data-dragging])::after { transition: none; }
+    :root[data-material][data-splitter-dragging] .v3-root::after { transition: none; }
   }
   @media (prefers-reduced-transparency: no-preference) and (prefers-reduced-motion: reduce) {
     :root[data-material] .v3-root[data-narrow='0']::after { transition: none; }
@@ -119,7 +119,7 @@
   .v3-root[data-sidebar-preview] .v3-side-top-actions,
   .v3-root[data-narrow='1'] .v3-side-close { display: none; }
   .v3-sidebar-reveal { position: absolute; inset: var(--size-head) auto 0 0; width: var(--s-10); z-index: calc(var(--z-drawer) - 1); padding: 0; border: 0; background: transparent; -webkit-app-region: no-drag; }
-  .v3-root:has(.v3-sidebar-resizer[data-dragging]) .v3-side { transition: none; }
+  :root[data-splitter-dragging] .v3-side { transition: none; }
   .v3-root[data-side-drag='1'] .v3-sidebar-resizer::after { opacity: 0; }
   .v3-sidebar-resizer.ui-splitter { position: absolute; left: calc(var(--sidebar-width) - 1px); top: 0; bottom: 0; z-index: calc(var(--z-drawer) + 1); -webkit-app-region: no-drag; }
 

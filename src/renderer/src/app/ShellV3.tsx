@@ -149,6 +149,13 @@ export default function ShellV3(): ReactElement {
   const showSidebarPreview = useCallback(() => { if (!useUiV3.getState().sidebarOpen) setSidebarPreview(true) }, [])
   const reveal = useHoverDelay(120, showSidebarPreview)
   useEffect(() => { if (sidebarOpen) { reveal.cancel(); setSidebarPreview(false) } }, [sidebarOpen, reveal])
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    root.dataset.shell = 'v3'
+    return () => {
+      delete root.dataset.shell
+    }
+  }, [])
   const [previewPhase, setPreviewPhase] = useState<'off' | 'leaving' | 'reset'>('off')
   const previewWasOn = useRef(false)
   useLayoutEffect(() => {

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { usePresence } from "../../../ui/motion-hooks";
 import { cn } from "../../lib/utils";
@@ -25,6 +25,16 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
     testId = "rp",
   } = props;
   const presence = usePresence(open, { animate: mode === "inline" && !maximized, exit: "sheet" });
+  const sheetOpen = mode === "sheet" && open;
+
+  useEffect(() => {
+    if (!sheetOpen) return undefined;
+    const root = document.documentElement;
+    root.dataset.rpSheetOpen = "1";
+    return () => {
+      delete root.dataset.rpSheetOpen;
+    };
+  }, [sheetOpen]);
 
   const content = (panelMode: PanelMode): ReactNode => (
     <PreviewPanelShell

@@ -83,7 +83,7 @@
   [data-slot='sheet-viewport']:has([data-rp-sheet]) {
     top: var(--size-head) !important;
   }
-  :root:has([data-rp-sheet][data-open]) .v3-win {
+  :root[data-rp-sheet-open] .v3-win {
     position: relative;
     z-index: calc(var(--z-sheet) + 1);
   }

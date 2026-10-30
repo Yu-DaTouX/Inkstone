@@ -88,14 +88,14 @@
       transition-duration: 0s;
     }
   }
-  .v3-root:has(.ui-splitter[data-dragging]) .v3-chat {
+  :root[data-splitter-dragging] .v3-chat {
     transition: none;
   }
   html[data-rp-dragging] .v3-chat,
   html[data-rp-dragging] .v3-chat[data-bar-anim] {
     transition: none;
   }
-  .v3-chat:has(.v3-rail) {
+  .v3-chat[data-outline] {
     --outline-on: 1;
   }
   .v3-chat .v3-rail-track {

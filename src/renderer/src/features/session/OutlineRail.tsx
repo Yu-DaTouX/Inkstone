@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type JSX, type KeyboardEvent } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type JSX, type KeyboardEvent } from 'react'
 import { useT } from '../../i18n'
 import type { UIMessage } from '../../../../shared/ipc'
 import { createOutlineProjector } from '../../../../shared/outline-turns'
@@ -132,6 +132,15 @@ function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, class
   }, [clearTimer])
 
   useEffect(() => clearTimer, [clearTimer])
+
+  useLayoutEffect(() => {
+    const chat = visible ? rootRef.current?.closest<HTMLElement>('.v3-chat') : null
+    if (!chat) return undefined
+    chat.dataset.outline = ''
+    return () => {
+      delete chat.dataset.outline
+    }
+  }, [visible])
 
   useEffect(() => {
     const root = rootRef.current

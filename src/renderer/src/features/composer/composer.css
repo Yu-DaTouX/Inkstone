@@ -913,7 +913,7 @@
     line-height: 1.625;
   }
 
-  .v3-chat:has(> .v3-composer) .v3-stream-host::after {
+  .v3-chat .v3-stream-host::after {
     height: 0;
     background: none;
   }

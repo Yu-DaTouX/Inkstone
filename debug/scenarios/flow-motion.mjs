@@ -38,7 +38,7 @@ const PROBE = `(() => {
     const head = heads[heads.length - 1]
     const y = head ? Math.round(head.getBoundingClientRect().top) : null
     if (y !== answerY) { answerY = y; f.answer.push({ t: now(), y }) }
-    const comp = document.querySelector('.v3-composer .composer')
+    const comp = document.querySelector('.v3-composer .composer-v3')
     const cx = comp ? Math.round(comp.getBoundingClientRect().x * 10) / 10 : null
     if (cx !== composerX) { composerX = cx; f.composer.push({ t: now(), x: cx }) }
     const rows = document.querySelectorAll('.v3-process-body [data-testid=v3-step], .v3-process-body [data-testid=v3-step-group]')
@@ -57,7 +57,7 @@ const GEOMETRY = `(() => {
   const rect = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) } }
   const chat = rect('.v3-chat')
   const greet = rect('.v3-empty-greet')
-  const composer = rect('.v3-composer .composer')
+  const composer = rect('.v3-composer .composer-v3')
   const mid = (r) => r ? r.x + r.w / 2 : null
   const home = chat && greet ? { greetOffset: Math.round((mid(greet) - mid(chat)) * 10) / 10, composerOffset: composer ? Math.round((mid(composer) - mid(chat)) * 10) / 10 : null, chatX: chat.x, chatW: chat.w } : null
   return { home, composer, user: rect('.v3-msg.user .v3-bubble'), sessionbar: !!document.querySelector('[data-testid=v3-sessionbar]'), win: { w: innerWidth, h: innerHeight } }

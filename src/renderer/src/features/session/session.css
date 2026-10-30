@@ -30,7 +30,7 @@
     background: linear-gradient(to top, var(--bg) calc(100% - var(--s-32)), transparent);
   }
 
-  .v3-session:has(> .v3-asks:not(:empty)) .v3-stream-host::after {
+  .v3-session[data-asks] .v3-stream-host::after {
     height: var(--s-32);
   }
 
@@ -53,7 +53,7 @@
   .v3-stream-row--head { padding-top: var(--s-20); }
   .v3-stream-row--tail { padding-bottom: calc(var(--s-24) + var(--s-32) + var(--s-12) + var(--composer-h, 0px)); }
   .v3-stream-inner > .v3-stream-row { padding: 0; }
-  .v3-session:has(> .v3-asks:not(:empty)) :is(.v3-stream-inner, .v3-stream-row--tail) { padding-bottom: var(--s-32); }
+  .v3-session[data-asks] :is(.v3-stream-inner, .v3-stream-row--tail) { padding-bottom: var(--s-32); }
 
   .v3-msg {
     display: flex;

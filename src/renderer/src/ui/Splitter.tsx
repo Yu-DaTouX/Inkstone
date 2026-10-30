@@ -266,8 +266,13 @@ export function Splitter({
       event.stopPropagation()
       cancelDragRef.current()
     }
+    const root = document.documentElement
+    root.dataset.splitterDragging = '1'
     window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      delete root.dataset.splitterDragging
+    }
   }, [dragging])
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
