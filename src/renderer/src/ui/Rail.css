@@ -74,6 +74,11 @@
     font-size: 0.94em;
   }
 
+  .ui-rail-value__delta[data-quiet] {
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+  }
+
   .ui-rail-value__delta > [data-sign='add'] {
     color: var(--add);
   }

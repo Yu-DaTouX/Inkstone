@@ -412,6 +412,14 @@
   .ui-diffstat__del {
     color: var(--del);
   }
+  .ui-diffstat--columns {
+    display: inline-grid;
+    grid-template-columns: minmax(6ch, auto) minmax(5ch, auto);
+    justify-items: end;
+  }
+  .ui-diffstat__none {
+    color: var(--fg3);
+  }
 
   .ui-inline-rename {
     flex: 1;

@@ -51,6 +51,12 @@
     --fti-tone: var(--file-teal);
   }
 
+  .ui-file-icon[data-mono] {
+    --fti-tone: var(--fg3);
+    --fti-alt: var(--fg3);
+    color: var(--fg3);
+  }
+
   .ui-file-icon[data-size='14'] {
     --file-icon-size: 14px;
   }

@@ -6,11 +6,20 @@ export interface DiffStatProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'ch
   removed: number
   hideZero?: boolean
   size?: 'sm' | 'md'
+  columns?: boolean
 }
 
-export function DiffStat({ added, removed, hideZero = false, size = 'sm', className, ...rest }: DiffStatProps) {
+export function DiffStat({ added, removed, hideZero = false, size = 'sm', columns = false, className, ...rest }: DiffStatProps) {
   const showAdded = !hideZero || added > 0
   const showRemoved = !hideZero || removed > 0
+  if (columns) {
+    return (
+      <span {...rest} className={cx('ui-diffstat', `ui-diffstat--${size}`, 'ui-diffstat--columns', className)}>
+        {showAdded ? <span className="ui-diffstat__add">+{added}</span> : <span className="ui-diffstat__none">{showRemoved ? null : '\u2014'}</span>}
+        <span className="ui-diffstat__del">{showRemoved ? `\u2212${removed}` : null}</span>
+      </span>
+    )
+  }
   if (!showAdded && !showRemoved) return null
   return (
     <span {...rest} className={cx('ui-diffstat', `ui-diffstat--${size}`, className)}>
