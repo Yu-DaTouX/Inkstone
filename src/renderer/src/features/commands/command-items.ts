@@ -1,8 +1,8 @@
-export type CommandGroupId = 'action' | 'session' | 'message' | 'help'
+export type CommandGroupId = 'action' | 'session' | 'message' | 'file' | 'content' | 'help'
 
 export const COMMAND_GROUP_ORDER: readonly CommandGroupId[] = ['action', 'session']
 
-export const PALETTE_GROUP_ORDER: readonly CommandGroupId[] = ['action', 'session', 'message', 'help']
+export const PALETTE_GROUP_ORDER: readonly CommandGroupId[] = ['action', 'session', 'message', 'file', 'content', 'help']
 
 export const COMMAND_ACTION_IDS = {
   newSession: 'newSession',
@@ -22,11 +22,11 @@ export const COMMAND_ACTION_IDS = {
 
 export type CommandActionId = (typeof COMMAND_ACTION_IDS)[keyof typeof COMMAND_ACTION_IDS]
 
-export type CommandPrefix = '>' | '@' | '#' | '?'
+export type CommandPrefix = '>' | '@' | '#' | '/' | '%' | '?'
 
-export const COMMAND_PREFIXES: readonly CommandPrefix[] = ['>', '@', '#', '?']
+export const COMMAND_PREFIXES: readonly CommandPrefix[] = ['>', '@', '#', '/', '%', '?']
 
-export type PaletteMode = 'default' | 'action' | 'session' | 'message' | 'help'
+export type PaletteMode = 'default' | 'action' | 'session' | 'message' | 'file' | 'content' | 'help'
 
 export interface ParsedPaletteQuery {
   mode: PaletteMode
@@ -38,6 +38,8 @@ const FULLWIDTH_PREFIXES: Readonly<Record<string, CommandPrefix>> = {
   '＞': '>',
   '＠': '@',
   '＃': '#',
+  '／': '/',
+  '％': '%',
   '？': '?'
 }
 
@@ -52,6 +54,10 @@ export function parsePaletteQuery(query: string): ParsedPaletteQuery {
       return { mode: 'session', term: rest }
     case '#':
       return { mode: 'message', term: rest }
+    case '/':
+      return { mode: 'file', term: rest }
+    case '%':
+      return { mode: 'content', term: rest }
     case '?':
       return { mode: 'help', term: rest }
     default:
@@ -71,6 +77,9 @@ export interface CommandItem {
   messageId?: string
   helpPrefix?: CommandPrefix
   meta?: string
+  filePath?: string
+  line?: number
+  column?: number
 }
 
 export function commandTokens(query: string): string[] {

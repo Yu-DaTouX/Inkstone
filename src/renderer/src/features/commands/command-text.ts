@@ -10,6 +10,18 @@ export interface CommandText {
   groupSession: string
   groupMessage: string
   groupHelp: string
+  groupFile: string
+  groupContent: string
+  fileHint: string
+  contentHint: string
+  fileEmpty: string
+  contentEmpty: string
+  fileSearching: string
+  fileNoProject: string
+  fileFailed: string
+  contentPattern: string
+  contentTruncated: string
+  fileOpenFailed: string
   newSession: string
   focusSearch: string
   toggleSidebar: string
@@ -50,6 +62,18 @@ const ZH: CommandText = {
   groupSession: '会话',
   groupMessage: '消息',
   groupHelp: '帮助',
+  groupFile: '文件',
+  groupContent: '内容',
+  fileHint: '输入文件名跳到项目里的文件',
+  contentHint: '输入关键词搜索项目文件内容',
+  fileEmpty: '项目里没有匹配的文件',
+  contentEmpty: '项目文件里没有匹配的内容',
+  fileSearching: '正在搜索…',
+  fileNoProject: '当前会话没有项目目录，无法搜索文件',
+  fileFailed: '文件搜索失败，可稍后重试',
+  contentPattern: '搜索词无效',
+  contentTruncated: '结果较多，只显示前面一部分',
+  fileOpenFailed: '文件没有打开',
   newSession: '新建会话',
   focusSearch: '搜索侧栏',
   toggleSidebar: '展开或收起侧栏',
@@ -72,6 +96,8 @@ const ZH: CommandText = {
     '>': '只看操作：新会话、侧栏、工作区、设置、主题',
     '@': '切换会话：按标题、项目或路径搜',
     '#': '搜索当前会话里的消息',
+    '/': '跳到文件：按文件名模糊匹配项目里的文件',
+    '%': '搜索内容：在项目文件里全文搜索，回车打开并定位到行',
     '?': '显示这段前缀说明'
   },
   messageHint: '输入关键词搜索当前会话的消息',
@@ -95,6 +121,18 @@ const EN: CommandText = {
   groupSession: 'Chats',
   groupMessage: 'Messages',
   groupHelp: 'Help',
+  groupFile: 'Files',
+  groupContent: 'Content',
+  fileHint: 'Type a file name to jump to a project file',
+  contentHint: 'Type keywords to search project file contents',
+  fileEmpty: 'No matching files in this project',
+  contentEmpty: 'No matching content in project files',
+  fileSearching: 'Searching…',
+  fileNoProject: 'This chat has no project folder to search',
+  fileFailed: 'File search failed. Try again later.',
+  contentPattern: 'Invalid search text',
+  contentTruncated: 'Many results; showing the first ones',
+  fileOpenFailed: 'The file did not open',
   newSession: 'New chat',
   focusSearch: 'Search sidebar',
   toggleSidebar: 'Show or hide the sidebar',
@@ -117,6 +155,8 @@ const EN: CommandText = {
     '>': 'Actions only: new chat, sidebar, workspace, settings, theme',
     '@': 'Switch chats by title, project or path',
     '#': 'Search messages in the current chat',
+    '/': 'Go to file: fuzzy-match project files by name',
+    '%': 'Search content: full-text search in project files, Enter opens at the line',
     '?': 'Show this prefix help'
   },
   messageHint: 'Type keywords to search messages in this chat',

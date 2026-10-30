@@ -4,6 +4,7 @@ import {
   CircleHelp,
   Eye,
   FileDiff,
+  FileText,
   Folder,
   Globe,
   MessageSquare,
@@ -18,6 +19,7 @@ import {
   SquarePen,
   SquareTerminal,
   Sun,
+  TextSearch,
   X,
   type LucideIcon
 } from 'lucide-react'
@@ -30,6 +32,10 @@ import { sessionViewIdentity, viewMatchesProjectedSession } from '../session/vie
 import { currentPanelEntry, toolSurface, useRightPanel } from '../../state/right-panel'
 import { activateWorkspaceOwner, captureActivationTarget } from '../workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, type WorkbenchTabId } from '../workbench/types'
+import { useWorkspaceOwner } from '../workbench/use-owner'
+import { showPreview } from '../workbench/preview-bindings'
+import { toAbsolutePath } from '../files/files-model'
+import { usePaletteFileSearch, type PaletteFileSearch } from './use-palette-file-search'
 import {
   CommandSurface,
   CommandSurfaceBody,
@@ -118,6 +124,8 @@ function commandIcon(item: CommandItem, theme: string): LucideIcon {
   if (item.group === 'session') return MessageSquare
   if (item.group === 'message') return MessageSquareText
   if (item.group === 'help') return CircleHelp
+  if (item.group === 'file') return FileText
+  if (item.group === 'content') return TextSearch
   if (item.id === COMMAND_ACTION_IDS.toggleTheme) return theme === 'dark' ? Sun : Moon
   if (item.id.startsWith(SETTINGS_COMMAND_PREFIX)) return SlidersHorizontal
   return ACTION_ICONS[item.id] ?? SquarePen
@@ -299,6 +307,8 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
 
   const parsed = useMemo(() => parsePaletteQuery(query), [query])
   const trimmedTerm = parsed.term.trim()
+  const owner = useWorkspaceOwner()
+  const fileSearch = usePaletteFileSearch(parsed.mode, trimmedTerm, owner)
 
   const messageItems = useMemo<CommandItem[]>(() => {
     if (!isOpen || parsed.mode !== 'message') return []
@@ -320,7 +330,8 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         group: 'help' as const,
         label: text.helpRows[prefix],
         keywords: `help prefix ${prefix}`,
-        helpPrefix: prefix
+        helpPrefix: prefix,
+        meta: prefix
       })),
     [text]
   )
@@ -334,6 +345,9 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       case 'message':
         if (!trimmedTerm) return []
         return limitCommandGroup(rankCommands(messageItems, parsed.term), 'message', MESSAGE_LIMIT)
+      case 'file':
+      case 'content':
+        return trimmedTerm ? fileSearch.items : []
       case 'help':
         return rankCommands(helpItems, parsed.term)
       default: {
@@ -341,7 +355,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         return limitCommands(rankCommands(pool, parsed.term), SESSION_LIMIT)
       }
     }
-  }, [parsed.mode, parsed.term, trimmedTerm, actionItems, sessionItems, messageItems, helpItems])
+  }, [parsed.mode, parsed.term, trimmedTerm, actionItems, sessionItems, messageItems, helpItems, fileSearch.items])
 
   const groups = useMemo(() => groupCommands(visible, PALETTE_GROUP_ORDER), [visible])
   const options = useMemo(() => navigableCommands(visible), [visible])
@@ -406,6 +420,14 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
     if (item.helpPrefix) {
       setQuery(item.helpPrefix)
       return { ok: true, keepOpen: true }
+    }
+
+    if (item.filePath) {
+      if (!owner.cwd) return { ok: false, error: text.fileNoProject }
+      onNavigate?.('chat')
+      const abs = toAbsolutePath(owner.cwd, item.filePath)
+      showPreview(owner.key, abs, item.line ? { preview: true, line: item.line } : { preview: true })
+      return { ok: true }
     }
 
     const workspaceTab = WORKSPACE_ACTION_TABS[item.id]
@@ -553,7 +575,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       <CommandSurfaceBody>
         <div ref={listRef} id="cmd-list" className="cmd-list" role="listbox" aria-label={text.paletteLabel}>
           {options.length === 0 ? (
-            <EmptyState size="sm" title={emptyTitle(parsed.mode, trimmedTerm, text)} />
+            <EmptyState size="sm" title={emptyTitle(parsed.mode, trimmedTerm, text, fileSearch, !!owner.cwd)} data-testid="v3-command-empty" />
           ) : (
             groups.map((section) => (
               <div key={section.group} className="cmd-group" role="group" aria-label={groupLabel(section.group, text)}>
@@ -582,7 +604,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
                       trailing={
                         aside || item.shortcut?.length ? (
                           <>
-                            {aside ? <span className="cmd-option__meta">{aside}</span> : null}
+                            {aside ? <span className={item.filePath ? 'cmd-option__meta ui-meta-num' : 'cmd-option__meta'} title={item.filePath}>{aside}</span> : null}
                             {item.shortcut?.length ? <KbdGroup keys={item.shortcut} /> : null}
                           </>
                         ) : undefined
@@ -602,6 +624,12 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
           )}
         </div>
       </CommandSurfaceBody>
+
+      {(parsed.mode === 'file' || parsed.mode === 'content') && fileSearch.truncated && options.length > 0 ? (
+        <Notice compact className="cmd-error">
+          {text.contentTruncated}
+        </Notice>
+      ) : null}
 
       {error ? (
         <Notice tone="fail" compact className="cmd-error">
@@ -629,7 +657,15 @@ function roleLabel(role: string, text: ReturnType<typeof commandText>): string {
   return text.roleUser
 }
 
-function emptyTitle(mode: PaletteMode, term: string, text: ReturnType<typeof commandText>): string {
+function emptyTitle(mode: PaletteMode, term: string, text: ReturnType<typeof commandText>, search: PaletteFileSearch, hasProject: boolean): string {
+  if (mode === 'file' || mode === 'content') {
+    if (!hasProject) return text.fileNoProject
+    if (!term) return mode === 'file' ? text.fileHint : text.contentHint
+    if (search.phase !== 'done') return text.fileSearching
+    if (search.issue === 'pattern') return text.contentPattern
+    if (search.issue) return text.fileFailed
+    return mode === 'file' ? text.fileEmpty : text.contentEmpty
+  }
   if (mode === 'message') return term ? text.messageEmpty : text.messageHint
   if (mode === 'session') return text.sessionEmpty
   return text.empty
@@ -643,6 +679,10 @@ function groupLabel(group: CommandItem['group'], text: ReturnType<typeof command
       return text.groupMessage
     case 'help':
       return text.groupHelp
+    case 'file':
+      return text.groupFile
+    case 'content':
+      return text.groupContent
     default:
       return text.groupAction
   }
