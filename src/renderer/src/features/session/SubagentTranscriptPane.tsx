@@ -187,14 +187,14 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   return (
     <div className="sa-pane" data-state={row.state} data-testid="v3-subagent-pane">
       <PaneTitle>
-        <span className="sa-pane-head" data-state={row.state} data-testid="v3-subagent-pane-head">
+        <span className="sa-pane-head px-0 text-xs" data-state={row.state} data-testid="v3-subagent-pane-head">
           <span className="sa-pane-bot" aria-hidden="true">
             <SubagentBot run={run} snapshot={snapshot} model={model} size={SUBAGENT_CARD_BOT} />
           </span>
-          <span className="sa-pane-name" title={model.task}>{subagentPaneName(run)}</span>
-          <span className="sa-pane-role">{`· ${role}`}</span>
-          {modelName ? <span className="sa-pane-model" title={run.model}>{modelName}</span> : null}
-          <span className="sa-pane-state" aria-label={statusWord} title={statusWord} data-testid="v3-subagent-pane-status">
+          <span className="sa-pane-name text-foreground" title={model.task}>{subagentPaneName(run)}</span>
+          <span className="sa-pane-role text-secondary-label">{`· ${role}`}</span>
+          {modelName ? <span className="sa-pane-model text-secondary-label" title={run.model}>{modelName}</span> : null}
+          <span className="sa-pane-state text-xs text-secondary-label" aria-label={statusWord} title={statusWord} data-testid="v3-subagent-pane-status">
             <SubagentStateIcon state={row.state} />
             <span className="sa-pane-state-label">{statusWord}</span>
           </span>
@@ -206,6 +206,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
           <Button
             size="sm"
             variant="ghost"
+            className="h-6 gap-1 px-2 text-xs"
             icon={<Square size={12} aria-hidden />}
             isPending={row.state === 'stopping'}
             onPress={() => void stop()}
@@ -215,7 +216,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
           </Button>
         ) : null}
         {canRetry ? (
-          <Button size="sm" variant="ghost" icon={<RotateCcw size={12} aria-hidden />} isPending={retrying} onPress={() => void retry()} data-testid="v3-subagent-retry">
+          <Button size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs" icon={<RotateCcw size={12} aria-hidden />} isPending={retrying} onPress={() => void retry()} data-testid="v3-subagent-retry">
             {t('sa.retry')}
           </Button>
         ) : null}

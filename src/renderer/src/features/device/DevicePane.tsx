@@ -4,6 +4,7 @@ import { useT } from '../../i18n'
 import { Button, EmptyState, IconButton, ListBoxItem, Notice, Select, Spinner, TextField } from '../../ui'
 import type { AndroidControl, AndroidDevice } from '../../../../shared/android-sdk'
 import { openSettingsDialog } from '../settings/root/deep-link'
+import { PaneTitle, PaneTools, usePaneChrome } from '../workbench/pane-chrome'
 import type { DevicePaneProps } from '../workbench/types'
 import './device.css'
 
@@ -22,6 +23,7 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
   const [text, setText] = useState('')
   const press = useRef<{ pointer: number; frame: number; pending: { x: number; y: number } | null } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const chrome = usePaneChrome()
 
   const refresh = useCallback(async () => {
     try {
@@ -138,46 +140,60 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
     send({ kind: 'swipe', x: at.x, y: at.y, toX: at.x, toY: Math.max(0.02, Math.min(0.98, at.y + distance)), ms: 200 })
   }
 
-  if (adbReady === false) {
-    return (
-      <EmptyState
-        className="device-pane__empty"
-        data-testid="device-pane-no-adb"
-        title={t('android.pane.noAdb')}
-        description={t('android.pane.noAdbBody')}
-        action={<Button onPress={() => openSettingsDialog('android')}>{t('android.pane.openSettings')}</Button>}
-      />
-    )
-  }
-
   const online = devices.filter((device) => device.state === 'device')
   const pending = devices.filter((device) => device.state !== 'device' && !device.emulator)
   const starting = bootingAt !== null || devices.some((device) => device.emulator && device.state !== 'device')
   const emulatorUp = starting || online.some((device) => device.emulator)
 
+  const deviceSelect = online.length ? (
+    <Select
+      aria-label={t('android.pane.device')}
+      className="device-pane__select"
+      triggerClassName="h-6 min-h-6 gap-1 rounded-[var(--control-radius)] px-1.5 text-xs text-secondary-label"
+      selectedKey={serial}
+      onSelectionChange={(key) => setSerial(String(key))}
+    >
+      {online.map((device) => (
+        <ListBoxItem key={device.serial} id={device.serial}>
+          {device.model ? `${device.model} · ${device.serial}` : device.serial}
+        </ListBoxItem>
+      ))}
+    </Select>
+  ) : null
+
+  const deviceActions = (
+    <>
+      <IconButton size="sm" aria-label={t('android.pane.refresh')} tooltip={t('android.pane.refresh')} onPress={() => void refresh()}><RefreshCw size={14} aria-hidden /></IconButton>
+      <IconButton size="sm" aria-label={t('android.pane.wake')} tooltip={t('android.pane.wake')} isDisabled={!serial} onPress={() => send({ kind: 'key', key: 'wake' })}><Power size={14} aria-hidden /></IconButton>
+    </>
+  )
+
   return (
     <div className="device-pane" data-testid="device-pane">
-      <div className="device-pane__bar">
-        {online.length ? (
-          <Select
-            aria-label={t('android.pane.device')}
-            className="device-pane__select"
-            selectedKey={serial}
-            onSelectionChange={(key) => setSerial(String(key))}
-          >
-            {online.map((device) => (
-              <ListBoxItem key={device.serial} id={device.serial}>
-                {device.model ? `${device.model} · ${device.serial}` : device.serial}
-              </ListBoxItem>
-            ))}
-          </Select>
-        ) : null}
-        <span className="device-pane__spacer" />
-        <IconButton size="sm" aria-label={t('android.pane.refresh')} tooltip={t('android.pane.refresh')} onPress={() => void refresh()}><RefreshCw size={14} aria-hidden /></IconButton>
-        <IconButton size="sm" aria-label={t('android.pane.wake')} tooltip={t('android.pane.wake')} isDisabled={!serial} onPress={() => send({ kind: 'key', key: 'wake' })}><Power size={14} aria-hidden /></IconButton>
-      </div>
+      {chrome ? (
+        <>
+          <PaneTitle>{deviceSelect}</PaneTitle>
+          <PaneTools>{deviceActions}</PaneTools>
+        </>
+      ) : (
+        <div className="device-pane__bar">
+          {deviceSelect}
+          <span className="device-pane__spacer" />
+          {deviceActions}
+        </div>
+      )}
 
-      {serial ? (
+      {adbReady === false ? (
+        <EmptyState
+          className="device-pane__empty"
+          data-testid="device-pane-no-adb"
+          title={t('android.pane.noAdb')}
+          description={t('android.pane.noAdbBody')}
+          action={<Button onPress={() => openSettingsDialog('android')}>{t('android.pane.openSettings')}</Button>}
+        />
+      ) : null}
+
+      {adbReady === false ? null : serial ? (
         <>
           <div className="device-pane__screen">
             <canvas
@@ -211,7 +227,8 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
             </form>
           </div>
         </>
-      ) : (
+      ) : null}
+      {adbReady === false || serial ? null : (
         <EmptyState
           className="device-pane__empty"
           data-testid="device-pane-empty"

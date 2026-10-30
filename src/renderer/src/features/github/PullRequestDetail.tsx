@@ -49,6 +49,7 @@ import { prDetailText } from './pr-detail-text'
 import { prActionText } from './pr-action-text'
 import { addPendingComment, inferCommentSide, nextCondensed, parsePending, pendingStorageKey, removePendingComment, type PendingComment } from './pr-actions-model'
 import { PrActionStatus, usePrAction } from './PrActionStatus'
+import { Toggle, ToggleGroup } from '../../t3/components/ui/toggle-group'
 import { PrActionBar } from './PrDetailActions'
 import { EditFooter } from './PrEditors'
 import { ChecksList, CommentCard, FloatingComment, PrSummaryTab } from './PrSummaryTab'
@@ -704,20 +705,26 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
           />
         ) : null}
       </header>
-      <nav className="gh-prd__tabs" aria-label={text.tabsLabel}>
-        <SegmentedControl<PrDetailTab>
-          label={text.tabsLabel}
-          value={tab}
-          onChange={onTabChange}
-          options={[
-            { value: 'summary', label: text.tabs.summary, testId: 'gh-pr-tab-summary' },
-            { value: 'timeline', label: text.tabs.timeline, testId: 'gh-pr-tab-timeline' },
-            { value: 'code', label: text.tabs.code, testId: 'gh-pr-tab-code' }
-          ]}
-        />
+      <nav className="gh-prd__tabs gap-2 border-t border-b-0 border-border/60 px-4 py-2" aria-label={text.tabsLabel}>
+        <ToggleGroup
+          aria-label={text.tabsLabel}
+          size="segmented"
+          variant="segmented"
+          value={[tab]}
+          onValueChange={(next) => {
+            const picked = TABS.find((which) => which === next[0])
+            if (picked && picked !== tab) onTabChange(picked)
+          }}
+        >
+          {TABS.map((which) => (
+            <Toggle key={which} value={which} data-testid={`gh-pr-tab-${which}`}>
+              {text.tabs[which]}
+            </Toggle>
+          ))}
+        </ToggleGroup>
         {detail ? (
           <DialogTrigger>
-            <Button size="xs" variant="ghost" className="gh-prd__checks" data-testid="gh-pr-checks-line" aria-label={checksLabel(detail.checks)}>
+            <Button size="xs" variant="ghost" className="gh-prd__checks h-6 gap-1 px-1.5 text-xs text-secondary-label" data-testid="gh-pr-checks-line" aria-label={checksLabel(detail.checks)}>
               <StatusDot kind={checksDot(detail.checks)} />
               <span>{checksLabel(detail.checks)}</span>
             </Button>

@@ -563,7 +563,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         <>
           {strip || badge || exited ? (
             <PaneTitle>
-              <span className="term-pane-chrome-title">
+              <span className="term-pane-chrome-title min-w-0 [&_.ui-ptabs]:gap-1 [&_.ui-ptab]:rounded-[var(--control-radius)] [&_.ui-ptab]:text-xs [&_.ui-ptab_.ui-ptab__close]:size-4">
                 {strip}
                 {barStatus}
               </span>

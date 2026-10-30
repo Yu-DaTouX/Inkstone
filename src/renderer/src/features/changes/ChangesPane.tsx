@@ -636,7 +636,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
 
   const scopeMenu = source.changes ? (
     <MenuTrigger>
-      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={repo?.root} className="changes-pane__scope">
+      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={repo?.root} className="changes-pane__scope h-6 gap-1 rounded-[var(--control-radius)] px-2 text-xs text-secondary-label">
         {scopeLabels[scope.kind]}
         <ChevronDown size={12} aria-hidden="true" />
       </Button>
@@ -670,7 +670,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
         ref={branchRef}
         size="sm"
         variant="ghost"
-        className="changes-pane__branch"
+        className="changes-pane__branch h-6 gap-1 rounded-[var(--control-radius)] px-2 text-xs text-foreground"
         icon={<GitBranch size={14} />}
         trailingIcon={<ChevronDown size={12} />}
         aria-label={t('gitflow.branch.trigger', { branch: branchLabel })}
@@ -855,12 +855,12 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     <>
       {scopeMenu ? (
         <PaneTitle>
-          <span className="changes-pane__title">
+          <span className="changes-pane__title min-w-0 gap-1">
             {branchButton}
             {syncMark}
             {scopeMenu}
             {countLabel ? (
-              <span className="changes-pane__count" data-testid="changes-stats">
+              <span className="changes-pane__count text-xs text-secondary-label" data-testid="changes-stats">
                 {countLabel}
               </span>
             ) : null}
