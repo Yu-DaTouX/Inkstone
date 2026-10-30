@@ -218,7 +218,7 @@ export function VoiceButton({ onText, disabled, scope }: { onText: (text: string
           data-testid="voice-start"
           onPress={() => void start()}
         >
-          <Mic size={13} aria-hidden />
+          <Mic size={16} aria-hidden />
         </IconButton>
       </IconTip>
       {phase.kind === 'preparing' ? <span className="composer-voice-state">{t('voice.preparing')}</span> : null}

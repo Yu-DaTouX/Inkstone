@@ -1,4 +1,4 @@
-import { Folder, FolderOpen, FolderX } from 'lucide-react'
+import { ChevronDown, Folder, FolderOpen, FolderX } from 'lucide-react'
 import { Button, Menu, MenuItem, MenuSeparator, MenuTrigger, MiddleTruncate, Popover } from '../../ui'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -35,12 +35,12 @@ export function ProjectPicker() {
   return (
     <MenuTrigger>
       <Button
-        variant="secondary"
-        size="sm"
+        variant="ghost"
         className="composer-permission composer-project"
         aria-haspopup="menu"
         data-testid="composer-project"
         icon={<Folder size={14} />}
+        trailingIcon={<ChevronDown className="cp-chev" size={12} />}
       >
         <span className="cp-label">{current ? projectLabel(current) : t('chat.pickProject')}</span>
       </Button>

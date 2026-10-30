@@ -380,6 +380,9 @@
   }
   .ui-middle-truncate__tail {
     flex: none;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .ui-middle-truncate__head[data-overflow] + .ui-middle-truncate__tail::before {
     content: '\2026';
@@ -542,6 +545,10 @@
   .ui-command__body .ui-menu,
   .ui-command__body .ui-listbox {
     max-height: none;
+  }
+  .ui-command__body .ui-row[role='option'][aria-selected='true'] {
+    background: var(--press);
+    box-shadow: inset 2px 0 0 var(--accent);
   }
   .ui-command__foot {
     display: flex;

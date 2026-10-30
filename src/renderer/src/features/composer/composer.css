@@ -556,22 +556,22 @@
     }
   }
 
-  .composer-tools :is(.mtp-trigger, .composer-permission:not(.composer-project)).ui-btn--ghost:not(:hover, [aria-expanded='true'], [data-focus-visible], [data-pressed]) {
+  .composer-tools :is(.mtp-trigger, .composer-permission).ui-btn--ghost:not(:hover, [aria-expanded='true'], [data-focus-visible], [data-pressed]) {
     color: var(--fg3);
   }
 
-  .composer-tools > .composer-project {
-    margin-inline-start: var(--s-10);
-  }
-
-  .composer-tools > .composer-project:not([aria-expanded='true']) {
-    color: var(--fg);
+  .composer-line-end > .ctx-ring-wrap {
+    margin-inline-start: var(--s-16);
   }
 
   .composer-line-end > .composer-status-sep {
     align-self: center;
     height: var(--s-16);
-    margin-inline: var(--s-8) var(--s-6);
+    margin-inline: var(--s-10);
+  }
+
+  .composer-line-end > .composer-send {
+    margin-inline-start: var(--s-4);
   }
 
   .composer-plus,
@@ -772,6 +772,12 @@
 
   .v3-delegate-error {
     color: var(--fail-t);
+  }
+
+  @container (max-width: 600px) {
+    .composer-bar .composer-permission:not(.composer-project) .cp-label {
+      display: none;
+    }
   }
 
   @container (max-width: 480px) {

@@ -359,7 +359,7 @@ async function main() {
     ok(/data-empty="/.test(editorText) && /dataset\.empty/.test(editorText), '空态用 data-empty 驱动占位符')
 
     const tools = byClass(card, 'composer-tools')
-    ok(controlNames(tools).join('>') === 'ModelThinkingPicker>PermissionToggle>ProjectPicker', '状态行左侧：模型+思考→权限，新会话项目选择靠间距与描边单独成组')
+    ok(controlNames(tools).join('>') === 'ModelThinkingPicker>PermissionToggle>ProjectPicker', '状态行左侧：模型+思考→权限→新会话项目，同组同形')
     ok(byTestId(card, 'composer-send').props.round === true, '发送键是圆形主按钮，禁用时保持同形实心')
     const bar = byClass(card, 'composer-bar')
     const barControls = controlNames(bar)
@@ -414,7 +414,7 @@ async function main() {
     ok(/\.composer:has\(> \.plan-card \+ \.composer-queue\)\s*\{\s*--cborder-fade:/.test(composerCssText), '计划行加排队行时渐隐延伸到排队行，两行之间不断层')
     ok(/\n\s*\.composer\s*\{[^}]*border-radius:\s*var\(--r-side\)/.test(composerCssText) && /\n\s*\.composer\s*\{[^}]*box-shadow:\s*var\(--shadow-comp-float\)/.test(composerCssText), '外框用左栏同款 12px 圆角与浮起阴影令牌')
     ok(/\n\s*\.composer::after\s*\{[^}]*var\(--comp-rim-hi\)[^}]*var\(--comp-rim-lo\)/.test(composerCssText), '外框 135° 高光描边取 comp-rim 令牌')
-    ok(!/cp-label\s*\{[^}]*clip-path/.test(composerCssText), '窄屏下权限文字不再隐藏')
+    ok(/@container \(max-width: 600px\)\s*\{\s*\.composer-bar \.composer-permission:not\(\.composer-project\) \.cp-label\s*\{\s*display:\s*none/.test(composerCssText), '窄宽度下先收起权限文字，只留盾牌图标')
     ok(/\n\s*\.composer-queue\s*\{[^}]*border-bottom:\s*1px solid var\(--line\)/.test(composerCssText) && !/\.cq-pending\s*\{/.test(composerCssText), '排队行和计划行同款分隔线，去掉蓝色底')
     const queueSource = await readFile(join(ROOT, 'src/renderer/src/features/composer/QueueEditor.tsx'), 'utf8')
     const queueCssText = await readFile(join(ROOT, 'src/renderer/src/features/composer/queue-editor.css'), 'utf8')

@@ -16,6 +16,8 @@ export function PermissionToggle() {
     void patchSettings({ permissionMode: mode }).catch((error) => notify('error', String(error)))
   }
 
+  const label = t(`permission.label.${permission}` as 'permission.label.danger')
+
   return (
     <>
       <MenuTrigger>
@@ -24,11 +26,13 @@ export function PermissionToggle() {
           className="composer-permission"
           data-mode={permission}
           aria-haspopup="menu"
+          aria-label={`${t('permission.title')}: ${label}`}
+          title={label}
           data-testid="permission-picker"
           icon={<Shield size={14} />}
           trailingIcon={<ChevronDown className="cp-chev" size={12} />}
         >
-          <span className="cp-label">{t(`permission.label.${permission}` as 'permission.label.danger')}</span>
+          <span className="cp-label">{label}</span>
         </Button>
         <Popover className="composer-permission-pop" placement="top start" offset={6}>
           <Menu className="composer-permission-menu" aria-label={t('permission.title')}>

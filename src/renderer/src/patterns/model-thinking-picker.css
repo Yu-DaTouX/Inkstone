@@ -24,6 +24,10 @@
     flex: none;
   }
 
+  .mtp-think-trigger > .ui-btn__label {
+    gap: var(--s-4);
+  }
+
   .mtp-trigger[data-disabled] {
     opacity: 1;
   }

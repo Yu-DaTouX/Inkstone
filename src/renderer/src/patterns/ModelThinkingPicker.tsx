@@ -366,7 +366,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
           onPressStart={(e) => { if (e.pointerType === 'mouse') setOpen((v) => !v) }}
           onPress={(e) => { if (e.pointerType !== 'mouse') setOpen((v) => !v) }}
         >
-          {cur ? <ModelBot className="mtp-bot" brand={brandOfModel(cur)} mood="icon" size={16} /> : null}
+          {cur ? <ModelBot className="mtp-bot" brand={brandOfModel(cur)} mood="icon" size={14} /> : null}
           {cur ? (
             <MiddleTruncate
               className="mtp-model"

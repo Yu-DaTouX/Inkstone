@@ -255,6 +255,10 @@
       color: var(--fg);
     }
   }
+  .ui-btn--ghost:not(.ui-icon-btn)[aria-expanded='true']:not([data-disabled]) {
+    background: var(--hover);
+    color: var(--fg);
+  }
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary):is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled]) {
     background: var(--sel);
     color: var(--fg);
