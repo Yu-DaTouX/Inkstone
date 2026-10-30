@@ -13,6 +13,7 @@ import { useRunProgress } from './run-status'
 import type { TranscriptView } from './transcript-view-model'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
+const STEADY_HOLD_MS = 1200
 
 function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; minHeight: number | undefined } {
   const [node, setNode] = useState<HTMLDivElement | null>(null)
@@ -23,6 +24,7 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
       return undefined
     }
     let width = node.getBoundingClientRect().width
+    let release = 0
     const observer = new ResizeObserver(() => {
       const box = node.getBoundingClientRect()
       if (Math.abs(box.width - width) > 0.5) {
@@ -31,9 +33,14 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
         return
       }
       setMinHeight((current) => (box.height > current + 0.5 ? box.height : current))
+      window.clearTimeout(release)
+      release = window.setTimeout(() => setMinHeight(0), STEADY_HOLD_MS)
     })
     observer.observe(node)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      window.clearTimeout(release)
+    }
   }, [active, node])
   return { ref: setNode, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
