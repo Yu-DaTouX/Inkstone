@@ -240,7 +240,7 @@
   --toolbar-control: var(--surface);
   --toolbar-control-foreground: var(--fg-ctl);
   --toolbar-control-hover: var(--hover);
-  --surface-raised: color-mix(in srgb, var(--surface) 20%, transparent);
+  --surface-raised: color-mix(in srgb, var(--card) 20%, transparent);
   --foreground: var(--fg);
   --card: var(--surface);
   --card-foreground: var(--fg);
@@ -306,6 +306,7 @@
   --chat-composer-attachment-overlap: 1rem;
 
   @variant dark {
+    --surface-raised: color-mix(in srgb, var(--surface) 97%, var(--fg));
     --guest-foreground: var(--color-fuchsia-300);
   }
 }
