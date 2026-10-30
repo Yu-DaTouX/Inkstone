@@ -8,6 +8,9 @@ export interface PrActionText {
     filtersActive: (n: number) => string
     author: string
     authorAll: string
+    authorMe: (login: string) => string
+    mine: string
+    mineHint: string
     draft: string
     draftAny: string
     draftOnly: string
@@ -47,6 +50,8 @@ export interface PrActionText {
     blockedDetached: string
     problem: { title: string; base: string; head: string; same: string }
     titleHint: string
+    titleHintBranch: string
+    baseHint: Record<'github' | 'git' | 'fallback', string>
   }
   edit: {
     edit: string
@@ -72,12 +77,28 @@ export interface PrActionText {
     title: string
     placeholder: string
     submit: string
-    quote: string
-    quoteTitle: (author: string) => string
+    cancel: string
+  }
+  threads: {
+    title: (n: number) => string
+    where: (start: number, end: number, side: 'LEFT' | 'RIGHT') => string
+    resolved: string
+    outdated: string
+    pending: string
+    reply: string
+    replyTitle: (author: string) => string
     replyPlaceholder: string
     send: string
     cancel: string
-    threadedGap: string
+    replies: (n: number) => string
+    showResolved: (n: number) => string
+    hideResolved: string
+    empty: string
+    truncated: string
+    failed: (msg: string) => string
+    fileNotes: (n: number) => string
+    deletePending: string
+    open: string
   }
   status: {
     merge: string
@@ -93,6 +114,7 @@ export interface PrActionText {
     mergeConfirm: string
     blockers: Record<PrMergeBlocker, string>
     mergeableUnknown: string
+    mergeState: Record<'UNSTABLE' | 'HAS_HOOKS' | 'UNKNOWN', string>
     more: string
     ready: string
     toDraft: string
@@ -182,6 +204,9 @@ const ZH: PrActionText = {
     filtersActive: (n) => `筛选 · ${n}`,
     author: '作者',
     authorAll: '全部作者',
+    authorMe: (login) => (login ? `我（${login}）` : '我'),
+    mine: '我的',
+    mineHint: '只看我创建的 PR',
     draft: '草稿',
     draftAny: '不限',
     draftOnly: '只看草稿',
@@ -220,7 +245,9 @@ const ZH: PrActionText = {
     blockedDefault: (branch) => `当前在默认分支 ${branch} 上，不能从默认分支建 PR。请先切到功能分支。`,
     blockedDetached: '当前是 detached HEAD，没有可作为来源的分支。请先切到一个分支。',
     problem: { title: '请填写标题', base: '请填写 base 分支', head: '没有来源分支', same: 'base 与 head 不能相同' },
-    titleHint: '默认取自分支名，可直接修改'
+    titleHint: '默认取自最近一次提交说明，可直接修改',
+    titleHintBranch: '没有读到提交说明，默认取自分支名，可直接修改',
+    baseHint: { github: '默认取 GitHub 仓库默认分支', git: '没读到 GitHub 默认分支，按 origin/HEAD 推断', fallback: '没读到默认分支，请确认' }
   },
   edit: {
     edit: '编辑',
@@ -246,12 +273,28 @@ const ZH: PrActionText = {
     title: '发表评论',
     placeholder: '写评论（支持 Markdown），发出后对仓库成员可见',
     submit: '评论',
-    quote: '引用回复',
-    quoteTitle: (author) => `引用回复 @${author}`,
-    replyPlaceholder: '写回复，会连同引用一起作为新评论发出',
+    cancel: '取消'
+  },
+  threads: {
+    title: (n) => `评审讨论（${n}）`,
+    where: (start, end, side) => `${start && start !== end ? `L${start}-L${end}` : end ? `L${end}` : '整个文件'} · ${side === 'LEFT' ? '旧' : '新'}`,
+    resolved: '已解决',
+    outdated: '已过时',
+    pending: '待提交',
+    reply: '回复',
+    replyTitle: (author) => `回复 @${author} 的评审讨论`,
+    replyPlaceholder: '写回复，会直接发到这条评审讨论里（支持 Markdown）',
     send: '发出回复',
     cancel: '取消',
-    threadedGap: '代码行上的评审讨论暂时只能在 GitHub 上回复'
+    replies: (n) => `${n} 条`,
+    showResolved: (n) => `显示已解决（${n}）`,
+    hideResolved: '隐藏已解决',
+    empty: '没有行内评审讨论。',
+    truncated: '评审讨论较多，只读到了一部分，其余请在 GitHub 上查看。',
+    failed: (msg) => `评审讨论读取失败：${msg}`,
+    fileNotes: (n) => `本文件的评审讨论与待提交评论（${n}）`,
+    deletePending: '删除待提交评论',
+    open: '在 GitHub 上打开'
   },
   status: {
     merge: '合并',
@@ -273,13 +316,15 @@ const ZH: PrActionText = {
       'not-open': 'PR 已关闭或已合并',
       draft: '草稿 PR 不能合并，先标为待评审',
       conflict: '与 base 有冲突，需要先解决',
+      behind: '分支落后于 base，需要先更新分支',
       'checks-failed': '有检查失败',
       'checks-pending': '检查尚未完成',
       'changes-requested': '有审阅者要求修改',
       'review-required': '保护分支要求评审通过',
       blocked: '分支保护规则阻止合并'
     },
-    mergeableUnknown: '是否有冲突以 GitHub 为准，合并失败会说明原因',
+    mergeableUnknown: 'GitHub 还在计算能否合并，稍后刷新再看',
+    mergeState: { UNSTABLE: '有非必需的检查未通过，仍可合并', HAS_HOOKS: '合并后会触发仓库钩子', UNKNOWN: 'GitHub 还在计算能否合并，稍后刷新再看' },
     more: '更多操作',
     ready: '标为待评审',
     toDraft: '转为草稿',
@@ -407,6 +452,9 @@ const EN: PrActionText = {
     filtersActive: (n) => `Filters · ${n}`,
     author: 'Author',
     authorAll: 'Any author',
+    authorMe: (login) => (login ? `Me (${login})` : 'Me'),
+    mine: 'Mine',
+    mineHint: 'Only pull requests I opened',
     draft: 'Draft',
     draftAny: 'Any',
     draftOnly: 'Drafts only',
@@ -445,7 +493,9 @@ const EN: PrActionText = {
     blockedDefault: (branch) => `You are on the default branch ${branch}. A pull request cannot come from the default branch; switch to a feature branch first.`,
     blockedDetached: 'HEAD is detached, so there is no branch to open a pull request from. Switch to a branch first.',
     problem: { title: 'Enter a title', base: 'Enter a base branch', head: 'No head branch', same: 'Base and head must differ' },
-    titleHint: 'Taken from the branch name; edit as needed'
+    titleHint: 'Taken from the latest commit message; edit as needed',
+    titleHintBranch: 'No commit message was read, so it comes from the branch name; edit as needed',
+    baseHint: { github: 'Defaults to the GitHub default branch', git: 'GitHub default branch unavailable; inferred from origin/HEAD', fallback: 'Default branch unknown; please check' }
   },
   edit: {
     edit: 'Edit',
@@ -471,12 +521,28 @@ const EN: PrActionText = {
     title: 'Comment',
     placeholder: 'Write a comment (Markdown). It is visible to repository members once sent.',
     submit: 'Comment',
-    quote: 'Quote reply',
-    quoteTitle: (author) => `Quote reply to @${author}`,
-    replyPlaceholder: 'Write a reply; it is posted as a new comment with the quote',
+    cancel: 'Cancel'
+  },
+  threads: {
+    title: (n) => `Review threads (${n})`,
+    where: (start, end, side) => `${start && start !== end ? `L${start}-L${end}` : end ? `L${end}` : 'File'} · ${side === 'LEFT' ? 'old' : 'new'}`,
+    resolved: 'Resolved',
+    outdated: 'Outdated',
+    pending: 'Pending',
+    reply: 'Reply',
+    replyTitle: (author) => `Reply to @${author}'s thread`,
+    replyPlaceholder: 'Write a reply; it is posted to this review thread (Markdown)',
     send: 'Send reply',
     cancel: 'Cancel',
-    threadedGap: 'Line-level review threads can only be replied to on GitHub for now'
+    replies: (n) => (n === 1 ? '1 comment' : `${n} comments`),
+    showResolved: (n) => `Show resolved (${n})`,
+    hideResolved: 'Hide resolved',
+    empty: 'No line review threads.',
+    truncated: 'Only some review threads were loaded; see GitHub for the rest.',
+    failed: (msg) => `Could not load review threads: ${msg}`,
+    fileNotes: (n) => `Threads and pending comments in this file (${n})`,
+    deletePending: 'Delete pending comment',
+    open: 'Open on GitHub'
   },
   status: {
     merge: 'Merge',
@@ -498,13 +564,15 @@ const EN: PrActionText = {
       'not-open': 'The pull request is closed or merged',
       draft: 'Drafts cannot be merged; mark it ready first',
       conflict: 'Conflicts with base must be resolved first',
+      behind: 'The branch is behind base; update it first',
       'checks-failed': 'Some checks failed',
       'checks-pending': 'Checks are still running',
       'changes-requested': 'A reviewer requested changes',
       'review-required': 'Branch protection requires an approving review',
       blocked: 'Branch protection blocks merging'
     },
-    mergeableUnknown: 'GitHub decides about conflicts; a failed merge will explain why',
+    mergeableUnknown: 'GitHub is still computing mergeability; refresh shortly',
+    mergeState: { UNSTABLE: 'Some non-required checks failed; merging is still allowed', HAS_HOOKS: 'Merging will run repository hooks', UNKNOWN: 'GitHub is still computing mergeability; refresh shortly' },
     more: 'More actions',
     ready: 'Mark ready for review',
     toDraft: 'Convert to draft',

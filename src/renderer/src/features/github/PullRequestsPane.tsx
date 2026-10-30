@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, ListFilter, RefreshCw } from 'lucide-react'
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, ListFilter, RefreshCw, UserRound } from 'lucide-react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import {
   Badge,
@@ -28,6 +28,7 @@ import type { PullRequestsPaneProps } from '../workbench/types'
 import { ageOf, filterByListState, filterPrRows, normalizePrRow, type PrChecks, type PrRow } from './pr-model'
 import {
   activeFilterCount,
+  AUTHOR_ME,
   buildListOptions,
   DEFAULT_LIST_FILTERS,
   toggleLabel,
@@ -73,12 +74,13 @@ function reviewBadge(decision: string, text: PrActionText['list']): { label: str
 
 interface FilterPanelProps {
   cwd: string
+  viewer: string
   filters: PrListFilters
   onChange: (next: PrListFilters) => void
   text: PrActionText['list']
 }
 
-function FilterPanel({ cwd, filters, onChange, text }: FilterPanelProps): ReactElement {
+function FilterPanel({ cwd, viewer, filters, onChange, text }: FilterPanelProps): ReactElement {
   const [labels, setLabels] = useState<GhPrLabelJson[] | null>(null)
   const [authors, setAuthors] = useState<string[]>([])
   const [query, setQuery] = useState('')
@@ -104,7 +106,9 @@ function FilterPanel({ cwd, filters, onChange, text }: FilterPanelProps): ReactE
       alive = false
     }
   }, [cwd])
-  const authorOptions = filters.author && !authors.includes(filters.author) ? [filters.author, ...authors] : authors
+  const others = authors.filter((login) => login !== viewer && login !== AUTHOR_ME)
+  const authorOptions = filters.author && filters.author !== AUTHOR_ME && !others.includes(filters.author) ? [filters.author, ...others] : others
+  const authorLabel = (login: string): string => (login === ALL_AUTHORS ? text.authorAll : login === AUTHOR_ME ? text.authorMe(viewer) : login)
   const needle = query.trim().toLowerCase()
   const shown = (labels ?? []).filter((label) => label.name && (!needle || label.name.toLowerCase().includes(needle)))
   const set = (patch: Partial<PrListFilters>): void => onChange({ ...filters, ...patch })
@@ -116,9 +120,9 @@ function FilterPanel({ cwd, filters, onChange, text }: FilterPanelProps): ReactE
         onSelectionChange={(key) => key != null && set({ author: String(key) === ALL_AUTHORS ? '' : String(key) })}
         data-testid="gh-pr-filter-author"
       >
-        {[ALL_AUTHORS, ...authorOptions].map((login) => (
-          <ListBoxItem key={login} id={login} textValue={login === ALL_AUTHORS ? text.authorAll : login}>
-            {login === ALL_AUTHORS ? text.authorAll : login}
+        {[ALL_AUTHORS, AUTHOR_ME, ...authorOptions].map((login) => (
+          <ListBoxItem key={login} id={login} textValue={authorLabel(login)} data-testid={login === AUTHOR_ME ? 'gh-pr-filter-author-me' : undefined}>
+            {authorLabel(login)}
           </ListBoxItem>
         ))}
       </Select>
@@ -389,6 +393,17 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
               value={query}
               onChange={setQuery}
             />
+            <Toggle
+              size="sm"
+              variant="outline"
+              isSelected={filters.author === AUTHOR_ME}
+              onChange={(on) => changeFilters({ ...filters, author: on ? AUTHOR_ME : '' })}
+              tooltip={status?.viewerLogin ? `${actText.mineHint} · ${status.viewerLogin}` : actText.mineHint}
+              data-testid="gh-pr-mine"
+            >
+              <UserRound size={14} aria-hidden />
+              {actText.mine}
+            </Toggle>
             <DialogTrigger>
               <Button
                 size="sm"
@@ -400,7 +415,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
               </Button>
               <Popover variant="panel" placement="bottom end" className="gh-pr-filter-pop">
                 <Dialog aria-label={actText.filters} showClose={false}>
-                  <FilterPanel cwd={cwd} filters={filters} onChange={changeFilters} text={actText} />
+                  <FilterPanel cwd={cwd} viewer={status?.viewerLogin ?? ''} filters={filters} onChange={changeFilters} text={actText} />
                 </Dialog>
               </Popover>
             </DialogTrigger>

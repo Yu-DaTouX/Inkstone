@@ -2,6 +2,7 @@ import type { GhPrActionResult, GhPrFailure, GhPrInlineComment, GhPrListOptions,
 import type { PrCheckItem, PrDetail, PrTimelineItem } from './pr-model'
 
 export const PR_PAGE_SIZE = 30
+export const AUTHOR_ME = '@me'
 
 export type PrDraftFilter = 'any' | 'draft' | 'ready'
 export type PrReviewFilter = 'any' | 'none' | 'required' | 'approved' | 'changes_requested'
@@ -62,6 +63,7 @@ export type PrMergeBlocker =
   | 'not-open'
   | 'draft'
   | 'conflict'
+  | 'behind'
   | 'checks-failed'
   | 'checks-pending'
   | 'changes-requested'
@@ -78,7 +80,8 @@ export function mergeVerdict(detail: Pick<PrDetail, 'state' | 'checks' | 'review
   const blockers: PrMergeBlocker[] = []
   if (detail.state === 'merged' || detail.state === 'closed') return { canMerge: false, canAutoMerge: false, blockers: ['not-open'] }
   if (detail.state === 'draft') blockers.push('draft')
-  if (detail.mergeable === 'conflicting') blockers.push('conflict')
+  if (detail.mergeable === 'conflicting' || detail.mergeState === 'DIRTY') blockers.push('conflict')
+  else if (detail.mergeState === 'BEHIND') blockers.push('behind')
   if (detail.checks.state === 'fail') blockers.push('checks-failed')
   if (detail.checks.state === 'pending') blockers.push('checks-pending')
   const review = detail.reviewDecision.toUpperCase()
@@ -119,12 +122,14 @@ export function removePendingComment(list: readonly PendingComment[], id: string
 }
 
 export function inlineCommentsOf(list: readonly PendingComment[]): GhPrInlineComment[] {
-  return list.map((item) => ({
-    path: item.path,
-    line: item.line,
-    side: item.side,
-    body: item.startLine && item.startLine !== item.line ? `L${item.startLine}-L${item.line}\n\n${item.body}` : item.body
-  }))
+  return list.map((item) => {
+    const comment: GhPrInlineComment = { path: item.path, line: item.line, side: item.side, body: item.body }
+    if (item.startLine > 0 && item.startLine < item.line) {
+      comment.startLine = item.startLine
+      comment.startSide = item.side
+    }
+    return comment
+  })
 }
 
 export function pendingStorageKey(repo: string, number: number): string {
@@ -187,6 +192,18 @@ function sideLinesOf(patch: string): SideLines {
     }
   }
   return { left, right }
+}
+
+export function lineExcerpt(patch: string, side: 'LEFT' | 'RIGHT', start: number, end: number, limit = 6): string[] {
+  if (!patch || !(end > 0)) return []
+  const map = side === 'LEFT' ? sideLinesOf(patch).left : sideLinesOf(patch).right
+  const out: string[] = []
+  const from = Math.max(Math.min(start || end, end), end - limit + 1)
+  for (let n = from; n <= end; n++) {
+    const value = map.get(n)
+    if (value !== undefined) out.push(value)
+  }
+  return out
 }
 
 export function inferCommentSide(patch: string, start: number, end: number, code: string): 'LEFT' | 'RIGHT' | null {
@@ -266,7 +283,8 @@ export interface CreateDefaultsInput {
   branch: string | null
   detached: boolean
   baseRef: string | null
-  lastCommit?: string
+  defaultBranch?: string | null
+  lastCommit?: { subject: string; body: string } | null
   upstream: string | null
   unpushed: number | null
 }
@@ -275,6 +293,9 @@ export interface CreateDefaults {
   head: string
   base: string
   title: string
+  body: string
+  titleSource: 'commit' | 'branch'
+  baseSource: 'github' | 'git' | 'fallback'
   pushFirst: boolean
   blocked: 'detached' | 'default-branch' | null
 }
@@ -298,11 +319,16 @@ export function titleFromBranch(branch: string): string {
 
 export function createDefaults(input: CreateDefaultsInput): CreateDefaults {
   const head = input.detached ? '' : (input.branch ?? '')
-  const base = baseBranchOf(input.baseRef) || 'main'
+  const github = (input.defaultBranch ?? '').trim()
+  const git = baseBranchOf(input.baseRef)
+  const base = github || git || 'main'
+  const baseSource = github ? 'github' : git ? 'git' : 'fallback'
   const blocked = !head ? 'detached' : head === base ? 'default-branch' : null
-  const title = (input.lastCommit ?? '').split('\n')[0].trim() || titleFromBranch(head)
+  const subject = (input.lastCommit?.subject ?? '').split('\n')[0].trim()
+  const title = subject || titleFromBranch(head)
+  const body = subject ? (input.lastCommit?.body ?? '').trim() : ''
   const pushFirst = !input.upstream || (input.unpushed ?? 0) > 0
-  return { head, base, title, pushFirst, blocked }
+  return { head, base, title, body, titleSource: subject ? 'commit' : 'branch', baseSource, pushFirst, blocked }
 }
 
 export interface CreateDraft {
@@ -326,17 +352,6 @@ export function diffNames(current: readonly string[], next: readonly string[]): 
   const before = new Set(current)
   const after = new Set(next)
   return { add: [...after].filter((name) => !before.has(name)), remove: [...before].filter((name) => !after.has(name)) }
-}
-
-export function quoteReply(author: string, body: string, reply: string): string {
-  const quoted = body
-    .trim()
-    .split('\n')
-    .slice(0, 12)
-    .map((line) => `> ${line}`)
-    .join('\n')
-  const head = author ? `> @${author}\n>\n` : ''
-  return `${head}${quoted}\n\n${reply.trim()}`
 }
 
 export type AgentTask = 'explain' | 'fix-checks' | 'respond-reviews'

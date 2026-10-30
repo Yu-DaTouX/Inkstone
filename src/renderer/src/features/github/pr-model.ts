@@ -7,7 +7,8 @@ import type {
   GhPrCommitJson,
   GhPrListState,
   GhPrReviewJson,
-  GhPrReviewRequestJson
+  GhPrReviewRequestJson,
+  GhPrReviewThreadJson
 } from '../../../../shared/github'
 
 export type PrState = 'open' | 'draft' | 'merged' | 'closed'
@@ -71,6 +72,27 @@ export interface PrTimelineItem {
   review: string
 }
 
+export type PrSide = 'LEFT' | 'RIGHT'
+
+export interface PrThreadComment {
+  id: number
+  author: string
+  body: string
+  at: string
+  url: string
+}
+
+export interface PrThread {
+  id: string
+  path: string
+  line: number
+  startLine: number
+  side: PrSide
+  isResolved: boolean
+  isOutdated: boolean
+  comments: PrThreadComment[]
+}
+
 export interface PrDetail {
   number: number
   title: string
@@ -97,6 +119,9 @@ export interface PrDetail {
   checkItems: PrCheckItem[]
   files: PrFileItem[]
   timeline: PrTimelineItem[]
+  threads: PrThread[]
+  threadsTruncated: boolean
+  threadsError: string
 }
 
 const NO_CHECKS: PrChecks = { state: 'none', total: 0, passed: 0, failed: 0, pending: 0 }
@@ -344,6 +369,45 @@ export function timelineOf(
   })
 }
 
+function sideOf(value: unknown): PrSide {
+  return value === 'LEFT' ? 'LEFT' : 'RIGHT'
+}
+
+export function threadsOf(threads: readonly GhPrReviewThreadJson[] | null | undefined): PrThread[] {
+  const out: PrThread[] = []
+  for (const thread of threads ?? []) {
+    if (!thread || typeof thread !== 'object') continue
+    const comments: PrThreadComment[] = []
+    for (const comment of thread.comments ?? []) {
+      if (!comment || typeof comment.databaseId !== 'number' || !(comment.databaseId > 0)) continue
+      comments.push({ id: comment.databaseId, author: text(comment.author?.login), body: text(comment.body), at: text(comment.createdAt), url: text(comment.url) })
+    }
+    const path = text(thread.path)
+    if (!path || !comments.length) continue
+    const line = count(thread.line)
+    const start = count(thread.startLine)
+    out.push({
+      id: text(thread.id) || `${path}:${comments[0].id}`,
+      path,
+      line,
+      startLine: start > 0 && start < line ? start : line,
+      side: sideOf(thread.side),
+      isResolved: thread.isResolved === true,
+      isOutdated: thread.isOutdated === true,
+      comments
+    })
+  }
+  return out
+}
+
+export function threadReplyTarget(thread: PrThread): number | null {
+  return thread.comments[0]?.id ?? null
+}
+
+export function threadsForPath(threads: readonly PrThread[], path: string): PrThread[] {
+  return threads.filter((thread) => thread.path === path).sort((a, b) => (a.line || Number.MAX_SAFE_INTEGER) - (b.line || Number.MAX_SAFE_INTEGER))
+}
+
 export function normalizePrDetail(json: GhPrDetailJson, options: { repo: string; diff: string }): PrDetail {
   const number = count(json.number)
   const { summary, items } = normalizeChecks(json.statusCheckRollup)
@@ -382,7 +446,10 @@ export function normalizePrDetail(json: GhPrDetailJson, options: { repo: string;
     checks: summary,
     checkItems: items,
     files,
-    timeline: timelineOf(json.comments, json.reviews, json.commits)
+    timeline: timelineOf(json.comments, json.reviews, json.commits),
+    threads: threadsOf(json.reviewThreads),
+    threadsTruncated: json.reviewThreadsTruncated === true,
+    threadsError: text(json.reviewThreadsError)
   }
 }
 

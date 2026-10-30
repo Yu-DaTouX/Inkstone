@@ -62,6 +62,14 @@ export function PrActionBar({ cwd, detail, text, action, pending, onPendingChang
   const mergeAllowed = verdict.canMerge || verdict.canAutoMerge
   const busy = action.busy
   const reasons = verdict.blockers.map((item) => text.status.blockers[item])
+  const mergeHint = !open || verdict.blockers.includes('conflict')
+    ? ''
+    : detail.mergeable === 'unknown' || detail.mergeState === 'UNKNOWN'
+      ? text.status.mergeableUnknown
+      : detail.mergeState === 'UNSTABLE' || detail.mergeState === 'HAS_HOOKS'
+        ? text.status.mergeState[detail.mergeState]
+        : ''
+  const notes = mergeHint ? [...reasons, mergeHint] : reasons
 
   const handOff = (task: AgentTask): void => {
     const prompt = agentPrompt(task, detail, text.agent.prompt)
@@ -156,9 +164,9 @@ export function PrActionBar({ cwd, detail, text, action, pending, onPendingChang
           </Menu>
         </Popover>
       </MenuTrigger>
-      {open && reasons.length ? (
-        <ul className="gh-pr-act__reasons ui-meta-text" data-testid="gh-pr-merge-reasons">
-          {reasons.map((reason) => (
+      {open && notes.length ? (
+        <ul className="gh-pr-act__reasons ui-meta-text" data-testid="gh-pr-merge-reasons" data-merge-state={detail.mergeState || undefined}>
+          {notes.map((reason) => (
             <li key={reason}>{reason}</li>
           ))}
         </ul>
@@ -206,7 +214,7 @@ export function PrActionBar({ cwd, detail, text, action, pending, onPendingChang
               {reasons.join('；')}
             </Notice>
           ) : null}
-          {detail.mergeable === 'unknown' ? <span className="gh-pr-act__hint ui-meta-text">{text.status.mergeableUnknown}</span> : null}
+          {mergeHint ? <span className="gh-pr-act__hint ui-meta-text">{mergeHint}</span> : null}
         </div>
       </ConfirmDialog>
       <ConfirmDialog

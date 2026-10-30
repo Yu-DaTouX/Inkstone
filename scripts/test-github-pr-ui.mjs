@@ -39,6 +39,8 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.equal(m.buildListOptions({ ...base, draft: 'draft' }, 0).limit, 30)
   assert.equal(m.activeFilterCount(base), 0)
   assert.equal(m.activeFilterCount({ ...base, author: 'hubot', labels: ['x'], draft: 'draft', review: 'approved' }), 4)
+  assert.equal(m.buildListOptions({ ...base, author: m.AUTHOR_ME }, 1).author, '@me')
+  assert.equal(m.activeFilterCount({ ...base, author: m.AUTHOR_ME }), 1)
   assert.deepEqual(m.toggleLabel(['a'], 'b'), ['a', 'b'])
   assert.deepEqual(m.toggleLabel(['a', 'b'], 'a'), ['b'])
 }
@@ -60,6 +62,10 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.deepEqual(m.mergeVerdict({ ...clean, reviewDecision: 'CHANGES_REQUESTED' }).blockers, ['changes-requested'])
   assert.deepEqual(m.mergeVerdict({ ...clean, reviewDecision: '', mergeState: 'BLOCKED' }), { canMerge: false, canAutoMerge: true, blockers: ['blocked'] })
   assert.deepEqual(m.mergeVerdict({ ...clean, mergeable: 'unknown' }).blockers, [])
+  assert.deepEqual(m.mergeVerdict({ ...clean, mergeable: 'unknown', mergeState: 'DIRTY' }), { canMerge: false, canAutoMerge: false, blockers: ['conflict'] })
+  assert.deepEqual(m.mergeVerdict({ ...clean, mergeable: 'conflicting', mergeState: 'DIRTY' }).blockers, ['conflict'])
+  assert.deepEqual(m.mergeVerdict({ ...clean, mergeState: 'BEHIND' }), { canMerge: false, canAutoMerge: false, blockers: ['behind'] })
+  assert.deepEqual(m.mergeVerdict({ ...clean, mergeState: 'UNSTABLE' }).blockers, [])
   assert.deepEqual(model.mergeableOf({ mergeable: 'CONFLICTING', mergeStateStatus: 'dirty' }), { mergeable: 'conflicting', mergeState: 'DIRTY' })
   assert.deepEqual(model.mergeableOf({}), { mergeable: 'unknown', mergeState: '' })
   const row = model.normalizePrRow({ number: 3, labels: [{ name: 'bug' }, { name: '' }, null] })
@@ -78,7 +84,7 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.deepEqual(m.updatePendingComment(list, 'p2', '  ').map((item) => item.id), ['p1'])
   assert.deepEqual(m.removePendingComment(list, 'p1').map((item) => item.id), ['p2'])
   assert.deepEqual(m.inlineCommentsOf(list), [
-    { path: 'a.ts', line: 4, side: 'RIGHT', body: 'L2-L4\n\nfix' },
+    { path: 'a.ts', line: 4, side: 'RIGHT', startLine: 2, startSide: 'RIGHT', body: 'fix' },
     { path: 'b.ts', line: 1, side: 'LEFT', body: 'changed' }
   ])
   const raw = JSON.stringify([...list, { id: 'bad', path: 'x', line: '1' }, { id: 'e', path: 'x', line: 1, startLine: 1, side: 'RIGHT', body: ' ' }])
@@ -107,6 +113,36 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.equal(m.inferCommentSide(patch, 10, 10, 'keep'), 'RIGHT')
   assert.equal(m.inferCommentSide(patch, 13, 13, 'tail'), 'RIGHT')
   assert.equal(m.inferCommentSide(patch, 99, 99, 'nothing'), null)
+  assert.deepEqual(m.lineExcerpt(patch, 'RIGHT', 11, 12), ['added one', 'added two'])
+  assert.deepEqual(m.lineExcerpt(patch, 'LEFT', 11, 11), ['gone'])
+  assert.deepEqual(m.lineExcerpt(patch, 'RIGHT', 0, 0), [])
+  assert.deepEqual(m.lineExcerpt('', 'RIGHT', 1, 1), [])
+  const threads = model.threadsOf([
+    {
+      id: 'T1', isResolved: false, isOutdated: false, path: 'a.ts', line: 12, side: 'RIGHT', startLine: 11, startSide: 'RIGHT',
+      comments: [
+        { id: 'c1', databaseId: 501, author: { login: 'rev' }, body: 'why?', createdAt: '2026-01-01T00:00:00Z', url: 'u1', path: 'a.ts', line: 12, side: 'RIGHT', isResolved: false },
+        { id: 'c2', databaseId: 502, author: { login: 'me' }, body: 'because', createdAt: '2026-01-02T00:00:00Z', url: 'u2', path: 'a.ts', line: 12, side: 'RIGHT', replyToId: 501, isResolved: false }
+      ]
+    },
+    { id: 'T2', isResolved: true, isOutdated: true, path: 'b.ts', line: 3, side: 'LEFT', comments: [{ id: 'c3', databaseId: 7, body: 'ok', path: 'b.ts', line: 3, side: 'LEFT', isResolved: true }] },
+    { id: 'T3', isResolved: false, isOutdated: false, path: 'c.ts', line: 1, side: 'RIGHT', comments: [{ id: 'x', path: 'c.ts', line: 1, side: 'RIGHT', isResolved: false }] },
+    null
+  ])
+  assert.equal(threads.length, 2)
+  assert.deepEqual(threads[0], {
+    id: 'T1', path: 'a.ts', line: 12, startLine: 11, side: 'RIGHT', isResolved: false, isOutdated: false,
+    comments: [
+      { id: 501, author: 'rev', body: 'why?', at: '2026-01-01T00:00:00Z', url: 'u1' },
+      { id: 502, author: 'me', body: 'because', at: '2026-01-02T00:00:00Z', url: 'u2' }
+    ]
+  })
+  assert.equal(threads[1].startLine, 3)
+  assert.equal(threads[1].side, 'LEFT')
+  assert.equal(model.threadReplyTarget(threads[0]), 501)
+  assert.deepEqual(model.threadsForPath(threads, 'b.ts').map((t) => t.id), ['T2'])
+  const normalized = model.normalizePrDetail({ number: 9, reviewThreads: [], reviewThreadsTruncated: true, reviewThreadsError: 'boom', mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }, { repo: 'a/b', diff: '' })
+  assert.deepEqual([normalized.threads, normalized.threadsTruncated, normalized.threadsError, normalized.mergeable, normalized.mergeState], [[], true, 'boom', 'conflicting', 'DIRTY'])
 }
 
 {
@@ -149,9 +185,13 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.equal(m.baseBranchOf(null), '')
   assert.equal(m.titleFromBranch('feat/add-pr_ui'), 'Add pr ui')
   assert.deepEqual(m.createDefaults({ branch: 'feat/x', detached: false, baseRef: 'origin/main', upstream: null, unpushed: null }), {
-    head: 'feat/x', base: 'main', title: 'X', pushFirst: true, blocked: null
+    head: 'feat/x', base: 'main', title: 'X', body: '', titleSource: 'branch', baseSource: 'git', pushFirst: true, blocked: null
   })
-  assert.equal(m.createDefaults({ branch: 'feat/x', detached: false, baseRef: 'origin/main', lastCommit: 'Fix bug\n\nbody', upstream: 'origin/feat/x', unpushed: 0 }).title, 'Fix bug')
+  const fromCommit = m.createDefaults({ branch: 'feat/x', detached: false, baseRef: 'origin/main', defaultBranch: 'trunk', lastCommit: { subject: 'Fix bug', body: '\nPara one\n\nPara two\n' }, upstream: 'origin/feat/x', unpushed: 0 })
+  assert.deepEqual([fromCommit.title, fromCommit.body, fromCommit.base, fromCommit.titleSource, fromCommit.baseSource], ['Fix bug', 'Para one\n\nPara two', 'trunk', 'commit', 'github'])
+  assert.equal(m.createDefaults({ branch: 'trunk', detached: false, baseRef: 'origin/main', defaultBranch: 'trunk', upstream: 'origin/trunk', unpushed: 0 }).blocked, 'default-branch')
+  assert.equal(m.createDefaults({ branch: 'feat/x', detached: false, baseRef: null, defaultBranch: null, upstream: null, unpushed: null }).baseSource, 'fallback')
+  assert.equal(m.createDefaults({ branch: 'feat/x', detached: false, baseRef: null, lastCommit: { subject: '  ', body: 'orphan' }, upstream: null, unpushed: null }).body, '')
   assert.equal(m.createDefaults({ branch: 'feat/x', detached: false, baseRef: null, upstream: 'origin/feat/x', unpushed: 0 }).pushFirst, false)
   assert.equal(m.createDefaults({ branch: 'main', detached: false, baseRef: 'origin/main', upstream: 'origin/main', unpushed: 0 }).blocked, 'default-branch')
   assert.equal(m.createDefaults({ branch: null, detached: true, baseRef: 'origin/main', upstream: null, unpushed: null }).blocked, 'detached')
@@ -162,7 +202,7 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.equal(m.createProblem({ ...draft, head: '' }), 'head')
   assert.equal(m.createProblem({ ...draft, base: 'x' }), 'same')
   assert.deepEqual(m.diffNames(['a', 'b'], ['b', 'c']), { add: ['c'], remove: ['a'] })
-  assert.equal(m.quoteReply('octo', 'line1\nline2', ' ok '), '> @octo\n>\n> line1\n> line2\n\nok')
+  assert.equal(m.quoteReply, undefined)
 }
 
 {

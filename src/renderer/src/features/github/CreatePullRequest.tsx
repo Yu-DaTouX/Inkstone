@@ -41,23 +41,29 @@ export function CreatePullRequestDialog({ cwd, isOpen, onOpenChange, lang }: Cre
     setTouched(false)
     action.reset()
     const git = window.yan?.git
+    const github = window.yan?.github
     void (async () => {
       try {
-        const [state, changes] = await Promise.all([
+        const [state, remote] = await Promise.all([
           git ? git.state(cwd) : Promise.resolve({ repo: null }),
-          git ? git.changes(cwd, { scope: { kind: 'branch' }, patches: false }).catch(() => null) : Promise.resolve(null)
+          github ? github.createDefaults(cwd).catch(() => null) : Promise.resolve(null)
         ])
+        const changes =
+          remote?.defaultBranch || !git ? null : await git.changes(cwd, { scope: { kind: 'branch' }, patches: false }).catch(() => null)
         if (!alive) return
         const repo = state.repo
+        const branch = remote?.currentBranch ?? repo?.branch ?? null
         const next = createDefaults({
-          branch: repo?.branch ?? null,
-          detached: repo?.detached ?? false,
+          branch,
+          detached: !branch,
           baseRef: changes?.baseRef ?? null,
+          defaultBranch: remote?.defaultBranch ?? null,
+          lastCommit: remote?.latestCommit ?? null,
           upstream: repo?.upstream ?? null,
           unpushed: repo?.unpushedCount ?? null
         })
         setDefaults(next)
-        setDraft({ title: next.title, body: '', base: next.base, head: next.head, draft: false, pushFirst: next.pushFirst })
+        setDraft({ title: next.title, body: next.body, base: next.base, head: next.head, draft: false, pushFirst: next.pushFirst })
       } catch {
         if (alive) setDefaults(createDefaults({ branch: null, detached: true, baseRef: null, upstream: null, unpushed: null }))
       } finally {
@@ -117,7 +123,7 @@ export function CreatePullRequestDialog({ cwd, isOpen, onOpenChange, lang }: Cre
             <TextField
               label={text.create.titleField}
               placeholder={text.create.titlePlaceholder}
-              description={text.create.titleHint}
+              description={defaults?.titleSource === 'commit' ? text.create.titleHint : text.create.titleHintBranch}
               value={draft.title}
               onChange={(value) => set({ title: value })}
               isInvalid={touched && problem === 'title'}
@@ -131,6 +137,7 @@ export function CreatePullRequestDialog({ cwd, isOpen, onOpenChange, lang }: Cre
                 label={text.create.base}
                 value={draft.base}
                 onChange={(value) => set({ base: value })}
+                description={defaults ? text.create.baseHint[defaults.baseSource] : undefined}
                 isInvalid={touched && (problem === 'base' || problem === 'same')}
                 errorMessage={problem === 'same' ? text.create.problem.same : text.create.problem.base}
                 isDisabled={busy}

@@ -1,5 +1,5 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, ListFilter, MessageSquarePlus, Pencil, Quote, Tag, Users, X } from 'lucide-react'
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, ListFilter, MessageSquarePlus, Pencil, Tag, Users, X } from 'lucide-react'
 import {
   Avatar,
   Badge,
@@ -19,11 +19,12 @@ import {
 } from '../../ui'
 import { Markdown } from '../session/Markdown'
 import type { PrCheckItem, PrDetail, PrReviewerState, PrTimelineItem } from './pr-model'
-import { commentView, quoteReply } from './pr-actions-model'
+import { commentView } from './pr-actions-model'
 import type { PrActionText } from './pr-action-text'
 import type { PrDetailText } from './pr-detail-text'
 import type { PrActionController } from './PrActionStatus'
 import { CandidatePicker, EditFooter, MarkdownEditor } from './PrEditors'
+import { ThreadsSection } from './PrThreads'
 
 type BadgeTone = 'neutral' | 'accent' | 'ok' | 'run' | 'ask' | 'stall' | 'fail'
 
@@ -76,18 +77,9 @@ export interface CommentCardProps {
   cwd: string
   when: (iso: string) => string
   reviewBadge: ReactNode
-  action: PrActionController
-  text: PrActionText
-  number: number
 }
 
-export function CommentCard({ item, cwd, when, reviewBadge, action, text, number }: CommentCardProps): ReactElement {
-  const [reply, setReply] = useState<string | null>(null)
-  const send = async (): Promise<void> => {
-    if (!reply?.trim()) return
-    const result = await action.run({ kind: 'comment', number, body: quoteReply(item.author, item.body, reply) })
-    if (result?.ok) setReply(null)
-  }
+export function CommentCard({ item, cwd, when, reviewBadge }: CommentCardProps): ReactElement {
   return (
     <li className="gh-pr-event" data-kind={item.kind}>
       <div className="gh-pr-event__head">
@@ -95,45 +87,10 @@ export function CommentCard({ item, cwd, when, reviewBadge, action, text, number
         <span className="gh-pr-event__author">{item.author}</span>
         {reviewBadge}
         <span className="gh-pr-event__time">{when(item.at)}</span>
-        {item.body.trim() ? (
-          <IconButton
-            size="xs"
-            variant="ghost"
-            aria-label={text.comment.quoteTitle(item.author || '?')}
-            tooltip={text.comment.quote}
-            isDisabled={action.busy}
-            onPress={() => setReply(reply === null ? '' : null)}
-            data-testid={`gh-pr-quote-${item.id}`}
-          >
-            <Quote size={12} aria-hidden />
-          </IconButton>
-        ) : null}
       </div>
       {item.body ? (
         <div className="gh-pr-event__body">
           <Markdown text={item.body} sourceCwd={cwd} />
-        </div>
-      ) : null}
-      {reply !== null ? (
-        <div className="gh-pr-act__form" data-testid="gh-pr-quote-editor">
-          <TextArea
-            aria-label={text.comment.quoteTitle(item.author || '?')}
-            placeholder={text.comment.replyPlaceholder}
-            value={reply}
-            onChange={setReply}
-            rows={3}
-            size="sm"
-            autoFocus
-            isDisabled={action.busy}
-          />
-          <div className="gh-pr-act__footer">
-            <Button size="xs" variant="ghost" onPress={() => setReply(null)} isDisabled={action.busy}>
-              {text.comment.cancel}
-            </Button>
-            <Button size="xs" variant="primary" isDisabled={!reply.trim()} isPending={action.busy} onPress={() => void send()}>
-              {text.comment.send}
-            </Button>
-          </div>
         </div>
       ) : null}
     </li>
@@ -155,7 +112,6 @@ export function FloatingComment({ number, action, text }: { number: number; acti
                 <span className="ui-field__label">{text.summary.commentTitle}</span>
                 <TextArea aria-label={text.summary.commentTitle} placeholder={text.comment.placeholder} value={draft} onChange={setDraft} rows={5} autoFocus isDisabled={action.busy} />
                 <div className="gh-pr-act__footer">
-                  <span className="gh-pr-act__hint ui-meta-text">{text.comment.threadedGap}</span>
                   <Button size="sm" variant="ghost" onPress={close} isDisabled={action.busy}>
                     {text.comment.cancel}
                   </Button>
@@ -200,6 +156,7 @@ export interface PrSummaryTabProps {
 }
 
 export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBadge, openExternal, checksDetailsLabel, checksEmpty, bodyEmpty }: PrSummaryTabProps): ReactElement {
+  const patchOf = (path: string): string => detail.files.find((file) => file.path === path)?.patch ?? ''
   const [descriptionOpen, setDescriptionOpen] = useState(true)
   const [checksOpen, setChecksOpen] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(true)
@@ -350,6 +307,18 @@ export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBad
           ) : null}
         </CollapsiblePanel>
       </Collapsible>
+      <ThreadsSection
+        threads={detail.threads}
+        truncated={detail.threadsTruncated}
+        error={detail.threadsError}
+        cwd={cwd}
+        number={number}
+        when={when}
+        action={action}
+        text={text}
+        onOpen={openExternal}
+        patchOf={patchOf}
+      />
       <Collapsible className="gh-prd__section" isExpanded={commentsOpen} onExpandedChange={setCommentsOpen}>
         <CollapsibleHeader
           tone="emphasized"
@@ -392,7 +361,7 @@ export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBad
             ) : (
               <ol className="gh-pr-timeline" data-testid="gh-pr-comments">
                 {comments.items.map((item) => (
-                  <CommentCard key={item.id} item={item} cwd={cwd} when={when} reviewBadge={reviewBadge(item)} action={action} text={text} number={number} />
+                  <CommentCard key={item.id} item={item} cwd={cwd} when={when} reviewBadge={reviewBadge(item)} />
                 ))}
               </ol>
             )

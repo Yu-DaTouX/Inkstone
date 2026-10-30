@@ -35,6 +35,7 @@ import type { PrDetailTab } from '../../state/right-panel'
 import {
   ageOf,
   normalizePrDetail,
+  threadsForPath,
   parseViewed,
   serializeViewed,
   toggleViewed,
@@ -46,11 +47,12 @@ import {
 } from './pr-model'
 import { prDetailText } from './pr-detail-text'
 import { prActionText } from './pr-action-text'
-import { addPendingComment, inferCommentSide, nextCondensed, parsePending, pendingStorageKey, type PendingComment } from './pr-actions-model'
+import { addPendingComment, inferCommentSide, nextCondensed, parsePending, pendingStorageKey, removePendingComment, type PendingComment } from './pr-actions-model'
 import { PrActionStatus, usePrAction } from './PrActionStatus'
 import { PrActionBar } from './PrDetailActions'
 import { EditFooter } from './PrEditors'
 import { ChecksList, CommentCard, FloatingComment, PrSummaryTab } from './PrSummaryTab'
+import { FileNotes } from './PrThreads'
 import './pull-requests.css'
 import './pr-actions.css'
 
@@ -454,7 +456,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                 {item.body ? <p className="gh-prd__commit">{item.body}</p> : null}
               </li>
             ) : (
-              <CommentCard key={item.id} item={item} cwd={cwd} when={when} reviewBadge={reviewBadge(item)} action={action} text={actText} number={number} />
+              <CommentCard key={item.id} item={item} cwd={cwd} when={when} reviewBadge={reviewBadge(item)} />
             )
           )}
         </ol>
@@ -497,6 +499,9 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
             {files.map((file) => {
               const open = expanded.has(file.key)
               const read = viewedSet.has(file.key)
+              const fileThreads = threadsForPath(detail.threads, file.path)
+              const filePending = pending.filter((item) => item.path === file.path)
+              const noteCount = fileThreads.length + filePending.length
               return (
                 <li key={file.key} className="gh-pr-file" data-read={read ? '1' : undefined} data-open={open ? '1' : undefined}>
                   <Collapsible isExpanded={open} onExpandedChange={() => toggleFile(file.key)}>
@@ -506,7 +511,16 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                       aria-label={`${open ? t('github.pr.detail.collapse') : t('github.pr.detail.expand')} ${file.path}`}
                       data-testid={`gh-pr-file-toggle-${file.path}`}
                       icon={<FileTypeIcon name={file.path} size={12} />}
-                      accessory={<DiffStat added={file.additions} removed={file.deletions} />}
+                      accessory={
+                        <>
+                          {noteCount ? (
+                            <Badge tone={filePending.length ? 'accent' : 'neutral'} data-testid={`gh-pr-file-notes-count-${file.path}`}>
+                              {noteCount}
+                            </Badge>
+                          ) : null}
+                          <DiffStat added={file.additions} removed={file.deletions} />
+                        </>
+                      }
                       actions={
                         <Checkbox
                           isSelected={read}
@@ -520,6 +534,21 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                       <MiddleTruncate value={file.path} />
                     </CollapsibleHeader>
                     <CollapsiblePanel className="gh-pr-file__diffview">
+                      {open ? (
+                        <FileNotes
+                          path={file.path}
+                          threads={fileThreads}
+                          pending={filePending}
+                          onRemovePending={(id) => updatePending((prev) => removePendingComment(prev, id))}
+                          cwd={cwd}
+                          number={number}
+                          when={when}
+                          action={action}
+                          text={actText}
+                          onOpen={openExternal}
+                          patchOf={() => file.patch}
+                        />
+                      ) : null}
                       {open ? (
                         file.patch ? (
                           <DiffView patch={file.patch} title={file.path} embedded showFileHeader={false} lang={lang} annotate={annotations.get(file.key)} />
