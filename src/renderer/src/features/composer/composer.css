@@ -898,14 +898,14 @@
   }
 
   .composer-v3 .composer-text {
-    min-height: calc(1.625em * 2);
-    max-height: min(24rem, 40svh);
-    font-size: 15px;
+    min-height: calc(1.625em * 2 + 0.5rem);
+    max-height: min(13rem, 40svh);
+    font-size: 14px;
     line-height: 1.625;
   }
 
   .composer-v3 .composer-text[data-placeholder-visible='true'][data-placeholder]::before {
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1.625;
   }
 

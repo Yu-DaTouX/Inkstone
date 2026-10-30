@@ -3,10 +3,7 @@ import { CornerUpRight, ListPlus } from "lucide-react";
 import { MorphIcon } from "../MorphIcon";
 import { useT } from "../../../i18n";
 import { useShortcutModifierState } from "../../adapters/shortcut-modifier";
-import {
-  alternateComposerDispatchAction,
-  resolveComposerDispatchMode,
-} from "../../adapters/composer-dispatch";
+import { resolveComposerDispatchMode } from "../../adapters/composer-dispatch";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -58,7 +55,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       canSteer,
       alternateModifier: shortcutModifiers.altKey,
     }) === "queue";
-  const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const canOperate = true;
 
   const renderStopGenerationButton = () => (
@@ -96,17 +92,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const submitTooltip =
     submitStatus ??
     (isRunning && canSteer
-      ? t("composer.t3.steerClickHint", {
-          action:
-            followUpBehavior === "queue"
-              ? t("composer.t3.queueAction")
-              : t("composer.t3.steerAction"),
-          mod: "Alt",
-          alt:
-            alternateAction === "queue"
-              ? t("composer.t3.queueAction")
-              : t("composer.t3.steerAction"),
-        })
+      ? t(
+          followUpBehavior === "queue"
+            ? "composer.t3.queueClickHint"
+            : "composer.t3.steerClickHint",
+          { mod: "Alt" },
+        )
       : submitLabel);
 
   const sendButton = (
