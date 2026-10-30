@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { normalizeRepositoryUrl } from './src/shared/build-info'
 
 const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
@@ -71,6 +72,6 @@ export default defineConfig({
         }
       }
     },
-    plugins: [react()]
+    plugins: [react(), tailwindcss()]
   }
 })

@@ -34,6 +34,14 @@
 | [Vercel Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines)（提交 `434b7f91`） | MIT | 原文 `AGENTS.md` 在 `resources/skills/artifact/official/vercel-web-interface-guidelines/`，附原许可 |
 | [three.js](https://threejs.org)（npm 包 `three@0.186.1`，含 `TextGeometry`、`FontLoader`、`RoomEnvironment` 附加模块）与 three.js 仓库 `r186` 的 `helvetiker_bold.typeface.json`（MgOpen 字体） | three.js：MIT；字体：MgOpen 许可（允许随软件分发，需保留版权与许可声明） | 由 `scripts/vendor-three.mjs` 打包为 `resources/skills/artifact/vendor/three.min.js`，许可原文在同目录 `LICENSE-three.txt`、`LICENSE-mgopen-fonts.txt`；成果页写 `<script data-yan-lib="three"></script>` 时由砚内联 |
 
+## 界面基元（T3 Code）
+
+左栏、右栏与输入框的外观和交互按 [T3 Code](https://github.com/pingdotgg/t3code) 的实现复刻。拷入的源码保持上游相对结构：界面基元在 [`src/renderer/src/t3/components/ui/`](src/renderer/src/t3/components/ui/)，`cn` 与少量工具在 [`src/renderer/src/t3/lib/`](src/renderer/src/t3/lib/)，设计变量与 Tailwind 入口在 [`src/renderer/src/t3/t3.css`](src/renderer/src/t3/t3.css)。拷入的文件删去注释，`~/` 导入改成相对路径，对 `@t3tools/*` 内部包的依赖在本目录写最小替身，数据层换成砚自己的 store 与 `window.yan.*`。
+
+| 组件 | 许可 | 说明 |
+| --- | --- | --- |
+| T3 Code（`apps/web/src/index.css`、`apps/web/src/components/ui/`、`apps/web/src/lib/utils.ts`） | MIT，Copyright (c) 2026 T3 Tools Inc. | 许可原文见 [`src/renderer/src/t3/LICENSE`](src/renderer/src/t3/LICENSE)。`t3.css` 只引入 Tailwind 的 theme 与 utilities 层，未启用 preflight，颜色角色改由砚的设计令牌驱动 |
+
 ## 其它运行时组件
 
 | 组件 | 许可 |

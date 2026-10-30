@@ -1,25 +1,25 @@
 /* 由 scripts/design/build-tokens.mjs 生成，不要手改。 */
 export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
-  "--color-background-primary": "light-dark(#FFFFFF, #2A2A29)",
-  "--color-background-secondary": "light-dark(#FCFCFB, #1A1A1A)",
-  "--color-background-tertiary": "light-dark(#F4F4F2, #131313)",
+  "--color-background-primary": "light-dark(#FFFFFF, #111111)",
+  "--color-background-secondary": "light-dark(#FCFCFB, #000000)",
+  "--color-background-tertiary": "light-dark(#F4F4F2, #0A0A0A)",
   "--color-background-inverse": "light-dark(#0B0B0B, #FFFFFF)",
   "--color-background-ghost": "transparent",
   "--color-background-info": "light-dark(rgba(42,120,214,.1), rgba(42,120,214,.26))",
   "--color-background-danger": "light-dark(#FCEBEB, rgba(236,126,126,.12))",
   "--color-background-success": "light-dark(#E6F4E4, rgba(50,215,75,.12))",
   "--color-background-warning": "light-dark(#FDF1D6, rgba(250,178,25,.12))",
-  "--color-text-primary": "light-dark(#20211F, #D4D3CE)",
-  "--color-text-secondary": "light-dark(#555750, #BAB9B3)",
-  "--color-text-tertiary": "light-dark(#6B6A64, #A3A29C)",
-  "--color-text-inverse": "light-dark(#FFFFFF, #0B0B0B)",
+  "--color-text-primary": "light-dark(#20211F, #F5F5F5)",
+  "--color-text-secondary": "light-dark(#555750, #A3A3A3)",
+  "--color-text-tertiary": "light-dark(#6B6A64, #8F8F8F)",
+  "--color-text-inverse": "light-dark(#FFFFFF, #000000)",
   "--color-text-info": "light-dark(#184F95, #6DA7EC)",
   "--color-text-danger": "light-dark(#8E2626, #EC7E7E)",
   "--color-text-success": "light-dark(#006300, #7ACF82)",
   "--color-text-warning": "light-dark(#734500, #DB9300)",
-  "--color-border-primary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2))",
-  "--color-border-secondary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2))",
-  "--color-border-tertiary": "light-dark(rgba(11,11,11,.1), rgba(255,255,255,.12))",
+  "--color-border-primary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.11))",
+  "--color-border-secondary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.11))",
+  "--color-border-tertiary": "light-dark(rgba(11,11,11,.1), rgba(255,255,255,.08))",
   "--color-ring-primary": "#2875D2",
   "--font-sans": "\"Segoe UI Variable Text\", \"Segoe UI Variable\", \"Segoe UI\", \"Noto Sans SC\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"PingFang SC\", \"Noto Sans CJK SC\", system-ui, sans-serif",
   "--font-mono": "\"Cascadia Mono\", \"Cascadia Code\", \"JetBrains Mono\", \"SF Mono\", Consolas, \"Microsoft YaHei UI\", monospace",
@@ -45,8 +45,8 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--border-radius-xl": "14px",
   "--border-radius-full": "9999px",
   "--border-width-regular": "1px",
-  "--shadow-hairline": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.12))",
-  "--shadow-sm": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.12))"
+  "--shadow-hairline": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.08))",
+  "--shadow-sm": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.08))"
 }
 
 export const APP_THEME_SHADOW_VARIABLES: Readonly<
@@ -57,7 +57,7 @@ export const APP_THEME_SHADOW_VARIABLES: Readonly<
     "--shadow-lg": "0 0 0 .5px rgba(11,11,11,.12), 0 8px 24px rgba(0,0,0,.1), 0 2px 6px rgba(0,0,0,.05)"
   },
   "dark": {
-    "--shadow-md": "inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13)",
-    "--shadow-lg": "inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35)"
+    "--shadow-md": "inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.08)",
+    "--shadow-lg": "inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35)"
   }
 }

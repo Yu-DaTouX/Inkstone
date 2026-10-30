@@ -1,5 +1,6 @@
-@layer reset, tokens, base, primitives, patterns, features, utilities;
+@layer reset, theme, tokens, base, components, primitives, patterns, features, utilities;
 
 @import './reset.css' layer(reset);
 @import './tokens.css' layer(tokens);
 @import './base.css' layer(base);
+@import '../t3/t3.css';
