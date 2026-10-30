@@ -124,7 +124,7 @@ async function runShortcutsAndPalette() {
   assert.equal(pressed({ key: 'b', ctrl: true, alt: true, inTerminal: true }), 'toggleWorkspace', '终端里 Ctrl+Alt+B 仍切换工作区')
   assert.equal(pressed({ key: '/', ctrl: true, inTerminal: true }), 'shortcutSheet', '终端里 Ctrl+/ 仍开快捷键表')
 
-  assert.deepEqual(COMMAND_PREFIXES, ['>', '@', '#', '?'], '前缀顺序即帮助顺序')
+  assert.deepEqual(COMMAND_PREFIXES, ['>', '@', '#', '/', '%', '?'], '前缀顺序即帮助顺序')
   assert.deepEqual(parsePaletteQuery(''), { mode: 'default', term: '' }, '空查询是默认模式')
   assert.deepEqual(parsePaletteQuery('new'), { mode: 'default', term: 'new' }, '普通查询不切模式')
   assert.deepEqual(parsePaletteQuery('>'), { mode: 'action', term: '' }, '> 只看操作')
@@ -143,7 +143,7 @@ async function runShortcutsAndPalette() {
   assert.deepEqual(parsePaletteQuery('《新'), { mode: 'default', term: '《新' }, '其他中文标点不切模式')
 
   assert.deepEqual(COMMAND_GROUP_ORDER, ['action', 'session'], '旧默认顺序保持不变')
-  assert.deepEqual(PALETTE_GROUP_ORDER, ['action', 'session', 'message', 'help'], '面板渲染顺序')
+  assert.deepEqual(PALETTE_GROUP_ORDER, ['action', 'session', 'message', 'file', 'content', 'help'], '面板渲染顺序')
 
   assert.equal(messageSnippet('  hello\n  world  '), 'hello world', '压平空白')
   assert.equal(messageSnippet('abcdef', 4), 'abc…', '超长截断并加省略号')
