@@ -570,3 +570,9 @@
     var(--sidebar-foreground) var(--appearance-contrast-border-boost)
   );
 }
+
+@layer components {
+  .t3-rp {
+    --workspace-topbar-height: var(--size-head);
+  }
+}

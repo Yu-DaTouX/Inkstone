@@ -1,6 +1,6 @@
 import { memo, useCallback, useRef, type JSX } from 'react'
 import { SessionView } from '../features/session/SessionView'
-import { Composer } from '../features/composer/Composer'
+import { ComposerV3 } from '../features/composer/ComposerV3'
 
 function observeHeight(element: HTMLElement | null, onHeight: (height: number) => void): (() => void) | undefined {
   if (!element || typeof ResizeObserver === 'undefined') return undefined
@@ -22,7 +22,7 @@ export const ChatMain = memo(function ChatMain(): JSX.Element {
   return (
     <>
       <div className="v3-conv" ref={convRef}><SessionView /></div>
-      <div className="v3-composer" ref={composerRef}><Composer /></div>
+      <div className="v3-composer" ref={composerRef}><ComposerV3 /></div>
     </>
   )
 })
