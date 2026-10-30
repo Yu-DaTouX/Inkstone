@@ -4,6 +4,7 @@
   .v3-qcard > * { flex: none; }
   .v3-qhead { padding: var(--s-12) var(--s-12) 0 var(--s-16); }
   .v3-qmini { padding: var(--s-4) var(--s-16) var(--s-12); color: var(--fg3); font-size: var(--t-footnote); }
+  .v3-qcard > .v3-typing-defer { margin: 0; padding: var(--s-4) var(--s-16) 0; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); }
   .v3-qcard > .v3-qbody { flex: 0 1 auto; min-height: 0; padding: var(--s-10) var(--s-16) var(--s-12); max-height: 320px; overflow: auto; }
   .v3-qbody[hidden] { display: none; }
   .v3-qmsg { margin-bottom: var(--s-8); color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }

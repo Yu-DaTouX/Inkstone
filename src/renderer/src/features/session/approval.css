@@ -31,6 +31,7 @@
   .v3-approval-receipt-head { padding: var(--s-4) var(--s-12); }
   .v3-approval-receipt-reason { padding: 0 var(--s-12) var(--s-8); color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
 
+  .v3-approval .v3-typing-defer,
   .v3-approval-read-hint {
     margin: 0;
     color: var(--fg3);

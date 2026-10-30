@@ -25,7 +25,13 @@ import {
   type ApprovalArming,
   type ApprovalGate
 } from './approval-keys'
+import { cardFocusKeysText, useTypingDeferredFocus } from './typing-guard'
+import { isMacPlatform } from '../../app/shortcuts'
 import './approval.css'
+
+function approvalFocusTarget(card: HTMLElement): HTMLElement {
+  return card.querySelector<HTMLElement>('[data-testid="v3-approval-deny"]') ?? card
+}
 
 function overlayOutside(card: HTMLElement | null): boolean {
   return isModalOpen() || [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="menu"], [role="listbox"]')]
@@ -63,6 +69,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const gated = !!current && active && requiresApprovalReadGate(current)
   const readThrough = !!current && readId === current.id
   const allowBlocked = gated && !readThrough
+  const deferred = useTypingDeferredFocus(cardRef, active ? current?.id : null, approvalFocusTarget, false)
 
   const answer = useCallback(
     (choice: ApprovalChoice, reason?: string): void => {
@@ -254,6 +261,12 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
         {allowBlocked ? (
           <p className="v3-approval-read-hint" role="status" data-testid="v3-approval-read-hint">
             {t('approval.readHint')}
+          </p>
+        ) : null}
+
+        {deferred ? (
+          <p className="v3-typing-defer" role="status" data-testid="v3-typing-defer">
+            {t('session.typingDefer.hint', { keys: cardFocusKeysText(isMacPlatform()) })}
           </p>
         ) : null}
 

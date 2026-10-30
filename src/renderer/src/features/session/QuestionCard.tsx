@@ -11,9 +11,15 @@ import { QuestionForm } from './QuestionForm'
 import { useSessionText } from './text'
 import { approvalSlotClaimed, useApprovalSlotVersion, useClaimApprovalSlot } from './approval-slot'
 import { claimDigitKeys, digitChoiceIndex } from './question-keys'
+import { cardFocusKeysText, useTypingDeferredFocus } from './typing-guard'
+import { isMacPlatform } from '../../app/shortcuts'
 import './question.css'
 
 const INTERACTIVE = new Set(['select', 'confirm', 'input', 'editor'])
+
+function questionFocusTarget(card: HTMLElement): HTMLElement {
+  return card.querySelector<HTMLElement>('.v3-qoption-row, .v3-qoption, input, textarea, select') ?? card
+}
 
 export function QuestionCard({ requestId }: { requestId?: string } = {}): JSX.Element | null {
   const requests = useStore((s) => s.uiRequests)
@@ -108,12 +114,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
     return () => window.clearInterval(id)
   }, [deadline, reqId, dismissRequest])
 
-  useEffect(() => {
-    const card = cardRef.current
-    if (!card) return
-    const target = card.querySelector<HTMLElement>('.v3-qoption-row, .v3-qoption, input, textarea, select') ?? card
-    target.focus({ preventScroll: true })
-  }, [])
+  const deferred = useTypingDeferredFocus(cardRef, reqId, questionFocusTarget, true)
 
   const digitOptions = useMemo(
     () => (!req.form?.length && (req.method === 'select' || req.method === 'input') ? req.options ?? [] : []),
@@ -233,6 +234,11 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
         </CardControl>
       </CardHead>
 
+      {deferred ? (
+        <p className="v3-typing-defer" role="status" data-testid="v3-typing-defer">
+          {t('session.typingDefer.hint', { keys: cardFocusKeysText(isMacPlatform()) })}
+        </p>
+      ) : null}
       {collapsed ? <div className="v3-qmini">{t('q.collapsed', { n: page.total })}</div> : null}
       {(
         <div className="v3-qbody" data-testid="v3-question-body" hidden={collapsed}>
