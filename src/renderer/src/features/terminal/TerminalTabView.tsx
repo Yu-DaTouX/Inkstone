@@ -27,6 +27,8 @@ import {
   type TerminalViewState
 } from './terminal-session'
 import { terminalXtermOptions, type TerminalViewSettings } from './terminal-view'
+import { createTerminalLinkProvider } from './terminal-link-provider'
+import { isMacPlatform, isTerminalLinkGesture, type TerminalFileLink, type TerminalLinkMatch } from './terminal-links'
 import type { WorkspaceOwner } from '../workbench/types'
 
 export interface TerminalTabHandle {
@@ -54,6 +56,10 @@ export interface TerminalTabViewProps {
   onBell: (key: string) => void
   onFindRequest: (key: string) => void
   onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void
+  linkHint: string
+  onLink: (key: string, link: TerminalLinkMatch) => void
+  checkFile: (key: string, link: TerminalFileLink) => Promise<boolean>
+  onAddSelection: (key: string) => void
 }
 
 function bufferLines(term: Terminal): string[] {
@@ -85,7 +91,7 @@ function readClipboard(paste: (text: string) => void): void {
 }
 
 export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProps>(function TerminalTabView(
-  { tabKey, adopt, owner, visible, active, view, text, onState, onBell, onFindRequest, onContextMenu },
+  { tabKey, adopt, owner, visible, active, view, text, onState, onBell, onFindRequest, onContextMenu, linkHint, onLink, checkFile, onAddSelection },
   ref
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -95,8 +101,8 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
   const fitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const findCursor = useRef<TerminalFindMatch | null>(null)
 
-  const latest = useRef({ owner, visible, active, view, text, onState, onBell, onFindRequest, adopt, tabKey })
-  latest.current = { owner, visible, active, view, text, onState, onBell, onFindRequest, adopt, tabKey }
+  const latest = useRef({ owner, visible, active, view, text, onState, onBell, onFindRequest, adopt, tabKey, linkHint, onLink, checkFile, onAddSelection })
+  latest.current = { owner, visible, active, view, text, onState, onBell, onFindRequest, adopt, tabKey, linkHint, onLink, checkFile, onAddSelection }
 
   const scheduleFit = useCallback((delay = 90): void => {
     clearTimeout(fitTimer.current)
@@ -196,6 +202,7 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
     let release = (): void => {}
 
     const current = latest.current
+    const mac = isMacPlatform()
     const options = {
       fontFamily: terminalFontFamily(),
       ...terminalXtermOptions(current.view),
@@ -203,7 +210,14 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       customGlyphs: true,
       rescaleOverlappingGlyphs: true,
       screenReaderMode: true,
-      theme: readTerminalTheme()
+      theme: readTerminalTheme(),
+      linkHandler: {
+        allowNonHttpProtocols: false,
+        activate: (event: MouseEvent, uri: string) => {
+          if (!isTerminalLinkGesture(event, mac) || !/^https?:\/\//i.test(uri)) return
+          latest.current.onLink(latest.current.tabKey, { kind: 'url', start: 0, end: uri.length, text: uri, url: uri })
+        }
+      }
     }
 
     void terminalFontReady(options).then(() => {
@@ -214,6 +228,20 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       term.open(host)
       installTerminalRenderer(term, host)
       const imeOff = installImeFallback(term)
+      const links = term.registerLinkProvider(
+        createTerminalLinkProvider(term, {
+          checkFile: (link) => latest.current.checkFile(latest.current.tabKey, link),
+          open: (link, event) => {
+            if (!isTerminalLinkGesture(event, mac)) return
+            event.preventDefault()
+            latest.current.onLink(latest.current.tabKey, link)
+          },
+          hover: (on) => {
+            if (on) host.title = latest.current.linkHint
+            else host.removeAttribute('title')
+          }
+        })
+      )
       termRef.current = term
       fitRef.current = fit
 
@@ -253,6 +281,10 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
           readClipboard((value) => term.paste(value))
           return false
         }
+        if (mod && event.shiftKey && !event.altKey && event.code === 'KeyL' && term.hasSelection()) {
+          latest.current.onAddSelection(latest.current.tabKey)
+          return false
+        }
         if (event.ctrlKey && event.code === 'Insert') {
           const selection = term.getSelection()
           if (selection) writeClipboard(selection)
@@ -279,6 +311,8 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       release = () => {
         clearTimeout(fitTimer.current)
         imeOff()
+        links.dispose()
+        host.removeAttribute('title')
         unsubscribe()
         observer.disconnect()
         releaseEnv()
