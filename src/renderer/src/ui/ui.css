@@ -314,6 +314,31 @@
       background: var(--press);
     }
   }
+  .ui-icon-tray {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    padding: 1px;
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    box-shadow: var(--ring-line);
+  }
+  .ui-icon-tray > .ui-icon-btn {
+    height: calc(var(--size-btn) - 2px);
+    border-radius: calc(var(--r-sm) - 1px);
+  }
+  .ui-icon-tray > .ui-btn.ui-icon-btn--mark-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled]) {
+    background: var(--surface-3);
+    box-shadow: var(--shadow-sm), var(--ring-line);
+  }
+  .ui-icon-tray > .ui-btn.ui-icon-btn--mark-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled])::after {
+    opacity: 0;
+  }
+  @media (hover: hover) {
+    .ui-icon-tray > .ui-btn.ui-icon-btn--mark-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):hover:not([data-disabled]) {
+      background: var(--surface-3);
+    }
+  }
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary)[data-pressed]:not([data-disabled]):not([data-pending]) {
     background: var(--press);
     color: var(--fg);

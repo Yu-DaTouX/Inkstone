@@ -13,10 +13,18 @@ export interface AsciiRuleProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   tone?: AsciiTone
   label?: ReactNode
   align?: 'start' | 'center'
+  leader?: boolean
 }
 
-export function AsciiRule({ glyph = '·', tone = 'dim', label, align = 'start', className, ...rest }: AsciiRuleProps) {
+export function AsciiRule({ glyph = '·', tone = 'dim', label, align = 'start', leader = false, className, ...rest }: AsciiRuleProps) {
   const fill = glyph.repeat(RULE_LENGTH)
+  if (leader) {
+    return (
+      <span className={cx('ui-ascii-rule ui-ascii-rule--leader', className)} data-tone={tone} aria-hidden>
+        <span className="ui-ascii-rule__fill">{fill}</span>
+      </span>
+    )
+  }
   return (
     <div {...rest} role="separator" className={cx('ui-ascii-rule', className)} data-tone={tone} data-align={label && align === 'center' ? 'center' : 'start'}>
       {label && align === 'center' ? <span className="ui-ascii-rule__fill" aria-hidden>{fill}</span> : null}
