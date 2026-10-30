@@ -9,6 +9,7 @@ import {
   CardActions,
   CardBody,
   CardChevron,
+  CardCode,
   CardControl,
   CardHead,
   CardMeta,
@@ -330,6 +331,9 @@ function CardGrammarDemo(): ReactNode {
           <CardMeta>已等 12 秒</CardMeta>
           <CardControl><IconButton size="sm" variant="plain" aria-label="收起"><CardChevron /></IconButton></CardControl>
         </CardHead>
+        <CardBody style={{ padding: '0 var(--s-10) var(--s-10)' }}>
+          <CardCode tone="ask" tabIndex={0}>Remove-Item -Recurse -Force .tmp/release/0.13.0</CardCode>
+        </CardBody>
       </Card>
       <Card padding="none" receipt>
         <CardHead>
@@ -363,7 +367,7 @@ export const CardGrammarStates: Story = {
   name: 'Card · 头部语法与回执',
   parameters: {
     stateMatrix: {
-      components: ['Card', 'CardHead', 'CardSummary', 'CardStatus', 'CardTitle', 'CardMeta', 'CardControl', 'CardBody', 'CardActions', 'CardChevron', 'CardTime'],
+      components: ['Card', 'CardHead', 'CardSummary', 'CardStatus', 'CardTitle', 'CardMeta', 'CardControl', 'CardBody', 'CardCode', 'CardActions', 'CardChevron', 'CardTime'],
       states: STATES('default', 'open', 'tone-accent', 'tone-run', 'tone-ask', 'tone-ok', 'tone-fail')
     }
   },

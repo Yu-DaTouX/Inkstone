@@ -5,7 +5,7 @@ import { isModalOpen } from '../../lib/modalLayer'
 import { formatCountdown } from '../../../../shared/ui-timeout'
 import type { ApprovalChoice } from '../../../../shared/approval'
 import { Button, Kbd } from '../../ui'
-import { Card, CardActions, CardBody, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
+import { Card, CardActions, CardBody, CardCode, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { useApprovalSlotClaimed, useClaimApprovalSlot } from './approval-slot'
@@ -207,7 +207,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
         <CardTitle className="v3-approval-title">{current.title}</CardTitle>
         {waited || approvals.length > 1 ? (
           <CardMeta>
-            {waited ? <span className="v3-approval-wait"><Icon name="clock" size={12} />{waited}</span> : null}
+            {waited ? <span className="v3-approval-wait"><Icon name="clock" size={12} /><span className="ui-num">{waited}</span></span> : null}
             {approvals.length > 1 ? <span data-testid="v3-approval-count">{t('approval.more', { n: approvals.length - 1 })}</span> : null}
           </CardMeta>
         ) : null}
@@ -238,8 +238,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
         {current.cwd ? <div className="v3-approval-cwd" title={current.cwd}>{tt('approvalCwd', { cwd: current.cwd })}</div> : null}
 
         {current.detail ? (
-          <pre
+          <CardCode
             ref={detailRef}
+            tone={risky ? 'ask' : undefined}
             className="v3-approval-detail"
             data-testid="v3-approval-detail"
             title={current.detail}
@@ -247,7 +248,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
             onScroll={onDetailScroll}
           >
             {current.detail}
-          </pre>
+          </CardCode>
         ) : null}
 
         {allowBlocked ? (

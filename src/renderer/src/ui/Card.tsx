@@ -80,6 +80,14 @@ export function CardBody({ className, ...rest }: HTMLAttributes<HTMLDivElement>)
   return <div {...rest} className={cx('ui-card__body', className)} />
 }
 
+export interface CardCodeProps extends HTMLAttributes<HTMLPreElement> {
+  tone?: CardTone
+}
+
+export const CardCode = forwardRef<HTMLPreElement, CardCodeProps>(function CardCode({ tone, className, ...rest }, ref) {
+  return <pre {...rest} ref={ref} data-tone={tone} className={cx('ui-card__code', className)} />
+})
+
 export interface CardActionsProps extends HTMLAttributes<HTMLDivElement> {
   lead?: ReactNode
 }

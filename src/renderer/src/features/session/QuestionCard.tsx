@@ -207,14 +207,14 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
                   onClick={extend}
                 >
                   <Icon name="clock" size={12} />
-                  {formatCountdown(remaining)}
+                  <span className="ui-num">{formatCountdown(remaining)}</span>
                 </button>
               </span>
             ) : null}
             {page.total > 1 ? (
               <span className="v3-qpage" data-testid="v3-question-page">
                 <IconButton size="sm" aria-label={t('q.prev')} isDisabled={page.index === 0} onPress={onPrev} data-testid="v3-question-prev"><Icon name="chevron-left" size={14} /></IconButton>
-                <span className="v3-qpage-n">{t('q.page', { i: page.index + 1, n: page.total })}</span>
+                <span className="v3-qpage-n ui-num">{t('q.page', { i: page.index + 1, n: page.total })}</span>
                 <IconButton size="sm" aria-label={t('q.nextPage')} isDisabled={page.index >= page.total - 1} onPress={onNext} data-testid="v3-question-next"><Icon name="chevron-right" size={14} /></IconButton>
               </span>
             ) : null}
@@ -286,27 +286,27 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
           ) : null}
 
           {!known ? <div className="v3-qmsg" data-testid="v3-question-unknown">{t('q.input')}</div> : null}
-
-          {req.form?.length ? null : (
-            <CardActions
-              className="v3-qfoot"
-              lead={<Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>}
-            >
-              {req.method === 'confirm' ? (
-                <>
-                  <Button isDisabled={busy} onPress={() => answer({ confirmed: false })}>{t('ui.no')}</Button>
-                  <Button variant="primary" isDisabled={busy} onPress={() => answer({ confirmed: true })} data-testid="v3-question-submit">{t('ui.yes')}</Button>
-                </>
-              ) : null}
-              {req.method === 'input' || req.method === 'editor' || req.method === 'select' ? (
-                <Button variant="primary" isDisabled={busy || !canSubmit} onPress={() => answer({ value: trimmed })} data-testid="v3-question-submit">
-                  {page.total > 1 ? t('q.next') : t('q.submit')}
-                </Button>
-              ) : null}
-              {!known ? <Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-dismiss">{t('q.skip')}</Button> : null}
-            </CardActions>
-          )}
         </div>
+      )}
+
+      {collapsed || req.form?.length ? null : (
+        <CardActions
+          className="v3-qfoot"
+          lead={<Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>}
+        >
+          {req.method === 'confirm' ? (
+            <>
+              <Button isDisabled={busy} onPress={() => answer({ confirmed: false })}>{t('ui.no')}</Button>
+              <Button variant="primary" isDisabled={busy} onPress={() => answer({ confirmed: true })} data-testid="v3-question-submit">{t('ui.yes')}</Button>
+            </>
+          ) : null}
+          {req.method === 'input' || req.method === 'editor' || req.method === 'select' ? (
+            <Button variant="primary" isDisabled={busy || !canSubmit} onPress={() => answer({ value: trimmed })} data-testid="v3-question-submit">
+              {page.total > 1 ? t('q.next') : t('q.submit')}
+            </Button>
+          ) : null}
+          {!known ? <Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-dismiss">{t('q.skip')}</Button> : null}
+        </CardActions>
       )}
     </Card>
   )

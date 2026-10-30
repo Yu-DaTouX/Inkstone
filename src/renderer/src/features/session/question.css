@@ -1,8 +1,10 @@
 @layer features {
-  .v3-qcard { width: 100%; max-width: 480px; overflow: hidden; animation: v3-card-in var(--dur-base) var(--ease) both; }
+  @keyframes v3-ask-in { from { opacity: 0; } }
+  .v3-qcard { display: flex; flex-direction: column; width: 100%; max-height: 60vh; overflow: hidden; animation: v3-ask-in var(--dur-snap) var(--ease) both; }
+  .v3-qcard > * { flex: none; }
   .v3-qhead { padding: var(--s-12) var(--s-12) 0 var(--s-16); }
   .v3-qmini { padding: var(--s-4) var(--s-16) var(--s-12); color: var(--fg3); font-size: var(--t-footnote); }
-  .v3-qbody { padding: var(--s-10) var(--s-16) var(--s-12); max-height: 320px; overflow: auto; }
+  .v3-qcard > .v3-qbody { flex: 0 1 auto; min-height: 0; padding: var(--s-10) var(--s-16) var(--s-12); max-height: 320px; overflow: auto; }
   .v3-qbody[hidden] { display: none; }
   .v3-qmsg { margin-bottom: var(--s-8); color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-qtimer-wrap { display: inline-flex; align-items: center; gap: var(--s-4); }
@@ -21,7 +23,7 @@
   .v3-qoption-row:focus-visible { outline: none; box-shadow: var(--ring-focus-inset); }
   .v3-qoption-n { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: var(--r-full); corner-shape: round; box-shadow: var(--ring-line2); color: var(--fg3); font-size: var(--t-caption); font-variant-numeric: tabular-nums; }
   .v3-qoption-t { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-  .v3-qfoot { margin-top: var(--s-10); }
+  .v3-qcard > .v3-qfoot { margin: 0; padding: 0 var(--s-16) var(--s-12); }
 
   .v3-qfield { margin-bottom: var(--s-10); }
   .v3-qfield-label { display: block; margin-bottom: var(--s-4); color: var(--fg); font-size: var(--t-body); overflow-wrap: anywhere; }

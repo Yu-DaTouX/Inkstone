@@ -1,15 +1,19 @@
 @layer features {
+  @keyframes v3-ask-in { from { opacity: 0; } }
   .v3-approval {
+    display: flex;
+    flex-direction: column;
     width: 100%;
-    max-width: 480px;
     max-height: 60vh;
-    overflow: auto;
+    overflow: hidden;
     box-sizing: border-box;
-    animation: v3-card-in var(--dur-base) var(--ease) both;
+    animation: v3-ask-in var(--dur-snap) var(--ease) both;
   }
+  .v3-approval > :is(.ui-card__head, .ui-card__actions) { flex: none; }
   .v3-approval[data-inline] { margin: var(--s-2) 0 var(--s-6); }
   .v3-approval-wait { display: inline-flex; align-items: center; gap: var(--s-4); }
-  .v3-approval-body { display: flex; flex-direction: column; gap: var(--s-8); }
+  .v3-approval-body { display: flex; flex-direction: column; gap: var(--s-8); flex: 0 1 auto; min-height: 0; overflow: auto; padding: var(--s-6); margin: calc(var(--s-10) - var(--s-6)) calc(-1 * var(--s-6)) calc(-1 * var(--s-6)); }
+  .v3-approval-body > * { flex: none; }
   .v3-approval-body:empty { display: none; }
   .v3-approval-source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-8); color: var(--fg3); font-size: var(--t-footnote); }
   .v3-approval-why { display: flex; flex-direction: column; gap: 2px; color: var(--fg); font-size: var(--t-body); overflow-wrap: anywhere; }
@@ -17,7 +21,7 @@
   .v3-approval-reasons { margin: 0; padding-left: var(--s-16); color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); }
   .v3-approval-reasons:has(> li:only-child) { padding-left: 0; list-style: none; }
   .v3-approval-cwd { color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); overflow-wrap: anywhere; }
-  .v3-approval-detail { margin: 0; max-height: 160px; overflow: auto; padding: var(--s-8) var(--s-12); border-radius: var(--r-sm); background: var(--alpha-1); color: var(--fg); font-family: var(--font-mono); font-size: var(--t-code); line-height: var(--t-code-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .v3-approval-detail { max-height: 160px; overflow: auto; }
   .v3-approval-dirs { color: var(--fg3); font-family: var(--font-mono); font-size: var(--t-footnote); word-break: break-all; }
   .v3-approval-kbd { margin-left: var(--s-2); border-color: currentColor; background: transparent; color: inherit; opacity: .7; }
   @media (prefers-reduced-motion: reduce) { .v3-approval { animation: none; } }
@@ -32,11 +36,6 @@
     color: var(--fg3);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
-  }
-
-  .v3-approval-detail:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
   }
 
   .v3-approval-feedback {
