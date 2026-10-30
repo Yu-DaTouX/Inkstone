@@ -172,7 +172,7 @@ async function main() {
 
   const sidebar = await readFile(join(ROOT, 'src/renderer/src/features/sidebar/Sidebar.tsx'), 'utf8')
   ok(!sidebar.includes('TodoTile'), '待办磁贴已不在左侧栏')
-  const panel = await readFile(join(ROOT, 'src/renderer/src/features/workbench/RightPanel.tsx'), 'utf8')
+  const panel = await readFile(join(ROOT, 'src/renderer/src/features/workbench/RightPanelT3.tsx'), 'utf8')
   ok(!panel.includes('<TodoTile />'), '待办不再固定在右栏标签条下方')
 
   const overview = await readFile(join(ROOT, 'src/renderer/src/features/workbench/OverviewPane.tsx'), 'utf8')

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEventHandler, ReactNode } from "react";
 
 export type PanelMode = "inline" | "sheet";
 
@@ -52,6 +52,9 @@ export interface PanelFrameProps {
   onWidth: (width: number) => void;
   label: string;
   tabbar: ReactNode;
+  tabbarClassName?: string;
+  toggleSelector?: string;
+  onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   children: ReactNode;
   sheet?: SheetChrome;
   testId?: string;

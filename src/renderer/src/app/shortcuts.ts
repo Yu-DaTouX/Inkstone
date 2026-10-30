@@ -21,6 +21,8 @@ export type ShortcutId =
   | 'workspaceTab6'
   | 'workspaceClosePane'
   | 'workspaceToggleMaximize'
+  | 'workspaceNewPanel'
+  | 'workspaceReopenPanel'
   | 'splitFocusNext'
   | 'splitFocusPrevious'
   | 'splitNewRight'
@@ -77,6 +79,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'workspaceTab6', keys: ['Alt', '6'], purposeKey: 'workspaceTab6', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'workspaceClosePane', keys: ['Ctrl', '\\'], purposeKey: 'workspaceClosePane', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'workspaceToggleMaximize', keys: ['Ctrl', 'Shift', '\\'], purposeKey: 'workspaceToggleMaximize', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'workspaceNewPanel', keys: ['Ctrl', 'Shift', 'N'], purposeKey: 'workspaceNewPanel', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'workspaceReopenPanel', keys: ['Ctrl', 'Shift', 'T'], purposeKey: 'workspaceReopenPanel', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'splitFocusNext', keys: ['Ctrl', 'Alt', ']'], purposeKey: 'splitFocusNext', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'splitFocusPrevious', keys: ['Ctrl', 'Alt', '['], purposeKey: 'splitFocusPrevious', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'splitNewRight', keys: ['Ctrl', 'Alt', '\\'], purposeKey: 'splitNewRight', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },

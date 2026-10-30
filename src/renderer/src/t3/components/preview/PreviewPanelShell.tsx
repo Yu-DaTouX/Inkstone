@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type KeyboardEvent,
+  type KeyboardEventHandler,
   type ReactNode,
   useLayoutEffect,
   useRef,
@@ -29,6 +30,7 @@ export interface PreviewPanelShellProps {
   testId?: string;
   toggleSelector?: string;
   inlineSize?: PreviewPanelInlineSize;
+  onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   children: ReactNode;
 }
 
@@ -130,6 +132,7 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
     <div
       ref={attachHost}
       data-testid={props.testId}
+      onKeyDown={props.onKeyDown}
       role="region"
       aria-label={props.label}
       data-workspace-unavailable={collapsible && !open ? "true" : undefined}

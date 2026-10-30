@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Copy, EllipsisVertical, FileDiff, Folder, Minus, PanelLeft, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
+import { ArrowLeft, EllipsisVertical, FileDiff, Folder, PanelLeft, PanelRight, SquarePen, Terminal } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings, type ShortcutId } from './shortcuts'
@@ -10,6 +10,8 @@ import { workbenchText } from '../features/workbench/workbench-text'
 import { collabText } from '../features/collab/collab-text'
 import { useHoverDelay } from '../lib/use-hover-delay'
 import { ProjectScriptsControl } from '../features/scripts/ProjectScriptsControl'
+import { rightPanelText } from '../features/workbench/right-panel-text'
+import { WindowControls } from './WindowControls'
 import { v3Text, withShortcutKeys } from './v3-text'
 import { plainTitleText } from '../../../shared/title-text'
 import { sessionProjectLabel } from '../features/sidebar/sidebar-model'
@@ -27,6 +29,9 @@ interface Props {
   sessionBarHidden?: boolean
   onToggleSessionBar: () => void
   sessionBarShown?: boolean
+  rightPanelOpen: boolean
+  onToggleRightPanel: () => void
+  windowControls: boolean
   openPanes: ReadonlySet<WorkbenchTabId>
   activePane?: string | null
   changesDirty: boolean
@@ -48,6 +53,7 @@ const HEAD_TEXT = {
 const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['browser', 'logs', 'device', 'pullRequests']
 const MENU_KEEP_ON_TOP = 'head:keep-on-top'
 const MENU_SETTINGS = 'head:settings'
+const MENU_SESSION_BAR = 'head:session-bar'
 
 const PANE_SHORTCUTS: Partial<Record<WorkbenchTabId, ShortcutId>> = {
   terminal: 'openTerminal',
@@ -56,7 +62,7 @@ const PANE_SHORTCUTS: Partial<Record<WorkbenchTabId, ShortcutId>> = {
   files: 'workspaceTab3'
 }
 
-export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, openPanes, activePane = null, changesDirty, onTogglePane }: Props): ReactElement {
+export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, rightPanelOpen, onToggleRightPanel, windowControls, openPanes, activePane = null, changesDirty, onTogglePane }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -73,11 +79,10 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const sessions = useStore((s) => s.sessions)
   const projects = useStore((s) => s.settings?.projects)
   const projectNames = useStore((s) => s.settings?.projectNames)
-  const maximized = useStore((s) => s.maximized)
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const shortcutOverrides = shortcutOverridesFromSettings(useStore((s) => s.settings))
-  const win = window.yan.win
+  const panelText = rightPanelText(lang)
 
   const preview = useHoverDelay(280, () => onPreviewSidebar?.())
   const paneActive = (tab: WorkbenchTabId): boolean => (tab === 'changes' && changesDirty) || (tab === 'terminal' && terminalRunning)
@@ -86,14 +91,6 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
     const state = paneState(tab)
     return state ? `${toolText.tabs[tab]} · ${state}` : toolText.tabs[tab]
   }
-  const withShortcut = (label: string, tab: WorkbenchTabId): string => {
-    const id = PANE_SHORTCUTS[tab]
-    if (!id) return label
-    const keys = shortcutKeysText(id, shortcutOverrides)
-    if (!keys) return label
-    return lang === 'en-US' ? `${label} (${keys})` : `${label}（${keys}）`
-  }
-  const paneLabel = (tab: WorkbenchTabId): string => withShortcut(activeLabel(tab), tab)
   const paneShortcut = (tab: WorkbenchTabId): string | undefined => {
     const id = PANE_SHORTCUTS[tab]
     return (id && shortcutKeysText(id, shortcutOverrides)) || undefined
@@ -104,7 +101,6 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const menuPanes: readonly WorkbenchTabId[] = route === 'chat' ? [...(panesInMenu ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES] : []
   const menuDotTab = route === 'chat' && narrow && !freshHome ? TITLEBAR_PANES.find(({ tab }) => paneActive(tab))?.tab : undefined
   const moreLabel = menuDotTab ? `${text.more} · ${activeLabel(menuDotTab)}` : text.more
-  const sessionBarVisible = sessionBarOpen && !sessionBarHidden
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
@@ -166,51 +162,24 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
 
       <div className="v3-head-drag" aria-hidden />
 
-      <div className="v3-head-actions">
+      <div className="v3-head-actions" data-win={windowControls ? '1' : '0'}>
         {route === 'chat' ? (
           <>
-            {freshHome ? null : (
-            <div className="v3-head-toggles ui-icon-tray" role="group" aria-label={text.panelToggles}>
-              <IconButton
-                tooltip={sessionBarLabel}
-                aria-label={sessionBarLabel}
-                aria-pressed={sessionBarOpen}
-                pressedTone="mark"
-                className="v3-head-pane"
-                onPress={onToggleSessionBar}
-                data-testid="v3-header-sessionbar"
-                data-open={sessionBarVisible ? '1' : undefined}
-                data-active={sessionBarOpen && sessionBarHidden ? 'partial' : undefined}
-                data-setting={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
-              >
-                <span className="v3-head-pane-glyph">
-                  <SquareMenu size={16} />
-                </span>
-              </IconButton>
-              {narrow
-                ? null
-                : TITLEBAR_PANES.map(({ tab, Icon }) => (
-                    <IconButton
-                      key={tab}
-                      tooltip={paneLabel(tab)}
-                      aria-label={paneLabel(tab)}
-                      aria-pressed={openPanes.has(tab)}
-                      pressedTone="mark"
-                      className="v3-head-pane"
-                      data-testid={`wb-open-${tab}`}
-                      data-open={openPanes.has(tab) ? '1' : undefined}
-                      onPress={() => onTogglePane(tab)}
-                    >
-                      <span className="v3-head-pane-glyph">
-                        <Icon size={16} />
-                        {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} data-tone={tab} /> : null}
-                      </span>
-                    </IconButton>
-                  ))}
-            </div>
-            )}
-            {freshHome ? null : <Separator orientation="vertical" className="v3-head-sep" />}
             <ProjectScriptsControl />
+            <IconButton
+              tooltip={rightPanelOpen ? panelText.hidePanel : panelText.panel}
+              aria-label={rightPanelOpen ? panelText.hidePanel : panelText.panel}
+              aria-pressed={rightPanelOpen}
+              pressedTone="mark"
+              className="v3-head-pane"
+              onPress={onToggleRightPanel}
+              data-testid="v3-head-panel-toggle"
+              data-right-panel-toggle
+            >
+              <span className="v3-head-pane-glyph">
+                <PanelRight size={16} />
+              </span>
+            </IconButton>
           </>
         ) : null}
         <MenuTrigger>
@@ -226,6 +195,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
               onAction={(key) => {
                 if (key === MENU_KEEP_ON_TOP) void toggleAlwaysOnTop()
                 else if (key === MENU_SETTINGS) onSettings()
+                else if (key === MENU_SESSION_BAR) onToggleSessionBar()
                 else onTogglePane(key as WorkbenchTabId)
               }}
             >
@@ -235,6 +205,9 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                 </MenuItem>
               ))}
               {menuPanes.length > 0 ? <MenuSeparator /> : null}
+              <MenuItem id={MENU_SESSION_BAR} textValue={sessionBarLabel} checked={sessionBarOpen} aria-checked={sessionBarOpen} data-testid="v3-header-sessionbar">
+                {sessionBarLabel}
+              </MenuItem>
               <MenuItem id={MENU_KEEP_ON_TOP} textValue={text.keepOnTop} checked={alwaysOnTop} aria-checked={alwaysOnTop} data-testid="v3-always-on-top">
                 {text.keepOnTop}
               </MenuItem>
@@ -244,25 +217,12 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
             </Menu>
           </Popover>
         </MenuTrigger>
-        <Separator orientation="vertical" className="v3-head-sep v3-head-sep--win" />
-        <div className="v3-win">
-          <button type="button" className="v3-winbtn v3-winbtn-min" aria-label={t('tb.minimize')} title={t('tb.minimize')} onClick={() => win.minimize()} data-testid="v3-min">
-            <Minus size={14} />
-          </button>
-          <button
-            type="button"
-            className="v3-winbtn v3-winbtn-max"
-            aria-label={maximized ? t('tb.restore') : t('tb.maximize')}
-            title={maximized ? t('tb.restore') : t('tb.maximize')}
-            onClick={() => win.maximize()}
-            data-testid="v3-max"
-          >
-            {maximized ? <Copy size={13} style={{ transform: 'scaleX(-1)' }} /> : <Square size={13} />}
-          </button>
-          <button type="button" className="v3-winbtn v3-winbtn-close" aria-label={t('tb.hide')} title={t('tb.hide')} onClick={() => win.close()} data-testid="v3-close">
-            <X size={14} />
-          </button>
-        </div>
+        {windowControls ? (
+          <>
+            <Separator orientation="vertical" className="v3-head-sep v3-head-sep--win" />
+            <WindowControls />
+          </>
+        ) : null}
       </div>
     </header>
   )

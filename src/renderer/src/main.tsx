@@ -4,6 +4,8 @@ import { I18nProvider } from './i18n'
 import { useStore } from './state/store'
 import { useRunsV3 } from './state/runs-v3'
 import { useLiveQuota } from './state/live-quota'
+import { useRightPanel } from './state/right-panel'
+import { useUiV3 } from './state/ui-v3'
 import { installAudioUnlock } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
 import { installFocusModality } from './lib/focusModality'
@@ -19,6 +21,8 @@ declare global {
     __yanStore: typeof useStore
     __yanRuns: typeof useRunsV3
     __yanLiveQuota: typeof useLiveQuota
+    __yanRightPanel: typeof useRightPanel
+    __yanUiV3: typeof useUiV3
   }
 }
 const probeMode = window.yan.probeMode || (import.meta.env.DEV && new URLSearchParams(window.location.search).get('probe') === '1')
@@ -26,6 +30,8 @@ if (probeMode) {
   window.__yanStore = useStore
   window.__yanRuns = useRunsV3
   window.__yanLiveQuota = useLiveQuota
+  window.__yanRightPanel = useRightPanel
+  window.__yanUiV3 = useUiV3
 }
 
 installAudioUnlock()

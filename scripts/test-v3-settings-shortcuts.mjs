@@ -46,7 +46,7 @@ assert.deepEqual(
   rebindable,
   ['newSession', 'switchSessionNext', 'switchSessionPrevious', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
     'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
-    'workspaceClosePane', 'workspaceToggleMaximize',
+    'workspaceClosePane', 'workspaceToggleMaximize', 'workspaceNewPanel', 'workspaceReopenPanel',
     'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown'],
   '非终端让键、未由宿主注册的项可改'
 )

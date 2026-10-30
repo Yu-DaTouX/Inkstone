@@ -48,6 +48,8 @@ export interface TabStripProps {
   activeId: string | null
   actions: readonly LauncherAction[]
   showAdd?: boolean
+  addMenuOpen?: boolean
+  onAddMenuOpenChange?: (open: boolean) => void
   addLabel?: string
   listLabel?: string
   className?: string
@@ -82,7 +84,9 @@ export function TabStrip(props: TabStripProps) {
   const t = useOptionalT()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [scroll, setScroll] = useState<TabScrollState>(NO_OVERFLOW)
-  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [addMenuInternalOpen, setAddMenuInternalOpen] = useState(false)
+  const addMenuOpen = props.addMenuOpen ?? addMenuInternalOpen
+  const setAddMenuOpen = props.onAddMenuOpenChange ?? setAddMenuInternalOpen
   const [drag, setDrag] = useState<{ id: string; offsetX: number } | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
 
@@ -294,7 +298,13 @@ export function TabStrip(props: TabStripProps) {
             <Menu open={addMenuOpen} onOpenChange={setAddMenuOpen}>
               <MenuTrigger
                 render={
-                  <Button aria-label={props.addLabel ?? t('panel.t3.addSurface')} className="shrink-0" size="icon-xs" variant="ghost-muted" />
+                  <Button
+                    aria-label={props.addLabel ?? t('panel.t3.addSurface')}
+                    className="shrink-0"
+                    data-testid="rp-new-tab"
+                    size="icon-xs"
+                    variant="ghost-muted"
+                  />
                 }
               >
                 <Plus className="size-3.5" />

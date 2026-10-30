@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { usePresence } from "../../../ui/motion-hooks";
+import { cn } from "../../lib/utils";
 import { PreviewPanelShell } from "../preview/PreviewPanelShell";
 import { Sheet, SheetPopup } from "../ui/sheet";
 import type { PanelFrameProps, PanelMode } from "./model";
@@ -16,6 +17,9 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
     onWidth,
     label,
     tabbar,
+    tabbarClassName,
+    toggleSelector,
+    onKeyDown,
     children,
     sheet,
     testId = "rp",
@@ -33,10 +37,15 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
       onWidth={onWidth}
       label={label}
       testId={testId}
+      toggleSelector={toggleSelector}
+      onKeyDown={onKeyDown}
     >
       <div
         data-right-panel-tabbar
-        className="flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pr-3 pl-2"
+        className={cn(
+          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pr-3 pl-2",
+          tabbarClassName,
+        )}
       >
         {tabbar}
       </div>

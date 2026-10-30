@@ -22,27 +22,31 @@
     min-height: 0;
     min-width: 0;
     position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
   }
 
-  .v3-body > :not(.rp) {
-    grid-column: 1;
-    grid-row: 1;
+  .v3-body > * {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
-  .v3-body > .rp {
-    grid-column: 2;
-    grid-row: 1;
+  .v3-root > .t3-rp {
+    flex: none;
+    height: 100%;
   }
 
-  .v3-body > .rp[data-maximized='1'] {
-    grid-column: 1 / -1;
-  }
-
-  .v3-body[data-panel='maximized'] > .v3-chat {
+  .v3-root[data-panel='maximized'] > .v3-main {
     display: none;
+  }
+
+  .t3-rp [data-right-panel-tabbar] {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .t3-rp [data-right-panel-tabbar] :is(button, a, input, [role='tab'], [role='button'], [role='menuitem']) {
+    -webkit-app-region: no-drag;
   }
   .v3-chat {
     --tiles-reserve: var(--bar-reserve, 0px);
@@ -313,6 +317,10 @@
     align-items: center;
     gap: 4px;
     padding-right: 4px;
+  }
+
+  .v3-head-actions[data-win='0'] {
+    padding-right: var(--s-8);
   }
 
   .v3-head-pane {

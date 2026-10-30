@@ -1,128 +1,4 @@
 @layer features {
-  .rp {
-    position: relative;
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    height: 100%;
-    border-left: var(--hair, 1px) solid var(--line);
-    background: var(--surface);
-  }
-  .rp[data-maximized='1'] {
-    flex: 1 1 auto;
-    border-left: none;
-  }
-  .rp[data-mode='inline'][data-motion='opening'] {
-    animation: rp-open var(--dur-sheet) var(--ease-inout);
-  }
-  .rp[data-mode='inline'][data-motion='opening'] > :is(.rp-bar, .rp-body) {
-    animation:
-      rp-hold var(--dur-sheet) linear,
-      rp-content-in var(--dur-base) var(--ease) var(--dur-quick) both;
-  }
-  .rp[data-mode='inline'][data-motion='closing'] {
-    animation: rp-close var(--dur-base) var(--ease-inout) forwards;
-    pointer-events: none;
-  }
-  .rp[data-mode='inline'][data-motion='closing'] > :is(.rp-bar, .rp-body) {
-    animation:
-      rp-hold var(--dur-base) linear forwards,
-      rp-content-out var(--dur-quick) var(--ease-exit) forwards;
-  }
-  @keyframes rp-open {
-    from {
-      width: 0;
-      overflow: clip;
-    }
-    to {
-      overflow: clip;
-    }
-  }
-  @keyframes rp-close {
-    from {
-      overflow: clip;
-    }
-    to {
-      width: 0;
-      overflow: clip;
-    }
-  }
-  @keyframes rp-content-in {
-    from {
-      opacity: 0;
-      translate: var(--s-12) 0;
-    }
-  }
-  @keyframes rp-content-out {
-    to {
-      opacity: 0;
-      translate: var(--s-12) 0;
-    }
-  }
-  .rp-surface[data-motion='in']:not([hidden]) {
-    animation: rp-surface-in var(--dur-quick) var(--ease);
-  }
-  @keyframes rp-surface-in {
-    from {
-      opacity: 0;
-      translate: 0 var(--s-4);
-    }
-  }
-  @keyframes rp-hold {
-    from,
-    to {
-      min-width: calc(var(--rp-w) - var(--hair, 1px));
-    }
-  }
-  .rp[data-mode='sheet'] {
-    flex: 1 1 auto;
-    width: 100%;
-    border-left: none;
-  }
-  .rp-resizer {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: calc(-1 * var(--s-4));
-    z-index: 2;
-  }
-
-  .rp-bar {
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: var(--s-4);
-    height: var(--size-bar);
-    min-height: var(--size-bar);
-    padding: 0 var(--s-6) 0 var(--s-8);
-    border-bottom: var(--hair, 1px) solid var(--line);
-  }
-  .rp-tabs {
-    flex: 0 1 auto;
-  }
-  .rp-bar-add {
-    flex: none;
-  }
-  .rp-launch-menu {
-    display: contents;
-  }
-  .rp-bar-actions {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    gap: var(--s-2);
-    margin-left: auto;
-  }
-
-  .rp-body {
-    position: relative;
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-height: 0;
-  }
   .rp-surfaces {
     position: relative;
     display: flex;
@@ -139,6 +15,15 @@
   .rp-surface[hidden] {
     display: none;
   }
+  .rp-surface[data-motion='in']:not([hidden]) {
+    animation: rp-surface-in var(--dur-quick) var(--ease);
+  }
+  @keyframes rp-surface-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--s-4);
+    }
+  }
   .rp-sub {
     display: flex;
     flex: none;
@@ -151,7 +36,7 @@
     color: var(--fg3);
     font: var(--t-footnote) / 1 var(--font-ui);
   }
-  .rp[data-mode='sheet'] .rp-sub {
+  [data-preview-panel-mode='sheet'] .rp-sub {
     height: var(--size-head);
     min-height: var(--size-head);
     margin-bottom: 0;
@@ -238,39 +123,37 @@
     justify-content: center;
     gap: var(--s-24);
     padding: var(--s-32);
-    background: var(--surface);
+    background: var(--bg);
     text-align: center;
   }
   .rp-empty {
     margin: auto;
   }
-
-  .rp-launcher {
-    display: flex;
-    flex: 1 1 auto;
+  .rp-tabbar-actions {
+    display: inline-flex;
+    flex: none;
     align-items: center;
-    justify-content: center;
-    min-height: 0;
-    padding: var(--s-24);
-    overflow-y: auto;
-  }
-  .rp-launcher-inner {
-    width: 100%;
-    max-width: 280px;
-  }
-  .rp-launcher-title {
-    margin: 0 0 var(--s-12);
-    color: var(--fg);
-    font: var(--w-medium) var(--t-body) / var(--t-body-lh) var(--font-ui);
-    text-align: center;
-  }
-  .rp-launcher-list {
-    display: flex;
-    flex-direction: column;
     gap: var(--s-2);
+    -webkit-app-region: no-drag;
+  }
+  .rp-tabbar-actions .ui-icon-btn {
+    width: var(--s-24);
+    height: var(--s-24);
+    border-radius: var(--r-md);
+    color: var(--fg3);
+  }
+  .rp-tabbar-actions .ui-icon-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+  .rp-tabbar-actions .ui-icon-btn:hover:not([data-disabled]) {
+    color: var(--fg);
+  }
+  .rp-tabbar-actions .ui-icon-btn[aria-pressed='true']:not([data-disabled]) {
+    background: var(--hover);
+    color: var(--fg);
   }
 }
-
 @layer patterns {
   .rp-tabs svg[data-tone='open'] {
     color: var(--ok);

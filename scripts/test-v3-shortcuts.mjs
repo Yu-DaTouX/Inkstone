@@ -38,7 +38,7 @@ async function runShortcutsAndPalette() {
     ['commandPalette', 'newSession', 'switchSessionNext', 'switchSessionPrevious', 'toggleSidebar', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack',
       'stopRun', 'focusComposer', 'copyLastReply', 'openTerminal', 'runProjectScript',
       'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
-      'workspaceClosePane', 'workspaceToggleMaximize',
+      'workspaceClosePane', 'workspaceToggleMaximize', 'workspaceNewPanel', 'workspaceReopenPanel',
       'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown', 'cycleTranscriptView',
       'cycleModel', 'cycleModelBack', 'cycleThinking', 'quickAsk'],
     '外壳绑定项在前，宿主已注册项在后；顺序即展示顺序'
@@ -47,7 +47,7 @@ async function runShortcutsAndPalette() {
     SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id),
     ['newSession', 'switchSessionNext', 'switchSessionPrevious', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
       'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
-      'workspaceClosePane', 'workspaceToggleMaximize',
+      'workspaceClosePane', 'workspaceToggleMaximize', 'workspaceNewPanel', 'workspaceReopenPanel',
       'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown'],
     '只让非终端让键、未由宿主注册的项可改绑'
   )
@@ -221,6 +221,8 @@ async function runShortcutRegistry() {
     'workspaceTab6',
     'workspaceClosePane',
     'workspaceToggleMaximize',
+    'workspaceNewPanel',
+    'workspaceReopenPanel',
     'splitFocusNext',
     'splitFocusPrevious',
     'splitNewRight',
@@ -249,7 +251,7 @@ async function runShortcutRegistry() {
     SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id),
     ['newSession', 'switchSessionNext', 'switchSessionPrevious', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
       'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
-      'workspaceClosePane', 'workspaceToggleMaximize',
+      'workspaceClosePane', 'workspaceToggleMaximize', 'workspaceNewPanel', 'workspaceReopenPanel',
       'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown'],
     '非终端让键、未由宿主注册的项可改绑'
   )

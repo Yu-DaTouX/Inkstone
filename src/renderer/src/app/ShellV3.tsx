@@ -36,7 +36,7 @@ import { ConnBanner } from './ConnBanner'
 import { OnboardingWizard, markOnboarded, shouldAutoWizard } from '../features/onboarding'
 import { NativeSessionSurfaces } from '../features/session/native'
 import { V3ErrorBoundary } from './ErrorBoundary'
-import { RightPanel } from '../features/workbench/RightPanel'
+import { RightPanelT3, requestNewPanelMenu } from '../features/workbench/RightPanelT3'
 import { OverviewPane } from '../features/workbench/OverviewPane'
 import { WORKBENCH_PANES } from '../features/workbench/panes'
 import { filesClaimsQuickOpen } from '../features/files/FilesPane'
@@ -48,7 +48,8 @@ import { activateWorkspaceOwner, captureActivationTarget } from '../features/wor
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
 import { usePruneSubagentSurfaces } from '../features/workbench/use-subagent-surfaces'
 import { useTerminalRunning } from '../features/terminal/use-terminal-running'
-import { PANEL_WIDTH_MIN, currentPanelEntry, panelRoom, toolSurface, useRightPanel, useRightPanelEntry, type PanelToolKind } from '../state/right-panel'
+import { PANEL_WIDTH_MIN, clampPanelWidth, currentPanelEntry, panelRoom, toolSurface, useRightPanel, useRightPanelEntry, type PanelToolKind } from '../state/right-panel'
+import { reopenLastClosed } from '../state/right-panel-reopen'
 import { railText } from '../features/workbench/rail-text'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import { createFrameBatch } from './frame-batch'
@@ -140,6 +141,7 @@ export default function ShellV3(): ReactElement {
   const route = useUiV3((s) => s.route)
   const sidebarOpen = useUiV3((s) => s.sidebarOpen)
   const panelEntry = useRightPanelEntry()
+  const panelStoredWidth = useRightPanel((s) => s.width)
   const hasMessages = useStore((s) => s.messages.length > 0)
   const sessionBarOn = useStore((s) => s.settings?.workspaceTiles !== false)
   const panelOpen = route.name === 'chat' && panelEntry.open
@@ -195,7 +197,10 @@ export default function ShellV3(): ReactElement {
   const owner = useWorkspaceOwner()
   useChatFilePreview(owner.key)
   useLiveHtmlFollow(owner.key)
-  const panelMode: 'inline' | 'sheet' = bodyWidth > 0 && bodyWidth < SHEET_BELOW_PX ? 'sheet' : 'inline'
+  const sidebarReserves = sidebarOpen && !sidebarCompact
+  const rowWidth = Math.max(0, windowWidth - (sidebarReserves ? sidebarWidth + 1 : 0))
+  const panelMode: 'inline' | 'sheet' = rowWidth > 0 && rowWidth < SHEET_BELOW_PX ? 'sheet' : 'inline'
+  const panelRoomWidth = panelRoom(windowWidth, rowWidth, CHAT_MIN_WIDTH_PX)
   const panelMaximized = panelOpen && panelMode === 'inline' && panelEntry.maximized
   const liveSessionId = useStore((s) => s.session?.sessionId ?? null)
   useEffect(() => {
@@ -277,7 +282,7 @@ export default function ShellV3(): ReactElement {
     }
   }, [route.name])
   const chatWidth = route.name === 'chat' ? measuredChatWidth : bodyWidth
-  const toastInset = panelOpen && panelMode === 'inline' && !panelMaximized && chatWidth > 0 ? Math.max(0, bodyWidth - chatWidth) : 0
+  const toastInset = panelOpen && panelMode === 'inline' && !panelMaximized ? Math.max(0, clampPanelWidth(panelStoredWidth, panelRoomWidth)) : 0
   useEffect(() => {
     document.documentElement.style.setProperty('--toast-inset-right', `${toastInset}px`)
   }, [toastInset])
@@ -479,6 +484,19 @@ export default function ShellV3(): ReactElement {
             useRightPanel.getState().close(entry.active)
             return
           }
+          case 'workspaceNewPanel': {
+            if (useUiV3.getState().route.name !== 'chat') return
+            event.preventDefault()
+            if (!currentPanelEntry().open) useRightPanel.getState().setOpen(true)
+            requestNewPanelMenu()
+            return
+          }
+          case 'workspaceReopenPanel': {
+            if (useUiV3.getState().route.name !== 'chat') return
+            event.preventDefault()
+            void reopenLastClosed()
+            return
+          }
           case 'workspaceToggleMaximize': {
             const entry = currentPanelEntry()
             if (useUiV3.getState().route.name !== 'chat' || !entry.open || !entry.surfaces.length) return
@@ -536,7 +554,7 @@ export default function ShellV3(): ReactElement {
 
   return (
     <V3ErrorBoundary>
-      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen && !sidebarDragHidden ? 'open' : 'closed'} data-side-drag={sidebarDragHidden ? '1' : undefined} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase}>
+      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen && !sidebarDragHidden ? 'open' : 'closed'} data-side-drag={sidebarDragHidden ? '1' : undefined} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase} data-panel={panelMaximized ? 'maximized' : panelOpen ? panelMode : 'closed'}>
         {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} onPointerEnter={reveal.start} onPointerLeave={reveal.cancel} /> : null}
         <FocusScope contain={drawerOpen}>
           <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
@@ -559,6 +577,9 @@ export default function ShellV3(): ReactElement {
             sessionBarHidden={route.name === 'chat' && sessionBarOn && hasMessages && !sessionBarShown && !sessionBarYields}
             onToggleSessionBar={toggleSessionBar}
             sessionBarShown={sessionBarShown}
+            rightPanelOpen={panelOpen}
+            onToggleRightPanel={toggleWorkspace}
+            windowControls={!(panelOpen && panelMode === 'inline')}
             openPanes={openPanes}
             activePane={activePane}
             changesDirty={changesDirty}
@@ -600,18 +621,19 @@ export default function ShellV3(): ReactElement {
                 ) : null}
               </div>
             ) : null}
-            {route.name === 'chat' ? (
-              <RightPanel
-                owner={owner.key ? owner : null}
-                mode={panelMode}
-                room={panelRoom(window.innerWidth, bodyWidth, CHAT_MIN_WIDTH_PX)}
-                panes={WORKBENCH_PANES}
-                onOpenTool={(kind) => void openWorkspaceTab(kind)}
-                onRequestActivation={requestActivation}
-              />
-            ) : null}
           </div>
         </main>
+        {route.name === 'chat' ? (
+          <RightPanelT3
+            owner={owner.key ? owner : null}
+            mode={panelMode}
+            room={panelRoomWidth}
+            panes={WORKBENCH_PANES}
+            windowControls={panelOpen && panelMode === 'inline'}
+            onOpenTool={(kind) => void openWorkspaceTab(kind)}
+            onRequestActivation={requestActivation}
+          />
+        ) : null}
       </div>
       <CommandPalette
         isOpen={paletteOpen}
