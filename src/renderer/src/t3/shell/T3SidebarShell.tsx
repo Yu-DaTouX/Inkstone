@@ -318,8 +318,8 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         collapsed,
         threadKeys: rows.map((view) => scopedKeyOf(view.id)),
         hiddenCount: collapsed ? rows.length : 0,
-        dot,
-        dotLabel: dot === null ? null : own.attention
+        dot: collapsed ? dot : null,
+        dotLabel: collapsed && dot !== null ? own.attention : null
       }
     })
   }, [collapsedFolders, now, own.attention, projects, sections.active, text.groupUngrouped])
@@ -405,6 +405,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
           onRenameCancel={() => setRenamingKey(null)}
           onArchive={view.archivedAt === null ? () => void sidebarActions.archive(ref) : undefined}
           onUnarchive={view.archivedAt === null ? undefined : () => void sidebarActions.unarchive(ref)}
+          onDelete={() => void sidebarActions.remove(ref)}
           onSnooze={(until) => {
             void sidebarActions.snooze(ref, until)
             setAnnouncement(t('sidebar.t3.snooze'))
@@ -434,7 +435,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     [viewByKey]
   )
 
-  const settledRemaining = Math.max(0, sections.settled.length - settledVisible)
+  const settledRemaining = Math.max(0, sections.settled.length - Math.min(settledVisible, sections.settled.length))
   const undoNotice = undo.text === null ? null : { text: undo.text, label: undo.label, undo: undo.undo }
   const menuView = menuKey === null ? null : viewByKey.get(menuKey)
   const menuSession = menuView ? sessions.find((entry) => entry.id === menuView.id) : undefined
@@ -571,7 +572,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                 settledRemaining === 0
                   ? undefined
                   : {
-                      label: own.showMore.replace('{n}', String(settledRemaining)),
+                      label: own.showMore.replace('{n}', String(Math.min(settledRemaining, SHELF_PAGE_SIZE))),
                       disabled: false,
                       onShowMore: () => setSettledVisible((count) => count + SHELF_PAGE_SIZE)
                     }

@@ -101,6 +101,7 @@ export interface SidebarThreadRowProps {
   onRenameCancel?: () => void;
   onArchive?: () => void;
   onUnarchive?: () => void;
+  onDelete?: () => void;
   onSnooze?: (until: number) => void;
   onUnsnooze?: () => void;
   onUnpin?: () => void;
@@ -295,6 +296,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     onRenameCancel,
     onArchive,
     onUnarchive,
+    onDelete,
     onSnooze,
     onUnsnooze,
     onUnpin,
@@ -349,6 +351,11 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     if (event.key === "F2" && !renaming && onRenameStart) {
       event.preventDefault();
       onRenameStart();
+      return;
+    }
+    if (event.key === "Delete" && onDelete) {
+      event.preventDefault();
+      onDelete();
       return;
     }
     if (event.key !== "Enter" && event.key !== " ") return;

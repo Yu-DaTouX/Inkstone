@@ -12,9 +12,9 @@ import {
 const MARKER_SORTABLE_DISABLED = { draggable: true } as const
 
 const SHELF_HEADER_TONES = {
-  muted: { label: 'text-sidebar-muted-foreground', line: 'bg-sidebar-border/50' },
-  emphasized: { label: 'text-sidebar-foreground/80', line: 'bg-sidebar-foreground/25' },
-  accent: { label: 'text-primary', line: 'bg-primary/50' }
+  muted: { label: 'text-sidebar-muted-foreground' },
+  emphasized: { label: 'text-sidebar-foreground/80' },
+  accent: { label: 'text-primary' }
 } as const
 
 function SortableSidebarMarker(props: {
@@ -153,7 +153,7 @@ export function SidebarSectionHeader(props: {
         )}
       >
         <span className="shrink-0">{props.label}</span>
-        <span aria-hidden className={cn('h-px min-w-2 flex-1', SHELF_HEADER_TONES[tone].line)} />
+        <span aria-hidden className="h-px min-w-2 flex-1" />
         <span className="shrink-0 font-normal tabular-nums">{props.count}</span>
         <ChevronDownIcon
           aria-hidden

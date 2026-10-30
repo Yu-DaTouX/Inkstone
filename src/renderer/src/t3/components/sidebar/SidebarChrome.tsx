@@ -214,7 +214,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
         data-slot="sidebar-menu"
         className="flex w-full min-w-0 flex-row items-center gap-1"
       >
-        <li className="min-w-0 flex-1">
+        <li className="min-w-0 max-w-30 flex-1">
           <span
             title={userName}
             className="flex h-8 min-w-0 items-center gap-2 px-[var(--sidebar-row-content-inset)] text-xs font-medium text-sidebar-muted-foreground/80"

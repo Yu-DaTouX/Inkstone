@@ -6,37 +6,35 @@ const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '
 const abs = (rel) => `${root}${rel}`
 const read = (rel) => readFileSync(abs(rel), 'utf8')
 
+const CHROME_TSX = 'src/renderer/src/t3/components/sidebar/SidebarChrome.tsx'
 const SIDEBAR_TSX = 'src/renderer/src/features/sidebar/Sidebar.tsx'
-const SIDEBAR_CSS = 'src/renderer/src/features/sidebar/Sidebar.css'
 const BRAND_MARK = 'src/renderer/src/features/sidebar/BrandMark.tsx'
 const DESIGN_ENTRY = 'src/renderer/src/design/index.css'
 const V3_STYLE_DIRS = [
   'src/renderer/src/design',
   'src/renderer/src/ui',
   'src/renderer/src/patterns',
-  'src/renderer/src/features'
+  'src/renderer/src/features',
+  'src/renderer/src/t3'
 ]
 
-const sidebarTsx = read(SIDEBAR_TSX)
+const chrome = read(CHROME_TSX)
 assert.ok(
-  /import\s*\{[^}]*\bBrandMark\b[^}]*\}\s*from\s*'\.\/BrandMark'/.test(sidebarTsx),
-  `${SIDEBAR_TSX} 应从 ./BrandMark 导入 BrandMark`
+  /import\s*\{\s*BrandMark\s*\}\s*from\s*['"]\.\.\/\.\.\/\.\.\/features\/sidebar\/BrandMark['"]/.test(chrome),
+  `${CHROME_TSX} 应从 features/sidebar/BrandMark 导入 BrandMark`
 )
 
-const brandEntry = sidebarTsx.match(/<span className="v3-side-brand">[\s\S]*?<\/span>/)
-assert.ok(brandEntry, `${SIDEBAR_TSX} 应有 .v3-side-brand 品牌入口`)
-assert.ok(/<BrandMark\b[^>]*\bsize=\{16\}/.test(brandEntry[0]), '品牌入口应渲染 <BrandMark size={16}>')
+const brandEntry = chrome.match(/<span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">[\s\S]*?<\/span>\s*\)/)
+assert.ok(brandEntry, `${CHROME_TSX} 应有品牌入口`)
+assert.ok(/<BrandMark\b[^>]*\bsize=\{14\}/.test(brandEntry[0]), '品牌入口应渲染 <BrandMark size={14}>')
 assert.ok(/<BrandMark\b[^>]*\bdecorative\b/.test(brandEntry[0]), '品牌入口的 BrandMark 应为装饰性（旁边「Inkstone」字给名称）')
-assert.ok(/v3-side-name[^>]*>Inkstone</.test(brandEntry[0]), '品牌入口应显示「Inkstone」字标')
-assert.ok(!/v3-side-mark/.test(brandEntry[0]), '品牌入口不应再使用 .v3-side-mark 方块')
+assert.ok(brandEntry[0].includes('{brandLabel}'), '品牌入口应显示字标文案')
+assert.ok(chrome.includes('brandLabel = "Inkstone"'), '品牌字标默认是 Inkstone')
+assert.ok(chrome.includes('data-testid="t3-sidebar-brand"'), '品牌入口有稳定测试锚点')
+assert.ok(!/v3-side-mark/.test(chrome), `${CHROME_TSX} 不应再使用 .v3-side-mark 方块`)
 
-const sidebarCss = read(SIDEBAR_CSS)
-assert.ok(!/\.v3-side-mark\b/.test(sidebarCss), `${SIDEBAR_CSS} 不应残留 .v3-side-mark`)
-assert.ok(!/\.v3-side-mark\b/.test(sidebarTsx), `${SIDEBAR_TSX} 不应残留 .v3-side-mark`)
-assert.ok(
-  /\.v3-side-brand\s+\.brand-mark\s*\{[^}]*flex:\s*none/.test(sidebarCss),
-  `${SIDEBAR_CSS} 应为品牌标志保留不参与挤压的版面约束`
-)
+const sidebarShell = read(SIDEBAR_TSX)
+assert.ok(sidebarShell.includes('T3SidebarShell'), `${SIDEBAR_TSX} 应挂载 T3 侧栏，品牌入口随侧栏头部渲染`)
 
 const brandMark = read(BRAND_MARK)
 assert.ok(
@@ -89,4 +87,4 @@ for (const rule of v3BrandMarkCss) {
   )
 }
 
-console.log('v3 侧栏品牌入口检查通过：BrandMark 复用统一几何、无 .v3-side-mark 方块、v3 无旧 CSS 依赖。')
+console.log('v3 侧栏品牌入口检查通过：头部复用统一 BrandMark 几何、显示 Inkstone 字标、无 .v3-side-mark 方块、v3 无旧 CSS 依赖。')
