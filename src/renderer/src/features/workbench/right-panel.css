@@ -143,12 +143,20 @@
     display: flex;
     flex: none;
     align-items: center;
-    gap: var(--s-6);
-    height: var(--size-bar);
-    padding: 0 var(--s-6) 0 var(--s-12);
-    border-bottom: var(--hair, 1px) solid var(--line);
+    gap: var(--s-4);
+    height: calc(var(--s-4) * 7);
+    min-height: calc(var(--s-4) * 7);
+    margin: 0 0 var(--s-12);
+    padding: 0 var(--s-8);
     color: var(--fg3);
     font: var(--t-footnote) / 1 var(--font-ui);
+  }
+  .rp[data-mode='sheet'] .rp-sub {
+    height: var(--size-head);
+    min-height: var(--size-head);
+    margin-bottom: 0;
+    padding: 0 var(--s-6);
+    border-bottom: var(--hair, 1px) solid var(--line);
   }
   .rp-sub:not(:has(.rp-sub-title > *, .rp-sub-tools > *, .rp-sub-menu)) {
     display: none;
@@ -157,14 +165,57 @@
     display: flex;
     flex: 1 1 auto;
     align-items: center;
+    gap: var(--s-2);
     min-width: 0;
     overflow: hidden;
+  }
+  .rp-sub-title > * {
+    min-width: 0;
   }
   .rp-sub-tools {
     display: inline-flex;
     flex: none;
     align-items: center;
     gap: var(--s-2);
+  }
+  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn),
+  .rp-sub-menu {
+    width: var(--s-24);
+    height: var(--s-24);
+    border-radius: var(--r-md);
+    color: var(--fg3);
+  }
+  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn) svg,
+  .rp-sub-menu svg {
+    width: 14px;
+    height: 14px;
+  }
+  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn):hover:not([data-disabled]),
+  .rp-sub-menu:hover:not([data-disabled]) {
+    color: var(--fg);
+  }
+  .rp-sub .ui-btn.ui-icon-btn[aria-pressed='true']:not([data-disabled]) {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .rp-sub .v3-preview-pathbar {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0;
+  }
+  .rp-sub .v3-preview-pathstack {
+    flex-direction: row;
+    gap: var(--s-4);
+    padding-block: 0;
+  }
+  .rp-sub .v3-preview-pathstack > .v3-preview-pathdir {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rp-sub .v3-preview-headrow .v3-files-crumbs {
+    padding-inline: 0;
   }
   .rp-surface-body {
     position: relative;
@@ -185,8 +236,10 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: var(--s-24);
+    gap: var(--s-24);
+    padding: var(--s-32);
     background: var(--surface);
+    text-align: center;
   }
   .rp-empty {
     margin: auto;

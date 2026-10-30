@@ -533,54 +533,72 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
         onNavigate={(dir) => onRevealInTree(toAbsolutePath(owner.cwd, dir))}
       />
     ) : null
-  const pathRow = mergedHead ? null : chrome && activeAbs ? (
-    <div className="v3-preview-pathbar" data-testid="v3-preview-pathbar">
-      {crumbNav ? (
-        <CondensingHeader
-          state={condense}
-          className="v3-preview-pathfold"
-          compact={
-            <span className="v3-preview-pathname" data-compact title={activeAbs}>
-              {name}
+  const chromePathLabel = ((): { dir: string; name: string } => {
+    if (crumbs.length > 1) return { dir: crumbs.slice(0, -1).join('/'), name }
+    if (!activeAbs) return { dir: '', name }
+    const rel = owner.cwd && activeAbs.startsWith(owner.cwd) ? activeAbs.slice(owner.cwd.length).replace(/^[\\/]/, '') : activeAbs
+    const dir = rel.replace(/[\\/][^\\/]*$/, '')
+    if (dir !== rel) return { dir, name }
+    const root = owner.cwd ? (owner.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? '') : ''
+    return { dir: root, name }
+  })()
+  const chromePathRow =
+    mergedHead || !chrome || !activeAbs ? null : (
+      <div className="v3-preview-pathbar" data-testid="v3-preview-pathbar">
+        {crumbNav ? (
+          <CondensingHeader
+            state={condense}
+            className="v3-preview-pathfold"
+            compact={
+              <span className="v3-preview-pathname" data-compact title={activeAbs}>
+                {name}
+              </span>
+            }
+          >
+            {crumbNav}
+          </CondensingHeader>
+        ) : (
+          <CondensingHeader
+            state={condense}
+            className="v3-preview-pathfold"
+            compact={
+              <span className="v3-preview-pathname" data-compact title={activeAbs}>
+                {name}
+              </span>
+            }
+          >
+            <span className="v3-preview-pathstack" title={activeAbs}>
+              {chromePathLabel.dir ? (
+                <>
+                  <span className="v3-preview-pathdir ui-meta-path">{chromePathLabel.dir}</span>
+                  <span className="v3-files-crumb-sep" aria-hidden>
+                    ›
+                  </span>
+                </>
+              ) : null}
+              <span className="v3-preview-pathname">{chromePathLabel.name}</span>
             </span>
-          }
-        >
-          {crumbNav}
-        </CondensingHeader>
-      ) : (
-        <CondensingHeader
-          state={condense}
-          className="v3-preview-pathfold"
-          compact={
-            <span className="v3-preview-pathname" data-compact title={activeAbs}>
-              {name}
-            </span>
-          }
-        >
-          <span className="v3-preview-pathstack" title={activeAbs}>
-            <span className="v3-preview-pathname">{name}</span>
-            <span className="v3-preview-pathdir ui-meta-path">{crumbs.length > 1 ? crumbs.slice(0, -1).join('/') : activeAbs.replace(/[\\/][^\\/]*$/, '')}</span>
-          </span>
-        </CondensingHeader>
-      )}
-      {barNotice}
-      <span className="v3-preview-pathtools">{toolButtons}</span>
-    </div>
-  ) : crumbNav ? (
+          </CondensingHeader>
+        )}
+        {barNotice}
+        <span className="v3-preview-pathtools">{toolButtons}</span>
+      </div>
+    )
+  const pathRow = mergedHead || chrome ? null : crumbNav ? (
     <CondensingHeader state={condense} compact={null}>
       {crumbNav}
     </CondensingHeader>
   ) : null
 
   return (
-    <section className="v3-preview" data-testid="v3-preview" aria-label={text.title} onScrollCapture={pathRow ? condense.onScrollCapture : undefined}>
+    <section className="v3-preview" data-testid="v3-preview" aria-label={text.title} onScrollCapture={pathRow || chromePathRow ? condense.onScrollCapture : undefined}>
       {chrome ? (
         mergedHead ? (
           <>
             <PaneTitle>
-              <span className="v3-preview-headrow" data-testid="v3-preview-headrow" data-single={singleTab ? '' : undefined}>
+              <span className="v3-preview-headrow gap-1" data-testid="v3-preview-headrow" data-single={singleTab ? '' : undefined}>
                 {singleTab ? null : tabStrip}
-                {activeAbs ? crumbNav ?? (singleTab ? <span className="v3-preview-pathname" title={activeAbs}>{name}</span> : null) : null}
+                {activeAbs ? (crumbNav ?? (singleTab ? <span className="v3-preview-pathname ps-0" title={activeAbs}>{name}</span> : null)) : null}
               </span>
             </PaneTitle>
             {activeAbs ? (
@@ -591,7 +609,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
             ) : null}
           </>
         ) : (
-          <PaneTitle>{tabStrip}</PaneTitle>
+          <PaneTitle>{chromePathRow}</PaneTitle>
         )
       ) : (
         <>
