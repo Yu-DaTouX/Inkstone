@@ -1,5 +1,6 @@
 import { classifyGhFailure, prFailure, runGh } from './command'
 import { listArguments } from './validation'
+import { readReviewThreads } from './threads'
 import type {
   GhPrDetailJson,
   GhPrDetailResult,
@@ -18,7 +19,7 @@ const MAX_PR_NUMBER = 9_999_999
 const LIST_FIELDS =
   'number,title,author,state,isDraft,headRefName,baseRefName,updatedAt,reviewDecision,labels,statusCheckRollup,additions,deletions,url'
 export const DETAIL_FIELDS =
-  'number,title,body,author,state,isDraft,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,reviewDecision,statusCheckRollup,files,commits,comments,reviews,latestReviews,reviewRequests,labels,additions,deletions,changedFiles,url'
+  'number,title,body,author,state,isDraft,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,files,commits,comments,reviews,latestReviews,reviewRequests,labels,additions,deletions,changedFiles,url'
 
 type GhRun = import('./command').GhRun
 
@@ -38,8 +39,8 @@ function isPrNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_PR_NUMBER
 }
 
-export async function readGithubStatus(cwd: string): Promise<GithubStatus> {
-  const version = await runGh(cwd, ['--version'])
+export async function readGithubStatus(cwd: string, run = runGh): Promise<GithubStatus> {
+  const version = await run(cwd, ['--version'])
   if (!version.ok) {
     if (version.missingCwd) return { installed: false, authed: false, repo: null, error: `项目目录不存在：${cwd}` }
     return {
@@ -49,17 +50,23 @@ export async function readGithubStatus(cwd: string): Promise<GithubStatus> {
       ...(version.missing ? {} : { error: failureText(version) })
     }
   }
-  const auth = await runGh(cwd, ['auth', 'status'])
+  const auth = await run(cwd, ['auth', 'status'])
   if (!auth.ok) return { installed: true, authed: false, repo: null }
-  const repo = await runGh(cwd, ['repo', 'view', '--json', 'nameWithOwner,url'])
-  if (!repo.ok) return { installed: true, authed: true, repo: null, error: failureText(repo) }
-  const parsed = parseJson<{ nameWithOwner?: unknown; url?: unknown }>(repo.stdout)
+  const [repo, viewer] = await Promise.all([
+    run(cwd, ['repo', 'view', '--json', 'nameWithOwner,url,defaultBranchRef']),
+    run(cwd, ['api', 'user'])
+  ])
+  const user = viewer.ok ? parseJson<{ login?: unknown }>(viewer.stdout) : null
+  const viewerLogin = typeof user?.login === 'string' ? user.login : undefined
+  if (!repo.ok) return { installed: true, authed: true, repo: null, viewerLogin, error: failureText(repo) }
+  const parsed = parseJson<{ nameWithOwner?: unknown; url?: unknown; defaultBranchRef?: { name?: unknown } | null }>(repo.stdout)
   const nameWithOwner = typeof parsed?.nameWithOwner === 'string' ? parsed.nameWithOwner : ''
-  if (!nameWithOwner) return { installed: true, authed: true, repo: null, error: '无法识别当前项目对应的 GitHub 仓库' }
+  if (!nameWithOwner) return { installed: true, authed: true, repo: null, viewerLogin, error: '无法识别当前项目对应的 GitHub 仓库' }
   return {
     installed: true,
     authed: true,
-    repo: { nameWithOwner, url: typeof parsed?.url === 'string' ? parsed.url : '' }
+    viewerLogin,
+    repo: { nameWithOwner, url: typeof parsed?.url === 'string' ? parsed.url : '', ...(typeof parsed?.defaultBranchRef?.name === 'string' ? { defaultBranch: parsed.defaultBranchRef.name } : {}) }
   }
 }
 
@@ -76,13 +83,13 @@ export async function ghPrList(cwd: string, options: GhPrListState | GhPrListOpt
   return { ok: true, items: parsed.slice(0, built.limit), limit: built.limit, hasMore: parsed.length > built.limit }
 }
 
-export async function ghPrDetail(cwd: string, number: number): Promise<GhPrDetailResult> {
+export async function ghPrDetail(cwd: string, number: number, run = runGh): Promise<GhPrDetailResult> {
   if (!isPrNumber(number)) return { ok: false, pr: null, error: 'PR 编号不合法' }
-  const res = await runGh(cwd, ['pr', 'view', String(number), '--json', DETAIL_FIELDS])
-  if (!res.ok) return { ok: false, pr: null, error: failureText(res) }
+  const res = await run(cwd, ['pr', 'view', String(number), '--json', DETAIL_FIELDS])
+  if (!res.ok) return { ok: false, pr: null, error: failureText(res), failure: classifyGhFailure(res) }
   const parsed = parseJson<GhPrDetailJson>(res.stdout)
-  if (!parsed || typeof parsed !== 'object') return { ok: false, pr: null, error: 'gh 返回的 PR 详情无法解析' }
-  return { ok: true, pr: parsed }
+  if (!parsed || typeof parsed !== 'object' || parsed.number !== number) return { ok: false, pr: null, error: 'gh 返回的 PR 详情无法解析' }
+  return { ok: true, pr: { ...parsed, ...await readReviewThreads(cwd, number, run) } }
 }
 
 export async function ghPrDiff(cwd: string, number: number): Promise<GhPrDiffResult> {

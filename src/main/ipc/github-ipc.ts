@@ -3,8 +3,9 @@ import type { IpcRegistrar } from './registrar'
 import type { AuthorizeReadCwd } from '../git-inspect'
 import { ghPrDetail, ghPrDiff, ghPrList, readGithubStatus } from '../github/gh'
 import { githubPrBackend } from '../github/actions'
+import { readPrCreateDefaults } from '../github/defaults'
 import { prFailure } from '../github/command'
-import type { GhPrActionRequest, GhPrActionResult, GhPrCandidatesRequest, GhPrCandidatesResult, GhPrDetailResult, GhPrDiffResult, GhPrListOptions, GhPrListResult, GhPrListState, GithubStatus } from '../../shared/github'
+import type { GhPrCreateDefaultsResult, GhPrActionRequest, GhPrActionResult, GhPrCandidatesRequest, GhPrCandidatesResult, GhPrDetailResult, GhPrDiffResult, GhPrListOptions, GhPrListResult, GhPrListState, GithubStatus } from '../../shared/github'
 
 export interface GithubIpcDeps {
   authorizeReadCwd: AuthorizeReadCwd
@@ -43,6 +44,18 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
       return await readGithubStatus(auth.cwd)
     } catch (error) {
       return { installed: false, authed: false, repo: null, error: message(error) }
+    }
+  })
+
+  handle('yan:github:createDefaults', async (cwd: string): Promise<GhPrCreateDefaultsResult> => {
+    const empty = { currentBranch: null, latestCommit: null, defaultBranch: null }
+    try {
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { ok: false, ...empty, error: auth.error, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      return await readPrCreateDefaults(auth.cwd)
+    } catch {
+      const failure = prFailure('other', '读取新建 PR 默认值失败')
+      return { ok: false, ...empty, error: failure.message, failure }
     }
   })
 

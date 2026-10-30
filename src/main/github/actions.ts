@@ -1,7 +1,7 @@
 import type { GhPrActionRequest, GhPrActionResult, GhPrCandidatesRequest, GhPrCandidatesResult, GhPrDetailJson, GhPrFailure } from '../../shared/github'
 import type { GitActionResult } from '../../shared/git-actions'
 import { checkoutPrHead, pushCurrentBranchForPr } from '../git-actions'
-import { DETAIL_FIELDS } from './gh'
+import { ghPrDetail } from './gh'
 import { classifyGhFailure, prFailure, runGh } from './command'
 import type { GhRunner } from './command'
 import { record, validateAction } from './validation'
@@ -143,7 +143,7 @@ export function createGithubPrBackend(run: GhRunner = runGh, git = { pushCurrent
           break
         case 'review': {
           const pr = await readPr(cwd, request.number)
-          await step('review', () => api(cwd, `${pull}/reviews`, 'POST', { event: request.event, body: request.body, commit_id: pr.head.sha, comments: request.comments ?? [] }))
+          await step('review', () => api(cwd, `${pull}/reviews`, 'POST', { event: request.event, body: request.body, commit_id: pr.head.sha, comments: (request.comments ?? []).map(({ startLine, startSide, ...comment }) => ({ ...comment, ...(startLine === undefined ? {} : { start_line: startLine, start_side: startSide ?? comment.side }) })) }))
           break
         }
         case 'checkout': {
@@ -157,8 +157,9 @@ export function createGithubPrBackend(run: GhRunner = runGh, git = { pushCurrent
       let pr: GhPrDetailJson | null = null
       let refreshFailure: GhPrFailure | undefined
       try {
-        pr = parse<GhPrDetailJson>(await command(cwd, ['pr', 'view', String(number), '--json', DETAIL_FIELDS], false))
-        if (!record(pr) || pr.number !== number) throw new ActionFailure(prFailure('other', '刷新 PR 详情失败'))
+        const refreshed = await ghPrDetail(cwd, number!, run)
+        pr = refreshed.pr
+        if (!refreshed.ok || !record(pr) || pr.number !== number) throw new ActionFailure(refreshed.failure ?? prFailure('other', '刷新 PR 详情失败'))
       } catch (error) {
         pr = null
         refreshFailure = error instanceof ActionFailure ? error.failure : prFailure('other', '刷新 PR 详情失败')

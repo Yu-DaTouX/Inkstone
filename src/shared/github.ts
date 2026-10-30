@@ -84,7 +84,35 @@ export interface GhPrReviewRequestJson {
   slug?: string
 }
 
+export interface GhPrReviewThreadCommentJson extends GhPrCommentJson {
+  databaseId: number
+  path: string
+  line: number | null
+  side: 'LEFT' | 'RIGHT'
+  startLine?: number | null
+  startSide?: 'LEFT' | 'RIGHT' | null
+  replyToId?: number
+  isResolved: boolean
+}
+
+export interface GhPrReviewThreadJson {
+  id: string
+  isResolved: boolean
+  isOutdated: boolean
+  path: string
+  line: number | null
+  side: 'LEFT' | 'RIGHT'
+  startLine?: number | null
+  startSide?: 'LEFT' | 'RIGHT' | null
+  comments: GhPrReviewThreadCommentJson[]
+}
+
 export interface GhPrDetailJson extends GhPrListItemJson {
+  mergeable?: 'CONFLICTING' | 'MERGEABLE' | 'UNKNOWN'
+  mergeStateStatus?: string
+  reviewThreads?: GhPrReviewThreadJson[]
+  reviewThreadsTruncated?: boolean
+  reviewThreadsError?: string
   body?: string
   createdAt?: string
   mergedAt?: string | null
@@ -102,12 +130,14 @@ export interface GhPrDetailJson extends GhPrListItemJson {
 export interface GithubRepoRef {
   nameWithOwner: string
   url: string
+  defaultBranch?: string
 }
 
 export interface GithubStatus {
   installed: boolean
   authed: boolean
   repo: GithubRepoRef | null
+  viewerLogin?: string
   error?: string
 }
 
@@ -124,6 +154,16 @@ export interface GhPrDetailResult {
   ok: boolean
   pr: GhPrDetailJson | null
   error?: string
+  failure?: GhPrFailure
+}
+
+export interface GhPrCreateDefaultsResult {
+  ok: boolean
+  currentBranch: string | null
+  latestCommit: { subject: string; body: string } | null
+  defaultBranch: string | null
+  error?: string
+  failure?: GhPrFailure
 }
 
 export interface GhPrDiffResult {
@@ -172,6 +212,8 @@ export interface GhPrInlineComment {
   path: string
   line: number
   side: 'LEFT' | 'RIGHT'
+  startLine?: number
+  startSide?: 'LEFT' | 'RIGHT'
   body: string
 }
 
@@ -205,6 +247,7 @@ export interface GhPrCandidatesResult {
 
 export interface GithubBridge {
   status(cwd: string): Promise<GithubStatus>
+  createDefaults(cwd: string): Promise<GhPrCreateDefaultsResult>
   list(cwd: string, options: GhPrListState | GhPrListOptions): Promise<GhPrListResult>
   action(cwd: string, request: GhPrActionRequest): Promise<GhPrActionResult>
   candidates(cwd: string, request: GhPrCandidatesRequest): Promise<GhPrCandidatesResult>

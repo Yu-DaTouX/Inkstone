@@ -489,6 +489,7 @@ const api: YanBridge = {
   },
   github: {
     status: (cwd) => invoke<import('../shared/github').GithubStatus>('yan:github:status', cwd),
+    createDefaults: (cwd) => invoke<import('../shared/github').GhPrCreateDefaultsResult>('yan:github:createDefaults', cwd),
     list: (cwd, options) => invoke<import('../shared/github').GhPrListResult>('yan:github:list', cwd, options),
     action: (cwd, request) => invoke<import('../shared/github').GhPrActionResult>('yan:github:action', cwd, request),
     candidates: (cwd, request) => invoke<import('../shared/github').GhPrCandidatesResult>('yan:github:candidates', cwd, request),

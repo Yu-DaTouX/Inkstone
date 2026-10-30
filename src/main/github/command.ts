@@ -26,9 +26,10 @@ export type GhRunner = (cwd: string, args: string[], maxBuffer?: number, input?:
 
 export function createGhRunner(execute: typeof execFile = execFile): GhRunner {
   return (cwd, args, maxBuffer = JSON_MAX_BUFFER, input) => new Promise((resolve) => {
+    const debugScript = process.env.YAN_PROBE && process.env.YAN_USER_DATA ? process.env.YAN_DEBUG_GH_SCRIPT : undefined
     const child = execute(
-      'gh', args,
-      { cwd, timeout: GH_TIMEOUT_MS, maxBuffer, encoding: 'utf8', windowsHide: true, env: { ...process.env, ...GH_ENV } },
+      debugScript ? process.execPath : 'gh', debugScript ? [debugScript, ...args] : args,
+      { cwd, timeout: GH_TIMEOUT_MS, maxBuffer, encoding: 'utf8', windowsHide: true, env: { ...process.env, ...GH_ENV, ...(debugScript ? { ELECTRON_RUN_AS_NODE: '1' } : {}) } },
       (error, stdout, stderr) => {
         const code = (error as NodeJS.ErrnoException | null)?.code ?? ''
         const missing = code === 'ENOENT'

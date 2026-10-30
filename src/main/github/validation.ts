@@ -31,6 +31,13 @@ function names(value: unknown, check: (value: unknown) => boolean): boolean {
   return value === undefined || Array.isArray(value) && value.length <= 100 && value.every(check)
 }
 
+function inlineRange(value: Record<string, unknown>): boolean {
+  if (value.startSide !== undefined && !['LEFT', 'RIGHT'].includes(String(value.startSide))) return false
+  if (value.startLine === undefined) return value.startSide === undefined
+  if (!Number.isSafeInteger(value.startLine) || Number(value.startLine) < 1) return false
+  return value.startSide !== undefined && value.startSide !== value.side || Number(value.startLine) <= Number(value.line)
+}
+
 export function validateAction(value: unknown): GhPrFailure | null {
   const invalid = () => prFailure('invalid-input', 'PR 操作参数不合法')
   if (!record(value) || typeof value.kind !== 'string') return invalid()
@@ -58,7 +65,7 @@ export function validateAction(value: unknown): GhPrFailure | null {
     case 'merge': return typeof value.method === 'string' && ['merge', 'squash', 'rebase'].includes(value.method) && (value.autoMerge === undefined || typeof value.autoMerge === 'boolean') && (value.deleteBranch === undefined || typeof value.deleteBranch === 'boolean') ? null : invalid()
     case 'review':
       if (typeof value.event !== 'string' || !['COMMENT', 'APPROVE', 'REQUEST_CHANGES'].includes(value.event) || !text(value.body, 65_536, false)) return invalid()
-      if (value.comments !== undefined && (!Array.isArray(value.comments) || value.comments.length > 100 || !value.comments.every(c => record(c) && text(c.path, 1024, false) && !c.path.startsWith('/') && !c.path.includes('\\') && !c.path.split('/').some(part => part === '..' || part === '.') && !/^[a-z]:/i.test(c.path) && Number.isSafeInteger(c.line) && Number(c.line) > 0 && typeof c.side === 'string' && ['LEFT', 'RIGHT'].includes(c.side) && text(c.body, 65_536, false)))) return invalid()
+      if (value.comments !== undefined && (!Array.isArray(value.comments) || value.comments.length > 100 || !value.comments.every(c => record(c) && text(c.path, 1024, false) && !c.path.startsWith('/') && !c.path.includes('\\') && !c.path.split('/').some(part => part === '..' || part === '.') && !/^[a-z]:/i.test(c.path) && Number.isSafeInteger(c.line) && Number(c.line) > 0 && typeof c.side === 'string' && ['LEFT', 'RIGHT'].includes(c.side) && inlineRange(c) && text(c.body, 65_536, false)))) return invalid()
       return null
     case 'ready': case 'draft': case 'close': case 'reopen': case 'checkout': case 'delete-branch': return null
     default: return invalid()
@@ -69,7 +76,7 @@ export function listArguments(value: GhPrListState | GhPrListOptions): { ok: tru
   const fail = () => ({ ok: false as const, failure: prFailure('invalid-input', 'PR 列表筛选参数不合法') })
   const o = typeof value === 'string' ? { state: value } : value
   if (!record(o)) return fail()
-  if (o.state !== undefined && !isGhPrListState(o.state) || o.author !== undefined && !username(o.author) || !names(o.labels, label) || o.draft !== undefined && typeof o.draft !== 'boolean' || o.review !== undefined && (typeof o.review !== 'string' || !['none', 'required', 'approved', 'changes_requested'].includes(o.review)) || o.sort !== undefined && (typeof o.sort !== 'string' || !['created', 'updated', 'comments'].includes(o.sort)) || o.direction !== undefined && (typeof o.direction !== 'string' || !['asc', 'desc'].includes(o.direction))) return fail()
+  if (o.state !== undefined && !isGhPrListState(o.state) || o.author !== undefined && o.author !== '@me' && !username(o.author) || !names(o.labels, label) || o.draft !== undefined && typeof o.draft !== 'boolean' || o.review !== undefined && (typeof o.review !== 'string' || !['none', 'required', 'approved', 'changes_requested'].includes(o.review)) || o.sort !== undefined && (typeof o.sort !== 'string' || !['created', 'updated', 'comments'].includes(o.sort)) || o.direction !== undefined && (typeof o.direction !== 'string' || !['asc', 'desc'].includes(o.direction))) return fail()
   const limit = o.limit ?? 50
   if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 500) return fail()
   const args = ['pr', 'list', '--state', String(o.state ?? 'open'), '--limit', String(limit + 1)]
