@@ -2657,5 +2657,14 @@
   "script.run": "运行 {name}",
   "script.runWithKeys": "运行 {name}（{keys}）",
   "script.save": "保存",
-  "script.saveFailed": "脚本保存失败"
+  "script.saveFailed": "脚本保存失败",
+  "state.error.restoreFailed": "恢复失败",
+  "sidebar.undo.deleted": "已删除「{name}」",
+  "sidebar.undo.action": "撤销",
+  "sidebar.undo.restored": "已恢复「{name}」",
+  "sidebar.undo.failed": "撤销没成功：{error}",
+  "sidebar.undo.retry": "重试",
+  "sidebar.jump.label": "{keys} 打开",
+  "sidebar.fileDrop.status": "松手后切到「{name}」并加入待发附件",
+  "session.typingDefer.hint": "你正在输入，焦点没有切走 · {keys} 处理"
 }

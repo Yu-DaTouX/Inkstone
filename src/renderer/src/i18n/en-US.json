@@ -2657,5 +2657,14 @@
   "script.run": "Run {name}",
   "script.runWithKeys": "Run {name} ({keys})",
   "script.save": "Save",
-  "script.saveFailed": "Could not save the scripts"
+  "script.saveFailed": "Could not save the scripts",
+  "state.error.restoreFailed": "Restore failed",
+  "sidebar.undo.deleted": "Deleted \"{name}\"",
+  "sidebar.undo.action": "Undo",
+  "sidebar.undo.restored": "Restored \"{name}\"",
+  "sidebar.undo.failed": "Undo didn't work: {error}",
+  "sidebar.undo.retry": "Retry",
+  "sidebar.jump.label": "{keys} to open",
+  "sidebar.fileDrop.status": "Drop to switch to \"{name}\" and attach",
+  "session.typingDefer.hint": "You're typing, so focus stayed put · {keys} to handle"
 }

@@ -313,7 +313,8 @@ export interface Store {
   renameSession: (name: string) => Promise<void>
   setManualTitle: (sessionId: string, name: string) => Promise<void>
   regenerateTitle: (sessionId: string) => Promise<void>
-  deleteSession: (path: string) => Promise<void>
+  deleteSession: (path: string) => Promise<{ ok: boolean; undoToken?: string }>
+  restoreDeletedSession: (undoToken: string) => Promise<{ ok: boolean; error?: string }>
   fork: (entryId: string) => Promise<boolean>
   clone: () => Promise<void>
   exportHtml: (outputPath?: string) => Promise<{ ok: boolean; error?: string }>
@@ -924,6 +925,23 @@ function currentViewOwnerKey(view: Store): string {
 }
 
 let sessionSwitchGate = 0
+
+interface DeletedTitles {
+  manualTitles: Record<string, string>
+  titles: Record<string, string>
+}
+
+const DELETED_TITLES_MAX = 50
+const deletedTitles = new Map<string, DeletedTitles>()
+
+function rememberDeletedTitles(token: string, kept: DeletedTitles): void {
+  deletedTitles.set(token, kept)
+  while (deletedTitles.size > DELETED_TITLES_MAX) {
+    const oldest = deletedTitles.keys().next().value
+    if (oldest === undefined) break
+    deletedTitles.delete(oldest)
+  }
+}
 
 let sessionSwitchInFlight: { gate: number; done: Promise<void> } | null = null
 
@@ -2282,7 +2300,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await piCall(() => window.yan.deleteSession(path))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.deleteFailed')) })
-      return
+      return { ok: false }
     }
     const cache = { ...get().sessionRuntimes }
     const normalize = (value: string): string => value.replace(/\\/g, '/').toLowerCase()
@@ -2295,9 +2313,37 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     const manualTitles = { ...get().manualTitles }
     const titles = { ...get().titles }
-    for (const id of removedIds) { delete manualTitles[id]; delete titles[id] }
+    const kept: DeletedTitles = { manualTitles: {}, titles: {} }
+    for (const id of removedIds) {
+      if (manualTitles[id] !== undefined) kept.manualTitles[id] = manualTitles[id]
+      if (titles[id] !== undefined) kept.titles[id] = titles[id]
+      delete manualTitles[id]
+      delete titles[id]
+    }
+    if (res.undoToken) rememberDeletedTitles(res.undoToken, kept)
     set({ sessionRuntimes: cache, manualTitles, titles })
     await get().refreshSessions()
+    return { ok: true, undoToken: res.undoToken }
+  },
+
+  restoreDeletedSession: async (undoToken) => {
+    let res: { ok: boolean; error?: string }
+    try {
+      res = await window.yan.restoreSession(undoToken)
+    } catch (error) {
+      res = { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    if (!res.ok) return { ok: false, error: res.error ?? uiText('state.error.restoreFailed') }
+    const kept = deletedTitles.get(undoToken)
+    deletedTitles.delete(undoToken)
+    if (kept) {
+      set({
+        manualTitles: { ...kept.manualTitles, ...get().manualTitles },
+        titles: { ...kept.titles, ...get().titles }
+      })
+    }
+    await get().refreshSessions()
+    return { ok: true }
   },
 
   fork: async (entryId) => {

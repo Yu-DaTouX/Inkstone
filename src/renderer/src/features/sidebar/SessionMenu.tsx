@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type JSX, type RefObject } from 'react'
-import { useI18n } from '../../i18n'
+import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, Dialog, DialogFooter, Modal, ModalOverlay, Popover } from '../../ui'
+import { leaveSessionAfter } from './session-advance'
+import { deleteSessionWithUndo } from './session-undo-toast'
 import { v3Text } from '../../app/v3-text'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
@@ -24,6 +26,7 @@ export interface SessionMenuProps {
 export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange, onRename }: SessionMenuProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
+  const t = useT()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [customSnooze, setCustomSnooze] = useState(false)
   const dialogOpen = confirmDelete || customSnooze
@@ -77,7 +80,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
         return
       }
       const option = pickSnoozeOption(preset, Date.now())
-      if (option) void store.setSessionSnoozed(item.id, option.until)
+      if (option) void leaveSessionAfter(item.path, () => store.setSessionSnoozed(item.id, option.until))
       return
     }
     switch (key) {
@@ -99,7 +102,8 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
         void store.setSessionPinned(item.id, !item.pinned)
         return
       case 'archive':
-        void store.setSessionArchived(item.id, !item.archivedAt)
+        if (item.archivedAt) void store.setSessionArchived(item.id, false)
+        else void leaveSessionAfter(item.path, () => store.setSessionArchived(item.id, true))
         return
       case 'title':
         void store.regenerateTitle(item.id)
@@ -121,7 +125,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
       <CustomSnoozeDialog
         open={customSnooze && dialogReady}
         onOpenChange={setCustomSnooze}
-        onSubmit={(until) => void useStore.getState().setSessionSnoozed(item.id, until)}
+        onSubmit={(until) => void leaveSessionAfter(item.path, () => useStore.getState().setSessionSnoozed(item.id, until))}
       />
 
       <ModalOverlay isDismissable isOpen={confirmDelete && dialogReady} onOpenChange={setConfirmDelete}>
@@ -136,7 +140,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
                     variant="danger"
                     onPress={() => {
                       close()
-                      void useStore.getState().deleteSession(item.path)
+                      void deleteSessionWithUndo(item.path, title, t)
                     }}
                     data-testid="v3-session-delete-confirm"
                   >
