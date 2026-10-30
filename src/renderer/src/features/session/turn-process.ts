@@ -1,4 +1,4 @@
-import type { UIToolCall } from '../../../../shared/ipc'
+import type { UIMessage, UIToolCall } from '../../../../shared/ipc'
 import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../shared/turns'
 import { countedWorkCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolCategory } from './tool-run-model'
 import { callPath, collectTurnChanges, isInsideCwd, readFileDiff, readPiDiff, type TurnChanges, type TurnFileChange, type TurnFileStatus } from './turn-changes'
@@ -391,6 +391,26 @@ export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_
   })
   const tools = dropped.reduce((sum, segment) => sum + segment.tools.length, 0)
   return { shown, hidden: tools || dropped.length }
+}
+
+export function turnSpanMs(messages: readonly Pick<UIMessage, 'id' | 'role' | 'timestamp'>[], sourceIds: readonly string[], tools: readonly Pick<UIToolCall, 'endedAt'>[]): number | undefined {
+  const first = sourceIds.length ? messages.findIndex((message) => message.id === sourceIds[0]) : -1
+  if (first < 0) return undefined
+  let start: number | undefined
+  for (let i = first - 1; i >= 0; i -= 1) {
+    if (messages[i].role !== 'user') continue
+    start = messages[i].timestamp
+    break
+  }
+  if (!start) return undefined
+  const ids = new Set(sourceIds)
+  let end = 0
+  for (let i = first; i < messages.length; i += 1) {
+    const stamp = messages[i].timestamp
+    if (stamp && ids.has(messages[i].id)) end = Math.max(end, stamp)
+  }
+  for (const call of tools) if (call.endedAt) end = Math.max(end, call.endedAt)
+  return end > start ? end - start : undefined
 }
 
 export function turnChangeSet(turn: AssistantTurn, cwd?: string): TurnChanges | null {

@@ -193,9 +193,6 @@ export type SessionTextKey =
   | 'processOther'
   | 'processKindJoin'
   | 'processViewChanges'
-  | 'outcomeFiles'
-  | 'outcomeNoChanges1'
-  | 'outcomeNoChanges'
   | 'turnOrdinal'
   | 'tallyCommand'
   | 'tallyRead'
@@ -208,11 +205,15 @@ export type SessionTextKey =
   | 'tallyWeb'
   | 'tallyAgent'
   | 'tallyTodo'
-  | 'processCommandCount1'
-  | 'processCommandCount'
-  | 'processToolCount1'
-  | 'processToolCount'
+  | 'processEdits1'
+  | 'processCreates1'
+  | 'processMoreSteps'
   | 'decisionReplied'
+  | 'decisionYourReply'
+  | 'decisionOutcome'
+  | 'decisionRunning'
+  | 'decisionFailed'
+  | 'decisionStopped'
   | 'questionChosen'
   | 'questionFreeAnswer'
   | 'thinkingEmptyRecord'
@@ -443,9 +444,6 @@ const ZH: Record<SessionTextKey, string> = {
   processOther: '调用 {n} 次工具',
   processKindJoin: '、',
   processViewChanges: '查看更改',
-  outcomeFiles: '交付文件',
-  outcomeNoChanges1: '无代码改动 · 1 个交付文件',
-  outcomeNoChanges: '无代码改动 · {n} 个交付文件',
   turnOrdinal: '第 {n} 轮',
   tallyCommand: '命令',
   tallyRead: '读取',
@@ -458,11 +456,15 @@ const ZH: Record<SessionTextKey, string> = {
   tallyWeb: '联网搜索',
   tallyAgent: '子 Agent',
   tallyTodo: '待办',
-  processCommandCount1: '1 条命令',
-  processCommandCount: '{n} 条命令',
-  processToolCount1: '1 次工具',
-  processToolCount: '{n} 次工具',
+  processEdits1: '编辑 1 个文件',
+  processCreates1: '新建 1 个文件',
+  processMoreSteps: '等 {n} 步',
   decisionReplied: '已回复',
+  decisionYourReply: '你的回复',
+  decisionOutcome: '结果',
+  decisionRunning: '正在处理',
+  decisionFailed: '没有完成',
+  decisionStopped: '已中止',
   questionChosen: '已选',
   questionFreeAnswer: '回答：{answer}',
   thinkingEmptyRecord: '这一轮的思考没有留下文字记录',
@@ -694,9 +696,6 @@ const EN: Record<SessionTextKey, string> = {
   processOther: 'Called {n} tools',
   processKindJoin: ', ',
   processViewChanges: 'View changes',
-  outcomeFiles: 'Deliverables',
-  outcomeNoChanges1: 'No code changes · 1 deliverable',
-  outcomeNoChanges: 'No code changes · {n} deliverables',
   turnOrdinal: 'Turn {n}',
   tallyCommand: 'command',
   tallyRead: 'read',
@@ -709,11 +708,15 @@ const EN: Record<SessionTextKey, string> = {
   tallyWeb: 'web search',
   tallyAgent: 'subagent',
   tallyTodo: 'to-do',
-  processCommandCount1: '1 command',
-  processCommandCount: '{n} commands',
-  processToolCount1: '1 tool call',
-  processToolCount: '{n} tool calls',
+  processEdits1: 'Edited 1 file',
+  processCreates1: 'Created 1 file',
+  processMoreSteps: ' and more ({n} steps)',
   decisionReplied: 'Replied',
+  decisionYourReply: 'You replied',
+  decisionOutcome: 'Outcome',
+  decisionRunning: 'In progress',
+  decisionFailed: 'Not completed',
+  decisionStopped: 'Stopped',
   questionChosen: 'Chosen',
   questionFreeAnswer: 'Answer: {answer}',
   thinkingEmptyRecord: 'This turn left no reasoning text',
