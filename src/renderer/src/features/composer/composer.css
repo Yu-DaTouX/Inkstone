@@ -897,6 +897,18 @@
     to { opacity: 0; }
   }
 
+  .composer-v3 .composer-text {
+    min-height: calc(1.625em * 2);
+    max-height: min(24rem, 40svh);
+    font-size: 15px;
+    line-height: 1.625;
+  }
+
+  .composer-v3 .composer-text[data-placeholder-visible='true'][data-placeholder]::before {
+    font-size: 15px;
+    line-height: 1.625;
+  }
+
   @keyframes file-drop-card-in {
     from { opacity: 0; scale: 0.92; }
   }

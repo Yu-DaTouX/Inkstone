@@ -6,6 +6,7 @@ const EMPTY_ENTRIES: ReadonlyArray<ProviderInstanceEntry> = [];
 function entryFrom(
   provider: string,
   info: AuthProviderInfo | undefined,
+  setupMessage: (kind: "signIn" | "apiKey") => string,
 ): ProviderInstanceEntry {
   const ready = info?.status === "ready";
   const unknown = info?.status === "unknown" || info === undefined;
@@ -19,11 +20,7 @@ function entryFrom(
     status: ready ? "ready" : unknown ? "warning" : "disabled",
     needsSetup: !ready,
     snapshot: {
-      message: ready
-        ? undefined
-        : info?.inAppLogin
-          ? "No credentials yet — sign in from Settings."
-          : "No API key yet — add one in Settings.",
+      message: ready ? undefined : setupMessage(info?.inAppLogin ? "signIn" : "apiKey"),
     },
   };
 }
@@ -32,6 +29,7 @@ export function providerInstanceEntries(input: {
   models: ReadonlyArray<ModelInfo>;
   providers: ReadonlyArray<AuthProviderInfo>;
   order: ReadonlyArray<string>;
+  setupMessage: (kind: "signIn" | "apiKey") => string;
 }): ReadonlyArray<ProviderInstanceEntry> {
   const byId = new Map(input.providers.map((info) => [info.id, info]));
   const seen = new Set<string>();
@@ -57,7 +55,7 @@ export function providerInstanceEntries(input: {
     }
   }
   if (ids.length === 0) return EMPTY_ENTRIES;
-  return ids.map((provider) => entryFrom(provider, byId.get(provider)));
+  return ids.map((provider) => entryFrom(provider, byId.get(provider), input.setupMessage));
 }
 
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {

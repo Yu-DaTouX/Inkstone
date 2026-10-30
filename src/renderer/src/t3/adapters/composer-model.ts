@@ -5,6 +5,7 @@ import {
   sortByProviderThenNewest,
   toggleFavorite as toggleFavoriteChoice
 } from '../../features/settings/models/models-model'
+import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { ProviderInstanceEntry, ProviderInstanceId } from './contracts'
 import { providerInstanceEntries } from './providers'
@@ -35,8 +36,9 @@ export function instanceEntriesFromModels(
   models: ReadonlyArray<ModelInfo>,
   order: ReadonlyArray<string> = [],
   providers: ReadonlyArray<AuthProviderInfo> = [],
+  setupMessage: (kind: 'signIn' | 'apiKey') => string,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  return providerInstanceEntries({ models, providers, order })
+  return providerInstanceEntries({ models, providers, order, setupMessage })
 }
 
 export function sortProviderModelItems<T extends { instanceId: ProviderInstanceId; slug: string }>(
@@ -78,6 +80,7 @@ const EMPTY_ORDER: ReadonlyArray<string> = []
 const EMPTY_OPTIONS: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>> = new Map()
 
 export function useComposerModelAdapter(): ComposerModelAdapter {
+  const t = useT()
   const models = useStore((s) => s.models) ?? EMPTY_MODELS
   const providers = useStore((s) => s.authProviders) ?? EMPTY_PROVIDERS
   const provider = useStore((s) => s.session?.model?.provider ?? '')
@@ -87,8 +90,11 @@ export function useComposerModelAdapter(): ComposerModelAdapter {
   const order = useStore((s) => s.settings?.modelProviderOrder) ?? EMPTY_ORDER
 
   const instanceEntries = useMemo(
-    () => instanceEntriesFromModels(models, order, providers),
-    [models, order, providers],
+    () =>
+      instanceEntriesFromModels(models, order, providers, (kind) =>
+        t(kind === 'signIn' ? 'composer.t3.picker.needsSignIn' : 'composer.t3.picker.needsApiKey'),
+      ),
+    [models, order, providers, t],
   )
   const modelOptionsByInstance = useMemo(() => {
     if (models.length === 0) return EMPTY_OPTIONS
