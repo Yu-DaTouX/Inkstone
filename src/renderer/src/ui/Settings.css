@@ -26,6 +26,10 @@
     animation: ui-modal-in var(--dur-base) var(--ease);
   }
 
+  .ui-settings-modal[data-exiting] {
+    animation: ui-modal-out var(--dur-quick) var(--ease-exit) forwards;
+  }
+
   .ui-settings-modal[data-nested-dialog-open] {
     filter: blur(2px);
   }

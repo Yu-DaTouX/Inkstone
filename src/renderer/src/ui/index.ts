@@ -33,6 +33,24 @@ export {
   type CollapsibleProps
 } from './Collapsible'
 export { MiddleTruncate, type MiddleTruncateProps } from './MiddleTruncate'
+export {
+  AnimatedHeight,
+  AnimatedWidth,
+  CondensingHeader,
+  Expand,
+  MorphIcon,
+  MotionList,
+  useCondensingHeader,
+  type AnimatedHeightProps,
+  type AnimatedWidthProps,
+  type CondensingHeaderOptions,
+  type CondensingHeaderProps,
+  type CondensingHeaderState,
+  type ExpandProps,
+  type MorphIconProps,
+  type MotionListProps
+} from './Motion'
+export { holdMotion, motionAllowed, motionHeld, motionMs, useArrival, useHoldMotionOn, useMotionHeld, useNavigationHold, usePresence, useReducedMotion, type MotionDuration, type Presence } from './motion-hooks'
 export { DiffStat, type DiffStatProps } from './DiffStat'
 export { InlineRename, isImeComposing, type InlineRenameProps } from './InlineRename'
 export { ListRow, ListRowStatic, TreeRow, type ListRowProps, type ListRowStaticProps, type TreeRowProps } from './Row'

@@ -709,10 +709,14 @@
     --pop-shift-y: 0px;
   }
   .ui-popover[data-entering] {
-    animation: ui-popover-in var(--dur-snap) var(--ease-snap);
+    animation: ui-popover-in var(--dur-quick) var(--ease);
   }
   .ui-popover[data-exiting] {
-    animation: ui-pop-out var(--dur-fast) var(--ease);
+    animation: ui-popover-out var(--dur-snap) var(--ease-exit) forwards;
+  }
+  .ui-popover[data-entering] .ui-menu > :is(.ui-menu__item, .ui-menu__section) {
+    animation: ui-item-in var(--dur-quick) var(--ease) both;
+    animation-delay: calc(min(sibling-index() - 1, 6) * var(--dur-stagger) / 2);
   }
   .ui-popover--panel {
     max-width: none;
@@ -902,7 +906,7 @@
     animation: ui-fade-in var(--dur-base) var(--ease);
   }
   .ui-modal-overlay[data-exiting] {
-    animation: ui-fade-out var(--dur-base) var(--ease);
+    animation: ui-fade-out var(--dur-quick) var(--ease-exit) forwards;
   }
   .ui-modal {
     display: flex;
@@ -930,7 +934,7 @@
     animation: ui-modal-in var(--dur-base) var(--ease);
   }
   .ui-modal[data-exiting] {
-    animation: ui-modal-out var(--dur-base) var(--ease);
+    animation: ui-modal-out var(--dur-quick) var(--ease-exit) forwards;
   }
   .ui-dialog {
     display: flex;
@@ -1058,8 +1062,7 @@
   .ui-tab[data-selected] {
     color: var(--fg);
   }
-  .ui-tab[data-selected]::after {
-    content: '';
+  .ui-tab__ink {
     position: absolute;
     inset-inline: var(--s-6);
     bottom: -1px;
@@ -1067,6 +1070,17 @@
     border-radius: var(--r-full);
     corner-shape: round;
     background: var(--accent);
+    pointer-events: none;
+    transition:
+      translate var(--dur-base) var(--ease),
+      width var(--dur-base) var(--ease),
+      opacity var(--dur-quick) var(--ease);
+  }
+  .ui-tab__ink[data-entering] {
+    opacity: 0;
+  }
+  .ui-tab__ink[data-exiting] {
+    opacity: 0;
   }
   .ui-tab[data-disabled] {
     opacity: 0.4;
@@ -1123,11 +1137,27 @@
     color: var(--fg);
     box-shadow: var(--shadow-md), var(--shadow-ring);
   }
+  .ui-tooltip {
+    --pop-shift-x: 0px;
+    --pop-shift-y: 2px;
+    transform-origin: var(--trigger-anchor-point, center);
+  }
+  .ui-tooltip[data-placement='bottom'] {
+    --pop-shift-y: -2px;
+  }
+  .ui-tooltip[data-placement='left'] {
+    --pop-shift-x: 2px;
+    --pop-shift-y: 0px;
+  }
+  .ui-tooltip[data-placement='right'] {
+    --pop-shift-x: -2px;
+    --pop-shift-y: 0px;
+  }
   .ui-tooltip[data-entering] {
-    animation: ui-pop-in var(--dur-snap) var(--ease-snap);
+    animation: ui-popover-in var(--dur-quick) var(--ease);
   }
   .ui-tooltip[data-exiting] {
-    animation: ui-pop-out var(--dur-snap) var(--ease-snap);
+    animation: ui-popover-out var(--dur-snap) var(--ease-exit) forwards;
   }
   .ui-tooltip__line {
     display: inline-flex;
@@ -1193,17 +1223,40 @@
     transform-origin: bottom;
     transform: translateY(calc(var(--toast-index, 0) * -14px)) scale(calc(1 - var(--toast-index, 0) * 0.04));
     transition:
-      transform var(--dur-base) var(--ease),
-      opacity var(--dur-base) var(--ease);
+      transform var(--dur-slow) var(--ease-glide),
+      opacity var(--dur-slow) var(--ease-glide);
     pointer-events: auto;
   }
-  .ui-toast[data-entering] {
-    animation: ui-toast-in var(--dur-base) var(--ease);
+  .ui-toast {
+    view-transition-class: ui-toast;
   }
-  .ui-toast[data-exiting] {
-    opacity: 0;
-    transform: translateY(calc(var(--toast-index, 0) * -14px)) scale(0.85);
-    pointer-events: none;
+  @starting-style {
+    .ui-toast {
+      opacity: 0;
+      transform: translateY(calc(100% + var(--s-16))) scale(calc(1 - var(--toast-index, 0) * 0.04));
+    }
+  }
+  :root:active-view-transition-type(ui-toast) {
+    view-transition-name: none;
+  }
+  :root:active-view-transition-type(ui-toast) .ui-toast {
+    transition: none;
+  }
+  ::view-transition-group(.ui-toast) {
+    animation-duration: var(--dur-slow);
+    animation-timing-function: var(--ease-glide);
+  }
+  ::view-transition-old(.ui-toast):only-child {
+    animation: ui-toast-out var(--dur-sheet) var(--ease-exit) both;
+  }
+  ::view-transition-new(.ui-toast):only-child {
+    animation: none;
+  }
+  @keyframes ui-toast-out {
+    to {
+      opacity: 0;
+      transform: translateY(calc(100% + var(--s-16)));
+    }
   }
   .ui-toast__content {
     display: flex;
@@ -1534,6 +1587,30 @@
       transform: translate(var(--pop-shift-x), var(--pop-shift-y)) scale(0.98);
     }
   }
+  @keyframes ui-popover-out {
+    to {
+      opacity: 0;
+      transform: translate(calc(var(--pop-shift-x) / 2), calc(var(--pop-shift-y) / 2)) scale(0.98);
+    }
+  }
+  @keyframes ui-item-in {
+    from {
+      opacity: 0;
+      translate: 0 -2px;
+    }
+  }
+  @keyframes ui-command-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.98);
+    }
+  }
+  @keyframes ui-command-out {
+    to {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
   @keyframes ui-pop-out {
     from {
       opacity: 1;
@@ -1577,16 +1654,7 @@
     }
     to {
       opacity: 0;
-      transform: scale(0.98);
-    }
-  }
-  @keyframes ui-toast-in {
-    from {
-      opacity: 0;
-      transform: translateY(100%) scale(calc(1 - var(--toast-index, 0) * 0.04));
-    }
-    to {
-      opacity: 1;
+      transform: translateY(4px) scale(0.98);
     }
   }
 
@@ -1615,6 +1683,15 @@
   .ui-meta-text {
     color: var(--fg3);
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+
+  .ui-meta-path {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg3);
+    font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .ui-notice {

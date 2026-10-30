@@ -1,12 +1,19 @@
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
+  AnimatedHeight,
+  AnimatedWidth,
   AsciiRule,
   AsciiScale,
   AsciiSpark,
   Badge,
   Button,
   CompletionSweep,
+  CondensingHeader,
+  Expand,
+  MorphIcon,
+  MotionList,
+  useCondensingHeader,
   DiffStat,
   Heading,
   IconButton,
@@ -254,6 +261,96 @@ export const Motion: Story = {
     }
   },
   render: () => <MotionDemo />
+}
+
+export const MotionPrimitives: Story = {
+  name: '动效基元 · 高度 / 宽度 / 展开 / 收缩头部 / 图标形变 / 列表进出',
+  parameters: {
+    stateMatrix: {
+      components: ['AnimatedHeight', 'AnimatedWidth', 'Expand', 'CondensingHeader', 'MorphIcon', 'MotionList'],
+      states: STATES('default', 'open', 'theme-light', 'theme-dark')
+    }
+  },
+  render: () => <MotionPrimitivesDemo />
+}
+
+const MOTION_ROWS = ['重构侧栏', '右栏分区折叠', '过程块展开', '改动卡抵达', '设置弹窗入场', '命令面板下落']
+
+function MotionPrimitivesDemo() {
+  const [lines, setLines] = useState(2)
+  const [wide, setWide] = useState(false)
+  const [open, setOpen] = useState(true)
+  const [morph, setMorph] = useState(false)
+  const [rows, setRows] = useState(MOTION_ROWS.slice(0, 4))
+  const condense = useCondensingHeader('story')
+  const shuffle = () => setRows((prev) => (prev.length > 3 ? [...prev.slice(1), prev[0]].slice(0, prev.length - 1) : MOTION_ROWS.slice(0, prev.length + 2)))
+  return (
+    <ThemePair>
+      <Section title="AnimatedHeight · 内容增减时高度过渡">
+        <div style={metaRowStyle}>
+          <Button size="sm" variant="secondary" onPress={() => setLines((n) => (n >= 5 ? 1 : n + 1))}>
+            {`行数 ${lines}`}
+          </Button>
+        </div>
+        <AnimatedHeight>
+          <div style={{ display: 'grid', gap: 'var(--s-4)', padding: 'var(--s-8)', borderRadius: 'var(--r-md)', boxShadow: 'var(--ring-line)' }}>
+            {Array.from({ length: lines }, (_, index) => (
+              <span key={index} style={{ color: 'var(--fg2)' }}>{`第 ${index + 1} 行 · 只动高度，不挤压文字`}</span>
+            ))}
+          </div>
+        </AnimatedHeight>
+      </Section>
+      <Section title="AnimatedWidth · 文字按钮换词时宽度过渡">
+        <Button size="sm" variant="secondary" onPress={() => setWide((value) => !value)}>
+          <AnimatedWidth>{wide ? '发布分支到远端' : '推送'}</AnimatedWidth>
+        </Button>
+      </Section>
+      <Section title="Expand · grid 0fr↔1fr 展开收起，内容延后淡入">
+        <Button size="sm" variant="secondary" onPress={() => setOpen((value) => !value)}>
+          {open ? '收起' : '展开'}
+        </Button>
+        <Expand open={open}>
+          <p style={{ margin: 0, padding: 'var(--s-8) 0', color: 'var(--fg2)' }}>右栏分区、侧栏分段和贪睡列表共用这一种展开：先让行高过渡，再让内容淡入；收起时内容先淡出，行高随后归零。</p>
+        </Expand>
+      </Section>
+      <Section title="CondensingHeader · 滚动收缩头部（滞回 + scrollTop 补偿）">
+        <div style={{ display: 'flex', flexDirection: 'column', height: 200, borderRadius: 'var(--r-md)', boxShadow: 'var(--ring-line)', overflow: 'hidden' }} onScrollCapture={condense.onScrollCapture}>
+          <CondensingHeader
+            state={condense}
+            compact={<div style={{ padding: 'var(--s-4) var(--s-12)', color: 'var(--fg2)' }} className="ui-num">#128 · 12 files · +340 −52</div>}
+          >
+            <div style={{ display: 'grid', gap: 'var(--s-4)', padding: 'var(--s-12)' }}>
+              <strong>设计整合第二阶段：动效基元</strong>
+              <span style={{ color: 'var(--fg3)' }}>完整头部：标题、作者、分支与统计。向下滚过头部高度 + 32px 后收成一行，回到顶部 4px 内再展开。</span>
+            </div>
+          </CondensingHeader>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--s-12)', borderTop: 'var(--hair, 1px) solid var(--line)' }}>
+            {Array.from({ length: 24 }, (_, index) => (
+              <p key={index} style={{ margin: '0 0 var(--s-8)', color: 'var(--fg2)' }}>{`正文第 ${index + 1} 段`}</p>
+            ))}
+          </div>
+        </div>
+      </Section>
+      <Section title="MorphIcon · 开关图标形变">
+        <Button size="sm" variant="secondary" onPress={() => setMorph((value) => !value)}>
+          <MorphIcon iconKey={morph ? 'close' : 'open'} icon={<span className="ui-num">{morph ? '×' : '+'}</span>} />
+          {morph ? '还原' : '最大化'}
+        </Button>
+      </Section>
+      <Section title="MotionList · 列表行进入 / 离开 / 重排（FLIP）">
+        <Button size="sm" variant="secondary" onPress={shuffle}>
+          轮换
+        </Button>
+        <MotionList style={{ display: 'grid', gap: 2, maxWidth: 280 }}>
+          {rows.map((row) => (
+            <ListRow key={row} trailing={<span className="ui-num">{row.length}</span>}>
+              {row}
+            </ListRow>
+          ))}
+        </MotionList>
+      </Section>
+    </ThemePair>
+  )
 }
 
 function TitlebarDemo() {

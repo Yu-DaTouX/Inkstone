@@ -1,8 +1,9 @@
-import { forwardRef, type ReactNode } from 'react'
+import { forwardRef, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Button as RACButton,
   Disclosure as RACDisclosure,
   DisclosurePanel as RACDisclosurePanel,
+  DisclosureStateContext,
   composeRenderProps,
   type ButtonProps as RACButtonProps,
   type DisclosurePanelProps as RACDisclosurePanelProps,
@@ -11,6 +12,7 @@ import {
 import { ChevronRight } from 'lucide-react'
 import { cx } from './cx'
 import { CHEVRON_ICON_SIZE } from './sizes'
+import { motionAllowed, motionMs } from './motion-hooks'
 
 export type CollapsibleProps = RACDisclosureProps
 
@@ -23,16 +25,37 @@ export interface CollapsiblePanelProps extends RACDisclosurePanelProps {
 }
 
 export const CollapsiblePanel = forwardRef<HTMLDivElement, CollapsiblePanelProps>(function CollapsiblePanel(
-  { className, animated, ...props },
+  { className, animated, children, ...props },
   ref
 ) {
+  const expanded = useContext(DisclosureStateContext)?.isExpanded ?? true
+  const kept = useRef<RACDisclosurePanelProps['children']>(children)
+  const [closing, setClosing] = useState(false)
+  const [opening, setOpening] = useState(false)
+  const [seen, setSeen] = useState(expanded)
+  if (seen !== expanded) {
+    const allowed = !!animated && motionAllowed()
+    setSeen(expanded)
+    setClosing(!expanded && allowed)
+    setOpening(expanded && allowed)
+  }
+  if (expanded) kept.current = children
+  useEffect(() => {
+    if (!closing) return
+    const timer = window.setTimeout(() => setClosing(false), motionMs('base') + 50)
+    return () => window.clearTimeout(timer)
+  }, [closing])
+  const shown = animated && !expanded && closing && children == null ? kept.current : children
   return (
     <RACDisclosurePanel
       {...props}
       ref={ref}
       data-animated={animated ? 'true' : undefined}
+      data-opening={opening ? '' : undefined}
       className={composeRenderProps(className, (cn) => cx('ui-collapsible__panel', cn))}
-    />
+    >
+      {shown}
+    </RACDisclosurePanel>
   )
 })
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import {
+  SelectionIndicator,
   Tab as RACTab,
   TabList as RACTabList,
   TabPanel as RACTabPanel,
@@ -55,6 +56,7 @@ export function Tab({ onClose, closeLabel, className, children, ...props }: TabP
     <RACTab {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-tab', cn))}>
       {composeRenderProps(children, (kids) => (
         <>
+          <SelectionIndicator className="ui-tab__ink" />
           <span className="ui-tab__label">{kids}</span>
           {onClose ? (
             <span

@@ -1,0 +1,140 @@
+@layer primitives {
+  .ui-height {
+    transition: height var(--dur-base) var(--ease);
+    overflow-clip-margin: 2px;
+  }
+  .ui-height[data-clipping] {
+    overflow: clip;
+  }
+
+  .ui-width {
+    display: inline-block;
+    overflow: hidden;
+    vertical-align: bottom;
+    transition: width var(--dur-quick) var(--ease);
+  }
+  .ui-width__content {
+    display: block;
+    width: max-content;
+    white-space: nowrap;
+  }
+
+  .ui-expand {
+    display: grid;
+    grid-template-rows: 0fr;
+    grid-template-columns: minmax(0, 1fr);
+    transition: grid-template-rows var(--dur-base) var(--ease);
+  }
+  .ui-expand[data-open] {
+    grid-template-rows: 1fr;
+  }
+  .ui-expand__clip {
+    min-height: 0;
+    overflow: clip;
+    overflow-clip-margin: var(--s-4);
+    opacity: 0;
+    translate: 0 calc(-1 * var(--s-4));
+    transition:
+      opacity var(--dur-snap) var(--ease-exit),
+      translate var(--dur-snap) var(--ease-exit);
+  }
+  .ui-expand[data-open] > .ui-expand__clip {
+    opacity: 1;
+    translate: none;
+    transition:
+      opacity var(--dur-quick) var(--ease) var(--dur-lag),
+      translate var(--dur-base) var(--ease) var(--dur-lag);
+  }
+
+  .ui-condense {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ui-condense__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ui-condense__row[data-part='compact'] {
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--dur-base) var(--ease);
+  }
+  .ui-condense[data-condensed] > .ui-condense__row[data-part='compact'] {
+    grid-template-rows: 1fr;
+    transition: none;
+  }
+  .ui-condense__row[data-part='full'] {
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--dur-base) var(--ease);
+  }
+  .ui-condense[data-condensed] > .ui-condense__row[data-part='full'] {
+    grid-template-rows: 0fr;
+    transition: none;
+  }
+  .ui-condense__clip {
+    min-height: 0;
+    overflow: hidden;
+    transition:
+      opacity var(--dur-quick) var(--ease) var(--dur-lag),
+      translate var(--dur-quick) var(--ease) var(--dur-lag);
+  }
+  .ui-condense__row[data-part='compact'] > .ui-condense__clip {
+    opacity: 0;
+    translate: 0 var(--s-4);
+    transition-duration: var(--dur-snap);
+    transition-delay: 0s;
+  }
+  .ui-condense[data-condensed] > .ui-condense__row[data-part='compact'] > .ui-condense__clip {
+    opacity: 1;
+    translate: none;
+    transition-duration: var(--dur-quick);
+    transition-delay: var(--dur-lag);
+  }
+  .ui-condense[data-condensed] > .ui-condense__row[data-part='full'] > .ui-condense__clip {
+    opacity: 0;
+    translate: 0 calc(-1 * var(--s-4));
+    transition-duration: var(--dur-snap);
+    transition-delay: 0s;
+  }
+
+  .ui-morph {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    vertical-align: middle;
+  }
+  .ui-morph__glyph {
+    display: inline-flex;
+    grid-area: 1 / 1;
+  }
+  .ui-morph__glyph[data-state='in'] {
+    animation: ui-morph-in var(--dur-base) var(--ease) both;
+  }
+  .ui-morph__glyph[data-state='out'] {
+    animation: ui-morph-out var(--dur-quick) var(--ease-exit) both;
+    pointer-events: none;
+  }
+  @keyframes ui-morph-in {
+    from {
+      opacity: 0;
+      scale: 0.4;
+      rotate: -60deg;
+      filter: blur(2px);
+    }
+  }
+  @keyframes ui-morph-out {
+    to {
+      opacity: 0;
+      scale: 0.4;
+      rotate: 60deg;
+      filter: blur(2px);
+    }
+  }
+
+  .ui-motion-list {
+    position: relative;
+  }
+
+  :root[data-motion-hold] :is(.ui-height, .ui-width, .ui-expand, .ui-expand__clip, .ui-condense__row, .ui-condense__clip, .ui-ptabs__ink, .ui-tab__ink, .ui-collapsible__panel, .ui-chevron > svg) {
+    transition: none !important;
+  }
+}

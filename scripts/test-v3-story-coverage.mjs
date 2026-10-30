@@ -166,6 +166,10 @@ const EXCLUSIONS = [
     reason: '设置弹层的窄窗口判断 hook，不是可视控件；窄窗口版式由 SettingsTabBar / SettingsTab 的故事覆盖'
   },
   {
+    test: (name) => ['useCondensingHeader', 'usePresence', 'useNavigationHold', 'useHoldMotionOn', 'useMotionHeld', 'useReducedMotion', 'useArrival', 'holdMotion', 'motionHeld', 'motionAllowed', 'motionMs'].includes(name),
+    reason: '动效状态 hook 与工具函数，不是可视控件；效果由 V3Style「动效基元」故事中的 AnimatedHeight / Expand / CondensingHeader / MorphIcon / MotionList 覆盖，纯逻辑由 test-ui-motion 核对'
+  },
+  {
     test: (name) => name === 'sortRows',
     reason: '表格排序纯函数，不是可视控件；由 table-model 的纯逻辑核对覆盖'
   }

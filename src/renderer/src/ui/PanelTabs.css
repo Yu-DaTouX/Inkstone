@@ -11,6 +11,33 @@
   .ui-ptabs::-webkit-scrollbar {
     display: none;
   }
+  .ui-ptabs[data-ink] {
+    position: relative;
+    isolation: isolate;
+  }
+  .ui-ptabs__ink {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    z-index: -1;
+    width: var(--ink-w);
+    height: var(--size-btn-sm);
+    border-radius: var(--r-sm);
+    background: var(--sel);
+    translate: var(--ink-x) -50%;
+    pointer-events: none;
+  }
+  .ui-ptabs[data-ink='settled'] > .ui-ptabs__ink {
+    transition:
+      translate var(--dur-base) var(--ease),
+      width var(--dur-base) var(--ease);
+  }
+  .ui-ptabs[data-ink] > .ui-ptab[data-active='1'] {
+    background: transparent;
+  }
+  .ui-ptabs[data-ink] > .ui-ptab[data-active='1']:hover {
+    background: var(--hover);
+  }
 
   .ui-ptab {
     position: relative;

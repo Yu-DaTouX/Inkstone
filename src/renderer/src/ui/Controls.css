@@ -354,6 +354,24 @@
     overflow-clip-margin: var(--s-4);
     transition: height var(--dur-base) var(--ease);
   }
+  .ui-collapsible__panel[data-animated] > * {
+    transition:
+      opacity var(--dur-quick) var(--ease) var(--dur-lag),
+      translate var(--dur-base) var(--ease) var(--dur-lag);
+  }
+  .ui-collapsible__panel[data-animated][aria-hidden='true'] > * {
+    opacity: 0;
+    translate: 0 calc(-1 * var(--s-4));
+    transition:
+      opacity var(--dur-snap) var(--ease-exit),
+      translate var(--dur-snap) var(--ease-exit);
+  }
+  @starting-style {
+    .ui-collapsible__panel[data-animated][data-opening] > * {
+      opacity: 0;
+      translate: 0 calc(-1 * var(--s-4));
+    }
+  }
   @media (hover: hover) {
     .ui-collapsible__trigger:hover:not([data-disabled]) {
       color: var(--fg);
@@ -495,7 +513,7 @@
     animation: ui-fade-in var(--dur-snap) var(--ease);
   }
   .ui-command-overlay[data-exiting] {
-    animation: ui-fade-out var(--dur-snap) var(--ease);
+    animation: ui-fade-out var(--dur-snap) var(--ease-exit) forwards;
   }
   .ui-command {
     display: flex;
@@ -519,8 +537,14 @@
   .ui-command--inline {
     width: 100%;
   }
+  .ui-command {
+    transform-origin: 50% 0;
+  }
   .ui-command[data-entering] {
-    animation: ui-modal-in var(--dur-snap) var(--ease-snap);
+    animation: ui-command-in var(--dur-quick) var(--ease);
+  }
+  .ui-command[data-exiting] {
+    animation: ui-command-out var(--dur-snap) var(--ease-exit) forwards;
   }
   .ui-command__dialog {
     display: flex;

@@ -1,15 +1,21 @@
 import {
   forwardRef,
+  useCallback,
   useId,
+  useLayoutEffect,
+  useRef,
+  useState,
   type HTMLAttributes,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type CSSProperties,
   type ReactNode,
   type Ref
 } from 'react'
 import { X } from 'lucide-react'
 import { cx } from './cx'
+import { inkGeometry } from './motion-model'
 import './PanelTabs.css'
 
 export interface PanelTabCloseButtonProps {
@@ -152,10 +158,55 @@ function tabsOf(list: HTMLElement): HTMLButtonElement[] {
   return [...list.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
 }
 
+interface Ink {
+  x: number
+  width: number
+  settled: boolean
+}
+
+function usePanelTabInk(plain: boolean | undefined): { listRef: (node: HTMLDivElement | null) => void; ink: Ink | null } {
+  const list = useRef<HTMLDivElement | null>(null)
+  const [ink, setInk] = useState<Ink | null>(null)
+  const measure = useCallback(() => {
+    const node = list.current
+    const active = node?.querySelector<HTMLElement>(':scope > .ui-ptab[data-active="1"]')
+    if (!node || !active || plain) {
+      setInk((current) => (current === null ? current : null))
+      return
+    }
+    const next = inkGeometry({ left: active.offsetLeft, width: active.offsetWidth }, { left: 0, width: node.clientWidth }, 0)
+    setInk((current) => {
+      if (current && current.x === next.x && current.width === next.width) return current
+      return { ...next, settled: current !== null }
+    })
+  }, [plain])
+  useLayoutEffect(() => {
+    measure()
+  })
+  useLayoutEffect(() => {
+    const node = list.current
+    if (!node) return
+    const observer = new ResizeObserver(() => measure())
+    observer.observe(node)
+    for (const child of Array.from(node.children)) observer.observe(child)
+    return () => observer.disconnect()
+  })
+  const listRef = useCallback((node: HTMLDivElement | null) => {
+    list.current = node
+  }, [])
+  return { listRef, ink }
+}
+
 export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(function PanelTabList(
-  { label, plain, className, children, onCloseFocused, onContextMenuFocused, onKeyDown: onKeyDownProp, onWheel: onWheelProp, ...rest },
+  { label, plain, className, children, onCloseFocused, onContextMenuFocused, onKeyDown: onKeyDownProp, onWheel: onWheelProp, style, ...rest },
   ref
 ) {
+  const { listRef, ink } = usePanelTabInk(plain)
+  const attach = (node: HTMLDivElement | null): void => {
+    listRef(node)
+    if (typeof ref === 'function') ref(node)
+    else if (ref) ref.current = node
+  }
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     onKeyDownProp?.(event)
     if (event.defaultPrevented) return
@@ -197,11 +248,13 @@ export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(functi
   return (
     <div
       {...rest}
-      ref={ref}
+      ref={attach}
       role="tablist"
       aria-label={label}
       aria-orientation="horizontal"
       className={cx('ui-ptabs', plain && 'ui-ptabs--plain', className)}
+      data-ink={ink ? (ink.settled ? 'settled' : 'placed') : undefined}
+      style={ink ? ({ ...style, '--ink-x': `${ink.x}px`, '--ink-w': `${ink.width}px` } as CSSProperties) : style}
       onKeyDown={onKeyDown}
       onWheel={(event) => {
         onWheelProp?.(event)
@@ -211,6 +264,7 @@ export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(functi
         list.scrollLeft += delta
       }}
     >
+      {ink ? <span className="ui-ptabs__ink" aria-hidden /> : null}
       {children}
     </div>
   )
