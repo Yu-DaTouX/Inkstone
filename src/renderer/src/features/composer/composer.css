@@ -475,8 +475,7 @@
   }
 
   .composer-tools > .mtp-wrap {
-    flex: 0 1 auto;
-    min-width: 0;
+    display: contents;
   }
 
   .composer-tools {
@@ -484,7 +483,7 @@
     align-items: center;
     gap: var(--s-2);
     flex: 1 1 0;
-    min-width: min-content;
+    min-width: 0;
     overflow: hidden;
     padding: var(--s-4);
     margin: calc(-1 * var(--s-4));
@@ -778,6 +777,23 @@
   @container (max-width: 480px) {
     .composer-bar .ctx-ring-text {
       display: none;
+    }
+  }
+
+  @container (max-width: 560px) {
+    .composer-bar .mtp-think-icon {
+      display: none;
+    }
+  }
+
+  @container (max-width: 360px) {
+    .composer-bar {
+      flex-wrap: wrap;
+      row-gap: var(--s-4);
+    }
+
+    .composer-tools {
+      flex: 1 0 100%;
     }
   }
 
