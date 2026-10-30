@@ -624,7 +624,7 @@ async function main() {
     ok(nullMds.every((el) => typeof el.props.messageId === 'string' && el.props.messageId.length > 0), '身份未知时仍传真实 messageId', nullMds.map((el) => el.props.messageId))
   }
 
-  group('TurnView 元信息：每轮统一为「时间 · 模型 · 复制」，末轮与换模型的回合常驻，其余悬停显示')
+  group('TurnView 元信息：每轮都常驻「时间 · 模型 · 复制」')
   {
     const turn = assistantOf(baseMessages())
     const metaOf = (props, source = turn) => {
@@ -637,25 +637,17 @@ async function main() {
     const clock = (root) => parts(root).find((child) => child.props?.className === 'v3-msg-meta-part')
     const order = (root) => parts(root).map((child) => child.props?.className ?? child.props?.['data-testid'])
     const last = metaOf({ tail: true }, { ...turn, model: 'prov/model-x' })
-    ok(last.el?.props.tail === true && last.root?.props['data-testid'] === 'v3-turn-meta' && last.root.props['data-reveal'] === undefined, '最后一轮：元信息行常驻', last.root?.props['data-reveal'])
+    ok(last.root?.props['data-testid'] === 'v3-turn-meta' && last.root.props['data-reveal'] === undefined, '最后一轮：元信息行常驻', last.root?.props['data-reveal'])
     ok(parts(last.root).every((child) => child.props?.['data-reveal'] === undefined), '最后一轮：各项一起显示，不再只剩模型名', parts(last.root).map((child) => child.props?.['data-reveal']))
     ok(!clock(last.root) || !model(last.root) || order(last.root).indexOf('v3-msg-meta-part') < order(last.root).indexOf('v3-act-model'), '时间排在模型名之前', order(last.root))
     ok(!model(last.root) || model(last.root).props.className === 'v3-act-model', '模型名仍在', model(last.root)?.props)
-    const history = metaOf({ tail: false })
-    ok(history.el?.props.tail === false && history.root?.props['data-reveal'] === 'hover', '历史轮：元信息改为悬停显示（仍渲染，占位保留）', history.root?.props['data-reveal'])
-    const shifted = metaOf({ tail: false, modelShift: true })
-    ok(shifted.root?.props['data-reveal'] === undefined, '换模型的历史轮：整行常驻', shifted.root?.props['data-reveal'])
-    const unordered = metaOf({})
-    ok(unordered.el?.props.tail === true, '调用方不区分末轮时：按末轮处理', unordered.el?.props.tail)
-    for (const reason of ['stopped', 'interrupted']) {
-      const tree = renderTurn({ ...turn, terminalReason: reason }, { sessionId: 'sess-a', streaming: false, tail: false })
-      const el = byTypeName(tree, 'TurnMeta')[0]
-      const root = el ? rt.render(el.type, el.props) : null
-      ok(root?.props['data-reveal'] === undefined, `历史轮以 ${reason} 结束：元信息带终止状态，保持常驻`, root?.props['data-reveal'])
-    }
-    const completed = renderTurn({ ...turn, terminalReason: 'completed' }, { sessionId: 'sess-a', streaming: false, tail: false })
-    const completedEl = byTypeName(completed, 'TurnMeta')[0]
-    ok((completedEl ? rt.render(completedEl.type, completedEl.props) : null)?.props['data-reveal'] === 'hover', '历史轮正常收尾：仍然悬停才显示')
+    const history = metaOf({ tail: false }, { ...turn, model: 'prov/model-x' })
+    ok(history.root?.props['data-testid'] === 'v3-turn-meta' && history.root.props['data-reveal'] === undefined, '历史轮：元信息同样常驻', history.root?.props['data-reveal'])
+    ok(!!model(history.root) && (!turn.timestamp || !!clock(history.root)), '历史轮：时间与模型都在', order(history.root))
+    const quiet = metaOf({ tail: false }, { ...turn, model: 'prov/model-x', response: null, segments: turn.segments.map((segment) => ({ ...segment, response: null })) })
+    ok(!!quiet.root && !!model(quiet.root), '历史轮没有正文：仍显示时间与模型', quiet.root ? order(quiet.root) : null)
+    const untimed = metaOf({ tail: false }, { ...turn, timestamp: undefined, model: 'prov/model-x' })
+    ok(!clock(untimed.root) && !!model(untimed.root), '缺时间：不显示时间项，其余照常', untimed.root ? order(untimed.root) : null)
     const live = renderTurn(turn, { sessionId: 'sess-a', streaming: true, tail: true })
     ok(byTypeName(live, 'TurnMeta').length === 0, '运行中的回合不渲染元信息行（保持现状）')
   }

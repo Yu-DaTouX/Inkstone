@@ -31,7 +31,7 @@ await build({
   outfile,
   logLevel: 'silent'
 })
-const { splitDecision, decisionTitle, replyFileLinks, outcomeFiles, turnAnswers, userTurnOrdinals } = await import(pathToFileURL(posix(outfile)).href)
+const { splitDecision, decisionTitle, replyFileLinks, outcomeFiles, turnAnswers, userTurnOrdinals, decisionOutcomes, leadSentence } = await import(pathToFileURL(posix(outfile)).href)
 await rm(outdir, { recursive: true, force: true })
 
 process.stdout.write('\n▌待决策：只取答复末段的提问\n')
@@ -106,6 +106,27 @@ process.stdout.write('\n▌回合序号：只数用户回合\n')
   ]
   const ordinals = userTurnOrdinals(turns)
   ok(ordinals.get('u1') === 1 && ordinals.get('u2') === 2 && !ordinals.has('a1') && !ordinals.has('n1'), '用户回合按出现顺序编号', [...ordinals])
+}
+
+process.stdout.write('\n▌决策卡结局：取下一轮结论首句或状态\n')
+{
+  const reply = (text, extra = {}) => ({ kind: 'assistant', id: extra.id, segments: [{ response: { text } }], response: { text }, streaming: false, ...extra })
+  const turns = [
+    { kind: 'user', id: 'u1', msg: { text: '发布吧' } },
+    reply('现在公开发布吗？', { id: 'a1' }),
+    { kind: 'user', id: 'u2', msg: { text: '公开发布' } },
+    reply('**Inkstone 0.13.0 已公开发布**，GitHub 上标为 Latest。附带文件见下。', { id: 'a2' }),
+    { kind: 'user', id: 'u3', msg: { text: '再发手机版' } },
+    reply('', { id: 'a3', streaming: true }),
+    { kind: 'user', id: 'u4', msg: { text: '停' } },
+    reply('做了一半', { id: 'a4', terminalReason: 'stopped' })
+  ]
+  const outcomes = decisionOutcomes(turns)
+  ok(outcomes.get('a1')?.state === 'done' && outcomes.get('a1').text === 'Inkstone 0.13.0 已公开发布，GitHub 上标为 Latest。', '已回复：结局取下一轮答复首句，去掉 Markdown 标记', outcomes.get('a1'))
+  ok(outcomes.get('a2')?.state === 'running', '下一轮还在跑：结局为进行中', outcomes.get('a2'))
+  ok(outcomes.get('a3')?.state === 'stopped', '下一轮被中止：结局为已中止', outcomes.get('a3'))
+  ok(!outcomes.has('a4'), '没有后续回复：不给结局', outcomes.get('a4'))
+  ok(leadSentence('- 第一项很长' + '字'.repeat(200)).length <= 120, '首句过长时截断', leadSentence('- 第一项很长' + '字'.repeat(200)).length)
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

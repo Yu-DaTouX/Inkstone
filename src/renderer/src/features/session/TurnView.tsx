@@ -43,14 +43,14 @@ import { stripImageNotice } from './effective-messages'
 import { isHistoryQuestionCall } from './question-receipt'
 import { QuestionHistory } from './QuestionReceipt'
 import { DecisionBlock, TurnResult } from './TurnOutcome'
-import { turnChangeSet } from './turn-process'
-import { splitDecision } from './turn-outcome'
+import { turnChangeSet, turnSpanMs } from './turn-process'
+import { splitDecision, type DecisionOutcome } from './turn-outcome'
 
-export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, modelShift = false, answer, ordinal }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; modelShift?: boolean; answer?: string | null; ordinal?: number }): JSX.Element | null {
+export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, answer, outcome = null, ordinal }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null; ordinal?: number }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} ordinal={ordinal} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
-  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} modelShift={modelShift} answer={answer} />
+  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} answer={answer} outcome={outcome} />
 })
 
 function UserTurnView({ turn, readOnly, rewindOwner, branchPager, ordinal }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding; ordinal?: number }): JSX.Element | null {
@@ -220,7 +220,7 @@ function replyText(turn: AssistantTurn): string {
   return text
 }
 
-function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail, modelShift, answer }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail?: boolean; modelShift: boolean; answer?: string | null }): JSX.Element | null {
+function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail, answer, outcome }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail?: boolean; answer?: string | null; outcome: DecisionOutcome | null }): JSX.Element | null {
   const sourceTurn = useMemo(() => withoutWrapUp(rawTurn), [rawTurn])
   const view = useTranscriptView(sessionId)
   const inline = showsThinkingInline(view)
@@ -234,6 +234,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const changeCwd = sourceTurn.response?.sourceCwd || sessionCwd || undefined
   const changes = useMemo(() => (streaming ? null : turnChangeSet(sourceTurn, changeCwd)), [streaming, sourceTurn, changeCwd])
   const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, s.messages, !!streaming)))
+  const spanMs = useStore((s) => (streaming || sourceTurn.elapsedMs ? undefined : turnSpanMs(s.messages, sourceTurn.sourceIds, sourceTurn.tools)))
   const showCompaction = useStore((s) => {
     if (s.session?.compaction) return edge.last
     if (!s.session?.lastCompaction) return false
@@ -293,7 +294,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   turnId={turn.id}
                   approvalIds={approvalIds}
                   glowId={glowId}
-                  elapsedMs={sourceTurn.elapsedMs}
+                  elapsedMs={sourceTurn.elapsedMs ?? spanMs}
                   filesShownBelow={!!changes}
                 />
               ) : null}
@@ -372,9 +373,9 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
           {!streaming ? <TurnResult turn={sourceTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} /> : null}
-          {decision && split?.reply && answer !== undefined ? <DecisionBlock question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} /> : null}
+          {decision && split?.reply && answer !== undefined ? <DecisionBlock question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
           {!streaming && wrapUp ? <WrapUpCard card={wrapUp} dismissKey={wrapUpKey(sessionId, wrapUp.callId)} /> : null}
-          {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} tail={tail ?? true} modelShift={modelShift} /> : null}
+          {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
           {showCompaction ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
@@ -435,7 +436,7 @@ function useCopyState(): [CopyState, (next: CopyState) => void] {
   return [copyState, setCopyState]
 }
 
-function TurnMeta({ turn, readOnly, tail, modelShift }: { turn: AssistantTurn; readOnly: boolean; tail: boolean; modelShift: boolean }): JSX.Element | null {
+function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }): JSX.Element | null {
   const t = useT()
   const models = useStore((s) => s.models)
   const [copyState, setCopyState] = useCopyState()
@@ -443,12 +444,10 @@ function TurnMeta({ turn, readOnly, tail, modelShift }: { turn: AssistantTurn; r
   const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
   const modelDisplay = turn.model ? turnModelLabel(turn.model, models) : null
   const stopLabel = turn.terminalReason === 'stopped' ? t('act.stopped') : turn.terminalReason === 'interrupted' ? t('act.interrupted') : null
-  if (!reply && !turn.timestamp && !elapsed && !turn.model) return null
-  if (!reply && !tail && !stopLabel) return null
-  const pinned = tail || modelShift || !!stopLabel
+  if (!reply && !turn.timestamp && !turn.model && !stopLabel) return null
   const elapsedTip = elapsed ? `${elapsed} \u00b7 ${turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}` : undefined
   return (
-    <div className="v3-msg-meta v3-turn-meta" data-testid="v3-turn-meta" data-reveal={pinned ? undefined : 'hover'}>
+    <div className="v3-msg-meta v3-turn-meta" data-testid="v3-turn-meta">
       {turn.timestamp ? <span className="v3-msg-meta-part" title={elapsedTip}><TurnClock timestamp={turn.timestamp} /></span> : null}
       {modelDisplay ? <span className="v3-act-model" title={elapsedTip ? `${modelDisplay.identity}\n${elapsedTip}` : modelDisplay.identity}>{modelDisplay.label}</span> : null}
       {stopLabel ? <span className="v3-msg-meta-stop">{stopLabel}</span> : null}

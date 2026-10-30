@@ -1,5 +1,5 @@
 import { classifyLink } from '../../../../shared/links'
-import type { Turn } from '../../../../shared/turns'
+import type { AssistantTurn, Turn } from '../../../../shared/turns'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 
 const DECISION_MAX_CHARS = 320
@@ -101,6 +101,58 @@ export function turnAnswers(turns: readonly Turn[]): Map<string, string | null> 
     else if (next.kind === 'user') answers.set(turn.id, (next.msg.text ?? '').trim())
   })
   return answers
+}
+
+export type DecisionOutcome =
+  | { state: 'running' }
+  | { state: 'failed' }
+  | { state: 'stopped' }
+  | { state: 'done'; text: string }
+
+const OUTCOME_MAX_CHARS = 120
+
+function finalReply(turn: AssistantTurn): string {
+  for (let i = turn.segments.length - 1; i >= 0; i -= 1) {
+    const text = turn.segments[i].response?.text
+    if (text?.trim()) return text
+  }
+  return turn.response?.text ?? ''
+}
+
+export function leadSentence(text: string): string {
+  const plain = text
+    .replace(/^(\s*)(```|~~~)[\s\S]*?^\s*\2/gm, ' ')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s*(?:#{1,6}|>|[-*+]|\d+[.)])\s+/gm, '')
+    .replace(/[`*_~|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const first = sentencesOf(plain)[0] ?? ''
+  return first.length > OUTCOME_MAX_CHARS ? `${first.slice(0, OUTCOME_MAX_CHARS - 1).trimEnd()}\u2026` : first
+}
+
+function outcomeOf(turn: AssistantTurn): DecisionOutcome | null {
+  if (turn.streaming) return { state: 'running' }
+  if (turn.terminalReason === 'stopped' || turn.terminalReason === 'interrupted') return { state: 'stopped' }
+  if (turn.terminalReason === 'failed' || (turn.error && !turn.errorRecovered)) return { state: 'failed' }
+  const text = leadSentence(finalReply(turn))
+  return text ? { state: 'done', text } : null
+}
+
+export function decisionOutcomes(turns: readonly Turn[]): Map<string, DecisionOutcome> {
+  const outcomes = new Map<string, DecisionOutcome>()
+  turns.forEach((turn, index) => {
+    if (turn.kind !== 'assistant' || turns[index + 1]?.kind !== 'user') return
+    let next: AssistantTurn | null = null
+    for (let i = index + 2; i < turns.length; i += 1) {
+      const later = turns[i]
+      if (later.kind === 'user') break
+      if (later.kind === 'assistant') next = later
+    }
+    const outcome = next ? outcomeOf(next) : null
+    if (outcome) outcomes.set(turn.id, outcome)
+  })
+  return outcomes
 }
 
 export function userTurnOrdinals(turns: readonly Turn[]): Map<string, number> {

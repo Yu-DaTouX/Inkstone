@@ -195,22 +195,14 @@ export function splitChangePath(path: string, cwd?: string): { dir: string; base
   return { dir, base }
 }
 
-export interface TurnChangeGroup {
+export interface TurnChangeRow {
+  file: TurnFileChange
   dir: string
-  files: { file: TurnFileChange; base: string }[]
-  added: number
-  removed: number
+  base: string
 }
 
-export function groupChangesByDir(files: readonly TurnFileChange[], cwd?: string): TurnChangeGroup[] {
-  const groups = new Map<string, TurnChangeGroup>()
-  for (const file of files) {
-    const { dir, base } = splitChangePath(file.path, cwd)
-    const group = groups.get(dir) ?? { dir, files: [], added: 0, removed: 0 }
-    group.files.push({ file, base })
-    group.added += Math.max(0, file.added)
-    group.removed += Math.max(0, file.removed)
-    groups.set(dir, group)
-  }
-  return [...groups.values()]
+export function changeRows(files: readonly TurnFileChange[], cwd?: string): TurnChangeRow[] {
+  const rows = files.map((file) => ({ file, ...splitChangePath(file.path, cwd) }))
+  const key = (row: TurnChangeRow): string => `${row.dir}${row.base}`.toLowerCase()
+  return rows.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
 }

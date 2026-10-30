@@ -5,13 +5,17 @@
   .v3-decision-title { text-wrap: pretty; }
   .v3-decision-status { flex: none; margin-top: 1px; }
   .v3-decision-body { padding: var(--s-4) var(--s-12) var(--s-10); }
-  .v3-decision[data-state='answered'] .v3-decision-body .v3-prose { color: var(--fg2); }
+  .v3-decision[data-state='answered'] .v3-decision-body .v3-prose { color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); }
+  .v3-decision-trail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s-4) var(--s-12); margin: 0; padding: var(--s-8) var(--s-12); border-top: var(--hair, 1px) solid var(--line); font-size: var(--t-body); line-height: var(--t-body-lh); }
+  .v3-decision-step { display: contents; }
+  .v3-decision-step > dt { color: var(--fg3); }
+  .v3-decision-step > dd { min-width: 0; margin: 0; color: var(--fg); }
+  .v3-decision-step[data-kind='reply'] > dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-decision-step[data-state='running'] > dd { color: var(--run-t); }
+  .v3-decision-step[data-state='failed'] > dd { color: var(--fail-t); }
+  .v3-decision-step[data-state='stopped'] > dd { color: var(--stall-t); }
 
   .v3-result { display: flex; flex-direction: column; min-width: 0; margin-top: var(--s-2); border-radius: var(--r-md); box-shadow: var(--shadow-ring); overflow: hidden; }
   .v3-result:empty { display: none; }
-  .v3-result > * + * { border-top: var(--hair, 1px) solid var(--line); }
-
-  .v3-outcome { display: flex; align-items: center; gap: var(--s-10); min-width: 0; padding: var(--s-2) var(--s-4) var(--s-2) var(--s-12); }
   .v3-result-label { flex: none; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--size-btn); font-weight: var(--w-regular); white-space: nowrap; }
-  .v3-outcome-files { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); min-width: 0; }
 }

@@ -30,8 +30,7 @@ import {
   type BranchPagerRequest
 } from './branch-pager-model'
 import { countUserMessages, mergeApprovalLogCached, withoutImageNotices } from './effective-messages'
-import { modelShiftTurnIds } from './turn-model-label'
-import { turnAnswers, userTurnOrdinals } from './turn-outcome'
+import { decisionOutcomes, turnAnswers, userTurnOrdinals } from './turn-outcome'
 import { messageEntrySignature } from './turn-lines'
 import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
@@ -245,8 +244,8 @@ export function SessionView(): JSX.Element {
   const visibleMessages = useMemo(() => withoutImageNotices(effectiveMessages), [effectiveMessages])
   const projectedMessages = useMemo(() => withoutWrapUpMessages(visibleMessages), [visibleMessages])
   const turns = useMemo(() => projectTurns(projectedMessages, streamingId), [projectedMessages, streamingId, projectTurns])
-  const modelShifts = useMemo(() => modelShiftTurnIds(turns), [turns])
   const answers = useMemo(() => turnAnswers(turns), [turns])
+  const outcomes = useMemo(() => decisionOutcomes(turns), [turns])
   const ordinals = useMemo(() => userTurnOrdinals(turns), [turns])
   const wrapUpBusy = !!(session?.isAgentRunning || session?.isStreaming || session?.isCompacting)
   const wrapUpOn = settings?.wrapUpCard !== false
@@ -612,7 +611,7 @@ export function SessionView(): JSX.Element {
           >
             {(item, index) => (
               <div key={`${identity}|${item.id}`} className={`v3-stream-row${index === 0 ? ' v3-stream-row--head' : ''}${index === renderTurns.length - 1 ? ' v3-stream-row--tail' : ''}`}>
-                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} modelShift={modelShifts.has(item.id)} answer={answers.get(item.id)} ordinal={ordinals.get(item.id)} />}
+                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} ordinal={ordinals.get(item.id)} />}
               </div>
             )}
           </VList>
@@ -622,7 +621,7 @@ export function SessionView(): JSX.Element {
               {turns.length === 0 ? (switchLoading ? null : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
                   ? <PendingRunNotice key={`${identity}|${item.id}`} />
-                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} modelShift={modelShifts.has(item.id)} answer={answers.get(item.id)} ordinal={ordinals.get(item.id)} />
+                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} ordinal={ordinals.get(item.id)} />
               )}
             </div>
           </div>

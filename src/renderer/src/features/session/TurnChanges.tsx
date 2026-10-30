@@ -1,7 +1,7 @@
-import { useMemo, useState, type JSX } from 'react'
+import { useMemo, type JSX } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { Folder, Undo2 } from 'lucide-react'
-import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, DiffStat } from '../../ui'
+import { Undo2 } from 'lucide-react'
+import { Button, DiffStat } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -9,15 +9,17 @@ import { openPanelTool } from '../workbench/panel-actions'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import type { UIMessage } from '../../../../shared/ipc'
 import type { AssistantTurn } from '../../../../shared/turns'
-import { groupChangesByDir, splitChangePath, type TurnChangeGroup, type TurnChanges as TurnChangeSet, type TurnFileChange, type TurnFileStatus } from './turn-changes'
+import { changeRows, type TurnChangeRow, type TurnChanges as TurnChangeSet, type TurnFileStatus } from './turn-changes'
+import type { ReplyFileLink } from './turn-outcome'
 import './turn-changes.css'
 
-const OPEN_GROUPS_UP_TO = 1
+const ROW_LIMIT = 6
 
 interface ChangesText {
   title: string
   summary: (counts: Record<TurnFileStatus, number>) => string
-  files: (n: number) => string
+  deliverables: (n: number) => string
+  more: (n: number) => string
   view: string
   undo: string
 }
@@ -29,7 +31,8 @@ const ZH: ChangesText = {
     c.modified ? `编辑 ${c.modified} 个文件` : '',
     c.deleted ? `删除 ${c.deleted} 个文件` : ''
   ].filter(Boolean).join(' · '),
-  files: (n) => `${n} 个文件`,
+  deliverables: (n) => `${n} 个交付文件`,
+  more: (n) => `还有 ${n} 个文件`,
   view: '查看更改',
   undo: '撤销'
 }
@@ -40,7 +43,8 @@ const EN: ChangesText = {
     c.modified ? `Edited ${c.modified} ${c.modified === 1 ? 'file' : 'files'}` : '',
     c.deleted ? `Deleted ${c.deleted} ${c.deleted === 1 ? 'file' : 'files'}` : ''
   ].filter(Boolean).join(' · '),
-  files: (n) => `${n} ${n === 1 ? 'file' : 'files'}`,
+  deliverables: (n) => `${n} ${n === 1 ? 'deliverable' : 'deliverables'}`,
+  more: (n) => `${n} more ${n === 1 ? 'file' : 'files'}`,
   view: 'View changes',
   undo: 'Undo'
 }
@@ -58,10 +62,20 @@ function promptBefore(messages: readonly UIMessage[], sourceIds: readonly string
   return null
 }
 
-export function TurnChanges({ turn, changes, cwd, readOnly, rewindOwner }: { turn: AssistantTurn; changes: TurnChangeSet | null; cwd?: string; readOnly: boolean; rewindOwner: string | null }): JSX.Element | null {
+const NO_DELIVERABLES: readonly ReplyFileLink[] = []
+
+export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd, previewCwd, readOnly, rewindOwner }: {
+  turn: AssistantTurn
+  changes: TurnChangeSet | null
+  deliverables?: readonly ReplyFileLink[]
+  cwd?: string
+  previewCwd?: string
+  readOnly: boolean
+  rewindOwner: string | null
+}): JSX.Element | null {
   const { lang } = useI18n()
   const openRewind = useStore((s) => s.openRewind)
-  const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({})
+  const previewFile = useStore((s) => s.previewFile)
   const wantsCheckpoint = !!changes && !readOnly && !!rewindOwner
   const checkpoints = useStore((s) => s.checkpoints)
   const owned = useMemo(
@@ -73,27 +87,29 @@ export function TurnChanges({ turn, changes, cwd, readOnly, rewindOwner }: { tur
     if (!owned.length || !anchor) return null
     return matchCheckpoint(owned, anchor.text, anchor.timestamp)?.id ?? null
   }, [anchor, owned])
-  if (!changes) return null
+  const rows = useMemo(() => (changes ? changeRows(changes.files, cwd) : []), [changes, cwd])
+  if (!rows.length && !deliverables.length) return null
 
   const text = changesText(lang)
   const prompt = checkpointId ? anchor : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
-  const single = changes.files.length === 1 ? changes.files[0] : null
-  const groups = single ? [] : groupChangesByDir(changes.files, cwd)
-  const openByDefault = groups.length <= OPEN_GROUPS_UP_TO
-  const singleBase = single ? splitChangePath(single.path, cwd).base : ''
+  const summary = [changes ? text.summary(changes.counts) : '', deliverables.length ? text.deliverables(deliverables.length) : ''].filter(Boolean).join(' \u00b7 ')
+  const single = rows.length + deliverables.length === 1
+  const shownRows = rows.length > ROW_LIMIT + 1 ? rows.slice(0, ROW_LIMIT) : rows
+  const hidden = rows.length - shownRows.length
+  const totals = changes && changes.added >= 0 && changes.added + changes.removed > 0 ? changes : null
+  const openFile = (file: ReplyFileLink): void => void previewFile(file.path, file.line, previewCwd, file.lineEnd)
 
   return (
-    <section className="v3-chg" data-testid="v3-turn-changes" aria-label={text.summary(changes.counts)}>
+    <section className="v3-chg" data-testid="v3-turn-changes" data-single={single || undefined} aria-label={`${text.title} \u00b7 ${summary}`}>
       <header className="v3-chg-head">
-        <div className="v3-chg-title" title={single ? single.path : text.summary(changes.counts)}>
+        <div className="v3-chg-title">
           <span className="v3-result-label" data-testid="v3-turn-changes-label">{text.title}</span>
-          {single ? (
-            <span className="v3-chg-path"><FileTypeIcon name={singleBase} size={14} />{singleBase}</span>
-          ) : (
-            <strong>{text.files(changes.files.length)}</strong>
-          )}
-          {changes.added >= 0 && changes.added + changes.removed > 0 ? <DiffStat className="v3-chg-stats" added={changes.added} removed={changes.removed} /> : null}
+          <span className="v3-chg-summary" data-testid="v3-turn-changes-summary">{summary}</span>
+          {single ? <span className="v3-chg-sep" aria-hidden>{'\u00b7'}</span> : null}
+          {single && rows[0] ? <ChangePath row={rows[0]} /> : null}
+          {single && deliverables[0] ? <DeliverableButton file={deliverables[0]} onOpen={openFile} /> : null}
+          {totals ? <DiffStat className="v3-chg-stats" added={totals.added} removed={totals.removed} /> : null}
         </div>
         <div className="v3-chg-actions">
           {checkpoint && prompt ? (
@@ -102,53 +118,62 @@ export function TurnChanges({ turn, changes, cwd, readOnly, rewindOwner }: { tur
               <Undo2 size={13} aria-hidden />
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" onPress={() => openPanelTool('changes')} data-testid="v3-turn-changes-view">
-            {text.view}
-          </Button>
+          {changes ? (
+            <Button size="sm" variant="ghost" onPress={() => openPanelTool('changes')} data-testid="v3-turn-changes-view">
+              {text.view}
+            </Button>
+          ) : null}
         </div>
       </header>
-      {groups.length ? (
+      {single ? null : (
         <ul className="v3-chg-list">
-          {groups.map((group) => group.dir
-            ? <ChangeGroup key={group.dir} group={group} expanded={openDirs[group.dir] ?? openByDefault} onExpandedChange={(open) => setOpenDirs((prev) => ({ ...prev, [group.dir]: open }))} />
-            : group.files.map(({ file, base }) => <ChangeRow key={file.path} file={file} base={base} />))}
+          {shownRows.map((row) => (
+            <li key={row.file.path} className="v3-chg-row" data-testid="v3-turn-changes-row" title={row.file.path}>
+              <ChangePath row={row} />
+              {row.file.added + row.file.removed > 0 ? <DiffStat className="v3-chg-stats" added={row.file.added} removed={row.file.removed} /> : null}
+            </li>
+          ))}
+          {hidden > 0 ? (
+            <li className="v3-chg-row" data-kind="more">
+              <Button size="sm" variant="ghost" className="v3-chg-more" onPress={() => openPanelTool('changes')} data-testid="v3-turn-changes-more">{text.more(hidden)}</Button>
+            </li>
+          ) : null}
+          {deliverables.map((file) => (
+            <li key={file.path} className="v3-chg-row" data-kind="deliverable">
+              <DeliverableButton file={file} onOpen={openFile} />
+              {file.label && file.label !== file.base ? <span className="v3-chg-note">{file.label}</span> : null}
+            </li>
+          ))}
         </ul>
-      ) : null}
+      )}
     </section>
   )
 }
 
-function ChangeGroup({ group, expanded, onExpandedChange }: { group: TurnChangeGroup; expanded: boolean; onExpandedChange: (open: boolean) => void }): JSX.Element {
-  const known = group.files.every(({ file }) => file.added >= 0 && file.removed >= 0)
+function ChangePath({ row }: { row: TurnChangeRow }): JSX.Element {
   return (
-    <li className="v3-chg-group">
-      <Collapsible isExpanded={expanded} onExpandedChange={onExpandedChange}>
-        <CollapsibleHeader
-          className="v3-chg-dir-head"
-          size="compact"
-          icon={<Folder size={14} aria-hidden />}
-          accessory={known && group.added + group.removed > 0 ? <DiffStat className="v3-chg-stats" added={group.added} removed={group.removed} /> : undefined}
-          data-testid="v3-turn-changes-dir"
-        >
-          <span className="v3-chg-dir" title={group.dir}>{group.dir.replace(/\/$/, '')}</span>
-        </CollapsibleHeader>
-        <CollapsiblePanel className="v3-chg-panel">
-          {expanded ? (
-            <ul className="v3-chg-sub">
-              {group.files.map(({ file, base }) => <ChangeRow key={file.path} file={file} base={base} />)}
-            </ul>
-          ) : null}
-        </CollapsiblePanel>
-      </Collapsible>
-    </li>
+    <span className="v3-chg-path" title={row.file.path}>
+      <FileTypeIcon name={row.base} size={14} />
+      <span className="v3-chg-name">
+        {row.dir ? <span className="v3-chg-dir">{row.dir}</span> : null}
+        <span className="v3-chg-base">{row.base}</span>
+      </span>
+    </span>
   )
 }
 
-function ChangeRow({ file, base }: { file: TurnFileChange; base: string }): JSX.Element {
+function DeliverableButton({ file, onOpen }: { file: ReplyFileLink; onOpen: (file: ReplyFileLink) => void }): JSX.Element {
   return (
-    <li className="v3-chg-row" data-testid="v3-turn-changes-row" title={file.path}>
-      <span className="v3-chg-path"><FileTypeIcon name={base} size={14} />{base}</span>
-      {file.added + file.removed > 0 ? <DiffStat className="v3-chg-stats" added={file.added} removed={file.removed} /> : null}
-    </li>
+    <Button
+      size="sm"
+      variant="ghost"
+      className="v3-chg-file"
+      icon={<FileTypeIcon name={file.base} size={14} />}
+      title={file.label && file.label !== file.base ? `${file.label}\n${file.path}` : file.path}
+      onPress={() => onOpen(file)}
+      data-testid="v3-turn-file"
+    >
+      {file.base}
+    </Button>
   )
 }

@@ -1,29 +1,33 @@
 import { useMemo, type JSX } from 'react'
-import { Badge, Button } from '../../ui'
+import { Badge } from '../../ui'
 import { Card, CardHead, CardTitle } from '../../ui/Card'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { TurnChanges } from './TurnChanges'
-import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useStore } from '../../state/store'
 import { Markdown } from './Markdown'
 import { useSessionText } from './text'
-import { decisionTitle, outcomeFiles, replyFileLinks } from './turn-outcome'
+import { decisionTitle, outcomeFiles, replyFileLinks, type DecisionOutcome } from './turn-outcome'
 import { WrapUpText } from './WrapUpCard'
 import type { TurnChanges as TurnChangeSet } from './turn-changes'
 import './turn-outcome.css'
 
-export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer }: {
+const OUTCOME_TEXT = { running: 'decisionRunning', failed: 'decisionFailed', stopped: 'decisionStopped' } as const
+
+export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer, outcome = null }: {
   question: string
   sourceCwd?: string
   sessionId: string | null
   messageId: string
   answer: string | null
+  outcome?: DecisionOutcome | null
 }): JSX.Element {
   const tt = useSessionText()
   const answered = answer !== null
   const status = answered ? tt('decisionReplied') : tt('wrapUpDecide')
   const { title, rest } = useMemo(() => decisionTitle(question), [question])
   const heading = title ? plainTitle(title) : ''
+  const reply = answer?.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
+  const result = !outcome ? '' : outcome.state === 'done' ? outcome.text : tt(OUTCOME_TEXT[outcome.state])
   return (
     <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} aria-label={heading.replace(/`/g, '') || status} data-testid="v3-decision">
       <CardHead className="v3-decision-head">
@@ -34,6 +38,22 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
         <div className="v3-para v3-decision-body">
           <Markdown text={rest} sourceCwd={sourceCwd} sessionId={sessionId} messageId={`${messageId}:decision`} />
         </div>
+      ) : null}
+      {answered && (reply || result) ? (
+        <dl className="v3-decision-trail" data-testid="v3-decision-trail">
+          {reply ? (
+            <div className="v3-decision-step" data-kind="reply">
+              <dt>{tt('decisionYourReply')}</dt>
+              <dd title={answer ?? undefined}>{reply}</dd>
+            </div>
+          ) : null}
+          {result && outcome ? (
+            <div className="v3-decision-step" data-kind="outcome" data-state={outcome.state}>
+              <dt>{tt('decisionOutcome')}</dt>
+              <dd>{result}</dd>
+            </div>
+          ) : null}
+        </dl>
       ) : null}
     </Card>
   )
@@ -46,41 +66,13 @@ function plainTitle(title: string): string {
 const NO_PATHS: readonly string[] = []
 
 export function TurnResult({ turn, changes, cwd, readOnly, rewindOwner, text, sourceCwd }: { turn: AssistantTurn; changes: TurnChangeSet | null; cwd?: string; readOnly: boolean; rewindOwner: string | null; text: string; sourceCwd?: string }): JSX.Element {
+  const sessionCwd = useStore((s) => s.session?.cwd)
   const changedPaths = useMemo(() => changes?.files.map((file) => file.path) ?? NO_PATHS, [changes])
+  const hasTools = turn.tools.length > 0
+  const deliverables = useMemo(() => (hasTools ? outcomeFiles(replyFileLinks(text), changedPaths) : []), [hasTools, text, changedPaths])
   return (
     <div className="v3-result" data-testid="v3-turn-result">
-      <TurnChanges turn={turn} changes={changes} cwd={cwd} readOnly={readOnly} rewindOwner={rewindOwner} />
-      {turn.tools.length ? <TurnFiles text={text} sourceCwd={sourceCwd} changedPaths={changedPaths} changed={!!changes} /> : null}
-    </div>
-  )
-}
-
-function TurnFiles({ text, sourceCwd, changedPaths, changed }: { text: string; sourceCwd?: string; changedPaths: readonly string[]; changed: boolean }): JSX.Element | null {
-  const tt = useSessionText()
-  const previewFile = useStore((s) => s.previewFile)
-  const sessionCwd = useStore((s) => s.session?.cwd)
-  const files = useMemo(() => outcomeFiles(replyFileLinks(text), changedPaths), [text, changedPaths])
-  if (!files.length) return null
-  const cwd = sourceCwd || sessionCwd || undefined
-  return (
-    <div className="v3-outcome" role="group" aria-label={tt('outcomeFiles')} data-testid="v3-turn-files">
-      <span className="v3-result-label" data-testid="v3-turn-files-label">{changed ? tt('outcomeFiles') : files.length === 1 ? tt('outcomeNoChanges1') : tt('outcomeNoChanges', { n: files.length })}</span>
-      <div className="v3-outcome-files">
-        {files.map((file) => (
-          <Button
-            key={file.path}
-            size="sm"
-            variant="ghost"
-            className="v3-outcome-file"
-            icon={<FileTypeIcon name={file.base} size={14} />}
-            title={file.label && file.label !== file.base ? `${file.label}\n${file.path}` : file.path}
-            onPress={() => void previewFile(file.path, file.line, cwd, file.lineEnd)}
-            data-testid="v3-turn-file"
-          >
-            {file.base}
-          </Button>
-        ))}
-      </div>
+      <TurnChanges turn={turn} changes={changes} deliverables={deliverables} cwd={cwd} previewCwd={sourceCwd || sessionCwd || undefined} readOnly={readOnly} rewindOwner={rewindOwner} />
     </div>
   )
 }
