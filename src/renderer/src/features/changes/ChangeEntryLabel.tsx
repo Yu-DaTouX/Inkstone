@@ -15,6 +15,8 @@ const STATUS_LETTER: Record<GitFileStatus, string> = {
   unmerged: 'U'
 }
 
+const ELIDED_DIR = '\u2026/'
+
 export function splitChangePath(path: string): { name: string; dir: string } {
   const cut = path.lastIndexOf('/')
   return cut === -1 ? { name: path, dir: '' } : { name: path.slice(cut + 1), dir: path.slice(0, cut) }
@@ -34,11 +36,18 @@ export function ChangeStatusMark({ item, lang, text }: { item: ChangeItem; lang?
 export function ChangePathLabel({ path, dir, mark }: { path: string; dir?: string; mark?: ReactNode }): ReactElement {
   const { name } = splitChangePath(path)
   const shown = dir ?? distinctChangeDirs([path]).get(path) ?? ''
+  const elided = shown.startsWith(ELIDED_DIR)
+  const visible = elided ? shown.slice(1) : shown
   return (
     <span className="changes-path" title={path}>
       {mark}
       <span className="changes-path__name">{name}</span>
-      {shown ? <MiddleTruncate value={shown} showTitle={false} className="changes-path__dir ui-meta-num" /> : null}
+      {visible ? (
+        <span className="changes-path__where">
+          {elided ? <span className="changes-path__elide" aria-hidden="true">{'\u2026'}</span> : null}
+          <MiddleTruncate value={visible} showTitle={false} className="changes-path__dir ui-meta-num" />
+        </span>
+      ) : null}
     </span>
   )
 }

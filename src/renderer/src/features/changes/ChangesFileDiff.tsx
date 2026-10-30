@@ -184,7 +184,7 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
           className="changes-file__head"
           tone="emphasized"
           rowHover
-          accessory={counts && lineCounts ? <DiffStat added={lineCounts.added} removed={lineCounts.removed} hideZero /> : undefined}
+          accessory={counts && lineCounts ? <DiffStat added={lineCounts.added} removed={lineCounts.removed} hideZero columns /> : undefined}
         >
           <ChangePathLabel path={item.path} dir={dir} mark={<ChangeStatusMark item={item} lang={lang} text={text} />} />
         </CollapsibleHeader>

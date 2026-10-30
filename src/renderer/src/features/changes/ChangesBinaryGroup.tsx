@@ -17,7 +17,7 @@ export function ChangesBinaryGroup({ items, expanded, onToggle, lang, text, dirs
   return (
     <section className="changes-file changes-binary" data-testid="changes-binary-group" data-collapsed={expanded ? undefined : ''}>
       <Collapsible isExpanded={expanded} onExpandedChange={onToggle}>
-        <CollapsibleHeader className="changes-file__head" tone="emphasized" rowHover>
+        <CollapsibleHeader className="changes-file__head changes-binary__head" rule>
           {text.binaryGroup(items.length)}
         </CollapsibleHeader>
         <CollapsiblePanel className="changes-file__body">

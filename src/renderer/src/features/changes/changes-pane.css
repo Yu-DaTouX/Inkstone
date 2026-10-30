@@ -263,10 +263,32 @@
     color: var(--fg);
   }
 
-  .changes-path__dir {
+  .changes-path__where {
+    display: inline-flex;
     flex: 0 10000 auto;
+    align-items: baseline;
     min-width: 0;
+    overflow: hidden;
+    color: var(--fg3);
     font-size: var(--t-caption);
+  }
+
+  .changes-path__elide {
+    flex: none;
+    padding-inline-end: var(--s-2);
+  }
+
+  .changes-path__dir {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .changes-binary__head {
+    margin-top: var(--s-4);
+  }
+
+  .changes-binary__head .ui-collapsible__label {
+    flex: 0 1 auto;
   }
 
   .changes-status {

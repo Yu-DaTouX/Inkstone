@@ -463,8 +463,8 @@ function ChangedRows({ files, text, onOpen }: { files: readonly RailChangedFile[
             key={file.path}
             label={name}
             title={counted ? `${file.path}\n${text.linesChanged(file.added ?? 0, file.removed ?? 0)}` : file.path}
-            icon={<FileTypeIcon name={name} size={16} />}
-            value={unchangedLines ? undefined : counted ? <RailValue glyph={{ kind: 'delta', added: file.added ?? 0, removed: file.removed ?? 0 }} /> : outputFolder(file.path) || undefined}
+            icon={<FileTypeIcon name={name} size={16} mono />}
+            value={unchangedLines ? undefined : counted ? <RailValue glyph={{ kind: 'delta', added: file.added ?? 0, removed: file.removed ?? 0, quiet: true }} /> : outputFolder(file.path) || undefined}
             onPress={onOpen}
           />
         )
