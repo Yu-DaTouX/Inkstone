@@ -50,7 +50,8 @@ import {
   KbdGroup,
   ListRow,
   Notice,
-  Spinner
+  Spinner,
+  usePresence
 } from '../../ui'
 import { SHORTCUTS, type ShortcutId } from '../../app/shortcuts'
 import {
@@ -136,7 +137,8 @@ function shortcutKeys(id: ShortcutId): readonly string[] | undefined {
 }
 
 export function CommandPalette(props: CommandPaletteProps): ReactElement | null {
-  return props.isOpen ? <CommandPaletteBody {...props} /> : null
+  const presence = usePresence(props.isOpen, { exit: 'snap' })
+  return presence.present ? <CommandPaletteBody {...props} /> : null
 }
 
 const NO_MESSAGES: readonly UIMessage[] = []
@@ -533,10 +535,8 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
     }
   }
 
-  if (!isOpen) return null
-
   return (
-    <CommandSurface isOpen onOpenChange={onOpenChange} aria-label={text.paletteLabel} className="cmd-surface">
+    <CommandSurface isOpen={isOpen} onOpenChange={onOpenChange} aria-label={text.paletteLabel} className="cmd-surface">
       <CommandSurfaceHeader>
         <InputGroup>
           <InputGroupAddon align="start">

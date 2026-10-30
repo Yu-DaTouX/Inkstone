@@ -13,7 +13,8 @@ import './turn-outcome.css'
 
 const OUTCOME_TEXT = { running: 'decisionRunning', failed: 'decisionFailed', stopped: 'decisionStopped' } as const
 
-export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer, outcome = null }: {
+export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer, outcome = null, arrive = false }: {
+  arrive?: boolean
   question: string
   sourceCwd?: string
   sessionId: string | null
@@ -29,7 +30,7 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
   const reply = answer?.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
   const result = !outcome ? '' : outcome.state === 'done' ? outcome.text : tt(OUTCOME_TEXT[outcome.state])
   return (
-    <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} aria-label={heading.replace(/`/g, '') || status} data-testid="v3-decision">
+    <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} data-arrive={arrive ? '' : undefined} aria-label={heading.replace(/`/g, '') || status} data-testid="v3-decision">
       <CardHead className="v3-decision-head">
         <CardTitle className="v3-decision-title" data-testid="v3-decision-title">{heading ? <WrapUpText text={heading} /> : status}</CardTitle>
         {heading ? <Badge tone={answered ? 'neutral' : 'ask'} className="v3-decision-status" data-testid="v3-decision-status">{status}</Badge> : null}
@@ -65,13 +66,13 @@ function plainTitle(title: string): string {
 
 const NO_PATHS: readonly string[] = []
 
-export function TurnResult({ turn, changes, cwd, readOnly, rewindOwner, text, sourceCwd }: { turn: AssistantTurn; changes: TurnChangeSet | null; cwd?: string; readOnly: boolean; rewindOwner: string | null; text: string; sourceCwd?: string }): JSX.Element {
+export function TurnResult({ turn, changes, cwd, readOnly, rewindOwner, text, sourceCwd, arrive = false }: { turn: AssistantTurn; changes: TurnChangeSet | null; cwd?: string; readOnly: boolean; rewindOwner: string | null; text: string; sourceCwd?: string; arrive?: boolean }): JSX.Element {
   const sessionCwd = useStore((s) => s.session?.cwd)
   const changedPaths = useMemo(() => changes?.files.map((file) => file.path) ?? NO_PATHS, [changes])
   const hasTools = turn.tools.length > 0
   const deliverables = useMemo(() => (hasTools ? outcomeFiles(replyFileLinks(text), changedPaths) : []), [hasTools, text, changedPaths])
   return (
-    <div className="v3-result" data-testid="v3-turn-result">
+    <div className="v3-result" data-testid="v3-turn-result" data-arrive={arrive ? '' : undefined}>
       <TurnChanges turn={turn} changes={changes} deliverables={deliverables} cwd={cwd} previewCwd={sourceCwd || sessionCwd || undefined} readOnly={readOnly} rewindOwner={rewindOwner} />
     </div>
   )

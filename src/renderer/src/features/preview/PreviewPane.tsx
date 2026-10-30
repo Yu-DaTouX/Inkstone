@@ -3,6 +3,7 @@ import { BookOpen, Code2, Copy, Download, FileText, Folder, FolderOpen, Image as
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
+import { CondensingHeader, useCondensingHeader } from '../../ui/Motion'
 import type { OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { latestArtifactVersions, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
@@ -510,6 +511,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
 
   usePaneMenu('preview-view', activeAbs ? viewSettingsMenu(viewSettings, setViewSetting, text) : [])
 
+  const condense = useCondensingHeader(activeAbs || activePath || '', { accept: acceptsCondenseScroll })
   const mergedHead = !!chrome && !!tabStrip
   const remoteNoticeInBar = !!chrome && !!activeAbs
   const barNotice = remoteNoticeInBar ? <RemoteImagesNotice group={remoteImages} text={text} inBar /> : null
@@ -533,18 +535,45 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
     ) : null
   const pathRow = mergedHead ? null : chrome && activeAbs ? (
     <div className="v3-preview-pathbar" data-testid="v3-preview-pathbar">
-      {crumbNav ?? (
-        <span className="v3-preview-pathname" title={activeAbs}>
-          {name}
-        </span>
+      {crumbNav ? (
+        <CondensingHeader
+          state={condense}
+          className="v3-preview-pathfold"
+          compact={
+            <span className="v3-preview-pathname" data-compact title={activeAbs}>
+              {name}
+            </span>
+          }
+        >
+          {crumbNav}
+        </CondensingHeader>
+      ) : (
+        <CondensingHeader
+          state={condense}
+          className="v3-preview-pathfold"
+          compact={
+            <span className="v3-preview-pathname" data-compact title={activeAbs}>
+              {name}
+            </span>
+          }
+        >
+          <span className="v3-preview-pathstack" title={activeAbs}>
+            <span className="v3-preview-pathname">{name}</span>
+            <span className="v3-preview-pathdir ui-meta-path">{crumbs.length > 1 ? crumbs.slice(0, -1).join('/') : activeAbs.replace(/[\\/][^\\/]*$/, '')}</span>
+          </span>
+        </CondensingHeader>
       )}
       {barNotice}
       <span className="v3-preview-pathtools">{toolButtons}</span>
     </div>
-  ) : crumbNav
+  ) : crumbNav ? (
+    <CondensingHeader state={condense} compact={null}>
+      {crumbNav}
+    </CondensingHeader>
+  ) : null
 
   return (
-    <section className="v3-preview" data-testid="v3-preview" aria-label={text.title}>
+    <section className="v3-preview" data-testid="v3-preview" aria-label={text.title} onScrollCapture={pathRow ? condense.onScrollCapture : undefined}>
       {chrome ? (
         mergedHead ? (
           <>
@@ -687,6 +716,10 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
       ) : null}
     </section>
   )
+}
+
+function acceptsCondenseScroll(scroller: HTMLElement): boolean {
+  return scroller.clientHeight >= 160 && scroller.scrollHeight > scroller.clientHeight
 }
 
 function PreviewBody({

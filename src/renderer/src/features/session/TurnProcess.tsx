@@ -115,7 +115,7 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
           </span>
         </CollapsibleHeader>
       )}
-      <CollapsiblePanel className="v3-step-panel">{open ? body : null}</CollapsiblePanel>
+      <CollapsiblePanel animated className="v3-step-panel">{open ? body : null}</CollapsiblePanel>
       {stage ? body : null}
     </Collapsible>
   )

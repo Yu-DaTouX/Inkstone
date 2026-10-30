@@ -291,6 +291,25 @@
     padding: 0;
   }
 
+  .v3-preview-pathfold {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-content: center;
+  }
+
+  .v3-preview-pathfold .ui-condense__clip {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .v3-preview-pathstack {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding-block: var(--s-6);
+  }
+
   .v3-preview-pathname {
     flex: 1;
     min-width: 0;

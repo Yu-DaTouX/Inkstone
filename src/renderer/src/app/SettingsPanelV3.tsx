@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, type ReactElement } from 'react'
 import { useStore } from '../state/store'
+import { usePresence } from '../ui'
 import { consumeSettingsHash, installSettingsDeepLink } from '../features/settings/root/deep-link'
 
 installSettingsDeepLink()
@@ -17,6 +18,7 @@ function closeSettings(): void {
 
 export function SettingsPanelV3({ onShowOnboarding }: SettingsPanelV3Props = {}): ReactElement | null {
   const open = useStore((s) => s.settingsOpen)
+  const presence = usePresence(open)
 
   useEffect(() => {
     const idle = window.requestIdleCallback(() => { void loadSettings().catch(() => undefined) }, { timeout: 2000 })
@@ -32,10 +34,11 @@ export function SettingsPanelV3({ onShowOnboarding }: SettingsPanelV3Props = {})
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  if (!open) return null
+  if (!presence.present) return null
   return (
     <Suspense fallback={null}>
       <SettingsPage
+        isOpen={open}
         onClose={closeSettings}
         onShowOnboarding={
           onShowOnboarding

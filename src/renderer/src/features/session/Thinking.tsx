@@ -125,7 +125,7 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
           ) : null}
         </span>
       </CollapsibleHeader>
-      <CollapsiblePanel className="v3-step-panel">
+      <CollapsiblePanel animated className="v3-step-panel">
         {open ? (
           <div
             ref={bodyRef}

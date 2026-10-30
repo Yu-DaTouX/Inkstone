@@ -96,7 +96,7 @@
   .v3-process-head .ui-collapsible__icon { inline-size: var(--s-16); justify-content: center; }
   .v3-process-line { display: flex; flex-wrap: nowrap; align-items: center; column-gap: var(--s-6); min-width: 0; }
   .v3-process-count[data-kind='lead'] { display: block; flex: 0 1 auto; min-width: 3em; }
-  .v3-step-panel[hidden] { display: none; }
+  .v3-step-panel[hidden]:not([data-animated]) { display: none; }
   .v3-process-count { display: inline-flex; align-items: baseline; gap: var(--s-4); flex: none; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-process-count[data-kind='thinking'], .v3-process-count[data-kind='elapsed'] { flex: none; }
   .v3-process-count[data-kind='activity'] { display: block; flex: 0 1 auto; min-width: 3em; }

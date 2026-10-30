@@ -369,6 +369,14 @@
     padding-bottom: var(--s-8);
   }
 
+  .wb-tile > .wb-tile-expand {
+    margin-top: calc(-1 * var(--s-4));
+  }
+
+  .wb-tile-expand > .ui-expand__clip > .wb-tile-body {
+    padding-top: var(--s-4);
+  }
+
   .wb-tile + .wb-tile::before {
     content: '';
     position: absolute;

@@ -160,7 +160,7 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
         </span>
       </CollapsibleHeader>
       {asking ? <ApprovalCard inline /> : null}
-      <CollapsiblePanel className="v3-step-panel" aria-label={label}>
+      <CollapsiblePanel animated className="v3-step-panel" aria-label={label}>
         {open ? (
           <div className="v3-step-nest" data-testid="v3-step-group-list">
             {members.map((member) => <MemoStepNode key={member.node.call.id} node={member.node} glowId={glowId} depth={1} repeat={member.repeat} />)}
@@ -223,7 +223,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
         </span>
       </CollapsibleHeader>
       {asking ? <ApprovalCard inline /> : call.approval ? <ApprovalReceipt approval={call.approval} /> : null}
-      <CollapsiblePanel className="v3-step-panel">{open ? <StepDetail call={call} /> : null}</CollapsiblePanel>
+      <CollapsiblePanel animated className="v3-step-panel">{open ? <StepDetail call={call} /> : null}</CollapsiblePanel>
       {nested.shown.length ? (
         <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>
           {nested.earlier ? (

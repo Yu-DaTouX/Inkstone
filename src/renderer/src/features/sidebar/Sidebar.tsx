@@ -3,8 +3,8 @@ import { Archive, PanelLeftClose, Search, Settings, FolderPlus, SquarePen, Unplu
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { Avatar, Button, Dialog, DialogFooter, EmptyState, IconButton, ListRow, Modal, ModalOverlay, SearchField, StatusDot, type StatusDotKind } from '../../ui'
-import { SESSION_FOLDER_DROP_EVENT, type SessionFolderDrop } from './session-drag'
+import { Avatar, Button, Dialog, DialogFooter, EmptyState, IconButton, ListRow, Modal, ModalOverlay, MotionList, SearchField, StatusDot, type StatusDotKind } from '../../ui'
+import { SESSION_FOLDER_DROP_EVENT, useSessionDrag, type SessionFolderDrop } from './session-drag'
 import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
 import { BrandMark } from './BrandMark'
 import { v3Text, withShortcutKeys } from '../../app/v3-text'
@@ -33,6 +33,7 @@ import { createSidebarRunsSelector } from './sidebar-runs'
 import { setSessionOrder, useSessionNav } from './session-nav-store'
 import { useSessionJump } from './use-session-jump'
 import { useSessionFileDrop } from './use-session-file-drop'
+import { useNavigationMotionHold } from './use-navigation-motion-hold'
 import './Sidebar.css'
 
 function toggleKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
@@ -63,6 +64,8 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const [filtering, setFiltering] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [collapsedKeys, setCollapsedKeys] = useState<ReadonlySet<string>>(() => new Set())
+  const sessionDragging = !!useSessionDrag((s) => s.source)
+  useNavigationMotionHold()
   const [visibleCounts, setVisibleCounts] = useState<ReadonlyMap<string, number>>(() => new Map())
   const [announcement, setAnnouncement] = useState('')
   const [scrolled, setScrolled] = useState(false)
@@ -519,8 +522,9 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
               const page = pageOf(group)
               const rows = collapsed ? [] : page.rows
               return (
-                <div
+                <MotionList
                   key={group.slot}
+                  animate={!sessionDragging}
                   className="v3-group"
                   data-collapsed={collapsed ? '1' : undefined}
                   data-move-cwd={group.key !== 'pinned' && group.cwd ? group.cwd : undefined}
@@ -554,7 +558,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                       {page.expanded ? own.showLess : own.showMore.replace('{n}', String(page.revealable))}
                     </ListRow>
                   ) : null}
-                </div>
+                </MotionList>
               )
             })
           )}

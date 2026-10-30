@@ -3,7 +3,7 @@ import { Archive, Check, FolderOpen, FolderPlus, Link, ListFilter, MoreHorizonta
 import { useSessionDrag } from './session-drag'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { AsciiRule, Collapsible, CollapsibleHeader, Dialog, IconButton, ListRow, Menu, MenuItem, Modal, ModalOverlay, Popover, SearchField, TermSpinner } from '../../ui'
+import { AsciiRule, Collapsible, CollapsibleHeader, Dialog, IconButton, ListRow, Menu, MenuItem, Modal, ModalOverlay, MotionList, Popover, SearchField, TermSpinner } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import { FLAT_PAGE_SIZE, bucketByRecency, compactAgo, recencyBucket, sessionProjectLabel, isGlobalGroup, sessionActivityAt, sessionRowMeta, type FlatEntry, type RecencyBucket, type SidebarGroup } from './sidebar-model'
@@ -511,6 +511,7 @@ export function WorkingShelf({
   const now = useMinuteClock()
   const [open, setOpen] = useState(() => readShelfOpen(WORKING_OPEN_KEY))
   const shown = open ? entries : entries.filter((entry) => rowState(entry.session).isCurrent)
+  const dragging = !!useSessionDrag((s) => s.source)
   const branches = useCwdBranches(shown.map((entry) => entry.session.cwd), now)
   const shifts = projectShifts([shown])
   useEffect(() => {
@@ -536,7 +537,7 @@ export function WorkingShelf({
           {own.workingShelf}
         </CollapsibleHeader>
         {shown.length ? (
-          <div className="v3-shelf-list">
+          <MotionList className="v3-shelf-list" animate={!dragging}>
             {shown.map((entry) => (
               <FlatRow
                 key={entry.session.path}
@@ -549,7 +550,7 @@ export function WorkingShelf({
                 onOpen={onOpen}
               />
             ))}
-          </div>
+          </MotionList>
         ) : null}
       </Collapsible>
     </section>
@@ -636,12 +637,12 @@ export function FlatSessionList({
           clearLabel={own.clearScope}
         />
       ) : null}
-      <div className="v3-pin-zone" data-pin-zone data-empty={pinned.length ? undefined : '1'} data-dragging={dragging && !draggingPinned ? '1' : undefined} data-testid="v3-pin-zone">
+      <MotionList className="v3-pin-zone" animate={!dragSource} data-pin-zone data-empty={pinned.length ? undefined : '1'} data-dragging={dragging && !draggingPinned ? '1' : undefined} data-testid="v3-pin-zone">
         {pinned.length ? <RecencyRule label={text.pinnedGroup} count={pinned.length} /> : null}
         {pinned.map(render)}
         {dragging && !draggingPinned ? <div className="v3-zone-drop" aria-hidden>{own.pinDrop}</div> : null}
-      </div>
-      <div className="v3-unpin-zone" data-unpin-zone data-dragging={draggingPinned ? '1' : undefined}>
+      </MotionList>
+      <MotionList className="v3-unpin-zone" animate={!dragSource} data-unpin-zone data-dragging={draggingPinned ? '1' : undefined}>
         {draggingPinned ? <div className="v3-zone-drop" aria-hidden>{own.unpinDrop}</div> : null}
         {buckets.map((run) => (
           <Fragment key={run.bucket}>
@@ -654,7 +655,7 @@ export function FlatSessionList({
             {own.showMore.replace('{n}', String(Math.min(hidden, FLAT_PAGE_SIZE)))}
           </ListRow>
         ) : null}
-      </div>
+      </MotionList>
     </div>
   )
 }

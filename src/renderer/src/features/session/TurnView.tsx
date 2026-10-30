@@ -20,6 +20,7 @@ import { MessageFiles } from './MessageFiles'
 import { splitFileReferences } from '../composer/file-refs'
 import { Icon } from './Icon'
 import { AsciiRule, Badge, IconButton, Notice } from '../../ui'
+import { useArrival } from '../../ui/motion-hooks'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
@@ -230,6 +231,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const turnThinking = aside || (!inline && !turn.thinkingLive) ? '' : turn.thinking ?? ''
   const asideThinking = aside ? sourceTurn.thinking ?? '' : ''
   const asideFits = useAsideFit()
+  const arrived = useArrival(!!streaming)
   const sessionCwd = useStore((s) => s.session?.cwd)
   const changeCwd = sourceTurn.response?.sourceCwd || sessionCwd || undefined
   const changes = useMemo(() => (streaming ? null : turnChangeSet(sourceTurn, changeCwd)), [streaming, sourceTurn, changeCwd])
@@ -372,8 +374,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {streaming ? <LiveRunNotice /> : null}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
-          {!streaming ? <TurnResult turn={sourceTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} /> : null}
-          {decision && split?.reply && answer !== undefined ? <DecisionBlock question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
+          {!streaming ? <TurnResult turn={sourceTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
+          {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
           {!streaming && wrapUp ? <WrapUpCard card={wrapUp} dismissKey={wrapUpKey(sessionId, wrapUp.callId)} /> : null}
           {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
           {showCompaction ? <CompactCommandEcho /> : null}

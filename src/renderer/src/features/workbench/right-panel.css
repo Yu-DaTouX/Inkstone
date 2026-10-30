@@ -14,11 +14,22 @@
     flex: 1 1 auto;
     border-left: none;
   }
-  .rp[data-mode='inline'] {
-    animation: rp-open var(--dur-base) var(--ease);
+  .rp[data-mode='inline'][data-motion='opening'] {
+    animation: rp-open var(--dur-sheet) var(--ease-inout);
   }
-  .rp[data-mode='inline'] > :is(.rp-bar, .rp-body) {
-    animation: rp-hold var(--dur-base) linear;
+  .rp[data-mode='inline'][data-motion='opening'] > :is(.rp-bar, .rp-body) {
+    animation:
+      rp-hold var(--dur-sheet) linear,
+      rp-content-in var(--dur-base) var(--ease) var(--dur-quick) both;
+  }
+  .rp[data-mode='inline'][data-motion='closing'] {
+    animation: rp-close var(--dur-base) var(--ease-inout) forwards;
+    pointer-events: none;
+  }
+  .rp[data-mode='inline'][data-motion='closing'] > :is(.rp-bar, .rp-body) {
+    animation:
+      rp-hold var(--dur-base) linear forwards,
+      rp-content-out var(--dur-quick) var(--ease-exit) forwards;
   }
   @keyframes rp-open {
     from {
@@ -27,6 +38,36 @@
     }
     to {
       overflow: clip;
+    }
+  }
+  @keyframes rp-close {
+    from {
+      overflow: clip;
+    }
+    to {
+      width: 0;
+      overflow: clip;
+    }
+  }
+  @keyframes rp-content-in {
+    from {
+      opacity: 0;
+      translate: var(--s-12) 0;
+    }
+  }
+  @keyframes rp-content-out {
+    to {
+      opacity: 0;
+      translate: var(--s-12) 0;
+    }
+  }
+  .rp-surface[data-motion='in']:not([hidden]) {
+    animation: rp-surface-in var(--dur-quick) var(--ease);
+  }
+  @keyframes rp-surface-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--s-4);
     }
   }
   @keyframes rp-hold {

@@ -1,7 +1,7 @@
 import { useState, type JSX } from 'react'
 import { AlarmClock } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
-import { Collapsible, CollapsibleHeader } from '../../ui'
+import { Collapsible, CollapsibleHeader, Expand } from '../../ui'
 import type { SessionSummary } from '../../../../shared/ipc'
 import type { ArchiveShelfRow } from './ArchiveShelf'
 import { SidebarRow } from './SidebarRow'
@@ -37,7 +37,7 @@ export function SnoozeShelf({ rows, now, onOpen }: SnoozeShelfProps): JSX.Elemen
         >
           {t('rail.snoozedGroup')}
         </CollapsibleHeader>
-        {open ? (
+        <Expand open={open}>
           <div className="v3-snooze-list">
             {rows.map((row) => {
               const wake = row.item.snoozedUntil
@@ -57,7 +57,7 @@ export function SnoozeShelf({ rows, now, onOpen }: SnoozeShelfProps): JSX.Elemen
               )
             })}
           </div>
-        ) : null}
+        </Expand>
       </Collapsible>
     </section>
   )

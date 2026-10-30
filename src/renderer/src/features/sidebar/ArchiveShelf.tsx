@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react'
 import { useI18n } from '../../i18n'
-import { Collapsible, CollapsibleHeader, ListRow } from '../../ui'
+import { Collapsible, CollapsibleHeader, ListRow, MotionList } from '../../ui'
 import type { SessionSummary } from '../../../../shared/ipc'
 import type { ModelRef } from '../../../../shared/model-brand'
 import { useSessionDrag } from './session-drag'
@@ -95,7 +95,7 @@ export function ArchiveShelf({
           </div>
         ) : null}
         {shown.length || open ? (
-          <div className="v3-shelf-list">
+          <MotionList className="v3-shelf-list" animate={!dragSource}>
             {shown.map((row) => renderRow ? renderRow(row) : (
               <SidebarRow
                 key={row.item.path}
@@ -117,7 +117,7 @@ export function ArchiveShelf({
                 {own.archiveShelfAll}
               </ListRow>
             ) : null}
-          </div>
+          </MotionList>
         ) : null}
       </Collapsible>
     </section>

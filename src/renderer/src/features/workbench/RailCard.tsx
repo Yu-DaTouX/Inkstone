@@ -1,6 +1,6 @@
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react'
 import { ArrowUpRight, GripVertical } from 'lucide-react'
-import { AsciiRule, Button, CollapsibleChevron, IconButton } from '../../ui'
+import { AsciiRule, Button, CollapsibleChevron, Expand, IconButton } from '../../ui'
 import type { RailSectionId } from './rail-sections'
 
 export interface RailGrip {
@@ -100,7 +100,11 @@ export function RailCard({
           </IconButton>
         ) : null}
       </div>
-      {open && hasBody ? <div className="wb-tile-body">{children}</div> : null}
+      {hasBody ? (
+        <Expand open={open} className="wb-tile-expand">
+          <div className="wb-tile-body">{children}</div>
+        </Expand>
+      ) : null}
     </section>
   )
 }

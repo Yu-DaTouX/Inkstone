@@ -24,7 +24,7 @@ import {
   Terminal,
   type LucideIcon
 } from 'lucide-react'
-import { Button, EmptyState, IconButton, Kbd, ListRow, Menu, MenuItem, MenuTrigger, PanelTab, PanelTabList, Popover, Separator, Sheet, Spinner, Splitter } from '../../ui'
+import { Button, EmptyState, IconButton, Kbd, ListRow, Menu, MenuItem, MenuTrigger, MorphIcon, PanelTab, PanelTabList, Popover, Separator, Sheet, Spinner, Splitter, motionAllowed, usePresence } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { createFrameBatch } from '../../app/frame-batch'
@@ -156,6 +156,8 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
   const open = entry.open
   const active = entry.surfaces.find((item) => item.id === entry.active) ?? null
   const maximized = mode === 'inline' && entry.maximized
+  const presence = usePresence(open, { animate: mode === 'inline' && !maximized })
+  const closing = !open && presence.closing
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null)
   const [adding, setAdding] = useState(false)
   const anchorRef = useRef<HTMLElement | null>(null)
@@ -250,6 +252,8 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
       aria-label={panel.panel}
       data-mode={mode}
       data-maximized={maximized ? '1' : undefined}
+      data-motion={closing ? 'closing' : presence.entering ? 'opening' : undefined}
+      inert={closing}
       data-testid="rp"
       style={mode === 'inline' && !maximized ? ({ width: shownWidth, '--rp-w': `${shownWidth}px` } as CSSProperties) : undefined}
       onKeyDown={onPanelKey}
@@ -317,7 +321,7 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
               data-testid="rp-maximize"
               onPress={() => useRightPanel.getState().setMaximized(!maximized)}
             >
-              {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              <MorphIcon iconKey={maximized ? 'restore' : 'maximize'} icon={maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />} />
             </IconButton>
           ) : null}
           <IconButton size="sm" aria-label={panel.hidePanel} tooltip={panel.hidePanel} data-testid="rp-hide" onPress={() => useRightPanel.getState().setOpen(false)}>
@@ -336,7 +340,8 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
               <SurfaceView
                 key={surface.id}
                 surface={surface}
-                shown={open && surface.id === entry.active}
+                shown={(open || closing) && surface.id === entry.active}
+                live={open}
                 owner={owner}
                 panes={panes}
                 text={text}
@@ -382,7 +387,7 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
       </Sheet>
     )
   }
-  return open ? content : null
+  return open || closing ? content : null
 }
 
 function Launcher({ text, panel, onPick }: { text: WorkbenchText; panel: RightPanelText; onPick: (action: LauncherAction) => void }): ReactElement {
@@ -445,6 +450,7 @@ function menuSourceRank(source: string): number {
 interface SurfaceViewProps {
   surface: RightPanelSurface
   shown: boolean
+  live: boolean
   owner: WorkspaceOwner
   panes: WorkbenchPaneComponents
   text: WorkbenchText
@@ -453,11 +459,17 @@ interface SurfaceViewProps {
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
 }
 
-function SurfaceView({ surface, shown, owner, panes, text, panel, onRequestActivation }: SurfaceViewProps): ReactElement {
+function SurfaceView({ surface, shown, live, owner, panes, text, panel, onRequestActivation }: SurfaceViewProps): ReactElement {
   const [titleEl, setTitleEl] = useState<HTMLElement | null>(null)
   const [toolsEl, setToolsEl] = useState<HTMLElement | null>(null)
   const [menuGroups, setMenuGroups] = useState<ReadonlyMap<string, readonly PaneMenuItem[]>>(() => new Map())
   const [activating, setActivating] = useState(false)
+  const [seenShown, setSeenShown] = useState(shown)
+  const [entering, setEntering] = useState(false)
+  if (seenShown !== shown) {
+    setSeenShown(shown)
+    setEntering(shown && motionAllowed())
+  }
   const setMenu = useCallback((source: string, items: readonly PaneMenuItem[]): void => {
     setMenuGroups((prev) => {
       const current = prev.get(source) ?? []
@@ -514,7 +526,7 @@ function SurfaceView({ surface, shown, owner, panes, text, panel, onRequestActiv
     body = Body ? (
       <Body
         owner={owner}
-        visible={shown && !blocked}
+        visible={shown && live && !blocked}
         onPreview={(path, options) => usePreviewBindings.getState().bind(owner.key, path, options)}
         path={previewPath}
         Preview={tool === 'files' ? panes.preview : undefined}
@@ -532,6 +544,7 @@ function SurfaceView({ surface, shown, owner, panes, text, panel, onRequestActiv
       role="tabpanel"
       aria-labelledby={`ptab-${surface.id}`}
       hidden={!shown}
+      data-motion={entering ? 'in' : undefined}
       data-kind={surface.kind}
       data-testid={`rp-surface-${surface.id}`}
     >

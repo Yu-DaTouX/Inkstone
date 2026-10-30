@@ -230,11 +230,12 @@ function LegacyNotice({
 }
 
 export interface SettingsPageProps {
+  isOpen?: boolean
   onClose: () => void
   onShowOnboarding?: () => void
 }
 
-export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): ReactElement {
+export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: SettingsPageProps): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
   const settings = useStore((s) => s.settings)
@@ -446,7 +447,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
 
   return (
     <SettingsDialog
-      isOpen
+      isOpen={isOpen}
       onOpenChange={(open) => {
         if (!open) onClose()
       }}
