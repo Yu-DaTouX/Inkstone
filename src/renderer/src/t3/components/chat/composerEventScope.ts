@@ -18,20 +18,16 @@ export function setComposerEditorHandle(handle: { current: ComposerEditorHandle 
 }
 
 export function useComposerMenuProps() {
-  const handle = composerEditorHandle
-
   return {
     ...composerFloatingLayerProps,
-    finalFocus: handle
-      ? () => {
-          const activeElement = document.activeElement
-          if (activeElement !== document.body && !isInsideComposerFloatingLayer(activeElement)) {
-            return false
-          }
-          handle.current?.focusAtEnd()
-          return false
-        }
-      : undefined
+    finalFocus: () => {
+      const handle = composerEditorHandle
+      if (!handle) return undefined
+      const activeElement = document.activeElement
+      if (activeElement !== document.body && !isInsideComposerFloatingLayer(activeElement)) return false
+      handle.current?.focusAtEnd()
+      return false
+    }
   }
 }
 

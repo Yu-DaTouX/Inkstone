@@ -31,6 +31,21 @@ function check(label, fn) {
   process.stdout.write(`  ✓ ${label}\n`)
 }
 
+check('历史代码块复用高亮处理器后语言别名、纯文本与超限跳过保持一致', () => {
+  const make = (classes, text) => ({ type: 'root', children: [{ type: 'element', tagName: 'pre', properties: {}, children: [{ type: 'element', tagName: 'code', properties: { className: classes }, children: [{ type: 'text', value: text }] }] }] })
+  for (const [classes, text] of [[['language-ts'], 'const answer: number = 42'], [['language-pwsh'], 'Get-Item .'], [['language-unknown'], 'plain'], [['language-js', 'no-highlight'], 'const value = 1'], [[], 'plain']]) {
+    const fresh = make(classes, text)
+    const shared = structuredClone(fresh)
+    highlight.rehypeHighlight(highlight.highlightOptions)(fresh, { message() {} })
+    highlight.rehypeMessageHighlight()(shared, { message() {} })
+    assert.deepEqual(shared, fresh)
+  }
+  const tree = make(['language-js'], 'a'.repeat(highlight.HIGHLIGHT_MAX_CHARS + 1))
+  highlight.rehypeMarkOversizedCode()(tree)
+  highlight.rehypeMessageHighlight()(tree, { message() {} })
+  assert.equal(tree.children[0].children[0].children[0].type, 'text')
+})
+
 check('渐显：短首段整体淡入，长首段不动画', () => {
   const short = fade.trackReveal(null, 'hello', 0)
   assert.deepEqual(short.marks, [{ from: 0, at: 0 }])
@@ -160,6 +175,25 @@ check('分屏：切焦点后按回合锚点恢复，允许编辑器高度和上�
   assert.equal(box.scrollTop, 333, '锚点丢失时回退绝对位置')
   position.restoreDomScroll(box, { top: 0, bottom: true, anchor: null })
   assert.equal(box.scrollTop, 2000, '原来贴底的视图继续贴底')
+})
+
+check('滚动锚点：一次读取兼顾被截断行和完整行，找到后停止扫描', () => {
+  let reads = 0
+  const nodes = Array.from({ length: 100 }, (_, index) => ({
+    dataset: { turnId: `row-${index}` },
+    getBoundingClientRect: () => {
+      reads++
+      return { top: 80 + index * 100, bottom: 180 + index * 100 }
+    }
+  }))
+  const box = { getBoundingClientRect: () => ({ top: 100 }), querySelectorAll: () => nodes }
+  assert.deepEqual(position.domReadingAnchors(box), {
+    snapshot: { turnId: 'row-0', offset: 20 },
+    resize: { turnId: 'row-1', offset: 80 }
+  })
+  assert.equal(reads, 2)
+  assert.deepEqual(position.domReadingAnchors({ ...box, querySelectorAll: () => [] }), { snapshot: null, resize: null })
+  assert.deepEqual(position.domAnchor(box), { turnId: 'row-0', offset: 20 })
 })
 
 check('分屏：共享滚动记录有界，不无限保留历史会话', () => {

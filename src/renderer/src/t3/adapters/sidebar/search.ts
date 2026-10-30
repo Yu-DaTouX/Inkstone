@@ -3,7 +3,7 @@ import { useStore } from '../../../state/store'
 import { buildContentMatches, CONTENT_SEARCH_LIMIT, shouldSearchContent, type ContentMatch } from '../../../features/sidebar/content-search'
 import type { SessionSearchHit } from '../../../../../shared/ipc'
 import type { SidebarThreadView } from './types'
-import { useSidebarSections } from './threads'
+import type { SidebarSections } from './sections'
 
 const DEBOUNCE_MS = 160
 
@@ -19,8 +19,7 @@ function matchesThread(view: SidebarThreadView, query: string): boolean {
   return [view.title, view.path, view.projectDisplayName ?? ''].some((value) => value.toLowerCase().includes(needle))
 }
 
-export function useSidebarSearch(query: string): SidebarSearch {
-  const sections = useSidebarSections()
+export function useSidebarSearch(query: string, sections: SidebarSections): SidebarSearch {
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)

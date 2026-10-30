@@ -1,4 +1,4 @@
-import { pickReadingAnchor, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
+import type { ReadingAnchor, ScrollMetrics } from './scroll-follow'
 
 export interface ScrollSnapshot {
   top: number
@@ -34,13 +34,23 @@ export function domMetrics(el: HTMLElement): ScrollMetrics {
   return { offset: el.scrollTop, size: el.scrollHeight, viewport: el.clientHeight }
 }
 
-export function domAnchor(box: HTMLElement): ReadingAnchor | null {
+export function domReadingAnchors(box: HTMLElement): { snapshot: ReadingAnchor | null; resize: ReadingAnchor | null } {
   const base = box.getBoundingClientRect().top
-  const rows = [...box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')].map((node) => {
+  let snapshot: ReadingAnchor | null = null
+  let resize: ReadingAnchor | null = null
+  for (const node of box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')) {
+    const turnId = node.dataset.turnId
+    if (!turnId) continue
     const rect = node.getBoundingClientRect()
-    return { id: node.dataset.turnId ?? '', top: rect.top - base, bottom: rect.bottom - base }
-  })
-  return pickReadingAnchor(rows.filter((row) => row.id), 0)
+    if (!snapshot && rect.bottom > base) snapshot = { turnId, offset: Math.max(0, base - rect.top) }
+    if (!resize && rect.top - base >= -1) resize = { turnId, offset: rect.top - base }
+    if (snapshot && resize) break
+  }
+  return { snapshot, resize }
+}
+
+export function domAnchor(box: HTMLElement): ReadingAnchor | null {
+  return domReadingAnchors(box).snapshot
 }
 
 export function restoreDomScroll(box: HTMLElement, snapshot: ScrollSnapshot | undefined): void {

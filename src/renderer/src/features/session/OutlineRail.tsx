@@ -77,10 +77,11 @@ interface OutlineRailProps {
   messages: UIMessage[]
   streamingId?: string
   onJump: (index: number) => void
+  readActiveIndex?: () => number | undefined
   className?: string
 }
 
-function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRailProps): JSX.Element | null {
+function OutlineRailView({ messages, streamingId, onJump, readActiveIndex, className }: OutlineRailProps): JSX.Element | null {
   const t = useT()
   const projectOutline = useMemo(() => createOutlineProjector(), [])
   const turns = useMemo(() => projectOutline(messages, streamingId), [messages, streamingId, projectOutline])
@@ -100,6 +101,8 @@ function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRa
   const scheduleRef = useRef<(() => void) | undefined>(undefined)
   const indexByIdRef = useRef(indexById)
   indexByIdRef.current = indexById
+  const readActiveIndexRef = useRef(readActiveIndex)
+  readActiveIndexRef.current = readActiveIndex
 
   const current = active >= 0 && active < turns.length ? active : turns.length - 1
   const tabStop = focusIndex >= 0 && focusIndex < turns.length ? focusIndex : current
@@ -112,11 +115,12 @@ function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRa
 
   const openSoon = useCallback(() => {
     clearTimer()
+    revealWithin(trackRef.current, current, true)
     timerRef.current = window.setTimeout(() => {
       timerRef.current = undefined
       setOpen(true)
     }, OPEN_DELAY_MS)
-  }, [clearTimer])
+  }, [clearTimer, current])
 
   const closeSoon = useCallback(() => {
     clearTimer()
@@ -134,15 +138,23 @@ function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRa
     const host = root?.parentElement
     if (!visible || !root || !host) return undefined
     let frame = 0
+    let precisionTimer = 0
     const update = (): void => {
       frame = 0
       const stream = host.querySelector<HTMLElement>('.v3-stream')
       if (!stream) return
-      const next = locateActiveTurn(stream, indexByIdRef.current)
+      const next = readActiveIndexRef.current?.() ?? locateActiveTurn(stream, indexByIdRef.current)
       if (next >= 0) setActive(next)
     }
     const schedule = (): void => {
       if (!frame) frame = requestAnimationFrame(update)
+      clearTimeout(precisionTimer)
+      precisionTimer = window.setTimeout(() => {
+        const stream = host.querySelector<HTMLElement>('.v3-stream')
+        if (!stream) return
+        const next = locateActiveTurn(stream, indexByIdRef.current)
+        if (next >= 0) setActive(next)
+      }, 120)
     }
     const onScroll = (event: Event): void => {
       if (event.target instanceof Node && root.contains(event.target)) return
@@ -157,6 +169,7 @@ function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRa
       host.removeEventListener('scroll', onScroll, { capture: true })
       resize.disconnect()
       if (frame) cancelAnimationFrame(frame)
+      clearTimeout(precisionTimer)
       scheduleRef.current = undefined
     }
   }, [visible])
@@ -164,10 +177,6 @@ function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRa
   useEffect(() => {
     scheduleRef.current?.()
   }, [turns])
-
-  useEffect(() => {
-    revealWithin(trackRef.current, current, false)
-  }, [current, visible])
 
   useEffect(() => {
     if (open) revealWithin(listRef.current, current, true)

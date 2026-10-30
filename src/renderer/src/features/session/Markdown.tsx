@@ -12,7 +12,7 @@ import { useStore } from '../../state/store'
 import { classifyLink, type LinkTarget } from '../../../../shared/links'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
 import { isVisualBlockLang } from '../../../../shared/visual-blocks'
-import { highlightOptions, rehypeHighlight, rehypeMarkOversizedCode } from '../../lib/code-highlight'
+import { rehypeMessageHighlight, rehypeMarkOversizedCode } from '../../lib/code-highlight'
 import { prefersReducedMotion } from '../../lib/reduced-motion'
 import { MessageImage } from './Image'
 import { RemoteImage, useInRemoteImageGroup } from './RemoteImage'
@@ -37,7 +37,7 @@ import '../../patterns/highlighted-code.css'
 type PluginList = NonNullable<Options['rehypePlugins']>
 
 const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm, remarkCjkFriendly]
-const MD_REHYPE: PluginList = [rehypeKbd, rehypeMarkOversizedCode, [rehypeHighlight, highlightOptions]]
+const MD_REHYPE: PluginList = [rehypeKbd, rehypeMarkOversizedCode, rehypeMessageHighlight]
 const MD_REHYPE_PLAIN: PluginList = [rehypeKbd]
 const MD_HTML_SCHEMA = { ...defaultSchema, tagNames: (defaultSchema.tagNames ?? []).filter((tag) => tag !== 'source') }
 const MD_REHYPE_HTML: PluginList = [rehypeRaw, [rehypeSanitize, MD_HTML_SCHEMA]]
@@ -606,6 +606,11 @@ function whenIdle(callback: () => void): () => void {
   return () => window.clearTimeout(handle)
 }
 
+function parseMarkdown(text: string, math: MathPlugins | null, allowHtml: boolean, footnotes: NonNullable<Options['remarkRehypeOptions']>): React.ReactElement {
+  const plugins = pluginsFor(!hasUnclosedFence(text), math, allowHtml)
+  return <div className="v3-prose">{ReactMarkdown({ remarkPlugins: plugins.remark, rehypePlugins: plugins.rehype, components: MD_COMPONENTS, remarkRehypeOptions: footnotes, children: text })}</div>
+}
+
 export const Markdown = memo(function Markdown({
   text,
   sourceCwd,
@@ -648,6 +653,8 @@ export const Markdown = memo(function Markdown({
   const cacheKey = markdownCacheKey({ lang, allowHtml, math: !!math.plugins, text: renderedText })
   const cached = live || mathPending ? undefined : mdCache.get(cacheKey)
   if (cached) {
+    mdCache.delete(cacheKey)
+    mdCache.set(cacheKey, cached)
     return (
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
@@ -685,14 +692,7 @@ export const Markdown = memo(function Markdown({
       </WidgetIdentityContext.Provider>
     )
   }
-  const plugins = pluginsFor(!unclosed, math.plugins, allowHtml)
-  const element = (
-    <div className="v3-prose">
-      <ReactMarkdown remarkPlugins={plugins.remark} rehypePlugins={plugins.rehype} components={MD_COMPONENTS} remarkRehypeOptions={footnoteOptions}>
-        {renderedText}
-      </ReactMarkdown>
-    </div>
-  )
+  const element = parseMarkdown(renderedText, math.plugins, allowHtml, footnoteOptions)
   const stable = !unclosed && !mathPending && renderedText.length <= MD_CACHE_ENTRY_CHARS
   if (stable) mdCacheSet(cacheKey, element)
   return (

@@ -32,14 +32,28 @@ function projectLookups(projects: readonly ProjectRecord[]): {
   return { byId, byCwd }
 }
 
-function latestRunOf(runs: readonly RunSnapshot[], session: SessionSummary): RunSnapshot | null {
-  let latest: RunSnapshot | null = null
-  for (const run of runs) {
-    const mine = (!!session.id && run.sessionId === session.id) || (!!session.path && run.sessionPath === session.path)
-    if (!mine) continue
-    if (!latest || run.startedAt > latest.startedAt) latest = run
+function latestRunLookup(runs: readonly RunSnapshot[]): (session: SessionSummary) => RunSnapshot | null {
+  type Entry = { run: RunSnapshot; order: number }
+  const byId = new Map<string, Entry>()
+  const byPath = new Map<string, Entry>()
+  const keep = (map: Map<string, Entry>, key: string | undefined, entry: Entry): void => {
+    if (!key) return
+    const previous = map.get(key)
+    if (!previous || entry.run.startedAt > previous.run.startedAt) map.set(key, entry)
   }
-  return latest
+  runs.forEach((run, order) => {
+    const entry = { run, order }
+    keep(byId, run.sessionId, entry)
+    keep(byPath, run.sessionPath, entry)
+  })
+  return (session) => {
+    const id = byId.get(session.id)
+    const path = byPath.get(session.path)
+    if (!id) return path?.run ?? null
+    if (!path) return id.run
+    if (id.run.startedAt !== path.run.startedAt) return id.run.startedAt > path.run.startedAt ? id.run : path.run
+    return id.order < path.order ? id.run : path.run
+  }
 }
 
 export interface BuildSidebarSectionsInput {
@@ -54,6 +68,7 @@ export interface BuildSidebarSectionsInput {
 
 export function buildSidebarSections(input: BuildSidebarSectionsInput): SidebarSections {
   const { byId, byCwd } = projectLookups(input.projects)
+  const latestRunOf = latestRunLookup(input.runs)
   const archivedProjectIds = new Set(input.projects.filter((project) => project.archived).map((project) => project.id))
   const archivedProjectCwds = new Set(input.projects.filter((project) => project.archived).map((project) => normalize(project.cwd)))
   const views: SidebarThreadView[] = []
@@ -67,7 +82,7 @@ export function buildSidebarSections(input: BuildSidebarSectionsInput): SidebarS
       : session.cwd
         ? { id: NO_PROJECT_ID, label: input.projectNames[session.cwd] || shortProject(session.cwd) }
         : null
-    const view = toThreadView(session, { run: latestRunOf(input.runs, session), title, project })
+    const view = toThreadView(session, { run: latestRunOf(session), title, project })
     const inArchivedProject =
       session.projectId !== undefined
         ? archivedProjectIds.has(session.projectId)

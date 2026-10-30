@@ -127,6 +127,23 @@ process.stdout.write('\n▌决策卡结局：取下一轮结论首句或状态\n
   ok(outcomes.get('a3')?.state === 'stopped', '下一轮被中止：结局为已中止', outcomes.get('a3'))
   ok(!outcomes.has('a4'), '没有后续回复：不给结局', outcomes.get('a4'))
   ok(leadSentence('- 第一项很长' + '字'.repeat(200)).length <= 120, '首句过长时截断', leadSentence('- 第一项很长' + '字'.repeat(200)).length)
+  const repeated = decisionOutcomes([...turns])
+  ok(repeated.get('a1') === outcomes.get('a1'), '未变化的历史结论保持同一对象，避免触发历史回合重渲染')
+  const streamingChanged = [...turns]
+  streamingChanged[5] = reply('正在继续生成', { id: 'a3', streaming: true })
+  const during = decisionOutcomes(streamingChanged)
+  ok(during.get('a1') === outcomes.get('a1'), '尾部增量不重算已结束历史结论')
+  ok(during.get('a2') === outcomes.get('a2'), '流式正文变化但仍进行中时复用状态对象')
+  const completed = [...streamingChanged]
+  completed[5] = reply('手机版已完成。可以安装。', { id: 'a3' })
+  const done = decisionOutcomes(completed)
+  ok(done.get('a2')?.state === 'done' && done.get('a2').text === '手机版已完成。', '流式结束时更新对应历史卡片的结局', done.get('a2'))
+  const failed = [...completed]
+  failed[5] = reply('', { id: 'a3', terminalReason: 'failed' })
+  ok(decisionOutcomes(failed).get('a2')?.state === 'failed', '同 ID 新回合对象失败时不复用旧结论')
+  const empty = [...completed]
+  empty[5] = reply('', { id: 'a3' })
+  ok(!decisionOutcomes(empty).has('a2'), '新回合正文为空时移除旧结论')
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

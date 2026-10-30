@@ -96,4 +96,10 @@ export function rehypeMarkOversizedCode() {
 
 export const highlightOptions = { detect: false, languages: HIGHLIGHT_LANGUAGES, aliases: LANGUAGE_ALIASES }
 
+const messageHighlight = rehypeHighlight(highlightOptions)
+
+export function rehypeMessageHighlight(): ReturnType<typeof rehypeHighlight> {
+  return messageHighlight
+}
+
 export { rehypeHighlight }

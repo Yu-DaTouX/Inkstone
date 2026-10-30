@@ -110,6 +110,10 @@ export type DecisionOutcome =
   | { state: 'done'; text: string }
 
 const OUTCOME_MAX_CHARS = 120
+const outcomeCache = new WeakMap<AssistantTurn, DecisionOutcome | null>()
+const RUNNING_OUTCOME: DecisionOutcome = { state: 'running' }
+const STOPPED_OUTCOME: DecisionOutcome = { state: 'stopped' }
+const FAILED_OUTCOME: DecisionOutcome = { state: 'failed' }
 
 function finalReply(turn: AssistantTurn): string {
   for (let i = turn.segments.length - 1; i >= 0; i -= 1) {
@@ -132,11 +136,18 @@ export function leadSentence(text: string): string {
 }
 
 function outcomeOf(turn: AssistantTurn): DecisionOutcome | null {
-  if (turn.streaming) return { state: 'running' }
-  if (turn.terminalReason === 'stopped' || turn.terminalReason === 'interrupted') return { state: 'stopped' }
-  if (turn.terminalReason === 'failed' || (turn.error && !turn.errorRecovered)) return { state: 'failed' }
-  const text = leadSentence(finalReply(turn))
-  return text ? { state: 'done', text } : null
+  const cached = outcomeCache.get(turn)
+  if (cached !== undefined) return cached
+  let outcome: DecisionOutcome | null
+  if (turn.streaming) outcome = RUNNING_OUTCOME
+  else if (turn.terminalReason === 'stopped' || turn.terminalReason === 'interrupted') outcome = STOPPED_OUTCOME
+  else if (turn.terminalReason === 'failed' || (turn.error && !turn.errorRecovered)) outcome = FAILED_OUTCOME
+  else {
+    const text = leadSentence(finalReply(turn))
+    outcome = text ? { state: 'done', text } : null
+  }
+  outcomeCache.set(turn, outcome)
+  return outcome
 }
 
 export function decisionOutcomes(turns: readonly Turn[]): Map<string, DecisionOutcome> {

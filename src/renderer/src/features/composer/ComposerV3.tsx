@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n, useT } from '../../i18n'
 import { pendingSendsForView, useStore } from '../../state/store'
 import { ComposerFrame } from '../../t3/components/chat/ComposerFrame'
@@ -81,6 +81,55 @@ function dirName(path: string): string {
   return at < 0 ? '' : trimmed.slice(0, at)
 }
 
+const ComposerModelControls = memo(function ComposerModelControls(): JSX.Element {
+  const t = useT()
+  const model = useComposerModelAdapter()
+  const menuProps = useComposerMenuProps()
+  const layout = useComposerControlsLayout()
+  return (
+    <>
+      <span ref={layout.attachHost} hidden aria-hidden />
+      <ComposerControlsBar
+        modelPicker={
+          <ProviderModelPicker
+            activeInstanceId={model.activeInstanceId}
+            model={model.model}
+            instanceEntries={model.instanceEntries}
+            modelOptionsByInstance={model.modelOptionsByInstance}
+            favoriteKeys={model.favoriteKeys}
+            onInstanceModelChange={model.select}
+            onToggleFavorite={model.toggleFavorite}
+            onOpenProviderSetup={model.openProviderSetup}
+            isComposerOwned
+            floatingLayerProps={menuProps}
+          />
+        }
+        collapsed={false}
+        hidden={!layout.visible}
+        measuredHiddenBlockCount={layout.hiddenBlockCount}
+        iconOnlyBlockCount={layout.iconOnlyBlockCount}
+        showProviderUnavailable={model.instanceEntries.length === 0}
+        providerSetupLabel={t('composer.t3.picker.openProviderSetup')}
+        onOpenProviderSetup={model.openProviderSetup}
+      />
+    </>
+  )
+})
+
+const ComposerContextMeter = memo(function ComposerContextMeter(): JSX.Element {
+  const usage = useContextWindowSnapshot()
+  const compact = useContextCompactAdapter()
+  return usage ? (
+    <ContextWindowMeter
+      usage={usage}
+      modelDisplayName={compact.modelDisplayName}
+      onCompact={compact.onCompact}
+      compactDisabled={compact.compactDisabled}
+      compactDisabledReason={compact.compactDisabledReason}
+    />
+  ) : <ContextWindowMeterPlaceholder />
+})
+
 export function ComposerV3(): JSX.Element {
   const t = useT()
   const [value, setValue] = useState('')
@@ -91,13 +140,8 @@ export function ComposerV3(): JSX.Element {
   const drop = useComposerDropTarget()
   const notice = useComposerNotice(value)
   const rootRef = useRef<HTMLDivElement>(null)
-  const model = useComposerModelAdapter()
-  const menuProps = useComposerMenuProps()
-  const controlsLayout = useComposerControlsLayout()
   const stash = usePromptStashAdapter({ value, rootRef, onStashed: () => setValue('') })
   const stashFrame = composerStashFrameProps(stash, t)
-  const contextUsage = useContextWindowSnapshot()
-  const contextCompact = useContextCompactAdapter()
   const submitAdapter = useComposerSubmitAdapter({
     value,
     clearText: () => setValue(''),
@@ -490,47 +534,10 @@ export function ComposerV3(): JSX.Element {
         }
         notice={notice ? <ComposerNotice message={notice.message} tone={notice.tone} slot="image-ref" /> : null}
         footerLeading={<ComposerAttachButton onFiles={attachments.addFiles} />}
-        controls={
-          <>
-            <span ref={controlsLayout.attachHost} hidden aria-hidden />
-            <ComposerControlsBar
-              modelPicker={
-                <ProviderModelPicker
-                  activeInstanceId={model.activeInstanceId}
-                  model={model.model}
-                  instanceEntries={model.instanceEntries}
-                  modelOptionsByInstance={model.modelOptionsByInstance}
-                  favoriteKeys={model.favoriteKeys}
-                  onInstanceModelChange={model.select}
-                  onToggleFavorite={model.toggleFavorite}
-                  onOpenProviderSetup={model.openProviderSetup}
-                  isComposerOwned
-                  floatingLayerProps={menuProps}
-                />
-              }
-              collapsed={false}
-              hidden={!controlsLayout.visible}
-              measuredHiddenBlockCount={controlsLayout.hiddenBlockCount}
-              iconOnlyBlockCount={controlsLayout.iconOnlyBlockCount}
-              showProviderUnavailable={model.instanceEntries.length === 0}
-              providerSetupLabel={t('composer.t3.picker.openProviderSetup')}
-              onOpenProviderSetup={model.openProviderSetup}
-            />
-          </>
-        }
+        controls={<ComposerModelControls />}
         primaryActions={
           <>
-            {contextUsage ? (
-              <ContextWindowMeter
-                usage={contextUsage}
-                modelDisplayName={contextCompact.modelDisplayName}
-                onCompact={contextCompact.onCompact}
-                compactDisabled={contextCompact.compactDisabled}
-                compactDisabledReason={contextCompact.compactDisabledReason}
-              />
-            ) : (
-              <ContextWindowMeterPlaceholder />
-            )}
+            <ComposerContextMeter />
             <ComposerPrimaryActions
               isRunning={submitAdapter.isRunning}
               canInterrupt={submitAdapter.canInterrupt}

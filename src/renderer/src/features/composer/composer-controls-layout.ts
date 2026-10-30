@@ -51,27 +51,49 @@ export function useComposerControlsLayout(): ComposerControlsLayout {
       })
     }
 
-    const observer = new ResizeObserver(measure)
+    let frame = 0
+    let targetsChanged = false
+    const observed = new Set<HTMLElement>()
+    const observer = new ResizeObserver(() => schedule())
     const observeTargets = () => {
-      observer.observe(host)
-      for (const node of host.querySelectorAll<HTMLElement>(MEASURED_NODE_SELECTOR)) {
+      const targets = new Set([host, ...host.querySelectorAll<HTMLElement>(MEASURED_NODE_SELECTOR)])
+      for (const node of observed) {
+        if (targets.has(node)) continue
+        observer.unobserve(node)
+        observed.delete(node)
+      }
+      for (const node of targets) {
+        if (observed.has(node)) continue
+        observed.add(node)
         observer.observe(node)
       }
+    }
+    const schedule = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        if (targetsChanged) {
+          targetsChanged = false
+          observeTargets()
+        }
+        measure()
+      })
     }
     observeTargets()
     measure()
 
-    const mutations = new MutationObserver(() => {
-      observeTargets()
-      measure()
+    const mutations = new MutationObserver((records) => {
+      if (records.some((record) => record.type === 'childList')) targetsChanged = true
+      schedule()
     })
     mutations.observe(host, { childList: true, subtree: true, characterData: true })
-    document.fonts.addEventListener('loadingdone', measure)
+    document.fonts.addEventListener('loadingdone', schedule)
 
     return () => {
       observer.disconnect()
       mutations.disconnect()
-      document.fonts.removeEventListener('loadingdone', measure)
+      cancelAnimationFrame(frame)
+      document.fonts.removeEventListener('loadingdone', schedule)
     }
   }, [host])
 

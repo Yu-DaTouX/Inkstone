@@ -38,7 +38,7 @@ import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar } from './SessionFindBar'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
-import { domAnchor, domMetrics, glideSettle, keepSettleAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
+import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
 import './session.css'
 import { sameComposerView } from '../../state/composer-recovery'
 import { withSubmittingMessages } from '../../state/submitting-messages'
@@ -59,7 +59,7 @@ const VIRTUALIZE_TURNS_AT = 80
 const VIRTUALIZE_MSGS_AT = 200
 const LOCATE_MOUNT_FRAMES = 30
 const NAV_SETTLE_STILL_FRAMES = 3
-const NAV_SETTLE_MAX_MS = 1400
+const NAV_SETTLE_MAX_MS = 3000
 const NAV_FLASH_MS = 900
 const NAV_MOUNT_FRAMES = 30
 
@@ -72,18 +72,7 @@ type RenderItem = Turn | PendingTurn
 
 const isPending = (item: RenderItem): item is PendingTurn => item.kind === 'pending'
 
-function rowAnchor(box: HTMLElement): ReadingAnchor | null {
-  const base = box.getBoundingClientRect().top
-  for (const node of box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')) {
-    const top = node.getBoundingClientRect().top - base
-    if (top >= -1) return node.dataset.turnId ? { turnId: node.dataset.turnId, offset: top } : null
-  }
-  return null
-}
-
-function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>, box: HTMLElement | null): ReadingAnchor | null {
-  const anchor = box ? domAnchor(box) : null
-  if (anchor) return anchor
+function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>): ReadingAnchor | null {
   const index = handle.findItemIndex(handle.scrollOffset)
   const item = items[index]
   if (!item) return null
@@ -282,8 +271,27 @@ export function SessionView(): JSX.Element {
   const [asideFits, setAsideFits] = useState(false)
   const vlistRef = useRef<VListHandle>(null)
   const settlingRef = useRef(false)
+  const cancelNavigationRef = useRef<() => void>(() => undefined)
   const renderTurnsRef = useRef(renderTurns)
   renderTurnsRef.current = renderTurns
+  const userIndices = useMemo(() => {
+    let userIndex = -1
+    return renderTurns.map((turn) => {
+      if (turn.kind === 'user') userIndex++
+      return userIndex
+    })
+  }, [renderTurns])
+  const userIndicesRef = useRef(userIndices)
+  userIndicesRef.current = userIndices
+  const readActiveIndex = useCallback((): number | undefined => {
+    const handle = vlistRef.current
+    if (!handle) return undefined
+    const indices = userIndicesRef.current
+    const offset = handle.scrollOffset
+    if (handle.scrollSize - offset - handle.viewportSize < 4) return indices.at(-1) ?? -1
+    const index = handle.findItemIndex(offset + Math.min(handle.viewportSize * .25, 120))
+    return Math.max(0, indices[index] ?? -1)
+  }, [])
   const [remountKey, setRemountKey] = useState(0)
   const remountsRef = useRef(0)
   const settleRef = useRef<SettleAnchor | null>(null)
@@ -334,6 +342,7 @@ export function SessionView(): JSX.Element {
   }, [setStickNow])
 
   const scrollFrameRef = useRef(0)
+  const virtualRecordTimerRef = useRef(0)
   const readScroll = useCallback(() => {
     const el = streamRef.current
     if (!el) return
@@ -342,8 +351,9 @@ export function SessionView(): JSX.Element {
     applyFollow(decision)
     if (decision.repin) el.scrollTop = el.scrollHeight
     metricsRef.current = decision.repin ? domMetrics(el) : metrics
-    readingRef.current = decision.stick ? null : rowAnchor(el)
-    record(el.scrollTop, decision.stick, decision.stick ? null : domAnchor(el))
+    const anchors = decision.stick ? null : domReadingAnchors(el)
+    readingRef.current = anchors?.resize ?? null
+    record(el.scrollTop, decision.stick, anchors?.snapshot ?? null)
   }, [applyFollow, record])
 
   const onScroll = useCallback(() => {
@@ -355,9 +365,14 @@ export function SessionView(): JSX.Element {
     })
   }, [readScroll])
 
-  useEffect(() => () => cancelAnimationFrame(scrollFrameRef.current), [])
+  useEffect(() => () => {
+    cancelAnimationFrame(scrollFrameRef.current)
+    scrollFrameRef.current = 0
+    clearTimeout(virtualRecordTimerRef.current)
+    virtualRecordTimerRef.current = 0
+  }, [identity, virtual])
 
-  const onVirtualScroll = useCallback(() => {
+  const readVirtualScroll = useCallback(() => {
     const h = vlistRef.current
     if (!h || settlingRef.current) return
     const metrics = { offset: h.scrollOffset, size: h.scrollSize, viewport: h.viewportSize }
@@ -365,13 +380,30 @@ export function SessionView(): JSX.Element {
     metricsRef.current = metrics
     applyFollow(decision)
     if (decision.repin) h.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
-    record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current, hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null))
+    record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current))
+    clearTimeout(virtualRecordTimerRef.current)
+    if (!decision.stick) virtualRecordTimerRef.current = window.setTimeout(() => {
+      virtualRecordTimerRef.current = 0
+      const handle = vlistRef.current
+      const root = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+      if (!handle || !root || settlingRef.current || stickRef.current) return
+      record(handle.scrollOffset, false, domAnchor(root) ?? virtualAnchor(handle, renderTurnsRef.current))
+    }, 120)
   }, [record, applyFollow])
+
+  const onVirtualScroll = useCallback(() => {
+    if (scrollFrameRef.current) return
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = 0
+      readVirtualScroll()
+    })
+  }, [readVirtualScroll])
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return undefined
     const mark = (): void => {
+      cancelNavigationRef.current()
       intentRef.current = performance.now()
       if (stickRef.current) setStickNow(false)
     }
@@ -485,14 +517,27 @@ export function SessionView(): JSX.Element {
         if (!bottom) setShowJump(distanceFromBottom(domMetrics(box)) > JUMP_THRESHOLD_PX)
       }
       if (virtual && !bottom && snap) {
-        settleRaf = requestAnimationFrame(() => {
+        const started = performance.now()
+        let frames = 0
+        let stable = 0
+        const restore = (): void => {
+          if (userScrollActive(intentRef.current, performance.now())) {
+            settlingRef.current = false
+            return
+          }
           const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
           if (box) {
+            const previous = box.scrollTop
             restoreDomScroll(box, snap)
-            vlistRef.current?.scrollTo(box.scrollTop)
+            const shift = Math.abs(previous - box.scrollTop)
+            if (shift > .5) vlistRef.current?.scrollTo(box.scrollTop)
+            stable = shift <= .5 ? stable + 1 : 0
           }
-          settlingRef.current = false
-        })
+          const elapsed = performance.now() - started
+          if (++frames >= 60 || elapsed > 600 || stable >= 3 && elapsed >= 160) settlingRef.current = false
+          else settleRaf = requestAnimationFrame(restore)
+        }
+        settleRaf = requestAnimationFrame(restore)
       } else settlingRef.current = false
     })
     return () => {
@@ -589,6 +634,12 @@ export function SessionView(): JSX.Element {
     if (frame !== null) cancelAnimationFrame(frame)
     settlingRef.current = false
   }, [])
+  cancelNavigationRef.current = () => {
+    const handle = vlistRef.current
+    const navigating = navRef.current !== null
+    endNavigation()
+    if (navigating && handle) handle.scrollTo(handle.scrollOffset)
+  }
 
   const revealTurn = useCallback((turnId: string) => {
     let frames = 0
@@ -607,8 +658,10 @@ export function SessionView(): JSX.Element {
     endNavigation()
     settlingRef.current = true
     const started = performance.now()
+    const initialOffset = readOffset()
     let last = Number.NaN
     let still = 0
+    let moved = false
     const finish = (): void => {
       endNavigation()
       if (virtual) onVirtualScroll()
@@ -618,9 +671,11 @@ export function SessionView(): JSX.Element {
     const step = (): void => {
       if (navRef.current === null) return
       const offset = readOffset()
+      moved ||= Math.abs(offset - initialOffset) > 0.5
       still = Math.abs(offset - last) < 0.5 ? still + 1 : 0
       last = offset
-      if (still >= NAV_SETTLE_STILL_FRAMES || performance.now() - started > NAV_SETTLE_MAX_MS) {
+      const elapsed = performance.now() - started
+      if (still >= NAV_SETTLE_STILL_FRAMES && (moved || elapsed >= 200) || elapsed > NAV_SETTLE_MAX_MS) {
         finish()
         return
       }
@@ -629,15 +684,44 @@ export function SessionView(): JSX.Element {
     navRef.current = requestAnimationFrame(step)
   }, [endNavigation, readScroll, onVirtualScroll, revealTurn, virtual])
 
+  const navigateVirtual = useCallback((handle: VListHandle, target: number, turnId: string) => {
+    const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+    if (!box) return
+    endNavigation()
+    settlingRef.current = true
+    const destination = (): number => Math.max(0, Math.min(handle.getItemOffset(target), handle.scrollSize - handle.viewportSize))
+    const distance = Math.abs(destination() - handle.scrollOffset)
+    const duration = Math.min(2400, Math.max(400, 350 + Math.sqrt(distance) * 5.5))
+    const started = performance.now()
+    let previous = 0
+    const step = (now: number): void => {
+      if (navRef.current === null) return
+      const progress = Math.min(1, (now - started) / duration)
+      if (progress >= 1) {
+        handle.scrollToIndex(target, { align: 'start' })
+        followNavigation(() => handle.scrollOffset, turnId)
+        return
+      }
+      const eased = progress * progress * (3 - 2 * progress)
+      const fraction = (eased - previous) / (1 - previous)
+      const offset = handle.scrollOffset
+      box.scrollTo({ top: offset + (destination() - offset) * fraction, behavior: 'instant' })
+      previous = eased
+      navRef.current = requestAnimationFrame(step)
+    }
+    navRef.current = requestAnimationFrame(step)
+  }, [endNavigation, followNavigation])
+
   useEffect(() => () => {
     endNavigation()
     const flash = flashRef.current
     if (flash.timer) window.clearTimeout(flash.timer)
     flash.el?.classList.remove('v3-msg-nav')
     flashRef.current = { timer: 0, el: null }
-  }, [endNavigation])
+  }, [endNavigation, identity])
 
   const jumpToTurn = useCallback((userIndex: number) => {
+    cancelNavigationRef.current()
     setStickNow(false)
     const list = turnsRef.current
     const target = userTurnRenderIndex(list, userIndex)
@@ -648,13 +732,13 @@ export function SessionView(): JSX.Element {
     if (virtual) {
       const handle = vlistRef.current
       if (!handle) return
-      handle.scrollToIndex(target, { align: 'start', smooth: !instant })
       if (instant) {
+        handle.scrollToIndex(target, { align: 'start' })
         onVirtualScroll()
         revealTurn(turnId)
         return
       }
-      followNavigation(() => handle.scrollOffset, turnId)
+      navigateVirtual(handle, target, turnId)
       return
     }
     const box = streamRef.current
@@ -669,7 +753,7 @@ export function SessionView(): JSX.Element {
     }
     box.scrollTo({ top, behavior: 'smooth' })
     followNavigation(() => box.scrollTop, turnId)
-  }, [virtual, setStickNow, followNavigation, flashTurn, onVirtualScroll, readScroll, revealTurn])
+  }, [virtual, setStickNow, followNavigation, navigateVirtual, flashTurn, onVirtualScroll, readScroll, revealTurn, turnNode])
 
   useEffect(() => registerMessageLocator(async (messageId) => {
     const items = renderTurnsRef.current
@@ -736,7 +820,7 @@ export function SessionView(): JSX.Element {
             ref={vlistRef}
             data={renderTurns}
             className="v3-stream"
-            bufferSize={800}
+            bufferSize={200}
             onScroll={onVirtualScroll}
           >
             {(item, index) => (
@@ -766,7 +850,7 @@ export function SessionView(): JSX.Element {
           </div>
         ) : null}
 
-        <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} />
+        <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} readActiveIndex={readActiveIndex} />
       </div>
       </AsideFitScope.Provider>
       </ToolExpansionScope.Provider>

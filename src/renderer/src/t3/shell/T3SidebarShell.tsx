@@ -109,7 +109,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const jump = useSessionNav((s) => s.jump)
   const fileDropPath = useSessionNav((s) => s.fileDropPath)
   const searching = query.trim().length > 0
-  const search = useSidebarSearch(query)
+  const search = useSidebarSearch(query, sections)
   const snoozePresets = useSnoozePresets(menuKey !== null)
   const invitePending = usePendingPairInvite((s) => s.invite !== null)
 
