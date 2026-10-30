@@ -67,10 +67,8 @@
 
   .v3-msg.assistant { margin-bottom: var(--s-6); }
   .v3-msg.user { align-items: flex-end; padding-top: 0; margin-bottom: 0; }
-  .v3-turn-rule { align-self: stretch; margin-top: var(--s-24); }
   .v3-msg.user .v3-user-actions { position: relative; z-index: 1; margin-bottom: calc(-1 * var(--s-8)); }
   :is(.v3-stream-inner > .v3-msg.user:first-child, .v3-stream-row--head > .v3-msg.user) { padding-top: 0; }
-  :is(.v3-stream-inner > .v3-msg.user:first-child, .v3-stream-row--head > .v3-msg.user) > .v3-turn-rule { display: none; }
   .v3-msg.user .v3-user-body { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-4); max-width: 85%; }
   .v3-msg.assistant .v3-assistant-body { display: flex; flex-direction: column; gap: var(--s-10); min-width: 0; }
   .v3-msg.bash { gap: var(--s-6); }
@@ -194,10 +192,17 @@
   .v3-asks > :is(.v3-approval, .v3-qcard) { max-width: var(--size-chat); max-height: calc(45vh - var(--s-12)); margin-inline: auto; }
   .v3-msgmenu-anchor { position: fixed; width: 1px; height: 1px; pointer-events: none; }
 
-  .v3-jump { position: absolute; right: calc(var(--col-pad-r, var(--s-20)) + (100% - var(--col-pad-l, var(--s-20)) - var(--col-pad-r, var(--s-20)) - var(--size-jump)) / 2); bottom: calc(var(--composer-h, 0px) + var(--s-24) - var(--size-jump) / 2); z-index: 5; }
-  @container (min-width: 900px) {
-    .v3-jump { right: calc(var(--col-pad-r, var(--s-20)) - var(--size-jump) - var(--s-12)); bottom: calc(var(--composer-h, 0px) + var(--s-24) - var(--size-jump)); }
+  .v3-jump {
+    position: absolute;
+    right: max(var(--col-pad-r, var(--s-20)), calc((100% - var(--size-chat)) / 2));
+    bottom: calc(var(--composer-h, 0px) + var(--s-12));
+    z-index: 5;
+    display: flex;
+    justify-content: flex-end;
+    pointer-events: none;
+    animation: v3-fade-in var(--dur-base) var(--ease) both;
   }
+  .v3-jump-btn { pointer-events: auto; }
   .v3-asks:not(:empty) { margin-bottom: calc(var(--composer-h, 0px) + var(--s-24)); }
 
   @media (max-width: 720px) {

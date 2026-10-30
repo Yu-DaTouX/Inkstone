@@ -849,6 +849,8 @@
   "composer.t3.queue.showLess": "收起排队",
   "composer.t3.stash.closeAria": "关闭暂存",
   "composer.t3.moreControls": "更多输入框控件",
+  "composer.t3.effort.wheel": "\u6eda\u8f6e\u5207\u6362\u6863\u4f4d",
+  "composer.t3.effort.menu": "\u53f3\u952e\u6253\u5f00\u5b8c\u6574\u83dc\u5355",
   "composer.t3.submit": "发送消息",
   "composer.t3.steer": "插话",
   "composer.t3.queue": "排队",

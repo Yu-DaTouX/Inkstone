@@ -849,6 +849,8 @@
   "composer.t3.queue.showLess": "Show fewer",
   "composer.t3.stash.closeAria": "Close stash",
   "composer.t3.moreControls": "More composer controls",
+  "composer.t3.effort.wheel": "Scroll to change effort",
+  "composer.t3.effort.menu": "Right-click for the full menu",
   "composer.t3.submit": "Send message",
   "composer.t3.steer": "Steer message",
   "composer.t3.queue": "Queue message",

@@ -14,9 +14,10 @@ import { BrowserHandoffCard } from './BrowserHandoffCard'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
-import { Icon } from './Icon'
 import { AsciiField } from '../ambient/AsciiField'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
+import { Button } from '../../t3/components/ui/button'
+import { ChevronDown } from 'lucide-react'
 import { approvalMatchesView, sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { V3EmptyState } from './V3EmptyState'
 import { RewindDialogV3 } from './RewindDialogV3'
@@ -30,7 +31,7 @@ import {
   type BranchPagerRequest
 } from './branch-pager-model'
 import { countUserMessages, mergeApprovalLogCached, withoutImageNotices } from './effective-messages'
-import { decisionOutcomes, turnAnswers, userTurnOrdinals } from './turn-outcome'
+import { decisionOutcomes, turnAnswers } from './turn-outcome'
 import { messageEntrySignature } from './turn-lines'
 import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
@@ -246,7 +247,6 @@ export function SessionView(): JSX.Element {
   const turns = useMemo(() => projectTurns(projectedMessages, streamingId), [projectedMessages, streamingId, projectTurns])
   const answers = useMemo(() => turnAnswers(turns), [turns])
   const outcomes = useMemo(() => decisionOutcomes(turns), [turns])
-  const ordinals = useMemo(() => userTurnOrdinals(turns), [turns])
   const wrapUpBusy = !!(session?.isAgentRunning || session?.isStreaming || session?.isCompacting)
   const wrapUpOn = settings?.wrapUpCard !== false
   const wrapUp = useMemo(
@@ -491,6 +491,21 @@ export function SessionView(): JSX.Element {
   useEffect(() => { remountsRef.current = 0 }, [identity])
 
   useEffect(() => {
+    if (!virtual) return undefined
+    const root = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+    if (!root) return undefined
+    const repin = (): void => {
+      if (settlingRef.current || !stickRef.current) return
+      if (userScrollActive(intentRef.current, performance.now())) return
+      root.scrollTop = root.scrollHeight
+    }
+    const observer = new ResizeObserver(repin)
+    observer.observe(root)
+    if (root.firstElementChild) observer.observe(root.firstElementChild)
+    return () => observer.disconnect()
+  }, [virtual, identity, remountKey])
+
+  useEffect(() => {
     if (settlingRef.current) return undefined
     if (!stickRef.current) {
       const measure = (): void => {
@@ -581,7 +596,18 @@ export function SessionView(): JSX.Element {
       return
     }
     const el = streamRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el) return
+    const smooth = typeof window.matchMedia === 'function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!smooth) {
+      el.scrollTop = el.scrollHeight
+      return
+    }
+    settlingRef.current = true
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    window.setTimeout(() => {
+      settlingRef.current = false
+      if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight
+    }, 400)
   }, [setStickNow, virtual])
 
   const userCount = useMemo(() => countUserMessages(effectiveMessages), [effectiveMessages])
@@ -611,7 +637,7 @@ export function SessionView(): JSX.Element {
           >
             {(item, index) => (
               <div key={`${identity}|${item.id}`} className={`v3-stream-row${index === 0 ? ' v3-stream-row--head' : ''}${index === renderTurns.length - 1 ? ' v3-stream-row--tail' : ''}`}>
-                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} ordinal={ordinals.get(item.id)} />}
+                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />}
               </div>
             )}
           </VList>
@@ -621,16 +647,19 @@ export function SessionView(): JSX.Element {
               {turns.length === 0 ? (switchLoading ? null : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
                   ? <PendingRunNotice key={`${identity}|${item.id}`} />
-                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} ordinal={ordinals.get(item.id)} />
+                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />
               )}
             </div>
           </div>
         )}
 
         {showJump && !stick ? (
-          <button className="v3-jump" data-testid="v3-jump" onClick={jumpToBottom} aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')}>
-            <Icon name="arrow-down" size={14} />
-          </button>
+          <div className="v3-jump">
+            <Button className="v3-jump-btn" data-testid="v3-jump" size="xs" variant="glass" aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')} onClick={jumpToBottom}>
+              <ChevronDown aria-hidden />
+              <span>{t('chat.jumpToBottom')}</span>
+            </Button>
+          </div>
         ) : null}
 
         <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} />

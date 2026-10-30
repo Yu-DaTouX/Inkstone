@@ -19,7 +19,7 @@ import { UserText } from './UserText'
 import { MessageFiles } from './MessageFiles'
 import { splitFileReferences } from '../composer/file-refs'
 import { Icon } from './Icon'
-import { AsciiRule, Badge, IconButton, Notice } from '../../ui'
+import { Badge, IconButton, Notice } from '../../ui'
 import { useArrival } from '../../ui/motion-hooks'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
@@ -47,14 +47,14 @@ import { DecisionBlock, TurnResult } from './TurnOutcome'
 import { turnChangeSet, turnSpanMs } from './turn-process'
 import { splitDecision, type DecisionOutcome } from './turn-outcome'
 
-export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, answer, outcome = null, ordinal }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null; ordinal?: number }): JSX.Element | null {
-  if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} ordinal={ordinal} />
+export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, answer, outcome = null }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null }): JSX.Element | null {
+  if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
   return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} answer={answer} outcome={outcome} />
 })
 
-function UserTurnView({ turn, readOnly, rewindOwner, branchPager, ordinal }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding; ordinal?: number }): JSX.Element | null {
+function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
   const t = useT()
   const { lang } = useI18n()
   const msg = turn.msg
@@ -77,7 +77,6 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager, ordinal }: { t
   const showImageRefs = (msg.images?.length ?? 0) > 1 || referencedImageNumbers(displayText).length > 0
   return (
     <article className="v3-msg user" data-msg-id={msg.id} data-turn-id={turn.id}>
-      {ordinal && ordinal > 1 ? <AsciiRule glyph="┄" align="center" className="v3-turn-rule" label={tt('turnOrdinal', { n: ordinal })} data-testid="v3-turn-rule" /> : null}
       <div className="v3-user-body">
         {msg.question ? (
           <Badge data-testid="v3-question-tag">

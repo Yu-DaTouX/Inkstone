@@ -490,6 +490,9 @@
     .wb-rail-grip[data-with-open='1'] {
       right: calc(var(--size-btn-sm) + var(--s-2));
     }
+    .wb-tile-head:has(> .wb-rail-grip) .wb-tile-toggle {
+      padding-right: calc(var(--size-btn-sm) + var(--s-4));
+    }
     .wb-tile-open {
       position: absolute;
       top: 50%;
