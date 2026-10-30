@@ -454,7 +454,7 @@ async function fetchRemote(request: Extract<GitActionRequest, { kind: 'fetch' }>
   })
 }
 
-async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>): Promise<GitActionResult> {
+async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>, requiredBranch?: string): Promise<GitActionResult> {
   const prep = await prepare(request.cwd)
   if (!prep.ok) return { ok: false, failure: prep.failure }
   const repo = prep.repo
@@ -466,6 +466,8 @@ async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>):
       return { ok: false, failure: { code: 'no-remote', message: '这个仓库没有配置远程', retrySafe: true } }
     }
     const state = await readRepoState(repo.root)
+    if (requiredBranch && request.remote && !remotes.includes(request.remote)) return { ok: false, failure: { code: 'no-remote', message: '指定的推送远程不存在', retrySafe: true } }
+    if (requiredBranch && state?.branch !== requiredBranch) return { ok: false, failure: { code: 'stale', message: '当前分支与 PR head 不一致，请刷新后重试', retrySafe: true } }
     const branch = request.branch || state?.branch || null
     if (branch) {
       const invalid = validateBranchName(branch) ?? (branch.startsWith('+') ? '分支名不能以 + 开头' : null)
@@ -514,6 +516,41 @@ async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>):
       ...(next ? { state: next } : {})
     }
   })
+}
+
+export async function pushCurrentBranchForPr(cwd: string, head: string, options: { remote?: string; setUpstream?: boolean }): Promise<GitActionResult> {
+  try {
+    return await pushBranch({ kind: 'push', cwd, requestId: 'github-pr-push', expected: await readExpected(cwd), branch: null, remote: options.remote ?? null, setUpstream: options.setUpstream === true }, head)
+  } catch (error) {
+    return { ok: false, failure: classifyGitFailure(String((error as Error)?.message ?? error)) }
+  }
+}
+
+export async function checkoutPrHead(cwd: string, number: number, repositoryUrl: string, headOid: string): Promise<GitActionResult> {
+  if (!Number.isInteger(number) || number < 1 || number > 9_999_999 || !/^[0-9a-f]{40,64}$/.test(headOid)) return { ok: false, failure: { code: 'invalid-input', message: 'PR checkout 参数不合法', retrySafe: true } }
+  try {
+    const url = new URL(repositoryUrl)
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return { ok: false, failure: { code: 'invalid-input', message: 'PR 仓库地址不合法', retrySafe: true } }
+    const prep = await prepare(cwd)
+    if (!prep.ok) return { ok: false, failure: prep.failure }
+    const repo = prep.repo
+    return await withRepoLock(repo.repoId, async () => {
+      if (ctx.hasRunningTask?.(repo.root)) return { ok: false, failure: runningFailure('switch') }
+      const fetched = await runWrite(repo.root, ['fetch', '--no-tags', '--', url.toString(), `refs/pull/${number}/head`], { timeout: NETWORK_TIMEOUT })
+      if (!fetched.ok) return { ok: false, failure: fetched.failure }
+      const fetchedHead = await gitRun(repo.root, ['rev-parse', '--verify', 'FETCH_HEAD'], { allowFailure: true })
+      if (!fetchedHead.ok || fetchedHead.stdout.trim() !== headOid) return { ok: false, failure: staleFailure(['PR HEAD']) }
+      if (ctx.hasRunningTask?.(repo.root)) return { ok: false, failure: runningFailure('switch') }
+      const dirty = await switchDirtyFailure(repo.root, headOid)
+      if (dirty) return { ok: false, failure: dirty }
+      const before = await readExpected(repo.root)
+      const switched = await runWrite(repo.root, ['switch', '--detach', headOid])
+      if (!switched.ok) return { ok: false, failure: switched.failure }
+      return finish(repo, before.head, `已检出 PR #${number}（detached HEAD）`)
+    })
+  } catch (error) {
+    return { ok: false, failure: classifyGitFailure(String((error as Error)?.message ?? error)) }
+  }
 }
 
 export async function runGitAction(request: GitActionRequest): Promise<GitActionResult> {

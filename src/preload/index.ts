@@ -488,7 +488,9 @@ const api: YanBridge = {
   },
   github: {
     status: (cwd) => invoke<import('../shared/github').GithubStatus>('yan:github:status', cwd),
-    list: (cwd, state) => invoke<import('../shared/github').GhPrListResult>('yan:github:list', cwd, state),
+    list: (cwd, options) => invoke<import('../shared/github').GhPrListResult>('yan:github:list', cwd, options),
+    action: (cwd, request) => invoke<import('../shared/github').GhPrActionResult>('yan:github:action', cwd, request),
+    candidates: (cwd, request) => invoke<import('../shared/github').GhPrCandidatesResult>('yan:github:candidates', cwd, request),
     detail: (cwd, number) => invoke<import('../shared/github').GhPrDetailResult>('yan:github:detail', cwd, number),
     diff: (cwd, number) => invoke<import('../shared/github').GhPrDiffResult>('yan:github:diff', cwd, number),
     openUrl: (url) => invoke<{ ok: boolean; error?: string }>('yan:github:openUrl', url)

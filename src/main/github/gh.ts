@@ -1,74 +1,26 @@
-import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { isGhPrListState } from '../../shared/github'
+import { classifyGhFailure, prFailure, runGh } from './command'
+import { listArguments } from './validation'
 import type {
   GhPrDetailJson,
   GhPrDetailResult,
   GhPrDiffResult,
   GhPrListResult,
   GhPrListState,
+  GhPrListOptions,
   GhPrListItemJson,
   GithubStatus
 } from '../../shared/github'
 
-const GH_TIMEOUT_MS = 20_000
-const JSON_MAX_BUFFER = 8 * 1024 * 1024
 const DIFF_LIMIT_BYTES = 4 * 1024 * 1024
 const DIFF_MAX_BUFFER = DIFF_LIMIT_BYTES + 1024 * 1024
-const MESSAGE_LIMIT = 400
 const MAX_PR_NUMBER = 9_999_999
 
 const LIST_FIELDS =
-  'number,title,author,state,isDraft,headRefName,baseRefName,updatedAt,reviewDecision,statusCheckRollup,additions,deletions,url'
-const DETAIL_FIELDS =
+  'number,title,author,state,isDraft,headRefName,baseRefName,updatedAt,reviewDecision,labels,statusCheckRollup,additions,deletions,url'
+export const DETAIL_FIELDS =
   'number,title,body,author,state,isDraft,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,reviewDecision,statusCheckRollup,files,commits,comments,reviews,latestReviews,reviewRequests,labels,additions,deletions,changedFiles,url'
 
-const GH_ENV = {
-  GH_PROMPT_DISABLED: '1',
-  GH_NO_UPDATE_NOTIFIER: '1',
-  GH_PAGER: 'cat',
-  NO_COLOR: '1',
-  CLICOLOR: '0'
-}
-
-interface GhRun {
-  ok: boolean
-  stdout: string
-  stderr: string
-  missing: boolean
-  missingCwd: boolean
-  timedOut: boolean
-  overflow: boolean
-}
-
-function runGh(cwd: string, args: string[], maxBuffer = JSON_MAX_BUFFER): Promise<GhRun> {
-  return new Promise((resolve) => {
-    execFile(
-      'gh',
-      args,
-      { cwd, timeout: GH_TIMEOUT_MS, maxBuffer, encoding: 'utf8', windowsHide: true, env: { ...process.env, ...GH_ENV } },
-      (error, stdout, stderr) => {
-        const out = typeof stdout === 'string' ? stdout : ''
-        const err = typeof stderr === 'string' ? stderr : ''
-        if (!error) {
-          resolve({ ok: true, stdout: out, stderr: err, missing: false, missingCwd: false, timedOut: false, overflow: false })
-          return
-        }
-        const code = (error as NodeJS.ErrnoException).code ?? ''
-        const missing = code === 'ENOENT'
-        resolve({
-          ok: false,
-          stdout: out,
-          stderr: err || error.message,
-          missing,
-          missingCwd: missing && !existsSync(cwd),
-          timedOut: code === 'ETIMEDOUT' || (error as { killed?: boolean }).killed === true,
-          overflow: code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
-        })
-      }
-    )
-  })
-}
+type GhRun = import('./command').GhRun
 
 function parseJson<T>(text: string): T | null {
   try {
@@ -79,9 +31,7 @@ function parseJson<T>(text: string): T | null {
 }
 
 function failureText(run: GhRun): string {
-  if (run.timedOut) return `gh 命令超过 ${GH_TIMEOUT_MS / 1000} 秒没有返回`
-  const text = run.stderr.replace(/\s+/g, ' ').trim().slice(0, MESSAGE_LIMIT)
-  return text || `gh 退出码 ${run.ok ? 0 : 1}`
+  return classifyGhFailure(run).message
 }
 
 function isPrNumber(value: unknown): value is number {
@@ -113,13 +63,17 @@ export async function readGithubStatus(cwd: string): Promise<GithubStatus> {
   }
 }
 
-export async function ghPrList(cwd: string, state: GhPrListState): Promise<GhPrListResult> {
-  const safeState: GhPrListState = isGhPrListState(state) ? state : 'open'
-  const res = await runGh(cwd, ['pr', 'list', '--state', safeState, '--limit', '50', '--json', LIST_FIELDS])
-  if (!res.ok) return { ok: false, items: [], error: failureText(res) }
+export async function ghPrList(cwd: string, options: GhPrListState | GhPrListOptions, run = runGh): Promise<GhPrListResult> {
+  const built = listArguments(options)
+  if (!built.ok) return { ok: false, items: [], error: built.failure.message, failure: built.failure }
+  const res = await run(cwd, [...built.args, '--json', LIST_FIELDS])
+  if (!res.ok) {
+    const failure = classifyGhFailure(res)
+    return { ok: false, items: [], error: failure.message, failure }
+  }
   const parsed = parseJson<GhPrListItemJson[]>(res.stdout)
-  if (!Array.isArray(parsed)) return { ok: false, items: [], error: 'gh 返回的 PR 列表无法解析' }
-  return { ok: true, items: parsed }
+  if (!Array.isArray(parsed)) return { ok: false, items: [], error: 'gh 返回的 PR 列表无法解析', failure: prFailure('other', 'gh 返回的 PR 列表无法解析') }
+  return { ok: true, items: parsed.slice(0, built.limit), limit: built.limit, hasMore: parsed.length > built.limit }
 }
 
 export async function ghPrDetail(cwd: string, number: number): Promise<GhPrDetailResult> {

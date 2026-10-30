@@ -2,8 +2,9 @@ import { shell } from 'electron'
 import type { IpcRegistrar } from './registrar'
 import type { AuthorizeReadCwd } from '../git-inspect'
 import { ghPrDetail, ghPrDiff, ghPrList, readGithubStatus } from '../github/gh'
-import { isGhPrListState } from '../../shared/github'
-import type { GhPrDetailResult, GhPrDiffResult, GhPrListResult, GhPrListState, GithubStatus } from '../../shared/github'
+import { githubPrBackend } from '../github/actions'
+import { prFailure } from '../github/command'
+import type { GhPrActionRequest, GhPrActionResult, GhPrCandidatesRequest, GhPrCandidatesResult, GhPrDetailResult, GhPrDiffResult, GhPrListOptions, GhPrListResult, GhPrListState, GithubStatus } from '../../shared/github'
 
 export interface GithubIpcDeps {
   authorizeReadCwd: AuthorizeReadCwd
@@ -46,13 +47,34 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
   })
 
   handle('yan:github:list', async (cwd: string, state?: unknown): Promise<GhPrListResult> => {
-    const wanted: GhPrListState = isGhPrListState(state) ? state : 'open'
+    const wanted = (state ?? 'open') as GhPrListState | GhPrListOptions
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
-      if (!auth.ok) return { ok: false, items: [], error: auth.error }
+      if (!auth.ok) return { ok: false, items: [], error: auth.error, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
       return await ghPrList(auth.cwd, wanted)
-    } catch (error) {
-      return { ok: false, items: [], error: message(error) }
+    } catch {
+      const failure = prFailure('other', '获取 PR 列表失败')
+      return { ok: false, items: [], error: failure.message, failure }
+    }
+  })
+
+  handle('yan:github:action', async (cwd: string, request: GhPrActionRequest): Promise<GhPrActionResult> => {
+    try {
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      return await githubPrBackend.action(auth.cwd, request)
+    } catch {
+      return { ok: false, failure: prFailure('other', 'PR 操作未得到确认，请刷新确认', false) }
+    }
+  })
+
+  handle('yan:github:candidates', async (cwd: string, request: GhPrCandidatesRequest): Promise<GhPrCandidatesResult> => {
+    try {
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      return await githubPrBackend.candidates(auth.cwd, request)
+    } catch {
+      return { ok: false, failure: prFailure('other', '获取 PR 候选列表失败') }
     }
   })
 
