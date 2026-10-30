@@ -20,6 +20,7 @@ export interface GitStateView {
 
 export interface ChangesSnapshot {
   files: GitChangeEntry[]
+  truncated?: boolean
   head: string | null
   scopeKind: GitChangesScope['kind']
   baseRef: string | null
@@ -71,6 +72,8 @@ export interface ChangeItem {
   origPath?: string
   added?: number
   removed?: number
+  staged?: boolean
+  unstaged?: boolean
 }
 
 export interface ChangesAnnotate {

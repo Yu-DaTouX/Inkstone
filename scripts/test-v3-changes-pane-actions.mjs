@@ -74,6 +74,8 @@ export function usePaneMenu(id, items) { (globalThis.__V3_MENUS ??= {})[id] = it
 
 const DIFF_STUB = `export function ChangesFileDiff() { return null }`
 
+const PICKER_STUB = `export function BranchPicker() { return null }`
+
 const LUCIDE_STUB = importedNames(/['"]lucide-react['"]/)
   .map((name) => `export function ${name}() { return null }`)
   .join('\n')
@@ -86,7 +88,8 @@ function makeStubMap() {
       'src/renderer/src/i18n/index.tsx': I18N_STUB,
       'src/renderer/src/i18n/ui-text.ts': UI_TEXT_STUB,
       'src/renderer/src/features/workbench/pane-chrome.tsx': CHROME_STUB,
-      'src/renderer/src/features/changes/ChangesFileDiff.tsx': DIFF_STUB
+      'src/renderer/src/features/changes/ChangesFileDiff.tsx': DIFF_STUB,
+      'src/renderer/src/features/changes/BranchPicker.tsx': PICKER_STUB
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
 }
@@ -129,6 +132,8 @@ async function buildBundle(outdir) {
 export { Button } from '${posix(resolve(ROOT, 'src/renderer/src/ui/index.ts'))}'
 export { ChangesFileDiff } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/ChangesFileDiff.tsx'))}'
 export { ChangesBinaryGroup } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/ChangesBinaryGroup.tsx'))}'
+export { CommitPanel } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/CommitPanel.tsx'))}'
+export { GitFailureNotice } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/GitFailureNotice.tsx'))}'
 export { patchLineCounts } from '${posix(resolve(ROOT, 'src/renderer/src/features/changes/patch-line-counts.ts'))}'
 `
   )
@@ -376,7 +381,7 @@ async function run() {
 
   try {
     const mod = await import(pathToFileURL(await buildBundle(outdir)).href)
-    const { ChangesPane, Button } = mod
+    const { ChangesPane, CommitPanel, GitFailureNotice } = mod
     const owner = { key: 'sess-a', cwd: 'C:/proj/demo', active: true }
 
     assert.equal(typeof ChangesPane, 'function', 'ChangesPane 应能浅渲染')
@@ -389,22 +394,51 @@ async function run() {
       assert.equal(reads.state, 1, '首次渲染应读一次仓库状态')
       assert.equal(reads.changes, 1, '首次渲染应读一次改动列表')
 
-      const actionable = findAllByType(tree, Button).filter((el) => typeof el.props?.onPress === 'function' && !el.props.isDisabled)
-      assert.equal(actionable.length, 1, `可点击的写操作按钮应只有一个，实际 ${actionable.length}`)
-      await actionable[0].props.onPress()
+      const panels = findAllByType(tree, CommitPanel)
+      assert.equal(panels.length, 1, '工作区范围要显示暂存与提交区')
+      const panel = panels[0].props
+      assert.equal(panel.ready, true, '拿到 expected 后提交区才可操作')
+      assert.deepEqual(panel.items.map((item) => [item.path, item.staged, item.unstaged]), [['a.txt', false, true]], '暂存状态要从 git.changes 带到文件行')
+      panel.onStageAll()
       const after = await flush(globalThis.__V3_HOOKS, ChangesPane, props)
 
       assert.equal(reads.action, 1, '点了按钮应真的调用 git action')
       assert.equal(reads.state, 2, 'stale 失败后必须重新读仓库状态（否则 expected 永远过期）')
       assert.equal(reads.changes, 2, 'stale 失败后必须重新读改动列表')
-      const alerts = []
-      walk(after, (el) => {
-        if (el?.props?.role === 'alert' || (el?.props?.tone === 'fail' && el?.props?.role === undefined)) alerts.push(textOf(el))
-      })
-      assert.ok(
-        alerts.some((line) => line.includes(STALE_MESSAGE)),
-        `失败提示仍要留在界面上，实际 ${JSON.stringify(alerts)}`
-      )
+      const failures = findAllByType(after, GitFailureNotice)
+      assert.equal(failures.length, 1, '失败提示仍要留在界面上')
+      assert.equal(failures[0].props.view.message, STALE_MESSAGE)
+      assert.equal(failures[0].props.view.retry, 'refresh', 'stale 不给一键重试，只给刷新状态')
+    }
+
+    {
+      const { reads, source } = fixtures()
+      const sent = []
+      const action = async (req) => {
+        sent.push(req)
+        return { ok: true, summary: 'ok' }
+      }
+      globalThis.window = { yan: { git: { action } }, addEventListener() {}, removeEventListener() {} }
+      globalThis.__V3_HOOKS = makeHookRuntime()
+      const props = { owner, gitSource: source }
+      const tree = await flush(globalThis.__V3_HOOKS, ChangesPane, props)
+      const panel = findAllByType(tree, CommitPanel)[0].props
+      panel.onStage({ path: 'a.txt', status: '.M', untracked: false })
+      panel.onUnstage({ path: 'n.txt', status: 'R.', untracked: false, origPath: 'o.txt' })
+      await flush(globalThis.__V3_HOOKS, ChangesPane, props)
+      assert.equal(sent.length, 1, '一个写操作进行中时不重复提交')
+      assert.equal(sent[0].kind, 'stage')
+      assert.deepEqual(sent[0].paths, ['a.txt'])
+      assert.deepEqual(sent[0].expected, { head: HEAD, indexDigest: 'index-1', statusDigest: 'status-1' }, '写操作带 expected 防并发')
+      assert.equal(reads.state, 2, '成功后重新读状态')
+      const again = findAllByType(globalThis.__V3_HOOKS.render(ChangesPane, props), CommitPanel)[0].props
+      again.onUnstage({ path: 'n.txt', status: 'R.', untracked: false, origPath: 'o.txt' })
+      await flush(globalThis.__V3_HOOKS, ChangesPane, props)
+      assert.equal(sent[1].kind, 'unstage')
+      assert.deepEqual(sent[1].paths, ['n.txt', 'o.txt'], '取消暂存改名文件时连旧路径一起')
+      again.onUnstageAll()
+      await flush(globalThis.__V3_HOOKS, ChangesPane, props)
+      assert.equal(sent[2].kind, 'unstage-all')
     }
 
     {
@@ -413,12 +447,13 @@ async function run() {
       globalThis.__V3_HOOKS = makeHookRuntime()
       const props = { owner, gitSource: source }
       const tree = await flush(globalThis.__V3_HOOKS, ChangesPane, props)
-      const actionable = findAllByType(tree, Button).filter((el) => typeof el.props?.onPress === 'function' && !el.props.isDisabled)
-      assert.equal(actionable.length, 1)
-      await actionable[0].props.onPress()
-      await flush(globalThis.__V3_HOOKS, ChangesPane, props)
+      findAllByType(tree, CommitPanel)[0].props.onCommit(false)
+      const after = await flush(globalThis.__V3_HOOKS, ChangesPane, props)
       assert.equal(reads.action, 1)
       assert.equal(reads.state, 1, '非 stale 失败不额外重读（面板只在状态真的过期时才刷新）')
+      const failure = findAllByType(after, GitFailureNotice)[0]
+      assert.equal(failure.props.view.code, 'hook')
+      assert.equal(failure.props.view.retry, 'refresh', 'retrySafe 为假时不给一键重试')
     }
 
     {

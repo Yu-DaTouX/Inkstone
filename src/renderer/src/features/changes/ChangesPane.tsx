@@ -1,11 +1,12 @@
 import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, FlaskConical, List, RefreshCw } from 'lucide-react'
+import { ChevronDown, CloudDownload, CloudUpload, FlaskConical, GitBranch, List, RefreshCw } from 'lucide-react'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitStatusEntry } from '../../../../shared/git'
 import {
   Button,
   Checkbox,
+  ConfirmDialog,
   DiffStat,
   EmptyState,
   IconButton,
@@ -20,6 +21,12 @@ import {
   TreeRow,
   cx
 } from '../../ui'
+import { BranchPicker } from './BranchPicker'
+import { CommitPanel } from './CommitPanel'
+import { GitFailureNotice } from './GitFailureNotice'
+import { needsDefaultBranchConfirm, primaryAction, unstagePaths } from './git-flow'
+import { useGitAction } from './use-git-action'
+import { REASON_KEY } from './git-flow-keys'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -118,6 +125,7 @@ function defaultGitSource(): ChangesGitSource {
       if (!res.ok) throw new Error(res.error ?? uiText('state.error.changesReadFailed'))
       return {
         files: res.files,
+        truncated: res.truncated === true,
         head: res.head,
         scopeKind: res.scopeKind ?? query.scope.kind,
         baseRef: res.baseRef ?? null,
@@ -144,7 +152,7 @@ function defaultLoadPatch(): PatchLoader | undefined {
   }
 }
 
-type ChangeEntry = GitStatusEntry & { added?: number; removed?: number }
+type ChangeEntry = GitStatusEntry & { added?: number; removed?: number; staged?: boolean; unstaged?: boolean }
 
 function mergeItems(entries: ChangeEntry[], untracked: string[]): ChangeItem[] {
   const map = new Map<string, ChangeItem>()
@@ -156,7 +164,9 @@ function mergeItems(entries: ChangeEntry[], untracked: string[]): ChangeItem[] {
       untracked: entry.untracked,
       origPath: entry.origPath,
       added: entry.added,
-      removed: entry.removed
+      removed: entry.removed,
+      ...(typeof entry.staged === 'boolean' ? { staged: entry.staged } : {}),
+      ...(typeof entry.unstaged === 'boolean' ? { unstaged: entry.unstaged } : {})
     })
   }
   for (const path of untracked) {
@@ -183,7 +193,7 @@ interface ListMeta {
 const EMPTY_META: ListMeta = { baseRef: null, baseSha: null, targetSha: null, added: null, removed: null, pathScope: null }
 
 type ListOutcome =
-  | { ok: true; items: ChangeItem[]; head: string | null; meta: ListMeta; patches: Record<string, GitChangePatch> }
+  | { ok: true; items: ChangeItem[]; head: string | null; meta: ListMeta; patches: Record<string, GitChangePatch>; truncated?: boolean }
   | { ok: false; error: string }
 
 const SCOPE_KINDS: readonly ChangesScopeKind[] = ['working', 'branch', 'commit']
@@ -240,9 +250,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const [reveal, setReveal] = useState<{ path: string; seq: number } | null>(null)
   const [layout, setLayout] = useState<DiffViewMode>(readLayout)
   const [message, setMessage] = useState('')
-  const [actionBusy, setActionBusy] = useState(false)
-  const [actionError, setActionError] = useState('')
-  const [actionNotice, setActionNotice] = useState('')
+  const [truncated, setTruncated] = useState(false)
+  const [hasRemote, setHasRemote] = useState(false)
+  const [confirm, setConfirm] = useState<'push' | 'publish' | 'commit-push' | null>(null)
+  const [branchOpen, setBranchOpen] = useState(false)
+  const branchRef = useRef<HTMLButtonElement | null>(null)
   const [hideTests, setHideTests] = useState(readHideTestFiles)
   const [viewed, setViewed] = useState(readViewedFiles)
 
@@ -288,6 +300,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
           return {
             ok: true,
             items: mergeItems(snapshot.files, []),
+            truncated: snapshot.truncated === true,
             head: snapshot.head,
             meta: {
               baseRef: snapshot.baseRef,
@@ -322,6 +335,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
         if (listRes.ok) {
           setListError('')
           setItems(listRes.items)
+          setTruncated(listRes.truncated === true)
           setPatches(listRes.patches)
           setMeta(listRes.meta)
           if (initRef.current !== initKey) {
@@ -512,49 +526,82 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     setScopeState({ ownerId, scope: commitScope(shaDraft) })
   }
 
-  const refresh = useCallback((): void => {
-    setActionError('')
-    setActionNotice('')
+  const reload = useCallback((): void => {
     setTick((n) => n + 1)
   }, [])
+  const runner = useGitAction(cwd, expected, reload)
+  const clearRunner = runner.clear
 
-  const runAction = useCallback(
-    async (kind: 'stage-all' | 'commit'): Promise<void> => {
-      const git = bridge()
-      if (!git || !expected || actionBusy) return
-      setActionBusy(true)
-      setActionError('')
-      setActionNotice('')
-      try {
-        const requestId = `changes-${kind}-${Date.now()}`
-        const res =
-          kind === 'commit'
-            ? await git.action({ requestId, cwd, expected, kind: 'commit', message: message.trim() })
-            : await git.action({ requestId, cwd, expected, kind: 'stage-all' })
-        if (!res.ok) {
-          setActionError(text.commitFailed(res.failure?.message ?? ''))
-          if (res.failure?.code === 'stale') setTick((n) => n + 1)
-          return
-        }
-        if (kind === 'commit') {
-          setActionNotice(text.commitDone(res.summary ?? ''))
-          setMessage('')
-        }
-        setTick((n) => n + 1)
-      } catch (e: unknown) {
-        setActionError(text.commitFailed(e instanceof Error ? e.message : String(e)))
-      } finally {
-        setActionBusy(false)
-      }
-    },
-    [actionBusy, cwd, expected, message, text]
-  )
+  const refresh = useCallback((): void => {
+    clearRunner()
+    setTick((n) => n + 1)
+  }, [clearRunner])
+
+  useEffect(() => {
+    const git = bridge()
+    if (!git?.remotes) {
+      setHasRemote(false)
+      return undefined
+    }
+    let alive = true
+    git
+      .remotes(cwd)
+      .then((list) => {
+        if (alive) setHasRemote(list.length > 0)
+      })
+      .catch(() => {
+        if (alive) setHasRemote(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [cwd, tick])
+
+  const pushNow = async (kind: 'push' | 'publish'): Promise<void> => {
+    await runner.run({ kind: 'push', remote: null, setUpstream: kind === 'publish' || !repo?.upstream, branch: repo?.branch ?? null })
+  }
+
+  const commitNow = async (andPush: boolean): Promise<void> => {
+    const res = await runner.run({ kind: 'commit', message: message.trim() })
+    if (!res?.ok) return
+    setMessage('')
+    if (andPush) await pushNow(repo?.upstream ? 'push' : 'publish')
+  }
+
+  const requestPush = (kind: 'push' | 'publish'): void => {
+    if (needsDefaultBranchConfirm(kind, repo?.branch)) setConfirm(kind)
+    else void pushNow(kind)
+  }
+
+  const requestCommit = (andPush: boolean): void => {
+    if (andPush && needsDefaultBranchConfirm('commit-push', repo?.branch)) setConfirm('commit-push')
+    else void commitNow(andPush)
+  }
+
+  const fetchNow = (): void => {
+    void runner.run({ kind: 'fetch', remote: null })
+  }
 
   const canDiff = loader !== undefined
   const hasEntries = Boolean(source.changes || source.entries)
   const hasTracked = (repo?.stagedCount ?? 0) + (repo?.unstagedCount ?? 0) > 0
-  const hasWork = (repo?.changedCount ?? 0) > 0
-  const canAct = Boolean(bridge()?.action) && Boolean(expected) && hasWork && owner.active && !actionBusy
+  const canAct = Boolean(bridge()?.action) && Boolean(expected) && owner.active
+  const sync = repo
+    ? primaryAction({
+        stagedCount: 0,
+        changedCount: 0,
+        branch: repo.branch,
+        detached: repo.detached,
+        unborn: repo.unborn,
+        upstream: repo.upstream,
+        ahead: repo.ahead,
+        behind: repo.behind,
+        hasRemote,
+        hasMessage: false
+      })
+    : null
+  const canPush = canAct && !!sync && (sync.kind === 'push' || sync.kind === 'publish') && sync.reason === null
+  const pushKind: 'push' | 'publish' = sync?.kind === 'publish' ? 'publish' : 'push'
   const scopeLabels: Record<ChangesScopeKind, string> = {
     working: text.scopeWorking,
     branch: text.scopeBranch,
@@ -589,7 +636,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const scopeMenu = source.changes ? (
     <MenuTrigger>
       <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={repo?.root} className="changes-pane__scope">
-        {branchLabel ? `${branchLabel} \u2192 ${scopeLabels[scope.kind]}` : scopeLabels[scope.kind]}
+        {scopeLabels[scope.kind]}
         <ChevronDown size={12} aria-hidden="true" />
       </Button>
       <Popover placement="bottom end">
@@ -615,6 +662,71 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       <RefreshCw size={14} aria-hidden="true" />
     </IconButton>
   )
+
+  const branchButton =
+    repo && branchLabel ? (
+      <Button
+        ref={branchRef}
+        size="sm"
+        variant="ghost"
+        className="changes-pane__branch"
+        icon={<GitBranch size={14} />}
+        trailingIcon={<ChevronDown size={12} />}
+        aria-label={t('gitflow.branch.trigger', { branch: branchLabel })}
+        aria-haspopup="dialog"
+        aria-expanded={branchOpen}
+        isDisabled={!owner.active}
+        onPress={() => setBranchOpen(true)}
+        data-testid="changes-branch"
+      >
+        {branchLabel}
+      </Button>
+    ) : null
+
+  const syncLabel =
+    repo && repo.upstream && (repo.ahead > 0 || repo.behind > 0)
+      ? t('gitflow.aheadBehind', { ahead: repo.ahead, behind: repo.behind })
+      : ''
+  const syncMark = syncLabel ? (
+    <span className="changes-pane__sync ui-meta-num" role="img" aria-label={syncLabel} title={syncLabel} data-testid="changes-sync">
+      {`\u2191${repo?.ahead ?? 0} \u2193${repo?.behind ?? 0}`}
+    </span>
+  ) : null
+
+  const syncButtons = repo ? (
+    <>
+      <IconButton
+        size="sm"
+        aria-label={t('gitflow.fetch')}
+        tooltip={hasRemote ? t('gitflow.fetch') : t('gitflow.reason.noRemote')}
+        isDisabled={!hasRemote || !canAct || runner.busy !== null}
+        isPending={runner.busy === 'fetch'}
+        onPress={fetchNow}
+        data-testid="changes-fetch"
+      >
+        <CloudDownload size={14} aria-hidden="true" />
+      </IconButton>
+      <IconButton
+        size="sm"
+        aria-label={pushKind === 'publish' ? t('gitflow.action.publish') : t('gitflow.action.push')}
+        tooltip={
+          canPush
+            ? pushKind === 'publish'
+              ? t('gitflow.action.publish')
+              : t('gitflow.pushCount', { count: repo.ahead })
+            : sync?.reason
+              ? t(REASON_KEY[sync.reason], { upstream: repo.upstream ?? '', ahead: repo.ahead, behind: repo.behind })
+              : t('gitflow.action.upToDate')
+        }
+        isDisabled={!canPush || runner.busy !== null}
+        isPending={runner.busy === 'push'}
+        onPress={() => requestPush(pushKind)}
+        data-testid="changes-push"
+      >
+        <CloudUpload size={14} aria-hidden="true" />
+      </IconButton>
+    </>
+  ) : null
 
   const listToggle = fileList.canFit ? (
     <Toggle
@@ -743,6 +855,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       {scopeMenu ? (
         <PaneTitle>
           <span className="changes-pane__title">
+            {branchButton}
+            {syncMark}
             {scopeMenu}
             {countLabel ? (
               <span className="changes-pane__count" data-testid="changes-stats">
@@ -763,11 +877,21 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
         </PaneTitle>
       ) : null}
       <PaneTools>
+        {syncButtons}
         {listToggle}
         {refreshButton}
       </PaneTools>
     </>
   )
+
+  const doneText = (() => {
+    const done = runner.done
+    if (!done) return ''
+    if (done.kind === 'commit') return t('gitflow.done.commit', { commit: done.commit ?? '' })
+    if (done.kind === 'push') return t('gitflow.done.push')
+    if (done.kind === 'fetch') return t('gitflow.done.fetch')
+    return ''
+  })()
 
   const problem = repo ? '' : error ? classifyProblem(error, text) : text.notRepo
   const compareWith = compareLabel(scope, meta)
@@ -843,6 +967,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             ? hint(showEmpty && elsewhere > 0 ? text.subdirClean(subdir, elsewhere) : text.subdirScope(subdir), 'changes-subdir-hint')
             : null}
           {hiddenTestCount > 0 ? hint(t('changes.testsHidden', { count: hiddenTestCount }), 'changes-tests-hidden') : null}
+          {truncated && !listError ? hint(t('gitflow.truncated', { count: items.length }), 'changes-truncated') : null}
           {showEmpty ? (
             scope.kind === 'working' ? (
               !hasTracked && !listError && !subdir ? <EmptyState size="sm" title={text.clean} className="changes-pane__empty" /> : null
@@ -994,44 +1119,73 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               </div>
             </div>
           )}
+          {runner.failure ? (
+            <GitFailureNotice
+              className="changes-pane__hint"
+              view={runner.failure.view}
+              busy={runner.busy !== null}
+              onRetry={() => {
+                const input = runner.failure?.input
+                if (input) void runner.run(input)
+              }}
+              onRefresh={refresh}
+              onNext={(next) => (next === 'fetch' ? fetchNow() : requestPush('publish'))}
+              onDismiss={runner.clear}
+            />
+          ) : null}
+          {doneText ? (
+            <Notice variant="hint" tone="ok" className="changes-pane__hint" data-testid="git-done">
+              {doneText}
+            </Notice>
+          ) : null}
           {scope.kind === 'working' ? (
-            <div className="changes-pane__commit">
-              <TextField
-                aria-label={text.commitMessage}
-                className="changes-pane__commit-field"
-                placeholder={text.commitPlaceholder}
-                value={message}
-                onChange={setMessage}
-              />
-              <Button isDisabled={!canAct} onPress={() => void runAction('stage-all')}>
-                {text.stageAll}
-              </Button>
-              <Button
-                variant="primary"
-                isDisabled={!canAct || !message.trim()}
-                onPress={() => void runAction('commit')}
-              >
-                {text.commitAction}
-              </Button>
-            </div>
-          ) : null}
-          {actionBusy ? (
-            <Notice variant="hint" icon={<Spinner size="xs" />} className="changes-pane__hint">
-              {text.commitBusy}
-            </Notice>
-          ) : null}
-          {actionError ? (
-            <Notice tone="fail" compact className="changes-pane__hint">
-              {actionError}
-            </Notice>
-          ) : null}
-          {actionNotice ? (
-            <Notice variant="hint" tone="ok" className="changes-pane__hint">
-              {actionNotice}
-            </Notice>
+            <CommitPanel
+              items={items}
+              repo={repo}
+              hasRemote={hasRemote}
+              active={owner.active}
+              ready={canAct}
+              busy={runner.busy}
+              message={message}
+              lang={resolvedLang}
+              text={text}
+              onMessageChange={setMessage}
+              onStage={(item) => void runner.run({ kind: 'stage', paths: [item.path] })}
+              onUnstage={(item) => void runner.run({ kind: 'unstage', paths: unstagePaths(item) })}
+              onStageAll={() => void runner.run({ kind: 'stage-all' })}
+              onUnstageAll={() => void runner.run({ kind: 'unstage-all' })}
+              onCommit={requestCommit}
+              onPush={requestPush}
+              onOpenFile={selectFile}
+            />
           ) : null}
         </>
       ) : null}
+      {repo ? (
+        <BranchPicker
+          cwd={cwd}
+          triggerRef={branchRef}
+          isOpen={branchOpen}
+          onOpenChange={setBranchOpen}
+          onChanged={refresh}
+        />
+      ) : null}
+      <ConfirmDialog
+        isOpen={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null)
+        }}
+        title={t('gitflow.confirmPush.title', { branch: repo?.branch ?? '' })}
+        description={t('gitflow.confirmPush.desc', { branch: repo?.branch ?? '' })}
+        confirmLabel={confirm === 'commit-push' ? t('gitflow.action.commitPush') : t('gitflow.confirmPush.confirm')}
+        onConfirm={() => {
+          const kind = confirm
+          setConfirm(null)
+          if (kind === 'commit-push') void commitNow(true)
+          else if (kind) void pushNow(kind)
+        }}
+        data-testid="git-confirm-push"
+      />
     </section>
   )
 }

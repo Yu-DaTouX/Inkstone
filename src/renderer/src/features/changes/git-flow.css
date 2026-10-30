@@ -1,0 +1,142 @@
+@layer features {
+
+  .changes-pane__branch {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .changes-pane__sync {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .gitflow-commit {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: var(--s-6);
+    min-height: 0;
+    max-height: 60%;
+    margin-top: auto;
+    padding: var(--s-6) var(--s-10) var(--s-10);
+    border-top: var(--hair, 1px) solid var(--line);
+  }
+
+  .gitflow-commit__groups {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .gitflow-commit__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .gitflow-commit__item {
+    min-width: 0;
+  }
+
+  .gitflow-commit__row {
+    min-width: 0;
+  }
+
+  .gitflow-commit__message {
+    flex: none;
+  }
+
+  .gitflow-commit__bar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .gitflow-commit__summary {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .gitflow-commit__actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-4);
+  }
+
+  .gitflow-commit__reason,
+  .gitflow-commit__empty {
+    flex: none;
+    margin: 0;
+  }
+
+  .gitflow-fail__hint {
+    margin: 0;
+  }
+
+  .gitflow-fail__files {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    margin-top: var(--s-6);
+  }
+
+  .gitflow-fail__raw {
+    max-height: 200px;
+    margin-top: var(--s-6);
+    overflow: auto;
+  }
+
+  .gitflow-fail__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-6);
+    margin-top: var(--s-8);
+  }
+
+  .gitflow-branch {
+    width: min(360px, calc(100vw - var(--s-32)));
+  }
+
+  .gitflow-branch__dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+    outline: none;
+  }
+
+  .gitflow-branch__list,
+  .gitflow-branch__create {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .gitflow-branch__menu {
+    max-height: min(320px, 50vh);
+  }
+
+  .gitflow-branch__create-head {
+    display: flex;
+    margin-inline-start: calc(var(--s-8) * -1);
+  }
+
+  .gitflow-branch__create-foot {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .gitflow-branch__note,
+  .gitflow-branch__failure {
+    margin: 0;
+  }
+}

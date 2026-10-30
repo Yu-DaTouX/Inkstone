@@ -56,14 +56,6 @@ export interface ChangesText {
   retry: string
   fileRenamed: (path: string) => string
   binaryGroup: (count: number) => string
-  commitMessage: string
-  commitPlaceholder: string
-  stageAll: string
-  commitAction: string
-  commitBusy: string
-  commitDone: (summary: string) => string
-  commitFailed: (message: string) => string
-  commitClean: string
 }
 
 export function changesText(lang: string): ChangesText {
@@ -125,15 +117,7 @@ export function changesText(lang: string): ChangesText {
       largeDiffBanner: 'Files are collapsed for large diffs. Select a file to expand it.',
       retry: 'Retry',
       fileRenamed: (path) => `Renamed from ${path}`,
-      binaryGroup: (count) => `${count} binary ${count === 1 ? 'file' : 'files'}`,
-      commitMessage: 'Commit message',
-      commitPlaceholder: 'Describe this change',
-      stageAll: 'Stage all',
-      commitAction: 'Commit',
-      commitBusy: 'Running Git…',
-      commitDone: (summary) => `Committed ${summary}`,
-      commitFailed: (message) => `Git action failed: ${message}`,
-      commitClean: 'Nothing to commit.'
+      binaryGroup: (count) => `${count} binary ${count === 1 ? 'file' : 'files'}`
     }
   }
   return {
@@ -193,14 +177,6 @@ export function changesText(lang: string): ChangesText {
     largeDiffBanner: '改动较大，文件已全部折叠。选择文件展开查看。',
     retry: '重试',
     fileRenamed: (path) => `重命名自 ${path}`,
-    binaryGroup: (count) => `${count} 个二进制文件`,
-    commitMessage: '提交说明',
-    commitPlaceholder: '描述这次改动',
-    stageAll: '全部暂存',
-    commitAction: '提交',
-    commitBusy: '正在执行 Git…',
-    commitDone: (summary) => `已提交 ${summary}`,
-    commitFailed: (message) => `Git 操作失败：${message}`,
-    commitClean: '没有可提交的改动。'
+    binaryGroup: (count) => `${count} 个二进制文件`
   }
 }

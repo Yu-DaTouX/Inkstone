@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, X } from 'lucide-react'
-import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover, RailRow, RailValue, type RailTone } from '../../ui'
+import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from 'lucide-react'
+import { Button, IconButton, Menu, MenuItem, MenuTrigger, Meter, Notice, Popover, RailRow, RailValue, type RailTone } from '../../ui'
+import { BranchPicker } from '../changes/BranchPicker'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -306,6 +307,72 @@ function RailRowMenu({
   )
 }
 
+function BranchRow({
+  cwd,
+  branch,
+  repo,
+  title,
+  rail,
+  onAction,
+  onChanged
+}: {
+  cwd: string
+  branch: string
+  repo: GitRepoState | null
+  title: string
+  rail: RailText
+  onAction: (key: RowMenuKey) => void
+  onChanged: () => void
+}): ReactElement {
+  const t = useT()
+  const anchor = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  return (
+    <RailRow
+      label={branch}
+      title={title}
+      icon={<GitBranch size={14} aria-hidden />}
+      value={
+        repo && repo.changedCount > 0 ? (
+          <RailValue glyph={{ kind: 'dot', status: 'awaiting' }} value={String(repo.changedCount)} aria-label={rail.dirty} />
+        ) : undefined
+      }
+      onPress={() => setOpen(true)}
+      buttonProps={{
+        ref: anchor,
+        'aria-haspopup': 'dialog',
+        'aria-expanded': open,
+        'aria-label': t('gitflow.branch.trigger', { branch }),
+        'data-testid': 'wb-rail-branch'
+      }}
+      actionReveal="hover"
+      action={
+        <MenuTrigger>
+          <IconButton variant="plain" size="sm" aria-label={rail.branchMenu} tooltip={rail.branchMenu} data-testid="wb-rail-branch-menu">
+            <MoreHorizontal size={14} aria-hidden />
+          </IconButton>
+          <Popover placement="bottom end" offset={4}>
+            <Menu aria-label={rail.branchMenu} onAction={(key) => onAction(key as RowMenuKey)}>
+              {repo?.branch ? (
+                <MenuItem id="copyBranch" textValue={rail.copyBranch}>
+                  <Copy size={14} aria-hidden />
+                  {rail.copyBranch}
+                </MenuItem>
+              ) : null}
+              <MenuItem id="openChanges" textValue={rail.openChanges}>
+                <FileDiff size={14} aria-hidden />
+                {rail.openChanges}
+              </MenuItem>
+            </Menu>
+          </Popover>
+        </MenuTrigger>
+      }
+    >
+      <BranchPicker cwd={cwd} triggerRef={anchor} isOpen={open} onOpenChange={setOpen} onChanged={onChanged} />
+    </RailRow>
+  )
+}
+
 function ContextDetail({ data, last, text }: { data: ContextPaneData; last: CompactionRun | undefined; text: OverviewText }): ReactElement {
   const t = useT()
   const { usage, slices, compacted } = data
@@ -531,7 +598,8 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const projectName = cwd ? settings?.projectNames?.[cwd] || lastSegment(cwd) : ''
 
   const gitMessageCount = useThrottledValue(messages.length, agentRunning, GIT_REFRESH_WHILE_RUNNING_MS)
-  const gitRefresh = `${gitMessageCount}:${agentRunning ? 1 : 0}`
+  const [gitTick, setGitTick] = useState(0)
+  const gitRefresh = `${gitMessageCount}:${agentRunning ? 1 : 0}:${gitTick}`
   const repo = useGitRepo(cwd || null, gitRefresh)
   const sessionChanges = useMemo(() => sessionLineTotals(messages, cwd || undefined), [messages, cwd])
   const changesCount = sessionChanges.files
@@ -670,19 +738,15 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
               ]}
             />
           ) : null}
-          {branch ? (
-            <RailRowMenu
-              label={branch}
-              icon={<GitBranch size={14} aria-hidden />}
-              value={repo && repo.changedCount > 0 ? <RailValue glyph={{ kind: 'dot', status: 'awaiting' }} value={rail.dirty} /> : undefined}
+          {branch && cwd ? (
+            <BranchRow
+              cwd={cwd}
+              branch={branch}
+              repo={repo}
               title={[`${text.branchLabel} ${branch}`, repo && repo.changedCount > 0 ? rail.dirty : ''].filter(Boolean).join('\n')}
-              menuLabel={rail.branchMenu}
-              testId="wb-rail-branch"
+              rail={rail}
               onAction={runRowAction}
-              items={[
-                ...(repo?.branch ? [{ key: 'copyBranch' as const, label: rail.copyBranch, icon: <Copy size={14} aria-hidden /> }] : []),
-                { key: 'openChanges', label: rail.openChanges, icon: <FileDiff size={14} aria-hidden /> }
-              ]}
+              onChanged={() => setGitTick((n) => n + 1)}
             />
           ) : null}
         </ul>
