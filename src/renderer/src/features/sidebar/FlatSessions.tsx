@@ -408,6 +408,18 @@ export interface FlatCues {
   twins: ReadonlySet<string>
 }
 
+export function projectShifts(runs: readonly (readonly FlatEntry[])[]): ReadonlySet<string> {
+  const keys = new Set(runs.flatMap((run) => run.map((entry) => entry.group.key)))
+  const shifts = new Set<string>()
+  if (keys.size < 2) return shifts
+  for (const run of runs) {
+    run.forEach((entry, index) => {
+      if (index === 0 || run[index - 1].group.key !== entry.group.key) shifts.add(entry.session.path)
+    })
+  }
+  return shifts
+}
+
 interface FlatRowProps {
   entry: FlatEntry
   row: ArchiveShelfRow
@@ -415,10 +427,11 @@ interface FlatRowProps {
   branch?: string | null
   cues: FlatCues
   scoped?: boolean
+  shift: boolean
   onOpen: (item: SessionSummary) => void
 }
 
-function FlatRow({ entry, row, now, branch, cues, scoped, onOpen }: FlatRowProps): JSX.Element {
+function FlatRow({ entry, row, now, branch, cues, scoped, shift, onOpen }: FlatRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   const hint = cues.hints.get(entry.group.key)
@@ -434,8 +447,8 @@ function FlatRow({ entry, row, now, branch, cues, scoped, onOpen }: FlatRowProps
     branch: branch ?? undefined,
     hint,
     toneKey: hint ? entry.group.cwd : undefined,
-    hideProject: scoped
-  }), [entry.group.label, entry.group.cwd, entry.session, row.model, row.modelRef, text.projectFallback, now, lang, branch, hint, scoped])
+    hideProject: scoped || !shift
+  }), [entry.group.label, entry.group.cwd, entry.session, row.model, row.modelRef, text.projectFallback, now, lang, branch, hint, scoped, shift])
   const meta = useMemo(
     () => sessionRowMeta(entry.session, { now, lang, since: row.since, live, twin }),
     [entry.session, now, lang, row.since, live, twin]
@@ -499,6 +512,7 @@ export function WorkingShelf({
   const [open, setOpen] = useState(() => readShelfOpen(WORKING_OPEN_KEY))
   const shown = open ? entries : entries.filter((entry) => rowState(entry.session).isCurrent)
   const branches = useCwdBranches(shown.map((entry) => entry.session.cwd), now)
+  const shifts = projectShifts([shown])
   useEffect(() => {
     const reveal = (): void => {
       writeShelfOpen(WORKING_OPEN_KEY, true)
@@ -531,6 +545,7 @@ export function WorkingShelf({
                 now={now}
                 branch={branches.get(entry.session.cwd)}
                 cues={cues}
+                shift={shifts.has(entry.session.path)}
                 onOpen={onOpen}
               />
             ))}
@@ -593,6 +608,7 @@ export function FlatSessionList({
     const bucket = recencyBucket(sessionActivityAt(entry.session), now)
     bucketTotals.set(bucket, (bucketTotals.get(bucket) ?? 0) + 1)
   }
+  const shifts = projectShifts([pinned, ...buckets.map((run) => run.entries)])
 
   const render = (entry: FlatEntry): JSX.Element => (
     <FlatRow
@@ -603,6 +619,7 @@ export function FlatSessionList({
       branch={branches.get(entry.session.cwd)}
       cues={cues}
       scoped={!!scopeGroup}
+      shift={shifts.has(entry.session.path)}
       onOpen={onOpen}
     />
   )

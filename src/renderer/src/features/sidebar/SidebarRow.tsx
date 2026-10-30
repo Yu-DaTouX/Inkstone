@@ -51,15 +51,20 @@ function signalInk(status: SessionStatusKind): string | undefined {
   return status === 'running' ? 'ui-signal-run' : status === 'awaiting' ? 'ui-signal-ask' : undefined
 }
 
-function RowSub({ card, note }: { card?: SidebarRowCard; note?: string }): JSX.Element | null {
-  const project = card && !card.slim && !card.hideProject ? card : undefined
-  const tail = note ?? (card && !card.slim ? card.model : undefined)
+function subModel(card: SidebarRowCard | undefined, status: SessionStatusKind): string | undefined {
+  return card && !card.slim && cardHasBot(status) ? card.model : undefined
+}
+
+function RowSub({ card, note, status }: { card?: SidebarRowCard; note?: string; status: SessionStatusKind }): JSX.Element | null {
+  const shown = card && !card.slim && !card.hideProject ? card : undefined
+  const project = shown && (shown.global || !note) ? shown : undefined
+  const tail = note ?? subModel(card, status)
   if (!project && !tail) return null
   return (
     <span className="v3-srow-sub" data-testid="v3-session-sub">
       {project ? (
         <span className="v3-srow-owner">
-          <ProjectBadge label={project.project} global={project.global} toneKey={project.toneKey} />
+          {project.global ? <ProjectBadge label={project.project} global /> : null}
           {note ? null : <span className="v3-crow-project">{project.project}</span>}
           {project.hint && !note ? <span className="v3-srow-hint" data-testid="v3-session-hint">{project.hint}</span> : null}
         </span>
@@ -100,7 +105,7 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
   const [renamePending, setRenamePending] = useState(false)
   const settledByKey = useRef(false)
   const dragging = useSessionDrag((s) => s.source === `session:${item.path}`)
-  const hasSub = !!meta?.note || (!!card && !card.slim && (!card.hideProject || !!card.model))
+  const hasSub = !!meta?.note || (!!card && !card.slim && (!card.hideProject || !!subModel(card, status)))
 
   useEffect(() => {
     if (!renamePending || menuOpen) return
@@ -255,7 +260,7 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
                     </span>
                   ) : null}
                 </span>
-                {hasSub ? <RowSub card={card} note={meta?.note} /> : null}
+                {hasSub ? <RowSub card={card} note={meta?.note} status={status} /> : null}
               </span>
             )}
           </ListRow>
