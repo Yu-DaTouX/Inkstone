@@ -26,7 +26,7 @@ function seedProjects(root) {
   return projects
 }
 
-export function createSandbox(runDir, { fakePort, samples = [] } = {}) {
+export function createSandbox(runDir, { fakePort, samples = [], demo = false } = {}) {
   const box = {
     runDir,
     piDir: join(runDir, 'pi-agent'),
@@ -40,9 +40,9 @@ export function createSandbox(runDir, { fakePort, samples = [] } = {}) {
     samples: []
   }
   for (const dir of [box.piDir, box.sessionsDir, box.dataDir, box.userData, box.downloads, box.androidSdk]) mkdirSync(dir, { recursive: true })
-  box.projects = seedProjects(join(runDir, 'projects'))
+  box.projects = demo ? [] : seedProjects(join(runDir, 'projects'))
   if (box.projects.length > 0) box.project = box.projects[0]
-  else {
+  else if (!demo) {
     mkdirSync(box.project, { recursive: true })
     writeFileSync(join(box.project, 'README.md'), '# debug fixture\n')
     gitInit(box.project)

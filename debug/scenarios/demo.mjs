@@ -1,0 +1,46 @@
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+export const meta = { demo: true, description: '演示项目、PR 列表/详情、分支选择器与会话更改；本地 origin + 假模型，无真实模型请求' }
+
+export default async function run({ cdp, fake, box, runDir, check, waitFor, sleep }) {
+  const shots = process.env.YAN_DEBUG_DEMO_SHOTS || runDir
+  mkdirSync(shots, { recursive: true })
+  const take = name => cdp.shot(`${Date.now()}-${name}`, shots)
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false })
+  await cdp.evaluate(`window.__yanStore.getState().patchSettings({lang:'en-US',rightPanelOpen:true})`)
+  const actual = await cdp.evaluate(`(async()=>{const cwd=${JSON.stringify(box.project)};return {status:await window.yan.github.status(cwd),defaults:await window.yan.github.createDefaults(cwd),list:await window.yan.github.list(cwd,'all'),detail:await window.yan.github.detail(cwd,108)}})()`)
+  check('GitHub 状态来自本地假 gh，包含当前用户与默认分支', actual.status.viewerLogin === 'demo-developer' && actual.status.repo?.defaultBranch === 'main', actual.status)
+  check('新建默认值读取实际当前分支与最近提交', actual.defaults.ok && actual.defaults.latestCommit?.subject === 'chore: prepare local reconciliation review', actual.defaults)
+  check('PR 列表有 9 条持久化记录', actual.list.ok && actual.list.items.length === 9)
+  check('详情含真实数字评论 ID、多轮评审、已解决线程与合并状态', actual.detail.ok && actual.detail.pr.reviewThreads?.[0].comments[0].databaseId === 10811 && actual.detail.pr.reviewThreads.some(t => t.isResolved) && actual.detail.pr.mergeable === 'MERGEABLE', { threads: actual.detail.pr?.reviewThreads?.length })
+  await waitFor(`document.body.innerText.includes('Changes this turn') && !!document.querySelector('[data-testid=wb-rail-branch]')`, 20000)
+  check('本会话改动卡有数据', await cdp.evaluate(`document.body.innerText.includes('staged.txt') && document.body.innerText.includes('partial.txt')`))
+  await take('01-session-and-changes')
+  await cdp.evaluate(`document.querySelector('[data-testid=wb-rail-branch]').click()`)
+  await sleep(500)
+  check('分支选择器有 feature 与 worktree 占用分支', await cdp.evaluate(`document.body.innerText.includes('feature/no-upstream') && document.body.innerText.includes('fix/maintenance')`))
+  await take('02-branches')
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await cdp.evaluate(`document.querySelector('[data-testid=wb-open-changes]').click()`)
+  await sleep(700)
+  check('更改面板有实际文件', await cdp.evaluate(`document.body.innerText.includes('staged.txt') && document.body.innerText.includes('partial.txt')`))
+  await take('03-changes-panel')
+  await cdp.evaluate(`document.querySelector('[data-testid=wb-more-tools]').click()`)
+  await sleep(100)
+  const opened = await cdp.evaluate(`(()=>{const x=[...document.querySelectorAll('[role=menuitem]')].find(x=>x.innerText.includes('Pull requests'));x?.click();return !!x})()`)
+  check('从工具菜单打开 PR 面板', opened)
+  await waitFor(`!!document.querySelector('[data-testid=gh-pr-row-108]')`, 20000)
+  await take('04-pr-list')
+  await cdp.evaluate(`document.querySelector('[data-testid=gh-pr-row-108]').click()`)
+  await waitFor(`document.body.innerText.includes('Why') && document.body.innerText.includes('Preserve review context')`, 20000)
+  await sleep(700)
+  await take('05-pr-detail')
+  const text = await cdp.evaluate('document.body.innerText')
+  check('PR 详情显示实际描述或评审内容', text.includes('incident replay') || text.includes('Roll out to the canary') || text.includes('Why'))
+  const checkout = await cdp.evaluate(`window.yan.github.action(${JSON.stringify(box.project)},{kind:'checkout',number:108})`)
+  check('PR 检出使用本地 origin 的 pull ref', checkout.ok, { summary: checkout.gitResult?.summary, failure: checkout.failure })
+  check('未发送任何模型请求', fake.requests.length === 0, fake.requests.length)
+  writeFileSync(join(runDir, 'demo-ui-observations.json'), JSON.stringify({ actual, checkout, screenshots: shots, text }, null, 2))
+}

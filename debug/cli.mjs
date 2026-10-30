@@ -6,6 +6,7 @@ import { currentFile, debugDir, freePort, newRunDir, parseArgs, runsDir, sleep }
 import { FAKE_TRIGGERS, startFakeModel } from './lib/fake-model.mjs'
 import { createSandbox, sandboxEnv } from './lib/sandbox.mjs'
 import { importUserData } from './lib/user-data.mjs'
+import { demoEnv, initializeDemo, prepareDemo } from './lib/demo.mjs'
 import { scenarioContext } from './lib/scenario-context.mjs'
 import { describeSamples, pickSamples, samplePaths } from './lib/sessions.mjs'
 
@@ -15,13 +16,19 @@ const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bu
 const HELP = `砚调试工具：npm run debug -- <命令> [参数]
 
 隔离实例（数据全在 debug/runs/<时间>-<名字>/，不碰真实数据、不抢单实例锁）
-  up [--dev] [--build] [--no-fake] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N]
+  up [--demo] [--dev] [--build] [--no-fake] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N]
       起一个隔离实例并保持前台运行，Ctrl+C 或 down 结束
       --dev       用 electron-vite dev（渲染端热更新），默认跑 out/ 构建版
       --build     先 electron-vite build
       --no-fake   不配置假模型（在实例里自己登录模型）
       --user-data 拷贝真实数据副本：最近 N 天会话、项目与标题等小文件、去密钥的模型列表；不拷凭据，关远程访问
       --samples   把 debug/data 里的大会话样本拷进实例
+      --demo      一键准备 2 个演示项目、29 个 Git 提交、本地 origin、9 个有状态 PR 和示例会话
+                  可组合 --user-data --no-fake；默认项目为演示仓库，不拷凭据、不访问真实远端
+                  每次 up --demo 使用新运行目录即重置，旧演示数据保留；覆盖情况见 demo/coverage.json
+                  例：node debug/cli.mjs up --demo --user-data --no-fake
+                  假 gh 也进入实例终端 PATH；Git 只允许 file 协议，GitHub 演示 URL 仅重写到本地 origin
+                  可选失败注入：YAN_DEBUG_GH_FAILURE=auth|forbidden|timeout（或 pr.merge:timeout），默认关闭
   ps                   看当前实例
   eval <表达式>        在当前实例渲染端求值；s 是 store 状态，如 eval "s.messages.length"
   shot [名字]          当前实例截图，存到它的运行目录
@@ -62,10 +69,22 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
   }
   const fake = flags['no-fake'] ? null : await startFakeModel()
   const runDir = newRunDir(label)
-  const box = createSandbox(runDir, { fakePort: fake?.port, samples })
+  const box = createSandbox(runDir, { fakePort: fake?.port, samples, demo: !!flags.demo })
   if (flags['user-data']) console.log('导入真实数据副本：' + JSON.stringify(importUserData(box, { days: flags['user-days'] ? Number(flags['user-days']) : 7 })))
+  if (flags.demo) prepareDemo(box)
   const cdpPort = flags.port ? Number(flags.port) : await freePort()
-  const app = launchApp(sandboxEnv(box, { fake: !!fake, cdpPort, probe }), { dev: !!flags.dev })
+  const app = launchApp({ ...sandboxEnv(box, { fake: !!fake, cdpPort, probe }), ...demoEnv(box) }, { dev: !!flags.dev })
+  if (box.demo) {
+    let cdp
+    try {
+      cdp = await connectCdp(cdpPort, { shotDir: runDir })
+      await initializeDemo(cdp, box)
+    } catch (error) {
+      writeFileSync(join(runDir, 'main.log'), app.log())
+      stopInstance({ app, fake })
+      throw error
+    } finally { cdp?.close() }
+  }
   return { fake, runDir, box, cdpPort, app }
 }
 
@@ -84,8 +103,8 @@ async function cmdUp(flags) {
   const current = readCurrent()
   if (current) throw new Error(`已有实例在跑（pid ${current.pid}，${current.runDir}），先 down`)
   const samples = samplePaths(flags.samples)
-  const instance = await startInstance({ label: flags.dev ? 'up-dev' : 'up', flags, samples })
-  const info = { pid: instance.app.child.pid, cdpPort: instance.cdpPort, fakePort: instance.fake?.port ?? null, runDir: instance.runDir, project: instance.box.project, dev: !!flags.dev, startedAt: new Date().toISOString() }
+  const instance = await startInstance({ label: flags.demo ? `up-demo-${Date.now()}` : flags.dev ? 'up-dev' : 'up', flags, samples })
+  const info = { pid: instance.app.child.pid, cdpPort: instance.cdpPort, fakePort: instance.fake?.port ?? null, runDir: instance.runDir, project: instance.box.project, dev: !!flags.dev, ...(instance.box.demo ? { demo: { project: instance.box.demo.project, secondProject: instance.box.demo.second, origin: instance.box.demo.origin, ghState: instance.box.demo.stateFile, coverage: join(instance.box.demo.dir, 'coverage.json'), reset: 'down 后再次 up --demo 会创建全新演示目录；旧目录保留' } } : {}), startedAt: new Date().toISOString() }
   writeFileSync(currentFile, JSON.stringify(info, null, 2))
   console.log(JSON.stringify(info, null, 2))
   const logFile = join(instance.runDir, 'main.log')
@@ -126,7 +145,7 @@ async function runScenarioOnce(name, flags) {
   const need = mod.meta?.samples ?? 0
   const samples = need ? samplePaths('all').slice(0, need) : []
   if (samples.length < need) throw new Error(`场景 ${name} 需要 ${need} 个大会话样本：先 npm run debug -- samples pick`)
-  const instance = await startInstance({ label: name, flags: { ...flags, 'no-fake': false }, samples })
+  const instance = await startInstance({ label: name, flags: { ...flags, 'no-fake': false, demo: !!flags.demo || !!mod.meta?.demo }, samples })
   const report = { scenario: name, startedAt: new Date().toISOString(), checks: [], timings: {}, log: [] }
   let cdp
   try {

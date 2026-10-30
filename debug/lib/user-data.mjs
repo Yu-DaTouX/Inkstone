@@ -76,7 +76,7 @@ export function importUserData(box, { days = 7, budgetMb = 400 } = {}) {
   if (desktop) {
     const sandboxed = {
       ...stripSecrets(desktop),
-      remoteAccess: { ...(desktop.remoteAccess ?? {}), enabled: false, relay: { ...(desktop.remoteAccess?.relay ?? {}), enabled: false } },
+      remoteAccess: { enabled: false, relay: { enabled: false } },
       fontUiCustom: undefined,
       lastMainModel: undefined,
       backgroundCustom: undefined,
