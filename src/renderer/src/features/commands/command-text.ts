@@ -4,10 +4,8 @@ import type { CommandPrefix } from './command-items'
 export interface CommandText {
   paletteLabel: string
   placeholder: string
-  prefixLabels: Record<CommandPrefix, string>
-  footNavigate: string
   footRun: string
-  footClose: string
+  footPrefixes: string
   groupAction: string
   groupSession: string
   groupMessage: string
@@ -46,10 +44,8 @@ export interface CommandText {
 const ZH: CommandText = {
   paletteLabel: '命令面板',
   placeholder: '搜索命令或会话…',
-  prefixLabels: { '>': '操作', '@': '会话', '#': '消息', '?': '帮助' },
-  footNavigate: '选择',
   footRun: '执行',
-  footClose: '关闭',
+  footPrefixes: '搜索前缀',
   groupAction: '命令',
   groupSession: '会话',
   groupMessage: '消息',
@@ -93,10 +89,8 @@ const ZH: CommandText = {
 const EN: CommandText = {
   paletteLabel: 'Command palette',
   placeholder: 'Search commands or chats…',
-  prefixLabels: { '>': 'Actions', '@': 'Chats', '#': 'Messages', '?': 'Help' },
-  footNavigate: 'Navigate',
   footRun: 'Run',
-  footClose: 'Close',
+  footPrefixes: 'Search prefixes',
   groupAction: 'Commands',
   groupSession: 'Chats',
   groupMessage: 'Messages',

@@ -65,10 +65,7 @@
     gap: var(--s-6);
   }
 
-  .cmd-foot__prefix {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-12);
+  .cmd-foot__help {
     margin-inline-start: auto;
   }
 }

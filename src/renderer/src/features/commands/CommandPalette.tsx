@@ -611,24 +611,12 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
 
       <CommandSurfaceFooter aria-hidden="true" className="cmd-foot">
         <span className="cmd-foot__item">
-          <KbdGroup keys={['↑', '↓']} />
-          {text.footNavigate}
-        </span>
-        <span className="cmd-foot__item">
           <Kbd>Enter</Kbd>
           {text.footRun}
         </span>
-        <span className="cmd-foot__item">
-          <Kbd>Esc</Kbd>
-          {text.footClose}
-        </span>
-        <span className="cmd-foot__prefix">
-          {COMMAND_PREFIXES.map((prefix) => (
-            <span key={prefix} className="cmd-foot__item">
-              <Kbd>{prefix}</Kbd>
-              {text.prefixLabels[prefix]}
-            </span>
-          ))}
+        <span className="cmd-foot__item cmd-foot__help">
+          <Kbd>?</Kbd>
+          {text.footPrefixes}
         </span>
       </CommandSurfaceFooter>
     </CommandSurface>
