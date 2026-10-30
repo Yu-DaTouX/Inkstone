@@ -1,11 +1,11 @@
 /* 由 scripts/design/build-tokens.mjs 生成，不要手改。 */
 export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
-  "--color-background-primary": "light-dark(#FFFFFF, #242423)",
+  "--color-background-primary": "light-dark(#FFFFFF, #2A2A29)",
   "--color-background-secondary": "light-dark(#FCFCFB, #1A1A1A)",
   "--color-background-tertiary": "light-dark(#F4F4F2, #131313)",
   "--color-background-inverse": "light-dark(#0B0B0B, #FFFFFF)",
   "--color-background-ghost": "transparent",
-  "--color-background-info": "light-dark(rgba(42,120,214,.1), rgba(42,120,214,.2))",
+  "--color-background-info": "light-dark(rgba(42,120,214,.1), rgba(42,120,214,.26))",
   "--color-background-danger": "light-dark(#FCEBEB, rgba(236,126,126,.12))",
   "--color-background-success": "light-dark(#E6F4E4, rgba(50,215,75,.12))",
   "--color-background-warning": "light-dark(#FDF1D6, rgba(250,178,25,.12))",
@@ -15,7 +15,7 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--color-text-inverse": "light-dark(#FFFFFF, #0B0B0B)",
   "--color-text-info": "light-dark(#184F95, #6DA7EC)",
   "--color-text-danger": "light-dark(#8E2626, #EC7E7E)",
-  "--color-text-success": "light-dark(#006300, #14AD14)",
+  "--color-text-success": "light-dark(#006300, #7ACF82)",
   "--color-text-warning": "light-dark(#734500, #DB9300)",
   "--color-border-primary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2))",
   "--color-border-secondary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2))",
@@ -58,6 +58,6 @@ export const APP_THEME_SHADOW_VARIABLES: Readonly<
   },
   "dark": {
     "--shadow-md": "inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13)",
-    "--shadow-lg": "inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35)"
+    "--shadow-lg": "inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35)"
   }
 }
