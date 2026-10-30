@@ -526,7 +526,8 @@
     overflow-x: auto;
     scrollbar-width: none;
     border-radius: var(--r-sm);
-    background: var(--alpha-1);
+    background: var(--sunken);
+    box-shadow: var(--ring-line);
   }
   .ui-seg[data-disabled] {
     opacity: 0.4;
@@ -582,7 +583,7 @@
     inset: 0;
     border-radius: calc(var(--r-sm) - 1px);
     background: var(--surface-3);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-sm), var(--ring-line);
     transition:
       translate var(--dur-base) var(--ease),
       width var(--dur-base) var(--ease);

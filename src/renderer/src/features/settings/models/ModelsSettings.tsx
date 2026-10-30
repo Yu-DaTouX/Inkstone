@@ -13,6 +13,7 @@ import {
   Kbd,
   Notice,
   Spinner,
+  StatusDot,
   TextField,
   TooltipText,
   type BadgeTone
@@ -478,43 +479,41 @@ export function ModelsSettings(): ReactElement {
         </Notice>
       ) : null}
 
-      <SettingsGroup
-        label={text('title')}
-        className="ms-overview"
-        description={
-          <>
-            <span className="settings-row__line">{t('auth.summary', { ready: readyCount, total: authProviders.length })}</span>
-            <span className="ms-safety settings-row__line" data-testid="ms-file-info">
-              <span className="ms-safety-lead">{t('auth.safety')}</span>
-              {fileInfo ? (
-                <span className="ms-file">
-                  <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
-                  <Button
-                    variant="plain"
-                    size="micro"
-                    className="ms-file-link"
-                    tooltip={<span className="ms-file-tip">{fileInfo.path}</span>}
-                    aria-expanded={showPath}
-                    data-testid="ms-file-link"
-                    onPress={() => setShowPath((v) => !v)}
-                  >
-                    {text('credentialFile')}
-                  </Button>
-                  <span className="ms-file-count">
-                    {' · '}
-                    {fileInfo.exists ? t(fileInfo.count === 1 ? 'auth.entry' : 'auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
-                  </span>
+      <div className="ms-overview" role="group" aria-label={text('title')} data-testid="ms-services">
+        <div className="ms-status">
+          <span className="ms-status-count" data-testid="ms-status-count">
+            <StatusDot kind={readyCount > 0 ? 'ok' : 'idle'} />
+            <span className="ms-status-num ui-num" aria-hidden="true">{`${readyCount}/${authProviders.length}`}</span>
+            <span aria-hidden="true">{text('statusReady')}</span>
+            <span className="sr-only">{t('auth.summary', { ready: readyCount, total: authProviders.length })}</span>
+          </span>
+          <span className="ms-safety" data-testid="ms-file-info">
+            <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
+            <span className="ms-safety-lead">{t('auth.safety')}</span>
+            {fileInfo ? (
+              <span className="ms-file">
+                <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
+                <Button
+                  variant="plain"
+                  size="micro"
+                  className="ms-file-link"
+                  tooltip={<span className="ms-file-tip">{fileInfo.path}</span>}
+                  aria-expanded={showPath}
+                  data-testid="ms-file-link"
+                  onPress={() => setShowPath((v) => !v)}
+                >
+                  {text('credentialFile')}
+                </Button>
+                <span className="ms-file-count">
+                  {' · '}
+                  {fileInfo.exists ? t(fileInfo.count === 1 ? 'auth.entry' : 'auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
                 </span>
-              ) : null}
-            </span>
-            {fileInfo && showPath ? (
-              <span className="ms-file-path settings-row__line" data-testid="ms-file-path">{fileInfo.path}</span>
+              </span>
             ) : null}
-          </>
-        }
-        actions={
+          </span>
           <Button
             variant="secondary"
+            className="ms-status-action"
             isDisabled={checking}
             data-testid="ms-recheck"
             data-setting-id="models-recheck"
@@ -523,12 +522,12 @@ export function ModelsSettings(): ReactElement {
             {checking ? <Spinner label={t('auth.checking')} /> : null}
             {checking ? t('auth.checking') : t('auth.recheck')}
           </Button>
-        }
-        testId="ms-services"
-        plain
-      >
+        </div>
+        {fileInfo && showPath ? (
+          <span className="ms-file-path" data-testid="ms-file-path">{fileInfo.path}</span>
+        ) : null}
         {authProviders.length === 0 ? <EmptyState size="sm" align="start" inset="none" title={text('noAuthInfo')} /> : null}
-      </SettingsGroup>
+      </div>
 
       {subscriptions.length > 0 ? (
         <SettingsGroup title={t('auth.subs')} settingId="models-subscriptions" className="ms-group" plain>

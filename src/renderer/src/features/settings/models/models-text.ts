@@ -48,6 +48,7 @@ export type ModelsTextKey =
   | 'visNoModels'
   | 'visToggle'
   | 'visGroupHidden'
+  | 'statusReady'
 
 const ZH: Record<ModelsTextKey, string> = {
   title: '模型与服务',
@@ -98,7 +99,8 @@ const ZH: Record<ModelsTextKey, string> = {
   visEmpty: '没有匹配的模型',
   visNoModels: '还没有读到可用模型',
   visToggle: '在选择器中显示 {name}',
-  visGroupHidden: '已隐藏'
+  visGroupHidden: '已隐藏',
+  statusReady: '可用'
 }
 
 const EN: Record<ModelsTextKey, string> = {
@@ -150,7 +152,8 @@ const EN: Record<ModelsTextKey, string> = {
   visEmpty: 'No models match',
   visNoModels: 'No models reported yet',
   visToggle: 'Show {name} in the model picker',
-  visGroupHidden: 'Hidden from picker'
+  visGroupHidden: 'Hidden from picker',
+  statusReady: 'ready'
 }
 
 export function modelsText(lang: string, key: ModelsTextKey): string {
