@@ -897,6 +897,10 @@
     to { opacity: 0; }
   }
 
+  .composer-v3 {
+    --chat-content-max-width: var(--size-chat, 46rem);
+  }
+
   .composer-v3 .composer-text {
     min-height: calc(1.625em * 2 + 0.5rem);
     max-height: min(13rem, 40svh);

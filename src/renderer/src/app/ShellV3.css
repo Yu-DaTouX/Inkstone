@@ -54,13 +54,20 @@
     --stream-scrollbar: 10px;
     --col-pl-min: calc(var(--s-20) + var(--rail-gutter) * var(--outline-on, 0));
     --col-r: calc(var(--s-20) + (var(--rail-gutter) - var(--s-16)) * var(--outline-on, 0) + var(--tiles-reserve));
-    --col-hidden-scrollbar: calc(var(--stream-scrollbar) * var(--tiles-on, 0));
-    --col-window-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
-    --col-pl-to: max(var(--col-pl-min), min((100% + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-window-shift), 100% - var(--col-r) - var(--size-chat)));
-    --col-pr-to: max(var(--col-r), 100% - var(--col-pl-to) - var(--size-chat));
-    --col-pad-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
-    --col-pad-l-to: max(var(--col-pl-min), min((100% - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pad-shift), 100% - var(--stream-scrollbar) - var(--col-r) - var(--size-chat)));
-    --col-pad-r-to: max(var(--col-r) + var(--stream-scrollbar), 100% - var(--col-pad-l-to) - var(--size-chat));
+    --col-window-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
+    --col-left-nat: calc((100% - var(--size-chat)) / 2 - var(--col-window-shift));
+    --col-left-base: max(var(--col-pl-min), var(--col-left-nat));
+    --col-room: max(0px, 100% - var(--col-left-base) - var(--col-r));
+    --col-w: max(var(--size-chat-min), min(var(--size-chat), var(--col-room)));
+    --col-pl-to: min(var(--col-left-base), max(var(--col-pl-min), 100% - var(--size-chat-min) - var(--col-r)));
+    --col-pr-to: max(var(--col-r), 100% - var(--col-pl-to) - var(--col-w));
+    --col-pad-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) - var(--stream-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
+    --col-pad-nat: calc((100% - var(--stream-scrollbar) - var(--size-chat)) / 2 - var(--col-pad-shift));
+    --col-pad-base: max(var(--col-pl-min), var(--col-pad-nat));
+    --col-pad-room: max(0px, 100% - var(--stream-scrollbar) - var(--col-pad-base) - var(--col-r));
+    --col-pad-w: max(var(--size-chat-min), min(var(--size-chat), var(--col-pad-room)));
+    --col-pad-l-to: min(var(--col-pad-base), max(var(--col-pl-min), 100% - var(--stream-scrollbar) - var(--size-chat-min) - var(--col-r)));
+    --col-pad-r-to: max(var(--col-r) + var(--stream-scrollbar), 100% - var(--col-pad-l-to) - var(--col-pad-w));
     --col-pl-at: var(--col-pl-to);
     --col-pr-at: var(--col-pr-to);
     --col-pad-l-at: var(--col-pad-l-to);
@@ -75,6 +82,11 @@
   }
   .v3-chat[data-bar-anim] {
     transition-duration: var(--dur-sheet);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .v3-chat[data-bar-anim] {
+      transition-duration: 0s;
+    }
   }
   .v3-root:has(.ui-splitter[data-dragging]) .v3-chat {
     transition: none;
@@ -94,7 +106,6 @@
   }
   .v3-chat[data-sessionbar='1'] {
     --bar-reserve: calc(var(--size-tiles) + var(--s-16));
-    --tiles-on: 1;
   }
   .v3-sessionbar {
     position: absolute;

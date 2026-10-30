@@ -58,6 +58,14 @@ function nativeSessionBridge(): BranchPagerRequest | undefined {
 const VIRTUALIZE_TURNS_AT = 80
 const VIRTUALIZE_MSGS_AT = 200
 const LOCATE_MOUNT_FRAMES = 30
+const NAV_SETTLE_STILL_FRAMES = 3
+const NAV_SETTLE_MAX_MS = 1400
+const NAV_FLASH_MS = 900
+const NAV_MOUNT_FRAMES = 30
+
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
 
 type PendingTurn = { kind: 'pending'; id: string }
 type RenderItem = Turn | PendingTurn
@@ -326,21 +334,26 @@ export function SessionView(): JSX.Element {
   }, [setStickNow])
 
   const scrollFrameRef = useRef(0)
+  const readScroll = useCallback(() => {
+    const el = streamRef.current
+    if (!el) return
+    const metrics = domMetrics(el)
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
+    applyFollow(decision)
+    if (decision.repin) el.scrollTop = el.scrollHeight
+    metricsRef.current = decision.repin ? domMetrics(el) : metrics
+    readingRef.current = decision.stick ? null : rowAnchor(el)
+    record(el.scrollTop, decision.stick, decision.stick ? null : domAnchor(el))
+  }, [applyFollow, record])
+
   const onScroll = useCallback(() => {
     if (scrollFrameRef.current) return
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = 0
-      const el = streamRef.current
-      if (!el || settlingRef.current) return
-      const metrics = domMetrics(el)
-      const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
-      applyFollow(decision)
-      if (decision.repin) el.scrollTop = el.scrollHeight
-      metricsRef.current = decision.repin ? domMetrics(el) : metrics
-      readingRef.current = decision.stick ? null : rowAnchor(el)
-      record(el.scrollTop, decision.stick, decision.stick ? null : domAnchor(el))
+      if (settlingRef.current) return
+      readScroll()
     })
-  }, [record, applyFollow])
+  }, [readScroll])
 
   useEffect(() => () => cancelAnimationFrame(scrollFrameRef.current), [])
 
@@ -550,22 +563,113 @@ export function SessionView(): JSX.Element {
   turnsRef.current = turns
   const outlineMessages = useThrottledValue(visibleMessages, !!streamingId)
 
+  const navRef = useRef<number | null>(null)
+  const flashRef = useRef<{ timer: number; el: HTMLElement | null }>({ timer: 0, el: null })
+
+  const turnNode = useCallback((turnId: string): HTMLElement | null =>
+    hostRef.current?.querySelector<HTMLElement>(`.v3-msg[data-turn-id="${cssQuoted(turnId)}"]`) ?? null, [])
+
+  const flashTurn = useCallback((el: HTMLElement) => {
+    const prev = flashRef.current
+    if (prev.timer) window.clearTimeout(prev.timer)
+    prev.el?.classList.remove('v3-msg-nav')
+    el.classList.remove('v3-msg-nav')
+    el.getBoundingClientRect()
+    el.classList.add('v3-msg-nav')
+    const timer = window.setTimeout(() => {
+      el.classList.remove('v3-msg-nav')
+      flashRef.current = { timer: 0, el: null }
+    }, NAV_FLASH_MS)
+    flashRef.current = { timer, el }
+  }, [])
+
+  const endNavigation = useCallback(() => {
+    const frame = navRef.current
+    navRef.current = null
+    if (frame !== null) cancelAnimationFrame(frame)
+    settlingRef.current = false
+  }, [])
+
+  const revealTurn = useCallback((turnId: string) => {
+    let frames = 0
+    const reveal = (): void => {
+      const el = turnNode(turnId)
+      if (el) {
+        flashTurn(el)
+        return
+      }
+      if (++frames < NAV_MOUNT_FRAMES) requestAnimationFrame(reveal)
+    }
+    reveal()
+  }, [flashTurn, turnNode])
+
+  const followNavigation = useCallback((readOffset: () => number, turnId: string) => {
+    endNavigation()
+    settlingRef.current = true
+    const started = performance.now()
+    let last = Number.NaN
+    let still = 0
+    const finish = (): void => {
+      endNavigation()
+      if (virtual) onVirtualScroll()
+      else readScroll()
+      revealTurn(turnId)
+    }
+    const step = (): void => {
+      if (navRef.current === null) return
+      const offset = readOffset()
+      still = Math.abs(offset - last) < 0.5 ? still + 1 : 0
+      last = offset
+      if (still >= NAV_SETTLE_STILL_FRAMES || performance.now() - started > NAV_SETTLE_MAX_MS) {
+        finish()
+        return
+      }
+      navRef.current = requestAnimationFrame(step)
+    }
+    navRef.current = requestAnimationFrame(step)
+  }, [endNavigation, readScroll, onVirtualScroll, revealTurn, virtual])
+
+  useEffect(() => () => {
+    endNavigation()
+    const flash = flashRef.current
+    if (flash.timer) window.clearTimeout(flash.timer)
+    flash.el?.classList.remove('v3-msg-nav')
+    flashRef.current = { timer: 0, el: null }
+  }, [endNavigation])
+
   const jumpToTurn = useCallback((userIndex: number) => {
     setStickNow(false)
-    const turns = turnsRef.current
-    const target = userTurnRenderIndex(turns, userIndex)
-    if (target === undefined) return
+    const list = turnsRef.current
+    const target = userTurnRenderIndex(list, userIndex)
+    const turn = target === undefined ? undefined : list[target]
+    if (target === undefined || !turn) return
+    const instant = prefersReducedMotion()
+    const turnId = turn.id
     if (virtual) {
-      vlistRef.current?.scrollToIndex(target, { align: 'start' })
+      const handle = vlistRef.current
+      if (!handle) return
+      handle.scrollToIndex(target, { align: 'start', smooth: !instant })
+      if (instant) {
+        onVirtualScroll()
+        revealTurn(turnId)
+        return
+      }
+      followNavigation(() => handle.scrollOffset, turnId)
       return
     }
     const box = streamRef.current
-    const turn = turns[target]
-    const el = turn ? box?.querySelector<HTMLElement>(`[data-turn-id="${turn.id}"]`) : null
+    const el = turnNode(turnId)
     if (!box || !el) return
-    const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
-    box.scrollTop = Math.max(0, top)
-  }, [virtual, setStickNow])
+    const top = Math.max(0, el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop)
+    if (instant) {
+      box.scrollTop = top
+      readScroll()
+      flashTurn(el)
+      return
+    }
+    box.scrollTo({ top, behavior: 'smooth' })
+    followNavigation(() => box.scrollTop, turnId)
+  }, [virtual, setStickNow, followNavigation, flashTurn, onVirtualScroll, readScroll, revealTurn])
 
   useEffect(() => registerMessageLocator(async (messageId) => {
     const items = renderTurnsRef.current

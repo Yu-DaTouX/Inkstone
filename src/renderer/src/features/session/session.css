@@ -66,6 +66,27 @@
   }
 
   .v3-msg.assistant { margin-bottom: var(--s-6); }
+  .v3-msg.v3-msg-nav {
+    border-radius: var(--r-md);
+    animation: v3-msg-nav-flash calc(var(--dur-slow) * 2) var(--ease-glide) both;
+  }
+
+  @keyframes v3-msg-nav-flash {
+    from {
+      background-color: color-mix(in srgb, var(--accent) 16%, transparent);
+      box-shadow: 0 0 0 var(--s-8) color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    to {
+      background-color: transparent;
+      box-shadow: 0 0 0 var(--s-8) transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-msg.v3-msg-nav {
+      animation: none;
+    }
+  }
   .v3-msg.user { align-items: flex-end; padding-top: 0; margin-bottom: 0; }
   .v3-msg.user .v3-user-actions { position: relative; z-index: 1; margin-bottom: calc(-1 * var(--s-8)); }
   :is(.v3-stream-inner > .v3-msg.user:first-child, .v3-stream-row--head > .v3-msg.user) { padding-top: 0; }
@@ -195,8 +216,8 @@
   .v3-jump {
     position: absolute;
     right: max(var(--col-pad-r, var(--s-20)), calc((100% - var(--size-chat)) / 2));
-    bottom: calc(var(--composer-h, 0px) + var(--s-12));
-    z-index: 5;
+    bottom: calc(var(--composer-h, 0px) + var(--s-24) + var(--s-8));
+    z-index: var(--z-rail);
     display: flex;
     justify-content: flex-end;
     pointer-events: none;
