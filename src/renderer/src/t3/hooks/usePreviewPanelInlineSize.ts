@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { observeResize } from "../lib/observeResize";
 import { type ResizableWidthHandlers, useResizableWidth } from "./useResizableWidth";
@@ -36,28 +36,31 @@ export function usePreviewPanelInlineSize(options: {
     edge: "left",
     onWidth: options.onWidth,
   });
-  const observeRow = (host: HTMLElement) => {
-    const row = container ?? (enabled ? host.parentElement : null) ?? null;
-    const measure = () => {
-      setMeasuredCap(maxWidthFor(window.innerWidth, row?.clientWidth));
-    };
-    measure();
-    let frame = 0;
-    const onResize = () => {
-      if (frame !== 0) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        measure();
-      });
-    };
-    window.addEventListener("resize", onResize);
-    const stopObserving = row ? observeResize(row, measure) : undefined;
-    return () => {
-      window.removeEventListener("resize", onResize);
-      if (frame !== 0) window.cancelAnimationFrame(frame);
-      stopObserving?.();
-    };
-  };
+  const observeRow = useCallback(
+    (host: HTMLElement) => {
+      const row = container ?? (enabled ? host.parentElement : null) ?? null;
+      const measure = () => {
+        setMeasuredCap(maxWidthFor(window.innerWidth, row?.clientWidth));
+      };
+      measure();
+      let frame = 0;
+      const onResize = () => {
+        if (frame !== 0) return;
+        frame = window.requestAnimationFrame(() => {
+          frame = 0;
+          measure();
+        });
+      };
+      window.addEventListener("resize", onResize);
+      const stopObserving = row ? observeResize(row, measure) : undefined;
+      return () => {
+        window.removeEventListener("resize", onResize);
+        if (frame !== 0) window.cancelAnimationFrame(frame);
+        stopObserving?.();
+      };
+    },
+    [container, enabled],
+  );
   return { width, handlers, observeRow };
 }
 

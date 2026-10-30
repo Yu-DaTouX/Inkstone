@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement } from 'react'
-import { ArrowLeft, EllipsisVertical, FileDiff, Folder, PanelLeft, PanelRight, SquarePen, Terminal } from 'lucide-react'
+import { ArrowLeft, Columns3, EllipsisVertical, FileDiff, Folder, PanelLeft, PanelRight, SquarePen, Terminal } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings, type ShortcutId } from './shortcuts'
@@ -166,6 +166,16 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
         {route === 'chat' ? (
           <>
             <ProjectScriptsControl />
+            <IconButton
+              tooltip={sessionBarLabel}
+              aria-label={sessionBarLabel}
+              aria-pressed={sessionBarOpen}
+              className="v3-head-pane"
+              onPress={onToggleSessionBar}
+              data-testid="v3-head-sessionbar-toggle"
+            >
+              <Columns3 size={16} />
+            </IconButton>
             <IconButton
               tooltip={rightPanelOpen ? panelText.hidePanel : panelText.panel}
               aria-label={rightPanelOpen ? panelText.hidePanel : panelText.panel}

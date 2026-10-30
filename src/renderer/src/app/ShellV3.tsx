@@ -287,8 +287,8 @@ export default function ShellV3(): ReactElement {
     document.documentElement.style.setProperty('--toast-inset-right', `${toastInset}px`)
   }, [toastInset])
   const sessionBarFits = chatWidth - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
-  const sessionBarYields = panelOpen && panelMode === 'inline'
-  const sessionBarShown = route.name === 'chat' && hasMessages && sessionBarOn && sessionBarFits && !panelMaximized && !sessionBarYields
+  const sessionBarWanted = route.name === 'chat' && hasMessages && sessionBarOn && !panelMaximized
+  const sessionBarShown = sessionBarWanted && sessionBarFits
   const tilesRoom = tilesWidthRoom(chatWidth, LANE_GAP, MESSAGE_MIN_WIDTH)
   const shownTilesWidth = clampTilesWidth(tilesWidth, tilesRoom)
   const tilesMaxShown = clampTilesWidth(TILES_WIDTH_MAX, tilesRoom)
@@ -574,7 +574,7 @@ export default function ShellV3(): ReactElement {
             onSettings={() => openSettingsDialog()}
             onBack={() => useUiV3.getState().goBack()}
             sessionBarOpen={sessionBarOn}
-            sessionBarHidden={route.name === 'chat' && sessionBarOn && hasMessages && !sessionBarShown && !sessionBarYields}
+            sessionBarHidden={route.name === 'chat' && sessionBarOn && hasMessages && !sessionBarShown}
             onToggleSessionBar={toggleSessionBar}
             sessionBarShown={sessionBarShown}
             rightPanelOpen={panelOpen}

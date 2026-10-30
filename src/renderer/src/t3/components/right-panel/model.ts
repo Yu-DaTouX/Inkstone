@@ -11,7 +11,6 @@ export type T3SurfaceKind =
   | "pullRequests"
   | "pullRequest"
   | "device"
-  | "overview"
   | "context"
   | "branch"
   | "logs"

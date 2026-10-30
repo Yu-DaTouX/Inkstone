@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
 
-export type PanelToolKind = Exclude<WorkbenchTabId, 'preview'> | 'overview'
+export type PanelToolKind = Exclude<WorkbenchTabId, 'preview'>
 export type PrDetailTab = 'summary' | 'timeline' | 'code'
 export type PrSurfaceState = 'open' | 'draft' | 'merged' | 'closed'
 
@@ -34,10 +34,9 @@ export const PANEL_WIDTH_MIN = 360
 export const PANEL_WIDTH_DEFAULT = 720
 export const PANEL_WIDTH_MAX_FRACTION = 0.7
 export const PANEL_WIDTH_STEP = 16
-export const PANEL_TOOL_KINDS: readonly PanelToolKind[] = [
-  ...WORKBENCH_TABS.filter((tab): tab is Exclude<WorkbenchTabId, 'preview'> => tab !== 'preview'),
-  'overview'
-]
+export const PANEL_TOOL_KINDS: readonly PanelToolKind[] = WORKBENCH_TABS.filter(
+  (tab): tab is Exclude<WorkbenchTabId, 'preview'> => tab !== 'preview'
+)
 
 const PR_TABS: readonly PrDetailTab[] = ['summary', 'timeline', 'code']
 const PR_STATES: readonly PrSurfaceState[] = ['open', 'draft', 'merged', 'closed']
@@ -195,6 +194,7 @@ export function sanitizeSurface(value: unknown): RightPanelSurface | null {
   const raw = value as Record<string, unknown>
   const kind = text(raw.kind)
   if (kind === 'preview') return toolSurface('files')
+  if (kind === 'overview') return null
   if (isPanelToolKind(kind)) return toolSurface(kind)
   if (kind === 'file') {
     const path = text(raw.path)

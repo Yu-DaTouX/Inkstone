@@ -31,7 +31,7 @@ export function launcherActions(input: LauncherActionInput): LauncherAction[] {
 export function useLauncherActions(owner: WorkspaceOwner | null, onPick: (kind: PanelToolKind) => void): LauncherAction[] {
   const texts = usePanelTexts()
   const availability = usePanelAvailability(owner)
-  const label = useCallback((kind: PanelToolKind) => (kind === 'overview' ? texts.panel.overview : texts.workbench.tabs[kind]), [texts])
+  const label = useCallback((kind: PanelToolKind) => texts.workbench.tabs[kind], [texts])
   const reason = useCallback((code: PanelUnavailableReason) => texts.panel.unavailable[code], [texts])
   return useMemo(() => launcherActions({ entries: LAUNCHER, availability, label, reason, onPick }), [availability, label, reason, onPick])
 }

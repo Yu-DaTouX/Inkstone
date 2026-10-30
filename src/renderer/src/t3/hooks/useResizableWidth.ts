@@ -163,14 +163,20 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   const start = (event: ReactPointerEvent<HTMLElement>): ResizeSession | null => {
     const host = event.currentTarget.parentElement;
     host?.style.setProperty("transition-property", "none");
+    document.documentElement.dataset.rpDragging = "1";
     const startWidth = clampedWidth;
+    let written = startWidth;
     return {
       width: startWidth,
       edge,
       bounds: { min: minWidth, max: maxWidth },
       resize(nextWidth) {
-        host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${nextWidth}px`);
-        return nextWidth;
+        const rounded = Math.round(nextWidth);
+        if (rounded !== written) {
+          written = rounded;
+          host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${rounded}px`);
+        }
+        return rounded;
       },
       finish(finalWidth, moved) {
         if (!moved && finalWidth === startWidth) return;
@@ -178,6 +184,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
       },
       cleanup(committed) {
         host?.style.removeProperty("transition-property");
+        delete document.documentElement.dataset.rpDragging;
         if (!committed) host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${startWidth}px`);
       },
     };

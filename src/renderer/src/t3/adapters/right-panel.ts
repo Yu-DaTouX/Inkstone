@@ -109,7 +109,7 @@ export function useSurfaceLabelContext(owner: WorkspaceOwner | null): SurfaceLab
   const terminalLabel = useTerminalTabTitle(owner?.key ?? null)
   const blocked = !!owner && !owner.active
   const blockedKinds = useMemo(() => blockedKindsOf(blocked), [blocked])
-  const toolLabel = useCallback((kind: PanelToolKind) => panelToolLabel(kind, texts.workbench, texts.panel), [texts])
+  const toolLabel = useCallback((kind: PanelToolKind) => panelToolLabel(kind, texts.workbench), [texts])
   const pullRequestLabel = useCallback((number: number) => texts.panel.pullRequest(number), [texts])
   const subagentLabel = useCallback(
     (runId: string) => {

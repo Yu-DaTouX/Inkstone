@@ -3,6 +3,7 @@ import {
   type KeyboardEvent,
   type KeyboardEventHandler,
   type ReactNode,
+  useCallback,
   useLayoutEffect,
   useRef,
   useState,
@@ -80,14 +81,21 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
     });
   }
   const suppressWidthTransition = collapsible && !widthTransition.enabled;
-  const attachHost = (host: HTMLDivElement) => {
-    hostRef.current = host;
-    const stopObservingRow = observeRow(host);
-    return () => {
-      hostRef.current = null;
-      stopObservingRow();
-    };
-  };
+  const attachHost = useCallback(
+    (host: HTMLDivElement | null) => {
+      if (!host) {
+        hostRef.current = null;
+        return;
+      }
+      hostRef.current = host;
+      const stopObservingRow = observeRow(host);
+      return () => {
+        hostRef.current = null;
+        stopObservingRow();
+      };
+    },
+    [observeRow],
+  );
   useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host || !collapsible) return;

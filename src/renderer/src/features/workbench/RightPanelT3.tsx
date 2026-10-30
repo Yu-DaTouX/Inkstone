@@ -4,10 +4,9 @@ import { create } from 'zustand'
 import { Button, EmptyState, IconButton, Spinner, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { fileSurface, pullRequestSurface, toolSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelSurface } from '../../state/right-panel'
+import { fileSurface, pullRequestSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelSurface } from '../../state/right-panel'
 import { SubagentTranscriptPane } from '../session/SubagentTranscriptPane'
 import { PullRequestDetail } from '../github/PullRequestDetail'
-import { OverviewPane } from './OverviewPane'
 import { PaneChromeContext, paneMenuSignature, type PaneChrome, type PaneMenuItem } from './pane-chrome'
 import { previewPathFor, type PreviewOpenOptions } from './preview-state'
 import { usePreviewBindings } from './preview-bindings'
@@ -260,7 +259,7 @@ function SurfaceView({ surface, shown, live, owner, panes, text, panel, onReques
   }, [])
   const chrome = useMemo<PaneChrome>(() => ({ title: titleEl, tools: toolsEl, setMenu }), [titleEl, toolsEl, setMenu])
   const previewPath = usePreviewBindings((s) => previewPathFor(s.bindings, owner.key))
-  const tool = surface.kind !== 'file' && surface.kind !== 'pullRequest' && surface.kind !== 'subagent' && surface.kind !== 'overview' ? surface.kind : null
+  const tool = surface.kind !== 'file' && surface.kind !== 'pullRequest' && surface.kind !== 'subagent' ? surface.kind : null
   const blocked = !!tool && !owner.active && WORKBENCH_ACTIVE_TABS.has(tool)
   const extraItems: PaneMenuItem[] =
     tool === 'files' && previewPath
@@ -294,8 +293,6 @@ function SurfaceView({ surface, shown, live, owner, panes, text, panel, onReques
     )
   } else if (surface.kind === 'subagent') {
     body = <SubagentTranscriptPane runId={surface.runId} />
-  } else if (surface.kind === 'overview') {
-    body = <OverviewPane owner={owner} onOpenView={(tab) => useRightPanel.getState().open(toolSurface(tab))} />
   } else if (surface.kind === 'file') {
     const Preview = panes.preview
     body = Preview ? <Preview owner={owner} path={surface.path} treeShown={false} standalone /> : null

@@ -141,7 +141,7 @@ export function useWorkspaceProbes(cwd: string | null, enabled: boolean): Worksp
 }
 
 export function panelAvailability(kind: PanelToolKind, owner: WorkspaceOwner | null, probes: WorkspaceProbes): PanelAvailability {
-  if (kind === 'overview' || kind === 'context' || kind === 'logs' || kind === 'quota') return AVAILABLE
+  if (kind === 'context' || kind === 'logs' || kind === 'quota') return AVAILABLE
   if (!owner) return unavailable('no-session')
   if (kind === 'terminal' || kind === 'browser') return owner.active ? AVAILABLE : unavailable('inactive')
   if (kind === 'branch') {
@@ -175,8 +175,7 @@ export function availabilityMap(owner: WorkspaceOwner | null, probes: WorkspaceP
     logs: panelAvailability('logs', owner, probes),
     quota: panelAvailability('quota', owner, probes),
     device: panelAvailability('device', owner, probes),
-    pullRequests: panelAvailability('pullRequests', owner, probes),
-    overview: panelAvailability('overview', owner, probes)
+    pullRequests: panelAvailability('pullRequests', owner, probes)
   }
 }
 

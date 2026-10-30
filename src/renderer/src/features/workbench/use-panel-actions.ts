@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { FileDiff, FolderOpen, Gauge, GitBranch, GitPullRequest, Globe, LayoutDashboard, ScrollText, Smartphone, SquareStack, Terminal, type LucideIcon } from 'lucide-react'
+import { FileDiff, FolderOpen, Gauge, GitBranch, GitPullRequest, Globe, ScrollText, Smartphone, SquareStack, Terminal, type LucideIcon } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import type { PanelToolKind } from '../../state/right-panel'
 import { rightPanelText, type RightPanelText } from './right-panel-text'
@@ -17,7 +17,6 @@ export const LAUNCHER: readonly LauncherEntry[] = [
   { kind: 'changes', shortcut: 'D' },
   { kind: 'pullRequests', shortcut: 'P' },
   { kind: 'device', shortcut: 'M' },
-  { kind: 'overview', shortcut: 'O' },
   { kind: 'context', shortcut: 'C' },
   { kind: 'branch', shortcut: 'G' },
   { kind: 'logs', shortcut: 'L' },
@@ -34,12 +33,11 @@ export const PANEL_TOOL_ICONS: Record<PanelToolKind, LucideIcon> = {
   logs: ScrollText,
   quota: Gauge,
   device: Smartphone,
-  pullRequests: GitPullRequest,
-  overview: LayoutDashboard
+  pullRequests: GitPullRequest
 }
 
-export function panelToolLabel(kind: PanelToolKind, text: WorkbenchText, panel: RightPanelText): string {
-  return kind === 'overview' ? panel.overview : text.tabs[kind]
+export function panelToolLabel(kind: PanelToolKind, text: WorkbenchText): string {
+  return text.tabs[kind]
 }
 
 export function launcherEntryForEvent(event: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean }): LauncherEntry | null {
