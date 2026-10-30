@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import remarkCjkFriendly from 'remark-cjk-friendly'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
-import { CircleDot, Folder, FolderGit2, GitCommitHorizontal, GitPullRequest, SquareTerminal, WrapText } from 'lucide-react'
+import { CircleDot, Folder, FolderGit2, GitCommitHorizontal, GitPullRequest, Globe, SquareTerminal, WrapText } from 'lucide-react'
 import { Button, IconButton } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT } from '../../i18n'
@@ -132,11 +132,20 @@ type AnchorProps = ClassAttributes<HTMLAnchorElement> & AnchorHTMLAttributes<HTM
 
 const GITHUB_URL = /^https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+(\/(pull|issues|commit)\/)?/i
 
-function GithubLinkIcon({ url }: { url: string }): JSX.Element | null {
+function UrlLinkIcon({ url }: { url: string }): JSX.Element {
   const match = GITHUB_URL.exec(url)
-  if (!match) return null
-  const Glyph = match[2] === 'pull' ? GitPullRequest : match[2] === 'issues' ? CircleDot : match[2] === 'commit' ? GitCommitHorizontal : FolderGit2
+  const Glyph = !match ? Globe : match[2] === 'pull' ? GitPullRequest : match[2] === 'issues' ? CircleDot : match[2] === 'commit' ? GitCommitHorizontal : FolderGit2
   return <Glyph size={13} strokeWidth={1.75} className="v3-md-link-icon" aria-hidden />
+}
+
+function LinkKindIcon({ target }: { target: ReturnType<typeof classifyLink> }): JSX.Element | null {
+  if (target.kind === 'file') return <><FileLinkIcon path={target.path} />{'\u2060'}</>
+  if (target.kind === 'url') return <><UrlLinkIcon url={target.url} />{'\u2060'}</>
+  return null
+}
+
+function isPathLabel(label: string): boolean {
+  return !!label && !/\s/.test(label) && (/[\\/]/.test(label) || /^[\w.@-]+\.[a-zA-Z0-9]{1,8}(?::\d+)?$/.test(label))
 }
 
 function FileLinkIcon({ path }: { path: string }): JSX.Element {
@@ -240,6 +249,8 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
   }
 
   const label = textOf(children).trim()
+  const pathLabel = target.kind === 'file' && isPathLabel(label)
+  const plain = typeof children === 'string' || (Array.isArray(children) && children.length === 1 && typeof children[0] === 'string')
   const title =
     target.kind === 'file'
       ? (() => {
@@ -256,6 +267,7 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
       className={`v3-md-link ${target.kind === 'invalid' ? 'blocked' : ''}`}
       data-link-kind={target.kind}
       data-short={label.length <= SHORT_LINK_CHARS ? '' : undefined}
+      data-path-label={pathLabel ? '' : undefined}
       data-github={target.kind === 'url' && GITHUB_URL.test(target.url) ? '' : undefined}
       data-line={target.kind === 'file' && target.line ? String(target.line) : undefined}
       data-line-end={target.kind === 'file' && target.lineEnd ? String(target.lineEnd) : undefined}
@@ -265,8 +277,8 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
       onAuxClick={(e) => e.preventDefault()}
       onContextMenu={onContextMenu}
     >
-      {imageLink ? null : target.kind === 'file' ? <><FileLinkIcon path={target.path} />{'\u2060'}</> : target.kind === 'url' && GITHUB_URL.test(target.url) ? <><GithubLinkIcon url={target.url} />{'\u2060'}</> : null}
-      {children}
+      {imageLink ? null : <LinkKindIcon target={target} />}
+      {pathLabel && plain ? pathPieces(label) : children}
     </a>
   )
 }
@@ -321,13 +333,14 @@ function InlineCodeLink({ className, children }: { className?: string; children?
     else void window.yan.revealPath(resolveAgainstCwd(candidate.path, sourceCwd))
   }
   return (
-    <code className="v3-md-code-link" role="link" tabIndex={0} title={candidate.kind === 'file' && resolved ? `${resolved}\n${t('link.codeDblclickHint')}` : t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu} onKeyDown={(event) => {
+    <code className="v3-md-code-link" data-link-kind={candidate.kind} role="link" tabIndex={0} title={candidate.kind === 'file' && resolved ? `${resolved}\n${t('link.codeDblclickHint')}` : t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu} onKeyDown={(event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return
       event.preventDefault()
       event.stopPropagation()
       if (candidate.kind === 'url') void openLink(candidate.url)
       else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
     }}>
+      <LinkKindIcon target={candidate} />
       {pathPieces(children)}
     </code>
   )
