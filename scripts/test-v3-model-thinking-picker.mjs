@@ -72,8 +72,8 @@ async function buildSsr(outdir) {
     entry,
     `import * as React from 'react'\n` +
       `import { renderToStaticMarkup } from 'react-dom/server'\n` +
-      `import { ThinkingSection } from '${posix(join(ROOT, 'src/renderer/src/patterns/ModelThinkingPicker.tsx'))}'\n` +
-      `export { React, renderToStaticMarkup, ThinkingSection }\n`
+      `import { ThinkingSection, thinkingScale, modelNameTail } from '${posix(join(ROOT, 'src/renderer/src/patterns/ModelThinkingPicker.tsx'))}'\n` +
+      `export { React, renderToStaticMarkup, ThinkingSection, thinkingScale, modelNameTail }\n`
   )
   await build({
     entryPoints: [entry],
@@ -133,21 +133,41 @@ async function main() {
   const outdir = await mkdtemp(join(ROOT, '.tmp/v3-thinking-'))
   try {
     const require = createRequire(import.meta.url)
-    const { React, renderToStaticMarkup, ThinkingSection } = require(await buildSsr(outdir))
+    const { React, renderToStaticMarkup, ThinkingSection, thinkingScale, modelNameTail } = require(await buildSsr(outdir))
+    const cell = (html, level) => (html.match(new RegExp(`<button[^>]*data-testid="thinking-${level}"[^>]*>`)) ?? [])[0] ?? ''
     const html = renderToStaticMarkup(
       React.createElement(ThinkingSection, { levels: LEVELS, level: 'medium', busy: false, onCommit: () => {} })
     )
-    ok(html.includes('data-testid="thinking-current"'), '头部当前档位带 thinking-current')
-    ok(/data-level="medium"/.test(html), '头部按 data-level 染色')
-    ok(html.includes('think.medium'), '头部显示当前档位名（i18n 键）')
-    ok(html.includes('data-testid="thinking-stops"'), '滑杆带 thinking-stops')
-    ok(html.includes('mtp-field') && html.includes('mtp-thumb'), '滑杆里渲染点阵画布与块状光标')
-    ok(html.includes('class="mtp-step"'), '滑杆与档位名包在同一档位容器里（共用档位色变量）')
-    const input = (html.match(/<input\b[^>]*>/) ?? [])[0] ?? ''
-    ok(/\btype="range"/.test(input) && /\bmin="0"/.test(input) && /\bmax="6"/.test(input) && /\bstep="1"/.test(input), '滑杆用原生 range，min/max/step 对齐七档')
-    ok(/\bvalue="3"/.test(input), '当前档位 medium 落在下标 3')
-    for (const l of LEVELS) ok(html.includes(`data-testid="thinking-${l}"`), `保留档位 testid thinking-${l}`)
-    ok(/data-testid="thinking-medium"[^>]*data-active="true"/.test(html) || /data-active="true"[^>]*data-testid="thinking-medium"/.test(html), '当前档在刻度行高亮')
+    ok(html.includes('data-testid="thinking-stops"'), '刻度带 thinking-stops')
+    ok(html.includes('ui-ascii-scale'), '刻度来自 ui/ 的 AsciiScale 基元')
+    for (const l of LEVELS) ok(cell(html, l), `保留档位 testid thinking-${l}`)
+    ok(/data-selected="true"/.test(cell(html, 'medium')), '当前档 medium 处于选中态')
+    ok(['off', 'minimal', 'low', 'medium'].every((l) => /data-lit/.test(cell(html, l))) && !/data-lit/.test(cell(html, 'high')), '选中格及其左侧格点亮，右侧不点亮')
+    const glyphs = [...html.matchAll(/class="ui-ascii-scale__glyph"[^>]*>([^<]*)</g)].map((m) => m[1]).join('')
+    ok(glyphs === '▁▁▁▂▂▂▃▃▃▄▄▄▅▅▅▆▆▆▇▇▇', `七格字形逐级升高（实际 ${glyphs}）`)
+    for (const l of LEVELS) ok(html.includes(`think.${l}`), `刻度字走 i18n 键 think.${l}`)
+    ok(!html.includes('data-testid="thinking-current"'), '有档位且未开 Ultracode 时头部不再重复当前档')
+    ok(/var\(--think-medium/.test(html), '选中格的色调取当前档位色')
+
+    const partial = renderToStaticMarkup(
+      React.createElement(ThinkingSection, { levels: ['off', 'high'], level: 'high', busy: false, onCommit: () => {} })
+    )
+    ok(['minimal', 'low', 'medium', 'xhigh', 'max'].every((l) => /\bdisabled=""/.test(cell(partial, l))), '模型不支持的档位置灰禁用')
+    ok(!/\bdisabled=""/.test(cell(partial, 'off')) && !/\bdisabled=""/.test(cell(partial, 'high')), '支持的档位可选')
+    ok((partial.match(/title="picker\.thinkLevelUnsupported"/g) ?? []).length === 5, '置灰档位悬停说明原因')
+
+    const deep = renderToStaticMarkup(
+      React.createElement(ThinkingSection, { levels: LEVELS, level: 'max', busy: false, onCommit: () => {}, ultracode: true })
+    )
+    ok(/data-testid="thinking-current"[^>]*>Ultracode</.test(deep), 'Ultracode 开启时头部标出 Ultracode')
+    const again = renderToStaticMarkup(
+      React.createElement(ThinkingSection, { levels: LEVELS, level: 'max', busy: false, onCommit: () => {}, onUltracodeRequest: () => {} })
+    )
+    ok(again.includes('title="picker.deepAgain"'), '停在最高档时提示再按一次开启 Ultracode')
+    const busy = renderToStaticMarkup(
+      React.createElement(ThinkingSection, { levels: LEVELS, level: 'low', busy: true, onCommit: () => {} })
+    )
+    ok(/data-disabled="true"/.test(busy) || /\bdisabled=""/.test(cell(busy, 'high')), '生成中刻度整体禁用')
 
     const fallback = renderToStaticMarkup(
       React.createElement(ThinkingSection, {
@@ -155,49 +175,53 @@ async function main() {
         level: 'off',
         busy: false,
         onCommit: () => {},
-        fallback: 'think.unsupported'
+        fallback: 'think.unsupported',
+        fallbackShort: 'short'
       })
     )
-    ok(!fallback.includes('data-testid="thinking-stops"'), '只有「关」一档时不渲染滑杆')
-    ok(fallback.includes('think.unsupported'), '只有「关」一档时头部给出能力说明')
+    ok(!fallback.includes('data-testid="thinking-stops"'), '只有「关」一档时不渲染刻度')
+    ok(fallback.includes('think.unsupported') && fallback.includes('data-testid="thinking-current"'), '只有「关」一档时头部给出能力说明')
+
+    ok(thinkingScale(['off', 'turbo']).join() === 'off,minimal,low,medium,high,xhigh,max,turbo', '刻度固定七档，未知档追加在末尾')
+    ok(modelNameTail('Claude Opus 5.5') === 8 && modelNameTail('GPT-6.1 Sol') === 3 && modelNameTail('Fake') === undefined, '模型名中间截断保留品牌之后的部分')
   } finally {
     await rm(outdir, { recursive: true, force: true })
   }
 
   const pickerCss = await readFile(join(ROOT, 'src/renderer/src/patterns/model-thinking-picker.css'), 'utf8')
+  const scaleCss = await readFile(join(ROOT, 'src/renderer/src/ui/AsciiScale.css'), 'utf8')
   const composerCss = await readFile(join(ROOT, 'src/renderer/src/features/composer/composer.css'), 'utf8')
   const pickerTsx = await readFile(join(ROOT, 'src/renderer/src/patterns/ModelThinkingPicker.tsx'), 'utf8')
-  ok(pickerCss.includes('@keyframes v3-step-value-in'), '新关键帧用 v3-step-value-in')
-  ok(pickerCss.includes('@keyframes v3-step-caret'), '光标闪烁关键帧用 v3-step-caret')
-  ok(pickerCss.includes('.mtp-field') && pickerCss.includes('.mtp-thumb'), '点阵画布与块状光标各有自己的类')
-  ok(/@keyframes v3-step-caret\s*\{\s*50%\s*\{\s*opacity/.test(pickerCss), '光标闪烁只降透明度（v2 终端节拍）')
-  ok(
-    /\.mtp-thumb\s*\{[^}]*animation:\s*v3-step-caret/.test(pickerCss),
-    '光标启动时按终端节拍闪四次'
-  )
-  ok(
-    /\.mtp-scale-item\[data-active='true'\]\s*\{[^}]*color:\s*color-mix\(in srgb, var\(--mtp-think\) \d+%, var\(--fg\)\)/.test(pickerCss),
-    '当前档名染档位色（可点击切档的一排）'
-  )
-  ok(pickerCss.includes('color-mix') && /\.mtp-thumb\s*\{[^}]*box-shadow/.test(pickerCss), '块状光标带发光')
-  ok(pickerCss.includes('prefers-reduced-motion: reduce') && /\.mtp-thumb\s*\{\s*animation:\s*none;/.test(pickerCss), 'reduced-motion 下光标不闪')
-  ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?scale:\s*none/.test(pickerCss), 'reduced-motion 下光标不放大')
-  ok(pickerCss.includes('prefers-reduced-motion: reduce') && /\.mtp-step-value\s*\{\s*animation:\s*none;/.test(pickerCss), 'reduced-motion 下关闭档位切换动画')
-  ok(pickerCss.includes('var(--think-'), '档位色引用 --think-*')
+  ok(!pickerCss.includes('@keyframes') && !pickerCss.includes('.mtp-thumb'), '选择器不再有点阵滑杆与闪烁光标')
+  ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.mtp-chev\s*\{\s*transition:\s*none/.test(pickerCss) && /:root\[data-reduce-motion='true'\] \.mtp-chev/.test(pickerCss), '减少动效（系统与应用两路）下箭头不转动')
+  ok(scaleCss.includes('--ascii-ink') && scaleCss.includes('--ascii-dim') && scaleCss.includes('--ring-focus'), '刻度用 ASCII 墨色令牌，焦点环来自令牌')
+  ok(/\.mtp-item\s*\{[^}]*grid-template-columns:[^;]*minmax\(0, 1fr\)/.test(pickerCss), '模型行是 grid，弹性列用 minmax(0, 1fr)')
+  ok(/\.mtp-prov\s*\{[^}]*width:\s*13ch/.test(pickerCss) && /\.mtp-ctx\s*\{[^}]*text-align:\s*end/.test(pickerCss), '供应商列定宽、上下文列右对齐')
+  ok(/\.mtp-pop\s*\{[^}]*container-type:\s*inline-size/.test(pickerCss) && pickerCss.includes('@container (max-width: 520px)'), '窄窗口下菜单收窄供应商栏')
   ok(/\n\s*\.mtp-level\s*\{[^}]*color:\s*var\(--fg2\)/.test(pickerCss) && !/\.mtp-level\[data-level/.test(pickerCss), '输入框里的档位字是次级灰，不按档位染色（档位色只留在输入框顶边）')
   ok(/\.mtp-trigger\[data-disabled\]\s*\{\s*opacity:\s*1;/.test(pickerCss), '运行中模型名保持常态，不变灰')
+  ok(/\.mtp-think-trigger\s*\{\s*flex:\s*none;/.test(pickerCss), '思考档按钮不被压缩，档位字不会被裁成半个字')
   ok(!pickerCss.includes('@import'), '选择器 CSS 不 @import（尤其不引 v2 样式）')
   ok(composerCss.includes('--think-max') && composerCss.includes('.cborder'), '输入框顶边与档位色在 composer 专属 CSS 里派生')
   ok(composerCss.includes('prefers-reduced-motion: reduce') && /\.cborder\s*\{\s*transition:\s*none;/.test(composerCss), 'reduced-motion 下顶边换色无过渡')
-  ok(pickerTsx.includes("setAttribute('aria-valuetext'") && pickerTsx.includes('levelLabel'), '运行时把隐藏 range 的 aria-valuetext 补成档位名')
-  ok(pickerTsx.includes('PulseField') && pickerTsx.includes('pulse-field'), '滑杆复用 components/ui/pulse-field 的纯点阵引擎')
-  ok(pickerTsx.includes('engine.dispose()') && pickerTsx.includes('fieldRef.current = null'), '菜单关闭时 dispose 点阵引擎')
-  ok(pickerTsx.includes('dataset.theme'), '深浅主题按 v3 根元素主题属性判断')
-  ok(pickerTsx.includes("from '../ui'") && pickerTsx.includes('thinkingDragAction') && pickerTsx.includes('thinkingCommitAction'), '滑杆来自 ui/，拖动预览 / 松手提交走同一纯模型')
+  ok(/\.composer-tools\s*\{[^}]*min-width:\s*0/.test(composerCss), '状态行左组可收缩，右侧发送组不被挤出')
+  ok(/@container \(max-width: 560px\)\s*\{\s*\.composer-bar \.mtp-think-icon\s*\{\s*display:\s*none/.test(composerCss), '更窄时先收起「思考」前缀，档位字保留')
+  ok(pickerTsx.includes('MiddleTruncate') && pickerTsx.includes('modelNameTail(cur.name)'), '模型名在窄宽度下中间截断')
+  ok(pickerTsx.includes('AsciiScale') && pickerTsx.includes("from '../ui'") && pickerTsx.includes('thinkingCommitAction'), '思考档用 ui/ 的字符刻度，提交走同一纯模型')
+  ok(!pickerTsx.includes('PulseField') && !pickerTsx.includes('pulse-field'), '不再引用点阵引擎')
+  ok(pickerTsx.includes('model-picker-tab-${provider}') && pickerTsx.includes('visibleCount(provider)'), '左栏按供应商分组并显示模型数')
+  ok(pickerTsx.includes('data-testid="model-picker-favorites"') && pickerTsx.includes('jumpLabel(jump)'), '收藏区固定在菜单顶部并显示 Ctrl+N')
+  ok(pickerTsx.includes('data-testid="model-picker-thinking"'), '模型菜单底部可直接调当前模型的思考档')
   ok(
     !/styles\//.test(pickerTsx) && !/\bfrom\s+['"][^'"]*components\/ui['"]/.test(pickerTsx),
-    '选择器源文件不引 v2 样式 / 旧 ui 桶入口（只复用 pulse-field 纯模块）'
+    '选择器源文件不引 v2 样式 / 旧 ui 桶入口'
   )
+  for (const lang of ['zh-CN', 'en-US']) {
+    const dict = JSON.parse(await readFile(join(ROOT, `src/renderer/src/i18n/${lang}.json`), 'utf8'))
+    ok(['picker.thinkLevelUnsupported', 'picker.deepAgain', 'picker.matchCount'].every((k) => typeof dict[k] === 'string' && dict[k]), `${lang} 有刻度与菜单新文案`)
+  }
+  const zh = JSON.parse(await readFile(join(ROOT, 'src/renderer/src/i18n/zh-CN.json'), 'utf8'))
+  ok(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].every((l) => /^[\u4e00-\u9fff]+$/.test(zh[`think.${l}`])), '中文刻度字统一为中文（关 / 最低 / 低 / 中 / 高 / 极高 / 最高）')
 
   console.log(`\n结果：${checks} 项通过`)
 }

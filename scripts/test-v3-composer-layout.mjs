@@ -446,7 +446,7 @@ async function main() {
     ]) {
       const text = await readFile(join(ROOT, rel), 'utf8')
       const v2Entry = /\bfrom\s+['"][^'"]*components\/ui['"]/.test(text)
-      ok(!/styles\//.test(text) && !v2Entry, `${rel} 不 import v2 样式/旧控件入口（只允许复用 pulse-field 纯模块）`)
+      ok(!/styles\//.test(text) && !v2Entry, `${rel} 不 import v2 样式/旧控件入口`)
     }
 
     const menuText = await readFile(join(ROOT, 'src/renderer/src/features/composer/ComposerMenu.tsx'), 'utf8')

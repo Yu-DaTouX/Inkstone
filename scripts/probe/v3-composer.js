@@ -165,38 +165,27 @@
       '顶边 data-level 初始为 medium'
     )
     q('thinking-picker')?.click()
-    check(await until(() => !!q('thinking-stops')), '思考浮层打开，档位滑杆出现')
+    check(await until(() => !!q('thinking-stops')), '思考浮层打开，字符刻度出现')
     const commits = []
     const realSetThinking = store.getState().setThinking
     store.setState({ setThinking: async (level) => { commits.push(level) } })
     await wait(120)
 
-    const thumb = q('thinking-stops')?.querySelector('.ui-slider__thumb')
-    const track = q('thinking-stops')?.querySelector('.ui-slider__track')
-    check(!!thumb && !!track, '滑杆手柄与轨道已渲染')
-    if (thumb && track) {
-      const tb = track.getBoundingClientRect()
-      const hb = thumb.getBoundingClientRect()
-      const startX = hb.left + hb.width / 2
-      const startY = hb.top + hb.height / 2
-      const delta = tb.width / (LEVELS.length - 1)
+    const cells = [...(q('thinking-stops')?.querySelectorAll('.ui-ascii-scale__cell') ?? [])]
+    check(cells.length === LEVELS.length, `字符刻度渲染 ${LEVELS.length} 格（实际 ${cells.length}）`)
+    const highCell = q('thinking-high')
+    if (highCell) {
       const before = commits.length
-      pointer('pointerdown', thumb, startX, startY)
-      await wait(60)
-      pointer('pointermove', window, startX + delta, startY)
-      await wait(200)
-      check(commits.length === before, '拖动过程中 setThinking 未被调用（只预览）')
-      check(
-        q('thinking-current')?.getAttribute('data-level') === 'high',
-        `拖动预览头部显示 high（实际 ${q('thinking-current')?.getAttribute('data-level')}）`
-      )
+      highCell.focus()
+      highCell.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      highCell.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }))
+      if (!(await until(() => commits.length > before, 800))) highCell.click()
+      check(await until(() => commits.length > before, 2500), '选中 high 格后调用 setThinking')
+      check(commits.at(-1) === 'high', `提交档位 high（实际 ${JSON.stringify(commits.at(-1))}）`)
       check(
         q('composer-border')?.getAttribute('data-level') === 'medium',
-        '拖动期间顶边仍是已提交的 medium（预览未落盘）'
+        '提交被替身拦下时顶边仍是 medium（只认已落盘的档位）'
       )
-      pointer('pointerup', window, startX + delta, startY)
-      check(await until(() => commits.length > before, 2500), '松手后调用 setThinking')
-      check(commits.at(-1) === 'high', `提交档位 high（实际 ${JSON.stringify(commits.at(-1))}）`)
     }
     store.setState({ setThinking: realSetThinking })
 

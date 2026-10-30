@@ -59,15 +59,6 @@
     background: var(--accent);
   }
 
-  .mtp-head-level.uc-head[data-pending='true'] {
-    color: var(--fg2);
-  }
-
-  .mtp-step[data-ultracode='true'] .mtp-thumb {
-    background: var(--accent);
-    box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);
-  }
-
   .uc-kw {
     font-family: var(--font-mono);
     color: var(--fg2);
