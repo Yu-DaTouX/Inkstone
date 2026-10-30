@@ -207,6 +207,42 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
   const menuSurface = menu ? entry.surfaces.find((item) => item.id === menu.id) : undefined
   const menuIndex = menuSurface ? entry.surfaces.indexOf(menuSurface) : -1
 
+  const single = entry.surfaces.length === 1
+  const addTab = (
+    <MenuTrigger isOpen={adding} onOpenChange={setAdding}>
+      <IconButton size="sm" aria-label={panel.newTab} tooltip={panel.newTab} data-testid="rp-new-tab" className="rp-bar-add">
+        <Plus size={14} />
+      </IconButton>
+      <Popover placement="bottom start" offset={4}>
+        <div
+          className="rp-launch-menu"
+          onKeyDownCapture={(event) => {
+            const action = launcherFor(event)
+            if (!action) return
+            event.preventDefault()
+            event.stopPropagation()
+            runLauncher(action)
+          }}
+        >
+          <Menu aria-label={panel.newTab} data-testid="rp-new-tab-menu" onAction={(key) => {
+            const action = LAUNCHER.find((item) => item.kind === key)
+            if (action) runLauncher(action)
+          }}>
+            {LAUNCHER.map((action) => {
+              const Icon = TOOL_ICONS[action.kind]
+              const label = toolLabel(action.kind, text, panel)
+              return (
+                <MenuItem key={action.kind} id={action.kind} textValue={label} aria-keyshortcuts={action.key} icon={<Icon size={14} />} shortcut={action.key}>
+                  {label}
+                </MenuItem>
+              )
+            })}
+          </Menu>
+        </div>
+      </Popover>
+    </MenuTrigger>
+  )
+
   const content = (
     <section
       className="rp"
@@ -236,9 +272,10 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
           }}
         />
       ) : null}
-      <div className="rp-bar" data-testid="rp-bar" ref={barRef}>
+      <div className="rp-bar" data-testid="rp-bar" data-single={single ? '1' : undefined} ref={barRef}>
         <PanelTabList
           label={panel.tabs}
+          plain={single}
           className="rp-tabs"
           onCloseFocused={closeTab}
           onContextMenuFocused={(id, anchor) => setMenu({ id, anchor })}
@@ -266,39 +303,9 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
             )
           })}
         </PanelTabList>
-        <MenuTrigger isOpen={adding} onOpenChange={setAdding}>
-          <IconButton size="sm" aria-label={panel.newTab} tooltip={panel.newTab} data-testid="rp-new-tab" className="rp-bar-add">
-            <Plus size={14} />
-          </IconButton>
-          <Popover placement="bottom start" offset={4}>
-            <div
-              className="rp-launch-menu"
-              onKeyDownCapture={(event) => {
-                const action = launcherFor(event)
-                if (!action) return
-                event.preventDefault()
-                event.stopPropagation()
-                runLauncher(action)
-              }}
-            >
-              <Menu aria-label={panel.newTab} data-testid="rp-new-tab-menu" onAction={(key) => {
-                const action = LAUNCHER.find((item) => item.kind === key)
-                if (action) runLauncher(action)
-              }}>
-                {LAUNCHER.map((action) => {
-                  const Icon = TOOL_ICONS[action.kind]
-                  const label = toolLabel(action.kind, text, panel)
-                  return (
-                    <MenuItem key={action.kind} id={action.kind} textValue={label} aria-keyshortcuts={action.key} icon={<Icon size={14} />} shortcut={action.key}>
-                      {label}
-                    </MenuItem>
-                  )
-                })}
-              </Menu>
-            </div>
-          </Popover>
-        </MenuTrigger>
+        {single ? null : addTab}
         <span className="rp-bar-actions">
+          {single ? addTab : null}
           {mode === 'inline' ? (
             <IconButton
               size="sm"

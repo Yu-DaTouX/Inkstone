@@ -407,6 +407,15 @@
     white-space: nowrap;
   }
 
+  .wb-tile-leader {
+    min-width: var(--s-12);
+    margin-inline: var(--s-4);
+  }
+
+  .wb-tile-leader:last-child {
+    margin-right: calc(var(--size-btn-sm) * 2 + var(--s-2));
+  }
+
   .wb-tile-summary {
     flex: 0 1 auto;
     display: inline-flex;
@@ -719,9 +728,6 @@
     border-radius: var(--r-md);
   }
 
-  .wb-tile + .wb-tile::before {
-    background: var(--line);
-  }
 
   .wb-tile[data-tone='fail'] .wb-tile-title {
     color: var(--fail-t);

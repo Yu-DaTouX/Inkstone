@@ -1,6 +1,6 @@
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react'
 import { ArrowUpRight, GripVertical } from 'lucide-react'
-import { Button, CollapsibleChevron, IconButton } from '../../ui'
+import { AsciiRule, Button, CollapsibleChevron, IconButton } from '../../ui'
 import type { RailSectionId } from './rail-sections'
 
 export interface RailGrip {
@@ -77,6 +77,7 @@ export function RailCard({
         <Button variant="plain" size="sm" justify="start" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
           <span className="wb-tile-title">{title}</span>
           <CollapsibleChevron expanded={open} className="wb-tile-chevron" />
+          <AsciiRule leader className="wb-tile-leader" />
           {showSummary ? <span className="wb-tile-summary">{summary}</span> : null}
         </Button>
         <span className="wb-rail-grip" data-with-open={onOpenView ? '1' : undefined} onPointerDownCapture={grip.onPointerDown}>
