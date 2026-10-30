@@ -38,6 +38,15 @@ export interface TerminalText {
   noResults: string
   reload: string
   listFailed: string
+  linkHint: (mac: boolean) => string
+  addToChat: string
+  selectionSource: (label: string, cwd: string) => string
+  closeConfirmTitle: string
+  closeConfirmList: string
+  closeConfirmUnknown: string
+  closeConfirmMore: (n: number) => string
+  closeConfirmAction: string
+  cancel: string
 }
 
 const ZH: TerminalText = {
@@ -77,7 +86,16 @@ const ZH: TerminalText = {
   findClose: '关闭查找',
   noResults: '无结果',
   reload: '重新加载',
-  listFailed: '终端列表读取失败，可重试'
+  listFailed: '终端列表读取失败，可重试',
+  linkHint: (mac) => (mac ? '按住 Cmd 点击打开' : '按住 Ctrl 点击打开'),
+  addToChat: '加入输入框',
+  selectionSource: (label, cwd) => (cwd ? `终端「${label}」输出（${cwd}）：` : `终端「${label}」输出：`),
+  closeConfirmTitle: '结束运行中的进程？',
+  closeConfirmList: '关闭后，下列进程会被结束：',
+  closeConfirmUnknown: '终端里还有命令在运行，关闭会结束它。',
+  closeConfirmMore: (n) => `另有 ${n} 个`,
+  closeConfirmAction: '关闭并结束',
+  cancel: '取消'
 }
 
 const EN: TerminalText = {
@@ -117,7 +135,16 @@ const EN: TerminalText = {
   findClose: 'Close find bar',
   noResults: 'No results',
   reload: 'Reload',
-  listFailed: 'Could not list the terminal tabs. You can retry.'
+  listFailed: 'Could not list the terminal tabs. You can retry.',
+  linkHint: (mac) => (mac ? 'Cmd+click to open' : 'Ctrl+click to open'),
+  addToChat: 'Add to composer',
+  selectionSource: (label, cwd) => (cwd ? `Terminal "${label}" output (${cwd}):` : `Terminal "${label}" output:`),
+  closeConfirmTitle: 'End running processes?',
+  closeConfirmList: 'Closing will end these processes:',
+  closeConfirmUnknown: 'A command is still running in this terminal. Closing will end it.',
+  closeConfirmMore: (n) => `${n} more`,
+  closeConfirmAction: 'Close and end',
+  cancel: 'Cancel'
 }
 
 export function terminalText(lang: Lang): TerminalText {

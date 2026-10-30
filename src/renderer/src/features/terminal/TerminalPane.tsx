@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
 import { Plus, RefreshCw, SquareTerminal } from 'lucide-react'
-import { Badge, Button, EmptyState, Menu, MenuItem, MenuSeparator, Notice, PaneHeader, Popover, type BadgeTone } from '../../ui'
+import { Badge, Button, ConfirmDialog, EmptyState, KbdGroup, Menu, MenuItem, MenuSeparator, Notice, PaneHeader, Popover, type BadgeTone } from '../../ui'
 import { PaneTitle, PaneTools, usePaneChrome } from '../workbench/pane-chrome'
 import { useI18n, useT } from '../../i18n'
 import { resourceOwner } from '../../state/resource-owners'
+import { useStore } from '../../state/store'
+import { showPreview } from '../workbench/preview-bindings'
+import { isMacPlatform, resolveTerminalPath, terminalSelectionBlock, type TerminalFileLink, type TerminalLinkMatch } from './terminal-links'
 import { terminalText } from './terminal-text'
 import { selectOwnedTerminals } from './terminal-session'
 import type { TerminalAdopt, TerminalViewState } from './terminal-session'
@@ -22,7 +25,7 @@ import type { TerminalFindDirection } from './terminal-find'
 import { onActivateTerminal } from './terminal-activate'
 import { onTerminalTabRequest } from './terminal-requests'
 import type { TerminalPaneProps } from '../workbench/types'
-import type { TerminalAvailability, TerminalProgramStatus, TerminalSnapshot } from '../../../../shared/ipc'
+import type { TerminalAvailability, TerminalProcessEntry, TerminalProcessList, TerminalProgramStatus, TerminalSnapshot } from '../../../../shared/ipc'
 import './terminal.css'
 
 function statusOf(state: TerminalViewState | undefined): { key: 'term.running' | 'term.waitPermission' | 'term.waitAnswer' | 'term.waitAuth' | 'term.wait' | 'term.ok' | 'term.error' | 'term.idle'; tone: BadgeTone; progress?: number } | null {
@@ -61,8 +64,22 @@ interface TabSeed {
 
 type PanePhase = 'idle' | 'loading' | 'inactive' | 'unavailable' | 'error' | 'ready'
 
+interface CloseRequest {
+  keys: string[]
+  keep: string | null
+  processes: TerminalProcessEntry[]
+  more: number
+}
+
 const BELL_FLASH_MS = 1200
 const FIND_DELAY = 120
+const LINK_CACHE_MS = 15000
+const LINK_CACHE_MAX = 200
+const NO_PROCESSES: TerminalProcessList = { ok: false, processes: [] }
+
+function commandRunning(state: TerminalViewState | undefined): boolean {
+  return state?.status?.state === 'working' || state?.status?.state === 'blocked'
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error ?? '')
@@ -98,6 +115,13 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const [findNone, setFindNone] = useState(false)
   const [bell, setBell] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; selection: string } | null>(null)
+  const [closing, setClosing] = useState<CloseRequest | null>(null)
+  const statesRef = useRef(states)
+  statesRef.current = states
+  const closeSeq = useRef(0)
+  const linkCache = useRef(new Map<string, { at: number; abs: Promise<string | null> }>())
+  const labelsRef = useRef(new Map<string, string>())
+  const mac = useMemo(() => isMacPlatform(), [])
 
   useEffect(() => terminalViewStore().subscribe(() => setView(terminalViewStore().get())), [])
 
@@ -163,6 +187,9 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     setPhase('idle')
     setFindOpen(false)
     setMenu(null)
+    setClosing(null)
+    closeSeq.current += 1
+    linkCache.current.clear()
   }, [owner.key])
 
   useEffect(() => {
@@ -261,7 +288,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     focusTerminal(seed.key)
   }, [focusTerminal, tabs.length])
 
-  const closeTab = useCallback(
+  const closeTabNow = useCallback(
     (key: string): void => {
       void handles.current.get(key)?.session()?.kill()
       setTabs((previous) => othersThan(previous, key))
@@ -276,7 +303,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     [active, tabs]
   )
 
-  const closeOthers = useCallback(
+  const closeOthersNow = useCallback(
     (key: string): void => {
       for (const tab of tabs) {
         if (tab.key === key) continue
@@ -287,6 +314,102 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       setActive(key)
     },
     [tabs]
+  )
+
+  const closeNow = useRef({ closeTabNow, closeOthersNow })
+  closeNow.current = { closeTabNow, closeOthersNow }
+
+  const commitClose = useCallback((request: Pick<CloseRequest, 'keys' | 'keep'>): void => {
+    if (request.keep) closeNow.current.closeOthersNow(request.keep)
+    else if (request.keys[0]) closeNow.current.closeTabNow(request.keys[0])
+  }, [])
+
+  const requestClose = useCallback(
+    async (keys: string[], keep: string | null): Promise<void> => {
+      const seq = ++closeSeq.current
+      const targets = keys
+        .map((key) => statesRef.current[key])
+        .filter((state): state is TerminalViewState => !!state?.terminalId && state.phase !== 'exited' && state.phase !== 'error')
+      if (targets.length === 0) {
+        commitClose({ keys, keep })
+        return
+      }
+      const lists = await Promise.all(
+        targets.map((state) => window.yan.terminal.processes(state.terminalId as string).catch(() => NO_PROCESSES))
+      )
+      if (seq !== closeSeq.current) return
+      const processes = lists.flatMap((list) => list.processes)
+      const more = lists.reduce((sum, list) => sum + (list.more ?? 0), 0)
+      const unknown = lists.some((list, index) => !list.ok && commandRunning(targets[index]))
+      if (processes.length === 0 && more === 0 && !unknown) {
+        commitClose({ keys, keep })
+        return
+      }
+      setClosing({ keys, keep, processes, more })
+    },
+    [commitClose]
+  )
+
+  const closeTab = useCallback((key: string): void => void requestClose([key], null), [requestClose])
+
+  const closeOthers = useCallback(
+    (key: string): void => void requestClose(tabs.filter((tab) => tab.key !== key).map((tab) => tab.key), key),
+    [requestClose, tabs]
+  )
+
+  const terminalCwd = useCallback((key: string): string => statesRef.current[key]?.cwd || ownerRef.current.cwd, [])
+
+  const resolveFileLink = useCallback(
+    (key: string, link: TerminalFileLink): Promise<string | null> => {
+      const abs = resolveTerminalPath(terminalCwd(key), link.path)
+      if (!abs) return Promise.resolve(null)
+      const root = ownerRef.current.cwd || undefined
+      const cacheKey = `${root ?? ''}\u0000${abs}`
+      const cache = linkCache.current
+      const now = Date.now()
+      const hit = cache.get(cacheKey)
+      if (hit && now - hit.at < LINK_CACHE_MS) return hit.abs
+      const pending = window.yan
+        .statPreview(abs, root)
+        .then((result) => (result.ok && result.abs ? result.abs : null))
+        .catch(() => null)
+      if (cache.size >= LINK_CACHE_MAX) cache.clear()
+      cache.set(cacheKey, { at: now, abs: pending })
+      return pending
+    },
+    [terminalCwd]
+  )
+
+  const checkFile = useCallback(
+    async (key: string, link: TerminalFileLink): Promise<boolean> => !!(await resolveFileLink(key, link)),
+    [resolveFileLink]
+  )
+
+  const openLink = useCallback(
+    (key: string, link: TerminalLinkMatch): void => {
+      if (link.kind === 'url') {
+        void useStore.getState().openLink(link.url)
+        return
+      }
+      const ownerKey = ownerRef.current.key
+      void resolveFileLink(key, link).then((abs) => {
+        if (!abs || ownerRef.current.key !== ownerKey) return
+        showPreview(ownerKey, abs, link.line ? { preview: true, line: link.line } : { preview: true })
+      })
+    },
+    [resolveFileLink]
+  )
+
+  const addSelection = useCallback(
+    (key: string): void => {
+      const selection = handles.current.get(key)?.selection() ?? ''
+      const label = labelsRef.current.get(key) || text.tabTitle
+      const cwd = terminalCwd(key)
+      const same = cwd.replace(/[\\/]+$/, '').toLowerCase() === ownerRef.current.cwd.replace(/[\\/]+$/, '').toLowerCase()
+      const block = terminalSelectionBlock(selection, text.selectionSource(label, same ? '' : cwd))
+      if (block) useStore.getState().insertIntoComposer(block)
+    },
+    [terminalCwd, text]
   )
 
   const openFind = useCallback((key: string | null): void => {
@@ -365,11 +488,14 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
             if (value) handle.paste(value)
           })
           .catch(() => undefined)
+      } else if (key === 'add-to-chat') {
+        if (active) addSelection(active)
+        return
       } else if (key === 'select-all') handle.selectAll()
       else if (key === 'clear') handle.clear()
       handle.focus()
     },
-    [active]
+    [active, addSelection]
   )
 
   const inactive = !owner.active || phase === 'inactive'
@@ -413,6 +539,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       exited: state?.phase === 'exited'
     }
   })
+  labelsRef.current = new Map(items.map((item) => [item.key, item.label]))
 
   const strip =
     tabs.length > 0 ? (
@@ -482,6 +609,10 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
               onBell={handleBell}
               onFindRequest={openFind}
               onContextMenu={openBodyMenu}
+              linkHint={text.linkHint(mac)}
+              onLink={openLink}
+              checkFile={checkFile}
+              onAddSelection={addSelection}
             />
           ))}
         </div>
@@ -624,6 +755,15 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
                 <MenuItem id="paste" textValue={text.paste}>
                   {text.paste}
                 </MenuItem>
+                <MenuItem
+                  id="add-to-chat"
+                  textValue={text.addToChat}
+                  isDisabled={!menu.selection}
+                  shortcut={<KbdGroup keys={mac ? ['Cmd', 'Shift', 'L'] : ['Ctrl', 'Shift', 'L']} />}
+                  data-testid="terminal-menu-add-to-chat"
+                >
+                  {text.addToChat}
+                </MenuItem>
                 <MenuSeparator />
                 <MenuItem id="select-all" textValue={text.selectAll}>
                   {text.selectAll}
@@ -637,6 +777,36 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
           </>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        isOpen={!!closing}
+        onOpenChange={(open) => {
+          if (!open) setClosing(null)
+        }}
+        title={text.closeConfirmTitle}
+        description={closing && (closing.processes.length > 0 || closing.more > 0) ? text.closeConfirmList : text.closeConfirmUnknown}
+        tone="danger"
+        confirmLabel={text.closeConfirmAction}
+        cancelLabel={text.cancel}
+        onConfirm={() => {
+          if (closing) commitClose(closing)
+          setClosing(null)
+        }}
+        confirmTestId="terminal-close-confirm"
+        data-testid="terminal-close-dialog"
+      >
+        {closing && closing.processes.length > 0 ? (
+          <ul className="term-close-list" data-testid="terminal-close-processes">
+            {closing.processes.map((process) => (
+              <li key={process.pid} className="term-close-item">
+                <span className="ui-num">{process.name}</span>
+                <span className="ui-meta-num">{process.pid}</span>
+              </li>
+            ))}
+            {closing.more > 0 ? <li className="term-close-item ui-meta-num">{text.closeConfirmMore(closing.more)}</li> : null}
+          </ul>
+        ) : null}
+      </ConfirmDialog>
     </div>
   )
 }

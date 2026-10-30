@@ -291,6 +291,13 @@ export function killTerminal(id: string): boolean {
   return true
 }
 
+export function terminalProcessId(id: string): number | null {
+  const entry = sessions.get(id)
+  if (!entry || !entry.info.alive) return null
+  const pid = entry.pty.pid
+  return Number.isInteger(pid) && pid > 0 ? pid : null
+}
+
 export function hasWorkingTerminal(): boolean {
   for (const entry of sessions.values()) {
     if (entry.info.alive && entry.info.status?.state === 'working') return true

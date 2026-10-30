@@ -57,6 +57,7 @@ import type {
   BrowserNetworkSnapshot,
   BrowserState,
   TerminalAvailability,
+  TerminalProcessList,
   TerminalSnapshot,
   ChromeSyncReport,
   BrowserLoginImportStatus,
@@ -673,7 +674,8 @@ const api: YanBridge = {
     resize: (id, cols, rows) => invoke<boolean>('yan:terminal:resize', id, cols, rows),
     kill: (id) => invoke<boolean>('yan:terminal:kill', id),
     attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id),
-    clear: (id) => invoke<boolean>('yan:terminal:clear', id)
+    clear: (id) => invoke<boolean>('yan:terminal:clear', id),
+    processes: (id) => invoke<TerminalProcessList>('yan:terminal:processes', id)
   },
 
   projectScripts: {

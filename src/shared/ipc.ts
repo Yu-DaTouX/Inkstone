@@ -981,6 +981,17 @@ export interface TerminalStartRequest {
   title?: string
 }
 
+export interface TerminalProcessEntry {
+  pid: number
+  name: string
+}
+
+export interface TerminalProcessList {
+  ok: boolean
+  processes: TerminalProcessEntry[]
+  more?: number
+}
+
 export interface TerminalAvailability {
   available: boolean
   error?: string
@@ -2073,6 +2084,7 @@ export interface YanBridge {
     kill(id: string): Promise<boolean>
     attach(id: string): Promise<TerminalSnapshot | null>
     clear(id: string): Promise<boolean>
+    processes(id: string): Promise<TerminalProcessList>
   }
 
   projectScripts: {

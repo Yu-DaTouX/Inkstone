@@ -8,8 +8,10 @@ import {
   startTerminal,
   terminalAvailable,
   terminalLoadError,
+  terminalProcessId,
   writeTerminal
 } from '../terminal'
+import { listProcessTree } from '../terminal-processes'
 import type { IpcRegistrar } from './registrar'
 
 export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string | undefined): void {
@@ -33,4 +35,5 @@ export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string
   rawHandle('yan:terminal:kill', (_e, id: string) => killTerminal(String(id ?? '')))
   rawHandle('yan:terminal:attach', (_e, id: string) => attachTerminal(String(id ?? '')))
   rawHandle('yan:terminal:clear', (_e, id: string) => clearTerminal(String(id ?? '')))
+  rawHandle('yan:terminal:processes', (_e, id: string) => listProcessTree(terminalProcessId(String(id ?? ''))))
 }

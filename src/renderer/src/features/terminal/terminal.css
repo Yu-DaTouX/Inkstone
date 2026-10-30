@@ -161,4 +161,24 @@
     bottom: var(--s-8);
     z-index: 3;
   }
+
+  .term-close-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    max-height: 200px;
+    margin: var(--s-8) 0 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  .term-close-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-12);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
