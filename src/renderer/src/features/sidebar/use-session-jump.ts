@@ -5,8 +5,8 @@ import { isMacPlatform, isSessionJumpModifier, resolveSessionJump, SESSION_JUMP_
 import { jumpIndexMap, visibleJumpPaths, type JumpRowBox } from './session-nav'
 import { useSessionNav } from './session-nav-store'
 
-export const SESSION_JUMP_ROW = '.v3-srow[data-session-path]'
-const JUMP_VIEWPORTS = '.v3-side-list, .v3-flat-shelves, .v3-side'
+export const SESSION_JUMP_ROW = '[data-sidebar-row][data-session-path]'
+const JUMP_VIEWPORTS = '[data-slot="sidebar-content"], .v3-side-list, .v3-flat-shelves, .v3-side'
 
 export function sessionJumpKeysText(index: number, mac = isMacPlatform()): string {
   return `${mac ? 'Cmd' : 'Ctrl'}+${index}`
@@ -16,7 +16,7 @@ function jumpRows(aside: HTMLElement | null): string[] {
   if (!aside || aside.getClientRects().length === 0) return []
   const boxes: JumpRowBox[] = []
   for (const row of aside.querySelectorAll<HTMLElement>(SESSION_JUMP_ROW)) {
-    if (row.querySelector('.v3-srow-rename')) continue
+    if (row.querySelector('input')) continue
     const box = row.getBoundingClientRect()
     const view = (row.parentElement?.closest<HTMLElement>(JUMP_VIEWPORTS) ?? aside).getBoundingClientRect()
     boxes.push({ path: row.dataset.sessionPath ?? '', top: box.top, bottom: box.bottom, viewport: { top: view.top, bottom: view.bottom } })
