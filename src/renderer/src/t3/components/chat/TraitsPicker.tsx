@@ -14,6 +14,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from './ComposerControl'
 import { EffortGlyph, resolveEffortGlyph } from './EffortGlyph'
+import { EffortSlider } from './EffortSlider'
 import { focusRequestedPermission, useComposerMenuProps } from './composerEventScope'
 import { useComposerMenuState } from './useComposerMenuState'
 
@@ -88,6 +89,45 @@ export const TraitsPicker = memo(function TraitsPicker({
   const effortWord = effortGlyph
     ? (effortGlyph.special ?? (effortDisplay === 'label' ? effortGlyph.label : null))
     : null
+
+  if (isComposerOwned) {
+    return (
+      <>
+        <EffortSlider
+          traits={traits}
+          size={size}
+          disabled={disabled || traits.busy}
+          className={triggerClassName}
+          onOpenMenu={() => setIsMenuOpen(true)}
+          anchorRef={triggerRef}
+        />
+        <Menu
+          open={isMenuOpen}
+          onOpenChange={(open) => {
+            setIsMenuOpen(open && !disabled && !traits.busy)
+          }}
+          onOpenChangeComplete={(open) => {
+            if (!open) triggerRef.current?.focus({ preventScroll: true })
+            focusRequestedPermission(open, triggerRef.current)
+          }}
+        >
+          <MenuPopup
+            align="start"
+            {...(triggerRef.current ? { anchor: triggerRef.current } : {})}
+            {...composerFloatingLayerProps}
+          >
+            <TraitsMenuContent traits={traits} />
+            {extraMenuContent ? (
+              <>
+                <MenuDivider />
+                {extraMenuContent}
+              </>
+            ) : null}
+          </MenuPopup>
+        </Menu>
+      </>
+    )
+  }
 
   return (
     <Menu

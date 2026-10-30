@@ -12,9 +12,6 @@ import { CompactComposerControlsMenu } from './CompactComposerControlsMenu'
 import { TraitsMenuContent, TraitsPicker } from './TraitsPicker'
 import { resolveComposerControlsOwnership } from './composerControlsOwnership'
 
-const TEXT_CONTROL_STATES =
-  'hover:bg-transparent data-pressed:bg-transparent data-popup-open:bg-transparent data-pressed:text-foreground data-popup-open:text-foreground'
-
 export function ComposerControlsBar(props: {
   modelPicker: ReactNode
   collapsed: boolean
@@ -69,7 +66,6 @@ export function ComposerControlsBar(props: {
                 size={size}
                 hidden={props.hidden || traitsBlockHidden}
                 isComposerOwned
-                triggerClassName={cn('ps-1.5 pe-1', TEXT_CONTROL_STATES)}
                 extraMenuContent={permissionsSection}
                 extraMenuOwnsModeShortcut={effortOwnsModeShortcut}
                 extraMenuHint={extraMenuHint}

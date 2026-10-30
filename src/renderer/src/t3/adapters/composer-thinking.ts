@@ -3,6 +3,7 @@ import { useT } from '../../i18n'
 import { levelLabel } from '../../patterns/ThinkingBadge'
 import { currentThinkingLevels, useStore } from '../../state/store'
 import {
+  buildLockedReasoningDescriptor,
   buildReasoningDescriptor,
   buildTraitsTriggerDisplay,
   isUltracodeSelection,
@@ -15,6 +16,8 @@ const ULTRACODE_LABEL = 'Ultracode'
 export type ComposerTraitsAdapter = {
   descriptor: SelectDescriptor
   display: TraitsTriggerDisplay
+  levels: readonly string[]
+  unsupportedReason: string | null
   busy: boolean
   ultracode: boolean
   canUltracode: boolean
@@ -36,15 +39,27 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
   const busy = !!session?.isStreaming || !!session?.isCompacting
   const ultracode = !!session?.ultracode
   const level = session?.thinkingLevel ?? 'off'
-  const descriptor = buildReasoningDescriptor({
-    levels,
-    current: level,
-    ultracode,
-    ultracodeLabel: ULTRACODE_LABEL,
-    ultracodeDescription: t('picker.deepDesc'),
-    sectionLabel: t('picker.think'),
-    levelLabel: (entry) => levelLabel(t, entry)
-  })
+  const unsupportedReason =
+    levels.length > 1
+      ? null
+      : levels.length === 0
+        ? t('picker.thinkUnknown')
+        : t('picker.thinkUnsupported')
+  const sliderLevels = levels.length > 1 && !levels.includes('off') ? ['off', ...levels] : levels
+  const descriptor =
+    buildReasoningDescriptor({
+      levels,
+      current: level,
+      ultracode,
+      ultracodeLabel: ULTRACODE_LABEL,
+      ultracodeDescription: t('picker.deepDesc'),
+      sectionLabel: t('picker.think'),
+      levelLabel: (entry) => levelLabel(t, entry)
+    }) ??
+    buildLockedReasoningDescriptor({
+      sectionLabel: t('picker.think'),
+      levelLabel: (entry) => levelLabel(t, entry)
+    })
   const canUltracode = levels.length > 1 && !!session?.sessionId && !ultracode && !busy
 
   const requestUltracode = useCallback(() => {
@@ -77,6 +92,8 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
   return {
     descriptor,
     display: buildTraitsTriggerDisplay(descriptor),
+    levels: sliderLevels.length > 1 ? sliderLevels : ['off'],
+    unsupportedReason,
     busy,
     ultracode,
     canUltracode,

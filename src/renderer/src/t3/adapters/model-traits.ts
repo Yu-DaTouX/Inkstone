@@ -80,6 +80,19 @@ export function buildReasoningDescriptor(input: {
   }
 }
 
+export function buildLockedReasoningDescriptor(input: {
+  sectionLabel: string
+  levelLabel: (level: string) => string
+}): SelectDescriptor {
+  return {
+    id: REASONING_SELECT_DESCRIPTOR_ID,
+    label: input.sectionLabel,
+    type: 'select',
+    options: [{ id: 'off', label: input.levelLabel('off') }],
+    currentValue: 'off'
+  }
+}
+
 export function buildTraitsTriggerDisplay(descriptor: SelectDescriptor): TraitsTriggerDisplay {
   return {
     label: descriptorCurrentLabel(descriptor) ?? descriptor.label,
