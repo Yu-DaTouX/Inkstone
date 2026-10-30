@@ -51,9 +51,14 @@ export function ComposerControlsBar(props: {
   const shownModeLabel =
     permissions.options.find((option) => option.mode === permissions.mode)?.label ??
     permissions.mode
-  const extraMenuHint = permissions.matchesDefault
-    ? `${t('permission.title')}: ${shownModeLabel}`
-    : undefined
+  const traitsBlocked = traits !== null && traits.unsupportedReason !== null
+  const modeBlockShown = showModeBlock || traitsBlocked
+  const permissionsInTraitsPicker = !modeBlockShown && traits !== null
+  const extraMenuHint =
+    permissionsInTraitsPicker && permissions.matchesDefault
+      ? `${t('permission.title')}: ${shownModeLabel}`
+      : undefined
+  const modeAccessDisplay = modeBlockShown && !showModeBlock ? 'icon' : accessDisplay
   const size = props.collapsed ? 'xs' : 'sm'
   const restingBlockDefs = [
     ...(traits
@@ -67,14 +72,14 @@ export function ComposerControlsBar(props: {
                 hidden={props.hidden || traitsBlockHidden}
                 isComposerOwned
                 extraMenuContent={permissionsSection}
-                extraMenuOwnsModeShortcut={effortOwnsModeShortcut}
+                extraMenuOwnsModeShortcut={showModeBlock ? effortOwnsModeShortcut : false}
                 extraMenuHint={extraMenuHint}
               />
             )
           }
         ]
       : []),
-    ...(!showModeBlock
+    ...(!modeBlockShown
       ? []
       : [
           {
@@ -85,7 +90,7 @@ export function ComposerControlsBar(props: {
                 runtimeModeOptions={permissions.options}
                 size={size}
                 hidden={props.hidden || restingHiddenBlockCount > 0}
-                accessDisplay={accessDisplay}
+                accessDisplay={modeAccessDisplay}
                 emphasized={!permissions.matchesDefault}
                 onRuntimeModeChange={permissions.requestMode}
               />

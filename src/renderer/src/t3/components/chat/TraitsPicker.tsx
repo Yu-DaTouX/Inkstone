@@ -13,12 +13,9 @@ import {
 } from '../ui/menu'
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from './ComposerControl'
-import { EffortGlyph, resolveEffortGlyph } from './EffortGlyph'
 import { EffortSlider } from './EffortSlider'
-import { focusRequestedPermission, useComposerMenuProps } from './composerEventScope'
+import { focusRequestedPermission } from './composerEventScope'
 import { useComposerMenuState } from './useComposerMenuState'
-
-export type EffortDisplay = 'label' | 'glyph'
 
 export function TraitsMenuContent({ traits }: { traits: ComposerTraitsAdapter }) {
   const { descriptor } = traits
@@ -58,7 +55,6 @@ export const TraitsPicker = memo(function TraitsPicker({
   hidden = false,
   disabled = false,
   isComposerOwned = false,
-  effortDisplay = 'label',
   triggerClassName,
   extraMenuContent,
   extraMenuOwnsModeShortcut,
@@ -69,63 +65,28 @@ export const TraitsPicker = memo(function TraitsPicker({
   hidden?: boolean
   disabled?: boolean
   isComposerOwned?: boolean
-  effortDisplay?: EffortDisplay
   triggerClassName?: string
   extraMenuContent?: ReactNode
   extraMenuOwnsModeShortcut?: boolean
   extraMenuHint?: string
 }) {
-  const composerFloatingLayerProps = useComposerMenuProps()
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled || traits.busy)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const { descriptor, display } = traits
+  const { display } = traits
   const triggerLabel = display.label
-  const triggerDescription = isComposerOwned
-    ? [`${descriptor.label}: ${triggerLabel}`, extraMenuHint].filter(Boolean).join(' · ')
-    : triggerLabel
-  const effortGlyph = isComposerOwned
-    ? resolveEffortGlyph(descriptor, descriptor.currentValue)
-    : null
-  const effortWord = effortGlyph
-    ? (effortGlyph.special ?? (effortDisplay === 'label' ? effortGlyph.label : null))
-    : null
 
   if (isComposerOwned) {
     return (
-      <>
-        <EffortSlider
-          traits={traits}
-          size={size}
-          disabled={disabled || traits.busy}
-          className={triggerClassName}
-          onOpenMenu={() => setIsMenuOpen(true)}
-          anchorRef={triggerRef}
-        />
-        <Menu
-          open={isMenuOpen}
-          onOpenChange={(open) => {
-            setIsMenuOpen(open && !disabled && !traits.busy)
-          }}
-          onOpenChangeComplete={(open) => {
-            if (!open) triggerRef.current?.focus({ preventScroll: true })
-            focusRequestedPermission(open, triggerRef.current)
-          }}
-        >
-          <MenuPopup
-            align="start"
-            {...(triggerRef.current ? { anchor: triggerRef.current } : {})}
-            {...composerFloatingLayerProps}
-          >
-            <TraitsMenuContent traits={traits} />
-            {extraMenuContent ? (
-              <>
-                <MenuDivider />
-                {extraMenuContent}
-              </>
-            ) : null}
-          </MenuPopup>
-        </Menu>
-      </>
+      <EffortSlider
+        traits={traits}
+        size={size}
+        disabled={disabled || traits.busy}
+        hidden={hidden}
+        {...(triggerClassName ? { className: triggerClassName } : {})}
+        {...(extraMenuContent ? { extraMenuContent } : {})}
+        {...(extraMenuOwnsModeShortcut ? { extraMenuOwnsModeShortcut } : {})}
+        {...(extraMenuHint ? { extraMenuHint } : {})}
+      />
     )
   }
 
@@ -145,57 +106,20 @@ export const TraitsPicker = memo(function TraitsPicker({
                 <ComposerControl
                   ref={triggerRef}
                   disabled={disabled || traits.busy}
-                  aria-label={triggerDescription}
-                  data-composer-shortcut={
-                    isComposerOwned
-                      ? extraMenuOwnsModeShortcut
-                        ? 'composer.effort composer.mode'
-                        : 'composer.effort'
-                      : undefined
-                  }
+                  aria-label={triggerLabel}
                   size={size}
-                  className={cn(
-                    'shrink-0 whitespace-nowrap',
-                    triggerClassName,
-                    isComposerOwned && (effortWord !== null ? '-ms-1 ps-0' : '-ms-1 ps-0.5'),
-                    effortWord !== null &&
-                      'text-muted-foreground hover:text-foreground data-pressed:text-foreground data-popup-open:text-foreground'
-                  )}
+                  className={cn('shrink-0 whitespace-nowrap', triggerClassName)}
                 />
               }
             />
           }
         >
-          {effortGlyph ? (
-            <span className="flex items-center gap-1.5">
-              {effortWord === null ? (
-                <EffortGlyph count={effortGlyph.count} filled={effortGlyph.filled} size={size} />
-              ) : null}
-              {effortWord !== null ? (
-                <>
-                  <span data-composer-control-label>{effortWord}</span>
-                  <GaugeIcon
-                    aria-hidden="true"
-                    data-composer-control-compact-icon
-                    className="invisible absolute size-3.5"
-                  />
-                </>
-              ) : (
-                <span data-composer-control-label className="sr-only">
-                  {triggerLabel}
-                </span>
-              )}
-            </span>
-          ) : (
-            <>
-              <ComposerControlIcon icon={GaugeIcon} size={size} />
-              <span data-composer-control-label>{triggerLabel}</span>
-            </>
-          )}
+          <ComposerControlIcon icon={GaugeIcon} size={size} />
+          <span data-composer-control-label>{triggerLabel}</span>
         </TooltipTrigger>
-        <TooltipPopup side="top">{triggerDescription}</TooltipPopup>
+        <TooltipPopup side="top">{triggerLabel}</TooltipPopup>
       </Tooltip>
-      <MenuPopup align="start" {...(isComposerOwned ? composerFloatingLayerProps : {})}>
+      <MenuPopup align="start">
         <TraitsMenuContent traits={traits} />
         {extraMenuContent ? (
           <>

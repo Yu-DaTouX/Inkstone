@@ -18,6 +18,7 @@ export type ComposerTraitsAdapter = {
   display: TraitsTriggerDisplay
   levels: readonly string[]
   unsupportedReason: string | null
+  unsupportedShortLabel: string | null
   busy: boolean
   ultracode: boolean
   canUltracode: boolean
@@ -45,6 +46,12 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
       : levels.length === 0
         ? t('picker.thinkUnknown')
         : t('picker.thinkUnsupported')
+  const unsupportedShortLabel =
+    levels.length > 1
+      ? null
+      : levels.length === 0
+        ? t('picker.thinkUnknownShort')
+        : t('picker.thinkUnsupportedShort')
   const sliderLevels = levels.length > 1 && !levels.includes('off') ? ['off', ...levels] : levels
   const descriptor =
     buildReasoningDescriptor({
@@ -94,6 +101,7 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
     display: buildTraitsTriggerDisplay(descriptor),
     levels: sliderLevels.length > 1 ? sliderLevels : ['off'],
     unsupportedReason,
+    unsupportedShortLabel,
     busy,
     ultracode,
     canUltracode,
