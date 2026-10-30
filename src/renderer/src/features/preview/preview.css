@@ -62,6 +62,35 @@
     margin-bottom: var(--s-8);
   }
 
+  .v3-preview-remote--bar {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    align-items: center;
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  .v3-preview-remote--bar .ui-notice__text {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .v3-preview-remote--bar .v3-preview-remote__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .v3-preview-remote--bar .v3-preview-remote__action {
+    flex: none;
+  }
+
+  .v3-preview-md .v3-md-link[data-github] > .v3-md-link-icon {
+    display: none;
+  }
+
   .v3-preview-remote__action {
     height: auto;
     margin-inline-start: calc(var(--s-6) * -1);

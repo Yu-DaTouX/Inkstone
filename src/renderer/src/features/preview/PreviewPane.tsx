@@ -105,6 +105,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
   const [sourceChoice, setSourceChoice] = useState<boolean | null>(null)
   const [viewSettings, setViewSetting] = useFileViewSettings()
   const chrome = usePaneChrome()
+  const remoteImages = useRemoteImageGroup()
 
   const scopeKey = previewScopeKey(owner)
   const externalPath = path ?? null
@@ -510,6 +511,8 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
   usePaneMenu('preview-view', activeAbs ? viewSettingsMenu(viewSettings, setViewSetting, text) : [])
 
   const mergedHead = !!chrome && !!tabStrip
+  const remoteNoticeInBar = !!chrome && !!activeAbs
+  const barNotice = remoteNoticeInBar ? <RemoteImagesNotice group={remoteImages} text={text} inBar /> : null
   const singleTab = mergedHead && tabList.length === 1
   const crumbPath = useMemo(() => {
     if (!activeAbs || !crumbs.length) return null
@@ -535,6 +538,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
           {name}
         </span>
       )}
+      {barNotice}
       <span className="v3-preview-pathtools">{toolButtons}</span>
     </div>
   ) : crumbNav
@@ -550,7 +554,12 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
                 {activeAbs ? crumbNav ?? (singleTab ? <span className="v3-preview-pathname" title={activeAbs}>{name}</span> : null) : null}
               </span>
             </PaneTitle>
-            {activeAbs ? <PaneTools>{toolButtons}</PaneTools> : null}
+            {activeAbs ? (
+              <PaneTools>
+                {barNotice}
+                {toolButtons}
+              </PaneTools>
+            ) : null}
           </>
         ) : (
           <PaneTitle>{tabStrip}</PaneTitle>
@@ -632,6 +641,8 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
         <PreviewBody
           view={view}
           text={text}
+          remoteImages={remoteImages}
+          remoteNoticeInBar={remoteNoticeInBar}
           artifacts={artifacts}
           ownsCurrent={ownsCurrent}
           reading={reading}
@@ -681,6 +692,8 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
 function PreviewBody({
   view,
   text,
+  remoteImages,
+  remoteNoticeInBar,
   artifacts,
   ownsCurrent,
   reading,
@@ -703,6 +716,8 @@ function PreviewBody({
 }: {
   view: PreviewView
   text: PreviewText
+  remoteImages: RemoteImageGroup
+  remoteNoticeInBar: boolean
   artifacts: AssistantArtifact[]
   ownsCurrent: boolean
   reading: boolean
@@ -794,7 +809,7 @@ function PreviewBody({
         <>
           <PreviewNotes notes={view.notes.filter((note) => note !== 'too_large')} text={text} />
           {reading && view.format === 'markdown' ? (
-            <MarkdownView view={view} text={text} />
+            <MarkdownView view={view} text={text} remoteImages={remoteImages} noticeInBar={remoteNoticeInBar} />
           ) : reading && view.format === 'csv' ? (
             <CsvTableView text={view.text} name={view.name} delimiter={csvDelimiterOf(view.name)} truncated={view.truncated} labels={text} />
           ) : reading && view.format === 'html' ? (
@@ -999,7 +1014,7 @@ function ProblemView({ problem, text }: { problem: PreviewProblem; text: Preview
   )
 }
 
-function RemoteImagesNotice({ group, text }: { group: RemoteImageGroup; text: PreviewText }): ReactElement | null {
+function RemoteImagesNotice({ group, text, inBar = false }: { group: RemoteImageGroup; text: PreviewText; inBar?: boolean }): ReactElement | null {
   const summary = useRemoteImageGroupSummary(group)
   const hosts = summary.hosts.join('\n')
   const notice = (state: string, label: string, action?: { label: string; run: () => void; testId?: string }): ReactElement => (
@@ -1007,11 +1022,11 @@ function RemoteImagesNotice({ group, text }: { group: RemoteImageGroup; text: Pr
       variant="hint"
       loading={state === 'loading'}
       icon={<ImageOff size={12} />}
-      className="v3-preview-remote"
+      className={inBar ? 'v3-preview-remote v3-preview-remote--bar' : 'v3-preview-remote'}
       data-testid="v3-preview-remote-images"
       data-state={state}
     >
-      <span title={hosts}>{label}</span>
+      <span className="v3-preview-remote__label" title={hosts}>{label}</span>
       {action ? (
         <>
           <span aria-hidden="true">{' \u00b7 '}</span>
@@ -1039,15 +1054,18 @@ function RemoteImagesNotice({ group, text }: { group: RemoteImageGroup; text: Pr
 
 function MarkdownView({
   view,
-  text
+  text,
+  remoteImages,
+  noticeInBar
 }: {
   view: Extract<PreviewView, { kind: 'text' }>
   text: PreviewText
+  remoteImages: RemoteImageGroup
+  noticeInBar: boolean
 }): ReactElement {
-  const remoteImages = useRemoteImageGroup()
   return (
     <div className="v3-preview-text v3-preview-reading" data-testid="v3-preview-markdown">
-      <RemoteImagesNotice group={remoteImages} text={text} />
+      {noticeInBar ? null : <RemoteImagesNotice group={remoteImages} text={text} />}
       <div className="v3-preview-md">
         <RemoteImageGroupScope group={remoteImages}>
           <Markdown text={view.text} sourceCwd={parentDir(view.abs)} allowHtml />
