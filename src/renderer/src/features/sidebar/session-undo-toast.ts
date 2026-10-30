@@ -1,9 +1,37 @@
-import type { TFunc } from '../../i18n'
+import { useSyncExternalStore } from 'react'
+import { useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { showToast } from '../../ui'
 import { viewingSessionPath } from './session-advance'
 import { sameSessionPathLoose } from './session-nav'
 import { canUndo, claimUndo, createUndoTicket, expireUndo, releaseUndo, SESSION_UNDO_WINDOW_MS, type SessionUndoTicket } from './session-undo'
+
+export interface SessionUndoNotice {
+  text: string | null
+  label: string
+  undo(): void
+}
+
+let undoNotice: SessionUndoNotice | null = null
+const undoNoticeListeners = new Set<() => void>()
+
+function publishUndoNotice(next: SessionUndoNotice | null): void {
+  undoNotice = next
+  for (const listener of undoNoticeListeners) listener()
+}
+
+function subscribeUndoNotice(listener: () => void): () => void {
+  undoNoticeListeners.add(listener)
+  return () => {
+    undoNoticeListeners.delete(listener)
+  }
+}
+
+export function useSessionUndoNotice(): SessionUndoNotice {
+  const t = useT()
+  const notice = useSyncExternalStore(subscribeUndoNotice, () => undoNotice, () => null)
+  return notice ?? { text: null, label: t('sidebar.undo.action'), undo: () => undefined }
+}
 
 function offerUndo(ticket: SessionUndoTicket, title: string, t: TFunc, tone: 'info' | 'danger' = 'info'): void {
   showToast(title, {
@@ -14,10 +42,13 @@ function offerUndo(ticket: SessionUndoTicket, title: string, t: TFunc, tone: 'in
       if (canUndo(ticket)) expireUndo(ticket)
     }
   })
+  if (tone === 'info') publishUndoNotice({ text: title, label: t('sidebar.undo.action'), undo: () => void undoDelete(ticket, t) })
+  else publishUndoNotice(null)
 }
 
 async function undoDelete(ticket: SessionUndoTicket, t: TFunc): Promise<void> {
   const token = claimUndo(ticket)
+  publishUndoNotice(null)
   if (!token) return
   const store = useStore.getState()
   const res = await store.restoreDeletedSession(token)
