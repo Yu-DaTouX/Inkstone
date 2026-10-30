@@ -46,6 +46,7 @@ import {
   type ChangesScopeState
 } from './changes-scope'
 import { ChangesFileDiff } from './ChangesFileDiff'
+import { CreatePullRequestButton } from '../github/CreatePullRequest'
 import { ChangesBinaryGroup } from './ChangesBinaryGroup'
 import { buildFileTree, createLimitedQueue, distinctChangeDirs, flattenFileTree, isCompactPane, isLargeDiff, sortChangeItems } from './file-list'
 import { useChangesFileList } from './use-file-list'
@@ -878,6 +879,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       ) : null}
       <PaneTools>
         {syncButtons}
+        {repo ? <CreatePullRequestButton cwd={cwd} /> : null}
         {listToggle}
         {refreshButton}
       </PaneTools>

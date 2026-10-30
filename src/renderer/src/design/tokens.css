@@ -217,6 +217,9 @@
     --dur-flourish: 900ms;
     --dur-stagger: 40ms;
     --dur-frame: 80ms;
+    --dur-fold-fade: 150ms;
+    --dur-fold-out: 100ms;
+    --dur-fold-delay: 50ms;
     --ease-inout: cubic-bezier(.65,0,.35,1);
     --ease: cubic-bezier(.165,.84,.44,1);
     --ease-snap: cubic-bezier(.32,.72,0,1);

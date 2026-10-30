@@ -89,7 +89,8 @@ function makeStubMap() {
       'src/renderer/src/i18n/ui-text.ts': UI_TEXT_STUB,
       'src/renderer/src/features/workbench/pane-chrome.tsx': CHROME_STUB,
       'src/renderer/src/features/changes/ChangesFileDiff.tsx': DIFF_STUB,
-      'src/renderer/src/features/changes/BranchPicker.tsx': PICKER_STUB
+      'src/renderer/src/features/changes/BranchPicker.tsx': PICKER_STUB,
+      'src/renderer/src/features/github/CreatePullRequest.tsx': 'export function CreatePullRequestButton(){ return null }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
 }

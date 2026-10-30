@@ -42,7 +42,10 @@ export interface PrRow {
   additions: number
   deletions: number
   checks: PrChecks
+  labels: string[]
 }
+
+export type PrMergeable = 'mergeable' | 'conflicting' | 'unknown'
 
 export interface PrFileItem {
   path: string
@@ -82,6 +85,8 @@ export interface PrDetail {
   mergedAt: string
   closedAt: string
   reviewDecision: string
+  mergeable: PrMergeable
+  mergeState: string
   commitCount: number
   additions: number
   deletions: number
@@ -169,8 +174,16 @@ export function normalizePrRow(item: GhPrListItemJson): PrRow {
     reviewDecision: text(item.reviewDecision),
     additions: count(item.additions),
     deletions: count(item.deletions),
-    checks: summary
+    checks: summary,
+    labels: (item.labels ?? []).map((label) => text(label?.name)).filter(Boolean)
   }
+}
+
+export function mergeableOf(json: unknown): { mergeable: PrMergeable; mergeState: string } {
+  const record = json && typeof json === 'object' ? (json as Record<string, unknown>) : {}
+  const raw = text(record.mergeable).toUpperCase()
+  const mergeable: PrMergeable = raw === 'MERGEABLE' ? 'mergeable' : raw === 'CONFLICTING' ? 'conflicting' : 'unknown'
+  return { mergeable, mergeState: text(record.mergeStateStatus).toUpperCase() }
 }
 
 function unescapeGitPath(value: string): string {
@@ -359,6 +372,7 @@ export function normalizePrDetail(json: GhPrDetailJson, options: { repo: string;
     mergedAt: text(json.mergedAt),
     closedAt: text(json.closedAt),
     reviewDecision: text(json.reviewDecision),
+    ...mergeableOf(json),
     commitCount: Array.isArray(json.commits) ? json.commits.length : 0,
     additions: typeof json.additions === 'number' ? json.additions : files.reduce((sum, file) => sum + file.additions, 0),
     deletions: typeof json.deletions === 'number' ? json.deletions : files.reduce((sum, file) => sum + file.deletions, 0),

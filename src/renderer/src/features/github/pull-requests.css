@@ -358,11 +358,8 @@
   }
 
   .gh-prd__ref {
+    flex: 0 1 auto;
     min-width: 0;
-    max-width: 45%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);
   }
 
@@ -389,13 +386,8 @@
   }
 
   .gh-prd__checks {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-6);
     min-width: 0;
     margin-inline-start: auto;
-    color: var(--fg3);
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     white-space: nowrap;
   }
 

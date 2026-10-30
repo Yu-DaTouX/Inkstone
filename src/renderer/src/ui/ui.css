@@ -1612,6 +1612,11 @@
     letter-spacing: 0;
   }
 
+  .ui-meta-text {
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+
   .ui-notice {
     --notice-fg: var(--fg2);
     --notice-ink: var(--accent);
