@@ -30,6 +30,9 @@ import { activeSessions, isSnoozed, snoozedSessions } from './session-snooze'
 import { useSnoozeClock } from './use-session-snooze'
 import { SnoozeShelf } from './SnoozeShelf'
 import { createSidebarRunsSelector } from './sidebar-runs'
+import { setSessionOrder, useSessionNav } from './session-nav-store'
+import { useSessionJump } from './use-session-jump'
+import { useSessionFileDrop } from './use-session-file-drop'
 import './Sidebar.css'
 
 function toggleKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
@@ -241,6 +244,10 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const orderedSessions = flat
     ? [...flatView.pinned, ...activeRows, ...workingRows].map((entry) => entry.session)
     : groups.flatMap((group) => group.list)
+  const orderKey = orderedSessions.map((item) => item.path).join('\n')
+  useEffect(() => {
+    setSessionOrder(orderKey ? orderKey.split('\n') : [])
+  }, [orderKey])
   const tally = tallyAttention(orderedSessions.map((item) => ({ path: item.path, status: rowState(item).status })))
   const jumpCursor = useRef<Partial<Record<AttentionKind, string>>>({})
 
@@ -344,6 +351,16 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
       markSessionRunsSeen(item)
     })
   }, [switchSession])
+
+  const jumpToPath = useCallback((path: string): void => {
+    const item = useStore.getState().sessions.find((entry) => entry.path === path)
+    if (item && isSnoozed(item, Date.now())) void useStore.getState().setSessionSnoozed(item.id, null)
+    openSession({ id: item?.id ?? '', path })
+  }, [openSession])
+  useSessionJump(asideRef, jumpToPath)
+  useSessionFileDrop(asideRef, t)
+  const fileDropPath = useSessionNav((s) => s.fileDropPath)
+  const fileDropItem = fileDropPath ? sessions.find((entry) => entry.path === fileDropPath) : undefined
 
   const openSnoozed = useCallback((item: SessionSummary): void => {
     if (isSnoozed(item, Date.now())) void useStore.getState().setSessionSnoozed(item.id, null)
@@ -556,6 +573,9 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         )}
         {query && total === 0 && !contentVisible ? <span className="v3-visually-hidden" aria-live="polite">{t('rail.noMatch')}</span> : null}
         <span className="v3-visually-hidden" role="status">{announcement}</span>
+        <span className="v3-visually-hidden" aria-live="polite">
+          {fileDropItem ? t('sidebar.fileDrop.status', { name: manualTitles[fileDropItem.id] ?? titles[fileDropItem.id] ?? fileDropItem.title }) : ''}
+        </span>
       </nav>
 
       {flat && !showArchived && (workingRows.length || showShelf) ? (

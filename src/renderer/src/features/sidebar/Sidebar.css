@@ -452,6 +452,7 @@
     top: calc(var(--s-4) + var(--t-body-lh) / 2);
   }
 
+  .v3-srow[data-file-drop='1'] > .v3-row,
   .v3-srow[data-jumped='1'] > .v3-row {
     box-shadow: inset 0 0 0 1px var(--accent);
   }
@@ -539,6 +540,24 @@
 
   .v3-srow[data-dragging='1'] > .v3-row {
     opacity: 0.45;
+  }
+
+  .v3-srow-jump {
+    position: absolute;
+    right: var(--s-6);
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .v3-srow:has(> .v3-row[data-sub]) > .v3-srow-jump {
+    top: calc(var(--s-4) + var(--t-body-lh) / 2);
+  }
+
+  .v3-srow[data-jump='1'] .v3-srow-meta,
+  .v3-srow[data-jump='1'] > .v3-row[data-variant='slim'] .v3-crow-ago,
+  .v3-srow[data-jump='1'] > .v3-srow-more {
+    visibility: hidden;
   }
 
   .v3-srow:has(> .v3-srow-rename) {

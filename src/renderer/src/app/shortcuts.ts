@@ -180,6 +180,59 @@ export function findShortcutConflicts(defs: readonly ShortcutDef[] = SHORTCUTS):
   return conflicts
 }
 
+export function isMacPlatform(): boolean {
+  return typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+}
+
+export const SESSION_JUMP_HOLD_MS = 300
+
+export const SESSION_JUMP_LIMIT = 9
+
+export interface SessionJumpKeyState {
+  key: string
+  ctrl: boolean
+  meta: boolean
+  alt: boolean
+  shift: boolean
+  mac: boolean
+  composing?: boolean
+  repeat?: boolean
+  altGraph?: boolean
+  modalOpen?: boolean
+  inTerminal?: boolean
+}
+
+export function isSessionJumpModifier(key: string, mac: boolean): boolean {
+  return key === (mac ? 'Meta' : 'Control')
+}
+
+export function sessionJumpConflicts(overrides: ShortcutOverrides = EMPTY_SHORTCUT_OVERRIDES): ShortcutId[] {
+  const defs = applyShortcutOverrides(overrides)
+  return defs
+    .filter((def) => {
+      const modifiers = bindingModifiers(def.keys)
+      return modifiers.ctrl && !modifiers.shift && !modifiers.alt && /^[1-9]$/.test(shortcutKeyToken(def.keys))
+    })
+    .map((def) => def.id)
+}
+
+export function resolveSessionJump(
+  state: SessionJumpKeyState,
+  overrides: ShortcutOverrides = EMPTY_SHORTCUT_OVERRIDES
+): number | null {
+  if (state.composing || state.repeat || state.altGraph || state.modalOpen || state.inTerminal) return null
+  if (state.alt || state.shift) return null
+  if (state.mac ? !state.meta || state.ctrl : !state.ctrl || state.meta) return null
+  if (!/^[1-9]$/.test(state.key)) return null
+  const claimed = sessionJumpConflicts(overrides).some((id) => {
+    const def = SHORTCUTS.find((item) => item.id === id)
+    return def ? shortcutKeyToken(effectiveShortcutKeys(def, overrides)) === state.key : false
+  })
+  if (claimed) return null
+  const index = Number(state.key) - 1
+  return index < SESSION_JUMP_LIMIT ? index : null
+}
+
 export interface V3KeyState {
   key: string
   ctrl: boolean

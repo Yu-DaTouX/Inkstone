@@ -1,8 +1,10 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { AlarmClock, MoreHorizontal, Pin } from 'lucide-react'
-import { useI18n } from '../../i18n'
+import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { cx, IconButton, InlineRename, isImeComposing, ListRow, StatusSlot } from '../../ui'
+import { cx, IconButton, InlineRename, isImeComposing, Kbd, ListRow, StatusSlot } from '../../ui'
+import { useSessionNav } from './session-nav-store'
+import { sessionJumpKeysText } from './use-session-jump'
 import { ModelBot, type BotMood } from '../../patterns/ModelBot'
 import { modelBrand, type ModelRef } from '../../../../shared/model-brand'
 import { v3Text } from '../../app/v3-text'
@@ -105,6 +107,10 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
   const [renamePending, setRenamePending] = useState(false)
   const settledByKey = useRef(false)
   const dragging = useSessionDrag((s) => s.source === `session:${item.path}`)
+  const t = useT()
+  const jumpIndex = useSessionNav((s) => s.jump?.get(item.path))
+  const fileDrop = useSessionNav((s) => s.fileDropPath === item.path)
+  const jumpKeys = jumpIndex ? sessionJumpKeysText(jumpIndex) : undefined
   const hasSub = !!meta?.note || (!!card && !card.slim && (!card.hideProject || !!subModel(card, status)))
 
   useEffect(() => {
@@ -181,6 +187,8 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
       data-current={isCurrent ? '1' : undefined}
       data-menu={menuOpen ? '1' : undefined}
       data-dragging={dragging ? '1' : undefined}
+      data-jump={jumpIndex && !renaming ? '1' : undefined}
+      data-file-drop={fileDrop ? '1' : undefined}
       onContextMenu={(event) => {
         if (renaming) return
         event.preventDefault()
@@ -220,6 +228,16 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
             data-sub={hasSub ? '' : undefined}
             data-mark={card?.slim && sessionStatusHasMark(status) ? '' : undefined}
             onPointerDown={onPointerDown}
+            aria-keyshortcuts={jumpKeys ? `${jumpKeys.replace('Ctrl', 'Control').replace('Cmd', 'Meta')} F2` : 'F2'}
+            onDoubleClick={(event) => {
+              if (draggedRef.current || event.button !== 0) return
+              setRenaming(true)
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'F2' || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
+              event.preventDefault()
+              setRenaming(true)
+            }}
             onClick={() => {
               if (draggedRef.current) {
                 draggedRef.current = false
@@ -266,6 +284,11 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
           </ListRow>
         </SidebarTip>
       )}
+      {jumpIndex && !renaming ? (
+        <Kbd className="v3-srow-jump" aria-label={t('sidebar.jump.label', { keys: jumpKeys ?? '' })} data-testid="v3-session-jump">
+          {jumpIndex}
+        </Kbd>
+      ) : null}
       {renaming ? null : (
         <IconButton
           size="sm"

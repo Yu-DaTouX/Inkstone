@@ -37,6 +37,7 @@ import { QueueEditor } from './QueueEditor'
 import { IsolationMergeBar } from './IsolationMergeBar'
 import { PlanCard } from './PlanCard'
 import { FileDropOverlay, useFileDropZone } from './FileDropZone'
+import { attachDroppedFiles, captureDroppedFiles } from './drop-attach'
 import { usePastedTextAttach } from './use-pasted-text'
 import { VoiceButton } from './VoiceButton'
 import { useSessionQuoteDrop } from './use-session-quote'
@@ -121,8 +122,6 @@ export function Composer({ className }: { className?: string } = {}) {
   const attachments = useStore((s) => s.attachments)
   const clearAttachments = useStore((s) => s.clearAttachments)
   const addAttachments = useStore((s) => s.addAttachments)
-  const addFileRefs = useStore((s) => s.addFileRefs)
-  const addFileRefPaths = useStore((s) => s.addFileRefPaths)
   const composerFocus = useStore((s) => s.composerFocus)
 
   useEffect(() => {
@@ -377,32 +376,11 @@ export function Composer({ className }: { className?: string } = {}) {
 
   const onDrop = useCallback(
     (data: DataTransfer) => {
-      const internalPaths = data.getData('application/x-yan-file-paths').trim()
-      const internalPath = data.getData('application/x-yan-file-path').trim()
-      if (internalPaths || internalPath) {
-        let paths = [internalPath]
-        if (internalPaths) {
-          try {
-            const parsed: unknown = JSON.parse(internalPaths)
-            paths = Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [internalPath]
-          } catch {
-            paths = [internalPath]
-          }
-        }
-        paths = paths.filter((value) => value.trim().length > 0)
-        if (paths.length) void addFileRefPaths(paths)
-        return
-      }
-      if (!data.types.includes('Files')) return
-      const files = [...data.files]
-      if (files.length === 0) return
-      const images = files.filter((f) => f.type.startsWith('image/'))
-      const others = files.filter((f) => !f.type.startsWith('image/'))
-      const identity = composerSubmitIdentity(useStore.getState())
-      if (images.length) void readFiles(images, (items) => addAttachments(items, identity), (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
-      if (others.length) void addFileRefs(others)
+      const dropped = captureDroppedFiles(data)
+      if (!dropped) return
+      attachDroppedFiles(dropped, composerSubmitIdentity(useStore.getState()), (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
     },
-    [addAttachments, addFileRefs, addFileRefPaths, notify, t]
+    [notify, t]
   )
   const fileDrop = useFileDropZone(wrapRef, onDrop)
 

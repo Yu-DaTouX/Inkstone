@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useStore } from '../../state/store'
+import { leaveSessionAfter } from './session-advance'
 
 const SESSION_DRAG_THRESHOLD = 4
 
@@ -264,7 +265,8 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
         drop: () => {
           if (shelf && zone) {
             const store = useStore.getState()
-            if (zone.kind === 'archive' || zone.kind === 'restore') void store.setSessionArchived(item.id, zone.kind === 'archive')
+            if (zone.kind === 'archive') void leaveSessionAfter(item.path, () => store.setSessionArchived(item.id, true))
+            else if (zone.kind === 'restore') void store.setSessionArchived(item.id, false)
             else void store.setSessionPinned(item.id, zone.kind === 'pin')
             return
           }
