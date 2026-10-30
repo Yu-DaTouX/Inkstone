@@ -66,8 +66,11 @@
     --col-pad-l: var(--col-pad-l-at);
     --col-pad-r: var(--col-pad-r-at);
     transition-property: --col-pl-at, --col-pr-at, --col-pad-l-at, --col-pad-r-at;
-    transition-duration: var(--dur-sheet);
+    transition-duration: 0s;
     transition-timing-function: var(--ease-inout);
+  }
+  .v3-chat[data-bar-anim] {
+    transition-duration: var(--dur-sheet);
   }
   .v3-root:has(.ui-splitter[data-dragging]) .v3-chat {
     transition: none;
@@ -123,7 +126,6 @@
   .v3-head-toggles {
     display: flex;
     align-items: center;
-    gap: var(--s-2);
   }
 
   .v3-chat {
@@ -151,7 +153,7 @@
     height: var(--s-12);
     z-index: 5;
     pointer-events: none;
-    background: linear-gradient(to bottom, var(--bg), color-mix(in srgb, var(--bg) 60%, transparent) 45%, transparent);
+    background: linear-gradient(to bottom, var(--bg), var(--bg) 22%, color-mix(in srgb, var(--bg) 82%, transparent) 42%, color-mix(in srgb, var(--bg) 40%, transparent) 70%, transparent);
   }
 
   @supports (animation-timeline: scroll()) {
@@ -164,7 +166,7 @@
 
   @keyframes v3-top-fade {
     to {
-      height: var(--s-24);
+      height: var(--s-32);
     }
   }
 

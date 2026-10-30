@@ -169,9 +169,8 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
       <div className="v3-head-actions">
         {route === 'chat' ? (
           <>
-            <ProjectScriptsControl />
             {freshHome ? null : (
-            <div className="v3-head-toggles" role="group" aria-label={text.panelToggles}>
+            <div className="v3-head-toggles ui-icon-tray" role="group" aria-label={text.panelToggles}>
               <IconButton
                 tooltip={sessionBarLabel}
                 aria-label={sessionBarLabel}
@@ -211,6 +210,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
             </div>
             )}
             {freshHome ? null : <Separator orientation="vertical" className="v3-head-sep" />}
+            <ProjectScriptsControl />
           </>
         ) : null}
         <MenuTrigger>
