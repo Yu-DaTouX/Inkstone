@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
   AsciiRule,
+  AsciiScale,
   AsciiSpark,
   Badge,
   Button,
@@ -231,6 +232,18 @@ export const TitlebarToggles: Story = {
   render: () => <TitlebarDemo />
 }
 
+export const ThinkingScale: Story = {
+  name: '字符刻度 · 思考档（七格，不支持的档置灰）',
+  parameters: {
+    stateMatrix: {
+      components: ['AsciiScale'],
+      states: STATES('default', 'selected', 'disabled', 'focus', 'theme-light', 'theme-dark'),
+      declared: STATES('focus')
+    }
+  },
+  render: () => <ThinkingScaleDemo />
+}
+
 export const Motion: Story = {
   name: '动效 · 反馈 / 过渡 / 表演三档',
   parameters: {
@@ -256,6 +269,46 @@ function TitlebarDemo() {
         ))}
       </div>
       <p style={noteStyle}>文字只出现在悬停提示里；同一排按钮宽度不随状态变化。面板内已有标签页时，顶栏不再重复面板名。</p>
+    </ThemePair>
+  )
+}
+
+const SCALE_LEVELS = [
+  ['off', '关'],
+  ['minimal', '最低'],
+  ['low', '低'],
+  ['medium', '中'],
+  ['high', '高'],
+  ['xhigh', '极高'],
+  ['max', '最高']
+] as const
+
+function ThinkingScaleDemo() {
+  const [level, setLevel] = useState('medium')
+  const [narrow, setNarrow] = useState('high')
+  const supported = new Set(['off', 'high'])
+  return (
+    <ThemePair>
+      <Section title="全部七档：已选格染档位色，其左各格用 ASCII 强笔画">
+        <AsciiScale
+          label="思考强度"
+          tone={`var(--think-${level}, var(--accent-t))`}
+          value={level}
+          onChange={setLevel}
+          options={SCALE_LEVELS.map(([id, label]) => ({ id, label }))}
+        />
+      </Section>
+      <Section title="模型只支持关 / 高：其余格置灰，悬停说明原因">
+        <AsciiScale
+          label="思考强度"
+          value={narrow}
+          onChange={setNarrow}
+          options={SCALE_LEVELS.map(([id, label]) => ({ id, label, isDisabled: !supported.has(id), title: supported.has(id) ? undefined : '当前模型不支持这一档' }))}
+        />
+      </Section>
+      <Section title="生成中整条禁用">
+        <AsciiScale label="思考强度" value="low" onChange={() => {}} isDisabled options={SCALE_LEVELS.map(([id, label]) => ({ id, label }))} />
+      </Section>
     </ThemePair>
   )
 }

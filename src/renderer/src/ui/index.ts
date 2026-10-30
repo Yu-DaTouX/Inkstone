@@ -138,6 +138,7 @@ export { Skeleton, type SkeletonProps, type SkeletonShape } from './Skeleton'
 export { ShimmerText, CompletionSweep, type ShimmerTextProps, type CompletionSweepProps } from './Shimmer'
 export { Separator, type SeparatorProps } from './Separator'
 export { AsciiRule, AsciiSpark, TermSpinner, type AsciiGlyph, type AsciiRuleProps, type AsciiSparkProps, type AsciiTone, type TermSpinnerProps } from './Terminal'
+export { AsciiScale, type AsciiScaleOption, type AsciiScaleProps } from './AsciiScale'
 export { Slider, type SliderProps } from './Slider'
 export {
   SettingRow,

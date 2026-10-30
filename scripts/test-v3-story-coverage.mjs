@@ -130,6 +130,7 @@ const REQUIRED = {
   AsciiRule: ['default', 'theme-light', 'theme-dark'],
   AsciiSpark: ['default', 'tone-accent', 'loading'],
   TermSpinner: ['default', 'loading'],
+  AsciiScale: ['default', 'selected', 'disabled'],
   Slider: ['default', 'disabled', 'invalid', 'orientation-vertical'],
   Tree: ['default', 'selected', 'disabled', 'empty'],
   TreeItem: ['default', 'selected', 'disabled'],

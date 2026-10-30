@@ -1,0 +1,93 @@
+@layer primitives {
+  .ui-ascii-scale {
+    --ui-scale-tone: var(--accent-t);
+    min-width: 0;
+  }
+
+  .ui-ascii-scale__group {
+    display: grid;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .ui-ascii-scale__slot {
+    display: flex;
+    min-width: 0;
+  }
+
+  .ui-ascii-scale__cell {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+    padding: var(--s-6) 0 var(--s-4);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--fg3);
+    font: var(--t-caption) / var(--t-caption-lh) var(--font-ui);
+    cursor: default;
+    user-select: none;
+    outline: none;
+    transition:
+      background-color var(--dur-fast) var(--ease-snap),
+      color var(--dur-fast) var(--ease-snap);
+  }
+
+  .ui-ascii-scale__glyph {
+    display: block;
+    height: 1em;
+    color: var(--ascii-dim);
+    font: var(--t-title) / 1 var(--font-mono);
+    letter-spacing: 0;
+    white-space: pre;
+    transition: color var(--dur-snap) var(--ease-snap);
+  }
+
+  .ui-ascii-scale__label {
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .ui-ascii-scale__cell[data-lit] .ui-ascii-scale__glyph {
+    color: var(--ascii-ink);
+  }
+
+  .ui-ascii-scale__cell[data-selected] {
+    background: var(--press);
+    color: var(--fg);
+    font-weight: var(--t-heading-w);
+  }
+
+  .ui-ascii-scale__cell[data-selected] .ui-ascii-scale__glyph {
+    color: var(--ui-scale-tone);
+  }
+
+  .ui-ascii-scale__cell[data-hovered]:not([data-disabled], [data-selected]) {
+    background: var(--hover);
+    color: var(--fg2);
+  }
+
+  .ui-ascii-scale__cell[data-pressed]:not([data-disabled]) {
+    background: var(--press);
+  }
+
+  .ui-ascii-scale__cell[data-focus-visible] {
+    box-shadow: var(--ring-focus);
+  }
+
+  .ui-ascii-scale__cell[data-disabled] {
+    color: color-mix(in srgb, var(--fg3) 55%, transparent);
+  }
+
+  .ui-ascii-scale__cell[data-disabled] .ui-ascii-scale__glyph {
+    opacity: 0.45;
+  }
+
+  .ui-ascii-scale__group[data-disabled] .ui-ascii-scale__cell {
+    opacity: 0.55;
+  }
+}
