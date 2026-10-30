@@ -7,19 +7,9 @@ import { v3Text } from '../../app/v3-text'
 import { UsageStrip } from '../../patterns/UsageStrip'
 import { ListRow } from '../../ui'
 import { BlinkCursor } from './BlinkCursor'
-import { compactAgo, sessionActivityAt, sessionProjectLabel } from '../sidebar/sidebar-model'
-import type { SessionSummary } from '../../../../shared/ipc'
 import './v3-empty-state.css'
 
-const RECENT_LIMIT = 4
-const RECENT_TEXT: Record<'zh-CN' | 'en-US', string> = { 'zh-CN': '最近', 'en-US': 'Recent' }
-
-function recentSessions(sessions: readonly SessionSummary[], skip: ReadonlySet<string>): SessionSummary[] {
-  return sessions
-    .filter((item) => !item.archivedAt && !skip.has(item.id) && !skip.has(item.path))
-    .sort((a, b) => sessionActivityAt(b) - sessionActivityAt(a))
-    .slice(0, RECENT_LIMIT)
-}
+const SPARK_SPAN: Record<'zh-CN' | 'en-US', string> = { 'zh-CN': '近 14 天', 'en-US': 'Last 14 days' }
 
 interface V3EmptyStateProps {
   usage?: ReactNode
@@ -57,15 +47,6 @@ export function V3EmptyState({ usage }: V3EmptyStateProps = {}): JSX.Element {
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
   const awaiting = useMemo(() => awaitingRuns(runs), [runs])
-  const currentId = useStore((s) => s.session?.sessionId ?? null)
-  const projects = useStore((s) => s.settings?.projects)
-  const projectNames = useStore((s) => s.settings?.projectNames)
-  const recent = useMemo(() => {
-    const skip = new Set<string>(awaiting.flatMap((run) => [run.sessionId, run.sessionPath ?? ''].filter(Boolean)))
-    if (currentId) skip.add(currentId)
-    return recentSessions(sessions, skip)
-  }, [sessions, awaiting, currentId])
-  const now = Date.now()
   const langKey = lang === 'en-US' ? 'en-US' : 'zh-CN'
 
   const titleOf = (run: RunSnapshot): string => {
@@ -87,7 +68,7 @@ export function V3EmptyState({ usage }: V3EmptyStateProps = {}): JSX.Element {
           </div>
           {usage === null ? null : (
             <UsageStrip
-              text={{ label: text.usageStripLabel, sessions: text.usageStripSessions, days: text.usageStripDays, recent: text.usageStripRecent }}
+              text={{ label: text.usageStripLabel, sessions: text.usageStripSessions, days: text.usageStripDays, recent: text.usageStripRecent, span: SPARK_SPAN[langKey] }}
             />
           )}
           {awaiting.length > 0 ? (
@@ -113,30 +94,6 @@ export function V3EmptyState({ usage }: V3EmptyStateProps = {}): JSX.Element {
         </div>
         {usage ?? null}
       </div>
-      {recent.length > 0 ? (
-        <section className="v3-empty-recent" aria-label={RECENT_TEXT[langKey]} data-testid="v3-empty-recent">
-          <h2 className="v3-empty-recent-head">{RECENT_TEXT[langKey]}</h2>
-          {recent.map((item) => {
-            const project = item.scope === 'global' ? '' : sessionProjectLabel(item, projects ?? [], projectNames ?? {}).label
-            return (
-              <ListRow
-                key={item.path}
-                className="v3-empty-recent-row"
-                onClick={() => void useStore.getState().switchSession(item.path)}
-                data-testid="v3-empty-recent-row"
-                trailing={
-                  <span className="v3-empty-recent-meta">
-                    {project ? <span className="v3-empty-recent-project">{project}</span> : null}
-                    <span className="v3-empty-recent-ago ui-num">{compactAgo(sessionActivityAt(item), now, langKey)}</span>
-                  </span>
-                }
-              >
-                {manualTitles[item.id] ?? titles[item.id] ?? (item.title || t('rail.untitled'))}
-              </ListRow>
-            )
-          })}
-        </section>
-      ) : null}
     </div>
   )
 }

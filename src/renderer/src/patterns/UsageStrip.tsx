@@ -12,6 +12,7 @@ export interface UsageStripText {
   sessions: string
   days: string
   recent: string
+  span: string
 }
 
 export function UsageStrip({ text }: { text: UsageStripText }): JSX.Element {
@@ -20,14 +21,17 @@ export function UsageStrip({ text }: { text: UsageStripText }): JSX.Element {
   const values = Array.from({ length: RECENT_DAYS }, (_, i) => recent[i - (RECENT_DAYS - recent.length)]?.tokens ?? 0)
   return (
     <div className="start-strip" data-testid="usage-strip" aria-label={text.label} aria-busy={!stats || undefined}>
-      <button className="start-details-link start-label" type="button" onClick={() => useUiV3.getState().navigate({ name: 'usage' })}>{text.label} ↗</button>
-      <span className="start-strip-num">{stats ? compactNumber(stats.tokens) : '—'}</span>
-      <span className="start-label">Token</span>
-      <span className="start-strip-sep" aria-hidden>·</span>
-      <span className="start-label">{text.sessions.replace('{n}', stats ? stats.sessions.toLocaleString() : '—')}</span>
-      <span className="start-strip-sep" aria-hidden>·</span>
-      <span className="start-label">{text.days.replace('{n}', stats ? String(stats.activeDays) : '—')}</span>
-      <AsciiSpark key={stats ? 'ready' : 'pending'} className="start-strip-spark" label={text.recent} values={values} cell={CELL_SIZE} />
+      <span className="start-strip-key start-label" aria-hidden>{text.span}</span>
+      <AsciiSpark key={stats ? 'ready' : 'pending'} className="start-strip-spark" label={text.recent} values={values} cell={CELL_SIZE} markPeak={false} />
+      <button className="start-details-link start-label start-strip-key" type="button" onClick={() => useUiV3.getState().navigate({ name: 'usage' })}>{text.label} ↗</button>
+      <span className="start-strip-row">
+        <span className="start-strip-num">{stats ? compactNumber(stats.tokens) : '—'}</span>
+        <span className="start-label">Token</span>
+        <span className="start-strip-sep" aria-hidden>·</span>
+        <span className="start-label">{text.sessions.replace('{n}', stats ? stats.sessions.toLocaleString() : '—')}</span>
+        <span className="start-strip-sep" aria-hidden>·</span>
+        <span className="start-label">{text.days.replace('{n}', stats ? String(stats.activeDays) : '—')}</span>
+      </span>
     </div>
   )
 }

@@ -120,7 +120,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
 
   let width = 1
   let height = 1
-  let colorFg = resolveToken(host, '--fg')
+  let colorFg = resolveToken(host, '--ascii-field')
   let colorAccent = resolveToken(host, '--accent')
   let monoStack = readMonoStack()
   let atlas: HTMLCanvasElement | null = null
@@ -208,7 +208,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
 
   const readTokens = (): void => {
     const nextMono = readMonoStack()
-    const nextFg = resolveToken(host, '--fg')
+    const nextFg = resolveToken(host, '--ascii-field')
     const nextAccent = resolveToken(host, '--accent')
     if (nextFg !== colorFg || nextAccent !== colorAccent || nextMono !== monoStack) {
       colorFg = nextFg
