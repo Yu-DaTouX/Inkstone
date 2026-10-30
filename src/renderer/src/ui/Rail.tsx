@@ -104,6 +104,7 @@ export interface RailRowButtonProps {
   ref?: Ref<HTMLButtonElement>
   'aria-haspopup'?: 'menu' | 'dialog' | 'listbox' | boolean
   'aria-expanded'?: boolean
+  'aria-label'?: string
   'data-testid'?: string
 }
 

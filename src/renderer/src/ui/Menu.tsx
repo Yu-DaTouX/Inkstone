@@ -32,6 +32,7 @@ export interface MenuItemProps<T extends object = object> extends RACMenuItemPro
   trailingValue?: ReactNode
   checked?: boolean | 'selection'
   tone?: 'default' | 'danger'
+  disabledReason?: ReactNode
 }
 
 export function MenuItem<T extends object = object>({
@@ -41,12 +42,13 @@ export function MenuItem<T extends object = object>({
   trailingValue,
   checked,
   tone = 'default',
+  disabledReason,
   className,
   children,
   textValue,
   ...props
 }: MenuItemProps<T>) {
-  const slotted = icon != null || description != null || shortcut != null || trailingValue != null || checked !== undefined
+  const slotted = icon != null || description != null || disabledReason != null || shortcut != null || trailingValue != null || checked !== undefined
   const resolvedTextValue = textValue ?? (typeof children === 'string' ? children : undefined)
   return (
     <RACMenuItem
@@ -59,6 +61,7 @@ export function MenuItem<T extends object = object>({
           slotted && 'ui-menu__item--slotted',
           checked !== undefined && 'ui-menu__item--checkable',
           description != null && 'ui-menu__item--described',
+          disabledReason != null && 'ui-menu__item--explained',
           cn
         )
       )}
@@ -68,6 +71,7 @@ export function MenuItem<T extends object = object>({
         if (!slotted) return kids
         const showCheck = checked !== undefined
         const isChecked = checked === 'selection' ? renderProps.isSelected : checked === true
+        const shownDescription = renderProps.isDisabled && disabledReason != null ? disabledReason : description
         return (
           <>
             {showCheck ? (
@@ -84,9 +88,9 @@ export function MenuItem<T extends object = object>({
               <Text slot="label" className="ui-menu__label">
                 {kids}
               </Text>
-              {description != null ? (
+              {shownDescription != null ? (
                 <Text slot="description" className="ui-menu__desc">
-                  {description}
+                  {shownDescription}
                 </Text>
               ) : null}
             </span>

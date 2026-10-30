@@ -758,6 +758,14 @@
   .ui-menu__item[data-tone='danger'] {
     color: var(--fail-t);
   }
+  .ui-menu__item--explained[data-disabled] {
+    align-items: flex-start;
+    opacity: 1;
+  }
+  .ui-menu__item--explained[data-disabled] > :not(.ui-menu__text),
+  .ui-menu__item--explained[data-disabled] .ui-menu__label {
+    opacity: 0.4;
+  }
   .ui-menu__item--checkable[data-selected] {
     background: transparent;
     color: inherit;
