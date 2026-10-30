@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
 import { EllipsisVertical, Eye, Maximize2, Minimize2, PanelRightClose } from 'lucide-react'
 import { create } from 'zustand'
-import { Button, EmptyState, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator, Spinner, motionAllowed } from '../../ui'
+import { Button, EmptyState, IconButton, Spinner, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { fileSurface, pullRequestSurface, toolSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelSurface } from '../../state/right-panel'
@@ -20,6 +20,9 @@ import { RightPanelFrame } from '../../t3/components/right-panel/RightPanelFrame
 import { TabStrip } from '../../t3/components/right-panel/TabStrip'
 import { Launcher } from '../../t3/components/right-panel/Launcher'
 import { TabContextMenu, type TabContextMenuItem } from '../../t3/components/right-panel/TabContextMenu'
+import { Menu, MenuCheckboxItem, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '../../t3/components/ui/menu'
+import { Button as T3Button } from '../../t3/components/ui/button'
+import { Tooltip, TooltipPopup, TooltipTrigger } from '../../t3/components/ui/tooltip'
 import { closePanelMenu, useRightPanelAdapter } from '../../t3/adapters/right-panel'
 import './right-panel.css'
 
@@ -64,6 +67,7 @@ export function RightPanelT3({ owner, mode, room, panes, windowControls, onOpenT
   const { lang } = useI18n()
   const text = workbenchText(lang)
   const panel = rightPanelText(lang)
+  const reducedMotion = useReducedMotion()
   const entry = useRightPanelEntry()
   const adapter = useRightPanelAdapter({ owner, mode, room, onPick: onOpenTool })
   const [addMenuOpen, setAddMenuOpen] = useState(false)
@@ -187,7 +191,7 @@ export function RightPanelT3({ owner, mode, room, panes, windowControls, onOpenT
         tabbar={tabbar}
         tabbarClassName={windowControls ? 'pr-0' : undefined}
         toggleSelector='[data-right-panel-toggle]'
-        sheet={{ onClose: adapter.onHide, transitionMs: motionMs('sheet') }}
+        sheet={{ onClose: adapter.onHide, transitionMs: reducedMotion ? 0 : motionMs('sheet') }}
         onKeyDown={onPanelKey}
         testId="rp"
       >
@@ -327,34 +331,46 @@ function SurfaceView({ surface, shown, live, owner, panes, text, panel, onReques
           <span className="rp-sub-title" ref={setTitleEl} />
           <span className="rp-sub-tools" ref={setToolsEl} />
           {allItems.length ? (
-            <MenuTrigger>
-              <IconButton size="sm" aria-label={text.paneMenu(name || panel.file)} tooltip={text.paneMenu(name || panel.file)} data-testid={`rp-menu-${surface.id}`} className="rp-sub-menu">
-                <EllipsisVertical size={14} />
-              </IconButton>
-              <Popover placement="bottom end" offset={4}>
-                <Menu
-                  aria-label={text.paneMenu(name || panel.file)}
-                  disabledKeys={allItems.filter((item) => item.disabled).map((item) => item.id)}
-                  onAction={(key) => allItems.find((item) => item.id === key)?.onAction()}
+            <Menu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <MenuTrigger
+                      render={
+                        <T3Button
+                          type="button"
+                          variant="ghost-muted"
+                          size="icon-xs"
+                          className="rp-sub-menu"
+                          aria-label={text.paneMenu(name || panel.file)}
+                          data-testid={`rp-menu-${surface.id}`}
+                        />
+                      }
+                    />
+                  }
                 >
-                  {groups.flatMap((items, index) => [
-                    ...(index > 0 ? [<Separator key={`sep:${index}`} />] : []),
-                    ...items.map((item) => (
-                      <MenuItem
-                        key={item.id}
-                        id={item.id}
-                        textValue={item.label}
-                        aria-checked={item.checked}
-                        checked={item.checked}
-                        icon={item.checked === undefined ? item.icon : undefined}
-                      >
-                        {item.label}
+                  <EllipsisVertical />
+                </TooltipTrigger>
+                <TooltipPopup>{text.paneMenu(name || panel.file)}</TooltipPopup>
+              </Tooltip>
+              <MenuPopup align="end" side="bottom" sideOffset={6}>
+                {groups.flatMap((items, index) => [
+                  ...(index > 0 ? [<MenuSeparator key={`sep:${index}`} />] : []),
+                  ...items.map((item) =>
+                    item.checked === undefined ? (
+                      <MenuItem key={item.id} disabled={item.disabled} onClick={() => item.onAction()}>
+                        {item.icon}
+                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       </MenuItem>
-                    ))
-                  ])}
-                </Menu>
-              </Popover>
-            </MenuTrigger>
+                    ) : (
+                      <MenuCheckboxItem key={item.id} checked={item.checked} disabled={item.disabled} onCheckedChange={() => item.onAction()}>
+                        {item.label}
+                      </MenuCheckboxItem>
+                    )
+                  )
+                ])}
+              </MenuPopup>
+            </Menu>
           ) : null}
         </div>
       ) : null}

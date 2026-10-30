@@ -28,20 +28,20 @@
     display: flex;
     flex: none;
     align-items: center;
-    gap: var(--s-4);
+    gap: var(--s-8);
     height: calc(var(--s-4) * 7);
     min-height: calc(var(--s-4) * 7);
     margin: 0 0 var(--s-12);
-    padding: 0 var(--s-8);
-    color: var(--fg3);
+    padding: 0 var(--s-12);
+    color: var(--fg2);
     font: var(--t-footnote) / 1 var(--font-ui);
   }
   [data-preview-panel-mode='sheet'] .rp-sub {
     height: var(--size-head);
     min-height: var(--size-head);
     margin-bottom: 0;
-    padding: 0 var(--s-6);
-    border-bottom: var(--hair, 1px) solid var(--line);
+    padding: 0 var(--s-12);
+    border-bottom: var(--hair, 1px) solid color-mix(in srgb, var(--line) 60%, transparent);
   }
   .rp-sub:not(:has(.rp-sub-title > *, .rp-sub-tools > *, .rp-sub-menu)) {
     display: none;
@@ -63,21 +63,29 @@
     align-items: center;
     gap: var(--s-2);
   }
-  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn),
-  .rp-sub-menu {
+  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn) {
     width: var(--s-24);
     height: var(--s-24);
     border-radius: var(--r-md);
     color: var(--fg3);
   }
-  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn) svg,
-  .rp-sub-menu svg {
+  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn) svg {
     width: 14px;
     height: 14px;
   }
-  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn):hover:not([data-disabled]),
-  .rp-sub-menu:hover:not([data-disabled]) {
+  .rp-sub :is(.rp-sub-tools, .rp-sub-title) .ui-icon-btn:not(.ui-close-btn):hover:not([data-disabled]) {
     color: var(--fg);
+  }
+  .rp-sub .rp-sub-menu {
+    flex: none;
+  }
+  [data-slot='sheet-backdrop']:has(+ [data-slot='sheet-viewport'] [data-rp-sheet]),
+  [data-slot='sheet-viewport']:has([data-rp-sheet]) {
+    top: var(--size-head) !important;
+  }
+  :root:has([data-rp-sheet][data-open]) .v3-win {
+    position: relative;
+    z-index: calc(var(--z-sheet) + 1);
   }
   .rp-sub .ui-btn.ui-icon-btn[aria-pressed='true']:not([data-disabled]) {
     background: var(--hover);

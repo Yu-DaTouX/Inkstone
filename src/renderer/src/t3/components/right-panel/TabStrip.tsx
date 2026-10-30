@@ -188,6 +188,11 @@ export function TabStrip(props: TabStripProps) {
     if (!chip) return
     const id = chip.dataset.tabId
     if (!id) return
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'w') {
+      event.preventDefault()
+      props.onClose(id)
+      return
+    }
     if (event.key === 'Delete') {
       event.preventDefault()
       props.onClose(id)

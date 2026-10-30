@@ -69,7 +69,8 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
           showCloseButton={false}
           keepMounted
           transitionDurationMs={sheet?.transitionMs}
-          className="w-[min(42vw,28rem)] min-w-80 max-w-[28rem] max-[760px]:w-[min(88vw,24rem)] max-[760px]:min-w-0"
+          data-rp-sheet
+          className="h-full max-h-full w-[min(42vw,28rem)] min-w-80 max-w-[28rem] max-[760px]:w-[min(88vw,24rem)] max-[760px]:min-w-0"
         >
           {content("sheet")}
         </SheetPopup>
