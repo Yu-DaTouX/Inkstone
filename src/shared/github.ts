@@ -245,6 +245,101 @@ export interface GhPrCandidatesResult {
   failure?: GhPrFailure
 }
 
+export interface GithubAccountStatus {
+  installed: boolean
+  authed: boolean
+  login?: string
+  error?: string
+}
+
+export interface GithubRepoSummary {
+  nameWithOwner: string
+  owner: string
+  name: string
+  description: string
+  isPrivate: boolean
+  isFork: boolean
+  updatedAt: string
+  defaultBranch: string
+  url: string
+  stars?: number
+}
+
+export interface GithubRepoListRequest {
+  owner?: string
+  query?: string
+  limit?: number
+}
+
+export interface GithubRepoListResult {
+  ok: boolean
+  items: GithubRepoSummary[]
+  owners: string[]
+  hasMore?: boolean
+  error?: string
+  failure?: GhPrFailure
+}
+
+export type GithubCloneSource =
+  | { kind: 'github'; nameWithOwner: string }
+  | { kind: 'url'; url: string }
+
+export interface GithubCloneRequest {
+  id: string
+  source: GithubCloneSource
+  parentDir?: string
+  folderName?: string
+}
+
+export interface GithubCloneProgress {
+  id: string
+  phase: 'starting' | 'receiving' | 'resolving' | 'checkout' | 'done'
+  percent?: number
+}
+
+export interface GithubCloneResult {
+  ok: boolean
+  cwd?: string
+  projectId?: string
+  trusted?: boolean
+  cancelled?: boolean
+  error?: string
+  failure?: GhPrFailure
+}
+
+export interface GithubCreateProjectResult {
+  ok: boolean
+  cwd?: string
+  projectId?: string
+  error?: string
+}
+
+export interface GithubBranchRef {
+  name: string
+  oid: string
+  protected: boolean
+}
+
+export interface GithubBranchListResult {
+  ok: boolean
+  repo?: string
+  branches: GithubBranchRef[]
+  pulls: GhPrListItemJson[]
+  error?: string
+  failure?: GhPrFailure
+}
+
+export interface GithubPeerPublishRequest {
+  trackingRef: string
+  branch: string
+  base: string
+  title: string
+  body: string
+  draft?: boolean
+  remote?: string
+  confirmed: true
+}
+
 export interface GithubBridge {
   status(cwd: string): Promise<GithubStatus>
   createDefaults(cwd: string): Promise<GhPrCreateDefaultsResult>
@@ -254,4 +349,13 @@ export interface GithubBridge {
   detail(cwd: string, number: number): Promise<GhPrDetailResult>
   diff(cwd: string, number: number): Promise<GhPrDiffResult>
   openUrl(url: string): Promise<{ ok: boolean; error?: string }>
+  account(): Promise<GithubAccountStatus>
+  repos(request: GithubRepoListRequest): Promise<GithubRepoListResult>
+  searchRepos(query: string): Promise<GithubRepoListResult>
+  clone(request: GithubCloneRequest): Promise<GithubCloneResult>
+  cancelClone(id: string): Promise<{ ok: boolean }>
+  createProject(name: string, parentDir?: string): Promise<GithubCreateProjectResult>
+  branches(cwd: string): Promise<GithubBranchListResult>
+  publishPeerBranch(cwd: string, request: GithubPeerPublishRequest): Promise<GhPrActionResult>
+  defaultCloneDir(): Promise<string>
 }

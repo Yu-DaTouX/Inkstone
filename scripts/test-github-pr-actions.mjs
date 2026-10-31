@@ -120,7 +120,7 @@ for (const event of ['COMMENT', 'APPROVE', 'REQUEST_CHANGES']) {
 }
 result = await act({ kind: 'checkout', number: 12 })
 assert.equal(result.ok, true)
-assert.deepEqual(gitCalls[0], ['checkout', '/project', 12, 'https://github.com/acme/app', sha])
+assert.deepEqual(gitCalls[0], ['checkout', '/project', 12, 'https://github.com/acme/app', sha, { headRef: 'feat/pr', headRepoUrl: null, baseRepoUrl: 'https://github.com/acme/app', maintainerCanModify: false }])
 
 for (const request of [
   null, {}, { kind: 'close', number: '12', confirmed: true }, { kind: 'close', number: 10_000_000, confirmed: true },
@@ -276,6 +276,19 @@ result = await local.checkoutPrHead('/project', 12, 'https://github.com/acme/app
 assert.equal(result.ok, true)
 assert.ok(local.state.commands.some(args => args[0] === 'switch' && args[1] === '--detach'))
 local.state.commands.length = 0
+const branchOptions = { headRef: 'feat/x', headRepoUrl: 'https://github.com/acme/app', baseRepoUrl: 'https://github.com/acme/app', maintainerCanModify: false }
+result = await local.checkoutPrHead('/project', 12, 'https://github.com/acme/app', sha, branchOptions)
+assert.equal(result.ok, true)
+assert.match(result.summary, /本地分支 feat\/x/)
+assert.ok(!local.state.commands.some(args => args[1] === '--detach'))
+assert.ok(local.state.commands.some(args => args[0] === 'switch' && args[1] === 'feat/x'))
+assert.ok(local.state.commands.some(args => args[0] === 'config' && args[1] === 'branch.feat/x.remote' && args[2] === 'https://github.com/acme/app'))
+assert.ok(local.state.commands.some(args => args[0] === 'config' && args[1] === 'branch.feat/x.merge' && args[2] === 'refs/heads/feat/x'))
+result = await local.checkoutPrHead('/project', 12, 'https://github.com/acme/app', sha, { ...branchOptions, headRepoUrl: 'https://github.com/fork/app' })
+assert.match(result.summary, /fork/)
+assert.match(result.summary, /不会强推/)
+local.state.dirty = false
+local.state.commands.length = 0
 result = await local.checkoutPrHead('/project', 12, 'https://github.com/acme/app', 'b'.repeat(40))
 assert.equal(result.failure.code, 'stale')
 assert.ok(!local.state.commands.some(args => args[0] === 'switch'))
@@ -294,7 +307,7 @@ assert.ok(!local.state.commands.some(args => args[0] === 'push'))
 result = await local.pushCurrentBranchForPr('/project', 'feat/pr', { setUpstream: true })
 assert.equal(result.ok, true)
 assert.deepEqual(local.state.commands.find(args => args[0] === 'push'), ['push', '--set-upstream', '--', 'origin', 'refs/heads/feat/pr:refs/heads/feat/pr'])
-const ipcModule = await load('src/main/ipc/github-ipc.ts', { electron: 'export const shell={openExternal:async()=>{}}', '../github/actions': 'export const githubPrBackend={action:async(cwd,request)=>({ok:true,cwd,request}),candidates:async(cwd,request)=>({ok:true,cwd,request})}' })
+const ipcModule = await load('src/main/ipc/github-ipc.ts', { electron: 'export const shell={openExternal:async()=>{}}', '../settings': 'export const getSettings=async()=>({}), patchSettings=async()=>({})', '../project-trust': 'export const trustStatus=async()=>({trusted:false})', '../collab/git': 'export const repoRootOf=async()=>null, resolveCommit=async()=>null', '../git-service': 'export const gitRun=async()=>({ok:true})', '../collab/github-publish': 'export const publishPeerBranch=async()=>({ok:false})', '../github/actions': 'export const githubPrBackend={action:async(cwd,request)=>({ok:true,cwd,request}),candidates:async(cwd,request)=>({ok:true,cwd,request})}' })
 const handlers = new Map()
 let authorized = false
 ipcModule.registerGithubIpc({ handle: (channel, handler) => handlers.set(channel, handler) }, { authorizeReadCwd: async () => authorized ? { ok: true, cwd: '/authorized' } : { ok: false, error: 'denied' } })

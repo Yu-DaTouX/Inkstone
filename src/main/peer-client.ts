@@ -20,6 +20,7 @@ import {
   type PeerStatusView
 } from '../shared/peer-protocol'
 import { YAN_DIR } from './paths'
+import { sanitizePrRefs } from '../shared/collab-github'
 
 const PEERS_FILE = join(YAN_DIR, 'peers.json')
 const IMPORTS_DIR = join(YAN_DIR, 'peer-imports')
@@ -505,6 +506,7 @@ export class PeerClient implements PeerTransport {
       importedAt: Date.now(),
       exportedAt: pack.source.exportedAt,
       messageCount: pack.messages.length,
+      ...(sanitizePrRefs(pack.source.prRefs).length ? { prRefs: sanitizePrRefs(pack.source.prRefs) } : {}),
       artifacts
     }
     await writeFile(join(dir, 'manifest.json'), JSON.stringify({ ...view, source: pack.source, truncated: pack.truncated, via: auth.peer.address }, null, 2), 'utf8')
@@ -529,6 +531,7 @@ export class PeerClient implements PeerTransport {
           importedAt: manifest.importedAt,
           exportedAt: manifest.exportedAt,
           messageCount: manifest.messageCount,
+          ...(sanitizePrRefs(manifest.prRefs).length ? { prRefs: sanitizePrRefs(manifest.prRefs) } : {}),
           artifacts: manifest.artifacts ?? []
         })
       } catch {

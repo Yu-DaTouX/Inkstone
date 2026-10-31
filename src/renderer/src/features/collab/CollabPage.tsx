@@ -50,6 +50,7 @@ import {
 import { DiffView } from '../diff'
 import { collabBridge, collabPeerBridge, parsePairLink, type CollabPeerBridge } from './bridge'
 import { collabFailureText, collabText, fill, formatCollabTime, peerDisplayName, type CollabText } from './collab-text'
+import { GithubChannel } from './GithubChannel'
 import { HostGrants } from './HostGrants'
 import { InviteCard } from './InviteCard'
 import { usePendingPairInvite } from './pending-invite'
@@ -925,6 +926,8 @@ function RemoteProjectPanel({
           </ul>
         )}
       </section>
+
+      <GithubChannel lang={lang} peerId={peer.id} peerComputer={peer.computer} localProject={localProject} branches={branches} notify={notify} onChanged={onOverviewChanged} />
 
       <section className="collab-block" aria-label={fill(text.pushTitle, { computer: peer.computer })} data-testid="v3-collab-push">
         <p className="collab-label">{fill(text.pushTitle, { computer: peer.computer })}</p>

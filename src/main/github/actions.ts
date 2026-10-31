@@ -12,7 +12,8 @@ interface RestPr {
   number: number
   html_url: string
   merged: boolean
-  head: { ref: string; sha: string; repo: { full_name: string } | null }
+  maintainer_can_modify?: boolean
+  head: { ref: string; sha: string; repo: { full_name: string; html_url?: string } | null }
   base: { repo: { full_name: string; html_url: string; default_branch: string } }
 }
 
@@ -148,7 +149,7 @@ export function createGithubPrBackend(run: GhRunner = runGh, git = { pushCurrent
         }
         case 'checkout': {
           const pr = await readPr(cwd, request.number)
-          gitResult = await git.checkoutPrHead(cwd, request.number, pr.base.repo.html_url, pr.head.sha)
+          gitResult = await git.checkoutPrHead(cwd, request.number, pr.base.repo.html_url, pr.head.sha, { headRef: pr.head.ref, headRepoUrl: pr.head.repo?.html_url ?? null, baseRepoUrl: pr.base.repo.html_url, maintainerCanModify: pr.maintainer_can_modify === true })
           if (!gitResult.ok) return { ok: false, number, failure: gitFailure(gitResult), gitResult: { ...gitResult, failure: undefined } }
           completedSteps.push('checkout')
           break

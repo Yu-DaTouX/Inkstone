@@ -5,10 +5,27 @@ import { ghPrDetail, ghPrDiff, ghPrList, readGithubStatus } from '../github/gh'
 import { githubPrBackend } from '../github/actions'
 import { readPrCreateDefaults } from '../github/defaults'
 import { prFailure } from '../github/command'
-import type { GhPrCreateDefaultsResult, GhPrActionRequest, GhPrActionResult, GhPrCandidatesRequest, GhPrCandidatesResult, GhPrDetailResult, GhPrDiffResult, GhPrListOptions, GhPrListResult, GhPrListState, GithubStatus } from '../../shared/github'
+import { cancelClone, cloneRepository, createLocalProject, defaultCloneDir, ghBranchesAndPulls, listGithubRepos, readGithubAccount, searchGithubRepos } from '../github/repos'
+import { publishPeerBranch } from '../collab/github-publish'
+import { repoRootOf, resolveCommit } from '../collab/git'
+import { gitRun } from '../git-service'
+import { getSettings, patchSettings } from '../settings'
+import { trustStatus } from '../project-trust'
+import type { GhPrCreateDefaultsResult, GhPrActionRequest, GhPrActionResult, GhPrCandidatesRequest, GhPrCandidatesResult, GhPrDetailResult, GhPrDiffResult, GhPrListOptions, GhPrListResult, GhPrListState, GithubStatus, GithubAccountStatus, GithubBranchListResult, GithubCloneProgress, GithubCloneRequest, GithubCloneResult, GithubCreateProjectResult, GithubRepoListRequest, GithubRepoListResult, GithubPeerPublishRequest } from '../../shared/github'
 
 export interface GithubIpcDeps {
   authorizeReadCwd: AuthorizeReadCwd
+  pushCloneProgress?: (progress: GithubCloneProgress) => void
+}
+
+async function cloneParent(parentDir?: unknown): Promise<string> {
+  if (typeof parentDir === 'string' && parentDir.trim()) return parentDir.trim()
+  return (await getSettings()).cloneDir ?? defaultCloneDir()
+}
+
+async function addProject(cwd: string): Promise<{ projectId?: string }> {
+  const settings = await patchSettings({ cwd, recentCwds: [cwd, ...(await getSettings()).recentCwds.filter((path) => path !== cwd)].slice(0, 8) })
+  return { projectId: settings.projects.find((project) => project.cwd === cwd)?.id }
 }
 
 const MAX_URL_LENGTH = 2048
@@ -36,6 +53,88 @@ function externalUrl(raw: string): string | null {
 export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void {
   const { handle } = ipc
   const { authorizeReadCwd } = deps
+
+  handle('yan:github:account', async (): Promise<GithubAccountStatus> => {
+    try {
+      return await readGithubAccount()
+    } catch (error) {
+      return { installed: false, authed: false, error: message(error) }
+    }
+  })
+
+  handle('yan:github:defaultCloneDir', async (): Promise<string> => (await getSettings()).cloneDir ?? defaultCloneDir())
+
+  handle('yan:github:repos', async (request: GithubRepoListRequest): Promise<GithubRepoListResult> => {
+    try {
+      return await listGithubRepos(request ?? {})
+    } catch {
+      const failure = prFailure('other', '获取仓库列表失败')
+      return { ok: false, items: [], owners: [], error: failure.message, failure }
+    }
+  })
+
+  handle('yan:github:searchRepos', async (query: unknown): Promise<GithubRepoListResult> => {
+    try {
+      return await searchGithubRepos(String(query ?? ''))
+    } catch {
+      const failure = prFailure('other', '搜索 GitHub 仓库失败')
+      return { ok: false, items: [], owners: [], error: failure.message, failure }
+    }
+  })
+
+  handle('yan:github:clone', async (request: GithubCloneRequest): Promise<GithubCloneResult> => {
+    try {
+      const parentDir = await cloneParent(request?.parentDir)
+      return await cloneRepository({ ...request, parentDir }, {
+        defaultDir: () => parentDir,
+        onProgress: deps.pushCloneProgress,
+        addProject,
+        trusted: async (cwd) => (await trustStatus(cwd)).trusted
+      })
+    } catch (error) {
+      return { ok: false, error: message(error) }
+    }
+  })
+
+  handle('yan:github:cancelClone', async (id: unknown): Promise<{ ok: boolean }> => ({ ok: cancelClone(String(id ?? '')) }))
+
+  handle('yan:github:createProject', async (name: unknown, parentDir?: unknown): Promise<GithubCreateProjectResult> => {
+    try {
+      return await createLocalProject(name, await cloneParent(parentDir), { addProject })
+    } catch (error) {
+      return { ok: false, error: message(error) }
+    }
+  })
+
+  handle('yan:github:publishPeerBranch', async (cwd: string, request: GithubPeerPublishRequest): Promise<GhPrActionResult> => {
+    try {
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      const root = await repoRootOf(auth.cwd)
+      if (!root) return { ok: false, failure: prFailure('invalid-input', '此项目不是 git 仓库') }
+      return await publishPeerBranch(request, {
+        login: async () => (await readGithubAccount()).login ?? null,
+        resolve: (ref) => resolveCommit(root, ref),
+        push: async (trackingRef, branch, remote) => {
+          const pushed = await gitRun(root, ['push', '--', remote, `${trackingRef}:refs/heads/${branch}`], { allowFailure: true, timeout: 120_000 })
+          return { ok: pushed.ok, error: pushed.ok ? undefined : (pushed.error ?? pushed.stderr ?? '').trim().split(/\r?\n/).pop() }
+        },
+        createPr: (input) => githubPrBackend.action(auth.cwd, { kind: 'create', ...input })
+      })
+    } catch {
+      return { ok: false, failure: prFailure('other', '发布到 GitHub 未得到确认，请刷新确认', false) }
+    }
+  })
+
+  handle('yan:github:branches', async (cwd: string): Promise<GithubBranchListResult> => {
+    try {
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { ok: false, branches: [], pulls: [], error: auth.error, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      return await ghBranchesAndPulls(auth.cwd)
+    } catch {
+      return { ok: false, branches: [], pulls: [], error: '获取 GitHub 分支失败' }
+    }
+  })
 
   handle('yan:github:status', async (cwd: string): Promise<GithubStatus> => {
     try {

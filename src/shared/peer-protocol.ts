@@ -62,6 +62,7 @@ export interface PeerSessionExport {
     exportedAt: number
     updatedAt: number
     messageCount: number
+    prRefs?: import('./collab-github').PrRef[]
   }
   messages: unknown[]
   artifacts: PeerExportedArtifact[]
@@ -97,5 +98,6 @@ export interface PeerImportView {
   importedAt: number
   exportedAt: number
   messageCount: number
+  prRefs?: import('./collab-github').PrRef[]
   artifacts: Array<{ id: string; filename: string; status: 'copied' | 'missing' | 'too_large' }>
 }

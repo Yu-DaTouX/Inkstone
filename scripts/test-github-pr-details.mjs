@@ -84,7 +84,7 @@ const base = { path: 'src/ledger.js', line: 14, side: 'RIGHT', body: 'Review thi
 assert.equal(validateAction(request([{ ...base, startLine: 10 }])), null)
 assert.equal(validateAction(request([{ ...base, startLine: 10, startSide: 'LEFT' }])), null)
 for (const range of [{ startLine: 0 }, { startLine: 15 }, { startLine: 1.5 }, { startSide: 'RIGHT' }, { startLine: 10, startSide: 'INVALID' }]) assert.equal(validateAction(request([{ ...base, ...range }])).code, 'invalid-input')
-const { registerGithubIpc } = await load('src/main/ipc/github-ipc.ts', { electron: 'export const shell={openExternal:async()=>{}}', '../github/defaults': 'export const readPrCreateDefaults=async(cwd)=>({ok:true,currentBranch:cwd,latestCommit:{subject:"subject",body:"body"},defaultBranch:"trunk"})' })
+const { registerGithubIpc } = await load('src/main/ipc/github-ipc.ts', { electron: 'export const shell={openExternal:async()=>{}}', '../settings': 'export const getSettings=async()=>({}), patchSettings=async()=>({})', '../project-trust': 'export const trustStatus=async()=>({trusted:false})', '../collab/git': 'export const repoRootOf=async()=>null, resolveCommit=async()=>null', '../git-service': 'export const gitRun=async()=>({ok:true})', '../collab/github-publish': 'export const publishPeerBranch=async()=>({ok:false})', '../github/defaults': 'export const readPrCreateDefaults=async(cwd)=>({ok:true,currentBranch:cwd,latestCommit:{subject:"subject",body:"body"},defaultBranch:"trunk"})' })
 const handlers = new Map()
 let authorized = false
 registerGithubIpc({ handle: (channel, fn) => handlers.set(channel, fn) }, { authorizeReadCwd: async () => authorized ? { ok: true, cwd: '/authorized' } : { ok: false, error: 'denied' } })

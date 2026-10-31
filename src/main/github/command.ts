@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { GhPrFailure } from '../../shared/github'
 
 export const GH_TIMEOUT_MS = 20_000
@@ -10,6 +11,14 @@ const GH_ENV = {
   GH_PAGER: 'cat',
   NO_COLOR: '1',
   CLICOLOR: '0'
+}
+
+export function ghFallbackPaths(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string[] {
+  if (platform !== 'win32') return []
+  const roots = [env.ProgramFiles, env['ProgramFiles(x86)'], env.ProgramW6432].filter((root): root is string => !!root)
+  const paths = roots.map((root) => join(root, 'GitHub CLI', 'gh.exe'))
+  if (env.LOCALAPPDATA) paths.push(join(env.LOCALAPPDATA, 'Programs', 'GitHub CLI', 'gh.exe'))
+  return [...new Set(paths)]
 }
 
 export interface GhRun {
@@ -24,11 +33,11 @@ export interface GhRun {
 
 export type GhRunner = (cwd: string, args: string[], maxBuffer?: number, input?: string) => Promise<GhRun>
 
-export function createGhRunner(execute: typeof execFile = execFile): GhRunner {
-  return (cwd, args, maxBuffer = JSON_MAX_BUFFER, input) => new Promise((resolve) => {
+export function createGhRunner(execute: typeof execFile = execFile, fallbacks: () => string[] = () => ghFallbackPaths().filter((path) => existsSync(path))): GhRunner {
+  const run = (cwd: string, args: string[], maxBuffer: number, input: string | undefined, binary: string | null): Promise<GhRun> => new Promise((resolve) => {
     const debugScript = process.env.YAN_PROBE && process.env.YAN_USER_DATA ? process.env.YAN_DEBUG_GH_SCRIPT : undefined
     const child = execute(
-      debugScript ? process.execPath : 'gh', debugScript ? [debugScript, ...args] : args,
+      debugScript ? process.execPath : binary ?? 'gh', debugScript ? [debugScript, ...args] : args,
       { cwd, timeout: GH_TIMEOUT_MS, maxBuffer, encoding: 'utf8', windowsHide: true, env: { ...process.env, ...GH_ENV, ...(debugScript ? { ELECTRON_RUN_AS_NODE: '1' } : {}) } },
       (error, stdout, stderr) => {
         const code = (error as NodeJS.ErrnoException | null)?.code ?? ''
@@ -48,6 +57,15 @@ export function createGhRunner(execute: typeof execFile = execFile): GhRunner {
     child.stdin?.on('error', () => undefined)
     child.stdin?.end(input)
   })
+  return async (cwd, args, maxBuffer = JSON_MAX_BUFFER, input) => {
+    const first = await run(cwd, args, maxBuffer, input, null)
+    if (!first.missing || first.missingCwd) return first
+    for (const candidate of fallbacks()) {
+      const next = await run(cwd, args, maxBuffer, input, candidate)
+      if (!next.missing) return next
+    }
+    return first
+  }
 }
 
 export const runGh = createGhRunner()

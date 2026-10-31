@@ -1,0 +1,64 @@
+@layer features {
+  .gh-channel__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+  }
+
+  .gh-channel__account {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-8);
+  }
+
+  .gh-channel__list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: 0;
+  }
+
+  .gh-channel__row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
+    padding: var(--s-10) 0;
+  }
+
+  .gh-channel__row + .gh-channel__row {
+    border-top: var(--hair, 1px) solid var(--line);
+  }
+
+  .gh-channel__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .gh-channel__name {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .gh-channel__meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--s-4) var(--s-12);
+    margin: 0;
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+
+  .gh-channel__owner {
+    color: var(--fg2);
+  }
+}

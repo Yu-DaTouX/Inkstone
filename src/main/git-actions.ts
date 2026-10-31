@@ -25,6 +25,7 @@ import {
 import type { GitActionExpected, GitActionRequest, GitActionResult, GitFailure } from '../shared/git-actions'
 import { gitRun, readExpected, readRepoState, readStatus, refExists, resolveRepo, safeRepoPath } from './git-service'
 import { checkSwitch } from './git-branch-switch'
+import { decidePrBranch, normalizeRepoKey, prBranchCandidates, pushRightsNote, type PrCheckoutOptions } from './git-pr-branch'
 import type { RepoIdentity } from './git-service'
 
 const WRITE_TIMEOUT = 120_000
@@ -526,7 +527,47 @@ export async function pushCurrentBranchForPr(cwd: string, head: string, options:
   }
 }
 
-export async function checkoutPrHead(cwd: string, number: number, repositoryUrl: string, headOid: string): Promise<GitActionResult> {
+async function configValue(root: string, key: string): Promise<string | null> {
+  const res = await gitRun(root, ['config', '--get', key], { allowFailure: true })
+  const value = res.ok ? res.stdout.trim() : ''
+  return value || null
+}
+
+async function switchToPrBranch(root: string, number: number, headOid: string, options: PrCheckoutOptions): Promise<{ ok: true; summary: string } | { ok: false; failure: GitFailure }> {
+  for (const name of prBranchCandidates(options.headRef, number)) {
+    const tipRes = await gitRun(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], { allowFailure: true })
+    const tip = tipRes.ok ? tipRes.stdout.trim() || null : null
+    const remote = tip ? await configValue(root, `branch.${name}.remote`) : null
+    const remoteUrl = remote ? (await configValue(root, `remote.${remote}.url`)) ?? remote : null
+    const merge = tip ? await configValue(root, `branch.${name}.merge`) : null
+    const descendantOfTip = tip && tip !== headOid ? (await gitRun(root, ['merge-base', '--is-ancestor', tip, headOid], { allowFailure: true })).ok : false
+    const decision = decidePrBranch({ exists: !!tip, tip, merge, remoteUrl, descendantOfTip }, headOid, options.headRef, options.headRepoUrl)
+    if (decision === 'skip') continue
+    const switched = await runWrite(root, decision === 'create' ? ['switch', '-c', name, headOid] : ['switch', name])
+    if (!switched.ok) return { ok: false, failure: switched.failure }
+    if (decision === 'fast-forward') {
+      const merged = await runWrite(root, ['merge', '--ff-only', headOid])
+      if (!merged.ok) return { ok: false, failure: merged.failure }
+    }
+    let upstream = ''
+    if (options.headRepoUrl) {
+      const listed = await gitRun(root, ['config', '--get-regexp', '^remote\..*\.url$'], { allowFailure: true })
+      const key = normalizeRepoKey(options.headRepoUrl)
+      const named = listed.ok
+        ? listed.stdout.split('\n').map((line) => /^remote\.(.+)\.url (.+)$/.exec(line.trim())).find((m) => m && normalizeRepoKey(m[2]) === key)?.[1]
+        : undefined
+      const target = named ?? options.headRepoUrl
+      const remoteSet = await runWrite(root, ['config', `branch.${name}.remote`, target])
+      const mergeSet = remoteSet.ok ? await runWrite(root, ['config', `branch.${name}.merge`, `refs/heads/${options.headRef}`]) : remoteSet
+      upstream = mergeSet.ok ? `，上游 ${named ?? '来源仓库'}/${options.headRef}` : '（上游没设上，推送时勾「设置上游」）'
+    }
+    const note = pushRightsNote(options)
+    return { ok: true, summary: `已检出 PR #${number} 到本地分支 ${name}${upstream}${note ? `。${note}` : ''}` }
+  }
+  return { ok: false, failure: { code: 'invalid-input', message: '本地已有同名分支且不是这个 PR 的分支，请先改名或删除后再检出', retrySafe: true } }
+}
+
+export async function checkoutPrHead(cwd: string, number: number, repositoryUrl: string, headOid: string, branchOptions?: PrCheckoutOptions): Promise<GitActionResult> {
   if (!Number.isInteger(number) || number < 1 || number > 9_999_999 || !/^[0-9a-f]{40,64}$/.test(headOid)) return { ok: false, failure: { code: 'invalid-input', message: 'PR checkout 参数不合法', retrySafe: true } }
   try {
     const url = new URL(repositoryUrl)
@@ -544,6 +585,11 @@ export async function checkoutPrHead(cwd: string, number: number, repositoryUrl:
       const dirty = await switchDirtyFailure(repo.root, headOid)
       if (dirty) return { ok: false, failure: dirty }
       const before = await readExpected(repo.root)
+      if (branchOptions) {
+        const onBranch = await switchToPrBranch(repo.root, number, headOid, branchOptions)
+        if (!onBranch.ok) return { ok: false, failure: onBranch.failure }
+        return finish(repo, before.head, onBranch.summary)
+      }
       const switched = await runWrite(repo.root, ['switch', '--detach', headOid])
       if (!switched.ok) return { ok: false, failure: switched.failure }
       return finish(repo, before.head, `已检出 PR #${number}（detached HEAD）`)
