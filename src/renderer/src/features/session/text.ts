@@ -216,6 +216,7 @@ export type SessionTextKey =
   | 'decisionStopped'
   | 'questionChosen'
   | 'questionFreeAnswer'
+  | 'questionMore'
   | 'thinkingEmptyRecord'
   | 'thinkingUnavailable'
   | 'asideStacked'
@@ -467,6 +468,7 @@ const ZH: Record<SessionTextKey, string> = {
   decisionStopped: '已中止',
   questionChosen: '已选',
   questionFreeAnswer: '回答：{answer}',
+  questionMore: '等 {n} 题',
   thinkingEmptyRecord: '这一轮的思考没有留下文字记录',
   thinkingUnavailable: '{model} 不提供思考文字',
   asideStacked: '窗口不够宽，推理暂时放在正文上方',
@@ -719,6 +721,7 @@ const EN: Record<SessionTextKey, string> = {
   decisionStopped: 'Stopped',
   questionChosen: 'Chosen',
   questionFreeAnswer: 'Answer: {answer}',
+  questionMore: '+{n} more',
   thinkingEmptyRecord: 'This turn left no reasoning text',
   thinkingUnavailable: '{model} does not return reasoning text',
   asideStacked: 'Not enough width; reasoning is shown above the reply for now',

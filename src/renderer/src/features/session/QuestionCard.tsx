@@ -4,7 +4,7 @@ import { useStore } from '../../state/store'
 import { formatCountdown, UI_TIMEOUT_EXTEND } from '../../../../shared/ui-timeout'
 import type { ExtensionUiRequest } from '../../../../shared/ipc'
 import type { QuestionField } from '../../../../shared/question-form'
-import { Button, IconButton, TextArea, TextField } from '../../ui'
+import { Button, IconButton, Kbd, TextArea, TextField } from '../../ui'
 import { Card, CardActions, CardChevron, CardControl, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { QuestionForm } from './QuestionForm'
@@ -258,9 +258,8 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
             <div className="v3-qoptions-list">
               {req.options.map((o, i) => (
                 <button key={`${i}:${o}`} className="v3-qoption-row" disabled={busy} onClick={() => answer({ value: o })} data-testid={`v3-question-option-${i}`}>
-                  <span className="v3-qoption-n" aria-hidden>{i + 1}</span>
                   <span className="v3-qoption-t">{o}</span>
-                  <Icon name="chevron-right" size={13} className="v3-chev" />
+                  {i < 9 ? <Kbd className="v3-qoption-n" aria-hidden>{i + 1}</Kbd> : null}
                 </button>
               ))}
             </div>
