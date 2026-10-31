@@ -144,6 +144,7 @@ import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { ApprovalBroker } from './approval-broker'
 import { approvalLog } from './approval-log'
+import { createWorkFolder, workFolderRoot } from './work-folder'
 import { approvalIdentityFrom } from './approval-ledger'
 import { refreshManagedGit } from './git-runtime'
 import { applyBundledSearchTools } from './search-tools'
@@ -638,7 +639,7 @@ const YAN_THIN_EXTENSION_FILES = {
   dangerGuardExtension: 'danger-guard.js'
 } as const
 
-const PROVIDER_EXTENSION_FILES = ['commandcode.js', 'provider-diagnostics.js', 'anthropic-progress-updates.js', 'parallel-tool-calls.js'] as const
+const PROVIDER_EXTENSION_FILES = ['commandcode.js', 'provider-diagnostics.js', 'anthropic-progress-updates.js', 'cache-retention.js', 'parallel-tool-calls.js'] as const
 
 function yanThinExtensions(): { -readonly [K in keyof typeof YAN_THIN_EXTENSION_FILES]: string | undefined } {
   const entries = Object.entries(YAN_THIN_EXTENSION_FILES).map(([key, file]) => [key, yanThinResourcePath(file)])
@@ -3054,6 +3055,9 @@ function registerIpc(): void {
     return r.filePaths[0]
   })
 
+  handle('yan:workFolderRoot', async () => workFolderRoot())
+  handle('yan:createWorkFolder', async (name: string) => createWorkFolder(name))
+
   handle('yan:setCwd', async (cwd: string) => {
     const cwdResult = await validateCwd(cwd)
     if (!cwdResult.ok) return cwdResult
@@ -3114,6 +3118,7 @@ function registerIpc(): void {
   })
 
   registerGithubIpc(ipc, {
+    pushCloneProgress: (payload) => push({ ch: 'github-clone', payload }),
     authorizeReadCwd: async (cwd: string) => {
       const st = await getSettings()
       const resolved = await resolveFileContext(st, st.cwd, { cwd })

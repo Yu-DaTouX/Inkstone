@@ -119,6 +119,14 @@ export function activateSurface(entry: RightPanelEntry, id: string): RightPanelE
   return { ...entry, active: id, open: true }
 }
 
+export function updateSurface(entry: RightPanelEntry, surface: RightPanelSurface): RightPanelEntry {
+  const current = entry.surfaces.find((item) => item.id === surface.id && item.kind === surface.kind)
+  if (!current) return entry
+  const merged = { ...current, ...surface } as RightPanelSurface
+  if (sameSurface(current, merged)) return entry
+  return { ...entry, surfaces: entry.surfaces.map((item) => item === current ? merged : item) }
+}
+
 export function removeSurfaces(entry: RightPanelEntry, ids: ReadonlySet<string>): RightPanelEntry {
   if (!entry.surfaces.some((item) => ids.has(item.id))) return entry
   const kept = entry.surfaces.filter((item) => !ids.has(item.id))
@@ -291,6 +299,7 @@ export interface RightPanelState {
   width: number
   load: (sessionId: string | null | undefined) => void
   open: (surface: RightPanelSurface) => void
+  updateSurface: (key: string, surface: RightPanelSurface) => void
   activate: (id: string) => void
   close: (id: string) => void
   closeOthers: (id: string) => void
@@ -344,6 +353,13 @@ export const useRightPanel = create<RightPanelState>((set, get) => {
       set({ key })
     },
     open: (surface) => update((entry) => upsertSurface(entry, surface)),
+    updateSurface: (key, surface) => {
+      const state = get()
+      const current = state.byKey[key]
+      if (!current) return
+      const next = updateSurface(current, surface)
+      if (next !== current) set({ byKey: { ...state.byKey, [key]: next } })
+    },
     activate: (id) => update((entry) => activateSurface(entry, id)),
     close: (id) => update((entry) => closeSurface(entry, id)),
     closeOthers: (id) => update((entry) => closeOtherSurfaces(entry, id)),

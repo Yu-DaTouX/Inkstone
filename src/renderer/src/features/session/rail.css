@@ -12,6 +12,9 @@
     align-items: center;
     pointer-events: none;
   }
+  .v3-root:not([data-side='open']) .v3-rail {
+    left: var(--s-16);
+  }
   .v3-rail-dock {
     position: relative;
     display: flex;

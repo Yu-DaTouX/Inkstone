@@ -27,6 +27,7 @@ export interface WorkspaceOwner {
 
 export interface FilesPaneProps {
   owner: WorkspaceOwner
+  visible?: boolean
   onPreview?: (path: string, options?: PreviewOpenOptions) => void
   path?: string
   Preview?: ComponentType<PreviewPaneProps>
@@ -48,6 +49,7 @@ export interface ChangesPaneProps {
 
 export interface PreviewPaneProps {
   owner: WorkspaceOwner
+  visible?: boolean
   path?: string
   treeShown?: boolean
   onRevealInTree?: (abs: string) => void
@@ -69,6 +71,7 @@ export interface LogsPaneProps {
 
 export interface QuotaPaneProps {
   owner: WorkspaceOwner
+  visible?: boolean
 }
 
 export interface PullRequestsPaneProps {

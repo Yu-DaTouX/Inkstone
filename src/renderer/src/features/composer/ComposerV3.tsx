@@ -51,8 +51,11 @@ import {
   type PromptHistoryNav
 } from './prompt-history'
 import { useCompletion, firstClause } from './useCompletion'
+import { useSessionQuoteDrop } from './use-session-quote'
 import { imageRefLabel, imageRefPrefix, renumberImageRefsAfterRemoval } from './image-refs'
 import { ImageViewer } from './image-viewer'
+import { ComposerHeightHandle } from './ComposerHeightHandle'
+import { ComposerWidthHandles } from './ComposerWidthHandles'
 import './composer.css'
 
 let consumedComposerFocus = 0
@@ -140,6 +143,7 @@ export function ComposerV3(): JSX.Element {
   const drop = useComposerDropTarget()
   const notice = useComposerNotice(value)
   const rootRef = useRef<HTMLDivElement>(null)
+  useSessionQuoteDrop(rootRef)
   const stash = usePromptStashAdapter({ value, rootRef, onStashed: () => setValue('') })
   const stashFrame = composerStashFrameProps(stash, t)
   const submitAdapter = useComposerSubmitAdapter({
@@ -510,7 +514,7 @@ export function ComposerV3(): JSX.Element {
   )
 
   return (
-    <div className="composer-v3" ref={rootRef} data-testid="composer-v3">
+    <div className="composer-v3" ref={rootRef} data-testid="composer-v3" data-session-quote-drop data-quote-label={t('composer.quoteDrop')}>
       <QueuedRunsControl />
       <ComposerFrame
         editor={editor}
@@ -548,6 +552,12 @@ export function ComposerV3(): JSX.Element {
               onSubmitMessage={(mode) => void submitMessage(mode)}
               onInterrupt={submitAdapter.interrupt}
             />
+          </>
+        }
+        edgeHandles={
+          <>
+            <ComposerWidthHandles />
+            <ComposerHeightHandle />
           </>
         }
         stash={stashFrame}

@@ -83,6 +83,7 @@ import {
   type SessionRuntimeSnapshot
 } from './session-runtime'
 import { routePush, viewingSessionId } from './push-routing'
+import { useSplitView } from './split-view'
 import { beginSessionSwitch as markSessionSwitch, endSessionSwitch as unmarkSessionSwitch } from './session-activation'
 import { pushBelongsToView, sameSessionFile, viewIdentityOf, viewKeyRef } from './view-identity'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
@@ -1012,6 +1013,7 @@ async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<
   await useStore.getState().send(QUOTA_RESUME_PROMPT)
 }
 let approvalBootstrapSeq = 0
+let bootPushes: { state: boolean; messages: boolean } | null = null
 let approvalsBootstrapped = false
 let approvalChanges = new Map<string, ApprovalRequest | null>()
 let settingsPatchQueue: Promise<unknown> = Promise.resolve()
@@ -1220,6 +1222,8 @@ export const useStore = create<Store>((rawSet, get) => {
     const timedBoot = <T,>(name: string, p: Promise<T>): Promise<T> => p.finally(() => { try { performance.measure('yan:boot:' + name, 'yan:bootstrap-start') } catch { } })
     const api = window.yan
     performance.mark('yan:bootstrap-start')
+    const pushed = { state: false, messages: false }
+    bootPushes = pushed
     const [loadedSettings, session, messages, stats, todos, titles, manualTitles, browserState] =
       await Promise.all([
         timedBoot('settings', api.getSettings()),
@@ -1234,11 +1238,13 @@ export const useStore = create<Store>((rawSet, get) => {
 
     performance.mark('yan:bootstrap-fetched')
     const settings = loadedSettings
+    if (bootPushes === pushed) bootPushes = null
+    const fetchedIds = new Set(messages.map((item) => item.id))
 
     set({
       settings,
-      session: session ?? get().session,
-      messages: messages.length ? messages : get().messages,
+      session: pushed.state ? get().session : session ?? get().session,
+      messages: pushed.messages ? [...messages, ...get().messages.filter((item) => !fetchedIds.has(item.id))] : messages.length ? messages : get().messages,
       stats: stats ?? get().stats,
       todos,
       titles,
@@ -1301,6 +1307,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   applyPush: (m) => {
+    if (bootPushes) {
+      if (m.ch === 'state') bootPushes.state = true
+      else if (m.ch.startsWith('msg')) bootPushes.messages = true
+    }
     if (!approvalsBootstrapped) {
       if (m.ch === 'approval') approvalChanges.set(m.payload.id, m.payload)
       else if (m.ch === 'approval-close') approvalChanges.set(m.payload.id, null)
@@ -1347,7 +1357,7 @@ export const useStore = create<Store>((rawSet, get) => {
         peekedSessionId: s.peekedSessionId,
         peekedPath: s.peekedPath,
         session: s.session,
-        visibleSessionIds: []
+        visibleSessionIds: useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : [])
       },
       m
     )
@@ -1420,7 +1430,8 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'runners':
         {
           const active = viewedActiveRunner(s, m.payload)
-          const keep = new Set([viewingSessionId(s) ?? ''])
+          const keep = new Set([viewingSessionId(s) ?? '',
+            ...(useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) ?? [])])
           for (const runner of m.payload) if (runner.running || runner.waiting || runner.isActive) keep.add(runner.sessionId || `run:${runner.runId}`)
           set({ runners: keepRef(s.runners, m.payload), sessionRuntimes: pruneSessionRuntimes(get().sessionRuntimes, keep), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
           if (active) {

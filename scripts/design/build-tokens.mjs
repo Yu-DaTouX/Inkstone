@@ -14,6 +14,18 @@ function darkShadowLines(indent = '    ') {
   return Object.entries(tokens.shadow).map(([name, value]) => `${indent}--shadow-${name}: ${value[1]};`)
 }
 
+const glassNoiseImage = (alpha) =>
+  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 ${alpha}'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`
+
+function glassLines(index, indent = '    ') {
+  const glass = tokens.glass
+  const lines = Object.entries(glass)
+    .filter(([name]) => name !== 'noise')
+    .map(([name, value]) => `${indent}--glass-${name}: ${value[index]};`)
+  lines.push(`${indent}--glass-noise-image: ${glassNoiseImage(glass.noise[index])};`)
+  return lines
+}
+
 function baseDensityValue(key) {
   const groups = [['t-', tokens.type], ['d-', tokens.d], ['size-', tokens.size], ['r-', tokens.radius]]
   for (const [prefix, group] of groups) {
@@ -36,6 +48,7 @@ function buildCss() {
   tokens.alpha.forEach((a, i) => lines.push(`    --alpha-${i}: ${pair([`rgba(${inkLight},${a})`, `rgba(${inkDark},${a})`])};`))
   tokens.data.forEach((value, i) => lines.push(`    --data-${i + 1}: ${pair(value)};`))
   for (const [name, value] of Object.entries(tokens.shadow)) lines.push(`    --shadow-${name}: ${value[0]};`)
+  lines.push(...glassLines(0))
   for (const [name, value] of Object.entries(tokens.ring)) lines.push(`    --ring-${name}: ${value};`)
   for (const [name, value] of Object.entries(tokens.font)) lines.push(`    --font-${name}: ${value};`)
   for (const [name, [size, lh, weight]] of Object.entries(tokens.type)) {
@@ -57,10 +70,21 @@ function buildCss() {
   lines.push('  @media (prefers-color-scheme: dark) {')
   lines.push("    :root:not([data-theme='light']) {")
   lines.push(...darkShadowLines('      '))
+  lines.push(...glassLines(1, '      '))
   lines.push('    }')
   lines.push('  }')
   lines.push("  :root[data-theme='dark'] {")
   lines.push(...darkShadowLines())
+  lines.push(...glassLines(1))
+  lines.push('  }')
+  lines.push('  @media (prefers-reduced-transparency: reduce) {')
+  lines.push('    :root, :root[data-theme] {')
+  lines.push('      --glass-blur: 0px;')
+  lines.push('      --glass-saturation: 1;')
+  lines.push('      --glass-opacity: 100%;')
+  lines.push('      --glass-rim: transparent;')
+  lines.push('      --glass-noise-image: none;')
+  lines.push('    }')
   lines.push('  }')
   const overridden = new Set(Object.values(tokens.density).flatMap((values) => Object.keys(values)))
   lines.push("  [data-density-scope='compact'] {")

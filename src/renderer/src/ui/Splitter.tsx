@@ -186,6 +186,7 @@ export interface SplitterProps
 
 interface ActiveDrag extends SplitDragSession {
   element: HTMLElement
+  last?: number
 }
 
 export function Splitter({
@@ -217,7 +218,9 @@ export function Splitter({
 
   const commit = (next: number): void => {
     const clamped = clampSplitValue(next, min, max)
-    if (clamped === current) return
+    const session = dragRef.current
+    if (clamped === (session?.last ?? current)) return
+    if (session) session.last = clamped
     if (!controlled) setUncontrolled(clamped)
     onChange?.(clamped)
   }

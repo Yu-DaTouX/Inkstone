@@ -56,9 +56,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   disabled = false,
   isComposerOwned = false,
   triggerClassName,
-  extraMenuContent,
-  extraMenuOwnsModeShortcut,
-  extraMenuHint
+  extraMenuContent
 }: {
   traits: ComposerTraitsAdapter
   size?: ComposerControlSize
@@ -67,8 +65,6 @@ export const TraitsPicker = memo(function TraitsPicker({
   isComposerOwned?: boolean
   triggerClassName?: string
   extraMenuContent?: ReactNode
-  extraMenuOwnsModeShortcut?: boolean
-  extraMenuHint?: string
 }) {
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled || traits.busy)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -83,9 +79,6 @@ export const TraitsPicker = memo(function TraitsPicker({
         disabled={disabled || traits.busy}
         hidden={hidden}
         {...(triggerClassName ? { className: triggerClassName } : {})}
-        {...(extraMenuContent ? { extraMenuContent } : {})}
-        {...(extraMenuOwnsModeShortcut ? { extraMenuOwnsModeShortcut } : {})}
-        {...(extraMenuHint ? { extraMenuHint } : {})}
       />
     )
   }

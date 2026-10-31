@@ -175,6 +175,12 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
         if (rounded !== written) {
           written = rounded;
           host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${rounded}px`);
+          const dock = Number.parseFloat(host?.style.getPropertyValue("--rp-dock") ?? "");
+          if (Number.isFinite(dock)) {
+            host?.toggleAttribute("data-rp-overlay", rounded > dock);
+            if (rounded > dock) document.documentElement.style.setProperty("--rp-overlap", `${rounded - dock}px`);
+            else document.documentElement.style.removeProperty("--rp-overlap");
+          }
         }
         return rounded;
       },
@@ -185,7 +191,15 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
       cleanup(committed) {
         host?.style.removeProperty("transition-property");
         delete document.documentElement.dataset.rpDragging;
-        if (!committed) host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${startWidth}px`);
+        if (!committed) {
+          host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${startWidth}px`);
+          const dock = Number.parseFloat(host?.style.getPropertyValue("--rp-dock") ?? "");
+          if (Number.isFinite(dock)) {
+            host?.toggleAttribute("data-rp-overlay", startWidth > dock);
+            if (startWidth > dock) document.documentElement.style.setProperty("--rp-overlap", `${startWidth - dock}px`);
+            else document.documentElement.style.removeProperty("--rp-overlap");
+          }
+        }
       },
     };
   };

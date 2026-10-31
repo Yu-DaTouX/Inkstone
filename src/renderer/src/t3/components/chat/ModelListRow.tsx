@@ -12,6 +12,11 @@ import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { useT } from "../../../i18n";
 import type { ProviderDriverKind, ProviderInstanceId } from "../../adapters/contracts";
 
+export function formatContextWindow(tokens: number): string {
+  if (tokens >= 1_000_000) return `${String(Math.round(tokens / 100_000) / 10)}M`;
+  return `${Math.round(tokens / 1000)}K`;
+}
+
 export const ModelListRow = memo(function ModelListRow(props: {
   index: number;
   slug: string;
@@ -25,7 +30,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   showProvider: boolean;
   showNewBadge?: boolean;
   unavailable?: boolean;
-  jumpLabel?: string | null;
+  contextWindow?: number | undefined;
   disabledReason?: string | null;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
@@ -44,14 +49,14 @@ export const ModelListRow = memo(function ModelListRow(props: {
       value={modelPickerModelKey(props.instanceId, props.slug)}
       disabled={Boolean(props.disabledReason)}
       className={cn(
-        "group relative w-full !min-w-0 max-w-full cursor-pointer",
+        "group relative min-h-10 w-full !min-w-0 max-w-full cursor-pointer py-1.5 sm:min-h-10",
         props.disabledReason &&
           "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed",
       )}
     >
       <div className="min-w-0 flex-1 text-left">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="min-w-0 truncate text-sm font-normal leading-snug">
+          <div className="min-w-0 truncate font-medium text-[14px] leading-snug">
             {getDisplayModelName(model)}
           </div>
           {props.showNewBadge ? (
@@ -84,7 +89,17 @@ export const ModelListRow = memo(function ModelListRow(props: {
       </div>
 
       <div className="shrink-0 items-center gap-1.5 flex">
-        {props.jumpLabel ? <Kbd>{props.jumpLabel}</Kbd> : null}
+        {props.contextWindow ? (
+          <Kbd
+            className="tabular-nums"
+            aria-label={t("composer.t3.picker.contextWindow", {
+              size: formatContextWindow(props.contextWindow),
+            })}
+            data-model-context-window
+          >
+            {formatContextWindow(props.contextWindow)}
+          </Kbd>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={

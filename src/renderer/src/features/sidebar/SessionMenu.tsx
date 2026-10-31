@@ -7,11 +7,13 @@ import { deleteSessionWithUndo } from './session-undo-toast'
 import { v3Text } from '../../app/v3-text'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
+import { indexOfSession, useSplitView } from '../../state/split-view'
+import { closeSplitPane, openSessionInSplit } from '../split/split-actions'
 import { pickSnoozeOption } from './session-snooze'
 import { CustomSnoozeDialog } from './CustomSnoozeDialog'
 import { SessionMenuContent } from './SessionMenuContent'
 
-export type MenuKey = `move:${string}` | `snooze:${string}` | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
+export type MenuKey = `move:${string}` | `snooze:${string}` | 'split' | 'split-below' | 'split-close' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
 
 export interface SessionMenuProps {
   item: SessionSummary
@@ -84,6 +86,18 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
       return
     }
     switch (key) {
+      case 'split':
+        openSessionInSplit(item)
+        return
+      case 'split-below':
+        openSessionInSplit(item, 'below')
+        return
+      case 'split-close': {
+        const split = useSplitView.getState().split
+        const index = split ? indexOfSession(split.tiles, { sessionId: item.id, path: item.path }) : -1
+        if (index >= 0) closeSplitPane(index)
+        return
+      }
       case 'wake':
         void store.setSessionSnoozed(item.id, null)
         return

@@ -31,6 +31,8 @@ export interface RightPanelProps {
   owner: WorkspaceOwner | null
   mode: RightPanelMode
   room: number
+  dock?: number
+  span?: number
   panes: WorkbenchPaneComponents
   windowControls: boolean
   onOpenTool: (kind: PanelToolKind) => void
@@ -62,12 +64,13 @@ function baseName(path: string): string {
   return parts[parts.length - 1] || path
 }
 
-export function RightPanelT3({ owner, mode, room, panes, windowControls, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {
+export function RightPanelT3({ owner, mode, room, dock, span, panes, windowControls, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {
   const { lang } = useI18n()
   const text = workbenchText(lang)
   const panel = rightPanelText(lang)
   const reducedMotion = useReducedMotion()
   const entry = useRightPanelEntry()
+  const panelKey = useRightPanel((state) => state.key)
   const adapter = useRightPanelAdapter({ owner, mode, room, onPick: onOpenTool })
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const pendingNewPanel = useNewPanelRequest((state) => state.pending)
@@ -164,6 +167,7 @@ export function RightPanelT3({ owner, mode, room, panes, windowControls, onOpenT
         <SurfaceView
           key={surface.id}
           surface={surface}
+          panelKey={panelKey}
           shown={entry.open && surface.id === entry.active}
           live={entry.open}
           owner={owner}
@@ -185,6 +189,8 @@ export function RightPanelT3({ owner, mode, room, panes, windowControls, onOpenT
         maximized={adapter.maximized}
         width={adapter.width}
         room={room}
+        dock={dock}
+        span={span}
         label={panel.panel}
         onWidth={adapter.onWidth}
         tabbar={tabbar}
@@ -226,6 +232,7 @@ function menuSourceRank(source: string): number {
 
 interface SurfaceViewProps {
   surface: RightPanelSurface
+  panelKey: string
   shown: boolean
   live: boolean
   owner: WorkspaceOwner
@@ -236,7 +243,7 @@ interface SurfaceViewProps {
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
 }
 
-function SurfaceView({ surface, shown, live, owner, panes, text, panel, onRequestActivation }: SurfaceViewProps): ReactElement {
+function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel, onRequestActivation }: SurfaceViewProps): ReactElement {
   const [titleEl, setTitleEl] = useState<HTMLElement | null>(null)
   const [toolsEl, setToolsEl] = useState<HTMLElement | null>(null)
   const [menuGroups, setMenuGroups] = useState<ReadonlyMap<string, readonly PaneMenuItem[]>>(() => new Map())
@@ -285,9 +292,9 @@ function SurfaceView({ surface, shown, live, owner, panes, text, panel, onReques
         number={surface.number}
         seedTitle={surface.title}
         tab={surface.tab ?? 'summary'}
-        onTabChange={(tab) => useRightPanel.getState().open(pullRequestSurface(surface.number, { title: surface.title, state: surface.state, tab }))}
+        onTabChange={(tab) => useRightPanel.getState().updateSurface(panelKey, pullRequestSurface(surface.number, { tab }))}
         onState={(state, title) => {
-          if (state !== surface.state || (title && title !== surface.title)) useRightPanel.getState().open(pullRequestSurface(surface.number, { state, title: title ?? surface.title, tab: surface.tab }))
+          useRightPanel.getState().updateSurface(panelKey, pullRequestSurface(surface.number, { state, title }))
         }}
       />
     )
@@ -295,7 +302,7 @@ function SurfaceView({ surface, shown, live, owner, panes, text, panel, onReques
     body = <SubagentTranscriptPane runId={surface.runId} />
   } else if (surface.kind === 'file') {
     const Preview = panes.preview
-    body = Preview ? <Preview owner={owner} path={surface.path} treeShown={false} standalone /> : null
+    body = Preview ? <Preview owner={owner} path={surface.path} visible={shown && live} treeShown={false} standalone /> : null
   } else if (tool) {
     const Body = panes[tool] as ComponentType<LeafProps> | undefined
     body = Body ? (

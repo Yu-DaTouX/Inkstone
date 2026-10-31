@@ -83,13 +83,22 @@ export function SidebarDragBoundary(props: {
   label: string
   visible: boolean
   isDropTarget: boolean
+  resting?: boolean
 }) {
+  const header = props.marker === 'pinned-header'
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className="pointer-events-none relative mx-0.5 -mb-px h-0"
+      data-resting={props.resting || undefined}
+      className={cn(
+        'pointer-events-none relative mx-0.5',
+        props.resting && !header ? 'h-3' : '-mb-px h-0'
+      )}
     >
+      {props.resting && !props.visible && !header ? (
+        <div aria-hidden className="absolute inset-x-2 top-1/2 h-px bg-sidebar-foreground/15" />
+      ) : null}
       {props.visible ? (
         <div className="sidebar-drag-boundary-label absolute inset-x-2 top-1 flex h-4 items-center gap-2">
           <span

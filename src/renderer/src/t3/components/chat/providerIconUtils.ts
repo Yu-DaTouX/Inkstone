@@ -10,6 +10,7 @@ export type ModelEsque = {
   badge?: "new" | undefined;
   isLegacy?: boolean | undefined;
   isUnavailable?: boolean | undefined;
+  contextWindow?: number | undefined;
 };
 
 function escapeRegExp(value: string): string {

@@ -1,5 +1,6 @@
 import { memo, type ReactElement } from 'react'
 import { T3SidebarShell } from '../../t3/shell/T3SidebarShell'
+import { useNavigationMotionHold } from './use-navigation-motion-hold'
 import './Sidebar.css'
 
 interface Props {
@@ -14,5 +15,6 @@ interface Props {
 }
 
 export const Sidebar = memo(function Sidebar(props: Props): ReactElement {
+  useNavigationMotionHold()
   return <T3SidebarShell {...props} />
 })

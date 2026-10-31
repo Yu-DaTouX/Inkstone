@@ -47,6 +47,8 @@ export interface PanelFrameProps {
   maximized?: boolean;
   width: number;
   room?: number;
+  dock?: number;
+  span?: number;
   minWidth?: number;
   onWidth: (width: number) => void;
   label: string;

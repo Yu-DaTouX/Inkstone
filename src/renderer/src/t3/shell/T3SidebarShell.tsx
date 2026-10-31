@@ -13,7 +13,6 @@ import {
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import { v3Text } from '../../app/v3-text'
 import { useI18n, useT } from '../../i18n'
-import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { collabText } from '../../features/collab/collab-text'
@@ -21,7 +20,15 @@ import { usePendingPairInvite } from '../../features/collab/pending-invite'
 import { openSidebarSession } from '../../features/sidebar/session-advance'
 import { setSessionOrder, useSessionNav } from '../../features/sidebar/session-nav-store'
 import { SessionMenu } from '../../features/sidebar/SessionMenu'
+import { ProjectMenu } from '../../features/sidebar/ProjectMenu'
+import { NewSessionPicker } from '../../features/sidebar/NewSessionPicker'
+import { ProjectFilter } from '../../features/sidebar/ProjectFilter'
+import { openAddProjectPalette } from '../../features/projects'
+import { quoteTargetUnder, SESSION_QUOTE_DROP_EVENT, sidebarEdge, startSessionRowDrag } from '../../features/sidebar/session-drag'
+import { createSessionSplitDrag, setSplitBadge, type SessionSplitDrag } from '../../features/split/split-drag'
+import { Menu, MenuItem, Popover } from '../../ui'
 import { compactAgo } from '../../features/sidebar/sidebar-model'
+import { modelDisplayName } from '../../patterns/model-display-name'
 import { sidebarText } from '../../features/sidebar/sidebar-text'
 import { useSessionFileDrop } from '../../features/sidebar/use-session-file-drop'
 import { useSessionJump } from '../../features/sidebar/use-session-jump'
@@ -62,6 +69,7 @@ import {
 import type { SidebarProjectFolderView } from '../components/sidebar/SidebarProjectFolderHeader'
 
 const SHELF_PAGE_SIZE = 10
+const PROJECT_FILTER_KEY = 'inkstone.v3.sidebarProjectFilter'
 
 export interface T3SidebarShellProps {
   preview?: boolean
@@ -88,19 +96,43 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchFieldRef = useRef<HTMLDivElement>(null)
   const menuAnchorRef = useRef<HTMLElement | null>(null)
+  const projectMenuAnchorRef = useRef<HTMLElement | null>(null)
+  const draftMenuAnchorRef = useRef<HTMLElement | null>(null)
+  const newPickerAnchorRef = useRef<HTMLElement | null>(null)
+  const [newPickerOpen, setNewPickerOpen] = useState(false)
+  const quoteTargetRef = useRef<HTMLElement | null>(null)
+  const splitDragRef = useRef<{ key: string; drag: SessionSplitDrag } | null>(null)
   const jumpCursor = useRef<Partial<Record<SidebarAttentionKind, string>>>({})
   const [query, setQuery] = useState('')
   const [renamingKey, setRenamingKey] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [menuKey, setMenuKey] = useState<string | null>(null)
+  const [projectMenu, setProjectMenu] = useState<{ id: string; open: boolean } | null>(null)
+  const [draftMenuId, setDraftMenuId] = useState<string | null>(null)
   const [collapsedFolders, setCollapsedFolders] = useState<ReadonlySet<string>>(() => new Set())
   const [shelves, setShelves] = useState({ working: true, snoozed: true, settled: true })
   const [settledVisible, setSettledVisible] = useState(SHELF_PAGE_SIZE)
   const [retrying, setRetrying] = useState(false)
   const [announcement, setAnnouncement] = useState('')
 
-  const sections = useSidebarSections()
+  const allSections = useSidebarSections()
   const projects = useSidebarProjects()
+  const [projectFilterState, setProjectFilterState] = useState<string | null>(() => {
+    try { return window.localStorage.getItem(PROJECT_FILTER_KEY) || null } catch { return null }
+  })
+  const projectFilter = projectFilterState === null || projectFilterState === NO_PROJECT_ID || projects.byId.get(projectFilterState)?.archived === false ? projectFilterState : null
+  const setProjectFilter = useCallback((next: string | null): void => {
+    setProjectFilterState(next)
+    try {
+      if (next === null) window.localStorage.removeItem(PROJECT_FILTER_KEY)
+      else window.localStorage.setItem(PROJECT_FILTER_KEY, next)
+    } catch {}
+  }, [])
+  const sections = useMemo(() => {
+    if (projectFilter === null) return allSections
+    const keep = (list: SidebarThreadView[]): SidebarThreadView[] => list.filter((view) => view.projectId === projectFilter)
+    return { pinned: keep(allSections.pinned), active: keep(allSections.active), working: keep(allSections.working), snoozed: keep(allSections.snoozed), settled: keep(allSections.settled) }
+  }, [allSections, projectFilter])
   const drafts = useSidebarDrafts()
   const undo = useThreadUndoNotice()
   const activeKey = useActiveThreadKey()
@@ -110,7 +142,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const fileDropPath = useSessionNav((s) => s.fileDropPath)
   const searching = query.trim().length > 0
   const search = useSidebarSearch(query, sections)
-  const snoozePresets = useSnoozePresets(menuKey !== null)
+  const snoozePresets = useSnoozePresets(true, now)
   const invitePending = usePendingPairInvite((s) => s.invite !== null)
 
   const sessions = useStore((s) => s.sessions)
@@ -162,11 +194,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     void useStore.getState().newSession({ scope: 'global' })
   }, [])
 
-  const createInFolder = useCallback((): void => {
-    useUiV3.getState().navigate({ name: 'chat' })
-    void newSessionInPickedFolder(t)
-  }, [t])
-
   const projectRecord = useCallback(
     (projectId: string | undefined) => (projectId ? settings?.projects.find((entry) => entry.id === projectId) : undefined),
     [settings?.projects]
@@ -187,10 +214,14 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
 
   const newThread = useCallback(
     (event: ReactMouseEvent): void => {
-      if (event.shiftKey) newThreadInProject(currentProjectId)
-      else createGlobal()
+      if (event.shiftKey) {
+        newThreadInProject(currentProjectId)
+        return
+      }
+      newPickerAnchorRef.current = event.currentTarget as HTMLElement
+      setNewPickerOpen(true)
     },
-    [createGlobal, currentProjectId, newThreadInProject]
+    [currentProjectId, newThreadInProject]
   )
 
   const clearSearch = useCallback((): void => {
@@ -206,11 +237,13 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       }
       if (event.key !== 'Enter') return
       const first = search.threads[0]
-      if (!first) return
+      const content = search.matches[0]
+      if (!first && !content) return
       event.preventDefault()
-      openView(first)
+      if (first) openView(first)
+      else if (content) void openSidebarSession({ id: content.id ?? undefined, path: content.path })
     },
-    [clearSearch, openView, search.threads]
+    [clearSearch, openView, search.threads, search.matches]
   )
 
   useEffect(() => {
@@ -233,6 +266,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     (path: string): void => {
       const view = viewByPath.get(path)
       if (view) openView(view)
+      else void openSidebarSession({ path })
     },
     [openView, viewByPath]
   )
@@ -291,9 +325,9 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       if (list) list.push(view)
       else grouped.set(view.projectId, [view])
     }
-    const order = projects.list.map((project) => project.projectId)
+    const order = projects.list.filter((project) => !project.archived).map((project) => project.projectId)
     const keys = [
-      ...order.filter((id) => grouped.has(id)),
+      ...order,
       ...Array.from(grouped.keys()).filter((id) => !order.includes(id))
     ]
     return keys.map((projectId) => {
@@ -319,7 +353,8 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         threadKeys: rows.map((view) => scopedKeyOf(view.id)),
         hiddenCount: collapsed ? rows.length : 0,
         dot: collapsed ? dot : null,
-        dotLabel: collapsed && dot !== null ? own.attention : null
+        dotLabel: collapsed && dot !== null ? own.attention : null,
+        manageable: project !== undefined
       }
     })
   }, [collapsedFolders, now, own.attention, projects, sections.active, text.groupUngrouped])
@@ -336,9 +371,20 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const openMenu = useCallback((threadKey: string): void => {
     const row = asideRef.current?.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(threadKey)}"]`)
     menuAnchorRef.current = row ?? null
+    setDraftMenuId(null)
+    setProjectMenu((previous) => previous ? { ...previous, open: false } : previous)
     setMenuKey(threadKey)
   }, [])
 
+  const openProjectMenu = useCallback((projectKey: string, anchor?: HTMLElement): void => {
+    if (!projectKey || projectKey === NO_PROJECT_ID) return
+    projectMenuAnchorRef.current = anchor ?? asideRef.current?.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(`folder:${projectKey}`)}"]`) ?? null
+    setMenuKey(null)
+    setDraftMenuId(null)
+    setProjectMenu({ id: projectKey, open: true })
+  }, [])
+
+  const modelCatalog = useStore((s) => s.models)
   const rowView = useCallback(
     (view: SidebarThreadView): SidebarThreadRowView => {
       const threadKey = scopedKeyOf(view.id)
@@ -363,11 +409,11 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         snoozeWakeLabel: view.snoozedUntil === null ? null : wakeLabel(view.snoozedUntil),
         hasUnsentDraft: draftIds.has(view.id),
         jumpLabel: jumpIndex === undefined ? null : String(jumpIndex),
-        modelLabel: view.modelLabel,
+        modelLabel: view.modelLabel ? modelDisplayName(view.modelLabel, modelCatalog ?? []) : null,
         diff: null
       }
     },
-    [activeKey, draftIds, jump, lang, now, wakeLabel]
+    [activeKey, draftIds, jump, lang, modelCatalog, now, wakeLabel]
   )
 
   const renderRow = useCallback(
@@ -378,6 +424,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       const threadKey = rowProps.threadKey
       return (
         <SidebarThreadRow
+          key={threadKey}
           view={rowView(view)}
           variant={rowProps.variant}
           isActive={threadKey === activeKey}
@@ -389,6 +436,10 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
           renameValue={renamingKey === threadKey ? renameValue : ''}
           snoozePresets={snoozePresets.map((preset) => ({ id: preset.id, label: preset.label, until: Date.parse(preset.snoozedUntil) }))}
           sortable={rowProps.sortable}
+          fileDropHandlers={!rowProps.sortable.listeners ? { onPointerDown: (event) => {
+            if ((event.target as HTMLElement).closest('button, input')) return
+            startSessionRowDrag(event, { id: view.id, path: view.path, title: view.title }, () => undefined)
+          } } : undefined}
           onOpen={() => openView(view)}
           onActivate={() => openView(view)}
           onContextMenu={() => openMenu(threadKey)}
@@ -424,21 +475,51 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       const view = viewByKey.get(input.threadKey)
       if (!view) return
       const ref = refOf(view)
-      if (input.plan.kind === 'pin') void sidebarActions.pin(ref)
-      else if (input.plan.kind === 'archive') void sidebarActions.archive(ref)
-      else if (input.plan.kind === 'move-active') {
-        if (input.plan.unpin) void sidebarActions.unpin(ref)
-        if (input.plan.unsettle) void sidebarActions.unarchive(ref)
-        if (input.plan.unsnooze) void sidebarActions.unsnooze(ref)
-      }
+      void (async () => {
+        const plan = input.plan
+        if ((plan.kind === 'pin' || plan.kind === 'archive' || (plan.kind === 'move-active' && plan.unsnooze)) && view.snoozedUntil !== null && !await sidebarActions.unsnooze(ref)) return
+        if (plan.kind === 'pin' || (plan.kind === 'move-active' && plan.unsettle)) {
+          const project = useStore.getState().settings?.projects.find((item) => item.id === view.projectId)
+          if (project?.archived && !await sidebarActions.restoreProject(project)) return
+          if (view.archivedAt !== null && !await sidebarActions.unarchive(ref)) return
+        }
+        if (plan.kind === 'pin') await sidebarActions.pin(ref)
+        else if (plan.kind === 'archive') await sidebarActions.archive(ref)
+        else if (plan.kind === 'move-active' && plan.unpin) await sidebarActions.unpin(ref)
+      })()
     },
     [viewByKey]
   )
+
+  const clearQuoteTarget = useCallback((): void => {
+    quoteTargetRef.current?.removeAttribute('data-quote-over')
+    quoteTargetRef.current = null
+    splitDragRef.current?.drag.end()
+    splitDragRef.current = null
+    setSplitBadge(null)
+  }, [])
+
+  const splitDragFor = useCallback(
+    (threadKey: string): SessionSplitDrag | null => {
+      if (splitDragRef.current?.key === threadKey) return splitDragRef.current.drag
+      const view = viewByKey.get(threadKey)
+      if (!view) return null
+      const drag = createSessionSplitDrag({ id: view.id, path: view.path })
+      splitDragRef.current = { key: threadKey, drag }
+      return drag
+    },
+    [viewByKey]
+  )
+
+  useEffect(() => clearQuoteTarget, [clearQuoteTarget])
 
   const settledRemaining = Math.max(0, sections.settled.length - Math.min(settledVisible, sections.settled.length))
   const undoNotice = undo.text === null ? null : { text: undo.text, label: undo.label, undo: undo.undo }
   const menuView = menuKey === null ? null : viewByKey.get(menuKey)
   const menuSession = menuView ? sessions.find((entry) => entry.id === menuView.id) : undefined
+  const menuProject = projectMenu ? settings?.projects.find((project) => project.id === projectMenu.id) : undefined
+  const menuDraft = drafts.find((draft) => draft.draftId === draftMenuId)
+  const flatLayout = settings?.sidebarLayout === 'flat'
 
   const connLabel = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
   const userName = settings?.profile?.name?.trim() || own.localUser
@@ -470,21 +551,23 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       >
         <SidebarChromeHeader
           toggleLabel={closeLabel}
+          leading={
+            onClose || onPin ? (
+              <button
+                type="button"
+                aria-label={closeLabel}
+                title={closeLabel}
+                onClick={preview ? onPin : onClose}
+                data-testid="v3-side-close"
+                className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-(--control-radius) text-(--sidebar-icon-color) outline-hidden ring-ring hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset"
+              >
+                <PanelLeftClose className="size-4" />
+              </button>
+            ) : null
+          }
           status={
             <span className="flex min-w-0 items-center gap-1">
               <SidebarAttentionSummary ariaLabel={own.attention} items={attention.items} onJump={jumpToAttention} />
-              {onClose || onPin ? (
-                <button
-                  type="button"
-                  aria-label={closeLabel}
-                  title={closeLabel}
-                  onClick={preview ? onPin : onClose}
-                  data-testid="v3-side-close"
-                  className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-(--control-radius) text-(--sidebar-icon-color) outline-hidden ring-ring hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset"
-                >
-                  <PanelLeftClose className="size-4" />
-                </button>
-              ) : null}
             </span>
           }
         />
@@ -493,8 +576,8 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
           <SidebarThreadHeader
             searchFieldRef={searchFieldRef}
             hasProjects={projects.list.length > 0}
-            projectScope={null}
-            onNewProject={createInFolder}
+            projectScope={<ProjectFilter value={projectFilter} projects={projects.list} onChange={setProjectFilter} onManage={(projectId, anchor) => openProjectMenu(projectId, anchor)} />}
+            onNewProject={openAddProjectPalette}
             onNewThread={newThread}
             newThreadDisabled={false}
             newThreadShortcutLabel={newThreadShortcut}
@@ -524,17 +607,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
               ) : null}
               {search.threads.length > 0 ? (
                 <ul aria-label={t('sidebar.t3.searchThreads')} className="flex flex-col gap-px">
-                  {search.threads.map((view) => (
-                    <SidebarThreadRow
-                      key={view.id}
-                      view={rowView(view)}
-                      variant="slim"
-                      isActive={scopedKeyOf(view.id) === activeKey}
-                      onOpen={() => openView(view)}
-                      onActivate={() => openView(view)}
-                      onContextMenu={() => openMenu(scopedKeyOf(view.id))}
-                    />
-                  ))}
+                  {search.threads.map((view) => renderRow({ threadKey: scopedKeyOf(view.id), section: 'active', variant: 'slim', dropVerb: null, sortable: {} }))}
                 </ul>
               ) : null}
               <SidebarSearchContentMatches
@@ -577,10 +650,12 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                       onShowMore: () => setSettledVisible((count) => count + SHELF_PAGE_SIZE)
                     }
               }
-              projectFolders={projectFolders}
+              projectFolders={flatLayout ? null : projectFolders}
               onToggleFolder={toggleFolder}
+              onFolderContextMenu={(projectKey) => openProjectMenu(projectKey)}
               onNewThreadInFolder={(projectKey) => newThreadInProject(projects.byId.get(projectKey)?.projectId)}
               folderNewThreadLabel={(projectKey) => t('sidebar.t3.newThreadInProjectName', { name: projects.byId.get(projectKey)?.displayName ?? '' })}
+              folderMenuLabel={own.projectMenu}
               draftRows={
                 drafts.length === 0 ? null : (
                   <SidebarDraftBlock
@@ -597,10 +672,16 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                       if (view) openView(view)
                     }}
                     onDiscardDraft={(draftId) => drafts.find((entry) => entry.draftId === draftId)?.discard()}
-                    onDraftContextMenu={(draftId) => openMenu(`draft:${draftId}`)}
+                    onDraftContextMenu={(draftId) => {
+                      draftMenuAnchorRef.current = asideRef.current?.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(`draft:${draftId}`)}"]`) ?? null
+                      setMenuKey(null)
+                      setProjectMenu((previous) => previous ? { ...previous, open: false } : previous)
+                      setDraftMenuId(draftId)
+                    }}
                   />
                 )
               }
+              draftKey={drafts.map((draft) => draft.draftId).join('|')}
               undoNotice={undoNotice === null ? null : <SidebarThreadUndoNotice notice={undoNotice} />}
               emptyState={
                 allViews.length === 0 ? (
@@ -609,6 +690,31 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
               }
               renderRow={renderRow}
               onDropPlan={onDropPlan}
+              onMoveOutside={({ x, y }, threadKey) => {
+                const next = quoteTargetUnder(x, y)
+                if (quoteTargetRef.current !== next) {
+                  quoteTargetRef.current?.removeAttribute('data-quote-over')
+                  next?.setAttribute('data-quote-over', '1')
+                  quoteTargetRef.current = next
+                }
+                const split = splitDragFor(threadKey)
+                if (next) {
+                  split?.clear()
+                  return true
+                }
+                return split?.move(x, y, sidebarEdge()) === true
+              }}
+              onDropOutside={({ x, y }, threadKey) => {
+                const target = quoteTargetUnder(x, y)
+                const view = viewByKey.get(threadKey)
+                if (!view) return false
+                if (target) {
+                  target.dispatchEvent(new CustomEvent(SESSION_QUOTE_DROP_EVENT, { detail: { id: view.id, path: view.path, title: view.title } }))
+                  return true
+                }
+                return splitDragFor(threadKey)?.drop(x, y, sidebarEdge()) === true
+              }}
+              onDragFinish={clearQuoteTarget}
               className="pb-1"
             />
           )}
@@ -640,6 +746,20 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
           onConnectionSettings={() => useStore.getState().openSettings('devices')}
         />
       </div>
+
+      {menuProject ? <ProjectMenu key={menuProject.id} project={menuProject} anchor={projectMenuAnchorRef} open={projectMenu?.open === true} onOpenChange={(open) => setProjectMenu((previous) => previous ? { ...previous, open } : previous)} onNew={() => newThreadInProject(menuProject.id)} /> : null}
+      <NewSessionPicker
+        anchor={newPickerAnchorRef}
+        open={newPickerOpen}
+        onOpenChange={setNewPickerOpen}
+        onProject={(record) => newThreadInProject(record.id)}
+        onStarted={() => useUiV3.getState().navigate({ name: 'chat' })}
+      />
+      <Popover triggerRef={draftMenuAnchorRef} isOpen={!!menuDraft} onOpenChange={(open) => { if (!open) setDraftMenuId(null) }} placement="bottom end" offset={4}>
+        <Menu aria-label={t('sidebar.t3.unsentDraft')} autoFocus="first" onClose={() => setDraftMenuId(null)} onAction={() => { menuDraft?.discard(); setDraftMenuId(null) }} data-testid="sidebar-draft-menu">
+          <MenuItem id="discard" tone="danger">{t('sidebar.t3.discardDraft')}</MenuItem>
+        </Menu>
+      </Popover>
 
       {menuView && menuSession ? (
         <SessionMenu

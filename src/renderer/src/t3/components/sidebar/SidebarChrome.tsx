@@ -1,8 +1,8 @@
-import { CircleAlert, CircleDot, LoaderCircle, PanelLeft, Unplug } from "lucide-react";
-import { memo, type ReactNode } from "react";
+import { CircleAlert, CircleDot, LoaderCircle, MoreHorizontal, PanelLeft, Unplug } from "lucide-react";
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { useT } from "../../../i18n";
-import { Avatar } from "../../../ui";
+import { Avatar, Menu, MenuItem, Popover } from "../../../ui";
 import { cn } from "../../lib/utils";
 import { BrandMark } from "../../../features/sidebar/BrandMark";
 import { Button } from "../ui/button";
@@ -17,6 +17,7 @@ export interface SidebarChromeHeaderProps {
   toggleLabel: string;
   onToggleSidebar?: (() => void) | undefined;
   status?: ReactNode;
+  leading?: ReactNode;
 }
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
@@ -26,12 +27,14 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   toggleLabel,
   onToggleSidebar,
   status,
+  leading,
 }: SidebarChromeHeaderProps) {
   return (
     <div
       className="relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3"
       data-testid="t3-sidebar-chrome-header"
     >
+      {leading ? <div className="relative z-10 ml-3 flex shrink-0 items-center">{leading}</div> : null}
       {onToggleSidebar ? (
         <div className="relative top-[calc(var(--workspace-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
           <Button
@@ -46,7 +49,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         </div>
       ) : null}
       <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
-        <SidebarBrand brandLabel={brandLabel} homeLabel={homeLabel} onHome={onHome} />
+        <SidebarBrand brandLabel={brandLabel} homeLabel={homeLabel} onHome={onHome} flush={leading != null} />
         {status}
       </div>
     </div>
@@ -57,13 +60,16 @@ function SidebarBrand({
   brandLabel,
   homeLabel,
   onHome,
+  flush,
 }: {
+  flush: boolean;
   brandLabel: string;
   homeLabel: string | undefined;
   onHome: (() => void) | undefined;
 }) {
   const className = cn(
-    "relative z-10 ml-[var(--workspace-titlebar-content-left,var(--sidebar-content-inset))] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md text-foreground outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
+    "relative z-10 hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md text-foreground outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
+    !flush && "ml-[var(--workspace-titlebar-content-left,var(--sidebar-content-inset))]",
     onHome !== undefined && "cursor-pointer",
   );
   const content = (
@@ -202,6 +208,30 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
   const t = useT();
   const connectionBroken =
     connection !== undefined && (connection.state === "exited" || connection.state === "error");
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const moreRef = useRef<HTMLButtonElement | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [fit, setFit] = useState(utilities.length);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return undefined;
+    const measure = (): void => {
+      const gap = 4;
+      const slot = 32 + gap;
+      let used = 0;
+      for (const item of list.querySelectorAll<HTMLElement>(":scope > [data-footer-fixed]")) used += item.offsetWidth + gap;
+      const room = list.clientWidth - used;
+      const total = utilities.length;
+      setFit(room >= total * slot ? total : Math.max(0, Math.floor((room - slot) / slot)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [utilities.length, userName, connectionBroken]);
+  const shown = utilities.slice(0, fit);
+  const hidden = utilities.slice(fit);
+  const hiddenAttention = hidden.find((entry) => entry.attention)?.attention ?? null;
 
   return (
     <div
@@ -212,9 +242,10 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
       {showUndoNotice ? <SidebarThreadUndoNotice notice={undo ?? null} /> : null}
       <ul
         data-slot="sidebar-menu"
-        className="flex w-full min-w-0 flex-row items-center gap-1"
+        ref={listRef}
+        className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-1"
       >
-        <li className="min-w-0 max-w-30 flex-1">
+        <li className="min-w-0 max-w-30 shrink-0" data-footer-fixed>
           <span
             title={userName}
             className="flex h-8 min-w-0 items-center gap-2 px-[var(--sidebar-row-content-inset)] text-xs font-medium text-sidebar-muted-foreground/80"
@@ -226,8 +257,9 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
             <span className="truncate">{userName}</span>
           </span>
         </li>
+        <li aria-hidden className="min-w-0 flex-1" />
         {connectionBroken && onRetryConnection ? (
-          <li className="shrink-0">
+          <li className="shrink-0" data-footer-fixed>
             <Button
               size="micro"
               variant="ghost-muted"
@@ -240,7 +272,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
           </li>
         ) : null}
         {connectionBroken && onConnectionSettings ? (
-          <li className="shrink-0">
+          <li className="shrink-0" data-footer-fixed>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -262,7 +294,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
           </li>
         ) : null}
         {connection ? (
-          <li className="shrink-0">
+          <li className="shrink-0" data-footer-fixed>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -284,7 +316,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
             </Tooltip>
           </li>
         ) : null}
-        {utilities.map((entry) => (
+        {shown.map((entry) => (
           <li key={entry.key} className="shrink-0">
             <Tooltip>
               <TooltipTrigger
@@ -315,6 +347,51 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
             </Tooltip>
           </li>
         ))}
+        {hidden.length > 0 ? (
+          <li className="shrink-0">
+            <button
+              ref={moreRef}
+              type="button"
+              aria-label={t("sidebar.t3.moreUtilities")}
+              title={t("sidebar.t3.moreUtilities")}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              data-active={moreOpen ? "true" : undefined}
+              onClick={() => setMoreOpen(true)}
+              className={cn(SIDEBAR_MENU_BUTTON, SIDEBAR_MENU_ICON_BUTTON, "relative")}
+              data-testid="t3-sidebar-utility-more"
+            >
+              <MoreHorizontal />
+              {hiddenAttention ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute top-1 right-1 size-1.5 rounded-full",
+                    hiddenAttention === "awaiting" ? "bg-warning" : "bg-info",
+                  )}
+                />
+              ) : null}
+            </button>
+            <Popover triggerRef={moreRef} isOpen={moreOpen} onOpenChange={setMoreOpen} placement="top end" offset={6}>
+              <Menu
+                aria-label={t("sidebar.t3.moreUtilities")}
+                autoFocus="first"
+                onClose={() => setMoreOpen(false)}
+                onAction={(key) => {
+                  setMoreOpen(false);
+                  hidden.find((entry) => entry.key === key)?.onSelect();
+                }}
+                data-testid="t3-sidebar-utility-menu"
+              >
+                {hidden.map((entry) => (
+                  <MenuItem key={entry.key} id={entry.key} textValue={entry.label} icon={entry.icon}>
+                    {entry.label}
+                  </MenuItem>
+                ))}
+              </Menu>
+            </Popover>
+          </li>
+        ) : null}
       </ul>
     </div>
   );

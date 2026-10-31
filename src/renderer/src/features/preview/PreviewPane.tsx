@@ -5,7 +5,7 @@ import { useStore } from '../../state/store'
 import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
 import { CondensingHeader, useCondensingHeader } from '../../ui/Motion'
 import type { OfficeDocumentView } from '../../../../shared/office'
-import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
+import type { AssistantArtifact, FilePreview, UIMessage } from '../../../../shared/ipc'
 import { latestArtifactVersions, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/LazyCodeEditor'
 import { Markdown } from '../session/Markdown'
@@ -94,7 +94,7 @@ type PreviewView =
   | { kind: 'problem'; name: string; problem: PreviewProblem }
   | { kind: 'error'; name: string; message: string }
 
-export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, standalone = false }: PreviewPaneProps): ReactElement {
+export function PreviewPane({ owner, visible = true, path, treeShown = true, onRevealInTree, standalone = false }: PreviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = previewText(lang)
   const [viewSlot, setViewSlot] = useState<{ key: string; view: PreviewView } | null>(null)
@@ -120,13 +120,15 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
   ownerKeyRef.current = owner.key
 
   const storeSessionId = useStore((store) => store.session?.sessionId)
-  const messages = useStore((store) => store.messages)
+  const lastMessages = useRef<UIMessage[]>([])
+  const messages = useStore((store) => visible ? store.messages : lastMessages.current)
+  if (visible) lastMessages.current = messages
   const ownsCurrent = ownerOwnsSession(owner, storeSessionId ?? null)
   const artifacts = useMemo<AssistantArtifact[]>(
     () => (ownsCurrent ? latestArtifactVersions(messages.flatMap((message) => message.artifacts ?? [])) : []),
     [ownsCurrent, messages]
   )
-  const liveTarget = useLiveHtml((state) => state.target)
+  const liveTarget = useLiveHtml((state) => visible ? state.target : null)
   const liveMatch = !!liveTarget && ownsCurrent && liveTarget.sessionId === storeSessionId && !!activePath && samePath(liveTarget.path, activePath)
   const liveGenerating = liveMatch && liveTarget.generating
   const liveRevision = liveMatch ? liveTarget.revision : 0
@@ -135,6 +137,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
   }, [liveRevision])
 
   useEffect(() => {
+    if (!visible) return undefined
     if (!activePath || !viewKey) {
       setViewSlot(null)
       return undefined
@@ -252,7 +255,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
     return () => {
       cancelled = true
     }
-  }, [viewKey, activePath, owner.key, owner.cwd, text.failed])
+  }, [visible, viewKey, activePath, owner.key, owner.cwd, text.failed])
 
   const view: PreviewView =
     viewKey && viewSlot && viewSlot.key === viewKey
@@ -295,7 +298,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
     viewKey && diskStat && diskStat.key === viewKey
       ? { abs: diskStat.abs, cwd: owner.cwd, mtimeMs: diskStat.mtimeMs, size: diskStat.size }
       : null
-  usePreviewFreshness(ownsCurrent, freshnessTarget, () => setReload((value) => value + 1), liveGenerating ? 1000 : undefined)
+  usePreviewFreshness(visible && ownsCurrent, freshnessTarget, () => setReload((value) => value + 1), liveGenerating ? 1000 : undefined)
   useEffect(() => setSourceChoice(null), [activePath])
 
   const openArtifact = useCallback(

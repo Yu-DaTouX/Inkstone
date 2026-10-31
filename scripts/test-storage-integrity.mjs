@@ -107,7 +107,7 @@ try {
     for (let i = 0; i < 3; i++) {
       const report = await service.sync()
       assert.equal(report.conflicts.length, 1)
-      assert.deepEqual(report.pushed, [])
+      assert.deepEqual(report.pushed, i === 0 ? [copy.key] : [])
       assert.deepEqual(report.pulled, [])
     }
     assert.equal(await readFile(file, 'utf8'), 'pre-existing-copy')

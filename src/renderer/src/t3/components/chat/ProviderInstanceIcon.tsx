@@ -4,6 +4,7 @@ import type { ProviderDriverKind } from "../../adapters/contracts";
 import { cn } from "../../lib/utils";
 import { ModelBot } from "../../../patterns/ModelBot";
 import { brandOfModel } from "../../../patterns/model-vendor";
+import { providerFavicon } from "../../../patterns/provider-favicon";
 
 export function providerInitials(displayName: string): string {
   const words = displayName.trim().split(/[\s._/-]+/u).filter(Boolean);
@@ -24,6 +25,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
 }) {
   const brand = brandOfModel({ provider: props.driverKind, id: props.driverKind });
   const iconSize = props.iconSize ?? 16;
+  const favicon = providerFavicon(props.driverKind);
   return (
     <span
       className={cn(
@@ -32,7 +34,20 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
       )}
       data-provider-brand={brand}
     >
-      <ModelBot brand={brand} mood="icon" size={iconSize} className={cn(props.iconClassName)} />
+      {favicon ? (
+        <img
+          src={favicon}
+          alt=""
+          width={iconSize}
+          height={iconSize}
+          draggable={false}
+          data-provider-favicon
+          className={cn("shrink-0 rounded-[3px] object-contain", props.iconClassName)}
+          style={{ width: iconSize, height: iconSize }}
+        />
+      ) : (
+        <ModelBot brand={brand} mood="icon" size={iconSize} className={cn(props.iconClassName)} />
+      )}
       {props.showBadge ? (
         <span
           className={cn(

@@ -5,13 +5,17 @@ import { warnIfWorkspaceUnfit } from './workspace-fit'
 export async function newSessionInPickedFolder(t: TFunc): Promise<boolean> {
   const selected = await window.yan.pickCwd().catch(() => null)
   if (!selected) return false
+  return newSessionInFolder(selected, t)
+}
+
+export async function newSessionInFolder(folder: string, t: TFunc): Promise<boolean> {
   const store = useStore.getState()
-  const result = await window.yan.setCwd(selected)
+  const result = await window.yan.setCwd(folder)
   if (!result.ok) {
-    store.notify('error', result.error ?? selected)
+    store.notify('error', result.error ?? folder)
     return false
   }
-  warnIfWorkspaceUnfit(result.cwd ?? selected, t)
+  warnIfWorkspaceUnfit(result.cwd ?? folder, t)
   const settings = await window.yan.getSettings()
   useStore.setState({ settings })
   const project = settings.projects.find((p) => p.cwd === settings.cwd)

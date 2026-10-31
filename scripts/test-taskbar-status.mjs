@@ -35,7 +35,17 @@ class FakeNotification {
   on() {}
   show() { notices.push(this.options) }
 }
+const noticeDir = await mkdtemp(join(tmpdir(), 'yan-taskbar-notice-'))
+const noticeFile = join(noticeDir, 'attention-notice.mjs')
+await build({ entryPoints: ['src/main/attention-notice.ts'], outfile: noticeFile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+const { terminalNoticeText } = await import(pathToFileURL(noticeFile).href)
+await rm(noticeDir, { recursive: true, force: true })
 const context = vm.createContext({
+  terminalNoticeText,
+  noticeLang: () => 'zh-CN',
+  attentionNotices: { show: (options) => notices.push(options) },
+  shellIconPath: () => 'fake-icon',
+  push: () => {},
   win: fakeWindow(1),
   hasBlockedTerminal: () => false, hasWorkingTerminal: () => false,
   blockedTerminalNotices: new Map(),

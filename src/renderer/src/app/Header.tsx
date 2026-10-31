@@ -32,6 +32,7 @@ interface Props {
   rightPanelOpen: boolean
   onToggleRightPanel: () => void
   windowControls: boolean
+  splitActive?: boolean
   openPanes: ReadonlySet<WorkbenchTabId>
   activePane?: string | null
   changesDirty: boolean
@@ -62,7 +63,7 @@ const PANE_SHORTCUTS: Partial<Record<WorkbenchTabId, ShortcutId>> = {
   files: 'workspaceTab3'
 }
 
-export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, rightPanelOpen, onToggleRightPanel, windowControls, openPanes, activePane = null, changesDirty, onTogglePane }: Props): ReactElement {
+export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, rightPanelOpen, onToggleRightPanel, windowControls, splitActive = false, openPanes, activePane = null, changesDirty, onTogglePane }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -149,7 +150,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
             <SquarePen size={16} />
           </IconButton>
         ) : null}
-        <h1 className={route === 'chat' ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'} title={project ? `${project} / ${title}` : title}>
+        <h1 className={route === 'chat' && !splitActive ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'} title={project ? `${project} / ${title}` : title}>
           {project ? (
             <>
               <span className="v3-head-crumb">{project}</span>

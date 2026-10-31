@@ -19,6 +19,7 @@ export class SidebarPointerSensor {
     }
   ]
   autoScrollEnabled = true
+  private outside = false
   private phase: 'pending' | 'dragging' | 'finished' = 'pending'
   private readonly pointer: PointerEvent
   private readonly document: Document
@@ -83,7 +84,18 @@ export class SidebarPointerSensor {
     }
     if (this.phase === 'dragging') {
       if (event.cancelable) event.preventDefault()
-      if (this.props.options.onMove?.(coordinates) === true) return
+      if (this.props.options.onMove?.(coordinates) === true) {
+        if (!this.outside) {
+          this.outside = true
+          this.autoScrollEnabled = false
+          this.props.onMove(this.coordinates())
+        }
+        return
+      }
+      if (this.outside) {
+        this.outside = false
+        this.autoScrollEnabled = true
+      }
       this.props.onMove(coordinates)
     }
   }

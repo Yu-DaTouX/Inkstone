@@ -495,7 +495,16 @@ const api: YanBridge = {
     candidates: (cwd, request) => invoke<import('../shared/github').GhPrCandidatesResult>('yan:github:candidates', cwd, request),
     detail: (cwd, number) => invoke<import('../shared/github').GhPrDetailResult>('yan:github:detail', cwd, number),
     diff: (cwd, number) => invoke<import('../shared/github').GhPrDiffResult>('yan:github:diff', cwd, number),
-    openUrl: (url) => invoke<{ ok: boolean; error?: string }>('yan:github:openUrl', url)
+    openUrl: (url) => invoke<{ ok: boolean; error?: string }>('yan:github:openUrl', url),
+    account: () => invoke<import('../shared/github').GithubAccountStatus>('yan:github:account'),
+    repos: (request) => invoke<import('../shared/github').GithubRepoListResult>('yan:github:repos', request),
+    searchRepos: (query) => invoke<import('../shared/github').GithubRepoListResult>('yan:github:searchRepos', query),
+    clone: (request) => invoke<import('../shared/github').GithubCloneResult>('yan:github:clone', request),
+    cancelClone: (id) => invoke<{ ok: boolean }>('yan:github:cancelClone', id),
+    createProject: (name, parentDir) => invoke<import('../shared/github').GithubCreateProjectResult>('yan:github:createProject', name, parentDir),
+    branches: (cwd) => invoke<import('../shared/github').GithubBranchListResult>('yan:github:branches', cwd),
+    publishPeerBranch: (cwd, request) => invoke<import('../shared/github').GhPrActionResult>('yan:github:publishPeerBranch', cwd, request),
+    defaultCloneDir: () => invoke<string>('yan:github:defaultCloneDir')
   },
 
   getSettings: () => invoke<AppSettings>('yan:getSettings'),
@@ -504,6 +513,8 @@ const api: YanBridge = {
   changeProjectDirectory: (request) => invoke<import('../shared/ipc').ProjectDirectoryResult>('yan:project:changeDirectory', request),
   pickCwd: () => invoke<string | null>('yan:pickCwd'),
   setCwd: (cwd) => invoke<Ok>('yan:setCwd', cwd),
+  workFolderRoot: () => invoke<string>('yan:workFolderRoot'),
+  createWorkFolder: (name) => invoke<{ ok: boolean; cwd?: string; error?: string }>('yan:createWorkFolder', name),
 
   respondUi: (res) => ipcRenderer.send('yan:respondUi', res),
   extendUi: (id, extraMs) => invoke('yan:extendUi', id, extraMs),

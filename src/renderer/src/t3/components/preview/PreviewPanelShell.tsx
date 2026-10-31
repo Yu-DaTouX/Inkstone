@@ -4,6 +4,7 @@ import {
   type KeyboardEventHandler,
   type ReactNode,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -25,6 +26,8 @@ export interface PreviewPanelShellProps {
   open?: boolean;
   width: number;
   room?: number;
+  dock?: number;
+  span?: number;
   minWidth?: number;
   onWidth: (width: number) => void;
   label?: string;
@@ -44,14 +47,28 @@ export function PreviewPanelShell(props: PreviewPanelShellProps) {
 }
 
 function ResizablePreviewPanelShell(props: PreviewPanelShellProps) {
+  const [overlayChosen, setOverlayChosen] = useState(false);
+  const dock = props.dock;
+  const minWidth = props.minWidth ?? 360;
+  const shownWidth =
+    dock === undefined || overlayChosen ? props.width : Math.min(props.width, Math.max(minWidth, dock));
+  const { onWidth: storeWidth } = props;
+  const onWidth = useCallback(
+    (next: number) => {
+      setOverlayChosen(dock !== undefined && next > dock);
+      storeWidth(next);
+    },
+    [dock, storeWidth],
+  );
   const inlineSize = usePreviewPanelInlineSize({
     enabled: props.mode === "inline" && !props.maximized,
-    width: props.width,
+    width: shownWidth,
     room: props.room,
+    siblingMinWidth: dock !== undefined ? 0 : undefined,
     minWidth: props.minWidth,
-    onWidth: props.onWidth,
+    onWidth,
   });
-  return <PreviewPanelShellFrame {...props} inlineSize={inlineSize} />;
+  return <PreviewPanelShellFrame {...props} onWidth={onWidth} inlineSize={inlineSize} />;
 }
 
 function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: PreviewPanelInlineSize }) {
@@ -62,25 +79,6 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
   const hostRef = useRef<HTMLDivElement | null>(null);
   const returnedFocus = useRef(false);
   const { width, handlers, observeRow } = props.inlineSize;
-  const [widthTransition, setWidthTransition] = useState(() => ({
-    open,
-    width,
-    maximized,
-    enabled: true,
-  }));
-  if (
-    widthTransition.open !== open ||
-    widthTransition.width !== width ||
-    widthTransition.maximized !== maximized
-  ) {
-    setWidthTransition({
-      open,
-      width,
-      maximized,
-      enabled: widthTransition.open !== open,
-    });
-  }
-  const suppressWidthTransition = collapsible && !widthTransition.enabled;
   const attachHost = useCallback(
     (host: HTMLDivElement | null) => {
       if (!host) {
@@ -126,7 +124,7 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
   }, [collapsible, open, hostRef, props.toggleSelector]);
 
   const minWidth = props.minWidth ?? 360;
-  const maxWidth = Math.max(minWidth, width);
+  const maxWidth = Math.max(minWidth, props.inlineSize.maxWidth ?? props.room ?? width);
   const onHandleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "ArrowLeft") props.onWidth(Math.min(maxWidth, width + KEYBOARD_STEP));
     else if (event.key === "ArrowRight") props.onWidth(Math.max(minWidth, width - KEYBOARD_STEP));
@@ -135,6 +133,19 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
     else return;
     event.preventDefault();
   };
+
+  const floating = isInline && !maximized;
+  const docked = isInline && (!maximized || props.span !== undefined);
+  const overlay = floating && props.dock !== undefined && width > props.dock;
+  const overlap = overlay && props.dock !== undefined && open ? Math.round(width - props.dock) : 0;
+  useEffect(() => {
+    const root = document.documentElement;
+    if (overlap > 0) root.style.setProperty("--rp-overlap", `${overlap}px`);
+    else root.style.removeProperty("--rp-overlap");
+    return () => {
+      root.style.removeProperty("--rp-overlap");
+    };
+  }, [overlap]);
 
   return (
     <div
@@ -146,24 +157,27 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
       data-workspace-unavailable={collapsible && !open ? "true" : undefined}
       data-preview-panel-mode={props.mode}
       data-preview-panel-maximized={maximized ? "true" : "false"}
+      data-rp-overlay={overlay ? "" : undefined}
       className={cn(
-        "t3-rp relative flex h-full min-h-0 min-w-0 max-w-full flex-col self-stretch bg-background",
-        isInline ? (maximized ? "flex-1" : "shrink-0 border-l border-border") : "w-full",
-        collapsible && "transition-[width] duration-(--dur-sheet) ease-out",
-        collapsible && open && "starting:w-0!",
-        collapsible && !open && "pointer-events-none",
+        "t3-rp relative flex h-full min-h-0 min-w-0 max-w-full flex-col self-stretch",
+        !docked && "bg-background",
+        isInline ? (docked ? "z-(--z-panel) shrink-0" : "flex-1") : "w-full",
+        docked && "w-[min(var(--rp-w),var(--rp-dock,var(--rp-w)))]",
+        docked && collapsible && "transition-[width] duration-(--dur-sheet) ease-(--ease)",
+        docked && collapsible && open && "starting:w-0",
+        docked && collapsible && !open && "pointer-events-none w-0",
       )}
       style={
         isInline
           ? ({
               [RESIZABLE_WIDTH_PROPERTY]: `${width}px`,
-              width: maximized ? "100%" : collapsible && !open ? "0px" : `var(${RESIZABLE_WIDTH_PROPERTY})`,
-              transitionDuration: suppressWidthTransition ? "0ms" : undefined,
+              ...(docked && props.dock !== undefined ? { "--rp-dock": `${Math.max(0, Math.floor(props.dock))}px` } : null),
+              ...(maximized && !docked ? { width: "100%" } : null),
             } as CSSProperties)
           : undefined
       }
     >
-      {isInline && !maximized ? (
+      {floating ? (
         <RightPanelResizeHandle
           handlers={handlers}
           label={props.label}
@@ -171,18 +185,24 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
           min={minWidth}
           max={maxWidth}
           onKeyDown={onHandleKeyDown}
+          className="left-[calc(min(var(--rp-w),var(--rp-dock,var(--rp-w)))-var(--rp-w)-0.25rem)]"
         />
       ) : null}
-      <div className={cn("h-full min-h-0 w-full", collapsible && "overflow-clip")}>
-        <div
-          className="flex h-full min-h-0 min-w-0 flex-col"
-          style={
-            collapsible && !maximized
-              ? { width: `calc(var(${RESIZABLE_WIDTH_PROPERTY}) - 1px)` }
-              : undefined
-          }
-        >
-          {props.children}
+      <div
+        data-rp-surface
+        className={cn(
+          "flex h-full min-h-0 flex-col",
+          docked
+            ? cn("absolute inset-y-0 right-0 border-l border-border", !maximized && "w-(--rp-w)")
+            : "w-full",
+          docked && collapsible && "transition-[translate] duration-(--dur-sheet) ease-(--ease)",
+          docked && collapsible && open && "translate-x-0 starting:translate-x-(--rp-w)",
+          docked && collapsible && !open && "translate-x-(--rp-w)",
+        )}
+        style={maximized && docked && props.span !== undefined ? { width: `${Math.floor(props.span)}px` } : undefined}
+      >
+        <div className={cn("h-full min-h-0 w-full", collapsible && "overflow-clip")}>
+          <div className="flex h-full min-h-0 min-w-0 flex-col">{props.children}</div>
         </div>
       </div>
     </div>

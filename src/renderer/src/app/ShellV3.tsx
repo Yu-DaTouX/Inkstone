@@ -7,6 +7,7 @@ import { transcriptViewText } from '../features/session/transcript-view-text'
 import { useI18n } from '../i18n'
 import { useStore } from '../state/store'
 import { useRunnerVisibility } from '../lib/use-runner-visibility'
+import { displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from '../state/split-view'
 import { useHoverDelay } from '../lib/use-hover-delay'
 import { sessionViewIdentity, viewMatchesProjectedSession } from '../features/session/view-state'
 import { isModalOpen } from '../lib/modalLayer'
@@ -17,8 +18,14 @@ import { useCurrentRunsSeen } from '../state/use-current-runs-seen'
 import type { RunSnapshot } from '../../../shared/runs'
 import { Sidebar } from '../features/sidebar/Sidebar'
 import { SessionDragLayer } from '../features/sidebar/SessionDragLayer'
+import { SplitDropLayer } from '../features/split/SplitDropLayer'
+import { SPLIT_CONSTRAINED_WIDTH } from '../features/split/split-drop-model'
+import { runSplitShortcut } from '../features/split/split-keys'
+import { useSplitPersistence } from '../features/split/use-split-persistence'
 import { SIDEBAR_DRAG_COLLAPSE, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_STEP, SIDEBAR_WIDTH_STEP_LARGE, readSidebarWidth, sidebarMaxForWindow, shouldAutoCollapseSidebar } from '../features/sidebar/sidebar-layout'
-import { ChatMain } from './ChatMain'
+import { useSidebarWidthDraft } from '../features/sidebar/useSidebarWidthDraft'
+import { SideBySide } from './SideBySide'
+import { collapsedPanes, sessionTiles } from './SideBySideLayout'
 import { CommandPalette } from '../features/commands/CommandPalette'
 import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { SessionSwitcher, useSessionSwitcher } from '../features/commands/SessionSwitcher'
@@ -64,9 +71,11 @@ const ArtifactLibraryPage = lazy(() => import('../features/artifacts/ArtifactLib
 
 const CHAT_MIN_WIDTH_PX = 420
 const SHEET_BELOW_PX = CHAT_MIN_WIDTH_PX + PANEL_WIDTH_MIN
+const PANEL_OVERLAY_GUTTER_PX = 120
 
 export default function ShellV3(): ReactElement {
   const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth(localStorage))
+  const draftSidebarWidth = useSidebarWidthDraft(setSidebarWidth)
   const [sidebarPreview, setSidebarPreview] = useState(false)
   useScrollbarReveal()
   useEffect(() => {
@@ -147,7 +156,7 @@ export default function ShellV3(): ReactElement {
   const panelOpen = route.name === 'chat' && panelEntry.open
   const [sessionBarWidth] = useState(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-tiles')) || 300)
   const showSidebarPreview = useCallback(() => { if (!useUiV3.getState().sidebarOpen) setSidebarPreview(true) }, [])
-  const reveal = useHoverDelay(120, showSidebarPreview)
+  const reveal = useHoverDelay(280, showSidebarPreview)
   useEffect(() => { if (sidebarOpen) { reveal.cancel(); setSidebarPreview(false) } }, [sidebarOpen, reveal])
   useLayoutEffect(() => {
     const root = document.documentElement
@@ -207,7 +216,8 @@ export default function ShellV3(): ReactElement {
   const sidebarReserves = sidebarOpen && !sidebarCompact
   const rowWidth = Math.max(0, windowWidth - (sidebarReserves ? sidebarWidth + 1 : 0))
   const panelMode: 'inline' | 'sheet' = rowWidth > 0 && rowWidth < SHEET_BELOW_PX ? 'sheet' : 'inline'
-  const panelRoomWidth = panelRoom(windowWidth, rowWidth, CHAT_MIN_WIDTH_PX)
+  const panelRoomWidth = panelRoom(windowWidth, rowWidth, PANEL_OVERLAY_GUTTER_PX)
+  const panelDockWidth = Math.max(PANEL_WIDTH_MIN, rowWidth - CHAT_MIN_WIDTH_PX)
   const panelMaximized = panelOpen && panelMode === 'inline' && panelEntry.maximized
   const liveSessionId = useStore((s) => s.session?.sessionId ?? null)
   useEffect(() => {
@@ -268,13 +278,29 @@ export default function ShellV3(): ReactElement {
     return () => mq.removeEventListener('change', apply)
   }, [])
 
+  const displayed = useMemo<SplitSessionRef | null>(
+    () =>
+      displayedSessionOf({
+        peekedSessionId,
+        peekedPath,
+        session: session ? { sessionId: session.sessionId, sessionFile: session.sessionFile } : null
+      }),
+    [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile]
+  )
+  const storedSplit = useSplitView((s) => s.split)
+  const split = useMemo(() => (storedSplit ? reconcileSplit(storedSplit, displayed) : null), [storedSplit, displayed])
+  useLayoutEffect(() => {
+    useSplitView.getState().sync(displayed)
+  }, [displayed, storedSplit])
+  const splitParked = windowWidth <= SPLIT_CONSTRAINED_WIDTH
   const visibleSessions = useMemo(() => {
-    const sessionId = peekedSessionId ?? (peekedPath ? undefined : session?.sessionId || undefined)
-    const path = peekedPath ?? (peekedSessionId ? undefined : session?.sessionFile || undefined)
-    return sessionId || path ? [{ sessionId, path }] : []
-  }, [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile])
+    const layout = collapsedPanes(split, splitParked)
+    return layout ? sessionTiles(layout.tiles) : displayed ? [displayed] : []
+  }, [split, splitParked, displayed])
   useRunnerVisibility(visibleSessions)
   usePruneSubagentSurfaces()
+  useSplitPersistence()
+  const singlePane = !collapsedPanes(split, splitParked)
   useLayoutEffect(() => {
     if (route.name !== 'chat') return
     const chat = chatRef.current
@@ -289,15 +315,22 @@ export default function ShellV3(): ReactElement {
     }
   }, [route.name])
   const chatWidth = route.name === 'chat' ? measuredChatWidth : bodyWidth
-  const toastInset = panelOpen && panelMode === 'inline' && !panelMaximized ? Math.max(0, clampPanelWidth(panelStoredWidth, panelRoomWidth)) : 0
+  const toastInset = panelOpen && panelMode === 'inline' && !panelMaximized ? Math.max(0, Math.min(panelDockWidth, clampPanelWidth(panelStoredWidth, panelRoomWidth))) : 0
   useEffect(() => {
     document.documentElement.style.setProperty('--toast-inset-right', `${toastInset}px`)
   }, [toastInset])
-  const sessionBarFits = chatWidth - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
-  const sessionBarWanted = route.name === 'chat' && hasMessages && sessionBarOn && !panelMaximized
+  const sessionBarFitsNow = chatWidth - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
+  const sessionBarFitsRef = useRef(sessionBarFitsNow)
+  const layoutDragging = document.documentElement.dataset.rpDragging !== undefined || (document.documentElement.dataset.splitterDragging !== undefined && !document.querySelector('.v3-tiles-resizer[data-dragging]'))
+  const sessionBarFits = layoutDragging ? sessionBarFitsRef.current && sessionBarFitsNow : sessionBarFitsNow
+  sessionBarFitsRef.current = sessionBarFits
+  const sessionBarWanted = route.name === 'chat' && singlePane && hasMessages && sessionBarOn
   const sessionBarShown = sessionBarWanted && sessionBarFits
   const tilesRoom = tilesWidthRoom(chatWidth, LANE_GAP, MESSAGE_MIN_WIDTH)
-  const shownTilesWidth = clampTilesWidth(tilesWidth, tilesRoom)
+  const shownTilesWidthNow = clampTilesWidth(tilesWidth, tilesRoom)
+  const shownTilesWidthRef = useRef(shownTilesWidthNow)
+  const shownTilesWidth = layoutDragging ? shownTilesWidthRef.current : shownTilesWidthNow
+  shownTilesWidthRef.current = shownTilesWidth
   const tilesMaxShown = clampTilesWidth(TILES_WIDTH_MAX, tilesRoom)
   const tilesAxis = TILES_WIDTH_MAX + TILES_WIDTH_MIN
 
@@ -512,7 +545,10 @@ export default function ShellV3(): ReactElement {
             return
           }
           default:
-            break
+            if (ui.route.name === 'chat' && runSplitShortcut(shortcut, event.target)) {
+              event.preventDefault()
+              return
+            }
         }
       }
       if (event.key === 'Escape' && !typing) {
@@ -566,7 +602,7 @@ export default function ShellV3(): ReactElement {
         <FocusScope contain={drawerOpen}>
           <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
         </FocusScope>
-        {(sidebarOpen || sidebarDragHidden) && !sidebarCompact ? <Splitter className="v3-sidebar-resizer" value={Math.min(sidebarWidth, sidebarMax)} min={SIDEBAR_WIDTH_MIN} max={sidebarMax} step={SIDEBAR_WIDTH_STEP} largeStep={SIDEBAR_WIDTH_STEP_LARGE} collapseBelow={SIDEBAR_DRAG_COLLAPSE} onCollapse={() => useUiV3.getState().setSidebarOpen(false)} onDragHide={setSidebarDragHidden} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} /> : null}
+        {(sidebarOpen || sidebarDragHidden) && !sidebarCompact ? <Splitter className="v3-sidebar-resizer" value={Math.min(sidebarWidth, sidebarMax)} min={SIDEBAR_WIDTH_MIN} max={sidebarMax} step={SIDEBAR_WIDTH_STEP} largeStep={SIDEBAR_WIDTH_STEP_LARGE} collapseBelow={SIDEBAR_DRAG_COLLAPSE} onCollapse={() => useUiV3.getState().setSidebarOpen(false)} onDragHide={setSidebarDragHidden} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={draftSidebarWidth} /> : null}
         {sidebarCompact && sidebarOpen ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />
         ) : null}
@@ -587,6 +623,7 @@ export default function ShellV3(): ReactElement {
             rightPanelOpen={panelOpen}
             onToggleRightPanel={toggleWorkspace}
             windowControls={!(panelOpen && panelMode === 'inline')}
+            splitActive={!singlePane}
             openPanes={openPanes}
             activePane={activePane}
             changesDirty={changesDirty}
@@ -619,7 +656,7 @@ export default function ShellV3(): ReactElement {
             {route.name === 'chat' ? (
               <div className="v3-chat" ref={chatRef} data-sessionbar={sessionBarShown ? '1' : undefined} data-bar-anim={settledBarOn !== sessionBarOn ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
                 <ConnBanner />
-                <ChatMain />
+                <SideBySide split={split} narrow={splitParked} />
                 {sessionBarShown ? (
                   <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
                     <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
@@ -635,6 +672,8 @@ export default function ShellV3(): ReactElement {
             owner={owner.key ? owner : null}
             mode={panelMode}
             room={panelRoomWidth}
+            dock={panelDockWidth}
+            span={rowWidth}
             panes={WORKBENCH_PANES}
             windowControls={panelOpen && panelMode === 'inline'}
             onOpenTool={(kind) => void openWorkspaceTab(kind)}
@@ -660,6 +699,7 @@ export default function ShellV3(): ReactElement {
       ) : null}
       <NativeSessionSurfaces />
       <SessionDragLayer />
+      <SplitDropLayer />
       <NoticeBridge />
       <PeerApprovalDialog />
       <BrowserSiteAskDialog />

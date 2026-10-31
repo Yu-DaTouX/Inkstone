@@ -1,3 +1,4 @@
+import { sanitizePeerLogins } from '../shared/collab-github'
 import { readFile, mkdir, copyFile, rename } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -23,7 +24,7 @@ import { isWorkspaceMode } from '../shared/workspace-mode'
 import { voiceModelSpec } from '../shared/voice-input'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
-import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeStreamWidth } from '../shared/appearance'
+import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeComposerHeight, sanitizeStreamWidth } from '../shared/appearance'
 import { allowedSiteList } from './preview-site-access'
 import { sanitizeProjectScripts } from '../shared/project-scripts'
 import { electronGuardSealStore, guardFieldsOf, sameGuardFields, trustedGuardFields, type GuardFields } from './settings-guard-seal'
@@ -132,6 +133,8 @@ function projectId(cwd: string, isTaken?: (id: string) => boolean): string {
   return projectIdForCwd(cwd, isTaken)
 }
 
+const PROJECT_ICON_COLORS = 8
+
 function sanitizeProjects(v: unknown, names: Record<string, string>, recent: string[], cwd: string): ProjectRecord[] {
   const now = Date.now()
   const raw = Array.isArray(v) ? v : []
@@ -142,7 +145,11 @@ function sanitizeProjects(v: unknown, names: Record<string, string>, recent: str
     const o = item as Partial<ProjectRecord>
     if (typeof o.id !== 'string' || !o.id || typeof o.cwd !== 'string' || !o.cwd || seen.has(o.id)) continue
     seen.add(o.id)
-    out.push({ id: o.id.slice(0, 80), cwd: o.cwd, name: typeof o.name === 'string' ? o.name.trim().slice(0, 64) : '', archived: o.archived === true, createdAt: Number.isFinite(o.createdAt) ? Number(o.createdAt) : now, updatedAt: Number.isFinite(o.updatedAt) ? Number(o.updatedAt) : now })
+    const record: ProjectRecord = { id: o.id.slice(0, 80), cwd: o.cwd, name: typeof o.name === 'string' ? o.name.trim().slice(0, 64) : '', archived: o.archived === true, createdAt: Number.isFinite(o.createdAt) ? Number(o.createdAt) : now, updatedAt: Number.isFinite(o.updatedAt) ? Number(o.updatedAt) : now }
+    if (Number.isInteger(o.iconColor) && Number(o.iconColor) >= 1 && Number(o.iconColor) <= PROJECT_ICON_COLORS) record.iconColor = Number(o.iconColor)
+    const iconText = typeof o.iconText === 'string' ? [...o.iconText.trim()].slice(0, 2).join('') : ''
+    if (iconText) record.iconText = iconText
+    out.push(record)
   }
   const usedIds = new Set(out.map((p) => p.id))
   for (const path of new Set([...Object.keys(names), ...recent, cwd])) {
@@ -248,6 +255,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.browserAllowedSites = allowedSiteList(settings.browserAllowedSites)
   settings.subagentNotify = settings.subagentNotify === false ? false : undefined
   settings.streamLoopAutoContinue = settings.streamLoopAutoContinue === false ? false : undefined
+  settings.subagentHistoryPrune = settings.subagentHistoryPrune === false ? false : undefined
   settings.workspaceTiles = settings.workspaceTiles === false ? false : undefined
   settings.smoothText = settings.smoothText === true ? true : undefined
   settings.usageCurrency = normalizeUsageCurrency(settings.usageCurrency)
@@ -275,8 +283,11 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.fontCodeCustom = sanitizeFontName(settings.fontCodeCustom)
   settings.fontSizeUi = sanitizeFontSize(settings.fontSizeUi, FONT_UI_MIN, FONT_UI_MAX, FONT_UI_DEFAULT)
   settings.streamWidth = sanitizeStreamWidth(settings.streamWidth)
+  settings.composerHeight = sanitizeComposerHeight(settings.composerHeight)
   settings.reduceMotion = settings.reduceMotion === true ? true : undefined
   settings.sidebarLayout = settings.sidebarLayout === 'flat' ? 'flat' : undefined
+  settings.cloneDir = cleanCloneDir(settings.cloneDir)
+  settings.peerGithubLogins = sanitizePeerLogins(settings.peerGithubLogins)
   settings.autoArchiveDays = typeof settings.autoArchiveDays === 'number' ? normalizeAutoArchiveDays(settings.autoArchiveDays) : undefined
   settings.voiceInput = sanitizeVoiceInput(settings.voiceInput)
   settings.theme = settings.theme === 'light' ? 'light' : 'dark'
@@ -367,6 +378,12 @@ function sanitizeVoiceInput(value: unknown): AppSettings['voiceInput'] {
   return Object.keys(out).length ? out : undefined
 }
 
+function cleanCloneDir(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const text = value.trim()
+  return text && text.length <= 1024 && !text.includes('\0') && isAbsolute(text) ? text : undefined
+}
+
 function cleanAllowRoots(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   const roots: string[] = []
@@ -381,7 +398,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectScripts','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','reduceMotion','sidebarLayout','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectScripts','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -420,6 +437,8 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.browserAllowedSites = allowedSiteList(next.browserAllowedSites)
   next.usageCurrency = normalizeUsageCurrency(next.usageCurrency)
   next.sidebarLayout = next.sidebarLayout === 'flat' ? 'flat' : undefined
+  next.cloneDir = cleanCloneDir(next.cloneDir)
+  next.peerGithubLogins = sanitizePeerLogins(next.peerGithubLogins)
 
   if (Array.isArray(patch.recentCwds)) {
     next.recentCwds = [...new Set(patch.recentCwds.filter((path): path is string => typeof path === 'string' && isAbsolute(path)))].slice(0, 8)

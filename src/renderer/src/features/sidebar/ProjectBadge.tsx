@@ -1,13 +1,14 @@
 import type { JSX } from 'react'
 import { Globe } from 'lucide-react'
 import { Badge, type BadgeTone } from '../../ui'
-import { projectMonogram, projectTone } from './sidebar-model'
+import { useProjectIconLook } from '../../patterns/project-icon'
 
-export function ProjectBadge({ label, global, toneKey }: { label: string; global?: boolean; toneKey?: string }): JSX.Element {
-  const tone: BadgeTone = global ? 'data-8' : (`data-${projectTone(toneKey || label)}` as BadgeTone)
+export function ProjectBadge({ label, global, toneKey, projectId }: { label: string; global?: boolean; toneKey?: string; projectId?: string }): JSX.Element {
+  const look = useProjectIconLook(projectId ?? toneKey, label)
+  const tone: BadgeTone = global ? 'data-8' : (`data-${look.tone}` as BadgeTone)
   return (
     <Badge tone={tone} shape="square" aria-hidden="true">
-      {global ? <Globe aria-hidden="true" /> : projectMonogram(label)}
+      {global ? <Globe aria-hidden="true" /> : look.text}
     </Badge>
   )
 }

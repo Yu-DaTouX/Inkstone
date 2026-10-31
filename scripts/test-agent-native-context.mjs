@@ -32,6 +32,8 @@ for (const generation of ['versions/..', '../private', 'versions/fixture/extra',
 await writeFile(join(runtimeRoot, 'current.json'), JSON.stringify({ generation: 'versions/0.99.1-fixture' }))
 await mkdir(join(runtimeRoot, 'versions', '0.99.1-fixture', 'dist', 'bundle'), { recursive: true })
 await writeFile(join(runtimeRoot, 'versions', '0.99.1-fixture', 'dist', 'bundle', 'cli.js'), '// fixture')
+await mkdir(join(root, 'out', 'main'), { recursive: true })
+await writeFile(join(root, 'out', 'main', 'index.js'), "import 'node:path'\n")
 const beforePack = createRequire(import.meta.url)('./pi-runtime-before-pack.cjs')
 const config = { extraResources: ['dist', 'node_modules', 'package.json'].map(part => ({ from: `resources/pi-runtime/${part}`, to: `pi-runtime/${part}` })).concat([{ from: 'resources/yan-cli', to: 'yan-cli' }]) }
 await beforePack({ packager: { projectDir: root, config } })

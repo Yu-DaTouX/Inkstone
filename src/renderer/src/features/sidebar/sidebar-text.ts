@@ -1,5 +1,12 @@
 export interface SidebarText {
   projectMenu: string
+  iconColor: string
+  iconColorAuto: string
+  iconColorOption: string
+  iconText: string
+  iconTextHint: string
+  iconTextReset: string
+  iconSaveFailed: string
   registerFailed: string
   archivedEntryCount: string
   archivedBack: string
@@ -7,6 +14,7 @@ export interface SidebarText {
   archivedSessions: string
   archivedEmpty: string
   restoreProject: string
+  restoreProjectFailed: string
   restoreSession: string
   archiveShelf: string
   archiveShelfDrop: string
@@ -58,6 +66,13 @@ export interface SidebarText {
 
 const zh: SidebarText = {
   projectMenu: '项目操作',
+  iconColor: '图标颜色',
+  iconColorAuto: '自动',
+  iconColorOption: '颜色 {n}',
+  iconText: '图标文字…',
+  iconTextHint: '1–2 个字，留空则按项目名自动生成',
+  iconTextReset: '恢复自动',
+  iconSaveFailed: '保存项目图标失败，请重试',
   registerFailed: '无法把该目录登记为项目',
   archivedEntryCount: '已归档 · {n}',
   archivedBack: '返回会话',
@@ -65,6 +80,7 @@ const zh: SidebarText = {
   archivedSessions: '会话',
   archivedEmpty: '没有归档的项目或会话',
   restoreProject: '恢复项目',
+  restoreProjectFailed: '恢复项目失败，请重试',
   restoreSession: '取消归档',
   archiveShelf: '已归档',
   archiveShelfDrop: '松开即可归档',
@@ -116,6 +132,13 @@ const zh: SidebarText = {
 
 const en: SidebarText = {
   projectMenu: 'Project actions',
+  iconColor: 'Icon color',
+  iconColorAuto: 'Automatic',
+  iconColorOption: 'Color {n}',
+  iconText: 'Icon text…',
+  iconTextHint: '1–2 characters. Leave empty to derive from the project name.',
+  iconTextReset: 'Use automatic',
+  iconSaveFailed: 'Could not save the project icon. Try again.',
   registerFailed: 'Could not register this folder as a project',
   archivedEntryCount: 'Archived · {n}',
   archivedBack: 'Back to chats',
@@ -123,6 +146,7 @@ const en: SidebarText = {
   archivedSessions: 'Chats',
   archivedEmpty: 'No archived projects or chats',
   restoreProject: 'Restore project',
+  restoreProjectFailed: 'Could not restore project. Try again.',
   restoreSession: 'Unarchive',
   archiveShelf: 'Archived',
   archiveShelfDrop: 'Release to archive',

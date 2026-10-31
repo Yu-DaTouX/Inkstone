@@ -1,7 +1,9 @@
 import type { JSX } from 'react'
-import { AlarmClock, Clock, Eye, FolderInput, FolderOpen, Globe, Mail, MailOpen, Pencil, Pin, PinOff, Archive, ArchiveRestore, Sparkles, Trash2 } from 'lucide-react'
+import { AlarmClock, Clock, Columns2, Eye, FolderInput, FolderOpen, Globe, Mail, MailOpen, Pencil, Pin, PinOff, Archive, ArchiveRestore, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { indexOfSession, useSplitView } from '../../state/split-view'
+import { splitText } from '../split/split-text'
 import { Menu, MenuItem, Popover, SubmenuTrigger } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import { shortProject } from './sidebar-model'
@@ -22,6 +24,8 @@ export function SessionMenuContent({ item, isCurrent, onOpenChange, onAction }: 
   const defaultView = useTranscriptViews((s) => s.defaultView)
   const snoozed = isSnoozed(item, Date.now())
   const snoozeOptions = snoozed ? [] : resolveSnoozeOptions(Date.now())
+  const split = splitText(lang)
+  const splitIndex = useSplitView((s) => (s.split ? indexOfSession(s.split.tiles, { sessionId: item.id, path: item.path }) : -1))
 
   return (
     <Menu
@@ -115,16 +119,65 @@ export function SessionMenuContent({ item, isCurrent, onOpenChange, onAction }: 
       <MenuItem id="archive" textValue={t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')} icon={item.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />}>
         {t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')}
       </MenuItem>
-      {item.scope !== 'global' ? (
-        <MenuItem id="move:global" textValue={`${t('rail.moveSession')} ${t('rail.global')}`} icon={<Globe size={14} />}>
-          {t('rail.moveSession')} · {t('rail.global')}
+      <SubmenuTrigger>
+        <MenuItem id="open-with" textValue={split.openWith} data-testid="v3-session-open-with" icon={<SquareArrowOutUpRight size={14} />}>
+          {split.openWith}
         </MenuItem>
+        <Popover placement="end top" offset={2}>
+          <Menu
+            aria-label={split.openWith}
+            onAction={(key) => {
+              onOpenChange(false)
+              onAction(key as MenuKey)
+            }}
+            disabledKeys={isCurrent && splitIndex < 0 ? ['split', 'split-below'] : []}
+            data-testid="v3-session-open-with-menu"
+          >
+            {splitIndex >= 0 ? (
+              <MenuItem id="split-close" textValue={t('split.closeSide')} icon={<X size={14} />}>
+                {t('split.closeSide')}
+              </MenuItem>
+            ) : (
+              <MenuItem id="split" textValue={split.openInSplit} icon={<Columns2 size={14} />}>
+                {split.openInSplit}
+              </MenuItem>
+            )}
+            {splitIndex < 0 ? (
+              <MenuItem id="split-below" textValue={split.openBelow} icon={<Rows2 size={14} />}>
+                {split.openBelow}
+              </MenuItem>
+            ) : null}
+          </Menu>
+        </Popover>
+      </SubmenuTrigger>
+      {item.scope !== 'global' || moveTargets.length > 0 ? (
+        <SubmenuTrigger>
+          <MenuItem id="move" textValue={t('rail.moveTo')} data-testid="v3-session-move" icon={<FolderInput size={14} />}>
+            {t('rail.moveTo')}
+          </MenuItem>
+          <Popover placement="end top" offset={2}>
+            <Menu
+              aria-label={t('rail.moveTo')}
+              onAction={(key) => {
+                onOpenChange(false)
+                onAction(key as MenuKey)
+              }}
+              data-testid="v3-session-move-menu"
+            >
+              {item.scope !== 'global' ? (
+                <MenuItem id="move:global" textValue={t('rail.global')} icon={<Globe size={14} />}>
+                  {t('rail.global')}
+                </MenuItem>
+              ) : null}
+              {moveTargets.map((project) => (
+                <MenuItem key={project.id} id={`move:${project.id}`} textValue={project.name || shortProject(project.cwd)} icon={<FolderInput size={14} />}>
+                  {project.name || shortProject(project.cwd)}
+                </MenuItem>
+              ))}
+            </Menu>
+          </Popover>
+        </SubmenuTrigger>
       ) : null}
-      {moveTargets.map((project) => (
-        <MenuItem key={project.id} id={`move:${project.id}`} textValue={`${t('rail.moveSession')} ${project.name || shortProject(project.cwd)}`} icon={<FolderInput size={14} />}>
-          {t('rail.moveSession')} · {project.name || shortProject(project.cwd)}
-        </MenuItem>
-      ))}
       <MenuItem id="delete" textValue={t('rail.delete')} tone="danger" icon={<Trash2 size={14} />}>
         {isCurrent ? t('rail.cantDeleteCurrent') : t('rail.delete')}
       </MenuItem>

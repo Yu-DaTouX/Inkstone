@@ -1,0 +1,77 @@
+@layer features {
+  .v3-split-drop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-drop);
+    pointer-events: none;
+  }
+
+  .v3-split-drop-badge {
+    position: fixed;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line2);
+    border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--bg) 40%, transparent);
+    backdrop-filter: blur(2px);
+    box-shadow: var(--ring-selected);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    font-weight: var(--w-medium);
+    transition:
+      left var(--dur-snap) var(--ease),
+      top var(--dur-snap) var(--ease),
+      width var(--dur-snap) var(--ease),
+      height var(--dur-snap) var(--ease),
+      opacity var(--dur-snap) var(--ease);
+    animation: v3-split-drop-in var(--dur-snap) var(--ease);
+  }
+
+  .v3-split-drop-badge::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 24px 0 color-mix(in srgb, var(--accent) 20%, transparent);
+    pointer-events: none;
+  }
+
+  .v3-split-drop-label {
+    position: relative;
+    padding: var(--s-4) var(--s-10);
+    border-radius: var(--r-full);
+    corner-shape: round;
+    background: var(--accent);
+    color: var(--on-accent);
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-snap) var(--ease),
+      color var(--dur-snap) var(--ease);
+  }
+
+  .v3-split-drop-badge[data-hint] {
+    opacity: 0.45;
+  }
+
+  .v3-split-drop-badge[data-hint] .v3-split-drop-label {
+    background: var(--alpha-3);
+    color: var(--fg2);
+  }
+
+  @keyframes v3-split-drop-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-split-drop-badge,
+    .v3-split-drop-badge::before,
+    .v3-split-drop-label {
+      transition: none;
+      animation: none;
+    }
+  }
+}

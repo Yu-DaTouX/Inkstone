@@ -421,6 +421,10 @@ export function SessionView(): JSX.Element {
         setStickNow(true)
       } else mark()
     }
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.target instanceof Element && event.target.closest('a, button, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"]')) return
+      mark()
+    }
     const onKey = (event: KeyboardEvent): void => { if (isScrollIntentKey(event.key)) mark() }
     const release = (): void => {
       const handle = vlistRef.current
@@ -432,13 +436,13 @@ export function SessionView(): JSX.Element {
     const options: AddEventListenerOptions = { passive: true, capture: true }
     host.addEventListener('wheel', wheel, options)
     host.addEventListener('touchmove', mark, options)
-    host.addEventListener('pointerdown', mark, options)
+    host.addEventListener('pointerdown', onPointerDown, options)
     host.addEventListener('pointerup', release, options)
     host.addEventListener('keydown', onKey, options)
     return () => {
       host.removeEventListener('wheel', wheel, options)
       host.removeEventListener('touchmove', mark, options)
-      host.removeEventListener('pointerdown', mark, options)
+      host.removeEventListener('pointerdown', onPointerDown, options)
       host.removeEventListener('pointerup', release, options)
       host.removeEventListener('keydown', onKey, options)
     }
@@ -480,7 +484,7 @@ export function SessionView(): JSX.Element {
         node.scrollTop = next
         recordRef.current(next, false, { turnId: anchor.turnId, offset: anchor.offset })
       }
-      requestAnimationFrame(() => requestAnimationFrame(restore))
+      restore()
     })
     observer.observe(inner)
     observer.observe(node)

@@ -52,6 +52,7 @@
       background: var(--side-tint);
     }
     :root[data-material][data-splitter-dragging] .v3-root::after { transition: none; }
+    :root[data-material][data-splitter-dragging] .v3-root[data-narrow='0']:not([data-side='closed'])::after { width: calc(100vw - 48px); }
   }
   @media (prefers-reduced-transparency: no-preference) and (prefers-reduced-motion: reduce) {
     :root[data-material] .v3-root[data-narrow='0']::after { transition: none; }
@@ -91,9 +92,14 @@
     z-index: var(--z-drawer);
     width: var(--side-panel-w);
     box-shadow: var(--shadow-pop);
-    background: var(--side-glass);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    backdrop-filter: blur(20px) saturate(160%);
+    background: var(--glass-noise-image), color-mix(in srgb, var(--side) var(--glass-opacity), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-pop);
+  }
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .v3-root[data-sidebar-preview='1'] .v3-side,
+    .v3-root[data-side='closed'][data-sidebar-preview='leaving'] .v3-side { background: var(--side); }
   }
   .v3-root[data-sidebar-preview='1'] .v3-side { opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition: none; animation: v3-side-in var(--dur-base) var(--ease); }
   .v3-root[data-narrow='1'][data-side='closed'][data-sidebar-preview='1'] .v3-side { transform: none; }
@@ -118,7 +124,7 @@
   .v3-root[data-sidebar-preview='1'] .v3-head { -webkit-app-region: no-drag; }
   .v3-root[data-sidebar-preview] .v3-side-top-actions,
   .v3-root[data-narrow='1'] .v3-side-close { display: none; }
-  .v3-sidebar-reveal { position: absolute; inset: var(--size-head) auto 0 0; width: var(--s-10); z-index: calc(var(--z-drawer) - 1); padding: 0; border: 0; background: transparent; -webkit-app-region: no-drag; }
+  .v3-sidebar-reveal { position: absolute; inset: var(--size-head) auto 0 0; width: var(--s-4); z-index: calc(var(--z-drawer) - 1); padding: 0; border: 0; background: transparent; -webkit-app-region: no-drag; }
   :root[data-splitter-dragging] .v3-side { transition: none; }
   .v3-root[data-side-drag='1'] .v3-sidebar-resizer::after { opacity: 0; }
   .v3-sidebar-resizer.ui-splitter { position: absolute; left: calc(var(--sidebar-width) - 1px); top: 0; bottom: 0; z-index: calc(var(--z-drawer) + 1); -webkit-app-region: no-drag; }

@@ -12,6 +12,7 @@ import { SortableContext, useSortable } from '@dnd-kit/sortable'
 import {
   Fragment,
   type ReactNode,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -126,11 +127,14 @@ export interface SidebarThreadListProps {
   onNewThreadInFolder?: (projectKey: string) => void
   onFolderContextMenu?: (projectKey: string, position: { x: number; y: number }) => void
   folderNewThreadLabel?: (projectKey: string) => string
+  folderMenuLabel?: string
   draftRows?: ReactNode
+  draftKey?: string
   undoNotice?: ReactNode
   emptyState?: ReactNode
-  onMoveOutside?: (point: { x: number; y: number }) => boolean
-  onDropOutside?: (point: { x: number; y: number }) => boolean
+  onMoveOutside?: (point: { x: number; y: number }, threadKey: string) => boolean
+  onDropOutside?: (point: { x: number; y: number }, threadKey: string) => boolean
+  onDragFinish?: () => void
   className?: string
 }
 
@@ -148,15 +152,15 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
 
   const items = useMemo(
     () =>
-      hasAnyRow
+      hasAnyRow || hasProjectFolders
         ? buildSidebarListItems({
             pinned: sections.pinned,
             active: sections.active,
             working: sections.working,
             snoozed: sections.snoozed,
             settled: shelves.settled ? sections.settled : [],
-            showWorkingShelf: shelves.working,
-            showSnoozedShelf: shelves.snoozed,
+            visibleWorking: shelves.working ? sections.working : [],
+            visibleSnoozed: shelves.snoozed ? sections.snoozed : [],
             showSettledShelf: props.showSettledShelf !== false
           })
         : [],
@@ -191,6 +195,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
     [items]
   )
 
+  const [dragOutside, setDragOutside] = useState(false)
   const [dragState, setDragState] = useState<{
     activeKey: string
     activeSection: SidebarSection
@@ -198,6 +203,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
     activationY: number | null
   } | null>(null)
   const dragSensorRef = useRef<SidebarPointerSensor | null>(null)
+  const draggedKeyRef = useRef<string | null>(null)
   const dragLabelOffsetRef = useRef(0)
   const listMotionRef = useRef<ReturnType<typeof createSidebarListMotion> | null>(null)
   const threadListRef = useRef<HTMLUListElement | null>(null)
@@ -209,7 +215,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
     itemsRef.current = items
   })
 
-  const attachTreeRef = (node: HTMLUListElement | null) => {
+  const attachTreeRef = useCallback((node: HTMLUListElement | null) => {
     threadListRef.current = node
     if (node === null) return
     const motion = createSidebarListMotion(node)
@@ -223,11 +229,13 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
       if (listMotionRef.current === motion) listMotionRef.current = null
       if (threadListRef.current === node) threadListRef.current = null
     }
-  }
+  }, [])
+
+  const folderKey = props.projectFolders?.map((folder) => `${folder.projectKey}:${folder.collapsed ? '' : folder.threadKeys.join(',')}`).join('|')
 
   useLayoutEffect(() => {
     listMotionRef.current?.update(dragState === null)
-  }, [listKey, dragState])
+  }, [listKey, folderKey, props.draftKey, dragState])
 
   useEffect(() => {
     if (
@@ -249,6 +257,9 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
 
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null
+    setDragOutside(false)
+    draggedKeyRef.current = null
+    props.onDragFinish?.()
     if (started) {
       listMotionRef.current?.release()
       setDragState(null)
@@ -261,8 +272,12 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
       dragSensorRef.current = sensor
     },
     onFinish: finishThreadDrag,
-    onMove: props.onMoveOutside,
-    onDrop: props.onDropOutside
+    onMove: (point: { x: number; y: number }) => {
+      const outside = draggedKeyRef.current !== null && props.onMoveOutside?.(point, draggedKeyRef.current) === true
+      setDragOutside(outside)
+      return outside
+    },
+    onDrop: (point: { x: number; y: number }) => draggedKeyRef.current !== null && props.onDropOutside?.(point, draggedKeyRef.current) === true
   }
   const dndSensors = useSensors(useSensor(SidebarPointerSensor, pointerSensorOptions))
 
@@ -270,6 +285,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
     const activeKey = String(event.active.id)
     const activeSection = sectionByThreadKeyRef.current.get(activeKey)
     if (activeSection === undefined) return
+    draggedKeyRef.current = activeKey
     listMotionRef.current?.suspend()
     const list = threadListRef.current
     const header = list?.querySelector<HTMLElement>('[data-testid="sidebar-pinned-header"]')
@@ -317,6 +333,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
   const sortableIds = items.map(sidebarListItemId)
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items,
+    enabled: !dragOutside,
     boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: sections.settled,
     activeOrder: hasProjectFolders ? sections.active : undefined,
@@ -405,8 +422,9 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
             key="pinned-header"
             marker="pinned-header"
             label={labels.pinned}
-            visible={from !== null}
+            visible={from !== null && !dragOutside}
             isDropTarget={dragTargetSection === 'pinned'}
+            resting={sections.pinned.length > 0}
           />
         )
         break
@@ -416,8 +434,9 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
             key="pinned-divider"
             marker="pinned-divider"
             label={labels.active}
-            visible={from !== null}
+            visible={from !== null && !dragOutside}
             isDropTarget={dragTargetSection === 'active'}
+            resting={sections.pinned.length > 0}
           />
         )
         break
@@ -429,6 +448,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
                 key={`project-folder:${folder.projectKey}`}
                 folder={folder}
                 newThreadLabel={props.folderNewThreadLabel?.(folder.projectKey) ?? folder.displayName}
+                menuLabel={props.folderMenuLabel ?? folder.displayName}
                 onToggle={(projectKey) => props.onToggleFolder?.(projectKey)}
                 onNewThread={(projectKey) => props.onNewThreadInFolder?.(projectKey)}
                 onContextMenu={(projectKey, position) =>

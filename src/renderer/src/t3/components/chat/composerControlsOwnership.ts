@@ -4,21 +4,15 @@ export function resolveComposerControlsOwnership(input: {
   readonly collapsed: boolean
   readonly measuredHiddenBlockCount: number
 }) {
-  const accessDisplay = !input.matchesDefault
-    ? input.collapsed
-      ? ('icon' as const)
-      : ('label' as const)
-    : input.hasTraits
-      ? ('hidden' as const)
-      : ('icon' as const)
-  const showModeBlock = accessDisplay !== 'hidden'
+  const accessDisplay = input.collapsed ? ('icon' as const) : ('label' as const)
+  const showModeBlock = true
   const blockIds = [
     ...(input.hasTraits ? ['traits' as const] : []),
     ...(showModeBlock ? ['mode' as const] : [])
   ]
   const hiddenFor = (count: number) => blockIds.slice(blockIds.length - count)
   const overflowShowsPermissionsFor = (hidden: ReadonlyArray<string>) =>
-    hidden.includes(input.hasTraits ? 'traits' : 'mode')
+    hidden.includes('mode')
   const overflowHasContent = (hidden: ReadonlyArray<string>) =>
     hidden.includes('traits') || overflowShowsPermissionsFor(hidden)
 

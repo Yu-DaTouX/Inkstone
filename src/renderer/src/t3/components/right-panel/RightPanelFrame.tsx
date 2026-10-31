@@ -13,6 +13,8 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
     maximized = false,
     width,
     room,
+    dock,
+    span,
     minWidth,
     onWidth,
     label,
@@ -43,6 +45,8 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
       maximized={panelMode === "inline" && maximized}
       width={width}
       room={room}
+      dock={dock}
+      span={span}
       minWidth={minWidth}
       onWidth={onWidth}
       label={label}

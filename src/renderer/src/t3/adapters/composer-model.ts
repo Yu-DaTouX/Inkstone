@@ -29,6 +29,7 @@ export function modelOptionsForProvider(
     slug: model.id,
     name: model.name || model.id,
     ...(model.reasoning ? { reasoning: true } : {}),
+    ...(model.contextWindow > 0 && model.contextWindowAssumed !== true ? { contextWindow: model.contextWindow } : {}),
   }))
 }
 

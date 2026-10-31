@@ -41,17 +41,17 @@ async function run() {
       conflict({ kind: 'prompt', key: 'prompt:周报', remoteDeviceName: 'MacBook-Pro', remotePayload: 'P1', remoteModifiedAt: 111 })
     )
     assert.deepEqual(prompt, {
-      key: 'prompt:周报（MacBook-Pro）',
+      key: `prompt:周报（MacBook-Pro-${shortHash('c0', 32)}）`,
       kind: 'prompt',
       payload: 'P1',
       modifiedAt: 111
     })
 
     const promptFallback = buildConflictCopy(conflict({ kind: 'prompt', key: 'prompt:笔记', remoteDeviceName: '   ' }))
-    assert.equal(promptFallback.key, 'prompt:笔记（未知设备）')
+    assert.equal(promptFallback.key, `prompt:笔记（未知设备-${shortHash('c0', 32)}）`)
 
     const promptSanitized = buildConflictCopy(conflict({ kind: 'prompt', key: 'prompt:笔记', remoteDeviceName: 'a//b**c' }))
-    assert.equal(promptSanitized.key, 'prompt:笔记（a b c）')
+    assert.equal(promptSanitized.key, `prompt:笔记（a b c-${shortHash('c0', 32)}）`)
 
     assert.equal(buildConflictCopy(conflict({ kind: 'prompt', key: 'other:name' })), null)
     assert.equal(buildConflictCopy(conflict({ kind: 'prompt', key: 'prompt:' })), null)
@@ -63,7 +63,7 @@ async function run() {
       conflict({ kind: 'skill', key: 'skill:my-skill', remoteDeviceName: 'Mac Book', remotePayload: 'SK', remoteModifiedAt: 222 })
     )
     assert.deepEqual(skill, {
-      key: 'skill:my-skill-from-Mac-Book',
+      key: `skill:my-skill-from-Mac-Book-${shortHash('c0', 32)}`,
       kind: 'skill',
       payload: 'SK',
       modifiedAt: 222
@@ -73,7 +73,7 @@ async function run() {
     const skillFallback = buildConflictCopy(
       conflict({ id: skillId, kind: 'skill', key: 'skill:no-name', remoteDeviceName: '电脑' })
     )
-    assert.equal(skillFallback.key, `skill:no-name-from-device-${shortHash(skillId, 6)}`)
+    assert.equal(skillFallback.key, `skill:no-name-from-device-${shortHash(skillId, 6)}-${shortHash(skillId, 32)}`)
 
     assert.equal(buildConflictCopy(conflict({ kind: 'skill', key: 'skill:has space' })), null)
     assert.equal(buildConflictCopy(conflict({ kind: 'skill', key: 'skill:中文' })), null)
@@ -94,7 +94,7 @@ async function run() {
     assert.deepEqual(bookmark, {
       key: `bookmark:${shortHash(`${bookmarkId}\u0000${bookmarkKey}`, 32)}`,
       kind: 'bookmark',
-      payload: canonicalJson({ session: 's1', key: 'bookmark:note（我的电脑）', value: 'V' }),
+      payload: canonicalJson({ session: 's1', key: `bookmark:note（我的电脑-${shortHash(bookmarkId, 32)}）`, value: 'V' }),
       modifiedAt: 333
     })
 
@@ -112,7 +112,7 @@ async function run() {
 
     const scheduleId = 'sched-1'
     const scheduleConflictId = 'conflict-9'
-    const scheduleNextId = `${scheduleId}-conflict-${shortHash(scheduleConflictId, 6)}`
+    const scheduleNextId = `${scheduleId}-conflict-${shortHash(scheduleConflictId, 32)}`
     const schedule = buildConflictCopy(
       conflict({
         id: scheduleConflictId,
@@ -125,7 +125,7 @@ async function run() {
     assert.deepEqual(schedule, {
       key: `schedule:${scheduleNextId}`,
       kind: 'schedule',
-      payload: canonicalJson({ id: scheduleNextId, name: '每日构建（MacBook-Pro）', cron: '0 9 * * *' }),
+      payload: canonicalJson({ id: scheduleNextId, name: `每日构建（MacBook-Pro-${shortHash(scheduleConflictId, 32)}）`, cron: '0 9 * * *' }),
       modifiedAt: 444
     })
 
@@ -142,7 +142,7 @@ async function run() {
     assert.equal(buildConflictCopy(conflict({ kind: 'schedule', remotePayload: JSON.stringify({ id: 'has space' }) })), null)
     assert.equal(
       buildConflictCopy(conflict({ kind: 'schedule', remotePayload: JSON.stringify({ id: scheduleId, name: '' }) })).key,
-      `schedule:${scheduleId}-conflict-${shortHash('c0', 6)}`
+      `schedule:${scheduleId}-conflict-${shortHash('c0', 32)}`
     )
 
     assert.equal(buildConflictCopy(conflict({ kind: 'settings' })), null)

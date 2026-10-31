@@ -80,7 +80,7 @@ interface MenuState {
   targets: FilesMenuTarget[]
 }
 
-export function FilesPane({ owner, onPreview, path: previewPath, Preview }: FilesPaneProps): ReactElement {
+export function FilesPane({ owner, visible: paneVisible = true, onPreview, path: previewPath, Preview }: FilesPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = filesText(lang)
   const chrome = usePaneChrome()
@@ -395,7 +395,7 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
       {Preview ? (
         <div className="v3-files-preview" ref={previewRef} tabIndex={-1} hidden={!layout.showPreview} data-testid="v3-files-preview">
           <PaneChromeContext.Provider value={previewChrome}>
-            <Preview owner={owner} path={previewPath} treeShown={layout.showTree} onRevealInTree={revealInTree} />
+            <Preview owner={owner} visible={paneVisible} path={previewPath} treeShown={layout.showTree} onRevealInTree={revealInTree} />
           </PaneChromeContext.Provider>
         </div>
       ) : null}

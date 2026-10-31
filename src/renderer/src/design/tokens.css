@@ -127,6 +127,11 @@
     --shadow-pop: 0 0 0 .5px rgba(11,11,11,.12), 0 8px 24px rgba(0,0,0,.1), 0 2px 6px rgba(0,0,0,.05);
     --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(11,11,11,.1), 0 1px 2px rgba(0,0,0,.03);
     --shadow-side: 0 0 0 .5px rgba(11,11,11,.08), inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.55), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(11,11,11,.05), 0 2px 6px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.12);
+    --glass-blur: 28px;
+    --glass-saturation: 1.25;
+    --glass-opacity: 65%;
+    --glass-rim: rgba(255,255,255,.6);
+    --glass-noise-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0.04'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     --ring-focus: inset 0 0 0 var(--hair, 1px) var(--bg), 0 0 0 var(--hair, 1px) var(--accent), 0 0 6px 1px var(--focus-glow);
     --ring-focus-inset: inset 0 0 0 var(--hair, 1px) var(--accent);
     --ring-outline: 1px solid var(--accent);
@@ -257,6 +262,11 @@
       --shadow-pop: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
       --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.08);
       --shadow-side: inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.07), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
+      --glass-blur: 28px;
+      --glass-saturation: 1.15;
+      --glass-opacity: 60%;
+      --glass-rim: rgba(255,255,255,.08);
+      --glass-noise-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0.05'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     }
   }
   :root[data-theme='dark'] {
@@ -269,6 +279,20 @@
     --shadow-pop: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
     --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.08);
     --shadow-side: inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.07), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
+    --glass-blur: 28px;
+    --glass-saturation: 1.15;
+    --glass-opacity: 60%;
+    --glass-rim: rgba(255,255,255,.08);
+    --glass-noise-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0.05'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    :root, :root[data-theme] {
+      --glass-blur: 0px;
+      --glass-saturation: 1;
+      --glass-opacity: 100%;
+      --glass-rim: transparent;
+      --glass-noise-image: none;
+    }
   }
   [data-density-scope='compact'] {
     --t-caption: 11px;

@@ -1,17 +1,69 @@
-import { useEffect, useRef, type ReactNode } from 'react'
-import { GaugeIcon } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useT } from '../../../i18n'
 import type { ComposerTraitsAdapter } from '../../adapters/composer-thinking'
 import { cn } from '../../lib/utils'
-import { Menu, MenuPopup, MenuTrigger } from '../ui/menu'
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
-import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from './ComposerControl'
-import { EffortGlyph } from './EffortGlyph'
-import { focusRequestedPermission, useComposerMenuProps } from './composerEventScope'
+import { ComposerControl, type ComposerControlSize } from './ComposerControl'
+import { composerFloatingLayerProps } from './composerEventScope'
 import { useComposerMenuState } from './useComposerMenuState'
 
 const WHEEL_STEP_INTERVAL_MS = 130
 const WHEEL_STEP_DELTA = 4
+const ROW_HEIGHT = 28
+const COLUMN_PADDING = 4
+const COLUMN_BORDER = 1
+const COLUMN_INLINE_PADDING = 2
+const NEAR_OPACITY = 0.65
+const FAR_OPACITY = 0.35
+const OPACITY_STEP = 0.1
+
+function levelFallbackLabel(level: string): string {
+  return level === 'xhigh' ? 'XHigh' : level.charAt(0).toUpperCase() + level.slice(1)
+}
+
+function levelOpacity(distance: number): number {
+  if (distance === 0) return 1
+  return Math.max(FAR_OPACITY, NEAR_OPACITY - (distance - 1) * OPACITY_STEP)
+}
+
+type Anchor = {
+  centerY: number
+  triggerLeft: number
+  triggerWidth: number
+  viewportHeight: number
+  viewportWidth: number
+}
+
+const VIEWPORT_MARGIN = 8
+const FLIP_DURATION_MS = 180
+
+function readAnchor(trigger: HTMLElement): Anchor {
+  const triggerRect = trigger.getBoundingClientRect()
+  return {
+    centerY: triggerRect.top + triggerRect.height / 2,
+    triggerLeft: triggerRect.left,
+    triggerWidth: triggerRect.width,
+    viewportHeight: window.innerHeight,
+    viewportWidth: window.innerWidth
+  }
+}
+
+function readEasing(): string {
+  const value = getComputedStyle(document.documentElement).getPropertyValue('--ease-glide').trim()
+  return value || 'cubic-bezier(.22,1,.36,1)'
+}
+
+function EffortTextContent(props: { text: string }) {
+  return (
+    <>
+      {props.text}
+      <span className="composer-effort-sheen" aria-hidden="true">
+        <span className="composer-effort-sheen-text">{props.text}</span>
+      </span>
+    </>
+  )
+}
 
 export function EffortSlider(props: {
   traits: ComposerTraitsAdapter
@@ -19,34 +71,202 @@ export function EffortSlider(props: {
   disabled: boolean
   hidden?: boolean
   className?: string
-  extraMenuContent?: ReactNode
-  extraMenuOwnsModeShortcut?: boolean
-  extraMenuHint?: string
 }) {
   const t = useT()
-  const composerFloatingLayerProps = useComposerMenuProps()
   const { traits } = props
   const { descriptor } = traits
   const levels = traits.levels
   const count = levels.length
   const current = descriptor.currentValue
+  const currentLevel = current ?? 'off'
   const rawIndex = current === null ? 0 : levels.indexOf(current)
   const index = rawIndex < 0 ? count - 1 : rawIndex
+  const labelOf = (level: string) =>
+    descriptor.options.find((option) => option.id === level)?.label ?? levelFallbackLabel(level)
   const currentLabel =
     descriptor.options.find((option) => option.id === current)?.label ?? descriptor.label
   const blocked = props.disabled || traits.busy || traits.unsupportedReason !== null
   const triggerLabel = traits.unsupportedShortLabel ?? currentLabel
+  const sizerLabels = Array.from(new Set([...levels.map(labelOf), triggerLabel]))
   const tooltip = blocked
     ? (traits.unsupportedReason ?? `${descriptor.label}: ${currentLabel}`)
-    : [`${descriptor.label}: ${currentLabel}`, props.extraMenuHint].filter(Boolean).join(' · ')
+    : `${descriptor.label}: ${currentLabel}`
 
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const trackRef = useRef<HTMLDivElement>(null)
-  const draggingRef = useRef(false)
+  const labelRef = useRef<HTMLSpanElement>(null)
+  const columnRef = useRef<HTMLDivElement | null>(null)
+  const [columnNode, setColumnNode] = useState<HTMLDivElement | null>(null)
+  const [anchor, setAnchor] = useState<Anchor | null>(null)
+  const previousRef = useRef({ text: triggerLabel, index, level: currentLevel })
+  const ghostRef = useRef<HTMLSpanElement | null>(null)
+  const flipRef = useRef<Animation | null>(null)
   const [open, setOpen] = useComposerMenuState(props.hidden || blocked)
+  const slotRef = useRef<HTMLSpanElement>(null)
+  const measureRef = useRef<HTMLSpanElement>(null)
+  const lockRef = useRef({ trigger: false, column: false, open: false, width: 0 })
+  const widthLabelRef = useRef(triggerLabel)
+  widthLabelRef.current = triggerLabel
 
   const stateRef = useRef({ index, blocked, count, levels, select: traits.select })
   stateRef.current = { index, blocked, count, levels, select: traits.select }
+
+  const fitWidth = useCallback(() => {
+    const slot = slotRef.current
+    const measure = measureRef.current
+    if (!slot || !measure) return
+    const samples = Array.from(measure.children).filter(
+      (child): child is HTMLElement => child instanceof HTMLElement
+    )
+    const sample = samples.find((child) => child.dataset.label === widthLabelRef.current)
+    const natural = sample?.getBoundingClientRect().width ?? 0
+    if (natural <= 0) return
+    const lock = lockRef.current
+    const locked = lock.trigger || lock.column || lock.open
+    const widest = lock.open
+      ? Math.max(...samples.map((child) => child.getBoundingClientRect().width))
+      : 0
+    const next = locked ? Math.max(lock.width, natural, widest) : natural
+    lock.width = locked ? next : 0
+    const previous = parseFloat(slot.style.width) || slot.getBoundingClientRect().width
+    if (Math.abs(next - previous) < 0.25) return
+    if (next < previous && !locked) slot.dataset.effortSettling = 'true'
+    else delete slot.dataset.effortSettling
+    slot.style.width = `${next}px`
+    const trigger = triggerRef.current
+    if (next > previous && lock.open && trigger) setAnchor(readAnchor(trigger))
+  }, [])
+
+  useLayoutEffect(() => {
+    fitWidth()
+  }, [triggerLabel, fitWidth])
+
+  useLayoutEffect(() => {
+    lockRef.current.open = open
+    fitWidth()
+  }, [open, fitWidth])
+
+  useEffect(() => {
+    const measure = measureRef.current
+    if (!measure || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => fitWidth())
+    observer.observe(measure)
+    return () => observer.disconnect()
+  }, [fitWidth])
+
+  useEffect(() => {
+    const trigger = triggerRef.current
+    if (!trigger) return
+    const enter = () => {
+      lockRef.current.trigger = true
+      fitWidth()
+    }
+    const leave = () => {
+      lockRef.current.trigger = false
+      fitWidth()
+    }
+    trigger.addEventListener('pointerenter', enter)
+    trigger.addEventListener('pointerleave', leave)
+    return () => {
+      trigger.removeEventListener('pointerenter', enter)
+      trigger.removeEventListener('pointerleave', leave)
+    }
+  }, [fitWidth])
+
+  useEffect(() => {
+    if (!columnNode) return
+    const enter = () => {
+      lockRef.current.column = true
+      fitWidth()
+    }
+    const leave = () => {
+      lockRef.current.column = false
+      fitWidth()
+    }
+    columnNode.addEventListener('pointerenter', enter)
+    columnNode.addEventListener('pointerleave', leave)
+    return () => {
+      columnNode.removeEventListener('pointerenter', enter)
+      columnNode.removeEventListener('pointerleave', leave)
+      lockRef.current.column = false
+    }
+  }, [columnNode, fitWidth])
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setAnchor(null)
+      return
+    }
+    const trigger = triggerRef.current
+    if (!trigger) return
+    setAnchor(readAnchor(trigger))
+  }, [open])
+
+  useLayoutEffect(() => {
+    const previous = previousRef.current
+    previousRef.current = { text: triggerLabel, index, level: currentLevel }
+    if (previous.text === triggerLabel) return
+    const label = labelRef.current
+    const slot = label?.parentElement
+    if (!label || !slot) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const direction = index > previous.index ? 1 : -1
+    const easing = readEasing()
+    const computed = getComputedStyle(label)
+    const inFlight = flipRef.current !== null
+    const fromTransform =
+      inFlight && computed.transform !== 'none' ? computed.transform : 'translateY(0)'
+    const fromOpacity = inFlight ? computed.opacity : '1'
+    flipRef.current?.cancel()
+    flipRef.current = null
+    ghostRef.current?.remove()
+    const ghost = document.createElement('span')
+    ghost.textContent = previous.text
+    ghost.className = 'composer-effort-text'
+    ghost.dataset.composerEffortGhost = 'true'
+    ghost.dataset.effortLevel = previous.level
+    ghost.setAttribute('aria-hidden', 'true')
+    slot.appendChild(ghost)
+    ghostRef.current = ghost
+    const options = { duration: FLIP_DURATION_MS, easing, fill: 'both' as const }
+    const dropGhost = () => {
+      ghost.remove()
+      if (ghostRef.current === ghost) ghostRef.current = null
+    }
+    ghost
+      .animate(
+        [
+          { transform: fromTransform, opacity: fromOpacity },
+          { transform: `translateY(${-direction * 100}%)`, opacity: 0 }
+        ],
+        options
+      )
+      .finished.then(dropGhost, dropGhost)
+    const flip = label.animate(
+      [
+        { transform: `translateY(${direction * 100}%)`, opacity: 0 },
+        { transform: 'translateY(0)', opacity: 1 }
+      ],
+      { duration: FLIP_DURATION_MS, easing }
+    )
+    flipRef.current = flip
+    const release = () => {
+      if (flipRef.current === flip) flipRef.current = null
+    }
+    flip.finished.then(release, release)
+  }, [triggerLabel, index, currentLevel])
+
+  useEffect(
+    () => () => {
+      flipRef.current?.cancel()
+      ghostRef.current?.remove()
+    },
+    []
+  )
+
+  const close = (restoreFocus: boolean) => {
+    setOpen(false)
+    if (restoreFocus) triggerRef.current?.focus({ preventScroll: true })
+  }
 
   const commit = (position: number) => {
     const state = stateRef.current
@@ -57,107 +277,110 @@ export function EffortSlider(props: {
     state.select(level)
   }
 
-  const levelAtPointer = (clientY: number) => {
-    const node = trackRef.current
-    const state = stateRef.current
-    if (!node) return state.index
-    const rect = node.getBoundingClientRect()
-    if (rect.height <= 0) return state.index
-    const ratio = (clientY - rect.top) / rect.height
-    const position = Math.min(state.count - 1, Math.max(0, Math.floor(ratio * state.count)))
-    return state.count - 1 - position
-  }
-
   useEffect(() => {
-    const onPointerMove = (event: PointerEvent) => {
-      if (!draggingRef.current) return
-      commit(levelAtPointer(event.clientY))
-    }
-    const endDrag = () => {
-      draggingRef.current = false
-    }
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', endDrag)
-    window.addEventListener('pointercancel', endDrag)
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove)
-      window.removeEventListener('pointerup', endDrag)
-      window.removeEventListener('pointercancel', endDrag)
-    }
-  }, [])
-
-  useEffect(() => {
-    const node = triggerRef.current
-    if (!node) return
     let lastStepAt = 0
     const onWheel = (event: WheelEvent) => {
-      if (stateRef.current.blocked) return
+      const state = stateRef.current
+      if (state.blocked) return
       if (Math.abs(event.deltaY) < WHEEL_STEP_DELTA) return
       event.preventDefault()
       const now = event.timeStamp || Date.now()
       if (now - lastStepAt < WHEEL_STEP_INTERVAL_MS) return
       lastStepAt = now
-      const next = stateRef.current.index + (event.deltaY < 0 ? 1 : -1)
-      const level = stateRef.current.levels[next]
-      if (!level || level === stateRef.current.levels[stateRef.current.index]) return
-      stateRef.current.select(level)
+      const next = (state.index + (event.deltaY < 0 ? 1 : -1) + state.count) % state.count
+      const level = state.levels[next]
+      if (!level || level === state.levels[state.index]) return
+      state.select(level)
     }
-    node.addEventListener('wheel', onWheel, { passive: false })
-    return () => node.removeEventListener('wheel', onWheel)
-  }, [])
+    const nodes: HTMLElement[] = []
+    if (triggerRef.current) nodes.push(triggerRef.current)
+    if (columnNode) nodes.push(columnNode)
+    for (const node of nodes) node.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      for (const node of nodes) node.removeEventListener('wheel', onWheel)
+    }
+  }, [columnNode])
 
-  const shortcut = props.extraMenuOwnsModeShortcut
-    ? 'composer.effort composer.mode'
-    : 'composer.effort'
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (columnRef.current?.contains(target) || triggerRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const onResize = () => setOpen(false)
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [open, setOpen])
+
+  const columnReady = columnNode !== null
+  useEffect(() => {
+    if (columnReady) columnRef.current?.focus({ preventScroll: true })
+  }, [columnReady])
+
+  const columnHeight = count * ROW_HEIGHT + (COLUMN_PADDING + COLUMN_BORDER) * 2
+  const alignedTop = anchor
+    ? anchor.centerY - ROW_HEIGHT / 2 - COLUMN_PADDING - COLUMN_BORDER - (count - 1 - index) * ROW_HEIGHT
+    : 0
+  const columnTop = anchor
+    ? Math.max(
+        VIEWPORT_MARGIN,
+        Math.min(alignedTop, anchor.viewportHeight - VIEWPORT_MARGIN - columnHeight)
+      )
+    : 0
+  const shifted = anchor !== null && Math.abs(columnTop - alignedTop) > 0.5
+  const columnWidth = anchor?.triggerWidth ?? 0
+  const columnLeft = anchor
+    ? Math.max(
+        VIEWPORT_MARGIN,
+        Math.min(anchor.triggerLeft, anchor.viewportWidth - VIEWPORT_MARGIN - columnWidth)
+      )
+    : 0
 
   return (
-    <Menu
-      open={open}
-      onOpenChange={(next) => setOpen(next && !blocked)}
-      onOpenChangeComplete={(isOpen) => {
-        const openToPermissions =
-          isOpen && triggerRef.current?.dataset.openToPermissions === 'true'
-        focusRequestedPermission(isOpen, triggerRef.current)
-        if (!isOpen) {
-          triggerRef.current?.focus({ preventScroll: true })
-          return
-        }
-        if (!openToPermissions) trackRef.current?.focus({ preventScroll: true })
-      }}
-    >
+    <>
       <TooltipProvider delay={150}>
         <Tooltip>
           <TooltipTrigger
             render={
-              <MenuTrigger
-                render={
-                  <ComposerControl
-                    ref={triggerRef}
-                    aria-disabled={blocked || undefined}
-                    aria-label={tooltip}
-                    data-composer-shortcut={shortcut}
-                    data-composer-effort-trigger="true"
-                    size={props.size}
-                    className={cn(
-                      'shrink-0 whitespace-nowrap',
-                      props.className,
-                      '-ms-1 ps-0.5 text-muted-foreground hover:text-foreground data-popup-open:text-foreground',
-                      blocked && 'cursor-default text-muted-foreground/60 hover:text-muted-foreground/60'
-                    )}
-                  />
-                }
+              <ComposerControl
+                ref={triggerRef}
+                aria-disabled={blocked || undefined}
+                aria-label={tooltip}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                data-composer-shortcut="composer.effort"
+                data-composer-effort-trigger="true"
+                data-effort-level={currentLevel}
+                size={props.size}
+                onClick={() => {
+                  if (blocked) return
+                  setOpen(!open)
+                }}
+                className={cn(
+                  'composer-effort-trigger shrink-0 whitespace-nowrap [[data-chat-provider-model-picker]+[data-resting-block]>&]:rounded-s-none [[data-chat-provider-model-picker]+[data-resting-block]>&]:ps-[2px] [[data-chat-provider-model-picker]:hover+[data-resting-block]>&]:bg-accent',
+                  props.className,
+                  blocked && 'cursor-default opacity-60'
+                )}
               />
             }
           >
-            <span className="flex items-center gap-1.5">
-              {count > 1 ? (
-                <span data-composer-control-compact-icon className="flex items-center">
-                  <EffortGlyph count={count} filled={index + 1} size={props.size} />
-                </span>
-              ) : (
-                <ComposerControlIcon icon={GaugeIcon} size={props.size} />
-              )}
-              <span data-composer-control-label>{triggerLabel}</span>
+            <span ref={slotRef} className="composer-effort-slot" data-composer-effort-slot>
+              <span ref={measureRef} className="composer-effort-measure" aria-hidden="true">
+                {sizerLabels.map((text) => (
+                  <span key={text} data-label={text}>
+                    {text}
+                  </span>
+                ))}
+              </span>
+              <span ref={labelRef} className="composer-effort-text" data-composer-effort-label>
+                <EffortTextContent text={triggerLabel} />
+              </span>
             </span>
           </TooltipTrigger>
           <TooltipPopup side="top">
@@ -170,94 +393,86 @@ export function EffortSlider(props: {
           </TooltipPopup>
         </Tooltip>
       </TooltipProvider>
-      <MenuPopup align="start" width="content" {...composerFloatingLayerProps}>
-        <div className="flex w-44 flex-col gap-1" data-composer-effort-panel="true">
-          <div className="px-2 pt-1 pb-0.5 font-medium text-muted-foreground text-xs">
-            {descriptor.label}
-          </div>
-          <div
-            ref={trackRef}
-            role="slider"
-            tabIndex={0}
-            aria-label={descriptor.label}
-            aria-orientation="vertical"
-            aria-valuemin={0}
-            aria-valuemax={count - 1}
-            aria-valuenow={index}
-            aria-valuetext={currentLabel}
-            data-composer-effort-slider="true"
-            className="flex flex-col-reverse gap-0.5 rounded-md p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-            onPointerDown={(event) => {
-              event.currentTarget.focus({ preventScroll: true })
-              draggingRef.current = true
-              commit(levelAtPointer(event.clientY))
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === 'Escape') {
+      {open && anchor
+        ? createPortal(
+            <div
+              ref={(node) => {
+                columnRef.current = node
+                setColumnNode(node)
+              }}
+              role="slider"
+              tabIndex={0}
+              aria-label={descriptor.label}
+              aria-orientation="vertical"
+              aria-valuemin={0}
+              aria-valuemax={count - 1}
+              aria-valuenow={index}
+              aria-valuetext={currentLabel}
+              data-composer-effort-slider="true"
+              {...composerFloatingLayerProps}
+              className="composer-effort-column fixed z-[130] flex flex-col-reverse overflow-hidden rounded-lg border border-border bg-(--surface-3) shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[top] duration-[180ms] ease-[var(--ease-glide)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]"
+              style={{
+                top: columnTop,
+                left: columnLeft,
+                height: columnHeight,
+                width: columnWidth,
+                paddingBlock: COLUMN_PADDING,
+                paddingInline: COLUMN_INLINE_PADDING
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === 'Escape') {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  close(true)
+                  return
+                }
+                const position =
+                  event.key === 'ArrowUp' || event.key === 'ArrowRight'
+                    ? index + 1
+                    : event.key === 'ArrowDown' || event.key === 'ArrowLeft'
+                      ? index - 1
+                      : event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? count - 1
+                          : null
+                if (position === null) return
                 event.preventDefault()
                 event.stopPropagation()
-                setOpen(false)
-                return
-              }
-              const position =
-                event.key === 'ArrowUp' || event.key === 'ArrowRight'
-                  ? index + 1
-                  : event.key === 'ArrowDown' || event.key === 'ArrowLeft'
-                    ? index - 1
-                    : event.key === 'PageUp'
-                      ? index + Math.max(1, count - 1)
-                      : event.key === 'PageDown'
-                        ? index - Math.max(1, count - 1)
-                        : event.key === 'Home'
-                          ? 0
-                          : event.key === 'End'
-                            ? count - 1
-                            : null
-              if (position === null) return
-              event.preventDefault()
-              event.stopPropagation()
-              commit(position)
-            }}
-          >
-            {levels.map((level, position) => {
-              const label = descriptor.options.find((option) => option.id === level)?.label ?? level
-              const active = position === index
-              return (
-                <button
-                  key={level}
-                  type="button"
-                  tabIndex={-1}
-                  data-composer-effort-level={level}
-                  data-active={active || undefined}
-                  aria-current={active || undefined}
-                  onClick={() => commit(position)}
-                  className={cn(
-                    'flex h-7 w-full cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-sm outline-none transition-colors duration-100 motion-reduce:transition-none',
-                    active
-                      ? 'bg-foreground/10 text-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                  )}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'h-3.5 w-0.5 shrink-0 rounded-full bg-current transition-opacity duration-100 motion-reduce:transition-none',
-                      position <= index ? 'opacity-90' : 'opacity-25'
-                    )}
-                  />
-                  <span className="min-w-0 truncate">{label}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        {props.extraMenuContent ? (
-          <>
-            <div className="mx-2 my-1 h-px bg-border" role="separator" />
-            {props.extraMenuContent}
-          </>
-        ) : null}
-      </MenuPopup>
-    </Menu>
+                commit(position)
+              }}
+            >
+              {levels.map((level, position) => {
+                const active = position === index
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    tabIndex={-1}
+                    data-composer-effort-level={level}
+                    data-active={active || undefined}
+                    aria-current={active || undefined}
+                    onClick={() => {
+                      commit(position)
+                      close(true)
+                    }}
+                    className="flex w-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-0 text-center font-[family-name:var(--font-ui)] font-medium text-[13px] tracking-[-0.005em] outline-none transition-[opacity,background-color] duration-150 hover:!opacity-100 motion-reduce:transition-none"
+                    style={{
+                      backgroundColor: shifted && active ? 'color-mix(in srgb, var(--fg) 10%, transparent)' : undefined,
+                      height: ROW_HEIGHT,
+                      opacity: levelOpacity(Math.abs(position - index))
+                    }}
+                  >
+                    <span className="composer-effort-text" data-effort-level={level}>
+                      <EffortTextContent text={labelOf(level)} />
+                    </span>
+                  </button>
+                )
+              })}
+            </div>,
+            document.body
+          )
+        : null}
+    </>
   )
 }

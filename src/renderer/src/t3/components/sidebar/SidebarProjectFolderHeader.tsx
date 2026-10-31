@@ -1,4 +1,4 @@
-import { ChevronDownIcon, SquarePenIcon } from 'lucide-react'
+import { ChevronDownIcon, EllipsisIcon, SquarePenIcon } from 'lucide-react'
 import { memo, type ReactNode } from 'react'
 import { cn } from '../../lib/utils'
 import { sidebarFolderRowId } from '../Sidebar.logic'
@@ -22,11 +22,13 @@ export interface SidebarProjectFolderView {
   hiddenCount: number
   dot: SidebarFolderDot | null
   dotLabel: string | null
+  manageable?: boolean
 }
 
 export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHeader(props: {
   folder: SidebarProjectFolderView
   newThreadLabel: string
+  menuLabel: string
   onToggle: (projectKey: string) => void
   onNewThread: (projectKey: string) => void
   onContextMenu: (projectKey: string, position: { x: number; y: number }) => void
@@ -74,6 +76,17 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         />
       </button>
       <span className="absolute inset-y-0 right-6 flex items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
+        {folder.manageable ? <Button
+          data-sidebar-action-for={rowId}
+          size="icon-xs"
+          variant="ghost-muted"
+          aria-label={props.menuLabel}
+          data-testid="v3-project-more"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect()
+            props.onContextMenu(folder.projectKey, { x: rect.left, y: rect.bottom })
+          }}
+        ><EllipsisIcon aria-hidden /></Button> : null}
         <Button
           data-sidebar-action-for={rowId}
           size="icon-xs"

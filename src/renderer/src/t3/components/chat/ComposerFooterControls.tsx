@@ -1,14 +1,16 @@
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
+import { ShieldCheckIcon, ShieldOffIcon } from 'lucide-react'
 import { memo, useId, useRef, useState } from 'react'
 import type { PermissionMode } from '../../../../../shared/approval'
 import type { RuntimeModeOption } from '../../adapters/composer-permissions'
 import { useT } from '../../../i18n'
-import { Menu, MenuPopup, MenuTrigger } from '../ui/menu'
+import { Button } from '../ui/button'
+import { Popover, PopoverPopup } from '../ui/popover'
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from './ComposerControl'
-import { focusRequestedPermission, useComposerMenuProps } from './composerEventScope'
+import { composerFloatingLayerProps } from './composerEventScope'
 import { runtimeModeIcons } from './runtimeModeConfig'
-import { useComposerMenuState } from './useComposerMenuState'
+import { cn } from '../../lib/utils'
 
 const fallbackRuntimeModeOption: RuntimeModeOption = {
   mode: 'danger',
@@ -19,68 +21,92 @@ const fallbackRuntimeModeOption: RuntimeModeOption = {
 
 export const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
   runtimeMode: PermissionMode
-  runtimeModeOptions: ReadonlyArray<RuntimeModeOption>
   size?: ComposerControlSize
   hidden?: boolean
   accessDisplay?: 'label' | 'icon' | 'hidden'
-  emphasized?: boolean
+  pendingMode: PermissionMode | null
   onRuntimeModeChange: (mode: PermissionMode) => void
+  onConfirmPending: () => void
+  onCancelPending: () => void
 }) {
   const t = useT()
   const size = props.size ?? 'sm'
   const accessDisplay = props.accessDisplay ?? 'label'
-  const composerFloatingLayerProps = useComposerMenuProps()
-  const [open, setOpen] = useComposerMenuState(props.hidden || props.accessDisplay === 'hidden')
-  const permissionsChipRef = useRef<HTMLButtonElement>(null)
-  const runtimeModeOption =
-    props.runtimeModeOptions.find((option) => option.mode === props.runtimeMode) ??
-    fallbackRuntimeModeOption
-  const RuntimeModeIcon = runtimeModeOption.icon
-  const permissionsTooltip = `${t('permission.title')}: ${runtimeModeOption.label}. ${runtimeModeOption.description}`
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const unrestricted = props.runtimeMode === 'all'
+  const Icon = unrestricted ? ShieldOffIcon : ShieldCheckIcon
+  const fullLabel = t(`permission.label.${props.runtimeMode}` as 'permission.label.danger')
+  const description = t(`permission.hint.${props.runtimeMode}` as 'permission.hint.danger')
+  const toggleHint = t('permission.toggle')
+  const confirmOpen = props.pendingMode === 'all' && !props.hidden
 
   if (accessDisplay === 'hidden') return null
 
   return (
-    <Menu
-      open={open}
-      onOpenChange={setOpen}
-      onOpenChangeComplete={(isOpen) => focusRequestedPermission(isOpen, permissionsChipRef.current)}
-    >
+    <>
       <Tooltip>
         <TooltipTrigger
           render={
-            <MenuTrigger
-              render={
-                <ComposerControl
-                  ref={permissionsChipRef}
-                  data-composer-shortcut="composer.mode"
-                  size={size}
-                  className="ps-1.5"
-                  aria-label={`${t('permission.title')}: ${runtimeModeOption.label}`}
-                />
-              }
+            <ComposerControl
+              ref={buttonRef}
+              data-composer-shortcut="composer.mode"
+              data-composer-permission-trigger="true"
+              data-permission-mode={props.runtimeMode}
+              size={size}
+              className={cn(
+                'aspect-square px-0 text-(--fg2) hover:text-foreground [&_svg[data-composer-control-icon]]:text-current',
+                size === 'xs' ? 'w-7 sm:w-6' : 'w-7'
+              )}
+              aria-label={`${t('permission.title')}: ${fullLabel}. ${toggleHint}`}
+              onClick={() => props.onRuntimeModeChange(unrestricted ? 'danger' : 'all')}
             />
           }
         >
-          <ComposerControlIcon
-            icon={RuntimeModeIcon}
-            size={size}
-            {...(props.emphasized ? { className: 'text-current' } : {})}
-          />
-          <span data-composer-control-label className={accessDisplay === 'icon' ? 'sr-only' : undefined}>
-            {runtimeModeOption.label}
-          </span>
+          <ComposerControlIcon icon={Icon} size={size} />
         </TooltipTrigger>
-        <TooltipPopup side="top">{permissionsTooltip}</TooltipPopup>
+        <TooltipPopup side="top">
+          <span className="flex flex-col gap-0.5">
+            <span>{`${t('permission.title')}: ${fullLabel}`}</span>
+            <span className="text-muted-foreground text-xs">{`${description} · ${toggleHint}`}</span>
+          </span>
+        </TooltipPopup>
       </Tooltip>
-      <MenuPopup align="start" {...composerFloatingLayerProps}>
-        <ComposerPermissionsSection
-          runtimeMode={props.runtimeMode}
-          runtimeModeOptions={props.runtimeModeOptions}
-          onRuntimeModeChange={props.onRuntimeModeChange}
-        />
-      </MenuPopup>
-    </Menu>
+      <Popover
+        open={confirmOpen}
+        onOpenChange={(next) => {
+          if (!next) props.onCancelPending()
+        }}
+      >
+        <PopoverPopup
+          anchor={buttonRef}
+          side="top"
+          align="start"
+          sideOffset={8}
+          data-composer-permission-confirm="true"
+          {...composerFloatingLayerProps}
+        >
+          <div className="grid w-60 gap-2.5">
+            <div className="grid gap-0.5">
+              <div className="font-medium text-sm">{t('permission.confirmAll.title')}</div>
+              <div className="text-muted-foreground text-xs">{t('permission.confirmAll.desc')}</div>
+            </div>
+            <div className="flex justify-end gap-1.5">
+              <Button size="xs" variant="ghost" onClick={props.onCancelPending}>
+                {t('ui.cancel')}
+              </Button>
+              <Button
+                size="xs"
+                autoFocus
+                className="bg-(--stall) text-white hover:bg-(--stall)/90"
+                onClick={props.onConfirmPending}
+              >
+                {t('permission.confirmAll.confirm')}
+              </Button>
+            </div>
+          </div>
+        </PopoverPopup>
+      </Popover>
+    </>
   )
 })
 

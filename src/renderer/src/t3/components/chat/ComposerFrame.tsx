@@ -31,6 +31,7 @@ export interface ComposerFrameProps {
   controls?: ReactNode;
   primaryActions?: ReactNode;
   contextStrip?: ReactNode;
+  edgeHandles?: ReactNode;
   stash?: ComposerFrameStash | null;
   dropActive?: boolean;
   quoteActive?: boolean;
@@ -49,6 +50,7 @@ export function ComposerFrame({
   controls,
   primaryActions,
   contextStrip,
+  edgeHandles,
   stash = null,
   dropActive = false,
   quoteActive = false,
@@ -86,6 +88,7 @@ export function ComposerFrame({
                   className={cn(
                     "rounded-2xl transition-[background-color] duration-200",
                     "in-data-[thread-context-over]:bg-accent/45 in-data-[thread-context-over]:ring-1 in-data-[thread-context-over]:ring-inset in-data-[thread-context-over]:ring-primary/70",
+                    "in-data-[quote-over]:bg-accent/45 in-data-[quote-over]:ring-1 in-data-[quote-over]:ring-inset in-data-[quote-over]:ring-primary/70",
                     quoteActive && "bg-accent/45 ring-1 ring-inset ring-primary/70",
                     dropActive && "bg-accent/45 ring-1 ring-inset ring-primary/70",
                     surfaceClassName,
@@ -130,6 +133,7 @@ export function ComposerFrame({
           <ComposerSurface.ContextStrip>{contextStrip}</ComposerSurface.ContextStrip>
         ) : null}
       </ComposerSurface.Host>
+      {edgeHandles}
     </ComposerSurface.Shell>
   );
 }

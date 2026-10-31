@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { useStore } from '../../state/store'
 import { leaveSessionAfter } from './session-advance'
+import { createSessionSplitDrag } from '../split/split-drag'
 
 const SESSION_DRAG_THRESHOLD = 4
 
@@ -189,7 +190,7 @@ function sidebarZoneUnder(x: number, y: number, selector: string): HTMLElement |
 
 export const SESSION_QUOTE_DROP_EVENT = 'yan-v3-session-quote-drop'
 
-function quoteTargetUnder(x: number, y: number): HTMLElement | null {
+export function quoteTargetUnder(x: number, y: number): HTMLElement | null {
   if (x <= sidebarEdge()) return null
   for (const target of document.querySelectorAll<HTMLElement>('[data-session-quote-drop]')) {
     const rect = target.getBoundingClientRect()
@@ -223,6 +224,8 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
   let shelf: HTMLElement | null = null
   let zone: SidebarZone | null = null
   let quote: HTMLElement | null = null
+  let last: DragPoint = { x: -1, y: -1 }
+  const splitDrag = createSessionSplitDrag({ id: item.id, path: item.path })
   const markQuote = (next: HTMLElement | null): void => {
     if (next === quote) return
     quote?.removeAttribute('data-quote-over')
@@ -257,10 +260,13 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
         source: `session:${item.path}`,
         ghost,
         hover: ({ x, y }) => {
+          last = { x, y }
           zone = sidebarZoneFor(x, y, row)
           markShelf(zone?.el ?? null)
           markFolder(shelf || archived ? null : folderUnder(x, y, home))
           markQuote(shelf || folder ? null : quoteTargetUnder(x, y))
+          if (shelf || folder || quote || archived) splitDrag.clear()
+          else splitDrag.move(x, y, sidebarEdge())
         },
         drop: () => {
           if (shelf && zone) {
@@ -282,9 +288,12 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
               label: folder.dataset.moveLabel ?? ''
             }
             window.dispatchEvent(new CustomEvent(SESSION_FOLDER_DROP_EVENT, { detail }))
+            return
           }
+          if (!archived) splitDrag.drop(last.x, last.y, sidebarEdge())
         },
         end: () => {
+          splitDrag.end()
           markFolder(null)
           markShelf(null)
           markQuote(null)

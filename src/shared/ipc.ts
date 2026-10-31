@@ -765,6 +765,8 @@ export interface ProjectRecord {
   archived: boolean
   createdAt: number
   updatedAt: number
+  iconColor?: number
+  iconText?: string
 }
 
 export interface ProjectDirectoryChange {
@@ -799,8 +801,11 @@ export interface AppSettings {
   fontCodeCustom?: string
   fontSizeUi?: number
   streamWidth?: number
+  composerHeight?: number
   reduceMotion?: boolean
   sidebarLayout?: 'projects' | 'flat'
+  cloneDir?: string
+  peerGithubLogins?: Record<string, string>
   keepAwakeOnBattery?: boolean
   checkpointsEnabled?: boolean
   guardOutsideWrites?: boolean
@@ -819,6 +824,7 @@ export interface AppSettings {
   profile: UserProfile
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
+  subagentHistoryPrune?: boolean
   wrapUpCard?: boolean
   workspaceTiles?: boolean
   smoothText?: boolean
@@ -1219,6 +1225,7 @@ export interface SubagentRun {
   usage?: SubagentUsageTotals
   brief?: SubagentBrief
   result?: SubagentResult
+  resumable?: { ok: boolean; reason?: string }
 }
 
 export interface SubagentRecovery {
@@ -1310,6 +1317,7 @@ export type MainPushBody =
   | { ch: 'runners'; payload: RunnerStatus[] }
   | { ch: 'runs'; payload: { revision: number; upsert: import('./runs').RunSnapshot[]; remove: string[] } }
   | { ch: 'tray-new-session'; payload: null }
+  | { ch: 'github-clone'; payload: import('./github').GithubCloneProgress }
   | { ch: 'peer-request'; payload: import('./peer-protocol').PeerApprovalRequest }
   | { ch: 'peer-request-closed'; payload: { requestId: string } }
   | { ch: 'session-moved'; payload: { sessionId: string; sessionFile: string; cwd: string; ok: boolean; error?: string; continued?: boolean; continuationError?: string } }
@@ -1872,6 +1880,8 @@ export interface YanBridge {
   changeProjectDirectory(request: ProjectDirectoryChange): Promise<ProjectDirectoryResult>
   pickCwd(): Promise<string | null>
   setCwd(cwd: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
+  workFolderRoot(): Promise<string>
+  createWorkFolder(name: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
 
   respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void
   extendUi(id: string, extraMs?: number): Promise<{ ok: boolean; timeout?: number; deadline?: number; error?: string }>

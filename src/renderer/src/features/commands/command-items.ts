@@ -11,6 +11,7 @@ export const COMMAND_ACTION_IDS = {
   toggleWorkspace: 'toggleWorkspace',
   toggleTheme: 'toggleTheme',
   openSettings: 'openSettings',
+  openSideBySide: 'openSideBySide',
   stopSession: 'stopSession',
   workspaceChanges: 'workspaceChanges',
   workspaceTerminal: 'workspaceTerminal',

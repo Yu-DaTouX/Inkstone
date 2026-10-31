@@ -18,7 +18,7 @@ export function modelPickerTriggerClassName(size: ModelPickerSize, className?: s
     "[&_:is([data-composer-control-label],[data-chat-provider-model-picker-label])]:[text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:[&_:is([data-composer-control-label],[data-chat-provider-model-picker-label])]:py-1.5",
     size === "xs"
       ? "h-7 gap-1 px-1.75 font-normal text-foreground/70 text-sm hover:text-foreground dark:text-muted-foreground sm:h-6 sm:text-xs [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5 [&_svg[data-composer-control-chevron]]:ms-0 [&_svg[data-composer-control-chevron]]:-me-1"
-      : "h-7 gap-1.5 px-2 font-medium text-foreground/80 [&_svg:not([class*='text-'])]:text-muted-foreground hover:text-foreground sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
+      : "h-7 gap-1.5 px-2 font-medium font-[family-name:var(--font-ui)] tracking-[-0.005em] text-[13px] text-[color:var(--fg-ctl)] [&_svg:not([class*='text-'])]:text-muted-foreground hover:text-foreground sm:text-[13px] [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
     "aria-pressed:bg-accent aria-pressed:text-accent-foreground aria-pressed:hover:bg-accent/80",
     className,
   );
@@ -149,6 +149,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               props.compact
                 ? "max-w-42 shrink-0"
                 : !props.isComposerOwned && "max-w-48 sm:max-w-56",
+              props.isComposerOwned &&
+                "[&:has(+[data-resting-block=traits]:not([aria-hidden=true]))]:rounded-e-none [&:has(+[data-resting-block=traits]:not([aria-hidden=true]))]:pe-[2px] [&:has(+[data-resting-block=traits]_.composer-effort-trigger:hover)]:bg-accent [&:has(+[data-resting-block=traits]_.composer-effort-trigger:hover)]:text-foreground",
               props.triggerClassName,
             )}
             disabled={props.disabled}
@@ -161,7 +163,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             size === "xs" ? "gap-1" : "gap-1.5",
           )}
         >
-          {activeEntry && props.triggerLabel === undefined ? (
+          {activeEntry && props.triggerLabel === undefined && !props.isComposerOwned ? (
             <span data-chat-provider-model-picker-icon className="contents">
               <ProviderInstanceIcon
                 driverKind={activeEntry.driverKind}

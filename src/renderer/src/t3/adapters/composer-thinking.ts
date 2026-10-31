@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react'
 import { useT } from '../../i18n'
-import { levelLabel } from '../../patterns/ThinkingBadge'
 import { currentThinkingLevels, useStore } from '../../state/store'
 import {
   buildLockedReasoningDescriptor,
@@ -12,6 +11,20 @@ import {
 } from './model-traits'
 
 const ULTRACODE_LABEL = 'Ultracode'
+
+const EFFORT_LABELS: Record<string, string> = {
+  off: 'Off',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'XHigh',
+  max: 'Max'
+}
+
+function effortLabel(level: string): string {
+  return EFFORT_LABELS[level] ?? level
+}
 
 export type ComposerTraitsAdapter = {
   descriptor: SelectDescriptor
@@ -52,7 +65,6 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
       : levels.length === 0
         ? t('picker.thinkUnknownShort')
         : t('picker.thinkUnsupportedShort')
-  const sliderLevels = levels.length > 1 && !levels.includes('off') ? ['off', ...levels] : levels
   const descriptor =
     buildReasoningDescriptor({
       levels,
@@ -61,11 +73,11 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
       ultracodeLabel: ULTRACODE_LABEL,
       ultracodeDescription: t('picker.deepDesc'),
       sectionLabel: t('picker.think'),
-      levelLabel: (entry) => levelLabel(t, entry)
+      levelLabel: effortLabel
     }) ??
     buildLockedReasoningDescriptor({
       sectionLabel: t('picker.think'),
-      levelLabel: (entry) => levelLabel(t, entry)
+      levelLabel: effortLabel
     })
   const canUltracode = levels.length > 1 && !!session?.sessionId && !ultracode && !busy
 
@@ -99,7 +111,7 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
   return {
     descriptor,
     display: buildTraitsTriggerDisplay(descriptor),
-    levels: sliderLevels.length > 1 ? sliderLevels : ['off'],
+    levels: levels.length > 1 ? levels : ['off'],
     unsupportedReason,
     unsupportedShortLabel,
     busy,

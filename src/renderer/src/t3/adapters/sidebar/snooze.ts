@@ -2,9 +2,8 @@ import { useMemo } from 'react'
 import { useI18n } from '../../../i18n'
 import { pickSnoozePreset, resolveSnoozePresets, snoozeWakeLabel, type SnoozePreset } from '../../internal/thread-settled'
 
-export function useSnoozePresets(open: boolean): SnoozePreset[] {
+export function useSnoozePresets(open: boolean, now = Date.now()): SnoozePreset[] {
   const { lang } = useI18n()
-  const now = Date.now()
   return useMemo(() => (open ? resolveSnoozePresets(now, lang) : []), [open, now, lang])
 }
 

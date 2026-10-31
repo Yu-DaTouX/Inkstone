@@ -1551,6 +1551,15 @@ await runGitWorkspaceChangesTests(ok, workspaceChanges)
 }
 
 {
+  const { runSplitViewTests } = await import('./test-split-view.mjs')
+  await runSplitViewTests(ok)
+}
+
+await import('./test-split-drop-model.mjs')
+await import('./test-v3-side-by-side.mjs')
+await import('./test-v3-side-by-side-resize.mjs')
+
+{
   const { runRemoteApprovalTests } = await import('./test-remote-approval.mjs')
   await runRemoteApprovalTests(ok)
 }

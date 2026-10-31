@@ -4,6 +4,7 @@ import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
+import { ProjectFavicon } from '../../t3/components/ProjectFavicon'
 
 const RECENT_LIMIT = 8
 
@@ -51,7 +52,7 @@ export function ProjectPicker() {
               key={project.id}
               textValue={projectLabel(project)}
               checked={project.id === currentProjectId}
-              icon={<Folder size={14} />}
+              icon={<ProjectFavicon project={{ projectId: project.id, displayName: projectLabel(project) }} />}
               description={<MiddleTruncate value={project.cwd} />}
               data-current={project.id === currentProjectId ? 'true' : undefined}
               onAction={() => openProject(project)}

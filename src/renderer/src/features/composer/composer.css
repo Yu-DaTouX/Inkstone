@@ -10,6 +10,234 @@
     --think-max: var(--fail);
   }
 
+  .composer-effort-trigger {
+    --effort-color: var(--fg);
+    --effort-tinted: 0;
+    --effort-flow-on: 0;
+  }
+
+  .composer-effort-trigger:is(:hover, [aria-expanded='true']),
+  :where([data-empty]) .composer-effort-trigger {
+    --effort-tinted: 1;
+    --effort-flow-on: 1;
+  }
+
+  .composer-effort-trigger[aria-disabled='true'] {
+    --effort-flow-on: 0;
+  }
+
+  .composer-effort-column .composer-effort-text {
+    --effort-tinted: 1;
+    --effort-flow-on: 1;
+  }
+
+  :is(.composer-effort-trigger, .composer-effort-text)[data-effort-level='off'] {
+    --effort-color: var(--think-off);
+    --effort-flow-mix: 0%;
+  }
+  :is(.composer-effort-trigger, .composer-effort-text)[data-effort-level='minimal'] {
+    --effort-color: var(--think-minimal);
+    --effort-flow-mix: 24%;
+    --effort-flow-period: calc(var(--dur-breathe) * .75);
+  }
+  :is(.composer-effort-trigger, .composer-effort-text)[data-effort-level='low'] {
+    --effort-color: var(--think-low);
+    --effort-flow-mix: 30%;
+    --effort-flow-period: calc(var(--dur-breathe) * .75);
+  }
+  :is(.composer-effort-trigger, .composer-effort-text)[data-effort-level='medium'] {
+    --effort-color: var(--think-medium);
+    --effort-flow-mix: 36%;
+    --effort-flow-period: calc(var(--dur-breathe) * .6667);
+  }
+  :is(.composer-effort-trigger, .composer-effort-text)[data-effort-level='high'] {
+    --effort-color: var(--think-high);
+    --effort-flow-mix: 44%;
+    --effort-flow-period: calc(var(--dur-breathe) * .5833);
+  }
+  :is(.composer-effort-trigger, .composer-effort-text)[data-effort-level='xhigh'] {
+    --effort-color: var(--think-xhigh);
+    --effort-flow-mix: 50%;
+    --effort-flow-period: calc(var(--dur-breathe) * .5833);
+  }
+  :is(.composer-effort-trigger, .composer-effort-text)[data-effort-level='max'] {
+    --effort-color: var(--think-max);
+    --effort-flow-mix: 56%;
+    --effort-flow-period: calc(var(--dur-breathe) * .5833);
+  }
+
+  .composer-effort-slot {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    overflow: hidden;
+  }
+
+  .composer-effort-slot[data-effort-settling] {
+    transition: width var(--dur-base) var(--ease-glide);
+  }
+
+  .composer-effort-slot > * {
+    grid-area: 1 / 1;
+    white-space: nowrap;
+  }
+
+  .composer-effort-slot > .composer-effort-measure {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: max-content;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .composer-effort-slot > [data-composer-effort-ghost] {
+    pointer-events: none;
+  }
+
+  .composer-effort-text {
+    --effort-flow-src: color-mix(in oklch, var(--fg2), var(--effort-color) calc(var(--effort-tinted, 1) * 100%));
+    --effort-flow-base: var(--effort-flow-src);
+    --effort-flow-hi: color-mix(
+      in oklch,
+      var(--effort-flow-src),
+      var(--fg) calc(var(--effort-flow-mix, 0%) * var(--effort-flow-on, 0))
+    );
+    --effort-sheen-color: var(--effort-flow-hi);
+    position: relative;
+    display: inline-block;
+    color: var(--effort-flow-base);
+    transition:
+      --effort-flow-base var(--dur-quick) var(--ease-glide),
+      --effort-flow-hi var(--dur-quick) var(--ease-glide);
+  }
+
+  .composer-effort-sheen {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 60%;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-100%);
+    mask-image: linear-gradient(90deg, transparent, var(--fg) 50%, transparent);
+    transition: opacity var(--dur-quick) var(--ease-glide);
+    animation: composer-effort-sheen var(--effort-flow-period, var(--dur-breathe)) linear infinite paused;
+    will-change: transform;
+  }
+
+  .composer-effort-sheen-text {
+    display: block;
+    width: max-content;
+    color: var(--effort-sheen-color);
+    white-space: nowrap;
+    animation: composer-effort-sheen-text var(--effort-flow-period, var(--dur-breathe)) linear infinite paused;
+    will-change: transform;
+  }
+
+  .composer-effort-trigger:is(:hover, [aria-expanded='true']):not([aria-disabled='true'], [data-effort-level='off']) .composer-effort-sheen,
+  :where([data-empty]) .composer-effort-trigger:not([aria-disabled='true'], [data-effort-level='off']) .composer-effort-sheen,
+  .composer-effort-column .composer-effort-text:not([data-effort-level='off']) .composer-effort-sheen {
+    opacity: 1;
+  }
+
+  .composer-effort-trigger:is(:hover, [aria-expanded='true']):not([aria-disabled='true'], [data-effort-level='off']) :is(.composer-effort-sheen, .composer-effort-sheen-text),
+  :where([data-empty]) .composer-effort-trigger:not([aria-disabled='true'], [data-effort-level='off']) :is(.composer-effort-sheen, .composer-effort-sheen-text),
+  .composer-effort-column .composer-effort-text:not([data-effort-level='off']) :is(.composer-effort-sheen, .composer-effort-sheen-text) {
+    animation-play-state: running;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .composer-effort-sheen {
+      display: none;
+    }
+
+    .composer-effort-slot[data-effort-settling] {
+      transition: none;
+    }
+  }
+
+  @keyframes composer-effort-sheen {
+    0% { transform: translateX(-100%); }
+    75%, 100% { transform: translateX(166.667%); }
+  }
+
+  @keyframes composer-effort-sheen-text {
+    0% { transform: translateX(60%); }
+    75%, 100% { transform: translateX(-100%); }
+  }
+
+  .composer-width-handle {
+    position: absolute;
+    top: var(--s-8, 8px);
+    bottom: var(--s-8, 8px);
+    z-index: 20;
+    width: 10px;
+    cursor: ew-resize;
+    outline: none;
+    touch-action: none;
+  }
+
+  .composer-width-handle[data-composer-width-handle='left'] { left: -5px; }
+  .composer-width-handle[data-composer-width-handle='right'] { right: -5px; }
+
+  .composer-width-handle::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    left: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--fg3);
+    opacity: 0;
+    transition: opacity var(--dur-quick, 120ms) ease;
+  }
+
+  .composer-width-handle:hover::after,
+  .composer-width-handle:focus-visible::after,
+  .composer-width-handle[data-dragging]::after {
+    opacity: 0.7;
+  }
+
+  .composer-height-handle {
+    position: absolute;
+    top: -5px;
+    left: var(--s-24, 24px);
+    right: var(--s-24, 24px);
+    z-index: 20;
+    height: 10px;
+    cursor: ns-resize;
+    outline: none;
+    touch-action: none;
+  }
+
+  .composer-height-handle::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 4px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--fg3);
+    opacity: 0;
+    transition: opacity var(--dur-quick, 120ms) ease;
+  }
+
+  .composer-height-handle:hover::after,
+  .composer-height-handle:focus-visible::after,
+  .composer-height-handle[data-dragging]::after {
+    opacity: 0.7;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .composer-width-handle::after { transition: none; }
+    .composer-height-handle::after { transition: none; }
+  }
+
   .isolation-merge {
     flex-wrap: wrap;
   }
@@ -902,14 +1130,16 @@
   }
 
   .composer-v3 .composer-text {
-    min-height: calc(1.625em * 2 + 0.5rem);
-    max-height: min(13rem, 40svh);
-    font-size: 14px;
+    min-height: min(var(--composer-editor-min-h, calc(1.625em * 2 + 0.5rem)), 50svh);
+    max-height: max(min(var(--composer-editor-min-h, 0px), 50svh), min(13rem, 40svh));
+    font-family: var(--font-ui);
+    font-size: var(--t-prose);
     line-height: 1.625;
   }
 
   .composer-v3 .composer-text[data-placeholder-visible='true'][data-placeholder]::before {
-    font-size: 14px;
+    font-family: var(--font-ui);
+    font-size: var(--t-prose);
     line-height: 1.625;
   }
 
@@ -944,4 +1174,16 @@
   @keyframes file-drop-float {
     50% { transform: translateY(-3px); }
   }
+}
+
+@property --effort-flow-base {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --effort-flow-hi {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
 }

@@ -62,7 +62,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <Toolbar.Root
-      className="w-11 shrink-0 overflow-hidden bg-muted/30"
+      className="w-12 shrink-0 overflow-hidden bg-muted/30"
       data-model-picker-sidebar="true"
       aria-label={t("composer.t3.picker.providers")}
       orientation="vertical"
@@ -92,14 +92,14 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                     render={
                       <Toolbar.Button
                         className={cn(
-                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none aria-pressed:bg-foreground/[0.07]",
                         )}
                         onClick={() => handleSelect("favorites")}
                         type="button"
                         aria-label={t("composer.t3.picker.favorites")}
                         aria-pressed={props.selectedInstanceId === "favorites"}
                       >
-                        <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
+                        <StarIcon className="size-5.5 fill-current shrink-0" aria-hidden />
                       </Toolbar.Button>
                     }
                   />
@@ -136,7 +136,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const button = (
               <Toolbar.Button
                 className={cn(
-                  "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                  "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none aria-pressed:bg-foreground/[0.07]",
                   isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
                 )}
                 onClick={() => !isDisabled && handleSelect(entry.instanceId)}
@@ -158,8 +158,8 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   driverKind={entry.driverKind}
                   displayName={entry.displayName}
                   showBadge={showInstanceBadge}
-                  className="size-6 z-30"
-                  iconSize={20}
+                  className="size-7 z-30"
+                  iconSize={22}
                   indicatorBackground={
                     isHovered && !isDisabled
                       ? "var(--muted)"

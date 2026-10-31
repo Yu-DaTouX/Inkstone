@@ -23,6 +23,14 @@ export function sanitizeStreamWidth(value: unknown): number | undefined {
   return Math.round(Math.min(STREAM_WIDTH_MAX, Math.max(STREAM_WIDTH_MIN, value)))
 }
 
+export const COMPOSER_HEIGHT_MIN = 16
+export const COMPOSER_HEIGHT_MAX = 1600
+
+export function sanitizeComposerHeight(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.round(Math.min(COMPOSER_HEIGHT_MAX, Math.max(COMPOSER_HEIGHT_MIN, value)))
+}
+
 export function sanitizeFontName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const name = value.trim().replace(/\s+/g, ' ')

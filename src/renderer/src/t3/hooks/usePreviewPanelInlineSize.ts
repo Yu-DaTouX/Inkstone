@@ -5,6 +5,7 @@ import { type ResizableWidthHandlers, useResizableWidth } from "./useResizableWi
 
 export interface PreviewPanelInlineSize {
   readonly width: number;
+  readonly maxWidth?: number;
   readonly handlers: ResizableWidthHandlers;
   readonly observeRow: (host: HTMLElement) => () => void;
 }
@@ -17,6 +18,7 @@ export function usePreviewPanelInlineSize(options: {
   readonly enabled?: boolean | undefined;
   readonly width: number;
   readonly room?: number | undefined;
+  readonly siblingMinWidth?: number | undefined;
   readonly minWidth?: number | undefined;
   readonly onWidth: (width: number) => void;
   readonly container?: HTMLElement | null | undefined;
@@ -24,8 +26,9 @@ export function usePreviewPanelInlineSize(options: {
   const enabled = options.enabled ?? true;
   const minWidth = options.minWidth ?? PANEL_MIN_WIDTH;
   const container = options.container;
+  const siblingMin = options.siblingMinWidth ?? SIBLING_COLUMN_MIN_WIDTH;
   const [measuredCap, setMeasuredCap] = useState(() =>
-    maxWidthFor(typeof window === "undefined" ? 1280 : window.innerWidth),
+    maxWidthFor(typeof window === "undefined" ? 1280 : window.innerWidth, undefined, siblingMin),
   );
   const room = Number.isFinite(options.room) ? Math.floor(options.room as number) : Infinity;
   const maxWidth = Math.max(minWidth, Math.min(room, measuredCap));
@@ -40,7 +43,7 @@ export function usePreviewPanelInlineSize(options: {
     (host: HTMLElement) => {
       const row = container ?? (enabled ? host.parentElement : null) ?? null;
       const measure = () => {
-        setMeasuredCap(maxWidthFor(window.innerWidth, row?.clientWidth));
+        setMeasuredCap(maxWidthFor(window.innerWidth, row?.clientWidth, siblingMin));
       };
       measure();
       let frame = 0;
@@ -59,14 +62,14 @@ export function usePreviewPanelInlineSize(options: {
         stopObserving?.();
       };
     },
-    [container, enabled],
+    [container, enabled, siblingMin],
   );
-  return { width, handlers, observeRow };
+  return { width, maxWidth, handlers, observeRow };
 }
 
-function maxWidthFor(viewportWidth: number, containerWidth?: number): number {
+function maxWidthFor(viewportWidth: number, containerWidth: number | undefined, siblingMin: number): number {
   const fractionCap = Math.floor(viewportWidth * PANEL_MAX_WIDTH_FRACTION);
   const containerCap =
-    containerWidth === undefined ? Infinity : Math.floor(containerWidth) - SIBLING_COLUMN_MIN_WIDTH;
+    containerWidth === undefined ? Infinity : Math.floor(containerWidth) - siblingMin;
   return Math.max(PANEL_MIN_WIDTH, Math.min(fractionCap, containerCap));
 }
