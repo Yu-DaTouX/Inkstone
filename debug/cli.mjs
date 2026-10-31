@@ -7,6 +7,7 @@ import { FAKE_TRIGGERS, startFakeModel } from './lib/fake-model.mjs'
 import { createSandbox, sandboxEnv } from './lib/sandbox.mjs'
 import { importUserData } from './lib/user-data.mjs'
 import { demoEnv, initializeDemo, prepareDemo } from './lib/demo.mjs'
+import { initializeCards, prepareCards } from './lib/card-gallery.mjs'
 import { scenarioContext } from './lib/scenario-context.mjs'
 import { describeSamples, pickSamples, samplePaths } from './lib/sessions.mjs'
 
@@ -16,13 +17,14 @@ const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bu
 const HELP = `砚调试工具：npm run debug -- <命令> [参数]
 
 隔离实例（数据全在 debug/runs/<时间>-<名字>/，不碰真实数据、不抢单实例锁）
-  up [--demo] [--dev] [--build] [--no-fake] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N]
+  up [--demo] [--cards] [--dev] [--build] [--no-fake] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N]
       起一个隔离实例并保持前台运行，Ctrl+C 或 down 结束
       --dev       用 electron-vite dev（渲染端热更新），默认跑 out/ 构建版
       --build     先 electron-vite build
       --no-fake   不配置假模型（在实例里自己登录模型）
       --user-data 拷贝真实数据副本：最近 N 天会话、项目与标题等小文件、去密钥的模型列表；不拷凭据，关远程访问
       --samples   把 debug/data 里的大会话样本拷进实例
+      --cards     预置三个会话「卡片·少字 / 正常 / 多字」，按顺序包含消息流里全部可静态注入的卡片
       --demo      一键准备 2 个演示项目、29 个 Git 提交、本地 origin、9 个有状态 PR 和示例会话
                   可组合 --user-data --no-fake；默认项目为演示仓库，不拷凭据、不访问真实远端
                   每次 up --demo 使用新运行目录即重置，旧演示数据保留；覆盖情况见 demo/coverage.json
@@ -72,8 +74,20 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
   const box = createSandbox(runDir, { fakePort: fake?.port, samples, demo: !!flags.demo })
   if (flags['user-data']) console.log('导入真实数据副本：' + JSON.stringify(importUserData(box, { days: flags['user-days'] ? Number(flags['user-days']) : 7 })))
   if (flags.demo) prepareDemo(box)
+  if (flags.cards) prepareCards(box)
   const cdpPort = flags.port ? Number(flags.port) : await freePort()
   const app = launchApp({ ...sandboxEnv(box, { fake: !!fake, cdpPort, probe }), ...demoEnv(box) }, { dev: !!flags.dev })
+  if (box.cards) {
+    let cdp
+    try {
+      cdp = await connectCdp(cdpPort, { shotDir: runDir })
+      await initializeCards(cdp, box)
+    } catch (error) {
+      writeFileSync(join(runDir, 'main.log'), app.log())
+      stopInstance({ app, fake })
+      throw error
+    } finally { cdp?.close() }
+  }
   if (box.demo) {
     let cdp
     try {
@@ -103,7 +117,7 @@ async function cmdUp(flags) {
   const current = readCurrent()
   if (current) throw new Error(`已有实例在跑（pid ${current.pid}，${current.runDir}），先 down`)
   const samples = samplePaths(flags.samples)
-  const instance = await startInstance({ label: flags.demo ? `up-demo-${Date.now()}` : flags.dev ? 'up-dev' : 'up', flags, samples })
+  const instance = await startInstance({ label: flags.demo ? `up-demo-${Date.now()}` : flags.cards ? 'up-cards' : flags.dev ? 'up-dev' : 'up', flags, samples })
   const info = { pid: instance.app.child.pid, cdpPort: instance.cdpPort, fakePort: instance.fake?.port ?? null, runDir: instance.runDir, project: instance.box.project, dev: !!flags.dev, ...(instance.box.demo ? { demo: { project: instance.box.demo.project, secondProject: instance.box.demo.second, origin: instance.box.demo.origin, ghState: instance.box.demo.stateFile, coverage: join(instance.box.demo.dir, 'coverage.json'), reset: 'down 后再次 up --demo 会创建全新演示目录；旧目录保留' } } : {}), startedAt: new Date().toISOString() }
   writeFileSync(currentFile, JSON.stringify(info, null, 2))
   console.log(JSON.stringify(info, null, 2))
