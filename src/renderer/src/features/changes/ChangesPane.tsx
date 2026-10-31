@@ -637,8 +637,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const scopeMenu = source.changes ? (
     <MenuTrigger>
       <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={repo?.root} className="changes-pane__scope h-6 gap-1 rounded-[var(--control-radius)] px-2 text-xs text-secondary-label">
-        {scopeLabels[scope.kind]}
-        <ChevronDown size={12} aria-hidden="true" />
+        <span className="changes-pane__clip">{scopeLabels[scope.kind]}</span>
+        <ChevronDown size={12} aria-hidden="true" className="shrink-0" />
       </Button>
       <Popover placement="bottom end">
         <Menu
@@ -680,7 +680,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
         onPress={() => setBranchOpen(true)}
         data-testid="changes-branch"
       >
-        {branchLabel}
+        <span className="changes-pane__clip">{branchLabel}</span>
       </Button>
     ) : null
 

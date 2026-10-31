@@ -110,6 +110,7 @@ export interface RailRowButtonProps {
 
 export interface RailRowProps {
   label: string
+  truncate?: 'start'
   title?: string
   icon?: ReactNode
   dot?: StatusDotKind
@@ -127,6 +128,7 @@ export interface RailRowProps {
 
 export function RailRow({
   label,
+  truncate,
   title,
   icon,
   dot,
@@ -147,13 +149,13 @@ export function RailRow({
       <span className="ui-rail-row__lead" aria-hidden="true">
         {dot ? <StatusDot kind={dot} /> : icon}
       </span>
-      <span className="ui-rail-row__label">{label}</span>
+      <span className="ui-rail-row__label">{truncate === 'start' ? <bdi>{label}</bdi> : label}</span>
       {value != null ? <span className="ui-rail-row__value">{value}</span> : null}
     </>
   )
   const { ref: buttonRef, ...buttonRest } = buttonProps ?? {}
   return (
-    <li {...rest} className={cx('ui-rail-row', className)} data-error={error ? '1' : undefined} data-action-reveal={actionReveal === 'hover' ? 'hover' : undefined} title={tip}>
+    <li {...rest} className={cx('ui-rail-row', className)} data-error={error ? '1' : undefined} data-truncate={truncate} data-action-reveal={actionReveal === 'hover' ? 'hover' : undefined} title={tip}>
       {onPress ? (
         <Button
           {...buttonRest}

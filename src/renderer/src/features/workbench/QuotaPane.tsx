@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { RefreshCw } from 'lucide-react'
-import { useI18n, useT, type MessageKey } from '../../i18n'
+import { RefreshCw, Settings } from 'lucide-react'
+import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, publishAccountQuotaReport } from '../../state/live-quota'
 import { Badge, Button, Card, EmptyState, IconButton, Notice, Spinner } from '../../ui'
@@ -14,16 +14,24 @@ import {
   type AccountQuotaSource
 } from '../../../../shared/account-quota'
 import { QuotaWindowRow, quotaReadAgo } from '../../patterns/QuotaWindowRow'
-import { workbenchPaneText } from './pane-text'
 import type { QuotaPaneProps } from './types'
 
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
-const cap = (value?: string): string => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '')
+const planLabel = (value?: string): string => (value ? value.toUpperCase() : '')
+const GROUP_KEYS = new Set(['openai-codex', 'anthropic', 'google'])
 
-export function QuotaPane(_props: QuotaPaneProps): ReactElement {
+function groupByProvider(cards: AccountQuotaCard[]): { provider: string; cards: AccountQuotaCard[] }[] {
+  const groups: { provider: string; cards: AccountQuotaCard[] }[] = []
+  for (const card of cards) {
+    const group = groups.find((entry) => entry.provider === card.provider)
+    if (group) group.cards.push(card)
+    else groups.push({ provider: card.provider, cards: [card] })
+  }
+  return groups
+}
+
+export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
   const t = useT()
-  const { lang } = useI18n()
-  const text = workbenchPaneText(lang)
   const provider = useStore((s) => s.session?.model?.provider ?? '')
   const authProviders = useStore((s) => s.authProviders)
   const [report, setReport] = useState<AccountQuotaReport | null>(null)
@@ -54,8 +62,8 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
   }, [])
 
   useEffect(() => {
+    if (!visible) return undefined
     alive.current = true
-    setReport(null)
     void load()
     const tick = setInterval(() => setTick((value) => value + 1), 30_000)
     const poll = setInterval(() => {
@@ -74,7 +82,7 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onFocus)
     }
-  }, [load, authProviders])
+  }, [load, authProviders, visible])
 
   const switchTo = async (card: AccountQuotaCard): Promise<void> => {
     setBusyKey(card.key)
@@ -101,18 +109,30 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
   return (
     <div className="wb-quota" data-testid="v3-wb-quota">
       <div className="wb-quota-head">
-        <span className="wb-quota-checked">{report ? t('quota.checkedAt', { time }) : loading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
-        <IconButton
-          size="sm"
-          variant="ghost"
-          aria-label={t('quota.refresh')}
-          tooltip={t('quota.refresh')}
-          onPress={() => void load()}
-          isDisabled={loading}
-          data-testid="v3-wb-quota-refresh"
-        >
-          <RefreshCw size={14} />
-        </IconButton>
+        <span className="wb-quota-checked" title={report ? t('quota.checkedAt', { time }) : undefined}>{report ? time : loading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
+        <span className="wb-quota-actions">
+          <IconButton
+            size="sm"
+            variant="ghost"
+            aria-label={t('quota.refresh')}
+            tooltip={t('quota.refresh')}
+            onPress={() => void load()}
+            isDisabled={loading}
+            data-testid="v3-wb-quota-refresh"
+          >
+            <RefreshCw size={14} />
+          </IconButton>
+          <IconButton
+            size="sm"
+            variant="ghost"
+            aria-label={t('quota.settings')}
+            tooltip={t('quota.settings')}
+            onPress={() => useStore.getState().openSettings('models')}
+            data-testid="v3-wb-quota-settings"
+          >
+            <Settings size={14} />
+          </IconButton>
+        </span>
       </div>
       {error ? (
         <Notice tone="fail" compact data-testid="v3-wb-quota-error">
@@ -121,15 +141,22 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
       ) : null}
       {notice ? <Notice compact>{notice}</Notice> : null}
 
-      {cards.map((card) => (
-        <QuotaCard key={`${card.source}:${card.key}`} card={card} busy={busyKey === card.key} locked={!!busyKey} onSwitch={() => void switchTo(card)} />
+      {groupByProvider(cards).map((group) => (
+        <section key={group.provider} className="wb-quota-group" data-testid={`v3-wb-quota-group-${group.provider}`}>
+          <header className="wb-quota-group-head">
+            <span className="wb-quota-group-name">
+              {GROUP_KEYS.has(group.provider) ? t(`quota.group.${group.provider}` as MessageKey) : group.provider}
+            </span>
+          </header>
+          {group.cards.map((card) => (
+            <QuotaCard key={`${card.source}:${card.key}`} card={card} busy={busyKey === card.key} locked={!!busyKey} onSwitch={() => void switchTo(card)} />
+          ))}
+        </section>
       ))}
       {report && cards.length === 0 ? (
         <EmptyState className="wb-note-block" data-testid="v3-wb-quota-empty" title={t('acct.emptyTitle')} description={t('acct.emptyBody')} />
       ) : null}
 
-      <p className="wb-ctx-note">{text.quotaHint}</p>
-      <p className="wb-ctx-note">{text.quotaManage}</p>
     </div>
   )
 }
@@ -151,7 +178,6 @@ export function QuotaCard({
   const title = accountCardTitle(card)
   const meta = [
     title !== card.email ? card.email : '',
-    cap(card.plan),
     card.source !== 'yan' ? t(sourceKey(card.source)) : '',
     card.alsoIn?.length ? t('acct.alsoIn', { list: card.alsoIn.map((source) => t(sourceKey(source))).join('、') }) : ''
   ]
@@ -159,12 +185,14 @@ export function QuotaCard({
     .join(' · ')
 
   return (
-    <Card as="section" className="wb-quota-card" data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
+    <Card as="section" className="wb-quota-card" data-active={card.active ? '1' : undefined} data-limited={card.status === 'limited' ? '1' : undefined} data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
       <div className="wb-quota-id">
         <span className="wb-quota-name" title={[card.label, card.email].filter(Boolean).join(' · ') || undefined}>
           {title}
         </span>
-        {card.active ? <Badge tone="accent">{t('acct.active')}</Badge> : null}
+        {card.plan ? <Badge tone="accent" data-testid="v3-wb-quota-plan">{planLabel(card.plan)}</Badge> : null}
+        {card.status === 'expired' ? <span title={card.hint || t('quota.expiredTip')}><Badge tone="ask">{t('quota.expiredBadge')}</Badge></span> : null}
+        {card.active ? <Badge tone="ok">{t('acct.active')}</Badge> : null}
         {card.status === 'limited' ? <Badge tone="fail">{t('quota.limitReached')}</Badge> : null}
         {card.switchable && !card.active ? (
           <Button size="sm" variant="secondary" isDisabled={locked} icon={busy ? <Spinner size="xs" /> : undefined} onPress={onSwitch} data-testid="v3-wb-quota-switch">
@@ -175,16 +203,15 @@ export function QuotaCard({
       {meta ? <div className="wb-quota-meta" title={meta}>{meta}</div> : null}
 
       {card.status === 'error' ? <Notice tone="fail" compact>{t('acct.failed', { msg: card.error ?? '' })}</Notice> : null}
-      {card.status === 'expired' ? <Notice tone="ask" compact>{card.hint}</Notice> : null}
 
       {stale && (card.windows.length || card.balance) ? (
-        <p className="wb-quota-stale" title={t('quota.staleTip')} data-testid="v3-wb-quota-stale">
-          {[quotaReadAgo(t, card.checkedAt, now), card.staleError ? t('quota.readFailed', { msg: card.staleError }) : ''].filter(Boolean).join(' · ')}
-        </p>
+        <span className="wb-quota-stale" title={[t('quota.staleTip'), card.staleError ? t('quota.readFailed', { msg: card.staleError }) : ''].filter(Boolean).join(" · ")} data-testid="v3-wb-quota-stale">
+          <Badge>{quotaReadAgo(t, card.checkedAt, now)}</Badge>
+        </span>
       ) : null}
 
       {card.windows.map((window) => (
-        <QuotaWindowRow key={window.id} window={window} stale={stale} now={now} testId={`v3-wb-quota-win-${window.id}`} />
+        <QuotaWindowRow key={window.id} window={window} stale={stale} now={now} detail testId={`v3-wb-quota-win-${window.id}`} />
       ))}
       {card.balance ? (
         <div className="quota-win" data-tone={stale ? 'stale' : 'ok'}>

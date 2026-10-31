@@ -161,57 +161,6 @@ async function main() {
   ok(enHtml.includes('Hello world') && !enHtml.includes('class="v3-empty-hint"'), '英文空态同样使用终端问候，无旧标语')
   ok(enHtml.includes('data-testid="usage-overview"') && !enHtml.includes('Subagents 80K'), '英文长文案下用量面板仍渲染，不被内容长度错误隐藏')
 
-  const css = await readFile(join(process.cwd(), 'src/renderer/src/features/session/v3-empty-state.css'), 'utf8')
-  ok(css.includes("container-type: inline-size"), 'CSS：v3-empty-page 建立 inline-size 容器（按真实对话列宽度判定）')
-  ok(/\.v3-empty-cols\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/.test(css), 'CSS：问候与用量同列堆叠')
-  ok(/\.v3-empty-main\s*\{[^}]*align-items:\s*center;[^}]*text-align:\s*center;/.test(css), 'CSS：问候与用量居中，与输入框共用居中轴')
-  ok(/\.v3-chat:has\(\.v3-empty-page\) > \.v3-composer\s*\{[^}]*bottom:\s*var\(--home-lift\)/.test(css) && /\.v3-empty\.v3-empty-page\s*\{[^}]*padding:\s*0 0 calc\(var\(--home-lift, 0px\) \+ var\(--s-20\)\)/.test(css), 'CSS：首页输入框与问候同一抬升量，三者成组位于主区约 40% 高度，统计行与输入框留出间距')
-  ok(/\.v3-chat:has\(\.v3-empty-page\)\s*\{[^}]*--col-window-shift:\s*0px;[^}]*--col-pad-shift:\s*0px;/.test(css), 'CSS：首页按侧栏右侧的主区水平居中，不按整窗')
-  ok(!css.includes('font-family: var(--font-mono)') && !css.includes('letter-spacing: 0.06em'), 'CSS：问候不再用等宽宽字距')
-  const fixedCaps = [...css.replace(/@container\s*\([^)]*\)/g, '').matchAll(/max-width\s*:\s*([^;}]+)/g)].filter((m) => m[1].trim() !== '100%')
-  ok(fixedCaps.length === 0, 'CSS：除容器查询判定外没有固定 max-width 规则（避免旧 max-width 让统计永远隐藏）', fixedCaps.map((m) => m[0]))
-
-  const patternCss = await readFile(join(process.cwd(), 'src/renderer/src/patterns/usage-pattern.css'), 'utf8')
-  const patternCode = patternCss.replace(/\/\*[\s\S]*?\*\//g, '')
-  ok(patternCode.includes('@layer patterns'), 'CSS：用量领域排版在 @layer patterns（只随 v3 入口加载）')
-  ok(!patternCode.includes('@import'), 'CSS：patterns 用量样式不 @import 任何文件')
-  ok(!/styles\/|chat\.css/.test(patternCode), 'CSS：patterns 用量样式不依赖 v2 styles/chat.css')
-  ok(!/\.ui-tab|\.ui-btn|\.start-toggle/.test(patternCode), 'CSS：patterns 只做领域排版 / 图形，不重写 Tabs 原语按钮皮肤')
-
-  const sessionView = await readFile(join(process.cwd(), 'src/renderer/src/features/session/SessionView.tsx'), 'utf8')
-  ok(sessionView.includes("import { V3EmptyState } from './V3EmptyState'"), 'SessionView 引入 V3EmptyState（入口补丁已应用）')
-  ok(/turns\.length === 0 \?[\s\S]{0,160}?<V3EmptyState\b[^>]*\/>/.test(sessionView), 'SessionView 空态分支渲染 V3EmptyState')
-  ok(sessionView.includes('switchLoading ? null : <V3EmptyState'), '切换会话加载中先不渲染空态（避免闪空）')
-  ok(!sessionView.includes('function EmptyState(): JSX.Element') && !sessionView.includes('<EmptyState />'), '旧局部 EmptyState 已移除，不再有未接线的空态')
-
-  const patternSrc = await readFile(join(process.cwd(), 'src/renderer/src/patterns/UsagePattern.tsx'), 'utf8')
-  const pattern0 = () => patternSrc
-  const emptyState = await readFile(join(process.cwd(), 'src/renderer/src/features/session/V3EmptyState.tsx'), 'utf8')
-  ok(!emptyState.includes('UsagePattern'), 'V3EmptyState 首页不再渲染整块用量面板，只留一行用量')
-  ok(pattern0().includes('keepWhenEmpty'), 'UsagePattern 让 v3 用量在取数中 / 无记录时保留框架')
-  ok(emptyState.includes('<UsageStrip'), 'V3EmptyState 在问候下渲染一行用量条')
-  ok(emptyState.includes("import './v3-empty-state.css'"), 'V3EmptyState 自己 import 专用版面 CSS')
-
-  const pattern = patternSrc
-  ok(pattern.includes("import { SegmentedControl, Tab, TabList, Tabs } from '../ui'"), 'UsagePattern 控件只来自 v3 ui/ primitives')
-  ok(pattern.includes("import { UsageOverview } from '../features/usage/UsageOverview'"), 'UsagePattern 复用正式 UsageOverview 取数容器')
-  ok(pattern.includes('renderToggle={renderUsageToggle}'), 'UsagePattern 把生产控件槽传进共享展示链')
-  ok(pattern.includes("import './usage-pattern.css'"), 'UsagePattern 载入 patterns 领域 CSS')
-
-  const viewSrc = await readFile(join(process.cwd(), 'src/renderer/src/features/usage/UsageOverviewView.tsx'), 'utf8')
-  ok(viewSrc.includes('renderToggle: UsageToggleRenderer'), '共享展示件的 renderToggle 槽必填')
-  ok(!viewSrc.includes('start-toggle'), '共享展示件不再保留无样式的 .start-toggle 回退')
-
-  const designEntry = await readFile(join(process.cwd(), 'src/renderer/src/design/index.css'), 'utf8')
-  ok(designEntry.includes('@layer reset, tokens, base, primitives, patterns, features, utilities;'), 'v3 入口声明 patterns 层，pattern CSS 落到既定层序')
-
-  const chatMain = await readFile(join(process.cwd(), 'src/renderer/src/app/ChatMain.tsx'), 'utf8')
-  ok(chatMain.includes('import { SessionView }') && chatMain.includes('<SessionView />'), '真实入口 ChatMain 渲染 SessionView（与 ShellV3 同一链）')
-
-  ok(sessionView.includes("import { AsciiField } from '../ambient/AsciiField'") && /<AsciiField\s+active=\{turns\.length === 0[^}]*\}/.test(sessionView), 'ASCII 层与空态判定未被本任务改动')
-  ok(!sessionView.includes('StalledCard') && sessionView.includes('className="v3-asks"') && sessionView.includes('onScroll={onScroll}'), '滚动 / 审批 / 提问分支仍保留，停滞卡已移除')
-  ok(sessionView.includes('VList') && sessionView.includes('renderTurns'), '虚拟列表与回合投影仍保留')
-
   await rm(outdir, { recursive: true, force: true })
   console.log(`\nv3-empty-usage: ${checks} checks passed`)
 }

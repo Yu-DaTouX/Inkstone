@@ -265,8 +265,8 @@ interface RowMenuItem {
 
 function RailRowMenu({
   label,
+  truncate,
   icon,
-  value,
   title,
   menuLabel,
   items,
@@ -274,8 +274,8 @@ function RailRowMenu({
   testId
 }: {
   label: string
+  truncate?: 'start'
   icon: ReactNode
-  value?: ReactNode
   title: string
   menuLabel: string
   items: RowMenuItem[]
@@ -287,9 +287,9 @@ function RailRowMenu({
   return (
     <RailRow
       label={label}
+      truncate={truncate}
       title={title}
       icon={icon}
-      value={value || undefined}
       onPress={() => setOpen(true)}
       buttonProps={{ ref: anchor, 'aria-haspopup': 'menu', 'aria-expanded': open, 'data-testid': testId }}
     >
@@ -724,9 +724,9 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           <RailRow label={rail.local} icon={<Monitor size={14} aria-hidden />} data-testid="wb-rail-local" />
           {cwd ? (
             <RailRowMenu
-              label={projectName}
+              label={cwd}
+              truncate="start"
               icon={<Folder size={14} aria-hidden />}
-              value={cwd}
               title={cwd}
               menuLabel={rail.folderMenu}
               testId="wb-ov-path"

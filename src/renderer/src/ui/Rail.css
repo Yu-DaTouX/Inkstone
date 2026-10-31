@@ -124,7 +124,7 @@
   .ui-rail-row__main {
     flex: 1 1 auto;
     display: grid;
-    grid-template-columns: var(--size-icon) minmax(0, 1fr) auto;
+    grid-template-columns: var(--size-icon) minmax(4ch, 1fr) minmax(0, auto);
     align-items: center;
     column-gap: var(--s-8);
     min-width: 0;
@@ -143,7 +143,7 @@
   .ui-btn.ui-rail-row__main > .ui-btn__label {
     flex: 1;
     display: grid;
-    grid-template-columns: var(--size-icon) minmax(0, 1fr) auto;
+    grid-template-columns: var(--size-icon) minmax(4ch, 1fr) minmax(0, auto);
     align-items: center;
     column-gap: var(--s-8);
     min-width: 0;
@@ -167,6 +167,12 @@
     color: var(--fg);
   }
 
+  .ui-rail-row[data-truncate='start'] .ui-rail-row__label {
+    direction: rtl;
+    text-align: left;
+    color: var(--fg2);
+  }
+
   .ui-rail-row__value {
     min-width: 0;
     max-width: 100%;
@@ -187,8 +193,21 @@
     display: inline-flex;
   }
   @media (hover: hover) {
+    .ui-rail-row[data-action-reveal='hover'] {
+      position: relative;
+    }
+    .ui-rail-row[data-action-reveal='hover'] .ui-rail-row__action {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: 0;
+      align-items: center;
+    }
     .ui-rail-row[data-action-reveal='hover']:not(:hover, :focus-within) .ui-rail-row__action {
       opacity: 0;
+      pointer-events: none;
+    }
+    .ui-rail-row[data-action-reveal='hover']:is(:hover, :focus-within) .ui-rail-row__value {
+      visibility: hidden;
     }
   }
 

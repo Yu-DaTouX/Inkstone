@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import { Badge, Meter, type ProgressTone } from '../ui'
-import { useT, type TFunc } from '../i18n'
+import { useT, type MessageKey, type TFunc } from '../i18n'
 import type { QuotaWindow } from '../../../shared/ipc'
 import { quotaTone } from '../../../shared/quota-tone'
 import {
@@ -80,6 +80,31 @@ export function quotaShortLabel(t: TFunc, window: QuotaWindow): string {
   return window.label
 }
 
+export function quotaPace(window: QuotaWindow, now: number): { pace: 'ahead' | 'on' | 'under'; timeLeftPct: number } | null {
+  if (window.resetAt === undefined || !window.durationMs || window.durationMs <= 0 || window.resetAt <= now) return null
+  const elapsed = Math.max(0, Math.min(1, (window.durationMs - (window.resetAt - now)) / window.durationMs))
+  const gap = (windowUsedPct(window) ?? 0) - elapsed * 100
+  return { pace: gap > 5 ? 'ahead' : gap < -5 ? 'under' : 'on', timeLeftPct: Math.round((1 - elapsed) * 100) }
+}
+
+export function quotaWindowName(t: TFunc, window: QuotaWindow): string {
+  const { span } = windowSpan(window)
+  if (span === 'fiveHour') return t('quota.win.fiveHour')
+  if (span === 'week') return t('quota.win.thisWeek')
+  if (span === 'month') return t('quota.win.monthly')
+  if (span === 'day') return t('quota.win.daily')
+  return window.label
+}
+
+function quotaShortReset(t: TFunc, window: QuotaWindow, now: number): string {
+  if (window.resetAt === undefined || window.resetAt <= now) return ''
+  if (window.id === 'monthly') {
+    const date = new Date(window.resetAt)
+    return `${date.getMonth() + 1}/${date.getDate()}`
+  }
+  return quotaCountdown(t, window.resetAt - now)
+}
+
 export function quotaWindowTone(window: QuotaWindow, stale: boolean, now: number): QuotaWindowTone {
   if (stale || windowAwaitingReset(window, now)) return 'stale'
   if (window.informational) return 'ok'
@@ -91,13 +116,15 @@ export function QuotaWindowRow({
   stale,
   now,
   testId,
-  compact = false
+  compact = false,
+  detail = false
 }: {
   window: QuotaWindow
   stale: boolean
   now: number
   testId?: string
   compact?: boolean
+  detail?: boolean
 }): ReactElement {
   const t = useT()
   const awaiting = windowAwaitingReset(window, now)
@@ -108,6 +135,37 @@ export function QuotaWindowRow({
   const subText = [!awaiting ? reset.text : '', forecast?.text ?? ''].filter(Boolean)
   const showSub = subText.length > 0 && (!compact || forecast?.kind === 'exhaust')
   const tone = quotaWindowTone(window, stale, now)
+  const left = Math.round(100 - Math.min(100, Math.max(0, pct)))
+  const pace = detail && !greyed ? quotaPace(window, now) : null
+  if (detail) {
+    const awaitingTone: QuotaWindowTone = tone === 'ok' && pace?.pace === 'ahead' ? 'ask' : tone
+    const notes = [
+      window.estimated ? t('quota.estimatedTip') : '',
+      pace ? t(`quota.pace.${pace.pace}` as MessageKey) : '',
+      forecast?.text ?? '',
+      forecast?.tip ?? ''
+    ].filter(Boolean)
+    const short = awaiting ? '' : quotaShortReset(t, window, now)
+    return (
+      <div
+        className="quota-win"
+        data-detail="1"
+        data-tone={awaitingTone}
+        data-forecast={forecast?.kind || undefined}
+        data-sampling={forecast?.kind === 'sampling' || window.estimated ? '1' : undefined}
+        data-testid={testId}
+        title={[reset.tip, ...notes].filter(Boolean).join(" · ") || undefined}
+      >
+        <span className="quota-win-label">{quotaWindowName(t, window)}</span>
+        <div className="quota-win-bar">
+          <Meter aria-label={window.label} value={awaiting ? 0 : left} minValue={0} maxValue={100} tone={METER_TONE[awaitingTone]} />
+          {pace ? <span className="quota-win-tick" style={{ left: `${Math.min(99, Math.max(1, pace.timeLeftPct))}%` }} aria-hidden="true" /> : null}
+        </div>
+        <span className="quota-win-reset ui-meta-num" title={reset.tip || undefined}>{short}</span>
+        <span className="quota-win-value ui-meta-num">{awaiting ? t('quota.resetDue') : t('quota.leftPct', { pct: left })}</span>
+      </div>
+    )
+  }
   return (
     <div
       className="quota-win"
@@ -125,19 +183,30 @@ export function QuotaWindowRow({
           </span>
         ) : null}
         <span className="quota-win-value ui-meta-num" title={awaiting ? reset.tip : undefined}>
-          {awaiting ? t('quota.resetDue') : `${pct.toFixed(1)}%`}
+          {awaiting ? t('quota.resetDue') : detail ? t('quota.leftPct', { pct: left }) : `${pct.toFixed(1)}%`}
         </span>
       </div>
-      <Meter
-        aria-label={window.label}
-        value={awaiting ? 0 : Math.min(100, Math.max(0, pct))}
-        minValue={0}
-        maxValue={100}
-        projectedPercent={greyed ? null : forecastProjectionPct(window.forecast)}
-        tone={METER_TONE[tone]}
-      />
+      <div className="quota-win-bar">
+        <Meter
+          aria-label={window.label}
+          value={awaiting ? 0 : detail ? left : Math.min(100, Math.max(0, pct))}
+          minValue={0}
+          maxValue={100}
+          projectedPercent={greyed || detail ? null : forecastProjectionPct(window.forecast)}
+          tone={METER_TONE[tone]}
+        />
+        {pace ? (
+          <span
+            className="quota-win-tick"
+            style={{ left: `${Math.min(99, Math.max(1, pace.timeLeftPct))}%` }}
+            title={t('quota.paceTip')}
+            aria-hidden="true"
+          />
+        ) : null}
+      </div>
       {showSub ? (
         <div className="quota-win-sub">
+          {pace ? <span className="quota-win-pace" data-pace={pace.pace}>{t(`quota.pace.${pace.pace}` as MessageKey)}</span> : null}
           {!awaiting && reset.text ? <span title={reset.tip}>{reset.text}</span> : null}
           {forecast?.text ? (
             <span className="quota-win-forecast" data-testid={testId ? `${testId}-forecast` : undefined} title={forecast.tip || undefined}>

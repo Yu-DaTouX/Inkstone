@@ -1,13 +1,48 @@
 @layer features {
 
   .changes-pane__branch {
-    flex: 0 1 auto;
+    flex: 0 8 auto;
     min-width: 0;
   }
 
   .changes-pane__sync {
     flex: none;
     white-space: nowrap;
+  }
+
+  .rp-sub-title:has(> .changes-pane__title) {
+    container: changes-head / inline-size;
+  }
+
+  .changes-pane__title > :is(.changes-pane__branch, .changes-pane__scope) {
+    overflow: hidden;
+  }
+
+  .changes-pane__clip {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .changes-pane__title :is(.changes-pane__branch, .changes-pane__scope) > .ui-btn__icon {
+    flex: none;
+  }
+
+  .changes-pane__title > :is(.changes-pane__count, .changes-pane__totals) {
+    flex: none;
+  }
+
+  @container changes-head (max-width: 340px) {
+    .changes-pane__count {
+      display: none;
+    }
+  }
+
+  @container changes-head (max-width: 250px) {
+    .changes-pane__totals {
+      display: none;
+    }
   }
 
   .gitflow-commit {

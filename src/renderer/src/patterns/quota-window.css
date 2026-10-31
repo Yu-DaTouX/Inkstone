@@ -48,4 +48,50 @@
   .quota-win[data-forecast='exhaust'] .quota-win-forecast {
     color: var(--ask-t);
   }
+
+  .quota-win-bar {
+    position: relative;
+    min-width: 0;
+  }
+
+  .quota-win-tick {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: var(--r-full);
+    background: var(--fg);
+  }
+
+  .quota-win-pace {
+    color: var(--fg2);
+  }
+
+  .quota-win-pace[data-pace='ahead'] {
+    color: var(--ask-t);
+  }
+
+  .quota-win[data-detail] {
+    display: grid;
+    grid-template-columns: 4.5em minmax(0, 1fr) 4.5em 5.5em;
+    align-items: center;
+    column-gap: var(--s-8);
+  }
+
+  .quota-win-reset {
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .quota-win[data-detail] .quota-win-value {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .quota-win[data-sampling] .ui-progress__track {
+    opacity: 0.6;
+  }
 }

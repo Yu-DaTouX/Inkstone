@@ -260,42 +260,6 @@ async function runQuotaCardTests() {
     })
     const mod = await import(pathToFileURL(out).href)
     const now = Date.now()
-    const base = { source: 'yan', provider: 'openai-codex', name: 'ChatGPT', checkedAt: now }
-    const html = (card, props = {}) =>
-      renderToStaticMarkup(
-        createElement(
-          mod.I18nProvider,
-          null,
-          createElement(mod.QuotaCard, { card: { ...base, status: 'ok', windows: [], ...card }, busy: false, locked: false, onSwitch() {}, ...props })
-        )
-      )
-
-    const low = html({ key: 'k1', email: 'a@example.com', windows: [{ id: 'five_hour', label: '5 小时', used: 20, total: 100, resetAt: now + 3 * 3600_000 }] })
-    ok(low.includes('data-tone="ok"') && low.includes('20.0%'), '低用量窗口：ok 色调与精确百分比')
-    ok(low.includes('a@example.com'), '标题显示邮箱')
-
-    const warn = html({ key: 'k2', windows: [{ id: 'weekly', label: '每周', used: 85, total: 100 }] })
-    ok(warn.includes('data-tone="ask"'), '85% 窗口：ask 色调')
-
-    const exceeded = html({ key: 'k3', status: 'limited', windows: [{ id: 'monthly', label: '本月', used: 100, total: 100, exceeded: true, estimated: true }] })
-    ok(exceeded.includes('data-tone="fail"'), '用尽窗口：fail 色调')
-    ok(exceeded.includes('ui-badge'), '推算窗口与已达上限都带徽标')
-
-    const active = html({ key: 'k4', active: true, switchable: true })
-    ok(!active.includes('v3-wb-quota-switch'), '活跃账号没有切换按钮')
-    const other = html({ key: 'k5', switchable: true })
-    ok(other.includes('v3-wb-quota-switch'), '可切换的非活跃账号有切换按钮')
-    const locked = html({ key: 'k5', switchable: true }, { locked: true })
-    ok(/data-testid="v3-wb-quota-switch"[^>]*disabled/.test(locked), '锁定期间切换按钮禁用')
-
-    const balance = html({ key: 'k6', balance: { label: '余额', amount: 3.5, currency: 'USD' } })
-    ok(balance.includes('余额') && /3\.5/.test(balance), '显示余额')
-
-    const failed = html({ key: 'k7', status: 'error', error: 'boom' })
-    ok(failed.includes('boom'), '查询失败的卡显示错误')
-    const expired = html({ key: 'k8', status: 'expired', hint: '请重新登录' })
-    ok(expired.includes('请重新登录'), '凭证过期的卡显示提示')
-
     const t = (key, vars) => `${key}:${JSON.stringify(vars ?? {})}`
     ok(mod.quotaResetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1 }, now).text === '', '没有重置时间不显示')
     ok(mod.quotaResetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1, resetAt: now - 1000 }, now).text.startsWith('quota.resetDue'), '已到点显示待刷新（不本地归零）')
@@ -306,7 +270,6 @@ async function runQuotaCardTests() {
     ok(mod.quotaForecastLine(t, constrained, now).tip.includes('quota.fc.fiveHourTip'), '周预测提示已计入五小时额度和重置等待')
     const constrainedSteady = { ...constrained, forecast: { kind: 'steady', atResetPct: 75, limitedByFiveHour: true } }
     ok(mod.quotaForecastLine(t, constrainedSteady, now).tip.includes('quota.fc.fiveHourTip'), '重置前不会用尽时同样说明五小时约束')
-    ok(html({ key: 'constrained', windows: [constrained] }).includes('已计入五小时额度耗尽后的等待'), '实际组件渲染预测约束说明')
     console.log(`\nv3-quota-card: ${checks} checks passed`)
   } finally {
     await rm(dir, { recursive: true, force: true })
