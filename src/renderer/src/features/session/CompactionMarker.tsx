@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { compactionElapsedText, compactionRunningText, compactionSummary, compactionTokensText, compactionTone } from '../../state/compaction-view'
+import { compactionElapsedText, compactionReasonText, compactionRunningText, compactionSummary, compactionTokensText, compactionTone } from '../../state/compaction-view'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { compactionLineModel } from './turn-lines'
@@ -26,6 +26,8 @@ export function CompactionMarker(): JSX.Element | null {
   if (!model) return null
   const tokens = compactionTokensText(model.run)
   const elapsed = model.running ? compactionElapsedText(t, model.run, now) : null
+  const failed = !model.running && model.run.status === 'failed'
+  const text = model.running ? compactionRunningText(t, model.run) : failed ? compactionReasonText(t, model.run) : compactionSummary(t, model.run)
   return (
     <div
       className="v3-compaction"
@@ -34,8 +36,8 @@ export function CompactionMarker(): JSX.Element | null {
       data-testid="v3-compaction-marker"
     >
       <Icon name="layers" size={13} />
-      {model.running ? null : <span className="v3-compaction-title">{tt('compactionTitle')}</span>}
-      <span className="v3-compaction-text">{model.running ? compactionRunningText(t, model.run) : compactionSummary(t, model.run)}</span>
+      {model.running ? null : <span className="v3-compaction-title">{tt(failed ? 'compactionFailedTitle' : 'compactionTitle')}</span>}
+      {text ? <span className="v3-compaction-text">{text}</span> : null}
       {elapsed ? <span className="v3-compaction-elapsed" data-testid="v3-compaction-elapsed">{elapsed}</span> : null}
       {tokens ? <span className="v3-compaction-tokens">{tokens}</span> : null}
       {!model.running && model.run.status === 'failed' && model.run.error ? (

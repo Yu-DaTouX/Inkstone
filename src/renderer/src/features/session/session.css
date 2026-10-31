@@ -185,6 +185,8 @@
 
   .v3-session { position: relative; container-type: inline-size; --rail-gutter: calc(var(--s-8) + 28px + var(--s-8)); }
   .v3-compaction { display: flex; align-items: center; gap: var(--s-6); margin: var(--s-8) 0; }
+  .v3-compaction > * { flex: none; white-space: nowrap; }
+  .v3-compaction > .v3-compaction-error { flex: 1 1 0; }
   .v3-branchline { display: flex; align-items: center; gap: var(--s-6); margin: var(--s-4) 0 var(--s-8); }
 
   .v3-prose ul { list-style-type: disc; }

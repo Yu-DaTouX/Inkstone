@@ -38,6 +38,7 @@ export type SessionTextKey =
   | 'subagentBrief'
   | 'subagentGone'
   | 'compactionTitle'
+  | 'compactionFailedTitle'
   | 'branchFrom'
   | 'errorTitleRetryable'
   | 'errorTitleQuotaUsage'
@@ -290,6 +291,7 @@ const ZH: Record<SessionTextKey, string> = {
   subagentBrief: '简报',
   subagentGone: '任务已经结束，无需停止',
   compactionTitle: '上下文已压缩',
+  compactionFailedTitle: '上下文压缩失败',
   branchFrom: '从「{text}」分出去',
   errorTitleRetryable: '模型侧错误',
   errorTitleQuotaUsage: '额度已用完',
@@ -543,6 +545,7 @@ const EN: Record<SessionTextKey, string> = {
   subagentBrief: 'Brief',
   subagentGone: 'The task already ended; nothing to stop',
   compactionTitle: 'Context compacted',
+  compactionFailedTitle: 'Compaction failed',
   branchFrom: 'Branched from “{text}”',
   errorTitleRetryable: 'Model error',
   errorTitleQuotaUsage: 'Quota exhausted',

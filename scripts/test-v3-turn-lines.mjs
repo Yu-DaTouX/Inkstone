@@ -726,6 +726,9 @@ async function main() {
     store({ session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', lastCompaction: { status: 'completed', reason: 'threshold', beforeTokens: 150_000, afterTokens: 32_000 } } })
     ok(flattenText(rt.render(bundle.CompactionMarker, {})).includes('150k → ≈32k'), '压缩后读数未实测时标为估计值')
     ok(markerText.includes('compactionTitle'), '已完成压缩带「上下文已压缩」标题', markerText)
+    store({ session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', lastCompaction: { status: 'failed', reason: 'threshold', error: '摘要模型返回空结果' } } })
+    const failedText = flattenText(rt.render(bundle.CompactionMarker, {}))
+    ok(failedText.includes('compactionFailedTitle') && !failedText.includes('compactionTitle'), '压缩失败写「上下文压缩失败」而非「已压缩」', failedText)
 
     store({ session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', compaction: { status: 'running', reason: 'overflow' } } })
     const running = rt.render(bundle.CompactionMarker, {})
