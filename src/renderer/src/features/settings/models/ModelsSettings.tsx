@@ -19,7 +19,7 @@ import {
   type BadgeTone
 } from '../../../ui'
 import { canRemoveCredential, credentialFromEnv, entryState, type ServiceState } from './models-model'
-import { SettingsGroup, SettingsReveal } from '../root/controls'
+import { SettingsAdvanced, SettingsGroup, SettingsReveal } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { PiThinkingLevelsGroup } from '../general/PiNativeSettings'
 import { ClaudeCodeBridgeRow } from './ClaudeCodeBridgeRow'
@@ -563,17 +563,19 @@ export function ModelsSettings(): ReactElement {
 
       <CustomEndpointSettings />
 
-      <ModelVisibilityGroup />
+      <SettingsAdvanced label={labels.advanced} testId="ms-advanced">
+        <ModelVisibilityGroup />
 
-      <SettingsGroup title={labels.groupModelsIntegrations} className="ms-group" plain>
-        <div className="settings-rows ms-rows">
-          <div data-setting-id="models-claude-code">
-            <ClaudeCodeBridgeRow />
+        <SettingsGroup title={labels.groupModelsIntegrations} className="ms-group" plain>
+          <div className="settings-rows ms-rows">
+            <div data-setting-id="models-claude-code">
+              <ClaudeCodeBridgeRow />
+            </div>
           </div>
-        </div>
-      </SettingsGroup>
+        </SettingsGroup>
 
-      <PiThinkingLevelsGroup />
+        <PiThinkingLevelsGroup />
+      </SettingsAdvanced>
 
       {pendingRemove ? (
         <ConfirmDialog

@@ -8,16 +8,18 @@ import { PromptsSection } from './PromptsSection'
 import { VoiceSetupPanel, VoiceStatusPanel, useVoiceSetup } from './VoiceSection'
 import { ComputerUseSection } from './ComputerUseSection'
 import { SearchApiSection } from './SearchSection'
-import { GitRuntimeSection } from './GitRuntimeSection'
 import { AndroidSection } from './AndroidSection'
+import { useI18n } from '../../../i18n'
+import { SettingsAdvanced } from '../root/controls'
+import { settingsText } from '../settings-text'
 import { getSettingsRequest, subscribeSettingsRequest } from '../root/deep-link'
 import { getSettingReveal, requestSettingReveal, subscribeSettingReveal } from '../search/search-model'
 import { CAPABILITIES_TABS, type CapabilitiesTabId } from '../types'
 import './capabilities.css'
 
 export type { CapabilitiesTabId }
-const LEGACY_TAB: Record<string, CapabilitiesTabId> = { skills: 'skills', mcp: 'mcp', tools: 'tools', voice: 'tools', market: 'market', git: 'tools', android: 'tools' }
-const LEGACY_SETTING: Record<string, string> = { tools: 'caps-tools-computer-use', voice: 'caps-tools-voice-setup', git: 'caps-tools-git', android: 'caps-tools-android' }
+const LEGACY_TAB: Record<string, CapabilitiesTabId> = { skills: 'skills', mcp: 'mcp', tools: 'tools', voice: 'tools', market: 'market', android: 'tools' }
+const LEGACY_SETTING: Record<string, string> = { tools: 'caps-tools-computer-use', voice: 'caps-tools-voice-setup', android: 'caps-tools-android' }
 
 let handledRevealRevision = 0
 let handledRequestRevision: number | null = null
@@ -74,18 +76,18 @@ export function CapabilitiesSettings({ tab, onTabChange }: CapabilitiesSettingsP
 
 function ToolsTab(): ReactElement {
   const voice = useVoiceSetup()
+  const { lang } = useI18n()
   return (
     <>
       <ComputerUseSection />
       <VoiceStatusPanel voice={voice} />
-      <SearchApiSection />
-      <AndroidSection />
-      <div data-setting-id="caps-tools-git">
-        <GitRuntimeSection />
-      </div>
-      <div data-setting-id="caps-tools-voice-setup">
-        <VoiceSetupPanel voice={voice} />
-      </div>
+      <SettingsAdvanced label={settingsText(lang).advanced} testId="caps-tools-advanced">
+        <SearchApiSection />
+        <AndroidSection />
+        <div data-setting-id="caps-tools-voice-setup">
+          <VoiceSetupPanel voice={voice} />
+        </div>
+      </SettingsAdvanced>
     </>
   )
 }

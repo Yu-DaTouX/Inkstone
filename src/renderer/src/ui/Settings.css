@@ -15,9 +15,10 @@
     max-height: 800px;
     min-height: 0;
     overflow: hidden;
-    border-radius: var(--r-bubble);
+    border: 1px solid var(--line2);
+    border-radius: var(--r-xl);
     background: var(--surface);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-pop);
     color: var(--fg);
     outline: none;
   }
@@ -90,8 +91,8 @@
     gap: var(--s-12);
     width: var(--settings-nav-w);
     min-height: 0;
-    border-right: 1px solid var(--alpha-2);
-    background: var(--bg);
+    border-right: 1px solid var(--line);
+    background: color-mix(in srgb, var(--fg) 3%, var(--surface));
   }
 
   .ui-settings-nav__search {
@@ -103,17 +104,16 @@
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: var(--s-12);
+    gap: var(--s-8);
     min-height: 0;
     padding: 0 var(--s-12) var(--s-12);
     overflow: auto;
-    scrollbar-width: thin;
   }
 
   .ui-settings-nav__group {
     display: flex;
     flex-direction: column;
-    gap: var(--s-12);
+    gap: var(--s-4);
   }
 
   .ui-settings-nav__title {
@@ -169,7 +169,7 @@
   }
 
   .ui-settings-nav__item[data-active='1'] {
-    background: var(--alpha-2);
+    background: var(--alpha-1);
     color: var(--fg);
     font-weight: var(--w-medium);
   }
@@ -185,7 +185,7 @@
     }
 
     .ui-settings-nav__item[data-active='1']:hover {
-      background: var(--alpha-2);
+      background: var(--alpha-1);
     }
   }
 
@@ -222,6 +222,10 @@
   }
 
   .ui-settings-search__icon {
+    flex: none;
+  }
+
+  .ui-settings-search__hint {
     flex: none;
   }
 
@@ -475,7 +479,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--s-8) var(--s-16);
-    margin-bottom: var(--s-16);
+    margin-bottom: var(--s-8);
   }
 
   .ui-setting-section__head:last-child {
@@ -517,8 +521,8 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: var(--s-8) var(--s-16);
-    padding: var(--s-12) 0;
+    gap: var(--s-4) var(--s-16);
+    padding: var(--s-8) 0;
   }
 
   .ui-setting-row + .ui-setting-row,
@@ -541,7 +545,7 @@
     display: flex;
     flex: 1 1 240px;
     flex-direction: column;
-    gap: var(--s-4);
+    gap: 2px;
     min-width: 0;
   }
 
@@ -555,6 +559,8 @@
 
   .ui-setting-row__desc {
     color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     overflow-wrap: anywhere;
   }
 

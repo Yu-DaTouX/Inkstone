@@ -127,13 +127,25 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     keywords: ['android', 'adb', '安卓', '模拟器', 'emulator', 'SDK', 'JDK', 'Gradle', '真机', '手机调试']
   },
   {
-    id: 'caps-tools-git',
-    section: 'capabilities',
-    tab: 'tools',
-    zh: '命令行工具',
-    en: 'Command-line tools',
-    keywords: ['git', 'bash', '安装 Git', 'install git', '重装 Git', '移除 Git'],
-    more: true
+    id: 'code-git-runtime',
+    section: 'code',
+    zh: 'Git 与命令行工具',
+    en: 'Git & command-line tools',
+    keywords: ['git', 'bash', '安装 Git', 'install git', '重装 Git', '移除 Git', '命令行工具']
+  },
+  {
+    id: 'github-account',
+    section: 'code',
+    zh: 'GitHub 账号',
+    en: 'GitHub account',
+    keywords: ['gh', 'github', 'cli', '登录', 'login']
+  },
+  {
+    id: 'github-clone-dir',
+    section: 'code',
+    zh: '克隆目录',
+    en: 'Clone folder',
+    keywords: ['克隆', '仓库', 'clone', 'repository', '默认目录']
   },
   {
     id: 'caps-tools-voice-setup',

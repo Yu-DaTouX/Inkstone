@@ -265,9 +265,6 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
         </SettingsRow>
       </SettingsGroup>
 
-      <Notice tone="info" compact role="note">
-        {text.sessionEffectNote}
-      </Notice>
       <PiNativeError error={state.error} />
     </>
   )

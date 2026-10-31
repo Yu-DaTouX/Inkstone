@@ -56,11 +56,8 @@ assert.equal(dailyEntries([], 'all').length, 0, '没有热度数据时返回空'
 
 const types = await loadTs('../src/renderer/src/features/settings/types.ts')
 const { resolveLegacyView, isSettingsSectionId, SETTINGS_SECTIONS } = types
-assert.deepEqual(
-  SETTINGS_SECTIONS.map((section) => section.id),
-  ['models', 'appearance', 'session', 'notifications', 'security', 'devices', 'data', 'shortcuts', 'about', 'capabilities'],
-  '上下文并入会话与上下文分区'
-)
+assert.ok(SETTINGS_SECTIONS.some((section) => section.id === 'session'), '会话与上下文分区存在')
+assert.ok(!SETTINGS_SECTIONS.some((section) => section.id === 'context'), '上下文并入会话分区，不再独立')
 assert.equal(isSettingsSectionId('context'), false, 'context 不再是独立分区')
 assert.deepEqual(resolveLegacyView('context'), { kind: 'section', view: 'context', section: 'session' }, '旧深链接 context 落到会话与上下文分区')
 

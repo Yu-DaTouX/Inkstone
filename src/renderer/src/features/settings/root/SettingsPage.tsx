@@ -16,6 +16,7 @@ import {
   BarChart3,
   Bell,
   Clock,
+  GitBranch,
   HardDrive,
   Info,
   KeyRound,
@@ -76,6 +77,7 @@ import '../settings.css'
 
 const ModelsSettings = lazy(async () => ({ default: (await import('../models/index')).ModelsSettings }))
 const CapabilitiesSettings = lazy(async () => ({ default: (await import('../capabilities/index')).CapabilitiesSettings }))
+const CodeSettings = lazy(async () => ({ default: (await import('../capabilities/index')).CodeSettings }))
 
 const ICON_SIZE = 20
 
@@ -94,12 +96,16 @@ const SECTION_ICON: Record<SettingsIconId, ReactElement> = {
   scroll: <ScrollText size={ICON_SIZE} aria-hidden />,
   plug: <Plug size={ICON_SIZE} aria-hidden />,
   wrench: <Wrench size={ICON_SIZE} aria-hidden />,
-  puzzle: <Puzzle size={ICON_SIZE} aria-hidden />
+  puzzle: <Puzzle size={ICON_SIZE} aria-hidden />,
+  'git-branch': <GitBranch size={ICON_SIZE} aria-hidden />
 }
 
 const GROUP_LABEL: Partial<Record<SettingsNavGroupId, keyof SettingsText>> = {
-  customize: 'groupCustomize',
-  local: 'groupLocal'
+  general: 'groupGeneral',
+  agents: 'groupAgents',
+  code: 'groupCode',
+  connections: 'groupConnections',
+  maintenance: 'groupMaintenance'
 }
 
 const NAV_ENTRIES = settingsNavEntries()
@@ -380,7 +386,11 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
     [search]
   )
   const onDialogKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (narrow || event.altKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
+    const target = event.target as HTMLElement
+    const typing = target.matches('input, textarea, select, [contenteditable="true"]')
+    const slash = event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey
+    const find = !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f'
+    if (narrow || !(slash || find)) return
     event.preventDefault()
     event.stopPropagation()
     searchInput.current?.focus()
@@ -481,6 +491,8 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
             <SubmoduleHost component={ModelsSettings} props={{}} />
           ) : section === 'capabilities' ? (
             <SubmoduleHost component={CapabilitiesSettings} props={{ tab: capsTab, onTabChange: setCapsTab }} />
+          ) : section === 'code' ? (
+            <SubmoduleHost component={CodeSettings} props={{}} />
           ) : section === 'shortcuts' ? (
             <ShortcutsSettings />
           ) : section === 'security' ? (

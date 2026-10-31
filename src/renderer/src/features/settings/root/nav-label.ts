@@ -11,6 +11,7 @@ export const SECTION_LABEL: Record<SettingsSectionId, keyof SettingsText> = {
   devices: 'sectionDevices',
   data: 'sectionData',
   usage: 'sectionUsage',
+  code: 'sectionCode',
   shortcuts: 'sectionShortcuts',
   about: 'sectionAbout'
 }

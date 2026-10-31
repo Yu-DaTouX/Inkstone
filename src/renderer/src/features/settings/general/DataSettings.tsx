@@ -3,11 +3,11 @@ import { useI18n } from '../../../i18n'
 import type { StorageInfoView } from '../../../../../shared/ipc'
 import type { BackupAction, BackupSummary } from '../../../../../shared/data-backup'
 import { useStore } from '../../../state/store'
-import { Button, Notice } from '../../../ui'
+import { Button, Notice, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { devicesDataText } from './devices-data-text'
 import { bytesText } from './general-model'
-import { SettingsGroup, SettingsRow } from '../root/controls'
+import { SettingsAdvanced, SettingsGroup, SettingsRow } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { PiShareDestinationGroup } from './PiNativeSettings'
 import { SyncConflictsGroup, SyncGroup, fillTemplate, useSyncPanel } from '../sync/SyncSettings'
@@ -77,7 +77,9 @@ function describe(cause: unknown): string {
 }
 
 export function DataSettings(): ReactElement {
-  const { lang } = useI18n()
+  const { lang, t } = useI18n()
+  const pruneHistory = useStore((s) => s.settings?.subagentHistoryPrune !== false)
+  const patchSettings = useStore((s) => s.patchSettings)
   const text = generalText(lang)
   const labels = settingsText(lang)
   const local = devicesDataText(lang)
@@ -259,78 +261,88 @@ export function DataSettings(): ReactElement {
         <DataMessageLine message={message} scope="restore" />
       </SettingsGroup>
 
-      <SettingsGroup title={labels.groupDataStorage}>
-        <SettingsRow
-          settingId="data-location"
-          label={text.dataLocation}
-          description={
-            <>
-              {text.dataLocationDesc}
-              <StorageFacts info={info} text={text} />
-            </>
-          }
-        >
-          {info ? (
-            <Button variant="secondary" onPress={() => void window.yan.revealPath(info.realDir)}>
-              {text.dataOpen}
-            </Button>
-          ) : null}
-        </SettingsRow>
-        <SettingsRow
-          settingId="data-move"
-          label={text.dataMove}
-          description={
-            <>
-              {local.dataMoveDesc}
-              {target ? <span className="settings-row__line">{text.dataTarget.replace('{path}', target)}</span> : null}
-              {info && !info.movable ? <span className="settings-row__line">{text.dataNotMovable}</span> : null}
-            </>
-          }
-        >
-          {canMove && target ? (
-            <>
-              <Button variant="secondary" isDisabled={busy !== null} onPress={() => setTarget(null)}>
-                {text.cancel}
-              </Button>
-              <Button variant="primary" isDisabled={busy !== null} data-testid="v3-data-move-confirm" onPress={() => void move()}>
-                {busy === 'storage' ? text.dataMoving : text.dataMoveConfirm}
-              </Button>
-            </>
-          ) : canMove ? (
-            <Button variant="secondary" data-testid="v3-data-move" onPress={() => void pick()}>
-              {text.dataMove}
-            </Button>
-          ) : null}
-        </SettingsRow>
-        <DataMessageLine message={message} scope="storage" />
-      </SettingsGroup>
-
       <SyncGroup panel={panel} title={labels.groupDataSync} />
 
       <SyncConflictsGroup panel={panel} />
 
-      <SettingsGroup title={local.sessionTransfer}>
-        <SettingsRow settingId="data-session-export" label={sync.exportSession} description={local.dataExportDesc}>
-          <Button
-            variant="secondary"
-            isDisabled={busy !== null || !session?.sessionId}
-            data-testid="v3-data-export"
-            onPress={() => void exportSession()}
+      <SettingsAdvanced label={labels.advanced} testId="v3-data-advanced">
+        <SettingsGroup title={labels.groupDataStorage}>
+          <SettingsRow
+            settingId="data-location"
+            label={text.dataLocation}
+            description={
+              <>
+                {text.dataLocationDesc}
+                <StorageFacts info={info} text={text} />
+              </>
+            }
           >
-            {busy === 'session' ? sync.exporting : sync.exportSession}
-          </Button>
-        </SettingsRow>
-        {bridge ? (
-          <SettingsRow settingId="data-session-import" label={sync.importSession} description={local.dataImportDesc}>
-            <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-import" onPress={() => void importSession()}>
-              {busy === 'import' ? sync.importing : sync.importSession}
+            {info ? (
+              <Button variant="secondary" onPress={() => void window.yan.revealPath(info.realDir)}>
+                {text.dataOpen}
+              </Button>
+            ) : null}
+          </SettingsRow>
+          <SettingsRow
+            settingId="data-move"
+            label={text.dataMove}
+            description={
+              <>
+                {local.dataMoveDesc}
+                {target ? <span className="settings-row__line">{text.dataTarget.replace('{path}', target)}</span> : null}
+                {info && !info.movable ? <span className="settings-row__line">{text.dataNotMovable}</span> : null}
+              </>
+            }
+          >
+            {canMove && target ? (
+              <>
+                <Button variant="secondary" isDisabled={busy !== null} onPress={() => setTarget(null)}>
+                  {text.cancel}
+                </Button>
+                <Button variant="primary" isDisabled={busy !== null} data-testid="v3-data-move-confirm" onPress={() => void move()}>
+                  {busy === 'storage' ? text.dataMoving : text.dataMoveConfirm}
+                </Button>
+              </>
+            ) : canMove ? (
+              <Button variant="secondary" data-testid="v3-data-move" onPress={() => void pick()}>
+                {text.dataMove}
+              </Button>
+            ) : null}
+          </SettingsRow>
+          <DataMessageLine message={message} scope="storage" />
+          <SettingsRow settingId="data-subagent-prune" label={t('set.dataSubagentPrune')} description={t('set.dataSubagentPruneDesc')}>
+            <Switch
+              aria-label={t('set.dataSubagentPrune')}
+              isSelected={pruneHistory}
+              onChange={(on) => void patchSettings({ subagentHistoryPrune: on })}
+              data-testid="v3-data-subagent-prune"
+            />
+          </SettingsRow>
+        </SettingsGroup>
+
+        <SettingsGroup title={local.sessionTransfer}>
+          <SettingsRow settingId="data-session-export" label={sync.exportSession} description={local.dataExportDesc}>
+            <Button
+              variant="secondary"
+              isDisabled={busy !== null || !session?.sessionId}
+              data-testid="v3-data-export"
+              onPress={() => void exportSession()}
+            >
+              {busy === 'session' ? sync.exporting : sync.exportSession}
             </Button>
           </SettingsRow>
-        ) : null}
-        <DataMessageLine message={message} scope="session" />
-      </SettingsGroup>
+          {bridge ? (
+            <SettingsRow settingId="data-session-import" label={sync.importSession} description={local.dataImportDesc}>
+              <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-import" onPress={() => void importSession()}>
+                {busy === 'import' ? sync.importing : sync.importSession}
+              </Button>
+            </SettingsRow>
+          ) : null}
+          <DataMessageLine message={message} scope="session" />
+        </SettingsGroup>
 
-      <PiShareDestinationGroup title={labels.groupDataShare} />
+        <PiShareDestinationGroup title={labels.groupDataShare} />
+      </SettingsAdvanced>
     </section>
   )
 }

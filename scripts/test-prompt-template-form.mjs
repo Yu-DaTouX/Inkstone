@@ -134,7 +134,7 @@ try {
   }
   await fixture.submit()
   assert.equal(fixture.calls.created, 0)
-  assert.match(words(fixture.render()), /文件已保存，但暂未加载：session busy/)
+  assert.match(words(fixture.render()), /文件已保存，但未加载：session busy/)
   assert.equal(find(fixture.render(), 'caps-prompt-create-name').props.isDisabled, true)
   await fixture.submit()
   assert.equal(fixture.calls.create.length, 1, '保存后重试只重载，不重复创建文件')
@@ -144,7 +144,7 @@ try {
   fixture = setup()
   window.yan.nativeSession = async () => { throw new Error('reload exception') }
   await fixture.submit()
-  assert.match(words(fixture.render()), /文件已保存，但暂未加载：reload exception/)
+  assert.match(words(fixture.render()), /文件已保存，但未加载：reload exception/)
   assert.equal(fixture.calls.created, 0)
 
   fixture = setup()

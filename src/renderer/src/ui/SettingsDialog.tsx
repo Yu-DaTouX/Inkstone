@@ -14,6 +14,7 @@ import { popModal, pushModal, useModalCount } from '../lib/modalLayer'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { IconButton } from './IconButton'
+import { Kbd } from './Badge'
 import { ModalOverlay } from './Dialog'
 
 const NARROW_QUERY = '(max-width: 767px)'
@@ -391,6 +392,7 @@ export const SettingsSearch = forwardRef<HTMLInputElement, SettingsSearchProps>(
         }}
         onKeyDown={onKeyDown}
       />
+      {!focused && value === '' && !isDisabled ? <Kbd className="ui-settings-search__hint">/</Kbd> : null}
       {open ? (
         <div
           ref={list}

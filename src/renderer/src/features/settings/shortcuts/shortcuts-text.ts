@@ -23,9 +23,9 @@ export interface ShortcutsText {
 }
 
 const zh: ShortcutsText = {
-  note: '点快捷键录制新键位，Esc 取消；部分键位固定。',
+  note: '点快捷键录制新键位，Esc 取消。',
   composerTitle: '输入框',
-  composerNote: '运行中按 Enter 插话，Ctrl+Q 或 Alt+Enter 排队；这些键位固定，不能改。',
+  composerNote: '运行中 Enter 插话，Ctrl+Q 或 Alt+Enter 排队；固定不可改。',
   columnAction: '作用',
   columnKeys: '快捷键',
   columnState: '改键',
@@ -45,9 +45,9 @@ const zh: ShortcutsText = {
 }
 
 const en: ShortcutsText = {
-  note: 'Click a shortcut to record; Esc cancels. Some keys are fixed.',
+  note: 'Click a shortcut to record; Esc cancels.',
   composerTitle: 'Composer',
-  composerNote: 'While a turn runs, Enter cuts in and Ctrl+Q or Alt+Enter queues; these keys are fixed.',
+  composerNote: 'While running: Enter steers, Ctrl+Q or Alt+Enter queues; fixed.',
   columnAction: 'Action',
   columnKeys: 'Keys',
   columnState: 'Rebind',

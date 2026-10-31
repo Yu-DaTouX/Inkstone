@@ -10,7 +10,7 @@
   .caps-panel {
     display: flex;
     flex-direction: column;
-    gap: calc(var(--s-24) + var(--s-16));
+    gap: var(--s-24);
     min-width: 0;
   }
 
@@ -51,7 +51,7 @@
     flex-direction: column;
     gap: var(--s-4);
     min-width: 0;
-    padding: var(--s-12) 0;
+    padding: var(--s-8) 0;
   }
 
   .caps-item > .caps-actions {
@@ -67,6 +67,13 @@
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
+  }
+
+  .caps-group > :is(.caps-card, .caps-group-body) {
+    padding: var(--s-4) var(--s-16);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .mcp-service-form { gap: var(--s-12); padding: var(--s-12) 0; }

@@ -9,7 +9,7 @@ import { filesHiddenStore } from '../../files/files-hidden'
 import { filesText } from '../../files/files-text'
 import { settingsText } from '../settings-text'
 import { generalText } from '../general/general-text'
-import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
+import { Segmented, SettingsAdvanced, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
 import { codeFontChoice } from '../../../lib/appearance-v3'
 import { useTranscriptViews } from '../../../state/transcript-view'
 import { TRANSCRIPT_VIEWS } from '../../session/transcript-view-model'
@@ -268,32 +268,34 @@ export function AppearanceSettings(): ReactElement {
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title={text.groupAppearanceMotion}>
-        <SwitchRow
-          settingId="appearance-reduce-motion"
-          label={text.reduceMotion}
-          description={text.reduceMotionDesc}
-          isSelected={reduceMotion}
-          onChange={(next) => void patchSettings({ reduceMotion: next }).catch(() => undefined)}
-          testId="v3-reduce-motion-toggle"
-        />
-        <SwitchRow
-          settingId="appearance-smooth-text"
-          label={text.smoothText}
-          description={text.smoothTextDesc}
-          isSelected={smoothText}
-          onChange={(next) => void patchSettings({ smoothText: next }).catch(() => undefined)}
-          testId="v3-smooth-text-toggle"
-        />
-        <SwitchRow
-          settingId="appearance-ascii-background"
-          label={text.asciiBackground}
-          description={text.asciiBackgroundDesc}
-          isSelected={asciiBackgroundEnabled(settings)}
-          onChange={(next) => void patchSettings(asciiBackgroundPatch(next)).catch(() => undefined)}
-          testId="v3-ascii-background-toggle"
-        />
-      </SettingsGroup>
+      <SettingsAdvanced label={text.advanced} testId="v3-appearance-advanced">
+        <SettingsGroup title={text.groupAppearanceMotion}>
+          <SwitchRow
+            settingId="appearance-reduce-motion"
+            label={text.reduceMotion}
+            description={text.reduceMotionDesc}
+            isSelected={reduceMotion}
+            onChange={(next) => void patchSettings({ reduceMotion: next }).catch(() => undefined)}
+            testId="v3-reduce-motion-toggle"
+          />
+          <SwitchRow
+            settingId="appearance-smooth-text"
+            label={text.smoothText}
+            description={text.smoothTextDesc}
+            isSelected={smoothText}
+            onChange={(next) => void patchSettings({ smoothText: next }).catch(() => undefined)}
+            testId="v3-smooth-text-toggle"
+          />
+          <SwitchRow
+            settingId="appearance-ascii-background"
+            label={text.asciiBackground}
+            description={text.asciiBackgroundDesc}
+            isSelected={asciiBackgroundEnabled(settings)}
+            onChange={(next) => void patchSettings(asciiBackgroundPatch(next)).catch(() => undefined)}
+            testId="v3-ascii-background-toggle"
+          />
+        </SettingsGroup>
+      </SettingsAdvanced>
     </section>
   )
 }

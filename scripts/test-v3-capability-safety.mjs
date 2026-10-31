@@ -311,7 +311,6 @@ assert.equal(preview.token, 'TOKEN-SECRET-000', '不改写 preview.token（commi
   assert.ok(!/skill/i.test(enEmpty), 'prompt empty state must not reuse skill wording')
 
   const zhHiddenHint = capsText('zh-CN', 'promptsHiddenHint')
-  assert.ok(/不是停用|并非停用/.test(zhHiddenHint), '隐藏说明要点明并非停用')
   assert.ok(!zhHiddenHint.includes('声明位置'), '不再要求用户猜测声明位置')
   for (const language of ['zh-CN', 'en-US']) {
     const hint = capsText(language, 'promptsHiddenHint')

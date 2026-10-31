@@ -147,7 +147,7 @@ export function PackagesPanel({
   if (mode === 'install') {
     return (
       <Group title={t('pkg.install')} desc={t('pkg.installDesc')} settingId="caps-market-install">
-        {note ? <Note tone="caution">{note}</Note> : null}
+        {note ? <Note>{note}</Note> : null}
         <div className="caps-field">
           <TextField
             aria-label={t('pkg.install')}
@@ -179,7 +179,7 @@ export function PackagesPanel({
 
   return (
     <Group title={t('pkg.installed')} desc={t('pkg.location', { dir: listing?.agentDir ?? '—' })} settingId="caps-extensions">
-      {note ? <Note tone="caution">{note}</Note> : null}
+      {note ? <Note>{note}</Note> : null}
       {!listing ? (
         <div className="caps-list" aria-hidden="true">
           <div className="caps-item caps-item--skeleton">

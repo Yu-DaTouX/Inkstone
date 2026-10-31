@@ -10,10 +10,11 @@ export type SettingsSectionId =
   | 'devices'
   | 'data'
   | 'usage'
+  | 'code'
   | 'shortcuts'
   | 'about'
 
-export type SettingsNavGroupId = 'general' | 'local' | 'customize'
+export type SettingsNavGroupId = 'general' | 'agents' | 'code' | 'connections' | 'maintenance'
 
 export type CapabilitiesTabId = 'skills' | 'mcp' | 'tools' | 'market'
 
@@ -35,6 +36,7 @@ export type SettingsIconId =
   | 'plug'
   | 'wrench'
   | 'puzzle'
+  | 'git-branch'
 
 export interface SettingsSectionDef {
   readonly id: SettingsSectionId
@@ -43,19 +45,20 @@ export interface SettingsSectionDef {
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
-  { id: 'models', icon: 'key', group: 'general' },
   { id: 'appearance', icon: 'moon', group: 'general' },
   { id: 'session', icon: 'clock', group: 'general' },
   { id: 'notifications', icon: 'bell', group: 'general' },
   { id: 'security', icon: 'shield', group: 'general' },
-  { id: 'devices', icon: 'smartphone', group: 'local' },
-  { id: 'data', icon: 'hard-drive', group: 'local' },
-  { id: 'shortcuts', icon: 'keyboard', group: 'local' },
-  { id: 'about', icon: 'info', group: 'local' },
-  { id: 'capabilities', icon: 'sparkles', group: 'customize' }
+  { id: 'shortcuts', icon: 'keyboard', group: 'general' },
+  { id: 'models', icon: 'key', group: 'agents' },
+  { id: 'capabilities', icon: 'sparkles', group: 'agents' },
+  { id: 'code', icon: 'git-branch', group: 'code' },
+  { id: 'devices', icon: 'smartphone', group: 'connections' },
+  { id: 'data', icon: 'hard-drive', group: 'connections' },
+  { id: 'about', icon: 'info', group: 'maintenance' }
 ]
 
-export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupId[] = ['general', 'local', 'customize']
+export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupId[] = ['general', 'agents', 'code', 'connections', 'maintenance']
 
 const CAPABILITIES_TAB_ICON: Record<CapabilitiesTabId, SettingsIconId> = {
   skills: 'scroll',
@@ -105,6 +108,7 @@ export function isSettingsSectionId(value: unknown): value is SettingsSectionId 
     value === 'devices' ||
     value === 'data' ||
     value === 'usage' ||
+    value === 'code' ||
     value === 'shortcuts' ||
     value === 'about'
   )
@@ -126,7 +130,8 @@ const LEGACY_VIEW_TO_SECTION: Record<string, SettingsSectionId> = {
   knowledge: 'capabilities',
   packages: 'capabilities',
   market: 'capabilities',
-  git: 'capabilities',
+  git: 'code',
+  github: 'code',
   android: 'capabilities',
   usage: 'usage',
   ...GENERAL_LEGACY_MAP

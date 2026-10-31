@@ -1,5 +1,6 @@
-import type { ReactElement, ReactNode } from 'react'
-import { cx, SegmentedControl, SettingRow, SettingSection } from '../../../ui'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
+import { Button, CollapsibleChevron, cx, SegmentedControl, SettingRow, SettingSection } from '../../../ui'
+import { getSettingReveal, settingSelector, subscribeSettingReveal } from '../search/search-model'
 
 export interface SettingsRowProps {
   label: ReactNode
@@ -69,6 +70,43 @@ export function SettingsReveal({ open, children }: { open: boolean; children: Re
   return (
     <div className="settings-reveal" data-open={open ? '1' : '0'} data-setting-rows-continue="" inert={!open} aria-hidden={!open}>
       <div className="settings-reveal__inner">{children}</div>
+    </div>
+  )
+}
+
+export interface SettingsAdvancedProps {
+  label: string
+  testId?: string
+  children: ReactNode
+}
+
+export function SettingsAdvanced({ label, testId, children }: SettingsAdvancedProps): ReactElement {
+  const [open, setOpen] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
+  const bodyId = useId()
+  const reveal = useSyncExternalStore(subscribeSettingReveal, getSettingReveal, getSettingReveal)
+  useEffect(() => {
+    if (reveal && body.current?.querySelector(settingSelector(reveal.id))) setOpen(true)
+  }, [reveal])
+  return (
+    <div className="settings-advanced" data-open={open ? '1' : '0'}>
+      <Button
+        variant="ghost"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        icon={<CollapsibleChevron expanded={open} />}
+        data-testid={testId}
+        onPress={() => setOpen((value) => !value)}
+      >
+        {label}
+      </Button>
+      <div className="settings-reveal" data-open={open ? '1' : '0'} inert={!open} aria-hidden={!open}>
+        <div className="settings-reveal__inner">
+          <div className="settings-advanced__body" id={bodyId} ref={body}>
+            {children}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

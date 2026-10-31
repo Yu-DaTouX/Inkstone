@@ -118,6 +118,7 @@ export function ShortcutsSettings(): ReactElement {
           </span>
         }
       >
+        <div className="settings-scroll-list">
         {defs.map((def) => {
           const modified = overrides[def.id] !== undefined
           const recording = recordingId === def.id
@@ -179,6 +180,7 @@ export function ShortcutsSettings(): ReactElement {
             </SettingRow>
           )
         })}
+        </div>
       </SettingsGroup>
 
       <SettingsGroup
@@ -204,9 +206,11 @@ export function ShortcutsSettings(): ReactElement {
         </SettingRow>
       </SettingsGroup>
 
-      <p className="settings-row__desc settings-shortcut-status" role="status" data-testid="v3-shortcut-conflicts">
-        {conflicts.length ? text.conflictFound.replace('{list}', conflicts.join(', ')) : text.conflictNone}
-      </p>
+      {conflicts.length ? (
+        <p className="settings-row__desc settings-shortcut-status" role="status" data-testid="v3-shortcut-conflicts">
+          {text.conflictFound.replace('{list}', conflicts.join(', '))}
+        </p>
+      ) : null}
     </section>
   )
 }

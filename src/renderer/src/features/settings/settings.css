@@ -32,12 +32,12 @@
   .settings-section {
     display: flex;
     flex-direction: column;
-    gap: calc(var(--s-24) + var(--s-16));
+    gap: var(--s-24);
     min-width: 0;
   }
 
   .settings-section > .settings-group + .ui-notice {
-    margin-top: calc(var(--s-24) * -1);
+    margin-top: calc(var(--s-16) * -1);
   }
 
   .settings-h2 {
@@ -62,6 +62,14 @@
     color: var(--fg);
     font-size: var(--t-prose);
     line-height: var(--t-prose-lh);
+  }
+
+  .settings-scroll-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 320px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .settings-actions {
@@ -94,13 +102,35 @@
     box-shadow: var(--shadow-card);
   }
 
-  .settings-group > .ui-setting-section__head .ui-setting-section__title {
-    font-size: calc(var(--t-heading) * 1.2);
-    line-height: var(--t-title-lh);
+  :is(.settings-group, .caps-group) > .ui-setting-section__head .ui-setting-section__title {
+    color: var(--fg2);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    font-weight: 600;
+  }
+
+  .settings-advanced {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .settings-advanced > .settings-reveal {
+    align-self: stretch;
+  }
+
+  .settings-advanced__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-24);
+    min-width: 0;
+    padding-top: var(--s-8);
   }
 
   .settings-group > .ui-setting-section__head:not(:last-child) {
-    margin-bottom: var(--s-12);
+    margin-bottom: var(--s-8);
   }
 
   .settings-main__title {

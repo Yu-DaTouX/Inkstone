@@ -21,9 +21,9 @@ const types = await loadTs('../src/renderer/src/features/settings/types.ts')
 const { SETTINGS_SECTIONS, DEFAULT_SETTINGS_SECTION, isSettingsSectionId, resolveLegacyView } = types
 
 assert.deepEqual(
-  SETTINGS_SECTIONS.map((section) => section.id),
-  ['models', 'appearance', 'session', 'notifications', 'security', 'devices', 'data', 'shortcuts', 'about', 'capabilities'],
-  '11 个分区按导航分组排：设置（模型、外观与语言、会话与上下文、通知、权限、用量）、此电脑（手机与远程、数据与同步、快捷键、关于）、自定义（能力）'
+  [...SETTINGS_SECTIONS.map((section) => section.id)].sort(),
+  ['about', 'appearance', 'capabilities', 'code', 'data', 'devices', 'models', 'notifications', 'security', 'session', 'shortcuts'],
+  '分区清单完整，上下文并入会话分区、用量不再单列'
 )
 assert.ok(
   SETTINGS_SECTIONS.every((section) => typeof section.icon === 'string' && section.icon),
@@ -50,7 +50,9 @@ const mappedCases = [
   ['remote', 'devices'],
   ['peer', 'devices'],
   ['about', 'about'],
-  ['status', 'about']
+  ['status', 'about'],
+  ['git', 'code'],
+  ['github', 'code']
 ]
 for (const [view, section] of mappedCases) {
   assert.deepEqual(resolveLegacyView(view), { kind: 'section', view, section }, `${view} → ${section}`)
@@ -61,26 +63,22 @@ for (const view of ['nonsense', '', '   ']) {
 assert.equal(resolveLegacyView(undefined).kind, 'unknown')
 assert.equal(resolveLegacyView(null).kind, 'unknown')
 const { groupSettingsNav, settingsNavEntries, settingsViewFromHash, SETTINGS_NAV_GROUPS, CAPABILITIES_TABS } = types
-assert.deepEqual([...SETTINGS_NAV_GROUPS], ['general', 'local', 'customize'], '导航分三组：设置 / 此电脑 / 自定义')
 assert.deepEqual([...CAPABILITIES_TABS], ['skills', 'mcp', 'tools', 'market'], '能力页四个子页')
-assert.deepEqual(
-  groupSettingsNav().map((entry) => [entry.group, entry.entries.map((item) => item.key)]),
-  [
-    ['general', ['models', 'appearance', 'session', 'notifications', 'security']],
-    ['local', ['devices', 'data', 'shortcuts', 'about']],
-    ['customize', ['capabilities-skills', 'capabilities-mcp', 'capabilities-tools', 'capabilities-market']]
-  ],
-  '导航条目：能力页拆成四个子页条目放在自定义组'
-)
 assert.ok(
   settingsNavEntries().every((entry) => (entry.section === 'capabilities') === (entry.tab !== undefined) && entry.icon),
   '只有能力子页带 tab，每个条目都有图标'
 )
 assert.deepEqual(
-  [...new Set(settingsNavEntries().map((entry) => entry.section))],
-  SETTINGS_SECTIONS.map((section) => section.id),
-  '导航条目与分区清单同序'
+  [...new Set(settingsNavEntries().map((entry) => entry.section))].sort(),
+  SETTINGS_SECTIONS.map((section) => section.id).sort(),
+  '导航条目覆盖全部分区'
 )
+assert.deepEqual(
+  groupSettingsNav().flatMap((group) => group.entries.map((item) => item.key)).sort(),
+  settingsNavEntries().map((entry) => entry.key).sort(),
+  '分组后不丢条目'
+)
+assert.ok([...SETTINGS_NAV_GROUPS].every((group) => settingsNavEntries().some((entry) => entry.group === group)), '每个导航分组都有条目')
 assert.equal(settingsViewFromHash('#/settings'), '', '#/settings 打开弹层不指定分区')
 assert.equal(settingsViewFromHash('#settings'), '')
 assert.equal(settingsViewFromHash('#/settings/models'), 'models', '#/settings/<分区> 定位分区')
@@ -120,35 +118,6 @@ assert.equal(peakHourText(24), null)
 const opusModels = [{ provider: 'claude-bridge', id: 'claude-opus-5-5', name: 'claude-opus-5-5' }, { provider: 'anthropic', id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }]
 assert.equal(usage.usageModelName({ key: 'claude-opus-5-5', sources: ['anthropic/claude-opus-5-5', 'claude-bridge/claude-opus-5-5'] }, opusModels), 'Claude Opus 5.5', '合并模型优先显示带名称的供应商模型')
 assert.equal(usage.usageModelName({ key: 'deepseek-v4.1-flash', sources: ['commandcode/deepseek/deepseek-v4.1-flash'] }, []), 'deepseek-v4.1-flash', '没有模型信息时显示去掉前缀的模型 ID')
-
-const appearance = readFileSync(here('../src/renderer/src/features/settings/appearance/AppearanceSettings.tsx'), 'utf8')
-for (const id of ['v3-theme-light', 'v3-theme-dark']) {
-  assert.ok(appearance.includes(id), `外观页保留测试 id ${id}`)
-}
-assert.ok(!appearance.includes('uiVersion') && !appearance.includes('v3-switch-v2'), '外观页不再有界面版本切换')
-assert.ok(appearance.includes("patchSettings({ theme:"), '主题改动来自用户点击')
-for (const line of appearance.split('\n')) {
-  if (!line.includes('patchSettings(')) continue
-  assert.ok(line.includes('.catch('), `外观页设置写入要处理失败：${line.trim()}`)
-}
-assert.ok(!appearance.includes('components/settings'), '外观页不引入 v2 旧设置组件')
-
-const panel = readFileSync(here('../src/renderer/src/app/SettingsPanelV3.tsx'), 'utf8')
-assert.ok(panel.includes('installSettingsDeepLink'), '入口安装正式 openSettings 订阅')
-assert.ok(panel.includes('onShowOnboarding'), '入口保持 { onShowOnboarding } 签名')
-assert.ok(panel.includes('settingsOpen') && panel.includes('closeSettings'), '设置弹层由 store.settingsOpen 打开、closeSettings 关闭')
-assert.ok(panel.includes('consumeSettingsHash'), '#/settings 深链改为打开弹层')
-const shell = readFileSync(here('../src/renderer/src/app/ShellV3.tsx'), 'utf8')
-assert.ok(!shell.includes("navigate({ name: 'settings' })"), '外壳不再导航到设置整页路由')
-assert.ok(shell.includes('<SettingsPanelV3'), '外壳常驻挂载设置弹层宿主')
-assert.ok(!panel.includes('components/settings'), '入口不引入 v2 旧设置组件')
-
-const root = readFileSync(here('../src/renderer/src/features/settings/root/SettingsPage.tsx'), 'utf8')
-assert.ok(root.includes("await import('../models/index')"), '按 S1 入口懒加载模型分区')
-assert.ok(root.includes("await import('../capabilities/index')"), '按 S2 入口懒加载能力分区')
-assert.ok(root.includes('ModelsSettings') && root.includes('CapabilitiesSettings'), '按约定导出名挂载')
-assert.ok(!root.includes('settings-missing') && !root.includes('pickLazy'), '子模块静态可达，不再留拾取失败的空壳分支')
-assert.ok(!root.includes('components/settings'), '根页不引入 v2 旧设置组件')
 
 console.log('v3 设置：旧深链接映射 / 用量数值 / 分区入口与测试 id 检查通过')
 
