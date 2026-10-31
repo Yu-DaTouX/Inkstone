@@ -171,8 +171,10 @@ const cleanEnv = (extra = {}) => {
   return { ...env, ...extra }
 }
 
+const debugPort = 9300 + Math.floor(Math.random() * 600)
 const probeEnv = cleanEnv({
   ...dirs,
+  YAN_PROBE_DEBUG_PORT: String(debugPort),
   YAN_PROBE: join(root, 'scripts', 'probe', 'packaged.js'),
   YAN_PROBE_DELAY: String(delay),
   YAN_PROBE_OUT: outFile
@@ -247,6 +249,50 @@ while (Date.now() < deadline) {
   }
   await sleep(500)
 }
+
+const cdpEvaluate = (wsUrl, expression) => new Promise((resolveEval) => {
+  const socket = new WebSocket(wsUrl)
+  const timer = setTimeout(() => {
+    socket.close()
+    resolveEval('求值超时（渲染进程主线程可能卡住）')
+  }, 5000)
+  socket.onopen = () => socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
+  socket.onmessage = (event) => {
+    const reply = JSON.parse(String(event.data))
+    if (reply.id !== 1) return
+    clearTimeout(timer)
+    socket.close()
+    resolveEval(JSON.stringify(reply.result?.result?.value ?? reply.result?.exceptionDetails ?? reply.error ?? null))
+  }
+  socket.onerror = () => {
+    clearTimeout(timer)
+    resolveEval('调试连接失败')
+  }
+})
+
+const startupDiagnosis = async () => {
+  const lines = []
+  try {
+    const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json())
+    if (!targets.length) lines.push('调试端口在，但没有任何页面')
+    for (const target of targets) {
+      lines.push(`${target.type} ${target.url}`)
+      if (target.type !== 'page' || !target.webSocketDebuggerUrl) continue
+      lines.push(`  ${await cdpEvaluate(target.webSocketDebuggerUrl, `({ readyState: document.readyState, visibility: document.visibilityState, rootChildren: document.getElementById('root')?.childElementCount ?? null, text: (document.body?.innerText ?? '').slice(0, 800) })`)}`)
+    }
+  } catch (error) {
+    lines.push(`调试端口不可用：${error?.message ?? error}`)
+  }
+  for (const entry of readdirSync(sandbox, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !/\.(log|txt)$/i.test(entry.name)) continue
+    const path = join(entry.parentPath ?? entry.path, entry.name)
+    lines.push(`--- ${path}`)
+    lines.push(readFileSync(path, 'utf8').slice(-1500))
+  }
+  return lines.join('\n')
+}
+
+const diagnosis = body == null ? await startupDiagnosis() : ''
 
 child.kill()
 terminatePackagedProcesses(sandbox)
@@ -428,6 +474,7 @@ if (body == null) {
   terminatePackagedProcesses(sandbox)
   console.error(`\n${C.err('✗')} 没拿到 PROBE 输出 —— 打包后的应用可能启动失败`)
   console.error(C.dim(buf.slice(-3000) || '(child 没有任何输出，也没写结果文件)'))
+  console.error(`\n启动诊断：\n${diagnosis}`)
   console.error(C.dim(`隔离现场已保留：${sandbox}`))
   process.exit(1)
 }
