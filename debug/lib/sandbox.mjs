@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const FIXTURE_ROOT = process.env.YAN_DEBUG_FIXTURES || 'E:/Harness-test/tasks'
+const FIXTURE_ROOT = process.env.YAN_DEBUG_FIXTURES || 'E:/Inkstone/bench/Harness-test/tasks'
 const FIXTURE_TASKS = ['40-ledger-incident', '30-async-refactor', '50-expr-lang', '10-cache-bugs', '20-csv-spec']
 
 function gitInit(dir) {

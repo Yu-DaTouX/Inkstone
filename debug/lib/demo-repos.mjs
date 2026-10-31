@@ -17,7 +17,7 @@ export function demoFile(dir, path, content) {
   writeFileSync(file, content)
 }
 
-export function createDemoRepos(runDir, { fixtureRoot = process.env.YAN_DEBUG_FIXTURES || 'E:/Harness-test/tasks' } = {}) {
+export function createDemoRepos(runDir, { fixtureRoot = process.env.YAN_DEBUG_FIXTURES || 'E:/Inkstone/bench/Harness-test/tasks' } = {}) {
   const dir = join(runDir, 'demo')
   if (existsSync(join(dir, 'gh-state.json')) || existsSync(join(dir, 'ledger'))) throw new Error('演示目录已存在，请使用新的运行目录')
   mkdirSync(dir, { recursive: true })

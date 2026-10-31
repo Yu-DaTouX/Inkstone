@@ -21,7 +21,22 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 任务预计跨会话或跨 agent 时，在 STATUS「进行中」登记主题与文件范围；收尾时改写或删除自己的条目，没做完就写交接。STATUS 是现状板不是日志：一句结论加链接，全文 150 行以内。
 - 本地产物归位：日志、截图、清单放 `.local-docs/evidence/<日期>-<主题>/`，一次性脚本放 `.tmp/<任务>/`（已被 Git 忽略）；`.local-docs/` 根目录只留 README、STATUS、DECISIONS 三个文件，其余放进 `handoffs/`、`evidence/`、`archive/`（已结束的主题整目录移入，只移不删）。
 - 隔离调试用 `npm run debug -- help`（源码在 `debug/`）：隔离实例、假模型、CDP 求值截图、回归场景；大会话样本与运行产物在被忽略的 `debug/data/`、`debug/runs/`，要留证的再拷到 `.local-docs/evidence/`。可复用的调试场景写进 `debug/scenarios/`，不再散落在 `.tmp/`。
-- 可以用 worktree 隔离长任务，分支名写明 agent 与主题。不删除、不重置其他 agent 的 worktree 与分支，清理由用户决定。
+- 可以用 worktree 隔离长任务，分支名写明 agent 与主题，放在 `E:/Inkstone/worktrees/<名称>`。不删除、不重置其他 agent 的 worktree 与分支，清理由用户决定。
+
+## 本机相关资料（作者 Windows 机器）
+
+主仓固定在 `E:/pi-desktop`；砚的其他目录统一在 `E:/Inkstone/`，不再在 E 盘根目录新建 `yan-*`、`*-test` 之类目录。新克隆里没有这些，依据源码工作。
+
+| 位置 | 内容 |
+| --- | --- |
+| `E:/pi-desktop/.local-docs/` | 现状、决定、交接、证据（见「开工」第 4 条） |
+| `E:/Inkstone/worktrees/` | 主仓的 git worktree（如 `t3-ui-replica`）；用 `git worktree move/remove` 管理，不直接挪删目录 |
+| `E:/Inkstone/bench/Harness-test/` | 多 harness 编码跑分仓库，统计以其 README 为准；`tasks/` 是 `npm run debug` 的默认夹具（`YAN_DEBUG_FIXTURES` 可改） |
+| `E:/Inkstone/bench/yan-agent-trial/` | 砚 agent 真实任务试用记录（每个任务含 TASK/PROGRESS/FRICTION/SUMMARY） |
+| `E:/Inkstone/refs/` | 只读参考：`t3code`（T3 源码）、`openclaude`、`cc-rea`（Claude Code / Desktop 界面研究） |
+| `E:/Inkstone/projects/inkstone-minecraft-plugin/` | Minecraft 插件独立仓库（GitHub `Yu-DaTouX/inkstone-minecraft-plugin`） |
+| `E:/Inkstone/projects/砚启动器/` | Minecraft 独立启动器仓库（GitHub `Yu-DaTouX/inkstone-minecraft`） |
+| `release/砚数据/` | 真实用户数据，只读 |
 
 ## 实现约定
 
@@ -45,6 +60,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 大测试先问用户，得到同意再跑：`npm run check`、完整 `test:unit`、多场景或整套 `test:live`、发行包验证，以及任何调用真实模型的场景。用户说过「不跑测试」时照办，交付说明写明没跑什么。
 - 不替无关改动做测试：其他 agent 的未提交改动、任务范围外的既有失败，不自行排查或修复；记下现象与命令，在交付说明里报告。
 - Electron 启动前清除 `ELECTRON_RUN_AS_NODE`；不要关闭或重启用户窗口，除非已授权。
+- 改界面后，把自己启动的最新测试实例留着给用户试用，交付说明里写明窗口标题和 PID。继续修改时，先关掉自己上一次留下的实例，再启动新的，始终只留最新一个；不碰用户自己的窗口和其他 agent 的实例。
 - 远程模型场景运行前确认模型、额度和授权。模拟或本机 fixture 不代表真实模型验证。视觉结论应来自实际截图。
 - 未经授权不提交、推送、打包或发布。提交时逐文件暂存当前任务（不用 `git add .`），先核对暂存清单，提交后确认其他改动仍在。
 - 发版（需授权）：`npm version <版本> --no-git-tag-version` 后单独提交「版本 x.y.z」；推送 `v<版本>` 标签会触发 CI 打包、跑 `test:packaged` 并生成草稿 Release；核对附件、写好更新说明后再公开。本地安装包放 `release/<版本>-<短哈希>/`，不碰 `release/砚数据/`。
