@@ -28,6 +28,7 @@ files:
   - 'node_modules/@ff-labs/fff-bin-*/**'
   - 'node_modules/ffi-rs/**'
   - 'node_modules/@yuuang/ffi-rs-*/**'
+  - 'node_modules/pdfjs-dist/**'
   - '!out/test/**'
   - '!**/*.{map,md,ts,tsx,tsbuildinfo}'
 

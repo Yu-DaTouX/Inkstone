@@ -94,7 +94,7 @@ if (exeFromArg) {
   }
   console.log(`  ${C.ok('✓')} extraResources 落位（pi-runtime / yan-thin / yan-cli / app.asar）`)
 }
-const sandbox = mkdtempSync(join(tmpdir(), 'yan-packaged-'))
+const sandbox = mkdtempSync(join(process.env.YAN_PACKAGED_TMP_DIR ? resolve(process.env.YAN_PACKAGED_TMP_DIR) : tmpdir(), 'yan-packaged-'))
 if (!exeFromArg) {
   const standalone = join(sandbox, 'app')
   cpSync(unpacked, standalone, { recursive: true })
@@ -164,7 +164,7 @@ for (const base of [dirs.YAN_PI_DIR, dirs.YAN_DATA_DIR]) {
 const delay = 9000
 const outFile = join(sandbox, 'probe.txt')
 
-const INHERITED_KEYS = ['ELECTRON_RUN_AS_NODE', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']
+const INHERITED_KEYS = ['ELECTRON_RUN_AS_NODE', 'NODE_PATH', 'NODE_OPTIONS', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']
 const cleanEnv = (extra = {}) => {
   const env = { ...process.env }
   for (const k of INHERITED_KEYS) delete env[k]
@@ -203,7 +203,7 @@ const child = spawn(exePath, [
   `--yan-data-dir=${dirs.YAN_DATA_DIR}`,
   `--yan-pi-dir=${dirs.YAN_PI_DIR}`
 ], {
-  cwd: root,
+  cwd: sandbox,
   env: probeEnv,
   windowsHide: true
 })
@@ -283,11 +283,33 @@ const startupDiagnosis = async () => {
   } catch (error) {
     lines.push(`调试端口不可用：${error?.message ?? error}`)
   }
-  for (const entry of readdirSync(sandbox, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile() || !/\.(log|txt)$/i.test(entry.name)) continue
-    const path = join(entry.parentPath ?? entry.path, entry.name)
-    lines.push(`--- ${path}`)
-    lines.push(readFileSync(path, 'utf8').slice(-1500))
+  lines.push(`进程：${child.exitCode === null ? `仍在运行 pid=${child.pid}` : `已退出 code=${child.exitCode} signal=${child.signalCode}`}`)
+  if (child.exitCode === null) {
+    const windowScript = join(sandbox, 'window-titles.ps1')
+    writeFileSync(windowScript, [
+      'param([string]$AppDirectory)',
+      'Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($AppDirectory, [StringComparison]::OrdinalIgnoreCase) } | Select-Object Id, ProcessName, MainWindowTitle | ConvertTo-Json -Compress'
+    ].join('\n'))
+    const titles = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', windowScript, dirname(exePath)], { encoding: 'utf8', windowsHide: true, timeout: 10_000 })
+    lines.push(`窗口：\n${titles.stdout?.trim() || titles.stderr?.trim() || titles.error?.message || '无窗口信息'}`)
+  }
+  const unpackedModules = join(dirname(exePath), 'resources', 'app.asar.unpacked', 'node_modules')
+  const nativeScript = join(sandbox, 'native-load.cjs')
+  writeFileSync(nativeScript, [
+    "for (const name of ['ffi-rs', '@ff-labs/fff-node']) {",
+    "  try { require(require('node:path').join(process.argv[2], name)); console.log(name + ' 加载成功') }",
+    "  catch (error) { console.log(name + ' 加载失败：' + (error.stack || error)) }",
+    '}'
+  ].join('\n'))
+  const nativeLoad = spawnSync(exePath, [nativeScript, unpackedModules], { cwd: sandbox, encoding: 'utf8', windowsHide: true, timeout: 30_000, env: cleanEnv({ ...dirs, ELECTRON_RUN_AS_NODE: '1' }) })
+  lines.push(`原生依赖：\n${`${nativeLoad.stdout ?? ''}${nativeLoad.stderr ?? ''}`.trim() || `无输出 status=${nativeLoad.status} error=${nativeLoad.error?.message ?? ''}`}`)
+  for (const base of [dirs.YAN_USER_DATA, dirs.YAN_DATA_DIR, dirs.YAN_PI_DIR]) {
+    for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !(/\.log$/i.test(entry.name) || entry.name === 'last-exit.json')) continue
+      const path = join(entry.parentPath ?? entry.path, entry.name)
+      lines.push(`--- ${path}`)
+      lines.push(readFileSync(path, 'utf8').slice(-1500))
+    }
   }
   return lines.join('\n')
 }
@@ -380,7 +402,7 @@ if (!exeFromArg) {
     `--yan-data-dir=${remoteDirs.YAN_DATA_DIR}`,
     `--yan-pi-dir=${remoteDirs.YAN_PI_DIR}`
   ], {
-    cwd: root,
+    cwd: sandbox,
     windowsHide: true,
     env: cleanEnv({
       ...remoteDirs,

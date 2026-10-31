@@ -31,7 +31,17 @@ export default defineConfig({
     define,
     plugins: [
       externalizeDepsPlugin({
-        exclude: ['@modelcontextprotocol/sdk', 'tar', 'electron-updater']
+        exclude: [
+          '@modelcontextprotocol/sdk',
+          '@modelcontextprotocol/core',
+          '@modelcontextprotocol/client',
+          '@modelcontextprotocol/ext-apps',
+          'linkedom',
+          '@mozilla/readability',
+          'node-html-markdown',
+          'tar',
+          'electron-updater'
+        ]
       })
     ],
     build: {
