@@ -32,7 +32,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'subagent.start',
     '委派子代理',
-    '指定模型执行独立子任务并返回结果；默认当前文件夹，代码任务可显式选择 worktree 隔离。',
+    '指定模型执行独立子任务并返回结果；默认当前文件夹，代码任务可显式选择 worktree 隔离。按需调用：任务确实可独立并行或需要隔离上下文时才派，能续派已有子代理时优先续派。',
     'external-action',
     'yan subagent start --task <text> --model <provider/model> [--thinking low|medium|high]'
   ),
@@ -56,6 +56,20 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     '向本会话派出的子代理发信息：运行中用于补充或纠偏（默认当前工具结束后送达，follow-up 等它做完原任务）；已结束的按原会话续接，记得之前的工作。',
     'external-action',
     'yan subagent send --id <id> --message <text> [--mode steer|follow-up]'
+  ),
+  builtin(
+    'subagent.merge',
+    '合并子代理改动',
+    'worktree 子代理的改动由你审阅处置：合并是把它的补丁应用到当前项目目录；冲突时会报错并保留工作树，可用 subagent send 让它继续解决。',
+    'external-action',
+    'yan subagent merge --id <id>'
+  ),
+  builtin(
+    'subagent.discard',
+    '放弃子代理改动',
+    '放弃 worktree 子代理尚未合并的改动并清理它的工作树。',
+    'external-action',
+    'yan subagent discard --id <id>'
   ),
   builtin(
     'subagent.stop',

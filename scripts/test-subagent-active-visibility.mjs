@@ -55,7 +55,8 @@ export async function runSubagentActiveVisibilityTests(ok) {
     const has = (id) => ids.includes(id)
 
     check(has('live') && has('starting') && has('wrapping'), '运行中 / 启动中 / 收尾中的常驻')
-    check(has('failed') && has('timeout') && has('budget') && has('review') && has('conflict'), '出错 / 超时 / 调用用完 / 待审阅 / 冲突的常驻')
+    check(has('failed') && has('timeout') && has('budget'), '出错 / 超时 / 调用用完的常驻')
+    check(!has('review') && !has('conflict'), '待主会话处置的 worktree 改动不再常驻打扰用户')
     check(!has('finished') && !has('merged') && !has('discarded') && !has('cancelled'), '完成无需处理 / 已合并 / 已放弃 / 被停止的撤下')
     check(!has('foreign'), '别的会话的子代理不串进当前会话')
     check(!has('orphan'), '没有归属字段且不属于当前视图的旧记录不猜当前会话')

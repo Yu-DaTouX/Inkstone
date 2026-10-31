@@ -28,7 +28,7 @@ function headlineWord(key: SubagentOutcomeKey, status: string): string {
 
 export function buildSubagentNotice(
   run: Pick<SubagentRun, 'id' | 'task' | 'status' | 'isolation' | 'model' | 'diff' | 'review' | 'error' | 'result'> &
-    Partial<Pick<SubagentRun, 'endReason' | 'resultPath'>>
+    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable'>>
 ): string {
   const status = run.status === 'done' || run.status === 'error' || run.status === 'cancelled' ? run.status : 'done'
   const mode = run.isolation === 'controlled-cwd' ? '只读' : '可修改'
@@ -42,14 +42,17 @@ export function buildSubagentNotice(
   if (run.diff && run.diff.files > 0) {
     const review =
       run.review === 'pending' || run.review === 'conflict'
-        ? '，尚未合并，等用户审阅'
+        ? '，尚未合并，由你处置'
         : run.review === 'archived'
           ? '，已归档为补丁'
           : ''
     lines.push(`改动：${run.diff.files} 个文件 +${run.diff.additions}/-${run.diff.deletions}${review}`)
     if ((run.review === 'pending' || run.review === 'conflict') && run.resultPath) lines.push(`工作区：${run.resultPath}`)
+    if (run.review === 'pending' || run.review === 'conflict') lines.push(`处置：合并 yan subagent merge --id ${run.id}；放弃 yan subagent discard --id ${run.id}；要它继续改或解决冲突用 yan subagent send --id ${run.id}`)
   }
   lines.push(`完整过程：yan subagent get --id ${run.id}`)
+  if (run.resumable?.ok) lines.push(`可续派：yan subagent send --id ${run.id} --message <追加任务>（保留它之前的全部上下文，比重新派更省）`)
+  else if (run.resumable?.reason) lines.push(`不可续派：${clip(run.resumable.reason, 120)}`)
   lines.push('这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。')
   return `<${SUBAGENT_NOTICE_TAG} id="${run.id}" status="${status}">\n${lines.join('\n')}\n</${SUBAGENT_NOTICE_TAG}>`
 }

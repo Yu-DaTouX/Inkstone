@@ -1,5 +1,5 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: 05f13edd5ff754d36bdbf9da32321c80d0db1cf05e390ab444ce5a8ad794cb50 */
+/* source-sha256: fb48b7b6d6e09e1da179fd72014d6d9b467ca63c259337cfb188b5c030268884 */
 var PI_API_IDS = [
   "openai-completions",
   "openai-responses",

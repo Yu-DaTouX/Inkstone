@@ -35,7 +35,8 @@ function fakeRpcFactory() {
         if (type === 'prompt') rpc.prompts.push(payload?.message)
         return { success: true }
       },
-      async close() { rpc.running = false }
+      async close() { rpc.running = false },
+      emit(event, ...payload) { for (const listener of handlers.get(event) ?? []) listener(...payload) }
     }
     created.push(rpc)
     return rpc
@@ -95,7 +96,25 @@ export async function runSubagentForkTests(ok, fork, SubagentController) {
     ok(at('--session-dir') === childDir && at('--session').startsWith(childDir) && (await readdir(childDir)).length === 1, 'fork 控制器：子会话文件写在自己的会话目录')
     ok(rpc.cwd === scratch && /^<fork-directive>/.test(rpc.prompts[0] ?? ''), 'fork 控制器：在父会话目录运行，任务以 fork 指令发出', rpc.prompts[0])
     ok(ctrl.list().find((run) => run.id === started.run.id)?.fork === true, 'fork 控制器：快照里带 fork 标记')
-    await ctrl.stop?.(started.run.id)
+    const forkId = started.run.id
+    rpc.emit('event', { type: 'agent_settled', aborted: false })
+    for (let i = 0; i < 100 && ctrl.get(forkId)?.status !== 'done'; i += 1) await new Promise((resolve) => setTimeout(resolve, 20))
+    ok(ctrl.get(forkId)?.status === 'done' && ctrl.get(forkId).resumable?.ok === true, 'fork 控制器：结束后标明可续派', JSON.stringify(ctrl.get(forkId)?.resumable))
+    const saved = JSON.parse(await readFile(join(archive, `${forkId}.json`), 'utf8'))
+    ok(saved.resume?.forkLaunch?.model === forkSource.model && saved.resume.forkLaunch.args.includes('guide.js') && saved.resume.forkLaunch.env.YAN_PROJECT_ID === 'p', 'fork 控制器：来源信息写进历史记录', JSON.stringify(saved.resume))
+    ok(!JSON.stringify(saved.resume).includes('TOKEN'), 'fork 控制器：历史记录不含令牌类环境变量')
+    await ctrl.stopAll?.()
+    const reopened = new SubagentController({ cwd: scratch, archiveDir: archive, parentSessionId: 'parent-session-1', createRpc: factory.createRpc,
+      prepare: async (rootCwd, _id, isolation) => ({ isolation, rootCwd, cwd: rootCwd }), onChange: () => {} })
+    await reopened.loadHistory()
+    ok(reopened.get(forkId)?.resumable?.ok === true, 'fork 控制器：重启后仍标明可续派', JSON.stringify(reopened.get(forkId)?.resumable))
+    const before = factory.created.length
+    const resumed = await reopened.send(forkId, '接着改 c.ts', 'steer', { from: 'user' })
+    ok(resumed.ok && resumed.delivery === 'resumed' && factory.created.length === before + 1, 'fork 控制器：重启后可续接', JSON.stringify(resumed))
+    const again = factory.created.at(-1)
+    const atAgain = (flag) => again.args[again.args.indexOf(flag) + 1]
+    ok(atAgain('--model') === forkSource.model && again.args.includes('guide.js') && atAgain('--session').startsWith(childDir), 'fork 控制器：续接沿用来源参数与自己的会话文件', again.args.join(' '))
+    await reopened.stopAll?.()
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }

@@ -323,7 +323,9 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                                运行中：steer（默认）在当前工具结束后送达，用来纠偏或补充资料；
                                        follow-up 等它做完原任务再处理
                                已结束：用它原来的会话续接，它记得之前做过的事（追问不用重派、不用重讲背景）
-                               worktree 子代理结束后、或没启动成功的，不能续接
+                               没启动成功、或 worktree 已合并/放弃的，不能续接
+  merge  --id <子代理ID>        worktree 子代理的改动由你审阅处置：把补丁应用到当前项目目录；有冲突时报错、工作树保留，可 send 让它继续解决
+  discard --id <子代理ID>       放弃 worktree 子代理尚未合并的改动并清理工作树
   stop   --id <子代理ID>        停止一个仍在运行的子代理
 
 说明：
@@ -483,12 +485,14 @@ const GROUP_SPECS = {
     required: { create: ['prompt'], delete: ['id'], pause: ['id'] }
   },
   subagent: {
-    actions: ['start', 'list', 'get', 'status', 'send', 'stop'],
+    actions: ['start', 'list', 'get', 'status', 'send', 'merge', 'discard', 'stop'],
     required: {
       start: ['task'],
       get: ['id'],
       status: ['id'],
       send: ['id', 'message'],
+      merge: ['id'],
+      discard: ['id'],
       stop: ['id']
     }
   },

@@ -6,6 +6,7 @@ import { readSessionMessages } from './session-reader'
 import { localizeImage } from './image-store'
 import { YAN_DIR } from './paths'
 import { normalizeSubagentId } from '../shared/subagent-id'
+import type { ResumeMeta } from './subagent-resume'
 
 const localizeSubagentImage = (mimeType: string, data: string): string =>
   localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
@@ -13,6 +14,7 @@ const localizeSubagentImage = (mimeType: string, data: string): string =>
 export interface SubagentHistoryRecord {
   run: SubagentRun
   rootCwd: string
+  resume?: ResumeMeta
 }
 
 const validId = (id: unknown): id is string => normalizeSubagentId(id) !== null
@@ -71,6 +73,13 @@ export class SubagentHistory {
     return this.loaded ??= this.readHistory()
   }
 
+  forget(ids: readonly string[]): void {
+    for (const id of ids) {
+      this.records.delete(id)
+      this.hidden.delete(id)
+    }
+  }
+
   list(): SubagentHistoryRecord[] {
     return [...this.records.values()].filter(({ run }) => !this.hidden.has(run.id))
   }
@@ -94,7 +103,7 @@ export class SubagentHistory {
       try {
         const record = await this.readRecord(file.name)
         if (record === 'hidden') { this.hidden.add(file.name.slice(0, -5)); continue }
-        if (record) this.records.set(record.run.id, { run: withoutTranscript(record.run), rootCwd: record.rootCwd })
+        if (record) this.records.set(record.run.id, { run: withoutTranscript(record.run), rootCwd: record.rootCwd, resume: record.resume })
       } catch {
       }
     }
@@ -143,7 +152,7 @@ export class SubagentHistory {
       ...(interrupted ? { status: 'error', endReason: 'exited', endedAt: data.endedAt ?? (await stat(path)).mtimeMs,
         error: '应用退出时子代理未完成，未自动恢复执行', latestActivity: '运行已中断' } : {})
     }
-    return { run, rootCwd: data.rootCwd }
+    return { run, rootCwd: data.rootCwd, resume: data.resume && typeof data.resume === 'object' ? data.resume as ResumeMeta : undefined }
   }
 
   private async storedTranscript(id: string): Promise<UIMessage[]> {
@@ -166,9 +175,10 @@ export class SubagentHistory {
       const saved = snapshot.status === 'error' && typeof dismissedAt === 'number' && Number.isFinite(dismissedAt)
         ? { ...snapshot, dismissedAt }
         : snapshot
-      await writeFile(temp, JSON.stringify({ ...extra, ...saved, rootCwd, schemaVersion: 1, hidden: this.hidden.has(run.id) }, null, 2), 'utf8')
+      const resume = (extra.resume as ResumeMeta | undefined) ?? this.records.get(run.id)?.resume
+      await writeFile(temp, JSON.stringify({ ...extra, ...(resume ? { resume } : {}), ...saved, rootCwd, schemaVersion: 1, hidden: this.hidden.has(run.id) }, null, 2), 'utf8')
       await rename(temp, join(this.dir, `${run.id}.json`))
-      this.records.set(run.id, { run: withoutTranscript(saved), rootCwd })
+      this.records.set(run.id, { run: withoutTranscript(saved), rootCwd, resume })
     })
     this.writes.set(run.id, next)
     try { await next } finally { if (this.writes.get(run.id) === next) this.writes.delete(run.id) }

@@ -51,8 +51,8 @@ export function subagentOutcome(run: OutcomeInput): SubagentOutcome {
     if (run.endReason === 'budget') return make('budget', 'warn', true)
     return make('failed', 'err', true)
   }
-  if (run.review === 'conflict') return make('conflict', 'err', true)
-  if (run.review === 'pending') return make('review', 'warn', true)
+  if (run.review === 'conflict') return make('conflict', 'warn', false)
+  if (run.review === 'pending') return make('review', 'mute', false)
   if (run.endReason === 'timeout') return make('timeout', 'warn', true)
   if (run.endReason === 'budget') return make('budget', 'warn', true)
   return make('done', 'ok', false)

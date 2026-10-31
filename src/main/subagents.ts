@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto'
-import { appendFileSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
-import { SubagentHistory } from './subagent-history'
+import { SubagentHistory, type SubagentHistoryRecord } from './subagent-history'
+import { launchDigest, persistableForkLaunch, resolveResumeLaunch, restoreForkSource, subagentResumability, type ResumeLaunch, type ResumeMeta } from './subagent-resume'
+import { pruneSubagentArchive } from './subagent-prune'
 import { delimiter, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
@@ -164,6 +166,7 @@ interface Run extends SubagentRun {
   brief: SubagentBrief
   stderrTail: string[]
   forkSource?: SubagentForkSource
+  launch?: ResumeLaunch
   exitInfo?: { code: number | null; signal: string | null; spawnError?: string }
 }
 
@@ -246,6 +249,7 @@ export interface SubagentOptions {
   ): Promise<boolean | SubagentDangerAnswer>
   dangerPrefs?(): Promise<{ mode: 'danger' | 'all'; outsideWrites: boolean; allowRoots: string[] }>
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
+  pruneHistory?(): boolean | Promise<boolean>
   extensions?: string[]
   readOnlyExtension?: string
   runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
@@ -298,6 +302,18 @@ export class SubagentController {
 
   async loadHistory(): Promise<void> {
     await this.history.load()
+    void this.pruneArchive()
+  }
+
+  private async pruneArchive(): Promise<void> {
+    try {
+      if (this.opts.pruneHistory && !(await this.opts.pruneHistory())) return
+      const dir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
+      const removed = await pruneSubagentArchive(dir, { liveIds: new Set(this.runs.keys()) })
+      if (removed.length) this.history.forget(removed)
+    } catch (error) {
+      console.warn('[subagent] 清理旧子代理记录失败', error)
+    }
   }
 
   setContext(context: SubagentContext): void {
@@ -361,7 +377,11 @@ export class SubagentController {
       error: run.error,
       usage: run.usage,
       brief: run.brief,
-      result: this.resultOf(run)
+      result: this.resultOf(run),
+      resumable: subagentResumability({
+        status: run.status, isolation: run.isolation, review: run.review, fork: run.fork, launchFailed: run.launchFailed,
+        live: true, worktreeAlive: worktreeAlive(run), forkLaunchSaved: !!run.forkSource
+      })
     }
   }
 
@@ -453,18 +473,33 @@ export class SubagentController {
   }
 
   list(): SubagentRun[] {
-    const historical = this.history.list().filter(({ run }) => !this.runs.has(run.id)).map(({ run }) => run)
+    const historical = this.history.list().filter(({ run }) => !this.runs.has(run.id)).map((record) => this.historic(record))
     return [...historical, ...[...this.runs.values()].map((r) => this.snapshot(r))].sort((a, b) => a.startedAt - b.startedAt)
   }
 
   get(id: string): SubagentRun | undefined {
     const run = this.runs.get(id)
-    return run ? this.snapshot(run) : this.history.get(id)?.run
+    if (run) return this.snapshot(run)
+    const record = this.history.get(id)
+    return record ? this.historic(record) : undefined
   }
 
   async getFull(id: string): Promise<SubagentRun | undefined> {
     const run = this.runs.get(id)
-    return run ? this.snapshot(run) : (await this.history.full(id))?.run
+    if (run) return this.snapshot(run)
+    const record = await this.history.full(id)
+    return record ? this.historic(record) : undefined
+  }
+
+  private historic(record: SubagentHistoryRecord): SubagentRun {
+    const { run } = record
+    return {
+      ...run,
+      resumable: subagentResumability({
+        status: run.status, isolation: run.isolation, review: run.review, fork: run.fork, launchFailed: run.launchFailed,
+        live: false, worktreeAlive: false, forkLaunchSaved: !!record.resume?.forkLaunch
+      })
+    }
   }
 
   hasParentRun(sessionId: string | undefined, runId: string): boolean {
@@ -636,6 +671,7 @@ export class SubagentController {
       projectId: ctx.projectId,
       isolation: workspace.isolation,
       ...(fork ? { fork: true, forkSource: fork } : {}),
+      launch: { appendSystemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension },
       model,
       status: 'starting',
       startedAt: Date.now(),
@@ -890,19 +926,26 @@ export class SubagentController {
         if (previous) return { ok: false, error: '子代理仍在运行，请再发一次' }
         return { ok: false, error: '这个子代理上次运行被中断，不能续接；需要继续时重新派一个，并在任务里附上它的结论' }
       }
-      if (snapshot.isolation === 'worktree') {
-        return { ok: false, error: 'worktree 子代理结束后不能续接：请先审阅它的改动；需要继续时重新派一个，并在任务里附上它的结论' }
+      if (snapshot.isolation === 'worktree' && !(previous && worktreeAlive(previous) && existsSync(previous.workspace.cwd))) {
+        return { ok: false, error: 'worktree 子代理的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论' }
       }
       if (snapshot.launchFailed) return { ok: false, error: '这个子代理没有成功启动过，不能续接，请重新派一个' }
-      const forkSource = previous?.forkSource
-      if (snapshot.fork && !forkSource) return { ok: false, error: 'fork 子代理在砚重启后不能续接；需要继续时重新派一个' }
       const sessionFile = await latestSessionFile(this.sessionDir(id))
       if (abandoned()) return abandonedError()
       if (!sessionFile) return { ok: false, error: '找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论' }
+      const savedFork = record?.resume?.forkLaunch
+      const forkSource = previous?.forkSource ?? (snapshot.fork && savedFork ? restoreForkSource(savedFork, sessionFile) : undefined)
+      if (snapshot.fork && !forkSource) return { ok: false, error: '这个 fork 子代理没有保存来源信息，砚重启后不能续接；需要继续时重新派一个' }
 
       const rootCwd = previous?.workspace.rootCwd ?? record?.rootCwd ?? snapshot.cwd
       const workspace: PreparedWorkspace = previous?.workspace ?? { isolation: snapshot.isolation, rootCwd, cwd: snapshot.cwd }
-      const ctx: SubagentOptions = { ...this.opts, parentSessionId: snapshot.parentSessionId, parentRunId: snapshot.parentRunId, parentGeneration: snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: snapshot.thinkingLevel }
+      const storedLaunch = previous?.launch ?? record?.resume?.launch
+      const resolvedLaunch = resolveResumeLaunch(
+        storedLaunch ? { launch: storedLaunch, digest: record?.resume?.launchDigest ?? launchDigest(storedLaunch) } : undefined,
+        { appendSystemPrompt: this.opts.appendSystemPrompt, extensions: this.opts.extensions, readOnlyExtension: this.opts.readOnlyExtension },
+        existsSync
+      )
+      const ctx: SubagentOptions = { ...this.opts, ...resolvedLaunch.launch, parentSessionId: snapshot.parentSessionId, parentRunId: snapshot.parentRunId, parentGeneration: snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: snapshot.thinkingLevel }
       let brief: SubagentBrief
       let rpc: SubagentRpc
       try {
@@ -933,8 +976,10 @@ export class SubagentController {
         usageSnapshots: {},
         baseUsage: snapshot.usage,
         brief,
-        stderrTail: []
+        stderrTail: [],
+        ...(forkSource ? { forkSource } : {})
       }
+      run.launch = resolvedLaunch.launch
       clearTimeout(run.timer)
       Object.assign(run, {
         rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now,
@@ -973,7 +1018,7 @@ export class SubagentController {
         if (ready.thinkingLevel) run.thinkingLevel = ready.thinkingLevel
         run.status = 'running'
         run.resumed = false
-        run.latestActivity = '已续接'
+        run.latestActivity = resolvedLaunch.prefixChanged ? '已续接（系统提示或扩展已变，首轮缓存需要重建）' : '已续接'
         await this.writeMetadata(run)
         if (!current('running')) return stoppedError()
         this.emit(run)
@@ -1210,7 +1255,8 @@ export class SubagentController {
     try {
       await this.history.save(this.snapshot(run), run.workspace.rootCwd, {
         limits: { totalMs: run.totalMs, stallTimeoutMs: run.idleMs, graceMs: run.graceMs },
-        patchPath: patchPath ?? run.diff?.patchPath
+        patchPath: patchPath ?? run.diff?.patchPath,
+        ...resumeExtra(run)
       })
     } catch (error) {
       console.warn('[subagent] 保存历史失败', error)
@@ -1665,6 +1711,20 @@ function addUsage(base: SubagentUsageTotals | undefined, next: SubagentUsageTota
     cost: sum(base.cost, next.cost),
     reportedMessages: base.reportedMessages + next.reportedMessages
   }
+}
+
+function worktreeAlive(run: Run): boolean {
+  return run.isolation === 'worktree' && !run.worktreeDone && (run.review === 'pending' || run.review === 'conflict')
+}
+
+function resumeExtra(run: Run): { resume?: ResumeMeta } {
+  const meta: ResumeMeta = {}
+  if (run.launch) {
+    meta.launch = run.launch
+    meta.launchDigest = launchDigest(run.launch)
+  }
+  if (run.forkSource) meta.forkLaunch = persistableForkLaunch(run.forkSource)
+  return Object.keys(meta).length ? { resume: meta } : {}
 }
 
 function resumeBrief(run: SubagentRun): SubagentBrief {

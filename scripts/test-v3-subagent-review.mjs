@@ -322,23 +322,20 @@ async function main() {
     ok(render({ run: run({ review: 'merged' }), ...callbacks() }) === null, '已采纳：不渲染审阅控件')
   }
 
-  group('SubagentReview：pending/conflict 才给出查看 / 采纳 / 放弃')
+  group('SubagentReview：pending/conflict 只展示结果与查看差异，不给用户采纳或放弃')
   {
     resetHooks()
     const tree = render({ run: run(), ...callbacks() })
     ok(byTestId(tree, 'v3-subagent-review').length === 1, '渲染审阅区', tree)
     ok(byTestId(tree, 'v3-subagent-review-view').length === 1, '有查看差异', tree)
-    ok(byTestId(tree, 'v3-subagent-review-merge').length === 1, '有采纳', tree)
-    ok(byTestId(tree, 'v3-subagent-review-discard').length === 1, '有放弃', tree)
+    ok(byTestId(tree, 'v3-subagent-review-merge').length === 0 && byTestId(tree, 'v3-subagent-review-discard').length === 0, '没有采纳 / 放弃按钮，处置交给主会话', tree)
     ok(textOf(byTestId(tree, 'v3-subagent-review-state')[0]) === 'sa.reviewPending', 'pending 显示待审阅', textOf(byTestId(tree, 'v3-subagent-review-state')[0]))
 
     const conflictTree = render({ run: run({ review: 'conflict' }), ...callbacks() })
     ok(textOf(byTestId(conflictTree, 'v3-subagent-review-state')[0]) === 'sa.reviewConflict', 'conflict 显示冲突说明', textOf(byTestId(conflictTree, 'v3-subagent-review-state')[0]))
 
     const noPatch = render({ run: run({ diff: undefined }), ...callbacks() })
-    ok(byTestId(noPatch, 'v3-subagent-review-view').length === 0 && byTestId(noPatch, 'v3-subagent-review-merge').length === 0, '无补丁不画查看 / 采纳', noPatch)
-    ok(byTestId(noPatch, 'v3-subagent-review-discard').length === 1, '无补丁仍可放弃', noPatch)
-    ok(collect(noPatch, (el) => flattenText(el).includes('没有可读取的补丁')).length >= 1, '无补丁就地说明', noPatch)
+    ok(byTestId(noPatch, 'v3-subagent-review-view').length === 0, '无补丁不画查看', noPatch)
   }
 
   group('SubagentReview：查看差异走 run 自己的归档补丁')
@@ -378,71 +375,11 @@ async function main() {
     ok(collect(tree, (el) => flattenText(el).includes('登记被拒')).length >= 1, '带出宿主原因', tree)
   }
 
-  group('SubagentReview：采纳与放弃都要先明确确认')
+  group('SubagentReview：没有确认框与处置回调')
   {
     resetHooks()
-    const calls = []
-    const props = {
-      run: run(),
-      onMerge: async (id) => { calls.push(['merge', id]) },
-      onDiscard: async (id) => { calls.push(['discard', id]) },
-      loadPatch: async () => ({ patch: '', truncated: false })
-    }
-    let tree = render(props)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 0, '默认没有确认框')
-
-    byTestId(tree, 'v3-subagent-review-discard')[0].props.onPress()
-    tree = render(props)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 1, '点放弃先弹确认', tree)
-    ok(collect(tree, (el) => flattenText(el).includes('sa.discardConfirm')).length >= 1, '放弃确认用既有文案', tree)
-    ok(calls.length === 0, '确认前不执行', calls)
-
-    byTestId(tree, 'v3-subagent-review-cancel')[0].props.onPress()
-    tree = render(props)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 0 && calls.length === 0, '取消不执行', calls)
-
-    byTestId(tree, 'v3-subagent-review-merge')[0].props.onPress()
-    tree = render(props)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 1, '点采纳先弹确认', tree)
-
-    let resolveMerge
-    const gated = {
-      ...props,
-      onMerge: (id) => { calls.push(['merge', id]); return new Promise((r) => { resolveMerge = r }) }
-    }
-    tree = render(gated)
-    byTestId(tree, 'v3-subagent-review-confirm')[0].props.onPress()
-    tree = render(gated)
-    const confirm = byTestId(tree, 'v3-subagent-review-confirm')[0]
-    ok(confirm.props.isDisabled === true, '动作进行中确认禁用', confirm.props)
-    ok(flattenText(confirm).includes('正在采纳'), '显示进行中文案', flattenText(confirm))
-    confirm.props.onPress()
-    ok(calls.length === 1 && calls[0][0] === 'merge' && calls[0][1] === 'sub-42', 'busy 防重复，且只操作这条 run', calls)
-    resolveMerge()
-    await tick()
-    tree = render(gated)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 0, '完成后关闭确认框', tree)
-  }
-
-  group('SubagentReview：动作失败保留并提示')
-  {
-    resetHooks()
-    const props = {
-      run: run(),
-      onMerge: async () => { throw new Error('合并冲突或补丁已失效') },
-      onDiscard: async () => {},
-      loadPatch: async () => ({ patch: '', truncated: false })
-    }
-    let tree = render(props)
-    byTestId(tree, 'v3-subagent-review-merge')[0].props.onPress()
-    tree = render(props)
-    byTestId(tree, 'v3-subagent-review-confirm')[0].props.onPress()
-    await tick()
-    tree = render(props)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 1, '失败后仍保留确认框（工作树未变）', tree)
-    ok(byTestId(tree, 'v3-subagent-review-action-error').length === 1, '就地提示失败原因', tree)
-    const confirm = byTestId(tree, 'v3-subagent-review-confirm')[0]
-    ok(confirm.props.isDisabled !== true, '失败后释放 busy，可重试', confirm.props)
+    const tree = render({ run: run(), ...callbacks() })
+    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 0 && byTestId(tree, 'v3-subagent-review-confirm').length === 0, '不再弹确认框', tree)
   }
 
   group('窄结果适配器：{ ok:false } 转成明确失败，成功 / 传输拒绝不改变语义')
@@ -476,118 +413,6 @@ async function main() {
       /工作树已清理/,
       '放弃同样把 { ok:false } 转成明确失败'
     )
-  }
-
-  group('SubagentReview：适配器 resolved { ok:false } 正确回显、不关闭确认框')
-  {
-    resetHooks()
-    const io = {
-      merge: async () => ({ ok: false, error: '合并冲突或补丁已失效' }),
-      discard: async () => ({ ok: true })
-    }
-    const props = {
-      run: run(),
-      onMerge: (id) => lib.mergeSubagentResult(id, io),
-      onDiscard: (id) => lib.discardSubagentResult(id, io),
-      loadPatch: async () => ({ patch: '', truncated: false })
-    }
-    let tree = render(props)
-    byTestId(tree, 'v3-subagent-review-merge')[0].props.onPress()
-    tree = render(props)
-    byTestId(tree, 'v3-subagent-review-confirm')[0].props.onPress()
-    await tick()
-    tree = render(props)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 1, 'resolved 业务失败仍保留确认框（修复点）', tree)
-    ok(byTestId(tree, 'v3-subagent-review-action-error').length === 1, '就地提示失败', tree)
-    ok(collect(tree, (el) => flattenText(el).includes('合并冲突或补丁已失效')).length >= 1, '带出后端原因', tree)
-    const confirm = byTestId(tree, 'v3-subagent-review-confirm')[0]
-    ok(confirm.props.isDisabled !== true, '失败后释放 busy，可重试', confirm.props)
-  }
-
-  group('SubagentReview：适配器 { ok:true } 成功关闭确认框（状态交给后端 push）')
-  {
-    resetHooks()
-    let merged = null
-    const io = {
-      merge: async (id) => { merged = id; return { ok: true } },
-      discard: async () => ({ ok: true })
-    }
-    const props = {
-      run: run(),
-      onMerge: (id) => lib.mergeSubagentResult(id, io),
-      onDiscard: (id) => lib.discardSubagentResult(id, io),
-      loadPatch: async () => ({ patch: '', truncated: false })
-    }
-    let tree = render(props)
-    byTestId(tree, 'v3-subagent-review-merge')[0].props.onPress()
-    tree = render(props)
-    byTestId(tree, 'v3-subagent-review-confirm')[0].props.onPress()
-    await tick()
-    tree = render(props)
-    ok(merged === 'sub-42', '只对这条 run 调用正式 merge', merged)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 0, '成功后关闭确认框', tree)
-  }
-
-  group('SubagentReview：换 run 后旧动作迟到，不关闭 / 不污染新确认')
-  {
-    resetHooks()
-    let resolveA = null
-    const runA = run({ id: 'sub-a' })
-    const runB = run({ id: 'sub-b' })
-    const propsA = {
-      run: runA,
-      onMerge: () => new Promise((r) => { resolveA = r }),
-      onDiscard: async () => {},
-      loadPatch: async () => ({ patch: '', truncated: false })
-    }
-    const propsB = {
-      run: runB,
-      onMerge: async () => {},
-      onDiscard: async () => {},
-      loadPatch: async () => ({ patch: '', truncated: false })
-    }
-    let tree = render(propsA)
-    byTestId(tree, 'v3-subagent-review-merge')[0].props.onPress()
-    tree = render(propsA)
-    byTestId(tree, 'v3-subagent-review-confirm')[0].props.onPress()
-    tree = render(propsA)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 1, 'A 确认框已开', tree)
-
-    tree = render(propsB)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 0, '换 run 收掉旧确认框', tree)
-    byTestId(tree, 'v3-subagent-review-discard')[0].props.onPress()
-    tree = render(propsB)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 1, 'B 打开自己的确认框', tree)
-
-    resolveA()
-    await tick()
-    tree = render(propsB)
-    ok(byTestId(tree, 'v3-subagent-review-dialog').length === 1, 'A 迟到结果不关闭 B 的确认框', tree)
-    ok(byTestId(tree, 'v3-subagent-review-action-error').length === 0, 'A 迟到结果不污染 B 的错误提示', tree)
-  }
-
-  group('SubagentReview：同一帧重复确认只执行一次')
-  {
-    resetHooks()
-    const calls = []
-    let resolveMerge
-    const props = {
-      run: run(),
-      onMerge: () => { calls.push('merge'); return new Promise((r) => { resolveMerge = r }) },
-      onDiscard: async () => {},
-      loadPatch: async () => ({ patch: '', truncated: false })
-    }
-    const tree = render(props)
-    byTestId(tree, 'v3-subagent-review-merge')[0].props.onPress()
-    const opened = render(props)
-    const confirm = byTestId(opened, 'v3-subagent-review-confirm')[0]
-    confirm.props.onPress()
-    confirm.props.onPress()
-    ok(calls.length === 1, '同帧第二次确认被同步 busyRef 拦住', calls)
-    resolveMerge()
-    await tick()
-    const done = render(props)
-    ok(byTestId(done, 'v3-subagent-review-dialog').length === 0, '完成后关闭', done)
   }
 
   process.stdout.write(`\n${fail === 0 ? '全部通过' : '有失败'}：${pass} 通过 / ${fail} 失败\n`)

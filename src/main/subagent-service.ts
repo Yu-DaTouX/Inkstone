@@ -39,6 +39,11 @@ export function compactSubagentRun(run: SubagentRun): Record<string, unknown> {
   }
 }
 
+function patchPathInside(path: string): boolean {
+  const normalized = path.replace(/\\/g, '/')
+  return !!normalized && !normalized.startsWith('/') && !/^[A-Za-z]:/.test(normalized) && !normalized.split('/').includes('..')
+}
+
 const SUBAGENT_THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const SUMMARY_TASK_CHARS = 80
 
@@ -109,6 +114,7 @@ export class SubagentService {
     this.controller = new SubagentController({
       cwd: s.cwd,
       piBin: s.piBin,
+      pruneHistory: async () => (await getSettings()).subagentHistoryPrune !== false,
       extensions: [this.deps.preambleExtension?.(), this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       ...(this.deps.readOnlyExtension?.() && this.deps.runReadOnlyCommand ? { readOnlyExtension: this.deps.readOnlyExtension(), runReadOnlyCommand: this.deps.runReadOnlyCommand } : {}),
       ...(this.deps.previewHtml ? { previewHtml: this.deps.previewHtml } : {}),
@@ -232,7 +238,7 @@ export class SubagentService {
       )
     }
 
-    if (command === 'subagent.get' || command === 'subagent.stop') {
+    if (command === 'subagent.get' || command === 'subagent.stop' || command === 'subagent.merge' || command === 'subagent.discard') {
       const run = ctrl.get(id)
       if (!context.parentSessionId || !run || run.parentSessionId !== context.parentSessionId) {
         throw new CapabilityCommandError('subagent_not_found', `找不到当前会话的子代理：${id}`)
@@ -262,7 +268,8 @@ export class SubagentService {
           changedFiles: compact.changedFiles,
           finalMessage: String(compact.finalMessage ?? '').slice(0, 400),
           ...(String(compact.finalMessage ?? '').length > 400 ? { finalMessageTruncated: true, finalMessageFull: `全文在 resultFile 的 finalMessage；也可用 yan subagent get --id ${run.id} --final 直接输出` } : {}),
-          review: run.review
+          review: run.review,
+          ...(run.resumable ? { resumable: run.resumable.ok, ...(run.resumable.reason ? { resumeBlockedBy: run.resumable.reason } : {}) } : {})
         }
       }
     }
@@ -296,6 +303,29 @@ export class SubagentService {
           latestActivity: result.run.latestActivity
         }
       }
+    }
+
+    if (command === 'subagent.merge' || command === 'subagent.discard') {
+      const target = ctrl.get(id)
+      if (target?.isolation !== 'worktree') {
+        throw new CapabilityCommandError('subagent_not_worktree', '只有 worktree 子代理有待处置的改动')
+      }
+      const merging = command === 'subagent.merge'
+      if (merging) {
+        const escaping = (target.diff?.paths ?? []).find((path) => !patchPathInside(path))
+        if (escaping) {
+          throw new CapabilityCommandError('subagent_merge_outside_project', `补丁里有项目目录之外的路径，不合并：${escaping}`)
+        }
+      }
+      const result = merging ? await ctrl.merge(id) : await ctrl.discard(id)
+      if (!result.ok) {
+        throw new CapabilityCommandError(
+          merging ? 'subagent_merge_failed' : 'subagent_discard_failed',
+          merging ? `${result.error ?? `合并失败：${id}`}。工作树已保留；可用 yan subagent send --id ${id} 让它基于最新代码解决冲突后再合并，或 yan subagent discard --id ${id} 放弃` : result.error ?? `放弃失败：${id}`
+        )
+      }
+      const run = ctrl.get(id)
+      return { data: run, summary: { kind: 'subagent', action: merging ? 'merge' : 'discard', id, review: run?.review } }
     }
 
     if (command === 'subagent.stop') {

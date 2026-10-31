@@ -18,7 +18,8 @@ try {
   assert.equal(subagentComposerMode(run({ status: 'done' })), 'resume', '结束后可续接')
   assert.equal(subagentComposerMode(run({ status: 'error', isolation: 'controlled-cwd' })), 'resume', '只读子代理失败后也可续接')
   assert.equal(subagentComposerMode(run({ status: 'cancelled', launchFailed: true })), 'hidden', '没启动成功的不显示输入框')
-  assert.equal(subagentComposerMode(run({ status: 'done', isolation: 'worktree' })), 'hidden', 'worktree 结束后不续接')
+  assert.equal(subagentComposerMode(run({ status: 'done', isolation: 'worktree', resumable: { ok: true } })), 'resume', 'worktree 未合并前可续接')
+  assert.equal(subagentComposerMode(run({ status: 'done', isolation: 'worktree', resumable: { ok: false, reason: '已合并' } })), 'blocked', '不可续接时说明原因而不是隐藏')
   assert.equal(subagentComposerMode(run({ isolation: 'worktree' })), 'steer', 'worktree 运行中仍可纠偏')
 
   assert.deepEqual(forwardedText('【用户追加】请在继续之前先考虑这条信息；仍在原任务范围内工作。\n\n改查 src'), { text: '改查 src', forwarded: true })

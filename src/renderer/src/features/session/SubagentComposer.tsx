@@ -14,6 +14,13 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
   const [error, setError] = useState('')
   const mode = subagentComposerMode(run)
   if (mode === 'hidden') return null
+  if (mode === 'blocked') {
+    return (
+      <div className="sa-composer" data-mode={mode} data-testid="v3-subagent-composer">
+        <p className="sa-composer-hint" data-testid="v3-subagent-resume-blocked">{t('sa.composer.blocked', { reason: run.resumable?.reason ?? '' })}</p>
+      </div>
+    )
+  }
   const blocked = mode === 'busy' || sending
   const value = text.trim()
 
@@ -38,7 +45,9 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
     void send()
   }
 
-  const placeholder = mode === 'resume' ? t('sa.composer.resume') : t('sa.composer.steer')
+  const placeholder = mode === 'resume'
+    ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktree' : 'sa.composer.resume')
+    : t('sa.composer.steer')
   return (
     <div className="sa-composer" data-mode={mode} data-testid="v3-subagent-composer">
       <div className="sa-composer-box" onKeyDown={onKeyDown}>
@@ -57,7 +66,7 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
         <IconButton
           size="sm"
           variant="secondary"
-          aria-label={t('sa.composer.send')}
+          aria-label={mode === 'resume' ? t('sa.composer.continue') : t('sa.composer.send')}
           isDisabled={!value || blocked}
           onPress={() => void send()}
           data-testid="v3-subagent-composer-send"

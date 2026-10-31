@@ -21,7 +21,6 @@ import { SubagentStateIcon } from './SubagentState'
 import { SubagentReview } from './SubagentReview'
 import { SubagentComposer } from './SubagentComposer'
 import { forwardedText } from './subagent-composer'
-import { discardSubagentResult, mergeSubagentResult } from './subagent-review'
 import { SUBAGENT_CARD_BOT, compactTaskPaths, subagentTitle, useSubagentView } from './SubagentLine'
 import { retrySubagent, rowLang, stopSubagentChecked, switchSubagentPane, useSubagentRow } from './subagent-actions'
 import { subagentNeighbor, subagentSessionPeers } from './subagent-list'
@@ -255,7 +254,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
         {row.summaryLine ? <p className="sa-pane-summary" data-testid="v3-subagent-summary-line">{row.summaryLine}</p> : null}
         <PathList label={tt('subagentSources')} items={model.sources} />
         <PathList label={tt('subagentArtifacts')} items={model.artifacts} />
-        <SubagentReview run={run} onMerge={mergeSubagentResult} onDiscard={discardSubagentResult} />
+        <SubagentReview run={run} />
         <SubagentComposer key={run.id} run={run} />
       </footer>
     </div>

@@ -99,6 +99,8 @@ export const KNOWN_COMMANDS = new Set([
   'subagent.list',
   'subagent.get',
   'subagent.send',
+  'subagent.merge',
+  'subagent.discard',
   'subagent.stop',
   'browser.api',
   'browser.run',
@@ -296,14 +298,23 @@ export class CapabilityServer {
 
     const chunks: Buffer[] = []
     let bodyBytes = 0
+    let tooLarge = false
     try {
       for await (const chunk of req) {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
         bodyBytes += bytes.length
-        if (bodyBytes > 1_000_000) throw new Error('body_too_large')
+        if (bodyBytes > 1_000_000) {
+          tooLarge = true
+          chunks.length = 0
+          if (bodyBytes > 64_000_000) break
+          continue
+        }
         chunks.push(bytes)
       }
     } catch {
+      tooLarge = true
+    }
+    if (tooLarge) {
       reply(413, { ok: false, error: 'body_too_large' })
       return
     }
