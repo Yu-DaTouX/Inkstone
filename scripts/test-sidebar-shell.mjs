@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -211,15 +211,6 @@ async function run() {
     assert.equal(model.nextAttentionPath(tally.running, 'p1'), 'p5')
     assert.equal(model.nextAttentionPath(tally.running, 'p5'), 'p1', '跳到最后一个后回到第一个')
     assert.equal(model.nextAttentionPath([], null), null)
-
-    const shell = await readFile('src/renderer/src/app/ShellV3.tsx', 'utf8')
-    assert.match(shell, /const drawerOpen = sidebarCompact && sidebarOpen/, '抽屉状态只在窄屏且左栏打开时成立')
-    assert.match(shell, /<main className="v3-main" inert=\{drawerOpen\}>/, '抽屉打开时主界面退出交互')
-    assert.match(shell, /<FocusScope contain=\{drawerOpen\}>\s*<Sidebar [^>]*\/>\s*<\/FocusScope>/, '抽屉打开时 Tab 约束在左栏内')
-    assert.match(shell, /<div className="v3-scrim" onClick=\{\(\) => useUiV3\.getState\(\)\.setSidebarOpen\(false\)\}/, '点击遮罩仍关闭抽屉')
-    assert.match(shell, /else if \(sidebarCompact && ui\.sidebarOpen\) ui\.setSidebarOpen\(false\)/, 'Esc 仍关闭抽屉')
-    assert.match(shell, /if \(drawerOpen\) \{\s*document\.querySelector<HTMLElement>\('\.v3-side'\)/, '打开抽屉时焦点移进左栏')
-    assert.match(shell, /\[data-testid="v3-rail-toggle"\]'\)\?\.focus/, '关闭抽屉后焦点回到顶栏左栏开关')
 
     console.log('sidebar-shell: 通过')
   } finally {

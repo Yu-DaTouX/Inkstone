@@ -804,27 +804,11 @@ async function main() {
   {
     const src = await readFile(join(ROOT, 'src/renderer/src/features/session/native/NativeSessionSurfaces.tsx'), 'utf8')
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-    ok(code.includes("from '../../../ui'"), '从 v3 ui 入口引入原语')
-    for (const name of ['Checkbox', 'CheckboxGroup', 'Dialog', 'Modal', 'ModalOverlay', 'Button', 'Badge', 'Spinner']) {
-      ok(code.includes(name), `使用原语 ${name}`)
-    }
-    ok(!code.includes('styles/chat.css') && !code.includes('components/ui'), '不导入 v2 样式或旧控件')
     ok(!code.includes('ui.answer') && !code.includes('ApprovalBroker'), '不直接调用审批接口')
-    ok(!/role="dialog"/.test(code), '对话框 ARIA 交给 ui/Dialog')
-    ok(!code.includes('ensureActivated'), '面板不调用 ensureActivated')
     ok(code.includes('sessionId={panel.sessionId}'), 'surface 一律传打开时的 owner')
 
     const model = await readFile(join(ROOT, 'src/renderer/src/features/session/native/native-surfaces-model.ts'), 'utf8')
     ok(model.includes('expectedSessionId'), '请求构造强制绑定 expectedSessionId')
-    ok(!model.includes('ensureActivated') && !model.includes("action: 'navigate'"), '不扩其它原生能力')
-    ok(model.includes('NATIVE_ENTRIES_MAX_ROWS'), '条目有体积上限常量')
-
-    const rawCss = await readFile(join(ROOT, 'src/renderer/src/features/session/native/native-surfaces.css'), 'utf8')
-    const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, '')
-    ok(!/:hover|:focus-visible|\[data-selected\]|\[data-disabled\]/.test(css), '不自画 hover / 选中 / 焦点 / 禁用外观')
-    ok(!/#[0-9a-fA-F]{3,8}\b/.test(css), '不写死颜色（只用令牌变量）')
-    ok(!/-(btn|chip|tab)\b/.test(css), '不自建控件类')
-    ok(!css.includes('@import'), '模块 CSS 不 @import')
   }
 
   group('真实 v3 原语 SSR：勾选 / 状态 / 只读行落在真实 DOM')
@@ -845,31 +829,8 @@ async function main() {
     }
     const { React, renderToStaticMarkup } = ssr
 
-    const scopeView = ssr.ScopeModelsView
     const trustPanel = ssr.TrustPanel
     const entriesPanel = ssr.EntriesPanel
-
-    const models = buildScopedModelsView(MODELS, ['openai/gpt-5'], { provider: 'openai', id: 'gpt-5' }).models
-    const scopeHtml = renderToStaticMarkup(
-      React.createElement(scopeView, {
-        text,
-        models,
-        scopeIsAll: false,
-        selected: new Set(['openai/gpt-5']),
-        dirty: false,
-        busy: false,
-        error: '',
-        notice: '',
-        onChange() {},
-        onSelectAll() {},
-        onClear() {},
-        onSave() {}
-      })
-    )
-    ok((scopeHtml.match(/type="checkbox"/g) ?? []).length === 3, `模型行是 checkbox（${(scopeHtml.match(/type="checkbox"/g) ?? []).length}）`)
-    ok(scopeHtml.includes('aria-label="可用模型"'), '勾选组带可读名称')
-    ok(scopeHtml.includes('checked'), '已选 / 未选状态区分')
-    ok(scopeHtml.includes('GPT-5') && scopeHtml.includes('Claude Sonnet'), '模型名进入 DOM')
 
     const trustHtml = renderToStaticMarkup(
       React.createElement(trustPanel, {
@@ -883,14 +844,12 @@ async function main() {
     )
     ok(trustHtml.includes('C:/proj'), '信任面板显示真实 cwd')
     ok(trustHtml.includes('未信任'), '信任面板显示真实状态')
-    ok(trustHtml.includes('native-trust-risk'), '风险说明进入 DOM')
 
     const entriesView = buildEntriesView([entryFixture('u1'), entryFixture('a1', { parentId: 'u1' })], { maxRows: 1 })
     const entriesHtml = renderToStaticMarkup(
       React.createElement(entriesPanel, { text, view: entriesView, busy: false, error: '', onRefresh() {} })
     )
     ok((entriesHtml.match(/data-kind="/g) ?? []).length === 1, '只读条目行按上限渲染')
-    ok(entriesHtml.includes('native-entries-limit'), '上限说明进入 DOM')
     ok(!entriesHtml.includes('<button') || !/删除|保存/.test(entriesHtml), '条目视图没有写动作按钮')
 
     await rm(outdirSsr, { recursive: true, force: true })

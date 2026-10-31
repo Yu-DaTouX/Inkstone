@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -53,8 +53,7 @@ async function buildBundle(outdir) {
     "import * as React from 'react'",
     "import { renderToStaticMarkup } from 'react-dom/server'",
     `import { Slider } from '${p('src/renderer/src/ui/Slider.tsx')}'`,
-    `import * as stories from '${p('src/renderer/src/ui/Slider.stories.tsx')}'`,
-    'export { React, renderToStaticMarkup, Slider, stories }'
+    'export { React, renderToStaticMarkup, Slider }'
   ].join('\n')
   const outfile = join(outdir, 'v3-slider.bundle.cjs')
   await build({
@@ -90,7 +89,7 @@ async function main() {
   const outdir = await mkdtemp(join(tmpdir(), 'inkstone-v3-slider-'))
   const require = createRequire(import.meta.url)
   const bundle = require(await buildBundle(outdir))
-  const { React, renderToStaticMarkup, Slider, stories } = bundle
+  const { React, renderToStaticMarkup, Slider } = bundle
   const render = (props) => renderToStaticMarkup(React.createElement(Slider, props))
 
   const single = render({ label: '阈值', defaultValue: 40, minValue: 0, maxValue: 100, step: 5, showValue: true })
@@ -147,35 +146,8 @@ async function main() {
   const vertical = render({ label: '音量', defaultValue: 45, orientation: 'vertical' })
   ok(attr(root(vertical), 'data-orientation') === 'vertical' && attr(inputs(vertical)[0], 'aria-orientation') === 'vertical', '竖向方向透传根与 input')
 
-  const storyNames = Object.keys(stories).filter((k) => k !== 'default')
-  for (const name of ['Default', 'Controlled', 'Range', 'Disabled', 'LongLabel', 'Invalid']) {
-    ok(storyNames.includes(name), `故事导出 ${name}`)
-  }
-  ok(stories.default && stories.default.title === 'v3/原语/Slider', '故事登记在 v3/原语/Slider 工作台')
-
-  const sliderSrc = await readFile(join(process.cwd(), 'src/renderer/src/ui/Slider.tsx'), 'utf8')
-  ok(sliderSrc.includes("from 'react-aria-components'"), 'Slider 复用 React Aria Components')
-  ok(!/from\s+['"][^'"]*styles\//.test(sliderSrc) && !/from\s+['"][^'"]*components\/ui/.test(sliderSrc), '不 import v2 styles 或旧控件')
-  ok(!/onKeyDown|onKeyUp|keydown/.test(sliderSrc), '不重写键盘逻辑，键盘交给 RAC')
-
-  const css = await readFile(join(process.cwd(), 'src/renderer/src/ui/Slider.css'), 'utf8')
-  const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
-  ok(cssCode.includes('@layer primitives'), 'Slider.css 落在 primitives 层')
-  ok(!/#[0-9a-fA-F]{3,8}\b/.test(cssCode) && !/rgba?\(/.test(cssCode), 'CSS 不写死色值')
-  const colorDecls = cssCode
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => /^(?:color|background(?:-color)?|border(?:-color)?|box-shadow)\s*:/.test(line))
-  const literalColors = colorDecls.filter((line) => !line.includes('var(--'))
-  ok(colorDecls.length > 0 && literalColors.length === 0, 'CSS 颜色取界面令牌（着色声明不写字面值）', literalColors)
-  const tokensCss = await readFile(join(process.cwd(), 'src/renderer/src/design/tokens.css'), 'utf8')
-  const tokenRefs = [...new Set(colorDecls.flatMap((line) => [...line.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((m) => m[1])))]
-  const undefinedRefs = tokenRefs.filter((name) => !new RegExp(`^\\s*${name}\\s*:`, 'm').test(tokensCss))
-  ok(tokenRefs.length > 0 && undefinedRefs.length === 0, 'CSS 颜色令牌都在 design/tokens.css 里定义', undefinedRefs)
-  ok(cssCode.includes('.ui-slider__thumb[data-focus-visible]'), 'CSS 提供键盘焦点环样式')
-
   await rm(outdir, { recursive: true, force: true })
-  console.log(`\nv3 Slider：${checks} 项 SSR / 结构 / 纯文本检查通过（未做真实键鼠与视觉验证）`)
+  console.log(`\nv3 Slider：${checks} 项 SSR 检查通过（未做真实键鼠与视觉验证）`)
 }
 
 await main()

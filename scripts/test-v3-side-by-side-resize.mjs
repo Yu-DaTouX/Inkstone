@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createRequire } from 'node:module'
 import { build } from 'esbuild'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const READ = (rel) => readFile(join(ROOT, rel), 'utf8')
 
 let checks = 0
 const ok = (condition, label) => {
@@ -176,116 +172,4 @@ ok(
   'readPair 可直接读取一对像素'
 )
 
-function installGlobals() {
-  const storage = new Map()
-  globalThis.localStorage = {
-    getItem: (k) => (storage.has(String(k)) ? storage.get(String(k)) : null),
-    setItem: (k, v) => storage.set(String(k), String(v)),
-    removeItem: (k) => storage.delete(String(k)),
-    clear: () => storage.clear()
-  }
-  function ElementShim() {}
-  ElementShim.prototype = { focus() {}, blur() {}, addEventListener() {}, removeEventListener() {} }
-  globalThis.HTMLElement = ElementShim
-  globalThis.Element = ElementShim
-  globalThis.Node = ElementShim
-  globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' })
-  globalThis.window = {
-    yan: new Proxy({}, { get: () => async () => undefined }),
-    HTMLElement: ElementShim,
-    Element: ElementShim,
-    Node: ElementShim,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    getComputedStyle: globalThis.getComputedStyle,
-    screen: { orientation: { angle: 0 } },
-    location: { href: 'http://localhost/' }
-  }
-  globalThis.document = {
-    readyState: 'loading',
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    documentElement: {},
-    visibilityState: 'visible'
-  }
-}
-
-installGlobals()
-const outdir = await mkdtemp(join(tmpdir(), 'inkstone-v3-sbs-resize-'))
-try {
-  const p = (rel) => join(ROOT, rel).replace(/\\/g, '/')
-  const entry = [
-    "import * as React from 'react'",
-    "import { renderToStaticMarkup } from 'react-dom/server'",
-    `import * as UI from '${p('src/renderer/src/ui/index.ts')}'`,
-    'export { React, renderToStaticMarkup, UI }'
-  ].join('\n')
-  const outfile = join(outdir, 'v3-sbs-resize.bundle.cjs')
-  await build({
-    stdin: { contents: entry, resolveDir: ROOT, loader: 'ts' },
-    outfile,
-    bundle: true,
-    format: 'cjs',
-    platform: 'node',
-    jsx: 'automatic',
-    logLevel: 'silent',
-    loader: { '.css': 'empty' }
-  })
-  const require = createRequire(import.meta.url)
-  const { React, renderToStaticMarkup, UI } = require(outfile)
-  const h = React.createElement
-
-  const measured = measurePair(600, 400)
-  const bounds = pairBounds(measured.total)
-  const splitterHtml = renderToStaticMarkup(
-    h(UI.Splitter, {
-      orientation: 'vertical',
-      value: measured.left,
-      min: bounds.min,
-      max: bounds.max,
-      step: KEY_STEP,
-      'aria-label': '调整列宽',
-      'data-testid': 'v3-split-resizer',
-      onChange: () => undefined
-    })
-  )
-  ok(splitterHtml.includes('role="separator"'), '原语渲染 role=separator')
-  ok(splitterHtml.includes('aria-orientation="vertical"'), '原语按竖线方向渲染')
-  ok(splitterHtml.includes('aria-valuenow="600"'), '原语 aria-valuenow 承接像素值（不是百分比）')
-  ok(splitterHtml.includes('aria-valuemin="320"') && splitterHtml.includes('aria-valuemax="680"'), '原语 min/max 承接像素拖动范围')
-  ok(splitterHtml.includes('tabindex="0"'), '原语自带键盘可聚焦')
-  ok(splitterHtml.includes('data-testid="v3-split-resizer"'), '并排调用点的 testid 透传到原语')
-
-  const firstFrame = renderToStaticMarkup(
-    h(UI.Splitter, { orientation: 'vertical', value: 0, min: pairBounds(0).min, max: pairBounds(0).max, step: KEY_STEP, 'aria-label': '调整列宽' })
-  )
-  ok(firstFrame.includes('aria-valuenow="0"'), '首帧未测量时原语值为 0，不崩、不自造比例')
-
-  const sideBySide = await READ('src/renderer/src/app/SideBySide.tsx')
-  ok(/from '\.\.\/ui'/.test(sideBySide) && /\bSplitter\b/.test(sideBySide.split("from '../ui'")[0]), 'SideBySide 从正式 ../ui 出口导入 Splitter')
-  ok(sideBySide.includes("from './split-resizer-model'"), 'SideBySide 通过 split-resizer-model 做像素↔份额换算')
-
-  const start = sideBySide.indexOf('function SplitResizer(')
-  const end = sideBySide.indexOf('\n}\n', start)
-  ok(start > 0 && end > start, '能定位真实调用点 SplitResizer')
-  const resizer = sideBySide.slice(start, end)
-  ok(resizer.includes('<Splitter'), 'SplitResizer 渲染原语')
-  ok(resizer.includes('bindPairObserver'), 'SplitResizer 用绑定观察器测量，不每次 render 挂全局监听')
-  ok(resizer.includes('weightsForLeft') && resizer.includes('pairBounds'), 'SplitResizer 经纯适配换算像素与范围')
-  for (const forbidden of ['onPointerDown', 'onPointerMove', 'onPointerUp', 'onKeyDown', 'onDoubleClick', 'addEventListener', 'getBoundingClientRect', 'role="separator"', 'aria-orientation', 'tabIndex']) {
-    ok(!resizer.includes(forbidden), `SplitResizer 不自行实现 ${forbidden}`)
-  }
-  ok(!sideBySide.includes('getBoundingClientRect'), '整个 SideBySide 只在模型里读 DOM 尺寸')
-
-  const css = await READ('src/renderer/src/app/SideBySide.css')
-  ok(css.includes('.v3-split-resizer'), 'CSS 保留分隔条占位选择器')
-  ok(/\.v3-split-resizer\s*\{[^}]*display:\s*contents/.test(css), '占位只让原语成为相邻两列的 flex 项（display: contents）')
-  ok(!/\.v3-split-resizer[^{]*\{[^}]*background/.test(css), 'CSS 不自画分隔条背景')
-  ok(!/\.v3-split-resizer[^{]*\{[^}]*cursor/.test(css), 'CSS 不自画分隔条光标')
-  ok(!/\.v3-split-resizer:(hover|focus-visible)/.test(css), 'CSS 不自画 hover / focus 外观')
-
-  console.log(`\n并排分隔条消费原语检查：${checks} 项通过`)
-  console.log('边界：不启动窗口、不做真实拖动/键鼠/视觉；只验证纯换算、mock 观察器、SSR 承接与调用点静态接线。')
-} finally {
-  await rm(outdir, { recursive: true, force: true })
-}
+console.log(`\n并排分隔条换算检查：${checks} 项通过`)

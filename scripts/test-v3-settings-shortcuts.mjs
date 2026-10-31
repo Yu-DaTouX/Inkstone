@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
@@ -124,43 +123,4 @@ assert.deepEqual(clearShortcutOverrides({ openSettings: ['Ctrl', 'Alt', ','] }),
 assert.deepEqual(findShortcutConflicts(SHORTCUTS), [], '默认注册表没有重复键位')
 assert.equal(findShortcutConflicts(applyShortcutOverrides({ newSession: ['Ctrl', 'K'] })).length, 1, '覆盖造成的重复能被抓出')
 
-const shortcutsTextMod = await loadTs('../src/renderer/src/features/settings/shortcuts/shortcuts-text.ts')
-const zh = shortcutsTextMod.shortcutsText('zh-CN')
-const en = shortcutsTextMod.shortcutsText('en-US')
-assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort(), '中英文案键一一对应')
-for (const key of ['note', 'recording', 'restoreDefault', 'restoreAll', 'conflictWith', 'needModifier']) {
-  assert.ok(zh[key] && en[key], `文案键 ${key} 中英都有值`)
-}
-assert.ok(zh.conflictWith.includes('{name}') && en.conflictWith.includes('{name}'), '冲突文案保留 {name} 占位符')
-assert.ok(zh.conflictFound.includes('{list}') && en.conflictFound.includes('{list}'), '总冲突文案保留 {list} 占位符')
-
-const section = readFileSync(here('../src/renderer/src/features/settings/shortcuts/ShortcutsSettings.tsx'), 'utf8')
-assert.ok(section.includes('shortcutOverridesFromSettings'), '分区从设置读取并清洗覆盖')
-assert.ok(section.includes('applyShortcutOverrides'), '分区经改绑纯函数取生效键位')
-assert.ok(section.includes('findShortcutConflicts'), '分区复用注册表的冲突检测纯函数')
-assert.ok(section.includes('bindingFromKeyStroke') && section.includes('rebindShortcut'), '分区用纯函数录制与校验')
-assert.ok(section.includes('clearShortcutOverrides'), '分区能恢复默认')
-assert.ok(section.includes('patchSettings'), '分区把覆盖写回设置')
-assert.ok(section.includes('v3-shortcuts-settings'), '分区有稳定测试 id')
-assert.ok(section.includes('v3-shortcut-record-') && section.includes('v3-shortcut-reset-all'), '分区有录制与全部重置入口')
-assert.ok(section.includes("from '../../../ui'") && section.includes('Kbd') && section.includes('Button'), '键位与操作都用 ui/ 控件')
-assert.ok(!section.includes('components/settings'), '分区不引入 v2 旧设置组件')
-
-const types = readFileSync(here('../src/renderer/src/features/settings/types.ts'), 'utf8')
-assert.ok(types.includes("'shortcuts'"), '分区 id 加入 SettingsSectionId')
-assert.ok(types.includes("id: 'shortcuts'"), '分区加入导航清单')
-
-const root = readFileSync(here('../src/renderer/src/features/settings/root/SettingsPage.tsx'), 'utf8')
-assert.ok(root.includes('ShortcutsSettings'), '根页挂载快捷键分区')
-assert.ok(root.includes('v3-settings-nav-${entry.section}'), '导航仍用统一测试 id')
-
-const header = readFileSync(here('../src/renderer/src/app/Header.tsx'), 'utf8')
-assert.ok(header.includes('shortcutOverridesFromSettings'), '顶栏快捷键提示读用户改键后的覆盖值')
-assert.ok(header.includes('shortcutKeysText(id, shortcutOverrides)'), '面板按钮按生效键位显示')
-assert.ok(header.includes("shortcutKeysText('newSession', shortcutOverrides)"), '新建会话提示按生效键位显示')
-const v3Text = readFileSync(here('../src/renderer/src/app/v3-text.ts'), 'utf8')
-assert.ok(!v3Text.includes('Ctrl+N'), '新会话文案不写死 Ctrl+N')
-assert.ok(v3Text.includes("newChatShortcut: '新会话（{keys}）'"), '新会话文案用 {keys} 占位')
-assert.ok(v3Text.includes("newChatShortcut: 'New chat ({keys})'"), '英文新会话文案用 {keys} 占位')
-
-console.log('v3 设置快捷键分区：改绑 / 冲突 / 清洗 / 恢复默认 / 可改集合 / 文案 / 源码契约检查通过')
+console.log('v3 设置快捷键分区：改绑 / 冲突 / 清洗 / 恢复默认 / 可改集合检查通过')

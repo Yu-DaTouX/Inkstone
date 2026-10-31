@@ -49,10 +49,11 @@ export async function runHiddenPageTests(ok) {
       setup(b) {
         b.onResolve({ filter: /^fixture-real-boundary$/ }, () => ({ path: join(process.cwd(), 'src/main/browser/network-boundary.ts'), namespace: 'file' }))
         b.onResolve({ filter: /network-boundary$/ }, (args) => args.importer.endsWith('hidden-page.ts') ? { path: 'boundary', namespace: 'hidden-stub' } : undefined)
+        b.onResolve({ filter: /public-page$/ }, (args) => args.importer.endsWith('read-page.ts') ? { path: 'public-page', namespace: 'hidden-stub' } : undefined)
         b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'hidden-stub' }))
         b.onResolve({ filter: /^node:dns\/promises$/ }, () => ({ path: 'dns', namespace: 'hidden-stub' }))
         b.onLoad({ filter: /.*/, namespace: 'hidden-stub' }, (args) => ({
-          contents: args.path === 'boundary' ? `import { shouldBlockHiddenPageRequest as real } from 'fixture-real-boundary'; export async function shouldBlockHiddenPageRequest(...args) { if (globalThis.__hiddenBoundaryError) throw new Error('fixture boundary failure'); return real(...args) }` : args.path === 'dns' ? DNS_STUB : ELECTRON_STUB,
+          contents: args.path === 'public-page' ? `export async function fetchPublicPage() { throw new Error('offline fixture') }` : args.path === 'boundary' ? `import { shouldBlockHiddenPageRequest as real } from 'fixture-real-boundary'; export async function shouldBlockHiddenPageRequest(...args) { if (globalThis.__hiddenBoundaryError) throw new Error('fixture boundary failure'); return real(...args) }` : args.path === 'dns' ? DNS_STUB : ELECTRON_STUB,
           loader: 'js'
         }))
       }

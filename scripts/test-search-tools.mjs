@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -30,12 +30,5 @@ assert.equal(vendoredUpToDate(pins, join(dir, 'none')), false)
 await writeFile(join(bundled, 'fd.exe'), '')
 await writeFile(join(bundled, 'search-tools.json'), JSON.stringify(Object.fromEntries(pins.map((pin) => [pin.binary, pin.sha256]))))
 assert.equal(vendoredUpToDate(pins, bundled), true, '清单与固定版本一致时跳过下载')
-
-const builder = await readFile('electron-builder.yml', 'utf8')
-assert.match(builder, /from: resources\/search-tools\s+to: search-tools/, '安装包随带 rg/fd')
-const workflow = await readFile('.github/workflows/release-windows.yml', 'utf8')
-assert.match(workflow, /npm run vendor:search-tools/, '发行流程先准备 rg/fd')
-const host = await readFile('src/main/index.ts', 'utf8')
-assert.match(host, /refreshManagedGit\(\)[^\n]*\n\s*applyBundledSearchTools\(\)/, '启动 agent 前把随包目录放进 PATH')
 
 console.log('search tools ok')

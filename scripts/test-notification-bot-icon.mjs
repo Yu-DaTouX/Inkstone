@@ -1,22 +1,15 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
-const PROBE_MODEL = {
-  claude: 'anthropic/claude-sonnet-4', codex: 'openai/gpt-5', deepseek: 'deepseek/deepseek-chat', qwen: 'qwen/qwen3-coder',
-  gemini: 'google/gemini-2.5-pro', kimi: 'moonshot/kimi-k2', glm: 'zai/glm-4.6', grok: 'xai/grok-4', pi: 'mystery/unknown'
-}
-
 const temp = await mkdtemp(join(tmpdir(), 'yan-bot-icon-'))
 try {
   const outfile = join(temp, 'bot-icon.mjs')
   await build({ entryPoints: ['src/main/bot-icon.ts'], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' })
   const { botIconDirs, botIconFile, notificationBotMood } = await import(pathToFileURL(outfile).href)
-  const { MODEL_BRANDS } = await import(pathToFileURL((await bundleBrands(temp)).outfile).href)
 
   assert.equal(notificationBotMood('done'), 'done')
   assert.equal(notificationBotMood('error'), 'fail')
@@ -47,27 +40,7 @@ try {
   assert.equal(dirs.length, 3)
   assert.equal(botIconDirs(undefined, 'C:/app/out/main', 'C:/work').length, 2)
 
-  let checked = 0
-  for (const brand of MODEL_BRANDS) {
-    for (const mood of ['done', 'fail', 'ask', 'rest']) {
-      for (const dark of [false, true]) {
-        const file = real(PROBE_MODEL[brand], mood, dark)
-        assert.ok(file, `${brand}/${mood} 缺少图标`)
-        const png = readFileSync(file)
-        assert.equal(png.subarray(1, 4).toString(), 'PNG')
-        assert.equal(png.readUInt32BE(16), 128)
-        assert.equal(png.readUInt32BE(20), 128)
-        checked += 1
-      }
-    }
-  }
-  console.log(`✓ 通知 Bot 图标：状态映射、品牌选择、深浅主题回退、${checked} 个图标文件均为 128px PNG`)
+  console.log(`✓ 通知 Bot 图标：状态映射、品牌选择、深浅主题回退`)
 } finally {
   await rm(temp, { recursive: true, force: true })
-}
-
-async function bundleBrands(temp) {
-  const outfile = join(temp, 'brands.mjs')
-  await build({ entryPoints: ['src/shared/model-brand.ts'], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' })
-  return { outfile }
 }

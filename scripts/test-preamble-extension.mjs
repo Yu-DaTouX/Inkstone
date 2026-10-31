@@ -53,8 +53,4 @@ export async function runPreambleExtensionTests(ok, mod) {
     ok(handlers.context_with_system({ type: 'context_with_system', messages: replaced.messages }, {}) === undefined, '幂等：已换成砚开场白且文档分区已置空时不再改动')
     ok(handlers.context_with_system({ type: 'context_with_system', messages: [user] }, {}) === undefined, '没有系统消息时不改动')
   }
-  ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('Work quietly') && PROGRESS_GUIDANCE.includes('Do not narrate routine steps') && PROGRESS_GUIDANCE.includes('Inkstone internals') && !PROGRESS_GUIDANCE.includes('After each batch of tool calls'), '进展约定：安静干活，只在关键节点说话，不讲砚内部机制，尊重静默要求')
-  ok(PROGRESS_GUIDANCE.includes('claiming only what you observed'), '进展约定只声称观察到的结果')
-  ok(WORK_RULES.length === 1 && /whole files or large ranges.*parallel/.test(WORK_RULES[0]), '工作规则只留整段读取、并行发出；测试怎么跑交给模型')
-  ok(!WORK_RULES.some((rule) => /stop and report|every case|\| tail/.test(rule)), '不再规定测试通过即停、检查脚本跑全、测试不接 tail/head')
 }

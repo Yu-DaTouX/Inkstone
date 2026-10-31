@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -245,33 +245,6 @@ try {
     fullList.map((m) => m.id),
     '全量兜底落到视图上'
   )
-
-  section('agent.ts 接线')
-  const agentSource = await readFile(join(ROOT, 'src/main/agent.ts'), 'utf8')
-  const hydrateBody = agentSource.slice(
-    agentSource.indexOf('private async hydrate()'),
-    agentSource.indexOf('private pushSessionSync(')
-  )
-  assert.ok(hydrateBody.length > 0, '能找到 hydrate 方法体')
-  const captureAt = hydrateBody.indexOf('const syncedBefore = this.messages')
-  const firstAssignAt = hydrateBody.indexOf('this.messages =')
-  assert.ok(captureAt >= 0 && firstAssignAt > captureAt, 'hydrate 一开始先抓取同步前的数组，再做重放')
-  assert.ok(
-    hydrateBody.includes('const scopeBefore = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }'),
-    'hydrate 记下重放前的会话身份'
-  )
-  assert.ok(hydrateBody.includes('this.pushSessionSync(scopeBefore, syncedBefore)'), 'hydrate 改走 pushSessionSync')
-  assert.ok(!hydrateBody.includes("this.push({ ch: 'sync', payload: this.messages })"), 'hydrate 不再整份重推')
-  const sendBody = agentSource.slice(
-    agentSource.indexOf('private pushSessionSync('),
-    agentSource.indexOf('async getCustomEntries(')
-  )
-  assert.ok(
-    sendBody.includes('this.state?.sessionId === scopeBefore.sessionId && this.state?.sessionFile === scopeBefore.sessionFile'),
-    '会话身份变化（切换/新建/重载）一律退回全量'
-  )
-  assert.ok(sendBody.includes("ch: 'sync-delta'"), '增量走 sync-delta 通道')
-  assert.ok(sendBody.includes("ch: 'sync'"), '全量仍走原来的 sync 通道')
 
   section('压缩形态的增量（真实 projector）')
   const raw = []

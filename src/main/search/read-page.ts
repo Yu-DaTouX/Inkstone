@@ -84,8 +84,9 @@ export async function readPage(
       })
     }, signal)
   } catch (e) {
-    if (opts.signal?.aborted || e instanceof HiddenPageCancelled) throw new ReadPageError('cancelled', '已取消网页读取')
-    if (signal.aborted) throw new ReadPageError('timeout', `超过 ${timeoutMs}ms 没有返回`)
+    if (opts.signal?.aborted) throw new ReadPageError('cancelled', '已取消网页读取')
+    if (signal.aborted || e instanceof HiddenPageTimeout) throw new ReadPageError('timeout', `超过 ${timeoutMs}ms 没有返回`)
+    if (e instanceof HiddenPageCancelled) throw new ReadPageError('cancelled', '已取消网页读取')
     if (e instanceof ReadPageError) throw e
     if (e instanceof HiddenPageTimeout) throw new ReadPageError('timeout', e.message)
     throw new ReadPageError('network_error', e instanceof Error ? e.message : String(e))

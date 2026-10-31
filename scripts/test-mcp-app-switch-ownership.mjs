@@ -1605,7 +1605,6 @@ const writeJson = async (path, value) => {
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
-const read = (path) => readFile(resolve(path), 'utf8')
 
 const bundleDir = join(process.cwd(), '.tmp', 'mcp-runtime-integration')
 await mkdir(bundleDir, { recursive: true })
@@ -1832,25 +1831,6 @@ try {
   ok(agent.running === false, '5f 复核期间 stop 后进程已停止')
   eq(agent.nativeBootWitness(), null, '5g 复核期间 stop：旧回调不签发见证')
   await agent.stop().catch(() => undefined)
-}
-
-{
-  const agentSrc = await read('src/main/agent.ts')
-  ok(agentSrc.includes('captureNativeStartupWitness('), '6a agent.ts spawn 前采集启动见证')
-  ok(agentSrc.includes('verifyNativeStartupWitness('), '6b agent.ts ready 后复核启动见证')
-  ok(agentSrc.includes('nativeBootWitness()'), '6c agent.ts 暴露只读 nativeBootWitness getter')
-  ok(agentSrc.includes('syncServers('), '6d agent.ts 原地协调 manager 成员（不重建）')
-  ok(agentSrc.includes('closeConfirmed()'), '6e agent.ts 退出/对账用关闭确认语义')
-  const runnersSrc = await read('src/main/runners.ts')
-  ok(runnersSrc.includes('legacyMcpServices'), '6f runners 窄快照纳入 legacy 连接事实')
-  const indexPath = await read('src/main/index.ts')
-  ok(indexPath.includes('configureMcpAppHostOwnership('), '6g index 注入真实归属守卫')
-  ok(indexPath.includes('createMcpAppRuntimeOwnershipFacts('), '6h index 用 A7 动态 facts 工厂')
-  ok(indexPath.includes('closeMcpAppHost()'), '6i index 退出时关闭宿主连接池')
-  const ipcSrc = await read('src/main/ipc/mcp-app-ipc.ts')
-  ok(ipcSrc.includes('mcpAppHost().disconnect('), '6j to-pi 按 server 断开（不关整池）')
-  const hostSwitchSrc = await read('src/main/mcp/host-switch.ts')
-  ok(hostSwitchSrc.includes('disconnectHost?: (serverId: string)'), '6k host-switch 断开回调签名按 serverId')
 }
 
 await rm(root, { recursive: true, force: true }).catch(() => undefined)
@@ -2872,39 +2852,6 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   p2.setState('running')
   eq(assetReads, readsAfterStart, '同一状态重复 setState 不重新取素材')
   p2.dispose()
-}
-
-{
-  const index = await readFile('src/main/index.ts', 'utf8')
-  const preload = await readFile('src/preload/index.ts', 'utf8')
-  const sharedIpc = await readFile('src/shared/ipc.ts', 'utf8')
-  const htmlPreview = await readFile('src/main/html-artifact-preview.ts', 'utf8')
-  const protocol = await readFile('src/main/mcp/app-protocol.ts', 'utf8')
-
-  ok(index.includes('registerMcpAppViewIpc(ipc, { service: () => mcpAppViewService })'), 'index：注册正式 view IPC（地址只经主窗口白名单）')
-  ok(index.includes('createMcpAppViewRuntime({') && index.includes('registerMcpAppProtocol(mcpAppViewService.resourceStore())'), 'index：正式组装 runtime 并在 ready 后注册协议 handler')
-  ok(
-    index.includes('owner.runnerId === facts.runnerId') &&
-      index.includes('owner.sessionId === facts.sessionId') &&
-      index.includes('owner.sessionFile === facts.sessionFile') &&
-      index.includes('owner.projectId === facts.projectId') &&
-      index.includes('owner.generation === facts.generation'),
-    'index：ownerGuard 对当前前台全字段核对'
-  )
-  ok(index.includes('currentProject: (): string | null => appViewForegroundFacts()?.projectId ?? null'), 'index：currentProject 与 current 同源前台项目')
-  ok(index.includes('mcpAppViewService?.close()'), 'index：renderer 失效 / 退出主动 close 实例')
-  ok(index.indexOf('mcpAppViewService?.invalidateRunnerId(id)') >= 0, 'index：回收实例时 invalidate 绑定视图')
-  ok(index.includes("ipcMain.on('yan:motion-preference'") && index.includes('typeof reduced !== \'boolean\''), 'index：运动偏好 IPC 校验主窗口且严格 boolean')
-  ok(index.includes('let trayMotionAllowed = false'), 'index：运动偏好默认 false（静态）')
-  ok(index.includes('ensureTrayAssets()') && index.includes('trayAnimationAssets:') && index.includes('motionAllowed: () => trayMotionAllowed'), 'index：启动预载托盘素材并接入 attention 端口')
-
-  ok(preload.includes('mcpApps: {') && preload.includes('MCP_APP_VIEW_CHANNELS.prepare'), 'preload：暴露 mcpApps，通道名来自共享唯一源')
-  ok(preload.includes("ipcRenderer.send('yan:motion-preference', Boolean(reduced))"), 'preload：运动偏好单向 send 且转成 boolean')
-  ok(sharedIpc.includes('mcpApps: McpAppViewApi') && sharedIpc.includes('setMotionPreference(reduced: boolean): void'), 'shared/ipc：YanBridge 含 mcpApps 与 setMotionPreference')
-
-  ok(htmlPreview.includes('parseMcpAppUrl(details.url) !== null'), '离线 HTML 拦截合并放行受控 inkstone-app 子框（不新增第二个 onBeforeRequest）')
-  ok(!protocol.includes('onBeforeRequest'), 'MCP App 协议不注册自己的 webRequest 监听（不与离线成果争单监听）')
-  ok(protocol.includes('store.read(request.url, { method: request.method })') && protocol.includes('mcpAppResponseHeaders(result.csp)'), '协议 handler 只读 store，经共享头沿用严格离线 CSP')
 }
 
 await rm(root, { recursive: true, force: true }).catch(() => undefined)

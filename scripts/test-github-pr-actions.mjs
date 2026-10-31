@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { EventEmitter } from 'node:events'
-import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const root = new URL('../', import.meta.url)
@@ -315,6 +314,4 @@ assert.equal((await handlers.get('yan:github:action')('/project', { kind: 'close
 assert.equal((await handlers.get('yan:github:candidates')('/project', { kind: 'labels' })).failure.code, 'cwd-rejected')
 authorized = true
 assert.equal((await handlers.get('yan:github:action')('/project', { kind: 'ready', number: 12 })).cwd, '/authorized')
-const preload = await readFile(new URL('src/preload/index.ts', root), 'utf8')
-for (const channel of ['yan:github:action', 'yan:github:candidates', 'yan:github:list']) assert.ok(preload.includes(channel))
 console.log('test-github-pr-actions: ok (actions, stdin, validation, failures, confirmation, pagination, Git guards, IPC)')

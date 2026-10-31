@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
@@ -33,7 +33,6 @@ const texts = (text) => splitMarkdownBlocks(text).map((b) => b.text)
 const kbdHtml = (text) =>
   renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeKbd] }, text)).replace(/\n(?=<)|(?<=>)\n/g, '')
 const footnoteHtml = kbdHtml('脚注[^1]。\n\n[^1]: 定义内容。\n')
-const baseCss = await readFile(join(ROOT, 'src/renderer/src/design/base.css'), 'utf8')
 
 const answer = [
   '## 结论', '', '可以，按下面三步走：', '', '1. 先确认输入格式', '2. 写分帧函数', '3. 补边界测试', '',
@@ -114,14 +113,6 @@ check('脚注尾区块保留，标题靠 .sr-only 隐藏且结构不变', () => 
   assert.ok(footnoteHtml.includes('<h2 class="sr-only" id="footnote-label">Footnotes</h2>'), footnoteHtml)
   assert.ok(footnoteHtml.includes('<section data-footnotes="true" class="footnotes">'), footnoteHtml)
   assert.ok(footnoteHtml.includes('data-footnote-backref'), footnoteHtml)
-})
-
-check('.sr-only 在 base.css 里是完整的无障碍隐藏规则', () => {
-  const rule = /\.sr-only[^{]*\{([^}]*)\}/.exec(baseCss)
-  assert.ok(rule, '.sr-only rule missing')
-  for (const declaration of ['position: absolute', 'width: 1px', 'height: 1px', 'clip-path: inset(50%)', 'white-space: nowrap']) {
-    assert.ok(rule[1].includes(declaration), `${declaration} missing in ${rule[1]}`)
-  }
 })
 
 check('流式未闭合行内代码暂缓到闭合，最终正文不变', () => {

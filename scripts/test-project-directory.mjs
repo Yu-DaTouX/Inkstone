@@ -86,13 +86,6 @@ try {
   const concurrent = (await m.getSettings()).projects.find((p) => p.id === 'p-main')
   check(concurrent.cwd === later && concurrent.name === 'Renamed' && concurrent.archived, '串行更新保留并发改名/归档，不覆盖整份旧项目表')
   check(!(await m.changeProjectDirectory({ projectId: 'p-other', expectedCwd: other, cwd: later })).ok, '已归档项目也占用其目录，不静默合并')
-
-  const host = await readFile('src/main/index.ts', 'utf8')
-  const ui = await readFile('src/renderer/src/features/sidebar/ProjectHeader.tsx', 'utf8')
-  const preload = await readFile('src/preload/index.ts', 'utf8')
-  check(host.includes('isRunnerProjectCwd(checked.cwd, projectId, runners?.statuses() ?? [])'), '正式文件上下文入口接入宿主实例归属检查')
-  check(host.includes('next = await updateSettings((current) =>') && host.includes('项目文件夹已变化，请刷新后重试'), '旧的普通设置写入也在队列内拒绝陈旧目录')
-  check(preload.includes("'yan:project:changeDirectory'") && !ui.includes('window.yan.setCwd('), '独立IPC入口不复用会话切换')
   console.log(`项目文件夹定向检查：${checks} 项通过（隔离夹具，不代替真实窗口验收）`)
 } finally {
   delete globalThis.__yanProjectFolderFailWrite

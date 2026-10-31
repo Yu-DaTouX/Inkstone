@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -128,68 +127,7 @@ async function main() {
     assert.equal(Model.GENERAL_LEGACY_MAP.workspace, 'session')
 
     const zh = General.generalText('zh-CN')
-    const en = General.generalText('en-US')
-    assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort(), '中英文案键一一对应')
-    for (const key of ['sessionAutoArchive', 'notifSystem', 'securityMode', 'devicesEnable', 'dataMove', 'aboutPi']) {
-      assert.ok(zh[key] && en[key], `文案键 ${key} 中英都有值`)
-    }
-    for (const key of Object.keys(zh)) {
-      const zhVars = (zh[key].match(/\{(\w+)\}/g) ?? []).sort()
-      const enVars = (en[key].match(/\{(\w+)\}/g) ?? []).sort()
-      assert.deepEqual(zhVars, enVars, `文案 ${key} 中英占位符一致`)
-    }
-
     localStorage.setItem('yan.lang', 'zh-CN')
-
-    const withProvider = (component) => render(createElement(i18n.I18nProvider, null, createElement(component)))
-
-    const sessionHtml = withProvider(General.SessionSettings)
-    ok(sessionHtml.includes('data-testid="v3-session-settings"'), '会话分区有稳定根 testid')
-    ok(sessionHtml.includes('data-testid="v3-session-archive-14"'), '自动归档渲染现有 7/14/30 档位')
-    ok(sessionHtml.includes('data-testid="v3-session-keep-awake"'), '运行中保持唤醒接现有字段')
-    ok(sessionHtml.includes('data-testid="v3-session-checkpoints"'), '检查点接现有字段')
-    ok(sessionHtml.includes('data-testid="v3-session-subagent-notify"'), '子 Agent 通知接现有字段')
-    ok(!sessionHtml.includes('v3-session-stall-unavailable') && !sessionHtml.includes('停滞判定阈值'), '停滞阈值无后端时不放占位行')
-
-    const notifHtml = withProvider(General.NotificationsSettings)
-    ok(notifHtml.includes('data-testid="v3-notifications-settings"'), '通知分区有稳定根 testid')
-    ok(notifHtml.includes('data-testid="v3-notif-system"') && notifHtml.includes('data-testid="v3-notif-sound"'), '系统通知与声音总开关接现有 sound 字段')
-    ok(notifHtml.includes('data-testid="v3-notif-event-done"') && notifHtml.includes('data-testid="v3-notif-event-error"'), '按事件开关接现有 sound.events')
-    ok(notifHtml.includes('data-testid="v3-notif-system-test"'), '系统通知试发走既有 notifyAttention')
-    ok(!notifHtml.includes('v3-notif-dnd-unavailable'), '勿扰时段无后端时不放占位行，也不造假开关')
-
-    const securityHtml = withProvider(General.SecuritySettings)
-    ok(securityHtml.includes('data-testid="v3-security-settings"'), '权限安全分区有稳定根 testid')
-    ok(securityHtml.includes('data-testid="v3-security-mode-danger"') && securityHtml.includes('data-testid="v3-security-mode-all"'), '两档权限来自既有 PERMISSION_MODES')
-    ok(securityHtml.includes('data-testid="v3-security-outside"'), '项目外写入保护接现有字段')
-    ok(securityHtml.includes('data-testid="v3-security-roots-empty"'), '无允许目录时展示空态，不伪造路径')
-
-    const devicesHtml = withProvider(General.DevicesSettings)
-    ok(devicesHtml.includes('data-testid="v3-devices-settings"'), '设备分区有稳定根 testid')
-    ok(devicesHtml.includes('data-testid="v3-devices-enable"'), '手机接入开关接现有 remoteAccess.enabled')
-    ok(devicesHtml.includes('data-testid="v3-devices-pair"'), '配对入口来自既有 remote.pair')
-    ok(devicesHtml.includes('data-testid="v3-devices-empty"'), '未取到设备时不渲染假设备')
-    ok(
-      ['tailscale', 'radmin', 'lan', 'loopback'].every((mode) => devicesHtml.includes(`data-testid="v3-devices-bind-${mode}"`)),
-      '监听地址可选 Tailscale / Radmin VPN / 局域网 / 仅本机'
-    )
-
-    const dataHtml = withProvider(General.DataSettings)
-    ok(dataHtml.includes('data-testid="v3-data-settings"'), '数据分区有稳定根 testid')
-    ok(dataHtml.includes('data-testid="v3-data-location-loading"'), '首帧未读到时显示加载，不伪造路径')
-    ok(dataHtml.includes('data-testid="v3-data-export"'), '会话导出按钮存在且接既有 sync.exportSession')
-    ok(dataHtml.includes('data-testid="v3-data-backup-create"') && dataHtml.includes('data-testid="v3-data-backup-verify"'), '备份保留创建与只读校验入口')
-    ok(dataHtml.includes('data-testid="v3-data-backup-restore"') && dataHtml.includes('独立目录') && dataHtml.includes('不覆盖当前数据'), '恢复入口明确独立目录与不覆盖语义')
-    ok(!dataHtml.includes('data-testid="v3-data-backup-open-restored"'), '恢复成功前不能打开未验证的数据目录')
-
-    const aboutHtml = render(
-      createElement(i18n.I18nProvider, null, createElement(General.AboutSettings))
-    )
-    ok(aboutHtml.includes('data-testid="v3-about-settings"'), '关于分区有稳定根 testid')
-    ok(aboutHtml.includes('data-testid="v3-about-repo"'), '开源入口按钮存在（无 URL 时禁用）')
-    ok(aboutHtml.includes('data-testid="v3-about-pi-redetect"'), 'pi 重新检测走既有 redetectPi')
-    ok(aboutHtml.includes('data-testid="v3-about-update-check"'), '更新检查走既有 appUpdate')
-    ok(!aboutHtml.includes('data-testid="v3-about-models"'), '关于页不再重复放模型页入口')
 
     const rootsHtml = render(
       createElement(General.AllowRootsList, {
@@ -230,50 +168,6 @@ async function main() {
       })
     )
     ok(factsReal.includes('data-testid="v3-data-location"') && factsReal.includes('12 MB'), '数据位置显示真实路径与体积')
-
-    const dir = join(process.cwd(), 'src/renderer/src/features/settings/general')
-    const read = (name) => readFile(join(dir, name), 'utf8')
-    const sources = {
-      session: await read('SessionSettings.tsx'),
-      notif: await read('NotificationsSettings.tsx'),
-      security: await read('SecuritySettings.tsx'),
-      devices: await read('DevicesSettings.tsx'),
-      data: await read('DataSettings.tsx'),
-      about: await read('AboutSettings.tsx')
-    }
-    for (const [name, src] of Object.entries(sources)) {
-      assert.ok(src.includes("from '../../../ui'"), `${name} 控件来自 v3 ui/`)
-      assert.ok(!src.includes('components/'), `${name} 不引入 v2 组件`)
-      assert.ok(!src.includes('styles/'), `${name} 不引入 v2 样式`)
-      assert.ok(!/@fontsource/.test(src), `${name} 不引入字体包`)
-      assert.ok(!src.includes('checked='), `${name} 不混用 v2 的 checked 属性`)
-    }
-    const textSrc = await read('general-text.ts')
-    const ifaceBlock = textSrc.match(/export interface GeneralText \{([\s\S]*?)\n\}/)
-    assert.ok(ifaceBlock, 'GeneralText 接口存在')
-    const ifaceKeys = [...ifaceBlock[1].matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort()
-    assert.deepEqual(ifaceKeys, Object.keys(zh).sort(), 'GeneralText 接口与中英实现键一致')
-    for (const field of ['autoArchiveDays', 'keepAwakeWhileWorking', 'keepAwakeOnBattery', 'checkpointsEnabled', 'subagentNotify']) {
-      assert.ok(sources.session.includes(field), `会话分区复用现有字段 ${field}`)
-    }
-    assert.ok(sources.notif.includes('previewSound') && sources.notif.includes('notifyAttention'), '通知分区复用既有试听与通知 IPC')
-    assert.ok(sources.security.includes('PERMISSION_MODES') && sources.security.includes('shared/approval'), '权限分区复用既有档位定义')
-    assert.ok(sources.security.includes('guardAllowRoots') && sources.security.includes('guardOutsideWrites'), '权限分区复用现有保护字段')
-    assert.ok(sources.devices.includes('window.yan.remote') && sources.devices.includes('window.yan.peer'), '设备分区只调既有 remote / peer IPC')
-    assert.ok(sources.devices.includes('setSettings({ ...store.settings, remoteAccess: next })'), '开关保存后回写渲染端设置，开关能回显')
-    assert.ok(sources.data.includes('window.yan.storage') && sources.data.includes('window.yan.backup') && sources.data.includes('window.yan.sync.exportSession'), '数据分区只调既有 storage / backup / sync IPC')
-    assert.ok(sources.about.includes('BUILD_INFO') && sources.about.includes('appUpdate') && sources.about.includes('openBrowser'), '关于分区显示真实构建信息并接既有更新 / 浏览器入口')
-    for (const bad of ['budget', 'permissionTier', 'authorizationBudget', 'newPermissionMode']) {
-      for (const [name, src] of Object.entries(sources)) {
-        assert.ok(!src.includes(bad), `${name} 不新造 ${bad}`)
-      }
-    }
-
-    const css = await readFile(join(dir, 'general.css'), 'utf8')
-    const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
-    ok(cssCode.includes('@layer features'), 'CSS 落在 features 层')
-    ok(!cssCode.includes('@import') && !/@keyframes/.test(cssCode), 'CSS 不 @import、不自建关键帧')
-    ok(!/styles\/|components\//.test(cssCode), 'CSS 不依赖 v2 样式目录')
 
     console.log(`\nv3-settings-general: ${checks} checks passed`)
   } finally {

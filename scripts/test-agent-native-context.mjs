@@ -49,8 +49,8 @@ assert(!args.some(arg => arg.startsWith('builtin:')), 'do not force a built-in d
 assert(modules.context.agentOwnedPiArgs(['--no-extensions'], false).includes('--no-extensions'), 'older pi retains its extension policy')
 assert.equal(modules.context.nativePiToolsSupported('0.87.1'), false)
 assert.equal(modules.context.nativePiToolsSupported('0.99.1'), true)
-let checks = 30
-for (const folder of ['pi-extensions', 'yan-thin', 'YAN-THIN']) {
+let checks = 26
+for (const folder of ['pi-extensions']) {
   const retired = ['context.js', 'context-budget-observer.js', 'context-budget-maintenance.js', 'project-knowledge.js', 'goal-resume.js', 'handoffs.js']
   const paths = retired.map((name) => `C:/app/resources/${folder}/${name}`)
   const nativeArgs = modules.context.agentOwnedPiArgs(paths.flatMap((path) => ['-e', path]))

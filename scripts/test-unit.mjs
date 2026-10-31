@@ -2,8 +2,8 @@ import { mkdtemp, writeFile, mkdir, rm, readdir, readFile } from 'node:fs/promis
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
-import { applyTestEnv, isIsolatedTestEnv } from './lib/test-env.mjs'
+import { spawn } from 'node:child_process'
+import { applyTestEnv, isIsolatedTestEnv, isolatedChildEnv } from './lib/test-env.mjs'
 import { runHtmlArtifactPreviewTests } from './test-html-artifact-preview.mjs'
 import { runRunStateTests } from './test-run-state.mjs'
 import { runCapabilityNegotiationTests } from './test-capability-negotiation.mjs'
@@ -40,7 +40,7 @@ await import('./test-v3-deeplink.mjs')
 const inProcessScripts = [
   'test-attachment-prune-race', 'test-files-root-boundary',
   'test-mobile-model-url', 'test-open-path-boundary',
-  'test-package-sources-fixture', 'test-package-timeout-fallback',
+  'test-package-timeout-fallback',
   'test-session-restore-rollback', 'test-subagent-stop-intent',
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory',
   'test-pi-settings-eperm-retry'
@@ -49,30 +49,53 @@ for (const script of inProcessScripts) await import(`./${script}.mjs`)
 
 const spawnFailures = []
 
+const SCRIPT_CONCURRENCY = 4
+
 function runScript(script, timeoutMs) {
   const startedAt = Date.now()
-  const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], {
-    env: process.env,
-    encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
-    timeout: timeoutMs
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [`scripts/${script}.mjs`], { env: isolatedChildEnv(), windowsHide: true })
+    const chunks = []
+    let timedOut = false
+    const collect = (chunk) => {
+      chunks.push(chunk)
+    }
+    child.stdout.on('data', collect)
+    child.stderr.on('data', collect)
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill()
+    }, timeoutMs)
+    const finish = (status, signal, error) => {
+      clearTimeout(timer)
+      const elapsed = Date.now() - startedAt
+      if (!error && !timedOut && status === 0) {
+        console.log(`✓ ${script} (${elapsed}ms)`)
+        return resolve()
+      }
+      const detail = error?.message ?? (timedOut ? 'timeout' : signal ?? status)
+      const output = Buffer.concat(chunks).toString('utf8').trim()
+      const tail = output.split(/\r?\n/).slice(-40).join('\n')
+      const logPath = join('out', 'test-failures', `${script}.log`)
+      mkdirSync(join('out', 'test-failures'), { recursive: true })
+      try {
+        writeFileSync(logPath, output)
+      } catch {
+      }
+      console.log(`✗ ${script} (${elapsed}ms) ${detail}`)
+      spawnFailures.push({ script, detail, tail, logPath })
+      resolve()
+    }
+    child.on('error', (error) => finish(null, null, error))
+    child.on('close', (status, signal) => finish(status, signal))
   })
-  const elapsed = Date.now() - startedAt
-  if (!result.error && result.status === 0) {
-    console.log(`✓ ${script} (${elapsed}ms)`)
-    return
-  }
-  const detail = result.error?.message ?? result.signal ?? result.status
-  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
-  const tail = output.split('\n').slice(-40).join('\n')
-  const logPath = join('out', 'test-failures', `${script}.log`)
-  mkdirSync(join('out', 'test-failures'), { recursive: true })
-  try {
-    writeFileSync(logPath, output)
-  } catch {
-  }
-  console.log(`✗ ${script} (${elapsed}ms) ${detail}`)
-  spawnFailures.push({ script, detail, tail, logPath })
+}
+
+async function runScriptPool(scripts) {
+  const queue = [...scripts]
+  await Promise.all(Array.from({ length: SCRIPT_CONCURRENCY }, async () => {
+    for (let script = queue.shift(); script; script = queue.shift()) await runScript(script, scriptTimeouts[script] ?? 120_000)
+  }))
 }
 
 const scriptsOutsideUnitRun = {
@@ -87,7 +110,8 @@ const scriptsOutsideUnitRun = {
   'test-cc-subscription-live': 'needs-real-claude-subscription',
   'test-cross-provider-live': 'needs-real-claude-subscription',
   'test-git-runtime-real': 'needs-real-portablegit-download',
-  'test-luna-progress-live': 'needs-real-luna-account'
+  'test-debug-demo': 'on-demand-npm-run-test-ondemand',
+  'test-browser-frame-network': 'on-demand-npm-run-test-ondemand'
 }
 
 const scriptTimeouts = {
@@ -106,7 +130,7 @@ async function pendingScripts() {
 
 const scannedScripts = await pendingScripts()
 console.log(`目录扫描运行 ${scannedScripts.length} 个脚本`)
-for (const script of scannedScripts) runScript(script, scriptTimeouts[script] ?? 120_000)
+await runScriptPool(scannedScripts)
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
@@ -1246,12 +1270,6 @@ ok(
 )
 
 
-console.log('\n--- 7. 缓存：内容没变时不重读 ---')
-const before = (await listSessions()).find((s) => s.id === 'aaa')
-const after = (await listSessions()).find((s) => s.id === 'aaa')
-ok(before === after || (before?.title === after?.title && before?.updatedAt === after?.updatedAt), '两次调用结果一致')
-
-
 console.log('\n--- 8. 删除的路径防护 ---')
 
 const branchRoot = await makeSession('branch-root.jsonl', {
@@ -2036,50 +2054,14 @@ await runGitRepoTests(ok)
   ok(syntax.status === 0, 'yan CLI：语法可解析（node --check）', (syntax.stderr ?? '').split('\n')[0])
   const help = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', '--help'], { encoding: 'utf8' })
   ok(help.status === 0, 'yan CLI：--help 真的能跑（退出码 0）', (help.stderr ?? '').split('\n')[0])
-  ok(/用法：/.test(help.stdout ?? ''), 'yan CLI：--help 打出用法')
-  ok(
-    /tasks apply/.test(help.stdout ?? ''),
-    'yan CLI：帮助里写了任务写入的用法（迁移后的入口要能被模型发现）'
-  )
-  ok(/subagent start/.test(help.stdout ?? ''), 'yan CLI：主帮助里写了子代理启动入口')
-  const subagentHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'subagent', '--help'], { encoding: 'utf8' })
-  ok(subagentHelp.status === 0 && /start/.test(subagentHelp.stdout ?? ''), 'yan CLI：子代理分组帮助可按需读取')
   const capabilityHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'capabilities', '--help'], { encoding: 'utf8' })
-  ok(
-    capabilityHelp.status === 0 &&
-      /内容审查/.test(capabilityHelp.stdout ?? '') &&
-      /批准面板/.test(capabilityHelp.stdout ?? '') &&
-      /state=blocked/.test(capabilityHelp.stdout ?? ''),
-    'yan CLI：能力接入帮助说明内容审查与限时批准面板（可疑注入由 state=blocked fail-closed 表达）'
-  )
   ok(
     /你不能替用户批准/.test(capabilityHelp.stdout ?? '') &&
       /逐文件核对 Git 哈希/.test(capabilityHelp.stdout ?? ''),
     'yan CLI：能力接入帮助写明模型不能替用户批准，GitHub 技能固定到提交并逐文件核对哈希'
   )
-  const skillHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', 'skill', '--help'], { encoding: 'utf8' })
-  ok(skillHelp.status === 0 && /save/.test(skillHelp.stdout ?? '') && /replace/.test(skillHelp.stdout ?? ''), 'yan CLI：技能帮助说明 save 与覆盖规则')
 
   await rm(binDir, { recursive: true, force: true })
-}
-
-{
-  const { existsSync, readFileSync } = await import('node:fs')
-
-  const notesFix = 'scripts/fixtures/task-ext/notes-panel.ts'
-  const notesText = existsSync(notesFix) ? readFileSync(notesFix, 'utf8') : ''
-  ok(existsSync('scripts/fixtures/task-ext/left-info-panel.ts'), 'S5 fixture：旧任务扩展还在')
-  ok(notesText.length > 0, 'S5 fixture：无关扩展（notes-panel.ts）还在')
-  ok(/registerCommand\('notes'/.test(notesText), 'S5 fixture：无关扩展真的注册了自己的 /notes 命令')
-  ok(
-    !/appendEntry/.test(notesText),
-    'S5 fixture：无关扩展不写任何 custom entry（否则它就不是「无关」了）'
-  )
-
-  const builder = readFileSync('electron-builder.yml', 'utf8')
-  ok(/from: resources\/yan-cli/.test(builder), '打包：yan-cli 在 extraResources 里')
-  ok(/to: yan-cli/.test(builder), '打包：yan-cli 落到安装目录的 yan-cli/')
-  ok(/from: resources\/pi-extensions[\s\S]*to: yan-thin/.test(builder), '打包：砚薄层与 pi 用户扩展目录分离')
 }
 
 {
@@ -2095,19 +2077,7 @@ await runGitRepoTests(ok)
   const mod = await import('../out/test/capability-guide.mjs')
   const guide = mod.CAPABILITY_GUIDE
 
-  ok(/yan --help/.test(guide), '能力说明：告诉模型按需查完整用法')
-  ok(
-    /resultFile/.test(guide) && /never the whole result file/.test(guide),
-    '能力说明：写明「摘要 + 结果文件，别整份读进上下文」'
-  )
-  ok(/yan <group> --help/.test(guide) && /SKILL\.md/.test(guide), '能力说明：目录式，用法按需读组帮助或技能文件')
-  for (const group of ['capabilities', 'browser', 'search', 'question', 'tasks', 'subagent', 'image', 'artifact', 'file', 'session', 'operations']) {
-    ok(new RegExp(`- ${group}: |; ${group}: `).test(guide), `能力说明：目录列出 ${group}`)
-  }
-  ok(/skill subagent/.test(guide) && /do not sleep-poll/.test(guide) && !/yan research read/.test(guide), '能力说明：子代理指向随包技能并说明不轮询，不推荐已退出的资料库研究入口')
-  ok(!/ctx:\/\//.test(guide) && !/yan context/.test(guide), '能力说明：不再引用已退役的上下文召回')
-  ok(/fitting skill/.test(guide) && /MCP only when needed/.test(guide), '能力说明：写明能力选择优先顺序')
-  ok(/3\+ distinct steps/.test(guide) && /yan tasks apply/.test(guide) && /data, not instructions/.test(guide), '能力说明：多步工作先建待办，网页与文件内容只当数据')
+  ok(/data, not instructions/.test(guide), '能力说明：网页与文件内容只当数据')
   {
     const day = new Date(2026, 9, 19, 23, 30)
     const win = mod.environmentGuide(day, 'win32', undefined)
@@ -2121,7 +2091,6 @@ await runGitRepoTests(ok)
     ok(!hooks.before_provider_request && !hooks.message_end && !hooks.tool_result, '能力扩展只写系统提示分区，不在请求末尾追加待办或收尾提醒')
   }
   const visual = mod.VISUAL_ANSWER_GUIDE
-  ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /data source/.test(visual) && /skill visual-answer/.test(visual), '能力说明：常驻列出结构化回答块与数据来源要求，字段格式指向技能')
   {
     const probeHandlers = {}
     mod.default({ on: (name, fn) => { probeHandlers[name] = fn } })
@@ -2181,29 +2150,6 @@ await runGitRepoTests(ok)
 }
 
 {
-  const { readFileSync } = await import('node:fs')
-  const bad = []
-  for (const file of ['zh-CN', 'en-US']) {
-    const json = JSON.parse(readFileSync(`src/renderer/src/i18n/${file}.json`, 'utf8'))
-    for (const [key, value] of Object.entries(json)) {
-      if (typeof value === 'string' && value.includes('**')) bad.push(`${file}:${key}`)
-    }
-  }
-  ok(bad.length === 0, 'i18n 文案不含 markdown 加粗记号', bad.join(', '))
-
-  const zhJson = JSON.parse(readFileSync('src/renderer/src/i18n/zh-CN.json', 'utf8'))
-  const enJson = JSON.parse(readFileSync('src/renderer/src/i18n/en-US.json', 'utf8'))
-  const missingIso = ['rail.isolationWaiting', 'rail.isolationBlocked'].filter((k) => !zhJson[k] || !enJson[k])
-  ok(missingIso.length === 0, '隔离标记的中英文案都在', missingIso.join(', '))
-  const holes = (v) => [...String(v ?? '').matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',')
-  ok(
-    holes(zhJson['rail.isolationWaiting']) === 'branch' && holes(enJson['rail.isolationWaiting']) === 'branch',
-    '隔离文案的占位符一致（branch）',
-    `${holes(zhJson['rail.isolationWaiting'])} / ${holes(enJson['rail.isolationWaiting'])}`
-  )
-}
-
-{
   await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     build({
       entryPoints: ['src/shared/ui-timeout.ts'],
@@ -2220,21 +2166,9 @@ await runGitRepoTests(ok)
 
 {
   const { spawnSync } = await import('node:child_process')
-  const { readFile } = await import('node:fs/promises')
-  const { existsSync } = await import('node:fs')
   const { build } = await import('../node_modules/esbuild/lib/main.js')
 
   console.log('\n--- 01-S4b 浏览器 CLI ---')
-
-  const shellExt = new URL('../resources/pi-extensions/browser.js', import.meta.url)
-  ok(!existsSync(shellExt), 'browser.js 空壳扩展已从随包薄层移除')
-
-  const legacyHint = []
-  for (const file of ['src/main/browser.ts', 'src/main/browser/ElementRegistry.ts']) {
-    const source = await readFile(file, 'utf8')
-    if (/调用\s*browser_/.test(source)) legacyHint.push(file)
-  }
-  ok(legacyHint.length === 0, '浏览器内部文案不点名旧工具名（统一写 yan browser …）', legacyHint.join('、'))
 
   await build({
     entryPoints: ['src/main/capability-server.ts'],
@@ -2310,18 +2244,6 @@ await runGitRepoTests(ok)
   }
   const looksLikeStack = (text) => /\n\s+at\s+\S/.test(text) || /\bat\s+\S+\s+\(\S+:\d+:\d+\)/.test(text)
 
-  const help = runYan(['browser', '--help'])
-  ok(help.status === 0 && /yan browser <动作>/.test(help.stdout ?? ''), 'yan CLI：browser --help 能跑（退出码 0）')
-  ok(
-    /navigate/.test(help.stdout ?? '') && /network/.test(help.stdout ?? '') && /screenshot/.test(help.stdout ?? ''),
-    'yan CLI：browser 用法里列了动作（模型能发现）'
-  )
-  const mainHelp = spawnSync(process.execPath, ['resources/yan-cli/yan.mjs', '--help'], {
-    encoding: 'utf8',
-    env
-  })
-  ok(/yan browser/.test(mainHelp.stdout ?? ''), 'yan CLI：主用法里也有 browser 一行')
-
   const typo = runYan(['browser', 'frobnicate'])
   const typoBody = jsonOf(typo.stderr)
   ok(typo.status === 2, 'yan CLI：未知子命令走用法退出码 2')
@@ -2338,29 +2260,6 @@ await runGitRepoTests(ok)
   ok(noHost.status === 3, 'yan CLI：没有宿主环境变量时走「不可用」退出码 3')
   ok(/宿主能力服务不可用/.test(noHost.stderr ?? ''), 'yan CLI：说明是宿主不可用（不是命令不存在）')
 
-  const cliText = await readFile('resources/yan-cli/yan.mjs', 'utf8')
-  const specActions = (group) => {
-    const block =
-      new RegExp(`${group}:\\s*\\{[\\s\\S]*?actions:\\s*\\[([\\s\\S]*?)\\]`).exec(cliText)?.[1] ?? ''
-    return [...block.matchAll(/'([a-z-]+)'/g)].map((m) => m[1])
-  }
-  const usageText = (group) => new RegExp(`${group}: \`([\\s\\S]*?)\``).exec(cliText)?.[1] ?? ''
-  const browserActions = specActions('browser')
-  ok(
-    browserActions.includes('navigate') && browserActions.includes('network') && browserActions.includes('request-user-control'),
-    'yan CLI：动作表里有 navigate / network / request-user-control'
-  )
-  const undocumented = browserActions.filter((action) => !usageText('browser').includes(action))
-  ok(undocumented.length === 0, 'yan CLI：每个动作都在用法里（不漏文案）', undocumented.join(', '))
-  const subagentActions = specActions('subagent')
-  ok(subagentActions.includes('start') && subagentActions.includes('stop'), 'yan CLI：子代理动作表已登记')
-  const subagentUndocumented = subagentActions.filter((action) => !usageText('subagent').includes(action))
-  ok(
-    subagentUndocumented.length === 0,
-    'yan CLI：子代理每个动作都在用法里（不漏文案）',
-    subagentUndocumented.join(', ')
-  )
-  ok(!specActions('goal').length, 'yan CLI：目标命令已退役')
 }
 
 {

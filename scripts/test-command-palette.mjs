@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -78,11 +78,6 @@ const YAN = (name, executable = true, extra = {}) => ({ name, source: 'yan', exe
 
 async function main() {
   const submit = await load(SUBMIT_ENTRY, 'composer-submit')
-  const paletteSource = await readFile('src/renderer/src/features/commands/CommandPalette.tsx', 'utf8')
-  ok(
-    paletteSource.includes(".join(' ').toLowerCase()") && paletteSource.includes('message.text.slice(0, 2000).toLowerCase()'),
-    '命令面板的关键词在建立条目时就转小写，匹配时不再逐条重建小写串'
-  )
   try {
     const S = submit.module
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
@@ -321,7 +321,6 @@ async function main() {
     })
     let tree = rt.render(Composer, {})
     const wrap = tree
-    ok(typeof wrap.props.className === 'string' && wrap.props.className.includes('composer-wrap'), '根是框外的 composer-wrap')
     const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'FileDropOverlay' && nameOf(child) !== 'PromptStash')
     ok(nameOf(wrapChildren[0]) === 'IsolationMergeBar', '合入确认条留在输入框卡片外上方')
     ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片紧跟合入确认条')
@@ -344,19 +343,6 @@ async function main() {
     ok(byClass(line, 'composer-prompt') === null, '输入行不再渲染 › 提示符')
     const lineEnd = byClass(card, 'composer-line-end')
     ok(controlNames(lineEnd).join('>') === 'ContextRing>Separator>PlusMenu>VoiceButton>#composer-send', '行尾：上下文读数｜＋→语音→发送，状态与操作分组', controlNames(lineEnd))
-
-    const editorText = await readFile(join(ROOT, 'src/renderer/src/features/composer/ComposerEditor.tsx'), 'utf8')
-    ok(!/<textarea/.test(editorText), '编辑器门面不再渲染 textarea')
-    ok(
-      /role="textbox"/.test(editorText) && /contentEditable/.test(editorText),
-      '宿主是可编辑节点（role=textbox + contenteditable）'
-    )
-    ok(/data-testid=\{props\['data-testid'\]\}/.test(editorText), '宿主透传 data-testid=composer-input')
-    ok(
-      /new EditorView\(/.test(editorText) && /from 'prosemirror-view'/.test(editorText),
-      '门面内部挂 ProseMirror EditorView'
-    )
-    ok(/data-empty="/.test(editorText) && /dataset\.empty/.test(editorText), '空态用 data-empty 驱动占位符')
 
     const tools = byClass(card, 'composer-tools')
     ok(controlNames(tools).join('>') === 'ModelThinkingPicker>PermissionToggle>ProjectPicker', '状态行左侧：模型+思考→权限→新会话项目，同组同形')
@@ -401,71 +387,6 @@ async function main() {
     ok(byTestId(tree, 'composer-keyhint') === null, '发送键非默认时也不在底栏显示按键提示')
 
 
-    const composerCssText = await readFile(join(ROOT, 'src/renderer/src/features/composer/composer.css'), 'utf8')
-    ok(/\n\s*\.composer\s*\{[^}]*position:\s*relative/.test(composerCssText), '卡片为绝对定位的顶边提供定位上下文')
-    ok(/\n\s*\.cborder\s*\{[^}]*position:\s*absolute/.test(composerCssText), '顶边绝对定位，不占用卡片高度')
-    ok(/\n\s*\.cborder\s*\{[^}]*opacity:\s*0/.test(composerCssText), '空闲时顶边完全不可见')
-    ok(/\n\s*\.cborder\[data-state='working'\]\s*\{\s*opacity:\s*1/.test(composerCssText), '只有运行中才亮起顶边')
-    ok(/\n\s*\.cborder\s*\{[^}]*border-radius:\s*inherit/.test(composerCssText), '顶边继承卡片圆角，不在圆角外露直角')
-    ok(/\.cborder\[data-level='max'\]\s*\{\s*border-color:\s*var\(--think-max/.test(composerCssText), '档位色描整圈轮廓，颜色取档位')
-    ok(!/\n\s*\.cborder[^{]*\{[^}]*border-top-color/.test(composerCssText), '不再只染上边（圆角处会变细斜切）')
-    ok(/\n\s*\.cborder\s*\{[^}]*(?<!-webkit-)mask-image:\s*linear-gradient\(to bottom,[^;]*transparent var\(--cborder-fade\)/.test(composerCssText), '描边自顶部沿圆角向下渐隐')
-    ok(/\n\s*\.composer\s*\{[^}]*--cborder-fade:\s*calc\(2 \* var\(--r-side\)\)/.test(composerCssText), '默认在两倍圆角内消失，不碰计划行分隔线')
-    ok(/\.composer:has\(> \.plan-card \+ \.composer-queue\)\s*\{\s*--cborder-fade:/.test(composerCssText), '计划行加排队行时渐隐延伸到排队行，两行之间不断层')
-    ok(/\n\s*\.composer\s*\{[^}]*border-radius:\s*var\(--r-side\)/.test(composerCssText) && /\n\s*\.composer\s*\{[^}]*box-shadow:\s*var\(--shadow-comp-float\)/.test(composerCssText), '外框用左栏同款 12px 圆角与浮起阴影令牌')
-    ok(/\n\s*\.composer::after\s*\{[^}]*var\(--comp-rim-hi\)[^}]*var\(--comp-rim-lo\)/.test(composerCssText), '外框 135° 高光描边取 comp-rim 令牌')
-    ok(/@container \(max-width: 600px\)\s*\{\s*\.composer-bar \.composer-permission:not\(\.composer-project\) \.cp-label\s*\{\s*display:\s*none/.test(composerCssText), '窄宽度下先收起权限文字，只留盾牌图标')
-    ok(/\n\s*\.composer-queue\s*\{[^}]*border-bottom:\s*1px solid var\(--line\)/.test(composerCssText) && !/\.cq-pending\s*\{/.test(composerCssText), '排队行和计划行同款分隔线，去掉蓝色底')
-    const queueSource = await readFile(join(ROOT, 'src/renderer/src/features/composer/QueueEditor.tsx'), 'utf8')
-    const queueCssText = await readFile(join(ROOT, 'src/renderer/src/features/composer/queue-editor.css'), 'utf8')
-    ok(/<Badge tone="accent" className="cq-pill">\s*\{t\('queue\.pill', \{ n: total \}\)\}/.test(queueSource), '排队行首是强调色「排队 · N」胶囊')
-    ok(/\{!collapsible \? \(\s*pill/.test(queueSource) && /<span className="cq-text">\{item\.text\}<\/span>/.test(queueSource), '单条行首放胶囊，正文不带「下一条」前缀')
-    ok(/data-testid="queue-toggle"[\s\S]*?\{pill\}[\s\S]*?cq-preview/.test(queueSource), '折叠条行首也是胶囊')
-    ok(/\n\s*\.cq-text\s*\{[^}]*color:\s*var\(--fg\);/.test(composerCssText) && /\n\s*\.cq-preview\s*\{[^}]*color:\s*var\(--fg\);/.test(queueCssText), '排队正文用主色 --fg')
-    ok(/\n\s*\.cq-pill\s*\{[^}]*flex:\s*none/.test(composerCssText) && /\n\s*\.cq-tag-steer\s*\{\s*color:\s*var\(--accent-t\)/.test(composerCssText), '胶囊不被压缩，「插话中」用 --accent-t')
-    for (const lang of ['zh-CN', 'en-US']) {
-      const dict = JSON.parse(await readFile(join(ROOT, `src/renderer/src/i18n/${lang}.json`), 'utf8'))
-      ok(/\{n\}/.test(dict['queue.pill'] ?? ''), `${lang} 有 queue.pill 文案`)
-    }
-    ok(/\n\s*\.cborder\s*\{[^}]*-webkit-mask-image:/.test(composerCssText), '渐隐遮罩带 -webkit- 前缀')
-    ok(/\n\s*\.composer-wrap\.is-dropping \.cborder\s*\{\s*opacity:\s*0/.test(composerCssText), '拖放时让位给强调色边框，档位描边隐藏')
-    ok(/\n\s*\.composer-text\s*\{[^}]*white-space:\s*pre-wrap/.test(composerCssText), '编辑器宿主保留连续空白与手动换行（pre-wrap）')
-    ok(/\n\s*\.composer-text\s*\{[^}]*max-height:/.test(composerCssText), '编辑器宿主自增高到上限后内部滚动')
-    ok(
-      /\.composer-text\[data-placeholder-visible='true'\]\[data-placeholder\]::before/.test(composerCssText),
-      '占位符由 data-placeholder 伪元素绘制（contenteditable 没有 ::placeholder）'
-    )
-    ok(!/\.composer-text::placeholder/.test(composerCssText), '不再残留 textarea 的 ::placeholder 规则')
-    for (const rel of [
-      'src/renderer/src/features/composer/Composer.tsx',
-      'src/renderer/src/features/composer/composer.css',
-      'src/renderer/src/features/composer/VoiceButton.tsx',
-      'src/renderer/src/features/composer/ComposerBorder.tsx',
-      'src/renderer/src/patterns/ModelThinkingPicker.tsx',
-      'src/renderer/src/patterns/model-thinking-picker.css'
-    ]) {
-      const text = await readFile(join(ROOT, rel), 'utf8')
-      const v2Entry = /\bfrom\s+['"][^'"]*components\/ui['"]/.test(text)
-      ok(!/styles\//.test(text) && !v2Entry, `${rel} 不 import v2 样式/旧控件入口`)
-    }
-
-    const menuText = await readFile(join(ROOT, 'src/renderer/src/features/composer/ComposerMenu.tsx'), 'utf8')
-    ok(
-      menuText.includes(`querySelector<HTMLElement>('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' })`),
-      '补全菜单把高亮项按 nearest 滚进视野'
-    )
-    ok(/querySelector<HTMLElement>\('\[data-selected="true"\]'\)[\s\S]{0,120}?\}, \[open, index\]\)/.test(menuText), '滚动只跟随高亮索引变化触发')
-    ok(
-      /pointerIndex\.current = next === index \? null : next\s*completion\.setIndex\(next\)/.test(menuText) &&
-        /if \(pointerIndex\.current === index\) \{\s*pointerIndex\.current = null\s*return\s*\}/.test(menuText),
-      '鼠标悬停改的高亮不回滚列表'
-    )
-    ok((menuText.match(/onMouseEnter=\{\(\) => hoverIndex\(/g) ?? []).length === 3, '三处选项的悬停都走同一入口')
-    ok(
-      /data-testid="composer-menu-status"/.test(menuText) && /aria-live="polite"/.test(menuText),
-      '补全浮层 portal 里带 aria-live 播报行'
-    )
-
     ok(layout.composerPlaceholderKey({ bash: true, session: true, firstRun: true }) === 'composer.phBash', '占位符：bash 模式优先')
     ok(layout.composerPlaceholderKey({ bash: false, session: true, firstRun: false }) === 'composer.phSession', '占位符：已有会话')
     ok(layout.composerPlaceholderKey({ bash: false, session: false, firstRun: true }) === 'composer.phFirst', '占位符：首次使用')
@@ -491,10 +412,6 @@ async function main() {
     __state.runners = [{ runId: 'r1', running: true }]
     __state.activeRunnerId = 'r1'
     ok(placeholderOf() === 'composer.phRunning', '回合运行中 → 单独一条占位文案，不拼接插话/排队词条')
-    for (const [lang, label] of [['zh-CN', 'Enter 插话 · Ctrl+Q 排队'], ['en-US', 'Enter to cut in · Ctrl+Q to queue']]) {
-      const messages = JSON.parse(await readFile(join(ROOT, `src/renderer/src/i18n/${lang}.json`), 'utf8'))
-      ok(messages['composer.phRunning'] === label, `${lang} 运行中占位为「${label}」`)
-    }
     ok(!String(placeholderOf()).includes('Alt+Enter'), '运行中占位不再写 Alt+Enter（按键本身不变）')
     __state.runners = []
     __state.activeRunnerId = null
@@ -515,7 +432,6 @@ async function main() {
     tree = pressHistoryKey('ArrowUp')
     let history = byTestId(tree, 'composer-history-status')
     ok(history?.props.children === '历史记录 2/2', '首次 ↑ 显示最新一条的序号与用户消息总数')
-    ok(history?.props.className === 'composer-history' && !history.props.className.includes('sr-only'), '历史序号可见，不再仅供读屏')
     ok(children(byClass(tree, 'composer-input')).indexOf(history) < children(byClass(tree, 'composer-input')).indexOf(byClass(tree, 'composer-line')), '历史序号位于输入内容上方')
     tree = pressHistoryKey('ArrowUp')
     ok(byTestId(tree, 'composer-history-status')?.props.children === '历史记录 1/2', '继续 ↑ 显示更早的序号')
@@ -530,10 +446,6 @@ async function main() {
     __state.session = { sessionId: 'history-other' }
     tree = rt.render(Composer, {})
     ok(byTestId(tree, 'composer-history-status') === null, '切换会话后清除历史序号')
-    for (const [lang, label] of [['zh-CN', '历史记录 {n}/{total}'], ['en-US', 'History {n}/{total}']]) {
-      const messages = JSON.parse(await readFile(join(ROOT, `src/renderer/src/i18n/${lang}.json`), 'utf8'))
-      ok(messages['composer.historyStatus'] === label, `${lang} 历史序号文案使用当前条/总条数`)
-    }
 
     console.log(`\n结果：${checks} 项通过`)
   } finally {

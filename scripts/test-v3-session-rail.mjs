@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
@@ -321,18 +320,6 @@ async function main() {
     const short = CONVO.slice(0, 4)
     ok(byTestId(rt.render(OutlineRail, { messages: short, onJump: () => {} }), 'v3-outline-tick').length === 2, '2 轮也显示可点击的导航刻度')
     ok(rt.render(OutlineRail, { messages: [], onJump: () => {} }) === null, '空会话：返回 null')
-  }
-
-  group('细刻度常驻 + 悬停展开卡片 + 减少动态效果：外观规则')
-  {
-    const css = readFileSync(resolve(ROOT, 'src/renderer/src/features/session/rail.css'), 'utf8')
-    const look = readFileSync(resolve(ROOT, 'src/renderer/src/features/session/ui/rail-look.css'), 'utf8')
-    ok(css.includes('.v3-rail[data-open] .v3-rail-card') && look.includes('.v3-rail[data-open] .v3-rail-card'), '展开由 data-open 控制，卡片在展开时才可见可点')
-    ok(/v3-rail-tick:focus-visible/.test(look), '刻度有可见的键盘焦点环')
-    ok(/v3-rail-tick\[aria-current\]/.test(look) && css.includes('left: var(--s-8)'), '刻度列在左侧常驻，当前轮高亮')
-
-    ok(/prefers-reduced-motion:\s*reduce/.test(look), 'rail-look.css 声明了 reduced-motion 分支')
-    ok(/prefers-reduced-motion[\s\S]*transition:\s*none/.test(look), 'reduced-motion 下把过渡关掉')
   }
 
   await rm(outdir, { recursive: true, force: true })

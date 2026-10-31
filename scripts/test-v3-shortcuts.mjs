@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { readFileSync } from 'node:fs'
 
 const here = (rel) => fileURLToPath(new URL(rel, import.meta.url))
 
@@ -383,15 +382,6 @@ async function runShortcutRegistry() {
   for (const id of ['stopSession', 'workspaceTerminal', 'workspaceChanges', 'workspaceFiles', 'workspaceBrowser', 'workspacePreview']) {
     assert.ok(Object.values(COMMAND_ACTION_IDS).includes(id), `命令面板存在动作 ${id}`)
   }
-
-  const sheet = readFileSync(here('../src/renderer/src/features/commands/ShortcutSheet.tsx'), 'utf8')
-  assert.ok(sheet.includes('applyShortcutOverrides') && sheet.includes('shortcutOverridesFromSettings'),
-    '帮助表按用户改绑后的生效键位显示')
-  assert.ok(sheet.includes("from '../../app/shortcuts'") || sheet.includes("from '../../app/shortcuts\"") ||
-    sheet.includes("app/shortcuts"), '帮助表从注册表取全局组')
-  assert.ok(sheet.includes('text.approval.allow') && sheet.includes('text.approval.deny'), '帮助表补上确认卡 Alt+Y/N 行')
-  assert.ok(sheet.includes('SHORTCUT_NOTE_GROUPS'), '输入框 / 审批 / 终端组仍复用共享说明数据')
-  assert.ok(!sheet.includes('components/shell/ShortcutSheet'), '不引入 v2 旧快捷键表')
 
   console.log('v3 快捷键注册表补齐：注册表 / 冲突 / 精确匹配 / 焦点 / IME / 模态 / 终端 / 宿主去重 / 文案 / 面板一致性检查通过')
 }

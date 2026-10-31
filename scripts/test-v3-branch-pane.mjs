@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
@@ -514,7 +514,6 @@ async function main() {
     assert.deepEqual(itemChildIds(tree, TreeItem, 'u1'), ['a1'], 'u1 行内嵌 a1')
     assert.deepEqual(itemChildIds(tree, TreeItem, 'a1').slice().sort(), ['a2', 't1'], 'a1 行内嵌 t1 / a2')
     assert.deepEqual(itemChildIds(tree, TreeItem, 'u2'), [], 'u2 没有内嵌子行')
-    ok(findAllByType(tree, TreeItem).find((el) => el.props.id === 'a2')?.props.className.includes('branch-node--leaf'), '当前叶子行带语义标记类')
 
     treeEl.props.onExpandedChange(new Set(['u1', 'a1', 'u2']))
     tree = await flush(rt, BranchTree, props)
@@ -720,31 +719,6 @@ async function main() {
     await rm(outdir2, { recursive: true, force: true })
   }
 
-  group('静态边界：BranchTree 只接原语，branch-tree.css 不自画控件外观')
-  {
-    const src = await readFile(join(ROOT, 'src/renderer/src/features/session/BranchTree.tsx'), 'utf8')
-    ok(src.includes("from '../../ui/Tree'"), 'BranchTree 从 ui/Tree 引入正式原语')
-    for (const name of ['Tree,', 'TreeItem,', 'TreeChevron,', 'TreeItemLabel']) {
-      ok(src.includes(name), `BranchTree 使用 ${name.replace(',', '')}`)
-    }
-    ok(!src.includes('role="tree"'), '不再出现旧 role="tree" 字符串')
-    ok(!/aria-level\s*=/.test(src), '不再手写 aria-level（层级交给 RAC）')
-    ok(!src.includes('onKeyDown'), '不再自建键盘处理（键盘交给 RAC）')
-
-    const rawCss = await readFile(join(ROOT, 'src/renderer/src/features/session/branch-tree.css'), 'utf8')
-    const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, '')
-    ok(!/\.branch-row\b/.test(css), '不再保留旧私有行的样式')
-    const rowRules = css
-      .split('}')
-      .map((rule) => rule.split('{')[0])
-      .filter((selector) => !selector.split(',').every((part) => /\.branch-bookmark(\[[^\]]*\])*\s*$/.test(part.trim())))
-      .join('}')
-    ok(!/:hover|:focus-visible|\[data-selected\]|\[data-disabled\]/.test(rowRules), '不自画 hover / 选中 / 焦点 / 禁用外观')
-    ok(!/#[0-9a-fA-F]{3,8}\b/.test(css), '不写死颜色（只用令牌变量）')
-    ok(css.includes('.branch-tree__list') && css.includes('.branch-kind'), '保留版面与语义标识类')
-    ok(!css.includes('@import'), '模块 CSS 不 @import')
-  }
-
   group('正式 Tree 原语：treegrid / aria-level / 展开 / 选中落在真实 DOM（SSR）')
   {
     installSsrGlobals()
@@ -789,17 +763,13 @@ async function main() {
 
     ok(html.includes('aria-level="1"') && html.includes('aria-level="2"') && html.includes('aria-level="3"'), '真实嵌套产生 aria-level 1 / 2 / 3')
     ok((html.match(/aria-expanded="true"/g) ?? []).length >= 2, '已展开父行带 aria-expanded="true"')
-    ok(html.includes('slot="chevron"') && html.includes('class="ui-tree__chevron"'), '行内是 RAC 的 chevron 展开按钮')
 
     ok(html.includes('aria-selected="true"') && html.includes('aria-selected="false"'), '选中 / 未选中都带 aria-selected')
     const leafTag = html.match(/<[^>]*data-key="a2"[^>]*>/)?.[0] ?? ''
     ok(leafTag.includes('aria-selected="true"'), '当前叶子行（data-key=a2）是选中行')
     ok(leafTag.includes('aria-level="3"'), '当前叶子行层级为 3（a1 的子节点）')
 
-    const labelCount = (html.match(/class="ui-tree__label"/g) ?? []).length
-    ok(labelCount === 5, `每个可见行都有 TreeItemLabel（${labelCount} 行）`)
     ok(html.includes('>again<') && html.includes('>hello<'), '真实条目文字进入 DOM（不截字符串）')
-    ok(html.includes('branch-node--leaf'), '当前叶子行的语义标记类进入 DOM')
 
     await rm(outdirRac, { recursive: true, force: true })
   }

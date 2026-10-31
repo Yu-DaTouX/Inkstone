@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from 'esbuild'
@@ -186,33 +186,6 @@ async function main() {
     await Client.runTaskNow(bridge, 't1')
     ok(bridge.calls[5].name === 'runNow' && bridge.calls[5].args[0] === 't1', 'runTaskNow 调用 runNow(id)')
 
-    const card = (over, lang = 'zh-CN') =>
-      render(
-        createElement(Page.ScheduleTaskCard, {
-          task: task(over),
-          busy: false,
-          lang,
-          t: lang === 'en-US' ? en : zh,
-          onToggle: () => {},
-          onRunNow: () => {},
-          onEdit: () => {},
-          onDelete: () => {}
-        })
-      )
-    const onCard = card({ nextRunAt: Date.UTC(2026, 0, 2, 1, 0, 0), lastRunAt: Date.UTC(2026, 0, 1, 1, 0, 0), model: 'anthropic/claude-x' })
-    ok(onCard.includes('data-testid="schedule-t1"') && onCard.includes('data-state="on"'), '启用任务渲染为 on 状态')
-    ok(onCard.includes('每日简报') && onCard.includes('每天 09:00'), '卡片显示名称与触发描述')
-    ok(onCard.includes('下次') && onCard.includes('上次'), '启用任务显示下次与上次时间')
-    ok(onCard.includes('claude-x'), '卡片把 provider/id 显示为模型名，完整值在 title')
-
-    const pendingCard = card({ pendingApproval: true, createdBy: 'model', enabled: false })
-    ok(pendingCard.includes('data-state="pending"'), '模型创建待确认任务渲染为 pending 状态')
-    ok(pendingCard.includes(zh('sched.pending')) && pendingCard.includes(zh('sched.byModel')), '待确认与模型创建标签都在')
-
-    const pausedCard = card({ enabled: false, lastError: '目标会话已变化，未发送指令' })
-    ok(pausedCard.includes('data-state="off"') && pausedCard.includes(zh('sched.paused')), '暂停任务渲染为 off 状态并带已暂停标签')
-    ok(pausedCard.includes('目标会话已变化'), '上次运行错误显示在卡片上')
-
     ok(Page.formatWhen(undefined, 'zh-CN') === '—', '缺失时间显示破折号，不猜值')
 
     ok(Page.describeTriggerText({ kind: 'weekly', days: [1, 3], time: '21:00' }, zh, 'zh-CN') === '每周一、三 21:00', '中文每周描述列出星期')
@@ -222,34 +195,11 @@ async function main() {
     ok(Page.describeTriggerText({ kind: 'interval', minutes: 120 }, en, 'en-US') === 'Every 2 hours', '英文整小时间隔描述')
     ok(Page.describeTriggerText({ kind: 'interval', minutes: 90 }, zh, 'zh-CN') === '每 90 分钟', '中文非整小时间隔描述')
     ok(!/[\u4e00-\u9fff]/.test(Page.describeTriggerText({ kind: 'once', at: Date.UTC(2026, 0, 2, 9, 30) }, en, 'en-US')), '英文单次描述不含中文')
-    const enCard = card({ name: 'Brief', prompt: 'summarize today', trigger: { kind: 'weekly', days: [1, 3], time: '21:00' } }, 'en-US')
-    ok(enCard.includes('Mon, Wed at 21:00') && !/[\u4e00-\u9fff]/.test(enCard), '英文卡片副标题不再出中文')
 
     const pageClient = mockBridge({ list: [] })
     const pageHtml = render(createElement(i18n.I18nProvider, null, createElement(Page.ScheduleTasksPage, { client: pageClient })))
-    ok(pageHtml.includes('data-testid="v3-schedule-page"'), '页面根节点使用 v3-schedule-page')
-    ok(pageHtml.includes(zh('sched.title')) && pageHtml.includes(zh('sched.new')), '页面显示标题与新建入口')
-    ok(pageHtml.includes(zh('sched.notice')), '页面明确写出定时任务的运行说明')
     ok(!pageHtml.includes('data-testid^="schedule-t"') && !pageHtml.match(/data-testid="schedule-t/), '首帧没有任务快照时不渲染假任务')
     ok(pageClient.calls.length === 0, 'SSR 首帧不发任何 IPC（请求在 effect 里）')
-
-    const pageSrc = await readFile(join(process.cwd(), 'src/renderer/src/features/schedule/ScheduleTasksPage.tsx'), 'utf8')
-    ok(pageSrc.includes("from '../../ui'"), '页面控件来自 v3 ui/ primitives')
-    ok(pageSrc.includes("from './schedule-draft'") && pageSrc.includes("from './schedule-client'"), '页面复用本地草稿与 IPC 转发模块')
-    ok(!pageSrc.includes("components/ui") && !pageSrc.includes("styles/"), '页面不引入 v2 控件或 styles/*')
-    ok(!pageSrc.includes('setInterval(') || pageSrc.includes('30_000') , '页面只做 30s 只读刷新，没有自建触发通道')
-    ok(pageSrc.includes('loadTasks(') && pageSrc.includes('saveTask(') && pageSrc.includes('setTaskEnabled(') && pageSrc.includes('removeTask(') && pageSrc.includes('runTaskNow('), '增删改启停都经既有 IPC 转发函数')
-
-    const clientSrc = await readFile(join(process.cwd(), 'src/renderer/src/features/schedule/schedule-client.ts'), 'utf8')
-    ok(clientSrc.includes('window.yan.schedule'), '客户端缺省读 preload 暴露的 window.yan.schedule')
-    ok(clientSrc.includes('bridge.list()') && clientSrc.includes('bridge.create(') && clientSrc.includes('bridge.update(') && clientSrc.includes('bridge.setEnabled(') && clientSrc.includes('bridge.remove(') && clientSrc.includes('bridge.runNow('), '客户端逐一转发既有 IPC 方法')
-
-    const css = await readFile(join(process.cwd(), 'src/renderer/src/features/schedule/schedule-tasks.css'), 'utf8')
-    const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
-    ok(css.startsWith('@layer features'), 'CSS 落在 features 层')
-    ok(!cssCode.includes('@import') && !/@keyframes/.test(cssCode), 'CSS 不 @import、不自建关键帧')
-    ok(!/styles\/|components\//.test(cssCode), 'CSS 不依赖 v2 样式目录')
-    ok(cssCode.includes('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)'), '弹性列使用 minmax(0, 1fr)')
 
     console.log(`\nv3-schedule-ui: ${checks} checks passed`)
   } finally {

@@ -8,6 +8,17 @@ export function applyTestEnv() {
   for (const key of Object.keys(process.env)) {
     if (HOST_ENV.test(key)) delete process.env[key]
   }
+  const { root, env } = isolatedPaths()
+  Object.assign(process.env, env)
+  return root
+}
+
+export function isolatedChildEnv() {
+  const { env } = isolatedPaths()
+  return { ...process.env, ...env }
+}
+
+function isolatedPaths() {
   const root = mkdtempSync(join(tmpdir(), 'inkstone-test-'))
   const paths = {
     data: join(root, 'data'),
@@ -17,15 +28,17 @@ export function applyTestEnv() {
     downloads: join(root, 'downloads')
   }
   for (const path of Object.values(paths)) mkdirSync(path, { recursive: true })
-  Object.assign(process.env, {
-    YAN_DATA_DIR: paths.data,
-    YAN_PI_DIR: paths.pi,
-    YAN_SESSIONS_DIR: paths.sessions,
-    YAN_USER_DATA: paths.userdata,
-    YAN_DOWNLOADS_DIR: paths.downloads,
-    PI_CODING_AGENT_DIR: paths.pi
-  })
-  return root
+  return {
+    root,
+    env: {
+      YAN_DATA_DIR: paths.data,
+      YAN_PI_DIR: paths.pi,
+      YAN_SESSIONS_DIR: paths.sessions,
+      YAN_USER_DATA: paths.userdata,
+      YAN_DOWNLOADS_DIR: paths.downloads,
+      PI_CODING_AGENT_DIR: paths.pi
+    }
+  }
 }
 
 export function isIsolatedTestEnv() {

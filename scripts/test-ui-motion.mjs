@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 
 async function load(entry) {
@@ -129,22 +128,5 @@ const m = await load('src/renderer/src/ui/motion-model.ts')
   assert.equal(m.staggerDelay(3, 20), 60)
   assert.equal(m.staggerDelay(30, 20), 120, '错峰封顶 6 级')
 }
-
-const read = (path) => readFileSync(path, 'utf8')
-const motionCss = read('src/renderer/src/ui/Motion.css')
-assert.ok(!/\d+ms|\d\.?\d*s\b(?![-\w])/.test(motionCss.replace(/--dur-[\w-]+/g, '').replace(/\b0s\b/g, '')), 'Motion.css 只用时长令牌')
-assert.ok(!/cubic-bezier|ease-in-out|\bease-out\b/.test(motionCss), 'Motion.css 只用缓动令牌')
-assert.ok(motionCss.includes(':root[data-motion-hold]'), '切会话两帧抑制覆盖新基元')
-const tokens = JSON.parse(read('src/renderer/src/design/tokens.json')).motion
-for (const name of ['quick', 'lag', 'ease-glide', 'ease-exit']) assert.ok(tokens[name], `令牌 ${name} 存在`)
-const tokenCss = read('src/renderer/src/design/tokens.css')
-for (const name of ['--dur-quick', '--dur-lag', '--ease-glide', '--ease-exit']) assert.ok(tokenCss.includes(name), `生成物含 ${name}`)
-const base = read('src/renderer/src/design/base.css')
-assert.ok(base.includes("data-reduce-motion='true'") && base.includes('prefers-reduced-motion: reduce'), '两路减少动效仍在全局生效')
-const listMotion = read('src/renderer/src/ui/list-motion.ts')
-assert.ok(listMotion.includes('prefersReducedMotion()') && listMotion.includes('motionHeld()'), '脚本动画同时检查减少动效与抑制窗口')
-const hold = read('src/renderer/src/features/sidebar/use-navigation-motion-hold.ts')
-assert.ok(hold.includes('holdMotion()') && hold.includes('sessionFile') && hold.includes('next.key !== prev.key') && hold.includes('next.route !== prev.route'), '切会话、切面板归属与换路由时触发抑制')
-assert.ok(read('src/renderer/src/features/sidebar/Sidebar.tsx').includes('useNavigationMotionHold()'), '常驻的侧栏挂上导航抑制')
 
 console.log('ui-motion: 通过（滞回与补偿、FLIP 位移、抑制窗口、出场保留、令牌与减少动效契约）')

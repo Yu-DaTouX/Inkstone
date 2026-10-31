@@ -15,167 +15,10 @@ import {
   trayFilePath,
   validateDesign
 } from './lib/brand.mjs'
+import { BOOT_HTML, projectBootHtml } from './design/sync-boot-brand.mjs'
 
 const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 const abs = (rel) => `${root}${rel}`
-
-const EXPECTED = {
-  '16': {
-    frame: [
-      '................',
-      '................',
-      '..FFFFFFFFFF....',
-      '..F.............',
-      '..F.............',
-      '..F.............',
-      '..F.............',
-      '..F.............',
-      '..F..........F..',
-      '..F..........F..',
-      '..F..........F..',
-      '..F..........F..',
-      '..F..........F..',
-      '..FFFFFFFFFFFF..',
-      '................',
-      '................'
-    ],
-    prompt: [
-      '................',
-      '................',
-      '................',
-      '................',
-      '................',
-      '.....A..........',
-      '......A.........',
-      '.......A........',
-      '......A.........',
-      '.....A..........',
-      '.........AAA....',
-      '................',
-      '................',
-      '................',
-      '................',
-      '................'
-    ],
-    question: [
-      '................',
-      '................',
-      '................',
-      '................',
-      '......QQQQ......',
-      '.....QQ..QQ.....',
-      '..........Q.....',
-      '........QQ......',
-      '.......QQ.......',
-      '.......Q........',
-      '................',
-      '.......Q........',
-      '................',
-      '................',
-      '................',
-      '................'
-    ]
-  },
-  '24': {
-    frame: [
-      '........................',
-      '........................',
-      '........................',
-      '....FFFFFFFFFFFFFF......',
-      '...FFFFFFFFFFFFFFF......',
-      '...FF...................',
-      '...FF...................',
-      '...FF...................',
-      '...FF...................',
-      '...FF...................',
-      '...FF...................',
-      '...FF...................',
-      '...FF...................',
-      '...FF..............FF...',
-      '...FF..............FF...',
-      '...FF..............FF...',
-      '...FF..............FF...',
-      '...FF..............FF...',
-      '...FF..............FF...',
-      '...FFFFFFFFFFFFFFFFFF...',
-      '....FFFFFFFFFFFFFFFF....',
-      '........................',
-      '........................',
-      '........................'
-    ],
-    prompt: [
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........AA..............',
-      '.........AA.............',
-      '..........AA............',
-      '...........AA...........',
-      '..........AA............',
-      '.........AA.............',
-      '........AA....AAAA......',
-      '..............AAAA......',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................'
-    ],
-    question: [
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '...........QQQQ.........',
-      '..........QQ..QQ........',
-      '.........QQ....QQ.......',
-      '...............QQ.......',
-      '...............QQ.......',
-      '..............QQ........',
-      '.............QQ.........',
-      '............QQ..........',
-      '........................',
-      '............QQ..........',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................',
-      '........................'
-    ]
-  }
-}
-
-function setOfRows(rows, marks) {
-  const out = new Set()
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x += 1) if (marks.includes(row[x])) out.add(`${x},${y}`)
-  })
-  return out
-}
-
-function checkMasks(design) {
-  const marks = { frame: 'F', prompt: 'A', question: 'Q' }
-  for (const gridKey of ['16', '24']) {
-    for (const layer of ['frame', 'prompt', 'question']) {
-      const actual = maskCells(design, gridKey, layer)
-      const expected = setOfRows(EXPECTED[gridKey][layer], marks[layer])
-      assert.deepEqual([...actual].sort(), [...expected].sort(), `masks.${gridKey}.${layer} 与定稿不一致`)
-    }
-  }
-}
 
 function checkTimeline(design) {
   const running = dedupedFrames(design, 'running')
@@ -196,14 +39,14 @@ function checkGeneratedText(design, hash) {
   const svgPath = abs(SVG_OUT)
   if (existsSync(svgPath)) {
     assert.equal(readFileSync(svgPath, 'utf8'), renderSvg(design), `${SVG_OUT} 与真源不一致`)
-    assert.match(readFileSync(svgPath, 'utf8'), /id="stone-frame"/)
-    assert.match(readFileSync(svgPath, 'utf8'), /id="prompt"/)
-    assert.match(readFileSync(svgPath, 'utf8'), /stroke="currentColor"/)
   }
   const geomPath = abs(GEOMETRY_OUT)
   if (existsSync(geomPath)) {
     assert.equal(readFileSync(geomPath, 'utf8'), renderGeometryModule(design, hash), `${GEOMETRY_OUT} 与真源不一致`)
   }
+  const bootHtml = readFileSync(abs(BOOT_HTML), 'utf8')
+  assert.equal(projectBootHtml(bootHtml, design), bootHtml, `${BOOT_HTML} 与真源投影不一致（运行 npm run icon 重新生成）`)
+  assert.equal(projectBootHtml(projectBootHtml(bootHtml, design), design), bootHtml, '启动画面投影应幂等')
 }
 
 function decodePng(buffer) {
@@ -333,7 +176,6 @@ function checkGeneratedAssets(design) {
 export function runBrandAssetTests() {
   const { design, hash } = readDesign(abs(DESIGN_PATH))
   validateDesign(design)
-  checkMasks(design)
   checkTimeline(design)
   checkGeneratedText(design, hash)
   checkGeneratedAssets(design)

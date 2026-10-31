@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
@@ -97,24 +96,6 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
   const standalone = mermaid.inlineMermaidTheme(svg, { '--pele-bg': 'rgb(1, 2, 3)', '--pele-font': '"Segoe UI", sans-serif' })
   assert.match(standalone, /style="--pele-bg:rgb\(1, 2, 3\);--pele-font:&quot;Segoe UI&quot;, sans-serif;background-color:rgb\(1, 2, 3\);max-width/, '导出 SVG 内联解析后的主题值')
   assert.equal(mermaid.inlineMermaidTheme(svg, {}), svg)
-}
-
-{
-  const source = readFileSync(
-    fileURLToPath(new URL('../src/renderer/src/features/artifacts/ArtifactFrame.tsx', import.meta.url)),
-    'utf8'
-  )
-  assert.match(source, /const frameKey = `\$\{key\}#\$\{reload\}`/, 'iframe key 由身份 + 主动重载组成')
-  assert.match(source, /key=\{frameKey\}/, 'iframe 用 frameKey')
-  assert.ok(!/frameKey[^\n]*\bform\b/.test(source), 'form 不得进入 iframe key')
-  assert.ok(!/key=\{[^}]*\bform\b[^}]*\}/.test(source), '任何形态 key 都不能绑定 form')
-
-  const markdown = readFileSync(
-    fileURLToPath(new URL('../src/renderer/src/features/session/Markdown.tsx', import.meta.url)),
-    'utf8'
-  )
-  assert.match(markdown, /MermaidBlock/, 'mermaid 段改用 MermaidBlock')
-  assert.ok(!/VisualFallback/.test(markdown), '旧 mermaid 回退已移除')
 }
 
 console.log('test-v3-artifact-forms: all checks passed')

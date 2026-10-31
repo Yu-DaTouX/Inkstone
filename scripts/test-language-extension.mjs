@@ -62,12 +62,4 @@ export async function runLanguageExtensionTests(ok, mod) {
   )
 
   ok(handlers.before_provider_request === undefined && handlers.message_end === undefined, '语言只写系统提示，不跟踪思考、不追加漂移提醒')
-  ok(!('languageReminder' in mod) && !('thinkingDrifted' in mod), '漂移检测已删除')
-
-  const { readFileSync } = await import('node:fs')
-  const mainSrc = readFileSync('src/main/index.ts', 'utf8')
-  ok(
-    !mainSrc.includes('推理（思考过程）与回复一律使用简体中文'),
-    '主进程里不再重复维护这句措辞（单一真源在扩展里）'
-  )
 }

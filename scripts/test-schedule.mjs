@@ -566,28 +566,6 @@ async function runScheduleSafetyWiringTests() {
     verify(fixture.sent.length === 0, '模型不可用时不发送')
     verify(fixture.runsHost.calls.some((call) => call[0] === 'fail'), '模型不可用后以同一 handle 收成失败')
 
-    const agent = await readFile('src/main/agent.ts', 'utf8')
-    verify(agent.includes("import type { ExecuteAdmissionPort } from './session-send-guard'"), 'agent.ts 引入了 ExecuteAdmissionPort')
-    verify((agent.match(/const admission = this\.claimExecutionAdmission\(\)/g) ?? []).length === 4, 'send / steer / followUp / runBash 四处同步 claim')
-    for (const name of ['sendAdmitted', 'steerAdmitted', 'followUpAdmitted', 'runBashAdmitted']) {
-      verify(agent.includes(`private async ${name}(`), `agent.ts 提供 ${name} 执行体`)
-    }
-    verify(agent.includes('if (!this.confirmExecutionAdmission()) throw new Error('), '真正入队前 confirm 生效')
-    verify(agent.includes('this.releaseExecutionAdmission()'), 'agent.ts 有 release 接线')
-    const stopBody = agent.slice(agent.indexOf('async stop(): Promise<void> {'))
-    const stop = stopBody.slice(0, stopBody.indexOf('\n  }'))
-    verify(stop.includes('this.stopping = true') && stop.indexOf('this.stopping = true') < stop.indexOf('this.releaseExecutionAdmission()'), 'stop() 归还执行入场 claim')
-    const genBody = agent.slice(agent.indexOf('setRunnerGeneration(generation: number): void {'))
-    const gen = genBody.slice(0, genBody.indexOf('\n  }'))
-    verify(gen.includes('runnerGeneration !== generation') && gen.includes('this.releaseExecutionAdmission()'), 'setRunnerGeneration 换代时归还 claim')
-
-    const index = await readFile('src/main/index.ts', 'utf8')
-    verify(index.includes('execution: runners?.executionPort(id)'), 'index.ts 按 runner 注入 executionPort(id)')
-    verify(index.includes('onRunnerOrigin: ({ sessionId, generation, origin })'), 'index.ts 接线 onRunnerOrigin')
-    verify(index.includes("origin: { kind: 'scheduled', scopeId: task.id }"), '定时 select 携带正式 scheduled 来源')
-    verify(index.includes('runsHost.openScheduled('), 'index.ts 生产链调用 openScheduled')
-    verify(index.includes('runsHost.failScheduled('), 'index.ts 生产链调用 failScheduled')
-
     console.log(`v3-schedule-safety-wiring: ${checks} passed`)
   } finally {
     await rm(work, { recursive: true, force: true })

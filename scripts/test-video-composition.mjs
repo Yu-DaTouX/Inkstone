@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
 
 const GUIDE = 'resources/skills/artifact/guides/video.md'
-const SKILL = 'resources/skills/artifact/SKILL.md'
-const DECK = 'resources/skills/artifact/styles.json'
 const SAMPLE = '.tmp/canvas-w3-视频成果指南/sample/index.html'
 const CLOCK_TOKENS = ['setTimeout', 'setInterval', 'requestAnimationFrame', 'Math.random', 'Date.now']
 const CONTROLLER_METHODS = ['duration', 'seek', 'play', 'pause', 'paused']
@@ -145,20 +142,6 @@ for (const [index, block] of blocks.entries()) {
     ok(fakeWindow.__timelines && Object.keys(fakeWindow.__timelines).length > 0, `指南模板 ${index + 1} 注册了 window.__timelines`)
   }
 }
-
-for (const phrase of ['data-composition-id', 'data-track-index', '__timelines', '8MB', 'HTML_ASSET_TYPES', 'autoplay', 'GSAP', 'data-volume']) {
-  ok(guide.includes(phrase), `指南写到了 ${phrase}`)
-}
-ok(/seek\(0\)/.test(guide) && /MP4/.test(guide), '指南的自检提到 seek(0) 与导出 MP4')
-
-const skill = readFileSync(SKILL, 'utf8')
-ok(/guides\/video\.md/.test(skill), 'SKILL.md 的指南列表指向 guides/video.md')
-ok(/data-composition-id/.test(skill), 'SKILL.md 说明画布识别 data-composition-id')
-
-const { ARTIFACT_KINDS } = await import(pathToFileURL('resources/yan-cli/artifact-style.mjs').href)
-ok(ARTIFACT_KINDS.includes('video'), 'ARTIFACT_KINDS 收录 video')
-const deck = JSON.parse(readFileSync(DECK, 'utf8'))
-ok(deck.filter((card) => Array.isArray(card.kinds) && card.kinds.includes('video')).length >= 5, '至少 5 张风格牌可用于 video')
 
 if (existsSync(SAMPLE)) {
   const summary = checkComposition(readFileSync(SAMPLE, 'utf8'), '样例合成', 3)

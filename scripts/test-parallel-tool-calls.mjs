@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import extension, { PARALLEL_REJECTED_RETRY_HINT, isParallelRejection } from '../resources/pi-extensions/parallel-tool-calls.js'
 
 const model = (extra = {}) => ({ api: 'openai-responses', provider: 'commandcode', baseUrl: 'https://api.commandcode.ai/provider/v1', id: 'deepseek/deepseek-v4.1-flash', ...extra })
@@ -52,8 +51,5 @@ const ok = { role: 'assistant', stopReason: 'toolUse', content: [] }
 assert.equal(isParallelRejection({ role: 'assistant', stopReason: 'error', errorMessage: '422 {"detail":[{"loc":["body","parallel_tool_calls"],"msg":"Extra inputs are not permitted"}]}' }), true)
 assert.equal(isParallelRejection({ role: 'assistant', stopReason: 'error', errorMessage: '400 invalid_request_error: Unrecognized request argument supplied' }), true)
 assert.equal(isParallelRejection({ role: 'assistant', stopReason: 'error', errorMessage: '401 invalid api key' }), false)
-
-const host = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8')
-assert.match(host, /PROVIDER_EXTENSION_FILES = \[[^\]]*'parallel-tool-calls\.js'/, '主会话与子代理共用的供应商扩展列表加载它')
 
 console.log('parallel tool calls ok')

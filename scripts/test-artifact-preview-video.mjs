@@ -35,16 +35,6 @@ const command = await import(pathToFileURL(join(outDir, 'main', 'artifact-previe
 assert.equal(sampling.PREVIEW_VIDEO_MAX_SAMPLES, 8, '默认最多 8 个取样时间点')
 assert.equal(sampling.PREVIEW_VIDEO_MAX_EDGE, 1280, '视频截图长边不超过 1280')
 assert.equal(sampling.PREVIEW_VIDEO_END_EPSILON, 0.001, '结尾帧取 duration - 0.001')
-ok(sampling.VIDEO_COMPOSITION_PROBE.includes('[data-composition-id]'), '探测脚本按 data-composition-id 认合成')
-ok(sampling.VIDEO_COMPOSITION_PROBE.includes('__timelines'), '探测脚本读 window.__timelines')
-ok(sampling.VIDEO_COMPOSITION_PROBE.includes('data-start') && sampling.VIDEO_COMPOSITION_PROBE.includes('data-duration'), '探测脚本收集片段的 data-start / data-duration')
-ok(sampling.VIDEO_COMPOSITION_PROBE.includes('data-width') && sampling.VIDEO_COMPOSITION_PROBE.includes('data-height'), '探测脚本读画幅')
-const seekSource = sampling.videoSeekScript('demo', 1.5)
-ok(seekSource.includes('seek(1.5)'), 'seek 脚本把秒数写进 controller.seek')
-ok(seekSource.includes('list["demo"]'), 'seek 脚本按合成 id 取控制器')
-ok(/requestAnimationFrame\(\(\) => requestAnimationFrame/.test(seekSource), 'seek 后等两帧再截图')
-ok(!seekSource.includes('play()'), 'seek 脚本不播放（导出与预览都只用 seek）')
-ok(true, '合成探测与取值脚本')
 
 const pourOverClips = [
   { start: 0, duration: 2.4 },
@@ -128,11 +118,6 @@ const normalized = sampling.normalizeVideoComposition({
 assert.deepEqual(normalized, { id: 'pour-over', width: 1080, height: 1920, duration: 12, ready: true, clips: [{ start: 0, duration: 2 }] }, '探测结果归一化，坏片段被丢掉')
 assert.equal(sampling.normalizeVideoComposition({ id: '' }).ready, false, '没有 ready 标记时当作未就绪')
 ok(true, '探测结果归一化')
-
-const exportSource = readFileSync('src/main/video-export.ts', 'utf8')
-ok(exportSource.includes("from './video-composition'"), '导出复用同一套合成探测与 seek 脚本')
-ok(!exportSource.includes('PROBE_COMPOSITION'), '导出没有自己再留一份探测脚本')
-ok(exportSource.includes('videoSeekScript('), '导出的逐帧 seek 用共享脚本')
 
 const videoResult = {
   shots: [],

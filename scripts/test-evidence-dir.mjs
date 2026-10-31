@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { evidenceDir, localDay, outputDir } from './lib/evidence-dir.mjs'
 
@@ -19,11 +18,5 @@ const absolute = resolve('elsewhere', 'out')
 assert.equal(outputDir(['--report', '--out', absolute], root, 'x', day), absolute)
 assert.throws(() => outputDir(['--out'], root, 'x', day))
 assert.throws(() => outputDir(['--out', '--report'], root, 'x', day))
-
-for (const file of ['scripts/audit/workspace.mjs', 'scripts/design/showcase/render.mjs', 'scripts/measure-memory.mjs']) {
-  const source = readFileSync(file, 'utf8')
-  assert.ok(source.includes('evidence-dir.mjs'), `${file} 用 evidence 目录`)
-  assert.ok(!/workspace-audits|showcase-2026-09-29|memory-audit-20261012/.test(source), `${file} 不再写 .local-docs 根下的固定子目录`)
-}
 
 console.log('test-evidence-dir: ok')

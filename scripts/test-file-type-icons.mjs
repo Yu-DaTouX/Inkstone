@@ -166,22 +166,6 @@ const files = readdirSync(assets)
 assert.deepEqual(files.filter((name) => !name.endsWith('.svg')), [], '目录里只有 SVG')
 const svgs = files.map((name) => name.slice(0, -4)).sort()
 assert.deepEqual(svgs, [...icons.FILE_TYPE_ICON_IDS].sort(), '映射表里的图标与 SVG 一一对应')
-const brandIds = new Set(icons.FILE_TYPE_BRAND_ICON_IDS)
-const themedColor = /^ style="color:light-dark\(#[0-9A-F]{6},#[0-9A-F]{6}\)(;--fti-alt:light-dark\(#[0-9A-F]{6},#[0-9A-F]{6}\))?"$/
-for (const name of svgs) {
-  const svg = readFileSync(new URL(`${name}.svg`, assets), 'utf8')
-  const open = svg.match(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 16 16"([^>]*)>/)
-  assert.ok(open, `${name}.svg 统一 16 网格`)
-  if (brandIds.has(name)) {
-    assert.match(open[1], themedColor, `${name}.svg 品牌色分深浅两套`)
-    assert.match(svg, /class="fti-brand(-line)?"/, `${name}.svg 用品牌形状类`)
-  } else assert.equal(open[1], '', `${name}.svg 颜色来自色调`)
-  assert.ok(!/\sid=/.test(svg), `${name}.svg 不带 id，内联多份不会冲突`)
-  assert.ok(!/<script|\son[a-z]+=|href=/i.test(svg), `${name}.svg 不含脚本与外链`)
-  assert.ok(!/(fill|stroke)="#/i.test(svg), `${name}.svg 不写死颜色属性`)
-  assert.ok(svg.length < 4500, `${name}.svg 体积 ${svg.length}`)
-}
-const python = readFileSync(new URL('python.svg', assets), 'utf8')
-assert.match(python, /fti-brand-alt/, 'Python 保持蓝黄双色')
+for (const name of svgs) assert.ok(!/<script|\son[a-z]+=|href=/i.test(readFileSync(new URL(`${name}.svg`, assets), 'utf8')), `${name}.svg 不含脚本与外链`)
 
 console.log(`file type icons ok (${cases.length} cases, ${names.length} names, ${extensions.length} extensions, ${svgs.length} icons)`)

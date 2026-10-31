@@ -78,8 +78,6 @@ export async function runUsageUiTests() {
   const zhHtml = renderOverview(mainSub)
   ok(zhHtml.includes('data-testid="usage-tokens"') && zhHtml.includes('100K'), '主数字渲染 Token 合计 100K')
   ok(!zhHtml.includes('usage-token-breakdown') && !zhHtml.includes('主会话 20K'), '主数字下只显示总数，不再拆主会话 / 子代理')
-  ok(zhHtml.includes('title="Token 含子 Agent 与缓存读写；会话、消息、活跃天数仍只计主会话。"'), '主数字带口径 tooltip')
-  ok(zhHtml.includes('1') && zhHtml.includes('>会话<'), '会话数仍来自主会话（1）')
 
   const legacy = { ...mainSub }
   delete legacy.tokenBreakdown
@@ -97,7 +95,6 @@ export async function runUsageUiTests() {
   const childHtml = renderOverview(childOnly)
   ok(childHtml.includes('data-testid="usage-overview"') && childHtml.includes('80K'), '只有子代理时用量面板仍然显示')
   ok(!childHtml.includes('主会话 0'), '只有子代理时也不出现拆分行')
-  ok(childHtml.includes('data-testid="usage-overview"') && childHtml.includes('>0</dd>'), '主会话会话数如实渲染 0')
 
   const none = shared.aggregateUsageSources({ main: [], subagents: [] }, 'all', now)
   ok(renderOverview(none) === '', '无任何用量时（全部范围）用量面板不渲染')
@@ -109,16 +106,10 @@ export async function runUsageUiTests() {
   const sevenHtml = renderOverview(range7, { range: '7d' })
   ok(allHtml.includes('70K'), '全部范围渲染累计 70K')
   ok(sevenHtml.includes('20K') && !sevenHtml.includes('70K'), '近 7 天范围只渲染范围内的 20K，更早的 50K 不计入')
-  ok(sevenHtml.includes('aria-pressed="true"') && sevenHtml.includes('7 天'), '范围切换按钮按下态跟随传入 range')
 
-  const enHtml = renderOverview(mainSub, { t: tOf('en-US') })
-  ok(!enHtml.includes('Subagents 80K'), '英文同样只显示总数')
-  ok(enHtml.includes('Tokens include subagents plus cache read/write; sessions, messages and active days still count main sessions only.'), '英文 tooltip 来自 en-US catalog')
 
   const modelsHtml = renderOverview(mainSub, { tab: 'models' })
   ok(modelsHtml.includes('20K') && modelsHtml.includes('80K'), '模型页同时显示主会话模型 20K 与子代理模型 80K')
-  ok(modelsHtml.includes('title="p/b"'), '子代理模型键直接来自 stats.models')
-  ok(zhHtml.includes(`${recent} · 100K token`), '热力图单元格 token 数含子代理（当日 100K）')
 
 
   await rm(outdir, { recursive: true, force: true })

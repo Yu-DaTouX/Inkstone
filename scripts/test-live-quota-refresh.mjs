@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
@@ -59,14 +59,6 @@ try {
   await failed
   assert.equal(quota.useLiveQuota.getState().entries['openai-codex'].snapshot.windows[0].used, 42)
   assert.equal(quota.useLiveQuota.getState().entries['openai-codex'].snapshot.staleError, undefined, '旧请求失败也不能污染换号后的读数')
-
-  const overview = await readFile('src/renderer/src/features/workbench/OverviewPane.tsx', 'utf8')
-  const pane = await readFile('src/renderer/src/features/workbench/QuotaPane.tsx', 'utf8')
-  assert.ok(overview.includes('refreshLive(provider, runEnded > 0 || authProviders.length > 0)'), '回合结束接线强制刷新')
-  assert.ok(overview.includes("document.addEventListener('visibilitychange', onFocus)"))
-  assert.ok(pane.includes('publishAccountQuotaReport(next)'))
-  assert.ok(pane.includes('}, LIVE_QUOTA_POLL_MS)'))
-  assert.ok(!pane.includes('AUTO_REFRESH_MS = 5 * 60_000'))
   console.log('live-quota-refresh: passed; synthetic IPC only')
 } finally {
   Date.now = originalNow

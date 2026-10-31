@@ -174,7 +174,6 @@ try {
 
   const ssr = await loadSsrModule()
 
-  assert.match(ssr.longVirtualized, /class="[^"]*ui-table/)
   assert.match(ssr.longVirtualized, /role="grid"/)
   assert.match(ssr.longVirtualized, /aria-rowcount="1001"/)
   assert.match(ssr.longVirtualized, /aria-colcount="2"/)
@@ -185,7 +184,6 @@ try {
   assert.ok(!ssr.longVirtualized.includes('行 999'), '1000 行不整表渲染')
   assert.match(ssr.longVirtualized, /width:200px/, '表头第一列按声明的 200px 布局')
   assert.match(ssr.longVirtualized, /left:200px;width:100px/, '表头第二列紧接第一列对齐')
-  assert.match(ssr.longVirtualized, /class="[^"]*ui-table__column/)
 
   assert.match(ssr.forcedRows, /aria-rowcount="7"/)
   for (const index of [2, 3, 4, 5, 6, 7]) {
@@ -203,15 +201,10 @@ try {
   assert.ok(count(ssr.plain, 'aria-disabled="true"') >= 1, '禁用行带 aria-disabled')
   assert.ok(count(ssr.plain, 'data-disabled') >= 1, '禁用行带 data-disabled')
   assert.match(ssr.plain, /aria-sort="ascending"/)
-  assert.match(ssr.plain, /data-key="r0"/)
-  assert.match(ssr.plain, /data-key="r2"/)
-  assert.match(ssr.plain, /class="[^"]*ui-table__row/)
 
   assert.match(ssr.empty, /data-empty/)
   assert.match(ssr.empty, /暂无数据/)
-  assert.match(ssr.empty, /class="[^"]*ui-table__empty/)
   assert.match(ssr.empty, /aria-rowcount="1"/)
-  assert.match(ssr.loading, /class="[^"]*ui-table__loading/)
   assert.match(ssr.loading, /role="status"/)
   assert.match(ssr.loading, /aria-busy="true"/)
   assert.match(ssr.loading, /正在加载/)

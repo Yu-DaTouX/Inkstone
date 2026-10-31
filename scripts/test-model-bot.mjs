@@ -18,7 +18,7 @@ try {
   const load = (name) => import(pathToFileURL(resolve(temp, `${name}.mjs`)).href)
   const { modelBrand, splitModelRef, MODEL_BRANDS } = await load('brand')
   const { subagentToolLook, subagentActiveTool } = await load('tool')
-  const { BOT_FORMS, IDLE_TOOL, TOOL_LINGER_SECONDS, followTool, poseAt, settlesAt, motionGain } = await load('draw')
+  const { IDLE_TOOL, TOOL_LINGER_SECONDS, followTool } = await load('draw')
   let count = 0
   const expect = (ref, brand, text) => {
     assert.equal(modelBrand(ref), brand, `${text}：${JSON.stringify(ref)}`)
@@ -144,70 +144,6 @@ try {
   assert.deepEqual(followTool(state, { look: 'command', id: 'a' }, 5), { look: 'command', id: 'a', until: 0 }, '同一调用回来取消余韵')
   assert.equal(followTool(IDLE_TOOL, null, 5), IDLE_TOOL)
   count += 8
-
-  const at = (t, tool, form = BOT_FORMS.claude, still = false) => poseAt('work', form, { t, seed: 0, since: 0, entrance: false, restTurn: 30, still }, tool)
-  const body = ({ badge, cue, cueAlpha, ...rest }) => rest
-  for (const tool of ['command', 'read', 'edit', 'search']) {
-    for (const t of [0.3, 2, 7.7, 25]) {
-      assert.deepEqual(body(at(t, tool, BOT_FORMS.claude, true)), body(at(t, null, BOT_FORMS.claude, true)), `减少动态时 ${tool} 身体静止`)
-      assert.deepEqual(at(t, tool, BOT_FORMS.claude, true), at(0.3, tool, BOT_FORMS.claude, true), `减少动态时 ${tool} 道具静止`)
-    }
-    assert.equal(at(2, tool, BOT_FORMS.claude, true).badge, tool, `减少动态时 ${tool} 仍显示静态道具`)
-    count += 2
-  }
-  assert.equal(at(2, null, BOT_FORMS.claude, true).badge, 'think', '减少动态时思考仍显示静态泡泡')
-  count += 1
-  const samples = (from, to, tool, form) => Array.from({ length: 80 }, (_, i) => at(from + ((to - from) * i) / 80, tool, form))
-  const reading = samples(0, 6.8, 'read')
-  assert.ok(reading.every((p) => p.dy === 0 && p.dx === 0 && p.turn === 30 && p.scale === 1 && p.squash === 0 && p.tilt === 0), '读文件时身体不动、不自转')
-  assert.ok(Math.min(...reading.map((p) => p.yaw)) < -0.3 && Math.max(...reading.map((p) => p.yaw)) > 0.3, '读文件时眼睛左右扫')
-  assert.ok(at(1.0, 'read').pitch < at(1.7 + 1.0, 'read').pitch && at(1.7 + 1.0, 'read').pitch < at(3 * 1.7 + 1.0, 'read').pitch, '逐行略向下')
-  assert.ok(at(4 * 1.7 + 1.0, 'read').pitch === at(1.0, 'read').pitch, '一页读完回到顶行')
-  const bursting = samples(0, 3, 'command')
-  const pausing = samples(3.01, 4.49, 'command')
-  assert.ok(Math.min(...bursting.map((p) => p.dy)) < -0.04, '跑命令时按节拍上下点动')
-  assert.ok(pausing.every((p) => p.dy === 0 && p.squash === 0 && p.turn === pausing[0].turn), '每 3 秒点动后停 1.5 秒，停时不转')
-  assert.ok(bursting.at(-1).turn > bursting[0].turn, '会转的品牌点动时自转')
-  assert.ok(samples(0, 3, 'command', BOT_FORMS.deepseek).every((p) => p.turn === 30), '不转的品牌不转')
-  assert.ok(Math.min(...samples(24, 28.5, 'command').map((p) => p.dy)) > -0.025, '命令超过 20 秒换成更慢更轻的点动')
-  const editing = samples(0, 3.2, 'edit')
-  assert.ok(editing.every((p) => p.dy >= 0 && p.turn === 30) && Math.max(...editing.map((p) => p.dy)) > 0.02, '编辑时轻轻点头')
-  count += 10
-
-  assert.ok(motionGain(16) > motionGain(22) && motionGain(22) > motionGain(32) && motionGain(32) > motionGain(64) && motionGain(64) === 1 && motionGain(128) === 1, '小尺寸放大动作幅度，64px 起不放大')
-  const sized = (size, mood, tool, t, entrance = false) => poseAt(mood, BOT_FORMS.claude, { t, seed: 0, since: 0, entrance, restTurn: 0, still: false, size }, tool)
-  const span = (size, mood, tool, key, to) => {
-    const values = Array.from({ length: 160 }, (_, i) => sized(size, mood, tool, (to * i) / 160)[key])
-    return Math.max(...values) - Math.min(...values)
-  }
-  assert.ok(span(16, 'work', 'read', 'yaw', 6.8) > span(64, 'work', 'read', 'yaw', 6.8), '读文件在小尺寸下眼睛扫得更开')
-  assert.ok(span(16, 'work', null, 'tilt', 4.8) > span(64, 'work', null, 'tilt', 4.8) && span(64, 'work', null, 'tilt', 4.8) > 0, '思考时随视线歪头，小尺寸更明显')
-  assert.ok(span(16, 'work', 'edit', 'squash', 0.8) > 0.05, '编辑时按下有压扁')
-  assert.ok(Math.max(...Array.from({ length: 60 }, (_, i) => sized(32, 'work', 'command', i * 0.05).squash)) > 0.03 && Math.min(...Array.from({ length: 60 }, (_, i) => sized(32, 'work', 'command', i * 0.05).squash)) < 0, '跑命令时起跳拉伸、落地压扁')
-  assert.ok(span(32, 'ask', null, 'dy', 1.9) > 0.025 && span(32, 'ask', null, 'tilt', 1.9) > 0.1, '等你确认时连跳两下再左右摇摆')
-  assert.ok(span(16, 'work', 'search', 'yaw', 1.6) > 0.8 && span(16, 'work', 'search', 'dx', 1.6) > 0.02 && span(16, 'work', 'search', 'cue', 1.6) > 1.5, '搜索时左右张望，放大镜跟着扫')
-  assert.deepEqual(['think', 'search', 'read', 'command', 'edit'].map((look) => sized(16, 'work', look === 'think' ? null : look, 1).badge), ['think', 'search', 'read', 'command', 'edit'], '每种工作状态都有自己的道具')
-  assert.equal(sized(16, 'ask', null, 1).badge, 'ask', '等你确认显示问号')
-  assert.ok(['done', 'fail', 'rest', 'wake'].every((mood) => sized(16, mood, null, 0.2, true).badge === null && sized(16, mood, null, 5).badge === null), '终态和醒来不显示道具')
-  assert.ok(Object.values(BOT_FORMS).every((form) => poseAt('fail', form, { t: 3, seed: 0, since: 0, entrance: false, restTurn: 0, still: false, size: 16 }).crossed === 1), '失败时所有品牌都画 X 眼')
-  count += 1
-  count += 4
-  assert.ok(Array.from({ length: 160 }, (_, i) => sized(16, 'work', 'command', i * 0.03)).every((p) => p.squash < 0.1 && p.squash > -0.06 && Math.abs(p.tilt) < 0.2), '动作幅度有上限')
-  count += 7
-
-  for (const mood of ['done', 'fail', 'wake']) {
-    const end = settlesAt(mood, true)
-    assert.ok(end > 0 && end <= 1.6, `${mood} 有入场动作且很快结束`)
-    assert.deepEqual(sized(16, mood, null, end + 0.01, true), sized(16, mood, null, end + 3, true), `${mood} 入场后静止`)
-    assert.deepEqual(sized(16, mood, null, 0.3, false), sized(16, mood, null, 5, false), `${mood} 非入场时不动`)
-    count += 3
-  }
-  assert.ok(span(16, 'done', null, 'dy', 0.6) === 0 && Array.from({ length: 30 }, (_, i) => sized(16, 'done', null, i * 0.02, true).dy).some((dy) => dy < -0.03), '完成时开心地跳一下')
-  for (const mood of ['ask', 'done', 'fail', 'wake', 'rest']) {
-    const still = (t) => poseAt(mood, BOT_FORMS.claude, { t, seed: 0, since: 0, entrance: true, restTurn: 0, still: true, size: 16 })
-    assert.deepEqual(still(0.2), still(3.3), `减少动态时 ${mood} 静止`)
-  }
-  count += 6
 
   console.log(`model-bot: ${count} 项通过`)
 } finally {

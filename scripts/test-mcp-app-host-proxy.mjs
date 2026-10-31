@@ -1470,24 +1470,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
   ok(log.includes('legacy.disconnect:A') && !log.some((line) => line.startsWith('legacy.listToolsCached')), '登记 probe 不经旧 client 连接')
 }
 
-const read = (path) => readFile(resolve(path), 'utf8')
-const agentSrc = await read('src/main/agent.ts')
-ok(agentSrc.includes("from './mcp/settings-safe-access'"), 'agent.ts 导入 settings-safe-access helper')
-for (const symbol of ['reconcileLegacyForManaged(', 'verifyManagedServer(', 'disconnectManagedServer(', 'managedRuntimeFacts(']) {
-  ok(agentSrc.includes(symbol), `agent.ts 使用 helper：${symbol}`)
-}
-ok(agentSrc.includes('getLegacyMcpHolderSnapshot('), 'agent.ts 提供 getLegacyMcpHolderSnapshot 只读事实 getter')
-
-const preloadSrc = await read('src/preload/index.ts')
-ok(preloadSrc.includes("invoke<McpAppOwnershipResponse>('yan:mcpApp:ownership')"), 'preload ownership 按对象契约声明')
-
-const sharedSrc = await read('src/shared/mcp-app-switch.ts')
-ok(sharedSrc.includes('interface McpAppOwnershipResponse'), 'shared 定义 McpAppOwnershipResponse')
-ok(sharedSrc.includes('ownership(): Promise<McpAppOwnershipResponse>'), 'shared 桥 ownership 返回对象契约')
-
-const rendererComponent = await read('src/renderer/src/features/settings/capabilities/McpAppOwnership.tsx')
-ok(rendererComponent.includes('parseMcpAppOwnershipResponse('), 'McpAppOwnership 组件用解析 helper 解包')
-
 await rm(root, { recursive: true, force: true })
 console.log(`\n${checks} 项通过（mcp-app-settings-boundary）`)
 }
