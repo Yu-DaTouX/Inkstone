@@ -51,7 +51,13 @@
   .v3-qrow-a { flex: 1 1 auto; min-width: 2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg3); }
   .v3-qrow-a[data-answered] { color: var(--fg); }
   .v3-qrow[data-state='failed'] .ui-collapsible__icon { color: var(--fail-t); }
-  .v3-qrow-time { font-size: var(--t-footnote); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+  .v3-qrow[data-open] > .v3-step-head .ui-collapsible__label { white-space: normal; }
+  .v3-qrow[data-open] > .v3-step-head .ui-collapsible__trigger { align-items: flex-start; }
+  .v3-qrow[data-open] > .v3-step-head :is(.ui-collapsible__icon, .ui-chevron) { height: var(--t-body-lh); align-items: center; }
+  .v3-qrow[data-open] .v3-qrow-line { align-items: baseline; }
+  .v3-qrow[data-open] .v3-qrow-q { max-width: none; color: var(--fg2); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .v3-qrow[data-open] .v3-qrow-a { display: none; }
+  .v3-qrow-time {font-size: var(--t-footnote); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
   .v3-qrow > .v3-step-head:is(:hover, :focus-within) .v3-qrow-time { opacity: 1; }
 
   .v3-qrow-detail { display: flex; flex-direction: column; gap: var(--s-10); min-width: 0; margin: var(--s-2) 0 var(--s-6); padding-left: calc(13px + var(--s-6)); color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); }

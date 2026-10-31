@@ -35,7 +35,7 @@ function QuestionRow({ call, testId }: { call: UIToolCall; testId: string }): JS
   const preview = answered ? answerPreview(model) : tt(STATE_TEXT[model.state])
   const at = model.state === 'pending' ? undefined : call.endedAt ?? call.startedAt
   return (
-    <Collapsible className="v3-step v3-qrow" data-state={model.state} data-testid={testId} isExpanded={open} onExpandedChange={setOpen}>
+    <Collapsible className="v3-step v3-qrow" data-state={model.state} data-open={open || undefined} data-testid={testId} isExpanded={open} onExpandedChange={setOpen}>
       <CollapsibleHeader
         className="v3-step-head"
         size="compact"
@@ -44,7 +44,7 @@ function QuestionRow({ call, testId }: { call: UIToolCall; testId: string }): JS
         accessory={at ? <CardTime at={at} className="v3-qrow-time" /> : undefined}
       >
         <span className="v3-step-line v3-qrow-line" title={first}>
-          <span className="v3-qrow-q">{first.replace(/\s+/g, ' ')}</span>
+          <span className="v3-qrow-q">{open ? first : first.replace(/\s+/g, ' ')}</span>
           {more > 0 ? <span className="v3-qrow-more">{tt('questionMore', { n: more })}</span> : null}
           {preview ? <span className="v3-qrow-a" data-answered={answered || undefined}>{preview}</span> : null}
         </span>
@@ -55,7 +55,7 @@ function QuestionRow({ call, testId }: { call: UIToolCall; testId: string }): JS
             {model.items.map((item, index) => (
               <section key={index} className="v3-qrow-item" aria-label={item.question || tt('questionLabel')}>
                 {item.header ? <div className="v3-qrow-header">{item.header}</div> : null}
-                <p className="v3-qrow-question">{item.question || tt('questionLabel')}</p>
+                {index > 0 ? <p className="v3-qrow-question">{item.question || tt('questionLabel')}</p> : null}
                 {item.options.length ? (
                   <ul className="v3-qrow-options">
                     {item.options.map((option) => (
