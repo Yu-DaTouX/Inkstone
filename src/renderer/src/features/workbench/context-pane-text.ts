@@ -24,6 +24,9 @@ export interface ContextPaneText {
   compactBusy: string
   compactFailed: string
   openSettings: string
+  windowTitle: string
+  used: string
+  left: (remaining: string) => string
 }
 
 const ZH: ContextPaneText = {
@@ -55,7 +58,10 @@ const ZH: ContextPaneText = {
   compacting: '正在压缩…',
   compactBusy: '会话运行中，结束后再压缩。',
   compactFailed: '压缩失败',
-  openSettings: '打开裁剪与压缩设置'
+  openSettings: '打开裁剪与压缩设置',
+  windowTitle: '上下文窗口',
+  used: '已用',
+  left: (remaining) => `剩余 ${remaining}`
 }
 
 const EN: ContextPaneText = {
@@ -87,7 +93,10 @@ const EN: ContextPaneText = {
   compacting: 'Compacting…',
   compactBusy: 'The session is running; compact after it finishes.',
   compactFailed: 'Compaction failed',
-  openSettings: 'Open trim and compaction settings'
+  openSettings: 'Open trim and compaction settings',
+  windowTitle: 'Context window',
+  used: 'Used',
+  left: (remaining) => `${remaining} left`
 }
 
 export function contextPaneText(lang: Lang): ContextPaneText {

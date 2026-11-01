@@ -4,7 +4,7 @@
   .v3-rail {
     position: absolute;
     top: var(--s-8);
-    bottom: calc(var(--s-8) + var(--composer-h, 0px));
+    bottom: calc(var(--s-8) + 96px);
     left: var(--s-8);
     z-index: 3;
     width: 28px;

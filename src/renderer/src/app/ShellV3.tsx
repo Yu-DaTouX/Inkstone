@@ -1,6 +1,7 @@
 import '../design/index.css'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { FocusScope } from 'react-aria'
+import { flushSync } from 'react-dom'
 import { showToast, Splitter, useScrollbarReveal } from '../ui'
 import { useTranscriptViews } from '../state/transcript-view'
 import { transcriptViewText } from '../features/session/transcript-view-text'
@@ -121,12 +122,18 @@ export default function ShellV3(): ReactElement {
   useLayoutEffect(() => {
     const body = bodyRef.current
     if (!body) return
-    const updateSize = (): void => {
-      setBodyWidth(body.clientWidth)
+    const updateOffset = (): void => {
       body.style.setProperty('--sidebar-offset', `${Math.max(0, body.getBoundingClientRect().left)}px`)
     }
+    const updateSize = (): void => {
+      setBodyWidth(body.clientWidth)
+      updateOffset()
+    }
     const measure = createFrameBatch<void>(updateSize)
-    const observer = new ResizeObserver(() => measure.schedule())
+    const observer = new ResizeObserver(() => {
+      updateOffset()
+      measure.schedule()
+    })
     observer.observe(body)
     updateSize()
     return () => {
@@ -305,14 +312,10 @@ export default function ShellV3(): ReactElement {
     if (route.name !== 'chat') return
     const chat = chatRef.current
     if (!chat) return
-    const measure = createFrameBatch<void>(() => setMeasuredChatWidth(chat.clientWidth))
     setMeasuredChatWidth(chat.clientWidth)
-    const observer = new ResizeObserver(() => measure.schedule())
+    const observer = new ResizeObserver(() => flushSync(() => setMeasuredChatWidth(chat.clientWidth)))
     observer.observe(chat)
-    return () => {
-      observer.disconnect()
-      measure.cancel()
-    }
+    return () => observer.disconnect()
   }, [route.name])
   const chatWidth = route.name === 'chat' ? measuredChatWidth : bodyWidth
   const toastInset = panelOpen && panelMode === 'inline' && !panelMaximized ? Math.max(0, Math.min(panelDockWidth, clampPanelWidth(panelStoredWidth, panelRoomWidth))) : 0

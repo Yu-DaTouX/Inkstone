@@ -37,7 +37,7 @@
     border-top: 1px solid var(--line);
   }
 
-  .v3-split-col[data-split-inactive] {
+  .v3-split-col[data-split-inactive] > :not(.v3-split-head) {
     filter: opacity(0.9) saturate(0.9);
   }
 
@@ -64,10 +64,6 @@
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
     color: var(--fg3);
-  }
-
-  .v3-split-col[data-live='1'] .v3-split-title {
-    color: var(--fg);
   }
 
   .v3-split-head {
@@ -109,7 +105,7 @@
     font-size: var(--t-heading);
     line-height: var(--t-heading-lh);
     font-weight: var(--t-heading-w);
-    color: var(--fg2);
+    color: var(--fg);
   }
 
   .v3-split-proj {

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type JSX, type RefCallback } from 'react'
+import { useCallback, useLayoutEffect, useState, type JSX, type RefCallback } from 'react'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
 import { Markdown } from './Markdown'
@@ -14,18 +14,19 @@ import type { TranscriptView } from './transcript-view-model'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 const STEADY_HOLD_MS = 1200
+const USER_TOGGLE_MS = 500
 
 function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; minHeight: number | undefined } {
   const [node, setNode] = useState<HTMLDivElement | null>(null)
   const [minHeight, setMinHeight] = useState(0)
   useLayoutEffect(() => {
-    if (!active || !node) {
-      setMinHeight(0)
-      return undefined
-    }
+    setMinHeight(0)
+    if (!active || !node) return undefined
     let width = node.getBoundingClientRect().width
     let release = 0
+    let suspendedUntil = 0
     const observer = new ResizeObserver(() => {
+      if (performance.now() < suspendedUntil) return
       const box = node.getBoundingClientRect()
       if (Math.abs(box.width - width) > 0.5) {
         width = box.width
@@ -36,13 +37,26 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
       window.clearTimeout(release)
       release = window.setTimeout(() => setMinHeight(0), STEADY_HOLD_MS)
     })
+    const releaseNow = (): void => {
+      window.clearTimeout(release)
+      suspendedUntil = performance.now() + USER_TOGGLE_MS
+      setMinHeight(0)
+    }
     observer.observe(node)
+    node.addEventListener('click', releaseNow, true)
+    node.addEventListener('keydown', releaseNow, true)
     return () => {
       observer.disconnect()
+      node.removeEventListener('click', releaseNow, true)
+      node.removeEventListener('keydown', releaseNow, true)
       window.clearTimeout(release)
     }
   }, [active, node])
-  return { ref: setNode, minHeight: active && minHeight > 0 ? minHeight : undefined }
+  const ref = useCallback<RefCallback<HTMLDivElement>>((element) => {
+    setNode(element)
+    return () => setNode((current) => (current === element ? null : current))
+  }, [])
+  return { ref, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
 export function TurnProcess({ process, live, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false }: {

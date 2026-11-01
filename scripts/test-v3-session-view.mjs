@@ -652,7 +652,7 @@ async function main() {
     ok(byTypeName(live, 'TurnMeta').length === 0, '运行中的回合不渲染元信息行（保持现状）')
   }
 
-  group('进度叙述：运行中照常露出，结束后收进过程摘要，最终答复始终露出')
+  group('回复段：运行中与结束后都露出，不折进过程摘要')
   {
     const narrated = () => [
       msg('u1', 'user', '去撤下来', { timestamp: 1 }),
@@ -664,9 +664,9 @@ async function main() {
     const turn = assistantOf(narrated())
     const shownTexts = (tree) => byTypeName(tree, 'Markdown').map((el) => el.props.text)
     const done = renderTurn(turn, { sessionId: 'sess-a', streaming: false, tail: true })
-    ok(shownTexts(done).join('|') === '已从远端撤下。', '结束后：只露出最终答复', shownTexts(done))
+    ok(shownTexts(done).join('|') === '远端已更新。还有一处残留。|已从远端撤下。', '结束后：前面的回复段与最终答复都露出', shownTexts(done))
     const proc = byTypeName(done, 'TurnProcess')[0]
-    ok(!!proc && proc.props.process.some((segment) => segment.commentary.some((part) => part.text.includes('还有一处残留'))), '结束后：叙述进入过程摘要', proc?.props.process.map((segment) => segment.id))
+    ok(!!proc && !proc.props.process.some((segment) => segment.commentary.some((part) => part.text.includes('还有一处残留'))), '结束后：回复段不进过程摘要', proc?.props.process.map((segment) => segment.id))
     const running = renderTurn({ ...turn, streaming: true }, { sessionId: 'sess-a', streaming: true, tail: true })
     ok(shownTexts(running).includes('远端已更新。还有一处残留。'), '运行中：叙述照常露出', shownTexts(running))
   }

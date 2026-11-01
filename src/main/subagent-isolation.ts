@@ -276,11 +276,9 @@ export async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<Wo
   }
   if (errors.length) return { ok: false, errors }
   if (workspace.containerPath) {
-    try {
-      await rm(workspace.containerPath, { recursive: true, force: true })
-    } catch (error) {
-      errors.push(`删除临时目录失败（${workspace.containerPath}）：${error instanceof Error ? error.message : String(error)}`)
-    }
+    await rm(workspace.containerPath, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }).catch((error) => {
+      console.warn(`[subagent] 临时目录暂时删不掉，留给系统清理（${workspace.containerPath}）：${error instanceof Error ? error.message : String(error)}`)
+    })
   }
   return { ok: errors.length === 0, errors }
 }

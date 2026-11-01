@@ -250,7 +250,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error
   if (!hasBody && !streaming) return null
   const flow = flowSegments(sourceTurn, commentary)
-  const split = flow ? splitTurnProcess(flow, { keepThinking: !aside, foldReplies: !streaming }) : null
+  const split = flow ? splitTurnProcess(flow, { keepThinking: !aside }) : null
   const processSegs = split?.process ?? []
   const decision = !streaming && !wrapUp && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
@@ -316,6 +316,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   ) : null}
                 </div>
               ) : null}
+              {wrapUp && split.reply ? <WrapUpCard card={wrapUp} dismissKey={wrapUpKey(sessionId, wrapUp.callId)} hideQuestion={repeatsQuestion(split.reply.response?.text ?? '', wrapUp.ask)} /> : null}
               {tailSegments.map((seg, si) => {
                 const last = si === tailSegments.length - 1
                 return (
@@ -375,7 +376,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
           {!streaming ? <TurnResult turn={sourceTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
           {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
-          {!streaming && wrapUp ? <WrapUpCard card={wrapUp} dismissKey={wrapUpKey(sessionId, wrapUp.callId)} /> : null}
+          {wrapUp && !split?.reply ? <WrapUpCard card={wrapUp} dismissKey={wrapUpKey(sessionId, wrapUp.callId)} /> : null}
           {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
           {showCompaction ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
@@ -384,6 +385,15 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
       </article>
     </TranscriptViewScope.Provider>
   )
+}
+
+function compactText(text: string): string {
+  return text.replace(/[\s`*_"'\u201c\u201d\u2018\u2019\u3002\uff1f?\uff01!\uff0c,\uff1a:]/g, '')
+}
+
+function repeatsQuestion(reply: string, ask: string | null): boolean {
+  const question = compactText(ask ?? '')
+  return question.length > 0 && compactText(reply).includes(question)
 }
 
 function keepSegment(segment: TurnSegment): TurnSegment {

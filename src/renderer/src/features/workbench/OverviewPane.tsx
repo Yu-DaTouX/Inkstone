@@ -515,7 +515,7 @@ function OutputRows({
   )
 }
 
-function ChangedRows({ files, text, onOpen }: { files: readonly RailChangedFile[]; text: RailText; onOpen: () => void }): ReactElement {
+function ChangedRows({ files, text, onOpen }: { files: readonly RailChangedFile[]; text: RailText; onOpen: (path: string) => void }): ReactElement {
   return (
     <RailList
       items={files}
@@ -532,7 +532,7 @@ function ChangedRows({ files, text, onOpen }: { files: readonly RailChangedFile[
             title={counted ? `${file.path}\n${text.linesChanged(file.added ?? 0, file.removed ?? 0)}` : file.path}
             icon={<FileTypeIcon name={name} size={16} mono />}
             value={unchangedLines ? undefined : counted ? <RailValue glyph={{ kind: 'delta', added: file.added ?? 0, removed: file.removed ?? 0, quiet: true }} /> : outputFolder(file.path) || undefined}
-            onPress={onOpen}
+            onPress={() => onOpen(file.path)}
           />
         )
       }}
@@ -817,7 +817,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             onOpenView: () => onOpenView('changes'),
             body:
               changesCount === 0 ? null : lineTotals && lineTotals.entries.length > 0 ? (
-                <ChangedRows files={lineTotals.entries} text={rail} onOpen={() => onOpenView('changes')} />
+                <ChangedRows files={lineTotals.entries} text={rail} onOpen={(path) => openOutput(/^(?:[a-zA-Z]:[\\/]|[\\/])/.test(path) || !cwd ? path : `${cwd.replace(/[\\/]+$/, '')}/${path}`)} />
               ) : (
                 <ul className="wb-ov-items">
                   {([

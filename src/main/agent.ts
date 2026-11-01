@@ -4623,6 +4623,8 @@ export class AgentController extends EventEmitter {
         images: titleImages,
         cwd: this.cwd,
         piBin: this.piBin,
+        ...(st.model ? { model: `${st.model.provider}/${st.model.id}` } : {}),
+        extensions: this.providerExtensions,
         force: opts.force,
         allowManual: opts.candidate,
         persist: !opts.candidate

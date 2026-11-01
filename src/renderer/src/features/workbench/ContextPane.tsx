@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { useI18n, useT, type Lang, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { UIMessage } from '../../../../shared/ipc'
@@ -18,6 +18,7 @@ import {
   shortTokens,
   type ContextToolCall
 } from './context-pane-view'
+import { CELL_COLUMNS, contextCells, type CellKind } from './context-cells'
 import { compactionReclaim, loadCompactionHistory, type CompactionHistoryItem, type CompactionHistoryLoad } from './context-compactions'
 import { contextPaneText, type ContextPaneText } from './context-pane-text'
 import type { ContextPaneProps } from './types'
@@ -72,6 +73,28 @@ function useCompactionHistory(visible: boolean, sessionId: string | null, reload
     }
   }, [visible, sessionId, key])
   return state && state.key.startsWith(`${sessionId ?? ''}|`) ? state.load : null
+}
+
+function ContextCells({ cells, focus, compacting }: { cells: CellKind[]; focus: CellKind | null; compacting: boolean }): ReactElement {
+  return (
+    <div
+      className="wb-ctxw-field"
+      aria-hidden
+      data-compacting={compacting ? '1' : undefined}
+      data-focus={focus ? '1' : undefined}
+      style={{ '--ctx-columns': CELL_COLUMNS } as CSSProperties}
+      data-testid="v3-wb-ctx-cells"
+    >
+      {cells.map((kind, index) => (
+        <i
+          key={index}
+          className={`wb-ctxw-cell c-${kind}`}
+          data-lit={focus === kind ? '1' : undefined}
+          style={{ '--cell-step': (index % CELL_COLUMNS) + Math.floor(index / CELL_COLUMNS) * 2 } as CSSProperties}
+        />
+      ))}
+    </div>
+  )
 }
 
 function ToolCallRows({ rows, text }: { rows: ContextToolCall[]; text: ContextPaneText }): ReactElement {
@@ -138,6 +161,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const historyKey = [last?.status ?? '', last?.endedAt ?? last?.startedAt ?? '', last?.entryId ?? '', session?.contextFrom?.firstKeptEntryId ?? ''].join(':')
   const history = useCompactionHistory(visible, sessionId, historyKey)
   const [showAllHistory, setShowAllHistory] = useState(false)
+  const [focusKind, setFocusKind] = useState<CellKind | null>(null)
 
   const [compactRun, setCompactRun] = useState<{ sessionId: string; pending: boolean; error: string } | null>(null)
   const ownRun = compactRun && compactRun.sessionId === sessionId ? compactRun : null
@@ -155,13 +179,12 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   }
 
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
-  const rows = usage.known
-    ? [
-        ...slices.filter((s) => s.tokens > 0),
-        { id: 'free' as const, tokens: Math.max(0, usage.windowSize - usage.tokens) }
-      ]
-    : []
+  const rows = usage.known ? slices.filter((s) => s.tokens > 0) : []
+  const focusRow = rows.find((row) => row.id === focusKind) ?? null
+  const rowLabel = (id: ContextCategory): string => t(id === 'system' && compacted ? 'ctx.cat.systemSummary' : CATEGORY_LABEL[id])
+  const modelName = session?.model?.name || session?.model?.id || ''
 
+  const cells = useMemo(() => (usage.known ? contextCells(slices, usage.windowSize) : []), [usage.known, slices, usage.windowSize])
   const limitNote = usage.cappedByLimit
     ? t('ctx.limitNote', { model: shortTokens(usage.modelWindow), limit: shortTokens(usage.windowSize) })
     : undefined
@@ -181,44 +204,44 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
 
   return (
     <section className="wb-ctx" aria-label={text.title} data-testid="v3-wb-context">
-      <div className="wb-ctx-block">
-        <div className="wb-ctx-head">
-          <span className="wb-ctx-subtitle">{text.usage}</span>
-          <span
-            className={`wb-ctx-total ui-meta-num ${usage.known ? usage.tone : ''}`}
-            title={limitNote}
-            data-testid="v3-wb-ctx-tokens"
-          >
+      <div className="wb-ctxw" role="group" aria-label={text.windowTitle} data-tone={usage.known ? usage.tone : undefined}>
+        <div className="wb-ctxw-head">
+          <span className="wb-ctxw-title">{text.windowTitle}</span>
+          {modelName ? <span className="wb-ctxw-model" title={modelName}>{modelName}</span> : null}
+        </div>
+        <div className="wb-ctxw-figure" title={limitNote}>
+          <span className="wb-ctxw-number" aria-hidden>{usage.known ? shortTokens(focusRow ? focusRow.tokens : usage.tokens) : text.unknown}</span>
+          <span className="wb-ctxw-figure-label" aria-hidden>{focusRow ? rowLabel(focusRow.id) : text.used}</span>
+          <span className="v3-visually-hidden" data-testid="v3-wb-ctx-tokens">
             {usage.known
               ? `${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)} (${Math.round(usage.percent!)}%)`
               : text.unknown}
           </span>
+          {usage.known ? (
+            <span className="wb-ctxw-pct ui-num" data-tone={usage.tone} aria-hidden>
+              {`${Math.round(focusRow ? share(focusRow.tokens) : usage.percent!)}%`}
+            </span>
+          ) : null}
         </div>
 
         {usage.known ? (
           <>
-            <div
-              className="wb-ctx-bar"
-              role="img"
-              aria-label={t('ctx.tip', {
-                used: shortTokens(usage.tokens),
-                win: shortTokens(usage.windowSize),
-                pct: Math.round(usage.percent!)
-              })}
-            >
-              {slices.map((s) =>
-                s.tokens > 0 ? (
-                  <i key={s.id} className={`wb-ctx-seg c-${s.id}`} style={{ width: `${share(s.tokens)}%` }} />
-                ) : null
-              )}
-            </div>
-            <ul className="wb-ctx-legend" data-testid="v3-wb-ctx-breakdown">
+            <ContextCells cells={cells} focus={focusKind} compacting={compacting} />
+            <ul className="wb-ctxw-parts" data-testid="v3-wb-ctx-breakdown">
               {rows.map((r) => (
-                <li key={r.id} className={r.id === 'free' ? 'free' : undefined}>
-                  <i className={`wb-ctx-swatch c-${r.id}`} aria-hidden />
-                  <span className="wb-ctx-legend-name">{t(r.id === 'system' && compacted ? 'ctx.cat.systemSummary' : CATEGORY_LABEL[r.id])}</span>
-                  <span className="wb-ctx-legend-num ui-meta-num">{shortTokens(r.tokens)}</span>
-                  <span className="wb-ctx-legend-num ui-meta-num">{`${share(r.tokens).toFixed(1)}%`}</span>
+                <li
+                  key={r.id}
+                  className="wb-ctxw-part"
+                  data-active={focusKind === r.id ? '1' : undefined}
+                  tabIndex={0}
+                  onMouseEnter={() => setFocusKind(r.id)}
+                  onMouseLeave={() => setFocusKind(null)}
+                  onFocus={() => setFocusKind(r.id)}
+                  onBlur={() => setFocusKind(null)}
+                >
+                  <i className={`wb-ctxw-swatch c-${r.id}`} aria-hidden />
+                  <span className="wb-ctxw-part-name">{rowLabel(r.id)}</span>
+                  <span className="wb-ctxw-part-num ui-num">{shortTokens(r.tokens)}</span>
                 </li>
               ))}
             </ul>
@@ -229,18 +252,18 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
           </p>
         )}
 
-        {usage.afterCompactUnknown ? <p className="wb-ctx-note">{text.afterCompact}</p> : null}
-        {distance ? (
-          <p className="wb-ctx-record" title={limitNote} data-testid="v3-wb-ctx-distance" data-kind={distance.kind}>
-            {text.distance(distance.kind, shortTokens(distance.remaining))}
-          </p>
-        ) : null}
-        {usage.windowAssumed ? (
-          <p className="wb-ctx-note" data-testid="v3-wb-ctx-window-assumed">
-            {t('ctx.windowAssumed', { win: shortTokens(usage.windowSize) })}
-          </p>
-        ) : null}
-        <div className="wb-ctx-actions">
+        <div className="wb-ctxw-tray">
+          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitNote} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind}>
+            {compacting
+              ? text.compacting
+              : usage.afterCompactUnknown
+                ? text.afterCompact
+                : distance
+                  ? text.distance(distance.kind, shortTokens(distance.remaining))
+                  : usage.known
+                    ? text.left(shortTokens(Math.max(0, usage.windowSize - usage.tokens)))
+                    : ''}
+          </span>
           <Button
             variant="secondary"
             size="sm"
@@ -250,9 +273,14 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
             data-testid="v3-wb-ctx-compact"
             onPress={compactNow}
           >
-            {compacting ? text.compacting : text.compactNow}
+            {text.compactNow}
           </Button>
         </div>
+        {usage.windowAssumed ? (
+          <p className="wb-ctx-note" data-testid="v3-wb-ctx-window-assumed">
+            {t('ctx.windowAssumed', { win: shortTokens(usage.windowSize) })}
+          </p>
+        ) : null}
         {ownRun?.error ? (
           <Notice tone="fail" compact title={text.compactFailed} data-testid="v3-wb-ctx-compact-error">
             {ownRun.error === text.compactFailed ? null : ownRun.error}

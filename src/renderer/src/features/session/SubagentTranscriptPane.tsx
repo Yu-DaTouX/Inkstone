@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
-import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, EmptyState, IconButton, Notice, Spinner } from '../../ui'
+import { Button, EmptyState, IconButton, Notice, Spinner } from '../../ui'
 import { groupIntoTurns, type Turn } from '../../../../shared/turns'
 import { mergeApprovalLog } from '../../../../shared/approval-log'
 import type { ApprovalReceipt } from '../../../../shared/approval'
@@ -30,7 +30,6 @@ import { useSessionText } from './text'
 import './subagent-pane.css'
 
 const RETRYABLE = new Set(['failed', 'timeout', 'budget', 'stopped'])
-const PATHS_SHOWN = 12
 
 function subagentBriefText(run: Pick<SubagentRun, 'task' | 'brief'>): string {
   return run.brief ? briefPrompt(run.brief, run.task) : run.task
@@ -251,32 +250,9 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
         </div>
       </div>
       <footer className="sa-pane-foot" data-testid="v3-subagent-pane-foot">
-        {row.summaryLine ? <p className="sa-pane-summary" data-testid="v3-subagent-summary-line">{row.summaryLine}</p> : null}
-        <PathList label={tt('subagentSources')} items={model.sources} />
-        <PathList label={tt('subagentArtifacts')} items={model.artifacts} />
         <SubagentReview run={run} />
         <SubagentComposer key={run.id} run={run} />
       </footer>
     </div>
-  )
-}
-
-function PathList({ label, items }: { label: string; items: readonly string[] }): JSX.Element | null {
-  const [open, setOpen] = useState(false)
-  if (!items.length) return null
-  return (
-    <Collapsible className="sa-pane-paths" isExpanded={open} onExpandedChange={setOpen}>
-      <CollapsibleHeader accessory={items.length}>{label}</CollapsibleHeader>
-      <CollapsiblePanel className="sa-pane-paths-panel">
-        {open ? (
-          <ul>
-            {items.slice(0, PATHS_SHOWN).map((item) => (
-              <li key={item} title={item}>{item}</li>
-            ))}
-            {items.length > PATHS_SHOWN ? <li className="dim">+{items.length - PATHS_SHOWN}</li> : null}
-          </ul>
-        ) : null}
-      </CollapsiblePanel>
-    </Collapsible>
   )
 }

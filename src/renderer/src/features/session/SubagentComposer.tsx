@@ -14,14 +14,7 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
   const [error, setError] = useState('')
   const mode = subagentComposerMode(run)
   if (mode === 'hidden') return null
-  if (mode === 'blocked') {
-    return (
-      <div className="sa-composer" data-mode={mode} data-testid="v3-subagent-composer">
-        <p className="sa-composer-hint" data-testid="v3-subagent-resume-blocked">{t('sa.composer.blocked', { reason: run.resumable?.reason ?? '' })}</p>
-      </div>
-    )
-  }
-  const blocked = mode === 'busy' || sending
+  const blocked = mode === 'busy' || mode === 'blocked' || sending
   const value = text.trim()
 
   const send = async (): Promise<void> => {
@@ -45,9 +38,11 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
     void send()
   }
 
-  const placeholder = mode === 'resume'
-    ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktree' : 'sa.composer.resume')
-    : t('sa.composer.steer')
+  const placeholder = mode === 'blocked'
+    ? t('sa.composer.blocked', { reason: run.resumable?.reason ?? '' })
+    : mode === 'resume'
+      ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktree' : 'sa.composer.resume')
+      : t('sa.composer.steer')
   return (
     <div className="sa-composer" data-mode={mode} data-testid="v3-subagent-composer">
       <div className="sa-composer-box" onKeyDown={onKeyDown}>
@@ -57,13 +52,14 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
           rows={1}
           value={text}
           maxLength={MAX_CHARS}
-          isDisabled={sending}
+          isDisabled={sending || mode === 'blocked'}
           onChange={setText}
           className="sa-composer-field"
           textAreaClassName="sa-composer-input"
           data-testid="v3-subagent-composer-input"
         />
         <IconButton
+          title={mode === 'blocked' ? placeholder : undefined}
           size="sm"
           variant="secondary"
           aria-label={mode === 'resume' ? t('sa.composer.continue') : t('sa.composer.send')}

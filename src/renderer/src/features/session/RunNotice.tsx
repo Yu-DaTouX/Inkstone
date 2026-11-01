@@ -2,7 +2,6 @@ import type { JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, ShimmerText } from '../../ui'
-import { formatDuration } from '../../../../shared/duration'
 import { compactionRunningText } from '../../state/compaction-view'
 import { useSessionText } from './text'
 import { useWorkingLine } from './run-status'
@@ -47,7 +46,6 @@ export function LiveRunNotice(): JSX.Element | null {
       <span className="v3-act-text" role="status" aria-live="polite" title={line.error}>
         <ShimmerText active={!line.quiet && SHIMMER.has(line.kind)}>{text}</ShimmerText>
       </span>
-      {line.elapsedMs !== null ? <span className="v3-act-time">{formatDuration(line.elapsedMs)}</span> : null}
       {line.tokens !== null ? <span className="v3-act-time" data-testid="v3-working-tokens">{tt('workTokens', { n: formatTokenCount(line.tokens) })}</span> : null}
       {line.kind === 'retrying' ? (
         <Button size="sm" variant="ghost" onPress={() => void abortRetry()} data-testid="v3-stop-retry">

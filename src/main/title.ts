@@ -157,6 +157,8 @@ export async function generateTitle(opts: {
   samples: string[]
   cwd: string
   piBin?: string
+  model?: string
+  extensions?: string[]
   images?: { data: string; mimeType: string }[]
   timeoutMs?: number
   force?: boolean
@@ -187,7 +189,8 @@ export async function generateTitle(opts: {
       '--no-skills',
       '--no-prompt-templates',
       '--no-tools',
-      ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : [])
+      ...(opts.extensions ?? []).flatMap((path) => ['--extension', path]),
+      ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : opts.model ? ['--model', opts.model] : [])
     ],
     env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }
   })

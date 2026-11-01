@@ -106,7 +106,8 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const [query, setQuery] = useState('')
   const [renamingKey, setRenamingKey] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [menuKey, setMenuKey] = useState<string | null>(null)
+  const [sessionMenu, setSessionMenu] = useState<{ key: string; open: boolean } | null>(null)
+  const closeSessionMenu = useCallback((): void => setSessionMenu((previous) => previous ? { ...previous, open: false } : previous), [])
   const [projectMenu, setProjectMenu] = useState<{ id: string; open: boolean } | null>(null)
   const [draftMenuId, setDraftMenuId] = useState<string | null>(null)
   const [collapsedFolders, setCollapsedFolders] = useState<ReadonlySet<string>>(() => new Set())
@@ -176,6 +177,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     [sections]
   )
   const viewByKey = useMemo(() => new Map(allViews.map((view) => [scopedKeyOf(view.id), view])), [allViews])
+  const looseDrafts = useMemo(() => drafts.filter((draft) => !viewByKey.has(scopedKeyOf(draft.draftId))), [drafts, viewByKey])
   const viewByPath = useMemo(() => new Map(allViews.map((view) => [view.path, view])), [allViews])
   const draftIds = useMemo(() => new Set(drafts.map((draft) => draft.draftId)), [drafts])
 
@@ -373,16 +375,16 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     menuAnchorRef.current = row ?? null
     setDraftMenuId(null)
     setProjectMenu((previous) => previous ? { ...previous, open: false } : previous)
-    setMenuKey(threadKey)
+    setSessionMenu({ key: threadKey, open: true })
   }, [])
 
   const openProjectMenu = useCallback((projectKey: string, anchor?: HTMLElement): void => {
     if (!projectKey || projectKey === NO_PROJECT_ID) return
     projectMenuAnchorRef.current = anchor ?? asideRef.current?.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(`folder:${projectKey}`)}"]`) ?? null
-    setMenuKey(null)
+    closeSessionMenu()
     setDraftMenuId(null)
     setProjectMenu({ id: projectKey, open: true })
-  }, [])
+  }, [closeSessionMenu])
 
   const modelCatalog = useStore((s) => s.models)
   const rowView = useCallback(
@@ -461,7 +463,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
             void sidebarActions.snooze(ref, until)
             setAnnouncement(t('sidebar.t3.snooze'))
           }}
-          onUnsnooze={() => void sidebarActions.unsnooze(ref)}
+          onUnsnooze={view.snoozedUntil === null ? undefined : () => void sidebarActions.unsnooze(ref)}
           onUnpin={() => void sidebarActions.unpin(ref)}
           onDiscardDraft={() => sidebarActions.discardDraft(ref)}
         />
@@ -515,7 +517,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
 
   const settledRemaining = Math.max(0, sections.settled.length - Math.min(settledVisible, sections.settled.length))
   const undoNotice = undo.text === null ? null : { text: undo.text, label: undo.label, undo: undo.undo }
-  const menuView = menuKey === null ? null : viewByKey.get(menuKey)
+  const menuView = sessionMenu === null ? null : viewByKey.get(sessionMenu.key)
   const menuSession = menuView ? sessions.find((entry) => entry.id === menuView.id) : undefined
   const menuProject = projectMenu ? settings?.projects.find((project) => project.id === projectMenu.id) : undefined
   const menuDraft = drafts.find((draft) => draft.draftId === draftMenuId)
@@ -657,9 +659,9 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
               folderNewThreadLabel={(projectKey) => t('sidebar.t3.newThreadInProjectName', { name: projects.byId.get(projectKey)?.displayName ?? '' })}
               folderMenuLabel={own.projectMenu}
               draftRows={
-                drafts.length === 0 ? null : (
+                looseDrafts.length === 0 ? null : (
                   <SidebarDraftBlock
-                    drafts={drafts.map((draft) => ({
+                    drafts={looseDrafts.map((draft) => ({
                       draftId: draft.draftId,
                       projectDisplayName: draft.projectDisplayName,
                       preview: draft.preview,
@@ -671,17 +673,17 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                       const view = viewByKey.get(scopedKeyOf(draftId))
                       if (view) openView(view)
                     }}
-                    onDiscardDraft={(draftId) => drafts.find((entry) => entry.draftId === draftId)?.discard()}
+                    onDiscardDraft={(draftId) => looseDrafts.find((entry) => entry.draftId === draftId)?.discard()}
                     onDraftContextMenu={(draftId) => {
                       draftMenuAnchorRef.current = asideRef.current?.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(`draft:${draftId}`)}"]`) ?? null
-                      setMenuKey(null)
+                      closeSessionMenu()
                       setProjectMenu((previous) => previous ? { ...previous, open: false } : previous)
                       setDraftMenuId(draftId)
                     }}
                   />
                 )
               }
-              draftKey={drafts.map((draft) => draft.draftId).join('|')}
+              draftKey={looseDrafts.map((draft) => draft.draftId).join('|')}
               undoNotice={undoNotice === null ? null : <SidebarThreadUndoNotice notice={undoNotice} />}
               emptyState={
                 allViews.length === 0 ? (
@@ -763,18 +765,19 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
 
       {menuView && menuSession ? (
         <SessionMenu
+          key={menuView.id}
           item={menuSession}
           title={menuView.title}
           isCurrent={scopedKeyOf(menuView.id) === activeKey}
           anchor={menuAnchorRef}
-          open
+          open={sessionMenu?.open === true}
           onOpenChange={(open) => {
-            if (!open) setMenuKey(null)
+            if (!open) closeSessionMenu()
           }}
           onRename={() => {
             setRenameValue(menuView.title)
             setRenamingKey(scopedKeyOf(menuView.id))
-            setMenuKey(null)
+            closeSessionMenu()
           }}
         />
       ) : null}

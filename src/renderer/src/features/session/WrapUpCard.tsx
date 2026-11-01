@@ -41,7 +41,34 @@ export function WrapUpText({ text }: { text: string }): JSX.Element {
   return <>{runs.map((run, index) => run.kind === 'code' ? <code key={index} className="v3-wrapup-code">{run.text}</code> : run.text)}</>
 }
 
-export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismissKey: string }): JSX.Element | null {
+function WrapUpRich({ text }: { text: string }): JSX.Element {
+  const parts = text.split(/(\*\*[^*\n]+\*\*)/g)
+  return <>{parts.map((part, index) => /^\*\*[^*\n]+\*\*$/.test(part) ? <strong key={index}><WrapUpText text={part.slice(2, -2)} /></strong> : <WrapUpText key={index} text={part} />)}</>
+}
+
+const LIST_ITEM = /^\s*(?:[-*\u2022]|\d+[.)])\s+/
+
+function WrapUpRecap({ text }: { text: string }): JSX.Element {
+  const blocks: Array<{ kind: 'p' | 'ul'; lines: string[] }> = []
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue
+    const kind = LIST_ITEM.test(line) ? 'ul' : 'p'
+    const last = blocks.at(-1)
+    if (last && last.kind === kind && kind === 'ul') last.lines.push(line.replace(LIST_ITEM, ''))
+    else blocks.push({ kind, lines: [kind === 'ul' ? line.replace(LIST_ITEM, '') : line] })
+  }
+  return (
+    <>
+      {blocks.map((block, index) => block.kind === 'ul' ? (
+        <ul key={index} className="v3-wrapup-list">{block.lines.map((line, i) => <li key={i}><WrapUpRich text={line} /></li>)}</ul>
+      ) : (
+        <p key={index}><WrapUpRich text={block.lines[0]} /></p>
+      ))}
+    </>
+  )
+}
+
+export function WrapUpCard({ card, dismissKey, hideQuestion = false }: { card: WrapUpCardModel; dismissKey: string; hideQuestion?: boolean }): JSX.Element | null {
   const t = useT()
   const tt = useSessionText()
   const hidden = useWrapUpDismissed(dismissKey)
@@ -58,7 +85,7 @@ export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismis
     <Card as="section" padding="md" className="v3-wrapup" data-pending="" aria-label={tt('wrapUpLabel')} data-testid="v3-wrap-up">
       <CardHead>
         <CardStatus tone="accent" icon={<Icon name="help" size={14} />}>{tt('wrapUpDecide')}</CardStatus>
-        <CardTitle className="v3-wrapup-question" data-testid="v3-wrap-up-question"><WrapUpText text={card.ask} /></CardTitle>
+        {hideQuestion ? null : <CardTitle className="v3-wrapup-question" data-testid="v3-wrap-up-question"><WrapUpText text={card.ask} /></CardTitle>}
         <CardControl>
           <IconButton size="sm" aria-label={tt('wrapUpDismiss')} onPress={() => dismissWrapUp(dismissKey)} data-testid="v3-wrap-up-dismiss">
             <Icon name="close" size={14} />
@@ -67,7 +94,7 @@ export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismis
       </CardHead>
       {card.recap.trim() ? (
         <CardBody>
-          <p className="v3-wrapup-recap" data-testid="v3-wrap-up-recap"><WrapUpText text={card.recap} /></p>
+          <div className="v3-wrapup-recap" data-testid="v3-wrap-up-recap"><WrapUpRecap text={card.recap} /></div>
         </CardBody>
       ) : null}
       {actions.length ? (
@@ -84,6 +111,16 @@ export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismis
             </Button>
           ))}
         </CardActions>
+      ) : null}
+      {ordered.some(({ action }) => action.message.trim().length > action.label.trim().length + 8) ? (
+        <ul className="v3-wrapup-notes" data-testid="v3-wrap-up-notes">
+          {ordered.map(({ action, index }) => (
+            <li key={`${index}:${action.label}`}>
+              <span className="v3-wrapup-note-label">{action.label}</span>
+              <span className="v3-wrapup-note-text"><WrapUpText text={action.message} /></span>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </Card>
   )

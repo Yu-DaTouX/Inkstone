@@ -56,9 +56,11 @@ import { imageRefLabel, imageRefPrefix, renumberImageRefsAfterRemoval } from './
 import { ImageViewer } from './image-viewer'
 import { ComposerHeightHandle } from './ComposerHeightHandle'
 import { ComposerWidthHandles } from './ComposerWidthHandles'
+import { loadDraft, restoreDraft, saveDraft } from './draft-store'
 import './composer.css'
 
 let consumedComposerFocus = 0
+let attachmentsConversation: string | null = null
 
 function sourceLabelOf(t: ReturnType<typeof useT>, source: string): string {
   const key = ({
@@ -233,6 +235,50 @@ export function ComposerV3(): JSX.Element {
     armStrayEnter()
     requestAnimationFrame(() => editorRef.current?.focus({ preventScroll: true }))
   }, [composerFocus, sessionId, armStrayEnter])
+
+  const draftKey = useStore((s) => {
+    if (s.peekedSessionId) return s.peekedSessionId
+    const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
+    const sid = s.session?.sessionId ?? runner?.sessionId
+    return sid || (s.activeRunnerId ? `run:${s.activeRunnerId}` : '')
+  })
+  const conversationKey = useStore((s) => s.peekedSessionId ?? s.session?.conversationId) ?? draftKey
+  const storeAttachments = useStore((s) => s.attachments)
+  const setSessionDraft = useStore((s) => s.setSessionDraft)
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null)
+  const hydratedConversation = useRef<string | null>(null)
+  const skipSessionDraft = useRef(false)
+  useEffect(() => {
+    const leavingConversation = !!attachmentsConversation && attachmentsConversation !== (conversationKey || null)
+    attachmentsConversation = conversationKey || null
+    hydratedConversation.current = conversationKey || null
+    skipSessionDraft.current = true
+    const state = useStore.getState()
+    const restored = restoreDraft(draftKey ? state.sessionRuntimes[draftKey] : undefined, draftKey ? loadDraft(draftKey) : undefined)
+    setValue(restored.text)
+    setHydratedDraftKey(draftKey)
+    setCursor(draftKey ? restored.text.length : null)
+    if ((leavingConversation || restored.attachments.length) && restored.attachments !== state.attachments && (restored.attachments.length || state.attachments.length)) {
+      useStore.setState({ attachments: restored.attachments })
+    }
+  }, [conversationKey, draftKey])
+  const draftReady = !!draftKey && hydratedDraftKey === draftKey && hydratedConversation.current === conversationKey
+  useEffect(() => {
+    if (!draftReady) return undefined
+    const draft = { text: value, attachments: storeAttachments }
+    const timer = setTimeout(() => saveDraft(draftKey, draft), 250)
+    return () => {
+      clearTimeout(timer)
+      saveDraft(draftKey, draft)
+    }
+  }, [draftReady, draftKey, value, storeAttachments])
+  useEffect(() => {
+    if (skipSessionDraft.current) {
+      skipSessionDraft.current = false
+      return
+    }
+    if (draftReady) setSessionDraft(value, draftKey)
+  }, [draftReady, draftKey, setSessionDraft, value])
 
   const placeCursor = useCallback((position: number): void => {
     setCursor(position)
