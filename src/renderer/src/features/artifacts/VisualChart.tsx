@@ -64,6 +64,7 @@ function LinePlot({ block }: { block: ChartBlock }): JSX.Element {
   const area = block.type === 'area'
   const domain = useMemo(() => lineDomain(block.series.flatMap((s) => s.values), area, block.max), [block, area])
   const n = block.labels.length
+  const labelStep = n > 12 ? Math.ceil(n / 12) : 1
   const W = 600
   const H = 120
   const x = (i: number): number => (n <= 1 ? W / 2 : (i / (n - 1)) * W)
@@ -110,11 +111,11 @@ function LinePlot({ block }: { block: ChartBlock }): JSX.Element {
           </span>
         ))}
         <div className="v3-visual-xaxis" aria-hidden>
-          {block.labels.map((label, i) => (
+          {block.labels.map((label, i) => (i % labelStep === 0 || i === n - 1 ? (
             <span key={i} style={{ left: `${n <= 1 ? 50 : (i / (n - 1)) * 100}%` } as CSSProperties}>
               {label}
             </span>
-          ))}
+          ) : null))}
         </div>
       </div>
     </div>

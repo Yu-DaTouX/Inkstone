@@ -473,7 +473,7 @@ function frameHeight(){
 function labelOf(el){
   var named=(el.getAttribute("data-label")||el.getAttribute("aria-label")||"").trim();
   if(named)return named.slice(0,40);
-  var text=(el.textContent||"").replace(/\s+/g," ").trim();
+  var text=((el.innerText||el.textContent)||"").replace(/\s+/g," ").trim();
   if(text)return text.slice(0,24);
   if(el.id)return el.id;
   var list=el.classList||[];

@@ -64,9 +64,11 @@
     height: var(--s-4);
   }
 
-  .ui-splitter:hover::after {
-    opacity: 1;
-    background: var(--fg3);
+  @media (hover: hover) {
+    .ui-splitter:hover::after {
+      opacity: 1;
+      background: var(--fg3);
+    }
   }
 
   .ui-splitter[data-dragging]::after,
@@ -126,8 +128,10 @@
     transform: translateX(-50%);
   }
 
-  .ui-splitter--edge:hover::after {
-    background: var(--line2);
+  @media (hover: hover) {
+    .ui-splitter--edge:hover::after {
+      background: var(--line2);
+    }
   }
 
   .ui-splitter--edge[data-dragging]::after,
@@ -139,8 +143,10 @@
     cursor: default;
   }
 
-  .ui-splitter[aria-disabled='true']:hover::after {
-    opacity: 0;
+  @media (hover: hover) {
+    .ui-splitter[aria-disabled='true']:hover::after {
+      opacity: 0;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

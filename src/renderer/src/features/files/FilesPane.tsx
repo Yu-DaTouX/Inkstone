@@ -436,60 +436,72 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
               onChange={(event) => setQuery(event.currentTarget.value)}
               onKeyDown={onFilterKeyDown}
             />
-            {contentMode || query ? (
-              <InputGroupAddon align="end">
-                {contentMode ? (
-                  <ToggleGroup
-                    size="xs"
-                    selectionMode="multiple"
-                    aria-label={text.searchOptions}
-                    selectedKeys={(['matchCase', 'wholeWord', 'regexp'] as const).filter((key) => contentOptions[key])}
-                    onSelectionChange={(keys) =>
-                      setContentOptions({ matchCase: keys.has('matchCase'), wholeWord: keys.has('wholeWord'), regexp: keys.has('regexp') })
-                    }
-                    data-testid="v3-files-search-options"
-                  >
-                    {(
-                      [
-                        ['matchCase', 'Aa', text.matchCase],
-                        ['wholeWord', 'ab', text.wholeWord],
-                        ['regexp', '.*', text.useRegexp]
-                      ] as const
-                    ).map(([key, glyph, label]) => (
-                      <Toggle
-                        key={key}
-                        id={key}
-                        icon
-                        className="v3-files-filter-option"
-                        aria-label={label}
-                        tooltip={label}
-                        data-option={key}
-                        data-testid={`v3-files-search-${key}`}
-                        onPress={(event) => {
-                          if (event.pointerType !== 'keyboard') filterInput()?.focus()
-                        }}
-                      >
-                        <span aria-hidden>{glyph}</span>
-                      </Toggle>
-                    ))}
-                  </ToggleGroup>
-                ) : null}
-                {query ? (
-                  <IconButton
-                    size="xs"
-                    aria-label={text.searchClear}
-                    tooltip={text.searchClear}
-                    data-testid="v3-files-search-clear"
-                    onPress={() => {
-                      setQuery('')
-                      filterInput()?.focus()
-                    }}
-                  >
-                    <X size={12} />
-                  </IconButton>
-                ) : null}
+            <InputGroupAddon align="end">
+              {!contentMode ? (
+                <IconButton
+                  size="xs"
+                  aria-label={text.searchInContents}
+                  tooltip={text.searchInContents}
+                  data-testid="v3-files-search-mode"
+                  onPress={() => {
+                    setQuery(contentQueryFrom(query))
+                    filterInput()?.focus()
+                  }}
+                >
+                  <span aria-hidden>?</span>
+                </IconButton>
+              ) : null}
+              {contentMode ? (
+                <ToggleGroup
+                  size="xs"
+                  selectionMode="multiple"
+                  aria-label={text.searchOptions}
+                  selectedKeys={(['matchCase', 'wholeWord', 'regexp'] as const).filter((key) => contentOptions[key])}
+                  onSelectionChange={(keys) =>
+                    setContentOptions({ matchCase: keys.has('matchCase'), wholeWord: keys.has('wholeWord'), regexp: keys.has('regexp') })
+                  }
+                  data-testid="v3-files-search-options"
+                >
+                  {(
+                    [
+                      ['matchCase', 'Aa', text.matchCase],
+                      ['wholeWord', 'ab', text.wholeWord],
+                      ['regexp', '.*', text.useRegexp]
+                    ] as const
+                  ).map(([key, glyph, label]) => (
+                    <Toggle
+                      key={key}
+                      id={key}
+                      icon
+                      className="v3-files-filter-option"
+                      aria-label={label}
+                      tooltip={label}
+                      data-option={key}
+                      data-testid={`v3-files-search-${key}`}
+                      onPress={(event) => {
+                        if (event.pointerType !== 'keyboard') filterInput()?.focus()
+                      }}
+                    >
+                      <span aria-hidden>{glyph}</span>
+                    </Toggle>
+                  ))}
+                </ToggleGroup>
+              ) : null}
+              {query ? (
+                <IconButton
+                  size="xs"
+                  aria-label={text.searchClear}
+                  tooltip={text.searchClear}
+                  data-testid="v3-files-search-clear"
+                  onPress={() => {
+                    setQuery('')
+                    filterInput()?.focus()
+                  }}
+                >
+                  <X size={12} />
+                </IconButton>
+              ) : null}
               </InputGroupAddon>
-            ) : null}
           </InputGroup>
         </div>
 

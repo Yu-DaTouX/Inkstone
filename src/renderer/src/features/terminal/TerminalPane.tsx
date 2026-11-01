@@ -113,6 +113,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
   const [findNone, setFindNone] = useState(false)
+  const [findMatch, setFindMatch] = useState<{ index: number; total: number } | null>(null)
   const [bell, setBell] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; selection: string } | null>(null)
   const [closing, setClosing] = useState<CloseRequest | null>(null)
@@ -415,6 +416,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const openFind = useCallback((key: string | null): void => {
     setFindQuery('')
     setFindNone(false)
+    setFindMatch(null)
     setFindOpen(true)
     if (key) handles.current.get(key)?.resetFind()
   }, [])
@@ -427,6 +429,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     setFindOpen(false)
     setFindQuery('')
     setFindNone(false)
+    setFindMatch(null)
     if (previous) handle?.resetFind()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
@@ -443,9 +446,12 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       if (!query) {
         handle?.resetFind()
         setFindNone(false)
+        setFindMatch(null)
         return
       }
-      setFindNone(!(handle?.find(query, direction, reset) ?? false))
+      const progress = handle?.find(query, direction, reset) ?? null
+      setFindNone(progress === null)
+      setFindMatch(progress)
     },
     [active]
   )
@@ -463,6 +469,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     setFindOpen(false)
     if (active) handles.current.get(active)?.focus()
     setFindNone(false)
+    setFindMatch(null)
   }, [active])
 
   const openBodyMenu = useCallback(
@@ -718,6 +725,8 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
           <TerminalFindBar
             query={findQuery}
             noResults={findNone}
+            matchIndex={findMatch ? findMatch.index - 1 : null}
+            matchCount={findMatch?.total ?? null}
             text={text}
             onQuery={(query) => {
               setFindQuery(query)

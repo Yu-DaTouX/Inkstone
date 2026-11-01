@@ -17,7 +17,7 @@ const DIFF_MAX_BUFFER = DIFF_LIMIT_BYTES + 1024 * 1024
 const MAX_PR_NUMBER = 9_999_999
 
 const LIST_FIELDS =
-  'number,title,author,state,isDraft,headRefName,baseRefName,updatedAt,reviewDecision,labels,statusCheckRollup,additions,deletions,url'
+  'number,title,author,state,isDraft,headRefName,baseRefName,updatedAt,reviewDecision,labels,statusCheckRollup,additions,deletions,url,mergeable'
 export const DETAIL_FIELDS =
   'number,title,body,author,state,isDraft,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,files,commits,comments,reviews,latestReviews,reviewRequests,labels,additions,deletions,changedFiles,url'
 

@@ -35,7 +35,7 @@ export function ProgressBar({ label, showValue = false, tone = 'ink', className,
           <div className="ui-progress__track">
             <div
               className="ui-progress__fill"
-              style={renderProps.percentage != null ? { width: `${renderProps.percentage}%` } : undefined}
+              style={renderProps.percentage != null ? { transform: `scaleX(${Math.min(100, Math.max(0, renderProps.percentage)) / 100})` } : undefined}
             />
           </div>
         </>
@@ -69,12 +69,12 @@ export function Meter({ label, showValue = false, projectedPercent, tone = 'ink'
               <div
                 className="ui-progress__projection"
                 data-testid="ui-meter-projection"
-                style={{ width: `${Math.min(100, projectedPercent)}%` }}
+                style={{ transform: `scaleX(${Math.min(100, Math.max(0, projectedPercent)) / 100})` }}
               />
             ) : null}
             <div
               className="ui-progress__fill"
-              style={renderProps.percentage != null ? { width: `${renderProps.percentage}%` } : undefined}
+              style={renderProps.percentage != null ? { transform: `scaleX(${Math.min(100, Math.max(0, renderProps.percentage)) / 100})` } : undefined}
             />
           </div>
         </>

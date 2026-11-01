@@ -17,7 +17,7 @@
 
   .cmd-option {
     gap: var(--s-10);
-    height: calc(var(--s-32) + var(--s-4));
+    height: var(--size-menu-row);
     padding-inline: var(--s-12) var(--s-8);
     color: var(--fg);
     cursor: pointer;

@@ -92,7 +92,7 @@ export function PackagesPanel({
     if (kind === 'remove') {
       const accepted = await confirm({
         title: t('pkg.remove'),
-        body: t('pkg.remove'),
+        body: t('pkg.removeBody'),
         detail: src,
         confirmLabel: t('pkg.remove'),
         tone: 'danger'

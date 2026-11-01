@@ -10,6 +10,11 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .peer-approval-actions {
+    display: flex;
+    gap: var(--s-8);
+  }
+
   .peer-approval-lead {
     margin: 0;
     color: var(--fg2);

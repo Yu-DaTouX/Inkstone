@@ -34,9 +34,9 @@ interface HomeBackgroundText {
 
 const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
   'zh-CN': {
-    group: '背景',
+    group: '首页背景',
     mode: '背景',
-    modeDesc: '动态字符只在新会话空白页出现；图片在会话里也显示，并自动再淡一些。图片只存在这台电脑上。',
+    modeDesc: '图片只留在这台电脑上，会话里会再淡一些。',
     ascii: '动态字符',
     image: '图片',
     none: '无',
@@ -46,7 +46,7 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     replace: '更换图片…',
     remove: '移除',
     fade: '遮罩强度',
-    fadeDesc: '遮罩盖在图片上的浓度，越大文字越清楚。会话里会在此基础上再加深一半。',
+    fadeDesc: '越大文字越清楚；会话里会再深一半。',
     blur: '虚化',
     blurDesc: '把图片模糊开，0 为原图。',
     tone: '遮罩颜色',
@@ -57,9 +57,9 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     failed: '图片读取失败'
   },
   'en-US': {
-    group: 'Background',
+    group: 'Home background',
     mode: 'Background',
-    modeDesc: 'Drifting characters show only on the empty new-session page; an image also shows inside sessions, a little fainter. Images stay on this computer.',
+    modeDesc: 'Images stay on this computer; sessions show them a little fainter.',
     ascii: 'Drifting characters',
     image: 'Image',
     none: 'None',
@@ -69,7 +69,7 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     replace: 'Replace image…',
     remove: 'Remove',
     fade: 'Mask strength',
-    fadeDesc: 'How strongly the mask covers the image; higher keeps text easier to read. Sessions deepen it halfway further.',
+    fadeDesc: 'Higher keeps text clearer; sessions deepen it halfway.',
     blur: 'Blur',
     blurDesc: 'Softens the image; 0 keeps it sharp.',
     tone: 'Mask color',
@@ -152,7 +152,6 @@ export function HomeBackgroundSettings(): ReactElement {
         <>
           <SettingsRow settingId="appearance-home-image-blur" label={text.blur} description={text.blurDesc}>
             <div className="home-bg-slider">
-              <output className="home-bg-value ui-num" aria-hidden>{`${background.blur}px`}</output>
               <Slider
                 className="home-bg-range"
                 aria-label={text.blur}
@@ -163,6 +162,7 @@ export function HomeBackgroundSettings(): ReactElement {
                 onChange={(value) => updateHomeBackground({ blur: Array.isArray(value) ? value[0] : value })}
                 data-testid="v3-home-bg-blur"
               />
+              <output className="home-bg-value ui-num" aria-hidden>{`${background.blur}px`}</output>
             </div>
           </SettingsRow>
           <SettingsRow settingId="appearance-home-image-tone" label={text.tone} description={text.toneDesc}>
@@ -179,7 +179,6 @@ export function HomeBackgroundSettings(): ReactElement {
           </SettingsRow>
           <SettingsRow settingId="appearance-home-image-fade" label={text.fade} description={text.fadeDesc}>
             <div className="home-bg-slider">
-              <output className="home-bg-value ui-num" aria-hidden>{`${Math.round(background.fade * 100)}%`}</output>
               <Slider
                 className="home-bg-range"
                 aria-label={text.fade}
@@ -190,6 +189,7 @@ export function HomeBackgroundSettings(): ReactElement {
                 onChange={(value) => updateHomeBackground({ fade: Array.isArray(value) ? value[0] : value })}
                 data-testid="v3-home-bg-fade"
               />
+              <output className="home-bg-value ui-num" aria-hidden>{`${Math.round(background.fade * 100)}%`}</output>
             </div>
           </SettingsRow>
         </>

@@ -5,10 +5,7 @@ import { formatContextWindowTokens, type ContextWindowSnapshot } from "../../ada
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { composerFloatingLayerProps } from "./composerEventScope";
-import {
-  formatContextWindowCompactionMessage,
-  formatContextWindowCost,
-} from "./ContextWindowMeter.logic";
+import { formatContextWindowCost } from "./ContextWindowMeter.logic";
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -28,7 +25,7 @@ export function ContextWindowMeter(props: {
   compactDisabledReason?: string | null | undefined;
 }) {
   const t = useT();
-  const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
+  const { usage, onCompact, compactDisabled, compactDisabledReason } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
@@ -40,13 +37,6 @@ export function ContextWindowMeter(props: {
   const usageColor = isOverloaded
     ? "var(--color-error)"
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
-  const compactionMessage = usage.compactsAutomatically
-    ? formatContextWindowCompactionMessage(modelDisplayName, usage.autoCompactThreshold, {
-        atTokens: (tokens) => t("composer.t3.autoCompactAt", { n: tokens }),
-        forModel: (model) => t("composer.t3.autoCompactForModel", { model }),
-        generic: t("composer.t3.autoCompactGeneric"),
-      })
-    : null;
 
   return (
     <Popover>
@@ -101,7 +91,6 @@ export function ContextWindowMeter(props: {
       />
       <PopoverPopup
         {...composerFloatingLayerProps}
-        tooltipStyle
         side="top"
         align="end"
         padding="none"
@@ -158,11 +147,6 @@ export function ContextWindowMeter(props: {
               </span>
             </div>
           ) : null}
-          {compactionMessage ? (
-            <div className="mt-1 text-pretty text-secondary-label text-2xs font-medium">
-              {compactionMessage}
-            </div>
-          ) : null}
           {onCompact ? (
             <>
               <Button
@@ -170,17 +154,13 @@ export function ContextWindowMeter(props: {
                 variant="outline"
                 className="mt-1 w-full justify-center"
                 disabled={compactDisabled}
+                title={compactDisabled ? (compactDisabledReason ?? undefined) : undefined}
                 data-testid="composer-context-compact"
                 onClick={onCompact}
               >
                 <Minimize2Icon aria-hidden="true" />
                 {t("status.compact")}
               </Button>
-              {compactDisabled && compactDisabledReason ? (
-                <div className="text-pretty text-secondary-label text-2xs">
-                  {compactDisabledReason}
-                </div>
-              ) : null}
             </>
           ) : null}
         </div>

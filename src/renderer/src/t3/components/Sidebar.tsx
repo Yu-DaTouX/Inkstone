@@ -21,6 +21,7 @@ import {
 } from 'react'
 import { cn } from '../lib/utils'
 import { attachSidebarTree, sidebarTreeProps } from '../lib/sidebarTree'
+import { useT } from '../../i18n'
 import {
   animateSidebarLayoutChanges,
   buildSidebarListItems,
@@ -29,6 +30,7 @@ import {
   resolveSidebarDropVerb,
   sidebarFolderRowId,
   sidebarListItemId,
+  sidebarMarkerId,
   type SidebarDropTarget,
   type SidebarDropVerb,
   type SidebarSection,
@@ -140,6 +142,33 @@ export interface SidebarThreadListProps {
 
 export function SidebarThreadList(props: SidebarThreadListProps) {
   const { sections, labels, renderRow } = props
+  const t = useT()
+  const markerLabel = (id: string): string | null => {
+    if (id === sidebarMarkerId('pinned-header')) return labels.pinned
+    if (id === sidebarMarkerId('pinned-divider') || id === sidebarMarkerId('active-placeholder')) return labels.active
+    if (id === sidebarMarkerId('working-header')) return labels.working
+    if (id === sidebarMarkerId('snoozed-header')) return labels.snoozed
+    if (id === sidebarMarkerId('settled-header') || id === sidebarMarkerId('settled-placeholder')) return labels.settled
+    return null
+  }
+  const dropName = (id: string | number): string => {
+    const marker = markerLabel(String(id))
+    if (marker !== null) return marker
+    const row = document.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(String(id))}"]`)
+    return row?.getAttribute('aria-label') ?? ''
+  }
+  const dragLabel = (id: string | number): string => {
+    const row = document.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(String(id))}"]`)
+    return row?.getAttribute('aria-label') ?? ''
+  }
+  const announcements = {
+    onDragStart: ({ active }: { active: { id: string | number } }) => t('sidebar.t3.dnd.picked', { name: dragLabel(active.id) }),
+    onDragOver: ({ active, over }: { active: { id: string | number }; over: { id: string | number } | null }) =>
+      over === null ? t('sidebar.t3.dnd.left', { name: dragLabel(active.id) }) : t('sidebar.t3.dnd.moved', { name: dragLabel(active.id), target: dropName(over.id) }),
+    onDragEnd: ({ active, over }: { active: { id: string | number }; over: { id: string | number } | null }) =>
+      over === null ? t('sidebar.t3.dnd.cancelled', { name: dragLabel(active.id) }) : t('sidebar.t3.dnd.dropped', { name: dragLabel(active.id), target: dropName(over.id) }),
+    onDragCancel: ({ active }: { active: { id: string | number } }) => t('sidebar.t3.dnd.cancelled', { name: dragLabel(active.id) })
+  }
   const hasProjectFolders = props.projectFolders != null && props.projectFolders.length > 0
   const shelves = props.shelves ?? { working: true, snoozed: true, settled: true }
   const hasAnyRow =
@@ -582,6 +611,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
       sensors={dndSensors}
       collisionDetection={dndCollisionDetection}
       modifiers={dndModifiers}
+      accessibility={{ announcements, screenReaderInstructions: { draggable: t('sidebar.t3.dnd.instructions') } }}
       onDragStart={handleThreadDragStart}
       onDragOver={handleThreadDragOver}
       onDragEnd={handleThreadDragEnd}

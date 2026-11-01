@@ -49,7 +49,7 @@ export function SubscriptionAccountList({ provider, name, accounts, disabled, on
               ) : (
                 <span className="ms-key-label">{account.label || `${name} · ${index + 1}`}</span>
               )}
-              {account.plan ? <span className="ms-key-mask">{account.plan}</span> : null}
+              {account.plan ? <Badge tone="accent">{account.plan.toUpperCase()}</Badge> : null}
               <span className="ms-key-actions">
                 {account.active ? (
                   <Badge tone="ok">{text('keyCurrent')}</Badge>

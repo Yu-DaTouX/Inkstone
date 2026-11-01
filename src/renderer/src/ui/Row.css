@@ -19,9 +19,14 @@
       background-color var(--dur-fast) var(--ease),
       color var(--dur-fast) var(--ease);
   }
-  .ui-row:not([data-no-hover]):is(:hover, [data-hovered]),
+  .ui-row:not([data-no-hover])[data-hovered],
   .ui-row[data-menu='1'] {
     background: var(--hover);
+  }
+  @media (hover: hover) {
+    .ui-row:not([data-no-hover]):hover {
+      background: var(--hover);
+    }
   }
   .ui-row:not(.ui-row--static):active {
     background: var(--press);
@@ -29,9 +34,14 @@
   .ui-row[data-signal='ask'] {
     background: var(--ask-bg);
   }
-  .ui-row[data-signal='ask']:not([data-no-hover]):is(:hover, [data-hovered]),
+  .ui-row[data-signal='ask']:not([data-no-hover])[data-hovered],
   .ui-row[data-signal='ask'][data-menu='1'] {
     background: linear-gradient(var(--hover), var(--hover)), var(--ask-bg);
+  }
+  @media (hover: hover) {
+    .ui-row[data-signal='ask']:not([data-no-hover]):hover {
+      background: linear-gradient(var(--hover), var(--hover)), var(--ask-bg);
+    }
   }
   .ui-row[data-signal='ask']:is([aria-current='true'], [aria-current='page']) {
     background: linear-gradient(var(--alpha-1), var(--alpha-1)), var(--ask-bg);
@@ -81,8 +91,10 @@
     border-radius: var(--r-sm);
     transition: background-color var(--dur-fast) var(--ease);
   }
-  .ui-row-frame:not([data-no-hover]):hover {
-    background: var(--hover);
+  @media (hover: hover) {
+    .ui-row-frame:not([data-no-hover]):hover {
+      background: var(--hover);
+    }
   }
   .ui-row-frame:has(> .ui-row:is([aria-current='true'], [aria-current='page'], [data-selected])) {
     background: var(--alpha-1);
@@ -91,8 +103,13 @@
     flex: 1;
     background: transparent;
   }
-  .ui-row-frame > .ui-row:is(:hover, [data-hovered], [aria-current='true'], [aria-current='page'], [data-selected]) {
+  .ui-row-frame > .ui-row:is([data-hovered], [aria-current='true'], [aria-current='page'], [data-selected]) {
     background: transparent;
+  }
+  @media (hover: hover) {
+    .ui-row-frame > .ui-row:hover {
+      background: transparent;
+    }
   }
   .ui-row__accessory {
     display: inline-flex;
@@ -133,9 +150,13 @@
     background: var(--field);
     color: var(--fg3);
   }
-  .ui-row--field:hover,
   .ui-row--field[data-hovered] {
     background: var(--field-hover);
+  }
+  @media (hover: hover) {
+    .ui-row--field:hover {
+      background: var(--field-hover);
+    }
   }
   @media (forced-colors: active) {
     .ui-row--field {
@@ -172,6 +193,7 @@
     background: var(--fg3);
   }
   .ui-status__dot[data-kind='running'] {
+    background: var(--run);
     animation: ui-status-pulse var(--dur-breathe) ease-in-out infinite;
   }
   .ui-status__dot:is([data-kind='awaiting'], [data-kind='pending']) {

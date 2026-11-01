@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import type { PromptTemplateDirectories } from '../../../../../shared/ipc'
 import { useStore } from '../../../state/store'
-import { Button } from '../../../ui'
+import { Button, MiddleTruncate } from '../../../ui'
 import { useCapsText } from './text'
 import { Empty, Entry, Group, Meta, Panel, Warn } from './parts'
 import { promptCommands } from './model'
@@ -104,7 +104,9 @@ export function PromptsSection(): ReactElement {
                     </Button>
                   }
                 >
-                  <Meta title={path}>{path}</Meta>
+                  <Meta>
+                    <MiddleTruncate value={path} />
+                  </Meta>
                 </Entry>
               ) : null
             })}

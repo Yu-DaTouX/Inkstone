@@ -1,5 +1,4 @@
-import { useEffect, type CSSProperties } from 'react'
-import { flushSync } from 'react-dom'
+import { useEffect } from 'react'
 import {
   UNSTABLE_Toast as RACToast,
   UNSTABLE_ToastContent as RACToastContent,
@@ -12,7 +11,6 @@ import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { Button } from './Button'
 import { CloseButton } from './IconButton'
-import { motionAllowed } from './motion-hooks'
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger'
 
@@ -23,22 +21,7 @@ export interface ToastContent {
   action?: { label: string; onAction: () => void }
 }
 
-type TransitionDocument = Document & { startViewTransition?: (options: { update: () => void; types?: string[] }) => unknown }
-
-function withToastTransition(update: () => void, action: string): void {
-  const doc = typeof document === 'undefined' ? null : (document as TransitionDocument)
-  if (action === 'add' || !doc?.startViewTransition || !motionAllowed() || !doc.querySelector('.ui-toast')) {
-    update()
-    return
-  }
-  doc.startViewTransition({ update: () => flushSync(update), types: ['ui-toast'] })
-}
-
-export const toastQueue = new UNSTABLE_ToastQueue<ToastContent>({ maxVisibleToasts: 3, wrapUpdate: withToastTransition })
-
-function toastTransitionName(key: string): string {
-  return `ui-toast-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`
-}
+export const toastQueue = new UNSTABLE_ToastQueue<ToastContent>({ maxVisibleToasts: 3 })
 
 export const DEFAULT_TOAST_TIMEOUT_MS = 6500
 
@@ -81,10 +64,11 @@ export function ToastRegion({ className }: { className?: string } = {}) {
   return (
     <RACToastRegion
       queue={toastQueue}
+      aria-label={t('ui.toastRegion')}
       className={composeRenderProps(className, (cn) => cx('ui-toast-region', cn))}
     >
       {({ toast }) => (
-        <RACToast toast={toast} className={cx('ui-toast', `ui-toast--${toast.content.tone ?? 'info'}`)} style={{ viewTransitionName: toastTransitionName(toast.key) } as CSSProperties}>
+        <RACToast toast={toast} className={cx('ui-toast', `ui-toast--${toast.content.tone ?? 'info'}`)}>
           <RACToastContent className="ui-toast__content">
             <span className="ui-toast__icon" aria-hidden="true">
               {toneIcon(toast.content.tone)}

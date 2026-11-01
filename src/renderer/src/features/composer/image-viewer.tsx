@@ -25,7 +25,7 @@ export function ImageViewer({
         <Dialog className="imgv-dialog" title={alt || t('chat.imagePreview')} closeLabel={t('ui.close')}>
           <div className="imgv-body">
             <InlineImage className="imgv-image" src={src} alt={alt ?? ''} />
-            {caption ? <p className="imgv-caption">{caption}</p> : null}
+            {caption && caption !== alt ? <p className="imgv-caption">{caption}</p> : null}
           </div>
         </Dialog>
       </Modal>

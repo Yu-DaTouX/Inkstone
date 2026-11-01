@@ -76,7 +76,7 @@ export function AndroidSection(): ReactElement {
               <Button variant="secondary" onPress={() => void window.yan.android.openSdkDir()}>
                 {t('android.openSdk')}
               </Button>
-              <Button isDisabled={running || !missing.length} onPress={() => void start(missing)}>
+              <Button isDisabled={running || !missing.length} title={t('android.license')} onPress={() => void start(missing)}>
                 {missing.length ? t('android.installAll', { size: fmtBytes(missing.reduce((sum, id) => sum + APPROX_BYTES[id], 0)) }) : t('android.allInstalled')}
               </Button>
             </>

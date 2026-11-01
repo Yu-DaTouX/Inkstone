@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, ListFilter, RefreshCw, UserRound } from 'lucide-react'
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, CircleCheck, CircleDashed, CircleX, ListFilter, RefreshCw, UserRound } from 'lucide-react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import {
   Badge,
@@ -19,7 +19,6 @@ import {
   Select,
   Skeleton,
   Spinner,
-  StatusDot,
   Toggle,
   ToggleGroup
 } from '../../ui'
@@ -54,7 +53,11 @@ const LIST_STATES: readonly { id: GhPrListState; label: MessageKey }[] = [
 
 const REVIEW_FILTERS: readonly PrReviewFilter[] = ['any', 'required', 'approved', 'changes_requested', 'none']
 const SORT_KEYS: readonly PrSortKey[] = ['updated', 'created', 'comments']
-const LABEL_LIMIT = 3
+function CheckGlyph({ state }: { state: ReturnType<typeof checkDot> }): ReactElement {
+  if (state === 'ok') return <CircleCheck size={12} aria-hidden />
+  if (state === 'fail') return <CircleX size={12} aria-hidden />
+  return <CircleDashed size={12} aria-hidden />
+}
 const ALL_AUTHORS = '*'
 
 function checkDot(checks: PrChecks): 'ok' | 'pending' | 'fail' | 'idle' {
@@ -342,9 +345,8 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
 
   const content = (): ReactElement | null => {
     if (!status) return loadingHint()
-    if (status.error && !status.authed) return hint(t('github.pr.errorTitle'), status.error)
     if (!status.installed) return hint(t('github.pr.missingGhTitle'), t('github.pr.missingGhBody'))
-    if (!status.authed) return hint(t('github.pr.signedOutTitle'), t('github.pr.signedOutBody'))
+    if (!status.authed) return hint(t('github.pr.signedOutTitle'), t('github.pr.signedOutBody'), status.error)
     if (!status.repo) return hint(t('github.pr.notRepoTitle'), t('github.pr.notRepoBody'), status.error)
     return null
   }
@@ -470,37 +472,30 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
                     type="button"
                     className="gh-pr-row"
                     aria-label={`#${row.number} ${row.title}`}
+                    title={row.labels.length ? row.labels.join(' · ') : undefined}
                     onClick={() => openPanelSurface(pullRequestSurface(row.number, { title: row.title, state: row.state }))}
                     data-testid={`gh-pr-row-${row.number}`}
                   >
                     <span className="gh-pr-row__top">
                       <span className="gh-pr-row__num">#{row.number}</span>
                       <span className="gh-pr-row__title">{row.title}</span>
-                      {row.state !== 'open' ? <Badge tone={stateTone(row.state)}>{stateText(row.state)}</Badge> : null}
+                      {row.state !== 'open' ? <Badge tone={stateTone(row.state)}>{stateText(row.state)}</Badge> : row.conflicting ? <Badge tone="fail" data-testid={`gh-pr-conflict-${row.number}`}>{actText.conflicting}</Badge> : null}
                       {review ? <Badge tone={review.tone}>{review.label}</Badge> : null}
                     </span>
                     <span className="gh-pr-row__meta">
                       <span className="gh-pr-row__author">{row.author}</span>
                       <span className="gh-pr-row__branches ui-num" title={`${row.head} → ${row.base}`}>
                         <MiddleTruncate className="gh-pr-row__branch" value={row.head} showTitle={false} />
-                        <span aria-hidden>→</span>
-                        <MiddleTruncate className="gh-pr-row__branch" value={row.base} showTitle={false} />
                       </span>
-                      <span className="gh-pr-row__check" title={checkText(row.checks)} aria-label={checkText(row.checks)}>
-                        <StatusDot kind={checkDot(row.checks)} />
-                        {row.checks.total ? <span className="ui-num">{row.checks.passed}/{row.checks.total}</span> : null}
-                      </span>
+                      {row.checks.total ? (
+                        <span className="gh-pr-row__check" data-state={checkDot(row.checks)} title={checkText(row.checks)} aria-label={checkText(row.checks)}>
+                          <CheckGlyph state={checkDot(row.checks)} />
+                          <span className="ui-num">{row.checks.passed}/{row.checks.total}</span>
+                        </span>
+                      ) : null}
                       <DiffStat added={row.additions} removed={row.deletions} hideZero />
                       <span className="gh-pr-row__time">{when(row.updatedAt)}</span>
                     </span>
-                    {row.labels.length ? (
-                      <span className="gh-pr-row__labels">
-                        {row.labels.slice(0, LABEL_LIMIT).map((label) => (
-                          <Badge key={label}>{label}</Badge>
-                        ))}
-                        {row.labels.length > LABEL_LIMIT ? <Badge>+{row.labels.length - LABEL_LIMIT}</Badge> : null}
-                      </span>
-                    ) : null}
                   </button>
                 </li>
               )

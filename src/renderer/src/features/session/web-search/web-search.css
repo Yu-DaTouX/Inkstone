@@ -69,7 +69,7 @@
     max-width: 720px;
     margin: var(--s-8) 0 var(--s-10);
   }
-  .ws-op[data-single] { grid-template-columns: minmax(0, 1fr); max-width: 240px; }
+  .ws-op[data-single] { grid-template-columns: minmax(0, 1fr); max-width: 240px; align-items: start; }
   .ws-source-pending { flex-direction: column; justify-content: space-between; gap: var(--s-8); }
   .ws-source-pending-title { display: grid; gap: var(--s-6); }
   .ws-source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-6); min-width: 0; color: var(--fg3); font-size: var(--t-caption); }

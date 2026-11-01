@@ -51,7 +51,12 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
     return () => window.removeEventListener(MCP_SETTINGS_CHANGED, changed)
   }, [active, refresh])
   const services = (snapshot?.project ? snapshot.projectServices : snapshot?.global ?? []).filter((service) => !service.special)
-  const scopeLabel = snapshot?.project ? (en ? `This project: ${snapshot.project.name}` : `本项目：${snapshot.project.name}`) : en ? 'Global defaults' : '全局默认'
+  const projectName = snapshot?.project?.name?.trim() ?? ''
+  const scopeLabel = snapshot?.project
+    ? en
+      ? projectName ? `This project: ${projectName}` : 'This project'
+      : projectName ? `本项目：${projectName}` : '本项目'
+    : en ? 'Global defaults' : '全局默认'
   const busyText = en ? 'Wait until this conversation is idle.' : '当前会话运行中，空闲后可切换。'
   const apply = async (): Promise<void> => {
     if (!current() || !owner?.sessionId || !snapshot) return

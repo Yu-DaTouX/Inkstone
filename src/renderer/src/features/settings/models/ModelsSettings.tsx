@@ -337,7 +337,11 @@ export function ModelsSettings(): ReactElement {
         {p.envVar || fromEnv || p.envShadowed ? (
           <div className="ms-service-detail">
             {p.envVar ? <p className="ms-service-env">{t('auth.orEnv')} <code>{p.envVar}</code></p> : null}
-            {fromEnv ? <Notice tone="info" compact role="note" className="ms-env-notice">{text('envActive')}</Notice> : null}
+            {fromEnv ? (
+              <TooltipText tooltip={text('envActive')}>
+                <Badge tone="neutral">{text('envBadge')}</Badge>
+              </TooltipText>
+            ) : null}
             {p.envShadowed ? <p className="ms-service-env">{text('envShadowed')}</p> : null}
           </div>
         ) : null}
@@ -489,7 +493,6 @@ export function ModelsSettings(): ReactElement {
           </span>
           <span className="ms-safety" data-testid="ms-file-info">
             <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
-            <span className="ms-safety-lead">{t('auth.safety')}</span>
             {fileInfo ? (
               <span className="ms-file">
                 <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
@@ -497,17 +500,19 @@ export function ModelsSettings(): ReactElement {
                   variant="plain"
                   size="micro"
                   className="ms-file-link"
-                  tooltip={<span className="ms-file-tip">{fileInfo.path}</span>}
+                  tooltip={
+                    <span className="ms-file-tip">
+                      {fileInfo.path}
+                      {' · '}
+                      {fileInfo.exists ? t(fileInfo.count === 1 ? 'auth.entry' : 'auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
+                    </span>
+                  }
                   aria-expanded={showPath}
                   data-testid="ms-file-link"
                   onPress={() => setShowPath((v) => !v)}
                 >
                   {text('credentialFile')}
                 </Button>
-                <span className="ms-file-count">
-                  {' · '}
-                  {fileInfo.exists ? t(fileInfo.count === 1 ? 'auth.entry' : 'auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
-                </span>
               </span>
             ) : null}
           </span>

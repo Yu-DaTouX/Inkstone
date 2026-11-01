@@ -431,8 +431,8 @@ function CodeBlock({ lang, source, children }: { lang?: string; source: string; 
           variant="ghost"
           size="sm"
           className="v3-code-act"
-          aria-label={copied ? t('turn.copied') : failed ? t('turn.copyFailed') : t('turn.copy')}
-          tooltip={copied ? t('turn.copied') : failed ? t('turn.copyFailed') : t('turn.copy')}
+          aria-label={copied ? t('code.copied') : failed ? t('code.copyFailed') : t('code.copy')}
+          tooltip={copied ? t('code.copied') : failed ? t('code.copyFailed') : t('code.copy')}
           onPress={copy}
         >
           <Icon name={copied ? 'check' : 'copy'} size={14} />
@@ -490,6 +490,7 @@ const MD_COMPONENTS: Options['components'] = {
   a: LinkAnchor,
   p: MarkdownParagraph,
   img: MarkdownImage,
+  input: MarkdownInput,
   code: InlineCodeLink,
   pre: MarkdownPre,
   table: ({ children }: { children?: ReactNode }) => (
@@ -501,6 +502,12 @@ const MD_COMPONENTS: Options['components'] = {
 
 function footnoteIndex(referenceIndex: number, rereferenceIndex: number): string {
   return `${referenceIndex + 1}${rereferenceIndex > 1 ? `-${rereferenceIndex}` : ''}`
+}
+
+function MarkdownInput({ node: _node, ...props }: JSX.IntrinsicElements['input'] & ExtraProps): ReactNode {
+  const t = useT()
+  if (props.type !== 'checkbox') return <input {...props} />
+  return <input {...props} readOnly disabled aria-label={props.checked ? t('chat.taskDone') : t('chat.taskTodo')} />
 }
 
 function useFootnoteOptions(): NonNullable<Options['remarkRehypeOptions']> {

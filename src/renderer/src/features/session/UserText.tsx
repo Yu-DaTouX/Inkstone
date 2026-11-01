@@ -1,8 +1,36 @@
-import { useMemo, type JSX, type ReactNode } from 'react'
+import { useMemo, useState, type JSX, type ReactNode } from 'react'
 import { splitImageRefs } from '../composer/image-refs'
 import { HighlightedCode } from '../../patterns/HighlightedCode'
+import { IconButton } from '../../ui'
+import { useT } from '../../i18n'
+import { Icon } from './Icon'
 import { parseUserInline, parseUserSegments, type UserInlineRun } from './user-text'
 import './user-text.css'
+
+function UserCode({ code, lang }: { code: string; lang: string }): JSX.Element {
+  const t = useT()
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copy = (): void => {
+    void navigator.clipboard.writeText(code).then(
+      () => { setState('copied'); window.setTimeout(() => setState('idle'), 1600) },
+      () => { setState('failed'); window.setTimeout(() => setState('idle'), 2000) }
+    )
+  }
+  const label = state === 'copied' ? t('code.copied') : state === 'failed' ? t('code.copyFailed') : t('code.copy')
+  return (
+    <div className="v3-user-code" data-lang={lang || 'text'}>
+      <div className="v3-user-code-head">
+        <span className="v3-user-code-lang">{lang || 'text'}</span>
+        <IconButton size="sm" className="v3-user-code-act" aria-label={label} tooltip={label} onPress={copy}>
+          <Icon name={state === 'copied' ? 'check' : 'copy'} size={14} />
+        </IconButton>
+      </div>
+      <pre className="v3-user-pre">
+        <HighlightedCode code={code} lang={lang} />
+      </pre>
+    </div>
+  )
+}
 
 function ImageRefs({ text }: { text: string }): JSX.Element {
   const parts = useMemo(() => splitImageRefs(text), [text])
@@ -60,11 +88,7 @@ export function UserText({ text }: { text: string }): JSX.Element {
     <div className="v3-user-text" data-user-text="">
       {segments.map((segment, index) =>
         segment.kind === 'code' ? (
-          <div key={index} className="v3-user-code" data-lang={segment.lang}>
-            <pre className="v3-user-pre">
-              <HighlightedCode code={segment.text} lang={segment.lang} />
-            </pre>
-          </div>
+          <UserCode key={index} code={segment.text} lang={segment.lang} />
         ) : (
           <p key={index} className="v3-user-p">
             <InlineRuns text={segment.text} />

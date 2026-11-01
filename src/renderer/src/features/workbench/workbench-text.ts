@@ -131,7 +131,7 @@ const ZH: WorkbenchText = {
     logs: '日志',
     quota: '额度',
     device: '设备',
-    pullRequests: 'Pull 请求'
+    pullRequests: 'PR'
   },
   overview: {
     title: '概览',

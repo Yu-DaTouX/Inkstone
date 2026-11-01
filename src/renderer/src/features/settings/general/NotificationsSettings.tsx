@@ -115,6 +115,7 @@ export function NotificationsSettings(): ReactElement {
           <SettingsRow key={event.id} settingId={`notifications-event-${event.id}`} label={text[event.textKey]}>
             <IconButton
               aria-label={`${text.notifPreview} · ${text[event.textKey]}`}
+              isDisabled={!sound.enabled}
               data-testid={`v3-notif-preview-${event.id}`}
               onPress={() => previewSound(event.id, sound.volume)}
             >

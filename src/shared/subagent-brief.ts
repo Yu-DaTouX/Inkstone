@@ -81,6 +81,8 @@ export function parseSubagentBrief(
   }
 }
 
+export const SUBAGENT_BRIEF_CLOSING = '交回时先说结论（做了什么 / 结论是什么），再说依据；做不到的部分如实说做不到。'
+
 export function briefPrompt(brief: SubagentBrief, task: string): string {
   const lines: string[] = [brief.goal]
   const extra = task.trim() && task.trim() !== brief.goal.trim() ? task.trim() : ''
@@ -94,8 +96,13 @@ export function briefPrompt(brief: SubagentBrief, task: string): string {
     for (const item of brief.sources) lines.push(`- ${item}`)
   }
   if (brief.boundary) lines.push('', `边界：${brief.boundary}`)
-  lines.push('', '交回时先说结论（做了什么 / 结论是什么），再说依据；做不到的部分如实说做不到。')
+  lines.push('', SUBAGENT_BRIEF_CLOSING)
   return lines.join('\n')
+}
+
+export function briefDisplay(brief: SubagentBrief, task: string): string {
+  const full = briefPrompt(brief, task)
+  return full.endsWith(SUBAGENT_BRIEF_CLOSING) ? full.slice(0, -SUBAGENT_BRIEF_CLOSING.length).trimEnd() : full
 }
 
 export interface SubagentResult {

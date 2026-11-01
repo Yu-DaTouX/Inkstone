@@ -52,7 +52,6 @@ export function QuotaResumeNotice({ sessionId }: { sessionId: string | null | un
       </CardHead>
       <CardBody className="v3-wrapup-body">
         <p className="v3-wrapup-recap" role="status" aria-live="polite">{eta}</p>
-        <p className="v3-wrapup-recap">{t('quota.resume.hint')}</p>
       </CardBody>
       <CardActions
         className="v3-wrapup-actions"
@@ -62,7 +61,7 @@ export function QuotaResumeNotice({ sessionId }: { sessionId: string | null | un
           </Button>
         }
       >
-        <Button variant="secondary" onPress={resumeNow} data-testid="quota-resume-now">
+        <Button variant="primary" onPress={resumeNow} data-testid="quota-resume-now">
           {t('quota.resume.now')}
         </Button>
       </CardActions>

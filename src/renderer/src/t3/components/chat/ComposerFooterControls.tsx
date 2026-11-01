@@ -36,7 +36,6 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   const unrestricted = props.runtimeMode === 'all'
   const Icon = unrestricted ? ShieldOffIcon : ShieldCheckIcon
   const fullLabel = t(`permission.label.${props.runtimeMode}` as 'permission.label.danger')
-  const description = t(`permission.hint.${props.runtimeMode}` as 'permission.hint.danger')
   const toggleHint = t('permission.toggle')
   const confirmOpen = props.pendingMode === 'all' && !props.hidden
 
@@ -65,10 +64,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
           <ComposerControlIcon icon={Icon} size={size} />
         </TooltipTrigger>
         <TooltipPopup side="top">
-          <span className="flex flex-col gap-0.5">
-            <span>{`${t('permission.title')}: ${fullLabel}`}</span>
-            <span className="text-muted-foreground text-xs">{`${description} · ${toggleHint}`}</span>
-          </span>
+          {`${t('permission.title')}: ${fullLabel} · ${toggleHint}`}
         </TooltipPopup>
       </Tooltip>
       <Popover

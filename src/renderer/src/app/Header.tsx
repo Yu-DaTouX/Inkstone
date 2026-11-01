@@ -3,7 +3,7 @@ import { ArrowLeft, Columns3, PanelLeft, PanelRight, Pin, SquarePen } from 'luci
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings } from './shortcuts'
-import { IconButton, Separator } from '../ui'
+import { IconButton, Separator, TooltipText } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { collabText } from '../features/collab/collab-text'
@@ -109,14 +109,16 @@ export function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSid
             <SquarePen size={16} />
           </IconButton>
         ) : null}
-        <h1 className={route === 'chat' && !splitActive ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'} title={project ? `${project} / ${title}` : title}>
+        <h1 className={route === 'chat' && !splitActive ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'}>
           {project ? (
             <>
               <span className="v3-head-crumb">{project}</span>
               <span className="v3-head-crumb-sep" aria-hidden>/</span>
             </>
           ) : null}
-          <span className="v3-head-title__text">{title}</span>
+          <TooltipText tooltip={title} className="v3-head-title__text">
+            {title}
+          </TooltipText>
         </h1>
       </div>
 

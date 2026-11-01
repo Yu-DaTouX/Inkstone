@@ -1,6 +1,7 @@
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import type { CSSProperties } from "react";
+import { useOptionalT } from "../../../i18n";
 import { cn } from "../../lib/utils";
 import { Button } from "./button";
 import { ControlledOpenContext, renderRetainedPopup } from "./dialog";
@@ -71,6 +72,7 @@ function SheetPopup({
   side?: "right" | "left" | "top" | "bottom";
   variant?: "default" | "inset";
 }) {
+  const t = useOptionalT();
   const transitionStyle =
     transitionDurationMs === undefined
       ? undefined
@@ -90,7 +92,7 @@ function SheetPopup({
       <SheetViewport side={side} variant={variant}>
         <SheetPrimitive.Popup
           className={cn(
-            "relative flex max-h-full min-h-0 w-full min-w-0 flex-col bg-popover not-dark:bg-clip-padding text-popover-foreground shadow-lg/5 transition-[opacity,translate] duration-200 ease-in-out will-change-transform before:pointer-events-none before:absolute before:inset-0 before:shadow-(--shadow-bevel) data-ending-style:opacity-0 data-starting-style:opacity-0 max-sm:before:hidden",
+            "relative flex max-h-full min-h-0 w-full min-w-0 flex-col bg-popover not-dark:bg-clip-padding text-popover-foreground shadow-(--shadow-dialog) transition-[opacity,translate] duration-200 ease-in-out will-change-transform before:pointer-events-none before:absolute before:inset-0 before:shadow-(--shadow-bevel) data-ending-style:opacity-0 data-starting-style:opacity-0 max-sm:before:hidden",
             side === "bottom" &&
               "row-start-2 border-t data-ending-style:translate-y-8 data-starting-style:translate-y-8",
             side === "top" &&
@@ -113,7 +115,7 @@ function SheetPopup({
           {children}
           {showCloseButton && (
             <SheetPrimitive.Close
-              aria-label="Close"
+              aria-label={t('ui.close')}
               className="absolute end-2 top-2"
               render={<Button size="icon" variant="ghost" />}
             >

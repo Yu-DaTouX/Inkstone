@@ -129,7 +129,7 @@ export function PrActionBar({ cwd, detail, text, action, pending, onPendingChang
             <MenuItem
               id="fix-checks"
               description={text.agent.fixChecksHint}
-              trailingValue={failedChecksOf(detail.checkItems).length || undefined}
+              trailingValue={failedChecksOf(detail.checkItems).length ? <Badge tone="fail">{failedChecksOf(detail.checkItems).length}</Badge> : undefined}
               data-testid="gh-pr-agent-fix"
             >
               {text.agent.fixChecks}
@@ -386,9 +386,7 @@ export function PrReviewDialog({ cwd, detail, text, action, pending, onPendingCh
                     </li>
                   ))}
                 </ul>
-              ) : (
-                <Notice variant="hint">{text.review.pendingEmpty}</Notice>
-              )}
+              ) : null}
             </section>
             <PrActionStatus controller={action} text={text.result} onRefresh={onRefresh} />
             <DialogFooter>

@@ -404,8 +404,11 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
             {status.message}
           </Notice>
         ) : null}
-        {total === 0 ? <p className="v3-canvas-draw-hint">{text.empty}</p> : null}
-        <p className="v3-canvas-draw-hint">{text.hint}</p>
+        {total === 0 ? (
+          <p className="v3-canvas-draw-hint" title={text.hint}>
+            {text.empty}
+          </p>
+        ) : null}
       </div>
     </aside>
   )

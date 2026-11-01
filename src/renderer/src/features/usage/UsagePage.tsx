@@ -34,7 +34,7 @@ export function UsagePage() {
   const rows = !stats
     ? []
     : dimension === 'day'
-      ? usageBars(dailyEntries(stats.heat, range)).reverse().map((bar) => ({ ...bar, cost: null as number | null, title: bar.key }))
+      ? usageBars(dailyEntries(stats.heat, range)).reverse().filter((bar) => bar.value > 0).map((bar) => ({ ...bar, cost: null as number | null, title: bar.key }))
       : usageBars(stats.models.map((item) => ({ key: item.key, label: usageModelName(item, models), value: item.tokens }))).map((bar, i) => ({ ...bar, cost: stats.models[i].cost, title: stats.models[i].sources?.join(' · ') }))
   const costText = stats ? money(stats.cost, true) : '—'
   const costUnitAt = costText.lastIndexOf(' ')

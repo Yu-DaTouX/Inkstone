@@ -30,7 +30,7 @@ import {
 import { useToolExpansion } from './use-tool-run'
 import './subagents.css'
 import { turnModelLabel } from './turn-model-label'
-import { Button, ProgressBar, ShimmerText } from '../../ui'
+import { Badge, Button, ProgressBar, ShimmerText } from '../../ui'
 import { Card, CardStatus, CardSummary, CardTitle, type CardStatusTone } from '../../ui/Card'
 import { ContextGauge } from '../../patterns/ContextGauge'
 
@@ -271,6 +271,7 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
   const thinkText = thinking ? (THINK_LABEL[thinking] ? t(THINK_LABEL[thinking]) : thinking) : null
   const modelTail = [thinkText, run.fork ? 'fork' : null].filter(Boolean).join(' · ')
   const live = row.state === 'starting' || row.state === 'running'
+  const awaitingReview = !live && (run.review === 'pending' || run.review === 'conflict')
   const label = compactTaskPaths(live && row.description ? row.description : row.label)
   const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
   const summary = live ? '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
@@ -300,6 +301,16 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       <span className="v3-sa-title" data-testid="v3-subagent-task">
         {live ? <ShimmerText className="v3-sa-shimmer">{label}</ShimmerText> : label}
       </span>
+      {awaitingReview ? (
+        <Badge
+          tone={run.review === 'conflict' ? 'stall' : 'ask'}
+          className="v3-sa-review"
+          style={{ flex: 'none' }}
+          data-testid="v3-subagent-review-badge"
+        >
+          {t('sa.reviewBadge')}
+        </Badge>
+      ) : null}
       {modelName ? (
         <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>
           <span className="v3-sa-model-name">{modelName}</span>

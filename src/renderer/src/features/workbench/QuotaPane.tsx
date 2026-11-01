@@ -102,6 +102,7 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
   }
 
   const cards = orderAccountCardsForProvider(report?.cards ?? [], provider)
+  const groups = groupByProvider(cards)
   const time = report
     ? new Date(report.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
     : ''
@@ -109,7 +110,7 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
   return (
     <div className="wb-quota" data-testid="v3-wb-quota">
       <div className="wb-quota-head">
-        <span className="wb-quota-checked" title={report ? t('quota.checkedAt', { time }) : undefined}>{report ? time : loading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
+        <span className="wb-quota-checked" title={report ? t('quota.checkedAt', { time }) : undefined}>{report ? t('quota.checkedAt', { time }) : loading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
         <span className="wb-quota-actions">
           <IconButton
             size="sm"
@@ -141,20 +142,22 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
       ) : null}
       {notice ? <Notice compact>{notice}</Notice> : null}
 
-      {groupByProvider(cards).map((group) => (
+      {groups.map((group) => (
         <section key={group.provider} className="wb-quota-group" data-testid={`v3-wb-quota-group-${group.provider}`}>
-          <header className="wb-quota-group-head">
-            <span className="wb-quota-group-name">
-              {GROUP_KEYS.has(group.provider) ? t(`quota.group.${group.provider}` as MessageKey) : group.provider}
-            </span>
-          </header>
+          {groups.length > 1 ? (
+            <header className="wb-quota-group-head">
+              <span className="wb-quota-group-name">
+                {GROUP_KEYS.has(group.provider) ? t(`quota.group.${group.provider}` as MessageKey) : group.provider}
+              </span>
+            </header>
+          ) : null}
           {group.cards.map((card) => (
             <QuotaCard key={`${card.source}:${card.key}`} card={card} busy={busyKey === card.key} locked={!!busyKey} onSwitch={() => void switchTo(card)} />
           ))}
         </section>
       ))}
       {report && cards.length === 0 ? (
-        <EmptyState className="wb-note-block" data-testid="v3-wb-quota-empty" title={t('acct.emptyTitle')} description={t('acct.emptyBody')} />
+        <EmptyState className="wb-note-block" data-testid="v3-wb-quota-empty" title={t('acct.emptyTitle')} />
       ) : null}
 
     </div>

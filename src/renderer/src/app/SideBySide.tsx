@@ -369,7 +369,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
             rows={1}
             readOnly
             value={draft}
-            placeholder={t('composer.ph')}
+            placeholder={text.activate(summary?.title || t('split.untitled'))}
             aria-label={text.activate(summary?.title || t('split.untitled'))}
             onFocus={() => focusSplitSession(target)}
             data-testid="v3-split-peer-input"

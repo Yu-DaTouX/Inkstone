@@ -55,7 +55,9 @@ export function ModelVisibilityGroup(): ReactElement {
   }
 
   const counter = [
-    text('visCount').replace('{n}', String(models.length)),
+    q
+      ? text('visCountShown').replace('{n}', String(shown.length)).replace('{total}', String(models.length))
+      : text('visCount').replace('{n}', String(models.length)),
     favoriteCount ? text('visCountFav').replace('{n}', String(favoriteCount)) : '',
     hiddenCount ? text('visCountHidden').replace('{n}', String(hiddenCount)) : ''
   ].filter(Boolean).join(' · ')

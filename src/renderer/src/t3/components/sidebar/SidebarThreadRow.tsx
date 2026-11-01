@@ -343,7 +343,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     isFileDragOver && "ring-1 ring-inset ring-primary/70",
     isFileDragOver && !isActive && "bg-sidebar-row-hover",
     isDragging &&
-      "bg-sidebar bg-linear-to-b from-sidebar-row-active to-sidebar-row-active text-sidebar-foreground opacity-100 shadow-lg",
+      "bg-sidebar bg-linear-to-b from-sidebar-row-active to-sidebar-row-active text-sidebar-foreground opacity-70 shadow-lg",
   );
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -386,13 +386,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
             )
           : cn(
               "group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
-              view.recede
-                ? "text-secondary-label"
-                : isActive || view.isWoke || status === "input"
-                  ? "text-foreground"
-                  : view.isUnread
-                    ? "text-muted-foreground"
-                    : "text-secondary-label/70",
+              isActive || view.isWoke || status === "input" || view.isUnread
+                ? "text-foreground"
+                : "text-muted-foreground",
             ),
       )}
       dir="auto"
@@ -433,7 +429,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               event.stopPropagation();
               onUnpin?.();
             }}
-            className="group/unpin inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="group/unpin -my-1 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           />
         }
       >
@@ -528,8 +524,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
           />
         }
       >
-        <Check className="size-3.5" />
-        {t("sidebar.t3.archive")}
+        <Check aria-hidden className="size-3.5" />
       </TooltipTrigger>
       <TooltipPopup>{t("sidebar.t3.archive")}</TooltipPopup>
     </Tooltip>
@@ -843,7 +838,12 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     {onUnarchive ? unsnoozeButton : null}
                     {onArchive || onUnarchive ? (
                       <span className="pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100">
-                        {onUnarchive ? unarchiveButton : archiveButton}
+                        {onUnarchive ? unarchiveButton : (
+                          <>
+                            {unsnoozeButton}
+                            {archiveButton}
+                          </>
+                        )}
                       </span>
                     ) : null}
                   </span>

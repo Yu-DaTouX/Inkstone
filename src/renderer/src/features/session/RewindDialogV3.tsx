@@ -106,6 +106,7 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
     d: preview.changes.filter((change) => change.status === 'D').length
   } : null
   const label = { A: t('rewind.sA'), D: t('rewind.sD'), M: t('rewind.sM') } as const
+  const nothingToRestore = phase === 'ready' && !!preview && preview.total === 0
 
   return (
     <ModalOverlay
@@ -114,7 +115,7 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
       onOpenChange={(open) => { if (!open && phase !== 'working') close() }}
     >
       <Modal className="rewind-dialog">
-        <Dialog title={t('rewind.title')} closeLabel={t('rewind.cancel')} showClose={phase !== 'working'} data-testid="rewind-dialog">
+        <Dialog title={t('rewind.title')} closeLabel={t('rewind.cancel')} showClose={phase !== 'working' && !nothingToRestore} data-testid="rewind-dialog">
           <p className="rewind-lead">
             {t('rewind.lead')}
             <br />
@@ -143,7 +144,7 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
           <DialogFooter>
             {phase === 'ready' && preview && preview.total > 0 ? <Button variant="primary" onPress={() => void run()} data-testid="rewind-confirm">{t('rewind.confirm')}</Button> : null}
             {phase === 'done' && undoId ? <Button onPress={() => void undo()} data-testid="rewind-undo">{t('rewind.undo')}</Button> : null}
-            <Button onPress={close} isDisabled={phase === 'working'} data-testid="rewind-done">{phase === 'done' || phase === 'undone' ? t('rewind.close') : t('rewind.cancel')}</Button>
+            <Button onPress={close} isDisabled={phase === 'working'} data-testid="rewind-done">{nothingToRestore ? t('rewind.dismiss') : phase === 'done' || phase === 'undone' ? t('rewind.close') : t('rewind.cancel')}</Button>
           </DialogFooter>
         </Dialog>
       </Modal>

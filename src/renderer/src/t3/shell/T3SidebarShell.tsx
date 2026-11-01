@@ -671,7 +671,22 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                     unsentLabel={t('sidebar.t3.unsentDraft')}
                     onNavigateToDraft={(draftId) => {
                       const view = viewByKey.get(scopedKeyOf(draftId))
-                      if (view) openView(view)
+                      if (view) {
+                        openView(view)
+                        return
+                      }
+                      const state = useStore.getState()
+                      const runId = draftId.startsWith('run:') ? draftId.slice(4) : draftId.startsWith('pending:') ? draftId.slice(8) : ''
+                      const runner = state.runners.find((item) => item.sessionId === draftId || (!!runId && (item.runId ?? item.id) === runId))
+                      if (runner?.sessionFile) {
+                        void openSidebarSession({ path: runner.sessionFile })
+                        return
+                      }
+                      const text = state.sessionRuntimes[draftId]?.draft ?? ''
+                      void state.newSession(runner?.cwd ? { cwd: runner.cwd } : undefined).then(() => {
+                        useStore.setState({ editorInject: { text, mode: 'replace' } })
+                        looseDrafts.find((entry) => entry.draftId === draftId)?.discard()
+                      })
                     }}
                     onDiscardDraft={(draftId) => looseDrafts.find((entry) => entry.draftId === draftId)?.discard()}
                     onDraftContextMenu={(draftId) => {

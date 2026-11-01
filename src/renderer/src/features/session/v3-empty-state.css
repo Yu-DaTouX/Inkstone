@@ -93,22 +93,16 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .v3-home-usage-label,
-  .v3-home-usage-meta {
+  .v3-home-usage-label {
     color: var(--fg3);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
   }
 
-  .v3-home-usage-meta::before {
-    content: '\00b7';
-    margin-right: var(--s-8);
-  }
-
   .v3-home-usage-bars {
     align-self: center;
     width: 112px;
-    height: 20px;
+    height: var(--s-32);
     margin-left: auto;
   }
 

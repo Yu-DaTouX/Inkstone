@@ -58,6 +58,8 @@ export function ProjectScriptsDialog({
   const [busy, setBusy] = useState(false)
 
   const importable = importablePackageScripts(draft, available)
+  const dirty = JSON.stringify(normalizeProjectScripts(draft)) !== JSON.stringify(normalizeProjectScripts(scripts.map((script) => ({ ...script }))))
+  const addRow = (): void => setDraft((current) => [...current, newScript()])
 
   const loadImportable = async (): Promise<void> => {
     setImportShown(true)
@@ -124,6 +126,23 @@ export function ProjectScriptsDialog({
     }
   }
 
+  const actions = (
+    <>
+      <Button size="sm" icon={<Plus size={14} />} isDisabled={busy} onPress={addRow} data-testid="script-add-row">
+        {t('script.addRow')}
+      </Button>
+      <Button
+        size="sm"
+        icon={<FileJson size={14} />}
+        isDisabled={busy || importLoading}
+        onPress={toggleImport}
+        data-testid="script-import-toggle"
+      >
+        {importShown ? t('script.importHide') : t('script.import')}
+      </Button>
+    </>
+  )
+
   return (
     <ModalOverlay
       isDismissable
@@ -133,13 +152,30 @@ export function ProjectScriptsDialog({
       }}
     >
       <Modal className="scripts-modal">
-        <Dialog title={t('script.dialogTitle')} closeLabel={t('script.cancel')} data-testid="scripts-dialog">
+        <Dialog
+          title={t('script.dialogTitle')}
+          closeLabel={t('script.cancel')}
+          data-testid="scripts-dialog"
+        >
           {({ close }) => (
-            <div className="scripts-dialog">
+            <div
+              className="scripts-dialog"
+              onKeyDownCapture={(event) => {
+                if (event.key !== 'Escape' || busy) return
+                event.stopPropagation()
+                onClose()
+              }}
+            >
               <p className="scripts-dialog-project">{project.name || project.cwd}</p>
 
               <div className="scripts-dialog-list">
-                {draft.length === 0 ? <EmptyState size="sm" title={t('script.empty')} /> : null}
+                {draft.length === 0 ? (
+                  <EmptyState
+                    size="sm"
+                    title={t('script.empty')}
+                    action={<div className="scripts-dialog-actions">{actions}</div>}
+                  />
+                ) : null}
                 {draft.map((script, index) => (
                   <Card padding="sm" quiet className="scripts-card" key={script.id} data-testid={`script-card-${index}`}>
                     <div className="scripts-card-head">
@@ -209,26 +245,11 @@ export function ProjectScriptsDialog({
                 ))}
               </div>
 
-              <div className="scripts-dialog-actions">
-                <Button
-                  size="sm"
-                  icon={<Plus size={14} />}
-                  isDisabled={busy}
-                  onPress={() => setDraft((current) => [...current, newScript()])}
-                  data-testid="script-add-row"
-                >
-                  {t('script.addRow')}
-                </Button>
-                <Button
-                  size="sm"
-                  icon={<FileJson size={14} />}
-                  isDisabled={busy || importLoading}
-                  onPress={toggleImport}
-                  data-testid="script-import-toggle"
-                >
-                  {importShown ? t('script.importHide') : t('script.import')}
-                </Button>
-              </div>
+              {draft.length === 0 ? null : (
+                <div className="scripts-dialog-actions">
+                  {actions}
+                </div>
+              )}
 
               {importShown ? (
                 <Card padding="sm" quiet className="scripts-import" data-testid="scripts-import">
@@ -287,7 +308,7 @@ export function ProjectScriptsDialog({
                 </Button>
                 <Button
                   variant="primary"
-                  isDisabled={busy}
+                  isDisabled={busy || !dirty}
                   onPress={() => void save(close)}
                   data-testid="scripts-save"
                 >

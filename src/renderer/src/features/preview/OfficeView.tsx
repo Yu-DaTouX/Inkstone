@@ -232,11 +232,10 @@ function PlainSections({
           </pre>
         </section>
       ))}
-      <div className="v3-preview-note">
+      <div className="v3-preview-note" title={labels.officeNote}>
         {note}
         {truncated || total > OFFICE_MAX_LINES ? ` ${labels.truncated}` : ''}
       </div>
-      <div className="v3-preview-hint">{labels.officeNote}</div>
     </div>
   )
 }
@@ -252,11 +251,10 @@ export function OfficeView({ view, labels }: { view: OfficeDocumentView; labels:
   }
   const footer = (
     <>
-      <div className="v3-preview-note">
+      <div className="v3-preview-note" title={labels.officeNote}>
         {view.note}
         {view.truncated ? ` ${labels.truncated}` : ''}
       </div>
-      <div className="v3-preview-hint">{labels.officeNote}</div>
     </>
   )
   if (view.format === 'docx' && view.blocks && view.blocks.length) {

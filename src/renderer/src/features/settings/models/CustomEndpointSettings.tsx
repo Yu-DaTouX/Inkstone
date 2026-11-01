@@ -27,7 +27,9 @@ import {
 import './models-settings.css'
 
 function apiLabel(id: string): string {
-  return CUSTOM_API_CHOICES.find((choice) => choice.id === id)?.label ?? id
+  return CUSTOM_API_CHOICES.find((choice) => choice.id === id)?.label
+    ?? CUSTOM_API_CHOICES.find((choice) => choice.id.startsWith(`${id}-`))?.label
+    ?? id
 }
 
 function errorText(error: unknown): string {

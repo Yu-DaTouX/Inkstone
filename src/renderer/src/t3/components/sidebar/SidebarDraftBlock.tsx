@@ -69,12 +69,12 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         onKeyDown={handleKeyDown}
       >
         <span className="sr-only">{draft.preview}</span>
-        <div className="relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)">
+        <div className="relative z-10 px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)">
           <div className="flex h-5 min-w-0 items-center gap-1.5">
             <SquarePenIcon aria-hidden className={DRAFT_PEN_CLASS_NAME} />
             {draft.projectIcon}
             <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
-              {draft.projectDisplayName}
+              {draft.projectDisplayName ?? props.unsentLabel}
             </span>
             <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-end">
               <Tooltip>

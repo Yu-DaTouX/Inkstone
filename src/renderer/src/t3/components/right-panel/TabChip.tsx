@@ -112,7 +112,7 @@ export function TabChip(props: TabChipProps) {
       className={cn(
         'group/tab flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs',
         active
-          ? 'bg-accent text-foreground'
+          ? 'bg-(--sel) text-(--accent-t)'
           : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
         props.dragging && 'relative z-10 cursor-grabbing'
       )}
@@ -138,7 +138,7 @@ export function TabChip(props: TabChipProps) {
           />
         ) : null}
       </button>
-      <Tooltip>
+      <Tooltip disabled={!surface.detail}>
         <TooltipTrigger
           render={
             <button
@@ -155,7 +155,7 @@ export function TabChip(props: TabChipProps) {
         >
           <span className="truncate">{surface.label}</span>
         </TooltipTrigger>
-        <TooltipPopup>{title}</TooltipPopup>
+        <TooltipPopup side="bottom" sideOffset={8}>{title}</TooltipPopup>
       </Tooltip>
       {surface.muted ? (
         <span aria-hidden className="ml-0.5 size-1 rounded-full bg-current opacity-50" />

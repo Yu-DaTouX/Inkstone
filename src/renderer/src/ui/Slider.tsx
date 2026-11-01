@@ -35,6 +35,7 @@ export const Slider = forwardRef<HTMLDivElement, SliderProps>(function Slider(
     children,
     'aria-describedby': ariaDescribedBy,
     'aria-errormessage': ariaErrorMessage,
+    'aria-label': ariaLabel,
     ...props
   },
   ref
@@ -58,7 +59,11 @@ export const Slider = forwardRef<HTMLDivElement, SliderProps>(function Slider(
       {composeRenderProps(children, (kids, values) =>
         kids ?? (
           <>
-            {label != null ? <Label className="ui-field__label">{label}</Label> : null}
+            {label != null ? (
+              <Label className="ui-field__label">{label}</Label>
+            ) : ariaLabel ? (
+              <Label className="sr-only">{ariaLabel}</Label>
+            ) : null}
             <div className="ui-slider__row">
               <SliderTrack className="ui-slider__track">
                 <SliderFill className="ui-slider__fill" />

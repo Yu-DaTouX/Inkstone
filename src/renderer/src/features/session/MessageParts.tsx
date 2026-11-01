@@ -12,6 +12,8 @@ import type { AssistantArtifact, UIMessage } from '../../../../shared/ipc'
 import { Icon } from './Icon'
 import { ImageViewer } from '../composer/image-viewer'
 
+const CODE_PREVIEW_LINES = 12
+
 const HTML_ERROR_KEYS: Record<HtmlArtifactPreviewError, MessageKey> = {
   outside: 'artifact.htmlOutside',
   type: 'artifact.htmlType',
@@ -116,6 +118,7 @@ function ArtifactCardView({
   const [viewerOpen, setViewerOpen] = useState(false)
   const [text, setText] = useState<string | null>(null)
   const [readError, setReadError] = useState(false)
+  const [codeOpen, setCodeOpen] = useState(false)
 
   const isHtml = useMemo(() => isHtmlArtifact(artifact), [artifact])
   const isImage = isImageArtifact(artifact)
@@ -163,6 +166,31 @@ function ArtifactCardView({
       if (result?.ok === false && openTarget !== artifact.path) void window.yan.revealPath(artifact.path)
     })
   }
+
+  const codeHidden = text ? Math.max(0, text.split('\n').length - CODE_PREVIEW_LINES) : 0
+  const codeClamped = codeHidden > 0 && !codeOpen
+  const shownCode = codeClamped && text ? text.split('\n').slice(0, CODE_PREVIEW_LINES).join('\n') : text
+  const codeView = (body: string): JSX.Element => (
+    <>
+      <pre className="v3-artifact-code" data-clamped={codeClamped || undefined} data-testid="v3-artifact-code">
+        <code>{body}</code>
+      </pre>
+      {codeHidden > 0 ? (
+        <div className="v3-artifact-code-foot">
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-expanded={codeOpen}
+            data-testid="v3-artifact-code-toggle"
+            onPress={() => setCodeOpen((open) => !open)}
+          >
+            {codeOpen ? t('artifact.codeLess') : t('artifact.codeMore', { n: codeHidden })}
+          </Button>
+          {codeOpen ? <span className="v3-artifact-code-hint">{t('artifact.codeScroll')}</span> : null}
+        </div>
+      ) : null}
+    </>
+  )
 
   return (
     <section
@@ -237,9 +265,7 @@ function ArtifactCardView({
 
       {isHtml && !unavailable ? (
         showSource ? (
-          <pre className="v3-artifact-code">
-            <code>{readError ? t('artifact.htmlRead') : text ?? t('artifact.reading')}</code>
-          </pre>
+          codeView(readError ? t('artifact.htmlRead') : shownCode ?? t('artifact.reading'))
         ) : snapshot.url ? (
           <HtmlArtifactThumb url={snapshot.url} title={artifact.filename} openLabel={t('artifact.previewHint')} onOpen={() => void previewFile(artifact.path)} />
         ) : snapshot.status === 'paused' ? (
@@ -260,9 +286,7 @@ function ArtifactCardView({
           </Notice>
         )
       ) : isCode ? (
-        <pre className="v3-artifact-code">
-          <code>{unavailable ? artifact.error || t('artifact.noPreview') : readError ? t('artifact.htmlRead') : text ?? t('artifact.reading')}</code>
-        </pre>
+        codeView(unavailable ? artifact.error || t('artifact.noPreview') : readError ? t('artifact.htmlRead') : shownCode ?? t('artifact.reading'))
       ) : artifact.previewable && !unavailable ? (
         <div className="v3-artifact-card-open">
           <Button size="sm" variant="ghost" onPress={() => void previewFile(artifact.path)} data-testid="v3-artifact-preview">

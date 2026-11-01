@@ -7,7 +7,7 @@ export type RowStatus = 'working' | 'waiting' | 'approval' | 'input' | 'failed' 
 export function resolveRowStatus(view: SidebarThreadView, now: number): RowStatus {
   if (view.hasPendingApprovals) return 'approval'
   if (view.hasPendingUserInput) return 'input'
-  if (effectiveSnoozed(view, now)) return 'waiting'
+  if (effectiveSnoozed(view, now)) return null
   if (view.runtime?.status === 'failed') return 'failed'
   if (view.runtime?.status === 'waiting') return 'waiting'
   if (

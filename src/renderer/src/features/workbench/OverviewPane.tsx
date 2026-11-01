@@ -334,7 +334,7 @@ function BranchRow({
       icon={<GitBranch size={14} aria-hidden />}
       value={
         repo && repo.changedCount > 0 ? (
-          <RailValue glyph={{ kind: 'dot', status: 'awaiting' }} value={String(repo.changedCount)} aria-label={rail.dirty} />
+          <RailValue glyph={{ kind: 'dot', status: 'awaiting' }} value={rail.dirtyCount(repo.changedCount)} aria-label={rail.dirty} />
         ) : undefined
       }
       onPress={() => setOpen(true)}

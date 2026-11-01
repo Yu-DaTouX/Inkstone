@@ -6,7 +6,7 @@ import { Button, Switch } from '../../../ui'
 import { fillCapsText, useCapsText } from './text'
 import { useConfirm } from './confirm'
 import { runConfirmedOperation } from './operation-state'
-import { Empty, Entry, Group, ListSkeleton, Note, Panel, Warn } from './parts'
+import { Empty, Entry, Group, ListSkeleton, Panel, Warn } from './parts'
 import { groupSkills } from './model'
 
 export function SkillsSection(): ReactElement {
@@ -121,7 +121,6 @@ export function SkillsSection(): ReactElement {
 
   return (
     <Panel label={t('cap.skillsTitle')}>
-      <Note>{text('skillsLoadedNote')}</Note>
       {error ? <Warn>{`${text('loadFailed')}: ${error}`}</Warn> : null}
       {notice ? (
         <p className="caps-result" role="status" data-testid="caps-skill-notice">
@@ -150,11 +149,9 @@ export function SkillsSection(): ReactElement {
               <div className="caps-list">
                 {group.skills.map((skill) => {
                   const metaParts = [
-                    skill.origin === 'session' ? t('cap.skillOrigin.session') : null,
                     skill.acquired && group.origin === 'user' ? t('cap.skillAcquired') : null,
-                    skill.enabled === false && !skill.manage ? text('skillDisabled') : null,
-                    skill.sourceUrl ? skill.sourceUrl.replace(/^https?:\/\//, '') : null,
-                    skill.description
+                    skill.enabled === false ? text('skillDisabled') : null,
+                    skill.sourceUrl ? skill.sourceUrl.replace(/^https?:\/\//, '') : null
                   ]
                   return (
                     <Entry

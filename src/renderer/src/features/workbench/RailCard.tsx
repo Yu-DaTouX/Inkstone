@@ -85,6 +85,7 @@ export function RailCard({
             variant="plain"
             size="sm"
             aria-label={grip.label}
+            tooltip={grip.label}
             aria-pressed={grip.picked}
             onPress={grip.onPress}
             onKeyDown={grip.onKeyDown}

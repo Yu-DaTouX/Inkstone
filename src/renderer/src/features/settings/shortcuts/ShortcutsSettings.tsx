@@ -118,7 +118,6 @@ export function ShortcutsSettings(): ReactElement {
           </span>
         }
       >
-        <div className="settings-scroll-list">
         {defs.map((def) => {
           const modified = overrides[def.id] !== undefined
           const recording = recordingId === def.id
@@ -145,10 +144,9 @@ export function ShortcutsSettings(): ReactElement {
               data-modified={modified ? '1' : '0'}
             >
               <span className="settings-shortcut-ctl">
-                {def.rebindable ? (
+                {def.rebindable && modified ? (
                   <IconButton
                     variant="ghost"
-                    isDisabled={!modified}
                     tooltip={text.restoreDefault}
                     aria-label={`${text.restoreDefault} · ${purpose}`}
                     data-testid={`v3-shortcut-reset-${def.id}`}
@@ -180,7 +178,6 @@ export function ShortcutsSettings(): ReactElement {
             </SettingRow>
           )
         })}
-        </div>
       </SettingsGroup>
 
       <SettingsGroup
@@ -188,13 +185,13 @@ export function ShortcutsSettings(): ReactElement {
         description={text.composerNote}
         settingId="shortcuts-composer"
       >
-        <SettingRow className="settings-row settings-shortcut" label={t('sheet.inputSteer')} description={t('sheet.inputSteerNote')} data-testid="v3-shortcut-composer-steer">
+        <SettingRow className="settings-row settings-shortcut" label={t('sheet.inputSteer')} data-testid="v3-shortcut-composer-steer">
           <span className="settings-shortcut-ctl">
             <span className="settings-shortcut-fixed">{text.fixed}</span>
             <Keys className="settings-shortcut-fixed-keys" tokens={['Enter']} />
           </span>
         </SettingRow>
-        <SettingRow className="settings-row settings-shortcut" label={t('sheet.inputQueue')} description={t('sheet.inputQueueNote')} data-testid="v3-shortcut-composer-queue">
+        <SettingRow className="settings-row settings-shortcut" label={t('sheet.inputQueue')} data-testid="v3-shortcut-composer-queue">
           <span className="settings-shortcut-ctl">
             <span className="settings-shortcut-fixed">{text.fixed}</span>
             <span className="settings-shortcut-keys settings-shortcut-fixed-keys">

@@ -97,7 +97,6 @@ function SliderRow({ settingKey, label, description, min, max, step, fallback, f
             <RotateCcw size={13} aria-hidden />
           </IconButton>
         ) : null}
-        <output className="tuning-value ui-num" aria-hidden>{format(value)}</output>
         <Slider
           className="tuning-slider"
           aria-label={label}
@@ -109,6 +108,7 @@ function SliderRow({ settingKey, label, description, min, max, step, fallback, f
           onChangeEnd={(next) => save(Array.isArray(next) ? next[0] : next)}
           data-testid={`v3-slider-${settingKey}`}
         />
+        <output className="tuning-value ui-num" aria-hidden>{format(value)}</output>
       </div>
     </SettingsRow>
   )

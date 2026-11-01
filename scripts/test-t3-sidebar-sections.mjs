@@ -36,9 +36,10 @@ const mixed = buildSidebarSections(input([
   session('snoozed', { snoozedUntil: now + 60000 }),
   session('archived', { archivedAt: now - 100 }),
   session('running'),
+  session('finished'),
   session('active'),
   session('project-archived', { cwd: 'E:/archived', projectId: 'archived-project' })
-], [run('running', 'running', now, { phase: { kind: 'running', since: now } })], {
+], [run('running', 'running', now, { phase: { kind: 'running', since: now } }), run('finished', 'finished', now - 10)], {
   projects: [{ id: 'archived-project', name: 'Archive', cwd: 'E:/archived', archived: true }],
   titles: { active: 'Generated' },
   manualTitles: { active: 'Manual' }
@@ -47,7 +48,8 @@ assert.deepEqual(mixed.pinned.map(view => view.id), ['pinned'])
 assert.deepEqual(mixed.snoozed.map(view => view.id), ['snoozed'])
 assert.deepEqual(new Set(mixed.settled.map(view => view.id)), new Set(['archived', 'project-archived']))
 assert.deepEqual(mixed.working.map(view => view.id), ['running'])
-assert.equal(mixed.active[0].title, 'Manual')
+assert.ok(mixed.active.some(view => view.id === 'finished'))
+assert.equal(mixed.active.find(view => view.id === 'active').title, 'Manual')
 
 const manySessions = Array.from({ length: 200 }, (_, i) => session(`s-${i}`))
 const manyRuns = Array.from({ length: 1200 }, (_, i) => run(`r-${i}`, `s-${i % 220}`, i % 37, {

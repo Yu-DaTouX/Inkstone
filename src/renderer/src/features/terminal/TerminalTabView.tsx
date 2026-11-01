@@ -31,11 +31,16 @@ import { createTerminalLinkProvider } from './terminal-link-provider'
 import { isMacPlatform, isTerminalLinkGesture, type TerminalFileLink, type TerminalLinkMatch } from './terminal-links'
 import type { WorkspaceOwner } from '../workbench/types'
 
+export interface TerminalFindProgress {
+  index: number
+  total: number
+}
+
 export interface TerminalTabHandle {
   session(): TerminalSession | null
   focus(): void
   fit(): void
-  find(query: string, direction: TerminalFindDirection, reset: boolean): boolean
+  find(query: string, direction: TerminalFindDirection, reset: boolean): TerminalFindProgress | null
   resetFind(): void
   selection(): string
   copySelection(): boolean
@@ -140,11 +145,11 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       fit: () => scheduleFit(0),
       find(query, direction, reset) {
         const term = termRef.current
-        if (!term) return false
+        if (!term) return null
         const matches = findTerminalMatches(bufferLines(term), query)
         if (matches.length === 0) {
           findCursor.current = null
-          return false
+          return null
         }
         let index: number
         if (reset) {
@@ -153,10 +158,10 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
         } else {
           index = stepTerminalMatchIndex(matches, findCursor.current, direction)
         }
-        if (index < 0) return false
+        if (index < 0) return null
         findCursor.current = matches[index]
         revealMatch(term, matches[index])
-        return true
+        return { index: index + 1, total: matches.length }
       },
       resetFind() {
         findCursor.current = null

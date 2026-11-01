@@ -123,6 +123,8 @@ export type SessionTextKey =
   | 'errStatus'
   | 'errRecoveredStatus'
   | 'errCopyDetails'
+  | 'errRaw'
+  | 'errRawHide'
   | 'workStopping'
   | 'workWaiting'
   | 'workRetry'
@@ -376,6 +378,8 @@ const ZH: Record<SessionTextKey, string> = {
   errStatus: '出错',
   errRecoveredStatus: '已恢复',
   errCopyDetails: '复制详情',
+  errRaw: '原文',
+  errRawHide: '收起原文',
   workStopping: '正在停止…',
   workWaiting: '等你处理',
   workRetry: '重试中（{n}/{m}）',
@@ -501,7 +505,7 @@ const ZH: Record<SessionTextKey, string> = {
   wrapUpDecide: '等你决定',
   browserHandoffTitle: '浏览器交给你了',
   browserHandoffReason: '需要你在浏览器里亲自完成一步操作，比如登录、验证码或支付。',
-  browserHandoffHint: '这期间 Agent 不会操作浏览器。做完后点「我做好了」，或直接发消息告诉它。',
+  browserHandoffHint: '这期间 Agent 不会操作浏览器。',
   browserHandoffDone: '我做好了',
   browserHandoffShow: '查看浏览器',
   browserHandoffMessage: '浏览器里的操作我已经做完了，请继续。'
@@ -630,6 +634,8 @@ const EN: Record<SessionTextKey, string> = {
   errStatus: 'Error',
   errRecoveredStatus: 'Recovered',
   errCopyDetails: 'Copy details',
+  errRaw: 'Raw error',
+  errRawHide: 'Hide raw error',
   workStopping: 'Stopping…',
   workWaiting: 'Needs your input',
   workRetry: 'Retrying ({n}/{m})',
@@ -755,7 +761,7 @@ const EN: Record<SessionTextKey, string> = {
   wrapUpDecide: 'Your call',
   browserHandoffTitle: 'The browser is yours',
   browserHandoffReason: 'A step needs you in the browser, such as signing in, a captcha, or a payment.',
-  browserHandoffHint: 'The agent will not touch the browser meanwhile. Press "Done" when finished, or just send a message.',
+  browserHandoffHint: 'The agent will not touch the browser meanwhile.',
   browserHandoffDone: 'Done',
   browserHandoffShow: 'Show browser',
   browserHandoffMessage: 'I have finished the step in the browser. Please continue.'

@@ -8,7 +8,7 @@ import { Button, EmptyState, IconButton, Notice, Spinner } from '../../ui'
 import { groupIntoTurns, type Turn } from '../../../../shared/turns'
 import { mergeApprovalLog } from '../../../../shared/approval-log'
 import type { ApprovalReceipt } from '../../../../shared/approval'
-import { briefPrompt } from '../../../../shared/subagent-brief'
+import { briefDisplay, briefPrompt } from '../../../../shared/subagent-brief'
 import { subagentRowLabel } from '../../../../shared/subagent-task-rows'
 import type { SubagentRun } from '../../../../shared/ipc'
 import type { TurnSubagentScope } from '../../state/subagent-view'
@@ -32,17 +32,18 @@ import './subagent-pane.css'
 const RETRYABLE = new Set(['failed', 'timeout', 'budget', 'stopped'])
 
 function subagentBriefText(run: Pick<SubagentRun, 'task' | 'brief'>): string {
-  return run.brief ? briefPrompt(run.brief, run.task) : run.task
+  return run.brief ? briefDisplay(run.brief, run.task) : run.task
 }
 
 const NO_APPROVAL_RECEIPTS: ApprovalReceipt[] = []
 
 function subagentTranscriptTurns(run: Pick<SubagentRun, 'id' | 'task' | 'brief' | 'transcript' | 'cwd'>, approvals: readonly ApprovalReceipt[]): Turn[] {
   const brief = subagentBriefText(run).trim()
+  const prompt = run.brief ? briefPrompt(run.brief, run.task).trim() : brief
   const task = run.task.trim()
   return groupIntoTurns(
     mergeApprovalLog(run.transcript, approvals, run.id)
-      .filter((item) => item.role !== 'user' || (item.text.trim() !== brief && item.text.trim() !== task))
+      .filter((item) => item.role !== 'user' || (item.text.trim() !== brief && item.text.trim() !== prompt && item.text.trim() !== task))
       .map((item) => ({ ...item, ...(item.role === 'user' ? { text: forwardedText(item.text).text } : {}), sourceCwd: item.sourceCwd ?? run.cwd }))
   )
 }

@@ -73,8 +73,7 @@ export function PeerApprovalDialog() {
   return (
     <ModalOverlay isOpen isDismissable onOpenChange={(open) => { if (!open) void decide(false) }}>
       <Modal className="peer-approval">
-        <Dialog title={t('peer.approveTitle')} closeLabel={t('peer.deny')} data-testid="peer-approval">
-          <p className="peer-approval-timer" role="timer">{t('peer.approveExpires', { seconds })}</p>
+        <Dialog title={t('peer.approveTitle')} showClose={false} data-testid="peer-approval">
           <p className="peer-approval-lead">{t('peer.approveWho', { name: current.deviceName })}</p>
           {current.note ? <p className="peer-approval-lead">{t('peer.approveNote', { note: current.note })}</p> : null}
           <p className="peer-approval-dim">{t('peer.approveRule')}</p>
@@ -94,17 +93,19 @@ export function PeerApprovalDialog() {
             ))}
           </CheckboxGroup>
           {error ? <Notice tone="fail" compact>{error}</Notice> : null}
-          <p className="peer-approval-dim">{t('peer.approveNotShared')}</p>
-          <DialogFooter>
-            <Button variant="ghost" isDisabled={pending} onPress={() => void decide(false)} data-testid="peer-deny">{t('peer.deny')}</Button>
-            <Button
-              variant="primary"
-              isDisabled={pending || !projects.length || !operations.length}
-              onPress={() => void decide(true)}
-              data-testid="peer-approve"
-            >
-              {t('peer.approve')}
-            </Button>
+          <DialogFooter align="between">
+            <span className="peer-approval-timer" role="timer">{t('peer.approveExpires', { seconds })}</span>
+            <span className="peer-approval-actions">
+              <Button variant="ghost" isDisabled={pending} onPress={() => void decide(false)} data-testid="peer-deny">{t('peer.deny')}</Button>
+              <Button
+                variant="primary"
+                isDisabled={pending || !projects.length || !operations.length}
+                onPress={() => void decide(true)}
+                data-testid="peer-approve"
+              >
+                {t('peer.approve')}
+              </Button>
+            </span>
           </DialogFooter>
         </Dialog>
       </Modal>

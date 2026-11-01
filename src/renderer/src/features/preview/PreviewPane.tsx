@@ -265,7 +265,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
         : activePath
         ? { kind: 'loading', name: previewBaseName(activePath) }
         : { kind: 'empty' }
-  const activeAbs = 'abs' in view ? view.abs : ''
+  const activeAbs = 'abs' in view ? view.abs : view.kind === 'problem' ? activePath ?? '' : ''
   const name = 'name' in view ? view.name : ''
   const editing = !!draft && !!activeAbs && draft.abs === activeAbs
   const editable = view.kind === 'text' && editorIsEditableKind(name)
@@ -711,6 +711,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
           onComment={addComment}
           onReveal={reveal}
           onOpen={open}
+          onRetry={() => setReload((value) => value + 1)}
           onViewSource={() => setSourceChoice(true)}
         />
       )}
@@ -766,6 +767,7 @@ function PreviewBody({
   onComment,
   onReveal,
   onOpen,
+  onRetry,
   onViewSource
 }: {
   view: PreviewView
@@ -790,6 +792,7 @@ function PreviewBody({
   onComment: (comment: CodeComment) => void
   onReveal: () => void
   onOpen: () => void
+  onRetry: () => void
   onViewSource: () => void
 }): ReactElement {
   const emptyTitle = hasTabs ? text.noSelection : text.emptyTitle
@@ -857,7 +860,7 @@ function PreviewBody({
         </Notice>
       )
     case 'problem':
-      return <ProblemView problem={view.problem} text={text} />
+      return <ProblemView problem={view.problem} text={text} onRetry={onRetry} />
     case 'text':
       return (
         <>
@@ -904,12 +907,11 @@ function PreviewBody({
           data-testid="v3-preview-binary"
           icon={<ImageIcon size={20} />}
           title={text.binary}
-          description={
-            <>
-              {view.media ? text.mediaHint : text.binaryHint}
-              <br />
-              {formatBytes(view.bytes)}
-            </>
+          description={formatBytes(view.bytes)}
+          action={
+            <Button size="sm" variant="secondary" onPress={onOpen}>
+              {text.open}
+            </Button>
           }
         />
       )
@@ -1043,7 +1045,7 @@ function PreviewNotes({ notes, text }: { notes: PreviewNote[]; text: PreviewText
   )
 }
 
-function ProblemView({ problem, text }: { problem: PreviewProblem; text: PreviewText }): ReactElement {
+function ProblemView({ problem, text, onRetry }: { problem: PreviewProblem; text: PreviewText; onRetry: () => void }): ReactElement {
   const title =
     problem.kind === 'missing'
       ? text.missing
@@ -1064,6 +1066,13 @@ function ProblemView({ problem, text }: { problem: PreviewProblem; text: Preview
       icon={<FileText size={20} />}
       title={title}
       description={description}
+      action={
+        problem.kind === 'directory' || problem.kind === 'invalid' || problem.kind === 'not_file' ? undefined : (
+          <Button size="sm" variant="secondary" onPress={onRetry}>
+            {text.retry}
+          </Button>
+        )
+      }
     />
   )
 }

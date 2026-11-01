@@ -53,10 +53,10 @@ export function ComposerAttachmentMediaRow({
               </span>
             )}
           </button>
-          <span className="pointer-events-none absolute left-1 top-1 inline-flex items-center rounded-sm bg-background/85 px-1 text-5xs tabular-nums text-muted-foreground">
+          <span className="pointer-events-none absolute bottom-1 left-1 inline-flex items-center rounded-sm bg-background/85 px-1 text-[length:var(--t-caption)] leading-(--t-caption-lh) tabular-nums text-muted-foreground">
             {refLabel(index)}
           </span>
-          <span className="absolute right-1 top-1 flex">
+          <span className="absolute right-1 top-1 flex opacity-0 transition-opacity group-hover/attachment:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
             <Button
               variant="media-close"
               size="icon-xs"

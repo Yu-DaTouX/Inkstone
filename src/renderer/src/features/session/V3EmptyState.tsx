@@ -135,10 +135,9 @@ function UsageSummary({ text }: { text: HomeText }): JSX.Element {
           {text.usageDetails}
         </Button>
       </CardHead>
-      <CardBody className="v3-home-usage">
+      <CardBody className="v3-home-usage" title={stats ? text.meta(stats.sessions.toLocaleString(), String(stats.activeDays)) : undefined}>
         <span className="v3-home-usage-num">{stats ? compactNumber(recentTotal) : dash}</span>
         <span className="v3-home-usage-label">{text.recentTokens}</span>
-        <span className="v3-home-usage-meta">{text.meta(stats ? stats.sessions.toLocaleString() : dash, stats ? String(stats.activeDays) : dash)}</span>
         <MiniBars className="v3-home-usage-bars" values={values} slots={RECENT_DAYS} stretch />
       </CardBody>
     </Card>

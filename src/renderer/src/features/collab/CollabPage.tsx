@@ -1450,7 +1450,7 @@ export function CollabPage(): ReactElement {
         </section>
       ) : null}
 
-      <SettingSection plain className="collab-section" title={text.peersTitle} description={text.peersHint} aria-label={text.peersTitle} data-testid="v3-collab-peers">
+      <SettingSection plain className="collab-section" title={text.peersTitle} aria-label={text.peersTitle} data-testid="v3-collab-peers">
         <div className="collab-section__body">
           {!peerBridge ? (
             <Notice tone="ask" compact role="note">
@@ -1479,7 +1479,7 @@ export function CollabPage(): ReactElement {
         </div>
       </SettingSection>
 
-      <SettingSection plain className="collab-section" title={text.hostTitle} description={text.hostHint} aria-label={text.hostTitle} data-testid="v3-collab-host">
+      <SettingSection plain className="collab-section" title={text.hostTitle} aria-label={text.hostTitle} data-testid="v3-collab-host">
         <div className="collab-section__body">
           <HostGrants text={text} lang={lang} remoteState={remoteState} notify={notify} />
         </div>

@@ -28,15 +28,15 @@
     pointer-events: none;
   }
   .ui-ptabs[data-ink='settled'] > .ui-ptabs__ink {
-    transition:
-      translate var(--dur-base) var(--ease),
-      width var(--dur-base) var(--ease);
+    transition: translate var(--dur-base) var(--ease);
   }
   .ui-ptabs[data-ink] > .ui-ptab[data-active='1'] {
     background: transparent;
   }
-  .ui-ptabs[data-ink] > .ui-ptab[data-active='1']:hover {
-    background: var(--hover);
+  @media (hover: hover) {
+    .ui-ptabs[data-ink] > .ui-ptab[data-active='1']:hover {
+      background: var(--hover);
+    }
   }
 
   .ui-ptab {
@@ -53,9 +53,11 @@
     font: var(--t-footnote) / normal var(--font-ui);
     transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
   }
-  .ui-ptab:hover {
-    background: var(--hover);
-    color: var(--fg);
+  @media (hover: hover) {
+    .ui-ptab:hover {
+      background: var(--hover);
+      color: var(--fg);
+    }
   }
   .ui-ptab[data-active='1'] {
     background: var(--sel);
@@ -65,8 +67,10 @@
     background: transparent;
     font-weight: var(--w-medium);
   }
-  .ui-ptabs--plain .ui-ptab[data-active='1']:hover {
-    background: var(--hover);
+  @media (hover: hover) {
+    .ui-ptabs--plain .ui-ptab[data-active='1']:hover {
+      background: var(--hover);
+    }
   }
   .ui-ptab[data-muted] .ui-ptab__text,
   .ui-ptab[data-muted] .ui-ptab__glyph {
@@ -105,8 +109,16 @@
     color: inherit;
     cursor: pointer;
   }
-  .ui-ptab__close:hover {
-    background: var(--press);
+  .ui-ptab__close::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: var(--r-xs);
+  }
+  @media (hover: hover) {
+    .ui-ptab__close:hover {
+      background: var(--press);
+    }
   }
   .ui-ptab__close:focus-visible {
     outline: none;
@@ -126,14 +138,22 @@
     grid-area: 1 / 1;
     visibility: hidden;
   }
-  .ui-ptab:hover .ui-ptab__x,
   .ui-ptab:focus-within .ui-ptab__x,
   .ui-ptab__close:focus-visible .ui-ptab__x {
     visibility: visible;
   }
-  .ui-ptab:hover .ui-ptab__glyph,
+  @media (hover: hover) {
+    .ui-ptab:hover .ui-ptab__x {
+      visibility: visible;
+    }
+  }
   .ui-ptab:focus-within .ui-ptab__glyph {
     visibility: hidden;
+  }
+  @media (hover: hover) {
+    .ui-ptab:hover .ui-ptab__glyph {
+      visibility: hidden;
+    }
   }
   .ui-ptab__pending {
     position: absolute;

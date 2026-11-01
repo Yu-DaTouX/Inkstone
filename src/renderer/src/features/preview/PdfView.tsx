@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
-import { ChevronLeft, ChevronRight, FileWarning, FolderOpen, Lock, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileWarning, FolderOpen, Lock, Minus, Plus } from 'lucide-react'
 import {
   getDocument,
   GlobalWorkerOptions,
@@ -396,7 +396,7 @@ export function PdfView({
         </IconButton>
         <Separator orientation="vertical" className="v3-toolbar-sep" />
         <IconButton size="sm" aria-label={labels.pdfZoomOut} tooltip={labels.pdfZoomOut} onPress={() => zoomBy(-1)}>
-          <ZoomOut size={14} />
+          <Minus size={14} />
         </IconButton>
         <Button
           size="sm"
@@ -412,7 +412,7 @@ export function PdfView({
           {percent}
         </Button>
         <IconButton size="sm" aria-label={labels.pdfZoomIn} tooltip={labels.pdfZoomIn} onPress={() => zoomBy(1)}>
-          <ZoomIn size={14} />
+          <Plus size={14} />
         </IconButton>
         <Toggle size="sm" isSelected={fitWidth} data-testid="v3-pdf-fit-width" onChange={() => setFitWidth(true)}>
           {labels.pdfFitWidth}

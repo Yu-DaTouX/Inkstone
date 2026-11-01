@@ -96,11 +96,8 @@ export interface SettingsText {
 
   contextAutoCompact: string
   contextCompactAt: string
-  contextCompactAtNow: string
-  contextCompactAtClamped: string
+  contextCompactAtActual: string
   contextProjectIgnored: string
-  contextCappedByInkstone: string
-  contextNoteJoin: string
   contextCompactNow: string
   contextUsed: string
   contextWindowLabel: string
@@ -238,11 +235,8 @@ const ZH: SettingsText = {
 
   contextAutoCompact: '自动压缩',
   contextCompactAt: '自动压缩上限',
-  contextCompactAtNow: '到 {n} 触发。',
-  contextCompactAtClamped: '模型窗口较小，实际在 {e} 触发。',
+  contextCompactAtActual: '实际 {e} 触发',
   contextProjectIgnored: '项目 .pi/settings.json 的压缩设置未生效：项目未受信任。',
-  contextCappedByInkstone: '低于 pi 自身阈值，将在 {n} 提前压缩。',
-  contextNoteJoin: '',
   contextCompactNow: '立即压缩',
   contextUsed: '已用',
   contextWindowLabel: '窗口',
@@ -255,7 +249,7 @@ const ZH: SettingsText = {
   backToAppearance: '返回外观',
   backToChat: '返回会话',
 
-  usageNote: '来自本机会话文件；费用按模型报价（美元）换算。',
+  usageNote: '费用按模型报价换算。',
   rangeAll: '全部',
   range30: '近 30 天',
   range7: '近 7 天',
@@ -264,7 +258,7 @@ const ZH: SettingsText = {
   usagePeakHour: '高峰时段',
   usagePeakNone: '暂无',
   usageCurrency: '显示货币',
-  usageCurrencyDesc: '只改显示；1 原石 = 0.1 元。',
+  usageCurrencyDesc: '只改显示。',
   usageRate: '1 USD = ? {code}',
   usageRateDesc: '默认 {default}；当前 $1 = {sample}。',
   usageNoModels: '这段时间没有模型用量。',
@@ -380,11 +374,8 @@ const EN: SettingsText = {
 
   contextAutoCompact: 'Auto-compaction',
   contextCompactAt: 'Auto-compaction limit',
-  contextCompactAtNow: 'Triggers at {n}.',
-  contextCompactAtClamped: 'Small model window; triggers at {e}.',
+  contextCompactAtActual: 'Actually triggers at {e}',
   contextProjectIgnored: 'Project .pi/settings.json compaction ignored: project is untrusted.',
-  contextCappedByInkstone: 'Below pi’s own threshold; compacts early at {n}.',
-  contextNoteJoin: ' ',
   contextCompactNow: 'Compact now',
   contextUsed: 'Used',
   contextWindowLabel: 'Window',
@@ -397,7 +388,7 @@ const EN: SettingsText = {
   backToAppearance: 'Back to Appearance',
   backToChat: 'Back to chat',
 
-  usageNote: 'From local session files; cost uses model prices (USD).',
+  usageNote: 'Cost uses model prices.',
   rangeAll: 'All',
   range30: 'Last 30 days',
   range7: 'Last 7 days',
@@ -406,7 +397,7 @@ const EN: SettingsText = {
   usagePeakHour: 'Peak hour',
   usagePeakNone: 'n/a',
   usageCurrency: 'Display currency',
-  usageCurrencyDesc: 'Display only; 1 原石 = ¥0.1.',
+  usageCurrencyDesc: 'Display only.',
   usageRate: '1 USD = ? {code}',
   usageRateDesc: 'Default {default}; $1 = {sample}.',
   usageNoModels: 'No model usage in this range.',

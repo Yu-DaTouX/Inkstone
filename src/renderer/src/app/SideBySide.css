@@ -52,7 +52,22 @@
   }
 
   .v3-split-col[data-split-inactive] .v3-split-peer-input {
-    cursor: text;
+    cursor: pointer;
+  }
+
+  .v3-split-col[data-split-inactive] .v3-split-title {
+    color: var(--fg3);
+  }
+
+  .v3-split-col:not([data-split-inactive]) .v3-split-title::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-inline-end: var(--s-6);
+    border-radius: var(--r-full);
+    background: var(--accent);
+    vertical-align: middle;
   }
 
   .v3-split-model {
@@ -142,12 +157,11 @@
     max-width: var(--size-chat);
     margin: 0 auto;
     padding: var(--s-8) var(--s-12);
-    border: 1px solid var(--line);
+    border: 1px dashed var(--line2);
     border-radius: var(--r-lg);
-    background: var(--glass-noise-image), color-mix(in srgb, var(--surface-3) var(--glass-opacity), transparent);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-    box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-comp-float);
+    background: color-mix(in srgb, var(--bg) var(--glass-opacity), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: blur(var(--glass-blur));
   }
 
   .v3-split-peer-input {

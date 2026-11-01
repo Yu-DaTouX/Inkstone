@@ -6,13 +6,15 @@ import type { TerminalText } from './terminal-text'
 export interface TerminalFindBarProps {
   query: string
   noResults: boolean
+  matchIndex?: number | null
+  matchCount?: number | null
   text: TerminalText
   onQuery: (query: string) => void
   onStep: (direction: TerminalFindDirection) => void
   onClose: () => void
 }
 
-export function TerminalFindBar({ query, noResults, text, onQuery, onStep, onClose }: TerminalFindBarProps): JSX.Element {
+export function TerminalFindBar({ query, noResults, matchIndex, matchCount, text, onQuery, onStep, onClose }: TerminalFindBarProps): JSX.Element {
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -54,6 +56,8 @@ export function TerminalFindBar({ query, noResults, text, onQuery, onStep, onClo
         onPrevious={() => onStep('previous')}
         onClose={onClose}
         hasMatches={query === '' ? undefined : !noResults}
+        matchIndex={matchIndex}
+        matchCount={matchCount}
         status={noResults && query !== '' ? text.noResults : undefined}
         spellCheck={false}
         placeholder={text.findPlaceholder}

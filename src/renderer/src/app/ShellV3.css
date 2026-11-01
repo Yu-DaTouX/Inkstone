@@ -294,7 +294,7 @@
   }
 
   .v3-head-crumb {
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
     max-width: 40%;
     overflow: hidden;
@@ -408,6 +408,11 @@
     color: var(--fg2);
   }
 
+  .v3-winbtn:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
   .v3-winbtn:hover {
     background: var(--hover-main);
     color: var(--fg);
@@ -481,13 +486,9 @@
     white-space: pre-wrap;
   }
 
-  .v3-fatal-reload {
-    height: var(--size-btn);
-    padding: 0 16px;
-    border-radius: var(--r-sm);
-    background: var(--ink);
-    color: var(--on-ink);
-    font-weight: 600;
+  .v3-fatal-actions {
+    display: flex;
+    gap: var(--s-8);
   }
 }
 
@@ -497,7 +498,8 @@
     top: var(--s-8);
     left: 50%;
     z-index: var(--z-rail);
-    width: min(560px, calc(100% - var(--s-32)));
+    width: max-content;
+    max-width: min(560px, calc(100% - var(--s-32)));
     transform: translateX(-50%);
     box-shadow: var(--shadow-pop);
   }

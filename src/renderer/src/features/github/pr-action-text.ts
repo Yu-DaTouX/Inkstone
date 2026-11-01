@@ -30,6 +30,7 @@ export interface PrActionText {
     loadingMore: string
     shown: (n: number) => string
     checks: { pass: string; fail: string; pending: string; none: string }
+    conflicting: string
   }
   create: {
     open: string
@@ -225,11 +226,12 @@ const ZH: PrActionText = {
     loadMore: '加载更多',
     loadingMore: '正在加载…',
     shown: (n) => `已显示 ${n} 个`,
-    checks: { pass: '检查通过', fail: '检查失败', pending: '检查进行中', none: '没有检查' }
+    checks: { pass: '检查通过', fail: '检查失败', pending: '检查进行中', none: '没有检查' },
+    conflicting: '冲突'
   },
   create: {
     open: '新建 PR',
-    title: '新建 Pull 请求',
+    title: '新建 PR',
     titleField: '标题',
     titlePlaceholder: '用一句话说明这次改动',
     body: '描述',
@@ -427,7 +429,7 @@ const ZH: PrActionText = {
     hideCause: '收起原因',
     retry: '重试',
     refreshConfirm: '刷新确认',
-    unknown: '结果未知：请求可能已经生效。请刷新确认，不要直接重试。',
+    unknown: '结果未知，先刷新确认',
     dismiss: '知道了',
     codes: {
       'gh-missing': '未安装 GitHub CLI',
@@ -473,7 +475,8 @@ const EN: PrActionText = {
     loadMore: 'Load more',
     loadingMore: 'Loading…',
     shown: (n) => `${n} shown`,
-    checks: { pass: 'Checks passed', fail: 'Checks failing', pending: 'Checks running', none: 'No checks' }
+    checks: { pass: 'Checks passed', fail: 'Checks failing', pending: 'Checks running', none: 'No checks' },
+    conflicting: 'Conflicts'
   },
   create: {
     open: 'New PR',
@@ -675,7 +678,7 @@ const EN: PrActionText = {
     hideCause: 'Hide cause',
     retry: 'Retry',
     refreshConfirm: 'Refresh to confirm',
-    unknown: 'Outcome unknown: the request may have taken effect. Refresh to confirm instead of retrying.',
+    unknown: 'Outcome unknown — refresh to confirm',
     dismiss: 'Dismiss',
     codes: {
       'gh-missing': 'GitHub CLI missing',

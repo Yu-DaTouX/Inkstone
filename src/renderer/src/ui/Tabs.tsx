@@ -59,8 +59,10 @@ export function Tab({ onClose, closeLabel, className, children, ...props }: TabP
           <SelectionIndicator className="ui-tab__ink" />
           <span className="ui-tab__label">{kids}</span>
           {onClose ? (
-            <span
-              aria-hidden="true"
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label={closeLabel ?? t('ui.close')}
               title={closeLabel ?? t('ui.close')}
               className="ui-tab__close"
               onPointerDown={(event) => {
@@ -72,8 +74,8 @@ export function Tab({ onClose, closeLabel, className, children, ...props }: TabP
                 onClose()
               }}
             >
-              <X size={CLOSE_ICON_SIZE.micro} />
-            </span>
+              <X size={CLOSE_ICON_SIZE.micro} aria-hidden="true" />
+            </button>
           ) : null}
         </>
       ))}

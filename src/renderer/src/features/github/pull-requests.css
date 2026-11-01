@@ -112,6 +112,15 @@
     flex: none;
     display: inline-flex;
     align-items: center;
+    gap: var(--s-2);
+  }
+
+  .gh-pr-row__check[data-state='ok'] {
+    color: var(--ok-t);
+  }
+
+  .gh-pr-row__check[data-state='fail'] {
+    color: var(--fail-t);
   }
 
   .gh-pr-row__meta {

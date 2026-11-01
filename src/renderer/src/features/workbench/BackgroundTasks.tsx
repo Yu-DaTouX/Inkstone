@@ -153,7 +153,7 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
             </IconButton>
           ) : null}
         </div>
-        {detail ? <p className="wb-bg-detail">{detail}</p> : null}
+        {detail ? <p className="wb-bg-detail" title={detail}>{detail}</p> : null}
         {open && output ? <TaskOutput text={output} earlier={text.earlierOutput} label={label} /> : null}
       </li>
     )

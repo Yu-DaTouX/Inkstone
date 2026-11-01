@@ -36,6 +36,7 @@ export interface RailText {
   showLess: string
   removeOutput: (name: string) => string
   dirty: string
+  dirtyCount: (n: number) => string
   cacheHit: string
   hitShort: string
   statsBreakdown: string
@@ -87,6 +88,7 @@ const ZH: RailText = {
   showLess: '收起',
   removeOutput: (name) => `从列表移除「${name}」`,
   dirty: '工作区有未提交的改动',
+  dirtyCount: (n) => `${n} 处改动`,
   cacheHit: '缓存命中率',
   hitShort: '命中',
   statsBreakdown: '分布',
@@ -138,6 +140,7 @@ const EN: RailText = {
   showLess: 'Show less',
   removeOutput: (name) => `Remove ${name} from the list`,
   dirty: 'Uncommitted changes in the working tree',
+  dirtyCount: (n) => (n === 1 ? '1 change' : `${n} changes`),
   cacheHit: 'Cache hit rate',
   hitShort: 'Hit',
   statsBreakdown: 'Breakdown',

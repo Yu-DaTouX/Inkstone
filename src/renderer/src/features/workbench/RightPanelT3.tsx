@@ -110,6 +110,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         id: item.id,
         label: item.label,
         disabled: item.disabled,
+        danger: item.danger,
         separatorBefore: item.id === 'close-all',
         onSelect: () => {
           item.onSelect()

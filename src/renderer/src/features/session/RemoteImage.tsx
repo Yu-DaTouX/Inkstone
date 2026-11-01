@@ -161,7 +161,22 @@ export function RemoteImage({ src, alt, className }: { src: string; alt?: string
   useEffect(() => (group ? () => group.report(memberKey, null) : undefined), [group, memberKey])
 
   if (state.phase === 'ready') return <MessageImage src={state.dataUrl} alt={alt} className={className} />
-  if (group) return null
+  if (group) {
+    const hint = t('chat.remoteImageLoad', { host: remoteImageHost(src) })
+    return (
+      <button
+        type="button"
+        className={className ? `v3-remote-image-slot ${className}` : 'v3-remote-image-slot'}
+        data-testid="v3-remote-image-slot"
+        data-phase={state.phase}
+        aria-label={alt ? `${hint} · ${alt}` : hint}
+        title={alt ?? undefined}
+        onClick={() => void load(true)}
+      >
+        <ImageDown size={14} aria-hidden />
+      </button>
+    )
+  }
   const host = remoteImageHost(src)
   const label = state.phase === 'failed'
     ? t(state.code === 'denied' ? 'chat.remoteImageDenied' : 'chat.remoteImageFailed', { host })

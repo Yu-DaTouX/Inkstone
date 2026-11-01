@@ -59,6 +59,30 @@
     overflow: clip;
   }
 
+  .v3-user-text .v3-user-code-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: var(--s-2) var(--s-4) 0 var(--s-8);
+  }
+
+  .v3-user-text .v3-user-code-lang {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    text-transform: lowercase;
+  }
+
+  .v3-user-text .v3-user-code-act {
+    flex: none;
+    color: var(--fg3);
+  }
+
+  .v3-user-text .v3-user-code-act:hover {
+    color: var(--fg);
+  }
+
   .v3-user-text .v3-user-pre {
     display: block;
     margin: 0;

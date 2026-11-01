@@ -397,7 +397,7 @@ export const SettingsSearch = forwardRef<HTMLInputElement, SettingsSearchProps>(
         <div
           ref={list}
           id={listId}
-          className="ui-settings-search__results"
+          className="ui-settings-search__results ui-float"
           role={results.length > 0 ? 'listbox' : undefined}
           aria-label={resultsLabel}
         >

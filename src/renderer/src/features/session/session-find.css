@@ -1,10 +1,11 @@
 @layer features {
   .v3-find {
-    position: fixed;
-    top: calc(var(--size-head) + var(--s-16));
-    right: var(--s-16);
+    position: absolute;
+    top: var(--s-12);
+    right: max(var(--s-16), calc((100% - var(--size-chat)) / 2));
+    z-index: var(--z-drop);
     box-sizing: border-box;
-    width: min(var(--size-tiles), calc(100vw - var(--s-32)));
+    width: min(var(--size-tiles), calc(100% - var(--s-32)));
     padding: var(--s-2);
     border-radius: var(--r-md);
     background: var(--surface-3);

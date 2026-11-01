@@ -16,6 +16,7 @@ export interface PanelMenuItem {
   id: string
   label: string
   disabled?: boolean
+  danger?: boolean
   onSelect: () => void
 }
 
@@ -163,7 +164,7 @@ export function useRightPanelAdapter(input: RightPanelAdapterInput): RightPanelA
         { id: 'close', label: text.close, onSelect: () => useRightPanel.getState().close(id) },
         { id: 'close-others', label: text.closeOthers, disabled: surfaces.length <= 1, onSelect: () => useRightPanel.getState().closeOthers(id) },
         { id: 'close-right', label: text.closeRight, disabled: index >= surfaces.length - 1, onSelect: () => useRightPanel.getState().closeRight(id) },
-        { id: 'close-all', label: text.closeAll, onSelect: () => useRightPanel.getState().closeAll() }
+        { id: 'close-all', label: text.closeAll, danger: true, onSelect: () => useRightPanel.getState().closeAll() }
       ]
       usePanelMenuStore.getState().open({ id, anchor, items })
     },

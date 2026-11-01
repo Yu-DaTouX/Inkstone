@@ -4,6 +4,7 @@ import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { activeTodoRow, anchorTodoIndex, buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
 import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
+import { ComposerBanner } from '../../t3/components/chat/ComposerBanner'
 import './plan-card.css'
 
 const PLAN_EXPANDED_STORAGE_KEY = 'inkstone.v3.planCard.expanded'
@@ -75,6 +76,7 @@ export function PlanCard(): ReactElement | null {
   const hint = expanded ? t('plan.collapse') : nowText ? t('plan.workingOn', { text: nowText }) : t('plan.expand')
 
   return (
+    <ComposerBanner.Root>
     <div className="plan-card" data-testid="plan-card" data-expanded={expanded}>
       <button
         type="button"
@@ -105,5 +107,6 @@ export function PlanCard(): ReactElement | null {
         </div>
       ) : null}
     </div>
+    </ComposerBanner.Root>
   )
 }

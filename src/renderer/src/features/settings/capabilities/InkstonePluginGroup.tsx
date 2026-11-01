@@ -9,7 +9,7 @@ import {
 import { Button } from '../../../ui'
 import { DesktopPetRow } from './DesktopPetRow'
 import { MinecraftPluginRow } from './MinecraftPluginRow'
-import { Entry, Group } from './parts'
+import { Entry, Group, StatusBadge } from './parts'
 import { useConfirm } from './confirm'
 
 function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElement {
@@ -43,7 +43,7 @@ function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElemen
     })
   }
   const statusLabel = installed ? t('pkg.installed') : t('ocp.statusMissing')
-  return <Entry name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`} meta={[statusLabel, copy.desc, copy.target, copy.hint, note]} testId={`caps-market-${entry.id}`}
+  return <Entry name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`} badge={<StatusBadge tone={installed ? 'ok' : 'neutral'}>{statusLabel}</StatusBadge>} meta={[copy.desc, note]} metaTitle={[copy.desc, copy.target, copy.hint].filter(Boolean).join('\n')} testId={`caps-market-${entry.id}`}
     actions={<>
       <Button variant="secondary" isDisabled={busy} onPress={() => choose('install')}>{busy ? t('pkg.working') : t(installed ? 'pet.reinstall' : 'pet.install')}</Button>
       {installed ? <Button variant="danger" isDisabled={busy} onPress={() => choose('remove')}>{t('pet.uninstall')}</Button> : null}
@@ -116,27 +116,25 @@ export function InkstonePluginGroup(): ReactElement {
       desc={t('market.oursDesc')}
       settingId="caps-market-inkstone"
       actions={
-        <Button variant="ghost" isDisabled={refreshing} onPress={() => void load(true)} data-testid="caps-market-catalog-refresh">
+        <Button variant="ghost" isDisabled={refreshing} onPress={() => void load(true)} data-testid="caps-market-catalog-refresh" tooltip={sourceLabel}>
           {refreshing ? t('pkg.working') : t('market.catalogRefresh')}
         </Button>
       }
     >
-      <p className="caps-result" data-testid="caps-market-catalog-source">
-        {sourceLabel}
-      </p>
       <div className="caps-list" data-testid="caps-market-inkstone">
         {catalog.plugins.map((entry) => {
           const copy = pluginText(entry, lang)
           if (entry.id === 'desktop-pet' && (entry.kind === 'pet' || entry.kind === 'bundled')) return <DesktopPetRow key={entry.id} entry={entry} copy={copy} />
           if (entry.kind === 'bundled') return <BundledPluginRow key={entry.id} entry={entry} />
           if (entry.id === 'inkstone-minecraft') return <MinecraftPluginRow key={entry.id} entry={entry} copy={copy} />
-          const metaParts = [copy.desc, copy.target, copy.hint]
+          const metaParts = [copy.desc]
           return (
             <Entry
               key={entry.id}
               testId="caps-market-plugin"
               name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`}
               meta={metaParts}
+              metaTitle={[copy.desc, copy.target, copy.hint].filter(Boolean).join('\n')}
               actions={
                 <>
                   {entry.kind === 'export' || entry.kind === 'mcp' ? (

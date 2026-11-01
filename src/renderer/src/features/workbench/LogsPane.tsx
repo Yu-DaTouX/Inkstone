@@ -26,7 +26,7 @@ export function LogsPane(_props: LogsPaneProps): ReactElement {
 
   if (logs.length === 0 && statusEntries.length === 0) {
     return (
-      <EmptyState className="wb-note-block" data-testid="v3-wb-logs-empty" title={t('tile.logsEmpty')} description={t('tile.logsEmptyBody')} />
+      <EmptyState className="wb-note-block" data-testid="v3-wb-logs-empty" title={t('tile.logsEmpty')} />
     )
   }
 

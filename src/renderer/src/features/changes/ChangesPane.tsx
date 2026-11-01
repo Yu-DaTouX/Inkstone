@@ -1,11 +1,10 @@
 import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, CloudDownload, CloudUpload, FlaskConical, GitBranch, List, RefreshCw } from 'lucide-react'
+import { ChevronDown, CloudDownload, CloudUpload, Eye, FlaskConical, GitBranch, List, RefreshCw } from 'lucide-react'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitStatusEntry } from '../../../../shared/git'
 import {
   Button,
-  Checkbox,
   ConfirmDialog,
   DiffStat,
   EmptyState,
@@ -771,7 +770,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     },
     {
       id: 'changes:split',
-      label: layout === 'split' && narrow ? `${text.layoutSplit} · ${text.splitNeedsWidth}` : text.layoutSplit,
+      label: narrow ? `${text.layoutSplit} · ${text.splitNeedsWidth}` : text.layoutSplit,
       checked: layout === 'split',
       onAction: () => {
         const next: DiffViewMode = layout === 'split' ? 'unified' : 'split'
@@ -864,6 +863,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                 {countLabel}
               </span>
             ) : null}
+            {!fileList.shown && shownItems.length > 0 ? (
+              <span className="changes-pane__count text-xs text-secondary-label" data-testid="changes-viewed-head">
+                {t('changes.viewedOf', { viewed: viewedPaths.size, total: shownItems.length })}
+              </span>
+            ) : null}
             {countLabel && lineTotals ? (
               <DiffStat
                 added={lineTotals.added}
@@ -905,6 +909,25 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   return (
     <section className={cx('changes-pane', className)} aria-label={text.title} ref={fileList.hostRef} data-compact={fileList.compact ? '' : undefined}>
       {head}
+      {runner.failure ? (
+        <GitFailureNotice
+          className="changes-pane__hint"
+          view={runner.failure.view}
+          busy={runner.busy !== null}
+          onRetry={() => {
+            const input = runner.failure?.input
+            if (input) void runner.run(input)
+          }}
+          onRefresh={refresh}
+          onNext={(next) => (next === 'fetch' ? fetchNow() : requestPush('publish'))}
+          onDismiss={runner.clear}
+        />
+      ) : null}
+      {doneText ? (
+        <Notice variant="hint" tone="ok" className="changes-pane__hint" data-testid="git-done">
+          {doneText}
+        </Notice>
+      ) : null}
       {!owner.active ? hint(text.inactiveHint) : null}
       {repo && scope.kind !== 'working' ? (
         <div className="changes-pane__summary">
@@ -1044,12 +1067,17 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                           >
                             {row.name}
                           </TreeRow>
-                          <Checkbox
+                          <Toggle
                             className="changes-pane__viewed"
+                            icon
+                            size="xs"
                             aria-label={seen ? t('changes.markUnviewed', { path: row.path }) : t('changes.markViewed', { path: row.path })}
+                            tooltip={seen ? t('changes.markUnviewed', { path: row.path }) : t('changes.markViewed', { path: row.path })}
                             isSelected={seen}
                             onChange={(next) => toggleViewed(row.path, next)}
-                          />
+                          >
+                            <Eye size={12} aria-hidden="true" />
+                          </Toggle>
                         </div>
                       )
                     })}
@@ -1121,25 +1149,6 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               </div>
             </div>
           )}
-          {runner.failure ? (
-            <GitFailureNotice
-              className="changes-pane__hint"
-              view={runner.failure.view}
-              busy={runner.busy !== null}
-              onRetry={() => {
-                const input = runner.failure?.input
-                if (input) void runner.run(input)
-              }}
-              onRefresh={refresh}
-              onNext={(next) => (next === 'fetch' ? fetchNow() : requestPush('publish'))}
-              onDismiss={runner.clear}
-            />
-          ) : null}
-          {doneText ? (
-            <Notice variant="hint" tone="ok" className="changes-pane__hint" data-testid="git-done">
-              {doneText}
-            </Notice>
-          ) : null}
           {scope.kind === 'working' ? (
             <CommitPanel
               items={items}

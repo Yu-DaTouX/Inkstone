@@ -31,7 +31,7 @@ export function SaveAsArtifactButton({
     <Button
       size="sm"
       variant="ghost"
-      isDisabled={state === 'saving'}
+      isDisabled={state === 'saving' || state === 'saved'}
       onPress={() => void save()}
       data-testid="v3-save-as-artifact"
     >

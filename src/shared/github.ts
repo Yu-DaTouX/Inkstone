@@ -69,6 +69,7 @@ export interface GhPrListItemJson {
   additions?: number
   deletions?: number
   url?: string
+  mergeable?: 'CONFLICTING' | 'MERGEABLE' | 'UNKNOWN'
 }
 
 export interface GhPrLabelJson {
@@ -108,7 +109,6 @@ export interface GhPrReviewThreadJson {
 }
 
 export interface GhPrDetailJson extends GhPrListItemJson {
-  mergeable?: 'CONFLICTING' | 'MERGEABLE' | 'UNKNOWN'
   mergeStateStatus?: string
   reviewThreads?: GhPrReviewThreadJson[]
   reviewThreadsTruncated?: boolean

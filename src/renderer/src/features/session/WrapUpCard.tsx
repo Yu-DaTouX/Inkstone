@@ -84,7 +84,7 @@ export function WrapUpCard({ card, dismissKey, hideQuestion = false }: { card: W
   return (
     <Card as="section" padding="md" className="v3-wrapup" data-pending="" aria-label={tt('wrapUpLabel')} data-testid="v3-wrap-up">
       <CardHead>
-        <CardStatus tone="accent" icon={<Icon name="help" size={14} />}>{tt('wrapUpDecide')}</CardStatus>
+        <CardStatus tone="ask" icon={<Icon name="help" size={14} />}>{tt('wrapUpDecide')}</CardStatus>
         {hideQuestion ? null : <CardTitle className="v3-wrapup-question" data-testid="v3-wrap-up-question"><WrapUpText text={card.ask} /></CardTitle>}
         <CardControl>
           <IconButton size="sm" aria-label={tt('wrapUpDismiss')} onPress={() => dismissWrapUp(dismissKey)} data-testid="v3-wrap-up-dismiss">

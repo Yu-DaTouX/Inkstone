@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useI18n } from '../i18n'
+import { Button } from '../ui'
 import { isStaleChunkError } from '../lib/preload-recovery'
 
 interface Props {
@@ -45,9 +46,11 @@ function V3Fatal({ error }: { error: Error }): ReactNode {
             : 'Your session data is safe. Reload to get back to the interface.'}
       </p>
       <pre className="v3-fatal-detail">{error.message}</pre>
-      <button type="button" className="v3-fatal-reload" onClick={() => window.location.reload()}>
-        {zh ? '重新载入' : 'Reload'}
-      </button>
+      <div className="v3-fatal-actions">
+        <Button variant="primary" onPress={() => window.location.reload()}>
+          {zh ? '重新载入' : 'Reload'}
+        </Button>
+      </div>
     </div>
   )
 }

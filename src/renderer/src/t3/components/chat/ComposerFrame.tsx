@@ -69,7 +69,7 @@ export function ComposerFrame({
           >
             <ComposerBanner.Dock>
               <ComposerBanner.Column>{banners}</ComposerBanner.Column>
-              {stash ? (
+              {stash && !stash.menuOpen && !menuLayer ? (
                 <ComposerStashBadge
                   count={stash.count}
                   menuOpen={stash.menuOpen}

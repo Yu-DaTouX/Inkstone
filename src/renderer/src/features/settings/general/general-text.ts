@@ -143,6 +143,11 @@ export interface GeneralText {
   dataBackupVerify: string
   dataBackupWorking: string
   dataBackupChecked: string
+  dataBackupCreateAction: string
+  dataBackupVerifyAction: string
+  dataBackupRestoreAction: string
+  dataSessionExportAction: string
+  dataSessionImportAction: string
 
   aboutVersion: string
   aboutBuild: string
@@ -196,7 +201,7 @@ const ZH: GeneralText = {
   sessionWrapUpCardDesc: '仅在需要你决定时显示回复按钮。',
   sessionResponseDetail: '回复详细程度',
   sessionUserAddress: '如何称呼你',
-  sessionUserAddressDesc: '也用作侧栏名称。保存后从下一轮对话起生效，会发送给模型服务；留空则不指定称呼。',
+  sessionUserAddressDesc: '也用作侧栏名称；留空则不指定。',
   sessionUserAddressPlaceholder: '你的名字或昵称',
   sessionResponseDetailDesc: '只控制讲多细，与思考强度无关。',
   responseDetailBrief: '简洁',
@@ -224,7 +229,7 @@ const ZH: GeneralText = {
   notifSystem: '系统通知',
   notifSystemDesc: '窗口在后台时弹出系统通知。',
   notifSystemTest: '发送',
-  notifSystemTestLabel: '试发一条系统通知',
+  notifSystemTestLabel: '测试通知',
   notifSystemNeedsSound: '需先开启提示音。',
   notifVolume: '音量',
   notifSystemHelp: '系统需允许砚发通知。',
@@ -278,7 +283,7 @@ const ZH: GeneralText = {
   devicesBindLanAddress: '局域网地址',
   devicesBindLanNone: '未找到局域网地址。',
   devicesBindRadminNone: '未找到 Radmin VPN 地址。',
-  devicesStartFailed: '没能开启：{error}',
+  devicesStartFailed: '{error}',
   devicesList: '已配对设备',
   devicesListDesc: '撤销后需重新配对。',
   devicesNone: '还没有配对过设备。',
@@ -313,6 +318,11 @@ const ZH: GeneralText = {
   dataBackupVerify: '校验备份',
   dataBackupWorking: '处理中…',
   dataBackupChecked: '已校验 {files} 个文件 · {size}',
+  dataBackupCreateAction: '创建',
+  dataBackupVerifyAction: '校验',
+  dataBackupRestoreAction: '恢复',
+  dataSessionExportAction: '导出…',
+  dataSessionImportAction: '导入…',
 
   aboutVersion: '版本',
   aboutBuild: '构建',
@@ -366,7 +376,7 @@ const EN: GeneralText = {
   sessionWrapUpCardDesc: 'Only when a decision is needed.',
   sessionResponseDetail: 'Response detail',
   sessionUserAddress: 'What should the model call you?',
-  sessionUserAddressDesc: 'Also used as your sidebar name. Saved changes apply from the next turn and are sent to the model service. Leave blank for no preference.',
+  sessionUserAddressDesc: 'Also used as your sidebar name; leave blank for none.',
   sessionUserAddressPlaceholder: 'Your name or nickname',
   sessionResponseDetailDesc: 'Controls length, not thinking effort.',
   responseDetailBrief: 'Brief',
@@ -394,7 +404,7 @@ const EN: GeneralText = {
   notifSystem: 'System notifications',
   notifSystemDesc: 'System notification when the window is in background.',
   notifSystemTest: 'Send',
-  notifSystemTestLabel: 'Send a test notification',
+  notifSystemTestLabel: 'Test notification',
   notifSystemNeedsSound: 'Turn on sounds first.',
   notifVolume: 'Volume',
   notifSystemHelp: 'The OS must allow notifications.',
@@ -448,7 +458,7 @@ const EN: GeneralText = {
   devicesBindLanAddress: 'LAN address',
   devicesBindLanNone: 'No LAN address found.',
   devicesBindRadminNone: 'No Radmin VPN address.',
-  devicesStartFailed: 'Could not turn on: {error}',
+  devicesStartFailed: '{error}',
   devicesList: 'Paired devices',
   devicesListDesc: 'Revoked devices must pair again.',
   devicesNone: 'No devices paired yet.',
@@ -483,6 +493,11 @@ const EN: GeneralText = {
   dataBackupVerify: 'Verify backup',
   dataBackupWorking: 'Working…',
   dataBackupChecked: 'Verified {files} files · {size}',
+  dataBackupCreateAction: 'Create',
+  dataBackupVerifyAction: 'Verify',
+  dataBackupRestoreAction: 'Restore',
+  dataSessionExportAction: 'Export…',
+  dataSessionImportAction: 'Import…',
 
   aboutVersion: 'Version',
   aboutBuild: 'Build',

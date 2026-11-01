@@ -1,6 +1,6 @@
 import { useCallback, useReducer, useRef, useState, type ReactElement } from 'react'
 import { RefreshCw, RotateCcw } from 'lucide-react'
-import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, Notice, Spinner } from '../../ui'
+import { Button, CloseButton, Collapsible, CollapsibleHeader, CollapsiblePanel, Notice, Spinner } from '../../ui'
 import type { GhPrActionRequest, GhPrActionResult } from '../../../../shared/github'
 import { canStartAction, failureCause, reduceAction, type PrActionPhase } from './pr-actions-model'
 import type { PrActionText } from './pr-action-text'
@@ -92,9 +92,11 @@ export function PrActionStatus({ controller, text, onRefresh, className }: PrAct
   }
   const { failure, recovery } = state
   const unknown = failure.code === 'timeout' || recovery === 'refresh'
+  const line = failure.code === 'timeout' ? text.unknown : failure.message || (text.codes[failure.code] ?? failure.code)
   return (
     <Notice
       tone={unknown ? 'ask' : 'fail'}
+      compact
       className={className}
       title={`${text.failed} · ${text.codes[failure.code] ?? failure.code}`}
       data-testid="gh-pr-action-failed"
@@ -120,16 +122,12 @@ export function PrActionStatus({ controller, text, onRefresh, className }: PrAct
               {text.refreshConfirm}
             </Button>
           ) : null}
-          <Button size="xs" variant="ghost" onPress={controller.reset}>
-            {text.dismiss}
-          </Button>
+          <CloseButton size="sm" aria-label={text.dismiss} onPress={controller.reset} />
         </span>
       }
     >
       <span className="gh-pr-act__status-body">
-        {unknown && failure.code === 'timeout' ? <span>{text.unknown}</span> : null}
-        {failure.message ? <span>{failure.message}</span> : null}
-        {failure.hint ? <span className="gh-pr-act__hint ui-meta-text">{failure.hint}</span> : null}
+        <span title={failure.code === 'timeout' ? undefined : failure.hint || undefined}>{line}</span>
         <Collapsible isExpanded={causeOpen} onExpandedChange={setCauseOpen}>
           <CollapsibleHeader tone="muted" aria-label={causeOpen ? text.hideCause : text.cause} data-testid="gh-pr-action-cause">
             {causeOpen ? text.hideCause : text.cause}

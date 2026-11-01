@@ -8,6 +8,7 @@ export interface ContextPaneText {
   unknownHint: string
   afterCompact: string
   distance: (kind: AutoCompactDistance['kind'], remaining: string) => string
+  distanceHint: string
   topTools: string
   jumpTo: (name: string) => string
   locateFailed: string
@@ -42,13 +43,14 @@ const ZH: ContextPaneText = {
         ? '已到自动压缩上限，本轮结束后会压缩。'
         : kind === 'limit'
           ? `再用 ${remaining} 触发自动压缩。`
-          : `距模型窗口用满还剩 ${remaining}，接近用满时自动压缩。`,
+          : `剩余 ${remaining}`,
+  distanceHint: '接近用满时自动压缩。',
   topTools: '占用最多的工具结果',
   jumpTo: (name) => `在对话中定位 ${name}`,
   locateFailed: '对话里找不到这一轮，它可能已不在当前会话中。',
   estimateNote: '分类与明细按可见消息估算，总量以上方 Agent 回报为准。',
   compaction: '压缩记录',
-  compactionNone: '这条会话还没有压缩过。',
+  compactionNone: '还没有压缩记录',
   compactionTokens: (before, after, percent) => `${before} → ${after}${percent === null ? '' : ` · 回收 ${percent}%`}`,
   compactionBefore: (before) => `压缩前 ${before}`,
   compactionSummary: (tokens) => `摘要约 ${tokens}`,
@@ -77,13 +79,14 @@ const EN: ContextPaneText = {
         ? 'At the auto-compact limit; compaction runs when this turn ends.'
         : kind === 'limit'
           ? `${remaining} more until auto-compaction.`
-          : `${remaining} left in the model window; auto-compaction runs when it is nearly full.`,
+          : `${remaining} left`,
+  distanceHint: 'Auto-compaction runs when the window is nearly full.',
   topTools: 'Largest tool results',
   jumpTo: (name) => `Show ${name} in the conversation`,
   locateFailed: 'That turn is no longer in the current chat.',
   estimateNote: 'Categories and details are estimated from visible messages; the Agent total above is authoritative.',
   compaction: 'Compaction history',
-  compactionNone: 'This session has not been compacted yet.',
+  compactionNone: 'No compaction yet',
   compactionTokens: (before, after, percent) => `${before} → ${after}${percent === null ? '' : ` · reclaimed ${percent}%`}`,
   compactionBefore: (before) => `${before} before`,
   compactionSummary: (tokens) => `summary ~${tokens}`,

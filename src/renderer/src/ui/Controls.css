@@ -421,8 +421,8 @@
     white-space: nowrap;
   }
   .ui-diffstat--sm {
-    font-size: var(--t-caption);
-    line-height: var(--t-caption-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
   .ui-diffstat__add {
     color: var(--add);

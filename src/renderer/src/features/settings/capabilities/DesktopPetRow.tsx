@@ -6,7 +6,7 @@ import type { PluginCatalogEntry, PluginCatalogText } from '../../../../../share
 import type { ModelInfo } from '../../../../../shared/ipc'
 import { Button, Checkbox, ListBoxItem, Notice, Select } from '../../../ui'
 import { useConfirm } from './confirm'
-import { Entry, Warn } from './parts'
+import { Entry, StatusBadge, Warn } from './parts'
 
 type RunKind = 'install' | 'start' | 'stop' | 'uninstall' | 'autoStart' | 'model'
 
@@ -84,7 +84,9 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
     await confirm({
       title: t('pet.install'),
       body: copy.target ?? copy.desc,
-      detail: t('pet.installConfirm', { dir: status?.installDir ?? '' }),
+      detail: status?.installDir
+        ? t('pet.installConfirm', { dir: status.installDir })
+        : t('pet.installConfirmPending'),
       confirmLabel: t('pet.install'),
       tone: 'default',
       action: () => run('install', () => window.yan.plugins.action(entry.id, 'install') as Promise<DesktopPetResult>, 'pet.installedOk')
@@ -108,19 +110,16 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
   const selectedModel = status?.model ?? MODEL_OFF
   const modelKnown = selectedModel === MODEL_OFF || models.some((model) => `${model.provider}/${model.id}` === selectedModel)
 
-  const metaParts = [
-    label,
-    copy.desc,
-    copy.target,
-    installed ? t('pet.firstRun') : null,
-    installed && status ? edgeMeta(status.edges, t) : null
-  ]
+  const metaParts = [copy.desc, installed && status ? edgeMeta(status.edges, t) : null]
+  const metaTitle = [copy.desc, copy.target, installed ? t('pet.firstRun') : null].filter(Boolean).join('\n')
 
   return (
     <Entry
       testId="caps-market-desktop-pet"
       name={`${copy.name ?? entry.name} · ${status?.version || DESKTOP_PET_VERSION}`}
+      badge={<StatusBadge tone={running ? 'ok' : 'neutral'}>{label}</StatusBadge>}
       meta={metaParts}
+      metaTitle={metaTitle}
       actions={
         <>
           {!installed ? (

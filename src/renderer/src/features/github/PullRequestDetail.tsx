@@ -78,10 +78,10 @@ function writeStored(key: string, value: string | null): void {
 }
 
 type CommentTarget = 'review' | 'agent'
-type BadgeTone = 'neutral' | 'accent' | 'ok' | 'run' | 'ask' | 'stall' | 'fail'
+type BadgeTone = 'neutral' | 'accent' | 'ok' | 'run' | 'ask' | 'stall' | 'fail' | 'data-3'
 
 export function stateTone(state: PrState): BadgeTone {
-  if (state === 'merged') return 'accent'
+  if (state === 'merged') return 'data-3'
   if (state === 'closed') return 'fail'
   if (state === 'draft') return 'neutral'
   return 'ok'
@@ -433,8 +433,6 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
           when={when}
           reviewBadge={reviewBadge}
           openExternal={openExternal}
-          checksDetailsLabel={t('github.pr.checks.details')}
-          checksEmpty={t('github.pr.detail.noChecks')}
           bodyEmpty={t('github.pr.detail.noBody')}
         />
       )
@@ -474,7 +472,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
             </span>
           ) : null}
         </h3>
-        <div className="gh-pr-act__target" data-testid="gh-pr-comment-target">
+        <div className="gh-pr-act__target" data-testid="gh-pr-comment-target" title={actText.review.targetHint}>
           <SegmentedControl<CommentTarget>
             label={actText.review.target}
             value={target}
@@ -485,7 +483,6 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
             ]}
           />
           {pending.length ? <Badge tone="accent">{actText.review.pending(pending.length)}</Badge> : null}
-          <span className="gh-pr-act__hint ui-meta-text">{actText.review.targetHint}</span>
         </div>
         {sideNote ? <Notice tone="ask" compact>{actText.review.sideUnknown}</Notice> : null}
         {diffNote?.kind === 'truncated' ? <Notice tone="ask" compact>{t('github.pr.detail.diffTruncated')}</Notice> : null}

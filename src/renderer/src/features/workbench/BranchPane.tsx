@@ -101,7 +101,6 @@ export function BranchPane({ owner }: BranchPaneProps): ReactElement {
       >
         {text.summarize}
       </Switch>
-      <p className="wb-branch__hint">{summarize ? text.hintSummarize : text.hint}</p>
       <BranchTree
         className="wb-branch__tree"
         owner={owner}

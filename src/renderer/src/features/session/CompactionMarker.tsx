@@ -34,15 +34,14 @@ export function CompactionMarker(): JSX.Element | null {
       data-tone={TONE[compactionTone(model.run)]}
       data-running={model.running ? '1' : '0'}
       data-testid="v3-compaction-marker"
+      title={model.run.error || undefined}
+      role={failed ? 'alert' : undefined}
     >
       <Icon name="layers" size={13} />
       {model.running ? null : <span className="v3-compaction-title">{tt(failed ? 'compactionFailedTitle' : 'compactionTitle')}</span>}
       {text ? <span className="v3-compaction-text">{text}</span> : null}
       {elapsed ? <span className="v3-compaction-elapsed" data-testid="v3-compaction-elapsed">{elapsed}</span> : null}
       {tokens ? <span className="v3-compaction-tokens">{tokens}</span> : null}
-      {!model.running && model.run.status === 'failed' && model.run.error ? (
-        <span className="v3-compaction-error" title={model.run.error} data-testid="v3-compaction-error" role="alert">{model.run.error}</span>
-      ) : null}
     </div>
   )
 }

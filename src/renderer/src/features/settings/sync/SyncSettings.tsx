@@ -239,7 +239,7 @@ export function SyncGroup({ panel, title }: { panel: SyncPanel; title?: string }
 
       <SettingsRow
         settingId="data-sync-now"
-        label={text.syncNow}
+        label={text.lastTitle}
         description={
           <span className="dd-lines" data-testid="v3-sync-last">
             <span>

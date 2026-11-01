@@ -7,7 +7,7 @@ import {
   type SearchProviderState
 } from '../../../../../shared/search'
 import { Button, TextField } from '../../../ui'
-import { Entry, Group, Panel, Warn } from './parts'
+import { Entry, Group, Panel, StatusBadge, Warn } from './parts'
 
 export function SearchApiSection(): ReactElement {
   const t = useT()
@@ -53,12 +53,12 @@ function SearchApiGroup(): ReactElement {
           <Entry
             testId="cap-search-api-deepseek"
             name={t('search.deepseekTitle')}
-            meta={[
-              <span key="status" data-testid="cap-search-api-status-deepseek">
-                {config?.deepseekModelKey ? t('search.deepseekReady') : t('search.deepseekMissing')}
-              </span>,
-              t('search.role.deepseek')
-            ]}
+            badge={
+              <span data-testid="cap-search-api-status-deepseek" title={config?.deepseekModelKey ? t('search.deepseekReady') : t('search.deepseekMissing')}>
+                <StatusBadge tone={config?.deepseekModelKey ? 'ok' : 'neutral'}>{config?.deepseekModelKey ? t('search.apiReady') : t('search.apiMissing')}</StatusBadge>
+              </span>
+            }
+            meta={[t('search.role.deepseek')]}
           />
           {SEARCH_PROVIDERS.map((provider) => (
             <SearchProviderItem key={provider.id} provider={provider} state={config?.providers[provider.id]} onChanged={load} />
@@ -112,31 +112,21 @@ function SearchProviderItem({
     <Entry
       testId={`cap-search-api-${provider.id}`}
       name={provider.label}
-      meta={[
-        <span key="status" data-testid={`cap-search-api-status-${provider.id}`}>
-          {state?.configured
-            ? state.source === 'env'
-              ? t('search.apiReadyEnv', { env: provider.envName })
-              : t('search.apiReady')
-            : t('search.apiMissing')}
-        </span>,
-        provider.keyOptional ? t('search.apiOptional') : null,
-        t(`search.role.${provider.id}` as MessageKey)
-      ]}
+      badge={
+        <span data-testid={`cap-search-api-status-${provider.id}`} title={state?.source === 'env' ? t('search.apiReadyEnv', { env: provider.envName }) : provider.keyOptional && !state?.configured ? t('search.apiOptional') : undefined}>
+          <StatusBadge tone={state?.configured ? 'ok' : 'neutral'}>{state?.configured ? t('search.apiReady') : t('search.apiMissing')}</StatusBadge>
+        </span>
+      }
+      meta={[t(`search.role.${provider.id}` as MessageKey)]}
       actions={
-        <>
-          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
-            {t('search.apiGet')}
+        state?.source !== 'env' && state?.configured ? (
+          <Button variant="danger" onPress={() => void clear()}>
+            {t('search.apiClear')}
           </Button>
-          {state?.source !== 'env' && state?.configured ? (
-            <Button variant="danger" onPress={() => void clear()}>
-              {t('search.apiClear')}
-            </Button>
-          ) : null}
-        </>
+        ) : undefined
       }
     >
-      {state?.source !== 'env' ? (
+      {state?.source !== 'env' && !state?.configured ? (
         <form className="caps-field" onSubmit={(event) => void save(event)}>
           <TextField
             aria-label={placeholder}
@@ -151,6 +141,9 @@ function SearchProviderItem({
           />
           <Button variant="primary" type="submit" isDisabled={busy || !key.trim()}>
             {t('search.apiSave')}
+          </Button>
+          <Button variant="ghost" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
+            {t('search.apiGet')}
           </Button>
         </form>
       ) : null}

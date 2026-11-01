@@ -353,7 +353,7 @@ export function EffortSlider(props: {
                 className={cn(
                   'composer-effort-trigger shrink-0 whitespace-nowrap [[data-chat-provider-model-picker]+[data-resting-block]>&]:rounded-s-none [[data-chat-provider-model-picker]+[data-resting-block]>&]:ps-[2px] [[data-chat-provider-model-picker]:hover+[data-resting-block]>&]:bg-accent',
                   props.className,
-                  blocked && 'cursor-default opacity-60'
+                  blocked && 'cursor-default opacity-40'
                 )}
               />
             }

@@ -22,7 +22,7 @@ interface ComposerPrimaryActionsProps {
 }
 
 const sendButtonClassName =
-  "relative isolate flex size-7 items-center justify-center overflow-hidden rounded-full shadow-xs transition-[scale,box-shadow,background-color] duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 [&_svg]:pointer-events-none";
+  "relative isolate flex size-7 items-center justify-center overflow-hidden rounded-full shadow-xs transition-[scale,box-shadow,background-color] duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 disabled:opacity-40 [&_svg]:pointer-events-none";
 
 const stopButtonClassName =
   "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-(--on-fill) shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none size-7 [&_svg]:pointer-events-none";

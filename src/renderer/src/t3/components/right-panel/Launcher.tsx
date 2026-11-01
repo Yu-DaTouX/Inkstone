@@ -64,7 +64,7 @@ export function LauncherActionRow(props: {
           <div
             tabIndex={0}
             aria-disabled="true"
-            className="flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm opacity-50"
+            className="flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-(length:--t-body) opacity-50"
           >
             <span className="relative inline-flex shrink-0">{action.icon}</span>
             <span className="min-w-0 flex-1 truncate">{action.label}</span>
@@ -84,7 +84,7 @@ export function LauncherActionRow(props: {
         type="button"
         onClick={action.onPick}
         className={cn(
-          'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm transition-colors group-hover:bg-accent/60',
+          'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-(length:--t-body) transition-colors group-hover:bg-accent/60',
           props.highlighted && 'bg-accent/60'
         )}
       >

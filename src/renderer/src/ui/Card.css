@@ -31,7 +31,9 @@
     cursor: pointer;
     transition: background-color var(--dur-fast) var(--ease);
   }
-  .ui-card__summary:hover { background: var(--alpha-1); }
+  @media (hover: hover) {
+    .ui-card__summary:hover { background: var(--alpha-1); }
+  }
   .ui-card__summary:focus-visible {
     outline: none;
     box-shadow: var(--ring-focus-inset);

@@ -313,19 +313,26 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
         ) : null}
 
         {hw ? (
-          <Meta>
-            {t('voice.hardware')}
-            {t('voice.hardwareLine', {
+          <Meta
+            title={`${t('voice.hardware')}${t('voice.hardwareLine', {
               cpu: hw.cpuModel || '—',
               threads: hw.threads,
               free: (hw.freeMemoryMB / 1024).toFixed(1),
               total: (hw.totalMemoryMB / 1024).toFixed(1),
               load: hw.cpuLoad === null ? '—' : `${Math.round(hw.cpuLoad * 100)}%`
+            })}${hw.gpu ? ` ${t('voice.gpuNote', { gpu: hw.gpu })}` : ''}`}
+          >
+            {t('voice.hardwareShort', {
+              threads: hw.threads,
+              free: (hw.freeMemoryMB / 1024).toFixed(1),
+              total: (hw.totalMemoryMB / 1024).toFixed(1)
             })}
-            {hw.gpu ? ` ${t('voice.gpuNote', { gpu: hw.gpu })}` : ''}
+            {hw.gpu ? ` · ${t('voice.gpuNote', { gpu: hw.gpu })}` : ''}
           </Meta>
         ) : null}
-        <Note>{t('voice.privacy', { dir: status?.storageDir ?? '' })}</Note>
+        <Note>
+          <span title={status?.storageDir ?? undefined}>{t('voice.privacyShort')}</span>
+        </Note>
       </div>
     </Panel>
   )

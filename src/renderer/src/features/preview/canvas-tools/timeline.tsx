@@ -221,6 +221,7 @@ export function TimelinePanel({ context }: CanvasToolPanelProps): ReactElement |
         <Slider
           className="v3-canvas-timeline-scrub"
           aria-label={text.scrub}
+          thumbLabels={[text.scrub]}
           minValue={0}
           maxValue={total > 0 ? total : 1}
           step={0.01}
@@ -349,7 +350,6 @@ export function TimelinePanel({ context }: CanvasToolPanelProps): ReactElement |
             </>
           ) : null}
         </div>
-        <span className="v3-canvas-timeline-keys">{text.keys}</span>
       </div>
     </footer>
   )

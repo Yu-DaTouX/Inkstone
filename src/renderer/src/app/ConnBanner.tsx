@@ -13,8 +13,9 @@ export function ConnBanner(): ReactElement | null {
   return (
     <Notice
       tone="fail"
+      compact
       className="v3-conn-banner"
-      title={t('conn.engineDown')}
+      title={<span title={connDetail || undefined}>{t('conn.engineDown')}</span>}
       data-testid="v3-conn-banner"
       action={
         <Button
@@ -30,7 +31,6 @@ export function ConnBanner(): ReactElement | null {
         </Button>
       }
     >
-      {connDetail || null}
     </Notice>
   )
 }

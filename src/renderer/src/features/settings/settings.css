@@ -64,14 +64,6 @@
     line-height: var(--t-prose-lh);
   }
 
-  .settings-scroll-list {
-    display: flex;
-    flex-direction: column;
-    max-height: 320px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
   .settings-actions {
     display: flex;
     flex-wrap: wrap;
@@ -274,37 +266,6 @@
     --mark-color: var(--ask);
   }
 
-  .settings-usage__legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-4) var(--s-16);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-  }
-
-  .settings-usage__legend li {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-6);
-  }
-
-  .settings-usage__legend li::before {
-    content: '';
-    width: 8px;
-    height: 8px;
-    border-radius: var(--r-full);
-    corner-shape: round;
-    background: var(--mark-color);
-  }
-
-  .settings-usage__legend b {
-    color: var(--fg2);
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-  }
 
   @keyframes settings-flash-line {
     0% {

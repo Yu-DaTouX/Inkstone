@@ -124,8 +124,8 @@ export class RemoteAccess {
     if (wanted && !wanted.host) {
       await this.stopServer()
       this.lastError = this.settings.bind === 'radmin'
-        ? '没有找到 Radmin VPN 地址：请确认 Radmin VPN 已连接，或改选其他监听地址'
-        : '没有找到 Tailscale 地址：请确认 Tailscale 已登录，或改选其他监听地址'
+        ? '没有找到 Radmin VPN 地址，请先连接 Radmin VPN'
+        : '没有找到 Tailscale 地址，请先登录 Tailscale'
       return
     }
     const current = this.server?.info

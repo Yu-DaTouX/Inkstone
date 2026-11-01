@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { ExternalLink, FolderOpen, Layers, MessageSquare, Pin, PinOff } from 'lucide-react'
 import type { ArtifactLibraryItem as ArtifactLibraryEntry } from '../../../../shared/artifact-library'
 import { isHtmlArtifact } from '../../../../shared/html-artifact-preview'
-import { useT } from '../../i18n'
+import { useI18n, useT } from '../../i18n'
 import { Button, EmptyState, IconButton, Notice, PageHeader, SearchField, SegmentedControl } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useStore } from '../../state/store'
@@ -95,6 +95,7 @@ function LibraryThumb({ entry, openLabel, onOpen }: { entry: ArtifactLibraryEntr
 
 export function ArtifactLibraryPage(): JSX.Element {
   const t = useT()
+  const { lang } = useI18n()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [query, setQuery] = useState('')
   const [view, setView] = useState<LibraryView>(readView)
@@ -132,7 +133,7 @@ export function ArtifactLibraryPage(): JSX.Element {
     const found = state.entries.filter((entry) => matches(entry, query.trim()))
     return [...found.filter((entry) => pinned.has(libraryEntryKey(entry))), ...found.filter((entry) => !pinned.has(libraryEntryKey(entry)))]
   }, [state, query, pinned])
-  const dateFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }), [])
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(lang === 'en-US' ? 'en-US' : 'zh-CN', { dateStyle: 'medium', timeStyle: 'short' }), [lang])
 
   const changeView = (next: LibraryView): void => {
     setView(next)

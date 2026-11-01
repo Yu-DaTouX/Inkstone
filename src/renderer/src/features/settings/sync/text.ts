@@ -22,6 +22,7 @@ export interface SyncText {
   syncing: string
   lastNever: string
   lastLine: string
+  lastTitle: string
   lastDone: string
   lastFailed: string
   resultPushed: string
@@ -78,7 +79,8 @@ const ZH: SyncText = {
   syncNow: '立即同步',
   syncing: '正在同步…',
   lastNever: '还没有同步过。',
-  lastLine: '上次同步 {time} · {result}',
+  lastLine: '{time} · {result}',
+  lastTitle: '上次同步',
   lastDone: '已完成',
   lastFailed: '未完成',
   resultPushed: '推送 {n}',
@@ -162,7 +164,8 @@ const EN: SyncText = {
   syncNow: 'Sync now',
   syncing: 'Syncing…',
   lastNever: 'No sync has run yet.',
-  lastLine: 'Last sync {time} · {result}',
+  lastLine: '{time} · {result}',
+  lastTitle: 'Last sync',
   lastDone: 'Done',
   lastFailed: 'Incomplete',
   resultPushed: 'pushed {n}',

@@ -176,23 +176,23 @@
     top: var(--s-8, 8px);
     bottom: var(--s-8, 8px);
     z-index: 20;
-    width: 10px;
+    width: 16px;
     cursor: ew-resize;
     outline: none;
     touch-action: none;
   }
 
-  .composer-width-handle[data-composer-width-handle='left'] { left: -5px; }
-  .composer-width-handle[data-composer-width-handle='right'] { right: -5px; }
+  .composer-width-handle[data-composer-width-handle='left'] { left: -8px; }
+  .composer-width-handle[data-composer-width-handle='right'] { right: -8px; }
 
   .composer-width-handle::after {
     content: '';
     position: absolute;
     inset-block: 0;
-    left: 4px;
-    width: 2px;
-    border-radius: 1px;
-    background: var(--fg3);
+    left: 6px;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--accent-t);
     opacity: 0;
     transition: opacity var(--dur-quick, 120ms) ease;
   }
@@ -200,16 +200,16 @@
   .composer-width-handle:hover::after,
   .composer-width-handle:focus-visible::after,
   .composer-width-handle[data-dragging]::after {
-    opacity: 0.7;
+    opacity: 1;
   }
 
   .composer-height-handle {
     position: absolute;
-    top: -5px;
+    top: -8px;
     left: var(--s-24, 24px);
     right: var(--s-24, 24px);
     z-index: 20;
-    height: 10px;
+    height: 16px;
     cursor: ns-resize;
     outline: none;
     touch-action: none;
@@ -219,10 +219,10 @@
     content: '';
     position: absolute;
     inset-inline: 0;
-    top: 4px;
-    height: 2px;
-    border-radius: 1px;
-    background: var(--fg3);
+    top: 6px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--accent-t);
     opacity: 0;
     transition: opacity var(--dur-quick, 120ms) ease;
   }
@@ -230,7 +230,7 @@
   .composer-height-handle:hover::after,
   .composer-height-handle:focus-visible::after,
   .composer-height-handle[data-dragging]::after {
-    opacity: 0.7;
+    opacity: 1;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -1144,8 +1144,8 @@
   }
 
   .v3-chat .v3-stream-host::after {
-    height: 0;
-    background: none;
+    height: var(--s-32);
+    background: linear-gradient(to top, var(--bg) var(--s-16), transparent);
   }
 
   @keyframes file-drop-card-in {

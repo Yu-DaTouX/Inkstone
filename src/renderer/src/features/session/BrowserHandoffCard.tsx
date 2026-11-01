@@ -44,7 +44,7 @@ export function BrowserHandoffCard({ sessionId }: { sessionId: string | null }):
   return (
     <Card as="section" padding="md" className="v3-wrapup" data-pending="" aria-label={tt('browserHandoffTitle')} data-testid="v3-browser-handoff">
       <CardHead>
-        <CardStatus tone="accent" icon={<Icon name="help" size={14} />}>{tt('awaitAction')}</CardStatus>
+        <CardStatus tone="ask" icon={<Icon name="help" size={14} />}>{tt('awaitAction')}</CardStatus>
         <CardTitle>{tt('browserHandoffTitle')}</CardTitle>
       </CardHead>
       <CardBody className="v3-wrapup-body">

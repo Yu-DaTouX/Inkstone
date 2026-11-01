@@ -123,7 +123,7 @@ export function ScheduleTaskCard({ task, busy, lang, t, onToggle, onRunNow, onEd
           {task.lastRunAt ? <span>{t('sched.last', { when: formatWhen(task.lastRunAt, lang) })}</span> : null}
           {task.cwd ? (
             <span className="sched-task-cwd" title={task.cwd}>
-              {t('sched.cwdMeta', { cwd: task.cwd })}
+              {t('sched.cwdMeta', { cwd: task.cwd.split(/[\\/]/).filter(Boolean).pop() ?? task.cwd })}
             </span>
           ) : null}
           {task.model ? (
@@ -397,10 +397,6 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
         </Notice>
       ) : null}
 
-      <Notice tone="info" compact className="sched-page-notice">
-        {t('sched.notice')}
-      </Notice>
-
       <div className="sched-list" aria-busy={loading || undefined}>
         {tasks.length === 0 && !loading ? (
           <EmptyState
@@ -408,7 +404,6 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
             data-testid="schedule-empty"
             icon={<CalendarClock size={20} />}
             title={t('sched.empty')}
-            description={t('sched.emptyBody')}
           />
         ) : (
           <ul className="sched-task-list">

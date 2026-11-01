@@ -223,7 +223,7 @@ export function DataSettings(): ReactElement {
         >
           {openSummary('create')}
           <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-backup-create" onPress={() => void backup('create')}>
-            {busy === 'backup' ? text.dataBackupWorking : text.dataBackupCreate}
+            {busy === 'backup' ? text.dataBackupWorking : text.dataBackupCreateAction}
           </Button>
         </SettingsRow>
         <DataMessageLine message={message} scope="backup" />
@@ -239,7 +239,7 @@ export function DataSettings(): ReactElement {
         >
           {openSummary('verify')}
           <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-backup-verify" onPress={() => void backup('verify')}>
-            {busy === 'verify' ? text.dataBackupWorking : text.dataBackupVerify}
+            {busy === 'verify' ? text.dataBackupWorking : text.dataBackupVerifyAction}
           </Button>
         </SettingsRow>
         <DataMessageLine message={message} scope="verify" />
@@ -255,7 +255,7 @@ export function DataSettings(): ReactElement {
             </Button>
           ) : null}
           <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-backup-restore" onPress={() => void backup('restore')}>
-            {busy === 'restore' ? text.dataBackupWorking : local.dataBackupRestore}
+            {busy === 'restore' ? text.dataBackupWorking : text.dataBackupRestoreAction}
           </Button>
         </SettingsRow>
         <DataMessageLine message={message} scope="restore" />
@@ -328,13 +328,13 @@ export function DataSettings(): ReactElement {
               data-testid="v3-data-export"
               onPress={() => void exportSession()}
             >
-              {busy === 'session' ? sync.exporting : sync.exportSession}
+              {busy === 'session' ? sync.exporting : text.dataSessionExportAction}
             </Button>
           </SettingsRow>
           {bridge ? (
             <SettingsRow settingId="data-session-import" label={sync.importSession} description={local.dataImportDesc}>
               <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-import" onPress={() => void importSession()}>
-                {busy === 'import' ? sync.importing : sync.importSession}
+                {busy === 'import' ? sync.importing : text.dataSessionImportAction}
               </Button>
             </SettingsRow>
           ) : null}

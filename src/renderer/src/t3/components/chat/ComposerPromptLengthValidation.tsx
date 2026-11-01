@@ -23,7 +23,3 @@ export function ComposerNotice({
     </p>
   );
 }
-
-export function ComposerPromptLengthValidation({ message }: { message: string | null }) {
-  return <ComposerNotice message={message} slot="prompt-length" />;
-}

@@ -136,7 +136,6 @@ export function ComputerUseSection(): ReactElement | null {
             </Actions>
           </>
         ) : null}
-        <Meta>{t('cu.scope')}</Meta>
         <Actions>
           <Button variant="secondary" isDisabled={busy !== null} onPress={() => void refresh()}>
             {t('set.extRecheck')}

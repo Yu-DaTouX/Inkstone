@@ -253,7 +253,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
         )}
 
         <div className="wb-ctxw-tray">
-          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitNote} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind}>
+          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitNote || text.distanceHint} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind}>
             {compacting
               ? text.compacting
               : usage.afterCompactUnknown
@@ -290,9 +290,8 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
 
       {toolCalls.length ? (
         <div className="wb-ctx-block">
-          <h4 className="wb-ctx-subtitle">{text.topTools}</h4>
+          <h4 className="wb-ctx-subtitle" title={text.estimateNote}>{text.topTools}</h4>
           <ToolCallRows rows={toolCalls} text={text} />
-          <p className="wb-ctx-note">{text.estimateNote}</p>
         </div>
       ) : null}
 

@@ -44,8 +44,8 @@ function CommandItem({
   return (
     <div
       className={cn(
-        "flex min-h-8 cursor-default select-none items-center gap-2 rounded-sm px-2 py-1 text-base outline-none hover:bg-accent data-disabled:pointer-events-none data-disabled:opacity-40 sm:min-h-7 sm:text-sm [&_svg:not([class*='text-'])]:text-muted-foreground",
-        "py-1.5 data-selected:bg-foreground/[0.06] [&[data-selected]]:text-foreground",
+        "ui-menu-row flex cursor-default select-none items-center gap-2 outline-none hover:bg-accent data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "data-selected:bg-foreground/[0.06] [&[data-selected]]:text-foreground",
         active && "bg-accent! text-accent-foreground!",
         className,
       )}

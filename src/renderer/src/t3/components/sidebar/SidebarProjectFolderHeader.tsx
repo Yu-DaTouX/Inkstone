@@ -1,5 +1,8 @@
 import { ChevronDownIcon, EllipsisIcon, SquarePenIcon } from 'lucide-react'
 import { memo, type ReactNode } from 'react'
+import { useI18n } from '../../../i18n'
+import { v3Text } from '../../../app/v3-text'
+import { NO_PROJECT_ID } from '../../adapters/sidebar/types'
 import { cn } from '../../lib/utils'
 import { sidebarFolderRowId } from '../Sidebar.logic'
 import { Button } from '../ui/button'
@@ -34,7 +37,9 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   onContextMenu: (projectKey: string, position: { x: number; y: number }) => void
 }) {
   const { folder } = props
+  const { lang } = useI18n()
   const rowId = sidebarFolderRowId(folder.projectKey)
+  const displayName = folder.projectKey === NO_PROJECT_ID ? v3Text(lang).groupUngrouped : folder.displayName
   return (
     <li
       data-testid="sidebar-project-folder"
@@ -55,7 +60,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
       >
         {folder.icon}
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
-          {folder.displayName}
+          {displayName}
         </span>
         {folder.dot ? (
           <span className={cn('size-1.5 shrink-0 rounded-full', FOLDER_DOT_CLASS_NAME[folder.dot])}>

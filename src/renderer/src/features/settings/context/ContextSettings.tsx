@@ -81,15 +81,6 @@ function ContextUsageMeter({
           ))}
         </div>
       ) : null}
-      {markers.length > 0 ? (
-        <ul className="settings-usage__legend">
-          {markers.map((marker) => (
-            <li key={marker.key} data-mark={marker.key}>
-              {marker.label} <b>{kTokens(marker.at)}</b>
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </div>
   )
 }
@@ -120,17 +111,12 @@ export function ContextSettings({ piNative, lede }: { piNative: PiNativeSettings
 
   const compactAtValue = settings?.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
   const effective = autoCompactAt(compactAtValue, contextWindow)
-  const compactAtText =
-    contextWindow > 0 && effective < compactAtValue
-      ? text.contextCompactAtClamped.replace('{n}', kTokens(compactAtValue)).replace('{e}', kTokens(effective))
-      : text.contextCompactAtNow.replace('{n}', kTokens(compactAtValue))
-
   const info = useCompactionInfo(session?.cwd ?? '', contextWindow, compactAtValue)
-  const compactionNotes = [
-    info?.projectIgnored ? text.contextProjectIgnored : '',
-    info?.cappedByInkstone ? text.contextCappedByInkstone.replace('{n}', kTokens(info.threshold)) : ''
-  ].filter(Boolean)
-  const compactAtDescription = compactionNotes.length ? [compactAtText, ...compactionNotes].join(text.contextNoteJoin) : compactAtText
+  const actualAt = info?.cappedByInkstone ? Math.min(effective, info.threshold) : effective
+  const compactAtDescription = [
+    contextWindow > 0 && actualAt < compactAtValue ? text.contextCompactAtActual.replace('{e}', kTokens(actualAt)) : '',
+    info?.projectIgnored ? text.contextProjectIgnored : ''
+  ].filter(Boolean).join(' · ') || undefined
 
   const windowText = contextWindow > 0 ? `${usage.windowAssumed ? '~' : ''}${kTokens(contextWindow)}` : text.contextUnknown
 

@@ -36,9 +36,9 @@ export function SourceCard({ title, domain, href, icon, number, index = 0, label
         {snippet ? <span className="ui-source-card__snippet">{snippet}</span> : null}
         <span className="ui-source-card__foot">
           {status ? <CardStatus tone={statusTone}><span className="ui-source-card__dot" />{status}</CardStatus> : null}
+          {meta ? <span className="ui-source-card__meta">{meta}</span> : null}
           <ArrowUpRight size={14} className="ui-source-card__arrow" aria-hidden="true" />
         </span>
-        {meta ? <span className="ui-source-card__meta">{meta}</span> : null}
       </a>
     </Card>
   )

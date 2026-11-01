@@ -1,6 +1,7 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import { type ComponentProps, createContext, type ReactNode, use, useState } from "react";
+import { useOptionalT } from "../../../i18n";
 import { cn } from "../../lib/utils";
 import { Button } from "./button";
 import {
@@ -93,6 +94,7 @@ function DialogPopup({
   bottomStickOnMobile?: boolean;
   variant?: "default" | "media";
 }) {
+  const t = useOptionalT();
   return (
     <DialogPortal>
       <DialogBackdrop className={variant === "media" ? "z-[60]" : undefined} variant={variant} />
@@ -118,7 +120,7 @@ function DialogPopup({
           {children}
           {showCloseButton && (
             <DialogPrimitive.Close
-              aria-label="Close"
+              aria-label={t('ui.close')}
               className="absolute end-2 top-2"
               render={<Button size="icon" variant="ghost" />}
             >

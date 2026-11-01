@@ -30,7 +30,7 @@ export interface PrDetailText {
 
 const ZH: PrDetailText = {
   tabs: { summary: '概要', timeline: '时间线', code: '代码' },
-  tabsLabel: 'Pull 请求分段',
+  tabsLabel: 'PR 分段',
   repoLink: (repo) => `在浏览器打开仓库 ${repo}`,
   prLink: (n) => `在浏览器打开 #${n}`,
   copyCheckout: '复制检出命令',

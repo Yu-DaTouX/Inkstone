@@ -148,13 +148,7 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
           {staged ? t('gitflow.staged') : t('gitflow.unstaged')}
         </CollapsibleHeader>
         <CollapsiblePanel>
-          {shown.length > 0 ? (
-            <ul className="gitflow-commit__list">{shown.map((item) => row(item, staged))}</ul>
-          ) : (
-            <Notice variant="hint" className="gitflow-commit__empty">
-              {staged ? t('gitflow.stagedEmpty') : t('gitflow.unstagedEmpty')}
-            </Notice>
-          )}
+          {shown.length > 0 ? <ul className="gitflow-commit__list">{shown.map((item) => row(item, staged))}</ul> : null}
           {list.length > shown.length ? (
             <Notice variant="hint" className="gitflow-commit__empty">
               {t('gitflow.groupMore', { count: list.length - shown.length })}
@@ -170,7 +164,7 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
       {items.length > 0 || repo.changedCount > 0 ? (
         <div className="gitflow-commit__groups">
           {group('staged', groups.staged, stagedCount)}
-          {group('unstaged', groups.unstaged, Math.max(groups.unstaged.length, repo.unstagedCount + repo.untrackedCount))}
+          {group('unstaged', groups.unstaged, groups.unstaged.length ? Math.max(groups.unstaged.length, repo.unstagedCount + repo.untrackedCount) : 0)}
         </div>
       ) : null}
       <TextArea

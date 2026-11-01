@@ -738,7 +738,10 @@
       position: relative;
     }
     .wb-tile-summary {
-      transition: opacity var(--dur-fast) ease;
+      margin-right: calc(var(--size-btn-sm) + var(--s-2));
+    }
+    .wb-tile:has(.wb-tile-open) .wb-tile-summary {
+      margin-right: calc(var(--size-btn-sm) * 2 + var(--s-2));
     }
     .wb-rail-grip {
       position: absolute;
@@ -764,10 +767,6 @@
     .wb-rail-grip:focus-within,
     .wb-tile:is([data-picked='1'], [data-dragging='1']) .wb-rail-grip {
       opacity: 1;
-    }
-    .wb-tile-head:is(:hover, :has(.wb-rail-grip:focus-within)) :is(.wb-tile-summary, .wb-tile-leader),
-    .wb-tile:is([data-picked='1'], [data-dragging='1']) :is(.wb-tile-summary, .wb-tile-leader) {
-      opacity: 0;
     }
   }
 

@@ -880,6 +880,20 @@
     background: var(--hover-main);
   }
 
+  .v3-artifact-card-head .ui-icon-btn { flex: none; }
+
+  .v3-artifact-code-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding: 0 var(--s-8) var(--s-6);
+  }
+
+  .v3-artifact-code-hint {
+    color: var(--fg3);
+    font-size: var(--t-caption);
+  }
+
   .v3-artifact-card-name {
     min-width: 0;
     overflow: hidden;

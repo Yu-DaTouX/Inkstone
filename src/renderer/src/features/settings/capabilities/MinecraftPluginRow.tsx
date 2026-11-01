@@ -5,7 +5,7 @@ import type { PluginCatalogEntry, PluginCatalogText } from '../../../../../share
 import type { MinecraftPluginResult, MinecraftPluginStatus } from '../../../../../shared/plugin-market'
 import { Button, Notice } from '../../../ui'
 import { useConfirm } from './confirm'
-import { Entry, Warn } from './parts'
+import { Entry, StatusBadge, Warn } from './parts'
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -91,14 +91,13 @@ export function MinecraftPluginRow({ entry, copy }: { entry: PluginCatalogEntry;
     <Entry
       testId="caps-market-minecraft"
       name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`}
+      badge={label ? <StatusBadge tone={label === 'mcPlugin.statusReady' ? 'ok' : label === 'mcPlugin.statusConflict' ? 'fail' : 'neutral'}>{t(label)}</StatusBadge> : undefined}
       meta={[
-        label ? t(label) : null,
         installedVersion ? t('mcPlugin.installedVersion', { version: installedVersion }) : null,
         updatable ? t('mcPlugin.latestVersion', { version: latestVersion }) : null,
-        copy.desc,
-        copy.target,
-        copy.hint
+        copy.desc
       ]}
+      metaTitle={[copy.desc, copy.target, copy.hint].filter(Boolean).join('\n')}
       actions={
         <>
           <Button

@@ -13,6 +13,14 @@ import './error-card.css'
 
 const PRIMARY_ACTIONS: ReadonlySet<ErrorCardAction> = new Set<ErrorCardAction>(['retry', 'wait'])
 
+const RAW_MARK = '原因：'
+
+function splitErrorBody(body: string): { explanation: string; raw: string } {
+  const at = body.lastIndexOf(RAW_MARK)
+  if (at < 0) return { explanation: body, raw: '' }
+  return { explanation: body.slice(0, at).trim(), raw: body.slice(at + RAW_MARK.length).trim() }
+}
+
 export function ErrorCard({ sourceIds, error, readOnly = false, recovered = false }: { sourceIds: readonly string[]; error: string; readOnly?: boolean; recovered?: boolean }): JSX.Element | null {
   const tt = useSessionText()
   const send = useStore((s) => s.send)
@@ -27,6 +35,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
   const provider = session?.model?.provider
   const liveQuota = useLiveQuota((s) => (provider ? s.entries[provider]?.snapshot : undefined))
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [rawOpen, setRawOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const parsed = errorCardModel(error)
@@ -82,10 +91,25 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
 
   const title = tt(errorTitleKey(model))
   const toggle = (): void => setDetailsOpen((open) => !open)
+  const bodyParts = splitErrorBody(model.body)
   const details = detailsOpen ? (
     <CardBody className="v3-errorcard-details" data-testid="v3-error-body">
       {windowFull ? <p className="v3-errorcard-body">{tt('errorQuotaWindowFull')}</p> : null}
-      <p className="v3-errorcard-body">{model.body}</p>
+      <p className="v3-errorcard-body" title={bodyParts.raw || undefined} data-testid="v3-error-explanation">{bodyParts.explanation}</p>
+      {bodyParts.raw ? (
+        <>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-expanded={rawOpen}
+            data-testid="v3-error-raw-toggle"
+            onPress={() => setRawOpen((open) => !open)}
+          >
+            {rawOpen ? tt('errRawHide') : tt('errRaw')}
+          </Button>
+          {rawOpen ? <p className="v3-errorcard-raw" data-testid="v3-error-raw">{bodyParts.raw}</p> : null}
+        </>
+      ) : null}
       <div className="v3-errorcard-detail-foot">
         <Button
           size="sm"

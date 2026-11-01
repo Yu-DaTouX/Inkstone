@@ -254,7 +254,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const processSegs = split?.process ?? []
   const decision = !streaming && !wrapUp && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
-  const thinkingNote = !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
+  const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0
   const glowId = liveToolGlowId(turn.tools)
   const askedCalls = streaming ? [] : turn.tools.filter((call) => !call.parentToolCallId && isHistoryQuestionCall(call) && call.status !== 'running' && call.status !== 'pending')
@@ -270,6 +270,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
         {asideThinking ? <ThinkingAside text={asideThinking} ms={sourceTurn.thinkingMs} live={sourceTurn.thinkingLive} stacked={!asideFits} /> : null}
         <WebSearchTurnProvider tools={turn.tools}>
         <div className="v3-assistant-body">
+          {showCompaction ? <CompactCommandEcho /> : null}
           {edge.first ? <BranchSummary /> : null}
           {thinkingNote ? <ThinkingAvailability empty={!!sourceTurn.thinkingEmpty} model={sourceTurn.model} /> : null}
           {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
@@ -378,7 +379,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
           {wrapUp && !split?.reply ? <WrapUpCard card={wrapUp} dismissKey={wrapUpKey(sessionId, wrapUp.callId)} /> : null}
           {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
-          {showCompaction ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
         </WebSearchTurnProvider>

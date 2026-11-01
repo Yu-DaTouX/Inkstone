@@ -36,6 +36,8 @@ interface BranchText {
   treeLabel: string
   hint: string
   hintSummarize: string
+  footHint: string
+  footHintSummarize: string
   summarize: string
   summarizing: string
   bookmark: string
@@ -70,6 +72,8 @@ const ZH: BranchText = {
   treeLabel: '会话树',
   hint: '切换只把当前叶子移到所选条目：不改写会话文件，也不会自动摘要。',
   hintSummarize: '切换时让模型总结离开的分支，摘要作为新条目写进会话，可能需要几十秒。',
+  footHint: '只移动当前叶子，不改写会话',
+  footHintSummarize: '切换时总结离开的分支',
   summarize: '离开时生成分支摘要',
   summarizing: '正在总结离开的分支…',
   bookmark: '书签',
@@ -117,6 +121,8 @@ const EN: BranchText = {
   treeLabel: 'Session tree',
   hint: 'Switching only moves the current leaf to the chosen entry: it does not rewrite the session file and never summarizes.',
   hintSummarize: 'Switching asks the model to summarize the branch you leave; the summary is added to the session and may take a while.',
+  footHint: 'Moves the current leaf only',
+  footHintSummarize: 'Summarizes the branch you leave',
   summarize: 'Summarize the branch I leave',
   summarizing: 'Summarizing the branch you left…',
   bookmark: 'Bookmark',
@@ -614,7 +620,7 @@ export function BranchTree({
       ) : null}
 
       <div className="branch-foot">
-        <span className="branch-foot__hint">{pending && summarize ? text.summarizing : blocked ? text.busyHint : summarize ? text.hintSummarize : text.hint}</span>
+        <span className="branch-foot__hint" title={summarize ? text.hintSummarize : text.hint}>{pending && summarize ? text.summarizing : blocked ? text.busyHint : summarize ? text.footHintSummarize : text.footHint}</span>
         <span className="branch-foot__spacer" />
         {actionError ? (
           <span className="branch-note branch-note--err" data-testid="branch-error" role="alert">

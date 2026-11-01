@@ -114,7 +114,7 @@ const RULES: Record<SubagentRowLang, TenseRules> = {
       const verb = Object.keys(ZH_VERBS).find((candidate) => description.startsWith(candidate))
       return verb ? { verb, rest: description.slice(verb.length).trimStart() } : null
     },
-    join: (prefix, rest, tense) => (tense === 'failed' ? `${prefix}：${rest}` : `${prefix}${rest}`),
+    join: (prefix, rest, tense) => (tense === 'failed' ? `${prefix}：${rest}` : `${prefix}${/^[A-Za-z0-9]/.test(rest) ? ' ' : ''}${rest}`),
     genericJoin: (prefix, description) => `${prefix}：${description}`
   },
   'en-US': {

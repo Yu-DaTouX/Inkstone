@@ -6,6 +6,8 @@ export interface SplitText {
   splitView: string
   swap: string
   moveHere: string
+  splitLeft: string
+  splitRight: string
   openWith: string
   openInSplit: string
   openBelow: string
@@ -24,6 +26,8 @@ const zh: SplitText = {
   splitView: '分屏',
   swap: '交换',
   moveHere: '移到这里',
+  splitLeft: '在左侧分屏',
+  splitRight: '在右侧分屏',
   openWith: '打开方式',
   openInSplit: '分屏',
   openBelow: '在下方分屏',
@@ -42,6 +46,8 @@ const en: SplitText = {
   splitView: 'Split view',
   swap: 'Swap',
   moveHere: 'Move here',
+  splitLeft: 'Split on the left',
+  splitRight: 'Split on the right',
   openWith: 'Open with',
   openInSplit: 'Split view',
   openBelow: 'Split view below',

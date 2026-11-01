@@ -17,6 +17,7 @@ import {
 import { ComposerStashMenuV3, composerStashFrameProps } from '../../t3/components/chat/ComposerStashMenuV3'
 import { ProviderModelPicker } from '../../t3/components/chat/ProviderModelPicker'
 import { QueuedRunsControl } from '../../t3/components/chat/QueuedRunsControl'
+import { PlanCard } from './PlanCard'
 import { setComposerEditorHandle, useComposerMenuProps } from '../../t3/components/chat/composerEventScope'
 import { useAttachmentAdapter, useComposerDropTarget } from '../../t3/adapters/composer-attachments'
 import { useComposerSubmitAdapter } from '../../t3/adapters/composer-submit'
@@ -42,7 +43,7 @@ import {
   type ComposerPasteEvent
 } from './composer-keys'
 import { composerMode, composerPlaceholderKey } from './composer-layout'
-import { hasComposerText, type ComposerAtomSpec, type TextSelection } from './composer-text'
+import { appendBlock, hasComposerText, prependBlock, type ComposerAtomSpec, type TextSelection } from './composer-text'
 import {
   INITIAL_PROMPT_HISTORY,
   humanPrompts,
@@ -186,8 +187,6 @@ export function ComposerV3(): JSX.Element {
     [attachments]
   )
 
-  const placeholder = t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false }))
-
   const [composing, setComposing] = useState(false)
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [historyNav, setHistoryNav] = useState<PromptHistoryNav | null>(null)
@@ -196,6 +195,8 @@ export function ComposerV3(): JSX.Element {
   const lastEsc = useRef(0)
   const commands = useStore((s) => s.commands)
   const composerFocus = useStore((s) => s.composerFocus)
+  const editorInject = useStore((s) => s.editorInject)
+  const queueRestore = useStore((s) => s.queueRestore)
   const abort = useStore((s) => s.abort)
   const sendKey = useStore((s) => s.settings?.sendKey ?? 'auto')
   const historyKey = useStore(
@@ -281,6 +282,22 @@ export function ComposerV3(): JSX.Element {
     if (draftReady) setSessionDraft(value, draftKey)
   }, [draftReady, draftKey, setSessionDraft, value])
 
+  useEffect(() => {
+    if (editorInject === null) return
+    useStore.getState().consumeEditorInject()
+    setValue((draft) => (editorInject.mode === 'append' ? appendBlock(draft, editorInject.text) : editorInject.text))
+    armStrayEnter()
+    requestAnimationFrame(() => editorRef.current?.focus({ preventScroll: true }))
+  }, [editorInject, armStrayEnter])
+
+  useEffect(() => {
+    if (queueRestore === null) return
+    useStore.getState().consumeQueueRestore()
+    setValue((draft) => prependBlock(draft, queueRestore))
+    armStrayEnter()
+    requestAnimationFrame(() => editorRef.current?.focus({ preventScroll: true }))
+  }, [queueRestore, armStrayEnter])
+
   const placeCursor = useCallback((position: number): void => {
     setCursor(position)
     requestAnimationFrame(() => {
@@ -323,6 +340,7 @@ export function ComposerV3(): JSX.Element {
   )
 
   const mode = composerMode(value)
+  const placeholder = mode === 'bash' ? t('composer.phBash') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false }))
   const slashMode =
     completion.slashQuery !== null &&
     (completion.slashMatches.length > 0 || (completion.atQuery === null && completion.slashStatus !== 'idle'))
@@ -568,15 +586,18 @@ export function ComposerV3(): JSX.Element {
         editor={editor}
         menuLayer={menuLayer}
         banners={
-          stash.isOpen ? (
-            <ComposerStashMenuV3
-              entries={stash.entries}
-              onRestore={stash.restore}
-              onDelete={stash.remove}
-              onClose={stash.close}
-              scopeRef={rootRef}
-            />
-          ) : null
+          <>
+            <PlanCard />
+            {stash.isOpen ? (
+              <ComposerStashMenuV3
+                entries={stash.entries}
+                onRestore={stash.restore}
+                onDelete={stash.remove}
+                onClose={stash.close}
+                scopeRef={rootRef}
+              />
+            ) : null}
+          </>
         }
         attachments={
           <>

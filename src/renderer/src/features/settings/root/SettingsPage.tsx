@@ -79,7 +79,7 @@ const ModelsSettings = lazy(async () => ({ default: (await import('../models/ind
 const CapabilitiesSettings = lazy(async () => ({ default: (await import('../capabilities/index')).CapabilitiesSettings }))
 const CodeSettings = lazy(async () => ({ default: (await import('../capabilities/index')).CodeSettings }))
 
-const ICON_SIZE = 20
+const ICON_SIZE = 16
 
 const SECTION_ICON: Record<SettingsIconId, ReactElement> = {
   moon: <Moon size={ICON_SIZE} aria-hidden />,
@@ -368,6 +368,7 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
     setSection(entry.section)
     if (entry.tab) setCapsTab(entry.tab)
     setLegacy(null)
+    content.current?.closest('.ui-settings__content')?.scrollTo({ top: 0 })
   }, [])
   const openDefault = useCallback((): void => {
     setSection(DEFAULT_SETTINGS_SECTION)

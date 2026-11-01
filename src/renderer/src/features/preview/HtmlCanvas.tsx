@@ -203,8 +203,10 @@ export function HtmlCanvas({
     const stage = stageRef.current
     if (!stage) return
     const panel = stage.parentElement?.querySelector<HTMLElement>('.v3-canvas-timeline')
+    const side = stage.parentElement?.querySelector<HTMLElement>('.v3-canvas-panel, .v3-canvas-comment-panel, .v3-canvas-edit-panel')
     const reserved = (panel ? panel.offsetHeight + 12 : 0) + (dockTool ? dockReserve : 0)
-    setView(fitView(stage.clientWidth, Math.max(120, stage.clientHeight - reserved), layout.width, layout.height, 56))
+    const sideReserve = side ? side.offsetWidth + 24 : 0
+    setView(fitView(Math.max(160, stage.clientWidth - sideReserve), Math.max(120, stage.clientHeight - reserved), layout.width, layout.height, 56))
   }, [layout.width, layout.height, dockTool, dockReserve])
 
   useEffect(() => {

@@ -11,8 +11,9 @@
   .usage-page-breakdown { margin-bottom: var(--s-32); }
   .usage-page-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--s-8) var(--s-12); margin-bottom: var(--s-8); }
   .usage-page-controls h2 { margin: 0; font-size: var(--t-prose); font-weight: var(--w-medium); }
-  .usage-page-heat-scroll { overflow-x: auto; padding: var(--s-8) 0; scrollbar-width: none; }
-  .usage-page-heat-scroll::-webkit-scrollbar { display: none; }
+  .usage-page-heat-scroll { overflow-x: auto; padding: var(--s-8) 0; scrollbar-width: thin; }
+  .usage-page-heat-scroll::-webkit-scrollbar { height: 6px; }
+  .usage-page-heat-scroll::-webkit-scrollbar-thumb { border-radius: var(--r-full); background: var(--line2); }
   .usage-page-heat.start-heat { --cell: 12px; gap: 3px; width: max-content; overflow: visible; }
   .usage-page-months { display: grid; grid-auto-flow: column; grid-auto-columns: 15px; width: max-content; font-size: var(--t-footnote); color: var(--fg3); }
   .usage-page-note { margin-bottom: var(--s-8); }

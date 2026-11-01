@@ -226,20 +226,24 @@
 
   .v3-preview-tab-overflow-item {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--s-6);
     min-width: 0;
+    max-width: 100%;
   }
 
   .v3-preview-tab-overflow-name {
-    max-width: 100%;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .v3-preview-tab-overflow-detail {
-    max-width: 100%;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 50%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -398,7 +402,8 @@
   }
 
   .v3-preview-csv-table {
-    min-width: 100%;
+    width: 100%;
+    max-width: 96ch;
     border-collapse: collapse;
     color: var(--fg);
     font-size: var(--t-footnote);

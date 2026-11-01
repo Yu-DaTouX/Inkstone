@@ -150,15 +150,12 @@ export interface PrSummaryTabProps {
   when: (iso: string) => string
   reviewBadge: (item: PrTimelineItem) => ReactNode
   openExternal: (url: string) => void
-  checksDetailsLabel: string
-  checksEmpty: string
   bodyEmpty: string
 }
 
-export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBadge, openExternal, checksDetailsLabel, checksEmpty, bodyEmpty }: PrSummaryTabProps): ReactElement {
+export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBadge, openExternal, bodyEmpty }: PrSummaryTabProps): ReactElement {
   const patchOf = (path: string): string => detail.files.find((file) => file.path === path)?.patch ?? ''
   const [descriptionOpen, setDescriptionOpen] = useState(true)
-  const [checksOpen, setChecksOpen] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(true)
   const [editingBody, setEditingBody] = useState(false)
   const [bodyDraft, setBodyDraft] = useState('')
@@ -289,20 +286,6 @@ export function PrSummaryTab({ cwd, detail, dText, text, action, when, reviewBad
               </div>
             ) : (
               <span className="ui-meta-text">{bodyEmpty}</span>
-            )
-          ) : null}
-        </CollapsiblePanel>
-      </Collapsible>
-      <Collapsible className="gh-prd__section" isExpanded={checksOpen} onExpandedChange={setChecksOpen}>
-        <CollapsibleHeader tone="emphasized" data-testid="gh-pr-checks-toggle">
-          {text.summary.checksTitle(detail.checkItems.length)}
-        </CollapsibleHeader>
-        <CollapsiblePanel>
-          {checksOpen ? (
-            detail.checkItems.length ? (
-              <ChecksList items={detail.checkItems} detailsLabel={checksDetailsLabel} onOpen={openExternal} />
-            ) : (
-              <span className="ui-meta-text">{checksEmpty}</span>
             )
           ) : null}
         </CollapsiblePanel>

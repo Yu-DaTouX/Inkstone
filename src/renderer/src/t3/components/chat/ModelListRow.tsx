@@ -4,7 +4,6 @@ import { getDisplayModelName, getProviderRowLabel } from "./providerIconUtils";
 import { ComboboxItem } from "../ui/combobox";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Kbd } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
@@ -56,9 +55,16 @@ export const ModelListRow = memo(function ModelListRow(props: {
     >
       <div className="min-w-0 flex-1 text-left">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="min-w-0 truncate font-medium text-[14px] leading-snug">
-            {getDisplayModelName(model)}
-          </div>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <div className="min-w-0 truncate font-medium text-[14px] leading-snug" />
+              }
+            >
+              {getDisplayModelName(model)}
+            </TooltipTrigger>
+            <TooltipPopup side="top">{getDisplayModelName(model)}</TooltipPopup>
+          </Tooltip>
           {props.showNewBadge ? (
             <span
               className="shrink-0 rounded border border-update/35 bg-update/15 px-0.5 py-px text-3xs font-bold uppercase leading-none tracking-wide text-update-foreground"
@@ -81,7 +87,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
               className="size-3"
               iconSize={12}
             />
-            <span className="truncate text-xs font-normal leading-snug text-muted-foreground/70">
+            <span className="truncate text-xs font-normal leading-snug text-muted-foreground">
               {providerLabel}
             </span>
           </div>
@@ -90,7 +96,9 @@ export const ModelListRow = memo(function ModelListRow(props: {
 
       <div className="shrink-0 items-center gap-1.5 flex">
         {props.contextWindow ? (
-          <Kbd
+          <Badge
+            variant="outline"
+            size="sm"
             className="tabular-nums"
             aria-label={t("composer.t3.picker.contextWindow", {
               size: formatContextWindow(props.contextWindow),
@@ -98,7 +106,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
             data-model-context-window
           >
             {formatContextWindow(props.contextWindow)}
-          </Kbd>
+          </Badge>
         ) : null}
         <Tooltip>
           <TooltipTrigger

@@ -5,7 +5,7 @@ import { Button, TextField } from '../../../ui'
 import { useCapsText } from './text'
 import { PackagesPanel } from './PackagesPanel'
 import { InkstonePluginGroup } from './InkstonePluginGroup'
-import { Empty, Entry, Group, ListSkeleton, Meta, Note, Panel, Warn } from './parts'
+import { Empty, Entry, Group, ListSkeleton, Meta, Panel, Warn } from './parts'
 import { MARKET_PAGE_SIZE, marketRange } from './model'
 
 export function MarketSection(): ReactElement {
@@ -68,8 +68,6 @@ export function MarketSection(): ReactElement {
 
   return (
     <Panel label={t('market.title')}>
-      <Note>{text('marketNoAutoNote')}</Note>
-
       <InkstonePluginGroup />
 
       <Group title={t('market.pi')} desc={t('market.piDesc')} settingId="caps-market-pi">

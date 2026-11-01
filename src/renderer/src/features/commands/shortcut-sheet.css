@@ -7,8 +7,21 @@
     font: var(--t-heading-w) var(--t-heading) / var(--t-heading-lh) var(--font-ui);
   }
 
+  .sheet-surface.ui-command {
+    max-height: min(760px, 84vh);
+  }
+
   .sheet-body {
     padding: 0 var(--s-12);
+    scrollbar-width: thin;
+    scrollbar-color: var(--line2) transparent;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      black var(--s-12),
+      black calc(100% - var(--s-16)),
+      transparent
+    );
   }
 
   .sheet-group {

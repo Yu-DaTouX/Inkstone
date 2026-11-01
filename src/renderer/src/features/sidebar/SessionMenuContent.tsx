@@ -4,7 +4,7 @@ import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { indexOfSession, useSplitView } from '../../state/split-view'
 import { splitText } from '../split/split-text'
-import { Menu, MenuItem, Popover, SubmenuTrigger } from '../../ui'
+import { Menu, MenuItem, MenuSeparator, Popover, SubmenuTrigger } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import { shortProject } from './sidebar-model'
 import { useTranscriptViews } from '../../state/transcript-view'
@@ -70,6 +70,38 @@ export function SessionMenuContent({ item, isCurrent, onOpenChange, onAction }: 
           </Menu>
         </Popover>
       </SubmenuTrigger>
+      <SubmenuTrigger>
+        <MenuItem id="open-with" textValue={split.openWith} data-testid="v3-session-open-with" icon={<SquareArrowOutUpRight size={14} />}>
+          {split.openWith}
+        </MenuItem>
+        <Popover placement="end top" offset={2}>
+          <Menu
+            aria-label={split.openWith}
+            onAction={(key) => {
+              onOpenChange(false)
+              onAction(key as MenuKey)
+            }}
+            disabledKeys={isCurrent && splitIndex < 0 ? ['split', 'split-below'] : []}
+            data-testid="v3-session-open-with-menu"
+          >
+            {splitIndex >= 0 ? (
+              <MenuItem id="split-close" textValue={t('split.closeSide')} icon={<X size={14} />}>
+                {t('split.closeSide')}
+              </MenuItem>
+            ) : (
+              <MenuItem id="split" textValue={split.openInSplit} icon={<Columns2 size={14} />}>
+                {split.openInSplit}
+              </MenuItem>
+            )}
+            {splitIndex < 0 ? (
+              <MenuItem id="split-below" textValue={split.openBelow} icon={<Rows2 size={14} />}>
+                {split.openBelow}
+              </MenuItem>
+            ) : null}
+          </Menu>
+        </Popover>
+      </SubmenuTrigger>
+      <MenuSeparator />
       <MenuItem id="rename" textValue={t('rail.rename')} icon={<Pencil size={14} />}>
         {t('rail.rename')}
       </MenuItem>
@@ -113,43 +145,6 @@ export function SessionMenuContent({ item, isCurrent, onOpenChange, onAction }: 
       <MenuItem id="unread" textValue={item.markedUnread ? t('rail.markRead') : t('rail.markUnread')} data-testid="v3-session-mark-unread" icon={item.markedUnread ? <MailOpen size={14} /> : <Mail size={14} />}>
         {item.markedUnread ? t('rail.markRead') : t('rail.markUnread')}
       </MenuItem>
-      <MenuItem id="title" textValue={t('rail.regenerateTitle')} icon={<Sparkles size={14} />}>
-        {t('rail.regenerateTitle')}
-      </MenuItem>
-      <MenuItem id="archive" textValue={t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')} icon={item.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />}>
-        {t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')}
-      </MenuItem>
-      <SubmenuTrigger>
-        <MenuItem id="open-with" textValue={split.openWith} data-testid="v3-session-open-with" icon={<SquareArrowOutUpRight size={14} />}>
-          {split.openWith}
-        </MenuItem>
-        <Popover placement="end top" offset={2}>
-          <Menu
-            aria-label={split.openWith}
-            onAction={(key) => {
-              onOpenChange(false)
-              onAction(key as MenuKey)
-            }}
-            disabledKeys={isCurrent && splitIndex < 0 ? ['split', 'split-below'] : []}
-            data-testid="v3-session-open-with-menu"
-          >
-            {splitIndex >= 0 ? (
-              <MenuItem id="split-close" textValue={t('split.closeSide')} icon={<X size={14} />}>
-                {t('split.closeSide')}
-              </MenuItem>
-            ) : (
-              <MenuItem id="split" textValue={split.openInSplit} icon={<Columns2 size={14} />}>
-                {split.openInSplit}
-              </MenuItem>
-            )}
-            {splitIndex < 0 ? (
-              <MenuItem id="split-below" textValue={split.openBelow} icon={<Rows2 size={14} />}>
-                {split.openBelow}
-              </MenuItem>
-            ) : null}
-          </Menu>
-        </Popover>
-      </SubmenuTrigger>
       {item.scope !== 'global' || moveTargets.length > 0 ? (
         <SubmenuTrigger>
           <MenuItem id="move" textValue={t('rail.moveTo')} data-testid="v3-session-move" icon={<FolderInput size={14} />}>
@@ -178,8 +173,15 @@ export function SessionMenuContent({ item, isCurrent, onOpenChange, onAction }: 
           </Popover>
         </SubmenuTrigger>
       ) : null}
-      <MenuItem id="delete" textValue={t('rail.delete')} tone="danger" icon={<Trash2 size={14} />}>
-        {isCurrent ? t('rail.cantDeleteCurrent') : t('rail.delete')}
+      <MenuItem id="title" textValue={t('rail.regenerateTitle')} icon={<Sparkles size={14} />}>
+        {t('rail.regenerateTitle')}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem id="archive" textValue={t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')} icon={item.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />}>
+        {t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')}
+      </MenuItem>
+      <MenuItem id="delete" textValue={t('rail.delete')} tone="danger" icon={<Trash2 size={14} />} disabledReason={isCurrent ? t('rail.cantDeleteCurrent') : undefined}>
+        {t('rail.delete')}
       </MenuItem>
     </Menu>
   )

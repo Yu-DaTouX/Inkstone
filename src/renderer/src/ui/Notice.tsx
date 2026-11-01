@@ -35,7 +35,7 @@ export function Notice({ tone = 'info', title, action, icon, compact, loading = 
   return (
     <div
       {...rest}
-      role={role ?? (tone === 'fail' ? 'alert' : 'status')}
+      role={role ?? (tone === 'fail' ? 'alert' : loading ? 'status' : undefined)}
       aria-busy={loading || undefined}
       className={cx('ui-notice', `ui-notice--${tone}`, compact && 'ui-notice--compact', hint && 'ui-notice--hint', className)}
     >

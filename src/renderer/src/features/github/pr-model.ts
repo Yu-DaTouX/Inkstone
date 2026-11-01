@@ -44,6 +44,7 @@ export interface PrRow {
   deletions: number
   checks: PrChecks
   labels: string[]
+  conflicting: boolean
 }
 
 export type PrMergeable = 'mergeable' | 'conflicting' | 'unknown'
@@ -159,7 +160,7 @@ function checkItemOf(node: GhCheckNodeJson): PrCheckItem | null {
     const state = text(node.state).toUpperCase()
     const kind: PrCheckState = state === 'SUCCESS' ? 'pass' : state === 'FAILURE' || state === 'ERROR' ? 'fail' : 'pending'
     const name = text(node.context) || text(node.__typename) || 'status'
-    return { name, state: kind, url: text(node.targetUrl), detail: text(node.description) }
+    return { name, state: kind, url: text(node.targetUrl), detail: text(node.description) || state }
   }
   const name = text(node.name) || text(node.__typename) || 'check'
   const status = text(node.status).toUpperCase()
@@ -200,7 +201,8 @@ export function normalizePrRow(item: GhPrListItemJson): PrRow {
     additions: count(item.additions),
     deletions: count(item.deletions),
     checks: summary,
-    labels: (item.labels ?? []).map((label) => text(label?.name)).filter(Boolean)
+    labels: (item.labels ?? []).map((label) => text(label?.name)).filter(Boolean),
+    conflicting: text(item.mergeable).toUpperCase() === 'CONFLICTING'
   }
 }
 

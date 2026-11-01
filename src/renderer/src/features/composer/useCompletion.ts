@@ -264,12 +264,12 @@ export function useCompletion({
     if (typedComposing) return
     if (slashQuery !== null && slashReady && !slashDismissed) {
       setMenu((m) => (m.open ? m : { open: true, index: 0 }))
-    } else if (atQuery !== null && slashMatches.length === 0 && !atDismissed && (atImages.length > 0 || paths.length > 0 || atLoading || atError)) {
+    } else if (atQuery !== null && slashMatches.length === 0 && !atDismissed && (atImages.length > 0 || paths.length > 0 || atLoading || atError || atStatus === 'empty')) {
       setMenu((m) => (m.open ? m : { open: true, index: 0 }))
     } else {
       setMenu((m) => (m.open ? { open: false, index: 0 } : m))
     }
-  }, [atDismissed, atError, atImages.length, atLoading, atQuery, paths.length, slashDismissed, slashMatches.length, slashQuery, slashReady, typedComposing])
+  }, [atDismissed, atError, atImages.length, atLoading, atQuery, atStatus, paths.length, slashDismissed, slashMatches.length, slashQuery, slashReady, typedComposing])
 
   useEffect(() => {
     if (typedComposing) return
@@ -368,7 +368,7 @@ export function useCompletion({
       return true
     }
     if (count === 0) {
-      if (swallowsPendingCompletionKey(event.key)) {
+      if ((atLoading || slashQuery !== null) && swallowsPendingCompletionKey(event.key)) {
         event.preventDefault()
         return true
       }
