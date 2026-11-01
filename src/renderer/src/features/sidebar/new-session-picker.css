@@ -2,10 +2,6 @@
   .ui-popover.new-session-picker {
     width: min(420px, calc(100vw - var(--s-24)));
     padding: var(--s-6);
-    background: var(--glass-noise-image), color-mix(in srgb, var(--surface-3) var(--glass-opacity), transparent);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-    box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-pop);
   }
 
   .nsp {

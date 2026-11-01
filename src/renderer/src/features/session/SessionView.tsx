@@ -16,7 +16,7 @@ import { QuestionCard } from './QuestionCard'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
 import { HomeBackdrop } from '../ambient/HomeBackdrop'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
-import { Button } from '../../t3/components/ui/button'
+import { Button } from '../../ui'
 import { ChevronDown } from 'lucide-react'
 import { approvalMatchesView, sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { V3EmptyState } from './V3EmptyState'
@@ -892,9 +892,8 @@ export function SessionView(): JSX.Element {
 
         {showJump && !stick ? (
           <div className="v3-jump">
-            <Button className="v3-jump-btn" data-testid="v3-jump" size="xs" variant="glass" aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')} onClick={jumpToBottom}>
-              <ChevronDown aria-hidden />
-              <span>{t('chat.jumpToBottom')}</span>
+            <Button className="v3-jump-btn" data-testid="v3-jump" variant="glass" icon={<ChevronDown size={14} />} aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')} onPress={jumpToBottom}>
+              {t('chat.jumpToBottom')}
             </Button>
           </div>
         ) : null}

@@ -11,7 +11,7 @@ export const Popover = forwardRef<HTMLElement, PopoverProps>(function Popover({ 
     <RACPopover
       {...props}
       ref={ref}
-      className={composeRenderProps(className, (cn) => cx('ui-popover', variant === 'panel' && 'ui-popover--panel', cn))}
+      className={composeRenderProps(className, (cn) => cx('ui-popover ui-float', variant === 'panel' && 'ui-popover--panel', cn))}
     />
   )
 })

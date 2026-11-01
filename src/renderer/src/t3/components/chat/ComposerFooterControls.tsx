@@ -97,7 +97,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
               <Button
                 size="xs"
                 autoFocus
-                className="bg-(--stall) text-white hover:bg-(--stall)/90"
+                className="bg-(--stall) text-(--on-fill) hover:bg-(--stall)/90"
                 onClick={props.onConfirmPending}
               >
                 {t('permission.confirmAll.confirm')}

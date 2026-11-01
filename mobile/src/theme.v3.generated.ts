@@ -45,8 +45,16 @@ export const v3Light = {
   "accent": "#2875D2",
   "accentT": "#184F95",
   "onAccent": "#FFFFFF",
-  "tip": "#0B0B0B",
-  "onTip": "#FFFFFF",
+  "tip": "#FFFFFF",
+  "onTip": "#20211F",
+  "floatEdge": "rgba(11,11,11,.1)",
+  "onFill": "#FFFFFF",
+  "ctlHi": "rgba(255,255,255,.16)",
+  "ctlPress": "rgba(0,0,0,.08)",
+  "seam": "rgba(0,0,0,.18)",
+  "mediaScrim": "rgba(0,0,0,.65)",
+  "mediaScrimStrong": "rgba(0,0,0,.85)",
+  "onMedia": "#FFFFFF",
   "focusGlow": "#CDE2FB",
   "sel": "rgba(42,120,214,.1)",
   "run": "#2A78D6",
@@ -138,6 +146,14 @@ export const v3Dark = {
   "onAccent": "#FFFFFF",
   "tip": "#191A1D",
   "onTip": "#F5F5F5",
+  "floatEdge": "rgba(255,255,255,.1)",
+  "onFill": "#FFFFFF",
+  "ctlHi": "rgba(255,255,255,.16)",
+  "ctlPress": "rgba(0,0,0,.08)",
+  "seam": "rgba(0,0,0,.18)",
+  "mediaScrim": "rgba(0,0,0,.65)",
+  "mediaScrimStrong": "rgba(0,0,0,.85)",
+  "onMedia": "#FFFFFF",
   "focusGlow": "#1D4F8C",
   "sel": "rgba(42,120,214,.26)",
   "run": "#2A78D6",
@@ -181,4 +197,4 @@ export const v3Dark = {
   "fileTeal": "#58BDB3"
 } as const
 
-export const v3Radius = {"2xs":2,"xs":4,"sm":6,"md":8,"lg":10,"bubble":12,"side":12,"xl":14,"full":999} as const
+export const v3Radius = {"2xs":2,"xs":4,"sm":6,"md":8,"lg":10,"bubble":12,"side":12,"xl":14,"2xl":16,"full":999} as const

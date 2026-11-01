@@ -33,7 +33,7 @@
     "build": "electron-vite build",
     "tokens:v3": "node scripts/design/build-tokens.mjs",
     "check:tokens:v3": "node scripts/design/build-tokens.mjs --check && node scripts/design/check-v3-contrast.mjs",
-    "check:styles:v3": "node scripts/test-v3-style-isolation.mjs && node scripts/design/check-v3-style-isolation.mjs",
+    "check:styles:v3": "node scripts/test-v3-style-isolation.mjs && node scripts/design/check-v3-style-isolation.mjs && node scripts/design/check-ui-norms.mjs",
     "storybook": "storybook dev -p 6006",
     "build:storybook": "storybook build",
     "start": "node scripts/launch.mjs",

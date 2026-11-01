@@ -146,7 +146,7 @@ const TOP_STATUS: Record<SidebarRowStatus, TopStatus> = {
   input: {
     labelKey: "sidebar.t3.status.input",
     icon: "input",
-    className: "text-indigo-600 dark:text-indigo-300",
+    className: "text-(--data-3)",
   },
   failed: {
     labelKey: "sidebar.t3.status.failed",

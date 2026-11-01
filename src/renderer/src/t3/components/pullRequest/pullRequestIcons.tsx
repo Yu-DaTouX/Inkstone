@@ -33,19 +33,19 @@ export interface PullRequestStatePresentation {
 
 export const PULL_REQUEST_STATE_PRESENTATION = {
   open: {
-    toneClassName: 'text-emerald-600 dark:text-emerald-300/90',
+    toneClassName: 'text-(--ok-t)',
     Icon: PullRequestGlyph.pullRequest
   },
   draft: {
-    toneClassName: 'text-zinc-500 dark:text-zinc-400/80',
+    toneClassName: 'text-(--fg3)',
     Icon: PullRequestGlyph.draft
   },
   closed: {
-    toneClassName: 'text-red-600 dark:text-red-300/90',
+    toneClassName: 'text-(--fail-t)',
     Icon: PullRequestGlyph.closed
   },
   merged: {
-    toneClassName: 'text-violet-600 dark:text-violet-300/90',
+    toneClassName: 'text-(--data-3)',
     Icon: PullRequestGlyph.merged
   }
 } as const satisfies Record<PullRequestGlyphState, PullRequestStatePresentation>

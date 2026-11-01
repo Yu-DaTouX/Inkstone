@@ -393,7 +393,7 @@ export function EffortSlider(props: {
               aria-label={descriptor.label}
               data-composer-effort-panel="true"
               {...composerFloatingLayerProps}
-              className="composer-effort-column fixed z-[130] overflow-hidden rounded-lg border border-border bg-(--surface-3) shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]"
+              className="composer-effort-column fixed z-[130] overflow-hidden dropdown-glass outline-none focus-visible:ring-2 focus-visible:ring-ring"
               style={{
                 top: columnTop,
                 left: columnLeft,

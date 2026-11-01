@@ -524,7 +524,7 @@
     overflow: hidden;
     border: var(--hair, 1px) solid var(--line2);
     border-radius: var(--r-xl);
-    background: color-mix(in srgb, var(--surface-3) 94%, var(--on-tip));
+    background: light-dark(var(--surface-3), color-mix(in srgb, var(--surface-3) 94%, var(--fg)));
     box-shadow: var(--shadow-pop);
     color: var(--fg);
     font: var(--t-body) / var(--t-body-lh) var(--font-ui);

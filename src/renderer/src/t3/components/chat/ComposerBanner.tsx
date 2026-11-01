@@ -15,8 +15,7 @@ const surfaceColors = cn(
 );
 
 const neutralOutline = cn(
-  "[--chat-composer-attached-outline:var(--chat-composer-outline,color-mix(in_srgb,var(--contrast-foreground)_8%,transparent))]",
-  "dark:[--chat-composer-attached-outline:var(--chat-composer-outline,color-mix(in_srgb,var(--color-white)_5%,transparent))]",
+  "[--chat-composer-attached-outline:var(--chat-composer-outline,var(--comp-rim-lo))]",
 );
 
 const variantColors: Record<ComposerBannerVariant, string> = {
