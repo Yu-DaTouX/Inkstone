@@ -34,15 +34,23 @@ export function ComposerHeightHandle(): JSX.Element {
   const t = useT()
   const saved = useStore((s) => sanitizeComposerHeight(s.settings?.composerHeight))
   const dragRef = useRef<{ startY: number; startHeight: number; height: number; bounds: Bounds; frame: number } | null>(null)
+  const pendingRef = useRef<{ height: number | undefined } | null>(null)
   const [dragging, setDragging] = useState(false)
 
   useEffect(() => {
-    if (!dragging) applyHeight(saved)
+    if (!dragging && !pendingRef.current) applyHeight(saved)
   }, [saved, dragging])
 
   const persist = (height: number | undefined): void => {
+    const pending = { height }
+    pendingRef.current = pending
     applyHeight(height)
-    void useStore.getState().patchSettings({ composerHeight: height }).catch(() => undefined)
+    const settle = (): void => {
+      if (pendingRef.current !== pending) return
+      pendingRef.current = null
+      applyHeight(sanitizeComposerHeight(useStore.getState().settings?.composerHeight))
+    }
+    void useStore.getState().patchSettings({ composerHeight: height }).then(settle, settle)
   }
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
@@ -79,7 +87,7 @@ export function ComposerHeightHandle(): JSX.Element {
     document.body.style.cursor = ''
     setDragging(false)
     if (drag.height !== drag.startHeight) persist(drag.height)
-    else applyHeight(saved)
+    else applyHeight(pendingRef.current ? pendingRef.current.height : saved)
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
