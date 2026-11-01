@@ -10,6 +10,18 @@
     text-align: left;
   }
 
+  .v3-local-servers[data-compact='1'] {
+    max-width: none;
+    margin-top: auto;
+    padding-top: var(--s-8);
+  }
+
+  .v3-local-servers[data-icon-only='1'] {
+    align-items: center;
+    padding-top: var(--s-8);
+    border-top: 1px solid var(--line);
+  }
+
   .v3-local-servers__head {
     display: flex;
     align-items: center;

@@ -63,7 +63,7 @@ task.pages()                           [{ id, url, title, active }]
 task.newPage(url?)                     新标签并切换过去
 task.switchTo(id) / task.closePage(id?)
 
-每个动作返回 { url, title, receipt }，字段都在 receipt 里：dialogs（弹窗及处理方式）、openedTabs（新开的标签）、downloadStarted、value、scroll。
+click / fill / select / press 返回 { url, title, receipt }，字段都在 receipt 里：dialogs（弹窗及处理方式）、openedTabs（新开的标签）、downloadStarted、value、obscuredBy（点击点被别的元素挡住时的遮挡者）；scroll 直接返回位置。
 例如 const r = await page.fill(ref, '18:30'); r.receipt.value === '18:30'。切换标签后旧标签的 ref 不能用，先 observe 或 find。
 动作失败会抛出 Error，message 以错误码开头，例如 "STALE_ELEMENT: …"。ref 在同一页面上保持不变，页面导航后需要重新 observe 或 find。`
 

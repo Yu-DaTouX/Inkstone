@@ -6,7 +6,7 @@ import {
   StaleElementError,
   type RegisteredElement
 } from './ElementRegistry'
-import { centerOf, elementBox } from './geometry'
+import { candidatePoints, centerOf, elementBox, elementQuads, visibleBoxes, type Viewport } from './geometry'
 import { pressKey } from './driver/keyboard'
 import { dispatchWheelMotion } from './driver/scroll-motion'
 
@@ -74,7 +74,35 @@ const DOM_CLICK_FN = `function () {
   return true
 }`
 
-const SCROLL_POSITION_EXPR = `(() => { const s = document.scrollingElement || document.documentElement; return { x: Math.round(scrollX), y: Math.round(scrollY), maxY: Math.max(0, Math.round(s.scrollHeight - innerHeight)) } })()`
+const HIT_TEST_FN = `function (points) {
+  let ox = 0
+  let oy = 0
+  try {
+    let w = window
+    while (w.frameElement) {
+      const frame = w.frameElement
+      const r = frame.getBoundingClientRect()
+      ox += r.left + frame.clientLeft
+      oy += r.top + frame.clientTop
+      w = w.parent
+    }
+  } catch {}
+  const root = typeof this.getRootNode === 'function' ? this.getRootNode() : document
+  const scope = typeof root.elementFromPoint === 'function' ? root : document
+  let first = null
+  for (let i = 0; i < points.length; i++) {
+    const hit = scope.elementFromPoint(points[i][0] - ox, points[i][1] - oy)
+    if (hit && (hit === this || this.contains(hit) || (hit.shadowRoot && hit.shadowRoot.contains(this)))) return { index: i }
+    if (i === 0) first = hit
+  }
+  if (!first) return { index: -1 }
+  const id = first.id ? '#' + first.id : ''
+  const cls = typeof first.className === 'string' && first.className.trim() ? '.' + first.className.trim().split(/\\s+/)[0] : ''
+  const label = String(first.getAttribute('aria-label') || first.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 40)
+  return { index: -1, blocker: (first.tagName || '').toLowerCase() + id + cls + (label ? ' "' + label + '"' : '') }
+}`
+
+const SCROLL_POSITION_EXPR =`(() => { const s = document.scrollingElement || document.documentElement; return { x: Math.round(scrollX), y: Math.round(scrollY), maxY: Math.max(0, Math.round(s.scrollHeight - innerHeight)) } })()`
 
 export interface SelectOutcome {
   value: string
@@ -84,6 +112,12 @@ export interface SelectOutcome {
 export interface TypeOutcome {
   value: string | null
   picker?: string
+}
+
+interface AimPoint {
+  x: number
+  y: number
+  obscuredBy?: string
 }
 
 export interface ScrollPosition {
@@ -113,15 +147,16 @@ export class InputController {
     return { value: String(outcome.value ?? ''), label: String(outcome.label ?? '') }
   }
 
-  async click(element: RegisteredElement): Promise<void> {
-    const point = await this.pointAt(element, '点击')
+  async click(element: RegisteredElement): Promise<{ obscuredBy?: string }> {
+    const { obscuredBy, ...point } = await this.pointAt(element, '点击')
     if (await this.pageHidden(element.sessionId)) {
       await this.callOn(element, DOM_CLICK_FN)
-      return
+      return {}
     }
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, element.sessionId)
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, element.sessionId)
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, element.sessionId)
+    return obscuredBy ? { obscuredBy } : {}
   }
 
   async type(element: RegisteredElement, text: string): Promise<TypeOutcome> {
@@ -232,18 +267,28 @@ export class InputController {
     }
   }
 
-  private async pointAt(element: RegisteredElement, label: string): Promise<{ x: number; y: number }> {
+  private async pointAt(element: RegisteredElement, label: string): Promise<AimPoint> {
     const point = await this.bringIntoView(element)
     const [offsetX, offsetY] = element.sessionId ? element.frameOffset ?? [0, 0] : [0, 0]
     await this.cursor.show(label, { x: point.x + offsetX, y: point.y + offsetY })
     return point
   }
 
-  private async bringIntoView(element: RegisteredElement): Promise<{ x: number; y: number }> {
+  private async bringIntoView(element: RegisteredElement): Promise<AimPoint> {
     try {
       await this.cdp.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: element.backendNodeId }, element.sessionId)
     } catch (error) {
       throw staleFromCdp(error, element.ref) ?? error
+    }
+    const [quads, viewport] = await Promise.all([
+      elementQuads(this.cdp, element.backendNodeId, element.sessionId),
+      this.viewport(element.sessionId)
+    ])
+    const points = candidatePoints(visibleBoxes(quads, viewport))
+    if (points.length) {
+      const hit = await this.callOn<{ index?: number; blocker?: string }>(element, HIT_TEST_FN, [points.map((point) => [point.x, point.y])]).catch(() => undefined)
+      const index = typeof hit?.index === 'number' && hit.index >= 0 ? hit.index : 0
+      return hit?.blocker && hit.index === -1 ? { ...points[index], obscuredBy: hit.blocker } : points[index]
     }
     const box = await elementBox(this.cdp, element.backendNodeId, element.sessionId)
     const [offsetX, offsetY] = element.frameOffset ?? [0, 0]
@@ -251,6 +296,17 @@ export class InputController {
       ? [element.box[0] - offsetX, element.box[1] - offsetY, element.box[2], element.box[3]] as [number, number, number, number]
       : element.box
     return centerOf(box ?? fallback)
+  }
+
+  private async viewport(sessionId?: string): Promise<Viewport | null> {
+    const metrics = await this.cdp
+      .send<{
+        cssLayoutViewport?: { clientWidth?: number; clientHeight?: number }
+        layoutViewport?: { clientWidth?: number; clientHeight?: number }
+      }>('Page.getLayoutMetrics', {}, sessionId)
+      .catch(() => null)
+    const layout = metrics?.cssLayoutViewport ?? metrics?.layoutViewport
+    return layout?.clientWidth && layout?.clientHeight ? { width: layout.clientWidth, height: layout.clientHeight } : null
   }
 
   private async key(type: 'keyDown' | 'keyUp', key: string, code: string, modifiers: number, keyCode?: number, sessionId?: string): Promise<void> {

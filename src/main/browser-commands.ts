@@ -14,7 +14,16 @@ import { receiptSummary, type BrowserActionOptions } from './browser/receipt'
 
 const ACTION_TIMEOUT_MS = 60_000
 const CONFIRMING_ACTIONS = new Set(['state', 'observe', 'wait', 'screenshot'])
+const SUMMARY_ELEMENT_LIMIT = 80
+const SUMMARY_NAME_CHARS = 60
 let browserUncertain = false
+
+function summaryElementLine(element: BrowserObservation['elements'][number]): string {
+  const name = element.name.replace(/\s+/g, ' ').trim()
+  const shown = name.length > SUMMARY_NAME_CHARS ? `${name.slice(0, SUMMARY_NAME_CHARS)}…` : name
+  const value = element.value ? ` =${JSON.stringify(element.value.slice(0, 40))}` : ''
+  return `${element.ref} ${element.role} ${JSON.stringify(shown)}${value}${element.disabled ? ' disabled' : ''}`
+}
 
 class ActionTimeoutError extends Error {}
 
@@ -177,7 +186,7 @@ export class BrowserCommands {
 
       case 'observe': {
         const observation = await this.browserObserve(action)
-        return { data: observation, summary: this.browserObservationSummary(action, observation) }
+        return { data: observation, summary: this.browserObservationSummary(action, observation, true) }
       }
 
       case 'network': {
@@ -203,7 +212,7 @@ export class BrowserCommands {
 
       case 'wait': {
         const observation = await this.browserWaitCommand(params)
-        return { data: observation, summary: this.browserObservationSummary(action, observation) }
+        return { data: observation, summary: this.browserObservationSummary(action, observation, true) }
       }
 
       case 'click':
@@ -555,7 +564,8 @@ export class BrowserCommands {
 
   browserObservationSummary(
     action: string,
-    observation: BrowserObservation
+    observation: BrowserObservation,
+    listElements = false
   ): Record<string, unknown> {
     return {
       kind: 'browser',
@@ -566,7 +576,8 @@ export class BrowserCommands {
       generationId: observation.generationId,
       elements: observation.elements.length,
       accessibilityNodes: observation.accessibilityNodeCount,
-      textChars: observation.text.length
+      textChars: observation.text.length,
+      ...(listElements ? { items: observation.elements.slice(0, SUMMARY_ELEMENT_LIMIT).map(summaryElementLine) } : {})
     }
   }
 }

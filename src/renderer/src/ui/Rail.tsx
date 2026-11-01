@@ -116,10 +116,12 @@ export interface RailRowProps {
   dot?: StatusDotKind
   value?: ReactNode
   error?: boolean
+  selected?: boolean
   onPress?: () => void
   isDisabled?: boolean
   action?: ReactNode
   actionReveal?: 'always' | 'hover'
+  iconOnly?: boolean
   buttonProps?: RailRowButtonProps
   className?: string
   'data-testid'?: string
@@ -134,10 +136,12 @@ export function RailRow({
   dot,
   value,
   error,
+  selected,
   onPress,
   isDisabled,
   action,
   actionReveal = 'always',
+  iconOnly,
   buttonProps,
   className,
   children,
@@ -149,16 +153,18 @@ export function RailRow({
       <span className="ui-rail-row__lead" aria-hidden="true">
         {dot ? <StatusDot kind={dot} /> : icon}
       </span>
-      <span className="ui-rail-row__label">{truncate === 'start' ? <bdi>{label}</bdi> : label}</span>
-      {value != null ? <span className="ui-rail-row__value">{value}</span> : null}
+      {iconOnly ? null : <span className="ui-rail-row__label">{truncate === 'start' ? <bdi>{label}</bdi> : label}</span>}
+      {!iconOnly && value != null ? <span className="ui-rail-row__value">{value}</span> : null}
     </>
   )
   const { ref: buttonRef, ...buttonRest } = buttonProps ?? {}
   return (
-    <li {...rest} className={cx('ui-rail-row', className)} data-error={error ? '1' : undefined} data-truncate={truncate} data-action-reveal={actionReveal === 'hover' ? 'hover' : undefined} title={tip}>
+    <li {...rest} className={cx('ui-rail-row', className)} data-error={error ? '1' : undefined} data-selected={selected ? '1' : undefined} data-truncate={truncate} data-action-reveal={actionReveal === 'hover' ? 'hover' : undefined} data-icon-only={iconOnly ? '1' : undefined} title={tip}>
       {onPress ? (
         <Button
+          aria-label={iconOnly ? label : undefined}
           {...buttonRest}
+          aria-current={selected ? 'true' : undefined}
           ref={buttonRef}
           variant="ghost"
           size="sm"
@@ -172,7 +178,7 @@ export function RailRow({
       ) : (
         <span className="ui-rail-row__main">{body}</span>
       )}
-      {action != null ? <span className="ui-rail-row__action">{action}</span> : null}
+      {!iconOnly && action != null ? <span className="ui-rail-row__action">{action}</span> : null}
       {children}
     </li>
   )

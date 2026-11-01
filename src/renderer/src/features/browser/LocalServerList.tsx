@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { Globe, RotateCw } from 'lucide-react'
+import { Globe, RotateCw, Server } from 'lucide-react'
 import { useT } from '../../i18n'
 import { IconButton, Notice, RailRow } from '../../ui'
 import type { LocalServerInfo } from '../../../../shared/local-servers'
@@ -9,6 +9,8 @@ const REFRESH_INTERVAL_MS = 5000
 
 interface LocalServerListProps {
   active: boolean
+  compact?: boolean
+  iconOnly?: boolean
   onOpen: (url: string) => void
 }
 
@@ -29,7 +31,7 @@ function ServerFavicon({ url }: { url: string }): ReactElement {
   )
 }
 
-export function LocalServerList({ active, onOpen }: LocalServerListProps): ReactElement {
+export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServerListProps): ReactElement | null {
   const t = useT()
   const [servers, setServers] = useState<LocalServerInfo[]>([])
   const [refreshing, setRefreshing] = useState(false)
@@ -58,8 +60,28 @@ export function LocalServerList({ active, onOpen }: LocalServerListProps): React
     }
   }, [active, load])
 
+  if (iconOnly) {
+    if (servers.length === 0) return null
+    return (
+      <ul className="v3-local-servers v3-local-servers__list" data-compact="1" data-icon-only="1" data-testid="browser-local-servers-list">
+        {servers.map((server) => (
+          <RailRow
+            key={server.url}
+            iconOnly
+            label={`${server.title || server.processName || t('browser.localServersListening')} · ${server.host}:${server.port}`}
+            icon={<Server size={14} aria-hidden="true" />}
+            title={server.url}
+            data-testid="browser-local-server-row"
+            buttonProps={{ 'data-testid': 'browser-local-server-open' }}
+            onPress={() => onOpen(server.url)}
+          />
+        ))}
+      </ul>
+    )
+  }
+
   return (
-    <div className="v3-local-servers" data-testid="browser-local-servers">
+    <div className="v3-local-servers" data-compact={compact ? '1' : undefined} data-testid="browser-local-servers">
       <div className="v3-local-servers__head">
         <span className="v3-local-servers__title">{t('browser.localServers')}</span>
         <IconButton

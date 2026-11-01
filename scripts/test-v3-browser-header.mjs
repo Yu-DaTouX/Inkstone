@@ -22,13 +22,17 @@ export function PanelTab(props) {
   globalThis.__browserTabItems[props.id] = props
   return <div role="tab">{props.label}</div>
 }
-export function CloseButton(props) { return <button data-testid={props['data-testid']} /> }
+export function CloseButton(props) { globalThis.__browserButtons[props['data-testid']] = props; return <button data-testid={props['data-testid']} /> }
 export function InputGroup(props) { return <div>{props.children}</div> }
 export function InputGroupAddon(props) { return <div>{props.children}</div> }
 export function InputGroupInput(props) { return <input aria-label={props['aria-label']} data-testid={props['data-testid']} /> }
 export function MiddleTruncate(props) { return <span data-testid={props['data-testid']}>{props.value}</span> }
 export function Spinner() { return <span /> }
-export function RailRow() { return <li /> }
+export function Avatar(props) { return <span className={props.className}>{props.name}</span> }
+export function RailRow(props) {
+  if (props['data-testid']) globalThis.__browserTabItems[props['data-testid']] = props
+  return <li data-testid={props['data-testid']} data-selected={props.selected ? '1' : undefined}>{props.label}{props.action}</li>
+}
 export function TooltipTrigger(props) { return <>{props.children}</> }
 export function Tooltip() { return null }
 export function TooltipHint() { return null }
@@ -107,21 +111,19 @@ try {
     return renderToStaticMarkup(createElement(BrowserPane, { owner, ...props }))
   }
 
-  render({ title: {} })
-  assert.ok(globalThis.__browserTitle, '工作区标签栏挂到现有标题槽')
-
-  const header = renderToStaticMarkup(globalThis.__browserTitle)
-  assert.match(header, /Example/)
-  assert.match(header, /Second/)
+  const column = render({ title: {} })
+  assert.equal(globalThis.__browserTitle, null, '标签不再挂到面板标题槽，避免两层标签叠在一起')
+  assert.match(column, /data-testid="browser-pane-tabs"/, '浏览器标签单独成一列')
+  assert.match(column, /Example/)
+  assert.match(column, /Second/)
+  assert.match(column, /data-testid="browser-pane-tab-tab-a" data-selected="1"/, '当前标签标为选中')
   globalThis.__browserButtons['browser-pane-new-tab'].onPress()
-  globalThis.__browserTabItems['tab-b'].onSelect()
-  globalThis.__browserTabItems['tab-a'].onClose()
-  assert.deepEqual(calls, ['new', 'switch:tab-b', 'close:tab-a'], '合并顶栏后新增、切换、关闭标签照常工作')
+  globalThis.__browserTabItems['browser-pane-tab-tab-b'].onPress()
+  globalThis.__browserButtons['browser-pane-tab-close-tab-a'].onPress()
+  assert.deepEqual(calls, ['new', 'switch:tab-b', 'close:tab-a'], '标签列里新增、切换、关闭标签照常工作')
 
   const standalone = render(null)
-  assert.match(standalone, /data-ui="tabs"/, '无标题槽的容器保留内联标签栏')
-  const mounting = render({ title: null })
-  assert.match(mounting, /data-ui="tabs"/, '标题槽挂载前不丢失标签栏')
+  assert.match(standalone, /data-testid="browser-pane-tabs"/, '无标题槽的容器同样显示标签列')
   const drivingOwner = { ...owner, sessionId: 'sid-a' }
   globalThis.__browserOwners = { browser: 'old-key' }
   globalThis.__browserStore.browserState = { ...globalThis.__browserStore.browserState, agentSessionId: 'sid-a' }
@@ -155,7 +157,9 @@ try {
   globalThis.__browserOwners = { browser: 'session-a' }
   const inactive = render({ title: {} }, { owner: { ...owner, active: false } })
   assert.match(inactive, /browser-pane-inactive/)
-  assert.equal(globalThis.__browserTitle, null, '非活动会话不注册可操作标签栏')
+  const before = calls.length
+  globalThis.__browserTabItems['browser-pane-tab-tab-b']?.onPress()
+  assert.equal(calls.length, before, '非活动会话里点标签不切换')
   console.log('test-v3-browser-header: 全部通过')
 } finally {
   await rm(dir, { recursive: true, force: true })

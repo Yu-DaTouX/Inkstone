@@ -201,6 +201,7 @@
   "browser.revokePermission": "撤销",
   "browser.storageCopy": "复制当前页面存储",
   "browser.storageScope": "只复制当前网站的页面存储，不含 Cookie",
+  "browser.tabs": "标签页",
   "browser.syncFailed": "Cookie 复制失败，请检查浏览器连接",
   "browser.syncNoChrome": "没找到本机 Chrome 的用户数据，将使用空白配置目录（需在此登录一次）。",
   "browser.syncNoCookies": "尚未验证登录状态。文件导入不等于登录同步。",

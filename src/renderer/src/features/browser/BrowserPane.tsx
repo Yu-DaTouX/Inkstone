@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, LogIn, Plus, RotateCw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, LogIn, PanelLeftClose, PanelLeftOpen, Plus, RotateCw } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import {
+  Avatar,
   Button,
   CloseButton,
   EmptyState,
@@ -12,28 +13,46 @@ import {
   InputGroupInput,
   MiddleTruncate,
   Notice,
-  PanelTab,
-  PanelTabList,
+  RailRow,
   TextField
 } from '../../ui'
 import { claimResource, releaseResource, resourceOwner } from '../../state/resource-owners'
-import { nextAddressInput } from '../../../../shared/browser-navigation'
+import { addressTarget, isBlankAddress, nextAddressInput } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
-import { PaneTitle, usePaneChrome } from '../workbench/pane-chrome'
 import { browserText } from './browser-text'
 import { browserControlAllowed } from './ownership'
+import { BrowserStartPage } from './BrowserStartPage'
 import { LocalServerList } from './LocalServerList'
 import { useBrowserBoundsSync, useBrowserOverlayBlocker, useBrowserSurfaceActive } from './use-browser-surface'
 import './browser.css'
 
 export type { BrowserPaneProps }
 
-function withScheme(value: string): string {
-  if (/^[a-z][a-z\d+.-]*:/i.test(value)) return value
-  if (/^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|\[[\da-f:]+\])(?::\d+)?(?:[/?#]|$)/i.test(value)) {
-    return `http://${value}`
+const TABS_COLLAPSED_KEY = 'inkstone.browser.tabsCollapsed'
+const START_PAGE_TOKEN = 'browser-start-page'
+
+function readTabsCollapsed(): boolean {
+  try {
+    return localStorage.getItem(TABS_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
   }
-  return `https://${value}`
+}
+
+function writeTabsCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(TABS_COLLAPSED_KEY, collapsed ? '1' : '0')
+  } catch {
+    return
+  }
+}
+
+function tabHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
 }
 
 function Gate({ text, testId }: { text: string; testId: string }): ReactElement {
@@ -46,7 +65,6 @@ function Gate({ text, testId }: { text: string; testId: string }): ReactElement 
 
 export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactElement {
   const t = useT()
-  const chrome = usePaneChrome()
   const { lang } = useI18n()
   const text = browserText(lang)
   const state = useStore((s) => s.browserState)
@@ -77,7 +95,21 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   useBrowserSurfaceActive(surfaceActive, owner.key)
   useBrowserOverlayBlocker(surfaceActive)
 
-  const shownUrl = state.url === 'about:blank' ? '' : state.url
+  const startPage = control && state.mode !== 'external' && isBlankAddress(state.url)
+  useEffect(() => {
+    if (!startPage) return
+    return useStore.getState().acquireOverlayBlocker(START_PAGE_TOKEN)
+  }, [startPage])
+
+  const [tabsCollapsed, setTabsCollapsed] = useState(readTabsCollapsed)
+  const toggleTabs = (): void => {
+    setTabsCollapsed((prev) => {
+      writeTabsCollapsed(!prev)
+      return !prev
+    })
+  }
+
+  const shownUrl = isBlankAddress(state.url) ? '' : state.url
   const [draft, setDraft] = useState(shownUrl)
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
@@ -166,9 +198,21 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     setImportNote(null)
   }, [owner.key])
 
+  const ownerSessionId = owner.sessionId ?? 'workspace'
+  useEffect(() => {
+    if (!owner.active) return
+    let current = true
+    void window.yan.browser.activateSession(ownerSessionId).then((next) => {
+      if (current) useStore.setState({ browserState: next })
+    }).catch(() => undefined)
+    return () => {
+      current = false
+    }
+  }, [owner.active, ownerSessionId])
+
   const navigate = async (target?: string): Promise<void> => {
     if (!controlRef.current) return
-    const value = withScheme((target ?? draft).trim())
+    const value = addressTarget(target ?? draft, useStore.getState().settings?.browserSearchEngine)
     if (!value) return
     const seq = ++navSeq.current
     let ok = false
@@ -233,56 +277,87 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   }
 
   const tabs = state.tabs ?? []
-  const tabStrip = (
-    <div className={`v3-browser__tabsrow${chrome?.title ? ' v3-browser__tabsrow--chrome' : ''}`} data-testid="browser-pane-tabs">
-      <PanelTabList
-        label={text.tabLabel}
-        className="v3-browser__tabs"
-        onCloseFocused={(id) => {
-          if (controlRef.current) void window.yan.browser.closeTab(id)
-        }}
-      >
+  const newTabButton = (
+    <IconButton
+      aria-label={t('browser.newTab')}
+      tooltip={t('browser.newTab')}
+      size="sm"
+      data-testid="browser-pane-new-tab"
+      onPress={() => {
+        if (controlRef.current) void window.yan.browser.newTab()
+      }}
+    >
+      <Plus size={14} aria-hidden="true" />
+    </IconButton>
+  )
+  const collapseButton = (
+    <IconButton
+      aria-label={tabsCollapsed ? text.expandTabs : text.collapseTabs}
+      tooltip={tabsCollapsed ? text.expandTabs : text.collapseTabs}
+      size="sm"
+      aria-expanded={!tabsCollapsed}
+      data-testid="browser-pane-tabs-toggle"
+      onPress={toggleTabs}
+    >
+      {tabsCollapsed ? <PanelLeftOpen size={14} aria-hidden="true" /> : <PanelLeftClose size={14} aria-hidden="true" />}
+    </IconButton>
+  )
+  const tabColumn = (
+    <nav className="v3-browser__tabcol" aria-label={text.tabLabel} data-testid="browser-pane-tabs" data-collapsed={tabsCollapsed ? '1' : undefined}>
+      <div className="v3-browser__tabcol-head">
+        {tabsCollapsed ? null : <span className="v3-browser__tabcol-title">{t('browser.tabs')}</span>}
+        {newTabButton}
+      </div>
+      <ul className="v3-browser__tablist">
         {tabs.map((tab) => {
-          const label = tab.title || tab.url || t('browser.newTab')
+          const blank = isBlankAddress(tab.url)
+          const title = isBlankAddress(tab.title) ? '' : tab.title
+          const label = title || (blank ? t('browser.newTab') : tab.url)
+          const host = blank ? '' : tabHost(tab.url)
           return (
-            <PanelTab
+            <RailRow
               key={tab.id}
-              id={tab.id}
               label={label}
-              title={tab.url && tab.url !== label ? `${label}\n${tab.url}` : label}
-              icon={<Globe aria-hidden="true" />}
-              pending={tab.loading}
-              active={tab.id === state.activeTabId}
-              closeLabel={t('browser.closeTab')}
-              testId={`browser-pane-tab-${tab.id}`}
-              onSelect={() => {
+              iconOnly={tabsCollapsed}
+              title={!blank && tab.url !== label ? `${label}\n${tab.url}` : label}
+              icon={host ? <Avatar name={host} className="v3-browser__tab-mark" /> : <Globe size={14} aria-hidden="true" />}
+              selected={tab.id === state.activeTabId}
+              actionReveal="hover"
+              data-testid={`browser-pane-tab-${tab.id}`}
+              buttonProps={{ 'data-testid': `browser-pane-tab-select-${tab.id}` }}
+              onPress={() => {
                 if (controlRef.current && tab.id !== state.activeTabId) void window.yan.browser.switchTab(tab.id)
               }}
-              onClose={() => {
-                if (controlRef.current) void window.yan.browser.closeTab(tab.id)
-              }}
+              action={
+                <CloseButton
+                  aria-label={t('browser.closeTab')}
+                  tooltip={t('browser.closeTab')}
+                  data-testid={`browser-pane-tab-close-${tab.id}`}
+                  onPress={() => {
+                    if (controlRef.current) void window.yan.browser.closeTab(tab.id)
+                  }}
+                />
+              }
             />
           )
         })}
-      </PanelTabList>
-      <IconButton
-        aria-label={t('browser.newTab')}
-        tooltip={t('browser.newTab')}
-        size="sm"
-        className="v3-browser__newtab"
-        data-testid="browser-pane-new-tab"
-        onPress={() => {
-          if (controlRef.current) void window.yan.browser.newTab()
+      </ul>
+      <LocalServerList
+        active={visible}
+        compact
+        iconOnly={tabsCollapsed}
+        onOpen={(url) => {
+          if (controlRef.current) void window.yan.browser.newTab(url)
         }}
-      >
-        <Plus size={14} aria-hidden="true" />
-      </IconButton>
-    </div>
+      />
+      <div className="v3-browser__tabcol-foot">{collapseButton}</div>
+    </nav>
   )
 
   return (
-    <div className="v3-browser" data-testid="browser-pane" data-active={surfaceActive ? '1' : '0'}>
-      {chrome?.title ? <PaneTitle>{tabStrip}</PaneTitle> : tabStrip}
+    <div className="v3-browser v3-browser--split" data-testid="browser-pane" data-active={surfaceActive ? '1' : '0'} data-tabs-collapsed={tabsCollapsed ? '1' : undefined}>
+      {tabColumn}
+      <div className="v3-browser__main">
 
       <div className="v3-browser__toolbar">
         <IconButton
@@ -420,7 +495,12 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
         ref={viewportRef}
         aria-label={text.viewportLabel}
         data-testid="browser-pane-viewport"
-      />
+      >
+        {startPage ? (
+          <BrowserStartPage tabId={state.activeTabId} text={text} onSubmit={(value) => void navigate(value)} />
+        ) : null}
+      </div>
+      </div>
     </div>
   )
 }

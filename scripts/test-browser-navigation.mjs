@@ -17,4 +17,13 @@ export async function runBrowserNavigationTests(ok) {
 
   ok(m.sameCommittedUrl('https://a/', 'https://a') === true, '末尾斜杠不算差别')
   ok(m.sameCommittedUrl('https://a', 'https://b') === false, '不同地址不相同')
+
+  ok(m.addressTarget('localhost:5173') === 'http://localhost:5173', '本机端口走 http，不被当成协议名')
+  ok(m.addressTarget('example.com/a') === 'https://example.com/a', '域名补 https')
+  ok(m.addressTarget('https://x.dev') === 'https://x.dev', '完整网址原样')
+  ok(m.addressTarget('electron 文档') === 'https://www.bing.com/search?q=electron%20%E6%96%87%E6%A1%A3', '带空格的输入默认走 Bing 搜索')
+  ok(m.addressTarget('hello', 'baidu') === 'https://www.baidu.com/s?wd=hello', '预设引擎按 id 生效')
+  ok(m.addressTarget('hi', 'https://s.example/?k=%s') === 'https://s.example/?k=hi', '自定义模板替换 %s')
+  ok(m.normalizeSearchEngine('bing') === undefined && m.normalizeSearchEngine('google') === 'google', '默认引擎不落盘，其它预设保留')
+  ok(m.normalizeSearchEngine('javascript:%s') === undefined && m.normalizeSearchEngine('https://x/?q=') === undefined, '非 http(s) 或缺 %s 的模板丢弃')
 }

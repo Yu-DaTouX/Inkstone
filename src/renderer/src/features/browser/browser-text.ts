@@ -34,6 +34,15 @@ export interface BrowserText {
   importDone(copied: number, failed: number, skipped: number): string
   importFailed: string
   importError(reason: BrowserLoginImportStatus['error']): string
+  startAddress: string
+  collapseTabs: string
+  expandTabs: string
+  searchEngine: string
+  searchEngineCustom: string
+  searchEngineCustomLabel: string
+  searchEngineInvalid: string
+  save: string
+  cancel: string
 }
 
 const ZH: BrowserText = {
@@ -81,7 +90,16 @@ const ZH: BrowserText = {
     read_failed: '来源浏览器读取 Cookie 失败，请确认扩展已获得全部网站访问权限。',
     invalid_payload: 'Cookie 数据无法解析，请更新砚和导入扩展后重试。',
     import_failed: '未能完成 Cookie 写入，请重新发起导入。'
-  })[reason ?? 'import_failed']
+  })[reason ?? 'import_failed'],
+  startAddress: '搜索或输入网址',
+  collapseTabs: '收起标签栏',
+  expandTabs: '展开标签栏',
+  searchEngine: '搜索引擎',
+  searchEngineCustom: '自定义…',
+  searchEngineCustomLabel: '搜索网址（%s 代表关键词）',
+  searchEngineInvalid: '需要 http(s) 网址，并包含 %s',
+  save: '保存',
+  cancel: '取消'
 }
 
 const EN: BrowserText = {
@@ -131,7 +149,16 @@ const EN: BrowserText = {
     read_failed: 'The source browser could not read cookies. Check that the extension has access to all websites.',
     invalid_payload: 'Cookie data could not be parsed. Update Inkstone and the import extension, then retry.',
     import_failed: 'Cookie writing did not complete. Start the import again.'
-  })[reason ?? 'import_failed']
+  })[reason ?? 'import_failed'],
+  startAddress: 'Search or enter address',
+  collapseTabs: 'Collapse tabs',
+  expandTabs: 'Expand tabs',
+  searchEngine: 'Search engine',
+  searchEngineCustom: 'Custom…',
+  searchEngineCustomLabel: 'Search URL (%s is the query)',
+  searchEngineInvalid: 'Use an http(s) URL that contains %s',
+  save: 'Save',
+  cancel: 'Cancel'
 }
 
 export function browserText(lang: Lang): BrowserText {

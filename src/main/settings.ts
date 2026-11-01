@@ -26,6 +26,7 @@ import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
 import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeComposerHeight, sanitizeStreamWidth } from '../shared/appearance'
 import { allowedSiteList } from './preview-site-access'
+import { normalizeSearchEngine } from '../shared/browser-navigation'
 import { sanitizeProjectScripts } from '../shared/project-scripts'
 import { electronGuardSealStore, guardFieldsOf, sameGuardFields, trustedGuardFields, type GuardFields } from './settings-guard-seal'
 import { atomicWriteFile } from './sync/atomic'
@@ -210,6 +211,14 @@ function invalidate(): void {
   cached = null
 }
 
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 async function defaultWorkFolder(): Promise<string> {
   let documents = join(homedir(), 'Documents')
   try {
@@ -253,6 +262,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.checkpointsEnabled = settings.checkpointsEnabled !== false
   settings.guardAllowRoots = cleanAllowRoots(settings.guardAllowRoots)
   settings.browserAllowedSites = allowedSiteList(settings.browserAllowedSites)
+  settings.browserSearchEngine = normalizeSearchEngine(settings.browserSearchEngine)
   settings.subagentNotify = settings.subagentNotify === false ? false : undefined
   settings.streamLoopAutoContinue = settings.streamLoopAutoContinue === false ? false : undefined
   settings.subagentHistoryPrune = settings.subagentHistoryPrune === false ? false : undefined
@@ -335,7 +345,7 @@ export async function getSettings(): Promise<AppSettings> {
       healedBackup = backup
     }
   }
-  if (typeof parsed.cwd !== 'string' || !parsed.cwd.trim() || !isAbsolute(parsed.cwd)) parsed.cwd = await defaultWorkFolder()
+  if (typeof parsed.cwd !== 'string' || !parsed.cwd.trim() || !isAbsolute(parsed.cwd) || !isDirectory(parsed.cwd)) parsed.cwd = await defaultWorkFolder()
   const loaded = await enforceGuardSeal(sanitizeSettings(parsed), healedBackup !== null)
   if (healedBackup) noticeGuardSettings(`设置文件损坏，已备份为 ${basename(healedBackup)}，这次用默认设置启动（权限档按加密记录恢复）。`, `heal:${healedBackup}`)
   if (generation !== cacheGeneration) return getSettings()
@@ -398,7 +408,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectScripts','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectScripts','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -435,6 +445,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.checkpointsEnabled = next.checkpointsEnabled !== false
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)
   next.browserAllowedSites = allowedSiteList(next.browserAllowedSites)
+  next.browserSearchEngine = normalizeSearchEngine(next.browserSearchEngine)
   next.usageCurrency = normalizeUsageCurrency(next.usageCurrency)
   next.sidebarLayout = next.sidebarLayout === 'flat' ? 'flat' : undefined
   next.cloneDir = cleanCloneDir(next.cloneDir)

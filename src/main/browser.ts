@@ -99,6 +99,7 @@ function permissionKey(permission: string, origin: string): string {
 
 interface BrowserTab {
   id: string
+  sessionId: string
   view: WebContentsView
   cdp: CDPBridge
   registry: ElementRegistry
@@ -182,7 +183,37 @@ export class BrowserController {
       revoke: (reason: BrowserTransferRevokeReason) => void
     }
   >()
-  private activeTabId: string | null = null
+  private focusSessionId = 'workspace'
+  private viewerSessionId = 'workspace'
+  private readonly activeBySession = new Map<string, string | null>()
+  private get activeTabId(): string | null {
+    return this.activeBySession.get(this.focusSessionId) ?? null
+  }
+  private set activeTabId(id: string | null) {
+    this.activeBySession.set(this.focusSessionId, id)
+  }
+  forSession(sessionId: string): this {
+    if (sessionId && sessionId !== this.focusSessionId) {
+      this.focusSessionId = sessionId
+      this.updateState()
+    }
+    return this
+  }
+  userSession(sessionId?: string): this {
+    const target = sessionId || this.viewerSessionId
+    const changed = target !== this.focusSessionId || target !== this.viewerSessionId
+    this.viewerSessionId = target
+    this.focusSessionId = target
+    if (changed) this.showOnlyOwnedView(this.activeTabId)
+    return this
+  }
+  activateSession(sessionId: string): BrowserState {
+    this.viewerSessionId = sessionId
+    if (!this.agentSessionId || this.agentSessionId === sessionId) this.focusSessionId = sessionId
+    this.showOnlyOwnedView(this.activeBySession.get(this.focusSessionId) ?? null)
+    this.updateState()
+    return this.getState(sessionId)
+  }
   private userControl = false
   private userControlRequest: { reason: string; sessionId: string; at: number } | null = null
   private lastDownload: BrowserState['lastDownload']
@@ -222,16 +253,6 @@ export class BrowserController {
     return tabId.startsWith('chrome:') ? tabId.slice('chrome:'.length) : null
   }
   private readonly externalDownloads = new Map<string, { filename: string; url: string }>()
-  private state: BrowserState = {
-    open: false,
-    url: '',
-    title: '',
-    loading: false,
-    canGoBack: false,
-    canGoForward: false,
-    tabs: []
-  }
-
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
     private readonly push: Push,
@@ -291,13 +312,16 @@ export class BrowserController {
     }
   }
 
-  getState(): BrowserState {
-    const ext = this.external
-    const active = this.activeTab()
-    const activeIsExternal = this.activeMode === 'external' && Boolean(ext)
-    const embeddedTabs = [...this.tabs.values()].map((tab) => ({ ...tab.state }))
+  getState(sessionId: string = this.focusSessionId): BrowserState {
+    const isFocus = sessionId === this.focusSessionId
+    const ext = isFocus ? this.external : null
+    const activeId = this.activeBySession.get(sessionId) ?? null
+    const active = activeId ? this.tabs.get(activeId) ?? null : null
+    const activeIsExternal = isFocus && this.activeMode === 'external' && Boolean(ext)
+    const embeddedTabs = [...this.tabs.values()].filter((tab) => tab.sessionId === sessionId).map((tab) => ({ ...tab.state }))
     const externalTabs = ext ? ext.chromeTabs.map((tab) => ({ ...tab, id: this.externalTabId(tab.id) })) : []
     return {
+      sessionId,
       open: Boolean(active) || Boolean(ext),
       url: activeIsExternal ? ext?.url ?? '' : active?.state.url ?? '',
       title: activeIsExternal ? ext?.title ?? '' : active?.state.title ?? '',
@@ -305,7 +329,7 @@ export class BrowserController {
       canGoBack: activeIsExternal ? ext?.canGoBack ?? false : active?.state.canGoBack ?? false,
       canGoForward: activeIsExternal ? ext?.canGoForward ?? false : active?.state.canGoForward ?? false,
       tabs: [...embeddedTabs, ...externalTabs],
-      activeTabId: activeIsExternal ? this.externalTabId(ext!.targetId) : this.activeTabId ?? undefined,
+      activeTabId: activeIsExternal ? this.externalTabId(ext!.targetId) : activeId ?? undefined,
       userControl: this.userControl,
       ...(this.userControl && this.userControlRequest ? { userControlRequest: this.userControlRequest } : {}),
       lastDownload: this.lastDownload,
@@ -328,12 +352,14 @@ export class BrowserController {
   }
 
   private publish(): void {
-    this.push({ ch: 'browser-state', payload: this.getState() })
+    this.push({ ch: 'browser-state', payload: this.getState(this.viewerSessionId) })
+    if (this.focusSessionId !== this.viewerSessionId) {
+      this.push({ ch: 'browser-state', payload: this.getState(this.focusSessionId) })
+    }
   }
 
   private updateState(): void {
     sharedResources.setPaused(INTERACTIVE_RESOURCE, this.userControl)
-    this.state = this.getState()
     this.publish()
   }
 
@@ -343,7 +369,7 @@ export class BrowserController {
     return tab ? { cdp: tab.cdp, registry: tab.registry, observer: tab.observer, input: tab.input, network: tab.network } : null
   }
 
-  private createTab(): BrowserTab {
+  private createTab(sessionId: string = this.focusSessionId): BrowserTab {
     const view = new WebContentsView({
       webPreferences: {
         contextIsolation: true,
@@ -360,6 +386,7 @@ export class BrowserController {
     const registry = new ElementRegistry()
     const tab: BrowserTab = {
       id,
+      sessionId,
       view,
       cdp,
       registry,
@@ -441,7 +468,7 @@ export class BrowserController {
     view.webContents.setWindowOpenHandler(({ url }) => {
       const target = safeUrl(url)
       if (target) {
-        void this.openBackgroundTab(target, tab.committedUrl || tab.openerUrl).catch((error) =>
+        void this.openBackgroundTab(target, tab.committedUrl || tab.openerUrl, tab.sessionId).catch((error) =>
           this.pushError(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`)
         )
       }
@@ -615,10 +642,10 @@ export class BrowserController {
     if (!safeUrl(rawUrl)) event.preventDefault()
   }
 
-  private async openBackgroundTab(rawUrl: string, openerUrl: string): Promise<void> {
+  private async openBackgroundTab(rawUrl: string, openerUrl: string, sessionId: string): Promise<void> {
     const url = safeUrl(rawUrl)
     if (!url) return
-    const tab = this.createTab()
+    const tab = this.createTab(sessionId)
     const win = this.getWindow()
     if (win) {
       this.removeForeignBrowserViews(win)
@@ -682,8 +709,8 @@ export class BrowserController {
     const tab = this.tabs.get(id)
     if (!tab) throw new Error('找不到浏览器标签页')
     this.activeMode = 'embedded'
-    this.activeTabId = id
-    this.showOnlyOwnedView(id)
+    this.activeBySession.set(tab.sessionId, id)
+    this.showOnlyOwnedView(this.activeTabId)
     this.updateState()
     return this.getState()
   }
@@ -724,16 +751,26 @@ export class BrowserController {
     tab.observer.dispose()
     await tab.cdp.detach().catch(() => undefined)
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close()
-    const priorIndex = [...this.tabs.keys()].indexOf(id)
+    const sameSession = [...this.tabs.values()].filter((candidate) => candidate.sessionId === tab.sessionId)
+    const priorIndex = sameSession.indexOf(tab)
     this.tabs.delete(id)
-    if (this.activeTabId === id) {
-      const remaining = [...this.tabs.values()]
+    if (this.activeBySession.get(tab.sessionId) === id) {
+      const remaining = sameSession.filter((candidate) => candidate !== tab)
       const next = remaining[Math.min(Math.max(0, priorIndex), remaining.length - 1)]
-      this.activeTabId = next?.id ?? null
+      this.activeBySession.set(tab.sessionId, next?.id ?? null)
       this.showOnlyOwnedView(this.activeTabId)
     }
     if (!options.silent) this.updateState()
     return this.getState()
+  }
+
+  async closeSession(sessionId: string): Promise<BrowserState> {
+    const ids = [...this.tabs.values()].filter((tab) => tab.sessionId === sessionId).map((tab) => tab.id)
+    for (const id of ids) await this.closeTab(id, { silent: true })
+    this.activeBySession.delete(sessionId)
+    if (this.focusSessionId === sessionId) await this.closeExternalChrome()
+    this.updateState()
+    return this.getState(sessionId)
   }
 
   async close(): Promise<BrowserState> {
@@ -820,9 +857,10 @@ export class BrowserController {
   }
 
   private showOnlyOwnedView(activeId: string | null): void {
+    const shownId = this.viewerSessionId === this.focusSessionId ? activeId : this.activeBySession.get(this.viewerSessionId) ?? null
     for (const tab of this.tabs.values()) {
       if (tab.borrowedBy) continue
-      tab.view.setVisible(ownedViewVisible(activeId, tab.id, this.viewVisibleRequested))
+      tab.view.setVisible(ownedViewVisible(shownId, tab.id, this.viewVisibleRequested))
     }
   }
 
@@ -1268,8 +1306,9 @@ export class BrowserController {
 
   setBounds(bounds: BrowserBounds): void {
     if (this.external && this.activeMode === 'external') return
-    const tab = this.activeTab()
-    if (!tab || !this.state.open) return
+    const viewerActive = this.activeBySession.get(this.viewerSessionId) ?? null
+    const tab = viewerActive ? this.tabs.get(viewerActive) ?? null : null
+    if (!tab) return
     if (tab.borrowedBy) return
     const win = this.getWindow()
     const zoom = win && !win.isDestroyed() ? win.webContents.getZoomFactor() || 1 : 1
@@ -1393,8 +1432,8 @@ export class BrowserController {
 
   async click(ref: string, options: BrowserActionOptions = {}): Promise<BrowserActionOutcome> {
     return this.act(async (p) => {
-      await p.input.click(p.registry.resolve(ref))
-      return {}
+      const { obscuredBy } = await p.input.click(p.registry.resolve(ref))
+      return obscuredBy ? { receipt: { obscuredBy } } : {}
     }, options)
   }
 

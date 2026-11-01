@@ -812,6 +812,7 @@ export interface AppSettings {
   permissionMode?: PermissionMode
   guardAllowRoots?: string[]
   browserAllowedSites?: string[]
+  browserSearchEngine?: string
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]

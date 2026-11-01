@@ -14,10 +14,15 @@ export function registerBrowserIpc(
   answerSiteAsk?: (id: string, allowed: boolean) => void
 ): void {
   const { rawHandle } = ipc
-  const scoped = (_sessionId?: string) => browserOf()
-  rawHandle('yan:browser:activateSession', () => browserOf()?.getState() ?? CLOSED_STATE)
+  const scoped = (sessionId?: string) => browserOf()?.userSession(typeof sessionId === 'string' ? sessionId : undefined) ?? null
+  rawHandle('yan:browser:activateSession', (_e, sessionId?: string) =>
+    browserOf()?.activateSession(typeof sessionId === 'string' && sessionId ? sessionId : 'workspace') ?? CLOSED_STATE
+  )
   rawHandle('yan:browser:install', () => undefined)
-  rawHandle('yan:browser:getState', (_e, sessionId?: string) => scoped(sessionId)?.getState() ?? CLOSED_STATE)
+  rawHandle('yan:browser:getState', (_e, sessionId?: string) => {
+    const browser = browserOf()
+    return browser ? browser.getState(typeof sessionId === 'string' && sessionId ? sessionId : undefined) : CLOSED_STATE
+  })
   rawHandle('yan:browser:open', async (_e, url?: string, sessionId?: string) => {
     const session = scoped(sessionId)
     if (!session) return CLOSED_STATE
@@ -35,7 +40,10 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:newTab', async (_e, url?: string, sessionId?: string) => scoped(sessionId)?.newTab(url))
   rawHandle('yan:browser:switchTab', async (_e, id: string, sessionId?: string) => scoped(sessionId)?.switchTab(id))
   rawHandle('yan:browser:closeTab', async (_e, id?: string, sessionId?: string) => scoped(sessionId)?.closeTab(id))
-  rawHandle('yan:browser:close', async () => browserOf()?.close())
+  rawHandle('yan:browser:close', async (_e, sessionId?: string) => {
+    const browser = browserOf()
+    return typeof sessionId === 'string' && sessionId ? browser?.closeSession(sessionId) : browser?.close()
+  })
   rawHandle('yan:browser:navigate', async (_e, url: string, sessionId?: string) => scoped(sessionId)?.navigate(url) ?? NOT_READY)
   rawHandle('yan:browser:siteAccess', async (_e, sessionId: unknown, url: unknown) => {
     const decision = siteGate ? siteGate.peek(typeof sessionId === 'string' ? sessionId : '', String(url ?? '')) : 'allow'

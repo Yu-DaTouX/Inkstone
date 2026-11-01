@@ -121,6 +121,11 @@
     line-height: var(--t-body-lh);
   }
 
+  .ui-rail-row[data-selected='1'] {
+    border-radius: var(--r-sm);
+    background: var(--sel);
+  }
+
   .ui-rail-row__main {
     flex: 1 1 auto;
     display: grid;
@@ -148,6 +153,24 @@
     column-gap: var(--s-8);
     min-width: 0;
     text-align: left;
+  }
+
+  .ui-rail-row[data-icon-only='1'] {
+    justify-content: center;
+  }
+
+  .ui-rail-row[data-icon-only='1'] .ui-btn.ui-rail-row__main {
+    flex: none;
+    justify-content: center;
+    width: var(--size-btn-sm);
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .ui-rail-row[data-icon-only='1'] .ui-btn.ui-rail-row__main > .ui-btn__label {
+    display: inline-flex;
+    flex: none;
+    justify-content: center;
   }
 
   .ui-rail-row__lead {

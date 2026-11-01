@@ -410,7 +410,8 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                                  砚在 127.0.0.1 上临时托管它所在的项目目录，相对链接与样式照常加载
   open     --url <地址>          navigate 的别名（同样支持 --file）
   state                          当前状态：是否打开 / 标签列表 / 活动标签
-  observe                        观察当前页面：URL / 标题 / 可交互元素 ref / 可见文本
+  observe                        观察当前页面：stdout 的 items 每行一个元素「ref 角色 "名称"」，可直接拿 ref 去 click / type；
+                                 可见文本与坐标在结果文件里
   network                        最近 80 条请求的 URL / 方法 / 状态 / 资源类型（无请求头、正文或 Cookie）
   wait     [--ref <ref>] [--text <文本>] [--url <子串>] [--timeout <毫秒>]
                                  等条件成立（可叠加，是“且”）；--gone 配 --ref 等元素**消失**。

@@ -201,6 +201,7 @@
   "browser.revokePermission": "Revoke",
   "browser.storageCopy": "Copy current page storage",
   "browser.storageScope": "Copies this site's page storage only — no cookies",
+  "browser.tabs": "Tabs",
   "browser.syncFailed": "Cookie copy failed. Check the browser connection.",
   "browser.syncNoChrome": "No local Chrome user data found; the isolated profile will start empty (sign in once there).",
   "browser.syncNoCookies": "Login not verified. Profile file import is not login synchronization.",
