@@ -3009,5 +3009,6 @@
   "sidebar.t3.filter.archived": "已归档项目 · {n}",
   "sidebar.t3.filter.manage": "「{name}」项目操作",
   "sidebar.t3.filter.current": "当前筛选",
-  "sidebar.t3.moreUtilities": "更多"
+  "sidebar.t3.moreUtilities": "更多",
+  "composer.modelChange.pending": "下轮切换"
 }

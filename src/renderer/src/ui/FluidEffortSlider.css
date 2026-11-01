@@ -1,0 +1,66 @@
+@layer primitives {
+  .ui-fluid-effort {
+    min-width: 0;
+    padding: var(--s-12) var(--s-16);
+  }
+
+  .ui-fluid-effort__value {
+    color: var(--fluid-tone);
+    text-align: end;
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
+
+  .ui-fluid-effort .ui-slider__row {
+    padding: var(--s-8) var(--s-6);
+  }
+
+  .ui-fluid-effort .ui-fluid-effort__track {
+    height: 28px;
+    background: transparent;
+  }
+
+  .ui-fluid-effort__field {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .ui-fluid-effort__probe {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+
+  .ui-fluid-effort .ui-fluid-effort__thumb {
+    left: var(--step-x, 0%) !important;
+    width: 10px;
+    height: 26px;
+    border-radius: var(--r-xs);
+    background: var(--fluid-tone);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--fluid-tone) 55%, transparent);
+    transition: background-color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), scale var(--dur-base) var(--ease);
+  }
+
+  .ui-fluid-effort .ui-fluid-effort__thumb:is([data-hovered], [data-dragging]) {
+    width: 10px;
+    background: var(--fluid-tone);
+    scale: 1.15 1.05;
+  }
+
+  :root[data-reduce-motion='true'] .ui-fluid-effort__thumb {
+    transition: none;
+    scale: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-fluid-effort .ui-fluid-effort__thumb {
+      transition: none;
+      scale: none;
+    }
+  }
+}

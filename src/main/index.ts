@@ -418,6 +418,7 @@ const notifySubagentFinished = createSubagentNotifier({
 const subagentSearch = new Map<string, LookupCommands>()
 const subagentService: SubagentService = new SubagentService({
   preambleExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.preambleExtension),
+  userAddressExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.userAddressExtension),
   codemodeExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.codemodeExtension),
   providerExtensions: providerExtensionPaths,
   guardExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.dangerGuardExtension),
@@ -628,6 +629,7 @@ const YAN_THIN_EXTENSION_FILES = {
   responseDetailExtension: 'response-detail.js',
   preambleExtension: 'preamble.js',
   languageExtension: 'language.js',
+  userAddressExtension: 'user-address.js',
   ultracodeExtension: 'ultracode.js',
   capabilityGuideExtension: 'capability-guide.js',
   mcpAppProxyExtension: 'mcp-app-proxy.js',

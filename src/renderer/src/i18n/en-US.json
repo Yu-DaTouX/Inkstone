@@ -3009,5 +3009,6 @@
   "sidebar.t3.filter.archived": "Archived projects · {n}",
   "sidebar.t3.filter.manage": "Actions for {name}",
   "sidebar.t3.filter.current": "Current filter",
-  "sidebar.t3.moreUtilities": "More"
+  "sidebar.t3.moreUtilities": "More",
+  "composer.modelChange.pending": "Switch next turn"
 }

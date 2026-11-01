@@ -10,6 +10,7 @@ import { settingsText } from '../settings-text'
 import { ContextSettings } from '../context/ContextSettings'
 import { PiRetryDetailRows, PiSessionGroups, usePiNativeSettings } from './PiNativeSettings'
 import { piNativeText } from './pi-native-text'
+import { UserAddressSetting } from './UserAddressSetting'
 
 const ARCHIVE_OPTIONS = [0, 3, 7, 14, 30] as const
 const RESPONSE_DETAILS = ['brief', 'standard', 'detailed'] as const
@@ -75,6 +76,7 @@ export function SessionSettings(): ReactElement {
       <ContextSettings piNative={piNative} lede={text.sessionContextLede} />
 
       <SettingsGroup title={labels.groupSessionGeneral}>
+        <UserAddressSetting />
         <SettingsRow settingId="session-checkpoints" label={text.sessionCheckpoints} description={text.sessionCheckpointsDesc}>
           <Switch
             aria-label={text.sessionCheckpoints}

@@ -435,6 +435,7 @@ export class AgentController extends EventEmitter {
   private responseDetailExtension?: string
   private preambleExtension?: string
   private languageExtension?: string
+  private userAddressExtension?: string
   private ultracodeExtension?: string
   private capabilityGuideExtension?: string
   private mcpAppProxyExtension?: string
@@ -655,6 +656,7 @@ export class AgentController extends EventEmitter {
     responseDetailExtension?: string
     preambleExtension?: string
     languageExtension?: string
+    userAddressExtension?: string
     ultracodeExtension?: string
     capabilityGuideExtension?: string
     mcpAppProxyExtension?: string
@@ -732,6 +734,7 @@ export class AgentController extends EventEmitter {
     this.responseDetailExtension = opts.responseDetailExtension
     this.preambleExtension = opts.preambleExtension
     this.languageExtension = opts.languageExtension
+    this.userAddressExtension = opts.userAddressExtension
     this.ultracodeExtension = opts.ultracodeExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
@@ -894,6 +897,7 @@ export class AgentController extends EventEmitter {
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         ...(this.preambleExtension ? ['--extension', this.preambleExtension] : []),
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
+        ...(this.userAddressExtension ? ['--extension', this.userAddressExtension] : []),
         ...(this.ultracodeExtension ? ['--extension', this.ultracodeExtension] : []),
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
@@ -2223,6 +2227,9 @@ export class AgentController extends EventEmitter {
       sessionName: data.sessionName ? String(data.sessionName) : undefined,
       model: model ?? undefined,
       thinkingLevel: String(data.thinkingLevel ?? 'off'),
+      ...(previous?.sessionId === String(data.sessionId ?? '') && previous.pendingModelChange
+        ? { pendingModelChange: previous.pendingModelChange }
+        : {}),
       ultracode: isUltracodeOn(String(data.sessionId ?? '')),
       availableThinkingLevels,
       thinkingLevelsStatus: levels.status,
@@ -2528,6 +2535,7 @@ export class AgentController extends EventEmitter {
       }
 
       case 'turn_start':
+        this.clearPendingModelChange()
         this.pendingRequestMono = performance.now()
         break
 
@@ -4013,6 +4021,7 @@ export class AgentController extends EventEmitter {
   }
 
   private resetSessionScope(): void {
+    this.clearPendingModelChange()
     this.loopGuardContinuationVersion += 1
     this.loopGuardAutoContinueCount = 0
     if (this.bash) void endTreeSnapshot(this.bash.msgId).catch(() => null)
@@ -4380,14 +4389,45 @@ export class AgentController extends EventEmitter {
 
   async setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
     this.loopGuardContinuationVersion += 1
-    return this.enqueueCapabilityChange(() => this.applyModel(provider, modelId))
+    return this.enqueueCapabilityChange(async () => {
+      const previous = this.state
+      const result = await this.applyModel(provider, modelId)
+      if (result.ok) this.recordPendingModelChange(previous)
+      return result
+    })
+  }
+
+  private recordPendingModelChange(previous: SessionState | null): void {
+    const current = this.state
+    if (!previous || !current || previous.sessionId !== current.sessionId) return
+    const pending = previous.pendingModelChange ?? {
+      previousModel: previous.model,
+      previousThinkingLevel: previous.thinkingLevel
+    }
+    const changed = modelKeyOf(pending.previousModel) !== modelKeyOf(current.model) || pending.previousThinkingLevel !== current.thinkingLevel
+    this.state = {
+      ...current,
+      pendingModelChange: changed && (this.executionActive() || previous.pendingModelChange) ? pending : undefined
+    }
+    this.push({ ch: 'state', payload: this.state })
+  }
+
+  private clearPendingModelChange(): void {
+    if (!this.state?.pendingModelChange) return
+    const { pendingModelChange: _, ...current } = this.state
+    this.state = current
+    this.push({ ch: 'state', payload: this.state })
   }
 
   async setThinking(level: string): Promise<{ ok: boolean; error?: string }> {
     return this.enqueueCapabilityChange(async () => {
       if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+      const previous = this.state
       const res = await this.rpc.command('set_thinking_level', { level })
-      if (res.success) await this.refreshState()
+      if (res.success) {
+        await this.refreshState()
+        this.recordPendingModelChange(previous)
+      }
       return res.success ? { ok: true } : { ok: false, error: res.error }
     })
   }

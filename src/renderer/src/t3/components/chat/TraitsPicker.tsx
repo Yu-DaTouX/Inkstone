@@ -76,7 +76,7 @@ export const TraitsPicker = memo(function TraitsPicker({
       <EffortSlider
         traits={traits}
         size={size}
-        disabled={disabled || traits.busy}
+        disabled={disabled}
         hidden={hidden}
         {...(triggerClassName ? { className: triggerClassName } : {})}
       />

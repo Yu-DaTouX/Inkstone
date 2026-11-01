@@ -1,0 +1,39 @@
+@layer primitives {
+  .ui-model-change-notice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-6);
+    min-width: 0;
+    margin-bottom: var(--s-8);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
+
+  .ui-model-change-notice svg {
+    flex: none;
+    width: 14px;
+    height: 14px;
+  }
+
+  .ui-model-change-notice__rule {
+    flex: 1;
+    height: 1px;
+    min-width: var(--s-8);
+    background: var(--line);
+  }
+
+  .ui-model-change-notice__previous,
+  .ui-model-change-notice__next {
+    min-width: 0;
+    max-width: 30%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ui-model-change-notice__next {
+    color: var(--fg2);
+  }
+}

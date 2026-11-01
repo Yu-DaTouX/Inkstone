@@ -70,6 +70,7 @@ function startSummary(run: SubagentRun): { data: SubagentRun; summary: Record<st
 export interface SubagentServiceDeps {
   codemodeExtension?(): string | undefined
   preambleExtension?(): string | undefined
+  userAddressExtension?(): string | undefined
   providerExtensions?(): string[]
   guardExtension?(): string | undefined
   shellExtension?(): string | undefined
@@ -115,7 +116,7 @@ export class SubagentService {
       cwd: s.cwd,
       piBin: s.piBin,
       pruneHistory: async () => (await getSettings()).subagentHistoryPrune !== false,
-      extensions: [this.deps.preambleExtension?.(), this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
+      extensions: [this.deps.preambleExtension?.(), this.deps.userAddressExtension?.(), this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       ...(this.deps.readOnlyExtension?.() && this.deps.runReadOnlyCommand ? { readOnlyExtension: this.deps.readOnlyExtension(), runReadOnlyCommand: this.deps.runReadOnlyCommand } : {}),
       ...(this.deps.previewHtml ? { previewHtml: this.deps.previewHtml } : {}),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
