@@ -1,18 +1,38 @@
 @layer primitives {
   .ui-fluid-effort {
     min-width: 0;
-    padding: var(--s-12) var(--s-16);
+    padding: var(--s-12) var(--s-16) var(--s-12);
   }
 
-  .ui-fluid-effort__value {
-    color: var(--fluid-tone);
-    text-align: end;
+  .ui-fluid-effort__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-12);
+    min-width: 0;
+  }
+
+  .ui-fluid-effort__title {
+    color: var(--fg2);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
   }
 
+  .ui-fluid-effort__value {
+    color: var(--fluid-shown);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    font-weight: 600;
+    text-align: end;
+    transition: color var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease);
+  }
+
+  .ui-fluid-effort[data-previewing] .ui-fluid-effort__value {
+    opacity: 0.7;
+  }
+
   .ui-fluid-effort .ui-slider__row {
-    padding: var(--s-8) var(--s-6);
+    padding: var(--s-6) var(--s-6) 0;
   }
 
   .ui-fluid-effort .ui-fluid-effort__track {
@@ -50,6 +70,65 @@
     width: 10px;
     background: var(--fluid-tone);
     scale: 1.15 1.05;
+  }
+
+  .ui-fluid-effort__stops {
+    position: relative;
+    height: 20px;
+    margin-inline: var(--s-6);
+  }
+
+  .ui-fluid-effort__stop {
+    position: absolute;
+    top: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    translate: -50% 0;
+    cursor: pointer;
+  }
+
+  .ui-fluid-effort__stop::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 6px;
+    border-radius: var(--r-2xs);
+    background: var(--fg3);
+    translate: -50% -50%;
+    transition: background-color var(--dur-fast) var(--ease), height var(--dur-fast) var(--ease), width var(--dur-fast) var(--ease);
+  }
+
+  .ui-fluid-effort__stop[data-stop-state='below']::before {
+    background: color-mix(in srgb, var(--fluid-tone) 60%, var(--fg3));
+  }
+
+  .ui-fluid-effort__stop[data-stop-state='current']::before {
+    width: 4px;
+    height: 10px;
+    background: var(--fluid-tone);
+  }
+
+  @media (hover: hover) {
+    .ui-fluid-effort__stop:not(:disabled):hover::before {
+      height: 10px;
+      background: var(--stop-tone);
+    }
+  }
+
+  .ui-fluid-effort__stop:disabled {
+    cursor: default;
+  }
+
+  .ui-fluid-effort__hint {
+    margin: var(--s-4) 0 0;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   :root[data-reduce-motion='true'] .ui-fluid-effort__thumb {

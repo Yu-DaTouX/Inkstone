@@ -8,7 +8,7 @@ import {
 import { cx } from './cx'
 import { Tooltip, TooltipHint, TooltipTrigger } from './Tooltip'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'plain' | 'danger' | 'destructive' | 'glass'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'plain' | 'danger' | 'glass'
 export type ButtonSize = 'micro' | 'xs' | 'sm' | 'md'
 
 export interface ButtonProps extends RACButtonProps {

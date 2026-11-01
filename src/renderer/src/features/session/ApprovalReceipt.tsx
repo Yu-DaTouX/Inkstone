@@ -12,6 +12,25 @@ const RECEIPT_STATUS: Record<ApprovalChoice, { tone: CardStatusTone; key: Sessio
   deny: { tone: 'muted', key: 'approvalDenied', icon: 'deny' }
 }
 
+export function TurnApprovalLine({ approvals }: { approvals: readonly ApprovalReceiptRecord[] }): JSX.Element | null {
+  const tt = useSessionText()
+  const last = approvals.at(-1)
+  if (!last) return null
+  const denied = approvals.filter((approval) => approval.choice === 'deny').length
+  const single = approvals.length === 1
+  const status = RECEIPT_STATUS[single ? last.choice : denied === approvals.length ? 'deny' : 'once']
+  const label = single ? tt(status.key) : tt('approvalSummary', { n: approvals.length, ok: approvals.length - denied, no: denied })
+  const detail = approvals.map((approval) => `${tt(RECEIPT_STATUS[approval.choice].key)} · ${approval.title}${approval.feedback ? ` \u2014 ${approval.feedback}` : ''}`).join('\n')
+  return (
+    <div className="v3-approval-line" data-choice={single ? last.choice : undefined} data-testid="v3-turn-approval-line" title={detail}>
+      <CardStatus tone={status.tone} icon={<Icon name={status.icon} size={13} />}>{label}</CardStatus>
+      {single && last.title ? <span className="v3-approval-line-title">{last.title}</span> : null}
+      {single && last.feedback ? <span className="v3-approval-line-reason">{tt('approvalDeniedReason', { reason: last.feedback })}</span> : null}
+      <CardTime at={last.at} className="v3-approval-line-time" />
+    </div>
+  )
+}
+
 export function ApprovalReceipt({ approval }: { approval: ApprovalReceiptRecord }): JSX.Element {
   const tt = useSessionText()
   const status = RECEIPT_STATUS[approval.choice]

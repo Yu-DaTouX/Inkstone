@@ -109,13 +109,6 @@
     check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === undefined), '开回来只回落缺省，不写 true')
     check(await closeSettings(), '返回会话')
     check(await until(() => !!query('v3-ascii-field')), '恢复缺省后空态重新挂载 ASCII 背景')
-    if (!query('v3-schedule-entry')) query('v3-side-more')?.click()
-    check(await until(() => ['v3-schedule-entry', 'v3-collab-entry', 'v3-artifacts-entry'].every((id) => !!query(id))), '左栏「更多」收着定时任务、多人协作与 Artifact')
-    query('v3-schedule-entry')?.click()
-    check(await until(() => !!query('v3-back') && !query('v3-side-more-menu')), '从「更多」进入定时任务页')
-    check(!query('v3-side-more') || query('v3-side-more').hasAttribute('data-selected'), '在收起的页面里时「更多」行呈选中态')
-    query('v3-back')?.click()
-    check(await until(() => !!query('composer-input')), '定时任务页可返回会话')
     const focusTrail = []
     const onFocusIn = (event) => focusTrail.push(`${event.target?.tagName}:${event.target?.getAttribute?.('data-testid') ?? ''}`)
     document.addEventListener('focusin', onFocusIn, true)

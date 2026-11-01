@@ -412,10 +412,10 @@ export function DevicesSettings(): ReactElement {
               disabled={busy}
               onChange={chooseBind}
               options={[
+                { value: 'loopback', label: text.devicesBindLoopback, testId: 'v3-devices-bind-loopback' },
                 { value: 'tailscale', label: text.devicesBindTailscale, testId: 'v3-devices-bind-tailscale' },
                 { value: 'radmin', label: text.devicesBindRadmin, testId: 'v3-devices-bind-radmin' },
-                { value: 'lan', label: text.devicesBindLan, testId: 'v3-devices-bind-lan' },
-                { value: 'loopback', label: text.devicesBindLoopback, testId: 'v3-devices-bind-loopback' }
+                { value: 'lan', label: text.devicesBindLan, testId: 'v3-devices-bind-lan' }
               ]}
             />
             {bindMode === 'lan' && lanChoices.length > 1 ? (

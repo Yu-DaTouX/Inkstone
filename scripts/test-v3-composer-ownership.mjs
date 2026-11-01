@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve, normalize } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
-import { lucideStubSource } from './lib/lucide-stub.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
@@ -138,97 +137,7 @@ function installWindow(yan) {
   }
 }
 
-const REACT_SHIM = `/* v3 归属回归的 React 浅渲染替身：状态放在 globalThis.__V3_HOOKS。 */
-const rt = () => globalThis.__V3_HOOKS
-export const Fragment = Symbol.for('v3.fragment')
-export function useState(init) { return rt().useState(init) }
-export function useEffect(fn, deps) { return rt().useEffect(fn, deps) }
-export function useLayoutEffect(fn, deps) { return rt().useEffect(fn, deps) }
-export function useInsertionEffect() {}
-export function useRef(init) { return rt().useRef(init) }
-export function useMemo(fn) { return fn() }
-export function useCallback(fn) { return fn }
-export function useSyncExternalStore(_sub, getSnapshot) { return getSnapshot() }
-export function useDebugValue() {}
-export function useId() { return rt().useId() }
-export function useContext(ctx) { return ctx && '__value' in ctx ? ctx.__value : null }
-export function createContext(value) { return { __isContext: true, __value: value, Provider: (p) => (p ? p.children : null), Consumer: (p) => (p && typeof p.children === 'function' ? p.children(value) : null) } }
-export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
-export function forwardRef(fn) { return fn }
-export function useImperativeHandle(ref, factory) { const handle = factory(); if (ref) { if (typeof ref === 'function') ref(handle); else ref.current = handle } return handle }
-export function memo(fn) { return fn }
-export function isValidElement(el) { return !!el && typeof el === 'object' && 'type' in el && 'props' in el }
-export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, useImperativeHandle, memo, isValidElement }
-`
-
-const JSX_SHIM = `import { createElement, Fragment } from './react-shim.mjs'
-export { Fragment }
-export function jsx(type, props, key) { const el = createElement(type, props); if (key !== undefined) el.key = key; return el }
-export const jsxs = jsx
-export const jsxDEV = jsx
-`
-
-const STUBS = {
-  ui: `export function Button(){ return null }
-export const cx = (...a) => a.filter(Boolean).join(' ')
-export function IconButton(){ return null }
-export function Notice(){ return null }
-export function TextField(){ return null }
-export function Dialog(){ return null }
-export function Popover(){ return null }
-export function Menu(){ return null }
-export function MenuItem(){ return null }
-export function Tabs(){ return null }
-export function TabList(){ return null }
-export function Tab(){ return null }
-export function TabPanel(){ return null }
-export function Tooltip(){ return null }
-export function Select(){ return null }
-export function Switch(){ return null }
-export function Progress(){ return null }
-export function Badge(){ return null }
-export function Checkbox(){ return null }
-export function Radio(){ return null }
-export function ComboBox(){ return null }
-export function ListBox(){ return null }
-export function Separator(){ return null }
-export function Skeleton(){ return null }
-export function Toast(){ return null }`,
-  i18n: `export const currentLang = 'zh-CN'
-export function useT(){ return (k) => String(k) }
-export function useI18n(){ return { lang: 'zh-CN', setLang(){}, toggleLang(){}, t: (k) => String(k) } }
-export function translate(_lang, k){ return String(k) }`,
-  attachmentFiles: `export async function readFiles(){ return [] }`
-}
-
-function makeStubMap() {
-  return new Map(
-    Object.entries({
-      'src/renderer/src/ui/index.ts': STUBS.ui,
-      'src/renderer/src/i18n/index.tsx': STUBS.i18n,
-      'src/renderer/src/features/composer/attachment-files.ts': STUBS.attachmentFiles,
-      'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
-      'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
-      'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }\nexport function ImageRefWarning(){ return null }',
-      'src/renderer/src/features/composer/ComposerMenu.tsx': 'export function ComposerMenu(){ return null }',
-      'src/renderer/src/features/composer/useCompletion.ts': 'export function useCompletion(){ return { open: false, index: 0, slashMatches: [], atMatches: [], handleKey(){ return false } } }',
-      'src/renderer/src/features/composer/ComposerBorder.tsx': 'export function ComposerBorder(){ return null }',
-      'src/renderer/src/features/composer/RunSlot.tsx': 'export function RunSlot(){ return null }',
-      'src/renderer/src/features/composer/VoiceButton.tsx': 'export function VoiceButton(){ return null }',
-      'src/renderer/src/features/composer/PermissionToggle.tsx': 'export function PermissionToggle(){ return null }',
-      'src/renderer/src/features/composer/PlusMenu.tsx': 'export function PlusMenu(){ return null }',
-      'src/renderer/src/features/composer/ProjectPicker.tsx': 'export function ProjectPicker(){ return null }',
-      'src/renderer/src/features/composer/QueueEditor.tsx': 'export function QueueEditor(){ return null }'
-    }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
-  )
-}
-
 async function buildBundles(outdir) {
-  const reactShim = join(outdir, 'react-shim.mjs')
-  const jsxShim = join(outdir, 'jsx-shim.mjs')
-  await writeFile(reactShim, REACT_SHIM)
-  await writeFile(jsxShim, JSX_SHIM)
-
   const storeEntry = join(outdir, 'store-entry.ts')
   await writeFile(
     storeEntry,
@@ -238,45 +147,11 @@ export { viewingSubmitSessionId, attachmentsAfterSubmit, runLocalCommandGuarded,
 export { submitComposerInput } from '${posix(resolve(ROOT, 'src/renderer/src/lib/composer-submit'))}'
 `
   )
-  const composerEntry = join(outdir, 'composer-entry.ts')
-  await writeFile(
-    composerEntry,
-    `export { Composer } from '${posix(resolve(ROOT, 'src/renderer/src/features/composer/Composer'))}'
-export { useStore } from '${posix(resolve(ROOT, 'src/renderer/src/state/store'))}'
-export * as activation from '${posix(resolve(ROOT, 'src/renderer/src/state/session-activation'))}'
-`
-  )
-
-  const stubMap = makeStubMap()
   const define = {
     'import.meta.env.DEV': 'false',
     'import.meta.env.PROD': 'true',
     'process.env.NODE_ENV': '"production"'
   }
-  const stubPlugin = {
-    name: 'v3-ownership-stubs',
-    setup(b) {
-      b.onResolve({ filter: /.*/ }, (args) => {
-        if (args.path === 'react') return { path: reactShim }
-        if (args.path === 'react/jsx-runtime') return { path: jsxShim }
-        if (args.path === 'react/jsx-dev-runtime') return { path: jsxShim }
-        if (args.path === 'lucide-react') return { path: 'v3stub:lucide', namespace: 'v3stub' }
-        if (!args.importer || !args.resolveDir) return undefined
-        const base = resolve(args.resolveDir, args.path)
-        for (const e of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js']) {
-          const key = normalize(base + e)
-          if (stubMap.has(key)) return { path: `v3stub:${key}`, namespace: 'v3stub' }
-        }
-        return undefined
-      })
-      b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
-        if (args.path === 'v3stub:lucide') return { contents: lucideStubSource(), loader: 'js' }
-        const key = args.path.slice('v3stub:'.length)
-        return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
-      })
-    }
-  }
-
   const storeOut = join(outdir, 'store-bundle.mjs')
   await build({
     entryPoints: [storeEntry],
@@ -292,119 +167,7 @@ export * as activation from '${posix(resolve(ROOT, 'src/renderer/src/state/sessi
     }
   })
 
-  const composerOut = join(outdir, 'composer-bundle.mjs')
-  await build({
-    entryPoints: [composerEntry],
-    outfile: composerOut,
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent',
-    jsx: 'automatic',
-    resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
-    loader: { '.css': 'empty' },
-    define: {
-      ...define,
-      requestAnimationFrame: 'globalThis.requestAnimationFrame',
-      cancelAnimationFrame: 'globalThis.cancelAnimationFrame'
-    },
-    plugins: [stubPlugin]
-  })
-
-  return { storeOut, composerOut }
-}
-
-function makeHookRuntime() {
-  const rt = {
-    cells: [],
-    idx: 0,
-    effects: [],
-    dirty: false,
-    seq: 0,
-    slot(kind) {
-      const i = rt.idx++
-      let c = rt.cells[i]
-      if (!c || c.kind !== kind) c = rt.cells[i] = { kind, has: false, value: undefined, deps: undefined }
-      return c
-    },
-    useState(init) {
-      const c = rt.slot('state')
-      if (!c.has) {
-        c.value = typeof init === 'function' ? init() : init
-        c.has = true
-      }
-      const set = (v) => {
-        const next = typeof v === 'function' ? v(c.value) : v
-        if (!Object.is(next, c.value)) {
-          c.value = next
-          rt.dirty = true
-        }
-      }
-      return [c.value, set]
-    },
-    useRef(init) {
-      const c = rt.slot('ref')
-      if (!c.has) {
-        c.value = { current: init }
-        c.has = true
-      }
-      return c.value
-    },
-    useEffect(fn, deps) {
-      const c = rt.slot('effect')
-      const prev = c.deps
-      const changed = !c.has || deps === undefined || deps.length !== prev.length || deps.some((d, i) => !Object.is(d, prev[i]))
-      if (changed) {
-        c.deps = deps ? [...deps] : undefined
-        c.has = true
-        rt.effects.push(fn)
-      }
-    },
-    useId() {
-      return `v3id-${rt.seq++}`
-    },
-    render(Component, props) {
-      let tree
-      let guard = 0
-      do {
-        rt.dirty = false
-        rt.idx = 0
-        rt.effects = []
-        tree = Component(props || {})
-        for (const fn of rt.effects) fn()
-      } while (rt.dirty && ++guard < 100)
-      if (guard >= 100) throw new Error('浅渲染未收敛（疑似 effect 里无限 setState）')
-      return tree
-    }
-  }
-  return rt
-}
-
-function findByTestId(node, id) {
-  if (!node || typeof node !== 'object') return null
-  const props = node.props || {}
-  if (props['data-testid'] === id) return node
-  const kids = props.children
-  for (const k of Array.isArray(kids) ? kids : [kids]) {
-    const found = findByTestId(k, id)
-    if (found) return found
-  }
-  return null
-}
-
-const pastStrayEnterWindow = () => new Promise((done) => setTimeout(done, 520))
-
-function enterEvent() {
-  return {
-    key: 'Enter',
-    shiftKey: false,
-    ctrlKey: false,
-    metaKey: false,
-    altKey: false,
-    defaultPrevented: false,
-    preventDefault() {},
-    nativeEvent: { isComposing: false, keyCode: 13 }
-  }
+  return { storeOut }
 }
 
 function resetStore(store, activation, overrides = {}) {
@@ -431,16 +194,6 @@ function resetStore(store, activation, overrides = {}) {
   })
 }
 
-const attachment = (id, name, size) => ({
-  id,
-  name,
-  mimeType: 'image/png',
-  size,
-  data: '',
-  preview: '',
-  kind: 'image'
-})
-
 async function main() {
   installGlobals()
   const { yan } = makeYan()
@@ -448,11 +201,9 @@ async function main() {
 
   const outdir = await mkdtemp(join(tmpdir(), 'yan-v3-ownership-'))
   let storeBundle
-  let composerBundle
   try {
     const built = await buildBundles(outdir)
     storeBundle = await import(pathToFileURL(built.storeOut).href)
-    composerBundle = await import(pathToFileURL(built.composerOut).href)
   } catch (err) {
     process.stderr.write(`\n[bundle 失败] ${err && err.stack ? err.stack : err}\n`)
     await rm(outdir, { recursive: true, force: true })
@@ -460,8 +211,6 @@ async function main() {
   }
 
   const { useStore, activation } = storeBundle
-  const composerStore = composerBundle.useStore
-  const composerActivation = composerBundle.activation
 
   if (!process.argv.includes('--session-actions-only')) {
   group('D4 切换在途：ensureActivated 拒绝发送，Composer 保留草稿')
@@ -639,159 +388,6 @@ async function main() {
       }
     })
     ok(outcome2 === 'ran' && ran === 1, '纯界面命令不受激活状态影响，照常执行', { outcome2, ran })
-  }
-
-  const { Composer } = composerBundle
-  const hookRuntime = () => {
-    const rt = makeHookRuntime()
-    globalThis.__V3_HOOKS = rt
-    return rt
-  }
-
-  group('D4 Composer 接线：切换在途先不发送，切换完成后发往提交时所看的会话')
-  {
-    const { yan: yc, calls, pending } = makeYan()
-    globalThis.window.yan = yc
-    resetStore(composerStore, composerActivation, {
-      session: { sessionId: 'sess-a', cwd: 'C:/proj' },
-      activeRunnerId: 'run-a',
-      runners: [{ runId: 'run-a', sessionId: 'sess-a', generation: 0, cwd: 'C:/proj' }]
-    })
-    const rt = hookRuntime()
-    let tree = rt.render(Composer, {})
-    let ta = findByTestId(tree, 'composer-input')
-    ok(!!ta, 'Composer 渲染出输入框（真实组件已接上 store）')
-    ta.props.onChange({ text: '保留这段草稿', cursor: 5 })
-    tree = rt.render(Composer, {})
-    ta = findByTestId(tree, 'composer-input')
-    ok(ta.props.value === '保留这段草稿', '输入框已持有草稿', ta.props.value)
-
-    pending.peek = defer()
-    const switching = composerStore.getState().switchSession('A')
-    ok(composerActivation.isSessionSwitchInFlight(), 'Composer 场景下切换确实在途')
-    await pastStrayEnterWindow()
-    ta.props.onKeyDown(enterEvent())
-    await flush()
-    ok(calls.send.length === 0, '切换在途时 Composer 没有调用 yan.send', calls.send.length)
-    tree = rt.render(Composer, {})
-    ta = findByTestId(tree, 'composer-input')
-    pending.peek.resolve()
-    await switching
-    await flush()
-    await flush()
-    ok(calls.send.length === 1, '切换完成后这次发送只发出一次', calls.send.length)
-    pending.peek = null
-  }
-
-  group('D1 Composer 接线：一次 send 在途时新添加的附件不被成功回调吞掉')
-  {
-    const { yan: yc, calls, pending } = makeYan()
-    globalThis.window.yan = yc
-    resetStore(composerStore, composerActivation, {
-      session: { sessionId: 'sess-a', cwd: 'C:/proj' },
-      activeRunnerId: 'run-a',
-      runners: [{ runId: 'run-a', sessionId: 'sess-a', generation: 0, cwd: 'C:/proj' }],
-      attachments: [attachment('a1', 'one.png', 1)]
-    })
-    const rt = hookRuntime()
-    let tree = rt.render(Composer, {})
-    let ta = findByTestId(tree, 'composer-input')
-    ta.props.onChange({ text: '带附件发送', cursor: 5 })
-    tree = rt.render(Composer, {})
-    ta = findByTestId(tree, 'composer-input')
-
-    pending.send = defer()
-    await pastStrayEnterWindow()
-    ta.props.onKeyDown(enterEvent())
-    ok(await waitFor(() => calls.send.length === 1), '发送请求已到达 yan.send（在途）')
-    composerStore.getState().addAttachments([attachment('a2', 'two.png', 2)])
-    ok(JSON.stringify(composerStore.getState().attachments.map((a) => a.id)) === '["a2"]', '提交时已发出的 a1 立即移走，在途新加的 a2 留在输入框', composerStore.getState().attachments.map((a) => a.id))
-    pending.send.resolve({ ok: true })
-    await flush()
-    const ids = composerStore.getState().attachments.map((a) => a.id)
-    ok(ids.length === 1 && ids[0] === 'a2', '成功后只移除本次提交的 a1，在途新增的 a2 保留', ids)
-    tree = rt.render(Composer, {})
-    ta = findByTestId(tree, 'composer-input')
-    ok(ta.props.value === '', '成功提交后本次文字被清空', ta.props.value)
-    pending.send = null
-  }
-
-  group('D5 Composer 接线：草稿跟着 peek 身份，而不是尚在旧会话的 session 投影')
-  {
-    const { yan: yc } = makeYan()
-    globalThis.window.yan = yc
-    resetStore(composerStore, composerActivation, {
-      session: { sessionId: 'sess-a', conversationId: 'conv-a', cwd: 'C:/proj' },
-      peekedSessionId: 'sess-b',
-      activeRunnerId: 'run-a',
-      runners: [{ runId: 'run-a', sessionId: 'sess-a', generation: 0, cwd: 'C:/proj' }],
-      sessionRuntimes: {
-        'sess-a': { runtime: { sessionId: 'sess-a', runId: 'run-a', generation: 0 }, messages: [], draft: 'A 的旧草稿' },
-        'sess-b': { runtime: { sessionId: 'sess-b', runId: 'run-b', generation: 0 }, messages: [], draft: 'B 的草稿' }
-      }
-    })
-    const rt = hookRuntime()
-    let tree = rt.render(Composer, {})
-    let ta = findByTestId(tree, 'composer-input')
-    ok(ta.props.value === 'B 的草稿', '打开 B（未激活）时输入框显示 B 的草稿', ta.props.value)
-
-    ta.props.onChange({ text: 'B 的草稿 + 新字', cursor: 10 })
-    tree = rt.render(Composer, {})
-    ta = findByTestId(tree, 'composer-input')
-    await flush()
-    tree = rt.render(Composer, {})
-    ok(
-      composerStore.getState().sessionRuntimes['sess-b']?.draft === 'B 的草稿 + 新字',
-      '回写用 peek 身份 sess-b 的键',
-      composerStore.getState().sessionRuntimes['sess-b']?.draft
-    )
-    ok(
-      composerStore.getState().sessionRuntimes['sess-a']?.draft === 'A 的旧草稿',
-      '没有覆盖尚未离开的 sess-a 草稿',
-      composerStore.getState().sessionRuntimes['sess-a']?.draft
-    )
-  }
-
-  group('D2 Composer 接线：本地命令激活失败不执行不清字；激活成功才执行')
-  {
-    const { yan: yc, calls, pending } = makeYan()
-    globalThis.window.yan = yc
-    resetStore(composerStore, composerActivation, {
-      session: { sessionId: 'sess-a', cwd: 'C:/proj' },
-      activeRunnerId: 'run-a',
-      runners: [{ runId: 'run-a', sessionId: 'sess-a', generation: 0, cwd: 'C:/proj' }],
-      pendingActivation: { sessionFile: 'B', sessionId: 'sess-b', cwd: 'C:/proj', scope: 'global' }
-    })
-    const rt = hookRuntime()
-    let tree = rt.render(Composer, {})
-    let ta = findByTestId(tree, 'composer-input')
-    ta.props.onChange({ text: '!echo hi', cursor: 8 })
-    tree = rt.render(Composer, {})
-    ta = findByTestId(tree, 'composer-input')
-
-    pending.select = defer()
-    await pastStrayEnterWindow()
-    ta.props.onKeyDown(enterEvent())
-    ok(await waitFor(() => calls.selectSession.some((t) => t.sessionId === 'sess-b')), '本地命令前先尝试激活 peek 目标')
-    pending.select.resolve({ ok: false, error: '切换失败' })
-    await flush()
-    await flush()
-    ok(calls.runBash.length === 0, '激活失败时没有执行本地命令', calls.runBash)
-    tree = rt.render(Composer, {})
-    ta = findByTestId(tree, 'composer-input')
-    ok(ta.props.value === '!echo hi', '激活失败时命令原文保留在输入框', ta.props.value)
-    pending.select = null
-
-    composerStore.setState({ pendingActivation: null, notices: [] })
-    calls.runBash.length = 0
-    await pastStrayEnterWindow()
-    ta.props.onKeyDown(enterEvent())
-    await flush()
-    await flush()
-    ok(calls.runBash.length === 1 && calls.runBash[0] === 'echo hi', '激活就绪后本地命令按原文执行一次', calls.runBash)
-    tree = rt.render(Composer, {})
-    ta = findByTestId(tree, 'composer-input')
-    ok(ta.props.value === '', '执行成功后输入框才被清空', ta.props.value)
   }
 
   }

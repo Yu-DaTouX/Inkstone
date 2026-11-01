@@ -1552,7 +1552,7 @@ export function CollabPage(): ReactElement {
                 {text.cancel}
               </Button>
               <Button
-                variant={confirm?.danger ? 'destructive' : 'primary'}
+                variant={confirm?.danger ? 'danger' : 'primary'}
                 isPending={confirmBusy}
                 onPress={() => void confirmRun()}
                 data-testid="v3-collab-confirm-ok"

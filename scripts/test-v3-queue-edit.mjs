@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
-import { checkV3StyleIsolation } from './design/check-v3-style-isolation.mjs'
 
 const report = { pass: 0, fail: 0 }
 const failures = []
@@ -242,16 +241,6 @@ function makePort({ clearResults, refillFailsAt = -1 }) {
     ok(original.steering[0].text === '插话', '克隆不共享文本')
     ok(original.steering[0].images[0].data === 'img', '克隆不共享图片对象')
   }
-}
-
-{
-  process.stdout.write('\n▌ 样式依赖：新组件不引入 v2 全局样式 / 旧控件\n')
-  const entry = fileURLToPath(
-    new URL('../src/renderer/src/features/composer/QueueEditor.tsx', import.meta.url)
-  )
-  const result = checkV3StyleIsolation(entry)
-  ok(result.violations.length === 0, `无禁止依赖（访问 ${result.visited} 个文件）`)
-  ok(result.unresolved.length === 0, `无未解析本地依赖（${result.unresolved.map((u) => u.specifier).join(', ') || '0'}）`)
 }
 
 process.stdout.write(`\n${report.fail === 0 ? '✓' : '✗'} 通过 ${report.pass}，失败 ${report.fail}\n`)

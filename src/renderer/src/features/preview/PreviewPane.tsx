@@ -30,7 +30,6 @@ import {
   csvDelimiterOf,
   previewFormatIsFont,
   previewFormatOf,
-  previewFormatOpensAsSource,
   previewFormatUsesText,
   type PreviewFormat
 } from './preview-format'
@@ -281,7 +280,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
   const codeTarget: CodeViewTarget | null =
     tabTarget && activePath && samePath(tabTarget.path, activePath) ? { line: tabTarget.line, lineEnd: tabTarget.lineEnd, nonce: tabTarget.nonce } : null
   const liveRender = (liveMatch || prefersRenderedHtml(activeAbs || activePath)) && view.kind === 'text' && view.format === 'html'
-  const sourceMode = sourceChoice ?? (!liveRender && ((view.kind === 'text' && previewFormatOpensAsSource(view.format)) || !!codeTarget))
+  const sourceMode = sourceChoice ?? (!liveRender && !!codeTarget)
   const reading = textPreview && !sourceMode && !editing
   const [canvasChoice, setCanvasChoice] = useState<boolean | null>(readCanvasChoice)
   const fileHtml = view.kind === 'text' && view.format === 'html'

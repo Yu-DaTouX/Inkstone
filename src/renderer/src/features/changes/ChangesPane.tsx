@@ -1168,6 +1168,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               onCommit={requestCommit}
               onPush={requestPush}
               onOpenFile={selectFile}
+              listedBeside={fileList.shown}
             />
           ) : null}
         </>

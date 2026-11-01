@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
-import { EllipsisVertical, Eye, Maximize2, Minimize2, PanelRightClose } from 'lucide-react'
+import { EllipsisVertical, Eye, Minimize2, PanelRightClose } from 'lucide-react'
 import { create } from 'zustand'
 import { Button, EmptyState, IconButton, Spinner, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
@@ -139,22 +139,16 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         onMove={adapter.onMove}
       />
       <span className="rp-tabbar-actions">
-        {mode === 'inline' ? (
-          <IconButton
-            size="sm"
-            aria-label={adapter.maximized ? panel.restore : panel.maximize}
-            tooltip={adapter.maximized ? panel.restore : panel.maximize}
-            aria-pressed={adapter.maximized}
-            isDisabled={!entry.surfaces.length}
-            data-testid="rp-maximize"
-            onPress={adapter.onToggleMaximized}
-          >
-            {adapter.maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        {mode === 'inline' && adapter.maximized ? (
+          <IconButton size="sm" aria-label={panel.restore} tooltip={panel.restore} aria-pressed data-testid="rp-maximize" onPress={adapter.onToggleMaximized}>
+            <Minimize2 size={14} />
           </IconButton>
         ) : null}
-        <IconButton size="sm" aria-label={panel.hidePanel} tooltip={panel.hidePanel} data-testid="rp-hide" onPress={adapter.onHide}>
-          <PanelRightClose size={14} />
-        </IconButton>
+        {mode === 'inline' ? null : (
+          <IconButton size="sm" aria-label={panel.hidePanel} tooltip={panel.hidePanel} data-testid="rp-hide" onPress={adapter.onHide}>
+            <PanelRightClose size={14} />
+          </IconButton>
+        )}
       </span>
       {windowControls ? <WindowControls /> : null}
     </>

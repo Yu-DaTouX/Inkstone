@@ -1230,7 +1230,7 @@ export const DialogFooterConfirmStates: Story = {
               <p style={bodyStyle}>bare 按钮区：只排列按钮，不加底色。</p>
               <DialogFooter>
                 <Button variant="ghost">取消</Button>
-                <Button variant="destructive">删除</Button>
+                <Button variant="danger">删除</Button>
               </DialogFooter>
             </Dialog>
           </div>
@@ -1595,11 +1595,11 @@ export const CompactControlStates: Story = {
             <CloseButton isDisabled />
           </Row>
           <Row label="危险">
-            <Button variant="destructive">删除</Button>
-            <Button variant="destructive" size="sm">
+            <Button variant="danger">删除</Button>
+            <Button variant="danger" size="sm">
               删除
             </Button>
-            <Button variant="destructive" isDisabled>
+            <Button variant="danger" isDisabled>
               删除
             </Button>
             <Button variant="danger">次要危险</Button>

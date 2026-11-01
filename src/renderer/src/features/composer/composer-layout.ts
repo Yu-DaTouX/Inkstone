@@ -1,10 +1,3 @@
-export const COMPOSER_LINE_ORDER = ['plus', 'mode', 'input', 'voice', 'send'] as const
-
-export const COMPOSER_STATUS_ORDER = ['permission', 'project', 'context', 'model-thinking'] as const
-
-export type ComposerLineControl = (typeof COMPOSER_LINE_ORDER)[number]
-export type ComposerStatusControl = (typeof COMPOSER_STATUS_ORDER)[number]
-
 type ComposerMode = 'bash' | 'cmd' | null
 
 export function composerMode(value: string): ComposerMode {
@@ -40,43 +33,4 @@ export function composerPlaceholderKey(state: ComposerPlaceholderState): Compose
   if (state.bash) return 'composer.phBash'
   if (state.session) return 'composer.phSession'
   return state.firstRun ? 'composer.phFirst' : 'composer.phDraft'
-}
-
-interface ComposerSubmitState {
-  running: boolean
-  hasText: boolean
-  hasAttachments: boolean
-}
-
-export function composerSubmitAction(state: ComposerSubmitState): 'stop' | 'send' {
-  return state.running && !state.hasText && !state.hasAttachments ? 'stop' : 'send'
-}
-
-export function thinkingLevelIndex(levels: readonly string[], level: string): number {
-  const index = levels.indexOf(level)
-  return index < 0 ? 0 : index
-}
-
-export function thinkingLevelAt(levels: readonly string[], index: number): string | null {
-  if (!Number.isFinite(index)) return null
-  const clamped = Math.max(0, Math.min(levels.length - 1, Math.round(index)))
-  return levels[clamped] ?? null
-}
-
-export function thinkingDragAction(
-  levels: readonly string[],
-  index: number
-): { kind: 'preview'; level: string } | { kind: 'none' } {
-  const level = thinkingLevelAt(levels, index)
-  return level ? { kind: 'preview', level } : { kind: 'none' }
-}
-
-export function thinkingCommitAction(
-  levels: readonly string[],
-  index: number,
-  current: string
-): { kind: 'commit'; level: string } | { kind: 'none' } {
-  const level = thinkingLevelAt(levels, index)
-  if (!level || level === current) return { kind: 'none' }
-  return { kind: 'commit', level }
 }

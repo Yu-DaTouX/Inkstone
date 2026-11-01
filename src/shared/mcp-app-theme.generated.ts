@@ -17,9 +17,9 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--color-text-danger": "light-dark(#8E2626, #EC7E7E)",
   "--color-text-success": "light-dark(#006300, #7ACF82)",
   "--color-text-warning": "light-dark(#734500, #DB9300)",
-  "--color-border-primary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.11))",
-  "--color-border-secondary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.11))",
-  "--color-border-tertiary": "light-dark(rgba(11,11,11,.1), rgba(255,255,255,.08))",
+  "--color-border-primary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.14))",
+  "--color-border-secondary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.14))",
+  "--color-border-tertiary": "light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1))",
   "--color-ring-primary": "#2875D2",
   "--font-sans": "\"Segoe UI Variable Text\", \"Segoe UI Variable\", \"Segoe UI\", \"Noto Sans SC\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"PingFang SC\", \"Noto Sans CJK SC\", system-ui, sans-serif",
   "--font-mono": "\"Cascadia Mono\", \"Cascadia Code\", \"JetBrains Mono\", \"SF Mono\", Consolas, \"Microsoft YaHei UI\", monospace",
@@ -45,8 +45,8 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--border-radius-xl": "14px",
   "--border-radius-full": "9999px",
   "--border-width-regular": "1px",
-  "--shadow-hairline": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.08))",
-  "--shadow-sm": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.08))"
+  "--shadow-hairline": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1))",
+  "--shadow-sm": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1))"
 }
 
 export const APP_THEME_SHADOW_VARIABLES: Readonly<

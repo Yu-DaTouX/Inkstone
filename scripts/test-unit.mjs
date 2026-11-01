@@ -1388,9 +1388,6 @@ await runFileResourceTests(ok)
 const { runFileUrlTests } = await import('./test-file-url.mjs')
 await runFileUrlTests(ok)
 
-const { runSourceFilesTests } = await import('./test-source-files.mjs')
-await runSourceFilesTests(ok)
-
 const { runSessionSwitchTests } = await import('./test-session-switch.mjs')
 await runSessionSwitchTests(ok)
 

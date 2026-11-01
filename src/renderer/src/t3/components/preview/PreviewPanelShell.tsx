@@ -38,7 +38,7 @@ export interface PreviewPanelShellProps {
   children: ReactNode;
 }
 
-const DEFAULT_TOGGLE_SELECTOR = '[data-testid="rp-hide"]';
+const DEFAULT_TOGGLE_SELECTOR = '[data-testid="v3-head-panel-toggle"], [data-testid="rp-hide"]';
 const KEYBOARD_STEP = 16;
 
 export function PreviewPanelShell(props: PreviewPanelShellProps) {

@@ -131,7 +131,7 @@ export function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSid
             <IconButton
               tooltip={sessionBarLabel}
               aria-label={sessionBarLabel}
-              aria-pressed={sessionBarOpen}
+              aria-pressed={sessionBarOpen && !sessionBarHidden}
               className="v3-head-pane"
               onPress={onToggleSessionBar}
               data-testid="v3-head-sessionbar-toggle"

@@ -22,8 +22,24 @@ const EFFORT_LABELS: Record<string, string> = {
   max: 'Max'
 }
 
+const EFFORT_HINTS: Record<string, string> = {
+  off: 'Answers right away without reasoning.',
+  minimal: 'A quick glance before answering.',
+  low: 'Light reasoning for simple tasks.',
+  medium: 'Balanced reasoning for everyday work.',
+  high: 'Deep reasoning for hard problems.',
+  xhigh: 'Extended reasoning. Slower and uses more tokens.',
+  max: 'The full reasoning budget. Slowest and most expensive.'
+}
+
+export const EFFORT_TITLE = 'Thinking'
+
 function effortLabel(level: string): string {
   return EFFORT_LABELS[level] ?? level
+}
+
+export function effortHint(level: string): string {
+  return EFFORT_HINTS[level] ?? ''
 }
 
 export type ComposerTraitsAdapter = {

@@ -130,7 +130,7 @@ import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
 import { allowsConcurrentSessions, SHARED_CWD_NOTICE } from './cwd-sharing'
-import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolatedSessionCwd, isolationCwdKey, mergeIsolationBack, pendingIsolationChanges } from './session-isolation'
+import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolatedSessionCwd, isolationCwdKey, pendingIsolationChanges } from './session-isolation'
 import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
 import { localCommandDescriptors } from './command-registry'
 import { clearExitSnapshot, pickRestoreRunner, readExitSnapshot, writeExitSnapshot } from './exit-snapshot'
@@ -1014,23 +1014,6 @@ function warnSharedCwdOnce(runnerId: string, cwd: string, registry: RunnerRegist
     ch: 'notify',
     payload: { id: `shared-cwd-${runnerId}`, method: 'notify', notifyType: 'warning', message: SHARED_CWD_NOTICE }
   })
-}
-
-async function mergeIsolationForCwd(cwd: string): Promise<{ ok: boolean; error?: string }> {
-  const record = typeof cwd === 'string' ? await autoIsolations.byWorktree(cwd).catch(() => null) : null
-  if (!record) return { ok: false, error: '这个会话不在砚建的隔离工作树里' }
-  if (runners?.hasBusyCwd(isolatedSessionCwd(record))) return { ok: false, error: '这个会话还在运行，等它停下再合入' }
-  if (runners?.hasBusyCwd(record.mainCwd)) return { ok: false, error: '主工作目录里还有会话在运行，等它停下再合入' }
-  const result = await mergeIsolationBack(record)
-  if (!result.ok) {
-    isolationBlockedReason.set(record.worktree, result.detail)
-    setIsolationView(isolatedSessionCwd(record), { state: 'blocked', branch: record.branch })
-    return { ok: false, error: `${result.detail}。改动仍在隔离工作树里，没有丢。` }
-  }
-  isolationBlockedReason.delete(record.worktree)
-  setIsolationView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
-  if (result.action === 'merged') await autoIsolations.markSynced(record.worktree).catch(() => undefined)
-  return { ok: true }
 }
 
 function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnvelope | null): void {
@@ -2515,7 +2498,6 @@ function registerIpc(): void {
     await ac()?.abortBash()
   })
 
-  handle('yan:mergeIsolation', (cwd: string) => mergeIsolationForCwd(cwd))
   handle('yan:setVisibleRunnerSessions', (sessions: unknown) => {
     runners?.noteVisibleActivity()
     return runnerVisibility.update(sessions)

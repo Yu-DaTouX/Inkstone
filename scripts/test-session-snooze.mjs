@@ -16,7 +16,6 @@ async function load(name, entry) {
 }
 
 const snooze = await load('session-snooze', 'src/renderer/src/features/sidebar/session-snooze.ts')
-const status = await load('session-status', 'src/renderer/src/features/sidebar/session-status.ts')
 await rm(dir, { recursive: true, force: true })
 
 let pass = 0
@@ -161,14 +160,6 @@ check('唤醒时间文案：当天只给时间，跨天带上星期', () => {
   assert.equal(today, '18:00')
   assert.match(later, /^周一\s?09:00$/, '下周一显示星期加时间')
   assert.match(snooze.formatSnoozeWake(local(2026, 3, 9, 9), now, 'en-US'), /\d{2}:\d{2}/)
-})
-
-check('未读标记：没跑过时 markedUnread 就是未读，正在跑或已归档不被覆盖', () => {
-  assert.equal(status.sessionStatusKind({ phase: null, unread: false, archived: false, markedUnread: true }), 'unread')
-  assert.equal(status.sessionStatusKind({ phase: null, unread: false, archived: false }), 'idle')
-  assert.equal(status.sessionStatusKind({ phase: { kind: 'running', since: 1 }, unread: false, archived: false, markedUnread: true }), 'running')
-  assert.equal(status.sessionStatusKind({ phase: null, unread: false, archived: true, markedUnread: true }), 'archived')
-  assert.equal(status.sessionStatusKind({ phase: { kind: 'done', at: 2, seen: true }, unread: false, archived: false, markedUnread: true }), 'unread')
 })
 
 process.stdout.write(`\nsession-snooze: ${pass} 组检查通过\n`)

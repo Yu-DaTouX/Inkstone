@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { useT } from '../../../i18n'
 import { FluidEffortSlider } from '../../../ui/FluidEffortSlider'
-import type { ComposerTraitsAdapter } from '../../adapters/composer-thinking'
+import { EFFORT_TITLE, effortHint, type ComposerTraitsAdapter } from '../../adapters/composer-thinking'
 import { cn } from '../../lib/utils'
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import { ComposerControl, type ComposerControlSize } from './ComposerControl'
@@ -11,8 +11,8 @@ import { useComposerMenuState } from './useComposerMenuState'
 
 const WHEEL_STEP_INTERVAL_MS = 130
 const WHEEL_STEP_DELTA = 4
-const PANEL_HEIGHT = 98
-const PANEL_WIDTH = 360
+const PANEL_HEIGHT = 136
+const PANEL_WIDTH = 320
 
 function levelFallbackLabel(level: string): string {
   return level === 'xhigh' ? 'XHigh' : level.charAt(0).toUpperCase() + level.slice(1)
@@ -310,11 +310,15 @@ export function EffortSlider(props: {
   }, [open, setOpen])
 
   const columnReady = columnNode !== null
+  const [panelHeight, setPanelHeight] = useState(PANEL_HEIGHT)
   useEffect(() => {
     if (columnReady) columnRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
   }, [columnReady])
+  useLayoutEffect(() => {
+    if (columnNode && columnNode.offsetHeight > 0) setPanelHeight(columnNode.offsetHeight)
+  }, [columnNode])
 
-  const columnHeight = PANEL_HEIGHT
+  const columnHeight = panelHeight
   const alignedTop = anchor ? anchor.centerY - columnHeight - VIEWPORT_MARGIN : 0
   const columnTop = anchor
     ? Math.max(
@@ -410,6 +414,8 @@ export function EffortSlider(props: {
             >
               <FluidEffortSlider
                 label={descriptor.label}
+                title={EFFORT_TITLE}
+                describe={effortHint}
                 levels={levels}
                 value={currentLevel}
                 labelOf={labelOf}

@@ -238,10 +238,6 @@
     .composer-height-handle::after { transition: none; }
   }
 
-  .isolation-merge {
-    flex-wrap: wrap;
-  }
-
   .composer-wrap {
     position: relative;
     display: flex;

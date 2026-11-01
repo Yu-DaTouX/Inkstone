@@ -399,11 +399,9 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
         : 'slim'
 
   const shelfFirst =
-    sections.working.length > 0
-      ? 'working'
-      : sections.snoozed.length > 0
+    sections.snoozed.length > 0
         ? 'snoozed'
-        : sections.settled.length > 0
+        : sections.settled.length > 0 || sections.working.length > 0
           ? 'settled'
           : null
 
@@ -530,10 +528,8 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
           <SidebarSectionHeader
             key="working-shelf-header"
             marker="working-header"
-            className={shelfFirst === 'working' ? 'mt-auto' : undefined}
             label={labels.working}
             count={sections.working.length}
-            undoNotice={shelfFirst === 'working' ? props.undoNotice : undefined}
             toggle={{
               expanded: shelves.working,
               onToggle: () => props.onToggleShelf?.('working')

@@ -850,6 +850,8 @@
   "queue.steerNowTip": "Inject this into the running turn now (pi's steer)",
   "queue.steerTip": "Steer: inject into the running turn now",
   "queue.clearAll": "Clear all",
+  "queue.cleared": "Cleared {n} queued messages",
+  "queue.undoClear": "Undo",
   "queue.clearAllTip": "Clear every queued message; held messages go back to the draft",
   "queue.count": "{n} queued",
   "queue.next": "Next: {text}",

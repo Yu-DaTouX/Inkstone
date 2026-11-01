@@ -161,15 +161,6 @@
   .ui-btn--danger[data-pressed] {
     background: var(--fail-bg);
   }
-  .ui-btn--destructive {
-    background: var(--fail);
-    border-color: var(--fail);
-    color: var(--on-ink);
-  }
-  .ui-btn--destructive[data-pressed] {
-    background: color-mix(in srgb, var(--fail) 82%, var(--ink));
-    border-color: color-mix(in srgb, var(--fail) 82%, var(--ink));
-  }
   .ui-btn[data-disabled] {
     opacity: 0.4;
     cursor: default;
@@ -259,10 +250,6 @@
     }
     .ui-btn--danger:hover:not([data-disabled]):not([data-pending]) {
       background: var(--fail-bg);
-    }
-    .ui-btn--destructive:hover:not([data-disabled]):not([data-pending]) {
-      background: color-mix(in srgb, var(--fail) 90%, var(--ink));
-      border-color: color-mix(in srgb, var(--fail) 90%, var(--ink));
     }
     .ui-btn--plain:hover:not([data-disabled]):not([data-pending]) {
       color: var(--fg);
@@ -1327,6 +1314,9 @@
     font: var(--t-caption) / var(--t-caption-lh) var(--font-ui);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+  }
+  .ui-badge--neutral:not(.ui-badge--overlay) {
+    box-shadow: var(--ring-line);
   }
   .ui-badge--accent {
     background: var(--sel);

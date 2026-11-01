@@ -187,6 +187,10 @@ export function buildSidebarListItems(input: {
   const rows = (keys: readonly string[], section: SidebarSection): SidebarListItem[] =>
     keys.map((key) => ({ kind: 'thread', key, section }))
   const items: SidebarListItem[] = []
+  if (input.showWorkingShelf !== false && input.working.length > 0) {
+    items.push({ kind: 'marker', marker: 'working-header' })
+    items.push(...rows(input.visibleWorking ?? input.working, 'working'))
+  }
   if (input.pinned.length > 0 || input.active.length > 0) {
     items.push({ kind: 'marker', marker: 'pinned-header' })
     items.push(...rows(input.pinned, 'pinned'))
@@ -194,10 +198,6 @@ export function buildSidebarListItems(input: {
   }
   items.push({ kind: 'marker', marker: 'active-placeholder' })
   items.push(...rows(input.active, 'active'))
-  if (input.showWorkingShelf !== false && input.working.length > 0) {
-    items.push({ kind: 'marker', marker: 'working-header' })
-    items.push(...rows(input.visibleWorking ?? input.working, 'working'))
-  }
   if (input.showSnoozedShelf !== false && input.snoozed.length > 0) {
     items.push({ kind: 'marker', marker: 'snoozed-header' })
     items.push(...rows(input.visibleSnoozed ?? input.snoozed, 'snoozed'))

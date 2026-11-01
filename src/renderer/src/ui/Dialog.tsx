@@ -190,7 +190,7 @@ export function ConfirmDialog({
               {cancelLabel ?? t('ui.cancel')}
             </Button>
             <Button
-              variant={tone === 'danger' ? 'destructive' : 'primary'}
+              variant={tone === 'danger' ? 'danger' : 'primary'}
               onPress={confirm}
               isDisabled={isConfirmDisabled}
               isPending={pending}

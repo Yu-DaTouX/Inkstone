@@ -361,11 +361,11 @@ function sanitizeRemoteAccess(value: unknown): AppSettings['remoteAccess'] {
   if (!value || typeof value !== 'object') return undefined
   const raw = value as Record<string, unknown>
   const port = Number(raw.port)
-  const bind = typeof raw.bind === 'string' ? raw.bind.trim() : 'tailscale'
+  const bind = typeof raw.bind === 'string' ? raw.bind.trim() : 'loopback'
   const ipv4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/
   return {
     enabled: raw.enabled === true,
-    bind: bind === 'tailscale' || bind === 'radmin' || bind === 'loopback' || (ipv4.test(bind) && bind !== '0.0.0.0') ? bind : 'tailscale',
+    bind: bind === 'tailscale' || bind === 'radmin' || bind === 'loopback' || (ipv4.test(bind) && bind !== '0.0.0.0') ? bind : 'loopback',
     port: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 37892,
     ...(sanitizeRelay(raw.relay) ? { relay: sanitizeRelay(raw.relay) } : {})
   }

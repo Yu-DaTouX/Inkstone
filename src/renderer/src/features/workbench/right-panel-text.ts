@@ -19,7 +19,6 @@ export interface RightPanelText {
   closeOthers: string
   closeRight: string
   closeAll: string
-  maximize: string
   restore: string
   hidePanel: string
   resize: string
@@ -45,7 +44,6 @@ const ZH: RightPanelText = {
   closeOthers: '关闭其他标签',
   closeRight: '关闭右侧标签',
   closeAll: '关闭全部标签',
-  maximize: '最大化面板',
   restore: '还原面板',
   hidePanel: '收起右侧面板',
   resize: '调整右侧面板宽度',
@@ -80,7 +78,6 @@ const EN: RightPanelText = {
   closeOthers: 'Close other tabs',
   closeRight: 'Close tabs to the right',
   closeAll: 'Close all tabs',
-  maximize: 'Maximize panel',
   restore: 'Restore panel',
   hidePanel: 'Hide right panel',
   resize: 'Resize right panel',

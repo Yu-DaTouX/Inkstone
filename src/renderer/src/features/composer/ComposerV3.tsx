@@ -18,6 +18,8 @@ import { ComposerStashMenuV3, composerStashFrameProps } from '../../t3/component
 import { ProviderModelPicker } from '../../t3/components/chat/ProviderModelPicker'
 import { QueuedRunsControl } from '../../t3/components/chat/QueuedRunsControl'
 import { PlanCard } from './PlanCard'
+import { usePastedTextAttach } from './use-pasted-text'
+import { ComposerVoiceButton } from '../../t3/components/chat/ComposerVoiceButton'
 import { setComposerEditorHandle, useComposerMenuProps } from '../../t3/components/chat/composerEventScope'
 import { useAttachmentAdapter, useComposerDropTarget } from '../../t3/adapters/composer-attachments'
 import { useComposerSubmitAdapter } from '../../t3/adapters/composer-submit'
@@ -148,6 +150,7 @@ export function ComposerV3(): JSX.Element {
   const notice = useComposerNotice(value)
   const rootRef = useRef<HTMLDivElement>(null)
   useSessionQuoteDrop(rootRef)
+  const attachPastedText = usePastedTextAttach(rootRef)
   const stash = usePromptStashAdapter({ value, rootRef, onStashed: () => setValue('') })
   const stashFrame = composerStashFrameProps(stash, t)
   const submitAdapter = useComposerSubmitAdapter({
@@ -463,12 +466,21 @@ export function ComposerV3(): JSX.Element {
     else if (plan.action === 'abort') void abort()
   }
 
+  const appendVoiceText = (text: string): void => {
+    const spoken = text.trim()
+    if (!spoken) return
+    setValue((draft) => (/[A-Za-z0-9]$/.test(draft) && /^[A-Za-z0-9]/.test(spoken) ? `${draft} ${spoken}` : `${draft}${spoken}`))
+  }
+
   const onPaste = (event: ComposerPasteEvent): void => {
     const files = [...event.clipboardData.items]
       .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
       .map((item) => item.getAsFile())
       .filter((file): file is File => !!file)
-    if (files.length === 0) return
+    if (files.length === 0) {
+      if (attachPastedText(event.clipboardData.getData('text/plain'))) event.preventDefault()
+      return
+    }
     event.preventDefault()
     attachments.addFiles(files)
   }
@@ -606,7 +618,12 @@ export function ComposerV3(): JSX.Element {
           </>
         }
         notice={notice ? <ComposerNotice message={notice.message} tone={notice.tone} slot="image-ref" /> : null}
-        footerLeading={<ComposerAttachButton onFiles={attachments.addFiles} />}
+        footerLeading={
+          <>
+            <ComposerAttachButton onFiles={attachments.addFiles} />
+            <ComposerVoiceButton onText={appendVoiceText} scope={sessionId ?? undefined} />
+          </>
+        }
         controls={<ComposerModelControls />}
         primaryActions={
           <>

@@ -51,8 +51,6 @@ check('六类格式都按扩展名识别，HTML 默认先看源码', () => {
   assert.equal(format.previewFormatIsMedia('csv'), false)
   assert.equal(format.previewFormatUsesText('csv'), true)
   assert.equal(format.previewFormatUsesText('pdf'), false)
-  assert.equal(format.previewFormatOpensAsSource('html'), true)
-  assert.equal(format.previewFormatOpensAsSource('svg'), false)
 })
 
 check('TSV 用制表符，其余 CSV 用逗号', () => {

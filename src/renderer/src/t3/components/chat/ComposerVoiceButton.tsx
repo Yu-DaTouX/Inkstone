@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Mic, Square, X } from 'lucide-react'
-import { encodeWav16k, VOICE_MAX_SECONDS } from '../../../../shared/voice-input'
-import { useT } from '../../i18n'
-import { useStore } from '../../state/store'
-import { IconButton } from '../../ui'
-import { IconTip } from '../../app/IconTip'
+import { encodeWav16k, VOICE_MAX_SECONDS } from '../../../../../shared/voice-input'
+import { useT } from '../../../i18n'
+import { useStore } from '../../../state/store'
+import { IconButton } from '../../../ui'
+import { Button } from '../ui/button'
+import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
 
 type Phase =
   | { kind: 'idle' }
@@ -13,7 +14,7 @@ type Phase =
   | { kind: 'transcribing' }
   | { kind: 'error'; message: string }
 
-export function VoiceButton({ onText, disabled, scope }: { onText: (text: string) => void; disabled?: boolean; scope?: string }) {
+export function ComposerVoiceButton({ onText, disabled, scope }: { onText: (text: string) => void; disabled?: boolean; scope?: string }) {
   const t = useT()
   const openSettings = useStore((s) => s.openSettings)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
@@ -184,24 +185,22 @@ export function VoiceButton({ onText, disabled, scope }: { onText: (text: string
           size="sm"
           className="composer-voice-action"
           aria-label={t('voice.stop')}
-          title={t('voice.stop')}
+          tooltip={t('voice.stop')}
           data-testid="voice-stop"
           onPress={stop}
         >
           <Square size={12} aria-hidden />
         </IconButton>
-        <IconTip label={t('voice.cancel')}>
-          <IconButton
-            size="sm"
-            className="composer-voice-action"
-            aria-label={t('voice.cancel')}
-            title={t('voice.cancel')}
-            data-testid="voice-cancel"
-            onPress={cancel}
-          >
-            <X size={12} aria-hidden />
-          </IconButton>
-        </IconTip>
+        <IconButton
+          size="sm"
+          className="composer-voice-action"
+          aria-label={t('voice.cancel')}
+          tooltip={t('voice.cancel')}
+          data-testid="voice-cancel"
+          onPress={cancel}
+        >
+          <X size={12} aria-hidden />
+        </IconButton>
       </span>
     )
   }
@@ -209,18 +208,25 @@ export function VoiceButton({ onText, disabled, scope }: { onText: (text: string
   const busy = disabled || phase.kind === 'preparing' || phase.kind === 'transcribing'
   return (
     <span className="composer-voice" data-state={phase.kind}>
-      <IconTip label={t('voice.start')}>
-        <IconButton
-          className="composer-voice-action"
-          aria-label={t('voice.start')}
-          title={t('voice.start')}
-          isDisabled={busy}
-          data-testid="voice-start"
-          onPress={() => void start()}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('voice.start')}
+              disabled={busy}
+              data-testid="voice-start"
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => void start()}
+            />
+          }
         >
-          <Mic size={16} aria-hidden />
-        </IconButton>
-      </IconTip>
+          <Mic aria-hidden />
+        </TooltipTrigger>
+        <TooltipPopup>{t('voice.start')}</TooltipPopup>
+      </Tooltip>
       {phase.kind === 'preparing' ? <span className="composer-voice-state">{t('voice.preparing')}</span> : null}
       {phase.kind === 'transcribing' ? <span className="composer-voice-state">{t('voice.transcribing')}</span> : null}
       {phase.kind === 'error' ? (

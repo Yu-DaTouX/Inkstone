@@ -313,7 +313,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
       : null;
   const inFolder = variant === "folder" || variant === "folder-multiline";
   const metaLineEmpty =
-    !view.branch && view.diff === null && view.worktreePath === null && view.modelLabel === null;
+    !view.branch && view.diff === null && view.worktreePath === null;
 
   const sortableProps = sortable
     ? {
@@ -626,11 +626,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         <span className="flex-1" />
       )}
       <ThreadDiffCount diff={view.diff} />
-      {view.modelLabel ? (
-        <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-          {view.modelLabel}
-        </span>
-      ) : null}
     </div>
   );
 

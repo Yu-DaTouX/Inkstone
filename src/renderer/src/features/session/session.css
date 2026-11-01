@@ -87,7 +87,8 @@
       animation: none;
     }
   }
-  .v3-msg.user { align-items: flex-end; padding-top: 0; margin-bottom: 0; }
+  .v3-msg.user { position: relative; align-items: flex-end; padding-top: 0; margin-bottom: 0; }
+  .v3-msg.user::before { content: ''; position: absolute; inset-inline: 0; bottom: 100%; height: var(--s-6); }
   .v3-msg.user .v3-user-actions { position: relative; z-index: 1; margin-bottom: calc(-1 * var(--s-8)); }
   .v3-msg.user .v3-user-actions:has(> .branch-pager) { margin-bottom: var(--s-6); padding-top: var(--s-2); }
   :is(.v3-stream-inner > .v3-msg.user:first-child, .v3-stream-row--head > .v3-msg.user) { padding-top: 0; }

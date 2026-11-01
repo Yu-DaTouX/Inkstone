@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from 'react'
 import type { QueueState } from '../../../../shared/ipc'
 import { pendingSendsForView, useStore, type PendingSend } from '@/state/store'
+import { useT } from '../../i18n'
+import { showToast } from '../../ui'
 
 export type QueueRowKind = 'pending' | 'steering' | 'followUp'
 
@@ -78,7 +80,29 @@ export function buildQueueRows(
   ]
 }
 
+function activeRunnerRunning(): boolean {
+  const state = useStore.getState()
+  return state.runners.find((r) => (r.runId ?? r.id) === state.activeRunnerId)?.running === true
+}
+
+async function requeueRows(rows: readonly QueueRow[]): Promise<void> {
+  const store = useStore.getState()
+  const running = activeRunnerRunning()
+  const back: string[] = []
+  for (const row of rows) {
+    const images = row.images.map((image) => ({ ...image }))
+    if (row.kind === 'pending') store.holdSend(row.text, images)
+    else if (running) await store.send(row.text, images, row.kind === 'steering' ? 'steer' : 'followUp')
+    else if (row.text) back.push(row.text)
+  }
+  if (back.length) {
+    const text = back.join('\n')
+    useStore.setState((state) => ({ queueRestore: state.queueRestore ? `${text}\n${state.queueRestore}` : text }))
+  }
+}
+
 export function useQueueAdapter(): QueueAdapter {
+  const t = useT()
   const queue = useStore((s) => s.queue)
   const allPending = useStore((s) => s.pendingSends)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
@@ -130,9 +154,23 @@ export function useQueueAdapter(): QueueAdapter {
   }, [])
   const clearAll = useCallback(() => {
     const state = useStore.getState()
+    const cleared = buildQueueRows(state.queue, pendingSendsForView(state))
     for (const item of pendingSendsForView(state)) state.discardSend(item.id)
     void state.applyQueueOp({ op: 'clear' })
-  }, [])
+    if (!cleared.length) return
+    let undone = false
+    showToast(t('queue.cleared', { n: cleared.length }), {
+      timeout: 8000,
+      action: {
+        label: t('queue.undoClear'),
+        onAction: () => {
+          if (undone) return
+          undone = true
+          void requeueRows(cleared)
+        }
+      }
+    })
+  }, [t])
 
   return {
     rows,

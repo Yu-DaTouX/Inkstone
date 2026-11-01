@@ -1732,7 +1732,6 @@ export interface YanBridge {
   }>
   setVisibleRunnerSessions(sessions: VisibleRunnerSession[]): Promise<boolean>
   runnerStatuses(): Promise<RunnerStatus[]>
-  mergeIsolation(cwd: string): Promise<{ ok: boolean; error?: string }>
   stopRunner(id: string): Promise<boolean>
   runs: {
     snapshot(): Promise<{ revision: number; runs: import('./runs').RunSnapshot[] }>

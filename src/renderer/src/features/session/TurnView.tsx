@@ -28,6 +28,7 @@ import { forkAt } from '../../lib/fork'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import { findTurnModel, turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
+import { TurnApprovalLine } from './ApprovalReceipt'
 import { LiveRunNotice } from './RunNotice'
 import { QuotaResumeNotice } from './QuotaResumeNotice'
 import { CompactCommandEcho, CompactionMarker } from './CompactionMarker'
@@ -252,6 +253,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const flow = flowSegments(sourceTurn, commentary)
   const split = flow ? splitTurnProcess(flow, { keepThinking: !aside }) : null
   const processSegs = split?.process ?? []
+  const processApprovals = streaming ? [] : processSegs.flatMap((segment) => segment.tools.flatMap((call) => (call.approval ? [call.approval] : [])))
   const decision = !streaming && !wrapUp && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
   const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
@@ -266,7 +268,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
 
   return (
     <TranscriptViewScope.Provider value={view}>
-      <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length} data-transcript-view={view} data-aside={asideThinking ? '' : undefined} data-aside-fit={asideThinking && asideFits ? '' : undefined}>
+      <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tail={tail ? '' : undefined} data-tools={turn.tools.length} data-transcript-view={view} data-aside={asideThinking ? '' : undefined} data-aside-fit={asideThinking && asideFits ? '' : undefined}>
         {asideThinking ? <ThinkingAside text={asideThinking} ms={sourceTurn.thinkingMs} live={sourceTurn.thinkingLive} stacked={!asideFits} /> : null}
         <WebSearchTurnProvider tools={turn.tools}>
         <div className="v3-assistant-body">
@@ -300,6 +302,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   filesShownBelow={!!changes}
                 />
               ) : null}
+              {processApprovals.length ? <TurnApprovalLine approvals={processApprovals} /> : null}
               {askedCards}
               {split.earlierReplies.map((segment) => (
                 <div key={segment.id} className="v3-seg" data-testid="v3-seg">

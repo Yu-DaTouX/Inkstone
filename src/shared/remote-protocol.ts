@@ -103,7 +103,7 @@ export interface RemoteAccessSettings {
 
 export const DEFAULT_REMOTE_ACCESS_SETTINGS: RemoteAccessSettings = {
   enabled: false,
-  bind: 'tailscale',
+  bind: 'loopback',
   port: REMOTE_DEFAULT_PORT
 }
 

@@ -48,7 +48,3 @@ export function previewFormatIsMedia(format: PreviewFormat | null): boolean {
 export function previewFormatIsFont(format: PreviewFormat | null): boolean {
   return format === 'font'
 }
-
-export function previewFormatOpensAsSource(format: PreviewFormat | null): boolean {
-  return format === 'html'
-}

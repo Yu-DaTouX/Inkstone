@@ -9,8 +9,9 @@ import { WINDOWS_MCP_SERVER_ID, canImportMcp, verificationTone } from './model'
 import { McpAppOwnership } from './McpAppOwnership'
 import { McpAppRefresh } from './McpAppRefresh'
 import { McpImportControl } from './McpImportControl'
-import type { NativeMcpAction } from './NativeMcpList'
 import { McpServices } from './McpServices'
+
+type NativeMcpAction = 'login' | 'logout' | 'reconnect'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)

@@ -8,22 +8,29 @@ import './FluidEffortSlider.css'
 
 export function FluidEffortSlider(props: {
   label: string
+  title?: string
   levels: readonly string[]
   value: string
   labelOf: (level: string) => string
+  describe?: (level: string) => string
   onChange: (level: string) => void
   disabled?: boolean
 }) {
   const { levels, value, disabled } = props
   const [preview, setPreview] = useState<string | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
   const current = preview ?? value
+  const shown = hovered ?? current
   const index = Math.max(0, levels.indexOf(current))
+  const shownIndex = Math.max(0, levels.indexOf(shown))
   const trackRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const probeRef = useRef<HTMLSpanElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const fieldRef = useRef<PulseField | null>(null)
   const palette = levels.join('|')
+  const last = Math.max(1, levels.length - 1)
+  const description = props.describe?.(shown) ?? ''
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -37,7 +44,7 @@ export function FluidEffortSlider(props: {
       const surface = resolveColor(probe, 'var(--surface)')
       engine.setColors({
         levels: palette.split('|').map((level) => resolveColor(probe, `var(--think-${level}, var(--fg3))`)),
-        off: foreground.map((channel, i) => channel + (surface[i] - channel) * 0.72) as [number, number, number],
+        off: foreground.map((channel, i) => channel + (surface[i] - channel) * 0.5) as [number, number, number],
         dark: document.documentElement.dataset.theme === 'dark'
       })
     }
@@ -62,14 +69,21 @@ export function FluidEffortSlider(props: {
   }, [current, props.labelOf])
 
   return (
-    <div className="ui-fluid-effort" style={{ '--fluid-tone': `var(--think-${current}, var(--fg3))` } as CSSProperties}>
-      <div className="ui-fluid-effort__value" aria-live="polite">
-        <FlipText text={props.labelOf(current)} position={index} />
+    <div
+      className="ui-fluid-effort"
+      data-previewing={hovered !== null && hovered !== current ? 'true' : undefined}
+      style={{ '--fluid-tone': `var(--think-${current}, var(--fg3))`, '--fluid-shown': `var(--think-${shown}, var(--fg3))` } as CSSProperties}
+    >
+      <div className="ui-fluid-effort__head">
+        <span className="ui-fluid-effort__title">{props.title ?? props.label}</span>
+        <span className="ui-fluid-effort__value" aria-live="polite">
+          <FlipText text={props.labelOf(shown)} position={shownIndex} />
+        </span>
       </div>
       <Slider
         aria-label={props.label}
         minValue={0}
-        maxValue={Math.max(1, levels.length - 1)}
+        maxValue={last}
         step={1}
         value={index}
         isDisabled={disabled}
@@ -93,6 +107,31 @@ export function FluidEffortSlider(props: {
           </SliderTrack>
         </div>
       </Slider>
+      <div className="ui-fluid-effort__stops" onPointerLeave={() => setHovered(null)}>
+        {levels.map((level, i) => (
+          <button
+            key={level}
+            type="button"
+            tabIndex={-1}
+            disabled={disabled}
+            className="ui-fluid-effort__stop"
+            data-stop-state={i === index ? 'current' : i < index ? 'below' : 'above'}
+            data-level={level}
+            aria-label={props.labelOf(level)}
+            style={{ left: `${(i / last) * 100}%`, '--stop-tone': `var(--think-${level}, var(--fg3))` } as CSSProperties}
+            onPointerEnter={() => setHovered(level)}
+            onClick={() => {
+              setHovered(null)
+              if (level !== value) props.onChange(level)
+            }}
+          />
+        ))}
+      </div>
+      {description ? (
+        <p className="ui-fluid-effort__hint" data-testid="effort-description">
+          {description}
+        </p>
+      ) : null}
     </div>
   )
 }

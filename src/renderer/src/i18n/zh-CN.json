@@ -850,6 +850,8 @@
   "queue.steerNowTip": "现在就把这条插进正在跑的这轮（等价于 pi 的 steer）",
   "queue.steerTip": "插话：现在就插入正在跑的这轮",
   "queue.clearAll": "全部清除",
+  "queue.cleared": "已清除 {n} 条排队消息",
+  "queue.undoClear": "撤销",
   "queue.clearAllTip": "清掉所有排队的消息；待投递的消息放回草稿",
   "queue.count": "{n} 条排队",
   "queue.next": "下一条：{text}",
