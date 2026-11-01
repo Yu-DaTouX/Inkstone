@@ -198,6 +198,7 @@ export function ComposerV3(): JSX.Element {
   const lastEsc = useRef(0)
   const commands = useStore((s) => s.commands)
   const composerFocus = useStore((s) => s.composerFocus)
+  const composerInsert = useStore((s) => s.composerInsert)
   const editorInject = useStore((s) => s.editorInject)
   const queueRestore = useStore((s) => s.queueRestore)
   const abort = useStore((s) => s.abort)
@@ -284,6 +285,15 @@ export function ComposerV3(): JSX.Element {
     }
     if (draftReady) setSessionDraft(value, draftKey)
   }, [draftReady, draftKey, setSessionDraft, value])
+
+  useEffect(() => {
+    const pending = useStore.getState().composerInsert
+    if (pending === null) return
+    useStore.getState().clearComposerInsert()
+    setValue((draft) => appendBlock(draft, pending))
+    armStrayEnter()
+    requestAnimationFrame(() => editorRef.current?.focus({ preventScroll: true }))
+  }, [composerInsert, armStrayEnter])
 
   useEffect(() => {
     if (editorInject === null) return

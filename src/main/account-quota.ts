@@ -1,6 +1,6 @@
 import { net } from 'electron'
 import { createHash } from 'node:crypto'
-import { resolveQuotaProviderSecret } from './quota-credentials'
+import { customCommandCodeQuotaProviders, resolveQuotaProviderCredential } from './quota-credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
 import { quotaSamples } from './quota-samples'
 import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
@@ -72,12 +72,13 @@ function yanOpenRouterCard(account: OAuthAccountTarget): Promise<AccountQuotaCar
   })
 }
 
-async function yanKeyCard(provider: { id: string; name: string }): Promise<AccountQuotaCard | null> {
-  const secret = await resolveQuotaProviderSecret(provider.id)
+async function yanKeyCard(provider: { id: string; name: string; quotaProvider?: string }): Promise<AccountQuotaCard | null> {
+  const { secret, error } = await resolveQuotaProviderCredential(provider.id, { quotaProvider: provider.quotaProvider })
+  if (error) return { key: `yan:${provider.id}:configuration`, source: 'yan', provider: provider.id, name: provider.name, status: 'error', windows: [], checkedAt: Date.now(), error }
   if (!secret) return null
   const identity = createHash('sha256').update(secret).digest('hex').slice(0, 24)
   return settle({ key: `yan:${provider.id}:${identity}`, source: 'yan', provider: provider.id, name: provider.name }, async () => {
-    const q = await providerQuota(provider.id, undefined, secret)
+    const q = await providerQuota(provider.quotaProvider ?? provider.id, undefined, secret)
     const windows = q.windows ?? []
     const hasData = windows.length > 0 || q.remaining !== undefined
     if (q.error && !hasData) return { status: 'error', error: q.error }
@@ -109,13 +110,17 @@ export function accountQuotaReport(): Promise<AccountQuotaReport> {
 }
 
 async function buildReport(): Promise<AccountQuotaReport> {
-  const [targets, claude, openrouter] = await Promise.all([
+  const [targets, claude, openrouter, commandCodeAliases] = await Promise.all([
     codexAccountTargets().catch(() => [] as CodexAccountTarget[]),
     oauthAccountTargets('anthropic').catch(() => [] as OAuthAccountTarget[]),
-    oauthAccountTargets('openrouter').catch(() => [] as OAuthAccountTarget[])
+    oauthAccountTargets('openrouter').catch(() => [] as OAuthAccountTarget[]),
+    customCommandCodeQuotaProviders()
   ])
   targets.sort((a, b) => Number(b.active) - Number(a.active))
-  const keyProviders = KEY_PROVIDERS.filter((p) => p.id !== 'openrouter' || !openrouter.some((a) => a.active))
+  const keyProviders = [
+    ...KEY_PROVIDERS.filter((p) => p.id !== 'openrouter' || !openrouter.some((a) => a.active)),
+    ...commandCodeAliases.map((id) => ({ id, name: `Command Code · ${id}`, quotaProvider: 'commandcode' }))
+  ]
   const jobs: Array<Promise<AccountQuotaCard | null>> = [...targets.map(yanCodexCard), ...claude.map(yanClaudeCard), ...openrouter.map(yanOpenRouterCard), ...keyProviders.map(yanKeyCard)]
   const settled = await Promise.all(jobs.map((job) => job.catch(() => null)))
   const merged = mergeDuplicateCards(settled.filter((c): c is AccountQuotaCard => !!c))

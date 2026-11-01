@@ -6,9 +6,10 @@ const EMPTY_ENTRIES: ReadonlyArray<ProviderInstanceEntry> = [];
 function entryFrom(
   provider: string,
   info: AuthProviderInfo | undefined,
+  hasAvailableModels: boolean,
   setupMessage: (kind: "signIn" | "apiKey") => string,
 ): ProviderInstanceEntry {
-  const ready = info?.status === "ready";
+  const ready = hasAvailableModels || info?.status === "ready";
   const unknown = info?.status === "unknown" || info === undefined;
   return {
     instanceId: provider,
@@ -55,7 +56,10 @@ export function providerInstanceEntries(input: {
     }
   }
   if (ids.length === 0) return EMPTY_ENTRIES;
-  return ids.map((provider) => entryFrom(provider, byId.get(provider), input.setupMessage));
+  const availableProviders = new Set(input.models.map((model) => model.provider));
+  return ids.map((provider) =>
+    entryFrom(provider, byId.get(provider), availableProviders.has(provider), input.setupMessage),
+  );
 }
 
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {

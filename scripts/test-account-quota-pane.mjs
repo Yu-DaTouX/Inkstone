@@ -141,6 +141,14 @@ async function runMainReportScenarios(check, main, piDir) {
     check(!!cc, 'models.json-only 官方 key → Command Code 卡出现（此前会整张消失）')
     check(cc?.status === 'ok' && cc?.windows.length === 3, 'models.json-only 官方 key → 拿到三窗口')
 
+    await writeFile(modelsFile, '\uFEFF{\n// configuration accepted by pi\n"providers": {"commandcode": {"baseUrl": "https://api.commandcode.ai/provider/v1", /* key */ "apiKey": "user_jsonc"}}\n}')
+    setScenario({ authEntry: {}, quota: async (p, _budget, secret) => {
+      check(secret === 'user_jsonc', 'JSONC/BOM 配置只使用自身凭据')
+      return ccProviderQuota()
+    } })
+    r = await main.accountQuotaReport()
+    check(r.cards.some((c) => c.provider === 'commandcode' && c.status === 'ok' && c.windows.length === 3), 'JSONC/BOM 配置不再错误显示没有账号')
+
     for (const [label, entry] of [
       ['代理域', { baseUrl: 'https://api.commandcode.ai.evil.test/v1', apiKey: 'user_proxy_key' }],
       ['非 https', { baseUrl: 'http://api.commandcode.ai/provider/v1', apiKey: 'user_http_key' }],
@@ -151,7 +159,7 @@ async function runMainReportScenarios(check, main, piDir) {
       await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: entry } }))
       setScenario({ authEntry: {}, quota: async () => { throw new Error('should not be called') } })
       r = await main.accountQuotaReport()
-      check(!r.cards.some((c) => c.provider === 'commandcode'), `models.json ${label} → 不产 Command Code 卡，也不取 key`)
+      check(r.cards.some((c) => c.provider === 'commandcode' && c.status === 'error' && !c.windows.length), `models.json ${label} → 显示配置错误，不取 key 或查询额度`)
     }
 
     await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: { baseUrl: 'https://api.commandcode.ai.evil.test/v1', apiKey: 'user_proxy_key' } } }))
@@ -163,7 +171,7 @@ async function runMainReportScenarios(check, main, piDir) {
         quota: async () => { throw new Error('should not be called') }
       })
       r = await main.accountQuotaReport()
-      check(!r.cards.some((c) => c.provider === 'commandcode'), '代理条目 + auth/env key → 不产 Command Code 卡')
+      check(r.cards.some((c) => c.provider === 'commandcode' && c.status === 'error' && !c.windows.length), '代理条目 + auth/env key → 显示配置错误，不发送凭据')
     } finally {
       if (priorKey === undefined) delete process.env.COMMANDCODE_API_KEY
       else process.env.COMMANDCODE_API_KEY = priorKey
@@ -239,6 +247,9 @@ export async function runAccountQuotaPaneTests(ok) {
   const iso = await mkdtemp(join(tmpdir(), 'yan-acct-pane-'))
   const priorData = process.env.YAN_DATA_DIR
   const priorPi = process.env.YAN_PI_DIR
+  const quotaEnv = ['COMMANDCODE_API_KEY', 'DEEPSEEK_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY']
+  const priorQuotaEnv = new Map(quotaEnv.map((name) => [name, process.env[name]]))
+  for (const name of quotaEnv) delete process.env[name]
   process.env.YAN_DATA_DIR = iso
   process.env.YAN_PI_DIR = join(iso, 'pi')
 
@@ -263,6 +274,10 @@ export async function runAccountQuotaPaneTests(ok) {
     await rm(iso, { recursive: true, force: true }).catch(() => undefined)
     if (priorData === undefined) delete process.env.YAN_DATA_DIR; else process.env.YAN_DATA_DIR = priorData
     if (priorPi === undefined) delete process.env.YAN_PI_DIR; else process.env.YAN_PI_DIR = priorPi
+    for (const [name, value] of priorQuotaEnv) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
   }
 }
 

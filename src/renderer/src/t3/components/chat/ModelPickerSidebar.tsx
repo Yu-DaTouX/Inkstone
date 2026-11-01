@@ -31,6 +31,22 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   const showFavorites = props.showFavorites ?? true;
   const [hoveredInstanceId, setHoveredInstanceId] = useState<ProviderInstanceId | null>(null);
   const sidebarContentRef = useRef<HTMLDivElement>(null);
+  const tooltipAnchor = (instanceId: ProviderInstanceId | "favorites") => () => {
+    const content = sidebarContentRef.current;
+    const picker = content?.closest<HTMLElement>("[data-model-picker-content]");
+    const item = content && Array.from(
+      content.querySelectorAll<HTMLElement>("[data-model-picker-provider]"),
+    ).find((element) => element.dataset.modelPickerProvider === instanceId);
+    if (!picker || !item) return null;
+    return {
+      contextElement: item,
+      getBoundingClientRect: () => {
+        const menuRect = picker.getBoundingClientRect();
+        const itemRect = item.getBoundingClientRect();
+        return new DOMRect(menuRect.x, itemRect.y, menuRect.width, itemRect.height);
+      },
+    };
+  };
   const [selectedIndicatorTop, setSelectedIndicatorTop] = useState<number | null>(null);
   useLayoutEffect(() => {
     const content = sidebarContentRef.current;
@@ -46,19 +62,6 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
     }
     setSelectedIndicatorTop(selectedItem.offsetTop + selectedItem.offsetHeight / 2 - 10);
   }, [props.instanceEntries, props.selectedInstanceId, showFavorites]);
-
-  const describeUnavailableInstance = (entry: ProviderInstanceEntry): string => {
-    const label = entry.displayName;
-    if (!entry.enabled || entry.status === "disabled") {
-      return t("composer.t3.picker.providerNotEnabled", { name: label });
-    }
-    if (entry.status === "ready" && entry.isAvailable) {
-      return label;
-    }
-    const message = entry.snapshot.message?.trim();
-    const kind = entry.status === "error" ? t("composer.t3.picker.unavailable") : t("composer.t3.picker.limited");
-    return message ? t("composer.t3.picker.providerStatus", { name: label, kind, message }) : `${label}: ${kind}.`;
-  };
 
   return (
     <Toolbar.Root
@@ -104,6 +107,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                     }
                   />
                   <TooltipPopup
+                    anchor={tooltipAnchor("favorites")}
                     side={PICKER_TOOLTIP_SIDE}
                     sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
                     align="center"
@@ -127,11 +131,9 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge();
 
-            const tooltip = isUnavailable
-              ? describeUnavailableInstance(entry)
-              : isContextDisabled
-                ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
-                : entry.displayName;
+            const tooltip = isContextDisabled
+              ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
+              : entry.displayName;
 
             const button = (
               <Toolbar.Button
@@ -186,6 +188,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 <Tooltip>
                   <TooltipTrigger render={trigger} />
                   <TooltipPopup
+                    anchor={tooltipAnchor(entry.instanceId)}
                     side={PICKER_TOOLTIP_SIDE}
                     sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
                     align="center"

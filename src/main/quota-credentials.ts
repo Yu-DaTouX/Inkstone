@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import { readAuthEntry } from './credentials'
+import { isYanProviderId } from '../shared/custom-provider'
 
 type EnvLike = Record<string, string | undefined>
 
@@ -144,6 +145,23 @@ type ModelsEntryLookup =
   | { kind: 'invalid' }
   | { kind: 'entry'; entry: unknown }
 
+function parseModelsJson(raw: string): unknown {
+  const json = raw.replace(/^\uFEFF/, '').replace(/"(?:\\.|[^"\\])*"|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, (part) => part.startsWith('/') ? ' ' : part)
+  return JSON.parse(json)
+}
+
+export async function customCommandCodeQuotaProviders(agentDir = PI_AGENT_DIR): Promise<string[]> {
+  try {
+    const parsed = parseModelsJson(await readFile(join(agentDir, 'models.json'), 'utf8'))
+    if (!plainObject(parsed) || !plainObject(parsed.providers)) return []
+    return Object.entries(parsed.providers)
+      .filter(([id, entry]) => isYanProviderId(id) && entryEndpointAllowed('commandcode', entry))
+      .map(([id]) => id)
+  } catch {
+    return []
+  }
+}
+
 async function readModelsEntry(provider: string, agentDir?: string): Promise<ModelsEntryLookup> {
   let raw: string
   try {
@@ -153,7 +171,7 @@ async function readModelsEntry(provider: string, agentDir?: string): Promise<Mod
   }
   let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
+    parsed = parseModelsJson(raw)
   } catch {
     return { kind: 'invalid' }
   }
@@ -193,38 +211,53 @@ function readNativeEnv(provider: string, env: EnvLike): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined
 }
 
-export async function resolveQuotaProviderSecret(
+export async function resolveQuotaProviderCredential(
   rawProvider: string,
   options: {
     agentDir?: string
     env?: EnvLike
     readAuth?: (provider: string) => Promise<unknown>
+    quotaProvider?: string
   } = {}
-): Promise<string | undefined> {
+): Promise<{ secret?: string; error?: string }> {
   const provider = rawProvider.trim().toLowerCase()
-  if (!provider || !OFFICIAL_ENDPOINTS[provider]) return undefined
+  const quotaProvider = options.quotaProvider ?? provider
+  if (!provider || !OFFICIAL_ENDPOINTS[quotaProvider]) return {}
   const env = options.env ?? process.env
 
   const lookup = await readModelsEntry(provider, options.agentDir)
-  if (lookup.kind === 'invalid') return undefined
+  const fromAuth = await readAuthKey(provider, options)
+  const fromEnv = readNativeEnv(provider, env)
+  if (lookup.kind === 'invalid') return fromAuth || fromEnv
+    ? { error: '无法读取 models.json，请检查文件格式与读取权限后刷新额度。' }
+    : {}
   let entry: Record<string, unknown> | undefined
   if (lookup.kind === 'entry') {
-    if (!entryEndpointAllowed(provider, lookup.entry)) return undefined
+    if (!entryEndpointAllowed(quotaProvider, lookup.entry)) return { error: '模型配置中的服务地址无法确认为官方地址，未发送额度凭据。请在模型设置中检查服务地址。' }
     entry = lookup.entry as Record<string, unknown>
   }
 
-  const fromAuth = await readAuthKey(provider, options)
-  if (fromAuth) return fromAuth
+  if (fromAuth) return { secret: fromAuth }
 
   if (entry) {
     const rawApiKey = entry.apiKey
     if (rawApiKey !== undefined && rawApiKey !== null) {
-      if (typeof rawApiKey !== 'string' || !rawApiKey.trim()) return undefined
+      if (typeof rawApiKey !== 'string' || !rawApiKey.trim()) return { error: '模型配置中的 API Key 为空或格式无效，请在模型设置中补充。' }
       const resolved = resolveNativeConfigValue(rawApiKey, env)
-      return resolved && resolved.trim() ? resolved : undefined
+      if (resolved && resolved.trim()) return { secret: resolved }
+      return { error: rawApiKey.startsWith('!')
+        ? '额度查询不执行 API Key 命令，请在模型设置中填写 Key 或使用环境变量引用。'
+        : '模型配置引用的 API Key 环境变量未找到，请检查后刷新额度。' }
     }
-    if (!OFFICIAL_ENDPOINTS[provider].nativeDefaultBaseUrl) return undefined
+    if (!OFFICIAL_ENDPOINTS[quotaProvider].nativeDefaultBaseUrl) return { error: '模型配置中未填写 API Key，请在模型设置中补充。' }
   }
 
-  return readNativeEnv(provider, env)
+  return fromEnv ? { secret: fromEnv } : {}
+}
+
+export async function resolveQuotaProviderSecret(
+  provider: string,
+  options: Parameters<typeof resolveQuotaProviderCredential>[1] = {},
+): Promise<string | undefined> {
+  return (await resolveQuotaProviderCredential(provider, options)).secret
 }

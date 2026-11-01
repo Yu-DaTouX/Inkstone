@@ -85,6 +85,14 @@ async function runQuotaCredentialSourceTests(check) {
     const readAuth = async () => authEntry
     const threeEnv = { COMMANDCODE_API_KEY: 'user_env_sentinel' }
 
+    await writeFile(modelsFile, '\uFEFF{\n// pi accepts comments\n"providers": {"commandcode": {"baseUrl": "https://api.commandcode.ai/provider/v1", /* keep URL intact */ "apiKey": "user_jsonc//key"}}\n}')
+    check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: {}, readAuth: async () => undefined }) === 'user_jsonc//key', '带 BOM、行注释和块注释的原生 models.json → 识别配置且不破坏 key')
+    check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: {}, readAuth }) === 'user_auth_sentinel', '带注释 models.json + auth → 仍按原生优先级取 auth')
+
+    await writeFile(modelsFile, JSON.stringify({ providers: { commandcode: { baseUrl: 'https://api.commandcode.ai', apiKey: '!echo hidden-secret' } } }))
+    const problem = await creds.resolveQuotaProviderCredential('commandcode', { agentDir: dir, env: {}, readAuth: async () => undefined })
+    check(!problem.secret && problem.error?.includes('不执行') && !problem.error.includes('hidden-secret'), '命令型 key → 返回可显示的错误且不泄露命令或 key')
+
     await writeFile(modelsFile, '{ this is not json')
     check(await creds.resolveQuotaProviderSecret('commandcode', { agentDir: dir, env: threeEnv, readAuth }) === undefined, '坏 JSON → auth/env/models 都不取')
 

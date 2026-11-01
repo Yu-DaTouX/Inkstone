@@ -25,6 +25,7 @@ import { providerModelKey, sortProviderModelItems } from "../../adapters/compose
 import { MODEL_JUMP_LIMIT } from "../../adapters/shortcuts";
 import type { ProviderInstanceEntry, ProviderInstanceId } from "../../adapters/contracts";
 import { useT } from "../../../i18n";
+import { TOOLTIP_OPEN_DELAY_MS } from "../../../ui/Tooltip";
 
 type ModelPickerItem = {
   slug: string;
@@ -358,7 +359,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   };
 
   return (
-    <TooltipProvider delay={0}>
+    <TooltipProvider delay={TOOLTIP_OPEN_DELAY_MS}>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
