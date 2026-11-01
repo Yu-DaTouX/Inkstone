@@ -364,7 +364,9 @@ function CodeBlock({ lang, source, children }: { lang?: string; source: string; 
   const live = useContext(MarkdownLive)
   const readable = !lang || /^(?:md|markdown|text|txt|plain|plaintext)$/i.test(lang)
   const [reading, setReading] = useState(false)
-  const [wrap, setWrap] = useState(false)
+  const wrapByDefault = useStore((st) => st.settings?.codeWrap !== false)
+  const [wrapChoice, setWrap] = useState<boolean | null>(null)
+  const wrap = wrapChoice ?? wrapByDefault
   const [copied, setCopied] = useState(false)
   const [failed, setFailed] = useState(false)
   const copy = (): void => {
@@ -408,7 +410,7 @@ function CodeBlock({ lang, source, children }: { lang?: string; source: string; 
           aria-label={t('code.wrap')}
           tooltip={t('code.wrap')}
           isDisabled={reading}
-          onPress={() => setWrap((v) => !v)}
+          onPress={() => setWrap(!wrap)}
         >
           <WrapText size={14} aria-hidden />
         </IconButton>

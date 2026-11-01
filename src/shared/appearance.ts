@@ -63,3 +63,33 @@ export function resolveUiDensity(density: unknown, legacyFontSize?: unknown): Ui
   const size = typeof legacyFontSize === 'number' ? legacyFontSize : Number(legacyFontSize)
   return Number.isFinite(size) && size >= LEGACY_COMFORTABLE_FONT_SIZE ? 'comfortable' : 'compact'
 }
+
+export const GLASS_OPACITY_MIN = 30
+export const GLASS_OPACITY_MAX = 100
+export const GLASS_OPACITY_DEFAULT = 65
+
+export const CONTRAST_MIN = 0
+export const CONTRAST_MAX = 100
+export const CONTRAST_DEFAULT = 50
+
+export const PANEL_MOTION_MIN = 0
+export const PANEL_MOTION_MAX = 600
+export const PANEL_MOTION_DEFAULT = 300
+
+function steppedNumber(value: unknown, min: number, max: number, fallback: number, step: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  const next = Math.round(Math.min(max, Math.max(min, value)) / step) * step
+  return next === fallback ? undefined : next
+}
+
+export function sanitizeGlassOpacity(value: unknown): number | undefined {
+  return steppedNumber(value, GLASS_OPACITY_MIN, GLASS_OPACITY_MAX, Number.NaN, 5)
+}
+
+export function sanitizeContrast(value: unknown): number | undefined {
+  return steppedNumber(value, CONTRAST_MIN, CONTRAST_MAX, CONTRAST_DEFAULT, 5)
+}
+
+export function sanitizePanelMotion(value: unknown): number | undefined {
+  return steppedNumber(value, PANEL_MOTION_MIN, PANEL_MOTION_MAX, Number.NaN, 50)
+}

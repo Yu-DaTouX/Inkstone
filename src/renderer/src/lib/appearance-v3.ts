@@ -1,4 +1,5 @@
-import { FONT_STACKS, resolveUiDensity, sanitizeFontName, sanitizeStreamWidth } from '../../../shared/appearance'
+import { CONTRAST_DEFAULT, CONTRAST_MAX, FONT_STACKS, resolveUiDensity, sanitizeContrast, sanitizeFontName, sanitizeGlassOpacity, sanitizePanelMotion, sanitizeStreamWidth } from '../../../shared/appearance'
+import tokens from '../design/tokens.json'
 import { APPEARANCE_EVENT } from './appearance'
 import { setAppReducedMotion } from './reduced-motion'
 
@@ -11,11 +12,16 @@ export interface AppearanceV3Settings {
   fontCode?: string
   fontCodeCustom?: string
   reduceMotion?: boolean
+  glassOpacity?: number
+  contrast?: number
+  panelMotionMs?: number
 }
 
 export type CodeFontChoice = 'mono' | 'maple' | 'custom'
 
-const OVERRIDE_VARS = ['--font-ui', '--font-mono', '--size-chat'] as const
+const OVERRIDE_VARS = ['--font-ui', '--font-mono', '--size-chat', '--glass-opacity', '--panel-dur', '--line', '--line2', '--fg2', '--fg3'] as const
+const LINE_TOKENS = ['line', 'line2'] as const
+const TEXT_TOKENS = ['fg2', 'fg3'] as const
 
 let mapleRequested: Promise<unknown> | null = null
 
@@ -58,6 +64,37 @@ function overrides(s: AppearanceV3Settings, base: CSSStyleDeclaration): Record<s
   if (code) out['--font-mono'] = code
   const width = sanitizeStreamWidth(s.streamWidth)
   if (width !== undefined) out['--size-chat'] = `${width}px`
+  const glass = sanitizeGlassOpacity(s.glassOpacity)
+  if (glass !== undefined && !reducedTransparency()) out['--glass-opacity'] = `${glass}%`
+  const panel = sanitizePanelMotion(s.panelMotionMs)
+  if (panel !== undefined) out['--panel-dur'] = `${panel}ms`
+  Object.assign(out, contrastOverrides(sanitizeContrast(s.contrast)))
+  return out
+}
+
+function reducedTransparency(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-transparency: reduce)').matches
+}
+
+function themed(name: keyof typeof tokens.color): string {
+  const [light, dark] = tokens.color[name] as unknown as [string, string]
+  return `light-dark(${light}, ${dark})`
+}
+
+function contrastOverrides(contrast: number | undefined): Record<string, string> {
+  if (contrast === undefined) return {}
+  const shift = (contrast - CONTRAST_DEFAULT) / (CONTRAST_MAX - CONTRAST_DEFAULT)
+  const out: Record<string, string> = {}
+  for (const name of LINE_TOKENS) {
+    out[`--${name}`] = shift > 0
+      ? `color-mix(in srgb, ${themed(name)}, var(--fg) ${Math.round(shift * 30)}%)`
+      : `color-mix(in srgb, ${themed(name)}, transparent ${Math.round(-shift * 60)}%)`
+  }
+  for (const name of TEXT_TOKENS) {
+    out[`--${name}`] = shift > 0
+      ? `color-mix(in srgb, ${themed(name)}, var(--fg) ${Math.round(shift * 45)}%)`
+      : `color-mix(in srgb, ${themed(name)}, var(--bg) ${Math.round(-shift * 35)}%)`
+  }
   return out
 }
 

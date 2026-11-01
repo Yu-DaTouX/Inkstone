@@ -4,7 +4,6 @@ import type { AppSettings } from '../../../../../shared/ipc'
 import { FONT_UI_DEFAULT, resolveUiDensity, sanitizeFontName } from '../../../../../shared/appearance'
 import { useStore } from '../../../state/store'
 import { Switch, TextField } from '../../../ui'
-import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
 import { filesHiddenStore } from '../../files/files-hidden'
 import { filesText } from '../../files/files-text'
 import { settingsText } from '../settings-text'
@@ -15,6 +14,8 @@ import { useTranscriptViews } from '../../../state/transcript-view'
 import { TRANSCRIPT_VIEWS } from '../../session/transcript-view-model'
 import { transcriptViewText } from '../../session/transcript-view-text'
 import { StreamWidthSetting } from './StreamWidthSetting'
+import { HomeBackgroundSettings } from './HomeBackgroundSettings'
+import { InterfaceTuningSettings } from './InterfaceTuningSettings'
 
 type FontChoice = 'sans' | 'serif' | 'maple' | 'mono' | 'custom'
 type SendKeyChoice = 'enter' | 'ctrlEnter'
@@ -235,6 +236,10 @@ export function AppearanceSettings(): ReactElement {
         <FontRow kind="code" />
       </SettingsGroup>
 
+      <InterfaceTuningSettings />
+
+      <HomeBackgroundSettings />
+
       <SettingsGroup title={text.groupAppearanceInput}>
         <SettingsRow settingId="appearance-language" label={text.language}>
           <Segmented
@@ -285,14 +290,6 @@ export function AppearanceSettings(): ReactElement {
             isSelected={smoothText}
             onChange={(next) => void patchSettings({ smoothText: next }).catch(() => undefined)}
             testId="v3-smooth-text-toggle"
-          />
-          <SwitchRow
-            settingId="appearance-ascii-background"
-            label={text.asciiBackground}
-            description={text.asciiBackgroundDesc}
-            isSelected={asciiBackgroundEnabled(settings)}
-            onChange={(next) => void patchSettings(asciiBackgroundPatch(next)).catch(() => undefined)}
-            testId="v3-ascii-background-toggle"
           />
         </SettingsGroup>
       </SettingsAdvanced>

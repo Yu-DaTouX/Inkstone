@@ -1,0 +1,38 @@
+@layer features {
+  .home-bg-picker {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .home-bg-thumb {
+    flex: none;
+    width: 64px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: var(--r-sm);
+    box-shadow: var(--ring-line);
+  }
+
+  .home-bg-slider {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    width: 260px;
+    max-width: 100%;
+  }
+
+  .home-bg-value {
+    flex: none;
+    min-width: 48px;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    text-align: end;
+  }
+
+  .home-bg-range {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}

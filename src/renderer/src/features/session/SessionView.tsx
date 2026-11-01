@@ -14,7 +14,7 @@ import { BrowserHandoffCard } from './BrowserHandoffCard'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
-import { AsciiField } from '../ambient/AsciiField'
+import { HomeBackdrop } from '../ambient/HomeBackdrop'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { Button } from '../../t3/components/ui/button'
 import { ChevronDown } from 'lucide-react'
@@ -858,7 +858,7 @@ export function SessionView(): JSX.Element {
 
   return (
     <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-empty={empty ? '' : undefined}>
-      <AsciiField active={turns.length === 0 && !switchLoading} enabled={asciiBackgroundEnabled(settings)} />
+      <HomeBackdrop active={turns.length === 0 && !switchLoading} asciiEnabled={asciiBackgroundEnabled(settings)} />
       <ToolExpansionScope.Provider value={identity}>
       <AsideFitScope.Provider value={asideFits}>
       <div className="v3-stream-host" ref={hostRef} data-jump={showJump && !stick ? '' : undefined}>

@@ -1,4 +1,5 @@
 import '../design/index.css'
+import { PANEL_MOTION_DEFAULT, sanitizePanelMotion } from '../../../shared/appearance'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { FocusScope } from 'react-aria'
 import { flushSync } from 'react-dom'
@@ -255,7 +256,7 @@ export default function ShellV3(): ReactElement {
   }, [settings])
 
   const appearanceKey = settings
-    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom, settings.reduceMotion, settings.streamWidth])
+    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom, settings.reduceMotion, settings.streamWidth, settings.glassOpacity, settings.contrast, settings.panelMotionMs])
     : null
   useEffect(() => {
     const current = useStore.getState().settings
@@ -354,11 +355,12 @@ export default function ShellV3(): ReactElement {
   }, [])
 
   const [settledBarOn, setSettledBarOn] = useState(sessionBarOn)
+  const panelMotionMs = useStore((s) => sanitizePanelMotion(s.settings?.panelMotionMs) ?? PANEL_MOTION_DEFAULT)
   useEffect(() => {
     if (settledBarOn === sessionBarOn) return
-    const timer = window.setTimeout(() => setSettledBarOn(sessionBarOn), 400)
+    const timer = window.setTimeout(() => setSettledBarOn(sessionBarOn), panelMotionMs + 100)
     return () => window.clearTimeout(timer)
-  }, [sessionBarOn, settledBarOn])
+  }, [sessionBarOn, settledBarOn, panelMotionMs])
 
   const toggleSessionBar = (): void => {
     void useStore.getState().patchSettings({ workspaceTiles: !sessionBarOn }).catch(() => undefined)

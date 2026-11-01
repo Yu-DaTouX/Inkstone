@@ -13,6 +13,52 @@
   }
   .v3-ascii-field[data-closing='1'] { opacity: 0; }
 
+  .v3-session:has(> .v3-home-image) {
+    isolation: isolate;
+  }
+
+  .v3-home-image {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    animation: v3-home-image-in var(--dur-slow) var(--ease) both;
+  }
+
+  .v3-home-image::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--home-src) center / cover no-repeat;
+  }
+
+  .v3-home-image[data-blur]::before {
+    inset: calc(-2 * var(--home-blur, 0px));
+    filter: blur(var(--home-blur, 0px));
+  }
+
+  .v3-home-image::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--home-mask, var(--bg));
+    opacity: var(--home-fade, 0.35);
+    transition: opacity var(--dur-base) var(--ease);
+  }
+
+  @keyframes v3-home-image-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-home-image {
+      animation: none;
+    }
+  }
+
   .v3-ascii-field > canvas {
     display: block;
     width: 100%;

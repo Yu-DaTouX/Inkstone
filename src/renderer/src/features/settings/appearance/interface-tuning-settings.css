@@ -1,0 +1,23 @@
+@layer features {
+  .tuning-control {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s-8);
+    width: 260px;
+    max-width: 100%;
+  }
+
+  .tuning-value {
+    flex: none;
+    min-width: 48px;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    text-align: end;
+  }
+
+  .tuning-slider {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}

@@ -803,6 +803,10 @@ export interface AppSettings {
   streamWidth?: number
   composerHeight?: number
   reduceMotion?: boolean
+  glassOpacity?: number
+  contrast?: number
+  codeWrap?: boolean
+  panelMotionMs?: number
   sidebarLayout?: 'projects' | 'flat'
   cloneDir?: string
   peerGithubLogins?: Record<string, string>

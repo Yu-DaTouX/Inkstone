@@ -81,7 +81,7 @@
     transition-timing-function: var(--ease-inout);
   }
   .v3-chat[data-bar-anim] {
-    transition-duration: var(--dur-sheet);
+    transition-duration: var(--panel-dur, var(--dur-sheet));
   }
   @media (prefers-reduced-motion: reduce) {
     .v3-chat[data-bar-anim] {
@@ -117,7 +117,7 @@
     width: var(--size-tiles);
     max-height: 100%;
     min-height: 0;
-    animation: v3-sessionbar-open var(--dur-sheet) ease-in-out;
+    animation: v3-sessionbar-open var(--panel-dur, var(--dur-sheet)) ease-in-out;
   }
   @keyframes v3-sessionbar-open {
     from {

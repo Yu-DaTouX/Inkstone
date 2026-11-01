@@ -24,7 +24,7 @@ import { isWorkspaceMode } from '../shared/workspace-mode'
 import { voiceModelSpec } from '../shared/voice-input'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
-import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeComposerHeight, sanitizeStreamWidth } from '../shared/appearance'
+import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeComposerHeight, sanitizeStreamWidth, sanitizeGlassOpacity, sanitizeContrast, sanitizePanelMotion } from '../shared/appearance'
 import { allowedSiteList } from './preview-site-access'
 import { normalizeSearchEngine } from '../shared/browser-navigation'
 import { sanitizeProjectScripts } from '../shared/project-scripts'
@@ -295,6 +295,10 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.streamWidth = sanitizeStreamWidth(settings.streamWidth)
   settings.composerHeight = sanitizeComposerHeight(settings.composerHeight)
   settings.reduceMotion = settings.reduceMotion === true ? true : undefined
+  settings.glassOpacity = sanitizeGlassOpacity(settings.glassOpacity)
+  settings.contrast = sanitizeContrast(settings.contrast)
+  settings.codeWrap = settings.codeWrap === false ? false : undefined
+  settings.panelMotionMs = sanitizePanelMotion(settings.panelMotionMs)
   settings.sidebarLayout = settings.sidebarLayout === 'flat' ? 'flat' : undefined
   settings.cloneDir = cleanCloneDir(settings.cloneDir)
   settings.peerGithubLogins = sanitizePeerLogins(settings.peerGithubLogins)
@@ -408,7 +412,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectScripts','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectScripts','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)

@@ -44,6 +44,7 @@ import {
   type DiffKeyCursor
 } from './patch-files'
 import { diffViewText, type DiffViewText } from './text'
+import { useStore } from '../../state/store'
 import type { DiffViewMode } from './types'
 import './diff-view.css'
 
@@ -90,6 +91,7 @@ export function DiffView({
 }: DiffViewProps): ReactElement {
   const text = useMemo(() => diffViewText(lang ?? 'zh-CN'), [lang])
   const metrics = useDiffSurfaceMetrics()
+  const wrapLines = useStore((st) => st.settings?.codeWrap !== false)
   const [internalMode, setInternalMode] = useState<DiffViewMode>(defaultMode)
   const mode = modeProp ?? internalMode
   const [forceLarge, setForceLarge] = useState(false)
@@ -373,7 +375,7 @@ export function DiffView({
 
   const binaryOnly = files.every((file) => file.hunks.length === 0) && isBinaryPatch(patch)
   const options = {
-    ...diffOptions(metrics, mode, showFileHeader, Boolean(annotate) && draft === null),
+    ...diffOptions(metrics, mode, showFileHeader, Boolean(annotate) && draft === null, wrapLines),
     hunkSeparators: expandable ? ('line-info' as const) : ('metadata' as const),
     onPostRender,
     ...(expandable ? { loadDiffFiles } : {})
@@ -477,13 +479,13 @@ export function DiffView({
   )
 }
 
-function diffOptions(metrics: DiffSurfaceMetrics, mode: DiffViewMode, showFileHeader: boolean, annotatable: boolean) {
+function diffOptions(metrics: DiffSurfaceMetrics, mode: DiffViewMode, showFileHeader: boolean, annotatable: boolean, wrapLines: boolean) {
   return {
     theme: DIFF_THEMES,
     themeType: metrics.themeType,
     diffStyle: mode,
     diffIndicators: 'bars' as const,
-    overflow: 'wrap' as const,
+    overflow: wrapLines ? ('wrap' as const) : ('scroll' as const),
     lineDiffType: 'word-alt' as const,
     tokenizeMaxLineLength: 1_000,
     disableFileHeader: !showFileHeader,

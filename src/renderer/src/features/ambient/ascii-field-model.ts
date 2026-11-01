@@ -90,6 +90,7 @@ export interface FieldFrameInput {
   pull?: number
   origin?: MousePoint | null
   reach?: number
+  lift?: number
 }
 
 export interface FieldFrame {
@@ -449,6 +450,7 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
   const step = (FIELD_STRIDE * grid.cell) / height
   const half = (grid.cell * 0.5) / height
   const focusGain = 0.15 + 0.06 * pull
+  const lift = input.lift ?? 0
   for (let fr = 0; fr < frows; fr++) {
     const y0 = fr * step + half + oy / height
     for (let fc = 0; fc < fcols; fc++) {
@@ -462,7 +464,7 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
         ripple += Math.exp(-edge * edge) * wave.strength
       }
       const focus = Math.exp(-Math.hypot(p.x - ax, p.y - ay) * 1.7)
-      inkScratch[i] = 0.31 + ripple * 0.37 + focus * focusGain + p.k * 0.3
+      inkScratch[i] = 0.31 + lift + ripple * 0.37 + focus * focusGain + p.k * 0.3
     }
   }
 

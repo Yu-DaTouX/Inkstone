@@ -163,7 +163,7 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
         !docked && "bg-background",
         isInline ? (docked ? "z-(--z-panel) shrink-0" : "flex-1") : "w-full",
         docked && "w-[min(var(--rp-w),var(--rp-dock,var(--rp-w)))]",
-        docked && collapsible && "transition-[width] duration-(--dur-sheet) ease-(--ease)",
+        docked && collapsible && "transition-[width] duration-[var(--panel-dur,var(--dur-sheet))] ease-(--ease)",
         docked && collapsible && open && "starting:w-0",
         docked && collapsible && !open && "pointer-events-none w-0",
       )}
@@ -195,7 +195,7 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
           docked
             ? cn("absolute inset-y-0 right-0 border-l border-border", !maximized && "w-(--rp-w)")
             : "w-full",
-          docked && collapsible && "transition-[translate] duration-(--dur-sheet) ease-(--ease)",
+          docked && collapsible && "transition-[translate] duration-[var(--panel-dur,var(--dur-sheet))] ease-(--ease)",
           docked && collapsible && open && "translate-x-0 starting:translate-x-(--rp-w)",
           docked && collapsible && !open && "translate-x-(--rp-w)",
         )}

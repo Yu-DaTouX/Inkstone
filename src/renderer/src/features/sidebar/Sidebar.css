@@ -15,7 +15,7 @@
 
   .v3-side {
     overflow: hidden;
-    transition: width 0s, opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease), visibility 0s;
+    transition: width 0s, opacity var(--panel-dur, var(--dur-base)) var(--ease), transform var(--panel-dur, var(--dur-base)) var(--ease), visibility 0s;
   }
   .v3-side > * { min-width: var(--side-panel-w); }
 
@@ -41,13 +41,13 @@
       background-color: transparent;
       box-shadow: 0 0 0 200vmax var(--bg);
       pointer-events: none;
-      transition: width 0s, left 0s, background-color var(--dur-base) var(--ease);
+      transition: width 0s, left 0s, background-color var(--panel-dur, var(--dur-base)) var(--ease);
     }
     :root[data-material] .v3-root[data-narrow='0'][data-side='closed']::after {
       left: 0;
       width: 0;
       background-color: var(--bg);
-      transition: width 0s linear var(--dur-base), left 0s linear var(--dur-base), background-color var(--dur-base) var(--ease);
+      transition: width 0s linear var(--panel-dur, var(--dur-base)), left 0s linear var(--panel-dur, var(--dur-base)), background-color var(--panel-dur, var(--dur-base)) var(--ease);
     }
     :root[data-material] .v3-root[data-narrow='0']:not([data-sidebar-preview='1'], [data-sidebar-preview='leaving']) > .v3-side {
       background: var(--side-tint);
@@ -65,7 +65,7 @@
     visibility: hidden;
     pointer-events: none;
     transform: translateX(-12px);
-    transition: width 0s linear var(--dur-base), border-right-width 0s linear var(--dur-base), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease), visibility 0s linear var(--dur-base);
+    transition: width 0s linear var(--panel-dur, var(--dur-base)), border-right-width 0s linear var(--panel-dur, var(--dur-base)), opacity var(--panel-dur, var(--dur-base)) var(--ease), transform var(--panel-dur, var(--dur-base)) var(--ease), visibility 0s linear var(--panel-dur, var(--dur-base));
   }
   .v3-root[data-narrow='1'][data-side='closed'] .v3-side {
     width: var(--side-panel-w);

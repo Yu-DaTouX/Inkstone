@@ -9,13 +9,9 @@ import {
   EXIT_MS,
   FIELD_SEED,
   FRAME_SLACK_MS,
-  HOME_BAND,
-  HOME_PULL,
-  bandReach,
   STATIC_TIME,
   alphaLevel,
   animationPolicy,
-  bottomClearZone,
   computeFieldFrame,
   defaultClearZones,
   frameInterval,
@@ -30,8 +26,8 @@ import {
 import './ambient.css'
 
 const DARK_QUERY = '(prefers-color-scheme: dark)'
-const BAND_DROP_PX = 28
 const INK_GAIN = 2.4
+const HOME_LIFT = 0.04
 const glyphAtlases = new Map<string, HTMLCanvasElement>()
 
 function resolveToken(host: HTMLElement, token: string): string {
@@ -77,6 +73,7 @@ function originFor(host: HTMLElement): MousePoint | null {
 
 function zonesFor(host: HTMLElement, width: number, height: number): ClearZone[] {
   const empty = emptyStateOf(host)
+  if (empty?.querySelector('.v3-home-card')) return []
   const base = host.getBoundingClientRect()
   const zones: ClearZone[] = []
   const blocks = empty ? Array.from(empty.querySelectorAll<HTMLElement>('.v3-empty-greet, .v3-empty-hint, .start-usage, .start-strip')) : []
@@ -93,7 +90,6 @@ function zonesFor(host: HTMLElement, width: number, height: number): ClearZone[]
   if (composer && composer.width > 0 && composer.height > 0) {
     zones.push(textClearZone({ left: composer.left - base.left, top: composer.top - base.top, width: composer.width, height: composer.height }, 24))
   }
-  zones.push(bottomClearZone(width, height))
   return zones
 }
 
@@ -131,7 +127,6 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   let zones: ClearZone[] = []
   let anchor: MousePoint = { x: 0, y: 0 }
   let origin: MousePoint | null = null
-  let homed = false
   const enterMs = readEnterMs()
   let mouse: MousePoint | null = null
   let pulses: Array<{ x: number; y: number; at: number }> = []
@@ -155,11 +150,6 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     zones = zonesFor(host, width, height)
     anchor = anchorFor(host, width, height)
     origin = originFor(host)
-    homed = !!emptyStateOf(host)?.querySelector('.v3-empty-greet')
-    host.style.setProperty('--field-ax', `${Math.round(anchor.x)}px`)
-    host.style.setProperty('--field-ay', `${Math.round(anchor.y + BAND_DROP_PX)}px`)
-    host.style.setProperty('--field-band-w', `${HOME_BAND.w}px`)
-    host.style.setProperty('--field-band-h', `${HOME_BAND.h}px`)
   }
 
   const resize = (): void => {
@@ -236,9 +226,10 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
       pulses: pulses.map((p) => ({ x: p.x, y: p.y, age: (elapsed - p.at) / 1000 })),
       anchor,
       enter: enterProgress(),
-      pull: homed ? HOME_PULL : 0,
+      pull: 0,
       origin,
-      reach: homed ? bandReach(HOME_BAND) : undefined
+      reach: undefined,
+      lift: HOME_LIFT
     }, frame)
     pulses = pulses.filter((p) => elapsed - p.at < 2400)
     const { alpha, glyph, accent, cols } = frame

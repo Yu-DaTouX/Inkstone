@@ -13,7 +13,11 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'appearance-font-code', section: 'appearance', zh: '代码字体', en: 'Code font', keywords: ['等宽', '字体', 'monospace', 'Maple', 'font'], more: true },
   { id: 'appearance-font-code-custom', section: 'appearance', zh: '代码字体 · 自定义', en: 'Code font · Custom', keywords: ['自定义等宽字体', 'custom mono'], more: true },
   { id: 'appearance-reduce-motion', section: 'appearance', zh: '减少动效', en: 'Reduce motion', keywords: ['动画', '过渡', '动效', 'animation', 'motion'], more: true },
-  { id: 'appearance-ascii-background', section: 'appearance', zh: '动态背景', en: 'Dynamic background', keywords: ['字符背景', 'ASCII', '动画', 'background'], more: true },
+  { id: 'appearance-glass-opacity', section: 'appearance', zh: '毛玻璃不透明度', en: 'Glass opacity', keywords: ['透明', '毛玻璃', '模糊', '输入框', '菜单', 'transparent', 'glass', 'blur'] },
+  { id: 'appearance-contrast', section: 'appearance', zh: '对比度', en: 'Contrast', keywords: ['边框', '次要文字', '颜色', 'border', 'colors'] },
+  { id: 'appearance-code-wrap', section: 'appearance', zh: '代码自动换行', en: 'Word wrap', keywords: ['换行', '长行', '代码块', 'diff', '文件预览', 'wrap', 'long lines'] },
+  { id: 'appearance-panel-motion', section: 'appearance', zh: '面板动画时长', en: 'Panel animations', keywords: ['动画', '速度', '侧栏', '右栏', '开合', 'animation', 'speed', 'sidebar'] },
+  { id: 'appearance-ascii-background', section: 'appearance', zh: '背景', en: 'Background', keywords: ['动态背景', '字符背景', 'ASCII', '动画', '图片', '壁纸', '背景图', '虚化', '模糊', '遮罩', 'blur', 'mask', 'background', 'image', 'wallpaper'] },
   { id: 'appearance-transcript-view', section: 'appearance', zh: '对话显示方式', en: 'Conversation display', keywords: ['简洁', '侧边推理', '思考模式', '推理', '折叠', 'concise', 'side', 'thinking', 'reasoning'] },
   { id: 'appearance-smooth-text', section: 'appearance', zh: '柔和字体渲染', en: 'Smooth text rendering', keywords: ['抗锯齿', '灰度', '彩边', 'ClearType', 'antialiasing', 'LCD', 'blurry'], more: true },
 
