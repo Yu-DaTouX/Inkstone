@@ -43,6 +43,7 @@ const inProcessScripts = [
   'test-package-timeout-fallback',
   'test-session-restore-rollback', 'test-subagent-stop-intent',
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory',
+  'test-user-address',
   'test-pi-settings-eperm-retry'
 ]
 for (const script of inProcessScripts) await import(`./${script}.mjs`)

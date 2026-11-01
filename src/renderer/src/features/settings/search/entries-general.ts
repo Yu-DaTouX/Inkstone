@@ -21,6 +21,7 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'session-auto-compact', section: 'session', zh: '自动压缩', en: 'Auto-compaction', keywords: ['上下文', '压缩', 'context', 'compaction'] },
   { id: 'session-compact-at', section: 'session', zh: '自动压缩上限', en: 'Auto-compaction limit', keywords: ['阈值', '上限', '压缩点', 'threshold', 'limit'] },
   { id: 'session-checkpoints', section: 'session', zh: '发送前存检查点', en: 'Save checkpoints before sending', keywords: ['检查点', '快照', '回退', 'checkpoint', 'rewind', 'snapshot'] },
+  { id: 'session-user-address', section: 'session', zh: '如何称呼你', en: 'What should the model call you?', keywords: ['称呼', '姓名', '名字', '昵称', '档案', 'name', 'nickname', 'profile', 'address', 'personalization'] },
   { id: 'session-keep-awake', section: 'session', zh: '运行时保持唤醒', en: 'Keep awake while running', keywords: ['保持唤醒', '睡眠', '休眠', 'sleep', 'awake'] },
   { id: 'session-keep-awake-battery', section: 'session', zh: '用电池时也保持唤醒', en: 'Also on battery', keywords: ['电池', '笔记本', 'battery'] },
   { id: 'session-auto-archive', section: 'session', zh: '自动归档闲置会话', en: 'Auto-archive idle sessions', keywords: ['归档', '闲置', 'archive'] },

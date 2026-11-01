@@ -1,0 +1,98 @@
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { SliderThumb, SliderTrack } from 'react-aria-components'
+import { APPEARANCE_EVENT } from '../lib/appearance'
+import { Slider } from './Slider'
+import { FlipText } from './FlipText'
+import { PulseField, resolveColor } from './pulse-field'
+import './FluidEffortSlider.css'
+
+export function FluidEffortSlider(props: {
+  label: string
+  levels: readonly string[]
+  value: string
+  labelOf: (level: string) => string
+  onChange: (level: string) => void
+  disabled?: boolean
+}) {
+  const { levels, value, disabled } = props
+  const [preview, setPreview] = useState<string | null>(null)
+  const current = preview ?? value
+  const index = Math.max(0, levels.indexOf(current))
+  const trackRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const probeRef = useRef<HTMLSpanElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const fieldRef = useRef<PulseField | null>(null)
+  const palette = levels.join('|')
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const host = trackRef.current
+    const probe = probeRef.current
+    if (!canvas || !host || !probe) return
+    const engine = new PulseField(canvas, host)
+    fieldRef.current = engine
+    const paint = () => {
+      const foreground = resolveColor(probe, 'var(--fg3)')
+      const surface = resolveColor(probe, 'var(--surface)')
+      engine.setColors({
+        levels: palette.split('|').map((level) => resolveColor(probe, `var(--think-${level}, var(--fg3))`)),
+        off: foreground.map((channel, i) => channel + (surface[i] - channel) * 0.72) as [number, number, number],
+        dark: document.documentElement.dataset.theme === 'dark'
+      })
+    }
+    paint()
+    const themes = new MutationObserver(paint)
+    themes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
+    window.addEventListener(APPEARANCE_EVENT, paint)
+    return () => {
+      themes.disconnect()
+      window.removeEventListener(APPEARANCE_EVENT, paint)
+      engine.dispose()
+      fieldRef.current = null
+    }
+  }, [palette])
+
+  useEffect(() => {
+    fieldRef.current?.setLevel(index, levels.length, !!disabled)
+  }, [index, palette, levels.length, disabled])
+
+  useEffect(() => {
+    inputRef.current?.setAttribute('aria-valuetext', props.labelOf(current))
+  }, [current, props.labelOf])
+
+  return (
+    <div className="ui-fluid-effort" style={{ '--fluid-tone': `var(--think-${current}, var(--fg3))` } as CSSProperties}>
+      <div className="ui-fluid-effort__value" aria-live="polite">
+        <FlipText text={props.labelOf(current)} position={index} />
+      </div>
+      <Slider
+        aria-label={props.label}
+        minValue={0}
+        maxValue={Math.max(1, levels.length - 1)}
+        step={1}
+        value={index}
+        isDisabled={disabled}
+        onChange={(next) => setPreview(levels[next as number] ?? null)}
+        onChangeEnd={(next) => {
+          setPreview(null)
+          const level = levels[next as number]
+          if (level && level !== value) props.onChange(level)
+        }}
+      >
+        <div className="ui-slider__row">
+          <span ref={probeRef} className="ui-fluid-effort__probe" aria-hidden="true" />
+          <SliderTrack ref={trackRef} className="ui-slider__track ui-fluid-effort__track" data-composer-effort-slider="true">
+            <canvas ref={canvasRef} className="ui-fluid-effort__field" aria-hidden="true" />
+            <SliderThumb
+              index={0}
+              inputRef={inputRef}
+              aria-label={props.label}
+              className="ui-slider__thumb ui-fluid-effort__thumb"
+            />
+          </SliderTrack>
+        </div>
+      </Slider>
+    </div>
+  )
+}

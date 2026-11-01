@@ -95,7 +95,6 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
 
   const select = useCallback(
     (value: string) => {
-      if (busy) return
       if (isUltracodeSelection(value)) {
         requestUltracode()
         return
@@ -103,7 +102,7 @@ export function useComposerTraits(): ComposerTraitsAdapter | null {
       if (ultracode) void setUltracode(false)
       if (value !== level) void setThinking(value)
     },
-    [busy, level, requestUltracode, setThinking, setUltracode, ultracode]
+    [level, requestUltracode, setThinking, setUltracode, ultracode]
   )
 
   if (!descriptor) return null

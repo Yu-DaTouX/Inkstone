@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../../../i18n'
+import { FluidEffortSlider } from '../../../ui/FluidEffortSlider'
 import type { ComposerTraitsAdapter } from '../../adapters/composer-thinking'
 import { cn } from '../../lib/utils'
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
@@ -10,21 +11,11 @@ import { useComposerMenuState } from './useComposerMenuState'
 
 const WHEEL_STEP_INTERVAL_MS = 130
 const WHEEL_STEP_DELTA = 4
-const ROW_HEIGHT = 28
-const COLUMN_PADDING = 4
-const COLUMN_BORDER = 1
-const COLUMN_INLINE_PADDING = 2
-const NEAR_OPACITY = 0.65
-const FAR_OPACITY = 0.35
-const OPACITY_STEP = 0.1
+const PANEL_HEIGHT = 98
+const PANEL_WIDTH = 360
 
 function levelFallbackLabel(level: string): string {
   return level === 'xhigh' ? 'XHigh' : level.charAt(0).toUpperCase() + level.slice(1)
-}
-
-function levelOpacity(distance: number): number {
-  if (distance === 0) return 1
-  return Math.max(FAR_OPACITY, NEAR_OPACITY - (distance - 1) * OPACITY_STEP)
 }
 
 type Anchor = {
@@ -85,7 +76,7 @@ export function EffortSlider(props: {
     descriptor.options.find((option) => option.id === level)?.label ?? levelFallbackLabel(level)
   const currentLabel =
     descriptor.options.find((option) => option.id === current)?.label ?? descriptor.label
-  const blocked = props.disabled || traits.busy || traits.unsupportedReason !== null
+  const blocked = props.disabled || traits.unsupportedReason !== null
   const triggerLabel = traits.unsupportedShortLabel ?? currentLabel
   const sizerLabels = Array.from(new Set([...levels.map(labelOf), triggerLabel]))
   const tooltip = blocked
@@ -320,21 +311,18 @@ export function EffortSlider(props: {
 
   const columnReady = columnNode !== null
   useEffect(() => {
-    if (columnReady) columnRef.current?.focus({ preventScroll: true })
+    if (columnReady) columnRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
   }, [columnReady])
 
-  const columnHeight = count * ROW_HEIGHT + (COLUMN_PADDING + COLUMN_BORDER) * 2
-  const alignedTop = anchor
-    ? anchor.centerY - ROW_HEIGHT / 2 - COLUMN_PADDING - COLUMN_BORDER - (count - 1 - index) * ROW_HEIGHT
-    : 0
+  const columnHeight = PANEL_HEIGHT
+  const alignedTop = anchor ? anchor.centerY - columnHeight - VIEWPORT_MARGIN : 0
   const columnTop = anchor
     ? Math.max(
         VIEWPORT_MARGIN,
         Math.min(alignedTop, anchor.viewportHeight - VIEWPORT_MARGIN - columnHeight)
       )
     : 0
-  const shifted = anchor !== null && Math.abs(columnTop - alignedTop) > 0.5
-  const columnWidth = anchor?.triggerWidth ?? 0
+  const columnWidth = anchor ? Math.min(PANEL_WIDTH, anchor.viewportWidth - VIEWPORT_MARGIN * 2) : PANEL_WIDTH
   const columnLeft = anchor
     ? Math.max(
         VIEWPORT_MARGIN,
@@ -352,7 +340,7 @@ export function EffortSlider(props: {
                 ref={triggerRef}
                 aria-disabled={blocked || undefined}
                 aria-label={tooltip}
-                aria-haspopup="listbox"
+                aria-haspopup="dialog"
                 aria-expanded={open}
                 data-composer-shortcut="composer.effort"
                 data-composer-effort-trigger="true"
@@ -400,75 +388,34 @@ export function EffortSlider(props: {
                 columnRef.current = node
                 setColumnNode(node)
               }}
-              role="slider"
+              role="dialog"
               tabIndex={0}
               aria-label={descriptor.label}
-              aria-orientation="vertical"
-              aria-valuemin={0}
-              aria-valuemax={count - 1}
-              aria-valuenow={index}
-              aria-valuetext={currentLabel}
-              data-composer-effort-slider="true"
+              data-composer-effort-panel="true"
               {...composerFloatingLayerProps}
-              className="composer-effort-column fixed z-[130] flex flex-col-reverse overflow-hidden rounded-lg border border-border bg-(--surface-3) shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[top] duration-[180ms] ease-[var(--ease-glide)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]"
+              className="composer-effort-column fixed z-[130] overflow-hidden rounded-lg border border-border bg-(--surface-3) shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]"
               style={{
                 top: columnTop,
                 left: columnLeft,
-                height: columnHeight,
-                width: columnWidth,
-                paddingBlock: COLUMN_PADDING,
-                paddingInline: COLUMN_INLINE_PADDING
+                width: columnWidth
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === 'Escape') {
+                if (event.key === 'Escape' || (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement))) {
                   event.preventDefault()
                   event.stopPropagation()
                   close(true)
                   return
                 }
-                const position =
-                  event.key === 'ArrowUp' || event.key === 'ArrowRight'
-                    ? index + 1
-                    : event.key === 'ArrowDown' || event.key === 'ArrowLeft'
-                      ? index - 1
-                      : event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? count - 1
-                          : null
-                if (position === null) return
-                event.preventDefault()
-                event.stopPropagation()
-                commit(position)
               }}
             >
-              {levels.map((level, position) => {
-                const active = position === index
-                return (
-                  <button
-                    key={level}
-                    type="button"
-                    tabIndex={-1}
-                    data-composer-effort-level={level}
-                    data-active={active || undefined}
-                    aria-current={active || undefined}
-                    onClick={() => {
-                      commit(position)
-                      close(true)
-                    }}
-                    className="flex w-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-0 text-center font-[family-name:var(--font-ui)] font-medium text-[13px] tracking-[-0.005em] outline-none transition-[opacity,background-color] duration-150 hover:!opacity-100 motion-reduce:transition-none"
-                    style={{
-                      backgroundColor: shifted && active ? 'color-mix(in srgb, var(--fg) 10%, transparent)' : undefined,
-                      height: ROW_HEIGHT,
-                      opacity: levelOpacity(Math.abs(position - index))
-                    }}
-                  >
-                    <span className="composer-effort-text" data-effort-level={level}>
-                      <EffortTextContent text={labelOf(level)} />
-                    </span>
-                  </button>
-                )
-              })}
+              <FluidEffortSlider
+                label={descriptor.label}
+                levels={levels}
+                value={currentLevel}
+                labelOf={labelOf}
+                disabled={blocked}
+                onChange={(level) => commit(levels.indexOf(level))}
+              />
             </div>,
             document.body
           )

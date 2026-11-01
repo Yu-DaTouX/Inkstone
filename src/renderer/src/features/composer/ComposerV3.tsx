@@ -55,6 +55,7 @@ import { useSessionQuoteDrop } from './use-session-quote'
 import { imageRefLabel, imageRefPrefix, renumberImageRefsAfterRemoval } from './image-refs'
 import { ImageViewer } from './image-viewer'
 import { ComposerHeightHandle } from './ComposerHeightHandle'
+import { PendingModelChange } from './PendingModelChange'
 import { ComposerWidthHandles } from './ComposerWidthHandles'
 import { loadDraft, restoreDraft, saveDraft } from './draft-store'
 import './composer.css'
@@ -562,6 +563,7 @@ export function ComposerV3(): JSX.Element {
   return (
     <div className="composer-v3" ref={rootRef} data-testid="composer-v3" data-session-quote-drop data-quote-label={t('composer.quoteDrop')}>
       <QueuedRunsControl />
+      <PendingModelChange />
       <ComposerFrame
         editor={editor}
         menuLayer={menuLayer}

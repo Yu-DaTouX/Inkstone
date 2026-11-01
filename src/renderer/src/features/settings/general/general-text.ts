@@ -11,6 +11,9 @@ export interface GeneralText {
   appearanceSendKeyCtrl: string
 
   sessionContextLede: string
+  sessionUserAddress: string
+  sessionUserAddressDesc: string
+  sessionUserAddressPlaceholder: string
   sessionKeepAwakeBatteryOff: string
   sessionAutoArchive: string
   sessionAutoArchiveDesc: string
@@ -192,6 +195,9 @@ const ZH: GeneralText = {
   sessionWrapUpCard: '显示下一步建议',
   sessionWrapUpCardDesc: '仅在需要你决定时显示回复按钮。',
   sessionResponseDetail: '回复详细程度',
+  sessionUserAddress: '如何称呼你',
+  sessionUserAddressDesc: '也用作侧栏名称。保存后从下一轮对话起生效，会发送给模型服务；留空则不指定称呼。',
+  sessionUserAddressPlaceholder: '你的名字或昵称',
   sessionResponseDetailDesc: '只控制讲多细，与思考强度无关。',
   responseDetailBrief: '简洁',
   responseDetailStandard: '标准',
@@ -359,6 +365,9 @@ const EN: GeneralText = {
   sessionWrapUpCard: 'Show next-step suggestions',
   sessionWrapUpCardDesc: 'Only when a decision is needed.',
   sessionResponseDetail: 'Response detail',
+  sessionUserAddress: 'What should the model call you?',
+  sessionUserAddressDesc: 'Also used as your sidebar name. Saved changes apply from the next turn and are sent to the model service. Leave blank for no preference.',
+  sessionUserAddressPlaceholder: 'Your name or nickname',
   sessionResponseDetailDesc: 'Controls length, not thinking effort.',
   responseDetailBrief: 'Brief',
   responseDetailStandard: 'Standard',

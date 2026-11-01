@@ -1,0 +1,19 @@
+@layer primitives {
+  .ui-flip-text {
+    position: relative;
+    display: inline-grid;
+    overflow: hidden;
+    vertical-align: bottom;
+  }
+
+  .ui-flip-text > span {
+    grid-area: 1 / 1;
+    white-space: nowrap;
+  }
+
+  .ui-flip-text__ghost {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+}

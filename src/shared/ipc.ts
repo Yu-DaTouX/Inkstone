@@ -258,6 +258,10 @@ export interface SessionState {
   sessionName?: string
   model?: ModelInfo
   thinkingLevel: string
+  pendingModelChange?: {
+    previousModel?: ModelInfo
+    previousThinkingLevel: string
+  }
   ultracode?: boolean
   availableThinkingLevels: string[]
   thinkingLevelsStatus?: CapabilityStatus
