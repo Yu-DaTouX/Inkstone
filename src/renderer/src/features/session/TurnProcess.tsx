@@ -15,6 +15,12 @@ import type { TranscriptView } from './transcript-view-model'
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 const STEADY_HOLD_MS = 1200
 const USER_TOGGLE_MS = 500
+const BOTTOM_SLACK_PX = 48
+
+function readingBottom(node: HTMLElement): boolean {
+  const stream = node.closest<HTMLElement>('.v3-stream')
+  return !!stream && stream.scrollHeight - stream.clientHeight - stream.scrollTop <= BOTTOM_SLACK_PX
+}
 
 function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; minHeight: number | undefined } {
   const [node, setNode] = useState<HTMLDivElement | null>(null)
@@ -35,7 +41,14 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
       }
       setMinHeight((current) => (box.height > current + 0.5 ? box.height : current))
       window.clearTimeout(release)
-      release = window.setTimeout(() => setMinHeight(0), STEADY_HOLD_MS)
+      const settle = (): void => {
+        if (readingBottom(node)) {
+          release = window.setTimeout(settle, STEADY_HOLD_MS)
+          return
+        }
+        setMinHeight(0)
+      }
+      release = window.setTimeout(settle, STEADY_HOLD_MS)
     })
     const releaseNow = (): void => {
       window.clearTimeout(release)
