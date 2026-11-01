@@ -112,7 +112,8 @@
   .v3-img-thumb { max-height: 220px; max-width: 100%; border-radius: var(--r-sm); border: var(--hair, 1px) solid var(--line); }
   .v3-img-missing { display: inline-flex; align-items: center; gap: var(--s-4); padding: var(--s-4) var(--s-8); border: 1px dashed var(--line2); border-radius: var(--r-sm); color: var(--fg3); font-size: var(--t-footnote); }
 
-  .v3-act { display: flex; align-items: center; gap: var(--s-6); color: var(--fg2); font-size: var(--t-body); }
+  .v3-act { display: flex; align-items: baseline; gap: var(--s-6); color: var(--fg2); font-size: var(--t-body); }
+  .v3-act > .ui-btn { align-self: center; }
   .v3-act[data-kind='run'] { color: var(--run-t); }
   .v3-act[data-kind='retry'] { color: var(--stall-t); }
   .v3-act[data-kind='err'] { color: var(--fail-t); }
