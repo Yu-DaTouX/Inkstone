@@ -1,6 +1,8 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { userSnapshotDir } from './env.mjs'
+import { linkOrCopy, mirrorFile, pruneFiles } from './shared-files.mjs'
 
 const REAL_PI = process.env.YAN_DEBUG_USER_PI || join(homedir(), '.pi', 'agent')
 const DATA_FILES = [
@@ -19,6 +21,7 @@ const DATA_FILES = [
   'artifact-docs.json'
 ]
 const PI_FILES = ['left-panel.json']
+const SNAPSHOT_KEEP_DAYS = 30
 const SECRET_KEYS = /^(apiKey|apiKeys|headers|token|accessToken|refreshToken|secret|password|authorization)$/i
 
 function stripSecrets(value) {
@@ -62,10 +65,18 @@ function recentSessions(root, days, budgetBytes) {
 export function importUserData(box, { days = 7, budgetMb = 400 } = {}) {
   const realData = join(REAL_PI, 'yan')
   const sessions = recentSessions(join(REAL_PI, 'sessions'), days, budgetMb * 1048576)
+  const snapshot = join(userSnapshotDir, 'sessions')
+  const kept = new Set()
+  let refreshed = 0
+  let copied = 0
   for (const file of sessions) {
-    mkdirSync(join(box.sessionsDir, file.bucket), { recursive: true })
-    cpSync(join(REAL_PI, 'sessions', file.bucket, file.name), join(box.sessionsDir, file.bucket, file.name))
+    const rel = join(file.bucket, file.name)
+    kept.add(rel)
+    if (mirrorFile(join(REAL_PI, 'sessions', rel), join(snapshot, rel))) refreshed++
+    if (linkOrCopy(join(snapshot, rel), join(box.sessionsDir, rel)) === 'copy') copied++
   }
+  pruneFiles(snapshot, kept, Date.now() - Math.max(days, SNAPSHOT_KEEP_DAYS) * 86400000)
+  mkdirSync(box.sessionsDir, { recursive: true })
   for (const name of DATA_FILES) {
     if (existsSync(join(realData, name))) cpSync(join(realData, name), join(box.dataDir, name))
   }
@@ -90,5 +101,5 @@ export function importUserData(box, { days = 7, budgetMb = 400 } = {}) {
     const merged = { ...stripSecrets(models), providers: { ...stripSecrets(models.providers), ...(sandboxModels?.providers ?? {}) } }
     writeFileSync(join(box.piDir, 'models.json'), JSON.stringify(merged))
   }
-  return { sessions: sessions.length, sessionMb: Math.round(sessions.reduce((sum, file) => sum + file.size, 0) / 1048576) }
+  return { sessions: sessions.length, sessionMb: Math.round(sessions.reduce((sum, file) => sum + file.size, 0) / 1048576), refreshed, copied }
 }

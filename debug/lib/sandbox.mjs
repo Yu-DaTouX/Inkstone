@@ -2,6 +2,9 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { userSnapshotDir } from './env.mjs'
+import { restoreSample } from './sessions.mjs'
+import { linkOrCopy, linkTree, mirrorTree } from './shared-files.mjs'
 
 const FIXTURE_ROOT = process.env.YAN_DEBUG_FIXTURES || 'E:/Inkstone/bench/Harness-test/tasks'
 const FIXTURE_TASKS = ['40-ledger-incident', '30-async-refactor', '50-expr-lang', '10-cache-bugs', '20-csv-spec']
@@ -56,11 +59,15 @@ export function createSandbox(runDir, { fakePort, samples = [], demo = false } =
     writeFileSync(join(box.piDir, 'settings.json'), JSON.stringify({ defaultProvider: 'fake', defaultModel: 'fake-model' }))
   }
   const realBin = join(homedir(), '.pi', 'agent', 'bin')
-  if (existsSync(realBin)) cpSync(realBin, join(box.piDir, 'bin'), { recursive: true })
+  if (existsSync(realBin)) {
+    const sharedBin = join(userSnapshotDir, 'bin')
+    mirrorTree(realBin, sharedBin)
+    linkTree(sharedBin, join(box.piDir, 'bin'))
+  }
   for (const sample of samples) {
     const target = join(box.sessionsDir, sample.bucket, sample.file)
-    mkdirSync(join(box.sessionsDir, sample.bucket), { recursive: true })
-    cpSync(sample.path, target)
+    if (!restoreSample(sample)) console.log(`提示：样本 ${sample.bucket}/${sample.file} 与清单不符，按现状使用`)
+    linkOrCopy(sample.path, target)
     box.samples.push(target)
   }
   return box

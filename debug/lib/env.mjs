@@ -1,12 +1,22 @@
+import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:net'
 import { mkdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 
 export const root = resolve(import.meta.dirname, '..', '..')
 export const debugDir = join(root, 'debug')
 export const dataDir = join(debugDir, 'data')
 export const runsDir = join(debugDir, 'runs')
-export const sessionSamplesDir = join(dataDir, 'sessions')
+
+function mainCheckout() {
+  const result = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8', windowsHide: true })
+  const common = result.status === 0 ? result.stdout.trim() : ''
+  return common && basename(common) === '.git' ? dirname(common) : root
+}
+
+export const sharedDataDir = join(mainCheckout(), 'debug', 'data')
+export const sessionSamplesDir = join(sharedDataDir, 'sessions')
+export const userSnapshotDir = join(sharedDataDir, 'user-snapshot')
 export const currentFile = join(runsDir, 'current.json')
 
 export const sleep = (ms) => new Promise((done) => setTimeout(done, ms))

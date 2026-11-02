@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, truncateSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
 import { sessionSamplesDir } from './env.mjs'
@@ -59,6 +59,15 @@ export function samplePaths(selector) {
   if (selector === 'all') return all
   const wanted = String(selector).split(',').map((part) => part.trim()).filter(Boolean)
   return all.filter((entry, index) => wanted.some((want) => want === String(index + 1) || entry.file.includes(want)))
+}
+
+export function restoreSample(entry) {
+  if (!existsSync(entry.path)) return false
+  const size = statSync(entry.path).size
+  if (size === entry.bytes) return true
+  if (size < entry.bytes) return false
+  truncateSync(entry.path, entry.bytes)
+  return !entry.sha256 || sha256(entry.path) === entry.sha256
 }
 
 export function describeSamples() {
