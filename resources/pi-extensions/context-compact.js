@@ -4,7 +4,7 @@
 // 并在压缩完成后把失败原因记成不进上下文的会话条目；连续失败 3 次后直接交给 pi。
 // 被压缩的原文按段加锚点，追加写进会话文件旁的 <会话>.jsonl.history.txt（常见密钥格式替换成占位符），
 // 摘要末尾给出路径，模型缺细节时可以 grep 或读局部。
-import { readFile, writeFile, rename, rm } from 'node:fs/promises'
+import { appendFile, open, readFile, rm, stat, truncate } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 
 const SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.
@@ -156,32 +156,67 @@ export function snapshotPath(sessionFile) {
   return sessionFile ? `${sessionFile}.history.txt` : null
 }
 
-async function readText(file) {
-  try {
-    return await readFile(file, 'utf8')
-  } catch {
-    return ''
-  }
-}
+const SNAPSHOT_HEADER_LINE = /^=== compaction (\d+) · \S+ · \d+ parts ===$/
+const SNAPSHOT_SCAN_CHUNK = 64 * 1024
 
-export function nextCompactionNo(existing) {
-  return existing.split('\n').filter((line) => line.startsWith(SNAPSHOT_HEADER)).length + 1
-}
-
-// 先写临时文件、核对长度，再原子改名；返回路径和总字符数
-export async function appendSnapshot(file, existing, compactionNo, parts) {
-  const block = `${SNAPSHOT_HEADER}${compactionNo} · ${new Date().toISOString()} · ${parts.length} parts ===\n\n${redactSecrets(parts.join('\n\n'))}\n\n`
-  const content = existing + block
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`
+async function fileSize(file) {
   try {
-    await writeFile(tmp, content, 'utf8')
-    if ((await readFile(tmp, 'utf8')).length !== content.length) throw new Error('snapshot verify failed')
-    await rename(tmp, file)
+    return (await stat(file)).size
   } catch (error) {
-    await rm(tmp, { force: true }).catch(() => undefined)
+    if (error?.code === 'ENOENT') return 0
     throw error
   }
-  return { path: file, chars: content.length }
+}
+
+export async function snapshotState(file) {
+  const size = await fileSize(file)
+  if (!size) return { size, next: 1, endsClean: true }
+  const handle = await open(file, 'r')
+  try {
+    let end = size
+    let carry = Buffer.alloc(0)
+    let endsClean = true
+    while (end > 0) {
+      const start = Math.max(0, end - SNAPSHOT_SCAN_CHUNK)
+      const chunk = Buffer.alloc(end - start)
+      await handle.read(chunk, 0, chunk.length, start)
+      if (end === size) endsClean = chunk.subarray(-2).toString('utf8') === '\n\n'
+      const joined = Buffer.concat([chunk, carry])
+      const cut = start > 0 ? joined.indexOf(10) : -1
+      if (start > 0 && cut < 0) {
+        carry = joined
+        end = start
+        continue
+      }
+      const lines = joined.subarray(cut + 1).toString('utf8').split('\n')
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const match = SNAPSHOT_HEADER_LINE.exec(lines[i])
+        if (match) return { size, next: Number(match[1]) + 1, endsClean }
+      }
+      carry = start > 0 ? joined.subarray(0, cut) : Buffer.alloc(0)
+      end = start
+    }
+    return { size, next: 1, endsClean }
+  } finally {
+    await handle.close()
+  }
+}
+
+// 只追加本次的一段：写后核对长度，失败就截回原长度，不重写已有内容
+export async function appendSnapshot(file, state, compactionNo, parts) {
+  const lead = state.endsClean ? '' : '\n\n'
+  const block = `${lead}${SNAPSHOT_HEADER}${compactionNo} · ${new Date().toISOString()} · ${parts.length} parts ===\n\n${redactSecrets(parts.join('\n\n'))}\n\n`
+  const bytes = Buffer.byteLength(block, 'utf8')
+  try {
+    await appendFile(file, block, 'utf8')
+    const after = await fileSize(file)
+    if (after !== state.size + bytes) throw new Error('snapshot verify failed')
+  } catch (error) {
+    if (state.size) await truncate(file, state.size).catch(() => undefined)
+    else await rm(file, { force: true }).catch(() => undefined)
+    throw error
+  }
+  return { path: file, bytes: state.size + bytes }
 }
 
 const REINJECT_MAX_FILES = 5
@@ -227,6 +262,13 @@ export async function currentFilesBlock(paths, cwd, ratio) {
     if (!rel || rel.startsWith('..') || isAbsolute(rel)) continue
     let text
     try {
+      const info = await stat(full)
+      if (!info.isFile()) continue
+      if (info.size > Math.ceil(Math.min(REINJECT_FILE_TOKENS, budget) / ratio) * 4) {
+        sections.push(`=== ${p} (${info.size} bytes, too large to include here; read it if you need it) ===`)
+        files.push({ path: p, included: false })
+        continue
+      }
       text = await readFile(full, 'utf8')
     } catch {
       continue
@@ -291,8 +333,8 @@ export function userMessagesBlock(previousSummary, messages, compactionNo, maxCh
   return `\n\n<user-messages>\n${note}\n${entries.join('\n')}\n</user-messages>`
 }
 
-export function snapshotPointer({ path, chars }) {
-  return `\n\n<history-snapshot>\nThe full text of the conversation compacted so far, tool outputs included, is saved at ${path} (${chars} characters). Each part starts with an anchor line like "### [#2.17 tool_result read call=... ok]", matching (#2.17) citations above; source tags like (read src/app.ts) can be found by grepping the path or command. You can grep it or read parts of it when you need an exact detail; it records what was seen at the time, and files on disk may have changed since.\n</history-snapshot>`
+export function snapshotPointer({ path, bytes }) {
+  return `\n\n<history-snapshot>\nThe full text of the conversation compacted so far, tool outputs included, is saved at ${path} (${bytes} bytes). Each part starts with an anchor line like "### [#2.17 tool_result read call=... ok]", matching (#2.17) citations above; source tags like (read src/app.ts) can be found by grepping the path or command. You can grep it or read parts of it when you need an exact detail; it records what was seen at the time, and files on disk may have changed since.\n</history-snapshot>`
 }
 
 // 把超长的一段按行切成不超过 maxChars 的几片（单行太长再按字符切），每片开头标明是第几片
@@ -548,8 +590,8 @@ export default function contextCompactExtension(pi) {
     try {
       const messages = [...(preparation.messagesToSummarize ?? []), ...(preparation.turnPrefixMessages ?? [])]
       const historyFile = snapshotPath(ctx.sessionManager?.getSessionFile?.())
-      const existing = historyFile ? await readText(historyFile) : ''
-      const compactionNo = nextCompactionNo(existing)
+      const history = historyFile ? await snapshotState(historyFile).catch(() => null) : null
+      const compactionNo = history?.next ?? 1
       const parts = messages.flatMap((m, i) => {
         const body = serializeMessage(m, i + 1)
         return body ? [`${anchorLine(m, compactionNo, i + 1)}\n${body}`] : []
@@ -640,7 +682,8 @@ export default function contextCompactExtension(pi) {
       let snapshotError
       if (historyFile) {
         try {
-          snapshot = await appendSnapshot(historyFile, existing, compactionNo, parts)
+          if (!history) throw new Error('snapshot file unreadable')
+          snapshot = await appendSnapshot(historyFile, history, compactionNo, parts)
         } catch (error) {
           snapshotError = String(error?.message ?? error).slice(0, 200)
         }
@@ -654,7 +697,7 @@ export default function contextCompactExtension(pi) {
           usage,
           details: {
             ...files, path, ...(fastMs !== undefined ? { fastMs } : {}), ...(fastError ? { fastError } : {}), chunks, calls, capacityRetries, lengthRetries, parts: parts.length, ms: Date.now() - startedAt, untruncated: true,
-            compactionNo, ...(current.files.length ? { reinjected: current.files } : {}), ...(snapshot ? { snapshot: snapshot.path, snapshotChars: snapshot.chars } : {}), ...(snapshotError ? { snapshotError } : {})
+            compactionNo, ...(current.files.length ? { reinjected: current.files } : {}), ...(snapshot ? { snapshot: snapshot.path, snapshotBytes: snapshot.bytes } : {}), ...(snapshotError ? { snapshotError } : {})
           }
         }
       }

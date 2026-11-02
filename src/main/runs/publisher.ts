@@ -29,6 +29,7 @@ export class RunPublisher {
 
   pushChange(change: RunChange): void {
     for (const snapshot of change.runs) this.push(snapshot, change.immediate)
+    for (const runId of change.removed ?? []) this.remove(runId, false)
   }
 
   push(snapshot: RunSnapshot, immediate = false): void {

@@ -178,6 +178,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+const snapshotWrites = new Map<string, Promise<unknown>>()
+
 async function writeAtomicText(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const temp = `${path}.${randomBytes(6).toString('hex')}.tmp`
@@ -377,22 +379,23 @@ export class McpAppProxyService {
 
     const targetIds = new Set(targets.map((server) => server.id))
     const managedIds = new Set(managed.map((server) => server.id))
-    const keptFromOtherScopes = (this.readSnapshot()?.tools ?? []).filter((tool) => {
-      if (targetIds.has(tool.serverId)) return false
-      const scope = typeof tool.projectScope === 'string' ? tool.projectScope : ''
-      return managedIds.has(tool.serverId) || (!!scope && scope !== callerProjectId)
+    await this.commitSnapshot((current) => {
+      const keptFromOtherScopes = (current?.tools ?? []).filter((tool) => {
+        if (targetIds.has(tool.serverId)) return false
+        const scope = typeof tool.projectScope === 'string' ? tool.projectScope : ''
+        return managedIds.has(tool.serverId) || (!!scope && scope !== callerProjectId)
+      })
+      const keptServerIds = new Set(keptFromOtherScopes.map((tool) => tool.serverId))
+      const keptServers = (current?.servers ?? []).filter((server) => keptServerIds.has(server.id) && !targetIds.has(server.id))
+      return {
+        version: SNAPSHOT_VERSION,
+        generatedAt,
+        source: SNAPSHOT_SOURCE,
+        tools: [...keptFromOtherScopes, ...tools],
+        servers: [...keptServers, ...servers],
+        excluded
+      }
     })
-    const keptServerIds = new Set(keptFromOtherScopes.map((tool) => tool.serverId))
-    const keptServers = (this.readSnapshot()?.servers ?? []).filter((server) => keptServerIds.has(server.id) && !targetIds.has(server.id))
-    const snapshot: McpAppProxySnapshot = {
-      version: SNAPSHOT_VERSION,
-      generatedAt,
-      source: SNAPSHOT_SOURCE,
-      tools: [...keptFromOtherScopes, ...tools],
-      servers: [...keptServers, ...servers],
-      excluded
-    }
-    await writeAtomicText(this.snapshotPath(), `${JSON.stringify(snapshot, null, 2)}\n`)
     return {
       ok: errors.length === 0,
       path: this.snapshotPath(),
@@ -405,6 +408,15 @@ export class McpAppProxyService {
       collisions,
       errors
     }
+  }
+
+  private commitSnapshot(build: (current: McpAppProxySnapshot | null) => McpAppProxySnapshot): Promise<void> {
+    const path = this.snapshotPath()
+    const run = (snapshotWrites.get(path) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      await writeAtomicText(path, `${JSON.stringify(build(this.readSnapshot()), null, 2)}\n`)
+    })
+    snapshotWrites.set(path, run)
+    return run
   }
 
   registrableTools(): McpAppProxyTool[] {

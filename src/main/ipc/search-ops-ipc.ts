@@ -1,5 +1,5 @@
-import { readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { SEARCH_OPS_READ_CHANNEL, SEARCH_SITE_ICON_CHANNEL } from '../../shared/ipc'
 import { createSiteIconLoader } from '../search/site-icon'
 import type { WebSearchOpView, WebSearchPageView, WebSearchSourceView } from '../../shared/ipc'
@@ -12,6 +12,8 @@ const MAX_SOURCES = 30
 const MAX_SNIPPET = 300
 const MAX_TITLE = 200
 const MAX_SOURCE_NAME = 40
+const SNAPSHOT_COMMANDS = new Set(['search.query', 'search.fetch'])
+export const SEARCH_SNAPSHOT_MAX_FILES = 10_000
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
@@ -125,6 +127,68 @@ export function cleanSearchOp(data: unknown): WebSearchOpView {
   return { ok: false, error: 'unsupported_result' }
 }
 
+export function searchSnapshotDir(opsDir: string): string {
+  return join(dirname(opsDir), 'search-sources')
+}
+
+function snapshotData(view: WebSearchOpView): unknown {
+  if (!view.ok) return null
+  if (view.kind === 'search') {
+    return {
+      items: view.sources.map(({ title, url, snippet, source, published }) => ({ title, url, snippet, source, published })),
+      fetchedAt: view.sources[0]?.fetchedAt ?? '',
+      cached: view.sources[0]?.cached === true
+    }
+  }
+  const { page } = view
+  return { url: page.url, title: page.title, excerpt: page.excerpt, fetchedAt: page.fetchedAt, cached: page.cached, truncated: page.truncated, sourceTruncated: page.sourceTruncated }
+}
+
+export function preserveSearchOp(opsDir: string, command: string, operationId: string, data: unknown): void {
+  const id = String(operationId ?? '').trim().toLowerCase()
+  if (!SNAPSHOT_COMMANDS.has(command) || !OPERATION_ID.test(id)) return
+  const compact = snapshotData(cleanSearchOp(data))
+  if (!compact) return
+  const dir = searchSnapshotDir(opsDir)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${id}.json`), JSON.stringify(compact), 'utf8')
+}
+
+export function pruneSearchSnapshots(opsDir: string, maxFiles = SEARCH_SNAPSHOT_MAX_FILES): void {
+  const dir = searchSnapshotDir(opsDir)
+  let names: string[]
+  try {
+    names = readdirSync(dir).filter((name) => name.endsWith('.json'))
+  } catch {
+    return
+  }
+  if (names.length <= maxFiles) return
+  const files = names.flatMap((name) => {
+    try {
+      return [{ path: join(dir, name), at: statSync(join(dir, name)).mtimeMs }]
+    } catch {
+      return []
+    }
+  })
+  files.sort((a, b) => a.at - b.at)
+  for (const file of files.slice(0, files.length - maxFiles)) {
+    try {
+      unlinkSync(file.path)
+    } catch {
+    }
+  }
+}
+
+function readSearchSnapshot(opsDir: string, id: string): WebSearchOpView | null {
+  const path = join(searchSnapshotDir(opsDir), `${id}.json`)
+  try {
+    if (statSync(path).size > MAX_FILE_BYTES) return null
+    return cleanSearchOp(JSON.parse(readFileSync(path, 'utf8')))
+  } catch {
+    return null
+  }
+}
+
 export function readSearchOpFile(opsDir: string, operationId: string): WebSearchOpView {
   const id = String(operationId ?? '').trim().toLowerCase()
   if (!OPERATION_ID.test(id)) return { ok: false, error: 'bad_operation_id' }
@@ -134,7 +198,8 @@ export function readSearchOpFile(opsDir: string, operationId: string): WebSearch
     info = statSync(path)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException | undefined)?.code
-    return { ok: false, error: code === 'ENOENT' ? 'not_found' : 'unavailable' }
+    if (code === 'ENOENT') return readSearchSnapshot(opsDir, id) ?? { ok: false, error: 'not_found' }
+    return { ok: false, error: 'unavailable' }
   }
   if (!info.isFile()) return { ok: false, error: 'not_found' }
   if (info.size > MAX_FILE_BYTES) return { ok: false, error: 'too_large' }
@@ -143,6 +208,7 @@ export function readSearchOpFile(opsDir: string, operationId: string): WebSearch
 
 export function registerSearchOpsIpc(ipc: IpcRegistrar, opts: { opsDir: string }): void {
   const siteIcon = createSiteIconLoader()
+  pruneSearchSnapshots(opts.opsDir)
   ipc.handle(SEARCH_SITE_ICON_CHANNEL, (url: unknown) => typeof url === 'string' && url.length <= 8192 ? siteIcon(url) : null)
   ipc.handle(SEARCH_OPS_READ_CHANNEL, (operationId: unknown): WebSearchOpView => {
     try {

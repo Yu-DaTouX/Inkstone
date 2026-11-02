@@ -2,7 +2,7 @@ import { LIFE_ASSISTANT_ENABLED } from '../features'
 import { useEffect, useState } from 'react'
 import { Alert, Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import type { Connection } from '../api/client'
-import { openAlertSettings } from '../questionAlerts'
+import { openAlertSettings, questionAlertsSupported } from '../questionAlerts'
 import { useRemote } from '../state'
 import { font, mono, radius, space, usePalette } from '../theme'
 import { Button, Header, IconButton, Input, Meta, SectionTitle, STATUS_TEXT, StatusDot } from '../ui'
@@ -50,10 +50,11 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
           <View style={styles.row}>
             <Text style={{ flex: 1, color: p.fg, fontSize: font.base }}>任务与问题通知</Text>
-            <Switch value={alertsEnabled} onValueChange={(enabled) => enabled ? onEnableAlerts() : onDisableAlerts()} accessibilityLabel="手机待回答通知" trackColor={{ true: p.accentSoft, false: p.bg3 }} thumbColor={alertsEnabled ? p.accent : p.fgMute} />
+            <Switch disabled={!questionAlertsSupported(connection)} value={alertsEnabled} onValueChange={(enabled) => enabled ? onEnableAlerts() : onDisableAlerts()} accessibilityLabel="手机待回答通知" trackColor={{ true: p.accentSoft, false: p.bg3 }} thumbColor={alertsEnabled ? p.accent : p.fgMute} />
           </View>
           <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>同时提醒多 Agent 的待答复、待审阅和待核实事项。锁屏只显示数量。</Text>
           <Button label="系统通知设置" onPress={() => void openAlertSettings()} />
+          {!questionAlertsSupported(connection) ? <Text style={{ color: p.warn, fontSize: font.sm, lineHeight: 20 }}>经中继连接时暂不支持后台提醒；打开砚时仍会显示待回答事项。</Text> : null}
         </View>
         {LIFE_ASSISTANT_ENABLED ? <>
           <SectionTitle>生活助手</SectionTitle>

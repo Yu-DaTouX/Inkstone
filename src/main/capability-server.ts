@@ -54,6 +54,7 @@ export interface CapabilityServerOptions {
   opsDir: string
   allowCommands?: string[]
   onlyCommands?: string[]
+  preserveResult?: (command: string, operationId: string, data: unknown) => void
 }
 
 const NOT_IMPLEMENTED: CapabilityHandlers = {
@@ -204,11 +205,13 @@ export class CapabilityServer {
   private ctx: CapabilityContext | null = null
   private ops: Array<{ id: string; command: string; at: number; ok: boolean; error?: string; resultFile?: string; resultBytes?: number }> = []
   private readonly opsDir: string
+  private readonly preserveResult?: (command: string, operationId: string, data: unknown) => void
   private readonly handlers: CapabilityHandlers
   private readonly allowCommands: Set<string>
 
   constructor(opts: CapabilityServerOptions) {
     this.opsDir = opts.opsDir
+    this.preserveResult = opts.preserveResult
     this.handlers = opts.handlers ?? NOT_IMPLEMENTED
     this.allowCommands = new Set(opts.onlyCommands ?? [...KNOWN_COMMANDS, ...(opts.allowCommands ?? [])])
   }
@@ -387,6 +390,12 @@ export class CapabilityServer {
           : await this.handlers.run(command, params, bound, cancel.signal)
       if (cancel.signal.aborted || generation !== this.generation) return
       const file = this.writeResult(opId, out)
+      if (file && out.data !== undefined) {
+        try {
+          this.preserveResult?.(command, opId, out.data)
+        } catch {
+        }
+      }
       this.remember({ id: opId, command, at: Date.now(), ok: true, ...(file ? { resultFile: file.path, resultBytes: file.bytes } : {}) })
       reply(200, {
         ok: true,

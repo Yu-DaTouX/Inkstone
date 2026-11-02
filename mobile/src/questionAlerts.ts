@@ -14,9 +14,17 @@ function native(): QuestionAlertsNative | null {
     : null
 }
 
+export function questionAlertsSupported(connection: Connection): boolean {
+  return !connection.relay
+}
+
 export async function startQuestionAlerts(connection: Connection, requestPermission = false): Promise<boolean> {
   const alerts = native()
   if (!alerts) return false
+  if (!questionAlertsSupported(connection)) {
+    await alerts.stop().catch(() => false)
+    return false
+  }
   if (Number(Platform.Version) >= 33) {
     const permission = PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
     if (!await PermissionsAndroid.check(permission)) {

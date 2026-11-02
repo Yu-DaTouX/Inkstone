@@ -107,6 +107,17 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
     ok(renamed.response.status === 200 && calls.at(-1).action === 'rename', '远程 rename 走独立操作')
 
     const created = await json('/remote/v1/sessions/new', { method: 'POST' })
+    const newIn = (projectId) => json('/remote/v1/sessions/new', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': 'new-session-retry-0001' },
+      body: JSON.stringify({ projectId })
+    })
+    const firstNew = await newIn('project-a')
+    const callsAfterFirst = calls.length
+    const replayNew = await newIn('project-a')
+    ok(firstNew.response.status === 200 && replayNew.response.status === 200 && calls.length === callsAfterFirst && replayNew.body.data.projectId === 'project-a', '同项目用同一幂等键重试，回放原结果不重复新建')
+    const otherProject = await newIn('project-b')
+    ok(otherProject.response.status === 409 && otherProject.body.code === 'idempotency_key_reused' && calls.length === callsAfterFirst, '同一幂等键换了项目不会拿到另一个项目的新会话')
     ok(created.response.status === 200 && calls.at(-1).action === 'new', '远程 new 创建新会话')
 
     const noRunId = await json('/remote/v1/runs/abort', {

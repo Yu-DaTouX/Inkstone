@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { appendFile, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, rm, symlink, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -193,6 +193,19 @@ export async function runUsageStatsSubagentTests(ok) {
   ok((await forkReader('all')).tokens === 190, 'fork 子代理重复读取不翻倍')
   const persistedFork = Object.values(JSON.parse(await readFile(cacheFile, 'utf8')).files).find((entry) => entry.sourceKind === 'subagent')
   ok(persistedFork.forkedAt === Date.parse(forkedAt), 'fork 时间边界随增量偏移一起持久化')
+
+  await reset()
+  const replacedFile = join(mainDir, 'replaced.jsonl')
+  const replacedReader = reader()
+  await writeMain('replaced.jsonl', [userLine(iso(now - DAY)), replyLine(iso(now - DAY + 1000), { total: 300 })])
+  ok((await replacedReader('all')).tokenBreakdown.main === 300, '替换场景：初始统计')
+  await writeMain('replaced.jsonl', [userLine(iso(now - DAY)), replyLine(iso(now - DAY + 1000), { total: 900 })])
+  await utimes(replacedFile, new Date(), new Date(Date.now() + 60_000))
+  ok((await replacedReader('all')).tokenBreakdown.main === 900, '等长内容替换后重新统计，不沿用旧值')
+  await writeMain('replaced.jsonl', [userLine(iso(now - 2 * DAY)), replyLine(iso(now - 2 * DAY + 1000), { total: 40 }), userLine(iso(now - DAY)), replyLine(iso(now - DAY + 1000), { total: 70 })])
+  ok((await replacedReader('all')).tokenBreakdown.main === 110, '更大的非追加替换从头重算，不从旧偏移续读')
+  await appendFile(replacedFile, `${replyLine(iso(now - DAY + 5000), { total: 5 })}\n`)
+  ok((await replacedReader('all')).tokenBreakdown.main === 115, '真正的追加仍只读新增部分')
 
   await reset()
   const aliasFile = join(mainDir, 'alias.jsonl')

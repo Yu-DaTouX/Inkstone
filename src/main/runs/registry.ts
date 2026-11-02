@@ -35,6 +35,7 @@ export interface RunContext {
 export interface RunChange {
   runs: RunSnapshot[]
   immediate: boolean
+  removed?: string[]
 }
 
 export interface RunError {
@@ -51,6 +52,9 @@ export interface RunRegistryOptions {
   history?: RunHistoryWriter
   onChange?: (change: RunChange) => void
   onError?: (error: RunError) => void
+  finishedKeepMs?: number
+  finishedKeepMax?: number
+  unsavedKeepMax?: number
 }
 
 interface RunEntry {
@@ -59,7 +63,13 @@ interface RunEntry {
   phaseFrom: number
   segments: RunHistorySegment[]
   historyWritten: boolean
+  endedAt?: number
+  persisted?: boolean
 }
+
+const FINISHED_KEEP_MS = 10 * 60_000
+const FINISHED_KEEP_MAX = 200
+const UNSAVED_KEEP_MAX = 1000
 
 let globalRunSeq = 0
 
@@ -352,12 +362,34 @@ export class RunRegistry {
     const becameTerminal = isTerminalPhase(next.phase) && !isTerminalPhase(before.phase)
     if (becameTerminal) this.finish(entry, now)
     this.emit([snapshotOf(next)], immediate)
+    if (becameTerminal) this.pruneFinished(now)
     return snapshotOf(next)
+  }
+
+  private pruneFinished(now: number): void {
+    const keepMs = this.options.finishedKeepMs ?? FINISHED_KEEP_MS
+    const keepMax = this.options.finishedKeepMax ?? FINISHED_KEEP_MAX
+    const unsavedMax = this.options.unsavedKeepMax ?? UNSAVED_KEEP_MAX
+    const finished = [...this.runs.values()]
+      .filter((entry) => entry.endedAt !== undefined)
+      .sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0))
+    const removed: string[] = []
+    for (const entry of finished) {
+      const kept = finished.length - removed.length
+      const evictable = entry.persisted
+        ? now - (entry.endedAt ?? now) >= keepMs || kept > keepMax
+        : kept > unsavedMax
+      if (!evictable) continue
+      this.runs.delete(entry.state.runId)
+      removed.push(entry.state.runId)
+    }
+    if (removed.length) this.emit([], false, removed)
   }
 
   private finish(entry: RunEntry, now: number): void {
     if (entry.historyWritten) return
     entry.historyWritten = true
+    entry.endedAt = now
     this.active.delete(entry.state.sessionId)
     const phase = entry.state.phase
     const terminal = phase.kind === 'failed' || phase.kind === 'stopped' || phase.kind === 'done' ? phase.kind : 'done'
@@ -381,8 +413,13 @@ export class RunRegistry {
       counts: entry.state.counts
     }
     const writer = this.options.history
-    if (!writer) return
-    void writer.append(record).catch((error: unknown) => {
+    if (!writer) {
+      entry.persisted = true
+      return
+    }
+    void writer.append(record).then(() => {
+      entry.persisted = true
+    }, (error: unknown) => {
       this.reportError({
         code: 'history-write-failed',
         message: `运行历史写入失败：${error instanceof Error ? error.message : String(error)}`,
@@ -392,9 +429,9 @@ export class RunRegistry {
     })
   }
 
-  private emit(snapshots: RunSnapshot[], immediate: boolean): void {
-    if (snapshots.length === 0) return
-    const change: RunChange = { runs: snapshots, immediate }
+  private emit(snapshots: RunSnapshot[], immediate: boolean, removed: string[] = []): void {
+    if (snapshots.length === 0 && removed.length === 0) return
+    const change: RunChange = { runs: snapshots, immediate, ...(removed.length ? { removed } : {}) }
     this.options.onChange?.(change)
     for (const listener of [...this.listeners]) listener(change)
   }

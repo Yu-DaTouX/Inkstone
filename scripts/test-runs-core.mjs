@@ -377,6 +377,39 @@ async function runRegistryTests(main, shared, dir) {
   const order = registry.list().map((r) => r.phase.kind)
   const priorities = order.map((k) => shared.RUN_PHASE_ORDER[k])
   assert.deepEqual(priorities, [...priorities].sort((a, b) => a - b))
+
+  const flush = () => new Promise((resolve) => setImmediate(resolve))
+  const pruneStore = new SessionCodeStore({ root: dir })
+  await pruneStore.load()
+  await pruneStore.assign('prune-s', 'session')
+  let pruneNow = 10_000
+  const pruneChanges = []
+  const pruning = new RunRegistry({ codes: pruneStore, history: new MemoryRunHistory(), now: () => pruneNow, finishedKeepMs: 60_000, finishedKeepMax: 3, onChange: (change) => pruneChanges.push(change) })
+  const finishRun = async (registryUnderTest, runId) => {
+    registryUnderTest.open({ sessionId: 'prune-s', runId })
+    registryUnderTest.stop({ sessionId: 'prune-s', runId })
+    await flush()
+    pruneNow += 1000
+  }
+  for (let i = 0; i < 5; i++) await finishRun(pruning, `pr${i}`)
+  assert.equal(pruning.get('pr0'), undefined, '已写入历史的结束运行超过上限后从内存回收')
+  assert.equal(pruning.get('pr1'), undefined)
+  assert.ok(pruning.get('pr2') && pruning.get('pr4'), '最近结束的运行仍保留')
+  assert.deepEqual(pruneChanges.flatMap((change) => change.removed ?? []), ['pr0', 'pr1'], '回收时发出删除通知')
+  pruneNow += 70_000
+  await finishRun(pruning, 'pr5')
+  assert.deepEqual(pruning.list().map((run) => run.runId), ['pr5'], '超过保留时间的结束运行全部回收，刚结束的保留')
+  assert.equal(pruning.observe({ sessionId: 'prune-s', runId: 'pr0' }, { type: 'activity', activity: 'streaming' }), null, '已回收运行的迟到事件被忽略')
+
+  const failing = new RunRegistry({ codes: pruneStore, history: { append: () => Promise.reject(new Error('disk full')) }, now: () => pruneNow, finishedKeepMs: 1, finishedKeepMax: 1, unsavedKeepMax: 2, onError: () => {} })
+  for (let i = 0; i < 4; i++) await finishRun(failing, `pf${i}`)
+  assert.deepEqual(failing.list().map((run) => run.runId).sort(), ['pf2', 'pf3'], '历史写入失败的只在超过硬上限时才回收')
+
+  const removalBatches = []
+  const removalPublisher = new main.RunPublisher({ emit: (payload) => removalBatches.push(payload), setTimeout: () => null, clearTimeout: () => {} })
+  removalPublisher.pushChange({ runs: [], immediate: false, removed: ['gone'] })
+  removalPublisher.flush()
+  assert.deepEqual(removalBatches.at(-1)?.remove, ['gone'], '发布器把回收转成删除')
 }
 
 function runPublisherTests(main, shared) {

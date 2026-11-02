@@ -367,6 +367,7 @@ export interface CapabilityRunOptions {
   binDir: string
   artifactDir: string
   devResourcesDir?: string
+  preserveResult?: (command: string, operationId: string, data: unknown) => void
   execution?: ExecuteAdmissionPort
   onBashSettled?: () => void
   trashItem?: (path: string) => Promise<void>
@@ -696,6 +697,7 @@ export class AgentController extends EventEmitter {
       artifactDir: string
       runnerGeneration?: number
       devResourcesDir?: string
+      preserveResult?: (command: string, operationId: string, data: unknown) => void
       onBashSettled?: () => void
       trashItem?: (path: string) => Promise<void>
       previewHtml?: (htmlPath: string, root: string, options?: { at?: number[] }) => Promise<unknown>
@@ -779,7 +781,8 @@ export class AgentController extends EventEmitter {
       }
       const server = new CapabilityServer({
         opsDir: opts.opsDir,
-        handlers
+        handlers,
+        ...(opts.preserveResult ? { preserveResult: opts.preserveResult } : {})
       })
       const { url, token } = await server.start({
         sessionId: opts.sessionId,

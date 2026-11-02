@@ -220,7 +220,7 @@ export class RemoteServer {
   private readonly buffer: RemoteEventEnvelope[] = []
   private bufferBytes = 0
   private readonly eventFrames = new WeakMap<RemoteEventEnvelope, { text: string; bytes: number }>()
-  private readonly idempotency = new Map<string, { at: number; result: Promise<RemoteOperationResult> }>()
+  private readonly idempotency = new Map<string, { at: number; result: Promise<RemoteOperationResult>; fingerprint?: string }>()
   private pairAttempts: number[] = []
   private readonly pairAttemptsBySource = new Map<string, number[]>()
 
@@ -461,7 +461,8 @@ export class RemoteServer {
     res: ServerResponse,
     caller: Caller,
     required: boolean,
-    run: () => Promise<RemoteOperationResult>
+    run: () => Promise<RemoteOperationResult>,
+    fingerprint?: string
   ): Promise<void> {
     const header = req.headers[REMOTE_IDEMPOTENCY_HEADER]
     const key = typeof header === 'string' ? header.trim() : ''
@@ -480,6 +481,10 @@ export class RemoteServer {
     this.pruneIdempotency()
     const scoped = `${caller.device?.id ?? 'legacy'}:${req.method}:${new URL(req.url ?? '/', 'http://x').pathname}:${key}`
     const existing = this.idempotency.get(scoped)
+    if (existing && existing.fingerprint !== fingerprint) {
+      writeError(res, 409, '这个幂等键已用于另一个请求，请重新发起', 'idempotency_key_reused')
+      return
+    }
     if (existing) {
       const result = await existing.result
       this.writeOperation(res, result, true)
@@ -490,7 +495,7 @@ export class RemoteServer {
       status: 500,
       error: error instanceof Error ? error.message : '远程操作失败'
     }))
-    this.idempotency.set(scoped, { at: Date.now(), result })
+    this.idempotency.set(scoped, { at: Date.now(), result, ...(fingerprint !== undefined ? { fingerprint } : {}) })
     this.writeOperation(res, await result)
   }
 
@@ -715,7 +720,7 @@ export class RemoteServer {
       const body = await this.readJson(req)
       if (body.projectId !== undefined && !validText(body.projectId, 200)) return writeError(res, 400, '项目 id 无效')
       const projectId = typeof body.projectId === 'string' ? body.projectId : undefined
-      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'new', ...(projectId ? { projectId } : {}) }))
+      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'new', ...(projectId ? { projectId } : {}) }), `project:${projectId ?? ''}`)
       return
     }
 

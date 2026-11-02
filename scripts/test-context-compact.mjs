@@ -145,7 +145,7 @@ const ok = (text, usage) => ({ stopReason: 'stop', content: [{ type: 'text', tex
   assert.ok(history.includes('### [#1.4 tool_result bash call=c9 error]'), '失败的工具结果锚点标 error')
   assert.ok(!history.includes('sk-abcdefghijklmnop') && !history.includes('Bearer abcdefghijklmnop') && history.includes('[REDACTED]'), '写盘时替换常见密钥格式')
   assert.ok(prompts[0].includes('### [#1.3 tool_result read call=c1 ok]'), '摘要模型看到的原文也带锚点')
-  assert.ok(first.compaction.summary.includes(`<history-snapshot>\nThe full text of the conversation compacted so far, tool outputs included, is saved at ${sessionFile}.history.txt (${history.length} characters)`), '摘要末尾给出快照路径和字符数')
+  assert.ok(first.compaction.summary.includes(`<history-snapshot>\nThe full text of the conversation compacted so far, tool outputs included, is saved at ${sessionFile}.history.txt (${Buffer.byteLength(history)} bytes)`), '摘要末尾给出快照路径和字符数')
   assert.equal(first.compaction.details.snapshot, `${sessionFile}.history.txt`)
   assert.equal(first.compaction.details.compactionNo, 1)
   const second = await handlers.session_before_compact(event, ctx)
@@ -153,6 +153,27 @@ const ok = (text, usage) => ({ stopReason: 'stop', content: [{ type: 'text', tex
   assert.ok(history2.startsWith(history) && history2.includes('=== compaction 2 · ') && history2.includes('### [#2.3 tool_result read'), '第二次压缩往后追加，锚点用新序号')
   assert.equal(second.compaction.details.compactionNo, 2)
   assert.deepEqual(readdirSync(dir).sort(), ['s1.jsonl.history.txt'], '临时文件改名后不留残余')
+}
+{
+  const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(join(tmpdir(), 'yan-snapshot-state-'))
+  const file = join(dir, 'long.history.txt')
+  const header = (n) => `=== compaction ${n} · 2026-11-03T00:00:00.000Z · 2 parts ===`
+  const filler = '内容'.repeat(40_000)
+  writeFileSync(file, `${header(1)}\n\n${filler}\n\n${header(2)}\n\n${'x'.repeat(65_520)}\n\n${header(7)}\n\n=== compaction 99 · not a header\n${filler}\n\n`)
+  const state = await mod.snapshotState(file)
+  assert.equal(state.next, 8, '从末尾倒着找到最后一个快照头，跨块与多字节字符不出错')
+  assert.ok(state.endsClean && state.size === Buffer.byteLength(readFileSync(file)), '记录当前长度与结尾是否完整')
+  const cut = join(dir, 'cut.history.txt')
+  writeFileSync(cut, `${header(3)}\n\npartial line without end`)
+  const cutState = await mod.snapshotState(cut)
+  assert.ok(cutState.next === 4 && !cutState.endsClean, '上次写入中断时识别出结尾不完整')
+  const appended = await mod.appendSnapshot(cut, cutState, cutState.next, ['### [#4.1 user]\nhello'])
+  const after = readFileSync(cut, 'utf8')
+  assert.ok(after.startsWith(`${header(3)}\n\npartial line without end\n\n=== compaction 4 · `) && appended.bytes === Buffer.byteLength(after), '追加只写新的一段，新段从独立一行开始，旧内容不动')
+  assert.equal((await mod.snapshotState(join(dir, 'missing.history.txt'))).next, 1, '没有快照时从 1 开始')
 }
 assert.equal(
   mod.stripAppendices('## Goal\n读书\n\n<read-files>\na.md\n</read-files>\n\n<history-snapshot>\nsaved at x (10 characters)\n</history-snapshot>'),
@@ -368,7 +389,7 @@ for (const [label, opts, expected] of [
   writeFileSync(join(dir, 'bin.dat'), 'a\0b')
   const { block, files } = await mod.currentFilesBlock(['src/a.js', 'big.txt', 'bin.dat', '../outside.txt', 'missing.js'], dir, 0.3)
   assert.ok(block.includes('=== src/a.js (3 lines) ===\n1\tconst x = 1\n2\tconst key = "sk-[REDACTED]"'), '按磁盘当前内容带行号补回，密钥替换成占位符')
-  assert.ok(block.includes('=== big.txt (1 lines, too large to include here; read it if you need it) ==='), '超过单个上限的只给路径')
+  assert.ok(block.includes('=== big.txt (200000 bytes, too large to include here; read it if you need it) ==='), '超过单个上限的只给路径')
   assert.ok(!block.includes('bin.dat') && !block.includes('outside') && !block.includes('missing'), '不补二进制、工作目录外和不存在的文件')
   assert.deepEqual(files.map((f) => [f.path, f.included]), [['src/a.js', true], ['big.txt', false]])
   assert.equal(mod.stripAppendices(`摘要${block}`), '摘要', '下次压缩前去掉上次补回的文件')

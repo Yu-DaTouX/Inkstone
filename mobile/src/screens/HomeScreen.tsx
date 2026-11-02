@@ -16,11 +16,12 @@ function timeAgo(at: number): string {
   return minutes < 1 ? '刚刚' : minutes < 60 ? `${minutes} 分钟` : minutes < 1440 ? `${Math.floor(minutes / 60)} 小时` : `${Math.floor(minutes / 1440)} 天`
 }
 
-export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled, onEnableAlerts, selectedSessionId, project, onProjectChange }: {
+export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled, alertsSupported, onEnableAlerts, selectedSessionId, project, onProjectChange }: {
   onOpen: (sessionId: string, title: string) => void
   onOpenAssistant: () => void
   onSettings: () => void
   alertsEnabled: boolean
+  alertsSupported: boolean
   onEnableAlerts: () => void
   selectedSessionId?: string
   project: { id: string; name: string } | null
@@ -32,7 +33,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
   const [refreshing, setRefreshing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [picker, setPicker] = useState(false)
-  const newAttempt = useRef<string | null>(null)
+  const newAttempt = useRef<{ key: string; projectId: string | null } | null>(null)
   const groups = useMemo(() => {
     const known = new Set(projects.map((item) => item.id))
     const map = new Map<string, { id: string; name: string; cwd?: string; count: number; latest: number }>()
@@ -73,10 +74,11 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
   const create = async (projectId?: string) => {
     setPicker(false)
     setCreating(true)
-    const key = newAttempt.current ?? idempotencyKey()
-    newAttempt.current = key
+    const target = projectId ?? null
+    const attempt = newAttempt.current?.projectId === target ? newAttempt.current : { key: idempotencyKey(), projectId: target }
+    newAttempt.current = attempt
     try {
-      const result = await client.newSession(projectId, key)
+      const result = await client.newSession(projectId, attempt.key)
       newAttempt.current = null
       await refresh()
       if (result.sessionId) onOpen(result.sessionId, '新会话')
@@ -129,7 +131,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
         ListEmptyComponent={<EmptyState>{query ? '没有匹配的会话' : stream === 'open' ? '还没有会话' : '正在等待电脑的会话…'}</EmptyState>}
         renderItem={({ item }) => renderSession(item)} />
     </ContentEnter>
-    {!alertsEnabled ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm }}>开启待回答提醒</Text></Pressable> : null}
+    {!alertsEnabled && alertsSupported ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm }}>开启待回答提醒</Text></Pressable> : null}
     <View style={[styles.dock, { borderTopColor: p.borderSoft }]}>
       <StatusDot color={stream === 'open' ? p.ok : p.warn} label={STATUS_TEXT[stream]} />
       <Text accessibilityLabel={client.connection.baseUrl} numberOfLines={1} style={{ flexShrink: 1, color: p.fgDim, fontSize: font.sm }}>{info?.computer?.name || client.connection.computerName || client.connection.baseUrl.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}</Text>

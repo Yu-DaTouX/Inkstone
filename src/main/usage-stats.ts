@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { userInfo } from 'node:os'
 import { aggregateUsageSources, localDay, type FileUsage, type UsageRange, type UsageStatsView } from '../shared/usage-stats'
@@ -14,12 +15,16 @@ import { estimateCost } from '../shared/model-pricing'
 import { loadModelPricing } from './model-pricing'
 
 const CACHE_VERSION = 6
+const FINGERPRINT_BYTES = 4096
 
 interface FileEntry {
   size: number
   offset: number
   usage: FileUsage
   sourceKind: UsageSourceKind
+  mtimeMs?: number
+  head?: string
+  tail?: string
   forkedAt?: number
   provider?: string
   model?: string
@@ -133,6 +138,39 @@ function scan(path: string, offset: number, usage: FileUsage, state: UsageScanSt
   })
 }
 
+async function fingerprint(path: string, start: number, end: number): Promise<string> {
+  const length = Math.max(0, end - start)
+  const buffer = Buffer.alloc(length)
+  const handle = await open(path, 'r')
+  try {
+    let read = 0
+    while (read < length) {
+      const { bytesRead } = await handle.read(buffer, read, length - read, start + read)
+      if (bytesRead === 0) break
+      read += bytesRead
+    }
+    return createHash('sha1').update(buffer.subarray(0, read)).update(String(read)).digest('hex')
+  } finally {
+    await handle.close()
+  }
+}
+
+async function stampFingerprints(path: string, entry: FileEntry): Promise<void> {
+  entry.head = await fingerprint(path, 0, Math.min(FINGERPRINT_BYTES, entry.offset))
+  entry.tail = await fingerprint(path, Math.max(0, entry.offset - FINGERPRINT_BYTES), entry.offset)
+}
+
+async function grewByAppend(path: string, entry: FileEntry, size: number): Promise<boolean> {
+  if (!entry.head || !entry.tail || size < entry.offset) return false
+  try {
+    const head = await fingerprint(path, 0, Math.min(FINGERPRINT_BYTES, entry.offset))
+    const tail = await fingerprint(path, Math.max(0, entry.offset - FINGERPRINT_BYTES), entry.offset)
+    return head === entry.head && tail === entry.tail
+  } catch {
+    return false
+  }
+}
+
 export function createUsageReader(sources: UsageSources = defaultUsageSources()): UsageReader {
   const cacheFile = sources.cacheFile
   let cache: Map<string, FileEntry> | null = null
@@ -166,7 +204,7 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
         const canonical = await canonicalUsagePath(ref.path)
         if (!canonical || seen.has(canonical)) continue
         seen.add(canonical)
-        tagged.push({ ref: { path: canonical, size: ref.size }, sourceKind })
+        tagged.push({ ref: { path: canonical, size: ref.size, ...(ref.mtimeMs !== undefined ? { mtimeMs: ref.mtimeMs } : {}) }, sourceKind })
       }
     }
     return tagged
@@ -186,17 +224,22 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
     }
     for (const { ref, sourceKind } of tagged) {
       const hit = map.get(ref.path)
-      if (hit && hit.size === ref.size && hit.sourceKind === sourceKind) continue
-      if (hit && hit.size === ref.size) {
-        hit.sourceKind = sourceKind
-        changed = true
-        continue
+      if (hit && hit.size === ref.size && (ref.mtimeMs === undefined || hit.mtimeMs === ref.mtimeMs || !hit.head)) {
+        if (hit.sourceKind !== sourceKind || !hit.head || (ref.mtimeMs !== undefined && hit.mtimeMs !== ref.mtimeMs)) {
+          hit.sourceKind = sourceKind
+          hit.mtimeMs = ref.mtimeMs
+          if (!hit.head) await stampFingerprints(ref.path, hit).catch(() => undefined)
+          changed = true
+        }
+        if (hit.head || ref.mtimeMs === undefined) continue
       }
-      const entry: FileEntry = hit && ref.size > hit.offset && ref.size > hit.size ? hit : { size: 0, offset: 0, usage: {}, sourceKind }
+      const entry: FileEntry = hit && (await grewByAppend(ref.path, hit, ref.size)) ? hit : { size: 0, offset: 0, usage: {}, sourceKind }
       entry.sourceKind = sourceKind
       try {
         entry.offset = await scan(ref.path, entry.offset, entry.usage, entry)
         entry.size = ref.size
+        entry.mtimeMs = ref.mtimeMs
+        await stampFingerprints(ref.path, entry)
         map.set(ref.path, entry)
         changed = true
       } catch {

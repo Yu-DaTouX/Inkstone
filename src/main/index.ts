@@ -71,7 +71,7 @@ import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
 import { registerGithubIpc } from './ipc/github-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
-import { registerSearchOpsIpc } from './ipc/search-ops-ipc'
+import { preserveSearchOp, registerSearchOpsIpc } from './ipc/search-ops-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerMcpAppIpc } from './ipc/mcp-app-ipc'
 import { registerMcpAppViewIpc } from './ipc/mcp-app-view-ipc'
@@ -2054,6 +2054,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           runnerGeneration: generation ?? 1,
           projectId: capabilityProjectId(settings, cwd),
           opsDir: join(YAN_DIR, 'ops'),
+          preserveResult: (command: string, operationId: string, data: unknown) => preserveSearchOp(join(YAN_DIR, 'ops'), command, operationId, data),
           binDir: join(YAN_DIR, 'bin'),
           artifactDir: join(YAN_DIR, 'artifacts'),
           devResourcesDir: join(app.getAppPath(), 'resources'),

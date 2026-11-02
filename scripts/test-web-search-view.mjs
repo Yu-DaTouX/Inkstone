@@ -315,6 +315,20 @@ async function run() {
     ok(upper.ok === true, '大小写不同的 operationId 也能读到', upper.ok)
     ok(m.readSearchOpFile(opsDir, '../../package.json').ok === false, '非 UUID 一律拒绝（不能传路径）')
     ok(m.readSearchOpFile(opsDir, '..\\..\\package.json').ok === false, 'Windows 路径也被拒绝')
+    const kept = '11111111-1111-4111-8111-111111111111'
+    const page = '22222222-2222-4222-8222-222222222222'
+    m.preserveSearchOp(opsDir, 'search.query', kept, { queries: [searchFile([item(1), item(2)])] })
+    m.preserveSearchOp(opsDir, 'search.fetch', page, { finalUrl: 'https://example.com/doc', title: 'Doc', text: 'body text', fetchedAt: '2026-11-03T00:00:00Z' })
+    m.preserveSearchOp(opsDir, 'browser.open', '33333333-3333-4333-8333-333333333333', { queries: [searchFile([item(1)])] })
+    const fromSnapshot = m.readSearchOpFile(opsDir, kept)
+    ok(fromSnapshot.ok === true && fromSnapshot.kind === 'search' && fromSnapshot.sources.length === 2 && fromSnapshot.sources[0].url === read.sources[0].url, '临时结果被清理后从精简快照读回来源', fromSnapshot)
+    const pageSnapshot = m.readSearchOpFile(opsDir, page)
+    ok(pageSnapshot.ok === true && pageSnapshot.kind === 'fetch' && pageSnapshot.page.excerpt === 'body text' && pageSnapshot.page.fetchedAt === '2026-11-03T00:00:00Z', '读页结果也留精简快照', pageSnapshot)
+    ok(m.readSearchOpFile(opsDir, '33333333-3333-4333-8333-333333333333').ok === false, '非搜索命令不留快照')
+    for (let i = 0; i < 4; i++) m.preserveSearchOp(opsDir, 'search.query', `44444444-4444-4444-8444-00000000000${i}`, { queries: [searchFile([item(1)])] })
+    m.pruneSearchSnapshots(opsDir, 3)
+    const { readdirSync } = await import('node:fs')
+    ok(readdirSync(m.searchSnapshotDir(opsDir)).length === 3, '快照按总量上限回收最旧的')
     const missing = m.readSearchOpFile(opsDir, '00000000-0000-4000-8000-000000000000')
     ok(missing.ok === false, '文件不存在时返回失败而不是抛错', missing)
   }

@@ -5,7 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { RemoteClient, type Connection } from './api/client'
 import type { PhotoDraft } from './device'
 import { parsePairingLink, type PairingPrefill } from './pairLink'
-import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
+import { questionAlertsSupported, restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
 import { ArtifactScreen } from './screens/ArtifactScreen'
 import { AssistantScreen, type AssistantConversation } from './screens/AssistantScreen'
 import { AssistantSettingsScreen } from './screens/AssistantSettingsScreen'
@@ -222,6 +222,7 @@ export default function App() {
                     onSettings={() => setRoute({ name: 'settings' })}
                     onOpenAssistant={() => setRoute({ name: 'assistant' })}
                     alertsEnabled={alertsEnabled}
+                    alertsSupported={questionAlertsSupported(connection)}
                     onEnableAlerts={() => void enableAlerts()}
                     selectedSessionId={'sessionId' in route ? route.sessionId : undefined}
                     project={project}

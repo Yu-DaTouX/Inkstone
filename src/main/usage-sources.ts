@@ -8,6 +8,7 @@ export type UsageSourceKind = 'main' | 'subagent'
 export interface UsageFileRef {
   path: string
   size: number
+  mtimeMs?: number
 }
 
 export interface UsageSources {
@@ -40,7 +41,7 @@ export async function listRawSessionFiles(root: string, maxDepth = 1): Promise<U
       } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
         try {
           const info = await stat(path)
-          if (info.isFile()) files.push({ path, size: info.size })
+          if (info.isFile()) files.push({ path, size: info.size, mtimeMs: info.mtimeMs })
         } catch {
         }
       }
@@ -51,7 +52,7 @@ export async function listRawSessionFiles(root: string, maxDepth = 1): Promise<U
 }
 
 export async function listMainUsageFiles(): Promise<UsageFileRef[]> {
-  return (await listSessionFiles()).map((file) => ({ path: file.path, size: file.size }))
+  return (await listSessionFiles()).map((file) => ({ path: file.path, size: file.size, mtimeMs: file.mtimeMs }))
 }
 
 export function defaultUsageSources(): UsageSources {
