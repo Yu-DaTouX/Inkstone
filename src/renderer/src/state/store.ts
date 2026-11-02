@@ -73,7 +73,9 @@ import { reuseIfSame } from './same-messages'
 import { keepRef } from './stable-ref'
 import {
   migratePathDraft,
+  migrateSessionRuntime,
   pruneSessionRuntimes,
+  reduceSessionRuntime,
   seedRuntimeHistory,
   sessionRuntimeKey,
   updateSessionRuntime,
@@ -1036,22 +1038,77 @@ function queueEditRequest(arg: QueueEditArg): Promise<QueueEditResult> {
 }
 
 const pendingMessagePatches = new MessagePatchBatch()
+const pendingRuntimePushes: MainPush[] = []
 const messagePatchFlush = createFrameFlush(() => flushPendingMessagePatches())
+const VIEW_RESYNC_GAP_MS = 3000
+let viewResyncTimer: ReturnType<typeof setTimeout> | null = null
+let viewResyncAt = 0
+let uiRestoreAt = 0
+
+function reduceRuntimePushes(map: SessionRuntimeMap, pushes: readonly MainPush[]): SessionRuntimeMap {
+  let next = map
+  for (const push of pushes) {
+    if (push.runtime) next = migrateSessionRuntime(reduceSessionRuntime(next, push.runtime, push), push.runtime)
+  }
+  return next
+}
 
 function flushPendingMessagePatches(): void {
   messagePatchFlush.cancel()
   const drained = pendingMessagePatches.drain()
-  if (drained.length === 0) return
+  const runtimePushes = pendingRuntimePushes.splice(0)
+  if (drained.length === 0 && runtimePushes.length === 0) return
+  let missing = false
   useStore.setState((state) => {
-    let messages = state.messages
-    for (const item of drained) messages = patchMessage(messages, item.id, item.patch) as typeof state.messages
-    return { messages }
+    const patch: Partial<Store> = {}
+    if (runtimePushes.length) patch.sessionRuntimes = reduceRuntimePushes(state.sessionRuntimes, runtimePushes)
+    if (drained.length) {
+      const known = new Set(state.messages.map((message) => message.id))
+      let messages = state.messages
+      for (const item of drained) {
+        if (!known.has(item.id)) missing = true
+        messages = patchMessage(messages, item.id, item.patch) as typeof state.messages
+      }
+      patch.messages = messages
+    }
+    return patch
   })
+  if (missing) requestViewResync('patch-target-missing')
 }
 
 function discardPendingMessagePatches(): void {
   pendingMessagePatches.drain()
   messagePatchFlush.cancel()
+  const runtimePushes = pendingRuntimePushes.splice(0)
+  if (runtimePushes.length) useStore.setState((state) => ({ sessionRuntimes: reduceRuntimePushes(state.sessionRuntimes, runtimePushes) }))
+}
+
+function requestViewResync(reason: string): void {
+  if (viewResyncTimer || bootPushes) return
+  viewResyncTimer = setTimeout(() => {
+    viewResyncTimer = null
+    viewResyncAt = Date.now()
+    void window.yan.resyncView(reason).then(() => restorePendingUiRequests()).catch(() => undefined)
+  }, Math.max(300, viewResyncAt + VIEW_RESYNC_GAP_MS - Date.now()))
+}
+
+async function restorePendingUiRequests(): Promise<void> {
+  uiRestoreAt = Date.now()
+  const pushes = await window.yan.pendingUiRequests().catch(() => [] as MainPush[])
+  if (!useStore.getState().activeRunnerId) return
+  for (const push of pushes) useStore.getState().applyPush(push)
+}
+
+function restoreMissingUiRequests(runners: readonly RunnerStatus[]): void {
+  if (Date.now() - uiRestoreAt < VIEW_RESYNC_GAP_MS) return
+  const state = useStore.getState()
+  const viewing = viewingSessionId(state)
+  const missing = runners.some((runner) =>
+    runner.waiting &&
+    !!runner.sessionId &&
+    !(state.sessionRuntimes[runner.sessionId]?.uiRequests.length) &&
+    !(runner.sessionId === viewing && state.uiRequests.length))
+  if (missing) void restorePendingUiRequests().catch(() => undefined)
 }
 
 export const useStore = create<Store>((rawSet, get) => {
@@ -1289,7 +1346,7 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().loadZoom()
     void get().reloadCommands()
     void get().loadSubagents()
-    void get().syncRunners()
+    void get().syncRunners().then(() => restorePendingUiRequests()).catch(() => undefined)
   },
 
   syncRunners: async () => {
@@ -1361,9 +1418,14 @@ export const useStore = create<Store>((rawSet, get) => {
       },
       m
     )
-    if (route.patch) set(route.patch)
+    if (route.patch) {
+      if (m.ch === 'msg-update' && m.runtime) {
+        pendingRuntimePushes.push(m)
+        messagePatchFlush.schedule()
+      } else set(route.patch)
+    }
     if (!route.project) {
-      if (m.ch === 'ui-request' && route.patch) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null, m.runtime?.sessionId || undefined)
+      if (m.ch === 'ui-request' && route.patch && !m.replay) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null, m.runtime?.sessionId || undefined)
       if (m.ch === 'turn-settled' && route.patch?.sessionRuntimes && m.payload.sessionId) {
         const event = attentionForOutcome(m.payload.outcome)
         const sid = m.payload.sessionId
@@ -1434,6 +1496,7 @@ export const useStore = create<Store>((rawSet, get) => {
             ...(useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) ?? [])])
           for (const runner of m.payload) if (runner.running || runner.waiting || runner.isActive) keep.add(runner.sessionId || `run:${runner.runId}`)
           set({ runners: keepRef(s.runners, m.payload), sessionRuntimes: pruneSessionRuntimes(get().sessionRuntimes, keep), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
+          restoreMissingUiRequests(m.payload)
           if (active) {
             const runtime = runtimeFromRunner(active)
             const found = findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
@@ -1505,7 +1568,10 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'tool': {
         const { msgId, call, outputDelta } = m.payload
         const msg = s.messages.findLast((x) => x.id === msgId)
-        if (!msg) break
+        if (!msg) {
+          requestViewResync('tool-target-missing')
+          break
+        }
         const calls = (msg.toolCalls ?? []).slice()
         const i = calls.findIndex((c) => c.id === call.id)
         if (i >= 0) {

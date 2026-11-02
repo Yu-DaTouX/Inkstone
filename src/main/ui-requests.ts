@@ -177,7 +177,10 @@ export class UiRequests {
     for (const id of this.payloads.keys()) {
       if (!this.pending.has(id)) this.payloads.delete(id)
     }
-    return [...this.payloads.values()]
+    return [...this.payloads.entries()].map(([id, payload]) => {
+      const host = this.pendingHostUi.get(id)
+      return host?.started ? { ...payload, timeout: host.timeout, deadline: host.deadline } as ExtensionUiRequest : payload
+    })
   }
 
   answerUiRemotely(

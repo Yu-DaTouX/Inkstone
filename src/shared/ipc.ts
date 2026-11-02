@@ -1344,6 +1344,7 @@ export type MainPushBody =
 export type MainPush = MainPushBody & {
   runtime?: RuntimeEnvelope
   sessionKey?: string
+  replay?: boolean
 }
 
 
@@ -1799,6 +1800,8 @@ export interface YanBridge {
 
   answerApproval(id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity, feedback?: string): Promise<{ ok: boolean }>
   pendingApprovals(): Promise<ApprovalRequest[]>
+  pendingUiRequests(): Promise<MainPush[]>
+  resyncView(reason: string): Promise<{ ok: boolean }>
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
 

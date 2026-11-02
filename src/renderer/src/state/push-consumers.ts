@@ -150,7 +150,7 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
           : [...s.uiRequests, m.payload],
         ...(!duplicate ? { uiCollapsed: false } : {})
       })
-      if (!duplicate) ctx.alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
+      if (!duplicate && !m.replay) ctx.alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
       break
     }
     case 'ui-resolved':

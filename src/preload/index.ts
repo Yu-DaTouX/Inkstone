@@ -232,6 +232,8 @@ const api: YanBridge = {
 
   answerApproval: (id, choice, identity, feedback) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice, identity, feedback),
   pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
+  pendingUiRequests: () => invoke<MainPush[]>('yan:pendingUiRequests'),
+  resyncView: (reason) => invoke<{ ok: boolean }>('yan:resyncView', reason),
   setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
   setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
   abortRetry: () => invoke<Ok>('yan:abortRetry'),

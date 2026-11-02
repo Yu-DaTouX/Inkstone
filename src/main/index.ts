@@ -195,6 +195,36 @@ function reportMainError(kind: string, error: unknown): void {
   }
 }
 
+function logMainEvent(kind: string, text: string): void {
+  try {
+    const stamp = new Date().toISOString()
+    appendFileSync(join(crashLogDir(), `main-${stamp.slice(0, 10)}.log`), `${stamp} [主进程/${kind}] ${text}\n`, 'utf8')
+  } catch {
+  }
+}
+
+function pendingUiReplay(): MainPush[] {
+  const registry = runners
+  if (!registry) return []
+  return registry.statuses().flatMap((status) => {
+    const agent = registry.agentOf(status.id)
+    const runtime = registry.runtimeOf(status.id)
+    if (!agent || !runtime) return []
+    return agent.pendingUiRequests().map((payload): MainPush => ({ ch: 'ui-request', payload, runtime, sessionKey: status.id, replay: true }))
+  })
+}
+
+async function resyncActiveView(reason: unknown): Promise<{ ok: boolean }> {
+  const id = runners?.activeRunnerId
+  const agent = id ? runners?.agentOf(id) : null
+  if (!id || !agent) return { ok: false }
+  const state = agent.getState()
+  takeSyncBaseline(state?.sessionFile)
+  logMainEvent('视图重同步', `${String(reason ?? '').slice(0, 80)} runner=${id} session=${state?.sessionId ?? ''}`)
+  await pushRunnerSnapshot(id)
+  return { ok: true }
+}
+
 process.on('exit', (code) => {
   try {
     const record = JSON.stringify({
@@ -2624,6 +2654,8 @@ function registerIpc(): void {
 
   handle('yan:approvalAnswer', async (id: string, choice: unknown, identity?: unknown, feedback?: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice, approvalIdentityFrom(identity), feedback) }))
   handle('yan:approvalPending', async () => approvals.list())
+  handle('yan:pendingUiRequests', async () => pendingUiReplay())
+  handle('yan:resyncView', async (reason?: unknown) => resyncActiveView(reason))
   handle('yan:piInfo', async () => {
     const s = await getSettings()
     return piInfo(s.piBin)
