@@ -19,8 +19,22 @@ function previewOf(text: string): string {
   return line.length > 120 ? `${line.slice(0, 120)}\u2026` : line
 }
 
-export function useSidebarDrafts(): SidebarDraft[] {
-  const entries = useStore(useShallow((s) => Object.entries(s.sessionRuntimes).flatMap(([id, entry]) => entry.draft?.trim() ? [id, entry.draft] : [])))
+export function discardSidebarDraft(draftId: string): void {
+  useStore.getState().setSessionDraft('', draftId)
+}
+
+export function useSidebarDraftIds(): string[] {
+  return useStore(useShallow((s) => Object.entries(s.sessionRuntimes).flatMap(([id, entry]) => (entry.draft?.trim() ? [id] : []))))
+}
+
+export function useSidebarDrafts(only?: readonly string[]): SidebarDraft[] {
+  const entries = useStore(
+    useShallow((s) =>
+      Object.entries(s.sessionRuntimes).flatMap(([id, entry]) =>
+        entry.draft?.trim() && (!only || only.includes(id)) ? [id, previewOf(entry.draft)] : []
+      )
+    )
+  )
   const sessions = useStore((s) => s.sessions)
   const projectNames = useStore((s) => s.settings?.projectNames)
   const currentDraftKey = useStore(composerDraftKey)
@@ -29,15 +43,15 @@ export function useSidebarDrafts(): SidebarDraft[] {
     const byId = new Map(sessions.map((item) => [item.id, item]))
     for (let index = 0; index < entries.length; index += 2) {
       const draftId = entries[index]
-      const text = entries[index + 1]
+      const preview = entries[index + 1]
       const session = byId.get(draftId)
       const cwd = session?.cwd ?? ''
       out.push({
         draftId,
         projectDisplayName: cwd ? ((projectNames ?? {})[cwd] ?? shortProject(cwd)) : null,
-        preview: previewOf(text),
+        preview,
         active: draftId === currentDraftKey,
-        discard: () => useStore.getState().setSessionDraft('', draftId)
+        discard: () => discardSidebarDraft(draftId)
       })
     }
     return out

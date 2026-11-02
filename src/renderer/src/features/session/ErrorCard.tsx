@@ -7,7 +7,7 @@ import { Button } from '../../ui'
 import { Card, CardActions, CardBody, CardCode, CardHead, CardStatus, CardSummary, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
-import { forgetToolExpansion } from './tool-expansion'
+import { forgetToolExpansion, toolExpansionScopeOf } from './tool-expansion'
 import { errorCardModel, errorTitleKey, promptForTurn, type ErrorCardAction } from './turn-lines'
 import './error-card.css'
 
@@ -57,7 +57,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
     if (action === 'retry') {
       const prompt = promptForTurn(sourceIds, useStore.getState().messages)
       if (!prompt) return
-      forgetToolExpansion(view.key)
+      forgetToolExpansion(toolExpansionScopeOf(view.sessionId, view.sessionFile))
       void send(prompt.text, prompt.images.length ? prompt.images : undefined)
       return
     }

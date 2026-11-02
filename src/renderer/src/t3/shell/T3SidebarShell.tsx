@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type ReactElement
@@ -34,12 +35,14 @@ import { useSessionFileDrop } from '../../features/sidebar/use-session-file-drop
 import { useSessionJump } from '../../features/sidebar/use-session-jump'
 import {
   NO_PROJECT_ID,
+  discardSidebarDraft,
   resolveRowStatus,
   rowIsReceded,
   scopedKeyOf,
   sidebarActions,
   useActiveThreadKey,
   useMinuteClock,
+  useSidebarDraftIds,
   useSidebarDrafts,
   useSidebarProjects,
   useSidebarSections,
@@ -84,6 +87,15 @@ export interface T3SidebarShellProps {
 
 function refOf(view: SidebarThreadView): ThreadRef {
   return { environmentId: 'local', threadId: view.id }
+}
+
+function SidebarLooseDrafts({ ids, ...props }: { ids: readonly string[] } & Omit<ComponentProps<typeof SidebarDraftBlock>, 'drafts'>): ReactElement {
+  const drafts = useSidebarDrafts(ids)
+  const rows = useMemo(
+    () => drafts.map((draft) => ({ draftId: draft.draftId, projectDisplayName: draft.projectDisplayName, preview: draft.preview, isActive: draft.active })),
+    [drafts]
+  )
+  return <SidebarDraftBlock {...props} drafts={rows} />
 }
 
 export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShellProps): ReactElement {
@@ -134,7 +146,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     const keep = (list: SidebarThreadView[]): SidebarThreadView[] => list.filter((view) => view.projectId === projectFilter)
     return { pinned: keep(allSections.pinned), active: keep(allSections.active), working: keep(allSections.working), snoozed: keep(allSections.snoozed), settled: keep(allSections.settled) }
   }, [allSections, projectFilter])
-  const drafts = useSidebarDrafts()
+  const draftIdList = useSidebarDraftIds()
   const undo = useThreadUndoNotice()
   const activeKey = useActiveThreadKey()
   const now = useMinuteClock()
@@ -177,9 +189,9 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     [sections]
   )
   const viewByKey = useMemo(() => new Map(allViews.map((view) => [scopedKeyOf(view.id), view])), [allViews])
-  const looseDrafts = useMemo(() => drafts.filter((draft) => !viewByKey.has(scopedKeyOf(draft.draftId))), [drafts, viewByKey])
+  const looseDraftIds = useMemo(() => draftIdList.filter((draftId) => !viewByKey.has(scopedKeyOf(draftId))), [draftIdList, viewByKey])
   const viewByPath = useMemo(() => new Map(allViews.map((view) => [view.path, view])), [allViews])
-  const draftIds = useMemo(() => new Set(drafts.map((draft) => draft.draftId)), [drafts])
+  const draftIds = useMemo(() => new Set(draftIdList), [draftIdList])
 
   const orderKey = useMemo(() => allViews.map((view) => view.path).join('\n'), [allViews])
   useEffect(() => {
@@ -520,7 +532,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const menuView = sessionMenu === null ? null : viewByKey.get(sessionMenu.key)
   const menuSession = menuView ? sessions.find((entry) => entry.id === menuView.id) : undefined
   const menuProject = projectMenu ? settings?.projects.find((project) => project.id === projectMenu.id) : undefined
-  const menuDraft = drafts.find((draft) => draft.draftId === draftMenuId)
+  const menuDraftId = draftMenuId !== null && draftIds.has(draftMenuId) ? draftMenuId : null
   const flatLayout = settings?.sidebarLayout === 'flat'
 
   const connLabel = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
@@ -659,14 +671,9 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
               folderNewThreadLabel={(projectKey) => t('sidebar.t3.newThreadInProjectName', { name: projects.byId.get(projectKey)?.displayName ?? '' })}
               folderMenuLabel={own.projectMenu}
               draftRows={
-                looseDrafts.length === 0 ? null : (
-                  <SidebarDraftBlock
-                    drafts={looseDrafts.map((draft) => ({
-                      draftId: draft.draftId,
-                      projectDisplayName: draft.projectDisplayName,
-                      preview: draft.preview,
-                      isActive: draft.active
-                    }))}
+                looseDraftIds.length === 0 ? null : (
+                  <SidebarLooseDrafts
+                    ids={looseDraftIds}
                     discardLabel={t('sidebar.t3.discardDraft')}
                     unsentLabel={t('sidebar.t3.unsentDraft')}
                     onNavigateToDraft={(draftId) => {
@@ -685,10 +692,10 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                       const text = state.sessionRuntimes[draftId]?.draft ?? ''
                       void state.newSession(runner?.cwd ? { cwd: runner.cwd } : undefined).then(() => {
                         useStore.setState({ editorInject: { text, mode: 'replace' } })
-                        looseDrafts.find((entry) => entry.draftId === draftId)?.discard()
+                        discardSidebarDraft(draftId)
                       })
                     }}
-                    onDiscardDraft={(draftId) => looseDrafts.find((entry) => entry.draftId === draftId)?.discard()}
+                    onDiscardDraft={(draftId) => discardSidebarDraft(draftId)}
                     onDraftContextMenu={(draftId) => {
                       draftMenuAnchorRef.current = asideRef.current?.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(`draft:${draftId}`)}"]`) ?? null
                       closeSessionMenu()
@@ -698,7 +705,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                   />
                 )
               }
-              draftKey={looseDrafts.map((draft) => draft.draftId).join('|')}
+              draftKey={looseDraftIds.join('|')}
               undoNotice={undoNotice === null ? null : <SidebarThreadUndoNotice notice={undoNotice} />}
               emptyState={
                 allViews.length === 0 ? (
@@ -772,8 +779,8 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         onProject={(record) => newThreadInProject(record.id)}
         onStarted={() => useUiV3.getState().navigate({ name: 'chat' })}
       />
-      <Popover triggerRef={draftMenuAnchorRef} isOpen={!!menuDraft} onOpenChange={(open) => { if (!open) setDraftMenuId(null) }} placement="bottom end" offset={4}>
-        <Menu aria-label={t('sidebar.t3.unsentDraft')} autoFocus="first" onClose={() => setDraftMenuId(null)} onAction={() => { menuDraft?.discard(); setDraftMenuId(null) }} data-testid="sidebar-draft-menu">
+      <Popover triggerRef={draftMenuAnchorRef} isOpen={menuDraftId !== null} onOpenChange={(open) => { if (!open) setDraftMenuId(null) }} placement="bottom end" offset={4}>
+        <Menu aria-label={t('sidebar.t3.unsentDraft')} autoFocus="first" onClose={() => setDraftMenuId(null)} onAction={() => { if (menuDraftId !== null) discardSidebarDraft(menuDraftId); setDraftMenuId(null) }} data-testid="sidebar-draft-menu">
           <MenuItem id="discard" tone="danger">{t('sidebar.t3.discardDraft')}</MenuItem>
         </Menu>
       </Popover>

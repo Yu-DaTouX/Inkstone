@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from 'lucide-react'
 import { Button, IconButton, Menu, MenuItem, MenuTrigger, Meter, Notice, Popover, RailRow, RailValue, type RailTone } from '../../ui'
 import { BranchPicker } from '../changes/BranchPicker'
@@ -566,7 +567,13 @@ function StatsGlance({ model, text }: { model: RailStatsModel; text: RailText })
   )
 }
 
-export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactElement {
+function sameOwner(left: WorkspaceOwner | null, right: WorkspaceOwner | null): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  return left.key === right.key && left.sessionId === right.sessionId && left.sessionFile === right.sessionFile && left.cwd === right.cwd && left.runId === right.runId && left.generation === right.generation && left.active === right.active
+}
+
+export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = useMemo(() => workbenchText(lang).overview, [lang])
@@ -650,8 +657,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const [dismissedOutputs, dismissOutput] = useDismissedOutputs(view.sessionId || view.key || '')
   const outputs = useMemo(() => visibleOutputs(outputPool, outputScreen, dismissedOutputs), [outputPool, outputScreen, dismissedOutputs])
 
-  const allRuns = useRunsV3((s) => s.runs)
-  const backgroundRuns = useMemo(() => scheduledRuns(allRuns), [allRuns])
+  const backgroundRuns = useRunsV3(useShallow((s) => scheduledRuns(s.runs)))
   const taskCount = backgroundTaskCount({ running: childTasksLive, total: childTasks }, backgroundRuns)
   const taskTotal = taskCount.total
   const taskSummary =
@@ -896,4 +902,4 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       <RailSectionsMenu anchor={menuAnchor} open={menuOpen} onOpenChange={setMenuOpen} text={rail} />
     </div>
   )
-}
+}, (left, right) => sameOwner(left.owner, right.owner) && left.onOpenView === right.onOpenView && left.onPreview === right.onPreview)

@@ -75,6 +75,11 @@ const CHAT_MIN_WIDTH_PX = 420
 const SHEET_BELOW_PX = CHAT_MIN_WIDTH_PX + PANEL_WIDTH_MIN
 const PANEL_OVERLAY_GUTTER_PX = 120
 
+function CurrentRunsSeen(): null {
+  useCurrentRunsSeen()
+  return null
+}
+
 export default function ShellV3(): ReactElement {
   const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth(localStorage))
   const draftSidebarWidth = useSidebarWidthDraft(setSidebarWidth)
@@ -243,7 +248,6 @@ export default function ShellV3(): ReactElement {
   }, [applyPush, bootstrap, startConnWatch])
 
   useEffect(() => startRunSync(), [])
-  useCurrentRunsSeen()
 
   useEffect(() => {
     if (!settings) return
@@ -364,9 +368,10 @@ export default function ShellV3(): ReactElement {
     return () => window.clearTimeout(timer)
   }, [sessionBarOn, settledBarOn, panelMotionMs])
 
-  const toggleSessionBar = (): void => {
-    void useStore.getState().patchSettings({ workspaceTiles: !sessionBarOn }).catch(() => undefined)
-  }
+  const toggleSessionBar = useCallback((): void => {
+    const on = useStore.getState().settings?.workspaceTiles !== false
+    void useStore.getState().patchSettings({ workspaceTiles: !on }).catch(() => undefined)
+  }, [])
 
   const requestActivation = (_tab: WorkbenchTabId): Promise<boolean> => activateWorkspaceOwner(captureActivationTarget())
 
@@ -387,6 +392,11 @@ export default function ShellV3(): ReactElement {
     return activateWorkspaceOwner(captureActivationTarget())
   }, [])
 
+  const openOverviewView = useCallback((tab: WorkbenchTabId): void => void openWorkspaceTab(tab), [openWorkspaceTab])
+  const toggleSidebarFromHeader = useCallback(() => useUiV3.getState().toggleSidebar(), [])
+  const openSettingsFromHeader = useCallback(() => openSettingsDialog(), [])
+  const goBackFromHeader = useCallback(() => useUiV3.getState().goBack(), [])
+
   const togglePane = (tab: WorkbenchTabId): void => {
     const entry = currentPanelEntry()
     const id = toolSurface(tab).id
@@ -397,6 +407,9 @@ export default function ShellV3(): ReactElement {
     }
     void openWorkspaceTab(tab)
   }
+  const togglePaneRef = useRef(togglePane)
+  togglePaneRef.current = togglePane
+  const togglePaneFromHeader = useCallback((tab: WorkbenchTabId) => togglePaneRef.current(tab), [])
 
   useEffect(() => {
     if (nativeSessionPanel?.mode !== 'tree') return
@@ -619,10 +632,10 @@ export default function ShellV3(): ReactElement {
             sidebarOverlay={sidebarCompact}
             sidebarOpen={sidebarOpen}
             route={route.name}
-            onToggleSidebar={() => useUiV3.getState().toggleSidebar()}
+            onToggleSidebar={toggleSidebarFromHeader}
             onPreviewSidebar={showSidebarPreview}
-            onSettings={() => openSettingsDialog()}
-            onBack={() => useUiV3.getState().goBack()}
+            onSettings={openSettingsFromHeader}
+            onBack={goBackFromHeader}
             sessionBarOpen={sessionBarOn}
             sessionBarHidden={route.name === 'chat' && sessionBarOn && (hasMessages || !singlePane) && !sessionBarShown}
             onToggleSessionBar={toggleSessionBar}
@@ -635,9 +648,10 @@ export default function ShellV3(): ReactElement {
             activePane={activePane}
             changesDirty={changesDirty}
             terminalRunning={terminalRunning}
-            onTogglePane={togglePane}
+            onTogglePane={togglePaneFromHeader}
           />
           <RunAttentionToasts onOpen={openRunFromPill} />
+          <CurrentRunsSeen />
           <div
             className="v3-body"
             ref={bodyRef}
@@ -666,7 +680,7 @@ export default function ShellV3(): ReactElement {
                 <SideBySide split={split} narrow={splitParked} />
                 {sessionBarShown ? (
                   <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
-                    <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
+                    <OverviewPane owner={owner} onOpenView={openOverviewView} />
                     <Splitter className="v3-tiles-resizer ui-splitter--gutter" title={railText(lang).resizeTiles} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={railText(lang).resizeTiles} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
                   </aside>
                 ) : null}

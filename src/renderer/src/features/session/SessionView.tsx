@@ -9,6 +9,7 @@ import { mergeQuestionLog } from '../../../../shared/question-log'
 import { TurnView } from './TurnView'
 import { sessionWrapUp, withoutWrapUpMessages } from './wrap-up'
 import { AsideFitScope, ToolExpansionScope } from './use-tool-run'
+import { toolExpansionScopeOf } from './tool-expansion'
 import { PendingRunNotice } from './RunNotice'
 import { BrowserHandoffCard } from './BrowserHandoffCard'
 import { ApprovalCard } from './ApprovalCard'
@@ -96,7 +97,10 @@ export function SessionView(): JSX.Element {
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
   const approvals = useStore((s) => s.approvals)
-  const subagents = useStore((s) => s.subagents)
+  const approvalSubagentParent = useStore((s) => {
+    const id = s.approvals[0]?.subagentId
+    return id ? (s.subagents.find((run) => run.id === id)?.parentSessionId ?? null) : null
+  })
   const uiRequests = useStore((s) => s.uiRequests)
   const settings = useStore((s) => s.settings)
   const switchLoading = useStore((s) => s.switchLoading)
@@ -107,6 +111,8 @@ export function SessionView(): JSX.Element {
     [peekedSessionId, peekedPath, session]
   )
   const viewActive = viewMatchesProjectedSession(view, session)
+  const viewPathSessionId = useStore((s) => (view.sessionId || !view.sessionFile ? null : (s.sessions.find((item) => toolExpansionScopeOf(null, item.path) === toolExpansionScopeOf(null, view.sessionFile))?.id ?? null)))
+  const expansionScope = toolExpansionScopeOf(view.sessionId ?? viewPathSessionId, view.sessionFile)
   const rewindOwner = viewActive ? (session?.conversationId ?? session?.sessionId ?? null) : null
 
   const refreshCheckpoints = useStore((s) => s.refreshCheckpoints)
@@ -869,7 +875,7 @@ export function SessionView(): JSX.Element {
   return (
     <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-empty={empty ? '' : undefined}>
       <HomeBackdrop active={turns.length === 0 && !switchLoading} asciiEnabled={asciiBackgroundEnabled(settings)} />
-      <ToolExpansionScope.Provider value={identity}>
+      <ToolExpansionScope.Provider value={expansionScope}>
       <AsideFitScope.Provider value={asideFits}>
       <div className="v3-stream-host" ref={hostRef} data-jump={showJump && !stick ? '' : undefined}>
         <div className="v3-aside-fit-probe" ref={asideProbeRef} aria-hidden />
@@ -914,7 +920,7 @@ export function SessionView(): JSX.Element {
       </ToolExpansionScope.Provider>
 
       <div className="v3-asks" ref={asksRef}>
-        {viewActive || (approvals[0] && approvalMatchesView(approvals[0], subagents, view)) ? <ApprovalCard /> : null}
+        {viewActive || (approvals[0] && approvalMatchesView(approvals[0], approvals[0].subagentId && approvalSubagentParent ? [{ id: approvals[0].subagentId, parentSessionId: approvalSubagentParent }] : [], view)) ? <ApprovalCard /> : null}
         {viewActive && uiRequests.length > 0 ? <QuestionCard /> : null}
         {viewActive ? <BrowserHandoffCard sessionId={view.sessionId} /> : null}
       </div>

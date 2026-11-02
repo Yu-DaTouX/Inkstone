@@ -37,7 +37,9 @@
     border-top: 1px solid var(--line);
   }
 
-  .v3-split-col[data-split-inactive] > :not(.v3-split-head) {
+  .v3-split-col[data-split-inactive] > :not(.v3-split-head, .v3-split-peer),
+  .v3-split-col[data-split-inactive] > .v3-split-peer > .v3-conv,
+  .v3-split-col[data-split-inactive] .v3-split-peer-composer > * {
     filter: opacity(0.9) saturate(0.9);
   }
 
@@ -168,6 +170,9 @@
     box-sizing: border-box;
     width: 100%;
     min-height: var(--s-24);
+    max-height: calc(var(--t-body-lh) * 4);
+    field-sizing: content;
+    overflow: hidden;
     padding: 0;
     border: 0;
     outline: none;
@@ -178,6 +183,10 @@
     font-size: var(--t-body);
     line-height: var(--t-body-lh);
     cursor: pointer;
+  }
+
+  .v3-split-peer-input:placeholder-shown {
+    max-height: var(--s-24);
   }
 
   .v3-split-peer-input::placeholder {

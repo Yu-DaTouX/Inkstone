@@ -12,6 +12,8 @@ import type { TurnSubagentScope } from '../state/subagent-view'
 import { TurnView } from '../features/session/TurnView'
 import { TurnScopeContext } from '../features/session/turn-scope'
 import { WrapUpActivate } from '../features/session/WrapUpCard'
+import { ToolExpansionScope } from '../features/session/use-tool-run'
+import { toolExpansionScopeOf } from '../features/session/tool-expansion'
 import { sessionWrapUp } from '../features/session/wrap-up'
 import { Icon } from '../features/session/Icon'
 import { IconButton, Splitter } from '../ui'
@@ -291,6 +293,7 @@ function PeerPane({ target, hidden = false }: { target: SplitSessionRef; hidden?
   const wrapUpOn = useStore((s) => s.settings?.wrapUpCard !== false)
   const wrapUp = useMemo(() => sessionWrapUp({ enabled: wrapUpOn, active: true, busy: running, turns, messages }), [wrapUpOn, running, turns, messages])
   const activate = useCallback(() => focusSplitSession(target), [target])
+  const expansionScope = toolExpansionScopeOf(target.sessionId ?? summary?.id, target.path)
 
   useEffect(() => {
     if (cached?.length || !target.path) return undefined
@@ -369,6 +372,7 @@ function PeerPane({ target, hidden = false }: { target: SplitSessionRef; hidden?
               }}
             >
               <div className="v3-stream-inner">
+                <ToolExpansionScope.Provider value={expansionScope}>
                 <TurnScopeContext.Provider value={turnScope}>
                 <WrapUpActivate.Provider value={activate}>
                 {turns.length === 0 ? (
@@ -384,6 +388,7 @@ function PeerPane({ target, hidden = false }: { target: SplitSessionRef; hidden?
                 )}
                 </WrapUpActivate.Provider>
                 </TurnScopeContext.Provider>
+                </ToolExpansionScope.Provider>
               </div>
             </div>
           </div>

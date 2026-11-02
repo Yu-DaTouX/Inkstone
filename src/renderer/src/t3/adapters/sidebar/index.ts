@@ -6,6 +6,6 @@ export { sidebarActions, useSidebarActions, type SidebarActions } from './action
 export { useSidebarSearch, type SidebarSearch } from './search'
 export { usePickSnoozePreset, useSnoozePresets, useSnoozeWakeLabel } from './snooze'
 export { useThreadUndoNotice, type ThreadUndoNotice } from './undo'
-export { useSidebarDraftViews, useSidebarDrafts, type SidebarDraft } from './draft'
+export { discardSidebarDraft, useSidebarDraftIds, useSidebarDraftViews, useSidebarDrafts, type SidebarDraft } from './draft'
 export { formatWorkingDuration, resolveRowStatus, resolveStatusTone, rowIsReceded, type RowStatus } from './status'
 export { navigateToThread, navigateToThreadId, useRouteThreadKey, useRouteThreadRef } from './nav'

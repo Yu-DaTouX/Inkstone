@@ -77,6 +77,11 @@ export function createExpansionStore(limit = EXPANSION_LIMIT): ExpansionStore {
 
 export const toolExpansion = createExpansionStore()
 
+export function toolExpansionScopeOf(sessionId: string | null | undefined, sessionFile: string | null | undefined): string {
+  if (sessionId) return `id:${sessionId}`
+  return sessionFile ? `file:${sessionFile.replace(/[\\/]+/g, '/').toLowerCase()}` : ''
+}
+
 export function forgetToolExpansion(scope: string): void {
   toolExpansion.forget(scope)
 }

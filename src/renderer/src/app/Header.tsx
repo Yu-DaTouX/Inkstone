@@ -1,4 +1,4 @@
-import { useMemo, type ReactElement } from 'react'
+import { memo, useMemo, type ReactElement } from 'react'
 import { ArrowLeft, Columns3, PanelLeft, PanelRight, Pin, SquarePen } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
@@ -39,21 +39,25 @@ interface Props {
   onTogglePane: (tab: WorkbenchTabId) => void
 }
 
-export function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, rightPanelOpen, onToggleRightPanel, windowControls, splitActive = false }: Props): ReactElement {
+export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, rightPanelOpen, onToggleRightPanel, windowControls, splitActive = false }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
   const sessionBarLabel = sessionBarOpen ? (sessionBarHidden ? text.sessionBarNoRoom : text.hideSessionBar) : text.showSessionBar
-  const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const firstUser = useStore((s) => s.messages.find((message) => message.role === 'user') ?? null)
-  const firstUserTitle = useMemo(() => plainTitleText(firstUser?.text ?? '').slice(0, 80), [firstUser])
+  const sessionName = useStore((s) => s.session?.sessionName)
+  const sessionKey = useStore((s) => s.session?.conversationId ?? s.session?.sessionId)
+  const firstUserText = useStore((s) => s.messages.find((message) => message.role === 'user')?.text ?? '')
+  const firstUserTitle = useMemo(() => plainTitleText(firstUserText).slice(0, 80), [firstUserText])
   const hasMessages = useStore((s) => s.messages.length > 0)
-  const manualTitles = useStore((s) => s.manualTitles)
-  const titles = useStore((s) => s.titles)
-  const sessions = useStore((s) => s.sessions)
-  const projects = useStore((s) => s.settings?.projects)
-  const projectNames = useStore((s) => s.settings?.projectNames)
+  const titleId = peekedSessionId ?? sessionKey
+  const namedTitle = useStore((s) => (titleId ? s.manualTitles[titleId] || s.titles[titleId] || s.sessions.find((item) => item.id === titleId)?.title || '' : ''))
+  const project = useStore((s) => {
+    if (route !== 'chat') return ''
+    const summary = s.sessions.find((item) => item.id === titleId)
+    if (!summary || summary.scope === 'global') return ''
+    return sessionProjectLabel(summary, s.settings?.projects ?? [], s.settings?.projectNames ?? {}).label
+  })
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const shortcutOverrides = shortcutOverridesFromSettings(useStore((s) => s.settings))
@@ -67,23 +71,11 @@ export function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSid
     if (route === 'schedule') return t('sched.title')
     if (route === 'collab') return collabText(lang).nav
     if (route === 'artifacts') return t('artifactLibrary.title')
-    const id = peekedSessionId ?? session?.conversationId ?? session?.sessionId
-    if (id && manualTitles[id]) return manualTitles[id]
-    if (id && titles[id]) return titles[id]
-    const summary = sessions.find((item) => item.id === id)
-    if (summary?.title) return summary.title
-    if (!peekedSessionId && session?.sessionName) return session.sessionName
+    if (namedTitle) return namedTitle
+    if (!peekedSessionId && sessionName) return sessionName
     if (firstUserTitle) return firstUserTitle
     return !peekedSessionId && !hasMessages ? text.newSessionTitle : t('rail.untitled')
-  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, session?.sessionName, sessions, firstUserTitle, hasMessages, manualTitles, titles, t, lang, text.newSessionTitle])
-
-  const project = useMemo(() => {
-    if (route !== 'chat') return ''
-    const id = peekedSessionId ?? session?.conversationId ?? session?.sessionId
-    const summary = sessions.find((item) => item.id === id)
-    if (!summary || summary.scope === 'global') return ''
-    return sessionProjectLabel(summary, projects ?? [], projectNames ?? {}).label
-  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, sessions, projects, projectNames])
+  }, [route, peekedSessionId, sessionName, namedTitle, firstUserTitle, hasMessages, t, lang, text.newSessionTitle])
 
   return (
     <header className="v3-head">
@@ -173,4 +165,4 @@ export function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSid
       </div>
     </header>
   )
-}
+})

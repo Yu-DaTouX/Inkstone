@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRunsV3 } from '../../../state/runs-v3'
 import { useStore } from '../../../state/store'
 import { sessionActivityAt } from '../../../features/sidebar/sidebar-model'
+import type { RunSnapshot } from '../../../../../shared/runs'
 import { scopedKeyOf, type SidebarThreadView, type ThreadRef } from './types'
 import { buildSidebarSections, type SidebarSections } from './sections'
 
@@ -14,13 +15,46 @@ export function useMinuteClock(): number {
   return now
 }
 
+const runSignatures = new WeakMap<RunSnapshot, string>()
+
+function sidebarRunSignature(run: RunSnapshot): string {
+  const cached = runSignatures.get(run)
+  if (cached !== undefined) return cached
+  const phase = run.phase
+  const parts: unknown[] = [run.runId, run.sessionId, run.sessionPath ?? '', run.startedAt, phase.kind, run.model?.provider ?? '', run.model?.id ?? '', run.model?.label ?? '']
+  if (phase.kind === 'needs-you') parts.push(phase.request.type)
+  if (phase.kind === 'done' || phase.kind === 'failed' || phase.kind === 'stopped') parts.push(phase.at)
+  if (phase.kind === 'done' || phase.kind === 'failed') parts.push(phase.seen)
+  if (phase.kind === 'failed') parts.push(phase.errorKind ?? '', phase.message)
+  const signature = JSON.stringify(parts)
+  runSignatures.set(run, signature)
+  return signature
+}
+
+let sidebarRunsSignature = ''
+let sidebarRunsValue: readonly RunSnapshot[] = []
+
+export function selectSidebarRuns(runs: readonly RunSnapshot[]): readonly RunSnapshot[] {
+  if (runs === sidebarRunsValue) return runs
+  const signature = runs.map(sidebarRunSignature).join('\n')
+  if (signature !== sidebarRunsSignature) {
+    sidebarRunsSignature = signature
+    sidebarRunsValue = runs
+  }
+  return sidebarRunsValue
+}
+
+export function useSidebarRuns(): readonly RunSnapshot[] {
+  return useRunsV3((s) => selectSidebarRuns(s.runs))
+}
+
 export function useSidebarSections(): SidebarSections {
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
   const projects = useStore((s) => s.settings?.projects)
   const projectNames = useStore((s) => s.settings?.projectNames)
-  const runs = useRunsV3((s) => s.runs)
+  const runs = useSidebarRuns()
   const now = useMinuteClock()
   return useMemo(
     () =>
