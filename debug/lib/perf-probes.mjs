@@ -101,3 +101,12 @@ export const SUMMARY = (phase) => `(() => {
     ipc: { n: all.length, p50: q(all, 0.5), p95: q(all, 0.95), max: q(all, 1), cleanP95: q(clean, 0.95), cleanMax: q(clean, 1), cleanN: clean.length }
   };
 })()`
+
+export async function useRealWindow(cdp, sleep, { maximize = false } = {}) {
+  await cdp.call('Emulation.clearDeviceMetricsOverride').catch(() => {})
+  if (maximize && await cdp.evaluate('window.innerWidth < screen.availWidth - 40')) {
+    await cdp.evaluate('window.yan.win.maximize()')
+    await sleep(1200)
+  }
+  return cdp.evaluate('({ width: window.innerWidth, height: window.innerHeight, dpr: devicePixelRatio })')
+}

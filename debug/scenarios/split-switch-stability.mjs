@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { useRealWindow } from '../lib/perf-probes.mjs'
 
 export const meta = { description: '分屏切换焦点的稳定性：两个会话各三轮（FLOW/MANYTOOLS），每格滚到中段并展开一个过程，焦点格输入三行草稿；点击另一格标题切换并切回，逐帧记录空白帧、消息流元素替换、阅读锚点位移、过程展开状态与非焦点输入框截断，不调用真实模型' }
 
@@ -54,7 +55,7 @@ function analyze(frames, key, before) {
 
 export default async function run({ cdp, box, runDir, waitFor, check, report, sleep, shot, log, autoApprove, newSession, state, turn }) {
   const ev = (expr) => cdp.evaluate(expr)
-  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 2200, height: 1200, deviceScaleFactor: 1, mobile: false })
+  report.viewport = await useRealWindow(cdp, sleep, { maximize: true })
   await autoApprove()
 
   const sessions = []

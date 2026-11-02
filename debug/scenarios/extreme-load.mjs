@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
-import { PROBES, RENDER_HOOK, RENDER_START, RENDER_TAKE, SUMMARY } from '../lib/perf-probes.mjs'
+import { PROBES, RENDER_HOOK, RENDER_START, RENDER_TAKE, SUMMARY, useRealWindow } from '../lib/perf-probes.mjs'
 import { cpuByKind, memoryByKind, sampleProcessTree } from '../lib/process-tree.mjs'
 
 export const meta = { description: '极端负载：三个项目各一个会话同时跑 STORM（其中一个先派 4 个假模型子代理），首条消息各带一小一大两张图，三分屏同时显示；分阶段测静看、滚轮滚动、切换活动分屏、运行中输入与收尾的帧、长任务、主进程 IPC 往返、store 更新次数与各进程 CPU/内存，不调用真实模型' }
@@ -79,7 +79,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   report.variant = { splitOn, sessionCount, subagentsOn, profileOn }
   const marker = box.userData
   await cdp.call('Page.addScriptToEvaluateOnNewDocument', { source: RENDER_HOOK })
-  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 2400, height: 1300, deviceScaleFactor: 1, mobile: false })
+  report.viewport = await useRealWindow(cdp, sleep, { maximize: true })
   await cdp.call('Page.reload')
   await sleep(300)
   await waitFor('!!window.__yanStore && !!window.yan && !!document.querySelector(".ProseMirror")', 60000, 20)

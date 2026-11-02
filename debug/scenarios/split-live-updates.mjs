@@ -1,8 +1,9 @@
+import { useRealWindow } from '../lib/perf-probes.mjs'
 export const meta = { description: '分屏运行中切换焦点后的实时更新与提问卡：两个会话同时跑 STORM，A 跑完发起提问；运行中反复点击切换分屏焦点，再关闭分屏，核对界面消息与主进程一致、等待回答时问答卡出现且能作答，不调用真实模型' }
 
 export default async function run({ cdp, box, waitFor, check, report, sleep, shot, log, autoApprove, newSession, state, running }) {
   const ev = (expr) => cdp.evaluate(expr)
-  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 2200, height: 1200, deviceScaleFactor: 1, mobile: false })
+  report.viewport = await useRealWindow(cdp, sleep, { maximize: true })
   await autoApprove()
 
   const start = async (project, text) => {

@@ -1,6 +1,6 @@
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { PROBES, RENDER_HOOK, RENDER_START, RENDER_TAKE, SUMMARY } from '../lib/perf-probes.mjs'
+import { PROBES, RENDER_HOOK, RENDER_START, RENDER_TAKE, SUMMARY, useRealWindow } from '../lib/perf-probes.mjs'
 import { memoryByKind, sampleProcessTree } from '../lib/process-tree.mjs'
 
 export const meta = { description: '真实数据副本（配 --user-data）：重载、输入、切大会话、连续切换、会话栏与右栏、用量与设置页、反复切换后的内存，全程测主进程 IPC 往返；YAN_LONG_SCROLL_SOURCE 可加一个超大会话，不调用模型', samples: 2 }
@@ -17,7 +17,7 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   }
 
   await cdp.call('Page.addScriptToEvaluateOnNewDocument', { source: RENDER_HOOK })
-  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1778, height: 958, deviceScaleFactor: 1, mobile: false })
+  report.viewport = await useRealWindow(cdp, sleep, { maximize: true })
   await cdp.call('Performance.enable')
   const metrics = async () => Object.fromEntries((await cdp.call('Performance.getMetrics')).result.metrics.map((m) => [m.name, m.value]))
   const heap = async () => {
