@@ -38,7 +38,27 @@ export const FAKE_TRIGGERS = {
   FAIL: '返回 502，用来看模型错误与重试',
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
-  FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序'
+  FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
+  'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
+  SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM），再按 STORM 跑 60 步',
+  'SUBSTORM-<名字>': '子代理压测：40 步，每步叙述加一次改文件（sub/）并输出 60 行的 bash',
+  '<subagent-notification': '子代理完成回传只回一句，避免再次触发'
+}
+
+function stormTag(text, word) {
+  return new RegExp(`${word}-([A-Za-z0-9]+)`).exec(text)?.[1] ?? 'x'
+}
+
+function stormCommand(dir, tag, step, lines) {
+  const touch = `mkdir -p ${dir} && for i in 1 2 3; do printf 'step ${step} ${tag} %s\\n' "$RANDOM" >> "${dir}/${tag}-$(( (${step} + i) % 12 )).txt"; done`
+  const tracked = step % 10 === 0 ? ` && printf 'touch ${tag} ${step}\\n' >> README.md` : ''
+  return `${touch}${tracked} && seq -f 'out ${step} line %g ................................................' 1 ${lines}`
+}
+
+function stormNarration(step) {
+  if (step % 15 !== 14) return `第 ${step + 1} 步：继续处理。`
+  const rows = Array.from({ length: 8 }, (_, i) => `| ${step}-${i} | 值 ${i * step} | 状态 ${i % 3 ? '通过' : '待查'} |`).join('\n')
+  return `第 ${step + 1} 步小结：\n\n| 项 | 值 | 状态 |\n| --- | --- | --- |\n${rows}\n\n\`\`\`ts\nconst step${step} = ${JSON.stringify({ step, ok: true })}\n\`\`\`\n`
 }
 
 function flowThinking(step) {
@@ -108,8 +128,27 @@ async function respond(res, text, done, requestNo) {
     send({ type: 'response.output_item.done', output_index: index, item: finished })
     output.push(finished)
   }
+  const stormStep = async (dir, tag, step, lines) => {
+    if (text.includes('SLOW')) await streamThinking(`Storm ${tag} step ${step + 1}: ` + 'slowly weigh the evidence before the next edit. '.repeat(10), 4, 50)
+    else await streamThinking(`Storm ${tag} step ${step + 1}: ` + 'check the files, compare outputs, decide the next edit. '.repeat(5), 12, 8)
+    await streamText(stormNarration(step), 6, 10)
+    await callTool('bash', { command: stormCommand(dir, tag, step + 1, lines), description: `storm ${tag} ${step + 1}` })
+  }
   try {
-    if (text.includes('LONGTEXT')) await streamText(longText(), 12, 15)
+    if (text.includes('<subagent-notification')) await streamText('好的，收到。', 20, 10)
+    else if (text.includes('SUBSTORM')) {
+      if (done < 40) await stormStep('sub', stormTag(text, 'SUBSTORM'), done, 60)
+      else await streamText('子任务四十步完成。', 20, 10)
+    } else if (text.includes('SUBAGENTS')) {
+      if (done < 1) await callTool('bash', { command: 'for i in 1 2 3 4; do yan subagent start --task "SUBSTORM-sub$i 压测子任务" --title "压测$i" --model fake/fake-model; done', description: 'start subagents' })
+      else if (done < 61) await stormStep('storm', stormTag(text, 'SUBAGENTS'), done - 1, 120)
+      else await streamText(longText(), 24, 8)
+    } else if (text.includes('STORM')) {
+      const steps = Number(/STEPS(\d+)/.exec(text)?.[1] ?? 60)
+      if (done < steps) await stormStep('storm', stormTag(text, 'STORM'), done, 120)
+      else if (done === steps && text.includes('ASK')) await callTool('question', { question: `${stormTag(text, 'STORM')} 跑完了，下一步怎么做？`, options: ['继续', '停下'] })
+      else await streamText(longText(), 24, 8)
+    } else if (text.includes('LONGTEXT')) await streamText(longText(), 12, 15)
     else if (text.includes('MANYTOOLS')) {
       if (done < 40) {
         await streamText(`第 ${done + 1} 步。`, 20, 0)
