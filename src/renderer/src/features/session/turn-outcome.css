@@ -7,6 +7,9 @@
   .v3-decision-body { padding: var(--s-4) var(--s-12) var(--s-10); }
   .v3-decision[data-state='answered'] .v3-decision-body .v3-prose { color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); }
   .v3-decision-trail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s-4) var(--s-12); margin: 0; padding: var(--s-8) var(--s-12); border-top: var(--hair, 1px) solid var(--line); font-size: var(--t-body); line-height: var(--t-body-lh); }
+  .v3-decision.ui-card--receipt > .v3-decision-head { align-items: center; padding: 0; }
+  .v3-decision.ui-card--receipt > .v3-decision-body { margin: var(--s-2) 0 var(--s-4) var(--s-4); padding: 0 0 0 var(--s-10); border-left: var(--hair, 1px) solid var(--line); }
+  .v3-decision.ui-card--receipt > .v3-decision-trail { margin: 0 0 var(--s-4) var(--s-4); padding: 0 0 0 var(--s-10); border-top: 0; border-left: var(--hair, 1px) solid var(--line); }
   .v3-decision-step { display: contents; }
   .v3-decision-step > dt { color: var(--fg3); }
   .v3-decision-step > dd { min-width: 0; margin: 0; color: var(--fg); }

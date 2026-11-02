@@ -27,14 +27,13 @@
   @media (prefers-reduced-motion: reduce) { .v3-approval { animation: none; } }
   :root[data-reduce-motion='true'] .v3-approval { animation: none; }
 
-  .v3-approval-receipt { width: 100%; max-width: 480px; margin: var(--s-2) 0 var(--s-6); }
-  .v3-approval-receipt-head { padding: var(--s-4) var(--s-12); }
+  .v3-approval-receipt { width: 100%; margin: 0 0 var(--s-2); }
   .v3-approval-line { display: flex; align-items: center; gap: var(--s-8); min-width: 0; min-height: var(--size-btn-sm); color: var(--fg3); font-size: var(--t-footnote); }
   .v3-approval-line > * { flex: none; }
   .v3-approval-line-title { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--fg2); white-space: nowrap; text-overflow: ellipsis; }
   .v3-approval-line-reason { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .v3-approval-line-time { margin-inline-start: auto; }
-  .v3-approval-receipt-reason { padding: 0 var(--s-12) var(--s-8); color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .v3-approval-receipt-reason { margin: var(--s-2) 0 var(--s-4) var(--s-4); padding-left: var(--s-10); border-left: var(--hair, 1px) solid var(--line); color: var(--fg2); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
 
   .v3-approval .v3-typing-defer,
   .v3-approval-read-hint {

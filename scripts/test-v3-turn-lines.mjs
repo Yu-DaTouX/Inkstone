@@ -671,13 +671,15 @@ async function main() {
     ok(textOf(byTestId(active, 'v3-error-title')[0]) === 'errorTitleQuotaRate', '额度限流有类别标题', textOf(byTestId(active, 'v3-error-title')[0]))
     ok(byTestId(active, 'v3-error-retry').length === 1, '能定位提示时给重试')
     ok(byTestId(active, 'v3-error-model').length === 1, '限流也给换模型')
-    const fold = byTestId(active, 'v3-error-toggle')[0]
-    ok(!!fold && fold.props['aria-expanded'] === false, '原始错误默认折叠在「查看详情」里')
-    ok(byTestId(active, 'v3-error-body').length === 0, '折叠时不渲染正文')
-    fold.props.onPress()
+    ok(byTestId(active, 'v3-error-explanation').length === 1, '阻塞错误直接显示说明')
+    ok(byTestId(active, 'v3-error-raw').length === 0, '原文默认收起')
+    const lead = collect(active, kind('CardActions'))[0]?.props.lead
+    ok(byTestId(lead, 'v3-error-copy').length === 1, '阻塞错误底部可复制详情')
+    const rawToggle = byTestId(lead, 'v3-error-raw-toggle')[0]
+    ok(!rawToggle || rawToggle.props['aria-expanded'] === false, '原文按钮默认未展开')
+    rawToggle?.props.onPress()
     const opened = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('429 rate limit exceeded') })
-    ok(flattenText(byTestId(opened, 'v3-error-body')[0]).includes('原因：'), '展开后正文含脱敏原因')
-    ok(byTestId(opened, 'v3-error-copy').length === 1, '展开后可复制详情')
+    ok(!rawToggle || byTestId(opened, 'v3-error-raw').length === 1, '点「原文」后显示原始错误')
     const actionIds = collect(opened, (el) => /^v3-error-(retry|model|compact|wait)$/.test(el.props?.['data-testid'] ?? '')).map((el) => el.props['data-testid'])
     ok(actionIds[actionIds.length - 1] === 'v3-error-retry' && actionIds.length > 1, '主操作（重试）排在动作行最右', actionIds.join())
     const errorStatus = collect(opened, kind('CardStatus'))[0]

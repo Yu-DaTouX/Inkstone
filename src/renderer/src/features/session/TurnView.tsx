@@ -185,6 +185,7 @@ function NoteTurnView({ turn, sessionId }: { turn: NoteTurn; sessionId: string |
       <Icon name={summary ? 'branch' : 'message'} size={13} />
       <span className="v3-note-label">{label}</span>
       {msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
+      {summary ? <Icon name="chevron-right" size={13} className="v3-note-chev" /> : null}
     </>
   )
   const body = (

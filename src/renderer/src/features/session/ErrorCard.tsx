@@ -3,8 +3,8 @@ import { useStore } from '../../state/store'
 import { refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { blockedQuotaWindows } from '../../../../shared/quota-resume'
 import { viewMatchesProjectedSession, sessionViewIdentity } from './view-state'
-import { Button, IconButton } from '../../ui'
-import { Card, CardActions, CardBody, CardChevron, CardControl, CardHead, CardStatus, CardSummary, CardTitle } from '../../ui/Card'
+import { Button } from '../../ui'
+import { Card, CardActions, CardBody, CardCode, CardHead, CardStatus, CardSummary, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { forgetToolExpansion } from './tool-expansion'
@@ -90,82 +90,92 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
   }
 
   const title = tt(errorTitleKey(model))
-  const toggle = (): void => setDetailsOpen((open) => !open)
   const bodyParts = splitErrorBody(model.body)
-  const details = detailsOpen ? (
-    <CardBody className="v3-errorcard-details" data-testid="v3-error-body">
+  const explanation = (
+    <>
       {windowFull ? <p className="v3-errorcard-body">{tt('errorQuotaWindowFull')}</p> : null}
-      <p className="v3-errorcard-body" title={bodyParts.raw || undefined} data-testid="v3-error-explanation">{bodyParts.explanation}</p>
-      {bodyParts.raw ? (
-        <>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-expanded={rawOpen}
-            data-testid="v3-error-raw-toggle"
-            onPress={() => setRawOpen((open) => !open)}
-          >
-            {rawOpen ? tt('errRawHide') : tt('errRaw')}
-          </Button>
-          {rawOpen ? <p className="v3-errorcard-raw" data-testid="v3-error-raw">{bodyParts.raw}</p> : null}
-        </>
-      ) : null}
-      <div className="v3-errorcard-detail-foot">
-        <Button
-          size="sm"
-          variant="ghost"
-          icon={<Icon name={copied ? 'check' : 'copy'} size={14} />}
-          data-testid="v3-error-copy"
-          onPress={copy}
-        >
-          {copied ? tt('msgCopied') : tt('errCopyDetails')}
-        </Button>
-        <span className="v3-errorcard-status" role="status" aria-live="polite">
-          {copied ? tt('msgCopied') : ''}
-        </span>
-      </div>
-    </CardBody>
-  ) : null
+      <p className="v3-errorcard-body" data-testid="v3-error-explanation">{bodyParts.explanation}</p>
+    </>
+  )
+  const rawBlock = bodyParts.raw ? <CardCode tone="fail" className="v3-errorcard-raw" data-testid="v3-error-raw">{bodyParts.raw}</CardCode> : null
+  const copyButton = (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="v3-errorcard-tool"
+        icon={<Icon name={copied ? 'check' : 'copy'} size={14} />}
+        data-testid="v3-error-copy"
+        onPress={copy}
+      >
+        {copied ? tt('msgCopied') : tt('errCopyDetails')}
+      </Button>
+      <span className="v3-errorcard-status" role="status" aria-live="polite">
+        {copied ? tt('msgCopied') : ''}
+      </span>
+    </>
+  )
 
   if (recovered) {
     return (
       <Card receipt padding="none" className="v3-errorcard" role="status" data-testid="v3-error-card" data-kind={model.kind} data-recovered>
-        <CardSummary expanded={detailsOpen} onPress={toggle} title={tt('errViewDetails')} data-testid="v3-error-toggle">
-          <CardStatus tone="muted" icon={<Icon name="refresh" size={14} />}>{tt('errRecoveredStatus')}</CardStatus>
-          <CardTitle clamp data-testid="v3-error-title">{title}</CardTitle>
+        <CardSummary expanded={detailsOpen} onPress={() => setDetailsOpen((open) => !open)} title={tt('errViewDetails')} data-testid="v3-error-toggle">
+          <CardStatus tone="muted" icon={<Icon name="refresh" size={13} />}>{tt('errRecoveredStatus')}</CardStatus>
+          <CardTitle clamp className="v3-errorcard-title" data-testid="v3-error-title">{title}</CardTitle>
+          {detailsOpen ? null : <span className="v3-errorcard-preview">{bodyParts.explanation}</span>}
         </CardSummary>
-        {details}
+        {detailsOpen ? (
+          <CardBody className="v3-errorcard-details" data-testid="v3-error-body">
+            {explanation}
+            {rawBlock}
+            <div className="v3-errorcard-tools">{copyButton}</div>
+          </CardBody>
+        ) : null}
       </Card>
     )
   }
 
   const ordered = [...actions.filter((action) => !PRIMARY_ACTIONS.has(action)), ...actions.filter((action) => PRIMARY_ACTIONS.has(action))]
+  const tools = (
+    <div className="v3-errorcard-tools">
+      {bodyParts.raw ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="v3-errorcard-tool"
+          icon={<Icon name={rawOpen ? 'chevron-up' : 'chevron-down'} size={14} />}
+          aria-expanded={rawOpen}
+          data-testid="v3-error-raw-toggle"
+          onPress={() => setRawOpen((open) => !open)}
+        >
+          {rawOpen ? tt('errRawHide') : tt('errRaw')}
+        </Button>
+      ) : null}
+      {copyButton}
+    </div>
+  )
   return (
     <Card tone="fail" padding="md" className="v3-errorcard" role="alert" data-testid="v3-error-card" data-kind={model.kind}>
       <CardHead>
         <CardStatus tone="fail" icon={<Icon name="warn" size={14} />}>{tt('errStatus')}</CardStatus>
         <CardTitle data-testid="v3-error-title">{title}</CardTitle>
-        <CardControl>
-          <IconButton size="sm" aria-label={tt('errViewDetails')} aria-expanded={detailsOpen} onPress={toggle} data-testid="v3-error-toggle">
-            <CardChevron />
-          </IconButton>
-        </CardControl>
       </CardHead>
-      {details}
-      {ordered.length ? (
-        <CardActions className="v3-errorcard-actions">
-          {ordered.map((action) => (
-            <Button
-              key={action}
-              variant={PRIMARY_ACTIONS.has(action) ? 'primary' : 'ghost'}
-              data-testid={`v3-error-${action}`}
-              onPress={() => run(action)}
-            >
-              {LABEL[action]}
-            </Button>
-          ))}
-        </CardActions>
-      ) : null}
+      <CardBody className="v3-errorcard-details" data-testid="v3-error-body">
+        {explanation}
+        {rawOpen ? rawBlock : null}
+      </CardBody>
+      <CardActions className="v3-errorcard-actions" lead={tools}>
+        {ordered.map((action) => (
+          <Button
+            key={action}
+            variant={PRIMARY_ACTIONS.has(action) ? 'primary' : 'ghost'}
+            data-testid={`v3-error-${action}`}
+            onPress={() => run(action)}
+          >
+            {LABEL[action]}
+          </Button>
+        ))}
+      </CardActions>
     </Card>
   )
 }
