@@ -1,11 +1,14 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Square } from 'lucide-react'
 import { Button, CollapsibleChevron, IconButton, ListRow, ListRowStatic, Notice, StatusDot, StatusSlot } from '../../ui'
+import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../../state/store'
+import { viewSubagentRuns } from '../../state/subagent-view'
+import { useThrottledValue } from '../../state/streaming-throttle'
 import { useSubagentStopping } from '../../state/subagent-stopping'
 import { phaseWord, runTone, type RunLang } from '../../state/runs-v3'
 import { formatDuration } from '../../../../shared/duration'
-import { buildSubagentTaskRow, type SubagentTaskRow } from '../../../../shared/subagent-task-rows'
+import { buildSubagentTaskRow, isLiveSubagentRun, type SubagentTaskRow } from '../../../../shared/subagent-task-rows'
 import type { RunSnapshot } from '../../../../shared/runs'
 import type { SubagentRun } from '../../../../shared/ipc'
 import { SubagentStateIcon } from '../session/SubagentState'
@@ -29,22 +32,20 @@ type TaskEntry =
   | (BackgroundTaskEntry & { kind: 'scheduled'; snapshot: RunSnapshot })
 
 export interface BackgroundTasksProps {
-  subagents: readonly SubagentRun[]
   scheduled: readonly RunSnapshot[]
   lang: RunLang
   text: OverviewText
 }
 
-export function backgroundTaskCount(subagents: readonly SubagentRun[], scheduled: readonly RunSnapshot[], stopping: ReadonlySet<string>, now: number): { running: number; total: number } {
-  const running =
-    subagents.filter((run) => isLiveTaskRow(buildSubagentTaskRow(run, { now, stopping: stopping.has(run.id) }))).length +
-    scheduled.filter(canStopRun).length
-  return { running, total: subagents.length + scheduled.length }
+export function backgroundTaskCount(subagents: { running: number; total: number }, scheduled: readonly RunSnapshot[]): { running: number; total: number } {
+  return { running: subagents.running + scheduled.filter(canStopRun).length, total: subagents.total + scheduled.length }
 }
 
-export function BackgroundTasks({ subagents, scheduled, lang, text }: BackgroundTasksProps): ReactElement {
+export function BackgroundTasks({ scheduled, lang, text }: BackgroundTasksProps): ReactElement {
+  const latestSubagents = useStore(useShallow(viewSubagentRuns))
   const stopping = useSubagentStopping((s) => s.ids)
-  const anyLive = subagents.some((run) => run.status === 'starting' || run.status === 'running') || scheduled.some(canStopRun)
+  const anyLive = latestSubagents.some(isLiveSubagentRun) || scheduled.some(canStopRun)
+  const subagents = useThrottledValue(latestSubagents, anyLive)
   const now = useTicker(anyLive)
   const entries = useMemo<TaskEntry[]>(() => {
     const agentEntries: TaskEntry[] = subagents.map((run) => {
@@ -65,7 +66,7 @@ export function BackgroundTasks({ subagents, scheduled, lang, text }: Background
   const [finishedOpen, setFinishedOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const onGone = (): void => setNotice(text.taskGone)
+  const onGone = useCallback((): void => setNotice(text.taskGone), [text])
 
   return (
     <div className="wb-bg" data-testid="wb-bg-tasks">
@@ -108,7 +109,27 @@ export function BackgroundTasks({ subagents, scheduled, lang, text }: Background
 
 const RUN_DOT = { run: 'running', ask: 'awaiting', stall: 'awaiting', fail: 'fail', done: 'ok', idle: 'idle' } as const
 
-function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: number; lang: RunLang; text: OverviewText; onGone: () => void }): ReactElement {
+interface TaskRowProps {
+  entry: TaskEntry
+  now: number
+  lang: RunLang
+  text: OverviewText
+  onGone: () => void
+}
+
+function sameTaskEntry(a: TaskEntry, b: TaskEntry): boolean {
+  if (a.kind === 'subagent' && b.kind === 'subagent') return a.run === b.run && a.row.state === b.row.state
+  if (a.kind === 'scheduled' && b.kind === 'scheduled') return a.snapshot === b.snapshot
+  return false
+}
+
+const TaskRow = memo(
+  TaskRowView,
+  (a: TaskRowProps, b: TaskRowProps) =>
+    a.now === b.now && a.lang === b.lang && a.text === b.text && a.onGone === b.onGone && sameTaskEntry(a.entry, b.entry)
+)
+
+function TaskRowView({ entry, now, lang, text, onGone }: TaskRowProps): ReactElement {
   const [open, setOpen] = useState(false)
   const [stoppingRun, setStoppingRun] = useState(false)
   const models = useStore((s) => s.models)

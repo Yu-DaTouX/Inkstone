@@ -197,7 +197,7 @@ const fakeHost = {
 }
 
 globalThis.__rh = {
-  getSettings: async () => ({ projects: [], cwd: 'C:/fixture/p1', piBin: 'pi' }),
+  getSettings: async () => ({ projects: [{ id: 'p1', cwd: 'C:/fixture/p1', name: 'p1', archived: false }, { id: 'p2', cwd: 'C:/fixture/p2', name: 'p2', archived: false }], cwd: 'C:/fixture/p1', piBin: 'pi' }),
   listSessions: async () => allSessions,
   setManualTitle: async (sessionId, name) => {
     titleCalls.push({ sessionId, name })

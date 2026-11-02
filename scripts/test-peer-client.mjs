@@ -214,6 +214,26 @@ try {
   assert.doesNotMatch(unknownPeer.error, /[\u4e00-\u9fff]/, '主进程文案不写中文，由渲染端按语言显示')
   assert.equal((await dead.readImport('../etc')).code, 'import-invalid', '非法导入 id 返回错误码')
 
+  const pairDir = join(root, 'pair-race')
+  await mkdir(pairDir, { recursive: true })
+  let pairCount = 0
+  const pairServer = createServer(async (req, res) => {
+    const index = ++pairCount
+    await new Promise((resolve) => setTimeout(resolve, 20 + (index % 3) * 5))
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, token: `peer-token-race-${index}-0123456789`, deviceId: `dev-race-${index}`, computer: { name: `race-${index}` } }))
+  })
+  await new Promise((resolve) => pairServer.listen(0, '127.0.0.1', resolve))
+  const pairAddress = `127.0.0.1:${pairServer.address().port}`
+  const { PeerClient: RaceClient } = await buildClient('peer-client-pair-race', pairDir)
+  const racing = new RaceClient()
+  const paired = await Promise.all(Array.from({ length: 5 }, () => racing.pair(pairAddress, '123456')))
+  await new Promise((resolve) => pairServer.close(resolve))
+  assert.ok(paired.every((result) => result.ok), `并发配对全部成功：${JSON.stringify(paired.filter((result) => !result.ok))}`)
+  const reread = await new RaceClient().status()
+  assert.equal(reread.peers.length, 5, '并发配对后每台电脑都留在设备表里')
+  assert.deepEqual((await readdir(pairDir)).filter((name) => name.endsWith('.tmp')), [], '不残留临时文件')
+
   console.log('peer-client: 幂等重试、peers.json 损坏备份、断流重连、断开与移除通知、配对设备名、对方结束连接、失败返回错误码通过')
 } finally {
   await rm(root, { recursive: true, force: true })

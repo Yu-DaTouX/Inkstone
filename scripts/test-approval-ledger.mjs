@@ -221,6 +221,41 @@ async function run() {
     assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
     await childAfter
 
+    broker.activate('r10', a)
+    const firstSession = { ...base, runId: 'r10', owner: a, sessionId: 'S1' }
+    const sessionGrant = broker.ask(firstSession)
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    await sessionGrant
+    assert.equal((await broker.ask(firstSession))?.choice, 'once')
+    const forkedOpened = opened.length
+    const forked = broker.ask({ ...firstSession, sessionId: 'S2' })
+    assert.equal(opened.length, forkedOpened + 1, '同一 owner 下原生新建或分叉会话后要重新询问')
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal((await forked)?.choice, 'deny')
+    const unknownSession = broker.ask({ ...firstSession, sessionId: undefined })
+    assert.equal(opened.length, forkedOpened + 2, '没有会话身份的请求不能沿用会话授权')
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    await unknownSession
+    assert.equal((await broker.ask(firstSession))?.choice, 'once', '回到已授权的会话时授权仍在')
+
+    broker.activate('r11', a)
+    const oldPending = broker.ask({ ...base, runId: 'r11', owner: a, tool: 'old' })
+    broker.activate('r11', b)
+    assert.equal(await oldPending, null)
+    const newGrant = broker.ask({ ...base, runId: 'r11', owner: b, sessionId: 'S9' })
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    await newGrant
+    const newPending = broker.ask({ ...base, runId: 'r11', owner: b, tool: 'pending-new' })
+    const ownerless = broker.ask({ ...base, runId: 'r11', tool: 'ownerless' })
+    const pendingBefore = broker.list().length
+    assert.equal(broker.cancelRun('r11', a), 0, '停止被替换的旧实例不能取消新实例的待审批')
+    assert.equal(broker.retire('r11', a), 0)
+    assert.equal(broker.list().length, pendingBefore)
+    assert.equal((await broker.ask({ ...base, runId: 'r11', owner: b, sessionId: 'S9' }))?.choice, 'once', '旧实例注销不清掉新 owner 的会话授权')
+    assert.equal(broker.cancelRun('r11', b), 2)
+    assert.equal(await newPending, null)
+    assert.equal(await ownerless, null)
+
     const closedBroker =new ApprovalBroker({ canAsk: () => false, open: () => assert.fail('不应打开'), close: () => {} })
     assert.equal(await closedBroker.ask({ ...base }), null)
 

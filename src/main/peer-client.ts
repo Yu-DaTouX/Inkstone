@@ -1,7 +1,7 @@
 import { safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, readdir, readFile, rename, stat, writeFile, copyFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile, copyFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -90,28 +90,48 @@ function connectionEnded(code: string | undefined): boolean {
 
 export class PeerClient implements PeerTransport {
   private peers: StoredPeer[] | null = null
+  private loading: Promise<StoredPeer[]> | null = null
+  private saving: Promise<void> = Promise.resolve()
   private readonly connections = new Map<string, PeerConnectionState>()
   private readonly streams = new Map<string, AbortController>()
   private readonly reconnects = new Map<string, { timer: ReturnType<typeof setTimeout>; wake: () => void }>()
   private readonly generations = new Map<string, number>()
 
-  private async load(): Promise<StoredPeer[]> {
-    if (this.peers) return this.peers
-    try {
-      const parsed = JSON.parse(await readFile(PEERS_FILE, 'utf8')) as Partial<PeersFile>
-      this.peers = parsed.version === 1 && Array.isArray(parsed.peers) ? parsed.peers.filter((peer) => typeof peer?.id === 'string' && typeof peer.token === 'string') : []
-    } catch {
-      await copyFile(PEERS_FILE, `${PEERS_FILE}.${Date.now()}.corrupt`).catch(() => undefined)
-      this.peers = []
-    }
-    return this.peers
+  private load(): Promise<StoredPeer[]> {
+    if (this.peers) return Promise.resolve(this.peers)
+    this.loading ??= this.readPeers().then((peers) => {
+      this.peers = peers
+      return peers
+    })
+    return this.loading
   }
 
-  private async save(): Promise<void> {
+  private async readPeers(): Promise<StoredPeer[]> {
+    try {
+      const parsed = JSON.parse(await readFile(PEERS_FILE, 'utf8')) as Partial<PeersFile>
+      return parsed.version === 1 && Array.isArray(parsed.peers) ? parsed.peers.filter((peer) => typeof peer?.id === 'string' && typeof peer.token === 'string') : []
+    } catch {
+      await copyFile(PEERS_FILE, `${PEERS_FILE}.${Date.now()}.corrupt`).catch(() => undefined)
+      return []
+    }
+  }
+
+  private save(): Promise<void> {
+    const run = this.saving.catch(() => undefined).then(() => this.writePeers())
+    this.saving = run
+    return run
+  }
+
+  private async writePeers(): Promise<void> {
     await mkdir(YAN_DIR, { recursive: true })
-    const temp = `${PEERS_FILE}.${process.pid}.tmp`
-    await writeFile(temp, JSON.stringify({ version: 1, peers: this.peers ?? [] } satisfies PeersFile, null, 2), { encoding: 'utf8', mode: 0o600 })
-    await rename(temp, PEERS_FILE)
+    const temp = `${PEERS_FILE}.${process.pid}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temp, JSON.stringify({ version: 1, peers: this.peers ?? [] } satisfies PeersFile, null, 2), { encoding: 'utf8', mode: 0o600 })
+      await rename(temp, PEERS_FILE)
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 
   async status(): Promise<PeerStatusView> {

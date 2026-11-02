@@ -799,6 +799,22 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(agents[0].calls.stop === 0, '不会为了凑 LRU 顺序去动另一个空闲实例')
         await reg.stopAll()
       }
+
+      {
+        const { reg, agents } = make()
+        const first = await reg.select({ cwd: 'C:/dead-cwd', sessionFile: 'C:/dead-a.jsonl' })
+        ok(first.ok && agents.length === 1, '死实例夹具：第一个实例就绪')
+        const dead = agents[0]
+        dead.getConn = () => ({ state: 'exited', detail: 'pi exited' })
+        const reopened = await reg.select({ cwd: 'C:/dead-cwd', sessionFile: 'C:/dead-b.jsonl' })
+        ok(reopened.ok && reopened.id === first.id && reopened.via === 'reuse', 'pi 退出后同目录打开其它会话会重建该实例位', JSON.stringify(reopened))
+        ok(agents.length === 2 && agents[1].calls.start === 1, '启动新的 agent，不复用已退出的那个')
+        ok(!dead.calls.switchSession.includes('C:/dead-b.jsonl'), '不向已退出的进程发送切换会话命令')
+        ok(agents[1].calls.switchSession.includes('C:/dead-b.jsonl'), '替代实例打开目标会话')
+        ok(dead.calls.stop === 1, '替换完成后停止已退出的旧实例')
+        ok(reopened.generation !== first.generation, '替代实例换新代次')
+        await reg.stopAll()
+      }
     })()
   }
 }

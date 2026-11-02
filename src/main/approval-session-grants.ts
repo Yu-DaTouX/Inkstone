@@ -3,10 +3,10 @@ import { sameOwner } from './approval-ledger'
 
 interface ScopeGrants {
   owner?: ApprovalOwner
-  keys: Set<string>
+  sessions: Map<string, Set<string>>
 }
 
-type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title'>>
+type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title' | 'sessionId'>>
 
 const OUTSIDE_WRITE_REASON = '写入项目之外的路径：'
 
@@ -25,6 +25,10 @@ export function sessionGrantKey(request: GrantFields): string | null {
   return `${request.kind}\u0000${request.tool}\u0000${dirs}\u0000${operationClass(request)}`
 }
 
+function sessionSlot(request: Pick<GrantFields, 'sessionId'>): string {
+  return request.sessionId ?? ''
+}
+
 export class ApprovalSessionGrants {
   private readonly scopes = new Map<string, ScopeGrants>()
 
@@ -33,8 +37,11 @@ export class ApprovalSessionGrants {
     if (!scope || !key) return false
     const existing = this.scopes.get(scope)
     if (existing && !sameOwner(existing.owner, request.owner)) this.scopes.delete(scope)
-    const entry = this.scopes.get(scope) ?? { ...(request.owner ? { owner: request.owner } : {}), keys: new Set<string>() }
-    entry.keys.add(key)
+    const entry = this.scopes.get(scope) ?? { ...(request.owner ? { owner: request.owner } : {}), sessions: new Map<string, Set<string>>() }
+    const slot = sessionSlot(request)
+    const keys = entry.sessions.get(slot) ?? new Set<string>()
+    keys.add(key)
+    entry.sessions.set(slot, keys)
     this.scopes.set(scope, entry)
     return true
   }
@@ -44,7 +51,7 @@ export class ApprovalSessionGrants {
     const entry = scope ? this.scopes.get(scope) : undefined
     if (!entry || !key) return false
     if (!sameOwner(entry.owner, request.owner)) return false
-    return entry.keys.has(key)
+    return entry.sessions.get(sessionSlot(request))?.has(key) === true
   }
 
   clear(scope: string, owner?: ApprovalOwner): void {

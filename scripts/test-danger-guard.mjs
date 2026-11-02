@@ -1,4 +1,7 @@
+import { homedir } from 'node:os'
+
 export function runDangerGuardTests(ok, mod) {
+  runTargetParsingTests(ok, mod)
   const { detectDanger, isBroadTarget } = mod
   const bash = (command) => detectDanger('bash', { command }, 'C:/proj')
   const asks = (command) => bash(command).length > 0
@@ -134,4 +137,117 @@ export function runDangerGuardTests(ok, mod) {
     ok(detectDanger('write', { path: '/c/Windows/System32/drivers/etc/hosts' }, work).length > 0, '写 /c/Windows 按 Windows 系统目录要问')
     ok(isBroadTarget('/c') && isBroadTarget('/c/users/me') && !isBroadTarget('/c/users/me/bench/proj') && !isBroadTarget('/tmp/build/cache'), 'Git Bash 盘符按 Windows 盘计算范围')
   }
+}
+
+function runTargetParsingTests(ok, mod) {
+  const { detectDanger, outsideWrites } = mod
+  const on = { outsideWrites: true, allowRoots: [] }
+  const outside = (tool, command, cwd = 'C:/proj') => outsideWrites(tool, { command }, cwd, on)
+  ok(outside('bash', 'echo hi>D:/other/a.txt').length === 1, '重定向符前没有空格也识别为项目外写入')
+  ok(outside('bash', 'cat a.txt>>D:/other/log.txt').length === 1, '追加重定向前没有空格也识别')
+  ok(outside('bash', 'printf x>|D:/other/x').length === 1, '强制覆盖重定向 >| 也识别')
+  ok(outside('bash', 'npm test 2>&1 | tee out.log').length === 0, '2>&1 与项目内 tee 不误报')
+  ok(outside('bash', 'node -e "const f = (a) => a.length >= 2"').length === 0, '箭头函数与比较符不当作重定向')
+  const cdOut = outside('bash', 'cd D:/other && echo hi > a.txt')
+  ok(cdOut.length === 1 && cdOut[0] === 'd:/other/a.txt', '命令内 cd 后的相对写入按新目录判定', JSON.stringify(cdOut))
+  ok(outside('bash', 'cd .. && rm -f secret.txt').length === 1, 'cd .. 后删除上级目录文件要问')
+  ok(outside('bash', 'cd src && echo hi > a.txt').length === 0, 'cd 到项目子目录后写入不问')
+  const unknown = outside('bash', 'cd $SOMEWHERE && echo hi > a.txt')
+  ok(unknown.length === 1 && !/^[a-z]:\//.test(unknown[0]), '切到无法解析的目录后，相对写入不按原目录放行', JSON.stringify(unknown))
+  ok(outside('bash', 'cd $SOMEWHERE && echo hi > D:/other/a.txt')[0] === 'd:/other/a.txt', '目录不确定时绝对路径仍按原样判定')
+  ok(outside('powershell', 'Set-Location D:/other; Set-Content -Path a.txt -Value hi')[0] === 'd:/other/a.txt', 'PowerShell Set-Location 后的相对写入按新目录判定')
+  ok(outside('bash', String.raw`cd /d D:\other && echo hi > a.txt`)[0] === 'd:/other/a.txt', 'cmd 的 cd /d 也按新目录判定')
+  const chained = outside('bash', 'cd $SOMEWHERE && cd sub && echo hi > a.txt')
+  ok(chained.length === 1 && !/^[a-z]:\//.test(chained[0]), '目录不确定后再 cd 到相对子目录，仍然不确定', JSON.stringify(chained))
+  ok(outside('bash', 'curl -sSLo D:/other/x.exe https://example.com/x').length === 1, 'curl 合并写法 -sSLo 也识别输出文件')
+  ok(outside('bash', 'curl -o D:/other/x.exe https://example.com/x').length === 1, 'curl -o 写到项目外要问')
+  ok(outside('bash', 'curl https://example.com -o out.json').length === 0 && outside('bash', 'curl -O https://example.com/x.zip').length === 0, 'curl 写项目内不问')
+  ok(outside('bash', 'wget -O D:/other/x https://example.com/x').length === 1 && outside('bash', 'wget https://example.com/x').length === 0, 'wget 按 -O 判定目标')
+  ok(outside('powershell', 'Invoke-WebRequest https://example.com/x -OutFile D:/other/x.exe').length === 1, 'Invoke-WebRequest -OutFile 写到项目外要问')
+  ok(outside('bash', 'git clone https://example.com/a/b D:/other/repo').length === 1, 'git clone 到项目外要问')
+  ok(outside('bash', 'git clone https://example.com/a/b').length === 0 && outside('bash', 'git clone --depth 1 https://example.com/a/b vendor/b').length === 0, 'git clone 到项目内不问')
+  ok(outside('bash', 'cd D:/other && git clone https://example.com/a/b').length === 1, 'cd 到项目外再 clone 要问')
+  ok(outside('bash', 'tar -xzf a.tgz -C D:/other').length === 1 && outside('bash', 'tar -czf out.tgz src').length === 0, 'tar -C 解压到项目外要问，打包不误报')
+  ok(outside('bash', 'unzip a.zip -d D:/other').length === 1, 'unzip -d 到项目外要问')
+  ok(outside('powershell', 'Expand-Archive a.zip -DestinationPath D:/other').length === 1, 'Expand-Archive 到项目外要问')
+
+  const home = homedir().replace(/\\/g, '/')
+  const configReason = (reasons) => reasons.some((reason) => reason.includes('配置、凭据或扩展'))
+  ok(configReason(detectDanger('write', { path: `${home}/.pi/agent/extensions/x.js` }, 'C:/proj')), '写 pi 用户扩展要问')
+  ok(configReason(detectDanger('write', { path: `${home}/.pi/agent/auth.json` }, home)), '会话目录是家目录时写 auth.json 仍要问')
+  ok(configReason(detectDanger('bash', { command: 'echo x > ~/.pi/agent/extensions/x.js' }, 'C:/proj')), 'shell 写 pi 用户扩展要问')
+  ok(configReason(detectDanger('bash', { command: `cd ${home}/.pi/agent && echo {} > settings.json` }, 'C:/proj')), 'cd 进 pi 目录后写配置要问')
+  ok(outsideWrites('write', { path: `${home}/.pi/agent/settings.json` }, 'C:/proj', on).length === 1, 'pi 用户目录不再整体豁免项目外写入确认')
+  ok(!configReason(detectDanger('write', { path: `${home}/.pi/agent/extensions/my-ext/index.js` }, `${home}/.pi/agent/extensions/my-ext`)), '用户本身就在扩展目录里工作时不额外询问')
+  const previous = process.env.YAN_DATA_DIR
+  process.env.YAN_DATA_DIR = 'D:/yan-data'
+  try {
+    ok(!configReason(detectDanger('write', { path: 'D:/yan-data/tmp/a.txt' }, 'C:/proj')) && outsideWrites('write', { path: 'D:/yan-data/tmp/a.txt' }, 'C:/proj', on).length === 0, '砚数据目录的 tmp 仍是可写产物目录')
+    ok(!configReason(detectDanger('write', { path: 'D:/yan-data/artifacts/s/a.html' }, 'C:/proj')), '砚数据目录的 artifacts 仍是可写产物目录')
+    ok(configReason(detectDanger('write', { path: 'D:/yan-data/desktop.json' }, 'C:/proj')), '写砚设置文件要问')
+    ok(configReason(detectDanger('bash', { command: 'echo {} > D:/yan-data/api-keys.json' }, 'C:/proj')), 'shell 写砚凭据文件要问')
+  } finally {
+    if (previous === undefined) delete process.env.YAN_DATA_DIR
+    else process.env.YAN_DATA_DIR = previous
+  }
+}
+
+export async function runApprovalBindingTests(ok, mod) {
+  const { approvalDetail, inputDigest } = mod
+  const written = approvalDetail('write', { path: 'D:/other/a.txt', content: 'hello-content' })
+  ok(written.startsWith('D:/other/a.txt') && written.includes('hello-content') && written.includes(inputDigest({ path: 'D:/other/a.txt', content: 'hello-content' })), '写文件审批展示路径、内容与哈希')
+  const edited = approvalDetail('edit', { path: 'a.ts', edits: [{ oldText: 'old-line', newText: 'new-line' }] })
+  ok(edited.includes('- old-line') && edited.includes('+ new-line'), '编辑审批展示改前改后')
+  const big = approvalDetail('write', { path: 'D:/big.txt', content: 'x'.repeat(50000) })
+  ok(big.length < 20000 && big.includes('SHA-256'), '超长内容截断预览但保留完整内容的哈希')
+  ok(inputDigest({ path: 'a', content: '1' }) !== inputDigest({ path: 'a', content: '2' }), '内容不同哈希不同')
+
+  const handlers = {}
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, getAllTools: () => [] })
+  const keys = ['YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID', 'YAN_DANGER_GUARD']
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
+  const savedFetch = globalThis.fetch
+  Object.assign(process.env, { YAN_CLI_URL: 'http://127.0.0.1:9/fixture', YAN_CLI_TOKEN: 't', YAN_SESSION_ID: 's', YAN_PROJECT_ID: 'p' })
+  delete process.env.YAN_DANGER_GUARD
+  const asked = []
+  let swap = null
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.command === 'danger.prefs') return { json: async () => ({ summary: { mode: 'danger', outsideWrites: true, allowRoots: [] } }) }
+    asked.push(body.params)
+    swap?.()
+    return { json: async () => ({ ok: true, summary: { allowed: true } }) }
+  }
+  try {
+    const input = { path: 'D:/other/a.txt', content: 'approved-content' }
+    const allowed = await handlers.tool_call({ toolName: 'write', input, toolCallId: 'c1' }, { cwd: 'C:/proj' })
+    ok(allowed === undefined && asked.at(-1)?.detail.includes('approved-content'), '批准后按原内容放行，审批里带内容')
+    const changing = { path: 'D:/other/a.txt', content: 'approved-content' }
+    swap = () => { changing.content = 'swapped-content' }
+    const blocked = await handlers.tool_call({ toolName: 'write', input: changing, toolCallId: 'c2' }, { cwd: 'C:/proj' })
+    ok(blocked?.block === true, '审批期间内容被改动时不执行')
+  } finally {
+    globalThis.fetch = savedFetch
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key]
+      else process.env[key] = saved[key]
+    }
+  }
+}
+
+if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {
+  const mod = await import('../resources/pi-extensions/danger-guard.js')
+  let passed = 0
+  let failed = 0
+  const ok = (condition, label, detail) => {
+    if (condition) passed++
+    else {
+      failed++
+      console.error(`FAIL: ${label}`, detail ?? '')
+    }
+  }
+  runDangerGuardTests(ok, mod)
+  await runApprovalBindingTests(ok, mod)
+  console.log(`danger guard: ${passed} passed, ${failed} failed`)
+  if (failed) process.exitCode = 1
 }

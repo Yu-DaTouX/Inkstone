@@ -26,6 +26,11 @@ function canonicalCwd(value: string): string {
   return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
+function agentAlive(agent: AgentController): boolean {
+  const state = agent.getConn().state
+  return state !== 'exited' && state !== 'error'
+}
+
 function readNativeWitness(agent: AgentController): McpNativeBootWitness | null {
   const maybe = (agent as AgentController & { nativeBootWitness?: () => McpNativeBootWitness | null }).nativeBootWitness
   if (typeof maybe !== 'function') return null
@@ -478,7 +483,7 @@ export class RunnerRegistry {
     const idle = idleCandidates.find((runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd)) ?? idleCandidates[0]
 
     if (idle) {
-      if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd)) {
+      if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd) || !agentAlive(idle.agent)) {
         const previous = idle.agent
         const generation = nextGeneration()
         let replacement: AgentController | undefined

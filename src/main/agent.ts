@@ -459,9 +459,9 @@ export class AgentController extends EventEmitter {
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentAnswer | null>
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ApprovalDecision | null>
-  private cancelApprovals?: () => void
+  private cancelApprovals?: (owner: ApprovalOwner) => void
   private activateApprovals?: (owner: ApprovalOwner) => void
-  private retireApprovals?: () => void
+  private retireApprovals?: (owner: ApprovalOwner) => void
   private rpcInstanceId = ''
   private readonly operations = new SessionOperationGate()
   private getPermissionMode?: () => Promise<'danger' | 'all'>
@@ -680,9 +680,9 @@ export class AgentController extends EventEmitter {
     confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
     confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentAnswer | null>
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ApprovalDecision | null>
-    cancelApprovals?: () => void
+    cancelApprovals?: (owner: ApprovalOwner) => void
     activateApprovals?: (owner: ApprovalOwner) => void
-    retireApprovals?: () => void
+    retireApprovals?: (owner: ApprovalOwner) => void
     getPermissionMode?: () => Promise<'danger' | 'all'>
     requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
     dangerGuardExtension?: string
@@ -986,8 +986,8 @@ export class AgentController extends EventEmitter {
       this.contextFrom = undefined
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
       this.ui.pending.clear()
-      this.cancelApprovals?.()
-      this.retireApprovals?.()
+      this.cancelApprovals?.(this.approvalOwner())
+      this.retireApprovals?.(this.approvalOwner())
       if (this.state) {
         this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false }
         this.push({ ch: 'state', payload: this.state })
@@ -2551,7 +2551,7 @@ export class AgentController extends EventEmitter {
 
       case 'agent_settled': {
         this.setRetryRun(null)
-        this.cancelApprovals?.()
+        this.cancelApprovals?.(this.approvalOwner())
         const continuation = this.loopGuardAbortSent && this.loopGuardAbortedMessage && this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
             runId: this.turn.runId, version: this.loopGuardResumeVersion }
@@ -3772,7 +3772,7 @@ export class AgentController extends EventEmitter {
       if (this.loopGuardAbortSent || !this.agentRunning) return { steering: [], followUp: [] }
     }
     this.cancelImages()
-    this.cancelApprovals?.()
+    this.cancelApprovals?.(this.approvalOwner())
     this.turn.terminal = 'stopped'
     const rpc = this.rpc
     const generation = this.capabilityOpts?.runnerGeneration
@@ -4838,8 +4838,8 @@ export class AgentController extends EventEmitter {
     this.stopping = true
     this.releaseExecutionAdmission()
     this.loopGuardContinuationVersion += 1
-    this.cancelApprovals?.()
-    this.retireApprovals?.()
+    this.cancelApprovals?.(this.approvalOwner())
+    this.retireApprovals?.(this.approvalOwner())
     const liveRpc = this.rpc
     if (liveRpc?.running && (this.agentRunning || this.state?.isStreaming || this.bash)) {
       if (this.turn.terminal === 'completed') this.turn.terminal = 'stopped'

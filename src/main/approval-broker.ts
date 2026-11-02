@@ -7,7 +7,7 @@ import {
   type ApprovalRequest,
   type ApprovalSnapshot
 } from '../shared/approval'
-import { ApprovalLedger, type ApprovalAnswerIdentity } from './approval-ledger'
+import { ApprovalLedger, sameOwner, type ApprovalAnswerIdentity } from './approval-ledger'
 import { ApprovalSessionGrants } from './approval-session-grants'
 
 export const APPROVAL_TIMEOUT_MS = 4 * 60 * 1000
@@ -74,6 +74,11 @@ export class ApprovalBroker {
 
   cancel(match: (request: ApprovalRequest) => boolean): number {
     return this.settleAll(this.ledger.expire(match))
+  }
+
+  cancelRun(runId: string, owner: ApprovalOwner): number {
+    const current = this.ledger.isCurrent(`run:${runId}`, owner)
+    return this.cancel((pending) => pending.runId === runId && !pending.subagentId && (pending.owner ? sameOwner(pending.owner, owner) : current))
   }
 
   activate(runId: string, owner: ApprovalOwner): number {

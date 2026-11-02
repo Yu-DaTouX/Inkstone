@@ -23,7 +23,7 @@ import { RunnerRegistry } from './runners'
 import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from './pi-runtime-prefs'
 import { createRunsHost, type RunsHost } from './runs-host'
 import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
-import { createAuxWindows, registerAuxIpc, submitQuickAsk, type AuxWindows } from './windows'
+import { createAuxWindows, quickAskSessionTarget, registerAuxIpc, submitQuickAsk, type AuxWindows } from './windows'
 import { registerDeepLinkProtocol, windowDeepLinkRouter, type DeepLink } from './deeplink'
 import { approvalNoticeTitle, createAttentionNotices, noticeLang, terminalNoticeText } from './attention-notice'
 import { RunnerVisibility } from './runner-reclaim'
@@ -118,7 +118,7 @@ import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
-import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
+import { configureRemoteHost, cwdWithin, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { registerAndroidIpc } from './ipc/android-ipc'
 import { registerAppUpdate } from './app-update'
@@ -2196,14 +2196,14 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           const allowed = choice.choice === 'once' || choice.choice === 'remember'
           return choice.feedback ? { decision: allowed ? 'allow' : 'deny', feedback: choice.feedback } : { decision: allowed ? 'allow' : 'deny' }
         },
-        cancelApprovals: () => {
-          approvals.cancel((pending) => pending.runId === id && !pending.subagentId)
+        cancelApprovals: (owner) => {
+          approvals.cancelRun(id, owner)
         },
         activateApprovals: (owner) => {
           approvals.activate(id, owner)
         },
-        retireApprovals: () => {
-          approvals.retire(id)
+        retireApprovals: (owner) => {
+          approvals.retire(id, owner)
         },
         requestSessionMove,
         confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentAnswer | null> => {
@@ -3595,7 +3595,14 @@ configureRemoteHost({
   ...sessionHost,
   approvals,
   win: () => win,
-  remoteAccess: () => remoteAccess
+  remoteAccess: () => remoteAccess,
+  worktreeOriginOf: async (sessionId, cwd) => {
+    await worktreeOrigins.load()
+    const link = worktreeOrigins.forSession(sessionId)
+    if (link?.fromCwd && cwdWithin(cwd, link.worktree)) return link.fromCwd
+    const isolation = await autoIsolations.bySession(sessionId)
+    return isolation && cwdWithin(cwd, isolation.worktree) ? isolation.mainCwd : null
+  }
 })
 
 app.whenReady().then(async () => {
@@ -3670,8 +3677,10 @@ app.whenReady().then(async () => {
           agentOf: (runId) => runners?.agentOf(runId) ?? null,
           start: () => sessionHost.startAgent(),
           createSession: async ({ projectId }) => {
-            const settings = await getSettings()
-            const cwdResult = await sessionHost.validateCwd(settings.cwd)
+            const target = quickAskSessionTarget(await getSettings(), projectId)
+            if (!target.ok) return { ok: false, error: target.error }
+            const project = target.projectId
+            const cwdResult = await sessionHost.validateCwd(target.cwd)
             if (!cwdResult.ok) return { ok: false, error: cwdResult.error }
             if (!runners) {
               const started = await sessionHost.startAgent()
@@ -3679,11 +3688,11 @@ app.whenReady().then(async () => {
             }
             const registry = runners
             if (!registry) return { ok: false, error: 'pi 未运行' }
-            const scope = projectId ? 'project' : 'global'
-            const res = await registry.select({ cwd: cwdResult.cwd, projectId, scope })
+            const scope = project ? 'project' : 'global'
+            const res = await registry.select({ cwd: cwdResult.cwd, projectId: project, scope })
             await sessionHost.rememberRunnerSession(res, {
               cwd: cwdResult.cwd,
-              ...(projectId ? { projectId } : {}),
+              ...(project ? { projectId: project } : {}),
               scope
             })
             if (res.ok && res.id) void sessionHost.pushRunnerSnapshot(res.id)
@@ -3762,8 +3771,10 @@ app.whenReady().then(async () => {
       runtime: mcpAppViewRuntime.runtime,
       ownerGuard: mcpAppViewRuntime.ownerGuard,
       ask: (request) => {
-        const owner = request.runId ? runners?.agentOf(request.runId)?.approvalOwner() : undefined
-        return approvals.ask(owner ? { ...request, owner } : request)
+        const agent = request.runId ? runners?.agentOf(request.runId) : undefined
+        const owner = agent?.approvalOwner()
+        const sessionId = request.sessionId ?? agent?.getState()?.sessionId
+        return approvals.ask({ ...request, ...(owner ? { owner } : {}), ...(sessionId ? { sessionId } : {}) })
       },
       audit: new McpAppViewAuditStore(),
       serverConfigOf: (serverId) => loadMcpServersCached().servers.find((server) => server.id === serverId) ?? null,

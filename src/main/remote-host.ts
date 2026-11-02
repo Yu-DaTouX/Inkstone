@@ -34,6 +34,7 @@ export interface RemoteHost extends SessionHost {
   win(): BrowserWindow | null
   remoteAccess(): RemoteAccess | null
   approvals?: Pick<ApprovalBroker, 'list' | 'answer'>
+  worktreeOriginOf?(sessionId: string, cwd: string): Promise<string | null>
 }
 
 let host: RemoteHost
@@ -637,6 +638,26 @@ export async function peerSummaryOf(sessionId: string): Promise<SessionSummary |
   return (await remoteSessions(Number.MAX_SAFE_INTEGER, true)).find((item) => item.id === sessionId)
 }
 
+function cwdKey(value: string): string {
+  return resolve(value).replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+}
+
+export function cwdWithin(child: string | undefined, parent: string | undefined): boolean {
+  if (!child || !parent) return false
+  const inner = cwdKey(child)
+  const outer = cwdKey(parent)
+  return inner === outer || inner.startsWith(`${outer}/`)
+}
+
+async function peerProjectOf(summary: SessionSummary | undefined): Promise<string | null> {
+  if (!summary?.projectId) return null
+  const project = (await getSettings()).projects.find((item) => item.id === summary.projectId && !item.archived)
+  if (!project) return null
+  if (cwdWithin(summary.cwd, project.cwd)) return project.id
+  const origin = await host.worktreeOriginOf?.(summary.id, summary.cwd).catch(() => null)
+  return origin && cwdWithin(origin, project.cwd) ? project.id : null
+}
+
 export function peerProjectName(project: { name?: string; cwd: string }, projectNames: Record<string, string> = {}): string {
   return project.name?.trim() || projectNames[project.cwd]?.trim() || basename(project.cwd) || project.cwd
 }
@@ -649,20 +670,22 @@ export const peerHostHandlers: PeerHostHandlers = {
       .map((project) => ({ id: project.id, name: peerProjectName(project, settings.projectNames) }))
   },
   async sessions(projectIds) {
-    const list = (await remoteSessions(500, true))
+    const candidates = (await remoteSessions(500, true))
       .filter((summary) => !!summary.projectId && projectIds.includes(summary.projectId))
+    const scoped = await Promise.all(candidates.map(async (summary) => ((await peerProjectOf(summary)) === summary.projectId ? summary : null)))
+    const list = scoped.filter((summary): summary is SessionSummary => summary !== null)
     return (await filterChainRepresentatives(list)).map(remoteSessionSummary)
   },
   async projectOfSession(sessionId) {
-    return (await peerSummaryOf(sessionId))?.projectId ?? null
+    return await peerProjectOf(await peerSummaryOf(sessionId))
   },
   async projectOfRun(runId) {
     const sessionId = host.runners()?.agentOf(runId)?.getState()?.sessionId
-    return sessionId ? (await peerSummaryOf(sessionId))?.projectId ?? null : null
+    return sessionId ? await peerProjectOf(await peerSummaryOf(sessionId)) : null
   },
   async exportSession(sessionId) {
     const summary = await peerSummaryOf(sessionId)
-    if (!summary?.projectId) return { ok: false, status: 404, error: '找不到目标会话' }
+    if (!summary?.projectId || !(await peerProjectOf(summary))) return { ok: false, status: 404, error: '找不到目标会话' }
     const history = await host.readHistoryWithArtifacts(summary.path)
     if (!history) return { ok: false, status: 502, error: '无法读取该会话历史' }
     const settings = await getSettings()

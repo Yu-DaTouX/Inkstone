@@ -34,6 +34,18 @@ async function writeMapAtomic(file: string, value: TitleMap): Promise<void> {
   }
 }
 
+const mapUpdates = new Map<string, Promise<unknown>>()
+
+function updateMap(file: string, change: (all: TitleMap) => void): Promise<void> {
+  const run = (mapUpdates.get(file) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+    const all = await loadMap(file)
+    change(all)
+    await writeMapAtomic(file, all)
+  })
+  mapUpdates.set(file, run)
+  return run
+}
+
 let titlesSnapshot: TitleMap = {}
 
 async function loadTitles(): Promise<TitleMap> {
@@ -64,11 +76,11 @@ export async function setManualTitle(
   name: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const all = await loadMap(MANUAL_FILE)
     const trimmed = name.trim()
-    if (trimmed) all[sessionId] = Array.from(trimmed).slice(0, 60).join('')
-    else delete all[sessionId]
-    await writeMapAtomic(MANUAL_FILE, all)
+    await updateMap(MANUAL_FILE, (all) => {
+      if (trimmed) all[sessionId] = Array.from(trimmed).slice(0, 60).join('')
+      else delete all[sessionId]
+    })
     return { ok: true }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -77,14 +89,14 @@ export async function setManualTitle(
 
 async function saveTitle(sessionId: string, title: string): Promise<void> {
   try {
-    const all = await loadTitles()
-    all[sessionId] = title
-    titlesSnapshot = { ...titlesSnapshot, [sessionId]: title }
-    const keys = Object.keys(all)
-    if (keys.length > 300) {
-      for (const k of keys.slice(0, keys.length - 300)) delete all[k]
-    }
-    await writeMapAtomic(TITLES_FILE, all)
+    await updateMap(TITLES_FILE, (all) => {
+      all[sessionId] = title
+      titlesSnapshot = { ...all }
+      const keys = Object.keys(all)
+      if (keys.length > 300) {
+        for (const k of keys.slice(0, keys.length - 300)) delete all[k]
+      }
+    })
   } catch {
   }
 }

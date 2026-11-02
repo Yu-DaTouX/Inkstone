@@ -14,6 +14,18 @@ export interface QuickAskSubmitDeps {
   applyModel?(runId: string, model: { provider: string; id: string }): Promise<{ ok: boolean; error?: string }>
 }
 
+export type QuickAskSessionTarget = { ok: true; cwd: string; projectId?: string } | { ok: false; error: string }
+
+export function quickAskSessionTarget(
+  settings: { cwd: string; projects: readonly { id: string; cwd: string; archived?: boolean }[] },
+  projectId?: string
+): QuickAskSessionTarget {
+  if (!projectId) return { ok: true, cwd: settings.cwd }
+  const project = settings.projects.find((item) => item.id === projectId && !item.archived)
+  if (!project) return { ok: false, error: '找不到所选项目，可能已被移除或归档' }
+  return { ok: true, cwd: project.cwd, projectId: project.id }
+}
+
 export async function submitQuickAsk(deps: QuickAskSubmitDeps, payload: QuickAskSubmit): Promise<QuickAskResult> {
   const hasCurrent = deps.activeRunId() !== null
   const invalid = validateQuickAsk(payload.prompt, payload.target, hasCurrent)

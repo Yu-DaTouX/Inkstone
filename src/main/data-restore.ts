@@ -6,7 +6,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileUrl } from '../shared/file-url'
 import { DEFAULT_PERMISSION_MODE } from '../shared/approval'
-import type { BackupSummary } from '../shared/data-backup'
+import type { BackupSummary, DamagedSessionRecords } from '../shared/data-backup'
 import { hashBackupFile, readDataBackup } from './data-backup'
 
 function pathKey(value: string): string {
@@ -57,14 +57,34 @@ async function* sessionLines(input: ReadStream): AsyncGenerator<string> {
   if (length) yield parts.join('')
 }
 
-async function rewriteSession(file: string, paths: Map<string, string>): Promise<void> {
+const DAMAGED_LINES_LISTED = 20
+
+async function rewriteSession(file: string, paths: Map<string, string>): Promise<number[]> {
   const input = createReadStream(file, { encoding: 'utf8' })
   const output = createWriteStream(`${file}.restore.tmp`, { flags: 'wx', mode: 0o600 })
+  const damaged: number[] = []
   try {
     await pipeline(Readable.from((async function* () {
-      for await (const line of sessionLines(input)) yield (line.trim() ? JSON.stringify(rebase(JSON.parse(line), paths)) : '') + '\n'
+      let lineNumber = 0
+      for await (const line of sessionLines(input)) {
+        lineNumber += 1
+        if (!line.trim()) {
+          yield '\n'
+          continue
+        }
+        let record: unknown
+        try {
+          record = JSON.parse(line)
+        } catch {
+          damaged.push(lineNumber)
+          yield `${line}\n`
+          continue
+        }
+        yield JSON.stringify(rebase(record, paths)) + '\n'
+      }
     })()), output)
     await rename(`${file}.restore.tmp`, file)
+    return damaged
   } finally {
     input.destroy()
     output.destroy()
@@ -84,6 +104,7 @@ export async function restoreDataBackup(backup: string, parent: string, protecte
   const pi = join(path, 'pi-agent')
   const paths = new Map<string, string>()
   const legacyDirs = new Map<string, string>()
+  const damagedRecords: DamagedSessionRecords[] = []
   if (sources) {
     for (const entry of manifest.files.filter((item) => item.path.startsWith('sessions/'))) {
       const parts = entry.path.split('/').slice(1)
@@ -116,7 +137,8 @@ export async function restoreDataBackup(backup: string, parent: string, protecte
     for (const entry of manifest.files) {
       const dest = join(pi, ...entry.path.split('/'))
       if (entry.path.startsWith('sessions/')) {
-        if (sources) await rewriteSession(dest, paths)
+        const damaged = sources ? await rewriteSession(dest, paths) : []
+        if (damaged.length) damagedRecords.push({ path: entry.path, lines: damaged.slice(0, DAMAGED_LINES_LISTED), total: damaged.length })
       } else if (entry.path === 'yan/desktop.json' || /^yan\/(session-(?:chains|layout)\.json|interaction-state\/[a-f0-9]{64}\.json)$/.test(entry.path)) {
         const raw = JSON.parse(await readFile(dest, 'utf8')) as unknown
         const next = rebase(raw, paths) as Record<string, unknown>
@@ -151,8 +173,8 @@ export async function restoreDataBackup(backup: string, parent: string, protecte
     }
     for (const dir of ['sessions', 'yan']) await mkdir(join(pi, dir), { recursive: true })
     for (const dir of ['electron', 'downloads', 'workspace']) await mkdir(join(path, dir))
-    await writeFile(join(path, 'restored.json'), JSON.stringify({ format: 'inkstone-restored', version: 1, source: summary.path, restoredAt: new Date().toISOString(), legacyBackup: manifest.version === 1 }, null, 2), { flag: 'wx', mode: 0o600 })
-    return { ...summary, path }
+    await writeFile(join(path, 'restored.json'), JSON.stringify({ format: 'inkstone-restored', version: 1, source: summary.path, restoredAt: new Date().toISOString(), legacyBackup: manifest.version === 1, ...(damagedRecords.length ? { damagedRecords } : {}) }, null, 2), { flag: 'wx', mode: 0o600 })
+    return { ...summary, path, ...(damagedRecords.length ? { damagedRecords } : {}) }
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : String(error)}\nIncomplete restore retained: ${path}`)
   }

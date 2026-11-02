@@ -49,6 +49,22 @@ export function registerWorkspaceDataIpc(ipc: IpcRegistrar, window: () => Browse
         })
         if (target.canceled || !target.filePaths[0]) return { ok: false, cancelled: true }
         restored = await restoreDataBackup(checked.path, target.filePaths[0], [PI_AGENT_DIR, SESSIONS_DIR, YAN_DIR])
+        const damaged = restored.damagedRecords ?? []
+        if (damaged.length) {
+          const listed = damaged.map((item) => `${item.path}: ${item.lines.join(', ')}${item.total > item.lines.length ? ` (+${item.total - item.lines.length})` : ''}`).join('\n')
+          await dialog.showMessageBox(win, {
+            type: 'warning',
+            title: en ? 'Some session records were damaged' : '部分会话记录已损坏',
+            message: en
+              ? `${damaged.length} session file(s) contain records that could not be read. Everything else was restored.`
+              : `${damaged.length} 个会话文件里有无法读取的记录，其余内容已全部恢复。`,
+            detail: en
+              ? `The damaged lines are kept unchanged in the restored copy and are skipped when the session opens. The backup itself was not modified. Details are in restored.json.\n\n${listed}`
+              : `损坏的行已原样保留在恢复副本里，打开会话时会跳过；原备份未被修改。明细写在 restored.json。\n\n${listed}`,
+            buttons: [en ? 'OK' : '知道了'],
+            noLink: true
+          })
+        }
         return { ok: true, summary: restored }
       }
       const summary = action === 'create'

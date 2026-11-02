@@ -79,7 +79,7 @@ try {
     releaseExecute: () => { reservations-- }
   }
   let remember = async () => { remembered++ }
-  remote.configureRemoteHost({
+  const hostPorts = {
     runners: () => registry,
     ac: () => agent,
     sessionChains: { load: async () => {}, representativeOf: file => file, chains: () => [] },
@@ -89,7 +89,8 @@ try {
     pushRunners: () => {},
     pushRunnerSnapshot: async () => {},
     readHistoryWithArtifacts: async () => ({ messages: [], total: 0, truncated: 0, bytes: 0 })
-  })
+  }
+  remote.configureRemoteHost(hostPorts)
   const send = extra => remote.executeRemoteCommand({ action: 'send', sessionId: 'A', text: 'only-A', ...extra })
   assert.equal((await send()).ok, true)
   assert.deepEqual(sends.map(x => x.sessionId), ['A'])
@@ -183,6 +184,26 @@ try {
   assert.equal(sends.length, sentBeforeMoves)
   assert.equal(remembered, 0)
   assert.equal(state.sessions[0].projectId, 'Q')
+
+  const misplaced = { ...summary('A'), cwd: '/fixture/Q' }
+  state.sessions[0] = misplaced
+  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), null)
+  assert.equal(await remote.peerHostHandlers.projectOfRun('r1'), null)
+  assert.ok([403, 404].includes((await request('sessions/A')).status))
+  assert.ok([403, 404].includes((await request('sessions/A/messages', { text: 'label-only' })).status))
+  assert.ok(!(await remote.peerHostHandlers.sessions(['P'])).some((item) => item.id === 'A'))
+  assert.equal((await remote.peerHostHandlers.exportSession('A')).ok, false)
+  assert.equal(sends.length, sentBeforeMoves)
+  state.sessions[0] = { ...summary('A'), cwd: '/fixture/P/packages/app' }
+  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), 'P')
+  state.sessions[0] = { ...summary('A'), cwd: '/worktrees/P-feature' }
+  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), null)
+  remote.configureRemoteHost({ ...hostPorts, worktreeOriginOf: async (id, cwd) => (id === 'A' && cwd === '/worktrees/P-feature' ? '/fixture/P' : null) })
+  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), 'P')
+  remote.configureRemoteHost({ ...hostPorts, worktreeOriginOf: async () => '/fixture/Q' })
+  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), null)
+  remote.configureRemoteHost(hostPorts)
+  state.sessions[0] = summary('A')
 
   remember = async () => { remembered++; sessionId = 'B'; generation++ }
   const started = await remote.peerHostHandlers.startSession('P', 'new-task')

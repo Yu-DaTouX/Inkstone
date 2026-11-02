@@ -2126,8 +2126,9 @@ await runGitRepoTests(ok)
     logLevel: 'silent'
   })
   const dangerGuard = await import('../out/test/danger-guard.mjs')
-  const { runDangerGuardTests } = await import('./test-danger-guard.mjs')
+  const { runDangerGuardTests, runApprovalBindingTests } = await import('./test-danger-guard.mjs')
   runDangerGuardTests(ok, dangerGuard)
+  await runApprovalBindingTests(ok, dangerGuard)
 }
 
 {

@@ -124,6 +124,10 @@ export function selectSubagentRuns(runs: SubagentRun[], scope: SubagentScope): S
   }
 }
 
+export function viewSubagentRuns(input: SubagentViewInput & { subagents: SubagentRun[] }): SubagentRun[] {
+  return selectSubagentRuns(input.subagents, subagentScopeForView(input)).all
+}
+
 export interface TurnSubagentScope {
   sessionIds: string[]
   parentRunIds?: string[]

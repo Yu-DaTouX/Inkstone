@@ -3,7 +3,7 @@ import { Button, CollapsibleChevron, MiniBars, SegmentBar, Swatch } from '../../
 import { useT } from '../../i18n'
 import { useStore, type Store } from '../../state/store'
 import { useStreamingThrottledStore } from '../../state/streaming-throttle'
-import { selectSubagentRuns, subagentCost, subagentScopeForView, subagentTokens } from '../../state/subagent-view'
+import { subagentCost, subagentTokens, viewSubagentRuns } from '../../state/subagent-view'
 import { useMoney } from '../usage/UsageOverview'
 import {
   latencyFloor,
@@ -52,47 +52,59 @@ function sameSnapshot(a: RailSnapshot, b: RailSnapshot): boolean {
   return a.messages === b.messages && a.liveId === b.liveId && a.running === b.running
 }
 
+function viewKey(s: Store): string {
+  return sessionViewIdentity({ session: s.session, peekedSessionId: s.peekedSessionId, peekedPath: s.peekedPath }).key
+}
+
 export function useRailStats(enabled: boolean): RailStatsModel | null {
   const t = useT()
   const money = useMoney()
   const snapshot = useStreamingThrottledStore(railSnapshot, undefined, sameSnapshot)
   const stats = useStore((s) => s.stats)
   const peekNote = useStore((s) => s.peekNote)
-  const subagents = useStore((s) => s.subagents)
-  const session = useStore((s) => s.session)
-  const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const peekedPath = useStore((s) => s.peekedPath)
-  const runners = useStore((s) => s.runners)
+  const view = useStore(viewKey)
+  const childTokens = useStore((s) => (enabled ? subagentTokens(viewSubagentRuns(s)) : 0))
+  const childCost = useStore((s) => (enabled ? subagentCost(viewSubagentRuns(s)) : 0))
   const historyPartial = (peekNote?.truncated ?? 0) > 0
   const speedHold = useRef<RailSpeedHold | null>(null)
-  return useMemo(() => {
+  const history = useMemo(() => {
     if (!enabled) return null
     const { messages, liveId, running } = snapshot
     const { settled, live } = splitLiveStep(messages, liveId)
     const floor = latencyFloor(settled)
     const latestSpeed = settled.reduceRight<number | null>((found, message) => found ?? stepSpeed(message, floor), null)
     const reading = (live ? liveStepSpeed(live, floor) : null) ?? (latestSpeed === null ? null : { speed: latestSpeed, estimated: false })
-    const identity = JSON.stringify([sessionViewIdentity({ session, peekedSessionId, peekedPath }).key, messages.findLast((message) => message.role === 'user')?.id])
+    const identity = JSON.stringify([view, messages.findLast((message) => message.role === 'user')?.id])
     speedHold.current = retainRailSpeed(speedHold.current, identity, reading)
     const heldReading = speedHold.current.sample
-    const metrics = projectSessionMetrics(settled, stats, { historyPartial })
-    const runs = selectSubagentRuns(subagents, subagentScopeForView({ session, peekedSessionId, peekedPath, runners })).all
+    return {
+      metrics: projectSessionMetrics(settled, stats, { historyPartial }),
+      counts: railOperationCounts(messages),
+      speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
+      heldReading,
+      running,
+      liveSince: liveActivitySince(messages, live, running)
+    }
+  }, [enabled, snapshot, stats, historyPartial, view])
+  return useMemo(() => {
+    if (!history) return null
+    const { metrics, counts, speeds, heldReading, running, liveSince } = history
     return buildRailStats({
       metrics,
-      counts: railOperationCounts(messages),
+      counts,
       historyPartial,
-      subagentTokens: subagentTokens(runs),
-      subagentCost: subagentCost(runs),
-      speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
+      subagentTokens: childTokens,
+      subagentCost: childCost,
+      speeds,
       latestSpeed: heldReading?.speed ?? null,
       latestSpeedEstimated: heldReading?.estimated ?? false,
       liveSpeed: running ? (heldReading?.speed ?? null) : undefined,
       liveSpeedEstimated: heldReading?.estimated ?? false,
-      liveSince: liveActivitySince(messages, live, running),
+      liveSince,
       money,
       t
     })
-  }, [enabled, snapshot, stats, historyPartial, subagents, session, peekedSessionId, peekedPath, runners, money, t])
+  }, [history, historyPartial, childTokens, childCost, money, t])
 }
 
 function useLiveClock(active: boolean): number {

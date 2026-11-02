@@ -14,17 +14,17 @@ import {
   compactionTokensText
 } from '../../state/compaction-view'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, publishAccountQuotaReport, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
-import { selectSubagentRuns, subagentScopeForView } from '../../state/subagent-view'
+import { viewSubagentRuns } from '../../state/subagent-view'
+import { isLiveSubagentRun } from '../../../../shared/subagent-task-rows'
 import { useRunsV3 } from '../../state/runs-v3'
 import { sessionViewIdentity } from '../session/view-state'
-import { useSubagentStopping } from '../../state/subagent-stopping'
 import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import type { RunSnapshot } from '../../../../shared/runs'
 import { money } from '../../../../shared/quota-mini'
 import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
 import type { GitRepoState } from '../../../../shared/git'
-import type { CompactionRun, ProviderQuota, QuotaWindow, SubagentRun } from '../../../../shared/ipc'
+import type { CompactionRun, ProviderQuota, QuotaWindow } from '../../../../shared/ipc'
 import { autoCompactLimitOf, contextPaneData, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
 import { workbenchText, type OverviewText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
@@ -577,8 +577,8 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const stats = useStore((s) => s.stats)
   const settings = useStore((s) => s.settings)
   const messages = useStreamingThrottledStore((s) => s.messages)
-  const subagents = useStore((s) => s.subagents)
-  const runners = useStore((s) => s.runners)
+  const childTasks = useStore((s) => viewSubagentRuns(s).length)
+  const childTasksLive = useStore((s) => viewSubagentRuns(s).filter(isLiveSubagentRun).length)
   const widgets = useStore((s) => s.widgets)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
@@ -650,12 +650,9 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const [dismissedOutputs, dismissOutput] = useDismissedOutputs(view.sessionId || view.key || '')
   const outputs = useMemo(() => visibleOutputs(outputPool, outputScreen, dismissedOutputs), [outputPool, outputScreen, dismissedOutputs])
 
-  const scope = subagentScopeForView({ peekedSessionId, peekedPath, session, runners })
-  const runs: SubagentRun[] = selectSubagentRuns(subagents, scope).all
   const allRuns = useRunsV3((s) => s.runs)
   const backgroundRuns = useMemo(() => scheduledRuns(allRuns), [allRuns])
-  const stoppingIds = useSubagentStopping((s) => s.ids)
-  const taskCount = backgroundTaskCount(runs, backgroundRuns, stoppingIds, Date.now())
+  const taskCount = backgroundTaskCount({ running: childTasksLive, total: childTasks }, backgroundRuns)
   const taskTotal = taskCount.total
   const taskSummary =
     taskCount.running > 0 ? (
@@ -838,7 +835,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       ? {
           backgroundTasks: {
             summary: taskSummary,
-            body: <BackgroundTasks key={view.key} subagents={runs} scheduled={backgroundRuns} lang={lang} text={text} />
+            body: <BackgroundTasks key={view.key} scheduled={backgroundRuns} lang={lang} text={text} />
           }
         }
       : {}),

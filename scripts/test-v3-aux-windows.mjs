@@ -143,6 +143,24 @@ try {
     assert.equal(res.code, 'model-failed')
     assert.deepEqual(deps.calls, ['model:p:m'])
   })
+  const quickSettings = {
+    cwd: 'E:/current-a',
+    projects: [
+      { id: 'pa', cwd: 'E:/current-a', archived: false },
+      { id: 'pb', cwd: 'E:/project-b', archived: false },
+      { id: 'old', cwd: 'E:/archived', archived: true }
+    ]
+  }
+  check('快问新会话选了项目 B 时使用项目 B 的目录', () => {
+    assert.deepEqual(submit.quickAskSessionTarget(quickSettings, 'pb'), { ok: true, cwd: 'E:/project-b', projectId: 'pb' })
+  })
+  check('快问新会话未选项目时沿用当前目录且不挂项目', () => {
+    assert.deepEqual(submit.quickAskSessionTarget(quickSettings), { ok: true, cwd: 'E:/current-a' })
+  })
+  check('快问新会话选中的项目已归档或不存在时拒绝，不退回当前目录', () => {
+    assert.equal(submit.quickAskSessionTarget(quickSettings, 'old').ok, false)
+    assert.equal(submit.quickAskSessionTarget(quickSettings, 'missing').ok, false)
+  })
 
   console.log(`\nv3 辅助小窗：${passed} 项断言通过`)
 } finally {
