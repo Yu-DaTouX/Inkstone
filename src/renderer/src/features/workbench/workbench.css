@@ -512,7 +512,7 @@
     flex: none;
     display: flex;
     flex-direction: column;
-    gap: var(--s-8);
+    gap: var(--s-12);
     min-width: 0;
   }
 
@@ -525,13 +525,136 @@
 
   .wb-quota-group-head {
     display: flex;
-    align-items: baseline;
-    gap: var(--s-8);
+    align-items: center;
+    gap: var(--s-6);
     min-width: 0;
   }
 
+  .wb-quota-group-icon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: var(--r-xs);
+  }
+
   .wb-quota-group-name {
-    font-weight: 600;
+    font-weight: var(--w-medium);
+  }
+
+  .wb-quota-win {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 4.5ch;
+    align-items: center;
+    row-gap: var(--s-4);
+    column-gap: var(--s-12);
+    min-width: 0;
+  }
+
+  .wb-quota-win-top {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-12);
+    min-width: 0;
+  }
+
+  .wb-quota-win-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+  }
+
+  .wb-quota-win-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    white-space: nowrap;
+  }
+
+  .wb-quota-win-in::before {
+    content: '\00b7';
+    margin-right: var(--s-4);
+  }
+
+  .wb-quota-win-bar {
+    position: relative;
+    min-width: 0;
+  }
+
+  .wb-quota-win-tick {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: var(--r-full);
+    background: var(--fg);
+  }
+
+  .wb-quota-win-pct {
+    font-size: var(--t-body);
+    font-weight: var(--w-medium);
+    text-align: right;
+  }
+
+  .wb-quota-win[data-tone='stale'] .wb-quota-win-pct,
+  .wb-quota-balance[data-tone='stale'] .wb-quota-balance-value {
+    color: var(--fg3);
+  }
+
+  .wb-quota-win[data-tone='ask'] .wb-quota-win-pct {
+    color: var(--ask-t);
+  }
+
+  .wb-quota-win[data-tone='fail'] .wb-quota-win-pct {
+    color: var(--fail-t);
+  }
+
+  .wb-quota-balance {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-12);
+    min-width: 0;
+  }
+
+  .wb-quota-balance-value {
+    font-size: var(--t-body);
+    font-weight: var(--w-medium);
+  }
+
+  .wb-quota-credits {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    padding-top: var(--s-8);
+    border-top: 1px solid var(--line);
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+  }
+
+  .wb-quota-credits-count {
+    white-space: nowrap;
+  }
+
+  .wb-quota-credits-use {
+    margin-left: auto;
+  }
+
+  .wb-quota-credits-exp {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
   }
 
   .wb-quota-actions {
@@ -555,14 +678,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: 600;
-  }
-
-  .wb-quota-meta {
-    overflow: hidden;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .wb-quota-stale {
@@ -671,6 +786,7 @@
 
   .wb-tile-title {
     flex: none;
+    min-width: 4em;
     font-size: var(--t-body);
     font-weight: var(--w-medium);
     white-space: nowrap;
@@ -738,9 +854,22 @@
       position: relative;
     }
     .wb-tile-summary {
+      transition: margin-right var(--dur-fast) ease;
+    }
+    .wb-tile-leader:last-child {
+      margin-right: 0;
+      transition: opacity var(--dur-fast) ease, margin-right var(--dur-fast) ease;
+    }
+    .wb-tile-head:is(:hover, :has(:focus-visible)) .wb-tile-leader:last-child,
+    .wb-tile:is([data-picked='1'], [data-dragging='1']) .wb-tile-leader:last-child {
+      margin-right: calc(var(--size-btn-sm) * 2 + var(--s-2));
+    }
+    .wb-tile-head:is(:hover, :has(:focus-visible)) .wb-tile-summary,
+    .wb-tile:is([data-picked='1'], [data-dragging='1']) .wb-tile-summary {
       margin-right: calc(var(--size-btn-sm) + var(--s-2));
     }
-    .wb-tile:has(.wb-tile-open) .wb-tile-summary {
+    .wb-tile:has(.wb-tile-open) .wb-tile-head:is(:hover, :has(:focus-visible)) .wb-tile-summary,
+    .wb-tile:has(.wb-tile-open):is([data-picked='1'], [data-dragging='1']) .wb-tile-summary {
       margin-right: calc(var(--size-btn-sm) * 2 + var(--s-2));
     }
     .wb-rail-grip {

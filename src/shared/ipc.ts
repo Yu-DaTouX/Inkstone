@@ -51,7 +51,7 @@ export type { LocalServerInfo, LocalServerSnapshot } from './local-servers'
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
-import type { AccountQuotaReport, CodexAccountView } from './account-quota'
+import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from './account-quota'
 import type { OAuthAccountPools } from './oauth-accounts'
 import type { QuotaForecast } from './quota-forecast'
 import type { TurnOutcome } from './turn-outcome'
@@ -1856,6 +1856,7 @@ export interface YanBridge {
   removeApiKey(provider: string, id: string): Promise<{ ok: boolean; wasActive: boolean; error?: string }>
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
   accountQuota(): Promise<AccountQuotaReport>
+  accountResetCredit(provider: string, key: string, creditId: string): Promise<ResetCreditResult>
   codexAccounts(): Promise<CodexAccountView[]>
   codexAccountSwitch(key: string): Promise<{ ok: boolean; error?: string }>
   codexAccountRemove(key: string): Promise<{ ok: boolean; wasActive: boolean; error?: string }>

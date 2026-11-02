@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { RefreshCw, Settings } from 'lucide-react'
-import { useT, type MessageKey } from '../../i18n'
+import { RefreshCw, RotateCcw, Settings, Ticket } from 'lucide-react'
+import { useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, publishAccountQuotaReport } from '../../state/live-quota'
-import { Badge, Button, Card, EmptyState, IconButton, Notice, Spinner } from '../../ui'
+import { Badge, Button, Card, ConfirmDialog, EmptyState, IconButton, Meter, Notice, Spinner, type ProgressTone } from '../../ui'
 import { money } from '../../../../shared/quota-mini'
-import { quotaReadingStale } from '../../../../shared/quota-forecast'
+import { quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
+import type { QuotaWindow } from '../../../../shared/ipc'
 import {
   accountCardTitle,
   orderAccountCardsForProvider,
@@ -13,12 +14,22 @@ import {
   type AccountQuotaReport,
   type AccountQuotaSource
 } from '../../../../shared/account-quota'
-import { QuotaWindowRow, quotaReadAgo } from '../../patterns/QuotaWindowRow'
+import { providerFavicon } from '../../patterns/provider-favicon'
+import { quotaCountdown, quotaPace, quotaReadAgo, quotaWindowName, quotaWindowTone, type QuotaWindowTone } from '../../patterns/QuotaWindowRow'
 import type { QuotaPaneProps } from './types'
 
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
 const planLabel = (value?: string): string => (value ? value.toUpperCase() : '')
 const GROUP_KEYS = new Set(['openai-codex', 'anthropic', 'google'])
+const METER_TONE: Record<QuotaWindowTone, ProgressTone> = { ok: 'ink', ask: 'ask', fail: 'fail', stale: 'muted' }
+
+const pad = (value: number): string => String(value).padStart(2, '0')
+
+function clockAt(at: number, now: number): string {
+  const date = new Date(at)
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return date.toDateString() === new Date(now).toDateString() ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`
+}
 
 function groupByProvider(cards: AccountQuotaCard[]): { provider: string; cards: AccountQuotaCard[] }[] {
   const groups: { provider: string; cards: AccountQuotaCard[] }[] = []
@@ -101,6 +112,23 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
     }
   }
 
+  const redeem = async (card: AccountQuotaCard): Promise<void> => {
+    const creditId = card.resetCredits?.nextId
+    if (!creditId) return
+    setBusyKey(card.key)
+    setNotice('')
+    try {
+      const result = await window.yan.accountResetCredit(card.provider, card.key, creditId)
+      if (!alive.current) return
+      setNotice(result.ok && result.outcome ? t(`quota.credit.${result.outcome}` as MessageKey) : t('acct.failed', { msg: result.error ?? '' }))
+      if (result.ok) await load()
+    } catch (cause) {
+      if (alive.current) setNotice(t('acct.failed', { msg: cause instanceof Error ? cause.message : String(cause) }))
+    } finally {
+      if (alive.current) setBusyKey(null)
+    }
+  }
+
   const cards = orderAccountCardsForProvider(report?.cards ?? [], provider)
   const groups = groupByProvider(cards)
   const time = report
@@ -110,7 +138,7 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
   return (
     <div className="wb-quota" data-testid="v3-wb-quota">
       <div className="wb-quota-head">
-        <span className="wb-quota-checked" title={report ? t('quota.checkedAt', { time }) : undefined}>{report ? t('quota.checkedAt', { time }) : loading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
+        <span className="wb-quota-checked">{report ? t('quota.checkedAt', { time }) : loading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
         <span className="wb-quota-actions">
           <IconButton
             size="sm"
@@ -140,26 +168,69 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
           {report ? t('quota.stale', { msg: error }) : t('acct.failed', { msg: error })}
         </Notice>
       ) : null}
-      {notice ? <Notice compact>{notice}</Notice> : null}
+      {notice ? <Notice compact data-testid="v3-wb-quota-notice">{notice}</Notice> : null}
 
-      {groups.map((group) => (
-        <section key={group.provider} className="wb-quota-group" data-testid={`v3-wb-quota-group-${group.provider}`}>
-          {groups.length > 1 ? (
+      {groups.map((group) => {
+        const icon = providerFavicon(group.provider)
+        return (
+          <section key={group.provider} className="wb-quota-group" data-testid={`v3-wb-quota-group-${group.provider}`}>
             <header className="wb-quota-group-head">
+              {icon ? <img className="wb-quota-group-icon" src={icon} alt="" aria-hidden="true" /> : null}
               <span className="wb-quota-group-name">
-                {GROUP_KEYS.has(group.provider) ? t(`quota.group.${group.provider}` as MessageKey) : group.provider}
+                {GROUP_KEYS.has(group.provider) ? t(`quota.group.${group.provider}` as MessageKey) : group.cards[0]?.name ?? group.provider}
               </span>
             </header>
-          ) : null}
-          {group.cards.map((card) => (
-            <QuotaCard key={`${card.source}:${card.key}`} card={card} busy={busyKey === card.key} locked={!!busyKey} onSwitch={() => void switchTo(card)} />
-          ))}
-        </section>
-      ))}
+            {group.cards.map((card) => (
+              <QuotaCard
+                key={`${card.source}:${card.key}`}
+                card={card}
+                busy={busyKey === card.key}
+                locked={!!busyKey}
+                onSwitch={() => void switchTo(card)}
+                onRedeem={() => redeem(card)}
+              />
+            ))}
+          </section>
+        )
+      })}
       {report && cards.length === 0 ? (
         <EmptyState className="wb-note-block" data-testid="v3-wb-quota-empty" title={t('acct.emptyTitle')} />
       ) : null}
+    </div>
+  )
+}
 
+function QuotaMeter({ window, name, stale, now, t }: { window: QuotaWindow; name: string; stale: boolean; now: number; t: TFunc }): ReactElement {
+  const awaiting = windowAwaitingReset(window, now)
+  const pace = stale || awaiting ? null : quotaPace(window, now)
+  const base = quotaWindowTone(window, stale, now)
+  const tone: QuotaWindowTone = base === 'ok' && pace?.pace === 'ahead' ? 'ask' : base
+  const left = Math.round(100 - Math.min(100, Math.max(0, windowUsedPct(window) ?? 0)))
+  const resetAt = window.resetAt !== undefined && !awaiting ? window.resetAt : undefined
+  const tip = [
+    resetAt !== undefined ? t('quota.resetAtTip', { time: new Date(resetAt).toLocaleString(undefined, { hour12: false }) }) : '',
+    pace ? t(`quota.pace.${pace.pace}` as MessageKey) : '',
+    window.estimated ? t('quota.estimatedTip') : ''
+  ].filter(Boolean).join(' · ')
+  return (
+    <div className="wb-quota-win" data-tone={tone} title={tip || undefined} data-testid={`v3-wb-quota-win-${window.id}`}>
+      <div className="wb-quota-win-top">
+      <span className="wb-quota-win-label">{name}</span>
+      <span className="wb-quota-win-reset ui-meta-num">
+        {awaiting ? t('quota.resetDue') : resetAt !== undefined ? (
+          <>
+            <RotateCcw size={11} aria-hidden="true" />
+            {clockAt(resetAt, now)}
+            <span className="wb-quota-win-in">{quotaCountdown(t, resetAt - now)}</span>
+          </>
+        ) : null}
+      </span>
+      </div>
+      <div className="wb-quota-win-bar">
+        <Meter aria-label={window.label} value={awaiting ? 0 : left} minValue={0} maxValue={100} tone={METER_TONE[tone]} />
+        {pace ? <span className="wb-quota-win-tick" style={{ left: `${Math.min(99, Math.max(1, pace.timeLeftPct))}%` }} aria-hidden="true" /> : null}
+      </div>
+      <span className="wb-quota-win-pct ui-meta-num">{awaiting ? '' : `${left}%`}</span>
     </div>
   )
 }
@@ -168,62 +239,90 @@ export function QuotaCard({
   card,
   busy,
   locked,
-  onSwitch
+  onSwitch,
+  onRedeem
 }: {
   card: AccountQuotaCard
   busy: boolean
   locked: boolean
   onSwitch: () => void
+  onRedeem: () => Promise<void>
 }): ReactElement {
   const t = useT()
+  const [confirming, setConfirming] = useState(false)
   const now = Date.now()
   const stale = quotaReadingStale(card.checkedAt, now, !!card.staleError)
   const title = accountCardTitle(card)
-  const meta = [
-    title !== card.email ? card.email : '',
+  const tip = [
+    card.label,
+    card.email,
     card.source !== 'yan' ? t(sourceKey(card.source)) : '',
     card.alsoIn?.length ? t('acct.alsoIn', { list: card.alsoIn.map((source) => t(sourceKey(source))).join('、') }) : ''
   ]
     .filter(Boolean)
     .join(' · ')
+  const credits = card.resetCredits
+  const shortNames = card.windows.map((window) => quotaWindowName(t, window))
+  const names = shortNames.map((name, index) => (shortNames.indexOf(name) === shortNames.lastIndexOf(name) ? name : card.windows[index].label))
+  const creditsExpire = credits?.nextExpiresAt
 
   return (
     <Card as="section" className="wb-quota-card" data-active={card.active ? '1' : undefined} data-limited={card.status === 'limited' ? '1' : undefined} data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
       <div className="wb-quota-id">
-        <span className="wb-quota-name" title={[card.label, card.email].filter(Boolean).join(' · ') || undefined}>
-          {title}
-        </span>
+        <span className="wb-quota-name" title={tip || undefined}>{title}</span>
         {card.plan ? <Badge tone="accent" data-testid="v3-wb-quota-plan">{planLabel(card.plan)}</Badge> : null}
+        {stale && (card.windows.length || card.balance) ? (
+          <span title={[t('quota.staleTip'), card.staleError ? t('quota.readFailed', { msg: card.staleError }) : ''].filter(Boolean).join(' · ')} data-testid="v3-wb-quota-stale">
+            <Badge>{quotaReadAgo(t, card.checkedAt, now)}</Badge>
+          </span>
+        ) : null}
         {card.status === 'expired' ? <span title={card.hint || t('quota.expiredTip')}><Badge tone="ask">{t('quota.expiredBadge')}</Badge></span> : null}
-        {card.active ? <Badge tone="ok">{t('acct.active')}</Badge> : null}
         {card.status === 'limited' ? <Badge tone="fail">{t('quota.limitReached')}</Badge> : null}
+        {card.active ? <Badge tone="ok">{t('acct.active')}</Badge> : null}
         {card.switchable && !card.active ? (
-          <Button size="sm" variant="secondary" isDisabled={locked} icon={busy ? <Spinner size="xs" /> : undefined} onPress={onSwitch} data-testid="v3-wb-quota-switch">
+          <Button size="sm" variant="secondary" isDisabled={locked} icon={busy && !confirming ? <Spinner size="xs" /> : undefined} onPress={onSwitch} data-testid="v3-wb-quota-switch">
             {t('acct.switch')}
           </Button>
         ) : null}
       </div>
-      {meta ? <div className="wb-quota-meta" title={meta}>{meta}</div> : null}
 
       {card.status === 'error' ? <Notice tone="fail" compact>{t('acct.failed', { msg: card.error ?? '' })}</Notice> : null}
 
-      {stale && (card.windows.length || card.balance) ? (
-        <span className="wb-quota-stale" title={[t('quota.staleTip'), card.staleError ? t('quota.readFailed', { msg: card.staleError }) : ''].filter(Boolean).join(" · ")} data-testid="v3-wb-quota-stale">
-          <Badge>{quotaReadAgo(t, card.checkedAt, now)}</Badge>
-        </span>
-      ) : null}
-
-      {card.windows.map((window) => (
-        <QuotaWindowRow key={window.id} window={window} stale={stale} now={now} detail testId={`v3-wb-quota-win-${window.id}`} />
+      {card.windows.map((window, index) => (
+        <QuotaMeter key={window.id} window={window} name={names[index]} stale={stale} now={now} t={t} />
       ))}
       {card.balance ? (
-        <div className="quota-win" data-tone={stale ? 'stale' : 'ok'}>
-          <div className="quota-win-top">
-            <span className="quota-win-label">{card.balance.label}</span>
-            <span className="quota-win-value ui-meta-num">{money(card.balance.amount, card.balance.currency)}</span>
-          </div>
+        <div className="wb-quota-balance" data-tone={stale ? 'stale' : 'ok'}>
+          <span className="wb-quota-win-label">{card.balance.label}</span>
+          <span className="wb-quota-balance-value ui-meta-num">{money(card.balance.amount, card.balance.currency)}</span>
         </div>
       ) : null}
+
+      {credits && credits.count > 0 ? (
+        <div className="wb-quota-credits" data-testid="v3-wb-quota-credits">
+          <Ticket size={13} aria-hidden="true" />
+          <span className="wb-quota-credits-count">{t('quota.credit.count', { n: credits.count })}</span>
+          {creditsExpire ? (
+            <span className="wb-quota-credits-exp ui-meta-num" title={t('quota.credit.expireAt', { time: new Date(creditsExpire).toLocaleString(undefined, { hour12: false }) })}>
+              {t('quota.credit.expireIn', { t: quotaCountdown(t, creditsExpire - now) })}
+            </span>
+          ) : null}
+          {credits.nextId ? (
+            <Button className="wb-quota-credits-use" size="sm" variant="secondary" isDisabled={locked} icon={busy && confirming ? <Spinner size="xs" /> : undefined} onPress={() => setConfirming(true)} data-testid="v3-wb-quota-credit-use">
+              {t('quota.credit.use')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <ConfirmDialog
+        isOpen={confirming}
+        onOpenChange={setConfirming}
+        title={t('quota.credit.confirmTitle')}
+        description={t('quota.credit.confirmDesc', { name: title })}
+        confirmLabel={t('quota.credit.use')}
+        onConfirm={onRedeem}
+        confirmTestId="v3-wb-quota-credit-confirm"
+      />
     </Card>
   )
 }

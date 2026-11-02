@@ -28,7 +28,8 @@ export function todoSnapshotsFromEntries(
     if (!raw) continue
 
     const todos = normalizeTaskItems(raw)
-    if (todos.length === 0) continue
+    const cleared = host && raw.length === 0
+    if (todos.length === 0 && !cleared) continue
 
     const round =
       host && typeof e.round === 'number' && Number.isInteger(e.round) && e.round >= 1
@@ -44,6 +45,7 @@ export function todoSnapshotsFromEntries(
   const out: SessionTodoSnapshot[] = []
   for (const g of groups) {
     const prev = out[out.length - 1]
+    if (!prev && g.todos.length === 0) continue
     if (prev && sameTodos(prev.todos, g.todos)) {
       out[out.length - 1] = g
       continue

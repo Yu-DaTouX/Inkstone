@@ -10,7 +10,7 @@ import { detectLocalModelServers } from '../local-models'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
-import { accountQuotaReport, invalidateAccountQuotaReport } from '../account-quota'
+import { accountQuotaReport, consumeResetCredit, invalidateAccountQuotaReport } from '../account-quota'
 import { captureActiveCodexAccount, clearCodexAccounts, listCodexAccounts, removeCodexAccount, switchCodexAccount } from '../codex-accounts'
 import { captureActiveOAuthAccount, clearOAuthAccounts, listOAuthAccounts, removeOAuthAccount, renameOAuthAccount, switchOAuthAccount } from '../oauth-accounts'
 import { supportsOAuthAccounts } from '../../shared/oauth-accounts'
@@ -168,6 +168,7 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   handle('yan:oauthAccountRename', async (provider: string, key: string, label: string) => renameOAuthAccount(provider, key, label))
 
   handle('yan:accountQuota', async () => accountQuotaReport())
+  handle('yan:accountResetCredit', async (provider: unknown, key: unknown, creditId: unknown) => consumeResetCredit(String(provider ?? ''), String(key ?? ''), String(creditId ?? '')))
   handle('yan:codexAccounts', async () => listCodexAccounts())
   handle('yan:codexAccountSwitch', async (key: unknown) => {
     const r = await switchCodexAccount(String(key ?? ''))

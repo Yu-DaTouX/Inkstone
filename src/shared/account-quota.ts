@@ -5,6 +5,20 @@ export type AccountQuotaSource = 'yan' | 'codex-cli' | 'claude-code' | 'gemini-c
 
 export type AccountQuotaStatus = 'ok' | 'limited' | 'expired' | 'error'
 
+export interface ResetCredits {
+  count: number
+  nextId?: string
+  nextExpiresAt?: number
+}
+
+export type ResetCreditOutcome = 'reset' | 'nothingToReset' | 'noCredit' | 'alreadyRedeemed'
+
+export interface ResetCreditResult {
+  ok: boolean
+  outcome?: ResetCreditOutcome
+  error?: string
+}
+
 export interface AccountQuotaCard {
   key: string
   source: AccountQuotaSource
@@ -21,6 +35,7 @@ export interface AccountQuotaCard {
   error?: string
   windows: QuotaWindow[]
   balance?: { label: string; amount: number; currency: string }
+  resetCredits?: ResetCredits
   staleError?: string
   checkedAt: number
 }
@@ -36,6 +51,12 @@ export interface CodexAccountView {
   plan?: string
   label?: string
   active: boolean
+}
+
+export const CLAUDE_OAUTH_HEADERS: Readonly<Record<string, string>> = {
+  'anthropic-beta': 'oauth-2025-04-20',
+  Accept: 'application/json',
+  'User-Agent': 'claude-code/2.1.273'
 }
 
 export function accountCardTitle(card: Pick<AccountQuotaCard, 'label' | 'email' | 'name'>): string {
@@ -198,6 +219,43 @@ export function geminiQuotaWindows(payload: unknown): QuotaWindow[] {
     windows.push({ id: label, label, used, total: 100, resetAt: Number.isFinite(resetAt) ? resetAt : undefined, exceeded: b.remainingFraction <= 0 })
   }
   return windows.sort((a, b) => a.label.localeCompare(b.label))
+}
+
+export function codexResetCredits(payload: unknown, now: number): ResetCredits | undefined {
+  const list = obj(payload)?.credits
+  if (!Array.isArray(list)) return undefined
+  const live = list
+    .map((raw) => obj(raw))
+    .flatMap((credit) => {
+      const id = str(credit?.id)
+      const expiresAt = typeof credit?.expires_at === 'string' ? Date.parse(credit.expires_at) : NaN
+      if (!id || credit?.status !== 'available' || credit.reset_type !== 'codex_rate_limits' || !(expiresAt > now)) return []
+      return [{ id, expiresAt }]
+    })
+    .sort((a, b) => a.expiresAt - b.expiresAt)
+  return { count: live.length, ...(live[0] ? { nextId: live[0].id, nextExpiresAt: live[0].expiresAt } : {}) }
+}
+
+export function claudeResetCredits(block: unknown, now: number): ResetCredits | undefined {
+  const root = obj(block)
+  if (!root || root.eligible !== true) return undefined
+  const grants = (Array.isArray(root.grants) ? root.grants : [])
+    .map((raw) => obj(raw))
+    .flatMap((grant) => {
+      const id = str(grant?.id)
+      const left = Number(grant?.resets_left)
+      const endsAt = typeof grant?.ends_at === 'string' ? Date.parse(grant.ends_at) : undefined
+      if (!id || !/^[a-z0-9_-]{1,40}$/.test(id) || !Number.isInteger(left) || left < 0) return []
+      if (grant?.paused === true || grant?.usable_now !== true) return []
+      if (endsAt !== undefined && !(endsAt > now)) return []
+      return [{ id, left, endsAt }]
+    })
+  const next = grants.find((grant) => grant.id === root.next_grant_id)
+  return {
+    count: next ? grants.reduce((sum, grant) => sum + grant.left, 0) : 0,
+    ...(next ? { nextId: next.id } : {}),
+    ...(next?.endsAt ? { nextExpiresAt: next.endsAt } : {})
+  }
 }
 
 export function mergeDuplicateCards(cards: AccountQuotaCard[]): AccountQuotaCard[] {

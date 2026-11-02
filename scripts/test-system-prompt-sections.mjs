@@ -91,7 +91,7 @@ try {
     ['<inkstone_environment>', 1, 'environment facts render as their own section'],
     ['Today: ', 1, 'local date appears once'],
     ['Interactive questions use `yan question ask`', 1, 'question guidance appears once'],
-    ['Work quietly. Before substantive tool work', 1, 'progress guidance appears once'],
+    ['Before substantive tool work, say in one short line', 1, 'progress guidance appears once'],
     ['\n- Once the requested change is made and the relevant tests or checks pass, stop and report;', 0, 'no finish rule is added'],
     ['\n- When exploring code, read whole files or large ranges', 1, 'work rules are added to pi rules once'],
     ['<docs>', 0, 'pi docs section is dropped entirely, not just compacted'],

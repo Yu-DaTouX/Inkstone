@@ -11,7 +11,7 @@
     gap: var(--s-4);
     width: 100%;
     min-width: 0;
-    padding: var(--s-6) var(--s-8);
+    padding: var(--s-2) var(--s-8);
     border: 0;
     border-radius: var(--r-side) var(--r-side) 0 0;
     background: transparent;
@@ -38,7 +38,7 @@
 
   .plan-card-title {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: var(--s-8);
     flex: 0 1 auto;
     min-width: 0;
@@ -49,6 +49,10 @@
     flex: none;
     color: var(--fg2);
     font-variant-numeric: tabular-nums;
+  }
+
+  .plan-card-meter {
+    flex: none;
   }
 
   .plan-card-stale {

@@ -5,7 +5,18 @@ import { fetchCodexUsage, providerQuota } from './quota'
 import { quotaSamples } from './quota-samples'
 import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
 import { oauthAccountTargets, type OAuthAccountTarget } from './oauth-accounts'
-import { claudeUsageWindows, mergeDuplicateCards, type AccountQuotaCard, type AccountQuotaReport } from '../shared/account-quota'
+import {
+  claudeResetCredits,
+  claudeUsageWindows,
+  CLAUDE_OAUTH_HEADERS,
+  codexResetCredits,
+  mergeDuplicateCards,
+  type AccountQuotaCard,
+  type AccountQuotaReport,
+  type ResetCreditOutcome,
+  type ResetCreditResult,
+  type ResetCredits
+} from '../shared/account-quota'
 
 const TIMEOUT_MS = 12_000
 const http = net.fetch.bind(net)
@@ -50,16 +61,21 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
         ? { status: 'expired', hint: '登录令牌已过期，下次对话时 pi 会自动刷新。' }
         : { status: 'error', error: t.problem ?? '没有可用的登录凭证' }
     }
-    const usage = await fetchCodexUsage(t.credential.access, t.credential.accountId)
-    return { plan: usage.plan ?? t.plan, windows: usage.windows, status: usage.limited ? 'limited' : 'ok' }
+    const [usage, resetCredits] = await Promise.all([
+      fetchCodexUsage(t.credential.access, t.credential.accountId),
+      codexCredits(t.credential.access, t.credential.accountId)
+    ])
+    return { plan: usage.plan ?? t.plan, windows: usage.windows, status: usage.limited ? 'limited' : 'ok', ...(resetCredits ? { resetCredits } : {}) }
   })
 }
 
 function yanClaudeCard(account: OAuthAccountTarget): Promise<AccountQuotaCard> {
   return settle({ key: account.key, source: 'yan', provider: 'anthropic', name: 'Claude', email: account.email, label: account.label, active: account.active, switchable: true }, async () => {
     if (account.credential.expires <= Date.now()) return { status: 'expired', hint: '登录令牌已过期，切换后用 Claude 模型对话时 pi 会自动刷新。' }
-    const windows = claudeUsageWindows(await claudeUsage(account.credential.access))
-    return { windows, status: limitedIf(windows) }
+    const usage = await claudeUsage(account.key, account.credential.access) as { cedar_ember?: unknown }
+    const windows = claudeUsageWindows(usage)
+    const resetCredits = claudeResetCredits(usage?.cedar_ember, Date.now())
+    return { windows, status: limitedIf(windows), ...(resetCredits ? { resetCredits } : {}) }
   })
 }
 
@@ -87,10 +103,131 @@ async function yanKeyCard(provider: { id: string; name: string; quotaProvider?: 
   })
 }
 
-function claudeUsage(accessToken: string): Promise<unknown> {
-  return getJson('https://api.anthropic.com/api/oauth/usage', {
-    headers: { Authorization: `Bearer ${accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', Accept: 'application/json' }
+const CLAUDE_MIN_GAP_MS = 60_000
+const CLAUDE_BACKOFF_MS = 5 * 60_000
+const claudeUsageCache = new Map<string, { at: number; usage: unknown }>()
+const claudeCooldown = new Map<string, number>()
+
+function retryAfterMs(value: string | null): number {
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000
+  const at = value ? Date.parse(value) : NaN
+  return Number.isFinite(at) && at > Date.now() ? at - Date.now() : CLAUDE_BACKOFF_MS
+}
+
+async function claudeUsage(key: string, accessToken: string): Promise<unknown> {
+  const now = Date.now()
+  const cached = claudeUsageCache.get(key)
+  if (cached && now - cached.at < CLAUDE_MIN_GAP_MS) return cached.usage
+  const until = claudeCooldown.get(key) ?? 0
+  if (until > now) throw new Error(`查询太频繁，${Math.ceil((until - now) / 60_000)} 分钟后重试`)
+  const res = await http('https://api.anthropic.com/api/oauth/usage?cedar_ember=1', {
+    headers: { Authorization: `Bearer ${accessToken}`, ...CLAUDE_OAUTH_HEADERS },
+    signal: AbortSignal.timeout(TIMEOUT_MS)
   })
+  if (res.status === 429) {
+    const wait = Math.min(30 * 60_000, Math.max(CLAUDE_MIN_GAP_MS, retryAfterMs(res.headers.get('retry-after'))))
+    claudeCooldown.set(key, Date.now() + wait)
+    throw new Error(`查询太频繁（HTTP 429），${Math.ceil(wait / 60_000)} 分钟后重试`)
+  }
+  if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? `登录已失效（HTTP ${res.status}）` : `HTTP ${res.status}`)
+  const usage = await res.json()
+  claudeCooldown.delete(key)
+  claudeUsageCache.set(key, { at: Date.now(), usage })
+  return usage
+}
+
+const CODEX_CREDIT_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits'
+const CLAUDE_API = 'https://api.anthropic.com'
+const CLAUDE_HEADERS = { ...CLAUDE_OAUTH_HEADERS, 'Content-Type': 'application/json' }
+
+function codexHeaders(accessToken: string, accountId: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    'Chatgpt-Account-Id': accountId,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'OpenAI-Beta': 'codex-1',
+    Originator: 'Codex Desktop'
+  }
+}
+
+async function codexCredits(accessToken: string, accountId: string): Promise<ResetCredits | undefined> {
+  try {
+    return codexResetCredits(await getJson(CODEX_CREDIT_URL, { headers: codexHeaders(accessToken, accountId) }), Date.now())
+  } catch {
+    return undefined
+  }
+}
+
+function stableRequestId(seed: string): string {
+  const bytes = createHash('sha1').update(seed).digest().subarray(0, 16)
+  bytes[6] = (bytes[6] & 0x0f) | 0x50
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
+  const res = await http(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(25_000) })
+  const json = await res.json().catch(() => ({})) as Record<string, unknown>
+  return { status: res.status, json }
+}
+
+const CODEX_OUTCOMES: Record<string, ResetCreditOutcome> = { reset: 'reset', nothing_to_reset: 'nothingToReset', no_credit: 'noCredit', already_redeemed: 'alreadyRedeemed' }
+const CLAUDE_OUTCOMES: Record<string, ResetCreditOutcome> = { reset: 'reset', not_limited: 'nothingToReset', already_used: 'alreadyRedeemed', ineligible: 'noCredit' }
+
+async function consumeCodexCredit(key: string, creditId: string): Promise<ResetCreditResult> {
+  const target = (await codexAccountTargets()).find((t) => t.key === key)
+  if (!target?.credential) return { ok: false, error: '账号登录已失效' }
+  const { access, accountId } = target.credential
+  const { status, json } = await postJson(`${CODEX_CREDIT_URL}/consume`, codexHeaders(access, accountId), {
+    redeem_request_id: stableRequestId(`${accountId}:${creditId}`),
+    credit_id: creditId
+  })
+  if (status === 401 || status === 403) return { ok: false, error: `登录已失效（HTTP ${status}）` }
+  const outcome = typeof json.code === 'string' ? CODEX_OUTCOMES[json.code] : undefined
+  if (status < 200 || status >= 300 || !outcome) return { ok: false, error: `HTTP ${status}` }
+  return { ok: true, outcome }
+}
+
+async function consumeClaudeCredit(key: string, grantId: string): Promise<ResetCreditResult> {
+  if (!/^[a-z0-9_-]{1,40}$/.test(grantId)) return { ok: false, error: '重置卡编号无效' }
+  const account = (await oauthAccountTargets('anthropic')).find((a) => a.key === key)
+  if (!account) return { ok: false, error: '找不到该账号' }
+  if (account.credential.expires <= Date.now()) return { ok: false, error: '登录令牌已过期' }
+  const headers = { Authorization: `Bearer ${account.credential.access}`, ...CLAUDE_HEADERS }
+  const profile = await getJson(`${CLAUDE_API}/api/oauth/profile`, { headers }) as { organization?: { uuid?: unknown } }
+  const organization = typeof profile.organization?.uuid === 'string' ? profile.organization.uuid : ''
+  if (!organization) return { ok: false, error: '读不到账号所属组织' }
+  const { status, json } = await postJson(`${CLAUDE_API}/api/organizations/${encodeURIComponent(organization)}/reset_rate_limits`, headers, {
+    program: 'cedar_ember',
+    grant_id: grantId,
+    request_id: stableRequestId(`${key}:${grantId}`)
+  })
+  if (status === 401 || status === 403) return { ok: false, error: `登录已失效（HTTP ${status}）` }
+  if (status === 429) return { ok: false, error: '请求太频繁，稍后再试' }
+  if (status < 200 || status >= 300) return { ok: false, error: `HTTP ${status}` }
+  if (json.result === 'cooldown') return { ok: false, error: '重置冷却中，稍后再试' }
+  const outcome = typeof json.result === 'string' ? CLAUDE_OUTCOMES[json.result] : undefined
+  return outcome ? { ok: true, outcome } : { ok: false, error: '未确认是否重置成功，稍后刷新查看' }
+}
+
+export async function consumeResetCredit(provider: string, key: string, creditId: string): Promise<ResetCreditResult> {
+  try {
+    if (!creditId) return { ok: false, error: '没有可用的重置卡' }
+    const result = provider === 'openai-codex' ? await consumeCodexCredit(key, creditId)
+      : provider === 'anthropic' ? await consumeClaudeCredit(key, creditId)
+        : { ok: false, error: '该账号不支持重置卡' }
+    if (result.ok) {
+      invalidateAccountQuotaReport()
+      lastGoodCards.clear()
+      claudeUsageCache.clear()
+    }
+    return result
+  } catch (e) {
+    return { ok: false, error: friendly(e) }
+  }
 }
 
 let inflight: Promise<AccountQuotaReport> | null = null

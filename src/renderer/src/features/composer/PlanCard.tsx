@@ -2,6 +2,7 @@ import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type Re
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { Meter } from '../../ui'
 import { activeTodoRow, anchorTodoIndex, buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
 import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
 import { ComposerBanner } from '../../t3/components/chat/ComposerBanner'
@@ -76,7 +77,7 @@ export function PlanCard(): ReactElement | null {
   const hint = expanded ? t('plan.collapse') : nowText ? t('plan.workingOn', { text: nowText }) : t('plan.expand')
 
   return (
-    <ComposerBanner.Root>
+    <ComposerBanner.Root className="[--composer-banner-padding-block:0px]">
     <div className="plan-card" data-testid="plan-card" data-expanded={expanded}>
       <button
         type="button"
@@ -89,6 +90,17 @@ export function PlanCard(): ReactElement | null {
       >
         <span className="plan-card-title">
           <span className="plan-card-count">{headline}</span>
+          {model.total > 0 ? (
+            <Meter
+              className="plan-card-meter"
+              aria-label={headline}
+              value={model.done + (activeRow ? 0.5 : 0)}
+              minValue={0}
+              maxValue={model.total}
+              style={{ width: `${Math.min(160, Math.max(48, model.total * 16))}px` }}
+              data-testid="plan-card-meter"
+            />
+          ) : null}
           {stale ? <span className="plan-card-stale">{t('plan.stale')}</span> : null}
           {nowText ? <span className="plan-card-now">{nowText}</span> : null}
         </span>

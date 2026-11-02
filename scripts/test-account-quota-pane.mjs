@@ -44,7 +44,10 @@ export const readAuthEntry = async (p) => globalThis.__acctScenario?.authEntry?.
 `,
   quota: `
 export const providerQuota = async (p, budget, secret) => globalThis.__acctScenario.quota(p, budget, secret)
-export const fetchCodexUsage = async () => { throw new Error('test: codex usage not stubbed') }
+export const fetchCodexUsage = async (...args) => {
+  if (globalThis.__acctScenario?.codexUsage) return globalThis.__acctScenario.codexUsage(...args)
+  throw new Error('test: codex usage not stubbed')
+}
 `,
   'oauth-accounts': `export const oauthAccountTargets = async (provider) => globalThis.__acctScenario?.oauthTargets?.[provider] ?? []`,
   'codex-accounts': `
@@ -190,6 +193,21 @@ async function runMainReportScenarios(check, main, piDir) {
     check(r.cards.length === 2 && r.cards.every((c) => c.provider === 'anthropic' && c.switchable), 'Claude：每个已保存账号独立读取额度，允许切换')
     check(r.cards.find((c) => c.key === 'claude-a')?.active && !r.cards.find((c) => c.key === 'claude-b')?.active, 'Claude：当前与备用账号状态不混淆')
 
+    let claudeCalls = 0
+    setScenario({
+      authEntry: {},
+      oauthTargets: { anthropic: [{ key: 'claude-429', email: 'r@example.com', active: true, credential: { access: 'r', expires: Date.now() + 10000 } }] },
+      fetch: async (url, init) => {
+        claudeCalls++
+        check(init.headers['User-Agent']?.startsWith('claude-code/'), 'Claude：带 Claude Code 的 User-Agent，避免 429')
+        return { ok: false, status: 429, headers: { get: (name) => (name === 'retry-after' ? '120' : null) }, json: async () => ({}) }
+      }
+    })
+    r = await main.accountQuotaReport()
+    check(r.cards[0]?.status === 'error' && /429/.test(r.cards[0]?.error ?? ''), 'Claude 429：卡片说明太频繁')
+    await main.accountQuotaReport()
+    check(claudeCalls === 1, 'Claude 429：退避期间不再请求')
+
     setScenario({
       authEntry: { openrouter: { type: 'oauth', access: 'or-oauth' } },
       oauthTargets: { openrouter: [{ key: 'or-account', label: '个人', active: true, credential: { access: 'or-oauth' } }] },
@@ -201,6 +219,42 @@ async function runMainReportScenarios(check, main, piDir) {
     })
     r = await main.accountQuotaReport()
     check(r.cards.length === 1 && r.cards[0].key === 'or-account' && r.cards[0].balance.amount === 15, 'OpenRouter：订阅登录与通用 key 卡片不会重复展示当前凭证')
+
+    const soon = new Date(Date.now() + 86_400_000).toISOString()
+    const later = new Date(Date.now() + 5 * 86_400_000).toISOString()
+    const posts = []
+    setScenario({
+      authEntry: {},
+      codexTargets: [{ key: 'cx-a', email: 'x@example.com', active: true, credential: { access: 'cx-token', accountId: 'acct-1' } }],
+      codexUsage: async () => ({ plan: 'plus', windows: [{ id: 'primary', label: '五小时', used: 10, total: 100 }], limited: false }),
+      fetch: async (url, init = {}) => {
+        if (String(url).endsWith('/rate-limit-reset-credits')) {
+          check(init.headers['Chatgpt-Account-Id'] === 'acct-1', 'Codex 重置卡：带该账号自己的 account id')
+          return { ok: true, status: 200, json: async () => ({ credits: [
+            { id: 'c-late', status: 'available', reset_type: 'codex_rate_limits', expires_at: later },
+            { id: 'c-soon', status: 'available', reset_type: 'codex_rate_limits', expires_at: soon },
+            { id: 'c-used', status: 'redeemed', reset_type: 'codex_rate_limits', expires_at: later },
+            { id: 'c-old', status: 'available', reset_type: 'codex_rate_limits', expires_at: new Date(Date.now() - 1000).toISOString() }
+          ] }) }
+        }
+        if (String(url).endsWith('/rate-limit-reset-credits/consume')) {
+          posts.push(JSON.parse(init.body))
+          return { ok: true, status: 200, json: async () => ({ code: 'reset' }) }
+        }
+        throw new Error(`unexpected ${url}`)
+      },
+      quota: async (p) => ({ provider: p, supported: false })
+    })
+    r = await main.accountQuotaReport()
+    const cx = r.cards.find((c) => c.key === 'cx-a')
+    check(cx?.resetCredits?.count === 2, 'Codex 重置卡：只算可用且未过期的卡')
+    check(cx?.resetCredits?.nextId === 'c-soon' && cx?.resetCredits?.nextExpiresAt === Date.parse(soon), 'Codex 重置卡：先用最早过期的一张')
+    const used = await main.consumeResetCredit('openai-codex', 'cx-a', 'c-soon')
+    check(used.ok && used.outcome === 'reset', 'Codex 重置卡：使用后返回结果')
+    check(posts[0]?.credit_id === 'c-soon' && /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(posts[0]?.redeem_request_id ?? ''), 'Codex 重置卡：带稳定的幂等请求号')
+    await main.consumeResetCredit('openai-codex', 'cx-a', 'c-soon')
+    check(posts[1]?.redeem_request_id === posts[0]?.redeem_request_id, 'Codex 重置卡：重试同一张卡复用请求号，不会重复扣')
+    check((await main.consumeResetCredit('deepseek', 'x', 'y')).ok === false, '重置卡：不支持的账号不发请求')
 
     const deferred = () => {
       let resolve
@@ -266,6 +320,20 @@ export async function runAccountQuotaPaneTests(ok) {
     check(shared.orderAccountCardsForProvider([d, ccCard()], '').map((c) => c.provider).join(',') === 'deepseek,commandcode', '选择器：没有当前 provider 时顺序不变')
     check(shared.orderAccountCardsForProvider([d, ccCard()], 'COMMANDCODE')[0].provider === 'commandcode', '选择器：provider 大小写不敏感')
     check(!shared.orderAccountCardsForProvider([d], 'unsupported').some((c) => c.provider === 'unsupported'), '选择器：未知 / 不支持的 provider 不伪造卡')
+  }
+
+  {
+    const now = Date.now()
+    const future = new Date(now + 3_600_000).toISOString()
+    const claude = shared.claudeResetCredits({ eligible: true, next_grant_id: 'g1', grants: [
+      { id: 'g1', resets_left: 2, ends_at: future, usable_now: true },
+      { id: 'g2', resets_left: 1, usable_now: true },
+      { id: 'g3', resets_left: 5, paused: true, usable_now: true },
+      { id: 'BAD ID', resets_left: 9, usable_now: true }
+    ] }, now)
+    check(claude?.count === 3 && claude?.nextId === 'g1' && claude?.nextExpiresAt === Date.parse(future), 'Claude 重置卡：合计可用次数，跳过暂停和非法编号')
+    check(shared.claudeResetCredits({ eligible: false, grants: [] }, now) === undefined, 'Claude 重置卡：不符合资格时不显示')
+    check(shared.claudeResetCredits({ eligible: true, next_grant_id: 'gone', grants: [{ id: 'g1', resets_left: 1, usable_now: true }] }, now)?.count === 0, 'Claude 重置卡：没有下一张可用时计 0')
   }
 
   const main = await loadAccountQuotaMain()

@@ -68,6 +68,15 @@ export async function runTodoHistoryTests(ok) {
   }
 
   {
+    const host = (id, todos, round) => ({ type: 'custom', customType: 'yan-task-plan', id, data: { todos }, round })
+    const cleared = todoSnapshotsFromEntries([user(1), host('h1', [T('甲'), T('乙')], 1), user(2), host('h2', [], 2)])
+    ok(cleared.at(-1)?.todos.length === 0, '宿主清空计划：最新快照为空，计划条随之消失')
+    const sameRound = todoSnapshotsFromEntries([user(1), host('h1', [T('甲')], 1), host('h2', [], 1)])
+    ok((sameRound.at(-1)?.todos.length ?? 0) === 0, '同一轮先设后清：以清空为准')
+    ok(todoSnapshotsFromEntries([user(1), host('h0', [], 1)]).length === 0, '没有计划时清空不产生空历史')
+  }
+
+  {
     ok(sameTodos([T('甲')], [T('甲')]), 'sameTodos：相同为 true')
     ok(!sameTodos([T('甲')], [T('甲', true)]), 'sameTodos：完成态不同为 false')
     ok(!sameTodos([T('甲')], [T('乙')]), 'sameTodos：文字不同为 false')

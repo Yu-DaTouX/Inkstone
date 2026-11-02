@@ -126,7 +126,7 @@ import type { OfficeDocumentView } from '../shared/office'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { AndroidDevice, AndroidFrame, AndroidSdkStatus } from '../shared/android-sdk'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
-import type { AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
+import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from '../shared/account-quota'
 import type { OAuthAccountPools } from '../shared/oauth-accounts'
 import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
 import type { LocalServerSnapshot } from '../shared/local-servers'
@@ -290,6 +290,7 @@ const api: YanBridge = {
   removeApiKey: (provider, id) => invoke<Ok & { wasActive: boolean }>('yan:removeApiKey', provider, id),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
   accountQuota: () => invoke<AccountQuotaReport>('yan:accountQuota'),
+  accountResetCredit: (provider, key, creditId) => invoke<ResetCreditResult>('yan:accountResetCredit', provider, key, creditId),
   codexAccounts: () => invoke<CodexAccountView[]>('yan:codexAccounts'),
   codexAccountSwitch: (key) => invoke<Ok>('yan:codexAccountSwitch', key),
   codexAccountRemove: (key) => invoke<Ok & { wasActive: boolean }>('yan:codexAccountRemove', key),

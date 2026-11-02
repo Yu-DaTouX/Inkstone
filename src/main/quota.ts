@@ -7,7 +7,7 @@ import { readAuthEntry, resolveCodexAccountId } from './credentials'
 import { resolveQuotaProviderSecret } from './quota-credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
 import { hostImageCredentials } from './image-credentials'
-import { chatGptIdentity, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
+import { chatGptIdentity, CLAUDE_OAUTH_HEADERS, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
 import { quotaSamples } from './quota-samples'
 
 const http = net.fetch.bind(net)
@@ -20,7 +20,7 @@ async function claudeSubscriptionQuota(
   revoked: string
 ): Promise<ProviderQuota> {
   const response = await http('https://api.anthropic.com/api/oauth/usage', {
-    headers: { Authorization: `Bearer ${accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', Accept: 'application/json' },
+    headers: { Authorization: `Bearer ${accessToken}`, ...CLAUDE_OAUTH_HEADERS },
     signal: AbortSignal.timeout(10_000)
   })
   if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? revoked : `HTTP ${response.status}`)

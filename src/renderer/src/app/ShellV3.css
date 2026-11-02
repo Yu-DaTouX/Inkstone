@@ -54,16 +54,17 @@
     --stream-scrollbar: 10px;
     --col-pl-min: calc(var(--s-20) + var(--rail-gutter) * var(--outline-on, 0));
     --col-r: calc(var(--s-20) + (var(--rail-gutter) - var(--s-16)) * var(--outline-on, 0) + var(--tiles-reserve));
-    --col-window-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
-    --col-left-nat: calc((100% - var(--size-chat)) / 2 - var(--col-window-shift));
-    --col-left-base: max(var(--col-pl-min), var(--col-left-nat));
+    --col-basis: 100%;
+    --col-window-shift: clamp(0px, ((var(--col-basis) - var(--sidebar-offset, 0px) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
+    --col-left-nat: calc((var(--col-basis) - var(--size-chat)) / 2 - var(--col-window-shift));
+    --col-left-base: max(var(--col-pl-min), min(var(--col-left-nat), 100% - var(--col-r) - var(--size-chat)));
     --col-room: max(0px, 100% - var(--col-left-base) - var(--col-r));
     --col-w: max(var(--size-chat-min), min(var(--size-chat), var(--col-room)));
     --col-pl-to: min(var(--col-left-base), max(var(--col-pl-min), 100% - var(--size-chat-min) - var(--col-r)));
     --col-pr-to: max(var(--col-r), 100% - var(--col-pl-to) - var(--col-w));
-    --col-pad-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) - var(--stream-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
-    --col-pad-nat: calc((100% - var(--stream-scrollbar) - var(--size-chat)) / 2 - var(--col-pad-shift));
-    --col-pad-base: max(var(--col-pl-min), var(--col-pad-nat));
+    --col-pad-shift: clamp(0px, ((var(--col-basis) - var(--sidebar-offset, 0px) - var(--stream-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
+    --col-pad-nat: calc((var(--col-basis) - var(--stream-scrollbar) - var(--size-chat)) / 2 - var(--col-pad-shift));
+    --col-pad-base: max(var(--col-pl-min), min(var(--col-pad-nat), 100% - var(--stream-scrollbar) - var(--col-r) - var(--size-chat)));
     --col-pad-room: max(0px, 100% - var(--stream-scrollbar) - var(--col-pad-base) - var(--col-r));
     --col-pad-w: max(var(--size-chat-min), min(var(--size-chat), var(--col-pad-room)));
     --col-pad-l-to: min(var(--col-pad-base), max(var(--col-pl-min), 100% - var(--stream-scrollbar) - var(--size-chat-min) - var(--col-r)));
@@ -79,6 +80,9 @@
     transition-property: --col-pl-at, --col-pr-at, --col-pad-l-at, --col-pad-r-at;
     transition-duration: 0s;
     transition-timing-function: var(--ease-inout);
+  }
+  .v3-chat[data-single] {
+    --col-basis: calc(100vw - var(--sidebar-offset, 0px));
   }
   .v3-chat[data-bar-anim] {
     transition-duration: var(--panel-dur, var(--dur-sheet));

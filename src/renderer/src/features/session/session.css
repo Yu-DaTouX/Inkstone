@@ -238,11 +238,12 @@
 
   .v3-jump {
     position: absolute;
-    right: max(var(--s-8), calc((100% - var(--size-chat)) / 2 - var(--s-48)));
+    right: var(--col-pr, var(--s-20));
     bottom: calc(var(--composer-h, 0px) + var(--s-24) + var(--s-8));
+    left: var(--col-pl, var(--s-20));
     z-index: var(--z-rail);
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
     pointer-events: none;
     animation: v3-fade-in var(--dur-base) var(--ease) both;
   }
