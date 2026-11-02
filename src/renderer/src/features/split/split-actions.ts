@@ -17,6 +17,8 @@ import { splitText } from './split-text'
 import { domAnchor, domMetrics, saveScrollSnapshot } from '../session/scroll-position'
 import { distanceFromBottom } from '../session/scroll-follow'
 
+export const SPLIT_STICK_SLACK_PX = 48
+
 export const SPLIT_RUNNER_LIMIT = 3
 
 export type SplitCommand =
@@ -46,9 +48,9 @@ export function focusSplitSession(target: SplitSessionRef): void {
   if (sameSplitSession(displayedSessionOf(store), target)) return
   if (typeof document !== 'undefined') {
     for (const pane of document.querySelectorAll<HTMLElement>('[data-scroll-key]')) {
-      const stream = pane.querySelector<HTMLElement>('.v3-stream')
+      const stream = [...pane.querySelectorAll<HTMLElement>('.v3-stream')].find((element) => element.clientHeight > 0)
       if (!stream) continue
-      const bottom = distanceFromBottom(domMetrics(stream)) <= 1
+      const bottom = distanceFromBottom(domMetrics(stream)) <= SPLIT_STICK_SLACK_PX
       saveScrollSnapshot(pane.dataset.scrollKey ?? '', { top: stream.scrollTop, bottom, anchor: bottom ? null : domAnchor(stream) })
     }
   }

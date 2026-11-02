@@ -43,9 +43,19 @@ async function run() {
       call('after-read', 'read', { path: 'result.json' })
     ]
     const webRows = m.buildToolRows(webTools)
-    for (const id of ['nested-search', 'nested-fetch']) {
-      assert.ok(webRows.some((row) => row.kind === 'single' && row.standalone && row.id === id), '搜索和网页读取从 codemode 提升成独立卡片')
-    }
+    const webGroup = webRows.find((row) => row.kind === 'web')
+    assert.deepEqual(webGroup?.nodes.map((node) => node.call.id), ['nested-search', 'nested-fetch'], '连续已完成的搜索和网页读取合成一行')
+    const liveWeb = m.buildToolRows([
+      call('w1', 'web_fetch', { url: 'https://a.invalid' }),
+      call('w2', 'web_fetch', { url: 'https://b.invalid' }, { status: 'running' })
+    ])
+    assert.deepEqual(liveWeb.map((row) => `${row.kind}:${row.id}`), ['single:w1', 'single:w2'], '运行中的网页读取单独显示，不并入')
+    const failedWeb = m.buildToolRows([
+      call('f1', 'web_fetch', { url: 'https://a.invalid' }),
+      call('f2', 'web_fetch', { url: 'https://b.invalid' }, { status: 'error', output: 'boom' }),
+      call('f3', 'web_fetch', { url: 'https://c.invalid' })
+    ])
+    assert.ok(failedWeb.every((row) => row.kind === 'single'), '失败的读取断开合并，单独可见')
     const codeRow = webRows.find((row) => row.id === 'code-parent')
     assert.deepEqual(codeRow.node.children.map((node) => node.call.id), ['nested-read'], '原工具中不重复嵌套搜索卡片，普通读取仍保留')
 

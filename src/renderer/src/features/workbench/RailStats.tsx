@@ -6,6 +6,7 @@ import { useStreamingThrottledStore } from '../../state/streaming-throttle'
 import { selectSubagentRuns, subagentCost, subagentScopeForView, subagentTokens } from '../../state/subagent-view'
 import { useMoney } from '../usage/UsageOverview'
 import {
+  latencyFloor,
   liveActivitySince,
   liveStepId,
   liveStepSpeed,
@@ -68,8 +69,9 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
     if (!enabled) return null
     const { messages, liveId, running } = snapshot
     const { settled, live } = splitLiveStep(messages, liveId)
-    const latestSpeed = stepSpeed(settled.findLast((message) => message.role === 'assistant'))
-    const reading = live ? liveStepSpeed(live) : latestSpeed === null ? null : { speed: latestSpeed, estimated: false }
+    const floor = latencyFloor(settled)
+    const latestSpeed = settled.reduceRight<number | null>((found, message) => found ?? stepSpeed(message, floor), null)
+    const reading = (live ? liveStepSpeed(live, floor) : null) ?? (latestSpeed === null ? null : { speed: latestSpeed, estimated: false })
     const identity = JSON.stringify([sessionViewIdentity({ session, peekedSessionId, peekedPath }).key, messages.findLast((message) => message.role === 'user')?.id])
     speedHold.current = retainRailSpeed(speedHold.current, identity, reading)
     const heldReading = speedHold.current.sample

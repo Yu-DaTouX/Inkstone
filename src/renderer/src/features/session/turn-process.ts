@@ -186,6 +186,56 @@ export function withoutThinking(segment: TurnSegment): TurnSegment {
   return { ...segment, thinking: '', thinkingMs: undefined, thinkingLive: false, thinkingParts: [] }
 }
 
+export interface CompactionCut {
+  messageId: string
+  toolId: string | null
+}
+
+function splitSegmentAfterTool(segment: TurnSegment, toolId: string): [TurnSegment, TurnSegment] | null {
+  const index = segment.tools.findIndex((tool) => tool.id === toolId)
+  const cut = index + 1
+  if (index < 0 || cut >= segment.tools.length) return null
+  const parts = rawThinkingParts(segment)
+  const headParts = parts.filter((part) => part.at < cut)
+  const tailParts = parts.filter((part) => part.at >= cut).map((part) => ({ ...part, at: part.at - cut }))
+  const head: TurnSegment = {
+    ...segment,
+    tools: segment.tools.slice(0, cut),
+    thinking: headParts.map((part) => part.text).join('\n\n'),
+    thinkingMs: headParts.reduce((sum, part) => sum + (part.ms ?? 0), 0) || undefined,
+    thinkingLive: false,
+    thinkingParts: headParts,
+    texts: [],
+    response: null,
+    responseParts: [],
+    commentary: segment.commentary.filter((note) => noteAt(note, segment.tools.length) < cut)
+  }
+  const tail: TurnSegment = {
+    ...segment,
+    id: `${segment.id}~after`,
+    tools: segment.tools.slice(cut),
+    thinking: tailParts.map((part) => part.text).join('\n\n'),
+    thinkingMs: tailParts.reduce((sum, part) => sum + (part.ms ?? 0), 0) || undefined,
+    thinkingParts: tailParts,
+    commentary: segment.commentary.filter((note) => noteAt(note, segment.tools.length) >= cut).map((note) => ({ ...note, at: (note.at ?? 0) - cut }))
+  }
+  return [head, tail]
+}
+
+export function splitAtCompaction(process: readonly TurnSegment[], at: CompactionCut): { before: TurnSegment[]; after: TurnSegment[] } | null {
+  const byTool = at.toolId ? process.findIndex((segment) => segment.tools.some((tool) => tool.id === at.toolId)) : -1
+  const index = byTool >= 0 ? byTool : process.findIndex((segment) => segment.sourceMessageId === at.messageId)
+  if (index < 0) return null
+  const halves = byTool >= 0 && at.toolId ? splitSegmentAfterTool(process[index], at.toolId) : null
+  return halves
+    ? { before: [...process.slice(0, index), halves[0]], after: [halves[1], ...process.slice(index + 1)] }
+    : { before: process.slice(0, index + 1), after: process.slice(index + 1) }
+}
+
+export function hasSegmentContent(segment: TurnSegment): boolean {
+  return segment.tools.length > 0 || segment.commentary.length > 0 || !!segment.thinking?.trim() || !!segment.thinkingParts?.length || !!segment.thinkingLive
+}
+
 export function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment[] {
   const merged: TurnSegment[] = []
   for (const segment of process) {

@@ -20,6 +20,8 @@ export type WebSearchTextKey =
   | 'read'
   | 'partial'
   | 'cached'
+  | 'groupSearched'
+  | 'groupFetched'
 
 const ZH: Record<WebSearchTextKey, string> = {
   searching: '搜索中',
@@ -40,7 +42,9 @@ const ZH: Record<WebSearchTextKey, string> = {
   showLess: '显示更少',
   read: '已取原文',
   partial: '部分原文',
-  cached: '缓存'
+  cached: '缓存',
+  groupSearched: '搜索 {n} 次',
+  groupFetched: '读取 {n} 个网页'
 }
 
 const EN: Record<WebSearchTextKey, string> = {
@@ -62,7 +66,9 @@ const EN: Record<WebSearchTextKey, string> = {
   showLess: 'Show less',
   read: 'Text fetched',
   partial: 'Partial text',
-  cached: 'Cached'
+  cached: 'Cached',
+  groupSearched: 'Searched {n}\u00d7',
+  groupFetched: 'Read {n} pages'
 }
 
 export function webSearchText(lang: string, key: WebSearchTextKey, vars?: Record<string, string | number>): string {

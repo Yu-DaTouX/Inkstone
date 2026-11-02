@@ -85,10 +85,36 @@ export interface StepDecode {
   ms: number
 }
 
-export function stepDecode(m: UIMessage): StepDecode | null {
+function firstTokenWait(m: UIMessage): number | null {
+  const gt = m.generationTiming
+  if (m.role !== 'assistant' || m.error || gt?.startEvent !== 'turn_start') return null
+  return isNonNegative(gt.ttftMs) && isNonNegative(gt.durationMs) ? gt.ttftMs : null
+}
+
+const FLOOR_MIN_SAMPLES = 3
+
+export function latencyFloor(messages: readonly UIMessage[]): number | null {
+  let floor: number | null = null
+  const seen = new Set<string>()
+  for (const m of messages) {
+    const wait = firstTokenWait(m)
+    if (wait === null) continue
+    seen.add(m.id)
+    if (floor === null || wait < floor) floor = wait
+  }
+  return seen.size >= FLOOR_MIN_SAMPLES ? floor : null
+}
+
+export function stepDecode(m: UIMessage, floor: number | null = null): StepDecode | null {
   if (m.role !== 'assistant') return null
   const gt = m.generationTiming
   const usage = sanitizeUsage(m.usage)
+  if (floor !== null && firstTokenWait(m) !== null && gt) {
+    const total = usage?.output ?? 0
+    const span = gt.durationMs - floor
+    if (total <= 0 || span < MIN_DECODE_MS || total / (span / 1000) > MAX_PLAUSIBLE_TPS) return null
+    return { tokens: total, ms: span }
+  }
   const tokens = visibleOutput(usage)
   const decodeMs = usage?.reasoning
     ? gt?.outputDecodeMs ?? (!m.thinking ? gt?.decodeMs : undefined)
@@ -100,8 +126,10 @@ export function stepDecode(m: UIMessage): StepDecode | null {
 
 export function stepSpeeds(messages: readonly UIMessage[], limit: number): number[] {
   const out: number[] = []
-  for (const m of effectiveMessages(messages)) {
-    const decode = stepDecode(m)
+  const msgs = effectiveMessages(messages)
+  const floor = latencyFloor(msgs)
+  for (const m of msgs) {
+    const decode = stepDecode(m, floor)
     if (decode && decode.ms > 0) out.push(decode.tokens / (decode.ms / 1000))
   }
   return out.slice(Math.max(0, out.length - limit))
@@ -120,11 +148,12 @@ export interface LiveStepSpeed {
   estimated: boolean
 }
 
-export function liveStepSpeed(m: UIMessage | null | undefined): LiveStepSpeed | null {
+export function liveStepSpeed(m: UIMessage | null | undefined, floor: number | null = null): LiveStepSpeed | null {
   if (!m || m.role !== 'assistant') return null
-  const decode = stepDecode(m)
+  const decode = stepDecode(m, floor)
   if (decode) return { speed: decode.tokens / (decode.ms / 1000), estimated: false }
   if ((sanitizeUsage(m.usage)?.output ?? 0) > 0) return null
+  if (m.thinking) return null
   const ms = m.generationTiming?.decodeMs
   if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < MIN_DECODE_MS) return null
   let content = `${m.text ?? ''}${m.thinking ?? ''}`
@@ -213,8 +242,8 @@ export function liveActivitySince(messages: readonly UIMessage[], live: UIMessag
   return since
 }
 
-export function stepSpeed(m: UIMessage | null | undefined): number | null {
-  const decode = m ? stepDecode(m) : null
+export function stepSpeed(m: UIMessage | null | undefined, floor: number | null = null): number | null {
+  const decode = m ? stepDecode(m, floor) : null
   return decode && decode.ms > 0 ? decode.tokens / (decode.ms / 1000) : null
 }
 
@@ -310,6 +339,7 @@ export function projectSessionMetrics(
   let ttftSum = 0
   let ttftCount = 0
   let ttftEligible = 0
+  const floor = latencyFloor(msgs)
   for (const m of msgs) {
     if (m.role !== 'assistant') continue
 
@@ -326,7 +356,7 @@ export function projectSessionMetrics(
     const out = usage ? usage.output : 0
     if (!m.error && (out > 0 || !hasUsageNumbers(usage))) tpsEligible += 1
     if (!m.error && (out > 0 || m.text || m.toolCalls?.length)) ttftEligible += 1
-    const decode = stepDecode(m)
+    const decode = stepDecode(m, floor)
     if (decode) {
       decodeOut += decode.tokens
       decodeTime += decode.ms

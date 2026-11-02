@@ -1,4 +1,5 @@
-import { useCallback, useLayoutEffect, useState, type JSX, type RefCallback } from 'react'
+import { Fragment, useCallback, useLayoutEffect, useState, type JSX, type RefCallback } from 'react'
+import { CompactionMarker } from './CompactionMarker'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
 import { Markdown } from './Markdown'
@@ -7,7 +8,7 @@ import { ThinkingLine } from './Thinking'
 import { Button, Collapsible, CollapsibleChevron, CollapsibleHeader, CollapsiblePanel, DiffStat, TermSpinner } from '../../ui'
 import { formatDuration } from '../../../../shared/duration'
 import { useSessionText } from './text'
-import { conciseSegment, mergeQuietSegments, pickLiveSegments, processPreview, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
+import { conciseSegment, hasSegmentContent, mergeQuietSegments, splitAtCompaction, type CompactionCut, pickLiveSegments, processPreview, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
 import { useToolExpansion } from './use-tool-run'
 import { useRunProgress } from './run-status'
 import type { TranscriptView } from './transcript-view-model'
@@ -72,7 +73,7 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
   return { ref, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
-export function TurnProcess({ process, live, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false }: {
+export function TurnProcess({ process, live, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false, compactionAfter = null }: {
   process: TurnSegment[]
   live: boolean
   alertFailures: boolean
@@ -83,6 +84,7 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
   glowId?: string | null
   elapsedMs?: number
   filesShownBelow?: boolean
+  compactionAfter?: CompactionCut | null
 }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
@@ -94,8 +96,12 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
   const open = headless || (manual ?? view === 'thinking')
   const stage = !open && live
   const steady = useSteadyHeight(live)
-  const source = stage ? process.map(view === 'side' ? withoutThinking : conciseSegment) : process
-  const merged = mergeQuietSegments(source)
+  const source = stage ? process.map(view === 'side' ? withoutThinking : conciseSegment).filter(hasSegmentContent) : process
+  const halves = compactionAfter ? splitAtCompaction(source, compactionAfter) : null
+  const before = halves ? mergeQuietSegments(halves.before) : null
+  const merged = halves && before ? [...before, ...mergeQuietSegments(halves.after)] : mergeQuietSegments(source)
+  const markerAfter = before?.at(-1)?.id ?? null
+  const markerFirst = !!compactionAfter && (!halves || !before?.length)
   const picked = stage
     ? pickLiveSegments(merged, stageSegmentCount(merged))
     : live && showAll !== true ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
@@ -112,8 +118,12 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
         </Button>
       ) : null}
       <ToolTallyScope.Provider value>
+        {markerFirst || markerAfter && !picked.shown.some((segment) => segment.id === markerAfter) && merged.findIndex((segment) => segment.id === markerAfter) < merged.indexOf(picked.shown[0]) ? <CompactionMarker /> : null}
         {picked.shown.map((segment) => (
-          <ProcessSegment key={segment.id} segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} />
+          <Fragment key={segment.id}>
+            <ProcessSegment segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} />
+            {segment.id === markerAfter ? <CompactionMarker /> : null}
+          </Fragment>
         ))}
       </ToolTallyScope.Provider>
     </div>
@@ -142,8 +152,8 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
           </span>
         </CollapsibleHeader>
       )}
-      <CollapsiblePanel animated className="v3-step-panel">{open ? body : null}</CollapsiblePanel>
-      {stage ? body : null}
+      {live ? body : <CollapsiblePanel animated className="v3-step-panel">{open ? body : null}</CollapsiblePanel>}
+      {compactionAfter && !open && !stage ? <CompactionMarker /> : null}
     </Collapsible>
   )
 }

@@ -2,6 +2,7 @@ import { net } from 'electron'
 import { createHash } from 'node:crypto'
 import { customCommandCodeQuotaProviders, resolveQuotaProviderCredential } from './quota-credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
+import { claudeUsage, forgetClaudeUsage } from './claude-usage'
 import { quotaSamples } from './quota-samples'
 import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
 import { oauthAccountTargets, type OAuthAccountTarget } from './oauth-accounts'
@@ -72,7 +73,7 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
 function yanClaudeCard(account: OAuthAccountTarget): Promise<AccountQuotaCard> {
   return settle({ key: account.key, source: 'yan', provider: 'anthropic', name: 'Claude', email: account.email, label: account.label, active: account.active, switchable: true }, async () => {
     if (account.credential.expires <= Date.now()) return { status: 'expired', hint: '登录令牌已过期，切换后用 Claude 模型对话时 pi 会自动刷新。' }
-    const usage = await claudeUsage(account.key, account.credential.access) as { cedar_ember?: unknown }
+    const usage = await claudeUsage(account.credential.access) as { cedar_ember?: unknown }
     const windows = claudeUsageWindows(usage)
     const resetCredits = claudeResetCredits(usage?.cedar_ember, Date.now())
     return { windows, status: limitedIf(windows), ...(resetCredits ? { resetCredits } : {}) }
@@ -101,40 +102,6 @@ async function yanKeyCard(provider: { id: string; name: string; quotaProvider?: 
     const balance = !windows.length && q.remaining !== undefined ? { label: '余额', amount: q.remaining, currency: q.currency ?? 'USD' } : undefined
     return { windows, balance, status: limitedIf(windows) }
   })
-}
-
-const CLAUDE_MIN_GAP_MS = 60_000
-const CLAUDE_BACKOFF_MS = 5 * 60_000
-const claudeUsageCache = new Map<string, { at: number; usage: unknown }>()
-const claudeCooldown = new Map<string, number>()
-
-function retryAfterMs(value: string | null): number {
-  const seconds = Number(value)
-  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000
-  const at = value ? Date.parse(value) : NaN
-  return Number.isFinite(at) && at > Date.now() ? at - Date.now() : CLAUDE_BACKOFF_MS
-}
-
-async function claudeUsage(key: string, accessToken: string): Promise<unknown> {
-  const now = Date.now()
-  const cached = claudeUsageCache.get(key)
-  if (cached && now - cached.at < CLAUDE_MIN_GAP_MS) return cached.usage
-  const until = claudeCooldown.get(key) ?? 0
-  if (until > now) throw new Error(`查询太频繁，${Math.ceil((until - now) / 60_000)} 分钟后重试`)
-  const res = await http('https://api.anthropic.com/api/oauth/usage?cedar_ember=1', {
-    headers: { Authorization: `Bearer ${accessToken}`, ...CLAUDE_OAUTH_HEADERS },
-    signal: AbortSignal.timeout(TIMEOUT_MS)
-  })
-  if (res.status === 429) {
-    const wait = Math.min(30 * 60_000, Math.max(CLAUDE_MIN_GAP_MS, retryAfterMs(res.headers.get('retry-after'))))
-    claudeCooldown.set(key, Date.now() + wait)
-    throw new Error(`查询太频繁（HTTP 429），${Math.ceil(wait / 60_000)} 分钟后重试`)
-  }
-  if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? `登录已失效（HTTP ${res.status}）` : `HTTP ${res.status}`)
-  const usage = await res.json()
-  claudeCooldown.delete(key)
-  claudeUsageCache.set(key, { at: Date.now(), usage })
-  return usage
 }
 
 const CODEX_CREDIT_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits'
@@ -222,7 +189,7 @@ export async function consumeResetCredit(provider: string, key: string, creditId
     if (result.ok) {
       invalidateAccountQuotaReport()
       lastGoodCards.clear()
-      claudeUsageCache.clear()
+      forgetClaudeUsage()
     }
     return result
   } catch (e) {

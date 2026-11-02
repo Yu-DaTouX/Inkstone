@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useMemo, useRef, useState, type JSX } from 'react'
+import { createContext, memo, useContext, useId, useMemo, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { InlineImage } from '../../ui/InlineImage'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
@@ -22,7 +22,7 @@ import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
 import { Icon, type SessionIconName } from './Icon'
 import { Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, DiffStat, IconButton, ShimmerText, Spinner } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
-import { SearchStepView } from './web-search/SearchStep'
+import { SearchStepView, WebGroupCap } from './web-search/SearchStep'
 import { searchStepsOf } from './web-search/model'
 
 const OUTPUT_PREVIEW_LINES = 16
@@ -104,6 +104,7 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
       <div className="v3-steps-list" data-testid="v3-steps-list">
         {rows.map((row) => {
           if (row.kind === 'group') return <MemoToolGroupRow key={row.id} row={row} glowId={glowId} alertFailures={alertFailures} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
+          if (row.kind === 'web') return <WebGroupRow key={row.id} row={row} glowId={glowId} />
           if (row.standalone && isQuestionCall(row.node.call)) {
             const callId = row.node.call.id
             const asked = askedCalls.find((request) => request.toolCallId === callId)
@@ -122,6 +123,23 @@ type StepNodeProps = { node: ToolCallNode; depth: number; glowId: string | null;
 
 function sameStepProps(a: StepNodeProps, b: StepNodeProps): boolean {
   return a.depth === b.depth && a.glowId === b.glowId && !a.blocked === !b.blocked && (a.repeat ?? 1) === (b.repeat ?? 1) && !a.asking === !b.asking && (a.node === b.node || toolNodesEqual([a.node], [b.node]))
+}
+
+function WebGroupRow({ row, glowId }: { row: Extract<ToolRow, { kind: 'web' }>; glowId: string | null }): JSX.Element {
+  const [stored, setOpen] = useToolExpansion(row.id)
+  const open = stored ?? false
+  const panelId = useId()
+  const calls = useMemo(() => row.nodes.map((node) => node.call), [row.nodes])
+  return (
+    <div className="v3-web-group" data-testid="v3-web-group">
+      <WebGroupCap calls={calls} open={open} panelId={panelId} onToggle={() => setOpen(!open)} />
+      {open ? (
+        <div id={panelId} className="v3-step-nest" data-testid="v3-web-group-list">
+          {row.nodes.map((node) => <MemoStepNode key={node.call.id} node={node} glowId={glowId} depth={1} />)}
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<ToolRow, { kind: 'group' }>; asking: boolean; glowId: string | null; alertFailures: boolean }): JSX.Element {

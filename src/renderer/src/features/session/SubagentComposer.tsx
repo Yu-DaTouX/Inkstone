@@ -43,12 +43,17 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
     : mode === 'resume'
       ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktree' : 'sa.composer.resume')
       : t('sa.composer.steer')
+  const shortPlaceholder = mode === 'blocked'
+    ? placeholder
+    : mode === 'resume'
+      ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktreeShort' : 'sa.composer.resumeShort')
+      : t('sa.composer.steerShort')
   return (
     <div className="sa-composer" data-mode={mode} data-testid="v3-subagent-composer">
-      <div className="sa-composer-box" onKeyDown={onKeyDown}>
+      <div className="sa-composer-box" title={text ? undefined : placeholder} onKeyDown={onKeyDown}>
         <TextArea
           aria-label={placeholder}
-          placeholder={placeholder}
+          placeholder={shortPlaceholder}
           rows={1}
           value={text}
           maxLength={MAX_CHARS}

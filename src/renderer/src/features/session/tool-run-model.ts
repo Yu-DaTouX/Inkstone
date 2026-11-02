@@ -54,6 +54,7 @@ export interface ToolRunSummary {
 export type ToolRow =
   | { kind: 'single'; id: string; node: ToolCallNode; standalone: boolean; blocked: boolean }
   | { kind: 'group'; id: string; firstId: string; nodes: ToolCallNode[]; summary: ToolRunSummary }
+  | { kind: 'web'; id: string; nodes: ToolCallNode[] }
 
 interface CoalescedNode {
   node: ToolCallNode
@@ -309,6 +310,11 @@ function isStandaloneNode(node: ToolCallNode): boolean {
   return isStandaloneTool(node.call) || isWebTool(node.call) || !!node.call.approval
 }
 
+function isSettledWebNode(node: ToolCallNode, approvalIds: ReadonlySet<string>): boolean {
+  const call = node.call
+  return isWebTool(call) && !node.children.length && !isLive(call) && !isFailure(call) && !call.approval && !approvalIds.has(call.id)
+}
+
 function isHiddenTodoCall(call: Pick<UIToolCall, 'name' | 'status' | 'cancelled' | 'denied' | 'output'>): boolean {
   return TODO.has(bareName(call.name)) && !isFailure(call)
 }
@@ -423,6 +429,17 @@ export function buildToolRows(
     if (before && before.kind === 'single' && before.standalone === standalone && before.blocked === blocked && toolNodesEqual([before.node], [node])) return before
     return { kind: 'single', id: node.call.id, node, standalone, blocked }
   }
+  let web: ToolCallNode[] = []
+  const flushWeb = (): void => {
+    if (web.length >= 2) {
+      const id = `web:${web[0].call.id}`
+      const before = previous.get(id)
+      rows.push(before && before.kind === 'web' && toolNodesEqual(before.nodes, web) ? before : { kind: 'web', id, nodes: web })
+    } else {
+      for (const node of web) rows.push(single(node, true))
+    }
+    web = []
+  }
   const flush = (): void => {
     if (run.length >= min) {
       const first = run[0].call.id
@@ -447,14 +464,20 @@ export function buildToolRows(
     run = []
   }
   for (const node of withVisibleWebNodes(toolCallForest(tools.filter((call) => !isHiddenTodoCall(call))))) {
-    if (isStandaloneNode(node)) {
+    if (isSettledWebNode(node, approvalIds)) {
       flush()
+      web.push(node)
+    } else if (isStandaloneNode(node)) {
+      flush()
+      flushWeb()
       rows.push(single(node, true))
     } else {
+      flushWeb()
       run.push(node)
     }
   }
   flush()
+  flushWeb()
   return rows
 }
 

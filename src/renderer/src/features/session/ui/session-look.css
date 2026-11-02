@@ -214,6 +214,8 @@
   .v3-step-nest { margin-left: var(--s-16); padding-left: var(--s-10); border-left: var(--hair, 1px) solid var(--line); }
   .v3-step-group > .v3-step-panel > .v3-step-nest { margin: var(--s-2) 0 var(--s-4) var(--s-4); padding-left: var(--s-10); border-left: var(--hair, 1px) solid var(--line); }
   .v3-step-group > .v3-step-panel > .v3-step-nest > .v3-step > .v3-step-panel > .v3-step-detail { margin: var(--s-2) 0 var(--s-6); }
+  .v3-web-group { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+  .v3-web-group > .v3-step-nest { display: flex; flex-direction: column; gap: var(--s-4); margin: 0 0 var(--s-4) var(--s-8); }
   .v3-step-detail { position: relative; padding: var(--s-8) var(--s-10); border-radius: var(--r-md); background: var(--alpha-1); }
   .v3-step-detail-bar { position: absolute; top: var(--s-4); right: var(--s-4); display: flex; align-items: center; }
   .v3-step-detail > .v3-step-note:first-of-type { padding-right: 28px; }

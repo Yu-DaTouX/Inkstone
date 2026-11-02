@@ -25,7 +25,7 @@ async function runCodexAuthIpcTests(ok, build) {
     'answerOAuthPrompt', 'cancelOAuthLogin', 'startOAuthLogin', 'accountQuotaReport', 'invalidateAccountQuotaReport',
     'captureActiveCodexAccount', 'clearCodexAccounts', 'listCodexAccounts', 'removeCodexAccount', 'switchCodexAccount',
     'captureActiveApiKey', 'captureActiveOAuthAccount', 'clearOAuthAccounts', 'listOAuthAccounts', 'removeOAuthAccount',
-    'renameOAuthAccount', 'switchOAuthAccount'
+    'renameOAuthAccount', 'switchOAuthAccount', 'consumeResetCredit'
   ]
   await build({
     entryPoints: ['src/main/ipc/auth-ipc.ts'], outfile: 'out/test/codex-auth-ipc.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',

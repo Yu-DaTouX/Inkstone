@@ -11,7 +11,7 @@ import { WrapUpText } from './WrapUpCard'
 import type { TurnChanges as TurnChangeSet } from './turn-changes'
 import './turn-outcome.css'
 
-const OUTCOME_TEXT = { running: 'decisionRunning', failed: 'decisionFailed', stopped: 'decisionStopped' } as const
+const OUTCOME_TEXT = { failed: 'decisionFailed', stopped: 'decisionStopped' } as const
 
 export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer, outcome = null, arrive = false }: {
   arrive?: boolean
@@ -27,8 +27,7 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
   const status = answered ? tt('decisionReplied') : tt('wrapUpDecide')
   const { title, rest } = useMemo(() => decisionTitle(question), [question])
   const heading = title ? plainTitle(title) : ''
-  const reply = answer?.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
-  const result = !outcome ? '' : outcome.state === 'done' ? outcome.text : tt(OUTCOME_TEXT[outcome.state])
+  const result = !outcome || outcome.state === 'running' ? '' : outcome.state === 'done' ? outcome.text : tt(OUTCOME_TEXT[outcome.state])
   return (
     <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} data-arrive={arrive ? '' : undefined} aria-label={heading.replace(/`/g, '') || status} data-testid="v3-decision">
       <CardHead className="v3-decision-head">
@@ -40,15 +39,9 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
           <Markdown text={rest} sourceCwd={sourceCwd} sessionId={sessionId} messageId={`${messageId}:decision`} />
         </div>
       ) : null}
-      {answered && (reply || result) ? (
+      {answered && result ? (
         <dl className="v3-decision-trail" data-testid="v3-decision-trail">
-          {reply ? (
-            <div className="v3-decision-step" data-kind="reply">
-              <dt>{tt('decisionYourReply')}</dt>
-              <dd title={answer ?? undefined}>{reply}</dd>
-            </div>
-          ) : null}
-          {result && outcome ? (
+          {outcome ? (
             <div className="v3-decision-step" data-kind="outcome" data-state={outcome.state}>
               <dt>{tt('decisionOutcome')}</dt>
               <dd>{result}</dd>

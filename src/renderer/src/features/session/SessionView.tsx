@@ -421,12 +421,22 @@ export function SessionView(): JSX.Element {
         setStickNow(true)
       } else mark()
     }
+    const togglesDisclosure = (target: EventTarget | null): boolean => target instanceof Element && !!target.closest('[aria-expanded]')
+    const holdForDisclosure = (): void => {
+      cancelNavigationRef.current()
+      if (stickRef.current) setStickNow(false)
+    }
     const onPointerDown = (event: PointerEvent): void => {
+      if (togglesDisclosure(event.target)) return holdForDisclosure()
       if (event.target instanceof Element && event.target.closest('a, button, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"]')) return
       mark()
     }
-    const onKey = (event: KeyboardEvent): void => { if (isScrollIntentKey(event.key)) mark() }
-    const release = (): void => {
+    const onKey = (event: KeyboardEvent): void => {
+      if ((event.key === 'Enter' || event.key === ' ') && togglesDisclosure(event.target)) holdForDisclosure()
+      else if (isScrollIntentKey(event.key)) mark()
+    }
+    const release = (event: PointerEvent): void => {
+      if (togglesDisclosure(event.target)) return
       const handle = vlistRef.current
       const metrics = handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
       if (!metrics || stickRef.current || distanceFromBottom(metrics) > 1) return

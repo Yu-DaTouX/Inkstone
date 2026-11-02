@@ -7,8 +7,9 @@ import { readAuthEntry, resolveCodexAccountId } from './credentials'
 import { resolveQuotaProviderSecret } from './quota-credentials'
 import { commandCodeWindows, type CommandCodeCredits } from './quota-commandcode'
 import { hostImageCredentials } from './image-credentials'
-import { chatGptIdentity, CLAUDE_OAUTH_HEADERS, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
+import { chatGptIdentity, claudeUsageWindows, codexUsageWindows, type CodexUsagePayload } from '../shared/account-quota'
 import { quotaSamples } from './quota-samples'
+import { claudeUsage } from './claude-usage'
 
 const http = net.fetch.bind(net)
 
@@ -19,12 +20,7 @@ async function claudeSubscriptionQuota(
   label: string,
   revoked: string
 ): Promise<ProviderQuota> {
-  const response = await http('https://api.anthropic.com/api/oauth/usage', {
-    headers: { Authorization: `Bearer ${accessToken}`, ...CLAUDE_OAUTH_HEADERS },
-    signal: AbortSignal.timeout(10_000)
-  })
-  if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? revoked : `HTTP ${response.status}`)
-  const windows = claudeUsageWindows(await response.json())
+  const windows = claudeUsageWindows(await claudeUsage(accessToken, revoked))
   if (!windows.length) return { provider, supported: true, error: 'Claude 未返回额度窗口', checkedAt }
   const binding = [...windows].filter((window) => !window.informational).sort((a, b) => b.used / b.total - a.used / a.total)[0]
   return {

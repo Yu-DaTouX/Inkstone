@@ -166,6 +166,12 @@
     field-sizing: content;
   }
 
+  .sa-composer-input:placeholder-shown {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   .sa-composer-hint {
     margin: 0;
     color: var(--fg3);

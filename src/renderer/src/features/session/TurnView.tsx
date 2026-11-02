@@ -8,7 +8,7 @@ import { TurnArtifacts } from './MessageParts'
 import { ThinkingAside, ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
 import { TurnProcess } from './TurnProcess'
-import { conciseSegment, processFailuresAlert, splitTurnProcess, withoutThinking } from './turn-process'
+import { conciseSegment, processFailuresAlert, splitAtCompaction, splitTurnProcess, withoutThinking } from './turn-process'
 import { liveToolGlowId } from './tool-run-model'
 import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
 import { TranscriptViewScope, useAsideFit } from './use-tool-run'
@@ -38,6 +38,7 @@ import type { TurnSubagentScope } from '../../state/subagent-view'
 import { WebSearchTurnProvider } from './web-search/citations'
 import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
+import { useTurnScope } from './turn-scope'
 import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
 import { withoutWrapUp, type WrapUpCardModel } from './wrap-up'
 import { WrapUpCard, wrapUpKey } from './WrapUpCard'
@@ -47,6 +48,8 @@ import { QuestionHistory } from './QuestionReceipt'
 import { DecisionBlock, TurnResult } from './TurnOutcome'
 import { turnChangeSet, turnSpanMs } from './turn-process'
 import { splitDecision, type DecisionOutcome } from './turn-outcome'
+
+const COMPACTION_AT_END = '\u0000end'
 
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, answer, outcome = null }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
@@ -235,14 +238,19 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const sessionCwd = useStore((s) => s.session?.cwd)
   const changeCwd = sourceTurn.response?.sourceCwd || sessionCwd || undefined
   const changes = useMemo(() => (streaming ? null : turnChangeSet(sourceTurn, changeCwd)), [streaming, sourceTurn, changeCwd])
-  const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, s.messages, !!streaming)))
-  const spanMs = useStore((s) => (streaming || sourceTurn.elapsedMs ? undefined : turnSpanMs(s.messages, sourceTurn.sourceIds, sourceTurn.tools)))
-  const showCompaction = useStore((s) => {
-    if (s.session?.compaction) return edge.last
-    if (!s.session?.lastCompaction) return false
-    const anchor = compactionAnchorId(s.messages, s.session.lastCompaction)
-    return anchor !== null && turn.sourceIds.includes(anchor)
+  const scope = useTurnScope()
+  const scopedMessages = scope?.messages ?? null
+  const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, scopedMessages ?? s.messages, !!streaming)))
+  const spanMs = useStore((s) => (streaming || sourceTurn.elapsedMs ? undefined : turnSpanMs(scopedMessages ?? s.messages, sourceTurn.sourceIds, sourceTurn.tools)))
+  const compactionSpot = useStore((s) => {
+    const session = scope ? scope.session : s.session
+    if (session?.compaction) return edge.last ? COMPACTION_AT_END : null
+    if (!session?.lastCompaction) return null
+    const anchor = compactionAnchorId(scopedMessages ?? s.messages, session.lastCompaction)
+    if (anchor === null || !turn.sourceIds.includes(anchor)) return null
+    return anchor === turn.sourceIds.at(-1) ? COMPACTION_AT_END : anchor
   })
+  const compactionToolId = useStore((s) => compactionSpot === null || compactionSpot === COMPACTION_AT_END ? null : (scopedMessages ?? s.messages).find((message) => message.id === compactionSpot)?.toolCalls?.at(-1)?.id ?? null)
   const approvals = useStore((s) => s.approvals)
   const approvalIds = streaming ? approvalCallIds(approvals, turn.tools, sessionId) : undefined
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
@@ -253,6 +261,9 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const flow = flowSegments(sourceTurn, commentary)
   const split = flow ? splitTurnProcess(flow, { keepThinking: !aside }) : null
   const processSegs = split?.process ?? []
+  const compactionCut = compactionSpot !== null && compactionSpot !== COMPACTION_AT_END ? { messageId: compactionSpot, toolId: compactionToolId } : null
+  const compactionInProcess = compactionCut && splitAtCompaction(processSegs, compactionCut) ? compactionCut : null
+  const showCompaction = compactionSpot !== null && !compactionInProcess
   const processApprovals = streaming ? [] : processSegs.flatMap((segment) => segment.tools.flatMap((call) => (call.approval ? [call.approval] : [])))
   const decision = !streaming && !wrapUp && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
@@ -272,7 +283,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
         {asideThinking ? <ThinkingAside text={asideThinking} ms={sourceTurn.thinkingMs} live={sourceTurn.thinkingLive} stacked={!asideFits} /> : null}
         <WebSearchTurnProvider tools={turn.tools}>
         <div className="v3-assistant-body">
-          {showCompaction ? <CompactCommandEcho /> : null}
+          {compactionSpot !== null ? <CompactCommandEcho /> : null}
           {edge.first ? <BranchSummary /> : null}
           {thinkingNote ? <ThinkingAvailability empty={!!sourceTurn.thinkingEmpty} model={sourceTurn.model} /> : null}
           {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
@@ -300,6 +311,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   glowId={glowId}
                   elapsedMs={sourceTurn.elapsedMs ?? spanMs}
                   filesShownBelow={!!changes}
+                  compactionAfter={compactionInProcess}
                 />
               ) : null}
               {processApprovals.length ? <TurnApprovalLine approvals={processApprovals} /> : null}

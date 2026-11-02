@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore, type JSX } from 'react'
+import { createContext, useContext, useMemo, useSyncExternalStore, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { Button, IconButton } from '../../ui'
 import { Card, CardActions, CardBody, CardControl, CardHead, CardStatus, CardTitle } from '../../ui/Card'
@@ -10,6 +10,8 @@ import { parseUserInline } from './user-text'
 import { isFillInTemplate, type WrapUpCardModel } from './wrap-up'
 import { useStore } from '../../state/store'
 import './wrap-up.css'
+
+export const WrapUpActivate = createContext<(() => void) | null>(null)
 
 const dismissed = new Set<string>()
 const listeners = new Set<() => void>()
@@ -73,8 +75,13 @@ export function WrapUpCard({ card, dismissKey, hideQuestion = false }: { card: W
   const tt = useSessionText()
   const hidden = useWrapUpDismissed(dismissKey)
   const insertIntoComposer = useStore((s) => s.insertIntoComposer)
+  const activate = useContext(WrapUpActivate)
   if (hidden || !card.ask?.trim()) return null
   const choose = (message: string): void => {
+    if (activate) {
+      activate()
+      return
+    }
     dismissWrapUp(dismissKey)
     if (isFillInTemplate(message) || composerLocalCommand(message.trim(), useStore.getState().commands)) insertIntoComposer(message)
     else void sendAsComposerMessage(message, t)

@@ -5,7 +5,7 @@ import { Button, Card, ShimmerText, Skeleton, SourceCard as SourceCardFrame } fr
 import type { UIToolCall, WebSearchSourceView } from '../../../../../shared/ipc'
 import { Icon } from '../Icon'
 import { useCitationIndex } from './citations'
-import { citationFor, domainOf, isBlockedPage, searchStepLabel, siteLabel, type SearchStep } from './model'
+import { citationFor, domainOf, isBlockedPage, searchStepLabel, searchStepsOf, siteLabel, type SearchStep } from './model'
 import { useSearchOp } from './op-store'
 import { useWebSearchText } from './text'
 import { WebsiteIcon } from './WebsiteIcon'
@@ -111,6 +111,30 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
         </div>
       </div>
     </>
+  )
+}
+
+export function WebGroupCap({ calls, open, panelId, onToggle }: { calls: readonly UIToolCall[]; open: boolean; panelId: string; onToggle: () => void }): JSX.Element {
+  const tt = useWebSearchText()
+  const steps = calls.flatMap((call) => searchStepsOf(call))
+  const fetched = steps.filter((step) => step.command.action === 'fetch').length
+  const searched = steps.length - fetched
+  const label = [searched ? tt('groupSearched', { n: searched }) : '', fetched ? tt('groupFetched', { n: fetched }) : ''].filter(Boolean).join(' \u00b7 ')
+  const sites = uniqueSites(steps.flatMap((step): WebSearchSourceView[] => step.sources?.length ? step.sources : step.command.url ? [{ title: '', url: step.command.url, domain: domainOf(step.command.url), snippet: '', source: '' }] : []))
+  return (
+    <button type="button" className="ws-cap" aria-expanded={open} aria-controls={panelId} title={label} onClick={onToggle} data-testid="ws-group" data-state="done">
+      <span className="ws-cap-icon" data-done aria-hidden="true">
+        <Globe size={13} strokeWidth={1.75} />
+        <svg className="ws-ring" viewBox="0 0 24 24" aria-hidden="true">
+          <circle className="ws-ring-track" cx="12" cy="12" r="10" />
+        </svg>
+      </span>
+      <span className="ws-cap-label">{label}</span>
+      <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
+        {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
+      </span>
+      <Icon name="chevron-right" size={14} className="v3-chev" />
+    </button>
   )
 }
 

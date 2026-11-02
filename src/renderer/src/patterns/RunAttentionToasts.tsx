@@ -4,6 +4,8 @@ import { useI18n } from '../i18n'
 import { showToast, toastQueue, type ToastTone } from '../ui'
 import { useStore } from '../state/store'
 import { attentionPills, phaseDetail, phaseWord, runUiText, useRunsV3 } from '../state/runs-v3'
+import { errorCardModel, errorTitleKey } from '../features/session/turn-lines'
+import { sessionText } from '../features/session/text'
 
 const DETAIL_MAX = 140
 const TITLE_MAX = 60
@@ -25,6 +27,11 @@ function phaseSignature(run: RunSnapshot): string {
 
 function toneOf(phase: RunPhase): ToastTone {
   return phase.kind === 'failed' ? 'danger' : 'warning'
+}
+
+function toastDetail(lang: Parameters<typeof phaseDetail>[0], phase: RunPhase): string | null {
+  const model = phase.kind === 'failed' && phase.message ? errorCardModel(phase.message) : null
+  return model ? sessionText(lang, errorTitleKey(model)) : phaseDetail(lang, phase)
 }
 
 function clip(text: string | null | undefined, max = DETAIL_MAX): string | undefined {
@@ -59,7 +66,7 @@ export function RunAttentionToasts({ onOpen }: { onOpen: (run: RunSnapshot) => v
       toasted.add(signature)
       const key = showToast(`${run.code} ${clip(run.title, TITLE_MAX) || text.untitled} · ${phaseWord(lang, run.phase)}`, {
         tone: toneOf(run.phase),
-        description: clip(phaseDetail(lang, run.phase)),
+        description: clip(toastDetail(lang, run.phase)),
         action: { label: text.openSession, onAction: () => onOpenRef.current(run) },
         timeout: run.phase.kind === 'needs-you' ? 0 : 10000,
         onClose: () => open.current.delete(signature)

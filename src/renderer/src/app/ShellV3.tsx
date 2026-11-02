@@ -9,7 +9,7 @@ import { transcriptViewText } from '../features/session/transcript-view-text'
 import { useI18n } from '../i18n'
 import { useStore } from '../state/store'
 import { useRunnerVisibility } from '../lib/use-runner-visibility'
-import { displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from '../state/split-view'
+import { displayedSessionOf, reconcileSplit, splitColumns, useSplitView, type SplitSessionRef } from '../state/split-view'
 import { useHoverDelay } from '../lib/use-hover-delay'
 import { sessionViewIdentity, viewMatchesProjectedSession } from '../features/session/view-state'
 import { isModalOpen } from '../lib/modalLayer'
@@ -21,7 +21,7 @@ import type { RunSnapshot } from '../../../shared/runs'
 import { Sidebar } from '../features/sidebar/Sidebar'
 import { SessionDragLayer } from '../features/sidebar/SessionDragLayer'
 import { SplitDropLayer } from '../features/split/SplitDropLayer'
-import { SPLIT_CONSTRAINED_WIDTH } from '../features/split/split-drop-model'
+import { SPLIT_CONSTRAINED_WIDTH, SPLIT_MIN_PANE_PX } from '../features/split/split-drop-model'
 import { runSplitShortcut } from '../features/split/split-keys'
 import { useSplitPersistence } from '../features/split/use-split-persistence'
 import { SIDEBAR_DRAG_COLLAPSE, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_STEP, SIDEBAR_WIDTH_STEP_LARGE, readSidebarWidth, sidebarMaxForWindow, shouldAutoCollapseSidebar } from '../features/sidebar/sidebar-layout'
@@ -308,7 +308,9 @@ export default function ShellV3(): ReactElement {
   useRunnerVisibility(visibleSessions)
   usePruneSubagentSurfaces()
   useSplitPersistence()
-  const singlePane = !collapsedPanes(split, splitParked)
+  const paneLayout = collapsedPanes(split, splitParked)
+  const singlePane = !paneLayout
+  const laneMinWidth = paneLayout ? splitColumns(paneLayout.tiles).length * SPLIT_MIN_PANE_PX : MESSAGE_MIN_WIDTH
   useLayoutEffect(() => {
     if (route.name !== 'chat') return
     const chat = chatRef.current
@@ -323,14 +325,14 @@ export default function ShellV3(): ReactElement {
   useEffect(() => {
     document.documentElement.style.setProperty('--toast-inset-right', `${toastInset}px`)
   }, [toastInset])
-  const sessionBarFitsNow = chatWidth - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
+  const sessionBarFitsNow = chatWidth - (sessionBarWidth + LANE_GAP) >= laneMinWidth
   const sessionBarFitsRef = useRef(sessionBarFitsNow)
   const layoutDragging = document.documentElement.dataset.rpDragging !== undefined || (document.documentElement.dataset.splitterDragging !== undefined && !document.querySelector('.v3-tiles-resizer[data-dragging]'))
   const sessionBarFits = layoutDragging ? sessionBarFitsRef.current && sessionBarFitsNow : sessionBarFitsNow
   sessionBarFitsRef.current = sessionBarFits
-  const sessionBarWanted = route.name === 'chat' && singlePane && hasMessages && sessionBarOn
+  const sessionBarWanted = route.name === 'chat' && (hasMessages || !singlePane) && sessionBarOn
   const sessionBarShown = sessionBarWanted && sessionBarFits
-  const tilesRoom = tilesWidthRoom(chatWidth, LANE_GAP, MESSAGE_MIN_WIDTH)
+  const tilesRoom = tilesWidthRoom(chatWidth, LANE_GAP, laneMinWidth)
   const shownTilesWidthNow = clampTilesWidth(tilesWidth, tilesRoom)
   const shownTilesWidthRef = useRef(shownTilesWidthNow)
   const shownTilesWidth = layoutDragging ? shownTilesWidthRef.current : shownTilesWidthNow
@@ -622,7 +624,7 @@ export default function ShellV3(): ReactElement {
             onSettings={() => openSettingsDialog()}
             onBack={() => useUiV3.getState().goBack()}
             sessionBarOpen={sessionBarOn}
-            sessionBarHidden={route.name === 'chat' && sessionBarOn && hasMessages && !sessionBarShown}
+            sessionBarHidden={route.name === 'chat' && sessionBarOn && (hasMessages || !singlePane) && !sessionBarShown}
             onToggleSessionBar={toggleSessionBar}
             sessionBarShown={sessionBarShown}
             rightPanelOpen={panelOpen}

@@ -213,9 +213,7 @@ export type SessionTextKey =
   | 'processCreates1'
   | 'processMoreSteps'
   | 'decisionReplied'
-  | 'decisionYourReply'
   | 'decisionOutcome'
-  | 'decisionRunning'
   | 'decisionFailed'
   | 'decisionStopped'
   | 'questionChosen'
@@ -469,9 +467,7 @@ const ZH: Record<SessionTextKey, string> = {
   processCreates1: '新建 1 个文件',
   processMoreSteps: '等 {n} 步',
   decisionReplied: '已回复',
-  decisionYourReply: '你的回复',
   decisionOutcome: '结果',
-  decisionRunning: '正在处理',
   decisionFailed: '没有完成',
   decisionStopped: '已中止',
   questionChosen: '已选',
@@ -726,9 +722,7 @@ const EN: Record<SessionTextKey, string> = {
   processCreates1: 'Created 1 file',
   processMoreSteps: ' and more ({n} steps)',
   decisionReplied: 'Replied',
-  decisionYourReply: 'You replied',
   decisionOutcome: 'Outcome',
-  decisionRunning: 'In progress',
   decisionFailed: 'Not completed',
   decisionStopped: 'Stopped',
   questionChosen: 'Chosen',

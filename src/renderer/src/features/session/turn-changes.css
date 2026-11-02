@@ -17,12 +17,23 @@
     display: flex;
     align-items: center;
     gap: var(--s-8);
+    overflow: hidden;
     color: var(--fg2);
     font-size: var(--t-body);
   }
 
+  .v3-chg-title > .v3-result-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .v3-chg-summary {
-    flex: none;
+    flex: 0 1000 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: var(--fg);
     font-size: var(--t-footnote);
     white-space: nowrap;
@@ -89,19 +100,23 @@
   .v3-chg-name {
     display: flex;
     min-width: 0;
+    overflow: hidden;
     white-space: nowrap;
   }
 
   .v3-chg-dir {
-    flex: 0 1 auto;
-    min-width: 1ch;
+    flex: 0 1000 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--fg3);
   }
 
   .v3-chg-base {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .v3-chg-file {

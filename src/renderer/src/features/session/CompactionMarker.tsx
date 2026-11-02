@@ -6,14 +6,15 @@ import { compactionElapsedText, compactionReasonText, compactionRunningText, com
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { compactionLineModel } from './turn-lines'
+import { useTurnSession } from './turn-scope'
 
 const TONE = { ok: 'ok', warn: 'ask', err: 'fail' } as const
 
 export function CompactionMarker(): JSX.Element | null {
   const t = useT()
   const tt = useSessionText()
-  const running = useStore((s) => s.session?.compaction)
-  const last = useStore((s) => s.session?.lastCompaction)
+  const running = useTurnSession((session) => session?.compaction)
+  const last = useTurnSession((session) => session?.lastCompaction)
   const model = compactionLineModel(running, last)
   const live = model?.running === true
   const [now, setNow] = useState(() => Date.now())
@@ -47,9 +48,10 @@ export function CompactionMarker(): JSX.Element | null {
 }
 
 export function CompactCommandEcho(): JSX.Element | null {
-  const running = useStore((s) => s.session?.compaction)
-  const last = useStore((s) => s.session?.lastCompaction)
-  const command = useStore((s) => s.compactCommand?.sessionId === s.session?.sessionId ? s.compactCommand?.text : undefined)
+  const running = useTurnSession((session) => session?.compaction)
+  const last = useTurnSession((session) => session?.lastCompaction)
+  const sessionId = useTurnSession((session) => session?.sessionId)
+  const command = useStore((s) => s.compactCommand?.sessionId === sessionId ? s.compactCommand?.text : undefined)
   const model = compactionLineModel(running, last)
   if (model?.run.reason !== 'manual') return null
   return (

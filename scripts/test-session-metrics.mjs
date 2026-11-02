@@ -18,6 +18,7 @@ try {
   const {
     liveActivitySince,
     liveStepId,
+    latencyFloor,
     liveStepSpeed,
     projectSessionMetrics,
     sessionTurnCounts,
@@ -533,6 +534,19 @@ try {
     ], null)
     eq(fast.tps, 2000, '真实的高速流式不被当成异常')
     check(fast.tpsPartial === false, '正常记录不标下限')
+
+    const step = (id, output, durationMs, ttftMs, reasoning) => ({ id, role: 'assistant', text: 'x', usage: usage({ output, ...(reasoning ? { reasoning } : {}) }), generationTiming: { durationMs, ttftMs, decodeMs: durationMs - ttftMs, outputDecodeMs: durationMs - ttftMs, startEvent: 'turn_start' } })
+    const bursty = [
+      { id: 'u1', role: 'user', text: 'hi' },
+      step('a1', 121, 4994, 4297),
+      step('a2', 1017, 14232, 12327),
+      step('a3', 588, 10743, 8989, 371),
+      step('a4', 797, 10338, 4985)
+    ]
+    eq(latencyFloor(bursty), 4297, '至少 3 步有首字计时时，取最短首字等待作为请求开销')
+    eq(Math.round(stepSpeed(bursty[2], latencyFloor(bursty))), 102, '成批到达的步骤按「输出 ÷（生成时长 − 请求开销）」计，不再是 1017 / 1.9s = 534')
+    eq(stepSpeeds(bursty, 12).map(Math.round), [174, 102, 91, 132], '柱图同口径')
+    eq(latencyFloor(bursty.slice(0, 3)), null, '首字计时不足 3 步时不估请求开销')
   }
 
   {
@@ -550,7 +564,7 @@ try {
     eq(stepSpeeds(mixed, 12), [100], '柱图与主速度共用可靠模型输出样本')
 
     const streaming = {
-      id: 'streaming', role: 'assistant', text: '12345678', thinking: '中文',
+      id: 'streaming', role: 'assistant', text: '12345678中文',
       usage: usage({ output: 0 }),
       generationTiming: { durationMs: 1000, decodeMs: 800, ttftMs: 200 }
     }
@@ -559,6 +573,7 @@ try {
     eq(liveStepSpeed(outputOnly), { speed: 100, estimated: false }, '有真实输出 Token 时用真实速度')
     eq(liveStepSpeed(noMeasuredDecode), null, '有真实输出但无可靠解码时间时不用估算顶替')
     eq(liveStepSpeed({ ...streaming, text: '', thinking: '' }), null, '没有到达内容时不编速度')
+    eq(liveStepSpeed({ ...streaming, thinking: '摘要' }), null, '带推理摘要时有不可见推理 Token，不按可见文字估算')
     eq(liveStepSpeed({ ...streaming, generationTiming: { durationMs: 100, decodeMs: 100 } }), null, '解码过短不估算')
 
     const withError = projectSessionMetrics([

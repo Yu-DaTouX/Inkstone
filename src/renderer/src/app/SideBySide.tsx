@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Activity, Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { GripVertical } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
@@ -10,11 +10,14 @@ import { withSubmittingMessages } from '../state/submitting-messages'
 import { domAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot } from '../features/session/scroll-position'
 import type { TurnSubagentScope } from '../state/subagent-view'
 import { TurnView } from '../features/session/TurnView'
+import { TurnScopeContext } from '../features/session/turn-scope'
+import { WrapUpActivate } from '../features/session/WrapUpCard'
+import { sessionWrapUp } from '../features/session/wrap-up'
 import { Icon } from '../features/session/Icon'
 import { IconButton, Splitter } from '../ui'
 import { ChatMain } from './ChatMain'
 import { collapsedPanes } from './SideBySideLayout'
-import { closeSplitPane, focusSplitSession } from '../features/split/split-actions'
+import { closeSplitPane, focusSplitSession, SPLIT_STICK_SLACK_PX as PEER_STICK_SLACK_PX } from '../features/split/split-actions'
 import { startPaneDrag } from '../features/split/pane-drag'
 import { rowBoundsFor, rowSplitFor } from '../features/split/split-drop-model'
 import { observeHeight, observeWidth } from '../features/split/split-measure'
@@ -77,7 +80,10 @@ export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySide
         live={live}
         onClose={() => closeSplitPane(index)}
       >
-        {live ? <ChatMain /> : <PeerPane target={target} />}
+        <Activity mode={live ? 'hidden' : 'visible'}>
+          <PeerPane target={target} hidden={live} />
+        </Activity>
+        {live ? <ChatMain /> : null}
       </PaneFrame>
     )
   }
@@ -253,16 +259,26 @@ function useSameCwdBusy(target: SplitSessionRef, cwd: string | undefined): boole
   })
 }
 
-function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
+function useHeldWhile<T>(value: T, held: boolean): T {
+  const last = useRef(value)
+  if (!held) last.current = value
+  return last.current
+}
+
+function PeerPane({ target, hidden = false }: { target: SplitSessionRef; hidden?: boolean }): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = splitText(lang)
   const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
+  const paneTitle = useSplitTitle(target)
   const summary = useSplitSummary(target)
   const cached = runtime?.messages
   const submittingMessages = useStore((s) => s.submittingMessages)
   const [history, setHistory] = useState<UIMessage[] | null>(null)
-  const messages = useMemo(() => withSubmittingMessages(newestMessages(cached, history ?? undefined) ?? [], submittingMessages.filter((item) => sameSplitSession(item.identity, target))), [cached, history, submittingMessages, target])
+  const liveMessages = useMemo(() => withSubmittingMessages(newestMessages(cached, history ?? undefined) ?? [], submittingMessages.filter((item) => sameSplitSession(item.identity, target))), [cached, history, submittingMessages, target])
+  const messages = useHeldWhile(liveMessages, hidden)
+  const peerSession = useHeldWhile(runtime?.session ?? null, hidden)
+  const turnScope = useMemo(() => ({ messages, session: peerSession }), [messages, peerSession])
   const draft = runtime?.draft ?? ''
   const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
   const waiting = (runtime?.uiRequests.length ?? 0) > 0
@@ -272,6 +288,9 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const projectTurns = useMemo(() => createTurnProjector(), [])
   const subagentScope = useMemo<TurnSubagentScope>(() => ({ sessionIds: target.sessionId ? [target.sessionId] : [] }), [target.sessionId])
   const turns = useMemo(() => projectTurns(messages, streamingId), [messages, streamingId, projectTurns])
+  const wrapUpOn = useStore((s) => s.settings?.wrapUpCard !== false)
+  const wrapUp = useMemo(() => sessionWrapUp({ enabled: wrapUpOn, active: true, busy: running, turns, messages }), [wrapUpOn, running, turns, messages])
+  const activate = useCallback(() => focusSplitSession(target), [target])
 
   useEffect(() => {
     if (cached?.length || !target.path) return undefined
@@ -291,6 +310,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   }, [])
   const streamRef = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
+  const lastTopRef = useRef(Number.POSITIVE_INFINITY)
   const identity = target.path ?? target.sessionId ?? ''
   const hasTurns = turns.length > 0
   useLayoutEffect(() => {
@@ -298,6 +318,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
     if (!el) return
     const snapshot = readScrollSnapshot(identity)
     stickRef.current = !snapshot || snapshot.bottom
+    lastTopRef.current = Number.POSITIVE_INFINITY
     restoreDomScroll(el, snapshot)
   }, [identity, hasTurns])
   useLayoutEffect(() => {
@@ -335,17 +356,21 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
               className="v3-stream"
               ref={streamRef}
               onWheel={(event) => {
-                const el = event.currentTarget
-                stickRef.current = event.deltaY > 0 && el.scrollHeight - el.scrollTop - el.clientHeight <= 1
+                if (event.deltaY < 0) stickRef.current = false
               }}
               onTouchMove={() => { stickRef.current = false }}
               onScroll={(event) => {
                 const el = event.currentTarget
-                stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 1
+                const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+                if (distance <= PEER_STICK_SLACK_PX) stickRef.current = true
+                else if (el.scrollTop < lastTopRef.current - 1) stickRef.current = false
+                lastTopRef.current = el.scrollTop
                 saveScrollSnapshot(identity, { top: el.scrollTop, bottom: stickRef.current, anchor: stickRef.current ? null : domAnchor(el) })
               }}
             >
               <div className="v3-stream-inner">
+                <TurnScopeContext.Provider value={turnScope}>
+                <WrapUpActivate.Provider value={activate}>
                 {turns.length === 0 ? (
                   <div className="v3-empty">
                     <p className="v3-empty-hint">{running ? t('chat.working') : ''}</p>
@@ -353,10 +378,12 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
                 ) : (
                   turns.map((turn) => (
                     <div key={turn.id} className="v3-stream-row">
-                      <TurnView turn={turn} sessionId={target.sessionId ?? null} subagentScope={subagentScope} streaming={turn.kind === 'assistant' && turn.streaming} tail={turn === turns[turns.length - 1]} readOnly />
+                      <TurnView turn={turn} sessionId={target.sessionId ?? null} subagentScope={subagentScope} streaming={turn.kind === 'assistant' && turn.streaming} tail={turn === turns[turns.length - 1]} wrapUp={wrapUp?.turnId === turn.id ? wrapUp.card : null} readOnly />
                     </div>
                   ))
                 )}
+                </WrapUpActivate.Provider>
+                </TurnScopeContext.Provider>
               </div>
             </div>
           </div>
@@ -369,8 +396,8 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
             rows={1}
             readOnly
             value={draft}
-            placeholder={text.activate(summary?.title || t('split.untitled'))}
-            aria-label={text.activate(summary?.title || t('split.untitled'))}
+            placeholder={text.activate(paneTitle || t('split.untitled'))}
+            aria-label={text.activate(paneTitle || t('split.untitled'))}
             onFocus={() => focusSplitSession(target)}
             data-testid="v3-split-peer-input"
           />

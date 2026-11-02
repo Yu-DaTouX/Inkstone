@@ -111,6 +111,13 @@
   .v3-chat[data-sessionbar='1'] {
     --bar-reserve: calc(var(--size-tiles) + var(--s-16));
   }
+  .v3-chat[data-sessionbar='1']:not([data-single]) {
+    --bar-reserve: 0px;
+  }
+  .v3-chat[data-sessionbar='1']:not([data-single]) > .v3-split {
+    margin-right: calc(var(--size-tiles) + var(--s-12) * 2);
+    border-right: 1px solid var(--line);
+  }
   .v3-sessionbar {
     position: absolute;
     top: 0;
@@ -218,6 +225,25 @@
 
   .v3-composer > * {
     pointer-events: auto;
+  }
+
+  .v3-chat,
+  .v3-split-col {
+    container: v3-lane / inline-size;
+  }
+
+  @container v3-lane (max-width: 808px) {
+    .v3-composer {
+      padding-left: calc(var(--s-20) + var(--rail-gutter));
+    }
+  }
+
+  @media (max-width: 720px) {
+    @container v3-lane (max-width: 808px) {
+      .v3-composer {
+        padding-left: calc(var(--s-12) + var(--rail-gutter));
+      }
+    }
   }
 
   .v3-composer .composer {
