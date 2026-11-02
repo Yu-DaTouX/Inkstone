@@ -17,9 +17,9 @@ const STEADY_HOLD_MS = 1200
 const USER_TOGGLE_MS = 500
 const BOTTOM_SLACK_PX = 48
 
-function readingBottom(node: HTMLElement): boolean {
+function readingHistory(node: HTMLElement): boolean {
   const stream = node.closest<HTMLElement>('.v3-stream')
-  return !!stream && stream.scrollHeight - stream.clientHeight - stream.scrollTop <= BOTTOM_SLACK_PX
+  return !!stream && stream.scrollHeight - stream.clientHeight - stream.scrollTop > BOTTOM_SLACK_PX
 }
 
 function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; minHeight: number | undefined } {
@@ -42,7 +42,7 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
       setMinHeight((current) => (box.height > current + 0.5 ? box.height : current))
       window.clearTimeout(release)
       const settle = (): void => {
-        if (readingBottom(node)) {
+        if (readingHistory(node)) {
           release = window.setTimeout(settle, STEADY_HOLD_MS)
           return
         }
