@@ -1491,6 +1491,49 @@
     transform-origin: left center;
     transition: transform var(--dur-base) var(--ease);
   }
+  .ui-meter--gauge .ui-progress__track {
+    height: 22px;
+    border-radius: var(--r-full);
+    background: repeating-linear-gradient(135deg, var(--line2) 0 1px, transparent 1px 6px);
+    box-shadow: var(--ring-line);
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .ui-meter--gauge .ui-progress__fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    transform: none;
+    transition: width var(--dur-base) var(--ease);
+  }
+  .ui-meter__mark {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: var(--r-full);
+    background: var(--fg);
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+  .ui-meter__trailing {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    bottom: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    padding: 0 var(--s-6);
+    border-radius: var(--r-full);
+    background: var(--surface);
+    box-shadow: var(--ring-line);
+    color: var(--fg2);
+    font-family: var(--font-num);
+    font-size: var(--t-caption);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
   .ui-progress:not([aria-valuenow]) .ui-progress__fill {
     width: 40%;
     transform: none;

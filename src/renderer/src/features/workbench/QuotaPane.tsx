@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { RefreshCw, RotateCcw, Settings, Ticket } from 'lucide-react'
+import { Gauge, RefreshCw, RotateCcw, Settings, Ticket, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react'
 import { useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, publishAccountQuotaReport } from '../../state/live-quota'
@@ -21,7 +21,8 @@ import type { QuotaPaneProps } from './types'
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
 const planLabel = (value?: string): string => (value ? value.toUpperCase() : '')
 const GROUP_KEYS = new Set(['openai-codex', 'anthropic', 'google'])
-const METER_TONE: Record<QuotaWindowTone, ProgressTone> = { ok: 'ink', ask: 'ask', fail: 'fail', stale: 'muted' }
+const METER_TONE: Record<QuotaWindowTone, ProgressTone> = { ok: 'muted', ask: 'ask', fail: 'fail', stale: 'muted' }
+const PACE_ICON: Record<'ahead' | 'on' | 'under', LucideIcon> = { ahead: TrendingUp, on: Gauge, under: TrendingDown }
 
 const pad = (value: number): string => String(value).padStart(2, '0')
 
@@ -202,35 +203,43 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
 
 function QuotaMeter({ window, name, stale, now, t }: { window: QuotaWindow; name: string; stale: boolean; now: number; t: TFunc }): ReactElement {
   const awaiting = windowAwaitingReset(window, now)
-  const pace = stale || awaiting ? null : quotaPace(window, now)
   const base = quotaWindowTone(window, stale, now)
+  const pace = stale || awaiting || base === 'fail' ? null : quotaPace(window, now)
   const tone: QuotaWindowTone = base === 'ok' && pace?.pace === 'ahead' ? 'ask' : base
   const left = Math.round(100 - Math.min(100, Math.max(0, windowUsedPct(window) ?? 0)))
   const resetAt = window.resetAt !== undefined && !awaiting ? window.resetAt : undefined
   const tip = [
-    resetAt !== undefined ? t('quota.resetAtTip', { time: new Date(resetAt).toLocaleString(undefined, { hour12: false }) }) : '',
+    window.label,
+    resetAt !== undefined ? t('quota.resetAtTip', { time: clockAt(resetAt, now) }) : '',
     pace ? t(`quota.pace.${pace.pace}` as MessageKey) : '',
     window.estimated ? t('quota.estimatedTip') : ''
-  ].filter(Boolean).join(' · ')
+  ].filter(Boolean).join('\n')
+  const PaceIcon = pace ? PACE_ICON[pace.pace] : null
+  const countdown = awaiting ? t('quota.resetDue') : resetAt !== undefined ? quotaCountdown(t, resetAt - now) : ''
   return (
-    <div className="wb-quota-win" data-tone={tone} title={tip || undefined} data-testid={`v3-wb-quota-win-${window.id}`}>
-      <div className="wb-quota-win-top">
-      <span className="wb-quota-win-label">{name}</span>
-      <span className="wb-quota-win-reset ui-meta-num">
-        {awaiting ? t('quota.resetDue') : resetAt !== undefined ? (
-          <>
-            <RotateCcw size={11} aria-hidden="true" />
-            {clockAt(resetAt, now)}
-            <span className="wb-quota-win-in">{quotaCountdown(t, resetAt - now)}</span>
-          </>
+    <div className="wb-quota-win" data-tone={tone} title={tip} data-testid={`v3-wb-quota-win-${window.id}`}>
+      <span className="wb-quota-win-id">
+        <span className="wb-quota-win-label">{name}</span>
+        <span className="wb-quota-win-pct ui-num">
+          {awaiting ? '—' : `${left}%`}
+          <small>{t('quota.remaining')}</small>
+        </span>
+        {PaceIcon && pace ? (
+          <span className="wb-quota-win-pace" role="img" aria-label={t(`quota.pace.${pace.pace}` as MessageKey)}>
+            <PaceIcon size={13} aria-hidden="true" />
+          </span>
         ) : null}
       </span>
-      </div>
-      <div className="wb-quota-win-bar">
-        <Meter aria-label={window.label} value={awaiting ? 0 : left} minValue={0} maxValue={100} tone={METER_TONE[tone]} />
-        {pace ? <span className="wb-quota-win-tick" style={{ left: `${Math.min(99, Math.max(1, pace.timeLeftPct))}%` }} aria-hidden="true" /> : null}
-      </div>
-      <span className="wb-quota-win-pct ui-meta-num">{awaiting ? '' : `${left}%`}</span>
+      <Meter
+        aria-label={window.label}
+        value={awaiting ? 0 : left}
+        minValue={0}
+        maxValue={100}
+        tone={METER_TONE[tone]}
+        variant="gauge"
+        markPercent={pace ? pace.timeLeftPct : null}
+        trailing={countdown ? <><RotateCcw size={11} aria-hidden="true" />{countdown}</> : undefined}
+      />
     </div>
   )
 }
@@ -267,10 +276,11 @@ export function QuotaCard({
   const creditsExpire = credits?.nextExpiresAt
 
   return (
-    <Card as="section" className="wb-quota-card" data-active={card.active ? '1' : undefined} data-limited={card.status === 'limited' ? '1' : undefined} data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
+    <Card as="section" padding="none" className="wb-quota-card" data-active={card.active ? '1' : undefined} data-limited={card.status === 'limited' ? '1' : undefined} data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
       <div className="wb-quota-id">
         <span className="wb-quota-name" title={tip || undefined}>{title}</span>
         {card.plan ? <Badge tone="accent" data-testid="v3-wb-quota-plan">{planLabel(card.plan)}</Badge> : null}
+        {card.active ? <Badge tone="ok" data-testid="v3-wb-quota-active">{t('acct.active')}</Badge> : null}
         {stale && (card.windows.length || card.balance) ? (
           <span title={[t('quota.staleTip'), card.staleError ? t('quota.readFailed', { msg: card.staleError }) : ''].filter(Boolean).join(' · ')} data-testid="v3-wb-quota-stale">
             <Badge>{quotaReadAgo(t, card.checkedAt, now)}</Badge>
@@ -278,7 +288,6 @@ export function QuotaCard({
         ) : null}
         {card.status === 'expired' ? <span title={card.hint || t('quota.expiredTip')}><Badge tone="ask">{t('quota.expiredBadge')}</Badge></span> : null}
         {card.status === 'limited' ? <Badge tone="fail">{t('quota.limitReached')}</Badge> : null}
-        {card.active ? <Badge tone="ok">{t('acct.active')}</Badge> : null}
         {card.switchable && !card.active ? (
           <Button size="sm" variant="secondary" isDisabled={locked} icon={busy && !confirming ? <Spinner size="xs" /> : undefined} onPress={onSwitch} data-testid="v3-wb-quota-switch">
             {t('acct.switch')}
@@ -286,11 +295,15 @@ export function QuotaCard({
         ) : null}
       </div>
 
-      {card.status === 'error' ? <Notice tone="fail" compact>{t('acct.failed', { msg: card.error ?? '' })}</Notice> : null}
+      {card.status === 'error' ? <p className="wb-quota-error" title={card.error ?? undefined}>{card.error}</p> : null}
 
-      {card.windows.map((window, index) => (
-        <QuotaMeter key={window.id} window={window} name={names[index]} stale={stale} now={now} t={t} />
-      ))}
+      {card.windows.length ? (
+        <div className="wb-quota-wins">
+          {card.windows.map((window, index) => (
+            <QuotaMeter key={window.id} window={window} name={names[index]} stale={stale} now={now} t={t} />
+          ))}
+        </div>
+      ) : null}
       {card.balance ? (
         <div className="wb-quota-balance" data-tone={stale ? 'stale' : 'ok'}>
           <span className="wb-quota-win-label">{card.balance.label}</span>
@@ -299,14 +312,10 @@ export function QuotaCard({
       ) : null}
 
       {credits && credits.count > 0 ? (
-        <div className="wb-quota-credits" data-testid="v3-wb-quota-credits">
+        <div className="wb-quota-credits" data-testid="v3-wb-quota-credits" title={[t('quota.credit.count', { n: credits.count }), creditsExpire ? t('quota.credit.expireIn', { t: quotaCountdown(t, creditsExpire - now) }) : ''].filter(Boolean).join(' \u00b7 ')}>
           <Ticket size={13} aria-hidden="true" />
-          <span className="wb-quota-credits-count">{t('quota.credit.count', { n: credits.count })}</span>
-          {creditsExpire ? (
-            <span className="wb-quota-credits-exp ui-meta-num" title={t('quota.credit.expireAt', { time: new Date(creditsExpire).toLocaleString(undefined, { hour12: false }) })}>
-              {t('quota.credit.expireIn', { t: quotaCountdown(t, creditsExpire - now) })}
-            </span>
-          ) : null}
+          <span className="wb-quota-credits-count ui-num" aria-label={t('quota.credit.count', { n: credits.count })}>×{credits.count}</span>
+          <span className="wb-quota-credits-exp ui-meta-num">{creditsExpire ? t('quota.credit.expireIn', { t: quotaCountdown(t, creditsExpire - now) }) : ''}</span>
           {credits.nextId ? (
             <Button className="wb-quota-credits-use" size="sm" variant="secondary" isDisabled={locked} icon={busy && confirming ? <Spinner size="xs" /> : undefined} onPress={() => setConfirming(true)} data-testid="v3-wb-quota-credit-use">
               {t('quota.credit.use')}

@@ -49,9 +49,25 @@ export interface MeterProps extends Omit<RACMeterProps, 'children'> {
   showValue?: boolean
   projectedPercent?: number | null
   tone?: ProgressTone
+  variant?: 'dots' | 'gauge'
+  markPercent?: number | null
+  trailing?: ReactNode
 }
 
-export function Meter({ label, showValue = false, projectedPercent, tone = 'ink', className, ...props }: MeterProps) {
+export function Meter({ label, showValue = false, projectedPercent, tone = 'ink', variant = 'dots', markPercent, trailing, className, ...props }: MeterProps) {
+  if (variant === 'gauge') {
+    return (
+      <RACMeter {...props} className={composeRenderProps(className, (cn) => cx('ui-progress', 'ui-meter', 'ui-meter--gauge', `ui-progress--${tone}`, cn))}>
+        {({ percentage }) => (
+          <div className="ui-progress__track">
+            <div className="ui-progress__fill" style={{ width: `${Math.min(100, Math.max(0, percentage ?? 0))}%` }} />
+            {markPercent != null ? <span className="ui-meter__mark" style={{ left: `${Math.min(99, Math.max(1, markPercent))}%` }} aria-hidden="true" /> : null}
+            {trailing != null ? <span className="ui-meter__trailing">{trailing}</span> : null}
+          </div>
+        )}
+      </RACMeter>
+    )
+  }
   return (
     <RACMeter {...props} className={composeRenderProps(className, (cn) => cx('ui-progress', 'ui-meter', `ui-progress--${tone}`, cn))}>
       {(renderProps) => (

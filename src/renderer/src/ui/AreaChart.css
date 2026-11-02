@@ -1,0 +1,33 @@
+@layer primitives {
+  .ui-area-chart {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+  .ui-area-chart__grid {
+    stroke: var(--line);
+    stroke-width: 1;
+  }
+  .ui-area-chart__axis {
+    fill: var(--fg3);
+    font-family: var(--font-num);
+    font-size: 10px;
+  }
+  .ui-area-chart__area {
+    fill: var(--data-1);
+    fill-opacity: 0.16;
+  }
+  .ui-area-chart__line {
+    fill: none;
+    stroke: var(--data-1);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
+  .ui-area-chart__hit {
+    fill: transparent;
+  }
+  .ui-area-chart__hit:hover {
+    fill: var(--alpha-1);
+  }
+}

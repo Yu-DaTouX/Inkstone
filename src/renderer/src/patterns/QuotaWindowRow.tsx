@@ -131,9 +131,10 @@ export function QuotaWindowRow({
   const greyed = stale || awaiting
   const pct = windowUsedPct(window) ?? 0
   const reset = quotaResetLine(t, window, now)
-  const forecast = greyed ? null : quotaForecastLine(t, window, now)
+  const fullForecast = greyed ? null : quotaForecastLine(t, window, now)
+  const forecast = compact && fullForecast?.kind !== 'exhaust' ? null : fullForecast
   const subText = [!awaiting ? reset.text : '', forecast?.text ?? ''].filter(Boolean)
-  const showSub = subText.length > 0 && (!compact || forecast?.kind === 'exhaust')
+  const showSub = subText.length > 0
   const tone = quotaWindowTone(window, stale, now)
   const left = Math.round(100 - Math.min(100, Math.max(0, pct)))
   const pace = detail && !greyed ? quotaPace(window, now) : null

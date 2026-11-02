@@ -510,10 +510,20 @@
 
   .wb-quota-card {
     flex: none;
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
-    gap: var(--s-12);
     min-width: 0;
+    border-radius: var(--r-xl);
+    overflow: hidden;
+  }
+
+  .wb-quota-card > * + * {
+    border-top: var(--hair, 1px) solid var(--line);
+  }
+
+  .wb-quota-card > .wb-quota-id {
+    padding: var(--s-10) var(--s-12) var(--s-10) var(--s-16);
   }
 
   .wb-quota-group {
@@ -541,21 +551,28 @@
     font-weight: var(--w-medium);
   }
 
-  .wb-quota-win {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 4.5ch;
-    align-items: center;
-    row-gap: var(--s-4);
-    column-gap: var(--s-12);
+  .wb-quota-wins {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
   }
 
-  .wb-quota-win-top {
-    grid-column: 1 / -1;
+  .wb-quota-win {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-8);
+    min-width: 0;
+    padding: var(--s-12) var(--s-16);
+  }
+
+  .wb-quota-win + .wb-quota-win {
+    border-top: var(--hair, 1px) solid var(--line);
+  }
+
+  .wb-quota-win-id {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-12);
+    align-items: baseline;
+    gap: var(--s-6);
     min-width: 0;
   }
 
@@ -568,39 +585,61 @@
     font-size: var(--t-footnote);
   }
 
-  .wb-quota-win-reset {
+  .wb-quota-win-pace {
     display: inline-flex;
-    align-items: center;
-    gap: var(--s-4);
+    align-self: center;
     color: var(--fg3);
-    font-size: var(--t-footnote);
+  }
+
+  .wb-quota-error {
+    margin: 0;
+    padding: var(--s-8) var(--s-16);
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .wb-quota-win-in::before {
-    content: '\00b7';
-    margin-right: var(--s-4);
-  }
-
-  .wb-quota-win-bar {
-    position: relative;
-    min-width: 0;
-  }
-
-  .wb-quota-win-tick {
-    position: absolute;
-    top: -2px;
-    bottom: -2px;
-    width: 2px;
-    margin-left: -1px;
-    border-radius: var(--r-full);
-    background: var(--fg);
+    color: var(--fail-t);
+    font-size: var(--t-footnote);
   }
 
   .wb-quota-win-pct {
-    font-size: var(--t-body);
-    font-weight: var(--w-medium);
-    text-align: right;
+    margin-left: auto;
+    color: var(--fg);
+    font-size: 22px;
+    font-weight: var(--w-semibold);
+    line-height: 26px;
+    white-space: nowrap;
+  }
+
+  .wb-quota-win-pct small {
+    margin-left: var(--s-4);
+    color: var(--fg3);
+    font-family: var(--font-ui);
+    font-size: var(--t-caption);
+    font-weight: var(--w-regular);
+  }
+
+  @container (min-width: 420px) {
+    .wb-quota-win {
+      grid-template-columns: 8.25rem minmax(0, 1fr);
+      align-items: center;
+      gap: var(--s-16);
+    }
+
+    .wb-quota-win-id {
+      flex-wrap: wrap;
+      column-gap: var(--s-6);
+      row-gap: 0;
+    }
+
+    .wb-quota-win-label {
+      flex-basis: 100%;
+    }
+
+    .wb-quota-win-pct {
+      margin-left: 0;
+      font-size: 26px;
+      line-height: 32px;
+    }
   }
 
   .wb-quota-win[data-tone='stale'] .wb-quota-win-pct,
@@ -608,12 +647,20 @@
     color: var(--fg3);
   }
 
-  .wb-quota-win[data-tone='ask'] .wb-quota-win-pct {
+  .wb-quota-win[data-tone='stale'] .ui-progress__fill {
+    opacity: 0.45;
+  }
+
+  .wb-quota-win[data-tone='ask'] :is(.wb-quota-win-pct, .wb-quota-win-pace) {
     color: var(--ask-t);
   }
 
   .wb-quota-win[data-tone='fail'] .wb-quota-win-pct {
     color: var(--fail-t);
+  }
+
+  .wb-quota-card[data-limited='1'] .wb-quota-win {
+    opacity: 0.8;
   }
 
   .wb-quota-balance {
@@ -622,6 +669,7 @@
     justify-content: space-between;
     gap: var(--s-12);
     min-width: 0;
+    padding: var(--s-12) var(--s-16);
   }
 
   .wb-quota-balance-value {
@@ -634,18 +682,15 @@
     align-items: center;
     gap: var(--s-6);
     min-width: 0;
-    padding-top: var(--s-8);
-    border-top: 1px solid var(--line);
+    padding: var(--s-6) var(--s-8) var(--s-6) var(--s-16);
     color: var(--fg2);
     font-size: var(--t-footnote);
   }
 
   .wb-quota-credits-count {
+    color: var(--fg);
+    font-weight: var(--w-semibold);
     white-space: nowrap;
-  }
-
-  .wb-quota-credits-use {
-    margin-left: auto;
   }
 
   .wb-quota-credits-exp {
@@ -655,6 +700,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg3);
+    font-size: var(--t-caption);
+  }
+
+  .wb-quota-credits-use {
+    margin-left: auto;
   }
 
   .wb-quota-actions {
@@ -664,11 +714,7 @@
   }
 
   .wb-quota-card[data-active='1'] {
-    border-color: var(--ink);
-  }
-
-  .wb-quota-card[data-limited='1'] {
-    border-color: var(--fail);
+    box-shadow: var(--ring-line2), var(--shadow-sm);
   }
 
   .wb-quota-name {
