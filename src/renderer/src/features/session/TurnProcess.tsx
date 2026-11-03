@@ -242,9 +242,10 @@ function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking,
   openThinking: boolean
   alertFailures: boolean
 }): JSX.Element {
+  const steps = segmentSteps(segment)
   return (
-    <div className="v3-process-seg">
-      {segmentSteps(segment).map((step) => step.kind === 'tools'
+    <div className="v3-process-seg" data-lead={steps[0]?.kind} data-tail={steps.at(-1)?.kind}>
+      {steps.map((step) => step.kind === 'tools'
         ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} glowId={glowId} alertFailures={alertFailures} />
         : step.kind === 'notes'
           ? (
