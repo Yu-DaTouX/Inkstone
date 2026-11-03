@@ -666,7 +666,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const quotaSummary = binding ? (
     <RailValue
       glyph={bindingTone === 'fail' ? { kind: 'dot', status: 'fail' } : bindingTone === 'ask' ? { kind: 'dot', status: 'awaiting' } : undefined}
-      value={`${quotaShortLabel(t, binding)} ${bindingPct === null ? '—' : t('quota.leftPct', { pct: Math.round(100 - Math.min(100, Math.max(0, bindingPct))) })}`}
+      value={`${quotaShortLabel(t, binding)} ${bindingPct === null ? '—' : t('quota.usedInline', { pct: Math.round(Math.min(100, Math.max(0, bindingPct))) })}`}
     />
   ) : quotaModel?.balance ? (
     <RailValue value={money(quotaModel.balance.amount, quotaModel.balance.currency)} />

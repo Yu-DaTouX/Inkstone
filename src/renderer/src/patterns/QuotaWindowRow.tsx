@@ -135,7 +135,7 @@ export function QuotaWindowRow({
   const subText = [!awaiting ? reset.text : '', forecast?.text ?? ''].filter(Boolean)
   const showSub = subText.length > 0
   const tone = quotaWindowTone(window, stale, now)
-  const left = Math.round(100 - Math.min(100, Math.max(0, pct)))
+  const used = Math.round(Math.min(100, Math.max(0, pct)))
   const pace = detail && !greyed ? quotaPace(window, now) : null
   if (detail) {
     const awaitingTone: QuotaWindowTone = tone === 'ok' && pace?.pace === 'ahead' ? 'ask' : tone
@@ -158,11 +158,11 @@ export function QuotaWindowRow({
       >
         <span className="quota-win-label">{quotaWindowName(t, window)}</span>
         <div className="quota-win-bar">
-          <Meter aria-label={window.label} value={awaiting ? 0 : left} minValue={0} maxValue={100} tone={METER_TONE[awaitingTone]} />
-          {pace ? <span className="quota-win-tick" style={{ left: `${Math.min(99, Math.max(1, pace.timeLeftPct))}%` }} aria-hidden="true" /> : null}
+          <Meter aria-label={window.label} value={awaiting ? 0 : used} minValue={0} maxValue={100} tone={METER_TONE[awaitingTone]} />
+          {pace ? <span className="quota-win-tick" style={{ left: `${Math.min(99, Math.max(1, 100 - pace.timeLeftPct))}%` }} aria-hidden="true" /> : null}
         </div>
         <span className="quota-win-reset ui-meta-num" title={reset.tip || undefined}>{short}</span>
-        <span className="quota-win-value ui-meta-num">{awaiting ? t('quota.resetDue') : t('quota.leftPct', { pct: left })}</span>
+        <span className="quota-win-value ui-meta-num">{awaiting ? t('quota.resetDue') : t('quota.usedInline', { pct: used })}</span>
       </div>
     )
   }
@@ -183,13 +183,13 @@ export function QuotaWindowRow({
           </span>
         ) : null}
         <span className="quota-win-value ui-meta-num" title={awaiting ? reset.tip : undefined}>
-          {awaiting ? t('quota.resetDue') : t('quota.leftPct', { pct: left })}
+          {awaiting ? t('quota.resetDue') : t('quota.usedInline', { pct: used })}
         </span>
       </div>
       <div className="quota-win-bar">
         <Meter
           aria-label={window.label}
-          value={awaiting ? 0 : left}
+          value={awaiting ? 0 : used}
           minValue={0}
           maxValue={100}
           tone={METER_TONE[tone]}
@@ -197,7 +197,7 @@ export function QuotaWindowRow({
         {pace ? (
           <span
             className="quota-win-tick"
-            style={{ left: `${Math.min(99, Math.max(1, pace.timeLeftPct))}%` }}
+            style={{ left: `${Math.min(99, Math.max(1, 100 - pace.timeLeftPct))}%` }}
             title={t('quota.paceTip')}
             aria-hidden="true"
           />

@@ -1899,7 +1899,6 @@
   "update.noticeLater": "稍后",
   "quota.resetIn": "{t}后重置",
   "quota.resetOn": "{d} 重置",
-  "quota.leftPct": "剩余 {pct}%",
   "quota.paceTip": "竖线是时间进度：条的填充越过竖线，说明用得比时间走得快",
   "quota.pace.ahead": "用得偏快",
   "quota.pace.on": "节奏正常",

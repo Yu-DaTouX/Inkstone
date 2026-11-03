@@ -1899,7 +1899,6 @@
   "update.noticeLater": "Later",
   "quota.resetIn": "resets in {t}",
   "quota.resetOn": "resets {d}",
-  "quota.leftPct": "{pct}% left",
   "quota.paceTip": "The tick marks elapsed time: a fill past the tick means usage is running ahead of the clock",
   "quota.pace.ahead": "ahead of pace",
   "quota.pace.on": "on pace",

@@ -347,7 +347,7 @@ export const useRightPanel = create<RightPanelState>((set, get) => {
       if (state.key === key) return
       const home = state.byKey[HOME_PANEL_KEY]
       if (!state.byKey[key] && state.key === HOME_PANEL_KEY && key !== HOME_PANEL_KEY && home?.surfaces.length) {
-        set({ key, ...entryKeyed(state, key, home) })
+        set({ key, ...entryKeyed(entryKeyed(state, key, home), HOME_PANEL_KEY, { ...home, open: false, maximized: false }) })
         return
       }
       set({ key })
