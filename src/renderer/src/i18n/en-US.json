@@ -1997,6 +1997,8 @@
   "search.apiHintNever": "Don't show again",
   "search.apiTitle": "Enhanced search",
   "search.apiDesc": "Bring your own key, stored locally; queries go to that service.",
+  "search.nativeTitle": "Subscription web search",
+  "search.nativeDesc": "Use the provider's server-side search on Claude or ChatGPT plan sign-in. No extra charge; results count toward plan usage.",
   "search.apiReady": "Configured",
   "search.apiReadyEnv": "Configured via the {env} environment variable",
   "search.apiMissing": "Not set",

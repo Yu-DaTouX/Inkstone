@@ -6,7 +6,8 @@ import {
   type SearchProvider,
   type SearchProviderState
 } from '../../../../../shared/search'
-import { Button, TextField } from '../../../ui'
+import { Button, Switch, TextField } from '../../../ui'
+import { useStore } from '../../../state/store'
 import { Entry, Group, Panel, StatusBadge, Warn } from './parts'
 
 export function SearchApiSection(): ReactElement {
@@ -50,6 +51,7 @@ function SearchApiGroup(): ReactElement {
         }
       >
         <div className="caps-list">
+          <NativeSearchEntry />
           <Entry
             testId="cap-search-api-deepseek"
             name={t('search.deepseekTitle')}
@@ -66,6 +68,27 @@ function SearchApiGroup(): ReactElement {
         </div>
       </Group>
     </div>
+  )
+}
+
+function NativeSearchEntry(): ReactElement {
+  const t = useT()
+  const on = useStore((s) => s.settings?.nativeWebSearch === true)
+  return (
+    <Entry
+      testId="cap-search-native"
+      settingId="caps-tools-search-native"
+      name={t('search.nativeTitle')}
+      control={
+        <Switch
+          aria-label={t('search.nativeTitle')}
+          isSelected={on}
+          onChange={(next) => void useStore.getState().patchSettings({ nativeWebSearch: next })}
+          data-testid="cap-search-native-switch"
+        />
+      }
+      meta={[t('search.nativeDesc')]}
+    />
   )
 }
 

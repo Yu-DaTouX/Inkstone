@@ -1997,6 +1997,8 @@
   "search.apiHintNever": "不再提示",
   "search.apiTitle": "增强搜索",
   "search.apiDesc": "自备 key，只存本机；启用后查询会发给对应服务。",
+  "search.nativeTitle": "订阅自带搜索",
+  "search.nativeDesc": "Claude 或 ChatGPT 订阅登录时改用服务端搜索；不另收费，结果计入订阅用量。",
   "search.apiReady": "已配置",
   "search.apiReadyEnv": "已通过环境变量 {env} 配置",
   "search.apiMissing": "未配置",

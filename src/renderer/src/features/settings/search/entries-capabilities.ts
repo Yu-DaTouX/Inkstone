@@ -119,6 +119,15 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     more: true
   },
   {
+    id: 'caps-tools-search-native',
+    section: 'capabilities',
+    tab: 'tools',
+    zh: '订阅自带搜索',
+    en: 'Subscription web search',
+    keywords: ['服务端搜索', 'web search', 'Claude', 'Codex', 'ChatGPT', '订阅'],
+    more: true
+  },
+  {
     id: 'caps-tools-android',
     section: 'capabilities',
     tab: 'tools',

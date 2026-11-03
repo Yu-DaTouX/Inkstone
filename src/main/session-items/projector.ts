@@ -102,7 +102,7 @@ export class SessionItemProjector {
     if (m?.role === 'system') return
     const norm = normalizeMessage(m, this.seq, this.localizeImage, entryId)
     if (!norm) return
-    if (m.role === 'assistant') for (const call of norm.toolCalls ?? []) call.cancelled = true
+    if (m.role === 'assistant') for (const call of norm.toolCalls ?? []) if (!call.serverSide) call.cancelled = true
     if (m.role === 'toolResult') {
       const result = norm.toolCalls?.[0]
       const hit = result ? this.callIndex.get(result.id) : undefined
@@ -240,10 +240,11 @@ export class SessionItemProjector {
     return null
   }
 
-  liveMessageEnd(meta: Partial<UIMessage> = {}): UIMessage | null {
+  liveMessageEnd(meta: Partial<UIMessage> = {}, extraCalls: UIToolCall[] = []): UIMessage | null {
     const slot = this.streaming
     if (!slot) return null
     this.streaming = null
+    for (const call of extraCalls) if (!this.callIndex.has(call.id)) this.attachCall(slot, call)
     for (const item of slot.items) if (item.kind === 'reasoning') item.live = false
     const { text: _text, thinking: _thinking, toolCalls: _calls, error, ...rest } = meta
     slot.header = { ...slot.header, ...rest }

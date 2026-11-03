@@ -510,6 +510,27 @@ try {
     assert.equal(unconfirmed.items.call('not-confirmed').cancelled, undefined)
   }
 
+  {
+    const { serverSearchCalls } = await import(pathToFileURL(join(dir, 'server-search.mjs')).href).catch(async () => {
+      await build({ entryPoints: ['src/main/server-search-calls.ts'], outfile: join(dir, 'server-search.mjs'), bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+      return import(pathToFileURL(join(dir, 'server-search.mjs')).href)
+    })
+    const record = { queries: ['Electron latest'], opened: ['https://releases.electronjs.org/'], results: [{ title: 'Releases', url: 'https://releases.electronjs.org/' }], cited: [{ title: 'npm', url: 'https://www.npmjs.com/package/electron', text: 'Latest version: 45.2.1' }] }
+    const raw = { role: 'assistant', content: [{ type: 'text', text: 'Electron 45.2.1' }], yanWebSearch: record, timestamp: 900 }
+    const fromHistory = m.projectHistory([{ role: 'user', content: 'q', timestamp: 899 }, raw])[1]
+    const calls = fromHistory.toolCalls
+    assert.deepEqual(calls.map((call) => [call.name, call.serverSide, !!call.cancelled]), [['web_search', true, false], ['web_fetch', true, false]], '历史里的服务端搜索记录变成两条未取消的合成调用')
+    assert.deepEqual(calls[0].details.search.items.map((item) => [item.url, item.readState]), [['https://releases.electronjs.org/', 'discovered'], ['https://www.npmjs.com/package/electron', 'read']])
+    assert.equal(calls[0].details.search.items[1].snippet, 'Latest version: 45.2.1', '引用原文作为来源摘要')
+    const live = new m.SessionItemProjector()
+    live.liveMessageStart({ role: 'user', content: 'q' }, 899)
+    live.liveMessageStart({ role: 'assistant' }, 900)
+    live.liveAssistantDelta({ type: 'text_delta', contentIndex: 0, delta: 'Electron 45.2.1' }, 900)
+    const ended = live.liveMessageEnd({ timestamp: 900 }, serverSearchCalls(raw, 'm1'))
+    assert.deepEqual(ended.toolCalls.map((call) => call.id), calls.map((call) => call.id), '实时结束与历史重载得到同样的调用编号')
+    assert.equal(serverSearchCalls({ timestamp: 1 }, 'm0').length, 0, '没有搜索记录时不合成')
+  }
+
   console.log('session items ok')
 } finally {
   await rm(dir, { recursive: true, force: true })

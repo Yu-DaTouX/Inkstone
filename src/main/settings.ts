@@ -263,6 +263,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.guardAllowRoots = cleanAllowRoots(settings.guardAllowRoots)
   settings.browserAllowedSites = allowedSiteList(settings.browserAllowedSites)
   settings.browserSearchEngine = normalizeSearchEngine(settings.browserSearchEngine)
+  settings.nativeWebSearch = settings.nativeWebSearch === true ? true : undefined
   settings.subagentNotify = settings.subagentNotify === false ? false : undefined
   settings.streamLoopAutoContinue = settings.streamLoopAutoContinue === false ? false : undefined
   settings.subagentHistoryPrune = settings.subagentHistoryPrune === false ? false : undefined
@@ -412,7 +413,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectScripts','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','projectScripts','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -450,6 +451,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)
   next.browserAllowedSites = allowedSiteList(next.browserAllowedSites)
   next.browserSearchEngine = normalizeSearchEngine(next.browserSearchEngine)
+  next.nativeWebSearch = next.nativeWebSearch === true ? true : undefined
   next.usageCurrency = normalizeUsageCurrency(next.usageCurrency)
   next.sidebarLayout = next.sidebarLayout === 'flat' ? 'flat' : undefined
   next.cloneDir = cleanCloneDir(next.cloneDir)

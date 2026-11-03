@@ -50,6 +50,7 @@ import {
   entryMessage,
   type PiMessage
 } from './normalize'
+import { serverSearchCalls } from './server-search-calls'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { consumeQueuedItem, reconcileQueueItems, sameQueueImages, snapshotQueue } from './queue-items'
 import { applyQueueRewrite, type QueueRewritePort, type QueueRewriteResult } from './queue-edit'
@@ -2450,7 +2451,7 @@ export class AgentController extends EventEmitter {
           model: assistantModelIdentity(m),
           timestamp: m.timestamp ?? Date.now(),
           error: assistantError(m)
-        })
+        }, serverSearchCalls(m as { yanWebSearch?: unknown; timestamp?: number }, id))
         this.turn.messageIds.push(id)
         this.backfillCompactionAfter()
         if (this.turn.startedMono !== undefined) {
@@ -2800,8 +2801,8 @@ export class AgentController extends EventEmitter {
     return this.items.ownerOf(call.id) ?? this.streaming?.id
   }
 
-  private settleStreaming(id: string, meta: Partial<UIMessage>): UIMessage {
-    return this.items.liveMessageEnd(meta) ?? this.items.appendMessage({ id, role: 'assistant', text: '', ...meta })
+  private settleStreaming(id: string, meta: Partial<UIMessage>, extraCalls: UIToolCall[] = []): UIMessage {
+    return this.items.liveMessageEnd(meta, extraCalls) ?? this.items.appendMessage({ id, role: 'assistant', text: '', ...meta, ...(extraCalls.length ? { toolCalls: extraCalls } : {}) })
   }
 
   private pushTool(call: UIToolCall): void {

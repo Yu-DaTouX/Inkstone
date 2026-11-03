@@ -385,9 +385,10 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (m.turnTiming) cur.timing = m.turnTiming
 
     if (hasText(m.text)) {
-      const hasTools = (m.toolCalls?.length ?? 0) > 0
+      const ownCalls = m.toolCalls?.filter((call) => !call.serverSide).length ?? 0
+      const hasTools = ownCalls > 0
       const target = seg()
-      const at = Math.max(0, target.tools.length - (m.toolCalls?.length ?? 0))
+      const at = Math.max(0, target.tools.length - ownCalls)
       for (const p of splitParagraphs(m.text)) {
         const item = {
           id: `${m.id}#${cur.texts.length}`,

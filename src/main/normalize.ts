@@ -3,6 +3,7 @@ import { isDangerDenial } from '../shared/danger-block'
 import { modelErrorNotice } from '../shared/model-errors'
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { estimateCost } from '../shared/model-pricing'
+import { serverSearchCalls } from './server-search-calls'
 
 export interface PiContentBlock {
   type: string
@@ -143,14 +144,17 @@ export function normalizeMessage(
       .map((c) => c.thinking ?? '')
       .join('')
 
-    const toolCalls: UIToolCall[] = blocks
-      .filter((c) => c.type === 'toolCall' && c.id)
-      .map((c) => ({
-        id: c.id!,
-        name: c.name ?? 'unknown',
-        args: c.arguments,
-        status: 'ok' as const
-      }))
+    const toolCalls: UIToolCall[] = [
+      ...serverSearchCalls(m as { yanWebSearch?: unknown; timestamp?: number }, id),
+      ...blocks
+        .filter((c) => c.type === 'toolCall' && c.id)
+        .map((c) => ({
+          id: c.id!,
+          name: c.name ?? 'unknown',
+          args: c.arguments,
+          status: 'ok' as const
+        }))
+    ]
 
     return {
       id,

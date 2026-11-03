@@ -108,6 +108,7 @@ export interface UIToolCall {
   cancelled?: boolean
   denied?: boolean
   approval?: ApprovalReceipt
+  serverSide?: boolean
   output?: string
   images?: UIMessageImage[]
   details?: unknown
@@ -821,6 +822,7 @@ export interface AppSettings {
   guardAllowRoots?: string[]
   browserAllowedSites?: string[]
   browserSearchEngine?: string
+  nativeWebSearch?: boolean
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]
