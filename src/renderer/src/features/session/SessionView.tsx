@@ -35,7 +35,7 @@ import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar } from './SessionFindBar'
-import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
+import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, type FollowDecision, type ReadingAnchor } from './scroll-follow'
 import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
 import './session.css'
 import { sameComposerView } from '../../state/composer-recovery'
@@ -265,7 +265,6 @@ export function SessionView(): JSX.Element {
   const [showJump, setShowJump] = useState(false)
   const stickRef = useRef(true)
   const intentRef = useRef<number | null>(null)
-  const metricsRef = useRef<ScrollMetrics | null>(null)
   const streamRef = useRef<HTMLDivElement | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
@@ -349,10 +348,9 @@ export function SessionView(): JSX.Element {
     const el = streamRef.current
     if (!el) return
     const metrics = domMetrics(el)
-    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now())
     applyFollow(decision)
     if (decision.repin) el.scrollTop = el.scrollHeight
-    metricsRef.current = decision.repin ? domMetrics(el) : metrics
     const anchors = decision.stick ? null : domReadingAnchors(el)
     readingRef.current = anchors?.resize ?? null
     record(el.scrollTop, decision.stick, anchors?.snapshot ?? null)
@@ -378,8 +376,7 @@ export function SessionView(): JSX.Element {
     const h = vlistRef.current
     if (!h || settlingRef.current) return
     const metrics = { offset: h.scrollOffset, size: h.scrollSize, viewport: h.viewportSize }
-    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
-    metricsRef.current = metrics
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now())
     applyFollow(decision)
     if (decision.repin) h.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
     record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current))
@@ -445,12 +442,14 @@ export function SessionView(): JSX.Element {
     host.addEventListener('pointerdown', onPointerDown, options)
     host.addEventListener('pointerup', release, options)
     host.addEventListener('keydown', onKey, options)
+    host.addEventListener(SCROLL_INTENT_EVENT, mark, options)
     return () => {
       host.removeEventListener('wheel', wheel, options)
       host.removeEventListener('touchmove', mark, options)
       host.removeEventListener('pointerdown', onPointerDown, options)
       host.removeEventListener('pointerup', release, options)
       host.removeEventListener('keydown', onKey, options)
+    host.removeEventListener(SCROLL_INTENT_EVENT, mark, options)
     }
   }, [setStickNow])
 
@@ -526,7 +525,6 @@ export function SessionView(): JSX.Element {
     setStick(bottom)
     setShowJump(false)
     intentRef.current = null
-    metricsRef.current = null
     settlingRef.current = true
     let settleRaf = 0
     const raf = requestAnimationFrame(() => {

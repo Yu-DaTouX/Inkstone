@@ -1,6 +1,7 @@
 export const JUMP_THRESHOLD_PX = 200
 const BOTTOM_EPSILON_PX = 40
 export const USER_SCROLL_INTENT_MS = 1000
+export const SCROLL_INTENT_EVENT = 'yan-scroll-intent'
 
 export interface ScrollMetrics {
   offset: number
@@ -41,11 +42,11 @@ export function isLayoutShift(previous: ScrollMetrics | null | undefined, metric
   return metrics.offset >= previous.offset
 }
 
-export function decideFollow(wasStuck: boolean, metrics: ScrollMetrics, intentAt: number | null, now: number, previous?: ScrollMetrics | null): FollowDecision {
+export function decideFollow(wasStuck: boolean, metrics: ScrollMetrics, intentAt: number | null, now: number): FollowDecision {
   const distance = distanceFromBottom(metrics)
   const intent = userScrollActive(intentAt, now)
   if (distance <= 1 && (wasStuck || intent) || wasStuck && distance < BOTTOM_EPSILON_PX && !intent) return { stick: true, showJump: false, repin: false }
-  if (wasStuck && !intent && isLayoutShift(previous, metrics)) return { stick: true, showJump: false, repin: true }
+  if (wasStuck && !intent) return { stick: true, showJump: false, repin: true }
   return { stick: false, showJump: distance > JUMP_THRESHOLD_PX, repin: false }
 }
 

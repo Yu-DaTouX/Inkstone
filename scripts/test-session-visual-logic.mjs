@@ -122,9 +122,12 @@ check('跟随：无用户操作的版面回弹继续跟随并重新贴底', () =
   assert.equal(shrink.repin, true, '内容高度变化导致的位移按回弹处理')
 })
 
-check('跟随：高度不变的上移（拖滚动条、查找跳转）解除跟随', () => {
-  const moved = follow.decideFollow(true, { offset: 300, size: 1500, viewport: 500 }, null, 5000, { offset: 1000, size: 1500, viewport: 500 })
-  assert.deepEqual(moved, { stick: false, showJump: true, repin: false })
+check('跟随：没有用户操作时高度不变的上移也重新贴底（拖滚动条与查找跳转经用户意图解除）', () => {
+  const moved = follow.decideFollow(true, { offset: 300, size: 1500, viewport: 500 }, null, 5000)
+  assert.deepEqual(moved, { stick: true, showJump: false, repin: true })
+  const dragged = follow.decideFollow(true, { offset: 300, size: 1500, viewport: 500 }, 4800, 5000)
+  assert.deepEqual(dragged, { stick: false, showJump: true, repin: false })
+  assert.equal(follow.SCROLL_INTENT_EVENT, 'yan-scroll-intent')
   assert.equal(follow.isLayoutShift(null, { offset: 0, size: 1, viewport: 1 }), true)
   assert.equal(follow.isLayoutShift({ offset: 10, size: 100, viewport: 50 }, { offset: 20, size: 100, viewport: 50 }), true)
 })

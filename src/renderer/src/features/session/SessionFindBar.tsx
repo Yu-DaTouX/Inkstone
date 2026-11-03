@@ -5,6 +5,7 @@ import { isModalOpen } from '../../lib/modalLayer'
 import { useStore } from '../../state/store'
 import { FindBar } from '../../ui'
 import { stepFindIndex } from '../preview/code-find'
+import { SCROLL_INTENT_EVENT } from './scroll-follow'
 import {
   FIND_ACTIVE_HIGHLIGHT,
   FIND_HIGHLIGHT,
@@ -111,6 +112,7 @@ export function SessionFindBar({
       if (!scrollable(element)) continue
       const offset = centeringOffset(box, element.getBoundingClientRect())
       if (offset === null) continue
+      element.dispatchEvent(new CustomEvent(SCROLL_INTENT_EVENT, { bubbles: true }))
       element.scrollTop += offset
       box = range.getBoundingClientRect()
     }
