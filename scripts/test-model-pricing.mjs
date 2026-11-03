@@ -26,6 +26,9 @@ export async function runModelPricingTests(ok) {
   const est = toUsage(raw, 'deepseek/deepseek-v4-pro')
   ok(est.costEstimated === true && Math.abs(est.cost - (1000 * 1 + 2000 * 4 + 3000 * 0.1) / 1e6) < 1e-12, 'pi 报 0 费用：按公开价补估算并标记')
   ok(toUsage({ ...raw, cost: { total: 0.5 } }, 'deepseek/deepseek-v4-pro').cost === 0.5 && toUsage({ ...raw, cost: { total: 0.5 } }, 'deepseek/deepseek-v4-pro').costEstimated === undefined, 'pi 已经算出费用：原值不动')
+  const catalog = toUsage({ ...raw, cost: { total: 0.5, totalFromProvider: false } }, 'deepseek/deepseek-v4-pro')
+  ok(catalog.cost === 0.5 && catalog.costCatalog === true && catalog.costEstimated === undefined, 'pi 按价目表估算的费用：原值不动，只标记为估算来源（不重复叠加）')
+  ok(toUsage({ ...raw, cost: { total: 0.5, totalFromProvider: true } }, 'deepseek/deepseek-v4-pro').costCatalog === undefined, '供应商实报的费用不标估算')
   ok(toUsage(raw).cost === 0 && toUsage(raw, 'free-one').cost === 0, '不知道模型或没报价：保持 0')
   ok(toUsage({ cost: { total: 0 } }, 'deepseek/deepseek-v4-pro').cost === 0, '没有 token 不估算')
 }

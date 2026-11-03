@@ -4803,14 +4803,16 @@ export class AgentController extends EventEmitter {
   private statsForCurrentModel(stats: SessionStats): SessionStats {
     const modelKey = modelKeyOf(this.state?.model)
     let costEstimated = 0
+    let costCatalog = 0
     let countedUntil: number | null = null
     for (const msg of this.messages) {
       if (msg.usage?.costEstimated) costEstimated += msg.usage.cost
+      else if (msg.usage?.costCatalog) costCatalog += msg.usage.cost
       if (msg.role === 'assistant' && hasUsageNumbers(msg.usage) && typeof msg.timestamp === 'number') {
         countedUntil = Math.max(countedUntil ?? msg.timestamp, msg.timestamp)
       }
     }
-    const priced = costEstimated > 0 ? { cost: stats.cost + costEstimated, costEstimated } : {}
+    const priced = costEstimated > 0 || costCatalog > 0 ? { cost: stats.cost + costEstimated, costEstimated: costEstimated + costCatalog } : {}
     if (!stats.contextUsage) return { ...stats, ...priced, countedUntil }
     return {
       ...stats,

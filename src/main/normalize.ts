@@ -26,7 +26,7 @@ export interface PiMessage {
     cacheWrite?: number
     totalTokens?: number
     reasoning?: number
-    cost?: { total?: number }
+    cost?: { total?: number; totalFromProvider?: boolean }
   }
   model?: string
   provider?: string
@@ -62,7 +62,8 @@ export function toUsage(u: PiMessage['usage'], model?: string): Usage | undefine
     cost: u.cost?.total ?? 0,
     ...(typeof u.reasoning === 'number' && u.reasoning > 0 ? { reasoning: u.reasoning } : {})
   }
-  if (usage.cost > 0 || !model) return usage
+  if (usage.cost > 0) return u.cost?.totalFromProvider === false ? { ...usage, costCatalog: true } : usage
+  if (!model) return usage
   const estimate = estimateCost(model, usage)
   return estimate && estimate > 0 ? { ...usage, cost: estimate, costEstimated: true } : usage
 }

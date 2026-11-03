@@ -75,6 +75,7 @@ export interface Usage {
   totalTokens: number
   cost: number
   costEstimated?: boolean
+  costCatalog?: boolean
   reasoning?: number
 }
 
