@@ -10,16 +10,22 @@ const MAX_DELIVERY_ATTEMPTS = 5
 export const NOTICE_MAX_UNDELIVERED_RUNS = 20
 const READ_RESULTS_MAX = 200
 
-const readResults = new Set<string>()
+const readResults = new Map<string, number | undefined>()
 
-export function markSubagentResultRead(id: string): void {
+export function markSubagentResultRead(id: string, endedAt?: number): void {
   readResults.delete(id)
-  readResults.add(id)
-  while (readResults.size > READ_RESULTS_MAX) readResults.delete(readResults.values().next().value as string)
+  readResults.set(id, endedAt)
+  while (readResults.size > READ_RESULTS_MAX) readResults.delete(readResults.keys().next().value as string)
+}
+
+function resultAlreadyRead(run: SubagentRun): boolean {
+  if (!readResults.has(run.id)) return false
+  const readEndedAt = readResults.get(run.id)
+  return readEndedAt === undefined || readEndedAt === run.endedAt
 }
 
 function takeUnread(runs: SubagentRun[]): SubagentRun[] {
-  const unread = runs.filter((run) => !readResults.has(run.id))
+  const unread = runs.filter((run) => !resultAlreadyRead(run))
   for (const run of runs) readResults.delete(run.id)
   return unread
 }

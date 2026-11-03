@@ -39,7 +39,7 @@ try {
         export { buildSubagentNotice, isSubagentNotice, parseSubagentNotice } from './src/shared/subagent-notice'
         export * as store from './src/main/turn-timing-store'
         export { TurnTimingTracker } from './src/main/turn-timing-tracker'
-        export { createSubagentNotifier, findNoticeTarget, NOTICE_COALESCE_WINDOW_MS, NOTICE_BATCH_MIN_WAIT_MS, NOTICE_BATCH_MAX_WAIT_MS, NOTICE_SIBLINGS_POLL_MS, NOTICE_MAX_UNDELIVERED_RUNS } from './src/main/subagent-notify'
+        export { createSubagentNotifier, findNoticeTarget, markSubagentResultRead, NOTICE_COALESCE_WINDOW_MS, NOTICE_BATCH_MIN_WAIT_MS, NOTICE_BATCH_MAX_WAIT_MS, NOTICE_SIBLINGS_POLL_MS, NOTICE_MAX_UNDELIVERED_RUNS } from './src/main/subagent-notify'
       `,
       resolveDir: process.cwd(),
       loader: 'ts'
@@ -64,6 +64,7 @@ try {
     TurnTimingTracker,
     createSubagentNotifier,
     findNoticeTarget,
+    markSubagentResultRead,
     NOTICE_COALESCE_WINDOW_MS,
     NOTICE_BATCH_MIN_WAIT_MS,
     NOTICE_BATCH_MAX_WAIT_MS,
@@ -445,6 +446,20 @@ try {
     const deadlines = () => clock.pending().filter((t) => t.ms >= NOTICE_BATCH_MIN_WAIT_MS)
 
     try {
+      {
+        const { notify, sent } = scenario({ siblings: { 'sess-read': 0 } })
+        markSubagentResultRead('sub-resumed', 1_000)
+        notify(finish('sub-resumed', 'sess-read', { startedAt: 0, endedAt: 1_000 }))
+        await settle()
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        check(sent.length === 0, '已读过的同一次结束不再通知', String(sent.length))
+        markSubagentResultRead('sub-resumed', 1_000)
+        notify(finish('sub-resumed', 'sess-read', { startedAt: 0, endedAt: 9_000 }))
+        await settle()
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        check(sent.length === 1 && sent[0].id === 'sub-resumed', '续跑后的新一次结束照常通知（读过的是上一次结果）', String(sent.length))
+      }
+
       {
         const { notify, sent } = scenario({ siblings: { 'sess-a': 0 } })
         const run = finish('sub-one', 'sess-a')

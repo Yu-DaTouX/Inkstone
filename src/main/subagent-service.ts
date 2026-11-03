@@ -255,7 +255,7 @@ export class SubagentService {
         )
       }
       const withTranscript = params.transcript === true || params.transcript === 'true'
-      if (run.status !== 'running' && run.status !== 'starting') markSubagentResultRead(id)
+      if (run.status !== 'running' && run.status !== 'starting') markSubagentResultRead(id, run.endedAt)
       const compact = compactSubagentRun(run)
       return {
         data: withTranscript ? run : compact,
