@@ -4,7 +4,6 @@ import { useT, type MessageKey, type TFunc } from '../i18n'
 import type { QuotaWindow } from '../../../shared/ipc'
 import { quotaTone } from '../../../shared/quota-tone'
 import {
-  forecastProjectionPct,
   windowAwaitingReset,
   windowSpan,
   windowUsedPct,
@@ -184,16 +183,15 @@ export function QuotaWindowRow({
           </span>
         ) : null}
         <span className="quota-win-value ui-meta-num" title={awaiting ? reset.tip : undefined}>
-          {awaiting ? t('quota.resetDue') : detail ? t('quota.leftPct', { pct: left }) : `${pct.toFixed(1)}%`}
+          {awaiting ? t('quota.resetDue') : t('quota.leftPct', { pct: left })}
         </span>
       </div>
       <div className="quota-win-bar">
         <Meter
           aria-label={window.label}
-          value={awaiting ? 0 : detail ? left : Math.min(100, Math.max(0, pct))}
+          value={awaiting ? 0 : left}
           minValue={0}
           maxValue={100}
-          projectedPercent={greyed || detail ? null : forecastProjectionPct(window.forecast)}
           tone={METER_TONE[tone]}
         />
         {pace ? (

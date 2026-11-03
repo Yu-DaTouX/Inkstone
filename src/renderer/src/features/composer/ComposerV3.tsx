@@ -18,6 +18,7 @@ import { ComposerStashMenuV3, composerStashFrameProps } from '../../t3/component
 import { ProviderModelPicker } from '../../t3/components/chat/ProviderModelPicker'
 import { QueuedRunsControl } from '../../t3/components/chat/QueuedRunsControl'
 import { PlanCard } from './PlanCard'
+import { AskDock } from '../session/AskDock'
 import { usePastedTextAttach } from './use-pasted-text'
 import { ComposerVoiceButton } from '../../t3/components/chat/ComposerVoiceButton'
 import { setComposerEditorHandle, useComposerMenuProps } from '../../t3/components/chat/composerEventScope'
@@ -99,7 +100,7 @@ const ComposerModelControls = memo(function ComposerModelControls(): JSX.Element
     <>
       <span ref={layout.attachHost} hidden aria-hidden />
       <ComposerControlsBar
-        modelPicker={
+        modelPicker={(menu) => (
           <ProviderModelPicker
             activeInstanceId={model.activeInstanceId}
             model={model.model}
@@ -111,8 +112,13 @@ const ComposerModelControls = memo(function ComposerModelControls(): JSX.Element
             onOpenProviderSetup={model.openProviderSetup}
             isComposerOwned
             floatingLayerProps={menuProps}
+            open={menu.open}
+            onOpenChange={menu.onOpenChange}
+            aside={menu.aside}
+            triggerBadge={menu.badge}
+            footer={menu.footer}
           />
-        }
+        )}
         collapsed={false}
         hidden={!layout.visible}
         measuredHiddenBlockCount={layout.hiddenBlockCount}
@@ -609,6 +615,7 @@ export function ComposerV3(): JSX.Element {
         menuLayer={menuLayer}
         banners={
           <>
+            <AskDock />
             <PlanCard />
             {stash.isOpen ? (
               <ComposerStashMenuV3

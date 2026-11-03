@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from "react";
+import { memo, useRef, useState, type ReactNode } from "react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -84,6 +84,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerLabel?: string;
   triggerAriaLabel?: string;
   floatingLayerProps?: Record<string, unknown>;
+  aside?: ReactNode;
+  triggerBadge?: ReactNode;
+  footer?: ReactNode;
   onOpenChange?: (open: boolean) => void;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   onToggleFavorite: (instanceId: ProviderInstanceId, model: string) => void;
@@ -189,8 +192,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             >
               {props.triggerLabel ?? triggerTitle}
             </TooltipTrigger>
-            <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>
+            {props.isComposerOwned ? null : <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>}
           </Tooltip>
+          {props.triggerBadge}
           {selectedModel?.isUnavailable && props.triggerLabel === undefined ? (
             <Badge variant="outline" size="sm">
               {t("composer.t3.picker.unavailable")}
@@ -207,21 +211,30 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         padding="none"
         touchBackdrop
       >
-        <ModelPickerContent
-          searchInputRef={searchInputRef}
-          activeInstanceId={activeInstanceId}
-          model={props.model}
-          instanceEntries={props.instanceEntries}
-          modelOptionsByInstance={props.modelOptionsByInstance}
-          favoriteKeys={props.favoriteKeys}
-          onRequestClose={() => setIsMenuOpen(false)}
-          {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
-          {...(props.getModelDisabledReason
-            ? { getModelDisabledReason: props.getModelDisabledReason }
-            : {})}
-          onInstanceModelChange={handleInstanceModelChange}
-          onToggleFavorite={props.onToggleFavorite}
-        />
+        <div
+          className="composer-model-menu"
+          data-composer-model-menu={props.aside || props.footer ? "true" : undefined}
+        >
+          <div className="composer-model-menu__body">
+            <ModelPickerContent
+              searchInputRef={searchInputRef}
+              activeInstanceId={activeInstanceId}
+              model={props.model}
+              instanceEntries={props.instanceEntries}
+              modelOptionsByInstance={props.modelOptionsByInstance}
+              favoriteKeys={props.favoriteKeys}
+              onRequestClose={() => setIsMenuOpen(false)}
+              {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
+              {...(props.getModelDisabledReason
+                ? { getModelDisabledReason: props.getModelDisabledReason }
+                : {})}
+              onInstanceModelChange={handleInstanceModelChange}
+              onToggleFavorite={props.onToggleFavorite}
+            />
+            {props.aside ? <div className="composer-model-menu__aside">{props.aside}</div> : null}
+          </div>
+          {props.footer ? <div className="composer-model-menu__foot">{props.footer}</div> : null}
+        </div>
       </PopoverPopup>
     </Popover>
   );

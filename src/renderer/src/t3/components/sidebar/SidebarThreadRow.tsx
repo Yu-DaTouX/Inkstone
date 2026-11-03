@@ -146,7 +146,7 @@ const TOP_STATUS: Record<SidebarRowStatus, TopStatus> = {
   input: {
     labelKey: "sidebar.t3.status.input",
     icon: "input",
-    className: "text-(--data-3)",
+    className: "text-warning-foreground",
   },
   failed: {
     labelKey: "sidebar.t3.status.failed",

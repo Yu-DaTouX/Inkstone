@@ -42,10 +42,52 @@ function hostWidth(): number {
   return host ? host.clientWidth : 0
 }
 
-export function focusSplitSession(target: SplitSessionRef): void {
+const SWITCH_SETTLE_MAX_MS = 400
+
+type ViewTransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => unknown }
+
+function prefersReducedMotion(): boolean {
+  if (useStore.getState().settings?.reduceMotion === true) return true
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+}
+
+function splitSwitchSettled(target: SplitSessionRef): Promise<void> {
+  return new Promise((resolve) => {
+    const started = performance.now()
+    const check = (): void => {
+      const state = useStore.getState()
+      const ready = sameSplitSession(displayedSessionOf(state), target) && !state.switchLoading
+      if (ready) {
+        window.setTimeout(resolve, 32)
+        return
+      }
+      if (performance.now() - started > SWITCH_SETTLE_MAX_MS) {
+        resolve()
+        return
+      }
+      window.setTimeout(check, 16)
+    }
+    check()
+  })
+}
+
+export function focusSplitSession(target: SplitSessionRef, options: { composer?: boolean } = {}): void {
   const store = useStore.getState()
-  store.requestComposerFocus(target)
+  if (options.composer !== false) store.requestComposerFocus(target)
   if (sameSplitSession(displayedSessionOf(store), target)) return
+  const doc = typeof document !== 'undefined' ? (document as ViewTransitionDocument) : null
+  if (!doc?.startViewTransition || prefersReducedMotion()) {
+    switchSplitFocus(target)
+    return
+  }
+  doc.startViewTransition(async () => {
+    switchSplitFocus(target)
+    await splitSwitchSettled(target)
+  })
+}
+
+function switchSplitFocus(target: SplitSessionRef): void {
+  const store = useStore.getState()
   if (typeof document !== 'undefined') {
     for (const pane of document.querySelectorAll<HTMLElement>('[data-scroll-key]')) {
       const stream = [...pane.querySelectorAll<HTMLElement>('.v3-stream')].find((element) => element.clientHeight > 0)

@@ -84,12 +84,11 @@ export function NotificationsSettings(): ReactElement {
           nested
           settingId="notifications-system"
           label={text.notifSystem}
-          description={sound.enabled ? text.notifSystemDesc : text.notifSystemNeedsSound}
+          description={text.notifSystemDesc}
         >
           <Switch
             aria-label={text.notifSystem}
             isSelected={sound.notifications}
-            isDisabled={!sound.enabled}
             onChange={(on) => write({ notifications: on })}
             data-testid="v3-notif-system"
           />

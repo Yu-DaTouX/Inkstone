@@ -11,15 +11,12 @@ import { sessionWrapUp, withoutWrapUpMessages } from './wrap-up'
 import { AsideFitScope, ToolExpansionScope } from './use-tool-run'
 import { toolExpansionScopeOf } from './tool-expansion'
 import { PendingRunNotice } from './RunNotice'
-import { BrowserHandoffCard } from './BrowserHandoffCard'
-import { ApprovalCard } from './ApprovalCard'
-import { QuestionCard } from './QuestionCard'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
 import { HomeBackdrop } from '../ambient/HomeBackdrop'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { Button } from '../../ui'
 import { ChevronDown } from 'lucide-react'
-import { approvalMatchesView, sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
+import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { V3EmptyState } from './V3EmptyState'
 import { RewindDialogV3 } from './RewindDialogV3'
 import {
@@ -96,12 +93,6 @@ export function SessionView(): JSX.Element {
   const runTail = useStore((s) => s.runTail)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
-  const approvals = useStore((s) => s.approvals)
-  const approvalSubagentParent = useStore((s) => {
-    const id = s.approvals[0]?.subagentId
-    return id ? (s.subagents.find((run) => run.id === id)?.parentSessionId ?? null) : null
-  })
-  const uiRequests = useStore((s) => s.uiRequests)
   const settings = useStore((s) => s.settings)
   const switchLoading = useStore((s) => s.switchLoading)
   const submittingMessages = useStore((s) => s.submittingMessages)
@@ -279,7 +270,6 @@ export function SessionView(): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
   const asideProbeRef = useRef<HTMLDivElement | null>(null)
-  const asksRef = useRef<HTMLDivElement | null>(null)
   const [asideFits, setAsideFits] = useState(false)
   const vlistRef = useRef<VListHandle>(null)
   const settlingRef = useRef(false)
@@ -527,19 +517,6 @@ export function SessionView(): JSX.Element {
       delete chat.dataset.empty
     }
   }, [empty])
-
-  useLayoutEffect(() => {
-    const asks = asksRef.current
-    const session = asks?.parentElement
-    if (!asks || !session) return undefined
-    const sync = (): void => {
-      session.toggleAttribute('data-asks', asks.childNodes.length > 0)
-    }
-    sync()
-    const observer = new MutationObserver(sync)
-    observer.observe(asks, { childList: true })
-    return () => observer.disconnect()
-  }, [])
 
   useLayoutEffect(() => {
     if (!identity || switchLoading) return undefined
@@ -918,12 +895,6 @@ export function SessionView(): JSX.Element {
       </div>
       </AsideFitScope.Provider>
       </ToolExpansionScope.Provider>
-
-      <div className="v3-asks" ref={asksRef}>
-        {viewActive || (approvals[0] && approvalMatchesView(approvals[0], approvals[0].subagentId && approvalSubagentParent ? [{ id: approvals[0].subagentId, parentSessionId: approvalSubagentParent }] : [], view)) ? <ApprovalCard /> : null}
-        {viewActive && uiRequests.length > 0 ? <QuestionCard /> : null}
-        {viewActive ? <BrowserHandoffCard sessionId={view.sessionId} /> : null}
-      </div>
 
       <RewindDialogV3 ownerKey={view.key} active={viewActive} />
 

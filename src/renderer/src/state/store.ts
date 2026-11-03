@@ -109,12 +109,33 @@ function attentionTitle(event: SoundEvent): string {
   }
 }
 
-function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string, source?: ModelInfo | null, sessionId?: string): void {
+const QUESTION_REMIND_MS = 120_000
+
+function questionPending(requestId: string): boolean {
+  const state = useStore.getState()
+  if (state.uiRequests.some((request) => request.id === requestId)) return true
+  return Object.values(state.sessionRuntimes).some((runtime) => runtime?.uiRequests.some((request) => request.id === requestId))
+}
+
+function remindQuestionLater(requestId: string, body: string | undefined, sessionId: string | undefined): void {
+  window.setTimeout(() => {
+    if (!questionPending(requestId) || document.hasFocus()) return
+    if (useStore.getState().settings?.sound?.notifications === false) return
+    void window.yan
+      .notifyAttention({ kind: 'question', title: attentionTitle('question'), body, ...(sessionId ? { sessionId } : {}) })
+      .catch(() => {
+      })
+  }, QUESTION_REMIND_MS)
+}
+
+function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string, source?: ModelInfo | null, sessionId?: string, requestId?: string): void {
+  if (event === 'question' && requestId) remindQuestionLater(requestId, body, sessionId)
   const model = source === undefined ? useStore.getState().session?.model : source
   const sound = settings?.sound
-  if (!sound?.enabled || !sound.events?.[event]) return
-  playSound(event, sound.volume)
-  if (sound.notifications && typeof document !== 'undefined' && !document.hasFocus()) {
+  const audible = !!sound?.enabled && !!sound.events?.[event]
+  if (audible) playSound(event, sound.volume)
+  const notify = event === 'question' ? sound?.notifications !== false : audible && !!sound?.notifications
+  if (notify && typeof document !== 'undefined' && !document.hasFocus()) {
     void window.yan
       .notifyAttention({
         kind: event,
@@ -1425,7 +1446,7 @@ export const useStore = create<Store>((rawSet, get) => {
       } else set(route.patch)
     }
     if (!route.project) {
-      if (m.ch === 'ui-request' && route.patch && !m.replay) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null, m.runtime?.sessionId || undefined)
+      if (m.ch === 'ui-request' && route.patch && !m.replay) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null, m.runtime?.sessionId || undefined, m.payload.id)
       if (m.ch === 'turn-settled' && route.patch?.sessionRuntimes && m.payload.sessionId) {
         const event = attentionForOutcome(m.payload.outcome)
         const sid = m.payload.sessionId

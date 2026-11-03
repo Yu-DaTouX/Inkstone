@@ -236,10 +236,11 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const asideThinking = aside ? sourceTurn.thinking ?? '' : ''
   const asideFits = useAsideFit()
   const arrived = useArrival(!!streaming)
-  const sessionCwd = useStore((s) => s.session?.cwd)
+  const scope = useTurnScope()
+  const focusedCwd = useStore((s) => s.session?.cwd)
+  const sessionCwd = scope ? scope.cwd ?? scope.session?.cwd : focusedCwd
   const changeCwd = sourceTurn.response?.sourceCwd || sessionCwd || undefined
   const changes = useMemo(() => (streaming ? null : turnChangeSet(sourceTurn, changeCwd)), [streaming, sourceTurn, changeCwd])
-  const scope = useTurnScope()
   const scopedMessages = scope?.messages ?? null
   const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, scopedMessages ?? s.messages, !!streaming)))
   const spanMs = useStore((s) => (streaming || sourceTurn.elapsedMs ? undefined : turnSpanMs(scopedMessages ?? s.messages, sourceTurn.sourceIds, sourceTurn.tools)))

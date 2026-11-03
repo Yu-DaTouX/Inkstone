@@ -671,7 +671,7 @@ const YAN_THIN_EXTENSION_FILES = {
   dangerGuardExtension: 'danger-guard.js'
 } as const
 
-const PROVIDER_EXTENSION_FILES = ['commandcode.js', 'provider-diagnostics.js', 'anthropic-progress-updates.js', 'cache-retention.js', 'parallel-tool-calls.js', 'native-web-search.js'] as const
+const PROVIDER_EXTENSION_FILES = ['commandcode.js', 'provider-diagnostics.js', 'anthropic-progress-updates.js', 'cache-retention.js', 'parallel-tool-calls.js', 'native-web-search.js', 'fast-mode.js'] as const
 
 function yanThinExtensions(): { -readonly [K in keyof typeof YAN_THIN_EXTENSION_FILES]: string | undefined } {
   const entries = Object.entries(YAN_THIN_EXTENSION_FILES).map(([key, file]) => [key, yanThinResourcePath(file)])
@@ -741,15 +741,18 @@ function sessionNoticeLink(sessionId?: string): DeepLink | undefined {
   return sessionId ? { action: 'session', sessionId } : undefined
 }
 
+const APPROVAL_REMIND_MS = 120_000
+
 const approvals = new ApprovalBroker({
   canAsk: () => !!win && !win.isDestroyed(),
   open: (request) => {
     runsHost?.observeApproval(request)
     push({ ch: 'approval', payload: request })
-    if (win && !win.isDestroyed() && !win.isFocused()) {
+    const notifyApproval = (): void => {
+      if (!win || win.isDestroyed() || win.isFocused()) return
       attention?.flash()
       void getSettings().then((settings) => {
-        if (settings.sound?.enabled !== true || settings.sound.notifications === false || !Notification.isSupported()) return
+        if (settings.sound?.notifications === false || !Notification.isSupported()) return
         const lang = noticeLang(settings.lang)
         const subject = request.sessionId ? cachedTitlesSync()[request.sessionId] : undefined
         attentionNotices.show({
@@ -762,6 +765,10 @@ const approvals = new ApprovalBroker({
         push({ ch: 'attention-sound', payload: { event: 'question' } })
       }).catch(() => undefined)
     }
+    notifyApproval()
+    setTimeout(() => {
+      if (approvals.list().some((item) => item.id === request.id)) notifyApproval()
+    }, APPROVAL_REMIND_MS)
     refreshTaskbar()
   },
   close: (id) => {

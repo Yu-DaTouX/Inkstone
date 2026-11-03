@@ -16,11 +16,12 @@ import { ToolExpansionScope } from '../features/session/use-tool-run'
 import { toolExpansionScopeOf } from '../features/session/tool-expansion'
 import { sessionWrapUp } from '../features/session/wrap-up'
 import { Icon } from '../features/session/Icon'
-import { IconButton, Splitter } from '../ui'
+import { Badge, Button, IconButton, Splitter } from '../ui'
 import { ChatMain } from './ChatMain'
 import { collapsedPanes } from './SideBySideLayout'
 import { closeSplitPane, focusSplitSession, SPLIT_STICK_SLACK_PX as PEER_STICK_SLACK_PX } from '../features/split/split-actions'
 import { startPaneDrag } from '../features/split/pane-drag'
+import { answerSplitSession, usePeerAsk } from '../features/split/peer-ask'
 import { rowBoundsFor, rowSplitFor } from '../features/split/split-drop-model'
 import { observeHeight, observeWidth } from '../features/split/split-measure'
 import { splitText } from '../features/split/split-text'
@@ -160,6 +161,7 @@ function PaneFrame({
   const project = useSplitProject(target)
   const key = splitTileKey(target)
   const inactive = !live
+  const asking = !!usePeerAsk(target) && inactive
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>): void => {
     if ((event.target as HTMLElement).closest('[data-tile-action]')) return
@@ -177,7 +179,7 @@ function PaneFrame({
   const activateOnPress = (event: ReactPointerEvent<HTMLElement>): void => {
     if (!inactive || event.button !== 0) return
     const node = event.target as HTMLElement
-    if (node.closest('[data-tile-action], .v3-stream')) return
+    if (node.closest('[data-tile-action], .v3-stream, .v3-split-peer-ask')) return
     focusSplitSession(target)
   }
 
@@ -190,6 +192,7 @@ function PaneFrame({
       data-live={live ? '1' : '0'}
       data-kind="session"
       data-split-inactive={inactive ? '' : undefined}
+      data-asking={asking ? '' : undefined}
       data-row={target.below ? '1' : '0'}
       data-testid="v3-split-col"
       data-pane={target.sessionId ?? target.path ?? ''}
@@ -280,10 +283,12 @@ function PeerPane({ target, hidden = false }: { target: SplitSessionRef; hidden?
   const liveMessages = useMemo(() => withSubmittingMessages(newestMessages(cached, history ?? undefined) ?? [], submittingMessages.filter((item) => sameSplitSession(item.identity, target))), [cached, history, submittingMessages, target])
   const messages = useHeldWhile(liveMessages, hidden)
   const peerSession = useHeldWhile(runtime?.session ?? null, hidden)
-  const turnScope = useMemo(() => ({ messages, session: peerSession }), [messages, peerSession])
+  const peerCwd = peerSession?.cwd ?? summary?.cwd
+  const turnScope = useMemo(() => ({ messages, session: peerSession, ...(peerCwd ? { cwd: peerCwd } : {}) }), [messages, peerSession, peerCwd])
   const draft = runtime?.draft ?? ''
   const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
-  const waiting = (runtime?.uiRequests.length ?? 0) > 0
+  const ask = usePeerAsk(target)
+  const waiting = !!ask
   const model = runtime?.session?.model?.name ?? ''
   const cwdBusy = useSameCwdBusy(target, runtime?.session?.cwd ?? summary?.cwd)
   const streamingId = running && messages.length ? messages[messages.length - 1].id : undefined
@@ -395,6 +400,20 @@ function PeerPane({ target, hidden = false }: { target: SplitSessionRef; hidden?
         </div>
       </div>
       <div className="v3-composer" ref={composerRef}>
+        {ask ? (
+          <div className="v3-split-peer-ask" role="group" aria-label={ask.kind === 'approval' ? t('split.waitingApproval') : t('split.waiting')} data-testid="v3-split-peer-ask">
+            <div className="v3-split-peer-bar">
+              <Badge tone="ask">{ask.kind === 'approval' ? t('split.waitingApproval') : t('split.waiting')}</Badge>
+              {model ? <span className="v3-split-model">{model}</span> : null}
+            </div>
+            {ask.text ? <p className="v3-split-peer-ask-text">{ask.text}</p> : null}
+            <div className="v3-split-peer-bar">
+              <Button size="sm" variant="secondary" onPress={() => answerSplitSession(target)} data-testid="v3-split-peer-answer">
+                {ask.kind === 'approval' ? t('split.handle') : t('split.answer')}
+              </Button>
+            </div>
+          </div>
+        ) : (
         <div className="v3-split-peer-composer" data-testid="v3-split-peer-composer">
           <textarea
             className="v3-split-peer-input"
@@ -419,6 +438,7 @@ function PeerPane({ target, hidden = false }: { target: SplitSessionRef; hidden?
             {model ? <span className="v3-split-model">{model}</span> : null}
           </div>
         </div>
+        )}
       </div>
     </div>
   )

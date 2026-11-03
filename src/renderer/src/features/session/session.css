@@ -30,10 +30,6 @@
     background: linear-gradient(to top, var(--bg) calc(100% - var(--s-32)), transparent);
   }
 
-  .v3-session[data-asks] .v3-stream-host::after {
-    height: var(--s-32);
-  }
-
   .v3-stream {
     flex: 1 1 auto;
     min-height: 0;
@@ -53,7 +49,6 @@
   .v3-stream-row--head { padding-top: var(--s-20); }
   .v3-stream-row--tail { padding-bottom: calc(var(--s-24) + var(--s-32) + var(--s-12) + var(--composer-h, 0px)); }
   .v3-stream-inner > .v3-stream-row { padding: 0; }
-  .v3-session[data-asks] :is(.v3-stream-inner, .v3-stream-row--tail) { padding-bottom: var(--s-32); }
 
   .v3-msg {
     display: flex;
@@ -220,22 +215,15 @@
   .v3-prose :is(ul, ol) :is(ul, ol) ol { list-style-type: lower-roman; }
   .v3-prose li.task-list-item { list-style: none; }
 
-  .v3-asks {
-    display: flex;
-    flex-direction: column;
-    flex: none;
-    gap: var(--s-8);
-    width: 100%;
-    padding: 0 var(--col-pad-r, var(--s-20)) var(--s-12) var(--col-pad-l, var(--s-20));
-    box-sizing: border-box;
-    max-height: 45vh;
-    overflow-y: auto;
-  }
-
-  .v3-asks:empty { display: none; }
-
-  .v3-asks > * { flex-shrink: 0; }
-  .v3-asks > :is(.v3-approval, .v3-qcard) { max-width: var(--size-chat); max-height: calc(45vh - var(--s-12)); margin-inline: auto; }
+  .ask-dock { position: relative; }
+  .ask-dock-edge { position: absolute; top: 0; left: var(--s-20); right: var(--s-20); height: 2px; border-radius: var(--r-full); background: var(--ask); }
+  .ask-dock-list { display: flex; flex-direction: column; gap: var(--s-8); max-height: min(45vh, 28rem); overflow-y: auto; padding: var(--s-6) var(--s-2) 0; font-size: var(--t-body); line-height: var(--t-body-lh); }
+  .ask-dock-list > * { flex-shrink: 0; }
+  .ask-dock-list > .ui-card { border-color: transparent; background: transparent; box-shadow: none; }
+  .ask-dock-list .ui-card__head { flex-wrap: wrap; row-gap: var(--s-4); }
+  .ask-dock-list .ui-card__title { flex: 1 1 8em; min-width: 8em; }
+  .v3-ask-pill { align-self: flex-start; max-width: 100%; margin: var(--s-2) 0 var(--s-6); gap: var(--s-6); }
+  .v3-ask-pill-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
   .v3-msgmenu-anchor { position: fixed; width: 1px; height: 1px; pointer-events: none; }
 
   .v3-jump {
@@ -250,7 +238,6 @@
     animation: v3-fade-in var(--dur-base) var(--ease) both;
   }
   .v3-jump-btn { pointer-events: auto; }
-  .v3-asks:not(:empty) { margin-bottom: calc(var(--composer-h, 0px) + var(--s-24)); }
 
   @media (max-width: 720px) {
     .v3-stream-host { --stream-px: var(--s-12); }

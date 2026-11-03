@@ -36,7 +36,7 @@ export class PulseField {
   private readonly resizeObserver: ResizeObserver
   private unsubscribeMotion: () => void = () => {}
 
-  constructor(private readonly canvas: HTMLCanvasElement, private readonly host: HTMLElement) {
+  constructor(private readonly canvas: HTMLCanvasElement, private readonly host: HTMLElement, private readonly vertical = false) {
     this.ctx = canvas.getContext('2d')
     this.reduced = prefersReducedMotion()
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -106,8 +106,8 @@ export class PulseField {
   private resize(): void {
     const rect = this.canvas.getBoundingClientRect()
     this.dpr = Math.min(2, window.devicePixelRatio || 1)
-    this.w = rect.width
-    this.h = rect.height
+    this.w = this.vertical ? rect.height : rect.width
+    this.h = this.vertical ? rect.width : rect.height
     this.canvas.width = Math.max(1, Math.round(rect.width * this.dpr))
     this.canvas.height = Math.max(1, Math.round(rect.height * this.dpr))
     this.kick()
@@ -199,7 +199,8 @@ export class PulseField {
       }
     }
 
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+    if (this.vertical) ctx.setTransform(0, -this.dpr, this.dpr, 0, 0, this.w * this.dpr)
+    else ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
     ctx.clearRect(0, 0, this.w, this.h)
     const steps = levels.length - 1
     for (let c = 0; c < cols; c++) {

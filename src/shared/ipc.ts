@@ -824,6 +824,7 @@ export interface AppSettings {
   browserAllowedSites?: string[]
   browserSearchEngine?: string
   nativeWebSearch?: boolean
+  fastMode?: boolean
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]

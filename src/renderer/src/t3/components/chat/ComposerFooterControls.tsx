@@ -28,6 +28,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   onRuntimeModeChange: (mode: PermissionMode) => void
   onConfirmPending: () => void
   onCancelPending: () => void
+  onOpen?: () => void
 }) {
   const t = useT()
   const size = props.size ?? 'sm'
@@ -36,8 +37,8 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   const unrestricted = props.runtimeMode === 'all'
   const Icon = unrestricted ? ShieldOffIcon : ShieldCheckIcon
   const fullLabel = t(`permission.label.${props.runtimeMode}` as 'permission.label.danger')
-  const toggleHint = t('permission.toggle')
-  const confirmOpen = props.pendingMode === 'all' && !props.hidden
+  const toggleHint = props.onOpen ? '' : t('permission.toggle')
+  const confirmOpen = !props.onOpen && props.pendingMode === 'all' && !props.hidden
 
   if (accessDisplay === 'hidden') return null
 
@@ -56,15 +57,15 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
                 'aspect-square px-0 text-(--fg2) hover:text-foreground [&_svg[data-composer-control-icon]]:text-current',
                 size === 'xs' ? 'w-7 sm:w-6' : 'w-7'
               )}
-              aria-label={`${t('permission.title')}: ${fullLabel}. ${toggleHint}`}
-              onClick={() => props.onRuntimeModeChange(unrestricted ? 'danger' : 'all')}
+              aria-label={toggleHint ? `${t('permission.title')}: ${fullLabel}. ${toggleHint}` : `${t('permission.title')}: ${fullLabel}`}
+              onClick={() => (props.onOpen ? props.onOpen() : props.onRuntimeModeChange(unrestricted ? 'danger' : 'all'))}
             />
           }
         >
           <ComposerControlIcon icon={Icon} size={size} />
         </TooltipTrigger>
         <TooltipPopup side="top">
-          {`${t('permission.title')}: ${fullLabel} · ${toggleHint}`}
+          {toggleHint ? `${t('permission.title')}: ${fullLabel} · ${toggleHint}` : `${t('permission.title')}: ${fullLabel}`}
         </TooltipPopup>
       </Tooltip>
       <Popover

@@ -21,6 +21,7 @@ export function usePermissionAdapter(): {
   matchesDefault: boolean
   options: readonly RuntimeModeOption[]
   pendingMode: PermissionMode | null
+  setMode: (mode: PermissionMode) => void
   requestMode: (mode: PermissionMode) => void
   confirmPending: () => void
   cancelPending: () => void
@@ -72,6 +73,7 @@ export function usePermissionAdapter(): {
     matchesDefault: mode === DEFAULT_PERMISSION_MODE,
     options,
     pendingMode,
+    setMode: apply,
     requestMode,
     confirmPending,
     cancelPending

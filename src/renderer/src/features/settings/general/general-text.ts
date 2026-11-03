@@ -227,7 +227,7 @@ const ZH: GeneralText = {
   sessionAutoRetryDesc: '限流、过载、5xx 时自动重试。',
 
   notifSystem: '系统通知',
-  notifSystemDesc: '窗口在后台时弹出系统通知。',
+  notifSystemDesc: '窗口在后台时，有提问或审批就弹出系统通知，2 分钟没处理再提醒一次；完成和出错的通知需同时开启提示音。',
   notifSystemTest: '发送',
   notifSystemTestLabel: '测试通知',
   notifSystemNeedsSound: '需先开启提示音。',
@@ -402,7 +402,7 @@ const EN: GeneralText = {
   sessionAutoRetryDesc: 'Retry on rate limits, overload and 5xx.',
 
   notifSystem: 'System notifications',
-  notifSystemDesc: 'System notification when the window is in background.',
+  notifSystemDesc: 'When the window is in background, questions and approvals show a system notification and remind once more after 2 minutes; done and error notifications also need sounds on.',
   notifSystemTest: 'Send',
   notifSystemTestLabel: 'Test notification',
   notifSystemNeedsSound: 'Turn on sounds first.',

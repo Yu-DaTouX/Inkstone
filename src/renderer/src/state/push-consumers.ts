@@ -7,7 +7,7 @@ import { isNativeMcpActionResult, isNativeMcpSignInPrompt, isNativeMcpStatus } f
 export interface PushContext {
   get(): Store
   set(patch: Partial<Store>): void
-  alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string): void
+  alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string, source?: null, sessionId?: string, requestId?: string): void
   pushNotice(list: Notice[], type: Notice['type'], text: string, id?: string): Notice[]
   applyBrowserVisibility(): void
   revealBrowser(): void
@@ -150,7 +150,7 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
           : [...s.uiRequests, m.payload],
         ...(!duplicate ? { uiCollapsed: false } : {})
       })
-      if (!duplicate && !m.replay) ctx.alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
+      if (!duplicate && !m.replay) ctx.alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, undefined, undefined, m.payload.id)
       break
     }
     case 'ui-resolved':

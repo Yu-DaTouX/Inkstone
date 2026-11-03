@@ -1,17 +1,31 @@
 import { CircleAlertIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useT } from '../../../i18n'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { useComposerTraits } from '../../adapters/composer-thinking'
 import { usePermissionAdapter } from '../../adapters/composer-permissions'
+import { useStore } from '../../../state/store'
+import { fastModeSupported } from '../../../../../shared/fast-mode'
 import { UltracodeConfirmDialog } from '../../../patterns/UltracodeConfirmDialog'
 import { cn } from '../../lib/utils'
 import { ComposerControl } from './ComposerControl'
 import { ComposerFooterModeControls } from './ComposerFooterControls'
 import { CompactComposerControlsMenu } from './CompactComposerControlsMenu'
+import { ComposerAccessFooter, ComposerReasoningPanel, FastBolt } from './ComposerModelMenuPanels'
 import { TraitsMenuContent, TraitsPicker } from './TraitsPicker'
 import { resolveComposerControlsOwnership } from './composerControlsOwnership'
 
+export type ComposerModelMenu = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  aside: ReactNode
+  footer: ReactNode
+  badge: ReactNode
+}
+
+const REOPEN_GUARD_MS = 250
+
 export function ComposerControlsBar(props: {
-  modelPicker: ReactNode
+  modelPicker: (menu: ComposerModelMenu) => ReactNode
   collapsed: boolean
   hidden: boolean
   measuredHiddenBlockCount: number
@@ -20,24 +34,60 @@ export function ComposerControlsBar(props: {
   providerSetupLabel?: string
   onOpenProviderSetup?: () => void
 }) {
+  const t = useT()
   const traits = useComposerTraits()
   const permissions = usePermissionAdapter()
   const iconOnlyBlockCount = props.iconOnlyBlockCount
+  const [menuOpen, setMenuOpen] = useState(false)
+  const closedAtRef = useRef(0)
+  const changeMenuOpen = useCallback((open: boolean) => {
+    if (!open) closedAtRef.current = performance.now()
+    setMenuOpen(open)
+  }, [])
+  const openMenu = useCallback(() => {
+    if (performance.now() - closedAtRef.current < REOPEN_GUARD_MS) return
+    setMenuOpen(true)
+  }, [])
+  const unrestricted = permissions.mode === 'all'
+  const fastSupported = useStore((s) => fastModeSupported(s.session?.model))
+  const fastOn = useStore((s) => s.settings?.fastMode === true)
+  const patchSettings = useStore((s) => s.patchSettings)
+  const notify = useStore((s) => s.notify)
+  const setFast = useCallback(
+    (fast: boolean) => {
+      void patchSettings({ fastMode: fast }).catch((error) => notify('error', String(error)))
+    },
+    [notify, patchSettings]
+  )
+  const menu: ComposerModelMenu = {
+    open: menuOpen,
+    onOpenChange: changeMenuOpen,
+    aside: traits ? <ComposerReasoningPanel traits={traits} /> : null,
+    badge: fastSupported && fastOn ? <FastBolt label={t('picker.speed.fast')} /> : null,
+    footer: (
+      <ComposerAccessFooter
+        speed={fastSupported ? { fast: fastOn, onChange: setFast } : null}
+        mode={permissions.mode}
+        onModeChange={permissions.setMode}
+      />
+    )
+  }
 
   const {
     accessDisplay,
     showModeBlock,
     hiddenBlockCount: restingHiddenBlockCount,
     hiddenBlockIds: hiddenRestingBlockIds,
-    traitsHidden: traitsBlockHidden,
-    overflowShowsPermissions
+    traitsHidden: traitsBlockHidden
   } = resolveComposerControlsOwnership({
     matchesDefault: permissions.matchesDefault,
     hasTraits: traits !== null,
+    showMode: unrestricted,
     collapsed: props.collapsed,
     measuredHiddenBlockCount: props.measuredHiddenBlockCount
   })
   const size = props.collapsed ? 'xs' : 'sm'
+  const overflowTraits = hiddenRestingBlockIds.includes('traits')
   const restingBlockDefs = [
     ...(traits
       ? [
@@ -49,6 +99,8 @@ export function ComposerControlsBar(props: {
                 size={size}
                 hidden={props.hidden || traitsBlockHidden}
                 isComposerOwned
+                onOpen={openMenu}
+                expanded={menuOpen}
               />
             )
           }
@@ -69,6 +121,7 @@ export function ComposerControlsBar(props: {
                 onRuntimeModeChange={permissions.requestMode}
                 onConfirmPending={permissions.confirmPending}
                 onCancelPending={permissions.cancelPending}
+                onOpen={openMenu}
               />
             )
           }
@@ -90,7 +143,7 @@ export function ComposerControlsBar(props: {
         </ComposerControl>
       ) : (
         <>
-          {props.modelPicker}
+          {props.modelPicker(menu)}
           {restingBlockDefs.map((def, index) => {
             const hidden = index >= restingBlockDefs.length - restingHiddenBlockCount
             return (
@@ -116,24 +169,24 @@ export function ComposerControlsBar(props: {
           })}
           <div
             data-resting-controls-overflow
-            aria-hidden={hiddenRestingBlockIds.length === 0 || undefined}
-            inert={hiddenRestingBlockIds.length === 0 || undefined}
+            aria-hidden={!overflowTraits || undefined}
+            inert={!overflowTraits || undefined}
             className={cn(
               'min-w-0 shrink-0',
-              hiddenRestingBlockIds.length === 0 && 'pointer-events-none invisible absolute'
+              !overflowTraits && 'pointer-events-none invisible absolute'
             )}
           >
             <CompactComposerControlsMenu
               runtimeMode={permissions.mode}
               runtimeModeOptions={permissions.options}
               size={size}
-              hidden={props.hidden || hiddenRestingBlockIds.length === 0}
+              hidden={props.hidden || !overflowTraits}
               traitsMenuContent={
-                hiddenRestingBlockIds.includes('traits') && traits ? (
+                overflowTraits && traits ? (
                   <TraitsMenuContent traits={traits} />
                 ) : undefined
               }
-              showPermissions={overflowShowsPermissions}
+              showPermissions={false}
               onRuntimeModeChange={permissions.requestMode}
             />
           </div>

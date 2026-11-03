@@ -23,7 +23,7 @@ const TONES: Record<Exclude<RowStatus, null>, string> = {
   working: 'text-info-foreground',
   waiting: 'text-muted-foreground',
   approval: 'text-warning-foreground',
-  input: 'text-(--data-3)',
+  input: 'text-warning-foreground',
   failed: 'text-error-foreground',
   done: 'text-success-foreground'
 }

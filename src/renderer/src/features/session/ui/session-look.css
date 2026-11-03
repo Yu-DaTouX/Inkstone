@@ -237,7 +237,12 @@
   .v3-del { color: var(--del); }
   .v3-step-pre { margin: 0; padding: 0; font-family: var(--font-mono); font-size: var(--t-footnote); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
   .v3-step-patch { margin: var(--s-6) 0 0; padding: var(--s-6) 0 0; border-top: var(--hair, 1px) solid var(--line); font-family: var(--font-mono); font-size: var(--t-footnote); line-height: 1.5; overflow: auto; max-height: 320px; }
-  .v3-diff-line { display: block; white-space: pre; }
+  .v3-diff-line { display: block; white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 1.5ch; text-indent: -1.5ch; }
+  .v3-step-patch[data-numbered] .v3-diff-line { padding-left: 6.5ch; text-indent: -6.5ch; }
+  .v3-step-patch[data-raw] .v3-diff-line { padding-left: 1ch; text-indent: -1ch; }
+  .v3-diff-num, .v3-diff-sign { text-indent: 0; }
+  .v3-step-file { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .v3-step-patch[data-nowrap] .v3-diff-line, .v3-step-patch[data-nowrap].v3-step-file { white-space: pre; overflow-wrap: normal; }
   .v3-diff-line[data-kind='add'] { color: var(--add); background: var(--add-bg); }
   .v3-diff-line[data-kind='del'] { color: var(--del); background: var(--del-bg); }
   .v3-step-pre.out { color: var(--fg2); }

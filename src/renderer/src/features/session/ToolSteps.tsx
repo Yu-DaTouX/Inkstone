@@ -12,8 +12,7 @@ import { estimateCallLines } from './turn-process'
 import { argEntries, isCodemodeTool, isTestCommand, isYanJsonCommand, parseTestSummary, parseYanSummaries, previewOutput, readLineRange, relativePath, toolOutputView, writeArgContent, type OutputNotice, type ToolOutputView, type YanSummary } from './tool-output'
 import { HighlightedCode } from '../../patterns/HighlightedCode'
 import { useStore } from '../../state/store'
-import { ApprovalCard } from './ApprovalCard'
-import { QuestionCard } from './QuestionCard'
+import { AskPill } from './AskDock'
 import { QuestionReceipt } from './QuestionReceipt'
 import { ApprovalReceipt } from './ApprovalReceipt'
 import { isQuestionCall } from './question-receipt'
@@ -109,7 +108,7 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
             const callId = row.node.call.id
             const asked = askedCalls.find((request) => request.toolCallId === callId)
             return asked
-              ? <QuestionCard key={row.id} requestId={asked.id} />
+              ? <AskPill key={row.id} kind="answer" title={asked.title} />
               : <QuestionReceipt key={row.id} call={row.node.call} />
           }
           return <MemoStepNode key={row.id} node={row.node} glowId={glowId} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
@@ -177,7 +176,7 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
           {summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
         </span>
       </CollapsibleHeader>
-      {asking ? <ApprovalCard inline /> : null}
+      {asking ? <AskPill kind="approval" /> : null}
       <CollapsiblePanel animated className="v3-step-panel" aria-label={label}>
         {open ? (
           <div className="v3-step-nest" data-testid="v3-step-group-list">
@@ -240,7 +239,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
           {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
         </span>
       </CollapsibleHeader>
-      {asking ? <ApprovalCard inline /> : call.approval ? <ApprovalReceipt approval={call.approval} /> : null}
+      {asking ? <AskPill kind="approval" /> : call.approval ? <ApprovalReceipt approval={call.approval} /> : null}
       <CollapsiblePanel animated className="v3-step-panel">{open ? <StepDetail call={call} /> : null}</CollapsiblePanel>
       {nested.shown.length ? (
         <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>
@@ -477,10 +476,15 @@ function StepOutput({ text, error = false, tail = false }: { text: string; error
   )
 }
 
+function useCodeNowrap(): true | undefined {
+  return useStore((s) => s.settings?.codeWrap === false) || undefined
+}
+
 function DiffLines({ lines }: { lines: readonly CallDiffLine[] }): JSX.Element {
   const numbered = lines.some((line) => line.num !== null)
+  const nowrap = useCodeNowrap()
   return (
-    <pre className="v3-step-patch" data-numbered={numbered || undefined} data-testid="v3-step-diff">
+    <pre className="v3-step-patch" data-numbered={numbered || undefined} data-nowrap={nowrap} data-testid="v3-step-diff">
       {lines.map((line, i) => line.kind === 'skip' ? (
         <span key={i} className="v3-diff-line" data-kind="skip">{'\u22ef\n'}</span>
       ) : (
@@ -505,9 +509,10 @@ function FileContentPreview({ path, content }: { path: string; content: string }
   const lines = content.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
   const long = lines.length > CONTENT_PREVIEW_LINES
   const shown = long && !all ? lines.slice(0, CONTENT_PREVIEW_LINES).join('\n') : lines.join('\n')
+  const nowrap = useCodeNowrap()
   return (
     <>
-      <pre className="v3-step-patch v3-step-file" data-testid="v3-step-content"><HighlightedCode code={shown} lang={languageOf(path)} /></pre>
+      <pre className="v3-step-patch v3-step-file" data-nowrap={nowrap} data-testid="v3-step-content"><HighlightedCode code={shown} lang={languageOf(path)} /></pre>
       {long ? (
         <Button size="sm" variant="ghost" aria-expanded={all} data-testid="v3-step-content-toggle" onPress={() => setAll((v) => !v)}>
           {all ? tt('contentLess') : tt('contentMore', { n: lines.length })}
@@ -520,6 +525,7 @@ function FileContentPreview({ path, content }: { path: string; content: string }
 function ChangeDetail({ call, diff, cwd }: { call: UIToolCall; diff: FileDiff | null; cwd?: string }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
+  const nowrap = useCodeNowrap()
   const denied = isDeniedCall(call)
   const failed = call.status === 'error' && !call.cancelled && !denied
   if (!diff) {
@@ -565,7 +571,7 @@ function ChangeDetail({ call, diff, cwd }: { call: UIToolCall; diff: FileDiff | 
       {failed ? <div className="v3-step-note err">{t('tool.notApplied')}</div> : null}
       {tooLarge ? <div className="v3-step-note">{t('tool.diffTooLarge')}</div> : null}
       {diff.patch ? (
-        <pre className="v3-step-patch">
+        <pre className="v3-step-patch" data-raw="" data-nowrap={nowrap}>
           {diff.patch.split('\n').map((line, i) => (
             <span key={i} className="v3-diff-line" data-kind={line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : 'context'}>{line}{'\n'}</span>
           ))}

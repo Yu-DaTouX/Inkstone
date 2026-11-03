@@ -1,4 +1,10 @@
 @layer features {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: var(--dur-quick);
+    animation-timing-function: var(--ease);
+  }
+
   .v3-split {
     flex: 1;
     min-height: 0;
@@ -222,11 +228,68 @@
     color: var(--ask-t);
   }
 
+  .v3-split-peer-ask {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    width: 100%;
+    max-width: var(--size-chat);
+    margin: 0 auto;
+    padding: var(--s-10) var(--s-12);
+    border: 1px solid color-mix(in srgb, var(--ask) 55%, transparent);
+    border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--ask-bg) 85%, var(--bg));
+  }
+
+  .v3-split-peer-ask-text {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    color: var(--fg);
+  }
+
+  .v3-split-col[data-asking] > .v3-split-head {
+    background: var(--ask-bg);
+  }
+
+  .v3-split-col[data-asking] .v3-split-title {
+    color: var(--ask-t);
+  }
+
+  .v3-split-col[data-asking] .v3-split-title::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-inline-end: var(--s-6);
+    border-radius: var(--r-full);
+    background: var(--ask);
+    vertical-align: middle;
+    animation: v3-split-ask-breathe 1.6s var(--ease) infinite;
+  }
+
+  @keyframes v3-split-ask-breathe {
+    50% { opacity: 0.35; transform: scale(0.8); }
+  }
+
   .v3-split-resizer {
     display: contents;
   }
 
+  :root[data-reduce-motion='true'] .v3-split-col[data-asking] .v3-split-title::before {
+    animation: none;
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .v3-split-col[data-asking] .v3-split-title::before {
+      animation: none;
+    }
+
     .v3-split-col,
     .v3-split-col[data-split-inactive] .v3-split-action {
       transition: none;

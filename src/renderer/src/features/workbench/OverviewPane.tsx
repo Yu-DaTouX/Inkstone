@@ -8,12 +8,6 @@ import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useStreamingThrottledStore, useThrottledValue } from '../../state/streaming-throttle'
 import type { ContextCategory } from '../../state/context-breakdown'
-import {
-  compactionGrowthText,
-  compactionReclaimText,
-  compactionSummary,
-  compactionTokensText
-} from '../../state/compaction-view'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, publishAccountQuotaReport, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { viewSubagentRuns } from '../../state/subagent-view'
 import { isLiveSubagentRun } from '../../../../shared/subagent-task-rows'
@@ -374,18 +368,13 @@ function BranchRow({
   )
 }
 
-function ContextDetail({ data, last, text }: { data: ContextPaneData; last: CompactionRun | undefined; text: OverviewText }): ReactElement {
+function ContextDetail({ data, text }: { data: ContextPaneData; last: CompactionRun | undefined; text: OverviewText }): ReactElement {
   const t = useT()
   const { usage, slices, compacted } = data
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
   const rows = [...slices.filter((s) => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, usage.windowSize - usage.tokens) }]
   const limitNote = usage.cappedByLimit
     ? t('ctx.limitNote', { model: shortTokens(usage.modelWindow), limit: shortTokens(usage.windowSize) })
-    : ''
-  const record = last
-    ? [compactionSummary(t, last), compactionTokensText(last), compactionReclaimText(t, last), compactionGrowthText(t, last, usage.tokens)]
-        .filter(Boolean)
-        .join(' · ')
     : ''
   return (
     <div className="wb-ov-ctx" data-testid="wb-ov-ctx">
@@ -413,11 +402,6 @@ function ContextDetail({ data, last, text }: { data: ContextPaneData; last: Comp
           )
         })}
       </ul>
-      {record ? (
-        <p className="wb-ov-note wb-ov-line" title={record} data-testid="wb-ov-ctx-compaction">
-          {`${text.lastCompaction} · ${record}`}
-        </p>
-      ) : null}
     </div>
   )
 }
@@ -682,7 +666,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const quotaSummary = binding ? (
     <RailValue
       glyph={bindingTone === 'fail' ? { kind: 'dot', status: 'fail' } : bindingTone === 'ask' ? { kind: 'dot', status: 'awaiting' } : undefined}
-      value={`${quotaShortLabel(t, binding)} ${bindingPct === null ? '—' : `${Math.round(bindingPct)}%`}`}
+      value={`${quotaShortLabel(t, binding)} ${bindingPct === null ? '—' : t('quota.leftPct', { pct: Math.round(100 - Math.min(100, Math.max(0, bindingPct))) })}`}
     />
   ) : quotaModel?.balance ? (
     <RailValue value={money(quotaModel.balance.amount, quotaModel.balance.currency)} />

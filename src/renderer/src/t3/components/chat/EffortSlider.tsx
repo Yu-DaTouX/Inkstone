@@ -14,7 +14,7 @@ const WHEEL_STEP_DELTA = 4
 const PANEL_HEIGHT = 136
 const PANEL_WIDTH = 320
 
-function levelFallbackLabel(level: string): string {
+export function levelFallbackLabel(level: string): string {
   return level === 'xhigh' ? 'XHigh' : level.charAt(0).toUpperCase() + level.slice(1)
 }
 
@@ -62,6 +62,8 @@ export function EffortSlider(props: {
   disabled: boolean
   hidden?: boolean
   className?: string
+  onOpen?: () => void
+  expanded?: boolean
 }) {
   const t = useT()
   const { traits } = props
@@ -200,7 +202,7 @@ export function EffortSlider(props: {
     const slot = label?.parentElement
     if (!label || !slot) return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const direction = index > previous.index ? 1 : -1
+    const direction = index > previous.index ? -1 : 1
     const easing = readEasing()
     const computed = getComputedStyle(label)
     const inFlight = flipRef.current !== null
@@ -345,12 +347,16 @@ export function EffortSlider(props: {
                 aria-disabled={blocked || undefined}
                 aria-label={tooltip}
                 aria-haspopup="dialog"
-                aria-expanded={open}
+                aria-expanded={props.onOpen ? !!props.expanded : open}
                 data-composer-shortcut="composer.effort"
                 data-composer-effort-trigger="true"
                 data-effort-level={currentLevel}
                 size={props.size}
                 onClick={() => {
+                  if (props.onOpen) {
+                    props.onOpen()
+                    return
+                  }
                   if (blocked) return
                   setOpen(!open)
                 }}
@@ -375,14 +381,16 @@ export function EffortSlider(props: {
               </span>
             </span>
           </TooltipTrigger>
-          <TooltipPopup side="top">
-            <span className="flex flex-col gap-0.5">
-              <span>{tooltip}</span>
-              {blocked ? null : (
-                <span className="text-muted-foreground text-xs">{t('composer.t3.effort.wheel')}</span>
-              )}
-            </span>
-          </TooltipPopup>
+          {props.onOpen ? null : (
+            <TooltipPopup side="top">
+              <span className="flex flex-col gap-0.5">
+                <span>{tooltip}</span>
+                {blocked ? null : (
+                  <span className="text-muted-foreground text-xs">{t('composer.t3.effort.wheel')}</span>
+                )}
+              </span>
+            </TooltipPopup>
+          )}
         </Tooltip>
       </TooltipProvider>
       {open && anchor
@@ -415,7 +423,7 @@ export function EffortSlider(props: {
               <FluidEffortSlider
                 label={descriptor.label}
                 title={EFFORT_TITLE}
-                describe={effortHint}
+                describe={(level) => effortHint(t, level)}
                 levels={levels}
                 value={currentLevel}
                 labelOf={labelOf}

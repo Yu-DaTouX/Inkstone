@@ -54,7 +54,7 @@ export function createSandbox(runDir, { fakePort, samples = [], demo = false } =
   writeFileSync(join(box.dataDir, 'desktop.json'), JSON.stringify({ cwd: box.project, recentCwds: box.projects }))
   if (fakePort) {
     writeFileSync(join(box.piDir, 'models.json'), JSON.stringify({
-      providers: { fake: { baseUrl: `http://127.0.0.1:${fakePort}/v1`, api: 'openai-responses', apiKey: 'fake-key', models: [{ id: 'fake-model', name: 'Fake', reasoning: false, input: ['text', 'image'], contextWindow: 400000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } }
+      providers: { fake: { baseUrl: `http://127.0.0.1:${fakePort}/v1`, api: 'openai-responses', apiKey: 'fake-key', models: [{ id: 'fake-model', name: 'Fake', reasoning: false, input: ['text', 'image'], contextWindow: 400000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, { id: 'fake-reasoning', name: 'Fake Reasoning', reasoning: true, input: ['text', 'image'], contextWindow: 400000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } }
     }))
     writeFileSync(join(box.piDir, 'settings.json'), JSON.stringify({ defaultProvider: 'fake', defaultModel: 'fake-model' }))
   }

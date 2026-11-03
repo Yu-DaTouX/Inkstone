@@ -5,6 +5,7 @@ import type { SessionState, UIMessage } from '../../../../shared/ipc'
 export interface TurnScope {
   messages: readonly UIMessage[]
   session: SessionState | null
+  cwd?: string
 }
 
 export const TurnScopeContext = createContext<TurnScope | null>(null)

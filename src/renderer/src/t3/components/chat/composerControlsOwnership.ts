@@ -1,11 +1,12 @@
 export function resolveComposerControlsOwnership(input: {
   readonly matchesDefault: boolean
   readonly hasTraits: boolean
+  readonly showMode?: boolean
   readonly collapsed: boolean
   readonly measuredHiddenBlockCount: number
 }) {
   const accessDisplay = input.collapsed ? ('icon' as const) : ('label' as const)
-  const showModeBlock = true
+  const showModeBlock = input.showMode ?? true
   const blockIds = [
     ...(input.hasTraits ? ['traits' as const] : []),
     ...(showModeBlock ? ['mode' as const] : [])
