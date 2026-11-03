@@ -1207,6 +1207,8 @@ export interface SubagentStopResult {
 export interface SubagentRun {
   id: string
   task: string
+  followUp?: string
+  quotaWait?: SubagentQuotaWait
   cwd: string
   parentSessionId?: string
   parentRunId?: string
@@ -1239,6 +1241,12 @@ export interface SubagentRun {
   brief?: SubagentBrief
   result?: SubagentResult
   resumable?: { ok: boolean; reason?: string }
+}
+
+export interface SubagentQuotaWait {
+  since: number
+  resetAt?: number
+  accounts: number
 }
 
 export interface SubagentRecovery {

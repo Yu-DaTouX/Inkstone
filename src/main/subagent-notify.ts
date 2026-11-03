@@ -70,7 +70,20 @@ export function findNoticeTarget<T>(
   return lookup.agentOf(runId) ?? null
 }
 
-function buildNotice(runs: SubagentRun[]): string {
+function latestPerRun(runs: SubagentRun[]): SubagentRun[] {
+  const latest = new Map<string, SubagentRun>()
+  for (const run of runs) {
+    const known = latest.get(run.id)
+    if (!known || (run.endedAt ?? 0) >= (known.endedAt ?? 0)) {
+      latest.delete(run.id)
+      latest.set(run.id, run)
+    }
+  }
+  return [...latest.values()]
+}
+
+function buildNotice(all: SubagentRun[]): string {
+  const runs = latestPerRun(all)
   if (runs.length === 1) return buildSubagentNotice(runs[0])
   const bodies = runs.map((run) => {
     const text = buildSubagentNotice(run)

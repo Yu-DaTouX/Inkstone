@@ -28,15 +28,19 @@ function headlineWord(key: SubagentOutcomeKey, status: string): string {
 
 export function buildSubagentNotice(
   run: Pick<SubagentRun, 'id' | 'task' | 'status' | 'isolation' | 'model' | 'diff' | 'review' | 'error' | 'result'> &
-    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable'>>
+    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable' | 'followUp'>>
 ): string {
   const status = run.status === 'done' || run.status === 'error' || run.status === 'cancelled' ? run.status : 'done'
   const mode = run.isolation === 'controlled-cwd' ? '只读' : '可修改'
   const outcome = subagentOutcome({ status, review: 'none', endReason: run.endReason })
-  const lines = [`子代理 ${run.id}（${mode}）${headlineWord(outcome.key, status)}：${clip(run.task, HEADLINE_TASK_MAX)}`]
+  const lines = [`子代理 ${run.id}（${mode}）${headlineWord(outcome.key, status)}：${clip(run.followUp || run.task, HEADLINE_TASK_MAX)}`]
+  if (run.followUp) lines.push(`原任务：${clip(run.task, HEADLINE_TASK_MAX)}`)
   if (run.model) lines.push(`模型：${run.model}`)
   const summary = run.result?.summary || run.error
-  if (summary) lines.push(`${run.result?.summaryFrom === 'error' || (!run.result?.summary && status === 'error') ? '错误' : '摘要'}：${clip(summary, SUMMARY_MAX)}`)
+  if (summary) {
+    const clipped = [...summary.replace(/\s+/g, ' ').trim()].length > SUMMARY_MAX
+    lines.push(`${run.result?.summaryFrom === 'error' || (!run.result?.summary && status === 'error') ? '错误' : '摘要'}：${clip(summary, SUMMARY_MAX)}${clipped ? `（已截断，全文：yan subagent get --id ${run.id} --final）` : ''}`)
+  }
   if (status === 'error' && run.error && run.result?.summaryFrom === 'last-message') lines.push(`原因：${clip(run.error, 200)}`)
   if (outcome.partial) lines.push('这是到点收尾或被停止时的部分结论：关键事实先自己核对，缺的部分决定是重派、缩小范围还是自己补。')
   if (run.diff && run.diff.files > 0) {
@@ -55,6 +59,18 @@ export function buildSubagentNotice(
   else if (run.resumable?.reason) lines.push(`不可续派：${clip(run.resumable.reason, 120)}`)
   lines.push('这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。')
   return `<${SUBAGENT_NOTICE_TAG} id="${run.id}" status="${status}">\n${lines.join('\n')}\n</${SUBAGENT_NOTICE_TAG}>`
+}
+
+export function buildSubagentQuotaNotice(run: Pick<SubagentRun, 'id' | 'task' | 'model' | 'quotaWait'> & Partial<Pick<SubagentRun, 'followUp'>>): string {
+  const resetAt = run.quotaWait?.resetAt
+  const reset = resetAt !== undefined ? `（约 ${new Date(resetAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 重置）` : ''
+  const lines = [
+    `子代理 ${run.id} 撞上模型额度上限，已暂停：${clip(run.followUp || run.task, HEADLINE_TASK_MAX)}`,
+    ...(run.model ? [`模型：${run.model}`] : []),
+    `它会在额度恢复${reset}后自动继续，不用重派。等不及时可以 yan subagent stop --id ${run.id}，然后自己接手或改派别的模型。`,
+    '这是宿主自动发出的通知，不是用户的新消息：请据此安排后续，不要复述本通知。'
+  ]
+  return `<${SUBAGENT_NOTICE_TAG} id="${run.id}" status="waiting">\n${lines.join('\n')}\n</${SUBAGENT_NOTICE_TAG}>`
 }
 
 const NOTICE_RE = new RegExp(`^<${SUBAGENT_NOTICE_TAG} id="([^"]+)" status="([^"]+)">\\n([\\s\\S]*?)\\n</${SUBAGENT_NOTICE_TAG}>$`)

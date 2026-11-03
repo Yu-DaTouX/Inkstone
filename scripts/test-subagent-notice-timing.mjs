@@ -461,6 +461,17 @@ try {
       }
 
       {
+        const { notify, sent } = scenario({ siblings: { 'sess-dup': 0 } })
+        notify(finish('sub-dup', 'sess-dup', { status: 'error', startedAt: 0, endedAt: 1_000, error: '额度用尽' }))
+        notify(finish('sub-dup', 'sess-dup', { startedAt: 0, endedAt: 2_000, followUp: '接着做 USB' }))
+        await settle()
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        const parsed = sent.length === 1 ? parseSubagentNotice(sent[0].text) : null
+        check(parsed?.id === 'sub-dup' && parsed?.status === 'done', '同一子代理先失败后完成：合批只留最新一次，id 不重复', sent.map((item) => item.text.split('\n')[0]).join(' | '))
+        check(/已完成：接着做 USB/.test(parsed?.headline ?? '') && /原任务：/.test(parsed?.body ?? ''), '续派后的通知标题用最新追加的任务，并注明原任务', parsed?.headline)
+      }
+
+      {
         const { notify, sent } = scenario({ siblings: { 'sess-a': 0 } })
         const run = finish('sub-one', 'sess-a')
         notify(run)

@@ -46,7 +46,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'subagent.get',
     '子代理结果',
-    '读取某个子代理当前的状态、最终消息与改动文件；默认不含完整转录，要完整过程加 --transcript。',
+    '读取某个子代理当前的状态、最终消息与改动文件；运行中给出最近几句叙述作进展，不用拉完整过程；要完整过程加 --transcript。',
     'read',
     'yan subagent get --id <id> [--final]'
   ),

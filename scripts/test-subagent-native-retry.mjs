@@ -402,4 +402,70 @@ await withController('续跑中人工停止', async ({ ctrl, id, rpc, state }) =
   ok(await waitFor(() => state.finished === 1), '停止只收口一次', String(state.finished))
 })
 
+async function withQuotaController(answers, body) {
+  const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-quota-'))
+  const factory = makeRpcFactory()
+  const state = { finished: 0, waiting: [], checks: 0 }
+  const ctrl = new SubagentController({
+    cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc: factory.createRpc,
+    quotaWatch: {
+      check: async () => answers[Math.min(state.checks++, answers.length - 1)](),
+      waiting: (run) => state.waiting.push(run)
+    },
+    onChange: () => {}, onFinished: () => { state.finished += 1 }
+  })
+  try {
+    const started = await ctrl.start('等额度', 'anthropic/claude-test', 'shared-cwd')
+    ok(started.ok === true, '假 RPC 启动成功（带模型）', started.error ?? '')
+    await body({ ctrl, id: started.run.id, rpc: factory.created[0], state })
+  } finally {
+    await ctrl.stopAll()
+    await rm(archive, { recursive: true, force: true })
+  }
+}
+
+const USAGE_LIMIT = "You've hit your usage limit. Your limit resets at 5pm."
+const blocked = (resetAt) => ({ id: 'five', label: '5 小时', used: 100, total: 100, resetAt })
+const freed = () => ({ id: 'five', label: '5 小时', used: 3, total: 100 })
+
+await withQuotaController([
+  async () => ({ windows: [blocked(Date.now() + 200)], accounts: 1 }),
+  async () => ({ windows: [freed()], accounts: 1 })
+], async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', { type: 'auto_retry_start', attempt: 1, maxAttempts: 3, errorMessage: USAGE_LIMIT })
+  ok(await waitFor(() => rpc.commands.includes('abort_retry')), '额度用尽时停掉 pi 的自动重试', rpc.commands.join(','))
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
+  rpc.emit('event', { type: 'auto_retry_end', success: false, finalError: USAGE_LIMIT })
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.waiting.length === 1), '额度用尽时进入等额度并提醒一次', String(state.waiting.length))
+  const waiting = ctrl.get(id)
+  ok(waiting.status === 'running' && waiting.quotaWait?.accounts === 1 && waiting.error === undefined && state.finished === 0, '等额度期间仍在运行、不算失败', JSON.stringify({ status: waiting.status, quotaWait: waiting.quotaWait, error: waiting.error }))
+  ok(/等额度恢复/.test(waiting.latestActivity ?? ''), '单账号时进度写明等额度恢复', waiting.latestActivity)
+  ok(await waitFor(() => promptCount(rpc) === 2, 12000), '额度恢复后在同一会话自动续跑', rpc.commands.join(','))
+  const resumed = ctrl.get(id)
+  ok(resumed.status === 'running' && resumed.quotaWait === undefined, '续跑后清掉等额度状态', JSON.stringify(resumed.quotaWait))
+  rpc.emit('event', assistant('做完了', { stopReason: 'stop' }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.finished === 1), '续跑完成后收口一次', String(state.finished))
+  ok(ctrl.get(id).status === 'done', '续跑完成为 done', ctrl.get(id).status)
+})
+
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)], accounts: 3 })], async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.waiting.length === 1), '多账号时同样进入等额度', String(state.waiting.length))
+  const waiting = ctrl.get(id)
+  ok(waiting.quotaWait?.accounts === 3 && /换号/.test(waiting.latestActivity ?? ''), '多账号时进度提示换号', waiting.latestActivity)
+  await ctrl.stop(id)
+  const stopped = ctrl.get(id)
+  ok(stopped.status === 'cancelled' && stopped.quotaWait === undefined && promptCount(rpc) === 1, '等额度时可以停止，且不再续跑', JSON.stringify({ status: stopped.status, quotaWait: stopped.quotaWait }))
+})
+
+await withQuotaController([async () => null], async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.finished === 1), '查不到额度数据时照旧收口', String(state.finished))
+  ok(ctrl.get(id).status === 'error' && state.waiting.length === 0, '查不到额度数据时不等也不提醒', ctrl.get(id).status)
+})
+
 console.log(`subagent-native-retry: ${checks} assertions passed（注入假事件流，未启动真实 pi / 未联网）`)

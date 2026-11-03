@@ -115,6 +115,7 @@ import { SubagentService } from './subagent-service'
 import { LookupCommands } from './lookup-commands'
 import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
+import { createSubagentQuotaWatch } from './subagent-quota-watch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
@@ -445,6 +446,21 @@ const notifySubagentFinished = createSubagentNotifier({
   find: (run) => (runners ? findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners) : null),
   runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
 })
+const subagentQuotaWatch = createSubagentQuotaWatch({
+  notifyUser: ({ run, title, body }) => {
+    push({ ch: 'notify', payload: { id: `subagent-quota-${run.id}`, method: 'notify', notifyType: 'warning', message: `${title}：${body}` } })
+    void getSettings().then((settings) => {
+      if (!win || win.isDestroyed() || win.isFocused() || settings.sound?.notifications === false || !Notification.isSupported()) return
+      attentionNotices.show({ key: `subagent-quota:${run.id}`, title, body, icon: botNotificationIcon(run.model, 'question'), link: sessionNoticeLink(run.parentSessionId) })
+    }).catch(() => undefined)
+  },
+  notifyParent: (run, text) => {
+    void (async () => {
+      if ((await getSettings()).subagentNotify === false || !runners) return
+      await findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners)?.send(text, undefined, 'followUp')
+    })().catch(() => undefined)
+  }
+})
 const subagentSearch = new Map<string, LookupCommands>()
 const subagentService: SubagentService = new SubagentService({
   preambleExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.preambleExtension),
@@ -508,6 +524,7 @@ const subagentService: SubagentService = new SubagentService({
       (context.parentSessionId ? runners?.agentForSession(context.parentSessionId) : null) ?? null
     return parent ? parent.forkSource() : '来源会话已关闭，不能派 fork 子代理'
   },
+  quotaWatch: subagentQuotaWatch,
   onChange: (run) => {
     if (run.status !== 'starting' && run.status !== 'running') {
       approvals.cancel((pending) => pending.subagentId === run.id)

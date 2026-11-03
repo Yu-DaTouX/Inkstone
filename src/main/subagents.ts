@@ -7,7 +7,8 @@ import { pruneSubagentArchive } from './subagent-prune'
 import { delimiter, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
-import type { SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
+import type { QuotaWindow, SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
+import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../shared/quota-resume'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { SessionItemProjector } from './session-items/projector'
 import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type SubagentUsageTotals, type UsageSnapshots } from '../shared/subagent-usage'
@@ -149,6 +150,7 @@ interface Run extends SubagentRun {
   retryAttempt?: number
   retryMaxAttempts?: number
   lastModelErrorText?: string
+  quotaBounces?: number
   workspace: PreparedWorkspace
   finalizing?: Promise<void>
   settling?: Promise<void>
@@ -254,6 +256,7 @@ export interface SubagentOptions {
   readOnlyExtension?: string
   runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
   appendSystemPrompt?: string
+  quotaWatch?: SubagentQuotaWatch
   onChange: (run: SubagentRun) => void
   onPatch?: (payload: { id: string; run: SubagentRun; transcriptFrom: number }) => void
   onRemove?: (id: string) => void
@@ -262,6 +265,13 @@ export interface SubagentOptions {
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
   prepare?: (rootCwd: string, id: string, isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<PreparedWorkspace>
 }
+
+export interface SubagentQuotaWatch {
+  check(model: string): Promise<{ windows: QuotaWindow[]; accounts: number } | null>
+  waiting(run: SubagentRun): void
+}
+
+const QUOTA_BOUNCE_LIMIT = 3
 
 export interface SubagentHostCommands {
   onlyCommands: string[]
@@ -348,6 +358,8 @@ export class SubagentController {
     return {
       id: run.id,
       task: run.task,
+      ...(run.followUp ? { followUp: run.followUp } : {}),
+      ...(run.quotaWait ? { quotaWait: run.quotaWait } : {}),
       cwd: run.cwd,
       parentSessionId: run.parentSessionId,
       parentRunId: run.parentRunId,
@@ -882,6 +894,7 @@ export class SubagentController {
       const disposition = (res.data as { disposition?: unknown } | undefined)?.disposition
       const delivery = disposition === 'queued' ? 'queued' : 'started'
       live.lastProgressAt = Date.now()
+      if (mode === 'followUp') live.followUp = text
       live.latestActivity = delivery === 'queued'
         ? (mode === 'steer' ? '已收到追加信息，当前工具结束后处理' : '已收到追加信息，当前任务做完后处理')
         : '已收到追加信息'
@@ -982,13 +995,13 @@ export class SubagentController {
       run.launch = resolvedLaunch.launch
       clearTimeout(run.timer)
       Object.assign(run, {
-        rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now,
+        rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now, followUp: text, quotaWait: undefined,
         latestActivity: '正在续接…', stderrTail: [], runningTools: new Set<string>(),
         contextRevision: (run.contextRevision ?? 0) + 1, diff: undefined, resultPath: undefined,
         settling: undefined, finalizing: undefined, notified: false, reviewDecided: false, worktreeDone: false,
         endedAt: undefined, endReason: undefined, error: undefined, stopReason: undefined, wrapUp: undefined,
         progressWarning: undefined, recovery: undefined, retryAttempt: undefined, retryMaxAttempts: undefined,
-        lastModelErrorText: undefined, exitInfo: undefined, streamingId: undefined, dismissedAt: undefined
+        lastModelErrorText: undefined, quotaBounces: undefined, exitInfo: undefined, streamingId: undefined, dismissedAt: undefined
       })
       this.runs.set(id, run)
       release()
@@ -1073,6 +1086,7 @@ export class SubagentController {
       run.status = 'cancelled'
       run.endReason = 'stopped'
       run.wrapUp = undefined
+      run.quotaWait = undefined
       run.endedAt = Date.now()
       run.latestActivity = '已停止'
       this.emit(run)
@@ -1128,6 +1142,7 @@ export class SubagentController {
     run.status = 'error'
     run.endReason = 'exited'
     run.wrapUp = undefined
+    run.quotaWait = undefined
     run.error = run.error ?? describeProcessExit(run.exitInfo ?? {}, run.stderrTail)
     run.endedAt = Date.now()
     this.emit(run)
@@ -1148,6 +1163,7 @@ export class SubagentController {
     run.status = cancelled ? 'cancelled' : 'error'
     run.endReason = cancelled ? 'stopped' : reason
     run.wrapUp = undefined
+    run.quotaWait = undefined
     run.progressWarning = undefined
     if (cancelled) {
       run.error = undefined
@@ -1533,6 +1549,7 @@ export class SubagentController {
       const maxAttempts = finiteCount(evt.maxAttempts)
       run.retryAttempt = attempt
       run.retryMaxAttempts = maxAttempts
+      if (this.opts.quotaWatch && isQuotaWaitError(modelErrorText(evt.errorMessage ?? evt.error))) void run.rpc.command('abort_retry').catch(() => undefined)
       run.recovery = { ...run.recovery, piRetries: attempt, piMaxRetries: maxAttempts }
       run.latestActivity = retryActivity(attempt, maxAttempts)
       this.emit(run)
@@ -1563,6 +1580,10 @@ export class SubagentController {
 
     if (type === 'agent_settled') {
       if (this.closedForEvents(run)) return
+      if (this.canWaitForQuota(run)) {
+        void this.waitForQuota(run)
+        return
+      }
       if (this.canResumeAfterModelError(run)) {
         void this.resumeAfterModelError(run)
         return
@@ -1594,6 +1615,77 @@ export class SubagentController {
     }
     run.latestActivity = activityOf(msg)
     this.emitStream(run)
+  }
+
+  private canWaitForQuota(run: Run): boolean {
+    return !!this.opts.quotaWatch && !!run.model && run.status === 'running' && run.stopReason === 'error' && !run.wrapUp &&
+      (run.quotaBounces ?? 0) < QUOTA_BOUNCE_LIMIT && isQuotaWaitError(run.lastModelErrorText)
+  }
+
+  private async quotaDecision(run: Run): Promise<{ ready: boolean; resetAt?: number; nextCheckAt: number; accounts: number } | null> {
+    const info = await this.opts.quotaWatch!.check(run.model!).catch(() => null)
+    if (!info?.windows.length) return null
+    return { ...decideQuotaResume(info.windows, Date.now()), accounts: info.accounts }
+  }
+
+  private async waitForQuota(run: Run): Promise<void> {
+    const activation = run.activation
+    const live = (): boolean => this.runs.get(run.id) === run && run.activation === activation && run.status === 'running' && !run.settled
+    const first = await this.quotaDecision(run)
+    if (!live()) return
+    if (!first) {
+      this.settle(run)
+      return
+    }
+    clearTimeout(run.timer)
+    run.quotaBounces = (run.quotaBounces ?? 0) + 1
+    run.quotaWait = { since: Date.now(), ...(first.resetAt !== undefined ? { resetAt: first.resetAt } : {}), accounts: first.accounts }
+    run.stopReason = undefined
+    run.error = undefined
+    run.latestActivity = quotaWaitActivity(run.quotaWait)
+    this.emit(run)
+    try {
+      this.opts.quotaWatch!.waiting(this.snapshot(run))
+    } catch {
+    }
+    const schedule = (at: number): void => {
+      clearTimeout(run.timer)
+      run.timer = setTimeout(() => void tick(), Math.max(1000, at - Date.now()))
+    }
+    const tick = async (): Promise<void> => {
+      if (!live() || !run.quotaWait) return
+      const next = await this.quotaDecision(run)
+      if (!live() || !run.quotaWait) return
+      if (!next?.ready) {
+        if (next && next.resetAt !== run.quotaWait.resetAt) {
+          run.quotaWait = { ...run.quotaWait, ...(next.resetAt !== undefined ? { resetAt: next.resetAt } : {}) }
+          run.latestActivity = quotaWaitActivity(run.quotaWait)
+          this.emit(run)
+        }
+        schedule(next?.nextCheckAt ?? Date.now() + QUOTA_RESUME_POLL_MS)
+        return
+      }
+      await this.resumeAfterQuota(run)
+    }
+    schedule(first.ready ? Date.now() + QUOTA_RESUME_POLL_MS : first.nextCheckAt)
+  }
+
+  private async resumeAfterQuota(run: Run): Promise<void> {
+    const waited = run.quotaWait ? Date.now() - run.quotaWait.since : 0
+    run.activeSince += waited
+    run.quotaWait = undefined
+    run.lastModelErrorText = undefined
+    run.retryAttempt = undefined
+    run.lastProgressAt = Date.now()
+    run.latestActivity = '额度已恢复，继续原任务…'
+    this.armWatch(run)
+    this.emit(run)
+    try {
+      const res = await run.rpc.command('prompt', { message: QUOTA_RESUME_PROMPT }, { timeoutMs: 10_000 })
+      if (!res.success) await this.fail(run.id, res.error ?? '额度恢复后续跑失败')
+    } catch (error) {
+      await this.fail(run.id, error instanceof Error ? error.message : String(error))
+    }
   }
 
   private canResumeAfterModelError(run: Run): boolean {
@@ -1756,6 +1848,13 @@ async function latestSessionFile(dir: string): Promise<string | undefined> {
 }
 
 const MODEL_ERROR_RESUME_PROMPT = '[模型错误恢复 · 自动继续 1/1]\n上一轮模型请求因暂时性错误（超时、连接中断或服务过载）中断，且没有自动重试。请核对已完成的工具结果，继续尚未完成的原任务；不要重复已完成的操作。若原任务已完成或无法安全继续，请简短说明并结束。'
+
+function quotaWaitActivity(wait: NonNullable<SubagentRun['quotaWait']>): string {
+  const reset = wait.resetAt !== undefined ? `（约 ${new Date(wait.resetAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 重置）` : ''
+  return wait.accounts > 1
+    ? `额度用尽${reset}：可在额度页换号，换号或额度恢复后自动继续`
+    : `额度用尽，等额度恢复${reset}后自动继续`
+}
 
 function modelFailureActivity(recovery: SubagentRecovery | undefined): string {
   if (recovery?.resumed) return '自动续跑 1 次后仍失败'
