@@ -443,6 +443,8 @@
   "composer.phFirst": "描述要构建、修改或修复的内容",
   "composer.phSession": "问点什么。@ 文件，/ 命令",
   "composer.phRunning": "Enter 插话 · Ctrl+Q 排队",
+  "composer.answerImages": "（上一条回答附带的图片）",
+  "composer.phAnswerPlain": "输入回答，可附图片和文件",
   "composer.historyStatus": "历史记录 {n}/{total}",
   "composer.historyDraftHint": "按 ↓ 回到草稿",
   "composer.menuAnnounce": "{n} 项可选",

@@ -19,6 +19,7 @@ import { ProviderModelPicker } from '../../t3/components/chat/ProviderModelPicke
 import { QueuedRunsControl } from '../../t3/components/chat/QueuedRunsControl'
 import { PlanCard } from './PlanCard'
 import { AskDock } from '../session/AskDock'
+import { useComposerQuestionTitle } from '../session/question-composer'
 import { usePastedTextAttach } from './use-pasted-text'
 import { ComposerVoiceButton } from '../../t3/components/chat/ComposerVoiceButton'
 import { setComposerEditorHandle, useComposerMenuProps } from '../../t3/components/chat/composerEventScope'
@@ -359,7 +360,8 @@ export function ComposerV3(): JSX.Element {
   )
 
   const mode = composerMode(value)
-  const placeholder = mode === 'bash' ? t('composer.phBash') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false }))
+  const answering = useComposerQuestionTitle()
+  const placeholder = mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false }))
   const slashMode =
     completion.slashQuery !== null &&
     (completion.slashMatches.length > 0 || (completion.atQuery === null && completion.slashStatus !== 'idle'))

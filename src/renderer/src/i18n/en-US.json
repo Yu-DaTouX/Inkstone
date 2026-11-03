@@ -443,6 +443,8 @@
   "composer.phFirst": "Describe something to build, change, or fix",
   "composer.phSession": "Ask anything. @ files, / commands",
   "composer.phRunning": "Enter to cut in · Ctrl+Q to queue",
+  "composer.answerImages": "(Images attached to the answer above)",
+  "composer.phAnswerPlain": "Type your answer; images and files welcome",
   "composer.historyStatus": "History {n}/{total}",
   "composer.historyDraftHint": "↓ to restore your draft",
   "composer.menuAnnounce": "{n} items",

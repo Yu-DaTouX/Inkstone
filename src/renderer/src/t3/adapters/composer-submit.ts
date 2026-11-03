@@ -13,6 +13,7 @@ import { hasComposerText } from '../../features/composer/composer-text'
 import { fileReferencePath } from '../../features/composer/file-refs'
 import { imageRefPrefix, withImageLegend } from '../../features/composer/image-refs'
 import { loadDraft, saveDraft } from '../../features/composer/draft-store'
+import { composerQuestion } from '../../features/session/question-composer'
 
 export type ComposerSubmitMode = 'steer' | 'followUp'
 
@@ -133,6 +134,18 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
               list: fileRefs.map((a) => `- ${fileReferencePath(a)}`).join('\n')
             })}`
           : body
+        const question = composerQuestion()
+        if (question) {
+          useStore.getState().answerUi({ id: question.id, value: outgoing || t('composer.answerImages') })
+          portsRef.current.clearText()
+          useStore.getState().dropSentAttachments(sentIds, sentFrom ? [sentFrom] : [])
+          cleared = true
+          if (images.length) {
+            const ok = await send(t('composer.answerImages'), images, 'steer')
+            if (!ok) useStore.getState().recoverComposerInput({ identity, text: '', attachments: attachments.filter((a) => a.kind !== 'file') })
+          }
+          return
+        }
         const sending = roundRunning
           ? send(outgoing, images.length ? images : undefined, mode)
           : send(outgoing, images.length ? images : undefined)

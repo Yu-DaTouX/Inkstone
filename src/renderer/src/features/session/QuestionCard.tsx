@@ -8,6 +8,7 @@ import { Button, IconButton, Kbd, TextArea, TextField } from '../../ui'
 import { Card, CardActions, CardChevron, CardControl, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { QuestionForm } from './QuestionForm'
+import { answersInComposer, releaseComposerQuestion, setComposerQuestion } from './question-composer'
 import { useSessionText } from './text'
 import { approvalSlotClaimed, useApprovalSlotVersion, useClaimApprovalSlot } from './approval-slot'
 import { claimDigitKeys, digitChoiceIndex } from './question-keys'
@@ -115,6 +116,13 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
   }, [deadline, reqId, dismissRequest])
 
   const deferred = useTypingDeferredFocus(cardRef, reqId, questionFocusTarget, true)
+  const viaComposer = answersInComposer(req)
+
+  useEffect(() => {
+    if (!viaComposer) return undefined
+    setComposerQuestion(reqId)
+    return () => releaseComposerQuestion(reqId)
+  }, [reqId, viaComposer])
 
   const digitOptions = useMemo(
     () => (!req.form?.length && (req.method === 'select' || req.method === 'input') ? req.options ?? [] : []),
@@ -193,8 +201,11 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
           {needsApproval ? tt('awaitApproval') : tt('awaitAnswer')}
         </CardStatus>
         <CardTitle className="v3-qtitle" id={titleId}>{title}</CardTitle>
-        {deadline || page.total > 1 ? (
+        {deadline || page.total > 1 || viaComposer ? (
           <CardMeta>
+            {viaComposer && !collapsed ? (
+              <Button size="xs" variant="ghost" isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>
+            ) : null}
             {deadline ? (
               <span className="v3-qtimer-wrap">
                 {bump > 0 ? <span className="v3-qbump" key={bump} role="status">{t('q.extendBump')}</span> : null}
@@ -265,7 +276,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
             </div>
           ) : null}
 
-          {!req.form?.length && (req.method === 'select' || req.method === 'input') ? (
+          {!viaComposer && !req.form?.length && (req.method === 'select' || req.method === 'input') ? (
             <TextField
               data-testid={req.method === 'select' ? 'v3-question-custom' : 'v3-question-input'}
               aria-label={req.placeholder || (req.method === 'select' ? t('q.customReply') : title)}
@@ -294,7 +305,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
         </div>
       )}
 
-      {collapsed || req.form?.length ? null : (
+      {collapsed || req.form?.length || viaComposer ? null : (
         <CardActions
           className="v3-qfoot"
           lead={<Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>}
@@ -305,7 +316,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
               <Button variant="primary" isDisabled={busy} onPress={() => answer({ confirmed: true })} data-testid="v3-question-submit">{t('ui.yes')}</Button>
             </>
           ) : null}
-          {req.method === 'input' || req.method === 'editor' || req.method === 'select' ? (
+          {!viaComposer && (req.method === 'input' || req.method === 'editor' || req.method === 'select') ? (
             <Button variant="primary" isDisabled={busy || !canSubmit} onPress={() => answer({ value: trimmed })} data-testid="v3-question-submit">
               {page.total > 1 ? t('q.next') : t('q.submit')}
             </Button>

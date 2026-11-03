@@ -217,11 +217,14 @@
 
   .ask-dock { position: relative; }
   .ask-dock-edge { position: absolute; top: 0; left: var(--s-20); right: var(--s-20); height: 2px; border-radius: var(--r-full); background: var(--ask); }
-  .ask-dock-list { display: flex; flex-direction: column; gap: var(--s-8); max-height: min(45vh, 28rem); overflow-y: auto; padding: var(--s-6) var(--s-2) 0; font-size: var(--t-body); line-height: var(--t-body-lh); }
+  .ask-dock-list { display: flex; flex-direction: column; gap: var(--s-8); max-height: min(45vh, 28rem); overflow-y: auto; padding: var(--s-2) var(--s-2) 0; font-size: var(--t-body); line-height: var(--t-body-lh); }
   .ask-dock-list > * { flex-shrink: 0; }
   .ask-dock-list > .ui-card { border-color: transparent; background: transparent; box-shadow: none; }
   .ask-dock-list .ui-card__head { flex-wrap: wrap; row-gap: var(--s-4); }
   .ask-dock-list .ui-card__title { flex: 1 1 8em; min-width: 8em; }
+  .ask-dock-list .v3-qhead { padding-top: var(--s-8); }
+  .ask-dock-list .v3-qcard > .v3-qbody { padding-top: var(--s-4); padding-bottom: 0; }
+  .ask-dock-list .v3-qoptions-list:last-child { margin-bottom: 0; border-bottom: 0; }
   .v3-ask-pill { align-self: flex-start; max-width: 100%; margin: var(--s-2) 0 var(--s-6); gap: var(--s-6); }
   .v3-ask-pill-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
   .v3-msgmenu-anchor { position: fixed; width: 1px; height: 1px; pointer-events: none; }
