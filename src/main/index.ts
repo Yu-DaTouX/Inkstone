@@ -983,6 +983,7 @@ async function discardUnusedIsolations(): Promise<void> {
       cwd: status.cwd,
       isActive: status.isActive,
       busy: status.running || status.waiting,
+      visible: runnerVisibility.includes(registry.agentOf(status.id)?.getState() ?? null),
       messageCount: registry.agentOf(status.id)?.getState()?.messageCount ?? 0
     })),
     stopRunner: (id) => registry.stopOne(id),

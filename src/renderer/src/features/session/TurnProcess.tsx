@@ -73,9 +73,10 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
   return { ref, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
-export function TurnProcess({ process, live, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false, compactionAfter = null }: {
+export function TurnProcess({ process, live, openByDefault = false, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false, compactionAfter = null }: {
   process: TurnSegment[]
   live: boolean
+  openByDefault?: boolean
   alertFailures: boolean
   view: TranscriptView
   sessionId: string | null
@@ -93,7 +94,7 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
   const [showAll, setShowAll] = useToolExpansion(`${key}:all`)
   const summary = processSummary(process)
   const headless = !summary.thinking && !summary.actions
-  const open = headless || (manual ?? view === 'thinking')
+  const open = headless || (manual ?? (view === 'thinking' || (openByDefault && !live)))
   const stage = !open && live
   const steady = useSteadyHeight(live)
   const source = stage ? process.map(view === 'side' ? withoutThinking : conciseSegment).filter(hasSegmentContent) : process

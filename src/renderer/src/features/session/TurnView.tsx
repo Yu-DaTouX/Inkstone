@@ -304,6 +304,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                 <TurnProcess
                   process={processSegs}
                   live={!!streaming}
+                  openByDefault={!split.reply && !split.tail.length}
                   alertFailures={processFailuresAlert(sourceTurn, !!streaming)}
                   view={view}
                   sessionId={sessionId}

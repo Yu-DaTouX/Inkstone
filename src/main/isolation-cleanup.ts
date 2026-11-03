@@ -9,6 +9,7 @@ export interface IsolationRunnerView {
   cwd: string
   isActive: boolean
   busy: boolean
+  visible?: boolean
   messageCount: number
 }
 
@@ -46,7 +47,7 @@ export async function discardIdleEmptyIsolations(port: IsolationCleanupPort): Pr
     if (now - record.createdAt < UNUSED_ISOLATION_GRACE_MS) continue
     const key = isolationCwdKey(isolatedSessionCwd(record))
     const holders = port.runners().filter((runner) => isolationCwdKey(runner.cwd) === key)
-    if (holders.some((runner) => runner.isActive || runner.busy || runner.messageCount > 0)) continue
+    if (holders.some((runner) => runner.isActive || runner.busy || runner.visible || runner.messageCount > 0)) continue
     if (await port.hasSavedSession(record)) continue
     for (const runner of holders) await port.stopRunner(runner.id)
     if (port.runners().some((runner) => isolationCwdKey(runner.cwd) === key)) continue

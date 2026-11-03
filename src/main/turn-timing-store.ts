@@ -208,7 +208,13 @@ export async function readTurnTimings(
     if (list) list.push(record)
     else byId.set(record.logicalTurnId, [record])
   }
-  return [...byId.entries()].map(([id, list]) => mergeTurnRecords(id, list))
+  const finishedRuns = new Set<string>()
+  for (const list of byId.values()) {
+    for (const record of list) if (record.final !== false && record.runId) finishedRuns.add(record.runId)
+  }
+  return [...byId.entries()]
+    .filter(([, list]) => !list.every((record) => record.final === false && !!record.runId && finishedRuns.has(record.runId)))
+    .map(([id, list]) => mergeTurnRecords(id, list))
 }
 
 export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecord[]): UIMessage[] {

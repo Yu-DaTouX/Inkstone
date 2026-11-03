@@ -27,7 +27,8 @@ const SCRIPT = `(() => {
     return a ? { title: a.textContent || '', href: a.href || '', snippet: s ? s.textContent || '' : '' } : null
   }).filter(Boolean)
   const text = document.body ? document.body.innerText : ''
-  const captcha = items.length === 0 && /unusual traffic|anomaly|captcha|robot/i.test(text)
+  const challenge = !!document.querySelector('.anomaly-modal, #challenge-form, form[action*="anomaly"]')
+  const captcha = items.length === 0 && (challenge || /unusual traffic|anomaly|captcha|robot|bots use DuckDuckGo|complete the following challenge/i.test(text))
   const none = items.length === 0 && /no results/i.test(text)
   return { items, captcha, none }
 })()`

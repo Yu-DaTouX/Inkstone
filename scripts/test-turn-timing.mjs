@@ -325,6 +325,12 @@ export async function runTurnTimingStoreTests(ok) {
     ok(merged[0].startedAt === 1000 && merged[0].endedAt === 11000, 'startedAt 取最早、endedAt 取最晚')
     ok((merged[0].waitSpans ?? []).length === 2, 'waitSpans 合并（两段工作各一条）')
 
+    const steered = 'sess-steer'
+    await appendTurnTiming(dir, steered, { ...base, logicalTurnId: 'm10', anchorId: 'm10', runId: 'run-9', final: false })
+    await appendTurnTiming(dir, steered, { ...base, logicalTurnId: 'm20', anchorId: 'm20', runId: 'run-9', final: true, sourceIds: ['a1', 'a2'] })
+    const afterSteer = await readTurnTimings(dir, steered)
+    ok(afterSteer.length === 1 && afterSteer[0].logicalTurnId === 'm20', '插话改锚后，同一 run 留下的中途快照不再单独成条（不显示已中断）', afterSteer.map((r) => r.logicalTurnId).join('|'))
+
     const legacy = 'sess-legacy'
     await appendTurnTiming(dir, legacy, { ...base, logicalTurnId: 'a-old', elapsedMs: 1000 })
     await appendTurnTiming(dir, legacy, { ...base, logicalTurnId: 'a-old', elapsedMs: 2000 })

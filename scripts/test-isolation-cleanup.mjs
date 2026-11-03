@@ -67,6 +67,8 @@ try {
   ok(r.stopped.length === 0 && r.discarded.length === 0, '正在看的空会话不动')
   r = await run([a], [idle('r1', a.worktree, { busy: true })])
   ok(r.discarded.length === 0, '运行中的会话不动')
+  r = await run([a], [idle('r1', a.worktree, { visible: true })])
+  ok(r.stopped.length === 0 && r.discarded.length === 0, '分屏里仍显示的空会话不动')
   r = await run([a], [idle('r1', a.worktree, { messageCount: 2 })])
   ok(r.stopped.length === 0 && r.discarded.length === 0, '发过消息的会话不动')
   r = await run([a], [], new Set([a.worktree]))
