@@ -43,8 +43,6 @@ import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } f
 import { withoutWrapUp, type WrapUpCardModel } from './wrap-up'
 import { WrapUpCard, wrapUpKey } from './WrapUpCard'
 import { stripImageNotice } from './effective-messages'
-import { isHistoryQuestionCall } from './question-receipt'
-import { QuestionHistory } from './QuestionReceipt'
 import { DecisionBlock, TurnResult } from './TurnOutcome'
 import { turnChangeSet, turnSpanMs } from './turn-process'
 import { splitDecision, type DecisionOutcome } from './turn-outcome'
@@ -272,12 +270,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0
   const glowId = liveToolGlowId(turn.tools)
-  const askedCalls = streaming ? [] : turn.tools.filter((call) => !call.parentToolCallId && isHistoryQuestionCall(call) && call.status !== 'running' && call.status !== 'pending')
-  const askedCards = askedCalls.length ? (
-    <div className="v3-qhistory-list" data-testid="v3-question-history-list">
-      {askedCalls.map((call) => <QuestionHistory key={call.id} call={call} />)}
-    </div>
-  ) : null
 
   return (
     <TranscriptViewScope.Provider value={view}>
@@ -318,7 +310,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                 />
               ) : null}
               {processApprovals.length ? <TurnApprovalLine approvals={processApprovals} /> : null}
-              {askedCards}
               {split.earlierReplies.map((segment) => (
                 <div key={segment.id} className="v3-seg" data-testid="v3-seg">
                   <div className="v3-para">
@@ -381,7 +372,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   ? <div className="v3-para"><Markdown text={turn.response.text} sourceCwd={turn.response.sourceCwd} live={!!streaming} sessionId={sessionId} messageId={turn.response.id} /></div>
                   : null}
               <ToolSteps tools={turn.tools} approvalIds={approvalIds} glowId={glowId} />
-              {askedCards}
             </>
           )}
   

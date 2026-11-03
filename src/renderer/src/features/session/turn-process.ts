@@ -430,13 +430,13 @@ export function stageSegmentCount(segments: readonly TurnSegment[]): number {
   return Math.max(1, count)
 }
 
-export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_SEGMENTS): { shown: TurnSegment[]; hidden: number } {
+export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_SEGMENTS, keep?: (segment: TurnSegment) => boolean): { shown: TurnSegment[]; hidden: number } {
   const recentFrom = segments.length - limit
   const shown: TurnSegment[] = []
   const dropped: TurnSegment[] = []
   segments.forEach((segment, index) => {
     const pinned = segment.tools.some((call) => isWebTool(call) || call.status === 'running' || call.status === 'pending' || (call.status === 'error' && !call.cancelled))
-    if (index >= recentFrom || pinned) shown.push(segment)
+    if (index >= recentFrom || pinned || keep?.(segment)) shown.push(segment)
     else dropped.push(segment)
   })
   const tools = dropped.reduce((sum, segment) => sum + segment.tools.length, 0)

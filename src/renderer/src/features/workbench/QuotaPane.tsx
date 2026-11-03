@@ -206,7 +206,7 @@ function QuotaMeter({ window, name, stale, now, t }: { window: QuotaWindow; name
   const base = quotaWindowTone(window, stale, now)
   const pace = stale || awaiting || base === 'fail' ? null : quotaPace(window, now)
   const tone: QuotaWindowTone = base === 'ok' && pace?.pace === 'ahead' ? 'ask' : base
-  const left = Math.round(100 - Math.min(100, Math.max(0, windowUsedPct(window) ?? 0)))
+  const used = Math.round(Math.min(100, Math.max(0, windowUsedPct(window) ?? 0)))
   const resetAt = window.resetAt !== undefined && !awaiting ? window.resetAt : undefined
   const tip = [
     window.label,
@@ -221,8 +221,8 @@ function QuotaMeter({ window, name, stale, now, t }: { window: QuotaWindow; name
       <span className="wb-quota-win-id">
         <span className="wb-quota-win-label">{name}</span>
         <span className="wb-quota-win-pct ui-num">
-          {awaiting ? '—' : `${left}%`}
-          <small>{t('quota.remaining')}</small>
+          {awaiting ? '—' : `${used}%`}
+          <small>{t('quota.usedMain')}</small>
         </span>
         {PaceIcon && pace ? (
           <span className="wb-quota-win-pace" role="img" aria-label={t(`quota.pace.${pace.pace}` as MessageKey)}>
@@ -232,12 +232,12 @@ function QuotaMeter({ window, name, stale, now, t }: { window: QuotaWindow; name
       </span>
       <Meter
         aria-label={window.label}
-        value={awaiting ? 0 : left}
+        value={awaiting ? 0 : used}
         minValue={0}
         maxValue={100}
         tone={METER_TONE[tone]}
         variant="gauge"
-        markPercent={pace ? pace.timeLeftPct : null}
+        markPercent={pace ? 100 - pace.timeLeftPct : null}
         trailing={countdown ? <><RotateCcw size={11} aria-hidden="true" />{countdown}</> : undefined}
       />
     </div>

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useLayoutEffect, useState, type JSX, type RefCallback } from 'react'
+import { Fragment, useCallback, useContext, useLayoutEffect, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
 import { CompactionMarker } from './CompactionMarker'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
@@ -9,8 +9,11 @@ import { Button, Collapsible, CollapsibleChevron, CollapsibleHeader, Collapsible
 import { formatDuration } from '../../../../shared/duration'
 import { useSessionText } from './text'
 import { conciseSegment, hasSegmentContent, mergeQuietSegments, splitAtCompaction, type CompactionCut, pickLiveSegments, processPreview, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
-import { useToolExpansion } from './use-tool-run'
+import { ToolExpansionScope, useToolExpansion } from './use-tool-run'
+import { toolExpansion } from './tool-expansion'
 import { useRunProgress } from './run-status'
+import { isHistoryQuestionCall } from './question-receipt'
+import { QuestionHistory } from './QuestionReceipt'
 import type { TranscriptView } from './transcript-view-model'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
@@ -145,13 +148,17 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const merged = halves && before ? [...before, ...mergeQuietSegments(halves.after)] : mergeQuietSegments(source)
   const markerAfter = before?.at(-1)?.id ?? null
   const markerFirst = !!compactionAfter && (!halves || !before?.length)
+  const expansionScope = useContext(ToolExpansionScope)
+  useSyncExternalStore(toolExpansion.subscribe, toolExpansion.version)
+  const userOpened = (segment: TurnSegment): boolean => segment.tools.some((call) => ['step', 'group', 'web'].some((kind) => toolExpansion.get(expansionScope, `${kind}:${call.id}`) === true))
   const picked = stage
-    ? pickLiveSegments(merged, stageSegmentCount(merged))
-    : live && showAll !== true ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
+    ? pickLiveSegments(merged, stageSegmentCount(merged), userOpened)
+    : live && showAll !== true ? pickLiveSegments(merged, undefined, userOpened) : { shown: merged, hidden: 0 }
   const single = summary.thinking === 1 && !summary.actions
   const elapsed = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
   const preview = live ? '' : processPreview(process)
   const tip = [preview, processBreakdown(summary, tt)].filter(Boolean).join('\n')
+  const foldedQuestions = open || live ? [] : process.flatMap((segment) => segment.tools).filter((call) => !call.parentToolCallId && isHistoryQuestionCall(call) && call.status !== 'running' && call.status !== 'pending')
 
   const body = (
     <div ref={steady.ref} className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body" style={steady.minHeight ? { minHeight: steady.minHeight } : undefined}>
@@ -173,6 +180,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   )
 
   return (
+    <>
     <Collapsible className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={open} onExpandedChange={setManual}>
       {headless ? null : (
         <CollapsibleHeader
@@ -198,6 +206,12 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
       {live ? body : <CollapsiblePanel animated className="v3-step-panel">{open ? body : null}</CollapsiblePanel>}
       {compactionAfter && !open && !stage ? <CompactionMarker /> : null}
     </Collapsible>
+    {foldedQuestions.length ? (
+      <div className="v3-qhistory-list" data-testid="v3-question-history-list">
+        {foldedQuestions.map((call) => <QuestionHistory key={call.id} call={call} />)}
+      </div>
+    ) : null}
+    </>
   )
 }
 

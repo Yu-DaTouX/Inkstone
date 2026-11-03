@@ -75,6 +75,25 @@ function userMessageText(msg: unknown, plain = false): string | null {
   return text
 }
 
+const CLIPPED_USER_LINE = '"type":"message"'
+const CLIPPED_USER_ROLE = '"message":{"role":"user"'
+const CLIPPED_TEXT_PART = /"type":"text","text":("(?:[^"\\]|\\.)*")/g
+
+function parseSessionLine(line: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(line) as Record<string, unknown>
+  } catch {
+    if (!line.startsWith(`{${CLIPPED_USER_LINE}`) || !line.includes(CLIPPED_USER_ROLE)) return null
+    const content: { type: 'text'; text: string }[] = []
+    for (const match of line.matchAll(CLIPPED_TEXT_PART)) {
+      try {
+        content.push({ type: 'text', text: JSON.parse(match[1]) as string })
+      } catch { }
+    }
+    return content.length ? { type: 'message', message: { role: 'user', content } } : null
+  }
+}
+
 function titleFromMessage(msg: unknown): string | null {
   let text = userMessageText(msg, true)
   if (!text) return null
@@ -98,13 +117,10 @@ export async function readTitleSamples(path: string): Promise<string[]> {
       const order = reverse ? [...lines].reverse() : lines
       for (const line of order) {
         if (!line.includes('"type":"message"')) continue
-        try {
-          const obj = JSON.parse(line) as { type?: string; message?: unknown }
-          if (obj.type !== 'message') continue
-          const value = userMessageText(obj.message)
-          if (value) return value
-        } catch {
-        }
+        const obj = parseSessionLine(line)
+        if (obj?.type !== 'message') continue
+        const value = userMessageText(obj.message)
+        if (value) return value
       }
       return undefined
     }
@@ -153,12 +169,8 @@ async function readHead(path: string): Promise<{
 
     for (const line of head.split('\n')) {
       if (!line.trim()) continue
-      let obj: Record<string, unknown>
-      try {
-        obj = JSON.parse(line) as Record<string, unknown>
-      } catch {
-        continue
-      }
+      const obj = parseSessionLine(line)
+      if (!obj) continue
 
       if (obj.type === 'session') {
         id = typeof obj.id === 'string' ? obj.id : undefined

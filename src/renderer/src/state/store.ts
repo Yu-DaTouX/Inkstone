@@ -1446,6 +1446,7 @@ export const useStore = create<Store>((rawSet, get) => {
       } else set(route.patch)
     }
     if (!route.project) {
+      if (m.ch === 'session-title') set({ titles: { ...get().titles, [m.payload.sessionId]: m.payload.title } })
       if (m.ch === 'ui-request' && route.patch && !m.replay) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null, m.runtime?.sessionId || undefined, m.payload.id)
       if (m.ch === 'turn-settled' && route.patch?.sessionRuntimes && m.payload.sessionId) {
         const event = attentionForOutcome(m.payload.outcome)

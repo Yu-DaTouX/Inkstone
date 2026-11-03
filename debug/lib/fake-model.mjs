@@ -40,6 +40,7 @@ export const FAKE_TRIGGERS = {
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
   FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
+  'CAMSHOT': '仿「拍照确认」：6 步（含 STEPS<n> 时为 n 步），每步一次快 bash、一次 read 读 DIR=<目录>（缺省为项目里 cam）下的 check<步>.png、一句叙述、一次约 20 秒的慢 bash；图片由场景预先放好',
   SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM），再按 STORM 跑 60 步',
   'SUBSTORM-<名字>': '子代理压测：40 步，每步叙述加一次改文件（sub/）并输出 60 行的 bash',
   '<subagent-notification': '子代理完成回传只回一句，避免再次触发'
@@ -143,6 +144,17 @@ async function respond(res, text, done, requestNo) {
       if (done < 1) await callTool('bash', { command: 'for i in 1 2 3 4; do yan subagent start --task "SUBSTORM-sub$i 压测子任务" --title "压测$i" --model fake/fake-model; done', description: 'start subagents' })
       else if (done < 61) await stormStep('storm', stormTag(text, 'SUBAGENTS'), done - 1, 120)
       else await streamText(longText(), 24, 8)
+    } else if (text.includes('CAMSHOT')) {
+      const steps = Number(/STEPS(\d+)/.exec(text)?.[1] ?? 6)
+      const step = Math.floor(done / 3)
+      const phase = done % 3
+      if (step >= steps) await streamText('拍照确认结束。', 20, 10)
+      else if (phase === 0) await callTool('bash', { command: `echo shot ${step + 1}`, description: `拍照确认新取景 ${step + 1}` })
+      else if (phase === 1) await callTool('read', { path: `${/DIR=(\S+)/.exec(text)?.[1] ?? 'cam'}/check${step + 1}.png` })
+      else {
+        await streamText(`第 ${step + 1} 张：手机屏幕现在约占画面宽度的 80%，比之前大了不少；接下来上机测试并统计采样行。`, 6, 20)
+        await callTool('bash', { command: `sleep 20; echo run ${step + 1}`, description: `上机 v${step + 1} 并统计采样行` })
+      }
     } else if (text.includes('STORM')) {
       const steps = Number(/STEPS(\d+)/.exec(text)?.[1] ?? 60)
       if (done < steps) await stormStep('storm', stormTag(text, 'STORM'), done, 120)

@@ -902,7 +902,6 @@
   "quota.estimatedTip": "The monthly cap is derived from the weekly cap — the API has no official monthly field",
   "quota.limitReached": "Limit reached",
   "quota.refresh": "Refresh quota",
-  "quota.remaining": "remaining",
   "quota.remainingShort": "left",
   "quota.win.fiveHour": "5-hour",
   "quota.win.weekly": "Weekly",

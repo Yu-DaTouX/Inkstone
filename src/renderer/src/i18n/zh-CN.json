@@ -902,7 +902,6 @@
   "quota.estimatedTip": "本月上限由周额度反推（接口没有官方月额度字段），不是官方精确值",
   "quota.limitReached": "已用完",
   "quota.refresh": "刷新额度",
-  "quota.remaining": "剩余",
   "quota.remainingShort": "剩余",
   "quota.win.fiveHour": "5 小时",
   "quota.win.weekly": "每周",
