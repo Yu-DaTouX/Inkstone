@@ -23,6 +23,21 @@ function readingHistory(node: HTMLElement): boolean {
   return !!stream && stream.scrollHeight - stream.clientHeight - stream.scrollTop > BOTTOM_SLACK_PX
 }
 
+function contentBottom(node: HTMLElement): number {
+  let bottom = node.getBoundingClientRect().top
+  for (const child of node.children) bottom = Math.max(bottom, child.getBoundingClientRect().bottom)
+  return bottom
+}
+
+function heldGapVisible(node: HTMLElement): boolean {
+  const stream = node.closest<HTMLElement>('.v3-stream')
+  if (!stream) return false
+  const view = stream.getBoundingClientRect()
+  const gapTop = contentBottom(node)
+  const gapBottom = node.getBoundingClientRect().bottom
+  return gapBottom - gapTop > 1 && gapTop < view.bottom && gapBottom > view.top
+}
+
 function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; minHeight: number | undefined } {
   const [node, setNode] = useState<HTMLDivElement | null>(null)
   const [minHeight, setMinHeight] = useState(0)
@@ -32,37 +47,64 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
     let width = node.getBoundingClientRect().width
     let release = 0
     let suspendedUntil = 0
+    let lastHeight = 0
+    let held = false
+    const releaseHold = (): void => {
+      window.clearTimeout(release)
+      held = false
+      setMinHeight(0)
+    }
+    const releaseIfGapShows = (): void => {
+      if (held && readingHistory(node) && heldGapVisible(node)) releaseHold()
+    }
     const observer = new ResizeObserver(() => {
-      if (performance.now() < suspendedUntil) return
+      for (const child of node.children) observer.observe(child)
       const box = node.getBoundingClientRect()
-      if (Math.abs(box.width - width) > 0.5) {
-        width = box.width
-        setMinHeight(0)
+      const height = contentBottom(node) - box.top
+      const shrinking = height < lastHeight - 0.5
+      lastHeight = height
+      const now = performance.now()
+      if (now < suspendedUntil) {
+        if (shrinking) suspendedUntil = now + USER_TOGGLE_MS
         return
       }
+      if (Math.abs(box.width - width) > 0.5) {
+        width = box.width
+        releaseHold()
+        return
+      }
+      if (held && shrinking) {
+        releaseIfGapShows()
+        return
+      }
+      if (box.height <= 0.5) return
+      held = true
       setMinHeight((current) => (box.height > current + 0.5 ? box.height : current))
       window.clearTimeout(release)
       const settle = (): void => {
-        if (readingHistory(node)) {
+        if (readingHistory(node) && !heldGapVisible(node)) {
           release = window.setTimeout(settle, STEADY_HOLD_MS)
           return
         }
-        setMinHeight(0)
+        releaseHold()
       }
       release = window.setTimeout(settle, STEADY_HOLD_MS)
     })
     const releaseNow = (): void => {
-      window.clearTimeout(release)
       suspendedUntil = performance.now() + USER_TOGGLE_MS
-      setMinHeight(0)
+      releaseHold()
     }
+    const stream = node.closest<HTMLElement>('.v3-stream')
+    const scope = node.closest<HTMLElement>('.v3-process') ?? node
     observer.observe(node)
-    node.addEventListener('click', releaseNow, true)
-    node.addEventListener('keydown', releaseNow, true)
+    scope.addEventListener('click', releaseNow, true)
+    scope.addEventListener('keydown', releaseNow, true)
+    stream?.addEventListener('scroll', releaseIfGapShows, { passive: true })
     return () => {
       observer.disconnect()
-      node.removeEventListener('click', releaseNow, true)
-      node.removeEventListener('keydown', releaseNow, true)
+      scope.removeEventListener('click', releaseNow, true)
+      scope.removeEventListener('keydown', releaseNow, true)
+      stream?.removeEventListener('scroll', releaseIfGapShows)
       window.clearTimeout(release)
     }
   }, [active, node])
