@@ -476,7 +476,7 @@ async function run() {
     ok(runningHtml.includes('electron WebContentsView'), '胶囊显示查询词')
     ok(runningHtml.includes('ws-ring-arc'), '运行中地球图标外圈有进度环')
     ok(!runningHtml.includes('id="plain"'), '有胶囊时不再渲染普通步骤')
-    ok((runningHtml.match(/ws-source ws-source-pending/g) ?? []).length === 4, '骨架卡固定 4 张', (runningHtml.match(/ws-source ws-source-pending/g) ?? []).length)
+    ok(!runningHtml.includes('ws-source-pending') && runningHtml.includes('data-open="false"'), '搜索中胶囊收起时不渲染骨架卡，展开区关闭', (runningHtml.match(/ws-source ws-source-pending/g) ?? []).length)
     ok(runningHtml.includes('ws-cap-sites'), '运行中也预留站点图标位，完成时胶囊不变宽')
 
     const fallbackHtml = renderWith(createElement(view.SearchStepView, { call: call({ status: 'ok', output: 'no json here' }), step }, createElement('span', { id: 'plain' }, 'plain')))

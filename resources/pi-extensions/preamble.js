@@ -1,5 +1,12 @@
 export const NATIVE_PREAMBLE =
+  'You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.'
+
+export const NATIVE_PREAMBLES = [
+  NATIVE_PREAMBLE,
   'You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.'
+]
+
+const nativePreambleIn = (text) => NATIVE_PREAMBLES.find((native) => text.includes(native))
 
 export const YAN_PREAMBLE =
   'You are an assistant operating inside Inkstone (砚), a desktop AI workspace; pi is the underlying execution engine, not the user-facing application. You help users by reading files, executing commands, editing code, and writing new files.'
@@ -35,13 +42,13 @@ function withInkstonePreamble(messages) {
     if (message?.role !== 'system') return message
     const sections = message.sections
     const preamble = sections?.preamble
-    const hasNativePreamble = typeof preamble === 'string' && preamble.includes(NATIVE_PREAMBLE)
+    const native = typeof preamble === 'string' ? nativePreambleIn(preamble) : undefined
     const docs = sections?.docs
     const hasNativeDocs = typeof docs === 'string' && docs.includes(NATIVE_DOCS_MARKER)
-    if (!hasNativePreamble && !hasNativeDocs) return message
+    if (!native && !hasNativeDocs) return message
     changed = true
     const nextSections = { ...sections }
-    if (hasNativePreamble) nextSections.preamble = preamble.replace(NATIVE_PREAMBLE, YAN_PREAMBLE)
+    if (native) nextSections.preamble = preamble.replace(native, YAN_PREAMBLE)
     if (hasNativeDocs) nextSections.docs = null
     return { ...message, sections: nextSections }
   })
@@ -61,7 +68,8 @@ export default function preambleExtension(pi) {
       addWorkRules(event.systemPromptOptions.promptGuidelines)
       return
     }
-    const identity = base.includes(YAN_PREAMBLE) ? base : base.includes(NATIVE_PREAMBLE) ? base.replace(NATIVE_PREAMBLE, YAN_PREAMBLE) : `${base}\n\n${YAN_PREAMBLE}`
+    const native = nativePreambleIn(base)
+    const identity = base.includes(YAN_PREAMBLE) ? base : native ? base.replace(native, YAN_PREAMBLE) : `${base}\n\n${YAN_PREAMBLE}`
     const stripped = stripNativeDocsBlock(identity)
     const updated = stripped.includes(FALLBACK_GUIDANCE) ? stripped : `${stripped}\n\n${FALLBACK_GUIDANCE}`
     if (updated === base) return

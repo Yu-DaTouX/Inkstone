@@ -36,7 +36,6 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 | `E:/Inkstone/refs/` | 只读参考：`t3code`（T3 源码）、`openclaude`、`cc-rea`（Claude Code / Desktop 界面研究） |
 | `E:/Inkstone/projects/inkstone-minecraft-plugin/` | Minecraft 插件独立仓库（GitHub `Yu-DaTouX/inkstone-minecraft-plugin`） |
 | `E:/Inkstone/projects/砚启动器/` | Minecraft 独立启动器仓库（GitHub `Yu-DaTouX/inkstone-minecraft`） |
-| `release/砚数据/` | 真实用户数据，只读 |
 
 ## 实现约定
 
@@ -64,7 +63,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 远程模型场景运行前确认模型、额度和授权。模拟或本机 fixture 不代表真实模型验证。视觉结论应来自实际截图。
 - 未经授权不提交、推送、打包或发布。提交时逐文件暂存当前任务（不用 `git add .`），先核对暂存清单，提交后确认其他改动仍在。
 - 提交说明不加 `Co-Authored-By` 署名。
-- 发版（需授权）：`npm version <版本> --no-git-tag-version` 后单独提交「版本 x.y.z」；推送 `v<版本>` 标签会触发 CI 打包、跑 `test:packaged` 并生成草稿 Release；核对附件、写好更新说明后再公开。本地安装包放 `release/<版本>-<短哈希>/`，不碰 `release/砚数据/`。
+- 发版（需授权）：`npm version <版本> --no-git-tag-version` 后单独提交「版本 x.y.z」；推送 `v<版本>` 标签会触发 CI 打包、跑 `test:packaged` 并生成草稿 Release；核对附件、写好更新说明后再公开。本地安装包放 `release/<版本>-<短哈希>/`。
 - 交付说明写明修改、检查、未验证项及剩余限制；过程记录留在 `.local-docs/`，不提交到公开仓库。
 
 ## 工作区与公开边界
@@ -72,6 +71,6 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 不用 reset、checkout、clean、stash 或删除操作处理无关修改。
 - 忽略不等于可删除。不清理本地资料，不用 `git add -f` 重新纳入内部目录。
 - 已有截图与证据不删除、不覆盖，新图使用新名称。主页素材位于 `assets/inkstone/`，应用图标在 `build/`，按授权更新。
-- `release/砚数据/` 是真实用户数据，只读；验证使用独立 `YAN_*` 数据目录或备份副本。
+- 本机真实用户数据（`~/.pi/agent` 等）只读；验证使用独立 `YAN_*` 数据目录或备份副本（升级读取验证用 `YAN_UPGRADE_SOURCE` 指向副本）。
 - `resources/pi-runtime/` 整个被 Git 忽略，由 `vendor:pi` / `upgrade:pi` 生成：各版本在 `versions/` 下，`current.json` 指定新进程使用的版本。不手改，不删除旧版本目录。
 - 历史提交仍含以前公开的资料；不得自行强推或改写历史。

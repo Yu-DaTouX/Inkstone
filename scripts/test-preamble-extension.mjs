@@ -1,8 +1,9 @@
 export async function runPreambleExtensionTests(ok, mod) {
-  const { NATIVE_PREAMBLE, YAN_PREAMBLE, PROGRESS_GUIDANCE, WORK_RULES, default: extension } = mod
+  const { NATIVE_PREAMBLE, NATIVE_PREAMBLES, YAN_PREAMBLE, PROGRESS_GUIDANCE, WORK_RULES, default: extension } = mod
   const GUIDANCE = [PROGRESS_GUIDANCE, ...WORK_RULES.map((rule) => `- ${rule}`)].join('\n')
 
-  ok(typeof NATIVE_PREAMBLE === 'string' && NATIVE_PREAMBLE.startsWith('You are an expert coding assistant'), '导出的原生句就是 pi 的英文 preamble')
+  ok(typeof NATIVE_PREAMBLE === 'string' && NATIVE_PREAMBLE.startsWith('You are a coding assistant running inside pi'), '导出的原生句是 pi 1.5 的英文 preamble')
+  ok(NATIVE_PREAMBLES.length === 2 && NATIVE_PREAMBLES[1].startsWith('You are an expert coding assistant operating inside pi'), '仍认 pi 1.4 及以前的旧句')
   ok(typeof YAN_PREAMBLE === 'string' && YAN_PREAMBLE.includes('Inkstone'), '导出的砚开场白包含产品名 Inkstone')
   ok(YAN_PREAMBLE.includes('underlying execution engine') && !YAN_PREAMBLE.includes('inside pi,'), '开场白保持英文措辞，只换产品名')
 
@@ -17,6 +18,7 @@ export async function runPreambleExtensionTests(ok, mod) {
   ok(out?.systemPrompt?.startsWith(YAN_PREAMBLE), '原生开场白被替换成砚的英文开场白', String(out?.systemPrompt).slice(0, 60))
   ok(out.systemPrompt === `${YAN_PREAMBLE}\n\n<tools>\n- read: Read file contents\n</tools>\n\n<rules>\n- Be concise\n</rules>\n\n${GUIDANCE}`, '原生规则逐字保留，末尾追加简短进展约定与工作规则')
   ok(!out.systemPrompt.includes(NATIVE_PREAMBLE), '替换后不再包含原生英文句')
+  ok(run(`${NATIVE_PREAMBLES[1]}\n\n<tools>`).systemPrompt.startsWith(`${YAN_PREAMBLE}\n\n<tools>`), 'pi 1.4 的旧开场白同样替换')
 
   ok(run('BASE').systemPrompt === `BASE\n\n${YAN_PREAMBLE}\n\n${GUIDANCE}`, '未知原生开场白保留原文并补充砚身份和进展约定')
   ok(run('').systemPrompt.includes(YAN_PREAMBLE), '空系统提示仍包含砚身份')
@@ -52,5 +54,7 @@ export async function runPreambleExtensionTests(ok, mod) {
     ok(system.sections.preamble === NATIVE_PREAMBLE && system.sections.docs === nativeDocsSection && replaced.messages[1] === user, '不改原消息对象，非系统消息原样保留')
     ok(handlers.context_with_system({ type: 'context_with_system', messages: replaced.messages }, {}) === undefined, '幂等：已换成砚开场白且文档分区已置空时不再改动')
     ok(handlers.context_with_system({ type: 'context_with_system', messages: [user] }, {}) === undefined, '没有系统消息时不改动')
+    const legacy = handlers.context_with_system({ type: 'context_with_system', messages: [{ role: 'system', content: '', sections: { preamble: NATIVE_PREAMBLES[1] } }] }, {})
+    ok(legacy?.messages?.[0]?.sections?.preamble === YAN_PREAMBLE, '发出请求前也替换 pi 1.4 的旧开场白')
   }
 }

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const unpacked = join(root, 'release', 'win-unpacked')
-const source = join(root, 'release', '砚数据')
+const source = process.env.YAN_UPGRADE_SOURCE ? resolve(process.env.YAN_UPGRADE_SOURCE) : join(root, 'release', '砚数据')
 
 const C = {
   ok: (s) => `\x1b[32m${s}\x1b[0m`,
@@ -30,7 +30,7 @@ if (!existsSync(unpacked)) {
   process.exit(1)
 }
 if (!existsSync(source)) {
-  console.error(`找不到 ${source}（真实用户数据）。没有它就无法做升级验证 —— 不伪造。`)
+  console.error(`找不到 ${source}（真实用户数据）。用 YAN_UPGRADE_SOURCE 指向一份真实数据的备份副本；没有就无法做升级验证 —— 不伪造。`)
   process.exit(1)
 }
 
@@ -146,7 +146,7 @@ say(got.local?.onboarded === '1', 'localStorage 里的引导标记还在', Strin
 
 const after = fingerprint(source)
 const same = before.length === after.length && before.every((row, i) => row === after[i])
-say(same, `原目录 release/砚数据 逐字节未变（${before.length} 个文件）`)
+say(same, `源数据目录逐字节未变（${before.length} 个文件）`)
 
 console.log('')
 if (failed === 0) {
