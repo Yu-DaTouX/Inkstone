@@ -106,6 +106,7 @@ export interface SelectResult {
   generation?: number
   via?: 'hit' | 'reuse' | 'new'
   deferred?: boolean
+  deferredReason?: 'cwd-busy' | 'limit'
   error?: string
 }
 
@@ -445,7 +446,7 @@ export class RunnerRegistry {
       (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
     )
     if (conflict) {
-      if (target.preview) return { ok: true, deferred: true, sessionId: target.sessionId }
+      if (target.preview) return { ok: true, deferred: true, deferredReason: 'cwd-busy', sessionId: target.sessionId }
       const escalated = await this.opts.resolveCwdConflict?.(target)
       if (escalated && 'cwd' in escalated && canonicalCwd(escalated.cwd) !== canonicalCwd(target.cwd)) {
         target = { ...target, cwd: escalated.cwd }
@@ -475,7 +476,7 @@ export class RunnerRegistry {
           !target.hidden &&
           !runner.hidden &&
           !this.busy(runner) &&
-          !this.admissions.has(canonicalCwd(runner.cwd)) &&
+          ![...this.admissions.values()].some((claim) => claim.runId === runner.id) &&
           !this.awaitingSubagents(runner) &&
           (target.activate !== false || runner.id !== this.activeId)
       )
@@ -588,11 +589,12 @@ export class RunnerRegistry {
     }
 
     if (this.runners.size >= this.limit) {
+      if (target.preview) return { ok: true, deferred: true, deferredReason: 'limit', sessionId: target.sessionId }
       return {
         ok: false,
         error:
           `同时运行的会话已达上限（${this.limit} 个）。` +
-          '先等其中一个跑完，或停止它，再切换 —— 不会为了腾位置停掉正在跑的会话。'
+          '先等其中一个跑完，或停止它，再试 —— 不会为了腾位置停掉正在跑的会话。'
       }
     }
 

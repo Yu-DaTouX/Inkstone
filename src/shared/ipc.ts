@@ -1742,6 +1742,7 @@ export interface YanBridge {
     generation?: number
     via?: 'hit' | 'reuse' | 'new'
     deferred?: boolean
+    deferredReason?: 'cwd-busy' | 'limit'
     error?: string
   }>
   setVisibleRunnerSessions(sessions: VisibleRunnerSession[]): Promise<boolean>

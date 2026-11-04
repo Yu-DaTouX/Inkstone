@@ -2222,11 +2222,13 @@ export const useStore = create<Store>((rawSet, get) => {
         pendingActivation: { sessionFile: sum?.path ?? path, sessionId: res.sessionId ?? sum?.id, projectId, scope, cwd },
         peekedPath: path,
         peekedSessionId: res.sessionId ?? sum?.id ?? null,
-        notices: pushNotice(
-          get().notices,
-          'info',
-          uiText('state.session.readOnlyNotice')
-        )
+        ...(res.deferredReason === 'limit' ? {} : {
+          notices: pushNotice(
+            get().notices,
+            'info',
+            uiText('state.session.readOnlyNotice')
+          )
+        })
       })
       void get().syncRunners()
       return
