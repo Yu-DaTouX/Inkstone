@@ -106,8 +106,8 @@ export async function runRunnerReclaimTests(ok) {
     f.at(T)
     await f.reg.reclaimIdle()
     const restored = await f.reg.select({ cwd: 'C:/p0', sessionFile: 'C:/s0.jsonl' })
-    ok(restored.ok && restored.via === 'reuse', '切回也可以走已有空闲实例复用路径')
-    ok(f.reg.active().state.sessionFile === 'C:/s0.jsonl', '跨目录复用载回原会话')
+    ok(restored.ok && restored.via === 'new' && f.reg.size === 2, '没到上限时切回回收会话新开实例，另一个项目的空闲实例留着', `via=${restored.via} size=${f.reg.size}`)
+    ok(f.reg.active().state.sessionFile === 'C:/s0.jsonl', '切回后载回原会话')
     await f.reg.stopAll()
   }
   for (const field of ['isAgentRunning', 'isStreaming', 'isCompacting', 'bash', 'pending', 'steering', 'followUp']) {

@@ -377,16 +377,24 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(same.ok && same.via === 'reuse' && agents.length === 1, '同项目复用不换进程', `agents=${agents.length}`)
         ok(oldAgent.calls.switchSession.includes('C:/s-p1b.jsonl'), '同项目复用只切会话文件')
 
-        const moved = await reg.select({ cwd: 'C:/p2', sessionFile: 'C:/s-p2.jsonl' })
-        ok(moved.ok && moved.via === 'reuse', '跨项目仍复用同一个 runner 身份', `via=${moved.via}`)
-        ok(moved.id === first.id, 'runner id 稳定（渲染端缓存不用换键）')
-        ok(agents.length === 2, '跨项目复用会新建一个 pi 进程', `agents=${agents.length}`)
-        ok(oldAgent.calls.stop === 1, '旧 cwd 的进程被停掉')
-        ok(agents[1].calls.start === 1, '新进程已启动')
-        ok(agents[1].calls.switchSession.includes('C:/s-p2.jsonl'), '新进程切到目标会话')
-        ok(reg.activeRunner()?.cwd === 'C:/p2', '注册表里的 cwd 指向新项目', reg.activeRunner()?.cwd)
-        ok((moved.generation ?? 0) > 1, '换项目同样让 generation 递增（迟到事件失效）')
-        ok(agents[1].capabilityGeneration === moved.generation, '跨项目替代实例带着注册表的新 generation 启动')
+        const warm = await reg.select({ cwd: 'C:/p2', sessionFile: 'C:/s-p2.jsonl' })
+        ok(warm.ok && warm.via === 'new' && warm.id !== first.id, '没到上限时跨项目新开实例', `via=${warm.via}`)
+        ok(oldAgent.calls.stop === 0 && reg.size === 2, '原项目的空闲实例留着，切回来不用重启')
+        const back = await reg.select({ cwd: 'C:/p1', sessionFile: 'C:/s-p1.jsonl' })
+        ok(back.ok && back.id === first.id && agents.length === 2, '切回原项目直接用热实例', `via=${back.via} agents=${agents.length}`)
+
+        const moved = await reg.select({ cwd: 'C:/p3', sessionFile: 'C:/s-p3.jsonl' })
+        const movedAgent = agents[2]
+        ok(moved.ok && moved.via === 'reuse', '到上限后跨项目复用最久未用的 runner 身份', `via=${moved.via}`)
+        const replacedAgent = moved.id === first.id ? oldAgent : agents[1]
+        ok(moved.id === first.id || moved.id === warm.id, 'runner id 稳定（渲染端缓存不用换键）', moved.id)
+        ok(agents.length === 3 && reg.size === 2, '跨项目复用会新建一个 pi 进程', `agents=${agents.length}`)
+        ok(replacedAgent.calls.stop === 1, '旧 cwd 的进程被停掉')
+        ok(movedAgent.calls.start === 1, '新进程已启动')
+        ok(movedAgent.calls.switchSession.includes('C:/s-p3.jsonl'), '新进程切到目标会话')
+        ok(reg.activeRunner()?.cwd === 'C:/p3', '注册表里的 cwd 指向新项目', reg.activeRunner()?.cwd)
+        ok((moved.generation ?? 0) > (warm.generation ?? 0), '换项目同样让 generation 递增（迟到事件失效）')
+        ok(movedAgent.capabilityGeneration === moved.generation, '跨项目替代实例带着注册表的新 generation 启动')
       }
 
       {
