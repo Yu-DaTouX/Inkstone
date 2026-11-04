@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 
 export function runDangerGuardTests(ok, mod) {
   runTargetParsingTests(ok, mod)
+  runBypassTests(ok, mod)
   const { detectDanger, isBroadTarget } = mod
   const bash = (command) => detectDanger('bash', { command }, 'C:/proj')
   const asks = (command) => bash(command).length > 0
@@ -137,6 +138,57 @@ export function runDangerGuardTests(ok, mod) {
     ok(detectDanger('write', { path: '/c/Windows/System32/drivers/etc/hosts' }, work).length > 0, '写 /c/Windows 按 Windows 系统目录要问')
     ok(isBroadTarget('/c') && isBroadTarget('/c/users/me') && !isBroadTarget('/c/users/me/bench/proj') && !isBroadTarget('/tmp/build/cache'), 'Git Bash 盘符按 Windows 盘计算范围')
   }
+}
+
+function runBypassTests(ok, mod) {
+  const { detectDanger, outsideWrites } = mod
+  const on = { outsideWrites: true, allowRoots: [] }
+  const asks = (command, tool = 'bash') => detectDanger(tool, { command }, 'C:/proj').length > 0
+  const outside = (tool, command) => outsideWrites(tool, { command }, 'C:/proj', on)
+
+  for (const cmd of ['git -C . reset --hard HEAD', 'git -C "my dir" clean -fd', 'git -C D:/x checkout -- .', 'git -c core.x=y stash clear', 'git -C sub push --force origin main', 'git --git-dir=.git --work-tree=. reset --hard']) {
+    ok(asks(cmd), `git 全局参数不能绕过破坏性规则：${cmd}`)
+  }
+  for (const cmd of ['git -C . status', 'git -C . reset HEAD file.txt', 'git -C sub diff --stat', 'git -C sub push origin main']) ok(!asks(cmd), `git 全局参数的普通用法不打扰：${cmd}`)
+
+  for (const cmd of ["rg 'git reset --hard' src", "grep -n 'drop table' migrations.sql", "git grep 'npm publish'", "rg 'a|git clean -fd' src", 'rg -n "reg delete" scripts | head -20']) {
+    ok(!asks(cmd), `只是搜索危险文字不打扰：${cmd}`)
+  }
+  ok(!asks('Select-String -Pattern "reg delete" -Path *.ps1', 'powershell'), 'PowerShell 搜索危险文字不打扰')
+  ok(asks('grep -q x a.txt && git reset --hard'), '搜索后接的真实危险命令仍要问')
+  ok(asks('echo "git reset --hard" | sh'), '非搜索命令里的危险文字不豁免')
+
+  for (const cmd of ['Remove-Item -r -Force *', String.raw`Remove-Item -Rec C:\Users\me`, 'rd -r C:/Users', 'Remove-Item -Recurse:$true D:/other/data']) {
+    ok(asks(cmd, 'powershell'), `PowerShell 参数缩写不能绕过递归删除检查：${cmd}`)
+  }
+  ok(!asks('Remove-Item -Force a.txt', 'powershell') && !asks('Remove-Item -r build', 'powershell'), '项目内删除不打扰')
+
+  ok(outsideWrites('write', { path: '@D:/other/a.txt' }, 'C:/proj', on).length === 1, 'write 路径带 @ 前缀按 pi 的解析判定项目外')
+  ok(outsideWrites('edit', { path: '@src/a.ts' }, 'C:/proj', on).length === 0, '带 @ 的项目内路径不打扰')
+  ok(detectDanger('write', { path: '@C:/Windows/System32/x.dll' }, 'C:/proj').length > 0, '带 @ 写系统目录要问')
+
+  ok(outside('bash', "pwsh -NoProfile -Command 'Set-Content -Path D:/other/a.txt -Value x; Get-Date'").includes('d:/other/a.txt'), '嵌套 pwsh 里的项目外写入要问')
+  ok(outside('bash', 'bash -c "echo hi > D:/other/b.txt"').includes('d:/other/b.txt'), '嵌套 bash -c 里的项目外写入要问')
+  const encoded = Buffer.from('Set-Content -Path D:/other/c.txt -Value 1', 'utf16le').toString('base64')
+  ok(outside('bash', `pwsh -EncodedCommand ${encoded}`).includes('d:/other/c.txt'), '编码命令里的项目外写入要问')
+  ok(outside('bash', "pwsh -NoProfile -Command 'Set-Content -Path a.txt -Value x'").length === 0, '嵌套 shell 写项目内不打扰')
+  ok(detectDanger('bash', { command: "pwsh -Command 'Set-Content -Path ~/.pi/agent/settings.json -Value {}'" }, 'C:/proj').some((r) => r.includes('配置')), '嵌套 shell 改 pi 配置要问')
+
+  ok(outside('powershell', "$p='D:/other/a.txt'; Set-Content -Path $p -Value x").includes('d:/other/a.txt'), 'PowerShell 变量里的项目外路径要问')
+  ok(outside('bash', 'out=D:/other/x.log; npm test > "$out"').includes('d:/other/x.log'), 'bash 变量里的项目外路径要问')
+  const unknownVar = outside('bash', 'echo hi > "$YAN_TEST_SURELY_UNSET_VAR/a.txt"')
+  ok(unknownVar.length === 1 && unknownVar[0].includes('变量'), '无法解析的变量路径要问并说明原因', JSON.stringify(unknownVar))
+  for (const cmd of [
+    'for f in *.txt; do rm "$f"; done',
+    'for f in src/*.md; do mv "$f" "${f%.md}.txt"; done',
+    'tmp=$(mktemp); echo hi > "$tmp"',
+    'dir=build; mkdir -p "$dir" && echo x > "$dir/a.txt"',
+    'echo hi > "$PWD/a.txt"'
+  ]) ok(outside('bash', cmd).length === 0, `常见变量写法不打扰：${cmd}`, JSON.stringify(outside('bash', cmd)))
+  for (const cmd of ['Get-ChildItem *.log | ForEach-Object { Remove-Item $_.FullName }', 'npm test > $null', 'Set-Content a.txt $content', 'foreach ($f in Get-ChildItem *.tmp) { Remove-Item $f }']) {
+    ok(outside('powershell', cmd).length === 0, `PowerShell 常见写法不打扰：${cmd}`, JSON.stringify(outside('powershell', cmd)))
+  }
+  ok(outside('bash', "cat > notes.md <<'EOF'\nIt's fine\nEOF\necho hi > D:/other/x.txt").includes('d:/other/x.txt'), 'heredoc 正文里的单引号不吞掉后面的命令')
 }
 
 function runTargetParsingTests(ok, mod) {
