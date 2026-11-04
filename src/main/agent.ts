@@ -2655,6 +2655,8 @@ export class AgentController extends EventEmitter {
         if (evt.willRetry === true && this.turn.startedMono !== undefined) this.timingContinues = true
         this.setCompaction(this.compactionState, evt)
         this.markStreaming(false)
+        if (this.state?.isCompacting) this.state = { ...this.state, isCompacting: false }
+        if (evt.willRetry !== true) this.settleExecutionAdmission()
         void this.refreshState()
         void this.refreshStats()
         void this.hydrate().catch((error) => {
