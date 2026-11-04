@@ -146,7 +146,7 @@ console.log('\n--- 5. 排队消息随退出落盘 ---')
   await ctl.queueWrite
   check(existsSync(queueFile), '队列变化即落盘（不依赖退出钩子）')
   const saved = JSON.parse(await readFile(queueFile, 'utf8'))
-  check(saved.version === 1 && saved.sessionId === 'session-flush', '落盘记录带版本与会话 id', JSON.stringify(saved))
+  check(saved.version === 2 && saved.sessionId === 'session-flush', '落盘记录带版本与会话 id', JSON.stringify(saved))
   check(saved.steering.length === 1 && saved.followUp.length === 1, '插话与排队分别保存', JSON.stringify(saved))
 
   const { rpc } = fakeRpc()
@@ -165,7 +165,9 @@ console.log('\n--- 6. 重启后回填到输入框并清掉文件 ---')
   check(reclaimed[0]?.payload.sessionId === 'session-flush', '恢复推送带会话 id')
   check(reclaimed[0]?.payload.steering[0] === '补充要求：先跑类型检查', '插话内容回填', JSON.stringify(reclaimed[0]?.payload))
   check(reclaimed[0]?.payload.followUp[0] === '再说下一步', '排队内容回填')
-  check(!existsSync(queueFile), '回填后删除恢复文件，不会重复提示')
+  check(!existsSync(queueFile), '回填后恢复文件移走，不会重复提示')
+  check(existsSync(`${queueFile}.reclaimed`), '回填后留一份 .reclaimed 备份，可以找回')
+  check(reclaimed[0]?.payload.items?.steering?.[0]?.text === '补充要求：先跑类型检查', '回填带上按条的排队项（可携带图片）', JSON.stringify(reclaimed[0]?.payload.items))
 
   await ctl.reclaimSavedQueue()
   check(pushes.filter((msg) => msg.ch === 'queue-reclaimed').length === 1, '再调一次不会重复回填')
@@ -181,7 +183,7 @@ console.log('\n--- 7. 队列为空时清掉恢复文件 ---')
   await ctl.queueWrite
   check(!existsSync(queueFile), '队列清空后恢复文件被删除')
   const names = await readdir(QUEUE_RECOVERY_DIR).catch(() => [])
-  check(!names.some((name) => name.includes('session-flush')), '恢复目录不留残留文件', JSON.stringify(names))
+  check(!names.some((name) => name.includes('session-flush') && !name.endsWith('.reclaimed')), '恢复目录不留临时残留文件', JSON.stringify(names))
 }
 
 console.log('\n--- 8. 子代理完成通知不进恢复队列 ---')

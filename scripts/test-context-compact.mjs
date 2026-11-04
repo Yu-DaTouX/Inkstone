@@ -14,6 +14,8 @@ assert.ok(!text.includes('more characters truncated'), '不出现截断标记')
 assert.ok(text.includes('[Assistant tool calls]: read(path="book/ch01.md") call=c1'), '工具调用带调用 ID')
 assert.ok(text.includes('[Tool result #3 read call=c1]: 甲'), '工具结果带序号、工具名、调用 ID')
 assert.ok(mod.serializeMessage({ role: 'toolResult', toolName: 'bash', toolCallId: 'c2', isError: true, content: [] }, 7) === '[Tool result #7 bash call=c2 error]: (empty)', '失败的工具结果带 error 标记，空结果也留一行')
+assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'cat secret.env', output: 'TOKEN=abc', excludeFromContext: true }, 8), '', '用户排除出上下文的终端输出不进压缩摘要')
+assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'npm test', output: 'ok' }, 9), '[User ran]: npm test\nok', '普通终端输出照常进入摘要')
 
 {
   const lines = Array.from({ length: 300 }, (_, i) => `line ${i} ${'x'.repeat(40)}`).join('\n')

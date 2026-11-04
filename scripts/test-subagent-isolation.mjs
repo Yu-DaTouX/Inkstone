@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -102,6 +102,25 @@ export async function runSubagentIsolationTests(ok, isolation) {
     ok(encodedMerge.ok, '非 UTF-8 补丁可以合并', encodedMerge.error ?? '')
     ok((await readFile(join(encodingRepo, 'gbk.txt'))).equals(gbkChanged), '合并后主工作树得到原始字节内容')
     await isolation.cleanupWorkspace(encoded)
+
+    await writeFile(join(commitRepo, '.gitignore'), 'reports/\nnode_modules/\n', 'utf8')
+    await git(commitRepo, ['add', '.gitignore'])
+    await git(commitRepo, ['commit', '-qm', 'ignore'])
+    const ignoredWork = await isolation.prepareWorkspace(commitRepo, 'ignored', 'worktree')
+    await mkdir(join(ignoredWork.cwd, 'reports', 'shots'), { recursive: true })
+    await writeFile(join(ignoredWork.cwd, 'reports', 'summary.md'), '# 报告\n', 'utf8')
+    await writeFile(join(ignoredWork.cwd, 'reports', 'shots', 'a.png'), Buffer.from([1, 2, 3]))
+    await mkdir(join(ignoredWork.cwd, 'node_modules', 'x'), { recursive: true })
+    await writeFile(join(ignoredWork.cwd, 'node_modules', 'x', 'i.js'), 'x', 'utf8')
+    const preserved = await isolation.preserveIgnoredOutputs(ignoredWork, archive, 'ignored')
+    ok(preserved.ok && preserved.path && preserved.files.includes('reports'), '被忽略的产物在清理前另存', JSON.stringify(preserved))
+    ok(preserved.ok && (await readText(join(preserved.path, 'reports', 'summary.md'))) === '# 报告\n', '另存保留目录结构与内容')
+    ok(preserved.ok && !preserved.files.some((file) => file.includes('node_modules')), '可重建目录不另存', JSON.stringify(preserved))
+    const tooBig = await isolation.preserveIgnoredOutputs(ignoredWork, archive, 'ignored-big', 2)
+    ok(!tooBig.ok && /超过/.test(tooBig.error), '超过上限时不另存并说明原因', JSON.stringify(tooBig))
+    const nothing = await isolation.preserveIgnoredOutputs({ isolation: 'shared-cwd', rootCwd: commitRepo, cwd: commitRepo }, archive, 'shared')
+    ok(nothing.ok && !nothing.path && nothing.files.length === 0, '非 worktree 不做另存')
+    await isolation.cleanupWorkspace(ignoredWork)
 
     const missingWorktree = join(commitRepo, 'not-a-worktree')
     const missingCleanup = await isolation.cleanupWorkspace({

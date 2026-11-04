@@ -26,7 +26,7 @@ import { SessionItemProjector, projectHistory } from './session-items/projector'
 import { planSessionSync, planSessionSyncAgainst } from './session-sync-plan'
 import { rememberSyncBaseline, takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
-import { clearQueueFile, loadQueue, saveQueue } from './queue-persistence'
+import { clearQueueFile, keepReclaimedQueue, loadQueue, saveQueue, type PersistedQueueItem } from './queue-persistence'
 import { mergeToolDetails, streamsHtmlWriteArgs, toolOutputPushMode, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
@@ -3342,12 +3342,13 @@ export class AgentController extends EventEmitter {
   private persistQueue(): Promise<void> {
     const sessionId = this.state?.sessionId
     if (!sessionId) return Promise.resolve()
-    const items = [...this.queueState.steering, ...this.queueState.followUp].filter(item => !isSubagentNotice(item.text))
-    const steering = this.queueState.steering.filter(item => !isSubagentNotice(item.text)).map(item => item.text)
-    const followUp = this.queueState.followUp.filter(item => !isSubagentNotice(item.text)).map(item => item.text)
-    const images = items.reduce((count, item) => count + (item.images?.length ?? 0), 0)
-    if (!steering.length && !followUp.length && images === 0) return clearQueueFile(sessionId)
-    return saveQueue({ sessionId, steering, followUp, images })
+    const persisted = (items: QueueItem[]): PersistedQueueItem[] => items
+      .filter(item => !isSubagentNotice(item.text) && (item.text.trim() || item.images?.length))
+      .map(item => item.images?.length ? { text: item.text, images: item.images.map(({ data, mimeType }) => ({ data, mimeType })) } : { text: item.text })
+    const steering = persisted(this.queueState.steering)
+    const followUp = persisted(this.queueState.followUp)
+    if (!steering.length && !followUp.length) return clearQueueFile(sessionId)
+    return saveQueue({ sessionId, items: { steering, followUp } })
   }
 
   async reclaimSavedQueue(): Promise<void> {
@@ -3356,9 +3357,17 @@ export class AgentController extends EventEmitter {
     if (this.queueState.steering.length || this.queueState.followUp.length) return
     const saved = await loadQueue(sessionId).catch(() => null)
     if (!saved) return
-    await clearQueueFile(sessionId).catch(() => undefined)
-    if (!saved.steering.length && !saved.followUp.length) return
-    this.push({ ch: 'queue-reclaimed', payload: { steering: saved.steering, followUp: saved.followUp, sessionId } })
+    const items: QueueState = {
+      steering: saved.items.steering.map(item => this.newQueueItem(item.text, item.images)),
+      followUp: saved.items.followUp.map(item => this.newQueueItem(item.text, item.images))
+    }
+    if (items.steering.length || items.followUp.length) {
+      this.push({ ch: 'queue-reclaimed', payload: { steering: saved.steering, followUp: saved.followUp, items, sessionId } })
+    }
+    if (saved.lostImages) {
+      this.push({ ch: 'notify', payload: { id: `queue-lost-images-${Date.now()}`, method: 'notify', notifyType: 'warning', message: `旧版本保存的排队消息里有 ${saved.lostImages} 张图片没能保存，需要重新添加。` } })
+    }
+    await keepReclaimedQueue(sessionId).catch(() => undefined)
   }
 
   private consumeQueued(text: string, images: NonNullable<QueueItem['images']>): void {

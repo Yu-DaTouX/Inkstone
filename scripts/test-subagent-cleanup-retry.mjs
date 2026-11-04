@@ -44,6 +44,7 @@ try {
         export const collectDiff = async () => ({ summary: { files: 0 } })
         export const applyPatch = async () => ({ ok: true })
         export const prepareWorkspace = async () => ({})
+        export const preserveIgnoredOutputs = async () => ({ ok: true, files: [] })
       ` }))
     } }]
   })

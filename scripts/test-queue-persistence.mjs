@@ -36,7 +36,7 @@ await build({
   logLevel: 'silent'
 })
 const queue = await import(pathToFileURL(outfile).href)
-const { QUEUE_RECOVERY_DIR, saveQueue, loadQueue, clearQueueFile } = queue
+const { QUEUE_RECOVERY_DIR, saveQueue, loadQueue, clearQueueFile, keepReclaimedQueue } = queue
 const fileOf = (sessionId) => join(QUEUE_RECOVERY_DIR, `${sessionId}.json`)
 
 process.stdout.write('▌排队消息落盘与读回\n')
@@ -50,7 +50,7 @@ await check('插话与排队分开保存并能原样读回', async () => {
   const at = Date.now()
   await saveQueue({ sessionId: 'session-a', steering: ['补充要求：先跑类型检查'], followUp: ['再补测试'] })
   const saved = await loadQueue('session-a')
-  assert.equal(saved.version, 1)
+  assert.equal(saved.version, 2)
   assert.equal(saved.sessionId, 'session-a')
   assert.deepEqual(saved.steering, ['补充要求：先跑类型检查'])
   assert.deepEqual(saved.followUp, ['再补测试'])
@@ -85,21 +85,22 @@ await check('清空后文件消失', async () => {
 })
 
 process.stdout.write('\n▌内容清洗\n')
-await check('空白项被丢弃，纯图片项保留图片计数', async () => {
-  await saveQueue({ sessionId: 'session-c', steering: ['   ', '有内容的'], followUp: [], images: 2 })
+const png = { data: 'iVBORw0KGgo=', mimeType: 'image/png' }
+await check('空白项被丢弃，带图片的项连图片一起保存', async () => {
+  await saveQueue({ sessionId: 'session-c', items: { steering: [{ text: '   ' }, { text: '有内容的', images: [png, png] }], followUp: [] } })
   const saved = await loadQueue('session-c')
   assert.deepEqual(saved.steering, ['有内容的'])
-  assert.equal(saved.images, 2)
+  assert.deepEqual(saved.items.steering, [{ text: '有内容的', images: [png, png] }])
 })
 
-await check('只有图片没有文本时不算空记录', async () => {
-  await saveQueue({ sessionId: 'session-images', steering: [], followUp: [], images: 1 })
+await check('只有图片没有文本的排队项也完整保存', async () => {
+  await saveQueue({ sessionId: 'session-images', items: { steering: [], followUp: [{ text: '', images: [png] }] } })
   const saved = await loadQueue('session-images')
-  assert.equal(saved.images, 1)
   assert.deepEqual(saved.steering, [])
+  assert.deepEqual(saved.items.followUp, [{ text: '', images: [png] }])
 })
 
-await check('超长文本截断到上限，条数上限生效', async () => {
+await check('长文本不再截断，条数上限仍生效', async () => {
   const long = 'x'.repeat(30_000)
   await saveQueue({
     sessionId: 'session-long',
@@ -108,8 +109,24 @@ await check('超长文本截断到上限，条数上限生效', async () => {
   })
   const saved = await loadQueue('session-long')
   assert.equal(saved.steering.length, 200)
-  assert.equal(saved.steering[0].length, 20_000)
-  assert.ok(saved.steering[0].startsWith('x'))
+  assert.equal(saved.steering[0], `${long}-0`)
+})
+
+await check('旧版 v1 文件仍能读回，并报告当时没存下的图片数', async () => {
+  await mkdir(QUEUE_RECOVERY_DIR, { recursive: true })
+  await writeFile(fileOf('session-v1'), JSON.stringify({ version: 1, sessionId: 'session-v1', at: 5, steering: ['旧插话'], followUp: [], images: 2 }))
+  const saved = await loadQueue('session-v1')
+  assert.deepEqual(saved.steering, ['旧插话'])
+  assert.deepEqual(saved.items.steering, [{ text: '旧插话' }])
+  assert.equal(saved.lostImages, 2)
+})
+
+await check('回填后留一份 .reclaimed 备份，不再重复回填', async () => {
+  await saveQueue({ sessionId: 'session-reclaim', steering: ['回填我'], followUp: [] })
+  await keepReclaimedQueue('session-reclaim')
+  assert.equal(existsSync(fileOf('session-reclaim')), false)
+  assert.equal(existsSync(`${fileOf('session-reclaim')}.reclaimed`), true)
+  assert.equal(await loadQueue('session-reclaim'), null)
 })
 
 process.stdout.write('\n▌坏文件自愈\n')
@@ -123,7 +140,7 @@ await check('非法 JSON 读回 null 并删除坏文件', async () => {
 
 await check('版本或会话不匹配时不采用', async () => {
   const target = fileOf('session-version')
-  await writeFile(target, JSON.stringify({ version: 2, sessionId: 'session-version', at: 1, steering: ['旧格式'], followUp: [], images: 0 }))
+  await writeFile(target, JSON.stringify({ version: 3, sessionId: 'session-version', at: 1, steering: ['未来格式'], followUp: [], images: 0 }))
   assert.equal(await loadQueue('session-version'), null)
   await writeFile(target, JSON.stringify({ version: 1, sessionId: 'someone-else', at: 1, steering: ['串会话'], followUp: [], images: 0 }))
   assert.equal(await loadQueue('session-version'), null)
@@ -132,7 +149,7 @@ await check('版本或会话不匹配时不采用', async () => {
 await check('读回内容与磁盘文件一致', async () => {
   const raw = JSON.parse(await readFile(fileOf('session-a'), 'utf8'))
   assert.deepEqual(raw.steering, ['第一条', '第二条'])
-  assert.equal(raw.version, 1)
+  assert.equal(raw.version, 2)
 })
 
 process.stdout.write(`\n排队消息持久化：${report.pass} 通过 / ${report.fail} 失败\n`)

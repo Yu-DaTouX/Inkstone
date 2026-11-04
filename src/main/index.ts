@@ -2027,9 +2027,15 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   if (runners?.active()?.running) return { ok: true }
   if (restore?.sessionFile) void readHistoryWithArtifacts(restore.sessionFile).catch(() => undefined)
   const crashedId = runners?.activeRunnerId
-  if (runners && crashedId && !restore?.sessionFile && runners.statuses().some((status) => status.id !== crashedId && (status.running || status.waiting))) {
+  const crashedFile = crashedId ? runners?.agentOf(crashedId)?.getState()?.sessionFile : undefined
+  const othersWorking = !!crashedId && (
+    (runners?.statuses() ?? []).some((status) => status.id !== crashedId && (status.running || status.waiting)) ||
+    (subagentService.current()?.list() ?? []).some((run) => run.status === 'running' || run.status === 'starting')
+  )
+  if (runners && crashedId && othersWorking && (!restore?.sessionFile || restore.sessionFile === crashedFile)) {
     const restarted = await runners.restartOne(crashedId)
     if (restarted.ok) return { ok: true }
+    return { ok: false, error: `重启这个会话失败：${restarted.error ?? '未知原因'}。其他会话或子代理还在运行，没有把它们一起重启；等它们停下后再试。` }
   }
   await runners?.stopAll()
   await subagentService.current()?.stopAll()

@@ -131,7 +131,7 @@ export function serializeMessage(msg, index) {
       return `[Tool result${label ? ` ${label}` : ''}]: ${textOf(msg.content) || '(empty)'}`
     }
     case 'bashExecution':
-      return `[User ran]: ${msg.command ?? ''}\n${msg.output ?? ''}`.trim()
+      return msg.excludeFromContext ? '' : `[User ran]: ${msg.command ?? ''}\n${msg.output ?? ''}`.trim()
     case 'branchSummary':
     case 'compactionSummary':
       return msg.summary ? `[Earlier summary]: ${msg.summary}` : ''

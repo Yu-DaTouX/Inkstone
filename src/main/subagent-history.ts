@@ -27,6 +27,7 @@ const RUN_FIELDS: readonly (keyof SubagentRun)[] = [
   'projectId',
   'fork',
   'resultPath',
+  'savedOutputsPath',
   'thinkingLevel',
   'contextUsage',
   'latestActivity',

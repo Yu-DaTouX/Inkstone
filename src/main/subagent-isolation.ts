@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -239,6 +239,46 @@ export async function collectDiff(workspace: PreparedWorkspace, archiveDir: stri
   const patchPath = join(archiveDir, `${id}.patch`)
   await writeFile(patchPath, patch)
   return { summary: { ...summary, patchPath }, patchPath }
+}
+
+const IGNORED_OUTPUT_COPY_LIMIT = 200 * 1024 * 1024
+
+async function sizeWithin(path: string, budget: number): Promise<number> {
+  const info = await lstat(path)
+  if (info.isSymbolicLink()) return 0
+  if (!info.isDirectory()) return info.size
+  let total = 0
+  for (const entry of await readdir(path)) {
+    total += await sizeWithin(join(path, entry), budget - total)
+    if (total > budget) return total
+  }
+  return total
+}
+
+export type PreservedOutputs = { ok: true; path?: string; files: string[] } | { ok: false; error: string }
+
+export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archiveDir: string, id: string, limit = IGNORED_OUTPUT_COPY_LIMIT): Promise<PreservedOutputs> {
+  if (workspace.isolation !== 'worktree' || !workspace.worktreePath) return { ok: true, files: [] }
+  let outputs: string[]
+  try {
+    const listing = await git(workspace.cwd, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'])
+    outputs = ignoredOutputsOf(listing.stdout)
+  } catch (error) {
+    return { ok: false, error: `列不出被忽略的文件：${gitErrorDetail(error)}` }
+  }
+  if (outputs.length === 0) return { ok: true, files: [] }
+  try {
+    let total = 0
+    for (const rel of outputs) {
+      total += await sizeWithin(join(workspace.cwd, rel), limit - total)
+      if (total > limit) return { ok: false, error: `被忽略的产物超过 ${Math.round(limit / 1024 / 1024)} MB，没有自动另存` }
+    }
+    const target = join(archiveDir, `${id}-outputs`)
+    for (const rel of outputs) await cp(join(workspace.cwd, rel), join(target, rel), { recursive: true, force: true, verbatimSymlinks: true })
+    return { ok: true, path: target, files: outputs }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 export async function applyPatch(rootCwd: string, patchPath: string): Promise<{ ok: boolean; error?: string }> {

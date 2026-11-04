@@ -1218,6 +1218,7 @@ export interface SubagentRun {
   isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd'
   fork?: boolean
   resultPath?: string
+  savedOutputsPath?: string
   model?: string
   thinkingLevel?: string
   contextUsage?: SessionStats['contextUsage']

@@ -32,6 +32,7 @@ import {
   cleanupWorkspace as removeWorkspace,
   collectDiff,
   prepareWorkspace,
+  preserveIgnoredOutputs,
   type PreparedWorkspace
 } from './subagent-isolation'
 
@@ -272,6 +273,7 @@ export interface SubagentQuotaWatch {
 }
 
 const QUOTA_BOUNCE_LIMIT = 3
+const IGNORED_ONLY_NOTE = '子代理只写了被 .gitignore 忽略的文件'
 
 export interface SubagentHostCommands {
   onlyCommands: string[]
@@ -369,6 +371,7 @@ export class SubagentController {
       isolation: run.isolation,
       ...(run.fork ? { fork: true } : {}),
       resultPath: run.resultPath,
+      ...(run.savedOutputsPath ? { savedOutputsPath: run.savedOutputsPath } : {}),
       model: run.model,
       thinkingLevel: run.thinkingLevel,
       contextUsage: run.contextUsage,
@@ -1213,7 +1216,7 @@ export class SubagentController {
       } else if (run.isolation === 'worktree' && collected.ignoredOutputs?.length) {
         run.review = 'pending'
         run.resultPath = run.workspace.worktreePath
-        run.error = run.error ?? `子代理只写了被 .gitignore 忽略的文件（${collected.ignoredOutputs.slice(0, 5).join('、')}${collected.ignoredOutputs.length > 5 ? ' 等' : ''}），无法生成补丁，已保留工作区`
+        run.error = run.error ?? `${IGNORED_ONLY_NOTE}（${collected.ignoredOutputs.slice(0, 5).join('、')}${collected.ignoredOutputs.length > 5 ? ' 等' : ''}），无法生成补丁，已保留工作区`
       } else {
         run.review = 'none'
         run.resultPath = collected.patchPath
@@ -1238,7 +1241,20 @@ export class SubagentController {
     }
   }
 
-  private async cleanupRunWorkspace(run: Run): Promise<void> {
+  private async cleanupRunWorkspace(run: Run, keepIgnored = true): Promise<void> {
+    if (keepIgnored && run.isolation === 'worktree') {
+      const saved = await preserveIgnoredOutputs(run.workspace, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id)
+      if (!saved.ok) {
+        run.worktreeDone = false
+        run.error = [run.error, `被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${run.workspace.worktreePath}`].filter(Boolean).join('\n')
+        return
+      }
+      if (saved.path) {
+        run.savedOutputsPath = saved.path
+        if (run.error?.startsWith(IGNORED_ONLY_NOTE)) run.error = `${IGNORED_ONLY_NOTE}，已另存到 ${saved.path}`
+        if (!run.diff?.patchPath) run.resultPath = saved.path
+      }
+    }
     const result = await cleanupWorkspace(run.workspace)
     run.worktreeDone = result.ok
     if (!result.ok) run.error = [run.error, ...result.errors].filter(Boolean).join('\n')
@@ -1329,7 +1345,7 @@ export class SubagentController {
     try {
       run.review = 'discarded'
       run.resultPath = run.diff?.patchPath
-      await this.cleanupRunWorkspace(run)
+      await this.cleanupRunWorkspace(run, false)
       await this.writeMetadata(run, run.diff?.patchPath)
       this.emit(run)
       return { ok: true }
