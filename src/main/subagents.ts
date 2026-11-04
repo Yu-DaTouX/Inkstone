@@ -851,7 +851,8 @@ export class SubagentController {
         env: { ...env,
           PATH: `${join(YAN_DIR, 'bin')}${delimiter}${env.PATH ?? process.env.PATH ?? ''}`,
           YAN_CLI_URL: endpoint.url, YAN_CLI_TOKEN: endpoint.token,
-          YAN_SESSION_ID: id, YAN_PROJECT_ID: ctx.projectId ?? id }
+          YAN_SESSION_ID: id, YAN_PROJECT_ID: ctx.projectId ?? id,
+          YAN_SUBAGENT_COMMANDS: host.onlyCommands.join(',') }
       })
       rpc.on('exit', () => halt())
       rpc.on('ui', (req: Record<string, unknown>) => {

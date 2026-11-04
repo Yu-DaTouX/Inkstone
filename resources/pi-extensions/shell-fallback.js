@@ -1,17 +1,12 @@
 import { spawn } from 'node:child_process'
-import { existsSync, lstatSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileTransportOperations } from './shell-transport.js'
 import { createPythonEnvFixer } from './windows-python.js'
-import { findLegacyPowerShell, findPowerShellInBash, legacyPowerShellReason, findPowerShellQuotingConflict, powerShellConflictReason, powerShellInBashReason } from './windows-powershell.js'
-
-function hasPwsh() {
-  return (process.env.PATH ?? '').split(delimiter).some((dir) => {
-    try { return !!dir && !!lstatSync(join(dir, 'pwsh.exe')) } catch { return false }
-  })
-}
+import { registerEditHint } from './edit-hint.js'
+import { findLegacyPowerShell, findPowerShellInBash, hasPwsh, legacyPowerShellReason, findPowerShellQuotingConflict, powerShellConflictReason, powerShellInBashReason } from './windows-powershell.js'
 
 const UTF8_CONSOLE ='chcp.com 65001 >/dev/null 2>&1'
 
@@ -277,6 +272,7 @@ async function loadPiCore() {
 }
 
 export default async function shellFallback(pi) {
+  registerEditHint(pi)
   if (process.env.YAN_SHELL === 'powershell') {
     pi.on('before_agent_start', () => {
       try {
@@ -301,7 +297,7 @@ export default async function shellFallback(pi) {
     const token = findPowerShellQuotingConflict(command)
     if (token) return { block: true, reason: powerShellConflictReason(token) }
     const cmdlet = findPowerShellInBash(command)
-    if (cmdlet) return { block: true, reason: powerShellInBashReason(cmdlet) }
+    if (cmdlet) return { block: true, reason: powerShellInBashReason(cmdlet, hasPwsh() ? 'pwsh' : 'powershell') }
     return findLegacyPowerShell(command) && hasPwsh() ? { block: true, reason: legacyPowerShellReason() } : undefined
   })
 }

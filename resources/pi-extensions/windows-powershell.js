@@ -1,3 +1,12 @@
+import { lstatSync } from 'node:fs'
+import { delimiter, join } from 'node:path'
+
+export function hasPwsh(env = process.env) {
+  return (env.PATH ?? env.Path ?? '').split(delimiter).some((dir) => {
+    try { return !!dir && !!lstatSync(join(dir, 'pwsh.exe')) } catch { return false }
+  })
+}
+
 const POWERSHELL = /\b(?:powershell|pwsh)(?:\.exe)?\b/gi
 const PS_VARIABLE = /^\$(?:_(?![A-Za-z0-9_])|PSItem\b|PSVersionTable\b|PSScriptRoot\b|LASTEXITCODE\b|env:[A-Za-z_]|true\b|false\b|null\b|args\b|input\b|Matches\b|Error\b|host\b|[A-Za-z_][A-Za-z0-9_]*\s*=(?!=))/
 
@@ -18,7 +27,9 @@ function doubleQuotedScript(command, from) {
 
 export function findPowerShellQuotingConflict(command) {
   if (typeof command !== 'string') return null
+  const plain = unquoted(command)
   for (const match of command.matchAll(POWERSHELL)) {
+    if (plain !== null && plain.slice(match.index, match.index + match[0].length) !== match[0]) continue
     const range = doubleQuotedScript(command, match.index + match[0].length)
     if (!range) continue
     const [start, end] = range
@@ -66,8 +77,8 @@ export function findPowerShellInBash(command) {
   return null
 }
 
-export function powerShellInBashReason(name) {
-  return `没有执行：这是 bash 工具，\`${name}\` 是 PowerShell 命令，bash 里没有它。请改用 bash 写法（如 \`wc -l\`、\`cat\`、\`grep\`、\`rg\`）；确实要用 PowerShell，就用 powershell 工具，或在 bash 里写 \`powershell -NoProfile -Command '...'\`（脚本用单引号包住）。`
+export function powerShellInBashReason(name, exe = 'pwsh') {
+  return `没有执行：这是 bash 工具，\`${name}\` 是 PowerShell 命令，bash 里没有它。请改用 bash 写法（如 \`wc -l\`、\`cat\`、\`grep\`、\`rg\`）；确实要用 PowerShell，就在 bash 里写 \`${exe} -NoProfile -Command '...'\`（脚本用单引号包住）。`
 }
 
 export function powerShellConflictReason(token) {
@@ -84,5 +95,5 @@ export function findLegacyPowerShell(command) {
 }
 
 export function legacyPowerShellReason() {
-  return '没有执行：这台设备已装 PowerShell 7，请把命令里的 `powershell` / `powershell.exe` 改成 `pwsh`。系统自带的 5.1 按系统代码页读取无 BOM 的 .ps1，含中文的脚本会乱码或解析失败；pwsh 默认按 UTF-8 读取，参数写法不变。'
+  return '没有执行：这台设备已装 PowerShell 7，请把命令里的 `powershell` / `powershell.exe` 改成 `pwsh`，其余参数不变。系统自带的 5.1 按系统代码页读取无 BOM 的 .ps1，含中文的脚本会乱码或解析失败；pwsh 默认按 UTF-8 读取。'
 }

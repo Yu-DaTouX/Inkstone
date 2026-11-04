@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { registerWriteLineEndings } from './write-line-endings.js'
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 import { createWebTools } from './web-tools.js'
+import { hasPwsh } from './windows-powershell.js'
 
 const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with `yan tasks apply` before the first change and tick them off as they finish; chain each update into a command you are running anyway, never a step of its own.'
 const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with the `todos` tool before the first change and tick them off as they finish; send each update alongside other tool calls in the same response, never in a response of its own.'
@@ -109,14 +110,15 @@ function computerUseEnabled() {
 
 const OS_NAMES = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }
 
-export function environmentGuide(now = new Date(), platform = process.platform, shell = process.env.YAN_SHELL) {
+export function environmentGuide(now = new Date(), platform = process.platform, shell = process.env.YAN_SHELL, pwsh = platform === 'win32' && hasPwsh()) {
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const os = OS_NAMES[platform] ?? platform
   const shellLine = platform !== 'win32'
     ? `OS: ${os}.`
     : shell === 'powershell'
       ? 'OS: Windows; system commands run in PowerShell.'
-      : 'OS: Windows; the bash tool runs Git Bash, so write bash syntax, not PowerShell cmdlets. Windows programs such as node and python do not understand Git Bash paths like /tmp/... or /c/...: pass them C:/... paths (convert with `cygpath -m`). Edit files with the edit/write tools; Python text-mode writes on Windows turn \\n into \\r\\n.'
+      : 'OS: Windows; the bash tool runs Git Bash, so write bash syntax, not PowerShell cmdlets. Windows programs such as node and python do not understand Git Bash paths like /tmp/... or /c/...: pass them C:/... paths (convert with `cygpath -m`). Edit files with the edit/write tools; Python text-mode writes on Windows turn \\n into \\r\\n.' +
+        (pwsh ? ' For PowerShell run `pwsh` (PowerShell 7); `powershell` 5.1 is blocked because it garbles non-ASCII scripts.' : '')
   return [
     `Today: ${day} (local date).`,
     shellLine,

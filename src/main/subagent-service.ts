@@ -92,6 +92,7 @@ export interface SubagentServiceDeps {
   providerExtensions?(): string[]
   guardExtension?(): string | undefined
   shellExtension?(): string | undefined
+  guideExtension?(): string | undefined
   readOnlyExtension?(): string | undefined
   runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
   previewHtml?(htmlPath: string, root: string, options?: { at?: number[] }): Promise<unknown>
@@ -135,7 +136,7 @@ export class SubagentService {
       cwd: s.cwd,
       piBin: s.piBin,
       pruneHistory: async () => (await getSettings()).subagentHistoryPrune !== false,
-      extensions: [this.deps.preambleExtension?.(), this.deps.userAddressExtension?.(), this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
+      extensions: [this.deps.preambleExtension?.(), this.deps.userAddressExtension?.(), this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), this.deps.guideExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       ...(this.deps.readOnlyExtension?.() && this.deps.runReadOnlyCommand ? { readOnlyExtension: this.deps.readOnlyExtension(), runReadOnlyCommand: this.deps.runReadOnlyCommand } : {}),
       ...(this.deps.previewHtml ? { previewHtml: this.deps.previewHtml } : {}),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,

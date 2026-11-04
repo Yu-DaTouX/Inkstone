@@ -22,7 +22,9 @@ const allowed = [
   'echo "$_ is fine here"; ls',
   'git commit -m "mention powershell" && echo "$PWD"',
   'powershell -NoProfile -Command "Get-Date" | grep "$x = 1"',
-  'powershell -NoProfile -Command "if (1 -eq 1) { \'ok\' }"'
+  'powershell -NoProfile -Command "if (1 -eq 1) { \'ok\' }"',
+  'command -v powershell || echo "no powershell"; powershell -NoProfile -Command \'$PSVersionTable.PSVersion.ToString()\' 2>&1 | head -5',
+  'echo "run pwsh" && pwsh -NoProfile -Command \'$PSVersionTable\''
 ]
 for (const command of allowed) assert.equal(find(command), null, command)
 assert.equal(find(undefined), null)

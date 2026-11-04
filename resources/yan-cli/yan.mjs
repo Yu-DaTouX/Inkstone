@@ -361,7 +361,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
             yan search query --query-text "flash attention"
             yan search query --query-text "Node.js 最新版本" --recent month
             yan search query --query-text "electron WebContentsView" --site github.com,electronjs.org
-            yan search query --query-text "bun 基准" --query-text "deno 基准"     一次最多 5 个查询并行，结果在 data.queries
+            yan search query --query-text "bun 基准" --query-text "deno 基准"     一次最多 5 个查询（同时跑 2 个），结果文件顶层是 queries[]
             yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
           --recent day|week|month|year  尽量筛选这段时间内的结果；维基百科 / arXiv / HN 不支持严格时间过滤，须核对发布日期
           --site a.com,b.org             只搜这些站点（最多 5 个）
@@ -388,7 +388,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   doctor  列出可点名的内置来源
 
 说明：
-  · stdout 只给摘要和 resultFile 路径；用 read 读取结果文件中所需的 items / queries / sources，不能把摘要当完整搜索结果；
+  · stdout 只给摘要和 resultFile 路径，不能把摘要当完整搜索结果；结果文件顶层：单个查询是 query / items / sources，多个查询是 queries[]（每项同单个查询），没有 data 这一层；
   · query / fetch 支持 --refresh 跳过 10 分钟结果缓存；同参数的进行中请求会合并，不重复发起；
   · 结果非空、来源评分高都不等于可信：核对相关性和发布日期，事实结论先读来源原网页；必须来自某些站点时用 --site；
     结果不相关时缩短或换查询 / 来源，要最新信息时加 --refresh；

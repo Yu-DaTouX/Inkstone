@@ -469,6 +469,7 @@ const subagentService: SubagentService = new SubagentService({
   providerExtensions: providerExtensionPaths,
   guardExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.dangerGuardExtension),
   shellExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.shellFallbackExtension),
+  guideExtension: () => yanThinResourcePath('subagent-guide.js'),
   readOnlyExtension: () => yanThinResourcePath('readonly-tools.js'),
   runReadOnlyCommand: (command, params, cwd, signal, ownerId) => {
     const key = ownerId ?? cwd
