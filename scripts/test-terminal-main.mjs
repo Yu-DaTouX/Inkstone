@@ -313,7 +313,8 @@ async function runTerminalRegistry() {
     assert.equal(reg.normalizeOwner('  session-1 '), 'session-1')
     assert.equal(reg.normalizeOwner(''), undefined)
     assert.equal(reg.normalizeOwner(42), undefined)
-    assert.equal(reg.normalizeOwner('x'.repeat(300)), undefined)
+    assert.equal(reg.normalizeOwner('x'.repeat(300)), 'x'.repeat(300))
+    assert.equal(reg.normalizeOwner('x'.repeat(5000)), undefined)
 
     const small = reg.appendReplay('abc', 'def', 10, 2)
     assert.equal(small, 'abcdef')

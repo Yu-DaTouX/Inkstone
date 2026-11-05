@@ -3,6 +3,7 @@ import type { MessageKey, TVars } from '../i18n'
 import type { Notice, Store } from './store'
 import { releaseResource } from './resource-owners'
 import { isNativeMcpActionResult, isNativeMcpSignInPrompt, isNativeMcpStatus } from '../lib/native-mcp-status'
+import { noteTerminalAgent } from '../features/terminal/terminal-agent-activity'
 
 export interface PushContext {
   get(): Store
@@ -11,6 +12,7 @@ export interface PushContext {
   pushNotice(list: Notice[], type: Notice['type'], text: string, id?: string): Notice[]
   applyBrowserVisibility(): void
   revealBrowser(): void
+  revealTerminal(owner: string, terminalId: string): void
   t(key: MessageKey, vars?: TVars): string
 }
 
@@ -77,6 +79,11 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       else if (m.payload.kind === 'status') {
         const report = m.payload
         set({ terminals: s.terminals.map(term => term.id === report.id ? { ...term, status: report.status } : term) })
+      }
+      else if (m.payload.kind === 'agent') {
+        const phase = m.payload.agentPhase === 'start' ? 'start' : 'end'
+        noteTerminalAgent(m.payload.id, phase, m.payload.agentAction ?? '')
+        if (phase === 'start' && m.payload.owner) ctx.revealTerminal(m.payload.owner, m.payload.id)
       }
       break
     case 'log':

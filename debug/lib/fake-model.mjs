@@ -38,6 +38,7 @@ export const FAKE_TRIGGERS = {
   FAIL: '返回 502，用来看模型错误与重试',
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
+  TERMINAL: '用 yan terminal run 在会话终端里跑一条快命令、一条慢命令，再 list 一次，看终端面板自动打开与 agent 提示（含 DANGER 时改为一条要审批的删除注册表命令）',
   FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
   'CAMSHOT': '仿「拍照确认」：6 步（含 STEPS<n> 时为 n 步），每步一次快 bash、一次 read 读 DIR=<目录>（缺省为项目里 cam）下的 check<步>.png、一句叙述、一次约 20 秒的慢 bash；图片由场景预先放好',
@@ -179,6 +180,18 @@ async function respond(res, text, done, requestNo) {
     } else if (text.includes('APPROVAL')) {
       if (done < 1) await callTool('bash', { command: 'reg delete "HKCU\\Software\\InkstoneApprovalTest" /f', description: 'approval probe' })
       else await streamText('审批测试结束。', 20, 10)
+    } else if (text.includes('TERMINAL')) {
+      const steps = text.includes('DANGER')
+        ? [{ command: `yan terminal run --command 'reg delete "HKCU\\Software\\InkstoneTerminalApproval" /f'`, description: '终端里删除注册表项' }]
+        : [
+            { command: `yan terminal run --command 'Write-Output "agent-terminal-ok"; Get-ChildItem -Name | Select-Object -First 5'`, description: '在会话终端里列文件' },
+            { command: `yan terminal run --command 'Start-Sleep -Seconds 3; Write-Output "slow-done"'`, description: '终端里跑一条慢命令' },
+            { command: 'yan terminal list', description: '查看会话终端' }
+          ]
+      if (done < steps.length) {
+        await streamText(`终端第 ${done + 1} 步。`, 20, 0)
+        await callTool('bash', steps[done])
+      } else await streamText('终端测试结束。', 20, 10)
     } else if (text.includes('QUESTION')) {
       if (done < 1) await callTool('question', { question: '会话栏（环境/统计/上下文/更改那一列）和右栏，你想要哪种？现在的逻辑是右栏一打开会话栏就让位隐藏，而右栏的「概览」标签又和会话栏内容重复。', options: ['两者共存：右栏打开时会话栏照常显示（窗口太窄才让位），右栏去掉重复的「概览」', '合并：去掉独立会话栏，概览变成右栏固定的第一个标签（T3 式只有一个右侧区域）', '保持现状'] })
       else await streamText('好的，按你的选择来。', 20, 10)
