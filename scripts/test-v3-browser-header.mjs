@@ -29,6 +29,7 @@ export function InputGroupInput(props) { return <input aria-label={props['aria-l
 export function MiddleTruncate(props) { return <span data-testid={props['data-testid']}>{props.value}</span> }
 export function Spinner() { return <span /> }
 export function Avatar(props) { return <span className={props.className}>{props.name}</span> }
+export function SiteIcon(props) { return <span className={props.className}>{props.name}</span> }
 export function RailRow(props) {
   if (props['data-testid']) globalThis.__browserTabItems[props['data-testid']] = props
   return <li data-testid={props['data-testid']} data-selected={props.selected ? '1' : undefined}>{props.label}{props.action}</li>

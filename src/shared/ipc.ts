@@ -1084,6 +1084,8 @@ export interface ChromeSyncReport {
   cookiesSynced: boolean
 }
 
+export type BrowserViewport = 'responsive' | 'mobile' | 'tablet' | 'desktop'
+
 export interface BrowserTabState {
   id: string
   url: string
@@ -1092,6 +1094,7 @@ export interface BrowserTabState {
   canGoBack: boolean
   canGoForward: boolean
   loadError?: BrowserLoadFailure
+  viewport?: BrowserViewport
 }
 
 export interface BrowserObservation {
@@ -2051,6 +2054,8 @@ export interface YanBridge {
     setPermission(permission: string, origin: string, allowed: boolean): Promise<{ ok: boolean; error?: string }>
     setBounds(bounds: BrowserBounds): Promise<void>
     setVisible(visible: boolean): Promise<void>
+    snapshot(): Promise<string | null>
+    setViewport(viewport: BrowserViewport): Promise<void>
     localServers(): Promise<LocalServerSnapshot>
   }
   office: {

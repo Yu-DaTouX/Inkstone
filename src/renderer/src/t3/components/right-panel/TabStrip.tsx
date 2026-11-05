@@ -57,7 +57,10 @@ export interface TabStripProps {
   onClose: (id: string) => void
   onContextMenu: (id: string, anchor: HTMLElement) => void
   onMove?: (id: string, toIndex: number) => void
+  onDragOut?: (id: string, start: { button: number; pointerId: number; clientX: number; clientY: number }) => void
 }
+
+const TAB_DRAG_OUT_PX = 12
 
 function AddSurfaceMenuAction(props: { action: LauncherAction }) {
   const { action } = props
@@ -216,7 +219,21 @@ export function TabStrip(props: TabStripProps) {
     const startX = event.clientX
     let moved = false
 
+    const strip = rootRef.current?.getBoundingClientRect() ?? null
     const handleMove = (moveEvent: globalThis.PointerEvent) => {
+      if (
+        props.onDragOut &&
+        strip &&
+        (moveEvent.clientY < strip.top - TAB_DRAG_OUT_PX ||
+          moveEvent.clientY > strip.bottom + TAB_DRAG_OUT_PX ||
+          moveEvent.clientX < strip.left - TAB_DRAG_OUT_PX ||
+          moveEvent.clientX > strip.right + TAB_DRAG_OUT_PX)
+      ) {
+        stop()
+        setDrag(null)
+        props.onDragOut(surface.id, { button: 0, pointerId: moveEvent.pointerId, clientX: moveEvent.clientX, clientY: moveEvent.clientY })
+        return
+      }
       const offsetX = moveEvent.clientX - startX
       if (!moved && Math.abs(offsetX) < TAB_DRAG_THRESHOLD) return
       moved = true
@@ -236,6 +253,7 @@ export function TabStrip(props: TabStripProps) {
         setDrag(null)
         return
       }
+
       const root = rootRef.current
       const dragged = chip.getBoundingClientRect()
       const draggedCentre = dragged.left + dragged.width / 2

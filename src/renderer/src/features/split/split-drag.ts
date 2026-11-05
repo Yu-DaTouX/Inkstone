@@ -33,6 +33,7 @@ const sameBadge = (a: DropBadge | null, b: DropBadge | null): boolean =>
     !!b &&
     a.label === b.label &&
     a.hint === b.hint &&
+    a.text === b.text &&
     a.box.left === b.box.left &&
     a.box.top === b.box.top &&
     a.box.width === b.box.width &&

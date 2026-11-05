@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto'
 import type {
   BrowserBlockedRequest,
   BrowserBounds,
+  BrowserViewport,
   BrowserNetworkSnapshot,
   BrowserObservation,
   BrowserPermissionRecord,
@@ -114,6 +115,42 @@ interface BrowserTab {
   dialogs: BrowserDialogRecord[]
   dialogPolicy?: BrowserActionOptions
   acting?: boolean
+  emulatedKey?: string
+  mobileUa?: boolean
+  loadedUa?: string
+  uaReloadTimer?: ReturnType<typeof setTimeout>
+}
+
+const NARROW_ENTER_PX = 600
+const NARROW_EXIT_PX = 640
+const UA_RELOAD_DELAY_MS = 600
+
+const VIEWPORT_PRESETS: Partial<Record<BrowserViewport, { width: number; height: number }>> = {
+  mobile: { width: 375, height: 812 },
+  tablet: { width: 768, height: 1024 },
+  desktop: { width: 1280, height: 800 }
+}
+
+function isBrowserViewport(value: unknown): value is BrowserViewport {
+  return value === 'responsive' || value === 'mobile' || value === 'tablet' || value === 'desktop'
+}
+
+function mobileUserAgent(): string {
+  return `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome || '140.0.0.0'} Mobile Safari/537.36`
+}
+
+export interface ViewportFit extends BrowserBounds {
+  scale: number
+  emulated: { width: number; height: number } | null
+}
+
+export function viewportRect(pane: BrowserBounds, viewport: BrowserViewport): ViewportFit {
+  const preset = VIEWPORT_PRESETS[viewport]
+  if (!preset) return { ...pane, scale: 1, emulated: null }
+  const scale = Math.min(1, pane.width / preset.width)
+  const width = Math.max(1, Math.min(pane.width, Math.round(preset.width * scale)))
+  const emulatedHeight = Math.max(1, Math.round(pane.height / scale))
+  return { x: pane.x + Math.round((pane.width - width) / 2), y: pane.y, width, height: pane.height, scale, emulated: { width: preset.width, height: emulatedHeight } }
 }
 
 interface ExternalTarget {
@@ -426,6 +463,7 @@ export class BrowserController {
       void view.webContents.insertCSS('@media (max-width: 300px) { ::-webkit-scrollbar:horizontal { height: 0 !important; } }').catch(() => {})
     })
     view.webContents.on('did-navigate', (_event, url) => {
+      tab.loadedUa = view.webContents.getUserAgent()
       tab.state.url = url
       tab.committedUrl = url
       tab.state.loadError = undefined
@@ -860,7 +898,9 @@ export class BrowserController {
     const shownId = this.viewerSessionId === this.focusSessionId ? activeId : this.activeBySession.get(this.viewerSessionId) ?? null
     for (const tab of this.tabs.values()) {
       if (tab.borrowedBy) continue
-      tab.view.setVisible(ownedViewVisible(shownId, tab.id, this.viewVisibleRequested))
+      const visible = ownedViewVisible(shownId, tab.id, this.viewVisibleRequested)
+      if (visible) void this.placeTab(tab)
+      tab.view.setVisible(visible)
     }
   }
 
@@ -1319,7 +1359,74 @@ export class BrowserController {
       width: Math.max(1, Math.round(bounds.width * zoom)),
       height: Math.max(1, Math.round(bounds.height * zoom))
     }
-    tab.view.setBounds(clean)
+    this.pane = clean
+    void this.placeTab(tab)
+  }
+
+  private pane: BrowserBounds | null = null
+
+  private placeTab(tab: BrowserTab): Promise<void> {
+    const pane = this.pane
+    const viewport = tab.state.viewport ?? 'responsive'
+    if (!pane || tab.borrowedBy || tab.view.webContents.isDestroyed()) return Promise.resolve()
+    const fitted = viewportRect(pane, viewport)
+    tab.view.setBounds({ x: fitted.x, y: fitted.y, width: fitted.width, height: fitted.height })
+    const mobileUa = viewport === 'mobile' || (viewport === 'responsive' && (tab.mobileUa ? pane.width < NARROW_EXIT_PX : pane.width < NARROW_ENTER_PX))
+    const key = `${viewport}:${mobileUa ? 'm' : 'd'}:${fitted.emulated ? `${fitted.emulated.width}x${fitted.emulated.height}@${fitted.scale.toFixed(4)}` : ''}`
+    if (tab.emulatedKey === key) return Promise.resolve()
+    tab.emulatedKey = key
+    const uaChanged = (tab.mobileUa ?? false) !== mobileUa
+    tab.mobileUa = mobileUa
+    return this.applyViewport(tab, fitted, mobileUa).then(() => {
+      if (uaChanged) this.scheduleUaReload(tab)
+    })
+  }
+
+  private scheduleUaReload(tab: BrowserTab): void {
+    clearTimeout(tab.uaReloadTimer)
+    tab.uaReloadTimer = setTimeout(() => {
+      tab.uaReloadTimer = undefined
+      const contents = tab.view.webContents
+      if (this.tabs.get(tab.id) !== tab || contents.isDestroyed() || !tab.state.url) return
+      if (contents.getUserAgent() === tab.loadedUa) return
+      contents.reload()
+    }, UA_RELOAD_DELAY_MS)
+  }
+
+  private async applyViewport(tab: BrowserTab, fitted: ViewportFit, mobileUa: boolean): Promise<void> {
+    const viewport = tab.state.viewport ?? 'responsive'
+    const preset = fitted.emulated
+    const userAgent = mobileUa ? mobileUserAgent() : tab.view.webContents.session.getUserAgent()
+    tab.view.webContents.setUserAgent(userAgent)
+    await tab.cdp.send('Emulation.setUserAgentOverride', mobileUa ? { userAgent, platform: 'Android' } : { userAgent }).catch(() => undefined)
+    if (!preset) {
+      await tab.cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
+      await tab.cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => undefined)
+      return
+    }
+    const mobile = viewport === 'mobile'
+    await tab.cdp.send('Emulation.setDeviceMetricsOverride', { width: preset.width, height: preset.height, deviceScaleFactor: mobile ? 2 : 0, mobile, scale: fitted.scale }).catch(() => undefined)
+    await tab.cdp.send('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: mobile ? 5 : 1 }).catch(() => undefined)
+  }
+
+  async setViewport(value: unknown): Promise<void> {
+    const viewport = isBrowserViewport(value) ? value : 'responsive'
+    const viewerActive = this.activeBySession.get(this.viewerSessionId) ?? null
+    const tab = viewerActive ? this.tabs.get(viewerActive) ?? null : null
+    if (!tab || (tab.state.viewport ?? 'responsive') === viewport) return
+    tab.state.viewport = viewport
+    this.updateState()
+    await this.placeTab(tab)
+  }
+
+  async snapshot(): Promise<string | null> {
+    if (this.external && this.activeMode === 'external') return null
+    const viewerActive = this.activeBySession.get(this.viewerSessionId) ?? null
+    const tab = viewerActive ? this.tabs.get(viewerActive) ?? null : null
+    if (!tab || tab.borrowedBy || tab.view.webContents.isDestroyed()) return null
+    const image = await tab.view.webContents.capturePage().catch(() => null)
+    if (!image || image.isEmpty()) return null
+    return `data:image/jpeg;base64,${image.toJPEG(82).toString('base64')}`
   }
 
   runScript(code: string, signal?: AbortSignal): Promise<ScriptResult> {

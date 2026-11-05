@@ -237,6 +237,7 @@ export interface Store {
   browserState: BrowserState
   browserStates: Record<string, BrowserState>
   browserNativeVisible: boolean
+  browserCover: string | null
   terminals: TerminalSessionInfo[]
   filePreview: FilePreviewState | null
   subagents: SubagentRun[]
@@ -937,9 +938,27 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
   window.addEventListener('pagehide', () => { teardown = true })
 }
 
+let browserVisibilitySeq = 0
+
 function applyBrowserVisibility(get: () => Store): void {
   if (teardown) return
   const desired = browserVisibilityFor(get())
+  const seq = ++browserVisibilitySeq
+  if (!desired && get().browserNativeVisible && browserSurfaceActive && typeof window.yan.browser.snapshot === 'function') {
+    void window.yan.browser.snapshot().catch(() => null).then(async (cover) => {
+      if (cover && typeof Image === 'function') {
+        const image = new Image()
+        image.src = cover
+        await image.decode().catch(() => undefined)
+      }
+      if (seq !== browserVisibilitySeq) return
+      useStore.setState({ browserCover: cover, browserNativeVisible: false })
+      requestAnimationFrame(() => {
+        if (seq === browserVisibilitySeq) void window.yan.browser.setVisible(false)
+      })
+    })
+    return
+  }
   if (get().browserNativeVisible !== desired) useStore.setState({ browserNativeVisible: desired })
   void window.yan.browser.setVisible(desired)
 }
@@ -1263,6 +1282,7 @@ export const useStore = create<Store>((rawSet, get) => {
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
   browserStates: {},
   browserNativeVisible: false,
+  browserCover: null,
   terminals: [],
   filePreview: null,
   subagents: [],

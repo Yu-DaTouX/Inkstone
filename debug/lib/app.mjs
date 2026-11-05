@@ -45,7 +45,8 @@ export async function connectCdp(port, { shotDir, timeoutMs = 60000 } = {}) {
   while (!target && Date.now() < end) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${port}/json`)).json()
-      target = list.find((entry) => entry.type === 'page' && !entry.url.startsWith('devtools'))
+      const pages = list.filter((entry) => entry.type === 'page' && !entry.url.startsWith('devtools'))
+      target = pages.find((entry) => entry.url.startsWith('file:') || /^https?:\/\/(localhost|127\.0\.0\.1)[:/]/.test(entry.url)) ?? pages[0]
     } catch {}
     if (!target) await sleep(300)
   }

@@ -53,6 +53,7 @@ import type {
   Attachment,
   AttentionNotify,
   BrowserBounds,
+  BrowserViewport,
   BrowserObservation,
   BrowserNetworkSnapshot,
   BrowserState,
@@ -601,6 +602,8 @@ const api: YanBridge = {
       invoke<{ ok: boolean; error?: string }>('yan:browser:setPermission', permission, origin, allowed),
     setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
     setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible),
+    snapshot: () => invoke<string | null>('yan:browser:snapshot'),
+    setViewport: (viewport: BrowserViewport) => invoke<void>('yan:browser:setViewport', viewport),
     localServers: () => invoke<LocalServerSnapshot>('yan:browser:localServers')
   },
 

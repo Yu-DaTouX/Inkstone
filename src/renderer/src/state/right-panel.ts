@@ -11,11 +11,19 @@ export type RightPanelSurface =
   | { id: `pr:${number}`; kind: 'pullRequest'; number: number; title?: string; state?: PrSurfaceState; tab?: PrDetailTab }
   | { id: `subagent:${string}`; kind: 'subagent'; runId: string }
 
+export interface RightPanelGroup {
+  active: string | null
+  surfaces: RightPanelSurface[]
+  size: number
+}
+
 export interface RightPanelEntry {
   open: boolean
   active: string | null
   surfaces: RightPanelSurface[]
   maximized: boolean
+  groups?: RightPanelGroup[]
+  focus?: number
 }
 
 export interface RightPanelSnapshot {
@@ -34,6 +42,8 @@ export const PANEL_WIDTH_MIN = 360
 export const PANEL_WIDTH_DEFAULT = 720
 export const PANEL_WIDTH_MAX_FRACTION = 0.7
 export const PANEL_WIDTH_STEP = 16
+export const PANEL_GROUPS_MAX = 3
+export const PANEL_GROUP_MIN_WIDTH = 280
 export const PANEL_TOOL_KINDS: readonly PanelToolKind[] = WORKBENCH_TABS.filter(
   (tab): tab is Exclude<WorkbenchTabId, 'preview'> => tab !== 'preview'
 )
@@ -43,7 +53,7 @@ const PR_STATES: readonly PrSurfaceState[] = ['open', 'draft', 'merged', 'closed
 const RUN_ID = /^[\w.-]{1,96}$/
 const MAX_PR_NUMBER = 9_999_999
 
-export const EMPTY_PANEL: RightPanelEntry = Object.freeze({ open: false, active: null, surfaces: [], maximized: false }) as RightPanelEntry
+export const EMPTY_PANEL: RightPanelEntry = Object.freeze({ open: false, active: null, surfaces: [], maximized: false, groups: [], focus: 0 }) as RightPanelEntry
 
 export function panelKeyFor(sessionId: string | null | undefined): string {
   const id = typeof sessionId === 'string' ? sessionId.trim() : ''
@@ -96,54 +106,125 @@ function sameSurface(a: RightPanelSurface, b: RightPanelSurface): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-export function upsertSurface(entry: RightPanelEntry, surface: RightPanelSurface, activate = true): RightPanelEntry {
-  const index = entry.surfaces.findIndex((item) => item.id === surface.id)
-  let surfaces = entry.surfaces
-  if (index < 0) surfaces = [...entry.surfaces, surface]
-  else {
-    const current = entry.surfaces[index]
-    const merged: RightPanelSurface =
-      current.kind === 'pullRequest' && surface.kind === 'pullRequest'
-        ? pullRequestSurface(surface.number, { title: surface.title ?? current.title, state: surface.state ?? current.state, tab: surface.tab ?? current.tab })
-        : surface
-    if (!sameSurface(current, merged)) surfaces = entry.surfaces.map((item, at) => (at === index ? merged : item))
+export function panelGroups(entry: RightPanelEntry): RightPanelGroup[] {
+  if (entry.groups) return entry.groups
+  return entry.surfaces.length ? [{ active: entry.active, surfaces: entry.surfaces, size: 1 }] : []
+}
+
+export function panelFocus(entry: RightPanelEntry): number {
+  const count = panelGroups(entry).length
+  return Math.max(0, Math.min(count - 1, Math.trunc(entry.focus ?? 0)))
+}
+
+function groupIndexOf(groups: readonly RightPanelGroup[], id: string): number {
+  return groups.findIndex((group) => group.surfaces.some((item) => item.id === id))
+}
+
+function neighborActive(surfaces: readonly RightPanelSurface[], active: string | null, gone: ReadonlySet<string>): string | null {
+  if (active === null || !gone.has(active)) return active
+  const index = surfaces.findIndex((item) => item.id === active)
+  for (let step = 1; step < surfaces.length; step++) {
+    const right = surfaces[index + step]
+    const left = surfaces[index - step]
+    if (right && !gone.has(right.id)) return right.id
+    if (left && !gone.has(left.id)) return left.id
   }
-  const active = activate ? surface.id : entry.active ?? surface.id
-  if (surfaces === entry.surfaces && active === entry.active && entry.open) return entry
-  return { ...entry, open: true, surfaces, active }
+  return null
+}
+
+function withGroups(entry: RightPanelEntry, groups: RightPanelGroup[], focus: number, open = entry.open): RightPanelEntry {
+  const kept: RightPanelGroup[] = []
+  let nextFocus = 0
+  groups.forEach((group, index) => {
+    if (!group.surfaces.length) return
+    const active = group.surfaces.some((item) => item.id === group.active) ? group.active : group.surfaces[group.surfaces.length - 1].id
+    if (index <= focus) nextFocus = kept.length
+    kept.push(active === group.active ? group : { ...group, active })
+  })
+  if (!kept.length) return { ...entry, surfaces: [], active: null, open: false, maximized: false, groups: [], focus: 0 }
+  const total = kept.reduce((sum, group) => sum + group.size, 0)
+  if (Math.abs(total - kept.length) > 1e-6) {
+    const scale = total > 0 ? kept.length / total : 1
+    kept.forEach((group, at) => {
+      kept[at] = { ...group, size: total > 0 ? group.size * scale : 1 }
+    })
+  }
+  return {
+    ...entry,
+    open,
+    groups: kept,
+    focus: nextFocus,
+    surfaces: kept.length === 1 ? kept[0].surfaces : kept.flatMap((group) => group.surfaces),
+    active: kept[nextFocus].active
+  }
+}
+
+function mapGroup(entry: RightPanelEntry, index: number, fn: (group: RightPanelGroup) => RightPanelGroup, focus = index, open = entry.open): RightPanelEntry {
+  const groups = panelGroups(entry)
+  const current = groups[index]
+  if (!current) return entry
+  const next = fn(current)
+  if (next === current && focus === panelFocus(entry) && open === entry.open) return entry
+  return withGroups(entry, groups.map((group, at) => (at === index ? next : group)), focus, open)
+}
+
+export function upsertSurface(entry: RightPanelEntry, surface: RightPanelSurface, activate = true): RightPanelEntry {
+  const groups = panelGroups(entry)
+  const at = groupIndexOf(groups, surface.id)
+  if (at < 0) {
+    if (!groups.length) return withGroups(entry, [{ active: surface.id, surfaces: [surface], size: 1 }], 0, true)
+    const focus = panelFocus(entry)
+    return mapGroup(entry, focus, (group) => ({ ...group, surfaces: [...group.surfaces, surface], active: activate ? surface.id : group.active ?? surface.id }), focus, true)
+  }
+  return mapGroup(
+    entry,
+    at,
+    (group) => {
+      const index = group.surfaces.findIndex((item) => item.id === surface.id)
+      const current = group.surfaces[index]
+      const merged: RightPanelSurface =
+        current.kind === 'pullRequest' && surface.kind === 'pullRequest'
+          ? pullRequestSurface(surface.number, { title: surface.title ?? current.title, state: surface.state ?? current.state, tab: surface.tab ?? current.tab })
+          : surface
+      const surfaces = sameSurface(current, merged) ? group.surfaces : group.surfaces.map((item, i) => (i === index ? merged : item))
+      const active = activate ? surface.id : group.active ?? surface.id
+      return surfaces === group.surfaces && active === group.active ? group : { ...group, surfaces, active }
+    },
+    activate ? at : panelFocus(entry),
+    true
+  )
 }
 
 export function activateSurface(entry: RightPanelEntry, id: string): RightPanelEntry {
-  if (!entry.surfaces.some((item) => item.id === id)) return entry
-  if (entry.active === id && entry.open) return entry
-  return { ...entry, active: id, open: true }
+  const at = groupIndexOf(panelGroups(entry), id)
+  if (at < 0) return entry
+  return mapGroup(entry, at, (group) => (group.active === id ? group : { ...group, active: id }), at, true)
 }
 
 export function updateSurface(entry: RightPanelEntry, surface: RightPanelSurface): RightPanelEntry {
-  const current = entry.surfaces.find((item) => item.id === surface.id && item.kind === surface.kind)
-  if (!current) return entry
-  const merged = { ...current, ...surface } as RightPanelSurface
-  if (sameSurface(current, merged)) return entry
-  return { ...entry, surfaces: entry.surfaces.map((item) => item === current ? merged : item) }
+  const groups = panelGroups(entry)
+  const at = groupIndexOf(groups, surface.id)
+  if (at < 0) return entry
+  return mapGroup(entry, at, (group) => {
+    const current = group.surfaces.find((item) => item.id === surface.id && item.kind === surface.kind)
+    if (!current) return group
+    const merged = { ...current, ...surface } as RightPanelSurface
+    if (sameSurface(current, merged)) return group
+    return { ...group, surfaces: group.surfaces.map((item) => (item === current ? merged : item)) }
+  }, panelFocus(entry))
 }
 
 export function removeSurfaces(entry: RightPanelEntry, ids: ReadonlySet<string>): RightPanelEntry {
   if (!entry.surfaces.some((item) => ids.has(item.id))) return entry
-  const kept = entry.surfaces.filter((item) => !ids.has(item.id))
-  let active = entry.active
-  if (active !== null && ids.has(active)) {
-    const index = entry.surfaces.findIndex((item) => item.id === active)
-    let next: string | null = null
-    for (let step = 1; step < entry.surfaces.length && next === null; step++) {
-      const right = entry.surfaces[index + step]
-      const left = entry.surfaces[index - step]
-      if (right && !ids.has(right.id)) next = right.id
-      else if (left && !ids.has(left.id)) next = left.id
-    }
-    active = next
-  }
-  if (!kept.length) return { ...entry, surfaces: [], active: null, open: false, maximized: false }
-  return { ...entry, surfaces: kept, active: active ?? kept[kept.length - 1].id }
+  const groups = panelGroups(entry)
+  const focus = panelFocus(entry)
+  const next = groups.map((group) =>
+    group.surfaces.some((item) => ids.has(item.id))
+      ? { ...group, surfaces: group.surfaces.filter((item) => !ids.has(item.id)), active: neighborActive(group.surfaces, group.active, ids) }
+      : group
+  )
+  const focusGone = !next[focus]?.surfaces.length
+  return withGroups(entry, next, focusGone ? Math.max(0, focus - 1) : focus)
 }
 
 export function closeSurface(entry: RightPanelEntry, id: string): RightPanelEntry {
@@ -151,46 +232,144 @@ export function closeSurface(entry: RightPanelEntry, id: string): RightPanelEntr
 }
 
 export function closeOtherSurfaces(entry: RightPanelEntry, id: string): RightPanelEntry {
-  if (!entry.surfaces.some((item) => item.id === id)) return entry
-  const gone = new Set(entry.surfaces.filter((item) => item.id !== id).map((item) => item.id))
-  return { ...removeSurfaces(entry, gone), active: id }
+  const groups = panelGroups(entry)
+  const at = groupIndexOf(groups, id)
+  if (at < 0) return entry
+  const gone = new Set(groups[at].surfaces.filter((item) => item.id !== id).map((item) => item.id))
+  return activateSurface(removeSurfaces(entry, gone), id)
 }
 
 export function closeSurfacesToRight(entry: RightPanelEntry, id: string): RightPanelEntry {
-  const index = entry.surfaces.findIndex((item) => item.id === id)
-  if (index < 0) return entry
-  const gone = new Set(entry.surfaces.slice(index + 1).map((item) => item.id))
+  const groups = panelGroups(entry)
+  const at = groupIndexOf(groups, id)
+  if (at < 0) return entry
+  const surfaces = groups[at].surfaces
+  const index = surfaces.findIndex((item) => item.id === id)
+  const gone = new Set<string>(surfaces.slice(index + 1).map((item) => item.id))
   const next = removeSurfaces(entry, gone)
-  return next.active && entry.surfaces.slice(0, index + 1).some((item) => item.id === next.active) ? next : { ...next, active: id }
+  return gone.has(groups[at].active ?? '') ? activateSurface(next, id) : next
 }
 
 export function closeAllSurfaces(entry: RightPanelEntry): RightPanelEntry {
   return removeSurfaces(entry, new Set(entry.surfaces.map((item) => item.id)))
 }
 
+export function closeGroup(entry: RightPanelEntry, index: number): RightPanelEntry {
+  const group = panelGroups(entry)[index]
+  return group ? removeSurfaces(entry, new Set(group.surfaces.map((item) => item.id))) : entry
+}
+
 export function moveSurface(entry: RightPanelEntry, id: string, toIndex: number): RightPanelEntry {
-  const from = entry.surfaces.findIndex((item) => item.id === id)
+  const groups = panelGroups(entry)
+  const at = groupIndexOf(groups, id)
+  if (at < 0) return entry
+  return mapGroup(entry, at, (group) => {
+    const from = group.surfaces.findIndex((item) => item.id === id)
+    const to = Math.max(0, Math.min(group.surfaces.length - 1, Math.trunc(toIndex)))
+    if (to === from) return group
+    const surfaces = group.surfaces.slice()
+    const [moved] = surfaces.splice(from, 1)
+    surfaces.splice(to, 0, moved)
+    return { ...group, surfaces }
+  }, panelFocus(entry))
+}
+
+export function moveSurfaceToGroup(entry: RightPanelEntry, id: string, target: number, toIndex = Number.POSITIVE_INFINITY): RightPanelEntry {
+  const groups = panelGroups(entry)
+  const from = groupIndexOf(groups, id)
   if (from < 0) return entry
-  const to = Math.max(0, Math.min(entry.surfaces.length - 1, Math.trunc(toIndex)))
-  if (to === from) return entry
-  const surfaces = entry.surfaces.slice()
-  const [moved] = surfaces.splice(from, 1)
-  surfaces.splice(to, 0, moved)
-  return { ...entry, surfaces }
+  const surface = groups[from].surfaces.find((item) => item.id === id)!
+  const creating = target < 0 || target >= groups.length
+  if (creating && groups[from].surfaces.length < 2) {
+    const insertAt = target < 0 ? 0 : groups.length - 1
+    if (insertAt === from) return entry
+    const reordered = groups.filter((_, at) => at !== from)
+    reordered.splice(insertAt, 0, groups[from])
+    return withGroups(entry, reordered, insertAt, true)
+  }
+  if (creating && groups.length >= PANEL_GROUPS_MAX) return entry
+  if (!creating && target === from) return moveSurface(entry, id, toIndex)
+  const gone = new Set([id])
+  const next = groups.map((group, at) =>
+    at === from ? { ...group, surfaces: group.surfaces.filter((item) => item.id !== id), active: neighborActive(group.surfaces, group.active, gone) } : group
+  )
+  if (creating) {
+    const insertAt = target < 0 ? 0 : groups.length
+    const size = groups[from].size / 2
+    next[from] = { ...next[from], size }
+    next.splice(insertAt, 0, { active: id, surfaces: [surface], size })
+    return withGroups(entry, next, insertAt, true)
+  }
+  const dest = next[target]
+  const surfaces = dest.surfaces.slice()
+  surfaces.splice(Math.max(0, Math.min(surfaces.length, Math.trunc(toIndex))), 0, surface)
+  next[target] = { ...dest, surfaces, active: id }
+  const emptied = !next[from].surfaces.length
+  return withGroups(entry, next, emptied && from < target ? target - 1 : target, true)
+}
+
+export function splitSurface(entry: RightPanelEntry, id: string): RightPanelEntry {
+  const groups = panelGroups(entry)
+  const from = groupIndexOf(groups, id)
+  if (from < 0) return entry
+  if (groups.length < PANEL_GROUPS_MAX && groups[from].surfaces.length > 1) {
+    const gone = new Set([id])
+    const surface = groups[from].surfaces.find((item) => item.id === id)!
+    const size = groups[from].size / 2
+    const next = groups.map((group, at) =>
+      at === from ? { ...group, size, surfaces: group.surfaces.filter((item) => item.id !== id), active: neighborActive(group.surfaces, group.active, gone) } : group
+    )
+    next.splice(from + 1, 0, { active: id, surfaces: [surface], size })
+    return withGroups(entry, next, from + 1, true)
+  }
+  if (from + 1 < groups.length) return moveSurfaceToGroup(entry, id, from + 1)
+  return entry
+}
+
+export function canSplitSurface(entry: RightPanelEntry, id: string): boolean {
+  return splitSurface(entry, id) !== entry
+}
+
+export function focusGroup(entry: RightPanelEntry, index: number): RightPanelEntry {
+  const groups = panelGroups(entry)
+  if (!groups[index] || (index === panelFocus(entry) && entry.groups)) return entry
+  return withGroups(entry, groups, index)
+}
+
+export function resizeGroups(entry: RightPanelEntry, index: number, leftShare: number): RightPanelEntry {
+  const groups = panelGroups(entry)
+  const left = groups[index]
+  const right = groups[index + 1]
+  if (!left || !right || !Number.isFinite(leftShare)) return entry
+  const total = left.size + right.size
+  const share = Math.max(0.05, Math.min(0.95, leftShare))
+  const nextLeft = total * share
+  if (Math.abs(nextLeft - left.size) < 1e-4) return entry
+  const next = groups.slice()
+  next[index] = { ...left, size: nextLeft }
+  next[index + 1] = { ...right, size: total - nextLeft }
+  return withGroups(entry, next, panelFocus(entry))
 }
 
 export function stepSurface(entry: RightPanelEntry, delta: number): RightPanelEntry {
-  if (!entry.surfaces.length) return entry
-  const index = Math.max(0, entry.surfaces.findIndex((item) => item.id === entry.active))
-  const next = entry.surfaces[(index + delta + entry.surfaces.length * 4) % entry.surfaces.length]
+  const group = panelGroups(entry)[panelFocus(entry)]
+  if (!group?.surfaces.length) return entry
+  const index = Math.max(0, group.surfaces.findIndex((item) => item.id === group.active))
+  const next = group.surfaces[(index + delta + group.surfaces.length * 4) % group.surfaces.length]
   return activateSurface(entry, next.id)
 }
 
 export function replaceSurface(entry: RightPanelEntry, fromId: string, surface: RightPanelSurface): RightPanelEntry {
-  const index = entry.surfaces.findIndex((item) => item.id === fromId)
-  if (index < 0 || entry.surfaces.some((item) => item.id === surface.id)) return upsertSurface(entry, surface)
-  const surfaces = entry.surfaces.map((item, at) => (at === index ? surface : item))
-  return { ...entry, open: true, surfaces, active: entry.active === fromId ? surface.id : entry.active }
+  const groups = panelGroups(entry)
+  const at = groupIndexOf(groups, fromId)
+  if (at < 0 || groupIndexOf(groups, surface.id) >= 0) return upsertSurface(entry, surface)
+  return mapGroup(
+    entry,
+    at,
+    (group) => ({ ...group, surfaces: group.surfaces.map((item) => (item.id === fromId ? surface : item)), active: group.active === fromId ? surface.id : group.active }),
+    panelFocus(entry),
+    true
+  )
 }
 
 function text(value: unknown): string {
@@ -222,18 +401,37 @@ export function sanitizeSurface(value: unknown): RightPanelSurface | null {
   return null
 }
 
+function sanitizeGroupList(raw: Record<string, unknown>): RightPanelGroup[] {
+  const seen = new Set<string>()
+  const surfacesOf = (list: unknown): RightPanelSurface[] => {
+    const surfaces: RightPanelSurface[] = []
+    if (!Array.isArray(list)) return surfaces
+    for (const item of list) {
+      const surface = sanitizeSurface(item)
+      if (surface && !seen.has(surface.id)) {
+        seen.add(surface.id)
+        surfaces.push(surface)
+      }
+    }
+    return surfaces
+  }
+  const rawGroups = Array.isArray(raw.groups) ? raw.groups.slice(0, PANEL_GROUPS_MAX) : null
+  if (!rawGroups) return [{ active: typeof raw.active === 'string' ? raw.active : null, surfaces: surfacesOf(raw.surfaces), size: 1 }]
+  return rawGroups.map((item) => {
+    const group = item && typeof item === 'object' && !Array.isArray(item) ? (item as Record<string, unknown>) : {}
+    const size = typeof group.size === 'number' && Number.isFinite(group.size) && group.size > 0 ? group.size : 1
+    return { active: typeof group.active === 'string' ? group.active : null, surfaces: surfacesOf(group.surfaces), size }
+  })
+}
+
 export function sanitizePanelEntry(value: unknown): RightPanelEntry | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const raw = value as Record<string, unknown>
-  if (!Array.isArray(raw.surfaces)) return null
-  const surfaces: RightPanelSurface[] = []
-  for (const item of raw.surfaces) {
-    const surface = sanitizeSurface(item)
-    if (surface && !surfaces.some((known) => known.id === surface.id)) surfaces.push(surface)
-  }
-  if (!surfaces.length) return null
-  const active = surfaces.some((item) => item.id === raw.active) ? (raw.active as string) : surfaces[surfaces.length - 1].id
-  return { open: raw.open === true, active, surfaces, maximized: raw.maximized === true && raw.open === true }
+  if (!Array.isArray(raw.surfaces) && !Array.isArray(raw.groups)) return null
+  const focus = typeof raw.focus === 'number' && Number.isInteger(raw.focus) ? raw.focus : 0
+  const open = raw.open === true
+  const entry = withGroups({ ...EMPTY_PANEL, open, maximized: raw.maximized === true && open }, sanitizeGroupList(raw), focus, open)
+  return entry.surfaces.length ? entry : null
 }
 
 export function emptyRightPanelSnapshot(): RightPanelSnapshot {
@@ -306,6 +504,11 @@ export interface RightPanelState {
   closeRight: (id: string) => void
   closeAll: () => void
   move: (id: string, toIndex: number) => void
+  moveToGroup: (id: string, group: number, toIndex?: number) => void
+  split: (id: string) => void
+  closeGroup: (index: number) => void
+  focusGroup: (index: number) => void
+  resizeGroups: (index: number, leftShare: number) => void
   step: (delta: number) => void
   replace: (fromId: string, surface: RightPanelSurface) => void
   setOpen: (open: boolean) => void
@@ -366,6 +569,11 @@ export const useRightPanel = create<RightPanelState>((set, get) => {
     closeRight: (id) => update((entry) => closeSurfacesToRight(entry, id)),
     closeAll: () => update(closeAllSurfaces),
     move: (id, toIndex) => update((entry) => moveSurface(entry, id, toIndex)),
+    moveToGroup: (id, group, toIndex) => update((entry) => moveSurfaceToGroup(entry, id, group, toIndex)),
+    split: (id) => update((entry) => splitSurface(entry, id)),
+    closeGroup: (index) => update((entry) => closeGroup(entry, index)),
+    focusGroup: (index) => update((entry) => focusGroup(entry, index)),
+    resizeGroups: (index, leftShare) => update((entry) => resizeGroups(entry, index, leftShare)),
     step: (delta) => update((entry) => stepSurface(entry, delta)),
     replace: (fromId, surface) => update((entry) => replaceSurface(entry, fromId, surface)),
     setOpen: (open) =>

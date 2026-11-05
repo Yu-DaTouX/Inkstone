@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
-import { EllipsisVertical, Eye, Minimize2, PanelRightClose } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
+import { Columns2, EllipsisVertical, Eye, Minimize2, PanelRightClose, X } from 'lucide-react'
 import { create } from 'zustand'
 import { Button, EmptyState, IconButton, Spinner, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { fileSurface, pullRequestSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelSurface } from '../../state/right-panel'
+import { PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, canSplitSurface, fileSurface, panelFocus, panelGroups, pullRequestSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
 import { SubagentTranscriptPane } from '../session/SubagentTranscriptPane'
 import { PullRequestDetail } from '../github/PullRequestDetail'
 import { PaneChromeContext, paneMenuSignature, type PaneChrome, type PaneMenuItem } from './pane-chrome'
@@ -23,6 +23,7 @@ import { Menu, MenuCheckboxItem, MenuItem, MenuPopup, MenuSeparator, MenuTrigger
 import { Button as T3Button } from '../../t3/components/ui/button'
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../../t3/components/ui/tooltip'
 import { closePanelMenu, useRightPanelAdapter } from '../../t3/adapters/right-panel'
+import { startPanelTabDrag } from './panel-tab-drag'
 import './right-panel.css'
 
 export type RightPanelMode = 'inline' | 'sheet'
@@ -72,28 +73,39 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
   const entry = useRightPanelEntry()
   const panelKey = useRightPanel((state) => state.key)
   const adapter = useRightPanelAdapter({ owner, mode, room, onPick: onOpenTool })
-  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [addMenuFor, setAddMenuFor] = useState<number | null>(null)
+  const addMenuOpen = addMenuFor !== null
+  const setAddMenuOpen = (open: boolean): void => setAddMenuFor(open ? 0 : null)
   const pendingNewPanel = useNewPanelRequest((state) => state.pending)
   const ownerKey = owner?.key ?? ''
   const [visited, setVisited] = useState<{ owner: string; ids: ReadonlySet<string> }>({ owner: ownerKey, ids: new Set() })
   const visitedIds = visited.owner === ownerKey ? visited.ids : new Set<string>()
   const active = entry.surfaces.find((item) => item.id === entry.active) ?? null
+  const groups = panelGroups(entry)
+  const focus = panelFocus(entry)
+  const columnar = mode === 'inline' && groups.length > 0 && !!owner
+  const groupActives = groups.map((group) => group.active ?? '').join('\n')
 
   useEffect(() => {
     if (!pendingNewPanel) return
-    if (useNewPanelRequest.getState().take()) setAddMenuOpen(true)
-  }, [pendingNewPanel])
+    if (useNewPanelRequest.getState().take()) setAddMenuFor(columnar ? focus : 0)
+  }, [pendingNewPanel, columnar, focus])
 
   useEffect(() => {
-    if (!addMenuOpen) return
-    const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="rp-new-tab"]')?.focus())
+    if (addMenuFor === null) return
+    const scope = columnar ? `[data-rp-column="${addMenuFor}"] ` : ''
+    const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>(`${scope}[data-testid="rp-new-tab"]`)?.focus())
     return () => cancelAnimationFrame(frame)
-  }, [addMenuOpen])
+  }, [addMenuFor, columnar])
 
   useEffect(() => {
-    if (!entry.open || !active) return
-    setVisited((prev) => (prev.owner === ownerKey && prev.ids.has(active.id) ? prev : { owner: ownerKey, ids: new Set([...(prev.owner === ownerKey ? prev.ids : []), active.id]) }))
-  }, [entry.open, active, ownerKey])
+    if (!entry.open) return
+    const shown = columnar ? groupActives.split('\n').filter(Boolean) : active ? [active.id] : []
+    if (!shown.length) return
+    setVisited((prev) =>
+      prev.owner === ownerKey && shown.every((id) => prev.ids.has(id)) ? prev : { owner: ownerKey, ids: new Set([...(prev.owner === ownerKey ? prev.ids : []), ...shown]) }
+    )
+  }, [entry.open, active, ownerKey, columnar, groupActives])
 
   const onPanelKey = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (event.defaultPrevented) return
@@ -101,7 +113,8 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
     if (event.key !== 'PageDown' && event.key !== 'PageUp') return
     event.preventDefault()
     useRightPanel.getState().step(event.key === 'PageDown' ? 1 : -1)
-    requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-right-panel-tab-list] [role="tab"][aria-selected="true"]')?.focus())
+    const scope = columnar ? `[data-rp-column="${focus}"] ` : ''
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`${scope}[data-right-panel-tab-list] [role="tab"][aria-selected="true"]`)?.focus())
   }
 
   const menuItems = useMemo<TabContextMenuItem[]>(
@@ -122,6 +135,107 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
 
   const mounted = entry.surfaces.filter((item) => visitedIds.has(item.id) || item.id === active?.id)
   const closeShortcut = adapter.shortcuts.closePane
+  const closeTipOf = (surface: RightPanelSurface): string =>
+    closeShortcut ? `${panel.closeTab(baseName(surface.id))} · ${closeShortcut}` : panel.closeTab(baseName(surface.id))
+  const tabById = new Map(adapter.tabs.map((tab) => [tab.id, tab]))
+  const totalSize = groups.reduce((sum, group) => sum + group.size, 0) || 1
+
+  const columnHead = (group: RightPanelGroup, index: number): ReactNode => {
+    const last = index === groups.length - 1
+    const splittable = !!group.active && canSplitSurface(entry, group.active) && last
+    return (
+      <div
+        data-right-panel-tabbar
+        className="rp-column-head"
+        data-window-controls={windowControls && last ? '1' : undefined}
+      >
+        <TabStrip
+          tabs={group.surfaces.flatMap((surface) => tabById.get(surface.id) ?? [])}
+          activeId={group.active}
+          actions={adapter.actions}
+          listLabel={panel.tabs}
+          addLabel={panel.newTab}
+          addMenuOpen={addMenuFor === index}
+          onAddMenuOpenChange={(open) => setAddMenuFor(open ? index : null)}
+          onActivate={adapter.onActivate}
+          onClose={adapter.onClose}
+          onContextMenu={adapter.onContextMenu}
+          onMove={adapter.onMove}
+          onDragOut={(id, start) => startPanelTabDrag(start, id, tabById.get(id)?.label ?? '', room, panel)}
+        />
+        <span className="rp-tabbar-actions">
+          {splittable ? (
+            <IconButton size="sm" aria-label={panel.splitRight} tooltip={panel.splitRight} data-testid={`rp-split-${index}`} onPress={() => useRightPanel.getState().split(group.active!)}>
+              <Columns2 size={14} />
+            </IconButton>
+          ) : null}
+          {groups.length > 1 ? (
+            <IconButton size="sm" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
+              <X size={14} />
+            </IconButton>
+          ) : null}
+          {last && adapter.maximized ? (
+            <IconButton size="sm" aria-label={panel.restore} tooltip={panel.restore} aria-pressed data-testid="rp-maximize" onPress={adapter.onToggleMaximized}>
+              <Minimize2 size={14} />
+            </IconButton>
+          ) : null}
+        </span>
+        {windowControls && last ? <WindowControls /> : null}
+      </div>
+    )
+  }
+
+  const columnSplitter = (index: number): ReactNode => (
+    <ColumnSplitter
+      key={`split:${index}`}
+      index={index}
+      share={groups[index - 1].size / (groups[index - 1].size + groups[index].size)}
+      pairGrow={(groups[index - 1].size + groups[index].size) / totalSize}
+      label={panel.resizeColumns}
+    />
+  )
+
+  const renderSurface = (surface: RightPanelSurface, shown: boolean): ReactNode =>
+    owner ? (
+      <SurfaceView
+        key={surface.id}
+        surface={surface}
+        panelKey={panelKey}
+        shown={shown}
+        live={entry.open}
+        owner={owner}
+        panes={panes}
+        text={text}
+        panel={panel}
+        closeTip={closeTipOf(surface)}
+        onRequestActivation={onRequestActivation}
+      />
+    ) : null
+
+  const columns = columnar ? (
+    <div className="rp-columns" key={owner!.key} data-columns={groups.length}>
+      {groups.flatMap((group, index) => [
+        ...(index > 0 ? [columnSplitter(index)] : []),
+        <section
+          key={`col:${index}`}
+          className="rp-column"
+          data-rp-column={index}
+          data-focused={groups.length > 1 && index === focus ? '1' : undefined}
+          data-testid={`rp-column-${index}`}
+          style={{ flexGrow: group.size / totalSize }}
+          onPointerDownCapture={() => useRightPanel.getState().focusGroup(index)}
+          onFocusCapture={() => useRightPanel.getState().focusGroup(index)}
+        >
+          {columnHead(group, index)}
+          <div className="rp-surfaces">
+            {group.surfaces
+              .filter((item) => visitedIds.has(item.id) || item.id === group.active)
+              .map((surface) => renderSurface(surface, entry.open && surface.id === group.active))}
+          </div>
+        </section>
+      ])}
+    </div>
+  ) : null
 
   const tabbar = (
     <>
@@ -156,23 +270,11 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
 
   const content = !entry.surfaces.length ? (
     <Launcher actions={adapter.actions} title={panel.launcherTitle} />
+  ) : columns ? (
+    columns
   ) : owner ? (
     <div className="rp-surfaces" key={owner.key}>
-      {mounted.map((surface) => (
-        <SurfaceView
-          key={surface.id}
-          surface={surface}
-          panelKey={panelKey}
-          shown={entry.open && surface.id === entry.active}
-          live={entry.open}
-          owner={owner}
-          panes={panes}
-          text={text}
-          panel={panel}
-          closeTip={closeShortcut ? `${panel.closeTab(baseName(surface.id))} · ${closeShortcut}` : panel.closeTab(baseName(surface.id))}
-          onRequestActivation={onRequestActivation}
-        />
-      ))}
+      {mounted.map((surface) => renderSurface(surface, entry.open && surface.id === entry.active))}
     </div>
   ) : null
 
@@ -188,7 +290,8 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         span={span}
         label={panel.panel}
         onWidth={adapter.onWidth}
-        tabbar={tabbar}
+        minWidth={columns && groups.length > 1 ? Math.min(room, PANEL_WIDTH_MIN * groups.length) : undefined}
+        tabbar={columns ? null : tabbar}
         tabbarClassName={windowControls ? 'pr-0' : undefined}
         toggleSelector='[data-right-panel-toggle]'
         sheet={{ onClose: adapter.onHide, transitionMs: reducedMotion ? 0 : motionMs('sheet') }}
@@ -207,6 +310,96 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         }}
       />
     </>
+  )
+}
+
+const COLUMN_KEY_STEP_PX = 16
+
+function ColumnSplitter({ index, share, pairGrow, label }: { index: number; share: number; pairGrow: number; label: string }): ReactElement {
+  const drag = useRef<{ pointerId: number; startX: number; startLeft: number; pair: number; left: HTMLElement; right: HTMLElement; share: number } | null>(null)
+  const frame = useRef(0)
+  const [dragging, setDragging] = useState(false)
+  const columnsOf = (host: HTMLElement): [HTMLElement, HTMLElement] | null => {
+    const root = host.closest('.rp-columns')
+    const left = root?.querySelector<HTMLElement>(`:scope > [data-rp-column="${index - 1}"]`)
+    const right = root?.querySelector<HTMLElement>(`:scope > [data-rp-column="${index}"]`)
+    return left && right ? [left, right] : null
+  }
+  const clampShare = (leftPx: number, pair: number): number => {
+    const min = Math.min(pair / 2, PANEL_GROUP_MIN_WIDTH)
+    return Math.min(pair - min, Math.max(min, leftPx)) / pair
+  }
+  const commit = (next: number): void => useRightPanel.getState().resizeGroups(index - 1, next)
+  useEffect(() => () => cancelAnimationFrame(frame.current), [])
+  return (
+    <div
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-valuenow={Math.round(share * 100)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      data-dragging={dragging || undefined}
+      data-testid={`rp-column-splitter-${index}`}
+      className="ui-splitter ui-splitter--vertical ui-splitter--edge rp-column-splitter"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return
+        const pairEls = columnsOf(event.currentTarget)
+        if (!pairEls) return
+        const [left, right] = pairEls
+        const startLeft = left.getBoundingClientRect().width
+        const pair = startLeft + right.getBoundingClientRect().width
+        if (pair <= 0) return
+        event.preventDefault()
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId)
+        } catch {
+          return
+        }
+        drag.current = { pointerId: event.pointerId, startX: event.clientX, startLeft, pair, left, right, share: startLeft / pair }
+        setDragging(true)
+      }}
+      onPointerMove={(event) => {
+        const session = drag.current
+        if (!session || session.pointerId !== event.pointerId) return
+        session.share = clampShare(session.startLeft + event.clientX - session.startX, session.pair)
+        if (frame.current) return
+        frame.current = requestAnimationFrame(() => {
+          frame.current = 0
+          const live = drag.current
+          if (!live) return
+          live.left.style.flexGrow = String(live.share * pairGrow)
+          live.right.style.flexGrow = String((1 - live.share) * pairGrow)
+        })
+      }}
+      onPointerUp={(event) => {
+        const session = drag.current
+        if (!session || session.pointerId !== event.pointerId) return
+        drag.current = null
+        setDragging(false)
+        cancelAnimationFrame(frame.current)
+        frame.current = 0
+        commit(session.share)
+      }}
+      onLostPointerCapture={() => {
+        const session = drag.current
+        if (!session) return
+        drag.current = null
+        setDragging(false)
+        commit(session.share)
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+        const pairEls = columnsOf(event.currentTarget)
+        if (!pairEls) return
+        event.preventDefault()
+        const leftPx = pairEls[0].getBoundingClientRect().width
+        const pair = leftPx + pairEls[1].getBoundingClientRect().width
+        commit(clampShare(leftPx + (event.key === 'ArrowLeft' ? -COLUMN_KEY_STEP_PX : COLUMN_KEY_STEP_PX), pair))
+      }}
+      onDoubleClick={() => commit(0.5)}
+    />
   )
 }
 

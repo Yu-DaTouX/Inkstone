@@ -6,7 +6,7 @@ import type { WorkspaceOwner } from '../../features/workbench/types'
 import { panelToolLabel, usePanelTexts } from '../../features/workbench/use-panel-actions'
 import { subagentPaneName } from '../../features/session/SubagentTranscriptPane'
 import { useTerminalTabTitle } from '../../state/terminal-tabs'
-import { clampPanelWidth, currentPanelEntry, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelSurface } from '../../state/right-panel'
+import { canSplitSurface, clampPanelWidth, currentPanelEntry, panelGroups, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelSurface } from '../../state/right-panel'
 import { reopenLastClosed } from '../../state/right-panel-reopen'
 import { useStore } from '../../state/store'
 import { useLauncherActions } from './launcher'
@@ -153,14 +153,20 @@ export function useRightPanelAdapter(input: RightPanelAdapterInput): RightPanelA
 
   const onContextMenu = useCallback(
     (id: string, anchor: HTMLElement | null) => {
-      const state = useRightPanel.getState()
-      const surfaces = state.byKey[state.key]?.surfaces ?? []
+      const entry = currentPanelEntry()
+      const groups = panelGroups(entry)
+      const column = groups.findIndex((group) => group.surfaces.some((item) => item.id === id))
+      const surfaces = groups[column]?.surfaces ?? []
       const surface = surfaces.find((item) => item.id === id)
       if (!surface) return
       const index = surfaces.indexOf(surface)
       const text = texts.panel
+      const panel = useRightPanel.getState()
       const items: PanelMenuItem[] = [
         ...(surface.kind === 'file' ? [{ id: 'copy-path', label: text.copyPath, onSelect: () => copyPathOf(surface, text.copyPath) }] : []),
+        ...(mode === 'inline' && canSplitSurface(entry, id) && column === groups.length - 1 ? [{ id: 'split', label: text.splitRight, onSelect: () => panel.split(id) }] : []),
+        ...(mode === 'inline' && column > 0 ? [{ id: 'move-left', label: text.moveLeft, onSelect: () => panel.moveToGroup(id, column - 1) }] : []),
+        ...(mode === 'inline' && column < groups.length - 1 ? [{ id: 'move-right', label: text.moveRight, onSelect: () => panel.moveToGroup(id, column + 1) }] : []),
         { id: 'close', label: text.close, onSelect: () => useRightPanel.getState().close(id) },
         { id: 'close-others', label: text.closeOthers, disabled: surfaces.length <= 1, onSelect: () => useRightPanel.getState().closeOthers(id) },
         { id: 'close-right', label: text.closeRight, disabled: index >= surfaces.length - 1, onSelect: () => useRightPanel.getState().closeRight(id) },
@@ -168,7 +174,7 @@ export function useRightPanelAdapter(input: RightPanelAdapterInput): RightPanelA
       ]
       usePanelMenuStore.getState().open({ id, anchor, items })
     },
-    [texts]
+    [texts, mode]
   )
 
   const onCopyPath = useCallback(

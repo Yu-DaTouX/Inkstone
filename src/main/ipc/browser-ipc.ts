@@ -92,4 +92,6 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:setVisible', (_e, visible: unknown) => {
     browserOf()?.setViewVisible(visible !== false)
   })
+  rawHandle('yan:browser:snapshot', () => browserOf()?.snapshot() ?? null)
+  rawHandle('yan:browser:setViewport', (_e, viewport: unknown) => browserOf()?.setViewport(viewport))
 }

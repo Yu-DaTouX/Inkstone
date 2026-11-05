@@ -54,6 +54,7 @@ export interface DropBadge {
   box: DropRect
   label: DropBadgeLabel
   hint: boolean
+  text?: string
 }
 
 export function maxColumnsFor(width: number): number {

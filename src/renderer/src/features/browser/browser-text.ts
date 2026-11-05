@@ -36,6 +36,9 @@ export interface BrowserText {
   importError(reason: BrowserLoginImportStatus['error']): string
   startAddress: string
   collapseTabs: string
+  resizeTabs: string
+  viewport: string
+  viewportNames: Record<'responsive' | 'mobile' | 'tablet' | 'desktop', string>
   expandTabs: string
   searchEngine: string
   searchEngineCustom: string
@@ -92,8 +95,11 @@ const ZH: BrowserText = {
     import_failed: '未能完成 Cookie 写入，请重新发起导入。'
   })[reason ?? 'import_failed'],
   startAddress: '搜索或输入网址',
-  collapseTabs: '收起标签栏',
-  expandTabs: '展开标签栏',
+  collapseTabs: '取消固定，悬停时展开',
+  resizeTabs: '调整标签栏宽度',
+  viewport: '视口尺寸',
+  viewportNames: { responsive: '自适应面板', mobile: '手机 375×812', tablet: '平板 768×1024', desktop: '桌面 1280×800' },
+  expandTabs: '固定展开标签栏',
   searchEngine: '搜索引擎',
   searchEngineCustom: '自定义…',
   searchEngineCustomLabel: '搜索网址（%s 代表关键词）',
@@ -151,8 +157,11 @@ const EN: BrowserText = {
     import_failed: 'Cookie writing did not complete. Start the import again.'
   })[reason ?? 'import_failed'],
   startAddress: 'Search or enter address',
-  collapseTabs: 'Collapse tabs',
-  expandTabs: 'Expand tabs',
+  collapseTabs: 'Unpin, expand on hover',
+  resizeTabs: 'Resize tab bar',
+  viewport: 'Viewport size',
+  viewportNames: { responsive: 'Fit panel', mobile: 'Mobile 375×812', tablet: 'Tablet 768×1024', desktop: 'Desktop 1280×800' },
+  expandTabs: 'Pin tabs open',
   searchEngine: 'Search engine',
   searchEngineCustom: 'Custom…',
   searchEngineCustomLabel: 'Search URL (%s is the query)',

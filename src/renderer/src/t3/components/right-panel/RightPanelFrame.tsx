@@ -54,15 +54,17 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
       toggleSelector={toggleSelector}
       onKeyDown={onKeyDown}
     >
-      <div
-        data-right-panel-tabbar
-        className={cn(
-          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pr-3 pl-2",
-          tabbarClassName,
-        )}
-      >
-        {tabbar}
-      </div>
+      {tabbar ? (
+        <div
+          data-right-panel-tabbar
+          className={cn(
+            "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pr-3 pl-2",
+            tabbarClassName,
+          )}
+        >
+          {tabbar}
+        </div>
+      ) : null}
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {children}
       </div>

@@ -36,7 +36,7 @@ export function SplitDropLayer(): JSX.Element | null {
         style={{ left: badge.box.left, top: badge.box.top, width: badge.box.width, height: badge.box.height }}
         data-testid="v3-split-drop-badge"
       >
-        <span className="v3-split-drop-label">{badgeText(badge.label, text, badge.box)}</span>
+        <span className="v3-split-drop-label">{badge.text ?? badgeText(badge.label, text, badge.box)}</span>
       </span>
     </div>
   )

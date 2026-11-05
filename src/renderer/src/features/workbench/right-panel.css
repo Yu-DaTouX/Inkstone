@@ -1,4 +1,52 @@
 @layer features {
+  .rp-columns {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  .rp-column {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .rp-columns > .ui-splitter.rp-column-splitter {
+    z-index: 1;
+    width: var(--s-6);
+    margin-inline: 0;
+  }
+  .rp-columns > .ui-splitter.rp-column-splitter::after {
+    opacity: 1;
+    background: var(--line);
+  }
+  .rp-columns > .ui-splitter.rp-column-splitter:hover::after {
+    background: var(--fg3);
+  }
+  .rp-columns > .ui-splitter.rp-column-splitter[data-dragging]::after,
+  .rp-columns > .ui-splitter.rp-column-splitter:focus-visible::after {
+    background: var(--accent);
+  }
+  .rp-column-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-4);
+    height: var(--workspace-topbar-height);
+    min-height: var(--workspace-topbar-height);
+    min-width: 0;
+    padding-inline: var(--s-8) var(--s-12);
+  }
+  .rp-column-head[data-window-controls] {
+    padding-inline-end: 0;
+  }
+  .rp-column:not([data-focused]) [data-right-panel-tab-list] {
+    opacity: 0.72;
+  }
+  .rp-columns[data-columns='1'] .rp-column [data-right-panel-tab-list] {
+    opacity: 1;
+  }
   .rp-surfaces {
     position: relative;
     display: flex;

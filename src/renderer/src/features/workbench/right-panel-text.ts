@@ -19,6 +19,13 @@ export interface RightPanelText {
   closeOthers: string
   closeRight: string
   closeAll: string
+  splitRight: string
+  splitLeft: string
+  moveHere: string
+  moveLeft: string
+  moveRight: string
+  closeColumn: string
+  resizeColumns: string
   restore: string
   hidePanel: string
   resize: string
@@ -44,6 +51,13 @@ const ZH: RightPanelText = {
   closeOthers: '关闭其他标签',
   closeRight: '关闭右侧标签',
   closeAll: '关闭全部标签',
+  splitRight: '向右拆分',
+  splitLeft: '向左拆分',
+  moveHere: '移到此列',
+  moveLeft: '移到左侧列',
+  moveRight: '移到右侧列',
+  closeColumn: '关闭此列',
+  resizeColumns: '调整列宽',
   restore: '还原面板',
   hidePanel: '收起右侧面板',
   resize: '调整右侧面板宽度',
@@ -78,6 +92,13 @@ const EN: RightPanelText = {
   closeOthers: 'Close other tabs',
   closeRight: 'Close tabs to the right',
   closeAll: 'Close all tabs',
+  splitRight: 'Split right',
+  splitLeft: 'Split left',
+  moveHere: 'Move here',
+  moveLeft: 'Move to left column',
+  moveRight: 'Move to right column',
+  closeColumn: 'Close column',
+  resizeColumns: 'Resize columns',
   restore: 'Restore panel',
   hidePanel: 'Hide right panel',
   resize: 'Resize right panel',
