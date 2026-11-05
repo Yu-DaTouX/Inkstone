@@ -1,4 +1,4 @@
-import { useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { openMessageMenu, type MessageMenuItem } from './message-menu'
@@ -122,6 +122,21 @@ async function pngDataUrlFromBytes(bytes: Uint8Array, mime: string): Promise<str
   }
 }
 
+const IMAGE_SIZE_LIMIT = 500
+const imageSizes = new Map<string, { width: number; height: number }>()
+
+function imageSizeKey(src: string): string {
+  return src.length > 256 ? `${src.length}:${src.slice(0, 96)}:${src.slice(-96)}` : src
+}
+
+function rememberImageSize(src: string, width: number, height: number): void {
+  if (!(width > 0 && height > 0)) return
+  const key = imageSizeKey(src)
+  imageSizes.delete(key)
+  imageSizes.set(key, { width, height })
+  if (imageSizes.size > IMAGE_SIZE_LIMIT) imageSizes.delete(imageSizes.keys().next().value as string)
+}
+
 export function MessageImage({
   src,
   alt,
@@ -138,6 +153,7 @@ export function MessageImage({
   const imageRef = useRef<HTMLImageElement | null>(null)
   const [viewerOpen, setViewerOpen] = useState(false)
   const open = (): void => setViewerOpen(true)
+  const knownSize = imageSizes.get(imageSizeKey(src))
 
   const transfer = async (kind: 'copy' | 'save'): Promise<void> => {
     const dataUrl = await imageTransferDataUrl(
@@ -199,6 +215,9 @@ export function MessageImage({
         className={[className, 'v3-img-open'].filter(Boolean).join(' ') || undefined}
         loading="lazy"
         decoding="async"
+        data-sized={knownSize ? '' : undefined}
+        style={knownSize ? ({ '--img-ratio': `${knownSize.width} / ${knownSize.height}`, '--img-w': `${knownSize.width}px` } as CSSProperties) : undefined}
+        onLoad={(event) => rememberImageSize(src, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
         title={t('chat.imageOpen')}
         onClick={open}
         onContextMenu={onContextMenu}

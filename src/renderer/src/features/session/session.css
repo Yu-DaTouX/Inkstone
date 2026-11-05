@@ -99,6 +99,9 @@
 
   .v3-user-images { display: flex; flex-wrap: wrap; gap: var(--s-6); justify-content: flex-end; }
   .v3-user-image { position: relative; }
+  .v3-img-thumb[data-sized] { aspect-ratio: var(--img-ratio); width: min(var(--img-w), calc(220px * var(--img-ratio))); height: auto; }
+  .v3-md-image[data-sized] { aspect-ratio: var(--img-ratio); width: var(--img-w); height: auto; }
+  .v3-step-images .v3-md-image[data-sized] { width: min(var(--img-w), calc(360px * var(--img-ratio))); }
   .v3-user-images:has(> .v3-user-image + .v3-user-image) .v3-img-thumb { height: calc(var(--s-48) * 3); width: auto; object-fit: cover; }
   .v3-user-files { display: flex; flex-wrap: wrap; gap: var(--s-6); justify-content: flex-end; max-width: 100%; }
   .v3-user-file { width: min(240px, 100%); }
