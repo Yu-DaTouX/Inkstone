@@ -16,8 +16,7 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": { "@/*": ["src/renderer/src/*"] }
+    "paths": { "@/*": ["./src/renderer/src/*"] }
   },
   "include": ["src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx", "src/renderer/auxwin/**/*.ts", "src/renderer/auxwin/**/*.tsx", "src/shared/**/*.ts"]
 }

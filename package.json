@@ -37,7 +37,7 @@
     "storybook": "storybook dev -p 6006",
     "build:storybook": "storybook build",
     "start": "node scripts/launch.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/lint-css.mjs && npm run lint:layers",
+    "typecheck": "node node_modules/typescript7/bin/tsc --noEmit -p tsconfig.node.json && node node_modules/typescript7/bin/tsc --noEmit -p tsconfig.web.json && node scripts/lint-css.mjs && npm run lint:layers",
     "icons": "node scripts/design/icons/build-icons.mjs",
     "probe-pi": "npm run build && node scripts/probe-pi.mjs",
     "shot": "electron scripts/shot.mjs",
@@ -94,6 +94,7 @@
     "storybook": "^10.6.5",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3",
+    "typescript7": "npm:typescript@^7.0.2",
     "vite": "^8.3.5"
   },
   "dependencies": {
