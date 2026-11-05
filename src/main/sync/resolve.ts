@@ -59,26 +59,6 @@ export function buildConflictCopy(conflict: ConflictRecord): SyncRecord | null {
         modifiedAt: conflict.remoteModifiedAt
       }
     }
-    case 'schedule': {
-      let parsed: Record<string, unknown>
-      try {
-        const raw = JSON.parse(conflict.remotePayload) as unknown
-        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-        parsed = raw as Record<string, unknown>
-      } catch {
-        return null
-      }
-      const id = typeof parsed.id === 'string' ? parsed.id : ''
-      if (!id || !/^[\w.-]+$/.test(id)) return null
-      const nextId = `${id}-conflict-${copyId}`
-      const name = typeof parsed.name === 'string' && parsed.name ? `${parsed.name}（${tag}）` : undefined
-      return {
-        key: `schedule:${nextId}`,
-        kind: 'schedule',
-        payload: canonicalJson({ ...parsed, id: nextId, ...(name ? { name } : {}) }),
-        modifiedAt: conflict.remoteModifiedAt
-      }
-    }
     case 'settings':
       return null
     default: {

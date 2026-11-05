@@ -1,15 +1,11 @@
 import type { SubagentTaskRow } from '../../../../shared/subagent-task-rows'
-import type { RunPhase, RunSnapshot } from '../../../../shared/runs'
 import type { SubagentRun } from '../../../../shared/ipc'
 
 export const TASK_OUTPUT_TAIL = 8000
 export const FOLLOW_EDGE_PX = 16
 
-export type BackgroundTaskKind = 'subagent' | 'scheduled'
-
 export interface BackgroundTaskEntry {
   id: string
-  kind: BackgroundTaskKind
   live: boolean
   startedAt: number
   endedAt: number | null
@@ -60,16 +56,4 @@ export function subagentOutputText(run: Pick<SubagentRun, 'transcript' | 'result
     if (message.role === 'assistant' && message.text?.trim()) return message.text
   }
   return run.result?.summary?.trim() || run.latestActivity?.trim() || ''
-}
-
-export function isSettledPhase(phase: RunPhase): boolean {
-  return phase.kind === 'done' || phase.kind === 'stopped' || (phase.kind === 'failed' && phase.seen)
-}
-
-export function runEndedAt(phase: RunPhase): number | null {
-  return phase.kind === 'done' || phase.kind === 'failed' || phase.kind === 'stopped' ? phase.at : null
-}
-
-export function canStopRun(run: Pick<RunSnapshot, 'phase'>): boolean {
-  return run.phase.kind !== 'done' && run.phase.kind !== 'failed' && run.phase.kind !== 'stopped'
 }

@@ -74,7 +74,7 @@ const ZH: SyncText = {
   modeFailed: '切换同步方式失败。',
   modeNeedsFolder: '需先选择同步文件夹。',
   contentTitle: '同步哪些内容',
-  contentList: '设置、模板、技能、书签、定时任务；新设置默认不同步。',
+  contentList: '设置、模板、技能、书签；新设置默认不同步。',
   credentialNote: '模型凭证、路径、窗口位置和会话本体不同步。',
   syncNow: '立即同步',
   syncing: '正在同步…',
@@ -138,8 +138,7 @@ const ZH: SyncText = {
     settings: '设置',
     prompt: '提示词',
     skill: '技能',
-    bookmark: '书签',
-    schedule: '定时任务'
+    bookmark: '书签'
   }
 }
 
@@ -159,7 +158,7 @@ const EN: SyncText = {
   modeFailed: 'Could not change the sync mode.',
   modeNeedsFolder: 'Choose a sync folder first.',
   contentTitle: 'What gets synced',
-  contentList: 'Settings, prompts, skills, bookmarks, schedules; new settings off by default.',
+  contentList: 'Settings, prompts, skills, bookmarks; new settings off by default.',
   credentialNote: 'Credentials, paths, window layout and sessions never sync.',
   syncNow: 'Sync now',
   syncing: 'Syncing…',
@@ -223,8 +222,7 @@ const EN: SyncText = {
     settings: 'Settings',
     prompt: 'Prompt',
     skill: 'Skill',
-    bookmark: 'Bookmark',
-    schedule: 'Schedule'
+    bookmark: 'Bookmark'
   }
 }
 

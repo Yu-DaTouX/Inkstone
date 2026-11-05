@@ -81,11 +81,6 @@ export interface McpHolderSnapshot {
   legacyMcpServices: Array<{ serverId: string; status: McpServerStatus }> | null
 }
 
-export interface RunnerRunOrigin {
-  kind: 'scheduled'
-  scopeId: string
-}
-
 export interface SelectTarget {
   sessionFile?: string
   sessionId?: string
@@ -94,7 +89,6 @@ export interface SelectTarget {
   activate?: boolean
   preview?: boolean
   hidden?: boolean
-  origin?: RunnerRunOrigin
   cwd: string
 }
 
@@ -225,12 +219,6 @@ export class RunnerRegistry {
       launchSignature?: () => string
       prepareNewSession?: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
       onChanged?: () => void
-      onRunnerOrigin?: (info: {
-        runnerId: string
-        generation: number
-        sessionId?: string
-        origin?: RunnerRunOrigin
-      }) => void
       resolveCwdConflict?: (target: SelectTarget) => Promise<{ cwd: string } | { reason: string } | null>
       isolationOf?: (cwd: string) => { state: 'waiting' | 'ready' | 'blocked'; branch: string } | undefined
       sharesCwd?: (cwd: string) => boolean
@@ -422,23 +410,6 @@ export class RunnerRegistry {
     }
   }
 
-  private notifyRunnerOrigin(
-    runner: Runner,
-    origin: RunnerRunOrigin | undefined,
-    facts: { sessionId?: string; generation?: number } = {}
-  ): void {
-    const sessionId = facts.sessionId ?? runner.agent.getState()?.sessionId
-    try {
-      this.opts.onRunnerOrigin?.({
-        runnerId: runner.id,
-        generation: facts.generation ?? runner.generation,
-        ...(sessionId ? { sessionId } : {}),
-        origin
-      })
-    } catch {
-    }
-  }
-
   async select(target: SelectTarget): Promise<SelectResult> {
     return this.serialize(() => this.selectNow(target))
   }
@@ -451,7 +422,6 @@ export class RunnerRegistry {
         hit.lastActiveAt = this.now()
         if (target.activate !== false) this.activateRunner(hit.id)
         this.opts.onChanged?.()
-        this.notifyRunnerOrigin(hit, target.origin)
         return this.result(hit, 'hit')
       }
     }
@@ -514,17 +484,10 @@ export class RunnerRegistry {
             let prepared = target.sessionFile
               ? await replacement.switchSession(target.sessionFile)
               : await replacement.newSession()
-            if (prepared.ok) {
-              this.notifyRunnerOrigin(idle, target.origin, {
-                sessionId: replacement.getState()?.sessionId,
-                generation
-              })
-            }
             if (prepared.ok && !target.sessionFile && this.opts.prepareNewSession) {
               prepared = await this.opts.prepareNewSession(replacement)
             }
             if (!prepared.ok) {
-              this.notifyRunnerOrigin(idle, undefined, { sessionId: replacement.getState()?.sessionId, generation })
               failure = prepared.error ?? '替代运行实例准备会话失败'
             }
           }
@@ -535,7 +498,6 @@ export class RunnerRegistry {
           failure = '运行实例在替换过程中被停止'
         }
         if (failure !== undefined) {
-          this.notifyRunnerOrigin(idle, undefined, { sessionId: replacement?.getState()?.sessionId, generation })
           try {
             await replacement?.stop()
           } catch {
@@ -554,7 +516,6 @@ export class RunnerRegistry {
         } catch {
         }
         this.opts.onChanged?.()
-        this.notifyRunnerOrigin(idle, target.origin)
         return this.result(idle, 'reuse')
       }
 
@@ -574,12 +535,8 @@ export class RunnerRegistry {
       } catch (error) {
         res = { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
-      if (res.ok) {
-        this.notifyRunnerOrigin(idle, target.origin, { sessionId: idle.agent.getState()?.sessionId })
-      }
       if (res.ok && !target.sessionFile && this.opts.prepareNewSession) res = await this.opts.prepareNewSession(idle.agent)
       if (!res.ok) {
-        this.notifyRunnerOrigin(idle, undefined, { sessionId: idle.agent.getState()?.sessionId })
         const currentFile = idle.agent.getState()?.sessionFile
         if (oldSessionFile && currentFile !== oldSessionFile) {
           try {
@@ -599,7 +556,6 @@ export class RunnerRegistry {
       idle.lastActiveAt = this.now()
       if (target.activate !== false) this.activateRunner(idle.id)
       this.opts.onChanged?.()
-      this.notifyRunnerOrigin(idle, target.origin)
       return this.result(idle, 'reuse')
     }
 
@@ -639,9 +595,7 @@ export class RunnerRegistry {
       } else if (target.sessionFile) {
         const sw = await agent.switchSession(target.sessionFile)
         if (!sw.ok) failure = sw.error ?? '切换会话失败'
-        else this.notifyRunnerOrigin(runner, target.origin, { sessionId: agent.getState()?.sessionId })
       } else {
-        this.notifyRunnerOrigin(runner, target.origin, { sessionId: agent.getState()?.sessionId })
         if (this.opts.prepareNewSession) {
           const prepared = await this.opts.prepareNewSession(agent)
           if (!prepared.ok) failure = prepared.error ?? '新会话模型初始化失败'
@@ -662,12 +616,10 @@ export class RunnerRegistry {
       return { ok: false, error: failure }
     }
     this.opts.onChanged?.()
-    this.notifyRunnerOrigin(runner, target.origin)
     return this.result(runner, 'new')
   }
 
   private async discardNewRunner(id: string, runner: Runner, previousActive: string | null): Promise<void> {
-    this.notifyRunnerOrigin(runner, undefined, { sessionId: runner.agent.getState()?.sessionId })
     this.runners.delete(id)
     this.activeId = previousActive
     try {

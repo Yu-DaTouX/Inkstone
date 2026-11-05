@@ -7,7 +7,6 @@ interface Props {
   preview?: boolean
   onPin?: () => void
   onClose?: () => void
-  onSchedule?: () => void
   onCollab?: () => void
   onArtifacts?: () => void
   onSettings?: () => void

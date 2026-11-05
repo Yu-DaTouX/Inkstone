@@ -1,6 +1,6 @@
 import type { SyncNote } from '../../shared/sync'
 
-export type SyncRecordKind = 'settings' | 'prompt' | 'skill' | 'bookmark' | 'schedule'
+export type SyncRecordKind = 'settings' | 'prompt' | 'skill' | 'bookmark'
 
 export interface SyncRecord {
   key: string
@@ -61,6 +61,5 @@ export interface SyncPaths {
   settingsFile: string
   promptsDir: string
   skillsDir: string
-  schedulesFile: string
   interactionStateDir: string
 }

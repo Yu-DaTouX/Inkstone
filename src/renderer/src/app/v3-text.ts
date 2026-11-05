@@ -1,7 +1,6 @@
 import type { Lang } from '../i18n'
 
 export interface V3Text {
-  schedule: string
   settings: string
   settingsTitle: string
   appearance: string
@@ -46,7 +45,6 @@ export interface V3Text {
 }
 
 const ZH: V3Text = {
-  schedule: '定时任务',
   settings: '设置',
   settingsTitle: '设置',
   appearance: '外观',
@@ -91,7 +89,6 @@ const ZH: V3Text = {
 }
 
 const EN: V3Text = {
-  schedule: 'Scheduled tasks',
   settings: 'Settings',
   settingsTitle: 'Settings',
   appearance: 'Appearance',

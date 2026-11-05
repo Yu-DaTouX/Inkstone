@@ -1,4 +1,4 @@
-export type RunKind = 'session' | 'subagent' | 'scheduled'
+export type RunKind = 'session' | 'subagent'
 export type StallCause = 'retry' | 'rate-limit' | 'loop'
 export type FailCause = 'model-error' | 'pi-exit' | 'tool-fatal' | 'host'
 export type RunActivity = 'waiting-model' | 'thinking' | 'streaming' | 'tool' | 'compacting' | 'subagent'
@@ -31,7 +31,7 @@ export interface RunTool {
 }
 
 export type RunPhase =
-  | { kind: 'queued'; since: number; reason: 'followup' | 'concurrency' | 'scheduled'; at?: number }
+  | { kind: 'queued'; since: number; reason: 'followup' | 'concurrency'; at?: number }
   | { kind: 'running'; since: number; activity: RunActivity; tool?: RunTool }
   | { kind: 'needs-you'; since: number; request: { id: string; type: RunRequestType; summary: string } }
   | { kind: 'stalled'; since: number; cause: StallCause; detail?: string; retry?: RunRetry }
@@ -94,7 +94,7 @@ export interface RunInit {
 }
 
 export type RunSignal =
-  | { type: 'queued'; reason: 'followup' | 'concurrency' | 'scheduled'; at?: number }
+  | { type: 'queued'; reason: 'followup' | 'concurrency'; at?: number }
   | { type: 'agent-start' }
   | { type: 'activity'; activity: Extract<RunActivity, 'waiting-model' | 'thinking' | 'streaming'> }
   | { type: 'tool-start'; tool: { name: string; label?: string; callId: string }; isWrite?: boolean }

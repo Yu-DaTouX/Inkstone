@@ -1,5 +1,4 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from 'lucide-react'
 import { Button, IconButton, Menu, MenuItem, MenuTrigger, Meter, Notice, Popover, RailRow, RailValue, type RailTone } from '../../ui'
 import { BranchPicker } from '../changes/BranchPicker'
@@ -11,11 +10,9 @@ import type { ContextCategory } from '../../state/context-breakdown'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, publishAccountQuotaReport, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { viewSubagentRuns } from '../../state/subagent-view'
 import { isLiveSubagentRun } from '../../../../shared/subagent-task-rows'
-import { useRunsV3 } from '../../state/runs-v3'
 import { sessionViewIdentity } from '../session/view-state'
 import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
-import type { RunSnapshot } from '../../../../shared/runs'
 import { money } from '../../../../shared/quota-mini'
 import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
 import type { GitRepoState } from '../../../../shared/git'
@@ -48,7 +45,7 @@ import {
 import { railText, type RailText } from './rail-text'
 import { useRailReorder } from './use-rail-reorder'
 import { showPreview } from './preview-bindings'
-import { BackgroundTasks, backgroundTaskCount } from './BackgroundTasks'
+import { BackgroundTasks } from './BackgroundTasks'
 import { useMcpConnections } from './McpConnections'
 import './workbench.css'
 
@@ -244,10 +241,6 @@ const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   thinking: 'ctx.cat.thinking',
   tools: 'ctx.cat.tools',
   free: 'ctx.cat.free'
-}
-
-function scheduledRuns(runs: readonly RunSnapshot[]): RunSnapshot[] {
-  return runs.filter((run) => run.kind === 'scheduled')
 }
 
 type RowMenuKey = 'reveal' | 'copyPath' | 'openFiles' | 'copyBranch' | 'openChanges'
@@ -641,8 +634,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const [dismissedOutputs, dismissOutput] = useDismissedOutputs(view.sessionId || view.key || '')
   const outputs = useMemo(() => visibleOutputs(outputPool, outputScreen, dismissedOutputs), [outputPool, outputScreen, dismissedOutputs])
 
-  const backgroundRuns = useRunsV3(useShallow((s) => scheduledRuns(s.runs)))
-  const taskCount = backgroundTaskCount({ running: childTasksLive, total: childTasks }, backgroundRuns)
+  const taskCount = { running: childTasksLive, total: childTasks }
   const taskTotal = taskCount.total
   const taskSummary =
     taskCount.running > 0 ? (
@@ -825,7 +817,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       ? {
           backgroundTasks: {
             summary: taskSummary,
-            body: <BackgroundTasks key={view.key} scheduled={backgroundRuns} lang={lang} text={text} />
+            body: <BackgroundTasks key={view.key} lang={lang} text={text} />
           }
         }
       : {}),

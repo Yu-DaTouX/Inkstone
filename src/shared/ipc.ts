@@ -827,7 +827,6 @@ export interface AppSettings {
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]
-  projectScripts?: import('./project-scripts').ProjectScriptsByProject
   providerBudgets: Record<string, number>
   rightPanelOpen: boolean
   alwaysOnTop: boolean
@@ -1255,15 +1254,6 @@ export interface SubagentRecovery {
   piRetries?: number
   piMaxRetries?: number
   resumed?: boolean
-}
-
-export interface ScheduleBridge {
-  list(): Promise<import('./schedule').ScheduledTask[]>
-  create(input: { name?: string; prompt: string; cwd?: string; model?: string; trigger: import('./schedule').ScheduleTrigger }): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
-  update(id: string, input: { name?: string; prompt?: string; cwd?: string; model?: string; trigger?: import('./schedule').ScheduleTrigger }): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
-  setEnabled(id: string, enabled: boolean): Promise<{ ok: boolean; error?: string; task?: import('./schedule').ScheduledTask }>
-  remove(id: string): Promise<{ ok: boolean }>
-  runNow(id: string): Promise<{ ok: boolean; error?: string; sessionId?: string }>
 }
 
 export interface SubagentBridge {
@@ -1993,7 +1983,6 @@ export interface YanBridge {
   videoExport: VideoExportBridge
 
   subagents: SubagentBridge
-  schedule: ScheduleBridge
 
   sources: SourcesBridge
   searchOps: SearchOpsBridge
@@ -2126,9 +2115,6 @@ export interface YanBridge {
     processes(id: string): Promise<TerminalProcessList>
   }
 
-  projectScripts: {
-    read(projectId: string): Promise<import('./project-scripts').ProjectPackageScripts>
-  }
 }
 
 export interface ZoomState {

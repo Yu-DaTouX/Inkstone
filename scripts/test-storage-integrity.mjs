@@ -68,9 +68,9 @@ try {
   })
   await test('keep-both copies are unique and reject existing destinations for every kind', async () => {
     const store = new LocalStore(defaultSyncPaths(join(run, 'copies')))
-    for (const kind of ['prompt', 'skill', 'bookmark', 'schedule']) {
+    for (const kind of ['prompt', 'skill', 'bookmark']) {
       const key = `${kind}:sample`
-      const payload = kind === 'bookmark' ? JSON.stringify({ session: '/fixture/session.jsonl', key: 'bookmark:test', value: 'remote' }) : kind === 'schedule' ? JSON.stringify({ id: 'sample', prompt: 'remote' }) : 'remote'
+      const payload = kind === 'bookmark' ? JSON.stringify({ session: '/fixture/session.jsonl', key: 'bookmark:test', value: 'remote' }) : 'remote'
       const conflict = { id: '11111111-1111-4111-8111-111111111111', key, kind, remoteDeviceName: 'same-device', remotePayload: payload, remoteModifiedAt: 1 }
       const copy = buildConflictCopy(conflict)
       const other = buildConflictCopy({ ...conflict, id: '22222222-2222-4222-8222-222222222222' })

@@ -44,7 +44,7 @@ const routeName = () => useUiV3.getState().route.name
 const backNames = () => useUiV3.getState().back.map((r) => r.name)
 
 console.log('## 平级页面：返回一律回聊天')
-for (const page of ['schedule', 'collab', 'usage']) {
+for (const page of ['collab', 'usage', 'artifacts']) {
   useUiV3.setState({ route: { name: 'chat' }, back: [] })
   useUiV3.getState().navigate({ name: page })
   ok(routeName() === page, `进入 ${page}`)
@@ -55,11 +55,11 @@ for (const page of ['schedule', 'collab', 'usage']) {
 
 console.log('## 平级页之间互相跳转后再返回，仍然直接回聊天')
 useUiV3.setState({ route: { name: 'chat' }, back: [] })
-useUiV3.getState().navigate({ name: 'schedule' })
+useUiV3.getState().navigate({ name: 'artifacts' })
 useUiV3.getState().navigate({ name: 'collab' })
 useUiV3.getState().navigate({ name: 'usage' })
 ok(routeName() === 'usage', '连跳到用量页')
-ok(JSON.stringify(backNames()) === JSON.stringify(['chat', 'schedule', 'collab']), '历史栈记录了连跳', JSON.stringify(backNames()))
+ok(JSON.stringify(backNames()) === JSON.stringify(['chat', 'artifacts', 'collab']), '历史栈记录了连跳', JSON.stringify(backNames()))
 useUiV3.getState().goBack()
 ok(routeName() === 'chat', '在用量页点返回直接回聊天（不再退到协作页）', routeName())
 
@@ -75,7 +75,7 @@ ok(routeName() === 'chat', '聊天页返回保持聊天')
 
 console.log('## navigate 仍然会记录历史（供工作台等其它用途）')
 useUiV3.setState({ route: { name: 'chat' }, back: [] })
-useUiV3.getState().navigate({ name: 'schedule' })
+useUiV3.getState().navigate({ name: 'artifacts' })
 ok(JSON.stringify(backNames()) === JSON.stringify(['chat']), 'navigate 记录上一页', JSON.stringify(backNames()))
 
 await rm(dir, { recursive: true, force: true })

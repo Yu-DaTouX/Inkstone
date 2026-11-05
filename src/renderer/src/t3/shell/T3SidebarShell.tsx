@@ -1,4 +1,4 @@
-import { Clock, Layers, PanelLeftClose, Settings, Users } from 'lucide-react'
+import { Layers, PanelLeftClose, Settings, Users } from 'lucide-react'
 import {
   memo,
   useCallback,
@@ -78,7 +78,6 @@ export interface T3SidebarShellProps {
   preview?: boolean
   onPin?: () => void
   onClose?: () => void
-  onSchedule?: () => void
   onCollab?: () => void
   onArtifacts?: () => void
   onSettings?: () => void
@@ -99,7 +98,7 @@ function SidebarLooseDrafts({ ids, ...props }: { ids: readonly string[] } & Omit
 }
 
 export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShellProps): ReactElement {
-  const { onArtifacts, onClose, onCollab, onPin, onSchedule, onSettings, preview } = props
+  const { onArtifacts, onClose, onCollab, onPin, onSettings, preview } = props
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -541,7 +540,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
 
   const utilities: SidebarUtilityEntry[] = []
   if (onSettings) utilities.push({ key: 'settings', label: text.settingsEntryHint, icon: <Settings />, onSelect: onSettings })
-  if (onSchedule) utilities.push({ key: 'schedule', label: text.schedule, icon: <Clock />, onSelect: onSchedule })
   if (onCollab) {
     utilities.push({
       key: 'collab',

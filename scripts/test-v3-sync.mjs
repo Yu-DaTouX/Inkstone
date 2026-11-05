@@ -98,26 +98,6 @@ async function seed(dir, options = {}) {
   await writeJson(join(dir, 'desktop.json'), desktopSettings(options.settings))
   if (options.prompt !== undefined) await writeText(join(dir, 'prompts', 'review.md'), options.prompt)
   if (options.skill !== undefined) await writeText(join(dir, 'skills', 'my-skill', 'SKILL.md'), options.skill)
-  if (options.schedule !== undefined) {
-    await writeJson(join(dir, 'schedules.json'), {
-      v: 1,
-      tasks: [
-        {
-          id: options.schedule.id ?? 's1',
-          name: options.schedule.name ?? '每日巡检',
-          prompt: options.schedule.prompt ?? '检查项目状态',
-          trigger: options.schedule.trigger ?? { kind: 'daily', time: '09:00' },
-          enabled: true,
-          createdBy: 'user',
-          createdAt: 1,
-          cwd: LOCAL_PATHS[0],
-          nextRunAt: 999999,
-          lastRunAt: 111,
-          lastSessionId: 'old-session'
-        }
-      ]
-    })
-  }
   if (options.bookmark !== undefined) {
     await writeJson(join(dir, 'interaction-state', `${sha256(options.bookmark.session)}.json`), {
       version: 1,
@@ -344,11 +324,10 @@ function service(dataDir, deviceId, deviceName, syncFolder = syncRoot) {
 }
 
 try {
-  section('单向同步：A 推、B 拉，五类内容都过去')
+  section('单向同步：A 推、B 拉，四类内容都过去')
   await seed(dataA, {
     prompt: '# review\n请审查这段改动。\n',
     skill: '# my-skill\n做法说明。\n',
-    schedule: { id: 's1' },
     bookmark: { session: sessionValue }
   })
   await mkdir(dataB, { recursive: true })
@@ -356,9 +335,9 @@ try {
   const B = service(dataB, 'device-b', 'Device B')
 
   const pushReport = await A.sync()
-  await check('A 首轮同步成功并推出五类记录', () => {
+  await check('A 首轮同步成功并推出四类记录', () => {
     assert.equal(pushReport.ok, true, pushReport.errors.join('; '))
-    for (const key of ['settings', 'prompt:review', 'skill:my-skill', 'schedule:s1']) {
+    for (const key of ['settings', 'prompt:review', 'skill:my-skill']) {
       assert.ok(pushReport.pushed.includes(key), `缺少 ${key}：${pushReport.pushed.join(', ')}`)
     }
     assert.ok(pushReport.pushed.some((key) => key.startsWith('bookmark:')), `缺少书签：${pushReport.pushed.join(', ')}`)
@@ -367,7 +346,7 @@ try {
   const pullReport = await B.sync()
   await check('B 首轮同步拉取了全部记录', () => {
     assert.equal(pullReport.ok, true, pullReport.errors.join('; '))
-    for (const key of ['settings', 'prompt:review', 'skill:my-skill', 'schedule:s1']) {
+    for (const key of ['settings', 'prompt:review', 'skill:my-skill']) {
       assert.ok(pullReport.pulled.includes(key), `缺少 ${key}：${pullReport.pulled.join(', ')}`)
     }
   })
@@ -380,16 +359,6 @@ try {
   await check('B 拿到提示词模板与技能', async () => {
     assert.match(await readFile(join(dataB, 'prompts', 'review.md'), 'utf8'), /请审查这段改动/)
     assert.match(await readFile(join(dataB, 'skills', 'my-skill', 'SKILL.md'), 'utf8'), /做法说明/)
-  })
-  await check('B 拿到定时任务定义，且不带本机路径 / 运行状态', async () => {
-    const doc = await readJson(join(dataB, 'schedules.json'))
-    const task = doc.tasks.find((item) => item.id === 's1')
-    assert.ok(task, '任务 s1 不存在')
-    assert.equal(task.name, '每日巡检')
-    assert.equal(task.trigger.time, '09:00')
-    assert.equal('cwd' in task, false, 'cwd 不应同步')
-    assert.equal('nextRunAt' in task, false, 'nextRunAt 不应同步')
-    assert.equal('lastSessionId' in task, false, 'lastSessionId 不应同步')
   })
   await check('B 拿到书签，widget 本机状态不参与', async () => {
     const bookmarks = await readLocalBookmarks(dataB)
@@ -669,32 +638,6 @@ try {
     assert.equal(existsSync(join(dataF, 'desktop.json')), false, '注入写入入口后不应直写 desktop.json')
   })
 
-  section('定时任务：本机内容不被远端覆盖')
-  await check('同名任务提示词不同时跳过并报错，本机保留', async () => {
-    const scheduleRoot = join(root, 'folder-schedule')
-    await mkdir(scheduleRoot, { recursive: true })
-    const dataG = join(root, 'device-g')
-    const dataH = join(root, 'device-h')
-    await seed(dataG, { schedule: { id: 's1', prompt: '检查项目状态' } })
-    await seed(dataH, { schedule: { id: 's1', prompt: '检查项目状态' } })
-    const G = service(dataG, 'device-g', 'Device G', scheduleRoot)
-    const H = service(dataH, 'device-h', 'Device H', scheduleRoot)
-    await G.sync()
-    await H.sync()
-    await writeJson(join(dataG, 'schedules.json'), {
-      v: 1,
-      tasks: [{ id: 's1', name: '每日巡检', prompt: '新的检查内容', trigger: { kind: 'daily', time: '09:00' }, enabled: true, createdBy: 'user', createdAt: 1 }]
-    })
-    await G.sync()
-    const pulled = await H.sync()
-    assert.equal(pulled.ok, false, 'partial failure 不应报 ok')
-    assert.ok(
-      pulled.errors.some((item) => item.code === 'record.failed' && /提示词或触发时间/.test(String(item.params?.reason ?? ''))),
-      JSON.stringify(pulled.errors)
-    )
-    const doc = await readJson(join(dataH, 'schedules.json'))
-    assert.equal(doc.tasks.find((task) => task.id === 's1').prompt, '检查项目状态')
-  })
 } finally {
   const rootStat = await stat(root).catch(() => null)
   if (rootStat) await rm(root, { recursive: true, force: true }).catch(() => undefined)

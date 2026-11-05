@@ -22,7 +22,6 @@ export interface SyncServiceOptions {
   deviceName?: string
   now?: () => number
   settingsApplier?: (patch: Partial<AppSettings>) => Promise<void>
-  scheduleApplier?: (definition: Record<string, unknown>) => Promise<void>
 }
 
 const DEVICE_FILE = 'sync-device.json'
@@ -47,8 +46,7 @@ export class SyncService {
     this.paths = { ...defaultSyncPaths(options.dataDir, options.piAgentDir), ...options.paths }
     this.folder = new SyncFolder(options.syncRoot)
     this.store = new LocalStore(this.paths, {
-      ...(options.settingsApplier ? { applySettings: options.settingsApplier } : {}),
-      ...(options.scheduleApplier ? { applySchedule: options.scheduleApplier } : {})
+      ...(options.settingsApplier ? { applySettings: options.settingsApplier } : {})
     })
     this.deviceFile = join(options.dataDir, DEVICE_FILE)
     this.stateFile = join(options.dataDir, STATE_FILE)

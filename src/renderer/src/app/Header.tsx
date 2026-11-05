@@ -8,7 +8,6 @@ import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { collabText } from '../features/collab/collab-text'
 import { useHoverDelay } from '../lib/use-hover-delay'
-import { ProjectScriptsControl } from '../features/scripts/ProjectScriptsControl'
 import { rightPanelText } from '../features/workbench/right-panel-text'
 import { WindowControls } from './WindowControls'
 import { v3Text, withShortcutKeys } from './v3-text'
@@ -68,7 +67,6 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
-    if (route === 'schedule') return t('sched.title')
     if (route === 'collab') return collabText(lang).nav
     if (route === 'artifacts') return t('artifactLibrary.title')
     if (namedTitle) return namedTitle
@@ -119,7 +117,6 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
       <div className="v3-head-actions" data-win={windowControls ? '1' : '0'}>
         {route === 'chat' ? (
           <>
-            <ProjectScriptsControl />
             <IconButton
               tooltip={sessionBarLabel}
               aria-label={sessionBarLabel}

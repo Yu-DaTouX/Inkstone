@@ -120,7 +120,6 @@ import type { DeepLinkIntent } from '../shared/ipc'
 import type { ApiKeyPools } from '../shared/api-keys'
 import type { DesktopPetResult, DesktopPetStatus } from '../shared/desktop-pet'
 import type { RunSnapshot } from '../shared/runs'
-import type { ProjectPackageScripts } from '../shared/project-scripts'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../shared/checkpoints'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeDocumentView } from '../shared/office'
@@ -369,15 +368,6 @@ const api: YanBridge = {
       p,
       cwd
     ),
-
-  schedule: {
-    list: () => invoke('yan:schedule:list'),
-    create: (input) => invoke('yan:schedule:create', input),
-    update: (id, input) => invoke('yan:schedule:update', id, input),
-    setEnabled: (id, enabled) => invoke('yan:schedule:enabled', id, enabled),
-    remove: (id) => invoke('yan:schedule:remove', id),
-    runNow: (id) => invoke('yan:schedule:run', id)
-  },
 
   subagents: {
     list: () => invoke<SubagentRun[]>('yan:subagents:list'),
@@ -693,10 +683,6 @@ const api: YanBridge = {
     attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id),
     clear: (id) => invoke<boolean>('yan:terminal:clear', id),
     processes: (id) => invoke<TerminalProcessList>('yan:terminal:processes', id)
-  },
-
-  projectScripts: {
-    read: (projectId) => invoke<ProjectPackageScripts>('yan:projectScripts:read', projectId)
   },
 
   win: {

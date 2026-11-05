@@ -12,7 +12,6 @@ export function defaultSyncPaths(dataDir: string, piAgentDir = dataDir): SyncPat
     settingsFile: join(dataDir, 'desktop.json'),
     promptsDir: join(piAgentDir, 'prompts'),
     skillsDir: join(dataDir, 'skills'),
-    schedulesFile: join(dataDir, 'schedules.json'),
     interactionStateDir: join(dataDir, 'interaction-state')
   }
 }
@@ -272,81 +271,8 @@ async function applyBookmark(paths: SyncPaths, record: SyncRecord, exclusive = f
   await atomicWriteFile(file, JSON.stringify({ version: 1, session, values }))
 }
 
-export function pickScheduleDefinition(task: unknown): Record<string, unknown> | null {
-  if (!task || typeof task !== 'object' || Array.isArray(task)) return null
-  const source = task as Record<string, unknown>
-  const id = typeof source.id === 'string' ? source.id : ''
-  if (!id || !/^[\w.-]+$/.test(id)) return null
-  const out: Record<string, unknown> = { id }
-  for (const key of ['name', 'prompt', 'model', 'trigger', 'enabled', 'pendingApproval', 'createdBy', 'createdAt']) {
-    if (source[key] !== undefined) out[key] = source[key]
-  }
-  return out
-}
-
-async function readSchedules(paths: SyncPaths): Promise<ReadResult> {
-  if (!existsSync(paths.schedulesFile)) return { records: [], skipped: [] }
-  try {
-    const raw = JSON.parse(await readFile(paths.schedulesFile, 'utf8')) as { tasks?: unknown }
-    if (!raw || !Array.isArray(raw.tasks)) return { records: [], skipped: [`${paths.schedulesFile}：tasks 不是数组`] }
-    const modifiedAt = await mtimeMs(paths.schedulesFile)
-    const records: SyncRecord[] = []
-    for (const task of raw.tasks) {
-      const definition = pickScheduleDefinition(task)
-      if (!definition) continue
-      records.push({
-        key: `schedule:${definition.id as string}`,
-        kind: 'schedule',
-        payload: canonicalJson(definition),
-        modifiedAt
-      })
-    }
-    return { records, skipped: [] }
-  } catch (error) {
-    return { records: [], skipped: [`${paths.schedulesFile}：${describe(error)}`] }
-  }
-}
-
-async function applySchedule(paths: SyncPaths, record: SyncRecord, exclusive = false): Promise<void> {
-  const incoming = pickScheduleDefinition(JSON.parse(record.payload))
-  if (!incoming) throw new Error(`定时任务记录形状无效：${record.key}`)
-  let doc: { v?: unknown; tasks?: unknown } = { v: 1, tasks: [] }
-  if (existsSync(paths.schedulesFile)) {
-    try {
-      const raw = JSON.parse(await readFile(paths.schedulesFile, 'utf8')) as { v?: unknown; tasks?: unknown }
-      if (raw && typeof raw === 'object' && Array.isArray(raw.tasks)) doc = raw
-    } catch {
-      throw new Error('本机 schedules.json 解析失败，拒绝覆盖')
-    }
-  }
-  const tasks = Array.isArray(doc.tasks) ? (doc.tasks as Record<string, unknown>[]) : []
-  const index = tasks.findIndex((task) => task && typeof task === 'object' && (task as Record<string, unknown>).id === incoming.id)
-  if (exclusive && index >= 0) throw new Error(`定时任务副本已存在：${String(incoming.id)}`)
-  if (index >= 0) {
-    const local = tasks[index]
-    if (definitionSignature(local.prompt) !== definitionSignature(incoming.prompt) ||
-      definitionSignature(local.trigger) !== definitionSignature(incoming.trigger)) {
-      throw new Error(`定时任务 ${String(incoming.id)} 的提示词或触发时间与本机不同，已跳过（保留本机内容）`)
-    }
-    tasks[index] = {
-      ...local,
-      ...(incoming.name !== undefined ? { name: incoming.name } : {}),
-      ...(incoming.enabled !== undefined ? { enabled: incoming.enabled } : {}),
-      ...(incoming.pendingApproval !== undefined ? { pendingApproval: incoming.pendingApproval } : {})
-    }
-  } else {
-    tasks.push(incoming)
-  }
-  await atomicWriteFile(paths.schedulesFile, JSON.stringify({ v: 1, tasks }, null, 2))
-}
-
-function definitionSignature(value: unknown): string {
-  return value === undefined ? '' : canonicalJson(value)
-}
-
 export interface LocalStoreAppliers {
   applySettings?: (patch: Partial<AppSettings>) => Promise<void>
-  applySchedule?: (definition: Record<string, unknown>) => Promise<void>
 }
 
 export class LocalStore {
@@ -362,8 +288,7 @@ export class LocalStore {
       readSettings(this.paths),
       readPrompts(this.paths),
       readSkills(this.paths),
-      readBookmarks(this.paths),
-      readSchedules(this.paths)
+      readBookmarks(this.paths)
     ])
     return {
       records: parts.flatMap((part) => part.records),
@@ -394,17 +319,8 @@ export class LocalStore {
       await writeFile(file, record.payload, { flag: 'wx', mode: 0o600 })
       return
     }
-    if (record.kind !== 'bookmark' && record.kind !== 'schedule') throw new Error('不支持此类同步副本')
-    if (record.kind === 'bookmark') await applyBookmark(this.paths, record, true)
-    else {
-      const current = await readSchedules(this.paths)
-      if (current.skipped.length || current.records.some((entry) => entry.key === record.key)) throw new Error('定时任务副本已存在或无法读取')
-      if (this.appliers.applySchedule) {
-        const definition = pickScheduleDefinition(JSON.parse(record.payload))
-        if (!definition) throw new Error(`定时任务记录形状无效：${record.key}`)
-        await this.appliers.applySchedule(definition)
-      } else await applySchedule(this.paths, record, true)
-    }
+    if (record.kind !== 'bookmark') throw new Error('不支持此类同步副本')
+    await applyBookmark(this.paths, record, true)
   }
 
   async apply(record: SyncRecord): Promise<void> {
@@ -420,12 +336,6 @@ export class LocalStore {
         return applySkill(this.paths, record)
       case 'bookmark':
         return applyBookmark(this.paths, record)
-      case 'schedule': {
-        if (!this.appliers.applySchedule) return applySchedule(this.paths, record)
-        const definition = pickScheduleDefinition(JSON.parse(record.payload))
-        if (!definition) throw new Error(`定时任务记录形状无效：${record.key}`)
-        return this.appliers.applySchedule(definition)
-      }
       default: {
         const never: never = record.kind
         throw new Error(`未知的同步类别：${String(never)}`)
@@ -435,7 +345,7 @@ export class LocalStore {
 }
 
 export function isRecordKind(value: unknown): value is SyncRecordKind {
-  return value === 'settings' || value === 'prompt' || value === 'skill' || value === 'bookmark' || value === 'schedule'
+  return value === 'settings' || value === 'prompt' || value === 'skill' || value === 'bookmark'
 }
 
 function describe(error: unknown): string {

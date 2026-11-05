@@ -1840,7 +1840,7 @@ export const GapFillStates: Story = {
               行尾附件不嵌在按钮里
             </ListRow>
             <ListRowStatic icon={<StatusSlot><StatusDot kind="running" /></StatusSlot>} trailing="02:14">
-              非交互行（定时任务）
+              非交互行
             </ListRowStatic>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--s-6)', alignItems: 'center' }}>

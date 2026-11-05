@@ -33,7 +33,6 @@ export interface OverviewText {
   hideOutput: string
   earlierOutput: string
   taskGone: string
-  scheduledKind: string
   moreTools: string
   quotaFailed: string
   quotaExpired: string
@@ -165,7 +164,6 @@ const ZH: WorkbenchText = {
     hideOutput: '收起输出',
     earlierOutput: '（更早的输出未显示）',
     taskGone: '任务已经结束，无需停止',
-    scheduledKind: '定时',
     moreTools: '更多工具',
     quotaFailed: '额度查询失败',
     quotaExpired: '登录已过期',
@@ -263,7 +261,6 @@ const EN: WorkbenchText = {
     hideOutput: 'Hide output',
     earlierOutput: '(Earlier output not shown)',
     taskGone: 'The task already ended; nothing to stop',
-    scheduledKind: 'Scheduled',
     moreTools: 'More tools',
     quotaFailed: 'Quota check failed',
     quotaExpired: 'Sign-in expired',

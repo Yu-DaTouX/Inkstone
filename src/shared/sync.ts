@@ -44,7 +44,7 @@ export function isSyncMode(value: unknown): value is SyncMode {
   return value === 'manual' || value === 'auto'
 }
 
-export type SyncRecordKindView = 'settings' | 'prompt' | 'skill' | 'bookmark' | 'schedule'
+export type SyncRecordKindView = 'settings' | 'prompt' | 'skill' | 'bookmark'
 
 export interface SyncLastSummary {
   at: number

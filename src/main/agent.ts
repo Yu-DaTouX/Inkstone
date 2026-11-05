@@ -161,9 +161,6 @@ import { hasUsageNumbers } from '../shared/turns'
 import type { SubagentForkSource } from './subagent-fork'
 import { isUltracodeOn, setUltracodeOn } from './ultracode-sessions'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
-import type { ScheduleService } from './schedule-service'
-import type { ScheduledTask } from '../shared/schedule'
-import { runScheduleCommand, ScheduleCommandError } from './schedule-commands'
 
 const FLUSH_MS = 16
 const MAX_FLUSH_MS = 120
@@ -455,7 +452,6 @@ export class AgentController extends EventEmitter {
   private getResponseDetail?: () => ResponseDetail
   private getBrowserHost?: () => BrowserCommandHost | null
   private subagentHost?: SubagentCommandHost
-  private scheduleHost?: ScheduleService
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
   ) => Promise<CapabilityAuthorizationChoice>
@@ -687,7 +683,6 @@ export class AgentController extends EventEmitter {
     getResponseDetail?: () => ResponseDetail
     browserHost?: () => BrowserCommandHost | null
     subagentHost?: SubagentCommandHost
-    scheduleHost?: ScheduleService
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
@@ -766,7 +761,6 @@ export class AgentController extends EventEmitter {
     this.getResponseDetail = opts.getResponseDetail
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
-    this.scheduleHost = opts.scheduleHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
@@ -1260,15 +1254,6 @@ export class AgentController extends EventEmitter {
     if (command.startsWith('terminal.')) {
       return this.terminalCommands.run(command.slice('terminal.'.length), params, signal)
     }
-    if (command.startsWith('schedule.')) {
-      if (!this.scheduleHost) throw new CapabilityCommandError('schedule_unavailable', '定时任务当前不可用')
-      try {
-        return await runScheduleCommand(this.scheduleHost, command, params, { cwd: this.cwd, confirm: (task, action) => this.confirmScheduleChange(task, action) })
-      } catch (error) {
-        if (error instanceof ScheduleCommandError) throw new CapabilityCommandError(error.code, error.message)
-        throw error
-      }
-    }
     if (command.startsWith('subagent.')) {
       if (!this.subagentHost) {
         throw new CapabilityCommandError('subagent_unavailable', '子代理宿主入口当前不可用')
@@ -1732,20 +1717,6 @@ export class AgentController extends EventEmitter {
 
   private cancelImages(): void {
     for (const controller of this.imageRequests) controller.abort()
-  }
-
-  private async confirmScheduleChange(task: ScheduledTask, action: 'delete' | 'pause'): Promise<string | null> {
-    if ((await this.getPermissionMode?.()) === 'all') return null
-    const verb = action === 'delete' ? '删除' : '暂停'
-    const answer = this.confirmDanger ? await this.confirmDanger({
-      tool: `yan schedule ${action}`,
-      detail: [`任务：${task.name}`, `目录：${task.cwd ?? this.cwd}`, '', task.prompt].join('\n').slice(0, APPROVAL_DETAIL_MAX),
-      reasons: [`要${verb}${task.createdBy === 'user' ? '你创建的' : ''}定时任务：${task.name}`],
-      cwd: this.cwd,
-      owner: this.approvalOwner()
-    }) : null
-    if (answer?.decision === 'allow') return null
-    return answer?.feedback ?? `没有得到用户确认，未${verb}定时任务`
   }
 
   private async runImageCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {

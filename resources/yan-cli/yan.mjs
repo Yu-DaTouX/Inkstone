@@ -42,8 +42,6 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan session move --dir <文件夹> [--reason <原因>]   任务属于别的文件夹时，请用户批准把会话移过去
   yan consent request --capability <能力> --action <操作> [--resource <资源>] [--purpose <用途>]
   yan subagent start --request-file subagent.json
-  yan schedule create --request-file schedule.json     新建定时任务（需用户在「定时任务」页确认后才运行）
-  yan schedule list | delete --id <ID> | pause --id <ID>
   yan subagent list
   yan subagent get --id <子代理ID>
   yan subagent send --id <子代理ID> --message "追加信息"
@@ -282,24 +280,6 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
           完整答案落在 resultFile，stdout 只回摘要；取消 / 超时会如实返回，不猜答案。
 
 `,
-  schedule: `yan schedule <动作> [选项]
-
-动作：
-  create --request-file schedule.json
-         {"name":"每日简报","prompt":"总结昨天的提交","daily":"09:00"}
-         触发写法任选其一："daily":"09:00"（每天）/ "weekdays":"09:00"（工作日）/
-         "every":60（每隔多少分钟，最小 5）/ "at":"2026-10-15 09:00"（只一次）/
-         "trigger":{"kind":"weekly","days":[1,3],"time":"18:30"}（0 = 周日）
-         可选："model":"provider/id"、"cwd":"工作文件夹"（默认当前会话目录）
-  list   列出全部定时任务与状态
-  delete --id <ID>   删除
-  pause  --id <ID>   暂停（启用要用户在界面里点）
-
-说明：
-  · 到点会新开一条会话，用 prompt 当第一条消息；只在砚运行时触发，错过的 24 小时内补跑一次。
-  · create 之后任务是「待确认」：必须由用户在「定时任务」页启用，所以创建后要告诉用户去确认。
-  · prompt 要自足：新会话看不到当前对话，把需要的背景写进去。
-`,
   subagent: `yan subagent <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
@@ -512,10 +492,6 @@ const GROUP_SPECS = {
     }
   },
 
-  schedule: {
-    actions: ['create', 'list', 'delete', 'pause'],
-    required: { create: ['prompt'], delete: ['id'], pause: ['id'] }
-  },
   subagent: {
     actions: ['start', 'list', 'get', 'status', 'send', 'merge', 'discard', 'stop'],
     required: {

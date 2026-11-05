@@ -38,11 +38,11 @@ async function run() {
     assert.equal(bg.isNearBottom({ scrollTop: 400, scrollHeight: 1000, clientHeight: 500 }, 100), true)
 
     const entries = [
-      { id: 'r2', kind: 'subagent', live: true, startedAt: 20, endedAt: null },
-      { id: 'f1', kind: 'subagent', live: false, startedAt: 1, endedAt: 50 },
-      { id: 'r1', kind: 'scheduled', live: true, startedAt: 10, endedAt: null },
-      { id: 'f2', kind: 'scheduled', live: false, startedAt: 2, endedAt: 90 },
-      { id: 'f3', kind: 'subagent', live: false, startedAt: 70, endedAt: null }
+      { id: 'r2', live: true, startedAt: 20, endedAt: null },
+      { id: 'f1', live: false, startedAt: 1, endedAt: 50 },
+      { id: 'r1', live: true, startedAt: 10, endedAt: null },
+      { id: 'f2', live: false, startedAt: 2, endedAt: 90 },
+      { id: 'f3', live: false, startedAt: 70, endedAt: null }
     ]
     const sections = bg.sectionTasks(entries)
     assert.deepEqual(sections.running.map((e) => e.id), ['r1', 'r2'])
@@ -62,26 +62,6 @@ async function run() {
     assert.equal(bg.subagentOutputText({ transcript: [], result: { summary: '  sum  ' }, latestActivity: 'act' }), 'sum')
     assert.equal(bg.subagentOutputText({ transcript: [], latestActivity: ' reading a.ts ' }), 'reading a.ts')
     assert.equal(bg.subagentOutputText({ transcript: [] }), '')
-
-    const running = { kind: 'running', since: 1, activity: 'tool' }
-    const queued = { kind: 'queued', since: 1, reason: 'scheduled' }
-    const failedSeen = { kind: 'failed', at: 9, cause: 'model', message: 'x', seen: true }
-    const failedNew = { ...failedSeen, seen: false }
-    const stopped = { kind: 'stopped', at: 7, by: 'user' }
-    const done = { kind: 'done', at: 8, seen: false }
-    assert.equal(bg.isSettledPhase(done), true)
-    assert.equal(bg.isSettledPhase(stopped), true)
-    assert.equal(bg.isSettledPhase(failedSeen), true)
-    assert.equal(bg.isSettledPhase(failedNew), false)
-    assert.equal(bg.isSettledPhase(running), false)
-    assert.equal(bg.runEndedAt(done), 8)
-    assert.equal(bg.runEndedAt(failedNew), 9)
-    assert.equal(bg.runEndedAt(stopped), 7)
-    assert.equal(bg.runEndedAt(running), null)
-    assert.equal(bg.canStopRun({ phase: running }), true)
-    assert.equal(bg.canStopRun({ phase: queued }), true)
-    assert.equal(bg.canStopRun({ phase: { kind: 'needs-you', since: 1, request: { id: 'q', type: 'approval', summary: '' } } }), true)
-    for (const phase of [done, stopped, failedSeen, failedNew]) assert.equal(bg.canStopRun({ phase }), false, phase.kind)
 
     console.log('background-tasks: 通过')
   } finally {

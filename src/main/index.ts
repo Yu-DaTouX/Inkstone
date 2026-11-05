@@ -65,7 +65,6 @@ import { sessionActionAgent, SESSION_ACTION_CHANGED } from './ipc/session-action
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
-import { registerProjectScriptsIpc } from './ipc/project-scripts-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
@@ -88,8 +87,6 @@ import { BundledPlugins } from './bundled-plugins'
 import { completePluginText } from './plugin-completion'
 import { configurePluginCommands } from './plugin-commands'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
-import { registerScheduleIpc } from './ipc/schedule-ipc'
-import { ScheduleService } from './schedule-service'
 import { SyncService } from './sync'
 import { isSessionFileInSessionsDir, onSessionPurged, SESSIONS_DIR } from './sessions'
 import { registerSessionIpc } from './ipc/session-ipc'
@@ -387,60 +384,6 @@ let piPackageActivationInFlight = false
 let piPackageActivationAgain = false
 const piPackageActivationDeferred = new Map<string, string>()
 let browser: BrowserController | null = null
-const scheduleService = new ScheduleService({
-  file: join(YAN_DIR, 'schedules.json'),
-  run: async (task) => {
-    const settings = await getSettings()
-    const cwdResult = await sessionHost.validateCwd(task.cwd || settings.cwd)
-    if (!cwdResult.ok) throw new Error(cwdResult.error)
-    if (!runners) {
-      const started = await sessionHost.startAgent()
-      if (!started.ok) throw new Error(started.error ?? 'pi 未运行')
-    }
-    const cwd = cwdResult.cwd
-    const projectId = sessionHost.projectIdForCwd(settings, cwd)
-    const scope = projectId ? 'project' : 'global'
-    const registry = runners!
-    const res = await registry.select({ cwd, projectId, scope, activate: false, origin: { kind: 'scheduled', scopeId: task.id } })
-    if (!res.ok || !res.id) throw new Error(res.error ?? '无法新建会话（运行实例已满？）')
-    const pin = pinSendTarget(res.id)
-    const selectedRuntime = { runId: res.runId ?? res.id, sessionId: res.sessionId, generation: res.generation }
-    const current = () => runners === registry && !!pin && pinnedTargetMatches(pin) && sameRuntimeEnvelope(pin, selectedRuntime)
-    if (!pin || !current()) throw new Error('定时任务的目标会话已变化，未发送指令')
-    await sessionHost.rememberRunnerSession(res, { cwd, projectId, scope })
-    if (!current()) throw new Error('定时任务的目标会话已变化，未发送指令')
-    const agent = pin.agent
-    const sessionId = res.sessionId ?? agent.getState()?.sessionId
-    const sessionFile = agent.getState()?.sessionFile
-    const scheduled = runsHost && sessionId
-      ? await runsHost.openScheduled({
-          scopeId: task.id,
-          sessionId,
-          ...(res.generation !== undefined ? { generation: res.generation } : {}),
-          ...(sessionFile ? { sessionPath: sessionFile } : {}),
-          title: task.name
-        })
-      : null
-    try {
-      if (task.model) {
-        const at = task.model.indexOf('/')
-        const set = await agent.setModel(task.model.slice(0, at), task.model.slice(at + 1))
-        if (!current()) throw new Error('定时任务的目标会话已变化，未发送指令')
-        if (!set.ok) throw new Error(set.error ?? '指定的模型不可用')
-      }
-      const guard = registry.guardExecute(res.id)
-      if (!guard.ok) throw new Error(guard.error)
-      const sent = await agent.send(`[定时任务 · ${task.name}]\n${task.prompt}`)
-      if (!sent.ok) throw new Error(sent.error ?? '指令没有发出')
-    } catch (error) {
-      if (scheduled && runsHost) runsHost.failScheduled(scheduled, error instanceof Error ? error.message : String(error))
-      throw error
-    }
-    if (current()) void sessionHost.pushRunnerSnapshot(res.id)
-    sessionHost.pushRunners()
-    return { sessionId: res.sessionId }
-  }
-})
 const notifySubagentFinished = createSubagentNotifier({
   enabled: async () => (await getSettings()).subagentNotify !== false,
   find: (run) => (runners ? findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners) : null),
@@ -1358,7 +1301,6 @@ async function runShutdown(): Promise<void> {
   syncController?.stop()
   if (agentRestartTimer) clearTimeout(agentRestartTimer)
   agentRestartTimer = null
-  scheduleService.stop()
   disposeKeepAwake()
   bundledPlugins.close()
   attention?.dispose()
@@ -2050,18 +1992,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     isSessionVisible: (state) => runnerVisibility.includes(state),
     isParentProtected: (sessionId, runId) => subagentService.current()?.hasParentRun(sessionId, runId) ?? false,
     hasRunningSubagents: (sessionId) => (subagentService.current()?.runningSiblings({ parentSessionId: sessionId }) ?? 0) > 0,
-    onRunnerOrigin: ({ sessionId, generation, origin }) => {
-      if (!runsHost) return
-      if (origin) {
-        runsHost.bindScheduledOrigin({
-          scopeId: origin.scopeId,
-          ...(sessionId ? { sessionId } : {}),
-          generation
-        })
-      } else if (sessionId) {
-        runsHost.clearScheduledOrigin({ sessionId, generation })
-      }
-    },
     onReclaimed: ({ id, sessionId, idleMs, remaining }) => {
       mcpAppViewService?.invalidateRunnerId(id)
       const text = `[运行实例回收] ${id} (${sessionId ?? 'unknown'}) 空闲 ${Math.floor(idleMs / 1000)} 秒，释放1个 pi 实例，剩余 ${remaining} 个`
@@ -2108,7 +2038,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
         subagentHost: subagentService.capabilityHost,
-        scheduleHost: scheduleService,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
         providerExtensions: providerExtensionPaths(),
         bundledSkills: [...bundledSkillPaths(), ...bundledPlugins.skillPaths()],
@@ -2744,8 +2673,7 @@ function registerIpc(): void {
         settingsApplier: async (patch) => {
           const next = await patchSettings(patch)
           if (typeof patch.theme === 'string') syncNativeThemeSource(next.theme)
-        },
-        scheduleApplier: (definition) => scheduleService.applySynced(definition)
+        }
       }),
     pickSyncFolder: async () => {
       if (!win) return null
@@ -3148,8 +3076,6 @@ function registerIpc(): void {
 
 
 
-  registerScheduleIpc(ipc, scheduleService)
-  if (!isRestoredReadonly()) void scheduleService.start().catch((e) => reportMainError('定时任务', e))
   registerSubagentsIpc(ipc, {
     service: subagentService,
     parentContext: async (owner) => {
@@ -3274,7 +3200,6 @@ function registerIpc(): void {
   })
 
   registerTerminalIpc(ipc, () => ac()?.getState()?.cwd)
-  registerProjectScriptsIpc(ipc)
 }
 
 function pushWinState(): void {

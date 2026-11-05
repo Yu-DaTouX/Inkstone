@@ -122,13 +122,6 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     'yan search --help'
   ),
   builtin(
-    'schedule',
-    '定时任务',
-    '新建、列出、暂停或删除定时任务；新建后要用户在「定时任务」页确认过才会运行。',
-    'external-action',
-    'yan schedule list'
-  ),
-  builtin(
     'consent',
     '征求用户同意',
     '需要用户明确同意的操作先问一次，说清能力、操作、资源与用途。',

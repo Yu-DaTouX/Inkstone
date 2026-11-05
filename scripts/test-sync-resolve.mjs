@@ -32,7 +32,7 @@ async function run() {
     const { buildConflictCopy, supportsConflictCopy } = await compile('src/main/sync/resolve.ts', join(dir, 'resolve.mjs'))
     const { canonicalJson, shortHash } = await compile('src/main/sync/canonical.ts', join(dir, 'canonical.mjs'))
 
-    for (const kind of ['prompt', 'skill', 'bookmark', 'schedule']) {
+    for (const kind of ['prompt', 'skill', 'bookmark']) {
       assert.equal(supportsConflictCopy(kind), true, `${kind} 支持冲突副本`)
     }
     assert.equal(supportsConflictCopy('settings'), false)
@@ -108,41 +108,6 @@ async function run() {
     assert.equal(
       buildConflictCopy(conflict({ kind: 'bookmark', remotePayload: JSON.stringify({ session: 's', key: 'bookmark:a', value: 5 }) })),
       null
-    )
-
-    const scheduleId = 'sched-1'
-    const scheduleConflictId = 'conflict-9'
-    const scheduleNextId = `${scheduleId}-conflict-${shortHash(scheduleConflictId, 32)}`
-    const schedule = buildConflictCopy(
-      conflict({
-        id: scheduleConflictId,
-        kind: 'schedule',
-        remoteDeviceName: 'MacBook-Pro',
-        remotePayload: JSON.stringify({ id: scheduleId, name: '每日构建', cron: '0 9 * * *' }),
-        remoteModifiedAt: 444
-      })
-    )
-    assert.deepEqual(schedule, {
-      key: `schedule:${scheduleNextId}`,
-      kind: 'schedule',
-      payload: canonicalJson({ id: scheduleNextId, name: `每日构建（MacBook-Pro-${shortHash(scheduleConflictId, 32)}）`, cron: '0 9 * * *' }),
-      modifiedAt: 444
-    })
-
-    const scheduleNoName = buildConflictCopy(
-      conflict({ id: scheduleConflictId, kind: 'schedule', remotePayload: JSON.stringify({ id: scheduleId }) })
-    )
-    assert.equal(scheduleNoName.key, `schedule:${scheduleNextId}`)
-    assert.deepEqual(JSON.parse(scheduleNoName.payload), { id: scheduleNextId })
-    assert.equal(Object.hasOwn(JSON.parse(scheduleNoName.payload), 'name'), false)
-
-    assert.equal(buildConflictCopy(conflict({ kind: 'schedule', remotePayload: 'not json' })), null)
-    assert.equal(buildConflictCopy(conflict({ kind: 'schedule', remotePayload: JSON.stringify([{ id: scheduleId }]) })), null)
-    assert.equal(buildConflictCopy(conflict({ kind: 'schedule', remotePayload: JSON.stringify({ name: '无 id' }) })), null)
-    assert.equal(buildConflictCopy(conflict({ kind: 'schedule', remotePayload: JSON.stringify({ id: 'has space' }) })), null)
-    assert.equal(
-      buildConflictCopy(conflict({ kind: 'schedule', remotePayload: JSON.stringify({ id: scheduleId, name: '' }) })).key,
-      `schedule:${scheduleId}-conflict-${shortHash('c0', 32)}`
     )
 
     assert.equal(buildConflictCopy(conflict({ kind: 'settings' })), null)

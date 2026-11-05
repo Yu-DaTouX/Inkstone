@@ -277,11 +277,9 @@ async function runV3RunsSubagentTests() {
       const kinds = new SessionCodeStore({ root: join(dir, 'codes-d') })
       await kinds.load()
       await kinds.backfill([
-        { scopeId: 'sess', kind: 'session', createdAt: 1000 },
-        { scopeId: 'task', kind: 'scheduled', createdAt: 1000 }
+        { scopeId: 'sess', kind: 'session', createdAt: 1000 }
       ])
       assert.equal(kinds.codeFor('sess'), 'S1')
-      assert.equal(kinds.codeFor('task'), 'T01')
     }
 
     console.log('v3 子 Agent 归约：S{n}·{k} 稳定 / agent_settled 终态 / 补号确定且幂等 全部通过')
@@ -443,8 +441,7 @@ async function runStopTests(mod) {
     runs: [
       runSnapshot('run-live', { kind: 'running', since: 0, activity: 'streaming' }, { sessionId: 's-live', code: 'S1' }),
       runSnapshot('run-done', { kind: 'done', at: 5000, seen: true }, { sessionId: 's-done', code: 'S2' }),
-      runSnapshot('run-child', { kind: 'running', since: 0, activity: 'subagent' }, { sessionId: 's-live', code: 'S1·1', kind: 'subagent' }),
-      runSnapshot('run-scheduled', { kind: 'running', since: 0, activity: 'waiting-model' }, { sessionId: 's-t', code: 'T01', kind: 'scheduled' })
+      runSnapshot('run-child', { kind: 'running', since: 0, activity: 'subagent' }, { sessionId: 's-live', code: 'S1·1', kind: 'subagent' })
     ]
   }
   const fakeController = {
@@ -500,10 +497,6 @@ async function runStopTests(mod) {
   assert.deepEqual(child, { ok: true, runId: 'run-child', kind: 'subagent' })
   assert.deepEqual(calls.subagent, ['run-child'])
   assert.equal(fakeController.aborted, 1)
-
-  const scheduled = await ipc.invoke('yan:runs:stop', 'run-scheduled')
-  assert.equal(scheduled.ok, false)
-  assert.equal(scheduled.kind, 'scheduled')
 
   const failing = fakeIpc()
   mod.registerRunsIpc(failing, {

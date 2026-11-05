@@ -32,7 +32,6 @@ import { CommandPalette } from '../features/commands/CommandPalette'
 import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { SessionSwitcher, useSessionSwitcher } from '../features/commands/SessionSwitcher'
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
-import { runPrimaryProjectScript } from '../features/scripts/run-project-script'
 import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { BrowserSiteAskDialog } from '../features/browser/SiteAskDialog'
@@ -68,7 +67,6 @@ let bootstrapStarted = false
 
 const UsagePage = lazy(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
 const CollabPage = lazy(() => import('../features/collab').then((m) => ({ default: m.CollabPage })))
-const ScheduleTasksPage = lazy(() => import('../features/schedule').then((m) => ({ default: m.ScheduleTasksPage })))
 const ArtifactLibraryPage = lazy(() => import('../features/artifacts/ArtifactLibraryPage').then((m) => ({ default: m.ArtifactLibraryPage })))
 
 const CHAT_MIN_WIDTH_PX = 420
@@ -513,10 +511,6 @@ export default function ShellV3(): ReactElement {
             event.preventDefault()
             void openWorkspaceTab('terminal')
             return
-          case 'runProjectScript':
-            event.preventDefault()
-            void runPrimaryProjectScript()
-            return
           case 'cycleTranscriptView': {
             if (ui.route.name !== 'chat') return
             event.preventDefault()
@@ -601,7 +595,6 @@ export default function ShellV3(): ReactElement {
   const sidebarActions = useMemo(() => ({
     onClose: () => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) },
     onPin: () => useUiV3.getState().setSidebarOpen(true),
-    onSchedule: () => useUiV3.getState().navigate({ name: 'schedule' }),
     onCollab: () => useUiV3.getState().navigate({ name: 'collab' }),
     onArtifacts: () => useUiV3.getState().navigate({ name: 'artifacts' }),
     onSettings: () => openSettingsDialog(),
@@ -657,11 +650,7 @@ export default function ShellV3(): ReactElement {
             ref={bodyRef}
             data-panel={panelMaximized ? 'maximized' : panelOpen ? panelMode : 'closed'}
           >
-            {route.name === 'schedule' ? (
-              <Suspense fallback={null}>
-                <ScheduleTasksPage />
-              </Suspense>
-            ) : route.name === 'collab' ? (
+            {route.name === 'collab' ? (
               <Suspense fallback={null}>
                 <CollabPage />
               </Suspense>

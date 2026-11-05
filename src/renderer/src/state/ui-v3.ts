@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 
-export type V3RouteName = 'chat' | 'schedule' | 'collab' | 'usage' | 'artifacts'
+export type V3RouteName = 'chat' | 'collab' | 'usage' | 'artifacts'
 
 export interface V3Route {
   name: V3RouteName
@@ -35,7 +35,6 @@ export const useUiV3 = create<UiV3State>((set, get) => ({
 
 export function routeFromHash(hash: string): V3Route {
   const name = hash.replace(/^#\/?/, '')
-  if (name === 'schedule') return { name: 'schedule' }
   if (name === 'collab') return { name: 'collab' }
   if (name === 'usage') return { name: 'usage' }
   if (name === 'artifacts') return { name: 'artifacts' }

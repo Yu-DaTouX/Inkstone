@@ -9,7 +9,7 @@ import { syncNote, type SyncNote } from '../../shared/sync'
 import type { ConflictRecord, RemoteRecord, SyncRecordKind } from './types'
 
 export const SYNC_SUBDIR = 'inkstone-sync'
-const KINDS: SyncRecordKind[] = ['settings', 'prompt', 'skill', 'bookmark', 'schedule']
+const KINDS: SyncRecordKind[] = ['settings', 'prompt', 'skill', 'bookmark']
 
 export interface ReadRecordsResult {
   records: Map<string, RemoteRecord>
