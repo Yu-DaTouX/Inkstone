@@ -2093,6 +2093,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       })
       return { cwd: isolatedSessionCwd(outcome.record) }
     },
+    launchSignature: () => JSON.stringify([...providerExtensionPaths(), ...bundledSkillPaths(), ...bundledPlugins.skillPaths()].map((path) => {
+      try { return `${path}@${statSync(path).mtimeMs}` } catch { return path }
+    })),
     createAgent: (id, cwd, generation) => {
       const agent: AgentController = new AgentController({
         push: (m) => {

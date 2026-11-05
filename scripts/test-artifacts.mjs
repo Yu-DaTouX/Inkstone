@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -283,6 +283,11 @@ export async function runArtifactTests(modules = {}) {
     }
     assert(rejected, 'artifact attach should reject paths outside the project')
     await rm(external, { force: true })
+    const pluginOutput = join(root, 'comfyui', 'generated.mp4')
+    await mkdir(join(root, 'comfyui'), { recursive: true })
+    await writeFile(pluginOutput, 'video')
+    const pluginAttached = await store.attach({ sessionFile, messageId: 'assistant-plugin', cwd: project, sourcePath: pluginOutput })
+    assert(pluginAttached.filename === 'generated.mp4' && pluginAttached.sourceId === 'file:generated.mp4', 'plugin outputs inside the artifact root can be attached')
 
     const inside = join(project, 'notes.md')
     await writeFile(inside, '# 笔记\n')

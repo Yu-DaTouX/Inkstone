@@ -33,8 +33,9 @@ async function getJson(url) {
         return undefined;
     }
 }
+const KIND_ORDER = ['text-to-image', 'image-to-image', 'text-to-video', 'image-to-video', 'video-to-video'];
 export function sortWorkflows(entries) {
-    return [...entries].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'text-to-image' ? -1 : 1));
+    return [...entries].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind)));
 }
 export async function fetchComfyWorkflow(baseUrl, name, signal) {
     const response = await fetch(`${baseUrl}/api/userdata/${encodeURIComponent(`workflows/${name}`)}`, { signal: signal ?? AbortSignal.timeout(10_000) });
@@ -67,7 +68,7 @@ async function probeComfy(root) {
     if (!stats?.system)
         return null;
     const workflows = await listComfyWorkflows(root).catch(() => []);
-    return { kind: 'comfyui', purpose: 'image', name: 'ComfyUI', baseUrl: root, models: workflows.map((item) => item.name), running: true };
+    return { kind: 'comfyui', purpose: 'image', name: 'ComfyUI', baseUrl: root, models: workflows.map((item) => item.name), workflows, running: true };
 }
 function windowsDrives() {
     return process.platform === 'win32' ? [...'CDEFGHIJKLMNOPQRSTUVWXYZ'].map((letter) => `${letter}:\\`).filter((drive) => existsSync(drive)) : [];
@@ -140,7 +141,7 @@ export async function readInstalledWorkflows(installDir) {
     const out = [];
     for (const name of await walkJson(root, root)) {
         try {
-            const kind = classify(JSON.parse(await readFile(join(root, name), 'utf8')));
+            const kind = classify(JSON.parse((await readFile(join(root, name), 'utf8')).replace(/^\uFEFF/, '')));
             if (kind)
                 out.push({ name, kind });
         }

@@ -220,6 +220,8 @@ async function adoptLegacyDir(legacy: string, target: string): Promise<void> {
   if (rest && rest.every((name) => name.endsWith('.tmp'))) await rm(legacy, { recursive: true, force: true }).catch(() => undefined)
 }
 
+const PLUGIN_OUTPUT_DIRS = ['comfyui']
+
 function fileSourceId(cwd: string, source: string): string {
   const rel = relative(cwd, source).split(sep).join('/')
   return `file:${process.platform === 'win32' ? rel.toLowerCase() : rel}`
@@ -322,7 +324,9 @@ export class ArtifactStore {
   async attach(input: ArtifactAttachInput): Promise<AssistantArtifact> {
     const source = await realpath(resolve(input.cwd, input.sourcePath))
     const projectRoot = await realpath(resolve(input.cwd)).catch(() => resolve(input.cwd))
-    if (!isWithin(projectRoot, source)) throw new Error('artifact_path_outside_project')
+    const pluginRoots = await Promise.all(PLUGIN_OUTPUT_DIRS.map((dir) => realpath(join(this.rootDir, dir)).catch(() => null)))
+    const pluginRoot = pluginRoots.find((root): root is string => !!root && isWithin(root, source))
+    if (!pluginRoot && !isWithin(projectRoot, source)) throw new Error('artifact_path_outside_project')
     const info = await stat(source)
     if (!info.isFile()) throw new Error('artifact_not_a_file')
     if (info.size === 0) throw new Error('artifact_empty')
@@ -335,7 +339,7 @@ export class ArtifactStore {
       messageId: input.messageId,
       filename,
       bytes,
-      sourceId: fileSourceId(projectRoot, source),
+      sourceId: fileSourceId(pluginRoot ?? projectRoot, source),
       sourcePath: source,
       description: input.description
     })

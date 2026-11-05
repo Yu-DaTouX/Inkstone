@@ -3,7 +3,7 @@ import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
 import type { McpNativeBootWitness } from './mcp/app-native-witness'
 import type { McpServerStatus } from '../shared/mcp'
 import { executionBusy, runEnvelope, runStatus } from '../core/run-state'
-import { canReclaimIdle, IDLE_RECLAIM_ENABLED, IDLE_RECLAIM_SCAN_MS } from './runner-reclaim'
+import { canReclaimIdle, IDLE_RECLAIM_SCAN_MS } from './runner-reclaim'
 import {
   admissionClaimedBy,
   guardSameCwdExecute,
@@ -121,6 +121,19 @@ export class RunnerRegistry {
   private disposed = false
   private admissionCounter = 0
   private admissions = new Map<string, ExecuteAdmissionClaim>()
+  private launchSignatures = new WeakMap<AgentController, string>()
+
+  private spawnAgent(id: string, cwd: string, generation: number): AgentController {
+    const signature = this.opts.launchSignature?.()
+    const agent = this.opts.createAgent(id, cwd, generation)
+    if (signature !== undefined) this.launchSignatures.set(agent, signature)
+    return agent
+  }
+
+  private launchedWithStaleResources(agent: AgentController): boolean {
+    const current = this.opts.launchSignature?.()
+    return current !== undefined && this.launchSignatures.get(agent) !== current
+  }
 
   private sharesCwd(cwd: string): boolean {
     return this.opts.sharesCwd?.(cwd) === true
@@ -209,6 +222,7 @@ export class RunnerRegistry {
       hasRunningSubagents?: (sessionId: string) => boolean
       onReclaimed?: (entry: { id: string; sessionId?: string; idleMs: number; remaining: number }) => void
       createAgent: (id: string, cwd: string, generation?: number) => AgentController
+      launchSignature?: () => string
       prepareNewSession?: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
       onChanged?: () => void
       onRunnerOrigin?: (info: {
@@ -244,7 +258,7 @@ export class RunnerRegistry {
   }
 
   startIdleReclaim(): void {
-    if (!IDLE_RECLAIM_ENABLED || this.disposed || this.reclaimTimer) return
+    if (this.disposed || this.reclaimTimer) return
     this.reclaimTimer = setInterval(() => {
       void this.reclaimIdle().catch((error) => console.error('[runner-reclaim]', error))
     }, IDLE_RECLAIM_SCAN_MS)
@@ -254,7 +268,7 @@ export class RunnerRegistry {
   reclaimIdle(): Promise<string | null> {
     if (this.reclaimOperation) return this.reclaimOperation
     const operation = this.serialize(async () => {
-      if (!IDLE_RECLAIM_ENABLED || this.disposed) return null
+      if (this.disposed) return null
       const now = this.now()
       for (const runner of [...this.runners.values()].sort((a, b) => a.lastActiveAt - b.lastActiveAt)) {
         const state = runner.agent.getState()
@@ -485,13 +499,13 @@ export class RunnerRegistry {
       (this.runners.size < this.limit ? undefined : idleCandidates[0])
 
     if (idle) {
-      if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd) || !agentAlive(idle.agent)) {
+      if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd) || !agentAlive(idle.agent) || this.launchedWithStaleResources(idle.agent)) {
         const previous = idle.agent
         const generation = nextGeneration()
         let replacement: AgentController | undefined
         let failure: string | undefined
         try {
-          replacement = this.opts.createAgent(idle.id, target.cwd, generation)
+          replacement = this.spawnAgent(idle.id, target.cwd, generation)
           replacement.setRunnerGeneration(generation)
           const started = await replacement.start()
           if (!started.ok) {
@@ -602,7 +616,7 @@ export class RunnerRegistry {
     if (this.disposed) return { ok: false, error: '运行实例正在重启，请稍后再打开这个会话' }
     const id = `r${++this.seq}`
     const generation = nextGeneration()
-    const agent = this.opts.createAgent(id, target.cwd, generation)
+    const agent = this.spawnAgent(id, target.cwd, generation)
     const runner: Runner = {
       id,
       agent,
@@ -698,7 +712,7 @@ export class RunnerRegistry {
     const previousGeneration = runner.generation
     const queue = previous.queueSnapshot()
     const generation = nextGeneration()
-    const replacement = this.opts.createAgent(runner.id, runner.cwd, generation)
+    const replacement = this.spawnAgent(runner.id, runner.cwd, generation)
     runner.agent = replacement
     runner.generation = generation
     this.opts.onChanged?.()

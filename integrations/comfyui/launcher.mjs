@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
-import { comfyInstallCandidates, detectLocalImageService, isComfyInstall, listComfyWorkflows, resetLocalImageCache } from './discovery.mjs';
+import { comfyInstallCandidates, detectLocalImageService, isComfyInstall, listComfyWorkflows, readInstalledWorkflows, resetLocalImageCache } from './discovery.mjs';
 export class ComfyLaunchError extends Error {
     code;
     reason;
@@ -89,7 +89,7 @@ async function serverAt(baseUrl) {
         if (!response.ok)
             return null;
         const workflows = await listComfyWorkflows(baseUrl).catch(() => []);
-        return { kind: 'comfyui', purpose: 'image', name: 'ComfyUI', baseUrl, models: workflows.map((item) => item.name), running: true, installDir: managed?.installDir };
+        return { kind: 'comfyui', purpose: 'image', name: 'ComfyUI', baseUrl, models: workflows.map((item) => item.name), workflows, running: true, installDir: managed?.installDir };
     }
     catch {
         return null;
@@ -227,7 +227,7 @@ export async function comfyStatus() {
         ...(installDir ? { installDir } : {}),
         ...(running && managed ? { startedAt: managed.startedAt, ...(managed.idleStopAt ? { idleStopAt: managed.idleStopAt } : {}) } : {}),
         launchable: !!server || !!installDir,
-        workflows: server?.models ?? []
+        workflows: server?.workflows ?? (installDir ? await readInstalledWorkflows(installDir).catch(() => []) : [])
     };
 }
 process.once('exit', () => {

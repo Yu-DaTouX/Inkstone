@@ -300,6 +300,27 @@ export async function runSessionConcurrencyConflictTests(ok) {
     ok(r.ok === true, '隔离目标目录只有空闲实例时照常切换（不误报冲突）', JSON.stringify(r))
     ok(created.length === 2, '复用空闲隔离实例，不新建实例', JSON.stringify(created))
   }
+
+  {
+    let signature = 'plugins:none'
+    const { reg, created } = make({ launchSignature: () => signature })
+    const first = await reg.select({ cwd: 'C:/sig', sessionFile: 'C:/sig/a.jsonl' })
+    const original = reg.agentOf(first.id)
+
+    const same = await reg.select({ cwd: 'C:/sig' })
+    ok(same.ok === true && same.via === 'reuse' && created.length === 1, '扩展与技能未变时原地复用空闲实例', JSON.stringify(same))
+    ok(reg.agentOf(first.id) === original && original.calls.newSession === 1, '原进程直接开新会话')
+
+    signature = 'plugins:comfyui'
+    const changed = await reg.select({ cwd: 'C:/sig' })
+    const replacement = reg.agentOf(first.id)
+    ok(changed.ok === true && changed.via === 'reuse' && created.length === 2, '扩展或技能变化后换新进程承接新会话', JSON.stringify(changed))
+    ok(replacement !== original && replacement.calls.start === 1 && replacement.calls.newSession === 1, '新进程启动并开新会话')
+    ok(original.calls.stop === 1, '旧进程被停掉')
+
+    const again = await reg.select({ cwd: 'C:/sig' })
+    ok(again.ok === true && created.length === 2 && reg.agentOf(first.id) === replacement, '换过的新进程之后照常复用', JSON.stringify(again))
+  }
 }
 
 export async function runSessionConcurrencySendGuardTests(ok) {

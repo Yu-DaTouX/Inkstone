@@ -46,14 +46,14 @@
       "url": "https://github.com/Yu-DaTouX/Inkstone/tree/main/integrations/comfyui",
       "text": {
         "zh-CN": {
-          "desc": "用已保存的 ComfyUI 工作流文生图、图生图，支持子图和 API 格式，自动探测与按需启动本机服务。",
+          "desc": "用已保存的 ComfyUI 工作流文生图、图生图、生成视频（含 MiniMax H3 Director 视频转视频），支持子图和 API 格式，自动探测与按需启动本机服务。",
           "target": "从随包 integrations 安装 pi 扩展和技能，在 pi 独立进程运行；新建或重载会话后生效。需要本机 ComfyUI 和可用模型。",
-          "hint": "提供 comfyui_generate 与 comfyui_service 工具。启动服务、远程服务和云端 API 节点需要用户确认。移除插件保留图片与用户数据。"
+          "hint": "提供 comfyui_generate、comfyui_video、comfyui_job 与 comfyui_service 工具，视频任务可看进度、分段等待。需要时自动启动本机 ComfyUI；远程服务和云端 API 节点需要用户确认。移除插件保留图片与用户数据。"
         },
         "en-US": {
-          "desc": "Generate or edit images using saved ComfyUI workflows, including subgraphs and API format, with local detection and on-demand startup.",
+          "desc": "Generate or edit images and generate videos (including MiniMax H3 Director video-to-video) using saved ComfyUI workflows, including subgraphs and API format, with local detection and on-demand startup.",
           "target": "Installs a bundled pi extension and skill running in pi's separate process. Start or reload a session to apply. Requires ComfyUI and local models.",
-          "hint": "Provides comfyui_generate and comfyui_service. Starting a service, remote requests and cloud API nodes require confirmation. Removal preserves images and user data."
+          "hint": "Provides comfyui_generate, comfyui_video, comfyui_job and comfyui_service; video jobs report progress and can be awaited in steps. Starting a service, remote requests and cloud API nodes require confirmation. Removal preserves images and user data."
         }
       }
     },

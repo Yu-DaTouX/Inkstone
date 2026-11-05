@@ -222,7 +222,7 @@ export class BundledPlugins {
         cleanup()
         if (connection.child.connected) connection.child.send({ type: 'cancel-request', id: requestId }, () => undefined)
         reject(new Error('插件操作超时'))
-      }, 16 * 60_000)
+      }, 45 * 60_000)
       connection.pending.set(requestId, {
         resolve: value => { cleanup(); resolve(value) },
         reject: error => { cleanup(); reject(error) }, timer

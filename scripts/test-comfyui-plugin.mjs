@@ -5,8 +5,10 @@ import { join } from 'node:path'
 import { createComfyService } from '../integrations/comfyui/service.mjs'
 import { comfyImage, comfyAbortRequests, loadSources } from '../integrations/comfyui/generation.mjs'
 import { comfyLaunchCommand, findLaunchableComfy, comfyStatus } from '../integrations/comfyui/launcher.mjs'
+import { createServer } from 'node:http'
 import extension from '../integrations/comfyui/extension.mjs'
 import { runComfyWorkflowTests } from './test-comfyui-workflows.mjs'
+import { runComfyVideoTests, directorWorkflow } from './test-comfyui-video.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-comfy-plugin-'))
 const oldEnv = { ...process.env }, originalFetch = globalThis.fetch
@@ -18,14 +20,20 @@ try {
   process.env.YAN_LOCAL_INSTALL_SCAN = 'off'
   globalThis.fetch = async () => { throw new Error('Real network disabled') }
   checks += await runComfyWorkflowTests()
+  checks += await runComfyVideoTests()
   const project = join(root, 'project'), artifactDir = join(root, 'artifacts'), outside = join(root, 'outside')
   await mkdir(project); await mkdir(artifactDir); await mkdir(outside)
   await writeFile(join(project, 'normal.png'), PNG); await writeFile(join(outside, 'secret.png'), PNG)
   await symlink(outside, join(project, 'escape'), process.platform === 'win32' ? 'junction' : 'dir')
   await assert.rejects(loadSources(['escape/secret.png'], { cwd: project, artifactDir }), { code: 'image_source_outside_project' }); checks++
-  const deny = createComfyService({ artifactDir, confirm: async () => false })
-  await assert.rejects(deny('start'), /未批准/); checks++
+  let startPrompts = 0
+  const deny = createComfyService({ artifactDir, confirm: async () => { startPrompts++; return false } })
+  await assert.rejects(deny('start'), /没有找到能直接启动/)
+  await assert.rejects(deny('video', { input: { prompt: 'x' }, context: { cwd: project } }), /没有找到能直接启动/)
+  ok(startPrompts === 0, 'starting local ComfyUI, explicitly or for a generation, does not ask the user again')
+  startPrompts = 0
   await assert.rejects(deny('stop'), /未批准/); checks++
+  ok(startPrompts === 1, 'stopping still asks the user')
   await assert.rejects(deny('generate', { input: { prompt: 'x' } }), /可信项目/); checks++
   const workflow = {
     '1': { class_type: 'CLIPTextEncode', inputs: { text: 'saved' } },
@@ -81,22 +89,60 @@ try {
   await comfyStatus()
   ok(await findLaunchableComfy() === null && comfyLaunchCommand(installDir) === null, 'missing Python is not launchable')
   await writeFile(python, '')
+  await mkdir(join(installDir, 'user', 'default', 'workflows'), { recursive: true })
+  await writeFile(join(installDir, 'user', 'default', 'workflows', 'h3.json'), '\uFEFF' + JSON.stringify(directorWorkflow()))
   const launchStatus = await comfyStatus()
   ok(launchStatus.launchable && comfyLaunchCommand(installDir).python === python, 'installed Python is detected without executing it')
+  ok(launchStatus.workflows.some(entry => entry.name === 'h3.json' && entry.kind === 'video-to-video'), 'offline status lists saved workflows with their kind, including files with a BOM')
   const tools = new Map()
-  extension({ registerTool: tool => tools.set(tool.name, tool), exec: async () => ({ code: 0 }) })
-  ok(tools.has('comfyui_generate') && tools.has('comfyui_service'), 'pi extension registers both plugin tools')
-  process.env.YAN_CLI_URL = 'http://fixture.invalid/capability'
+  const attachedPaths = []
+  extension({ registerTool: tool => tools.set(tool.name, tool), exec: async (_cmd, args) => { attachedPaths.push(args.at(-1)); return { code: 0 } } })
+  ok(tools.has('comfyui_generate') && tools.has('comfyui_service') && tools.has('comfyui_video') && tools.has('comfyui_job'), 'pi extension registers all plugin tools')
+  const videoFile = join(root, 'video.mp4')
+  await writeFile(videoFile, 'video')
+  const requests = []
+  let jobPolls = 0
+  let finishAfter = 2
+  const rpc = createServer((req, res) => {
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    req.on('end', async () => {
+      const payload = JSON.parse(body)
+      requests.push({ payload, headers: req.headers })
+      const action = payload.params.action
+      const running = { jobId: 'j1', state: 'running', stage: 'running', nodeType: 'MiniMaxH3Director', nodesDone: 3, nodesTotal: 8, step: 2, steps: 4, stepPercent: 50, elapsedSeconds: 12 }
+      const value = action === 'status' ? { running: true }
+        : action === 'video' ? { jobId: 'j1', state: 'running', stage: 'preparing', elapsedSeconds: 0 }
+        : action === 'job' ? (++jobPolls >= finishAfter ? { ...running, state: 'done', stage: 'done', path: videoFile, mimeType: 'video/mp4', workflow: 'h3.json' } : running)
+        : {}
+      const file = join(root, `rpc-${requests.length}.json`)
+      await writeFile(file, JSON.stringify(value))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ ok: true, resultFile: file }))
+    })
+  })
+  await new Promise(resolve => rpc.listen(0, '127.0.0.1', resolve))
+  process.env.YAN_CLI_URL = `http://127.0.0.1:${rpc.address().port}/rpc`
   process.env.YAN_CLI_TOKEN = 'fixture-scoped-token'
   process.env.YAN_SESSION_ID = 'fixture-session'
   process.env.YAN_PROJECT_ID = 'fixture-project'
-  const resultFile = join(root, 'result.json')
-  await writeFile(resultFile, JSON.stringify({ running: true }))
-  let request
-  globalThis.fetch = async (url, init) => { request = { url, init }; return Response.json({ ok: true, resultFile }) }
-  const result = await tools.get('comfyui_service').execute('tool1', { action: 'status' }, undefined, undefined, { cwd: project })
-  const payload = JSON.parse(request.init.body)
-  ok(payload.command === 'plugin.invoke' && payload.params.plugin === 'comfyui' && payload.sessionId === 'fixture-session' && request.init.headers.authorization === 'Bearer fixture-scoped-token' && result.details.running, 'extension uses the authenticated session-scoped public capability interface')
+  try {
+    const result = await tools.get('comfyui_service').execute('tool1', { action: 'status' }, undefined, undefined, { cwd: project })
+    const first = requests[0]
+    ok(first.payload.command === 'plugin.invoke' && first.payload.params.plugin === 'comfyui' && first.payload.sessionId === 'fixture-session' && first.headers.authorization === 'Bearer fixture-scoped-token' && result.details.running, 'extension uses the authenticated session-scoped public capability interface')
+    const updates = []
+    const video = await tools.get('comfyui_video').execute('tool2', { prompt: 'fish', videoPath: 'clip.mp4', waitSeconds: 60 }, undefined, update => updates.push(update), { cwd: project })
+    const started = requests.find(entry => entry.payload.params.action === 'video')
+    ok(started.payload.params.input.detach === true && started.payload.params.input.waitSeconds === undefined, 'video tool starts a detached job without leaking waitSeconds')
+    ok(updates.some(update => /MiniMaxH3Director/.test(update.content[0].text) && /2\/4/.test(update.content[0].text)), 'tool card receives live node and step progress')
+    ok(video.details.state === 'done' && video.details.attached && attachedPaths.includes(videoFile), 'finished video is attached to the reply')
+    jobPolls = 0; finishAfter = 99
+    const pending = await tools.get('comfyui_video').execute('tool3', { prompt: 'fish', waitSeconds: 0 }, undefined, undefined, { cwd: project })
+    ok(pending.details.state === 'running' && /comfyui_job/.test(pending.content[0].text) && /j1/.test(pending.content[0].text), 'unfinished job returns progress and how to keep waiting')
+    finishAfter = 1; jobPolls = 0
+    const resumed = await tools.get('comfyui_job').execute('tool4', { jobId: 'j1', waitSeconds: 30 }, undefined, undefined, { cwd: project })
+    ok(resumed.details.state === 'done' && resumed.details.path === videoFile, 'comfyui_job resumes waiting and returns the finished video')
+  } finally { await new Promise(resolve => rpc.close(resolve)) }
   console.log(`comfyui-plugin: ${checks} checks passed (fixture only; no ComfyUI/model process)`)
 } finally {
   globalThis.fetch = originalFetch

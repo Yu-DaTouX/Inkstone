@@ -1,6 +1,5 @@
 import type { SessionState, VisibleRunnerSession } from '../shared/ipc'
 
-export const IDLE_RECLAIM_ENABLED = true
 export const IDLE_RECLAIM_AFTER_MS = 10 * 60_000
 export const IDLE_RECLAIM_SCAN_MS = 60_000
 

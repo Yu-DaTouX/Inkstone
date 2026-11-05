@@ -1,8 +1,13 @@
 const FRONTEND_ONLY = new Set(['Note', 'MarkdownNote', 'PrimitiveNode', 'Reroute', 'Label (rgthree)', 'Fast Groups Muter (rgthree)', 'Fast Groups Bypasser (rgthree)']);
 const LOADS_MEDIA = /LoadImage|ImageFolder|LoadVideo|VHS_Load|LoadAudio|Load3D/i;
 const LOADS_SINGLE_IMAGE = /^LoadImage(Output|Mask)?$/;
+const LOADS_VIDEO = /^LoadVideo$|^VHS_LoadVideo(FFmpeg)?$/;
 const SAVES_IMAGE = /^SaveImage|SaveImage$|^Image Save$/;
-const SAVES_OTHER = /SaveVideo|SaveAnimated|SaveAudio|SaveWEBM|CreateVideo|VHS_VideoCombine|Save3D|SaveGLB/i;
+const SAVES_VIDEO = /SaveVideo|SaveAnimated|SaveWEBM|VHS_VideoCombine/i;
+const SAVES_UNSUPPORTED = /SaveAudio|Save3D|SaveGLB/i;
+const DIRECTOR = 'MiniMaxH3Director';
+const DIRECTOR_DEFAULT_SECONDS = 10;
+const DIRECTOR_MAX_SECONDS = 30;
 const SAMPLES = /Sampler|Guider|Sample|Director/i;
 const ENCODES_TEXT = /TextEncode|CLIPText|Prompt|Director/i;
 const CONTROL_VALUES = new Set(['fixed', 'increment', 'decrement', 'randomize']);
@@ -35,9 +40,9 @@ function collectSubgraphs(workflow) {
     visit(workflow.definitions?.subgraphs);
     return out;
 }
-function activeTypes(workflow) {
+function activeNodes(workflow) {
     if (isApiPrompt(workflow))
-        return Object.values(workflow).map((node) => node.class_type);
+        return Object.values(workflow).map((node) => ({ type: node.class_type, values: [node.inputs?.task_type, node.inputs?.timeline_data] }));
     const subgraphs = collectSubgraphs(workflow);
     const out = [];
     const walk = (nodes, depth) => {
@@ -50,27 +55,127 @@ function activeTypes(workflow) {
                     walk(sub.nodes, depth + 1);
             }
             else {
-                out.push(node.type);
+                const values = node.widgets_values;
+                out.push({ type: node.type, values: Array.isArray(values) ? values : Object.values(values ?? {}) });
             }
         }
     };
     walk(workflow.nodes, 0);
     return out;
 }
+function activeTypes(workflow) {
+    return activeNodes(workflow).map((node) => node.type);
+}
+function taskKey(value) {
+    return String(value ?? '').split(/\s+[—–-]+\s+/)[0].trim().toLowerCase();
+}
+function directorTask(values) {
+    let widget = '';
+    for (const value of values) {
+        if (typeof value !== 'string')
+            continue;
+        if (value.trim().startsWith('{')) {
+            try {
+                const task = JSON.parse(value)?.global?.taskType;
+                if (typeof task === 'string' && task.trim())
+                    return taskKey(task);
+            }
+            catch {
+            }
+        }
+        else if (!widget && /^\s*[a-z0-9]+\s+[—–-]+\s+/i.test(value)) {
+            widget = value;
+        }
+    }
+    return taskKey(widget);
+}
 export function classifyWorkflow(workflow) {
-    const types = activeTypes(workflow);
-    if (!types.some((type) => SAVES_IMAGE.test(type)) || types.some((type) => SAVES_OTHER.test(type)))
+    const nodes = activeNodes(workflow);
+    const types = nodes.map((node) => node.type);
+    if (types.some((type) => type.startsWith('workflow>') || type.startsWith('workflow/') || SAVES_UNSUPPORTED.test(type)))
         return null;
-    if (!types.some((type) => SAMPLES.test(type)))
+    if (!types.some((type) => SAMPLES.test(type)) || !types.some((type) => ENCODES_TEXT.test(type)))
         return null;
-    if (!types.some((type) => ENCODES_TEXT.test(type)))
-        return null;
-    if (types.some((type) => type.startsWith('workflow>') || type.startsWith('workflow/')))
+    const video = types.some((type) => SAVES_VIDEO.test(type));
+    if (!video && !types.some((type) => SAVES_IMAGE.test(type)))
         return null;
     const loads = types.filter((type) => LOADS_MEDIA.test(type));
+    if (!video) {
+        if (!loads.length)
+            return 'text-to-image';
+        return loads.every((type) => LOADS_SINGLE_IMAGE.test(type)) ? 'image-to-image' : null;
+    }
+    const director = nodes.find((node) => node.type === DIRECTOR);
+    if (director) {
+        if (loads.length)
+            return null;
+        const task = directorTask(director.values);
+        return task === 'v2v' || task === 'rv2v' ? 'video-to-video' : task === 't2v' ? 'text-to-video' : null;
+    }
     if (!loads.length)
-        return 'text-to-image';
-    return loads.every((type) => LOADS_SINGLE_IMAGE.test(type)) ? 'image-to-image' : null;
+        return 'text-to-video';
+    if (loads.length === 1 && LOADS_VIDEO.test(loads[0]))
+        return 'video-to-video';
+    return loads.every((type) => LOADS_SINGLE_IMAGE.test(type)) ? 'image-to-video' : null;
+}
+export function usesDirector(prompt) {
+    return Object.values(prompt).some((node) => node.class_type === DIRECTOR);
+}
+function snap32(value) {
+    return Math.max(256, Math.round(value / 32) * 32);
+}
+function fitAspect(width, height, aspect) {
+    const area = Math.max(1, width) * Math.max(1, height);
+    const w = Math.sqrt(area * aspect);
+    return [snap32(w), snap32(w / aspect)];
+}
+function patchDirector(node, request) {
+    let timeline = {};
+    try {
+        timeline = JSON.parse(typeof node.inputs.timeline_data === 'string' && node.inputs.timeline_data.trim() ? node.inputs.timeline_data : '{}') ?? {};
+    }
+    catch {
+        throw new WorkflowError('local_workflow_unsupported', 'MiniMax H3 Director 的 timeline_data 不是有效 JSON');
+    }
+    const fps = Number(timeline.frameRate || node.inputs.frame_rate || 24) || 24;
+    const output = { ...(timeline.output ?? {}) };
+    let width = Number(output.width || timeline.width || node.inputs.width || 384);
+    let height = Number(output.height || timeline.height || node.inputs.height || 672);
+    if (request.width && request.height)
+        [width, height] = [snap32(request.width), snap32(request.height)];
+    else if (request.video?.width && request.video?.height)
+        [width, height] = fitAspect(width, height, request.video.width / request.video.height);
+    Object.assign(output, { mode: 'fixed', aspectRatio: '自定义', width, height, longEdge: Math.max(width, height) });
+    const seconds = Math.min(Math.max(Number(request.seconds) || DIRECTOR_DEFAULT_SECONDS, 1), DIRECTOR_MAX_SECONDS);
+    const next = { ...timeline, width, height, output, global: { ...(timeline.global ?? {}), prompt: request.prompt } };
+    if (request.video) {
+        const duration = Number(request.video.duration) || 0;
+        if (duration <= 0)
+            throw new WorkflowError('local_workflow_unsupported', '无法读取源视频时长');
+        const sourceFrames = Math.max(1, Math.round(duration * fps));
+        output.maxExportFrames = Math.min(sourceFrames, Math.round(seconds * fps));
+        Object.assign(next, {
+            editMode: 'global', timelineMode: 'video', totalFrames: sourceFrames, videoClips: [], segments: [], splitPoints: [], runSelectEnabled: false, runSelection: [],
+            video: {
+                ...(timeline.video ?? {}),
+                fileName: request.video.name.split('/').pop(), videoFile: request.video.name, subfolder: '', type: 'input',
+                frames: [], frameMap: [], deletedSourceRanges: [], sourceFrameCount: sourceFrames,
+                width: request.video.width, height: request.video.height, duration, nativeFps: request.video.fps || null,
+                storageWidth: width, storageHeight: height
+            }
+        });
+    }
+    else {
+        if (String(timeline.timelineMode ?? '').toLowerCase() === 'video')
+            next.timelineMode = 'gen_blank';
+        if (request.seconds)
+            next.gen = { ...(timeline.gen ?? {}), defaultFrameCount: Math.round(seconds * fps) };
+    }
+    node.inputs.timeline_data = JSON.stringify(next);
+    node.inputs.width = width;
+    node.inputs.height = height;
+    if (typeof node.inputs.global_prompt === 'string')
+        node.inputs.global_prompt = request.prompt;
 }
 export function workflowNodeTypes(workflow) {
     return [...new Set(activeTypes(workflow))];
@@ -92,8 +197,9 @@ function isWidgetSpec(spec) {
 function widgetOrder(info, node) {
     if (info?.input) {
         const entries = [...Object.entries(info.input.required ?? {}), ...Object.entries(info.input.optional ?? {})];
+        const uiWidgets = new Set((node.inputs ?? []).filter((input) => input.widget).map((input) => input.widget?.name ?? input.name));
         return entries
-            .filter(([, spec]) => isWidgetSpec(spec))
+            .filter(([name, spec]) => isWidgetSpec(spec) || uiWidgets.has(name))
             .map(([name, spec]) => {
             const options = (spec[1] ?? {});
             return { name, control: options.control_after_generate === true || (spec[0] === 'INT' && (name === 'seed' || name === 'noise_seed')) };
@@ -302,9 +408,19 @@ export function applyRequest(prompt, request) {
             node.inputs.width = request.width;
             node.inputs.height = request.height;
         }
-        if (request.filenamePrefix && /^SaveImage/.test(node.class_type) && 'filename_prefix' in node.inputs) {
+        if (request.filenamePrefix && (/^SaveImage/.test(node.class_type) || SAVES_VIDEO.test(node.class_type)) && 'filename_prefix' in node.inputs) {
             node.inputs.filename_prefix = request.filenamePrefix;
         }
+        if (node.class_type === DIRECTOR)
+            patchDirector(node, request);
+    }
+    if (request.video) {
+        const loaders = Object.values(next).filter((node) => LOADS_VIDEO.test(node.class_type));
+        const directed = Object.values(next).some((node) => node.class_type === DIRECTOR);
+        if (!loaders.length && !directed)
+            throw new WorkflowError('local_workflow_unsupported', '工作流里没有视频输入节点');
+        for (const node of loaders)
+            node.inputs[node.class_type === 'LoadVideo' ? 'file' : 'video'] = request.video.name;
     }
     if (request.images?.length) {
         const loaders = Object.values(next).filter((node) => LOADS_SINGLE_IMAGE.test(node.class_type) && 'image' in node.inputs);
