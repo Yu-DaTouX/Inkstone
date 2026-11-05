@@ -30,6 +30,15 @@ export function handWritten(dir) {
   return !!readJson(join(dir, 'models.json'))?.providers?.[PROVIDER]
 }
 
+// /models 不返回档位；V4.1 Flash 实测接受 reasoning_effort=max（档位同官方 CLI：off/low/high/max）
+const THINKING_OVERRIDES = [
+  [/^deepseek\/deepseek-v4\.1-flash/, { minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' }]
+]
+
+function thinkingOverride(id) {
+  return THINKING_OVERRIDES.find(([re]) => re.test(id))?.[1]
+}
+
 export function toPiModels(entries, catalog = {}) {
   return entries.map((m) => ({
     id: m.id,
@@ -37,7 +46,7 @@ export function toPiModels(entries, catalog = {}) {
     ...(m.api ? { api: m.api } : {}),
     ...(m.baseUrl ? { baseUrl: m.baseUrl } : {}),
     reasoning: m.reasoning === true,
-    ...(m.reasoning && m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
+    ...(m.reasoning && (m.thinkingLevelMap ?? thinkingOverride(m.id)) ? { thinkingLevelMap: { ...(m.thinkingLevelMap ?? thinkingOverride(m.id)) } } : {}),
     input: m.input ?? ['text'],
     cost: cleanModelCost(m.cost) ?? cleanModelCost(catalog[catalogKey(m.id)]?.cost) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: m.contextWindow ?? 128000,
