@@ -24,6 +24,7 @@ import { TerminalViewMenu } from './TerminalViewMenu'
 import type { TerminalFindDirection } from './terminal-find'
 import { onActivateTerminal } from './terminal-activate'
 import { onTerminalTabRequest } from './terminal-requests'
+import { useTerminalAgentActivity } from './terminal-agent-activity'
 import type { TerminalPaneProps } from '../workbench/types'
 import type { TerminalAvailability, TerminalProcessEntry, TerminalProcessList, TerminalProgramStatus, TerminalSnapshot } from '../../../../shared/ipc'
 import './terminal.css'
@@ -123,6 +124,8 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const linkCache = useRef(new Map<string, { at: number; abs: Promise<string | null> }>())
   const labelsRef = useRef(new Map<string, string>())
   const mac = useMemo(() => isMacPlatform(), [])
+  const agentActivity = useTerminalAgentActivity()
+  const agentOn = (key: string): boolean => agentActivity.has(states[key]?.terminalId ?? key)
 
   useEffect(() => terminalViewStore().subscribe(() => setView(terminalViewStore().get())), [])
 
@@ -521,6 +524,11 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const barActions = <TerminalViewMenu view={view} text={text} onChange={(patch) => terminalViewStore().update(patch)} />
   const barStatus = (
     <>
+      {active && agentOn(active) ? (
+        <Badge tone="accent" className="term-pane-badge" data-testid="terminal-agent-active">
+          {text.agentActive}
+        </Badge>
+      ) : null}
       {badge ? (
         <Badge tone={badge.tone} className="term-pane-badge">
           {t(badge.key)}
@@ -543,7 +551,8 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       label: info.kind === 'title' ? info.text : info.kind === 'numbered' ? text.tabNumber(info.number) : text.tabTitle,
       detail: state?.title || state?.cwd || '',
       busy: state?.status?.state === 'working' && state.phase !== 'exited',
-      exited: state?.phase === 'exited'
+      exited: state?.phase === 'exited',
+      agent: agentOn(tab.key)
     }
   })
   labelsRef.current = new Map(items.map((item) => [item.key, item.label]))

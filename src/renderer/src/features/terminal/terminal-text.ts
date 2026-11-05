@@ -47,6 +47,7 @@ export interface TerminalText {
   closeConfirmMore: (n: number) => string
   closeConfirmAction: string
   cancel: string
+  agentActive: string
 }
 
 const ZH: TerminalText = {
@@ -95,7 +96,8 @@ const ZH: TerminalText = {
   closeConfirmUnknown: '终端里还有命令在运行，关闭会结束它。',
   closeConfirmMore: (n) => `另有 ${n} 个`,
   closeConfirmAction: '关闭并结束',
-  cancel: '取消'
+  cancel: '取消',
+  agentActive: 'Agent 正在操作'
 }
 
 const EN: TerminalText = {
@@ -144,7 +146,8 @@ const EN: TerminalText = {
   closeConfirmUnknown: 'A command is still running in this terminal. Closing will end it.',
   closeConfirmMore: (n) => `${n} more`,
   closeConfirmAction: 'Close and end',
-  cancel: 'Cancel'
+  cancel: 'Cancel',
+  agentActive: 'Agent at work'
 }
 
 export function terminalText(lang: Lang): TerminalText {

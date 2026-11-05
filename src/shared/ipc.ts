@@ -1333,7 +1333,7 @@ export type MainPushBody =
   | { ch: 'proc'; payload: { state: 'starting' | 'ready' | 'exited' | 'stderr' | 'error'; detail?: string; code?: number | null } }
   | { ch: 'ui-scale'; payload: { uiScale: number; effective: number; scaleFactor: number; autoScale: number } }
   | { ch: 'browser-state'; payload: BrowserState }
-  | { ch: 'terminal'; payload: { id: string; kind: 'data' | 'exit' | 'status'; data?: string; seq?: number; exitCode?: number | null; status?: TerminalProgramStatus } }
+  | { ch: 'terminal'; payload: { id: string; kind: 'data' | 'exit' | 'status' | 'agent'; data?: string; seq?: number; exitCode?: number | null; status?: TerminalProgramStatus; owner?: string; agentPhase?: 'start' | 'end'; agentAction?: string } }
   | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
   | { ch: 'search-api-hint'; payload: Record<string, never> }
   | { ch: 'runners'; payload: RunnerStatus[] }

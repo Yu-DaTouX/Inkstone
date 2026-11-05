@@ -10,6 +10,7 @@ export interface TerminalTabItem {
   detail: string
   busy: boolean
   exited: boolean
+  agent?: boolean
 }
 
 export interface TerminalTabStripProps {
@@ -92,7 +93,7 @@ export function TerminalTabStrip({
               title={tab.detail || tab.label}
               icon={<SquareTerminal aria-hidden />}
               active={tab.key === active}
-              pending={tab.busy}
+              pending={tab.busy || !!tab.agent}
               muted={tab.exited}
               attention={bell === tab.key}
               closeLabel={text.closeTab}

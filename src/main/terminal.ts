@@ -54,13 +54,26 @@ interface TerminalEntry {
   pty: IPty
   buffer: string
   seq: number
+  total: number
+  lastOutputAt: number
   tracker: TerminalProgramStatusTracker
 }
+
+export interface TerminalStream {
+  info: TerminalSessionInfo
+  buffer: string
+  total: number
+  lastOutputAt: number
+  pid: number | null
+}
+
+export type TerminalAgentPhase = 'start' | 'end'
 
 export type TerminalSink = (event:
   | { kind: 'data'; id: string; data: string; seq: number }
   | { kind: 'status'; id: string; status?: TerminalProgramStatus }
-  | { kind: 'exit'; id: string; exitCode: number | null }) => void
+  | { kind: 'exit'; id: string; exitCode: number | null }
+  | { kind: 'agent'; id: string; owner?: string; phase: TerminalAgentPhase; action: string }) => void
 
 let loadError: string | null = null
 let ptyModule: typeof import('node-pty') | null = null
@@ -226,7 +239,7 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     exitCode: null,
     ...(owner ? { owner } : {})
   }
-  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, tracker: new TerminalProgramStatusTracker() }
+  const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, total: 0, lastOutputAt: Date.now(), tracker: new TerminalProgramStatusTracker() }
   sessions.set(id, entry)
 
   child.onData((data) => {
@@ -234,6 +247,8 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     if (!current) return
     applyStatusChunk(current, data, id)
     current.buffer = appendReplay(current.buffer, data)
+    current.total += data.length
+    current.lastOutputAt = Date.now()
     batcher.push(id, data)
   })
   child.onExit(({ exitCode }) => {
@@ -319,6 +334,24 @@ export function listTerminals(): TerminalSnapshot[] {
 export function readTerminal(id: string): TerminalSnapshot | null {
   const entry = sessions.get(id)
   return entry ? snapshotOf(entry) : null
+}
+
+export function terminalStream(id: string): TerminalStream | null {
+  const entry = sessions.get(id)
+  if (!entry) return null
+  batcher.flush(id)
+  const pid = entry.info.alive && Number.isInteger(entry.pty.pid) && entry.pty.pid > 0 ? entry.pty.pid : null
+  return { info: { ...entry.info }, buffer: entry.buffer, total: entry.total, lastOutputAt: entry.lastOutputAt, pid }
+}
+
+export function announceTerminalAgent(id: string, phase: TerminalAgentPhase, action: string): void {
+  const entry = sessions.get(id)
+  if (!entry) return
+  sink?.({ kind: 'agent', id, ...(entry.info.owner ? { owner: entry.info.owner } : {}), phase, action })
+}
+
+export function sameTerminalOwner(a: string, b: string): boolean {
+  return sameOwnerKey(a, b)
 }
 
 export function attachTerminal(id: string): TerminalSnapshot | null {

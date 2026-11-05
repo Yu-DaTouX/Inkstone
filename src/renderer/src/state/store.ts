@@ -53,6 +53,7 @@ import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/brows
 import { toolSurface, useRightPanel } from './right-panel'
 import { useUiV3 } from './ui-v3'
 import { markStopRequested } from '../features/session/stop-intent'
+import { requestTerminalTab } from '../features/terminal/terminal-requests'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
 import { reuseSessionSummaries } from './session-list'
@@ -1151,6 +1152,14 @@ export const useStore = create<Store>((rawSet, get) => {
       return partial
     })
   }
+  const revealTerminalPane = (owner: string, terminalId: string): void => {
+    const viewOwner = currentViewOwnerKey(get())
+    const sameOwner = (a: string, b: string): boolean => a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+    if (!sameOwner(owner, viewOwner)) return
+    if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
+    useRightPanel.getState().open(toolSurface('terminal'))
+    requestTerminalTab({ ownerKey: viewOwner, terminalId })
+  }
   const revealBrowserPane = (navigate: boolean): void => {
     if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
     const ui = useUiV3.getState()
@@ -1465,7 +1474,7 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
 
-    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), revealBrowser: () => revealBrowserPane(false), t: uiText }
+    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), revealBrowser: () => revealBrowserPane(false), revealTerminal: revealTerminalPane, t: uiText }
     if (consumeShellPush(m, s, ctx) || consumeQuestionPush(m, s, ctx) || consumeSubagentPush(m, s, ctx) || consumeTaskStatePush(m, s, ctx)) return
 
     switch (m.ch) {

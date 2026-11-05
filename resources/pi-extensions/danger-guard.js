@@ -230,12 +230,19 @@ export function ruleText(command) {
   return splitSegments(command).map(({ text, sep }) => (searchesText(commandOf(text.replace(/^\s*[({]+/, ''))) ? '' : text) + sep).join('')
 }
 
+export function hostScansTerminalInput(command) {
+  const segments = splitSegments(command).filter((part) => part.text.trim())
+  if (segments.length !== 1) return false
+  const { head, args } = commandOf(segments[0].text)
+  return /^yan(?:\.cmd|\.ps1)?$/.test(head) && args[0] === 'terminal' && ['run', 'write', 'keys'].includes(args[1])
+}
+
 export function detectDanger(toolName, input, cwd) {
   const reasons = []
   const name = String(toolName ?? '')
   if (name === 'bash' || name === 'powershell') {
     const command = String(input?.command ?? '')
-    scanCommand(command, reasons, 0, cwd)
+    if (!hostScansTerminalInput(command)) scanCommand(command, reasons, 0, cwd)
     for (const { target } of shellWrites(command, cwd)) {
       if (touchesHostConfig(target, cwd)) reasons.push(`${HOST_CONFIG_REASON}${target}`)
     }

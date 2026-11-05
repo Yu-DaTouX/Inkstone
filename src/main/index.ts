@@ -3694,7 +3694,9 @@ app.whenReady().then(async () => {
           ? { id: event.id, kind: 'data', data: event.data, seq: event.seq }
           : event.kind === 'exit'
             ? { id: event.id, kind: 'exit', exitCode: event.exitCode }
-            : { id: event.id, kind: 'status', status: event.status }
+            : event.kind === 'agent'
+              ? { id: event.id, kind: 'agent', ...(event.owner ? { owner: event.owner } : {}), agentPhase: event.phase, agentAction: event.action }
+              : { id: event.id, kind: 'status', status: event.status }
     })
   })
   registerIpc()

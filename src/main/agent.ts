@@ -81,6 +81,8 @@ import { skillsFromCommands, type RawSkillCommand } from './capabilities/skill-s
 import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 
 import { BrowserCommands } from './browser-commands'
+import { TerminalAgentCommands } from './terminal-agent'
+import { terminalAgentHost } from './terminal-agent-host'
 import { LookupCommands } from './lookup-commands'
 import { TurnTimingTracker } from './turn-timing-tracker'
 import { UiRequests, questionToolCallId, type HostUiResponse } from './ui-requests'
@@ -505,6 +507,16 @@ export class AgentController extends EventEmitter {
     capabilityOpts: () => this.capabilityOpts,
     conversationId: () => this.state?.sessionId,
     cwd: () => this.cwd
+  })
+
+  private readonly terminalCommands = new TerminalAgentCommands(terminalAgentHost(), {
+    ownerKeys: () => [this.state?.sessionFile, this.state?.sessionId].filter((key): key is string => typeof key === 'string' && key.length > 0),
+    cwd: () => this.cwd,
+    confirm: async (request) => {
+      const result = await this.runDangerConfirmCommand({ tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs })
+      const feedback = result.summary.feedback
+      return { allowed: result.summary.allowed === true, ...(typeof feedback === 'string' && feedback ? { feedback } : {}) }
+    }
   })
 
   private readonly acquisition = new CapabilityAcquisition({
@@ -1244,6 +1256,9 @@ export class AgentController extends EventEmitter {
   ): Promise<CapabilityCommandResult> {
     if (command.startsWith('browser.')) {
       return this.browserCommands.runBrowserCommand(command.slice('browser.'.length), params, signal)
+    }
+    if (command.startsWith('terminal.')) {
+      return this.terminalCommands.run(command.slice('terminal.'.length), params, signal)
     }
     if (command.startsWith('schedule.')) {
       if (!this.scheduleHost) throw new CapabilityCommandError('schedule_unavailable', '定时任务当前不可用')

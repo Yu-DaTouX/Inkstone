@@ -5,7 +5,7 @@ export const EXITED_REPLAY_CHARS = REPLAY_BUFFER_CHARS / 8
 export const REPLAY_SLACK_CHARS = 64 * 1024
 export const FLUSH_INTERVAL_MS = 8
 export const FLUSH_THRESHOLD_CHARS = 256 * 1024
-const MAX_OWNER_LENGTH = 256
+const MAX_OWNER_LENGTH = 4096
 
 export function safeTerminalCut(buffer: string, desired: number): number {
   let cut = Math.max(0, desired)
