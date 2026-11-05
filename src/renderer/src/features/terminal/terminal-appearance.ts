@@ -1,7 +1,24 @@
 import type { ITerminalOptions, Terminal } from '@xterm/xterm'
 import { WebglAddon } from '@xterm/addon-webgl'
 
+let canvasFontTrimInstalled = false
+
+function trimCanvasFontAssignments(): void {
+  if (canvasFontTrimInstalled || typeof CanvasRenderingContext2D === 'undefined') return
+  canvasFontTrimInstalled = true
+  const descriptor = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'font')
+  const setFont = descriptor?.set
+  if (!descriptor || !setFont) return
+  Object.defineProperty(CanvasRenderingContext2D.prototype, 'font', {
+    ...descriptor,
+    set(this: CanvasRenderingContext2D, value: string) {
+      setFont.call(this, typeof value === 'string' ? value.trim() : value)
+    }
+  })
+}
+
 export function installTerminalRenderer(term: Terminal, host: HTMLElement): void {
+  trimCanvasFontAssignments()
   const addon = new WebglAddon()
   host.dataset.terminalRenderer = 'dom'
   try {
