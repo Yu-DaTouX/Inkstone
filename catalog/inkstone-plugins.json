@@ -58,6 +58,26 @@
       }
     },
     {
+      "id": "voice-input",
+      "kind": "bundled",
+      "name": "语音输入",
+      "version": "1.0.0",
+      "url": "https://github.com/Yu-DaTouX/Inkstone/tree/main/integrations/voice-input",
+      "text": {
+        "zh-CN": {
+          "desc": "在输入框旁加麦克风按钮，录音用本机 whisper.cpp 转成文字，不上传也不保存。",
+          "target": "从随包 integrations 安装，在独立进程运行；首次使用要在「设置 → 本机工具」下载转写程序和模型（约 150 MB–600 MB）。",
+          "hint": "移除插件保留已下载的程序与模型（数据目录 voice/）。"
+        },
+        "en-US": {
+          "name": "Voice input",
+          "desc": "Adds a microphone button to the composer; recordings are transcribed locally with whisper.cpp, never uploaded or kept.",
+          "target": "Installs from bundled integrations and runs in a separate process; on first use download the transcriber and a model (about 150–600 MB) in Settings → Local tools.",
+          "hint": "Removing the plugin keeps downloaded programs and models (voice/ in the data directory)."
+        }
+      }
+    },
+    {
       "id": "inkstone-minecraft",
       "kind": "mcp",
       "name": "Inkstone Minecraft",

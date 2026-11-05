@@ -33,7 +33,7 @@ const CODE_BACKED: Record<Exclude<PluginCatalogKind, 'link'>, readonly string[]>
   export: ['hermes-inkstone'],
   mcp: ['inkstone-minecraft'],
   pet: ['desktop-pet'],
-  bundled: ['desktop-pet', 'comfyui']
+  bundled: ['desktop-pet', 'comfyui', 'voice-input']
 }
 const KINDS: readonly PluginCatalogKind[] = ['export', 'mcp', 'pet', 'bundled', 'link']
 const LANGS: readonly PluginCatalogLang[] = ['zh-CN', 'en-US']

@@ -10,27 +10,6 @@ export interface VoiceModelSpec {
   minFreeMemoryMB: number
 }
 
-const MB = 1024 * 1024
-
-export const VOICE_MODELS: VoiceModelSpec[] = [
-  { id: 'base', tier: 'light', file: 'ggml-base.bin', approxBytes: 148 * MB, approxMemoryMB: 400, minThreads: 2, minFreeMemoryMB: 1000 },
-  { id: 'small', tier: 'balanced', file: 'ggml-small.bin', approxBytes: 488 * MB, approxMemoryMB: 900, minThreads: 4, minFreeMemoryMB: 2500 },
-  {
-    id: 'large-v3-turbo-q5_0',
-    tier: 'quality',
-    file: 'ggml-large-v3-turbo-q5_0.bin',
-    approxBytes: 574 * MB,
-    approxMemoryMB: 1600,
-    minThreads: 8,
-    minFreeMemoryMB: 4000
-  }
-]
-
-export const VOICE_MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
-export const WHISPER_RELEASE_API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest'
-export const WHISPER_RELEASES_API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=20'
-export const WHISPER_WINDOWS_ASSET = 'whisper-bin-x64.zip'
-
 export type VoiceLanguage = 'auto' | 'zh' | 'en'
 export const VOICE_LANGUAGES: VoiceLanguage[] = ['auto', 'zh', 'en']
 
@@ -54,29 +33,6 @@ export interface VoiceModelCandidate {
   recommended: boolean
   strain: string | null
   installed: boolean
-}
-
-export function recommendVoiceModel(hw: VoiceHardware, installed: ReadonlySet<string> = new Set()): VoiceModelCandidate[] {
-  const busyFactor = hw.cpuLoad !== null && hw.cpuLoad > 0.6 ? 0.5 : 1
-  const effectiveThreads = Math.max(1, Math.floor(hw.threads * busyFactor))
-  const fits = (spec: VoiceModelSpec): boolean =>
-    effectiveThreads >= spec.minThreads && hw.freeMemoryMB >= spec.minFreeMemoryMB
-  const best = [...VOICE_MODELS].reverse().find(fits) ?? VOICE_MODELS[0]
-  return VOICE_MODELS.map((spec) => {
-    const reasons: string[] = []
-    if (effectiveThreads < spec.minThreads) reasons.push(`建议至少 ${spec.minThreads} 个可用 CPU 线程`)
-    if (hw.freeMemoryMB < spec.minFreeMemoryMB) reasons.push(`建议至少 ${Math.round((spec.minFreeMemoryMB / 1024) * 10) / 10}GB 可用内存`)
-    return {
-      spec,
-      recommended: spec.id === best.id,
-      strain: reasons.length ? `${reasons.join('，')}；转写会比较慢` : null,
-      installed: installed.has(spec.id)
-    }
-  })
-}
-
-export function voiceModelSpec(id: string): VoiceModelSpec | undefined {
-  return VOICE_MODELS.find((spec) => spec.id === id)
 }
 
 export interface VoiceDownloadPlan {
@@ -116,15 +72,6 @@ export type VoiceTranscribeResult =
 
 export const VOICE_MAX_SECONDS = 180
 export const VOICE_MAX_WAV_BYTES = VOICE_MAX_SECONDS * 16_000 * 2 + 1024
-
-export function parseWhisperOutput(stdout: string): string {
-  return stdout
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*\[[^\]]*-->[^\]]*\]\s*/, '').trim())
-    .filter((line) => line && !/^\[(BLANK_AUDIO|MUSIC|NOISE|SOUND|音乐|静音)[^\]]*\]$/i.test(line) && !/^\((?:music|silence)\)$/i.test(line))
-    .join('\n')
-    .trim()
-}
 
 export function encodeWav16k(samples: Float32Array): Uint8Array {
   const sampleRate = 16_000

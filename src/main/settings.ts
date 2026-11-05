@@ -20,7 +20,6 @@ import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
 import { DEFAULT_PERMISSION_MODE, isLegacyPermissionMode, normalizePermissionMode } from '../shared/approval'
 import { AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, pickTokenStep } from '../shared/context-limits'
-import { voiceModelSpec } from '../shared/voice-input'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
 import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeComposerHeight, sanitizeStreamWidth, sanitizeGlassOpacity, sanitizeContrast, sanitizePanelMotion } from '../shared/appearance'
@@ -382,7 +381,7 @@ function sanitizeVoiceInput(value: unknown): AppSettings['voiceInput'] {
   const model = raw.model as { kind?: unknown; id?: unknown; path?: unknown } | undefined
   const isAbs = (p: unknown): p is string => typeof p === 'string' && /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(p)
   const out: NonNullable<AppSettings['voiceInput']> = {}
-  if (model?.kind === 'catalog' && typeof model.id === 'string' && voiceModelSpec(model.id)) out.model = { kind: 'catalog', id: model.id }
+  if (model?.kind === 'catalog' && typeof model.id === 'string' && /^[\w.-]{1,64}$/.test(model.id)) out.model = { kind: 'catalog', id: model.id }
   else if (model?.kind === 'file' && isAbs(model.path) && /\.bin$/i.test(model.path)) out.model = { kind: 'file', path: model.path }
   if (isAbs(raw.binaryPath) && /\.exe$/i.test(raw.binaryPath)) out.binaryPath = raw.binaryPath
   if (raw.language === 'auto' || raw.language === 'zh' || raw.language === 'en') out.language = raw.language

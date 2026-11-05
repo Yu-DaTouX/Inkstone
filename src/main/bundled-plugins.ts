@@ -25,6 +25,7 @@ interface Options {
   complete(model: string, system: string, prompt: string, signal: AbortSignal): Promise<string>
   showWindow(): void
   confirm?(plugin: string, title: string, detail: string, signal: AbortSignal): Promise<boolean>
+  proxyEnvironment?(): Promise<NodeJS.ProcessEnv>
 }
 interface Connection {
   child: ChildProcess
@@ -67,12 +68,17 @@ export function pluginRunEvent(payload: unknown): unknown {
 
 export class BundledPlugins {
   private connections = new Map<string, Connection>()
+  private connecting = new Map<string, Promise<Connection>>()
   private queues = new Map<string, Promise<unknown>>()
   private sequence = 0
   private closed = false
   constructor(private options: Options) {}
 
   private root(id: string): string { return join(this.options.dataDir, 'plugins', id, 'plugin') }
+
+  installed(id: string): boolean { return /^[a-z0-9][a-z0-9-]{0,63}$/.test(id) && existsSync(join(this.root(id), MARKER)) }
+
+  inbox(id: string): string { return join(this.options.dataDir, 'plugins', id, 'inbox') }
 
   private async manifest(id: string): Promise<{ manifest: PluginManifest; source: string }> {
     if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) throw new Error('无效插件标识')
@@ -239,10 +245,19 @@ export class BundledPlugins {
   private async connect(manifest: PluginManifest): Promise<Connection> {
     const existing = this.connections.get(manifest.id)
     if (existing) { await existing.ready; return existing }
+    const pending = this.connecting.get(manifest.id)
+    if (pending) return pending
+    const task = this.spawn(manifest)
+    this.connecting.set(manifest.id, task)
+    try { return await task } finally { this.connecting.delete(manifest.id) }
+  }
+
+  private async spawn(manifest: PluginManifest): Promise<Connection> {
     if (!manifest.process) throw new Error('此插件不提供进程接口')
+    const proxy = manifest.capabilities?.includes('system.proxy') ? await this.options.proxyEnvironment?.().catch(() => ({})) : undefined
     const child = fork(join(this.root(manifest.id), manifest.process), [], {
       execPath: this.options.runtime, execArgv: [], cwd: this.options.dataDir,
-      env: { ...pluginEnvironment(process.env), ...pluginConfiguredEnvironment(manifest.environment, process.env), ELECTRON_RUN_AS_NODE: '1', INKSTONE_DATA_ROOT: this.options.dataDir, INKSTONE_PLUGIN_DATA: join(this.options.dataDir, 'plugins', manifest.id) },
+      env: { ...pluginEnvironment(process.env), ...pluginConfiguredEnvironment(manifest.environment, process.env), ...proxy, ELECTRON_RUN_AS_NODE: '1', INKSTONE_DATA_ROOT: this.options.dataDir, INKSTONE_PLUGIN_DATA: join(this.options.dataDir, 'plugins', manifest.id) },
       stdio: ['ignore', 'ignore', 'pipe', 'ipc']
     })
     let readyResolve!: () => void

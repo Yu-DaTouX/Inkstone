@@ -11,6 +11,7 @@ import { AgentToolSwitches } from './AgentToolSwitches'
 import { SearchApiSection } from './SearchSection'
 import { AndroidSection } from './AndroidSection'
 import { useI18n } from '../../../i18n'
+import { useVoicePluginInstalled } from '../../../state/installed-plugins'
 import { SettingsAdvanced } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { getSettingsRequest, subscribeSettingsRequest } from '../root/deep-link'
@@ -76,14 +77,28 @@ export function CapabilitiesSettings({ tab, onTabChange }: CapabilitiesSettingsP
 }
 
 function ToolsTab(): ReactElement {
-  const voice = useVoiceSetup()
+  const voiceInstalled = useVoicePluginInstalled()
   const { lang } = useI18n()
   return (
     <>
       <ComputerUseSection />
       <AgentToolSwitches />
+      {voiceInstalled ? <VoiceSections advanced={settingsText(lang).advanced} /> : (
+        <SettingsAdvanced label={settingsText(lang).advanced} testId="caps-tools-advanced">
+          <SearchApiSection />
+          <AndroidSection />
+        </SettingsAdvanced>
+      )}
+    </>
+  )
+}
+
+function VoiceSections({ advanced }: { advanced: string }): ReactElement {
+  const voice = useVoiceSetup()
+  return (
+    <>
       <VoiceStatusPanel voice={voice} />
-      <SettingsAdvanced label={settingsText(lang).advanced} testId="caps-tools-advanced">
+      <SettingsAdvanced label={advanced} testId="caps-tools-advanced">
         <SearchApiSection />
         <AndroidSection />
         <div data-setting-id="caps-tools-voice-setup">

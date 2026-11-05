@@ -1,0 +1,6 @@
+{
+  "id": "voice-input",
+  "version": "1.0.0",
+  "process": "plugin.mjs",
+  "capabilities": ["system.proxy"]
+}

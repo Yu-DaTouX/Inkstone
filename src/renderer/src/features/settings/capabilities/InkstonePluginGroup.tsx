@@ -11,12 +11,17 @@ import { DesktopPetRow } from './DesktopPetRow'
 import { MinecraftPluginRow } from './MinecraftPluginRow'
 import { Entry, Group, StatusBadge } from './parts'
 import { useConfirm } from './confirm'
+import { useInstalledPlugins } from '../../../state/installed-plugins'
 
 function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElement {
   const { t, lang } = useI18n()
   const confirm = useConfirm()
   const copy = pluginText(entry, lang)
-  const [installed, setInstalled] = useState(false)
+  const [installed, setInstalledState] = useState(false)
+  const setInstalled = useCallback((value: boolean) => {
+    setInstalledState(value)
+    useInstalledPlugins.getState().mark(entry.id, value)
+  }, [entry.id])
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   useEffect(() => {
@@ -25,7 +30,7 @@ function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElemen
       if (alive) { setInstalled(result.installed === true); if (!result.ok) setNote(result.error ?? t('pkg.failed')) }
     }).catch(error => { if (alive) setNote(String(error)) })
     return () => { alive = false }
-  }, [entry.id, t])
+  }, [entry.id, t, setInstalled])
   const run = async (action: 'install' | 'remove'): Promise<void> => {
     setBusy(true)
     try {

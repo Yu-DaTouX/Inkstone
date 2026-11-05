@@ -2067,8 +2067,9 @@ export interface YanBridge {
   }
 
   voice: {
+    available(): Promise<boolean>
     prepare(): Promise<{ ok: boolean; error?: string }>
-    status(): Promise<import('./voice-input').VoiceInputStatus>
+    status(): Promise<import('./voice-input').VoiceInputStatus | null>
     plan(
       target: import('./voice-input').VoiceDownloadPlan['target']
     ): Promise<{ ok: true; plan: import('./voice-input').VoiceDownloadPlan } | { ok: false; error: string }>

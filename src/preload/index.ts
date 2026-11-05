@@ -633,8 +633,9 @@ const api: YanBridge = {
   } as YanBridge['collab'],
 
   voice: {
+    available: () => invoke<boolean>('yan:voice:available'),
     prepare: () => invoke('yan:voice:prepare'),
-    status: () => invoke<VoiceInputStatus>('yan:voice:status'),
+    status: () => invoke<VoiceInputStatus | null>('yan:voice:status'),
     plan: (target) => invoke<{ ok: true; plan: VoiceDownloadPlan } | { ok: false; error: string }>('yan:voice:plan', target),
     download: (planId) => invoke<Ok>('yan:voice:download', planId),
     cancel: () => invoke<void>('yan:voice:cancel'),

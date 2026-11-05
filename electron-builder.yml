@@ -68,6 +68,9 @@ extraResources:
   - from: integrations/comfyui
     to: integrations/comfyui
     filter: ['**/*.mjs', 'inkstone-plugin.json', 'skills/**/*']
+  - from: integrations/voice-input
+    to: integrations/voice-input
+    filter: ['*.mjs', 'inkstone-plugin.json']
 
 asar: true
 beforePack: scripts/pi-runtime-before-pack.cjs

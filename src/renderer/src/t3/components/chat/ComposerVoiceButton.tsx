@@ -3,6 +3,7 @@ import { Mic, Square, X } from 'lucide-react'
 import { encodeWav16k, VOICE_MAX_SECONDS } from '../../../../../shared/voice-input'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
+import { useVoicePluginInstalled } from '../../../state/installed-plugins'
 import { IconButton } from '../../../ui'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
@@ -17,6 +18,7 @@ type Phase =
 export function ComposerVoiceButton({ onText, disabled, scope }: { onText: (text: string) => void; disabled?: boolean; scope?: string }) {
   const t = useT()
   const openSettings = useStore((s) => s.openSettings)
+  const installed = useVoicePluginInstalled()
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const [now, setNow] = useState(() => Date.now())
   const recorder = useRef<{ stop: () => void } | null>(null)
@@ -171,6 +173,8 @@ export function ComposerVoiceButton({ onText, disabled, scope }: { onText: (text
     generation.current++
     setPhase({ kind: 'idle' })
   }
+
+  if (!installed && phase.kind === 'idle') return null
 
   if (phase.kind === 'recording') {
     const seconds = Math.floor((now - phase.startedAt) / 1000)

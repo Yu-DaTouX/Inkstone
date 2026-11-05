@@ -2,7 +2,7 @@ import { isRestoredReadonly, RESTORED_READONLY_MESSAGE } from './restored-readon
 import { setUserHandoffRelease, userMessageSent } from './browser/user-handoff'
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import { storageMoveReady } from './storage-move-boot'
-import { app, shell, BrowserWindow, clipboard, ClipboardItem, crashReporter, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
+import { app, shell, BrowserWindow, clipboard, ClipboardItem, crashReporter, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme, session } from 'electron'
 import { openBlockedByName } from './open-guard'
 import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
@@ -117,10 +117,9 @@ import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
 import { configureRemoteHost, cwdWithin, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
-import { registerVoiceIpc } from './ipc/voice-ipc'
+import { registerVoiceIpc, voiceTranscriber } from './ipc/voice-ipc'
 import { registerAndroidIpc } from './ipc/android-ipc'
 import { registerAppUpdate } from './app-update'
-import { VoiceService } from './voice/voice-service'
 import { registerPeerIpc } from './ipc/peer-ipc'
 import { registerCollabIpc } from './ipc/collab-ipc'
 import type { ConsentAnswer } from '../shared/tool-consent'
@@ -575,6 +574,11 @@ const bundledPlugins = new BundledPlugins({
       buttons: ['拒绝', '允许本次'], defaultId: 0, cancelId: 0, noLink: true
     })
     return !signal.aborted && result.response === 1
+  },
+  proxyEnvironment: async () => {
+    const rule = await session.defaultSession.resolveProxy('https://huggingface.co')
+    const proxy = /(?:^|;)\s*PROXY\s+([^\s;]+)/i.exec(rule)?.[1]
+    return proxy ? { HTTP_PROXY: `http://${proxy}`, HTTPS_PROXY: `http://${proxy}`, NO_PROXY: 'localhost,127.0.0.1,::1', NODE_USE_ENV_PROXY: '1' } : {}
   }
 })
 configurePluginCommands((command, params, context, signal) => bundledPlugins.command(command, params, context, signal))
@@ -1395,12 +1399,7 @@ function controlStatus(): Record<string, unknown> {
 }
 
 
-let sharedVoiceService: VoiceService | null = null
-
-function voiceService(): VoiceService {
-  sharedVoiceService ??= new VoiceService(async () => (await getSettings()).voiceInput)
-  return sharedVoiceService
-}
+const transcribeVoice = voiceTranscriber({ plugins: bundledPlugins, settings: async () => (await getSettings()).voiceInput })
 
 async function startRemoteServer(): Promise<void> {
   if (!remoteAccess) {
@@ -1418,7 +1417,7 @@ async function startRemoteServer(): Promise<void> {
         humanApproval: remoteHumanApproval,
         artifact: remoteArtifact,
         transcribe: async (wav) => {
-          const result = await voiceService().transcribe(wav)
+          const result = await transcribeVoice(wav)
           return result.ok ? { ok: true, data: { text: result.text } } : { ok: false, status: 409, error: result.error }
         }
       },
@@ -3184,7 +3183,7 @@ function registerIpc(): void {
 
   registerAppUpdate(ipc, () => (runners?.statuses() ?? []).some((status) => status.running))
   registerVoiceIpc(ipc, {
-    service: voiceService(),
+    plugins: bundledPlugins,
     window: () => win,
     settings: async () => (await getSettings()).voiceInput,
     saveSettings: async (voiceInput) => {
