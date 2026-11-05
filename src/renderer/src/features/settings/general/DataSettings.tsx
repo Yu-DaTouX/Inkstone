@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
-import type { StorageInfoView } from '../../../../../shared/ipc'
+import type { AttachmentUsage, StorageInfoView } from '../../../../../shared/ipc'
 import type { BackupAction, BackupSummary } from '../../../../../shared/data-backup'
 import { useStore } from '../../../state/store'
-import { Button, Notice, Switch } from '../../../ui'
+import { Button, ConfirmDialog, Notice, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { devicesDataText } from './devices-data-text'
 import { bytesText } from './general-model'
@@ -74,6 +74,72 @@ function DataMessageLine({ message, scope }: { message: DataMessage | null; scop
 
 function describe(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
+}
+
+function ipcReason(cause: unknown): string {
+  return describe(cause).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
+}
+
+function AttachmentsRow(): ReactElement {
+  const { t } = useI18n()
+  const [usage, setUsage] = useState<AttachmentUsage | null>(null)
+  const [note, setNote] = useState<{ tone: 'info' | 'fail'; text: string } | null>(null)
+  const [confirming, setConfirming] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    void window.yan.attachments.usage().then(
+      (value) => alive && setUsage(value),
+      (cause) => alive && setNote({ tone: 'fail', text: ipcReason(cause) })
+    )
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const prune = async (): Promise<void> => {
+    setNote({ tone: 'info', text: t('pkg.attachScanning') })
+    try {
+      const result = await window.yan.attachments.prune()
+      setUsage(await window.yan.attachments.usage())
+      setNote({ tone: 'info', text: result.removed ? t('pkg.attachDone', { n: result.removed, size: bytesText(result.bytes) }) : t('pkg.attachNone') })
+    } catch (cause) {
+      setNote({ tone: 'fail', text: `${ipcReason(cause)} ${t('pkg.attachRetry')}` })
+    }
+  }
+
+  const size = usage ? t('pkg.attachSize', { files: usage.files, size: bytesText(usage.bytes) }) : ''
+  return (
+    <>
+      <SettingsRow
+        settingId="data-attachments"
+        label={t('pkg.attach')}
+        description={
+          <>
+            {t('pkg.attachDesc')}
+            {size ? <span className="settings-row__line" data-testid="v3-data-attachments-size">{size}</span> : null}
+          </>
+        }
+      >
+        <Button variant="secondary" isDisabled={!usage?.files} onPress={() => setConfirming(true)} data-testid="v3-data-attachments-prune">
+          {t('pkg.attachClean')}
+        </Button>
+      </SettingsRow>
+      {note ? <Notice tone={note.tone} compact className="dd-message" data-testid="v3-data-attachments-note">{note.text}</Notice> : null}
+      <ConfirmDialog
+        isOpen={confirming}
+        onOpenChange={setConfirming}
+        title={t('pkg.attachClean')}
+        description={`${t('pkg.attachDesc')}\n${t('pkg.attachCleanNote')}`}
+        confirmLabel={t('pkg.attachClean')}
+        tone="danger"
+        onConfirm={prune}
+        data-testid="v3-data-attachments-confirm"
+      >
+        {size}
+      </ConfirmDialog>
+    </>
+  )
 }
 
 export function DataSettings(): ReactElement {
@@ -318,6 +384,7 @@ export function DataSettings(): ReactElement {
               data-testid="v3-data-subagent-prune"
             />
           </SettingsRow>
+          <AttachmentsRow />
         </SettingsGroup>
 
         <SettingsGroup title={local.sessionTransfer}>

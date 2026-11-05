@@ -388,7 +388,7 @@ const api: YanBridge = {
     send: (id, message) => invoke<{ ok: boolean; error?: string; delivery?: 'queued' | 'started' | 'resumed' }>('yan:subagents:send', id, message),
     dismiss: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:dismiss', id),
     stopAll: () => invoke<void>('yan:subagents:stopAll'),
-    clearFinished: () => invoke<void>('yan:subagents:clear'),
+    clearFinished: (ids) => invoke<void>('yan:subagents:clear', ids),
     merge: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:merge', id),
     discard: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:discard', id)
   },

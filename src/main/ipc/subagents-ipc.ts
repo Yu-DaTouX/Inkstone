@@ -63,8 +63,9 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
   handle('yan:subagents:stopAll', async () => {
     await (await service.get()).stopAll()
   })
-  handle('yan:subagents:clear', async () => {
-    await (await service.get()).clearFinished()
+  handle('yan:subagents:clear', async (ids: unknown) => {
+    const runIds = Array.isArray(ids) ? ids.map(normalizeSubagentId).filter((id): id is string => !!id) : undefined
+    await (await service.get()).clearFinished(runIds)
   })
   handle('yan:subagents:merge', async (id: string) => {
     const runId = normalizeSubagentId(id)

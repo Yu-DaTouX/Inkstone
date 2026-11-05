@@ -44,7 +44,6 @@ import type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalReceipt, ApprovalR
 import type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalKind, ApprovalReceipt, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
-import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { LocalServerSnapshot } from './local-servers'
 export type { LocalServerInfo, LocalServerSnapshot } from './local-servers'
@@ -831,7 +830,6 @@ export interface AppSettings {
   projectScripts?: import('./project-scripts').ProjectScriptsByProject
   providerBudgets: Record<string, number>
   rightPanelOpen: boolean
-  workspaceMode?: WorkspaceMode
   alwaysOnTop: boolean
   uiScale: number
   profile: UserProfile
@@ -1281,7 +1279,7 @@ export interface SubagentBridge {
   send(id: string, message: string): Promise<{ ok: boolean; error?: string; delivery?: 'queued' | 'started' | 'resumed' }>
   dismiss(id: string): Promise<{ ok: boolean; error?: string }>
   stopAll(): Promise<void>
-  clearFinished(): Promise<void>
+  clearFinished(ids?: string[]): Promise<void>
   merge(id: string): Promise<{ ok: boolean; error?: string }>
   discard(id: string): Promise<{ ok: boolean; error?: string }>
 }

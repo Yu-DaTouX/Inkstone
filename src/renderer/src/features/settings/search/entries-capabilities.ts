@@ -94,6 +94,22 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     keywords: ['computer use', 'windows-mcp', '屏幕', '点击', 'uv', '安装 uv']
   },
   {
+    id: 'caps-tools-codemode',
+    section: 'capabilities',
+    tab: 'tools',
+    zh: 'Codemode',
+    en: 'Codemode',
+    keywords: ['codemode', '批量调用', '脚本', 'JavaScript', 'batch tools']
+  },
+  {
+    id: 'caps-tools-visual-answers',
+    section: 'capabilities',
+    tab: 'tools',
+    zh: '可视化回答',
+    en: 'Visual answers',
+    keywords: ['图表', '卡片', '图解', 'chart', 'visual', 'yan-chart']
+  },
+  {
     id: 'caps-tools-voice',
     section: 'capabilities',
     tab: 'tools',

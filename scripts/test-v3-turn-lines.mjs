@@ -229,6 +229,7 @@ async function buildBundle(outdir) {
       'src/renderer/src/state/store.ts': STORE_STUB,
       'src/renderer/src/ui/index.ts': UI_STUB,
       'src/renderer/src/features/session/Icon.tsx': ICON_STUB,
+      'src/renderer/src/features/session/SubagentComposer.tsx': `export function SubagentComposer(){ return null } SubagentComposer.__stub='sa-composer'\n`,
       'src/renderer/src/i18n/index.tsx': I18N_STUB,
       'src/renderer/src/features/session/text.ts': TEXT_STUB,
       'src/renderer/src/features/diff/index.ts': DIFF_STUB
@@ -511,6 +512,10 @@ async function main() {
     const liveTitle = textOf(byTestId(row, 'v3-subagent-task')[0])
     ok(!liveTitle.startsWith('进行中') && !liveTitle.startsWith('Running'), '运行中标题不带状态词', liveTitle)
     ok(byTestId(row, 'v3-subagent-time').length === 1, '运行中显示用时')
+    const liveStrip = renderRowEl(collect(line, kind('SubagentLive'))[0])
+    ok(flattenText(byTestId(liveStrip, 'v3-subagent-activity')[0] ?? {}) === '运行 read', '运行中在行下显示最近动作', liveStrip && flattenText(byTestId(liveStrip, 'v3-subagent-activity')[0] ?? {}))
+    ok(byTestId(liveStrip, 'v3-subagent-steer-toggle').length === 1, '运行中可以在卡片上就地插话')
+    ok(byTestId(liveStrip, 'v3-subagent-steer').length === 0, '插话框默认收起')
 
     store({ subagents: [subagentRun({ model: flash })], models: [] })
     const bare = renderRow().row
@@ -522,6 +527,9 @@ async function main() {
     const doneGauge = collect(finished, kind('ContextGauge'))[0]
     ok(doneGauge?.props.usage.percent === 10 && byTestId(finished, 'v3-subagent-usage').length === 0, '完成后与运行中同样显示上下文圆环', doneGauge?.props.usage)
     ok(String(finished.props.title).includes('4 个工具 · 12k tokens'), '完成后的工具数与 tokens 放进行的悬停说明', finished.props.title)
+    rt.cells = []
+    const finishedLine = rt.render(bundle.SubagentLine, { turn })
+    ok(renderRowEl(collect(finishedLine, kind('SubagentLive'))[0]) === null, '已结束的子 Agent 不显示进度行与插话')
 
     store({ subagents: [subagentRun({ status: 'error', endedAt: 4_000, error: '模型请求超时\n详细堆栈', toolCalls: 2 })], models: [] })
     const failed = renderRow().row

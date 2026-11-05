@@ -1,7 +1,3 @@
-export const AGENT_CONTEXT_OWNER = 'agent' as const
-
-export const AGENT_CONTEXT_ERROR = '上下文由当前 Agent 管理；砚不再提供预算、整理或自动交接。'
-
 const RETIRED_EXTENSIONS = new Set([
   'context.js',
   'context-budget-observer.js',

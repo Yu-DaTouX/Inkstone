@@ -43,8 +43,3 @@ export function quotaCompactWindows(windows: QuotaWindow[]): CompactQuotaWindow[
     ...(month ? [{ window: month, label: '月' }] : [])
   ]
 }
-
-export function windowPct(window: QuotaWindow, digits: 0 | 1 = 0): number | null {
-  if (!(window.total > 0)) return null
-  return Number(((window.used / window.total) * 100).toFixed(digits))
-}

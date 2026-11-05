@@ -7,7 +7,6 @@ export async function runCustomProviderTests(ok, mod) {
     isYanProviderId,
     validateBaseUrl,
     hasExecutablePrefix,
-    maskCustomProvider,
     CUSTOM_API_CHOICES,
     PI_API_IDS
   } = mod
@@ -165,14 +164,11 @@ export async function runCustomProviderTests(ok, mod) {
   ok(modelsWriteRisk(many, removeOwn.next, ['yan-big']).dropped.length === 0, '显式删除的服务商不算意外丢失')
   ok(modelsWriteRisk(null, collapsed).dropped.length === 0, '没有旧文件时没有风险')
 
-  const masked = maskCustomProvider({ id: 'yan-a', api: 'openai-completions', baseUrl: 'https://x', models: [], hasApiKey: true })
-  ok(masked.apiKeyLabel === '••••••' && !JSON.stringify(masked).includes('sk-'), '遮罩只显示存在状态')
-
   await runCapabilityTests(ok, mod)
 }
 
 async function runCapabilityTests(ok, mod) {
-  const { parseModelEntries, parseModelList, describeDiscoveredModels, catalogKey, validateCustomProvider, readCustomProviders } = mod
+  const { parseModelEntries, describeDiscoveredModels, catalogKey, validateCustomProvider, readCustomProviders } = mod
 
   const commandcode = {
     object: 'list',
@@ -186,7 +182,6 @@ async function runCapabilityTests(ok, mod) {
   const found = parseModelEntries(commandcode)
   ok(found.length === 4 && found[0].contextWindow === 1000000, '读出端点给的上下文长度')
   ok(found[0].endpoints?.join() === '/messages', '读出端点给的开放接口')
-  ok(parseModelList(commandcode).join() === found.map((m) => m.id).join(), 'parseModelList 与 parseModelEntries 的 id 一致')
   const openrouter = parseModelEntries({ data: [{ id: 'a/b', supported_parameters: ['tools', 'reasoning'], architecture: { input_modalities: ['text', 'image'] } }] })
   ok(openrouter[0].reasoning === true && openrouter[0].image === true, 'OpenRouter 式 supported_parameters / input_modalities 被识别')
 

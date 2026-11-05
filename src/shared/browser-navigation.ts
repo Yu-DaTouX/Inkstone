@@ -85,8 +85,3 @@ export function failureUrl(validatedUrl: string | undefined | null, fallback: st
   const value = (validatedUrl ?? '').trim()
   return value || fallback
 }
-
-export function sameCommittedUrl(a: string, b: string): boolean {
-  const trim = (value: string): string => value.replace(/\/+$/, '')
-  return trim(a ?? '') === trim(b ?? '')
-}

@@ -111,9 +111,3 @@ export function sanitizeSessionChains(raw: unknown): SessionChain[] {
   }
   return out
 }
-
-export function chainSummary(chain: SessionChain | null | undefined): string {
-  const segments = chain?.segments ?? []
-  if (segments.length <= 1) return '单段'
-  return `${segments.length} 段（同一会话）`
-}

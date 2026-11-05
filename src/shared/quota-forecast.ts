@@ -179,11 +179,6 @@ export function forecastQuota(
   return { kind: 'exhaust', exhaustAt: Math.round(now + (100 - pct) / rate) }
 }
 
-export function forecastProjectionPct(forecast: QuotaForecast | undefined): number | null {
-  if (!forecast || forecast.kind === 'sampling' || forecast.kind === 'uncertain') return null
-  return forecast.kind === 'exhaust' ? 100 : Math.min(100, forecast.atResetPct)
-}
-
 export function quotaReadingStale(checkedAt: number, now: number, failed: boolean): boolean {
   return failed || now - checkedAt > QUOTA_STALE_MS
 }

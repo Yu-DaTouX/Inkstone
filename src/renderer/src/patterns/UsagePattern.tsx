@@ -1,9 +1,7 @@
-import type { JSX, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { SegmentedControl, Tab, TabList, Tabs } from '../ui'
-import { UsageOverview } from '../features/usage/UsageOverview'
 import type { UsageToggleProps, UsageToggleRenderer } from '../features/usage/UsageOverviewView'
 import './usage-pattern.css'
-import { useUiV3 } from '../state/ui-v3'
 
 export const renderUsageToggle: UsageToggleRenderer = ({
   kind,
@@ -34,7 +32,3 @@ export const renderUsageToggle: UsageToggleRenderer = ({
       </TabList>
     </Tabs>
   )
-
-export function UsagePattern({ emptyNote }: { emptyNote?: string } = {}): JSX.Element {
-  return <UsageOverview compact renderToggle={renderUsageToggle} keepWhenEmpty emptyNote={emptyNote} onOpenDetails={() => useUiV3.getState().navigate({ name: 'usage' })} />
-}

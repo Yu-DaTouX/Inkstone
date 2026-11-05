@@ -281,13 +281,3 @@ export function orderAccountCardsForProvider(cards: readonly AccountQuotaCard[],
   if (index <= 0) return [...cards]
   return [cards[index], ...cards.slice(0, index), ...cards.slice(index + 1)]
 }
-
-export function cardPeakPercent(card: Pick<AccountQuotaCard, 'windows'>): number | null {
-  let peak: number | null = null
-  for (const w of card.windows) {
-    if (!(w.total > 0)) continue
-    const pct = (w.used / w.total) * 100
-    if (peak === null || pct > peak) peak = pct
-  }
-  return peak
-}

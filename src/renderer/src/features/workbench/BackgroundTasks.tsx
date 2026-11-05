@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Square } from 'lucide-react'
-import { Button, CollapsibleChevron, IconButton, ListRow, ListRowStatic, Notice, StatusDot, StatusSlot } from '../../ui'
+import { Button, CollapsibleChevron, ConfirmDialog, IconButton, ListRow, ListRowStatic, Notice, StatusDot, StatusSlot } from '../../ui'
+import { useT } from '../../i18n'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../../state/store'
 import { viewSubagentRuns } from '../../state/subagent-view'
@@ -65,6 +66,17 @@ export function BackgroundTasks({ scheduled, lang, text }: BackgroundTasksProps)
   const sections = sectionTasks(entries)
   const [finishedOpen, setFinishedOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const t = useT()
+  const finishedRunIds = sections.finished.flatMap((entry) => (entry.kind === 'subagent' ? [entry.id] : []))
+  const clearFinished = async (): Promise<void> => {
+    try {
+      await window.yan.subagents.clearFinished(finishedRunIds)
+    } catch (failure) {
+      setNotice(failure instanceof Error ? failure.message : String(failure))
+    }
+    await useStore.getState().loadSubagents()
+  }
 
   const onGone = useCallback((): void => setNotice(text.taskGone), [text])
 
@@ -82,6 +94,7 @@ export function BackgroundTasks({ scheduled, lang, text }: BackgroundTasksProps)
       ) : null}
       {sections.finished.length > 0 ? (
         <section className="wb-bg-section" data-testid="wb-bg-finished">
+          <div className="wb-bg-section-head">
           <Button
             variant="ghost"
             size="sm"
@@ -93,6 +106,12 @@ export function BackgroundTasks({ scheduled, lang, text }: BackgroundTasksProps)
           >
             {text.finishedSection(sections.finished.length)}
           </Button>
+          {finishedRunIds.length ? (
+            <Button variant="ghost" size="sm" className="wb-bg-clear" onPress={() => setConfirmClear(true)} data-testid="wb-bg-clear-finished">
+              {t('sa.clearFinished')}
+            </Button>
+          ) : null}
+          </div>
           {finishedOpen ? (
             <ul className="wb-bg-list">
               {sections.finished.map((entry) => (
@@ -103,6 +122,16 @@ export function BackgroundTasks({ scheduled, lang, text }: BackgroundTasksProps)
         </section>
       ) : null}
       {notice ? <Notice variant="hint" data-testid="wb-bg-notice">{notice}</Notice> : null}
+      <ConfirmDialog
+        isOpen={confirmClear}
+        onOpenChange={setConfirmClear}
+        title={t('sa.clearFinished')}
+        description={t('sa.clearFinishedConfirm')}
+        confirmLabel={t('sa.clearFinished')}
+        tone="danger"
+        onConfirm={clearFinished}
+        data-testid="wb-bg-clear-confirm"
+      />
     </div>
   )
 }

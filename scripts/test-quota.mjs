@@ -140,7 +140,7 @@ export async function runQuotaResumeTests(report) {
 }
 
 export async function runQuotaMiniTests(ok, mod) {
-  const { money, quotaCompactWindows, windowPct, CURRENCY_SYMBOL } = mod
+  const { money, quotaCompactWindows, CURRENCY_SYMBOL } = mod
 
   ok(money(9.92, 'USD') === '$9.92', 'money：美元用 $ 前缀')
   ok(money(9.92, 'CNY') === '¥9.92', 'money：人民币用 ¥（DeepSeek 余额的真实场景）')
@@ -170,17 +170,6 @@ export async function runQuotaMiniTests(ok, mod) {
     quotaCompactWindows([w('primary', '已用', 1, 10)])[0].label === '5h',
     '紧凑栏：primary 无数字标签时仍给出 5h'
   )
-
-  ok(windowPct(w('x', 'x', 5, 0)) === null, 'windowPct：total 为 0 时返回 null（不假装 0%）')
-  ok(windowPct(w('x', 'x', 25, 100)) === 25, 'windowPct：整数百分比在 0 位下是 25')
-  ok(windowPct(w('x', 'x', 25, 100), 1) === 25, 'windowPct：同一次除法在 1 位下仍是 25')
-  ok(windowPct(w('x', 'x', 1, 3)) === 33, 'windowPct：1/3 在 0 位下四舍五入到 33')
-  ok(windowPct(w('x', 'x', 1, 3), 1) === 33.3, 'windowPct：1/3 在 1 位下是 33.3')
-  ok(
-    windowPct(w('x', 'x', 1, 3)) === Number(windowPct(w('x', 'x', 1, 3), 1).toFixed(0)),
-    'windowPct：摘要（0 位）与明细（1 位）来自同一次除法，不会各算一次'
-  )
-  ok(windowPct(w('x', 'x', 150, 100), 1) === 150, 'windowPct：超过 100% 如实返回（不夹取）')
 }
 
 export default runQuotaMiniTests

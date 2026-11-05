@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { prefersReducedMotion, subscribeReducedMotion } from '../lib/reduced-motion'
 import { createMotionHold, parseDuration, presenceNext, type PresenceState } from './motion-model'
 
@@ -54,29 +54,6 @@ export function useMotionHeld(): boolean {
     hold.held,
     () => false
   )
-}
-
-export function useHoldMotionOn(key: unknown): void {
-  useLayoutEffect(() => {
-    holdMotion()
-  }, [key])
-}
-
-export function useNavigationHold(key: string): boolean {
-  const [painted, setPainted] = useState<string | null>(null)
-  const held = painted !== key
-  useEffect(() => {
-    if (!held) return
-    let second = 0
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => setPainted(key))
-    })
-    return () => {
-      cancelAnimationFrame(first)
-      cancelAnimationFrame(second)
-    }
-  }, [key, held])
-  return held
 }
 
 export function useArrival(busy: boolean): boolean {

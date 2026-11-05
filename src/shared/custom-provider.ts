@@ -299,10 +299,6 @@ export function modelsWriteRisk(before: unknown, next: unknown, removals: readon
   return { dropped, shrink }
 }
 
-export function maskCustomProvider(view: CustomProviderView): CustomProviderView & { apiKeyLabel: string } {
-  return { ...view, apiKeyLabel: view.hasApiKey ? '••••••' : '' }
-}
-
 export type CustomProviderTestMode = 'endpoint' | 'billable'
 
 export interface CustomProviderTestResult {
@@ -311,10 +307,6 @@ export interface CustomProviderTestResult {
   ms: number
   message: string
   text?: string
-}
-
-export function parseModelList(json: unknown): string[] {
-  return parseModelEntries(json).map((model) => model.id)
 }
 
 export interface DiscoveredModel {

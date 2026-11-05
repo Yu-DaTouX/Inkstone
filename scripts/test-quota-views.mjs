@@ -50,19 +50,16 @@ async function runQuotaForecastTests() {
     {
       const f = fc.forecastQuota(series([[30 * MIN, 35], [0, 40]]), win(), now)
       eq(f, { kind: 'steady', atResetPct: 60 }, '每 30 分钟 5 点、还剩 2 小时：重置时约 60%')
-      eq(fc.forecastProjectionPct(f), 60, '投影终点取重置时百分比')
     }
 
     {
       const f = fc.forecastQuota(series([[30 * MIN, 20], [0, 40]]), win(), now)
       eq(f, { kind: 'exhaust', exhaustAt: now + 90 * MIN }, '每 30 分钟 20 点：90 分钟后用完')
-      eq(fc.forecastProjectionPct(f), 100, '会用完时投影画满')
     }
 
     {
       const f = fc.forecastQuota(series([[30 * MIN, 40], [0, 40]]), win(), now)
       eq(f, { kind: 'steady', atResetPct: 40 }, '没有增长：重置时保持当前')
-      eq(fc.forecastProjectionPct(f), 40, '投影不超过当前时 Meter 不画延伸')
     }
 
     {
@@ -132,7 +129,6 @@ async function runQuotaForecastTests() {
       const longWeek = { ...week, resetAt: now + 5 * DAY }
       const flat = Array.from({ length: 7 }, (_, i) => ({ at: now - DAY + i * 4 * HOUR, pct: 2 * i / 6 }))
       eq(fc.forecastQuota(flat, longWeek, now), { kind: 'uncertain' }, '一天内只变化2个百分点，精度不足以预测')
-      eq(fc.forecastProjectionPct({ kind: 'uncertain' }), null, '不可靠预测不把用量条填满')
       const stable = Array.from({ length: 7 }, (_, i) => ({ at: now - DAY + i * 4 * HOUR, pct: 20 + 5 * i }))
       const forecast = fc.forecastQuota(stable, { ...longWeek, used: 50 }, now)
       check(forecast?.kind === 'exhaust' && forecast.earliestAt < forecast.exhaustAt && forecast.latestAt > forecast.exhaustAt && forecast.basedOnMs === DAY, '足够稳定的长历史给范围，不伪装精确时刻')

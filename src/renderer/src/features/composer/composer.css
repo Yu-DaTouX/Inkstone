@@ -1191,7 +1191,7 @@
     flex: none;
     display: flex;
     flex-direction: column;
-    width: 168px;
+    width: fit-content;
     min-width: 0;
     border-left: 1px solid var(--line);
   }

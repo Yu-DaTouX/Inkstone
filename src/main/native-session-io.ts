@@ -95,10 +95,6 @@ export function configureNativeSessionIo(next: NativeSessionIoContext): void {
   ctx = next
 }
 
-export function resetNativeSessionIo(): void {
-  ctx = {}
-}
-
 function agentDirNow(): string {
   return ctx.agentDir?.() ?? PI_AGENT_DIR
 }

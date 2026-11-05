@@ -1,8 +1,6 @@
 export async function runFileResourceTests(ok) {
   const fr = await import('../out/test/file-resource.mjs')
   const key = fr.fileResourceKey
-  const parse = fr.parseFileResourceKey
-  const label = fr.fileResourceLabel
 
   const id = {
     projectId: 'p-1',
@@ -10,11 +8,7 @@ export async function runFileResourceTests(ok) {
     canonicalPath: 'C:/work/app/src/index.ts'
   }
   const k = key(id)
-  const back = parse(k)
-  ok(back !== null, '合法的三元组能解析回来')
-  ok(back?.projectId === 'p-1', 'projectId 原样还原')
-  ok(back?.workspaceRoot === 'C:/work/app', 'workspaceRoot 原样还原（含盘符与斜杠）')
-  ok(back?.canonicalPath === 'C:/work/app/src/index.ts', 'canonicalPath 原样还原')
+  ok(k === 'p-1|C%3A%2Fwork%2Fapp|C%3A%2Fwork%2Fapp%2Fsrc%2Findex.ts', '三段各自编码后用竖线连接')
   ok(key(id) === k, '同一个身份重复构造出同一个键（标签不会重复建）')
 
   const tricky = key({
@@ -22,14 +16,10 @@ export async function runFileResourceTests(ok) {
     workspaceRoot: 'C:/我的 工作/app',
     canonicalPath: 'C:/我的 工作/app/src/奇|怪.ts'
   })
-  const trickyBack = parse(tricky)
+  ok(tricky.split('|').length === 3, '路径里的竖线被编码，键始终是三段')
   ok(
-    trickyBack?.canonicalPath === 'C:/我的 工作/app/src/奇|怪.ts',
-    '含中文/空格/竖线的路径也能准确还原（不把键拆错）'
-  )
-  ok(
-    trickyBack?.projectId === '项目 A' && trickyBack?.workspaceRoot === 'C:/我的 工作/app',
-    '含中文的项目与工作树也能还原'
+    tricky.split('|').map(decodeURIComponent)[2] === 'C:/我的 工作/app/src/奇|怪.ts',
+    '含中文/空格/竖线的路径编码后不丢信息'
   )
 
   const base = { projectId: 'p-1', workspaceRoot: 'C:/work/app', canonicalPath: 'C:/work/app/a.ts' }
@@ -46,19 +36,7 @@ export async function runFileResourceTests(ok) {
     '同工作树不同项目 → 两个键（项目归属进身份）'
   )
 
-  const bare = key({ canonicalPath: 'C:/x.ts' })
-  ok(parse(bare)?.canonicalPath === 'C:/x.ts', '只有路径时也能解析')
-  ok(parse(bare)?.projectId === null && parse(bare)?.workspaceRoot === null, '空项目/工作树解析回 null')
-
-  ok(parse('') === null, '空键 → null')
-  ok(parse('a|b') === null, '段数不够 → null')
-  ok(parse('a|b|c|d') === null, '段数过多 → null')
-  ok(parse('a|b|-') === null, 'canonicalPath 为空占位 → null（没有路径就没有文件身份）')
-
-  ok(label('C:/work/app/src/index.ts') === 'index.ts', 'Windows 路径取文件名')
-  ok(label('/home/me/app/main.ts') === 'main.ts', 'POSIX 路径取文件名')
-  ok(label('C:/work/app/src/') === 'src', '目录（尾斜杠）取最后一段')
-  ok(label('') === '', '空路径 → 空标签（界面自己回落）')
+  ok(key({ canonicalPath: 'C:/x.ts' }) === '-|-|C%3A%2Fx.ts', '缺项目/工作树时用占位符')
 
   ok(
     fr.sameResourcePath('C:/work/app/a.ts', 'C:\\work\\app\\a.ts'),

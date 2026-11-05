@@ -33,8 +33,6 @@ export async function runSessionChainTests(ok) {
   const withC = shared.appendSegment(withB, seg(C, 4, 'h-2'))
   ok(shared.planHistoryRead(withC).join(',') === `${A},${B},${C}`, '读历史按段从旧到新')
   ok(shared.planHistoryRead(null).length === 0, '没有链 → 不取文件')
-  ok(shared.chainSummary(withC).includes('3 段'), `摘要写明几段（${shared.chainSummary(withC)}）`)
-  ok(shared.chainSummary(chainA) === '单段', '单段链的摘要')
 
   const chains = [withC]
   ok(shared.chainForFile(chains, B) === withC, '按旧段也能找到链')

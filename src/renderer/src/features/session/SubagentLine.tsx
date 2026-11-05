@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -15,6 +15,8 @@ import type { RunSnapshot } from '../../../../shared/runs'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { Icon } from './Icon'
 import { SubagentBot } from './SubagentBot'
+import { SubagentComposer } from './SubagentComposer'
+import { subagentComposerMode } from './subagent-composer'
 import { SubagentStateIcon } from './SubagentState'
 import { useSessionText, type SessionTextKey } from './text'
 import { openSubagentPane, rowLang, useFocusedSubagentRun, useSubagentPaneOpen, useSubagentRow } from './subagent-actions'
@@ -237,7 +239,10 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
         {open ? (
           <div className="v3-sa-list" role="group" aria-label={tt('subagentListLabel')} onKeyDown={onKeyDown} data-testid="v3-subagent-list">
             {shown.map((run, index) => (
-              <SubagentRow key={run.id} run={run} snapshot={snapshots[run.id]} index={index} />
+              <Fragment key={run.id}>
+                <SubagentRow run={run} snapshot={snapshots[run.id]} index={index} />
+                <SubagentLive run={run} />
+              </Fragment>
             ))}
             {canFold ? (
               <Button
@@ -324,6 +329,44 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       {time ? <span className="v3-sa-time" data-testid="v3-subagent-time">{time}</span> : null}
       <Icon name="chevron-right" size={13} className="v3-chev" />
     </button>
+  )
+}
+
+function SubagentLive({ run }: { run: SubagentRun }): JSX.Element | null {
+  const tt = useSessionText()
+  const row = useSubagentRow(run)
+  const [steering, setSteering] = useState(false)
+  const live = row.state === 'starting' || row.state === 'running'
+  const canSteer = subagentComposerMode(run) === 'steer'
+  const activity = live ? run.progressWarning?.trim() || row.latestActivity : null
+  if (!steering && !(live && (activity || canSteer))) return null
+  return (
+    <>
+    {live || steering ? (
+      <div className="v3-sa-live" data-warning={run.progressWarning ? '' : undefined} data-testid="v3-subagent-live">
+        <span className="v3-sa-activity" title={activity ?? undefined} aria-live="polite" data-testid="v3-subagent-activity">
+          {activity ?? ''}
+        </span>
+        {canSteer || steering ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="v3-sa-steer-toggle"
+            aria-expanded={steering}
+            onPress={() => setSteering(!steering)}
+            data-testid="v3-subagent-steer-toggle"
+          >
+            {steering ? tt('subagentInterjectClose') : tt('subagentInterject')}
+          </Button>
+        ) : null}
+      </div>
+    ) : null}
+    {steering ? (
+      <div className="v3-sa-steer" data-testid="v3-subagent-steer">
+        <SubagentComposer run={run} />
+      </div>
+    ) : null}
+    </>
   )
 }
 

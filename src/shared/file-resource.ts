@@ -12,34 +12,12 @@ function encodePart(value: string | null | undefined): string {
   return v ? encodeURIComponent(v) : EMPTY
 }
 
-function decodePart(value: string): string | null {
-  if (!value || value === EMPTY) return null
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return value
-  }
-}
-
 export function fileResourceKey(identity: FileResourceIdentity): string {
   return [
     encodePart(identity.projectId),
     encodePart(identity.workspaceRoot),
     encodePart(identity.canonicalPath)
   ].join(SEP)
-}
-
-export function parseFileResourceKey(key: string): FileResourceIdentity | null {
-  const parts = String(key ?? '').split(SEP)
-  if (parts.length !== 3) return null
-  const canonicalPath = decodePart(parts[2])
-  if (!canonicalPath) return null
-  return { projectId: decodePart(parts[0]), workspaceRoot: decodePart(parts[1]), canonicalPath }
-}
-
-export function fileResourceLabel(canonicalPath: string): string {
-  const norm = String(canonicalPath ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
-  return norm.slice(norm.lastIndexOf('/') + 1) || norm
 }
 
 export function resolveRelativePath(baseDir: string, rel: string): string {

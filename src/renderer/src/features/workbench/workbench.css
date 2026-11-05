@@ -1089,6 +1089,19 @@
     line-height: var(--t-footnote-lh);
   }
 
+  .wb-bg-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .wb-bg-clear {
+    padding: 0 var(--s-4);
+    font-size: var(--t-footnote);
+  }
+
   .wb-bg-section-toggle {
     align-self: flex-start;
     margin-left: calc(-1 * var(--s-4));
@@ -1208,6 +1221,7 @@
 
   .wb-bg-section-title,
   .wb-bg-section-toggle,
+  .wb-bg-clear,
   .wb-bg-detail,
   .wb-bg-earlier {
     color: var(--fg3);

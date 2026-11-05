@@ -193,10 +193,6 @@ export interface SessionTurnCounts {
   steps: number
 }
 
-export function sessionTurnCounts(messages: readonly UIMessage[]): SessionTurnCounts {
-  return turnCountsOf(effectiveMessages(messages))
-}
-
 function isStepNoise(m: UIMessage): boolean {
   return !!m.question || m.role === 'note' || (m.role === 'user' && isSubagentNotice(m.text))
 }

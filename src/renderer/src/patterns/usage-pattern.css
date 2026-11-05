@@ -148,21 +148,4 @@
   .start-usage[data-pending] .start-stat dd {
     color: var(--fg3);
   }
-
-  .start-strip {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--s-4) var(--s-6);
-    min-width: 0;
-  }
-  .start-strip-num {
-    color: var(--fg);
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .start-strip-sep {
-    color: var(--fg3);
-  }
 }

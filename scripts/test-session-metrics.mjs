@@ -21,7 +21,6 @@ try {
     latencyFloor,
     liveStepSpeed,
     projectSessionMetrics,
-    sessionTurnCounts,
     splitLiveStep,
     stepSpeed,
     stepSpeeds
@@ -653,7 +652,6 @@ try {
     check(settled.partial === false, '只按已结算步骤计时不会闪出 ≥')
     check(settled.modelPartial === false, '进行中的计时不拉低已结算用时')
     eq(settled.total, 150)
-    eq(sessionTurnCounts(msgs), { turns: 1, steps: 2 }, '头部轮数与步数含进行中的一步')
 
     eq(stepSpeed(done), 50, '已结算步骤速度')
     eq(stepSpeed({ id: 'x', role: 'assistant', text: '' }), null)

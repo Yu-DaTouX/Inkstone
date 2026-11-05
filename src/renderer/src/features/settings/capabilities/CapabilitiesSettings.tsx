@@ -7,6 +7,7 @@ import { MarketSection } from './MarketSection'
 import { PromptsSection } from './PromptsSection'
 import { VoiceSetupPanel, VoiceStatusPanel, useVoiceSetup } from './VoiceSection'
 import { ComputerUseSection } from './ComputerUseSection'
+import { AgentToolSwitches } from './AgentToolSwitches'
 import { SearchApiSection } from './SearchSection'
 import { AndroidSection } from './AndroidSection'
 import { useI18n } from '../../../i18n'
@@ -80,6 +81,7 @@ function ToolsTab(): ReactElement {
   return (
     <>
       <ComputerUseSection />
+      <AgentToolSwitches />
       <VoiceStatusPanel voice={voice} />
       <SettingsAdvanced label={settingsText(lang).advanced} testId="caps-tools-advanced">
         <SearchApiSection />

@@ -28,6 +28,11 @@
   .v3-sa-time { grid-column: time; justify-self: end; white-space: nowrap; }
   .v3-sa-row .v3-chev { grid-column: chev; }
   .v3-sa-more { grid-column: title / end; justify-self: start; }
+  .v3-sa-live { grid-column: title / end; display: flex; align-items: center; gap: var(--s-6); min-width: 0; margin-top: calc(-1 * var(--s-2)); padding-inline-end: var(--s-6); }
+  .v3-sa-activity { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); }
+  .v3-sa-live[data-warning] .v3-sa-activity { color: var(--ask-t); }
+  .v3-sa-steer-toggle { flex: none; font-size: var(--t-footnote); }
+  .v3-sa-steer { grid-column: title / end; min-width: 0; padding: var(--s-4) var(--s-6) var(--s-6) 0; }
   .v3-sa-totals { grid-column: title / end; min-width: 0; margin: 0; padding: var(--s-4) 0 var(--s-2); overflow-wrap: anywhere; font-size: var(--t-footnote); line-height: var(--t-footnote-lh); font-variant-numeric: tabular-nums; }
   @container v3-subagents (max-width: 460px) {
     .v3-sa-list { --sa-cols: [bot] var(--size-avatar) [state] var(--size-status) [title] minmax(35%, 1fr) [usage] minmax(0, auto) [time] auto [chev] 13px [end]; }

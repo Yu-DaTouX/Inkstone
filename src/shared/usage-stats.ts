@@ -57,10 +57,6 @@ function rangeStart(range: UsageRange, now: number): string | null {
   return localDay(d.getTime())
 }
 
-export function aggregateUsage(files: FileUsage[], range: UsageRange, now = Date.now()): UsageStatsView {
-  return aggregateUsageSources({ main: files, subagents: [] }, range, now)
-}
-
 export function aggregateUsageSources(
   sources: { main: FileUsage[]; subagents: FileUsage[] },
   range: UsageRange,

@@ -35,6 +35,8 @@ export type SessionTextKey =
   | 'subagentResumed'
   | 'subagentNotRetried'
   | 'subagentOpenPane'
+  | 'subagentInterject'
+  | 'subagentInterjectClose'
   | 'subagentBrief'
   | 'subagentGone'
   | 'compactionTitle'
@@ -289,6 +291,8 @@ const ZH: Record<SessionTextKey, string> = {
   subagentResumed: '已自动续跑 1 次',
   subagentNotRetried: '未自动重试',
   subagentOpenPane: '在工作区打开转录',
+  subagentInterject: '插话',
+  subagentInterjectClose: '收起',
   subagentBrief: '简报',
   subagentGone: '任务已经结束，无需停止',
   compactionTitle: '上下文已压缩',
@@ -544,6 +548,8 @@ const EN: Record<SessionTextKey, string> = {
   subagentResumed: 'Auto-continued once',
   subagentNotRetried: 'Not retried',
   subagentOpenPane: 'Open transcript in the workspace',
+  subagentInterject: 'Interject',
+  subagentInterjectClose: 'Close',
   subagentBrief: 'Brief',
   subagentGone: 'The task already ended; nothing to stop',
   compactionTitle: 'Context compacted',

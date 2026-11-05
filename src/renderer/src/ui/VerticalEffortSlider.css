@@ -20,7 +20,7 @@
     flex: 1;
     min-height: calc(var(--veffort-row) * var(--veffort-count));
     display: grid;
-    grid-template-columns: calc(var(--s-32) + var(--s-4)) minmax(0, 1fr);
+    grid-template-columns: calc(var(--s-32) + var(--s-4)) max-content;
     align-items: stretch;
     min-width: 0;
   }

@@ -539,13 +539,16 @@ export class SubagentController {
     return live + this.preparing
   }
 
-  async clearFinished(): Promise<void> {
+  async clearFinished(ids?: readonly string[]): Promise<void> {
+    const only = ids ? new Set(ids) : null
     for (const run of [...this.runs.values()]) {
+      if (only && !only.has(run.id)) continue
       if (run.status === 'running' || run.status === 'starting') continue
       if (run.settling) { try { await run.settling } catch { } }
       if (run.finalizing) { try { await run.finalizing } catch { } }
     }
     for (const run of this.list()) {
+      if (only && !only.has(run.id)) continue
       if (run.status === 'running' || run.status === 'starting' || this.resuming.has(run.id)) continue
       if (run.review === 'pending' || run.review === 'conflict') continue
       const live = this.runs.get(run.id)

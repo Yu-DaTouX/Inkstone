@@ -1,5 +1,5 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: fb48b7b6d6e09e1da179fd72014d6d9b467ca63c259337cfb188b5c030268884 */
+/* source-sha256: 14c7d8f542cb40ac25bc0193ad59a8b154d5d5657752263b6d643b9672456eba */
 var PI_API_IDS = [
   "openai-completions",
   "openai-responses",
@@ -220,12 +220,6 @@ function modelsWriteRisk(before, next, removals = []) {
   }
   return { dropped, shrink };
 }
-function maskCustomProvider(view) {
-  return { ...view, apiKeyLabel: view.hasApiKey ? "\u2022\u2022\u2022\u2022\u2022\u2022" : "" };
-}
-function parseModelList(json) {
-  return parseModelEntries(json).map((model) => model.id);
-}
 function parseModelEntries(json) {
   const root = json;
   const list = Array.isArray(root) ? root : Array.isArray(root?.data) ? root.data : Array.isArray(root?.models) ? root.models : [];
@@ -309,11 +303,9 @@ export {
   describeDiscoveredModels,
   hasExecutablePrefix,
   isYanProviderId,
-  maskCustomProvider,
   mergeCustomProviders,
   modelsWriteRisk,
   parseModelEntries,
-  parseModelList,
   readCustomProviders,
   sameBaseUrl,
   validateBaseUrl,

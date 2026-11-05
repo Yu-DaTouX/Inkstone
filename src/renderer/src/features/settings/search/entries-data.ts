@@ -68,6 +68,14 @@ export const DATA_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     keywords: ['数据迁移', '迁移并重启', 'migrate', 'relocate'],
     more: true
   },
+  {
+    id: 'data-attachments',
+    section: 'data',
+    zh: '图片附件',
+    en: 'Image attachments',
+    keywords: ['附件', '清理', '占用', 'attachments', 'prune', 'disk'],
+    more: true
+  },
   { id: 'data-backup-verify', section: 'data', zh: '校验备份', en: 'Verify backup', keywords: ['备份校验', 'verify', 'check backup'], more: true },
   {
     id: 'data-sync-conflicts',

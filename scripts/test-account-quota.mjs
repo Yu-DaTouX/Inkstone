@@ -184,7 +184,6 @@ export async function runAccountQuotaTests(ok) {
   const merged = s.mergeDuplicateCards([card('k', 'yan', { active: true }), card('k', 'codex-cli'), card('other', 'codex-cli')])
   ok(merged.length === 2 && merged[0].source === 'yan' && merged[0].alsoIn?.[0] === 'codex-cli', '去重：同一账号只留砚的卡，记下也在 Codex CLI 登录')
   ok(s.accountCardTitle({ label: '主号', email: 'a@x', name: 'ChatGPT' }) === '主号' && s.accountCardTitle({ email: 'a@x', name: 'ChatGPT' }) === 'a@x' && s.accountCardTitle({ name: 'ChatGPT' }) === 'ChatGPT', '标题：备注 > 邮箱 > 默认名')
-  ok(s.cardPeakPercent({ windows: [{ used: 38, total: 100 }, { used: 6, total: 100 }] }) === 38 && s.cardPeakPercent({ windows: [] }) === null, '摘要：取最紧窗口')
 
   const root = await mkdtemp(join(tmpdir(), 'yan-accounts-'))
   const piDir = join(root, 'pi'), dataDir = join(root, 'yan')

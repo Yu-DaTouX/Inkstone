@@ -113,52 +113,6 @@
     white-space: nowrap;
   }
 
-  .v3-empty-main > .start-strip {
-    display: grid;
-    grid-template-columns: auto auto;
-    align-items: center;
-    column-gap: var(--s-12);
-    row-gap: var(--s-6);
-    text-align: start;
-  }
-
-  .v3-empty-main > .start-strip .start-strip-key {
-    justify-self: start;
-  }
-
-  .v3-empty-main > .start-strip .start-strip-spark {
-    justify-self: start;
-  }
-
-  .v3-empty-main > .start-strip .start-strip-spark > .ui-ascii-spark__cell {
-    scale: 1.34 1;
-  }
-
-  .v3-empty-main > .start-strip .start-strip-row {
-    display: inline-flex;
-    align-items: baseline;
-    gap: var(--s-4);
-    min-width: 0;
-    white-space: nowrap;
-  }
-
-  .v3-empty-main > .start-strip :is(.start-label, .start-strip-sep) {
-    color: var(--fg3);
-  }
-
-  .v3-empty-main > .start-strip .start-strip-num {
-    color: var(--fg2);
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-  }
-
-  .v3-empty-main > .start-strip .start-details-link {
-    color: var(--fg3);
-  }
-
-  .v3-empty-main > .start-strip .start-details-link:hover {
-    color: var(--fg);
-  }
-
   .v3-session[data-empty] > .v3-ascii-field[data-closing='0'] {
     opacity: 1;
   }
@@ -203,8 +157,7 @@
     animation: v3-empty-rise var(--dur-slow) var(--ease) var(--dur-base) both;
   }
 
-  .v3-empty-cols > .start-usage,
-  .v3-empty-main > .start-strip {
+  .v3-empty-cols > .start-usage {
     animation: v3-empty-rise var(--dur-base) var(--ease) both;
   }
 
@@ -219,7 +172,6 @@
     .v3-empty-greet,
     .v3-empty-hint,
     .v3-empty-cols > .start-usage,
-    .v3-empty-main > .start-strip,
     .v3-home-card {
       animation: none;
     }

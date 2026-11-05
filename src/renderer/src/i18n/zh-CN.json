@@ -1436,8 +1436,6 @@
   "set.keepAwakeBattery": "用电池时也保持",
   "set.keepAwakeBatteryDesc": "关闭后，用电池时允许睡眠，会话可能中断。",
   "set.workspaceDaily": "日常",
-  "set.workspaceMode": "界面形态",
-  "set.workspaceModeDesc": "编码侧重项目与代码，日常侧重工作台",
   "src.add": "关联",
   "src.all": "全部",
   "src.badUrl": "只接受 http / https 地址",

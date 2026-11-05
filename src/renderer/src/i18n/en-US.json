@@ -1436,8 +1436,6 @@
   "set.keepAwakeBattery": "Also on battery power",
   "set.keepAwakeBatteryDesc": "Off lets the system sleep on battery; sessions may stop.",
   "set.workspaceDaily": "Daily",
-  "set.workspaceMode": "Layout",
-  "set.workspaceModeDesc": "Coding focuses on code; Daily on the workbench",
   "src.add": "Link",
   "src.all": "All",
   "src.badUrl": "Only http / https URLs",

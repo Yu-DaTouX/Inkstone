@@ -15,9 +15,6 @@ export async function runBrowserNavigationTests(ok) {
   ok(m.failureUrl(undefined, 'https://y') === 'https://y', 'undefined 也退回当前地址')
   ok(m.failureUrl('   ', 'https://y') === 'https://y', '空白地址同样退回')
 
-  ok(m.sameCommittedUrl('https://a/', 'https://a') === true, '末尾斜杠不算差别')
-  ok(m.sameCommittedUrl('https://a', 'https://b') === false, '不同地址不相同')
-
   ok(m.addressTarget('localhost:5173') === 'http://localhost:5173', '本机端口走 http，不被当成协议名')
   ok(m.addressTarget('example.com/a') === 'https://example.com/a', '域名补 https')
   ok(m.addressTarget('https://x.dev') === 'https://x.dev', '完整网址原样')

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { RotateCcw, Square } from 'lucide-react'
+import { Check, RotateCcw, Square } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -10,6 +10,7 @@ import { mergeApprovalLog } from '../../../../shared/approval-log'
 import type { ApprovalReceipt } from '../../../../shared/approval'
 import { briefDisplay, briefPrompt } from '../../../../shared/subagent-brief'
 import { subagentRowLabel } from '../../../../shared/subagent-task-rows'
+import { isDismissed } from '../../../../shared/subagent-outcome'
 import type { SubagentRun } from '../../../../shared/ipc'
 import type { TurnSubagentScope } from '../../state/subagent-view'
 import { PaneTitle, PaneTools } from '../workbench/pane-chrome'
@@ -147,6 +148,8 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const approvalLog = useStore((s) => s.approvalLogSession && s.approvalLogSession === run.parentSessionId ? s.approvalLog : NO_APPROVAL_RECEIPTS)
   const [retrying, setRetrying] = useState(false)
   const [gone, setGone] = useState(false)
+  const [dismissing, setDismissing] = useState(false)
+  const [dismissError, setDismissError] = useState('')
 
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
   const role = run.fork
@@ -158,6 +161,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
       : tt('subagentScopeWorktree')
   const statusWord = subagentRowLabel(row.state, '', rowLang(lang))
   const canRetry = model.terminal && RETRYABLE.has(model.outcomeKey) && !!currentSessionId && run.parentSessionId === currentSessionId && !run.fork && !run.brief
+  const canDismiss = run.status === 'error' && !isDismissed(run) && run.review !== 'pending' && run.review !== 'conflict'
   const brief = subagentBriefText(run)
   const shown = useFullTranscript(run)
   const turns = useMemo(() => subagentTranscriptTurns(shown, approvalLog), [shown, approvalLog])
@@ -180,6 +184,20 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
       await retrySubagent(run)
     } finally {
       setRetrying(false)
+    }
+  }
+
+  const dismiss = async (): Promise<void> => {
+    setDismissing(true)
+    setDismissError('')
+    try {
+      const result = await window.yan.subagents.dismiss(run.id)
+      if (result.ok) await useStore.getState().loadSubagents()
+      else setDismissError(result.error || t('sa.dismissFailed'))
+    } catch (failure) {
+      setDismissError(failure instanceof Error ? failure.message : t('sa.dismissFailed'))
+    } finally {
+      setDismissing(false)
     }
   }
 
@@ -219,6 +237,20 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
             {t('sa.retry')}
           </Button>
         ) : null}
+        {canDismiss ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 gap-1 px-2 text-xs"
+            icon={<Check size={12} aria-hidden />}
+            tooltip={t('sa.dismissHint')}
+            isPending={dismissing}
+            onPress={() => void dismiss()}
+            data-testid="v3-subagent-dismiss"
+          >
+            {t('sa.dismiss')}
+          </Button>
+        ) : null}
       </PaneTools>
       <div
         className="sa-pane-scroll"
@@ -248,6 +280,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
             </Notice>
           ) : null}
           {gone ? <Notice tone="info" compact data-testid="v3-subagent-gone">{tt('subagentGone')}</Notice> : null}
+          {dismissError ? <Notice tone="fail" compact data-testid="v3-subagent-dismiss-error">{dismissError}</Notice> : null}
         </div>
       </div>
       <footer className="sa-pane-foot" data-testid="v3-subagent-pane-foot">
