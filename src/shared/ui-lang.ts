@@ -33,6 +33,22 @@ export function singularizeOne(text: string): string {
   return text.replace(COUNTED_RE, (_match, noun: string) => `1 ${COUNTED_NOUNS[noun]}`)
 }
 
+const translated = new Map<string, string>()
+const TRANSLATED_MAX = 4000
+
 export function pick(zh: string, en: string): string {
-  return uiLang() === 'en-US' ? singularizeOne(en) : zh
+  if (uiLang() !== 'en-US') return zh
+  const text = singularizeOne(en)
+  if (text.length >= 6 && text !== zh) {
+    translated.delete(text)
+    translated.set(text, zh)
+    if (translated.size > TRANSLATED_MAX) translated.delete(translated.keys().next().value as string)
+  }
+  return text
+}
+
+export function toModelText(text: string): string {
+  let result = text
+  for (const [ui, zh] of [...translated].sort((a, b) => b[0].length - a[0].length)) if (result.includes(ui)) result = result.split(ui).join(zh)
+  return result
 }

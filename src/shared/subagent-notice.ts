@@ -1,4 +1,5 @@
 import type { SubagentRun } from './ipc'
+import { toModelText } from './ui-lang'
 import { subagentOutcome, type SubagentOutcomeKey } from './subagent-outcome'
 
 export const SUBAGENT_NOTICE_TAG = 'subagent-notification'
@@ -44,13 +45,14 @@ export function buildSubagentNotice(
   const lines = [`子代理 ${run.id}（${mode}）${headlineWord(outcome.key, status)}：${clip(run.followUp || run.task, HEADLINE_TASK_MAX)}`]
   if (run.followUp) lines.push(`原任务：${clip(run.task, HEADLINE_TASK_MAX)}`)
   if (run.model) lines.push(`模型：${run.model}`)
-  const summary = run.result?.summary || run.error
+  const error = run.error ? toModelText(run.error) : run.error
+  const summary = run.result?.summary || error
   if (summary) {
     const truncated = run.result?.summary ? run.result.summaryTruncated === true : false
     lines.push(`${run.result?.summaryFrom === 'error' || (!run.result?.summary && status === 'error') ? '错误' : '摘要'}：${keepLines(summary)}`)
     if (truncated) lines.push(`（摘要已截断，全文：yan subagent get --id ${run.id} --final）`)
   }
-  if (status === 'error' && run.error && run.result?.summaryFrom === 'last-message') lines.push(`原因：${clip(run.error, 200)}`)
+  if (status === 'error' && run.error && run.result?.summaryFrom === 'last-message') lines.push(`原因：${clip(error ?? '', 200)}`)
   if (outcome.partial) lines.push('这是到点收尾或被停止时的部分结论：关键事实先自己核对，缺的部分决定是重派、缩小范围还是自己补。')
   if (run.diff && run.diff.files > 0) {
     const review =
