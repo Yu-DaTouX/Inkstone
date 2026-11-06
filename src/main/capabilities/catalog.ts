@@ -87,6 +87,13 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     'yan browser --help'
   ),
   builtin(
+    'terminal',
+    '会话终端',
+    '查看本会话的终端、在里面运行命令并读取输出、交互输入与按键、开关你自己开的终端（用户在右侧面板实时可见）；写入按 bash 规则在宿主侧审批。用 `yan terminal --help` 查参数。',
+    'external-action',
+    'yan terminal --help'
+  ),
+  builtin(
     'operations.status',
     '操作状态查询',
     '传 --id 查某一次操作的完整结果（stdout 只有摘要，细节在这里），找不到会报错；不传 id 则列出最近若干次操作。',

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { fillMissingExports } from './lib/stub-exports.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const __EXTRA = {'Collapsible': 'export function Collapsible(p){ return p.children ?? null }', 'CollapsibleHeader': 'export function CollapsibleHeader(p){ return p.children ?? null }', 'CollapsiblePanel': 'export function CollapsiblePanel(p){ return p.children ?? null }', 'DiffStat': 'export function DiffStat(){ return null }', 'DialogFooter': 'export function DialogFooter(p){ return p.children ?? null }', 'FindBar': 'export function FindBar(){ return null }', 'ListRow': 'export function ListRow(p){ return p.children ?? null }', 'Spinner': 'export function Spinner(){ return null }', 'CollapsibleChevron': 'export function CollapsibleChevron(){ return null }', 'TermSpinner': 'export function TermSpinner(){ return null }', 'AsciiRule': 'export function AsciiRule(){ return null }'}
@@ -182,7 +183,7 @@ async function bundle(outdir, name, entrySource, stubMap, shims) {
           b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
             if (args.path === 'v3stub:virtua') return { contents: 'export function VList(){ return null }\nexport const Virtualizer = VList', loader: 'js' }
             const key = args.path.slice('v3stub:'.length)
-            return { contents: __patch(key, map.get(key) ?? 'export {}'), loader: 'js' }
+            return { contents: fillMissingExports(key, __patch(key, map.get(key) ?? 'export {}')), loader: 'js' }
           })
         }
       }
@@ -489,7 +490,7 @@ async function main() {
               })
               b.onLoad({ filter: /.*/, namespace: 'v3turn' }, (args) => {
                 const key = args.path.slice('v3turn:'.length)
-                return { contents: __patch(key, map.get(key) ?? 'export {}'), loader: 'js' }
+                return { contents: fillMissingExports(key, __patch(key, map.get(key) ?? 'export {}')), loader: 'js' }
               })
             }
           }

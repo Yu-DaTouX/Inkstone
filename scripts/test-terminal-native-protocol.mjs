@@ -11,7 +11,7 @@ import ts from 'typescript'
 const RUNTIME_ROOT = join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'resources/pi-runtime')
 const ENTRY = 'src/main/terminal-status.ts'
 
-const WANTED_FUNCS = ['isProgramStatusReply', 'truncateUtf8', 'formatProgramStatus']
+const WANTED_FUNCS = ['isProgramStatusReply', 'truncateUtf8', 'formatProgramStatus', 'replaceControlCharacters']
 const WANTED_VARS = ['PROGRAM_STATUS_QUERY', 'APP_PATTERN', 'CONTROL_CHARACTERS', 'MAX_MESSAGE_BYTES']
 const WANTED = [...WANTED_FUNCS, ...WANTED_VARS]
 

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { fillMissingExports } from './lib/stub-exports.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const __EXTRA = {'Collapsible': 'export function Collapsible(p){ return p.children ?? null }', 'CollapsibleHeader': 'export function CollapsibleHeader(p){ return p.children ?? null }', 'CollapsiblePanel': 'export function CollapsiblePanel(p){ return p.children ?? null }', 'DiffStat': 'export function DiffStat(){ return null }', 'DialogFooter': 'export function DialogFooter(p){ return p.children ?? null }', 'FindBar': 'export function FindBar(){ return null }', 'ListRow': 'export function ListRow(p){ return p.children ?? null }', 'Spinner': 'export function Spinner(){ return null }'}
@@ -127,7 +128,7 @@ function makeStubPlugin(rawMap) {
       })
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         const key = args.path.slice('v3stub:'.length)
-        return { contents: __patch(key, stubMap.get(key) ?? 'export {}'), loader: 'js' }
+        return { contents: fillMissingExports(key, __patch(key, stubMap.get(key) ?? 'export {}')), loader: 'js' }
       })
     }
   }
@@ -520,7 +521,7 @@ async function main() {
     const once = renderComponent(makeHookRuntime(), receipts[0].type, { approval: { ...receipt, choice: 'session', feedback: undefined } })
     ok(textOf(once).includes('本会话内允许') && !textOf(once).includes('先别删'), '会话内允许写出范围，不带反馈', textOf(once))
     const pending = renderComponent(makeHookRuntime(), node.el.type, { ...node.el.props, asking: true })
-    ok(byTypeName(pending, 'ApprovalReceipt').length === 0 && byTypeName(pending, 'ApprovalCard').length === 1, '仍在等待审批时显示审批卡而不是回执')
+    ok(byTypeName(pending, 'ApprovalReceipt').length === 0 && byTypeName(pending, 'AskPill').length === 1, '仍在等待审批时显示指向审批卡的提示而不是回执')
   }
 
   group('并行大量调用：不同类别连续也合成一组；独立工具断开分组；同路径相邻折成一行')

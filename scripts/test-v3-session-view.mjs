@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { fillMissingExports } from './lib/stub-exports.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const __EXTRA = {'Collapsible': 'export function Collapsible(p){ return p.children ?? null }', 'CollapsibleHeader': 'export function CollapsibleHeader(p){ return p.children ?? null }', 'CollapsiblePanel': 'export function CollapsiblePanel(p){ return p.children ?? null }', 'DiffStat': 'export function DiffStat(){ return null }', 'DialogFooter': 'export function DialogFooter(p){ return p.children ?? null }', 'FindBar': 'export function FindBar(){ return null }', 'ListRow': 'export function ListRow(p){ return p.children ?? null }', 'Spinner': 'export function Spinner(){ return null }', 'CollapsibleChevron': 'export function CollapsibleChevron(){ return null }', 'TermSpinner': 'export function TermSpinner(){ return null }', 'AsciiRule': 'export function AsciiRule(){ return null }', 'AsciiSpark': 'export function AsciiSpark(){ return null }', 'Skeleton': 'export function Skeleton(){ return null }'}
@@ -157,7 +158,7 @@ function makeStubPlugin(rawMap, extraResolve = {}) {
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         const key = args.path.slice('v3stub:'.length)
         if (virtual.has(key)) return { contents: virtual.get(key), loader: 'js' }
-        return { contents: __patch(key, stubMap.get(key) ?? 'export {}'), loader: 'js' }
+        return { contents: fillMissingExports(key, __patch(key, stubMap.get(key) ?? 'export {}')), loader: 'js' }
       })
     }
   }
@@ -220,6 +221,7 @@ async function buildAll(outdir) {
     outdir,
     'session',
     `export { SessionView } from '${posix(abs('src/renderer/src/features/session/SessionView.tsx'))}'
+export { AskDock } from '${posix(abs('src/renderer/src/features/session/AskDock.tsx'))}'
 export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'
 export { sessionViewIdentity, viewMatchesProjectedSession, approvalMatchesView } from '${posix(abs('src/renderer/src/features/session/view-state.ts'))}'
 `,
@@ -227,6 +229,9 @@ export { sessionViewIdentity, viewMatchesProjectedSession, approvalMatchesView }
       'src/renderer/src/features/session/TurnView.tsx': `export function TurnView(){ return null }\nTurnView.__stub='turnview'`,
       'src/renderer/src/features/session/ApprovalCard.tsx': `export function ApprovalCard(){ return null }\nApprovalCard.__stub='approval'`,
       'src/renderer/src/features/session/QuestionCard.tsx': `export function QuestionCard(){ return null }\nQuestionCard.__stub='question'`,
+      'src/renderer/src/features/session/BrowserHandoffCard.tsx': `export function BrowserHandoffCard(){ return null }
+BrowserHandoffCard.__stub='handoff'`,
+      'src/renderer/src/t3/components/chat/ComposerBanner.tsx': `export const ComposerBanner = { Root: function ComposerBannerRoot(p){ return p.children ?? null } }`,
       'src/renderer/src/features/session/MessageMenu.tsx': `export function MessageMenuHost(){ return null }`,
       'src/renderer/src/features/session/Icon.tsx': `export function Icon(){ return null }\nIcon.__stub='icon'`,
       'src/renderer/src/i18n/index.tsx': `export const currentLang = 'zh-CN'\nexport function useT(){ return (k)=>String(k) }\nexport function useI18n(){ return { t:(k)=>String(k) } }\nexport function translate(_l,k){ return String(k) }`,
@@ -410,7 +415,7 @@ async function main() {
 
   const { createTurnProjector } = logic
   const { sessionViewIdentity, viewMatchesProjectedSession, approvalMatchesView } = viewstate
-  const { SessionView, useStore } = sessionBundle
+  const { SessionView, AskDock, useStore } = sessionBundle
   const { TurnView, useStore: turnStore } = turnBundle
 
   group('view-state：peek 优先、逐字段回退，不冒认活动会话')
@@ -443,9 +448,13 @@ async function main() {
 
   const rt = makeHookRuntime()
   globalThis.__V3_HOOKS = rt
+  const dockTrees = new WeakMap()
+  const dockOf = (tree) => dockTrees.get(tree)
   const renderSession = (overrides) => {
     resetSessionStore(useStore, overrides)
-    return rt.render(SessionView, {})
+    const tree = rt.render(SessionView, {})
+    dockTrees.set(tree, rt.render(AskDock, {}))
+    return tree
   }
 
   group('A 流中看历史 B：B 不背 A 的等待 / 批准 / 提问')
@@ -464,8 +473,8 @@ async function main() {
     ok(turns.length === 1, 'B 的消息仍然显示出来', turns.length)
     ok(turns.every((el) => el.props.sessionId === 'sess-b'), 'TurnView 拿到的是 B 的视图身份，不是 A', turns.map((el) => el.props.sessionId))
     ok(byTypeName(tree, 'PendingRunNotice').length === 0, 'B 底部没有挂 A 的等待行（A 仍在跑）')
-    ok(byStub(tree, 'approval').length === 0, 'B 底部没有挂来源 A 的批准卡（热键随之不注册）')
-    ok(byStub(tree, 'question').length === 0, 'B 底部没有挂来源不明的提问卡')
+    ok(byStub(dockOf(tree) ?? [], 'approval').length === 0, 'B 底部没有挂来源 A 的批准卡（热键随之不注册）')
+    ok(byStub(dockOf(tree) ?? [], 'question').length === 0, 'B 底部没有挂来源不明的提问卡')
     ok(turns.every((el) => String(el.key).startsWith('B|')), '列表 key 带视图身份 B', turns.map((el) => el.key))
     ok(tree.props['data-view-key'] === 'B' && tree.props['data-view-active'] === '0', '根节点视图键为 B、标记为未激活', { key: tree.props['data-view-key'], active: tree.props['data-view-active'] })
   }
@@ -485,8 +494,8 @@ async function main() {
     const turns = byStub(tree, 'turnview')
     ok(turns.length === 1 && turns[0].props.sessionId === null, 'path-only 视图把 sessionId 传 null，不冒认 sess-a', turns.map((el) => el.props.sessionId))
     ok(byTypeName(tree, 'PendingRunNotice').length === 0, 'path-only 视图不显示 A 的等待')
-    ok(byStub(tree, 'approval').length === 0, 'path-only 视图不显示来源 A 的批准')
-    ok(byStub(tree, 'question').length === 0, 'path-only 视图不显示 A 的提问')
+    ok(byStub(dockOf(tree) ?? [], 'approval').length === 0, 'path-only 视图不显示来源 A 的批准')
+    ok(byStub(dockOf(tree) ?? [], 'question').length === 0, 'path-only 视图不显示 A 的提问')
     ok(tree.props['data-view-active'] === '0', 'path-only 视图不算已激活')
   }
 
@@ -517,8 +526,8 @@ async function main() {
     ok(back.props['data-view-key'] === aKey, '回到 A 视图键与之前一致（滚动记录可恢复）', back.props['data-view-key'])
     ok(back.props['data-view-active'] === '1', '回到 A 算已激活')
     ok(byTypeName(back, 'PendingRunNotice').length === 1, 'A 仍在跑：回到 A 时等待行重新出现')
-    ok(byStub(back, 'approval').length === 1, '回到 A：来源 A 的批准卡重新出现')
-    ok(byStub(back, 'question').length === 1, '回到 A：A 的提问卡重新出现')
+    ok(byStub(dockOf(back) ?? [], 'approval').length === 1, '回到 A：来源 A 的批准卡重新出现')
+    ok(byStub(dockOf(back) ?? [], 'question').length === 1, '回到 A：A 的提问卡重新出现')
 
     const keyA = byStub(onA, 'turnview')[0]?.key
     const keyB = byStub(onB, 'turnview')[0]?.key
@@ -555,8 +564,8 @@ async function main() {
       approvals: [approval({ id: 'ap-b', sessionId: 'sess-b' })],
       uiRequests: [{ id: 'q-a', method: 'input' }]
     })
-    ok(byStub(tree, 'approval').length === 1, '批准来源是 B：按正式数据在 B 视图显示')
-    ok(byStub(tree, 'question').length === 0, '提问没有来源身份：仍不冒认到 B 视图')
+    ok(byStub(dockOf(tree) ?? [], 'approval').length === 1, '批准来源是 B：按正式数据在 B 视图显示')
+    ok(byStub(dockOf(tree) ?? [], 'question').length === 0, '提问没有来源身份：仍不冒认到 B 视图')
   }
 
   const project = createTurnProjector()

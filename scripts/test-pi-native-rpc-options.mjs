@@ -140,7 +140,7 @@ try {
   {
     const { agent, rpc } = fresh()
     const res = await agent.sessionTree()
-    deepEqual(res, { ok: true, tree: [{ entry: { id: 'e1' }, children: [] }], leafId: 'e1' }, '成功：返回 tree + leafId')
+    deepEqual(res, { ok: true, tree: [{ entry: { type: 'unknown', id: 'e1', parentId: null }, parentId: null }], leafId: 'e1' }, '成功：返回 tree + leafId')
     const call = lastCall(rpc, 'get_tree')
     check(call !== undefined && Object.keys(call.payload).length === 0, 'get_tree 不带参数')
   }
@@ -257,7 +257,7 @@ try {
     agent.agentRunning = true
     agent.state = { ...(agent.state ?? {}), isStreaming: true, isAgentRunning: true }
     deepEqual(await agent.sessionEntries(), { ok: true, entries: [{ id: 'e1', type: 'message' }], leafId: 'e1' }, '运行中：sessionEntries 仍可读')
-    deepEqual(await agent.sessionTree(), { ok: true, tree: [{ entry: { id: 'e1' }, children: [] }], leafId: 'e1' }, '运行中：sessionTree 仍可读')
+    deepEqual(await agent.sessionTree(), { ok: true, tree: [{ entry: { type: 'unknown', id: 'e1', parentId: null }, parentId: null }], leafId: 'e1' }, '运行中：sessionTree 仍可读')
     deepEqual(await agent.exportHtml(), { ok: true, path: '/tmp/session.html' }, '运行中：exportHtml 仍可用')
     check(rpc.calls.some((call) => call.type === 'get_entries'), '运行中确实发出了 get_entries')
   }

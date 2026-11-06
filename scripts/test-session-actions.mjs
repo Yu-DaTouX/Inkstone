@@ -9,7 +9,7 @@ process.stdout.write(child.stdout ?? '')
 process.stderr.write(child.stderr ?? '')
 assert.equal(child.error, undefined)
 assert.equal(child.status, 0)
-assert.match(child.stdout, /结果：\d+ 通过 \/ 0 失败/)
+assert.match(child.stdout, /结果：[1-9]\d* 通过 \/ 0 失败/)
 
 function find(tree, predicate) {
   let found

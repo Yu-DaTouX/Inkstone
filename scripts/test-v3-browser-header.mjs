@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { build } from 'esbuild'
+import { fillMissingExports } from './lib/stub-exports.mjs'
 
 const ui = `
 import React from 'react'
@@ -81,7 +82,7 @@ try {
             if (stubs.has(path)) return { path, namespace: 'fixture' }
           }
         })
-        builder.onLoad({ filter: /.*/, namespace: 'fixture' }, (args) => ({ contents: stubs.get(args.path), loader: 'tsx', resolveDir: process.cwd() }))
+        builder.onLoad({ filter: /.*/, namespace: 'fixture' }, (args) => ({ contents: fillMissingExports(args.path, stubs.get(args.path)), loader: 'tsx', resolveDir: process.cwd() }))
       }
     }]
   })
