@@ -98,6 +98,14 @@ export interface SubagentServiceDeps {
   onEvent?(runId: string, evt: Record<string, unknown>, run: SubagentRun): void
 }
 
+export function parseIsolation(value: unknown): 'worktree' | undefined {
+  if (value === undefined || value === null || value === false || value === '') return undefined
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (text === 'worktree') return 'worktree'
+  if (text === 'none' || text === 'shared' || text === 'cwd' || text === 'shared-cwd') return undefined
+  throw new CapabilityCommandError('subagent_isolation_invalid', `isolation 只能是 worktree（需要 Git）；不要隔离时省略这个参数。收到：${typeof value === 'string' ? value : JSON.stringify(value)}`)
+}
+
 export class SubagentService {
   private controller: SubagentController | null = null
   private loading?: Promise<SubagentController>
@@ -203,14 +211,15 @@ export class SubagentService {
       if (params.fork === true && thinkingLevel) {
         throw new CapabilityCommandError('subagent_fork_thinking', 'fork 子代理沿用当前会话的思考档，不能再传 --thinking；需要别的档位时改派普通子代理')
       }
-      if (params.fork === true) return this.startFork(ctrl, task, requested, readOnly, params.isolation, briefInput, context)
+      const isolation = parseIsolation(params.isolation)
+      if (params.fork === true) return this.startFork(ctrl, task, requested, readOnly, isolation, briefInput, context)
       let model = requested
       if (this.deps.resolveModelLabel) {
         const resolved = await this.deps.resolveModelLabel(requested ?? '', context)
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
-      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, thinkingLevel ? { ...context, thinkingLevel } : context)
+      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, thinkingLevel ? { ...context, thinkingLevel } : context)
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(
           'subagent_start_failed',
