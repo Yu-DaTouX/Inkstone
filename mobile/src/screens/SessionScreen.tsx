@@ -17,6 +17,7 @@ import { mergeRecentHistory } from '../historyCache'
 import { useBottomInset } from '../insets'
 import { pickImages, type PhotoDraft } from '../device'
 import { ModelPicker } from '../components/ModelPicker'
+import { RenameSheet } from '../components/RenameSheet'
 import type { RemoteModel, RemoteSessionChanges, RemoteSessionStats } from '../../../src/shared/remote-protocol'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 
@@ -109,6 +110,7 @@ export function SessionScreen({
   const userScrolled = useRef(false)
   const topArmed = useRef(true)
   const [modelPicker, setModelPicker] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   const [selectedModel, setSelectedModel] = useState<RemoteModel | null>(null)
   const [picking, setPicking] = useState(false)
   const sendAttempt = useRef<{ text: string; key: string } | null>(null)
@@ -328,7 +330,8 @@ export function SessionScreen({
     <KeyboardAvoidingView style={[styles.root, { backgroundColor: p.bg0 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={tabletop ? { height: tabletop.top } : { flex: 1 }}>
       <Header
-        title={title || '会话'}
+        title={sessions.find((entry) => entry.id === sessionId)?.title || title || '会话'}
+        onTitleLongPress={capabilityAllowed(info, 'rename') ? () => setRenaming(true) : undefined}
         crumb={projects.find((project) => project.id === sessions.find((s) => s.id === sessionId)?.projectId)?.name || cwdName}
         left={onToggleSidebar ? <IconButton name="sidebar-left" selected={sidebarVisible} label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : <IconButton name="back" label="返回会话列表" onPress={onBack} />}
         right={onOpenDetail ? <IconButton name="sidebar-right" selected={detailOpen} label={detailOpen ? '收起会话详情' : '打开会话详情'} onPress={onOpenDetail} /> : undefined}
@@ -431,6 +434,7 @@ export function SessionScreen({
         {voiceError ? <Text accessibilityLiveRegion="polite" style={[styles.voiceError, { color: p.err }]}>{voiceError}</Text> : null}
       </View>
       </View>
+      <RenameSheet sessionId={sessionId} initial={sessions.find((entry) => entry.id === sessionId)?.title || title} visible={renaming} onClose={() => setRenaming(false)} />
       <ModelPicker sessionId={sessionId} visible={modelPicker} onClose={() => setModelPicker(false)} onChanged={setSelectedModel} />
     </KeyboardAvoidingView>
   )
