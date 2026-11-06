@@ -17,7 +17,7 @@ function Choice({ label, selected, disabled, onPress }: { label: string; selecte
   </Pressable>
 }
 
-export function ModelPicker({ sessionId, visible, onClose, onChanged }: { sessionId: string; visible: boolean; onClose(): void; onChanged(model: RemoteModel): void }) {
+export function ModelPicker({ sessionId, visible, running = false, onClose, onChanged }: { sessionId: string; visible: boolean; running?: boolean; onClose(): void; onChanged(model: RemoteModel): void }) {
   const p = usePalette()
   const { height } = useWindowDimensions()
   const { client, refresh, info } = useRemote()
@@ -28,12 +28,13 @@ export function ModelPicker({ sessionId, visible, onClose, onChanged }: { sessio
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     if (!visible) return
     let alive = true
-    setLoading(true); setError(null); setQuery(''); setProvider(null)
-    void client.models(sessionId).then((result) => { if (alive) { setModels(result.models); setCurrent(result.current); setThinking(result.thinking ?? null) } })
+    setLoading(true); setError(null); setQuery(''); setProvider(null); setPending(false)
+    void client.models(sessionId).then((result) => { if (alive) { setModels(result.models); setCurrent(result.current); setThinking(result.thinking ?? null); setPending(!!result.pending) } })
       .catch((err: Error) => { if (alive) setError(err.message) }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [client, sessionId, visible])
@@ -44,14 +45,14 @@ export function ModelPicker({ sessionId, visible, onClose, onChanged }: { sessio
     if (busy) return
     if (current?.id === model.id && current.provider === model.provider) { onClose(); return }
     setBusy(true); setError(null)
-    try { const changed = await client.setModel(sessionId, model); onChanged(changed); onClose(); void refresh() }
+    try { const changed = await client.setModel(sessionId, model); onChanged(changed); void refresh(); if (running) { setCurrent(changed); setPending(true) } else onClose() }
     catch (err) { setError(err instanceof Error ? err.message : '切换失败') }
     finally { setBusy(false) }
   }
   const chooseThinking = async (level: string) => {
     if (busy || !thinking || thinking.level === level) return
     setBusy(true); setError(null)
-    try { await client.setThinking(sessionId, level); setThinking({ ...thinking, level }); void refresh() }
+    try { await client.setThinking(sessionId, level); setThinking({ ...thinking, level }); if (running) setPending(true); void refresh() }
     catch (err) { setError(err instanceof Error ? err.message : '切换失败') }
     finally { setBusy(false) }
   }
@@ -62,6 +63,7 @@ export function ModelPicker({ sessionId, visible, onClose, onChanged }: { sessio
       <SafeAreaView edges={['bottom', 'left', 'right']} style={{ width: '100%', maxWidth: 640, height: height * 0.78, backgroundColor: p.bg1, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: space[3] }}>
           <Text accessibilityRole="header" style={{ flex: 1, fontFamily: mono, fontSize: font.base, color: p.fgMute }}>模型</Text>
+          {pending || running ? <Text style={{ fontSize: font.xs, color: pending ? p.accent : p.fgMute, marginRight: space[2] }}>{pending ? '下一条消息生效' : '运行中，下一条消息生效'}</Text> : null}
           {busy ? <RunDot label="正在切换" /> : <IconButton name="close" label="关闭模型选择" onPress={onClose} />}
         </View>
         {canThinking ? <View style={{ paddingHorizontal: space[4], flexDirection: 'row', alignItems: 'center' }}>

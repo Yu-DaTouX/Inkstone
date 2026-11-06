@@ -175,6 +175,7 @@ export default function App() {
     if (route.name === 'session') setRoute({ name: 'artifact', sessionId: route.sessionId, title: route.title, artifact })
   }, [route])
 
+  const sessionRemoved = useCallback(() => { setDetailOpen(false); setDetail(null); setRoute({ name: 'home' }) }, [])
   const paired = !!connection && !pairingPrefill
   const multi = mode === 'split' || mode === 'book' || mode === 'triple'
   const detailShown = !!sessionId && route.name === 'session' && detailOpen && (mode === 'split' || mode === 'book')
@@ -208,7 +209,7 @@ export default function App() {
     detailVisible={detailOpen || mode === 'triple'}
     banner={mode === 'single' && detailOpen ? <View style={{ flex: 1 }}>
       <View style={[styles.banner, { backgroundColor: p.surface3, borderColor: p.borderSoft }]}>
-        <DetailPane detail={detail?.sessionId === route.sessionId ? detail : null} onOpenArtifact={(artifact) => { setDetailOpen(false); openArtifact(artifact) }} background={p.surface3} inset={false} />
+        <DetailPane detail={detail?.sessionId === route.sessionId ? detail : null} onSessionRemoved={sessionRemoved} onOpenArtifact={(artifact) => { setDetailOpen(false); openArtifact(artifact) }} background={p.surface3} inset={false} />
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel="收起会话详情" onPress={() => setDetailOpen(false)} style={[styles.scrim, { backgroundColor: p.press }]} />
     </View> : undefined}
@@ -253,7 +254,7 @@ export default function App() {
 
   const detailPane = (onClose?: () => void) => <View style={{ flex: 1, backgroundColor: p.bg1 }}>
     <Header title="会话详情" background={p.bg1} right={onClose ? <IconButton name="close" label="收起会话详情" onPress={onClose} /> : undefined} />
-    <DetailPane detail={detail?.sessionId === sessionId ? detail : null} onOpenArtifact={openArtifact} />
+    <DetailPane detail={detail?.sessionId === sessionId ? detail : null} onOpenArtifact={openArtifact} onSessionRemoved={sessionRemoved} />
   </View>
 
   const remoteBody = () => {
