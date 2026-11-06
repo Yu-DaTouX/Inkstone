@@ -482,7 +482,7 @@ async function main() {
     const notice = collect(tree, (el) => el.props?.['tone'] === 'fail' && textOf(el).includes('没有活动会话'))
     ok(notice.length === 1, '预览失败：有可见的状态提示', notice.length)
     const noticeSrc = await readFile(join(ROOT, 'src/renderer/src/ui/Notice.tsx'), 'utf8')
-    ok(noticeSrc.includes("tone === 'fail' ? 'alert' : 'status'"), '失败提示经 Notice 原语给出 alert 语态')
+    ok(noticeSrc.includes("role ?? (tone === 'fail' ? 'alert'"), '失败提示经 Notice 原语给出 alert 语态')
     pending.preview = null
   }
 
