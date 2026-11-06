@@ -3576,41 +3576,6 @@ function createWindow(): void {
       }, delay)
     })
   }
-
-  const shot = process.env.YAN_SHOT
-  if (shot) {
-    const delay = Number(process.env.YAN_SHOT_DELAY ?? 6000)
-    const shotW = Number(process.env.YAN_SHOT_W ?? 0)
-    const shotH = Number(process.env.YAN_SHOT_H ?? 0)
-    if (shotW && shotH) win.setContentSize(shotW, shotH)
-    win.once('ready-to-show', () => {
-      setTimeout(() => {
-        void (async () => {
-          try {
-            const setup = process.env.YAN_SHOT_SETUP
-            if (setup) {
-              const { readFile } = await import('node:fs/promises')
-              const src = await readFile(setup, 'utf8')
-              await win!.webContents.executeJavaScript(src, true)
-              await new Promise((r) => setTimeout(r, 2500))
-            }
-
-            const img = await win!.webContents.capturePage()
-            const { writeFile, mkdir } = await import('node:fs/promises')
-            const { dirname, resolve } = await import('node:path')
-            const out = resolve(shot)
-            await mkdir(dirname(out), { recursive: true })
-            await writeFile(out, img.toPNG())
-            console.log(`[shot] ${out}`)
-          } catch (e) {
-            console.error('[shot] 失败', e)
-          }
-          await shutdown()
-          app.exit(0)
-        })()
-      }, delay)
-    })
-  }
 }
 
 const sessionHost: SessionHost = {
@@ -3839,27 +3804,13 @@ app.whenReady().then(async () => {
     migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error)),
     restorePreviousSession()
   ])
-  const [started] = await Promise.all([
+  await Promise.all([
     startAgent(restore ? { sessionFile: restore.sessionFile } : undefined),
     startRemoteServer()
   ])
 
   const initialControl = decodeControlCommand(process.argv)
   if (initialControl) void dispatchControlCommand(initialControl)
-
-  const prompt = process.env.YAN_PROMPT
-  if (prompt && started.ok) {
-    let fired = false
-    const fire = (): void => {
-      if (fired) return
-      fired = true
-      void ac()?.send(prompt).then((r) => {
-        if (!r.ok) console.error('[yan] 自动发送失败：', r.error)
-      })
-    }
-    win?.webContents.once('did-finish-load', () => setTimeout(fire, 600))
-    setTimeout(fire, 3000)
-  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
