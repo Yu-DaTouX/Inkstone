@@ -1,4 +1,4 @@
-interface SessionViewIdentity {
+export interface SessionViewIdentity {
   sessionId: string | null
   sessionFile: string | null
   key: string
