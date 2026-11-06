@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useContext, useLayoutEffect, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
+import { Fragment, useCallback, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
 import { CompactionMarker } from './CompactionMarker'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
@@ -186,9 +186,27 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
     </div>
   )
 
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const liveHeightRef = useRef(0)
+  const wasLiveRef = useRef(live)
+  const [leave, setLeave] = useState(0)
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    if (live) {
+      liveHeightRef.current = root.getBoundingClientRect().height
+      wasLiveRef.current = true
+      return
+    }
+    if (!wasLiveRef.current) return
+    wasLiveRef.current = false
+    const gap = parseFloat(getComputedStyle(root).rowGap) || 0
+    const delta = liveHeightRef.current - root.getBoundingClientRect().height - gap
+    if (delta > 2) setLeave(delta)
+  })
   return (
     <>
-    <Collapsible className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={open} onExpandedChange={setManual}>
+    <Collapsible ref={rootRef} className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={open} onExpandedChange={setManual}>
       {headless ? null : (
         <CollapsibleHeader
           className="v3-process-head"
@@ -211,6 +229,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
         </CollapsibleHeader>
       )}
       {live ? body : <CollapsiblePanel animated className="v3-step-panel">{open ? body : null}</CollapsiblePanel>}
+      {leave > 0 && !live ? <div className="v3-process-leave" aria-hidden style={{ height: leave }} onAnimationEnd={() => setLeave(0)} /> : null}
       {compactionAfter && !open && !stage ? <CompactionMarker /> : null}
     </Collapsible>
     {foldedQuestions.length ? (

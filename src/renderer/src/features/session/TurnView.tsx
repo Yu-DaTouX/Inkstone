@@ -50,6 +50,23 @@ import { splitDecision, type DecisionOutcome } from './turn-outcome'
 const COMPACTION_AT_END = '\u0000end'
 const NO_RUN_MESSAGES: UIMessage[] = []
 
+const REPLY_APPEAR_MS = 160
+
+function useAppearDelay(ids: readonly string[], waiting: boolean, delayMs: number): (id: string) => boolean {
+  const [ready, setReady] = useState<ReadonlySet<string>>(new Set())
+  const key = ids.join('|')
+  useEffect(() => {
+    if (!waiting) {
+      setReady((current) => (current.size ? new Set() : current))
+      return undefined
+    }
+    if (ids.every((id) => ready.has(id))) return undefined
+    const timer = window.setTimeout(() => setReady(new Set(ids)), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [key, waiting, delayMs])
+  return (id) => !waiting || ready.has(id)
+}
+
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, tail, answer, outcome = null }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
@@ -280,6 +297,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
   const commentary = promoted.length ? [...turn.commentary, ...promoted] : turn.commentary
   const liveImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
+  const replyReady = useAppearDelay(sourceTurn.segments.filter((segment) => segment.response).map((segment) => segment.id), !!streaming && (turn.tools.length > 0 || !!turn.thinking), REPLY_APPEAR_MS)
   const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error
   if (!hasBody && !streaming) return null
   const flow = flowSegments(sourceTurn, commentary)
@@ -308,7 +326,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   
           {split ? (
             <>
-              {split.leadReplies.map((segment) => (
+              {split.leadReplies.filter((segment) => replyReady(segment.id)).map((segment) => (
                 <div key={segment.id} className="v3-seg" data-testid="v3-seg">
                   <div className="v3-para">
                     <Markdown text={segment.response?.text ?? ''} sourceCwd={segment.response?.sourceCwd} sessionId={sessionId} messageId={segment.response?.id ?? segment.id} />
@@ -334,14 +352,14 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   approvals={processApprovals}
                 />
               ) : null}
-              {split.earlierReplies.map((segment) => (
+              {split.earlierReplies.filter((segment) => replyReady(segment.id)).map((segment) => (
                 <div key={segment.id} className="v3-seg" data-testid="v3-seg">
                   <div className="v3-para">
                     <Markdown text={segment.response?.text ?? ''} sourceCwd={segment.response?.sourceCwd} sessionId={sessionId} messageId={segment.response?.id ?? segment.id} />
                   </div>
                 </div>
               ))}
-              {split.reply ? (
+              {split.reply && replyReady(split.reply.id) ? (
                 <div className="v3-seg" data-testid="v3-seg">
                   {decision?.body !== '' ? (
                     <div className="v3-para">
@@ -365,7 +383,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                       </div>
                     ) : null}
                     <ToolSteps tools={seg.tools} approvalIds={approvalIds} glowId={glowId} />
-                    {seg.response ? (
+                    {seg.response && replyReady(seg.id) ? (
                       <div className="v3-para">
                         <Markdown text={seg.response.text} sourceCwd={seg.response.sourceCwd} live={!!streaming && seg.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={seg.response.id} />
                       </div>
