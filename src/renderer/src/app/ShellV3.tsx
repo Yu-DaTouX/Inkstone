@@ -51,6 +51,7 @@ import { filesClaimsQuickOpen } from '../features/files/FilesPane'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
 import { useChatFilePreview } from '../features/preview/use-chat-file-preview'
 import { useLiveHtmlFollow } from '../features/preview/live-html'
+import { prefetchChanges } from '../features/changes/ChangesPane'
 import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-branch'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
@@ -381,6 +382,12 @@ export default function ShellV3(): ReactElement {
   const activePaneKind = panelOpen ? panelEntry.surfaces.find((item) => item.id === panelEntry.active)?.kind ?? null : null
   const activePane = activePaneKind === 'file' ? 'files' : activePaneKind
   const changesDirty = useWorkspaceHasChanges(owner.cwd || null, route.name === 'chat')
+  useEffect(() => {
+    const cwd = owner.cwd
+    if (!changesDirty || !cwd || route.name !== 'chat') return undefined
+    const idle = window.requestIdleCallback(() => prefetchChanges(cwd), { timeout: 2500 })
+    return () => window.cancelIdleCallback(idle)
+  }, [changesDirty, owner.cwd, route.name])
   const terminalRunning = useTerminalRunning(owner.key || null, route.name === 'chat')
 
   const openWorkspaceTab = useCallback((tab: WorkbenchTabId | PanelToolKind): Promise<boolean> => {

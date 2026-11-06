@@ -2,7 +2,7 @@ import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
 import { ChevronDown, CloudDownload, CloudUpload, Eye, FlaskConical, GitBranch, List, RefreshCw } from 'lucide-react'
 import type { GitActionExpected } from '../../../../shared/git-actions'
-import type { GitChangePatch, GitStatusEntry } from '../../../../shared/git'
+import type { GitChangePatch, GitChangesScope, GitStatusEntry } from '../../../../shared/git'
 import {
   Button,
   ConfirmDialog,
@@ -198,6 +198,85 @@ type ListOutcome =
 
 const SCOPE_KINDS: readonly ChangesScopeKind[] = ['working', 'branch', 'commit']
 
+interface ChangesSnapshotEntry {
+  stateRes: GitStateView
+  listRes: ListOutcome
+  at?: number
+}
+
+const SNAPSHOT_CACHE_MAX = 12
+const PREFETCH_FRESH_MS = 30_000
+const snapshotCache = new Map<string, ChangesSnapshotEntry>()
+
+function snapshotCacheKey(cwd: string, kind: string): string {
+  return `${cwd}|${kind}`
+}
+
+function rememberSnapshot(key: string, entry: ChangesSnapshotEntry): void {
+  if (!entry.stateRes.repo || !entry.listRes.ok) return
+  snapshotCache.delete(key)
+  snapshotCache.set(key, { ...entry, at: Date.now() })
+  while (snapshotCache.size > SNAPSHOT_CACHE_MAX) {
+    const oldest = snapshotCache.keys().next().value
+    if (oldest === undefined) break
+    snapshotCache.delete(oldest)
+  }
+}
+
+async function fetchSnapshot(source: ChangesGitSource, cwd: string, request: GitChangesScope | null): Promise<ChangesSnapshotEntry> {
+  const listPromise: Promise<ListOutcome> = (async (): Promise<ListOutcome> => {
+    try {
+      if (source.changes) {
+        if (!request) return { ok: true, items: [], head: null, meta: EMPTY_META, patches: {} }
+        const snapshot = await source.changes(cwd, { scope: request, patches: true })
+        return {
+          ok: true,
+          items: mergeItems(snapshot.files, []),
+          truncated: snapshot.truncated === true,
+          head: snapshot.head,
+          meta: {
+            baseRef: snapshot.baseRef,
+            baseSha: snapshot.baseSha,
+            targetSha: snapshot.targetSha,
+            added: snapshot.added,
+            removed: snapshot.removed,
+            pathScope: snapshot.pathScope ?? null
+          },
+          patches: snapshot.patches
+        }
+      }
+      if (source.entries) {
+        const entries = await source.entries(cwd)
+        return { ok: true, items: mergeItems(entries, []), head: null, meta: EMPTY_META, patches: {} }
+      }
+      const untracked = await source.untracked(cwd).catch(() => [] as string[])
+      return { ok: true, items: mergeItems([], untracked), head: null, meta: EMPTY_META, patches: {} }
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })()
+  const [stateRes, listRes] = await Promise.all([
+    source.state(cwd).catch((e: unknown): GitStateView => ({ repo: null, error: e instanceof Error ? e.message : String(e) })),
+    listPromise
+  ])
+  return { stateRes, listRes }
+}
+
+const prefetching = new Set<string>()
+
+export function prefetchChanges(cwd: string): void {
+  if (!cwd || !bridge()) return
+  const key = snapshotCacheKey(cwd, 'working')
+  if (prefetching.has(key)) return
+  const known = snapshotCache.get(key)
+  if (known?.at && Date.now() - known.at < PREFETCH_FRESH_MS) return
+  prefetching.add(key)
+  void fetchSnapshot(defaultGitSource(), cwd, { kind: 'working' })
+    .then((entry) => rememberSnapshot(key, entry))
+    .catch(() => undefined)
+    .finally(() => prefetching.delete(key))
+}
+
 function firstTextDiffPath(items: readonly ChangeItem[], patches: Record<string, GitChangePatch>, hideTests: boolean): string | null {
   let fallback: string | null = null
   for (const item of items) {
@@ -289,76 +368,52 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   useEffect(() => {
     const seq = ++seqRef.current
     let alive = true
-    setLoading(true)
-    setError('')
-    setListError('')
-    const listPromise: Promise<ListOutcome> = (async (): Promise<ListOutcome> => {
-      try {
-        if (source.changes) {
-          if (!request) return { ok: true, items: [], head: null, meta: EMPTY_META, patches: {} }
-          const snapshot = await source.changes(cwd, { scope: request, patches: true })
-          return {
-            ok: true,
-            items: mergeItems(snapshot.files, []),
-            truncated: snapshot.truncated === true,
-            head: snapshot.head,
-            meta: {
-              baseRef: snapshot.baseRef,
-              baseSha: snapshot.baseSha,
-              targetSha: snapshot.targetSha,
-              added: snapshot.added,
-              removed: snapshot.removed,
-              pathScope: snapshot.pathScope ?? null
-            },
-            patches: snapshot.patches
-          }
-        }
-        if (source.entries) {
-          const entries = await source.entries(cwd)
-          return { ok: true, items: mergeItems(entries, []), head: null, meta: EMPTY_META, patches: {} }
-        }
-        const untracked = await source.untracked(cwd).catch(() => [] as string[])
-        return { ok: true, items: mergeItems([], untracked), head: null, meta: EMPTY_META, patches: {} }
-      } catch (e: unknown) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) }
-      }
-    })()
-    void Promise.all([
-      source.state(cwd).catch((e: unknown): GitStateView => ({ repo: null, error: e instanceof Error ? e.message : String(e) })),
-      listPromise
-    ])
-      .then(([stateRes, listRes]) => {
-        if (!alive || seq !== seqRef.current) return
-        setRepo(stateRes.repo)
-        setExpected(stateRes.expected)
-        setError(stateRes.error ?? '')
-        if (listRes.ok) {
-          setListError('')
-          setItems(listRes.items)
-          setTruncated(listRes.truncated === true)
-          setPatches(listRes.patches)
-          setMeta(listRes.meta)
-          if (initRef.current !== initKey) {
-            initRef.current = initKey
-            const width = paneWidthRef.current
-            unsizedInitRef.current = width <= 0
-            setExpanded(
-              isLargeDiff(listRes.items) || isCompactPane(width)
-                ? onlyFirst(firstTextDiffPath(listRes.items, listRes.patches, hideTestsRef.current))
-                : new Set(listRes.items.map((item) => item.path))
-            )
-            setCollapsedDirs(new Set())
-            setBinaryOpen(false)
-            setActivePath(null)
-          } else {
-            setExpanded((prev) => new Set(listRes.items.filter((item) => prev.has(item.path)).map((item) => item.path)))
-          }
-          if (listRes.head) setHeadSha(listRes.head)
+    const cacheKey = gitSource ? null : snapshotCacheKey(cwd, scopeKey({ kind: scopeKind, sha: scopeSha }))
+    const apply = (stateRes: GitStateView, listRes: ListOutcome): void => {
+      setRepo(stateRes.repo)
+      setExpected(stateRes.expected)
+      setError(stateRes.error ?? '')
+      if (listRes.ok) {
+        setListError('')
+        setItems(listRes.items)
+        setTruncated(listRes.truncated === true)
+        setPatches(listRes.patches)
+        setMeta(listRes.meta)
+        if (initRef.current !== initKey) {
+          initRef.current = initKey
+          const width = paneWidthRef.current
+          unsizedInitRef.current = width <= 0
+          setExpanded(
+            isLargeDiff(listRes.items) || isCompactPane(width)
+              ? onlyFirst(firstTextDiffPath(listRes.items, listRes.patches, hideTestsRef.current))
+              : new Set(listRes.items.map((item) => item.path))
+          )
+          setCollapsedDirs(new Set())
+          setBinaryOpen(false)
+          setActivePath(null)
         } else {
-          setListError(listRes.error)
-          setItems([])
-          setPatches({})
+          setExpanded((prev) => new Set(listRes.items.filter((item) => prev.has(item.path)).map((item) => item.path)))
         }
+        if (listRes.head) setHeadSha(listRes.head)
+      } else {
+        setListError(listRes.error)
+        setItems([])
+        setPatches({})
+      }
+    }
+    const remembered = cacheKey ? snapshotCache.get(cacheKey) : undefined
+    if (remembered && initRef.current !== initKey) {
+      apply(remembered.stateRes, remembered.listRes)
+    } else {
+      setLoading(true)
+      setError('')
+      setListError('')
+    }
+    void fetchSnapshot(source, cwd, request)
+      .then((entry) => {
+        if (!alive || seq !== seqRef.current) return
+        if (cacheKey) rememberSnapshot(cacheKey, entry)
+        apply(entry.stateRes, entry.listRes)
       })
       .finally(() => {
         if (alive && seq === seqRef.current) setLoading(false)
