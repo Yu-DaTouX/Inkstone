@@ -124,6 +124,15 @@
     flex: none;
   }
 
+  .v3-split-cycle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    color: var(--fg3);
+    font-size: var(--t-caption);
+  }
+
   .v3-split-title {
     flex: 1 1 auto;
     min-width: 0;

@@ -42,7 +42,7 @@
     padding-inline-end: 0;
   }
   .rp-column:not([data-focused]) [data-right-panel-tab-list] {
-    opacity: 0.72;
+    opacity: 0.86;
   }
   .rp-columns[data-columns='1'] .rp-column [data-right-panel-tab-list] {
     opacity: 1;

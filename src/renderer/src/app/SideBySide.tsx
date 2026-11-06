@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { GripVertical } from 'lucide-react'
+import { ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { sameSplitSession, splitColumns, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
@@ -9,7 +9,7 @@ import { ChatMain } from './ChatMain'
 import { SessionView } from '../features/session/SessionView'
 import { ComposerV3 } from '../features/composer/ComposerV3'
 import { collapsedPanes } from './SideBySideLayout'
-import { closeSplitPane, focusSplitSession } from '../features/split/split-actions'
+import { closeSplitPane, focusSplitSession, runSplitCommand } from '../features/split/split-actions'
 import { startPaneDrag } from '../features/split/pane-drag'
 import { answerSplitSession, usePeerAsk } from '../features/split/peer-ask'
 import { rowBoundsFor, rowSplitFor } from '../features/split/split-drop-model'
@@ -102,6 +102,7 @@ export const SideBySide = memo(function SideBySide({ split, narrow, maxColumns }
         movable={movable}
         live={live}
         onClose={() => closeSplitPane(index)}
+        cycle={shown.length < split.tiles.length ? { at: split.live + 1, total: split.tiles.length } : null}
       >
         <PaneBody target={target} live={live} />
       </PaneFrame>
@@ -158,6 +159,7 @@ function PaneFrame({
   movable,
   live,
   onClose,
+  cycle,
   children
 }: {
   target: SplitSessionRef
@@ -169,6 +171,7 @@ function PaneFrame({
   movable: boolean
   live: boolean
   onClose: () => void
+  cycle: { at: number; total: number } | null
   children: ReactNode
 }): JSX.Element {
   const t = useT()
@@ -225,6 +228,13 @@ function PaneFrame({
           </IconButton>
         ) : null}
         <span className="v3-split-title" title={title}>{title || t('split.untitled')}</span>
+        {cycle ? (
+          <span className="v3-split-cycle" data-tile-action data-testid="v3-split-cycle">
+            <IconButton size="sm" aria-label={text.prevPane} title={text.prevPane} onPress={() => runSplitCommand('focus-previous')}><ChevronLeft size={14} /></IconButton>
+            <span className="ui-num v3-split-cycle-count">{cycle.at}/{cycle.total}</span>
+            <IconButton size="sm" aria-label={text.nextPane} title={text.nextPane} onPress={() => runSplitCommand('focus-next')}><ChevronRight size={14} /></IconButton>
+          </span>
+        ) : null}
         {project ? <span className="v3-split-proj" title={project}>{project}</span> : null}
         <IconButton
           size="sm"

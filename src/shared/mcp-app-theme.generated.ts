@@ -11,7 +11,7 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--color-background-warning": "light-dark(#FDF1D6, rgba(250,178,25,.12))",
   "--color-text-primary": "light-dark(#20211F, #F5F5F5)",
   "--color-text-secondary": "light-dark(#555750, #A3A3A3)",
-  "--color-text-tertiary": "light-dark(#6B6A64, #8F8F8F)",
+  "--color-text-tertiary": "light-dark(#615F5A, #9A9A9A)",
   "--color-text-inverse": "light-dark(#FFFFFF, #000000)",
   "--color-text-info": "light-dark(#184F95, #6DA7EC)",
   "--color-text-danger": "light-dark(#8E2626, #EC7E7E)",

@@ -14,6 +14,8 @@ export interface SplitText {
   resizeColumns: string
   resizeRows: string
   grip: string
+  prevPane: string
+  nextPane: string
   activate: (title: string) => string
   runnerLimit: (limit: number) => string
   sameCwdRunning: string
@@ -34,6 +36,8 @@ const zh: SplitText = {
   resizeColumns: '调整面板列宽',
   resizeRows: '调整面板行高',
   grip: '拖动换位，方向键左右移动',
+  prevPane: '上一个会话',
+  nextPane: '下一个会话',
   activate: (title) => `切换到「${title}」`,
   runnerLimit: (limit) => `最多 ${limit} 个会话能同时运行。其余分屏块先显示记录，点进去时会接管空闲的运行实例。`,
   sameCwdRunning: '同一目录有会话在运行，切过来先只读打开',
@@ -54,6 +58,8 @@ const en: SplitText = {
   resizeColumns: 'Resize pane columns',
   resizeRows: 'Resize pane rows',
   grip: 'Drag to reorder, or use the arrow keys',
+  prevPane: 'Previous session',
+  nextPane: 'Next session',
   activate: (title) => `Switch to “${title}”`,
   runnerLimit: (limit) => `Up to ${limit} sessions can run at once. Other panes show their history and take over an idle runner when you click into them.`,
   sameCwdRunning: 'Another session in this folder is running; this one opens read-only first',
