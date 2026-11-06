@@ -6,6 +6,7 @@ import { app, shell, BrowserWindow, clipboard, ClipboardItem, crashReporter, ipc
 import { openBlockedByName } from './open-guard'
 import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
+import { disposeUsageStatsWorker } from './usage-stats-host'
 import { disposeContentSearch } from './file-content-search'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { release as osRelease } from 'node:os'
@@ -1328,6 +1329,7 @@ async function runShutdown(): Promise<void> {
       { name: 'browser', run: () => browser?.dispose() },
       { name: 'terminals', run: () => disposeTerminals() },
       { name: 'file-name-search', run: () => disposeFileNameSearch() },
+      { name: 'usage-stats-worker', run: () => disposeUsageStatsWorker() },
       { name: 'content-search', run: () => disposeContentSearch() },
       { name: 'data-root-unlock', run: () => releaseDesktopDataRoot?.() }
     ],

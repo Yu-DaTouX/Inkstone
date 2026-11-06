@@ -21,7 +21,7 @@ import { rewriteSessionCwd } from '../session-move'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { effectiveAutoArchiveDays } from '../../shared/session-archive'
-import { readUsageStats } from '../usage-stats'
+import { readUsageStatsOffThread } from '../usage-stats-host'
 import { deleteSessionChain } from '../session-delete'
 
 export interface SelectedSessionTarget {
@@ -68,7 +68,7 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
 
 export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
-  handle('yan:usageStats', async (range: 'all' | '30d' | '7d') => readUsageStats(range))
+  handle('yan:usageStats', async (range: 'all' | '30d' | '7d') => readUsageStatsOffThread(range))
   handle('yan:fork', async (entryId: string, expected?: ExpectedRuntimeOwner) => sessionActionAgent(host, expected)?.fork(entryId) ?? { ok: false, error: SESSION_ACTION_CHANGED })
   handle('yan:clone', async () => host.ac()?.clone() ?? { ok: false, error: 'pi 未运行' })
   handle('yan:forkPoints', async () => host.ac()?.forkPoints() ?? [])
