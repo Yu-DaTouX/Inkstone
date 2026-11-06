@@ -140,6 +140,16 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .v3-canvas-tb-group {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+
+  .v3-canvas[data-narrow] .v3-canvas-toolbar .v3-toolbar-sep {
+    display: none;
+  }
+
   .v3-canvas-devices {
     display: flex;
     flex-direction: column;

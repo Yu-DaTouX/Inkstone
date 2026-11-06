@@ -45,7 +45,12 @@ function sliceParts(parts: readonly HighlightPart[], from: number, to: number): 
 function ResultName({ name, parts }: { name: string; parts: readonly HighlightPart[] }): ReactElement {
   const split = splitForMiddleTruncate(name)
   if (!split) return <Highlighted parts={parts} />
-  const cut = split.head.length
+  let firstHit = 0
+  for (const part of parts) {
+    if (part.hit) break
+    firstHit += part.text.length
+  }
+  const cut = firstHit < name.length ? Math.min(split.head.length, firstHit) : split.head.length
   return (
     <>
       <span className="v3-files-result-name-head">

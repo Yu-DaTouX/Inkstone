@@ -316,7 +316,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
 
   usePaneMenu('files', [
     ...(layout.showPreview ? [{ id: 'files:search', label: text.goToFile, icon: <Search size={14} aria-hidden />, onAction: focusFilter }] : []),
-    ...(hasPreview ? [{ id: 'files:tree', label: text.showTree, checked: layout.treePressed, onAction: toggleTree }] : []),
+    ...(hasPreview ? [{ id: 'files:tree', label: layout.treePressed ? text.hideTree : text.showTree, icon: <List size={14} aria-hidden />, onAction: toggleTree }] : []),
     ...(layout.showTree
       ? [
           { id: 'files:collapse', label: text.collapseAll, icon: <ChevronsDownUp size={14} aria-hidden />, onAction: collapseAll },

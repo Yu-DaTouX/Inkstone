@@ -702,6 +702,7 @@ export function HtmlCanvas({
           })}
         </ToggleGroup>
         <Separator orientation="vertical" className="v3-toolbar-sep" />
+        <div className="v3-canvas-tb-group">
         <IconButton size="sm" aria-label={labels.canvasZoomOut} tooltip={labels.canvasZoomOut} onPress={() => zoomCenter(zoomStep(view.zoom, -1))}>
           <ZoomOut size={14} />
         </IconButton>
@@ -789,6 +790,7 @@ export function HtmlCanvas({
         <IconButton size="sm" aria-label={labels.canvasOpen} tooltip={labels.canvasOpen} onPress={onOpen}>
           <ExternalLink size={14} />
         </IconButton>
+        </div>
       </div>
     </div>
   )
