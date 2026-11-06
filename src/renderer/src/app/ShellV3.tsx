@@ -51,6 +51,7 @@ import { filesClaimsQuickOpen } from '../features/files/FilesPane'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
 import { useChatFilePreview } from '../features/preview/use-chat-file-preview'
 import { useLiveHtmlFollow } from '../features/preview/live-html'
+import { prefetchRepos } from '../features/workbench/repo-memory'
 import { prefetchChanges } from '../features/changes/ChangesPane'
 import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-branch'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
@@ -247,6 +248,17 @@ export default function ShellV3(): ReactElement {
   useEffect(() => startRunSync(), [])
 
   useEffect(() => scheduleIdlePreloads(), [])
+
+  const recentCwds = useStore((s) => {
+    const seen: string[] = []
+    for (const item of s.sessions ?? []) {
+      if (item.archivedAt || !item.cwd || seen.includes(item.cwd)) continue
+      seen.push(item.cwd)
+      if (seen.length >= 8) break
+    }
+    return seen.join('|')
+  })
+  useEffect(() => (recentCwds ? prefetchRepos(recentCwds.split('|')) : undefined), [recentCwds])
 
   useEffect(() => {
     if (!settings) return

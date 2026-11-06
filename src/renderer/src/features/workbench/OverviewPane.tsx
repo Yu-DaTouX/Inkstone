@@ -16,6 +16,7 @@ import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import { money } from '../../../../shared/quota-mini'
 import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
 import type { GitRepoState } from '../../../../shared/git'
+import { rememberRepo, rememberedRepo } from './repo-memory'
 import type { CompactionRun, ProviderQuota, QuotaWindow } from '../../../../shared/ipc'
 import { autoCompactLimitOf, contextPaneData, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
 import { workbenchText, type OverviewText } from './workbench-text'
@@ -64,31 +65,29 @@ function lastSegment(path: string): string {
 }
 
 function useGitRepo(cwd: string | null, refreshKey: string): GitRepoState | null {
-  const [repo, setRepo] = useState<GitRepoState | null>(null)
+  const [held, setHeld] = useState<{ cwd: string | null; repo: GitRepoState | null }>(() => ({ cwd, repo: cwd ? rememberedRepo(cwd) : null }))
   useEffect(() => {
-    if (!cwd) {
-      setRepo(null)
-      return undefined
-    }
     const git = window.yan?.git
-    if (!git) {
-      setRepo(null)
+    if (!cwd || !git) {
+      setHeld({ cwd, repo: null })
       return undefined
     }
     let alive = true
     git
       .state(cwd)
       .then((st) => {
-        if (alive) setRepo(st.repo ?? null)
+        rememberRepo(cwd, st.repo ?? null)
+        if (alive) setHeld({ cwd, repo: st.repo ?? null })
       })
       .catch(() => {
-        if (alive) setRepo(null)
+        if (alive) setHeld({ cwd, repo: null })
       })
     return () => {
       alive = false
     }
   }, [cwd, refreshKey])
-  return repo
+  if (!cwd) return null
+  return held.cwd === cwd ? held.repo : rememberedRepo(cwd)
 }
 
 interface QuotaTileModel {

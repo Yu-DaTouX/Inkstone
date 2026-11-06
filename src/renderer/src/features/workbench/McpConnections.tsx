@@ -118,5 +118,9 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
       <Button variant="ghost" size="sm" onPress={() => useStore.getState().openSettings('mcp')}>{en ? 'Manage MCP services' : '管理 MCP 服务'}</Button>
     </>}
   </>
-  return { visible: !!owner && (!active || !!error || services.length > 0), summary, body }
+  const settled = !!snapshot || !!error
+  const lastVisible = useRef(false)
+  if (active && settled) lastVisible.current = !!error || services.length > 0
+  const visible = !!owner && lastVisible.current
+  return { visible, summary, body }
 }
