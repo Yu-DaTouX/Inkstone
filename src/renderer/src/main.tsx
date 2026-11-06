@@ -13,6 +13,7 @@ import { installFocusModality } from './lib/focusModality'
 import { installHairline } from './lib/hairline'
 import { installDeepLinkNavigation } from './features/deeplink/navigation'
 import { installBrowserPreloadRecovery } from './lib/preload-recovery'
+import { installIdlePrefetch } from './lib/idle-prefetch'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('找不到 #root')
@@ -51,7 +52,9 @@ installDeepLinkNavigation()
 
 async function mount(): Promise<void> {
   document.documentElement.dataset.ui = 'v3'
+  performance.mark('yan:shell-import-start')
   const { default: Shell } = await import('./app/ShellV3')
+  performance.mark('yan:shell-import-end')
   createRoot(root!).render(
     <StrictMode>
       <I18nProvider>
@@ -60,6 +63,8 @@ async function mount(): Promise<void> {
     </StrictMode>
   )
 }
+
+installIdlePrefetch()
 
 void mount().catch((error: unknown) => {
   console.error('界面外壳加载失败', error)

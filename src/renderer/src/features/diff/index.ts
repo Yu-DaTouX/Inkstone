@@ -1,4 +1,5 @@
-export { DiffView, type DiffViewProps } from './DiffView'
+export { DiffView } from './LazyDiffView'
+export type { DiffViewProps } from './DiffView'
 export {
   DiffAnnotationEditor,
   type DiffAnnotate,
