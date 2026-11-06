@@ -1,5 +1,7 @@
 import { loadApp, createHarness, env, marksSet, sleep } from './mobile-render/host.mjs'
 import { startFakeDesktop } from './mobile-render/fake-desktop.mjs'
+import { edgeFlows } from './mobile-render/flows-edge.mjs'
+import { moreFlows } from './mobile-render/flows-more.mjs'
 
 const lib = await loadApp()
 const failures = []
@@ -250,10 +252,11 @@ await run('模型错误', flowModelErrors)
 await run('改名与搜索', flowRenameSearch)
 await run('首页分组', flowHomeSections)
 await run('撤销设备', flowRevoked)
+for (const [name, fn] of [...edgeFlows({ boot, openSession, check, env }), ...moreFlows({ boot, openSession, check, env })]) await run(name, fn)
 
 console.error = realError
 console.warn = realWarn
-const nonNoise = consoleNoise.filter((line) => !/not wrapped in act|ReactDOMTestUtils/.test(line))
+const nonNoise = consoleNoise
 if (nonNoise.length) console.log('控制台输出（前 10 条）：\n' + [...new Set(nonNoise)].slice(0, 10).join('\n'))
 console.log(`通过 ${passed} 项，失败 ${failures.length} 项`)
 for (const line of failures) console.log('  失败：' + line)

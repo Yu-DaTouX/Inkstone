@@ -42,6 +42,7 @@ export async function startFakeDesktop({ omit = [], tweak } = {}) {
     stats: { tokens: 12345, cost: 0.5, toolCalls: 3, messages: 2, context: { percent: 40, tokens: 40000, window: 100000 } },
     changes: { branch: 'main', added: 3, removed: 1, total: 1, files: [{ path: 'src/a.ts', status: 'M', added: 3, removed: 1 }], truncated: false },
     branches: [{ name: 'main', current: true }, { name: 'dev', current: false }, { name: 'wt', current: false, busy: true }],
+    subagents: [],
     searchHits: [],
     errors: {},
     activeSessionId: 's-1'
@@ -59,8 +60,14 @@ export async function startFakeDesktop({ omit = [], tweak } = {}) {
     },
     history: guarded('history', async (sessionId) => ({ ok: true, data: { sessionId, messages: state.messages, total: state.messages.length, hasMore: false } })),
     models: guarded('models', async () => ({ ok: true, data: { models: state.models, current: state.current, thinking: state.thinking, pending: state.pending } })),
-    subagents: guarded('subagents', async () => ({ ok: true, data: { runs: [] } })),
-    insight: guarded('insight', async () => ({ ok: true, data: { stats: state.stats, changes: state.changes ? { ...state.changes, branch: state.branch } : null } })),
+    subagents: guarded('subagents', async () => ({ ok: true, data: { runs: state.subagents } })),
+    stopSubagent: guarded('stopSubagent', async (sessionId, runId) => {
+      const run = state.subagents.find((r) => r.id === runId)
+      if (!run) return fail(404, '没有这个子代理')
+      run.status = 'cancelled'
+      return { ok: true, data: { id: runId } }
+    }),
+    insight: guarded('insight', async () => ({ ok: true, data: { stats: state.stats, changes: state.changes ? { ...state.changes, branch: state.changes.branch === null ? null : state.branch } : null } })),
     sessionFlags: guarded('flags', async (sessionId, flags) => {
       const session = state.sessions.find((s) => s.id === sessionId)
       if (!session) return fail(404, '没有这个会话')
