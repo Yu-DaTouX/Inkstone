@@ -35,6 +35,8 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
     const rect = label?.getBoundingClientRect()
     return { pane: box.width, labelWidth: rect ? Math.round(rect.width) : null, text: label?.textContent ?? null, clipped: label ? label.scrollWidth > label.clientWidth : null }
   })`)
+  const footer = await ev(`(() => { const host = document.querySelector('[data-chat-composer-controls="footer"]'); if (!host) return null; const kids = (el, depth) => [...el.children].map((c) => ({ tag: c.tagName.toLowerCase(), cls: (c.className || '').toString().slice(0, 50), w: Math.round(c.getBoundingClientRect().width), kids: depth > 0 ? kids(c, depth - 1) : undefined })); return { w: Math.round(host.getBoundingClientRect().width), kids: kids(host, 2) } })()`)
+  log('footer', footer)
   log('labels', labels)
   report.labels = labels
   check('每个分屏格的模型名至少有 4 个字符宽度', labels.every((item) => item.labelWidth === null || item.labelWidth >= 40), JSON.stringify(labels))
