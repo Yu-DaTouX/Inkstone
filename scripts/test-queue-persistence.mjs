@@ -153,4 +153,4 @@ await check('读回内容与磁盘文件一致', async () => {
 })
 
 process.stdout.write(`\n排队消息持久化：${report.pass} 通过 / ${report.fail} 失败\n`)
-if (report.fail) process.exitCode = 1
+if (report.fail || report.pass === 0) process.exitCode = 1

@@ -78,4 +78,4 @@ ok(readyCount() === 1, '退订后再订阅仍不重发 renderer-ready', sends)
 ok((handlers.get('yan:push') ?? []).length > 0, 'yan:push 监听仍然注册', handlers.get('yan:push')?.length)
 
 process.stdout.write(`\n================ 结果：${report.pass} 通过 / ${report.fail} 失败 ================\n`)
-if (report.fail > 0) process.exitCode = 1
+if (report.fail > 0 || report.pass === 0) process.exitCode = 1

@@ -101,4 +101,4 @@ console.log('\n## 磁盘读取：只读尾部，不解析整份会话')
 }
 
 console.log(`\n${report.fail === 0 ? 'PASS' : 'FAIL'}: ${report.pass} passed, ${report.fail} failed`)
-if (report.fail > 0) process.exitCode = 1
+if (report.fail > 0 || report.pass === 0) process.exitCode = 1

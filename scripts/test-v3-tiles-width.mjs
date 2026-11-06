@@ -85,4 +85,4 @@ check('writeTilesWidth：持久化夹取后的值并可读回；存储异常不�
 })
 
 console.log(`\nv3 磁贴宽度：${report.pass} 通过 / ${report.fail} 失败`)
-if (report.fail > 0) process.exit(1)
+if (report.fail > 0 || report.pass === 0) process.exit(1)

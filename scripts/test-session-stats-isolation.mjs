@@ -235,7 +235,7 @@ async function main() {
   }
   await runSessionStatsIsolationTests(ok)
   console.log(`\n会话 stats 隔离：${pass} 通过 / ${fail} 失败`)
-  if (fail) process.exitCode = 1
+  if (fail || pass === 0) process.exitCode = 1
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) await main()

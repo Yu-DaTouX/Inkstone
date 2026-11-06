@@ -66,7 +66,7 @@ async function run() {
     ok(guardTimeout > broker.APPROVAL_TIMEOUT_MS, `扩展确认超时 ${guardTimeout}ms 长于宿主审批超时 ${broker.APPROVAL_TIMEOUT_MS}ms：先拿到 no-answer → 显示「未答复」而不是宿主故障`, [guardTimeout, broker.APPROVAL_TIMEOUT_MS])
 
     process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)
-    if (fail > 0) process.exitCode = 1
+    if (fail > 0 || pass === 0) process.exitCode = 1
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

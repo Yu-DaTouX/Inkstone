@@ -418,7 +418,7 @@ async function main() {
 
   process.stdout.write(`\n${fail === 0 ? '全部通过' : '有失败'}：${pass} 通过 / ${fail} 失败\n`)
   await rm(outdir, { recursive: true, force: true })
-  if (fail) process.exit(1)
+  if (fail || pass === 0) process.exit(1)
 }
 
 main().catch(async (error) => {

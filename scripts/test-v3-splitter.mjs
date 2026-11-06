@@ -304,4 +304,4 @@ check('Shift 大步长可用于侧栏 32', () => {
 })
 
 console.log(`\nv3 Splitter 纯逻辑：${report.pass} 通过 / ${report.fail} 失败`)
-if (report.fail > 0) process.exit(1)
+if (report.fail > 0 || report.pass === 0) process.exit(1)

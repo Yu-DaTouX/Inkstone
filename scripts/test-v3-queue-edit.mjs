@@ -256,7 +256,7 @@ function makePort({ clearResults, refillFailsAt = -1 }) {
 }
 
 process.stdout.write(`\n${report.fail === 0 ? '✓' : '✗'} 通过 ${report.pass}，失败 ${report.fail}\n`)
-if (report.fail > 0) {
+if (report.fail > 0 || report.pass === 0) {
   for (const label of failures) process.stdout.write(`  - ${label}\n`)
   process.exitCode = 1
 }
