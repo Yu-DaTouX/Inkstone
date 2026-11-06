@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import shellFallback from '../resources/pi-extensions/shell-fallback.js'
+import shellFallback, { registerPowerShellEnvFix } from '../resources/pi-extensions/shell-fallback.js'
 
 function fakePi(active) {
   const handlers = {}
@@ -34,6 +34,21 @@ const objects = fakePi([{ name: 'read' }, { name: 'bash' }])
 shellFallback(objects)
 objects.fire('before_agent_start')
 assert.deepEqual(objects.applied, ['read', 'powershell'])
+
+const registered = []
+const spawned = []
+const core = {
+  createPowerShellToolDefinition: (cwd, options) => ({
+    name: 'powershell',
+    execute: async () => { spawned.push({ cwd, ...options?.spawnHook?.({ command: 'x', cwd, env: { PATH: 'a' } }) }); return 'ok' }
+  })
+}
+registerPowerShellEnvFix({ registerTool: (tool) => registered.push(tool) }, core, { fixEnv: (env) => ({ ...env, FIXED: '1' }) })
+assert.equal(registered.length, 1)
+assert.equal(registered[0].name, 'powershell')
+await registered[0].execute('id', {}, undefined, undefined, { cwd: 'C:/work' })
+assert.equal(spawned[0].cwd, 'C:/work')
+assert.equal(spawned[0].env.FIXED, '1')
 
 delete process.env.YAN_SHELL
 console.log('shell-fallback: ok')

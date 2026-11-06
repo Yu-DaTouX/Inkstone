@@ -261,6 +261,16 @@ export function registerBashFileTransport(pi, core, { fixEnv = createPythonEnvFi
   })
 }
 
+export function registerPowerShellEnvFix(pi, core, { fixEnv = createPythonEnvFixer({}) } = {}) {
+  const spawnHook = (context) => ({ ...context, env: fixEnv(context.env) })
+  const template = core.createPowerShellToolDefinition(process.cwd())
+  pi.registerTool({
+    ...template,
+    execute: (toolCallId, params, signal, onUpdate, ctx) =>
+      core.createPowerShellToolDefinition(ctx?.cwd ?? process.cwd(), { spawnHook }).execute(toolCallId, params, signal, onUpdate, ctx)
+  })
+}
+
 async function loadPiCore() {
   try {
     return await import('@earendil-works/pi-coding-agent')
@@ -284,6 +294,12 @@ export default async function shellFallback(pi) {
       } catch {
       }
     })
+    if (typeof pi.registerTool === 'function') {
+      try {
+        registerPowerShellEnvFix(pi, await loadPiCore())
+      } catch {
+      }
+    }
     return
   }
   if (process.platform !== 'win32') return
