@@ -105,7 +105,7 @@ try {
     const restarted = make(repo)
     await restarted.loadHistory()
     const run = restarted.get(started.run.id)
-    ok(run.review === 'archived' && run.diff?.files === 4, '混合改动：删除、CRLF、二进制、带空格的嵌套新文件都进补丁')
+    ok(run.review === 'pending' && run.diff?.files === 4, '混合改动：删除、CRLF、二进制、带空格的嵌套新文件都进补丁')
     const merged = await restarted.merge(started.run.id)
     ok(merged.ok, `混合改动：合并成功 ${merged.error ?? ''}`)
     ok(!existsSync(join(repo, 'gone.txt')) && existsSync(join(repo, 'bin.dat')) && (await readFile(join(repo, 'bin.dat'))).length === 7, '混合改动：删除与二进制按原样合并')
