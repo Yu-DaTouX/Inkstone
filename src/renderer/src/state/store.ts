@@ -3212,3 +3212,16 @@ useStore.subscribe((state, previous) => {
   const patch = takeHeldQueueReclaim(state)
   if (patch) useStore.setState(patch)
 })
+
+useStore.subscribe((state, previous) => {
+  const id = viewingSessionId(state) ?? 'workspace'
+  if (id === (viewingSessionId(previous) ?? 'workspace')) return
+  if (state.browserState.sessionId !== id) {
+    useStore.setState({ browserState: state.browserStates[id] ?? { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false } })
+  }
+  if (typeof window.yan?.browser?.activateSession !== 'function') return
+  void window.yan.browser.activateSession(id).then((next) => {
+    const current = useStore.getState()
+    if ((viewingSessionId(current) ?? 'workspace') === id) useStore.setState({ browserState: next })
+  }).catch(() => undefined)
+})

@@ -57,9 +57,13 @@ export default async function run({ cdp, box, waitFor, check, sleep, shot, log, 
     check('B 的标签只有 beta，A 仍只有 alpha', b1.urls.length === 1 && b1.urls[0].startsWith(urlB) && a2.urls.length === 1 && a2.urls[0].startsWith(urlA), { a2, b1 })
     await shot('b-open')
 
+    await ev(`window.__mix = []; window.__mixOff = window.__yanStore.subscribe((st) => { const b = st.browserState; if (b.open && b.sessionId && st.session?.sessionId && b.sessionId !== st.session.sessionId) window.__mix.push({ t: Math.round(performance.now()), view: st.session.sessionId.slice(-4), page: b.sessionId.slice(-4), url: b.url }); else if (window.__mix.length && !window.__mixEnd && b.sessionId === st.session?.sessionId) window.__mixEnd = Math.round(performance.now()) })`)
     await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(aFile2 || aFile)})`)
     await waitFor(`s.session?.sessionId === ${JSON.stringify(a)} && !s.switchLoading`, 15000)
     await sleep(800)
+    const mix = await ev(`window.__mixOff(), window.__mix`)
+    log('错位采样', { count: mix.length, first: mix[0]?.t, end: await ev('window.__mixEnd'), last: mix.at(-1)?.t })
+    check('切会话的整个过程中，右栏状态从未短暂显示另一个会话的页面', mix.length === 0, mix.slice(0, 3))
     const viewA = await ev(`({ open: window.__yanStore.getState().browserState.open, url: window.__yanStore.getState().browserState.url, sid: window.__yanStore.getState().browserState.sessionId })`)
     check('切回 A 后浏览器状态是 A 的页面', viewA.open && viewA.url.startsWith(urlA) && viewA.sid === a, viewA)
     await shot('back-to-a')
