@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { p256 } from '@noble/curves/nist.js'
 import { gcm } from '@noble/ciphers/aes.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
@@ -80,7 +81,7 @@ export function fromB64(text: string): Uint8Array {
   let o = 0
   for (let i = 0; i < clean.length; i += 4) {
     const v = [0, 1, 2, 3].map((k) => (i + k < clean.length ? B64_INDEX.get(clean[i + k]) : 0))
-    if (v.some((x) => x === undefined)) throw new Error('不是 base64')
+    if (v.some((x) => x === undefined)) throw new Error(pick('不是 base64', 'Not base64'))
     const n = ((v[0] as number) << 18) | ((v[1] as number) << 12) | ((v[2] as number) << 6) | (v[3] as number)
     if (o < out.length) out[o++] = (n >> 16) & 255
     if (o < out.length) out[o++] = (n >> 8) & 255
@@ -94,7 +95,7 @@ export function toB64u(bytes: Uint8Array): string {
 }
 
 export function fromB64u(text: string): Uint8Array {
-  if (!/^[A-Za-z0-9_-]*$/.test(text)) throw new Error('不是 base64url')
+  if (!/^[A-Za-z0-9_-]*$/.test(text)) throw new Error(pick('不是 base64url', 'Not base64url'))
   return fromB64(text.replace(/-/g, '+').replace(/_/g, '/'))
 }
 
@@ -125,7 +126,7 @@ export function parseRelayLink(input: string): RelayPairing | null {
     if (typeof p.s !== 'string' || typeof p.c !== 'string' || typeof p.r !== 'string' || typeof p.y !== 'string') return null
     if (!/^wss?:\/\/[^\s]+\/v1\/join\/[A-Za-z0-9_-]{10,64}$/.test(p.r) || !/^\d{6}$/.test(p.y)) return null
     if (fromB64u(p.s).length !== 65) return null
-    return { join: p.r, hostKey: p.s, computerName: typeof p.n === 'string' ? p.n.slice(0, 60) : '电脑', relayCode: p.c, code: p.y }
+    return { join: p.r, hostKey: p.s, computerName: typeof p.n === 'string' ? p.n.slice(0, 60) : pick('电脑', 'Desktop'), relayCode: p.c, code: p.y }
   } catch {
     return null
   }
@@ -162,12 +163,12 @@ class Channel {
   }
 
   open(frame: string): Record<string, unknown> {
-    if (!frame.startsWith('x.')) throw new Error('不是加密帧')
+    if (!frame.startsWith('x.')) throw new Error(pick('不是加密帧', 'Not an encrypted frame'))
     const bytes = fromB64u(frame.slice(2))
-    if (bytes.length < 24) throw new Error('加密帧太短')
+    if (bytes.length < 24) throw new Error(pick('加密帧太短', 'Encrypted frame too short'))
     const ctr = bytes.slice(0, 8)
     const n = Number(new DataView(ctr.buffer).getBigUint64(0))
-    if (n !== this.recvCount) throw new Error('加密帧计数不对')
+    if (n !== this.recvCount) throw new Error(pick('加密帧计数不对', 'Encrypted frame count mismatch'))
     const plain = gcm(this.recvKey, concat(new Uint8Array(4), ctr)).decrypt(bytes.slice(8))
     this.recvCount++
     return JSON.parse(bytesToUtf8(plain)) as Record<string, unknown>
@@ -225,7 +226,7 @@ export class RelayTunnel {
     return tunnel
   }
 
-  constructor(private readonly config: RelayConfig, private readonly deviceName = '砚手机端') {}
+  constructor(private readonly config: RelayConfig, private readonly deviceName = pick('砚手机端', 'Inkstone mobile')) {}
 
   connect(pairCode?: string): Promise<void> {
     if (this.ready) return this.ready
@@ -242,7 +243,7 @@ export class RelayTunnel {
         if (state !== 'open') reject(error)
         this.teardown(error)
       }
-      timer = setTimeout(() => fail(new RelayError('连接电脑超时：请确认电脑上的砚在运行，并开启了中继接入')), HANDSHAKE_MS)
+      timer = setTimeout(() => fail(new RelayError(pick('连接电脑超时：请确认电脑上的砚在运行，并开启了中继接入', 'Timed out. Check that Inkstone is running with relay enabled.'))), HANDSHAKE_MS)
       ws.onopen = () => {
         if (this.ws !== ws) return
         ws.send(JSON.stringify({ t: 'hi', v: PROTOCOL_VERSION, c: toB64u(p256.getPublicKey(clientSecret, false)), e: toB64u(p256.getPublicKey(ephSecret, false)) }))
@@ -253,7 +254,7 @@ export class RelayTunnel {
         try {
           if (state === 'hello') {
             const hi = JSON.parse(text) as { t?: unknown; e?: unknown }
-            if (hi.t !== 'hi' || typeof hi.e !== 'string') throw new RelayError('电脑的握手消息不对')
+            if (hi.t !== 'hi' || typeof hi.e !== 'string') throw new RelayError(pick('电脑的握手消息不对', 'Invalid handshake from desktop'))
             this.channel = clientChannel(clientSecret, ephSecret, fromB64u(this.config.hostKey), fromB64u(hi.e))
             state = 'auth'
             ws.send(this.channel.seal({ t: 'auth', name: this.deviceName, ...(pairCode ? { pair: pairCode } : {}) }))
@@ -261,8 +262,8 @@ export class RelayTunnel {
           }
           const msg = this.channel!.open(text)
           if (state === 'auth') {
-            if (msg.t === 'denied') throw new RelayError(String(msg.reason ?? '电脑拒绝了连接'), true)
-            if (msg.t !== 'welcome') throw new RelayError('电脑的回应不对')
+            if (msg.t === 'denied') throw new RelayError(String(msg.reason ?? pick('电脑拒绝了连接', 'Desktop refused the connection')), true)
+            if (msg.t !== 'welcome') throw new RelayError(pick('电脑的回应不对', 'Invalid response from desktop'))
             state = 'open'
             clearTimeout(timer)
             resolve()
@@ -273,8 +274,8 @@ export class RelayTunnel {
           fail(error instanceof Error ? error : new RelayError(String(error)))
         }
       }
-      ws.onerror = () => fail(new RelayError('连不上中继：请检查手机网络'))
-      ws.onclose = (event) => fail(new RelayError(event.code === 4004 ? '电脑不在线：请确认电脑开机、砚在运行并开启了中继接入' : '与电脑的连接断开了'))
+      ws.onerror = () => fail(new RelayError(pick('连不上中继：请检查手机网络', 'Cannot reach relay. Check your phone network.')))
+      ws.onclose = (event) => fail(new RelayError(event.code === 4004 ? pick('电脑不在线：请确认电脑开机、砚在运行并开启了中继接入', 'Desktop offline. Check that it is on, Inkstone is running and relay is enabled.') : pick('与电脑的连接断开了', 'Disconnected from the desktop')))
     })
     const ready = attempt.catch((error: unknown) => {
       if (this.ready === ready) this.teardown(error instanceof Error ? error : new RelayError(String(error)))
@@ -298,11 +299,11 @@ export class RelayTunnel {
   }
 
   reset(): void {
-    this.teardown(new RelayError('与电脑的连接断开了'))
+    this.teardown(new RelayError(pick('与电脑的连接断开了', 'Disconnected from the desktop')))
   }
 
   close(): void {
-    this.teardown(new RelayError('连接已关闭'))
+    this.teardown(new RelayError(pick('连接已关闭', 'Connection closed')))
     for (const [key, value] of RelayTunnel.shared) if (value === this) RelayTunnel.shared.delete(key)
   }
 
@@ -339,7 +340,7 @@ export class RelayTunnel {
 
   private async send(frame: Record<string, unknown>): Promise<void> {
     await this.connect()
-    if (!this.ws || !this.channel) throw new RelayError('与电脑的连接断开了')
+    if (!this.ws || !this.channel) throw new RelayError(pick('与电脑的连接断开了', 'Disconnected from the desktop'))
     this.ws.send(this.channel.seal(frame))
   }
 
@@ -349,7 +350,7 @@ export class RelayTunnel {
       const timer = setTimeout(() => {
         this.pending.delete(id)
         void this.send({ t: 'abort', id }).catch(() => undefined)
-        reject(new RelayError('连接超时：请确认电脑上的砚在运行'))
+        reject(new RelayError(pick('连接超时：请确认电脑上的砚在运行', 'Timed out. Check that Inkstone is running on the desktop.')))
       }, init.timeoutMs ?? 20_000)
       this.pending.set(id, {
         resolve: (r) => { clearTimeout(timer); resolve(r) },

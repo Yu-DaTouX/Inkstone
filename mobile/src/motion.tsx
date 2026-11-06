@@ -1,3 +1,4 @@
+import { pick } from '../../src/shared/ui-lang'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AccessibilityInfo, Animated, Easing, StyleSheet, Text, View } from 'react-native'
 import Svg, { Path } from 'react-native-svg'
@@ -111,7 +112,7 @@ export function BootSplash({ ready, onDone }: { ready: boolean; onDone: () => vo
     const id = setTimeout(() => Animated.timing(fade, { toValue: 0, duration: reduced ? 1 : duration.base, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: true }).start(() => onDone()), wait)
     return () => clearTimeout(id)
   }, [ready, timedOut, reduced, fade, onDone])
-  return <Animated.View accessibilityLabel="砚 正在启动" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 100, alignItems: 'center', justifyContent: 'center', backgroundColor: p.bg0, opacity: fade }}>
+  return <Animated.View accessibilityLabel={pick('砚 正在启动', 'Inkstone starting')} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 100, alignItems: 'center', justifyContent: 'center', backgroundColor: p.bg0, opacity: fade }}>
     <Svg width={64} height={64} viewBox="0 0 100 100" fill="none">
       <AnimatedPath d="M70 22H25Q22 22 22 25V75Q22 78 25 78H75Q78 78 78 75V53" stroke={p.fg} strokeWidth={6} strokeLinejoin="round" strokeDasharray={[FRAME_LENGTH, FRAME_LENGTH]} strokeDashoffset={draw.interpolate({ inputRange: [0, 1], outputRange: [FRAME_LENGTH, 0] })} />
       <AnimatedPath d="M36 40L47 50L36 60" stroke={p.accent} strokeWidth={6} strokeLinecap="square" strokeLinejoin="miter" opacity={prompt} />

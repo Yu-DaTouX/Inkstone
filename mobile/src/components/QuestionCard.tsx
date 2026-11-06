@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { useRef, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { RemoteAnswer, RemotePendingQuestion } from '../../../src/shared/remote-protocol'
@@ -59,7 +60,7 @@ export function QuestionCard({
         return
       }
       if (!(err instanceof RemoteHttpError) || err.status !== 0) attempt.current = null
-      setError(err instanceof Error ? err.message : '回答没发出去，请重试')
+      setError(err instanceof Error ? err.message : pick('回答没发出去，请重试', 'Answer not sent. Try again.'))
     } finally {
       setBusy(false)
     }
@@ -72,33 +73,33 @@ export function QuestionCard({
     <View style={[styles.card, compact && styles.compact, { backgroundColor: p.surface, borderColor: risky ? p.warn : p.border }]}>
       <View style={styles.head}>
         <Icon name={approval ? 'alert-circle' : 'bell'} size={icon.sm} color={tone} />
-        <Text style={{ color: tone, fontSize: font.xs }}>{approval ? '等待批准' : question.sensitive ? '需要在电脑上确认' : STATUS_TEXT.wait}</Text>
+        <Text style={{ color: tone, fontSize: font.xs }}>{approval ? pick('等待批准', 'Awaiting approval') : question.sensitive ? pick('需要在电脑上确认', 'Confirm on the desktop') : STATUS_TEXT.wait}</Text>
         {sessionTitle ? <Text numberOfLines={1} style={[styles.session, { color: p.fgMute }]}>{sessionTitle}</Text> : null}
       </View>
       {question.title ? <Text style={!approval && question.message ? [styles.kicker, { color: p.fgDim }] : [styles.title, { color: p.fg }]}>{question.title}</Text> : null}
 
       {approval && compact ? (approval.detail ? <Text numberOfLines={1} style={{ color: p.fgDim, fontFamily: mono, fontSize: font.xs }}>{approval.detail.split('\n')[0]}</Text> : null) : approval ? <>
         {approval.reasons?.length ? <View style={{ gap: 2 }}>{approval.reasons.map((reason, index) => <Text key={index} style={[styles.message, { color: p.fgDim }]}>· {reason}</Text>)}</View> : null}
-        {approval.cwd ? <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.xs }}>目录：{approval.cwd}</Text> : null}
+        {approval.cwd ? <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.xs }}>{pick('目录：', 'Folder: ')}{approval.cwd}</Text> : null}
         {approval.detail ? <ScrollView nestedScrollEnabled style={[styles.detail, { backgroundColor: p.sunken }]}><Text selectable style={{ color: p.fgDim, fontFamily: mono, fontSize: font.xs, lineHeight: 17 }}>{approval.detail}</Text></ScrollView> : null}
       </> : question.message ? <Text selectable style={[styles.question, { color: p.fg }]}>{question.message}</Text> : null}
 
       {canApprove ? (
         <View style={styles.row}>
-          <Button label="拒绝" busy={busy} style={styles.flex} onPress={() => void decide(false)} />
-          <Button label="允许这一次" variant="primary" busy={busy} style={styles.flex} onPress={() => void decide(true)} />
+          <Button label={pick('拒绝', 'Deny')} busy={busy} style={styles.flex} onPress={() => void decide(false)} />
+          <Button label={pick('允许这一次', 'Allow once')} variant="primary" busy={busy} style={styles.flex} onPress={() => void decide(true)} />
         </View>
       ) : question.sensitive ? (
         <View style={styles.actions}>
-          <Text style={[styles.note, { color: p.fgMute }]}>{approval ? '电脑端版本较旧，请到电脑上批准；在手机上只能拒绝。' : '这是敏感操作，请到电脑上确认；在手机上只能拒绝。'}</Text>
-          <Button label="拒绝" variant="danger" busy={busy} onPress={() => void send({ cancelled: true })} />
+          <Text style={[styles.note, { color: p.fgMute }]}>{approval ? pick('电脑端版本较旧，请到电脑上批准；在手机上只能拒绝。', 'Desktop is outdated. Approve on the desktop; you can only deny here.') : pick('这是敏感操作，请到电脑上确认；在手机上只能拒绝。', 'Sensitive action. Confirm on the desktop; you can only deny here.')}</Text>
+          <Button label={pick('拒绝', 'Deny')} variant="danger" busy={busy} onPress={() => void send({ cancelled: true })} />
         </View>
       ) : question.form?.length ? (
         <QuestionForm fields={question.form} busy={busy} onSubmit={(json) => void send({ value: json })} onSkip={() => void send({ cancelled: true })} />
       ) : question.method === 'confirm' ? (
         <View style={styles.row}>
-          <Button label="不同意" busy={busy} style={styles.flex} onPress={() => void send({ confirmed: false })} />
-          <Button label="同意" variant="primary" busy={busy} style={styles.flex} onPress={() => void send({ confirmed: true })} />
+          <Button label={pick('不同意', 'No')} busy={busy} style={styles.flex} onPress={() => void send({ confirmed: false })} />
+          <Button label={pick('同意', 'Yes')} variant="primary" busy={busy} style={styles.flex} onPress={() => void send({ confirmed: true })} />
         </View>
       ) : (
         <View style={styles.actions}>
@@ -112,14 +113,14 @@ export function QuestionCard({
             value={text}
             onChangeText={setText}
             multiline={question.method === 'editor' || question.method === 'input'}
-            placeholder={question.method === 'select' ? '或自行撰写回复' : question.placeholder || '写下你的回答'}
-            accessibilityLabel="回答内容"
+            placeholder={question.method === 'select' ? pick('或自行撰写回复', 'Or write your own reply') : question.placeholder || pick('写下你的回答', 'Write your answer')}
+            accessibilityLabel={pick('回答内容', 'Answer')}
           />
           <SpeechInputButton onText={(spoken) => setText((current) => current.trim() ? `${current.trimEnd()} ${spoken}` : spoken)} onStateChange={(state) => setVoiceBusy(state !== 'idle')} disabled={busy} />
           <View style={styles.row}>
-            <Button label="跳过" variant="ghost" busy={busy} disabled={voiceBusy} onPress={() => void send({ cancelled: true })} />
+            <Button label={pick('跳过', 'Skip')} variant="ghost" busy={busy} disabled={voiceBusy} onPress={() => void send({ cancelled: true })} />
             <Button
-              label="发送回答"
+              label={pick('发送回答', 'Send answer')}
               variant="primary"
               busy={busy}
               disabled={!text.trim() || voiceBusy}

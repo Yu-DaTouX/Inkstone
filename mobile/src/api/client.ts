@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import type {
   RemoteAnswer,
   RemoteEventEnvelope,
@@ -63,13 +64,13 @@ async function request<T>(
     })
     const json = await readJson(response)
     if (!response.ok || json.ok === false) {
-      throw new RemoteHttpError(response.status, String(json.error ?? `请求失败（${response.status}）`), typeof json.code === 'string' ? json.code : undefined)
+      throw new RemoteHttpError(response.status, String(json.error ?? pick(`请求失败（${response.status}）`, `Request failed (${response.status})`)), typeof json.code === 'string' ? json.code : undefined)
     }
     return json as T
   } catch (error) {
     if (error instanceof RemoteHttpError) throw error
-    if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, '连接超时：请确认电脑上的砚在运行、手机与电脑在同一个 Tailscale 网络里')
-    throw new RemoteHttpError(0, '连不上电脑：请确认地址、端口，以及 Tailscale 已连接')
+    if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, pick('连接超时：请确认电脑上的砚在运行、手机与电脑在同一个 Tailscale 网络里', 'Timed out. Check that Inkstone is running on the desktop and both devices share a Tailscale network.'))
+    throw new RemoteHttpError(0, pick('连不上电脑：请确认地址、端口，以及 Tailscale 已连接', 'Cannot reach the desktop. Check the address, port and Tailscale.'))
   } finally {
     clearTimeout(timer)
   }
@@ -100,12 +101,12 @@ async function relayRequest<T>(
     } catch {
     }
     if (res.status < 200 || res.status >= 300 || json.ok === false) {
-      throw new RemoteHttpError(res.status, String(json.error ?? `请求失败（${res.status}）`), typeof json.code === 'string' ? json.code : undefined)
+      throw new RemoteHttpError(res.status, String(json.error ?? pick(`请求失败（${res.status}）`, `Request failed (${res.status})`)), typeof json.code === 'string' ? json.code : undefined)
     }
     return json as T
   } catch (error) {
     if (error instanceof RemoteHttpError) throw error
-    throw new RemoteHttpError(0, error instanceof RelayError ? error.message : '经中继连不上电脑：请确认电脑上的砚在运行并开启了中继接入')
+    throw new RemoteHttpError(0, error instanceof RelayError ? error.message : pick('经中继连不上电脑：请确认电脑上的砚在运行并开启了中继接入', 'Cannot reach the desktop via relay. Check that Inkstone is running with relay enabled.'))
   }
 }
 
@@ -116,7 +117,7 @@ export async function pairViaRelay(pairing: RelayPairing, deviceName: string): P
     await tunnel.connect(pairing.relayCode)
   } catch (error) {
     tunnel.close()
-    throw new RemoteHttpError(0, error instanceof RelayError ? error.message : '经中继连不上电脑')
+    throw new RemoteHttpError(0, error instanceof RelayError ? error.message : pick('经中继连不上电脑', 'Cannot reach the desktop via relay'))
   }
   const target = { baseUrl: `relay://${pairing.computerName}`, relay }
   try {
@@ -355,7 +356,7 @@ export class RemoteClient {
     if (!relay) return source
     const path = source.uri.slice(this.connection.baseUrl.length)
     const res = await RelayTunnel.for(relay).request('GET', path, { headers: source.headers, timeoutMs: 60_000 })
-    if (res.status !== 200) throw new RemoteHttpError(res.status, '读取图片失败')
+    if (res.status !== 200) throw new RemoteHttpError(res.status, pick('读取图片失败', 'Failed to load image'))
     return { uri: `data:${res.headers['content-type'] ?? 'application/octet-stream'};base64,${toB64(res.body)}` }
   }
 
@@ -365,8 +366,8 @@ export class RemoteClient {
     const maxBytes = 2 * 1024 * 1024
     if (relay) {
       const res = await RelayTunnel.for(relay).request('GET', source.uri.slice(this.connection.baseUrl.length), { headers: source.headers, timeoutMs: 60_000 })
-      if (res.status !== 200) throw new RemoteHttpError(res.status, '读取成果失败')
-      if (res.body.byteLength > maxBytes) throw new RemoteHttpError(res.status, '成果文本超过 2 MiB，无法在手机端预览')
+      if (res.status !== 200) throw new RemoteHttpError(res.status, pick('读取成果失败', 'Failed to load artifact'))
+      if (res.body.byteLength > maxBytes) throw new RemoteHttpError(res.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
       return bytesToUtf8(res.body)
     }
     const controller = new AbortController()
@@ -375,16 +376,16 @@ export class RemoteClient {
     try { response = await fetch(source.uri, { headers: source.headers, signal: controller.signal }) }
     catch (error) {
       clearTimeout(timer)
-      if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, '读取成果超时')
+      if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, pick('读取成果超时', 'Timed out loading artifact'))
       throw error
     }
     try {
     if (!response.ok) {
       const json = await readJson(response)
-      throw new RemoteHttpError(response.status, String(json.error ?? '读取成果失败'))
+      throw new RemoteHttpError(response.status, String(json.error ?? pick('读取成果失败', 'Failed to load artifact')))
     }
     const declared = Number(response.headers.get('content-length'))
-    if (Number.isFinite(declared) && declared > maxBytes) throw new RemoteHttpError(response.status, '成果文本超过 2 MiB，无法在手机端预览')
+    if (Number.isFinite(declared) && declared > maxBytes) throw new RemoteHttpError(response.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
     const body = (response as Response & { body?: { getReader(): {
       read(): Promise<{ done: boolean; value: Uint8Array }>
       cancel(): Promise<void>
@@ -392,7 +393,7 @@ export class RemoteClient {
     } } }).body
     if (!body) {
       const bytes = new Uint8Array(await response.arrayBuffer())
-      if (bytes.byteLength > maxBytes) throw new RemoteHttpError(response.status, '成果文本超过 2 MiB，无法在手机端预览')
+      if (bytes.byteLength > maxBytes) throw new RemoteHttpError(response.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
       return bytesToUtf8(bytes)
     }
     const reader = body.getReader()
@@ -403,7 +404,7 @@ export class RemoteClient {
         const { done, value } = await reader.read()
         if (done) break
         size += value.byteLength
-        if (size > maxBytes) { await reader.cancel(); throw new RemoteHttpError(response.status, '成果文本超过 2 MiB，无法在手机端预览') }
+        if (size > maxBytes) { await reader.cancel(); throw new RemoteHttpError(response.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile')) }
         chunks.push(value)
       }
     } finally { reader.releaseLock() }
@@ -412,7 +413,7 @@ export class RemoteClient {
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
     return bytesToUtf8(bytes)
     } catch (error) {
-      if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, '读取成果超时')
+      if ((error as { name?: string })?.name === 'AbortError') throw new RemoteHttpError(0, pick('读取成果超时', 'Timed out loading artifact'))
       throw error
     } finally { clearTimeout(timer) }
   }

@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native'
 import { Icon } from '../icons'
@@ -49,7 +50,7 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
     return () => {
       mounted.current = false
       request.current?.abort()
-      onConversationChange?.({ ...latest.current, messages: latest.current.messages.map(message => message.pending ? {...message, pending: false, error: '已取消，可重试'} : message) })
+      onConversationChange?.({ ...latest.current, messages: latest.current.messages.map(message => message.pending ? {...message, pending: false, error: pick('已取消，可重试', 'Cancelled; you can retry')} : message) })
     }
   }, [onConversationChange])
 
@@ -79,7 +80,7 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
       setMessages((current) => current.map((m) => (m.id === replyId ? { ...m, text: result.text, pending: false } : m)))
     } catch (error) {
       if (!mounted.current) return
-      const message = error instanceof Error ? error.message : '发送失败'
+      const message = error instanceof Error ? error.message : pick('发送失败', 'Send failed')
       setMessages((current) => current.map((m) => (m.id === replyId ? { ...m, pending: false, text: '', error: message } : m)))
     } finally {
       request.current = null
@@ -134,23 +135,23 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
   const openMenu = useCallback((message: LifeMessage) => {
     if (message.pending) return
     if (message.role === 'user') {
-      Alert.alert('你的消息', undefined, [
-        { text: '编辑', onPress: () => editUser(message) },
-        { text: '分享', onPress: () => void Share.share({ message: message.text }) },
-        { text: '取消', style: 'cancel' }
+      Alert.alert(pick('你的消息', 'Your message'), undefined, [
+        { text: pick('编辑', 'Edit'), onPress: () => editUser(message) },
+        { text: pick('分享', 'Share'), onPress: () => void Share.share({ message: message.text }) },
+        { text: pick('取消', 'Cancel'), style: 'cancel' }
       ])
       return
     }
-    Alert.alert('助手回复', undefined, [
-      { text: '重新生成', onPress: () => regenerate(message) },
-      { text: '分享', onPress: () => void Share.share({ message: message.text }) },
-      { text: '取消', style: 'cancel' }
+    Alert.alert(pick('助手回复', 'Assistant reply'), undefined, [
+      { text: pick('重新生成', 'Regenerate'), onPress: () => regenerate(message) },
+      { text: pick('分享', 'Share'), onPress: () => void Share.share({ message: message.text }) },
+      { text: pick('取消', 'Cancel'), style: 'cancel' }
     ])
   }, [editUser, regenerate])
 
   const configure = useCallback(() => {
     if (onConfigure) onConfigure()
-    else Alert.alert('配置模型', '在「模型与服务商」里填入地址、密钥和模型名，就可以用真实模型对话了。')
+    else Alert.alert(pick('配置模型', 'Set up a model'), pick('在「模型与服务商」里填入地址、密钥和模型名，就可以用真实模型对话了。', 'Enter the URL, key and model name under Models and providers to chat with a real model.'))
   }, [onConfigure])
 
   const renderMessage = (m: LifeMessage) => {
@@ -161,19 +162,19 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
           onLongPress={() => openMenu(m)}
           delayLongPress={350}
           accessibilityRole="button"
-          accessibilityLabel={isUser ? '你的消息，长按可编辑或分享' : '助手回复，长按可重新生成或分享'}
+          accessibilityLabel={isUser ? pick('你的消息，长按可编辑或分享', 'Your message; long-press to edit or share') : pick('助手回复，长按可重新生成或分享', 'Assistant reply; long-press to regenerate or share')}
           style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant, { backgroundColor: isUser ? p.accentSoft : p.bg2, borderColor: p.borderSoft }]}
         >
           {isUser
             ? <Text style={[styles.bubbleText, { color: p.fg }]}>{m.text.length ? m.text : ' '}</Text>
             : <Markdown text={m.text.length ? m.text : ' '} color={p.fg} codeBg={p.bg3} accent={p.accent} />}
         </Pressable>
-        {m.pending ? <Meta style={{ marginTop: space[1] }}>正在等待回复…</Meta> : null}
+        {m.pending ? <Meta style={{ marginTop: space[1] }}>{pick('正在等待回复…', 'Waiting for reply…')}</Meta> : null}
         {m.error ? (
           <View style={{ marginTop: space[1], gap: space[1] }}>
             <Text style={{ color: p.err, fontSize: font.sm }}>{m.error}</Text>
             <Pressable accessibilityRole="button" onPress={() => retry(m)}>
-              <Text style={{ color: p.accent, fontSize: font.sm }}>重试</Text>
+              <Text style={{ color: p.accent, fontSize: font.sm }}>{pick('重试', 'Retry')}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -184,15 +185,15 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
   return (
     <View style={{ flex: 1, backgroundColor: p.bg0 }}>
       <Header
-        title="生活助手"
-        subtitle={provider ? `${provider.label} · ${provider.model}` : '尚未配置模型'}
-        left={<IconButton name="back" label="返回" onPress={onBack} />}
-        right={<IconButton name="settings" label="助手设置" onPress={onOpenSettings ?? configure} />}
+        title={pick('生活助手', 'Assistant')}
+        subtitle={provider ? `${provider.label} · ${provider.model}` : pick('尚未配置模型', 'No model configured')}
+        left={<IconButton name="back" label={pick('返回', 'Back')} onPress={onBack} />}
+        right={<IconButton name="settings" label={pick('助手设置', 'Assistant settings')} onPress={onOpenSettings ?? configure} />}
       />
       {!provider ? (
         <Pressable accessibilityRole="button" onPress={configure} style={[styles.notice, { borderBottomColor: p.borderSoft, backgroundColor: p.warnSoft }]}>
           <Icon name="key" size={icon.sm} color={p.warn} />
-          <Text style={{ color: p.fg, fontSize: font.sm, flex: 1 }}>配置模型后即可对话。点这里添加服务商。</Text>
+          <Text style={{ color: p.fg, fontSize: font.sm, flex: 1 }}>{pick('配置模型后即可对话。点这里添加服务商。', 'Configure a model to chat. Tap to add a provider.')}</Text>
           <Icon name="chevron-right" size={icon.sm} color={p.fgMute} />
         </Pressable>
       ) : null}
@@ -204,8 +205,8 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
       >
         {messages.length === 0 ? (
           <View style={{ paddingTop: space[6], gap: space[2] }}>
-            <EmptyState>说点什么。此对话提供模型回答，暂不设置系统提醒。</EmptyState>
-            {!provider ? <EmptyState>添加模型服务商后可以发送消息。</EmptyState> : null}
+            <EmptyState>{pick('说点什么。此对话提供模型回答，暂不设置系统提醒。', 'Say something. Replies come from the model; no system reminders.')}</EmptyState>
+            {!provider ? <EmptyState>{pick('添加模型服务商后可以发送消息。', 'Add a model provider to send messages.')}</EmptyState> : null}
           </View>
         ) : messages.map(renderMessage)}
       </ScrollView>
@@ -217,10 +218,10 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
           multiline
           value={draft}
           onChangeText={setDraft}
-          placeholder="说点什么…"
-          accessibilityLabel="输入内容"
+          placeholder={pick('说点什么…', 'Say something…')}
+          accessibilityLabel={pick('输入内容', 'Message')}
         />
-        <IconButton name="send" primary label="发送" disabled={!provider || !draft.trim() || sending} onPress={() => send(draft)} />
+        <IconButton name="send" primary label={pick('发送', 'Send')} disabled={!provider || !draft.trim() || sending} onPress={() => send(draft)} />
       </View>
     </View>
   )

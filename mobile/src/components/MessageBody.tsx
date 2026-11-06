@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { memo, useMemo, useState } from 'react'
 import { parseMessageBlocks } from '../messageBlocks'
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -40,7 +41,7 @@ export const MessageBody = memo(function MessageBody({ text }: { text: string })
         {block.kind === 'list' ? <Text style={{ color: p.fgMute }}>{'•  '}</Text> : null}<Inline value={block.value} />
       </Text>
     ))}
-    {folded ? <Pressable accessibilityRole="button" onPress={() => setExpanded(true)} style={{ minHeight: touch.min, justifyContent: 'center' }}><Text style={{ color: p.fgMute, fontSize: font.sm }}>展开完整消息</Text></Pressable> : null}
+    {folded ? <Pressable accessibilityRole="button" onPress={() => setExpanded(true)} style={{ minHeight: touch.min, justifyContent: 'center' }}><Text style={{ color: p.fgMute, fontSize: font.sm }}>{pick('展开完整消息', 'Show full message')}</Text></Pressable> : null}
   </View>
 })
 

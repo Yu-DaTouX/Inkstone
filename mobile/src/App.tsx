@@ -22,6 +22,8 @@ import { BootSplash, ContentEnter } from './motion'
 import { useFoldLayout } from './foldLayout'
 import { computeLayout, type Frame } from './windowLayout'
 import { cancelSpeech, isSpeechActive } from './speech'
+import { LangProvider } from './lang'
+import { pick } from '../../src/shared/ui-lang'
 
 type ArtifactLink = { id: string; filename: string; mediaType: string; kind: string }
 
@@ -45,6 +47,10 @@ function Hidden({ hidden, children, style }: { hidden: boolean; children: ReactN
 }
 
 export default function App() {
+  return <LangProvider><AppRoot /></LangProvider>
+}
+
+function AppRoot() {
   const p = usePalette()
   const scheme = useColorScheme()
   const fold = useFoldLayout()
@@ -112,8 +118,8 @@ export default function App() {
         await new RemoteClient(connection).revokeSelf()
       } catch {
         const confirmed = await new Promise<boolean>((resolve) => Alert.alert(
-          '电脑暂时无法撤销设备', '若继续退出，将只清除此手机的钥匙串；电脑端令牌可能仍有效，请恢复连接后在设备设置中撤销。',
-          [{ text: '取消', style: 'cancel', onPress: () => resolve(false) }, { text: '仍然清除此手机', style: 'destructive', onPress: () => resolve(true) }],
+          pick('电脑暂时无法撤销设备', 'Desktop cannot revoke this device'), pick('若继续退出，将只清除此手机的钥匙串；电脑端令牌可能仍有效，请恢复连接后在设备设置中撤销。', 'Signing out only clears the keychain on this phone. The desktop token may stay valid; revoke the device in desktop settings once connected.'),
+          [{ text: pick('取消', 'Cancel'), style: 'cancel', onPress: () => resolve(false) }, { text: pick('仍然清除此手机', 'Clear this phone anyway'), style: 'destructive', onPress: () => resolve(true) }],
           { cancelable: false }
         ))
         if (!confirmed) return
@@ -211,7 +217,7 @@ export default function App() {
       <View style={[styles.banner, { backgroundColor: p.surface3, borderColor: p.borderSoft }]}>
         <DetailPane detail={detail?.sessionId === route.sessionId ? detail : null} onSessionRemoved={sessionRemoved} onOpenArtifact={(artifact) => { setDetailOpen(false); openArtifact(artifact) }} background={p.surface3} inset={false} />
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="收起会话详情" onPress={() => setDetailOpen(false)} style={[styles.scrim, { backgroundColor: p.press }]} />
+      <Pressable accessibilityRole="button" accessibilityLabel={pick('收起会话详情', 'Hide session details')} onPress={() => setDetailOpen(false)} style={[styles.scrim, { backgroundColor: p.press }]} />
     </View> : undefined}
   /> : null
 
@@ -253,7 +259,7 @@ export default function App() {
   /> : null
 
   const detailPane = (onClose?: () => void) => <View style={{ flex: 1, backgroundColor: p.bg1 }}>
-    <Header title="会话详情" background={p.bg1} right={onClose ? <IconButton name="close" label="收起会话详情" onPress={onClose} /> : undefined} />
+    <Header title={pick('会话详情', 'Session details')} background={p.bg1} right={onClose ? <IconButton name="close" label={pick('收起会话详情', 'Hide session details')} onPress={onClose} /> : undefined} />
     <DetailPane detail={detail?.sessionId === sessionId ? detail : null} onOpenArtifact={openArtifact} onSessionRemoved={sessionRemoved} />
   </View>
 
@@ -268,7 +274,7 @@ export default function App() {
     const firstWidth = leftHanded && mode === 'book' ? frame.width - layout.side - layout.gap : layout.side
     const hairline = StyleSheet.hairlineWidth
     const edge = (toward: 'main' | 'outer') => mode === 'book' ? {} : (toward === 'main') !== leftHanded ? { borderRightWidth: hairline, borderColor: p.borderSoft } : { borderLeftWidth: hairline, borderColor: p.borderSoft }
-    const main = sessionScreen ? <ContentEnter key={sessionId}>{sessionScreen}</ContentEnter> : mainContent ? <ContentEnter key={route.name}>{mainContent}</ContentEnter> : <View style={styles.center}><EmptyState>选择会话</EmptyState></View>
+    const main = sessionScreen ? <ContentEnter key={sessionId}>{sessionScreen}</ContentEnter> : mainContent ? <ContentEnter key={route.name}>{mainContent}</ContentEnter> : <View style={styles.center}><EmptyState>{pick('选择会话', 'Select a session')}</EmptyState></View>
     const spacer = mode === 'book' ? <View style={{ width: layout.gap }} /> : null
     return <View style={{ flex: 1, flexDirection: leftHanded ? 'row-reverse' : 'row' }}>
       <View style={[styles.side, { width: firstWidth }, edge('main'), listShown ? null : { display: 'none' }]}>{home}</View>
@@ -298,7 +304,7 @@ export default function App() {
               )
             ) : <>
               {LIFE_ASSISTANT_ENABLED ? <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: space[3], paddingTop: space[2] }}>
-                <Button compact variant="ghost" label="先用生活助手" onPress={() => setLocalRoute('assistant')} />
+                <Button compact variant="ghost" label={pick('先用生活助手', 'Try the assistant first')} onPress={() => setLocalRoute('assistant')} />
               </View> : null}
               <PairScreen
                 prefill={pairingPrefill}

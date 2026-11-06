@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { useEffect, useState } from 'react'
 import { KeyboardAvoidingView, Linking, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { pair, pairViaRelay, RemoteHttpError, type Connection } from '../api/client'
@@ -43,7 +44,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
 
   const open = async (url: string) => {
     try { await Linking.openURL(url) }
-    catch { setError('无法打开链接，请在浏览器中访问使用说明') }
+    catch { setError(pick('无法打开链接，请在浏览器中访问使用说明', 'Cannot open the link. Visit the guide in a browser.')) }
   }
 
   const acceptInput = (value: string) => {
@@ -62,28 +63,28 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
   const scan = async () => {
     try {
       const value = await scanner?.scan()
-      if (value === undefined) return setError('此设备暂不支持应用内扫码，请粘贴配对链接。')
+      if (value === undefined) return setError(pick('此设备暂不支持应用内扫码，请粘贴配对链接。', 'In-app scanning is unsupported. Paste the pairing link.'))
       if (value === null) return
       const parsed = parsePairingLink(value.trim())
-      if (!parsed) return setError('二维码不是有效的砚配对链接，请在电脑「设备连接」重新生成。')
+      if (!parsed) return setError(pick('二维码不是有效的砚配对链接，请在电脑「设备连接」重新生成。', 'Not a valid Inkstone pairing code. Regenerate it in Device connection on the desktop.'))
       setAddress(parsed.address)
       setCode(parsed.code)
       setRelay(parsed.relay ?? null)
       setError(null)
     } catch (err) {
       setError((err as { code?: string })?.code === 'scanner_permission'
-        ? '请允许砚使用相机后重试，或粘贴配对链接。'
-        : '扫码暂不可用，请粘贴配对链接或手动输入电脑地址。')
+        ? pick('请允许砚使用相机后重试，或粘贴配对链接。', 'Allow camera access and retry, or paste the pairing link.')
+        : pick('扫码暂不可用，请粘贴配对链接或手动输入电脑地址。', 'Scanning unavailable. Paste the link or enter the desktop address.'))
     }
   }
 
   const paste = async () => {
     try {
       const value = await scanner?.readClipboard()
-      if (!value?.trim()) return setError('剪贴板里没有链接或地址。')
+      if (!value?.trim()) return setError(pick('剪贴板里没有链接或地址。', 'No link or address on the clipboard.'))
       acceptInput(value)
     } catch {
-      setError('无法读取剪贴板，请长按输入框粘贴。')
+      setError(pick('无法读取剪贴板，请长按输入框粘贴。', 'Cannot read the clipboard. Long-press the field to paste.'))
     }
   }
 
@@ -94,7 +95,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
       try {
         await onPaired(await pairViaRelay(relay, name.trim() || '我的手机'))
       } catch (err) {
-        setError(err instanceof RemoteHttpError ? err.message : '经中继配对失败，请在电脑「中继接入」重新生成二维码。')
+        setError(err instanceof RemoteHttpError ? err.message : pick('经中继配对失败，请在电脑「中继接入」重新生成二维码。', 'Relay pairing failed. Regenerate the code in Relay access on the desktop.'))
       } finally {
         setBusy(false)
       }
@@ -102,15 +103,15 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
     }
     const baseUrl = normalizeBaseUrl(address)
     if (!baseUrl) return setError(address.trim().toLowerCase().startsWith('inkstone://')
-      ? '配对链接无效或已过期，请在电脑重新生成。'
-      : '请输入电脑的 Tailscale 地址，例如 100.101.102.103:37892。')
-    if (!/^\d{6}$/.test(code)) return setError('配对码是 6 位数字')
+      ? pick('配对链接无效或已过期，请在电脑重新生成。', 'Pairing link invalid or expired. Regenerate it on the desktop.')
+      : pick('请输入电脑的 Tailscale 地址，例如 100.101.102.103:37892。', 'Enter the desktop Tailscale address, e.g. 100.101.102.103:37892.'))
+    if (!/^\d{6}$/.test(code)) return setError(pick('配对码是 6 位数字', 'The pairing code is 6 digits'))
     setBusy(true)
     setError(null)
     try {
       await onPaired(await pair(baseUrl, code, name.trim() || '我的手机'))
     } catch (err) {
-      setError(err instanceof RemoteHttpError ? err.message : '配对失败，请在电脑上重新生成配对码。')
+      setError(err instanceof RemoteHttpError ? err.message : pick('配对失败，请在电脑上重新生成配对码。', 'Pairing failed. Regenerate the code on the desktop.'))
     } finally {
       setBusy(false)
     }
@@ -122,38 +123,38 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
         <View style={styles.topline}>
           <BrandMark size={40} />
           <Text style={[styles.kicker, { color: p.fgMute }]}>INKSTONE / PHONE</Text>
-          {onCancel ? <Button label="返回" variant="ghost" compact onPress={onCancel} /> : null}
+          {onCancel ? <Button label={pick('返回', 'Back')} variant="ghost" compact onPress={onCancel} /> : null}
         </View>
-        <Text style={[styles.headline, { color: p.fg }]}>连接电脑</Text>
+        <Text style={[styles.headline, { color: p.fg }]}>{pick('连接电脑', 'Connect to desktop')}</Text>
 
         <View style={[styles.step, { backgroundColor: p.bg1, borderColor: p.borderSoft }]}>
-          <View style={styles.stepHeading}><Text style={[styles.number, { color: p.accent }]}>01</Text><Text style={[styles.stepTitle, { color: p.fg }]}>连接同一个网络</Text></View>
-          <Text style={[styles.stepBody, { color: p.fgDim }]}>手机与电脑需连接同一个 Tailscale 网络；电脑开启了「中继接入」时，直接扫它的二维码即可，不需要 Tailscale。</Text>
+          <View style={styles.stepHeading}><Text style={[styles.number, { color: p.accent }]}>01</Text><Text style={[styles.stepTitle, { color: p.fg }]}>{pick('连接同一个网络', 'Join the same network')}</Text></View>
+          <Text style={[styles.stepBody, { color: p.fgDim }]}>{pick('手机与电脑需连接同一个 Tailscale 网络；电脑开启了「中继接入」时，直接扫它的二维码即可，不需要 Tailscale。', 'Phone and desktop need the same Tailscale network. With Relay access on, just scan its code; Tailscale is not needed.')}</Text>
           <Pressable accessibilityRole="link" onPress={() => void open(TAILSCALE_URL)} style={[styles.linkRow, { borderTopColor: p.borderSoft }]}>
-            <Text style={[styles.linkText, { color: p.accent }]}>下载 Tailscale</Text><Icon name="external" size={icon.sm} color={p.accent} />
+            <Text style={[styles.linkText, { color: p.accent }]}>{pick('下载 Tailscale', 'Get Tailscale')}</Text><Icon name="external" size={icon.sm} color={p.accent} />
           </Pressable>
         </View>
 
         <View style={[styles.step, { backgroundColor: p.bg1, borderColor: p.borderSoft }]}>
-          <View style={styles.stepHeading}><Text style={[styles.number, { color: p.accent }]}>02</Text><Text style={[styles.stepTitle, { color: p.fg }]}>与电脑配对</Text></View>
-          <Text style={[styles.stepBody, { color: p.fgDim }]}>在电脑「设置 → 设备连接」生成配对码。</Text>
+          <View style={styles.stepHeading}><Text style={[styles.number, { color: p.accent }]}>02</Text><Text style={[styles.stepTitle, { color: p.fg }]}>{pick('与电脑配对', 'Pair with desktop')}</Text></View>
+          <Text style={[styles.stepBody, { color: p.fgDim }]}>{pick('在电脑「设置 → 设备连接」生成配对码。', 'Generate a code in Settings → Device connection on the desktop.')}</Text>
           <View style={styles.pairActions}>
-            <Button label="扫码配对" variant="secondary" onPress={() => void scan()} style={styles.pairAction} />
-            <Button label="粘贴链接" variant="secondary" onPress={() => void paste()} style={styles.pairAction} />
+            <Button label={pick('扫码配对', 'Scan code')} variant="secondary" onPress={() => void scan()} style={styles.pairAction} />
+            <Button label={pick('粘贴链接', 'Paste link')} variant="secondary" onPress={() => void paste()} style={styles.pairAction} />
           </View>
-          {relay ? <Text style={[styles.scanned, { color: p.ok }]}>{`经中继连接「${relay.computerName}」，不需要 Tailscale`}</Text> : prefill ? <Text style={[styles.scanned, { color: p.ok }]}>已填入配对信息</Text> : null}
-          <Text style={[styles.label, { color: p.fgDim }]}>配对链接或 Tailscale 地址</Text>
-          <Input code value={address} onChangeText={acceptInput} placeholder="100.101.102.103:37892" autoCapitalize="none" autoCorrect={false} keyboardType="url" accessibilityLabel="配对链接或 Tailscale 地址" />
-          <Text style={[styles.label, { color: p.fgDim }]}>6 位配对码</Text>
-          <Input code style={styles.code} value={code} onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" keyboardType="number-pad" maxLength={6} accessibilityLabel="配对码" />
-          <Text style={[styles.label, { color: p.fgDim }]}>此手机名称</Text>
-          <Input value={name} onChangeText={setName} maxLength={60} accessibilityLabel="此手机名称" />
+          {relay ? <Text style={[styles.scanned, { color: p.ok }]}>{pick(`经中继连接「${relay.computerName}」，不需要 Tailscale`, `Via relay to ${relay.computerName}; no Tailscale needed`)}</Text> : prefill ? <Text style={[styles.scanned, { color: p.ok }]}>{pick('已填入配对信息', 'Pairing info filled in')}</Text> : null}
+          <Text style={[styles.label, { color: p.fgDim }]}>{pick('配对链接或 Tailscale 地址', 'Pairing link or Tailscale address')}</Text>
+          <Input code value={address} onChangeText={acceptInput} placeholder="100.101.102.103:37892" autoCapitalize="none" autoCorrect={false} keyboardType="url" accessibilityLabel={pick('配对链接或 Tailscale 地址', 'Pairing link or Tailscale address')} />
+          <Text style={[styles.label, { color: p.fgDim }]}>{pick('6 位配对码', '6-digit code')}</Text>
+          <Input code style={styles.code} value={code} onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" keyboardType="number-pad" maxLength={6} accessibilityLabel={pick('配对码', 'Pairing code')} />
+          <Text style={[styles.label, { color: p.fgDim }]}>{pick('此手机名称', 'This phone name')}</Text>
+          <Input value={name} onChangeText={setName} maxLength={60} accessibilityLabel={pick('此手机名称', 'This phone name')} />
           {error ? <Text style={[styles.error, { color: p.err }]} accessibilityLiveRegion="polite">{error}</Text> : null}
-          <Button label="连接电脑" variant="primary" busy={busy} onPress={() => void submit()} style={styles.submit} />
+          <Button label={pick('连接电脑', 'Connect')} variant="primary" busy={busy} onPress={() => void submit()} style={styles.submit} />
         </View>
 
         <Pressable accessibilityRole="link" onPress={() => void open(GUIDE_URL)} style={styles.guide}>
-          <Text style={{ color: p.accent, fontSize: font.sm }}>使用说明</Text><Icon name="external" size={icon.sm} color={p.accent} />
+          <Text style={{ color: p.accent, fontSize: font.sm }}>{pick('使用说明', 'Guide')}</Text><Icon name="external" size={icon.sm} color={p.accent} />
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>

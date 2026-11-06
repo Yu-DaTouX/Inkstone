@@ -1,3 +1,4 @@
+import { pick } from '../../src/shared/ui-lang'
 import { AppState } from 'react-native'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { RemoteEventEnvelope, RemotePendingQuestion, RemoteInfo, RemoteModel, RemoteSessionStats } from '../../src/shared/remote-protocol'
@@ -39,7 +40,7 @@ const Ctx = createContext<RemoteState | null>(null)
 
 export function useRemote(): RemoteState {
   const value = useContext(Ctx)
-  if (!value) throw new Error('useRemote 必须在 RemoteProvider 里使用')
+  if (!value) throw new Error(pick('useRemote 必须在 RemoteProvider 里使用', 'useRemote must be used inside RemoteProvider'))
   return value
 }
 
@@ -111,7 +112,7 @@ export function RemoteProvider({
         setError(null)
       } catch (err) {
         if (err instanceof RemoteHttpError && err.status === 401) onUnauthorized()
-        else setError(err instanceof Error ? err.message : '请求失败')
+        else setError(err instanceof Error ? err.message : pick('请求失败', 'Request failed'))
       }
     },
     [onUnauthorized]

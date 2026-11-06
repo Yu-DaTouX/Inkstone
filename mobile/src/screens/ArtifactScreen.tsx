@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { RemoteImage } from '../components/RemoteImage'
 import { useEffect, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -31,7 +32,7 @@ export function ArtifactScreen({
     setText(null)
     setError(null)
     client.artifactText(sessionId, artifact.id).then(value => { if (alive) setText(value) }).catch((err: unknown) => {
-      if (alive) setError(err instanceof Error ? err.message : '读取成果失败')
+      if (alive) setError(err instanceof Error ? err.message : pick('读取成果失败', 'Failed to load artifact'))
     })
     return () => { alive = false }
   }, [artifact.id, client, isText, sessionId])
@@ -41,17 +42,17 @@ export function ArtifactScreen({
       <Header
         title={artifact.filename}
         subtitle={artifact.mediaType}
-        left={<View style={{ flexDirection: 'row' }}>{onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : null}<IconButton name="back" label="返回会话" onPress={onBack} /></View>}
+        left={<View style={{ flexDirection: 'row' }}>{onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? pick('收起项目和会话列表', 'Hide project and session list') : pick('展开项目和会话列表', 'Show project and session list')} onPress={onToggleSidebar} /> : null}<IconButton name="back" label={pick('返回会话', 'Back to session')} onPress={onBack} /></View>}
       />
       {error ? <Text style={[styles.error, { color: p.err }]}>{error}</Text> : null}
       {isImage ? (
         <RemoteImage client={client} style={styles.image} resizeMode="contain" source={client.artifactSource(sessionId, artifact.id)} accessibilityLabel={artifact.filename} />
       ) : isText ? (
         <ScrollView contentContainerStyle={styles.textBox}>
-          <Text selectable style={[styles.text, { color: p.fg }]}>{text ?? '读取中…'}</Text>
+          <Text selectable style={[styles.text, { color: p.fg }]}>{text ?? pick('读取中…', 'Loading…')}</Text>
         </ScrollView>
       ) : (
-        <EmptyState>请在电脑上打开 {artifact.mediaType} 文件。</EmptyState>
+        <EmptyState>{pick(`请在电脑上打开 ${artifact.mediaType} 文件。`, `Open this ${artifact.mediaType} file on the desktop.`)}</EmptyState>
       )}
     </View>
   )
