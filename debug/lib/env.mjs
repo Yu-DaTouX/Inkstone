@@ -32,7 +32,7 @@ export function newRunDir(label) {
   return dir
 }
 
-const INHERITED_APP_ENV = /^(YAN_|ELECTRON_RUN_AS_NODE$|ELECTRON_RENDERER_URL$|PI_CODING_AGENT_DIR$)/
+const INHERITED_APP_ENV = /^(YAN_|ELECTRON_RUN_AS_NODE$|ELECTRON_RENDERER_URL$|PI_CODING_AGENT_DIR$|GH_TOKEN$|GITHUB_TOKEN$)|(_API_KEY|_AUTH_TOKEN|_ACCESS_TOKEN)$/
 
 export function cleanEnv(extra = {}) {
   const env = {}

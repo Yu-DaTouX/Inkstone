@@ -41,6 +41,11 @@ const HELP = `砚调试工具：npm run debug -- <命令> [参数]
   scenario <名字> [--repeat N] [--build] [--dev]
       结果写到 debug/runs/<时间>-<名字>/report.json，失败时退出码非 0
 
+界面审查（真实数据副本 + 假模型，跑任意脚本，跑完自动关）
+  node debug/review.mjs <脚本.mjs> <截图目录> [--demo] [--cards] [--no-user-data] [--days 7] [--timeout-min 8] [--real-model commandcode/<模型>]
+      脚本导出 run(ctx)；ctx.live() 只在沙箱项目发消息；工具库 debug/lib/review-kit.mjs（对比度、控件、鼠标键盘、缩窗、连续截帧）
+      --real-model 把本机 commandcode 凭据只放进实例环境变量，主会话与子代理都改用该真实模型
+
 假模型
   fake [--port N]      单独起假模型（openai-responses 协议），打印 models.json 片段
 ${Object.entries(FAKE_TRIGGERS).map(([key, text]) => `      消息含 ${key.padEnd(9)} ${text}`).join('\n')}

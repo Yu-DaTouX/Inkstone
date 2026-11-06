@@ -18,7 +18,8 @@ const DATA_FILES = [
   'plugin-catalog.json',
   'work-modes.json',
   'goals.json',
-  'artifact-docs.json'
+  'artifact-docs.json',
+  'approval-log.json'
 ]
 const PI_FILES = ['left-panel.json']
 const SNAPSHOT_KEEP_DAYS = 30
