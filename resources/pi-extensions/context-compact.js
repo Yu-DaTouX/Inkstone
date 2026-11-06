@@ -120,6 +120,17 @@ export function serializeMessage(msg, index) {
         return b.id ? `${b.name}(${args}) call=${b.id}` : `${b.name}(${args})`
       })
       if (calls.length) parts.push(`[Assistant tool calls]: ${calls.join('; ')}`)
+      const search = msg.yanWebSearch
+      if (search && typeof search === 'object') {
+        const queries = Array.isArray(search.queries) ? search.queries.filter((q) => typeof q === 'string' && q) : []
+        const urls = [...(Array.isArray(search.results) ? search.results : []), ...(Array.isArray(search.cited) ? search.cited : [])].map((item) => item?.url).filter((u) => typeof u === 'string' && u)
+        const opened = Array.isArray(search.opened) ? search.opened.filter((u) => typeof u === 'string' && u) : []
+        const lines = []
+        if (queries.length) lines.push(`queries=${queries.map((q) => JSON.stringify(q)).join(', ')}`)
+        if (urls.length) lines.push(`sources=${[...new Set(urls)].join(', ')}`)
+        if (opened.length) lines.push(`opened=${opened.join(', ')}`)
+        if (lines.length) parts.push(`[Assistant web search]: ${lines.join('; ')}`)
+      }
       return parts.join('\n\n')
     }
     case 'toolResult': {
@@ -133,7 +144,7 @@ export function serializeMessage(msg, index) {
     case 'compactionSummary':
       return msg.summary ? `[Earlier summary]: ${msg.summary}` : ''
     case 'custom':
-      return msg.display === false ? '' : (textOf(msg.content) ? `[Note]: ${textOf(msg.content)}` : '')
+      return textOf(msg.content) ? `[Note]: ${textOf(msg.content)}` : ''
     default:
       return ''
   }

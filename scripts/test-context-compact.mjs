@@ -18,6 +18,8 @@ assert.ok(text.includes('[Assistant tool calls]: read(path="book/ch01.md") call=
 assert.ok(text.includes('[Tool result #3 read call=c1]: 甲'), '工具结果带序号、工具名、调用 ID')
 assert.ok(mod.serializeMessage({ role: 'toolResult', toolName: 'bash', toolCallId: 'c2', isError: true, content: [] }, 7) === '[Tool result #7 bash call=c2 error]: (empty)', '失败的工具结果带 error 标记，空结果也留一行')
 assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'cat secret.env', output: 'TOKEN=abc', excludeFromContext: true }, 8), '', '用户排除出上下文的终端输出不进压缩摘要')
+assert.ok(mod.serializeMessage({ role: 'assistant', content: [{ type: 'text', text: '查到了' }], yanWebSearch: { queries: ['inkstone'], results: [{ url: 'https://a.example/x' }], cited: [{ url: 'https://a.example/x' }], opened: ['https://b.example'] } }, 9).includes('[Assistant web search]: queries="inkstone"; sources=https://a.example/x; opened=https://b.example'), '原生搜索记录进入压缩摘要')
+assert.equal(mod.serializeMessage({ role: 'custom', display: false, content: 'hidden but sent to model' }, 10), '[Note]: hidden but sent to model', 'display:false 的自定义消息仍发给模型，也进摘要')
 assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'npm test', output: 'ok' }, 9), '[User ran]: npm test\nok', '普通终端输出照常进入摘要')
 
 {
