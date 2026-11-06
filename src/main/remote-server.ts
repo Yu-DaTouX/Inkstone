@@ -105,6 +105,7 @@ export interface RemoteServerInfo {
 
 const MAX_BODY_BYTES = 64 * 1024
 const IDEMPOTENCY_MAX_ENTRIES = 2000
+const DEVICE_STREAM_LIMIT = 4
 const MAX_MESSAGE_CHARS = 20_000
 const MAX_NAME_CHARS = 200
 const SESSION_ID_MAX = 200
@@ -1179,6 +1180,13 @@ export class RemoteServer {
   private async openEvents(req: IncomingMessage, res: ServerResponse, caller: Caller, sinceRaw: string | null): Promise<void> {
     if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, '事件连接过多，请关闭其他连接后重试')
     ;(res as ServerResponse & { yanDeviceId?: string }).yanDeviceId = caller.device?.id
+    if (caller.device) {
+      const mine = [...this.clients].filter((client) => (client as ServerResponse & { yanDeviceId?: string }).yanDeviceId === caller.device!.id)
+      for (const stale of mine.slice(0, Math.max(0, mine.length - (DEVICE_STREAM_LIMIT - 1)))) {
+        this.clients.delete(stale)
+        try { stale.end() } catch { }
+      }
+    }
     this.clients.add(res)
     res.on('close', () => this.clients.delete(res))
     res.writeHead(200, {

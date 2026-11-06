@@ -174,6 +174,14 @@ try {
   const evil = await fetch(base + '/remote/v1/status', { headers: { ...auth(phone), origin: 'http://evil.example' } })
   assert.equal(evil.status, 403, '网页来源被拒绝')
 
+  const flood = []
+  for (let i = 0; i < 40; i += 1) flood.push(await fetch(base + '/remote/v1/events', { headers: auth(phone) }))
+  assert.ok(flood.every((response) => response.status === 200), '同一设备反复重连不会被拒')
+  const other = await fetch(base + '/remote/v1/events', { headers: auth(phone2) })
+  assert.equal(other.status, 200, '一台设备的连接风暴不会占满其他设备的事件流名额')
+  await other.body.cancel()
+  await Promise.all(flood.map((response) => response.body.cancel().catch(() => undefined)))
+
   const stream = await fetch(base + '/remote/v1/events', { headers: auth(phone2) })
   assert.equal(stream.status, 200)
   const reader = stream.body.getReader()
