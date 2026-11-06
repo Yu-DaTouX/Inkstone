@@ -76,6 +76,7 @@ try {
     ok(run.status === 'error' && run.endReason === 'exited', `${label}：重启后标为中断`)
     ok(run.review === 'pending' && run.diff?.files === 2 && existsSync(run.diff.patchPath), `${label}：改动存成补丁，审阅状态可合并`)
     ok(existsSync(worktree), `${label}：工作树保留，可以原地续接`)
+    ok(run.resultPath === worktree, `${label}：保留工作树时结果路径指向工作树`)
     ok(/原地续接/.test(run.error ?? ''), `${label}：说明改动怎么处置`)
     ok(run.resumable?.ok === true, `${label}：可续派`, JSON.stringify(run.resumable))
 
@@ -105,12 +106,68 @@ try {
     const restarted = make(repo)
     await restarted.loadHistory()
     const run = restarted.get(started.run.id)
-    ok(run.review === 'archived' && run.diff?.files === 4, '混合改动：删除、CRLF、二进制、带空格的嵌套新文件都进补丁')
+    ok(run.review === 'pending' && run.diff?.files === 4, '混合改动：删除、CRLF、二进制、带空格的嵌套新文件都进补丁')
     const merged = await restarted.merge(started.run.id)
     ok(merged.ok, `混合改动：合并成功 ${merged.error ?? ''}`)
     ok(!existsSync(join(repo, 'gone.txt')) && existsSync(join(repo, 'bin.dat')) && (await readFile(join(repo, 'bin.dat'))).length === 7, '混合改动：删除与二进制按原样合并')
     ok((await readFile(join(repo, 'crlf.txt'), 'utf8')) === 'a\r\nb\r\nc\r\n', '混合改动：CRLF 保持')
     ok(existsSync(join(repo, 'deep', 'dir', 'x 空格.txt')), '混合改动：嵌套新文件合并')
+  }
+
+  {
+    const repo = await newRepo('repo-ignored')
+    await writeFile(join(repo, '.gitignore'), 'reports/\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'ignore')
+    const crashed = make(repo)
+    const started = await crashed.start('只产出被忽略的文件', undefined, 'worktree')
+    const worktree = started.run.cwd
+    await mkdir(join(worktree, 'reports'), { recursive: true })
+    await writeFile(join(worktree, 'reports', 'result.bin'), 'ignored-output')
+    const restarted = make(repo)
+    await restarted.loadHistory()
+    const run = restarted.get(started.run.id)
+    ok(run.review === 'pending' && existsSync(worktree), '只有被忽略产物的中断子代理：保留工作树并待审阅')
+    ok(run.resultPath === worktree, '保留工作树时结果路径指向工作树')
+    const refused = await restarted.merge(started.run.id)
+    ok(!refused.ok && existsSync(worktree), '只有被忽略产物没有补丁可合并：拒绝合并并保留工作树')
+    const discarded = await restarted.discard(started.run.id)
+    ok(discarded.ok && !existsSync(worktree) && restarted.get(started.run.id).review === 'discarded', '放弃后清理保留的工作树')
+  }
+
+  {
+    const repo = await newRepo('repo-ignored-merge')
+    await writeFile(join(repo, '.gitignore'), 'reports/' + String.fromCharCode(10))
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'ignore')
+    const crashed = make(repo)
+    const started = await crashed.start('改文件并产出被忽略的文件', undefined, 'worktree')
+    const worktree = started.run.cwd
+    await writeFile(join(worktree, 'a.txt'), 'changed' + String.fromCharCode(10))
+    await mkdir(join(worktree, 'reports'), { recursive: true })
+    await writeFile(join(worktree, 'reports', 'result.bin'), 'ignored-output')
+    const restarted = make(repo)
+    await restarted.loadHistory()
+    const merged = await restarted.merge(started.run.id)
+    const after = restarted.get(started.run.id)
+    ok(merged.ok && !existsSync(worktree), '合并后清理保留的工作树')
+    ok(!!after.savedOutputsPath && existsSync(join(after.savedOutputsPath, 'reports', 'result.bin')), '清理前把被忽略的产物另存')
+  }
+
+  {
+    const repo = await newRepo('repo-vanished')
+    const crashed = make(repo)
+    const started = await crashed.start('工作树被手动删掉', undefined, 'worktree')
+    const worktree = started.run.cwd
+    await writeFile(join(worktree, 'a.txt'), 'changed\n')
+    const restarted = make(repo)
+    await restarted.loadHistory()
+    ok(existsSync(worktree) && restarted.get(started.run.id).resumable?.ok === true, '工作树在时可续派')
+    git(repo, 'worktree', 'remove', '--force', worktree)
+    const again = make(repo)
+    await again.loadHistory()
+    const run = again.get(started.run.id)
+    ok(!existsSync(worktree) && run.resumable?.ok !== true, '工作树已被删除：不再提示可原地续接')
   }
 
   {
