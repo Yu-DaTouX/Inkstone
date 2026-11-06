@@ -460,4 +460,24 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: var(--s-8);
   }
+
+  .v3-swap-fade {
+    animation: v3-swap-fade var(--dur-base) var(--ease) both;
+  }
+
+  @keyframes v3-swap-fade {
+    from {
+      opacity: 0.4;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-swap-fade {
+      animation: none;
+    }
+  }
+
+  :root[data-reduce-motion='true'] .v3-swap-fade {
+    animation: none;
+  }
 }

@@ -498,15 +498,15 @@
 
 @layer features {
   .v3-conn-banner {
-    position: absolute;
-    top: var(--s-8);
-    left: 50%;
+    position: relative;
     z-index: var(--z-rail);
+    flex: none;
+    align-self: center;
     width: max-content;
     max-width: min(560px, calc(100% - var(--s-32)));
+    margin-block: var(--s-8) 0;
     flex-wrap: nowrap;
     align-items: center;
-    transform: translateX(-50%);
     box-shadow: var(--shadow-pop);
   }
   .v3-conn-banner > .ui-notice__body {

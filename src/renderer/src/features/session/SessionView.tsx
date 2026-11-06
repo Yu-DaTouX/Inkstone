@@ -42,7 +42,7 @@ import { SessionFindBar, type VirtualFindSource } from './SessionFindBar'
 import { turnFindText, type TurnFindText } from './session-find'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, type FollowDecision, type ReadingAnchor } from './scroll-follow'
 import { holdStreamTail } from './stream-tail-hold'
-import { advanceGlide, domAnchor, domMetrics, domReadingAnchors, GLIDE_FRAME_CAP_MS, glideSettle, keepSettleAnchor, startGlide, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
+import { advanceGlide, domAnchor, domMetrics, domReadingAnchors, GLIDE_FRAME_CAP_MS, glideSettle, keepSettleAnchor, resolveAnchorPoint, startGlide, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
 import './session.css'
 import { withSubmittingMessages } from '../../state/submitting-messages'
 import { cssQuoted, highlightMessageElement, nextFrame, registerMessageLocator } from '../../state/message-locator'
@@ -505,14 +505,16 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
         if (userScrollActive(intentRef.current, performance.now())) return
         const target = [...node.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')].find((el) => el.dataset.turnId === anchor.turnId)
         if (!target) return
-        const offset = target.getBoundingClientRect().top - node.getBoundingClientRect().top
+        const point = resolveAnchorPoint(target, anchor)
+        const offset = point === null ? target.getBoundingClientRect().top - node.getBoundingClientRect().top : point - node.getBoundingClientRect().top
+        const wanted = point === null ? anchor.offset : 0
         const max = Math.max(0, node.scrollHeight - node.clientHeight)
-        const next = Math.min(Math.max(0, node.scrollTop + offset - anchor.offset), max)
+        const next = Math.min(Math.max(0, node.scrollTop + offset - wanted), max)
         const shift = next - node.scrollTop
-        if (Math.abs(offset - anchor.offset - shift) > 4) return
+        if (Math.abs(offset - wanted - shift) > 4) return
         if (Math.abs(shift) < 0.5) return
         node.scrollTop = next
-        recordRef.current(next, false, { turnId: anchor.turnId, offset: anchor.offset })
+        recordRef.current(next, false, point === null ? { turnId: anchor.turnId, offset: anchor.offset } : anchor)
       }
       restore()
     })
