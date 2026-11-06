@@ -1,6 +1,24 @@
 @import './ui/session-look.css';
 
+@property --composer-h {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 @layer features {
+  .v3-session,
+  .v3-stream-host,
+  .v3-stream-host::after,
+  .v3-stream,
+  .v3-stream > div:not(.v3-stream-inner),
+  .v3-stream > div:not(.v3-stream-inner) > div,
+  .v3-stream-inner,
+  .v3-stream-row--tail,
+  .v3-jump {
+    --composer-h: inherit;
+  }
+
   .v3-session {
     display: flex;
     flex-direction: column;

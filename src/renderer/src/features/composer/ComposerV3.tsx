@@ -298,15 +298,25 @@ export function ComposerV3(): JSX.Element {
     }
   }, [conversationKey, draftKey])
   const draftReady = !!draftKey && hydratedDraftKey === draftKey && hydratedConversation.current === conversationKey
+  const pendingDraft = useRef<{ key: string; text: string; attachments: typeof storeAttachments } | null>(null)
+  const flushDraft = useCallback((): void => {
+    const pending = pendingDraft.current
+    pendingDraft.current = null
+    if (pending) saveDraft(pending.key, { text: pending.text, attachments: pending.attachments })
+  }, [])
   useEffect(() => {
     if (!draftReady) return undefined
-    const draft = { text: value, attachments: storeAttachments }
-    const timer = setTimeout(() => saveDraft(draftKey, draft), 250)
+    pendingDraft.current = { key: draftKey, text: value, attachments: storeAttachments }
+    const timer = setTimeout(flushDraft, 250)
+    return () => clearTimeout(timer)
+  }, [draftReady, draftKey, value, storeAttachments, flushDraft])
+  useEffect(() => {
+    window.addEventListener('pagehide', flushDraft)
     return () => {
-      clearTimeout(timer)
-      saveDraft(draftKey, draft)
+      window.removeEventListener('pagehide', flushDraft)
+      flushDraft()
     }
-  }, [draftReady, draftKey, value, storeAttachments])
+  }, [draftKey, flushDraft])
   useEffect(() => {
     if (skipSessionDraft.current) {
       skipSessionDraft.current = false
@@ -393,13 +403,13 @@ export function ComposerV3(): JSX.Element {
     suggestion: suggestionStatus,
     dismissed: dismissedSuggestion,
     enabled: suggestionsEnabled,
-    running: roundRunning,
+    running: roundRunning || submitAdapter.isSendBusy,
     answering: answering !== null,
     value,
     attachmentCount: attachments.count,
     composing
   })
-  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
+  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning || submitAdapter.isSendBusy ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
   const slashMode =
     completion.slashQuery !== null &&
     (completion.slashMatches.length > 0 || (completion.atQuery === null && completion.slashStatus !== 'idle'))

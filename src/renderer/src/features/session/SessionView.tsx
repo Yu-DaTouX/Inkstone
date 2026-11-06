@@ -530,7 +530,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       }
       restore()
     })
-    observer.observe(inner)
+    observer.observe(inner, { box: 'border-box' })
     observer.observe(node)
     observerRef.current = observer
   }, [])
