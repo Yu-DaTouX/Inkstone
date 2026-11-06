@@ -21,6 +21,7 @@ const SAMPLER = (keys, anchors) => `(() => {
       window.__sw.frames.push({
         t, key,
         live: tile?.dataset.live ?? null,
+        cv: tile?.querySelector('.v3-conv')?.style.getPropertyValue('--composer-h') ?? null,
         top: stream ? Math.round(stream.scrollTop) : null,
         sh: stream ? stream.scrollHeight : null,
         rows: stream ? stream.querySelectorAll('.v3-msg[data-turn-id]').length : 0,
@@ -43,6 +44,7 @@ function analyze(frames, key, before) {
   const last = own.at(-1)
   const firstShift = own.find((frame) => frame.offset !== null && Math.abs(frame.offset - before.offset) > 1)
   return {
+    composerVarChanges: own.filter((frame, index) => index === 0 || frame.cv !== own[index - 1].cv).map((frame) => ({ t: frame.t, cv: frame.cv, live: frame.live, sh: frame.sh })),
     firstShift: firstShift ? { t: firstShift.t, offset: firstShift.offset, top: firstShift.top, sh: firstShift.sh, live: firstShift.live } : null,
     startFrame: own[0] ? { top: own[0].top, sh: own[0].sh, offset: own[0].offset } : null,
     endFrame: last ? { top: last.top, sh: last.sh } : null,
@@ -106,6 +108,8 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
     return { turnId: article.dataset.turnId, offset: Math.round(article.getBoundingClientRect().top - stream.getBoundingClientRect().top), open: process.hasAttribute('data-open') };
   })()`)
 
+  const composerHeights = () => ev(`[...document.querySelectorAll('[data-tile-key]')].map((tile) => ({ live: tile.dataset.live, own: Math.round(tile.querySelector('.v3-composer').getBoundingClientRect().height), var: tile.querySelector('.v3-conv').style.getPropertyValue('--composer-h') }))`)
+  log('composer-heights', await composerHeights())
   const liveKey = keyOf('1')
   const peerKey = keyOf('0')
   const before1 = { [liveKey]: await prepare(liveKey), [peerKey]: await prepare(peerKey) }
@@ -123,6 +127,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   }
   await sleep(400)
   await shot('before-switch')
+  log('composer-heights-draft', await composerHeights())
 
   const clickTitle = async (key) => {
     const point = await ev(`(() => { const el = document.querySelector('[data-tile-key="${key}"] .v3-split-title'); const r = el.getBoundingClientRect(); return { x: Math.round(r.left + Math.min(40, r.width / 2)), y: Math.round(r.top + r.height / 2) } })()`)
@@ -180,6 +185,7 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
 
   const first = await measureSwitch('switch-to-left', peerKey, before1, true)
   await shot('after-switch')
+  log('composer-heights-after', await composerHeights())
   const peerInput = await ev(`(() => {
     const el = document.querySelector('[data-tile-key="${liveKey}"] .v3-split-peer-input');
     if (!el) return null;

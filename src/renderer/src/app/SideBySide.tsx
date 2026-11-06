@@ -27,6 +27,7 @@ import {
 } from './split-resizer-model'
 import './SideBySide.css'
 
+const COMPOSER_SETTLE_MS = 250
 let liveComposerFloor = 0
 const liveComposerListeners = new Set<() => void>()
 
@@ -284,17 +285,29 @@ function PaneBody({ target, live }: { target: SplitSessionRef; live: boolean }):
   const pane = useMemo(() => ({ target, live }), [target, live])
   const convRef = useRef<HTMLDivElement | null>(null)
   const ownComposerHeight = useRef(0)
+  const lastLiveHeight = useRef(0)
   const floor = useSyncExternalStore(subscribeLiveComposerFloor, readLiveComposerFloor)
   const applyComposerHeight = useCallback(() => {
     const own = ownComposerHeight.current
-    convRef.current?.style.setProperty('--composer-h', `${live ? own : Math.max(own, readLiveComposerFloor())}px`)
+    convRef.current?.style.setProperty('--composer-h', `${Math.max(own, readLiveComposerFloor(), live ? 0 : lastLiveHeight.current)}px`)
   }, [live])
   const composerRef = useCallback((element: HTMLDivElement | null) => {
-    return observeHeight(element, (height) => {
+    let settle = 0
+    const stop = observeHeight(element, (height) => {
       ownComposerHeight.current = height
-      if (live) reportLiveComposerHeight(height)
+      if (live) {
+        window.clearTimeout(settle)
+        settle = window.setTimeout(() => {
+          lastLiveHeight.current = height
+          reportLiveComposerHeight(height)
+        }, COMPOSER_SETTLE_MS)
+      }
       applyComposerHeight()
     })
+    return () => {
+      window.clearTimeout(settle)
+      stop?.()
+    }
   }, [live, applyComposerHeight])
   useLayoutEffect(() => { applyComposerHeight() }, [applyComposerHeight, floor])
   return (
