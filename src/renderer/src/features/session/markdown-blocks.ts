@@ -24,23 +24,39 @@ function closeLeadingEmphasis(text: string): string {
 
 export function prepareStreamingMarkdown(text: string, live: boolean): string {
   if (!live) return text
-  return closeLeadingEmphasis(closeOpenCode(text))
+  const scan = scanTail(text)
+  let out = text
+  if (scan.inlineAt >= 0) out = out.slice(0, scan.inlineAt)
+  else if (scan.mathAt >= 0) out = out.slice(0, scan.mathAt).replace(/\s+$/, '')
+  else if (!scan.fenceOpen) out = holdPartialTable(holdPartialLink(out))
+  return closeLeadingEmphasis(out)
 }
 
-function closeOpenCode(text: string): string {
-  if (!text.includes('`')) return text
+interface TailScan {
+  fenceOpen: boolean
+  inlineAt: number
+  mathAt: number
+}
+
+function scanTail(text: string): TailScan {
+  if (!text.includes('`') && !text.includes('$$')) return { fenceOpen: false, inlineAt: -1, mathAt: -1 }
   let fence: { char: string; size: number } | null = null
   let inline: { at: number; size: number } | null = null
+  let mathAt = -1
   let offset = 0
   for (const line of text.split('\n')) {
     const fenceLine = line.replace(/^(?: {0,3}>[ \t]?)+/, '').replace(/^ {0,3}(?:[-*+]|\d{1,9}[.)])\s+/, '')
     const marker = FENCE_OPEN.exec(fenceLine)
     if (fence) {
       if (marker && marker[1][0] === fence.char && marker[1].length >= fence.size && !fenceLine.slice(marker[0].length).trim()) fence = null
+    } else if (mathAt >= 0) {
+      if (line.includes('$$')) mathAt = -1
     } else if (!line.trim()) {
       inline = null
     } else if (marker && !inline) {
       fence = { char: marker[1][0], size: marker[1].length }
+    } else if (!inline && DISPLAY_MATH_OPEN.test(line)) {
+      if (line.split('$$').length % 2 === 0) mathAt = offset + line.indexOf('$$')
     } else if (inline || !/^(?: {4}|\t)/.test(line)) {
       for (let i = 0; i < line.length; i += 1) {
         if (!inline && line[i] === '\\') {
@@ -58,7 +74,52 @@ function closeOpenCode(text: string): string {
     }
     offset += line.length + 1
   }
-  return inline ? text.slice(0, inline.at) : text
+  return { fenceOpen: fence !== null, inlineAt: inline ? inline.at : -1, mathAt }
+}
+
+const DISPLAY_MATH_OPEN = /^ {0,3}\$\$/
+const PARTIAL_IMAGE = /!\[[^\[\]\n]*(?:\](?:\([^)\n]*)?)?$/
+const PARTIAL_LINK =/(!?)\[([^\[\]\n]*)\]\([^)\n]*$/
+const TABLE_ROW_START = /^ {0,3}\|/
+const DELIMITER_CELL = /^:?-+:?$/
+
+function holdPartialLink(text: string): string {
+  const lineStart = text.lastIndexOf('\n') + 1
+  const line = text.slice(lineStart)
+  if (!line.includes('[')) return text
+  const insideCode = (until: number): boolean => (line.slice(0, until).match(/`/g)?.length ?? 0) % 2 === 1
+  const image = PARTIAL_IMAGE.exec(line)
+  if (image && !insideCode(image.index)) return text.slice(0, lineStart + image.index)
+  if (!line.includes('](')) return text
+  const match = PARTIAL_LINK.exec(line)
+  if (!match || insideCode(match.index)) return text
+  return text.slice(0, lineStart + match.index) + match[2]
+}
+
+function tableCells(line: string): string[] {
+  let body = line.trim()
+  if (body.startsWith('|')) body = body.slice(1)
+  if (body.endsWith('|') && !body.endsWith('\\|')) body = body.slice(0, -1)
+  return body.split(/(?<!\\)\|/).map((cell) => cell.trim())
+}
+
+function holdPartialTable(text: string): string {
+  if (!text.includes('|')) return text
+  const lines = text.split('\n')
+  const complete = lines[lines.length - 1] === ''
+  if (complete) lines.pop()
+  let start = lines.length
+  while (start > 0 && lines[start - 1].trim()) start -= 1
+  const block = lines.slice(start)
+  if (!block.length || !block.every((line) => TABLE_ROW_START.test(line))) return text
+  const blockOffset = lines.slice(0, start).reduce((sum, line) => sum + line.length + 1, 0)
+  const columns = tableCells(block[0]).length
+  const delimiter = block.length >= 2 ? tableCells(block[1]) : null
+  if (!delimiter || delimiter.length !== columns || !delimiter.every((cell) => DELIMITER_CELL.test(cell))) return text.slice(0, blockOffset)
+  if (complete || block.length < 3) return text
+  const row = block[block.length - 1]
+  if (row.trimEnd().endsWith('|') && tableCells(row).length >= columns) return text
+  return text.slice(0, text.length - row.length)
 }
 
 export function splitMarkdownBlocks(text: string): MarkdownBlock[] {
