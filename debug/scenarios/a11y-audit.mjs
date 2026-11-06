@@ -356,7 +356,7 @@ export default async function run(ctx) {
     log('会话切换面板', report.sections['Ctrl+Tab:switcher'])
     const sw = report.sections['Ctrl+Tab:switcher']
     if (!sw) note('Ctrl+Tab', '按住 Ctrl 再按 Tab 没有弹出会话切换面板', null)
-    else if (!sw.activedescendant && !sw.focusIn && !sw.live && !(await liveSince(t0)).some((l) => /d+/d+/.test(l.text))) note('Ctrl+Tab', '会话切换面板的当前选中项读屏不可知（焦点不在面板内、无 aria-activedescendant、非 live）', sw)
+    else if (!sw.activedescendant && !sw.focusIn && !sw.live && !(await liveSince(t0)).some((l) => /[0-9]+[/][0-9]+/.test(l.text))) note('Ctrl+Tab', '会话切换面板的当前选中项读屏不可知（焦点不在面板内、无 aria-activedescendant、非 live）', sw)
     await cc('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 })
     await sleep(700)
     const s1 = await state('s.session?.sessionFile')
@@ -365,7 +365,7 @@ export default async function run(ctx) {
     if (s0 === s1) note('Ctrl+Tab', '切换没有发生', null)
     if (f.tag === 'body') note('Ctrl+Tab', '切换后焦点丢到 body', f)
     const live = await liveSince(t0)
-    if (!live.some((l) => l.text.includes('已切换') || /d+/d+/.test(l.text))) note('Ctrl+Tab', '切换会话后没有 live region 播报新会话', live)
+    if (!live.some((l) => l.text.includes('已切换') || /[0-9]+[/][0-9]+/.test(l.text))) note('Ctrl+Tab', '切换会话后没有 live region 播报新会话', live)
     report.sections['Ctrl+Tab'] = { switched: s0 !== s1, focus: f, live }
   })
 
