@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -36,13 +36,16 @@ if (flag('demo')) { prepareDemo(box); at('演示仓库就绪') }
 if (flag('cards')) { prepareCards(box); at('卡片会话就绪') }
 const realModel = value('real-model', null)
 const realEnv = {}
+const REAL_MODELS = { 'commandcode/deepseek/deepseek-v4.1-flash': 'commandcode', 'anthropic/claude-haiku-5-5': 'anthropic', 'openai-codex/gpt-6-luna': 'openai-codex' }
 if (realModel) {
-  if (!realModel.startsWith('commandcode/')) { console.log('--real-model 只支持 commandcode/ 下的模型'); process.exit(1) }
-  const entry = JSON.parse(readFileSync(join(homedir(), '.pi', 'agent', 'auth.json'), 'utf8')).commandcode
-  if (!entry?.key) { console.log('本机没有 commandcode 凭据'); process.exit(1) }
-  realEnv.COMMANDCODE_API_KEY = entry.key
+  const provider = REAL_MODELS[realModel]
+  if (!provider) { console.log('--real-model 只允许：' + Object.keys(REAL_MODELS).join('、')); process.exit(1) }
+  const entry = JSON.parse(readFileSync(join(homedir(), '.pi', 'agent', 'auth.json'), 'utf8'))[provider]
+  if (!entry) { console.log('本机没有 ' + provider + ' 凭据'); process.exit(1) }
+  if (provider === 'commandcode') realEnv.COMMANDCODE_API_KEY = entry.key
+  else writeFileSync(join(box.piDir, 'auth.json'), JSON.stringify({ [provider]: provider === 'anthropic' ? { ...entry, refresh: 'disabled-in-sandbox' } : entry }))
   realEnv.YAN_TEST_MODEL = realModel
-  at(`真实模型 ${realModel}（凭据只进实例环境变量）`)
+  at(`真实模型 ${realModel}（凭据只进实例环境变量或隔离目录，结束即删）`)
 }
 const cdpPort = await freePort()
 const app = launchApp({ ...sandboxEnv(box, { fake: true, cdpPort, probe: holdProbe }), ...demoEnv(box), ...realEnv })
@@ -59,6 +62,8 @@ const finish = async (code) => {
   await sleep(500)
   report.mainLogTail = app.log().slice(-4000)
   killTree(app.child.pid)
+  await sleep(1500)
+  try { rmSync(join(box.piDir, 'auth.json'), { force: true }) } catch {}
   fake.server.close()
   writeFileSync(resolve(out, `run-${basename(script, '.mjs')}.json`), JSON.stringify(report, null, 2))
   at(`${code === 0 ? '完成' : '失败'}，报告 ${resolve(out, `run-${basename(script, '.mjs')}.json`)}`)
