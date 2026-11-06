@@ -75,6 +75,30 @@ export function AskDock(): JSX.Element | null {
   const wasShown = useRef(false)
   const [leaving, setLeaving] = useState<number | null>(null)
   const [leaveGen, setLeaveGen] = useState(0)
+  const focusWasInside = useRef(false)
+  useLayoutEffect(() => {
+    if (!shown) {
+      if (focusWasInside.current && (!document.activeElement || document.activeElement === document.body)) {
+        useStore.getState().requestComposerFocus({})
+      }
+      focusWasInside.current = false
+      return
+    }
+    const dock = document.querySelector<HTMLElement>(ASK_DOCK_SELECTOR)
+    const onFocusIn = (): void => { focusWasInside.current = true }
+    const onFocusOut = (event: FocusEvent): void => {
+      const next = event.relatedTarget as Node | null
+      if (next && dock?.contains(next)) return
+      if (next) focusWasInside.current = false
+    }
+    dock?.addEventListener('focusin', onFocusIn)
+    dock?.addEventListener('focusout', onFocusOut)
+    if (dock?.contains(document.activeElement)) focusWasInside.current = true
+    return () => {
+      dock?.removeEventListener('focusin', onFocusIn)
+      dock?.removeEventListener('focusout', onFocusOut)
+    }
+  }, [shown])
   useLayoutEffect(() => {
     if (shown) {
       wasShown.current = true

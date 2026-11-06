@@ -4,7 +4,7 @@ import { effectiveShortcutKeys, SHORTCUTS, shortcutOverridesFromSettings, type S
 import { useUiV3 } from '../../state/ui-v3'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { CommandSurfaceBody, CommandSurfaceHeader, CommandSurfacePanel, ListRow } from '../../ui'
+import { announce, CommandSurfaceBody, CommandSurfaceHeader, CommandSurfacePanel, ListRow } from '../../ui'
 import { heldModifiersReleased, initialSwitcherIndex, stepSwitcherIndex, switcherSessions } from './session-switcher-model'
 import { compactAgo, sessionActivityAt } from '../sidebar/sidebar-model'
 import { sidebarClockNow } from '../../t3/adapters/sidebar'
@@ -120,6 +120,12 @@ export function SessionSwitcher({ control }: { control: SessionSwitcherControl }
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
   const state = control.state
+  const selected = state?.items[state.index]
+  const selectedTitle = selected ? (manualTitles[selected.id] ?? titles[selected.id] ?? selected.title) : ''
+  const position = state ? `${state.index + 1}/${state.items.length}` : ''
+  useEffect(() => {
+    if (selectedTitle) announce(`${position} ${selectedTitle}`)
+  }, [position, selectedTitle])
   if (!state) return null
   const now = sidebarClockNow()
   const currentPath = currentViewPath()

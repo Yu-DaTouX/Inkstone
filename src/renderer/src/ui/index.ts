@@ -246,3 +246,4 @@ export {
   type CardTitleProps,
   type CardTone
 } from './Card'
+export { announce, LiveAnnouncer, type AnnouncePoliteness } from './LiveAnnouncer'
