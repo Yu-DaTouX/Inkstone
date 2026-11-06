@@ -36,6 +36,7 @@ try {
   await writeFile(join(attachments, `${hash}.png`), png)
   await writeFile(join(attachments, `${'b'.repeat(40)}.jpg`), Buffer.from('jpg-bytes'))
   await writeFile(join(attachments, 'notes.txt'), 'secret')
+  await writeFile(join(attachments, `${'a'.repeat(40)}xpng`), 'x')
   await writeFile(join(attachments, `${'c'.repeat(40)}.svg`), '<svg/>')
   await writeFile(join(attachments, `${'d'.repeat(39)}.png`), 'short')
   await writeFile(join(yanDir, `${'e'.repeat(40)}.png`), 'outside')
@@ -51,6 +52,7 @@ try {
   for (const [label, target] of [
     ['非内容寻址文件名', join(attachments, 'notes.txt')],
     ['不在白名单里的扩展名', join(attachments, `${'c'.repeat(40)}.svg`)],
+    ['扩展名前不是点号', join(attachments, `${'a'.repeat(40)}xpng`)],
     ['哈希长度不对', join(attachments, `${'d'.repeat(39)}.png`)],
     ['附件目录之外', join(yanDir, `${'e'.repeat(40)}.png`)],
     ['附件目录的子目录', join(attachments, 'nested', `${'f'.repeat(40)}.png`)],

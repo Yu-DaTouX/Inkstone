@@ -281,7 +281,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
       const path = resolve(fileURLToPath(String(url ?? '')))
       const directory = resolve(join(YAN_DIR, 'attachments')).toLowerCase()
       const name = basename(path)
-      if (dirname(path).toLowerCase() !== directory || !/^[a-f0-9]{40}.(jpg|png|webp|gif)$/.test(name)) return { ok: false }
+      if (dirname(path).toLowerCase() !== directory || !/^[a-f0-9]{40}\.(jpg|png|webp|gif)$/.test(name)) return { ok: false }
       const bytes = await readFile(path)
       const ext = name.split('.')[1]
       return { ok: true, data: bytes.toString('base64'), mimeType: ext === 'jpg' ? 'image/jpeg' : `image/${ext}` }
