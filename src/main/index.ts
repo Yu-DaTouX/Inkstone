@@ -55,6 +55,7 @@ import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
 import { allowTrust, trustStatus } from './project-trust'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
+import { readUsageStats } from './usage-stats'
 import { BrowserController, DOWNLOAD_CONFIRM_BYTES, type LargeDownload } from './browser'
 import { openableExternalUrl } from './external-url'
 import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSink } from './terminal'
@@ -3642,6 +3643,7 @@ app.whenReady().then(async () => {
   ensureTrayAssets()
   attention?.ensureTray()
   createWindow()
+  void readUsageStats('all').catch(() => undefined)
 
   auxWindows = createAuxWindows({
     preloadPath: () => join(__dirname_, '../preload/index.cjs'),
