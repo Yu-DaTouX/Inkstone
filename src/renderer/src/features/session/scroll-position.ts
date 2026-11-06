@@ -65,6 +65,42 @@ export function domMetrics(el: HTMLElement): ScrollMetrics {
   return { offset: el.scrollTop, size: el.scrollHeight, viewport: el.clientHeight }
 }
 
+const BLOCK_DEPTH = 6
+
+function blockAnchor(turn: HTMLElement, base: number): { path: number[]; sub: number } {
+  const path: number[] = []
+  let current: HTMLElement = turn
+  while (path.length < BLOCK_DEPTH) {
+    let found = -1
+    const kids = current.children
+    for (let index = 0; index < kids.length; index += 1) {
+      const rect = kids[index].getBoundingClientRect()
+      if (rect.height > 0 && rect.bottom > base) {
+        found = index
+        break
+      }
+    }
+    if (found < 0) break
+    const kid = kids[found]
+    if (!(kid instanceof HTMLElement)) break
+    path.push(found)
+    current = kid
+    if (kid.getBoundingClientRect().top >= base) break
+  }
+  return { path, sub: base - current.getBoundingClientRect().top }
+}
+
+export function resolveAnchorPoint(turn: HTMLElement, anchor: ReadingAnchor): number | null {
+  if (!anchor.path || anchor.sub === undefined) return null
+  let current: HTMLElement = turn
+  for (const index of anchor.path) {
+    const kid = current.children[index]
+    if (!(kid instanceof HTMLElement)) return null
+    current = kid
+  }
+  return current.getBoundingClientRect().top + anchor.sub
+}
+
 export function domReadingAnchors(box: HTMLElement): { snapshot: ReadingAnchor | null; resize: ReadingAnchor | null } {
   const base = box.getBoundingClientRect().top
   let snapshot: ReadingAnchor | null = null
@@ -74,8 +110,11 @@ export function domReadingAnchors(box: HTMLElement): { snapshot: ReadingAnchor |
     const turnId = node.dataset.turnId
     if (!turnId) continue
     const rect = node.getBoundingClientRect()
-    if (!snapshot && rect.bottom > base) snapshot = { turnId, offset: Math.max(0, base - rect.top) }
-    if (!containing && rect.bottom > base) containing = { turnId, offset: rect.top - base }
+    if (!snapshot && rect.bottom > base) {
+      const block = blockAnchor(node, base)
+      snapshot = { turnId, offset: Math.max(0, base - rect.top), path: block.path, sub: block.sub }
+      containing = { turnId, offset: rect.top - base, path: block.path, sub: block.sub }
+    }
     if (!resize && rect.top - base >= -1) resize = { turnId, offset: rect.top - base }
     if (snapshot && resize) break
   }
@@ -91,7 +130,12 @@ export function restoreDomScroll(box: HTMLElement, snapshot: ScrollSnapshot | un
   const anchor = snapshot?.anchor
   const node = anchor ? [...box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')].find((el) => el.dataset.turnId === anchor.turnId) : undefined
   if (!snapshot || snapshot.bottom) box.scrollTop = box.scrollHeight
-  else if (anchor && node) box.scrollTop = Math.max(0, node.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop + anchor.offset)
+  else if (anchor && node) {
+    const point = resolveAnchorPoint(node, anchor)
+    box.scrollTop = Math.max(0, point === null
+      ? node.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop + anchor.offset
+      : point - box.getBoundingClientRect().top + box.scrollTop)
+  }
   else box.scrollTop = snapshot.top
 }
 

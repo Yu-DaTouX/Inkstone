@@ -18,6 +18,8 @@ export interface FollowDecision {
 export interface ReadingAnchor {
   turnId: string
   offset: number
+  path?: number[]
+  sub?: number
 }
 
 interface AnchorRow {
