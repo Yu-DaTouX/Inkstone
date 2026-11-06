@@ -39,7 +39,7 @@ await import('./test-browser-frame-origin.mjs')
 await import('./test-v3-deeplink.mjs')
 const inProcessScripts = [
   'test-attachment-prune-race', 'test-files-root-boundary',
-  'test-mobile-model-url', 'test-mobile-window-layout', 'test-mobile-timeline', 'test-mobile-event-stream', 'test-open-path-boundary',
+  'test-mobile-model-url', 'test-mobile-window-layout', 'test-mobile-timeline', 'test-mobile-event-stream', 'test-mobile-image-cache', 'test-open-path-boundary',
   'test-package-timeout-fallback',
   'test-session-restore-rollback', 'test-subagent-stop-intent',
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory',
