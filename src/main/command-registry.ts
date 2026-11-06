@@ -97,12 +97,12 @@ const localCommands = (): readonly CommandDescriptor[] => [
   ),
   {
     name: 'subagent',
-    description: pick('子代理由模型按任务需要自主调用', 'Subagents are called by the model as the task needs'),
+    description: pick('子 Agent由模型按任务需要自主调用', 'Subagents are called by the model as the task needs'),
     source: 'compatibility',
     executable: false,
     hiddenInMenu: true,
     usage: pick('/subagent <任务>', '/subagent <task>'),
-    availability: pick('请直接描述任务；模型会在需要时调用子代理。', 'Just describe the task; the model calls subagents when needed.')
+    availability: pick('请直接描述任务；模型会在需要时调用子 Agent。', 'Just describe the task; the model calls subagents when needed.')
   },
   {
     name: 'panel',

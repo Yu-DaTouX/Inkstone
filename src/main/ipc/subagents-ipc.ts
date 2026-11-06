@@ -4,7 +4,7 @@ import type { SubagentService } from '../subagent-service'
 import { normalizeSubagentId } from '../../shared/subagent-id'
 import { pick } from '../../shared/ui-lang'
 
-const invalidId = () => ({ ok: false, error: pick('子代理 id 不合法', 'Invalid subagent id') })
+const invalidId = () => ({ ok: false, error: pick('子 Agent id 不合法', 'Invalid subagent id') })
 
 export interface SubagentParentContext {
   cwd: string
@@ -33,11 +33,11 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
     try {
       ctrl = await service.get()
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : pick('子代理服务暂不可用', 'Subagent service unavailable') }
+      return { ok: false, error: error instanceof Error ? error.message : pick('子 Agent服务暂不可用', 'Subagent service unavailable') }
     }
     const settled = await contextResult
     if (!settled.ok) {
-      return { ok: false, error: settled.error instanceof Error ? settled.error.message : pick('子代理父会话已不可用，未派发', 'Parent session of the subagent is unavailable; not dispatched') }
+      return { ok: false, error: settled.error instanceof Error ? settled.error.message : pick('子 Agent父会话已不可用，未派发', 'Parent session of the subagent is unavailable; not dispatched') }
     }
     ctrl.setContext(settled.value)
     const mode = isolation === 'controlled-cwd' ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd'

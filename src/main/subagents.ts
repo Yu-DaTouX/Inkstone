@@ -276,7 +276,7 @@ export interface SubagentQuotaWatch {
 }
 
 const QUOTA_BOUNCE_LIMIT = 3
-const ignoredOnlyNote = () => pick('子代理只写了被 .gitignore 忽略的文件', 'Subagent only wrote files ignored by .gitignore')
+const ignoredOnlyNote = () => pick('子 Agent只写了被 .gitignore 忽略的文件', 'Subagent only wrote files ignored by .gitignore')
 
 export interface SubagentHostCommands {
   onlyCommands: string[]
@@ -335,7 +335,7 @@ export class SubagentController {
         const saved = keepWorkspace ? { ok: true as const, path: undefined } : await preserveIgnoredOutputs(workspace, archiveDir, run.id)
         const kept = keepWorkspace ? '' : !saved.ok ? pick('被忽略的产物没能另存，已保留工作区', 'Ignored outputs could not be saved; workspace kept') : ''
         const cleaned = keepWorkspace || kept ? { ok: false, errors: [] as string[] } : await removeWorkspace(workspace)
-        const note = keepWorkspace ? pick('应用退出时子代理未完成；工作树已保留，可以继续派信息让它原地续接，也可以合并或放弃它的改动', 'Subagent unfinished at app exit; worktree kept. Send a message to resume it, or merge or discard its changes') : kept ? pick(`应用退出时子代理未完成；${kept}：${workspace.worktreePath}`, `Subagent unfinished at app exit; ${kept}: ${workspace.worktreePath}`) : pick('应用退出时子代理未完成，未自动恢复执行', 'Subagent unfinished at app exit; not resumed')
+        const note = keepWorkspace ? pick('应用退出时子 Agent未完成；工作树已保留，可以继续派信息让它原地续接，也可以合并或放弃它的改动', 'Subagent unfinished at app exit; worktree kept. Send a message to resume it, or merge or discard its changes') : kept ? pick(`应用退出时子 Agent未完成；${kept}：${workspace.worktreePath}`, `Subagent unfinished at app exit; ${kept}: ${workspace.worktreePath}`) : pick('应用退出时子 Agent未完成，未自动恢复执行', 'Subagent unfinished at app exit; not resumed')
         const next: SubagentRun = {
           ...run,
           review: keepWorkspace ? 'pending' : 'none',
@@ -610,10 +610,10 @@ export class SubagentController {
       const entry = this.history.get(id)
       const run = this.runs.get(id)
       const snapshot = run ? this.snapshot(run) : entry?.run
-      if (!snapshot) return { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
-      if (snapshot.status !== 'error') return { ok: false, error: pick('只能对已失败的子代理选择不再处理', 'Only failed subagents can be dismissed') }
+      if (!snapshot) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
+      if (snapshot.status !== 'error') return { ok: false, error: pick('只能对已失败的子 Agent选择不再处理', 'Only failed subagents can be dismissed') }
       if (snapshot.review === 'pending' || snapshot.review === 'conflict' || (run && !run.reviewDecided)) {
-        return { ok: false, error: pick('请先审阅并合并或明确放弃该子代理的改动', 'Review and merge or discard this subagent\'s changes first') }
+        return { ok: false, error: pick('请先审阅并合并或明确放弃该子 Agent的改动', 'Review and merge or discard this subagent\'s changes first') }
       }
       if (typeof snapshot.dismissedAt === 'number' && Number.isFinite(snapshot.dismissedAt)) return { ok: true }
       const next = { ...snapshot, dismissedAt: Date.now() }
@@ -642,14 +642,14 @@ export class SubagentController {
     fork?: SubagentForkSource,
     context?: SubagentContext
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
-    if (fork && isolation !== 'shared-cwd') return { ok: false, error: pick('fork 子代理只能在当前目录运行', 'Fork subagents can only run in the current folder') }
-    if (this.stoppingAll) return { ok: false, error: pick('子代理正在停止清理，请稍后重试', 'Subagents are being stopped; try again shortly') }
+    if (fork && isolation !== 'shared-cwd') return { ok: false, error: pick('fork 子 Agent只能在当前目录运行', 'Fork subagents can only run in the current folder') }
+    if (this.stoppingAll) return { ok: false, error: pick('子 Agent正在停止清理，请稍后重试', 'Subagents are being stopped; try again shortly') }
     const text = task.trim()
     if (!text) return { ok: false, error: pick('任务描述为空', 'Task is empty') }
     const modelError = subagentModelError(model ?? process.env.YAN_TEST_MODEL, isolation === 'controlled-cwd')
     if (modelError) return { ok: false, error: modelError }
     if (this.runningCount >= MAX_CONCURRENT) {
-      return { ok: false, error: pick(`同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它`, `At most ${MAX_CONCURRENT} subagents can run at once (${this.runningCount} running); wait for one to finish or stop it`) }
+      return { ok: false, error: pick(`同时最多运行 ${MAX_CONCURRENT} 个子 Agent（当前 ${this.runningCount} 个），先等一个结束或停掉它`, `At most ${MAX_CONCURRENT} subagents can run at once (${this.runningCount} running); wait for one to finish or stop it`) }
     }
     const parsed = parseSubagentBrief(briefInput, text)
     if (!parsed.ok) return { ok: false, error: parsed.error }
@@ -696,7 +696,7 @@ export class SubagentController {
     }
     if (invalidated()) {
       await cleanupWorkspace(workspace)
-      return { ok: false, error: pick('子代理在启动期间已停止', 'Subagent stopped during startup') }
+      return { ok: false, error: pick('子 Agent在启动期间已停止', 'Subagent stopped during startup') }
     }
 
     let rpc: SubagentRpc
@@ -709,7 +709,7 @@ export class SubagentController {
     if (invalidated()) {
       try { await rpc.close() } catch { }
       await cleanupWorkspace(workspace)
-      return { ok: false, error: pick('子代理在启动期间已停止', 'Subagent stopped during startup') }
+      return { ok: false, error: pick('子 Agent在启动期间已停止', 'Subagent stopped during startup') }
     }
 
     const run: Run = {
@@ -760,8 +760,8 @@ export class SubagentController {
       const ready = await this.waitReady(rpc, 20_000)
       if (run.status !== 'starting') return this.startupAbort(run)
       if (!ready.ok) {
-        await this.fail(id, pick('子代理启动超时', 'Subagent startup timed out'), 'startup')
-        return { ok: false, error: this.runs.get(id)?.error ?? pick('子代理启动超时', 'Subagent startup timed out') }
+        await this.fail(id, pick('子 Agent启动超时', 'Subagent startup timed out'), 'startup')
+        return { ok: false, error: this.runs.get(id)?.error ?? pick('子 Agent启动超时', 'Subagent startup timed out') }
       }
       if (model && ready.model && modelMismatch(model, ready.model)) {
         const message = pick(`指定的模型 ${model} 没有生效（pi 实际使用 ${ready.model}），请核对模型名与登录状态后重试，不要改用其他模型`, `Model ${model} was not applied (pi used ${ready.model}); check the model name and sign-in, then retry without switching models`)
@@ -919,19 +919,19 @@ export class SubagentController {
     const from = origin.from ?? 'parent'
     const live = this.runs.get(id)
     const snapshot = live ? this.snapshot(live) : this.history.get(id)?.run
-    if (!snapshot) return { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
+    if (!snapshot) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
     if (from === 'parent' && snapshot.parentSessionId && origin.parentSessionId !== snapshot.parentSessionId) {
-      return { ok: false, error: pick('只能向本会话派出的子代理追加信息', 'Messages can only be sent to subagents started from this session') }
+      return { ok: false, error: pick('只能向本会话派出的子 Agent追加信息', 'Messages can only be sent to subagents started from this session') }
     }
-    if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: pick('子代理正在启动，稍后再发', 'Subagent is starting; send again shortly') }
+    if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: pick('子 Agent正在启动，稍后再发', 'Subagent is starting; send again shortly') }
     if (!live || live.status !== 'running' || live.settled) return this.resume(id, text, from)
-    if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: pick('子代理正在收尾，等它结束后再发即可续接', 'Subagent is wrapping up; send again after it finishes to resume it') }
+    if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: pick('子 Agent正在收尾，等它结束后再发即可续接', 'Subagent is wrapping up; send again after it finishes to resume it') }
     const activation = live.activation
     const current = (): boolean => this.runs.get(id) === live && live.activation === activation && live.status === 'running' && !live.settled && !live.settling
     try {
       const res = await live.rpc.command('prompt', { message: forwardedMessage(text, mode, from), streamingBehavior: mode }, { timeoutMs: 10_000 })
       if (!res.success) return { ok: false, error: res.error ?? pick('追加信息没有送达', 'Message was not delivered') }
-      if (!current()) return { ok: false, error: pick('子代理在发送期间已结束，这条信息可能没有被处理；请再发一次以续接', 'Subagent ended while sending; the message may not have been handled. Send again to resume') }
+      if (!current()) return { ok: false, error: pick('子 Agent在发送期间已结束，这条信息可能没有被处理；请再发一次以续接', 'Subagent ended while sending; the message may not have been handled. Send again to resume') }
       const disposition = (res.data as { disposition?: unknown } | undefined)?.disposition
       const delivery = disposition === 'queued' ? 'queued' : 'started'
       live.lastProgressAt = Date.now()
@@ -948,9 +948,9 @@ export class SubagentController {
   }
 
   private async resume(id: string, text: string, from: SubagentSendFrom): Promise<SubagentSendResult> {
-    if (this.reviewing.has(id)) return { ok: false, error: pick('这个子代理的改动正在合并或放弃，不能同时续接；处理完再发', 'This subagent\'s changes are being merged or discarded; send again afterwards') }
-    if (this.stoppingAll) return { ok: false, error: pick('子代理正在停止清理，请稍后重试', 'Subagents are being stopped; try again shortly') }
-    if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: pick(`同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它`, `At most ${MAX_CONCURRENT} subagents can run at once (${this.runningCount} running); wait for one to finish or stop it`) }
+    if (this.reviewing.has(id)) return { ok: false, error: pick('这个子 Agent的改动正在合并或放弃，不能同时续接；处理完再发', 'This subagent\'s changes are being merged or discarded; send again afterwards') }
+    if (this.stoppingAll) return { ok: false, error: pick('子 Agent正在停止清理，请稍后重试', 'Subagents are being stopped; try again shortly') }
+    if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: pick(`同时最多运行 ${MAX_CONCURRENT} 个子 Agent（当前 ${this.runningCount} 个），先等一个结束或停掉它`, `At most ${MAX_CONCURRENT} subagents can run at once (${this.runningCount} running); wait for one to finish or stop it`) }
     const ticket = { cancelled: false }
     const generation = this.launchGeneration
     this.resuming.set(id, ticket)
@@ -968,7 +968,7 @@ export class SubagentController {
     const abandoned = (): boolean =>
       ticket.cancelled || generation !== this.launchGeneration ||
       (previous ? this.runs.get(id) !== previous : !this.history.get(id))
-    const abandonedError = (): SubagentSendResult => ({ ok: false, error: ticket.cancelled ? pick('续接已被停止', 'Resume was stopped') : pick('子代理已被停止或清理，没有续接', 'Subagent was stopped or cleaned up; not resumed') })
+    const abandonedError = (): SubagentSendResult => ({ ok: false, error: ticket.cancelled ? pick('续接已被停止', 'Resume was stopped') : pick('子 Agent已被停止或清理，没有续接', 'Subagent was stopped or cleaned up; not resumed') })
     try {
       if (previous?.settling) await previous.settling.catch(() => undefined)
       if (previous?.finalizing) await previous.finalizing.catch(() => undefined)
@@ -976,22 +976,22 @@ export class SubagentController {
       const record = previous ? this.history.get(id) : await this.history.full(id)
       if (abandoned()) return abandonedError()
       const snapshot = previous ? this.snapshot(previous) : record?.run
-      if (!snapshot) return { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
+      if (!snapshot) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
       if (snapshot.status === 'running' || snapshot.status === 'starting') {
-        if (previous) return { ok: false, error: pick('子代理仍在运行，请再发一次', 'Subagent is still running; send again') }
-        return { ok: false, error: pick('这个子代理上次运行被中断，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'This subagent\'s last run was interrupted and cannot be resumed; start a new one and include its findings') }
+        if (previous) return { ok: false, error: pick('子 Agent仍在运行，请再发一次', 'Subagent is still running; send again') }
+        return { ok: false, error: pick('这个子 Agent上次运行被中断，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'This subagent\'s last run was interrupted and cannot be resumed; start a new one and include its findings') }
       }
       const keptWorkspace = !previous && snapshot.isolation === 'worktree' && (snapshot.review === 'pending' || snapshot.review === 'conflict') ? keptWorktreeOf(record) : undefined
       if (snapshot.isolation === 'worktree' && !keptWorkspace && !(previous && worktreeAlive(previous) && existsSync(previous.workspace.cwd))) {
-        return { ok: false, error: pick('worktree 子代理的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论', 'This worktree subagent\'s worktree was merged, discarded or archived and cannot be resumed; start a new one and include its findings') }
+        return { ok: false, error: pick('worktree 子 Agent的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论', 'This worktree subagent\'s worktree was merged, discarded or archived and cannot be resumed; start a new one and include its findings') }
       }
-      if (snapshot.launchFailed) return { ok: false, error: pick('这个子代理没有成功启动过，不能续接，请重新派一个', 'This subagent never started successfully and cannot be resumed; start a new one') }
+      if (snapshot.launchFailed) return { ok: false, error: pick('这个子 Agent没有成功启动过，不能续接，请重新派一个', 'This subagent never started successfully and cannot be resumed; start a new one') }
       const sessionFile = await latestSessionFile(this.sessionDir(id))
       if (abandoned()) return abandonedError()
       if (!sessionFile) return { ok: false, error: pick('找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'Its session record was not found, so it cannot be resumed; start a new one and include its findings') }
       const savedFork = record?.resume?.forkLaunch
       const forkSource = previous?.forkSource ?? (snapshot.fork && savedFork ? restoreForkSource(savedFork, sessionFile) : undefined)
-      if (snapshot.fork && !forkSource) return { ok: false, error: pick('这个 fork 子代理没有保存来源信息，砚重启后不能续接；需要继续时重新派一个', 'This fork subagent has no saved source and cannot be resumed after a restart; start a new one') }
+      if (snapshot.fork && !forkSource) return { ok: false, error: pick('这个 fork 子 Agent没有保存来源信息，砚重启后不能续接；需要继续时重新派一个', 'This fork subagent has no saved source and cannot be resumed after a restart; start a new one') }
 
       const rootCwd = previous?.workspace.rootCwd ?? record?.rootCwd ?? snapshot.cwd
       const workspace: PreparedWorkspace = previous?.workspace ?? keptWorkspace ?? { isolation: snapshot.isolation, rootCwd, cwd: snapshot.cwd }
@@ -1053,7 +1053,7 @@ export class SubagentController {
       this.emit(run)
 
       const current = (status: SubagentRun['status']): boolean => run.rpc === rpc && run.activation === activation && run.status === status
-      const stoppedError = (): SubagentSendResult => ({ ok: false, error: run.error ?? pick('子代理在续接期间已停止，这条信息没有被处理', 'Subagent stopped while resuming; the message was not handled') })
+      const stoppedError = (): SubagentSendResult => ({ ok: false, error: run.error ?? pick('子 Agent在续接期间已停止，这条信息没有被处理', 'Subagent stopped while resuming; the message was not handled') })
       try {
         rpc.spawn()
         const ready = await this.waitReady(rpc, 20_000)
@@ -1063,8 +1063,8 @@ export class SubagentController {
           return abandonedError()
         }
         if (!ready.ok) {
-          await this.fail(id, pick('子代理续接超时', 'Subagent resume timed out'), 'startup')
-          return { ok: false, error: this.runs.get(id)?.error ?? pick('子代理续接超时', 'Subagent resume timed out') }
+          await this.fail(id, pick('子 Agent续接超时', 'Subagent resume timed out'), 'startup')
+          return { ok: false, error: this.runs.get(id)?.error ?? pick('子 Agent续接超时', 'Subagent resume timed out') }
         }
         if (snapshot.model && ready.model && modelMismatch(snapshot.model, ready.model)) {
           const error = pick(`续接时模型 ${snapshot.model} 没有生效（pi 实际使用 ${ready.model}），请核对登录状态后重试`, `Model ${snapshot.model} was not applied on resume (pi used ${ready.model}); check sign-in and retry`)
@@ -1112,7 +1112,7 @@ export class SubagentController {
     const ticket = this.resuming.get(id)
     if (ticket) ticket.cancelled = true
     const run = this.runs.get(id)
-    if (!run) return ticket || this.history.get(id) ? { ok: true } : { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
+    if (!run) return ticket || this.history.get(id) ? { ok: true } : { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
     if (run.status !== 'running' && run.status !== 'starting') return { ok: true, noop: true, before: run.status }
     await this.stopRun(run, false)
     return { ok: true }
@@ -1203,7 +1203,7 @@ export class SubagentController {
   }
 
   private startupAbort(run: Run): { ok: false; error: string } {
-    return { ok: false, error: run.status === 'error' && run.error ? run.error : pick('子代理在启动期间已停止', 'Subagent stopped during startup') }
+    return { ok: false, error: run.status === 'error' && run.error ? run.error : pick('子 Agent在启动期间已停止', 'Subagent stopped during startup') }
   }
 
   private async fail(id: string, message: string, reason: SubagentEndReason = 'failed'): Promise<void> {
@@ -1275,7 +1275,7 @@ export class SubagentController {
       await this.writeMetadata(run, collected.patchPath)
     } catch (error) {
       run.review = run.isolation === 'worktree' ? 'conflict' : 'none'
-      run.error = run.error ?? pick(`读取子代理差异失败：${error instanceof Error ? error.message : String(error)}`, `Could not read the subagent diff: ${error instanceof Error ? error.message : String(error)}`)
+      run.error = run.error ?? pick(`读取子 Agent差异失败：${error instanceof Error ? error.message : String(error)}`, `Could not read the subagent diff: ${error instanceof Error ? error.message : String(error)}`)
       run.resultPath = run.workspace.worktreePath
       await this.writeMetadata(run)
     }
@@ -1351,8 +1351,8 @@ export class SubagentController {
   }
 
   private async exclusiveReview(id: string, work: () => Promise<{ ok: boolean; error?: string }>): Promise<{ ok: boolean; error?: string }> {
-    if (this.resuming.has(id)) return { ok: false, error: pick('子代理正在续接，等它结束后再合并或放弃', 'Subagent is resuming; merge or discard after it finishes') }
-    if (this.reviewing.has(id)) return { ok: false, error: pick('这个子代理的改动正在合并或放弃，请稍候', 'This subagent\'s changes are being merged or discarded; wait a moment') }
+    if (this.resuming.has(id)) return { ok: false, error: pick('子 Agent正在续接，等它结束后再合并或放弃', 'Subagent is resuming; merge or discard after it finishes') }
+    if (this.reviewing.has(id)) return { ok: false, error: pick('这个子 Agent的改动正在合并或放弃，请稍候', 'This subagent\'s changes are being merged or discarded; wait a moment') }
     this.reviewing.add(id)
     try {
       return await work()
@@ -1373,7 +1373,7 @@ export class SubagentController {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'merged')
     await this.awaitSettled(run)
-    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子代理仍在运行，结束后才能合并', 'Subagent is still running; merge after it finishes') }
+    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子 Agent仍在运行，结束后才能合并', 'Subagent is still running; merge after it finishes') }
     if (run.review === 'merged') return { ok: true }
     if (run.review !== 'pending' && run.review !== 'conflict') {
       return { ok: false, error: pick('该任务没有待合并的改动', 'This task has no changes to merge') }
@@ -1409,7 +1409,7 @@ export class SubagentController {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'discarded')
     await this.awaitSettled(run)
-    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子代理仍在运行，先停止它', 'Subagent is still running; stop it first') }
+    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子 Agent仍在运行，先停止它', 'Subagent is still running; stop it first') }
     try {
       run.review = 'discarded'
       run.resultPath = run.diff?.patchPath
@@ -1424,7 +1424,7 @@ export class SubagentController {
 
   private async reviewHistory(id: string, review: 'merged' | 'discarded'): Promise<{ ok: boolean; error?: string }> {
     const record = this.history.get(id)
-    if (!record) return { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
+    if (!record) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
     const run = { ...record.run }
     if (run.review === review) return { ok: true }
     if (review === 'merged') {

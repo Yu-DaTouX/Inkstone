@@ -154,7 +154,7 @@ export async function prepareWorkspace(
 
   const repoRoot = await findGitRoot(root)
   if (!repoRoot) {
-    throw new Error(pick('写入型子代理需要 Git 项目；请改用只读模式，或先初始化 Git', 'A subagent that writes needs a Git project; use read-only mode or initialize Git first'))
+    throw new Error(pick('写入型子 Agent需要 Git 项目；请改用只读模式，或先初始化 Git', 'A subagent that writes needs a Git project; use read-only mode or initialize Git first'))
   }
 
   const containerPath = await mkdtemp(join(tmpdir(), `yan-subagent-${id}-`))

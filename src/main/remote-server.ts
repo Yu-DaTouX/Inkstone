@@ -766,7 +766,7 @@ export class RemoteServer {
     if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'subagents' && parts[6] === 'stop') {
       const sessionId = decodeURIComponent(parts[3])
       const runId = decodeURIComponent(parts[5])
-      if (!validSessionId(sessionId) || !/^sub-[a-zA-Z0-9-]{1,120}$/.test(runId)) return writeError(res, 400, pick('子代理标识无效', 'Invalid subagent id'))
+      if (!validSessionId(sessionId) || !/^sub-[a-zA-Z0-9-]{1,120}$/.test(runId)) return writeError(res, 400, pick('子 Agent标识无效', 'Invalid subagent id'))
       const stop = this.options.handlers.stopSubagent
       if (!stop) return writeError(res, 404, pick('请更新电脑端', 'Update the desktop app'))
       await this.idempotent(req, res, caller, false, () => stop(sessionId, runId), `subagent-stop:${sessionId}:${runId}`)

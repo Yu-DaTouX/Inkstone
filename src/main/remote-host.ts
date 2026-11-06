@@ -245,8 +245,8 @@ export async function remoteStopSubagent(
   stop: (id: string) => Promise<{ ok: boolean; error?: string; noop?: boolean }>
 ): Promise<RemoteOperationResult> {
   const run = runs.find((item) => item.id === runId && item.parentSessionId === sessionId)
-  if (!run) return { ok: false, status: 404, error: pick('找不到这个子代理', 'Subagent not found') }
-  if (run.status !== 'starting' && run.status !== 'running') return { ok: false, status: 409, error: pick('这个子代理已经结束', 'This subagent has already finished') }
+  if (!run) return { ok: false, status: 404, error: pick('找不到这个子 Agent', 'Subagent not found') }
+  if (run.status !== 'starting' && run.status !== 'running') return { ok: false, status: 409, error: pick('这个子 Agent已经结束', 'This subagent has already finished') }
   const result = await stop(run.id)
   return result.ok ? { ok: true, data: { id: run.id, status: 'cancelled' } } : { ok: false, status: 409, error: result.error ?? pick('停止失败', 'Stop failed') }
 }

@@ -21,7 +21,7 @@ export function quitReasons(activity: QuitActivity): QuitReason[] {
 
 const REASON_TEXT: Record<QuitReason, (activity: QuitActivity) => string> = {
   sessions: () => pick('有会话正在运行', 'A session is running'),
-  subagents: (activity) => pick(`${activity.runningSubagents} 个子代理正在运行`, `${activity.runningSubagents} subagent(s) running`),
+  subagents: (activity) => pick(`${activity.runningSubagents} 个子 Agent正在运行`, `${activity.runningSubagents} subagent(s) running`),
   terminal: () => pick('终端里有命令正在执行', 'A terminal command is running'),
   unsaved: (activity) => pick(`${activity.unsavedFiles ?? 0} 个文件有未保存的修改`, `${activity.unsavedFiles ?? 0} file(s) have unsaved changes`)
 }
