@@ -14,7 +14,7 @@ async function fixture(disappear) {
     SESSIONS_DIR: '/fixture/sessions', YAN_DIR: '/fixture', join, existsSync: () => true,
     listSessionFiles: () => ['session.jsonl'],
     stat: async () => { if (disappear && afterScan) throw Object.assign(new Error('gone'), { code: 'ENOENT' }); return { size: 1, mtimeMs: 1, ctimeMs: 1 } },
-    PRUNE_FINGERPRINT_BATCH: 32, clearSessionReadCache: () => {},
+    PRUNE_FINGERPRINT_BATCH: 32, pick: zh => zh, clearSessionReadCache: () => {},
     referencedAttachmentNames: async () => { afterScan = true; return new Set() },
     pruneAttachments: () => { pruned = true; return { removed: 0 } }, Date, JSON
   })

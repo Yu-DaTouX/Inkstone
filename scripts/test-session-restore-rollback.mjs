@@ -10,7 +10,7 @@ const first = { from: '/original/a', to: '/trash/a' }, second = { from: '/origin
 const deleted = new Map([['token', [first, second]]])
 const calls = []
 let fault = true
-const context = { deleted, resolve, mkdir: async () => {}, rename: async (from, to) => {
+const context = { pick: zh => zh, deleted, resolve, mkdir: async () => {}, rename: async (from, to) => {
  calls.push([from, to])
  if (fault && (from === second.to || from === first.from)) throw new Error('fixture rename failure')
 } }

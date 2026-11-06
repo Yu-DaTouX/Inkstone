@@ -22,7 +22,8 @@ const deferred = () => {
 const parse = async path => ts.createSourceFile(path, await readFile(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 const evaluate = (source, bindings) => {
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
-  return new Function(...Object.keys(bindings), js)(...Object.values(bindings))
+  const all = { pick: zh => zh, ...bindings }
+  return new Function(...Object.keys(all), js)(...Object.values(all))
 }
 const deleteSource = await parse('src/main/session-delete.ts')
 let deleteCallback

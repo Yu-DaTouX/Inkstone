@@ -50,7 +50,7 @@ function harness({ fetchFails = false, dnsFails = false, fetchGate } = {}) {
   class Stub { async start() {} dispose() {} }
   const chrome = { once() {} }
   const deps = {
-    safeUrl: value => value, INITIAL_URL: 'about:blank', pickFreePort: async () => 1234,
+    pick: zh => zh, safeUrl: value => value, INITIAL_URL: 'about:blank', pickFreePort: async () => 1234,
     defaultProfileDir: () => join(dir, 'profile'), YAN_DIR: dir, mkdir,
     launchChrome: opts => { calls.push(['launch', opts]); return chrome },
     waitForCdp: async () => {}, listTargets: async () => [{ id: 'p1', url: 'about:blank', title: '', webSocketDebuggerUrl: 'ws://fake' }],

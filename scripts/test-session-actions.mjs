@@ -22,7 +22,7 @@ const file = 'src/main/agent.ts'
 const tree = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
 const method = find(tree, node => ts.isMethodDeclaration(node) && node.name.getText(tree) === 'enqueueCapabilityChange')
 const compiled = ts.transpileModule(`class Fixture { ${method.getText(tree)} }\nglobalThis.Fixture = Fixture`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-const context = vm.createContext({})
+const context = vm.createContext({ pick: zh => zh })
 vm.runInContext(compiled, context)
 for (const field of ['session', 'rpc', 'generation']) {
   const agent = new context.Fixture()

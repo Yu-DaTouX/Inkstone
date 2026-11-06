@@ -7,7 +7,7 @@ const source = await readFile('src/main/subagents.ts', 'utf8')
 const stop = sliceDeclaration(source, '  private async stopRun(')
 const fail = sliceDeclaration(source, '  private async fail(')
 const { code } = await transform(`class Fixture { ${stop}\n${fail}\n } globalThis.Fixture=Fixture`, { loader: 'ts' })
-const context = { clearTimeout, Date }
+const context = { pick: zh => zh, clearTimeout, Date }
 runInNewContext(code, context)
 const host = new context.Fixture()
 const snapshots = []
