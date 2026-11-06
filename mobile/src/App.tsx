@@ -2,7 +2,7 @@ import { LIFE_ASSISTANT_ENABLED } from './features'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, StatusBar, StyleSheet, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
-import { RemoteClient, type Connection } from './api/client'
+import { RemoteClient, RemoteHttpError, type Connection } from './api/client'
 import { readUiPrefs, writeUiPrefs, type PhotoDraft } from './device'
 import { parsePairingLink, type PairingPrefill } from './pairLink'
 import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
@@ -116,8 +116,8 @@ function AppRoot() {
     if (connection) {
       try {
         await new RemoteClient(connection).revokeSelf()
-      } catch {
-        const confirmed = await new Promise<boolean>((resolve) => Alert.alert(
+      } catch (error) {
+        const confirmed = (error instanceof RemoteHttpError && error.status === 401) || await new Promise<boolean>((resolve) => Alert.alert(
           pick('电脑暂时无法撤销设备', 'Desktop cannot revoke this device'), pick('若继续退出，将只清除此手机的钥匙串；电脑端令牌可能仍有效，请恢复连接后在设备设置中撤销。', 'Signing out only clears the keychain on this phone. The desktop token may stay valid; revoke the device in desktop settings once connected.'),
           [{ text: pick('取消', 'Cancel'), style: 'cancel', onPress: () => resolve(false) }, { text: pick('仍然清除此手机', 'Clear this phone anyway'), style: 'destructive', onPress: () => resolve(true) }],
           { cancelable: false }

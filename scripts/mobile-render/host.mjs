@@ -173,6 +173,16 @@ export function createHarness(lib) {
     if (!nodes.length) throw new Error(`找不到标签：${label}`)
     return press(nodes[0])
   }
+  const pressables = () => all('[data-rn="Pressable"]')
+  const byText = (needle) => {
+    const hits = pressables().filter((n) => n.textContent.includes(needle))
+    return hits.filter((n) => !hits.some((other) => other !== n && n.contains(other)))
+  }
+  const pressText = async (needle) => {
+    const hits = byText(needle)
+    if (!hits.length) throw new Error(`找不到含文字的可点元素：${needle}`)
+    return press(hits[0])
+  }
   const longPress = async (node) => { await act(async () => { await node.__props.onLongPress() }); await settle(10) }
   const typeInto = async (node, value) => { await act(async () => { node.__props.onChangeText(value) }); await settle(10) }
   const inputs = () => all('[data-rn="TextInput"]')
@@ -183,7 +193,7 @@ export function createHarness(lib) {
     await act(async () => { await button.onPress?.() })
     await settle(30)
   }
-  return { mount, unmount, settle, waitFor, all, byLabel, matchLabel, text, has, press, pressLabel, longPress, typeInto, inputs, alertButton, act, createElement, get host() { return host } }
+  return { mount, unmount, settle, waitFor, all, byLabel, matchLabel, text, has, press, pressLabel, pressables, byText, pressText, longPress, typeInto, inputs, alertButton, act, createElement, get host() { return host } }
 }
 
 export const marksSet = (scope, json) => { marks.set(scope, json) }
