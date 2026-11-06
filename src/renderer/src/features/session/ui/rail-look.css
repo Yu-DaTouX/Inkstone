@@ -20,7 +20,7 @@
     transform: scaleX(0.625);
     transition: transform var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease);
     animation: v3-rail-tick-in var(--dur-base) var(--ease) both;
-    animation-delay: calc(var(--i, 0) * 22ms);
+    animation-delay: calc(min(var(--i, 0), 12) * 22ms);
   }
   .v3-rail-tick:hover .v3-rail-bar { transform: scaleX(0.8125); opacity: 1; }
   .v3-rail-tick[aria-current] .v3-rail-bar { transform: scaleX(1); background: var(--fg); opacity: 1; }

@@ -42,48 +42,11 @@ function hostWidth(): number {
   return host ? host.clientWidth : 0
 }
 
-const SWITCH_SETTLE_MAX_MS = 400
-
-type ViewTransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => unknown }
-
-function prefersReducedMotion(): boolean {
-  if (useStore.getState().settings?.reduceMotion === true) return true
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-}
-
-function splitSwitchSettled(target: SplitSessionRef): Promise<void> {
-  return new Promise((resolve) => {
-    const started = performance.now()
-    const check = (): void => {
-      const state = useStore.getState()
-      const ready = sameSplitSession(displayedSessionOf(state), target) && !state.switchLoading
-      if (ready) {
-        window.setTimeout(resolve, 32)
-        return
-      }
-      if (performance.now() - started > SWITCH_SETTLE_MAX_MS) {
-        resolve()
-        return
-      }
-      window.setTimeout(check, 16)
-    }
-    check()
-  })
-}
-
 export function focusSplitSession(target: SplitSessionRef, options: { composer?: boolean } = {}): void {
   const store = useStore.getState()
   if (options.composer !== false) store.requestComposerFocus(target)
   if (sameSplitSession(displayedSessionOf(store), target)) return
-  const doc = typeof document !== 'undefined' ? (document as ViewTransitionDocument) : null
-  if (!doc?.startViewTransition || prefersReducedMotion()) {
-    switchSplitFocus(target)
-    return
-  }
-  doc.startViewTransition(async () => {
-    switchSplitFocus(target)
-    await splitSwitchSettled(target)
-  })
+  switchSplitFocus(target)
 }
 
 function switchSplitFocus(target: SplitSessionRef): void {
