@@ -11,6 +11,7 @@ let timer, finish, killed = false
 const killer = new EventEmitter()
 killer.unref = () => {}
 const context = {
+ pick: zh => zh,
  ctx: { bin: () => 'fixture-pi' }, process: { platform: 'win32', execPath: 'fixture-node', env: {} },
  agentDirNow: () => 'fixture', setTimeout: callback => { timer = callback; return 1 }, clearTimeout: () => {},
  spawn: (_file, args) => { assert.equal(args.includes('/T'), true); return killer },

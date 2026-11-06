@@ -130,6 +130,7 @@ try {
   console.log('✓ cold histories remain searchable outside the global index cache')
 
   const attachments = await mod('src/main/attachments.ts', 'attachments')
+  const { pick } = await mod('src/shared/ui-lang.ts', 'ui-lang')
   const imageDir = join(temp, 'attachments'), historyDir = join(temp, 'attachment-history')
   await mkdir(imageDir); await mkdir(join(historyDir, 'sessions'), { recursive: true })
   const hash = createHash('sha1').update('USED').digest('hex')
@@ -144,7 +145,7 @@ try {
   vm.runInNewContext((await transform(handlerSource, { loader: 'ts', target: 'es2022' })).code, {
     handle: (_channel, callback) => { prune = callback }, deps: { isSessionBusy: () => busy },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    SESSIONS_DIR: join(historyDir, 'sessions'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, clearSessionReadCache: () => {}, ...attachments,
+    SESSIONS_DIR: join(historyDir, 'sessions'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, pick, clearSessionReadCache: () => {}, ...attachments,
     referencedAttachmentNames: async files => {
       const refs = await attachments.referencedAttachmentNames(files)
       if (mutate) await writeFile(sessionFile, validImageRow + '\n{}')
@@ -170,7 +171,7 @@ try {
     handle: (_channel, callback) => { missing = callback },
     deps: { isSessionBusy: () => false },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    SESSIONS_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, clearSessionReadCache: () => {}, ...attachments
+    SESSIONS_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, pick, clearSessionReadCache: () => {}, ...attachments
   })
   const skipped = await missing()
   assert.equal(skipped.removed, 0); assert.equal(skipped.bytes, 0); assert.equal(skipped.kept, 0)

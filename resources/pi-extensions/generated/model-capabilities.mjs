@@ -1,5 +1,86 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: 14c7d8f542cb40ac25bc0193ad59a8b154d5d5657752263b6d643b9672456eba */
+/* source-sha256: b34a43f3f64caad65129f27f67a5107dcaf1b510fc6caa08d6a0d30cb8c7d2e7 */
+var active = "zh-CN";
+var resolver = null;
+function uiLang() {
+  return resolver?.() ?? active;
+}
+var COUNTED_NOUNS = {
+  turns: "turn",
+  steps: "step",
+  files: "file",
+  sessions: "session",
+  messages: "message",
+  items: "item",
+  tools: "tool",
+  projects: "project",
+  changes: "change",
+  branches: "branch",
+  commits: "commit",
+  lines: "line",
+  results: "result",
+  matches: "match",
+  servers: "server",
+  services: "service",
+  skills: "skill",
+  devices: "device",
+  images: "image",
+  attachments: "attachment",
+  comments: "comment",
+  days: "day",
+  hours: "hour",
+  minutes: "minute",
+  seconds: "second",
+  tokens: "token",
+  requests: "request",
+  calls: "call",
+  errors: "error",
+  artifacts: "artifact",
+  subagents: "subagent",
+  plugins: "plugin",
+  extensions: "extension",
+  models: "model",
+  keys: "key",
+  accounts: "account",
+  tabs: "tab",
+  rows: "row",
+  folders: "folder",
+  hits: "hit",
+  sources: "source",
+  entries: "entry",
+  checks: "check",
+  characters: "character",
+  pages: "page",
+  windows: "window",
+  repos: "repo",
+  sites: "site",
+  scripts: "script",
+  workspaces: "workspace",
+  reviews: "review",
+  replies: "reply",
+  mentions: "mention",
+  tasks: "task",
+  jobs: "job",
+  events: "event",
+  words: "word"
+};
+var COUNTED_RE = new RegExp(`(?<![\\d.,])\\b1 (${Object.keys(COUNTED_NOUNS).join("|")})\\b`, "g");
+function singularizeOne(text) {
+  return text.replace(COUNTED_RE, (_match, noun) => `1 ${COUNTED_NOUNS[noun]}`);
+}
+var translated = /* @__PURE__ */ new Map();
+var TRANSLATED_MAX = 4e3;
+function pick(zh, en) {
+  if (uiLang() !== "en-US") return zh;
+  const text = singularizeOne(en);
+  if (text.length >= 6 && text !== zh) {
+    translated.delete(text);
+    translated.set(text, zh);
+    if (translated.size > TRANSLATED_MAX) translated.delete(translated.keys().next().value);
+  }
+  return text;
+}
+
 var PI_API_IDS = [
   "openai-completions",
   "openai-responses",
@@ -51,27 +132,27 @@ function hasExecutablePrefix(value) {
   return value.trimStart().startsWith("!");
 }
 function validateBaseUrl(value) {
-  if (typeof value !== "string" || !value.trim()) return "Base URL \u4E0D\u80FD\u4E3A\u7A7A";
+  if (typeof value !== "string" || !value.trim()) return pick("Base URL \u4E0D\u80FD\u4E3A\u7A7A", "Base URL is required");
   const raw = value.trim();
-  if (hasExecutablePrefix(raw)) return "Base URL \u4E0D\u80FD\u4EE5 ! \u5F00\u5934\uFF08\u53EF\u6267\u884C\u5B57\u7B26\u4E32\u4E0D\u5141\u8BB8\u5199\u76D8\uFF09";
+  if (hasExecutablePrefix(raw)) return pick("Base URL \u4E0D\u80FD\u4EE5 ! \u5F00\u5934\uFF08\u53EF\u6267\u884C\u5B57\u7B26\u4E32\u4E0D\u5141\u8BB8\u5199\u76D8\uFF09", "Base URL cannot start with ! (executable strings are not written to disk)");
   let url;
   try {
     url = new URL(raw);
   } catch {
-    return "Base URL \u4E0D\u662F\u5408\u6CD5\u5730\u5740";
+    return pick("Base URL \u4E0D\u662F\u5408\u6CD5\u5730\u5740", "Base URL is not a valid address");
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return "Base URL \u53EA\u652F\u6301 http / https";
+  if (url.protocol !== "http:" && url.protocol !== "https:") return pick("Base URL \u53EA\u652F\u6301 http / https", "Base URL must be http / https");
   return null;
 }
 function validateCustomProvider(input) {
   const errors = [];
   const id = typeof input.id === "string" ? input.id.trim() : "";
   if (!isYanProviderId(id)) {
-    errors.push(`Provider ID \u5FC5\u987B\u5F62\u5982 ${CUSTOM_PROVIDER_PREFIX}xxx\uFF08\u5C0F\u5199\u5B57\u6BCD\u3001\u6570\u5B57\u3001\u8FDE\u5B57\u7B26\uFF09`);
+    errors.push(pick(`Provider ID \u5FC5\u987B\u5F62\u5982 ${CUSTOM_PROVIDER_PREFIX}xxx\uFF08\u5C0F\u5199\u5B57\u6BCD\u3001\u6570\u5B57\u3001\u8FDE\u5B57\u7B26\uFF09`, `Provider ID must look like ${CUSTOM_PROVIDER_PREFIX}xxx (lowercase letters, digits, hyphens)`));
   }
   const api = typeof input.api === "string" ? input.api : "";
   if (!CUSTOM_API_CHOICES.some((choice) => choice.id === api)) {
-    errors.push("\u8BF7\u9009\u62E9\u4E00\u4E2A\u53D7\u652F\u6301\u7684\u534F\u8BAE");
+    errors.push(pick("\u8BF7\u9009\u62E9\u4E00\u4E2A\u53D7\u652F\u6301\u7684\u534F\u8BAE", "Choose a supported protocol"));
   }
   const urlError = validateBaseUrl(input.baseUrl);
   if (urlError) errors.push(urlError);
@@ -81,15 +162,15 @@ function validateCustomProvider(input) {
   for (const raw of models) {
     const modelId = typeof raw?.id === "string" ? raw.id.trim() : "";
     if (!modelId) {
-      errors.push("\u6A21\u578B ID \u4E0D\u80FD\u4E3A\u7A7A");
+      errors.push(pick("\u6A21\u578B ID \u4E0D\u80FD\u4E3A\u7A7A", "Model ID is required"));
       continue;
     }
     if (hasExecutablePrefix(modelId)) {
-      errors.push(`\u6A21\u578B ID\u300C${modelId}\u300D\u4E0D\u80FD\u4EE5 ! \u5F00\u5934`);
+      errors.push(pick(`\u6A21\u578B ID\u300C${modelId}\u300D\u4E0D\u80FD\u4EE5 ! \u5F00\u5934`, `Model ID "${modelId}" cannot start with !`));
       continue;
     }
     if (seen.has(modelId)) {
-      errors.push(`\u6A21\u578B ID \u91CD\u590D\uFF1A${modelId}`);
+      errors.push(pick(`\u6A21\u578B ID \u91CD\u590D\uFF1A${modelId}`, `Duplicate model ID: ${modelId}`));
       continue;
     }
     seen.add(modelId);
@@ -106,11 +187,11 @@ function validateCustomProvider(input) {
     }
     if (raw.api !== void 0) {
       if (isCustomApiId(raw.api)) next.api = raw.api;
-      else errors.push(`\u6A21\u578B\u300C${modelId}\u300D\u7684\u534F\u8BAE\u4E0D\u53D7\u652F\u6301`);
+      else errors.push(pick(`\u6A21\u578B\u300C${modelId}\u300D\u7684\u534F\u8BAE\u4E0D\u53D7\u652F\u6301`, `Protocol of model "${modelId}" is not supported`));
     }
     if (raw.baseUrl !== void 0) {
       const modelUrlError = validateBaseUrl(raw.baseUrl);
-      if (modelUrlError) errors.push(`\u6A21\u578B\u300C${modelId}\u300D\uFF1A${modelUrlError}`);
+      if (modelUrlError) errors.push(pick(`\u6A21\u578B\u300C${modelId}\u300D\uFF1A${modelUrlError}`, `Model "${modelId}": ${modelUrlError}`));
       else next.baseUrl = String(raw.baseUrl).trim();
     }
     if (next.reasoning) {
@@ -121,9 +202,9 @@ function validateCustomProvider(input) {
     if (cost) next.cost = cost;
     cleaned.push(next);
   }
-  if (!cleaned.length) errors.push("\u81F3\u5C11\u8981\u6709\u4E00\u4E2A\u6A21\u578B");
+  if (!cleaned.length) errors.push(pick("\u81F3\u5C11\u8981\u6709\u4E00\u4E2A\u6A21\u578B", "At least one model is required"));
   if (typeof input.apiKey === "string" && hasExecutablePrefix(input.apiKey)) {
-    errors.push("API Key \u4E0D\u80FD\u662F ! \u5F00\u5934\u7684\u53EF\u6267\u884C\u5B57\u7B26\u4E32");
+    errors.push(pick("API Key \u4E0D\u80FD\u662F ! \u5F00\u5934\u7684\u53EF\u6267\u884C\u5B57\u7B26\u4E32", "API key cannot be an executable string starting with !"));
   }
   if (errors.length) return { ok: false, errors };
   const value = { id, api, baseUrl: String(input.baseUrl).trim(), models: cleaned };

@@ -85,6 +85,7 @@ for (const changed of [false, true]) {
     releaseExecute: () => { released = true }
   }
   vm.runInNewContext(sendCode, {
+    pick: zh => zh,
     handle: (_channel, fn) => { handler = fn }, runners: registry,
     normalizeExpectedRuntime: (input) => input, resolveExpectedTarget: () => 'r1', targetMatchesExpected: () => current,
     pinSendTarget: () => ({ ...target, agent }), pinnedTargetMatches: () => current,
@@ -122,7 +123,7 @@ const makePush = ts.transpileModule(`(function(id, agent) { return ({ ${index.sl
 const pushed = []
 let nextSession = 0
 let registry
-const context = { runners: null, pushFrom: (id, msg) => pushed.push({ id, msg, runtime: registry.runtimeOf(id) }) }
+const context = { pick: zh => zh, runners: null, pushFrom: (id, msg) => pushed.push({ id, msg, runtime: registry.runtimeOf(id) }) }
 const bindPush = vm.runInNewContext(makePush, context)
 const makeAgent = (id, cwd) => {
   const agent = {

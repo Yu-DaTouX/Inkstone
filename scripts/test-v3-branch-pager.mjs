@@ -143,7 +143,8 @@ export function Badge() { return null }\nexport function Notice(props){ return p
 
 const I18N_STUB = `export function useI18n() { return { lang: 'zh-CN', setLang() {}, toggleLang() {}, t: (k) => String(k) } }
 export function useT() { return (k) => String(k) }
-export function translate(_l, k) { return String(k) }`
+export function translate(_l, k) { return String(k) }
+export function currentLang() { return 'zh-CN' }`
 
 const ICON_STUB = `export function Icon() { return null }`
 

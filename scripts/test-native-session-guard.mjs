@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises'
 import { transform } from 'esbuild'
 
 const source = await readFile(new URL('../src/main/native-session-guard.ts', import.meta.url), 'utf8')
-const { code } = await transform(source, { loader: 'ts', format: 'esm', target: 'es2022' })
+const { code: transformed } = await transform(source, { loader: 'ts', format: 'esm', target: 'es2022' })
+const code = transformed.replace(/^import { pick } from .*$/m, 'const pick = (zh) => zh;')
 const { validateNativeSessionRequest: check } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'))
 const state = { sessionId: 'a', isAgentRunning: false, isStreaming: false, isCompacting: false, pendingMessageCount: 0 }
 let count = 0
