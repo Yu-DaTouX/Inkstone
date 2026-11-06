@@ -24,13 +24,13 @@ const evaluate = (source, bindings) => {
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
   return new Function(...Object.keys(bindings), js)(...Object.values(bindings))
 }
-const ipcSource = await parse('src/main/ipc/session-ipc.ts')
+const deleteSource = await parse('src/main/session-delete.ts')
 let deleteCallback
 function visit(node) {
-  if (ts.isCallExpression(node) && node.expression.getText(ipcSource) === 'handle' && node.arguments[0]?.text === 'yan:deleteSession') deleteCallback = node.arguments[1].getText(ipcSource)
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'deleteSessionChain') deleteCallback = node.getText(deleteSource).replace('export ', '')
   ts.forEachChild(node, visit)
 }
-visit(ipcSource)
+visit(deleteSource)
 assert.ok(deleteCallback)
 function deletionFixture({ current, failAt, restoreFailures = [] } = {}) {
   const files = ['a', 'b', 'c'].map(name => resolve(output, `${name}.jsonl`))
@@ -64,7 +64,7 @@ function deletionFixture({ current, failAt, restoreFailures = [] } = {}) {
     },
     closeTerminalsForOwner: path => calls.terminals.push(path)
   })
-  return { run: () => run(files[0]), calls, trashed }
+  return { run: () => run(host, files[0]), calls, trashed }
 }
 await check('current chain segment rejected before stopping or deleting', async () => {
   const f = deletionFixture({ current: files => files[2] })
