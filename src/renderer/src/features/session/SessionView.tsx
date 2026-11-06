@@ -822,7 +822,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     followNavigation(() => box.scrollTop, turnId)
   }, [virtual, setStickNow, followNavigation, navigateVirtual, flashTurn, onVirtualScroll, readScroll, revealTurn, turnNode])
 
-  useEffect(() => registerMessageLocator(async (messageId) => {
+  useEffect(() => readOnly ? undefined : registerMessageLocator(async (messageId) => {
     const items = renderTurnsRef.current
     const index = items.findIndex((item) => !isPending(item) && (item.id === messageId || (item.kind === 'assistant' && item.sourceIds.includes(messageId))))
     if (index < 0) return false
@@ -838,7 +838,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       await nextFrame()
     }
     return false
-  }), [virtual, setStickNow])
+  }), [virtual, setStickNow, readOnly])
 
   const findScope = useCallback((): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null, [])
 
@@ -955,7 +955,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
           </div>
         )}
 
-        {showJump && !stick ? (
+        {showJump && !stick && !readOnly ? (
           <div className="v3-jump">
             <Button className="v3-jump-btn" data-testid="v3-jump" variant="glass" icon={<ChevronDown size={14} />} aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')} onPress={jumpToBottom}>
               {t('chat.jumpToBottom')}
