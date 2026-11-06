@@ -580,7 +580,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                 title={closeLabel}
                 onClick={preview ? onPin : onClose}
                 data-testid="v3-side-close"
-                className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-(--control-radius) text-(--sidebar-icon-color) outline-hidden ring-ring hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset"
+                className="flex size-6 shrink-0 cursor-pointer transition-colors items-center justify-center rounded-(--control-radius) text-(--sidebar-icon-color) outline-hidden ring-ring hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset"
               >
                 <PanelLeftClose className="size-4" />
               </button>

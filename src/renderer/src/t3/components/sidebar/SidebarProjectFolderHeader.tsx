@@ -57,7 +57,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           event.preventDefault()
           props.onContextMenu(folder.projectKey, { x: event.clientX, y: event.clientY })
         }}
-        className={cn('flex h-8 w-full items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring', !empty && 'cursor-pointer')}
+        className={cn('flex h-8 w-full items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring', !empty && 'cursor-pointer')}
       >
         {folder.icon}
         <span className={cn('min-w-0 flex-1 truncate text-sm font-medium', empty ? 'text-sidebar-muted-foreground' : 'text-sidebar-foreground/90')}>
