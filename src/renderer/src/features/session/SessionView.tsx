@@ -59,6 +59,7 @@ function nativeSessionBridge(): BranchPagerRequest | undefined {
 
 const VIRTUALIZE_TURNS_AT = 80
 const VIRTUALIZE_MSGS_AT = 200
+const VIRTUAL_BUFFER_PX = 3000
 const LOCATE_MOUNT_FRAMES = 30
 const NAV_SETTLE_STILL_FRAMES = 3
 const NAV_SETTLE_MAX_MS = 3000
@@ -574,6 +575,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     intentRef.current = null
     settlingRef.current = true
     let settleRaf = 0
+    if (virtual && bottom) vlistRef.current?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
     const raf = requestAnimationFrame(() => {
       const anchor = snap?.anchor ?? null
       if (virtual) {
@@ -957,7 +959,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
             ref={vlistRef}
             data={renderTurns}
             className="v3-stream"
-            bufferSize={200}
+            bufferSize={VIRTUAL_BUFFER_PX}
             itemSize={240}
             onScroll={onVirtualScroll}
           >
