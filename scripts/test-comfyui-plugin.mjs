@@ -9,6 +9,7 @@ import { createServer } from 'node:http'
 import extension from '../integrations/comfyui/extension.mjs'
 import { runComfyWorkflowTests } from './test-comfyui-workflows.mjs'
 import { runComfyVideoTests, directorWorkflow } from './test-comfyui-video.mjs'
+import { runComfyRawTests } from './test-comfyui-raw.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-comfy-plugin-'))
 const oldEnv = { ...process.env }, originalFetch = globalThis.fetch
@@ -21,6 +22,7 @@ try {
   globalThis.fetch = async () => { throw new Error('Real network disabled') }
   checks += await runComfyWorkflowTests()
   checks += await runComfyVideoTests()
+  checks += await runComfyRawTests()
   const project = join(root, 'project'), artifactDir = join(root, 'artifacts'), outside = join(root, 'outside')
   await mkdir(project); await mkdir(artifactDir); await mkdir(outside)
   await writeFile(join(project, 'normal.png'), PNG); await writeFile(join(outside, 'secret.png'), PNG)
@@ -97,7 +99,7 @@ try {
   const tools = new Map()
   const attachedPaths = []
   extension({ registerTool: tool => tools.set(tool.name, tool), exec: async (_cmd, args) => { attachedPaths.push(args.at(-1)); return { code: 0 } } })
-  ok(tools.has('comfyui_generate') && tools.has('comfyui_service') && tools.has('comfyui_video') && tools.has('comfyui_job'), 'pi extension registers all plugin tools')
+  ok(tools.has('comfyui_generate') && tools.has('comfyui_service') && tools.has('comfyui_video') && tools.has('comfyui_job') && ['comfyui_nodes', 'comfyui_workflow', 'comfyui_upload', 'comfyui_run'].every(name => tools.has(name)), 'pi extension registers all plugin tools')
   const videoFile = join(root, 'video.mp4')
   await writeFile(videoFile, 'video')
   const requests = []
