@@ -184,6 +184,7 @@
   "browser.localServers": "本机服务",
   "browser.localServersEmpty": "没发现正在监听的本地开发服务器",
   "browser.localServersListening": "监听中",
+  "browser.localServerStop": "停止（Agent 启动的）",
   "browser.localServersRefresh": "刷新本机服务",
   "browser.more": "更多操作",
   "browser.navigateError": "无法打开这个地址",

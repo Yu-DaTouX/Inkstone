@@ -4924,6 +4924,10 @@ export class AgentController extends EventEmitter {
     await this.closeRetiredMcpManagers()
   }
 
+  processId(): number | undefined {
+    return this.rpc?.pid
+  }
+
   async stop(): Promise<void> {
     this.stopping = true
     this.releaseExecutionAdmission()

@@ -3,6 +3,7 @@ import type { IpcRegistrar } from './registrar'
 import type { PreviewSiteGate } from '../preview-site-gate'
 import { fetchRemoteImage } from '../remote-image'
 import { listLocalServers } from '../browser/local-servers'
+import type { LocalServerControl } from '../browser/local-server-owner'
 
 const CLOSED_STATE = { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
 const NOT_READY = { ok: false, error: '浏览器未初始化' }
@@ -11,7 +12,8 @@ export function registerBrowserIpc(
   ipc: IpcRegistrar,
   browserOf: () => BrowserController | null,
   siteGate?: PreviewSiteGate,
-  answerSiteAsk?: (id: string, allowed: boolean) => void
+  answerSiteAsk?: (id: string, allowed: boolean) => void,
+  serverControl?: LocalServerControl
 ): void {
   const { rawHandle } = ipc
   const scoped = (sessionId?: string) => browserOf()?.userSession(typeof sessionId === 'string' ? sessionId : undefined) ?? null
@@ -86,6 +88,9 @@ export function registerBrowserIpc(
     browserOf()?.setPermission(String(permission ?? ''), String(origin ?? ''), Boolean(allowed)) ?? NOT_READY
   )
   rawHandle('yan:browser:localServers', async () => ({ servers: await listLocalServers() }))
+  rawHandle('yan:browser:stopLocalServer', async (_e, port: unknown) =>
+    typeof port === 'number' && Number.isInteger(port) && serverControl ? serverControl.stop(port) : { ok: false, code: 'failed' }
+  )
   rawHandle('yan:browser:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
     browserOf()?.setBounds(bounds)
   })

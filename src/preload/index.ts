@@ -129,7 +129,7 @@ import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
 import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from '../shared/account-quota'
 import type { OAuthAccountPools } from '../shared/oauth-accounts'
 import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
-import type { LocalServerSnapshot } from '../shared/local-servers'
+import type { LocalServerSnapshot, LocalServerStopResult } from '../shared/local-servers'
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
   ipcRenderer.invoke(ch, ...args) as Promise<T>
 
@@ -595,7 +595,8 @@ const api: YanBridge = {
     setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible),
     snapshot: () => invoke<string | null>('yan:browser:snapshot'),
     setViewport: (viewport: BrowserViewport) => invoke<void>('yan:browser:setViewport', viewport),
-    localServers: () => invoke<LocalServerSnapshot>('yan:browser:localServers')
+    localServers: () => invoke<LocalServerSnapshot>('yan:browser:localServers'),
+    stopLocalServer: (port) => invoke<LocalServerStopResult>('yan:browser:stopLocalServer', port)
   },
 
   office: {

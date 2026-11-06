@@ -291,6 +291,14 @@ async function mapLimit<T, R>(
   return results
 }
 
+export type LocalServerDecorator = (servers: LocalServerInfo[]) => Promise<LocalServerInfo[]>
+
+let decorator: LocalServerDecorator | null = null
+
+export function setLocalServerDecorator(next: LocalServerDecorator | null): void {
+  decorator = next
+}
+
 async function collectLocalServers(): Promise<LocalServerInfo[]> {
   const candidates = selectLocalServers(await readListeners(), process.pid)
   const probed = await mapLimit<LocalServerListener, LocalServerInfo | null>(
@@ -310,7 +318,8 @@ async function collectLocalServers(): Promise<LocalServerInfo[]> {
       return server
     }
   )
-  return rankLocalServers(probed.filter((server): server is LocalServerInfo => server !== null))
+  const ranked = rankLocalServers(probed.filter((server): server is LocalServerInfo => server !== null))
+  return decorator ? decorator(ranked).catch(() => ranked) : ranked
 }
 
 const DEV_RUNTIMES = /^(node|bun|deno|python\d*|pythonw|java|ruby|php|go|dotnet|cargo|uvicorn|gunicorn|hugo|caddy|nginx|httpd|esbuild|vite)(\.exe)?$/i
@@ -328,6 +337,11 @@ export function rankLocalServers(servers: readonly LocalServerInfo[]): LocalServ
 let cachedServers: LocalServerInfo[] = []
 let cachedAt = 0
 let pending: Promise<LocalServerInfo[]> | null = null
+
+export function refreshLocalServers(): Promise<LocalServerInfo[]> {
+  cachedAt = 0
+  return listLocalServers()
+}
 
 export function listLocalServers(): Promise<LocalServerInfo[]> {
   if (Date.now() - cachedAt < CACHE_TTL_MS) return Promise.resolve(cachedServers)

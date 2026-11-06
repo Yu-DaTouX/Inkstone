@@ -251,6 +251,10 @@ export interface TerminalAgentContext {
 type WaitState = 'completed' | 'matched' | 'quiet' | 'timeout' | 'exited' | 'cancelled' | 'settled'
 
 const agentTerminals = new Set<string>()
+
+export function agentTerminalIds(): string[] {
+  return [...agentTerminals]
+}
 const typedLines = new Map<string, string>()
 const lastUsed = new Map<string, string>()
 
