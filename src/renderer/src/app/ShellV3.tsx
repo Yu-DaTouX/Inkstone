@@ -361,12 +361,18 @@ export default function ShellV3(): ReactElement {
   }, [])
 
   const [settledBarOn, setSettledBarOn] = useState(sessionBarOn)
+  const [settledBarShown, setSettledBarShown] = useState(sessionBarShown)
   const panelMotionMs = useStore((s) => sanitizePanelMotion(s.settings?.panelMotionMs) ?? PANEL_MOTION_DEFAULT)
   useEffect(() => {
     if (settledBarOn === sessionBarOn) return
     const timer = window.setTimeout(() => setSettledBarOn(sessionBarOn), panelMotionMs + 100)
     return () => window.clearTimeout(timer)
   }, [sessionBarOn, settledBarOn, panelMotionMs])
+  useEffect(() => {
+    if (settledBarShown === sessionBarShown) return
+    const timer = window.setTimeout(() => setSettledBarShown(sessionBarShown), panelMotionMs + 100)
+    return () => window.clearTimeout(timer)
+  }, [sessionBarShown, settledBarShown, panelMotionMs])
 
   const toggleSessionBar = useCallback((): void => {
     const on = useStore.getState().settings?.workspaceTiles !== false
@@ -666,7 +672,7 @@ export default function ShellV3(): ReactElement {
               </Suspense>
             ) : null}
             {route.name === 'chat' ? (
-              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarShown ? '1' : undefined} data-bar-anim={settledBarOn !== sessionBarOn ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
+              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarShown ? '1' : undefined} data-bar-anim={settledBarOn !== sessionBarOn || (settledBarShown && !sessionBarShown) ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
                 <ConnBanner />
                 <SideBySide split={split} narrow={splitParked} maxColumns={splitFit} />
                 {sessionBarPresence.present ? (
