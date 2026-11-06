@@ -96,7 +96,11 @@ export default async function run({ cdp, fake, box, check, waitFor, sleep, shot 
   await waitFor('!s.session.isAgentRunning && !s.session.isStreaming', 45000)
   const flow = requests.filter((request) => request.tools?.length && JSON.stringify(request.input).includes('switch-model-runtime'))
   check('当前请求保持原模型与原档位', flow[0]?.model === 'fake-model' && flow[0]?.reasoning?.effort === 'low', { model: flow[0]?.model, reasoning: flow[0]?.reasoning })
-  check('下一次请求使用新模型和新档位', flow.slice(1).some((request) => request.model === 'fake-next' && request.reasoning?.effort === 'medium'), flow.map(request => ({ model: request.model, reasoning: request.reasoning })))
+  check('本轮后续请求仍保持原模型与原档位', flow.every((request) => request.model === 'fake-model' && request.reasoning?.effort === 'low'), flow.map(request => ({ model: request.model, reasoning: request.reasoning })))
+  await cdp.evaluate('window.__yanStore.getState().send("FLOW SHORT after-switch-next")')
+  await waitFor('!s.session.isAgentRunning && !s.session.isStreaming', 45000)
+  const nextFlow = requests.filter((request) => JSON.stringify(request.input).includes('after-switch-next'))
+  check('下一条用户消息使用新模型和新档位', nextFlow.length > 0 && nextFlow.every((request) => request.model === 'fake-next' && request.reasoning?.effort === 'medium'), nextFlow.map(request => ({ model: request.model, reasoning: request.reasoning })))
   check('新一轮开始后待切换提示清除', await cdp.evaluate('!window.__yanStore.getState().session.pendingModelChange && !document.querySelector("[data-testid=pending-model-change]")'))
 
   await cdp.evaluate('window.__yanStore.getState().patchSettings({ theme: "light" })')
