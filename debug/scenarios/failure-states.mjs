@@ -1,47 +1,9 @@
 import { mkdirSync } from 'node:fs'
+import { analyse, sample } from '../lib/state-probe.mjs'
 
 export const meta = { description: '模型失败各类状态（502 / 额度 / 鉴权 / HTML 错页 / 断网 / 半途断开 / 挂起 / 间歇失败后重试）：逐帧采样错误卡进出、消息数回退、转圈卡死、原始英文与堆栈外露，并截图' }
 
 const OUT = process.env.YAN_STATES_OUT ?? 'E:/pi-desktop/.local-docs/evidence/2026-11-07-night/states'
-
-const probe = `(() => {
-  const s = window.__yanStore.getState()
-  const card = document.querySelector('[data-testid="v3-error-card"]')
-  const sc = document.querySelector('[data-testid="v3-session-scroll"]') ?? document.querySelector('.v3-session-scroll')
-  return {
-    t: Date.now(),
-    card: card ? card.innerText.slice(0, 300) : null,
-    msgs: s.messages.length,
-    running: !!(s.session?.isStreaming || s.session?.isAgentRunning),
-    retry: s.session?.retry ? JSON.stringify(s.session.retry).slice(0, 120) : null,
-    notices: (s.notices ?? []).map((n) => n.text ?? n.message ?? '').slice(0, 3),
-    scrollTop: Math.round(sc?.scrollTop ?? -1),
-    spinners: document.querySelectorAll('[class*="spin"], [class*="Spin"], [data-spinning="true"]').length
-  }
-})()`
-
-async function sample(cdp, sleep, ms, every = 120, shots) {
-  const rows = []
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    try { rows.push(await cdp.evaluate(probe)) } catch (error) { rows.push({ error: String(error).slice(0, 100) }) }
-    if (shots) await shots(rows.length)
-    else await sleep(every)
-  }
-  return rows
-}
-
-function analyse(rows) {
-  const ok = rows.filter((r) => !r.error)
-  let cardFlips = 0
-  let msgDrops = 0
-  for (let i = 1; i < ok.length; i++) {
-    if (!!ok[i].card !== !!ok[i - 1].card) cardFlips++
-    if (ok[i].msgs < ok[i - 1].msgs) msgDrops++
-  }
-  const texts = [...new Set(ok.map((r) => r.card).filter(Boolean))]
-  return { frames: ok.length, cardFlips, msgDrops, texts, last: ok.at(-1) }
-}
 
 export default async function run({ cdp, box, fake, check, report, sleep, log, newSession, state, waitFor, until, shot }) {
   mkdirSync(OUT, { recursive: true })
