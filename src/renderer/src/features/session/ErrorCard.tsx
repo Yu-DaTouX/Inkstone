@@ -94,7 +94,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
     if (rateLimited && provider) void refreshLiveQuota(provider, { force: true })
   }, [rateLimited, provider])
   if (!parsed) return null
-  if (!recovered && latest && running) return null
+  if (latest && running) return null
   const windowFull = parsed.kind === 'quota' && parsed.quotaScope === 'rate' && !!liveQuota?.windows?.length && !liveQuota.staleError && blockedQuotaWindows(liveQuota.windows).length > 0
   const model = windowFull ? { ...parsed, quotaScope: 'usage' as const, actions: ['wait', 'model'] as ErrorCardAction[] } : parsed
 

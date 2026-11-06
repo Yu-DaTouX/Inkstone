@@ -287,6 +287,7 @@ async function respond(res, text, done, requestNo) {
 
 export function startFakeModel(port = 0) {
   const requests = []
+  const flaky = new Map()
   const server = createServer((req, res) => {
     let body = ''
     req.on('data', (chunk) => { body += chunk })
@@ -298,7 +299,48 @@ export function startFakeModel(port = 0) {
       const done = toolOutputsSinceUser(input)
       const images = JSON.stringify(input).split('"input_image"').length - 1
       requests.push({ at: Date.now(), text: text.slice(0, 40), done, tools: (json.tools ?? []).length, images, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
-      if (text.includes('FAIL')) {
+      const failTag = /FAIL[A-Z0-9]+/.exec(text)?.[0]
+      const flakyKey = text.slice(0, 40)
+      if (failTag === 'FAILQUOTA') {
+        res.writeHead(429, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { type: 'insufficient_quota', code: 'insufficient_quota', message: 'You exceeded your current quota, please check your plan and billing details.' } }))
+        return
+      }
+      if (failTag === 'FAILAUTH') {
+        res.writeHead(401, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { message: 'Incorrect API key provided' } }))
+        return
+      }
+      if (failTag === 'FAILHTML') {
+        res.writeHead(503, { 'content-type': 'text/html' })
+        res.end('<html><body><h1>503 Service Unavailable</h1><pre>at upstream.connect (proxy.js:42:13)</pre></body></html>')
+        return
+      }
+      if (failTag === 'FAILNET') {
+        req.socket.destroy()
+        return
+      }
+      if (failTag === 'FAILHANG') return
+      if (failTag === 'FAILFLAKY') {
+        flaky.set(flakyKey, (flaky.get(flakyKey) ?? 0) + 1)
+        if (flaky.get(flakyKey) <= 2) {
+          res.writeHead(502, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: 'fake flaky upstream failure' } }))
+          return
+        }
+      }
+      if (failTag === 'FAILMID') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        const send = (event) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+        send({ type: 'response.created', response: { id: 'resp_mid', status: 'in_progress', output: [] } })
+        const item = { id: 'msg_mid', type: 'message', role: 'assistant', status: 'in_progress', content: [] }
+        send({ type: 'response.output_item.added', output_index: 0, item })
+        send({ type: 'response.content_part.added', item_id: item.id, output_index: 0, content_index: 0, part: { type: 'output_text', text: '' } })
+        send({ type: 'response.output_text.delta', item_id: item.id, output_index: 0, content_index: 0, delta: '已经写到一半的回答，然后连接断开' })
+        setTimeout(() => req.socket.destroy(), 600)
+        return
+      }
+      if (text.includes('FAIL') && failTag !== 'FAILFLAKY') {
         res.writeHead(502, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ error: { message: 'fake upstream failure' } }))
         return
