@@ -3548,6 +3548,7 @@ function createWindow(): void {
             }
           } catch (e) {
             console.error('[probe] 失败', e)
+            if (process.env.YAN_PROBE_KEEP) return
           }
           await shutdown()
           app.exit(0)
