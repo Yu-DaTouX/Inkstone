@@ -51,6 +51,10 @@ const OUTCOME_KEY: Record<SubagentOutcomeKey, MessageKey> = {
 }
 
 export const SUBAGENT_CARD_BOT = 20
+const SUBAGENT_GRID_MIN = 5
+const SUBAGENT_GRID_SHOWN = 12
+const SUBAGENT_ITEM = '[data-testid="v3-subagent-row"], [data-testid="v3-subagent-tile"]'
+const GRID_KEYS: Readonly<Record<string, string>> = { ArrowRight: 'ArrowDown', ArrowLeft: 'ArrowUp' }
 
 export function useSubagentView(run: SubagentRun, snapshot?: RunSnapshot): {
   model: SubagentLineModel
@@ -152,7 +156,7 @@ function subagentContextUsage(
 }
 
 function focusRow(list: HTMLElement, index: number): void {
-  list.querySelectorAll<HTMLElement>('[data-testid="v3-subagent-row"]')[index]?.focus()
+  list.querySelectorAll<HTMLElement>(SUBAGENT_ITEM)[index]?.focus()
 }
 
 export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: TurnSubagentScope }): JSX.Element | null {
@@ -189,16 +193,17 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   if (!ordered.length) return null
   const totals = subagentListTotals(ordered)
   const many = ordered.length > 1
+  const grid = ordered.length >= SUBAGENT_GRID_MIN
   const open = !many || subagentListOpen(storedOpen, totals)
-  const { shown, hidden } = subagentListSlice(ordered, storedAll === true, selectedRunId)
+  const { shown, hidden } = subagentListSlice(ordered, storedAll === true, selectedRunId, grid ? SUBAGENT_GRID_SHOWN : undefined)
   const canFold = ordered.length > shown.length || storedAll === true
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-    const rows = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-testid="v3-subagent-row"]')]
+    const rows = [...event.currentTarget.querySelectorAll<HTMLElement>(SUBAGENT_ITEM)]
     const index = rows.findIndex((row) => row === document.activeElement)
     if (index < 0) return
-    const target = subagentRowFocusTarget(event.key, index, rows.length)
+    const target = subagentRowFocusTarget(grid ? GRID_KEYS[event.key] ?? event.key : event.key, index, rows.length)
     if (target === null) return
     event.preventDefault()
     focusRow(event.currentTarget, target)
@@ -237,8 +242,10 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
       <Card padding="none" receipt={totals.ended} className="v3-sa-card">
         {head}
         {open ? (
-          <div className="v3-sa-list" role="group" aria-label={tt('subagentListLabel')} onKeyDown={onKeyDown} data-testid="v3-subagent-list">
-            {shown.map((run, index) => (
+          <div className="v3-sa-list" data-layout={grid ? 'grid' : undefined} role="group" aria-label={tt('subagentListLabel')} onKeyDown={onKeyDown} data-testid="v3-subagent-list">
+            {shown.map((run, index) => grid ? (
+              <SubagentTile key={run.id} run={run} snapshot={snapshots[run.id]} index={index} />
+            ) : (
               <Fragment key={run.id}>
                 <SubagentRow run={run} snapshot={snapshots[run.id]} index={index} />
                 <SubagentLive run={run} />
@@ -328,6 +335,58 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       ) : null}
       {time ? <span className="v3-sa-time" data-testid="v3-subagent-time">{time}</span> : null}
       <Icon name="chevron-right" size={13} className="v3-chev" />
+    </button>
+  )
+}
+
+function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?: RunSnapshot; index?: number }): JSX.Element {
+  const tt = useSessionText()
+  const t = useT()
+  const { lang } = useI18n()
+  const { model, status } = useSubagentView(run, snapshot)
+  const row = useSubagentRow(run)
+  const selected = useSubagentPaneOpen(run.id)
+  const models = useStore((s) => s.models)
+  const modelName = run.model ? turnModelLabel(run.model, models).label : null
+  const live = row.state === 'starting' || row.state === 'running'
+  const awaitingReview = !live && (run.review === 'pending' || run.review === 'conflict')
+  const label = compactTaskPaths(live && row.description ? row.description : row.label)
+  const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
+  const warning = live ? run.progressWarning?.trim() : ''
+  const detail = live ? warning || row.latestActivity || '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
+
+  return (
+    <button
+      type="button"
+      className="ui-row v3-sa-tile"
+      data-testid="v3-subagent-tile"
+      data-run-id={run.id}
+      data-state={row.state}
+      data-selected={selected ? '' : undefined}
+      aria-current={selected ? 'true' : undefined}
+      title={[model.task, tt('subagentOpenPane')].filter(Boolean).join('\n')}
+      style={{ '--sa-index': index } as CSSProperties}
+      onClick={() => openSubagentPane(run.id)}
+    >
+      <span className="v3-sa-tile-head">
+        <span className="v3-sa-bot" aria-hidden="true">
+          <SubagentBot run={run} snapshot={snapshot} model={model} size={SUBAGENT_CARD_BOT} />
+        </span>
+        <span className="v3-sa-state">
+          <SubagentStateIcon state={row.state} label={status} />
+        </span>
+        <span className="v3-sa-title" data-testid="v3-subagent-task">
+          {live ? <ShimmerText className="v3-sa-shimmer">{label}</ShimmerText> : label}
+        </span>
+        {time ? <span className="v3-sa-time">{time}</span> : null}
+      </span>
+      {detail ? <span className="v3-sa-tile-detail" data-warning={warning ? '' : undefined}>{detail}</span> : null}
+      {modelName || awaitingReview ? (
+        <span className="v3-sa-tile-foot">
+          {modelName ? <span className="v3-sa-model-name">{modelName}</span> : null}
+          {awaitingReview ? <Badge tone={run.review === 'conflict' ? 'stall' : 'ask'} className="v3-sa-review">{t('sa.reviewBadge')}</Badge> : null}
+        </span>
+      ) : null}
     </button>
   )
 }

@@ -429,6 +429,7 @@ async function main() {
   const kind = (name) => (el) => typeof el.type === 'function' && (el.type.name === name || new RegExp('^' + name + '[0-9]+$').test(el.type.name))
   const stub = (name) => (el) => typeof el.type === 'function' && el.type.__stub === name
   const rowsOf = (line) => collect(line, kind('SubagentRow'))
+  const tilesOf = (line) => collect(line, kind('SubagentTile'))
   const summaryOf = (sum) => {
     const status = collect(sum, kind('CardStatus'))[0]
     const meta = collect(sum, kind('CardMeta'))[0]
@@ -554,11 +555,11 @@ async function main() {
     rt.cells = []
     store({ subagents: many, models: [] })
     const line = rt.render(bundle.SubagentLine, { turn })
-    ok(line.props['data-layout'] === 'list', '有运行中的项时默认展开成列表', line.props['data-layout'])
-    ok(rowsOf(line).map((el) => el.props.run.id).join() === 'sub-2,sub-1,sub-3,sub-5,sub-0', '超过 5 行只显示前 5 行', rowsOf(line).map((el) => el.props.run.id).join())
-    const more = byTestId(line, 'v3-subagents-more')[0]
-    ok(textOf(more) === 'subagentShowMore' && more.type.__stub === 'ui-button', '其余折叠为「再显示 N 个」按钮')
-    ok(bundle.subagentListSlice(bundle.orderSubagentRuns(many), false, null).hidden === 2, '「再显示」的数目是被折叠的行数')
+    ok(line.props['data-layout'] === 'list', '有运行中的项时默认展开', line.props['data-layout'])
+    ok(byTestId(line, 'v3-subagent-list')[0]?.props['data-layout'] === 'grid' && rowsOf(line).length === 0, '多于 4 个子 Agent 时铺成网格，不再是一行一个')
+    ok(tilesOf(line).map((el) => el.props.run.id).join() === 'sub-2,sub-1,sub-3,sub-5,sub-0,sub-4,sub-6', '网格顺序与列表相同，12 个以内全部显示', tilesOf(line).map((el) => el.props.run.id).join())
+    ok(byTestId(line, 'v3-subagents-more').length === 0, '没超过 12 个时不出「再显示」按钮')
+    ok(bundle.subagentListSlice(bundle.orderSubagentRuns(many), false, null).hidden === 2, '列表的「再显示」仍按 5 行折叠')
     const sum = byTestId(line, 'v3-subagents-sum')[0]
     const live = summaryOf(sum)
     ok(live.status === 'subagentFailedCount' && live.tone === 'fail', '组头状态在前：有失败时失败优先、红色', JSON.stringify(live))
@@ -572,17 +573,27 @@ async function main() {
     ok(list.props.role === 'group' && typeof list.props.onKeyDown === 'function' && list.props.tabIndex === undefined, '列表不是焦点停靠点，只处理行间方向键')
     ok(lib.useSubagentGroups.getState().byRun['sub-2']?.join() === 'sub-2,sub-1,sub-3,sub-5,sub-0,sub-4,sub-6', '列表顺序发布给转录窗格做上一个 / 下一个', lib.useSubagentGroups.getState().byRun['sub-2'])
 
+    const swarm = Array.from({ length: 14 }, (_, i) => subagentRun({ id: 'swarm-' + i, startedAt: 1000 + i, status: 'running', toolCalls: i }))
+    rt.cells = []
+    resetExpansion()
+    store({ subagents: swarm, models: [] })
+    const crowded = rt.render(bundle.SubagentLine, { turn })
+    const more = byTestId(crowded, 'v3-subagents-more')[0]
+    ok(tilesOf(crowded).length === 12 && textOf(more) === 'subagentShowMore' && more.type.__stub === 'ui-button', '超过 12 个时先显示 12 块，其余折叠为「再显示 N 个」')
     more.props.onPress()
     const all = rt.render(bundle.SubagentLine, { turn })
-    ok(rowsOf(all).length === 7 && textOf(byTestId(all, 'v3-subagents-more')[0]) === 'subagentShowLess', '展开后显示全部，按钮变「收起」')
+    ok(tilesOf(all).length === 14 && textOf(byTestId(all, 'v3-subagents-more')[0]) === 'subagentShowLess', '展开后显示全部，按钮变「收起」')
     rt.cells = []
-    ok(rowsOf(rt.render(bundle.SubagentLine, { turn })).length === 7, '展开状态存在展开存储里，重新挂载后保持')
+    ok(tilesOf(rt.render(bundle.SubagentLine, { turn })).length === 14, '展开状态存在展开存储里，重新挂载后保持')
     byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-more')[0].props.onPress()
-    ok(rowsOf(rt.render(bundle.SubagentLine, { turn })).length === 5, '收起后回到前 5 行')
+    ok(tilesOf(rt.render(bundle.SubagentLine, { turn })).length === 12, '收起后回到前 12 块')
 
-    setPanel(['subagent:sub-6'], 'subagent:sub-6')
-    ok(rowsOf(rt.render(bundle.SubagentLine, { turn })).length === 7, '选中的行被折叠时整组展开，选中项不藏起来')
+    setPanel(['subagent:swarm-13'], 'subagent:swarm-13')
+    ok(tilesOf(rt.render(bundle.SubagentLine, { turn })).length === 14, '选中的块被折叠时整组展开，选中项不藏起来')
     resetPanes()
+    resetExpansion()
+    rt.cells = []
+    store({ subagents: many, models: [] })
 
     byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-sum')[0].props.onPress()
     const folded = rt.render(bundle.SubagentLine, { turn })
@@ -606,7 +617,7 @@ async function main() {
     byTestId(summary, 'v3-subagents-sum')[0].props.onPress()
     rt.cells = []
     const reopened = rt.render(bundle.SubagentLine, { turn })
-    ok(reopened.props['data-layout'] === 'list' && rowsOf(reopened).length === 5, '点击摘要展开，用户展开过的状态保持', reopened.props['data-layout'])
+    ok(reopened.props['data-layout'] === 'list' && tilesOf(reopened).length === 7, '点击摘要展开，用户展开过的状态保持（7 个铺成网格）', reopened.props['data-layout'])
     ok(textOf(byTestId(reopened, 'v3-subagents-usage')[0]) === '21 个工具 · 7.0k tokens · 4s', '展开后在列表末尾写工具、tokens、整组用时', textOf(byTestId(reopened, 'v3-subagents-usage')[0]))
     ok(byTestId(reopened, 'v3-subagents-sum')[0].props.title === undefined, '展开后组头不再重复用量提示')
 
