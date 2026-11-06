@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { startProfile, stopProfile } from '../lib/cpu-profile.mjs'
-import { FX_HOOK, frameStats, sidebarStats, switchStats } from '../lib/sidebar-probes.mjs'
+import { FX_HOOK, frameStats, sidebarStats, streamStats, switchStats } from '../lib/sidebar-probes.mjs'
 
 export const meta = { description: '真实数据副本（用 debug/review.mjs 跑）：多会话同时运行时的左栏重排、状态变化、搜索、折叠，以及切会话中间帧；输出逐帧指标，不调用真实模型' }
 
@@ -35,7 +35,7 @@ export default async function run({ autoApprove, cdp, waitFor, sleep, log, repor
       log('profile', name, JSON.stringify(p.top.slice(0, 12)))
       log('longBusy', name, JSON.stringify(p.longBusy))
     }
-    const stats = raw.frames[0]?.rows ? sidebarStats(raw.frames, raw.shifts, raw.longs) : frameStats(raw.frames)
+    const stats = mode === 'stream' ? streamStats(raw.frames, raw.shifts, raw.longs) : raw.frames[0]?.rows ? sidebarStats(raw.frames, raw.shifts, raw.longs) : frameStats(raw.frames)
     report.timings[name] = stats
     save(`frames-${name}`, raw)
     log(name, JSON.stringify(stats))
@@ -123,10 +123,19 @@ export default async function run({ autoApprove, cdp, waitFor, sleep, log, repor
     const med = (key) => { const v = list.map((x) => x[key]).filter((x) => typeof x === 'number').sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null }
     const max = (key) => Math.max(0, ...list.map((x) => x[key] ?? 0))
     const sum = (key) => list.reduce((a, x) => a + (x[key] ?? 0), 0)
-    return { n: list.length, readyMsMedian: med('readyMs'), readyMsMax: max('readyMs'), dtMaxWorst: max('dtMax'), over50: sum('over50'), staleFrames: sum('staleFrames'), blankFrames: sum('blankFrames'), providerFlashFrames: sum('providerFlashFrames'), emptyModelFrames: sum('emptyModelFrames'), skeletonVisibleFrames: sum('skeletonVisibleFrames'), contentChanges: sum('contentChanges'), composerChanges: sum('composerChanges'), scrollTopChanges: sum('scrollTopChanges'), unclicked: list.filter((x) => !x.clicked).length }
+    return { n: list.length, readyMsMedian: med('readyMs'), readyMsMax: max('readyMs'), dtMaxWorst: max('dtMax'), over50: sum('over50'), staleFrames: sum('staleFrames'), blankFrames: sum('blankFrames'), shiftsAfterFirstContent: sum('shiftsAfterFirstContent'), firstContentMsMedian: med('firstContentMs'), providerFlashFrames: sum('providerFlashFrames'), emptyModelFrames: sum('emptyModelFrames'), skeletonVisibleFrames: sum('skeletonVisibleFrames'), contentChanges: sum('contentChanges'), composerChanges: sum('composerChanges'), scrollTopChanges: sum('scrollTopChanges'), unclicked: list.filter((x) => !x.clicked).length }
   }
 
   if (!started.length) started.push(...LOADS.map(() => ({ file: null, id: 'x' })))
+  if ((process.env.YAN_FX_PHASES ?? '').split(',').includes('subagents')) {
+    await newSession(box.projects[0])
+    await ev(`window.__yanStore.getState().patchSettings({ permissionMode: 'all' })`)
+    await record('subagents-grid', async () => {
+      await ev(`window.__yanStore.getState().send('SUBAGENTS8-LOOK STEPS30 先派子代理，再继续')`)
+      await waitFor('(s.subagents ?? []).filter((a) => a.status === "running").length >= 6', 60000, 50).catch(() => {})
+      await sleep(Number(process.env.YAN_FX_SA_MS ?? 14000))
+    }, 1500, 'stream')
+  }
   const live = started.map((x) => ({ key: 'local:' + x.id, path: x.file, file: x.file }))
   if (want('live')) {
     await clickRow(live[0].key)

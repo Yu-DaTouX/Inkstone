@@ -18,6 +18,21 @@ window.__fx = (() => {
       const aside = document.querySelector('aside.v3-side')
       const scroller = aside ? [...aside.querySelectorAll('*')].find((n) => n.scrollHeight > n.clientHeight + 2 && /auto|scroll/.test(getComputedStyle(n).overflowY)) : null
       rec.sc = scroller ? Math.round(scroller.scrollTop) : -1
+    } else if (mode === 'stream') {
+      const stream = document.querySelector('.v3-stream')
+      const box = document.querySelector('[data-testid="v3-subagents"]')
+      const list = document.querySelector('[data-testid="v3-subagent-list"]')
+      const prog = document.querySelector('[data-testid="v3-subagents-progress"]')
+      rec.sa = box ? Math.round(box.getBoundingClientRect().height * 10) / 10 : -1
+      rec.saTop = box ? Math.round(box.getBoundingClientRect().top) : -1
+      rec.layout = list ? list.dataset.layout || '' : ''
+      rec.tiles = document.querySelectorAll('[data-testid="v3-subagent-tile"]').length
+      rec.srows = document.querySelectorAll('[data-testid="v3-subagent-row"]').length
+      rec.prog = prog ? squash(prog.innerText).slice(0, 40) : ''
+      rec.top = stream ? Math.round(stream.scrollTop) : -1
+      rec.h = stream ? Math.round(stream.scrollHeight) : -1
+      rec.gap = stream ? Math.round(stream.scrollHeight - stream.scrollTop - stream.clientHeight) : -1
+      rec.turns = stream ? stream.querySelectorAll('[data-turn-id]').length : 0
     } else if (mode === 'switch') {
       const s = state()
       const stream = document.querySelector('.v3-stream')
@@ -34,7 +49,8 @@ window.__fx = (() => {
       rec.model = s.session && s.session.model ? (s.session.model.id || s.session.model.name || '?') : null
       rec.skel = !!skel
       rec.skelOp = skel ? Number(getComputedStyle(skel).opacity) : null
-      rec.turns = turns.length
+      rec.hold = !!stream && getComputedStyle(stream).visibility === 'hidden'
+      rec.turns = rec.hold ? 0 : turns.length
       rec.first = turns.length ? turns[0].getAttribute('data-turn-id') : null
       rec.last = turns.length ? turns[turns.length - 1].getAttribute('data-turn-id') : null
       rec.top = stream ? Math.round(stream.scrollTop) : -1
@@ -200,8 +216,19 @@ export function switchStats(frames, target) {
     if (prevTop !== null && Math.abs(f.top - prevTop) > 4 && f.turns > 0) topChanges.push({ t: Math.round(f.t), from: prevTop, to: f.top })
     prevTop = f.top
   }
+  const firstContent = frames.findIndex((f) => f.turns > 0 && f.peek === target.path && !f.loading)
+  let shifts = 0
+  if (firstContent >= 0) {
+    for (let i = firstContent + 1; i < frames.length; i++) {
+      const a = frames[i - 1]
+      const b = frames[i]
+      if (b.turns > 0 && (b.first !== a.first || b.last !== a.last || Math.abs(b.top - a.top) > 8)) shifts++
+    }
+  }
   return {
     ...base,
+    firstContentMs: firstContent >= 0 ? Math.round(frames[firstContent].t) : null,
+    shiftsAfterFirstContent: shifts,
     readyMs: readyIdx >= 0 ? Math.round(frames[readyIdx].t) : null,
     sessionAttachedMs: attachedIdx >= 0 ? Math.round(frames[attachedIdx].t) : null,
     providerFlashFrames: frames.filter((f) => f.cmp && f.cmp.includes('提供商设置')).length,
@@ -217,4 +244,42 @@ export function switchStats(frames, target) {
     scrollTopChanges: topChanges.length,
     scrollTopSamples: topChanges.slice(0, 6)
   }
+}
+
+export function streamStats(frames, shifts, longs) {
+  const out = { ...frameStats(frames) }
+  let saSteps = 0
+  let saMax = 0
+  let tileChanges = 0
+  let layoutFlips = 0
+  let gapJumps = 0
+  let gapMax = 0
+  let topJumps = 0
+  for (let i = 1; i < frames.length; i++) {
+    const a = frames[i - 1]
+    const b = frames[i]
+    if (a.sa >= 0 && b.sa >= 0 && Math.abs(a.sa - b.sa) > 0.5) {
+      saSteps++
+      saMax = Math.max(saMax, Math.abs(a.sa - b.sa))
+    }
+    if (a.tiles !== b.tiles || a.srows !== b.srows) tileChanges++
+    if (a.layout !== b.layout) layoutFlips++
+    if (a.gap >= 0 && b.gap >= 0) {
+      const d = Math.abs(a.gap - b.gap)
+      if (d > 40 && a.top === b.top) { gapJumps++; gapMax = Math.max(gapMax, d) }
+    }
+    if (b.top >= 0 && a.top >= 0 && Math.abs(b.top - a.top) > 200) topJumps++
+  }
+  out.cardHeightChanges = saSteps
+  out.cardHeightMaxStepPx = Math.round(saMax)
+  out.tileCountChanges = tileChanges
+  out.layoutFlips = layoutFlips
+  out.contentGrowthJumps40 = gapJumps
+  out.contentGrowthMaxPx = Math.round(gapMax)
+  out.scrollTopJumps200 = topJumps
+  out.layoutShiftStream = Math.round(shifts.filter((x) => x.src.includes('stream')).reduce((acc, x) => acc + x.v, 0) * 1000) / 1000
+  out.layoutShiftAll = Math.round(shifts.reduce((acc, x) => acc + x.v, 0) * 1000) / 1000
+  out.longTasks = longs.length
+  out.longTaskMax = Math.max(0, ...longs.map((l) => l.d))
+  return out
 }
