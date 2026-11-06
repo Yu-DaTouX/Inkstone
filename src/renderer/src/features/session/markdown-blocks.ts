@@ -28,7 +28,8 @@ export function prepareStreamingMarkdown(text: string, live: boolean): string {
   let out = text
   if (scan.inlineAt >= 0) out = out.slice(0, scan.inlineAt)
   else if (scan.mathAt >= 0) out = out.slice(0, scan.mathAt).replace(/\s+$/, '')
-  else if (!scan.fenceOpen) out = holdPartialTable(holdPartialLink(out))
+  else if (scan.fenceEdgeAt >= 0) out = out.slice(0, scan.fenceEdgeAt)
+  else if (!scan.fenceOpen) out = closeOpenMarks(holdBareMarker(holdPartialTable(holdPartialLink(out))))
   return closeLeadingEmphasis(out)
 }
 
@@ -36,25 +37,30 @@ interface TailScan {
   fenceOpen: boolean
   inlineAt: number
   mathAt: number
+  fenceEdgeAt: number
 }
 
 function scanTail(text: string): TailScan {
-  if (!text.includes('`') && !text.includes('$$')) return { fenceOpen: false, inlineAt: -1, mathAt: -1 }
+  if (!text.includes('`') && !text.includes('~~~') && !text.includes('$$')) return { fenceOpen: false, inlineAt: -1, mathAt: -1, fenceEdgeAt: -1 }
   let fence: { char: string; size: number } | null = null
   let inline: { at: number; size: number } | null = null
   let mathAt = -1
+  let fenceEdgeAt = -1
   let offset = 0
   for (const line of text.split('\n')) {
+    const unterminated = offset + line.length === text.length
     const fenceLine = line.replace(/^(?: {0,3}>[ \t]?)+/, '').replace(/^ {0,3}(?:[-*+]|\d{1,9}[.)])\s+/, '')
     const marker = FENCE_OPEN.exec(fenceLine)
     if (fence) {
       if (marker && marker[1][0] === fence.char && marker[1].length >= fence.size && !fenceLine.slice(marker[0].length).trim()) fence = null
+      else if (unterminated && /^ {0,3}(?:`+|~+)$/.test(line) && line.trim()[0] === fence.char && line.trim().length < fence.size) fenceEdgeAt = offset
     } else if (mathAt >= 0) {
       if (line.includes('$$')) mathAt = -1
     } else if (!line.trim()) {
       inline = null
     } else if (marker && !inline) {
       fence = { char: marker[1][0], size: marker[1].length }
+      if (unterminated) fenceEdgeAt = offset
     } else if (!inline && DISPLAY_MATH_OPEN.test(line)) {
       if (line.split('$$').length % 2 === 0) mathAt = offset + line.indexOf('$$')
     } else if (inline || !/^(?: {4}|\t)/.test(line)) {
@@ -74,11 +80,12 @@ function scanTail(text: string): TailScan {
     }
     offset += line.length + 1
   }
-  return { fenceOpen: fence !== null, inlineAt: inline ? inline.at : -1, mathAt }
+  return { fenceOpen: fence !== null, inlineAt: inline ? inline.at : -1, mathAt, fenceEdgeAt: fence !== null ? fenceEdgeAt : -1 }
 }
 
 const DISPLAY_MATH_OPEN = /^ {0,3}\$\$/
-const PARTIAL_IMAGE = /!\[[^\[\]\n]*(?:\](?:\([^)\n]*)?)?$/
+const BARE_MARKER = /^ {0,3}(?:[-*+]|>|#{1,6}|-{2}|\d{1,9}[.)]?)$/
+const PARTIAL_IMAGE =/!\[[^\[\]\n]*(?:\](?:\([^)\n]*)?)?$/
 const PARTIAL_LINK =/(!?)\[([^\[\]\n]*)\]\([^)\n]*$/
 const TABLE_ROW_START = /^ {0,3}\|/
 const DELIMITER_CELL = /^:?-+:?$/
@@ -94,6 +101,27 @@ function holdPartialLink(text: string): string {
   const match = PARTIAL_LINK.exec(line)
   if (!match || insideCode(match.index)) return text
   return text.slice(0, lineStart + match.index) + match[2]
+}
+
+function holdBareMarker(text: string): string {
+  const lineStart = text.lastIndexOf('\n') + 1
+  return BARE_MARKER.test(text.slice(lineStart)) ? text.slice(0, lineStart) : text
+}
+
+function closeOpenMarks(text: string): string {
+  if (!text.includes('**') && !text.includes('~~')) return text
+  const gap = text.lastIndexOf('\n\n')
+  const start = gap < 0 ? 0 : gap + 2
+  const masked = text.slice(start).replace(/\\[\s\S]|`[^`]*`/g, (piece) => ' '.repeat(piece.length))
+  let out = text
+  for (const mark of ['**', '~~']) {
+    if (masked.split(mark).length % 2 === 1) continue
+    const at = masked.lastIndexOf(mark)
+    const after = masked.slice(at + 2)
+    if (!after.trim()) out = out.slice(0, start + at).replace(/[ \t]+$/, '')
+    else if (!/^\s/.test(after)) out = `${out}${mark}`
+  }
+  return out
 }
 
 function tableCells(line: string): string[] {
