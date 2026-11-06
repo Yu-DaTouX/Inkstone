@@ -41,10 +41,11 @@ export function useId() { return rt().useId() }
 export function useContext(ctx) { return ctx && '__value' in ctx ? ctx.__value : null }
 export function createContext(value) { return { __isContext: true, __value: value, Provider: (p) => (p ? p.children : null) } }
 export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
+export function useSyncExternalStore(_sub, getSnapshot) { return getSnapshot() }
 export function forwardRef(fn) { return fn }
 export function memo(fn) { return fn }
 export function isValidElement(el) { return !!el && typeof el === 'object' && 'type' in el && 'props' in el }
-export default { Fragment, useState, useEffect, useLayoutEffect, useInsertionEffect, useRef, useMemo, useCallback, useId, useContext, createContext, createElement, forwardRef, memo, isValidElement }
+export default { Fragment, useSyncExternalStore, useState, useEffect, useLayoutEffect, useInsertionEffect, useRef, useMemo, useCallback, useId, useContext, createContext, createElement, forwardRef, memo, isValidElement }
 `
 
 const JSX_SHIM = `import { createElement, Fragment } from './react-shim.mjs'
