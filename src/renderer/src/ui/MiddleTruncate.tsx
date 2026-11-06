@@ -38,14 +38,19 @@ export function MiddleTruncate({ value, tail, showTitle = true, className, ...re
   )
 }
 
-function fitHead(head: HTMLElement): void {
+interface HeadFit {
+  overflowing: boolean
+  slack: number
+}
+
+function measureHead(head: HTMLElement): HeadFit {
   const text = head.firstChild
   const overflowing = head.scrollWidth > head.clientWidth && text instanceof Text
-  head.toggleAttribute('data-overflow', overflowing)
   let slack = 0
   if (overflowing) {
     const range = document.createRange()
     const left = head.getBoundingClientRect().left
+    const width = head.clientWidth
     const widthTo = (end: number): number => {
       range.setStart(text, 0)
       range.setEnd(text, end)
@@ -55,15 +60,34 @@ function fitHead(head: HTMLElement): void {
     let over = text.length
     while (over - fits > 1) {
       const mid = (fits + over) >> 1
-      if (widthTo(mid) <= head.clientWidth) fits = mid
+      if (widthTo(mid) <= width) fits = mid
       else over = mid
     }
     if (/[\uD800-\uDBFF]/.test(text.data[fits - 1] ?? '')) fits -= 1
-    slack = Math.max(0, head.clientWidth - widthTo(fits))
+    slack = Math.max(0, width - widthTo(fits))
   }
-  head.style.clipPath = slack > 0 ? `inset(-0.25em ${slack}px -0.25em 0)` : ''
+  return { overflowing, slack }
+}
+
+function applyHead(head: HTMLElement, fit: HeadFit): void {
+  head.toggleAttribute('data-overflow', fit.overflowing)
+  head.style.clipPath = fit.slack > 0 ? `inset(-0.25em ${fit.slack}px -0.25em 0)` : ''
   const tailNode = head.nextElementSibling
-  if (tailNode instanceof HTMLElement) tailNode.style.translate = slack > 0 ? `-${slack}px 0` : ''
+  if (tailNode instanceof HTMLElement) tailNode.style.translate = fit.slack > 0 ? `-${fit.slack}px 0` : ''
+}
+
+const queuedHeads = new Set<HTMLElement>()
+
+function flushHeads(): void {
+  const heads = [...queuedHeads].filter((head) => head.isConnected)
+  queuedHeads.clear()
+  const fits = heads.map(measureHead)
+  heads.forEach((head, index) => applyHead(head, fits[index]))
+}
+
+function fitHead(head: HTMLElement): void {
+  if (queuedHeads.size === 0) queueMicrotask(flushHeads)
+  queuedHeads.add(head)
 }
 
 const DEFAULT_TAIL = 10
