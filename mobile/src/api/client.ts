@@ -220,6 +220,9 @@ export interface HistoryPage {
   nextBefore?: string
 }
 
+const SLOW_REQUEST_MS = 60_000
+const COMPACT_REQUEST_MS = 180_000
+
 export class RemoteClient {
   readonly historyCache = new HistoryCache()
   constructor(readonly connection: Connection) {}
@@ -228,8 +231,8 @@ export class RemoteClient {
     return request<T>(this.connection, path, { token: this.connection.token })
   }
 
-  private post<T>(path: string, body: unknown, key: string): Promise<T> {
-    return request<T>(this.connection, path, { method: 'POST', token: this.connection.token, body, idempotencyKey: key })
+  private post<T>(path: string, body: unknown, key: string, timeoutMs?: number): Promise<T> {
+    return request<T>(this.connection, path, { method: 'POST', token: this.connection.token, body, idempotencyKey: key, timeoutMs })
   }
 
   info(): Promise<RemoteInfo> {
@@ -269,11 +272,11 @@ export class RemoteClient {
   }
 
   async deleteSession(sessionId: string): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/delete`, { confirm: true }, idempotencyKey())
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/delete`, { confirm: true }, idempotencyKey(), SLOW_REQUEST_MS)
   }
 
   async compact(sessionId: string): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/compact`, {}, idempotencyKey())
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/compact`, {}, idempotencyKey(), COMPACT_REQUEST_MS)
   }
 
   async branches(sessionId: string): Promise<{ repo: boolean; branches: Array<{ name: string; current: boolean; busy?: boolean }>; current: string | null }> {
@@ -281,7 +284,7 @@ export class RemoteClient {
   }
 
   async switchBranch(sessionId: string, branch: string): Promise<void> {
-    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/branch`, { branch }, idempotencyKey())
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/branch`, { branch }, idempotencyKey(), SLOW_REQUEST_MS)
   }
 
   async search(query: string): Promise<Array<{ sessionId: string; snippet: string; matches: number }>> {

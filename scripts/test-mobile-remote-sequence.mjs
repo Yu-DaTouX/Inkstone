@@ -92,7 +92,16 @@ assert.equal(listed.current.id, 'm-b')
 assert.equal(listed.pending, true, '运行中切换后 pending 标记为真')
 state.running = false
 
+const delays = []
+const realSetTimeout = globalThis.setTimeout
+globalThis.setTimeout = (fn, ms, ...rest) => { delays.push(ms); return realSetTimeout(fn, ms, ...rest) }
 await client.compact('s-1')
+await client.switchBranch('s-1', 'main')
+await client.insight('s-1')
+globalThis.setTimeout = realSetTimeout
+assert.ok(delays.includes(180_000), '压缩请求的超时放宽到 180 秒（压缩要等模型写摘要）')
+assert.ok(delays.includes(60_000), '切分支请求的超时放宽到 60 秒')
+assert.ok(delays.includes(15_000), '普通请求保持 15 秒')
 state.running = true
 await assert.rejects(client.compact('s-1'), (err) => err instanceof RemoteHttpError && err.status === 409 && /运行中/.test(err.message), '运行中压缩返回 409 与原文')
 await assert.rejects(client.switchBranch('s-1', 'dev'), (err) => err.status === 409)
