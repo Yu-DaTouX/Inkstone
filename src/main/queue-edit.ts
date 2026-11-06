@@ -16,7 +16,7 @@ export interface ClearedQueue {
 
 export interface QueueRewritePort {
   clearQueue(): Promise<ClearedQueue>
-  adoptCleared(steering: string[], followUp: string[]): void
+  adoptCleared(steering: string[], followUp: string[]): QueueState | void
   publish(next: QueueState): void
   refill(steering: QueueItem[], followUp: QueueItem[]): Promise<void>
 }
@@ -87,8 +87,8 @@ export async function applyQueueRewrite(
   original: QueueState,
   next: QueueState
 ): Promise<QueueRewriteResult> {
-  const target = cloneQueue(planQueueRewrite(original, next))
-  const backup = cloneQueue(original)
+  let target = cloneQueue(planQueueRewrite(original, next))
+  let backup = cloneQueue(original)
   if (sameQueue(original, target)) {
     port.publish(cloneQueue(original))
     return { ok: true }
@@ -97,7 +97,11 @@ export async function applyQueueRewrite(
   if (!cleared.success) {
     return { ok: false, error: cleared.error || '清空队列失败', dropped: allItems(target) }
   }
-  port.adoptCleared(cleared.steering, cleared.followUp)
+  const adopted = port.adoptCleared(cleared.steering, cleared.followUp)
+  if (adopted && Array.isArray(adopted.steering) && Array.isArray(adopted.followUp)) {
+    target = cloneQueue(planQueueRewrite(adopted, next))
+    backup = cloneQueue(adopted)
+  }
   try {
     port.publish(target)
     await port.refill(target.steering, target.followUp)
