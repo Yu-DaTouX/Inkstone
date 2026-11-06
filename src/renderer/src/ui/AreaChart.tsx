@@ -30,7 +30,7 @@ function niceCeil(value: number): number {
 export function AreaChart({ points, formatValue, axisLabels, className, ...props }: AreaChartProps) {
   const [active, setActive] = useState<number | null>(null)
   const shape = useMemo(() => {
-    const max = niceCeil(points.reduce((top, point) => Math.max(top, point.value), 0))
+    const max = Math.max(STEPS, niceCeil(points.reduce((top, point) => Math.max(top, point.value), 0)))
     const span = Math.max(1, points.length - 1)
     const x = (i: number): number => (WIDTH * i) / span
     const y = (v: number): number => HEIGHT - (HEIGHT * Math.max(0, v)) / max
