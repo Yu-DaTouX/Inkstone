@@ -34,7 +34,8 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
     const s = window.__yanStore.getState();
     const main = await window.yan.getMessages().catch(() => []);
     const ids = new Set(s.messages.map((m) => m.id));
-    const runs = window.__yanRuns.getState().runs.map((r) => ({ sid: r.sessionId, phase: r.phase.kind }));
+    const runs = window.__yanRuns.getState().runs.map((r) => ({ sid: r.sessionId, phase: r.phase.kind, request: r.phase.request?.id?.slice(-6) }));
+    const mainPending = (await window.yan.pendingUiRequests().catch(() => [])).map((p) => ({ id: String(p.payload?.id ?? '').slice(-6), key: p.sessionKey ?? null }));
     return {
       view: s.session?.sessionId ?? null,
       active: s.activeRunnerId,
@@ -51,6 +52,7 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
       runtimeRequests: Object.fromEntries(Object.entries(s.sessionRuntimes).map(([id, rt]) => [id.slice(-6), rt.uiRequests?.length ?? 0])),
       runners: s.runners.map((r) => ({ sid: (r.sessionId ?? '').slice(-6), gen: r.generation, running: r.running, waiting: r.waiting, active: r.isActive })),
       runs,
+      mainPending,
       split: window.__yanSplit.getState().split?.tiles.length ?? 0,
       cards: document.querySelectorAll('[data-testid="v3-question"]').length
     };
@@ -82,7 +84,7 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   await shot('after-switching')
 
   const askedAt = Date.now()
-  await waitFor(`window.__yanRuns.getState().runs.some((r) => r.sessionId === ${JSON.stringify(A.sessionId)} && r.phase.kind === 'needs-you')`, 180000, 100)
+  await waitFor(`window.__yanRuns.getState().runs.some((r) => r.sessionId === ${JSON.stringify(A.sessionId)} && r.phase.kind === 'needs-you' && String(r.phase.request?.id ?? '').startsWith('yan-question-'))`, 180000, 100)
   report.timings.askWaitMs = Date.now() - askedAt
   await sleep(1500)
   const atAsk = await snapshot()
