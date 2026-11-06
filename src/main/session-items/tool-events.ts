@@ -78,14 +78,14 @@ export function updateToolExecution(call: UIToolCall, partial: ToolResultPayload
   call.details = partial?.details
 }
 
-export function endToolExecution(call: UIToolCall, evt: ToolExecutionEnd, now: number): void {
+export function endToolExecution(call: UIToolCall, evt: ToolExecutionEnd, now: number, localizeImage?: (mimeType: string, data: string) => string): void {
   const result = evt.result
   const cancelled = evt.cancelled === true
   call.cancelled = cancelled || undefined
   call.status = evt.isError && !cancelled ? 'error' : 'ok'
   call.output = toolResultText(result?.content)
   if (call.status === 'error' && isDangerDenial(call.output)) call.denied = true
-  call.images = imagesOf(result?.content)
+  call.images = imagesOf(result?.content, localizeImage)
   call.details = result?.details
   call.endedAt = now
 }

@@ -284,7 +284,7 @@ export class SessionItemProjector {
   liveToolEnd(toolCallId: string, evt: ToolExecutionEnd, now: number): UIToolCall | null {
     const hit = this.callIndex.get(toolCallId)
     if (!hit) return null
-    endToolExecution(hit.call, evt, now)
+    endToolExecution(hit.call, evt, now, this.localizeImage)
     this.syncCall(hit.call)
     return hit.call
   }

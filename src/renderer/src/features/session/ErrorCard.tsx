@@ -57,6 +57,21 @@ function isLatestTurn(sourceIds: readonly string[], messages: readonly { id: str
   return true
 }
 
+async function restoreImages(images: { data: string; mimeType: string; url?: string }[]): Promise<{ data: string; mimeType: string }[]> {
+  const out: { data: string; mimeType: string }[] = []
+  for (const image of images) {
+    if (image.data) { out.push({ data: image.data, mimeType: image.mimeType }); continue }
+    if (!image.url) continue
+    try {
+      const bytes = new Uint8Array(await (await fetch(image.url)).arrayBuffer())
+      let binary = ''
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      out.push({ data: btoa(binary), mimeType: image.mimeType })
+    } catch { continue }
+  }
+  return out
+}
+
 export function ErrorCard({ sourceIds, error, readOnly = false, recovered = false }: { sourceIds: readonly string[]; error: string; readOnly?: boolean; recovered?: boolean }): JSX.Element | null {
   const tt = useSessionText()
   const zh = useI18n().lang !== 'en-US'
@@ -98,7 +113,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
       const prompt = promptForTurn(sourceIds, useStore.getState().messages)
       if (!prompt) return
       forgetToolExpansion(toolExpansionScopeOf(view.sessionId, view.sessionFile))
-      void send(prompt.text, prompt.images.length ? prompt.images : undefined)
+      void restoreImages(prompt.images).then((images) => send(prompt.text, images.length ? images : undefined))
       return
     }
     if (action === 'model') {

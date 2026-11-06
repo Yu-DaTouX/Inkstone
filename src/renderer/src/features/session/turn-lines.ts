@@ -70,7 +70,7 @@ export function errorTitleKey(model: ErrorCardModel): SessionTextKey {
 export function promptForTurn(
   sourceIds: readonly string[],
   messages: readonly UIMessage[]
-): { text: string; images: { data: string; mimeType: string }[] } | null {
+): { text: string; images: { data: string; mimeType: string; url?: string }[] } | null {
   const firstId = sourceIds[0]
   if (!firstId) return null
   const start = messages.findIndex((message) => message.id === firstId)
@@ -79,8 +79,8 @@ export function promptForTurn(
     const message = messages[i]
     if (message.role !== 'user' || !message.text) continue
     const images = (message.images ?? [])
-      .filter((image) => !!image.data)
-      .map((image) => ({ data: image.data as string, mimeType: image.mimeType }))
+      .filter((image) => !!image.data || !!image.url)
+      .map((image) => ({ data: image.data, mimeType: image.mimeType, url: image.url }))
     return { text: message.text, images }
   }
   return null

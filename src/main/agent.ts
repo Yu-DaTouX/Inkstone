@@ -558,7 +558,7 @@ export class AgentController extends EventEmitter {
     }
   })
 
-  private readonly items = new SessionItemProjector()
+  private readonly items = new SessionItemProjector((mimeType, data) => this.localizeHistoryImage(mimeType, data))
   private get messages(): UIMessage[] {
     return this.items.uiMessages()
   }
