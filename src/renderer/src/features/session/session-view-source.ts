@@ -99,12 +99,12 @@ export function useSessionViewSource(pane?: SessionPaneBinding): SessionViewSour
     return summary?.cwd
   })
   const peerCwd = peerSession?.cwd ?? summaryCwd
-  const turnScope = useMemo<TurnScope>(() => ({ messages: peerMessages, session: peerSession, ...(peerCwd ? { cwd: peerCwd } : {}) }), [peerMessages, peerSession, peerCwd])
-  const running = !!peerSession?.isAgentRunning || !!peerSession?.isStreaming
   const peerView = useMemo<SessionViewIdentity | undefined>(
     () => (target ? { sessionId: target.sessionId ?? null, sessionFile: target.path ?? null, key: paneKey(target) } : undefined),
     [target?.sessionId, target?.path]
   )
+  const turnScope = useMemo<TurnScope>(() => ({ messages: peerMessages, session: peerSession, ...(peerCwd ? { cwd: peerCwd } : {}), ...(peerView ? { view: peerView } : {}) }), [peerMessages, peerSession, peerCwd, peerView])
+  const running = !!peerSession?.isAgentRunning || !!peerSession?.isStreaming
   const peerScope = useMemo<TurnSubagentScope | undefined>(
     () => (targetId ? { sessionIds: [targetId] } : undefined),
     [targetId]
