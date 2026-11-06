@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext, memo, startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
+import { createContext, Fragment, useContext, memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
 import ReactMarkdown, { type ExtraProps, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkCjkFriendly from 'remark-cjk-friendly'
@@ -562,7 +562,6 @@ function hasUnclosedFence(text: string): boolean {
 }
 
 const FENCE_LINE = /^\s*(```|~~~)/m
-const LIVE_HIGHLIGHT_CHARS = 4000
 const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
 
 const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
@@ -578,7 +577,7 @@ const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highli
   )
 })
 
-function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE, throttle = false }: { text: string; highlight?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[]; throttle?: boolean }): JSX.Element {
+function LiveMarkdown({ text, math = null, fade = NO_FADE, throttle = false }: { text: string; math?: MathPlugins | null; fade?: readonly FadeSpan[]; throttle?: boolean }): JSX.Element {
   const split = useMemo(() => splitMarkdownBlocks(text), [text])
   const hold = useRef<TailHold | null>(null)
   const [, retry] = useState(0)
@@ -607,7 +606,7 @@ function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE, th
             key={block.offset}
             text={block.text}
             offset={block.offset}
-            highlight={FENCE_LINE.test(block.text) && (highlight || block.text.length <= LIVE_HIGHLIGHT_CHARS)}
+            highlight={FENCE_LINE.test(block.text)}
             math={math}
             fade={spans.length ? spans : NO_FADE}
           />
@@ -627,15 +626,6 @@ function useRevealFade(text: string, live: boolean): readonly FadeSpan[] {
   track.current = trackReveal(track.current, text, now)
   const spans = fadeSpans(track.current, now)
   return spans.length ? spans : NO_FADE
-}
-
-function whenIdle(callback: () => void): () => void {
-  if (typeof window.requestIdleCallback === 'function') {
-    const handle = window.requestIdleCallback(callback, { timeout: 500 })
-    return () => window.cancelIdleCallback(handle)
-  }
-  const handle = window.setTimeout(callback, 50)
-  return () => window.clearTimeout(handle)
 }
 
 function parseMarkdown(text: string, math: MathPlugins | null, allowHtml: boolean, footnotes: NonNullable<Options['remarkRehypeOptions']>): React.ReactElement {
@@ -674,14 +664,6 @@ export const Markdown = memo(function Markdown({
   const wasLive = useRef(false)
   if (running) wasLive.current = true
   const settling = !running && wasLive.current
-  const [highlightReady, setHighlightReady] = useState(false)
-  useEffect(() => {
-    if (!settling) {
-      setHighlightReady(false)
-      return undefined
-    }
-    return whenIdle(() => startTransition(() => setHighlightReady(true)))
-  }, [settling])
 
   const mathPending = math.needed && !math.plugins
   const cacheKey = markdownCacheKey({ lang, allowHtml, math: !!math.plugins, text: renderedText })
@@ -719,7 +701,7 @@ export const Markdown = memo(function Markdown({
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value={false}>
             <MarkdownHtml.Provider value={allowHtml}>
-              <LiveMarkdown text={renderedText} highlight={highlightReady && !unclosed} math={math.plugins} />
+              <LiveMarkdown text={renderedText} math={math.plugins} />
             </MarkdownHtml.Provider>
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>
