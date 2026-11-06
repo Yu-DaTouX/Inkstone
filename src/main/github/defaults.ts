@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import type { GhPrCreateDefaultsResult } from '../../shared/github'
 import { classifyGhFailure, prFailure, runGh } from './command'
 import type { GhRunner } from './command'
+import { pick } from '../../shared/ui-lang'
 
 export type ReadPrGit = (cwd: string, args: string[]) => Promise<{ ok: boolean; stdout: string }>
 
@@ -25,6 +26,6 @@ export async function readPrCreateDefaults(cwd: string, run: GhRunner = runGh, g
       if (typeof parsed.defaultBranchRef?.name === 'string') defaultBranch = parsed.defaultBranchRef.name
     } catch { }
   }
-  const failure = !repo.ok ? classifyGhFailure(repo) : !branch.ok || !commit.ok ? prFailure('git-failed', '无法读取当前分支或最近提交') : !defaultBranch ? prFailure('other', '无法读取 GitHub 仓库默认分支') : undefined
+  const failure = !repo.ok ? classifyGhFailure(repo) : !branch.ok || !commit.ok ? prFailure('git-failed', pick('无法读取当前分支或最近提交', 'Cannot read the current branch or latest commit')) : !defaultBranch ? prFailure('other', pick('无法读取 GitHub 仓库默认分支', 'Cannot read the GitHub repository default branch')) : undefined
   return { ok: !failure, currentBranch, latestCommit, defaultBranch, ...(failure ? { failure, error: failure.message } : {}) }
 }

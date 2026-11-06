@@ -1,5 +1,6 @@
 import type { QuotaWindow } from './ipc'
 import { WINDOW_DURATION } from './quota-forecast'
+import { pick } from './ui-lang'
 
 export type AccountQuotaSource = 'yan' | 'codex-cli' | 'claude-code' | 'gemini-cli'
 
@@ -113,13 +114,13 @@ export function chatGptIdentity(accessToken: unknown, idToken?: unknown, fallbac
 }
 
 export function quotaWindowLabel(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '额度'
+  if (!Number.isFinite(seconds) || seconds <= 0) return pick('额度', 'Quota')
   const hours = seconds / 3600
-  if (hours < 24) return `${Math.round(hours)} 小时`
+  if (hours < 24) return pick(`${Math.round(hours)} 小时`, `${Math.round(hours)} h`)
   const days = hours / 24
-  if (days < 7) return `${Math.round(days)} 天`
-  if (days < 30) return `${Math.round(days / 7)} 周`
-  return `${Math.round(days / 30)} 个月`
+  if (days < 7) return pick(`${Math.round(days)} 天`, `${Math.round(days)} d`)
+  if (days < 30) return pick(`${Math.round(days / 7)} 周`, `${Math.round(days / 7)} w`)
+  return pick(`${Math.round(days / 30)} 个月`, `${Math.round(days / 30)} mo`)
 }
 
 interface CodexUsageWindow {
@@ -149,7 +150,7 @@ export function codexUsageWindows(payload: CodexUsagePayload): { plan?: string; 
       : id === 'primary' ? WINDOW_DURATION.fiveHour : id === 'secondary' ? WINDOW_DURATION.week : undefined
     windows.push({
       id,
-      label: id === 'primary' ? '五小时' : id === 'secondary' ? '本周' : quotaWindowLabel(seconds),
+      label: id === 'primary' ? pick('五小时', '5 hours') : id === 'secondary' ? pick('本周', 'This week') : quotaWindowLabel(seconds),
       used: Number(w.used_percent),
       total: 100,
       resetAt: Number.isFinite(Number(w.reset_at)) ? Number(w.reset_at) * 1000 : undefined,
@@ -166,14 +167,14 @@ export function codexUsageWindows(payload: CodexUsagePayload): { plan?: string; 
   }
 }
 
-const CLAUDE_WINDOW_LABELS: Record<string, string> = {
-  five_hour: '五小时',
-  seven_day: '本周',
-  seven_day_opus: '本周 · Opus',
-  seven_day_sonnet: '本周 · Sonnet',
-  seven_day_oauth_apps: '本周 · 第三方应用',
-  extra_usage: '额外用量'
-}
+const claudeWindowLabels = (): Record<string, string> => ({
+  five_hour: pick('五小时', '5 hours'),
+  seven_day: pick('本周', 'This week'),
+  seven_day_opus: pick('本周 · Opus', 'This week · Opus'),
+  seven_day_sonnet: pick('本周 · Sonnet', 'This week · Sonnet'),
+  seven_day_oauth_apps: pick('本周 · 第三方应用', 'This week · Third-party apps'),
+  extra_usage: pick('额外用量', 'Extra usage')
+})
 
 export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
   const root = obj(payload) ?? {}
@@ -184,12 +185,12 @@ export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
     const w = obj(value)
     if (!w || typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) continue
     const resetAt = typeof w.resets_at === 'string' ? Date.parse(w.resets_at) : NaN
-    const listed = key in CLAUDE_WINDOW_LABELS
+    const listed = key in claudeWindowLabels()
     const durationMs = key === 'five_hour' ? WINDOW_DURATION.fiveHour : key.startsWith('seven_day') ? WINDOW_DURATION.week : undefined
     windows.push({
       id: key,
       ...(listed ? {} : { informational: true }),
-      label: CLAUDE_WINDOW_LABELS[key] ?? `其他限额 · ${key.replace(/_/g, ' ')}`,
+      label: claudeWindowLabels()[key] ?? pick(`其他限额 · ${key.replace(/_/g, ' ')}`, `Other limit · ${key.replace(/_/g, ' ')}`),
       used: w.utilization,
       total: 100,
       resetAt: Number.isFinite(resetAt) ? resetAt : undefined,

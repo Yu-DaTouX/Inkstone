@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { NativeMcpServerListView, NativeMcpServerView } from '../../shared/mcp-native-import'
+import { pick } from '../../shared/ui-lang'
 
 const OVERRIDE_KEYS = new Set(['enabled', 'exposure', 'toolExposure'])
 
@@ -18,12 +19,12 @@ async function readNativeDocument(path: string): Promise<{ servers: Record<strin
   }
   try {
     const root = asRecord(JSON.parse(text))
-    if (!root) return { error: `${path}: 顶层不是 JSON 对象` }
+    if (!root) return { error: pick(`${path}: 顶层不是 JSON 对象`, `${path}: top level is not a JSON object`) }
     if (root.mcpServers === undefined) return { servers: {} }
     const servers = asRecord(root.mcpServers)
-    return servers ? { servers } : { error: `${path}: mcpServers 不是对象` }
+    return servers ? { servers } : { error: pick(`${path}: mcpServers 不是对象`, `${path}: mcpServers is not an object`) }
   } catch (error) {
-    return { error: `${path}: 不是合法 JSON（${error instanceof Error ? error.message : String(error)}）` }
+    return { error: pick(`${path}: 不是合法 JSON（${error instanceof Error ? error.message : String(error)}）`, `${path}: not valid JSON (${error instanceof Error ? error.message : String(error)})`) }
   }
 }
 

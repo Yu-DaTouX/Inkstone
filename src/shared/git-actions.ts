@@ -1,4 +1,5 @@
 import type { GitRepoState } from './git'
+import { pick } from './ui-lang'
 
 export type GitActionKind =
   | 'stage'
@@ -127,109 +128,109 @@ interface Rule {
   retrySafe: boolean
 }
 
-const RULES: Rule[] = [
+const rules = (): Rule[] => [
   {
     code: 'identity',
     test: /please tell me who you are|unable to auto-detect email address|author identity unknown|empty ident name|committer identity unknown/,
-    message: 'Git 身份未配置，无法提交',
-    hint: '设置 user.name 与 user.email（可以让模型帮你跑 git config），或改仓库已有配置',
+    message: pick('Git 身份未配置，无法提交', 'Git identity not configured'),
+    hint: pick('设置 user.name 与 user.email（可以让模型帮你跑 git config），或改仓库已有配置', 'Set user.name and user.email (the model can run git config), or fix the repo config'),
     retrySafe: true
   },
   {
     code: 'sign',
     test: /gpg failed to sign|gpg: signing failed|failed to write commit object|secret key not available|no secret key/,
-    message: '提交签名失败',
-    hint: '检查 gpg / SSH 签名配置，或临时关掉 commit.gpgsign',
+    message: pick('提交签名失败', 'Commit signing failed'),
+    hint: pick('检查 gpg / SSH 签名配置，或临时关掉 commit.gpgsign', 'Check gpg / SSH signing config, or turn off commit.gpgsign'),
     retrySafe: true
   },
   {
     code: 'hook',
     test: /hook declined|pre-commit hook|pre-push hook|commit-msg hook|husky|\.git\/hooks\//,
-    message: '提交被 hook 拒绝',
-    hint: '上面保留了 hook 的原始输出；修掉它指出的问题再提交（这里不会跳过 hook）',
+    message: pick('提交被 hook 拒绝', 'Commit rejected by hook'),
+    hint: pick('上面保留了 hook 的原始输出；修掉它指出的问题再提交（这里不会跳过 hook）', 'Hook output is kept above; fix what it reports and commit again (hooks are never skipped)'),
     retrySafe: true
   },
   {
     code: 'lock',
     test: /unable to create '[^']*\.lock'|index\.lock.*file exists|another git process|cannot lock ref|unable to lock/,
-    message: '仓库被锁住（有另一个 git 进程在写）',
-    hint: '等它跑完再试；确认没有 git 在跑时，删掉对应的 .lock 文件',
+    message: pick('仓库被锁住（有另一个 git 进程在写）', 'Repository is locked (another git process is writing)'),
+    hint: pick('等它跑完再试；确认没有 git 在跑时，删掉对应的 .lock 文件', 'Wait for it to finish; if no git is running, delete the .lock file'),
     retrySafe: true
   },
   {
     code: 'conflict',
     test: /you need to resolve your current index first|unmerged files|committing is not possible because you have unmerged|needs merge|fix conflicts/,
-    message: '有未解决的合并冲突',
-    hint: '先解决冲突并暂存结果，再提交',
+    message: pick('有未解决的合并冲突', 'Unresolved merge conflicts'),
+    hint: pick('先解决冲突并暂存结果，再提交', 'Resolve the conflicts and stage the result first'),
     retrySafe: true
   },
   {
     code: 'dirty-blocks-switch',
     test: /your local changes to the following files would be overwritten|please commit your changes or stash them|would be overwritten by checkout|cannot switch branch|your local changes would be overwritten/,
-    message: '本地改动会被覆盖，Git 拒绝了这次切换',
-    hint: '这是 Git 自己的检查结果 —— 先提交或手动备份这些文件，这里不会替你 stash 或 reset',
+    message: pick('本地改动会被覆盖，Git 拒绝了这次切换', 'Git refused the switch: local changes would be overwritten'),
+    hint: pick('这是 Git 自己的检查结果 —— 先提交或手动备份这些文件，这里不会替你 stash 或 reset', 'This is Git\'s own check. Commit or back up those files first; no stash or reset is done for you'),
     retrySafe: true
   },
   {
     code: 'branch-in-use',
     test: /is already checked out at|already checked out/,
-    message: '该分支已被另一个工作树占用',
-    hint: '在占用它的那个工作树里切走，或换一个分支名',
+    message: pick('该分支已被另一个工作树占用', 'Branch is checked out in another worktree'),
+    hint: pick('在占用它的那个工作树里切走，或换一个分支名', 'Switch away in that worktree, or use another branch name'),
     retrySafe: true
   },
   {
     code: 'branch-exists',
     test: /a branch named .* already exists|branch named .* already exists/,
-    message: '分支已经存在',
-    hint: '换一个名字，或直接切到已有分支',
+    message: pick('分支已经存在', 'Branch already exists'),
+    hint: pick('换一个名字，或直接切到已有分支', 'Use another name, or switch to the existing branch'),
     retrySafe: true
   },
   {
     code: 'auth',
     test: /authentication failed|could not read username|permission denied \(publickey\)|terminal prompts disabled|invalid username or password|fatal: could not read password|access denied|403 forbidden/,
-    message: '远程认证失败',
-    hint: '认证走系统 Git 凭证；在这里失败时请到终端完成一次登录（应用不会代你保存凭证）',
+    message: pick('远程认证失败', 'Remote authentication failed'),
+    hint: pick('认证走系统 Git 凭证；在这里失败时请到终端完成一次登录（应用不会代你保存凭证）', 'Auth uses system Git credentials; sign in once in a terminal (the app does not store credentials)'),
     retrySafe: true
   },
   {
     code: 'no-upstream',
     test: /has no upstream branch|no upstream configured|no tracking information for the current branch/,
-    message: '当前分支没有上游',
-    hint: '用「推送并设置上游」推第一次',
+    message: pick('当前分支没有上游', 'Current branch has no upstream'),
+    hint: pick('用「推送并设置上游」推第一次', 'Use "Push and set upstream" for the first push'),
     retrySafe: true
   },
   {
     code: 'non-fast-forward',
     test: /non-fast-forward|fetch first|\[rejected\].*\(fetch first\)|updates were rejected/,
-    message: '远程有新提交，推送被拒（快进不了）',
-    hint: '先拉取并自己合并 / 变基 —— 这里不会自动 rebase，也不提供强制推送',
+    message: pick('远程有新提交，推送被拒（快进不了）', 'Push rejected: remote has new commits (not a fast-forward)'),
+    hint: pick('先拉取并自己合并 / 变基 —— 这里不会自动 rebase，也不提供强制推送', 'Pull and merge / rebase yourself first; no automatic rebase or force push'),
     retrySafe: true
   },
   {
     code: 'no-remote',
     test: /does not appear to be a git repository|could not read from remote repository|no such remote|'[^']*' does not appear/,
-    message: '远程仓库不可用',
-    hint: '检查 remote 地址与网络',
+    message: pick('远程仓库不可用', 'Remote repository unavailable'),
+    hint: pick('检查 remote 地址与网络', 'Check the remote URL and network'),
     retrySafe: true
   },
   {
     code: 'unborn',
     test: /does not have any commits yet|unborn branch|bad revision 'head'/,
-    message: '仓库还没有第一个提交',
-    hint: '先做一个初始提交',
+    message: pick('仓库还没有第一个提交', 'Repository has no commits yet'),
+    hint: pick('先做一个初始提交', 'Make an initial commit first'),
     retrySafe: true
   },
   {
     code: 'nothing-to-commit',
     test: /nothing to commit|no changes added to commit|nothing added to commit/,
-    message: '没有可提交的内容',
+    message: pick('没有可提交的内容', 'Nothing to commit'),
     retrySafe: true
   },
   {
     code: 'path-rejected',
     test: /pathspec .* did not match|did not match any files/,
-    message: '文件路径已经不在仓库里（可能被删或被改了名）',
-    hint: '刷新一下变更列表再操作',
+    message: pick('文件路径已经不在仓库里（可能被删或被改了名）', 'File path is no longer in the repository (deleted or renamed)'),
+    hint: pick('刷新一下变更列表再操作', 'Refresh the change list and try again'),
     retrySafe: true
   }
 ]
@@ -237,7 +238,7 @@ const RULES: Rule[] = [
 export function classifyGitFailure(stderr: string, exitCode: number | null = null): GitFailure {
   const raw = String(stderr ?? '').trim()
   const lower = raw.toLowerCase()
-  for (const rule of RULES) {
+  for (const rule of rules()) {
     if (rule.test.test(lower)) {
       return {
         code: rule.code,
@@ -250,9 +251,9 @@ export function classifyGitFailure(stderr: string, exitCode: number | null = nul
   }
   return {
     code: 'unknown',
-    message: 'Git 操作失败',
-    detail: raw || (exitCode === null ? '' : `退出码 ${exitCode}`),
-    hint: '看上面的原始输出；如果不确定，先在终端里跑同一条命令',
+    message: pick('Git 操作失败', 'Git operation failed'),
+    detail: raw || (exitCode === null ? '' : pick(`退出码 ${exitCode}`, `Exit code ${exitCode}`)),
+    hint: pick('看上面的原始输出；如果不确定，先在终端里跑同一条命令', 'See the raw output above; if unsure, run the same command in a terminal'),
     retrySafe: false
   }
 }
@@ -260,9 +261,9 @@ export function classifyGitFailure(stderr: string, exitCode: number | null = nul
 export function hookFailure(detail: string, hooks: string[]): GitFailure {
   return {
     code: 'hook',
-    message: `提交被 hook 拒绝（很可能是它：这个仓库有 ${hooks.join('、')}）`,
+    message: pick(`提交被 hook 拒绝（很可能是它：这个仓库有 ${hooks.join('、')}）`, `Commit rejected by hook (likely: this repo has ${hooks.join(', ')})`),
     detail,
-    hint: '上面是 hook 的原始输出；修掉它指出的问题再提交（这里不会跳过 hook）',
+    hint: pick('上面是 hook 的原始输出；修掉它指出的问题再提交（这里不会跳过 hook）', 'Hook output is above; fix what it reports and commit again (hooks are never skipped)'),
     retrySafe: true
   }
 }
@@ -270,9 +271,9 @@ export function hookFailure(detail: string, hooks: string[]): GitFailure {
 export function timeoutFailure(detail?: string): GitFailure {
   return {
     code: 'timeout',
-    message: 'Git 操作超时',
+    message: pick('Git 操作超时', 'Git operation timed out'),
     ...(detail ? { detail } : {}),
-    hint: '先去界面刷新看实际状态（提交可能已经完成），确认没有再重试',
+    hint: pick('先去界面刷新看实际状态（提交可能已经完成），确认没有再重试', 'Refresh to check the actual state (the commit may have completed) before retrying'),
     retrySafe: false
   }
 }
@@ -280,9 +281,9 @@ export function timeoutFailure(detail?: string): GitFailure {
 export function staleFailure(changed: string[]): GitFailure {
   return {
     code: 'stale',
-    message: '仓库状态在你操作前发生了变化，已为你刷新',
-    detail: changed.join('、'),
-    hint: '看一眼刷新后的内容再决定是否重做这一步',
+    message: pick('仓库状态在你操作前发生了变化，已为你刷新', 'Repository changed before your action; refreshed'),
+    detail: changed.join(pick('、', ', ')),
+    hint: pick('看一眼刷新后的内容再决定是否重做这一步', 'Review the refreshed state before redoing this step'),
     retrySafe: false
   }
 }
@@ -296,14 +297,14 @@ export function validateCommitMessage(message: string): GitFailure | null {
   if (!text.trim()) {
     return {
       code: 'empty-message',
-      message: '提交说明不能为空',
+      message: pick('提交说明不能为空', 'Commit message cannot be empty'),
       retrySafe: true
     }
   }
   if (text.length > MAX_COMMIT_MESSAGE) {
     return {
       code: 'invalid-input',
-      message: `提交说明过长（上限 ${MAX_COMMIT_MESSAGE} 字符）`,
+      message: pick(`提交说明过长（上限 ${MAX_COMMIT_MESSAGE} 字符）`, `Commit message too long (max ${MAX_COMMIT_MESSAGE} characters)`),
       retrySafe: true
     }
   }
@@ -312,17 +313,17 @@ export function validateCommitMessage(message: string): GitFailure | null {
 
 export function validateBranchName(name: string): string | null {
   const s = String(name ?? '').trim()
-  if (!s) return '分支名不能为空'
-  if (s.length > 200) return '分支名过长'
-  if (s.startsWith('-')) return '分支名不能以 - 开头'
-  if (s.startsWith('/') || s.endsWith('/')) return '分支名不能以 / 开头或结尾'
-  if (s.endsWith('.') || s.endsWith('.lock')) return '分支名不能以 . 或 .lock 结尾'
-  if (s.includes('..')) return '分支名不能含 ..'
-  if (s.includes('//')) return '分支名不能含连续的 /'
-  if (s.includes('@{')) return '分支名不能含 @{'
-  if (/[\s~^:?*\[\\]/.test(s)) return '分支名不能含空格或 ~ ^ : ? * [ \\'
+  if (!s) return pick('分支名不能为空', 'Branch name cannot be empty')
+  if (s.length > 200) return pick('分支名过长', 'Branch name too long')
+  if (s.startsWith('-')) return pick('分支名不能以 - 开头', 'Branch name cannot start with -')
+  if (s.startsWith('/') || s.endsWith('/')) return pick('分支名不能以 / 开头或结尾', 'Branch name cannot start or end with /')
+  if (s.endsWith('.') || s.endsWith('.lock')) return pick('分支名不能以 . 或 .lock 结尾', 'Branch name cannot end with . or .lock')
+  if (s.includes('..')) return pick('分支名不能含 ..', 'Branch name cannot contain ..')
+  if (s.includes('//')) return pick('分支名不能含连续的 /', 'Branch name cannot contain consecutive /')
+  if (s.includes('@{')) return pick('分支名不能含 @{', 'Branch name cannot contain @{')
+  if (/[\s~^:?*\[\\]/.test(s)) return pick('分支名不能含空格或 ~ ^ : ? * [ \\', 'Branch name cannot contain spaces or ~ ^ : ? * [ \\')
   /* eslint-disable-next-line no-control-regex */
-  if (/[\u0000-\u001f\u007f]/.test(s)) return '分支名不能含控制字符'
+  if (/[\u0000-\u001f\u007f]/.test(s)) return pick('分支名不能含控制字符', 'Branch name cannot contain control characters')
   return null
 }
 
@@ -397,13 +398,13 @@ export function expectedMismatch(
 ): string[] | null {
   const changed: string[] = []
   if (expected.head !== actual.head) changed.push('HEAD')
-  if (expected.indexDigest !== actual.indexDigest) changed.push('暂存区')
-  if (expected.statusDigest !== actual.statusDigest) changed.push('工作区状态')
+  if (expected.indexDigest !== actual.indexDigest) changed.push(pick('暂存区', 'index'))
+  if (expected.statusDigest !== actual.statusDigest) changed.push(pick('工作区状态', 'working tree status'))
   return changed.length ? changed : null
 }
 
 export function summarizeFiles(verb: string, paths: string[]): string {
   if (paths.length === 0) return verb
   if (paths.length === 1) return `${verb} ${paths[0]}`
-  return `${verb} ${paths.length} 个文件`
+  return pick(`${verb} ${paths.length} 个文件`, `${verb} ${paths.length} files`)
 }

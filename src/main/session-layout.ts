@@ -13,6 +13,7 @@ import type {
 import { YAN_DIR } from './paths'
 import { atomicWriteFile } from './sync/atomic'
 import { normalizeLayoutPath } from '../shared/session-path'
+import { pick } from '../shared/ui-lang'
 
 export { normalizeLayoutPath }
 
@@ -247,7 +248,7 @@ export async function decorateSessions(
 }
 
 export async function rememberSession(input: RememberSessionInput): Promise<SessionLayoutEntry> {
-  if (!input.sessionId.trim()) throw new Error('缺少 sessionId')
+  if (!input.sessionId.trim()) throw new Error(pick('缺少 sessionId', 'Missing sessionId'))
   const result = await update((document) => {
     const entries = [...document.entries]
     const index = entries.findIndex((entry) => entry.sessionId === input.sessionId)
@@ -291,7 +292,7 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
     return { version: 1, entries }
   })
   const entry = result.entries.find((item) => item.sessionId === input.sessionId)
-  if (!entry) throw new Error('保存会话归属失败')
+  if (!entry) throw new Error(pick('保存会话归属失败', 'Failed to save session ownership'))
   return entry
 }
 

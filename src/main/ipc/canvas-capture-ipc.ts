@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import type { CanvasCaptureRect, CanvasCaptureResult } from '../../shared/ipc'
 import { CANVAS_CAPTURE_CHANNEL } from '../../shared/ipc'
 import type { IpcRegistrar } from './registrar'
+import { pick } from '../../shared/ui-lang'
 
 export interface CanvasCaptureViewport {
   width: number
@@ -63,22 +64,22 @@ function failure(error: string): CanvasCaptureResult {
 export function registerCanvasCaptureIpc(ipc: IpcRegistrar): void {
   ipc.rawHandle(CANVAS_CAPTURE_CHANNEL, async (event, rect: unknown, scope: unknown): Promise<CanvasCaptureResult> => {
     const contents = event.sender
-    if (!contents || contents.isDestroyed()) return failure('窗口不可用，无法截图')
+    if (!contents || contents.isDestroyed()) return failure(pick('窗口不可用，无法截图', 'Window unavailable; cannot capture'))
     const bounds = BrowserWindow.fromWebContents(contents)?.getContentBounds()
-    if (!bounds || bounds.width < 1 || bounds.height < 1) return failure('窗口尚未就绪，无法截图')
+    if (!bounds || bounds.width < 1 || bounds.height < 1) return failure(pick('窗口尚未就绪，无法截图', 'Window not ready; cannot capture'))
     const zoom = contents.getZoomFactor() || 1
     const cssRect = clipCanvasRect(rect, { width: bounds.width / zoom, height: bounds.height / zoom }, scope)
-    if (!cssRect) return failure('截图区域无效')
+    if (!cssRect) return failure(pick('截图区域无效', 'Invalid capture area'))
     const dipRect = scaleCanvasRect(cssRect, zoom)
     let image: Electron.NativeImage
     try {
       image = await contents.capturePage(dipRect)
     } catch (e) {
-      return failure(`截图失败：${e instanceof Error ? e.message : String(e)}`)
+      return failure(pick(`截图失败：${e instanceof Error ? e.message : String(e)}`, `Capture failed: ${e instanceof Error ? e.message : String(e)}`))
     }
-    if (!image || image.isEmpty()) return failure('截图为空，请确认区域在可见窗口内')
+    if (!image || image.isEmpty()) return failure(pick('截图为空，请确认区域在可见窗口内', 'Capture is empty; make sure the area is inside the visible window'))
     const png = image.toPNG()
-    if (png.byteLength === 0) return failure('截图为空，请确认区域在可见窗口内')
+    if (png.byteLength === 0) return failure(pick('截图为空，请确认区域在可见窗口内', 'Capture is empty; make sure the area is inside the visible window'))
     const { width, height } = image.getSize()
     return {
       ok: true,
