@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { isLinkLocalHost, isPrivateHost } from './browser/network-boundary'
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
 import { request as httpRequest, type IncomingMessage } from 'node:http'
@@ -23,10 +24,10 @@ export function createPinnedFetch(resolveAll: AddressResolver = resolveAllAddres
   return (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
     const hostname = url.hostname.replace(/^\[|\]$/g, '')
-    if (isIP(hostname) && isPrivate(hostname)) throw new Error('目标地址在内网')
+    if (isIP(hostname) && isPrivate(hostname)) throw new Error(pick('目标地址在内网', 'Target address is on a private network'))
     const lookup = (name: string, options: { all?: boolean }, callback: (error: Error | null, address?: string | LookupAddress[], family?: number) => void): void => {
       resolveAll(name).then((addresses) => {
-        if (!addresses.length || addresses.some((item) => isPrivate(item.address))) return callback(new Error('目标地址在内网'))
+        if (!addresses.length || addresses.some((item) => isPrivate(item.address))) return callback(new Error(pick('目标地址在内网', 'Target address is on a private network')))
         if (options.all) return callback(null, addresses)
         return callback(null, addresses[0].address, addresses[0].family)
       }, (error: Error) => callback(error))
