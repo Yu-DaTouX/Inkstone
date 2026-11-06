@@ -1,23 +1,15 @@
-import { Activity, Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { GripVertical } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
-import { createTurnProjector } from '../../../shared/turns'
-import type { UIMessage } from '../../../shared/ipc'
 import { sameSplitSession, splitColumns, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
-import { newestMessages } from '../state/split-snapshots'
-import { withSubmittingMessages } from '../state/submitting-messages'
-import { domAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot } from '../features/session/scroll-position'
-import type { TurnSubagentScope } from '../state/subagent-view'
-import { TurnView } from '../features/session/TurnView'
-import { TurnScopeContext } from '../features/session/turn-scope'
-import { ToolExpansionScope } from '../features/session/use-tool-run'
-import { toolExpansionScopeOf } from '../features/session/tool-expansion'
 import { Icon } from '../features/session/Icon'
 import { Badge, Button, IconButton, Splitter } from '../ui'
 import { ChatMain } from './ChatMain'
+import { SessionView } from '../features/session/SessionView'
+import { ComposerV3 } from '../features/composer/ComposerV3'
 import { collapsedPanes } from './SideBySideLayout'
-import { closeSplitPane, focusSplitSession, SPLIT_STICK_SLACK_PX as PEER_STICK_SLACK_PX } from '../features/split/split-actions'
+import { closeSplitPane, focusSplitSession } from '../features/split/split-actions'
 import { startPaneDrag } from '../features/split/pane-drag'
 import { answerSplitSession, usePeerAsk } from '../features/split/peer-ask'
 import { rowBoundsFor, rowSplitFor } from '../features/split/split-drop-model'
@@ -82,10 +74,7 @@ export const SideBySide = memo(function SideBySide({ split, narrow, maxColumns }
         live={live}
         onClose={() => closeSplitPane(index)}
       >
-        <Activity mode={live ? 'hidden' : 'visible'}>
-          <PeerPane target={target} hidden={live} />
-        </Activity>
-        {live ? <ChatMain /> : null}
+        <PaneBody target={target} live={live} />
       </PaneFrame>
     )
   }
@@ -263,176 +252,83 @@ function useSameCwdBusy(target: SplitSessionRef, cwd: string | undefined): boole
   })
 }
 
-function useHeldWhile<T>(value: T, held: boolean): T {
-  const last = useRef(value)
-  if (!held) last.current = value
-  return last.current
-}
-
-function PeerPane({ target, hidden = false }: { target: SplitSessionRef; hidden?: boolean }): JSX.Element {
-  const t = useT()
-  const { lang } = useI18n()
-  const text = splitText(lang)
-  const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
-  const paneTitle = useSplitTitle(target)
-  const summary = useSplitSummary(target)
-  const cached = runtime?.messages
-  const submittingMessages = useStore((s) => s.submittingMessages)
-  const [history, setHistory] = useState<UIMessage[] | null>(null)
-  const liveMessages = useMemo(() => withSubmittingMessages(newestMessages(cached, history ?? undefined) ?? [], submittingMessages.filter((item) => sameSplitSession(item.identity, target))), [cached, history, submittingMessages, target])
-  const messages = useHeldWhile(liveMessages, hidden)
-  const peerSession = useHeldWhile(runtime?.session ?? null, hidden)
-  const peerCwd = peerSession?.cwd ?? summary?.cwd
-  const turnScope = useMemo(() => ({ messages, session: peerSession, ...(peerCwd ? { cwd: peerCwd } : {}) }), [messages, peerSession, peerCwd])
-  const draft = runtime?.draft ?? ''
-  const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
-  const ask = usePeerAsk(target)
-  const waiting = !!ask
-  const model = runtime?.session?.model?.name ?? ''
-  const cwdBusy = useSameCwdBusy(target, runtime?.session?.cwd ?? summary?.cwd)
-  const streamingId = running && messages.length ? messages[messages.length - 1].id : undefined
-  const projectTurns = useMemo(() => createTurnProjector(), [])
-  const subagentScope = useMemo<TurnSubagentScope>(() => ({ sessionIds: target.sessionId ? [target.sessionId] : [] }), [target.sessionId])
-  const turns = useMemo(() => projectTurns(messages, streamingId), [messages, streamingId, projectTurns])
-  const expansionScope = toolExpansionScopeOf(target.sessionId ?? summary?.id, target.path)
-
-  useEffect(() => {
-    if (cached?.length || !target.path) return undefined
-    let alive = true
-    void window.yan
-      .peekSession(target.path)
-      .then((peek) => { if (alive) setHistory(peek?.messages ?? []) })
-      .catch(() => { if (alive) setHistory([]) })
-    return () => { alive = false }
-  }, [cached?.length, target.path])
-
+function PaneBody({ target, live }: { target: SplitSessionRef; live: boolean }): JSX.Element {
+  const pane = useMemo(() => ({ target, live }), [target, live])
   const convRef = useRef<HTMLDivElement | null>(null)
+  const liveComposerHeight = useRef(0)
   const composerRef = useCallback((element: HTMLDivElement | null) => {
     return observeHeight(element, (height) => {
-      convRef.current?.style.setProperty('--composer-h', `${height}px`)
+      if (live) liveComposerHeight.current = height
+      convRef.current?.style.setProperty('--composer-h', `${live ? height : Math.max(height, liveComposerHeight.current)}px`)
     })
-  }, [])
-  const streamRef = useRef<HTMLDivElement>(null)
-  const stickRef = useRef(true)
-  const lastTopRef = useRef(Number.POSITIVE_INFINITY)
-  const identity = target.path ?? target.sessionId ?? ''
-  const hasTurns = turns.length > 0
-  useLayoutEffect(() => {
-    const el = streamRef.current
-    if (!el) return
-    const snapshot = readScrollSnapshot(identity)
-    stickRef.current = !snapshot || snapshot.bottom
-    lastTopRef.current = Number.POSITIVE_INFINITY
-    restoreDomScroll(el, snapshot)
-  }, [identity, hasTurns])
-  useLayoutEffect(() => {
-    const el = streamRef.current
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight
-  }, [turns])
-  useEffect(() => {
-    const el = streamRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return undefined
-    const follow = (): void => {
-      if (stickRef.current) el.scrollTop = el.scrollHeight
-    }
-    const observer = new ResizeObserver(follow)
-    observer.observe(el)
-    if (el.firstElementChild) observer.observe(el.firstElementChild)
-    if (convRef.current) observer.observe(convRef.current)
-    return () => observer.disconnect()
-  }, [identity, hasTurns])
-
+  }, [live])
   return (
     <div
       className="v3-split-peer"
-      data-testid="v3-split-peer"
-      onClickCapture={(event) => {
+      data-testid={live ? undefined : 'v3-split-peer'}
+      onClickCapture={live ? undefined : (event) => {
         if ((event.target as HTMLElement).closest('a, button, input, textarea, select, summary, [role="button"], [role="link"], .v3-md-code-link, [data-split-own]')) return
         const selection = window.getSelection()
         if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return
         focusSplitSession(target)
       }}
     >
-      <div className="v3-conv" ref={convRef}>
-        <div className="v3-session">
-          <div className="v3-stream-host">
-            <div
-              className="v3-stream"
-              ref={streamRef}
-              onWheel={(event) => {
-                if (event.deltaY < 0) stickRef.current = false
-              }}
-              onTouchMove={() => { stickRef.current = false }}
-              onScroll={(event) => {
-                const el = event.currentTarget
-                const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-                if (distance <= PEER_STICK_SLACK_PX) stickRef.current = true
-                else if (el.scrollTop < lastTopRef.current - 1) stickRef.current = false
-                lastTopRef.current = el.scrollTop
-                saveScrollSnapshot(identity, { top: el.scrollTop, bottom: stickRef.current, anchor: stickRef.current ? null : domAnchor(el) })
-              }}
-            >
-              <div className="v3-stream-inner">
-                <ToolExpansionScope.Provider value={expansionScope}>
-                <TurnScopeContext.Provider value={turnScope}>
-                {turns.length === 0 ? (
-                  <div className="v3-empty">
-                    <p className="v3-empty-hint">{running ? t('chat.working') : ''}</p>
-                  </div>
-                ) : (
-                  turns.map((turn) => (
-                    <div key={turn.id} className="v3-stream-row">
-                      <TurnView turn={turn} sessionId={target.sessionId ?? null} subagentScope={subagentScope} streaming={turn.kind === 'assistant' && turn.streaming} tail={turn === turns[turns.length - 1]} readOnly />
-                    </div>
-                  ))
-                )}
-                </TurnScopeContext.Provider>
-                </ToolExpansionScope.Provider>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="v3-conv" ref={convRef}><SessionView pane={pane} /></div>
+      <div className="v3-composer" ref={composerRef}>{live ? <ComposerV3 /> : <PeerComposer target={target} />}</div>
+    </div>
+  )
+}
+
+function PeerComposer({ target }: { target: SplitSessionRef }): JSX.Element {
+  const t = useT()
+  const { lang } = useI18n()
+  const text = splitText(lang)
+  const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
+  const paneTitle = useSplitTitle(target)
+  const summary = useSplitSummary(target)
+  const draft = runtime?.draft ?? ''
+  const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
+  const ask = usePeerAsk(target)
+  const waiting = !!ask
+  const model = runtime?.session?.model?.name ?? ''
+  const cwdBusy = useSameCwdBusy(target, runtime?.session?.cwd ?? summary?.cwd)
+
+  return ask ? (
+    <div className="v3-split-peer-ask" role="group" aria-label={ask.kind === 'approval' ? t('split.waitingApproval') : t('split.waiting')} data-testid="v3-split-peer-ask">
+      <div className="v3-split-peer-bar">
+        <Badge tone="ask">{ask.kind === 'approval' ? t('split.waitingApproval') : t('split.waiting')}</Badge>
+        {model ? <span className="v3-split-model">{model}</span> : null}
       </div>
-      <div className="v3-composer" ref={composerRef}>
-        {ask ? (
-          <div className="v3-split-peer-ask" role="group" aria-label={ask.kind === 'approval' ? t('split.waitingApproval') : t('split.waiting')} data-testid="v3-split-peer-ask">
-            <div className="v3-split-peer-bar">
-              <Badge tone="ask">{ask.kind === 'approval' ? t('split.waitingApproval') : t('split.waiting')}</Badge>
-              {model ? <span className="v3-split-model">{model}</span> : null}
-            </div>
-            {ask.text ? <p className="v3-split-peer-ask-text">{ask.text}</p> : null}
-            <div className="v3-split-peer-bar">
-              <Button size="sm" variant="secondary" onPress={() => answerSplitSession(target)} data-testid="v3-split-peer-answer">
-                {ask.kind === 'approval' ? t('split.handle') : t('split.answer')}
-              </Button>
-            </div>
-          </div>
-        ) : (
-        <div className="v3-split-peer-composer" data-testid="v3-split-peer-composer">
-          <textarea
-            className="v3-split-peer-input"
-            rows={1}
-            readOnly
-            value={draft}
-            placeholder={text.activate(paneTitle || t('split.untitled'))}
-            aria-label={text.activate(paneTitle || t('split.untitled'))}
-            onFocus={() => focusSplitSession(target)}
-            data-testid="v3-split-peer-input"
-          />
-          <div className="v3-split-peer-bar">
-            <div className="v3-split-peer-state">
-              {waiting ? (
-                <span className="v3-split-state" data-tone="ask">{t('split.waiting')}</span>
-              ) : running ? (
-                <span className="v3-split-state" data-tone="run">{t('split.running')}</span>
-              ) : cwdBusy ? (
-                <span className="v3-split-state" data-testid="v3-split-peer-cwd-busy">{text.sameCwdRunning}</span>
-              ) : null}
-            </div>
-            {model ? <span className="v3-split-model">{model}</span> : null}
-          </div>
+      {ask.text ? <p className="v3-split-peer-ask-text">{ask.text}</p> : null}
+      <div className="v3-split-peer-bar">
+        <Button size="sm" variant="secondary" onPress={() => answerSplitSession(target)} data-testid="v3-split-peer-answer">
+          {ask.kind === 'approval' ? t('split.handle') : t('split.answer')}
+        </Button>
+      </div>
+    </div>
+  ) : (
+    <div className="v3-split-peer-composer" data-testid="v3-split-peer-composer">
+      <textarea
+        className="v3-split-peer-input"
+        rows={1}
+        readOnly
+        value={draft}
+        placeholder={text.activate(paneTitle || t('split.untitled'))}
+        aria-label={text.activate(paneTitle || t('split.untitled'))}
+        onFocus={() => focusSplitSession(target)}
+        data-testid="v3-split-peer-input"
+      />
+      <div className="v3-split-peer-bar">
+        <div className="v3-split-peer-state">
+          {waiting ? (
+            <span className="v3-split-state" data-tone="ask">{t('split.waiting')}</span>
+          ) : running ? (
+            <span className="v3-split-state" data-tone="run">{t('split.running')}</span>
+          ) : cwdBusy ? (
+            <span className="v3-split-state" data-testid="v3-split-peer-cwd-busy">{text.sameCwdRunning}</span>
+          ) : null}
         </div>
-        )}
+        {model ? <span className="v3-split-model">{model}</span> : null}
       </div>
     </div>
   )

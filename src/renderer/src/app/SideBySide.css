@@ -152,10 +152,6 @@
     min-width: 0;
   }
 
-  .v3-split-peer .v3-stream-inner {
-    padding-bottom: calc(var(--composer-h) + var(--s-48));
-  }
-
   .v3-split-peer-composer {
     box-sizing: border-box;
     display: flex;

@@ -21,6 +21,8 @@ const SAMPLER = (keys, anchors) => `(() => {
       window.__sw.frames.push({
         t, key,
         live: tile?.dataset.live ?? null,
+        top: stream ? Math.round(stream.scrollTop) : null,
+        sh: stream ? stream.scrollHeight : null,
         rows: stream ? stream.querySelectorAll('.v3-msg[data-turn-id]').length : 0,
         sid: stream?.__swSid ?? 0,
         offset: anchor && stream ? Math.round(anchor.getBoundingClientRect().top - stream.getBoundingClientRect().top) : null,
@@ -39,7 +41,11 @@ function analyze(frames, key, before) {
   const missing = own.filter((frame) => frame.offset === null).length
   const offsets = own.map((frame) => frame.offset).filter((value) => value !== null)
   const last = own.at(-1)
+  const firstShift = own.find((frame) => frame.offset !== null && Math.abs(frame.offset - before.offset) > 1)
   return {
+    firstShift: firstShift ? { t: firstShift.t, offset: firstShift.offset, top: firstShift.top, sh: firstShift.sh, live: firstShift.live } : null,
+    startFrame: own[0] ? { top: own[0].top, sh: own[0].sh, offset: own[0].offset } : null,
+    endFrame: last ? { top: last.top, sh: last.sh } : null,
     frames: own.length,
     blankFrames: blank,
     streamElements: sids.size,

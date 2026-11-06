@@ -35,14 +35,14 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
     sessions.push({ sessionId: await state('s.session.sessionId'), path: await state('s.session.sessionFile') })
   }
   await ev(`window.__yanSplit.getState().apply({ tiles: ${JSON.stringify(sessions)}, live: 1 })`)
-  await sleep(2500)
+  await sleep(7000)
   const first = await ev(DUMP)
   const keys = await ev(`[...document.querySelectorAll('[data-tile-key]')].map((el) => ({ key: el.dataset.tileKey, live: el.dataset.live }))`)
   const left = keys.find((item) => item.live === '0').key
   const point = await ev(`(() => { const el = document.querySelector('[data-tile-key="${left}"] .v3-split-title'); const r = el.getBoundingClientRect(); return { x: Math.round(r.left + 30), y: Math.round(r.top + r.height / 2) } })()`)
   await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 })
   await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 })
-  await sleep(2500)
+  await sleep(7000)
   const second = await ev(DUMP)
   report.first = first
   report.second = second
