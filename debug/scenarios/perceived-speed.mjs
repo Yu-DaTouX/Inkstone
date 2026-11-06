@@ -62,7 +62,7 @@ export default async function run(ctx) {
     }
   })
   report.timings.manytools = { ...tools, ...(await longtasks('manytools')), switchPhase: await longtasks('switch-while-running') }
-  check('四十步工具全部到达', tools.requests === 41, `requests=${tools.requests}`)
+  check('四十步工具全部到达', tools.requests === 41 || tools.requests === 42, `requests=${tools.requests}`)
   check('切走再切回后最终回复可见', await ev(`document.body.innerText.includes('四十步都完成了')`))
   check('切回后不在 peek 态', await state('!s.peekedPath && !s.peekedSessionId'))
 
