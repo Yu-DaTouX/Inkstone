@@ -3,7 +3,7 @@ import { PANEL_MOTION_DEFAULT, sanitizePanelMotion } from '../../../shared/appea
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { FocusScope } from 'react-aria'
 import { flushSync } from 'react-dom'
-import { showToast, Splitter, useScrollbarReveal } from '../ui'
+import { showToast, Splitter, useScrollbarReveal, usePresence } from '../ui'
 import { useTranscriptViews } from '../state/transcript-view'
 import { transcriptViewText } from '../features/session/transcript-view-text'
 import { useI18n } from '../i18n'
@@ -335,6 +335,7 @@ export default function ShellV3(): ReactElement {
   sessionBarFitsRef.current = sessionBarFits
   const sessionBarWanted = route.name === 'chat' && (hasMessages || !singlePane) && sessionBarOn
   const sessionBarShown = sessionBarWanted && sessionBarFits
+  const sessionBarPresence = usePresence(sessionBarShown, { exit: 'sheet' })
   const tilesRoom = tilesWidthRoom(chatWidth, LANE_GAP, laneMinWidth)
   const shownTilesWidthNow = clampTilesWidth(tilesWidth, tilesRoom)
   const shownTilesWidthRef = useRef(shownTilesWidthNow)
@@ -360,12 +361,18 @@ export default function ShellV3(): ReactElement {
   }, [])
 
   const [settledBarOn, setSettledBarOn] = useState(sessionBarOn)
+  const [settledBarShown, setSettledBarShown] = useState(sessionBarShown)
   const panelMotionMs = useStore((s) => sanitizePanelMotion(s.settings?.panelMotionMs) ?? PANEL_MOTION_DEFAULT)
   useEffect(() => {
     if (settledBarOn === sessionBarOn) return
     const timer = window.setTimeout(() => setSettledBarOn(sessionBarOn), panelMotionMs + 100)
     return () => window.clearTimeout(timer)
   }, [sessionBarOn, settledBarOn, panelMotionMs])
+  useEffect(() => {
+    if (settledBarShown === sessionBarShown) return
+    const timer = window.setTimeout(() => setSettledBarShown(sessionBarShown), panelMotionMs + 100)
+    return () => window.clearTimeout(timer)
+  }, [sessionBarShown, settledBarShown, panelMotionMs])
 
   const toggleSessionBar = useCallback((): void => {
     const on = useStore.getState().settings?.workspaceTiles !== false
@@ -665,11 +672,11 @@ export default function ShellV3(): ReactElement {
               </Suspense>
             ) : null}
             {route.name === 'chat' ? (
-              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarShown ? '1' : undefined} data-bar-anim={settledBarOn !== sessionBarOn ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
+              <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarShown ? '1' : undefined} data-bar-anim={settledBarOn !== sessionBarOn || (settledBarShown && !sessionBarShown) ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
                 <ConnBanner />
                 <SideBySide split={split} narrow={splitParked} maxColumns={splitFit} />
-                {sessionBarShown ? (
-                  <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
+                {sessionBarPresence.present ? (
+                  <aside className="v3-sessionbar" data-closing={sessionBarPresence.closing ? '' : undefined} aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
                     <OverviewPane owner={owner} onOpenView={openOverviewView} />
                     <Splitter className="v3-tiles-resizer ui-splitter--gutter" title={railText(lang).resizeTiles} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={railText(lang).resizeTiles} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
                   </aside>

@@ -61,7 +61,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         aria-current={accessibility.current}
         data-testid="sidebar-draft-row"
         className={cn(
-          'group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+          'group/sidebar-row relative w-full cursor-pointer transition-colors overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
           draft.isActive ? 'bg-sidebar-row-active' : DRAFT_SURFACE_CLASS_NAME
         )}
         onClick={handleActivate}

@@ -10,6 +10,7 @@ import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { Button } from './Button'
+import { motionAllowed, motionMs } from './motion-hooks'
 import { CloseButton } from './IconButton'
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger'
@@ -22,6 +23,23 @@ export interface ToastContent {
 }
 
 export const toastQueue = new UNSTABLE_ToastQueue<ToastContent>({ maxVisibleToasts: 3 })
+
+const leavingToasts = new Set<string>()
+const closeToastNow = toastQueue.close.bind(toastQueue)
+toastQueue.close = (key: string): void => {
+  if (leavingToasts.has(key)) return
+  const element = typeof document === 'undefined' ? null : document.querySelector<HTMLElement>(`.ui-toast[data-toast-key="${key}"]`)
+  if (!element || !motionAllowed()) {
+    closeToastNow(key)
+    return
+  }
+  leavingToasts.add(key)
+  element.setAttribute('data-leaving', '')
+  window.setTimeout(() => {
+    leavingToasts.delete(key)
+    closeToastNow(key)
+  }, motionMs('quick'))
+}
 
 export const DEFAULT_TOAST_TIMEOUT_MS = 6500
 
@@ -68,7 +86,7 @@ export function ToastRegion({ className }: { className?: string } = {}) {
       className={composeRenderProps(className, (cn) => cx('ui-toast-region', cn))}
     >
       {({ toast }) => (
-        <RACToast toast={toast} className={cx('ui-toast', `ui-toast--${toast.content.tone ?? 'info'}`)}>
+        <RACToast toast={toast} data-toast-key={toast.key} className={cx('ui-toast', `ui-toast--${toast.content.tone ?? 'info'}`)}>
           <RACToastContent className="ui-toast__content">
             <span className="ui-toast__icon" aria-hidden="true">
               {toneIcon(toast.content.tone)}

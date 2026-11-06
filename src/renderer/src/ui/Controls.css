@@ -280,6 +280,7 @@
     text-align: start;
     cursor: default;
     outline: none;
+    transition: color var(--dur-fast) var(--ease);
   }
   .ui-collapsible__head[data-tone='emphasized'] .ui-collapsible__trigger {
     color: var(--fg2);

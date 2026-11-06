@@ -130,6 +130,15 @@
     min-height: 0;
     animation: v3-sessionbar-open var(--panel-dur, var(--dur-sheet)) ease-in-out;
   }
+  .v3-sessionbar[data-closing] {
+    pointer-events: none;
+    animation: v3-sessionbar-close var(--panel-dur, var(--dur-sheet)) ease-in-out forwards;
+  }
+  @keyframes v3-sessionbar-close {
+    to {
+      clip-path: inset(0 0 0 100%);
+    }
+  }
   @keyframes v3-sessionbar-open {
     from {
       clip-path: inset(0 0 0 100%);
@@ -436,6 +445,9 @@
     display: grid;
     place-items: center;
     color: var(--fg2);
+    transition:
+      background-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
   }
 
   .v3-winbtn:focus-visible {

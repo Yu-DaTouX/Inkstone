@@ -110,7 +110,7 @@ export function TabChip(props: TabChipProps) {
           : undefined
       }
       className={cn(
-        'group/tab relative flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs has-[[role=tab]:focus-visible]:ring-2 has-[[role=tab]:focus-visible]:ring-inset has-[[role=tab]:focus-visible]:ring-ring',
+        'rp-tab-chip group/tab relative flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs has-[[role=tab]:focus-visible]:ring-2 has-[[role=tab]:focus-visible]:ring-inset has-[[role=tab]:focus-visible]:ring-ring',
         active
           ? 'bg-(--sel) text-(--accent-t)'
           : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',

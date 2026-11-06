@@ -1246,6 +1246,14 @@
       opacity var(--dur-slow) var(--ease-glide);
     pointer-events: auto;
   }
+  .ui-toast[data-leaving] {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(var(--toast-index, 0) * -14px + var(--s-12))) scale(calc(0.96 - var(--toast-index, 0) * 0.04));
+    transition:
+      transform var(--dur-quick) var(--ease-exit),
+      opacity var(--dur-quick) var(--ease-exit);
+  }
   .ui-toast-region:is(:hover, :focus-within) {
     display: flex;
     flex-direction: column-reverse;
