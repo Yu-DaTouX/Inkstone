@@ -248,7 +248,7 @@ export function startFakeModel(port = 0) {
       const text = lastUserText(input)
       const done = toolOutputsSinceUser(input)
       const images = JSON.stringify(input).split('"input_image"').length - 1
-      requests.push({ at: Date.now(), text: text.slice(0, 40), done, tools: (json.tools ?? []).length, images })
+      requests.push({ at: Date.now(), text: text.slice(0, 40), done, tools: (json.tools ?? []).length, images, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
       if (text.includes('FAIL')) {
         res.writeHead(502, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ error: { message: 'fake upstream failure' } }))
