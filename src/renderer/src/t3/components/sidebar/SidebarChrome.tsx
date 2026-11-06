@@ -250,7 +250,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
         <li className="min-w-0 max-w-30 shrink-0" data-footer-fixed>
           <span
             title={userName}
-            className="flex h-8 min-w-0 items-center gap-2 px-[var(--sidebar-row-content-inset)] text-xs font-medium text-sidebar-muted-foreground/80"
+            className="flex h-8 min-w-0 items-center gap-2 px-[var(--sidebar-row-content-inset)] text-xs font-medium text-sidebar-muted-foreground/90"
             data-testid="t3-sidebar-user"
           >
             <span className="flex size-5 shrink-0 items-center justify-center">

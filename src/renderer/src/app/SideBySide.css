@@ -7,7 +7,7 @@
 
   :root[data-split-layout-vt]::view-transition-old(root),
   :root[data-split-layout-vt]::view-transition-new(root) {
-    animation-duration: calc(var(--dur-fast) * 1.5);
+    animation: none;
   }
 
   .v3-split {

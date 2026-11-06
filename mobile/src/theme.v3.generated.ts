@@ -32,7 +32,7 @@ export const v3Light = {
   "asciiDim": "rgba(11,11,11,.2)",
   "asciiField": "#20211F",
   "lineCtl": "rgba(11,11,11,.48)",
-  "kbdInk": "#6D6B67",
+  "kbdInk": "#64625E",
   "ink": "#0B0B0B",
   "inkHover": "#2B2B29",
   "onInk": "#FFFFFF",
