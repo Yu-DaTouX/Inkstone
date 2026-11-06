@@ -1,7 +1,8 @@
+import { pick } from '../../shared/ui-lang'
 import type { ExpectedRuntimeOwner } from '../../shared/ipc'
 import type { SessionHost } from '../session-host'
 
-export const SESSION_ACTION_CHANGED = '会话已切换，操作已取消'
+export const sessionActionChanged = (): string => pick('会话已切换，操作已取消', 'Session changed; action canceled')
 
 export function sessionActionAgent(host: Pick<SessionHost, 'ac' | 'runners'>, expected?: ExpectedRuntimeOwner) {
   if (expected === undefined) return host.ac()

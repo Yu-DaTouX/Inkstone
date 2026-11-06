@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { execFile } from 'node:child_process'
 import { networkInterfaces } from 'node:os'
 import type { MainPush } from '../shared/ipc'
@@ -124,8 +125,8 @@ export class RemoteAccess {
     if (wanted && !wanted.host) {
       await this.stopServer()
       this.lastError = this.settings.bind === 'radmin'
-        ? '没有找到 Radmin VPN 地址，请先连接 Radmin VPN'
-        : '没有找到 Tailscale 地址，请先登录 Tailscale'
+        ? pick('没有找到 Radmin VPN 地址，请先连接 Radmin VPN', 'Radmin VPN address not found; connect to Radmin VPN first')
+        : pick('没有找到 Tailscale 地址，请先登录 Tailscale', 'Tailscale address not found; sign in to Tailscale first')
       return
     }
     const current = this.server?.info

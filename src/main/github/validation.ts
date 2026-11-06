@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { isGhPrListState } from '../../shared/github'
 import type { GhPrActionRequest, GhPrFailure, GhPrListOptions, GhPrListState } from '../../shared/github'
 import { validateBranchName } from '../../shared/git-actions'
@@ -39,10 +40,10 @@ function inlineRange(value: Record<string, unknown>): boolean {
 }
 
 export function validateAction(value: unknown): GhPrFailure | null {
-  const invalid = () => prFailure('invalid-input', 'PR 操作参数不合法')
+  const invalid = () => prFailure('invalid-input', pick('PR 操作参数不合法', 'Invalid PR action parameters'))
   if (!record(value) || typeof value.kind !== 'string') return invalid()
   if (value.kind !== 'create' && !prNumber(value.number)) return invalid()
-  if (['merge', 'close', 'delete-branch'].includes(value.kind) && value.confirmed !== true) return prFailure('confirmation-required', '此操作需要调用方显式确认', true, '确认后传 confirmed: true')
+  if (['merge', 'close', 'delete-branch'].includes(value.kind) && value.confirmed !== true) return prFailure('confirmation-required', pick('此操作需要调用方显式确认', 'This action requires explicit confirmation'), true, pick('确认后传 confirmed: true', 'Pass confirmed: true after confirming'))
   switch (value.kind as GhPrActionRequest['kind']) {
     case 'create': {
       const head = typeof value.head === 'string' ? value.head.split(':') : []
@@ -73,7 +74,7 @@ export function validateAction(value: unknown): GhPrFailure | null {
 }
 
 export function listArguments(value: GhPrListState | GhPrListOptions): { ok: true; args: string[]; limit: number } | { ok: false; failure: GhPrFailure } {
-  const fail = () => ({ ok: false as const, failure: prFailure('invalid-input', 'PR 列表筛选参数不合法') })
+  const fail = () => ({ ok: false as const, failure: prFailure('invalid-input', pick('PR 列表筛选参数不合法', 'Invalid PR list filter parameters')) })
   const o = typeof value === 'string' ? { state: value } : value
   if (!record(o)) return fail()
   if (o.state !== undefined && !isGhPrListState(o.state) || o.author !== undefined && o.author !== '@me' && !username(o.author) || !names(o.labels, label) || o.draft !== undefined && typeof o.draft !== 'boolean' || o.review !== undefined && (typeof o.review !== 'string' || !['none', 'required', 'approved', 'changes_requested'].includes(o.review)) || o.sort !== undefined && (typeof o.sort !== 'string' || !['created', 'updated', 'comments'].includes(o.sort)) || o.direction !== undefined && (typeof o.direction !== 'string' || !['asc', 'desc'].includes(o.direction))) return fail()

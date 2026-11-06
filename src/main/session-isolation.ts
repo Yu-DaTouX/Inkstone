@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -207,11 +208,11 @@ export async function isolateCwdForConflict(
   const dir = resolve(cwd)
   const repo = await resolveRepo(dir)
   if (!repo) {
-    return { ok: false, reason: '这个目录不是 Git 仓库，没有安全的隔离与合并基线' }
+    return { ok: false, reason: pick('这个目录不是 Git 仓库，没有安全的隔离与合并基线', 'This folder is not a Git repository, so there is no safe isolation and merge baseline') }
   }
   const baseBranch = await currentBranch(repo.root)
   if (!baseBranch) {
-    return { ok: false, reason: '主工作树处于 detached HEAD，无法确定该合回哪个分支' }
+    return { ok: false, reason: pick('主工作树处于 detached HEAD，无法确定该合回哪个分支', 'The main worktree is on a detached HEAD, so the branch to merge back to is unknown') }
   }
 
   const branch = autoIsolationBranch(options.now ?? new Date())
@@ -223,7 +224,7 @@ export async function isolateCwdForConflict(
     carry: null
   })
   if (!created.ok || !created.path) {
-    return { ok: false, reason: created.failure?.message ?? '创建工作树失败' }
+    return { ok: false, reason: created.failure?.message ?? pick('创建工作树失败', 'Failed to create worktree') }
   }
 
   const record: AutoIsolationRecord = {
@@ -255,33 +256,33 @@ export async function discardUnusedIsolation(record: AutoIsolationRecord): Promi
   return true
 }
 
-const GONE = '隔离工作树已经不在磁盘上（可能已被移除）'
+const GONE = (): string => pick('隔离工作树已经不在磁盘上（可能已被移除）', 'The isolated worktree is no longer on disk (it may have been removed)')
 
 function shortName(record: AutoIsolationRecord): string {
   return record.branch.replace(/^yan\/auto-/, '').slice(-6) || record.branch
 }
 
 export async function pendingIsolationChanges(record: AutoIsolationRecord): Promise<PendingChanges> {
-  if (!existsSync(record.worktree)) return { ok: false, detail: GONE }
+  if (!existsSync(record.worktree)) return { ok: false, detail: GONE() }
   const dirty = await gitRun(record.worktree, ['status', '--porcelain'], { allowFailure: true, timeout: 30_000 })
-  if (!dirty.ok) return { ok: false, detail: dirty.error ?? '读不出隔离工作树的状态' }
+  if (!dirty.ok) return { ok: false, detail: dirty.error ?? pick('读不出隔离工作树的状态', 'Cannot read the isolated worktree status') }
   const files = dirty.stdout.split(/\r?\n/).filter((line) => line.trim()).length
   const base = record.baseBranch || 'HEAD'
   const ahead = await gitRun(record.repoRoot || record.mainCwd, ['rev-list', '--count', `${base}..${record.branch}`], {
     allowFailure: true,
     timeout: 30_000
   })
-  if (!ahead.ok) return { ok: false, detail: ahead.error ?? `找不到隔离分支 ${record.branch}` }
+  if (!ahead.ok) return { ok: false, detail: ahead.error ?? pick(`找不到隔离分支 ${record.branch}`, `Isolated branch ${record.branch} not found`) }
   return { ok: true, files, commits: Number(ahead.stdout.trim() || '0') }
 }
 
 async function squashOntoBase(record: AutoIsolationRecord, mainHead: string): Promise<SyncOutcome | null> {
   const base = await gitRun(record.worktree, ['merge-base', mainHead, 'HEAD'], { allowFailure: true, timeout: 30_000 })
   if (!base.ok || !base.stdout.trim()) {
-    return { ok: false, action: 'blocked', detail: base.error ?? `隔离分支和 ${mainHead} 没有共同基线` }
+    return { ok: false, action: 'blocked', detail: base.error ?? pick(`隔离分支和 ${mainHead} 没有共同基线`, `The isolated branch and ${mainHead} have no common base`) }
   }
   const reset = await gitRun(record.worktree, ['reset', '--soft', base.stdout.trim()], { allowFailure: true, timeout: GIT_WRITE_TIMEOUT })
-  if (!reset.ok) return { ok: false, action: 'blocked', detail: reset.error ?? '整理隔离分支提交失败' }
+  if (!reset.ok) return { ok: false, action: 'blocked', detail: reset.error ?? pick('整理隔离分支提交失败', 'Failed to tidy isolated branch commits') }
   const staged = await gitRun(record.worktree, ['diff', '--cached', '--quiet'], { allowFailure: true, timeout: 30_000 })
   if (staged.ok) return { ok: true, action: 'nothing' }
   const commit = await gitRun(
@@ -289,22 +290,22 @@ async function squashOntoBase(record: AutoIsolationRecord, mainHead: string): Pr
     [...(await identityArgs(record.worktree)), 'commit', '--no-verify', '-m', `砚：合入隔离会话改动（${shortName(record)}）`],
     { allowFailure: true, timeout: GIT_WRITE_TIMEOUT }
   )
-  if (!commit.ok) return { ok: false, action: 'blocked', detail: commit.error ?? '隔离工作树提交失败' }
+  if (!commit.ok) return { ok: false, action: 'blocked', detail: commit.error ?? pick('隔离工作树提交失败', 'Failed to commit in the isolated worktree') }
   return null
 }
 
 async function unfinishedGitOperation(cwd: string): Promise<string | null> {
   const dir = await gitRun(cwd, ['rev-parse', '--absolute-git-dir'], { allowFailure: true, timeout: 30_000 })
-  if (!dir.ok || !dir.stdout.trim()) return dir.error ?? '读不出 Git 工作目录'
+  if (!dir.ok || !dir.stdout.trim()) return dir.error ?? pick('读不出 Git 工作目录', 'Cannot read the Git folder')
   const marker = ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'sequencer']
     .find((name) => existsSync(join(dir.stdout.trim(), name)))
-  return marker ? `还有未完成的 Git 操作（${marker}），先完成或中止它` : null
+  return marker ? pick(`还有未完成的 Git 操作（${marker}），先完成或中止它`, `A Git operation is unfinished (${marker}); finish or abort it first`) : null
 }
 
 export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<SyncOutcome> {
-  if (!existsSync(record.worktree)) return { ok: false, action: 'blocked', detail: GONE }
+  if (!existsSync(record.worktree)) return { ok: false, action: 'blocked', detail: GONE() }
 
-  for (const [cwd, label] of [[record.mainCwd, '主工作目录'], [record.worktree, '隔离工作树']]) {
+  for (const [cwd, label] of [[record.mainCwd, pick('主工作目录', 'Main folder')], [record.worktree, pick('隔离工作树', 'Isolated worktree')]]) {
     const operation = await unfinishedGitOperation(cwd)
     if (operation) return { ok: false, action: 'blocked', detail: `${label}：${operation}` }
   }
@@ -313,7 +314,7 @@ export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<S
     return {
       ok: false,
       action: 'blocked',
-      detail: `隔离工作树当前在 ${isolatedBranch || 'detached HEAD'}，记录的隔离分支是 ${record.branch}；切回隔离分支后再合入`
+      detail: pick(`隔离工作树当前在 ${isolatedBranch || 'detached HEAD'}，记录的隔离分支是 ${record.branch}；切回隔离分支后再合入`, `The isolated worktree is on ${isolatedBranch || 'detached HEAD'}, but the recorded branch is ${record.branch}; switch back before merging`)
     }
   }
 
@@ -321,37 +322,37 @@ export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<S
     allowFailure: true,
     timeout: 30_000
   })
-  if (!mainUnmerged.ok) return { ok: false, action: 'blocked', detail: mainUnmerged.error ?? '读不出主工作目录的冲突状态' }
+  if (!mainUnmerged.ok) return { ok: false, action: 'blocked', detail: mainUnmerged.error ?? pick('读不出主工作目录的冲突状态', 'Cannot read conflict status of the main folder') }
   if (mainUnmerged.stdout.trim()) {
-    return { ok: false, action: 'blocked', detail: '主工作目录还有未解决的冲突，先处理它' }
+    return { ok: false, action: 'blocked', detail: pick('主工作目录还有未解决的冲突，先处理它', 'The main folder has unresolved conflicts; resolve them first') }
   }
   const mainHead = await currentBranch(record.mainCwd)
   if (!mainHead || mainHead === record.branch) {
     return {
       ok: false,
       action: 'blocked',
-      detail: `主工作目录当前在 ${mainHead || 'detached HEAD'}，与隔离分支不构成可合并的一对`
+      detail: pick(`主工作目录当前在 ${mainHead || 'detached HEAD'}，与隔离分支不构成可合并的一对`, `The main folder is on ${mainHead || 'detached HEAD'}, which does not pair with the isolated branch for merging`)
     }
   }
   if (record.baseBranch && mainHead !== record.baseBranch) {
     return {
       ok: false,
       action: 'blocked',
-      detail: `主工作目录现在在 ${mainHead}，隔离基线是 ${record.baseBranch}；切回基线分支后再合入`
+      detail: pick(`主工作目录现在在 ${mainHead}，隔离基线是 ${record.baseBranch}；切回基线分支后再合入`, `The main folder is on ${mainHead}, but the isolation base is ${record.baseBranch}; switch back before merging`)
     }
   }
 
   const dirty = await gitRun(record.worktree, ['status', '--porcelain'], { allowFailure: true, timeout: 30_000 })
-  if (!dirty.ok) return { ok: false, action: 'blocked', detail: dirty.error ?? '读不出隔离工作树的状态' }
+  if (!dirty.ok) return { ok: false, action: 'blocked', detail: dirty.error ?? pick('读不出隔离工作树的状态', 'Cannot read the isolated worktree status') }
   if (dirty.stdout.trim()) {
     const add = await gitRun(record.worktree, ['add', '-A', '--', '.'], { allowFailure: true, timeout: GIT_WRITE_TIMEOUT })
-    if (!add.ok) return { ok: false, action: 'blocked', detail: add.error ?? '隔离工作树暂存失败' }
+    if (!add.ok) return { ok: false, action: 'blocked', detail: add.error ?? pick('隔离工作树暂存失败', 'Failed to stage in the isolated worktree') }
   }
   const squashed = await squashOntoBase(record, mainHead)
   if (squashed) return squashed
 
   const isolatedHead = await gitRun(record.worktree, ['rev-parse', 'HEAD'], { allowFailure: true, timeout: 30_000 })
-  if (!isolatedHead.ok || !isolatedHead.stdout.trim()) return { ok: false, action: 'blocked', detail: isolatedHead.error ?? '读不出隔离分支提交' }
+  if (!isolatedHead.ok || !isolatedHead.stdout.trim()) return { ok: false, action: 'blocked', detail: isolatedHead.error ?? pick('读不出隔离分支提交', 'Cannot read the isolated branch commit') }
   const target = isolatedHead.stdout.trim()
   const fastForward = await gitRun(record.mainCwd, ['merge', '--ff-only', target], {
     allowFailure: true,
@@ -359,7 +360,7 @@ export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<S
   })
   if (fastForward.ok) return { ok: true, action: 'merged' }
   const operation = await unfinishedGitOperation(record.mainCwd)
-  if (operation) return { ok: false, action: 'blocked', detail: `主工作目录：${operation}` }
+  if (operation) return { ok: false, action: 'blocked', detail: pick(`主工作目录：${operation}`, `Main folder: ${operation}`) }
 
   const merge = await gitRun(
     record.mainCwd,
@@ -383,7 +384,7 @@ export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<S
     return {
       ok: false,
       action: 'blocked',
-      detail: (merge.error ?? '合并失败').split(/\r?\n/).slice(0, 4).join(' / ')
+      detail: (merge.error ?? pick('合并失败', 'Merge failed')).split(/\r?\n/).slice(0, 4).join(' / ')
     }
   }
   return { ok: true, action: 'merged' }

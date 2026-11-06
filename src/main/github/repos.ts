@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, rm, stat } from 'node:fs/promises'
@@ -101,7 +102,7 @@ export async function listGithubRepos(request: GithubRepoListRequest, run: GhRun
   const limit = Number.isInteger(request?.limit) ? Math.min(Math.max(Number(request.limit), 1), REPO_LIMIT_MAX) : REPO_LIMIT_DEFAULT
   const query = typeof request?.query === 'string' ? request.query.slice(0, 200) : ''
   if (request?.owner !== undefined && (typeof request.owner !== 'string' || !OWNER_PATTERN.test(request.owner))) {
-    return { ok: false, items: [], owners: [], error: '账号或组织名不合法', failure: prFailure('invalid-input', '账号或组织名不合法') }
+    return { ok: false, items: [], owners: [], error: pick('账号或组织名不合法', 'Invalid account or organization name'), failure: prFailure('invalid-input', pick('账号或组织名不合法', 'Invalid account or organization name')) }
   }
   const viewer = await run(cwd, ['api', 'user'])
   if (!viewer.ok) return { ok: false, items: [], owners: [], ...failureResult(viewer) }
@@ -118,7 +119,7 @@ export async function listGithubRepos(request: GithubRepoListRequest, run: GhRun
   for (const item of runs) {
     if (!item.ok) continue
     const parsed = parseRepoItems(item.stdout)
-    if (!parsed) return { ok: false, items: [], owners, error: 'gh 返回的仓库列表无法解析', failure: prFailure('other', 'gh 返回的仓库列表无法解析') }
+    if (!parsed) return { ok: false, items: [], owners, error: pick('gh 返回的仓库列表无法解析', 'Could not parse the repository list from gh'), failure: prFailure('other', pick('gh 返回的仓库列表无法解析', 'Could not parse the repository list from gh')) }
     if (parsed.length > limit) hasMore = true
     merged.push(...parsed.slice(0, limit))
   }
@@ -165,20 +166,20 @@ export function parseSearchItems(stdout: string): GithubRepoSummary[] | null {
 export async function searchGithubRepos(query: unknown, run: GhRunner = runGh, cwd = homedir()): Promise<GithubRepoListResult> {
   const text = typeof query === 'string' ? query.trim() : ''
   if (text.length < SEARCH_MIN_LENGTH || text.length > 200 || /[\0\r\n]/.test(text)) {
-    return { ok: false, items: [], owners: [], error: '搜索关键字不合法', failure: prFailure('invalid-input', '搜索关键字不合法') }
+    return { ok: false, items: [], owners: [], error: pick('搜索关键字不合法', 'Invalid search keyword'), failure: prFailure('invalid-input', pick('搜索关键字不合法', 'Invalid search keyword')) }
   }
   const res = await run(cwd, ['search', 'repos', '--limit', String(SEARCH_LIMIT), '--json', SEARCH_FIELDS, '--', text])
   if (!res.ok) return { ok: false, items: [], owners: [], ...failureResult(res) }
   const items = parseSearchItems(res.stdout)
-  if (!items) return { ok: false, items: [], owners: [], error: 'gh 返回的搜索结果无法解析', failure: prFailure('other', 'gh 返回的搜索结果无法解析') }
+  if (!items) return { ok: false, items: [], owners: [], error: pick('gh 返回的搜索结果无法解析', 'Could not parse the search results from gh'), failure: prFailure('other', pick('gh 返回的搜索结果无法解析', 'Could not parse the search results from gh')) }
   return { ok: true, items, owners: [] }
 }
 
 export function validateCloneUrl(raw: unknown): { ok: true; url: string; name: string } | { ok: false; error: string } {
-  if (typeof raw !== 'string') return { ok: false, error: '请输入仓库地址' }
+  if (typeof raw !== 'string') return { ok: false, error: pick('请输入仓库地址', 'Enter a repository URL') }
   const text = raw.trim()
-  if (!text || text.length > 2048) return { ok: false, error: '请输入仓库地址' }
-  if (text.startsWith('-') || /[\s\0\\]/.test(text)) return { ok: false, error: '仓库地址不合法' }
+  if (!text || text.length > 2048) return { ok: false, error: pick('请输入仓库地址', 'Enter a repository URL') }
+  if (text.startsWith('-') || /[\s\0\\]/.test(text)) return { ok: false, error: pick('仓库地址不合法', 'Invalid repository URL') }
   let name = ''
   const scp = /^git@([A-Za-z0-9.-]+):([\w.-]+(?:\/[\w.-]+)+?)(?:\.git)?\/?$/.exec(text)
   if (scp) {
@@ -188,33 +189,33 @@ export function validateCloneUrl(raw: unknown): { ok: true; url: string; name: s
     try {
       url = new URL(text)
     } catch {
-      return { ok: false, error: '只支持 https、ssh 或 git@ 地址' }
+      return { ok: false, error: pick('只支持 https、ssh 或 git@ 地址', 'Only https, ssh, or git@ URLs are supported') }
     }
     if (!['https:', 'ssh:', 'git:'].includes(url.protocol) || !url.hostname || url.password || url.search || url.hash) {
-      return { ok: false, error: '只支持 https、ssh 或 git@ 地址' }
+      return { ok: false, error: pick('只支持 https、ssh 或 git@ 地址', 'Only https, ssh, or git@ URLs are supported') }
     }
-    if (url.protocol === 'https:' && url.username) return { ok: false, error: '地址里不要带用户名或令牌' }
+    if (url.protocol === 'https:' && url.username) return { ok: false, error: pick('地址里不要带用户名或令牌', 'Do not include a username or token in the URL') }
     const segments = url.pathname.replace(/\.git\/?$/, '').split('/').filter(Boolean)
-    if (segments.length < 2 || segments.some((part) => !/^[\w.@~-]+$/.test(part) || part === '.' || part === '..')) return { ok: false, error: '仓库地址不合法' }
+    if (segments.length < 2 || segments.some((part) => !/^[\w.@~-]+$/.test(part) || part === '.' || part === '..')) return { ok: false, error: pick('仓库地址不合法', 'Invalid repository URL') }
     name = segments[segments.length - 1]
   }
   name = sanitizeWorkFolderName(name.replace(/.git$/, ''))
-  if (!name) return { ok: false, error: '无法从地址得到仓库名' }
+  if (!name) return { ok: false, error: pick('无法从地址得到仓库名', 'Could not get a repository name from the URL') }
   return { ok: true, url: text, name }
 }
 
 export async function resolveCloneTarget(parentDir: string, folderName: string): Promise<{ ok: true; target: string; created: boolean } | { ok: false; error: string }> {
   const folder = sanitizeWorkFolderName(folderName)
-  if (!folder || folder !== folderName.trim()) return { ok: false, error: '文件夹名不合法' }
-  if (typeof parentDir !== 'string' || !parentDir.trim() || parentDir.includes('\0') || !isAbsolute(parentDir.trim())) return { ok: false, error: '请选择有效的克隆目录' }
+  if (!folder || folder !== folderName.trim()) return { ok: false, error: pick('文件夹名不合法', 'Invalid folder name') }
+  if (typeof parentDir !== 'string' || !parentDir.trim() || parentDir.includes('\0') || !isAbsolute(parentDir.trim())) return { ok: false, error: pick('请选择有效的克隆目录', 'Choose a valid clone folder') }
   const parent = resolve(parentDir.trim())
   const target = resolve(parent, folder)
   const rel = relative(parent, target)
-  if (!rel || rel.startsWith('..') || isAbsolute(rel) || rel.includes('/') || rel.includes('\\')) return { ok: false, error: '目标路径不安全' }
+  if (!rel || rel.startsWith('..') || isAbsolute(rel) || rel.includes('/') || rel.includes('\\')) return { ok: false, error: pick('目标路径不安全', 'Unsafe target path') }
   if (existsSync(target)) {
     const info = await stat(target).catch(() => null)
-    if (!info?.isDirectory()) return { ok: false, error: '目标位置已有同名文件' }
-    if ((await readdir(target)).length) return { ok: false, error: '目标文件夹已存在且不为空' }
+    if (!info?.isDirectory()) return { ok: false, error: pick('目标位置已有同名文件', 'A file with this name already exists at the target') }
+    if ((await readdir(target)).length) return { ok: false, error: pick('目标文件夹已存在且不为空', 'Target folder already exists and is not empty') }
     return { ok: true, target, created: false }
   }
   return { ok: true, target, created: true }
@@ -234,14 +235,14 @@ export function parseCloneProgress(chunk: string, id: string): GithubCloneProgre
 }
 
 export function classifyCloneFailure(stderr: string, timedOut: boolean, missing: boolean): GhPrFailure {
-  if (missing) return prFailure('gh-missing', '未找到 git 或 GitHub CLI', true, '请安装后再克隆')
-  if (timedOut) return prFailure('timeout', '克隆超时', true, '网络较慢时可重试，或换到终端克隆')
+  if (missing) return prFailure('gh-missing', pick('未找到 git 或 GitHub CLI', 'git or GitHub CLI not found'), true, pick('请安装后再克隆', 'Install it, then clone'))
+  if (timedOut) return prFailure('timeout', pick('克隆超时', 'Clone timed out'), true, pick('网络较慢时可重试，或换到终端克隆', 'Retry on a slow network, or clone in a terminal'))
   const text = stderr.toLowerCase()
-  if (/gh auth login|not logged|authentication failed|could not read username|permission denied \(publickey\)|http 401/.test(text)) return prFailure('not-authenticated', '没有克隆这个仓库的凭据', true, 'GitHub 仓库请在终端运行 gh auth login，其他地址请先配置 git 凭据或 ssh 密钥')
-  if (/repository not found|could not resolve to a repository|http 404|not found/.test(text)) return prFailure('pr-not-found', '仓库不存在或当前账号不可见', true, '请核对地址与权限')
-  if (/http 403|forbidden|permission/.test(text)) return prFailure('forbidden', '没有访问这个仓库的权限', true, '请核对仓库权限与组织策略')
-  if (/could not resolve host|unable to access|timed out|connection (?:reset|refused)|tls/.test(text)) return prFailure('timeout', '网络连接失败', true, '请检查网络或代理后重试')
-  return prFailure('other', '克隆失败', true, text.trim().split(/\r?\n/).pop()?.slice(0, 200) || '请在终端核对 git 输出')
+  if (/gh auth login|not logged|authentication failed|could not read username|permission denied \(publickey\)|http 401/.test(text)) return prFailure('not-authenticated', pick('没有克隆这个仓库的凭据', 'No credentials to clone this repository'), true, pick('GitHub 仓库请在终端运行 gh auth login，其他地址请先配置 git 凭据或 ssh 密钥', 'For GitHub, run gh auth login in a terminal; for other hosts, set up git credentials or an ssh key'))
+  if (/repository not found|could not resolve to a repository|http 404|not found/.test(text)) return prFailure('pr-not-found', pick('仓库不存在或当前账号不可见', 'Repository not found or not visible to this account'), true, pick('请核对地址与权限', 'Check the URL and permissions'))
+  if (/http 403|forbidden|permission/.test(text)) return prFailure('forbidden', pick('没有访问这个仓库的权限', 'No permission to access this repository'), true, pick('请核对仓库权限与组织策略', 'Check repository permissions and organization policy'))
+  if (/could not resolve host|unable to access|timed out|connection (?:reset|refused)|tls/.test(text)) return prFailure('timeout', pick('网络连接失败', 'Network connection failed'), true, pick('请检查网络或代理后重试', 'Check the network or proxy and retry'))
+  return prFailure('other', pick('克隆失败', 'Clone failed'), true, text.trim().split(/\r?\n/).pop()?.slice(0, 200) || pick('请在终端核对 git 输出', 'Check the git output in a terminal'))
 }
 
 type Spawn = (command: string, args: string[], options: Parameters<typeof nodeSpawn>[2]) => ChildProcess
@@ -268,7 +269,7 @@ export function cancelClone(id: string): boolean {
 export function cloneArguments(request: GithubCloneRequest, target: string): { command: string; args: string[]; name: string } | { error: string } {
   const source = request.source
   if (source?.kind === 'github') {
-    if (typeof source.nameWithOwner !== 'string' || !REPO_PATTERN.test(source.nameWithOwner)) return { error: '仓库名不合法' }
+    if (typeof source.nameWithOwner !== 'string' || !REPO_PATTERN.test(source.nameWithOwner)) return { error: pick('仓库名不合法', 'Invalid repository name') }
     return { command: 'gh', args: ['repo', 'clone', source.nameWithOwner, target, '--', '--progress'], name: source.nameWithOwner.split('/')[1] }
   }
   if (source?.kind === 'url') {
@@ -276,13 +277,13 @@ export function cloneArguments(request: GithubCloneRequest, target: string): { c
     if (!checked.ok) return { error: checked.error }
     return { command: 'git', args: ['clone', '--progress', '--', checked.url, target], name: checked.name }
   }
-  return { error: '克隆来源不合法' }
+  return { error: pick('克隆来源不合法', 'Invalid clone source') }
 }
 
 export async function cloneRepository(request: GithubCloneRequest, deps: CloneDeps): Promise<GithubCloneResult> {
   const fail = (error: string, failure?: GhPrFailure): GithubCloneResult => ({ ok: false, error, ...(failure ? { failure } : {}) })
-  if (!record(request) || typeof request.id !== 'string' || !request.id || request.id.length > 80) return fail('克隆请求不合法')
-  if (active.has(request.id)) return fail('这个克隆已在进行')
+  if (!record(request) || typeof request.id !== 'string' || !request.id || request.id.length > 80) return fail(pick('克隆请求不合法', 'Invalid clone request'))
+  if (active.has(request.id)) return fail(pick('这个克隆已在进行', 'This clone is already in progress'))
   const preview = cloneArguments(request, 'target')
   if ('error' in preview) return fail(preview.error)
   const parent = typeof request.parentDir === 'string' && request.parentDir.trim() ? request.parentDir : await deps.defaultDir()
@@ -332,7 +333,7 @@ export async function cloneRepository(request: GithubCloneRequest, deps: CloneDe
   })
   if (outcome.cancelled || outcome.code !== 0) {
     if (resolved.created) await rm(resolved.target, { recursive: true, force: true }).catch(() => undefined)
-    if (outcome.cancelled) return { ok: false, cancelled: true, error: '已取消克隆' }
+    if (outcome.cancelled) return { ok: false, cancelled: true, error: pick('已取消克隆', 'Clone canceled') }
     const failure = classifyCloneFailure(outcome.stderr, outcome.timedOut, outcome.missing)
     return fail(failure.message, failure)
   }
@@ -349,7 +350,7 @@ export async function ghBranchesAndPulls(cwd: string, run: GhRunner = runGh): Pr
   ])
   if (!branches.ok) return { ok: false, branches: [], pulls: [], ...failureResult(branches) }
   const list = parseJson<unknown[]>(branches.stdout)
-  if (!Array.isArray(list)) return { ok: false, branches: [], pulls: [], error: 'gh 返回的分支列表无法解析', failure: prFailure('other', 'gh 返回的分支列表无法解析') }
+  if (!Array.isArray(list)) return { ok: false, branches: [], pulls: [], error: pick('gh 返回的分支列表无法解析', 'Could not parse the branch list from gh'), failure: prFailure('other', pick('gh 返回的分支列表无法解析', 'Could not parse the branch list from gh')) }
   const pullItems = pulls.ok ? parseJson<GhPrListItemJson[]>(pulls.stdout) : null
   const repoName = repo.ok ? str((parseJson<Record<string, unknown>>(repo.stdout) ?? {}).nameWithOwner, 200) : ''
   return {
@@ -370,7 +371,7 @@ export async function createLocalProject(
   deps: { gitInit?: (dir: string) => Promise<void>; addProject: (cwd: string) => Promise<{ projectId?: string }> }
 ): Promise<{ ok: boolean; cwd?: string; projectId?: string; error?: string }> {
   const folder = sanitizeWorkFolderName(name)
-  if (!folder) return { ok: false, error: '项目名称不合法' }
+  if (!folder) return { ok: false, error: pick('项目名称不合法', 'Invalid project name') }
   const resolved = await resolveCloneTarget(parentDir, folder)
   if (!resolved.ok) return { ok: false, error: resolved.error }
   try {
@@ -387,7 +388,7 @@ export async function createLocalProject(
 function defaultGitInit(dir: string): Promise<void> {
   return new Promise((done, reject) => {
     const child = nodeSpawn('git', ['init'], { cwd: dir, windowsHide: true, stdio: 'ignore' })
-    child.on('error', (error) => reject((error as NodeJS.ErrnoException).code === 'ENOENT' ? new Error('未找到 git') : error))
-    child.on('close', (code) => (code === 0 ? done() : reject(new Error('git init 失败'))))
+    child.on('error', (error) => reject((error as NodeJS.ErrnoException).code === 'ENOENT' ? new Error(pick('未找到 git', 'git not found')) : error))
+    child.on('close', (code) => (code === 0 ? done() : reject(new Error(pick('git init 失败', 'git init failed')))))
   })
 }

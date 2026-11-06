@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import type { IpcRegistrar } from './registrar'
 import { readRepoSnapshot, readRepoState, listRefs, resolveRepo } from '../git-service'
 import { listRemotes, runGitAction } from '../git-actions'
@@ -31,7 +32,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
       if (!auth.ok) return { ok: false, refs: [], busyBranches: [], error: auth.error }
       const repo = await readRepoState(auth.cwd, { withRefs: false })
-      if (!repo) return { ok: false, refs: [], busyBranches: [], error: '这个目录不在 Git 仓库里' }
+      if (!repo) return { ok: false, refs: [], busyBranches: [], error: pick('这个目录不在 Git 仓库里', 'This folder is not in a Git repository') }
       const listing = await listRefs(repo.root)
       return { ok: true, refs: listing.refs, busyBranches: listing.busyBranches }
     } catch (error) {
@@ -150,7 +151,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       default:
         return {
           ok: false,
-          failure: { code: 'unknown', message: `不支持的操作：${kind}`, retrySafe: false }
+          failure: { code: 'unknown', message: pick(`不支持的操作：${kind}`, `Unsupported action: ${kind}`), retrySafe: false }
         }
     }
     try {

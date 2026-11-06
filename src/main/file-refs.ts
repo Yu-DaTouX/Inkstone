@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { open, readFile, realpath, stat } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
@@ -98,31 +99,31 @@ function fail(input: string, error: string): FileRefInfo {
 }
 
 export async function grantFile(input: string): Promise<FileRefInfo> {
-  if (typeof input !== 'string' || !input.trim()) return fail(String(input ?? ''), '路径为空')
-  if (!isAbsolute(input)) return fail(input, '只接受绝对路径')
-  if (input.includes('\0')) return fail(input, '路径非法')
+  if (typeof input !== 'string' || !input.trim()) return fail(String(input ?? ''), pick('路径为空', 'Path is empty'))
+  if (!isAbsolute(input)) return fail(input, pick('只接受绝对路径', 'Only absolute paths are accepted'))
+  if (input.includes('\0')) return fail(input, pick('路径非法', 'Invalid path'))
 
   let real: string
   try {
     real = await realpath(input)
   } catch {
-    return fail(input, '文件不存在')
+    return fail(input, pick('文件不存在', 'File not found'))
   }
 
   let st
   try {
     st = await stat(real)
   } catch {
-    return fail(input, '无法读取文件信息')
+    return fail(input, pick('无法读取文件信息', 'Cannot read file info'))
   }
   if (st.isDirectory()) return { ok: true, input, path: real, name: basename(real) || real, size: 0, mimeType: 'inode/directory', kind: 'other', isDirectory: true }
-  if (!st.isFile()) return fail(input, '不是普通文件')
+  if (!st.isFile()) return fail(input, pick('不是普通文件', 'Not a regular file'))
 
   const name = basename(real)
   const { mime, kind } = classify(name)
   const limit = kind === 'image' ? MAX_IMAGE : MAX_FILE
   if (st.size > limit) {
-    return fail(input, `文件过大（${(st.size / 1024 / 1024).toFixed(1)}MB，上限 ${limit / 1024 / 1024}MB）`)
+    return fail(input, pick(`文件过大（${(st.size / 1024 / 1024).toFixed(1)}MB，上限 ${limit / 1024 / 1024}MB）`, `File too large (${(st.size / 1024 / 1024).toFixed(1)}MB, limit ${limit / 1024 / 1024}MB)`))
   }
 
   granted.set(real, { size: st.size, mime, kind, name, mtimeMs: st.mtimeMs })
@@ -140,24 +141,24 @@ export async function grantFiles(inputs: unknown): Promise<FileRefInfo[]> {
 }
 
 export async function readGrantedText(input: string): Promise<FileTextResult> {
-  if (typeof input !== 'string' || !isAbsolute(input)) return { ok: false, error: '路径非法' }
+  if (typeof input !== 'string' || !isAbsolute(input)) return { ok: false, error: pick('路径非法', 'Invalid path') }
   let real: string
   try {
     real = await realpath(input)
   } catch {
-    return { ok: false, error: '文件不存在' }
+    return { ok: false, error: pick('文件不存在', 'File not found') }
   }
   const meta = granted.get(real)
-  if (!meta) return { ok: false, error: '这个文件没有加入上下文，不能在预览里读取' }
+  if (!meta) return { ok: false, error: pick('这个文件没有加入上下文，不能在预览里读取', 'This file is not in the context and cannot be read in the preview') }
   const now = await stat(real).catch(() => null)
   if (!now || now.size !== meta.size || now.mtimeMs !== meta.mtimeMs) {
-    return { ok: false, error: '文件已变化，请重新添加到上下文' }
+    return { ok: false, error: pick('文件已变化，请重新添加到上下文', 'File changed; add it to the context again') }
   }
   if (meta.kind === 'pdf') {
-    return { ok: false, error: 'PDF 暂不支持文本预览，可以先用外部程序打开', size: meta.size }
+    return { ok: false, error: pick('PDF 暂不支持文本预览，可以先用外部程序打开', 'Text preview is not available for PDF; open it in an external app'), size: meta.size }
   }
   if (meta.kind !== 'text') {
-    return { ok: false, error: '二进制文件不支持文本预览', size: meta.size }
+    return { ok: false, error: pick('二进制文件不支持文本预览', 'Text preview is not available for binary files'), size: meta.size }
   }
 
   let buf: Buffer
@@ -172,7 +173,7 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
       await fh.close()
     }
   } catch {
-    return { ok: false, error: '读取失败（可能没有权限）' }
+    return { ok: false, error: pick('读取失败（可能没有权限）', 'Read failed (permission may be missing)') }
   }
   const truncated = meta.size > MAX_TEXT
   return { ok: true, text: buf.toString('utf8'), truncated, size: meta.size }
@@ -183,8 +184,8 @@ export type PreviewTargetResult =
   | { ok: false; error: string; issue: FilePreviewIssue; dir?: string; creatable?: boolean; real?: string }
 
 export async function resolvePreviewTarget(rawPath: string, cwd: string): Promise<PreviewTargetResult> {
-  if (typeof rawPath !== 'string' || !rawPath.trim()) return { ok: false, error: '路径为空', issue: 'invalid' }
-  if (rawPath.includes('\0')) return { ok: false, error: '路径非法', issue: 'invalid' }
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return { ok: false, error: pick('路径为空', 'Path is empty'), issue: 'invalid' }
+  if (rawPath.includes('\0')) return { ok: false, error: pick('路径非法', 'Invalid path'), issue: 'invalid' }
 
   const absolute = isAbsolute(rawPath)
   const root = cwd || process.cwd()
@@ -194,7 +195,7 @@ export async function resolvePreviewTarget(rawPath: string, cwd: string): Promis
     try {
       real = await realpath(rawPath)
     } catch {
-      return { ok: false, error: '文件不存在', issue: 'missing', dir: dirname(rawPath) }
+      return { ok: false, error: pick('文件不存在', 'File not found'), issue: 'missing', dir: dirname(rawPath) }
     }
     const rootReal = await realRoot(root)
     outsideRoot = !rootReal || !isWithin(rootReal, real)
@@ -202,10 +203,10 @@ export async function resolvePreviewTarget(rawPath: string, cwd: string): Promis
     const scoped = await scopedPath(root, rawPath.split('/').join(sep))
     if (!scoped.ok) {
       if (scoped.reason === 'missing') {
-        return { ok: false, error: '文件不存在', issue: 'missing', dir: dirname(scoped.lexical), ...(scoped.creatable ? { creatable: true } : {}) }
+        return { ok: false, error: pick('文件不存在', 'File not found'), issue: 'missing', dir: dirname(scoped.lexical), ...(scoped.creatable ? { creatable: true } : {}) }
       }
-      if (scoped.reason === 'root_missing') return { ok: false, error: '文件不存在', issue: 'missing', dir: dirname(join(root, rawPath)) }
-      return { ok: false, error: '路径越界', issue: scoped.reason === 'invalid' ? 'invalid' : 'outside_root' }
+      if (scoped.reason === 'root_missing') return { ok: false, error: pick('文件不存在', 'File not found'), issue: 'missing', dir: dirname(join(root, rawPath)) }
+      return { ok: false, error: pick('路径越界', 'Path is outside the allowed folder'), issue: scoped.reason === 'invalid' ? 'invalid' : 'outside_root' }
     }
     real = scoped.real
   }
@@ -214,10 +215,10 @@ export async function resolvePreviewTarget(rawPath: string, cwd: string): Promis
   try {
     st = await stat(real)
   } catch {
-    return { ok: false, error: '无法读取文件信息', issue: 'unreadable', dir: dirname(real) }
+    return { ok: false, error: pick('无法读取文件信息', 'Cannot read file info'), issue: 'unreadable', dir: dirname(real) }
   }
-  if (st.isDirectory()) return { ok: false, error: '这是文件夹', issue: 'directory', dir: dirname(real), real }
-  if (!st.isFile()) return { ok: false, error: '不是普通文件', issue: 'not_file', dir: dirname(real) }
+  if (st.isDirectory()) return { ok: false, error: pick('这是文件夹', 'This is a folder'), issue: 'directory', dir: dirname(real), real }
+  if (!st.isFile()) return { ok: false, error: pick('不是普通文件', 'Not a regular file'), issue: 'not_file', dir: dirname(real) }
   return { ok: true, real, st, outsideRoot }
 }
 
@@ -251,7 +252,7 @@ export async function readPreviewBytes(rawPath: string, cwd: string): Promise<Pr
       abs: real,
       name,
       size: st.size,
-      error: `PDF 超过 ${Math.round(MAX_PDF_BYTES / 1024 / 1024)}MB`,
+      error: pick(`PDF 超过 ${Math.round(MAX_PDF_BYTES / 1024 / 1024)}MB`, `PDF is over ${Math.round(MAX_PDF_BYTES / 1024 / 1024)}MB`),
       issue: 'too_large'
     }
   }
@@ -266,7 +267,7 @@ export async function readPreviewBytes(rawPath: string, cwd: string): Promise<Pr
       bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     }
   } catch {
-    return { ok: false, abs: real, name, size: st.size, error: '读取失败（可能没有权限）', issue: 'unreadable' }
+    return { ok: false, abs: real, name, size: st.size, error: pick('读取失败（可能没有权限）', 'Read failed (permission may be missing)'), issue: 'unreadable' }
   }
 }
 
@@ -324,7 +325,7 @@ export async function readPreview(
       await fh.close()
     }
   } catch {
-    return { ...base, error: '读取失败（可能没有权限）', issue: 'unreadable' }
+    return { ...base, error: pick('读取失败（可能没有权限）', 'Read failed (permission may be missing)'), issue: 'unreadable' }
   }
 
   const truncated = st.size > MAX_TEXT

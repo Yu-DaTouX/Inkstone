@@ -1,3 +1,4 @@
+import { pick } from './ui-lang'
 export const USER_SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 export const USER_SKILL_LIMITS = {
@@ -22,22 +23,22 @@ export function validateUserSkill(
     return {
       ok: false,
       code: 'bad-name',
-      message: `技能名只能用小写字母、数字和连字符，最长 ${USER_SKILL_LIMITS.maxName} 个字符（例如 weekly-report）`
+      message: pick(`技能名只能用小写字母、数字和连字符，最长 ${USER_SKILL_LIMITS.maxName} 个字符（例如 weekly-report）`, `Skill names may use only lowercase letters, digits, and hyphens, up to ${USER_SKILL_LIMITS.maxName} characters (e.g. weekly-report)`)
     }
   }
   const description = String(raw?.description ?? '')
     .replace(/\s+/g, ' ')
     .trim()
-  if (!description) return { ok: false, code: 'missing-description', message: '缺少 description：写清什么时候该用这个技能' }
+  if (!description) return { ok: false, code: 'missing-description', message: pick('缺少 description：写清什么时候该用这个技能', 'Missing description: say when to use this skill') }
   if ([...description].length > USER_SKILL_LIMITS.maxDescription) {
-    return { ok: false, code: 'description-too-long', message: `description 超过 ${USER_SKILL_LIMITS.maxDescription} 字` }
+    return { ok: false, code: 'description-too-long', message: pick(`description 超过 ${USER_SKILL_LIMITS.maxDescription} 字`, `description exceeds ${USER_SKILL_LIMITS.maxDescription} characters`) }
   }
   const body = String(raw?.body ?? '')
     .replace(/\r\n/g, '\n')
     .trim()
-  if (!body) return { ok: false, code: 'missing-body', message: '缺少技能正文' }
+  if (!body) return { ok: false, code: 'missing-body', message: pick('缺少技能正文', 'Missing skill body') }
   if ([...body].length > USER_SKILL_LIMITS.maxBody) {
-    return { ok: false, code: 'body-too-long', message: `正文超过 ${USER_SKILL_LIMITS.maxBody} 字，请拆成几个技能` }
+    return { ok: false, code: 'body-too-long', message: pick(`正文超过 ${USER_SKILL_LIMITS.maxBody} 字，请拆成几个技能`, `Body exceeds ${USER_SKILL_LIMITS.maxBody} characters; split it into several skills`) }
   }
   return { ok: true, value: { name, description, body } }
 }

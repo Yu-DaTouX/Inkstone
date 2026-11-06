@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
@@ -159,7 +160,7 @@ export class SessionChainStore {
       } catch {
         this.doc = { version: 1, chains: [], updatedAt: 0 }
       }
-      throw new Error('会话链落盘失败')
+      throw new Error(pick('会话链落盘失败', 'Failed to save the session chain'))
     }
   }
 }

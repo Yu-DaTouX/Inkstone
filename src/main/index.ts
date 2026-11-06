@@ -1,7 +1,8 @@
-import { isRestoredReadonly, RESTORED_READONLY_MESSAGE } from './restored-readonly'
+import { isRestoredReadonly, restoredReadonlyMessage } from './restored-readonly'
 import { setUserHandoffRelease, userMessageSent } from './browser/user-handoff'
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import { storageMoveReady } from './storage-move-boot'
+import { pick } from '../shared/ui-lang'
 import { app, shell, BrowserWindow, clipboard, ClipboardItem, crashReporter, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme, session } from 'electron'
 import { openBlockedByName } from './open-guard'
 import { unsavedFiles } from './unsaved-files'
@@ -62,7 +63,7 @@ import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSi
 import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
-import { sessionActionAgent, SESSION_ACTION_CHANGED } from './ipc/session-action-target'
+import { sessionActionAgent, sessionActionChanged } from './ipc/session-action-target'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
@@ -128,7 +129,7 @@ import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
-import { allowsConcurrentSessions, SHARED_CWD_NOTICE } from './cwd-sharing'
+import { allowsConcurrentSessions, sharedCwdNotice } from './cwd-sharing'
 import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolatedSessionCwd, isolationCwdKey, pendingIsolationChanges } from './session-isolation'
 import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
 import { localCommandDescriptors } from './command-registry'
@@ -504,7 +505,7 @@ async function applyToAllAgents(
   apply: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
 ): Promise<{ ok: boolean; error?: string }> {
   const active = ac()
-  if (!active) return { ok: false, error: 'pi 未运行' }
+  if (!active) return { ok: false, error: piDown() }
   const result = await apply(active)
   if (!result.ok) return result
   await Promise.all(
@@ -573,8 +574,8 @@ const bundledPlugins = new BundledPlugins({
   confirm: async (plugin, title, detail, signal) => {
     if (signal.aborted || !win || win.isDestroyed()) return false
     const result = await dialog.showMessageBox(win, {
-      type: 'warning', title: `插件 ${plugin}：${title}`, message: title, detail,
-      buttons: ['拒绝', '允许本次'], defaultId: 0, cancelId: 0, noLink: true
+      type: 'warning', title: pick(`插件 ${plugin}：${title}`, `Plugin ${plugin}: ${title}`), message: title, detail,
+      buttons: [pick('拒绝', 'Deny'), pick('允许本次', 'Allow once')], defaultId: 0, cancelId: 0, noLink: true
     })
     return !signal.aborted && result.response === 1
   },
@@ -919,6 +920,10 @@ function setIsolationView(worktree: string, view: { state: IsolationViewState; b
   pushRunners()
 }
 
+function piDown(): string {
+  return pick('pi 未运行', 'pi is not running')
+}
+
 function pushIsolationStatus(): void {
   const items = [...isolationView.values()]
   const ready = items.filter((x) => x.state === 'ready').length
@@ -927,8 +932,8 @@ function pushIsolationStatus(): void {
     ready + blocked === 0
       ? undefined
       : blocked > 0
-        ? `隔离工作树：${blocked} 个合入被挡，${ready} 个改动待确认合入`
-        : `隔离工作树：${ready} 个改动待确认合入`
+        ? pick(`隔离工作树：${blocked} 个合入被挡，${ready} 个改动待确认合入`, `Isolated worktrees: ${blocked} merges blocked, ${ready} changes awaiting merge`)
+        : pick(`隔离工作树：${ready} 个改动待确认合入`, `Isolated worktrees: ${ready} changes awaiting merge`)
   push({ ch: 'status', payload: { key: 'isolation', text } })
 }
 
@@ -1002,7 +1007,10 @@ async function refreshIsolationViews(): Promise<void> {
         id: `iso-ready-${Date.now()}`,
         method: 'notify',
         notifyType: 'info',
-        message: `隔离工作树 ${record.branch} 里有改动等你确认：打开那个会话，在输入框上方选「合入主干」。`
+        message: pick(
+          `隔离工作树 ${record.branch} 里有改动等你确认：打开那个会话，在输入框上方选「合入主干」。`,
+          `Isolated worktree ${record.branch} has changes to confirm: open that session and choose "Merge to main" above the input.`
+        )
       }
     })
   }
@@ -1019,7 +1027,7 @@ function warnSharedCwdOnce(runnerId: string, cwd: string, registry: RunnerRegist
   sharedCwdWarned.add(runnerId)
   push({
     ch: 'notify',
-    payload: { id: `shared-cwd-${runnerId}`, method: 'notify', notifyType: 'warning', message: SHARED_CWD_NOTICE }
+    payload: { id: `shared-cwd-${runnerId}`, method: 'notify', notifyType: 'warning', message: sharedCwdNotice() }
   })
 }
 
@@ -1458,7 +1466,7 @@ async function executeControlCommand(command: ControlCommand): Promise<ControlRe
     }
 
     if (!win || win.isDestroyed()) {
-      return { ok: false, action: command.action, error: '砚主窗口尚未就绪' }
+      return { ok: false, action: command.action, error: pick('砚主窗口尚未就绪', 'Main window is not ready') }
     }
 
     if (command.action === 'focus') {
@@ -1467,7 +1475,7 @@ async function executeControlCommand(command: ControlCommand): Promise<ControlRe
     }
 
     if ((command.action === 'click' || command.action === 'type' || command.action === 'key') && approvals.list().length > 0) {
-      return { ok: false, action: command.action, error: '有待处理的审批时不接受遥控输入，请在砚窗口里手动处理审批' }
+      return { ok: false, action: command.action, error: pick('有待处理的审批时不接受遥控输入，请在砚窗口里手动处理审批', 'Remote input is blocked while an approval is pending; handle it in the window') }
     }
 
     if (command.action === 'click') {
@@ -1475,7 +1483,7 @@ async function executeControlCommand(command: ControlCommand): Promise<ControlRe
       const x = command.x ?? -1
       const y = command.y ?? -1
       if (x < 0 || y < 0 || x >= width || y >= height) {
-        return { ok: false, action: command.action, error: `坐标超出内容区域：${width}×${height}` }
+        return { ok: false, action: command.action, error: pick(`坐标超出内容区域：${width}×${height}`, `Coordinates outside the content area: ${width}×${height}`) }
       }
       showMainWindow()
       win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
@@ -1491,7 +1499,7 @@ async function executeControlCommand(command: ControlCommand): Promise<ControlRe
 
     if (command.action === 'key') {
       const keyCode = CONTROL_KEYS[(command.key ?? '').toLowerCase()]
-      if (!keyCode) return { ok: false, action: command.action, error: '只支持受限导航键' }
+      if (!keyCode) return { ok: false, action: command.action, error: pick('只支持受限导航键', 'Only restricted navigation keys are supported') }
       showMainWindow()
       win.webContents.sendInputEvent({ type: 'keyDown', keyCode })
       win.webContents.sendInputEvent({ type: 'keyUp', keyCode })
@@ -1505,13 +1513,13 @@ async function executeControlCommand(command: ControlCommand): Promise<ControlRe
         const guard = runners!.guardExecute(active.id)
         if (!guard.ok) return { ok: false, action: command.action, error: guard.error }
       }
-      const result = (active?.id ? await runners?.agentOf(active.id)?.send(command.text ?? '') : undefined) ?? { ok: false, error: 'pi 未运行' }
+      const result = (active?.id ? await runners?.agentOf(active.id)?.send(command.text ?? '') : undefined) ?? { ok: false, error: piDown() }
       return result.ok
         ? { ok: true, action: command.action, data: { length: command.text?.length ?? 0 } }
-        : { ok: false, action: command.action, error: result.error ?? 'pi 未运行' }
+        : { ok: false, action: command.action, error: result.error ?? piDown() }
     }
 
-    return { ok: false, action: command.action, error: '未知控制动作' }
+    return { ok: false, action: command.action, error: pick('未知控制动作', 'Unknown control action') }
   } catch (error) {
     return {
       ok: false,
@@ -1543,7 +1551,7 @@ function requestExit(options: { relaunch?: boolean; source?: string } = {}): Pro
       const prompt = quitPrompt(activity, reasons)
       const response = await dialog.showMessageBox(win, {
         type: 'warning',
-        title: '退出砚',
+        title: pick('退出砚', 'Quit Inkstone'),
         message: prompt.message,
         detail: prompt.detail,
         buttons: prompt.buttons,
@@ -1635,10 +1643,10 @@ async function relocateMissingCwd(missing: string): Promise<string | null> {
   if (!win) return null
   const choice = await dialog.showMessageBox(win, {
     type: 'warning',
-    title: '项目文件夹找不到了',
-    message: '这个会话原来的项目文件夹不在了',
-    detail: `${missing}\n\n可能被改名、移动或删除。重新指定后，这个会话会在新文件夹里继续。`,
-    buttons: ['重新指定文件夹', '取消'],
+    title: pick('项目文件夹找不到了', 'Project folder not found'),
+    message: pick('这个会话原来的项目文件夹不在了', 'This session’s project folder is gone'),
+    detail: `${missing}\n\n${pick('可能被改名、移动或删除。重新指定后，这个会话会在新文件夹里继续。', 'It may have been renamed, moved, or deleted. After choosing a new folder, the session continues there.')}`,
+    buttons: [pick('重新指定文件夹', 'Choose folder'), pick('取消', 'Cancel')],
     defaultId: 0,
     cancelId: 1,
     noLink: true
@@ -1646,25 +1654,25 @@ async function relocateMissingCwd(missing: string): Promise<string | null> {
   if (choice.response !== 0) return null
   let near = dirname(resolve(missing))
   while (!existsSync(near) && dirname(near) !== near) near = dirname(near)
-  const picked = await dialog.showOpenDialog(win, { title: '选择这个会话的项目文件夹', defaultPath: near, properties: ['openDirectory'] })
+  const picked = await dialog.showOpenDialog(win, { title: pick('选择这个会话的项目文件夹', 'Choose the project folder for this session'), defaultPath: near, properties: ['openDirectory'] })
   return picked.canceled ? null : picked.filePaths[0] ?? null
 }
 
 async function validateCwd(cwd: unknown): Promise<{ ok: true; cwd: string } | { ok: false; error: string }> {
   if (typeof cwd !== 'string' || !cwd.trim()) {
-    return { ok: false, error: '工作目录不能为空' }
+    return { ok: false, error: pick('工作目录不能为空', 'Working folder is required') }
   }
   const raw = cwd.trim()
   const absolute = resolve(raw)
   try {
     const info = await stat(absolute)
     if (!info.isDirectory()) {
-      return { ok: false, error: `工作目录不是文件夹：${raw}` }
+      return { ok: false, error: pick(`工作目录不是文件夹：${raw}`, `Working folder is not a folder: ${raw}`) }
     }
     await access(absolute, fsConstants.R_OK)
     return { ok: true, cwd: absolute }
   } catch {
-    return { ok: false, error: `工作目录不存在或不可访问：${raw}` }
+    return { ok: false, error: pick(`工作目录不存在或不可访问：${raw}`, `Working folder does not exist or is inaccessible: ${raw}`) }
   }
 }
 
@@ -1816,14 +1824,14 @@ async function resolveFileContext(
     ...(runners?.statuses().map((runner) => runner.cwd) ?? [])
   ]
   if (!await isAuthorizedFileCwd(requestedCwd, allowedCwds)) {
-    return { ok: false, context: provisional, error: '工作目录不属于已授权的项目或会话' }
+    return { ok: false, context: provisional, error: pick('工作目录不属于已授权的项目或会话', 'Working folder is not in an authorized project or session') }
   }
   const checked = await validateCwd(requestedCwd)
   if (!checked.ok) return { ok: false, context: provisional, error: checked.error }
 
   if (projectId) {
     const project = settings.projects.find((item) => item.id === projectId)
-    if (!project) return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: '项目不存在或已被移除' }
+    if (!project) return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: pick('项目不存在或已被移除', 'Project not found or removed') }
     if (normalizeCwdForIdentity(project.cwd) !== normalizeCwdForIdentity(checked.cwd)) {
       if (await isRunnerProjectCwd(checked.cwd, projectId, runners?.statuses() ?? [])) {
         return { ok: true, context: { ...provisional, cwd: checked.cwd } }
@@ -1832,7 +1840,7 @@ async function resolveFileContext(
         (item) => normalizeCwdForIdentity(item.cwd) === normalizeCwdForIdentity(checked.cwd)
       )
       if (!byCwd) {
-        return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: '项目与工作目录不匹配' }
+        return { ok: false, context: { ...provisional, cwd: checked.cwd }, error: pick('项目与工作目录不匹配', 'Project and working folder do not match') }
       }
       return { ok: true, context: { ...provisional, cwd: checked.cwd, projectId: byCwd.id } }
     }
@@ -1908,7 +1916,7 @@ async function restoreLastSession(): Promise<SessionRestore | undefined> {
 
 async function restorePreviousSession(): Promise<SessionRestore | undefined> {
   const restored = (await restoreFromExitSnapshot().catch(() => undefined)) ?? (await restoreLastSession().catch(() => undefined))
-  if (restored?.interrupted) restoreNotice = '上次退出时这一回合没有结束，已恢复该会话；已生成的内容保留在会话里。'
+  if (restored?.interrupted) restoreNotice = pick('上次退出时这一回合没有结束，已恢复该会话；已生成的内容保留在会话里。', 'The last turn did not finish before exit. The session was restored and generated content is kept.')
   return restored
 }
 
@@ -1992,7 +2000,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   if (runners && crashedId && othersWorking && (!restore?.sessionFile || restore.sessionFile === crashedFile)) {
     const restarted = await runners.restartOne(crashedId)
     if (restarted.ok) return { ok: true }
-    return { ok: false, error: `重启这个会话失败：${restarted.error ?? '未知原因'}。其他会话或子代理还在运行，没有把它们一起重启；等它们停下后再试。` }
+    return { ok: false, error: pick(`重启这个会话失败：${restarted.error ?? '未知原因'}。其他会话或子代理还在运行，没有把它们一起重启；等它们停下后再试。`, `Failed to restart this session: ${restarted.error ?? 'unknown reason'}. Other sessions or subagents are still running and were not restarted; try again after they stop.`) }
   }
   await runners?.stopAll()
   await subagentService.current()?.stopAll()
@@ -2033,7 +2041,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           id: `iso-created-${Date.now()}`,
           method: 'notify',
           notifyType: 'info',
-          message: `同一目录已有会话在运行，本会话改用隔离工作树 ${outcome.record.worktree}（分支 ${outcome.record.branch}）。改动留在隔离分支，会话停下后由你确认再合入主干。`
+          message: pick(`同一目录已有会话在运行，本会话改用隔离工作树 ${outcome.record.worktree}（分支 ${outcome.record.branch}）。改动留在隔离分支，会话停下后由你确认再合入主干。`, `Another session is running in this folder, so this session uses isolated worktree ${outcome.record.worktree} (branch ${outcome.record.branch}). Changes stay on that branch and merge to main after you confirm once the session stops.`)
         }
       })
       return { cwd: isolatedSessionCwd(outcome.record) }
@@ -2070,7 +2078,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           ...(id
             ? {
                 execution: runners?.executionPort(id) ?? {
-                  claim: () => ({ ok: false as const, error: '运行实例注册表尚未就绪' }),
+                  claim: () => ({ ok: false as const, error: pick('运行实例注册表尚未就绪', 'Runtime registry is not ready') }),
                   confirm: () => false,
                   release: () => {}
                 }
@@ -2092,37 +2100,46 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           const isRemote = request.kind === 'remote-mcp'
           const trust = isRemote ? null : await trustStatus(request.cwd)
           const buttons = isRemote
-            ? ['拒绝', '允许此项目连接该 host']
+            ? [pick('拒绝', 'Deny'), pick('允许此项目连接该 host', 'Allow this project to connect to the host')]
             : trust?.trusted
-              ? ['拒绝', '允许（禁用 lifecycle scripts）', '允许（包含 lifecycle scripts）']
+              ? [pick('拒绝', 'Deny'), pick('允许（禁用 lifecycle scripts）', 'Allow (lifecycle scripts disabled)'), pick('允许（包含 lifecycle scripts）', 'Allow (with lifecycle scripts)')]
               : [
-                  '拒绝',
-                  '允许并信任此项目（禁用 lifecycle scripts）',
-                  '允许并信任此项目（包含 lifecycle scripts）'
+                  pick('拒绝', 'Deny'),
+                  pick('允许并信任此项目（禁用 lifecycle scripts）', 'Allow and trust this project (lifecycle scripts disabled)'),
+                  pick('允许并信任此项目（包含 lifecycle scripts）', 'Allow and trust this project (with lifecycle scripts)')
                 ]
           const response = await dialog.showMessageBox(win, {
             type: 'warning',
-            title: isRemote ? '授权远程 MCP 服务' : '授权本地能力包',
+            title: isRemote ? pick('授权远程 MCP 服务', 'Authorize remote MCP service') : pick('授权本地能力包', 'Authorize local capability package'),
             message: isRemote
-              ? `是否允许当前项目连接「${request.title}」？`
-              : `是否允许当前项目接入「${request.title}」并运行其本机代码？`,
+              ? pick(`是否允许当前项目连接「${request.title}」？`, `Allow this project to connect to "${request.title}"?`)
+              : pick(`是否允许当前项目接入「${request.title}」并运行其本机代码？`, `Allow this project to use "${request.title}" and run its local code?`),
             detail: [
-              `候选：${request.source}`,
-              `项目：${request.projectId}`,
-              `内容指纹：${request.digest}`,
-              ...(request.endpoint ? [`远程端点：${request.endpoint}`, '该服务会收到本任务发送给它的请求内容。'] : []),
+              pick(`候选：${request.source}`, `Candidate: ${request.source}`),
+              pick(`项目：${request.projectId}`, `Project: ${request.projectId}`),
+              pick(`内容指纹：${request.digest}`, `Digest: ${request.digest}`),
+              ...(request.endpoint ? [pick(`远程端点：${request.endpoint}`, `Remote endpoint: ${request.endpoint}`), pick('该服务会收到本任务发送给它的请求内容。', 'The service receives the request content sent to it by this task.')] : []),
               ...(!isRemote
                 ? [
-                    '安装前的临时环境加载验证（smoke）会实际加载候选扩展并执行代码，pi 重载时也会运行扩展。代码以当前桌面用户权限执行，可读写该用户的文件并联网；临时目录和清空继承环境不是操作系统沙箱。',
-                    '禁用 npm lifecycle scripts 只关闭安装生命周期脚本，不会阻止扩展代码运行，也不会隔离其运行时权限。',
+                    pick(
+                      '安装前的临时环境加载验证（smoke）会实际加载候选扩展并执行代码，pi 重载时也会运行扩展。代码以当前桌面用户权限执行，可读写该用户的文件并联网；临时目录和清空继承环境不是操作系统沙箱。',
+                      'The pre-install smoke check loads the candidate extension and runs its code in a temporary environment, and pi runs extensions on reload. Code runs with the current desktop user’s permissions and can read and write that user’s files and use the network; a temp directory and cleared environment are not an OS sandbox.'
+                    ),
+                    pick(
+                      '禁用 npm lifecycle scripts 只关闭安装生命周期脚本，不会阻止扩展代码运行，也不会隔离其运行时权限。',
+                      'Disabling npm lifecycle scripts only turns off install-time scripts; it does not stop extension code from running or isolate its runtime permissions.'
+                    ),
                     ...(trust?.trusted
-                      ? ['此项目已经在 trust.json 中显式信任；本次不会改写信任设置。']
+                      ? [pick('此项目已经在 trust.json 中显式信任；本次不会改写信任设置。', 'This project is already trusted in trust.json; trust settings will not be changed.')]
                       : [
-                          '此项目尚未信任。允许后会把当前目录写入 Pi 的 trust.json；该项目现有及未来的 .pi 设置、扩展、技能等资源都将允许加载，不只限于本候选。请仅对你信任的项目允许。'
+                          pick(
+                            '此项目尚未信任。允许后会把当前目录写入 Pi 的 trust.json；该项目现有及未来的 .pi 设置、扩展、技能等资源都将允许加载，不只限于本候选。请仅对你信任的项目允许。',
+                            'This project is not trusted yet. Allowing writes the current folder to Pi’s trust.json; its existing and future .pi settings, extensions, and skills will all be allowed to load, not just this candidate. Allow only projects you trust.'
+                          )
                         ])
                   ]
                 : []),
-              '授权仅绑定此候选 / host 与当前项目；拒绝时不会登记或执行。'
+              pick('授权仅绑定此候选 / host 与当前项目；拒绝时不会登记或执行。', 'Authorization applies only to this candidate / host and this project; if denied, nothing is registered or run.')
             ].join('\n'),
             buttons,
             defaultId: 0,
@@ -2140,10 +2157,10 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             if (!saved.ok) {
               await dialog.showMessageBox(win, {
                 type: 'error',
-                title: '无法信任项目',
-                message: '项目包授权未保存',
-                detail: saved.error ?? '写入 Pi trust.json 失败。没有保存候选授权。',
-                buttons: ['确定'],
+                title: pick('无法信任项目', 'Cannot trust project'),
+                message: pick('项目包授权未保存', 'Package authorization was not saved'),
+                detail: saved.error ?? pick('写入 Pi trust.json 失败。没有保存候选授权。', 'Failed to write Pi trust.json. The authorization was not saved.'),
+                buttons: [pick('确定', 'OK')],
                 noLink: true
               })
               return 'deny'
@@ -2153,20 +2170,23 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         },
         confirmExternalApi: async (request: ExternalApiConfirmationRequest): Promise<boolean> => {
           if (!win || win.isDestroyed()) return false
-          const endpoint = request.endpoint || '未配置的 OpenAI-compatible endpoint'
+          const endpoint = request.endpoint || pick('未配置的 OpenAI-compatible endpoint', 'Unconfigured OpenAI-compatible endpoint')
           const response = await dialog.showMessageBox(win, {
             type: 'warning',
-            title: '确认外部图像 API 请求',
-            message: `即将通过 ${({ compatible: 'OpenAI-compatible API', openai: 'OpenAI API', google: 'Google Gemini API', doubao: '火山方舟（豆包）API', local: '远程 SD WebUI' } as const)[request.provider]} 生成图片`,
+            title: pick('确认外部图像 API 请求', 'Confirm external image API request'),
+            message: pick(
+              `即将通过 ${({ compatible: 'OpenAI-compatible API', openai: 'OpenAI API', google: 'Google Gemini API', doubao: '火山方舟（豆包）API', local: '远程 SD WebUI' } as const)[request.provider]} 生成图片`,
+              `About to generate an image via ${({ compatible: 'OpenAI-compatible API', openai: 'OpenAI API', google: 'Google Gemini API', doubao: 'Volcano Ark (Doubao) API', local: 'remote SD WebUI' } as const)[request.provider]}`
+            ),
             detail: [
-              `端点：${endpoint}`,
-              `模型：${request.model}`,
-              `项目：${request.cwd}`,
-              `提示词：${request.prompt.slice(0, 800)}${request.prompt.length > 800 ? '…' : ''}`,
+              pick(`端点：${endpoint}`, `Endpoint: ${endpoint}`),
+              pick(`模型：${request.model}`, `Model: ${request.model}`),
+              pick(`项目：${request.cwd}`, `Project: ${request.cwd}`),
+              pick(`提示词：${request.prompt.slice(0, 800)}${request.prompt.length > 800 ? '…' : ''}`, `Prompt: ${request.prompt.slice(0, 800)}${request.prompt.length > 800 ? '…' : ''}`),
               '',
-              '这会把提示词（以及将来接入的参考图片）发送到外部服务，并可能产生 API 费用。拒绝后不会发送请求，也不会自动切换到其他供应商。'
+              pick('这会把提示词（以及将来接入的参考图片）发送到外部服务，并可能产生 API 费用。拒绝后不会发送请求，也不会自动切换到其他供应商。', 'This sends the prompt (and any future reference images) to an external service and may incur API costs. If denied, no request is sent and no other provider is tried.')
             ].join('\n'),
-            buttons: ['取消', '继续发送'],
+            buttons: [pick('取消', 'Cancel'), pick('继续发送', 'Send')],
             defaultId: 0,
             cancelId: 0,
             noLink: true
@@ -2274,7 +2294,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         agentOf: (id) => runners?.agentOf(id) ?? null,
         restartOne: async (id) => {
           mcpAppViewService?.invalidateRunnerId(id)
-          return (await runners?.restartOne(id)) ?? { ok: false, error: '运行实例注册表尚未就绪' }
+          return (await runners?.restartOne(id)) ?? { ok: false, error: pick('运行实例注册表尚未就绪', 'Runtime registry is not ready') }
         },
         hasBusyCwd: (cwd) => runners?.hasBusyCwd(cwd) ?? false
       },
@@ -2301,7 +2321,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     ? { cwd: settings.cwd, ...((id) => id ? { projectId: id, scope: 'project' as const } : { scope: 'global' as const })(projectIdForCwd(settings, settings.cwd)) }
     : openTarget
   if (openTarget.missingCwd) {
-    push({ ch: 'notify', payload: { id: `missing-cwd-${Date.now()}`, method: 'notify', notifyType: 'warning', message: `上次会话的项目文件夹不在了：${openTarget.missingCwd}。这次没有恢复它；从侧栏打开该会话时可以重新指定文件夹。` } })
+    push({ ch: 'notify', payload: { id: `missing-cwd-${Date.now()}`, method: 'notify', notifyType: 'warning', message: pick(`上次会话的项目文件夹不在了：${openTarget.missingCwd}。这次没有恢复它；从侧栏打开该会话时可以重新指定文件夹。`, `The last session’s project folder is gone: ${openTarget.missingCwd}. It was not restored; choose a new folder when opening it from the sidebar.`) } })
   }
   const res = await runners.startPrimary(startTarget.cwd, restoreFile, startTarget.projectId)
   await rememberRunnerSession(res, {
@@ -2399,14 +2419,14 @@ function registerIpc(): void {
     let checkpointMs = 0
     let checkpointSaved: boolean | undefined
     const expected = normalizeExpectedRuntime(expectedInput)
-    if (expected === 'invalid') return { ok: false, error: '发送目标身份无效，消息未发送' }
+    if (expected === 'invalid') return { ok: false, error: pick('发送目标身份无效，消息未发送', 'Invalid send target; message not sent') }
     let targetId = expected ? resolveExpectedTarget(expected) ?? undefined : runners?.activeRunnerId
-    if (expected && !targetId) return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
+    if (expected && !targetId) return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
     let pin = targetId ? pinSendTarget(targetId) : null
     const sendOwnershipChanged = (id: string | null | undefined): boolean =>
       (!!expected && (!id || !targetMatchesExpected(id, expected))) || (!!id && !!pin && !pinnedTargetMatches(pin))
     if (sendOwnershipChanged(targetId)) {
-      return { ok: false, error: '目标会话在等待时已变化，消息未发送；草稿已保留' }
+      return { ok: false, error: pick('目标会话在等待时已变化，消息未发送；草稿已保留', 'Target session changed while waiting; message not sent, draft kept') }
     }
     if (!expected && (!targetId || !runners?.agentOf(targetId)?.running)) {
       const r = await startAgent()
@@ -2415,7 +2435,7 @@ function registerIpc(): void {
       pin = targetId ? pinSendTarget(targetId) : null
     }
     if (sendOwnershipChanged(targetId)) {
-      return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
+      return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
     }
     const id = targetId
     if (id) {
@@ -2424,7 +2444,7 @@ function registerIpc(): void {
     }
     const registry = runners
     const agent = id ? registry?.agentOf(id) : null
-    if (!id || !registry || !agent) return { ok: false, error: 'pi 未运行' }
+    if (!id || !registry || !agent) return { ok: false, error: piDown() }
     await userMessageSent(agent.getState()?.sessionId)
     let admissionToken: number | undefined
     let handedOff = false
@@ -2441,12 +2461,12 @@ function registerIpc(): void {
     try {
       if (admissionToken !== undefined && (await getSettings()).checkpointsEnabled !== false) {
         if (sendOwnershipChanged(id) || runners !== registry) {
-          return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
+          return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
         }
         const state = agent.getState()
         if (state && idleForTurn()) {
           const release = reserveWorkspaceMutation(agent.workingDirectory)
-          if (!release) return { ok: false, error: '项目正在保存或回退代码，请稍后发送；草稿已保留' }
+          if (!release) return { ok: false, error: pick('项目正在保存或回退代码，请稍后发送；草稿已保留', 'Project is saving or reverting code; try again shortly, draft kept') }
           const checkpointStartedAt = Date.now()
           try {
             checkpointSaved = !!(await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text))
@@ -2457,7 +2477,7 @@ function registerIpc(): void {
         }
       }
       if (sendOwnershipChanged(id) || runners !== registry) {
-        return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
+        return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
       }
       console.log(`[发送准备] ${JSON.stringify({ runnerId: id, elapsedMs: Math.max(0, Date.now() - preparationStartedAt), checkpointMs, checkpointSaved })}`)
       const result = await agent.send(text, images, mode, undefined, pin?.generation)
@@ -2470,39 +2490,39 @@ function registerIpc(): void {
 
   handle('yan:steer', async (text: string, expectedInput?: unknown) => {
     const expected = normalizeExpectedRuntime(expectedInput)
-    if (expected === 'invalid') return { ok: false, error: '插话目标身份无效' }
+    if (expected === 'invalid') return { ok: false, error: pick('插话目标身份无效', 'Invalid steer target') }
     const agent = expected ? runnerForExpected(expected) : ac()
-    if (expected && !agent) return { ok: false, error: '目标会话已不在或运行实例已更换，插话未发送' }
-    return agent?.steer(text, undefined, expected?.generation) ?? { ok: false, error: 'pi 未运行' }
+    if (expected && !agent) return { ok: false, error: pick('目标会话已不在或运行实例已更换，插话未发送', 'Target session is gone or its runtime changed; steer not sent') }
+    return agent?.steer(text, undefined, expected?.generation) ?? { ok: false, error: piDown() }
   })
-  handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: piDown() })
+  handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: piDown() })
+  handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: piDown() })
   handle('yan:queueEdit', async (arg: QueueState | QueueEditOp) => {
     const agent = ac()
-    if (!agent) return { ok: false, error: 'pi 未运行' }
+    if (!agent) return { ok: false, error: piDown() }
     return 'op' in arg ? agent.editQueue(arg) : agent.rewriteQueue(arg)
   })
   handle('yan:abort', async (expectedInput?: unknown) => {
     const expected = normalizeExpectedRuntime(expectedInput)
-    if (expected === 'invalid') return { steering: [], followUp: [], error: '停止目标身份无效' }
+    if (expected === 'invalid') return { steering: [], followUp: [], error: pick('停止目标身份无效', 'Invalid stop target') }
     if (!expected) return stopRunner(ac())
     const agent = runnerForExpected(expected)
-    if (!agent) return { steering: [], followUp: [], error: '目标会话已不在或运行实例已更换，未停止' }
+    if (!agent) return { steering: [], followUp: [], error: pick('目标会话已不在或运行实例已更换，未停止', 'Target session is gone or its runtime changed; not stopped') }
     return (await agent.abort(expected.generation))
   })
 
   handle('yan:runBash', async (command: string, options?: { excludeFromContext?: boolean }, expectedInput?: unknown) => {
-    if (typeof command !== 'string' || !command.trim() || (options !== undefined && (!options || typeof options !== 'object' || (options.excludeFromContext !== undefined && typeof options.excludeFromContext !== 'boolean')))) return { ok: false, error: '命令参数无效' }
+    if (typeof command !== 'string' || !command.trim() || (options !== undefined && (!options || typeof options !== 'object' || (options.excludeFromContext !== undefined && typeof options.excludeFromContext !== 'boolean')))) return { ok: false, error: pick('命令参数无效', 'Invalid command arguments') }
     const expected = normalizeExpectedRuntime(expectedInput)
-    if (expected === 'invalid') return { ok: false, error: '执行目标身份无效' }
+    if (expected === 'invalid') return { ok: false, error: pick('执行目标身份无效', 'Invalid run target') }
     const id = expected ? resolveExpectedTarget(expected) ?? undefined : runners?.activeRunner()?.id
-    if (expected && !id) return { ok: false, error: '目标会话已不在或已切换，命令未执行' }
+    if (expected && !id) return { ok: false, error: pick('目标会话已不在或已切换，命令未执行', 'Target session is gone or changed; command not run') }
     if (id) {
       const guard = runners?.guardExecute(id)
       if (guard && !guard.ok) return guard
     }
-    return (id ? runners?.agentOf(id)?.runBash(command, options) : undefined) ?? { ok: false, error: 'pi 未运行' }
+    return (id ? runners?.agentOf(id)?.runBash(command, options) : undefined) ?? { ok: false, error: piDown() }
   })
   handle('yan:abortBash', async () => {
     await ac()?.abortBash()
@@ -2539,7 +2559,7 @@ function registerIpc(): void {
         if (request.action === 'set-scoped-models') {
           const models = await agent.listModels()
           const available = new Set(models.map(model => `${model.provider}/${model.id}`))
-          if (request.modelIds!.some(id => !available.has(id))) return { ok: false, error: '所选模型已不可用，请刷新面板' }
+          if (request.modelIds!.some(id => !available.has(id))) return { ok: false, error: pick('所选模型已不可用，请刷新面板', 'Selected model is no longer available; refresh the panel') }
           await agent.nativeSetScopedModels(request.modelIds!)
         } else {
           await agent.nativeSetProjectTrust(request.trusted!)
@@ -2548,7 +2568,7 @@ function registerIpc(): void {
         const sessionFile = agent.getState()?.sessionFile
         if (!runnerId || !sessionFile || !existsSync(sessionFile)) return { ok: true, requiresReload: true }
         const restarted = await runners!.restartOne(runnerId)
-        if (!restarted.ok) return { ok: false, error: `原生设置已保存，但应用失败：${restarted.error ?? '请重新打开会话'}` }
+        if (!restarted.ok) return { ok: false, error: pick(`原生设置已保存，但应用失败：${restarted.error ?? '请重新打开会话'}`, `Native settings saved, but applying them failed: ${restarted.error ?? 'reopen the session'}`) }
         const current = runners!.active()
         if (current) {
           const state = current.getState()
@@ -2564,11 +2584,11 @@ function registerIpc(): void {
           const applied = await current.nativeScopedModels()
           const keys = new Set(applied.scopedModels.map(item => item.key))
           const wanted = new Set(request.modelIds!)
-          if (keys.size !== wanted.size || [...wanted].some(key => !keys.has(key))) return { ok: false, error: '用户级模型范围已保存，但当前项目的 pi 设置或启动范围覆盖了它；请检查项目 enabledModels' }
+          if (keys.size !== wanted.size || [...wanted].some(key => !keys.has(key))) return { ok: false, error: pick('用户级模型范围已保存，但当前项目的 pi 设置或启动范围覆盖了它；请检查项目 enabledModels', 'User-level model scope saved, but the project’s pi settings or launch scope override it; check the project enabledModels') }
         }
         return { ok: true }
       }
-      return { ok: false, error: '不支持的原生操作' }
+      return { ok: false, error: pick('不支持的原生操作', 'Unsupported native action') }
     }
   })
   registerCheckpointIpc(ipc, sessionHost)
@@ -2585,16 +2605,16 @@ function registerIpc(): void {
   })
   handle(
     'yan:setModel',
-    async (provider: string, modelId: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setModel(provider, modelId) ?? { ok: false, error: SESSION_ACTION_CHANGED }
+    async (provider: string, modelId: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setModel(provider, modelId) ?? { ok: false, error: sessionActionChanged() }
   )
-  handle('yan:setThinking', async (level: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setThinking(level) ?? { ok: false, error: SESSION_ACTION_CHANGED })
+  handle('yan:setThinking', async (level: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setThinking(level) ?? { ok: false, error: sessionActionChanged() })
   handle('yan:listThinkingLevels', async () => ac()?.listThinkingLevels() ?? [])
-  handle('yan:setUltracode', async (on: boolean, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setUltracode(!!on) ?? { ok: false, error: SESSION_ACTION_CHANGED })
+  handle('yan:setUltracode', async (on: boolean, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setUltracode(!!on) ?? { ok: false, error: sessionActionChanged() })
   handle('yan:listCommands', async () => ac()?.listCommands() ?? localCommandDescriptors())
 
   handle(
     'yan:setAutoCompaction',
-    async (enabled: boolean) => ac()?.setAutoCompaction(enabled) ?? { ok: false, error: 'pi 未运行' }
+    async (enabled: boolean) => ac()?.setAutoCompaction(enabled) ?? { ok: false, error: piDown() }
   )
   handle(
     'yan:setAutoRetry',
@@ -2615,19 +2635,19 @@ function registerIpc(): void {
   )
   handle(
     'yan:abortRetry',
-    async () => ac()?.abortRetry() ?? { ok: false, error: 'pi 未运行' }
+    async () => ac()?.abortRetry() ?? { ok: false, error: piDown() }
   )
   handle(
     'yan:cycleModel',
-    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleModel() ?? { ok: false, error: SESSION_ACTION_CHANGED }
+    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleModel() ?? { ok: false, error: sessionActionChanged() }
   )
   handle(
     'yan:cycleModelBack',
-    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleModelBack() ?? { ok: false, error: SESSION_ACTION_CHANGED }
+    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleModelBack() ?? { ok: false, error: sessionActionChanged() }
   )
   handle(
     'yan:cycleThinking',
-    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleThinking() ?? { ok: false, error: SESSION_ACTION_CHANGED }
+    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleThinking() ?? { ok: false, error: sessionActionChanged() }
   )
   handle('yan:lastAssistantText', async () => ac()?.lastAssistantText() ?? null)
 
@@ -2660,13 +2680,13 @@ function registerIpc(): void {
     markSeen: (runId) => runsHost?.markSeen(runId) ?? { ok: false },
     stopSessionRun: async ({ sessionId }) => {
       const agent = runners?.agentForSession(sessionId) ?? null
-      if (!agent) return { ok: false, error: '找不到这次运行对应的会话实例' }
+      if (!agent) return { ok: false, error: pick('找不到这次运行对应的会话实例', 'No session runtime found for this run') }
       const { error, ...cleared } = await agent.abort()
       return error ? { ok: false, error } : { ok: true, recovered: cleared }
     },
     stopSubagentRun: async (runId) => {
       const service = subagentService.current()
-      if (!service) return { ok: false, error: '子 Agent 宿主未就绪' }
+      if (!service) return { ok: false, error: pick('子 Agent 宿主未就绪', 'Subagent host is not ready') }
       const result = await service.stop(runId)
       return result.ok ? { ok: true } : { ok: false, ...(result.error ? { error: result.error } : {}) }
     }
@@ -2693,7 +2713,7 @@ function registerIpc(): void {
     pickSyncFolder: async () => {
       if (!win) return null
       const r = await dialog.showOpenDialog(win, {
-        title: '选择同步文件夹（建议放在 OneDrive / 坚果云 / Syncthing 管理的目录）',
+        title: pick('选择同步文件夹（建议放在 OneDrive / 坚果云 / Syncthing 管理的目录）', 'Choose sync folder (preferably one managed by OneDrive / Syncthing)'),
         properties: ['openDirectory', 'createDirectory']
       })
       return r.canceled ? null : r.filePaths[0] ?? null
@@ -2701,18 +2721,18 @@ function registerIpc(): void {
     pickExportPath: async (suggested) => {
       if (!win) return null
       const r = await dialog.showSaveDialog(win, {
-        title: '导出会话',
+        title: pick('导出会话', 'Export session'),
         defaultPath: join(app.getPath('documents'), suggested),
-        filters: [{ name: '砚会话包', extensions: ['json'] }]
+        filters: [{ name: pick('砚会话包', 'Inkstone session bundle'), extensions: ['json'] }]
       })
       return r.canceled ? null : r.filePath ?? null
     },
     pickImportFile: async () => {
       if (!win) return null
       const r = await dialog.showOpenDialog(win, {
-        title: '选择会话包',
+        title: pick('选择会话包', 'Choose session bundle'),
         properties: ['openFile'],
-        filters: [{ name: '砚会话包', extensions: ['json'] }]
+        filters: [{ name: pick('砚会话包', 'Inkstone session bundle'), extensions: ['json'] }]
       })
       return r.canceled ? null : r.filePaths[0] ?? null
     },
@@ -2739,7 +2759,7 @@ function registerIpc(): void {
     return { ...s, lang: s.lang, theme: s.theme }
   })
   handle('yan:removeGuardAllowRoot', async (path: unknown) => {
-    if (typeof path !== 'string' || !path) throw new Error('目录无效')
+    if (typeof path !== 'string' || !path) throw new Error(pick('目录无效', 'Invalid folder'))
     const current = await getSettings()
     const roots = current.guardAllowRoots ?? []
     const next = roots.filter((root) => root !== path)
@@ -2755,13 +2775,13 @@ function registerIpc(): void {
       patch.cwd = checked.cwd
     }
     if ('projects' in patch) {
-      if (!Array.isArray(patch.projects)) throw new Error('项目列表格式无效')
+      if (!Array.isArray(patch.projects)) throw new Error(pick('项目列表格式无效', 'Invalid project list'))
       const ids = new Set<string>()
       for (const project of patch.projects) {
-        if (!isObject(project) || typeof project.id !== 'string' || !project.id || typeof project.cwd !== 'string' || !isAbsolute(project.cwd) || ids.has(project.id)) throw new Error('项目标识或目录格式无效')
+        if (!isObject(project) || typeof project.id !== 'string' || !project.id || typeof project.cwd !== 'string' || !isAbsolute(project.cwd) || ids.has(project.id)) throw new Error(pick('项目标识或目录格式无效', 'Invalid project id or folder'))
         ids.add(project.id)
         const previous = before.projects.find((item) => item.id === project.id)
-        if (previous && normalizeCwdForIdentity(previous.cwd) !== normalizeCwdForIdentity(project.cwd)) throw new Error('不能将已有项目标识重新绑定到其他目录')
+        if (previous && normalizeCwdForIdentity(previous.cwd) !== normalizeCwdForIdentity(project.cwd)) throw new Error(pick('不能将已有项目标识重新绑定到其他目录', 'Cannot rebind an existing project id to another folder'))
         if (!previous) {
           const checked = await validateCwd(project.cwd)
           if (!checked.ok) throw new Error(checked.error)
@@ -2775,7 +2795,7 @@ function registerIpc(): void {
         for (const project of patch.projects ?? []) {
           const previous = current.projects.find((item) => item.id === project.id)
           if (previous && normalizeCwdForIdentity(previous.cwd) !== normalizeCwdForIdentity(project.cwd)) {
-            throw new Error('项目文件夹已变化，请刷新后重试')
+            throw new Error(pick('项目文件夹已变化，请刷新后重试', 'Project folder changed; refresh and retry'))
           }
         }
         return patch as never
@@ -2810,11 +2830,11 @@ function registerIpc(): void {
   })
 
   handle('yan:extendUi', async (id: string, extraMs?: number) =>
-    runners?.extendHostUi(String(id ?? ''), extraMs) ?? { ok: false, error: 'pi 未运行' }
+    runners?.extendHostUi(String(id ?? ''), extraMs) ?? { ok: false, error: piDown() }
   )
 
   handle('yan:startUiTimer', async (id: string) =>
-    runners?.startHostUiTimer(String(id ?? '')) ?? { ok: false, error: 'pi 未运行' }
+    runners?.startHostUiTimer(String(id ?? '')) ?? { ok: false, error: piDown() }
   )
 
   ipcMain.on('yan:hotkey-guard', (event, v) => {
@@ -2844,7 +2864,7 @@ function registerIpc(): void {
       return { shown: true, simulated: true }
     }
 
-    if (!Notification.isSupported()) return { shown: false, error: '系统不支持通知' }
+    if (!Notification.isSupported()) return { shown: false, error: pick('系统不支持通知', 'System notifications are not supported') }
     try {
       attentionNotices.show({ key: sessionId ? `session:${sessionId}` : `attention:${kind}`, title, body, icon, link: sessionNoticeLink(sessionId) })
       return { shown: true }
@@ -2870,7 +2890,7 @@ function registerIpc(): void {
     pushRunners()
     void reclaimQueuedMessages()
     setGuardSettingsNoticeSink((message) => push({ ch: 'notify', payload: { id: `guard-settings-${Date.now()}-${message.length}`, method: 'notify', notifyType: 'warning', message } }))
-    if (isRestoredReadonly()) push({ ch: 'notify', payload: { id: 'restored-readonly', method: 'notify', notifyType: 'info', message: RESTORED_READONLY_MESSAGE } })
+    if (isRestoredReadonly()) push({ ch: 'notify', payload: { id: 'restored-readonly', method: 'notify', notifyType: 'info', message: restoredReadonlyMessage() } })
   })
 
   handle('yan:openPath', async (p: string) => {
@@ -2896,16 +2916,16 @@ function registerIpc(): void {
   })
   handle('yan:storage:pick', async () => {
     if (!win) return null
-    const r = await dialog.showOpenDialog(win, { title: '选择新的数据位置（建议非系统盘上的空文件夹）', properties: ['openDirectory', 'createDirectory'] })
+    const r = await dialog.showOpenDialog(win, { title: pick('选择新的数据位置（建议非系统盘上的空文件夹）', 'Choose new data location (an empty folder off the system drive)'), properties: ['openDirectory', 'createDirectory'] })
     const picked = r.canceled ? null : r.filePaths[0] ?? null
     const service = picked ? syncFolderService(picked) : null
     if (!picked || !service) return picked
     const answer = await dialog.showMessageBox(win, {
       type: 'warning',
-      title: '这是同步盘文件夹',
-      message: `选中的文件夹由 ${service} 同步`,
-      detail: '数据目录里有模型 API Key 与登录凭证（auth.json），放在同步盘会被上传到云端或其他设备。建议换一个不同步的文件夹。',
-      buttons: ['重新选择', '仍然使用'],
+      title: pick('这是同步盘文件夹', 'This is a synced folder'),
+      message: pick(`选中的文件夹由 ${service} 同步`, `The selected folder is synced by ${service}`),
+      detail: pick('数据目录里有模型 API Key 与登录凭证（auth.json），放在同步盘会被上传到云端或其他设备。建议换一个不同步的文件夹。', 'The data folder holds model API keys and login credentials (auth.json); on a synced drive they would be uploaded to the cloud or other devices. Choose a folder that is not synced.'),
+      buttons: [pick('重新选择', 'Choose again'), pick('仍然使用', 'Use anyway')],
       defaultId: 0,
       cancelId: 0,
       noLink: true
@@ -2918,7 +2938,7 @@ function registerIpc(): void {
     const exit = await requestExit({ relaunch: true, source: 'storage-relaunch' })
     if (exit.action === 'cancelled') {
       cancelStorageMove()
-      return { ok: false, error: '仍有会话在运行，已取消迁移' }
+      return { ok: false, error: pick('仍有会话在运行，已取消迁移', 'Sessions are still running; move canceled') }
     }
     return r
   })
@@ -2936,7 +2956,7 @@ function registerIpc(): void {
     if (!win) return { ok: false, error: 'window:missing' }
     if (typeof htmlPath !== 'string' || !/\.html?$/i.test(htmlPath) || !existsSync(htmlPath)) return { ok: false, error: 'export:path' }
     const r = await dialog.showSaveDialog(win, {
-      title: '导出 PNG',
+      title: pick('导出 PNG', 'Export PNG'),
       defaultPath: join(dirname(htmlPath), `${basename(htmlPath).replace(/\.html?$/i, '')}.png`),
       filters: [{ name: 'PNG', extensions: ['png'] }]
     })
@@ -2963,9 +2983,9 @@ function registerIpc(): void {
     const bytes = imageSaveBytes(dataUrl)
     if (!bytes) return { ok: false, error: 'image:invalid' }
     const r = await dialog.showSaveDialog(win, {
-      title: '保存图片',
+      title: pick('保存图片', 'Save image'),
       defaultPath: join(app.getPath('pictures'), imageFileName(suggestedName, bytes.ext)),
-      filters: [{ name: '图片', extensions: [bytes.ext] }]
+      filters: [{ name: pick('图片', 'Images'), extensions: [bytes.ext] }]
     })
     if (r.canceled || !r.filePath) return { ok: true, canceled: true }
     await writeFile(r.filePath, bytes.data)
@@ -2975,9 +2995,9 @@ function registerIpc(): void {
   handle('yan:pickImages', async (): Promise<Attachment[]> => {
     if (!win) return []
     const r = await dialog.showOpenDialog(win, {
-      title: '选择图片',
+      title: pick('选择图片', 'Choose images'),
       properties: ['openFile', 'multiSelections'],
-      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }]
+      filters: [{ name: pick('图片', 'Images'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }]
     })
     if (r.canceled) return []
 
@@ -3022,7 +3042,7 @@ function registerIpc(): void {
           id: `pick-images-${Date.now()}`,
           method: 'notify',
           notifyType: 'warning',
-          message: `有图片没能加入：单张超过 12 MB 或合计超过 ${Math.round(PICK_IMAGES_TOTAL_BYTES / (1024 * 1024))} MB。`
+          message: pick(`有图片没能加入：单张超过 12 MB 或合计超过 ${Math.round(PICK_IMAGES_TOTAL_BYTES / (1024 * 1024))} MB。`, `Some images were not added: over 12 MB each or ${Math.round(PICK_IMAGES_TOTAL_BYTES / (1024 * 1024))} MB total.`)
         }
       })
     }
@@ -3032,7 +3052,7 @@ function registerIpc(): void {
   handle('yan:pickFiles', async (): Promise<string[]> => {
     if (!win) return []
     const r = await dialog.showOpenDialog(win, {
-      title: '选择文件或文件夹',
+      title: pick('选择文件或文件夹', 'Choose files or folders'),
       properties: ['openFile', 'openDirectory', 'multiSelections']
     })
     return r.canceled ? [] : r.filePaths
@@ -3043,7 +3063,7 @@ function registerIpc(): void {
     const lastCwd = (await getSettings()).cwd
     const r = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
-      title: '选择工作目录',
+      title: pick('选择工作目录', 'Choose working folder'),
       ...(lastCwd && existsSync(lastCwd) ? { defaultPath: lastCwd } : {})
     })
     if (r.canceled || !r.filePaths[0]) return null
@@ -3124,11 +3144,11 @@ function registerIpc(): void {
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   refreshMinecraftPluginOnStartup()
   ipc.handle('yan:plugins:action', async (id: unknown, action: unknown) => {
-    if (typeof id !== 'string' || !['status', 'install', 'remove'].includes(String(action))) return { ok: false, error: '无效插件操作' }
+    if (typeof id !== 'string' || !['status', 'install', 'remove'].includes(String(action))) return { ok: false, error: pick('无效插件操作', 'Invalid plugin action') }
     return bundledPlugins.action(id, String(action))
   })
   ipc.handle('yan:plugins:invoke', async (id: unknown, action: unknown, params: unknown) => {
-    if (typeof id !== 'string' || typeof action !== 'string') throw new Error('无效插件请求')
+    if (typeof id !== 'string' || typeof action !== 'string') throw new Error(pick('无效插件请求', 'Invalid plugin request'))
     return bundledPlugins.invoke(id, action, params)
   })
   registerCanvasCaptureIpc(ipc)
@@ -3706,7 +3726,7 @@ app.whenReady().then(async () => {
               if (!started.ok) return { ok: false, error: started.error }
             }
             const registry = runners
-            if (!registry) return { ok: false, error: 'pi 未运行' }
+            if (!registry) return { ok: false, error: piDown() }
             const scope = project ? 'project' : 'global'
             const res = await registry.select({ cwd: cwdResult.cwd, projectId: project, scope })
             await sessionHost.rememberRunnerSession(res, {
@@ -3719,7 +3739,7 @@ app.whenReady().then(async () => {
             return res.ok && res.id ? { ok: true, id: res.id } : { ok: false, error: res.error }
           },
           applyModel: async (runId, model) =>
-            (await runners?.agentOf(runId)?.setModel(model.provider, model.id)) ?? { ok: false, error: 'pi 未运行' }
+            (await runners?.agentOf(runId)?.setModel(model.provider, model.id)) ?? { ok: false, error: piDown() }
         },
         payload
       ),
@@ -3848,7 +3868,7 @@ app.whenReady().then(async () => {
 }).catch((error) => {
   reportMainError('whenReady', error)
   exitReason = 'whenReady'
-  dialog.showErrorBox('砚无法启动', error instanceof Error ? error.message : String(error))
+  dialog.showErrorBox(pick('砚无法启动', 'Inkstone failed to start'), error instanceof Error ? error.message : String(error))
   app.exit(1)
 })
 
