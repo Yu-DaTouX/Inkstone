@@ -56,7 +56,7 @@ export async function startFakeDesktop({ omit = [], tweak } = {}) {
   }
   const handlers = {
     async snapshot() {
-      return { sessions: state.sessions, projects: state.projects, agent: { runners: state.running ? [{ runId: 'r-1', sessionId: 's-1', running: true, waiting: false, model: state.current }] : [], activeSessionId: state.activeSessionId } }
+      return { sessions: state.sessions, projects: state.projects, agent: { runners: state.running ? [{ runId: 'r1', sessionId: 's-1', running: true, waiting: false, model: state.current }] : [], activeSessionId: state.activeSessionId } }
     },
     history: guarded('history', async (sessionId) => ({ ok: true, data: { sessionId, messages: state.messages, total: state.messages.length, hasMore: false } })),
     models: guarded('models', async () => ({ ok: true, data: { models: state.models, current: state.current, thinking: state.thinking, pending: state.pending } })),

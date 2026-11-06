@@ -2,6 +2,7 @@ import { loadApp, createHarness, env, marksSet, sleep } from './mobile-render/ho
 import { startFakeDesktop } from './mobile-render/fake-desktop.mjs'
 import { edgeFlows } from './mobile-render/flows-edge.mjs'
 import { moreFlows } from './mobile-render/flows-more.mjs'
+import { liveFlows } from './mobile-render/flows-live.mjs'
 
 const lib = await loadApp()
 const failures = []
@@ -26,7 +27,10 @@ async function boot({ lang = 'zh-CN', left = false, width = 390, height = 844, f
   env.opened.length = 0
   env.nativeModules.InkstoneFoldLayout = fold ? { getCurrent: async () => fold } : undefined
   marksSet('ui:prefs', JSON.stringify({ lang, leftHanded: left }))
-  const conn = await lib.pair(desk.baseUrl, desk.startPairing(), '测试手机')
+  let conn
+  for (let attempt = 0; ; attempt++) {
+    try { conn = await lib.pair(desk.baseUrl, desk.startPairing(), '测试手机'); break } catch (error) { if (attempt >= 2) throw error; await sleep(200) }
+  }
   globalThis.__keychain.entry = { username: 'x', password: JSON.stringify(conn) }
   const h = createHarness(lib)
   await h.mount(h.createElement(lib.App))
@@ -252,7 +256,7 @@ await run('模型错误', flowModelErrors)
 await run('改名与搜索', flowRenameSearch)
 await run('首页分组', flowHomeSections)
 await run('撤销设备', flowRevoked)
-for (const [name, fn] of [...edgeFlows({ boot, openSession, check, env }), ...moreFlows({ boot, openSession, check, env })]) await run(name, fn)
+for (const [name, fn] of [...edgeFlows({ boot, openSession, check, env }), ...moreFlows({ boot, openSession, check, env }), ...liveFlows({ boot, openSession, check, env })]) await run(name, fn)
 
 console.error = realError
 console.warn = realWarn
