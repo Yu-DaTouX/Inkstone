@@ -196,8 +196,8 @@ async function main() {
   {
     reset()
     const { seen } = collect()
-    const at = Date.now
-    Date.now = () => at.call(Date)
+    const at = Date.now, frozen = at.call(Date)
+    Date.now = () => frozen
     try {
       openSettings('auth')
       openSettings('auth')
