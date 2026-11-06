@@ -24,7 +24,7 @@ async function run() {
     assert.deepEqual(guard.quitReasons({ ...idle, runningSubagents: 3 }), ['subagents'])
 
     const prompt = guard.quitPrompt({ ...idle, runningSubagents: 2, terminalWorking: true })
-    assert.match(prompt.message, /2 个子代理正在运行/)
+    assert.match(prompt.message, /2 个子 Agent正在运行/)
     assert.match(prompt.message, /终端/)
     assert.equal(prompt.buttons.length, 3)
 
