@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { asModelText } from './model-text'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -399,7 +400,7 @@ export class CapabilityServer {
       const out =
         command === 'operations.status'
           ? this.describeOps(params)
-          : await this.handlers.run(command, params, bound, cancel.signal)
+          : await asModelText(() => this.handlers.run(command, params, bound, cancel.signal))
       if (cancel.signal.aborted || generation !== this.generation) return
       const file = this.writeResult(opId, out)
       if (file && out.data !== undefined) {
