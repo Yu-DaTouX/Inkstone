@@ -641,7 +641,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
             </>
           ) : (
             <SidebarThreadList
-              className="v3-fade"
               sections={{
                 pinned: sections.pinned.map((view) => scopedKeyOf(view.id)),
                 active: sections.active.map((view) => scopedKeyOf(view.id)),
@@ -747,7 +746,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                 return splitDragFor(threadKey)?.drop(x, y, sidebarEdge()) === true
               }}
               onDragFinish={clearQuoteTarget}
-              className="pb-1"
+              className="v3-fade pb-1"
             />
           )}
           <span className="v3-visually-hidden" role="status">
