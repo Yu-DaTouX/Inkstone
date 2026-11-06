@@ -52,8 +52,11 @@ const PROBE = String.raw`(() => {
       const imgs = [...msg.querySelectorAll('img')].map((el) => ({ h: r1(el.getBoundingClientRect().height), ok: el.complete && el.naturalWidth > 0 }))
       const body = msg.querySelector('.v3-assistant-body')
       const sig = body ? [...body.children].map((el) => (typeof el.className === 'string' ? el.className.split(' ')[0] : el.tagName) + ':' + r1(el.getBoundingClientRect().height)).join(' | ') : ''
-      m.frames.push({ t: now(), sig, gap: r1(ts - lastT), h: r1(msg.getBoundingClientRect().height), chars: prose ? prose.textContent.length : 0, blocks, tables, codes, visual, imgs, katex: msg.querySelectorAll('.katex').length, katexErr: msg.querySelectorAll('.katex-error').length, imgAlt: msg.querySelectorAll('.v3-md-image-alt').length, links: msg.querySelectorAll('a.v3-md-link').length })
+      const raw = prose ? prose.innerText : ''
+      const lit = { strong: raw.includes('**'), link: raw.includes(']('), fence: raw.includes(String.fromCharCode(96, 96, 96)), math: raw.includes('$$'), pipe: /^\s*\|/m.test(raw), head: /^\s*#{1,6}\s*$/m.test(raw), bullet: /^\s*[-*+>]\s*$/m.test(raw), tilde: raw.includes('~~') }
+      m.frames.push({ t: now(), lit, act: document.querySelectorAll('.v3-stream [data-testid=v3-turn-activity]').length, pend: document.querySelectorAll('.v3-stream [data-testid=v3-pending]').length, sig, gap: r1(ts - lastT), h: r1(msg.getBoundingClientRect().height), chars: prose ? prose.textContent.length : 0, blocks, tables, codes, visual, imgs, katex: msg.querySelectorAll('.katex').length, katexErr: msg.querySelectorAll('.katex-error').length, imgAlt: msg.querySelectorAll('.v3-md-image-alt').length, links: msg.querySelectorAll('a.v3-md-link').length })
     }
+    if (m.frames.length && m.frames[m.frames.length - 1].act === 0) { const g = st.getState(); m.actGone = m.actGone || []; if (m.actGone.length < 12) m.actGone.push({ t: now(), streaming: !!g.session?.isStreaming, agent: !!g.session?.isAgentRunning, tail: g.messages.slice(-3).map((x) => x.role + ':' + (x.toolCalls ? x.toolCalls.length : 0) + ':' + x.id.slice(-6)), runTail: g.runTail ? g.runTail.id.slice(-6) : null }) }
     lastT = ts
     requestAnimationFrame(tick)
   }
@@ -142,6 +145,7 @@ function analyze(frames, from, to) {
     for (let k = 0; k < Math.min(a.length, b.length); k++) if (a[k].h !== b[k].h) img.push({ t: fs[i].t, from: a[k].h, to: b[k].h })
   }
   out.imageHeightChanges = img.slice(0, 8)
+  out.literalFrames = Object.fromEntries(['strong', 'link', 'fence', 'math', 'pipe', 'head', 'bullet', 'tilde'].map((k) => [k, fs.filter((f) => f.lit && f.lit[k]).length]))
   return out
 }
 
@@ -207,7 +211,7 @@ export default async function run({ box, cdp, newSession, check, sleep, shot, re
     removedAtSettle: md.mutBatches.filter((b) => b.t >= done - 50).length
   }
   report.md = result
-  writeFileSync(join(runDir, `md-${tag}.json`), JSON.stringify({ result, frames: md.frames, shifts: md.shifts, marks: md.marks, mutBatches: md.mutBatches }))
+  writeFileSync(join(runDir, `md-${tag}.json`), JSON.stringify({ actGone: md.actGone, result, frames: md.frames, shifts: md.shifts, marks: md.marks, mutBatches: md.mutBatches }))
   console.log(JSON.stringify(result, null, 1))
   check('回合结束', Number.isFinite(done))
 }
