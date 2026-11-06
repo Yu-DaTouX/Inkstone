@@ -21,7 +21,7 @@ import { TurnApprovalLine } from './ApprovalReceipt'
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 const NO_RECEIPTS: readonly ApprovalReceipt[] = []
 const HISTORY_SEGMENTS = 12
-const STEADY_HOLD_MS = 1200
+const STEADY_HOLD_MS = 30000
 const USER_TOGGLE_MS = 500
 const BOTTOM_SLACK_PX = 48
 

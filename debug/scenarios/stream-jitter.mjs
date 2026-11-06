@@ -1,0 +1,58 @@
+export const meta = { description: '流式回合的跳动与闪烁：假模型 FLOW，逐帧记录过程区高度、思考行/活动行位置与存在、答复首段位置、滚动位置，并列出布局位移来源，不调用模型' }
+
+const PROBE = `(() => {
+  const f = window.__jit = { t0: performance.now(), frames: [], shifts: [], marks: [] }
+  const now = () => Math.round(performance.now() - f.t0)
+  const cls = (n) => { const el = n && n.nodeType === 1 ? n : n && n.parentElement; return el ? (typeof el.className === 'string' ? el.className.split(' ')[0] : el.tagName) : String(n) }
+  new PerformanceObserver((list) => { for (const e of list.getEntries()) f.shifts.push({ t: Math.round(e.startTime - f.t0), v: +e.value.toFixed(4), src: (e.sources || []).slice(0, 3).map((s) => cls(s.node) + ' dy=' + Math.round(s.currentRect.top - s.previousRect.top)) }) } ).observe({ type: 'layout-shift' })
+  const tick = () => {
+    const stream = document.querySelector('.v3-stream')
+    const msgs = stream ? stream.querySelectorAll('.v3-msg.assistant') : []
+    const msg = msgs[msgs.length - 1]
+    const base = stream ? stream.getBoundingClientRect().top : 0
+    const rel = (el) => el ? Math.round(el.getBoundingClientRect().top - base) : null
+    const proc = msg ? msg.querySelector('[data-testid="v3-process"]') : null
+    const head = proc ? proc.querySelector('.v3-process-head') : null
+    const body = proc ? proc.querySelector('.v3-process-body') : null
+    const act = msg ? msg.querySelector('.v3-act') : null
+    const seg = msg ? msg.querySelector('.v3-seg') : null
+    const cs = act ? getComputedStyle(act) : null
+    f.frames.push({ t: now(), st: stream ? Math.round(stream.scrollTop) : null, sh: stream ? stream.scrollHeight : null, proc: rel(proc), procH: proc ? Math.round(proc.getBoundingClientRect().height) : null, open: proc ? proc.hasAttribute('data-open') : null, live: proc ? proc.hasAttribute('data-live') : null, head: rel(head), bodyH: body ? Math.round(body.getBoundingClientRect().height) : null, minH: body ? body.style.minHeight : null, stage: body ? body.dataset.stage ?? '' : null, act: rel(act), actOp: cs ? +cs.opacity : null, seg: rel(seg), segH: seg ? Math.round(seg.getBoundingClientRect().height) : null, msgH: msg ? Math.round(msg.getBoundingClientRect().height) : null })
+    requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+  const st = window.__yanStore
+  let running = false
+  st.subscribe((s) => { const r = !!(s.session && (s.session.isStreaming || s.session.isAgentRunning)); if (r !== running) { running = r; f.marks.push({ t: now(), kind: r ? 'run' : 'done' }) } const last = s.messages[s.messages.length - 1]; const tl = !!(last && last.role === 'assistant' && last.thinkingLive); if (f.tl !== tl) { f.tl = tl; f.marks.push({ t: now(), kind: tl ? 'think' : 'think-end' }) } })
+  return true
+})()`
+
+export default async function run({ cdp, box, check, report, sleep, newSession, turn, autoApprove, log }) {
+  const ev = (expr) => cdp.evaluate(expr)
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1500, height: 940, deviceScaleFactor: 1, mobile: false })
+  await autoApprove()
+  await newSession(box.projects[0] ?? box.project)
+  await ev(PROBE)
+  const trigger = process.env.JIT_TRIGGER ?? 'FLOW'
+  await turn(trigger + ' 先看看项目，然后修复金额', { timeout: 120000 })
+  await sleep(1500)
+  const data = await ev('window.__jit')
+  report.marks = data.marks
+  const fr = data.frames
+  const keys = ['st', 'sh', 'proc', 'procH', 'open', 'live', 'head', 'bodyH', 'minH', 'stage', 'act', 'actOp', 'seg', 'segH', 'msgH']
+  const changes = []
+  fr.forEach((f, i) => {
+    if (!i) return
+    const p = fr[i - 1]
+    const diff = keys.filter((k) => f[k] !== p[k]).map((k) => k + ':' + p[k] + '>' + f[k])
+    if (diff.length) changes.push(f.t + 'ms ' + diff.join(' '))
+  })
+  console.log('MARKS ' + JSON.stringify(data.marks))
+  console.log('SHIFTS ' + data.shifts.filter((s) => s.v > 0.0005).map((s) => s.t + 'ms v=' + s.v + ' ' + s.src.join(',')).join(' | '))
+  console.log('FRAMES ' + fr.length)
+  console.log('CHANGES\n' + changes.slice(0, 400).join('\n'))
+  const actFlick = []
+  fr.forEach((f, i) => { const p = fr[i - 1]; if (p && (f.act === null) !== (p.act === null)) actFlick.push(f.t + (f.act === null ? ' act removed' : ' act added')) })
+  console.log('ACT ' + actFlick.join(' | '))
+  report.shiftCount = data.shifts.length
+}
