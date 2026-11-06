@@ -586,6 +586,8 @@ function projectSnapshotKeepingHistory(state: Store, snapshot: SessionRuntimeSna
   if (snapshot.messagesLoaded === false && state.messages.length > 0) {
     delete projection.messages
   }
+  if (snapshot.models.length === 0 && state.models.length > 0) delete projection.models
+  if (snapshot.thinkingLevels.length === 0 && state.thinkingLevels.length > 0) delete projection.thinkingLevels
   return projection
 }
 

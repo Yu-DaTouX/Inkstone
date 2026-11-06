@@ -658,12 +658,12 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
       {...sortableProps}
       {...fileDropHandlers}
       className={cn(
-        "list-none [content-visibility:auto] [contain-intrinsic-size:auto_36px]",
-        variant === "card" && "py-0.5 [contain-intrinsic-size:auto_78px]",
-        variant === "folder-multiline" && "[contain-intrinsic-size:auto_54px]",
-        (variant === "card" || variant === "folder-multiline") &&
-          metaLineEmpty &&
-          "[contain-intrinsic-size:auto_58px]",
+        "list-none",
+        variant === "slim" && navigationParent === "shelf:settled" && "[content-visibility:auto] [contain-intrinsic-size:auto_36px]",
+        variant === "folder" && "[content-visibility:auto] [contain-intrinsic-size:auto_36px]",
+        variant === "card" && "py-0.5",
+        variant === "folder-multiline" && "[content-visibility:auto] [contain-intrinsic-size:auto_54px]",
+        variant === "folder-multiline" && metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
         isDragging && "relative z-20",
       )}
     >

@@ -90,20 +90,25 @@ function firstUserLine(messages: ReadonlyArray<{ role: string; text?: string }>)
   return text.trim().split('\n')[0].slice(0, 80)
 }
 
+const unlistedMemory = new Map<string, { name: string; cwd: string }>()
+
 export function withUnlistedRuns(sessions: readonly SessionSummary[], runs: readonly RunSnapshot[], current?: { sessionId: string; name: string; cwd?: string }): readonly SessionSummary[] {
   const ids = new Set(sessions.map((session) => session.id))
   const paths = new Set(sessions.map((session) => session.path))
+  for (const id of ids) unlistedMemory.delete(id)
   const pending: SessionSummary[] = []
   for (const run of runs) {
     const live = run.phase.kind === 'running' || run.phase.kind === 'needs-you' || run.phase.kind === 'stalled' || run.phase.kind === 'queued'
     if (run.kind !== 'session' || !run.sessionPath || !live || ids.has(run.sessionId) || paths.has(run.sessionPath)) continue
     ids.add(run.sessionId)
     paths.add(run.sessionPath)
+    if (current?.sessionId === run.sessionId) unlistedMemory.set(run.sessionId, { name: current.name, cwd: current.cwd ?? '' })
+    const known = unlistedMemory.get(run.sessionId)
     pending.push({
       id: run.sessionId,
       path: run.sessionPath,
-      cwd: current?.sessionId === run.sessionId ? current.cwd ?? '' : '',
-      title: run.title || (current?.sessionId === run.sessionId ? current.name : ''),
+      cwd: known?.cwd ?? '',
+      title: run.title || known?.name || '',
       named: false,
       createdAt: run.startedAt,
       updatedAt: run.startedAt,
