@@ -51,20 +51,8 @@
     color: var(--fg);
   }
 
-  .mtp-head-level.uc-head {
-    color: var(--accent-t);
-  }
-
-  .mtp-head-level.uc-head::before {
-    background: var(--accent);
-  }
-
   .uc-kw {
     font-family: var(--font-mono);
     color: var(--fg2);
-  }
-
-  .uc-badge {
-    color: var(--accent-t);
   }
 }

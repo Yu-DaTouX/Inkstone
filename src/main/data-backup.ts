@@ -52,7 +52,7 @@ async function scan(sessions: string, yan: string): Promise<Source[]> {
   return files
 }
 
-function inside(parent: string, child: string): boolean {
+export function inside(parent: string, child: string): boolean {
   const rel = relative(parent, child)
   return !rel || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + sep))
 }

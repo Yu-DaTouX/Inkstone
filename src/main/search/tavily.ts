@@ -1,5 +1,5 @@
 import type { SourceRun } from './aggregate'
-import { callApi, parseJson } from './api-call'
+import { callApi, parseJson, withCallerAbort } from './api-call'
 import { resolveSearchKey } from './config'
 import type { SourceRequest } from './modifiers'
 
@@ -8,11 +8,6 @@ const ENDPOINT = 'https://api.tavily.com/search'
 interface TavilyBody {
   results?: Array<Record<string, unknown>>
   usage?: { credits?: number }
-}
-
-function withCallerAbort(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
-  if (!signal) return fetchImpl
-  return (input, init) => fetchImpl(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal })
 }
 
 export async function runTavilySearch(query: string, opts: SourceRequest, fetchImpl: typeof fetch = fetch): Promise<SourceRun> {

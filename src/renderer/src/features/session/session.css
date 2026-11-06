@@ -195,11 +195,10 @@
   .v3-think[data-live] > :is(.v3-step-head, .v3-think-head) { width: 100%; }
   .v3-think[data-live] > * > .ui-collapsible__trigger > .ui-collapsible__label { flex: 1 1 auto; }
   .v3-think[data-live] .v3-think-peek { flex: 1 1 0; }
-  .v3-process-more, .v3-steps-more { display: flex; width: fit-content; align-self: flex-start; }
+  .v3-process-more { display: flex; width: fit-content; align-self: flex-start; }
   .v3-steps-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: inherit; }
   .v3-steps-label [data-failed] { color: var(--fail-t); }
   .v3-steps-tally > span + span::before { content: '\00b7'; margin-inline: var(--s-6); }
-  .v3-steps-sum { width: fit-content; max-width: 100%; min-height: 0; gap: 2px; }
   .v3-step-group > .v3-step-head .v3-step-line { gap: 2px; }
 .v3-step-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
   .v3-step[data-state='denied'] > .v3-step-head :is(.v3-step-label, .v3-steps-label) { color: var(--fg3); }
@@ -264,7 +263,6 @@
   .v3-session { position: relative; container-type: inline-size; --rail-gutter: calc(var(--s-8) + 28px + var(--s-8)); }
   .v3-compaction { display: flex; align-items: center; gap: var(--s-6); margin: var(--s-8) 0; }
   .v3-compaction > * { flex: none; white-space: nowrap; }
-  .v3-compaction > .v3-compaction-error { flex: 1 1 0; }
   .v3-branchline { display: flex; align-items: center; gap: var(--s-6); margin: var(--s-4) 0 var(--s-8); }
 
   .v3-prose ul { list-style-type: disc; }

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { readAuthEntry, updateAuthFile } from './credentials'
 import { refreshCodexCredential, type CodexOAuthCredential } from './oauth'
+import { isCodexCredential } from './codex-token'
 import { chatGptIdentity, type ChatGptIdentity, type CodexAccountView } from '../shared/account-quota'
 
 const STORE_FILE = join(YAN_DIR, 'codex-accounts.json')
@@ -31,11 +32,6 @@ export interface CodexAccountTarget {
   active: boolean
   credential?: CodexOAuthCredential
   problem?: 'expired' | string
-}
-
-function isCodexCredential(v: unknown): v is CodexOAuthCredential {
-  const c = v as Partial<CodexOAuthCredential> | null
-  return !!c && c.type === 'oauth' && typeof c.access === 'string' && typeof c.refresh === 'string' && typeof c.accountId === 'string'
 }
 
 function identityOf(credential: CodexOAuthCredential): ChatGptIdentity {

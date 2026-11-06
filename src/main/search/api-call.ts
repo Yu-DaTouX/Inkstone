@@ -47,3 +47,8 @@ export function parseJson<T>(text: string): T | null {
     return null
   }
 }
+
+export function withCallerAbort(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
+  if (!signal) return fetchImpl
+  return (input, init) => fetchImpl(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal })
+}

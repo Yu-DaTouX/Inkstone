@@ -12,7 +12,7 @@ import { disposeContentSearch } from './file-content-search'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { release as osRelease } from 'node:os'
 import { constants as fsConstants, appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { access, appendFile, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { loadModelPricing } from './model-pricing'
@@ -139,6 +139,7 @@ import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { smoothTextEnabledSync } from './early-switches'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
+import { armProbeRun, armProbeShots } from './probe-hooks'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
@@ -3370,38 +3371,7 @@ function createWindow(): void {
       })
     }, 1200)
 
-    const shotPath = process.env.YAN_PROBE_SHOT
-    if (process.env.YAN_PROBE && shotPath) {
-      const parsedShotDelay = Number(process.env.YAN_PROBE_SHOT_DELAY ?? 20_000)
-      const shotDelay = Number.isFinite(parsedShotDelay) && parsedShotDelay >= 0 ? parsedShotDelay : 20_000
-      const shotLog = (m: string): void => {
-        void appendFile(`${shotPath}.log`, `${new Date().toISOString()} ${m}\n`).catch(() => {})
-      }
-      shotLog(`armed delay=${shotDelay} path=${shotPath}`)
-      let shotIndex = 0
-      const shoot = (): void => {
-        if (!win || win.isDestroyed()) return
-        if (!win.isVisible()) win.showInactive()
-        const target = shotPath.replace(/\.png$/i, `-${++shotIndex}.png`)
-        void win.webContents
-          .capturePage()
-          .then((img) => writeFile(target, img.toPNG()))
-          .then(() => shotLog(`saved ${target}`))
-          .catch((e) => shotLog(`failed: ${e?.message ?? String(e)}`))
-      }
-      setTimeout(() => {
-        shotLog('burst start')
-        shoot()
-        const timer = setInterval(() => {
-          if (!win || win.isDestroyed()) {
-            clearInterval(timer)
-            shotLog('burst stop')
-            return
-          }
-          shoot()
-        }, Number(process.env.YAN_PROBE_SHOT_INTERVAL ?? 2000))
-      }, shotDelay)
-    }
+    if (win) armProbeShots(win)
   })
 
   win.on('maximize', () => pushWinState())
@@ -3509,108 +3479,7 @@ function createWindow(): void {
     void win.loadFile(join(__dirname_, '../renderer/index.html'))
   }
 
-  const probeFile = process.env.YAN_PROBE
-  if (probeFile) {
-    const delay = Number(process.env.YAN_PROBE_DELAY ?? 9000)
-    win.once('ready-to-show', () => {
-      setTimeout(() => {
-        void (async () => {
-          try {
-            const { readFile, writeFile } = await import('node:fs/promises')
-            const src = await readFile(probeFile, 'utf8')
-            const helper = await readFile(join(dirname(probeFile), 'workspace-helper.js'), 'utf8').catch(() => '')
-            if (helper) await win!.webContents.executeJavaScript(helper)
-            const mouse = process.env.YAN_PROBE_MOUSE
-            if (mouse) {
-              const [mx, my] = mouse.split(',').map(Number)
-              win!.webContents.sendInputEvent({ type: 'mouseMove', x: mx, y: my })
-              await new Promise((r) => setTimeout(r, 700))
-            }
-
-            const keys = process.env.YAN_PROBE_KEYS
-            let keyTask: Promise<void> | null = null
-            if (keys) {
-              keyTask = (async () => {
-                const delay = Number(process.env.YAN_PROBE_KEYS_DELAY) || 1800
-                await new Promise((r) => setTimeout(r, delay))
-                for (const combo of keys.split(',').map((s) => s.trim()).filter(Boolean)) {
-                  const parts = combo.toLowerCase().split('+')
-                  const key = parts.pop() ?? ''
-                  const mods = new Set(parts)
-
-                  const keyCode =
-                    key === 'tab' ? 'Tab' : key.length === 1 ? key.toUpperCase() : key
-                  const modifiers: Electron.InputEvent['modifiers'] = []
-                  if (mods.has('ctrl')) modifiers.push('control')
-                  if (mods.has('shift')) modifiers.push('shift')
-                  if (mods.has('alt')) modifiers.push('alt')
-                  if (mods.has('meta')) modifiers.push('meta')
-
-                  win!.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
-                  win!.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
-                  await new Promise((r) => setTimeout(r, 1600))
-                }
-              })()
-            }
-
-            const result = await win!.webContents.executeJavaScript(src, true)
-            if (keyTask) await keyTask.catch(() => undefined)
-            const body = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
-            console.log('---PROBE-START---')
-            console.log(body)
-            console.log('---PROBE-END---')
-            if (process.env.YAN_PROBE_OUT) {
-              await writeFile(
-                process.env.YAN_PROBE_OUT,
-                `${body}\n`,
-                'utf8'
-              ).catch(() => undefined)
-            }
-          } catch (e) {
-            console.error('[probe] 失败', e)
-            if (process.env.YAN_PROBE_DEBUG_PORT || process.env.YAN_PROBE_KEEP) return
-          }
-          await shutdown()
-          app.exit(0)
-        })()
-      }, delay)
-    })
-  }
-
-  const shot = process.env.YAN_SHOT
-  if (shot) {
-    const delay = Number(process.env.YAN_SHOT_DELAY ?? 6000)
-    const shotW = Number(process.env.YAN_SHOT_W ?? 0)
-    const shotH = Number(process.env.YAN_SHOT_H ?? 0)
-    if (shotW && shotH) win.setContentSize(shotW, shotH)
-    win.once('ready-to-show', () => {
-      setTimeout(() => {
-        void (async () => {
-          try {
-            const setup = process.env.YAN_SHOT_SETUP
-            if (setup) {
-              const { readFile } = await import('node:fs/promises')
-              const src = await readFile(setup, 'utf8')
-              await win!.webContents.executeJavaScript(src, true)
-              await new Promise((r) => setTimeout(r, 2500))
-            }
-
-            const img = await win!.webContents.capturePage()
-            const { writeFile, mkdir } = await import('node:fs/promises')
-            const { dirname, resolve } = await import('node:path')
-            const out = resolve(shot)
-            await mkdir(dirname(out), { recursive: true })
-            await writeFile(out, img.toPNG())
-            console.log(`[shot] ${out}`)
-          } catch (e) {
-            console.error('[shot] 失败', e)
-          }
-          await shutdown()
-          app.exit(0)
-        })()
-      }, delay)
-    })
-  }
+  armProbeRun(win, shutdown)
 }
 
 const sessionHost: SessionHost = {
@@ -3839,27 +3708,13 @@ app.whenReady().then(async () => {
     migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error)),
     restorePreviousSession()
   ])
-  const [started] = await Promise.all([
+  await Promise.all([
     startAgent(restore ? { sessionFile: restore.sessionFile } : undefined),
     startRemoteServer()
   ])
 
   const initialControl = decodeControlCommand(process.argv)
   if (initialControl) void dispatchControlCommand(initialControl)
-
-  const prompt = process.env.YAN_PROMPT
-  if (prompt && started.ok) {
-    let fired = false
-    const fire = (): void => {
-      if (fired) return
-      fired = true
-      void ac()?.send(prompt).then((r) => {
-        if (!r.ok) console.error('[yan] 自动发送失败：', r.error)
-      })
-    }
-    win?.webContents.once('did-finish-load', () => setTimeout(fire, 600))
-    setTimeout(fire, 3000)
-  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

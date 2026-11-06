@@ -77,6 +77,7 @@ import {
   migrateSessionRuntime,
   pruneSessionRuntimes,
   reduceSessionRuntime,
+  patchArtifact,
   seedRuntimeHistory,
   sessionRuntimeKey,
   updateSessionRuntime,
@@ -531,16 +532,6 @@ async function sessionActionTarget(get: () => Store) {
   const expected = expectedRuntimeFor(get(), composerSubmitIdentity(get()))
   if (!expected || expected.generation === undefined) return null
   return { expected, current }
-}
-
-function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
-  const index = list.findIndex((message) => message.id === messageId)
-  if (index < 0) return list
-  const current = list[index]
-  if (current.artifacts?.some((item) => item.id === artifact.id)) return list
-  const out = list.slice()
-  out[index] = { ...current, artifacts: [...(current.artifacts ?? []), artifact] }
-  return out
 }
 
 export function widgetsByPlacement(

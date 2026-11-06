@@ -168,10 +168,6 @@
   .v3-sessionbar .wb-tile[data-folded='1'] {
     padding-bottom: var(--s-8);
   }
-  .v3-head-toggles {
-    display: flex;
-    align-items: center;
-  }
 
   .v3-chat {
     position: relative;
@@ -399,46 +395,6 @@
 
   .v3-head-sep--win.ui-separator[aria-orientation='vertical'] {
     margin: 0 0 0 var(--s-12);
-  }
-
-  .v3-head-pane-dot {
-    position: absolute;
-    top: -1px;
-    right: -1px;
-    width: var(--s-6);
-    height: var(--s-6);
-    border-radius: var(--r-full);
-    corner-shape: round;
-    background: var(--accent);
-    pointer-events: none;
-  }
-
-  .v3-head-pane-dot[data-tone='terminal'] {
-    background: var(--run);
-    animation: v3-head-dot-breathe var(--dur-breathe) var(--ease) infinite;
-  }
-
-  @keyframes v3-head-dot-breathe {
-    50% {
-      opacity: 0.45;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .v3-head-pane-dot[data-tone='terminal'] {
-      animation: none;
-    }
-  }
-
-  .v3-head-more .v3-head-pane-dot {
-    top: calc(50% - var(--s-10));
-    left: calc(50% + var(--s-4));
-    right: auto;
-  }
-
-  .v3-head-check {
-    display: inline-flex;
-    width: 14px;
   }
 
   .v3-win {

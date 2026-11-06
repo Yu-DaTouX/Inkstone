@@ -14,13 +14,14 @@ import { PendingRunNotice } from './RunNotice'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
 import { HomeBackdrop } from '../ambient/HomeBackdrop'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
-import { Button, Skeleton } from '../../ui'
+import { Button } from '../../ui'
 import { motionAllowed } from '../../ui/motion-hooks'
 import { ChevronDown } from 'lucide-react'
 import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { useSessionViewSource, type SessionPaneBinding } from './session-view-source'
 import { TurnScopeContext } from './turn-scope'
 import { V3EmptyState } from './V3EmptyState'
+import { PeerEmpty, SwitchSkeleton } from './SessionPlaceholders'
 import { RewindDialogV3 } from './RewindDialogV3'
 import {
   buildBranchPagerMap,
@@ -86,30 +87,6 @@ function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>): R
   const item = items[index]
   if (!item) return null
   return { turnId: item.id, offset: Math.max(0, handle.scrollOffset - handle.getItemOffset(index)) }
-}
-
-function SwitchSkeleton({ label }: { label: string }): JSX.Element {
-  return (
-    <div className="v3-switch-skeleton" role="status" aria-label={label} data-testid="v3-switch-skeleton">
-      {[0, 1].map((round) => (
-        <div key={round} className="v3-switch-skeleton__round">
-          <Skeleton shape="rect" className="v3-switch-skeleton__ask" width="38%" height="var(--s-32)" />
-          <Skeleton width="92%" />
-          <Skeleton width="84%" />
-          <Skeleton width="56%" />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function PeerEmpty({ running }: { running: boolean }): JSX.Element {
-  const t = useT()
-  return (
-    <div className="v3-empty">
-      <p className="v3-empty-hint">{running ? t('chat.working') : ''}</p>
-    </div>
-  )
 }
 
 const SKELETON_DELAY_MS = 180

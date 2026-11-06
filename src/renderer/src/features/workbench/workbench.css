@@ -44,14 +44,6 @@
     background: var(--sunken);
     box-shadow: var(--ring-line2);
   }
-
-  .wb-ctx-total.ask {
-    color: var(--ask-t);
-  }
-
-  .wb-ctx-total.fail {
-    color: var(--fail-t);
-  }
 }
 
 @layer features {
@@ -72,22 +64,10 @@
     min-width: 0;
   }
 
-  .wb-ctx-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--s-8);
-  }
-
   .wb-ctx-subtitle {
     margin: 0;
     font-size: var(--t-footnote);
     font-weight: 600;
-    color: var(--fg2);
-  }
-
-  .wb-ctx-total {
-    font-size: var(--t-footnote);
     color: var(--fg2);
   }
 
@@ -406,12 +386,6 @@
 
   .wb-ctx-rows li > :first-child {
     flex: none;
-  }
-
-  .wb-ctx-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-8);
   }
 
   .wb-ctx-more,
@@ -1003,13 +977,6 @@
     color: var(--fg2);
   }
 
-  .wb-ov-line {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .wb-ov-ctx,
   .wb-ov-quota {
     display: flex;
@@ -1131,10 +1098,6 @@
     gap: var(--s-2);
     min-width: 0;
     height: var(--d-row);
-  }
-
-  .wb-bg-static {
-    flex: 1;
   }
 
   .wb-bg-detail {

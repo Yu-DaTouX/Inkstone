@@ -10,14 +10,6 @@
     gap: var(--s-4);
   }
 
-  .v3-wrapup-question {
-    margin: 0;
-    min-width: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    text-wrap: pretty;
-  }
-
   .v3-wrapup-recap {
     min-width: 0;
     color: var(--fg);
@@ -32,40 +24,6 @@
 
   .v3-wrapup-recap > * + * {
     margin-top: var(--s-6);
-  }
-
-  .v3-wrapup-list {
-    margin: 0;
-    padding-left: var(--s-20);
-  }
-
-  .v3-wrapup-notes {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-4);
-    margin: var(--s-8) 0 0;
-    padding: 0;
-    list-style: none;
-    color: var(--fg2);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-  }
-
-  .v3-wrapup-notes > li {
-    display: flex;
-    gap: var(--s-6);
-    min-width: 0;
-  }
-
-  .v3-wrapup-note-label {
-    flex: none;
-    color: var(--fg);
-    font-weight: var(--w-medium);
-  }
-
-  .v3-wrapup-note-text {
-    min-width: 0;
-    overflow-wrap: anywhere;
   }
 
   .v3-wrapup-actions > .ui-card__actions-main > * {

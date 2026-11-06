@@ -43,10 +43,6 @@
     height: 100%;
   }
 
-  .v3-session-ghost-clone .v3-srow-more {
-    display: none;
-  }
-
   .v3-session-ghost-label {
     position: absolute;
     inset: 0;

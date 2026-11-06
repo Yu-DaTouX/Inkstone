@@ -81,7 +81,7 @@ export function sandboxEnv(box, { fake = false, cdpPort, probe } = {}) {
     YAN_DOWNLOADS_DIR: box.downloads,
     ...(process.env.YAN_DEBUG_REAL_DEVICES === '1' ? {} : { ANDROID_HOME: box.androidSdk, ANDROID_SDK_ROOT: box.androidSdk }),
     ...(fake ? { YAN_TEST_MODEL: 'fake/fake-model' } : {}),
-    ...(probe ? { YAN_PROBE: probe, YAN_PROBE_DELAY: '500', YAN_PROBE_KEEP: '1' } : {}),
+    ...(probe ? { YAN_PROBE: probe, YAN_PROBE_DELAY: '500' } : {}),
     ...(probe && cdpPort ? { YAN_PROBE_DEBUG_PORT: String(cdpPort) } : {})
   }
 }

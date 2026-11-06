@@ -1,5 +1,5 @@
 import type { SourceRun } from './aggregate'
-import { callApi, parseJson, type ApiResult } from './api-call'
+import { callApi, parseJson, withCallerAbort, type ApiResult } from './api-call'
 import { isoDay, recencySince, queryOperators, withOperators, type SourceRequest } from './modifiers'
 import { normalizeReadUrl, READ_PAGE_MAX_CHARS_DEFAULT, READ_PAGE_MAX_CHARS_MAX, ReadPageError, type ReadPageResult } from './page-types'
 import { resolveQuotaProviderSecret } from '../quota-credentials'
@@ -83,11 +83,6 @@ export async function fundedDeepseekReadPage(rawUrl: string, opts: { maxChars?: 
 }
 
 const rerankOf = (row: Record<string, unknown>): number => (typeof row.rerank_score === 'number' && Number.isFinite(row.rerank_score) ? row.rerank_score : -1)
-
-function withCallerAbort(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
-  if (!signal) return fetchImpl
-  return (input, init) => fetchImpl(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal })
-}
 
 export function deepseekSearchBody(query: string, opts: SourceRequest, now = Date.now()): Record<string, unknown> {
   const operators = [...queryOperators(opts), opts.recent && !opts.after ? `after:${isoDay(recencySince(opts.recent, now))}` : '']
