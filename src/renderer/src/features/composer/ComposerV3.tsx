@@ -403,13 +403,13 @@ export function ComposerV3(): JSX.Element {
     suggestion: suggestionStatus,
     dismissed: dismissedSuggestion,
     enabled: suggestionsEnabled,
-    running: roundRunning,
+    running: roundRunning || submitAdapter.isSendBusy,
     answering: answering !== null,
     value,
     attachmentCount: attachments.count,
     composing
   })
-  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
+  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning || submitAdapter.isSendBusy ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
   const slashMode =
     completion.slashQuery !== null &&
     (completion.slashMatches.length > 0 || (completion.atQuery === null && completion.slashStatus !== 'idle'))
