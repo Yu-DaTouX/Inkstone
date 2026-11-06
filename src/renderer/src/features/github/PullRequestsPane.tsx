@@ -190,19 +190,39 @@ function FilterPanel({ cwd, viewer, filters, onChange, text }: FilterPanelProps)
   )
 }
 
+const statusMemory = new Map<string, GithubStatus>()
+const listMemory = new Map<string, { rows: PrRow[]; hasMore: boolean }>()
+const MEMORY_MAX = 12
+const EARLY_LIST_FRESH_MS = 15_000
+
+type GithubBridge = NonNullable<Window['yan']['github']>
+type ListResult = ReturnType<GithubBridge['list']>
+
+const earlyLists = new Map<string, { at: number; result: ListResult }>()
+
+function remember<T>(map: Map<string, T>, key: string, value: T): void {
+  map.delete(key)
+  map.set(key, value)
+  while (map.size > MEMORY_MAX) {
+    const oldest = map.keys().next().value
+    if (oldest === undefined) break
+    map.delete(oldest)
+  }
+}
+
 export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement {
   const t = useT()
   const { lang } = useI18n()
   const actText = prActionText(lang).list
   const cwd = owner.cwd
-  const [status, setStatus] = useState<GithubStatus | null>(null)
-  const [statusLoading, setStatusLoading] = useState(true)
+  const [status, setStatus] = useState<GithubStatus | null>(() => statusMemory.get(cwd) ?? null)
+  const [statusLoading, setStatusLoading] = useState(() => !statusMemory.has(cwd))
   const [reloadToken, setReloadToken] = useState(0)
   const [filters, setFilters] = useState<PrListFilters>(DEFAULT_LIST_FILTERS)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [query, setQuery] = useState('')
-  const [rows, setRows] = useState<PrRow[]>([])
+  const [rows, setRows] = useState<PrRow[]>(() => listMemory.get(`${cwd}|${JSON.stringify(buildListOptions(DEFAULT_LIST_FILTERS, 1))}`)?.rows ?? [])
   const [listLoading, setListLoading] = useState(false)
   const [listError, setListError] = useState('')
 
@@ -212,8 +232,9 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
 
   useEffect(() => {
     let alive = true
-    setStatusLoading(true)
-    setStatus(null)
+    const known = statusMemory.get(cwd) ?? null
+    setStatusLoading(!known)
+    setStatus(known)
     const github = window.yan?.github
     if (!github) {
       setStatus({ installed: false, authed: false, repo: null, error: t('github.pr.bridgeMissing') })
@@ -222,9 +243,15 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
         alive = false
       }
     }
+    const earlyKey = `${cwd}|${JSON.stringify(buildListOptions(DEFAULT_LIST_FILTERS, 1))}`
+    const early = github.list(cwd, buildListOptions(DEFAULT_LIST_FILTERS, 1))
+    early.catch(() => undefined)
+    earlyLists.set(earlyKey, { at: Date.now(), result: early })
     void (async () => {
       try {
         const next = await github.status(cwd)
+        if (next.repo) remember(statusMemory, cwd, next)
+        else statusMemory.delete(cwd)
         if (alive) setStatus(next)
       } catch (cause) {
         if (alive) {
@@ -250,9 +277,19 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
     setListLoading(true)
     const github = window.yan?.github
     if (!github) return undefined
+    const options = buildListOptions(filters, page)
+    const listKey = `${cwd}|${JSON.stringify(options)}`
+    const known = listMemory.get(listKey)
+    if (known) {
+      setRows(known.rows)
+      setHasMore(known.hasMore)
+    }
     void (async () => {
       try {
-        const res = await github.list(cwd, buildListOptions(filters, page))
+        const earlyHit = earlyLists.get(listKey)
+        earlyLists.delete(listKey)
+        const res = await (earlyHit && Date.now() - earlyHit.at < EARLY_LIST_FRESH_MS ? earlyHit.result : github.list(cwd, options))
+        if (res.ok) remember(listMemory, listKey, { rows: res.items.map(normalizePrRow), hasMore: res.hasMore === true })
         if (!alive) return
         if (!res.ok) {
           setListError(res.failure?.message || res.error || '')
