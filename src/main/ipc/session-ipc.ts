@@ -336,9 +336,11 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     const sweep = async (): Promise<void> => {
       try {
         const settings = await getSettings()
+        const days = effectiveAutoArchiveDays(settings)
+        if (!days) return
         await runAutoArchiveSweep({
           sessions: await filterChainRepresentatives(await listSessions(Number.MAX_SAFE_INTEGER, settings.projects)),
-          days: effectiveAutoArchiveDays(settings),
+          days,
           busyFiles: (host.runners()?.statuses() ?? []).map((runner) => runner.sessionFile),
           archive: (ids) => archiveSessionsBatch(ids)
         })
