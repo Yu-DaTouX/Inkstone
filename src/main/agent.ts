@@ -588,6 +588,8 @@ export class AgentController extends EventEmitter {
     toolOpen?: boolean
   } | null = null
   private agentRunning = false
+  private liveItemEdits = 0
+  private hydrateDeferred: { sessionId?: string; sessionFile?: string } | null = null
   private pendingAborts = 0
   private streamLoopDetector: StreamLoopDetector | null = null
   private loopGuardTripped = false
@@ -1105,6 +1107,12 @@ export class AgentController extends EventEmitter {
   private async hydrate(expected?: { sessionId?: string; sessionFile?: string }): Promise<void> {
     const syncedBefore = this.messages
     const scopeBefore = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
+    const editsBefore = this.liveItemEdits
+    const supersededByLive = (): boolean => {
+      if (!this.agentRunning || this.liveItemEdits === editsBefore) return false
+      this.hydrateDeferred = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
+      return true
+    }
     const outsideExpected = (): boolean => !!expected && (this.state?.sessionId !== expected.sessionId || this.state?.sessionFile !== expected.sessionFile)
     if (outsideExpected()) return
     const state = await this.requireRpc().command('get_state').catch(() => null)
@@ -1120,6 +1128,7 @@ export class AgentController extends EventEmitter {
     const fromFile = sessionFile ? await this.readHistoryOf(sessionFile) : null
     let presentationReady = false
     if (!this.nativeBranchView && outsideExpected()) return
+    if (supersededByLive()) return
     if (this.nativeBranchView) {
       const snapshot = await this.sessionEntries()
       if (outsideExpected()) return
@@ -1150,7 +1159,7 @@ export class AgentController extends EventEmitter {
     if (sessionFile && !presentationReady) {
       const hydrated = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
         .hydrateMessages(sessionFile, this.messages)
-      if (outsideExpected()) return
+      if (outsideExpected() || supersededByLive()) return
       this.messages = hydrated
     }
 
@@ -2339,6 +2348,7 @@ export class AgentController extends EventEmitter {
 
   private handleEvent(evt: Record<string, unknown>): void {
     const type = String(evt.type ?? '')
+    if (type.startsWith('message_') || type.startsWith('tool_execution_')) this.liveItemEdits += 1
     this.emitRunSignals(evt, type)
 
     switch (type) {
@@ -2609,7 +2619,10 @@ export class AgentController extends EventEmitter {
         this.turn.startedMono = undefined
         this.pendingRequestMono = undefined
         this.timingContinues = false
-        void this.persistTurnTiming()
+        const deferredHydrate = this.hydrateDeferred
+        this.hydrateDeferred = null
+        const persisted = this.persistTurnTiming()
+        if (deferredHydrate) void persisted.catch(() => undefined).then(() => this.hydrate(deferredHydrate)).catch(() => undefined)
         this.syncDeferredModelSwitch()
         void this.refreshState()
         void this.refreshStats()
