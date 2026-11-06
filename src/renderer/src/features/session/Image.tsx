@@ -137,6 +137,8 @@ function rememberImageSize(src: string, width: number, height: number): void {
   if (imageSizes.size > IMAGE_SIZE_LIMIT) imageSizes.delete(imageSizes.keys().next().value as string)
 }
 
+const failedImages = new Set<string>()
+
 export function MessageImage({
   src,
   alt,
@@ -153,7 +155,7 @@ export function MessageImage({
   const imageRef = useRef<HTMLImageElement | null>(null)
   const [viewerOpen, setViewerOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState(() => failedImages.has(src))
   const open = (): void => setViewerOpen(true)
   const knownSize = imageSizes.get(imageSizeKey(src))
 
@@ -222,10 +224,11 @@ export function MessageImage({
         style={knownSize ? ({ '--img-ratio': `${knownSize.width} / ${knownSize.height}`, '--img-w': `${knownSize.width}px` } as CSSProperties) : undefined}
         onLoad={(event) => {
           rememberImageSize(src, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+          failedImages.delete(src)
           setFailed(false)
           setLoaded(true)
         }}
-        onError={() => setFailed(true)}
+        onError={() => { failedImages.add(src); setFailed(true) }}
         title={t('chat.imageOpen')}
         onClick={open}
         onContextMenu={onContextMenu}
