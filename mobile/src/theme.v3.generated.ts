@@ -23,7 +23,7 @@ export const v3Light = {
   "codeInlineBg": "rgba(11,11,11,.055)",
   "fg": "#20211F",
   "fg2": "#555750",
-  "fg3": "#6B6A64",
+  "fg3": "#615F5A",
   "fgCtl": "#555750",
   "line": "rgba(11,11,11,.1)",
   "line2": "rgba(11,11,11,.2)",
