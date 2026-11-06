@@ -98,6 +98,8 @@ export const FAKE_TRIGGERS = {
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
   MOBILEDEMO: '先用 read 读一张仓库里的 PNG，再发一个多字段表单提问，最后流出带长行代码块的答复，用来看手机端看图、表单与代码',
+  BROWSERLOOP: '用 yan browser 连续导航（BROWSERURL1=<地址> BROWSERURL2=<地址> 轮流，BROWSERSTEPS<n> 步，默认 8），中间夹慢命令，用来看标签按会话归属与 agent 一轮内保持焦点',
+  DEVSERVER: '在会话终端里起一个本地 http 服务（DEVSCRIPT=<脚本路径> DEVPORT=<端口>），再用 yan browser open 打开它，用来看本地服务发现与停止',
   TERMINAL: '用 yan terminal run 在会话终端里跑一条快命令、一条慢命令，再 list 一次，看终端面板自动打开与 agent 提示（含 DANGER 时改为一条要审批的删除注册表命令）',
   FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
@@ -254,6 +256,24 @@ async function respond(res, text, done, requestNo) {
     } else if (text.includes('APPROVAL')) {
       if (done < 1) await callTool('bash', { command: 'reg delete "HKCU\\Software\\InkstoneApprovalTest" /f', description: 'approval probe' })
       else await streamText('审批测试结束。', 20, 10)
+    } else if (text.includes('BROWSERLOOP')) {
+      const urls = [/BROWSERURL1=(\S+)/.exec(text)?.[1], /BROWSERURL2=(\S+)/.exec(text)?.[1]].filter(Boolean)
+      const steps = Number(/BROWSERSTEPS(\d+)/.exec(text)?.[1] ?? 8)
+      if (done < steps && urls.length) {
+        await streamText(`导航第 ${done + 1} 步。`, 20, 0)
+        await callTool('bash', { command: `yan browser navigate --url ${urls[done % urls.length]}`, description: '导航' })
+      } else await streamText('导航结束。', 20, 10)
+    } else if (text.includes('DEVSERVER')) {
+      const script = /DEVSCRIPT=(\S+)/.exec(text)?.[1]
+      const port = /DEVPORT=(\d+)/.exec(text)?.[1]
+      const steps = [
+        { command: `yan terminal run --command 'node ${script} ${port}' --quiet 3`, description: '在终端里起本地服务' },
+        { command: `yan browser open --url http://127.0.0.1:${port}/`, description: '在内置浏览器打开' }
+      ]
+      if (done < steps.length && script && port) {
+        await streamText(`服务第 ${done + 1} 步。`, 20, 0)
+        await callTool('bash', steps[done])
+      } else await streamText('服务已起。', 20, 10)
     } else if (text.includes('TERMINAL')) {
       const steps = text.includes('DANGER')
         ? [{ command: `yan terminal run --command 'reg delete "HKCU\\Software\\InkstoneTerminalApproval" /f'`, description: '终端里删除注册表项' }]
