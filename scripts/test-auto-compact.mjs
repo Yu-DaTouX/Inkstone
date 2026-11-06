@@ -51,6 +51,8 @@ export async function runAutoCompactTests(ok, mod, limits) {
       ok(run(piDir) === 1, '自动压缩：其他项目不受影响')
       writeFileSync(join(piDir, 'trust.json'), JSON.stringify({ [project]: false }))
       ok(run(project) === 1, '自动压缩：明确不信任的项目按全局设置')
+      writeFileSync(join(piDir, 'trust.json'), JSON.stringify({ [project]: 'yes', [piDir]: true }))
+      ok(run(project) === 0, '自动压缩：信任记录不是布尔值时跳过，继续看上级目录（与 pi 一致）')
     }
 
     {

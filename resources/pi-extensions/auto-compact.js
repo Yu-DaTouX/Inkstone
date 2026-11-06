@@ -30,7 +30,7 @@ function projectTrusted(trustRaw, cwd) {
   let cur = norm(cwd)
   for (;;) {
     for (const [key, value] of Object.entries(trustRaw)) {
-      if (norm(key) === cur) return value === true
+      if (norm(key) === cur && typeof value === 'boolean') return value
     }
     const idx = cur.lastIndexOf('/')
     if (idx <= 0) return false

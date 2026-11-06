@@ -108,6 +108,38 @@ try {
   await sleep(200)
   check(busySent.length === 1, '空闲后重投')
 
+
+  const giveUpStates = []
+  const failing = createSubagentNotifier({
+    enabled: () => true, runningSiblings: () => 0,
+    find: () => ({ send: async () => ({ ok: false, error: '拒收' }) }),
+    store: { load: () => ({ 'sess-9': [finished('sub-ffff0001', { parentSessionId: 'sess-9', endedAt: 999 })] }), save: (state) => giveUpStates.push(structuredClone(state)) }
+  })
+  for (let i = 0; i < 6; i++) {
+    failing.retry()
+    await sleep(120)
+  }
+  check(giveUpStates.length > 0 && giveUpStates.at(-1)['sess-9'] === undefined, '连续投递失败放弃后，落盘记录同步清掉，重启不再冒出幽灵通知')
+
+  const staleSent = []
+  const gate = { release: undefined }
+  const slowTarget = { send: async (text) => { await new Promise((resolve) => { gate.release = resolve }); staleSent.push(text); return { ok: true } } }
+  const fastTarget = { send: async (text) => { staleSent.push(text); return { ok: true } } }
+  const stateOf = { k1: [finished('sub-gggg0001', { parentSessionId: 'k1', endedAt: 1001 })], k2: [finished('sub-gggg0002', { parentSessionId: 'k2', endedAt: 1002 })] }
+  const dup = createSubagentNotifier({
+    enabled: () => true, runningSiblings: () => 0,
+    find: (run) => (run.parentSessionId === 'k1' ? slowTarget : fastTarget),
+    store: { load: () => structuredClone(stateOf), save: () => {} }
+  })
+  dup.retry()
+  await sleep(100)
+  dup(finished('sub-gggg0003', { parentSessionId: 'k2', endedAt: 1003 }))
+  await sleep(NOTICE_COALESCE_WINDOW_MS + 600)
+  gate.release?.()
+  await sleep(300)
+  const mentions = staleSent.filter((text) => text.includes('sub-gggg0002')).length
+  check(mentions === 1, `retry 的旧快照不会让同一条通知重复投递（实际 ${mentions} 次）`)
+
   console.log(`Subagent notice persistence: ${checks} passed`)
 } finally {
   await rm(work, { recursive: true, force: true })

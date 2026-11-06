@@ -20,6 +20,8 @@ assert.ok(mod.serializeMessage({ role: 'toolResult', toolName: 'bash', toolCallI
 assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'cat secret.env', output: 'TOKEN=abc', excludeFromContext: true }, 8), '', '用户排除出上下文的终端输出不进压缩摘要')
 assert.ok(mod.serializeMessage({ role: 'assistant', content: [{ type: 'text', text: '查到了' }], yanWebSearch: { queries: ['inkstone'], results: [{ url: 'https://a.example/x' }], cited: [{ url: 'https://a.example/x' }], opened: ['https://b.example'] } }, 9).includes('[Assistant web search]: queries="inkstone"; sources=https://a.example/x; opened=https://b.example'), '原生搜索记录进入压缩摘要')
 assert.equal(mod.serializeMessage({ role: 'custom', display: false, content: 'hidden but sent to model' }, 10), '[Note]: hidden but sent to model', 'display:false 的自定义消息仍发给模型，也进摘要')
+assert.equal(mod.serializeMessage({ role: 'custom', customType: 'yan-ultracode', display: false, content: '<system-reminder>mode</system-reminder>' }, 11), '', 'Ultracode 模式提醒是状态标记，不进摘要，免得压缩后变成长期指令')
+assert.equal(mod.serializeMessage({ role: 'custom', customType: 'yan-ultracode-gate', display: false, content: '<system-reminder>gate</system-reminder>' }, 12), '', 'Ultracode 复核提醒同理')
 assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'npm test', output: 'ok' }, 9), '[User ran]: npm test\nok', '普通终端输出照常进入摘要')
 
 {
@@ -429,8 +431,9 @@ for (const [label, opts, expected] of [
   const mid = mod.appendixBudgets({ window: 128_000, summaryTokens: 8_000, keptTokens: 20_000 })
   assert.deepEqual([mid.userTokens, mid.fileTokens], [20_000, 30_000], '128k 窗口仍放得下')
   const small = mod.appendixBudgets({ window: 48_000, summaryTokens: 6_000, keptTokens: 20_000 })
-  assert.ok(small.userTokens + small.fileTokens <= small.room, '小窗口附加内容总和不超过剩余空间')
-  assert.ok(small.userTokens + small.fileTokens < 50_000)
+  assert.deepEqual([small.userTokens, small.fileTokens], [4_000, 0], '小窗口优先保住用户原话，补回文件让位')
+  const edge = mod.appendixBudgets({ window: 64_000, summaryTokens: 6_000, keptTokens: 20_000 })
+  assert.ok(edge.userTokens + edge.fileTokens + 6_000 + 20_000 + 12_000 <= 64_000 * 0.9, '64k 窗口压完仍在 90% 以内')
   const tiny = mod.appendixBudgets({ window: 32_000, summaryTokens: 6_000, keptTokens: 20_000 })
   assert.deepEqual([tiny.room, tiny.userTokens, tiny.fileTokens], [0, 0, 0], '窗口装不下时不追加任何附加内容')
 

@@ -87,6 +87,31 @@ try {
   }
 
   {
+    const repo = await newRepo('repo-mixed')
+    await writeFile(join(repo, 'gone.txt'), 'to delete\n')
+    await writeFile(join(repo, 'crlf.txt'), 'a\r\nb\r\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'more')
+    const crashed = make(repo)
+    const started = await crashed.start('混合改动', undefined, 'worktree')
+    const worktree = started.run.cwd
+    await rm(join(worktree, 'gone.txt'))
+    await writeFile(join(worktree, 'crlf.txt'), 'a\r\nb\r\nc\r\n')
+    await writeFile(join(worktree, 'bin.dat'), Buffer.from([0, 1, 2, 255, 254, 0, 7]))
+    await mkdir(join(worktree, 'deep', 'dir'), { recursive: true })
+    await writeFile(join(worktree, 'deep', 'dir', 'x 空格.txt'), 'nested\n')
+    const restarted = make(repo)
+    await restarted.loadHistory()
+    const run = restarted.get(started.run.id)
+    ok(run.review === 'archived' && run.diff?.files === 4, '混合改动：删除、CRLF、二进制、带空格的嵌套新文件都进补丁')
+    const merged = await restarted.merge(started.run.id)
+    ok(merged.ok, `混合改动：合并成功 ${merged.error ?? ''}`)
+    ok(!existsSync(join(repo, 'gone.txt')) && existsSync(join(repo, 'bin.dat')) && (await readFile(join(repo, 'bin.dat'))).length === 7, '混合改动：删除与二进制按原样合并')
+    ok((await readFile(join(repo, 'crlf.txt'), 'utf8')) === 'a\r\nb\r\nc\r\n', '混合改动：CRLF 保持')
+    ok(existsSync(join(repo, 'deep', 'dir', 'x 空格.txt')), '混合改动：嵌套新文件合并')
+  }
+
+  {
     const repo = await newRepo('repo-discard')
     const crashed = make(repo)
     const started = await crashed.start('只读文件', undefined, 'worktree')
