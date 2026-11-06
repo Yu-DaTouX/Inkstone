@@ -104,6 +104,14 @@ export default async function run({ autoApprove, cdp, waitFor, sleep, log, repor
   const switchOnce = async (name, target, settle = 900) => {
     const prof = profiling.includes(name)
     if (prof) await startProfile(cdp)
+    const hoverMs = Number(process.env.YAN_FX_HOVER_MS ?? 0)
+    if (hoverMs && target.key) {
+      const pt = await rowPoint(target.key)
+      if (pt) {
+        await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...pt })
+        await sleep(hoverMs)
+      }
+    }
     await ev('window.__fx.start("switch")')
     const clicked = target.key && (await rowPoint(target.key)) ? await clickRow(target.key) : (await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(target.path)}); true`), false)
     await sleep(settle)
