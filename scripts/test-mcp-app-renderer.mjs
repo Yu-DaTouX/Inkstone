@@ -528,7 +528,7 @@ ok(darkVars['--color-background-primary'] === '#111111', '深色主背景是具�
 ok(lightVars['--color-text-primary'] === '#20211F' && darkVars['--color-text-primary'] === '#F5F5F5', '文字主色按主题取值')
 ok(
   lightVars['--shadow-hairline'] === '0 0 0 1px rgba(11,11,11,.1)' &&
-    darkVars['--shadow-hairline'] === '0 0 0 1px rgba(255,255,255,.08)',
+    darkVars['--shadow-hairline'] === '0 0 0 1px rgba(255,255,255,.1)',
   '细线阴影按主题取值，不是 light-dark'
 )
 ok(
