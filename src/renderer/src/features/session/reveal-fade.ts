@@ -2,6 +2,7 @@ import type { Element, ElementContent, Root, RootContent, Text } from 'hast'
 
 export const FADE_MS = 200
 export const FADE_SKIP_INITIAL_CHARS = 400
+const FADE_REWRITE_TAIL_CHARS = 16
 
 export interface FadeMark {
   from: number
@@ -23,13 +24,21 @@ function emptyFadeTrack(text = ''): FadeTrack {
   return { text, marks: [] }
 }
 
+function sharedPrefixLength(a: string, b: string): number {
+  const limit = Math.min(a.length, b.length)
+  let at = 0
+  while (at < limit && a.charCodeAt(at) === b.charCodeAt(at)) at += 1
+  return at
+}
+
 export function trackReveal(previous: FadeTrack | null, text: string, now: number): FadeTrack {
   if (!previous) return text && text.length <= FADE_SKIP_INITIAL_CHARS ? { text, marks: [{ from: 0, at: now }] } : emptyFadeTrack(text)
   if (text === previous.text) return previous
-  const marks = previous.marks.filter((mark) => now - mark.at < FADE_MS && mark.from < text.length)
-  if (!text.startsWith(previous.text)) return emptyFadeTrack(text)
   if (!previous.text && text.length > FADE_SKIP_INITIAL_CHARS) return emptyFadeTrack(text)
-  return { text, marks: [...marks, { from: previous.text.length, at: now }] }
+  const shared = sharedPrefixLength(previous.text, text)
+  if ((shared === 0 && previous.text) || previous.text.length - shared > FADE_REWRITE_TAIL_CHARS) return emptyFadeTrack(text)
+  const marks = previous.marks.filter((mark) => now - mark.at < FADE_MS && mark.from < shared)
+  return { text, marks: [...marks, { from: shared, at: now }] }
 }
 
 export function fadeSpans(track: FadeTrack, now: number): FadeSpan[] {
