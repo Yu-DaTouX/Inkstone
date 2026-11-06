@@ -124,6 +124,12 @@ export function SessionScreen({
   const snapBottom = (animated = false) => {
     if (alive.current && followBottom.current && listSize.current.viewport > 0) listRef.current?.scrollToOffset({ offset: Math.max(0, listSize.current.content - listSize.current.viewport), animated })
   }
+  const snapFrame = useRef<number | null>(null)
+  const scheduleSnap = () => {
+    if (snapFrame.current !== null) return
+    snapFrame.current = requestAnimationFrame(() => { snapFrame.current = null; snapBottom() })
+  }
+  useEffect(() => () => { if (snapFrame.current !== null) cancelAnimationFrame(snapFrame.current) }, [])
   const model = selectedModel ?? runner?.model
   const cwdName = sessions.find((s) => s.id === sessionId)?.cwdName || '电脑工作目录'
   useEffect(() => { if (runner?.model) setSelectedModel(runner.model) }, [runner?.model?.id, runner?.model?.provider])
@@ -371,8 +377,8 @@ export function SessionScreen({
           if (followBottom.current) readLatest()
         }}
         scrollEventThrottle={100}
-        onLayout={({ nativeEvent }) => { listSize.current.viewport = nativeEvent.layout.height; requestAnimationFrame(() => snapBottom()) }}
-        onContentSizeChange={(_, height) => { listSize.current.content = height; requestAnimationFrame(() => snapBottom()) }}
+        onLayout={({ nativeEvent }) => { listSize.current.viewport = nativeEvent.layout.height; scheduleSnap() }}
+        onContentSizeChange={(_, height) => { listSize.current.content = height; scheduleSnap() }}
         ListEmptyComponent={<EmptyState>{loading ? '正在读取会话…' : '输入消息，开始这段会话'}</EmptyState>}
         ListFooterComponent={<>
           {runner?.running && !runInList ? <View style={styles.live}><GlyphSpinner /><Text style={{ color: p.accent, fontSize: font.sm }}>进行中</Text></View> : null}
