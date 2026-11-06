@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { dirname, extname, resolve } from 'node:path'
+import { basename, dirname, extname, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fetchComfyWorkflow } from './discovery.mjs'
 import { toApiPrompt, workflowNodeTypes, isApiPrompt } from './workflow.mjs'
@@ -148,6 +148,9 @@ export async function readWorkflow(server, params, roots, signal) {
     const path = resolveInside(params.outPath, { cwd: roots.cwd }, '输出文件')
     if (extname(path).toLowerCase() !== '.json') throw new RawError('outPath 必须是 .json 文件')
     await mkdir(dirname(path), { recursive: true })
+    const realCwd = await realpath(roots.cwd).catch(() => null)
+    const realTarget = await realpath(path).catch(() => realpath(dirname(path)).then(dir => resolve(dir, basename(path))).catch(() => null))
+    if (!realCwd || !realTarget || !inside(realCwd, realTarget)) throw new RawError(`输出文件必须在项目目录内（符号链接指向了目录外）：${params.outPath}`)
     await writeFile(path, JSON.stringify(prompt, null, 2), { flag: params.overwrite === true ? 'w' : 'wx' }).catch(error => { throw new RawError(error.code === 'EEXIST' ? `${params.outPath} 已存在，换个文件名或传 overwrite: true` : error.message) })
     savedTo = path
   }
