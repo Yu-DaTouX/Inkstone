@@ -315,8 +315,7 @@ assert.equal(preview.token, 'TOKEN-SECRET-000', '不改写 preview.token（commi
   for (const language of ['zh-CN', 'en-US']) {
     const hint = capsText(language, 'promptsHiddenHint')
     assert.ok(hint.includes('.md'), '说明模板文件格式')
-    assert.ok(hint.includes('/translate'), '说明文件名与调用命令的关系')
-    assert.ok(hint.includes('/reload'), '说明保存后如何重新加载，不混同刷新列表')
+    assert.ok(hint.length <= 60, '目录说明保持一句话，不再堆调用命令与重载解释')
     for (const key of ['promptsRefresh', 'promptUserDirectory', 'promptProjectDirectory', 'promptOpenDirectory', 'promptOpenFailed', 'promptCreate', 'promptName', 'promptNameHint', 'promptContent', 'promptContentPlaceholder', 'promptCreateHint', 'promptSave', 'promptSaveFailed', 'promptRetryReload', 'promptSavedReloadFailed', 'promptSavedNoSession', 'promptSavedLocation', 'promptCreated', 'promptNotLoaded']) {
       assert.ok(capsText(language, key).length > 0, `目录入口有 ${language} 文案`)
     }
