@@ -582,8 +582,9 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       if (virtual) {
         const handle = vlistRef.current
         const index = anchor ? renderTurnsRef.current.findIndex((item) => item.id === anchor.turnId) : -1
-        if (bottom) handle?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
-        else if (anchor && index >= 0) handle?.scrollToIndex(index, { align: 'start', offset: anchor.offset })
+        if (bottom) {
+          if (handle && handle.scrollSize - handle.scrollOffset - handle.viewportSize > 1) handle.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
+        } else if (anchor && index >= 0) handle?.scrollToIndex(index, { align: 'start', offset: anchor.offset })
         else if (snap) handle?.scrollTo(snap.top)
         if (!bottom && handle) setShowJump(distanceFromBottom({ offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize }) > JUMP_THRESHOLD_PX)
       } else if (streamRef.current) {
