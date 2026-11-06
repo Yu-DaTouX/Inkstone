@@ -31,6 +31,29 @@ export async function runAutoCompactTests(ok, mod, limits) {
     }
 
     {
+      const { mkdirSync } = await import('node:fs')
+      const project = join(piDir, 'proj')
+      mkdirSync(join(project, '.pi'), { recursive: true })
+      writeFileSync(join(project, '.pi', 'settings.json'), JSON.stringify({ compaction: { enabled: false } }))
+      const run = (cwd) => {
+        const handlers = {}
+        extension({ on: (name, fn) => (handlers[name] = fn) })
+        let compacts = 0
+        handlers.agent_settled({}, { cwd, getContextUsage: () => ({ tokens: 900_000, contextWindow: 1_050_000 }), compact: () => { compacts += 1 } })
+        return compacts
+      }
+      ok(run(project) === 1, '自动压缩：项目没被信任时，项目里的 compaction.enabled=false 不生效')
+      writeFileSync(join(piDir, 'trust.json'), JSON.stringify({ [project]: true }))
+      ok(run(project) === 0, '自动压缩：被信任的项目里 compaction.enabled=false 时不压缩')
+      mkdirSync(join(project, 'sub', '.pi'), { recursive: true })
+      writeFileSync(join(project, 'sub', '.pi', 'settings.json'), JSON.stringify({ compaction: { enabled: false } }))
+      ok(run(join(project, 'sub')) === 0, '自动压缩：信任沿父目录向下生效')
+      ok(run(piDir) === 1, '自动压缩：其他项目不受影响')
+      writeFileSync(join(piDir, 'trust.json'), JSON.stringify({ [project]: false }))
+      ok(run(project) === 1, '自动压缩：明确不信任的项目按全局设置')
+    }
+
+    {
       const handlers = {}
       extension({ on: (name, fn) => (handlers[name] = fn) })
       ok(typeof handlers.agent_settled === 'function' && handlers.context === undefined, '扩展：只注册 agent_settled，不改发给模型的消息')

@@ -16,17 +16,39 @@ function yanDataDir() {
   return process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
 }
 
-function piCompactionEnabled() {
+function readJson(path) {
   try {
-    const dir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
-    return JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))?.compaction?.enabled !== false
+    return JSON.parse(readFileSync(path, 'utf8'))
   } catch {
-    return true
+    return null
   }
 }
 
-export function readContextSettings() {
-  const compact = piCompactionEnabled()
+function projectTrusted(trustRaw, cwd) {
+  if (!trustRaw || typeof trustRaw !== 'object' || Array.isArray(trustRaw)) return false
+  const norm = (p) => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+  let cur = norm(cwd)
+  for (;;) {
+    for (const [key, value] of Object.entries(trustRaw)) {
+      if (norm(key) === cur) return value === true
+    }
+    const idx = cur.lastIndexOf('/')
+    if (idx <= 0) return false
+    cur = cur.slice(0, idx)
+  }
+}
+
+function piCompactionEnabled(cwd) {
+  const dir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
+  const user = readJson(join(dir, 'settings.json'))?.compaction?.enabled !== false
+  if (!cwd) return user
+  const project = readJson(join(cwd, '.pi', 'settings.json'))?.compaction
+  if (!project || typeof project !== 'object' || typeof project.enabled !== 'boolean') return user
+  return projectTrusted(readJson(join(dir, 'trust.json')), cwd) ? project.enabled : user
+}
+
+export function readContextSettings(cwd) {
+  const compact = piCompactionEnabled(cwd)
   try {
     const s = JSON.parse(readFileSync(join(yanDataDir(), 'desktop.json'), 'utf8'))
     const tokens = s?.autoCompactTokens
@@ -45,7 +67,7 @@ export default function autoCompactExtension(pi) {
   let holdUntil
   let justCompacted = false
   pi.on('agent_settled', (_event, ctx) => {
-    const settings = readContextSettings()
+    const settings = readContextSettings(ctx?.cwd)
     if (!settings.compact || compacting) return
     const usage = ctx?.getContextUsage?.()
     if (typeof usage?.tokens !== 'number') return
