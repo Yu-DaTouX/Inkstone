@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { resizeWindow, setTheme } from '../lib/review-kit.mjs'
+import { resizeWindow, setTheme, textAudit } from '../lib/review-kit.mjs'
 
 export const meta = { description: '用户视角走查：新建、流式、审批、提问、完成卡、切会话、分屏、右栏、设置、用量；WT_WIDTH（默认 1778）、WT_TAG、WT_PART' }
 
@@ -22,14 +22,18 @@ export default async function run({ cdp, check, waitFor, sleep, out, newSession,
     const res = await cdp.call('Page.captureScreenshot', { format: 'jpeg', quality: 80 })
     writeFileSync(join(d, name + '.jpg'), Buffer.from(res.result.data, 'base64'))
   }
+  const audits = {}
   const both = async (name) => {
     for (const theme of ['dark', 'light']) {
       await setTheme(cdp, theme)
       await sleep(250)
       await snap(`${name}-${theme}`, dir)
+      const a = await textAudit(cdp, 'body')
+      audits[`${name}-${theme}`] = { low: a.lowContrastCount, lowItems: (a.lowContrast ?? []).slice(0, 6), truncated: a.truncatedCount, truncItems: (a.truncated ?? []).slice(0, 6), tiny: (a.tinyFont ?? []).slice(0, 4) }
     }
     await setTheme(cdp, 'dark')
   }
+  process.on('exit', () => { try { writeFileSync(join(dir, `audits-${PART}.json`), JSON.stringify(audits, null, 1)) } catch {} })
   const frames = async (name, ms, gap = 260) => {
     const end = Date.now() + ms
     let i = 0
@@ -199,6 +203,10 @@ export default async function run({ cdp, check, waitFor, sleep, out, newSession,
       await sleep(700)
       await both(`30-settings-${String(++n).padStart(2, '0')}-${id.replace('v3-settings-nav-', '')}`)
     }
+    await ev(`window.__yanStore.getState().closeSettings?.(); document.querySelector('.ui-settings')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await sleep(500)
     await ev(`window.location.hash = '#/usage'`)
     await sleep(1500)
     await both('40-usage')
