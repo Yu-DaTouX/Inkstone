@@ -38,6 +38,10 @@ export interface CapabilityHandlers {
   ): Promise<CapabilityCommandResult>
 }
 
+export function normalizeErrorCode(code: string): string {
+  return code.toLowerCase()
+}
+
 export class CapabilityCommandError extends Error {
   constructor(
     readonly code: string,
@@ -233,14 +237,14 @@ export class CapabilityServer {
 
     const generation = ++this.generation
     this.server = createServer((req, res) => {
-      void this.handle(req, res, generation).catch(() => {
+      void this.handle(req, res, generation).catch((error: unknown) => {
         if (res.writableEnded || res.destroyed) return
         if (res.headersSent) {
           res.destroy()
           return
         }
         res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
-        res.end(JSON.stringify({ ok: false, error: 'internal_error' }))
+        res.end(JSON.stringify({ ok: false, error: 'internal_error', detail: error instanceof Error ? error.message : String(error) }))
       })
     })
 
@@ -375,8 +379,13 @@ export class CapabilityServer {
         reply(400, { ok: false, error: retirement, code: 'retired_command', detail: command })
         return
       }
-      const limited = KNOWN_COMMANDS.has(command) || Boolean(retirement)
-      reply(400, { ok: false, error: 'unknown_command', detail: command, ...(limited ? { hint: `这个会话只开放：${[...this.allowCommands].join(', ')}` } : {}) })
+      const opened = `这个会话只开放：${[...this.allowCommands].join(', ')}`
+      if (KNOWN_COMMANDS.has(command)) {
+        const group = command.split('.')[0]
+        reply(400, { ok: false, error: 'unknown_command', code: 'command_not_available', detail: command, hint: `本会话未开放 ${group} 命令（${command}）。${opened}` })
+        return
+      }
+      reply(400, { ok: false, error: 'unknown_command', detail: command, ...(retirement ? { hint: opened } : {}) })
       return
     }
 
@@ -405,12 +414,13 @@ export class CapabilityServer {
         operationId: opId,
         summary: out.summary,
         resultFile: file?.path,
-        resultBytes: file?.bytes
+        resultBytes: file?.bytes,
+        ...(!file && out.data !== undefined ? { resultError: '结果文件没能写盘，完整结果丢失；摘要仍然有效，需要完整内容时重新执行这条命令' } : {})
       })
     } catch (err) {
       if (cancel.signal.aborted || generation !== this.generation) return
       const message = err instanceof Error ? err.message : String(err)
-      const code = err instanceof CapabilityCommandError ? err.code : undefined
+      const code = err instanceof CapabilityCommandError ? normalizeErrorCode(err.code) : undefined
       const data = err instanceof CapabilityCommandError ? err.data : undefined
       const file = data === undefined ? null : this.writeResult(opId, { data })
       this.remember({ id: opId, command, at: Date.now(), ok: false, error: message, ...(file ? { resultFile: file.path, resultBytes: file.bytes } : {}) })

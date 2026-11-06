@@ -426,9 +426,9 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · 关键操作后读回执里的页面观察，必要时再 observe 或截图核对；没确认上次提交的结果前，不要重复提交；
   · 页面是异步渲染时，点完不要立刻 observe（容易读到中间态）：用 wait 等 ref / 文本 / 地址就绪；
   · 原生下拉框展开的选项不是 DOM 元素（observe 看不到）→ 选值用 select，不要先 click 再点选项；
-    目标不是下拉框回 code=NOT_SELECT，没有这个可选值回 code=OPTION_NOT_FOUND（并附上可选值）；
+    目标不是下拉框回 code=not_select，没有这个可选值回 code=option_not_found（并附上可选值）；
   · 每个 click / type / select / press / scroll 的回执都是一次新观察；同一页面上没变的元素 ref 保持不变，
-    页面导航或换了文档后 ref 才失效（报 STALE_ELEMENT 时用回执里的 elements[].ref 或重新 observe）；
+    页面导航或换了文档后 ref 才失效（报 stale_element 时用回执里的 elements[].ref 或重新 observe）；
   · 回执 openedTabs 表示点击打开了新标签（用 switch-tab 切过去），downloadStarted 表示开始下载（完成后用 download 取路径）；
   · 动作超时会回 code=browser_action_timeout：结果未确认，先 observe / state 核对，不要直接重放；
   · 浏览器还没打开时，除 navigate / open / run 外的动作回 code=browser_not_open；
@@ -467,8 +467,10 @@ GROUP_USAGE.terminal = `yan terminal <动作> [选项]
   · stdout 的 output 只带最后一段，完整输出在 resultFile 里。
 `
 
+const EXIT_CODE_NAMES = { [EXIT.failed]: 'cli_failed', [EXIT.usage]: 'usage_error', [EXIT.unavailable]: 'host_unavailable' }
+
 function fail(code, message, extra) {
-  process.stderr.write(JSON.stringify({ ok: false, error: message, ...(extra ?? {}) }) + '\n')
+  process.stderr.write(JSON.stringify({ ok: false, error: message, code: EXIT_CODE_NAMES[code] ?? 'cli_failed', ...(extra ?? {}) }) + '\n')
   process.exit(code)
 }
 
@@ -579,6 +581,26 @@ const GROUP_SPECS = {
 }
 
 const REPEATABLE_FLAGS = new Set(['query-text'])
+
+const PARAM_ALIASES = {
+  'query-text': ['queries', 'query', 'text'],
+  server: ['serverId', 'server-id'],
+  tool: ['toolName', 'tool-name', 'name'],
+  candidate: ['candidateId', 'candidate-id', 'id'],
+  'library-id': ['libraryId']
+}
+
+function camelCase(key) {
+  return key.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase())
+}
+
+function hasParam(params, key) {
+  return [key, camelCase(key), ...(PARAM_ALIASES[key] ?? [])].some((name) => {
+    const value = params[name]
+    if (Array.isArray(value)) return value.length > 0
+    return value !== undefined && value !== '' && value !== true
+  })
+}
 
 function parseArgs(argv) {
   const flags = {}
@@ -701,9 +723,8 @@ if (positional[0] === 'browser' && ['navigate', 'open', 'new-tab'].includes(posi
 
 if (groupSpec?.required?.[positional[1]]) {
   const missing = groupSpec.required[positional[1]].filter((key) => {
-    const value = params[key]
-    if (command === 'browser.type' && key === 'text' && value === '') return false
-    return value === undefined || value === '' || value === true
+    if (command === 'browser.type' && key === 'text' && params[key] === '') return false
+    return !hasParam(params, key)
   })
   if (missing.length) {
     fail(
@@ -760,7 +781,7 @@ try {
     JSON.stringify({ apiVersion: API_VERSION, command, params, sessionId, projectId })
   )
 } catch (err) {
-  fail(EXIT.unavailable, '连不上宿主能力服务', { detail: String(err?.message ?? err) })
+  fail(EXIT.unavailable, '连不上宿主能力服务', { detail: String(err?.message ?? err), hint: '砚可能正在重启或已关闭这个会话；稍后重试，仍然不行请告诉用户' })
 }
 
 const text = response.text
