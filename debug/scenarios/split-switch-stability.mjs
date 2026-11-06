@@ -72,6 +72,8 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
     await turn(`MANYTOOLS ${tag}2 \u8dd1\u56db\u5341\u6b65`, { timeout: 180000 })
     await turn(`FLOW ${tag}3 \u4fee\u590d\u91d1\u989d`)
     await turn(`LONGTEXT ${tag}4 \u957f\u6587`)
+    if (process.env.YAN_SPLIT_VIRTUAL === '1') for (let extra = 0; extra < 4; extra++) await turn(`MANYTOOLS ${tag}v${extra} more`, { timeout: 180000 })
+    log('messages', await state('s.messages.length'))
     sessions.push({ sessionId: await state('s.session.sessionId'), path: await state('s.session.sessionFile') })
   }
   log('sessions', sessions)

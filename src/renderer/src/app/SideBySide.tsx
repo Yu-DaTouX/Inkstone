@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { GripVertical } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
@@ -27,6 +27,30 @@ import {
 } from './split-resizer-model'
 import './SideBySide.css'
 
+let liveComposerFloor = 0
+const liveComposerListeners = new Set<() => void>()
+
+function reportLiveComposerHeight(height: number): void {
+  if (!(height > 0)) return
+  const next = liveComposerFloor > 0 ? Math.min(liveComposerFloor, height) : height
+  if (next === liveComposerFloor) return
+  liveComposerFloor = next
+  liveComposerListeners.forEach((listener) => listener())
+}
+
+function resetLiveComposerFloor(): void {
+  if (liveComposerFloor === 0) return
+  liveComposerFloor = 0
+  liveComposerListeners.forEach((listener) => listener())
+}
+
+function subscribeLiveComposerFloor(listener: () => void): () => void {
+  liveComposerListeners.add(listener)
+  return () => { liveComposerListeners.delete(listener) }
+}
+
+const readLiveComposerFloor = (): number => liveComposerFloor
+
 export interface SideBySideProps {
   split: SplitLayout | null
   narrow: boolean
@@ -43,6 +67,10 @@ export const SideBySide = memo(function SideBySide({ split, narrow, maxColumns }
     const chat = document.querySelector<HTMLElement>('.v3-chat')
     return observeWidth(chat, (width) => useSplitView.getState().setContainerWidth(width))
   }, [])
+
+  useEffect(() => {
+    if (!layout || !split) resetLiveComposerFloor()
+  }, [layout, split])
 
   if (!layout || !split) {
     return <ChatMain />
@@ -255,13 +283,20 @@ function useSameCwdBusy(target: SplitSessionRef, cwd: string | undefined): boole
 function PaneBody({ target, live }: { target: SplitSessionRef; live: boolean }): JSX.Element {
   const pane = useMemo(() => ({ target, live }), [target, live])
   const convRef = useRef<HTMLDivElement | null>(null)
-  const liveComposerHeight = useRef(0)
+  const ownComposerHeight = useRef(0)
+  const floor = useSyncExternalStore(subscribeLiveComposerFloor, readLiveComposerFloor)
+  const applyComposerHeight = useCallback(() => {
+    const own = ownComposerHeight.current
+    convRef.current?.style.setProperty('--composer-h', `${live ? own : Math.max(own, readLiveComposerFloor())}px`)
+  }, [live])
   const composerRef = useCallback((element: HTMLDivElement | null) => {
     return observeHeight(element, (height) => {
-      if (live) liveComposerHeight.current = height
-      convRef.current?.style.setProperty('--composer-h', `${live ? height : Math.max(height, liveComposerHeight.current)}px`)
+      ownComposerHeight.current = height
+      if (live) reportLiveComposerHeight(height)
+      applyComposerHeight()
     })
-  }, [live])
+  }, [live, applyComposerHeight])
+  useLayoutEffect(() => { applyComposerHeight() }, [applyComposerHeight, floor])
   return (
     <div
       className="v3-split-peer"
