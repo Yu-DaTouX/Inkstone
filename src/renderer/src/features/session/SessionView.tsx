@@ -17,6 +17,8 @@ import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { Button, Skeleton } from '../../ui'
 import { ChevronDown } from 'lucide-react'
 import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
+import { useSessionViewSource, type SessionPaneBinding } from './session-view-source'
+import { TurnScopeContext } from './turn-scope'
 import { V3EmptyState } from './V3EmptyState'
 import { RewindDialogV3 } from './RewindDialogV3'
 import {
@@ -40,7 +42,6 @@ import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX,
 import { holdStreamTail } from './stream-tail-hold'
 import { advanceGlide, domAnchor, domMetrics, domReadingAnchors, GLIDE_FRAME_CAP_MS, glideSettle, keepSettleAnchor, startGlide, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
 import './session.css'
-import { sameComposerView } from '../../state/composer-recovery'
 import { withSubmittingMessages } from '../../state/submitting-messages'
 import { cssQuoted, highlightMessageElement, nextFrame, registerMessageLocator } from '../../state/message-locator'
 
@@ -97,26 +98,29 @@ function SwitchSkeleton({ label }: { label: string }): JSX.Element {
   )
 }
 
-export function SessionView(): JSX.Element {
+function PeerEmpty({ running }: { running: boolean }): JSX.Element {
   const t = useT()
-  const messages = useStore((s) => s.messages)
-  const session = useStore((s) => s.session)
-  const questionLog = useStore((s) => s.questionLog)
-  const questionLogSession = useStore((s) => s.questionLogSession)
-  const approvalLog = useStore((s) => s.approvalLog)
-  const approvalLogSession = useStore((s) => s.approvalLogSession)
-  const runTail = useStore((s) => s.runTail)
-  const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const peekedPath = useStore((s) => s.peekedPath)
-  const settings = useStore((s) => s.settings)
-  const switchLoading = useStore((s) => s.switchLoading)
-  const submittingMessages = useStore((s) => s.submittingMessages)
-
-  const view = useMemo(
-    () => sessionViewIdentity({ peekedSessionId, peekedPath, session }),
-    [peekedSessionId, peekedPath, session]
+  return (
+    <div className="v3-empty">
+      <p className="v3-empty-hint">{running ? t('chat.working') : ''}</p>
+    </div>
   )
-  const viewActive = viewMatchesProjectedSession(view, session)
+}
+
+export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.Element {
+  const t = useT()
+  const source = useSessionViewSource(pane)
+  const { messages, session, questionLog, questionLogSession, approvalLog, approvalLogSession, runTail, peekedSessionId, peekedPath, settings, switchLoading, submittingMessages, readOnly, ownsSubmission } = source
+
+  const baseView = useMemo(
+    () => source.view ?? sessionViewIdentity({ peekedSessionId, peekedPath, session }),
+    [source.view, peekedSessionId, peekedPath, session]
+  )
+  const view = useMemo(
+    () => (source.scrollKey && source.scrollKey !== baseView.key ? { ...baseView, key: source.scrollKey } : baseView),
+    [baseView, source.scrollKey]
+  )
+  const viewActive = !readOnly && viewMatchesProjectedSession(view, session)
   const viewPathSessionId = useStore((s) => (view.sessionId || !view.sessionFile ? null : (s.sessions.find((item) => toolExpansionScopeOf(null, item.path) === toolExpansionScopeOf(null, view.sessionFile))?.id ?? null)))
   const expansionScope = toolExpansionScopeOf(view.sessionId ?? viewPathSessionId, view.sessionFile)
   const rewindOwner = viewActive ? (session?.conversationId ?? session?.sessionId ?? null) : null
@@ -248,13 +252,13 @@ export function SessionView(): JSX.Element {
   }, [pagerSessionId, branchPagerModels, branchPending, branchError, pagerBusy, navigateBranchPager])
 
   const projectTurns = useMemo(() => createTurnProjector(), [])
-  const streamingId = viewActive ? streamingMessageId({ session, messages, runTail }) : undefined
+  const streamingId = readOnly ? source.streamingId : viewActive ? streamingMessageId({ session, messages, runTail }) : undefined
   const effectiveMessages = useMemo(
     () => mergeApprovalLogCached(
-      mergeQuestionLog(withSubmittingMessages(messages, submittingMessages.filter((item) => sameComposerView(useStore.getState(), item.identity))), questionLogSession && questionLogSession === view.sessionId ? questionLog : []),
+      mergeQuestionLog(withSubmittingMessages(messages, submittingMessages.filter((item) => ownsSubmission(item.identity))), questionLogSession && questionLogSession === view.sessionId ? questionLog : []),
       approvalLogSession && approvalLogSession === view.sessionId ? approvalLog : []
     ),
-    [messages, submittingMessages, questionLog, questionLogSession, approvalLog, approvalLogSession, view.key, session]
+    [messages, submittingMessages, ownsSubmission, questionLog, questionLogSession, approvalLog, approvalLogSession, view.key, session]
   )
   const visibleMessages = useMemo(() => withoutImageNotices(effectiveMessages), [effectiveMessages])
   const projectedMessages = useMemo(() => withoutWrapUpMessages(visibleMessages), [visibleMessages])
@@ -529,13 +533,13 @@ export function SessionView(): JSX.Element {
   emptyRef.current = empty
 
   useLayoutEffect(() => {
-    const chat = empty ? hostRef.current?.closest<HTMLElement>('.v3-chat') : null
+    const chat = empty && !readOnly ? hostRef.current?.closest<HTMLElement>('.v3-chat') : null
     if (!chat) return undefined
     chat.dataset.empty = ''
     return () => {
       delete chat.dataset.empty
     }
-  }, [empty])
+  }, [empty, readOnly])
 
   useLayoutEffect(() => {
     if (!identity || switchLoading) return undefined
@@ -917,9 +921,10 @@ export function SessionView(): JSX.Element {
   }, [identity, userCount, jumpToBottom])
 
   return (
-    <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-empty={empty ? '' : undefined}>
-      <HomeBackdrop active={turns.length === 0 && !switchLoading} asciiEnabled={asciiBackgroundEnabled(settings)} />
+    <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-empty={empty && !readOnly ? '' : undefined}>
+      <HomeBackdrop active={!readOnly && turns.length === 0 && !switchLoading} asciiEnabled={asciiBackgroundEnabled(settings)} />
       <ToolExpansionScope.Provider value={expansionScope}>
+      <TurnScopeContext.Provider value={source.turnScope}>
       <AsideFitScope.Provider value={asideFits}>
       <div className="v3-stream-host" ref={hostRef} data-jump={showJump && !stick ? '' : undefined}>
         <div className="v3-aside-fit-probe" ref={asideProbeRef} aria-hidden />
@@ -934,17 +939,17 @@ export function SessionView(): JSX.Element {
           >
             {(item, index) => (
               <div key={`${identity}|${item.id}`} className={`v3-stream-row${index === 0 ? ' v3-stream-row--head' : ''}${index === renderTurns.length - 1 ? ' v3-stream-row--tail' : ''}`}>
-                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />}
+                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} subagentScope={source.subagentScope} readOnly={readOnly} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />}
               </div>
             )}
           </VList>
         ) : (
           <div className="v3-stream" ref={setStreamNode} onScroll={onScroll}>
             <div className="v3-stream-inner">
-              {turns.length === 0 ? (switchLoading ? <SwitchSkeleton label={t('chat.switchLoading')} /> : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
+              {turns.length === 0 ? (readOnly ? <PeerEmpty running={!!(session?.isAgentRunning || session?.isStreaming)} /> : switchLoading ? <SwitchSkeleton label={t('chat.switchLoading')} /> : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
                   ? <PendingRunNotice key={`${identity}|${item.id}`} />
-                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />
+                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} subagentScope={source.subagentScope} readOnly={readOnly} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />
               )}
             </div>
           </div>
@@ -958,16 +963,17 @@ export function SessionView(): JSX.Element {
           </div>
         ) : null}
 
-        <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} readActiveIndex={readActiveIndex} />
+        {readOnly ? null : <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} readActiveIndex={readActiveIndex} />}
       </div>
       </AsideFitScope.Provider>
+      </TurnScopeContext.Provider>
       </ToolExpansionScope.Provider>
 
-      <RewindDialogV3 ownerKey={view.key} active={viewActive} />
+      {readOnly ? null : <RewindDialogV3 ownerKey={view.key} active={viewActive} />}
 
-      <MessageMenuHost />
+      {readOnly ? null : <MessageMenuHost />}
 
-      <SessionFindBar enabled={viewActive} sessionKey={view.key} getScope={findScope} virtualSource={virtual ? findSource : undefined} />
+      {readOnly ? null : <SessionFindBar enabled={viewActive} sessionKey={view.key} getScope={findScope} virtualSource={virtual ? findSource : undefined} />}
 
     </div>
   )
