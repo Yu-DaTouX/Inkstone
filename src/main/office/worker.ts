@@ -2,11 +2,12 @@ import { parentPort, workerData } from 'node:worker_threads'
 import { open } from 'node:fs/promises'
 import { extractOffice } from './extract'
 import type { OfficeFormat } from '../../shared/office'
-import { pick } from '../../shared/ui-lang'
+import { pick, setUiLang } from '../../shared/ui-lang'
 
 const MAX_BYTES = 64 * 1024 * 1024
 async function run(): Promise<void> {
-  const { path, format } = workerData as { path: string; format: OfficeFormat }
+  const { path, format, lang } = workerData as { path: string; format: OfficeFormat; lang?: string }
+  setUiLang(lang)
   const file = await open(path, 'r')
   try {
     const size = (await file.stat()).size

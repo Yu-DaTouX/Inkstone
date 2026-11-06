@@ -1,4 +1,4 @@
-import { pick } from '../../shared/ui-lang'
+import { pick, uiLang } from '../../shared/ui-lang'
 import { Worker } from 'node:worker_threads'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,7 +19,7 @@ export async function previewOffice(rawPath: string, cwd: string): Promise<Offic
   try {
     return await new Promise<OfficeDocumentView>((resolve) => {
       const worker = new Worker(join(dirname(fileURLToPath(import.meta.url)), 'office-worker.js'), {
-        workerData: { path: resolved.real, format }, resourceLimits: { maxOldGenerationSizeMb: 256 }
+        workerData: { path: resolved.real, format, lang: uiLang() }, resourceLimits: { maxOldGenerationSizeMb: 256 }
       })
       let settled = false
       const finish = (result: OfficeDocumentView): void => {
