@@ -153,6 +153,7 @@ export function MessageImage({
   const imageRef = useRef<HTMLImageElement | null>(null)
   const [viewerOpen, setViewerOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
   const open = (): void => setViewerOpen(true)
   const knownSize = imageSizes.get(imageSizeKey(src))
 
@@ -216,13 +217,15 @@ export function MessageImage({
         className={[className, 'v3-img-open'].filter(Boolean).join(' ') || undefined}
         loading="lazy"
         decoding="async"
-        data-sized={knownSize ? '' : undefined}
-        data-pending={!knownSize && !loaded ? '' : undefined}
+        data-sized={knownSize && !failed ? '' : undefined}
+        data-pending={!knownSize && !loaded && !failed ? '' : undefined}
         style={knownSize ? ({ '--img-ratio': `${knownSize.width} / ${knownSize.height}`, '--img-w': `${knownSize.width}px` } as CSSProperties) : undefined}
         onLoad={(event) => {
           rememberImageSize(src, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+          setFailed(false)
           setLoaded(true)
         }}
+        onError={() => setFailed(true)}
         title={t('chat.imageOpen')}
         onClick={open}
         onContextMenu={onContextMenu}
