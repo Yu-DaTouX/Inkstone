@@ -5,11 +5,13 @@ export const meta = { description: '可访问性审计：AX 树角色/名称/状
 const HELPERS = `(() => {
   if (window.__a11y) return
   const sigOf = (el) => { const parts = []; let n = el; for (let i = 0; i < 6 && n && n !== document.body; i++, n = n.parentElement) { const c = getComputedStyle(n); const a = getComputedStyle(n, '::after'); const b = getComputedStyle(n, '::before'); parts.push([c.outlineStyle, c.outlineWidth, c.outlineColor, c.boxShadow, c.backgroundColor, c.borderTopColor, c.borderBottomColor, c.color, c.textDecorationLine, c.opacity, a.backgroundColor, a.opacity, a.boxShadow, b.backgroundColor, b.opacity, b.boxShadow].join('/')) } return parts.join('|') }
+  const staticRing = (el) => { let n = el; for (let i = 0; i < 4 && n && n !== document.body; i++, n = n.parentElement) { for (const pseudo of [null, '::before', '::after']) { const c = getComputedStyle(n, pseudo); if (c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) > 0) return true; if (c.boxShadow && c.boxShadow !== 'none' && /[1-9]/.test(c.boxShadow.replace(/(rgba?|color)[(][^)]*[)]/g, ''))) return true } } return false }
   const label = (el) => el.getAttribute('aria-label') || el.getAttribute('title') || (el.innerText || el.value || '').trim().slice(0, 40)
   const describe = (el) => {
     if (!el || el === document.body) return { tag: 'body' }
     const r = el.getBoundingClientRect()
     if (!window.__a11y.sigs.has(el)) window.__a11y.sigs.set(el, sigOf(el))
+    window.__a11y.static.set(el, staticRing(el))
     return {
       tag: el.tagName.toLowerCase(),
       role: el.getAttribute('role') || '',
@@ -19,13 +21,17 @@ const HELPERS = `(() => {
       rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]
     }
   }
-  const unringed = () => {
+  const unringed = async () => {
+    const textual = (el) => el.isContentEditable || el.getAttribute('role') === 'textbox' || (el.tagName === 'INPUT' && /text|search|^$/.test(el.type)) || el.tagName === 'TEXTAREA'
+    const entries = [...window.__a11y.sigs].filter(([el]) => el.isConnected && !textual(el))
+    const ringedWhileFocused = new Map(entries.map(([el]) => [el, window.__a11y.static.get(el)]))
     document.activeElement?.blur?.()
     const out = []
-    for (const [el, sig] of window.__a11y.sigs) {
-      if (el.isConnected && sigOf(el) === sig && !(el.isContentEditable || el.getAttribute('role') === 'textbox' || (el.tagName === 'INPUT' && /text|search|^$/.test(el.type)) || el.tagName === 'TEXTAREA')) out.push(el.tagName.toLowerCase() + '|' + (el.getAttribute('data-testid') || el.id || '') + '|' + label(el))
+    for (const [el, sig] of entries) {
+      if (sigOf(el) === sig && !ringedWhileFocused.get(el)) out.push(el.tagName.toLowerCase() + '|' + (el.getAttribute('data-testid') || el.id || '') + '|' + label(el))
     }
     window.__a11y.sigs = new Map()
+    window.__a11y.static = new Map()
     return out
   }
   const lives = []
@@ -40,7 +46,7 @@ const HELPERS = `(() => {
     }
   })
   observer.observe(document.body, { subtree: true, childList: true, characterData: true })
-  window.__a11y = { sigs: new Map(), describe, unringed, lives }
+  window.__a11y = { sigs: new Map(), static: new Map(), describe, unringed, lives }
 })()`
 
 export default async function run(ctx) {
@@ -63,7 +69,7 @@ export default async function run(ctx) {
   const active = () => ev(`window.__a11y.describe(document.activeElement)`)
   const activeInside = (selector) => ev(`!!document.activeElement?.closest(${JSON.stringify(selector)})`)
   const keyDef = (key) => {
-    const table = { Tab: [9, 'Tab'], Escape: [27, 'Escape'], Enter: [13, 'Enter'], ArrowDown: [40, 'ArrowDown'], ArrowUp: [38, 'ArrowUp'], ArrowLeft: [37, 'ArrowLeft'], ArrowRight: [39, 'ArrowRight'], Home: [36, 'Home'], End: [35, 'End'], Space: [32, 'Space'], ',': [188, 'Comma'], '\\': [220, 'Backslash'], ']': [221, 'BracketRight'], '[': [219, 'BracketLeft'], '`': [192, 'Backquote'] }
+    const table = { Tab: [9, 'Tab'], Escape: [27, 'Escape'], Enter: [13, 'Enter'], ArrowDown: [40, 'ArrowDown'], ArrowUp: [38, 'ArrowUp'], ArrowLeft: [37, 'ArrowLeft'], ArrowRight: [39, 'ArrowRight'], Home: [36, 'Home'], PageDown: [34, 'PageDown'], End: [35, 'End'], Space: [32, 'Space'], ',': [188, 'Comma'], '\\': [220, 'Backslash'], ']': [221, 'BracketRight'], '[': [219, 'BracketLeft'], '`': [192, 'Backquote'] }
     if (table[key]) return table[key]
     if (/^[0-9]$/.test(key)) return [48 + Number(key), `Digit${key}`]
     return [key.toUpperCase().charCodeAt(0), `Key${key.toUpperCase()}`]
@@ -116,7 +122,7 @@ export default async function run(ctx) {
     await ev(`(() => { window.__a11y.sigs = new Map(); if (!document.getElementById('__a11y-notrans')) { const st = document.createElement('style'); st.id = '__a11y-notrans'; st.textContent = '*,*::before,*::after{transition:none!important;animation-duration:0s!important}'; document.head.appendChild(st) } })()`)
     const seq = []
     for (let i = 0; i < steps; i++) {
-      await press('Tab', shift ? MOD.shift : 0, 35)
+      await press('Tab', shift ? MOD.shift : 0, 110)
       seq.push(await active())
     }
     const keys = seq.map((d) => `${d.tag}|${d.id}|${d.label}|${(d.rect ?? []).join(',')}`)
@@ -183,7 +189,7 @@ export default async function run(ctx) {
   await phase('审批卡', async () => {
     await newSession(box.projects[0] ?? box.project)
     const t0 = await nowT()
-    await ev(`document.querySelector('[data-testid="composer-input"]')?.focus()`)
+    await ev('document.activeElement?.blur?.()')
     await send('APPROVAL 删除')
     const got = await ctx.until(`(Array.isArray(s.approvals) ? s.approvals.length : Object.keys(s.approvals ?? {}).length) > 0`, 20000, 50)
     if (!got) { note('审批卡', '假模型 APPROVAL 没有产生待审批（可能被自动批准），跳过', await state('JSON.stringify(Object.keys(s.approvals ?? {}))')); return }
@@ -197,8 +203,10 @@ export default async function run(ctx) {
     log('审批到达 live 播报', live)
     const announced = live.some((l) => /审批|批准|确认|approve|approval|权限/i.test(l.text))
     if (!announced) note('审批卡', '审批请求到达时没有 live region 播报', live.slice(0, 5))
-    const inCard = await activeInside('[data-testid^="v3-approval"], .v3-approval, [data-approval]')
-    if (!inCard) note('审批卡', '审批卡出现后焦点不在卡内（键盘用户需要自己找到卡）', focus1)
+    const reach = await tabWalk('审批卡:可达性', 70, { scopeSel: '[data-ask-dock]' })
+    const reached = reach.seq.some((d) => /v3-approval/.test(d.id) || /批准|允许|拒绝|Approve|Deny|Allow/i.test(d.label))
+    log('审批卡能否被 Tab 到', reached)
+    if (!reached) note('审批卡', 'Tab 70 次内没有走到审批卡的按钮（设计上不抢焦点，但必须能用键盘到达）', reach.keys.slice(-8))
     const nodes = await axTree()
     report.sections['审批卡:ax'] = nodes.filter((n) => /批准|拒绝|允许|审批|approve|deny/i.test(n.name)).map((n) => `${n.role}:${n.name}`)
     await shot('a11y-approval')
@@ -305,7 +313,9 @@ export default async function run(ctx) {
     await ev(`document.querySelector('[data-testid="composer-input"]')?.focus()`)
     const panelOpen = async () => ev(`!!document.querySelector('[role=tab]')`)
     await press('b', MOD.ctrl | MOD.alt, 1800)
-    if (!(await panelOpen())) { await press('b', MOD.ctrl | MOD.alt, 1800) }
+    await press('1', MOD.alt, 900)
+    if (!(await panelOpen())) { await clickEl('[data-testid="v3-head-panel-toggle"]'); await sleep(1800) }
+    if (!(await panelOpen())) note('右栏', '快捷键与 setRightPanelOpen 都没能打开右栏（场景无法继续检查标签）', null)
     const tabs = async () => ev(`[...document.querySelectorAll('[role=tab]')].map((e) => ({ label: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24), sel: e.getAttribute('aria-selected'), tab: e.tabIndex, panel: e.getAttribute('aria-controls'), has: !!(e.getAttribute('aria-controls') && document.getElementById(e.getAttribute('aria-controls'))) }))`)
     const t1 = await tabs()
     report.sections['右栏:tabs'] = t1
@@ -375,19 +385,19 @@ export default async function run(ctx) {
     await waitFor(running, 15000, 30)
     await waitFor(`!(${running})`, 180000, 200)
     await sleep(1200)
-    const info = await ev(`(() => { const sc = document.querySelector('[data-testid="v3-session-scroll"]') ?? document.querySelector('.v3-session-scroll'); return { has: !!sc, role: sc?.getAttribute('role'), label: sc?.getAttribute('aria-label'), tabindex: sc?.getAttribute('tabindex'), rows: sc?.querySelectorAll('[data-row], [data-msg], article').length } })()`)
-    report.sections['消息流:scroller'] = info
-    log('消息流滚动容器', info)
-    await axAudit('消息流')
-    await ev(`(() => { const sc = document.querySelector('[data-testid="v3-session-scroll"]') ?? document.querySelector('.v3-session-scroll'); sc && (sc.scrollTop = 0) })()`)
+    const SC = `(() => { for (let n = document.querySelector('article'); n; n = n.parentElement) if (n.scrollHeight > n.clientHeight + 200 && /auto|scroll/.test(getComputedStyle(n).overflowY)) return n; return null })()`
+    await ev(`(() => { const sc = ${SC}; sc && (sc.scrollTop = 0) })()`)
     await sleep(900)
-    await ev(`document.querySelector('[data-testid="composer-input"]')?.focus()`)
+    const target = await ev(`(() => { const sc = ${SC}; const b = sc?.querySelector('article button, article a[href], article [tabindex="0"]'); if (!b) return null; b.focus({ preventScroll: true }); return { tag: b.tagName, label: b.getAttribute('aria-label') || b.textContent.trim().slice(0, 20) } })()`)
     const focusBefore = await active()
-    await ev(`(() => { const sc = document.querySelector('[data-testid="v3-session-scroll"]') ?? document.querySelector('.v3-session-scroll'); sc && (sc.scrollTop = sc.scrollHeight * 0.5) })()`)
-    await sleep(900)
+    await ev(`(() => { const sc = ${SC}; sc && (sc.scrollTop = sc.scrollHeight) })()`)
+    await sleep(1200)
     const focusAfter = await active()
+    report.sections['消息流:滚动焦点'] = { target, focusBefore, focusAfter }
+    if (!target) note('消息流', '找不到消息行内的可聚焦控件，无法测滚动后焦点', null)
+    else if (focusBefore.tag === 'body') note('消息流', '消息行内控件 focus() 失败', target)
     log('滚动后焦点', focusAfter, '滚动前', focusBefore)
-    if (focusAfter.tag === 'body' && focusBefore.tag !== 'body') note('消息流', '滚动后（行被卸载）焦点丢失', { focusBefore, focusAfter })
+    if (focusAfter.tag === 'body' && focusBefore.tag !== 'body') note('消息流', '滚动到远处后（行被卸载）焦点丢到 body', { focusBefore, focusAfter })
     await ev(`document.querySelector('[data-testid="composer-input"]')?.focus()`)
     const t0 = await nowT()
     await press('f', MOD.ctrl, 700)
@@ -419,11 +429,12 @@ export default async function run(ctx) {
     const start = async (text) => {
       await newSession(box.projects[0] ?? box.project)
       await send(text)
-      await waitFor(`!!s.session?.sessionFile && !!s.session?.sessionId && !${running} && s.messages.length >= 2`, 30000, 50)
+      await sleep(600); await waitFor(`!!s.session?.sessionFile && !!s.session?.sessionId && !${running} && s.messages.length >= 2`, 90000, 100)
       return { sessionId: await state('s.session.sessionId'), path: await state('s.session.sessionFile') }
     }
     const tiles = []
-    for (let i = 0; i < 3; i++) tiles.push(await start(`分屏会话 ${i + 1}`))
+    for (let i = 0; i < 3; i++) tiles.push(await start(i === 0 ? 'MDREAL 总结一下' : `分屏会话 ${i + 1}`))
+    await cc('Emulation.setDeviceMetricsOverride', { width: 1400, height: 260, deviceScaleFactor: 1, mobile: false })
     await ev(`window.__yanSplit.getState().apply({ tiles: ${JSON.stringify(tiles)}, live: 0 })`)
     await sleep(1500)
     await shot('a11y-split')
@@ -433,13 +444,22 @@ export default async function run(ctx) {
     if (panes.some((p) => !p.label)) note('分屏', '分屏格没有 aria-label，读屏无法区分是哪个会话', panes)
     await axAudit('分屏')
     await ev(`document.activeElement?.blur?.()`)
+    const ro = await ev(`(() => { const panes = [...document.querySelectorAll('[data-pane]')]; const pane = panes.find((p) => !p.querySelector('[data-testid="composer-input"]')); if (!pane) return null; const sc = [...pane.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 10 && /auto|scroll/.test(getComputedStyle(e).overflowY)); if (!sc) return { pane: true, scroller: false }; const f = sc.querySelector('button,a[href],[tabindex]:not([tabindex="-1"])'); f?.focus(); sc.scrollTop = 0; return { pane: true, scroller: true, focusable: !!f, tabindex: sc.tabIndex, focused: document.activeElement === f } })()`)
+    if (ro?.scroller) {
+      await press('PageDown', 0, 500)
+      const top = await ev(`(() => { const pane = [...document.querySelectorAll('[data-pane]')].find((p) => !p.querySelector('[data-testid="composer-input"]')); const sc = [...pane.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 10 && /auto|scroll/.test(getComputedStyle(e).overflowY)); return sc.scrollTop })()`)
+      log('只读格 PageDown 后 scrollTop', top, ro)
+      report.sections['分屏:只读格滚动'] = { ro, top }
+      if (!(top > 0)) note('分屏', '只读格里聚焦其中控件后 PageDown 无法用键盘滚动该格消息', ro)
+    } else log('只读格无可滚动内容或不存在', ro, await ev(`(() => { const pane = [...document.querySelectorAll('[data-pane]')].find((p) => !p.querySelector('[data-testid="composer-input"]')); return pane ? [...pane.querySelectorAll('*')].filter((e) => /auto|scroll/.test(getComputedStyle(e).overflowY)).map((e) => (e.className.toString().slice(0, 40)) + ':' + e.scrollHeight + '/' + e.clientHeight + ':tab' + e.tabIndex) : null })()`))
+    await ev(`document.activeElement?.blur?.()`)
     await tabWalk('分屏', 90)
     const readonlyReach = await ev(`[...document.querySelectorAll('[data-pane]')].map((p) => ({ focusables: p.querySelectorAll('a[href],button:not([disabled]),input,textarea,[tabindex]:not([tabindex="-1"]),[contenteditable=true]').length, scroller: [...p.querySelectorAll('*')].some((e) => (e.scrollHeight > e.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(e).overflowY)) && (e.tabIndex >= 0)) }))`)
     report.sections['分屏:reach'] = readonlyReach
     log('每格可聚焦数/可聚焦滚动区', readonlyReach)
     const readonly = await ev(`[...document.querySelectorAll('[data-pane]')].map((p, i) => [i, p.querySelector('[data-testid="composer-input"]') ? 'composer' : 'readonly', !!p.querySelector('[data-pane-readonly],[data-readonly]')])`)
     log('分屏格类型', readonly)
-    for (const [k, mods, label] of [[']', MOD.ctrl | MOD.alt, 'Ctrl+Alt+]'], ['[', MOD.ctrl | MOD.alt, 'Ctrl+Alt+['], ['ArrowRight', MOD.ctrl | MOD.alt, 'Ctrl+Alt+→']]) {
+    for (const [k, mods, label] of [[']', MOD.ctrl | MOD.alt, 'Ctrl+Alt+]'], ['[', MOD.ctrl | MOD.alt, 'Ctrl+Alt+['], ['ArrowLeft', MOD.ctrl | MOD.alt, 'Ctrl+Alt+←']]) {
       const before = await ev(`(document.querySelector('[data-pane][data-live="true"]') ?? document.activeElement?.closest('[data-pane]'))?.getAttribute('data-pane')`)
       const t0 = await nowT()
       await press(k, mods, 700)
@@ -502,7 +522,7 @@ export default async function run(ctx) {
   })
   await cc('Emulation.setEmulatedMedia', { features: [] })
 
-  check('审计跑完（发现项见 report.findings）', true, `${findings.length} 项发现`)
+  check('可访问性审计无发现项', findings.length === 0, findings.map((f) => f.area + '：' + f.problem))
   log('发现项合计', findings.length)
   for (const f of findings) log(' -', f.area, '|', f.problem)
 }
