@@ -59,7 +59,7 @@ const GEOMETRY = `(() => {
   const greet = rect('.v3-empty-greet')
   const composer = rect('.v3-composer .composer-v3')
   const mid = (r) => r ? r.x + r.w / 2 : null
-  const home = chat && greet ? { greetOffset: Math.round((mid(greet) - mid(chat)) * 10) / 10, composerOffset: composer ? Math.round((mid(composer) - mid(chat)) * 10) / 10 : null, chatX: chat.x, chatW: chat.w } : null
+  const home = chat && composer ? { greetOffset: greet ? Math.round((mid(greet) - mid(chat)) * 10) / 10 : null, composerOffset: composer ? Math.round((mid(composer) - mid(chat)) * 10) / 10 : null, chatX: chat.x, chatW: chat.w } : null
   return { home, composer, user: rect('.v3-msg.user .v3-bubble'), sessionbar: !!document.querySelector('[data-testid=v3-sessionbar]'), win: { w: innerWidth, h: innerHeight } }
 })()`
 
@@ -239,7 +239,7 @@ export default async function run({ cdp, newSession, check, sleep, shot, report,
   check('叙述按时间顺序（运行中）', !!liveOrder && liveOrder.a >= 0 && liveOrder.b > liveOrder.a, liveOrder)
   check('叙述按时间顺序（结束后展开）', doneOrder.a >= 0 && doneOrder.b > doneOrder.a, doneOrder)
   check('回合结束即收起，不留占位', !report.held.heldAfterDone && !report.held.blankAfterDone, report.held)
-  check('首页居中（与原版一致，偏差不超过 6px）', Math.abs(report.motion.homeGreetOffset ?? 99) <= 6 && Math.abs(report.motion.homeComposerOffset ?? 99) <= 6, { greet: report.motion.homeGreetOffset, composer: report.motion.homeComposerOffset })
+  check('首页输入框居中（偏差不超过 6px；问候语已随首页改版移除，存在时仍须居中）', Math.abs(report.motion.homeComposerOffset ?? 99) <= 6 && (report.motion.homeGreetOffset === null || Math.abs(report.motion.homeGreetOffset) <= 6), { greet: report.motion.homeGreetOffset, composer: report.motion.homeComposerOffset })
   check('发送后输入框横向无硬跳（每 16.7ms 不超过 12px）', report.motion.composerMaxRateX <= 12, { rate: report.motion.composerMaxRateX, step: report.motion.composerMaxFrameStepX, steps: report.motion.composerStepsX })
   check('完成瞬间答案无硬跳（每 16.7ms 不超过 12px）', report.motion.answerMaxRateAtDone <= 12, { rate: report.motion.answerMaxRateAtDone, step: report.motion.answerMaxFrameStepAtDone, move: report.motion.answerMoveAtDone })
   check('同一行 0.3 秒内换字不超过 2 次', report.motion.labelChangesWithin300ms <= 2, report.motion.labelChangesWithin300ms)
