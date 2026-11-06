@@ -14,6 +14,7 @@ import { sideBySideCandidate } from '../../app/SideBySideLayout'
 import { applySessionDrop, defaultDropTarget, dropContextFor, type SplitDropTarget } from './split-drop-model'
 import { neighbourSplitPane, nextSplitPane, sessionPaneCount, type SplitDirection } from './split-nav'
 import { splitText } from './split-text'
+import { runWithLayoutTransitionFlag } from './layout-transition-flag'
 import { domAnchor, domMetrics, saveScrollSnapshot } from '../session/scroll-position'
 import { distanceFromBottom } from '../session/scroll-follow'
 
@@ -85,15 +86,11 @@ function transitionSplitLayout(update: () => void, settleOn: SplitSessionRef | n
     return
   }
   const root = doc.documentElement
-  root.dataset.splitLayoutVt = ''
-  const transition = doc.startViewTransition(async () => {
+  runWithLayoutTransitionFlag(root, () => doc.startViewTransition!(async () => {
     update()
     if (settleOn) await splitSwitchSettled(settleOn)
     else await new Promise<void>((resolve) => window.setTimeout(resolve, 32))
-  }) as { finished?: Promise<unknown> } | undefined
-  const clear = (): void => { delete root.dataset.splitLayoutVt }
-  if (transition?.finished) void transition.finished.then(clear, clear)
-  else clear()
+  }) as { finished?: Promise<unknown> } | undefined)
 }
 
 function switchSplitFocus(target: SplitSessionRef): void {

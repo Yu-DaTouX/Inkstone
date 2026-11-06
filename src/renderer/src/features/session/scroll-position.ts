@@ -22,17 +22,22 @@ function loadSnapshots(): Map<string, ScrollSnapshot> {
 const snapshots = loadSnapshots()
 let persistTimer: ReturnType<typeof setTimeout> | undefined
 
+function writeSnapshots(): void {
+  if (persistTimer !== undefined) clearTimeout(persistTimer)
+  persistTimer = undefined
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...snapshots]))
+  } catch {
+    return
+  }
+}
+
 function persistSnapshots(): void {
   if (persistTimer !== undefined) return
-  persistTimer = setTimeout(() => {
-    persistTimer = undefined
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...snapshots]))
-    } catch {
-      return
-    }
-  }, 300)
+  persistTimer = setTimeout(writeSnapshots, 300)
 }
+
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { if (persistTimer !== undefined) writeSnapshots() })
 
 function scrollKey(identity: string): string {
   const key = identity.replace(/\\/g, '/')
