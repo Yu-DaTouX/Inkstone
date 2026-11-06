@@ -17,7 +17,7 @@ function BundledPluginRow({ entry }: { entry: PluginCatalogEntry }): ReactElemen
   const { t, lang } = useI18n()
   const confirm = useConfirm()
   const copy = pluginText(entry, lang)
-  const [installed, setInstalledState] = useState(false)
+  const [installed, setInstalledState] = useState(() => useInstalledPlugins.getState().installed[entry.id] === true)
   const setInstalled = useCallback((value: boolean) => {
     setInstalledState(value)
     useInstalledPlugins.getState().mark(entry.id, value)

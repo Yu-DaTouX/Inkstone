@@ -250,8 +250,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
     void (async () => {
       try {
         const next = await github.status(cwd)
-        if (next.repo) remember(statusMemory, cwd, next)
-        else statusMemory.delete(cwd)
+        remember(statusMemory, cwd, next)
         if (alive) setStatus(next)
       } catch (cause) {
         if (alive) {
