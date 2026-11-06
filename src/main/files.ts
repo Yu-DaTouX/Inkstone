@@ -27,7 +27,7 @@ const MAX_SEARCH_DIRS = 2000
 
 export { isWithin, pathKey }
 
-function statusForError(error: unknown): FileListingStatus {
+export function statusForError(error: unknown): FileListingStatus {
   const code = (error as NodeJS.ErrnoException | undefined)?.code
   if (code === 'EACCES' || code === 'EPERM') return 'permission'
   if (code === 'ENOENT' || code === 'ENOTDIR') return 'missing'

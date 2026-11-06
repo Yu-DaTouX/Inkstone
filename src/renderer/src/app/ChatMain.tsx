@@ -1,16 +1,7 @@
+import { observeHeight } from '../features/split/split-measure'
 import { memo, useCallback, useRef, type JSX } from 'react'
 import { SessionView } from '../features/session/SessionView'
 import { ComposerV3 } from '../features/composer/ComposerV3'
-
-function observeHeight(element: HTMLElement | null, onHeight: (height: number) => void): (() => void) | undefined {
-  if (!element || typeof ResizeObserver === 'undefined') return undefined
-  const observer = new ResizeObserver((entries) => {
-    const entry = entries[entries.length - 1]
-    if (entry) onHeight(Math.round(entry.contentRect.height))
-  })
-  observer.observe(element)
-  return () => observer.disconnect()
-}
 
 export const ChatMain = memo(function ChatMain(): JSX.Element {
   const convRef = useRef<HTMLDivElement | null>(null)

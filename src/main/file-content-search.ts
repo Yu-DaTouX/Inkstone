@@ -1,6 +1,7 @@
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import type { GrepCursor } from '@ff-labs/fff-node'
+import { statusForError } from './files'
 import { compileContentMatcher } from './file-content-match'
 import type { ContentMatcher, ContentSearchOptions } from './file-content-match'
 import { disposeFileSearch, runFileSearchJob } from './file-search-host'
@@ -9,8 +10,7 @@ import type {
   FileContentHit,
   FileContentSearchRequest,
   FileContentSearchResult,
-  FileContentTruncation,
-  FileListingStatus
+  FileContentTruncation
 } from '../shared/ipc'
 
 export { compileContentMatcher, matchContentLines, splitContentLines } from './file-content-match'
@@ -57,13 +57,6 @@ export function contentPreview(line: string, ranges: ReadonlyArray<[number, numb
     text: line.slice(offset, end),
     ranges: ranges.filter(([start, stop]) => start >= offset && stop <= end).map(([start, stop]) => [start - offset, stop - offset])
   }
-}
-
-function statusForError(error: unknown): FileListingStatus {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code
-  if (code === 'EACCES' || code === 'EPERM') return 'permission'
-  if (code === 'ENOENT' || code === 'ENOTDIR') return 'missing'
-  return 'error'
 }
 
 function hasTraversal(value: string): boolean {

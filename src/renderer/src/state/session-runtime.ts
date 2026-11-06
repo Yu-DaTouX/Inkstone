@@ -177,7 +177,7 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
   return out
 }
 
-function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
+export function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
   const index = list.findIndex((message) => message.id === messageId)
   if (index < 0) return list
   const current = list[index]

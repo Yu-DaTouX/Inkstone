@@ -1,3 +1,4 @@
+import { formatBytes } from '../diff/limits'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from 'react'
 import { BookOpen, Code2, Copy, Download, File as FileIcon, FileArchive, FileText, Folder, FolderOpen, ImageOff, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
@@ -1166,8 +1167,3 @@ function MarkdownView({
   )
 }
 
-function formatBytes(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
-}

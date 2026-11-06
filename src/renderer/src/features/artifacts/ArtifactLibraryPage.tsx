@@ -1,3 +1,4 @@
+import { formatBytes } from '../diff/limits'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { ExternalLink, FolderOpen, Layers, MessageSquare, Pin, PinOff } from 'lucide-react'
 import type { ArtifactLibraryItem as ArtifactLibraryEntry } from '../../../../shared/artifact-library'
@@ -20,12 +21,6 @@ type LibraryView = 'list' | 'grid'
 const VIEW_KEY = 'yan.artifactLibrary.view'
 const PINNED_KEY = 'yan.artifactLibrary.pinned'
 const REFRESH_DELAY_MS = 600
-
-function formatBytes(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
-}
 
 function matches(entry: ArtifactLibraryEntry, query: string): boolean {
   if (!query) return true

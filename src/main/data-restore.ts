@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, createWriteStream, type ReadStream } from 'node:fs'
 import { copyFile, lstat, mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, posix, relative, sep, win32 } from 'node:path'
+import { dirname, join, posix, win32 } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileUrl } from '../shared/file-url'
 import { DEFAULT_PERMISSION_MODE } from '../shared/approval'
 import type { BackupSummary, DamagedSessionRecords } from '../shared/data-backup'
-import { hashBackupFile, readDataBackup } from './data-backup'
+import { hashBackupFile, inside, readDataBackup } from './data-backup'
 
 function pathKey(value: string): string {
   const normalized = value.replace(/\\/g, '/')
@@ -16,11 +16,6 @@ function pathKey(value: string): string {
 
 function sourceFile(root: string, parts: string[]): string {
   return (/^(?:[a-z]:[\\/]|\\\\)/i.test(root) ? win32 : posix).join(root, ...parts)
-}
-
-function inside(parent: string, child: string): boolean {
-  const rel = relative(parent, child)
-  return !rel || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + sep))
 }
 
 const PATH_FIELDS = new Set(['path', 'url', 'session', 'sessionFile', 'conversationFile', 'parentSession', 'chainId'])

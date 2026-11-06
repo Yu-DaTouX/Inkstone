@@ -1,3 +1,4 @@
+import { formatBytes } from '../diff/limits'
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useShallow } from 'zustand/react/shallow'
@@ -304,8 +305,3 @@ function ArtifactCardView({
   )
 }
 
-function formatBytes(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
-}
