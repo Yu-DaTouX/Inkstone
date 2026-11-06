@@ -26,6 +26,9 @@
   .v3-decision[data-arrive] { animation-delay: var(--dur-quick); }
   .v3-result[data-arrive] :is(.v3-chg-head, .v3-chg-row) { animation: v3-arrive-row var(--dur-base) var(--ease) both; animation-delay: calc(var(--dur-quick) + min(sibling-index() - 1, 6) * var(--dur-stagger)); }
   .v3-result[data-arrive] .v3-chg-head { animation-delay: var(--dur-quick); }
+  .v3-result[data-arrive] { position: relative; }
+  .v3-result[data-arrive]::after { content: ''; position: absolute; inset: 0 0 auto 0; height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--accent), transparent); transform-origin: left; animation: v3-result-sweep var(--dur-flourish) var(--ease-glide) var(--dur-quick) both; }
+  @keyframes v3-result-sweep { from { opacity: 1; transform: scaleX(0); } 60% { opacity: 1; } to { opacity: 0; transform: scaleX(1); } }
   @keyframes v3-arrive { from { opacity: 0; translate: 0 var(--s-8); } }
   @keyframes v3-arrive-row { from { opacity: 0; translate: 0 var(--s-4); } }
 }
