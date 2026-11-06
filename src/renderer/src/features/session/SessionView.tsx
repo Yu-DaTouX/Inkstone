@@ -36,6 +36,7 @@ import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar } from './SessionFindBar'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, type FollowDecision, type ReadingAnchor } from './scroll-follow'
+import { holdStreamTail } from './stream-tail-hold'
 import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
 import './session.css'
 import { sameComposerView } from '../../state/composer-recovery'
@@ -572,6 +573,14 @@ export function SessionView(): JSX.Element {
   }, [identity, virtual, remountKey, switchLoading])
 
   useEffect(() => { remountsRef.current = 0 }, [identity])
+
+  const tailRunning = viewActive && !!(session?.isAgentRunning || session?.isStreaming)
+  const tailId = renderTurns.at(-1)?.id
+  useLayoutEffect(() => {
+    const scroller = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+    if (!tailRunning || !scroller) return undefined
+    return holdStreamTail(scroller, () => scroller.querySelector<HTMLElement>(virtual ? '.v3-stream-row--tail' : '.v3-stream-inner'))
+  }, [tailRunning, virtual, identity, remountKey, tailId])
 
   useEffect(() => {
     if (!virtual) return undefined

@@ -1,0 +1,59 @@
+const BLANK_LIMIT_OF_VIEWPORT = 0.5
+
+function naturalHeight(el: HTMLElement, top: number): number {
+  const style = getComputedStyle(el)
+  const last = el.lastElementChild
+  const end = last
+    ? last.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(last).marginBottom) || 0)
+    : top + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.paddingTop) || 0)
+  return end - top + (parseFloat(style.paddingBottom) || 0) + (parseFloat(style.borderBottomWidth) || 0)
+}
+
+export function heldTailHeight(current: number, natural: number, visibleBottom: number, viewport: number): number {
+  const kept = Math.max(natural, Math.min(current, visibleBottom))
+  return Math.min(kept, natural + viewport * BLANK_LIMIT_OF_VIEWPORT)
+}
+
+export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElement | null): () => void {
+  let target: HTMLElement | null = null
+  let written = ''
+  let frame = 0
+  const release = (): void => {
+    if (target) target.style.minHeight = ''
+    target = null
+    written = ''
+  }
+  const sync = (): void => {
+    const tail = findTail()
+    if (tail !== target) {
+      release()
+      target = tail
+    }
+    if (!target) return
+    observer.observe(target)
+    if (target.lastElementChild) observer.observe(target.lastElementChild)
+    const rect = target.getBoundingClientRect()
+    const natural = naturalHeight(target, rect.top)
+    const held = heldTailHeight(rect.height, natural, scroller.getBoundingClientRect().bottom - rect.top, scroller.clientHeight)
+    const value = `${Math.ceil(held)}px`
+    if (value === written) return
+    written = value
+    target.style.minHeight = value
+  }
+  const observer = new ResizeObserver(sync)
+  const onScroll = (): void => {
+    if (frame) return
+    frame = requestAnimationFrame(() => {
+      frame = 0
+      sync()
+    })
+  }
+  sync()
+  scroller.addEventListener('scroll', onScroll, { passive: true })
+  return () => {
+    cancelAnimationFrame(frame)
+    scroller.removeEventListener('scroll', onScroll)
+    observer.disconnect()
+    release()
+  }
+}

@@ -1,7 +1,7 @@
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-export const meta = { description: '长会话（虚拟列表）运行中仿「拍照确认」流程（快命令、读图、叙述、慢命令），整轮反复往上滚几格再往下滚回底部：逐帧记录滚动位置，检查往下滚时有没有被往回拉；YAN_SCROLL_PROMPT 可换假模型指令', samples: 1 }
+export const meta = { description: '长会话（虚拟列表）运行中仿「拍照确认」流程（快命令、读图、叙述、慢命令），整轮反复往上滚几格再往下滚回底部：逐帧记录滚动位置，检查往下滚时有没有被往回拉；YAN_SCROLL_PROMPT 可换假模型指令，YAN_SCROLL_EXPAND=0 不展开条目', samples: 1 }
 
 export default async function run({ cdp, state, waitFor, check, report, turn, box, runDir, sleep, shot, log, autoApprove, running }) {
   const [big] = box.samples
@@ -25,10 +25,25 @@ export default async function run({ cdp, state, waitFor, check, report, turn, bo
 
   await ev(`(() => {
     const rec = window.__scrollRec = { frames: [], on: true }
+    const parts = (root) => {
+      const out = {}
+      const walk = (el, path, depth) => {
+        let i = 0
+        for (const child of el.children) {
+          const name = (typeof child.className === 'string' ? child.className.split(' ').filter((c) => c.startsWith('v3-') || c.startsWith('ui-'))[0] : '') || child.tagName.toLowerCase()
+          const key = path + '>' + name + ':' + i++
+          const h = Math.round(child.getBoundingClientRect().height)
+          if (h) out[key] = h
+          if (depth < 7) walk(child, key, depth + 1)
+        }
+      }
+      if (root) walk(root, '', 0)
+      return out
+    }
     const tick = (t) => {
       const el = document.querySelector('.v3-stream-host .v3-stream')
       const live = [...document.querySelectorAll('.v3-msg[data-turn-id]')].at(-1)
-      if (rec.on && el) rec.frames.push({ t, top: Math.round(el.scrollTop), h: el.scrollHeight, c: el.clientHeight, lh: live ? Math.round(live.getBoundingClientRect().height) : 0, ex: live ? live.querySelectorAll('[aria-expanded="true"]').length : 0, img: live ? live.querySelectorAll('.v3-step-panel img').length : 0, minH: live?.querySelector('.v3-process-body')?.style.minHeight || '' })
+      if (rec.on && el) rec.frames.push({ t, top: Math.round(el.scrollTop), h: el.scrollHeight, c: el.clientHeight, lh: live ? Math.round(live.getBoundingClientRect().height) : 0, ex: live ? live.querySelectorAll('[aria-expanded="true"]').length : 0, img: live ? live.querySelectorAll('.v3-step-panel img').length : 0, minH: live?.querySelector('.v3-process-body')?.style.minHeight || '', parts: parts(live) })
       requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
@@ -67,7 +82,7 @@ export default async function run({ cdp, state, waitFor, check, report, turn, bo
       await sleep(3000)
       while (await state(running)) {
         const before = await ev(`document.querySelectorAll('.v3-msg.streaming [aria-expanded="true"]').length`)
-        await expandLive()
+        if (process.env.YAN_SCROLL_EXPAND !== '0') await expandLive()
         expanded = Math.max(expanded, await ev(`document.querySelectorAll('.v3-msg.streaming [aria-expanded="true"]').length`) - before)
         for (let i = 0; i < 4; i++) { await wheel(-200); await sleep(50) }
         await sleep(600)
@@ -89,7 +104,12 @@ export default async function run({ cdp, state, waitFor, check, report, turn, bo
       const back = []
       for (let i = 1; i < frames.length; i++) {
         const drop = frames[i - 1].top - frames[i].top
-        if (drop > 24) back.push({ t: Math.round(frames[i].t - from), drop, top: frames[i].top, h: frames[i].h, prevH: frames[i - 1].h, prev: frames.slice(Math.max(0, i - 3), i).map(({ lh, ex, img, minH }) => ({ lh, ex, img, minH })), now: { lh: frames[i].lh, ex: frames[i].ex, img: frames[i].img, minH: frames[i].minH } })
+        if (drop > 24) {
+          const before = frames[Math.max(0, i - 2)].parts
+          const after = frames[i].parts
+          const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].map((key) => [key, (after[key] || 0) - (before[key] || 0)]).filter(([, d]) => Math.abs(d) > 4).sort((a, b) => a[0].length - b[0].length).slice(0, 8)
+          back.push({ t: Math.round(frames[i].t - from), drop, top: frames[i].top, h: frames[i].h, prevH: frames[i - 1].h, prev: frames.slice(Math.max(0, i - 3), i).map(({ lh, ex, img, minH }) => ({ lh, ex, img, minH })), now: { lh: frames[i].lh, ex: frames[i].ex, img: frames[i].img, minH: frames[i].minH }, changed })
+        }
       }
       const last = frames.at(-1)
       return { back, endGap: last ? last.h - last.c - last.top : null }

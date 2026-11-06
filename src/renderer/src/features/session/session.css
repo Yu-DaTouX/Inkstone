@@ -132,6 +132,7 @@
   .v3-think-aside-hint::before { content: '·'; margin-inline-end: var(--s-6); }
   .v3-process-seg { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
   .v3-process-seg[data-tail='tools'] + .v3-process-seg:is([data-lead='tools'], [data-lead='thinking']) { margin-top: calc((var(--s-16) + var(--s-2)) * -1); }
+  .v3-process-seg[data-tail='tools'] + .v3-process-seg[data-lead='notes'] { margin-top: calc(var(--s-4) - var(--s-16)); }
   .v3-process-notes { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
   .v3-think-time { font-variant-numeric: tabular-nums; }
   .v3-think[data-live] .ui-collapsible__chevron { visibility: hidden; }

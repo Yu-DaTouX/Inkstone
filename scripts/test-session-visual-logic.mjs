@@ -18,6 +18,7 @@ async function load(name, entry, external = []) {
 const fade = await load('reveal-fade', 'src/renderer/src/features/session/reveal-fade.ts')
 const follow = await load('scroll-follow', 'src/renderer/src/features/session/scroll-follow.ts')
 const position = await load('scroll-position', 'src/renderer/src/features/session/scroll-position.ts')
+const tailHold = await load('stream-tail-hold', 'src/renderer/src/features/session/stream-tail-hold.ts')
 const receipt = await load('question-receipt', 'src/renderer/src/features/session/question-receipt.ts')
 const mdKey = await load('markdown-cache-key', 'src/renderer/src/features/session/markdown-cache-key.ts')
 const highlight = await load('code-highlight', 'src/renderer/src/lib/code-highlight.ts')
@@ -90,6 +91,14 @@ check('渐显：rehype 只包正文文本，跳过代码', () => {
   assert.deepEqual(p.children[1].properties.className, ['v3-fade'])
   assert.equal(p.children[1].properties.style, 'animation-delay:-40ms')
   assert.equal(tree.children[1].children[0].children[0].type, 'text')
+})
+
+check('运行中末行变矮：看得见的空白留住，视口下方的空白收回，最多留半屏', () => {
+  assert.equal(tailHold.heldTailHeight(800, 700, 800, 600), 800)
+  assert.equal(tailHold.heldTailHeight(800, 700, 760, 600), 760)
+  assert.equal(tailHold.heldTailHeight(800, 700, 300, 600), 700)
+  assert.equal(tailHold.heldTailHeight(800, 900, 800, 600), 900)
+  assert.equal(tailHold.heldTailHeight(1400, 700, 1400, 600), 1000)
 })
 
 check('跟随：贴底时保持跟随，无按钮', () => {
