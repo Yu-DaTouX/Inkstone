@@ -4,6 +4,7 @@ import { currentLang, useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useSessionText } from './text'
 import { Markdown } from './Markdown'
+import { useAppearDelay } from './reply-appear'
 import { TurnArtifacts } from './MessageParts'
 import { ThinkingAside, ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
@@ -51,21 +52,6 @@ const COMPACTION_AT_END = '\u0000end'
 const NO_RUN_MESSAGES: UIMessage[] = []
 
 const REPLY_APPEAR_MS = 160
-
-function useAppearDelay(ids: readonly string[], waiting: boolean, delayMs: number): (id: string) => boolean {
-  const [ready, setReady] = useState<ReadonlySet<string>>(new Set())
-  const key = ids.join('|')
-  useEffect(() => {
-    if (!waiting) {
-      setReady((current) => (current.size ? new Set() : current))
-      return undefined
-    }
-    if (ids.every((id) => ready.has(id))) return undefined
-    const timer = window.setTimeout(() => setReady(new Set(ids)), delayMs)
-    return () => window.clearTimeout(timer)
-  }, [key, waiting, delayMs])
-  return (id) => !waiting || ready.has(id)
-}
 
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, tail, answer, outcome = null }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
