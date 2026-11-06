@@ -234,6 +234,73 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
     await server.stop()
   }
 
+  const phoneCalls = []
+  const kinds = { 'phone-token': 'phone', 'agent-token': 'agent' }
+  const phoneServer = new RemoteServer({
+    host: '127.0.0.1',
+    port: 0,
+    devices: {
+      async authenticate(token) { return kinds[token] ? { id: `dev-${kinds[token]}`, name: kinds[token], kind: kinds[token] } : null },
+      async revoke() { return true },
+      async renameDevice() { return null }
+    },
+    handlers: {
+      async snapshot() { return { sessions: [] } },
+      async history() { return { ok: true, data: { messages: [] } } },
+      async deleteSession(sessionId) { phoneCalls.push({ action: 'delete', sessionId }); return { ok: true, data: { sessionId } } },
+      async sessionFlags(sessionId, flags) { phoneCalls.push({ action: 'flags', sessionId, flags }); return { ok: true, data: flags } },
+      async compact(sessionId) { phoneCalls.push({ action: 'compact', sessionId }); return { ok: true, data: {} } },
+      async branches() { return { ok: true, data: { branches: [] } } },
+      async switchBranch(sessionId, branch) { phoneCalls.push({ action: 'branch', sessionId, branch }); return { ok: true, data: { branch } } },
+      async search(query, limit) { phoneCalls.push({ action: 'search', query, limit }); return { ok: true, data: { hits: [] } } },
+      async command() { return { ok: true, data: {} } }
+    }
+  })
+  const phoneInfo = await phoneServer.start()
+  try {
+    const as = (token) => async (path, body) => {
+      const response = await fetch(`http://127.0.0.1:${phoneInfo.port}${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json', 'idempotency-key': `k-${Math.random()}` }) },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) })
+      })
+      return { status: response.status, body: await response.json().catch(() => null) }
+    }
+    const phone = as('phone-token')
+    const agent = as('agent-token')
+    const before = phoneCalls.length
+    const unconfirmed = await phone('/remote/v1/sessions/s-1/delete', {})
+    ok(unconfirmed.status === 400 && phoneCalls.length === before, '手机删除：缺少 confirm 返回 400，不触达主进程', unconfirmed.status)
+    const loose = await phone('/remote/v1/sessions/s-1/delete', { confirm: 'true' })
+    ok(loose.status === 400 && phoneCalls.length === before, '手机删除：confirm 必须是布尔 true，字符串不算', loose.status)
+    const deleted = await phone('/remote/v1/sessions/s-1/delete', { confirm: true })
+    ok(deleted.status === 200 && phoneCalls.at(-1)?.action === 'delete' && phoneCalls.at(-1).sessionId === 's-1', '手机删除：明确确认后到达主进程')
+    const agentDelete = await agent('/remote/v1/sessions/s-1/delete', { confirm: true })
+    ok(agentDelete.status !== 200 && phoneCalls.filter((call) => call.action === 'delete').length === 1, '非手机设备（agent）不能删除会话', agentDelete.status)
+    const badId = await phone('/remote/v1/sessions/a%0Ab/delete', { confirm: true })
+    ok(badId.status === 400 && phoneCalls.filter((call) => call.action === 'delete').length === 1, '删除拒绝无效会话 id')
+    const info = await phone('/remote/v1/info')
+    ok(info.body.capabilities.includes('session-delete') && info.body.capabilities.includes('session-flags') && info.body.capabilities.includes('compact') && info.body.capabilities.includes('branches') && info.body.capabilities.includes('search'), '手机设备看到新增能力声明')
+
+    const emptyFlags = await phone('/remote/v1/sessions/s-1/flags', { pinned: 'yes' })
+    ok(emptyFlags.status === 400 && !phoneCalls.some((call) => call.action === 'flags'), 'flags：非布尔值不当作有效字段')
+    const archived = await phone('/remote/v1/sessions/s-1/flags', { archived: false, pinned: true })
+    ok(archived.status === 200 && JSON.stringify(phoneCalls.at(-1).flags) === JSON.stringify({ pinned: true, archived: false }), 'flags：false 也如实传递')
+    const compacted = await phone('/remote/v1/sessions/s-1/compact', {})
+    ok(compacted.status === 200 && phoneCalls.at(-1).action === 'compact' && phoneCalls.at(-1).sessionId === 's-1', '手机压缩上下文到达主进程')
+    const longBranch = await phone('/remote/v1/sessions/s-1/branch', { branch: 'b'.repeat(251) })
+    ok(longBranch.status === 400 && !phoneCalls.some((call) => call.action === 'branch'), '切换分支：分支名过长被拒')
+    const emptyBranch = await phone('/remote/v1/sessions/s-1/branch', { branch: '' })
+    ok(emptyBranch.status === 400 && !phoneCalls.some((call) => call.action === 'branch'), '切换分支：空分支名被拒')
+    const switched = await phone('/remote/v1/sessions/s-1/branch', { branch: 'feature/x' })
+    ok(switched.status === 200 && phoneCalls.at(-1).branch === 'feature/x', '切换分支：合法分支名到达主进程')
+    await phone('/remote/v1/search?q=' + encodeURIComponent('字'.repeat(500)))
+    const searched = phoneCalls.filter((call) => call.action === 'search').at(-1)
+    ok(searched?.query.length === 200 && searched.limit === 30, '搜索：关键词截到 200 字，结果上限 30', `${searched?.query.length}/${searched?.limit}`)
+  } finally {
+    await phoneServer.stop()
+  }
+
   const relayServer = new RemoteServer({
     host: '127.0.0.1',
     port: 0,
