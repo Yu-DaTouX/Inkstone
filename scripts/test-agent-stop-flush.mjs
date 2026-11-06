@@ -47,7 +47,7 @@ await build({
           contents: `
             export class BrowserWindow { constructor() { throw new Error('Native browser requires an Electron integration test') } }
             export const session = { fromPartition() { throw new Error('Native session requires an Electron integration test') } }
-            export const app = { getLocale: () => 'en-US', getPath: () => process.env.YAN_DATA_DIR, getVersion: () => '0.0.0', isPackaged: false }
+            export const app = { getLocale: () => 'zh-CN', getPath: () => process.env.YAN_DATA_DIR, getVersion: () => '0.0.0', isPackaged: false }
             export const nativeImage = { createFromBuffer: () => ({ isEmpty: () => true, resize: () => ({}) }) }
             export const safeStorage = { isEncryptionAvailable: () => false }
           `,

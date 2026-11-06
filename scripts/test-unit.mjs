@@ -25,20 +25,30 @@ import { runFileEditorTests } from './test-file-editor.mjs'
 applyTestEnv()
 const isolatedEnv = isIsolatedTestEnv()
 
-await import('./test-live-synthetic-isolation.mjs')
-await import('./test-light-client.mjs')
-await import('./test-light-hotpaths.mjs')
-await import('./test-main-runtime-imports.mjs')
-await import('./test-i18n-consistency.mjs')
-await import('./test-i18n-compare.mjs')
-await import('./test-model-selection.mjs')
-await import('./test-cc-guard.mjs')
-await runHtmlArtifactPreviewTests()
-await runRunStateTests()
-await runCapabilityNegotiationTests()
-await import('./test-security-performance-fixes.mjs')
-await import('./test-browser-frame-origin.mjs')
-await import('./test-v3-deeplink.mjs')
+const inProcessFailures = []
+async function guarded(label, run) {
+  try {
+    await run()
+  } catch (error) {
+    console.log(`✗ ${label}：${error?.message ?? error}`)
+    inProcessFailures.push({ label, detail: error?.stack ?? String(error) })
+  }
+}
+
+await guarded("import('./test-live-synthetic-isolation.mjs')", () => import('./test-live-synthetic-isolation.mjs'))
+await guarded("import('./test-light-client.mjs')", () => import('./test-light-client.mjs'))
+await guarded("import('./test-light-hotpaths.mjs')", () => import('./test-light-hotpaths.mjs'))
+await guarded("import('./test-main-runtime-imports.mjs')", () => import('./test-main-runtime-imports.mjs'))
+await guarded("import('./test-i18n-consistency.mjs')", () => import('./test-i18n-consistency.mjs'))
+await guarded("import('./test-i18n-compare.mjs')", () => import('./test-i18n-compare.mjs'))
+await guarded("import('./test-model-selection.mjs')", () => import('./test-model-selection.mjs'))
+await guarded("import('./test-cc-guard.mjs')", () => import('./test-cc-guard.mjs'))
+await guarded("runHtmlArtifactPreviewTests()", () => runHtmlArtifactPreviewTests())
+await guarded("runRunStateTests()", () => runRunStateTests())
+await guarded("runCapabilityNegotiationTests()", () => runCapabilityNegotiationTests())
+await guarded("import('./test-security-performance-fixes.mjs')", () => import('./test-security-performance-fixes.mjs'))
+await guarded("import('./test-browser-frame-origin.mjs')", () => import('./test-browser-frame-origin.mjs'))
+await guarded("import('./test-v3-deeplink.mjs')", () => import('./test-v3-deeplink.mjs'))
 const inProcessScripts = [
   'test-attachment-prune-race', 'test-files-root-boundary',
   'test-mobile-model-url', 'test-mobile-window-layout', 'test-mobile-timeline', 'test-mobile-event-stream', 'test-mobile-image-cache', 'test-mobile-preview-plan', 'test-open-path-boundary',
@@ -48,7 +58,7 @@ const inProcessScripts = [
   'test-user-address',
   'test-pi-settings-eperm-retry'
 ]
-for (const script of inProcessScripts) await import(`./${script}.mjs`)
+for (const script of inProcessScripts) await guarded(script, () => import(`./${script}.mjs`))
 
 const spawnFailures = []
 
@@ -135,7 +145,7 @@ async function pendingScripts() {
 
 const scannedScripts = await pendingScripts()
 console.log(`目录扫描运行 ${scannedScripts.length} 个脚本`)
-await runScriptPool(scannedScripts)
+await guarded("runScriptPool(scannedScripts)", () => runScriptPool(scannedScripts))
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
@@ -322,10 +332,10 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 )
 const { runSessionImageTests } = await import('./test-session-images.mjs')
 const { runArtifactTests } = await import('./test-artifacts.mjs')
-await runArtifactTests()
-await import('./test-image-generation-boundaries.mjs')
-await import('./test-bundled-plugins.mjs')
-await import('./test-comfyui-plugin.mjs')
+await guarded("runArtifactTests()", () => runArtifactTests())
+await guarded("import('./test-image-generation-boundaries.mjs')", () => import('./test-image-generation-boundaries.mjs'))
+await guarded("import('./test-bundled-plugins.mjs')", () => import('./test-bundled-plugins.mjs'))
+await guarded("import('./test-comfyui-plugin.mjs')", () => import('./test-comfyui-plugin.mjs'))
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runTurnTimingTests } = await import('./test-turn-timing.mjs')
 const { runDurationTests } = await import('./test-duration.mjs')
@@ -1106,22 +1116,22 @@ console.log(`模块用的目录: ${SESSIONS_DIR}`)
 ok(SESSIONS_DIR === dir, 'YAN_SESSIONS_DIR 生效（测试不会碰真实会话）')
 ok(isolatedEnv, '测试环境已隔离（宿主 YAN_*/PI_* 已清空，数据目录在临时区）')
 
-await runSessionConcurrencyConflictTests(ok)
-await runSessionConcurrencyFrontendTests(ok)
-await runSessionStatsIsolationTests(ok)
+await guarded("runSessionConcurrencyConflictTests(ok)", () => runSessionConcurrencyConflictTests(ok))
+await guarded("runSessionConcurrencyFrontendTests(ok)", () => runSessionConcurrencyFrontendTests(ok))
+await guarded("runSessionStatsIsolationTests(ok)", () => runSessionStatsIsolationTests(ok))
 
-await runSessionConcurrencySendGuardTests(ok)
-await runSessionConcurrencyFinalEdgesTests(ok)
-await runCommandCodeQuotaDisplayTests(ok)
-await runSubagentActiveVisibilityTests(ok)
-await runSubagentParentOwnershipTests(ok)
+await guarded("runSessionConcurrencySendGuardTests(ok)", () => runSessionConcurrencySendGuardTests(ok))
+await guarded("runSessionConcurrencyFinalEdgesTests(ok)", () => runSessionConcurrencyFinalEdgesTests(ok))
+await guarded("runCommandCodeQuotaDisplayTests(ok)", () => runCommandCodeQuotaDisplayTests(ok))
+await guarded("runSubagentActiveVisibilityTests(ok)", () => runSubagentActiveVisibilityTests(ok))
+await guarded("runSubagentParentOwnershipTests(ok)", () => runSubagentParentOwnershipTests(ok))
 
-await runSessionSyncRaceTests(ok)
-await runHostOwnershipTests(ok)
-await runSnapshotIdentityTests(ok)
-await runExecutionAdmissionTests(ok)
-await runEpochSnapshotTests(ok)
-await runAccountQuotaPaneTests(ok)
+await guarded("runSessionSyncRaceTests(ok)", () => runSessionSyncRaceTests(ok))
+await guarded("runHostOwnershipTests(ok)", () => runHostOwnershipTests(ok))
+await guarded("runSnapshotIdentityTests(ok)", () => runSnapshotIdentityTests(ok))
+await guarded("runExecutionAdmissionTests(ok)", () => runExecutionAdmissionTests(ok))
+await guarded("runEpochSnapshotTests(ok)", () => runEpochSnapshotTests(ok))
+await guarded("runAccountQuotaPaneTests(ok)", () => runAccountQuotaPaneTests(ok))
 
 const PROJECT = join(dir, '--C--Users-Test--')
 await mkdir(PROJECT, { recursive: true })
@@ -1374,70 +1384,70 @@ ok(typeof piInfoRes.bundledAvailable === 'boolean', 'piInfo.bundledAvailable 是
 await rm(piTmp, { recursive: true, force: true })
 
 
-await runTurnTests(ok)
-await runTurnTimingTests(ok)
-await runDurationTests(ok)
-await runTurnTimingStoreTests(ok)
+await guarded("runTurnTests(ok)", () => runTurnTests(ok))
+await guarded("runTurnTimingTests(ok)", () => runTurnTimingTests(ok))
+await guarded("runDurationTests(ok)", () => runDurationTests(ok))
+await guarded("runTurnTimingStoreTests(ok)", () => runTurnTimingStoreTests(ok))
 
 
-await runZoomTests(ok)
+await guarded("runZoomTests(ok)", () => runZoomTests(ok))
 
 
-await runFileRefTests(ok)
+await guarded("runFileRefTests(ok)", () => runFileRefTests(ok))
 
 
-await runLinkTests(ok)
-await runFileResourceTests(ok)
+await guarded("runLinkTests(ok)", () => runLinkTests(ok))
+await guarded("runFileResourceTests(ok)", () => runFileResourceTests(ok))
 
 const { runFileUrlTests } = await import('./test-file-url.mjs')
-await runFileUrlTests(ok)
+await guarded("runFileUrlTests(ok)", () => runFileUrlTests(ok))
 
 const { runSessionSwitchTests } = await import('./test-session-switch.mjs')
-await runSessionSwitchTests(ok)
+await guarded("runSessionSwitchTests(ok)", () => runSessionSwitchTests(ok))
 
 
-await runWorkbenchTests(ok)
+await guarded("runWorkbenchTests(ok)", () => runWorkbenchTests(ok))
 
 
-await runBrowserVisibilityTests(ok)
+await guarded("runBrowserVisibilityTests(ok)", () => runBrowserVisibilityTests(ok))
 
 
-await runBrowserNavigationTests(ok)
+await guarded("runBrowserNavigationTests(ok)", () => runBrowserNavigationTests(ok))
 
 
 
-await runSubagentViewTests(ok)
+await guarded("runSubagentViewTests(ok)", () => runSubagentViewTests(ok))
 
 
-await runSubagentUsageTests(ok)
+await guarded("runSubagentUsageTests(ok)", () => runSubagentUsageTests(ok))
 
 
-await runKeepImagesTests(ok)
-await runQueueImageTests(ok)
-await runSameMessagesTests(ok)
-await runStableRefTests(ok)
-await runAttachmentTests(ok)
-await runSessionImageTests(ok)
+await guarded("runKeepImagesTests(ok)", () => runKeepImagesTests(ok))
+await guarded("runQueueImageTests(ok)", () => runQueueImageTests(ok))
+await guarded("runSameMessagesTests(ok)", () => runSameMessagesTests(ok))
+await guarded("runStableRefTests(ok)", () => runStableRefTests(ok))
+await guarded("runAttachmentTests(ok)", () => runAttachmentTests(ok))
+await guarded("runSessionImageTests(ok)", () => runSessionImageTests(ok))
 const { runImageStoreTests } = await import('./test-image-store.mjs')
-await runImageStoreTests(ok)
+await guarded("runImageStoreTests(ok)", () => runImageStoreTests(ok))
 
 
 
 
-await runResponseDetailTests(ok)
+await guarded("runResponseDetailTests(ok)", () => runResponseDetailTests(ok))
 
 
-await runSnapshotTests(ok)
+await guarded("runSnapshotTests(ok)", () => runSnapshotTests(ok))
 
 
-await runChromeProfileTests(ok)
+await guarded("runChromeProfileTests(ok)", () => runChromeProfileTests(ok))
 
 
 
 
-await runQuestionTests(ok)
+await guarded("runQuestionTests(ok)", () => runQuestionTests(ok))
 
-await runRepeatGuardTests(ok)
+await guarded("runRepeatGuardTests(ok)", () => runRepeatGuardTests(ok))
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1460,7 +1470,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   })
 )
 const { runSessionChainTests } = await import('./test-session-chain.mjs')
-await runSessionChainTests(ok)
+await guarded("runSessionChainTests(ok)", () => runSessionChainTests(ok))
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/session-history.ts'],
@@ -1483,24 +1493,24 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
 )
 const { runModelErrorTests } = await import('./test-model-errors.mjs')
-await runModelErrorTests(ok)
+await guarded("runModelErrorTests(ok)", () => runModelErrorTests(ok))
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({ entryPoints: ['src/shared/quota-resume.ts'], outfile: 'out/test/quota-resume.mjs',
     bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
 )
 const { runQuotaResumeTests } = await import('./test-quota.mjs')
-await runQuotaResumeTests(ok)
-await runTodoHistoryTests(ok)
-await runTaskPlanTests(ok)
-await runTaskPlanStoreTests(ok)
+await guarded("runQuotaResumeTests(ok)", () => runQuotaResumeTests(ok))
+await guarded("runTodoHistoryTests(ok)", () => runTodoHistoryTests(ok))
+await guarded("runTaskPlanTests(ok)", () => runTaskPlanTests(ok))
+await guarded("runTaskPlanStoreTests(ok)", () => runTaskPlanStoreTests(ok))
 await runCapabilityCatalogTests(ok, {
   capabilities: capabilityCatalogShared,
   skill: capabilitySkillService,
   catalog: capabilityCatalogMain
 })
 
-await runDiscoveryTests(ok, { shared: discoveryShared, discover: discoveryMain })
+await guarded("runDiscoveryTests(ok, { shared: discoveryShared, discover: d", () => runDiscoveryTests(ok, { shared: discoveryShared, discover: discoveryMain }))
 await runAcquisitionTests(ok, {
   shared: acquisitionShared,
   service: acquisitionService,
@@ -1509,24 +1519,24 @@ await runAcquisitionTests(ok, {
   packageAuthorizationShared,
   packageAuthorizationService
 })
-await runSkillSecurityTests(ok, skillSecurity)
+await guarded("runSkillSecurityTests(ok, skillSecurity)", () => runSkillSecurityTests(ok, skillSecurity))
 await runPiPackageSchedulerTests(ok, {
   AcquisitionService: acquisitionService.AcquisitionService,
   PiPackageActivationScheduler: piPackageScheduler.PiPackageActivationScheduler
 })
-await runPiPackageSmokeTests(ok, piPackageSmoke)
+await guarded("runPiPackageSmokeTests(ok, piPackageSmoke)", () => runPiPackageSmokeTests(ok, piPackageSmoke))
 await runMcpTests(ok, {
   mcp: mcpShared,
   config: mcpConfig,
   manager: mcpManager,
   toolService: mcpToolService
 })
-await runMcpRegistrationTests(ok, { shared: mcpRegistrationShared })
-await runExtensionInventoryTests(ok)
+await guarded("runMcpRegistrationTests(ok, { shared: mcpRegistrationShared ", () => runMcpRegistrationTests(ok, { shared: mcpRegistrationShared }))
+await guarded("runExtensionInventoryTests(ok)", () => runExtensionInventoryTests(ok))
 
-await runSubagentIsolationTests(ok, subagentIsolation)
+await guarded("runSubagentIsolationTests(ok, subagentIsolation)", () => runSubagentIsolationTests(ok, subagentIsolation))
 
-await runSubagentControllerTests(ok, SubagentController)
+await guarded("runSubagentControllerTests(ok, SubagentController)", () => runSubagentControllerTests(ok, SubagentController))
 
 runProjectIdTests(ok, projectId)
 
@@ -1545,8 +1555,8 @@ const workspaceChanges = await import('../node_modules/esbuild/lib/main.js').the
   }).then(() => import('../out/test/snapshots.mjs'))
 )
 const { runWorkspaceChangesTests, runGitWorkspaceChangesTests } = await import('./test-workspace-changes.mjs')
-await runWorkspaceChangesTests(ok, workspaceChanges)
-await runGitWorkspaceChangesTests(ok, workspaceChanges)
+await guarded("runWorkspaceChangesTests(ok, workspaceChanges)", () => runWorkspaceChangesTests(ok, workspaceChanges))
+await guarded("runGitWorkspaceChangesTests(ok, workspaceChanges)", () => runGitWorkspaceChangesTests(ok, workspaceChanges))
 
 {
   const { runRunnerTests } = await import('./test-runners.mjs')
@@ -1575,9 +1585,9 @@ await runGitWorkspaceChangesTests(ok, workspaceChanges)
   await runSplitViewTests(ok)
 }
 
-await import('./test-split-drop-model.mjs')
-await import('./test-v3-side-by-side.mjs')
-await import('./test-v3-side-by-side-resize.mjs')
+await guarded("import('./test-split-drop-model.mjs')", () => import('./test-split-drop-model.mjs'))
+await guarded("import('./test-v3-side-by-side.mjs')", () => import('./test-v3-side-by-side.mjs'))
+await guarded("import('./test-v3-side-by-side-resize.mjs')", () => import('./test-v3-side-by-side-resize.mjs'))
 
 {
   const { runRemoteApprovalTests } = await import('./test-remote-approval.mjs')
@@ -1662,30 +1672,30 @@ runAtQueryTests(ok, atQuery)
 }
 runSlashQueryTests(ok, slashQuery)
 runCapabilityRequestTests(ok, capabilityRequest)
-await runFileListingTests(ok, fileListing)
-await runFilesWatchTests(ok, filesWatch)
-await runOpenGuardTests(ok, openGuard)
-await runRailSectionsTests(ok, railSections)
-await runRightPanelTests(ok)
-await runFileContentSearchTests(ok, fileContentSearch)
-await runFileEditorTests(ok, fileEditor)
+await guarded("runFileListingTests(ok, fileListing)", () => runFileListingTests(ok, fileListing))
+await guarded("runFilesWatchTests(ok, filesWatch)", () => runFilesWatchTests(ok, filesWatch))
+await guarded("runOpenGuardTests(ok, openGuard)", () => runOpenGuardTests(ok, openGuard))
+await guarded("runRailSectionsTests(ok, railSections)", () => runRailSectionsTests(ok, railSections))
+await guarded("runRightPanelTests(ok)", () => runRightPanelTests(ok))
+await guarded("runFileContentSearchTests(ok, fileContentSearch)", () => runFileContentSearchTests(ok, fileContentSearch))
+await guarded("runFileEditorTests(ok, fileEditor)", () => runFileEditorTests(ok, fileEditor))
 
 const { runCredentialsTests } = await import('./test-credentials.mjs')
-await runCredentialsTests(ok)
+await guarded("runCredentialsTests(ok)", () => runCredentialsTests(ok))
 
 const { runApiKeyPoolTests } = await import('./test-api-key-pool.mjs')
-await runApiKeyPoolTests(ok)
+await guarded("runApiKeyPoolTests(ok)", () => runApiKeyPoolTests(ok))
 const { runOAuthAccountTests } = await import('./test-oauth-accounts.mjs')
-await runOAuthAccountTests(ok)
+await guarded("runOAuthAccountTests(ok)", () => runOAuthAccountTests(ok))
 
 const { runSettingsStoreTests } = await import('./test-settings-store.mjs')
-await runSettingsStoreTests(ok)
+await guarded("runSettingsStoreTests(ok)", () => runSettingsStoreTests(ok))
 
 const { runOAuthTests } = await import('./test-oauth.mjs')
-await runOAuthTests(ok)
+await guarded("runOAuthTests(ok)", () => runOAuthTests(ok))
 
 const { runStreamDeltasTests } = await import('./test-stream-deltas.mjs')
-await runStreamDeltasTests(ok)
+await guarded("runStreamDeltasTests(ok)", () => runStreamDeltasTests(ok))
 
 const titleSampleMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1706,22 +1716,22 @@ runCompactionStatusTests(ok, compactionEvents, compactionView)
 const { runStdioGuardTests } = await import('./test-stdio-guard.mjs')
 runStdioGuardTests(ok, stdioGuard)
 
-await runRemoteServerTests(ok, remoteServer)
-await runPeerTests(ok, { ...remoteServer, ...peerDeps })
+await guarded("runRemoteServerTests(ok, remoteServer)", () => runRemoteServerTests(ok, remoteServer))
+await guarded("runPeerTests(ok, { ...remoteServer, ...peerDeps })", () => runPeerTests(ok, { ...remoteServer, ...peerDeps }))
 const { runRemoteDeviceTests } = await import('./test-remote-devices.mjs')
-await runRemoteDeviceTests(ok, peerDeps)
+await guarded("runRemoteDeviceTests(ok, peerDeps)", () => runRemoteDeviceTests(ok, peerDeps))
 
 const languageExtension = await import('../resources/pi-extensions/language.js')
 const { runLanguageExtensionTests } = await import('./test-language-extension.mjs')
-await runLanguageExtensionTests(ok, languageExtension)
+await guarded("runLanguageExtensionTests(ok, languageExtension)", () => runLanguageExtensionTests(ok, languageExtension))
 
 const ultracodeExtension = await import('../resources/pi-extensions/ultracode.js')
 const { runUltracodeExtensionTests } = await import('./test-ultracode-extension.mjs')
-await runUltracodeExtensionTests(ok, ultracodeExtension)
+await guarded("runUltracodeExtensionTests(ok, ultracodeExtension)", () => runUltracodeExtensionTests(ok, ultracodeExtension))
 
 const preambleExtension = await import('../resources/pi-extensions/preamble.js')
 const { runPreambleExtensionTests } = await import('./test-preamble-extension.mjs')
-await runPreambleExtensionTests(ok, preambleExtension)
+await guarded("runPreambleExtensionTests(ok, preambleExtension)", () => runPreambleExtensionTests(ok, preambleExtension))
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   await build({ entryPoints: ['src/shared/context-limits.ts'], outfile: 'out/test/context-limits.mjs', bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
@@ -1731,7 +1741,7 @@ await runPreambleExtensionTests(ok, preambleExtension)
   await runAutoCompactTests(ok, autoCompact, contextLimits)
 }
 const { runAppUpdateTests } = await import('./test-app-update.mjs')
-await runAppUpdateTests(ok)
+await guarded("runAppUpdateTests(ok)", () => runAppUpdateTests(ok))
 
 const ipcError = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1744,7 +1754,7 @@ const ipcError = await import('../node_modules/esbuild/lib/main.js').then(({ bui
   }).then(() => import('../out/test/ipc-error.mjs'))
 )
 const { runIpcErrorTests } = await import('./test-ipc-error.mjs')
-await runIpcErrorTests(ok, ipcError)
+await guarded("runIpcErrorTests(ok, ipcError)", () => runIpcErrorTests(ok, ipcError))
 
 const webSearch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1757,7 +1767,7 @@ const webSearch = await import('../node_modules/esbuild/lib/main.js').then(({ bu
   }).then(() => import('../out/test/web-search.mjs'))
 )
 const { runWebSearchTests } = await import('./test-web-search.mjs')
-await runWebSearchTests(ok, webSearch)
+await guarded("runWebSearchTests(ok, webSearch)", () => runWebSearchTests(ok, webSearch))
 
 const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1770,7 +1780,7 @@ const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ bu
   }).then(() => import('../out/test/quota-mini.mjs'))
 )
 const { runQuotaMiniTests } = await import('./test-quota.mjs')
-await runQuotaMiniTests(ok, quotaMini)
+await guarded("runQuotaMiniTests(ok, quotaMini)", () => runQuotaMiniTests(ok, quotaMini))
 
 const runProgress = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1783,7 +1793,7 @@ const runProgress = await import('../node_modules/esbuild/lib/main.js').then(({ 
   }).then(() => import('../out/test/run-progress.mjs'))
 )
 const { runRunProgressTests } = await import('./test-run-progress.mjs')
-await runRunProgressTests(ok, runProgress)
+await guarded("runRunProgressTests(ok, runProgress)", () => runRunProgressTests(ok, runProgress))
 
 const customProvider = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1796,7 +1806,7 @@ const customProvider = await import('../node_modules/esbuild/lib/main.js').then(
   }).then(() => import('../out/test/custom-provider.mjs'))
 )
 const { runCustomProviderTests } = await import('./test-custom-provider.mjs')
-await runCustomProviderTests(ok, customProvider)
+await guarded("runCustomProviderTests(ok, customProvider)", () => runCustomProviderTests(ok, customProvider))
 
 const gitState = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1809,7 +1819,7 @@ const gitState = await import('../node_modules/esbuild/lib/main.js').then(({ bui
   }).then(() => import('../out/test/git.mjs'))
 )
 const { runGitStateTests } = await import('./test-git-lib.mjs')
-await runGitStateTests(ok, gitState)
+await guarded("runGitStateTests(ok, gitState)", () => runGitStateTests(ok, gitState))
 
 const gitActions = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1822,7 +1832,7 @@ const gitActions = await import('../node_modules/esbuild/lib/main.js').then(({ b
   }).then(() => import('../out/test/git-actions.mjs'))
 )
 const { runGitActionTests } = await import('./test-git-lib.mjs')
-await runGitActionTests(ok)
+await guarded("runGitActionTests(ok)", () => runGitActionTests(ok))
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   Promise.all([
@@ -1907,28 +1917,28 @@ const { runWorktreeLinkTests } = await import('./test-worktree-links.mjs')
 const { runSessionIsolationTests } = await import('./test-session-isolation.mjs')
 const { runQuestionLogTests } = await import('./test-question-log.mjs')
 console.log('\n--- 宿主提问：回放合并 + 按会话落盘 ---')
-await runQuestionLogTests(ok)
+await guarded("runQuestionLogTests(ok)", () => runQuestionLogTests(ok))
 console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
 const piCliPath = join('resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')
 if (!existsSync(piCliPath)) throw new Error(`内置 pi CLI 不在（${piCliPath}）：先跑 npm run vendor:pi`)
-await runPackagesTests(ok)
+await guarded("runPackagesTests(ok)", () => runPackagesTests(ok))
 const { runPluginMarketTests } = await import('./test-plugin-market.mjs')
-await runPluginMarketTests(ok)
+await guarded("runPluginMarketTests(ok)", () => runPluginMarketTests(ok))
 const { runVisualBlockTests } = await import('./test-visual-blocks.mjs')
-await runVisualBlockTests(ok)
+await guarded("runVisualBlockTests(ok)", () => runVisualBlockTests(ok))
 const { runAppearanceTests } = await import('./test-appearance.mjs')
 console.log('\n--- 外观个性化：字体、字号与背景色 ---')
-await runAppearanceTests(ok)
+await guarded("runAppearanceTests(ok)", () => runAppearanceTests(ok))
 const { runUsageStatsTests } = await import('./test-usage-stats.mjs')
 console.log('\n--- 启动页用量概览：按行计数与范围聚合 ---')
-await runUsageStatsTests(ok)
+await guarded("runUsageStatsTests(ok)", () => runUsageStatsTests(ok))
 console.log('\n--- S1. 会话来源的持久化引用 ---')
-await runSourcesTests(ok)
+await guarded("runSourcesTests(ok)", () => runSourcesTests(ok))
 console.log('\n--- S2. 会话↔工作树来源关系（实施-07）---')
-await runWorktreeLinkTests(ok)
+await guarded("runWorktreeLinkTests(ok)", () => runWorktreeLinkTests(ok))
 console.log('\n--- S2b. 同一工作目录冲突 → 自动隔离与自动合回 ---')
-await runSessionIsolationTests(ok)
-await runGitRepoTests(ok)
+await guarded("runSessionIsolationTests(ok)", () => runSessionIsolationTests(ok))
+await guarded("runGitRepoTests(ok)", () => runGitRepoTests(ok))
 
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
@@ -2325,7 +2335,7 @@ const pdfText = await import('../node_modules/esbuild/lib/main.js').then(({ buil
   }).then(() => import('../out/test/pdf-text.mjs'))
 )
 const { runPdfTextTests } = await import('./test-pdf-text.mjs')
-await runPdfTextTests(ok, pdfText)
+await guarded("runPdfTextTests(ok, pdfText)", () => runPdfTextTests(ok, pdfText))
 
 const userSkillShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2349,7 +2359,7 @@ const userSkillMain = await import('../node_modules/esbuild/lib/main.js').then((
   }).then(() => import('../out/test/user-skills.mjs'))
 )
 const { runUserSkillTests } = await import('./test-user-skill.mjs')
-await runUserSkillTests(ok, userSkillShared, userSkillMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm })
+await guarded("runUserSkillTests(ok, userSkillShared, userSkillMain, { mkdt", () => runUserSkillTests(ok, userSkillShared, userSkillMain, { mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }))
 
 const subagentBrief = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2388,9 +2398,9 @@ const searchMod = await import('../node_modules/esbuild/lib/main.js').then(({ bu
   }).then(() => import('../out/test/search.mjs'))
 )
 const { runSearchTests } = await import('./test-search.mjs')
-await runSearchTests(ok, searchMod)
+await guarded("runSearchTests(ok, searchMod)", () => runSearchTests(ok, searchMod))
 const { runWebResearchTests } = await import('./test-web-research.mjs')
-await runWebResearchTests()
+await guarded("runWebResearchTests()", () => runWebResearchTests())
 
 {
   const { mkdtempSync, writeFileSync } = await import('node:fs')
@@ -2453,7 +2463,7 @@ const capabilityServerMod = await import('../node_modules/esbuild/lib/main.js').
   }).then(() => import('../out/test/capability-server.mjs'))
 )
 const { runCapabilityResultTests } = await import('./test-capability-result.mjs')
-await runCapabilityResultTests(ok, capabilityServerMod)
+await guarded("runCapabilityResultTests(ok, capabilityServerMod)", () => runCapabilityResultTests(ok, capabilityServerMod))
 
 const browserWaitMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -2466,7 +2476,7 @@ const browserWaitMod = await import('../node_modules/esbuild/lib/main.js').then(
   }).then(() => import('../out/test/browser-wait.mjs'))
 )
 const { runBrowserWaitTests } = await import('./test-browser-wait.mjs')
-await runBrowserWaitTests(ok, browserWaitMod)
+await guarded("runBrowserWaitTests(ok, browserWaitMod)", () => runBrowserWaitTests(ok, browserWaitMod))
 
 const buildNeutral = (entry, outfile) =>
   import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -2482,18 +2492,22 @@ const buildNeutral = (entry, outfile) =>
 const browserInputMod = await buildNeutral('src/main/browser/InputController.ts', 'out/test/browser-input.mjs')
 const browserRegistryMod = await buildNeutral('src/main/browser/ElementRegistry.ts', 'out/test/browser-registry.mjs')
 const { runBrowserSelectTests } = await import('./test-browser-select.mjs')
-await runBrowserSelectTests(ok, browserInputMod, browserRegistryMod)
+await guarded("runBrowserSelectTests(ok, browserInputMod, browserRegistryMo", () => runBrowserSelectTests(ok, browserInputMod, browserRegistryMod))
 
 const browserNetworkMod = await buildNeutral('src/main/browser/NetworkTracker.ts', 'out/test/browser-network.mjs')
 const { runBrowserNetworkTests } = await import('./test-browser-network.mjs')
-await runBrowserNetworkTests(ok, browserNetworkMod)
+await guarded("runBrowserNetworkTests(ok, browserNetworkMod)", () => runBrowserNetworkTests(ok, browserNetworkMod))
 
 const { runSessionReadEquivalenceTests } = await import('./test-session-read-equivalence.mjs')
-await runSessionReadEquivalenceTests(ok)
-await import('./test-session-reader-stream.mjs')
-await import('./test-session-reader-branch.mjs')
+await guarded("runSessionReadEquivalenceTests(ok)", () => runSessionReadEquivalenceTests(ok))
+await guarded("import('./test-session-reader-stream.mjs')", () => import('./test-session-reader-stream.mjs'))
+await guarded("import('./test-session-reader-branch.mjs')", () => import('./test-session-reader-branch.mjs'))
 
 console.log(`\n${pass}/${pass + fail} 通过`)
+if (inProcessFailures.length) {
+  console.log(`\n${inProcessFailures.length} 个进程内测试失败：${inProcessFailures.map((item) => item.label).join(', ')}`)
+  for (const item of inProcessFailures) console.log(`\n--- ✗ ${item.label} ---\n${item.detail}`)
+}
 if (spawnFailures.length) {
   console.log(`\n${spawnFailures.length} 个子进程测试失败：${spawnFailures.map((item) => item.script).join(', ')}`)
   for (const item of spawnFailures) {
@@ -2503,4 +2517,4 @@ if (spawnFailures.length) {
   }
 }
 await rm(dataDir, { recursive: true, force: true })
-process.exit(fail || spawnFailures.length ? 1 : 0)
+process.exit(fail || spawnFailures.length || inProcessFailures.length ? 1 : 0)

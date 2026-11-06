@@ -85,7 +85,7 @@ try {
     name: 'stub-electron',
     setup(buildApi) {
       buildApi.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }))
-      buildApi.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const app={getLocale:()=>"en",getPath:()=>"",getVersion:()=>"0"};export class BrowserWindow{};export const shell={};export const ipcMain={};export const nativeImage={createFromBuffer:()=>({isEmpty:()=>false})};export const session={};', loader: 'js' }))
+      buildApi.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const app={getLocale:()=>"zh-CN",getPath:()=>"",getVersion:()=>"0"};export class BrowserWindow{};export const shell={};export const ipcMain={};export const nativeImage={createFromBuffer:()=>({isEmpty:()=>false})};export const session={};', loader: 'js' }))
     }
   }
   const bundle = async (entry, name) => {
