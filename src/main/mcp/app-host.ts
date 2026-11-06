@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { McpConnectionManager, type McpRawToolDescriptor, type McpRequestOptions } from './connection-manager'
 import { loadMcpServersCached, mcpServersForProject } from './config'
 import { toolResultText, type McpServerStatus } from '../../shared/mcp'
@@ -46,7 +47,7 @@ export class McpAppResourceTooLargeError extends Error {
     readonly bytes: number,
     readonly limit: number
   ) {
-    super(`资源 ${uri} 有 ${bytes} 字节，超过上限 ${limit} 字节`)
+    super(pick(`资源 ${uri} 有 ${bytes} 字节，超过上限 ${limit} 字节`, `Resource ${uri} is ${bytes} bytes, over the ${limit}-byte limit`))
     this.name = 'McpAppResourceTooLargeError'
   }
 }
@@ -223,7 +224,7 @@ export class McpAppHost {
       return {
         ok: false,
         code: 'runtime-unknown',
-        message: `归属守卫读取事实失败，拒绝连接服务 ${serverId}：${messageOf(error)}`
+        message: pick(`归属守卫读取事实失败，拒绝连接服务 ${serverId}：${messageOf(error)}`, `Ownership check failed; connection to ${serverId} refused: ${messageOf(error)}`)
       }
     }
   }
@@ -233,14 +234,14 @@ export class McpAppHost {
     const original = definitions.find((server) => server.id === serverId)
     const config = mcpServersForProject(definitions, options.projectId).find((server) => server.id === serverId)
     if (!config) {
-      return { ok: false, preservePool: !!original && isInkstoneManaged({ ...original, enabled: enabledSomewhere(original) }), error: new McpAppUnmanagedError(`MCP 服务 ${serverId} 不在当前项目配置里，拒绝由砚宿主连接`) }
+      return { ok: false, preservePool: !!original && isInkstoneManaged({ ...original, enabled: enabledSomewhere(original) }), error: new McpAppUnmanagedError(pick(`MCP 服务 ${serverId} 不在当前项目配置里，拒绝由砚宿主连接`, `MCP service ${serverId} is not in the current project config; Inkstone will not connect to it`)) }
     }
     if (!isInkstoneManaged(config)) {
       return {
         ok: false,
         preservePool: config.enabled === false && enabledSomewhere(original ?? config) && isInkstoneManaged({ ...config, enabled: true }),
         error: new McpAppUnmanagedError(
-          config.enabled === false ? `MCP 服务 ${serverId} 已在当前使用范围关闭，拒绝连接` : `MCP 服务 ${serverId} 未声明由砚托管（ownedBy=${config.ownedBy ?? 'pi'}），拒绝连接`
+          config.enabled === false ? pick(`MCP 服务 ${serverId} 已在当前使用范围关闭，拒绝连接`, `MCP service ${serverId} is turned off in the current scope; connection refused`) : pick(`MCP 服务 ${serverId} 未声明由砚托管（ownedBy=${config.ownedBy ?? 'pi'}），拒绝连接`, `MCP service ${serverId} is not declared as managed by Inkstone (ownedBy=${config.ownedBy ?? 'pi'}); connection refused`)
         )
       }
     }
@@ -299,7 +300,7 @@ export class McpAppHost {
     options: McpAppRequestOptions
   ): Promise<void> {
     if (this.pool.get(serverId) !== pooled) {
-      throw new McpAppOwnershipError('ownership-changed', `服务 ${serverId} 的连接在调用期间已被替换，丢弃本次结果`)
+      throw new McpAppOwnershipError('ownership-changed', pick(`服务 ${serverId} 的连接在调用期间已被替换，丢弃本次结果`, `The connection to ${serverId} was replaced during the call; result discarded`))
     }
     const evaluation = await this.evaluateOwnership(serverId, options)
     if (!evaluation.ok) {
@@ -308,7 +309,7 @@ export class McpAppHost {
       })
       throw new McpAppOwnershipError(
         'ownership-changed',
-        `服务 ${serverId} 的归属在调用期间发生变化，已丢弃本次结果：${evaluation.error.message}`
+        pick(`服务 ${serverId} 的归属在调用期间发生变化，已丢弃本次结果：${evaluation.error.message}`, `Ownership of ${serverId} changed during the call; result discarded: ${evaluation.error.message}`)
       )
     }
   }
@@ -352,8 +353,8 @@ export class McpAppHost {
         closed,
         code: 'not-managed',
         message: config
-          ? `MCP 服务 ${serverId} 未声明由砚托管（ownedBy=${config.ownedBy ?? 'pi'}），已断开旧连接`
-          : `MCP 服务 ${serverId} 不在配置里，已断开旧连接`
+          ? pick(`MCP 服务 ${serverId} 未声明由砚托管（ownedBy=${config.ownedBy ?? 'pi'}），已断开旧连接`, `MCP service ${serverId} is not declared as managed by Inkstone (ownedBy=${config.ownedBy ?? 'pi'}); old connection closed`)
+          : pick(`MCP 服务 ${serverId} 不在配置里，已断开旧连接`, `MCP service ${serverId} is not in the config; old connection closed`)
       }
     }
     const decision = await this.checkOwnership(serverId, config)
@@ -389,13 +390,13 @@ export class McpAppHost {
     const record = asRecord(raw)
     const contents = record && Array.isArray(record.contents) ? record.contents : []
     const first = contents.length ? asRecord(contents[0]) : null
-    if (!first) throw new McpAppResourceError(`资源 ${uri} 没有内容`)
+    if (!first) throw new McpAppResourceError(pick(`资源 ${uri} 没有内容`, `Resource ${uri} has no content`))
     const mimeType = typeof first.mimeType === 'string' ? first.mimeType : ''
     if (typeof first.text !== 'string') {
-      throw new McpAppResourceError(`资源 ${uri} 不是文本资源（App 页面必须是 ${MCP_APP_MIME_TYPE}）`)
+      throw new McpAppResourceError(pick(`资源 ${uri} 不是文本资源（App 页面必须是 ${MCP_APP_MIME_TYPE}）`, `Resource ${uri} is not a text resource (App pages must be ${MCP_APP_MIME_TYPE})`))
     }
     if (!isMcpAppMimeType(mimeType)) {
-      throw new McpAppResourceError(`资源 ${uri} 的 MIME 不是 ${MCP_APP_MIME_TYPE}：${mimeType || '（缺失）'}`)
+      throw new McpAppResourceError(pick(`资源 ${uri} 的 MIME 不是 ${MCP_APP_MIME_TYPE}：${mimeType || '（缺失）'}`, `Resource ${uri} has MIME type other than ${MCP_APP_MIME_TYPE}: ${mimeType || '(missing)'}`))
     }
     const bytes = Buffer.byteLength(first.text, 'utf8')
     if (bytes > this.maxResourceBytes) throw new McpAppResourceTooLargeError(uri, bytes, this.maxResourceBytes)

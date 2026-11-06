@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { readFile, rename, mkdir, realpath, stat, open, unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join, resolve, isAbsolute } from 'node:path'
@@ -15,7 +16,7 @@ export interface TrustStatus {
 async function readTable(): Promise<Record<string, unknown>> {
   try {
     const raw: unknown = JSON.parse(await readFile(join(PI_AGENT_DIR, TRUST_FILE_NAME), 'utf8'))
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('项目信任文件格式无效，已拒绝覆盖')
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(pick('项目信任文件格式无效，已拒绝覆盖', 'The project trust file is invalid; not overwritten'))
     return raw as Record<string, unknown>
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
@@ -57,9 +58,9 @@ function setTrust(cwd: string, trusted: boolean): Promise<{ ok: boolean; entry: 
   const operation = async () => {
     let temp: string | undefined
     try {
-      if (typeof cwd !== 'string' || !isAbsolute(cwd)) throw new Error('必须提供绝对目录')
+      if (typeof cwd !== 'string' || !isAbsolute(cwd)) throw new Error(pick('必须提供绝对目录', 'An absolute folder path is required'))
       const abs = await realpath(cwd)
-      if (!(await stat(abs)).isDirectory()) throw new Error('不是目录')
+      if (!(await stat(abs)).isDirectory()) throw new Error(pick('不是目录', 'Not a folder'))
       const table = await readTable()
       const key = Object.keys(table).find((name) => norm(name) === norm(abs)) ?? abs
       table[key] = trusted

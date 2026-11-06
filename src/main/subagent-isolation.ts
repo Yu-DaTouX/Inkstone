@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { execFile } from 'node:child_process'
 import { cp, lstat, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
@@ -62,7 +63,7 @@ function gitErrorDetail(error: unknown): string {
   const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown }
   const parts = [e.stderr, e.stdout, e.message].map((part) => (Buffer.isBuffer(part) ? part.toString('utf8') : String(part ?? '')))
   const detail = parts.map((part) => part.trim()).find((part) => part.length > 0)
-  return detail ?? 'git 命令失败'
+  return detail ?? pick('git 命令失败', 'Git command failed')
 }
 
 async function runGitBytes(cwd: string, args: string[], timeout = 30_000): Promise<Buffer> {
@@ -88,7 +89,7 @@ async function runGit(cwd: string, args: string[], timeout = 30_000, input?: str
         const child = execFile('git', args, options, (error, stdout, stderr) => {
           if (error) {
             const detail = String(stderr || stdout || error.message || error).trim()
-            rejectPromise(new Error(detail || 'git 命令失败'))
+            rejectPromise(new Error(detail || pick('git 命令失败', 'Git command failed')))
             return
           }
           resolvePromise({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
@@ -153,7 +154,7 @@ export async function prepareWorkspace(
 
   const repoRoot = await findGitRoot(root)
   if (!repoRoot) {
-    throw new Error('写入型子代理需要 Git 项目；请改用只读模式，或先初始化 Git')
+    throw new Error(pick('写入型子代理需要 Git 项目；请改用只读模式，或先初始化 Git', 'A subagent that writes needs a Git project; use read-only mode or initialize Git first'))
   }
 
   const containerPath = await mkdtemp(join(tmpdir(), `yan-subagent-${id}-`))
@@ -283,14 +284,14 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
     const listing = await git(workspace.cwd, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'])
     outputs = ignoredOutputsOf(listing.stdout)
   } catch (error) {
-    return { ok: false, error: `列不出被忽略的文件：${gitErrorDetail(error)}` }
+    return { ok: false, error: pick(`列不出被忽略的文件：${gitErrorDetail(error)}`, `Could not list ignored files: ${gitErrorDetail(error)}`) }
   }
   if (outputs.length === 0) return { ok: true, files: [] }
   try {
     let total = 0
     for (const rel of outputs) {
       total += await sizeWithin(join(workspace.cwd, rel), limit - total)
-      if (total > limit) return { ok: false, error: `被忽略的产物超过 ${Math.round(limit / 1024 / 1024)} MB，没有自动另存` }
+      if (total > limit) return { ok: false, error: pick(`被忽略的产物超过 ${Math.round(limit / 1024 / 1024)} MB，没有自动另存`, `Ignored outputs exceed ${Math.round(limit / 1024 / 1024)} MB and were not saved`) }
     }
     const target = join(archiveDir, `${id}-outputs`)
     for (const rel of outputs) await cp(join(workspace.cwd, rel), join(target, rel), { recursive: true, force: true, verbatimSymlinks: true })
@@ -302,17 +303,17 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
 
 export async function applyPatch(rootCwd: string, patchPath: string): Promise<{ ok: boolean; error?: string }> {
   const root = await findGitRoot(rootCwd)
-  if (!root) return { ok: false, error: '主工作目录不是 Git 项目，无法安全合并' }
+  if (!root) return { ok: false, error: pick('主工作目录不是 Git 项目，无法安全合并', 'The main working folder is not a Git project; cannot merge safely') }
   try {
     await git(root, ['apply', '--check', '--recount', '--whitespace=nowarn', patchPath], 60_000)
   } catch (error) {
-    return { ok: false, error: `合并冲突或补丁已失效：${error instanceof Error ? error.message : String(error)}` }
+    return { ok: false, error: pick(`合并冲突或补丁已失效：${error instanceof Error ? error.message : String(error)}`, `Merge conflict or stale patch: ${error instanceof Error ? error.message : String(error)}`) }
   }
   try {
     await git(root, ['apply', '--recount', '--whitespace=nowarn', patchPath], 60_000)
     return { ok: true }
   } catch (error) {
-    return { ok: false, error: `应用补丁失败：${error instanceof Error ? error.message : String(error)}` }
+    return { ok: false, error: pick(`应用补丁失败：${error instanceof Error ? error.message : String(error)}`, `Could not apply the patch: ${error instanceof Error ? error.message : String(error)}`) }
   }
 }
 
@@ -330,7 +331,7 @@ export async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<Wo
           return process.platform === 'win32' ? path.toLowerCase() === target.toLowerCase() : path === target
         }))
         .catch(() => true)
-      if (registered) errors.push(`移除 worktree 失败（${workspace.worktreePath}）：${error instanceof Error ? error.message : String(error)}`)
+      if (registered) errors.push(pick(`移除 worktree 失败（${workspace.worktreePath}）：${error instanceof Error ? error.message : String(error)}`, `Could not remove the worktree (${workspace.worktreePath}): ${error instanceof Error ? error.message : String(error)}`))
     }
   }
   if (errors.length) return { ok: false, errors }

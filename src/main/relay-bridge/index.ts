@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { hostname } from 'node:os'
 import { toB64u } from './crypto'
 import { RelayLink, relayWsBase, type WsCtor } from './link'
@@ -45,19 +46,19 @@ export class RelayBridge {
     this.stopLink()
     if (!next.enabled) return
     if (!/^(https?|wss?):\/\/[^\s/]+/.test(next.url)) {
-      this.detail = '中继地址无效：应为 https://… 开头'
+      this.detail = pick('中继地址无效：应为 https://… 开头', 'Invalid relay address: it must start with https://')
       return
     }
     const hostKey = await this.store.hostKey()
     const secret = await this.store.secret()
-    this.detail = '正在连接中继…'
+    this.detail = pick('正在连接中继…', 'Connecting to the relay…')
     this.link = new RelayLink({
       url: next.url,
       secret,
       WebSocket: this.opts.WebSocket,
       log: (text) => this.opts.log?.(text),
       onState: (connected, detail) => {
-        this.detail = connected ? null : (detail ?? '中继连接断开，正在重连')
+        this.detail = connected ? null : (detail ?? pick('中继连接断开，正在重连', 'Relay connection lost; reconnecting'))
       },
       onPipe: (pipe) => {
         const session = new TunnelSession(pipe, {
@@ -98,7 +99,7 @@ export class RelayBridge {
   }
 
   async pairLink(kind: RelayClientKind): Promise<{ link: string; expiresAt: number }> {
-    if (!this.settings.enabled || !this.settings.url) throw new Error('先开启中继接入并填写中继地址')
+    if (!this.settings.enabled || !this.settings.url) throw new Error(pick('先开启中继接入并填写中继地址', 'Turn on relay access and enter the relay address first'))
     const hostKey = await this.store.hostKey()
     const room = await roomIdFor(await this.store.secret())
     const relay = this.store.startPairing(kind)

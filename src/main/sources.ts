@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
@@ -27,7 +28,7 @@ export function configureSources(next: { dir: string }): void {
 export function sourcesDir(sessionId: string): string {
   const raw = String(sessionId ?? '')
   const safe = raw.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120)
-  if (!safe || safe === '.' || safe === '..') throw new Error('会话 id 不合法')
+  if (!safe || safe === '.' || safe === '..') throw new Error(pick('会话 id 不合法', 'Invalid session id'))
   return join(baseDir ?? YAN_DIR, 'sources', safe)
 }
 
@@ -82,7 +83,7 @@ export function saveImage(params: {
       sourceId: `image:${fingerprint}`,
       sessionId: params.sessionId,
       kind: 'image',
-      title: String(params.name ?? '') || '图片',
+      title: String(params.name ?? '') || pick('图片', 'Image'),
       ref: file,
       fingerprint,
       origin: String(params.name ?? ''),
@@ -162,7 +163,7 @@ export function verifyFiles(sessionId: string, entries: { path: string; name?: s
           origin: String(e.path),
           addedAt: e.addedAt ?? Date.now(),
           available: false,
-          error: '文件不在了（被删除或改名）'
+          error: pick('文件不在了（被删除或改名）', 'The file is gone (deleted or renamed)')
         }
       }
       return { ...ref, addedAt: e.addedAt ?? ref.addedAt }
@@ -244,7 +245,7 @@ export function linkSources(params: {
   messageId: string
 }): { ok: boolean; added: number; skipped: number; error?: string } {
   const messageId = safeMessageId(params.messageId)
-  if (!messageId) return { ok: false, added: 0, skipped: 0, error: '消息 id 形状不对' }
+  if (!messageId) return { ok: false, added: 0, skipped: 0, error: pick('消息 id 形状不对', 'Invalid message id') }
   const ids = [...new Set((params.sourceIds ?? []).map((x) => safeSourceId(String(x))))].filter(
     (x): x is string => !!x
   )
@@ -278,7 +279,7 @@ export function linkSources(params: {
 export function removeImage(sessionId: string, sourceId: string): { ok: boolean; error?: string } {
   const dir = resolve(sourcesDir(sessionId))
   const fingerprint = String(sourceId ?? '').replace(/^image:/, '')
-  if (!/^[a-f0-9]{8,64}$/i.test(fingerprint)) return { ok: false, error: '来源 id 形状不对' }
+  if (!/^[a-f0-9]{8,64}$/i.test(fingerprint)) return { ok: false, error: pick('来源 id 形状不对', 'Invalid source id') }
   let removed = false
   try {
     for (const f of readdirSync(dir)) {
@@ -291,18 +292,18 @@ export function removeImage(sessionId: string, sourceId: string): { ok: boolean;
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
-  return removed ? { ok: true } : { ok: false, error: '没有这份副本' }
+  return removed ? { ok: true } : { ok: false, error: pick('没有这份副本', 'No such copy') }
 }
 
 export function readImage(sessionId: string, sourceId: string): { ok: boolean; base64?: string; mime?: string; error?: string } {
   const dir = resolve(sourcesDir(sessionId))
   const fingerprint = String(sourceId ?? '').replace(/^image:/, '')
-  if (!/^[a-f0-9]{8,64}$/i.test(fingerprint)) return { ok: false, error: '来源 id 形状不对' }
+  if (!/^[a-f0-9]{8,64}$/i.test(fingerprint)) return { ok: false, error: pick('来源 id 形状不对', 'Invalid source id') }
   try {
     const hit = readdirSync(dir).find((f) => f.startsWith(fingerprint))
-    if (!hit) return { ok: false, error: '没有这份副本' }
+    if (!hit) return { ok: false, error: pick('没有这份副本', 'No such copy') }
     const full = resolve(join(dir, hit))
-    if (!full.startsWith(dir)) return { ok: false, error: '路径越界' }
+    if (!full.startsWith(dir)) return { ok: false, error: pick('路径越界', 'Path is out of bounds') }
     const ext = extname(hit).toLowerCase()
     const mime =
       ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : ext === '.bmp' ? 'image/bmp' : 'application/octet-stream'

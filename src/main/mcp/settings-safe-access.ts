@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import type { McpServerStatus } from '../../shared/mcp'
 import type { McpConnectionManager } from './connection-manager'
 import { loadMcpServers, mcpServersForProject, type McpConfigLoadResult } from './config'
@@ -65,7 +66,7 @@ export async function reconcileLegacyManaged(
     if (!released) {
       throw new SettingsSafeAccessError(
         'legacy-holder-unresolved',
-        `旧 MCP 连接管理器仍登记着 ${serverId}，但无法断开；不交给砚宿主，避免双连接`
+        pick(`旧 MCP 连接管理器仍登记着 ${serverId}，但无法断开；不交给砚宿主，避免双连接`, `The legacy MCP connection manager still holds ${serverId} and could not disconnect it; not handed to the Inkstone host to avoid double connections`)
       )
     }
     legacyReleased = true
@@ -95,7 +96,7 @@ export async function verifyManagedServer(
 ): Promise<ManagedVerifyResult> {
   const config = managedConfigOf(access, serverId, callerProjectId)
   if (!config) {
-    throw new SettingsSafeAccessError('not-managed', `服务 ${serverId} 当前不由砚托管，不能走托管检查路径`)
+    throw new SettingsSafeAccessError('not-managed', pick(`服务 ${serverId} 当前不由砚托管，不能走托管检查路径`, `Service ${serverId} is not managed by Inkstone, so the managed check path is unavailable`))
   }
   await reconcileLegacyManaged(access, serverId, callerProjectId)
   const host = access.host()
@@ -120,12 +121,12 @@ export async function probeManagedServer(
 ): Promise<{ tools: string[] }> {
   const config = managedConfigById(access, serverId)
   if (!config) {
-    throw new SettingsSafeAccessError('not-managed', `服务 ${serverId} 当前不由砚托管，不能走托管 probe 路径`)
+    throw new SettingsSafeAccessError('not-managed', pick(`服务 ${serverId} 当前不由砚托管，不能走托管 probe 路径`, `Service ${serverId} is not managed by Inkstone, so the managed probe path is unavailable`))
   }
   if (!callerProjectId || !callerProjectId.trim()) {
     throw new SettingsSafeAccessError(
       'managed-project-required',
-      `服务 ${serverId} 由砚托管，但没有调用者项目身份，拒绝用服务声明的项目代替调用者`
+      pick(`服务 ${serverId} 由砚托管，但没有调用者项目身份，拒绝用服务声明的项目代替调用者`, `Service ${serverId} is managed by Inkstone but the caller has no project identity; the service's declared project is not used instead`)
     )
   }
   await reconcileLegacyManaged(access, serverId, callerProjectId)

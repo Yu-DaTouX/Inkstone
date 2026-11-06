@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
@@ -57,12 +58,12 @@ function limitsFor(brief: SubagentBrief): { totalMs?: number; idleMs: number; gr
 }
 
 function spanText(ms: number): string {
-  if (ms >= 60_000) return `${Math.round(ms / 60_000)} 分钟`
-  if (ms >= 1_000) return `${Math.round(ms / 1000)} 秒`
-  return `${ms} 毫秒`
+  if (ms >= 60_000) return pick(`${Math.round(ms / 60_000)} 分钟`, `${Math.round(ms / 60_000)} min`)
+  if (ms >= 1_000) return pick(`${Math.round(ms / 1000)} 秒`, `${Math.round(ms / 1000)} s`)
+  return pick(`${ms} 毫秒`, `${ms} ms`)
 }
-const totalTimeoutText = (ms: number): string => `运行超时（超过 ${spanText(ms)}）`
-const stallTimeoutText = (ms: number): string => `停滞超时（超过 ${spanText(ms)} 未收到模型输出或工具事件）`
+const totalTimeoutText = (ms: number): string => pick(`运行超时（超过 ${spanText(ms)}）`, `Timed out (over ${spanText(ms)})`)
+const stallTimeoutText = (ms: number): string => pick(`停滞超时（超过 ${spanText(ms)} 未收到模型输出或工具事件）`, `Stalled (no model output or tool events for over ${spanText(ms)})`)
 
 function wrapUpMessage(text: string): string {
   return `【宿主提示】${text}。不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。`
@@ -113,15 +114,15 @@ export function describeProcessExit(
 ): string {
   const facts: string[] = []
   if (info.spawnError) {
-    facts.push(`无法启动 pi：${redactLocalDiagnostic(info.spawnError, 300) ?? info.spawnError}`)
+    facts.push(pick(`无法启动 pi：${redactLocalDiagnostic(info.spawnError, 300) ?? info.spawnError}`, `Could not start pi: ${redactLocalDiagnostic(info.spawnError, 300) ?? info.spawnError}`))
   } else {
     const bits: string[] = []
     if (info.code !== undefined) bits.push(`code=${info.code ?? 'null'}`)
     if (info.signal !== undefined) bits.push(`signal=${info.signal ?? 'null'}`)
-    if (bits.length) facts.push(`pi 子进程提前退出（${bits.join('，')}）`)
+    if (bits.length) facts.push(pick(`pi 子进程提前退出（${bits.join('，')}）`, `pi subprocess exited early (${bits.join(', ')})`))
   }
-  const tail = stderrTail.length ? `；stderr：${stderrTail.join(' | ')}` : ''
-  return `${facts.join('；') || 'pi 子进程提前退出'}${tail}`
+  const tail = stderrTail.length ? pick(`；stderr：${stderrTail.join(' | ')}`, `; stderr: ${stderrTail.join(' | ')}`) : ''
+  return `${facts.join('；') || pick('pi 子进程提前退出', 'pi subprocess exited early')}${tail}`
 }
 const STREAM_PUSH_MS = 33
 export interface SubagentRpc {
@@ -275,7 +276,7 @@ export interface SubagentQuotaWatch {
 }
 
 const QUOTA_BOUNCE_LIMIT = 3
-const IGNORED_ONLY_NOTE = '子代理只写了被 .gitignore 忽略的文件'
+const ignoredOnlyNote = () => pick('子代理只写了被 .gitignore 忽略的文件', 'Subagent only wrote files ignored by .gitignore')
 
 export interface SubagentHostCommands {
   onlyCommands: string[]
@@ -332,9 +333,9 @@ export class SubagentController {
         const collected = await collectDiff(workspace, archiveDir, run.id)
         const keepWorkspace = collected.summary.files > 0 || (collected.ignoredOutputs?.length ?? 0) > 0
         const saved = keepWorkspace ? { ok: true as const, path: undefined } : await preserveIgnoredOutputs(workspace, archiveDir, run.id)
-        const kept = keepWorkspace ? '' : !saved.ok ? '被忽略的产物没能另存，已保留工作区' : ''
+        const kept = keepWorkspace ? '' : !saved.ok ? pick('被忽略的产物没能另存，已保留工作区', 'Ignored outputs could not be saved; workspace kept') : ''
         const cleaned = keepWorkspace || kept ? { ok: false, errors: [] as string[] } : await removeWorkspace(workspace)
-        const note = keepWorkspace ? '应用退出时子代理未完成；工作树已保留，可以继续派信息让它原地续接，也可以合并或放弃它的改动' : kept ? `应用退出时子代理未完成；${kept}：${workspace.worktreePath}` : '应用退出时子代理未完成，未自动恢复执行'
+        const note = keepWorkspace ? pick('应用退出时子代理未完成；工作树已保留，可以继续派信息让它原地续接，也可以合并或放弃它的改动', 'Subagent unfinished at app exit; worktree kept. Send a message to resume it, or merge or discard its changes') : kept ? pick(`应用退出时子代理未完成；${kept}：${workspace.worktreePath}`, `Subagent unfinished at app exit; ${kept}: ${workspace.worktreePath}`) : pick('应用退出时子代理未完成，未自动恢复执行', 'Subagent unfinished at app exit; not resumed')
         const next: SubagentRun = {
           ...run,
           review: keepWorkspace ? 'pending' : 'none',
@@ -609,10 +610,10 @@ export class SubagentController {
       const entry = this.history.get(id)
       const run = this.runs.get(id)
       const snapshot = run ? this.snapshot(run) : entry?.run
-      if (!snapshot) return { ok: false, error: '找不到这个子代理' }
-      if (snapshot.status !== 'error') return { ok: false, error: '只能对已失败的子代理选择不再处理' }
+      if (!snapshot) return { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
+      if (snapshot.status !== 'error') return { ok: false, error: pick('只能对已失败的子代理选择不再处理', 'Only failed subagents can be dismissed') }
       if (snapshot.review === 'pending' || snapshot.review === 'conflict' || (run && !run.reviewDecided)) {
-        return { ok: false, error: '请先审阅并合并或明确放弃该子代理的改动' }
+        return { ok: false, error: pick('请先审阅并合并或明确放弃该子代理的改动', 'Review and merge or discard this subagent\'s changes first') }
       }
       if (typeof snapshot.dismissedAt === 'number' && Number.isFinite(snapshot.dismissedAt)) return { ok: true }
       const next = { ...snapshot, dismissedAt: Date.now() }
@@ -629,7 +630,7 @@ export class SubagentController {
       }
       return { ok: true }
     } catch (error) {
-      return { ok: false, error: `未能保存处理标记：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: pick(`未能保存处理标记：${error instanceof Error ? error.message : String(error)}`, `Could not save the dismissal: ${error instanceof Error ? error.message : String(error)}`) }
     }
   }
 
@@ -641,14 +642,14 @@ export class SubagentController {
     fork?: SubagentForkSource,
     context?: SubagentContext
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
-    if (fork && isolation !== 'shared-cwd') return { ok: false, error: 'fork 子代理只能在当前目录运行' }
-    if (this.stoppingAll) return { ok: false, error: '子代理正在停止清理，请稍后重试' }
+    if (fork && isolation !== 'shared-cwd') return { ok: false, error: pick('fork 子代理只能在当前目录运行', 'Fork subagents can only run in the current folder') }
+    if (this.stoppingAll) return { ok: false, error: pick('子代理正在停止清理，请稍后重试', 'Subagents are being stopped; try again shortly') }
     const text = task.trim()
-    if (!text) return { ok: false, error: '任务描述为空' }
+    if (!text) return { ok: false, error: pick('任务描述为空', 'Task is empty') }
     const modelError = subagentModelError(model ?? process.env.YAN_TEST_MODEL, isolation === 'controlled-cwd')
     if (modelError) return { ok: false, error: modelError }
     if (this.runningCount >= MAX_CONCURRENT) {
-      return { ok: false, error: `同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它` }
+      return { ok: false, error: pick(`同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它`, `At most ${MAX_CONCURRENT} subagents can run at once (${this.runningCount} running); wait for one to finish or stop it`) }
     }
     const parsed = parseSubagentBrief(briefInput, text)
     if (!parsed.ok) return { ok: false, error: parsed.error }
@@ -695,7 +696,7 @@ export class SubagentController {
     }
     if (invalidated()) {
       await cleanupWorkspace(workspace)
-      return { ok: false, error: '子代理在启动期间已停止' }
+      return { ok: false, error: pick('子代理在启动期间已停止', 'Subagent stopped during startup') }
     }
 
     let rpc: SubagentRpc
@@ -708,7 +709,7 @@ export class SubagentController {
     if (invalidated()) {
       try { await rpc.close() } catch { }
       await cleanupWorkspace(workspace)
-      return { ok: false, error: '子代理在启动期间已停止' }
+      return { ok: false, error: pick('子代理在启动期间已停止', 'Subagent stopped during startup') }
     }
 
     const run: Run = {
@@ -728,7 +729,7 @@ export class SubagentController {
       startedAt: Date.now(),
       activeSince: Date.now(),
       activation: ++this.activationSeq,
-      latestActivity: '启动中…',
+      latestActivity: pick('启动中…', 'Starting…'),
       transcript: [],
       review: 'none',
       usageSnapshots: {},
@@ -759,11 +760,11 @@ export class SubagentController {
       const ready = await this.waitReady(rpc, 20_000)
       if (run.status !== 'starting') return this.startupAbort(run)
       if (!ready.ok) {
-        await this.fail(id, '子代理启动超时', 'startup')
-        return { ok: false, error: this.runs.get(id)?.error ?? '子代理启动超时' }
+        await this.fail(id, pick('子代理启动超时', 'Subagent startup timed out'), 'startup')
+        return { ok: false, error: this.runs.get(id)?.error ?? pick('子代理启动超时', 'Subagent startup timed out') }
       }
       if (model && ready.model && modelMismatch(model, ready.model)) {
-        const message = `指定的模型 ${model} 没有生效（pi 实际使用 ${ready.model}），请核对模型名与登录状态后重试，不要改用其他模型`
+        const message = pick(`指定的模型 ${model} 没有生效（pi 实际使用 ${ready.model}），请核对模型名与登录状态后重试，不要改用其他模型`, `Model ${model} was not applied (pi used ${ready.model}); check the model name and sign-in, then retry without switching models`)
         await this.fail(id, message, 'startup')
         return { ok: false, error: message }
       }
@@ -780,15 +781,15 @@ export class SubagentController {
       if (ready.model) run.model = ready.model
       if (ready.thinkingLevel) run.thinkingLevel = ready.thinkingLevel
       run.status = 'running'
-      run.latestActivity = '已启动'
+      run.latestActivity = pick('已启动', 'Started')
       await this.writeMetadata(run)
       if (run.status !== 'running') return this.startupAbort(run)
       this.emit(run)
 
       const res = await rpc.command('prompt', { message: fork ? forkPrompt(briefPrompt(brief, text)) : briefPrompt(brief, text) })
       if (!res.success) {
-        await this.fail(id, res.error ?? '启动任务失败')
-        return { ok: false, error: res.error ?? '启动任务失败' }
+        await this.fail(id, res.error ?? pick('启动任务失败', 'Could not start the task'))
+        return { ok: false, error: res.error ?? pick('启动任务失败', 'Could not start the task') }
       }
       return { ok: true, run: this.snapshot(run) }
     } catch (error) {
@@ -812,7 +813,7 @@ export class SubagentController {
     rpc.on('spawn-error', (err: Error) => {
       if (!current()) return
       const raw = err instanceof Error ? err.message : String(err)
-      run.exitInfo = { code: null, signal: null, spawnError: redactLocalDiagnostic(raw, 300) ?? '未知启动错误' }
+      run.exitInfo = { code: null, signal: null, spawnError: redactLocalDiagnostic(raw, 300) ?? pick('未知启动错误', 'Unknown startup error') }
       this.handleProcessGone(run)
     })
     rpc.on('exit', (code: number | null, signal: string | null) => {
@@ -914,30 +915,30 @@ export class SubagentController {
     origin: { parentSessionId?: string; from?: SubagentSendFrom } = {}
   ): Promise<SubagentSendResult> {
     const text = message.trim()
-    if (!text) return { ok: false, error: '追加内容为空' }
+    if (!text) return { ok: false, error: pick('追加内容为空', 'Message is empty') }
     const from = origin.from ?? 'parent'
     const live = this.runs.get(id)
     const snapshot = live ? this.snapshot(live) : this.history.get(id)?.run
-    if (!snapshot) return { ok: false, error: '找不到这个子代理' }
+    if (!snapshot) return { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
     if (from === 'parent' && snapshot.parentSessionId && origin.parentSessionId !== snapshot.parentSessionId) {
-      return { ok: false, error: '只能向本会话派出的子代理追加信息' }
+      return { ok: false, error: pick('只能向本会话派出的子代理追加信息', 'Messages can only be sent to subagents started from this session') }
     }
-    if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: '子代理正在启动，稍后再发' }
+    if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: pick('子代理正在启动，稍后再发', 'Subagent is starting; send again shortly') }
     if (!live || live.status !== 'running' || live.settled) return this.resume(id, text, from)
-    if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: '子代理正在收尾，等它结束后再发即可续接' }
+    if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: pick('子代理正在收尾，等它结束后再发即可续接', 'Subagent is wrapping up; send again after it finishes to resume it') }
     const activation = live.activation
     const current = (): boolean => this.runs.get(id) === live && live.activation === activation && live.status === 'running' && !live.settled && !live.settling
     try {
       const res = await live.rpc.command('prompt', { message: forwardedMessage(text, mode, from), streamingBehavior: mode }, { timeoutMs: 10_000 })
-      if (!res.success) return { ok: false, error: res.error ?? '追加信息没有送达' }
-      if (!current()) return { ok: false, error: '子代理在发送期间已结束，这条信息可能没有被处理；请再发一次以续接' }
+      if (!res.success) return { ok: false, error: res.error ?? pick('追加信息没有送达', 'Message was not delivered') }
+      if (!current()) return { ok: false, error: pick('子代理在发送期间已结束，这条信息可能没有被处理；请再发一次以续接', 'Subagent ended while sending; the message may not have been handled. Send again to resume') }
       const disposition = (res.data as { disposition?: unknown } | undefined)?.disposition
       const delivery = disposition === 'queued' ? 'queued' : 'started'
       live.lastProgressAt = Date.now()
       if (mode === 'followUp') live.followUp = text
       live.latestActivity = delivery === 'queued'
-        ? (mode === 'steer' ? '已收到追加信息，当前工具结束后处理' : '已收到追加信息，当前任务做完后处理')
-        : '已收到追加信息'
+        ? (mode === 'steer' ? pick('已收到追加信息，当前工具结束后处理', 'Message received; handled after the current tool') : pick('已收到追加信息，当前任务做完后处理', 'Message received; handled after the current task'))
+        : pick('已收到追加信息', 'Message received')
       this.armWatch(live)
       this.emit(live)
       return { ok: true, run: this.snapshot(live), delivery }
@@ -947,9 +948,9 @@ export class SubagentController {
   }
 
   private async resume(id: string, text: string, from: SubagentSendFrom): Promise<SubagentSendResult> {
-    if (this.reviewing.has(id)) return { ok: false, error: '这个子代理的改动正在合并或放弃，不能同时续接；处理完再发' }
-    if (this.stoppingAll) return { ok: false, error: '子代理正在停止清理，请稍后重试' }
-    if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: `同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它` }
+    if (this.reviewing.has(id)) return { ok: false, error: pick('这个子代理的改动正在合并或放弃，不能同时续接；处理完再发', 'This subagent\'s changes are being merged or discarded; send again afterwards') }
+    if (this.stoppingAll) return { ok: false, error: pick('子代理正在停止清理，请稍后重试', 'Subagents are being stopped; try again shortly') }
+    if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: pick(`同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它`, `At most ${MAX_CONCURRENT} subagents can run at once (${this.runningCount} running); wait for one to finish or stop it`) }
     const ticket = { cancelled: false }
     const generation = this.launchGeneration
     this.resuming.set(id, ticket)
@@ -967,7 +968,7 @@ export class SubagentController {
     const abandoned = (): boolean =>
       ticket.cancelled || generation !== this.launchGeneration ||
       (previous ? this.runs.get(id) !== previous : !this.history.get(id))
-    const abandonedError = (): SubagentSendResult => ({ ok: false, error: ticket.cancelled ? '续接已被停止' : '子代理已被停止或清理，没有续接' })
+    const abandonedError = (): SubagentSendResult => ({ ok: false, error: ticket.cancelled ? pick('续接已被停止', 'Resume was stopped') : pick('子代理已被停止或清理，没有续接', 'Subagent was stopped or cleaned up; not resumed') })
     try {
       if (previous?.settling) await previous.settling.catch(() => undefined)
       if (previous?.finalizing) await previous.finalizing.catch(() => undefined)
@@ -975,22 +976,22 @@ export class SubagentController {
       const record = previous ? this.history.get(id) : await this.history.full(id)
       if (abandoned()) return abandonedError()
       const snapshot = previous ? this.snapshot(previous) : record?.run
-      if (!snapshot) return { ok: false, error: '找不到这个子代理' }
+      if (!snapshot) return { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
       if (snapshot.status === 'running' || snapshot.status === 'starting') {
-        if (previous) return { ok: false, error: '子代理仍在运行，请再发一次' }
-        return { ok: false, error: '这个子代理上次运行被中断，不能续接；需要继续时重新派一个，并在任务里附上它的结论' }
+        if (previous) return { ok: false, error: pick('子代理仍在运行，请再发一次', 'Subagent is still running; send again') }
+        return { ok: false, error: pick('这个子代理上次运行被中断，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'This subagent\'s last run was interrupted and cannot be resumed; start a new one and include its findings') }
       }
       const keptWorkspace = !previous && snapshot.isolation === 'worktree' && (snapshot.review === 'pending' || snapshot.review === 'conflict') ? keptWorktreeOf(record) : undefined
       if (snapshot.isolation === 'worktree' && !keptWorkspace && !(previous && worktreeAlive(previous) && existsSync(previous.workspace.cwd))) {
-        return { ok: false, error: 'worktree 子代理的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论' }
+        return { ok: false, error: pick('worktree 子代理的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论', 'This worktree subagent\'s worktree was merged, discarded or archived and cannot be resumed; start a new one and include its findings') }
       }
-      if (snapshot.launchFailed) return { ok: false, error: '这个子代理没有成功启动过，不能续接，请重新派一个' }
+      if (snapshot.launchFailed) return { ok: false, error: pick('这个子代理没有成功启动过，不能续接，请重新派一个', 'This subagent never started successfully and cannot be resumed; start a new one') }
       const sessionFile = await latestSessionFile(this.sessionDir(id))
       if (abandoned()) return abandonedError()
-      if (!sessionFile) return { ok: false, error: '找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论' }
+      if (!sessionFile) return { ok: false, error: pick('找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论', 'Its session record was not found, so it cannot be resumed; start a new one and include its findings') }
       const savedFork = record?.resume?.forkLaunch
       const forkSource = previous?.forkSource ?? (snapshot.fork && savedFork ? restoreForkSource(savedFork, sessionFile) : undefined)
-      if (snapshot.fork && !forkSource) return { ok: false, error: '这个 fork 子代理没有保存来源信息，砚重启后不能续接；需要继续时重新派一个' }
+      if (snapshot.fork && !forkSource) return { ok: false, error: pick('这个 fork 子代理没有保存来源信息，砚重启后不能续接；需要继续时重新派一个', 'This fork subagent has no saved source and cannot be resumed after a restart; start a new one') }
 
       const rootCwd = previous?.workspace.rootCwd ?? record?.rootCwd ?? snapshot.cwd
       const workspace: PreparedWorkspace = previous?.workspace ?? keptWorkspace ?? { isolation: snapshot.isolation, rootCwd, cwd: snapshot.cwd }
@@ -1038,7 +1039,7 @@ export class SubagentController {
       clearTimeout(run.timer)
       Object.assign(run, {
         rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now, followUp: text, quotaWait: undefined,
-        latestActivity: '正在续接…', stderrTail: [], runningTools: new Set<string>(),
+        latestActivity: pick('正在续接…', 'Resuming…'), stderrTail: [], runningTools: new Set<string>(),
         contextRevision: (run.contextRevision ?? 0) + 1, diff: undefined, resultPath: undefined,
         settling: undefined, finalizing: undefined, notified: false, reviewDecided: false, worktreeDone: false,
         endedAt: undefined, endReason: undefined, error: undefined, stopReason: undefined, wrapUp: undefined,
@@ -1052,7 +1053,7 @@ export class SubagentController {
       this.emit(run)
 
       const current = (status: SubagentRun['status']): boolean => run.rpc === rpc && run.activation === activation && run.status === status
-      const stoppedError = (): SubagentSendResult => ({ ok: false, error: run.error ?? '子代理在续接期间已停止，这条信息没有被处理' })
+      const stoppedError = (): SubagentSendResult => ({ ok: false, error: run.error ?? pick('子代理在续接期间已停止，这条信息没有被处理', 'Subagent stopped while resuming; the message was not handled') })
       try {
         rpc.spawn()
         const ready = await this.waitReady(rpc, 20_000)
@@ -1062,11 +1063,11 @@ export class SubagentController {
           return abandonedError()
         }
         if (!ready.ok) {
-          await this.fail(id, '子代理续接超时', 'startup')
-          return { ok: false, error: this.runs.get(id)?.error ?? '子代理续接超时' }
+          await this.fail(id, pick('子代理续接超时', 'Subagent resume timed out'), 'startup')
+          return { ok: false, error: this.runs.get(id)?.error ?? pick('子代理续接超时', 'Subagent resume timed out') }
         }
         if (snapshot.model && ready.model && modelMismatch(snapshot.model, ready.model)) {
-          const error = `续接时模型 ${snapshot.model} 没有生效（pi 实际使用 ${ready.model}），请核对登录状态后重试`
+          const error = pick(`续接时模型 ${snapshot.model} 没有生效（pi 实际使用 ${ready.model}），请核对登录状态后重试`, `Model ${snapshot.model} was not applied on resume (pi used ${ready.model}); check sign-in and retry`)
           await this.fail(id, error, 'startup')
           return { ok: false, error }
         }
@@ -1083,15 +1084,15 @@ export class SubagentController {
         if (ready.thinkingLevel) run.thinkingLevel = ready.thinkingLevel
         run.status = 'running'
         run.resumed = false
-        run.latestActivity = resolvedLaunch.prefixChanged ? '已续接（系统提示或扩展已变，首轮缓存需要重建）' : '已续接'
+        run.latestActivity = resolvedLaunch.prefixChanged ? pick('已续接（系统提示或扩展已变，首轮缓存需要重建）', 'Resumed (system prompt or extensions changed; first-turn cache will rebuild)') : pick('已续接', 'Resumed')
         await this.writeMetadata(run)
         if (!current('running')) return stoppedError()
         this.emit(run)
         const res = await rpc.command('prompt', { message: forwardedMessage(text, 'resume', from) }, { timeoutMs: 10_000 })
         if (!current('running')) return stoppedError()
         if (!res.success) {
-          await this.fail(id, res.error ?? '续接后发送信息失败')
-          return { ok: false, error: res.error ?? '续接后发送信息失败' }
+          await this.fail(id, res.error ?? pick('续接后发送信息失败', 'Could not send the message after resuming'))
+          return { ok: false, error: res.error ?? pick('续接后发送信息失败', 'Could not send the message after resuming') }
         }
         return { ok: true, run: this.snapshot(run), delivery: 'resumed' }
       } catch (error) {
@@ -1111,7 +1112,7 @@ export class SubagentController {
     const ticket = this.resuming.get(id)
     if (ticket) ticket.cancelled = true
     const run = this.runs.get(id)
-    if (!run) return ticket || this.history.get(id) ? { ok: true } : { ok: false, error: '找不到这个子代理' }
+    if (!run) return ticket || this.history.get(id) ? { ok: true } : { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
     if (run.status !== 'running' && run.status !== 'starting') return { ok: true, noop: true, before: run.status }
     await this.stopRun(run, false)
     return { ok: true }
@@ -1140,7 +1141,7 @@ export class SubagentController {
       run.wrapUp = undefined
       run.quotaWait = undefined
       run.endedAt = Date.now()
-      run.latestActivity = '已停止'
+      run.latestActivity = pick('已停止', 'Stopped')
       this.emit(run)
       await this.finalize(run, cleanupReview)
     })()
@@ -1202,7 +1203,7 @@ export class SubagentController {
   }
 
   private startupAbort(run: Run): { ok: false; error: string } {
-    return { ok: false, error: run.status === 'error' && run.error ? run.error : '子代理在启动期间已停止' }
+    return { ok: false, error: run.status === 'error' && run.error ? run.error : pick('子代理在启动期间已停止', 'Subagent stopped during startup') }
   }
 
   private async fail(id: string, message: string, reason: SubagentEndReason = 'failed'): Promise<void> {
@@ -1219,7 +1220,7 @@ export class SubagentController {
     run.progressWarning = undefined
     if (cancelled) {
       run.error = undefined
-      run.latestActivity = '已停止'
+      run.latestActivity = pick('已停止', 'Stopped')
     } else {
       run.error = reason === 'startup' && run.stderrTail.length ? `${message}；stderr：${run.stderrTail.join(' | ')}` : message
       run.latestActivity = message
@@ -1253,7 +1254,7 @@ export class SubagentController {
 
       if (run.isolation === 'worktree' && changed) {
         if (cleanupReview) {
-          if (!collected.patchPath) throw new Error('未能保存改动补丁，已保留工作区')
+          if (!collected.patchPath) throw new Error(pick('未能保存改动补丁，已保留工作区', 'Could not save the patch; workspace kept'))
           run.review = 'archived'
           run.resultPath = collected.patchPath ?? run.workspace.worktreePath
           await this.cleanupRunWorkspace(run)
@@ -1264,7 +1265,7 @@ export class SubagentController {
       } else if (run.isolation === 'worktree' && collected.ignoredOutputs?.length) {
         run.review = 'pending'
         run.resultPath = run.workspace.worktreePath
-        run.error = run.error ?? `${IGNORED_ONLY_NOTE}（${collected.ignoredOutputs.slice(0, 5).join('、')}${collected.ignoredOutputs.length > 5 ? ' 等' : ''}），无法生成补丁，已保留工作区`
+        run.error = run.error ?? pick(`${ignoredOnlyNote()}（${collected.ignoredOutputs.slice(0, 5).join('、')}${collected.ignoredOutputs.length > 5 ? ' 等' : ''}），无法生成补丁，已保留工作区`, `${ignoredOnlyNote()} (${collected.ignoredOutputs.slice(0, 5).join(', ')}${collected.ignoredOutputs.length > 5 ? ', …' : ''}); no patch could be made, workspace kept`)
       } else {
         run.review = 'none'
         run.resultPath = collected.patchPath
@@ -1274,7 +1275,7 @@ export class SubagentController {
       await this.writeMetadata(run, collected.patchPath)
     } catch (error) {
       run.review = run.isolation === 'worktree' ? 'conflict' : 'none'
-      run.error = run.error ?? `读取子代理差异失败：${error instanceof Error ? error.message : String(error)}`
+      run.error = run.error ?? pick(`读取子代理差异失败：${error instanceof Error ? error.message : String(error)}`, `Could not read the subagent diff: ${error instanceof Error ? error.message : String(error)}`)
       run.resultPath = run.workspace.worktreePath
       await this.writeMetadata(run)
     }
@@ -1294,12 +1295,12 @@ export class SubagentController {
       const saved = await preserveIgnoredOutputs(run.workspace, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id)
       if (!saved.ok) {
         run.worktreeDone = false
-        run.error = [run.error, `被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${run.workspace.worktreePath}`].filter(Boolean).join('\n')
+        run.error = [run.error, pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${run.workspace.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${run.workspace.worktreePath}`)].filter(Boolean).join('\n')
         return
       }
       if (saved.path) {
         run.savedOutputsPath = saved.path
-        if (run.error?.startsWith(IGNORED_ONLY_NOTE)) run.error = `${IGNORED_ONLY_NOTE}，已另存到 ${saved.path}`
+        if (run.error?.startsWith(ignoredOnlyNote())) run.error = pick(`${ignoredOnlyNote()}，已另存到 ${saved.path}`, `${ignoredOnlyNote()}; saved to ${saved.path}`)
         if (!run.diff?.patchPath) run.resultPath = saved.path
       }
     }
@@ -1315,13 +1316,13 @@ export class SubagentController {
       try {
         const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
         const collected = await collectDiff(run.workspace, archiveDir, run.id)
-        if (collected.summary.files > 0 && !collected.patchPath) throw new Error('未能保存改动补丁')
+        if (collected.summary.files > 0 && !collected.patchPath) throw new Error(pick('未能保存改动补丁', 'Could not save the patch'))
         run.diff = collected.summary
         run.review = 'archived'
         run.resultPath = collected.patchPath ?? run.workspace.worktreePath
         await this.writeMetadata(run, collected.patchPath)
       } catch (error) {
-        run.error = run.error ?? `退出归档失败，已保留工作区：${error instanceof Error ? error.message : String(error)}`
+        run.error = run.error ?? pick(`退出归档失败，已保留工作区：${error instanceof Error ? error.message : String(error)}`, `Archiving on exit failed; workspace kept: ${error instanceof Error ? error.message : String(error)}`)
         this.emit(run)
         return
       }
@@ -1350,8 +1351,8 @@ export class SubagentController {
   }
 
   private async exclusiveReview(id: string, work: () => Promise<{ ok: boolean; error?: string }>): Promise<{ ok: boolean; error?: string }> {
-    if (this.resuming.has(id)) return { ok: false, error: '子代理正在续接，等它结束后再合并或放弃' }
-    if (this.reviewing.has(id)) return { ok: false, error: '这个子代理的改动正在合并或放弃，请稍候' }
+    if (this.resuming.has(id)) return { ok: false, error: pick('子代理正在续接，等它结束后再合并或放弃', 'Subagent is resuming; merge or discard after it finishes') }
+    if (this.reviewing.has(id)) return { ok: false, error: pick('这个子代理的改动正在合并或放弃，请稍候', 'This subagent\'s changes are being merged or discarded; wait a moment') }
     this.reviewing.add(id)
     try {
       return await work()
@@ -1372,14 +1373,14 @@ export class SubagentController {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'merged')
     await this.awaitSettled(run)
-    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，结束后才能合并' }
+    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子代理仍在运行，结束后才能合并', 'Subagent is still running; merge after it finishes') }
     if (run.review === 'merged') return { ok: true }
     if (run.review !== 'pending' && run.review !== 'conflict') {
-      return { ok: false, error: '该任务没有待合并的改动' }
+      return { ok: false, error: pick('该任务没有待合并的改动', 'This task has no changes to merge') }
     }
     const patchPath = run.diff?.patchPath
     if (!patchPath || !run.diff?.files) {
-      return { ok: false, error: '没有可合并的补丁，已保留工作区供检查' }
+      return { ok: false, error: pick('没有可合并的补丁，已保留工作区供检查', 'No patch to merge; workspace kept for inspection') }
     }
 
     try {
@@ -1400,7 +1401,7 @@ export class SubagentController {
       this.emit(run)
       return { ok: true }
     } catch (error) {
-      return { ok: false, error: `合并失败：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: pick(`合并失败：${error instanceof Error ? error.message : String(error)}`, `Merge failed: ${error instanceof Error ? error.message : String(error)}`) }
     }
   }
 
@@ -1408,7 +1409,7 @@ export class SubagentController {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'discarded')
     await this.awaitSettled(run)
-    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，先停止它' }
+    if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子代理仍在运行，先停止它', 'Subagent is still running; stop it first') }
     try {
       run.review = 'discarded'
       run.resultPath = run.diff?.patchPath
@@ -1417,18 +1418,18 @@ export class SubagentController {
       this.emit(run)
       return { ok: true }
     } catch (error) {
-      return { ok: false, error: `放弃改动失败：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: pick(`放弃改动失败：${error instanceof Error ? error.message : String(error)}`, `Could not discard changes: ${error instanceof Error ? error.message : String(error)}`) }
     }
   }
 
   private async reviewHistory(id: string, review: 'merged' | 'discarded'): Promise<{ ok: boolean; error?: string }> {
     const record = this.history.get(id)
-    if (!record) return { ok: false, error: '找不到这个子代理' }
+    if (!record) return { ok: false, error: pick('找不到这个子代理', 'Subagent not found') }
     const run = { ...record.run }
     if (run.review === review) return { ok: true }
     if (review === 'merged') {
       if (!['pending', 'conflict', 'archived'].includes(run.review ?? '') || !run.diff?.files || !run.diff.patchPath) {
-        return { ok: false, error: '历史任务没有可合并的补丁' }
+        return { ok: false, error: pick('历史任务没有可合并的补丁', 'This past task has no patch to merge') }
       }
       const result = await applyPatch(record.rootCwd, run.diff.patchPath)
       if (!result.ok) return result
@@ -1436,7 +1437,7 @@ export class SubagentController {
     const kept = keptWorktreeOf(record)
     if (kept && run.isolation === 'worktree') {
       const saved = review === 'merged' ? await preserveIgnoredOutputs(kept, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id) : { ok: true as const, path: undefined }
-      if (!saved.ok) return { ok: false, error: `被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${kept.worktreePath}` }
+      if (!saved.ok) return { ok: false, error: pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${kept.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${kept.worktreePath}`) }
       const cleaned = await cleanupWorkspace(kept)
       if (saved.path) run.savedOutputsPath = saved.path
       if (!cleaned.ok) run.error = [run.error, ...cleaned.errors].filter(Boolean).join(String.fromCharCode(10))
@@ -1474,7 +1475,7 @@ export class SubagentController {
     }
     run.wrapUp = { reason: 'timeout', since: Date.now() }
     run.progressWarning = text
-    run.latestActivity = `${text}，正在收尾…`
+    run.latestActivity = pick(`${text}，正在收尾…`, `${text}; wrapping up…`)
     this.emit(run)
     clearTimeout(run.timer)
     run.timer = setTimeout(() => void this.fail(run.id, text, 'timeout'), run.graceMs)
@@ -1578,7 +1579,7 @@ export class SubagentController {
           call.output = result.output
           call.details = result.details
           if (result.cancelled) call.cancelled = true
-          run.latestActivity = `${call.name}${result.status === 'error' ? ' 失败' : ' 完成'}`
+          run.latestActivity = pick(`${call.name}${result.status === 'error' ? ' 失败' : ' 完成'}`, `${call.name}${result.status === 'error' ? ' failed' : ' done'}`)
           this.emit(run)
           return
         }
@@ -1621,7 +1622,7 @@ export class SubagentController {
     if (type === 'tool_execution_start') {
       if (typeof evt.toolCallId === 'string') run.runningTools.add(evt.toolCallId)
       run.toolCalls = (run.toolCalls ?? 0) + 1
-      if (!run.wrapUp) run.latestActivity = `运行 ${String(evt.toolName ?? '工具')}`
+      if (!run.wrapUp) run.latestActivity = pick(`运行 ${String(evt.toolName ?? '工具')}`, `Running ${String(evt.toolName ?? 'tool')}`)
       this.emit(run)
       return
     }
@@ -1629,7 +1630,7 @@ export class SubagentController {
     if (type === 'agent_end') {
       if (this.closedForEvents(run)) return
       if (evt.willRetry === true) {
-        run.latestActivity = '模型请求失败，等待自动重试…'
+        run.latestActivity = pick('模型请求失败，等待自动重试…', 'Model request failed; waiting to retry…')
         this.emit(run)
       }
       return
@@ -1654,17 +1655,17 @@ export class SubagentController {
         run.stopReason = 'error'
         run.error = run.error ?? modelErrorNotice(evt.finalError ?? evt.error)
         run.latestActivity = run.retryAttempt !== undefined
-          ? `自动重试失败（已观察到第 ${run.retryAttempt} 次）`
-          : '自动重试失败'
+          ? pick(`自动重试失败（已观察到第 ${run.retryAttempt} 次）`, `Auto-retry failed (attempt ${run.retryAttempt} seen)`)
+          : pick('自动重试失败', 'Auto-retry failed')
       } else if (evt.success === true) {
         run.error = undefined
         run.stopReason = undefined
         run.lastModelErrorText = undefined
         run.retryAttempt = undefined
         run.recovery = run.recovery?.resumed ? { resumed: true } : undefined
-        run.latestActivity = '自动重试成功，继续'
+        run.latestActivity = pick('自动重试成功，继续', 'Auto-retry succeeded; continuing')
       } else {
-        run.latestActivity = '自动重试结束（结果未知）'
+        run.latestActivity = pick('自动重试结束（结果未知）', 'Auto-retry ended (outcome unknown)')
       }
       this.emit(run)
       return
@@ -1769,12 +1770,12 @@ export class SubagentController {
     run.lastModelErrorText = undefined
     run.retryAttempt = undefined
     run.lastProgressAt = Date.now()
-    run.latestActivity = '额度已恢复，继续原任务…'
+    run.latestActivity = pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…')
     this.armWatch(run)
     this.emit(run)
     try {
       const res = await run.rpc.command('prompt', { message: QUOTA_RESUME_PROMPT }, { timeoutMs: 10_000 })
-      if (!res.success) await this.fail(run.id, res.error ?? '额度恢复后续跑失败')
+      if (!res.success) await this.fail(run.id, res.error ?? pick('额度恢复后续跑失败', 'Could not continue after quota recovery'))
     } catch (error) {
       await this.fail(run.id, error instanceof Error ? error.message : String(error))
     }
@@ -1789,7 +1790,7 @@ export class SubagentController {
     run.recovery = { ...run.recovery, resumed: true }
     run.stopReason = undefined
     run.error = undefined
-    run.latestActivity = '模型请求中断且未自动重试，正在同一会话自动续跑（1/1）…'
+    run.latestActivity = pick('模型请求中断且未自动重试，正在同一会话自动续跑（1/1）…', 'Model request interrupted without retry; continuing in the same session (1/1)…')
     run.lastProgressAt = Date.now()
     this.armWatch(run)
     this.emit(run)
@@ -1820,7 +1821,7 @@ export class SubagentController {
     if (modelFailed) run.error = run.error ?? modelErrorNotice(undefined)
     run.latestActivity = modelFailed
       ? modelFailureActivity(run.recovery)
-      : wrapped ? '超时，已收尾' : '已完成'
+      : wrapped ? pick('超时，已收尾', 'Timed out; wrapped up') : pick('已完成', 'Done')
     this.emit(run)
     run.settling = (async () => {
       await this.waitTranscriptQuiet(run)
@@ -1947,32 +1948,32 @@ async function latestSessionFile(dir: string): Promise<string | undefined> {
 
 
 function quotaWaitActivity(wait: NonNullable<SubagentRun['quotaWait']>): string {
-  const reset = wait.resetAt !== undefined ? `（约 ${new Date(wait.resetAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 重置）` : ''
+  const reset = wait.resetAt !== undefined ? pick(`（约 ${new Date(wait.resetAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 重置）`, `(resets around ${new Date(wait.resetAt).toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })})`) : ''
   return wait.accounts > 1
-    ? `额度用尽${reset}：可在额度页换号，换号或额度恢复后自动继续`
-    : `额度用尽，等额度恢复${reset}后自动继续`
+    ? pick(`额度用尽${reset}：可在额度页换号，换号或额度恢复后自动继续`, `Quota exhausted${reset}: switch account on the quota page, or it continues when quota is restored`)
+    : pick(`额度用尽，等额度恢复${reset}后自动继续`, `Quota exhausted; continues automatically when quota is restored${reset}`)
 }
 
 function modelFailureActivity(recovery: SubagentRecovery | undefined): string {
-  if (recovery?.resumed) return '自动续跑 1 次后仍失败'
-  if (recovery?.piRetries) return `自动重试 ${recovery.piRetries} 次后仍失败`
-  return '模型返回错误（未自动重试）'
+  if (recovery?.resumed) return pick('自动续跑 1 次后仍失败', 'Still failing after 1 auto-continue')
+  if (recovery?.piRetries) return pick(`自动重试 ${recovery.piRetries} 次后仍失败`, `Still failing after ${recovery.piRetries} auto-retries`)
+  return pick('模型返回错误（未自动重试）', 'Model returned an error (no auto-retry)')
 }
 
 function retryActivity(attempt: number | undefined, maxAttempts: number | undefined): string {
-  if (attempt === undefined) return '模型请求失败，正在自动重试…'
+  if (attempt === undefined) return pick('模型请求失败，正在自动重试…', 'Model request failed; retrying…')
   return maxAttempts === undefined || maxAttempts < attempt
-    ? `模型请求失败，正在自动重试（第 ${attempt} 次）`
-    : `模型请求失败，正在自动重试（第 ${attempt}/${maxAttempts} 次）`
+    ? pick(`模型请求失败，正在自动重试（第 ${attempt} 次）`, `Model request failed; retrying (attempt ${attempt})`)
+    : pick(`模型请求失败，正在自动重试（第 ${attempt}/${maxAttempts} 次）`, `Model request failed; retrying (attempt ${attempt}/${maxAttempts})`)
 }
 
 function activityOf(msg: UIMessage): string {
   if (msg.role === 'assistant') {
     const first = msg.text.split('\n').map((x) => x.trim()).find(Boolean)
     if (first) return first.slice(0, 80)
-    if (msg.toolCalls?.length) return `调用 ${msg.toolCalls[msg.toolCalls.length - 1].name}`
-    if (msg.thinking) return '推理中…'
-    return '生成中…'
+    if (msg.toolCalls?.length) return pick(`调用 ${msg.toolCalls[msg.toolCalls.length - 1].name}`, `Calling ${msg.toolCalls[msg.toolCalls.length - 1].name}`)
+    if (msg.thinking) return pick('推理中…', 'Thinking…')
+    return pick('生成中…', 'Generating…')
   }
-  return msg.text.split('\n').find(Boolean)?.slice(0, 80) ?? '处理中…'
+  return msg.text.split('\n').find(Boolean)?.slice(0, 80) ?? pick('处理中…', 'Working…')
 }

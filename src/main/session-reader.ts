@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { open, realpath, stat } from 'node:fs/promises'
 import type { BigIntStats } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
@@ -31,7 +32,7 @@ function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
     if (v.length > MAX_TEXT) {
       const head = v.slice(0, MAX_TEXT)
       return {
-        value: `${head}\n\n[…已截断：原始 ${Math.round(v.length / 1024)}KB，只显示前 ${MAX_TEXT / 1024}KB]`,
+        value: pick(`${head}\n\n[…已截断：原始 ${Math.round(v.length / 1024)}KB，只显示前 ${MAX_TEXT / 1024}KB]`, `${head}\n\n[…truncated: original ${Math.round(v.length / 1024)}KB, showing the first ${MAX_TEXT / 1024}KB]`),
         cut: 1
       }
     }

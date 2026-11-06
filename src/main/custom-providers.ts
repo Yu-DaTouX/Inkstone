@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
@@ -35,7 +36,7 @@ async function readRaw(): Promise<{ ok: true; json: unknown } | { ok: false; err
     try {
       return { ok: true, json: JSON.parse(text) }
     } catch {
-      return { ok: false, error: `models.json 不是合法 JSON，先修好再保存：${MODELS_FILE}` }
+      return { ok: false, error: pick(`models.json 不是合法 JSON，先修好再保存：${MODELS_FILE}`, `models.json is not valid JSON; fix it before saving: ${MODELS_FILE}`) }
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ok: true, json: {} }
@@ -109,8 +110,8 @@ export async function saveCustomProvider(input: CustomProviderInput): Promise<Cu
     const merged = mergeCustomProviders(raw.json, [checked.value!], [])
     if (merged.changed) {
       const risk = modelsWriteRisk(raw.json, merged.next)
-      if (risk.dropped.length) return { ok: false, errors: [`保存会删掉其他服务商（${risk.dropped.join('、')}），已取消`] }
-      if (risk.shrink.length && !input.confirmShrink) return { ok: false, shrink: risk.shrink, errors: risk.shrink.map((item) => `${item.provider} 的模型会从 ${item.before} 个减少到 ${item.after} 个，需要确认`) }
+      if (risk.dropped.length) return { ok: false, errors: [pick(`保存会删掉其他服务商（${risk.dropped.join('、')}），已取消`, `Saving would remove other providers (${risk.dropped.join(', ')}); cancelled`)] }
+      if (risk.shrink.length && !input.confirmShrink) return { ok: false, shrink: risk.shrink, errors: risk.shrink.map((item) => pick(`${item.provider} 的模型会从 ${item.before} 个减少到 ${item.after} 个，需要确认`, `${item.provider} would go from ${item.before} models to ${item.after}; confirmation needed`)) }
       await writeAtomic(merged.next)
     }
     return { ok: true, providers: readCustomProviders(merged.next) }
@@ -124,7 +125,7 @@ export async function removeCustomProvider(id: string): Promise<CustomProviderRe
     const merged = mergeCustomProviders(raw.json, [], [id])
     if (merged.changed) {
       const risk = modelsWriteRisk(raw.json, merged.next, [id])
-      if (risk.dropped.length) return { ok: false, errors: [`删除会连带删掉其他服务商（${risk.dropped.join('、')}），已取消`] }
+      if (risk.dropped.length) return { ok: false, errors: [pick(`删除会连带删掉其他服务商（${risk.dropped.join('、')}），已取消`, `Deleting would also remove other providers (${risk.dropped.join(', ')}); cancelled`)] }
       await writeAtomic(merged.next)
     }
     return { ok: true, providers: readCustomProviders(merged.next) }
@@ -185,11 +186,11 @@ async function readProviderEntry(id: string): Promise<Json | null> {
 export async function testCustomProviderEndpoint(id: string): Promise<CustomProviderTestResult> {
   const started = Date.now()
   const entry = await readProviderEntry(id)
-  if (!entry) return { ok: false, mode: 'endpoint', ms: 0, message: '这个服务不在 models.json 里' }
+  if (!entry) return { ok: false, mode: 'endpoint', ms: 0, message: pick('这个服务不在 models.json 里', 'This service is not in models.json') }
   const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : ''
   const apiKey = typeof entry.apiKey === 'string' ? entry.apiKey : ''
   const api = typeof entry.api === 'string' ? entry.api : undefined
-  if (!baseUrl) return { ok: false, mode: 'endpoint', ms: 0, message: '这条服务没有 Base URL' }
+  if (!baseUrl) return { ok: false, mode: 'endpoint', ms: 0, message: pick('这条服务没有 Base URL', 'This service has no Base URL') }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
@@ -197,16 +198,16 @@ export async function testCustomProviderEndpoint(id: string): Promise<CustomProv
     const { response } = await fetchModelsPage(api, baseUrl, apiKey, controller.signal)
     const ms = Date.now() - started
     if (response.status === 401 || response.status === 403) {
-      return { ok: false, mode: 'endpoint', ms, message: `凭证被拒绝（HTTP ${response.status}）` }
+      return { ok: false, mode: 'endpoint', ms, message: pick(`凭证被拒绝（HTTP ${response.status}）`, `Credentials rejected (HTTP ${response.status})`) }
     }
     if (response.status === 404) {
-      return { ok: false, mode: 'endpoint', ms, message: `地址可达，但端点没有模型列表（HTTP 404）` }
+      return { ok: false, mode: 'endpoint', ms, message: pick(`地址可达，但端点没有模型列表（HTTP 404）`, `Reachable, but the endpoint has no model list (HTTP 404)`) }
     }
     if (!response.ok) {
-      return { ok: false, mode: 'endpoint', ms, message: `端点返回 HTTP ${response.status}` }
+      return { ok: false, mode: 'endpoint', ms, message: pick(`端点返回 HTTP ${response.status}`, `Endpoint returned HTTP ${response.status}`) }
     }
     await response.arrayBuffer()
-    return { ok: true, mode: 'endpoint', ms, message: `地址可达，凭证可用（HTTP ${response.status}）` }
+    return { ok: true, mode: 'endpoint', ms, message: pick(`地址可达，凭证可用（HTTP ${response.status}）`, `Reachable, credentials work (HTTP ${response.status})`) }
   } catch (error) {
     const ms = Date.now() - started
     const aborted = (error as { name?: string }).name === 'AbortError'
@@ -214,7 +215,7 @@ export async function testCustomProviderEndpoint(id: string): Promise<CustomProv
       ok: false,
       mode: 'endpoint',
       ms,
-      message: aborted ? '连接超时（10 秒）' : `连不上：${describeFetchError(error)}`
+      message: aborted ? pick('连接超时（10 秒）', 'Connection timed out (10 s)') : pick(`连不上：${describeFetchError(error)}`, `Could not connect: ${describeFetchError(error)}`)
     }
   } finally {
     clearTimeout(timer)
@@ -228,10 +229,10 @@ export async function testCustomProviderBillable(opts: {
 }): Promise<CustomProviderTestResult> {
   const started = Date.now()
   const entry = await readProviderEntry(opts.id)
-  if (!entry) return { ok: false, mode: 'billable', ms: 0, message: '这个服务不在 models.json 里' }
-  if (!opts.modelId) return { ok: false, mode: 'billable', ms: 0, message: '先填一个模型 ID，再发真实请求' }
+  if (!entry) return { ok: false, mode: 'billable', ms: 0, message: pick('这个服务不在 models.json 里', 'This service is not in models.json') }
+  if (!opts.modelId) return { ok: false, mode: 'billable', ms: 0, message: pick('先填一个模型 ID，再发真实请求', 'Enter a model ID before sending a real request') }
   if (!opts.piBin) {
-    return { ok: false, mode: 'billable', ms: 0, message: '找不到 pi 可执行文件，无法发真实请求' }
+    return { ok: false, mode: 'billable', ms: 0, message: pick('找不到 pi 可执行文件，无法发真实请求', 'pi executable not found; cannot send a real request') }
   }
 
   const { spawn } = await import('node:child_process')
@@ -258,7 +259,7 @@ export async function testCustomProviderBillable(opts: {
         ok: false,
         mode: 'billable',
         ms: Date.now() - started,
-        message: '真实请求超时（60 秒）'
+        message: pick('真实请求超时（60 秒）', 'Real request timed out (60 s)')
       })
     }, 60_000)
     child.stdout?.on('data', (chunk) => {
@@ -275,8 +276,8 @@ export async function testCustomProviderBillable(opts: {
       clearTimeout(timer)
       const ms = Date.now() - started
       const text = stdout.trim()
-      if (code === 0 && text) return resolve({ ok: true, mode: 'billable', ms, message: '真实请求成功', text })
-      const reason = stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? `退出码 ${code}`
+      if (code === 0 && text) return resolve({ ok: true, mode: 'billable', ms, message: pick('真实请求成功', 'Real request succeeded'), text })
+      const reason = stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? pick(`退出码 ${code}`, `Exit code ${code}`)
       resolve({ ok: false, mode: 'billable', ms, message: reason.slice(0, 200) })
     })
   })
@@ -297,7 +298,7 @@ export async function discoverCustomProviderModels(input: {
     if (entry && typeof entry.apiKey === 'string' && typeof entry.baseUrl === 'string' && entry.baseUrl.replace(/\/+$/, '') === baseUrl.replace(/\/+$/, '')) {
       apiKey = entry.apiKey
     } else if (entry && typeof entry.apiKey === 'string') {
-      return { ok: false, models: [], message: '服务地址已更改，请重新输入 API Key 后再获取模型' }
+      return { ok: false, models: [], message: pick('服务地址已更改，请重新输入 API Key 后再获取模型', 'The service address changed; enter the API key again before fetching models') }
     }
   }
   const controller = new AbortController()
@@ -305,10 +306,10 @@ export async function discoverCustomProviderModels(input: {
   try {
     const { url, response, headers } = await fetchModelsPage(input.api, baseUrl, apiKey, controller.signal)
     if (response.status === 401 || response.status === 403) {
-      return { ok: false, models: [], message: `凭证被拒绝（HTTP ${response.status}），先检查 API Key` }
+      return { ok: false, models: [], message: pick(`凭证被拒绝（HTTP ${response.status}），先检查 API Key`, `Credentials rejected (HTTP ${response.status}); check the API key`) }
     }
     if (!response.ok) {
-      return { ok: false, models: [], message: `这个端点没有提供模型列表（HTTP ${response.status}），请手动填写模型 ID` }
+      return { ok: false, models: [], message: pick(`这个端点没有提供模型列表（HTTP ${response.status}），请手动填写模型 ID`, `This endpoint has no model list (HTTP ${response.status}); enter the model ID manually`) }
     }
     let body = (await response.json().catch(() => null)) as { nextPageToken?: unknown } | null
     const found: DiscoveredModel[] = parseModelEntries(body)
@@ -318,21 +319,21 @@ export async function discoverCustomProviderModels(input: {
       body = (await next.json().catch(() => null)) as { nextPageToken?: unknown } | null
       for (const model of parseModelEntries(body)) if (!found.some((m) => m.id === model.id)) found.push(model)
     }
-    if (!found.length) return { ok: false, models: [], message: '端点返回了空列表，请手动填写模型 ID' }
+    if (!found.length) return { ok: false, models: [], message: pick('端点返回了空列表，请手动填写模型 ID', 'The endpoint returned an empty list; enter the model ID manually') }
     const entries = describeDiscoveredModels(found, { api: input.api ?? 'openai-completions', baseUrl }, await readPiModelCatalog())
     const thinking = entries.filter((m) => m.reasoning).length
     return {
       ok: true,
       models: entries.map((m) => m.id),
       entries,
-      message: `获取到 ${entries.length} 个模型，其中 ${thinking} 个支持思考`
+      message: pick(`获取到 ${entries.length} 个模型，其中 ${thinking} 个支持思考`, `Fetched ${entries.length} models, ${thinking} with thinking support`)
     }
   } catch (error) {
     const aborted = (error as { name?: string }).name === 'AbortError'
     return {
       ok: false,
       models: [],
-      message: aborted ? '获取超时（10 秒）' : `连不上：${describeFetchError(error)}`
+      message: aborted ? pick('获取超时（10 秒）', 'Fetch timed out (10 s)') : pick(`连不上：${describeFetchError(error)}`, `Could not connect: ${describeFetchError(error)}`)
     }
   } finally {
     clearTimeout(timer)

@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { readFile, mkdir, stat, readdir, realpath, rmdir, utimes } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join, resolve } from 'node:path'
@@ -92,7 +93,7 @@ export async function readAuth(): Promise<Record<string, unknown>> {
     throw error
   }
   const value = JSON.parse(raw) as unknown
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('auth.json 格式无效；为保护现有凭证，已拒绝写入')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('auth.json 格式无效；为保护现有凭证，已拒绝写入', 'auth.json is invalid; write refused to protect existing credentials'))
   return value as Record<string, unknown>
 }
 
@@ -135,7 +136,7 @@ async function acquireAuthLock(): Promise<() => Promise<void>> {
         continue
       }
     }
-    if (Date.now() > deadline) throw new Error('凭证文件正被 pi 占用，请稍后再试')
+    if (Date.now() > deadline) throw new Error(pick('凭证文件正被 pi 占用，请稍后再试', 'The credentials file is in use by pi; try again shortly'))
     await new Promise((r) => setTimeout(r, AUTH_LOCK_POLL_MS))
   }
   const timer = setInterval(() => {
@@ -171,27 +172,27 @@ export function validProviderId(provider: string): boolean {
 export async function setApiKey(provider: string, key: string): Promise<{ ok: boolean; error?: string }> {
   const id = provider.trim()
   const val = key.trim()
-  if (!validProviderId(id)) return { ok: false, error: 'provider 名称无效' }
-  if (!val) return { ok: false, error: 'API key 不能为空' }
+  if (!validProviderId(id)) return { ok: false, error: pick('provider 名称无效', 'Invalid provider name') }
+  if (!val) return { ok: false, error: pick('API key 不能为空', 'API key cannot be empty') }
   return mergeAuthEntry(id, { type: 'api_key', key: val })
 }
 
 export async function mergeAuthEntry(provider: string, value: unknown, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }> {
-  if (!validProviderId(provider)) return { ok: false, error: 'provider 名称无效' }
+  if (!validProviderId(provider)) return { ok: false, error: pick('provider 名称无效', 'Invalid provider name') }
   try {
     await updateAuthFile((data) => {
-      if (signal?.aborted) throw new Error('已取消登录')
+      if (signal?.aborted) throw new Error(pick('已取消登录', 'Sign-in cancelled'))
       data[provider] = value
       return { write: true, result: undefined }
     })
     return { ok: true }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : '写入失败' }
+    return { ok: false, error: e instanceof Error ? e.message : pick('写入失败', 'Write failed') }
   }
 }
 
 export async function clearAuth(provider: string): Promise<{ ok: boolean; error?: string }> {
-  if (!validProviderId(provider)) return { ok: false, error: 'provider 名称无效' }
+  if (!validProviderId(provider)) return { ok: false, error: pick('provider 名称无效', 'Invalid provider name') }
   try {
     await updateAuthFile((data) => {
       if (!(provider in data)) return { write: false, result: undefined }
@@ -200,7 +201,7 @@ export async function clearAuth(provider: string): Promise<{ ok: boolean; error?
     })
     return { ok: true }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : '删除失败' }
+    return { ok: false, error: e instanceof Error ? e.message : pick('删除失败', 'Delete failed') }
   }
 }
 
@@ -216,14 +217,14 @@ function checkViaPi(
       { timeout: 20_000, windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, maxBuffer: 1024 * 1024 },
       (err, stdout) => {
         if (err) {
-          resolve({ status: 'unknown', detail: '无法查询（pi 未找到或未安装）' })
+          resolve({ status: 'unknown', detail: pick('无法查询（pi 未找到或未安装）', 'Cannot check (pi not found or not installed)') })
           return
         }
         try {
           const j = JSON.parse(String(stdout).trim()) as { status?: string; reason?: string; authType?: string }
           resolve({
             status: j.status === 'ready' ? 'ready' : 'missing',
-            detail: j.reason === 'credentials_not_configured' ? '未配置凭证' : j.reason
+            detail: j.reason === 'credentials_not_configured' ? pick('未配置凭证', 'No credentials configured') : j.reason
           })
         } catch {
           resolve({ status: 'unknown' })

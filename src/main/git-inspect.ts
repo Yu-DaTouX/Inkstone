@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { spawn } from 'node:child_process'
 import { lstat, open, readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
@@ -138,10 +139,10 @@ async function resolveInspectScope(cwd: string, authorize: AuthorizeReadCwd): Pr
   const root = await realpath(repo.root).catch(() => repo.root)
   const rootAuth = await authorize(root)
   const scopeAbs = rootAuth.ok ? root : realCwd
-  if (!isWithin(root, scopeAbs)) return { status: 'denied', error: '授权范围不在仓库里' }
+  if (!isWithin(root, scopeAbs)) return { status: 'denied', error: pick('授权范围不在仓库里', 'Authorized scope is outside the repository') }
   const relRaw = normSlashes(relative(root, scopeAbs))
   const scopeRel = !relRaw || relRaw === '.' ? '.' : relRaw
-  if (scopeRel.startsWith('..')) return { status: 'denied', error: '授权范围不在仓库里' }
+  if (scopeRel.startsWith('..')) return { status: 'denied', error: pick('授权范围不在仓库里', 'Authorized scope is outside the repository') }
   return { status: 'ok', scope: { root, scopeAbs, scopeRel } }
 }
 
@@ -181,7 +182,7 @@ async function readStatusReadOnly(root: string, safety: string[], deadline?: Git
     [...READ_GLOBALS, ...safety, 'status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'],
     readOpts(deadline)
   )
-  if (!res.ok && !res.stdout) throw Object.assign(new Error(res.error ?? 'git status 失败'), { code: res.code })
+  if (!res.ok && !res.stdout) throw Object.assign(new Error(res.error ?? pick('git status 失败', 'git status failed')), { code: res.code })
   return parseStatusV2(res.stdout)
 }
 
@@ -233,12 +234,12 @@ async function resolveRange(
 ): Promise<ResolvedRange | { error: string }> {
   if (scope.kind === 'commit') {
     const target = await revParseCommit(root, scope.sha, deadline)
-    if (!target) return { error: `找不到提交：${scope.sha}` }
+    if (!target) return { error: pick(`找不到提交：${scope.sha}`, `Commit not found: ${scope.sha}`) }
     const parent = await revParseCommit(root, `${target}^1`, deadline)
     return { kind: 'commit', base: parent ?? EMPTY_TREE, target, baseRef: null }
   }
   const head = await revParseCommit(root, 'HEAD', deadline)
-  if (!head) return { error: '当前分支还没有提交' }
+  if (!head) return { error: pick('当前分支还没有提交', 'The current branch has no commits yet') }
   const originHead = await gitRun(root, [...READ_GLOBALS, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], readOpts(deadline, 8000))
   for (const candidate of baseCandidates(scope.base, originHead.ok ? originHead.stdout.trim() || null : null)) {
     const sha = await revParseCommit(root, candidate, deadline)
@@ -247,7 +248,7 @@ async function resolveRange(
     const base = mergeBase.ok ? mergeBase.stdout.trim() : ''
     if (/^[0-9a-f]{40,64}$/.test(base)) return { kind: 'branch', base, target: null, baseRef: candidate }
   }
-  return { error: scope.base ? `找不到基线分支：${scope.base}` : '找不到可对比的基线分支' }
+  return { error: scope.base ? pick(`找不到基线分支：${scope.base}`, `Base branch not found: ${scope.base}`) : pick('找不到可对比的基线分支', 'No base branch to compare against') }
 }
 
 function rangeArgs(range: ResolvedRange): string[] {
@@ -269,7 +270,7 @@ async function readRangeEntries(
     [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--name-status', '-z', ...rangeArgs(range), ...scopePathspec(scope)],
     readOpts(deadline)
   )
-  if (!res.ok && !res.stdout) throw Object.assign(new Error(res.error ?? 'git diff 失败'), { code: res.code })
+  if (!res.ok && !res.stdout) throw Object.assign(new Error(res.error ?? pick('git diff 失败', 'git diff failed')), { code: res.code })
   const entries: GitStatusEntry[] = parseNameStatus(res.stdout).map((item) => ({
     x: item.status,
     y: '.',
@@ -367,7 +368,7 @@ function errorCodeOf(error: unknown): string | undefined {
 
 export async function readChanges(cwd: string, authorize: AuthorizeReadCwd, options: GitChangesOptions = {}): Promise<GitChangesResult> {
   const requestedScope = normalizeChangesScope(options.scope)
-  if (!requestedScope) return failChanges('对比范围不合法')
+  if (!requestedScope) return failChanges(pick('对比范围不合法', 'Invalid comparison scope'))
   const scoped = await resolveInspectScope(cwd, authorize)
   if (scoped.status === 'denied') return failChanges(scoped.error)
   if (scoped.status === 'notrepo') {
@@ -503,10 +504,10 @@ async function readUntrackedContent(
   let size: number
   try {
     const info = await stat(abs)
-    if (!info.isFile()) return { ok: false, error: '不是普通文件' }
+    if (!info.isFile()) return { ok: false, error: pick('不是普通文件', 'Not a regular file') }
     size = info.size
   } catch {
-    return { ok: false, error: '无法读取文件' }
+    return { ok: false, error: pick('无法读取文件', 'Could not read the file') }
   }
   const cap = Math.min(size, MAX_UNTRACKED_BYTES)
   let buf: Buffer
@@ -520,7 +521,7 @@ async function readUntrackedContent(
       await handle.close()
     }
   } catch {
-    return { ok: false, error: '无法读取文件' }
+    return { ok: false, error: pick('无法读取文件', 'Could not read the file') }
   }
   const binary = buf.subarray(0, BINARY_SNIFF_BYTES).includes(0)
   return { ok: true, text: buf.toString('utf8'), binary, truncated: size > MAX_UNTRACKED_BYTES, size }
@@ -617,7 +618,7 @@ async function readWorkingDiff(target: DiffTarget): Promise<GitDiffResult> {
   const tracked = await isTracked(scope.root, rootRel, safety)
   if (!tracked) {
     const untracked = await isUntracked(scope.root, rootRel, safety)
-    if (!untracked) return failDiff(rel, '这个文件被忽略或不在仓库里')
+    if (!untracked) return failDiff(rel, pick('这个文件被忽略或不在仓库里', 'This file is ignored or not in the repository'))
     const content = await readUntrackedContent(abs)
     if (!content.ok) return failDiff(rel, content.error)
     return untrackedDiff(rel, rootRel, content)
@@ -627,7 +628,7 @@ async function readWorkingDiff(target: DiffTarget): Promise<GitDiffResult> {
     gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--cached', '--', rootRel], readOpts(deadline)),
     gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--', rootRel], readOpts(deadline))
   ])
-  if (staged.timedOut || unstaged.timedOut) return failDiff(rel, 'diff 读取超时，文件可能过大')
+  if (staged.timedOut || unstaged.timedOut) return failDiff(rel, pick('diff 读取超时，文件可能过大', 'Diff read timed out; the file may be too large'))
   if (!staged.ok && !staged.stdout && staged.error) return failDiff(rel, staged.error)
   if (!unstaged.ok && !unstaged.stdout && unstaged.error) return failDiff(rel, unstaged.error)
 
@@ -655,7 +656,7 @@ async function readRangeDiff(target: DiffTarget, range: ResolvedRange): Promise<
     return untrackedDiff(rel, rootRel, content)
   }
   const res = await gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, ...rangeArgs(range), '--', rootRel], readOpts(deadline))
-  if (res.timedOut) return failDiff(rel, 'diff 读取超时，文件可能过大')
+  if (res.timedOut) return failDiff(rel, pick('diff 读取超时，文件可能过大', 'Diff read timed out; the file may be too large'))
   if (!res.ok && !res.stdout && res.error) return failDiff(rel, res.error)
   const capped = capBytes(res.stdout, PATCH_SINGLE_FILE_BYTES)
   return {
@@ -817,29 +818,29 @@ export async function readFileDiff(
   options: FileDiffOptions = {}
 ): Promise<GitDiffResult> {
   const requestedScope = normalizeChangesScope(options.scope)
-  if (!requestedScope) return failDiff(rawPath, '对比范围不合法')
+  if (!requestedScope) return failDiff(rawPath, pick('对比范围不合法', 'Invalid comparison scope'))
   const scoped = await resolveInspectScope(cwd, authorize)
   if (scoped.status === 'denied') return failDiff(rawPath, scoped.error)
-  if (scoped.status === 'notrepo') return failDiff(rawPath, '这个目录不在 Git 仓库里')
+  if (scoped.status === 'notrepo') return failDiff(rawPath, pick('这个目录不在 Git 仓库里', 'This folder is not in a Git repository'))
   const scope = scoped.scope
 
   const rel = normalizeRelPath(rawPath)
-  if (!rel) return failDiff(rawPath, '路径不合法')
+  if (!rel) return failDiff(rawPath, pick('路径不合法', 'Invalid path'))
   const abs = resolve(scope.scopeAbs, rel)
-  if (!isWithin(scope.scopeAbs, abs)) return failDiff(rawPath, '路径超出授权范围')
+  if (!isWithin(scope.scopeAbs, abs)) return failDiff(rawPath, pick('路径超出授权范围', 'Path is outside the authorized scope'))
   const rootRel = normSlashes(relative(scope.root, abs))
-  if (!rootRel || rootRel.startsWith('..') || isAbsolute(rootRel)) return failDiff(rawPath, '路径超出仓库范围')
+  if (!rootRel || rootRel.startsWith('..') || isAbsolute(rootRel)) return failDiff(rawPath, pick('路径超出仓库范围', 'Path is outside the repository'))
 
   const deadline = createGitDeadline(QUERY_DEADLINE_MS)
   const safety = await execSafetyFlags(scope.root, deadline)
 
-  if (!(await isRealWithinScope(scope.scopeAbs, abs))) return failDiff(rawPath, '路径超出授权范围')
+  if (!(await isRealWithinScope(scope.scopeAbs, abs))) return failDiff(rawPath, pick('路径超出授权范围', 'Path is outside the authorized scope'))
   try {
     const info = await lstat(abs)
-    if (info.isSymbolicLink()) return failDiff(rawPath, '符号链接不读取')
-    if (info.isDirectory()) return failDiff(rawPath, '目录不是文件')
+    if (info.isSymbolicLink()) return failDiff(rawPath, pick('符号链接不读取', 'Symbolic links are not read'))
+    if (info.isDirectory()) return failDiff(rawPath, pick('目录不是文件', 'A folder is not a file'))
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return failDiff(rawPath, '无法读取文件')
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return failDiff(rawPath, pick('无法读取文件', 'Could not read the file'))
   }
 
   const target: DiffTarget = { scope, rel, rootRel, abs, safety, deadline }

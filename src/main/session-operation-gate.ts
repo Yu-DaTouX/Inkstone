@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 export type SessionOperation = 'send' | 'compact' | 'fork' | 'rewind' | 'reload'
 
 export interface SessionOperationLease {
@@ -22,16 +23,17 @@ const CONFLICTS: Record<SessionOperation, readonly SessionOperation[]> = {
   reload: ['send', 'compact', 'fork', 'rewind', 'reload']
 }
 
-const LABELS: Record<SessionOperation, string> = {
-  send: '发送',
-  compact: '压缩',
-  fork: '分叉',
-  rewind: '回退',
-  reload: '重新加载工具'
-}
+const labels = (): Record<SessionOperation, string> => ({
+  send: pick('发送', 'sending'),
+  compact: pick('压缩', 'compacting'),
+  fork: pick('分叉', 'forking'),
+  rewind: pick('回退', 'rewinding'),
+  reload: pick('重新加载工具', 'reloading tools')
+})
 
 export function sessionOperationBusyError(op: SessionOperation, holder: SessionOperation): string {
-  return `会话正在${LABELS[holder]}，暂不能${LABELS[op]}，请稍后再试`
+  const names = labels()
+  return pick(`会话正在${names[holder]}，暂不能${names[op]}，请稍后再试`, `Session is busy ${names[holder]}; cannot start ${names[op]} yet. Try again shortly`)
 }
 
 export const GENERATION_MISMATCH_ERROR = '会话运行实例已更换，这次操作针对的是旧实例，已拒绝'

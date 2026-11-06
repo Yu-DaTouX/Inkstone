@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
@@ -37,10 +38,10 @@ export function killPidTree(pid: number | undefined, fallback: () => void): Prom
 
 const MAX_BUFFER = 48 * 1024 * 1024
 const DEFAULT_TIMEOUT = 20_000
-const GIT_MISSING_MESSAGE = '没有找到 git：请先安装 Git（Windows 为 Git for Windows，https://git-scm.com/download/win），装好后重启砚。'
+const gitMissingMessage = () => pick('没有找到 git：请先安装 Git（Windows 为 Git for Windows，https://git-scm.com/download/win），装好后重启砚。', 'Git not found. Install Git (Git for Windows on Windows: https://git-scm.com/download/win), then restart Inkstone.')
 
 function enoentMessage(cwd: string): string {
-  return existsSync(cwd) ? GIT_MISSING_MESSAGE : `项目目录不存在：${cwd}`
+  return existsSync(cwd) ? gitMissingMessage() : pick(`项目目录不存在：${cwd}`, `Project folder not found: ${cwd}`)
 }
 
 export interface GitRunResult {
@@ -69,7 +70,7 @@ export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = 
   const env = sanitizedGitEnv(process.env, opts.env ?? {})
   const timeout = timeoutWithin(opts.timeout ?? DEFAULT_TIMEOUT, opts.deadline)
   if (timeout <= 0) {
-    const message = 'git 查询总期限已到'
+    const message = pick('git 查询总期限已到', 'Git query deadline reached')
     if (opts.allowFailure) return { ok: false, stdout: '', stderr: '', error: message, timedOut: true, code: 'DEADLINE_EXCEEDED' }
     throw gitFailure(message, true, 'DEADLINE_EXCEEDED')
   }
@@ -112,8 +113,8 @@ export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = 
     })
     if (res.ok) return res
     const code = codeFor({ enoent, timedOut, stderr: res.stderr })
-    if (opts.allowFailure) return { ...res, code, error: (res.stderr || res.stdout).trim() || (timedOut ? 'git 命令超时' : undefined) }
-    throw gitFailure((res.stderr || res.stdout).trim() || 'git 命令失败', timedOut, code)
+    if (opts.allowFailure) return { ...res, code, error: (res.stderr || res.stdout).trim() || (timedOut ? pick('git 命令超时', 'Git command timed out') : undefined) }
+    throw gitFailure((res.stderr || res.stdout).trim() || pick('git 命令失败', 'Git command failed'), timedOut, code)
   }
   let timedOutByTimer = false
   try {
@@ -136,7 +137,7 @@ export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = 
     const stdout = String(e.stdout ?? '')
     const stderr = enoent ? enoentMessage(cwd) : String(e.stderr ?? '')
     const timedOut = timedOutByTimer || (e.killed === true && !!e.signal && !outputLimit)
-    const message = (stderr || stdout || String(e.message ?? error)).trim() || 'git 命令失败'
+    const message = (stderr || stdout || String(e.message ?? error)).trim() || pick('git 命令失败', 'Git command failed')
     const code = codeFor({ enoent, timedOut, outputLimit, stderr })
     if (opts.allowFailure) {
       return { ok: false, stdout, stderr, error: message, timedOut, code }
@@ -240,7 +241,7 @@ async function readStatusSnapshot(root: string): Promise<StatusSnapshot> {
   if (res.ok || res.stdout) return { status: parseStatusV2(res.stdout), stdout: res.stdout }
   const fallback = await gitRun(root, STATUS_FALLBACK_ARGS, { allowFailure: true })
   if (!fallback.ok && !fallback.stdout) {
-    throw new Error(res.error ?? fallback.error ?? 'git status 失败')
+    throw new Error(res.error ?? fallback.error ?? pick('git status 失败', 'git status failed'))
   }
   return { status: parseStatusV2(fallback.stdout), stdout: fallback.stdout }
 }
