@@ -1,12 +1,6 @@
 const loaders: Array<() => Promise<unknown>> = [
-  () => import('../features/preview/PreviewPane'),
-  () => import('../features/terminal/TerminalPane'),
   () => import('../features/editor/CodeEditor'),
-  () => import('../features/diff/DiffView'),
-  () => import('../features/diff/DiffView'),
-  () => import('../features/usage/UsagePage'),
-  () => import('../features/collab'),
-  () => import('../features/artifacts/ArtifactLibraryPage')
+  () => import('../features/diff/DiffView')
 ]
 
 const START_DELAY_MS = 2500
