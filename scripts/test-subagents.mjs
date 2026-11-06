@@ -107,7 +107,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       ok(ctrl.get(id).status === 'running', '旧进程迟到的退出事件不影响续接后的运行')
       second.emit('event', { type: 'agent_settled', aborted: false })
       ok(await waitFor(() => ctrl.get(id)?.status === 'done' && finished.filter(run => run.id === id).length === 2), '续接后的结束会再通知一次父会话', String(finished.length))
-      ok((await ctrl.send('sub-ffffffff', 'x')).error === '找不到这个子代理', '未知 id 报找不到')
+      ok((await ctrl.send('sub-ffffffff', 'x')).error === '找不到这个子 Agent', '未知 id 报找不到')
 
       const createdBeforeStop = factory.created.length
       const early = ctrl.send(id, '停掉我', 'steer', { from: 'user' })
@@ -358,7 +358,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     const rejected = results.filter((r) => !r.ok)
     ok(accepted.length === 24, '并发启动时24个通过（槽位在准备隔离区前就占住）', `通过=${accepted.length}`)
     ok(rejected.length === 1, '第25个并发请求被拒绝', `拒绝=${rejected.length}`)
-    ok(/最多运行 24 个子代理（当前 24 个）/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限和当前占用的名额', JSON.stringify(rejected[0]?.error))
+    ok(/最多运行 24 个子 Agent（当前 24 个）/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限和当前占用的名额', JSON.stringify(rejected[0]?.error))
     await ctrl.stop(accepted[0].run.id)
     ok((await ctrl.start('释放后补位')).ok && ctrl.runningCount === 24, '停止后可补回一个名额')
     await ctrl.stopAll()
