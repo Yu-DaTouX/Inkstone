@@ -20,6 +20,8 @@ assert.ok(mod.serializeMessage({ role: 'toolResult', toolName: 'bash', toolCallI
 assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'cat secret.env', output: 'TOKEN=abc', excludeFromContext: true }, 8), '', '用户排除出上下文的终端输出不进压缩摘要')
 assert.ok(mod.serializeMessage({ role: 'assistant', content: [{ type: 'text', text: '查到了' }], yanWebSearch: { queries: ['inkstone'], results: [{ url: 'https://a.example/x' }], cited: [{ url: 'https://a.example/x' }], opened: ['https://b.example'] } }, 9).includes('[Assistant web search]: queries="inkstone"; sources=https://a.example/x; opened=https://b.example'), '原生搜索记录进入压缩摘要')
 assert.equal(mod.serializeMessage({ role: 'custom', display: false, content: 'hidden but sent to model' }, 10), '[Note]: hidden but sent to model', 'display:false 的自定义消息仍发给模型，也进摘要')
+assert.equal(mod.serializeMessage({ role: 'custom', customType: 'yan-ultracode', display: false, content: '<system-reminder>mode</system-reminder>' }, 11), '', 'Ultracode 模式提醒是状态标记，不进摘要，免得压缩后变成长期指令')
+assert.equal(mod.serializeMessage({ role: 'custom', customType: 'yan-ultracode-gate', display: false, content: '<system-reminder>gate</system-reminder>' }, 12), '', 'Ultracode 复核提醒同理')
 assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'npm test', output: 'ok' }, 9), '[User ran]: npm test\nok', '普通终端输出照常进入摘要')
 
 {

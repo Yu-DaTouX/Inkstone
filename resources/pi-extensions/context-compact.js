@@ -144,6 +144,7 @@ export function serializeMessage(msg, index) {
     case 'compactionSummary':
       return msg.summary ? `[Earlier summary]: ${msg.summary}` : ''
     case 'custom':
+      if (typeof msg.customType === 'string' && msg.customType.startsWith('yan-ultracode')) return ''
       return textOf(msg.content) ? `[Note]: ${textOf(msg.content)}` : ''
     default:
       return ''
