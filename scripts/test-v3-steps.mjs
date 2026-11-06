@@ -521,7 +521,7 @@ async function main() {
     const once = renderComponent(makeHookRuntime(), receipts[0].type, { approval: { ...receipt, choice: 'session', feedback: undefined } })
     ok(textOf(once).includes('本会话内允许') && !textOf(once).includes('先别删'), '会话内允许写出范围，不带反馈', textOf(once))
     const pending = renderComponent(makeHookRuntime(), node.el.type, { ...node.el.props, asking: true })
-    ok(byTypeName(pending, 'ApprovalReceipt').length === 0 && byTypeName(pending, 'ApprovalCard').length === 1, '仍在等待审批时显示审批卡而不是回执')
+    ok(byTypeName(pending, 'ApprovalReceipt').length === 0 && byTypeName(pending, 'AskPill').length === 1, '仍在等待审批时显示指向审批卡的提示而不是回执')
   }
 
   group('并行大量调用：不同类别连续也合成一组；独立工具断开分组；同路径相邻折成一行')
