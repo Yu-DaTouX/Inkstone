@@ -5,6 +5,14 @@ import { deleteSession, restoreSession, sessionsToDelete } from './sessions'
 import { planHistoryRead } from '../shared/session-chain'
 import { closeTerminalsForOwner } from './terminal'
 
+function friendlyDeleteError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code ?? (error instanceof Error && error.cause ? (error.cause as { code?: string }).code : undefined)
+  if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+    return pick('会话文件正在被其他程序占用，关闭后再试', 'The session file is in use by another program; close it and try again')
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
 export async function deleteSessionChain(host: SessionHost, path: string): Promise<{ ok: boolean; undoToken?: string; error?: string }> {
   const tokens: string[] = []
   try {
@@ -37,7 +45,7 @@ export async function deleteSessionChain(host: SessionHost, path: string): Promi
     host.pushRunners()
     return {
       ok: false,
-      error: `${e instanceof Error ? e.message : String(e)}${remaining.length ? pick('；部分会话恢复失败，仍可使用撤销令牌重试恢复', '; some sessions failed to restore; retry with the undo token') : ''}`,
+      error: `${friendlyDeleteError(e)}${remaining.length ? pick('；部分会话恢复失败，仍可使用撤销令牌重试恢复', '; some sessions failed to restore; retry with the undo token') : ''}`,
       ...(remaining.length ? { undoToken: remaining.join('|') } : {})
     }
   }
