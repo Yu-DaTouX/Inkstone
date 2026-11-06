@@ -97,8 +97,10 @@ export function createContext(value) { return { __isContext: true, __value: valu
 export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
 export function forwardRef(fn) { return fn }
 export function memo(fn) { return fn }
+export function lazy() { return () => null }
+export function Suspense(p) { return p ? p.children : null }
 export function isValidElement(el) { return !!el && typeof el === 'object' && 'type' in el && 'props' in el }
-export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, memo, isValidElement }
+export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, memo, lazy, Suspense, isValidElement }
 `
 
 const JSX_SHIM = `import { createElement, Fragment } from './react-shim.mjs'

@@ -3310,6 +3310,12 @@ function createWindow(): void {
     applyZoom(win, s.uiScale)
   })
 
+  win.webContents.on('dom-ready', () => {
+    void getSettings().then((s) => {
+      if (win && !win.isDestroyed()) applyZoom(win, s.uiScale)
+    })
+  })
+
   const reapply = (): void => {
     void getSettings().then((s) => {
       if (win && !win.isDestroyed()) applyZoom(win, s.uiScale)

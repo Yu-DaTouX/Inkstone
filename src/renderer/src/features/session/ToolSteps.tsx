@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useId, useMemo, useRef, useState, type JSX } from 'react'
+import { createContext, lazy, memo, Suspense, useContext, useId, useMemo, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { InlineImage } from '../../ui/InlineImage'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
@@ -20,9 +20,11 @@ import { ToolRunStats } from './ToolRunStats'
 import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
 import { Icon, type SessionIconName } from './Icon'
 import { Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, DiffStat, IconButton, ShimmerText, Spinner } from '../../ui'
-import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 import { SearchStepView, WebGroupCap } from './web-search/SearchStep'
 import { searchStepsOf } from './web-search/model'
+
+const McpAppResult = lazy(() => import('../artifacts/McpAppFrame').then((m) => ({ default: m.McpAppResult })))
+const McpAppStepAudit = lazy(() => import('../artifacts/McpAppFrame').then((m) => ({ default: m.McpAppStepAudit })))
 
 const OUTPUT_PREVIEW_LINES = 16
 const OUTPUT_PREVIEW_CHARS = 1600
@@ -378,8 +380,10 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
           ) : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}
           {call.name.startsWith('mcp__') ? (
             <>
-              <McpAppResult callId={call.id} title={call.name} />
-              <McpAppStepAudit callId={call.id} />
+              <Suspense fallback={null}>
+                <McpAppResult callId={call.id} title={call.name} />
+                <McpAppStepAudit callId={call.id} />
+              </Suspense>
             </>
           ) : null}
         </>
