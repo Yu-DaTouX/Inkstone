@@ -19,10 +19,12 @@ function statusKey(status: MinecraftPluginStatus | null): MessageKey | null {
   return status.configured ? 'mcPlugin.statusReady' : 'mcPlugin.statusDisabled'
 }
 
+let lastMinecraftStatus: MinecraftPluginStatus | null = null
+
 export function MinecraftPluginRow({ entry, copy }: { entry: PluginCatalogEntry; copy: PluginCatalogText }): ReactElement {
   const t = useT()
   const confirm = useConfirm()
-  const [status, setStatus] = useState<MinecraftPluginStatus | null>(null)
+  const [status, setStatus] = useState<MinecraftPluginStatus | null>(lastMinecraftStatus)
   const [busy, setBusy] = useState<'install' | 'remove' | ''>('')
   const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const alive = useRef(true)
@@ -30,6 +32,7 @@ export function MinecraftPluginRow({ entry, copy }: { entry: PluginCatalogEntry;
   const load = useCallback(async (): Promise<void> => {
     try {
       const result = await window.yan.packages.minecraft('status')
+      if (result.status) lastMinecraftStatus = result.status
       if (alive.current && result.status) setStatus(result.status)
     } catch (error) {
       if (alive.current) setNote({ kind: 'err', text: errorText(error) })
@@ -50,7 +53,10 @@ export function MinecraftPluginRow({ entry, copy }: { entry: PluginCatalogEntry;
     try {
       const result: MinecraftPluginResult = await window.yan.packages.minecraft(kind)
       if (!alive.current) return
-      if (result.status) setStatus(result.status)
+      if (result.status) {
+        lastMinecraftStatus = result.status
+        setStatus(result.status)
+      }
       setNote(result.ok ? { kind: 'ok', text: t(okKey) } : { kind: 'err', text: result.error ?? t('pkg.failed') })
     } catch (error) {
       if (alive.current) setNote({ kind: 'err', text: errorText(error) })

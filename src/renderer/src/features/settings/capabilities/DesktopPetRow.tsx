@@ -23,11 +23,14 @@ function edgeMeta(edges: DesktopPetStatus['edges'], t: ReturnType<typeof useT>):
   return null
 }
 
+let lastPetStatus: DesktopPetStatus | null = null
+let lastPetModels: ModelInfo[] = []
+
 export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy: PluginCatalogText }): ReactElement {
   const t = useT()
   const confirm = useConfirm()
-  const [status, setStatus] = useState<DesktopPetStatus | null>(null)
-  const [models, setModels] = useState<ModelInfo[]>([])
+  const [status, setStatus] = useState<DesktopPetStatus | null>(lastPetStatus)
+  const [models, setModels] = useState<ModelInfo[]>(lastPetModels)
   const [busy, setBusy] = useState<RunKind | ''>('')
   const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [showLog, setShowLog] = useState(false)
@@ -37,7 +40,8 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
     try {
       const next = await window.yan.plugins.action('desktop-pet', 'status')
       if (!next.ok) throw new Error(next.error)
-      if (alive.current) setStatus(next.status as DesktopPetStatus ?? null)
+      lastPetStatus = (next.status as DesktopPetStatus | undefined) ?? null
+      if (alive.current) setStatus(lastPetStatus)
     } catch (error) {
       if (alive.current) setNote({ kind: 'err', text: errorText(error) })
     }
@@ -49,6 +53,7 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
     void window.yan
       .listModels()
       .then((list) => {
+        lastPetModels = list
         if (alive.current) setModels(list)
       })
       .catch(() => undefined)

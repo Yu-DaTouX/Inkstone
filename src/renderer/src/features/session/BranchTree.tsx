@@ -372,6 +372,24 @@ interface BranchTreeProps {
   className?: string
 }
 
+const TREE_MEMORY_MAX = 8
+const treeMemory = new Map<string, { tree: NativeTreeNode[]; leafId: string | null }>()
+
+function rememberTree(sessionId: string, tree: NativeTreeNode[], leafId: string | null): void {
+  treeMemory.delete(sessionId)
+  treeMemory.set(sessionId, { tree, leafId })
+  while (treeMemory.size > TREE_MEMORY_MAX) {
+    const oldest = treeMemory.keys().next().value
+    if (oldest === undefined) break
+    treeMemory.delete(oldest)
+  }
+}
+
+function rememberedLoadState(sessionId: string | null | undefined): LoadState {
+  const known = sessionId ? treeMemory.get(sessionId) : undefined
+  return known ? { phase: 'ready', tree: known.tree, leafId: known.leafId } : { phase: 'loading' }
+}
+
 type LoadState =
   | { phase: 'loading' }
   | { phase: 'error'; error: string; raw?: boolean }
@@ -389,7 +407,7 @@ export function BranchTree({
   const { lang } = useI18n()
   const text = useMemo(() => branchText(lang), [lang])
 
-  const [state, setState] = useState<LoadState>({ phase: 'loading' })
+  const [state, setState] = useState<LoadState>(() => rememberedLoadState(owner.sessionId))
   const [retryToken, setRetryToken] = useState(0)
   const [overrideId, setOverrideId] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
@@ -414,7 +432,7 @@ export function BranchTree({
   useEffect(() => {
     const run = ++runRef.current
     let cancelled = false
-    setState({ phase: 'loading' })
+    setState(rememberedLoadState(expectedSessionId))
     setActionError('')
     setNotice('')
     setPending(null)
@@ -434,6 +452,7 @@ export function BranchTree({
           setState({ phase: 'error', error: result.error, raw: result.raw })
           return
         }
+        rememberTree(expectedSessionId, result.tree, result.leafId)
         setState({ phase: 'ready', tree: result.tree, leafId: result.leafId })
         setOverrideId(null)
       })
@@ -485,6 +504,7 @@ export function BranchTree({
       setActionError(result.error)
       return
     }
+    rememberTree(expectedSessionId, result.tree, result.leafId)
     setState({ phase: 'ready', tree: result.tree, leafId: result.leafId })
     setOverrideId(keepSelected ?? null)
   }, [expectedSessionId, text.loadFailed])

@@ -1,5 +1,4 @@
 import {
-  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -9,7 +8,6 @@ import {
   useSyncExternalStore,
   type ComponentType,
   type KeyboardEvent,
-  type LazyExoticComponent,
   type ReactElement
 } from 'react'
 import {
@@ -74,11 +72,19 @@ import {
   subscribeSettingReveal,
   type SettingsSearchEntry
 } from '../search/search-model'
+import { preloadable } from '../../../lib/preloadable'
 import '../settings.css'
 
-const ModelsSettings = lazy(async () => ({ default: (await import('../models/index')).ModelsSettings }))
-const CapabilitiesSettings = lazy(async () => ({ default: (await import('../capabilities/index')).CapabilitiesSettings }))
-const CodeSettings = lazy(async () => ({ default: (await import('../capabilities/index')).CodeSettings }))
+const modelsSettings = preloadable(async () => ({ default: (await import('../models/index')).ModelsSettings }))
+const capabilitiesSettings = preloadable(async () => ({ default: (await import('../capabilities/index')).CapabilitiesSettings }))
+const codeSettings = preloadable(async () => ({ default: (await import('../capabilities/index')).CodeSettings }))
+const ModelsSettings = modelsSettings.Component
+const CapabilitiesSettings = capabilitiesSettings.Component
+const CodeSettings = codeSettings.Component
+
+export function preloadSettingsSections(): Promise<unknown> {
+  return Promise.all([modelsSettings.preload(), capabilitiesSettings.preload(), codeSettings.preload()])
+}
 
 const ICON_SIZE = 16
 
@@ -190,7 +196,7 @@ function SubmoduleHost<P extends object>({
   component: Host,
   props
 }: {
-  component: LazyExoticComponent<ComponentType<P>>
+  component: ComponentType<P>
   props: P
 }): ReactElement {
   const { lang } = useI18n()
@@ -360,8 +366,13 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
     return () => cancelAnimationFrame(frame)
   }, [narrow])
 
+  const sectionMounted = useRef(false)
   useEffect(() => {
     rememberSettingsSection(section)
+    if (!sectionMounted.current) {
+      sectionMounted.current = true
+      return
+    }
     content.current?.closest('.ui-settings__content')?.scrollTo({ top: 0 })
   }, [section, capsTab])
 

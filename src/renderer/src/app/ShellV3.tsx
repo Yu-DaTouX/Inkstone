@@ -1,6 +1,6 @@
 import '../design/index.css'
 import { PANEL_MOTION_DEFAULT, sanitizePanelMotion } from '../../../shared/appearance'
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { FocusScope } from 'react-aria'
 import { flushSync } from 'react-dom'
 import { showToast, Splitter, useScrollbarReveal, usePresence } from '../ui'
@@ -51,6 +51,8 @@ import { filesClaimsQuickOpen } from '../features/files/FilesPane'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
 import { useChatFilePreview } from '../features/preview/use-chat-file-preview'
 import { useLiveHtmlFollow } from '../features/preview/live-html'
+import { prefetchRepos } from '../features/workbench/repo-memory'
+import { prefetchChanges } from '../features/changes/ChangesPane'
 import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-branch'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
@@ -61,13 +63,11 @@ import { reopenLastClosed } from '../state/right-panel-reopen'
 import { railText } from '../features/workbench/rail-text'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import { createFrameBatch } from './frame-batch'
+import { ArtifactLibraryPage, CollabPage, UsagePage, scheduleIdlePreloads } from './route-pages'
 import './ShellV3.css'
 
 let bootstrapStarted = false
 
-const UsagePage = lazy(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
-const CollabPage = lazy(() => import('../features/collab').then((m) => ({ default: m.CollabPage })))
-const ArtifactLibraryPage = lazy(() => import('../features/artifacts/ArtifactLibraryPage').then((m) => ({ default: m.ArtifactLibraryPage })))
 
 const CHAT_MIN_WIDTH_PX = 420
 const SHEET_BELOW_PX = CHAT_MIN_WIDTH_PX + PANEL_WIDTH_MIN
@@ -247,6 +247,19 @@ export default function ShellV3(): ReactElement {
 
   useEffect(() => startRunSync(), [])
 
+  useEffect(() => scheduleIdlePreloads(), [])
+
+  const recentCwds = useStore((s) => {
+    const seen: string[] = []
+    for (const item of s.sessions ?? []) {
+      if (item.archivedAt || !item.cwd || seen.includes(item.cwd)) continue
+      seen.push(item.cwd)
+      if (seen.length >= 8) break
+    }
+    return seen.join('|')
+  })
+  useEffect(() => (recentCwds ? prefetchRepos(recentCwds.split('|')) : undefined), [recentCwds])
+
   useEffect(() => {
     if (!settings) return
     const theme = settings.theme === 'light' ? 'light' : 'dark'
@@ -388,6 +401,12 @@ export default function ShellV3(): ReactElement {
   const activePaneKind = panelOpen ? panelEntry.surfaces.find((item) => item.id === panelEntry.active)?.kind ?? null : null
   const activePane = activePaneKind === 'file' ? 'files' : activePaneKind
   const changesDirty = useWorkspaceHasChanges(owner.cwd || null, route.name === 'chat')
+  useEffect(() => {
+    const cwd = owner.cwd
+    if (!changesDirty || !cwd || route.name !== 'chat') return undefined
+    const idle = window.requestIdleCallback(() => prefetchChanges(cwd), { timeout: 2500 })
+    return () => window.cancelIdleCallback(idle)
+  }, [changesDirty, owner.cwd, route.name])
   const terminalRunning = useTerminalRunning(owner.key || null, route.name === 'chat')
 
   const openWorkspaceTab = useCallback((tab: WorkbenchTabId | PanelToolKind): Promise<boolean> => {

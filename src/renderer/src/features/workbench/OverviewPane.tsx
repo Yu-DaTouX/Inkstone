@@ -16,6 +16,7 @@ import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import { money } from '../../../../shared/quota-mini'
 import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
 import type { GitRepoState } from '../../../../shared/git'
+import { rememberRepo, rememberedRepo } from './repo-memory'
 import type { CompactionRun, ProviderQuota, QuotaWindow } from '../../../../shared/ipc'
 import { autoCompactLimitOf, contextPaneData, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
 import { workbenchText, type OverviewText } from './workbench-text'
@@ -64,31 +65,29 @@ function lastSegment(path: string): string {
 }
 
 function useGitRepo(cwd: string | null, refreshKey: string): GitRepoState | null {
-  const [repo, setRepo] = useState<GitRepoState | null>(null)
+  const [held, setHeld] = useState<{ cwd: string | null; repo: GitRepoState | null }>(() => ({ cwd, repo: cwd ? rememberedRepo(cwd) : null }))
   useEffect(() => {
-    if (!cwd) {
-      setRepo(null)
-      return undefined
-    }
     const git = window.yan?.git
-    if (!git) {
-      setRepo(null)
+    if (!cwd || !git) {
+      setHeld({ cwd, repo: null })
       return undefined
     }
     let alive = true
     git
       .state(cwd)
       .then((st) => {
-        if (alive) setRepo(st.repo ?? null)
+        rememberRepo(cwd, st.repo ?? null)
+        if (alive) setHeld({ cwd, repo: st.repo ?? null })
       })
       .catch(() => {
-        if (alive) setRepo(null)
+        if (alive) setHeld({ cwd, repo: null })
       })
     return () => {
       alive = false
     }
   }, [cwd, refreshKey])
-  return repo
+  if (!cwd) return null
+  return held.cwd === cwd ? held.repo : rememberedRepo(cwd)
 }
 
 interface QuotaTileModel {
@@ -119,6 +118,8 @@ function useRunEnded(running: boolean): number {
   return ended
 }
 
+const accountSnapMemory = new Map<string, AccountCardSnapshot>()
+
 function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: number): AccountCardSnapshot | null {
   const [snap, setSnap] = useState<AccountCardSnapshot | null>(null)
   const [poll, setPoll] = useState(0)
@@ -145,7 +146,9 @@ function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: numbe
         if (id !== seq.current) return
         publishAccountQuotaReport(report)
         const matches = (report.cards ?? []).filter((card) => card.provider.trim().toLowerCase() === want)
-        setSnap({ provider, state: 'ready', card: matches.find((card) => card.active) ?? matches.find((card) => card.active === undefined) ?? null })
+        const next: AccountCardSnapshot = { provider, state: 'ready', card: matches.find((card) => card.active) ?? matches.find((card) => card.active === undefined) ?? null }
+        accountSnapMemory.set(provider, next)
+        setSnap(next)
       })
       .catch(() => {
         if (id !== seq.current) return
@@ -153,7 +156,7 @@ function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: numbe
       })
   }, [provider, enabled, runEnded, poll])
 
-  return snap?.provider === provider ? snap : null
+  return snap?.provider === provider ? snap : accountSnapMemory.get(provider) ?? null
 }
 
 function liveQuotaModel(snapshot: ProviderQuota | null | undefined, t: TFunc, text: OverviewText): QuotaTileModel | null {

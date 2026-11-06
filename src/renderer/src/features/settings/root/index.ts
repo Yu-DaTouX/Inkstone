@@ -1,1 +1,1 @@
-export { SettingsPage, type SettingsPageProps } from './SettingsPage'
+export { SettingsPage, preloadSettingsSections, type SettingsPageProps } from './SettingsPage'

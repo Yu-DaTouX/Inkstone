@@ -1,12 +1,15 @@
-import { lazy, Suspense, useEffect, type ReactElement } from 'react'
+import { Suspense, useEffect, type ReactElement } from 'react'
 import { useStore } from '../state/store'
 import { usePresence } from '../ui'
+import { preloadable } from '../lib/preloadable'
+import type { SettingsPageProps } from '../features/settings/root'
 import { consumeSettingsHash, installSettingsDeepLink } from '../features/settings/root/deep-link'
 
 installSettingsDeepLink()
 
-const loadSettings = () => import('../features/settings/root').then((m) => ({ default: m.SettingsPage }))
-const SettingsPage = lazy(loadSettings)
+const settingsPage = preloadable<SettingsPageProps>(() => import('../features/settings/root').then((m) => ({ default: m.SettingsPage })))
+const SettingsPage = settingsPage.Component
+const loadSettings = settingsPage.preload
 
 export interface SettingsPanelV3Props {
   onShowOnboarding?: () => void
@@ -21,8 +24,16 @@ export function SettingsPanelV3({ onShowOnboarding }: SettingsPanelV3Props = {})
   const presence = usePresence(open)
 
   useEffect(() => {
-    const idle = window.requestIdleCallback(() => { void loadSettings().catch(() => undefined) }, { timeout: 2000 })
-    return () => window.cancelIdleCallback(idle)
+    let cancelled = false
+    const idle = window.requestIdleCallback(() => {
+      void loadSettings().then(() => {
+        if (!cancelled) return import('../features/settings/root').then((m) => m.preloadSettingsSections())
+      }).catch(() => undefined)
+    }, { timeout: 2000 })
+    return () => {
+      cancelled = true
+      window.cancelIdleCallback(idle)
+    }
   }, [])
 
   useEffect(() => {

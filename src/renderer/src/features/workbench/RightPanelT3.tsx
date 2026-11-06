@@ -294,7 +294,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         tabbar={columns ? null : tabbar}
         tabbarClassName={windowControls ? 'pr-0' : undefined}
         toggleSelector='[data-right-panel-toggle]'
-        sheet={{ onClose: adapter.onHide, transitionMs: reducedMotion ? 0 : motionMs('sheet') }}
+        sheet={{ onClose: adapter.onHide, transitionMs: reducedMotion || mode !== 'sheet' ? 0 : motionMs('sheet') }}
         onKeyDown={onPanelKey}
         testId="rp"
       >
