@@ -1,5 +1,10 @@
 import { isLinkLocalHost, isPrivateHost } from './browser/network-boundary'
-import { resolvesToPrivateAddress } from './browser/network-policy'
+import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
+import { request as httpRequest, type IncomingMessage } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { isIP } from 'node:net'
+import { Readable } from 'node:stream'
+import { isPrivateAddress, resolvesToPrivateAddress } from './browser/network-policy'
 import type { RemoteImageResult } from '../shared/ipc'
 
 export const REMOTE_IMAGE_MAX_BYTES = 15 * 1024 * 1024
@@ -8,6 +13,43 @@ const MAX_REDIRECTS = 4
 const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml|x-icon|vnd\.microsoft\.icon)$/i
 
 export type { RemoteImageResult }
+
+export type AddressResolver = (hostname: string) => Promise<LookupAddress[]>
+
+const resolveAllAddresses: AddressResolver = (hostname) =>
+  new Promise((resolve, reject) => dnsLookup(hostname, { all: true, verbatim: true }, (error, addresses) => (error ? reject(error) : resolve(addresses))))
+
+export function createPinnedFetch(resolveAll: AddressResolver = resolveAllAddresses, isPrivate: (address: string) => boolean = isPrivateAddress): typeof fetch {
+  return (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+    const hostname = url.hostname.replace(/^\[|\]$/g, '')
+    if (isIP(hostname) && isPrivate(hostname)) throw new Error('目标地址在内网')
+    const lookup = (name: string, options: { all?: boolean }, callback: (error: Error | null, address?: string | LookupAddress[], family?: number) => void): void => {
+      resolveAll(name).then((addresses) => {
+        if (!addresses.length || addresses.some((item) => isPrivate(item.address))) return callback(new Error('目标地址在内网'))
+        if (options.all) return callback(null, addresses)
+        return callback(null, addresses[0].address, addresses[0].family)
+      }, (error: Error) => callback(error))
+    }
+    const send = url.protocol === 'https:' ? httpsRequest : httpRequest
+    const headers = { 'accept-encoding': 'identity', ...Object.fromEntries(new Headers(init?.headers).entries()) }
+    return new Promise<Response>((resolve, reject) => {
+      const req = send(url, { method: 'GET', headers, lookup: lookup as never, signal: init?.signal ?? undefined }, (res: IncomingMessage) => {
+        const responseHeaders = new Headers()
+        for (const [name, value] of Object.entries(res.headers)) {
+          if (Array.isArray(value)) for (const item of value) responseHeaders.append(name, item)
+          else if (value !== undefined) responseHeaders.set(name, value)
+        }
+        const status = res.statusCode ?? 502
+        const bodyless = status < 200 || status === 204 || status === 205 || status === 304 || (status >= 300 && status < 400)
+        if (bodyless) res.resume()
+        resolve(new Response(bodyless ? null : (Readable.toWeb(res) as ReadableStream<Uint8Array>), { status, headers: responseHeaders }))
+      })
+      req.on('error', reject)
+      req.end()
+    })
+  }) as typeof fetch
+}
 
 export interface RemoteImageGate {
   peek(sessionId: string, url: string): string
@@ -65,7 +107,7 @@ export async function fetchRemoteImage(deps: RemoteImageDeps, sessionId: string,
   if (decision === 'ask') return { ok: false, code: 'needs-consent' }
   if (decision !== 'allow') return { ok: false, code: 'denied' }
   const isPrivate = deps.isPrivate ?? resolvesToPrivateAddress
-  const fetchImpl = deps.fetchImpl ?? fetch
+  const fetchImpl = deps.fetchImpl ?? createPinnedFetch()
   const signal = AbortSignal.timeout(REMOTE_IMAGE_TIMEOUT_MS)
   let current = url
   try {
