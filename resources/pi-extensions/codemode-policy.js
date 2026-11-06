@@ -36,7 +36,7 @@ function applyCodemodePreference(pi, names, searchTools) {
   }
   const extra = names.includes('read') ? searchTools.add.filter(name => !names.includes(name)) : []
   const without = [...names, ...extra].filter(name => name !== 'codemode')
-  const target = codemodeEnabled() && available('codemode') ? (names.includes('codemode') ? names : [...without, 'codemode']) : without
+  const target = codemodeEnabled() && available('codemode') ? (names.includes('codemode') ? [...names, ...extra] : [...without, 'codemode']) : without
   const hasDeferred = all.some(tool => typeof tool === 'object' && tool?.exposure === 'deferred')
   return hasDeferred && available('tool_search') && !target.includes('tool_search') ? [...target, 'tool_search'] : target
 }
