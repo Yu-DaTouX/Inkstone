@@ -118,7 +118,7 @@ export function parseSearchCommand(command: string | undefined | null): SearchCo
 
 export function parseSearchCommands(command: string | undefined | null): SearchCommand[] {
   const found: SearchCommand[] = []
-  if (typeof command !== 'string' || !command.trim()) return found
+  if (typeof command !== 'string' || !command.includes('search')) return found
   for (const segment of commandSegments(tokenizeCommand(command))) {
     for (let i = 0; i + 2 < segment.length; i += 1) {
       if (!YAN_BIN.test(segment[i])) continue
