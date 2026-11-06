@@ -15,6 +15,8 @@ interface IndexState {
 
 const HEAD_CHARS = 400
 
+const READ_CHUNK_BYTES = 2 * 1024 * 1024
+
 export class SessionEntriesLite {
   private state: IndexState | null = null
   private chain: Promise<unknown> = Promise.resolve()
@@ -52,27 +54,25 @@ export class SessionEntriesLite {
     let fh
     try {
       fh = await open(file, 'r')
-      const length = size - s.offset
-      const buf = Buffer.alloc(length)
-      let read = 0
-      while (read < length) {
-        const r = await fh.read(buf, read, length - read, s.offset + read)
+      const buf = Buffer.alloc(Math.min(size - s.offset, READ_CHUNK_BYTES))
+      while (s.offset < size) {
+        const want = Math.min(buf.length, size - s.offset)
+        const r = await fh.read(buf, 0, want, s.offset)
         if (r.bytesRead <= 0) break
-        read += r.bytesRead
-      }
-      const text = s.tail + s.decoder.write(buf.subarray(0, read))
-      s.offset += read
-      const lastNl = text.lastIndexOf('\n')
-      s.tail = lastNl >= 0 ? text.slice(lastNl + 1) : text
-      const body = lastNl >= 0 ? text.slice(0, lastNl) : ''
-      let start = 0
-      while (start < body.length) {
-        let nl = body.indexOf('\n', start)
-        if (nl < 0) nl = body.length
-        const line = body.slice(start, nl)
-        start = nl + 1
-        const entry = liteEntryOf(line)
-        if (entry) s.entries.push(entry)
+        const text = s.tail + s.decoder.write(buf.subarray(0, r.bytesRead))
+        s.offset += r.bytesRead
+        const lastNl = text.lastIndexOf('\n')
+        s.tail = lastNl >= 0 ? text.slice(lastNl + 1) : text
+        const body = lastNl >= 0 ? text.slice(0, lastNl) : ''
+        let start = 0
+        while (start < body.length) {
+          let nl = body.indexOf('\n', start)
+          if (nl < 0) nl = body.length
+          const line = body.slice(start, nl)
+          start = nl + 1
+          const entry = liteEntryOf(line)
+          if (entry) s.entries.push(entry)
+        }
       }
       return s.entries
     } catch {
