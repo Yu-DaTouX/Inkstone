@@ -22,6 +22,7 @@ import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
 import { prepareStreamingMarkdown, splitMarkdownBlocks } from './markdown-blocks'
 import { markdownCacheKey } from './markdown-cache-key'
+import { MarkdownTable } from './MarkdownTable'
 import { throttleTail, type TailHold } from './markdown-tail-throttle'
 import { rehypeKbd } from './markdown-kbd'
 import { useSmoothReveal } from './smooth-reveal'
@@ -515,11 +516,7 @@ const MD_COMPONENTS: Options['components'] = {
   input: MarkdownInput,
   code: InlineCodeLink,
   pre: MarkdownPre,
-  table: ({ children }: { children?: ReactNode }) => (
-    <div className="v3-md-table-wrap">
-      <table>{children}</table>
-    </div>
-  )
+  table: MarkdownTable
 }
 
 function footnoteIndex(referenceIndex: number, rereferenceIndex: number): string {

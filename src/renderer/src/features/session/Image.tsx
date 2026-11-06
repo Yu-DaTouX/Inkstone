@@ -152,6 +152,7 @@ export function MessageImage({
   const notify = useStore((s) => s.notify)
   const imageRef = useRef<HTMLImageElement | null>(null)
   const [viewerOpen, setViewerOpen] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const open = (): void => setViewerOpen(true)
   const knownSize = imageSizes.get(imageSizeKey(src))
 
@@ -216,8 +217,12 @@ export function MessageImage({
         loading="lazy"
         decoding="async"
         data-sized={knownSize ? '' : undefined}
+        data-pending={!knownSize && !loaded ? '' : undefined}
         style={knownSize ? ({ '--img-ratio': `${knownSize.width} / ${knownSize.height}`, '--img-w': `${knownSize.width}px` } as CSSProperties) : undefined}
-        onLoad={(event) => rememberImageSize(src, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
+        onLoad={(event) => {
+          rememberImageSize(src, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+          setLoaded(true)
+        }}
         title={t('chat.imageOpen')}
         onClick={open}
         onContextMenu={onContextMenu}
