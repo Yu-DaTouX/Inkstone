@@ -456,4 +456,4 @@ async function comfyGenerate(req, sources, server, managed, report, signal, conf
     }
 }
 const comfyImage = (req, sources, server, managed, report, signal, confirmCloudNodes) => comfyGenerate(req, sources, server, managed, report, signal, confirmCloudNodes);
-export { comfyGenerate, comfyImage, loadSources, loadVideoSource, sniffFormat, sniffVideoFormat, VIDEO_MIME };
+export { comfyGenerate, comfyImage, loadSources, loadVideoSource, sniffFormat, sniffVideoFormat, VIDEO_MIME, watchComfyProgress, queuePosition, comfyUpload, httpError, imageSignal, ImageProviderError, inside, SOURCE_MIME, VIDEO_SOURCE_MIME };

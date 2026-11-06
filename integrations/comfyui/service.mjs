@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { detectLocalImageService } from './discovery.mjs'
 import { comfyStatus, ensureComfyRunning, holdManagedComfy, stopManagedComfy } from './launcher.mjs'
+import { nodeCatalog, readWorkflow, validateWorkflow, uploadMedia, runPrompt, RawError } from './raw.mjs'
 import { comfyGenerate, loadSources, loadVideoSource, sniffFormat, sniffVideoFormat, VIDEO_MIME } from './generation.mjs'
 
 const MAX_IMAGE_BYTES = 40 * 1024 * 1024
@@ -30,6 +31,47 @@ export function createComfyService({ confirm, artifactDir, sourceArtifactDir = a
     if (media === 'video' && params.seconds !== undefined && !(Number.isFinite(params.seconds) && params.seconds > 0 && params.seconds <= 30)) throw new Error('seconds 需在 0–30 秒之间')
   }
 
+  const acquireServer = async (signal, progress) => {
+    const status = await comfyStatus()
+    let server = status.managed && status.baseUrl ? { kind: 'comfyui', name: 'ComfyUI', baseUrl: status.baseUrl } : await detectLocalImageService()
+    if (!server) {
+      progress({ stage: 'starting-comfyui' })
+      server = await ensureComfyRunning(detail => { report('preparing', detail); progress({ stage: 'starting-comfyui', message: detail }) })
+    }
+    check(signal)
+    const host = new URL(server.baseUrl).hostname
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) await approve('外部图像服务', '将提示词和参考素材发送至 ' + server.baseUrl, signal, progress)
+    return server
+  }
+
+  const rootsOf = request => {
+    if (typeof request.context?.cwd !== 'string' || !isAbsolute(request.context.cwd)) throw new Error('缺少可信项目目录')
+    return { cwd: request.context.cwd, artifactDir: sourceArtifactDir }
+  }
+
+  const withServer = async (request, signal, work) => {
+    const server = await acquireServer(signal, () => {})
+    const hold = holdManagedComfy(server.baseUrl)
+    try { return await work(server, rootsOf(request)) }
+    catch (error) { throw error instanceof RawError ? new Error(error.message) : error }
+    finally { hold.release() }
+  }
+
+  const produceRaw = async (server, params, request, signal, progress) => {
+    const hold = holdManagedComfy(server.baseUrl)
+    try {
+      const checked = await validateWorkflow(server, params, rootsOf(request), signal)
+      if (!checked.ok) throw new Error('工作流校验未通过，未提交：' + JSON.stringify(checked.problems))
+      if (checked.apiNodes.length) {
+        await approve('ComfyUI 云端 API', '工作流包含云端 API 节点（' + checked.apiNodes.join('、') + '），可能发送数据并产生费用。是否允许本次执行？', signal, progress)
+      }
+      progress({ stage: 'submitting', workflow: '(自定义工作流)' })
+      const result = await runPrompt(server, checked.prompt, { managed: hold.managed, signal, onProgress: progress, artifactDir })
+      return { ...result, workflow: '(自定义工作流)' }
+    } catch (error) { throw error instanceof RawError ? new Error(error.message) : error }
+    finally { hold.release() }
+  }
+
   const produce = async (media, params, request, signal, progress) => {
     const previous = generationQueue
     let release
@@ -38,16 +80,9 @@ export function createComfyService({ confirm, artifactDir, sourceArtifactDir = a
     await previous
     try {
       check(signal)
-      const status = await comfyStatus()
-      let server = status.managed && status.baseUrl ? { kind: 'comfyui', name: 'ComfyUI', baseUrl: status.baseUrl } : await detectLocalImageService()
-      if (!server) {
-        progress({ stage: 'starting-comfyui' })
-        server = await ensureComfyRunning(detail => { report('preparing', detail); progress({ stage: 'starting-comfyui', message: detail }) })
-      }
-      check(signal)
-      const host = new URL(server.baseUrl).hostname
-      if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) await approve('外部图像服务', '将提示词和参考素材发送至 ' + server.baseUrl, signal, progress)
+      const server = await acquireServer(signal, progress)
       await mkdir(artifactDir, { recursive: true })
+      if (media === 'raw') return await produceRaw(server, params, request, signal, progress)
       const roots = { cwd: request.context.cwd, artifactDir: sourceArtifactDir }
       const sources = await loadSources(params.sourcePaths, roots)
       const video = media === 'video' ? await loadVideoSource(params.videoPath, roots) : undefined
@@ -148,6 +183,21 @@ export function createComfyService({ confirm, artifactDir, sourceArtifactDir = a
         await waitJob(job, Number(params.waitSeconds) || 0, signal)
       }
       return snapshot(job)
+    }
+    if (action === 'nodes') return withServer(request, signal, server => nodeCatalog(server, params, signal))
+    if (action === 'upload') return withServer(request, signal, (server, roots) => uploadMedia(server, params.paths, roots, signal))
+    if (action === 'workflow') {
+      return withServer(request, signal, async (server, roots) => {
+        if (params.mode === 'validate') {
+          const { prompt: _prompt, ...checked } = await validateWorkflow(server, params, roots, signal)
+          return checked
+        }
+        return readWorkflow(server, params, roots, signal)
+      })
+    }
+    if (action === 'run') {
+      if (params.detach === true) return snapshot(startJob('raw', params, request))
+      return produce('raw', params, request, signal, () => {})
     }
     if (action !== 'generate' && action !== 'video') throw new Error('未知插件操作')
     const media = action === 'video' ? 'video' : 'image'

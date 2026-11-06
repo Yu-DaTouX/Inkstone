@@ -81,10 +81,12 @@ async function finishVideoJob(pi, job, signal) {
     const text = `${describeJob(job)}。任务仍在后台运行：用 comfyui_job 传 jobId "${job.jobId}" 继续等待（可设 waitSeconds），或传 cancel: true 取消。`
     return { content: [{ type: 'text', text }], details: job }
   }
-  const info = await stat(job.path)
-  if (!info.isFile()) throw new Error('视频结果无效')
+  const paths = job.files ? job.files.map(file => file.path) : [job.path]
   let attached = false
-  try { attached = (await pi.exec('yan', ['artifact', 'attach', '--path', job.path], { signal })).code === 0 } catch {}
+  for (const path of paths) {
+    if (!(await stat(path).catch(() => null))?.isFile()) throw new Error('结果文件无效')
+    try { attached = (await pi.exec('yan', ['artifact', 'attach', '--path', path], { signal })).code === 0 } catch { attached = false }
+  }
   if (signal?.aborted) throw new Error('已取消')
   const done = { ...job, attached }
   return { content: [{ type: 'text', text: `${describeJob(done)}。${JSON.stringify(done)}` }], details: done }
@@ -138,6 +140,45 @@ export default function comfyui(pi) {
     async execute(id, params, signal, onUpdate, ctx) {
       const { waitSeconds, ...input } = params
       const started = await callPlugin('video', { ...input, detach: true }, id, ctx, signal)
+      const release = cancelOnAbort(started.jobId, id, ctx, signal)
+      try {
+        onUpdate?.({ content: [{ type: 'text', text: describeJob(started) }], details: started })
+        return await finishVideoJob(pi, await followJob(started.jobId, waitBudget(waitSeconds), id, ctx, signal, onUpdate), signal)
+      } finally { release() }
+    }
+  })
+  pi.registerTool({
+    name: 'comfyui_nodes', label: 'ComfyUI 节点目录',
+    description: '查询这台 ComfyUI 实际安装的节点（object_info）。不传参数返回分类概览；search 按空格分隔的关键词匹配名称、显示名、分类和说明，category 限定分类；types 按节点类型名取完整定义（必填/可选输入、取值范围、下拉选项、输出序号与类型）。拼装或改写工作流前用它确认节点存在及输入名，不要凭记忆写。需要时自动启动本机 ComfyUI。',
+    parameters: { type: 'object', properties: { search: { type: 'string' }, category: { type: 'string' }, types: { type: 'array', items: { type: 'string' }, maxItems: 20 } }, additionalProperties: false },
+    async execute(id, params, signal, _update, ctx) { return textResult(await callPlugin('nodes', params, id, ctx, signal)) }
+  })
+  pi.registerTool({
+    name: 'comfyui_workflow', label: 'ComfyUI 工作流',
+    description: '读取或校验工作流。来源三选一：name（ComfyUI 已保存工作流，界面格式会转成 API 格式）、path（项目内 JSON 文件，API 或界面格式）、prompt（API 格式对象）。mode 为 read（默认）返回 API 格式 JSON（{节点编号: {class_type, inputs}}，输入里 ["节点编号", 输出序号] 是连线）；JSON 太长时不内联，传 outPath（项目内 .json，已存在需 overwrite: true）保存后用文件工具修改。mode 为 validate 用 object_info 检查节点是否存在、必填输入、连线节点与输出序号、类型是否匹配、数值范围、下拉值、是否有输出节点、是否成环，返回逐条问题（节点、输入、原因和可选值）及云端 API 节点列表；校验通过再用 comfyui_run 运行。',
+    parameters: {
+      type: 'object', properties: {
+        mode: { type: 'string', enum: ['read', 'validate'] }, name: { type: 'string' }, path: { type: 'string' }, prompt: { type: 'object' },
+        outPath: { type: 'string' }, overwrite: { type: 'boolean' }
+      }, additionalProperties: false
+    },
+    async execute(id, params, signal, _update, ctx) { return textResult(await callPlugin('workflow', params, id, ctx, signal)) }
+  })
+  pi.registerTool({
+    name: 'comfyui_upload', label: 'ComfyUI 上传素材',
+    description: '把项目内或插件成果目录内的图片（PNG/JPEG/WebP）、视频（MP4/MOV/WebM/MKV）上传到 ComfyUI 的 input 目录，返回可填入 LoadImage 的 image、LoadVideo 的 file 等输入的文件名。',
+    parameters: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4 } }, required: ['paths'], additionalProperties: false },
+    async execute(id, params, signal, _update, ctx) { return textResult(await callPlugin('upload', params, id, ctx, signal)) }
+  })
+  pi.registerTool({
+    name: 'comfyui_run', label: 'ComfyUI 运行工作流',
+    description: '运行你拼装或改写的工作流（API 格式），来源 path（项目内 JSON）或 prompt（对象）二选一，提交前自动校验，不通过则返回问题清单且不提交；ComfyUI 拒绝或节点执行失败时返回节点编号、类型和原因，据此修改再运行。所有输出图片和视频（最多 8 个）保存并挂到回复，文本输出一并返回。后台任务，卡片显示进度，最多等 waitSeconds（默认 240，0 为立即返回），到时没完成返回 jobId，用 comfyui_job 继续。含云端 API 节点（可能付费）时每次运行都由宿主向用户确认。',
+    parameters: {
+      type: 'object', properties: { path: { type: 'string' }, prompt: { type: 'object' }, waitSeconds: { type: 'number', minimum: 0, maximum: 900 } }, additionalProperties: false
+    },
+    async execute(id, params, signal, onUpdate, ctx) {
+      const { waitSeconds, ...input } = params
+      const started = await callPlugin('run', { ...input, detach: true }, id, ctx, signal)
       const release = cancelOnAbort(started.jobId, id, ctx, signal)
       try {
         onUpdate?.({ content: [{ type: 'text', text: describeJob(started) }], details: started })

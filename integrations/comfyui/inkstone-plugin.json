@@ -4,7 +4,7 @@
   "extension": "extension.mjs",
   "process": "plugin.mjs",
   "capabilities": ["user.confirm"],
-  "publicActions": ["status", "start", "stop", "generate", "video", "job"],
+  "publicActions": ["status", "start", "stop", "generate", "video", "job", "nodes", "workflow", "upload", "run"],
   "environment": ["YAN_COMFYUI_URL", "YAN_COMFYUI_DIR", "YAN_COMFYUI_PYTHON", "YAN_COMFYUI_ARGS", "YAN_COMFYUI_IDLE_MINUTES", "YAN_COMFYUI_START_SECONDS", "YAN_COMFYUI_WORKFLOW", "YAN_LOCAL_INSTALL_SCAN"],
   "commands": {
     "image.local.status": "status",
