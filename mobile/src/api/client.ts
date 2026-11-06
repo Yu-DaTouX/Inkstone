@@ -147,6 +147,8 @@ export interface SessionListItem {
   updatedAt: number
   messageCount: number
   model?: string
+  pinned?: boolean
+  archivedAt?: number
 }
 
 export interface HistoryToolCall {
@@ -261,6 +263,30 @@ export class RemoteClient {
     await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/stop`, {}, idempotencyKey())
   }
 
+  async setSessionFlags(sessionId: string, flags: { pinned?: boolean; archived?: boolean }): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/flags`, flags, idempotencyKey())
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/delete`, { confirm: true }, idempotencyKey())
+  }
+
+  async compact(sessionId: string): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/compact`, {}, idempotencyKey())
+  }
+
+  async branches(sessionId: string): Promise<{ repo: boolean; branches: Array<{ name: string; current: boolean; busy?: boolean }>; current: string | null }> {
+    return (await this.get<{ data: { repo: boolean; branches: Array<{ name: string; current: boolean; busy?: boolean }>; current: string | null } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/branches`)).data
+  }
+
+  async switchBranch(sessionId: string, branch: string): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/branch`, { branch }, idempotencyKey())
+  }
+
+  async search(query: string): Promise<Array<{ sessionId: string; snippet: string; matches: number }>> {
+    return (await this.get<{ data: { hits: Array<{ sessionId: string; snippet: string; matches: number }> } }>(`/remote/v1/search?q=${encodeURIComponent(query)}`)).data.hits
+  }
+
   async insight(sessionId: string): Promise<RemoteInsight> {
     return (await this.get<{ data: RemoteInsight }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/insight`)).data
   }
@@ -289,8 +315,8 @@ export class RemoteClient {
     return (await this.post<{ data: RemoteDeviceSummary }>('/remote/v1/device', { name }, idempotencyKey())).data
   }
 
-  async models(sessionId: string): Promise<{ models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null }> {
-    return (await this.get<{ data: { models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/models`)).data
+  async models(sessionId: string): Promise<{ models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null; pending?: boolean }> {
+    return (await this.get<{ data: { models: RemoteModel[]; current: RemoteModel | null; thinking?: { level: string; levels: string[] } | null; pending?: boolean } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/models`)).data
   }
 
   async setModel(sessionId: string, model: RemoteModel, key = idempotencyKey()): Promise<RemoteModel> {

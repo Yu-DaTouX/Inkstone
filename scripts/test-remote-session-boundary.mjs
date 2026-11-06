@@ -12,7 +12,7 @@ const stubs = {
   './image-store': 'export const localizeImage = () => ""',
   './title': 'export const setManualTitle = async () => ({ok:true})',
   './settings': 'export const getSettings = async () => globalThis.__boundary.settings',
-  './sessions': 'export const listSessions = async () => globalThis.__boundary.sessions.map(x => ({...x}))',
+  './sessions': 'export const listSessions = async () => globalThis.__boundary.sessions.map(x => ({...x})); export const deleteSession = async () => ""; export const restoreSession = async () => undefined; export const sessionsToDelete = async () => []; export const SESSIONS_DIR = ""',
   './peer-grants': 'export class PeerGrantRegistry {}',
   './peer-client': 'export class PeerClient {}',
   './paths': 'export const YAN_DIR = "/fixture"'

@@ -23,7 +23,7 @@ const stubModules = {
   './image-store': 'export const localizeImage = () => \'\'',
   './title': 'export const setManualTitle = (...args) => globalThis.__rh.setManualTitle(...args)',
   './settings': 'export const getSettings = (...args) => globalThis.__rh.getSettings(...args)',
-  './sessions': 'export const listSessions = (...args) => globalThis.__rh.listSessions(...args)',
+  './sessions': 'export const listSessions = (...args) => globalThis.__rh.listSessions(...args); export const deleteSession = async () => ""; export const restoreSession = async () => undefined; export const sessionsToDelete = async () => []; export const SESSIONS_DIR = ""',
   './peer-grants': 'export class PeerGrantRegistry { constructor() {} }',
   './peer-client': 'export class PeerClient { constructor() {} }',
   './paths': 'export const YAN_DIR = \'/tmp/yan-remote-chain-fixture\''

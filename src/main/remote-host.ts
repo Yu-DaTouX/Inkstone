@@ -22,6 +22,12 @@ import type { RemoteChangedFile, RemoteInsight, RemoteSessionChanges, RemoteSess
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
 import { readChanges } from './git-inspect'
+import { listRefs, readRepoSnapshot, resolveRepo } from './git-service'
+import { runGitAction } from './git-actions'
+import { setSessionFlags } from './session-layout'
+import { searchSessionText } from './session-search'
+import { deleteSessionChain } from './session-delete'
+import { randomUUID } from 'node:crypto'
 import type { GitChangeEntry } from '../shared/git'
 import type { AssistantArtifact, RunnerStatus, SessionStats, SessionState, SessionSummary, SessionTodo, SubagentRun, UIToolCall } from '../shared/ipc'
 import { SessionEntriesLite } from './session-entries-lite'
@@ -73,6 +79,8 @@ export function remoteSessionSummary(summary: SessionSummary): Record<string, un
     ...(summary.projectId ? { projectId: summary.projectId } : {}),
     ...(summary.scope ? { scope: summary.scope } : {}),
     ...(summary.lastOpenedAt !== undefined ? { lastOpenedAt: summary.lastOpenedAt } : {}),
+    ...(summary.pinned ? { pinned: true } : {}),
+    ...(summary.archivedAt ? { archivedAt: summary.archivedAt } : {}),
     ...(summary.projectCandidates?.length ? { projectCandidateCount: summary.projectCandidates.length } : {}),
     cwdName: basename(summary.cwd) || summary.cwd
   }
@@ -91,6 +99,7 @@ export function remoteSessionState(state: SessionState | null): Record<string, u
     isStreaming: state.isStreaming,
     ...(state.isAgentRunning !== undefined ? { isAgentRunning: state.isAgentRunning } : {}),
     isCompacting: state.isCompacting,
+    ...(state.pendingModelChange ? { pendingModelChange: true } : {}),
     ...(state.compaction ? { compaction: state.compaction } : {}),
     ...(state.lastCompaction ? { lastCompaction: state.lastCompaction } : {}),
     messageCount: state.messageCount,
@@ -502,7 +511,12 @@ export async function remoteModels(sessionId: string): Promise<RemoteOperationRe
   const levels = status ? await agent.listThinkingLevels().catch(() => []) : []
   const thinking = status && levels.length > 1 ? { level: agent.getState()?.thinkingLevel ?? 'off', levels } : null
   const current = status ? agent.getState()?.model : models.find((model) => summary.model === model.id || summary.model === `${model.provider}/${model.id}` || summary.model === `${model.provider}:${model.id}`)
-  return { ok: true, data: { models: models.map(({ id, provider, name, input }) => ({ id, provider, name, input })), current: current ? { id: current.id, provider: current.provider, name: current.name, input: current.input } : null, thinking } }
+  const pending = status ? !!agent.getState()?.pendingModelChange : false
+  return { ok: true, data: { pending, models: models.map(({ id, provider, name, input }) => ({ id, provider, name, input })), current: current ? { id: current.id, provider: current.provider, name: current.name, input: current.input } : null, thinking } }
+}
+
+function sessionBusy(sessionId: string): boolean {
+  return host.runners()?.statuses().some((item) => item.sessionId === sessionId && (item.running || item.waiting)) === true
 }
 
 export async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOperationResult> {
@@ -521,30 +535,24 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
   }
   if (command.action === 'model') {
     return withRemoteSession(command.sessionId, async (agent, _runId, _summary, _generation, current) => {
-      const state = agent.getState()
-      if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换模型' }
       const model = (await agent.listModels()).find((item) => item.provider === command.provider && item.id === command.modelId)
       if (!model) return { ok: false, status: 400, error: '模型不在电脑可用列表中' }
       if (!current()) return { ok: false, status: 409, error: '目标会话运行实例已变化' }
-      const latest = agent.getState()
-      if (latest?.isAgentRunning || latest?.isStreaming || latest?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换模型' }
       const result = await agent.setModel(model.provider, model.id)
       host.pushRunners()
-      return result.ok ? { ok: true, data: { current: { id: model.id, provider: model.provider, name: model.name, input: model.input } } } : { ok: false, status: 409, error: result.error }
-    }, undefined, true)
+      return result.ok ? { ok: true, data: { current: { id: model.id, provider: model.provider, name: model.name, input: model.input }, pending: !!agent.getState()?.pendingModelChange } } : { ok: false, status: 409, error: result.error }
+    }, undefined, !sessionBusy(command.sessionId))
   }
 
   if (command.action === 'thinking') {
     return withRemoteSession(command.sessionId, async (agent, _runId, _summary, _generation, current) => {
-      const state = agent.getState()
-      if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换思考档位' }
       const levels = await agent.listThinkingLevels()
       if (!current()) return { ok: false, status: 409, error: '目标会话运行实例已变化' }
       if (!levels.includes(command.level)) return { ok: false, status: 400, error: '当前模型不支持这个思考档位' }
       const result = await agent.setThinking(command.level)
       host.pushRunners()
-      return result.ok ? { ok: true, data: { level: command.level, levels } } : { ok: false, status: 409, error: result.error }
-    }, undefined, true)
+      return result.ok ? { ok: true, data: { level: command.level, levels, pending: !!agent.getState()?.pendingModelChange } } : { ok: false, status: 409, error: result.error }
+    }, undefined, !sessionBusy(command.sessionId))
   }
 
   if (command.action === 'abort') {
@@ -828,5 +836,96 @@ export const peerHostHandlers: PeerHostHandlers = {
     host.pushRunners()
     if (!sent.ok) return { ok: false, status: 409, error: sent.error ?? '新任务未能接收消息' }
     return { ok: true, data: { sessionId: sessionId ?? null, runId: selected.runId ?? selected.id, projectId: project.id } }
+  }
+}
+
+export async function remoteSetSessionFlag(sessionId: string, flags: { pinned?: boolean; archived?: boolean }): Promise<RemoteOperationResult> {
+  const resolved = await resolveChainSession(sessionId)
+  if (!resolved.ok) return resolved
+  const summary = resolved.summary
+  if (flags.archived === true && host.runners()?.statuses().some((item) => item.sessionId === summary.id && (item.running || item.waiting))) {
+    return { ok: false, status: 409, error: '会话正在运行，不能归档' }
+  }
+  try {
+    await setSessionFlags({ sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd }, flags)
+  } catch (error) {
+    return { ok: false, status: 500, error: error instanceof Error ? error.message : String(error) }
+  }
+  sessionsCache = null
+  host.pushRunners()
+  return { ok: true, data: { sessionId: summary.id, ...flags } }
+}
+
+export async function remoteDeleteSession(sessionId: string): Promise<RemoteOperationResult> {
+  const resolved = await resolveChainSession(sessionId)
+  if (!resolved.ok) return resolved
+  const result = await deleteSessionChain(host, resolved.summary.path)
+  sessionsCache = null
+  return result.ok ? { ok: true, data: { sessionId: resolved.summary.id } } : { ok: false, status: 409, error: result.error ?? '删除失败' }
+}
+
+export async function remoteCompact(sessionId: string): Promise<RemoteOperationResult> {
+  return withRemoteSession(sessionId, async (agent) => {
+    const state = agent.getState()
+    if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可压缩上下文' }
+    const result = await agent.compact()
+    host.pushRunners()
+    return result.ok ? { ok: true, data: { sessionId } } : { ok: false, status: 409, error: result.error ?? '压缩失败' }
+  })
+}
+
+export async function remoteSearch(query: string, limit = 30): Promise<RemoteOperationResult> {
+  const text = query.trim().slice(0, 200)
+  if (!text) return { ok: true, data: { hits: [] } }
+  const [found, summaries] = await Promise.all([searchSessionText(text, Math.min(Math.max(limit, 1), 50), 'remote'), remoteSessions(500)])
+  const byPath = new Map(summaries.map((item) => [normalizeChainKey(item.path), item]))
+  const hits = found.hits.flatMap((hit) => {
+    const summary = byPath.get(normalizeChainKey(hit.path))
+    return summary ? [{ sessionId: summary.id, snippet: clip(hit.snippet, 200) ?? '', matches: hit.matches }] : []
+  })
+  return { ok: true, data: { hits } }
+}
+
+async function gitContextOf(sessionId: string): Promise<{ ok: true; summary: SessionSummary } | { ok: false; status: number; error: string }> {
+  const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
+  return resolved
+}
+
+export async function remoteBranches(sessionId: string): Promise<RemoteOperationResult> {
+  const resolved = await gitContextOf(sessionId)
+  if (!resolved.ok) return resolved
+  try {
+    const repo = await resolveRepo(resolved.summary.cwd)
+    if (!repo) return { ok: true, data: { repo: false, branches: [], current: null, detached: false } }
+    const listing = await listRefs(repo.root)
+    const busy = new Set(listing.busyBranches)
+    const branches = listing.refs
+      .filter((ref) => ref.kind === 'local')
+      .slice(0, 100)
+      .map((ref) => ({ name: ref.ref, current: ref.current, ...(busy.has(ref.ref) && !ref.current ? { busy: true } : {}) }))
+    return { ok: true, data: { repo: true, branches, current: listing.currentBranch, detached: listing.currentBranch === null } }
+  } catch (error) {
+    return { ok: false, status: 500, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export async function remoteSwitchBranch(sessionId: string, branch: string): Promise<RemoteOperationResult> {
+  const resolved = await gitContextOf(sessionId)
+  if (!resolved.ok) return resolved
+  const summary = resolved.summary
+  if (host.runners()?.statuses().some((item) => item.sessionId === summary.id && (item.running || item.waiting))) {
+    return { ok: false, status: 409, error: '任务完成后可切换分支' }
+  }
+  try {
+    const repo = await resolveRepo(summary.cwd)
+    if (!repo) return { ok: false, status: 409, error: '这个目录不在 Git 仓库里' }
+    const listing = await listRefs(repo.root)
+    if (!listing.refs.some((ref) => ref.kind === 'local' && ref.ref === branch)) return { ok: false, status: 404, error: '找不到这个本地分支' }
+    const snapshot = await readRepoSnapshot(repo)
+    const result = await runGitAction({ requestId: randomUUID(), cwd: summary.cwd, kind: 'switch-branch', branch, expected: snapshot.expected })
+    if (!result.ok) return { ok: false, status: 409, error: (result as { failure?: { message?: string } }).failure?.message ?? '切换分支失败' }
+    return { ok: true, data: { branch } }
+  } catch (error) {
+    return { ok: false, status: 500, error: error instanceof Error ? error.message : String(error) }
   }
 }

@@ -28,6 +28,12 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
         calls.push({ action: 'stop-subagent', sessionId, runId })
         return { ok: true, data: { id: runId } }
       },
+      async sessionFlags(sessionId, flags) { calls.push({ action: 'flags', sessionId, flags }); return { ok: true, data: flags } },
+      async deleteSession(sessionId) { calls.push({ action: 'delete', sessionId }); return { ok: true, data: { sessionId } } },
+      async compact(sessionId) { calls.push({ action: 'compact', sessionId }); return { ok: true, data: { sessionId } } },
+      async branches(sessionId) { calls.push({ action: 'branches', sessionId }); return { ok: true, data: { branches: [{ name: 'main', current: true }] } } },
+      async switchBranch(sessionId, branch) { calls.push({ action: 'switch-branch', sessionId, branch }); return { ok: true, data: { branch } } },
+      async search(query) { calls.push({ action: 'search', query }); return { ok: true, data: { hits: [{ sessionId: 's-1', snippet: query, matches: 1 }] } } },
       async image() {
         return { path: bigFile, mediaType: 'application/octet-stream', bytes: 8 * 1024 * 1024, filename: 'big.bin' }
       },
@@ -87,6 +93,22 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
     ok(stopSub.response.status === 200 && calls.at(-1).action === 'stop-subagent' && calls.at(-1).runId === 'sub-ab12', '远程子代理停止路由')
     const badStop = await json('/remote/v1/sessions/s-1/subagents/not-a-sub/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
     ok(badStop.response.status === 400, '远程子代理停止拒绝无效标识')
+
+    const postJson = (path, body) => json(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    ok(infoResponse.body.capabilities.includes('session-flags') && infoResponse.body.capabilities.includes('compact') && infoResponse.body.capabilities.includes('search') && infoResponse.body.capabilities.includes('branches'), '远程 info 声明会话管理能力')
+    const pin = await postJson('/remote/v1/sessions/s-1/flags', { pinned: true })
+    ok(pin.response.status === 200 && calls.at(-1).flags.pinned === true, '远程置顶')
+    ok((await postJson('/remote/v1/sessions/s-1/flags', {})).response.status === 400, '远程 flags 需要字段')
+    const del = await postJson('/remote/v1/sessions/s-1/delete', { confirm: true })
+    ok(del.response.status === 403, '删除只允许配对的手机')
+    ok(!calls.some((call) => call.action === 'delete'), '未确认的删除不会到达主进程')
+    ok((await postJson('/remote/v1/sessions/s-1/compact', {})).response.status === 200 && calls.at(-1).action === 'compact', '远程压缩')
+    ok((await json('/remote/v1/sessions/s-1/branches')).body.data.branches[0].name === 'main', '远程分支列表')
+    const sw = await postJson('/remote/v1/sessions/s-1/branch', { branch: 'feature/x' })
+    ok(sw.response.status === 200 && calls.at(-1).branch === 'feature/x', '远程切换分支')
+    ok((await postJson('/remote/v1/sessions/s-1/branch', {})).response.status === 400, '切换分支需要分支名')
+    const found = await json('/remote/v1/search?q=' + encodeURIComponent('关键词'))
+    ok(found.response.status === 200 && found.body.data.hits[0].snippet === '关键词', '远程内容搜索')
 
     const status = await json('/remote/v1/status')
     ok(status.response.status === 200 && status.body.data.marker === 'snapshot', '远程 status 返回主进程快照')

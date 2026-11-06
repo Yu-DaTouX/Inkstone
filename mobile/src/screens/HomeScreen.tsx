@@ -1,5 +1,5 @@
 import { LIFE_ASSISTANT_ENABLED } from '../features'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type SessionListItem } from '../api/client'
 import { approvalInfo, QuestionCard } from '../components/QuestionCard'
@@ -8,9 +8,11 @@ import { GlyphSpinner } from '../motion'
 import { useRemote } from '../state'
 import { useBottomInset } from '../insets'
 import { font, icon, mono, radius, space, touch, usePalette, useProjectLook, weight } from '../theme'
+import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { ActivityLine, IconButton, Meta, SectionTitle, STATUS_TEXT, StatusDot } from '../ui'
 
 const UNGROUPED = 'folder:未分类'
+const ARCHIVED = 'archived'
 const SESSIONS_SHOWN = 5
 const folderKey = (s: SessionListItem) => s.projectId || `folder:${s.cwdName?.trim() || '未分类'}`
 const activityAt = (s: SessionListItem) => s.lastActivityAt ?? s.updatedAt
@@ -47,7 +49,19 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
   const [picker, setPicker] = useState(false)
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [showAll, setShowAll] = useState<Record<string, boolean>>({})
+  const [contentHits, setContentHits] = useState<Array<{ sessionId: string; snippet: string }>>([])
   const newAttempt = useRef<{ key: string; projectId: string | null } | null>(null)
+
+  const searchAllowed = capabilityAllowed(info, 'search')
+  useEffect(() => {
+    const needle = query.trim()
+    if (!searchAllowed || needle.length < 2) { setContentHits([]); return }
+    let alive = true
+    const timer = setTimeout(() => {
+      void client.search(needle).then((hits) => { if (alive) setContentHits(hits) }).catch(() => { if (alive) setContentHits([]) })
+    }, 400)
+    return () => { alive = false; clearTimeout(timer) }
+  }, [client, query, searchAllowed])
 
   const asking = useMemo(() => new Set(questions.map((q) => q.sessionId).filter(Boolean)), [questions])
   const running = useMemo(() => new Set(runners.filter((r) => r.running || r.waiting).map((r) => r.sessionId)), [runners])
@@ -55,14 +69,18 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     const known = new Set(projects.map((item) => item.id))
     const map = new Map<string, Group>()
     for (const item of projects) map.set(item.id, { id: item.id, name: item.name, cwd: item.cwd, sessions: [], latest: 0 })
+    const archived: SessionListItem[] = []
     for (const session of [...sessions].sort((a, b) => activityAt(b) - activityAt(a))) {
+      if (session.archivedAt) { archived.push(session); continue }
       const id = session.projectId && known.has(session.projectId) ? session.projectId : folderKey(session)
       const group = map.get(id) ?? { id, name: session.cwdName || '未分类', sessions: [], latest: 0 }
       group.sessions.push(session)
       group.latest = Math.max(group.latest, activityAt(session))
       map.set(id, group)
     }
-    return [...map.values()].sort((a, b) => (a.id === UNGROUPED ? 1 : b.id === UNGROUPED ? -1 : b.latest - a.latest))
+    const ordered = [...map.values()].sort((a, b) => (a.id === UNGROUPED ? 1 : b.id === UNGROUPED ? -1 : b.latest - a.latest))
+    if (archived.length) ordered.push({ id: ARCHIVED, name: '已归档', sessions: archived, latest: 0 })
+    return ordered
   }, [projects, sessions])
   const lookOf = useProjectLook(useMemo(() => projects.map((item) => item.id), [projects]))
   const projectName = (session: SessionListItem) => groups.find((group) => group.sessions.includes(session))?.name ?? session.cwdName ?? ''
@@ -75,13 +93,24 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       const hits = [...sessions].filter((s) => `${s.title} ${s.cwdName ?? ''}`.toLowerCase().includes(needle)).sort((a, b) => activityAt(b) - activityAt(a))
       out.push({ kind: 'section', key: 'search', title: '搜索结果', count: hits.length })
       for (const s of hits) out.push({ kind: 'session', key: `hit-${s.id}`, session: s, meta: s.cwdName })
+      const titled = new Set(hits.map((s) => s.id))
+      const inside = contentHits.filter((hit) => !titled.has(hit.sessionId)).flatMap((hit) => { const found = sessions.find((s) => s.id === hit.sessionId); return found ? [{ session: found, snippet: hit.snippet }] : [] })
+      if (inside.length) {
+        out.push({ kind: 'section', key: 'content', title: '内容匹配', count: inside.length })
+        for (const entry of inside) out.push({ kind: 'session', key: `content-${entry.session.id}`, session: entry.session, meta: entry.snippet })
+      }
       return out
     }
     if (questions.length) {
       out.push({ kind: 'section', key: 'ask', title: STATUS_TEXT.wait, count: questions.length })
       for (const q of questions) out.push({ kind: 'ask', key: `ask-${q.id}`, questionId: q.id })
     }
-    const live = sessions.filter((s) => running.has(s.id) && !asking.has(s.id))
+    const pinned = sessions.filter((s) => s.pinned && !s.archivedAt).sort((a, b) => activityAt(b) - activityAt(a))
+    if (pinned.length) {
+      out.push({ kind: 'section', key: 'pinned', title: '置顶', count: pinned.length })
+      for (const s of pinned) out.push({ kind: 'session', key: `pin-${s.id}`, session: s, meta: s.cwdName })
+    }
+    const live = sessions.filter((s) => running.has(s.id) && !asking.has(s.id) && !s.archivedAt)
     if (live.length) {
       out.push({ kind: 'section', key: 'run', title: STATUS_TEXT.run, count: live.length })
       for (const s of live) out.push({ kind: 'run', key: `run-${s.id}`, session: s })
@@ -90,7 +119,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     out.push({ kind: 'section', key: 'projects', title: '项目' })
     groups.forEach((group, index) => {
       const holdsCurrent = group.sessions.some((s) => s.id === selectedSessionId)
-      const open = toggled[group.id] ?? (holdsCurrent || index === 0)
+      const open = toggled[group.id] ?? (holdsCurrent || (index === 0 && group.id !== ARCHIVED))
       out.push({ kind: 'group', key: `group-${group.id}`, group, open })
       if (!open) return
       const all = showAll[group.id]
@@ -99,7 +128,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       if (!all && group.sessions.length > SESSIONS_SHOWN) out.push({ kind: 'more', key: `more-${group.id}`, groupId: group.id, hidden: group.sessions.length - SESSIONS_SHOWN })
     })
     return out
-  }, [query, sessions, questions, running, asking, groups, toggled, showAll, selectedSessionId])
+  }, [query, sessions, contentHits, questions, running, asking, groups, toggled, showAll, selectedSessionId])
 
   const create = async (projectId?: string) => {
     setPicker(false)

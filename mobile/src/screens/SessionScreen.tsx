@@ -441,7 +441,7 @@ export function SessionScreen({
       </View>
       </View>
       <RenameSheet sessionId={sessionId} initial={sessions.find((entry) => entry.id === sessionId)?.title || title} visible={renaming} onClose={() => setRenaming(false)} />
-      <ModelPicker sessionId={sessionId} visible={modelPicker} onClose={() => setModelPicker(false)} onChanged={setSelectedModel} />
+      <ModelPicker sessionId={sessionId} running={!!runner?.running} visible={modelPicker} onClose={() => setModelPicker(false)} onChanged={setSelectedModel} />
     </KeyboardAvoidingView>
   )
 }
