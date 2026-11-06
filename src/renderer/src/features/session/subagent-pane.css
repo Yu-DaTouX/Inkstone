@@ -178,37 +178,6 @@
     font-size: var(--t-footnote);
   }
 
-  .sa-pane-summary {
-    margin: 0;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .sa-pane-paths {
-    color: var(--fg2);
-    font-size: var(--t-footnote);
-  }
-
-  .sa-pane-paths-panel[hidden] {
-    display: none;
-  }
-
-  .sa-pane-paths ul {
-    margin: 0;
-    padding: 0 0 0 calc(var(--s-4) + var(--s-16) + var(--s-6));
-    font-family: var(--font-mono);
-    list-style: none;
-  }
-
-  .sa-pane-paths li {
-    overflow-wrap: anywhere;
-  }
-
-  .sa-pane-paths .dim {
-    color: var(--fg3);
-  }
-
   .sa-pane-missing {
     height: 100%;
   }

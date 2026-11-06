@@ -431,28 +431,6 @@
     font: var(--w-medium) var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
-  .gh-prd__people {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-6);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .gh-prd__person {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-  }
-
-  .gh-prd__labels {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-4);
-  }
-
   .gh-prd__markdown {
     min-width: 0;
     color: var(--fg2);

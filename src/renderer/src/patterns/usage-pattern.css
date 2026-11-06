@@ -1,76 +1,10 @@
 @layer patterns {
-  .start-sec {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-8);
-    margin: 0;
-  }
   .start-usage {
     gap: var(--s-12);
     min-width: 0;
   }
-  .start-usage-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0 var(--s-16);
-  }
-  .start-label {
-    margin: 0;
-    color: var(--fg3);
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-    font-weight: 400;
-  }
-  .start-spacer {
-    flex: 1 1 auto;
-  }
   .usage-switch {
     flex: none;
-  }
-
-  .start-hero {
-    display: flex;
-    flex-direction: column;
-  }
-  .start-hero-sub {
-    display: flex;
-    flex-wrap: wrap;
-    column-gap: var(--s-8);
-  }
-  .start-hero-cost {
-    color: var(--fg2);
-    font-variant-numeric: tabular-nums;
-  }
-  .start-hero-num {
-    color: var(--fg);
-    font: var(--t-title) / 1.1 var(--font-ui);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .start-stats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--s-4) var(--s-16);
-    margin: 0;
-  }
-  .start-stat {
-    min-width: 0;
-  }
-  .start-stat dt {
-    color: var(--fg3);
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-  }
-  .start-stat dd {
-    margin: 0;
-    overflow: hidden;
-    color: var(--fg);
-    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
-    font-variant-numeric: tabular-nums;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .start-stat dd[data-long] {
-    font-size: var(--t-body);
   }
 
   .start-heat {
@@ -113,39 +47,5 @@
     align-items: center;
     gap: var(--s-6);
     font: var(--t-prose) / var(--t-body-lh) var(--font-ui);
-  }
-  .start-model-name {
-    grid-area: name;
-    overflow: hidden;
-    color: var(--fg);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .start-model-bar {
-    grid-area: bar;
-    margin-bottom: var(--s-2);
-    height: 2px;
-    background: var(--line);
-  }
-  .start-model-bar > span {
-    display: block;
-    height: 100%;
-    background: var(--accent);
-  }
-  .start-model-num {
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-  }
-  .start-hint {
-    margin: 0;
-    color: var(--fg3);
-    font-size: var(--t-body);
-  }
-
-  .start-usage[data-pending] .start-hero-num,
-  .start-usage[data-pending] .start-stat dd {
-    color: var(--fg3);
   }
 }

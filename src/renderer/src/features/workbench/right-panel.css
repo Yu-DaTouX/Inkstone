@@ -226,16 +226,4 @@
   }
 }
 @layer patterns {
-  .rp-tabs svg[data-tone='open'] {
-    color: var(--ok);
-  }
-  .rp-tabs svg[data-tone='merged'] {
-    color: var(--accent);
-  }
-  .rp-tabs svg[data-tone='closed'] {
-    color: var(--fail);
-  }
-  .rp-tabs svg[data-tone='draft'] {
-    color: var(--fg3);
-  }
 }

@@ -49,13 +49,6 @@
     list-style: none;
   }
 
-  .gh-pr-row__labels {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-4);
-    min-width: 0;
-  }
-
   .gh-pr-row__check {
     gap: var(--s-4);
   }
@@ -244,28 +237,6 @@
     min-height: 96px;
     max-height: 360px;
     overflow-y: auto;
-  }
-
-  .gh-pr-pick {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-6);
-    min-width: 0;
-  }
-
-  .gh-pr-pick__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-4);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .gh-pr-pick__chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-2);
   }
 
   .gh-pr-row:active {
