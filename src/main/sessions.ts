@@ -290,7 +290,7 @@ async function readSessionSummary(f: { path: string; mtimeMs: number; size: numb
       id: head.id ?? f.path,
       path: f.path,
       cwd: head.cwd ?? decodeDirName(dirName) ?? '',
-      title: head.name ?? head.title ?? '(无标题)',
+      title: head.name ?? head.title ?? pick('(无标题)', '(Untitled)'),
       named,
       parentSession: head.parentSession,
       lastActivityAt:
