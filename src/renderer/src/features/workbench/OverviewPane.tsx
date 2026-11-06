@@ -118,6 +118,8 @@ function useRunEnded(running: boolean): number {
   return ended
 }
 
+const accountSnapMemory = new Map<string, AccountCardSnapshot>()
+
 function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: number): AccountCardSnapshot | null {
   const [snap, setSnap] = useState<AccountCardSnapshot | null>(null)
   const [poll, setPoll] = useState(0)
@@ -144,7 +146,9 @@ function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: numbe
         if (id !== seq.current) return
         publishAccountQuotaReport(report)
         const matches = (report.cards ?? []).filter((card) => card.provider.trim().toLowerCase() === want)
-        setSnap({ provider, state: 'ready', card: matches.find((card) => card.active) ?? matches.find((card) => card.active === undefined) ?? null })
+        const next: AccountCardSnapshot = { provider, state: 'ready', card: matches.find((card) => card.active) ?? matches.find((card) => card.active === undefined) ?? null }
+        accountSnapMemory.set(provider, next)
+        setSnap(next)
       })
       .catch(() => {
         if (id !== seq.current) return
@@ -152,7 +156,7 @@ function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: numbe
       })
   }, [provider, enabled, runEnded, poll])
 
-  return snap?.provider === provider ? snap : null
+  return snap?.provider === provider ? snap : accountSnapMemory.get(provider) ?? null
 }
 
 function liveQuotaModel(snapshot: ProviderQuota | null | undefined, t: TFunc, text: OverviewText): QuotaTileModel | null {
