@@ -627,7 +627,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                 </p>
               ) : null}
               {search.threads.length > 0 ? (
-                <ul aria-label={t('sidebar.t3.searchThreads')} className="flex flex-col gap-px">
+                <ul aria-label={t('sidebar.t3.searchThreads')} className="v3-fade flex flex-col gap-px">
                   {search.threads.map((view) => renderRow({ threadKey: scopedKeyOf(view.id), section: 'active', variant: 'slim', dropVerb: null, sortable: {} }))}
                 </ul>
               ) : null}
@@ -641,6 +641,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
             </>
           ) : (
             <SidebarThreadList
+              className="v3-fade"
               sections={{
                 pinned: sections.pinned.map((view) => scopedKeyOf(view.id)),
                 active: sections.active.map((view) => scopedKeyOf(view.id)),
