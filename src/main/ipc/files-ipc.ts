@@ -1,7 +1,8 @@
 import type { IpcRegistrar } from './registrar'
-import { join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { getSettings } from '../settings'
 import { completePath } from '../credentials'
 import { listDir, searchFiles } from '../files'
@@ -275,6 +276,17 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     return unsavedFiles.report(sender.id, rawPaths)
   })
 
+  handle('yan:attachments:read', async (url: string) => {
+    try {
+      const path = resolve(fileURLToPath(String(url ?? '')))
+      const directory = resolve(join(YAN_DIR, 'attachments')).toLowerCase()
+      const name = basename(path)
+      if (dirname(path).toLowerCase() !== directory || !/^[a-f0-9]{40}.(jpg|png|webp|gif)$/.test(name)) return { ok: false }
+      const bytes = await readFile(path)
+      const ext = name.split('.')[1]
+      return { ok: true, data: bytes.toString('base64'), mimeType: ext === 'jpg' ? 'image/jpeg' : `image/${ext}` }
+    } catch { return { ok: false } }
+  })
   handle('yan:attachments:usage',() => attachmentsUsage(join(YAN_DIR, 'attachments')))
   handle('yan:attachments:prune', async () => {
     if (deps.isSessionBusy()) throw new Error('会话正在运行，请结束后再清理附件')

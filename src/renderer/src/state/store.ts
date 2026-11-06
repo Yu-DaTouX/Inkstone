@@ -909,7 +909,7 @@ async function piCall<T extends { ok: boolean; error?: string }>(
   }
 }
 
-function pushNotice(
+export function pushNotice(
   list: Notice[],
   type: Notice['type'],
   text: string,
