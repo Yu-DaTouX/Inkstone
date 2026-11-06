@@ -14,7 +14,7 @@ function load(path, mocks = {}) {
   const source = readFileSync(path, 'utf8').replaceAll('import.meta.url', JSON.stringify(import.meta.url))
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const exports = {}
-  vm.runInNewContext(code, { exports, require: (name) => name in mocks ? mocks[name] : require(name), Buffer, process, console, AbortController, setTimeout, clearTimeout }, { filename: path })
+  vm.runInNewContext(code, { exports, require: (name) => name in mocks ? mocks[name] : name.endsWith('/ui-lang') ? { pick: (zh) => zh } : name === './model-text' ? { asModelText: (run) => run() } : require(name), Buffer, process, console, AbortController, setTimeout, clearTimeout }, { filename: path })
   return exports
 }
 async function test(name, run) {
