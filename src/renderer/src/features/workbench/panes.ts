@@ -10,8 +10,19 @@ import { DevicePane } from '../device/DevicePane'
 import { PullRequestsPane } from '../github/PullRequestsPane'
 import type { PreviewPaneProps, TerminalPaneProps, WorkbenchPaneComponents } from './types'
 
-const LazyTerminalPane = lazy(() => import('../terminal/TerminalPane').then((mod) => ({ default: mod.TerminalPane })))
-const LazyPreviewPane = lazy(() => import('../preview/PreviewPane').then((mod) => ({ default: mod.PreviewPane })))
+const loadTerminalPane = (): Promise<typeof import('../terminal/TerminalPane')> => import('../terminal/TerminalPane')
+const loadPreviewPane = (): Promise<typeof import('../preview/PreviewPane')> => import('../preview/PreviewPane')
+const LazyTerminalPane = lazy(() => loadTerminalPane().then((mod) => ({ default: mod.TerminalPane })))
+const LazyPreviewPane = lazy(() => loadPreviewPane().then((mod) => ({ default: mod.PreviewPane })))
+
+const PRELOAD_DELAY_MS = 2500
+
+if (typeof window !== 'undefined') {
+  window.setTimeout(() => {
+    void loadTerminalPane().catch(() => undefined)
+    void loadPreviewPane().catch(() => undefined)
+  }, PRELOAD_DELAY_MS)
+}
 
 function TerminalPane(props: TerminalPaneProps): JSX.Element {
   return createElement(Suspense, { fallback: null }, createElement(LazyTerminalPane, props))
