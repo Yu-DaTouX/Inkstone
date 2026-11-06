@@ -229,7 +229,7 @@ check('滚动锚点：一次读取兼顾被截断行和完整行，找到后停�
   })
   assert.equal(reads, 3)
   assert.deepEqual(position.domReadingAnchors({ ...box, querySelectorAll: () => [] }), { snapshot: null, resize: null })
-  assert.deepEqual(position.domAnchor(box), { turnId: 'row-0', offset: 20 })
+  assert.deepEqual(position.domAnchor(box), { turnId: 'row-0', offset: 20, path: [], sub: 20 })
 })
 
 check('分屏：共享滚动记录有界，不无限保留历史会话', () => {
