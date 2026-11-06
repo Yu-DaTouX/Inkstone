@@ -709,6 +709,34 @@
     vertical-align: text-bottom;
   }
 
+  .ask-dock,
+  .ui-model-change-notice,
+  [data-chat-composer-media-row] {
+    interpolate-size: allow-keywords;
+    animation: composer-block-in var(--dur-base) var(--ease-glide) both;
+  }
+
+  @keyframes composer-block-in {
+    from {
+      height: var(--chat-composer-attachment-overlap, 0px);
+      min-height: 0;
+      margin-bottom: 0;
+      opacity: 0;
+      overflow: hidden;
+    }
+    to {
+      overflow: hidden;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ask-dock,
+    .ui-model-change-notice,
+    [data-chat-composer-media-row] {
+      animation: none;
+    }
+  }
+
   .composer-bar {
     display: flex;
     align-items: center;
