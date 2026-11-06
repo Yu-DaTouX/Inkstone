@@ -1,6 +1,5 @@
 import type { IpcRegistrar } from './registrar'
-import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { getSettings } from '../settings'
@@ -16,6 +15,7 @@ import type { FileNameSearchRequest } from '../../shared/file-name-search'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from '../attachments'
 import { clearSessionReadCache } from '../session-reader'
 import { YAN_DIR } from '../paths'
+import { managedAttachment } from '../attachment-file'
 import { SESSIONS_DIR } from '../sessions'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
 import { savePastedText } from '../pasted-text'
@@ -277,14 +277,10 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   })
 
   handle('yan:attachments:read', async (url: string) => {
+    const file = await managedAttachment(url)
+    if (!file) return { ok: false }
     try {
-      const path = resolve(fileURLToPath(String(url ?? '')))
-      const directory = resolve(join(YAN_DIR, 'attachments')).toLowerCase()
-      const name = basename(path)
-      if (dirname(path).toLowerCase() !== directory || !/^[a-f0-9]{40}\.(jpg|png|webp|gif)$/.test(name)) return { ok: false }
-      const bytes = await readFile(path)
-      const ext = name.split('.')[1]
-      return { ok: true, data: bytes.toString('base64'), mimeType: ext === 'jpg' ? 'image/jpeg' : `image/${ext}` }
+      return { ok: true, data: (await readFile(file.path)).toString('base64'), mimeType: file.mimeType }
     } catch { return { ok: false } }
   })
   handle('yan:attachments:usage',() => attachmentsUsage(join(YAN_DIR, 'attachments')))

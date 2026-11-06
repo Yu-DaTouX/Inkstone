@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -148,6 +148,28 @@ try {
   assert.equal((await mod.remoteStopSubagent('s-running', 'sub-three', subs, stop)).status, 409)
   assert.equal((await mod.remoteStopSubagent('s-running', 'sub-one', subs, stop)).ok, true)
   assert.deepEqual(stopped, ['sub-one'])
+
+  const attachmentBuilt = await build({ entryPoints: [join(ROOT, 'src/main/attachment-file.ts')], bundle: true, write: false, platform: 'node', format: 'esm', target: 'node20', logLevel: 'silent', plugins: [stubPlugin] })
+  const attachmentPath = join(scratch, 'attachment-file.bundle.mjs')
+  await writeFile(attachmentPath, attachmentBuilt.outputFiles[0].text, 'utf8')
+  const { managedAttachment } = await import(pathToFileURL(attachmentPath).href)
+  const store = join(scratch, 'store')
+  await mkdir(store, { recursive: true })
+  const good = 'a'.repeat(40) + '.png'
+  await writeFile(join(store, good), 'png')
+  await writeFile(join(scratch, 'secret.txt'), 'secret')
+  assert.equal((await managedAttachment(pathToFileURL(join(store, good)).href, store))?.mimeType, 'image/png')
+  assert.equal(await managedAttachment(pathToFileURL(join(store, 'b'.repeat(40) + '.png')).href, store), null, '不存在的文件')
+  assert.equal(await managedAttachment(pathToFileURL(join(scratch, 'secret.txt')).href, store), null, '目录外的文件')
+  assert.equal(await managedAttachment(pathToFileURL(join(store, '..', 'secret.txt')).href, store), null, '穿越到上级')
+  assert.equal(await managedAttachment(pathToFileURL(join(store, 'sub', good)).href, store), null, '子目录')
+  assert.equal(await managedAttachment(pathToFileURL(join(store, 'notahash.png')).href, store), null, '文件名不是哈希')
+  assert.equal(await managedAttachment('C:\Windows\win.ini', store), null, '不是 file URL')
+  assert.equal(await managedAttachment('file://evil-host/share/' + good, store), null, 'UNC 远程主机')
+  assert.equal(await managedAttachment(undefined, store), null)
+  const linked = 'c'.repeat(40) + '.png'
+  const linkable = await symlink(join(scratch, 'secret.txt'), join(store, linked)).then(() => true, () => false)
+  if (linkable) assert.equal(await managedAttachment(pathToFileURL(join(store, linked)).href, store), null, '符号链接指向目录外')
 
   console.log('remote host security attacks ok')
 } finally {

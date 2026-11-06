@@ -1,9 +1,8 @@
 import { userMessageSent } from './browser/user-handoff'
 import type { BrowserWindow } from 'electron'
 import { nativeImage } from 'electron'
-import { join, dirname, basename, resolve } from 'node:path'
+import { join, basename, resolve } from 'node:path'
 import { stat } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { hostname } from 'node:os'
 import { remoteHistoryPage, remoteToolCall } from '../shared/remote-history-page'
 import { approvalDigest, applyHumanApproval, remoteApprovalQuestion } from './remote-approval'
@@ -21,6 +20,7 @@ import { REMOTE_ARTIFACT_MAX_BYTES, REMOTE_INSIGHT_MAX_FILES } from '../shared/r
 import type { RemoteChangedFile, RemoteInsight, RemoteSessionChanges, RemoteSessionStats, RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
+import { managedAttachment } from './attachment-file'
 import { readChanges } from './git-inspect'
 import { listRefs, readRepoSnapshot, resolveRepo } from './git-service'
 import { runGitAction } from './git-actions'
@@ -700,14 +700,10 @@ export async function remoteMessageImage(sessionId: string, messageId: string, i
   const image = message ? [...(message.images ?? []), ...(message.toolCalls ?? []).flatMap((call) => call.images ?? [])][index] : undefined
   const url = image?.url || (image?.data ? localizeImage(join(YAN_DIR, 'attachments'), image.mimeType, image.data) : '')
   if (!url.startsWith('file:')) return { ok: false, status: 404, error: '图片已不可用' }
-  try {
-    const path = resolve(fileURLToPath(url))
-    const directory = resolve(join(YAN_DIR, 'attachments')).toLowerCase()
-    if (dirname(path).toLowerCase() !== directory || !/^[a-f0-9]{40}\.(jpg|png|webp|gif)$/.test(basename(path))) return { ok: false, status: 403, error: '图片不在受管目录中' }
-    const info = await stat(path)
-    if (!info.isFile() || info.size > REMOTE_ARTIFACT_MAX_BYTES) return { ok: false, status: 413, error: '图片过大，请在电脑查看' }
-    return { path, mediaType: image!.mimeType, bytes: info.size, filename: basename(path) }
-  } catch { return { ok: false, status: 410, error: '图片已不可用' } }
+  const file = await managedAttachment(url)
+  if (!file) return { ok: false, status: 403, error: '图片不在受管目录中' }
+  if (file.size > REMOTE_ARTIFACT_MAX_BYTES) return { ok: false, status: 413, error: '图片过大，请在电脑查看' }
+  return { path: file.path, mediaType: image!.mimeType, bytes: file.size, filename: file.name }
 }
 
 export const peerClient = new PeerClient()
