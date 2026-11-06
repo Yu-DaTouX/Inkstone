@@ -12,11 +12,17 @@ export function isPrivateAddress(raw: string): boolean {
   const mapped = value >> 32n
   if (mapped === 0xffffn) {
     const ipv4 = Number(value & 0xffffffffn)
-    return isPrivateIpv4(`${ipv4 >>> 24}.${(ipv4 >>> 16) & 255}.${(ipv4 >>> 8) & 255}.${ipv4 & 255}`)
+    return isPrivateIpv4(ipv4Text(ipv4))
   }
 
-  return value === 0n || value === 1n || inRange(value, 0xfc000000000000000000000000000000n, 7) ||
-    inRange(value, 0xfe800000000000000000000000000000n, 10)
+  if (inRange(value, 0x0064ff9b000000000000000000000000n, 96)) return isPrivateIpv4(ipv4Text(Number(value & 0xffffffffn)))
+  if (inRange(value, 0x20020000000000000000000000000000n, 16)) return isPrivateIpv4(ipv4Text(Number((value >> 80n) & 0xffffffffn)))
+  return value >> 32n === 0n || inRange(value, 0xfc000000000000000000000000000000n, 7) ||
+    inRange(value, 0xfe800000000000000000000000000000n, 10) || inRange(value, 0xff000000000000000000000000000000n, 8)
+}
+
+function ipv4Text(ipv4: number): string {
+  return `${ipv4 >>> 24}.${(ipv4 >>> 16) & 255}.${(ipv4 >>> 8) & 255}.${ipv4 & 255}`
 }
 
 export async function resolvesToPrivateAddress(hostname: string): Promise<boolean> {

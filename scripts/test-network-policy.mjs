@@ -28,6 +28,12 @@ export async function runNetworkPolicyTests(ok, policy) {
       `压缩与完整写法分类一致：${compressed} / ${expanded}`
     )
   }
+  ok(isPrivateAddress('::7f00:1') && isPrivateAddress('::127.0.0.1'), '网络边界识别 IPv4 兼容地址 ::/96')
+  ok(isPrivateAddress('64:ff9b::7f00:1') && isPrivateAddress('64:ff9b::a9fe:a9fe'), '网络边界识别 NAT64 内嵌的内网 IPv4')
+  ok(!isPrivateAddress('64:ff9b::808:808'), 'NAT64 内嵌公网 IPv4 不误判')
+  ok(isPrivateAddress('2002:7f00:1::') && isPrivateAddress('2002:c0a8:101::1'), '网络边界识别 6to4 内嵌的内网 IPv4')
+  ok(!isPrivateAddress('2002:808:808::1'), '6to4 内嵌公网 IPv4 不误判')
+  ok(isPrivateAddress('ff02::1'), '网络边界识别 IPv6 组播')
   ok(!isPrivateAddress('8.8.8.8'), '公网 IPv4 不被误判为私网')
   ok(!isPrivateAddress('198.18.0.12') && !isPrivateAddress('198.19.255.1'), '代理 fake-ip 网段 198.18/15 不当作私网')
   ok(!isPrivateAddress('2001:4860:4860::8888'), '公网 IPv6 不被误判为私网')
