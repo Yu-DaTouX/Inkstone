@@ -158,6 +158,7 @@ export interface HistoryToolCall {
   args?: unknown
   output?: string
   parentToolCallId?: string
+  imageIndexes?: number[]
   startedAt?: number
   endedAt?: number
 }

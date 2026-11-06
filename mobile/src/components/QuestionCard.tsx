@@ -4,6 +4,7 @@ import type { RemoteAnswer, RemotePendingQuestion } from '../../../src/shared/re
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 import { idempotencyKey, RemoteHttpError } from '../api/client'
 import { SpeechInputButton } from './SpeechInputButton'
+import { QuestionForm } from './QuestionForm'
 import { Icon } from '../icons'
 import { useRemote } from '../state'
 import { font, icon, mono, radius, space, usePalette, weight } from '../theme'
@@ -74,13 +75,13 @@ export function QuestionCard({
         <Text style={{ color: tone, fontSize: font.xs }}>{approval ? '等待批准' : question.sensitive ? '需要在电脑上确认' : STATUS_TEXT.wait}</Text>
         {sessionTitle ? <Text numberOfLines={1} style={[styles.session, { color: p.fgMute }]}>{sessionTitle}</Text> : null}
       </View>
-      {question.title ? <Text style={[styles.title, { color: p.fg }]}>{question.title}</Text> : null}
+      {question.title ? <Text style={!approval && question.message ? [styles.kicker, { color: p.fgDim }] : [styles.title, { color: p.fg }]}>{question.title}</Text> : null}
 
       {approval && compact ? (approval.detail ? <Text numberOfLines={1} style={{ color: p.fgDim, fontFamily: mono, fontSize: font.xs }}>{approval.detail.split('\n')[0]}</Text> : null) : approval ? <>
         {approval.reasons?.length ? <View style={{ gap: 2 }}>{approval.reasons.map((reason, index) => <Text key={index} style={[styles.message, { color: p.fgDim }]}>· {reason}</Text>)}</View> : null}
         {approval.cwd ? <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.xs }}>目录：{approval.cwd}</Text> : null}
         {approval.detail ? <ScrollView nestedScrollEnabled style={[styles.detail, { backgroundColor: p.sunken }]}><Text selectable style={{ color: p.fgDim, fontFamily: mono, fontSize: font.xs, lineHeight: 17 }}>{approval.detail}</Text></ScrollView> : null}
-      </> : question.message ? <Text style={[styles.message, { color: p.fgDim }]}>{question.message}</Text> : null}
+      </> : question.message ? <Text selectable style={[styles.question, { color: p.fg }]}>{question.message}</Text> : null}
 
       {canApprove ? (
         <View style={styles.row}>
@@ -92,6 +93,8 @@ export function QuestionCard({
           <Text style={[styles.note, { color: p.fgMute }]}>{approval ? '电脑端版本较旧，请到电脑上批准；在手机上只能拒绝。' : '这是敏感操作，请到电脑上确认；在手机上只能拒绝。'}</Text>
           <Button label="拒绝" variant="danger" busy={busy} onPress={() => void send({ cancelled: true })} />
         </View>
+      ) : question.form?.length ? (
+        <QuestionForm fields={question.form} busy={busy} onSubmit={(json) => void send({ value: json })} onSkip={() => void send({ cancelled: true })} />
       ) : question.method === 'confirm' ? (
         <View style={styles.row}>
           <Button label="不同意" busy={busy} style={styles.flex} onPress={() => void send({ confirmed: false })} />
@@ -138,6 +141,8 @@ const styles = StyleSheet.create({
   session: { flex: 1, textAlign: 'right', fontSize: font.xs },
   title: { fontSize: font.body, fontWeight: weight.medium },
   message: { fontSize: font.sm, lineHeight: 20 },
+  kicker: { fontSize: font.xs },
+  question: { fontSize: font.body, lineHeight: 22 },
   detail: { maxHeight: 180, borderRadius: radius.md, padding: space[2] },
   actions: { gap: space[2], marginTop: space[1] },
   row: { flexDirection: 'row', gap: space[2], marginTop: space[1] },

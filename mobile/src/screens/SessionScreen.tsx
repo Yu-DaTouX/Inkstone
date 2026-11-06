@@ -4,7 +4,8 @@ import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Press
 import { idempotencyKey, RemoteHttpError, type HistoryMessage, type HistoryPage, type SubagentInfo } from '../api/client'
 import type { SessionDetail } from '../components/DetailPane'
 import { QuestionCard } from '../components/QuestionCard'
-import { MessageBody } from '../components/MessageBody'
+import { CodeBlock, MessageBody } from '../components/MessageBody'
+import { ImageViewer } from '../components/ImageViewer'
 import { SpeechInputButton } from '../components/SpeechInputButton'
 import { useRemote } from '../state'
 import { font, icon, mono, radius, space, touch, usePalette, weight } from '../theme'
@@ -20,14 +21,15 @@ import { ModelPicker } from '../components/ModelPicker'
 import type { RemoteModel } from '../../../src/shared/remote-protocol'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 
-type ToolStep = { id: string; name: string; failed: boolean; denied: boolean; running: boolean; awaiting: boolean; summary: string; output: string; nested: boolean }
+type ImageRef = { messageId: string; index: number }
+type ToolStep = { id: string; name: string; failed: boolean; denied: boolean; running: boolean; awaiting: boolean; summary: string; output: string; nested: boolean; images: ImageRef[] }
 type ProcessStep =
   | { kind: 'text'; key: string; message: HistoryMessage }
   | { kind: 'thinking'; key: string; text: string; ms?: number }
   | { kind: 'tool'; key: string; tool: ToolStep }
 type TimelineEntry =
   | { kind: 'message'; key: string; message: HistoryMessage }
-  | { kind: 'process'; key: string; steps: ProcessStep[]; actions: number; thinking: number; failed: number; ms?: number }
+  | { kind: 'process'; key: string; steps: ProcessStep[]; actions: number; thinking: number; failed: number; images: number; ms?: number }
 
 const SHOWN_ROLES = new Set(['user', 'assistant', 'bash'])
 
@@ -51,7 +53,7 @@ function spanText(ms?: number): string {
 const clock = (at?: number) => at ? new Date(at).toTimeString().slice(0, 5) : ''
 const UNCOUNTED_TOOLS = new Set(['todo', 'todos', 'todo_write', 'update_todos'])
 const LIVE_STEPS = 3
-const ARG_KEYS = ['command', 'cmd', 'path', 'file_path', 'filePath', 'pattern', 'query', 'url', 'description', 'task', 'prompt']
+const ARG_KEYS = ['command', 'cmd', 'path', 'file_path', 'filePath', 'pattern', 'query', 'url', 'description', 'task', 'prompt', 'question']
 
 function argSummary(args: unknown): string {
   if (typeof args === 'string') return args.split('\n')[0].slice(0, 160)
@@ -96,7 +98,8 @@ function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
           awaiting: tool.output === undefined && old?.output === undefined,
           summary: argSummary(tool.args) || old?.summary || '',
           output: tool.output ?? old?.output ?? '',
-          nested: !!tool.parentToolCallId
+          nested: !!tool.parentToolCallId,
+          images: tool.imageIndexes?.length ? tool.imageIndexes.map((index) => ({ messageId: message.id, index })) : old?.images ?? []
         }
         if (old) Object.assign(old, next)
         else {
@@ -108,7 +111,7 @@ function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
     const counted = [...tools.values()].filter((tool) => !tool.nested && !(UNCOUNTED_TOOLS.has(tool.name) && !tool.failed))
     const thinking = steps.filter((step) => step.kind === 'thinking').length
     if (counted.length || thinking) {
-      entries.push({ kind: 'process', key: `process-${turn[0].id}`, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length, ms: last > first ? last - first : undefined })
+      entries.push({ kind: 'process', key: `process-${turn[0].id}`, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length, images: [...tools.values()].reduce((sum, tool) => sum + tool.images.length, 0), ms: last > first ? last - first : undefined })
     } else {
       for (const step of steps) if (step.kind === 'text') entries.push({ kind: 'message', key: step.message.id, message: step.message })
     }
@@ -196,6 +199,7 @@ export function SessionScreen({
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [voicePhase, setVoicePhase] = useState<SpeechPhase>('idle')
   const [expandedTools, setExpandedTools] = useState<string[]>([])
+  const [viewing, setViewing] = useState<(ImageRef & { label: string }) | null>(null)
   const toggleExpanded = (key: string) => setExpandedTools((current) => current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key])
   const listRef = useRef<FlatList<TimelineEntry>>(null)
   const listSize = useRef({ content: 0, viewport: 0 })
@@ -452,7 +456,7 @@ export function SessionScreen({
           if (item.kind === 'process') {
             const expanded = expandedTools.includes(item.key)
             const live = item.key === liveKey
-            const parts = [item.actions ? `${item.actions} 次操作` : '', item.thinking ? `${item.thinking} 段思考` : '', spanText(item.ms)].filter(Boolean).join(' · ')
+            const parts = [item.actions ? `${item.actions} 次操作` : '', item.thinking ? `${item.thinking} 段思考` : '', item.images ? `${item.images} 张图` : '', spanText(item.ms)].filter(Boolean).join(' · ')
             const shown = expanded ? item.steps : live ? item.steps.slice(-LIVE_STEPS) : []
             return <View style={styles.process}>
               <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`过程，${parts}${item.failed ? `，${item.failed} 项失败` : ''}，${expanded ? '收起' : '展开'}`} onPress={() => toggleExpanded(item.key)} style={styles.processHead}>
@@ -474,12 +478,17 @@ export function SessionScreen({
                   </View>
                   const tool = step.tool
                   return <View key={step.key}>
-                    <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${tool.name} ${tool.summary}`} disabled={!tool.output} onPress={() => toggleExpanded(step.key)} style={[styles.toolRow, tool.nested ? { paddingLeft: space[4] } : null]}>
+                    <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${tool.name} ${tool.summary}`} disabled={!tool.output && !tool.images.length} onPress={() => toggleExpanded(step.key)} style={[styles.toolRow, tool.nested ? { paddingLeft: space[4] } : null]}>
                       <Icon name={toolIcon(tool.name)} size={14} color={tool.failed ? p.err : p.fgMute} />
                       <Text numberOfLines={open ? undefined : 1} style={{ flex: 1, minWidth: 0, color: tool.failed ? p.err : p.fgDim, fontSize: font.sm }}>{tool.name}{tool.summary ? <Text style={{ color: p.fgMute, fontFamily: mono, fontSize: font.xs }}>  {tool.summary}</Text> : null}</Text>
                       {tool.running || (live && tool.awaiting && !tool.failed && !tool.denied) ? <GlyphSpinner /> : <Text style={[styles.toolMark, { color: tool.failed ? p.err : p.fgMute }]}>{tool.failed ? '✕' : tool.denied ? '–' : '✓'}</Text>}
                     </Pressable>
-                    {open ? <Text selectable style={[styles.output, { color: p.fgDim, backgroundColor: p.sunken }]}>{tool.output.length > 4000 ? `…${tool.output.slice(-4000)}` : tool.output}</Text> : null}
+                    {tool.images.length ? <View style={styles.thumbs}>{tool.images.map((image, index) => (
+                      <Pressable key={`${image.messageId}:${image.index}`} accessibilityRole="imagebutton" accessibilityLabel={`${tool.name} 图片 ${index + 1}，点按放大`} onPress={() => setViewing({ ...image, label: `${tool.name} · ${index + 1}/${tool.images.length}` })}>
+                        <RemoteImage client={client} source={client.imageSource(sessionId, image.messageId, image.index)} resizeMode="cover" style={[styles.thumb, { backgroundColor: p.bg1, borderColor: p.borderSoft }]} />
+                      </Pressable>
+                    ))}</View> : null}
+                    {open && tool.output ? <CodeBlock value={tool.output.length > 4000 ? `…${tool.output.slice(-4000)}` : tool.output} size={font.xs} /> : null}
                   </View>
                 })}
               </View> : null}
@@ -493,7 +502,7 @@ export function SessionScreen({
               <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => toggleExpanded(message.id)} style={styles.processHead}>
                 <Text numberOfLines={open ? undefined : 2} style={{ color: failed ? p.err : p.fgDim, fontSize: font.sm, fontFamily: mono }}>$ {message.bash.command}{message.bash.cancelled ? '  （已取消）' : failed ? `  （退出码 ${message.bash.exitCode}）` : ''}</Text>
               </Pressable>
-              {open && message.text ? <Text selectable style={[styles.output, { color: p.fgDim, backgroundColor: p.sunken }]}>{message.text.length > 4000 ? `…${message.text.slice(-4000)}` : message.text}</Text> : null}
+              {open && message.text ? <CodeBlock value={message.text.length > 4000 ? `…${message.text.slice(-4000)}` : message.text} size={font.xs} /> : null}
             </View>
           }
           const mine = message.role === 'user'
@@ -501,7 +510,7 @@ export function SessionScreen({
             <View style={mine ? [styles.bubble, { backgroundColor: p.bubble }] : styles.message}>
               <View style={styles.messageMain}>
               {message.text ? <MessageBody text={message.text} /> : null}
-              {message.images?.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{message.images.map((_, index) => <RemoteImage key={index} client={client} accessibilityLabel={`消息图片 ${index + 1}`} source={client.imageSource(sessionId, message.id, index)} resizeMode="contain" style={{ width: 144, height: 144, borderRadius: radius.md, backgroundColor: p.bg1 }} />)}</View> : null}
+              {message.images?.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{message.images.map((_, index) => <Pressable key={index} accessibilityRole="imagebutton" accessibilityLabel={`消息图片 ${index + 1}，点按放大`} onPress={() => setViewing({ messageId: message.id, index, label: `图片 ${index + 1}/${message.images!.length}` })}><RemoteImage client={client} source={client.imageSource(sessionId, message.id, index)} resizeMode="contain" style={{ width: 144, height: 144, borderRadius: radius.md, backgroundColor: p.bg1 }} /></Pressable>)}</View> : null}
               {message.error ? <Text style={[styles.meta, { color: p.err }]}>{message.error}</Text> : null}
               {(message.artifacts ?? []).map((artifact) => (
                 <Pressable
@@ -523,6 +532,7 @@ export function SessionScreen({
         }}
       />
       {banner ? <View style={StyleSheet.absoluteFill}>{banner}</View> : null}
+      <ImageViewer client={client} source={viewing ? client.imageSource(sessionId, viewing.messageId, viewing.index) : null} label={viewing?.label ?? ''} onClose={() => setViewing(null)} />
       </View>
       </View>
       {tabletop ? <View style={{ height: tabletop.gap }} /> : null}
@@ -589,7 +599,8 @@ const styles = StyleSheet.create({
   steps: { borderLeftWidth: 1, marginLeft: space[1], paddingLeft: space[3], gap: space[1], paddingVertical: space[1] },
   toolRow: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: space[2] },
   toolMark: { width: 14, textAlign: 'center', fontSize: font.xs },
-  output: { fontFamily: mono, fontSize: font.xs, lineHeight: 17, borderRadius: radius.md, padding: space[2], marginVertical: space[1] },
+  thumbs: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2], paddingVertical: space[1] },
+  thumb: { width: 96, height: 96, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth },
   artifact: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[2], maxWidth: '100%' },
   pending: { marginTop: space[4] },
   composer: { paddingHorizontal: space[3], paddingTop: space[2], paddingBottom: space[3], gap: space[2] },

@@ -136,9 +136,10 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       if (!q) return null
       if (!q.sessionId) return <View style={styles.cardWrap}><QuestionCard question={q} onAnswer={(answer, key) => client.answer(q.id, answer, key).finally(() => refresh())} /></View>
       const session = sessions.find((s) => s.id === q.sessionId)
-      return <Pressable accessibilityRole="button" accessibilityLabel={`${STATUS_TEXT.wait}：${q.title || q.message || ''}，${titleOf(q.sessionId)}`} onPress={() => onOpen(q.sessionId!, titleOf(q.sessionId))} style={({ pressed }) => [styles.card, { backgroundColor: p.warnSoft, opacity: pressed ? 0.75 : 1 }]}>
+      const headline = (approvalInfo(q) ? q.title : q.message || q.title) || '砚需要你回答'
+      return <Pressable accessibilityRole="button" accessibilityLabel={`${STATUS_TEXT.wait}：${headline}，${titleOf(q.sessionId)}`} onPress={() => onOpen(q.sessionId!, titleOf(q.sessionId))} style={({ pressed }) => [styles.card, { backgroundColor: p.warnSoft, opacity: pressed ? 0.75 : 1 }]}>
         <View style={styles.cardTop}><Text numberOfLines={1} style={[styles.cardProject, { color: p.fgMute }]}>{session ? projectName(session) : ''}</Text><Text style={{ color: p.warn, fontSize: font.xs }}>◆ {approvalInfo(q) ? '等待批准' : q.sensitive ? '需在电脑确认' : STATUS_TEXT.wait}</Text></View>
-        <Text numberOfLines={2} style={[styles.cardTitle, { color: p.fg }]}>{q.title || q.message || '砚需要你回答'}</Text>
+        <Text numberOfLines={3} style={[styles.cardTitle, { color: p.fg }]}>{headline}</Text>
         <Text numberOfLines={1} style={{ color: p.fgDim, fontSize: font.sm }}>{titleOf(q.sessionId)}</Text>
       </Pressable>
     }
