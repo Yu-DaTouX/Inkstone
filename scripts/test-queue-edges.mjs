@@ -128,7 +128,7 @@ try {
       setup(b) {
         b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'fixture' }))
         b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
-          contents: `export const app={getLocale:()=>'en',getPath:()=>${JSON.stringify(root)}};export class BrowserWindow{};export const session={};`,
+          contents: `export const app={getLocale:()=>'zh-CN',getPath:()=>${JSON.stringify(root)}};export class BrowserWindow{};export const session={};`,
           loader: 'js'
         }))
       }

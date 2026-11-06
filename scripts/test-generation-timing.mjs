@@ -48,7 +48,7 @@ try {
             contents: `
               export class BrowserWindow { constructor() { throw new Error('Native browser requires an Electron integration test') } }
               export const session = { fromPartition() { throw new Error('Native session requires an Electron integration test') } }
-              export const app = { getLocale: () => 'en-US', getPath: () => process.cwd() }
+              export const app = { getLocale: () => 'zh-CN', getPath: () => process.cwd() }
             `,
             loader: 'js'
           }))

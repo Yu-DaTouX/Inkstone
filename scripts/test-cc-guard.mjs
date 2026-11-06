@@ -40,7 +40,7 @@ try {
   assert.equal(await call('read',{path:'a.txt'}),undefined); assert.equal(requests.length,afterDisk)
   delete process.env.YAN_CLI_URL
   assert.equal((await call('ProjectClaude',{prompt:'No host'})).block,true)
-  await build({entryPoints:['src/main/agent.ts'],outfile:resolve('out/test/cc-guard-host.mjs'),bundle:true,packages:'external',platform:'node',format:'esm',logLevel:'silent',plugins:[{name:'unused-electron',setup(b){b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const app={getLocale:()=> 'en',getPath:()=> ${JSON.stringify(root)}};export class BrowserWindow{};export const session={};`,loader:'js'}))}}]})
+  await build({entryPoints:['src/main/agent.ts'],outfile:resolve('out/test/cc-guard-host.mjs'),bundle:true,packages:'external',platform:'node',format:'esm',logLevel:'silent',plugins:[{name:'unused-electron',setup(b){b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const app={getLocale:()=> 'zh-CN',getPath:()=> ${JSON.stringify(root)}};export class BrowserWindow{};export const session={};`,loader:'js'}))}}]})
   const {AgentController}=await import(pathToFileURL(resolve('out/test/cc-guard-host.mjs')))
   const reviewed=[];const host=new AgentController({cwd:root,push:()=>{},getPermissionMode:async()=> 'danger',confirmDanger:async input=>{reviewed.push(input);return {decision:'allow'}}})
   const detail=JSON.stringify({prompt:'x'.repeat(3000),model:'haiku',mode:'full'})

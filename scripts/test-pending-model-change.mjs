@@ -16,7 +16,7 @@ await build({
   plugins: [{ name: 'electron-fixture', setup(builder) {
     builder.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'fixture' }))
     builder.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ loader: 'js', contents: `
-      export const app = { getPath: () => process.env.YAN_DATA_DIR, getLocale: () => 'en-US' }
+      export const app = { getPath: () => process.env.YAN_DATA_DIR, getLocale: () => 'zh-CN' }
       export class BrowserWindow {}
       export const session = { fromPartition: () => ({}) }
     ` }))
