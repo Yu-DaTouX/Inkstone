@@ -16,7 +16,30 @@ export function useSmoothHeight(el: HTMLElement | null): void {
     let height = el.offsetHeight
     let width = el.offsetWidth
     let animation: Animation | null = null
+    let target = height
+    const settle = (): void => {
+      animation = null
+      el.style.overflow = ''
+      const natural = el.offsetHeight
+      height = natural
+      if (Math.abs(natural - target) >= MIN_STEP_PX && !motionReduced()) animateFrom(target, natural)
+    }
+    const animateFrom = (from: number, to: number): void => {
+      el.style.overflow = 'clip'
+      target = to
+      const running = el.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+        duration: HEIGHT_MS,
+        easing: 'ease-out'
+      })
+      animation = running
+      const done = (): void => {
+        if (animation === running) settle()
+      }
+      running.addEventListener('finish', done, { once: true })
+      running.addEventListener('cancel', done, { once: true })
+    }
     const observer = new ResizeObserver(() => {
+      if (animation && el.offsetWidth === width) return
       const shown = animation ? el.getBoundingClientRect().height : height
       animation?.cancel()
       animation = null
@@ -24,30 +47,18 @@ export function useSmoothHeight(el: HTMLElement | null): void {
       const nextHeight = el.offsetHeight
       const nextWidth = el.offsetWidth
       const widthChanged = nextWidth !== width
-      const from = shown
       height = nextHeight
       width = nextWidth
-      if (widthChanged || Math.abs(nextHeight - from) < MIN_STEP_PX || motionReduced() || from === 0) return
-      el.style.overflow = 'clip'
-      const running = el.animate([{ height: `${from}px` }, { height: `${nextHeight}px` }], {
-        duration: HEIGHT_MS,
-        easing: 'ease-out'
-      })
-      animation = running
-      const done = (): void => {
-        if (animation !== running) return
-        animation = null
-        el.style.overflow = ''
-        height = el.offsetHeight
-      }
-      running.addEventListener('finish', done, { once: true })
-      running.addEventListener('cancel', done, { once: true })
+      target = nextHeight
+      if (widthChanged || Math.abs(nextHeight - shown) < MIN_STEP_PX || motionReduced() || shown === 0) return
+      animateFrom(shown, nextHeight)
     })
     observer.observe(el)
     return () => {
       observer.disconnect()
-      animation?.cancel()
+      const running = animation
       animation = null
+      running?.cancel()
       el.style.overflow = ''
     }
   }, [el])
