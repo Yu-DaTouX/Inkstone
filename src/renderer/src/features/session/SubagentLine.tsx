@@ -15,6 +15,7 @@ import type { SubagentRun } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { Icon } from './Icon'
+import { useSmoothHeight } from './smooth-height'
 import { SubagentBot } from './SubagentBot'
 import { SubagentComposer } from './SubagentComposer'
 import { subagentComposerMode } from './subagent-composer'
@@ -206,6 +207,8 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   const [storedOpen, setStoredOpen] = useToolExpansion(`subagents:${turn.id}`)
   const [storedAll, setStoredAll] = useToolExpansion(`subagents-all:${turn.id}`)
   const publish = useSubagentGroups((s) => s.publish)
+  const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null)
+  useSmoothHeight(rootEl)
   const selectedRunId = useFocusedSubagentRun()
   const awaitingIds = useStore(useShallow((s): string[] => s.approvals.flatMap((request) => request.subagentId ? [request.subagentId] : [])))
 
@@ -267,7 +270,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   ) : null
 
   return (
-    <div className="v3-subagents" data-testid="v3-subagents" data-layout={many ? (open ? 'list' : 'summary') : 'single'}>
+    <div className="v3-subagents" ref={setRootEl} data-testid="v3-subagents" data-layout={many ? (open ? 'list' : 'summary') : 'single'}>
       <Card padding="none" receipt={totals.ended} className="v3-sa-card">
         {head}
         {open ? (

@@ -951,6 +951,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
             data={renderTurns}
             className="v3-stream"
             bufferSize={200}
+            itemSize={240}
             onScroll={onVirtualScroll}
           >
             {(item, index) => (
