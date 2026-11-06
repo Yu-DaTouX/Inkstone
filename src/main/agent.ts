@@ -1007,6 +1007,7 @@ export class AgentController extends EventEmitter {
       this.releaseExecutionAdmission()
       this.compactionState = EMPTY_COMPACTION_STATE
       this.contextFrom = undefined
+      this.nativeRuntime?.dispose()
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
       this.ui.pending.clear()
       this.cancelApprovals?.(this.approvalOwner())
@@ -4688,11 +4689,14 @@ export class AgentController extends EventEmitter {
   async refreshStats(opts: { expectGeneration?: number } = {}): Promise<SessionStats | null> {
     try {
       const generation = this.capabilityOpts?.runnerGeneration
+      const ownerSession = this.state?.sessionId
       const res = await this.rpc?.command<SessionStats>('get_session_stats')
       if (res?.success && res.data) {
+        if (ownerSession !== this.state?.sessionId) return null
         if (opts.expectGeneration !== undefined && generation !== opts.expectGeneration) return null
         if (opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== opts.expectGeneration) return null
         const stats = await this.withOverheadUsage(this.statsForCurrentModel(res.data))
+        if (ownerSession !== this.state?.sessionId) return null
         if (opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== opts.expectGeneration) return null
         this.push({ ch: 'stats', payload: stats })
         return stats
