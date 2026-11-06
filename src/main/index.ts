@@ -3249,8 +3249,11 @@ function resolveWindowMaterial(): 'acrylic' | 'mica' | 'none' {
   return windowsBuildNumber() >= WIN11_MATERIAL_MIN_BUILD ? 'acrylic' : 'none'
 }
 
+const WINDOW_BACKGROUND = { dark: '#171717', light: '#fcfcfa' } as const
+
 function syncNativeThemeSource(theme: 'light' | 'dark'): void {
   if (windowMaterialActive) nativeTheme.themeSource = theme
+  else if (win && !win.isDestroyed()) win.setBackgroundColor(WINDOW_BACKGROUND[theme])
 }
 
 function createWindow(): void {
@@ -3271,7 +3274,7 @@ function createWindow(): void {
     show: false,
     frame: false,
     roundedCorners: true,
-    backgroundColor: '#171717',
+    backgroundColor: WINDOW_BACKGROUND.dark,
     webPreferences: {
       preload: join(__dirname_, '../preload/index.cjs'),
       additionalArguments: [
@@ -3303,7 +3306,6 @@ function createWindow(): void {
 
   void getSettings().then((s) => {
     if (!win) return
-    if (s.theme === 'light' && !windowMaterialActive) win.setBackgroundColor('#fcfcfa')
     syncNativeThemeSource(s.theme)
     if (s.alwaysOnTop) {
       win.setAlwaysOnTop(true)

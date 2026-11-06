@@ -7,6 +7,7 @@ import { BLOCKING_OVERLAY_SELECTOR, hasBlockingOverlay } from './overlay'
 import { createOverlayBlockerLifecycle } from './overlay-lifecycle'
 
 const OVERLAY_TOKEN = 'browser-overlay'
+const BOUNDS_SETTLE_MS = 80
 
 const surfaceClaim = new BrowserSurfaceClaim()
 
@@ -50,6 +51,15 @@ export function useBrowserBoundsSync(
       const visible = bounds ? bounds.width > 0 && bounds.height > 0 : false
       setInView((prev) => (prev === visible ? prev : visible))
     }
+    let settleTimer: ReturnType<typeof setTimeout> | undefined
+    const settle = (): void => {
+      clearTimeout(settleTimer)
+      settleTimer = setTimeout(measure, BOUNDS_SETTLE_MS)
+    }
+    const measureNow = (): void => {
+      measure()
+      settle()
+    }
     const schedule = (): void => {
       if (disposed || frame) return
       frame = requestAnimationFrame(() => {
@@ -59,10 +69,10 @@ export function useBrowserBoundsSync(
     }
 
     measure()
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureNow)
     observer?.observe(el)
     if (clip) observer?.observe(clip)
-    window.addEventListener('resize', schedule)
+    observer?.observe(document.documentElement)
     window.addEventListener('scroll', schedule, true)
     window.addEventListener('transitionend', schedule, true)
     window.addEventListener('animationend', schedule, true)
@@ -71,7 +81,7 @@ export function useBrowserBoundsSync(
       disposed = true
       if (frame) cancelAnimationFrame(frame)
       observer?.disconnect()
-      window.removeEventListener('resize', schedule)
+      clearTimeout(settleTimer)
       window.removeEventListener('scroll', schedule, true)
       window.removeEventListener('transitionend', schedule, true)
       window.removeEventListener('animationend', schedule, true)

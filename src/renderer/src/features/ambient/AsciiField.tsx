@@ -362,7 +362,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
 
   const ro = new ResizeObserver(() => {
     resize()
-    if (!running) draw()
+    draw()
   })
   const io = new IntersectionObserver((entries) => {
     inViewport = entries.some((entry) => entry.isIntersecting)
