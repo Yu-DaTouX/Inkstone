@@ -204,6 +204,8 @@ export function switchStats(frames, target) {
     ...base,
     readyMs: readyIdx >= 0 ? Math.round(frames[readyIdx].t) : null,
     sessionAttachedMs: attachedIdx >= 0 ? Math.round(frames[attachedIdx].t) : null,
+    providerFlashFrames: frames.filter((f) => f.cmp && f.cmp.includes('提供商设置')).length,
+    emptyModelFrames: frames.filter((f) => f.models === 0).length,
     staleFrames: stale,
     blankFrames: blank,
     skeletonFrames: frames.filter((f) => f.skel).length,

@@ -123,7 +123,7 @@ export default async function run({ autoApprove, cdp, waitFor, sleep, log, repor
     const med = (key) => { const v = list.map((x) => x[key]).filter((x) => typeof x === 'number').sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null }
     const max = (key) => Math.max(0, ...list.map((x) => x[key] ?? 0))
     const sum = (key) => list.reduce((a, x) => a + (x[key] ?? 0), 0)
-    return { n: list.length, readyMsMedian: med('readyMs'), readyMsMax: max('readyMs'), dtMaxWorst: max('dtMax'), over50: sum('over50'), staleFrames: sum('staleFrames'), blankFrames: sum('blankFrames'), skeletonVisibleFrames: sum('skeletonVisibleFrames'), contentChanges: sum('contentChanges'), composerChanges: sum('composerChanges'), scrollTopChanges: sum('scrollTopChanges'), unclicked: list.filter((x) => !x.clicked).length }
+    return { n: list.length, readyMsMedian: med('readyMs'), readyMsMax: max('readyMs'), dtMaxWorst: max('dtMax'), over50: sum('over50'), staleFrames: sum('staleFrames'), blankFrames: sum('blankFrames'), providerFlashFrames: sum('providerFlashFrames'), emptyModelFrames: sum('emptyModelFrames'), skeletonVisibleFrames: sum('skeletonVisibleFrames'), contentChanges: sum('contentChanges'), composerChanges: sum('composerChanges'), scrollTopChanges: sum('scrollTopChanges'), unclicked: list.filter((x) => !x.clicked).length }
   }
 
   if (!started.length) started.push(...LOADS.map(() => ({ file: null, id: 'x' })))
