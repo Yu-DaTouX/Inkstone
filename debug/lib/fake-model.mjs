@@ -31,8 +31,23 @@ export function longText() {
   return parts.join('')
 }
 
+const SUGGESTION_MARKER = "[Inkstone: predict the user's next message]"
+
+function reportDemo() {
+  return [
+    '6 份提示词清单都回来了。汇报难读的根子是最终回复的规则散在 5 处、互相打架。*主会话每次固定带约 1.5 万字符，其中一处明确要求「只写散文、不用列表」。*',
+    '',
+    '*原本打算直接改提示词，你说先不急，已经撤回，草稿存在 `.tmp/prompt-refactor/`。*',
+    '',
+    '草案已写好，分三期做。**要你定：子代理带不带 AGENTS.md。***这关系到并行派子代理时的成本。*',
+    '',
+    '真实模型会不会遵守新格式还没测。*要花额度，跑之前会先问你。*'
+  ].join('\n')
+}
+
 export const FAKE_TRIGGERS = {
   LONGTEXT: '约 20KB markdown 长文本，慢速逐块流出',
+  REPORTDEMO: '一段三层字色的汇报（主体、*附带说明*、**需要注意**），用来看汇报字色',
   MANYTOOLS: '连续 40 步，每步一句话加一次 bash 工具调用',
   BIGOUT: '一次 bash 输出 6000 行，期间分段停顿',
   FAIL: '返回 502，用来看模型错误与重试',
@@ -42,9 +57,10 @@ export const FAKE_TRIGGERS = {
   FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
   'CAMSHOT': '仿「拍照确认」：6 步（含 STEPS<n> 时为 n 步），每步一次快 bash、一次 read 读 DIR=<目录>（缺省为项目里 cam）下的 check<步>.png、一句叙述、一次约 20 秒的慢 bash；图片由场景预先放好',
-  SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM），再按 STORM 跑 60 步',
+  SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM；写成 SUBAGENTS<n> 时派 n 个），再按 STORM 跑 60 步',
   'SUBSTORM-<名字>': '子代理压测：40 步，每步叙述加一次改文件（sub/）并输出 60 行的 bash',
-  '<subagent-notification': '子代理完成回传只回一句，避免再次触发'
+  '<subagent-notification': '子代理完成回传只回一句，避免再次触发',
+  [SUGGESTION_MARKER]: '砚的「预测下一句」请求，固定回「继续下一步」'
 }
 
 function stormTag(text, word) {
@@ -137,12 +153,14 @@ async function respond(res, text, done, requestNo) {
     await callTool('bash', { command: stormCommand(dir, tag, step + 1, lines), description: `storm ${tag} ${step + 1}` })
   }
   try {
-    if (text.includes('<subagent-notification')) await streamText('好的，收到。', 20, 10)
+    if (text.includes(SUGGESTION_MARKER)) await streamText('继续下一步', 20, 5)
+    else if (text.includes('<subagent-notification')) await streamText('好的，收到。', 20, 10)
     else if (text.includes('SUBSTORM')) {
       if (done < 40) await stormStep('sub', stormTag(text, 'SUBSTORM'), done, 60)
       else await streamText('子任务四十步完成。', 20, 10)
     } else if (text.includes('SUBAGENTS')) {
-      if (done < 1) await callTool('bash', { command: 'for i in 1 2 3 4; do yan subagent start --task "SUBSTORM-sub$i 压测子任务" --title "压测$i" --model fake/fake-model; done', description: 'start subagents' })
+      const count = Number(/SUBAGENTS(\d+)/.exec(text)?.[1] ?? 4)
+      if (done < 1) await callTool('bash', { command: `for i in $(seq 1 ${count}); do yan subagent start --task "SUBSTORM-sub$i 压测子任务" --title "压测$i" --model fake/fake-model; done`, description: 'start subagents' })
       else if (done < 61) await stormStep('storm', stormTag(text, 'SUBAGENTS'), done - 1, 120)
       else await streamText(longText(), 24, 8)
     } else if (text.includes('CAMSHOT')) {
@@ -162,6 +180,7 @@ async function respond(res, text, done, requestNo) {
       else if (done === steps && text.includes('ASK')) await callTool('question', { question: `${stormTag(text, 'STORM')} 跑完了，下一步怎么做？`, options: ['继续', '停下'] })
       else await streamText(longText(), 24, 8)
     } else if (text.includes('LONGTEXT')) await streamText(longText(), 12, 15)
+    else if (text.includes('REPORTDEMO')) await streamText(reportDemo(), 40, 10)
     else if (text.includes('MANYTOOLS')) {
       if (done < 40) {
         await streamText(`第 ${done + 1} 步。`, 20, 0)

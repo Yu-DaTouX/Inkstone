@@ -107,6 +107,7 @@ try {
     { resultsDir, maxInlineBytes: 1000 }
   )
   ok(Boolean(big.resultFile) && big.images?.length === 1 && big.bytes < 5400, '文字超限落 .txt，同时保留 images，bytes 不含 base64')
+  ok(big.text.includes(big.resultFile) && /Result too large/.test(big.text), '模型看到的文字里带落盘路径，不用再去其他字段里找')
 
   console.log('落盘失败回退')
   const blocker = join(root, 'blocker')

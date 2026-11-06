@@ -7,7 +7,7 @@ import { useThrottledValue } from '../../state/streaming-throttle'
 import { createTurnProjector, type Turn } from '../../../../shared/turns'
 import { mergeQuestionLog } from '../../../../shared/question-log'
 import { TurnView } from './TurnView'
-import { sessionWrapUp, withoutWrapUpMessages } from './wrap-up'
+import { withoutWrapUpMessages } from './wrap-up'
 import { AsideFitScope, ToolExpansionScope } from './use-tool-run'
 import { toolExpansionScopeOf } from './tool-expansion'
 import { PendingRunNotice } from './RunNotice'
@@ -247,12 +247,6 @@ export function SessionView(): JSX.Element {
   const turns = useMemo(() => projectTurns(projectedMessages, streamingId), [projectedMessages, streamingId, projectTurns])
   const answers = useMemo(() => turnAnswers(turns), [turns])
   const outcomes = useMemo(() => decisionOutcomes(turns), [turns])
-  const wrapUpBusy = !!(session?.isAgentRunning || session?.isStreaming || session?.isCompacting)
-  const wrapUpOn = settings?.wrapUpCard !== false
-  const wrapUp = useMemo(
-    () => sessionWrapUp({ enabled: wrapUpOn, active: viewActive, busy: wrapUpBusy, turns, messages: effectiveMessages }),
-    [wrapUpOn, viewActive, wrapUpBusy, turns, effectiveMessages]
-  )
 
   const awaitingReply = viewActive && turns.length > 0 && turns[turns.length - 1].kind !== 'assistant' && !!(session?.isAgentRunning || session?.isStreaming)
   const renderTurns = useMemo<RenderItem[]>(
@@ -874,7 +868,7 @@ export function SessionView(): JSX.Element {
           >
             {(item, index) => (
               <div key={`${identity}|${item.id}`} className={`v3-stream-row${index === 0 ? ' v3-stream-row--head' : ''}${index === renderTurns.length - 1 ? ' v3-stream-row--tail' : ''}`}>
-                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />}
+                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />}
               </div>
             )}
           </VList>
@@ -884,7 +878,7 @@ export function SessionView(): JSX.Element {
               {turns.length === 0 ? (switchLoading ? null : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
                   ? <PendingRunNotice key={`${identity}|${item.id}`} />
-                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />
+                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />
               )}
             </div>
           </div>

@@ -40,6 +40,11 @@ async function run() {
     ok(m.dangerBlockKind(noAnswer) === 'no-answer', '没有答复 → no-answer', m.dangerBlockKind(noAnswer))
     ok(m.dangerBlockKind(host) === 'host-failure', '宿主故障单独归类，不当作拒绝', m.dangerBlockKind(host))
     ok(m.dangerBlockKind('普通工具失败') === null, '没有护栏前缀的失败不归类', m.dangerBlockKind('普通工具失败'))
+    const legacyDenied = '高危操作未获用户确认：递归删除大范围目录：/。用户拒绝了这次操作。请换一种更安全的做法'
+    const legacyNoAnswer = '高危操作未获用户确认：关机或重启。没有得到用户确认。请换一种更安全的做法'
+    const legacyHost = '高危操作未获用户确认：关机或重启。没能取得用户确认（fetch failed）。'
+    ok(m.dangerBlockKind(legacyDenied) === 'denied' && m.dangerBlockKind(legacyNoAnswer) === 'no-answer' && m.dangerBlockKind(legacyHost) === 'host-failure', '旧会话里的中文拦截文字照样识别', [m.dangerBlockKind(legacyDenied), m.dangerBlockKind(legacyNoAnswer), m.dangerBlockKind(legacyHost)])
+    ok(m.dangerBlockKind(`${m.DANGER_BLOCK_PREFIX}关机或重启。用户拒绝了这次操作。`) === null, '英文前缀不混认中文原因')
     ok(m.dangerBlockKind(undefined) === null && m.dangerBlockKind('') === null, '空输出不归类', [m.dangerBlockKind(undefined), m.dangerBlockKind('')])
     ok(m.isDangerDenial(denied) && m.isDangerDenial(feedback) && m.isDangerDenial(noAnswer), '拒绝与无答复算已拒绝', [m.isDangerDenial(denied), m.isDangerDenial(noAnswer)])
     ok(!m.isDangerDenial(host), '宿主故障不算已拒绝', m.isDangerDenial(host))

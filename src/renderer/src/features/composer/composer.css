@@ -686,6 +686,10 @@
     white-space: pre-wrap;
   }
 
+  .composer-text[data-suggestion='true'][data-placeholder-visible='true'][data-placeholder]::before {
+    content: attr(data-placeholder) '\2003\21E5\2009Tab';
+  }
+
   .composer-bar {
     display: flex;
     align-items: center;

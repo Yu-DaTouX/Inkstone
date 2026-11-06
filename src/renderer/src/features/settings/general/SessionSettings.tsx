@@ -31,7 +31,7 @@ export function SessionSettings(): ReactElement {
   const checkpoints = settings?.checkpointsEnabled !== false
   const subagentNotify = settings?.subagentNotify !== false
   const loopAutoContinue = settings?.streamLoopAutoContinue !== false
-  const wrapUpCard = settings?.wrapUpCard !== false
+  const promptSuggestions = settings?.promptSuggestions !== false
   const responseDetail: ResponseDetailChoice = settings?.responseDetail ?? 'standard'
   const responseDetailLabels: Record<ResponseDetailChoice, string> = {
     brief: text.responseDetailBrief,
@@ -86,12 +86,12 @@ export function SessionSettings(): ReactElement {
           />
         </SettingsRow>
 
-        <SettingsRow settingId="session-wrap-up-card" label={text.sessionWrapUpCard} description={text.sessionWrapUpCardDesc}>
+        <SettingsRow settingId="session-prompt-suggestions" label={text.sessionPromptSuggestions} description={text.sessionPromptSuggestionsDesc}>
           <Switch
-            aria-label={text.sessionWrapUpCard}
-            isSelected={wrapUpCard}
-            onChange={(on) => void patchSettings({ wrapUpCard: on })}
-            data-testid="v3-session-wrap-up-card"
+            aria-label={text.sessionPromptSuggestions}
+            isSelected={promptSuggestions}
+            onChange={(on) => void patchSettings({ promptSuggestions: on })}
+            data-testid="v3-session-prompt-suggestions"
           />
         </SettingsRow>
 

@@ -11,10 +11,12 @@ module.exports = async function beforePack(context) {
   if (context.electronPlatformName === 'win32' && !['rg.exe', 'fd.exe'].every((file) => existsSync(join(searchTools, file)))) {
     throw new Error('Bundled rg/fd are missing; run npm run vendor:search-tools')
   }
-  for (const entry of context.packager.config.extraResources ?? []) {
-    if (typeof entry === 'object' && ['pi-runtime/dist', 'pi-runtime/node_modules', 'pi-runtime/package.json'].includes(entry.to)) {
+  const extraResources = context.packager.config.extraResources ?? []
+  for (const entry of [...extraResources]) {
+    if (typeof entry === 'object' && ['pi-runtime/dist', 'pi-runtime/node_modules', 'pi-runtime/docs', 'pi-runtime/package.json'].includes(entry.to)) {
       const relative = entry.to.slice('pi-runtime/'.length)
       entry.from = join(root, relative)
+      if (relative === 'docs' && !existsSync(entry.from)) extraResources.splice(extraResources.indexOf(entry), 1)
     }
   }
 }

@@ -1,90 +1,10 @@
 import type { UIMessage, UIToolCall } from '../../../../shared/ipc'
-import type { AssistantTurn, Turn, TurnSegment, TurnThinking } from '../../../../shared/turns'
+import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../shared/turns'
 
-export const WRAP_UP_TOOL = 'wrap_up'
-const MAX_ACTIONS = 2
+const LEGACY_WRAP_UP_TOOL = 'wrap_up'
 
-export interface WrapUpAction {
-  label: string
-  message: string
-}
-
-export interface WrapUpCardModel {
-  callId: string
-  recap: string
-  ask: string | null
-  actions: WrapUpAction[]
-}
-
-const FILL_IN_BLANK = /_{2,}|＿{2,}|【\s*】|\[\s*\]|（\s*）|\(\s*\)|\{\s*\}/
-
-export function isFillInTemplate(message: string): boolean {
-  return FILL_IN_BLANK.test(message)
-}
-
-export function isWrapUpCall(call: Pick<UIToolCall, 'name'>): boolean {
-  return call.name === WRAP_UP_TOOL
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
-}
-
-function text(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-export function wrapUpCardOf(call: UIToolCall): WrapUpCardModel | null {
-  if (!isWrapUpCall(call) || call.status === 'error' || call.cancelled || call.denied) return null
-  const args = record(call.args)
-  const recap = text(args?.recap)
-  if (!recap) return null
-  const ask = text(args?.ask)
-  if (!ask) return null
-  const actions = ask && Array.isArray(args?.actions)
-    ? args.actions
-      .map((item) => ({ label: text(record(item)?.label), message: text(record(item)?.message) }))
-      .filter((item) => item.label && item.message)
-      .slice(0, MAX_ACTIONS)
-    : []
-  return { callId: call.id, recap, ask, actions }
-}
-
-export function latestWrapUp(calls: readonly UIToolCall[]): WrapUpCardModel | null {
-  for (let i = calls.length - 1; i >= 0; i -= 1) {
-    if (!isWrapUpCall(calls[i])) continue
-    const card = wrapUpCardOf(calls[i])
-    if (card) return card
-  }
-  return null
-}
-
-export function wrapUpForTurn(messages: readonly UIMessage[], sourceIds: readonly string[]): WrapUpCardModel | null {
-  const ids = new Set(sourceIds)
-  const calls: UIToolCall[] = []
-  for (const message of messages) {
-    if (ids.has(message.id) && message.toolCalls?.length) calls.push(...message.toolCalls)
-  }
-  return latestWrapUp(calls)
-}
-
-export function latestAssistantTurn(turns: readonly Turn[]): AssistantTurn | null {
-  const last = turns[turns.length - 1]
-  return last?.kind === 'assistant' ? last : null
-}
-
-export function sessionWrapUp(input: {
-  enabled: boolean
-  active: boolean
-  busy: boolean
-  turns: readonly Turn[]
-  messages: readonly UIMessage[]
-}): { turnId: string; card: WrapUpCardModel } | null {
-  if (!input.enabled || !input.active || input.busy) return null
-  const turn = latestAssistantTurn(input.turns)
-  if (!turn || turn.streaming) return null
-  const card = wrapUpForTurn(input.messages, turn.sourceIds)
-  return card ? { turnId: turn.id, card } : null
+function isWrapUpCall(call: Pick<UIToolCall, 'name'>): boolean {
+  return call.name === LEGACY_WRAP_UP_TOOL
 }
 
 const strippedMessages = new WeakMap<UIMessage, UIMessage>()

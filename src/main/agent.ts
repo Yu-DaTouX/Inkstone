@@ -16,6 +16,7 @@ import { runOfficeReadCommand } from './agent-commands/office-read'
 import { runSkillRead } from './agent-commands/skill-read'
 import { PiRpc, resolvePi } from './protocol'
 import { assistantModelIdentity } from '../shared/assistant-model'
+import { continuationPrompt } from '../shared/continuation-prompt'
 import { NativeSessionRuntime, type NavigateTreeResult, type ScopedModelsSnapshot, type ProjectTrustSnapshot } from './native-session-runtime'
 import { nativeActiveBranch } from './native-session-history'
 import { capNativeTreeDepth, type NativeTreeNode } from '../shared/native-session'
@@ -431,7 +432,7 @@ export class AgentController extends EventEmitter {
   private piBin?: string
   private codemodeExtension?: string
   private questionExtension?: string
-  private wrapUpExtension?: string
+  private promptSuggestionExtension?: string
   private shellFallbackExtension?: string
   private responseDetailExtension?: string
   private preambleExtension?: string
@@ -661,7 +662,7 @@ export class AgentController extends EventEmitter {
     piBin?: string
     codemodeExtension?: string
     questionExtension?: string
-    wrapUpExtension?: string
+    promptSuggestionExtension?: string
     shellFallbackExtension?: string
     responseDetailExtension?: string
     preambleExtension?: string
@@ -739,7 +740,7 @@ export class AgentController extends EventEmitter {
     this.piBin = opts.piBin
     this.codemodeExtension = opts.codemodeExtension
     this.questionExtension = opts.questionExtension
-    this.wrapUpExtension = opts.wrapUpExtension
+    this.promptSuggestionExtension = opts.promptSuggestionExtension
     this.shellFallbackExtension = opts.shellFallbackExtension
     this.responseDetailExtension = opts.responseDetailExtension
     this.preambleExtension = opts.preambleExtension
@@ -902,7 +903,6 @@ export class AgentController extends EventEmitter {
         ...(this.nativeSessionExtension ? ['--extension', this.nativeSessionExtension] : []),
         ...(nativeTools && this.codemodeExtension ? ['--extension', this.codemodeExtension] : []),
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
-        ...(this.wrapUpExtension ? ['--extension', this.wrapUpExtension] : []),
         ...(this.shellFallbackExtension ? ['--extension', this.shellFallbackExtension] : []),
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         ...(this.preambleExtension ? ['--extension', this.preambleExtension] : []),
@@ -918,7 +918,8 @@ export class AgentController extends EventEmitter {
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         ...this.providerExtensions.flatMap((path) => ['--extension', path]),
-        // 压缩扩展要截取最终发出的请求体，必须排在所有 before_provider_request 改写者之后
+        // 预测下一句和压缩扩展都要截取最终发出的请求体，必须排在所有 before_provider_request 改写者之后
+        ...(this.promptSuggestionExtension ? ['--extension', this.promptSuggestionExtension] : []),
         ...(this.contextCompactExtension ? ['--extension', this.contextCompactExtension] : []),
         ...this.bundledSkills.flatMap((skill) => ['--skill', skill]),
         ...userSkillArgs.flatMap((skill) => ['--skill', skill]),
@@ -3214,7 +3215,7 @@ export class AgentController extends EventEmitter {
           message: '自动继续后再次检测到循环，已停止；同一任务最多自动续一次，请手动决定。' } })
         return false
       }
-      const prompt = '[循环恢复 · 自动继续 1/1]\n上一轮因输出重复被安全中止。请核对已完成的工具结果，在当前会话继续尚未完成的原任务；不要复述循环内容或空转宣称调用工具。回收的排队消息不在本次续跑范围内。若原任务已完成、需要用户决定或无法安全继续，请简短说明并结束。'
+      const prompt = continuationPrompt('loop')
       const result = await this.send(prompt, undefined, undefined, scope)
       if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
         this.logStreamLoopGuard('auto-continue-failed', { sessionId: scope.sessionId, runId: scope.runId, detail: result.error, outcome: 'not-resumed' })
@@ -3237,7 +3238,7 @@ export class AgentController extends EventEmitter {
     try {
       if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return false
       if (!this.canContinueAfterLoopGuard(scope) || this.loopGuardAutoContinueCount >= 1) return false
-      const prompt = '[模型错误恢复 · 自动继续 1/1]\n上一轮模型请求因暂时性错误（超时、连接中断或服务过载）中断，且没有自动重试。请核对已完成的工具结果，在当前会话继续尚未完成的原任务；不要重复已完成的操作。若原任务已完成、需要用户决定或无法安全继续，请简短说明并结束。'
+      const prompt = continuationPrompt('model-error')
       const result = await this.send(prompt, undefined, undefined, scope)
       if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
         this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',

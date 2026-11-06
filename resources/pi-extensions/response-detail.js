@@ -19,15 +19,15 @@ function responseDetail() {
 
 const BRIEF = [
   'Response detail: BRIEF.',
-  '- Lead with the result and what changed; keep explanation to the minimum needed to trust it.',
+  '- Keep the main line and anything in bold; drop most supporting detail, keeping only what the reader needs to trust the result.',
   '- Still report errors, blockers and anything the user must decide.',
   '- Do not change the scope of the task; brevity is about wording, not about doing less.'
 ].join('\n')
 
 const DETAILED = [
-  'Response detail: DETAILED. The user chose this; it overrides the earlier "be concise" and "not a recap" guidance.',
-  '- Lead with the result. Besides the result, explain the trade-offs behind key choices, the steps that mattered,',
-  '  a concrete example where it helps, and the boundaries where the approach applies or does not.',
+  'Response detail: DETAILED. The user chose this; it overrides the general "be concise" rule.',
+  '- Keep the final-reply layers. After the main line, give fuller supporting detail (still in *single asterisks*): the trade-offs behind key choices,',
+  '  the steps that mattered, a concrete example where it helps, and where the approach applies or does not.',
   '- Still report errors, blockers and anything the user must decide.',
   '- Do not change the scope of the task; detail is about explanation, not about doing more.'
 ].join('\n')

@@ -7,8 +7,9 @@ import { useStore } from '../../state/store'
 import { Markdown } from './Markdown'
 import { useSessionText } from './text'
 import { decisionTitle, outcomeFiles, replyFileLinks, type DecisionOutcome } from './turn-outcome'
-import { WrapUpText } from './WrapUpCard'
+import { parseUserInline } from './user-text'
 import type { TurnChanges as TurnChangeSet } from './turn-changes'
+import './wrap-up.css'
 import './turn-outcome.css'
 
 const OUTCOME_TEXT = { failed: 'decisionFailed', stopped: 'decisionStopped' } as const
@@ -31,7 +32,7 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
   return (
     <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} data-arrive={arrive ? '' : undefined} aria-label={heading.replace(/`/g, '') || status} data-testid="v3-decision">
       <CardHead className="v3-decision-head">
-        <CardTitle className="v3-decision-title" data-testid="v3-decision-title">{heading ? <WrapUpText text={heading} /> : status}</CardTitle>
+        <CardTitle className="v3-decision-title" data-testid="v3-decision-title">{heading ? <InlineCodeText text={heading} /> : status}</CardTitle>
         {heading ? <Badge tone={answered ? 'neutral' : 'ask'} className="v3-decision-status" data-testid="v3-decision-status">{status}</Badge> : null}
       </CardHead>
       {rest ? (
@@ -51,6 +52,11 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
       ) : null}
     </Card>
   )
+}
+
+function InlineCodeText({ text }: { text: string }): JSX.Element {
+  const runs = useMemo(() => parseUserInline(text), [text])
+  return <>{runs.map((run, index) => run.kind === 'code' ? <code key={index} className="v3-wrapup-code">{run.text}</code> : run.text)}</>
 }
 
 function plainTitle(title: string): string {

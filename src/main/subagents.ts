@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import type { QuotaWindow, SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
 import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../shared/quota-resume'
+import { continuationPrompt } from '../shared/continuation-prompt'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { SessionItemProjector } from './session-items/projector'
 import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type SubagentUsageTotals, type UsageSnapshots } from '../shared/subagent-usage'
@@ -807,7 +808,7 @@ export class SubagentController {
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
     const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension, thinkingLevel: ctx.thinkingLevel })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
-    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }, ctx.runReadOnlyCommand)
+    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR, YAN_RUNNER_KIND: 'subagent' }, ctx.runReadOnlyCommand)
   }
 
   private async createForkRpc(ctx: SubagentOptions, id: string, fork: SubagentForkSource, sessionFile?: string): Promise<SubagentRpc> {
@@ -1728,7 +1729,7 @@ export class SubagentController {
       this.settle(run)
     }
     try {
-      const res = await run.rpc.command('prompt', { message: MODEL_ERROR_RESUME_PROMPT }, { timeoutMs: 10_000 })
+      const res = await run.rpc.command('prompt', { message: continuationPrompt('model-error', 'subagent') }, { timeoutMs: 10_000 })
       if (!res.success) failed()
     } catch {
       failed()
@@ -1867,7 +1868,6 @@ async function latestSessionFile(dir: string): Promise<string | undefined> {
   return best?.path
 }
 
-const MODEL_ERROR_RESUME_PROMPT = '[模型错误恢复 · 自动继续 1/1]\n上一轮模型请求因暂时性错误（超时、连接中断或服务过载）中断，且没有自动重试。请核对已完成的工具结果，继续尚未完成的原任务；不要重复已完成的操作。若原任务已完成或无法安全继续，请简短说明并结束。'
 
 function quotaWaitActivity(wait: NonNullable<SubagentRun['quotaWait']>): string {
   const reset = wait.resetAt !== undefined ? `（约 ${new Date(wait.resetAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 重置）` : ''

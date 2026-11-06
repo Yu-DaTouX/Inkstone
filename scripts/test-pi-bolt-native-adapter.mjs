@@ -286,16 +286,16 @@ try {
 
   const allowed = await runDanger({})
   check(hostCalls.length >= 1 && hostCalls[0].command === 'danger.confirm', 'L3 允许：真实宿主收到 danger.confirm')
-  check(!allowed.text.includes('高危操作未获用户确认'), 'L3 允许：未被护栏拦下', allowed.text.slice(0, 200))
+  check(!allowed.text.includes('High-risk operation not confirmed by the user'), 'L3 允许：未被护栏拦下', allowed.text.slice(0, 200))
 
   const denied = await runDanger({})
-  check(denied.result?.isError === true && denied.text.includes('高危操作'), 'L3 拒绝：护栏拦下并给出原因', denied.text.slice(0, 200))
+  check(denied.result?.isError === true && denied.text.includes('High-risk operation'), 'L3 拒绝：护栏拦下并给出原因', denied.text.slice(0, 200))
 
   const wrongToken = await runDanger({ YAN_CLI_TOKEN: 'wrong-token' })
-  check(wrongToken.text.includes('高危操作未获用户确认'), 'L3 错 token：拒绝并封闭', wrongToken.text.slice(0, 200))
+  check(wrongToken.text.includes('High-risk operation not confirmed by the user'), 'L3 错 token：拒绝并封闭', wrongToken.text.slice(0, 200))
 
   const wrongSession = await runDanger({ YAN_SESSION_ID: 'other-session' })
-  check(wrongSession.text.includes('高危操作未获用户确认'), 'L3 会话不符：拒绝并封闭', wrongSession.text.slice(0, 200))
+  check(wrongSession.text.includes('High-risk operation not confirmed by the user'), 'L3 会话不符：拒绝并封闭', wrongSession.text.slice(0, 200))
 
   await closeServer(provider.server)
   caps.stop()

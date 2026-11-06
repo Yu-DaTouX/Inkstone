@@ -245,9 +245,6 @@ export type SessionTextKey =
   | 'yanSearch'
   | 'yanSearchResults'
   | 'detailOutput'
-  | 'wrapUpLabel'
-  | 'wrapUpDismiss'
-  | 'wrapUpDone'
   | 'wrapUpDecide'
   | 'browserHandoffTitle'
   | 'browserHandoffReason'
@@ -501,9 +498,6 @@ const ZH: Record<SessionTextKey, string> = {
   yanSearch: '联网搜索',
   yanSearchResults: '联网搜索 · {n} 条结果',
   detailOutput: '输出',
-  wrapUpLabel: '下一步建议',
-  wrapUpDismiss: '关闭建议',
-  wrapUpDone: '本轮小结',
   wrapUpDecide: '等你决定',
   browserHandoffTitle: '浏览器交给你了',
   browserHandoffReason: '需要你在浏览器里亲自完成一步操作，比如登录、验证码或支付。',
@@ -758,9 +752,6 @@ const EN: Record<SessionTextKey, string> = {
   yanSearch: 'Web search',
   yanSearchResults: 'Web search · {n} results',
   detailOutput: 'Output',
-  wrapUpLabel: 'Next step',
-  wrapUpDismiss: 'Dismiss suggestion',
-  wrapUpDone: 'Turn recap',
   wrapUpDecide: 'Your call',
   browserHandoffTitle: 'The browser is yours',
   browserHandoffReason: 'A step needs you in the browser, such as signing in, a captcha, or a payment.',

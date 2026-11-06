@@ -207,7 +207,7 @@ export async function callMcpTool(
       serverId,
       toolName,
       toolError,
-      text: `（结果过大：${bytes} 字节，已落盘，请按需读取）`,
+      text: `Result too large (${bytes} bytes); saved to ${file}. Read only the parts you need.`,
       bytes,
       resultFile: file,
       ...images

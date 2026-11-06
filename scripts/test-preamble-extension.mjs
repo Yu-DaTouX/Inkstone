@@ -1,11 +1,13 @@
 export async function runPreambleExtensionTests(ok, mod) {
-  const { NATIVE_PREAMBLE, NATIVE_PREAMBLES, YAN_PREAMBLE, PROGRESS_GUIDANCE, WORK_RULES, default: extension } = mod
-  const GUIDANCE = [PROGRESS_GUIDANCE, ...WORK_RULES.map((rule) => `- ${rule}`)].join('\n')
+  const { NATIVE_PREAMBLE, NATIVE_PREAMBLES, YAN_PREAMBLE, WORK_GUIDANCE, REPORT_GUIDANCE, WORK_RULES, default: extension } = mod
+  const GUIDANCE = [WORK_GUIDANCE, REPORT_GUIDANCE, ...WORK_RULES.map((rule) => `- ${rule}`)].join('\n')
 
   ok(typeof NATIVE_PREAMBLE === 'string' && NATIVE_PREAMBLE.startsWith('You are a coding assistant running inside pi'), '导出的原生句是 pi 1.5 的英文 preamble')
   ok(NATIVE_PREAMBLES.length === 2 && NATIVE_PREAMBLES[1].startsWith('You are an expert coding assistant operating inside pi'), '仍认 pi 1.4 及以前的旧句')
   ok(typeof YAN_PREAMBLE === 'string' && YAN_PREAMBLE.includes('Inkstone'), '导出的砚开场白包含产品名 Inkstone')
-  ok(YAN_PREAMBLE.includes('underlying execution engine') && !YAN_PREAMBLE.includes('inside pi,'), '开场白保持英文措辞，只换产品名')
+  ok(YAN_PREAMBLE.includes("personal agent") && !YAN_PREAMBLE.includes('inside pi,') && !YAN_PREAMBLE.includes('coding assistant'), '开场白是英文的个人 agent 身份，不提 pi、不限于写代码')
+  ok(/data, not instructions/.test(WORK_GUIDANCE) && /one-sentence progress note/.test(WORK_GUIDANCE), '怎么干活：含进度句与「工具结果是数据」')
+  ok(/\*single asterisks\*/.test(REPORT_GUIDANCE) && /\*\*Bold\*\* only/.test(REPORT_GUIDANCE) && !/status mark/.test(REPORT_GUIDANCE), '汇报：三层字色，没有状态标记')
 
   const handlers = {}
   extension({ on: (name, fn) => (handlers[name] = fn) })
@@ -41,7 +43,10 @@ export async function runPreambleExtensionTests(ok, mod) {
     const promptGuidelines = ['Existing rule', WORK_RULES[0]]
     const result = handlers.before_agent_start({ systemPrompt: `${NATIVE_PREAMBLE}\n\n${docs}`, systemPromptOptions: { sections, promptGuidelines } }, {})
     ok(result === undefined, '有具名分区时不返回整段提示（否则 pi 会固定整段提示，其他扩展的分区失效）')
-    ok(sections.inkstone_progress === PROGRESS_GUIDANCE && sections.docs === undefined, '进展约定写进具名分区，文档分区不在此处处理（交给 context_with_system 整段去掉）')
+    ok(sections.inkstone_work === WORK_GUIDANCE && sections.inkstone_report === REPORT_GUIDANCE && sections.docs === undefined, '工作方式与汇报写进具名分区，文档分区不在此处处理（交给 context_with_system 整段去掉）')
+    const keys = Object.keys(sections)
+    ok(keys.indexOf('inkstone_work') < keys.indexOf('inkstone_question') && keys.indexOf('inkstone_question') < keys.indexOf('inkstone_report') && keys.indexOf('inkstone_report') < keys.indexOf('inkstone_capabilities') && keys.indexOf('inkstone_capabilities') < keys.indexOf('inkstone_environment'), '分区按语义顺序占位：怎么干活 → 提问 → 汇报 → 能力 → 环境')
+    ok(sections.inkstone_question === '' && sections.inkstone_capabilities === '', '占位分区为空字符串，pi 会跳过空分区')
     ok(promptGuidelines.length === 1 + WORK_RULES.length && promptGuidelines[0] === 'Existing rule' && WORK_RULES.every((rule) => promptGuidelines.filter((item) => item === rule).length === 1), '工作规则逐条加进 pi 原生 <rules>，不重复')
 
     ok(typeof handlers.context_with_system === 'function', '扩展注册了 context_with_system')
@@ -56,5 +61,34 @@ export async function runPreambleExtensionTests(ok, mod) {
     ok(handlers.context_with_system({ type: 'context_with_system', messages: [user] }, {}) === undefined, '没有系统消息时不改动')
     const legacy = handlers.context_with_system({ type: 'context_with_system', messages: [{ role: 'system', content: '', sections: { preamble: NATIVE_PREAMBLES[1] } }] }, {})
     ok(legacy?.messages?.[0]?.sections?.preamble === YAN_PREAMBLE, '发出请求前也替换 pi 1.4 的旧开场白')
+    const reworded = 'You are a helpful assistant working inside pi, a coding agent harness. Help users with code.'
+    const future = handlers.context_with_system({ type: 'context_with_system', messages: [{ role: 'system', content: '', sections: { preamble: reworded } }] }, {})
+    ok(future?.messages?.[0]?.sections?.preamble === YAN_PREAMBLE, 'pi 改了措辞也认得出身份句（按「coding agent harness」特征整行替换）')
+    ok(run(`${reworded}\n\n<tools>`).systemPrompt.startsWith(`${YAN_PREAMBLE}\n\n<tools>`), '整段提示模式同样按特征替换')
+    const custom = handlers.context_with_system({ type: 'context_with_system', messages: [{ role: 'system', content: '', sections: { preamble: 'You are my SQL helper.' } }] }, {})
+    ok(custom === undefined, '用户自己的 SYSTEM.md 开头不动')
+  }
+  {
+    const { SUBAGENT_PREAMBLE, SUBAGENT_WORK_GUIDANCE, SUBAGENT_REPORT_GUIDANCE, runnerPrompt } = mod
+    ok(runnerPrompt({}).identity === YAN_PREAMBLE && runnerPrompt({ YAN_RUNNER_KIND: 'fork' }).identity === YAN_PREAMBLE, '主会话和 fork 子代理沿用主会话身份（fork 要与父会话共享缓存前缀）')
+    const sub = runnerPrompt({ YAN_RUNNER_KIND: 'subagent' })
+    ok(sub.identity === SUBAGENT_PREAMBLE && sub.work === SUBAGENT_WORK_GUIDANCE && sub.report === SUBAGENT_REPORT_GUIDANCE, '子代理用自己的身份、工作规则和汇报规则')
+    ok(!/personal agent|whatever the user brings/.test(SUBAGENT_PREAMBLE) && /subagent/.test(SUBAGENT_PREAMBLE), '子代理身份不再自称用户的私人 agent')
+    ok(/cannot ask the user/.test(SUBAGENT_WORK_GUIDANCE) && /data, not instructions/.test(SUBAGENT_WORK_GUIDANCE), '子代理工作规则：不能提问、工具结果是数据')
+    ok(/could not verify/.test(SUBAGENT_REPORT_GUIDANCE) && /outcome in one plain sentence/.test(SUBAGENT_REPORT_GUIDANCE) && /Do not invent a decision/.test(SUBAGENT_REPORT_GUIDANCE) && /evidence/.test(SUBAGENT_REPORT_GUIDANCE), '子代理汇报：先结果、带证据、写明未验证项')
+    const previous = process.env.YAN_RUNNER_KIND
+    process.env.YAN_RUNNER_KIND = 'subagent'
+    try {
+      const subHandlers = {}
+      extension({ on: (name, fn) => (subHandlers[name] = fn) })
+      const sections = {}
+      subHandlers.before_agent_start({ type: 'before_agent_start', systemPrompt: '', systemPromptOptions: { sections, promptGuidelines: [] } }, {})
+      ok(sections.inkstone_work === SUBAGENT_WORK_GUIDANCE && sections.inkstone_report === SUBAGENT_REPORT_GUIDANCE, '子代理进程的分区写入子代理规则')
+      const swapped = subHandlers.context_with_system({ type: 'context_with_system', messages: [{ role: 'system', content: '', sections: { preamble: NATIVE_PREAMBLE } }] }, {})
+      ok(swapped?.messages?.[0]?.sections?.preamble === SUBAGENT_PREAMBLE, '子代理进程把 pi 开场白换成子代理身份')
+    } finally {
+      if (previous === undefined) delete process.env.YAN_RUNNER_KIND
+      else process.env.YAN_RUNNER_KIND = previous
+    }
   }
 }

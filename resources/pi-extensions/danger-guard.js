@@ -9,7 +9,7 @@ const APPROVAL_DETAIL_MAX = 20000
 const CHANGE_PREVIEW_MAX = 12000
 const MAX_SHELL_DEPTH = 6
 const FILE_TOOLS = new Set(['write', 'edit', 'multi_edit', 'apply_patch'])
-const CHANGED_AFTER_APPROVAL = '审批期间操作内容发生了变化，未执行。请重新发起这次操作'
+const CHANGED_AFTER_APPROVAL = 'Not run: the operation changed while it was waiting for approval. Start it again.'
 const CHANGE_CLIPPED = (rest) => `…（其余 ${rest} 字未显示，以哈希为准）`
 const CHANGE_DIGEST = (length, digest) => `变更共 ${length} 字，SHA-256 ${digest}`
 
@@ -658,9 +658,9 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
   const token = process.env.YAN_CLI_TOKEN
   const sessionId = process.env.YAN_SESSION_ID
   const projectId = process.env.YAN_PROJECT_ID
-  if (!url || !token || !sessionId || !projectId) return { allowed: false, why: '宿主确认通道不可用' }
+  if (!url || !token || !sessionId || !projectId) return { allowed: false, why: 'The approval channel is unavailable' }
   const detail = approvalDetail(toolName, input)
-  if (detail.length > APPROVAL_DETAIL_MAX) return { allowed: false, why: `审批内容有 ${detail.length} 字，超过 ${APPROVAL_DETAIL_MAX} 字，无法完整展示给用户确认。请缩短内容或分步执行` }
+  if (detail.length > APPROVAL_DETAIL_MAX) return { allowed: false, why: `The approval detail is ${detail.length} characters, over the ${APPROVAL_DETAIL_MAX} limit, so it cannot be shown to the user in full. Shorten it or split the work` }
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -677,12 +677,12 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
     const payload = await response.json()
     if (payload?.ok && payload?.summary?.allowed === true) return { allowed: true }
     const feedback = typeof payload?.summary?.feedback === 'string' ? payload.summary.feedback.trim() : ''
-    if (feedback) return { allowed: false, why: `用户拒绝了这次操作，并给出理由：${feedback}。请按这个理由调整做法后再试` }
+    if (feedback) return { allowed: false, why: `The user declined this operation and said: ${feedback}. Adjust your approach accordingly and try again` }
     const reason = typeof payload?.summary?.reason === 'string' ? payload.summary.reason.trim() : ''
     if (reason) return { allowed: false, why: reason }
-    return { allowed: false, why: payload?.summary?.decision === 'no-answer' ? '没有得到用户确认' : '用户拒绝了这次操作' }
+    return { allowed: false, why: payload?.summary?.decision === 'no-answer' ? 'No answer from the user' : 'The user declined this operation' }
   } catch (err) {
-    return { allowed: false, why: `没能取得用户确认（${String(err?.message ?? err).slice(0, 80)}）` }
+    return { allowed: false, why: `Could not get the user's confirmation (${String(err?.message ?? err).slice(0, 80)})` }
   }
 }
 
@@ -694,7 +694,7 @@ export default function dangerGuardExtension(pi) {
     const prefs = await hostPrefs()
     if (prefs.mode === 'all') return undefined
     const delegation = claudeDelegationDanger(name, event?.input ?? {}, ctx?.cwd)
-    if (delegation.length && JSON.stringify(event?.input ?? {}).length > 20000) return { block: true, reason: 'Claude Code 委派任务过长，无法完整展示审批内容。请缩短任务，或使用砚子 Agent。' }
+    if (delegation.length && JSON.stringify(event?.input ?? {}).length > 20000) return { block: true, reason: 'The Claude Code delegation is too long to show in full for approval. Shorten the task, or use an Inkstone subagent.' }
     const mcpReasons = name.startsWith('mcp__') ? mcpCallDanger(name, toolAnnotations(pi, name)) : []
     const outside = outsideWrites(name, event?.input ?? {}, ctx?.cwd, prefs)
     const reasons = [
@@ -710,6 +710,6 @@ export default function dangerGuardExtension(pi) {
       if (inputDigest(event?.input ?? {}) === approvedDigest) return undefined
       return { block: true, reason: CHANGED_AFTER_APPROVAL }
     }
-    return { block: true, reason: `高危操作未获用户确认：${reasons.join('；')}。${answer.why}。请换一种更安全的做法，或向用户说明为什么必须这样做。` }
+    return { block: true, reason: `High-risk operation not confirmed by the user: ${reasons.join('; ')}. ${answer.why}. Try a safer approach, or tell the user why this one is necessary.` }
   })
 }

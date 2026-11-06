@@ -25,8 +25,8 @@ export interface GeneralText {
   sessionKeepAwakeBatteryDesc: string
   sessionCheckpoints: string
   sessionCheckpointsDesc: string
-  sessionWrapUpCard: string
-  sessionWrapUpCardDesc: string
+  sessionPromptSuggestions: string
+  sessionPromptSuggestionsDesc: string
   sessionResponseDetail: string
   sessionResponseDetailDesc: string
   responseDetailBrief: string
@@ -197,8 +197,8 @@ const ZH: GeneralText = {
   sessionKeepAwakeBatteryDesc: '关闭后，用电池时允许睡眠。',
   sessionCheckpoints: '发送前存检查点',
   sessionCheckpointsDesc: '每轮存可回退快照；关闭后无法回退。',
-  sessionWrapUpCard: '显示下一步建议',
-  sessionWrapUpCardDesc: '仅在需要你决定时显示回复按钮。',
+  sessionPromptSuggestions: '预测下一句',
+  sessionPromptSuggestionsDesc: '回复结束后用同一模型多发一次短请求，在输入框给出灰字建议。Tab 或 → 填入，发送键直接发送，Esc 关掉。',
   sessionResponseDetail: '回复详细程度',
   sessionUserAddress: '如何称呼你',
   sessionUserAddressDesc: '也用作侧栏名称；留空则不指定。',
@@ -372,8 +372,8 @@ const EN: GeneralText = {
   sessionKeepAwakeBatteryDesc: 'Off lets the system sleep on battery.',
   sessionCheckpoints: 'Save checkpoints before sending',
   sessionCheckpointsDesc: 'Rewind snapshots; off disables rewind.',
-  sessionWrapUpCard: 'Show next-step suggestions',
-  sessionWrapUpCardDesc: 'Only when a decision is needed.',
+  sessionPromptSuggestions: 'Suggest next message',
+  sessionPromptSuggestionsDesc: 'After a reply, sends one short extra request to the same model and shows a grey suggestion in the composer. Tab or → fills it, the send key sends it, Esc dismisses it.',
   sessionResponseDetail: 'Response detail',
   sessionUserAddress: 'What should the model call you?',
   sessionUserAddressDesc: 'Also used as your sidebar name; leave blank for none.',

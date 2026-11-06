@@ -52,7 +52,7 @@ export default function codemodePolicy(pi) {
   })
   pi.on('tool_call', event => {
     if (event.toolName === 'codemode' && !codemodeEnabled()) {
-      return { block: true, reason: 'Codemode 已在砚设置中关闭。' }
+      return { block: true, reason: 'Codemode is turned off in Inkstone settings.' }
     }
   })
 }

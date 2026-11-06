@@ -45,6 +45,9 @@ extraResources:
   - from: resources/pi-runtime/node_modules
     to: pi-runtime/node_modules
     filter: ['**/*']
+  - from: resources/pi-runtime/docs
+    to: pi-runtime/docs
+    filter: ['codemode.md']
   - from: resources/pi-runtime/package.json
     to: pi-runtime/package.json
   - from: resources/pi-extensions

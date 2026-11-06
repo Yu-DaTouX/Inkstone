@@ -312,7 +312,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 说明：
   · title 是界面上显示的 2–8 字短标题，并行派多个时每个都写，互相区分；
   · --model 写完整名称「供应商/模型」（例：commandcode/deepseek/deepseek-v4.1-flash）；只写模型名时按已登录模型匹配，优先当前会话的供应商，仍有歧义会列出候选；
-  · --thinking（请求文件 "thinkingLevel"）取 off / minimal / low / medium / high / xhigh；不传时用 pi 对该模型的默认档（pi 设置里的 defaultThinkingLevel），fork 沿用当前会话的档位、不能再传；
+  · --thinking（请求文件 "thinkingLevel"）取 off / minimal / low / medium / high / xhigh；不传时由宿主按模型选默认档（DeepSeek V4.1 Flash 为 high，其余用 pi 设置里的 defaultThinkingLevel），各模型实际支持的档位以启动结果为准；fork 沿用当前会话的档位、不能再传；
   · start 默认在当前目录执行，可能直接改文件；未指定 --model 时优先使用设置中的默认子 Agent 模型，否则跟随当前会话；启用强制模型时由宿主按该设置选模；
     readOnly=true 开放 read/grep/find/ls/git_inspect/web_search/web_fetch/web_docs；只读不代表离线，联网搜索可能使用已配置的付费来源；需要代码隔离时显式传 --isolation worktree（要求 Git）；
   · --fork（请求文件 "fork":true）让子代理继承当前会话的全部历史，沿用当前会话的模型与推理档位，首个请求复用当前会话的提示缓存；

@@ -1,19 +1,11 @@
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
+import { reserveInkstoneSections } from './prompt-sections.js'
 
-const WHEN_TO_ASK = [
-  'Ask only when a materially different reading would change the result and you cannot settle it from the files, the conversation or a quick check; do not ask what you can verify yourself. When you ask, wait for the answer instead of guessing it.',
-  'Asking never relaxes approvals, permissions or high-risk confirmations; an explicit user instruction to ask (or not to ask) wins without widening the granted scope.'
-]
+const WHEN_TO_ASK = 'Ask the user only when a reasonable reading of the request could produce something they did not mean, or when you cannot tell what they want. Check the files, the conversation and the environment first; never ask what you can find out yourself. If the user says to ask more or less, follow that; asking or not never changes approvals or high-risk confirmations.'
 
-export const TOOL_GUIDANCE = [
-  'Interactive questions use the `question` tool, one question at a time.',
-  ...WHEN_TO_ASK
-].join('\n')
+export const TOOL_GUIDANCE = `${WHEN_TO_ASK} Ask with the \`question\` tool, one focused question at a time, and wait for the answer.`
 
-export const CLI_GUIDANCE = [
-  'Interactive questions use `yan question ask`: at most 3 concrete options, one question at a time.',
-  ...WHEN_TO_ASK
-].join('\n')
+export const CLI_GUIDANCE = `${WHEN_TO_ASK} Ask with \`yan question ask\` (at most 3 concrete options), one focused question at a time, and wait for the answer.`
 
 const FIELD_KINDS = ['choice', 'multi', 'text', 'date', 'number', 'range']
 
@@ -52,9 +44,9 @@ const QUESTION_TOOL = {
 
 // 超时说明用户多半不在：按 Claude Code 的做法让模型带着写明的假设继续，而不是停下来白等
 const TIMEOUT_TEXT = 'No answer before the question timed out; the user may be away. Proceed with your best judgment from the context so far, state the assumption you made in your final reply, and ask again later only if it still matters. Approvals and high-risk confirmations still apply.'
-// 主动关掉说明用户在场但不想答：和 Claude Code 拒答一样停下等用户；提交空答案只如实告知
+// 主动关掉或提交空答案说明用户在场但不想答：和 Claude Code 拒答一样停下等用户
 const DISMISSED_TEXT = 'The user dismissed the question without answering. Do not guess the answer: stop and wait for the user to tell you how to proceed.'
-const EMPTY_TEXT = 'The user did not answer the question.'
+const EMPTY_TEXT = 'The user closed the question with an empty answer. Do not guess the answer: stop and wait for the user to tell you how to proceed.'
 
 export function questionResult(outcome) {
   if (!outcome.ok && outcome.code === 'question_timeout') return toolText(TIMEOUT_TEXT, { cancelled: false, timedOut: true, code: outcome.code })
@@ -94,6 +86,7 @@ export default function question(pi) {
     const base = String(event?.systemPrompt ?? '')
     const sections = event?.systemPromptOptions?.sections
     if (sections && typeof sections === 'object') {
+      reserveInkstoneSections(sections)
       sections.inkstone_question = guidance
       return
     }

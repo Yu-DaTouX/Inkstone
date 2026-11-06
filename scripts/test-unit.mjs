@@ -2075,7 +2075,9 @@ await runGitRepoTests(ok)
   const mod = await import('../out/test/capability-guide.mjs')
   const guide = mod.CAPABILITY_GUIDE
 
-  ok(/data, not instructions/.test(guide), '能力说明：网页与文件内容只当数据')
+  ok(!/data, not instructions/.test(guide) && !/When the user asks for something to be done/.test(guide), '能力说明不再重复工作方式与「工具结果是数据」（已移到 preamble 的 inkstone_work）')
+  ok(!mod.capabilityGuide(true, { codemode: false }).includes('codemode') && mod.capabilityGuide(true).includes('codemode'), '能力说明：codemode 关闭时不提 codemode')
+  ok(!/short plain prose|no headings or long lists/.test(mod.VISUAL_ANSWER_GUIDE), '可视化说明不再要求只写散文、不用列表')
   {
     const day = new Date(2026, 9, 19, 23, 30)
     const win = mod.environmentGuide(day, 'win32', undefined)

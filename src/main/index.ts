@@ -619,7 +619,7 @@ function yanThinResourcePath(file: string): string | undefined {
 const YAN_THIN_EXTENSION_FILES = {
   codemodeExtension: 'codemode-policy.js',
   questionExtension: 'question.js',
-  wrapUpExtension: 'wrap-up.js',
+  promptSuggestionExtension: 'prompt-suggestion.js',
   shellFallbackExtension: 'shell-fallback.js',
   responseDetailExtension: 'response-detail.js',
   preambleExtension: 'preamble.js',

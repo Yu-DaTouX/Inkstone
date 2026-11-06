@@ -40,8 +40,7 @@ import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
 import { useTurnScope } from './turn-scope'
 import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
-import { withoutWrapUp, type WrapUpCardModel } from './wrap-up'
-import { WrapUpCard, wrapUpKey } from './WrapUpCard'
+import { withoutWrapUp } from './wrap-up'
 import { stripImageNotice } from './effective-messages'
 import { DecisionBlock, TurnResult } from './TurnOutcome'
 import { turnChangeSet, turnSpanMs } from './turn-process'
@@ -49,11 +48,11 @@ import { splitDecision, type DecisionOutcome } from './turn-outcome'
 
 const COMPACTION_AT_END = '\u0000end'
 
-export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, answer, outcome = null }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null }): JSX.Element | null {
+export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, tail, answer, outcome = null }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
-  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} answer={answer} outcome={outcome} />
+  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} tail={tail} answer={answer} outcome={outcome} />
 })
 
 function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
@@ -223,7 +222,7 @@ function replyText(turn: AssistantTurn): string {
   return text
 }
 
-function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail, answer, outcome }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail?: boolean; answer?: string | null; outcome: DecisionOutcome | null }): JSX.Element | null {
+function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, tail, answer, outcome }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; tail?: boolean; answer?: string | null; outcome: DecisionOutcome | null }): JSX.Element | null {
   const sourceTurn = useMemo(() => withoutWrapUp(rawTurn), [rawTurn])
   const view = useTranscriptView(sessionId)
   const inline = showsThinkingInline(view)
@@ -265,7 +264,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const compactionInProcess = compactionCut && splitAtCompaction(processSegs, compactionCut) ? compactionCut : null
   const showCompaction = compactionSpot !== null && !compactionInProcess
   const processApprovals = streaming ? [] : processSegs.flatMap((segment) => segment.tools.flatMap((call) => (call.approval ? [call.approval] : [])))
-  const decision = !streaming && !wrapUp && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
+  const decision = !streaming && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
   const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0
@@ -326,7 +325,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   ) : null}
                 </div>
               ) : null}
-              {wrapUp && split.reply ? <WrapUpCard card={wrapUp} dismissKey={wrapUpKey(sessionId, wrapUp.callId)} hideQuestion={repeatsQuestion(split.reply.response?.text ?? '', wrapUp.ask)} /> : null}
               {tailSegments.map((seg, si) => {
                 const last = si === tailSegments.length - 1
                 return (
@@ -385,7 +383,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
           {!streaming ? <TurnResult turn={sourceTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
           {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
-          {wrapUp && !split?.reply ? <WrapUpCard card={wrapUp} dismissKey={wrapUpKey(sessionId, wrapUp.callId)} /> : null}
           {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
@@ -393,15 +390,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
       </article>
     </TranscriptViewScope.Provider>
   )
-}
-
-function compactText(text: string): string {
-  return text.replace(/[\s`*_"'\u201c\u201d\u2018\u2019\u3002\uff1f?\uff01!\uff0c,\uff1a:]/g, '')
-}
-
-function repeatsQuestion(reply: string, ask: string | null): boolean {
-  const question = compactText(ask ?? '')
-  return question.length > 0 && compactText(reply).includes(question)
 }
 
 function keepSegment(segment: TurnSegment): TurnSegment {

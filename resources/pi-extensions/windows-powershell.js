@@ -78,12 +78,12 @@ export function findPowerShellInBash(command) {
 }
 
 export function powerShellInBashReason(name, exe = 'pwsh') {
-  return `没有执行：这是 bash 工具，\`${name}\` 是 PowerShell 命令，bash 里没有它。请改用 bash 写法（如 \`wc -l\`、\`cat\`、\`grep\`、\`rg\`）；确实要用 PowerShell，就在 bash 里写 \`${exe} -NoProfile -Command '...'\`（脚本用单引号包住）。`
+  return `Not run: this is the bash tool and \`${name}\` is a PowerShell command that bash does not have. Use the bash equivalent (such as \`wc -l\`, \`cat\`, \`grep\`, \`rg\`); if you really need PowerShell, run \`${exe} -NoProfile -Command '...'\` from bash with the script in single quotes.`
 }
 
 export function powerShellConflictReason(token) {
-  return `没有执行：这条命令在 bash 里用双引号把脚本交给 PowerShell，bash 会先处理其中的 ${token === '`' ? '反引号（当成命令替换）' : `\`${token}\`（当成 bash 变量展开）`}，PowerShell 收到的已经不是原脚本。` +
-    '请改用单引号包住 -Command 的脚本（脚本里的单引号写成 \'\\\'\'），或先把脚本写进 .ps1 文件再用 -File 运行；确实要在双引号里写，就把 PowerShell 的 $ 和反引号写成 \\$、\\`。'
+  return `Not run: this command passes a double-quoted script from bash to PowerShell, and bash expands ${token === '`' ? 'the backtick (as command substitution)' : `\`${token}\` (as a bash variable)`} first, so PowerShell would not receive the original script. ` +
+    'Wrap the -Command script in single quotes (write a single quote inside it as \'\\\'\'), or write the script to a .ps1 file and run it with -File; if it must stay in double quotes, escape PowerShell\'s $ and backtick as \\$ and \\`.'
 }
 
 const LEGACY_POWERSHELL = /(?:^|[;&|(\n])[ \t]*(?:[^\s;&|()]*[\\/])?powershell(?:\.exe)?(?=\s|$)/i
@@ -95,5 +95,5 @@ export function findLegacyPowerShell(command) {
 }
 
 export function legacyPowerShellReason() {
-  return '没有执行：这台设备已装 PowerShell 7，请把命令里的 `powershell` / `powershell.exe` 改成 `pwsh`，其余参数不变。系统自带的 5.1 按系统代码页读取无 BOM 的 .ps1，含中文的脚本会乱码或解析失败；pwsh 默认按 UTF-8 读取。'
+  return 'Not run: PowerShell 7 is installed here, so replace `powershell` / `powershell.exe` with `pwsh` and keep the other arguments. The built-in 5.1 reads BOM-less .ps1 files in the system code page, so scripts with non-ASCII text get garbled or fail to parse; pwsh reads UTF-8 by default.'
 }

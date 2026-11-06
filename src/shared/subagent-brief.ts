@@ -115,7 +115,7 @@ export interface SubagentResult {
   at: number
 }
 
-export const SUBAGENT_SUMMARY_MAX = 600
+export const SUBAGENT_SUMMARY_MAX = 1200
 const SOURCE_MAX = 12
 const ARTIFACT_MAX = 20
 

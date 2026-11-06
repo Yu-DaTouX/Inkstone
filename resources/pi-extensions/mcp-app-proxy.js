@@ -97,7 +97,7 @@ async function callHost({ toolCallId, serverId, toolName, params, signal }) {
   const sessionId = process.env.YAN_SESSION_ID
   const projectId = process.env.YAN_PROJECT_ID
   if (!url || !token || !sessionId || !projectId) {
-    return errorResult('托管 MCP 通道不可用：宿主能力端点未就绪（不降级为直连，也不走旧 yan 入口）')
+    return errorResult('Hosted MCP channel unavailable: the Inkstone host endpoint is not ready. The call was not made.')
   }
   let response
   try {
@@ -115,22 +115,22 @@ async function callHost({ toolCallId, serverId, toolName, params, signal }) {
     })
   } catch (error) {
     const cancelled = signal?.aborted === true || error?.name === 'AbortError'
-    return errorResult(cancelled ? '托管 MCP 调用已取消（宿主已向后端转发取消）' : `托管 MCP 调用失败：${String(error?.message ?? error)}`)
+    return errorResult(cancelled ? 'Hosted MCP call cancelled.' : `Hosted MCP call failed: ${String(error?.message ?? error)}`)
   }
   let payload
   try {
     payload = await response.json()
   } catch {
-    return errorResult('托管 MCP 通道返回了非 JSON 响应；未执行')
+    return errorResult('Hosted MCP channel returned a non-JSON response; the call was not made.')
   }
   if (!payload?.ok) {
-    const detail = typeof payload?.error === 'string' ? payload.error : '未知错误'
-    const code = typeof payload?.code === 'string' ? `（${payload.code}）` : ''
-    return errorResult(`托管 MCP 调用未获放行：${detail}${code}`)
+    const detail = typeof payload?.error === 'string' ? payload.error : 'unknown error'
+    const code = typeof payload?.code === 'string' ? ` (${payload.code})` : ''
+    return errorResult(`Hosted MCP call not allowed: ${detail}${code}`)
   }
   const summary = payload.summary ?? {}
   const text = typeof summary.text === 'string' ? summary.text : ''
-  if (summary.isError === true) return errorResult(text || '托管 MCP 工具返回错误')
+  if (summary.isError === true) return errorResult(text || 'Hosted MCP tool returned an error.')
   return { content: [{ type: 'text', text }], details: {} }
 }
 

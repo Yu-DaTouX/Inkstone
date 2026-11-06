@@ -62,6 +62,6 @@ for (const command of ['powershell -NoProfile -File a.ps1', 'cd x && powershell.
 for (const command of ['pwsh -File a.ps1', 'echo "powershell"', "git commit -m 'powershell.exe'", 'cat <<EOF\npowershell -File a\nEOF', 'ls powershell-notes', undefined]) assert.equal(findLegacyPowerShell(command), false, String(command))
 
 assert.match(powerShellConflictReason('$_'), /`\$_`/)
-assert.match(powerShellConflictReason('`'), /反引号/)
+assert.match(powerShellConflictReason('`'), /backtick \(as command substitution\)/)
 
 console.log('windows-powershell: ok')

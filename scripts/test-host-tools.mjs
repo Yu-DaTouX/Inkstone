@@ -48,7 +48,8 @@ try {
   assert.match(dismissed.content[0].text, /Do not guess/)
   assert.match(dismissed.content[0].text, /stop and wait for the user/)
   const empty = question.questionResult({ ok: true, data: { question: 'Q?', answer: null, cancelled: false } })
-  assert.equal(empty.content[0].text, 'The user did not answer the question.')
+  assert.match(empty.content[0].text, /empty answer/)
+  assert.match(empty.content[0].text, /stop and wait for the user/, '空答案和主动关掉一样停下等用户')
   const form = question.questionResult({ ok: true, data: { question: 'Q?', fields: [{ name: 'a' }], answers: { a: 1 }, answer: 'a: 1', cancelled: false } })
   assert.match(form.content[0].text, /"a":1/)
   assert.equal(question.questionResult({ ok: false, error: 'timeout' }).isError, true)
@@ -126,16 +127,6 @@ try {
   assert.equal(hooks.before_provider_request, undefined, '提问与能力指引不注册 before_provider_request')
   assert.equal(hooks.message_end, undefined, '提问与能力指引不跟踪回合')
 
-  const { appendReminder } = await import(new URL('../resources/pi-extensions/request-reminder.js', import.meta.url))
-  const userItem = { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
-  const toolOutput = { type: 'function_call_output', call_id: 'c1', output: 'ok' }
-  const onUser = appendReminder({ model: 'm', input: [userItem], stream: true }, 'R')
-  assert.deepEqual(onUser, { model: 'm', input: [{ role: 'user', content: [{ type: 'input_text', text: '继续' }, { type: 'input_text', text: 'R' }] }], stream: true }, 'Responses：末项是用户消息时追加 input_text')
-  assert.equal(userItem.content.length, 1, 'Responses：不改原 payload')
-  assert.deepEqual(appendReminder({ input: [userItem, toolOutput] }, 'R').input, [userItem, toolOutput, { role: 'user', content: [{ type: 'input_text', text: 'R' }] }], 'Responses：末项是工具结果时追加一条用户消息')
-  assert.deepEqual(appendReminder({ input: [{ type: 'message', role: 'user', content: 'hi' }] }, 'R').input.at(-1).content, [{ type: 'input_text', text: 'hi' }, { type: 'input_text', text: 'R' }])
-  assert.equal(appendReminder({ input: [] }, 'R'), undefined)
-  assert.equal(appendReminder({}, 'R'), undefined)
 
   const sizes = registered.map((definition) => JSON.stringify({ name: definition.name, description: definition.description, parameters: definition.parameters }).length)
   const removed = guide.CAPABILITY_GUIDE.length - withTools.length + (question.CLI_GUIDANCE.length - question.TOOL_GUIDANCE.length)

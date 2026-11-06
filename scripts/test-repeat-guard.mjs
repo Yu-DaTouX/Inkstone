@@ -60,7 +60,7 @@ export async function runRepeatGuardTests(ok) {
     })
     ok(typeof handlers.tool_call === 'function', 'repeat-guard.js 挂在 tool_call 上（唯一能提前拦的地方）')
     ok(typeof handlers.tool_result === 'function', 'repeat-guard.js 挂在 tool_result 上（判断结果有没有变化）')
-    ok(typeof handlers.before_provider_request === 'function', '提醒走 before_provider_request（tool_call 只能 block）')
+    ok(handlers.before_provider_request === undefined, '不改写发给模型的请求：软提醒已删，只留硬拦截')
     ok(typeof handlers.message_end === 'function', '用户发言要能归零，所以也挂 message_end')
 
     const step = (toolName, input, result) => {
@@ -108,26 +108,11 @@ export async function runRepeatGuardTests(ok) {
 
     await rm(counterFile, { force: true })
     await rm(logFile, { force: true })
-    const payload = {
-      messages: [
-        { role: 'system', content: 'sys' },
-        { role: 'user', content: '帮我看看' }
-      ]
-    }
-    ok(call('pnpm build') === undefined, '提醒场景：第 1 次')
-    ok(call('pnpm build') === undefined, '提醒场景：第 2 次（到提醒线）')
-    const warned = handlers.before_provider_request({ payload })
-    ok(Array.isArray(warned?.messages) && warned.messages.length === payload.messages.length, '第 2 次之后注入一条提醒，不新增消息')
-    ok(
-      JSON.stringify(warned.messages.at(-1)).includes('Repeat guard') && JSON.stringify(warned.messages[0]) === JSON.stringify(payload.messages[0]),
-      '提醒追加在请求末尾，不改动前面的消息（保住提示缓存前缀）'
-    )
-    ok(handlers.before_provider_request({ payload }) === undefined, '同一条串只提醒一次（不做复读机）')
-
+    ok(call('pnpm build') === undefined, '归零场景：第 1 次')
+    ok(call('pnpm build') === undefined, '归零场景：第 2 次')
     handlers.message_end({ message: { role: 'user' } })
     ok(call('pnpm build') === undefined, '用户发言后同一条命令重新从第 1 次数起')
-    ok(handlers.before_provider_request({ payload }) === undefined, '刚归零时不会立刻又提醒')
-    ok(call('pnpm build') === undefined, '数到第 2 次（又到提醒线）')
+    ok(call('pnpm build') === undefined, '数到第 2 次，仍不拦')
     const foundReset = (await readLog()).filter((line) => line.hook === 'reset')
     ok(
       foundReset.some((line) => line.reason === 'user'),
@@ -143,7 +128,6 @@ export async function runRepeatGuardTests(ok) {
     ok(poll('已运行 22 秒，仍在进行，用相同 operation_id 再查') === undefined, '结果再变（22 秒）：仍不拦')
     ok(poll('已运行 31 秒，仍在进行，用相同 operation_id 再查') === undefined, '结果继续变化：第 4 次也不拦（超过 BLOCK_AT 次数但每次都有进展）')
     ok(poll('已完成：构建成功') === undefined, '最终结果变成完成：同样不拦')
-    ok(handlers.before_provider_request({ payload: { messages: [{ role: 'user', content: 'x' }] } }) === undefined, '结果一直在变化时不追加重复调用提醒')
     const pollResets = (await readLog()).filter((line) => line.hook === 'reset' && line.reason === 'result_changed')
     ok(pollResets.length >= 3, '每次结果变化都留痕为 result_changed，不是被当成普通重复', JSON.stringify(pollResets))
 

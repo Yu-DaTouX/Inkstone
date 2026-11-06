@@ -304,6 +304,13 @@ mkdirSync(DEST, { recursive: true })
 const dist = copyDist(piRoot)
 ok(`dist（bundle + 资产）：${dist.files} 个文件，${mb(dist.bytes)}`)
 
+const codemodeDoc = join(piRoot, 'docs', 'codemode.md')
+if (existsSync(codemodeDoc)) {
+  mkdirSync(join(DEST, 'docs'), { recursive: true })
+  copyFileSync(codemodeDoc, join(DEST, 'docs', 'codemode.md'))
+  ok('docs/codemode.md：codemode 工具说明要求模型先读它')
+}
+
 for (const name of [...have].sort()) {
   const from = locate(name)
   const to = join(DEST, 'node_modules', name)

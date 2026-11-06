@@ -84,20 +84,27 @@ try {
   const expectations = [
     ['<mcp_servers>', 1, 'pi native MCP section survives Inkstone extensions'],
     ['probe_server', 1, 'configured deferred MCP server is listed'],
-    ['You are an assistant operating inside Inkstone', 1, 'Inkstone identity replaces the preamble'],
+    ["You are the user's personal agent in Inkstone", 1, 'Inkstone identity replaces the preamble'],
     ['You are an expert coding assistant operating inside pi', 0, 'pi identity sentence is not sent'],
     ['<inkstone_capabilities>', 1, 'capability guide renders as its own section'],
-    ['Inkstone provides local capabilities through the `yan` CLI', 1, 'capability guide appears once'],
+    ['Capabilities beyond your tools come through the `yan` CLI', 1, 'capability guide appears once'],
     ['<inkstone_environment>', 1, 'environment facts render as their own section'],
     ['Today: ', 1, 'local date appears once'],
-    ['Interactive questions use `yan question ask`', 1, 'question guidance appears once'],
+    ['Ask with `yan question ask`', 1, 'question guidance appears once'],
     ['Before substantive tool work, say in one short line', 1, 'progress guidance appears once'],
+    ['<inkstone_work>', 1, 'work section renders once'],
+    ['<inkstone_report>', 1, 'report section renders once'],
+    ['*single asterisks*', 1, 'report explains the light supporting-detail layer once'],
+    ['short plain prose', 0, 'old prose-only answer format is gone'],
+    ['<inkstone_progress>', 0, 'old progress section name is gone'],
     ['\n- Once the requested change is made and the relevant tests or checks pass, stop and report;', 0, 'no finish rule is added'],
     ['\n- When exploring code, read whole files or large ranges', 1, 'work rules are added to pi rules once'],
     ['<docs>', 0, 'pi docs section is dropped entirely, not just compacted'],
     ['Main documentation', 0, 'docs block content is not sent either']
   ]
   for (const [needle, expected, label] of expectations) equal(count(second, needle), expected, label)
+  const order = ['<inkstone_work>', '<inkstone_question>', '<inkstone_report>', '<inkstone_capabilities>', '<inkstone_environment>'].map(tag => second.indexOf(tag))
+  equal(order.every((position, i) => position >= 0 && (i === 0 || position > order[i - 1])), true, 'Inkstone sections follow work → question → report → capabilities → environment')
   equal(first, second, 'system prompt is identical across turns')
   console.log(`system-prompt-sections: ${checks} checks passed (actual pi, loopback model, no external credentials)`)
 } finally {

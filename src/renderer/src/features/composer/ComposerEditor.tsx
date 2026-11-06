@@ -55,6 +55,7 @@ interface ComposerEditorProps {
   value: string
   cursor: number | null
   placeholder: string
+  suggestion?: boolean
   ariaLabel: string
   expanded: boolean
   chipContext?: ComposerDocumentOptions
@@ -404,6 +405,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       data-testid={props['data-testid']}
       data-placeholder={props.placeholder}
       data-placeholder-visible={props.value === '' || props.value === '!' ? 'true' : 'false'}
+      data-suggestion={props.suggestion ? 'true' : undefined}
       data-empty="true"
       spellCheck={false}
       contentEditable

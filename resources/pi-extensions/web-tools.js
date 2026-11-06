@@ -1,6 +1,5 @@
 import { callHostTool, toolText } from './host-tool-call.js'
 
-const SOURCE_IDS = ['ddg', 'deepseek', 'tavily', 'brave', 'wikipedia', 'arxiv', 'hackernews']
 const take = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : ''
 const snippet = (value) => typeof value === 'string' ? value.length > 240 ? `${value.slice(0, 239)}…` : value : ''
 const rootOf = (data) => data?.data ?? data ?? {}
@@ -68,25 +67,16 @@ export function createWebTools(call = callHostTool) {
   return [
     {
       name: 'web_search', label: 'Web search',
-      description: 'Search public web pages. Returns candidate links, snippets, dates and source states. Configured paid sources may charge. Use web_fetch for original text. Identical requests cache for 10 minutes; refresh bypasses it.',
+      description: 'Search public web pages. Returns candidate links, snippets, dates and source states; use web_fetch for original text. Configured paid sources may charge. Identical requests are cached for 10 minutes.',
       parameters: {
         type: 'object',
         properties: {
           query: { type: 'string', maxLength: 200 },
           queries: { type: 'array', items: { type: 'string', maxLength: 200 }, maxItems: 5, description: 'Batch alternative queries instead of query.' },
-          question: { type: 'string', description: 'Original question, when different from the query.' },
           recent: { type: 'string', enum: ['day', 'week', 'month', 'year'] },
           site: { type: 'string', description: 'Required domains, comma-separated, at most 5.' },
-          excludeSites: { type: 'array', items: { type: 'string' }, maxItems: 5 },
           language: { type: 'string', description: 'Search language code, e.g. en or zh; best effort.' },
-          country: { type: 'string', description: 'Country code, e.g. AU; best effort, unrelated to answer language.' },
-          after: { type: 'string', description: 'Publication date lower bound YYYY-MM-DD; best effort.' },
-          before: { type: 'string', description: 'Publication date upper bound YYYY-MM-DD; best effort.' },
-          sources: { type: 'array', items: { type: 'string', enum: SOURCE_IDS }, maxItems: 7 },
-          coverage: { type: 'string', enum: ['fast', 'broad'], description: 'fast uses normal fallback; broad queries all configured sources, which may cost more.' },
-          limit: { type: 'integer', minimum: 1, maximum: 20 },
-          withContent: { type: 'boolean' },
-          refresh: { type: 'boolean' }
+          limit: { type: 'integer', minimum: 1, maximum: 20 }
         }
       },
       async execute(id, params, signal, _update, ctx) {

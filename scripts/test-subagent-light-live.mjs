@@ -48,7 +48,7 @@ try {
  assert.equal(finished.parentSessionId,'parent-session');assert.equal(finished.parentRunId,'parent-run')
  assert.equal(await readFile(join(cwd,'result.txt'),'utf8'),'LOCAL-CHILD-RESULT')
  assert(JSON.stringify(finished.transcript).includes('Child completed'));assert.equal(finished.isolation,'shared-cwd')
- assert.equal(approvals,1,'child danger guard reached its own approval server');assert(JSON.stringify(requests[2]).includes('拒绝'),'denied tool result returns to child');assert.equal(requests.length,3);assert(requests.every(r=>r.model==='child'))
+ assert.equal(approvals,1,'child danger guard reached its own approval server');assert(JSON.stringify(requests[2]).includes('The user declined this operation'),'denied tool result returns to child');assert.equal(requests.length,3);assert(requests.every(r=>r.model==='child'))
  await ctrl.stopAll();assert.equal(await readFile(join(cwd,'result.txt'),'utf8'),'LOCAL-CHILD-RESULT')
  console.log('PASS: actual pi RPC child uses explicitly selected model, writes in non-Git folder, returns transcript and parent identity, closes and preserves output; dangerous tool reaches child approval and is denied; three loopback requests, no account')
 } finally {await ctrl?.stopAll();await new Promise(done=>server.close(done));await rm(root,{recursive:true,force:true})}

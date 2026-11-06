@@ -835,7 +835,7 @@ export interface AppSettings {
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
   subagentHistoryPrune?: boolean
-  wrapUpCard?: boolean
+  promptSuggestions?: boolean
   workspaceTiles?: boolean
   smoothText?: boolean
   usageCurrency?: import('./currency').UsageCurrencySettings

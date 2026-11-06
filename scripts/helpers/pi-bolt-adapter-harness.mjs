@@ -96,7 +96,7 @@ export function writeModelsJson(agentDir, port) {
 export const THIN_EXTENSION_FILES = [
   'codemode-policy.js',
   'question.js',
-  'wrap-up.js',
+  'prompt-suggestion.js',
   'shell-fallback.js',
   'response-detail.js',
   'preamble.js',

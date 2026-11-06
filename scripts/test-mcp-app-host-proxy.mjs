@@ -704,7 +704,7 @@ try {
     })
     process.env.YAN_CLI_URL = `http://127.0.0.1:${closedPort}/rpc`
     const failed = await readOnlyDef.execute('call-10', {}, undefined)
-    ok(failed?.isError === true && /调用失败|未获放行/.test(failed.content[0].text), '扩展：端点不可用明确失败，不降级')
+    ok(failed?.isError === true && /call failed|not allowed/.test(failed.content[0].text), '扩展：端点不可用明确失败，不降级')
     process.env.YAN_CLI_URL = `http://127.0.0.1:${hostServer.address().port}/rpc`
 
     const snapshotB = join(root, 'ext-b.json')

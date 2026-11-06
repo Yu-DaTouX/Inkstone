@@ -280,7 +280,9 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.keepAwakeWhileWorking = settings.keepAwakeWhileWorking === false ? false : undefined
   settings.keepAwakeOnBattery = settings.keepAwakeOnBattery === false ? false : undefined
   settings.visualAnswers = settings.visualAnswers === false ? false : undefined
-  settings.wrapUpCard = settings.wrapUpCard === false ? false : undefined
+  const legacyWrapUpOff = (settings as { wrapUpCard?: unknown }).wrapUpCard === false
+  settings.promptSuggestions = settings.promptSuggestions === false || (settings.promptSuggestions === undefined && legacyWrapUpOff) ? false : undefined
+  delete (settings as { wrapUpCard?: unknown }).wrapUpCard
   settings.asciiBackground = settings.asciiBackground === false ? false : undefined
   settings.autoCompactTokens = pickTokenStep(settings.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
   settings.fontUi = sanitizeFontUiPreset(settings.fontUi)
@@ -408,7 +410,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -480,7 +482,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if ('keepAwakeWhileWorking' in patch) next.keepAwakeWhileWorking = next.keepAwakeWhileWorking === false ? false : undefined
   if ('keepAwakeOnBattery' in patch) next.keepAwakeOnBattery = next.keepAwakeOnBattery === false ? false : undefined
   if ('visualAnswers' in patch) next.visualAnswers = next.visualAnswers === false ? false : undefined
-  if ('wrapUpCard' in patch) next.wrapUpCard = next.wrapUpCard === false ? false : undefined
+  if ('promptSuggestions' in patch) next.promptSuggestions = next.promptSuggestions === false ? false : undefined
   if ('autoCompactTokens' in patch) next.autoCompactTokens = pickTokenStep(next.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
   if ('fontUi' in patch) next.fontUi = sanitizeFontUiPreset(next.fontUi)
   if ('fontUiCustom' in patch) next.fontUiCustom = sanitizeFontName(next.fontUiCustom)

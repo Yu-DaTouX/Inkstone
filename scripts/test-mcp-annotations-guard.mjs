@@ -103,7 +103,7 @@ fakePi.getAllTools = getAllTools
 hit = await call('mcp__db__query', { prompt: 'x'.repeat(3000) })
 ok(hit.asked && JSON.parse(hit.request?.params?.detail ?? '{}').prompt?.length === 3000, 'MCP 参数完整展示，不截断到 2000 字')
 hit = await call('mcp__db__query', { prompt: 'x'.repeat(21000) })
-ok(!hit.asked && hit.result?.block === true && String(hit.result?.reason).includes('超过 20000 字'), '超过 2 万字的审批内容直接拒绝，不截断后让用户批准')
+ok(!hit.asked && hit.result?.block === true && String(hit.result?.reason).includes('over the 20000 limit'), '超过 2 万字的审批内容直接拒绝，不截断后让用户批准')
 
 hit = await call('mcp__ghost__self', {})
 ok(hit.asked, '显式破坏即使同时标了只读也要问')

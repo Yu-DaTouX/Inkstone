@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { flushSync } from 'react-dom'
 import { useI18n, useT } from '../../i18n'
 import { pendingSendsForView, useStore } from '../../state/store'
 import { ComposerFrame } from '../../t3/components/chat/ComposerFrame'
@@ -21,6 +22,7 @@ import { PlanCard } from './PlanCard'
 import { AskDock } from '../session/AskDock'
 import { useComposerQuestionTitle } from '../session/question-composer'
 import { usePastedTextAttach } from './use-pasted-text'
+import { PROMPT_SUGGESTION_STATUS_KEY, suggestionKeyAction, visibleSuggestion } from './prompt-suggestion'
 import { ComposerVoiceButton } from '../../t3/components/chat/ComposerVoiceButton'
 import { setComposerEditorHandle, useComposerMenuProps } from '../../t3/components/chat/composerEventScope'
 import { useAttachmentAdapter, useComposerDropTarget } from '../../t3/adapters/composer-attachments'
@@ -361,7 +363,23 @@ export function ComposerV3(): JSX.Element {
 
   const mode = composerMode(value)
   const answering = useComposerQuestionTitle()
-  const placeholder = mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false }))
+  const suggestionStatus = useStore((s) => s.statuses[PROMPT_SUGGESTION_STATUS_KEY])
+  const suggestionsEnabled = useStore((s) => s.settings?.promptSuggestions !== false)
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null)
+  useEffect(() => {
+    if (!suggestionStatus) setDismissedSuggestion(null)
+  }, [suggestionStatus])
+  const suggestion = visibleSuggestion({
+    suggestion: suggestionStatus,
+    dismissed: dismissedSuggestion,
+    enabled: suggestionsEnabled,
+    running: roundRunning,
+    answering: answering !== null,
+    value,
+    attachmentCount: attachments.count,
+    composing
+  })
+  const placeholder = suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
   const slashMode =
     completion.slashQuery !== null &&
     (completion.slashMatches.length > 0 || (completion.atQuery === null && completion.slashStatus !== 'idle'))
@@ -462,6 +480,17 @@ export function ComposerV3(): JSX.Element {
       })
     ) {
       event.preventDefault()
+      return
+    }
+    const suggestionAction = suggestion ? suggestionKeyAction(event, sendKey) : null
+    if (suggestion && suggestionAction) {
+      event.preventDefault()
+      if (suggestionAction === 'dismiss') setDismissedSuggestion(suggestion)
+      else if (suggestionAction === 'fill') setValue(suggestion)
+      else {
+        flushSync(() => setValue(suggestion))
+        void submitMessage('steer')
+      }
       return
     }
     const completionHandled = completion.handleKey(event)
@@ -567,6 +596,7 @@ export function ComposerV3(): JSX.Element {
           value={value}
           cursor={cursor}
           placeholder={placeholder}
+          suggestion={!!suggestion}
           ariaLabel={t('composer.inputLabel')}
           expanded={completion.open}
           chipContext={chipContext}

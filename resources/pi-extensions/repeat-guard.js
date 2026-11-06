@@ -1,7 +1,6 @@
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { appendReminder } from './request-reminder.js'
 
 function envInt(name, fallback) {
   const raw = Number(process.env[name])
@@ -117,28 +116,16 @@ export function isSubagentPollLoop(toolName, input) {
   return /\bsleep\s+\d|\bstart-sleep\b|\btimeout\s+\/t\b|\bping\s+-n\s+\d/i.test(command)
 }
 
-function remindText(toolName, run) {
-  return (
-    `Repeat guard: you have called \`${toolName}\` ${run} times in a row with **byte-identical arguments and results**.\n` +
-    'Running the same call again will very likely return the same result. Either\n' +
-    '(a) explain what you are still missing and change the arguments, or\n' +
-    '(b) if you are stuck because of a blocker, say so and stop.\n' +
-    `After ${BLOCK_AT} consecutive identical calls this guard will block the call.`
-  )
-}
-
 export default function repeatGuard(pi) {
   let lastKey = null
   let lastResultKey = null
   let streak = 0
-  let warned = false
 
   const reset = (reason) => {
     if (streak > 0) note('reset', { reason, run: streak })
     lastKey = null
     lastResultKey = null
     streak = 0
-    warned = false
   }
 
   const writeCounter = (toolName) => {
@@ -198,22 +185,11 @@ export default function repeatGuard(pi) {
     } else {
       if (streak > 0) note('reset', { reason: key === lastKey ? 'result_changed' : 'args_changed', run: streak })
       streak = 1
-      warned = false
     }
     lastKey = key
     lastResultKey = resKey
-    if (streak >= WARN_AT) note('repeat_detected', { tool: toolName, run: streak, warned })
+    if (streak >= WARN_AT) note('repeat_detected', { tool: toolName, run: streak })
     return editEscapeHint(event)
-  })
-
-  pi.on('before_provider_request', (event) => {
-    if (streak < WARN_AT || warned) return undefined
-    const toolName = String(lastKey ?? '').split('\n')[0] || 'the same tool'
-    const next = appendReminder(event?.payload, `<system-reminder>${remindText(toolName, streak)}</system-reminder>`)
-    if (!next) return undefined
-    warned = true
-    note('repeat_warn', { tool: toolName, run: streak })
-    return next
   })
 
   pi.on('message_end', (event) => {

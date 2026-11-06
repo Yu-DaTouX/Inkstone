@@ -46,7 +46,7 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
     window.__yanStore.setState(s => ({
       messages: [...window.__streamHistory, { id: 'stream-live-user', role: 'user', text: '继续输出', timestamp: now }, { id: 'stream-live', role: 'assistant', text: window.__streamExpected, timestamp: now + 1 }],
       session: { ...s.session, isStreaming: true, isAgentRunning: true }, runTail: null,
-      settings: { ...s.settings, workspaceTiles: false, wrapUpCard: false }
+      settings: { ...s.settings, workspaceTiles: false }
     }));
   })()`)
   await sleep(1100)
