@@ -93,6 +93,21 @@ try {
   await sleep(200)
   check(readBeforeRetry.length === 0, '重投前已被读过的结果不再重复通知')
 
+  const busyState = { running: true }
+  const busySent = []
+  const busy = createSubagentNotifier({
+    enabled: () => true, runningSiblings: () => 0,
+    find: () => ({ send: async (text) => { busySent.push(text); return { ok: true } }, getState: () => ({ isAgentRunning: busyState.running }) }),
+    store: { load: () => ({ 'sess-1': [finished('sub-eeee0001', { endedAt: 888 })] }), save: () => {} }
+  })
+  busy.retry()
+  await sleep(200)
+  check(busySent.length === 0, '父会话正忙时重投等它空闲')
+  busyState.running = false
+  busy.retry()
+  await sleep(200)
+  check(busySent.length === 1, '空闲后重投')
+
   console.log(`Subagent notice persistence: ${checks} passed`)
 } finally {
   await rm(work, { recursive: true, force: true })

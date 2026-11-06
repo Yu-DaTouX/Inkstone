@@ -51,7 +51,14 @@ try {
   }
   await assert.rejects(service.run('subagent.start', { task: 'x', isolation: 'worktre', fork: true }, context), { code: 'subagent_isolation_invalid' })
   assert.equal(starts.length, 3, '写错 isolation 时不启动子代理，也不退回共享目录')
-  console.log('Subagent isolation param: ok')
+  const finished = { id: 'sub-a1b2c3d4', status: 'done', task: 't', parentSessionId: 'p', isolation: 'shared-cwd', startedAt: 1, endedAt: 2, review: 'none', transcript: [{ id: 'm1', role: 'assistant', text: '最终结论全文' }], deliverables: [], toolCalls: 0 }
+  service.get = async () => ({ setContext() {}, get: () => finished, getFull: async () => finished })
+  const plain = await service.run('subagent.get', { id: finished.id }, context)
+  const withTranscript = await service.run('subagent.get', { id: finished.id, transcript: true }, context)
+  assert.equal(typeof plain.data.finalMessage, 'string')
+  assert.equal(withTranscript.data.finalMessage, plain.data.finalMessage, '带 transcript 时结果文件顶层也有 finalMessage（--final 才取得到）')
+  assert.ok(withTranscript.data.transcript.length === 1)
+  console.log('Subagent service params: ok')
 } finally {
   await rm(work, { recursive: true, force: true })
 }

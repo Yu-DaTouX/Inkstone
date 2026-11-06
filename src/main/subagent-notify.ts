@@ -274,7 +274,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
       for (const [key, held] of [...undelivered]) {
         if (pending.has(key)) continue
         const target = deps.find(held[held.length - 1])
-        if (!target || target.holdsNotices?.()) continue
+        if (!target || target.holdsNotices?.() || targetBusy(target)) continue
         undelivered.delete(key)
         const runs = takeUnread(held)
         if (runs.length === 0) {

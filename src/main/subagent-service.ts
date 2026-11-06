@@ -273,7 +273,7 @@ export class SubagentService {
       const compact = compactSubagentRun(run)
       const live = run.status === 'running' || run.status === 'starting'
       return {
-        data: withTranscript ? run : compact,
+        data: withTranscript ? { ...run, finalMessage: compact.finalMessage } : compact,
         summary: {
           kind: 'subagent',
           action: 'get',
