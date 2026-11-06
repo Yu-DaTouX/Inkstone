@@ -1968,6 +1968,7 @@ export interface YanBridge {
 
   attachments: {
     usage(): Promise<AttachmentUsage>
+    read(url: string): Promise<{ ok: boolean; data?: string; mimeType?: string }>
     prune(): Promise<AttachmentPruneResult>
   }
 

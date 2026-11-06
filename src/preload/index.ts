@@ -550,6 +550,7 @@ const api: YanBridge = {
 
   attachments: {
     usage: () => invoke<AttachmentUsage>('yan:attachments:usage'),
+    read: (url) => invoke<{ ok: boolean; data?: string; mimeType?: string }>('yan:attachments:read', url),
     prune: () => invoke<AttachmentPruneResult>('yan:attachments:prune')
   },
 

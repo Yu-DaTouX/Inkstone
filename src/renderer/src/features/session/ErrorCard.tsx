@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { useI18n } from '../../i18n'
-import { useStore } from '../../state/store'
+import { pushNotice, useStore } from '../../state/store'
 import { refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { blockedQuotaWindows } from '../../../../shared/quota-resume'
 import { EMPTY_MODEL_ERROR_NOTICE, modelErrorCause, modelErrorResetTime, type ModelErrorCause } from '../../../../shared/model-errors'
@@ -57,17 +57,13 @@ function isLatestTurn(sourceIds: readonly string[], messages: readonly { id: str
   return true
 }
 
-async function restoreImages(images: { data: string; mimeType: string; url?: string }[]): Promise<{ data: string; mimeType: string }[]> {
+async function restoreImages(images: { data: string; mimeType: string; url?: string }[]): Promise<{ data: string; mimeType: string }[] | null> {
   const out: { data: string; mimeType: string }[] = []
   for (const image of images) {
     if (image.data) { out.push({ data: image.data, mimeType: image.mimeType }); continue }
-    if (!image.url) continue
-    try {
-      const bytes = new Uint8Array(await (await fetch(image.url)).arrayBuffer())
-      let binary = ''
-      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-      out.push({ data: btoa(binary), mimeType: image.mimeType })
-    } catch { continue }
+    const read = image.url ? await window.yan.attachments.read(image.url).catch(() => null) : null
+    if (!read?.ok || !read.data) return null
+    out.push({ data: read.data, mimeType: read.mimeType ?? image.mimeType })
   }
   return out
 }
@@ -113,7 +109,13 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
       const prompt = promptForTurn(sourceIds, useStore.getState().messages)
       if (!prompt) return
       forgetToolExpansion(toolExpansionScopeOf(view.sessionId, view.sessionFile))
-      void restoreImages(prompt.images).then((images) => send(prompt.text, images.length ? images : undefined))
+      void restoreImages(prompt.images).then((images) => {
+        if (!images) {
+          useStore.setState((s) => ({ notices: pushNotice(s.notices, 'error', zh ? '原图读取失败，已取消重试' : 'Could not read the original images; retry cancelled') }))
+          return
+        }
+        return send(prompt.text, images.length ? images : undefined)
+      })
       return
     }
     if (action === 'model') {
