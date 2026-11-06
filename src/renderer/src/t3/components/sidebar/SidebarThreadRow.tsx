@@ -371,7 +371,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     <span
       aria-hidden
       className={cn(
-        "min-w-0 flex-1 truncate text-start text-sm transition-opacity motion-reduce:transition-none",
+        "min-w-0 flex-1 truncate text-start text-sm transition-[opacity,color] motion-reduce:transition-none",
         view.recede ? "font-normal" : "font-medium",
         variant !== "slim"
           ? cn(
