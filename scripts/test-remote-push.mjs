@@ -128,6 +128,9 @@ try {
   assert.equal((await host.remoteDeleteSession('missing')).status, 404, '删除不存在的会话返回 404')
   assert.equal((await host.remoteSwitchBranch('s-branch', 'main')).status, 409, '运行中的会话不能切换分支')
   assert.deepEqual((await host.remoteSearch('   ')).data, { hits: [] }, '空查询不搜索')
+  const found = await host.remoteSearch('  第一句话  ')
+  assert.ok(found.ok && found.data.hits.some((hit) => hit.sessionId === 's-branch' && hit.matches >= 1 && typeof hit.snippet === 'string' && !('path' in hit)), '远程搜索按会话内容命中，只回会话 id 与片段，不带文件路径')
+  assert.deepEqual((await host.remoteSearch('完全不存在的词语abcxyz')).data, { hits: [] }, '没有命中返回空列表')
   assert.equal(host.remoteSessionSummary({ id: 'p', title: 't', path: 'x', cwd: 'C:\a', pinned: true, archivedAt: 5, createdAt: 1, updatedAt: 2, messageCount: 0 }).pinned, true, '会话摘要带置顶标记')
   assert.equal(host.remoteSessionState({ ...state, pendingModelChange: { previousThinkingLevel: 'off' } }).pendingModelChange, true, '状态只带「有待生效的切换」标记')
 
