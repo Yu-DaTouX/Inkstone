@@ -101,7 +101,7 @@ const ZH: TerminalText = {
 }
 
 const EN: TerminalText = {
-  activateFirst: 'Activate this conversation to run the terminal.',
+  activateFirst: 'Activate this session to run the terminal.',
   starting: 'Starting terminal…',
   connecting: 'Connecting to terminal…',
   startFailed: 'Could not start the terminal. You can retry.',
