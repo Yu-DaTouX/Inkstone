@@ -307,7 +307,7 @@ function makeHookRuntime() {
     useEffect(fn, deps) {
       const c = rt.slot('effect')
       const prev = c.deps
-      const changed = !c.has || deps === undefined || deps.length !== prev.length || deps.some((d, i) => !Object.is(d, prev[i]))
+      const changed = !c.has || deps === undefined || prev === undefined || deps.length !== prev.length || deps.some((d, i) => !Object.is(d, prev[i]))
       if (changed) {
         c.deps = deps ? [...deps] : undefined
         c.has = true
