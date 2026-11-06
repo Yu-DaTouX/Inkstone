@@ -45,5 +45,8 @@ export async function callHostTool({ command, params, toolCallId, cwd, signal, e
   }
   const data = readResult(payload?.resultFile)
   if (!payload?.ok) return { ok: false, error: String(payload?.error ?? 'host error'), code: payload?.code, data }
+  if (data === undefined && typeof payload.resultFile === 'string' && payload.resultFile) {
+    return { ok: false, error: `the host finished the command but its result file could not be read (${payload.resultFile}); the operation may already have taken effect, so check its state before repeating it`, code: 'result_unreadable', summary: payload.summary ?? {} }
+  }
   return { ok: true, summary: payload.summary ?? {}, data }
 }
