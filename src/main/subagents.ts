@@ -34,6 +34,7 @@ import {
   collectDiff,
   prepareWorkspace,
   preserveIgnoredOutputs,
+  recoverWorktree,
   type PreparedWorkspace
 } from './subagent-isolation'
 
@@ -303,6 +304,7 @@ export class SubagentController {
   private launchGeneration = 0
   private pendingLaunches = new Set<Promise<void>>()
   private resuming = new Map<string, { cancelled: boolean }>()
+  private reviewing = new Set<string>()
   private activationSeq = 0
   private stoppingAll?: Promise<void>
   private opts: SubagentOptions
@@ -315,7 +317,37 @@ export class SubagentController {
 
   async loadHistory(): Promise<void> {
     await this.history.load()
+    await this.recoverInterruptedWorktrees()
     void this.pruneArchive()
+  }
+
+  private async recoverInterruptedWorktrees(): Promise<void> {
+    const archiveDir = this.opts.archiveDir ?? join(YAN_DIR, 'subagents')
+    for (const record of this.history.list()) {
+      const { run } = record
+      if (run.isolation !== 'worktree' || run.status !== 'error' || run.endReason !== 'exited' || (run.review ?? 'none') !== 'none' || run.diff?.patchPath || this.runs.has(run.id)) continue
+      try {
+        const workspace = record.resume?.workspace ?? await recoverWorktree(run.cwd, record.rootCwd)
+        if (!workspace?.worktreePath || !existsSync(workspace.worktreePath)) continue
+        const collected = await collectDiff(workspace, archiveDir, run.id)
+        const saved = await preserveIgnoredOutputs(workspace, archiveDir, run.id)
+        const kept = collected.summary.files > 0 && !collected.patchPath ? '补丁没能保存，已保留工作区' : !saved.ok ? '被忽略的产物没能另存，已保留工作区' : ''
+        const cleaned = kept ? { ok: false, errors: [] as string[] } : await removeWorkspace(workspace)
+        const changed = collected.summary.files > 0 && !!collected.patchPath
+        const note = changed ? '应用退出时子代理未完成；已把它的改动存成补丁，可以合并或放弃（原工作树已清理，不能原地续接，需要继续时重新派一个并附上它的结论）' : kept ? `应用退出时子代理未完成；${kept}：${workspace.worktreePath}` : '应用退出时子代理未完成，未自动恢复执行'
+        const next: SubagentRun = {
+          ...run,
+          review: changed && cleaned.ok ? 'archived' : changed ? 'pending' : 'none',
+          diff: collected.summary,
+          resultPath: collected.patchPath ?? (saved.ok && saved.path ? saved.path : workspace.worktreePath),
+          ...(saved.ok && saved.path ? { savedOutputsPath: saved.path } : {}),
+          error: [note, ...cleaned.errors].join(String.fromCharCode(10))
+        }
+        await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath })
+      } catch (error) {
+        console.warn('[subagent] 恢复中断的 worktree 子代理失败', run.id, error)
+      }
+    }
   }
 
   private async pruneArchive(): Promise<void> {
@@ -915,6 +947,7 @@ export class SubagentController {
   }
 
   private async resume(id: string, text: string, from: SubagentSendFrom): Promise<SubagentSendResult> {
+    if (this.reviewing.has(id)) return { ok: false, error: '这个子代理的改动正在合并或放弃，不能同时续接；处理完再发' }
     if (this.stoppingAll) return { ok: false, error: '子代理正在停止清理，请稍后重试' }
     if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: `同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它` }
     const ticket = { cancelled: false }
@@ -1305,7 +1338,26 @@ export class SubagentController {
     if (run.finalizing) { try { await run.finalizing } catch { } }
   }
 
-  async merge(id: string): Promise<{ ok: boolean; error?: string }> {
+  private async exclusiveReview(id: string, work: () => Promise<{ ok: boolean; error?: string }>): Promise<{ ok: boolean; error?: string }> {
+    if (this.resuming.has(id)) return { ok: false, error: '子代理正在续接，等它结束后再合并或放弃' }
+    if (this.reviewing.has(id)) return { ok: false, error: '这个子代理的改动正在合并或放弃，请稍候' }
+    this.reviewing.add(id)
+    try {
+      return await work()
+    } finally {
+      this.reviewing.delete(id)
+    }
+  }
+
+  merge(id: string): Promise<{ ok: boolean; error?: string }> {
+    return this.exclusiveReview(id, () => this.mergeOnce(id))
+  }
+
+  discard(id: string): Promise<{ ok: boolean; error?: string }> {
+    return this.exclusiveReview(id, () => this.discardOnce(id))
+  }
+
+  private async mergeOnce(id: string): Promise<{ ok: boolean; error?: string }> {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'merged')
     await this.awaitSettled(run)
@@ -1341,7 +1393,7 @@ export class SubagentController {
     }
   }
 
-  async discard(id: string): Promise<{ ok: boolean; error?: string }> {
+  private async discardOnce(id: string): Promise<{ ok: boolean; error?: string }> {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'discarded')
     await this.awaitSettled(run)
@@ -1837,6 +1889,7 @@ function resumeExtra(run: Run): { resume?: ResumeMeta } {
     meta.launchDigest = launchDigest(run.launch)
   }
   if (run.forkSource) meta.forkLaunch = persistableForkLaunch(run.forkSource)
+  if (run.isolation === 'worktree' && run.workspace.worktreePath) meta.workspace = run.workspace
   return Object.keys(meta).length ? { resume: meta } : {}
 }
 
