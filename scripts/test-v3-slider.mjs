@@ -137,7 +137,7 @@ async function main() {
   ok(!!descId && invalid.includes(`id="${descId}"`) && invalid.includes('>本机说明<'), '说明经 aria-describedby 指向真实 id')
 
   const ariaLabeled = render({ 'aria-label': 'Reasoning effort', defaultValue: 20 })
-  ok(attr(root(ariaLabeled), 'aria-label') === 'Reasoning effort', 'aria-label 透传到滑杆根')
+  ok(/<label[^>]*class="sr-only"[^>]*>Reasoning effort<\/label>/.test(ariaLabeled) && attr(root(ariaLabeled), 'aria-labelledby') !== undefined, 'aria-label 渲染成隐藏标签并由根 aria-labelledby 指向')
   ok(!ariaLabeled.includes('ui-field__label'), '只给 aria-label 时不渲染可见标签')
 
   const pct = render({ label: '占比', defaultValue: 0.4, minValue: 0, maxValue: 1, step: 0.01, formatOptions: { style: 'percent' }, showValue: true })
