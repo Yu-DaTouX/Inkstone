@@ -1179,7 +1179,6 @@ export class RemoteServer {
   }
 
   private async openEvents(req: IncomingMessage, res: ServerResponse, caller: Caller, sinceRaw: string | null): Promise<void> {
-    if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, pick('事件连接过多，请关闭其他连接后重试', 'Too many event connections. Close others and retry'))
     ;(res as ServerResponse & { yanDeviceId?: string }).yanDeviceId = caller.device?.id
     if (caller.device) {
       const mine = [...this.clients].filter((client) => (client as ServerResponse & { yanDeviceId?: string }).yanDeviceId === caller.device!.id)
@@ -1188,6 +1187,8 @@ export class RemoteServer {
         try { stale.end() } catch { }
       }
     }
+
+    if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, pick('事件连接过多，请关闭其他连接后重试', 'Too many event connections. Close others and retry'))
     this.clients.add(res)
     res.on('close', () => this.clients.delete(res))
     res.writeHead(200, {

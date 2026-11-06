@@ -34,4 +34,8 @@ const inside = await lib.asModelText(async () => {
 })
 assert.equal(inside, '中文')
 assert.equal(lib.pick('中文', 'English text'), 'English text')
+lib.pick('取消操作', 'Cancel it now')
+assert.equal(lib.toModelText('Cancel it now'), '取消操作')
+assert.equal(lib.toModelText('x Cancel it now y'), 'x Cancel it now y', '不做子串替换')
+assert.equal(lib.toModelText('a\nCancel it now'), 'a\n取消操作', '整行精确匹配')
 console.log('model-text ok')

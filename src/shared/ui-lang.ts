@@ -48,7 +48,7 @@ export function pick(zh: string, en: string): string {
 }
 
 export function toModelText(text: string): string {
-  let result = text
-  for (const [ui, zh] of [...translated].sort((a, b) => b[0].length - a[0].length)) if (result.includes(ui)) result = result.split(ui).join(zh)
-  return result
+  const whole = translated.get(text)
+  if (whole !== undefined) return whole
+  return text.split('\n').map((line) => translated.get(line) ?? line).join('\n')
 }
