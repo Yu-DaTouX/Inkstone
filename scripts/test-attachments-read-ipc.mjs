@@ -14,8 +14,8 @@ await mkdir(attachments, { recursive: true })
 const plugin = {
   name: 'files-ipc-fixtures',
   setup(api) {
-    api.onResolve({ filter: /^\.\.\/paths$/ }, () => ({ path: 'paths', namespace: 'fixture' }))
-    api.onResolve({ filter: /^\.\.?\// }, (args) => (args.kind === 'entry-point' ? undefined : { path: args.path, namespace: 'inert' }))
+    api.onResolve({ filter: /^\.\.?\/paths$/ }, () => ({ path: 'paths', namespace: 'fixture' }))
+    api.onResolve({ filter: /^\.\.?\// }, (args) => (args.kind === 'entry-point' || args.path === '../attachment-file' ? undefined : { path: args.path, namespace: 'inert' }))
     api.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: `exports.YAN_DIR = ${JSON.stringify(yanDir)}`, loader: 'js' }))
     api.onLoad({ filter: /.*/, namespace: 'inert' }, () => ({ contents: 'module.exports = new Proxy({}, { get: () => () => undefined })', loader: 'js' }))
   }
