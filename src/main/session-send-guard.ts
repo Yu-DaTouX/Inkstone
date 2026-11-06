@@ -23,7 +23,7 @@ export interface ExecuteAdmissionPort {
 }
 
 export const SAME_CWD_ADMISSION_ERROR =
-  '同一工作目录已有会话正在开始执行，本次不会同时放行。请等它跑完或停止它。'
+  '同一工作目录里另一个会话正在启动，本次先不放行，请稍候几秒再发送。'
 
 export const sameCwdAdmissionError = (): string =>
   pick(SAME_CWD_ADMISSION_ERROR, 'Another session in this working folder is starting. Wait for it to finish or stop it.')

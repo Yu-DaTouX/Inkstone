@@ -65,7 +65,7 @@ export default async function run({ cdp, box, check, report, sleep, log, newSess
         await waitFor(running, 20000, 20)
         await waitFor(`!(${running})`, 120000, 200)
       }
-      await sleep(11000)
+      await sleep(1500)
       await ev(`window.__yanStore.getState().send('FLOW 重载时仍在运行')`)
       await waitFor(running, 20000, 20)
       await sleep(3000)
