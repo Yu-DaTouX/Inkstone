@@ -211,6 +211,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     if (attempts >= MAX_DELIVERY_ATTEMPTS) {
       failedAttempts.delete(key)
       console.warn(`[subagent-notify] 连续投递失败 ${attempts} 次，放弃 ${runs.length} 条通知（父会话 ${key}）：${runIds(runs)}`)
+      persist()
       return
     }
     failedAttempts.set(key, attempts)
@@ -271,8 +272,9 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
         persist()
         return
       }
-      for (const [key, held] of [...undelivered]) {
-        if (pending.has(key)) continue
+      for (const key of [...undelivered.keys()]) {
+        const held = undelivered.get(key)
+        if (!held || pending.has(key)) continue
         const target = deps.find(held[held.length - 1])
         if (!target || target.holdsNotices?.() || targetBusy(target)) continue
         undelivered.delete(key)
