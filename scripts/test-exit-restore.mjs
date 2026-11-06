@@ -158,4 +158,4 @@ await check('磁盘上的快照不含消息正文', async () => {
 })
 
 process.stdout.write(`\n退出快照恢复：${report.pass} 通过 / ${report.fail} 失败\n`)
-if (report.fail) process.exitCode = 1
+if (report.fail || report.pass === 0) process.exitCode = 1

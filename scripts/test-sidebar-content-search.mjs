@@ -86,4 +86,4 @@ try {
 }
 
 process.stdout.write(`\n${report.pass} 通过，${report.fail} 失败\n`)
-if (report.fail) process.exit(1)
+if (report.fail || report.pass === 0) process.exit(1)

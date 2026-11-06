@@ -206,4 +206,4 @@ await check('id 含非法字符不阻断删除', async () => {
 })
 
 process.stdout.write(`\n会话删除清理：${report.pass} 通过 / ${report.fail} 失败\n`)
-if (report.fail) process.exitCode = 1
+if (report.fail || report.pass === 0) process.exitCode = 1

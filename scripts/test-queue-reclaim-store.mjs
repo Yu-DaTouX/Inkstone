@@ -213,4 +213,4 @@ console.log('\n## 空回填不打扰：没有排队内容不提示也不写状�
 }
 
 console.log(`\n${report.fail === 0 ? 'PASS' : 'FAIL'}: ${report.pass} passed, ${report.fail} failed`)
-if (report.fail > 0) process.exitCode = 1
+if (report.fail > 0 || report.pass === 0) process.exitCode = 1

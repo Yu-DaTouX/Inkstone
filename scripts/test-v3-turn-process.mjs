@@ -355,4 +355,4 @@ group('插话与排队：同一次运行内的分段')
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)
-if (fail > 0) process.exitCode = 1
+if (fail > 0 || pass === 0) process.exitCode = 1

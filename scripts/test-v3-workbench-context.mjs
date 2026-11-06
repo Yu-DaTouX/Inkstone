@@ -316,7 +316,7 @@ async function main() {
   }
 
   process.stdout.write(`\n================ 结果：${report.pass} 通过 / ${report.fail} 失败 ================\n`)
-  if (report.fail > 0) process.exitCode = 1
+  if (report.fail > 0 || report.pass === 0) process.exitCode = 1
 }
 
 main().catch((err) => {
