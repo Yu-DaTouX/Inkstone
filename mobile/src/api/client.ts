@@ -257,6 +257,10 @@ export class RemoteClient {
     await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/rename`, { name }, idempotencyKey())
   }
 
+  async stopSubagent(sessionId: string, runId: string): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/stop`, {}, idempotencyKey())
+  }
+
   async insight(sessionId: string): Promise<RemoteInsight> {
     return (await this.get<{ data: RemoteInsight }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/insight`)).data
   }

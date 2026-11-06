@@ -100,7 +100,7 @@ export function DetailPane({ detail, onOpenArtifact, background, inset = true }:
       })}
     </Section> : null}
     {detail.subagents.length ? <Section title="子代理" value={String(detail.subagents.length)}>
-      <SubagentCard runs={detail.subagents} plain />
+      <SubagentCard runs={detail.subagents} plain sessionId={detail.sessionId} />
     </Section> : null}
     {detail.artifacts.length ? <Section title="产物" value={String(detail.artifacts.length)}>
       {detail.artifacts.map((artifact) => <Pressable key={artifact.id} accessibilityRole="button" disabled={artifact.unavailable} onPress={() => onOpenArtifact(artifact)} style={[styles.row, { opacity: artifact.unavailable ? 0.5 : 1 }]}>

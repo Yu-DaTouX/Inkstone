@@ -56,6 +56,7 @@ export interface RemoteServerHandlers {
   models?(sessionId: string): Promise<RemoteOperationResult>
   subagents?(sessionId: string): Promise<RemoteOperationResult>
   insight?(sessionId: string): Promise<RemoteOperationResult>
+  stopSubagent?(sessionId: string, runId: string): Promise<RemoteOperationResult>
   image?(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult>
   command(command: RemoteCommand): Promise<RemoteOperationResult>
   questions?(): Promise<RemotePendingQuestion[]>
@@ -583,9 +584,10 @@ export class RemoteServer {
         ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : []),
         ...(this.options.handlers.transcribe ? ['voice-transcribe'] : []),
         ...(this.options.handlers.subagents ? ['subagents'] : []),
-        ...(this.options.handlers.insight ? ['insight'] : [])
+        ...(this.options.handlers.insight ? ['insight'] : []),
+        ...(this.options.handlers.stopSubagent ? ['subagent-stop'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight'])]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight', 'subagent-stop'])]
       const allowed = isPeer || isAgent ? [] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
@@ -731,6 +733,16 @@ export class RemoteServer {
       if (body.projectId !== undefined && !validText(body.projectId, 200)) return writeError(res, 400, '项目 id 无效')
       const projectId = typeof body.projectId === 'string' ? body.projectId : undefined
       await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'new', ...(projectId ? { projectId } : {}) }), `project:${projectId ?? ''}`)
+      return
+    }
+
+    if (req.method === 'POST' && parts.length === 7 && parts[2] === 'sessions' && parts[4] === 'subagents' && parts[6] === 'stop') {
+      const sessionId = decodeURIComponent(parts[3])
+      const runId = decodeURIComponent(parts[5])
+      if (!validSessionId(sessionId) || !/^sub-[a-zA-Z0-9-]{1,120}$/.test(runId)) return writeError(res, 400, '子代理标识无效')
+      const stop = this.options.handlers.stopSubagent
+      if (!stop) return writeError(res, 404, '请更新电脑端')
+      await this.idempotent(req, res, caller, false, () => stop(sessionId, runId), `subagent-stop:${sessionId}:${runId}`)
       return
     }
 

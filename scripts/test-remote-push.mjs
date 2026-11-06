@@ -114,6 +114,14 @@ try {
   assert.equal(many.files.length, 40, '更改文件条数有上限')
   assert.equal(many.truncated, true, '超出上限标记截断')
 
+  const stopped = []
+  const runs = [{ id: 'sub-1', parentSessionId: 's1', status: 'running' }, { id: 'sub-2', parentSessionId: 's1', status: 'done' }, { id: 'sub-3', parentSessionId: 's9', status: 'running' }]
+  const stopper = async (id) => { stopped.push(id); return { ok: true } }
+  assert.equal((await host.remoteStopSubagent('s1', 'sub-1', runs, stopper)).ok, true, '运行中的子代理可以停止')
+  assert.equal((await host.remoteStopSubagent('s1', 'sub-3', runs, stopper)).status, 404, '不能停止别的会话的子代理')
+  assert.equal((await host.remoteStopSubagent('s1', 'sub-2', runs, stopper)).status, 409, '已结束的子代理不再停止')
+  assert.deepEqual(stopped, ['sub-1'], '只停止了目标子代理')
+
   const summary = host.remoteSessionSummary({
     id: 's-branch',
     title: '分支会话',

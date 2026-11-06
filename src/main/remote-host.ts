@@ -228,6 +228,19 @@ export async function remoteInsight(sessionId: string): Promise<RemoteOperationR
   return { ok: true, data }
 }
 
+export async function remoteStopSubagent(
+  sessionId: string,
+  runId: string,
+  runs: readonly SubagentRun[],
+  stop: (id: string) => Promise<{ ok: boolean; error?: string; noop?: boolean }>
+): Promise<RemoteOperationResult> {
+  const run = runs.find((item) => item.id === runId && item.parentSessionId === sessionId)
+  if (!run) return { ok: false, status: 404, error: '找不到这个子代理' }
+  if (run.status !== 'starting' && run.status !== 'running') return { ok: false, status: 409, error: '这个子代理已经结束' }
+  const result = await stop(run.id)
+  return result.ok ? { ok: true, data: { id: run.id, status: 'cancelled' } } : { ok: false, status: 409, error: result.error ?? '停止失败' }
+}
+
 export function remotePushPayload(channel: string, payload: unknown): unknown {
   if (channel === 'stats') return remoteSessionStats(payload as SessionStats | null) ?? {}
   if (channel === 'subagent') {
