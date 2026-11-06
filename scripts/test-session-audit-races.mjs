@@ -26,13 +26,14 @@ const evaluate = (source, bindings) => {
   return new Function(...Object.keys(all), js)(...Object.values(all))
 }
 const deleteSource = await parse('src/main/session-delete.ts')
-let deleteCallback
+let deleteCallback, friendlyDelete
 function visit(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'friendlyDeleteError') friendlyDelete = node.getText(deleteSource)
   if (ts.isFunctionDeclaration(node) && node.name?.text === 'deleteSessionChain') deleteCallback = node.getText(deleteSource).replace('export ', '')
   ts.forEachChild(node, visit)
 }
 visit(deleteSource)
-assert.ok(deleteCallback)
+assert.ok(deleteCallback && friendlyDelete)
 function deletionFixture({ current, failAt, restoreFailures = [] } = {}) {
   const files = ['a', 'b', 'c'].map(name => resolve(output, `${name}.jsonl`))
   const calls = { stopped: [], deleted: [], restored: [], forgotten: 0, terminals: [] }
@@ -47,7 +48,8 @@ function deletionFixture({ current, failAt, restoreFailures = [] } = {}) {
       forget: async () => { calls.forgotten++ }
     }
   }
-  const run = evaluate(`return (${deleteCallback})`, {
+  const run = evaluate(`${friendlyDelete}
+return (${deleteCallback})`, {
     host, resolve,
     planHistoryRead: chain => chain.segments.map(segment => segment.sessionFile),
     sessionsToDelete: async path => [{ path }],
