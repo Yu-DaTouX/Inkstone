@@ -1,3 +1,4 @@
+import { AppState } from 'react-native'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { RemoteEventEnvelope, RemotePendingQuestion, RemoteInfo, RemoteModel } from '../../src/shared/remote-protocol'
 import { RemoteClient, RemoteEventStream, RemoteHttpError, type Connection, type RemoteProject, type SessionListItem, type StreamState } from './api/client'
@@ -216,8 +217,15 @@ export function RemoteProvider({
       }
     })
     events.start()
+    const resume = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return
+      events.wake()
+      debounce('status', () => void refreshStatus())
+      debounce('questions', () => void refreshQuestions())
+    })
     return () => {
       if (streamTimer) clearTimeout(streamTimer)
+      resume.remove()
       events.stop()
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
