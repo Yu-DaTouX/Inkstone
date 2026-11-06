@@ -10,6 +10,7 @@ import { useUiV3 } from './state/ui-v3'
 import { installAudioUnlock } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
 import { installFocusModality } from './lib/focusModality'
+import { installWindowResizing } from './lib/windowResizing'
 import { installHairline } from './lib/hairline'
 import { installDeepLinkNavigation } from './features/deeplink/navigation'
 import { installBrowserPreloadRecovery } from './lib/preload-recovery'
@@ -44,6 +45,8 @@ installBrowserPreloadRecovery()
 installMotionPreferenceReporter()
 
 installFocusModality()
+
+installWindowResizing()
 
 installHairline()
 

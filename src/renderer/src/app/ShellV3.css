@@ -36,6 +36,12 @@
     height: 100%;
   }
 
+  html[data-window-resizing] .t3-rp,
+  html[data-window-resizing] .t3-rp > [data-rp-surface],
+  html[data-window-resizing] .v3-chat {
+    transition: none !important;
+  }
+
   .v3-root[data-panel='maximized'] > .v3-main {
     visibility: hidden;
   }
