@@ -122,7 +122,7 @@ export const v3Dark = {
   "codeInlineBg": "rgba(255,255,255,.08)",
   "fg": "#F5F5F5",
   "fg2": "#A3A3A3",
-  "fg3": "#8F8F8F",
+  "fg3": "#9A9A9A",
   "fgCtl": "#E5E5E5",
   "line": "rgba(255,255,255,.1)",
   "line2": "rgba(255,255,255,.14)",
