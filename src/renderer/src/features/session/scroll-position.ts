@@ -6,8 +6,33 @@ export interface ScrollSnapshot {
   anchor: ReadingAnchor | null
 }
 
-const snapshots = new Map<string, ScrollSnapshot>()
+const STORAGE_KEY = 'yan.scroll-snapshots'
 const SNAPSHOT_LIMIT = 32
+
+function loadSnapshots(): Map<string, ScrollSnapshot> {
+  try {
+    const raw = typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(STORAGE_KEY)
+    const entries = raw ? (JSON.parse(raw) as [string, ScrollSnapshot][]) : []
+    return new Map(entries.slice(-SNAPSHOT_LIMIT))
+  } catch {
+    return new Map()
+  }
+}
+
+const snapshots = loadSnapshots()
+let persistTimer: ReturnType<typeof setTimeout> | undefined
+
+function persistSnapshots(): void {
+  if (persistTimer !== undefined) return
+  persistTimer = setTimeout(() => {
+    persistTimer = undefined
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...snapshots]))
+    } catch {
+      return
+    }
+  }, 300)
+}
 
 function scrollKey(identity: string): string {
   const key = identity.replace(/\\/g, '/')
@@ -28,6 +53,7 @@ export function saveScrollSnapshot(identity: string, snapshot: ScrollSnapshot): 
     if (oldest === undefined) break
     snapshots.delete(oldest)
   }
+  persistSnapshots()
 }
 
 export function domMetrics(el: HTMLElement): ScrollMetrics {
