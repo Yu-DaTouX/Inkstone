@@ -100,6 +100,10 @@ export async function applyQueueRewrite(
   const adopted = port.adoptCleared(cleared.steering, cleared.followUp)
   if (adopted && Array.isArray(adopted.steering) && Array.isArray(adopted.followUp)) {
     target = cloneQueue(planQueueRewrite(adopted, next))
+    const known = itemIds(original)
+    for (const kind of ['steering', 'followUp'] as const) {
+      for (const item of adopted[kind]) if (!known.has(item.id)) target[kind].push(item)
+    }
     backup = cloneQueue(adopted)
   }
   try {
