@@ -5,6 +5,11 @@
     animation-timing-function: var(--ease);
   }
 
+  :root[data-split-layout-vt]::view-transition-old(root),
+  :root[data-split-layout-vt]::view-transition-new(root) {
+    animation-duration: calc(var(--dur-fast) * 1.5);
+  }
+
   .v3-split {
     flex: 1;
     min-height: 0;

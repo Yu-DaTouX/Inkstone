@@ -91,3 +91,14 @@ export function usePresence(open: boolean, { animate = true, exit = 'base' }: { 
   }, [state, exit])
   return { present: next !== 'closed', closing: next === 'closing', entering: open && entering }
 }
+
+const claimedStamps = new Set<string>()
+
+export function claimFreshArrival(scope: string, timestamp: number | undefined, maxAgeMs = 1500): boolean {
+  if (!timestamp) return false
+  const key = scope + ':' + timestamp
+  if (claimedStamps.has(key) || Date.now() - timestamp > maxAgeMs || !motionAllowed()) return false
+  claimedStamps.add(key)
+  if (claimedStamps.size > 128) claimedStamps.delete(claimedStamps.values().next().value as string)
+  return true
+}

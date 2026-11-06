@@ -113,6 +113,10 @@
   }
   .v3-msg.user { position: relative; align-items: flex-end; padding-top: 0; margin-bottom: 0; }
   .v3-msg.user::before { content: ''; position: absolute; inset-inline: 0; bottom: 100%; height: var(--s-6); }
+  .v3-stream-host[data-arrive='a'] > :is(.v3-stream) { animation: v3-stream-arrive-a var(--dur-quick) var(--ease) both; }
+  .v3-stream-host[data-arrive='b'] > :is(.v3-stream) { animation: v3-stream-arrive-b var(--dur-quick) var(--ease) both; }
+  @keyframes v3-stream-arrive-a { from { opacity: 0; } }
+  @keyframes v3-stream-arrive-b { from { opacity: 0; } }
   .v3-msg.user[data-fresh] .v3-user-body { animation: v3-user-in var(--dur-base) var(--ease-glide) both; }
   @keyframes v3-user-in { from { opacity: 0; translate: 0 var(--s-8); } }
   .v3-msg.user .v3-user-actions { position: relative; z-index: 1; margin-bottom: calc(-1 * var(--s-8)); }

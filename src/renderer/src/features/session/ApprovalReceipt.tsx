@@ -1,4 +1,5 @@
-import type { JSX } from 'react'
+import { useState, type JSX } from 'react'
+import { claimFreshArrival } from '../../ui/motion-hooks'
 import type { ApprovalChoice, ApprovalReceipt as ApprovalReceiptRecord } from '../../../../shared/approval'
 import { Card, CardHead, CardMeta, CardStatus, CardTime, CardTitle, type CardStatusTone } from '../../ui/Card'
 import { Icon } from './Icon'
@@ -39,8 +40,9 @@ export function ApprovalReceipt({ approval }: { approval: ApprovalReceiptRecord 
   const tt = useSessionText()
   const { lang } = useI18n()
   const status = RECEIPT_STATUS[approval.choice]
+  const [fresh] = useState(() => claimFreshArrival('approval', approval.at))
   return (
-    <Card receipt padding="none" className="v3-approval-receipt" data-choice={approval.choice} data-testid="v3-approval-receipt">
+    <Card receipt padding="none" className="v3-approval-receipt" data-fresh={fresh ? '' : undefined} data-choice={approval.choice} data-testid="v3-approval-receipt">
       <CardHead className="v3-approval-receipt-head">
         <CardStatus tone={status.tone} icon={<Icon name={status.icon} size={14} />}>{tt(status.key)}</CardStatus>
         {approval.title ? <CardTitle className="v3-approval-receipt-title">{localizeApprovalText(approval.title, lang)}</CardTitle> : null}
