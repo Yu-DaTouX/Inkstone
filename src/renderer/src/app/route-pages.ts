@@ -1,4 +1,5 @@
 import { preloadable } from '../lib/preloadable'
+import { prefetchUsageStats } from '../features/usage/UsageOverview'
 import { preloadPreviewPane, preloadTerminalPane } from '../features/workbench/panes'
 
 const usagePage = preloadable<Record<string, never>>(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
@@ -11,6 +12,7 @@ export const ArtifactLibraryPage = artifactLibraryPage.Component
 
 const IDLE_PRELOADS: ReadonlyArray<() => Promise<unknown>> = [
   usagePage.preload,
+  () => Promise.resolve(prefetchUsageStats()),
   preloadPreviewPane,
   preloadTerminalPane,
   artifactLibraryPage.preload,

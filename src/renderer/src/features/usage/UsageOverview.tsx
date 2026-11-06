@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { UsageRange } from '../../../../shared/usage-stats'
@@ -13,16 +13,34 @@ export function useMoney(): (usd: number, compact?: boolean) => string {
   return useCallback((usd: number, compact = false) => formatMoney(usd, currency, lang, compact), [currency, lang])
 }
 
+const usageMemory = new Map<UsageRange, UsageStatsResult>()
+const usageInflight = new Map<UsageRange, Promise<UsageStatsResult>>()
+
+function loadUsageStats(range: UsageRange): Promise<UsageStatsResult> {
+  const running = usageInflight.get(range)
+  if (running) return running
+  const next = window.yan
+    .usageStats(range)
+    .then((result) => {
+      usageMemory.set(range, result)
+      return result
+    })
+    .finally(() => usageInflight.delete(range))
+  usageInflight.set(range, next)
+  return next
+}
+
+export function prefetchUsageStats(): void {
+  void loadUsageStats('all').catch(() => undefined)
+}
+
 export function useUsageStats(range: UsageRange): UsageStatsResult | null {
-  const cache = useRef<Map<UsageRange, UsageStatsResult>>(new Map())
-  const [stats, setStats] = useState<UsageStatsResult | null>(null)
+  const [stats, setStats] = useState<UsageStatsResult | null>(() => usageMemory.get(range) ?? null)
   useEffect(() => {
     let alive = true
-    setStats(cache.current.get(range) ?? null)
-    window.yan
-      .usageStats(range)
+    setStats(usageMemory.get(range) ?? null)
+    loadUsageStats(range)
       .then((next) => {
-        cache.current.set(range, next)
         if (alive) setStats(next)
       })
       .catch(() => undefined)
