@@ -38,7 +38,7 @@ try {
   ok(!detail.includes('安装后的预检') && !detail.includes('Windows 用户'), '原生风险提示不再误报执行时点或限定 Windows')
   ok(/defaultId:\s*0/.test(authorization) && /cancelId:\s*0/.test(authorization), '原生授权默认和取消均选择拒绝')
   const buttons = authorization.slice(authorization.indexOf('const buttons ='), authorization.indexOf('const response ='))
-  ok((buttons.match(/\[\s*'拒绝'/g) ?? []).length === 3, '远程、已信任及未信任分支首项均为拒绝')
+  ok((buttons.match(/\[\s*pick\('拒绝', 'Deny'\)/g) ?? []).length === 3, '远程、已信任及未信任分支首项均为拒绝')
   ok(/if \(!win \|\| win\.isDestroyed\(\)\) return 'deny'/.test(authorization), '没有有效窗口时拒绝')
   ok(/const choice = response\.response === 2\s*\? 'allow-with-lifecycle-scripts'\s*: response\.response === 1\s*\? 'allow'\s*: 'deny'/.test(authorization), '只有明确允许按钮能够产生授权')
 
