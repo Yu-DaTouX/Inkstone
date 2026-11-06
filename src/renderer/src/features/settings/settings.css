@@ -84,6 +84,13 @@
     width: 100%;
     min-width: 0;
     max-width: var(--settings-col);
+    animation: settings-page-in var(--dur-quick) var(--ease) both;
+  }
+  @keyframes settings-page-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--s-4);
+    }
   }
 
   .settings-group > .ui-setting-rows,
