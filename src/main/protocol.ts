@@ -499,13 +499,12 @@ export class PiRpc extends EventEmitter {
       }
 
       timer = setTimeout(() => {
-        killPidTree(child.pid, () => {
+        void killPidTree(child.pid, () => {
           try {
             child.kill()
           } catch {
           }
-        })
-        finish()
+        }).finally(finish)
       }, 1500)
       timer.unref?.()
     })
