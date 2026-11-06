@@ -1,13 +1,18 @@
 export type UiLang = 'zh-CN' | 'en-US'
 
 let active: UiLang = 'zh-CN'
+let resolver: (() => UiLang | undefined) | null = null
+
+export function setLangResolver(next: (() => UiLang | undefined) | null): void {
+  resolver = next
+}
 
 export function setUiLang(lang: string | undefined): void {
   active = lang === 'en-US' ? 'en-US' : 'zh-CN'
 }
 
 export function uiLang(): UiLang {
-  return active
+  return resolver?.() ?? active
 }
 
 const COUNTED_NOUNS: Record<string, string> = {
@@ -29,5 +34,5 @@ export function singularizeOne(text: string): string {
 }
 
 export function pick(zh: string, en: string): string {
-  return active === 'en-US' ? singularizeOne(en) : zh
+  return uiLang() === 'en-US' ? singularizeOne(en) : zh
 }

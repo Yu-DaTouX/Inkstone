@@ -976,7 +976,7 @@ export class BrowserController {
       }
     }
     const tab = this.activeTab()
-    if (!tab) return { ok: false, error: pick('浏览器尚未打开', 'Browser is not open') }
+    if (!tab) return { ok: false, error: '浏览器尚未打开' }
     tab.registry.clear()
     const settled = this.navigationSettled(tab)
     tab.view.webContents.reload()
@@ -1467,7 +1467,7 @@ export class BrowserController {
 
   async observe(): Promise<BrowserObservation> {
     const p = this.parts()
-    if (!p) throw new Error(pick('浏览器尚未打开', 'Browser is not open'))
+    if (!p) throw new Error('浏览器尚未打开')
     if (!this.userControl) await p.input.showActivity(pick('读取页面', 'Reading page'))
     return this.observeTarget(p)
   }
@@ -1533,7 +1533,7 @@ export class BrowserController {
 
   async network(): Promise<BrowserNetworkSnapshot> {
     const p = this.parts()
-    if (!p) throw new Error(pick('浏览器尚未打开', 'Browser is not open'))
+    if (!p) throw new Error('浏览器尚未打开')
     await p.network.start()
     return p.network.snapshot()
   }
@@ -1575,7 +1575,7 @@ export class BrowserController {
     options: BrowserActionOptions = {}
   ): Promise<BrowserActionOutcome & { chosen?: SelectOutcome }> {
     const p = this.parts()
-    if (!p) return { ok: false, error: pick('浏览器尚未打开', 'Browser is not open') }
+    if (!p) return { ok: false, error: '浏览器尚未打开' }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
     const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
     const tabsBefore = new Set(this.tabs.keys())
@@ -1646,7 +1646,7 @@ export class BrowserController {
 
   async screenshot(): Promise<{ mimeType: string; data: Buffer }> {
     const p = this.parts()
-    if (!p) throw new Error(pick('浏览器尚未打开', 'Browser is not open'))
+    if (!p) throw new Error('浏览器尚未打开')
     const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
     if (tab) await this.layoutHiddenTab(tab, true)
     return { mimeType: 'image/png', data: await p.cdp.screenshot() }
