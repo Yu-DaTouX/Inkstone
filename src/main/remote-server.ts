@@ -181,7 +181,7 @@ export function validateRemoteImages(value: unknown): RemoteImageInput[] | null 
   return images
 }
 
-const PATH_LEAK_RE = /(?:[A-Za-z]:[\\/]|\\\\[^\s\\/]+[\\/]|(?<![\w.:/-])\/(?:home|Users|root|tmp|var|etc|opt|mnt|usr|private|Volumes|srv)\/)[^\r\n"'<>|*?，。；！？]*/g
+const PATH_LEAK_RE = /(?:(?<![A-Za-z0-9_])[A-Za-z]:[\\/]|\\\\[^\s\\/]+[\\/]|(?<![\w.:/-])\/(?:home|Users|root|tmp|var|etc|opt|mnt|usr|private|Volumes|srv)\/)[^\r\n"'<>|*?，。；！？]*/g
 
 export function scrubRemoteError(text: string): string {
   return text.replace(PATH_LEAK_RE, '…')
