@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { viteGlobShim } from './lib/vite-glob-shim.mjs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -252,6 +253,7 @@ async function runQuotaCardTests() {
       logLevel: 'silent',
       jsx: 'automatic',
       loader: { '.json': 'json', '.css': 'empty' },
+      plugins: [viteGlobShim()],
       external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', 'lucide-react']
     })
     const mod = await import(pathToFileURL(out).href)
