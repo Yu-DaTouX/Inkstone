@@ -7,11 +7,28 @@ import type { SessionSummary, SubagentRun } from '../../../../../shared/ipc'
 import { scopedKeyOf, type SidebarThreadView, type ThreadRef } from './types'
 import { buildSidebarSections, type SidebarSections } from './sections'
 
+let clockMounts = 0
+let clockNow = 0
+
+export function sidebarClockNow(): number {
+  return clockMounts > 0 && clockNow > 0 ? clockNow : Date.now()
+}
+
 export function useMinuteClock(): number {
-  const [now, setNow] = useState(() => Date.now())
+  const [now, setNow] = useState(() => {
+    clockNow = Date.now()
+    return clockNow
+  })
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 60_000)
-    return () => window.clearInterval(id)
+    clockMounts += 1
+    const id = window.setInterval(() => {
+      clockNow = Date.now()
+      setNow(clockNow)
+    }, 60_000)
+    return () => {
+      window.clearInterval(id)
+      clockMounts -= 1
+    }
   }, [])
   return now
 }

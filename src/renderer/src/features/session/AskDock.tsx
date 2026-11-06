@@ -1,6 +1,7 @@
 import { useMemo, type JSX } from 'react'
 import { useStore } from '../../state/store'
 import { Badge, Button } from '../../ui'
+import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { ComposerBanner } from '../../t3/components/chat/ComposerBanner'
 import { ApprovalCard } from './ApprovalCard'
@@ -84,7 +85,9 @@ export function AskPill({ kind, title }: { kind: 'answer' | 'approval'; title?: 
   const tt = useSessionText()
   return (
     <Button size="xs" variant="ghost" className="v3-ask-pill" data-kind={kind} data-testid="v3-ask-pill" onPress={focusAskDock}>
-      <Badge tone="ask">{kind === 'approval' ? tt('awaitApproval') : tt('awaitAnswer')}</Badge>
+      {kind === 'approval'
+        ? <Badge tone="ask" role="img" aria-label={tt('awaitApproval')} title={tt('awaitApproval')}><Icon name="shield" size={12} /></Badge>
+        : <Badge tone="ask">{tt('awaitAnswer')}</Badge>}
       {title ? <span className="v3-ask-pill-title">{title}</span> : null}
       <span aria-hidden="true">↓</span>
     </Button>

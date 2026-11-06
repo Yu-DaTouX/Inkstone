@@ -3,6 +3,7 @@ import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { isModalOpen } from '../../lib/modalLayer'
 import { formatCountdown } from '../../../../shared/ui-timeout'
+import { localizeApprovalText } from './approval-reason-text'
 import { approvalHeadline, type ApprovalAnswerIdentity, type ApprovalChoice, type ApprovalRequest } from '../../../../shared/approval'
 import { Button, Kbd } from '../../ui'
 import { Card, CardActions, CardBody, CardCode, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
@@ -229,8 +230,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const rememberLabel = current.kind === 'outside' ? t('approval.rememberDirs') : ''
   const waited = current.createdAt ? formatCountdown(Math.max(0, Date.now() - current.createdAt)) : ''
   const showSource = !isCurrent || !!current.subagentId
-  const headline = approvalHeadline(current)
-  const reasons = headline === current.title ? current.reasons : current.reasons.slice(1)
+  const lang = zh ? 'zh-CN' : 'en-US'
+  const headline = localizeApprovalText(approvalHeadline(current), lang)
+  const reasons = (approvalHeadline(current) === current.title ? current.reasons : current.reasons.slice(1)).map((reason) => localizeApprovalText(reason, lang))
   const clickOnly = (action: () => void) => (event: { pointerType?: string | null }): void => {
     if (!allowsPointerPress(event.pointerType)) return
     action()

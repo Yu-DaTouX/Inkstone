@@ -7,6 +7,7 @@ import { useStore } from '../../state/store'
 import { CommandSurfaceBody, CommandSurfaceHeader, CommandSurfacePanel, ListRow } from '../../ui'
 import { heldModifiersReleased, initialSwitcherIndex, stepSwitcherIndex, switcherSessions } from './session-switcher-model'
 import { compactAgo, sessionActivityAt } from '../sidebar/sidebar-model'
+import { sidebarClockNow } from '../../t3/adapters/sidebar'
 import './session-switcher.css'
 
 interface SwitcherState {
@@ -120,7 +121,7 @@ export function SessionSwitcher({ control }: { control: SessionSwitcherControl }
   const manualTitles = useStore((s) => s.manualTitles)
   const state = control.state
   if (!state) return null
-  const now = Date.now()
+  const now = sidebarClockNow()
   const currentPath = currentViewPath()
   const label = lang === 'en-US' ? 'Switch session' : '切换会话'
   return (

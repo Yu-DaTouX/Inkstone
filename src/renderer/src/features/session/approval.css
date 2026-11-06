@@ -10,6 +10,7 @@
     animation: v3-ask-in var(--dur-snap) var(--ease) both;
   }
   .v3-approval > :is(.ui-card__head, .ui-card__actions) { flex: none; }
+  .v3-approval-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
   .v3-approval[data-inline] { margin: var(--s-2) 0 var(--s-6); }
   .v3-approval-wait { display: inline-flex; align-items: center; gap: var(--s-4); }
   .v3-approval-body { display: flex; flex-direction: column; gap: var(--s-8); flex: 0 1 auto; min-height: 0; overflow: auto; padding: var(--s-6); margin: calc(var(--s-10) - var(--s-6)) calc(-1 * var(--s-6)) calc(-1 * var(--s-6)); }
