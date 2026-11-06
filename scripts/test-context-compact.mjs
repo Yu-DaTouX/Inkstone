@@ -429,8 +429,9 @@ for (const [label, opts, expected] of [
   const mid = mod.appendixBudgets({ window: 128_000, summaryTokens: 8_000, keptTokens: 20_000 })
   assert.deepEqual([mid.userTokens, mid.fileTokens], [20_000, 30_000], '128k 窗口仍放得下')
   const small = mod.appendixBudgets({ window: 48_000, summaryTokens: 6_000, keptTokens: 20_000 })
-  assert.ok(small.userTokens + small.fileTokens <= small.room, '小窗口附加内容总和不超过剩余空间')
-  assert.ok(small.userTokens + small.fileTokens < 50_000)
+  assert.deepEqual([small.userTokens, small.fileTokens], [4_000, 0], '小窗口优先保住用户原话，补回文件让位')
+  const edge = mod.appendixBudgets({ window: 64_000, summaryTokens: 6_000, keptTokens: 20_000 })
+  assert.ok(edge.userTokens + edge.fileTokens + 6_000 + 20_000 + 12_000 <= 64_000 * 0.9, '64k 窗口压完仍在 90% 以内')
   const tiny = mod.appendixBudgets({ window: 32_000, summaryTokens: 6_000, keptTokens: 20_000 })
   assert.deepEqual([tiny.room, tiny.userTokens, tiny.fileTokens], [0, 0, 0], '窗口装不下时不追加任何附加内容')
 

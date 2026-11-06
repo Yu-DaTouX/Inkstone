@@ -232,6 +232,8 @@ const REINJECT_FILE_TOKENS = 10_000
 const REINJECT_TOTAL_TOKENS = 30_000
 const MIN_APPENDIX_TOKENS = 500
 const POST_COMPACT_WINDOW_SHARE = 0.75
+const POST_COMPACT_HARD_SHARE = 0.9
+const USER_MESSAGES_FLOOR_TOKENS = 4_000
 const PROMPT_FIXED_TOKENS = 12_000
 const DEFAULT_KEEP_RECENT_TOKENS = 20_000
 
@@ -239,9 +241,11 @@ const DEFAULT_KEEP_RECENT_TOKENS = 20_000
 // 窗口 − 摘要 − 保留的近期消息 − 系统提示与工具定义，剩下的才分给附加内容
 export function appendixBudgets({ window, summaryTokens, keptTokens, fixedTokens = PROMPT_FIXED_TOKENS }) {
   const room = Math.max(0, Math.floor(window * POST_COMPACT_WINDOW_SHARE) - summaryTokens - keptTokens - fixedTokens)
-  const userTokens = Math.min(USER_MESSAGES_MAX_TOKENS, Math.floor(room / 2))
-  const fileTokens = Math.min(REINJECT_TOTAL_TOKENS, room - (userTokens >= MIN_APPENDIX_TOKENS ? userTokens : 0))
-  return { room, userTokens: userTokens >= MIN_APPENDIX_TOKENS ? userTokens : 0, fileTokens: fileTokens >= MIN_APPENDIX_TOKENS ? fileTokens : 0 }
+  const hard = Math.max(0, Math.floor(window * POST_COMPACT_HARD_SHARE) - summaryTokens - keptTokens - fixedTokens)
+  const userWanted = Math.min(USER_MESSAGES_MAX_TOKENS, Math.max(Math.floor(room / 2), Math.min(hard, USER_MESSAGES_FLOOR_TOKENS)))
+  const userTokens = userWanted >= MIN_APPENDIX_TOKENS ? userWanted : 0
+  const fileTokens = Math.min(REINJECT_TOTAL_TOKENS, room - userTokens)
+  return { room, userTokens, fileTokens: fileTokens >= MIN_APPENDIX_TOKENS ? fileTokens : 0 }
 }
 
 const FILE_TOOLS = new Set(['read', 'edit', 'write', 'multiedit'])
