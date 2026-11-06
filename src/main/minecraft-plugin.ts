@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createWriteStream, existsSync } from 'node:fs'
@@ -111,11 +112,11 @@ async function readMcp(agentDir: string): Promise<{ path: string; document: McpD
   try {
     parsed = JSON.parse(text)
   } catch {
-    throw new Error(`${path} 不是合法 JSON，未改动`)
+    throw new Error(pick(`${path} 不是合法 JSON，未改动`, `${path} is not valid JSON; left unchanged`))
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${path} 顶层必须是 JSON 对象，未改动`)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(pick(`${path} 顶层必须是 JSON 对象，未改动`, `${path} must be a JSON object at the top level; left unchanged`))
   const servers = (parsed as McpDocument).mcpServers
-  if (servers !== undefined && (!servers || typeof servers !== 'object' || Array.isArray(servers))) throw new Error(`${path} 里的 mcpServers 必须是对象，未改动`)
+  if (servers !== undefined && (!servers || typeof servers !== 'object' || Array.isArray(servers))) throw new Error(pick(`${path} 里的 mcpServers 必须是对象，未改动`, `mcpServers in ${path} must be an object; left unchanged`))
   return { path, document: parsed as McpDocument }
 }
 
@@ -175,25 +176,25 @@ function extractArchive(archive: string, into: string): Promise<void> {
       stderr = (stderr + chunk.toString()).slice(-2000)
     })
     child.on('error', fail)
-    child.on('exit', (code) => (code === 0 ? done() : fail(new Error(`解压失败（${code}）：${stderr.trim()}`))))
+    child.on('exit', (code) => (code === 0 ? done() : fail(new Error(pick(`解压失败（${code}）：${stderr.trim()}`, `Extraction failed (${code}): ${stderr.trim()}`)))))
   })
 }
 
 async function downloadArchive(request: FetchLike, url: string, target: string): Promise<void> {
   const response = await request(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT) })
-  if (!response.ok || !response.body) throw new Error(`下载插件失败：HTTP ${response.status}`)
+  if (!response.ok || !response.body) throw new Error(pick(`下载插件失败：HTTP ${response.status}`, `Plugin download failed: HTTP ${response.status}`))
   const declared = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declared) && declared > ARCHIVE_LIMIT) throw new Error(`插件包超过 ${Math.round(ARCHIVE_LIMIT / 1024 / 1024)} MB，已停止下载`)
+  if (Number.isFinite(declared) && declared > ARCHIVE_LIMIT) throw new Error(archiveTooLarge())
   let received = 0
   const counting = new TransformStream<Uint8Array, Uint8Array>({
     transform: (chunk, controller) => {
       received += chunk.byteLength
-      if (received > ARCHIVE_LIMIT) controller.error(new Error(`插件包超过 ${Math.round(ARCHIVE_LIMIT / 1024 / 1024)} MB，已停止下载`))
+      if (received > ARCHIVE_LIMIT) controller.error(new Error(archiveTooLarge()))
       else controller.enqueue(chunk)
     }
   })
   await pipeline(Readable.fromWeb(response.body.pipeThrough(counting) as import('node:stream/web').ReadableStream), createWriteStream(target))
-  if (!received) throw new Error('下载的插件包是空的')
+  if (!received) throw new Error(pick('下载的插件包是空的', 'The downloaded plugin package is empty'))
 }
 
 async function contentRoot(dir: string): Promise<string> {
@@ -211,11 +212,11 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths, deps: 
     const { path, document } = await readMcp(paths.agentDir)
     const current = document?.mcpServers?.[MINECRAFT_PLUGIN_ID]
     if (current !== undefined && !isOurs(current, paths.pluginDir)) {
-      return { ok: false, error: `${path} 里已有同名服务「${MINECRAFT_PLUGIN_ID}」，不是砚装的，未改动`, status: await minecraftPluginStatus(paths) }
+      return { ok: false, error: pick(`${path} 里已有同名服务「${MINECRAFT_PLUGIN_ID}」，不是砚装的，未改动`, `${path} already has a server named "${MINECRAFT_PLUGIN_ID}" not installed by Inkstone; left unchanged`), status: await minecraftPluginStatus(paths) }
     }
     const skillTarget = join(paths.skillsDir, MINECRAFT_SKILL)
     if (!(await skillIsOurs(paths))) {
-      return { ok: false, error: `${skillTarget} 里已有同名技能，不是砚装的，未改动`, status: await minecraftPluginStatus(paths) }
+      return { ok: false, error: pick(`${skillTarget} 里已有同名技能，不是砚装的，未改动`, `${skillTarget} already has a skill with the same name not installed by Inkstone; left unchanged`), status: await minecraftPluginStatus(paths) }
     }
     work = join(paths.tempDir, `minecraft-plugin-${randomBytes(4).toString('hex')}`)
     await mkdir(work, { recursive: true })
@@ -225,7 +226,7 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths, deps: 
     await mkdir(unpacked)
     await extractArchive(archive, unpacked)
     const source = await contentRoot(unpacked)
-    if (!existsSync(serverScript(source)) || !existsSync(join(source, 'package.json'))) throw new Error('下载的插件包里没有插件文件，未改动')
+    if (!existsSync(serverScript(source)) || !existsSync(join(source, 'package.json'))) throw new Error(pick('下载的插件包里没有插件文件，未改动', 'The downloaded package has no plugin files; left unchanged'))
     const staging = `${paths.pluginDir}.${randomBytes(4).toString('hex')}.new`
     try {
       for (const part of PLUGIN_PARTS) {
@@ -286,4 +287,9 @@ export async function removeMinecraftPlugin(paths: MinecraftPluginPaths): Promis
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error), status: await minecraftPluginStatus(paths) }
   }
+}
+
+function archiveTooLarge(): string {
+  const mb = Math.round(ARCHIVE_LIMIT / 1024 / 1024)
+  return pick(`插件包超过 ${mb} MB，已停止下载`, `Plugin package exceeds ${mb} MB; download stopped`)
 }

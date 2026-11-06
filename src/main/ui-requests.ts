@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import type { ExtensionUiRequest, MainPush } from '../shared/ipc'
 import { randomUUID } from 'node:crypto'
 import { CapabilityCommandError } from './capability-server'
@@ -150,7 +151,7 @@ export class UiRequests {
       return
     }
     if (method === 'setTitle') {
-      this.host.push({ ch: 'title', payload: String(req.title ?? '砚') })
+      this.host.push({ ch: 'title', payload: String(req.title ?? pick('砚', 'Inkstone')) })
       return
     }
     if (method === 'set_editor_text') {

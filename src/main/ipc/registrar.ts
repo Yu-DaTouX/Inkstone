@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { ipcMain } from 'electron'
 
 export interface IpcRegistrar {
@@ -7,7 +8,7 @@ export interface IpcRegistrar {
 
 export function createIpcRegistrar(isTrusted: (event: Electron.IpcMainInvokeEvent) => boolean): IpcRegistrar {
   const guard = (event: Electron.IpcMainInvokeEvent): void => {
-    if (!isTrusted(event)) throw new Error('拒绝来自非主窗口的 IPC 调用')
+    if (!isTrusted(event)) throw new Error(pick('拒绝来自非主窗口的 IPC 调用', 'IPC call from a non-main window was rejected'))
   }
   return {
     handle(channel, fn) {

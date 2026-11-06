@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { net } from 'electron'
 import { createHash } from 'node:crypto'
 import { customCommandCodeQuotaProviders, resolveQuotaProviderCredential } from './quota-credentials'
@@ -30,14 +31,14 @@ const KEY_PROVIDERS: Array<{ id: string; name: string }> = [
 
 async function getJson(url: string, init: RequestInit): Promise<unknown> {
   const res = await http(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) })
-  if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? `登录已失效（HTTP ${res.status}）` : `HTTP ${res.status}`)
+  if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? pick(`登录已失效（HTTP ${res.status}）`, `Sign-in expired (HTTP ${res.status})`) : `HTTP ${res.status}`)
   return res.json()
 }
 
 function friendly(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
-  if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) return '请求超时'
-  if (/fetch failed|ERR_|ENOTFOUND|ECONN/i.test(msg)) return `连不上服务器（${msg}）`
+  if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) return pick('请求超时', 'Request timed out')
+  if (/fetch failed|ERR_|ENOTFOUND|ECONN/i.test(msg)) return pick(`连不上服务器（${msg}）`, `Cannot reach the server (${msg})`)
   return msg
 }
 
@@ -59,8 +60,8 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
   return settle(base, async () => {
     if (!t.credential) {
       return t.problem === 'expired'
-        ? { status: 'expired', hint: '登录令牌已过期，下次对话时 pi 会自动刷新。' }
-        : { status: 'error', error: t.problem ?? '没有可用的登录凭证' }
+        ? { status: 'expired', hint: pick('登录令牌已过期，下次对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it on the next chat.') }
+        : { status: 'error', error: t.problem ?? pick('没有可用的登录凭证', 'No usable sign-in credentials') }
     }
     const [usage, resetCredits] = await Promise.all([
       fetchCodexUsage(t.credential.access, t.credential.accountId),
@@ -72,7 +73,7 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
 
 function yanClaudeCard(account: OAuthAccountTarget): Promise<AccountQuotaCard> {
   return settle({ key: account.key, source: 'yan', provider: 'anthropic', name: 'Claude', email: account.email, label: account.label, active: account.active, switchable: true }, async () => {
-    if (account.credential.expires <= Date.now()) return { status: 'expired', hint: '登录令牌已过期，切换后用 Claude 模型对话时 pi 会自动刷新。' }
+    if (account.credential.expires <= Date.now()) return { status: 'expired', hint: pick('登录令牌已过期，切换后用 Claude 模型对话时 pi 会自动刷新。', 'Sign-in token expired. pi refreshes it when you chat with a Claude model after switching.') }
     const usage = await claudeUsage(account.credential.access) as { cedar_ember?: unknown }
     const windows = claudeUsageWindows(usage)
     const resetCredits = claudeResetCredits(usage?.cedar_ember, Date.now())
@@ -84,8 +85,8 @@ function yanOpenRouterCard(account: OAuthAccountTarget): Promise<AccountQuotaCar
   return settle({ key: account.key, source: 'yan', provider: 'openrouter', name: 'OpenRouter', email: account.email, label: account.label, active: account.active, switchable: true }, async () => {
     const payload = await getJson('https://openrouter.ai/api/v1/credits', { headers: { Authorization: `Bearer ${account.credential.access}` } }) as { data?: { total_credits?: number; total_usage?: number } }
     const amount = Number(payload.data?.total_credits) - Number(payload.data?.total_usage)
-    if (!Number.isFinite(amount)) throw new Error('服务未返回余额')
-    return { balance: { label: '余额', amount: Math.max(0, amount), currency: 'USD' } }
+    if (!Number.isFinite(amount)) throw new Error(pick('服务未返回余额', 'The service returned no balance'))
+    return { balance: { label: pick('余额', 'Balance'), amount: Math.max(0, amount), currency: 'USD' } }
   })
 }
 
@@ -99,7 +100,7 @@ async function yanKeyCard(provider: { id: string; name: string; quotaProvider?: 
     const windows = q.windows ?? []
     const hasData = windows.length > 0 || q.remaining !== undefined
     if (q.error && !hasData) return { status: 'error', error: q.error }
-    const balance = !windows.length && q.remaining !== undefined ? { label: '余额', amount: q.remaining, currency: q.currency ?? 'USD' } : undefined
+    const balance = !windows.length && q.remaining !== undefined ? { label: pick('余额', 'Balance'), amount: q.remaining, currency: q.currency ?? 'USD' } : undefined
     return { windows, balance, status: limitedIf(windows) }
   })
 }
@@ -146,46 +147,46 @@ const CLAUDE_OUTCOMES: Record<string, ResetCreditOutcome> = { reset: 'reset', no
 
 async function consumeCodexCredit(key: string, creditId: string): Promise<ResetCreditResult> {
   const target = (await codexAccountTargets()).find((t) => t.key === key)
-  if (!target?.credential) return { ok: false, error: '账号登录已失效' }
+  if (!target?.credential) return { ok: false, error: pick('账号登录已失效', 'Account sign-in expired') }
   const { access, accountId } = target.credential
   const { status, json } = await postJson(`${CODEX_CREDIT_URL}/consume`, codexHeaders(access, accountId), {
     redeem_request_id: stableRequestId(`${accountId}:${creditId}`),
     credit_id: creditId
   })
-  if (status === 401 || status === 403) return { ok: false, error: `登录已失效（HTTP ${status}）` }
+  if (status === 401 || status === 403) return { ok: false, error: pick(`登录已失效（HTTP ${status}）`, `Sign-in expired (HTTP ${status})`) }
   const outcome = typeof json.code === 'string' ? CODEX_OUTCOMES[json.code] : undefined
   if (status < 200 || status >= 300 || !outcome) return { ok: false, error: `HTTP ${status}` }
   return { ok: true, outcome }
 }
 
 async function consumeClaudeCredit(key: string, grantId: string): Promise<ResetCreditResult> {
-  if (!/^[a-z0-9_-]{1,40}$/.test(grantId)) return { ok: false, error: '重置卡编号无效' }
+  if (!/^[a-z0-9_-]{1,40}$/.test(grantId)) return { ok: false, error: pick('重置卡编号无效', 'Invalid reset card id') }
   const account = (await oauthAccountTargets('anthropic')).find((a) => a.key === key)
-  if (!account) return { ok: false, error: '找不到该账号' }
-  if (account.credential.expires <= Date.now()) return { ok: false, error: '登录令牌已过期' }
+  if (!account) return { ok: false, error: pick('找不到该账号', 'Account not found') }
+  if (account.credential.expires <= Date.now()) return { ok: false, error: pick('登录令牌已过期', 'Sign-in token expired') }
   const headers = { Authorization: `Bearer ${account.credential.access}`, ...CLAUDE_HEADERS }
   const profile = await getJson(`${CLAUDE_API}/api/oauth/profile`, { headers }) as { organization?: { uuid?: unknown } }
   const organization = typeof profile.organization?.uuid === 'string' ? profile.organization.uuid : ''
-  if (!organization) return { ok: false, error: '读不到账号所属组织' }
+  if (!organization) return { ok: false, error: pick('读不到账号所属组织', 'Cannot read the account organization') }
   const { status, json } = await postJson(`${CLAUDE_API}/api/organizations/${encodeURIComponent(organization)}/reset_rate_limits`, headers, {
     program: 'cedar_ember',
     grant_id: grantId,
     request_id: stableRequestId(`${key}:${grantId}`)
   })
-  if (status === 401 || status === 403) return { ok: false, error: `登录已失效（HTTP ${status}）` }
-  if (status === 429) return { ok: false, error: '请求太频繁，稍后再试' }
+  if (status === 401 || status === 403) return { ok: false, error: pick(`登录已失效（HTTP ${status}）`, `Sign-in expired (HTTP ${status})`) }
+  if (status === 429) return { ok: false, error: pick('请求太频繁，稍后再试', 'Too many requests. Try again later') }
   if (status < 200 || status >= 300) return { ok: false, error: `HTTP ${status}` }
-  if (json.result === 'cooldown') return { ok: false, error: '重置冷却中，稍后再试' }
+  if (json.result === 'cooldown') return { ok: false, error: pick('重置冷却中，稍后再试', 'Reset is cooling down. Try again later') }
   const outcome = typeof json.result === 'string' ? CLAUDE_OUTCOMES[json.result] : undefined
-  return outcome ? { ok: true, outcome } : { ok: false, error: '未确认是否重置成功，稍后刷新查看' }
+  return outcome ? { ok: true, outcome } : { ok: false, error: pick('未确认是否重置成功，稍后刷新查看', 'Reset not confirmed. Refresh later to check') }
 }
 
 export async function consumeResetCredit(provider: string, key: string, creditId: string): Promise<ResetCreditResult> {
   try {
-    if (!creditId) return { ok: false, error: '没有可用的重置卡' }
+    if (!creditId) return { ok: false, error: pick('没有可用的重置卡', 'No reset card available') }
     const result = provider === 'openai-codex' ? await consumeCodexCredit(key, creditId)
       : provider === 'anthropic' ? await consumeClaudeCredit(key, creditId)
-        : { ok: false, error: '该账号不支持重置卡' }
+        : { ok: false, error: pick('该账号不支持重置卡', 'This account does not support reset cards') }
     if (result.ok) {
       invalidateAccountQuotaReport()
       lastGoodCards.clear()
@@ -245,5 +246,5 @@ async function withLastGood(card: AccountQuotaCard): Promise<AccountQuotaCard> {
   }
   const prior = lastGoodCards.get(lastGoodKey)
   if (card.status !== 'error' || !prior || card.checkedAt - prior.checkedAt > CARD_LAST_GOOD_MAX_AGE_MS) return card
-  return { ...prior, active: card.active, switchable: card.switchable, staleError: card.error || '读取失败' }
+  return { ...prior, active: card.active, switchable: card.switchable, staleError: card.error || pick('读取失败', 'Read failed') }
 }

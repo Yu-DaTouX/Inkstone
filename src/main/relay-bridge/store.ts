@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { createHash, randomUUID, type webcrypto } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, unlink, writeFile, copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -62,7 +63,7 @@ export class RelayBridgeStore {
         }
         return this.state
       }
-      throw new Error('中继配对存储格式无效')
+      throw new Error(pick('中继配对存储格式无效', 'Invalid relay pairing store format'))
     } catch (error) {
       const backup = `${this.file}.${Date.now()}.${randomUUID()}.corrupt`
       await copyFile(this.file, backup).catch(() => undefined)
@@ -121,17 +122,17 @@ export class RelayBridgeStore {
       void this.save().catch(() => undefined)
       return { ok: true, client: { ...known } }
     }
-    if (known && known.revokedAt !== null && !code) return { ok: false, reason: '这台设备已被撤销，请重新配对' }
-    if (!code) return { ok: false, reason: '需要配对：请在电脑上生成中继配对二维码' }
+    if (known && known.revokedAt !== null && !code) return { ok: false, reason: pick('这台设备已被撤销，请重新配对', 'This device was revoked. Pair again') }
+    if (!code) return { ok: false, reason: pick('需要配对：请在电脑上生成中继配对二维码', 'Pairing required: generate a relay pairing QR code on the computer') }
     const h = hash(code)
     const entry = this.codes.get(h)
-    if (!entry || entry.expiresAt <= this.now()) return { ok: false, reason: '配对码无效或已过期，请在电脑上重新生成' }
+    if (!entry || entry.expiresAt <= this.now()) return { ok: false, reason: pick('配对码无效或已过期，请在电脑上重新生成', 'Pairing code is invalid or expired. Generate a new one on the computer') }
     this.codes.delete(h)
-    if (state.clients.filter((c) => c.revokedAt === null).length >= MAX_CLIENTS) return { ok: false, reason: '已配对的设备太多，请先在电脑上移除不用的' }
+    if (state.clients.filter((c) => c.revokedAt === null).length >= MAX_CLIENTS) return { ok: false, reason: pick('已配对的设备太多，请先在电脑上移除不用的', 'Too many paired devices. Remove unused ones on the computer first') }
     const client: RelayClient = {
       id: `relay-${randomUUID()}`,
       key: clientKey,
-      name: (name || '未命名设备').replace(/[\u0000-\u001f]/g, '').slice(0, 60),
+      name: (name || pick('未命名设备', 'Unnamed device')).replace(/[\u0000-\u001f]/g, '').slice(0, 60),
       kind: entry.kind,
       addedAt: this.now(),
       lastSeenAt: this.now(),

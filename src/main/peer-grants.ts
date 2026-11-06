@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { randomUUID } from 'node:crypto'
 import {
   PEER_ACTIVATION_TIMEOUT_MS,
@@ -136,16 +137,16 @@ export class PeerGrantRegistry {
   check(connectionId: string | undefined, deviceId: string, operation: PeerOperation, projectId?: string): PeerCheck {
     const grant = connectionId ? this.grants.get(connectionId) : undefined
     if (!grant || grant.deviceId !== deviceId) {
-      return { ok: false, status: 401, code: 'peer_connection_required', error: '本次连接未获批准或已失效，请重新申请连接' }
+      return { ok: false, status: 401, code: 'peer_connection_required', error: pick('本次连接未获批准或已失效，请重新申请连接', 'This connection is not approved or has expired. Request again') }
     }
     if (grant.activatedAt === null) {
-      return { ok: false, status: 409, code: 'peer_connection_inactive', error: '连接尚未建立事件流' }
+      return { ok: false, status: 409, code: 'peer_connection_inactive', error: pick('连接尚未建立事件流', 'Connection has no event stream yet') }
     }
     if (!grant.operations.includes(operation)) {
-      return { ok: false, status: 403, code: 'peer_operation_denied', error: '这个操作不在本次连接的授权范围内，需要重新申请' }
+      return { ok: false, status: 403, code: 'peer_operation_denied', error: pick('这个操作不在本次连接的授权范围内，需要重新申请', 'This operation is outside the grant for this connection. Request again') }
     }
     if (projectId !== undefined && !grant.projects.some((project) => project.id === projectId)) {
-      return { ok: false, status: 403, code: 'peer_project_denied', error: '这个项目没有向本次连接开放' }
+      return { ok: false, status: 403, code: 'peer_project_denied', error: pick('这个项目没有向本次连接开放', 'This project is not shared with this connection') }
     }
     return { ok: true, grant }
   }

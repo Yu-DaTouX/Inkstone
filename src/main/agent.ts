@@ -1,4 +1,5 @@
-import { isRestoredReadonly, RESTORED_READONLY_MESSAGE } from './restored-readonly'
+import { pick } from '../shared/ui-lang'
+import { isRestoredReadonly, restoredReadonlyMessage } from './restored-readonly'
 import { EventEmitter } from 'node:events'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
@@ -404,13 +405,13 @@ function planQueueEditOp(state: QueueState, op: QueueEditOp): { next: QueueState
   if (op.op === 'clear') return { next: { steering: [], followUp: [] } }
   const steering = state.steering.findIndex((item) => item.id === op.id)
   const kind = steering >= 0 ? 'steering' : state.followUp.some((item) => item.id === op.id) ? 'followUp' : undefined
-  if (!kind) return { error: '这条排队消息已被接收或撤回' }
+  if (!kind) return { error: pick('这条排队消息已被接收或撤回', 'This queued message was already accepted or withdrawn') }
   const list = state[kind]
   const index = steering >= 0 ? steering : list.findIndex((item) => item.id === op.id)
   if (op.op === 'remove') return { next: { ...state, [kind]: list.filter((item) => item.id !== op.id) } }
   if (op.op === 'edit') {
     const text = op.text.trim()
-    if (!text) return { error: '消息内容为空' }
+    if (!text) return { error: pick('消息内容为空', 'Message is empty') }
     const items = [...list]
     items[index] = { ...items[index], text }
     return { next: { ...state, [kind]: items } }
@@ -994,7 +995,7 @@ export class AgentController extends EventEmitter {
     rpc.on('spawn-error', (err: Error) => {
       if (this.rpc !== rpc) return
       const raw = err instanceof Error ? err.message : String(err)
-      this.spawnFailure = raw.slice(0, 300) || '\u672a\u77e5\u542f\u52a8\u9519\u8bef'
+      this.spawnFailure = raw.slice(0, 300) || pick('未知启动错误', 'Unknown start error')
     })
 
     rpc.on('exit', (code) => {
@@ -1018,7 +1019,7 @@ export class AgentController extends EventEmitter {
         this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false }
         this.push({ ch: 'state', payload: this.state })
       }
-      this.setConn('exited', `pi 已退出（code=${code ?? 'null'}）`)
+      this.setConn('exited', pick(`pi 已退出（code=${code ?? 'null'}）`, `pi exited (code=${code ?? 'null'})`))
       this.nativeWitness = null
       this.nativeWitnessPending = null
       const runSink = this.runObserver
@@ -1050,7 +1051,7 @@ export class AgentController extends EventEmitter {
         ...(this.nativeConfigReader ? { readNativeConfig: this.nativeConfigReader } : {})
       })
       if (this.rpc !== rpc || this.stopping) {
-        return { ok: false, error: 'pi 启动在采集归属事实期间被取消' }
+        return { ok: false, error: pick('pi 启动在采集归属事实期间被取消', 'pi start was cancelled while collecting ownership facts') }
       }
       if (capture.ok) this.nativeWitnessPending = capture.witness ?? null
     }
@@ -1060,10 +1061,10 @@ export class AgentController extends EventEmitter {
     const ok = await this.waitReady(20_000, rpc)
     if (!ok) {
       const msg = this.spawnFailure
-        ? `\u65e0\u6cd5\u542f\u52a8 pi\uff1a${this.spawnFailure}\u3002\u53ef\u8dd1 npm run probe-pi \u6392\u67e5\u3002`
+        ? pick(`无法启动 pi：${this.spawnFailure}。可跑 npm run probe-pi 排查。`, `Cannot start pi: ${this.spawnFailure}. Run npm run probe-pi to investigate.`)
         : rpc.running
-          ? 'pi 启动超时（20s）。点「详情」看 stderr，或跑 npm run probe-pi。'
-          : 'pi \u542f\u52a8\u540e\u7acb\u5373\u9000\u51fa\u3002\u70b9\u300c\u8be6\u60c5\u300d\u770b stderr\uff0c\u6216\u8dd1 npm run probe-pi\u3002'
+          ? pick('pi 启动超时（20s）。点「详情」看 stderr，或跑 npm run probe-pi。', 'pi start timed out (20s). See stderr under Details, or run npm run probe-pi.')
+          : pick('pi 启动后立即退出。点「详情」看 stderr，或跑 npm run probe-pi。', 'pi exited right after starting. See stderr under Details, or run npm run probe-pi.')
       this.setConn('error', msg)
       return { ok: false, error: msg }
     }
@@ -1081,7 +1082,7 @@ export class AgentController extends EventEmitter {
       }
     }
     if (this.rpc !== rpc || this.stopping) {
-      return { ok: false, error: 'pi 启动在复核归属事实期间被取消' }
+      return { ok: false, error: pick('pi 启动在复核归属事实期间被取消', 'pi start was cancelled while rechecking ownership facts') }
     }
 
     void this.listThinkingLevels().catch(() => undefined)
@@ -1132,7 +1133,7 @@ export class AgentController extends EventEmitter {
     if (this.nativeBranchView) {
       const snapshot = await this.sessionEntries()
       if (outsideExpected()) return
-      if (!snapshot.ok) throw new Error(snapshot.error ?? '无法读取当前原生分支')
+      if (!snapshot.ok) throw new Error(snapshot.error ?? pick('无法读取当前原生分支', 'Cannot read the current native branch'))
       const path = nativeActiveBranch(snapshot.entries ?? [], snapshot.leafId ?? null)
       const messageEntries = path.flatMap(entry => {
         const message = entryMessage(entry)
@@ -1792,7 +1793,7 @@ export class AgentController extends EventEmitter {
       if (controller.signal.aborted) throw new CapabilityCommandError('image_cancelled', '已停止生图')
     }
 
-    publishProgress('queued', '已加入当前回合')
+    publishProgress('queued', pick('已加入当前回合', 'Added to the current turn'))
     try {
       const availability = await waitForImage(detectImageProviders(), controller.signal)
       checkCancelled()
@@ -1800,7 +1801,7 @@ export class AgentController extends EventEmitter {
       provider = resolved === 'unavailable' ? undefined : resolved
       model = typeof request.model === 'string' && request.model.trim() ? request.model.trim() : defaultImageModel(resolved, availability)
       if (resolved !== 'unavailable' && resolved !== 'codex' && resolved !== 'mock' && imageProviderNeedsConfirmation(resolved, availability)) {
-        publishProgress('confirming', '等待确认外部图像 API 请求')
+        publishProgress('confirming', pick('等待确认外部图像 API 请求', 'Waiting for approval of the external image API request'))
         const allowed = await waitForImage(Promise.resolve(this.confirmExternalApi?.({
           provider: resolved, endpoint: imageProviderEndpoint(resolved, availability), model, prompt, cwd
         })), controller.signal)
@@ -2048,7 +2049,7 @@ export class AgentController extends EventEmitter {
 
   async sessionSkillAction(action: 'promote' | 'remove', name: string): Promise<{ ok: boolean; error?: string }> {
     const sessionId = this.state?.sessionId
-    if (!sessionId) return { ok: false, error: '当前没有会话' }
+    if (!sessionId) return { ok: false, error: pick('当前没有会话', 'No active session') }
     try {
       if (action === 'remove') return { ok: await removeSessionSkill(YAN_DIR, sessionId, name) }
       await promoteSessionSkill(YAN_DIR, sessionId, name, this.bundledSkills.map((path) => basename(dirname(path))))
@@ -2066,7 +2067,7 @@ export class AgentController extends EventEmitter {
     }
     const manager = this.mcpConnectionManager()
     await this.closeRetiredMcpManagers()
-    if (!manager.listServerIds().includes(serverId)) throw new Error('当前 runner 没有这个 MCP 服务')
+    if (!manager.listServerIds().includes(serverId)) throw new Error(pick('当前 runner 没有这个 MCP 服务', 'This runner has no such MCP server'))
     const tools = await manager.listToolsCached(serverId, { refresh: true })
     return { status: manager.statusOf(serverId).status, toolCount: tools.length }
   }
@@ -2516,7 +2517,7 @@ export class AgentController extends EventEmitter {
               id: `loop-guard-${Date.now()}`,
               method: 'notify',
               notifyType: 'warning',
-              message: `已按流式防护终止本次生成（${this.loopGuardHit?.rule ?? 'stream-loop'}）。会话可继续，本次任务尚未完成。`
+              message: pick(`已按流式防护终止本次生成（${this.loopGuardHit?.rule ?? 'stream-loop'}）。会话可继续，本次任务尚未完成。`, `Generation stopped by stream guard (${this.loopGuardHit?.rule ?? 'stream-loop'}). The session can continue; this task is not finished.`)
             }
           })
           this.logStreamLoopGuard('settled', { rule: this.loopGuardHit?.rule, stream: this.loopGuardHit?.stream, outcome: 'aborted-stream' })
@@ -2705,7 +2706,7 @@ export class AgentController extends EventEmitter {
               id: `hydrate-${Date.now()}`,
               method: 'notify',
               notifyType: 'warning',
-              message: '压缩后刷新会话失败，请切一次会话或重新打开'
+              message: pick('压缩后刷新会话失败，请切一次会话或重新打开', 'Failed to refresh the session after compaction. Switch sessions or reopen it')
             }
           })
         })
@@ -2730,7 +2731,7 @@ export class AgentController extends EventEmitter {
       }
 
       case 'summarization_retry_scheduled': {
-        const what = this.compactionState.running ? '压缩' : '分支摘要'
+        const what = this.compactionState.running ? pick('压缩', 'Compaction') : pick('分支摘要', 'Branch summary')
         const seconds = Math.max(1, Math.round(Number(evt.delayMs ?? 0) / 1000))
         const reason = modelErrorText(evt.errorMessage)
         this.push({
@@ -2739,7 +2740,7 @@ export class AgentController extends EventEmitter {
             id: `summary-retry-${Date.now()}`,
             method: 'notify',
             notifyType: 'warning',
-            message: `${what}失败${reason ? `（${reason}）` : ''}，${seconds} 秒后第 ${Number(evt.attempt ?? 1)}/${Number(evt.maxAttempts ?? 1)} 次重试…`
+            message: pick(`${what}失败${reason ? `（${reason}）` : ''}，${seconds} 秒后第 ${Number(evt.attempt ?? 1)}/${Number(evt.maxAttempts ?? 1)} 次重试…`, `${what} failed${reason ? ` (${reason})` : ''}; retry ${Number(evt.attempt ?? 1)}/${Number(evt.maxAttempts ?? 1)} in ${seconds}s…`)
           }
         })
         break
@@ -2753,7 +2754,7 @@ export class AgentController extends EventEmitter {
               id: `retry-loop-guard-${Date.now()}`,
               method: 'notify',
               notifyType: 'warning',
-              message: '已按流式防护停止本次生成，不再自动重试。'
+              message: pick('已按流式防护停止本次生成，不再自动重试。', 'Generation stopped by stream guard; no further auto-retry.')
             }
           })
           void this.abortRetry()
@@ -2767,7 +2768,7 @@ export class AgentController extends EventEmitter {
               id: `retry-quota-${Date.now()}`,
               method: 'notify',
               notifyType: 'warning',
-              message: `模型额度已到限，已停止自动重试。${modelErrorNotice(retryError)}`
+              message: pick(`模型额度已到限，已停止自动重试。${modelErrorNotice(retryError)}`, `Model quota reached; auto-retry stopped. ${modelErrorNotice(retryError)}`)
             }
           })
           this.push({ ch: 'quota-wait', payload: {} } as unknown as MainPush)
@@ -2809,7 +2810,7 @@ export class AgentController extends EventEmitter {
             id: `ext-${Date.now()}`,
             method: 'notify',
             notifyType: 'error',
-            message: `扩展出错：${String(evt.error ?? evt.message ?? '未知')}`
+            message: pick(`扩展出错：${String(evt.error ?? evt.message ?? '未知')}`, `Extension error: ${String(evt.error ?? evt.message ?? 'unknown')}`)
           }
         })
         break
@@ -3033,8 +3034,8 @@ export class AgentController extends EventEmitter {
   }
 
   private claimExecutionAdmission(): { ok: true } | { ok: false; error: string } {
-    if (this.pendingAborts > 0) return { ok: false, error: '正在等待停止确认，请稍后执行' }
-    if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在保存或回退代码，请稍后执行' }
+    if (this.pendingAborts > 0) return { ok: false, error: pick('正在等待停止确认，请稍后执行', 'Waiting for stop confirmation. Try again shortly') }
+    if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在保存或回退代码，请稍后执行', 'The project is saving or reverting code. Try again shortly') }
     const port = this.capabilityOpts?.execution
     if (!port) return { ok: true }
     if (this.executionAdmissionToken !== undefined) return { ok: true }
@@ -3198,7 +3199,7 @@ export class AgentController extends EventEmitter {
         this.turn.terminal = 'interrupted'
         this.push({ ch: 'notify', payload: {
           id: `loop-guard-${Date.now()}`, method: 'notify', notifyType: 'warning',
-          message: `检测到模型输出重复（${hit.rule}），正在终止本次生成；会话可继续，本次任务尚未完成。`
+          message: pick(`检测到模型输出重复（${hit.rule}），正在终止本次生成；会话可继续，本次任务尚未完成。`, `Repeated model output detected (${hit.rule}); stopping this generation. The session can continue; this task is not finished.`)
         } })
         const response = await rpc.command('abort')
         if (!response.success) throw new Error(response.error || 'abort 失败')
@@ -3210,7 +3211,7 @@ export class AgentController extends EventEmitter {
       if (ownsRun()) {
         this.push({ ch: 'notify', payload: {
           id: `loop-guard-${Date.now()}`, method: 'notify', notifyType: 'error',
-          message: `检测到模型输出重复（${hit.rule}），但未能确认终止（${detail}）。请手动决定，不会自动续跑。`
+          message: pick(`检测到模型输出重复（${hit.rule}），但未能确认终止（${detail}）。请手动决定，不会自动续跑。`, `Repeated model output detected (${hit.rule}) but the stop was not confirmed (${detail}). Decide manually; it will not auto-continue.`)
         } })
         this.loopGuardAbortSent = false
         this.loopGuardContinuationVersion += 1
@@ -3245,7 +3246,7 @@ export class AgentController extends EventEmitter {
       if (this.loopGuardAutoContinueCount >= 1) {
         this.logStreamLoopGuard('auto-continue-limit', { sessionId: scope.sessionId, runId: scope.runId, outcome: 'not-resumed' })
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'warning',
-          message: '自动继续后再次检测到循环，已停止；同一任务最多自动续一次，请手动决定。' } })
+          message: pick('自动继续后再次检测到循环，已停止；同一任务最多自动续一次，请手动决定。', 'A loop was detected again after auto-continue and it stopped. A task auto-continues once at most; decide manually.') } })
         return false
       }
       const prompt = continuationPrompt('loop')
@@ -3253,7 +3254,7 @@ export class AgentController extends EventEmitter {
       if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
         this.logStreamLoopGuard('auto-continue-failed', { sessionId: scope.sessionId, runId: scope.runId, detail: result.error, outcome: 'not-resumed' })
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
-          message: `未能自动继续（${result.error ?? '发送失败'}），请手动决定。` } })
+          message: pick(`未能自动继续（${result.error ?? '发送失败'}），请手动决定。`, `Could not auto-continue (${result.error ?? 'send failed'}). Decide manually.`) } })
       }
       return result.ok
     } catch (error) {
@@ -3261,7 +3262,7 @@ export class AgentController extends EventEmitter {
       this.logStreamLoopGuard('auto-continue-failed', { sessionId: scope.sessionId, runId: scope.runId, detail, outcome: 'not-resumed' })
       if (this.canContinueAfterLoopGuard(scope)) {
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
-          message: `未能自动继续（${detail}），请手动决定。` } })
+          message: pick(`未能自动继续（${detail}），请手动决定。`, `Could not auto-continue (${detail}). Decide manually.`) } })
       }
       return false
     }
@@ -3275,13 +3276,13 @@ export class AgentController extends EventEmitter {
       const result = await this.send(prompt, undefined, undefined, scope)
       if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
         this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
-          message: `未能自动继续（${result.error ?? '发送失败'}），请手动决定。` } })
+          message: pick(`未能自动继续（${result.error ?? '发送失败'}），请手动决定。`, `Could not auto-continue (${result.error ?? 'send failed'}). Decide manually.`) } })
       }
       return result.ok
     } catch (error) {
       if (this.canContinueAfterLoopGuard(scope)) {
         this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
-          message: `未能自动继续（${error instanceof Error ? error.message : String(error)}），请手动决定。` } })
+          message: pick(`未能自动继续（${error instanceof Error ? error.message : String(error)}），请手动决定。`, `Could not auto-continue (${error instanceof Error ? error.message : String(error)}). Decide manually.`) } })
       }
       return false
     }
@@ -3387,7 +3388,7 @@ export class AgentController extends EventEmitter {
       this.push({ ch: 'queue-reclaimed', payload: { steering: saved.steering, followUp: saved.followUp, items, sessionId } })
     }
     if (saved.lostImages) {
-      this.push({ ch: 'notify', payload: { id: `queue-lost-images-${Date.now()}`, method: 'notify', notifyType: 'warning', message: `旧版本保存的排队消息里有 ${saved.lostImages} 张图片没能保存，需要重新添加。` } })
+      this.push({ ch: 'notify', payload: { id: `queue-lost-images-${Date.now()}`, method: 'notify', notifyType: 'warning', message: pick(`旧版本保存的排队消息里有 ${saved.lostImages} 张图片没能保存，需要重新添加。`, `${saved.lostImages} image(s) in queued messages saved by an older version could not be kept. Add them again.`) } })
     }
     await keepReclaimedQueue(sessionId).catch(() => undefined)
   }
@@ -3440,17 +3441,17 @@ export class AgentController extends EventEmitter {
   }
 
   private requireRpc(): PiRpc {
-    if (!this.rpc) throw new Error('pi 尚未就绪或已经停止')
-    if (this.queueScope && (this.queueScope.rpc !== this.rpc || this.queueScope.sessionId !== this.state?.sessionId || this.queueScope.generation !== this.capabilityOpts?.runnerGeneration)) throw new Error('会话已切换，队列操作已停止')
+    if (!this.rpc) throw new Error(pick('pi 尚未就绪或已经停止', 'pi is not ready or has stopped'))
+    if (this.queueScope && (this.queueScope.rpc !== this.rpc || this.queueScope.sessionId !== this.state?.sessionId || this.queueScope.generation !== this.capabilityOpts?.runnerGeneration)) throw new Error(pick('会话已切换，队列操作已停止', 'Session changed; queue operation stopped'))
     return this.rpc
   }
 
   private queueRun<T>(work: () => Promise<T>, allowLoopStop = false): Promise<T> {
     const owner = { rpc: this.rpc, sessionId: this.state?.sessionId, generation: this.capabilityOpts?.runnerGeneration }
     const guarded = async (): Promise<T> => {
-      if (!allowLoopStop && (this.loopGuardStopping || this.loopGuardAbortSent)) throw new Error('正在按流式防护终止生成，暂不接受队列修改')
-      if (owner.rpc !== this.rpc || owner.sessionId !== this.state?.sessionId || owner.generation !== this.capabilityOpts?.runnerGeneration) throw new Error('会话已切换，队列操作已停止')
-      if (!this.confirmExecutionAdmission()) throw new Error('同一工作目录的执行入场已失效，本次操作未开始')
+      if (!allowLoopStop && (this.loopGuardStopping || this.loopGuardAbortSent)) throw new Error(pick('正在按流式防护终止生成，暂不接受队列修改', 'Stream guard is stopping generation; queue changes are not accepted now'))
+      if (owner.rpc !== this.rpc || owner.sessionId !== this.state?.sessionId || owner.generation !== this.capabilityOpts?.runnerGeneration) throw new Error(pick('会话已切换，队列操作已停止', 'Session changed; queue operation stopped'))
+      if (!this.confirmExecutionAdmission()) throw new Error(pick('同一工作目录的执行入场已失效，本次操作未开始', 'Execution admission for this working folder expired; the action did not start'))
       this.queueBusy = true
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
@@ -3504,17 +3505,17 @@ export class AgentController extends EventEmitter {
         if (this.queueConsumed.has(item.id)) continue
         const res = await this.requireRpc().command(command, this.queuePayload(item))
         this.requireRpc()
-        if (!res.success) throw new Error(res.error || '恢复队列失败')
+        if (!res.success) throw new Error(res.error || pick('恢复队列失败', 'Failed to restore the queue'))
       }
     }
   }
 
   private async restoreQueue(raw: QueueState): Promise<string | undefined> {
-    if (!this.rpc) return 'pi 尚未就绪，无法恢复排队消息'
+    if (!this.rpc) return pick('pi 尚未就绪，无法恢复排队消息', 'pi is not ready; cannot restore queued messages')
     try {
       const cleared = await this.requireRpc().command('clear_queue')
       this.requireRpc()
-      if (!cleared.success) return cleared.error || '清空队列失败，无法恢复原顺序'
+      if (!cleared.success) return cleared.error || pick('清空队列失败，无法恢复原顺序', 'Failed to clear the queue; cannot restore the original order')
       this.consumedEmptyQueue = { steering: 0, followUp: 0 }
       const live = this.publishQueueItems(raw)
       await this.refillQueue(live.steering, live.followUp)
@@ -3540,7 +3541,7 @@ export class AgentController extends EventEmitter {
     autoContinue?: AutoContinueScope,
     expectGeneration?: number
   ): Promise<{ ok: boolean; error?: string }> {
-    if (isRestoredReadonly()) return { ok: false, error: RESTORED_READONLY_MESSAGE }
+    if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
     return this.withOperation('send', expectGeneration, () => this.sendClaimed(text, images, mode, autoContinue))
   }
 
@@ -3573,8 +3574,8 @@ export class AgentController extends EventEmitter {
       this.loopGuardContinuationVersion += 1
       this.loopGuardAutoContinueCount = 0
     }
-    if (text.trimStart().startsWith('/__inkstone_native')) return { ok: false, error: '原生内部命令只能通过桌面操作面板调用' }
-    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: '正在按流式防护终止本次生成，请稍候再发送' }
+    if (text.trimStart().startsWith('/__inkstone_native')) return { ok: false, error: pick('原生内部命令只能通过桌面操作面板调用', 'Native internal commands can only be run from the desktop action panel') }
+    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再发送', 'Stream guard is stopping generation. Try sending again shortly') }
     const payload: Record<string, unknown> = { message: text }
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
@@ -3582,9 +3583,9 @@ export class AgentController extends EventEmitter {
 
     return this.queueRun(async () => {
       if (autoContinue && (!(await this.readStreamLoopAutoContinue()) || !this.canContinueAfterLoopGuard(autoContinue) || this.loopGuardAutoContinueCount >= 1)) {
-        return { ok: false, error: '自动继续已取消或运行归属改变' }
+        return { ok: false, error: pick('自动继续已取消或运行归属改变', 'Auto-continue was cancelled or the run owner changed') }
       }
-      if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后发送' }
+      if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后发送', 'The project is reverting code. Try sending again shortly') }
       payload.streamingBehavior = mode ?? 'followUp'
       if (!autoContinue && this.deferredModelSwitch && !this.executionActive()) {
         await this.enqueueCapabilityChange(() => this.applyDeferredModelSwitch())
@@ -3592,22 +3593,22 @@ export class AgentController extends EventEmitter {
       const rpc = this.rpc
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
-      if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
+      if (!rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
       const titleOnSend = !autoContinue && !this.state?.sessionName && !this.messages.some((m) => m.role === 'user')
       if (autoContinue) {
         this.loopGuardAutoContinueCount += 1
         if (autoContinue.reason === 'model-error') {
           this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
-            message: '模型请求因暂时性错误中断且未自动重试，正在同一会话自动继续（1/1）。' } })
+            message: pick('模型请求因暂时性错误中断且未自动重试，正在同一会话自动继续（1/1）。', 'The model request was interrupted by a temporary error without auto-retry; continuing in the same session (1/1).') } })
         } else {
           this.logStreamLoopGuard('auto-continue-requested', { sessionId: autoContinue.sessionId, runId: autoContinue.runId, count: 1, limit: 1, outcome: 'sending' })
           this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
-            message: '已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。' } })
+            message: pick('已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。', 'Loop aborted safely; continuing in the same session (1/1). Withdrawn queued drafts will not run.') } })
         }
       }
       const res = await this.submitQueueCommand('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
-      if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，发送结果未应用到当前会话' }
+      if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，发送结果未应用到当前会话', 'Session changed; the send result was not applied to the current session') }
       if (titleOnSend) void this.maybeGenerateTitle({ prompt: { text, images } })
       await this.refreshState()
       return { ok: true }
@@ -3635,14 +3636,14 @@ export class AgentController extends EventEmitter {
   private async steerAdmitted(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
     this.loopGuardContinuationVersion += 1
     this.loopGuardAutoContinueCount = 0
-    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: '正在按流式防护终止本次生成，请稍候再插话' }
+    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再插话', 'Stream guard is stopping generation. Try interjecting again shortly') }
     return this.queueRun(async () => {
-      if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后插话' }
+      if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后插话', 'The project is reverting code. Try interjecting again shortly') }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
-      if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
+      if (!rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
       const res = await this.submitQueueCommand('steer', text, images, 'steering', this.queuePayload({ text, images }))
       if (!res.success) return { ok: false, error: res.error }
-      if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，插话结果未应用到当前会话' }
+      if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，插话结果未应用到当前会话', 'Session changed; the interjection was not applied to the current session') }
       await this.refreshState()
       return { ok: true }
     })
@@ -3669,14 +3670,14 @@ export class AgentController extends EventEmitter {
   private async followUpAdmitted(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
     this.loopGuardContinuationVersion += 1
     this.loopGuardAutoContinueCount = 0
-    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: '正在按流式防护终止本次生成，请稍候再排队' }
+    if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再排队', 'Stream guard is stopping generation. Try queueing again shortly') }
     return this.queueRun(async () => {
-      if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后排队' }
+      if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后排队', 'The project is reverting code. Try queueing again shortly') }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
-      if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
+      if (!rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
       const res = await this.submitQueueCommand('follow_up', text, images, 'followUp', this.queuePayload({ text, images }))
       if (!res.success) return { ok: false, error: res.error }
-      if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，排队结果未应用到当前会话' }
+      if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，排队结果未应用到当前会话', 'Session changed; the queued message was not applied to the current session') }
       await this.refreshState()
       return { ok: true }
     })
@@ -3693,7 +3694,7 @@ export class AgentController extends EventEmitter {
     const steering = restore('steering')
     const followUp = restore('followUp')
     if (steering.length === 0 && followUp.length === 0) return { ok: true }
-    if (!this.rpc?.running) return { ok: false, error: 'pi 尚未就绪，无法恢复排队消息' }
+    if (!this.rpc?.running) return { ok: false, error: pick('pi 尚未就绪，无法恢复排队消息', 'pi is not ready; cannot restore queued messages') }
     if (this.queueState.steering.length > 0 || this.queueState.followUp.length > 0) {
       const existing = {
         steering: this.queueState.steering.map((item) => item.text),
@@ -3702,7 +3703,7 @@ export class AgentController extends EventEmitter {
       if (JSON.stringify(existing) === JSON.stringify({ steering: snapshot.steering, followUp: snapshot.followUp }) &&
         (['steering', 'followUp'] as const).every(kind => this.queueState[kind].every((item, index) =>
           sameQueueImages(item.images, snapshot.items?.[kind][index]?.images)))) return { ok: true }
-      return { ok: false, error: '新实例已有不同的排队消息；为避免丢失或重复，拒绝覆盖' }
+      return { ok: false, error: pick('新实例已有不同的排队消息；为避免丢失或重复，拒绝覆盖', 'The new instance already has different queued messages; overwrite refused to avoid loss or duplication') }
     }
     try {
       return await this.queueRun(async () => {
@@ -3725,7 +3726,7 @@ export class AgentController extends EventEmitter {
 
   async rewriteQueue(next: QueueState): Promise<QueueRewriteResult> {
     return this.queueRun(async () => {
-      if (!this.rpc) return { ok: false, error: 'pi 尚未就绪', dropped: [...next.steering, ...next.followUp] }
+      if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready'), dropped: [...next.steering, ...next.followUp] }
       const original: QueueState = { steering: [...this.queueState.steering], followUp: [...this.queueState.followUp] }
       return applyQueueRewrite(this.queueRewritePort(), original, next)
     })
@@ -3733,7 +3734,7 @@ export class AgentController extends EventEmitter {
 
   async editQueue(op: QueueEditOp): Promise<QueueRewriteResult> {
     return this.queueRun(async () => {
-      if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+      if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
       const original: QueueState = { steering: [...this.queueState.steering], followUp: [...this.queueState.followUp] }
       const plan = planQueueEditOp(original, op)
       if ('error' in plan) return { ok: false, error: plan.error }
@@ -3756,9 +3757,9 @@ export class AgentController extends EventEmitter {
 
   private async editQueued(queueId: string, promote: boolean): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
     return this.queueRun(async () => {
-      if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+      if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
       const target = this.queueItemOf(queueId)
-      if (!target) return { ok: false, error: '这条排队消息已被接收或撤回' }
+      if (!target) return { ok: false, error: pick('这条排队消息已被接收或撤回', 'This queued message was already accepted or withdrawn') }
       try {
         const res = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
         this.requireRpc()
@@ -3768,8 +3769,8 @@ export class AgentController extends EventEmitter {
         if (!liveTarget) {
           const recovery = await this.restoreQueue(original)
           return { ok: false, error: recovery
-            ? `消息已被接收；恢复队列失败：${recovery}`
-            : '消息已被 pi 接收（已进入本轮对话），无法再操作' }
+            ? pick(`消息已被接收；恢复队列失败：${recovery}`, `Message was accepted; failed to restore the queue: ${recovery}`)
+            : pick('消息已被 pi 接收（已进入本轮对话），无法再操作', 'pi already accepted this message (now in the turn); it can no longer be changed') }
         }
         const restSteer = original.steering.filter(item => item.id !== queueId)
         const restFollow = original.followUp.filter(item => item.id !== queueId)
@@ -3783,8 +3784,8 @@ export class AgentController extends EventEmitter {
         } catch (error) {
           const recovery = await this.restoreQueue(original)
           return { ok: false, error: recovery
-            ? `队列操作失败，且恢复原队列失败：${recovery}`
-            : `队列操作失败，未消费内容已恢复：${error instanceof Error ? error.message : String(error)}` }
+            ? pick(`队列操作失败，且恢复原队列失败：${recovery}`, `Queue operation failed, and restoring the original queue failed: ${recovery}`)
+            : pick(`队列操作失败，未消费内容已恢复：${error instanceof Error ? error.message : String(error)}`, `Queue operation failed; unconsumed content restored: ${error instanceof Error ? error.message : String(error)}`) }
         }
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -3836,12 +3837,12 @@ export class AgentController extends EventEmitter {
       if (this.bash && rpc) {
         const result = await rpc.command('abort_bash')
         if (!current()) return { ...cleared, error: GENERATION_MISMATCH_ERROR }
-        if (!result.success) return { ...cleared, error: result.error ?? '命令停止尚未确认' }
+        if (!result.success) return { ...cleared, error: result.error ?? pick('命令停止尚未确认', 'Command stop not confirmed yet') }
       }
       if (!this.loopGuardAbortSent && rpc) {
         const result = await rpc.command('abort')
         if (!current()) return { ...cleared, error: GENERATION_MISMATCH_ERROR }
-        if (!result.success) return { ...cleared, error: result.error ?? '会话停止尚未确认' }
+        if (!result.success) return { ...cleared, error: result.error ?? pick('会话停止尚未确认', 'Session stop not confirmed yet') }
       }
     } catch (error) {
       return { ...cleared, error: error instanceof Error ? error.message : String(error) }
@@ -3933,10 +3934,10 @@ export class AgentController extends EventEmitter {
   }
 
   private async runBashAdmitted(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const cmd = command.trim()
-    if (!cmd) return { ok: false, error: '命令为空' }
-    if (this.bash) return { ok: false, error: '已有一条命令在跑' }
+    if (!cmd) return { ok: false, error: pick('命令为空', 'Command is empty') }
+    if (this.bash) return { ok: false, error: pick('已有一条命令在跑', 'A command is already running') }
 
     const reqId = `yan-bash-${randomUUID()}`
     const msgId = `bash-${reqId}`
@@ -3960,7 +3961,7 @@ export class AgentController extends EventEmitter {
       await snapshotReady
       if (this.bash?.reqId !== reqId) {
         await endTreeSnapshot(msgId)
-        return { ok: false, error: 'bash 请求已被停止或会话已切换' }
+        return { ok: false, error: pick('bash 请求已被停止或会话已切换', 'The bash request was stopped or the session changed') }
       }
       const payload: Record<string, unknown> = { command: cmd }
       if (options?.excludeFromContext !== undefined) payload.excludeFromContext = options.excludeFromContext
@@ -3976,7 +3977,7 @@ export class AgentController extends EventEmitter {
       if (b) this.bash = null
       if (!b) {
         await endTreeSnapshot(msgId)
-        return { ok: false, error: 'bash 请求已被停止或会话已切换' }
+        return { ok: false, error: pick('bash 请求已被停止或会话已切换', 'The bash request was stopped or the session changed') }
       }
 
       if (!res.success) {
@@ -3994,7 +3995,7 @@ export class AgentController extends EventEmitter {
       const err = e instanceof Error ? e.message : String(e)
       if (!b) {
         await endTreeSnapshot(msgId)
-        return { ok: false, error: 'bash 请求已被停止或会话已切换' }
+        return { ok: false, error: pick('bash 请求已被停止或会话已切换', 'The bash request was stopped or the session changed') }
       }
       await this.finishBash(msgId, cmd, b.output, null, true, err)
       return { ok: false, error: err }
@@ -4118,14 +4119,14 @@ export class AgentController extends EventEmitter {
   }
 
   async newSession(parentSession?: string): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const payload: Record<string, unknown> = typeof parentSession === 'string' && parentSession ? { parentSession } : {}
     return this.changeSessionScope(async (changed) => {
       try {
         const res = await this.requireRpc().command('new_session', payload)
         if (!res.success) return { ok: false, error: res.error }
         if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
-          return { ok: false, error: '会话切换被扩展取消' }
+          return { ok: false, error: pick('会话切换被扩展取消', 'Session switch was cancelled by an extension') }
         }
         changed()
         this.ui.cancelPending()
@@ -4139,12 +4140,12 @@ export class AgentController extends EventEmitter {
   }
 
   async switchSession(path: string): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     return this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command('switch_session', { sessionPath: path })
       if (!res.success) return { ok: false, error: res.error }
       if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
-        return { ok: false, error: '会话切换被扩展取消' }
+        return { ok: false, error: pick('会话切换被扩展取消', 'Session switch was cancelled by an extension') }
       }
       changed()
       this.ui.cancelPending()
@@ -4155,12 +4156,12 @@ export class AgentController extends EventEmitter {
   }
 
   async renameSession(name: string, sessionId?: string): Promise<{ ok: boolean; error?: string }> {
-    if (sessionId && this.state?.sessionId !== sessionId) return { ok: false, error: '要改名的会话已不是当前会话，请重新打开后再试' }
+    if (sessionId && this.state?.sessionId !== sessionId) return { ok: false, error: pick('要改名的会话已不是当前会话，请重新打开后再试', 'The session to rename is no longer current. Reopen it and try again') }
     const trimmed = name.trim()
     if (!trimmed) {
-      return { ok: false, error: '名字不能为空（pi 不支持清除会话名）' }
+      return { ok: false, error: pick('名字不能为空（pi 不支持清除会话名）', 'Name cannot be empty (pi cannot clear a session name)') }
     }
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const res = await this.rpc.command('set_session_name', { name: trimmed })
     if (res.success) await this.refreshState()
     return res.success ? { ok: true } : { ok: false, error: res.error }
@@ -4168,24 +4169,24 @@ export class AgentController extends EventEmitter {
 
   async regenerateTitle(): Promise<{ ok: boolean; title?: string; error?: string }> {
     const sessionId = this.state?.sessionId
-    if (!sessionId) return { ok: false, error: '当前还没有可重生成标题的会话' }
-    if (this.titleTried.has(sessionId)) return { ok: false, error: '标题正在生成，请稍候' }
+    if (!sessionId) return { ok: false, error: pick('当前还没有可重生成标题的会话', 'No session to regenerate a title for') }
+    if (this.titleTried.has(sessionId)) return { ok: false, error: pick('标题正在生成，请稍候', 'Title is being generated. Wait a moment') }
     this.titleTried.add(sessionId)
     try {
       const manual = await manualTitleOf(sessionId)
       const title = await this.maybeGenerateTitle({ force: true, candidate: !!manual, lockHeld: true, sessionId })
-      return title ? { ok: true, title } : { ok: false, error: '标题生成失败，已保留原标题' }
+      return title ? { ok: true, title } : { ok: false, error: pick('标题生成失败，已保留原标题', 'Title generation failed; kept the original title') }
     } finally {
       this.titleTried.delete(sessionId)
     }
   }
 
   async fork(entryId: string): Promise<{ ok: boolean; error?: string; text?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     return this.withOperation('fork', undefined, () => this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ text?: string; cancelled?: boolean }>('fork', { entryId })
       if (!res.success) return { ok: false, error: res.error }
-      if (res.data?.cancelled) return { ok: false, error: '分叉被扩展取消' }
+      if (res.data?.cancelled) return { ok: false, error: pick('分叉被扩展取消', 'Fork was cancelled by an extension') }
       changed()
       this.resetSessionScope()
       this.ui.cancelPending()
@@ -4195,11 +4196,11 @@ export class AgentController extends EventEmitter {
   }
 
   async clone(): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     return this.withOperation('fork', undefined, () => this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ cancelled?: boolean }>('clone')
       if (!res.success) return { ok: false, error: res.error }
-      if (res.data?.cancelled) return { ok: false, error: '复制被扩展取消' }
+      if (res.data?.cancelled) return { ok: false, error: pick('复制被扩展取消', 'Copy was cancelled by an extension') }
       changed()
       this.resetSessionScope()
       this.ui.cancelPending()
@@ -4220,7 +4221,7 @@ export class AgentController extends EventEmitter {
     leafId?: string | null
     error?: string
   }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const payload: Record<string, unknown> = typeof since === 'string' && since ? { since } : {}
     try {
       const res = await this.requireRpc().command<{
@@ -4240,7 +4241,7 @@ export class AgentController extends EventEmitter {
     leafId?: string | null
     error?: string
   }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     try {
       const res = await this.requireRpc().command<{
         tree?: Record<string, unknown>[]
@@ -4254,7 +4255,7 @@ export class AgentController extends EventEmitter {
   }
 
   async exportHtml(outputPath?: string): Promise<{ ok: boolean; path?: string; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const payload: Record<string, unknown> = typeof outputPath === 'string' && outputPath ? { outputPath } : {}
     try {
       const res = await this.rpc.command<{ path?: string }>('export_html', payload)
@@ -4267,7 +4268,7 @@ export class AgentController extends EventEmitter {
 
   async compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }> {
     this.loopGuardContinuationVersion += 1
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const trimmed = typeof customInstructions === 'string' ? customInstructions.trim() : ''
     const payload: Record<string, unknown> = trimmed ? { customInstructions: trimmed } : {}
     const admission = this.operations.acquire('compact', this.capabilityOpts?.runnerGeneration)
@@ -4293,14 +4294,14 @@ export class AgentController extends EventEmitter {
   async confirmNativeOperation(prompt: { title: string; message: string; acceptLabel: string }): Promise<boolean> {
     const response = await this.ui.requestHostUi({
       method: 'select', purpose: 'approval', sensitive: true, title: prompt.title, message: prompt.message,
-      options: [prompt.acceptLabel, '取消'], timeout: 180_000
+      options: [prompt.acceptLabel, pick('取消', 'Cancel')], timeout: 180_000
     })
     return !response.cancelled && response.value === prompt.acceptLabel
   }
 
   async nativeNavigate(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {
-    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
-    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
+    if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
+    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error(pick('当前会话尚未空闲', 'The session is not idle yet'))
     const admission = this.operations.acquire('rewind', this.capabilityOpts?.runnerGeneration)
     if (!admission.ok) throw new Error(admission.error)
     try {
@@ -4318,15 +4319,15 @@ export class AgentController extends EventEmitter {
   }
 
   async nativeSetLabel(entryId: string, label: string): Promise<{ ok: boolean; error?: string }> {
-    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
-    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
+    if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
+    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error(pick('当前会话尚未空闲', 'The session is not idle yet'))
     await this.nativeRuntime.setLabel(entryId, label)
     return { ok: true }
   }
 
   async nativeReload(): Promise<void> {
-    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
-    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
+    if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
+    if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error(pick('当前会话尚未空闲', 'The session is not idle yet'))
     const admission = this.operations.acquire('reload', this.capabilityOpts?.runnerGeneration)
     if (!admission.ok) throw new Error(admission.error)
     const rpc = this.rpc
@@ -4338,10 +4339,10 @@ export class AgentController extends EventEmitter {
         projectId: this.capabilityOpts?.projectId ?? null,
         ...(this.nativeConfigReader ? { readNativeConfig: this.nativeConfigReader } : {})
       })
-      if (this.rpc !== rpc || this.stopping || this.state?.sessionId !== identity) throw new Error('会话已切换，重新加载已取消')
+      if (this.rpc !== rpc || this.stopping || this.state?.sessionId !== identity) throw new Error(pick('会话已切换，重新加载已取消', 'Session changed; reload cancelled'))
       this.nativeWitness = null
       await this.nativeRuntime.reload()
-      if (this.rpc !== rpc || this.stopping || this.state?.sessionId !== identity) throw new Error('会话已切换，请检查当前工具状态')
+      if (this.rpc !== rpc || this.stopping || this.state?.sessionId !== identity) throw new Error(pick('会话已切换，请检查当前工具状态', 'Session changed; check the current tool state'))
       if (capture.ok && capture.witness) {
         const confirmed = await verifyNativeStartupWitness(capture.witness, {
           ...(this.nativeConfigReader ? { readNativeConfig: this.nativeConfigReader } : {})
@@ -4356,31 +4357,31 @@ export class AgentController extends EventEmitter {
   }
 
   async nativeScopedModels(): Promise<ScopedModelsSnapshot> {
-    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
     return this.nativeRuntime.getScopedModels()
   }
 
   async nativeSetScopedModels(modelIds: string[]): Promise<void> {
-    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
     await this.nativeRuntime.saveScopedModels(modelIds)
   }
 
   async nativeProjectTrust(): Promise<ProjectTrustSnapshot> {
-    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
     return this.nativeRuntime.getProjectTrust()
   }
 
   async nativeSetProjectTrust(trusted: boolean): Promise<void> {
-    if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
+    if (!this.nativeRuntime) throw new Error(pick('pi 原生桥尚未就绪', 'The pi native bridge is not ready'))
     const result = trusted ? await allowTrust(this.cwd) : await revokeTrust(this.cwd)
-    if (!result.ok) throw new Error(result.error ?? '项目信任保存失败')
+    if (!result.ok) throw new Error(result.error ?? pick('项目信任保存失败', 'Failed to save project trust'))
   }
 
   private enqueueCapabilityChange<T>(work: () => Promise<T>): Promise<T | { ok: false; error: string }> {
     const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
     const guarded = async (): Promise<T | { ok: false; error: string }> => rpc === this.rpc && sessionId === this.state?.sessionId && generation === this.capabilityOpts?.runnerGeneration
       ? work()
-      : { ok: false as const, error: '会话已切换，设置已取消' }
+      : { ok: false as const, error: pick('会话已切换，设置已取消', 'Session changed; settings change cancelled') }
     const next = this.capabilityChangeTail.then(guarded, guarded)
     this.capabilityChangeTail = next.then(
       () => undefined,
@@ -4390,7 +4391,7 @@ export class AgentController extends EventEmitter {
   }
 
   private async applyModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const res = await this.rpc.command('set_model', { provider, modelId })
     if (!res.success) return { ok: false, error: res.error }
     await this.refreshStateWithThinkingLevels()
@@ -4439,7 +4440,7 @@ export class AgentController extends EventEmitter {
 
   private async deferModelSwitch(change: { provider?: string; modelId?: string; thinkingLevel?: string }): Promise<{ ok: boolean; error?: string }> {
     const state = this.state
-    if (!this.rpc || !state?.sessionId) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc || !state?.sessionId) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const sessionId = state.sessionId
     const current = this.deferredModelSwitch?.sessionId === sessionId ? this.deferredModelSwitch : undefined
     const previousModel = current ? current.previousModel : state.model
@@ -4447,12 +4448,12 @@ export class AgentController extends EventEmitter {
     let model = current?.model
     if (change.provider && change.modelId) {
       const found = (await this.listModels()).find((item) => item.provider === change.provider && item.id === change.modelId)
-      if (!found) return { ok: false, error: `模型不可用：${change.provider}/${change.modelId}` }
+      if (!found) return { ok: false, error: pick(`模型不可用：${change.provider}/${change.modelId}`, `Model unavailable: ${change.provider}/${change.modelId}`) }
       model = modelKeyOf(found) === modelKeyOf(previousModel) ? undefined : this.withAssumedWindow(found) ?? found
     }
     const requestedLevel = change.thinkingLevel ?? current?.thinkingLevel
     const thinkingLevel = requestedLevel === previousThinkingLevel ? undefined : requestedLevel
-    if (this.state?.sessionId !== sessionId) return { ok: false, error: '会话已切换，设置已取消' }
+    if (this.state?.sessionId !== sessionId) return { ok: false, error: pick('会话已切换，设置已取消', 'Session changed; settings change cancelled') }
     const pending = !!model || thinkingLevel !== undefined
     this.deferredModelSwitch = pending ? { sessionId, model, thinkingLevel, previousModel, previousThinkingLevel } : undefined
     writePendingModelSwitch(sessionId, pending
@@ -4509,7 +4510,7 @@ export class AgentController extends EventEmitter {
 
   async setThinking(level: string): Promise<{ ok: boolean; error?: string }> {
     return this.enqueueCapabilityChange(async () => {
-      if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+      if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
       if (this.shouldDeferModelSwitch()) return this.deferModelSwitch({ thinkingLevel: level })
       const res = await this.rpc.command('set_thinking_level', { level })
       if (res.success) await this.refreshState()
@@ -4519,7 +4520,7 @@ export class AgentController extends EventEmitter {
 
   async setUltracode(on: boolean): Promise<{ ok: boolean; error?: string }> {
     const sessionId = this.state?.sessionId
-    if (!sessionId) return { ok: false, error: 'pi 尚未就绪' }
+    if (!sessionId) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     try {
       setUltracodeOn(sessionId, on)
     } catch (error) {
@@ -4553,34 +4554,34 @@ export class AgentController extends EventEmitter {
   }
 
   async setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const res = await this.rpc.command('set_auto_compaction', { enabled })
     if (res.success) await this.refreshState()
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async setAutoRetry(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const res = await this.rpc.command('set_auto_retry', { enabled })
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async setSteeringMode(mode: string): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const res = await this.rpc.command('set_steering_mode', { mode })
     if (res.success) await this.refreshState()
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async setFollowUpMode(mode: string): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const res = await this.rpc.command('set_follow_up_mode', { mode })
     if (res.success) await this.refreshState()
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
 
   async abortRetry(): Promise<{ ok: boolean; error?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const res = await this.rpc.command('abort_retry')
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
@@ -4607,15 +4608,15 @@ export class AgentController extends EventEmitter {
   }
 
   private async cycleModelNow(dir: 1 | -1): Promise<{ ok: boolean; error?: string; to?: string }> {
-    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const steps = dir === 1 ? 1 : (await this.nativeCycleLength()) - 1
-    if (steps < 1) return { ok: false, error: '只有一个可用模型' }
+    if (steps < 1) return { ok: false, error: pick('只有一个可用模型', 'Only one model is available') }
     this.loopGuardContinuationVersion += 1
     let landed: { name?: string; id?: string } | undefined
     for (let i = 0; i < steps; i += 1) {
       const res = await this.requireRpc().command<{ model?: { name?: string; id?: string } } | null>('cycle_model')
       if (!res.success) return { ok: false, error: res.error }
-      if (!res.data?.model) return { ok: false, error: '只有一个可用模型' }
+      if (!res.data?.model) return { ok: false, error: pick('只有一个可用模型', 'Only one model is available') }
       landed = res.data.model
     }
     await this.refreshStateWithThinkingLevels()
@@ -4625,11 +4626,11 @@ export class AgentController extends EventEmitter {
 
   async cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }> {
     return this.enqueueCapabilityChange(async () => {
-      if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+      if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
       const res = await this.rpc.command<{ level?: string } | null>('cycle_thinking_level')
       if (!res.success) return { ok: false, error: res.error }
       const level = res.data?.level
-      if (!level) return { ok: false, error: '当前模型不支持思考' }
+      if (!level) return { ok: false, error: pick('当前模型不支持思考', 'The current model does not support thinking') }
       this.loopGuardContinuationVersion += 1
       await this.refreshState()
       return { ok: true, to: level }

@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { createHash } from 'node:crypto'
 import type { SubagentForkSource } from './subagent-fork'
 import type { PreparedWorkspace } from './subagent-isolation'
@@ -60,13 +61,13 @@ export function resolveResumeLaunch(
 }
 
 export function subagentResumability(input: ResumabilityInput): Resumability {
-  if (input.status === 'running' || input.status === 'starting') return { ok: false, reason: '子代理仍在运行' }
-  if (input.launchFailed) return { ok: false, reason: '这个子代理没有成功启动过' }
+  if (input.status === 'running' || input.status === 'starting') return { ok: false, reason: pick('子代理仍在运行', 'Subagent is still running') }
+  if (input.launchFailed) return { ok: false, reason: pick('这个子代理没有成功启动过', 'This subagent never started successfully') }
   if (input.isolation === 'worktree' && !input.worktreeAlive) {
-    return { ok: false, reason: 'worktree 已合并、放弃或归档清理，原工作树不在了；需要继续时重新派一个，并附上它的结论' }
+    return { ok: false, reason: pick('worktree 已合并、放弃或归档清理，原工作树不在了；需要继续时重新派一个，并附上它的结论', 'The worktree was merged, discarded or cleaned up; start a new subagent and include its conclusion') }
   }
   if (input.fork && !input.live && !input.forkLaunchSaved) {
-    return { ok: false, reason: '这个 fork 子代理没有保存来源信息，重启后不能续接' }
+    return { ok: false, reason: pick('这个 fork 子代理没有保存来源信息，重启后不能续接', 'This fork subagent has no saved source and cannot resume after restart') }
   }
   return { ok: true }
 }

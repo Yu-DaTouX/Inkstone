@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -71,7 +72,7 @@ async function writeSettings(paths: SyncPaths, incoming: Record<string, unknown>
       const raw = await readJson(paths.settingsFile)
       if (raw && typeof raw === 'object' && !Array.isArray(raw)) current = raw as Record<string, unknown>
     } catch {
-      throw new Error('本机 desktop.json 解析失败，拒绝覆盖')
+      throw new Error(pick('本机 desktop.json 解析失败，拒绝覆盖', 'Failed to parse local desktop.json; overwrite refused'))
     }
   }
   const merged = { ...current, ...incoming }
@@ -113,7 +114,7 @@ function promptNameFromKey(key: string): string | undefined {
 
 async function applyPrompt(paths: SyncPaths, record: SyncRecord): Promise<void> {
   const name = promptNameFromKey(record.key)
-  if (!name) throw new Error(`提示词模板 key 非法：${record.key}`)
+  if (!name) throw new Error(pick(`提示词模板 key 非法：${record.key}`, `Invalid prompt template key: ${record.key}`))
   await atomicWriteFile(join(paths.promptsDir, `${name}${PROMPT_SUFFIX}`), record.payload)
 }
 
@@ -152,7 +153,7 @@ function skillNameFromKey(key: string): string | undefined {
 
 async function applySkill(paths: SyncPaths, record: SyncRecord): Promise<void> {
   const name = skillNameFromKey(record.key)
-  if (!name) throw new Error(`技能 key 非法：${record.key}`)
+  if (!name) throw new Error(pick(`技能 key 非法：${record.key}`, `Invalid skill key: ${record.key}`))
   await mkdir(paths.skillsDir, { recursive: true })
   const file = await checkedSkillFile(paths, name)
   await mkdir(join(paths.skillsDir, name), { recursive: true })
@@ -167,7 +168,7 @@ async function checkedSkillFile(paths: SyncPaths, name: string): Promise<string>
   const check = (target: string): void => {
     const tail = relative(root, target)
     if (!tail || tail === '..' || tail.startsWith(`..${sep}`) || isAbsolute(tail)) {
-      throw new Error(`技能路径越界：${name}`)
+      throw new Error(pick(`技能路径越界：${name}`, `Skill path escapes its folder: ${name}`))
     }
   }
   check(directory)
@@ -203,7 +204,7 @@ function parseBookmarkPayload(record: SyncRecord): BookmarkPayload {
   const key = typeof parsed?.key === 'string' ? parsed.key : ''
   const value = typeof parsed?.value === 'string' ? parsed.value : ''
   if (!session || !key.startsWith('bookmark:') || typeof parsed?.value !== 'string') {
-    throw new Error(`书签记录形状无效：${record.key}`)
+    throw new Error(pick(`书签记录形状无效：${record.key}`, `Invalid bookmark record shape: ${record.key}`))
   }
   return { session, key, value }
 }
@@ -229,7 +230,7 @@ async function readBookmarks(paths: SyncPaths): Promise<ReadResult> {
       }
       const session = typeof raw?.session === 'string' ? raw.session : ''
       if (raw?.version !== 1 || !session || !raw.values || typeof raw.values !== 'object' || Array.isArray(raw.values)) {
-        skipped.push(`${file}：交互状态结构无效`)
+        skipped.push(pick(`${file}：交互状态结构无效`, `${file}: invalid interaction state structure`))
         continue
       }
       const modifiedAt = await mtimeMs(file)
@@ -262,10 +263,10 @@ async function applyBookmark(paths: SyncPaths, record: SyncRecord, exclusive = f
         }
       }
     } catch {
-      throw new Error(`本机交互状态无法解析，拒绝覆盖：${file}`)
+      throw new Error(pick(`本机交互状态无法解析，拒绝覆盖：${file}`, `Local interaction state could not be parsed; overwrite refused: ${file}`))
     }
   }
-  if (exclusive && Object.hasOwn(values, key)) throw new Error(`书签副本已存在：${key}`)
+  if (exclusive && Object.hasOwn(values, key)) throw new Error(pick(`书签副本已存在：${key}`, `Bookmark copy already exists: ${key}`))
   values[key] = value
   await mkdir(paths.interactionStateDir, { recursive: true })
   await atomicWriteFile(file, JSON.stringify({ version: 1, session, values }))
@@ -305,21 +306,21 @@ export class LocalStore {
   private async createCopy(record: SyncRecord): Promise<void> {
     if (record.kind === 'prompt') {
       const name = promptNameFromKey(record.key)
-      if (!name) throw new Error(`提示词模板 key 非法：${record.key}`)
+      if (!name) throw new Error(pick(`提示词模板 key 非法：${record.key}`, `Invalid prompt template key: ${record.key}`))
       await mkdir(this.paths.promptsDir, { recursive: true })
       await writeFile(join(this.paths.promptsDir, `${name}${PROMPT_SUFFIX}`), record.payload, { flag: 'wx', mode: 0o600 })
       return
     }
     if (record.kind === 'skill') {
       const name = skillNameFromKey(record.key)
-      if (!name) throw new Error(`技能 key 非法：${record.key}`)
+      if (!name) throw new Error(pick(`技能 key 非法：${record.key}`, `Invalid skill key: ${record.key}`))
       await mkdir(this.paths.skillsDir, { recursive: true })
       const file = await checkedSkillFile(this.paths, name)
       await mkdir(dirname(file))
       await writeFile(file, record.payload, { flag: 'wx', mode: 0o600 })
       return
     }
-    if (record.kind !== 'bookmark') throw new Error('不支持此类同步副本')
+    if (record.kind !== 'bookmark') throw new Error(pick('不支持此类同步副本', 'This kind of sync copy is not supported'))
     await applyBookmark(this.paths, record, true)
   }
 
@@ -338,7 +339,7 @@ export class LocalStore {
         return applyBookmark(this.paths, record)
       default: {
         const never: never = record.kind
-        throw new Error(`未知的同步类别：${String(never)}`)
+        throw new Error(pick(`未知的同步类别：${String(never)}`, `Unknown sync kind: ${String(never)}`))
       }
     }
   }

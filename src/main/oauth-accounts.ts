@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { constants } from 'node:fs'
 import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
@@ -52,7 +53,7 @@ async function readStore(): Promise<Store> {
       Object.entries(store.providers).some(([provider, accounts]) => !supportsOAuthAccounts(provider) || !Array.isArray(accounts) ||
         accounts.some((a) => !a || typeof a.key !== 'string' || typeof a.identity !== 'string' || !isCredential(a.credential)))) {
     await copyFile(STORE_FILE, `${STORE_FILE}.corrupt.bak`, constants.COPYFILE_EXCL).catch(() => undefined)
-    throw new Error(`账号列表格式无效；为保护已保存的账号，已拒绝写入：${STORE_FILE}`)
+    throw new Error(pick(`账号列表格式无效；为保护已保存的账号，已拒绝写入：${STORE_FILE}`, `Invalid account list format; write refused to protect saved accounts: ${STORE_FILE}`))
   }
   return store
 }
@@ -145,7 +146,7 @@ export function listOAuthAccounts(): Promise<OAuthAccountPools> {
 
 async function mutate(provider: string, work: (store: Store, provider: OAuthAccountProvider) => Promise<void>): Promise<Result> {
   try {
-    if (!supportsOAuthAccounts(provider)) throw new Error('这个服务不支持订阅账号管理')
+    if (!supportsOAuthAccounts(provider)) throw new Error(pick('这个服务不支持订阅账号管理', 'This provider does not support subscription account management'))
     await serial(async () => work(await readStore(), provider))
     return { ok: true }
   } catch (error) {
@@ -156,7 +157,7 @@ async function mutate(provider: string, work: (store: Store, provider: OAuthAcco
 export function switchOAuthAccount(provider: string, key: string): Promise<Result> {
   return mutate(provider, async (store, id) => {
     const target = store.providers[id]?.find((a) => a.key === key)
-    if (!target) throw new Error('找不到这个账号，可能已被删除')
+    if (!target) throw new Error(accountGone())
     await updateAuthFile(async (auth) => {
       const current = auth[id]
       if (isCredential(current)) await upsert(store, id, current)
@@ -173,7 +174,7 @@ export async function removeOAuthAccount(provider: string, key: string): Promise
     await updateAuthFile(async (auth) => {
       const current = auth[id]
       const active = isCredential(current) ? await upsert(store, id, current) : undefined
-      if (!store.providers[id]?.some((a) => a.key === key)) throw new Error('找不到这个账号，可能已被删除')
+      if (!store.providers[id]?.some((a) => a.key === key)) throw new Error(accountGone())
       wasActive = active?.key === key
       store.providers[id] = store.providers[id]!.filter((a) => a.key !== key)
       await writeStore(store)
@@ -187,9 +188,9 @@ export async function removeOAuthAccount(provider: string, key: string): Promise
 export function renameOAuthAccount(provider: string, key: string, label: string): Promise<Result> {
   return mutate(provider, async (store, id) => {
     const account = store.providers[id]?.find((a) => a.key === key)
-    if (!account) throw new Error('找不到这个账号，可能已被删除')
+    if (!account) throw new Error(accountGone())
     const name = String(label ?? '').trim().slice(0, 40)
-    if (!name) throw new Error('备注不能为空')
+    if (!name) throw new Error(pick('备注不能为空', 'Note cannot be empty'))
     account.label = name
     await writeStore(store)
   })
@@ -215,4 +216,8 @@ export function oauthAccountTargets(provider: OAuthAccountProvider): Promise<OAu
     if (active) await writeStore(store)
     return (store.providers[provider] ?? []).map((a) => ({ ...view(a, active?.key), credential: a.credential }))
   })
+}
+
+function accountGone(): string {
+  return pick('找不到这个账号，可能已被删除', 'Account not found; it may have been deleted')
 }

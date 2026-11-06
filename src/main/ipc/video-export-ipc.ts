@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { randomUUID } from 'node:crypto'
 import { getSettings } from '../settings'
 import { exportVideo, VideoExportError } from '../video-export'
@@ -49,16 +50,16 @@ function failure(id: string, error: VideoExportErrorCode, detail?: string): Vide
 
 export function registerVideoExportIpc(ipc: IpcRegistrar, deps: VideoExportIpcDeps): void {
   ipc.rawHandle(VIDEO_EXPORT_START_CHANNEL, async (event, raw: unknown): Promise<VideoExportResult> => {
-    if (!isRecord(raw)) return failure('', 'bad-request', '参数无效')
+    if (!isRecord(raw)) return failure('', 'bad-request', pick('参数无效', 'Invalid parameters'))
     const request = raw as unknown as VideoExportRequest
     const id = field(request.id) || randomUUID()
     const target = field(request.path)
-    if (!target) return failure(id, 'bad-request', '缺少 HTML 路径')
-    if (jobs.has(id)) return failure(id, 'export-busy', '这个导出任务已经在跑')
+    if (!target) return failure(id, 'bad-request', pick('缺少 HTML 路径', 'Missing HTML path'))
+    if (jobs.has(id)) return failure(id, 'export-busy', pick('这个导出任务已经在跑', 'This export is already running'))
     const settings = await getSettings()
     const fallback = field(request.cwd) || settings.cwd
     const resolved = await deps.resolveFileContext(settings, settings.cwd, { cwd: fallback })
-    if (!resolved.ok) return failure(id, 'bad-request', '项目目录无效')
+    if (!resolved.ok) return failure(id, 'bad-request', pick('项目目录无效', 'Invalid project folder'))
     const controller = new AbortController()
     jobs.set(id, controller)
     const sender = event.sender

@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { validateBranchName } from '../shared/git-actions'
 
 export interface PrCheckoutOptions {
@@ -56,8 +57,8 @@ export function decidePrBranch(existing: ExistingBranch, headOid: string, headRe
 export function pushRightsNote(options: PrCheckoutOptions): string {
   const fork = normalizeRepoKey(options.headRepoUrl) !== normalizeRepoKey(options.baseRepoUrl)
   if (!fork) return ''
-  if (!options.headRepoUrl) return '该 PR 的来源仓库已不存在，无法推回。'
+  if (!options.headRepoUrl) return pick('该 PR 的来源仓库已不存在，无法推回。', 'The PR source repository no longer exists; cannot push back.')
   return options.maintainerCanModify === true
-    ? '该 PR 来自 fork；推回需要你对 fork 有写权限或作者允许维护者修改，被拒绝时不会强推。'
-    : '该 PR 来自 fork，作者没有允许维护者修改，推回大概率会被拒绝；不会强推，可改为向作者的 fork 提 PR。'
+    ? pick('该 PR 来自 fork；推回需要你对 fork 有写权限或作者允许维护者修改，被拒绝时不会强推。', 'This PR is from a fork; pushing back needs write access to the fork or maintainer edits allowed. No force push if rejected.')
+    : pick('该 PR 来自 fork，作者没有允许维护者修改，推回大概率会被拒绝；不会强推，可改为向作者的 fork 提 PR。', "This PR is from a fork without maintainer edits; pushing back will likely be rejected. No force push; open a PR to the author's fork instead.")
 }

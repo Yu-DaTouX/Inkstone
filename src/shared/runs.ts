@@ -1,3 +1,4 @@
+import { pick } from './ui-lang'
 export type RunKind = 'session' | 'subagent'
 export type StallCause = 'retry' | 'rate-limit' | 'loop'
 export type FailCause = 'model-error' | 'pi-exit' | 'tool-fatal' | 'host'
@@ -314,7 +315,7 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
 
     case 'retry-end':
       if (signal.success) return withPhase(state, now, { kind: 'running', since: now, activity: 'waiting-model' }, { pendingError: undefined })
-      return fail(state, now, 'model-error', state.pendingError?.message ?? signal.message ?? '自动重试失败，本轮结束', state.pendingError?.errorKind ?? signal.errorKind)
+      return fail(state, now, 'model-error', state.pendingError?.message ?? signal.message ?? pick('自动重试失败，本轮结束', 'Auto-retry failed; turn ended'), state.pendingError?.errorKind ?? signal.errorKind)
 
     case 'rate-limit':
       return withPhase(state, now, {
@@ -395,7 +396,7 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
           return withPhase(
             state,
             now,
-            { kind: 'stalled', since: now, cause: 'loop', detail: '重复输出被中止，不再自动续接' },
+            { kind: 'stalled', since: now, cause: 'loop', detail: pick('重复输出被中止，不再自动续接', 'Repeated output was aborted; no further auto-continue') },
             { loopAbortMarked: false }
           )
         }
@@ -410,7 +411,7 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
       return withPhase(state, now, { kind: 'stopped', at: now, by: signal.by }, { requests: [], stallBeforeWait: undefined, pendingError: undefined })
 
     case 'pi-exit':
-      return fail(state, now, 'pi-exit', `pi 进程在运行中退出（code=${signal.code ?? 'null'}）`)
+      return fail(state, now, 'pi-exit', pick(`pi 进程在运行中退出（code=${signal.code ?? 'null'}）`, `pi process exited while running (code=${signal.code ?? 'null'})`))
 
     case 'context': {
       const percent =

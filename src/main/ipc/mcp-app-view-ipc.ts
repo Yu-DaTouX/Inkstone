@@ -1,4 +1,6 @@
+import { pick } from '../../shared/ui-lang'
 import type { IpcRegistrar } from './registrar'
+
 import { MCP_APP_VIEW_CHANNELS } from '../../shared/mcp-app-view'
 import type {
   McpAppViewApi,
@@ -7,16 +9,20 @@ import type {
   McpAppViewSnapshot
 } from '../../shared/mcp-app-view'
 
+function notReady(): string {
+  return pick('MCP App 宿主尚未就绪', 'MCP App host is not ready')
+}
+
 export interface McpAppViewIpcDeps {
   service(): McpAppViewApi | null
 }
 
 function notReadyDescriptor(): McpAppViewDescriptor {
-  return { kind: 'error', error: 'MCP App 宿主尚未就绪' }
+  return { kind: 'error', error: notReady() }
 }
 
 function rpcNotReady(): unknown {
-  return { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'MCP App 宿主尚未就绪' } }
+  return { jsonrpc: '2.0', id: null, error: { code: -32600, message: notReady() } }
 }
 
 export function registerMcpAppViewIpc(ipc: IpcRegistrar, deps: McpAppViewIpcDeps): void {
@@ -61,7 +67,7 @@ export function registerMcpAppViewIpc(ipc: IpcRegistrar, deps: McpAppViewIpcDeps
 
   handle(MCP_APP_VIEW_CHANNELS.refresh, async (): Promise<McpAppViewRefreshResult> => {
     const api = service()
-    if (!api) return { ok: false, toolCount: 0, error: 'MCP App 宿主尚未就绪' }
+    if (!api) return { ok: false, toolCount: 0, error: notReady() }
     return api.refresh()
   })
 

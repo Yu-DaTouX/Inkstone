@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
@@ -345,7 +346,7 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
     body: JSON.stringify(payload()),
     signal: imageSignal(REQUEST_TIMEOUT_MS, signal)
   })
-  report?.('requesting', auth.source === 'yan' ? '使用砚内 ChatGPT 登录' : '使用 Codex CLI 登录')
+  report?.('requesting', auth.source === 'yan' ? pick('使用砚内 ChatGPT 登录', 'Using ChatGPT sign-in in Inkstone') : pick('使用 Codex CLI 登录', 'Using Codex CLI sign-in'))
   let response = await send()
   for (let retry = 0; response.status === 400 && retry < 2; retry += 1) {
     const reason = await errorReason(response)
@@ -395,7 +396,7 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
         if (finalB64) continue
         if (event.type === 'response.image_generation_call.partial_image') {
           partials += 1
-          report?.('generating', `已收到第 ${partials} 张预览`)
+          report?.('generating', pick(`已收到第 ${partials} 张预览`, `Received preview ${partials}`))
         } else if (event.type === 'response.failed' || event.type === 'error') {
           failure = event.response?.error?.message ?? event.error?.message ?? event.message ?? failure
         }
@@ -614,15 +615,15 @@ function mockSvg(prompt: string): Buffer {
   return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="180" fill="#101318"/><circle cx="512" cy="450" r="240" fill="#303A47"/><path d="M350 450h324v170H350z" fill="#F3F4F6"/><text x="512" y="820" fill="#98A2B3" font-size="34" text-anchor="middle" font-family="sans-serif">${safe}</text></svg>`, 'utf8')
 }
 
-const PROVIDER_LABEL: Record<Exclude<ResolvedImageProvider, 'unavailable'>, string> = {
-  codex: 'ChatGPT（Codex）',
+const providerLabel = (provider: Exclude<ResolvedImageProvider, 'unavailable'>): string => ({
+  codex: 'ChatGPT (Codex)',
   openai: 'OpenAI',
-  compatible: 'OpenAI 兼容端点',
+  compatible: pick('OpenAI 兼容端点', 'OpenAI-compatible endpoint'),
   google: 'Google Gemini',
-  doubao: '火山方舟（豆包）',
-  local: '本机服务',
-  mock: '本地预览'
-}
+  doubao: pick('火山方舟（豆包）', 'Volcano Ark (Doubao)'),
+  local: pick('本机服务', 'Local service'),
+  mock: pick('本地预览', 'Local preview')
+})[provider]
 
 async function unavailableHint(): Promise<string> {
   const stopped = (await detectLocalModelServers().catch(() => []))
@@ -663,7 +664,7 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
     context.onProgress?.(stage, detail)
     checkImageCancelled(signal)
   }
-  report?.('preparing', provider === 'mock' ? '正在准备本地预览' : `已选择 ${PROVIDER_LABEL[provider]}`)
+  report?.('preparing', provider === 'mock' ? pick('正在准备本地预览', 'Preparing local preview') : pick(`已选择 ${providerLabel(provider)}`, `Selected ${providerLabel(provider)}`))
   const sources = request.mode === 'edit' || request.sourcePaths?.length
     ? await loadSources(request.sourcePaths, { cwd: context.cwd, artifactDir: context.artifactDir })
     : []
@@ -672,7 +673,7 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
 
   let generated: Generated
   if (provider === 'mock') {
-    report?.('generating', '正在生成本地预览')
+    report?.('generating', pick('正在生成本地预览', 'Generating local preview'))
     generated = { bytes: mockSvg(prompt), model: 'yan-mock-svg' }
   } else if (provider === 'codex') {
     generated = await codexImage(req, sources, credentials, report, signal)
@@ -697,7 +698,7 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
   if (generated.bytes.length === 0) throw new ImageProviderError('image_result_empty')
   const format = provider === 'mock' ? 'svg' : sniffFormat(generated.bytes) ?? formatOf(request.format)
   checkImageCancelled(signal)
-  report?.('saving', '正在保存受控文件')
+  report?.('saving', pick('正在保存受控文件', 'Saving file'))
   const artifact = await new ArtifactStore(context.artifactDir).save({
     sessionFile: context.sessionFile,
     messageId: context.messageId,
