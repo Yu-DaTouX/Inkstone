@@ -246,7 +246,7 @@ export class Observer {
         const axRole = (ax?.role as { value?: string } | undefined)?.value
         const axName = (ax?.name as { value?: string } | undefined)?.value
         const role = axRole || attributes.role || String(node.localName || node.nodeName || 'element').toLowerCase()
-        const name = axName || attributes['aria-label'] || attributes.title || attributes.placeholder || textOf(node)
+        const name = axName || attributes['aria-label'] || attributes.title || attributes.placeholder || (String(node.localName).toLowerCase() === 'select' ? attributes.name || attributes.id || '' : textOf(node))
         const [offsetX, offsetY]: [number, number] = sessionId ? frameOffsets.get(frameId) ?? [0, 0] : [0, 0]
         candidates.push({
           backendNodeId,
