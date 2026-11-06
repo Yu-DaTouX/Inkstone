@@ -462,7 +462,8 @@ async function main() {
   await rm(outdir, { recursive: true, force: true })
 
   process.stdout.write(`\n================ 结果：${report.pass} 通过 / ${report.fail} 失败 ================\n`)
-  if (report.fail > 0) process.exitCode = 1
+  const expectedGroups = process.argv.includes('--session-actions-only') ? 1 : 6
+  if (report.fail > 0 || report.groups.length < expectedGroups) process.exitCode = 1
 }
 
 main().catch((err) => {
