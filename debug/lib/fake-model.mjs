@@ -49,7 +49,24 @@ function mdShow() {
   ].join('')
 }
 
-const SUGGESTION_MARKER = "[Inkstone: predict the user's next message]"
+function mdReal() {
+  return [
+    '## 修复结果\n\n',
+    '问题出在 `src/main/agent.ts` 的**重试逻辑**：失败后没有清掉旧的订阅，导致同一事件被处理了两次。详见[排查记录](https://example.com/notes/retry)。\n\n',
+    '### 改动\n\n',
+    '1. **清理订阅**：重试前先调用 `unsubscribe()`，再重新挂上。\n',
+    '2. **去重事件**：用 `eventId` 做幂等，重复的直接丢弃。\n',
+    '   - 覆盖断线重连\n   - 覆盖超时重试\n',
+    '3. ~~旧的计时器~~ 已移除。\n\n',
+    '| 文件 | 改动 | 行数 |\n| --- | --- | --- |\n| agent.ts | 清理订阅 | +12 -3 |\n| events.ts | 事件去重 | +20 -0 |\n| retry.test.ts | 新增用例 | +48 -0 |\n\n',
+    '> 注意：旧会话里已有的重复事件不会被回填，只影响新事件。\n\n',
+    '运行测试：\n\n```bash\nnpm run test -- retry\n```\n\n',
+    '---\n\n',
+    '**结论**：已修复，测试通过。如需我顺带清理日志，请告诉我。\n'
+  ].join('')
+}
+
+const SUGGESTION_MARKER ="[Inkstone: predict the user's next message]"
 
 function reportDemo() {
   return [
@@ -64,6 +81,7 @@ function reportDemo() {
 }
 
 export const FAKE_TRIGGERS = {
+  MDREAL: '一段常见的编程助手总结（标题、加粗、行内代码、链接、有序与嵌套列表、删除线、表格、引用、代码块、分隔线），不规则块长与间隔，用来看 markdown 流式渲染',
   MDSHOW: '一篇含行内代码、链接、代码块、表格、公式、Mermaid、图片、列表的短文，慢速逐块流出，用来看 markdown 流式渲染（CHUNK<n> 每块字符数，GAP<n> 间隔毫秒）',
   LONGTEXT: '约 20KB markdown 长文本，慢速逐块流出',
   REPORTDEMO: '一段三层字色的汇报（主体、*附带说明*、**需要注意**），用来看汇报字色',
@@ -130,9 +148,13 @@ async function respond(res, text, done, requestNo) {
     const item = { id: `msg_${requestNo}_${index}`, type: 'message', role: 'assistant', status: 'in_progress', content: [] }
     send({ type: 'response.output_item.added', output_index: index, item })
     send({ type: 'response.content_part.added', item_id: item.id, output_index: index, content_index: 0, part: { type: 'output_text', text: '' } })
-    for (let i = 0; i < content.length; i += chunk) {
-      send({ type: 'response.output_text.delta', item_id: item.id, output_index: index, content_index: 0, delta: content.slice(i, i + chunk) })
-      if (delay) await sleep(delay)
+    let seed = 7
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+    for (let i = 0; i < content.length;) {
+      const step = chunk < 0 ? 2 + Math.floor(next() * (-chunk - 1)) : chunk
+      send({ type: 'response.output_text.delta', item_id: item.id, output_index: index, content_index: 0, delta: content.slice(i, i + step) })
+      i += step
+      if (delay) await sleep(chunk < 0 ? Math.round(delay * (0.3 + next() * 1.7)) : delay)
     }
     send({ type: 'response.output_text.done', item_id: item.id, output_index: index, content_index: 0, text: content })
     const finished = { ...item, status: 'completed', content: [{ type: 'output_text', text: content }] }
@@ -200,7 +222,8 @@ async function respond(res, text, done, requestNo) {
       if (done < steps) await stormStep('storm', stormTag(text, 'STORM'), done, 120)
       else if (done === steps && text.includes('ASK')) await callTool('question', { question: `${stormTag(text, 'STORM')} 跑完了，下一步怎么做？`, options: ['继续', '停下'] })
       else await streamText(longText(), 24, 8)
-    } else if (text.includes('MDSHOW')) await streamText(mdShow(), Number(/CHUNK(d+)/.exec(text)?.[1] ?? 6), Number(/GAP(d+)/.exec(text)?.[1] ?? 20))
+    } else if (text.includes('MDREAL')) await streamText(mdReal(), -14, 22)
+    else if (text.includes('MDSHOW')) await streamText(mdShow(), Number(/CHUNK(\d+)/.exec(text)?.[1] ?? 6), Number(/GAP(\d+)/.exec(text)?.[1] ?? 20))
     else if (text.includes('LONGTEXT')) await streamText(longText(), 12, 15)
     else if (text.includes('REPORTDEMO')) await streamText(reportDemo(), 40, 10)
     else if (text.includes('MANYTOOLS')) {
