@@ -30,6 +30,15 @@ export function planPythonPath(path, fs = nodeFs) {
   return { path: next.join(';'), python: join(real, 'python.exe'), insertAt: index, needsPython3 }
 }
 
+export function planPython3Only(path, fs = nodeFs) {
+  const entries = path.split(';')
+  const index = entries.findIndex((dir) => dir && fs.exists(join(dir, 'python.exe')))
+  if (index < 0 || isRedirector(fs, join(entries[index], 'python.exe'))) return null
+  const python3 = entries.findIndex((dir) => dir && fs.exists(join(dir, 'python3.exe')))
+  if (python3 >= 0 && !isRedirector(fs, join(entries[python3], 'python3.exe'))) return null
+  return { python: join(entries[index], 'python.exe'), insertAt: python3 >= 0 ? Math.min(index, python3) : index }
+}
+
 export function ensurePython3Shim(dir, python) {
   const target = python.replace(/\\/g, '/').replace(/'/g, `'\\''`)
   const content = `#!/bin/sh\nexec '${target}' "$@"\n`
@@ -63,7 +72,12 @@ export function createPythonPathFixer({ shimDir, fs = nodeFs, writeShim = ensure
       let fixed = original
       try {
         const plan = planPythonPath(original, fs)
-        if (plan) {
+        const only = plan ? null : planPython3Only(original, fs)
+        if (only && shimDir) {
+          const entries = original.split(';')
+          entries.splice(only.insertAt, 0, writeShim(shimDir, only.python))
+          fixed = entries.join(';')
+        } else if (plan) {
           const entries = plan.path.split(';')
           if (plan.needsPython3 && shimDir) entries.splice(plan.insertAt, 0, writeShim(shimDir, plan.python))
           fixed = entries.join(';')

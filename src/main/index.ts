@@ -112,6 +112,7 @@ import { SubagentService } from './subagent-service'
 import { LookupCommands } from './lookup-commands'
 import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
+import { createSubagentNoticeStore } from './subagent-notice-store'
 import { createSubagentQuotaWatch } from './subagent-quota-watch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
@@ -384,6 +385,7 @@ let piPackageActivationAgain = false
 const piPackageActivationDeferred = new Map<string, string>()
 let browser: BrowserController | null = null
 const notifySubagentFinished = createSubagentNotifier({
+  store: createSubagentNoticeStore(join(YAN_DIR, 'subagent-notices.json')),
   enabled: async () => (await getSettings()).subagentNotify !== false,
   find: (run) => (runners ? findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners) : null),
   runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0

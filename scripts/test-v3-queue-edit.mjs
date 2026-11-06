@@ -146,6 +146,18 @@ function makePort({ clearResults, refillFailsAt = -1 }) {
     ok(calls.refill[0].followUp.map((i) => i.id).join(',') === 'f2,f1', 'followUp 按新顺序重建')
   }
 
+  process.stdout.write('\n▌ queue-edit：取到队列后 pi 已接收其中一条\n')
+  {
+    const { port, calls } = makePort({
+      clearResults: [{ success: true, steering: ['插话'], followUp: ['二'] }]
+    })
+    const live = { steering: [item('s1', '插话', [image('img')])], followUp: [item('f2', '二')] }
+    const result = await applyQueueRewrite({ ...port, adoptCleared: (steering, followUp) => { calls.adopt.push({ steering, followUp }); return live } }, original, next)
+    ok(result.ok === true, '成功')
+    ok(calls.refill[0].followUp.map((i) => i.id).join(',') === 'f2', '清空回执里已经没有的 f1 不再重建，避免重复执行')
+    ok(!JSON.stringify(calls.publish[0]).includes('f1'), '发布的目标队列也不含已被接收的消息')
+  }
+
   process.stdout.write('\n▌ queue-edit：clear_queue 失败\n')
   {
     const { port, calls } = makePort({ clearResults: [{ success: false, error: 'busy' }] })

@@ -1007,6 +1007,7 @@ export class AgentController extends EventEmitter {
       this.releaseExecutionAdmission()
       this.compactionState = EMPTY_COMPACTION_STATE
       this.contextFrom = undefined
+      this.nativeRuntime?.dispose()
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
       this.ui.pending.clear()
       this.cancelApprovals?.(this.approvalOwner())
@@ -1101,18 +1102,27 @@ export class AgentController extends EventEmitter {
     return false
   }
 
-  private async hydrate(): Promise<void> {
+  private async hydrate(expected?: { sessionId?: string; sessionFile?: string }): Promise<void> {
     const syncedBefore = this.messages
     const scopeBefore = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
+    const outsideExpected = (): boolean => !!expected && (this.state?.sessionId !== expected.sessionId || this.state?.sessionFile !== expected.sessionFile)
+    if (outsideExpected()) return
     const state = await this.requireRpc().command('get_state').catch(() => null)
+    if (expected && state?.success) {
+      const data = state.data as Record<string, unknown>
+      if (String(data.sessionId ?? '') !== (expected.sessionId ?? '') || (data.sessionFile ? String(data.sessionFile) : undefined) !== expected.sessionFile) return
+    }
+    if (outsideExpected()) return
     if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
     if (this.state?.sessionId && this.state.sessionId !== scopeBefore.sessionId) await this.reclaimSavedQueue().catch(() => undefined)
     const sessionFile = this.state?.sessionFile
 
     const fromFile = sessionFile ? await this.readHistoryOf(sessionFile) : null
     let presentationReady = false
+    if (!this.nativeBranchView && outsideExpected()) return
     if (this.nativeBranchView) {
       const snapshot = await this.sessionEntries()
+      if (outsideExpected()) return
       if (!snapshot.ok) throw new Error(snapshot.error ?? '无法读取当前原生分支')
       const path = nativeActiveBranch(snapshot.entries ?? [], snapshot.leafId ?? null)
       const messageEntries = path.flatMap(entry => {
@@ -1131,14 +1141,17 @@ export class AgentController extends EventEmitter {
       presentationReady = this.readHistory !== undefined
     } else {
       const msgs = await this.requireRpc().command('get_messages').catch(() => null)
+      if (outsideExpected()) return
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
       this.messages = Array.isArray(raw)
         ? projectHistory(raw, this.localizeHistoryImage)
         : []
     }
     if (sessionFile && !presentationReady) {
-      this.messages = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
+      const hydrated = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
         .hydrateMessages(sessionFile, this.messages)
+      if (outsideExpected()) return
+      this.messages = hydrated
     }
 
     const timingBucket = presentationReady ? undefined : timingKey(this.state?.sessionFile)
@@ -2671,7 +2684,7 @@ export class AgentController extends EventEmitter {
         if (evt.willRetry !== true) this.settleExecutionAdmission()
         void this.refreshState()
         void this.refreshStats()
-        void this.hydrate().catch((error) => {
+        void this.hydrate({ sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }).catch((error) => {
           console.warn('[agent] 压缩后刷新会话失败', error)
           this.push({
             ch: 'notify',
@@ -4676,11 +4689,14 @@ export class AgentController extends EventEmitter {
   async refreshStats(opts: { expectGeneration?: number } = {}): Promise<SessionStats | null> {
     try {
       const generation = this.capabilityOpts?.runnerGeneration
+      const ownerSession = this.state?.sessionId
       const res = await this.rpc?.command<SessionStats>('get_session_stats')
       if (res?.success && res.data) {
+        if (ownerSession !== this.state?.sessionId) return null
         if (opts.expectGeneration !== undefined && generation !== opts.expectGeneration) return null
         if (opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== opts.expectGeneration) return null
         const stats = await this.withOverheadUsage(this.statsForCurrentModel(res.data))
+        if (ownerSession !== this.state?.sessionId) return null
         if (opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== opts.expectGeneration) return null
         this.push({ ch: 'stats', payload: stats })
         return stats

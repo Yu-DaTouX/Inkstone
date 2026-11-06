@@ -45,6 +45,7 @@ try {
         export const applyPatch = async () => ({ ok: true })
         export const prepareWorkspace = async () => ({})
         export const preserveIgnoredOutputs = async () => ({ ok: true, files: [] })
+        export const recoverWorktree = async () => null
       ` }))
     } }]
   })

@@ -62,6 +62,14 @@ export function closestRegion(content, oldText) {
   return { from, to, matched: best.score, total: wanted.filter(Boolean).length, lines: fileLines.slice(from, to) }
 }
 
+export function lineEndingNote(content) {
+  const features = []
+  if (content.charCodeAt(0) === 0xfeff) features.push('a UTF-8 BOM')
+  if (content.includes('\r\n')) features.push('CRLF line endings')
+  if (features.length === 0) return ''
+  return `Note: this file has ${features.join(' and ')}. edit matches oldText independent of line endings (write plain newlines) and keeps the file's original line endings and BOM, so that is not why the match failed.`
+}
+
 export function editMismatchHint(event, cwd) {
   if (!notFound(event)) return undefined
   const oldText = failedOldText(event)
@@ -76,10 +84,11 @@ export function editMismatchHint(event, cwd) {
     return undefined
   }
   const region = closestRegion(content, oldText)
-  if (!region) return undefined
+  const note = lineEndingNote(content)
+  if (!region) return note ? { content: [...(event.content ?? []), { type: 'text', text: note }] } : undefined
   let body = region.lines.join('\n')
   if (body.length > MAX_HINT_CHARS) body = `${body.slice(0, MAX_HINT_CHARS)}\n…`
-  const text = `Closest current text in the file (lines ${region.from + 1}-${region.to}; ${region.matched} of ${region.total} oldText lines match ignoring indentation). Copy oldText from here rather than from memory:\n\`\`\`\n${body}\n\`\`\``
+  const text = `Closest current text in the file (lines ${region.from + 1}-${region.to}; ${region.matched} of ${region.total} oldText lines match ignoring indentation). Copy oldText from here rather than from memory:\n\`\`\`\n${body}\n\`\`\`${note ? `\n${note}` : ''}`
   return { content: [...(event.content ?? []), { type: 'text', text }] }
 }
 

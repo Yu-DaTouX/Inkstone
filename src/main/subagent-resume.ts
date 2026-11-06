@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { SubagentForkSource } from './subagent-fork'
+import type { PreparedWorkspace } from './subagent-isolation'
 
 export interface ResumeLaunch {
   appendSystemPrompt?: string
@@ -22,6 +23,7 @@ export interface ResumeMeta {
   launch?: ResumeLaunch
   launchDigest?: string
   forkLaunch?: PersistedForkLaunch
+  workspace?: PreparedWorkspace
 }
 
 export interface Resumability {

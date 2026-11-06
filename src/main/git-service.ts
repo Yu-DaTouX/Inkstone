@@ -15,21 +15,24 @@ export function killProcessTree(child: ChildProcess): void {
   killPidTree(child.pid, () => child.kill())
 }
 
-export function killPidTree(pid: number | undefined, fallback: () => void): void {
+export function killPidTree(pid: number | undefined, fallback: () => void): Promise<void> {
   if (process.platform === 'win32' && pid) {
-    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, (error) => {
-      if (error) fallback()
+    return new Promise((resolve) => {
+      execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, timeout: 8_000 }, (error) => {
+        if (error) fallback()
+        resolve()
+      })
     })
-    return
   }
   if (pid) {
     try {
       process.kill(pid, 'SIGTERM')
-      return
+      return Promise.resolve()
     } catch {
     }
   }
   fallback()
+  return Promise.resolve()
 }
 
 const MAX_BUFFER = 48 * 1024 * 1024

@@ -94,6 +94,18 @@ deferred = []
   tools = tools.filter(name => name !== 'read')
   loaded.get('before_agent_start')({})
   assert(!tools.includes('read'), '受限工具集保持原样')
+  await writeFile(desktop, JSON.stringify({ codemodeEnabled: true }))
+  tools = ['read', 'bash', 'edit', 'write', 'codemode']
+  const withCodemode = new Map()
+  codemodePolicy({
+    on(name, handler) { withCodemode.set(name, handler) },
+    getActiveTools: () => tools,
+    getAllTools: () => ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls', 'codemode'].map(name => ({ name })),
+    setActiveTools(names) { tools = [...names] }
+  })
+  withCodemode.get('before_agent_start')({})
+  assert(tools.includes('codemode') && tools.includes('grep') && tools.includes('ls'), 'codemode 已在活动工具里时，搜索工具照样补齐')
+  assert.equal(tools.filter(name => name === 'codemode').length, 1)
   delete process.env.PI_CODING_AGENT_DIR
   process.env.PATH = path
 }

@@ -39,6 +39,12 @@ try {
     fetchImpl: async () => ({ json: async () => ({ ok: false, error: 'bad', code: 'task_bad' }) }) })
   assert.deepEqual([refused.ok, refused.error, refused.code], [false, 'bad', 'task_bad'])
   assert.equal((await hostTools.callHostTool({ command: 'x', params: {}, toolCallId: 'c', env: {} })).ok, false)
+  const missingFile = await hostTools.callHostTool({ command: 'tasks.apply', params: {}, toolCallId: 'c', env,
+    fetchImpl: async () => ({ json: async () => ({ ok: true, summary: { kind: 'tasks' }, resultFile: join(dir, 'gone.json') }) }) })
+  assert.deepEqual([missingFile.ok, missingFile.code], [false, 'result_unreadable'], '结果文件读不到时不伪装成成功')
+  assert.match(guide.todosResult(missingFile).content[0].text, /could not be read/)
+  const noFileExpected = await hostTools.callHostTool({ command: 'x', params: {}, toolCallId: 'c', env, fetchImpl: async () => ({ json: async () => ({ ok: true, summary: {} }) }) })
+  assert.equal(noFileExpected.ok, true, '宿主本来就没有结果文件的命令仍算成功')
 
   const answered = question.questionResult({ ok: true, data: { question: 'Q?', options: ['A'], answer: 'A', cancelled: false } })
   assert.match(answered.content[0].text, /^Answer: A/)

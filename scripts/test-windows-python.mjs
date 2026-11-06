@@ -44,6 +44,13 @@ assert.equal(shimCalls, 1, '同一 PATH 只计算一次')
 const untouched = { PATH: 'C:\\Windows' }
 assert.equal(fixer(untouched), untouched)
 
+const realFirst = createPythonPathFixer({ shimDir: 'C:\shim', fs: fakeFs(realFiles), writeShim: (dir, python) => { assert.equal(python, join(REAL, 'python.exe')); return dir } })
+assert.deepEqual(realFirst({ PATH: [REAL, 'C:\Windows'].join(';') }).PATH.split(';'), ['C:\shim', REAL, 'C:\Windows'], '真实 Python 在前但没有 python3 时也补 python3 shim')
+const realWithPy3 = { PATH: [REAL, 'C:\Windows'].join(';') }
+assert.equal(createPythonPathFixer({ shimDir: 'C:\shim', fs: fakeFs({ ...realFiles, [join(REAL, 'python3.exe')]: '' }), writeShim: (dir) => dir })(realWithPy3), realWithPy3, '真实 python3 已存在时不动')
+const stubPy3 = createPythonPathFixer({ shimDir: 'C:\shim', fs: fakeFs({ ...realFiles, [join(APPS, 'python3.exe')]: STUB }), writeShim: (dir) => dir })({ PATH: [APPS, REAL].join(';') })
+assert.deepEqual(stubPy3.PATH.split(';'), ['C:\shim', APPS, REAL], 'python3 是商店重定向器时，shim 排在它前面')
+
 const envFixer = createPythonEnvFixer({ fs: fakeFs({}) })
 assert.equal(envFixer({ PATH: 'C:\\Windows' }).PYTHONIOENCODING, 'utf-8')
 assert.equal(envFixer({ PATH: 'C:\\Windows', PythonIOEncoding: 'gbk' }).PYTHONIOENCODING, undefined)

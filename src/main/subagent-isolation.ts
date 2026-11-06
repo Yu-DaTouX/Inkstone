@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
 import { cp, lstat, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
-import { join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const execFileAsync = promisify(execFile)
@@ -200,6 +201,24 @@ function parseNumstat(text: string): { additions: number; deletions: number } {
     if (Number.isFinite(del)) deletions += del
   }
   return { additions, deletions }
+}
+
+export async function recoverWorktree(cwd: string, rootCwd: string): Promise<PreparedWorkspace | null> {
+  const worktreePath = resolve(cwd)
+  if (!existsSync(join(worktreePath, '.git'))) return null
+  const repoRoot = await findGitRoot(rootCwd)
+  if (!repoRoot) return null
+  try {
+    const baselineCommit = (await git(worktreePath, ['rev-parse', 'HEAD'], 10_000)).stdout.trim()
+    if (!baselineCommit) return null
+    const container = dirname(worktreePath)
+    return {
+      isolation: 'worktree', rootCwd: resolve(rootCwd), cwd: worktreePath, repoRoot, worktreePath, baselineCommit,
+      ...(basename(worktreePath) === 'worktree' && basename(container).startsWith('yan-subagent-') ? { containerPath: container } : {})
+    }
+  } catch {
+    return null
+  }
 }
 
 export function summarizeGitDiff(nameStatus: string, numstat: string): SubagentDiffSummary {

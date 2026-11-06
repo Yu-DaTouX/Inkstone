@@ -1,5 +1,8 @@
 // context-compact.js：不截断工具结果、放不下才分段、超长单段切片、出错退回 pi 默认压缩并留记录
 import assert from 'node:assert/strict'
+import { mkdirSync as mkdirAppendix, mkdtempSync as mkdtempAppendix, writeFileSync as writeAppendix } from 'node:fs'
+import { tmpdir as tmpdirAppendix } from 'node:os'
+import { join as joinAppendix } from 'node:path'
 const mod = await import('../resources/pi-extensions/context-compact.js')
 
 const long = '甲'.repeat(10_000) + '钥匙编号 XQ-1234' + '乙'.repeat(10_000)
@@ -15,6 +18,8 @@ assert.ok(text.includes('[Assistant tool calls]: read(path="book/ch01.md") call=
 assert.ok(text.includes('[Tool result #3 read call=c1]: 甲'), '工具结果带序号、工具名、调用 ID')
 assert.ok(mod.serializeMessage({ role: 'toolResult', toolName: 'bash', toolCallId: 'c2', isError: true, content: [] }, 7) === '[Tool result #7 bash call=c2 error]: (empty)', '失败的工具结果带 error 标记，空结果也留一行')
 assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'cat secret.env', output: 'TOKEN=abc', excludeFromContext: true }, 8), '', '用户排除出上下文的终端输出不进压缩摘要')
+assert.ok(mod.serializeMessage({ role: 'assistant', content: [{ type: 'text', text: '查到了' }], yanWebSearch: { queries: ['inkstone'], results: [{ url: 'https://a.example/x' }], cited: [{ url: 'https://a.example/x' }], opened: ['https://b.example'] } }, 9).includes('[Assistant web search]: queries="inkstone"; sources=https://a.example/x; opened=https://b.example'), '原生搜索记录进入压缩摘要')
+assert.equal(mod.serializeMessage({ role: 'custom', display: false, content: 'hidden but sent to model' }, 10), '[Note]: hidden but sent to model', 'display:false 的自定义消息仍发给模型，也进摘要')
 assert.equal(mod.serializeMessage({ role: 'bashExecution', command: 'npm test', output: 'ok' }, 9), '[User ran]: npm test\nok', '普通终端输出照常进入摘要')
 
 {
@@ -417,5 +422,33 @@ for (const [label, opts, expected] of [
   const event = { preparation: { messagesToSummarize: messages, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, settings: { reserveTokens: 300_000 } , fileOps: {} }, signal: new AbortController().signal }
   await handlers.session_before_compact(event, ctx)
   assert.equal(seen[0], 32_000, '压缩线调低、reserveTokens 很大时，摘要输出上限仍封顶 32k')
+}
+{
+  const big = mod.appendixBudgets({ window: 400_000, summaryTokens: 8_000, keptTokens: 20_000 })
+  assert.deepEqual([big.userTokens, big.fileTokens], [20_000, 30_000], '大窗口附加内容不收紧')
+  const mid = mod.appendixBudgets({ window: 128_000, summaryTokens: 8_000, keptTokens: 20_000 })
+  assert.deepEqual([mid.userTokens, mid.fileTokens], [20_000, 30_000], '128k 窗口仍放得下')
+  const small = mod.appendixBudgets({ window: 48_000, summaryTokens: 6_000, keptTokens: 20_000 })
+  assert.ok(small.userTokens + small.fileTokens <= small.room, '小窗口附加内容总和不超过剩余空间')
+  assert.ok(small.userTokens + small.fileTokens < 50_000)
+  const tiny = mod.appendixBudgets({ window: 32_000, summaryTokens: 6_000, keptTokens: 20_000 })
+  assert.deepEqual([tiny.room, tiny.userTokens, tiny.fileTokens], [0, 0, 0], '窗口装不下时不追加任何附加内容')
+
+  const appendixDir = mkdtempAppendix(joinAppendix(tmpdirAppendix(), 'yan-appendix-'))
+  mkdirAppendix(joinAppendix(appendixDir, 'book'))
+  writeAppendix(joinAppendix(appendixDir, 'book', 'ch01.md'), 'chapter one')
+  const handlers = {}
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  const userMessages = Array.from({ length: 30 }, (_, i) => ({ role: 'user', content: `第 ${i} 条用户原话 ${'字'.repeat(2_000)}` }))
+  const run = async (contextWindow) => {
+    const ctx = { cwd: appendixDir, model: { contextWindow, maxTokens: 16_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async () => ok('摘要') } }
+    const event = { preparation: { messagesToSummarize: [...userMessages, ...messages], turnPrefixMessages: [], firstKeptEntryId: 'k1', tokensBefore: 60_000, settings: { reserveTokens: 8_000, keepRecentTokens: 20_000 }, fileOps: {} }, branchEntries: [{ id: 'k1', type: 'message', message: { role: 'user', content: '继续' } }], signal: new AbortController().signal }
+    return handlers.session_before_compact(event, ctx)
+  }
+  const wide = await run(400_000)
+  assert.ok(wide.compaction.summary.includes('<user-messages>') && wide.compaction.summary.includes('<current-files>'), '大窗口保留用户原话和补回的文件')
+  const narrow = await run(32_000)
+  assert.ok(!narrow.compaction.summary.includes('<user-messages>') && !narrow.compaction.summary.includes('<current-files>'), '小窗口不追加用户原话和文件内容')
+  assert.deepEqual(narrow.compaction.details.appendixTokens, { user: 0, files: 0 })
 }
 console.log('context-compact 测试通过')

@@ -139,7 +139,7 @@ try {
     try {
       const response = await request({})
       assert.equal(response.status, 500)
-      assert.deepEqual(await response.json(), { ok: false, error: 'internal_error' })
+      assert.deepEqual(await response.json(), { ok: false, error: 'internal_error', detail: 'fixture' })
     } finally { server.handle = handle }
   })
 } finally { server.stop() }

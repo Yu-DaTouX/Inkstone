@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { access, constants, readFile, stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { formatArtifactLint, lintArtifactHtml, type ArtifactLintFinding } from './artifact-lint'
 import { CapabilityCommandError } from './capability-server'
@@ -52,6 +52,24 @@ interface PreviewResult {
   video?: PreviewVideoShots
 }
 
+export async function previewReadFailure(htmlPath: string, cwd: string): Promise<CapabilityCommandError> {
+  let info
+  try {
+    info = await stat(htmlPath)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return new CapabilityCommandError('artifact_not_found', `文件不存在：${htmlPath}（相对路径按项目目录 ${cwd} 解析）`)
+    return new CapabilityCommandError('artifact_unreadable', `文件无法读取：${htmlPath}（${code ?? (error instanceof Error ? error.message : String(error))}）`)
+  }
+  if (!info.isFile()) return new CapabilityCommandError('artifact_unreadable', `不是文件：${htmlPath}`)
+  try {
+    await access(htmlPath, constants.R_OK)
+  } catch (error) {
+    return new CapabilityCommandError('artifact_unreadable', `文件无法读取：${htmlPath}（${(error as NodeJS.ErrnoException)?.code ?? '权限不足'}）`)
+  }
+  return new CapabilityCommandError('artifact_unreadable', `读取 ${htmlPath} 失败，文件可能正被其他程序占用或预览期间已改动，稍后再试`)
+}
+
 export async function runArtifactPreview(
   previewHtml: PreviewHtml | undefined,
   rawPath: unknown,
@@ -101,8 +119,9 @@ export async function runArtifactPreview(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    if (message === 'preview_outside') throw new CapabilityCommandError('artifact_path_outside', 'HTML 文件必须在当前项目目录内')
-    if (message === 'preview_size') throw new CapabilityCommandError('artifact_too_large', 'HTML 文件为空或超过 5MB')
+    if (message === 'preview_outside') throw new CapabilityCommandError('artifact_path_outside', `HTML 文件必须在当前项目目录内（解析到 ${htmlPath}，项目目录 ${cwd}）`)
+    if (message === 'preview_size') throw new CapabilityCommandError('artifact_too_large', `HTML 文件为空或超过 5MB：${htmlPath}`)
+    if (message === 'preview_read') throw await previewReadFailure(htmlPath, cwd)
     if (message === 'preview_busy') throw new CapabilityCommandError('artifact_preview_busy', '预览数量已达上限，稍后再试')
     throw new CapabilityCommandError('artifact_preview_failed', `预览失败：${message}`)
   }
