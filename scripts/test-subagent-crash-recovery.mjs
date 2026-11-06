@@ -74,15 +74,17 @@ try {
     await restarted.loadHistory()
     const run = restarted.get(id)
     ok(run.status === 'error' && run.endReason === 'exited', `${label}：重启后标为中断`)
-    ok(run.review === 'archived' && run.diff?.files === 2 && existsSync(run.diff.patchPath), `${label}：改动存成补丁，审阅状态可合并`)
-    ok(!existsSync(worktree), `${label}：原工作树已清理`)
-    ok(/可以合并或放弃/.test(run.error ?? ''), `${label}：说明改动怎么处置`)
+    ok(run.review === 'pending' && run.diff?.files === 2 && existsSync(run.diff.patchPath), `${label}：改动存成补丁，审阅状态可合并`)
+    ok(existsSync(worktree), `${label}：工作树保留，可以原地续接`)
+    ok(/原地续接/.test(run.error ?? ''), `${label}：说明改动怎么处置`)
+    ok(run.resumable?.ok === true, `${label}：可续派`, JSON.stringify(run.resumable))
 
     const merged = await restarted.merge(id)
     ok(merged.ok, `${label}：合并成功`)
     ok((await readFile(join(repo, 'a.txt'), 'utf8')).replace(/\r/g, '') === 'changed by subagent\n', `${label}：补丁应用到主工作目录`)
     ok(existsSync(join(repo, 'new.txt')), `${label}：新文件一并合并`)
     ok(restarted.get(id).review === 'merged', `${label}：状态变为已合并`)
+    ok(!existsSync(worktree), `${label}：合并后清理保留的工作树`)
     ok((await restarted.merge(id)).ok, `${label}：重复合并幂等`)
   }
 
@@ -95,6 +97,29 @@ try {
     await restarted.loadHistory()
     const run = restarted.get(started.run.id)
     ok(run.status === 'error' && run.review === 'none' && !existsSync(worktree), '没有改动的中断子代理：清理工作树，不留待审阅状态')
+  }
+
+  {
+    const repo = await newRepo('repo-resume')
+    const crashed = make(repo)
+    const started = await crashed.start('改一个文件', undefined, 'worktree')
+    const id = started.run.id
+    const worktree = started.run.cwd
+    await writeFile(join(worktree, 'a.txt'), 'before crash\n')
+    await mkdir(join(archive, 'sessions', id), { recursive: true })
+    await writeFile(join(archive, 'sessions', id, 'a.jsonl'), '{}\n')
+    const restarted = make(repo)
+    await restarted.loadHistory()
+    const resumed = await restarted.send(id, '接着改', 'steer', { parentSessionId: undefined, from: 'parent' })
+    ok(resumed.ok && resumed.delivery === 'resumed', '原地续接：崩溃子代理在原工作树继续')
+    const live = restarted.runs.get(id)
+    ok(live?.workspace.cwd === worktree && existsSync(worktree), '原地续接：仍在原工作树')
+    await writeFile(join(worktree, 'b.txt'), 'after resume\n')
+    live.rpc.emit('event', { type: 'agent_settled' })
+    await live.settling
+    const after = restarted.get(id)
+    ok(after.review === 'pending' && after.diff?.files === 2, '原地续接：结束后的改动含崩溃前与续接后两部分', JSON.stringify(after.diff))
+    ok((await restarted.discard(id)).ok && !existsSync(worktree), '原地续接：放弃后清理工作树')
   }
 
   {

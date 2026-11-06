@@ -330,20 +330,20 @@ export class SubagentController {
         const workspace = record.resume?.workspace ?? await recoverWorktree(run.cwd, record.rootCwd)
         if (!workspace?.worktreePath || !existsSync(workspace.worktreePath)) continue
         const collected = await collectDiff(workspace, archiveDir, run.id)
-        const saved = await preserveIgnoredOutputs(workspace, archiveDir, run.id)
-        const kept = collected.summary.files > 0 && !collected.patchPath ? '补丁没能保存，已保留工作区' : !saved.ok ? '被忽略的产物没能另存，已保留工作区' : ''
-        const cleaned = kept ? { ok: false, errors: [] as string[] } : await removeWorkspace(workspace)
-        const changed = collected.summary.files > 0 && !!collected.patchPath
-        const note = changed ? '应用退出时子代理未完成；已把它的改动存成补丁，可以合并或放弃（原工作树已清理，不能原地续接，需要继续时重新派一个并附上它的结论）' : kept ? `应用退出时子代理未完成；${kept}：${workspace.worktreePath}` : '应用退出时子代理未完成，未自动恢复执行'
+        const keepWorkspace = collected.summary.files > 0 || (collected.ignoredOutputs?.length ?? 0) > 0
+        const saved = keepWorkspace ? { ok: true as const, path: undefined } : await preserveIgnoredOutputs(workspace, archiveDir, run.id)
+        const kept = keepWorkspace ? '' : !saved.ok ? '被忽略的产物没能另存，已保留工作区' : ''
+        const cleaned = keepWorkspace || kept ? { ok: false, errors: [] as string[] } : await removeWorkspace(workspace)
+        const note = keepWorkspace ? '应用退出时子代理未完成；工作树已保留，可以继续派信息让它原地续接，也可以合并或放弃它的改动' : kept ? `应用退出时子代理未完成；${kept}：${workspace.worktreePath}` : '应用退出时子代理未完成，未自动恢复执行'
         const next: SubagentRun = {
           ...run,
-          review: changed && cleaned.ok ? 'archived' : changed ? 'pending' : 'none',
+          review: keepWorkspace ? 'pending' : 'none',
           diff: collected.summary,
-          resultPath: collected.patchPath ?? (saved.ok && saved.path ? saved.path : workspace.worktreePath),
+          resultPath: keepWorkspace ? workspace.worktreePath : collected.patchPath ?? (saved.ok && saved.path ? saved.path : workspace.worktreePath),
           ...(saved.ok && saved.path ? { savedOutputsPath: saved.path } : {}),
           error: [note, ...cleaned.errors].join(String.fromCharCode(10))
         }
-        await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath })
+        await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath, ...(keepWorkspace ? { resume: { ...record.resume, workspace } } : {}) })
       } catch (error) {
         console.warn('[subagent] 恢复中断的 worktree 子代理失败', run.id, error)
       }
@@ -545,7 +545,7 @@ export class SubagentController {
       ...run,
       resumable: subagentResumability({
         status: run.status, isolation: run.isolation, review: run.review, fork: run.fork, launchFailed: run.launchFailed,
-        live: false, worktreeAlive: false, forkLaunchSaved: !!record.resume?.forkLaunch
+        live: false, worktreeAlive: (run.review === 'pending' || run.review === 'conflict') && !!keptWorktreeOf(record), forkLaunchSaved: !!record.resume?.forkLaunch
       })
     }
   }
@@ -980,7 +980,8 @@ export class SubagentController {
         if (previous) return { ok: false, error: '子代理仍在运行，请再发一次' }
         return { ok: false, error: '这个子代理上次运行被中断，不能续接；需要继续时重新派一个，并在任务里附上它的结论' }
       }
-      if (snapshot.isolation === 'worktree' && !(previous && worktreeAlive(previous) && existsSync(previous.workspace.cwd))) {
+      const keptWorkspace = !previous && snapshot.isolation === 'worktree' && (snapshot.review === 'pending' || snapshot.review === 'conflict') ? keptWorktreeOf(record) : undefined
+      if (snapshot.isolation === 'worktree' && !keptWorkspace && !(previous && worktreeAlive(previous) && existsSync(previous.workspace.cwd))) {
         return { ok: false, error: 'worktree 子代理的工作树已合并、放弃或归档清理，不能在原工作树续改；需要继续时重新派一个，并在任务里附上它的结论' }
       }
       if (snapshot.launchFailed) return { ok: false, error: '这个子代理没有成功启动过，不能续接，请重新派一个' }
@@ -992,7 +993,7 @@ export class SubagentController {
       if (snapshot.fork && !forkSource) return { ok: false, error: '这个 fork 子代理没有保存来源信息，砚重启后不能续接；需要继续时重新派一个' }
 
       const rootCwd = previous?.workspace.rootCwd ?? record?.rootCwd ?? snapshot.cwd
-      const workspace: PreparedWorkspace = previous?.workspace ?? { isolation: snapshot.isolation, rootCwd, cwd: snapshot.cwd }
+      const workspace: PreparedWorkspace = previous?.workspace ?? keptWorkspace ?? { isolation: snapshot.isolation, rootCwd, cwd: snapshot.cwd }
       const storedLaunch = previous?.launch ?? record?.resume?.launch
       const resolvedLaunch = resolveResumeLaunch(
         storedLaunch ? { launch: storedLaunch, digest: record?.resume?.launchDigest ?? launchDigest(storedLaunch) } : undefined,
@@ -1431,6 +1432,14 @@ export class SubagentController {
       }
       const result = await applyPatch(record.rootCwd, run.diff.patchPath)
       if (!result.ok) return result
+    }
+    const kept = keptWorktreeOf(record)
+    if (kept && run.isolation === 'worktree') {
+      const saved = review === 'merged' ? await preserveIgnoredOutputs(kept, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id) : { ok: true as const, path: undefined }
+      if (!saved.ok) return { ok: false, error: `被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${kept.worktreePath}` }
+      const cleaned = await cleanupWorkspace(kept)
+      if (saved.path) run.savedOutputsPath = saved.path
+      if (!cleaned.ok) run.error = [run.error, ...cleaned.errors].filter(Boolean).join(String.fromCharCode(10))
     }
     run.review = review
     await this.history.save(run, record.rootCwd)
@@ -1886,6 +1895,11 @@ function addUsage(base: SubagentUsageTotals | undefined, next: SubagentUsageTota
     cost: sum(base.cost, next.cost),
     reportedMessages: base.reportedMessages + next.reportedMessages
   }
+}
+
+function keptWorktreeOf(record: SubagentHistoryRecord | undefined): PreparedWorkspace | undefined {
+  const workspace = record?.resume?.workspace
+  return workspace?.worktreePath && existsSync(workspace.worktreePath) ? workspace : undefined
 }
 
 function worktreeAlive(run: Run): boolean {
