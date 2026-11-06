@@ -15,6 +15,7 @@ import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
 import { HomeBackdrop } from '../ambient/HomeBackdrop'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { Button, Skeleton } from '../../ui'
+import { motionAllowed } from '../../ui/motion-hooks'
 import { ChevronDown } from 'lucide-react'
 import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { useSessionViewSource, type SessionPaneBinding } from './session-view-source'
@@ -308,6 +309,13 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     return Math.max(0, indices[index] ?? -1)
   }, [])
   const [remountKey, setRemountKey] = useState(0)
+  const arriveStage = `${identity}|${switchLoading ? 'l' : 'r'}`
+  const [seenStage, setSeenStage] = useState(arriveStage)
+  const [arriveFlip, setArriveFlip] = useState(0)
+  if (seenStage !== arriveStage) {
+    setSeenStage(arriveStage)
+    if (!switchLoading && motionAllowed()) setArriveFlip((flip) => flip + 1)
+  }
   const remountsRef = useRef(0)
   const settleRef = useRef<SettleAnchor | null>(null)
   const streamingSeenRef = useRef({ identity, streamingId })
@@ -926,7 +934,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       <ToolExpansionScope.Provider value={expansionScope}>
       <TurnScopeContext.Provider value={source.turnScope}>
       <AsideFitScope.Provider value={asideFits}>
-      <div className="v3-stream-host" ref={hostRef} data-jump={showJump && !stick ? '' : undefined}>
+      <div className="v3-stream-host" ref={hostRef} data-arrive={arriveFlip > 0 ? (arriveFlip % 2 ? 'a' : 'b') : undefined} data-jump={showJump && !stick ? '' : undefined}>
         <div className="v3-aside-fit-probe" ref={asideProbeRef} aria-hidden />
         {virtual ? (
           <VList
