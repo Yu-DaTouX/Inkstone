@@ -75,6 +75,18 @@ export default async function run({ cdp, waitFor, report, sleep, log, shot, out 
   log('messages', report.messages)
   await shot(`${tag}-open`)
 
+  await cdp.call('Performance.enable')
+  const mem = async () => { await cdp.call('HeapProfiler.collectGarbage').catch(() => {}); await sleep(300); const m = Object.fromEntries((await cdp.call('Performance.getMetrics')).result.metrics.map((x) => [x.name, x.value])); return { heapMB: Math.round(m.JSHeapUsedSize / 1048576), nodes: m.Nodes } }
+  if (want('stream')) {
+    report.memOpen = await mem()
+    log('mem open', report.memOpen)
+    await record('stream', async () => {
+      await ev(`window.__yanStore.getState().send('STEPS12 STORM-big')`)
+      await waitFor('!(s.session?.isStreaming || s.session?.isAgentRunning)', 25000, 50).catch(() => {})
+    }, 1500)
+    report.memStream = await mem()
+    log('mem stream', report.memStream)
+  }
   if (want('up')) {
     await record('wheel-up', () => wheel(-120, 120), 800)
     await record('wheel-up-fast', () => wheel(-400, 100, 8), 800)
@@ -148,9 +160,15 @@ export default async function run({ cdp, waitFor, report, sleep, log, shot, out 
       await waitFor(`!s.switchLoading && s.session?.sessionFile === ${JSON.stringify(other)} && s.messages.length > 0`, 60000, 10)
       await sleep(1000)
     }
+    const switchTimes = []
     await record('reopen', async () => {
+      const t0 = Date.now()
       await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(file)})`)
       await waitFor(`!s.switchLoading && s.session?.sessionFile === ${JSON.stringify(file)} && s.messages.length > 20`, 120000, 10)
+      switchTimes.push(Date.now() - t0)
     }, 1500)
+    await record('revisit-up', () => wheel(-400, 100, 8), 800)
+    log('switchMs', switchTimes)
+    report.switchMs = switchTimes
   }
 }
