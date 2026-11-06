@@ -1,5 +1,5 @@
 export { NO_PROJECT_ID, scopedKeyOf, toProjectView, toThreadView, type RowVariant, type SidebarProjectView, type SidebarThreadView, type ThreadRef, type ThreadViewContext } from './types'
-export { useActiveThreadKey, useMinuteClock, useSidebarSections, useThreadView } from './threads'
+export { sidebarClockNow, useActiveThreadKey, useMinuteClock, useSidebarSections, useThreadView } from './threads'
 export { buildSidebarSections, type BuildSidebarSectionsInput, type SidebarSections } from './sections'
 export { useSidebarProject, useSidebarProjects, type SidebarProjectCollection } from './projects'
 export { sidebarActions, useSidebarActions, type SidebarActions } from './actions'

@@ -268,7 +268,9 @@ export function canStartAction(state: PrActionPhase): boolean {
   return state.phase !== 'running'
 }
 
-export function failureCause(failure: GhPrFailure): string {
+const CJK_TEXT = /[一-鿿]/
+
+export function failureCause(failure: GhPrFailure, lang: 'zh-CN' | 'en-US' = 'zh-CN'): string {
   const parts: string[] = [`code: ${failure.code}`, failure.message, failure.hint].filter(Boolean)
   const git = failure.gitFailure
   if (git) {
@@ -276,7 +278,7 @@ export function failureCause(failure: GhPrFailure): string {
     if (git.message) parts.push(git.message)
     if (git.detail) parts.push(git.detail)
   }
-  return parts.join('\n')
+  return (lang === 'en-US' ? parts.filter((part) => !CJK_TEXT.test(part)) : parts).join('\n')
 }
 
 export interface CreateDefaultsInput {

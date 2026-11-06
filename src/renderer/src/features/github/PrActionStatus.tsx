@@ -1,5 +1,6 @@
 import { useCallback, useReducer, useRef, useState, type ReactElement } from 'react'
 import { RefreshCw, RotateCcw } from 'lucide-react'
+import { useI18n } from '../../i18n'
 import { Button, CloseButton, Collapsible, CollapsibleHeader, CollapsiblePanel, Notice, Spinner } from '../../ui'
 import type { GhPrActionRequest, GhPrActionResult } from '../../../../shared/github'
 import { canStartAction, failureCause, reduceAction, type PrActionPhase } from './pr-actions-model'
@@ -63,6 +64,7 @@ export interface PrActionStatusProps {
 
 export function PrActionStatus({ controller, text, onRefresh, className }: PrActionStatusProps): ReactElement | null {
   const { state } = controller
+  const { lang } = useI18n()
   const [causeOpen, setCauseOpen] = useState(false)
   if (state.phase === 'idle') return null
   if (state.phase === 'running') {
@@ -131,7 +133,7 @@ export function PrActionStatus({ controller, text, onRefresh, className }: PrAct
           <CollapsibleHeader tone="muted" aria-label={causeOpen ? text.hideCause : text.cause} data-testid="gh-pr-action-cause">
             {causeOpen ? text.hideCause : text.cause}
           </CollapsibleHeader>
-          <CollapsiblePanel>{causeOpen ? <pre className="gh-pr-act__cause ui-meta-num">{failureCause(failure)}</pre> : null}</CollapsiblePanel>
+          <CollapsiblePanel>{causeOpen ? <pre className="gh-pr-act__cause ui-meta-num">{failureCause(failure, lang === 'en-US' ? 'en-US' : 'zh-CN')}</pre> : null}</CollapsiblePanel>
         </Collapsible>
       </span>
     </Notice>

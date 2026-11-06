@@ -176,6 +176,10 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
     m.failureCause({ code: 'git-failed', message: 'x', hint: '', retrySafe: true, gitFailure: { code: 'dirty-blocks-switch', message: '冲突', detail: 'a.ts', retrySafe: true } }),
     'code: git-failed\nx\ngit: dirty-blocks-switch\n冲突\na.ts'
   )
+  assert.equal(
+    m.failureCause({ code: 'git-failed', message: '推送失败', hint: '检查网络', retrySafe: true, gitFailure: { code: 'network', message: 'fatal: unable to access', detail: '冲突', retrySafe: true } }, 'en-US'),
+    'code: git-failed\ngit: network\nfatal: unable to access'
+  )
 }
 
 {

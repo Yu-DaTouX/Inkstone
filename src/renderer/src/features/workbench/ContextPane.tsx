@@ -248,6 +248,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
                 <li
                   key={r.id}
                   className="wb-ctxw-part"
+                  aria-label={`${rowLabel(r.id)} ${shortTokens(r.tokens)} (${Math.round(share(r.tokens))}%)`}
                   data-active={focusKind === r.id ? '1' : undefined}
                   tabIndex={0}
                   onMouseEnter={() => setFocusKind(r.id)}
