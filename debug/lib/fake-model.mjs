@@ -49,6 +49,11 @@ function mdShow() {
   ].join('')
 }
 
+function mdCode() {
+  const lines = Array.from({ length: 220 }, (_, i) => `export function handler${i}(input: Record<string, unknown>, options = { retry: ${i % 4}, label: "第 ${i} 个" }): string { return JSON.stringify({ input, options, index: ${i} }) }`)
+  return ['下面是完整实现：\n\n', '```ts\n' + lines.join('\n') + '\n```\n\n', '以上就是全部代码。\n'].join('')
+}
+
 function mdReal() {
   return [
     '## 修复结果\n\n',
@@ -81,6 +86,7 @@ function reportDemo() {
 }
 
 export const FAKE_TRIGGERS = {
+  MDCODE: '一段 220 行（约 38KB）的 ts 代码块加前后各一句话，不规则块长与间隔，用来看长代码块流式渲染',
   MDREAL: '一段常见的编程助手总结（标题、加粗、行内代码、链接、有序与嵌套列表、删除线、表格、引用、代码块、分隔线），不规则块长与间隔，用来看 markdown 流式渲染',
   MDSHOW: '一篇含行内代码、链接、代码块、表格、公式、Mermaid、图片、列表的短文，慢速逐块流出，用来看 markdown 流式渲染（CHUNK<n> 每块字符数，GAP<n> 间隔毫秒）',
   LONGTEXT: '约 20KB markdown 长文本，慢速逐块流出',
@@ -222,7 +228,8 @@ async function respond(res, text, done, requestNo) {
       if (done < steps) await stormStep('storm', stormTag(text, 'STORM'), done, 120)
       else if (done === steps && text.includes('ASK')) await callTool('question', { question: `${stormTag(text, 'STORM')} 跑完了，下一步怎么做？`, options: ['继续', '停下'] })
       else await streamText(longText(), 24, 8)
-    } else if (text.includes('MDREAL')) await streamText(mdReal(), -14, 22)
+    } else if (text.includes('MDCODE')) await streamText(mdCode(), -14, 22)
+    else if (text.includes('MDREAL')) await streamText(mdReal(), -14, 22)
     else if (text.includes('MDSHOW')) await streamText(mdShow(), Number(/CHUNK(\d+)/.exec(text)?.[1] ?? 6), Number(/GAP(\d+)/.exec(text)?.[1] ?? 20))
     else if (text.includes('LONGTEXT')) await streamText(longText(), 12, 15)
     else if (text.includes('REPORTDEMO')) await streamText(reportDemo(), 40, 10)

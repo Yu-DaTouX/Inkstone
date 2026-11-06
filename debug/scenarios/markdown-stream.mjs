@@ -147,6 +147,18 @@ function analyze(frames, from, to) {
     for (let k = 0; k < Math.min(a.length, b.length); k++) if (a[k].h !== b[k].h) img.push({ t: fs[i].t, from: a[k].h, to: b[k].h })
   }
   out.imageHeightChanges = img.slice(0, 8)
+  const codeSteps = []
+  let lastLen = 0
+  let lastAt = 0
+  for (const f of fs) {
+    const len = f.codes.length ? f.codes[f.codes.length - 1].len : 0
+    if (len !== lastLen) {
+      if (len > lastLen && lastLen > 0) codeSteps.push({ dt: f.t - lastAt, dc: len - lastLen })
+      lastLen = len
+      lastAt = f.t
+    }
+  }
+  out.codeCadence = { updates: codeSteps.length, intervalMs: stats(codeSteps.map((s) => Math.round(s.dt))), charsPerUpdate: stats(codeSteps.map((s) => s.dc)) }
   out.literalFrames = Object.fromEntries(['strong', 'link', 'fence', 'math', 'pipe', 'head', 'bullet', 'tilde'].map((k) => [k, fs.filter((f) => f.lit && f.lit[k]).length]))
   return out
 }
