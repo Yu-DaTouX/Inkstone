@@ -4,6 +4,7 @@ import type { RemoteEventEnvelope, RemotePendingQuestion, RemoteInfo, RemoteMode
 import { RemoteClient, RemoteEventStream, RemoteHttpError, type Connection, type RemoteProject, type SessionListItem, type StreamState } from './api/client'
 import { deviceInfo, readMarks, writeMarks, type ReadMark } from './device'
 import { saveConnection } from './storage'
+import { planPreviews } from './previewPlan'
 
 export interface RunnerInfo {
   runId: string
@@ -139,14 +140,18 @@ export function RemoteProvider({
     if (next.computer?.name || next.device?.name) await saveConnection({ ...connection, computerName: next.computer?.name ?? connection.computerName, deviceName: next.device?.name ?? connection.deviceName })
   }), [client, connection, guard])
 
+  const previewFetchedAt = useRef(new Map<string, number>())
+  const [previewTick, setPreviewTick] = useState(0)
   useEffect(() => {
     let cancelled = false
-    const recent = [...sessions].sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt)).slice(0, 8)
-    const queue = recent.filter((session) => previewVersions.current.get(session.id) !== (session.lastActivityAt ?? session.updatedAt))
+    const plan = planPreviews(sessions, previewVersions.current, previewFetchedAt.current, Date.now())
+    const retry = plan.retryIn === null ? null : setTimeout(() => setPreviewTick((tick) => tick + 1), plan.retryIn + 20)
+    const queue = plan.fetch.map((id) => sessions.find((session) => session.id === id)!)
     const work = async () => {
       while (queue.length && !cancelled) {
         const session = queue.shift()!
         try {
+          previewFetchedAt.current.set(session.id, Date.now())
           const history = await client.history(session.id, 12)
           if (cancelled) return
           const last = [...history.messages].reverse().find((message) => (message.role === 'assistant' || message.role === 'user') && message.text?.trim())
@@ -157,8 +162,8 @@ export function RemoteProvider({
       }
     }
     void Promise.all([work(), work(), work()])
-    return () => { cancelled = true }
-  }, [client, sessions])
+    return () => { cancelled = true; if (retry) clearTimeout(retry) }
+  }, [client, sessions, previewTick])
 
   const refreshQuestions = useCallback(() => guard(async () => setQuestions(await client.questions())), [client, guard])
 
