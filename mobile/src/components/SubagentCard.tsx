@@ -78,7 +78,7 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
         const tone = run.status === 'error' ? p.err : isLive(run) ? p.fg : p.fgDim
         const meta = [statusText(run), shortModel(run.model), typeof run.toolCalls === 'number' ? pick(`${run.toolCalls} 次工具`, `${run.toolCalls} tool calls`) : '', duration(run, now)].filter(Boolean).join(' · ')
         const detail = run.status === 'error' ? (run.error || run.summary) : (run.summary || (isLive(run) ? run.latestActivity : ''))
-        return <Pressable key={run.id} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${run.title}，${meta}`} onPress={() => setOpenRun(open ? null : run.id)} style={styles.row}>
+        return <Pressable key={run.id} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${run.title}${pick('，', ', ')}${meta}`} onPress={() => setOpenRun(open ? null : run.id)} style={styles.row}>
           <ModelBot model={run.model} mood={botMood(run)} size={BOT_SIZE} />
           <View style={styles.body}>
             <Text numberOfLines={open ? undefined : 1} style={{ color: tone, fontSize: font.sm, lineHeight: 20 }}>{run.title}</Text>

@@ -167,7 +167,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       if (!q.sessionId) return <View style={styles.cardWrap}><QuestionCard question={q} onAnswer={(answer, key) => client.answer(q.id, answer, key).finally(() => refresh())} /></View>
       const session = sessions.find((s) => s.id === q.sessionId)
       const headline = (approvalInfo(q) ? q.title : q.message || q.title) || pick('砚需要你回答', 'Inkstone needs your answer')
-      return <Pressable accessibilityRole="button" accessibilityLabel={`${STATUS_TEXT.wait}：${headline}，${titleOf(q.sessionId)}`} onPress={() => onOpen(q.sessionId!, titleOf(q.sessionId))} style={({ pressed }) => [styles.card, { backgroundColor: p.warnSoft, opacity: pressed ? 0.75 : 1 }]}>
+      return <Pressable accessibilityRole="button" accessibilityLabel={`${STATUS_TEXT.wait}${pick('：', ': ')}${headline}${pick('，', ', ')}${titleOf(q.sessionId)}`} onPress={() => onOpen(q.sessionId!, titleOf(q.sessionId))} style={({ pressed }) => [styles.card, { backgroundColor: p.warnSoft, opacity: pressed ? 0.75 : 1 }]}>
         <View style={styles.cardTop}><Text numberOfLines={1} style={[styles.cardProject, { color: p.fgMute }]}>{session ? projectName(session) : ''}</Text><Text style={{ color: p.warn, fontSize: font.xs }}>◆ {approvalInfo(q) ? pick('等待批准', 'Awaiting approval') : q.sensitive ? pick('需在电脑确认', 'Confirm on desktop') : STATUS_TEXT.wait}</Text></View>
         <Text numberOfLines={3} style={[styles.cardTitle, { color: p.fg }]}>{headline}</Text>
         <Text numberOfLines={1} style={{ color: p.fgDim, fontSize: font.sm }}>{titleOf(q.sessionId)}</Text>
@@ -175,7 +175,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     }
     if (item.kind === 'run') {
       const selected = item.session.id === selectedSessionId
-      return <Pressable accessibilityRole="button" accessibilityLabel={`${item.session.title}，${STATUS_TEXT.run}`} onPress={() => onOpen(item.session.id, item.session.title)} style={({ pressed }) => [styles.card, { backgroundColor: selected ? p.press : p.bg3, borderColor: p.borderSoft, borderWidth: StyleSheet.hairlineWidth, opacity: pressed ? 0.75 : 1 }]}>
+      return <Pressable accessibilityRole="button" accessibilityLabel={`${item.session.title}${pick('，', ', ')}${STATUS_TEXT.run}`} onPress={() => onOpen(item.session.id, item.session.title)} style={({ pressed }) => [styles.card, { backgroundColor: selected ? p.press : p.bg3, borderColor: p.borderSoft, borderWidth: StyleSheet.hairlineWidth, opacity: pressed ? 0.75 : 1 }]}>
         <View style={styles.cardTop}><Text numberOfLines={1} style={[styles.cardProject, { color: p.fgMute }]}>{projectName(item.session)}</Text><View style={styles.runState}><GlyphSpinner /><Text style={{ color: p.accent, fontSize: font.xs, fontFamily: mono }}>{STATUS_TEXT.run}</Text></View></View>
         <Text numberOfLines={1} style={[styles.cardTitle, { color: p.fg }]}>{item.session.title || pick('未命名会话', 'Untitled session')}</Text>
       </Pressable>
@@ -223,7 +223,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     {!alertsEnabled ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('开启待回答提醒', 'Enable question alerts')}</Text></Pressable> : null}
     <View style={[styles.foot, { borderTopColor: p.borderSoft, paddingBottom: Math.max(0, bottomInset - space[2]) }]}>
       <StatusDot color={stream === 'open' ? p.online : p.warn} label={STATUS_TEXT[stream]} />
-      <Text accessibilityLabel={`${client.connection.baseUrl}，${STATUS_TEXT[stream]}`} numberOfLines={1} style={[styles.computer, { color: p.fgDim }]}>{info?.computer?.name || client.connection.computerName || client.connection.baseUrl.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}</Text>
+      <Text accessibilityLabel={`${client.connection.baseUrl}${pick('，', ', ')}${STATUS_TEXT[stream]}`} numberOfLines={1} style={[styles.computer, { color: p.fgDim }]}>{info?.computer?.name || client.connection.computerName || client.connection.baseUrl.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}</Text>
       <IconButton name="refresh" label={pick('刷新会话', 'Refresh sessions')} busy={refreshing} onPress={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} />
       <IconButton name="settings" label={pick('打开手机设置', 'Open phone settings')} onPress={onSettings} />
     </View>
