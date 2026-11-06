@@ -108,6 +108,8 @@ function PeerEmpty({ running }: { running: boolean }): JSX.Element {
   )
 }
 
+const SKELETON_DELAY_MS = 180
+
 export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.Element {
   const t = useT()
   const source = useSessionViewSource(pane)
@@ -312,10 +314,16 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   const arriveStage = `${identity}|${switchLoading ? 'l' : 'r'}`
   const [seenStage, setSeenStage] = useState(arriveStage)
   const [arriveFlip, setArriveFlip] = useState(0)
-  if (seenStage !== arriveStage) {
-    setSeenStage(arriveStage)
-    if (!switchLoading && motionAllowed()) setArriveFlip((flip) => flip + 1)
+  const skeletonSince = useRef(0)
+  if (switchLoading && messages.length === 0) {
+    if (skeletonSince.current === 0) skeletonSince.current = performance.now()
+  } else if (!switchLoading && skeletonSince.current > 0) {
+    if (performance.now() - skeletonSince.current >= SKELETON_DELAY_MS && motionAllowed() && seenStage !== arriveStage) setArriveFlip((flip) => flip + 1)
+    skeletonSince.current = 0
+  } else if (messages.length > 0) {
+    skeletonSince.current = 0
   }
+  if (seenStage !== arriveStage) setSeenStage(arriveStage)
   const remountsRef = useRef(0)
   const settleRef = useRef<SettleAnchor | null>(null)
   const streamingSeenRef = useRef({ identity, streamingId })

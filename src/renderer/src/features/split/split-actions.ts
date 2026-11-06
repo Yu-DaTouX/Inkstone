@@ -92,11 +92,16 @@ function transitionSplitLayout(update: () => void, settleOn: SplitSessionRef | n
     update()
     return
   }
-  doc.startViewTransition(async () => {
+  const root = doc.documentElement
+  root.dataset.splitLayoutVt = ''
+  const transition = doc.startViewTransition(async () => {
     update()
     if (settleOn) await splitSwitchSettled(settleOn)
     else await new Promise<void>((resolve) => window.setTimeout(resolve, 32))
-  })
+  }) as { finished?: Promise<unknown> } | undefined
+  const clear = (): void => { delete root.dataset.splitLayoutVt }
+  if (transition?.finished) void transition.finished.then(clear, clear)
+  else clear()
 }
 
 function switchSplitFocus(target: SplitSessionRef): void {
