@@ -13,7 +13,7 @@ export function AgentToolSwitches(): ReactElement {
     <SettingsGroup label={t('cap.codemodeTitle')} testId="cap-agent-switches">
       <SettingsRow
         settingId="caps-tools-codemode"
-        label={<TooltipText tooltip={t('cap.codemodeHint')}>{t('cap.codemodeTitle')}</TooltipText>}
+        label={<TooltipText tooltip={t('cap.codemodeHint')} tooltipPlacement="right">{t('cap.codemodeTitle')}</TooltipText>}
         description={t('cap.codemodeDesc')}>
         <Switch
           aria-label={t('cap.codemodeTitle')}
