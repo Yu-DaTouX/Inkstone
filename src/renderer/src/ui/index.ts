@@ -84,7 +84,6 @@ export {
 } from './SegmentedControl'
 export { Radio, RadioGroup, type RadioGroupProps, type RadioProps } from './Radio'
 export { Select, type SelectProps } from './Select'
-export { ComboBox, type ComboBoxProps } from './ComboBox'
 export {
   ListBox,
   ListBoxItem,
@@ -157,7 +156,6 @@ export { Skeleton, type SkeletonProps, type SkeletonShape } from './Skeleton'
 export { ShimmerText, CompletionSweep, type ShimmerTextProps, type CompletionSweepProps } from './Shimmer'
 export { Separator, type SeparatorProps } from './Separator'
 export { AsciiRule, AsciiSpark, TermSpinner, type AsciiGlyph, type AsciiRuleProps, type AsciiSparkProps, type AsciiTone, type TermSpinnerProps } from './Terminal'
-export { AsciiScale, type AsciiScaleOption, type AsciiScaleProps } from './AsciiScale'
 export { Slider, type SliderProps } from './Slider'
 export {
   SettingRow,
@@ -203,27 +201,6 @@ export {
   type TreeProps,
   type TreeSectionProps
 } from './Tree'
-export {
-  Cell,
-  Column,
-  Row,
-  Table,
-  TableBody,
-  TableEmptyState,
-  TableFooter,
-  TableHeader,
-  TableLoadingState,
-  type CellProps,
-  type ColumnProps,
-  type RowProps,
-  type TableBodyProps,
-  type TableEmptyStateProps,
-  type TableFooterProps,
-  type TableHeaderProps,
-  type TableLoadingStateProps,
-  type TableProps
-} from './Table'
-export { sortRows, type TableSortDescriptor } from './table-model'
 export { Splitter, type SplitterProps, type SplitterOrientation } from './Splitter'
 export { PanelTab, PanelTabCloseButton, PanelTabList, type PanelTabCloseButtonProps, type PanelTabListProps, type PanelTabProps } from './PanelTabs'
 export { Sheet, type SheetProps } from './Sheet'

@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react'
 import { SegmentedControl, Tab, TabList, Tabs } from '../ui'
-import type { UsageToggleProps, UsageToggleRenderer } from '../features/usage/UsageOverviewView'
 import './usage-pattern.css'
+
+export interface UsageToggleProps {
+  kind: 'tab' | 'range'
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+  label: string
+  testId?: string
+}
+
+export type UsageToggleRenderer = (props: UsageToggleProps) => ReactNode
 
 export const renderUsageToggle: UsageToggleRenderer = ({
   kind,

@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
   Checkbox,
   CheckboxGroup,
-  ComboBox,
   FieldError,
   Input,
   Label,
@@ -212,31 +211,6 @@ export const SelectStates: Story = {
         <ListBoxItem id="one">选项一</ListBoxItem>
         <ListBoxItem id="two">选项二</ListBoxItem>
       </Select>
-    </div>
-  )
-}
-
-export const ComboBoxStates: Story = {
-  name: 'ComboBox · 默认 / 过滤 / 禁用 / 错误',
-  parameters: {
-    stateMatrix: {
-      components: ['ComboBox'],
-      states: STATES('default', 'open', 'focus', 'disabled', 'invalid'),
-      declared: STATES('open', 'focus')
-    }
-  },
-  render: () => (
-    <div style={{ display: 'grid', gap: 'var(--s-16)', maxWidth: 360 }}>
-      <ComboBox label="模型" inputPlaceholder="输入以过滤" defaultInputValue="deep">
-        <ListBoxItem id="deepseek">deepseek-v4.1-flash</ListBoxItem>
-        <ListBoxItem id="deepseek-pro">deepseek-v4.1-pro</ListBoxItem>
-      </ComboBox>
-      <ComboBox label="禁用" inputPlaceholder="不可输入" isDisabled>
-        <ListBoxItem id="one">选项一</ListBoxItem>
-      </ComboBox>
-      <ComboBox label="错误" inputPlaceholder="选择一个" isInvalid errorMessage="没有匹配的模型。">
-        <ListBoxItem id="one">选项一</ListBoxItem>
-      </ComboBox>
     </div>
   )
 }
