@@ -12,6 +12,8 @@ const IDLE_EXIT_MS = 30_000
 
 const pending = new Map<string, { settle: (value: UsageReply) => void; fail: (error: Error) => void }>()
 let child: UtilityProcess | null = null
+let starting: Promise<UtilityProcess> | null = null
+let generation = 0
 let idleTimer: ReturnType<typeof setTimeout> | undefined
 
 function workerPath(): string {
@@ -45,23 +47,35 @@ function armIdle(): void {
 
 async function ensureChild(): Promise<UtilityProcess> {
   if (child) return child
-  const { utilityProcess } = await import('electron')
-  const spawned = utilityProcess.fork(workerPath(), [], { serviceName: 'Inkstone usage stats', stdio: 'ignore' })
-  spawned.on('message', (message: { id?: unknown; value?: unknown; error?: unknown } | null) => {
-    if (!message || typeof message.id !== 'string') return
-    const entry = pending.get(message.id)
-    if (!entry) return
-    pending.delete(message.id)
-    if (typeof message.error === 'string' && message.error) entry.fail(new Error(message.error))
-    else entry.settle(message.value as UsageReply)
-    armIdle()
-  })
-  spawned.once('exit', () => {
-    if (child === spawned) child = null
-    failAll(pick('用量统计进程已退出', 'Usage stats process exited'))
-  })
-  child = spawned
-  return spawned
+  if (starting) return starting
+  const launch = (async () => {
+    const born = generation
+    const { utilityProcess } = await import('electron')
+    if (born !== generation) throw new Error(pick('用量统计进程已退出', 'Usage stats process exited'))
+    const spawned = utilityProcess.fork(workerPath(), [], { serviceName: 'Inkstone usage stats', stdio: 'ignore' })
+    spawned.on('message', (message: { id?: unknown; value?: unknown; error?: unknown } | null) => {
+      if (!message || typeof message.id !== 'string') return
+      const entry = pending.get(message.id)
+      if (!entry) return
+      pending.delete(message.id)
+      if (typeof message.error === 'string' && message.error) entry.fail(new Error(message.error))
+      else entry.settle(message.value as UsageReply)
+      armIdle()
+    })
+    spawned.once('exit', () => {
+      if (child !== spawned) return
+      child = null
+      failAll(pick('用量统计进程已退出', 'Usage stats process exited'))
+    })
+    child = spawned
+    return spawned
+  })()
+  starting = launch
+  try {
+    return await launch
+  } finally {
+    if (starting === launch) starting = null
+  }
 }
 
 function readInWorker(range: UsageRange): Promise<UsageReply> {
@@ -81,6 +95,7 @@ export function readUsageStatsOffThread(range: UsageRange): Promise<UsageReply> 
 }
 
 export function disposeUsageStatsWorker(): void {
+  generation++
   stopChild()
   failAll(pick('用量统计进程已退出', 'Usage stats process exited'))
 }

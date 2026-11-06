@@ -67,7 +67,7 @@ export function buildSubagentNotice(
   }
   if (outcome.partial || status === 'error') lines.push(`完整过程：yan subagent get --id ${run.id}`)
   if (run.resumable?.ok) lines.push(`可续派：yan subagent send --id ${run.id} --message <追加任务>（保留它之前的全部上下文，比重新派更省）`)
-  else if (run.resumable?.reason) lines.push(`不可续派：${clip(run.resumable.reason, 120)}`)
+  else if (run.resumable?.reason) lines.push(`不可续派：${clip(toModelText(run.resumable.reason), 120)}`)
   lines.push('这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。')
   return `<${SUBAGENT_NOTICE_TAG} id="${run.id}" status="${status}">\n${lines.join('\n')}\n</${SUBAGENT_NOTICE_TAG}>`
 }
