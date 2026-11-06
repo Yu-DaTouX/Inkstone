@@ -585,7 +585,7 @@ function LiveMarkdown({ text, settled = false, math = null, fade = NO_FADE, thro
   let blocks = split
   let wait = 0
   const tail = split[split.length - 1]
-  if (throttle && tail) {
+  if (throttle && tail && !hasUnclosedFence(tail.text)) {
     const result = throttleTail(hold.current, tail, performance.now())
     hold.current = result.hold
     wait = result.wait
