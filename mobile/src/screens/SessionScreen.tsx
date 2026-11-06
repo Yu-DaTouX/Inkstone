@@ -141,9 +141,6 @@ export function SessionScreen({
     for (const message of messages) for (const artifact of message.artifacts ?? []) byName.set(artifact.filename, artifact)
     return [...byName.values()]
   }, [messages])
-  useEffect(() => {
-    onDetail?.({ sessionId, plan, subagents, artifacts, running: !!runner?.running, model: modelName, stats, changes })
-  }, [onDetail, sessionId, plan, subagents, artifacts, runner?.running, modelName, stats, changes])
   const todosLeft = plan?.todos.filter((todo) => !(todo.done || todo.status === 'done')).length ?? 0
   const liveSubagents = subagents.filter((run) => run.status === 'starting' || run.status === 'running').length
   const readLatest = useCallback(() => {
@@ -250,6 +247,9 @@ export function SessionScreen({
     } catch { }
   }, [client, insightAllowed, sessionId])
 
+  useEffect(() => {
+    onDetail?.({ sessionId, plan, subagents, artifacts, running: !!runner?.running, model: modelName, stats, changes, reloadInsight: () => void loadInsight() })
+  }, [onDetail, sessionId, plan, subagents, artifacts, runner?.running, modelName, stats, changes, loadInsight])
   const wasRunning = useRef(false)
   useEffect(() => {
     const running = !!runner?.running

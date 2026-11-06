@@ -25,6 +25,7 @@ export interface SessionDetail {
   model?: string
   stats?: RemoteSessionStats
   changes?: RemoteSessionChanges | null
+  reloadInsight?: () => void
 }
 
 const isDone = (todo: PlanTodo) => todo.done || todo.status === 'done'
@@ -143,7 +144,7 @@ export function DetailPane({ detail, onOpenArtifact, onSessionRemoved, backgroun
       <SubagentCard runs={detail.subagents} plain sessionId={detail.sessionId} />
     </Section> : null}
     <ActionsSection sessionId={detail.sessionId} running={detail.running} pinned={!!session?.pinned} archived={!!session?.archivedAt} onRemoved={onSessionRemoved} />
-    <BranchSheet sessionId={detail.sessionId} visible={branchOpen} running={detail.running} onClose={() => setBranchOpen(false)} onSwitched={() => undefined} />
+    <BranchSheet sessionId={detail.sessionId} visible={branchOpen} running={detail.running} onClose={() => setBranchOpen(false)} onSwitched={() => detail.reloadInsight?.()} />
     {detail.artifacts.length ? <Section title={pick('产物', 'Artifacts')} value={String(detail.artifacts.length)}>
       {detail.artifacts.map((artifact) => <Pressable key={artifact.id} accessibilityRole="button" disabled={artifact.unavailable} onPress={() => onOpenArtifact(artifact)} style={[styles.row, { opacity: artifact.unavailable ? 0.5 : 1 }]}>
         <Icon name="file" size={icon.sm} color={p.fgDim} />
