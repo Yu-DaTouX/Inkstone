@@ -69,6 +69,14 @@ check('渐显：非前缀改写时重置', () => {
   assert.equal(track.marks.length, 0)
 })
 
+check('渐显：只有末尾几个字被改写（补收尾符号）时保留前面的标记', () => {
+  let track = fade.trackReveal(null, '**ab**', 0)
+  track = fade.trackReveal(track, '**abc**', 50)
+  assert.deepEqual(track.marks.map((mark) => mark.from), [0, 4])
+  const rewritten = fade.trackReveal(fade.trackReveal(null, 'a'.repeat(40), 0), 'a'.repeat(10) + 'b'.repeat(40), 10)
+  assert.equal(rewritten.marks.length, 0)
+})
+
 check('渐显：分块换算到块内偏移', () => {
   const spans = [{ from: 5, to: 15, age: 20 }]
   assert.deepEqual(fade.spansForBlock(spans, 10, 10), [{ from: 0, to: 5, age: 20 }])

@@ -25,11 +25,15 @@ export function useSmoothReveal(text: string, live: boolean): string {
   const [shown, setShown] = useState(() => (live && !prefersReducedMotion() ? nextRevealLength(text, 0, 0) : text.length))
   const shownRef = useRef(shown)
   const textRef = useRef(text)
+  const wasLive = useRef(live)
   textRef.current = text
+  if (live) wasLive.current = true
 
-  const animate = live && !prefersReducedMotion()
+  const reduced = prefersReducedMotion()
   const clamped = Math.min(shown, text.length)
+  const animate = !reduced && (live || (wasLive.current && clamped < text.length))
   const pending = animate && clamped < text.length
+  if (!live && !pending) wasLive.current = false
 
   useEffect(() => {
     if (!pending) return undefined

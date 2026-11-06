@@ -562,6 +562,7 @@ function hasUnclosedFence(text: string): boolean {
 }
 
 const FENCE_LINE = /^\s*(```|~~~)/m
+const CLOSED_HIGHLIGHT_CHARS = 4000
 const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
 
 const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
@@ -577,14 +578,14 @@ const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highli
   )
 })
 
-function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE, throttle = false }: { text: string; highlight?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[]; throttle?: boolean }): JSX.Element {
+function LiveMarkdown({ text, settled = false, math = null, fade = NO_FADE, throttle = false }: { text: string; settled?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[]; throttle?: boolean }): JSX.Element {
   const split = useMemo(() => splitMarkdownBlocks(text), [text])
   const hold = useRef<TailHold | null>(null)
   const [, retry] = useState(0)
   let blocks = split
   let wait = 0
   const tail = split[split.length - 1]
-  if (throttle && tail) {
+  if (throttle && tail && !hasUnclosedFence(tail.text)) {
     const result = throttleTail(hold.current, tail, performance.now())
     hold.current = result.hold
     wait = result.wait
@@ -606,7 +607,7 @@ function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE, th
             key={block.offset}
             text={block.text}
             offset={block.offset}
-            highlight={highlight && FENCE_LINE.test(block.text)}
+            highlight={FENCE_LINE.test(block.text) && !hasUnclosedFence(block.text) && (settled || block.text.length <= CLOSED_HIGHLIGHT_CHARS)}
             math={math}
             fade={spans.length ? spans : NO_FADE}
           />
@@ -662,15 +663,17 @@ export const Markdown = memo(function Markdown({
     : s.session?.cwd)
   sourceCwd = sourceCwd || sessionCwd
   const revealedText = useSmoothReveal(text, live)
-  const renderedText = prepareStreamingMarkdown(live ? revealedText : text, live)
+  const draining = !live && revealedText.length < text.length
+  const running = live || draining
+  const renderedText = prepareStreamingMarkdown(running ? revealedText : text, running)
   const { lang } = useI18n()
   const footnoteOptions = useFootnoteOptions()
-  const fade = useRevealFade(renderedText, live)
+  const fade = useRevealFade(renderedText, running)
   const math = useMathFor(renderedText)
   const identity = useMarkdownIdentity(sessionId, messageId)
   const wasLive = useRef(false)
-  if (live) wasLive.current = true
-  const settling = !live && wasLive.current
+  if (running) wasLive.current = true
+  const settling = !running && wasLive.current
   const [highlightReady, setHighlightReady] = useState(false)
   useEffect(() => {
     if (!settling) {
@@ -682,7 +685,7 @@ export const Markdown = memo(function Markdown({
 
   const mathPending = math.needed && !math.plugins
   const cacheKey = markdownCacheKey({ lang, allowHtml, math: !!math.plugins, text: renderedText })
-  const cached = live || mathPending ? undefined : mdCache.get(cacheKey)
+  const cached = running || mathPending ? undefined : mdCache.get(cacheKey)
   if (cached) {
     mdCache.delete(cacheKey)
     mdCache.set(cacheKey, cached)
@@ -696,13 +699,13 @@ export const Markdown = memo(function Markdown({
   }
 
   const unclosed = hasUnclosedFence(renderedText)
-  if (live || unclosed) {
+  if (running || unclosed) {
     return (
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value>
             <MarkdownHtml.Provider value={allowHtml}>
-              <LiveMarkdown text={renderedText} math={math.plugins} fade={fade} throttle={live} />
+              <LiveMarkdown text={renderedText} math={math.plugins} fade={fade} throttle={running} />
             </MarkdownHtml.Provider>
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>
@@ -716,7 +719,7 @@ export const Markdown = memo(function Markdown({
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value={false}>
             <MarkdownHtml.Provider value={allowHtml}>
-              <LiveMarkdown text={renderedText} highlight={highlightReady && !unclosed} math={math.plugins} />
+              <LiveMarkdown text={renderedText} settled={highlightReady} math={math.plugins} />
             </MarkdownHtml.Provider>
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>
@@ -729,7 +732,7 @@ export const Markdown = memo(function Markdown({
   return (
     <WidgetIdentityContext.Provider value={identity}>
       <MessageSourceCwd.Provider value={sourceCwd}>
-        <MarkdownLive.Provider value={live}>{element}</MarkdownLive.Provider>
+        <MarkdownLive.Provider value={running}>{element}</MarkdownLive.Provider>
       </MessageSourceCwd.Provider>
     </WidgetIdentityContext.Provider>
   )

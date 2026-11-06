@@ -57,7 +57,6 @@
   .v3-md-table-wrap { overflow-x: auto; max-width: 100%; scrollbar-width: thin; scrollbar-color: var(--alpha-3) transparent; }
   .v3-md-table-wrap table { width: 100%; border-collapse: separate; border-spacing: 2px; font-size: var(--d-prose); line-height: var(--d-prose-lh); }
   .v3-md-table-wrap :is(th, td) { min-width: 96px; padding: var(--s-6); border: 0; border-radius: var(--r-2xs); text-align: left; vertical-align: top; }
-  .v3-msg.streaming .v3-md-table-wrap table { table-layout: fixed; }
   .v3-md-table-wrap th { background: var(--alpha-2); font-weight: 500; }
   .v3-md-table-wrap td { background: var(--alpha-1); }
 
@@ -78,12 +77,12 @@
   .v3-code pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-code code { color: var(--fg); background: none; }
 
-  .v3-fade { animation: v3-fade-in var(--dur-base) var(--ease) both; }
+  .v3-fade, .v3-msg.streaming .v3-md-image { animation: v3-fade-in var(--dur-base) var(--ease) both; }
   @keyframes v3-fade-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .v3-fade, .v3-code-head { animation: none; transition: none; }
+    .v3-fade, .v3-code-head, .v3-msg.streaming .v3-md-image { animation: none; transition: none; }
   }
-  :root[data-reduce-motion='true'] :is(.v3-fade, .v3-code-head) { animation: none; transition: none; }
+  :root[data-reduce-motion='true'] :is(.v3-fade, .v3-code-head, .v3-msg.streaming .v3-md-image) { animation: none; transition: none; }
 
   .v3-fallback-note { margin: var(--s-6) 0; }
   .v3-visual-fallback { border-radius: var(--r-md); }

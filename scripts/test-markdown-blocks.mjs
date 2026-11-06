@@ -119,7 +119,6 @@ check('流式段首未闭合的斜体先补上星号，已闭合或非段首星�
   assert.equal(prepareStreamingMarkdown('*说明文字还在写', true), '*说明文字还在写*')
   assert.equal(prepareStreamingMarkdown('前文\n\n*说明文字还在写  ', true), '前文\n\n*说明文字还在写*')
   assert.equal(prepareStreamingMarkdown('*说明文字*', true), '*说明文字*')
-  assert.equal(prepareStreamingMarkdown('**加粗还在写', true), '**加粗还在写')
   assert.equal(prepareStreamingMarkdown('* 列表项', true), '* 列表项')
   assert.equal(prepareStreamingMarkdown('*说明文字还在写', false), '*说明文字还在写')
   assert.equal(prepareStreamingMarkdown('先说 *中间', true), '先说 *中间')
@@ -144,6 +143,87 @@ check('流式预处理保留转义、围栏、代码里的反斜杠与不同长�
   for (const source of samples) assert.equal(prepareStreamingMarkdown(source, true), source)
   assert.equal(prepareStreamingMarkdown('```js\nconst x = `a`\n```\n\n后文 `pending', true), '```js\nconst x = `a`\n```\n\n后文 ')
   assert.equal(prepareStreamingMarkdown('``a`b', true), '')
+})
+
+check('流式预处理：没写完的加粗和删除线先补上收尾，已闭合的不动', () => {
+  assert.equal(prepareStreamingMarkdown('结果是 **加粗还在写', true), '结果是 **加粗还在写**')
+  assert.equal(prepareStreamingMarkdown('结果是 **加粗** 与 **另一', true), '结果是 **加粗** 与 **另一**')
+  assert.equal(prepareStreamingMarkdown('结果是 **加粗** 完', true), '结果是 **加粗** 完')
+  assert.equal(prepareStreamingMarkdown('结果是 **', true), '结果是')
+  assert.equal(prepareStreamingMarkdown('结果是 ~~删除', true), '结果是 ~~删除~~')
+  assert.equal(prepareStreamingMarkdown('乘方 2 ** 3 之后', true), '乘方 2 ** 3 之后')
+  assert.equal(prepareStreamingMarkdown('代码 `a ** b` 之后', true), '代码 `a ** b` 之后')
+  assert.equal(prepareStreamingMarkdown('转义 \\*\\*不是加粗', true), '转义 \\*\\*不是加粗')
+  assert.equal(prepareStreamingMarkdown('前文\n\n**加粗还在写', true), '前文\n\n**加粗还在写**')
+  assert.equal(prepareStreamingMarkdown('```\n**还在写\n```', true), '```\n**还在写\n```')
+  assert.equal(prepareStreamingMarkdown('结果是 **加粗还在写', false), '结果是 **加粗还在写')
+})
+
+check('流式预处理：只有行首标记还没内容的末行先不显示', () => {
+  for (const marker of ['-', '*', '+', '>', '#', '###', '1', '12.', '3)', '--']) {
+    assert.equal(prepareStreamingMarkdown(`前文\n${marker}`, true), '前文\n', marker)
+  }
+  assert.equal(prepareStreamingMarkdown('前文\n- 内容', true), '前文\n- 内容')
+  assert.equal(prepareStreamingMarkdown('前文\n## 标题', true), '前文\n## 标题')
+  assert.equal(prepareStreamingMarkdown('前文\n---', true), '前文\n---')
+  assert.equal(prepareStreamingMarkdown('前文\n-\n', true), '前文\n-\n')
+  assert.equal(prepareStreamingMarkdown('```\n-', true), '```\n-')
+})
+
+check('流式预处理：代码围栏开头没换行、结尾没写全时先不显示那一行', () => {
+  assert.equal(prepareStreamingMarkdown('先看代码\n\n```', true), '先看代码\n\n')
+  assert.equal(prepareStreamingMarkdown('先看代码\n\n```t', true), '先看代码\n\n')
+  assert.equal(prepareStreamingMarkdown('先看代码\n\n```ts\nconst a = 1', true), '先看代码\n\n```ts\nconst a = 1')
+  assert.equal(prepareStreamingMarkdown('```ts\nconst a = 1\n``', true), '```ts\nconst a = 1\n')
+  assert.equal(prepareStreamingMarkdown('```ts\nconst a = 1\n```', true), '```ts\nconst a = 1\n```')
+  assert.equal(prepareStreamingMarkdown('~~~sh\nls\n~~', true), '~~~sh\nls\n')
+  assert.equal(prepareStreamingMarkdown('````md\n```ts\n```', true), '````md\n```ts\n')
+  assert.equal(prepareStreamingMarkdown('````md\n```ts\n````', true), '````md\n```ts\n````')
+  assert.equal(prepareStreamingMarkdown('~~~sh', true), '')
+})
+
+check('流式预处理：写到一半的链接只留文字，图片整体等写完', () => {
+  assert.equal(prepareStreamingMarkdown('详见[官方文档](https://example.com/do', true), '详见官方文档')
+  assert.equal(prepareStreamingMarkdown('详见[官方文档](', true), '详见官方文档')
+  assert.equal(prepareStreamingMarkdown('看图 ![示例图](fig/pi', true), '看图 ')
+  assert.equal(prepareStreamingMarkdown('看图 ![示例图]', true), '看图 ')
+  assert.equal(prepareStreamingMarkdown('看图 ![示', true), '看图 ')
+  assert.equal(prepareStreamingMarkdown('看图 ![示例图](fig/pic.png)', true), '看图 ![示例图](fig/pic.png)')
+  assert.equal(prepareStreamingMarkdown('详见[官方文档](https://example.com)，再看[另一个](http', true), '详见[官方文档](https://example.com)，再看另一个')
+  assert.equal(prepareStreamingMarkdown('详见[官方文档](https://example.com)', true), '详见[官方文档](https://example.com)')
+  assert.equal(prepareStreamingMarkdown('只有 [方括号](没有', true), '只有 方括号')
+  assert.equal(prepareStreamingMarkdown('```js\nconst a = [x](y', true), '```js\nconst a = [x](y')
+  assert.equal(prepareStreamingMarkdown('`[x](y` 行内', true), '`[x](y` 行内')
+})
+
+check('流式预处理：表头没写完或分隔行没到时整块先不显示，数据行写完才出现', () => {
+  const head = '| 名称 | 说明 |'
+  const delimiter = '| --- | --- |'
+  assert.equal(prepareStreamingMarkdown('前文\n\n| 名', true), '前文\n\n')
+  assert.equal(prepareStreamingMarkdown(`前文\n\n${head}`, true), '前文\n\n')
+  assert.equal(prepareStreamingMarkdown(`前文\n\n${head}\n`, true), '前文\n\n')
+  assert.equal(prepareStreamingMarkdown(`前文\n\n${head}\n| --- |`, true), '前文\n\n')
+  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}`, true), `${head}\n${delimiter}`)
+  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n`, true), `${head}\n${delimiter}\n`)
+  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |`, true), `${head}\n${delimiter}\n| a1 | b1 |`)
+  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |\n| a2 |`, true), `${head}\n${delimiter}\n| a1 | b1 |\n`)
+  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |\n| a2 | b2`, true), `${head}\n${delimiter}\n| a1 | b1 |\n`)
+  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |\n| a2 | b2 |\n`, true), `${head}\n${delimiter}\n| a1 | b1 |\n| a2 | b2 |\n`)
+  assert.equal(prepareStreamingMarkdown('| 非表格的竖线开头段落\n\n后文', true), '| 非表格的竖线开头段落\n\n后文')
+  assert.equal(prepareStreamingMarkdown('```\n| a | b |\n```', true), '```\n| a | b |\n```')
+  assert.equal(prepareStreamingMarkdown('```md\n| a | b |', true), '```md\n| a | b |')
+  assert.equal(prepareStreamingMarkdown('| a \\| b | c |\n| --- | --- |\n| 1 \\| 2 | 3 |', true), '| a \\| b | c |\n| --- | --- |\n| 1 \\| 2 | 3 |')
+  assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |`, false), `${head}\n${delimiter}\n| a1 | b1 |`)
+})
+
+check('流式预处理：没闭合的块公式先不显示，闭合或在代码里不受影响', () => {
+  assert.equal(prepareStreamingMarkdown('公式如下：\n\n$$\n\\int_0^1 x^2', true), '公式如下：')
+  assert.equal(prepareStreamingMarkdown('公式如下：\n\n$$\n\\int_0^1 x^2\n$$\n后文', true), '公式如下：\n\n$$\n\\int_0^1 x^2\n$$\n后文')
+  assert.equal(prepareStreamingMarkdown('$$x^2$$ 与后文', true), '$$x^2$$ 与后文')
+  assert.equal(prepareStreamingMarkdown('命令 `echo $$` 取进程号', true), '命令 `echo $$` 取进程号')
+  assert.equal(prepareStreamingMarkdown('```sh\necho $$\n```', true), '```sh\necho $$\n```')
+  assert.equal(prepareStreamingMarkdown('价格 $$ 之间', true), '价格 $$ 之间')
+  assert.equal(prepareStreamingMarkdown('$$\na\n\nb', true), '')
 })
 
 const samples = [
