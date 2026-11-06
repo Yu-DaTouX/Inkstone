@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { fillMissingExports } from './lib/stub-exports.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
@@ -285,7 +286,7 @@ export * as tiles from '${posix(resolve(ROOT, 'src/renderer/src/features/workben
         if (args.path === 'v3stub:pdfjs') return { contents: PDFJS_STUB, loader: 'js' }
         if (args.path === 'v3stub:pdfjs-worker') return { contents: "export default 'file:///pdf.worker.mjs'", loader: 'js' }
         const key = args.path.slice('v3stub:'.length)
-        return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
+        return { contents: fillMissingExports(key, stubMap.get(key) ?? 'export {}'), loader: 'js' }
       })
     }
   }

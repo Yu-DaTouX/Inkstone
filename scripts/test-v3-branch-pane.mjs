@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { fillMissingExports } from './lib/stub-exports.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
@@ -109,7 +110,7 @@ function stubPlugin(stubMap, reactShimPath, jsxShimPath) {
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         if (args.path === 'v3stub:lucide') return { contents: LUCIDE_STUB, loader: 'js' }
         const key = args.path.slice('v3stub:'.length)
-        return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
+        return { contents: fillMissingExports(key, stubMap.get(key) ?? 'export {}'), loader: 'js' }
       })
     }
   }
@@ -639,7 +640,7 @@ async function main() {
                 }
               }
               const key = args.path.slice('v3stub:'.length)
-              return { contents: stub.get(key) ?? 'export {}', loader: 'js' }
+              return { contents: fillMissingExports(key, stub.get(key) ?? 'export {}'), loader: 'js' }
             })
           }
         }

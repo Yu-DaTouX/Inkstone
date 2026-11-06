@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { fillMissingExports } from './lib/stub-exports.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
@@ -185,7 +186,7 @@ function makeStubPlugin(rawMap) {
       })
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         const key = args.path.slice('v3stub:'.length)
-        return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
+        return { contents: fillMissingExports(key, stubMap.get(key) ?? 'export {}'), loader: 'js' }
       })
     }
   }
