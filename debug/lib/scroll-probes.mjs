@@ -49,17 +49,16 @@ export function scrollStats(raw, { gapPx = 48 } = {}) {
     const f = frames[i]
     const sorted = [...f.rows].sort((a, b) => a[1] - b[1])
     if (sorted.length) content = true
-    const atBottom = f.sh - f.vh - f.st <= 1
     let gap = 0
     if (!sorted.length) gap = f.vh
     else {
-      if (sorted[0][1] > gapPx) gap += Math.min(sorted[0][1], f.vh)
-      for (let k = 1; k < sorted.length; k++) {
-        const g = sorted[k][1] - sorted[k - 1][2]
-        if (g > gapPx && sorted[k - 1][2] < f.vh && sorted[k][1] > 0) gap += g
+      let covered = 0, edge = 0
+      for (const r of sorted) {
+        const from = Math.max(edge, Math.max(0, r[1])), to = Math.min(f.vh, r[2] + 12)
+        if (to > from) { covered += to - from; edge = to }
       }
-      const lastBottom = Math.max(...sorted.map((r) => r[2]))
-      if (!atBottom && lastBottom < f.vh - gapPx) gap += f.vh - lastBottom
+      gap = f.vh - covered
+      if (gap < gapPx) gap = 0
     }
     let ovl = 0, gp = 0
     for (let k = 1; k < sorted.length; k++) {

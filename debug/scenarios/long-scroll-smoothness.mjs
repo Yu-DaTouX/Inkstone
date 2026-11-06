@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { startProfile, stopProfile } from '../lib/cpu-profile.mjs'
 import { SCROLL_HOOK, scrollStats } from '../lib/scroll-probes.mjs'
 
 export const meta = { description: '真实数据副本（配 --days 0 --include-sessions <片段>，YAN_SCROLL_SESSION 指定片段）：大会话切入、滚轮上下滚、大纲跳转、查找跳转、回到底部、过程区展开的逐帧位移/白屏/长帧，不调用模型' }
@@ -17,11 +18,19 @@ export default async function run({ cdp, waitFor, report, sleep, log, shot, out 
   if (!file) throw new Error('找不到会话 ' + fragment)
   report.file = file
   const record = async (name, action, settle = 700) => {
+    const prof = (process.env.YAN_SCROLL_PROFILE ?? '').split(',').includes(name)
+    if (prof) await startProfile(cdp)
     await ev('window.__sp.start()')
     const t = Date.now()
     await action()
     await sleep(settle)
     const raw = await ev('window.__sp.stop()')
+    if (prof) {
+      const p = await stopProfile(cdp, out)
+      writeFileSync(join(out, `${tag}-${name}-profile.json`), JSON.stringify({ top: p.top, longBusy: p.longBusy }, null, 1))
+      log('profile', name, JSON.stringify(p.top.slice(0, 12)))
+      log('longBusy', name, JSON.stringify(p.longBusy))
+    }
     const stats = { ...scrollStats(raw), ms: Date.now() - t }
     report.timings[name] = stats
     writeFileSync(join(out, `${tag}-${name}.json`), JSON.stringify(raw))

@@ -568,6 +568,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     intentRef.current = null
     settlingRef.current = true
     let settleRaf = 0
+    if (virtual && bottom) vlistRef.current?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
     const raf = requestAnimationFrame(() => {
       const anchor = snap?.anchor ?? null
       if (virtual) {
