@@ -298,15 +298,25 @@ export function ComposerV3(): JSX.Element {
     }
   }, [conversationKey, draftKey])
   const draftReady = !!draftKey && hydratedDraftKey === draftKey && hydratedConversation.current === conversationKey
+  const pendingDraft = useRef<{ key: string; text: string; attachments: typeof storeAttachments } | null>(null)
+  const flushDraft = useCallback((): void => {
+    const pending = pendingDraft.current
+    pendingDraft.current = null
+    if (pending) saveDraft(pending.key, { text: pending.text, attachments: pending.attachments })
+  }, [])
   useEffect(() => {
     if (!draftReady) return undefined
-    const draft = { text: value, attachments: storeAttachments }
-    const timer = setTimeout(() => saveDraft(draftKey, draft), 250)
+    pendingDraft.current = { key: draftKey, text: value, attachments: storeAttachments }
+    const timer = setTimeout(flushDraft, 250)
+    return () => clearTimeout(timer)
+  }, [draftReady, draftKey, value, storeAttachments, flushDraft])
+  useEffect(() => {
+    window.addEventListener('pagehide', flushDraft)
     return () => {
-      clearTimeout(timer)
-      saveDraft(draftKey, draft)
+      window.removeEventListener('pagehide', flushDraft)
+      flushDraft()
     }
-  }, [draftReady, draftKey, value, storeAttachments])
+  }, [draftKey, flushDraft])
   useEffect(() => {
     if (skipSessionDraft.current) {
       skipSessionDraft.current = false
