@@ -76,6 +76,7 @@ try {
     ok(run.status === 'error' && run.endReason === 'exited', `${label}：重启后标为中断`)
     ok(run.review === 'pending' && run.diff?.files === 2 && existsSync(run.diff.patchPath), `${label}：改动存成补丁，审阅状态可合并`)
     ok(existsSync(worktree), `${label}：工作树保留，可以原地续接`)
+    ok(run.resultPath === worktree, `${label}：保留工作树时结果路径指向工作树`)
     ok(/原地续接/.test(run.error ?? ''), `${label}：说明改动怎么处置`)
     ok(run.resumable?.ok === true, `${label}：可续派`, JSON.stringify(run.resumable))
 
