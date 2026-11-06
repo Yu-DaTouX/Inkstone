@@ -1,4 +1,5 @@
 import type { Lang } from '../../i18n'
+import { singularizeOne } from '../../../../shared/ui-lang'
 
 export interface TerminalText {
   activateFirst: string
@@ -125,7 +126,7 @@ const EN: TerminalText = {
   cursorBlock: 'Block',
   cursorBar: 'Bar',
   cursorUnderline: 'Underline',
-  lines: (n) => `${n.toLocaleString()} lines`,
+  lines: (n) => singularizeOne(`${n.toLocaleString()} lines`),
   copy: 'Copy',
   paste: 'Paste',
   selectAll: 'Select all',

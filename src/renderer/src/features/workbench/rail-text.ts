@@ -1,5 +1,6 @@
 import type { Lang } from '../../i18n'
 import type { RailSectionId } from './rail-sections'
+import { singularizeOne } from '../../../../shared/ui-lang'
 
 export interface RailText {
   railLabel: string
@@ -147,7 +148,7 @@ const EN: RailText = {
   cacheHit: 'Cache hit rate',
   hitShort: 'Hit',
   statsBreakdown: 'Breakdown',
-  linesChanged: (added, removed) => `${added} lines added, ${removed} lines removed`
+  linesChanged: (added, removed) => singularizeOne(`${added} lines added, ${removed} lines removed`)
 }
 
 export function railText(lang: Lang): RailText {

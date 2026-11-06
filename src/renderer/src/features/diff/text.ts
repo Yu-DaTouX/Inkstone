@@ -1,3 +1,4 @@
+import { singularizeOne } from '../../../../shared/ui-lang'
 export interface DiffViewText {
   unified: string
   split: string
@@ -45,7 +46,7 @@ export function diffViewText(lang: string): DiffViewText {
       keysHelp: 'Up and down arrows move between lines, Shift extends the selection, Enter comments, Escape clears.',
       keyLine: (kind, line, code) =>
         `${kind === 'addition' ? 'Added' : kind === 'deletion' ? 'Removed' : 'Unchanged'} line ${line}: ${code || 'blank'}`,
-      keyRange: (start, end, count) => `Lines ${start}–${end} selected, ${count} lines`,
+      keyRange: (start, end, count) => singularizeOne(`Lines ${start}–${end} selected, ${count} lines`),
       annotateKeys: 'Enter to send · Shift+Enter for a new line · Esc to cancel',
       unmodified: (count) => `${count} unchanged ${count === 1 ? 'line' : 'lines'}`,
       moreContext: 'Show more unchanged lines',

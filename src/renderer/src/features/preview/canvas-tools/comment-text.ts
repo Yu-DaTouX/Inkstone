@@ -1,4 +1,5 @@
 import type { Lang } from '../../../i18n'
+import { singularizeOne } from '../../../../../shared/ui-lang'
 
 export interface CanvasCommentText {
   tool: string
@@ -100,7 +101,7 @@ const EN: CanvasCommentText = {
   sending: 'Capturing and sending…',
   sendEmpty: 'Select comments to send first',
   sendFailed: 'Could not insert into the chat composer. Open the chat panel and retry.',
-  sendDone: (count) => `Inserted ${count} comments into the chat composer`,
+  sendDone: (count) => singularizeOne(`Inserted ${count} comments into the chat composer`),
   sendPartial: (count, images) =>
     images < count ? `Inserted ${count} comments with ${images} element captures (the rest went as text only)` : `Inserted ${count} comments`,
   countLabel: (count, selected) => (count ? `${count} · ${selected} selected` : '0'),
