@@ -1,3 +1,4 @@
+import { setUiLang } from '../shared/ui-lang'
 import { sanitizePeerLogins } from '../shared/collab-github'
 import { readFile, mkdir, copyFile, rename } from 'node:fs/promises'
 import { statSync } from 'node:fs'
@@ -352,6 +353,7 @@ export async function getSettings(): Promise<AppSettings> {
   if (healedBackup) noticeGuardSettings(`设置文件损坏，已备份为 ${basename(healedBackup)}，这次用默认设置启动（权限档按加密记录恢复）。`, `heal:${healedBackup}`)
   if (generation !== cacheGeneration) return getSettings()
   cached = loaded
+  setUiLang(loaded.lang)
   return structuredClone(loaded)
 }
 
@@ -513,5 +515,6 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   }
   cacheGeneration++
   cached = next
+  setUiLang(next.lang)
   return structuredClone(next)
 }
