@@ -68,6 +68,13 @@ try {
   tick()
   assert.equal(sent.length, 0, 'dispose 后丢弃未发出的快照')
 
+  sent.length = 0
+  coalescer.push({ ch: 'stats', payload: { tokens: 1 }, runtime: { sessionId: 'a' } })
+  coalescer.push({ ch: 'stats', payload: { tokens: 2 }, runtime: { sessionId: 'b' } })
+  coalescer.push({ ch: 'stats', payload: { tokens: 3 }, runtime: { sessionId: 'a' } })
+  coalescer.flush()
+  assert.deepEqual(sent.map((message) => message.payload.tokens), [3, 2], '不同会话的快照互不覆盖，同会话只发最新')
+
   const immediate = new RemotePushCoalescer((message) => sent.push(message), 250, schedule)
   sent.length = 0
   immediate.push({ ch: 'queue', payload: { steering: [], followUp: [] } })
@@ -76,7 +83,7 @@ try {
   assert.equal(sent.length, 1, 'flush 幂等，不重复发送')
   immediate.dispose()
 
-  console.log(JSON.stringify({ passed: 11, failed: 0 }))
+  console.log(JSON.stringify({ passed: 12, failed: 0 }))
 } finally {
   await rm(root, { recursive: true, force: true })
 }

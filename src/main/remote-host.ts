@@ -17,11 +17,13 @@ import { PeerClient } from './peer-client'
 import type { PeerHostHandlers, RemoteArtifactFile, RemoteCommand, RemoteOperationResult } from './remote-server'
 import { PEER_ARTIFACT_MAX_BYTES } from '../shared/peer-protocol'
 import type { PeerExportedArtifact, PeerSessionExport } from '../shared/peer-protocol'
-import { REMOTE_ARTIFACT_MAX_BYTES } from '../shared/remote-protocol'
-import type { RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
+import { REMOTE_ARTIFACT_MAX_BYTES, REMOTE_INSIGHT_MAX_FILES } from '../shared/remote-protocol'
+import type { RemoteChangedFile, RemoteInsight, RemoteSessionChanges, RemoteSessionStats, RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
-import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary, SessionTodo, SubagentRun, UIToolCall } from '../shared/ipc'
+import { readChanges } from './git-inspect'
+import type { GitChangeEntry } from '../shared/git'
+import type { AssistantArtifact, RunnerStatus, SessionStats, SessionState, SessionSummary, SessionTodo, SubagentRun, UIToolCall } from '../shared/ipc'
 import { SessionEntriesLite } from './session-entries-lite'
 import { readTaskPlanLog } from './task-plan-store'
 import { taskPlanLogEntry } from '../shared/task-plan'
@@ -172,7 +174,62 @@ export function remoteSubagents(sessionId: string, runs: readonly SubagentRun[])
   return { ok: true, data: { runs: own.map(remoteSubagentRun) } }
 }
 
+export function remoteSessionStats(stats: SessionStats | null | undefined): RemoteSessionStats | null {
+  if (!stats) return null
+  const usage = stats.contextUsage
+  const finite = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
+  return {
+    tokens: finite(stats.tokens?.total),
+    cost: finite(stats.cost),
+    toolCalls: finite(stats.toolCalls),
+    messages: finite(stats.userMessages) + finite(stats.assistantMessages),
+    ...(usage && finite(usage.contextWindow) > 0
+      ? { context: { percent: typeof usage.percent === 'number' && Number.isFinite(usage.percent) ? usage.percent : null, tokens: typeof usage.tokens === 'number' ? usage.tokens : null, window: usage.contextWindow } }
+      : {})
+  }
+}
+
+function changedFileStatus(entry: GitChangeEntry): RemoteChangedFile['status'] {
+  if (entry.untracked) return '?'
+  if (entry.unmerged) return 'U'
+  const code = [entry.y, entry.x].find((letter) => letter && letter !== '.' && letter !== ' ')
+  return code === 'A' || code === 'D' || code === 'R' ? code : 'M'
+}
+
+export function remoteSessionChanges(result: { ok: boolean; branch: string | null; files: GitChangeEntry[]; added?: number; removed?: number; truncated: boolean }): RemoteSessionChanges | null {
+  if (!result.ok) return null
+  const files = result.files.slice(0, REMOTE_INSIGHT_MAX_FILES).map((entry) => ({
+    path: clip(entry.path, 200) ?? '',
+    status: changedFileStatus(entry),
+    ...(typeof entry.added === 'number' ? { added: entry.added } : {}),
+    ...(typeof entry.removed === 'number' ? { removed: entry.removed } : {})
+  }))
+  return {
+    branch: result.branch,
+    added: result.added ?? 0,
+    removed: result.removed ?? 0,
+    total: result.files.length,
+    files,
+    truncated: result.truncated || result.files.length > files.length
+  }
+}
+
+export async function remoteInsight(sessionId: string): Promise<RemoteOperationResult> {
+  const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
+  if (!resolved.ok) return resolved
+  const summary = resolved.summary
+  const status = host.runners()?.statuses().find((item) => item.sessionId === summary.id)
+  const agent = status ? host.runners()?.agentOf(status.runId) : null
+  const [stats, changes] = await Promise.all([
+    agent ? agent.refreshStats().catch(() => null) : Promise.resolve(null),
+    readChanges(summary.cwd, async (cwd) => ({ ok: true, cwd }), { scope: { kind: 'working' } }).catch(() => null)
+  ])
+  const data: RemoteInsight = { stats: remoteSessionStats(stats), changes: changes ? remoteSessionChanges(changes) : null }
+  return { ok: true, data }
+}
+
 export function remotePushPayload(channel: string, payload: unknown): unknown {
+  if (channel === 'stats') return remoteSessionStats(payload as SessionStats | null) ?? {}
   if (channel === 'subagent') {
     const parent = asRecord(payload).parentSessionId
     return typeof parent === 'string' ? { sessionId: parent } : {}
