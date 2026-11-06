@@ -56,6 +56,15 @@ function suspendWhenIdle(c: AudioContext, afterMs: number): void {
   }, afterMs)
 }
 
+export function prepareSound(): void {
+  const warm = (): void => {
+    const c = audioContext()
+    if (c) suspendWhenIdle(c, 300)
+  }
+  if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(warm, { timeout: 4000 })
+  else window.setTimeout(warm, 2000)
+}
+
 export function installAudioUnlock(): void {
   if (installed) return
   installed = true

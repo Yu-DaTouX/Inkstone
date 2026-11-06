@@ -7,7 +7,7 @@ import { useLiveQuota } from './state/live-quota'
 import { useRightPanel } from './state/right-panel'
 import { useSplitView } from './state/split-view'
 import { useUiV3 } from './state/ui-v3'
-import { installAudioUnlock } from './lib/sound'
+import { installAudioUnlock, prepareSound } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
 import { installFocusModality } from './lib/focusModality'
 import { installHairline } from './lib/hairline'
@@ -38,6 +38,15 @@ if (probeMode) {
 }
 
 installAudioUnlock()
+
+let soundPrepared = false
+const prepareSoundOnce = (): void => {
+  if (soundPrepared || !useStore.getState().settings?.sound?.enabled) return
+  soundPrepared = true
+  prepareSound()
+}
+prepareSoundOnce()
+useStore.subscribe(prepareSoundOnce)
 
 installBrowserPreloadRecovery()
 
