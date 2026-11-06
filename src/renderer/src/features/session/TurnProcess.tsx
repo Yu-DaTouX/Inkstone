@@ -203,6 +203,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   useLayoutEffect(() => {
     if (live) {
       wasLiveRef.current = true
+      setLeave(0)
       return
     }
     const root = rootRef.current
@@ -210,7 +211,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
     wasLiveRef.current = false
     const gap = parseFloat(getComputedStyle(root).rowGap) || 0
     const delta = liveHeightRef.current - root.getBoundingClientRect().height - gap
-    if (delta > 2) setLeave(delta)
+    setLeave(delta > 2 ? delta : 0)
   }, [live])
   return (
     <>
