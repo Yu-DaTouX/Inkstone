@@ -1,8 +1,17 @@
 export const SCROLL_HOOK = `
 window.__sp = (() => {
-  let frames = [], raf = 0, on = false, last = 0, t0 = 0, longs = [], obs = null
-  const sample = (now) => {
+  let frames = [], raf = 0, on = false, last = 0, t0 = 0, longs = [], obs = null, stamp = 0
+  const ch = new MessageChannel()
+  const tick = (now) => {
     if (!on) return
+    stamp = now
+    raf = requestAnimationFrame(tick)
+    ch.port2.postMessage(0)
+  }
+  ch.port1.onmessage = () => {
+    if (!on) return
+    const now = stamp
+    if (now === last) return
     const stream = document.querySelector('.v3-stream')
     if (stream) {
       const sr = stream.getBoundingClientRect()
@@ -15,13 +24,12 @@ window.__sp = (() => {
       frames.push({ t: now - t0, dt: now - last, st: stream.scrollTop, sh: stream.scrollHeight, vh: stream.clientHeight, rows })
     }
     last = now
-    raf = requestAnimationFrame(sample)
   }
   return {
     start() {
       frames = []; longs = []; on = true; t0 = performance.now(); last = t0
       try { obs = new PerformanceObserver((l) => { for (const e of l.getEntries()) longs.push([e.startTime - t0, e.duration]) }); obs.observe({ type: 'longtask' }) } catch {}
-      raf = requestAnimationFrame(sample)
+      raf = requestAnimationFrame(tick)
     },
     stop() {
       on = false; cancelAnimationFrame(raf); obs && obs.disconnect()
