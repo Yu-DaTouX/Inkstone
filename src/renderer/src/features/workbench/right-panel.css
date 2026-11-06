@@ -76,7 +76,10 @@
     animation: rp-tab-in var(--dur-quick) var(--ease) both;
     transition:
       background-color var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease);
+      color var(--dur-fast) var(--ease),
+      max-width var(--dur-quick) var(--ease-exit),
+      padding-inline var(--dur-quick) var(--ease-exit),
+      opacity var(--dur-quick) var(--ease-exit);
   }
   @keyframes rp-tab-in {
     from {

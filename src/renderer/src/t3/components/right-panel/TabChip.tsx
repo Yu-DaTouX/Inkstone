@@ -11,7 +11,8 @@ import {
   X,
   type LucideIcon
 } from 'lucide-react'
-import { type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { motionAllowed, motionMs } from '../../../ui/motion-hooks'
 import { Tooltip, TooltipPopup, TooltipTrigger } from '@/t3/components/ui/tooltip'
 import { cn } from '@/t3/lib/utils'
 import { AndroidIcon, AppleIcon } from '../icons/device'
@@ -80,6 +81,16 @@ export interface TabChipProps {
 export function TabChip(props: TabChipProps) {
   const { surface, active } = props
   const title = surface.detail ?? surface.label
+  const [leaving, setLeaving] = useState(false)
+  const requestClose = () => {
+    if (leaving) return
+    if (!motionAllowed()) {
+      props.onClose()
+      return
+    }
+    setLeaving(true)
+    window.setTimeout(props.onClose, motionMs('quick'))
+  }
 
   const preventMiddleButtonDefault = (event: MouseEvent<HTMLDivElement>) => {
     if (event.button !== 1) return
@@ -96,7 +107,7 @@ export function TabChip(props: TabChipProps) {
         if (event.button !== 1) return
         event.preventDefault()
         event.stopPropagation()
-        props.onClose()
+        requestClose()
       }}
       onContextMenu={(event) => {
         event.preventDefault()
@@ -105,9 +116,11 @@ export function TabChip(props: TabChipProps) {
       }}
       onPointerDown={props.onPointerDown}
       style={
-        props.dragging && props.offsetX
-          ? { transform: `translateX(${props.offsetX}px)` }
-          : undefined
+        leaving
+          ? { maxWidth: 0, opacity: 0, paddingInline: 0, pointerEvents: 'none' }
+          : props.dragging && props.offsetX
+            ? { transform: `translateX(${props.offsetX}px)` }
+            : undefined
       }
       className={cn(
         'rp-tab-chip group/tab relative flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs has-[[role=tab]:focus-visible]:ring-2 has-[[role=tab]:focus-visible]:ring-inset has-[[role=tab]:focus-visible]:ring-ring',
@@ -124,7 +137,7 @@ export function TabChip(props: TabChipProps) {
         className="group/close relative z-10 flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm hover:bg-muted"
         onClick={(event) => {
           event.stopPropagation()
-          props.onClose()
+          requestClose()
         }}
       >
         <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
