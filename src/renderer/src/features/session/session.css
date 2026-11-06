@@ -178,6 +178,8 @@
   .v3-process-diff { flex: none; }
   .v3-qhistory-list { display: flex; flex-direction: column; gap: var(--s-2); min-width: 0; }
   .v3-process-count + .v3-process-count::before { content: '·'; margin-inline-end: var(--s-6); }
+  .v3-process-leave { flex: none; overflow: hidden; animation: v3-process-leave var(--dur-sheet) var(--ease-inout) forwards; }
+  @keyframes v3-process-leave { to { height: 0; margin-top: calc(var(--s-6) * -1); } }
   .v3-process-body { display: flex; flex-direction: column; gap: var(--s-16); min-width: 0; margin-left: var(--s-4); padding-left: var(--s-10); border-left: var(--hair, 1px) solid var(--line); }
   .v3-process[data-headless] .v3-process-body { margin-left: 0; padding-left: 0; border-left: 0; }
   .v3-think-note { display: flex; align-items: center; gap: var(--s-6); min-width: 0; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); }
