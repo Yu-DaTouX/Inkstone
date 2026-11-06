@@ -38,14 +38,17 @@ export function domReadingAnchors(box: HTMLElement): { snapshot: ReadingAnchor |
   const base = box.getBoundingClientRect().top
   let snapshot: ReadingAnchor | null = null
   let resize: ReadingAnchor | null = null
+  let containing: ReadingAnchor | null = null
   for (const node of box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')) {
     const turnId = node.dataset.turnId
     if (!turnId) continue
     const rect = node.getBoundingClientRect()
     if (!snapshot && rect.bottom > base) snapshot = { turnId, offset: Math.max(0, base - rect.top) }
+    if (!containing && rect.bottom > base) containing = { turnId, offset: rect.top - base }
     if (!resize && rect.top - base >= -1) resize = { turnId, offset: rect.top - base }
     if (snapshot && resize) break
   }
+  if (containing && (!resize || resize.offset > box.clientHeight)) resize = containing
   return { snapshot, resize }
 }
 

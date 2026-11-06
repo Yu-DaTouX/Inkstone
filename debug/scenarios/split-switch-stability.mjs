@@ -24,6 +24,8 @@ const SAMPLER = (keys, anchors) => `(() => {
         cv: tile?.querySelector('.v3-conv')?.style.getPropertyValue('--composer-h') ?? null,
         top: stream ? Math.round(stream.scrollTop) : null,
         sh: stream ? stream.scrollHeight : null,
+        ch: stream ? stream.clientHeight : null,
+        cw: stream ? stream.clientWidth : null,
         rows: stream ? stream.querySelectorAll('.v3-msg[data-turn-id]').length : 0,
         sid: stream?.__swSid ?? 0,
         offset: anchor && stream ? Math.round(anchor.getBoundingClientRect().top - stream.getBoundingClientRect().top) : null,
@@ -49,6 +51,9 @@ function analyze(frames, key, before) {
     startFrame: own[0] ? { top: own[0].top, sh: own[0].sh, offset: own[0].offset } : null,
     endFrame: last ? { top: last.top, sh: last.sh } : null,
     frames: own.length,
+    fromBottomStart: own[0] && own[0].top !== null ? own[0].sh - own[0].ch - own[0].top : null,
+    fromBottomEnd: last && last.top !== null ? last.sh - last.ch - last.top : null,
+    changes: own.filter((frame, index) => index === 0 || frame.top !== own[index - 1].top || frame.sh !== own[index - 1].sh || frame.ch !== own[index - 1].ch || frame.cw !== own[index - 1].cw || frame.live !== own[index - 1].live).slice(0, 40).map((frame) => frame.t + 'ms top=' + frame.top + ' sh=' + frame.sh + ' ch=' + frame.ch + ' cw=' + frame.cw + ' off=' + frame.offset + ' live=' + frame.live),
     blankFrames: blank,
     streamElements: sids.size,
     anchorMissingFrames: missing,
@@ -168,6 +173,9 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
   const measureSwitch = async (name, toKey, before, record = false) => {
     const anchors = Object.fromEntries(Object.entries(before).map(([key, value]) => [key, value?.turnId]))
     await ev(SAMPLER(Object.keys(before), anchors))
+    if (process.env.YAN_SWITCH_NOANCHOR) await ev(`(() => { if (!document.getElementById('noanchor')) { const el = document.createElement('style'); el.id = 'noanchor'; el.textContent = '.v3-stream { overflow-anchor: none !important }'; document.head.appendChild(el) } })()`)
+    if (process.env.YAN_SWITCH_MUT) await ev(`(() => { window.__mut = []; const t0 = performance.now(); const tile = [...document.querySelectorAll('[data-tile-key]')].find((el) => el.dataset.tileKey === ${JSON.stringify(toKey)}); const stream = tile.querySelector('.v3-stream'); stream.addEventListener('scroll', () => window.__mut.push({ k: 'scroll', st: Math.round(stream.scrollTop), sh: stream.scrollHeight, at: Math.round(performance.now() - t0) }), { passive: true }); new MutationObserver((list) => { for (const m of list) window.__mut.push({ k: m.type, attr: m.attributeName, tgt: (m.target.className || m.target.nodeName).toString().slice(0, 40), add: m.addedNodes.length, rem: m.removedNodes.length, at: Math.round(performance.now() - t0) }) }).observe(tile, { subtree: true, childList: true, attributes: true }); new ResizeObserver((es) => { for (const e of es) window.__mut.push({ k: 'ro', tgt: e.target.className.toString().slice(0, 40), h: Math.round(e.contentRect.height), at: Math.round(performance.now() - t0) }) }).observe(stream.firstElementChild) })()`)
+    if (process.env.YAN_SWITCH_TRAP) await ev(`(() => { if (window.__trap) return; window.__trap = []; const d = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop'); Object.defineProperty(Element.prototype, 'scrollTop', { get() { return d.get.call(this) }, set(v) { if (this.classList.contains('v3-stream')) window.__trap.push({ from: d.get.call(this), to: v, at: Math.round(performance.now()), stack: new Error().stack.split(String.fromCharCode(10)).slice(2, 7).join(' | ') }); d.set.call(this, v) }, configurable: true }); for (const name of ['scrollTo', 'scrollBy', 'scrollIntoView']) { const orig = Element.prototype[name]; Element.prototype[name] = function (...args) { window.__trap.push({ fn: name, on: this.className, args: JSON.stringify(args).slice(0, 80), at: Math.round(performance.now()), stack: new Error().stack.split(String.fromCharCode(10)).slice(2, 6).join(' | ') }); return orig.apply(this, args) } } })()`)
     await sleep(100)
     const t = Date.now()
     const film = record ? screencast(name, 1200, () => clickTitle(toKey)) : clickTitle(toKey)
@@ -177,6 +185,8 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
     const filmed = record ? await film : null
     await sleep(record ? 800 : 2000)
     const frames = await ev(`(() => { window.__sw.stop = true; return window.__sw.frames })()`)
+    if (process.env.YAN_SWITCH_MUT) console.log('MUT ' + JSON.stringify(await ev('window.__mut')))
+    if (process.env.YAN_SWITCH_TRAP) console.log('TRAP ' + JSON.stringify(await ev('window.__trap.splice(0)')))
     const result = { switchMs, ...(filmed ? { screencast: filmed } : {}), tiles: Object.fromEntries(Object.keys(before).map((key) => [key, analyze(frames, key, before[key])])) }
     report.timings[name] = result
     log(name, result)
@@ -209,7 +219,8 @@ export default async function run({ cdp, box, runDir, waitFor, check, report, sl
       const label = `${name} \u00b7 ${key === liveKey ? '\u53f3\u683c' : '\u5de6\u683c'}`
       check(`${label} \u65e0\u7a7a\u767d\u5e27`, tile.blankFrames === 0, tile)
       check(`${label} \u6d88\u606f\u6d41\u5143\u7d20\u4e0d\u66ff\u6362`, tile.streamElements <= 1, tile)
-      check(`${label} \u9605\u8bfb\u951a\u70b9\u4f4d\u79fb\u4e0d\u8d85\u8fc7 24px`, tile.offsetAfter !== null && Math.abs(tile.offsetAfter - tile.offsetBefore) <= 24, tile)
+      const atBottom = tile.fromBottomStart !== null && tile.fromBottomStart <= 100
+      check(`${label} \u9605\u8bfb\u951a\u70b9\u4f4d\u79fb\u4e0d\u8d85\u8fc7 24px`, atBottom ? Math.abs(tile.fromBottomEnd) <= 4 : tile.offsetAfter !== null && Math.abs(tile.offsetAfter - tile.offsetBefore) <= 24, tile)
       check(`${label} \u5c55\u5f00\u7684\u8fc7\u7a0b\u4fdd\u6301\u5c55\u5f00`, tile.openBefore === true && tile.openAfter === true, tile)
     }
   }

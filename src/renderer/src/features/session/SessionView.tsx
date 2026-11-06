@@ -77,6 +77,8 @@ type RenderItem = Turn | PendingTurn
 
 const isPending = (item: RenderItem): item is PendingTurn => item.kind === 'pending'
 
+const WIDTH_SETTLE_MS = 700
+
 function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>): ReadingAnchor | null {
   const index = handle.findItemIndex(handle.scrollOffset)
   const item = items[index]
@@ -366,6 +368,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   const recordRef = useRef(record)
   recordRef.current = record
   const readingRef = useRef<ReadingAnchor | null>(null)
+  const widthWindowRef = useRef<{ until: number; anchor: ReadingAnchor | null } | null>(null)
 
   const applyFollow = useCallback((decision: FollowDecision) => {
     if (stickRef.current !== decision.stick) setStickNow(decision.stick)
@@ -511,8 +514,12 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
         return
       }
       setShowJump(distanceFromBottom(domMetrics(node)) > JUMP_THRESHOLD_PX)
-      if (!narrowed) return
-      const anchor = readingRef.current
+      const now = performance.now()
+      const open = widthWindowRef.current
+      if (narrowed) widthWindowRef.current = { until: now + WIDTH_SETTLE_MS, anchor: open && now <= open.until ? open.anchor : readingRef.current }
+      const hold = widthWindowRef.current
+      if (!hold || now > hold.until) return
+      const anchor = hold.anchor
       if (!anchor) return
       const restore = (): void => {
         if (stickRef.current || settlingRef.current) return

@@ -71,19 +71,11 @@ function splitSwitchSettled(target: SplitSessionRef): Promise<void> {
   })
 }
 
-export function focusSplitSession(target: SplitSessionRef, options: { composer?: boolean; transition?: boolean } = {}): void {
+export function focusSplitSession(target: SplitSessionRef, options: { composer?: boolean } = {}): void {
   const store = useStore.getState()
   if (options.composer !== false) store.requestComposerFocus(target)
   if (sameSplitSession(displayedSessionOf(store), target)) return
-  const doc = typeof document !== 'undefined' ? (document as ViewTransitionDocument) : null
-  if (options.transition === false || !doc?.startViewTransition || prefersReducedMotion()) {
-    switchSplitFocus(target)
-    return
-  }
-  doc.startViewTransition(async () => {
-    switchSplitFocus(target)
-    await splitSwitchSettled(target)
-  })
+  switchSplitFocus(target)
 }
 
 function transitionSplitLayout(update: () => void, settleOn: SplitSessionRef | null): void {
@@ -151,7 +143,7 @@ export function dropSessionInSplit(item: { id?: string; path?: string }, target:
     view.apply(next)
     warnRunnerLimit(before, next)
     useUiV3.getState().navigate({ name: 'chat' })
-    if (shown) focusSplitSession(shown, { transition: false })
+    if (shown) focusSplitSession(shown)
   }, shown ?? null)
   return true
 }
@@ -189,7 +181,7 @@ export function closeSplitPane(index: number): void {
   const neighbor = index === current.live ? current.tiles[nearestSessionOf(current.tiles, index)] : null
   const focus = neighbor && (neighbor.path || neighbor.sessionId) ? neighbor : null
   transitionSplitLayout(() => {
-    if (focus) focusSplitSession(focus, { transition: false })
+    if (focus) focusSplitSession(focus)
     view.remove(index)
   }, focus)
 }
