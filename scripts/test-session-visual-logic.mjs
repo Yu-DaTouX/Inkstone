@@ -183,12 +183,12 @@ check('分屏：切焦点后按回合锚点恢复，允许编辑器高度和上�
     clientHeight: 500,
     getBoundingClientRect: () => ({ top: 100 }),
     querySelectorAll: () => [
-      { dataset: { turnId: 'a' }, getBoundingClientRect: () => ({ top: -300, bottom: -10 }) },
-      { dataset: { turnId: 'b' }, getBoundingClientRect: () => ({ top: 80, bottom: 400 }) }
+      { dataset: { turnId: 'a' }, children: [], getBoundingClientRect: () => ({ top: -300, bottom: -10 }) },
+      { dataset: { turnId: 'b' }, children: [], getBoundingClientRect: () => ({ top: 80, bottom: 400 }) }
     ]
   }
   assert.deepEqual(position.domMetrics(box), { offset: 200, size: 2000, viewport: 500 })
-  assert.deepEqual(position.domAnchor(box), { turnId: 'b', offset: 20 })
+  assert.deepEqual(position.domAnchor(box), { turnId: 'b', offset: 20, path: [], sub: 20 })
   position.restoreDomScroll(box, { top: 999, bottom: false, anchor: { turnId: 'b', offset: 40 } })
   assert.equal(box.scrollTop, 220, '保持相同回合及回合内偏移，不沿用不同视图的绝对位置')
   position.restoreDomScroll(box, { top: 333, bottom: false, anchor: { turnId: 'gone', offset: 0 } })
@@ -197,10 +197,26 @@ check('分屏：切焦点后按回合锚点恢复，允许编辑器高度和上�
   assert.equal(box.scrollTop, 2000, '原来贴底的视图继续贴底')
 })
 
+check('滚动锚点：记录并按子块路径恢复回合内位置', () => {
+  globalThis.HTMLElement = class {}
+  const block = (top, bottom, children = []) => Object.assign(new globalThis.HTMLElement(), { children, getBoundingClientRect: () => ({ top, bottom, height: bottom - top }) })
+  const inner = block(60, 160)
+  const first = block(-200, 40)
+  const second = block(40, 260, [inner])
+  const turn = Object.assign(block(-200, 260, [first, second]), { dataset: { turnId: 't' } })
+  const box = { getBoundingClientRect: () => ({ top: 100 }), querySelectorAll: () => [turn] }
+  const anchor = position.domAnchor(box)
+  assert.deepEqual(anchor.path, [1, 0])
+  assert.equal(anchor.sub, 40)
+  assert.equal(position.resolveAnchorPoint(turn, anchor), 100)
+  delete globalThis.HTMLElement
+})
+
 check('滚动锚点：一次读取兼顾被截断行和完整行，找到后停止扫描', () => {
   let reads = 0
   const nodes = Array.from({ length: 100 }, (_, index) => ({
     dataset: { turnId: `row-${index}` },
+    children: [],
     getBoundingClientRect: () => {
       reads++
       return { top: 80 + index * 100, bottom: 180 + index * 100 }
@@ -208,10 +224,10 @@ check('滚动锚点：一次读取兼顾被截断行和完整行，找到后停�
   }))
   const box = { getBoundingClientRect: () => ({ top: 100 }), querySelectorAll: () => nodes }
   assert.deepEqual(position.domReadingAnchors(box), {
-    snapshot: { turnId: 'row-0', offset: 20 },
+    snapshot: { turnId: 'row-0', offset: 20, path: [], sub: 20 },
     resize: { turnId: 'row-1', offset: 80 }
   })
-  assert.equal(reads, 2)
+  assert.equal(reads, 3)
   assert.deepEqual(position.domReadingAnchors({ ...box, querySelectorAll: () => [] }), { snapshot: null, resize: null })
   assert.deepEqual(position.domAnchor(box), { turnId: 'row-0', offset: 20 })
 })
