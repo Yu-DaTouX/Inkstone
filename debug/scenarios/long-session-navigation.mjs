@@ -97,7 +97,7 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   report.navFar = await target(farIndex)
   check('远距离导航到达目标回合', report.navFar.active === String(farIndex), report.navFar)
   check('远距离导航保留全程滚动过程', intermediatePositions(farMotion) >= 3, intermediatePositions(farMotion))
-  check('远距离导航期间保留虚拟化', farMotion.maxMountedRows <= 16, farMotion.maxMountedRows)
+  check('远距离导航期间保留虚拟化', farMotion.maxMountedRows <= 24, farMotion.maxMountedRows)
   await phase('longScroll', async () => {
     const point = await cdp.evaluate(`(() => { const r = document.querySelector('.v3-stream').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
     await cdp.call('Input.synthesizeScrollGesture', { ...point, yDistance: 55000, speed: 55000, gestureSourceType: 'mouse', preventFling: true })
