@@ -1,4 +1,5 @@
 import { useStore } from './store'
+import { pick } from '../../../shared/ui-lang'
 
 export const MCP_SETTINGS_CHANGED = 'inkstone:mcp-settings-changed'
 
@@ -13,6 +14,6 @@ export function notifyMcpSettingsChanged(): void {
 
 export async function reloadCurrentMcp(expectedSessionId: string, context: string): Promise<void> {
   const result = await window.yan.capabilities.applyMcpServices({ context, expectedSessionId })
-  if (!result.ok) throw new Error(result.error || 'MCP 重新加载失败')
+  if (!result.ok) throw new Error(result.error || pick('MCP 重新加载失败', 'MCP reload failed'))
   notifyMcpSettingsChanged()
 }

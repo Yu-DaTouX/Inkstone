@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { I18nProvider } from './i18n'
+import { I18nProvider, currentLang } from './i18n'
 import { useStore } from './state/store'
 import { useRunsV3 } from './state/runs-v3'
 import { useLiveQuota } from './state/live-quota'
@@ -82,10 +82,13 @@ void mount().catch((error: unknown) => {
   console.error('界面外壳加载失败', error)
   document.getElementById('boot')?.remove()
   const title = document.createElement('h1')
-  title.textContent = '界面加载失败'
+  const zh = currentLang() === 'zh-CN'
+  title.textContent = zh ? '界面加载失败' : 'The interface failed to load'
   const detail = document.createElement('pre')
   detail.textContent = error instanceof Error ? error.message : String(error)
   const hint = document.createElement('p')
-  hint.textContent = '会话与设置不受影响。请重新启动砚；如果仍然失败，请把上面的错误信息反馈给开发者。'
+  hint.textContent = zh
+    ? '会话与设置不受影响。请重新启动砚；如果仍然失败，请把上面的错误信息反馈给开发者。'
+    : 'Your sessions and settings are unaffected. Restart Inkstone; if it still fails, send the error above to the developer.'
   root!.replaceChildren(title, detail, hint)
 })

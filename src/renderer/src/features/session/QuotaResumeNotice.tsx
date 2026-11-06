@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { QUOTA_RESUME_PROMPT } from '../../../../shared/quota-resume'
-import { useT } from '../../i18n'
+import { currentLang, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button } from '../../ui'
 import { Card, CardActions, CardBody, CardHead, CardStatus, CardTitle } from '../../ui/Card'
@@ -10,7 +10,7 @@ import './wrap-up.css'
 const MINUTE_MS = 60_000
 
 function clockTime(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(at).toLocaleTimeString(currentLang(), { hour: '2-digit', minute: '2-digit' })
 }
 
 function useMinuteClock(active: boolean): number {

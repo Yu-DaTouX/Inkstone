@@ -2,6 +2,7 @@ import { AppBridge, McpUiHostContextSchema, McpUiHostCapabilitiesSchema, type Mc
 import type { CallToolResult, ReadResourceResult } from '@modelcontextprotocol/client'
 import { McpAppTransport, type McpAppWindowLike, type McpAppFrameWindowLike } from './mcp-app-transport'
 import { clampMcpAppSize, type McpAppChannelPhase } from './mcp-app-frame-model'
+import { pick } from '../../../../shared/ui-lang'
 
 export type { McpAppMessageEvent, McpAppWindowLike, McpAppFrameWindowLike } from './mcp-app-transport'
 
@@ -185,13 +186,13 @@ export class McpAppChannel {
   }
 
   private assertReady(generation: number): void {
-    if (generation !== this.generation || this.phase !== 'ready') throw new Error('App 尚未完成初始化或实例已释放')
+    if (generation !== this.generation || this.phase !== 'ready') throw new Error(pick('App 尚未完成初始化或实例已释放', 'App is not ready or was released'))
   }
 
   private async dispatch(method: string, params: unknown): Promise<unknown> {
     const envelope = await this.options.api.dispatch(this.options.instanceId, { jsonrpc: '2.0', id: `${this.requestPrefix}-${++this.requestId}`, method, params }) as { result?: unknown; error?: { message?: string } }
-    if (envelope?.error) throw new Error(envelope.error.message ?? '宿主拒绝请求')
-    if (!envelope || !Object.prototype.hasOwnProperty.call(envelope, 'result')) throw new Error('宿主响应无效')
+    if (envelope?.error) throw new Error(envelope.error.message ?? pick('宿主拒绝请求', 'The host rejected the request'))
+    if (!envelope || !Object.prototype.hasOwnProperty.call(envelope, 'result')) throw new Error(pick('宿主响应无效', 'Invalid host response'))
     return envelope.result
   }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX } from 'react'
 import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, ShieldAlert, X } from 'lucide-react'
-import { useI18n } from '../../i18n'
+import { currentLang, useI18n } from '../../i18n'
 import { Button, IconButton, Notice } from '../../ui'
 import type { McpAppViewApi, McpAppViewAuditEntry, McpAppViewDescriptor } from '../../../../shared/mcp-app-view'
 import {
@@ -576,7 +576,7 @@ const AUDIT_TONE_CLASS: Record<McpAppAuditTone, string> = {
 
 function auditTime(at: number): string {
   try {
-    return new Date(at).toLocaleTimeString()
+    return new Date(at).toLocaleTimeString(currentLang())
   } catch {
     return ''
   }

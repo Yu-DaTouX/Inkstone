@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState, type JSX } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useI18n, useT } from '../../i18n'
+import { currentLang, useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useSessionText } from './text'
 import { Markdown } from './Markdown'
@@ -520,16 +520,18 @@ function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }
   )
 }
 
-let clockFormats: { clock: Intl.DateTimeFormat; full: Intl.DateTimeFormat } | null = null
+let clockFormats: { lang: string; clock: Intl.DateTimeFormat; full: Intl.DateTimeFormat } | null = null
 
 function turnClockFormats(): { clock: Intl.DateTimeFormat; full: Intl.DateTimeFormat } {
-  clockFormats ??= {
-    clock: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }),
-    full: new Intl.DateTimeFormat(undefined, {
+  const lang = currentLang()
+  if (clockFormats?.lang !== lang) clockFormats = {
+    lang,
+    clock: new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit' }),
+    full: new Intl.DateTimeFormat(lang, {
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short'
     })
   }
-  return clockFormats
+  return clockFormats!
 }
 
 function TurnClock({ timestamp }: { timestamp: number }): JSX.Element | null {

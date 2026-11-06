@@ -1,3 +1,4 @@
+import { currentLang } from '../../../i18n/lang'
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../../../state/store'
 import { buildContentMatches, CONTENT_SEARCH_LIMIT, shouldSearchContent, type ContentMatch } from '../../../features/sidebar/content-search'
@@ -67,7 +68,7 @@ export function useSidebarSearch(query: string, sections: SidebarSections): Side
         sessions,
         shownPaths: threads.map((view) => view.path),
         titleOf: (item) => manualTitles[item.id] ?? titles[item.id] ?? item.title,
-        fallbackTitle: (updatedAt) => new Date(updatedAt).toLocaleString()
+        fallbackTitle: (updatedAt) => new Date(updatedAt).toLocaleString(currentLang())
       }),
     [hits, sessions, threads, manualTitles, titles]
   )
