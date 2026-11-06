@@ -24,6 +24,7 @@ function ok(cond, label, detail) {
 const entry = `
 export { WORKBENCH_TABS, WORKBENCH_ACTIVE_TABS } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/types'))}'
 export { autoCompactDistance, autoCompactLimitOf, contextUsageSummary, contextPaneData, contextPaneToolCalls, largestToolCalls, shortTokens, turnAnchorIds } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
+export { contextCells } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-cells'))}'
 export { compactionHistory, compactionReclaim, loadCompactionHistory } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-compactions'))}'
 export { contextBreakdown, contextFromOf, inContextMessages } from '${posix(resolve(ROOT, 'src/renderer/src/state/context-breakdown'))}'
 `
@@ -301,6 +302,17 @@ async function main() {
     ok(tokensOf(first) === tokensOf(later), '输出中末尾助手消息增长时构成保持不变', [tokensOf(first), tokensOf(later)])
     ok(tokensOf(first) === tokensOf(settled), '输出中的助手消息不计入构成，结束后再计入', [tokensOf(first), tokensOf(settled)])
     ok(tokensOf(contextPaneData({ session, stats, messages })) !== tokensOf(first), '结束输出后构成包含末尾助手消息')
+  }
+
+  group('细胞格')
+  {
+    const slices = [{ id: 'system', tokens: 1000 }, { id: 'user', tokens: 20 }, { id: 'tools', tokens: 4000 }]
+    const cells = mod.contextCells(slices, 10000, 100)
+    ok(cells.length === 100, '格数固定', cells.length)
+    ok(cells.filter((c) => c === 'free').length === 50, '剩余格数按占比', cells.filter((c) => c === 'free').length)
+    ok(cells.includes('user'), '极小的分类至少占一格')
+    ok(mod.contextCells(slices, 0).length === 0, '窗口未知时不画格')
+    ok(mod.contextCells([{ id: 'tools', tokens: 99999 }], 10000, 50).every((c) => c === 'tools'), '超出窗口时填满')
   }
 
   process.stdout.write(`\n================ 结果：${report.pass} 通过 / ${report.fail} 失败 ================\n`)
