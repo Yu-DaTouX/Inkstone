@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { SubagentInfo } from '../api/client'
+import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
+import { useRemote } from '../state'
 import { Icon } from '../icons'
 import { MessageBody } from './MessageBody'
 import { ModelBot, type BotSpriteMood } from './ModelBot'
@@ -40,8 +42,19 @@ function statusText(run: SubagentInfo): string {
   return '完成'
 }
 
-export function SubagentCard({ runs, plain = false }: { runs: SubagentInfo[]; plain?: boolean }) {
+export function SubagentCard({ runs, plain = false, sessionId }: { runs: SubagentInfo[]; plain?: boolean; sessionId?: string }) {
   const p = usePalette()
+  const { client, info } = useRemote()
+  const [stopping, setStopping] = useState<string | null>(null)
+  const [stopError, setStopError] = useState<string | null>(null)
+  const canStop = !!sessionId && capabilityAllowed(info, 'subagent-stop')
+  const stop = async (runId: string) => {
+    if (!sessionId || stopping) return
+    setStopping(runId); setStopError(null)
+    try { await client.stopSubagent(sessionId, runId) }
+    catch (err) { setStopError(err instanceof Error ? err.message : '停止失败') }
+    finally { setStopping(null) }
+  }
   const live = runs.filter(isLive).length
   const failed = runs.filter((run) => run.status === 'error').length
   const done = runs.filter((run) => run.status === 'done').length
@@ -72,6 +85,8 @@ export function SubagentCard({ runs, plain = false }: { runs: SubagentInfo[]; pl
             {!open && isLive(run) && run.latestActivity ? <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.xs }}>{run.latestActivity}</Text> : null}
             {open && detail && run.status === 'error' ? <Text selectable style={[styles.detail, { color: p.err, backgroundColor: p.sunken }]}>{detail}</Text> : null}
             {open && detail && run.status !== 'error' ? <View style={[styles.summary, { backgroundColor: p.sunken }]}><MessageBody text={detail} /></View> : null}
+            {open && canStop && isLive(run) ? <Pressable accessibilityRole="button" accessibilityLabel={`停止子代理 ${run.title}`} disabled={stopping !== null} onPress={() => void stop(run.id)} style={[styles.stop, { borderColor: p.err, opacity: stopping === run.id ? 0.5 : 1 }]}><Icon name="stop" size={icon.sm} color={p.err} /><Text style={{ color: p.err, fontSize: font.sm }}>停止</Text></Pressable> : null}
+            {open && stopError ? <Text style={{ color: p.err, fontSize: font.xs }}>{stopError}</Text> : null}
             {open && run.task !== run.title ? <Text selectable style={{ color: p.fgMute, fontSize: font.xs, lineHeight: 17 }}>{run.task}</Text> : null}
           </View>
         </Pressable>
@@ -86,6 +101,7 @@ const styles = StyleSheet.create({
   list: { maxHeight: 260, paddingBottom: space[2] },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: space[2], paddingVertical: space[1] },
   body: { flex: 1, minWidth: 0, gap: 2 },
+  stop: { alignSelf: 'flex-start', minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: space[1], paddingHorizontal: space[3], borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.md },
   summary: { borderRadius: radius.md, padding: space[2], marginTop: 2 },
   detail: { fontFamily: mono, fontSize: font.xs, lineHeight: 17, borderRadius: radius.md, padding: space[2], marginTop: 2 }
 })

@@ -1,142 +1,29 @@
-import { RemoteImage } from '../components/RemoteImage'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type HistoryMessage, type HistoryPage, type SubagentInfo } from '../api/client'
 import type { SessionDetail } from '../components/DetailPane'
 import { QuestionCard } from '../components/QuestionCard'
-import { CodeBlock, MessageBody } from '../components/MessageBody'
+import { TimelineRow } from '../components/TimelineRow'
+import { SHOWN_ROLES, liveProcessKey, makeTimeline, reuseMessages, stabilizeTimeline, type ImageRef, type TimelineEntry } from '../timeline'
 import { ImageViewer } from '../components/ImageViewer'
 import { SpeechInputButton } from '../components/SpeechInputButton'
 import { useRemote } from '../state'
 import { font, icon, mono, radius, space, touch, usePalette, weight } from '../theme'
 import { ActivityLine, EmptyState, Header, IconButton, Meta, STATUS_TEXT } from '../ui'
 import { Icon } from '../icons'
-import type { IconName } from '../../../src/renderer/src/icons/sprite'
 import { GlyphSpinner, RunDot } from '../motion'
 import type { SpeechPhase } from '../speech'
 import { mergeRecentHistory } from '../historyCache'
 import { useBottomInset } from '../insets'
 import { pickImages, type PhotoDraft } from '../device'
 import { ModelPicker } from '../components/ModelPicker'
-import type { RemoteModel } from '../../../src/shared/remote-protocol'
+import { RenameSheet } from '../components/RenameSheet'
+import type { RemoteModel, RemoteSessionChanges, RemoteSessionStats } from '../../../src/shared/remote-protocol'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 
-type ImageRef = { messageId: string; index: number }
-type ToolStep = { id: string; name: string; failed: boolean; denied: boolean; running: boolean; awaiting: boolean; summary: string; output: string; nested: boolean; images: ImageRef[] }
-type ProcessStep =
-  | { kind: 'text'; key: string; message: HistoryMessage }
-  | { kind: 'thinking'; key: string; text: string; ms?: number }
-  | { kind: 'tool'; key: string; tool: ToolStep }
-type TimelineEntry =
-  | { kind: 'message'; key: string; message: HistoryMessage }
-  | { kind: 'process'; key: string; steps: ProcessStep[]; actions: number; thinking: number; failed: number; images: number; ms?: number }
-
-const SHOWN_ROLES = new Set(['user', 'assistant', 'bash'])
-
-function toolIcon(name: string): IconName {
-  if (/bash|shell|exec|command|terminal/i.test(name)) return 'terminal'
-  if (/read|view|cat/i.test(name)) return 'file'
-  if (/write|edit|patch|apply/i.test(name)) return 'pencil'
-  if (/grep|find|glob|search|ls/i.test(name)) return 'search'
-  if (/web|fetch|browser|url/i.test(name)) return 'globe'
-  if (/agent|subagent|task/i.test(name)) return 'agent'
-  if (/todo|plan/i.test(name)) return 'checklist'
-  return 'activity'
-}
-
-function spanText(ms?: number): string {
-  if (!ms || ms < 1000) return ''
-  const seconds = Math.round(ms / 1000)
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-}
-
-const clock = (at?: number) => at ? new Date(at).toTimeString().slice(0, 5) : ''
-const UNCOUNTED_TOOLS = new Set(['todo', 'todos', 'todo_write', 'update_todos'])
-const LIVE_STEPS = 3
-const ARG_KEYS = ['command', 'cmd', 'path', 'file_path', 'filePath', 'pattern', 'query', 'url', 'description', 'task', 'prompt', 'question']
-
-function argSummary(args: unknown): string {
-  if (typeof args === 'string') return args.split('\n')[0].slice(0, 160)
-  if (!args || typeof args !== 'object') return ''
-  const record = args as Record<string, unknown>
-  const key = ARG_KEYS.find((name) => typeof record[name] === 'string' && record[name])
-  const text = key ? String(record[key]) : JSON.stringify(args)
-  return text.split('\n')[0].slice(0, 160)
-}
-
-const SUBAGENT_NOTICE_RE = /^<subagent-notification id="[^"]+" status="[^"]+">/
-const isSubagentNotice = (message: HistoryMessage) => message.role === 'user' && SUBAGENT_NOTICE_RE.test(message.text?.trimStart() ?? '')
-
-const hasReply = (message: HistoryMessage) => !!(message.text?.trim() || message.error || message.artifacts?.length)
-
-function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
-  const entries: TimelineEntry[] = []
-  let turn: HistoryMessage[] = []
-  const flushTurn = () => {
-    if (!turn.length) return
-    let replyIndex = -1
-    turn.forEach((message, index) => { if (hasReply(message)) replyIndex = index })
-    const steps: ProcessStep[] = []
-    const tools = new Map<string, ToolStep>()
-    let first = Infinity
-    let last = 0
-    turn.forEach((message, index) => {
-      if (message.thinking?.trim()) steps.push({ kind: 'thinking', key: `thinking-${message.id}`, text: message.thinking.trim(), ms: message.thinkingMs })
-      if (index !== replyIndex && hasReply(message)) steps.push({ kind: 'text', key: `text-${message.id}`, message })
-      for (const [toolIndex, tool] of (message.toolCalls ?? []).entries()) {
-        if (tool.startedAt) first = Math.min(first, tool.startedAt)
-        if (tool.endedAt) last = Math.max(last, tool.endedAt)
-        const key = tool.id || `${message.id}:${toolIndex}`
-        const old = tools.get(key)
-        const denied = tool.denied === true || !!old?.denied
-        const next: ToolStep = {
-          id: key,
-          name: tool.name || old?.name || '工具',
-          failed: (tool.status === 'error' && !denied) || !!old?.failed,
-          denied,
-          running: tool.status === 'running' || tool.status === 'pending',
-          awaiting: tool.output === undefined && old?.output === undefined,
-          summary: argSummary(tool.args) || old?.summary || '',
-          output: tool.output ?? old?.output ?? '',
-          nested: !!tool.parentToolCallId,
-          images: tool.imageIndexes?.length ? tool.imageIndexes.map((index) => ({ messageId: message.id, index })) : old?.images ?? []
-        }
-        if (old) Object.assign(old, next)
-        else {
-          tools.set(key, next)
-          steps.push({ kind: 'tool', key: `tool-${key}`, tool: next })
-        }
-      }
-    })
-    const counted = [...tools.values()].filter((tool) => !tool.nested && !(UNCOUNTED_TOOLS.has(tool.name) && !tool.failed))
-    const thinking = steps.filter((step) => step.kind === 'thinking').length
-    if (counted.length || thinking) {
-      entries.push({ kind: 'process', key: `process-${turn[0].id}`, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length, images: [...tools.values()].reduce((sum, tool) => sum + tool.images.length, 0), ms: last > first ? last - first : undefined })
-    } else {
-      for (const step of steps) if (step.kind === 'text') entries.push({ kind: 'message', key: step.message.id, message: step.message })
-    }
-    if (replyIndex >= 0) entries.push({ kind: 'message', key: turn[replyIndex].id, message: turn[replyIndex] })
-    turn = []
-  }
-  for (const message of messages) {
-    if (message.role === 'user' || message.role === 'bash') {
-      flushTurn()
-      if (!isSubagentNotice(message)) entries.push({ kind: 'message', key: message.id, message })
-    } else turn.push(message)
-  }
-  flushTurn()
-  return entries
-}
-
-function liveProcessKey(timeline: TimelineEntry[], running: boolean): string | null {
-  if (!running) return null
-  for (let index = timeline.length - 1; index >= 0; index--) {
-    const entry = timeline[index]
-    if (entry.kind === 'process') return entry.key
-    if (entry.message.role !== 'assistant') return null
-  }
-  return null
-}
+const REFRESH_WINDOW = 24
+const INSIGHT_REFRESH_MS = 15_000
+const NO_EXPANDED: readonly string[] = []
 
 export function SessionScreen({
   sessionId,
@@ -154,6 +41,7 @@ export function SessionScreen({
   onOpenDetail,
   detailOpen,
   onDetail,
+  detailVisible,
   banner
 }: {
   sessionId: string
@@ -171,11 +59,12 @@ export function SessionScreen({
   onOpenDetail?: () => void
   detailOpen?: boolean
   onDetail?: (detail: SessionDetail) => void
+  detailVisible?: boolean
   banner?: ReactNode
 }) {
   const p = usePalette()
   const bottomInset = useBottomInset()
-  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, info, marksReady, markRead, unread } = useRemote()
+  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, info, marksReady, markRead, unread, latestStats } = useRemote()
   const cached = useRef(client.historyCache.get(sessionId)).current
   const [messages, setMessages] = useState<HistoryMessage[]>(cached?.messages.filter((m) => SHOWN_ROLES.has(m.role)) ?? [])
   const [loading, setLoading] = useState(!cached)
@@ -194,6 +83,11 @@ export function SessionScreen({
   const [plan, setPlan] = useState<HistoryPage['plan']>(cached?.plan)
   const [subagents, setSubagents] = useState<SubagentInfo[]>([])
   const subagentsAllowed = capabilityAllowed(info, 'subagents')
+  const insightAllowed = capabilityAllowed(info, 'insight')
+  const [stats, setStats] = useState<RemoteSessionStats | undefined>(() => latestStats(sessionId))
+  const [changes, setChanges] = useState<RemoteSessionChanges | null>(null)
+  const insightAt = useRef(0)
+  const detailSeen = useRef(false)
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
@@ -216,18 +110,26 @@ export function SessionScreen({
   const userScrolled = useRef(false)
   const topArmed = useRef(true)
   const [modelPicker, setModelPicker] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   const [selectedModel, setSelectedModel] = useState<RemoteModel | null>(null)
   const [picking, setPicking] = useState(false)
   const sendAttempt = useRef<{ text: string; key: string } | null>(null)
   const abortAttempt = useRef<{ runId: string; key: string } | null>(null)
   const runner = runners.find((entry) => entry.sessionId === sessionId)
   const pending = questions.filter((question) => question.sessionId === sessionId)
-  const timeline = useMemo(() => makeTimeline(messages), [messages])
+  const timelineRef = useRef<TimelineEntry[]>([])
+  const timeline = useMemo(() => (timelineRef.current = stabilizeTimeline(timelineRef.current, makeTimeline(messages))), [messages])
   const liveKey = liveProcessKey(timeline, !!runner?.running)
   const runInList = !!liveKey
   const snapBottom = (animated = false) => {
     if (alive.current && followBottom.current && listSize.current.viewport > 0) listRef.current?.scrollToOffset({ offset: Math.max(0, listSize.current.content - listSize.current.viewport), animated })
   }
+  const snapFrame = useRef<number | null>(null)
+  const scheduleSnap = () => {
+    if (snapFrame.current !== null) return
+    snapFrame.current = requestAnimationFrame(() => { snapFrame.current = null; snapBottom() })
+  }
+  useEffect(() => () => { if (snapFrame.current !== null) cancelAnimationFrame(snapFrame.current) }, [])
   const model = selectedModel ?? runner?.model
   const cwdName = sessions.find((s) => s.id === sessionId)?.cwdName || '电脑工作目录'
   useEffect(() => { if (runner?.model) setSelectedModel(runner.model) }, [runner?.model?.id, runner?.model?.provider])
@@ -239,8 +141,8 @@ export function SessionScreen({
     return [...byName.values()]
   }, [messages])
   useEffect(() => {
-    onDetail?.({ sessionId, plan, subagents, artifacts, running: !!runner?.running, model: modelName })
-  }, [onDetail, sessionId, plan, subagents, artifacts, runner?.running, modelName])
+    onDetail?.({ sessionId, plan, subagents, artifacts, running: !!runner?.running, model: modelName, stats, changes })
+  }, [onDetail, sessionId, plan, subagents, artifacts, runner?.running, modelName, stats, changes])
   const todosLeft = plan?.todos.filter((todo) => !(todo.done || todo.status === 'done')).length ?? 0
   const liveSubagents = subagents.filter((run) => run.status === 'starting' || run.status === 'running').length
   const readLatest = useCallback(() => {
@@ -260,20 +162,24 @@ export function SessionScreen({
     }
     const task = (async () => {
       try {
-        const history = await client.history(sessionId, 60)
+        let history = await client.history(sessionId, rawHistory.current.length > REFRESH_WINDOW ? REFRESH_WINDOW : 60)
+        if (history.messages.length === REFRESH_WINDOW && rawHistory.current.length > REFRESH_WINDOW && !mergeRecentHistory(rawHistory.current, history.messages).retained) history = await client.history(sessionId, 60)
         if (!alive.current) return
         pagination.current = typeof history.hasMore === 'boolean'
         if (pagination.current) setLimitedOlder(false)
-        setPlan(history.plan)
+        setPlan((current) => (JSON.stringify(current) === JSON.stringify(history.plan) ? current : history.plan))
         const merged = mergeRecentHistory(rawHistory.current, history.messages)
-        rawHistory.current = merged.messages
-        setMessages(merged.messages.filter((message) => SHOWN_ROLES.has(message.role)))
+        const reused = reuseMessages(rawHistory.current, merged.messages)
+        if (reused !== rawHistory.current) {
+          rawHistory.current = reused
+          setMessages(reused.filter((message) => SHOWN_ROLES.has(message.role)))
+        }
         if (!merged.retained) {
           moreRef.current = history.hasMore ?? history.messages.length === 60
           setHasOlder(moreRef.current)
           legacyLimit.current = 60
         }
-        client.historyCache.set(sessionId, { ...history, messages: merged.messages, hasMore: pagination.current ? moreRef.current : undefined })
+        client.historyCache.set(sessionId, { ...history, messages: reused, hasMore: pagination.current ? moreRef.current : undefined })
         setError(null)
       } catch (err) {
         if (alive.current) setError(err instanceof Error ? err.message : '读取失败')
@@ -328,20 +234,55 @@ export function SessionScreen({
     if (!subagentsAllowed) return
     try {
       const runs = await client.subagents(sessionId)
-      if (alive.current) setSubagents(runs)
+      if (alive.current) setSubagents((current) => (JSON.stringify(current) === JSON.stringify(runs) ? current : runs))
     } catch { }
   }, [client, sessionId, subagentsAllowed])
+
+  const loadInsight = useCallback(async (): Promise<void> => {
+    if (!insightAllowed) return
+    insightAt.current = Date.now()
+    try {
+      const next = await client.insight(sessionId)
+      if (!alive.current) return
+      setStats((current) => next.stats ?? current)
+      setChanges((current) => (JSON.stringify(current) === JSON.stringify(next.changes) ? current : next.changes))
+    } catch { }
+  }, [client, insightAllowed, sessionId])
+
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    const running = !!runner?.running
+    if (wasRunning.current && !running) void loadInsight()
+    wasRunning.current = running
+  }, [loadInsight, runner?.running])
+
+  useEffect(() => { void loadInsight() }, [loadInsight])
+
+  useEffect(() => {
+    if (detailVisible && !detailSeen.current && Date.now() - insightAt.current > 4000) void loadInsight()
+    detailSeen.current = !!detailVisible
+  }, [detailVisible, loadInsight])
+
+  const detailVisibleRef = useRef(detailVisible)
+  detailVisibleRef.current = detailVisible
 
   useEffect(() => {
     alive.current = true
     followBottom.current = true
     void load()
     const unsubscribe = onSessionEvent(sessionId, (kinds) => {
-      if (kinds.has('messages')) void load()
+      if (kinds.has('messages')) {
+        void load()
+        if (detailVisibleRef.current && Date.now() - insightAt.current > INSIGHT_REFRESH_MS) void loadInsight()
+      }
       if (kinds.has('subagents')) void loadSubagents()
+      if (kinds.has('stats')) {
+        const live = latestStats(sessionId)
+        if (live) setStats(live)
+      }
     })
     return () => { alive.current = false; unsubscribe() }
-  }, [load, loadSubagents, onSessionEvent, sessionId])
+  }, [latestStats, load, loadInsight, loadSubagents, onSessionEvent, sessionId])
 
   useEffect(() => { void loadSubagents() }, [loadSubagents])
 
@@ -395,7 +336,8 @@ export function SessionScreen({
     <KeyboardAvoidingView style={[styles.root, { backgroundColor: p.bg0 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={tabletop ? { height: tabletop.top } : { flex: 1 }}>
       <Header
-        title={title || '会话'}
+        title={sessions.find((entry) => entry.id === sessionId)?.title || title || '会话'}
+        onTitleLongPress={capabilityAllowed(info, 'rename') ? () => setRenaming(true) : undefined}
         crumb={projects.find((project) => project.id === sessions.find((s) => s.id === sessionId)?.projectId)?.name || cwdName}
         left={onToggleSidebar ? <IconButton name="sidebar-left" selected={sidebarVisible} label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : <IconButton name="back" label="返回会话列表" onPress={onBack} />}
         right={onOpenDetail ? <IconButton name="sidebar-right" selected={detailOpen} label={detailOpen ? '收起会话详情' : '打开会话详情'} onPress={onOpenDetail} /> : undefined}
@@ -435,8 +377,8 @@ export function SessionScreen({
           if (followBottom.current) readLatest()
         }}
         scrollEventThrottle={100}
-        onLayout={({ nativeEvent }) => { listSize.current.viewport = nativeEvent.layout.height; requestAnimationFrame(() => snapBottom()) }}
-        onContentSizeChange={(_, height) => { listSize.current.content = height; requestAnimationFrame(() => snapBottom()) }}
+        onLayout={({ nativeEvent }) => { listSize.current.viewport = nativeEvent.layout.height; scheduleSnap() }}
+        onContentSizeChange={(_, height) => { listSize.current.content = height; scheduleSnap() }}
         ListEmptyComponent={<EmptyState>{loading ? '正在读取会话…' : '输入消息，开始这段会话'}</EmptyState>}
         ListFooterComponent={<>
           {runner?.running && !runInList ? <View style={styles.live}><GlyphSpinner /><Text style={{ color: p.accent, fontSize: font.sm }}>进行中</Text></View> : null}
@@ -452,84 +394,7 @@ export function SessionScreen({
             </View>
           ) : null}
         </>}
-        renderItem={({ item }) => {
-          if (item.kind === 'process') {
-            const expanded = expandedTools.includes(item.key)
-            const live = item.key === liveKey
-            const parts = [item.actions ? `${item.actions} 次操作` : '', item.thinking ? `${item.thinking} 段思考` : '', item.images ? `${item.images} 张图` : '', spanText(item.ms)].filter(Boolean).join(' · ')
-            const shown = expanded ? item.steps : live ? item.steps.slice(-LIVE_STEPS) : []
-            return <View style={styles.process}>
-              <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`过程，${parts}${item.failed ? `，${item.failed} 项失败` : ''}，${expanded ? '收起' : '展开'}`} onPress={() => toggleExpanded(item.key)} style={styles.processHead}>
-                <View style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}><Icon name="chevron-right" size={14} color={p.fgMute} /></View>
-                <Text style={{ color: p.fgDim, fontSize: font.sm }}>{parts}</Text>
-                {item.failed ? <Text style={{ color: p.err, fontSize: font.sm }}>· {item.failed} 项失败</Text> : null}
-                {live ? <GlyphSpinner /> : null}
-              </Pressable>
-              {shown.length ? <View style={[styles.steps, { borderLeftColor: p.borderSoft }]}>
-                {live && !expanded && item.steps.length > LIVE_STEPS ? <Meta>前面还有 {item.steps.length - LIVE_STEPS} 步</Meta> : null}
-                {shown.map((step) => {
-                  if (step.kind === 'text') return <Text key={step.key} selectable style={{ color: p.fgDim, fontSize: font.sm, lineHeight: 20 }}>{step.message.text?.trim() || step.message.error}</Text>
-                  const open = expandedTools.includes(step.key)
-                  if (step.kind === 'thinking') return <View key={step.key}>
-                    <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => toggleExpanded(step.key)} style={styles.toolRow}>
-                      <Icon name="sparkles" size={icon.sm} color={p.fgMute} />
-                      <Text numberOfLines={open ? undefined : 1} style={{ flex: 1, minWidth: 0, color: p.fgMute, fontSize: font.sm }}>{open ? step.text : `思考${step.ms ? ` ${Math.max(1, Math.round(step.ms / 1000))} 秒` : ''} · ${step.text.split('\n')[0]}`}</Text>
-                    </Pressable>
-                  </View>
-                  const tool = step.tool
-                  return <View key={step.key}>
-                    <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${tool.name} ${tool.summary}`} disabled={!tool.output && !tool.images.length} onPress={() => toggleExpanded(step.key)} style={[styles.toolRow, tool.nested ? { paddingLeft: space[4] } : null]}>
-                      <Icon name={toolIcon(tool.name)} size={14} color={tool.failed ? p.err : p.fgMute} />
-                      <Text numberOfLines={open ? undefined : 1} style={{ flex: 1, minWidth: 0, color: tool.failed ? p.err : p.fgDim, fontSize: font.sm }}>{tool.name}{tool.summary ? <Text style={{ color: p.fgMute, fontFamily: mono, fontSize: font.xs }}>  {tool.summary}</Text> : null}</Text>
-                      {tool.running || (live && tool.awaiting && !tool.failed && !tool.denied) ? <GlyphSpinner /> : <Text style={[styles.toolMark, { color: tool.failed ? p.err : p.fgMute }]}>{tool.failed ? '✕' : tool.denied ? '–' : '✓'}</Text>}
-                    </Pressable>
-                    {tool.images.length ? <View style={styles.thumbs}>{tool.images.map((image, index) => (
-                      <Pressable key={`${image.messageId}:${image.index}`} accessibilityRole="imagebutton" accessibilityLabel={`${tool.name} 图片 ${index + 1}，点按放大`} onPress={() => setViewing({ ...image, label: `${tool.name} · ${index + 1}/${tool.images.length}` })}>
-                        <RemoteImage client={client} source={client.imageSource(sessionId, image.messageId, image.index)} resizeMode="cover" style={[styles.thumb, { backgroundColor: p.bg1, borderColor: p.borderSoft }]} />
-                      </Pressable>
-                    ))}</View> : null}
-                    {open && tool.output ? <CodeBlock value={tool.output.length > 4000 ? `…${tool.output.slice(-4000)}` : tool.output} size={font.xs} /> : null}
-                  </View>
-                })}
-              </View> : null}
-            </View>
-          }
-          const message = item.message
-          if (message.role === 'bash' && message.bash) {
-            const failed = message.bash.exitCode !== null && message.bash.exitCode !== 0
-            const open = expandedTools.includes(message.id)
-            return <View style={styles.process}>
-              <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => toggleExpanded(message.id)} style={styles.processHead}>
-                <Text numberOfLines={open ? undefined : 2} style={{ color: failed ? p.err : p.fgDim, fontSize: font.sm, fontFamily: mono }}>$ {message.bash.command}{message.bash.cancelled ? '  （已取消）' : failed ? `  （退出码 ${message.bash.exitCode}）` : ''}</Text>
-              </Pressable>
-              {open && message.text ? <CodeBlock value={message.text.length > 4000 ? `…${message.text.slice(-4000)}` : message.text} size={font.xs} /> : null}
-            </View>
-          }
-          const mine = message.role === 'user'
-          return (
-            <View style={mine ? [styles.bubble, { backgroundColor: p.bubble }] : styles.message}>
-              <View style={styles.messageMain}>
-              {message.text ? <MessageBody text={message.text} /> : null}
-              {message.images?.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{message.images.map((_, index) => <Pressable key={index} accessibilityRole="imagebutton" accessibilityLabel={`消息图片 ${index + 1}，点按放大`} onPress={() => setViewing({ messageId: message.id, index, label: `图片 ${index + 1}/${message.images!.length}` })}><RemoteImage client={client} source={client.imageSource(sessionId, message.id, index)} resizeMode="contain" style={{ width: 144, height: 144, borderRadius: radius.md, backgroundColor: p.bg1 }} /></Pressable>)}</View> : null}
-              {message.error ? <Text style={[styles.meta, { color: p.err }]}>{message.error}</Text> : null}
-              {(message.artifacts ?? []).map((artifact) => (
-                <Pressable
-                  key={artifact.id}
-                  accessibilityRole="button"
-                  disabled={artifact.unavailable}
-                  onPress={() => onOpenArtifact(artifact)}
-                  style={[styles.artifact, { opacity: artifact.unavailable ? 0.5 : 1 }]}
-                >
-                  <Icon name="file" size={icon.sm} color={p.fgDim} />
-                  <Text numberOfLines={1} style={{ flexShrink: 1, color: p.accent, fontSize: font.base }}>{artifact.version && artifact.version > 1 ? `${artifact.filename} · v${artifact.version}` : artifact.filename}</Text>
-                  <Meta>{artifact.unavailable ? '文件已不可用' : `${Math.max(1, Math.round(artifact.bytes / 1024))} KB`}</Meta>
-                </Pressable>
-              ))}
-              {!mine && message.timestamp && (message.text?.trim() || message.artifacts?.length) ? <Text style={[styles.metaLine, { color: p.fgMute }]}>{[clock(message.timestamp), modelName].filter(Boolean).join(' · ')}</Text> : null}
-              </View>
-            </View>
-          )
-        }}
+        renderItem={({ item }) => <TimelineRow item={item} live={item.key === liveKey} expandedTools={item.kind === 'process' || item.message.role === 'bash' ? expandedTools : NO_EXPANDED} client={client} sessionId={sessionId} modelName={modelName} onToggle={toggleExpanded} onView={setViewing} onOpenArtifact={onOpenArtifact} />}
       />
       {banner ? <View style={StyleSheet.absoluteFill}>{banner}</View> : null}
       <ImageViewer client={client} source={viewing ? client.imageSource(sessionId, viewing.messageId, viewing.index) : null} label={viewing?.label ?? ''} onClose={() => setViewing(null)} />
@@ -575,6 +440,7 @@ export function SessionScreen({
         {voiceError ? <Text accessibilityLiveRegion="polite" style={[styles.voiceError, { color: p.err }]}>{voiceError}</Text> : null}
       </View>
       </View>
+      <RenameSheet sessionId={sessionId} initial={sessions.find((entry) => entry.id === sessionId)?.title || title} visible={renaming} onClose={() => setRenaming(false)} />
       <ModelPicker sessionId={sessionId} visible={modelPicker} onClose={() => setModelPicker(false)} onChanged={setSelectedModel} />
     </KeyboardAvoidingView>
   )

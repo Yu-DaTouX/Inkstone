@@ -20,6 +20,14 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
         if (sessionId === 'missing') return { ok: false, status: 404, error: 'not found' }
         return { ok: true, data: { sessionId, limit, messages: [{ role: 'user', text: 'hello' }] } }
       },
+      async insight(sessionId) {
+        calls.push({ action: 'insight', sessionId })
+        return { ok: true, data: { stats: { tokens: 3, cost: 0, toolCalls: 1, messages: 2 }, changes: null } }
+      },
+      async stopSubagent(sessionId, runId) {
+        calls.push({ action: 'stop-subagent', sessionId, runId })
+        return { ok: true, data: { id: runId } }
+      },
       async image() {
         return { path: bigFile, mediaType: 'application/octet-stream', bytes: 8 * 1024 * 1024, filename: 'big.bin' }
       },
@@ -68,6 +76,17 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
         infoResponse.body.capabilities.includes('send'),
       '远程 info 返回协议能力但不回显 token'
     )
+
+    ok(infoResponse.body.capabilities.includes('insight'), '远程 info 声明 insight 能力')
+    const insight = await json('/remote/v1/sessions/s-1/insight')
+    ok(insight.response.status === 200 && insight.body.data.stats.tokens === 3 && calls.at(-1).action === 'insight', '远程 insight 返回统计与更改')
+    const badInsight = await json('/remote/v1/sessions/a%0Ab/insight')
+    ok(badInsight.response.status === 400, '远程 insight 拒绝无效会话 id')
+
+    const stopSub = await json('/remote/v1/sessions/s-1/subagents/sub-ab12/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    ok(stopSub.response.status === 200 && calls.at(-1).action === 'stop-subagent' && calls.at(-1).runId === 'sub-ab12', '远程子代理停止路由')
+    const badStop = await json('/remote/v1/sessions/s-1/subagents/not-a-sub/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    ok(badStop.response.status === 400, '远程子代理停止拒绝无效标识')
 
     const status = await json('/remote/v1/status')
     ok(status.response.status === 200 && status.body.data.marker === 'snapshot', '远程 status 返回主进程快照')

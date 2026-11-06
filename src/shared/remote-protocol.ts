@@ -159,3 +159,34 @@ export interface RemoteArtifact {
   previewable: boolean
   unavailable?: boolean
 }
+
+export interface RemoteSessionStats {
+  tokens: number
+  cost: number
+  toolCalls: number
+  messages: number
+  context?: { percent: number | null; tokens: number | null; window: number }
+}
+
+export interface RemoteChangedFile {
+  path: string
+  status: 'A' | 'M' | 'D' | 'R' | 'U' | '?'
+  added?: number
+  removed?: number
+}
+
+export interface RemoteSessionChanges {
+  branch: string | null
+  added: number
+  removed: number
+  total: number
+  files: RemoteChangedFile[]
+  truncated: boolean
+}
+
+export interface RemoteInsight {
+  stats: RemoteSessionStats | null
+  changes: RemoteSessionChanges | null
+}
+
+export const REMOTE_INSIGHT_MAX_FILES = 40

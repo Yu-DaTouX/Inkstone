@@ -91,17 +91,17 @@ export function EmptyState({ children }: { children: ReactNode }) {
   return <Text style={[styles.empty, { color: p.fgMute }]}>{children}</Text>
 }
 
-export function Header({ title, crumb, subtitle, left, right, background }: { title: string; crumb?: string; subtitle?: ReactNode; left?: ReactNode; right?: ReactNode; background?: string }) {
+export function Header({ title, crumb, subtitle, left, right, background, onTitleLongPress }: { title: string; crumb?: string; subtitle?: ReactNode; left?: ReactNode; right?: ReactNode; background?: string; onTitleLongPress?: () => void }) {
   const p = usePalette()
   return (
     <View style={[styles.header, { backgroundColor: background ?? p.bg0 }, !left && styles.headerBare]}>
       {left}
-      <View style={styles.headerMain}>
+      <Pressable disabled={!onTitleLongPress} onLongPress={onTitleLongPress} accessibilityActions={onTitleLongPress ? [{ name: 'longpress', label: '重命名会话' }] : undefined} onAccessibilityAction={onTitleLongPress ? () => onTitleLongPress() : undefined} style={styles.headerMain}>
         <Text numberOfLines={1} style={[styles.headerTitle, { color: p.fg }]} accessibilityRole="header">
           {crumb ? <Text style={{ color: p.fgDim, fontWeight: weight.regular }}>{crumb} / </Text> : null}{title}
         </Text>
         {subtitle ? <View style={styles.headerSub}>{typeof subtitle === 'string' ? <Meta numberOfLines={1}>{subtitle}</Meta> : subtitle}</View> : null}
-      </View>
+      </Pressable>
       {right}
     </View>
   )

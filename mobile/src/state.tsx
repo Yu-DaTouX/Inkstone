@@ -1,8 +1,10 @@
+import { AppState } from 'react-native'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { RemoteEventEnvelope, RemotePendingQuestion, RemoteInfo, RemoteModel } from '../../src/shared/remote-protocol'
+import type { RemoteEventEnvelope, RemotePendingQuestion, RemoteInfo, RemoteModel, RemoteSessionStats } from '../../src/shared/remote-protocol'
 import { RemoteClient, RemoteEventStream, RemoteHttpError, type Connection, type RemoteProject, type SessionListItem, type StreamState } from './api/client'
 import { deviceInfo, readMarks, writeMarks, type ReadMark } from './device'
 import { saveConnection } from './storage'
+import { planPreviews } from './previewPlan'
 
 export interface RunnerInfo {
   runId: string
@@ -29,6 +31,7 @@ interface RemoteState {
   previews: Record<string, { text: string; role: string; at?: number; reply?: ReadMark }>
   error: string | null
   refresh(): Promise<void>
+  latestStats(sessionId: string): RemoteSessionStats | undefined
   onSessionEvent(sessionId: string, listener: (kinds: ReadonlySet<SessionEventKind>) => void): () => void
 }
 
@@ -42,7 +45,7 @@ export function useRemote(): RemoteState {
 
 const MESSAGE_CHANNELS = new Set(['msg-add', 'msg-update', 'msg-remove', 'tool', 'session-title'])
 
-export type SessionEventKind = 'messages' | 'subagents'
+export type SessionEventKind = 'messages' | 'subagents' | 'stats'
 const QUESTION_CHANNELS = new Set(['ui-request', 'ui-resolved', 'ui-deadline', 'approval', 'approval-close'])
 const STATUS_CHANNELS = new Set(['state', 'runners', 'proc'])
 
@@ -80,6 +83,7 @@ export function RemoteProvider({
   const listeners = useRef(new Map<string, Set<(kinds: ReadonlySet<SessionEventKind>) => void>>())
   const eventKinds = useRef(new Map<string, Set<SessionEventKind>>())
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const statsBySession = useRef(new Map<string, RemoteSessionStats>())
 
   useEffect(() => {
     let alive = true
@@ -136,14 +140,18 @@ export function RemoteProvider({
     if (next.computer?.name || next.device?.name) await saveConnection({ ...connection, computerName: next.computer?.name ?? connection.computerName, deviceName: next.device?.name ?? connection.deviceName })
   }), [client, connection, guard])
 
+  const previewFetchedAt = useRef(new Map<string, number>())
+  const [previewTick, setPreviewTick] = useState(0)
   useEffect(() => {
     let cancelled = false
-    const recent = [...sessions].sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt)).slice(0, 8)
-    const queue = recent.filter((session) => previewVersions.current.get(session.id) !== (session.lastActivityAt ?? session.updatedAt))
+    const plan = planPreviews(sessions, previewVersions.current, previewFetchedAt.current, Date.now())
+    const retry = plan.retryIn === null ? null : setTimeout(() => setPreviewTick((tick) => tick + 1), plan.retryIn + 20)
+    const queue = plan.fetch.map((id) => sessions.find((session) => session.id === id)!)
     const work = async () => {
       while (queue.length && !cancelled) {
         const session = queue.shift()!
         try {
+          previewFetchedAt.current.set(session.id, Date.now())
           const history = await client.history(session.id, 12)
           if (cancelled) return
           const last = [...history.messages].reverse().find((message) => (message.role === 'assistant' || message.role === 'user') && message.text?.trim())
@@ -154,8 +162,8 @@ export function RemoteProvider({
       }
     }
     void Promise.all([work(), work(), work()])
-    return () => { cancelled = true }
-  }, [client, sessions])
+    return () => { cancelled = true; if (retry) clearTimeout(retry) }
+  }, [client, sessions, previewTick])
 
   const refreshQuestions = useCallback(() => guard(async () => setQuestions(await client.questions())), [client, guard])
 
@@ -204,6 +212,14 @@ export function RemoteProvider({
           const sessionId = sessionOfEvent(event)
           if (sessionId) notifySession(sessionId)
         }
+        if (event.channel === 'stats') {
+          const sessionId = sessionOfEvent(event)
+          const stats = event.payload as RemoteSessionStats | undefined
+          if (sessionId && stats && typeof stats.tokens === 'number') {
+            statsBySession.current.set(sessionId, stats)
+            notifySession(sessionId, 'stats')
+          }
+        }
         if (event.channel === 'subagent') {
           const sessionId = sessionOfEvent(event)
           if (sessionId) notifySession(sessionId, 'subagents')
@@ -216,13 +232,22 @@ export function RemoteProvider({
       }
     })
     events.start()
+    const resume = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return
+      events.wake()
+      debounce('status', () => void refreshStatus())
+      debounce('questions', () => void refreshQuestions())
+    })
     return () => {
       if (streamTimer) clearTimeout(streamTimer)
+      resume.remove()
       events.stop()
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
     }
   }, [connection, debounce, notifySession, onUnauthorized, refresh, refreshInfo, refreshQuestions, refreshStatus])
+
+  const latestStats = useCallback((sessionId: string) => statsBySession.current.get(sessionId), [])
 
   const onSessionEvent = useCallback((sessionId: string, listener: (kinds: ReadonlySet<SessionEventKind>) => void) => {
     const set = listeners.current.get(sessionId) ?? new Set()
@@ -242,8 +267,8 @@ export function RemoteProvider({
     return marksReady && !!reply && reply.at > readAt
   }).map((session) => session.id)), [sessions, previews, marks, marksReady, activeSessionId])
   const value = useMemo<RemoteState>(
-    () => ({ client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent }),
-    [client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent]
+    () => ({ client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent, latestStats }),
+    [client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent, latestStats]
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

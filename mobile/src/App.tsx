@@ -205,6 +205,7 @@ export default function App() {
     onOpenDetail={toggleDetail}
     detailOpen={detailOpen && mode !== 'triple'}
     onDetail={onDetail}
+    detailVisible={detailOpen || mode === 'triple'}
     banner={mode === 'single' && detailOpen ? <View style={{ flex: 1 }}>
       <View style={[styles.banner, { backgroundColor: p.surface3, borderColor: p.borderSoft }]}>
         <DetailPane detail={detail?.sessionId === route.sessionId ? detail : null} onOpenArtifact={(artifact) => { setDetailOpen(false); openArtifact(artifact) }} background={p.surface3} inset={false} />

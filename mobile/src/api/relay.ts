@@ -297,6 +297,10 @@ export class RelayTunnel {
     this.pending.clear()
   }
 
+  reset(): void {
+    this.teardown(new RelayError('与电脑的连接断开了'))
+  }
+
   close(): void {
     this.teardown(new RelayError('连接已关闭'))
     for (const [key, value] of RelayTunnel.shared) if (value === this) RelayTunnel.shared.delete(key)

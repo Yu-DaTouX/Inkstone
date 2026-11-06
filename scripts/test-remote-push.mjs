@@ -103,6 +103,25 @@ try {
   })
   assert.deepEqual(modelError, { message: '服务商拒绝了模型或请求配置', text: '400: invalid_request_error', source: 'stop-reason' }, '模型错误只留说明与原文')
 
+  const stats = host.remotePushPayload('stats', { tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, total: 3 }, cost: 0.5, toolCalls: 4, userMessages: 2, assistantMessages: 3, contextUsage: { tokens: 1000, contextWindow: 8000, percent: 12.5, modelKey: 'secret/model' }, overheadUsage: { input: 9 }, countedUntil: 5 })
+  assert.deepEqual(stats, { tokens: 3, cost: 0.5, toolCalls: 4, messages: 5, context: { percent: 12.5, tokens: 1000, window: 8000 } }, 'stats 事件只推手机需要的统计与上下文占用')
+  assert.deepEqual(host.remotePushPayload('stats', null), {}, '空统计不带内容')
+  const changes = host.remoteSessionChanges({ ok: true, branch: 'main', added: 7, removed: 2, truncated: false, files: [{ x: '.', y: 'M', path: 'a.ts', untracked: false, ignored: false, unmerged: false, added: 5, removed: 2, staged: false, unstaged: true }, { x: '?', y: '?', path: 'b.ts', untracked: true, ignored: false, unmerged: false, staged: false, unstaged: true }, { x: 'D', y: '.', path: 'c.ts', untracked: false, ignored: false, unmerged: false, staged: true, unstaged: false }] })
+  assert.deepEqual(changes.files.map((file) => file.status), ['M', '?', 'D'], '更改文件只留状态字母')
+  assert.equal(changes.total, 3, '更改总数')
+  assert.equal(host.remoteSessionChanges({ ok: false, branch: null, files: [], truncated: false }), null, '读取失败不带更改')
+  const many = host.remoteSessionChanges({ ok: true, branch: null, truncated: false, files: Array.from({ length: 90 }, (_, index) => ({ x: '.', y: 'M', path: `f${index}`, untracked: false, ignored: false, unmerged: false, staged: false, unstaged: true })) })
+  assert.equal(many.files.length, 40, '更改文件条数有上限')
+  assert.equal(many.truncated, true, '超出上限标记截断')
+
+  const stopped = []
+  const runs = [{ id: 'sub-1', parentSessionId: 's1', status: 'running' }, { id: 'sub-2', parentSessionId: 's1', status: 'done' }, { id: 'sub-3', parentSessionId: 's9', status: 'running' }]
+  const stopper = async (id) => { stopped.push(id); return { ok: true } }
+  assert.equal((await host.remoteStopSubagent('s1', 'sub-1', runs, stopper)).ok, true, '运行中的子代理可以停止')
+  assert.equal((await host.remoteStopSubagent('s1', 'sub-3', runs, stopper)).status, 404, '不能停止别的会话的子代理')
+  assert.equal((await host.remoteStopSubagent('s1', 'sub-2', runs, stopper)).status, 409, '已结束的子代理不再停止')
+  assert.deepEqual(stopped, ['sub-1'], '只停止了目标子代理')
+
   const summary = host.remoteSessionSummary({
     id: 's-branch',
     title: '分支会话',

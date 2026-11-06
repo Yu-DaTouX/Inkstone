@@ -6,7 +6,7 @@ import type {
   RemotePendingQuestion,
   RemoteResyncEvent
 } from '../../../src/shared/remote-protocol'
-import type { RemoteImageInput, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
+import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
 import { bytesToUtf8, newClientKey, RelayError, RelayTunnel, toB64, type RelayConfig, type RelayPairing } from './relay'
 
@@ -253,6 +253,18 @@ export class RemoteClient {
     return (await this.get<{ data: { runs: SubagentInfo[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents`)).data.runs
   }
 
+  async renameSession(sessionId: string, name: string): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/rename`, { name }, idempotencyKey())
+  }
+
+  async stopSubagent(sessionId: string, runId: string): Promise<void> {
+    await this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/stop`, {}, idempotencyKey())
+  }
+
+  async insight(sessionId: string): Promise<RemoteInsight> {
+    return (await this.get<{ data: RemoteInsight }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/insight`)).data
+  }
+
   async questions(): Promise<RemotePendingQuestion[]> {
     return (await this.get<{ data: { questions: RemotePendingQuestion[] } }>('/remote/v1/questions')).data.questions
   }
@@ -389,6 +401,10 @@ export interface EventStreamHandlers {
   onUnauthorized(): void
 }
 
+export const EVENT_IDLE_MS = 65_000
+export const EVENT_WATCH_MS = 10_000
+export const EVENT_WAKE_STALE_MS = 20_000
+
 export class RemoteEventStream {
   private xhr: XMLHttpRequest | null = null
   private cancelRelay: (() => void) | null = null
@@ -398,22 +414,66 @@ export class RemoteEventStream {
   private retryMs = 1000
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
+  private epoch = 0
+  private lastActivity = 0
+  private watchdog: ReturnType<typeof setInterval> | null = null
 
-  constructor(private readonly connection: Connection, private readonly handlers: EventStreamHandlers) {}
+  constructor(
+    private readonly connection: Connection,
+    private readonly handlers: EventStreamHandlers,
+    private readonly clock: { now(): number } = Date
+  ) {}
 
   start(): void {
     this.stopped = false
+    this.lastActivity = this.clock.now()
+    if (!this.watchdog) this.watchdog = setInterval(() => this.checkIdle(), EVENT_WATCH_MS)
     this.open()
   }
 
   stop(): void {
     this.stopped = true
+    this.epoch++
     if (this.retryTimer) clearTimeout(this.retryTimer)
     this.retryTimer = null
+    if (this.watchdog) clearInterval(this.watchdog)
+    this.watchdog = null
     this.xhr?.abort()
     this.xhr = null
     this.cancelRelay?.()
     this.cancelRelay = null
+  }
+
+  wake(): void {
+    if (this.stopped) return
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer)
+      this.retryTimer = null
+      this.retryMs = 1000
+      this.open()
+      return
+    }
+    if (this.clock.now() - this.lastActivity > EVENT_WAKE_STALE_MS) this.reconnectNow()
+  }
+
+  private checkIdle(): void {
+    if (this.stopped || this.retryTimer) return
+    if (this.clock.now() - this.lastActivity > EVENT_IDLE_MS) this.reconnectNow()
+  }
+
+  private reconnectNow(): void {
+    if (this.stopped) return
+    this.epoch++
+    const xhr = this.xhr
+    this.xhr = null
+    xhr?.abort()
+    const cancel = this.cancelRelay
+    this.cancelRelay = null
+    cancel?.()
+    if (this.connection.relay) RelayTunnel.for(this.connection.relay).reset()
+    if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null }
+    this.retryMs = 1000
+    this.open()
   }
 
   private rotating = false
@@ -422,7 +482,9 @@ export class RemoteEventStream {
     if (this.stopped) return
     if (this.rotating) this.rotating = false
     else this.handlers.onState(this.lastSeq > 0 ? 'reconnecting' : 'connecting')
-    if (this.connection.relay) return this.openRelay(this.connection.relay)
+    this.lastActivity = this.clock.now()
+    const epoch = this.epoch
+    if (this.connection.relay) return this.openRelay(this.connection.relay, epoch)
     const xhr = new XMLHttpRequest()
     this.xhr = xhr
     this.offset = 0
@@ -431,7 +493,8 @@ export class RemoteEventStream {
     xhr.setRequestHeader('authorization', `Bearer ${this.connection.token}`)
     xhr.setRequestHeader('accept', 'text/event-stream')
     xhr.onreadystatechange = () => {
-      if (this.stopped) return
+      if (this.stopped || this.epoch !== epoch || this.xhr !== xhr) return
+      this.lastActivity = this.clock.now()
       if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
         if (xhr.status === 401) {
           this.stopped = true
@@ -447,16 +510,17 @@ export class RemoteEventStream {
       if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) this.consume(xhr.responseText)
       if (xhr.readyState === XMLHttpRequest.DONE) this.scheduleReconnect()
     }
-    xhr.onerror = () => { if (!this.stopped) this.scheduleReconnect() }
+    xhr.onerror = () => { if (!this.stopped && this.epoch === epoch && this.xhr === xhr) this.scheduleReconnect() }
     xhr.send()
   }
 
-  private openRelay(relay: RelayConfig): void {
+  private openRelay(relay: RelayConfig, epoch: number): void {
     this.buffer = ''
     let received = 0
     this.cancelRelay = RelayTunnel.for(relay).stream(`/remote/v1/events?since=${this.lastSeq}`, { authorization: `Bearer ${this.connection.token}`, accept: 'text/event-stream' }, {
       onStart: (status) => {
-        if (this.stopped) return
+        if (this.stopped || this.epoch !== epoch) return
+        this.lastActivity = this.clock.now()
         if (status === 401) {
           this.stopped = true
           this.cancelRelay?.()
@@ -469,7 +533,8 @@ export class RemoteEventStream {
         }
       },
       onChunk: (text) => {
-        if (this.stopped) return
+        if (this.stopped || this.epoch !== epoch) return
+        this.lastActivity = this.clock.now()
         received += text.length
         this.consumeText(text)
         if (!this.stopped && received >= 1_000_000) {
@@ -480,6 +545,7 @@ export class RemoteEventStream {
         }
       },
       onEnd: () => {
+        if (this.epoch !== epoch) return
         this.cancelRelay = null
         if (this.stopped || this.rotating) return
         this.scheduleReconnect()
