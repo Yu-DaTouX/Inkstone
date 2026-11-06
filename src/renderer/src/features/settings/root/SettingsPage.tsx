@@ -360,8 +360,13 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
     return () => cancelAnimationFrame(frame)
   }, [narrow])
 
+  const sectionMounted = useRef(false)
   useEffect(() => {
     rememberSettingsSection(section)
+    if (!sectionMounted.current) {
+      sectionMounted.current = true
+      return
+    }
     content.current?.closest('.ui-settings__content')?.scrollTo({ top: 0 })
   }, [section, capsTab])
 

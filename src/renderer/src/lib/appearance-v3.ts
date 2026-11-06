@@ -56,11 +56,11 @@ function codeFontStack(s: AppearanceV3Settings, base: string): string | null {
   return null
 }
 
-function overrides(s: AppearanceV3Settings, base: CSSStyleDeclaration): Record<string, string> {
+function overrides(s: AppearanceV3Settings, base: (name: string) => string): Record<string, string> {
   const out: Record<string, string> = {}
-  const ui = uiFontStack(s, base.getPropertyValue('--font-ui').trim())
+  const ui = uiFontStack(s, base('--font-ui'))
   if (ui) out['--font-ui'] = ui
-  const code = codeFontStack(s, base.getPropertyValue('--font-mono').trim())
+  const code = codeFontStack(s, base('--font-mono'))
   if (code) out['--font-mono'] = code
   const width = sanitizeStreamWidth(s.streamWidth)
   if (width !== undefined) out['--size-chat'] = `${width}px`
@@ -99,14 +99,32 @@ function contrastOverrides(contrast: number | undefined): Record<string, string>
 }
 
 let appliedKey: string | null = null
+let appliedOverrides: Record<string, string> = {}
+const baseValues = new Map<string, string>()
+
+function baseValue(root: HTMLElement, name: string): string {
+  const known = baseValues.get(name)
+  if (known !== undefined) return known
+  const inline = root.style.getPropertyValue(name)
+  if (inline) root.style.removeProperty(name)
+  const value = getComputedStyle(root).getPropertyValue(name).trim()
+  if (inline) root.style.setProperty(name, inline)
+  baseValues.set(name, value)
+  return value
+}
 
 export function applyAppearanceV3(root: HTMLElement, s: AppearanceV3Settings): void {
   const density = resolveUiDensity(s.density, s.fontSizeUi)
   if (root.dataset.density !== density) root.dataset.density = density
   setAppReducedMotion(root, s.reduceMotion === true)
-  for (const name of OVERRIDE_VARS) root.style.removeProperty(name)
-  const next = overrides(s, getComputedStyle(root))
-  for (const [name, value] of Object.entries(next)) root.style.setProperty(name, value)
+  const next = overrides(s, (name) => baseValue(root, name))
+  for (const name of OVERRIDE_VARS) {
+    const value = next[name]
+    if (value === undefined) {
+      if (name in appliedOverrides || root.style.getPropertyValue(name)) root.style.removeProperty(name)
+    } else if (appliedOverrides[name] !== value || root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value)
+  }
+  appliedOverrides = next
   if (s.fontUi === 'maple' || codeFontChoice(s.fontCode) === 'maple') void loadMaple()
   const key = JSON.stringify([density, next])
   if (key === appliedKey) return
