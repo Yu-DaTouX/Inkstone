@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
 import type { Readable } from 'node:stream'
-import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { hostname } from 'node:os'
 import { negotiateCapabilities } from '../shared/capability-negotiation'
 import type { MainPush } from '../shared/ipc'
@@ -104,6 +104,7 @@ export interface RemoteServerInfo {
 }
 
 const MAX_BODY_BYTES = 64 * 1024
+const IDEMPOTENCY_MAX_ENTRIES = 2000
 const MAX_MESSAGE_CHARS = 20_000
 const MAX_NAME_CHARS = 200
 const SESSION_ID_MAX = 200
@@ -176,6 +177,16 @@ export function validateRemoteImages(value: unknown): RemoteImageInput[] | null 
     images.push({ mimeType: item.mimeType as RemoteImageInput['mimeType'], data: item.data })
   }
   return images
+}
+
+const PATH_LEAK_RE = /(?:[A-Za-z]:[\\/]|\\\\[^\s\\/]+[\\/]|(?<![\w.:/-])\/(?:home|Users|root|tmp|var|etc|opt|mnt|usr|private|Volumes|srv)\/)[^\r\n"'<>|*?，。；！？]*/g
+
+export function scrubRemoteError(text: string): string {
+  return text.replace(PATH_LEAK_RE, '…')
+}
+
+function fingerprintOf(...parts: unknown[]): string {
+  return createHash('sha256').update(JSON.stringify(parts)).digest('hex')
 }
 
 function validQuestionId(value: string): boolean {
@@ -498,11 +509,15 @@ export class RemoteServer {
       this.writeOperation(res, result, true)
       return
     }
-    const result = run().catch((error: unknown): RemoteOperationResult => ({
-      ok: false,
-      status: 500,
-      error: error instanceof Error ? error.message : '远程操作失败'
-    }))
+    const result = run().catch((error: unknown): RemoteOperationResult => {
+      this.log(`远程操作失败：${error instanceof Error ? error.message : String(error)}`, 'error')
+      return { ok: false, status: 500, error: '远程操作失败' }
+    })
+    while (this.idempotency.size >= IDEMPOTENCY_MAX_ENTRIES) {
+      const oldest = this.idempotency.keys().next().value
+      if (oldest === undefined) break
+      this.idempotency.delete(oldest)
+    }
     this.idempotency.set(scoped, { at: Date.now(), result, ...(fingerprint !== undefined ? { fingerprint } : {}) })
     this.writeOperation(res, await result)
   }
@@ -798,21 +813,21 @@ export class RemoteServer {
         }
         const text = body.text
         const mode = body.mode === 'steer' || body.mode === 'followUp' ? body.mode : undefined
-        await this.idempotent(req, res, caller, !!images?.length, () => this.options.handlers.command({ action: 'send', sessionId, text, images, mode }))
+        await this.idempotent(req, res, caller, !!images?.length, () => this.options.handlers.command({ action: 'send', sessionId, text, images, mode }), fingerprintOf('send', text, mode ?? null, images?.map((image) => [image.mimeType, image.data.length, createHash('sha256').update(image.data).digest('hex')]) ?? []))
         return
       }
       if (operation === 'model') {
         if (!this.options.handlers.models) return writeError(res, 404, '请更新电脑端')
         if (!validText(body.provider, 200) || !validText(body.modelId, 300)) return writeError(res, 400, '模型标识无效')
         const { provider, modelId } = body
-        await this.idempotent(req, res, caller, true, () => this.options.handlers.command({ action: 'model', sessionId, provider, modelId }))
+        await this.idempotent(req, res, caller, true, () => this.options.handlers.command({ action: 'model', sessionId, provider, modelId }), fingerprintOf('model', provider, modelId))
         return
       }
       if (operation === 'thinking') {
         if (!this.options.handlers.models) return writeError(res, 404, '请更新电脑端')
         if (!validText(body.level, 40)) return writeError(res, 400, '思考档位无效')
         const level = body.level
-        await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'thinking', sessionId, level }))
+        await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'thinking', sessionId, level }), fingerprintOf('thinking', level))
         return
       }
       if (operation === 'flags') {
@@ -864,7 +879,7 @@ export class RemoteServer {
         return
       }
       const runId = body.runId
-      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'abort', runId }))
+      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'abort', runId }), fingerprintOf('abort', runId))
       return
     }
 
@@ -1157,7 +1172,7 @@ export class RemoteServer {
       result.status ?? (result.ok ? 200 : 400),
       result.ok
         ? { ok: true, data: result.data, ...(replayed ? { replayed: true } : {}) }
-        : { ok: false, error: result.error ?? '远程操作失败', ...(result.code ? { code: result.code } : {}) }
+        : { ok: false, error: scrubRemoteError(result.error ?? '远程操作失败'), ...(result.code ? { code: result.code } : {}) }
     )
   }
 
