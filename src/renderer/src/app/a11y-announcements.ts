@@ -14,6 +14,7 @@ export function announcementText(zh: boolean) {
     running: zh ? '开始运行' : 'Run started',
     finished: zh ? '运行结束' : 'Run finished',
     approval: (headline: string) => (zh ? `需要你确认：${headline}` : `Approval needed: ${headline}`),
+    approvalDone: zh ? '审批已处理' : 'Approval handled',
     question: zh ? '有问题等你回答' : 'A question needs your answer',
     switched: (title: string) => (zh ? `已切换到会话：${title}` : `Switched to session: ${title}`),
     tile: (n: number, total: number, title: string) => (zh ? `第 ${n} 格，共 ${total} 格：${title}` : `Pane ${n} of ${total}: ${title}`)
@@ -54,6 +55,7 @@ export function useA11yAnnouncements(): void {
         }, RUN_END_SETTLE_MS)
       }
       for (const item of s.approvals) if (!approvals.has(item.id)) announce(text.approval(approvalHeadline(item)), 'assertive')
+      if (nextId === sessionId && [...approvals].some((id) => !s.approvals.some((item) => item.id === id))) announce(text.approvalDone)
       approvals = new Set(s.approvals.map((item) => item.id))
       for (const item of s.uiRequests) if (!requests.has(item.id)) announce(text.question, 'assertive')
       requests = new Set(s.uiRequests.map((item) => item.id))

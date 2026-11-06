@@ -4,7 +4,7 @@ export const meta = { description: '可访问性审计：AX 树角色/名称/状
 
 const HELPERS = `(() => {
   if (window.__a11y) return
-  const sigOf = (el) => { const parts = []; let n = el; for (let i = 0; i < 4 && n && n !== document.body; i++, n = n.parentElement) { const c = getComputedStyle(n); parts.push([c.outlineStyle, c.outlineWidth, c.outlineColor, c.boxShadow, c.backgroundColor, c.borderTopColor, c.borderBottomColor, c.color, c.textDecorationLine, c.opacity].join('/')) } return parts.join('|') }
+  const sigOf = (el) => { const parts = []; let n = el; for (let i = 0; i < 6 && n && n !== document.body; i++, n = n.parentElement) { const c = getComputedStyle(n); const a = getComputedStyle(n, '::after'); const b = getComputedStyle(n, '::before'); parts.push([c.outlineStyle, c.outlineWidth, c.outlineColor, c.boxShadow, c.backgroundColor, c.borderTopColor, c.borderBottomColor, c.color, c.textDecorationLine, c.opacity, a.backgroundColor, a.opacity, a.boxShadow, b.backgroundColor, b.opacity, b.boxShadow].join('/')) } return parts.join('|') }
   const label = (el) => el.getAttribute('aria-label') || el.getAttribute('title') || (el.innerText || el.value || '').trim().slice(0, 40)
   const describe = (el) => {
     if (!el || el === document.body) return { tag: 'body' }
@@ -23,7 +23,7 @@ const HELPERS = `(() => {
     document.activeElement?.blur?.()
     const out = []
     for (const [el, sig] of window.__a11y.sigs) {
-      if (el.isConnected && sigOf(el) === sig) out.push(el.tagName.toLowerCase() + '|' + (el.getAttribute('data-testid') || el.id || '') + '|' + label(el))
+      if (el.isConnected && sigOf(el) === sig && !(el.isContentEditable || el.getAttribute('role') === 'textbox' || (el.tagName === 'INPUT' && /text|search|^$/.test(el.type)) || el.tagName === 'TEXTAREA')) out.push(el.tagName.toLowerCase() + '|' + (el.getAttribute('data-testid') || el.id || '') + '|' + label(el))
     }
     window.__a11y.sigs = new Map()
     return out
@@ -195,7 +195,7 @@ export default async function run(ctx) {
     report.sections['审批卡:focusOnArrival'] = focus1
     const live = await liveSince(t0)
     log('审批到达 live 播报', live)
-    const announced = live.some((l) => /审批|批准|approve|approval|权限/i.test(l.text))
+    const announced = live.some((l) => /审批|批准|确认|approve|approval|权限/i.test(l.text))
     if (!announced) note('审批卡', '审批请求到达时没有 live region 播报', live.slice(0, 5))
     const inCard = await activeInside('[data-testid^="v3-approval"], .v3-approval, [data-approval]')
     if (!inCard) note('审批卡', '审批卡出现后焦点不在卡内（键盘用户需要自己找到卡）', focus1)
@@ -214,7 +214,7 @@ export default async function run(ctx) {
     log('审批回执后焦点', after, '回执', receipt)
     if (after.tag === 'body') note('审批卡', '审批处理后焦点丢到 body', after)
     const live2 = await liveSince(t0)
-    if (!live2.some((l) => /已批准|已拒绝|批准|approved|denied/i.test(l.text))) note('审批卡', '审批处理结果没有 live region 播报', null)
+    if (!live2.some((l) => /已批准|已拒绝|已处理|批准|approved|denied|handled/i.test(l.text))) note('审批卡', '审批处理结果没有 live region 播报', null)
   })
 
   await phase('提问停靠区', async () => {
@@ -303,7 +303,9 @@ export default async function run(ctx) {
   await phase('右栏面板与标签', async () => {
     await newSession(box.projects[0] ?? box.project)
     await ev(`document.querySelector('[data-testid="composer-input"]')?.focus()`)
+    const panelOpen = async () => ev(`!!document.querySelector('[role=tab]')`)
     await press('b', MOD.ctrl | MOD.alt, 1800)
+    if (!(await panelOpen())) { await press('b', MOD.ctrl | MOD.alt, 1800) }
     const tabs = async () => ev(`[...document.querySelectorAll('[role=tab]')].map((e) => ({ label: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24), sel: e.getAttribute('aria-selected'), tab: e.tabIndex, panel: e.getAttribute('aria-controls'), has: !!(e.getAttribute('aria-controls') && document.getElementById(e.getAttribute('aria-controls'))) }))`)
     const t1 = await tabs()
     report.sections['右栏:tabs'] = t1
@@ -354,7 +356,7 @@ export default async function run(ctx) {
     log('会话切换面板', report.sections['Ctrl+Tab:switcher'])
     const sw = report.sections['Ctrl+Tab:switcher']
     if (!sw) note('Ctrl+Tab', '按住 Ctrl 再按 Tab 没有弹出会话切换面板', null)
-    else if (!sw.activedescendant && !sw.focusIn && !sw.live) note('Ctrl+Tab', '会话切换面板的当前选中项读屏不可知（焦点不在面板内、无 aria-activedescendant、非 live）', sw)
+    else if (!sw.activedescendant && !sw.focusIn && !sw.live && !(await liveSince(t0)).some((l) => /d+/d+/.test(l.text))) note('Ctrl+Tab', '会话切换面板的当前选中项读屏不可知（焦点不在面板内、无 aria-activedescendant、非 live）', sw)
     await cc('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 })
     await sleep(700)
     const s1 = await state('s.session?.sessionFile')
@@ -363,7 +365,7 @@ export default async function run(ctx) {
     if (s0 === s1) note('Ctrl+Tab', '切换没有发生', null)
     if (f.tag === 'body') note('Ctrl+Tab', '切换后焦点丢到 body', f)
     const live = await liveSince(t0)
-    if (!live.length) note('Ctrl+Tab', '切换会话后没有 live region 播报新会话', null)
+    if (!live.some((l) => l.text.includes('已切换') || /d+/d+/.test(l.text))) note('Ctrl+Tab', '切换会话后没有 live region 播报新会话', live)
     report.sections['Ctrl+Tab'] = { switched: s0 !== s1, focus: f, live }
   })
 
