@@ -1,3 +1,4 @@
+import { clamp } from '../../../../shared/clamp'
 import type { DirEntry, DirEntryLink, DirListing, FileListingStatus } from '../../../../shared/ipc'
 
 export interface FilesOwner {
@@ -384,10 +385,6 @@ export interface FilesWindow {
   end: number
   padTop: number
   padBottom: number
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
 }
 
 export function computeWindow(input: FilesWindowInput): FilesWindow {
