@@ -1069,6 +1069,16 @@ export class SubagentController {
           await this.fail(id, error, 'startup')
           return { ok: false, error }
         }
+        if (snapshot.model && ready.model) {
+          const expectedApi = await ctx.resolveModelApi?.(ready.model, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId })
+          if (!current('starting')) return stoppedError()
+          const selectionError = await confirmRegisteredModel(rpc, ready.model, { readOnly: workspace.isolation === 'controlled-cwd', expectedApi })
+          if (!current('starting')) return stoppedError()
+          if (selectionError) {
+            await this.fail(id, selectionError, 'startup')
+            return { ok: false, error: selectionError }
+          }
+        }
         if (ready.thinkingLevel) run.thinkingLevel = ready.thinkingLevel
         run.status = 'running'
         run.resumed = false
