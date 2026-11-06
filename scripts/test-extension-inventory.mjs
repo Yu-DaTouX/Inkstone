@@ -107,8 +107,9 @@ export async function runExtensionInventoryTests(ok) {
         const toolCalls = source.match(/\.registerTool\s*\(/g)?.length ?? 0
         const bashOverride =
           file === 'shell-fallback.js' &&
-          toolCalls === 1 &&
+          toolCalls === 2 &&
           /const template = core\.createBashToolDefinition\(/.test(source) &&
+          /const template = core\.createPowerShellToolDefinition\(process\.cwd\(\)\)\s*pi\.registerTool\(\{\s*\.\.\.template,\s*execute:[\s\S]*?createPowerShellToolDefinition\([\s\S]*?\{ spawnHook \}\)/.test(source) &&
           /\.registerTool\(\{\s*\.\.\.template,\s*parameters: withDescriptionParameter\(template\.parameters\),\s*execute:/.test(source)
         const mcpAppProxy =
           file === 'mcp-app-proxy.js' && toolCalls === 1 && /\.registerTool\(definition\)/.test(source)
@@ -242,4 +243,22 @@ export async function runExtensionInventoryTests(ok) {
       '正对照：真实宿主桥单独扫描无缺陷'
     )
   }
+}
+
+import { pathToFileURL } from 'node:url'
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const { build } = await import('esbuild')
+  await build({ entryPoints: ['src/main/extensions-inventory.ts'], outfile: 'out/test/extensions-inventory.mjs', bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
+  let pass = 0
+  let fail = 0
+  await runExtensionInventoryTests((value, name, detail) => {
+    if (value) pass += 1
+    else {
+      fail += 1
+      console.error('FAIL', name, detail ?? '')
+    }
+  })
+  console.log(`扩展清单：${pass} 通过 / ${fail} 失败`)
+  process.exit(fail > 0 || pass === 0 ? 1 : 0)
 }
