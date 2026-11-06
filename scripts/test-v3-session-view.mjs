@@ -726,6 +726,125 @@ async function main() {
     ok(byStub(tree, 'turn-artifacts').length === 1, '已完成成果卡与生图进度并存，不被回退提示遮掉')
   }
 
+  group('分屏格数据源：焦点格走 store，非焦点格走 runtime，peek 回退，target 变化')
+  {
+    const fresh = () => {
+      const r = makeHookRuntime()
+      globalThis.__V3_HOOKS = r
+      return r
+    }
+    const setStore = (over) => resetSessionStore(useStore, { sessionRuntimes: {}, sessions: [], ...over })
+    const turnsOf = (tree) => byStub(tree, 'turnview')
+    const turnJson = (tree) => JSON.stringify(turnsOf(tree)[0]?.props.turn ?? null)
+    const storeMsgs = [msg('s0', 'user', 'store 的消息', { timestamp: 1 })]
+    const runtimeMsgs = [msg('r0', 'user', 'runtime 的消息', { timestamp: 1 })]
+    const base = { session: SESSION_A, messages: storeMsgs }
+
+    setStore(base)
+    let r = fresh()
+    let tree = r.render(SessionView, { pane: { target: { sessionId: 'sess-a', path: 'A' }, live: true } })
+    ok(turnsOf(tree).length === 1 && turnsOf(tree)[0].props.readOnly === false, '焦点格：读 store 且不是只读')
+    ok(turnJson(tree).includes('store 的消息'), '焦点格：显示 store 的消息')
+    ok(tree.props['data-view-active'] === '1', '焦点格：视图已激活')
+
+    setStore({ ...base, sessionRuntimes: { 'sess-b': { messages: runtimeMsgs, session: { ...SESSION_A, sessionId: 'sess-b', isAgentRunning: false, isStreaming: false } } } })
+    r = fresh()
+    tree = r.render(SessionView, { pane: { target: { sessionId: 'sess-b', path: 'B' }, live: true } })
+    ok(turnsOf(tree).length === 1 && turnsOf(tree)[0].props.readOnly === true, '非焦点格：只读')
+    ok(turnJson(tree).includes('runtime 的消息') && !turnJson(tree).includes('store 的消息'), '非焦点格：显示 runtime 的消息，不混入 store 的消息', turnJson(tree).slice(0, 120))
+    ok(turnsOf(tree)[0].props.sessionId === 'sess-b', '非焦点格：TurnView 拿到自己的会话身份')
+    ok(tree.props['data-view-key'] === 'B' && tree.props['data-view-active'] === '0', '非焦点格：视图键为自己的 target、未激活', { key: tree.props['data-view-key'], active: tree.props['data-view-active'] })
+    ok(byTypeName(tree, 'PendingRunNotice').length === 0, '非焦点格：别的会话在跑也不挂等待行')
+
+    setStore(base)
+    r = fresh()
+    tree = r.render(SessionView, { pane: { target: { sessionId: 'sess-a', path: 'A' }, live: false } })
+    ok(turnsOf(tree).every((el) => el.props.readOnly === true), 'live=false：即使 target 是 store 当前会话也按只读')
+
+    setStore({ ...base, peekedSessionId: 'sess-b', peekedPath: 'B' })
+    r = fresh()
+    tree = r.render(SessionView, { pane: { target: { sessionId: 'sess-z', path: 'Z' }, live: true } })
+    ok(turnsOf(tree).length === 1 && turnsOf(tree)[0].props.readOnly === false, 'store 正在 peek 时：该格由 store 接管，不是只读')
+
+    setStore(base)
+    const peeked = []
+    globalThis.window.yan = new Proxy({}, { get: (_t, name) => name === 'peekSession' ? async (path) => { peeked.push(path); return { messages: [msg('p0', 'user', 'peek 的消息', { timestamp: 1 })] } } : async () => undefined })
+    r = fresh()
+    const pane = { target: { path: 'P' }, live: true }
+    tree = r.render(SessionView, { pane })
+    ok(peeked.length === 1 && peeked[0] === 'P', '无 runtime：按路径 peek 一次', peeked)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    tree = r.render(SessionView, { pane })
+    ok(turnsOf(tree).length === 1 && turnJson(tree).includes('peek 的消息') && turnsOf(tree)[0].props.readOnly === true, 'peek 回来的消息只读显示')
+    ok(peeked.length === 1, 'peek 结果到位后不重复请求', peeked)
+    peeked.length = 0
+    setStore({ ...base, sessionRuntimes: { 'sess-b': { messages: runtimeMsgs, session: { ...SESSION_A, sessionId: 'sess-b' } } } })
+    r = fresh()
+    r.render(SessionView, { pane: { target: { sessionId: 'sess-b', path: 'B' }, live: true } })
+    ok(peeked.length === 0, 'runtime 已有消息：不再 peek 磁盘', peeked)
+    setStore(base)
+
+    globalThis.window.yan = new Proxy({}, { get: (_t, name) => name === 'peekSession' ? async () => { throw new Error('boom') } : async () => undefined })
+    r = fresh()
+    tree = r.render(SessionView, { pane: { target: { path: 'Q' }, live: true } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    tree = r.render(SessionView, { pane: { target: { path: 'Q' }, live: true } })
+    ok(turnsOf(tree).length === 0, 'peek 失败：显示空，不抛出')
+    globalThis.window.yan = new Proxy({}, { get: () => async () => undefined })
+
+    setStore({
+      ...base,
+      sessionRuntimes: {
+        'sess-b': { messages: runtimeMsgs, session: { ...SESSION_A, sessionId: 'sess-b' } },
+        'sess-c': { messages: [msg('c0', 'user', 'C 的消息', { timestamp: 1 })], session: { ...SESSION_A, sessionId: 'sess-c' } }
+      }
+    })
+    r = fresh()
+    tree = r.render(SessionView, { pane: { target: { sessionId: 'sess-b', path: 'B' }, live: true } })
+    const first = turnJson(tree)
+    tree = r.render(SessionView, { pane: { target: { sessionId: 'sess-c', path: 'C' }, live: true } })
+    ok(first.includes('runtime 的消息') && turnJson(tree).includes('C 的消息'), 'target 变化：内容随新 target 切换')
+    ok(tree.props['data-view-key'] === 'C' && turnsOf(tree)[0].props.sessionId === 'sess-c', 'target 变化：视图键与会话身份同步变化')
+    setStore(base)
+    globalThis.__V3_HOOKS = rt
+  }
+
+  group('长会话走虚拟列表分支')
+  {
+    const many = Array.from({ length: 120 }, (_, i) => msg(`v${i}`, i % 2 ? 'assistant' : 'user', `第 ${i} 条`, { timestamp: i + 1 }))
+    const r = makeHookRuntime()
+    globalThis.__V3_HOOKS = r
+    resetSessionStore(useStore, { session: SESSION_A, messages: many, sessionRuntimes: {}, sessions: [] })
+    const tree = r.render(SessionView, {})
+    const lists = byStub(tree, 'vlist')
+    ok(lists.length === 1, '超过阈值：渲染虚拟列表', lists.length)
+    const list = lists[0]
+    ok(Array.isArray(list?.props.data) && list.props.data.length > 60, '虚拟列表拿到完整回合数据', list?.props.data?.length)
+    ok(byStub(tree, 'turnview').length === 0, '虚拟列表外不直接渲染回合')
+    const row = list.props.children(list.props.data[0], 0)
+    const rowTurns = byStub(row, 'turnview')
+    ok(rowTurns.length === 1 && rowTurns[0].props.sessionId === 'sess-a' && rowTurns[0].props.readOnly === false, '虚拟行里的 TurnView 带会话身份且非只读')
+    ok(String(row.key ?? row.props.key ?? '').length >= 0 && String(row.props.className).includes('v3-stream-row--head'), '虚拟行首行标记')
+    const lastIdx = list.props.data.length - 1
+    const lastRow = list.props.children(list.props.data[lastIdx], lastIdx)
+    ok(String(lastRow.props.className).includes('v3-stream-row--tail'), '虚拟行末行标记')
+
+    resetSessionStore(useStore, { session: SESSION_A, messages: many.slice(0, 6), sessionRuntimes: {}, sessions: [] })
+    const short = r.render(SessionView, {})
+    ok(byStub(short, 'vlist').length === 0 && byStub(short, 'turnview').length > 0, '短会话：不用虚拟列表')
+
+    resetSessionStore(useStore, { session: SESSION_A, messages: [], sessionRuntimes: { 'sess-b': { messages: many, session: { ...SESSION_A, sessionId: 'sess-b' } } }, sessions: [] })
+    const peerRt = makeHookRuntime()
+    globalThis.__V3_HOOKS = peerRt
+    const peer = peerRt.render(SessionView, { pane: { target: { sessionId: 'sess-b', path: 'B' }, live: true } })
+    const peerList = byStub(peer, 'vlist')[0]
+    ok(!!peerList, '只读格长会话同样走虚拟列表')
+    const peerRow = peerList ? byStub(peerList.props.children(peerList.props.data[0], 0), 'turnview')[0] : undefined
+    ok(peerRow?.props.readOnly === true && peerRow.props.sessionId === 'sess-b', '只读格虚拟行：只读且带自己的会话身份')
+    globalThis.__V3_HOOKS = rt
+    resetSessionStore(useStore, { sessionRuntimes: {}, sessions: [] })
+  }
+
   process.stdout.write(`\n${report.fail === 0 ? '全部通过' : '有失败项'}：${report.pass} 通过 / ${report.fail} 失败\n`)
   await rm(outdir, { recursive: true, force: true })
   process.exit(report.fail === 0 ? 0 : 1)
