@@ -3,7 +3,7 @@ export const RENDER_HOOK = `
   window.__uiRegions = null;
   window.__uiCauses = null;
   window.__pendingKeys = new Set();
-  const TRACK = new Set(['ShellV3', 'Header', 'OverviewPane', 'T3SidebarShell', 'SessionView', 'PeerPane', 'SidebarThreadRow', 'ChatMain']);
+  const TRACK = new Set(['SubagentRow', 'SubagentLine', 'TurnProcess', 'ApprovalCard', 'LiveRunNotice', 'ShellV3', 'Header', 'OverviewPane', 'T3SidebarShell', 'SessionView', 'PeerPane', 'SidebarThreadRow', 'ChatMain']);
   const AREAS = new Set(['T3SidebarShell', 'SessionView', 'PeerPane', 'RightPanelT3', 'WorkbenchRail', 'ComposerV3', 'Header', 'RunAttentionToasts', 'SettingsPage', 'UsagePage']);
   const PARTS = new Set(['TurnView', 'AssistantTurnView', 'TurnProcess', 'SubagentRow', 'SubagentLine', 'SubagentCard', 'LiveRunNotice', 'SidebarThreadRow', 'BackgroundTasks', 'RailStats', 'OverviewPane', 'ChangesCard', 'TurnChanges', 'Markdown', 'ComposerControlsBar', 'ApprovalCard', 'WebSearchTurnProvider']);
   const nameOf = (fiber) => {

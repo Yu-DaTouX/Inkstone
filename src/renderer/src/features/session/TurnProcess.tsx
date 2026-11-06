@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
+import { Fragment, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
 import { CompactionMarker } from './CompactionMarker'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
@@ -190,20 +190,28 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const liveHeightRef = useRef(0)
   const wasLiveRef = useRef(live)
   const [leave, setLeave] = useState(0)
-  useLayoutEffect(() => {
+  useEffect(() => {
     const root = rootRef.current
-    if (!root) return
+    if (!live || !root) return undefined
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[entries.length - 1]?.borderBoxSize?.[0]
+      liveHeightRef.current = box ? box.blockSize : root.offsetHeight
+    })
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [live])
+  useLayoutEffect(() => {
     if (live) {
-      liveHeightRef.current = root.getBoundingClientRect().height
       wasLiveRef.current = true
       return
     }
-    if (!wasLiveRef.current) return
+    const root = rootRef.current
+    if (!root || !wasLiveRef.current) return
     wasLiveRef.current = false
     const gap = parseFloat(getComputedStyle(root).rowGap) || 0
     const delta = liveHeightRef.current - root.getBoundingClientRect().height - gap
     if (delta > 2) setLeave(delta)
-  })
+  }, [live])
   return (
     <>
     <Collapsible ref={rootRef} className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={open} onExpandedChange={setManual}>
