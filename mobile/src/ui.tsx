@@ -13,11 +13,14 @@ export const STATUS_TEXT = {
   reconnecting: '重新连接中'
 } as const
 
-export function IconButton({ name, label, onPress, disabled, busy, primary = false, back = false }: { name: IconName; label: string; onPress: () => void; disabled?: boolean; busy?: boolean; primary?: boolean; back?: boolean }) {
+export function IconButton({ name, label, onPress, disabled, busy, primary = false, danger = false, back = false, selected = false }: { name: IconName; label: string; onPress: () => void; disabled?: boolean; busy?: boolean; primary?: boolean; danger?: boolean; back?: boolean; selected?: boolean }) {
   const p = usePalette()
-  const glyph = busy ? <RunDot color={primary ? (p.onInk ?? p.onAccent) : undefined} /> : <View style={back ? { transform: [{ rotate: '180deg' }] } : undefined}><Icon name={name} size={primary ? icon.sm : icon.md} color={primary ? (p.onInk ?? p.onAccent) : p.fgDim} /></View>
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled || !!busy, busy: !!busy }} onPress={onPress} disabled={disabled || busy} style={({ pressed }) => ({ minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.35 : pressed ? 0.65 : 1 })}>
-    {primary ? <View style={[styles.primaryDot, { backgroundColor: p.ink ?? p.accent }]}>{glyph}</View> : glyph}
+  const filled = primary || danger
+  const off = filled && !!disabled
+  const fg = danger ? p.onFill : off ? p.fgMute : filled ? p.onBtnPrimary : selected ? p.accent : p.fgDim
+  const glyph = busy ? <RunDot color={filled ? fg : undefined} /> : <View style={back ? { transform: [{ rotate: '180deg' }] } : undefined}><Icon name={name} size={filled ? icon.sm : icon.md} color={fg} /></View>
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled || !!busy, busy: !!busy, selected }} onPress={onPress} disabled={disabled || busy} style={({ pressed }) => ({ minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', opacity: disabled && !filled ? 0.4 : pressed ? 0.65 : 1 })}>
+    {filled ? <View style={[styles.primaryDot, { backgroundColor: danger ? p.fail : off ? p.bubble : p.btnPrimary }]}>{glyph}</View> : selected ? <View style={[styles.selected, { backgroundColor: p.accentSoft }]}>{glyph}</View> : glyph}
   </Pressable>
 }
 
@@ -88,14 +91,14 @@ export function EmptyState({ children }: { children: ReactNode }) {
   return <Text style={[styles.empty, { color: p.fgMute }]}>{children}</Text>
 }
 
-export function Header({ title, subtitle, left, right }: { title: string; subtitle?: ReactNode; left?: ReactNode; right?: ReactNode }) {
+export function Header({ title, crumb, subtitle, left, right, background }: { title: string; crumb?: string; subtitle?: ReactNode; left?: ReactNode; right?: ReactNode; background?: string }) {
   const p = usePalette()
   return (
-    <View style={[styles.header, { backgroundColor: p.bg0 }, !left && styles.headerBare]}>
+    <View style={[styles.header, { backgroundColor: background ?? p.bg0 }, !left && styles.headerBare]}>
       {left}
       <View style={styles.headerMain}>
-        <Text numberOfLines={1} style={[styles.headerTitle, subtitle ? styles.headerTitleTwoLine : null, { color: p.fg }]} accessibilityRole="header">
-          {title}
+        <Text numberOfLines={1} style={[styles.headerTitle, { color: p.fg }]} accessibilityRole="header">
+          {crumb ? <Text style={{ color: p.fgDim, fontWeight: weight.regular }}>{crumb} / </Text> : null}{title}
         </Text>
         {subtitle ? <View style={styles.headerSub}>{typeof subtitle === 'string' ? <Meta numberOfLines={1}>{subtitle}</Meta> : subtitle}</View> : null}
       </View>
@@ -104,9 +107,12 @@ export function Header({ title, subtitle, left, right }: { title: string; subtit
   )
 }
 
-export function SectionTitle({ children }: { children: ReactNode }) {
+export function SectionTitle({ children, count }: { children: ReactNode; count?: number }) {
   const p = usePalette()
-  return <Text accessibilityRole="header" style={[styles.section, { color: p.fgMute }]}>{children}</Text>
+  return <View style={styles.sectionRow}>
+    <Text accessibilityRole="header" style={[styles.section, { color: p.fgDim }]}>{children}</Text>
+    {count !== undefined ? <Text style={[styles.meta, { color: p.fgMute, fontFamily: mono }]}>{count}</Text> : null}
+  </View>
 }
 
 export function Meta({ children, color, numberOfLines, style }: { children: ReactNode; color?: string; numberOfLines?: number; style?: StyleProp<TextStyle> }) {
@@ -163,7 +169,7 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: font.xs, fontWeight: weight.medium },
   empty: { fontSize: font.sm, paddingVertical: space[4], textAlign: 'center' },
   header: {
-    minHeight: 52,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[1],
@@ -172,15 +178,16 @@ const styles = StyleSheet.create({
   headerBare: { paddingLeft: space[4] },
   headerMain: { flex: 1, minWidth: 0, gap: 1 },
   headerTitle: { fontSize: font.lg, fontWeight: weight.strong },
-  headerTitleTwoLine: { fontSize: font.body },
   headerSub: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
-  section: { fontSize: font.xs, marginTop: space[4], marginBottom: space[1], paddingHorizontal: space[2] },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space[3], marginBottom: space[1], paddingHorizontal: space[3], minHeight: 28 },
+  section: { fontSize: font.sm },
   meta: { fontSize: font.xs, fontVariant: ['tabular-nums'] },
-  primaryDot: { width: 32, height: 32, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
+  primaryDot: { width: 34, height: 34, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
+  selected: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   input: { minHeight: touch.min, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], fontSize: font.base },
   inputCode: { fontFamily: mono },
   activityLine: { minHeight: lineHeight.row, flexDirection: 'row', alignItems: 'center', gap: space[2] },
   glyph: { width: 14, textAlign: 'center', fontFamily: mono, fontSize: font.sm },
   activityText: { flex: 1, minWidth: 0, fontSize: font.sm },
-  dot: { width: 6, height: 6, borderRadius: 3 }
+  dot: { width: 7, height: 7, borderRadius: 4 }
 })

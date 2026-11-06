@@ -2,16 +2,19 @@ import { LIFE_ASSISTANT_ENABLED } from '../features'
 import { useEffect, useState } from 'react'
 import { Alert, Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import type { Connection } from '../api/client'
-import { openAlertSettings, questionAlertsSupported } from '../questionAlerts'
+import { openAlertSettings } from '../questionAlerts'
 import { useRemote } from '../state'
 import { font, mono, radius, space, usePalette } from '../theme'
 import { Button, Header, IconButton, Input, Meta, SectionTitle, STATUS_TEXT, StatusDot } from '../ui'
 import { deviceInfo } from '../device'
+import { useBottomInset } from '../insets'
 
 const GUIDE = 'https://github.com/Yu-DaTouX/Inkstone'
 
-export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible, onOpenAssistantSettings }: {
+export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible, onOpenAssistantSettings, leftHanded, onLeftHandedChange }: {
   connection: Connection
+  leftHanded: boolean
+  onLeftHandedChange: (value: boolean) => void
   alertsEnabled: boolean
   onEnableAlerts: () => void
   onDisableAlerts: () => void
@@ -22,6 +25,7 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
   onOpenAssistantSettings?: () => void
 }) {
   const p = usePalette()
+  const bottomInset = useBottomInset()
   const { stream, info, client, refresh } = useRemote()
   const [name, setName] = useState(info?.device?.name ?? connection.deviceName ?? '')
   const [renaming, setRenaming] = useState(false)
@@ -39,22 +43,29 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
   return (
     <View style={{ flex: 1, backgroundColor: p.bg0 }}>
       <Header title="设置" left={<View style={{ flexDirection: 'row' }}>{onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : null}<IconButton name="back" label="返回工作台" onPress={onBack} /></View>} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: space[6] + bottomInset }]}>
         <SectionTitle>电脑</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
           <Text style={{ color: p.fg, fontSize: font.body }}>{info?.computer?.name || connection.computerName || '已配对电脑'}</Text>
           <Text style={{ color: p.fgDim, fontSize: font.sm, fontFamily: mono }} selectable>{connection.baseUrl.replace(/^https?:\/\//, '')}</Text>
           <View style={styles.row}><StatusDot color={stream === 'open' ? p.ok : p.warn} /><Meta color={stream === 'open' ? p.ok : p.warn} style={{ fontSize: font.sm, marginLeft: space[2] }}>{STATUS_TEXT[stream]}</Meta></View>
         </View>
+        <SectionTitle>布局</SectionTitle>
+        <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
+          <View style={styles.row}>
+            <Text style={{ flex: 1, color: p.fg, fontSize: font.base }}>左手习惯</Text>
+            <Switch value={leftHanded} onValueChange={onLeftHandedChange} accessibilityLabel="左手习惯" trackColor={{ true: p.accentSoft, false: p.bg3 }} thumbColor={leftHanded ? p.accent : p.fgMute} />
+          </View>
+          <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>展开分栏时，会话与输入框在左半屏，列表和详情在右半屏。</Text>
+        </View>
         <SectionTitle>待回答提醒</SectionTitle>
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
           <View style={styles.row}>
             <Text style={{ flex: 1, color: p.fg, fontSize: font.base }}>任务与问题通知</Text>
-            <Switch disabled={!questionAlertsSupported(connection)} value={alertsEnabled} onValueChange={(enabled) => enabled ? onEnableAlerts() : onDisableAlerts()} accessibilityLabel="手机待回答通知" trackColor={{ true: p.accentSoft, false: p.bg3 }} thumbColor={alertsEnabled ? p.accent : p.fgMute} />
+            <Switch value={alertsEnabled} onValueChange={(enabled) => enabled ? onEnableAlerts() : onDisableAlerts()} accessibilityLabel="手机待回答通知" trackColor={{ true: p.accentSoft, false: p.bg3 }} thumbColor={alertsEnabled ? p.accent : p.fgMute} />
           </View>
           <Text style={{ color: p.fgMute, fontSize: font.sm, lineHeight: 20 }}>同时提醒多 Agent 的待答复、待审阅和待核实事项。锁屏只显示数量。</Text>
           <Button label="系统通知设置" onPress={() => void openAlertSettings()} />
-          {!questionAlertsSupported(connection) ? <Text style={{ color: p.warn, fontSize: font.sm, lineHeight: 20 }}>经中继连接时暂不支持后台提醒；打开砚时仍会显示待回答事项。</Text> : null}
         </View>
         {LIFE_ASSISTANT_ENABLED ? <>
           <SectionTitle>生活助手</SectionTitle>

@@ -9,7 +9,12 @@ const native = NativeModules.InkstoneMobileDevice as {
   readMarks(scope: string): Promise<string>
   writeMarks(scope: string, json: string): Promise<void>
 }
+export interface UiPrefs { leftHanded?: boolean }
 export const deviceInfo = () => native.info()
+export async function readUiPrefs(): Promise<UiPrefs> {
+  try { return JSON.parse(await native.readMarks('ui:prefs')) as UiPrefs } catch { return {} }
+}
+export const writeUiPrefs = (prefs: UiPrefs) => native.writeMarks('ui:prefs', JSON.stringify(prefs))
 export const pickImages = (limit: number) => native.pickImages(limit)
 export async function readMarks(scope: string): Promise<Record<string, ReadMark>> {
   try { return JSON.parse(await native.readMarks(scope)) as Record<string, ReadMark> } catch { return {} }

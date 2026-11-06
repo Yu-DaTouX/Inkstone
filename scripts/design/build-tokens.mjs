@@ -188,7 +188,8 @@ function buildMobile() {
     light[key] = l
     dark[key] = d
   }
-  return `/* ${HEADER} */\nexport const v3Light = ${JSON.stringify(light, null, 2)} as const\n\nexport const v3Dark = ${JSON.stringify(dark, null, 2)} as const\n\nexport const v3Radius = ${JSON.stringify(tokens.radius)} as const\n`
+  const data = { light: tokens.data.map(([l]) => l), dark: tokens.data.map(([, d]) => d) }
+  return `/* ${HEADER} */\nexport const v3Light = ${JSON.stringify(light, null, 2)} as const\n\nexport const v3Dark = ${JSON.stringify(dark, null, 2)} as const\n\nexport const v3Radius = ${JSON.stringify(tokens.radius)} as const\n\nexport const v3Data = ${JSON.stringify(data)} as const\n`
 }
 
 const outputs = [

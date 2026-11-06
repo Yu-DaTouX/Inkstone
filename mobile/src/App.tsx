@@ -1,11 +1,11 @@
 import { LIFE_ASSISTANT_ENABLED } from './features'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, StatusBar, useColorScheme, useWindowDimensions, View } from 'react-native'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, StatusBar, StyleSheet, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { RemoteClient, type Connection } from './api/client'
-import type { PhotoDraft } from './device'
+import { readUiPrefs, writeUiPrefs, type PhotoDraft } from './device'
 import { parsePairingLink, type PairingPrefill } from './pairLink'
-import { questionAlertsSupported, restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
+import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
 import { ArtifactScreen } from './screens/ArtifactScreen'
 import { AssistantScreen, type AssistantConversation } from './screens/AssistantScreen'
 import { AssistantSettingsScreen } from './screens/AssistantSettingsScreen'
@@ -13,13 +13,17 @@ import { HomeScreen } from './screens/HomeScreen'
 import { PairScreen } from './screens/PairScreen'
 import { SessionScreen } from './screens/SessionScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
+import { DetailPane, type SessionDetail } from './components/DetailPane'
 import { RemoteProvider, useRemote } from './state'
-import { Button, EmptyState } from './ui'
+import { Button, EmptyState, Header, IconButton } from './ui'
 import { clearConnection, loadConnection, saveConnection } from './storage'
 import { space, usePalette } from './theme'
 import { BootSplash, ContentEnter } from './motion'
 import { useFoldLayout } from './foldLayout'
+import { computeLayout, type Frame } from './windowLayout'
 import { cancelSpeech, isSpeechActive } from './speech'
+
+type ArtifactLink = { id: string; filename: string; mediaType: string; kind: string }
 
 type Route =
   | { name: 'home' }
@@ -27,7 +31,7 @@ type Route =
   | { name: 'assistant-settings' }
   | { name: 'settings' }
   | { name: 'session'; sessionId: string; title: string }
-  | { name: 'artifact'; sessionId: string; title: string; artifact: { id: string; filename: string; mediaType: string; kind: string } }
+  | { name: 'artifact'; sessionId: string; title: string; artifact: ArtifactLink }
 
 function RemoteReady({ onReady }: { onReady: () => void }) {
   const { sessions, stream, error } = useRemote()
@@ -36,40 +40,33 @@ function RemoteReady({ onReady }: { onReady: () => void }) {
   return null
 }
 
+function Hidden({ hidden, children, style }: { hidden: boolean; children: ReactNode; style?: object }) {
+  return <View style={[{ flex: 1, minWidth: 0 }, style, hidden ? { display: 'none' } : null]}>{children}</View>
+}
+
 export default function App() {
   const p = usePalette()
   const scheme = useColorScheme()
-  const { width } = useWindowDimensions()
   const fold = useFoldLayout()
   const frameRef = useRef<View>(null)
-  const [frame, setFrame] = useState({ x: 0, y: 0, width: 0, height: 0 })
+  const [frame, setFrame] = useState<Frame>({ x: 0, y: 0, width: 0, height: 0 })
   const [keyboardTop, setKeyboardTop] = useState<number | null>(null)
+  const measure = useCallback(() => frameRef.current?.measureInWindow((x, y, width, height) => setFrame({ x, y, width, height })), [])
   useEffect(() => {
     if (Platform.OS !== 'android') return
     const timers: Array<ReturnType<typeof setTimeout>> = []
-    const remeasure = (): void => { frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height })) }
     const show = Keyboard.addListener('keyboardDidShow', (event) => {
       setKeyboardTop(event.endCoordinates.screenY)
-      for (const delay of [120, 400]) timers.push(setTimeout(remeasure, delay))
+      for (const delay of [120, 400]) timers.push(setTimeout(measure, delay))
     })
-    const hide = Keyboard.addListener('keyboardDidHide', () => { setKeyboardTop(null); timers.push(setTimeout(remeasure, 120)) })
+    const hide = Keyboard.addListener('keyboardDidHide', () => { setKeyboardTop(null); timers.push(setTimeout(measure, 120)) })
     return () => { timers.forEach(clearTimeout); show.remove(); hide.remove() }
-  }, [])
+  }, [measure])
   const statusOffset = frame.y < (StatusBar.currentHeight ?? 0) / 2 ? StatusBar.currentHeight ?? 0 : 0
   const keyboardOverlap = keyboardTop === null ? 0 : Math.max(0, Math.round(frame.y + statusOffset + frame.height - keyboardTop))
-  const extraGap = fold.orientation === 'vertical' ? Math.max(0, 12 - ((fold.right ?? 0) - (fold.left ?? 0))) : Math.max(0, 12 - ((fold.bottom ?? 0) - (fold.top ?? 0)))
-  const vertical = fold.separating && fold.orientation === 'vertical' && frame.width > 0 ? {
-    left: (fold.left ?? 0) - frame.x - extraGap / 2,
-    gap: (fold.right ?? 0) - (fold.left ?? 0) + extraGap
-  } : null
-  const horizontal = fold.separating && fold.orientation === 'horizontal' && frame.height > 0 ? {
-    top: (fold.top ?? 0) - frame.y - extraGap / 2,
-    gap: (fold.bottom ?? 0) - (fold.top ?? 0) + extraGap
-  } : null
-  const verticalInside = vertical && vertical.left > 0 && vertical.left + vertical.gap < frame.width ? vertical : null
-  const horizontalInside = horizontal && horizontal.top > 0 && horizontal.top + horizontal.gap < frame.height ? horizontal : null
-  const twoPanes = !!verticalInside && verticalInside.left >= 220 && frame.width - verticalInside.left - verticalInside.gap >= 220
-  const expanded = !horizontalInside && (verticalInside ? twoPanes : width >= 600)
+  const layout = computeLayout(frame, fold)
+  const mode = layout.mode
+
   const [connection, setConnection] = useState<Connection | null | undefined>(undefined)
   const [route, setRoute] = useState<Route>({ name: 'home' })
   const [assistantConversation, setAssistantConversation] = useState<AssistantConversation>({ messages: [], draft: '' })
@@ -79,26 +76,22 @@ export default function App() {
   const [alertsEnabled, setAlertsEnabled] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft[]>>({})
-  const [project, setProject] = useState<{ id: string; name: string } | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detail, setDetail] = useState<SessionDetail | null>(null)
+  const [leftHanded, setLeftHanded] = useState(false)
+  useEffect(() => { void readUiPrefs().then((prefs) => setLeftHanded(!!prefs.leftHanded)) }, [])
+  const changeLeftHanded = useCallback((value: boolean) => {
+    setLeftHanded(value)
+    void writeUiPrefs({ leftHanded: value }).catch(() => undefined)
+  }, [])
   const [booting, setBooting] = useState(true)
   const [remoteReady, setRemoteReady] = useState(false)
   const markRemoteReady = useCallback(() => setRemoteReady(true), [])
   const endBoot = useCallback(() => setBooting(false), [])
-  const sidebarVisible = expanded && (!sidebarCollapsed || route.name === 'home')
-  const tabletop = route.name === 'session' && horizontalInside && horizontalInside.top >= 140 && frame.height - horizontalInside.top - horizontalInside.gap >= 220 ? horizontalInside : null
-  const pairing = connection === null || !!pairingPrefill
-  const safeRegion = horizontalInside && !tabletop
-    ? horizontalInside.top >= frame.height - horizontalInside.top - horizontalInside.gap
-      ? { height: horizontalInside.top } : { marginTop: horizontalInside.top + horizontalInside.gap, flex: 1 }
-    : verticalInside && (!twoPanes || pairing || !sidebarVisible)
-      ? verticalInside.left >= frame.width - verticalInside.left - verticalInside.gap
-        ? { width: verticalInside.left } : { marginLeft: verticalInside.left + verticalInside.gap, flex: 1 }
-      : { flex: 1 }
+  const sessionId = 'sessionId' in route ? route.sessionId : undefined
 
-  useEffect(() => {
-    void loadConnection().then(setConnection)
-  }, [])
+  useEffect(() => { void loadConnection().then(setConnection) }, [])
 
   useEffect(() => {
     const receive = (url: string | null) => {
@@ -130,9 +123,9 @@ export default function App() {
     setConnection(null)
     setAlertsEnabled(false)
     setRoute({ name: 'home' })
-    setProject(null)
     setDrafts({})
     setPhotoDrafts({})
+    setDetail(null)
   }, [connection])
 
   const enableAlerts = useCallback(async () => {
@@ -141,9 +134,10 @@ export default function App() {
     catch { setAlertsEnabled(false) }
   }, [connection])
 
-  const onDraftChange = useCallback((sessionId: string, text: string) => {
-    setDrafts((current) => ({ ...current, [sessionId]: text }))
+  const onDraftChange = useCallback((id: string, text: string) => {
+    setDrafts((current) => ({ ...current, [id]: text }))
   }, [])
+  const onDetail = useCallback((next: SessionDetail) => setDetail(next), [])
 
   useEffect(() => {
     const restore = async () => {
@@ -160,126 +154,166 @@ export default function App() {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (isSpeechActive()) { cancelSpeech(); return true }
       if (Keyboard.isVisible()) { Keyboard.dismiss(); return true }
-      if (pairingPrefill && connection) {
-        setPairingPrefill(null)
-        return true
-      }
+      if (pairingPrefill && connection) { setPairingPrefill(null); return true }
       if (!connection && localRoute !== 'welcome') { setLocalRoute(localRoute === 'assistant-settings' ? 'assistant' : 'welcome'); return true }
       if (route.name === 'assistant-settings') { setRoute(assistantSettingsFrom.current === 'settings' ? { name: 'settings' } : { name: 'assistant' }); return true }
-      if (route.name === 'assistant') { setRoute({name: 'home'}); return true }
-      if (route.name === 'artifact') {
-        setRoute({ name: 'session', sessionId: route.sessionId, title: route.title })
-        return true
-      }
-      if (route.name === 'session' || route.name === 'settings') {
-        setRoute({ name: 'home' })
-        return true
-      }
-      if (project) { setProject(null); return true }
+      if (route.name === 'assistant') { setRoute({ name: 'home' }); return true }
+      if (route.name === 'artifact') { setRoute({ name: 'session', sessionId: route.sessionId, title: route.title }); return true }
+      if (route.name === 'session' && detailOpen && mode !== 'triple' && mode !== 'tabletop') { setDetailOpen(false); return true }
+      if (route.name === 'session' || route.name === 'settings') { setRoute({ name: 'home' }); return true }
       return false
     })
     return () => sub.remove()
-  }, [connection, pairingPrefill, route, project, localRoute])
+  }, [connection, pairingPrefill, route, localRoute, mode, detailOpen])
+
+  const openSession = useCallback((id: string, title: string) => {
+    setRoute({ name: 'session', sessionId: id, title })
+    setDetailOpen(false)
+    setDetail((current) => (current?.sessionId === id ? current : null))
+  }, [])
+  const openArtifact = useCallback((artifact: ArtifactLink) => {
+    if (route.name === 'session') setRoute({ name: 'artifact', sessionId: route.sessionId, title: route.title, artifact })
+  }, [route])
+
+  const paired = !!connection && !pairingPrefill
+  const multi = mode === 'split' || mode === 'book' || mode === 'triple'
+  const detailShown = !!sessionId && route.name === 'session' && detailOpen && (mode === 'split' || mode === 'book')
+  const listShown = multi && !detailShown && (mode !== 'split' || !sidebarCollapsed || route.name === 'home')
+  const toggleSidebar = mode === 'split'
+    ? () => { if (detailOpen) { setDetailOpen(false); setSidebarCollapsed(false) } else setSidebarCollapsed((c) => !c) }
+    : mode === 'book' ? () => setDetailOpen(false) : undefined
+  const toggleDetail = mode === 'single' || mode === 'split' || mode === 'book' ? () => setDetailOpen((open) => !open) : undefined
+  const singleRegion = mode === 'book'
+    ? leftHanded ? { width: layout.side } : { marginLeft: layout.side + layout.gap, flex: 1 }
+    : mode === 'tabletop' && route.name !== 'session'
+      ? { height: layout.top }
+      : { flex: 1 }
+
+  const sessionScreen = route.name === 'session' ? <SessionScreen
+    key={route.sessionId}
+    sessionId={route.sessionId}
+    title={route.title}
+    onBack={() => setRoute({ name: 'home' })}
+    onOpenArtifact={openArtifact}
+    draft={drafts[route.sessionId] ?? ''}
+    onDraftChange={(text) => onDraftChange(route.sessionId, text)}
+    photos={photoDrafts[route.sessionId] ?? []}
+    onPhotosChange={(photos) => setPhotoDrafts((current) => ({ ...current, [route.sessionId]: photos }))}
+    tabletop={mode === 'tabletop' ? { top: layout.top, gap: layout.topGap } : undefined}
+    sidebarVisible={mode === 'split' || mode === 'book' ? listShown : undefined}
+    onToggleSidebar={toggleSidebar}
+    onOpenDetail={toggleDetail}
+    detailOpen={detailOpen && mode !== 'triple'}
+    onDetail={onDetail}
+    banner={mode === 'single' && detailOpen ? <View style={{ flex: 1 }}>
+      <View style={[styles.banner, { backgroundColor: p.surface3, borderColor: p.borderSoft }]}>
+        <DetailPane detail={detail?.sessionId === route.sessionId ? detail : null} onOpenArtifact={(artifact) => { setDetailOpen(false); openArtifact(artifact) }} background={p.surface3} inset={false} />
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="收起会话详情" onPress={() => setDetailOpen(false)} style={[styles.scrim, { backgroundColor: p.press }]} />
+    </View> : undefined}
+  /> : null
+
+  const mainContent = route.name === 'settings' ? (
+    <SettingsScreen
+      connection={connection!}
+      alertsEnabled={alertsEnabled}
+      onEnableAlerts={() => void enableAlerts()}
+      onDisableAlerts={() => { void stopQuestionAlerts(); setAlertsEnabled(false) }}
+      onUnpair={unpair}
+      onBack={() => setRoute({ name: 'home' })}
+      sidebarVisible={listShown}
+      onToggleSidebar={mode === 'split' ? () => setSidebarCollapsed((c) => !c) : undefined}
+      onOpenAssistantSettings={() => { assistantSettingsFrom.current = 'settings'; setRoute({ name: 'assistant-settings' }) }}
+      leftHanded={leftHanded}
+      onLeftHandedChange={changeLeftHanded}
+    />
+  ) : route.name === 'artifact' ? (
+    <ArtifactScreen
+      sessionId={route.sessionId}
+      artifact={route.artifact}
+      onBack={() => setRoute({ name: 'session', sessionId: route.sessionId, title: route.title })}
+      sidebarVisible={listShown}
+      onToggleSidebar={mode === 'split' ? () => setSidebarCollapsed((c) => !c) : undefined}
+    />
+  ) : route.name === 'assistant' ? (
+    <AssistantScreen conversation={assistantConversation} onConversationChange={setAssistantConversation} onBack={() => setRoute({ name: 'home' })} onConfigure={() => { assistantSettingsFrom.current = 'assistant'; setRoute({ name: 'assistant-settings' }) }} />
+  ) : route.name === 'assistant-settings' ? (
+    <AssistantSettingsScreen onBack={() => setRoute(assistantSettingsFrom.current === 'settings' ? { name: 'settings' } : { name: 'assistant' })} />
+  ) : null
+
+  const home = connection ? <HomeScreen
+    onOpen={openSession}
+    onSettings={() => setRoute({ name: 'settings' })}
+    onOpenAssistant={() => setRoute({ name: 'assistant' })}
+    alertsEnabled={alertsEnabled}
+    onEnableAlerts={() => void enableAlerts()}
+    selectedSessionId={sessionId}
+  /> : null
+
+  const detailPane = (onClose?: () => void) => <View style={{ flex: 1, backgroundColor: p.bg1 }}>
+    <Header title="会话详情" background={p.bg1} right={onClose ? <IconButton name="close" label="收起会话详情" onPress={onClose} /> : undefined} />
+    <DetailPane detail={detail?.sessionId === sessionId ? detail : null} onOpenArtifact={openArtifact} />
+  </View>
+
+  const remoteBody = () => {
+    if (!multi) {
+      return <View style={[singleRegion]}>
+        <Hidden hidden={route.name !== 'home'}>{home}</Hidden>
+        {sessionScreen ? <ContentEnter key={sessionId}>{sessionScreen}</ContentEnter> : null}
+        {mainContent ? <ContentEnter key={route.name}>{mainContent}</ContentEnter> : null}
+      </View>
+    }
+    const firstWidth = leftHanded && mode === 'book' ? frame.width - layout.side - layout.gap : layout.side
+    const hairline = StyleSheet.hairlineWidth
+    const edge = (toward: 'main' | 'outer') => mode === 'book' ? {} : (toward === 'main') !== leftHanded ? { borderRightWidth: hairline, borderColor: p.borderSoft } : { borderLeftWidth: hairline, borderColor: p.borderSoft }
+    const main = sessionScreen ? <ContentEnter key={sessionId}>{sessionScreen}</ContentEnter> : mainContent ? <ContentEnter key={route.name}>{mainContent}</ContentEnter> : <View style={styles.center}><EmptyState>选择会话</EmptyState></View>
+    const spacer = mode === 'book' ? <View style={{ width: layout.gap }} /> : null
+    return <View style={{ flex: 1, flexDirection: leftHanded ? 'row-reverse' : 'row' }}>
+      <View style={[styles.side, { width: firstWidth }, edge('main'), listShown ? null : { display: 'none' }]}>{home}</View>
+      {listShown ? spacer : null}
+      <View style={[{ minWidth: 0, backgroundColor: p.bg0 }, mode === 'book' && detailShown ? { width: firstWidth } : { flex: 1 }]}>{main}</View>
+      {detailShown ? <>
+        {spacer}
+        <View style={[mode === 'book' ? { flex: 1 } : { width: Math.min(420, Math.max(300, Math.round(frame.width * 0.45))) }, edge('outer')]}>{detailPane(() => setDetailOpen(false))}</View>
+      </> : null}
+      {mode === 'triple' && sessionId ? <View style={[{ width: layout.aside }, edge('outer')]}>{detailPane()}</View> : null}
+    </View>
+  }
 
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={scheme === 'light' ? 'dark-content' : 'light-content'} backgroundColor={p.bg1} />
-      <SafeAreaView style={{ flex: 1, backgroundColor: p.bg1 }}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: paired && route.name !== 'home' && mode === 'single' ? p.bg0 : p.bg1 }}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={frame.y} style={{ flex: 1 }}>
-        <View ref={frameRef} collapsable={false} onLayout={() => frameRef.current?.measureInWindow((x, y, measuredWidth, height) => setFrame({ x, y, width: measuredWidth, height }))} style={{ flex: 1, paddingBottom: keyboardOverlap }}>
-        {connection === undefined ? null : connection === null || pairingPrefill ? (
-          localRoute !== 'welcome' && !pairingPrefill ? (
-            <View style={safeRegion}>{localRoute === 'assistant-settings' ? (
-              <AssistantSettingsScreen onBack={() => setLocalRoute('assistant')} />
-            ) : (
-              <AssistantScreen conversation={assistantConversation} onConversationChange={setAssistantConversation} onBack={() => setLocalRoute('welcome')} onConfigure={() => setLocalRoute('assistant-settings')} />
-            )}</View>
-          ) : (
-          <View style={safeRegion}>
-          {LIFE_ASSISTANT_ENABLED ? <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: space[3], paddingTop: space[2] }}>
-            <Button compact variant="ghost" label="先用生活助手" onPress={() => setLocalRoute('assistant')} />
-          </View> : null}
-          <PairScreen
-            prefill={pairingPrefill}
-            onCancel={connection ? () => setPairingPrefill(null) : undefined}
-            onPaired={async (next) => {
-              await saveConnection(next)
-              setConnection(next)
-              setPairingPrefill(null)
-              setRoute({ name: 'home' })
-            }}
-          />
+        <View ref={frameRef} collapsable={false} onLayout={measure} style={{ flex: 1, paddingBottom: keyboardOverlap }}>
+        {connection === undefined ? null : !paired ? (
+          <View style={[singleRegion, { backgroundColor: p.bg0 }]}>
+            {localRoute !== 'welcome' && !pairingPrefill ? (
+              localRoute === 'assistant-settings' ? (
+                <AssistantSettingsScreen onBack={() => setLocalRoute('assistant')} />
+              ) : (
+                <AssistantScreen conversation={assistantConversation} onConversationChange={setAssistantConversation} onBack={() => setLocalRoute('welcome')} onConfigure={() => setLocalRoute('assistant-settings')} />
+              )
+            ) : <>
+              {LIFE_ASSISTANT_ENABLED ? <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: space[3], paddingTop: space[2] }}>
+                <Button compact variant="ghost" label="先用生活助手" onPress={() => setLocalRoute('assistant')} />
+              </View> : null}
+              <PairScreen
+                prefill={pairingPrefill}
+                onCancel={connection ? () => setPairingPrefill(null) : undefined}
+                onPaired={async (next) => {
+                  await saveConnection(next)
+                  setConnection(next)
+                  setPairingPrefill(null)
+                  setRoute({ name: 'home' })
+                }}
+              />
+            </>}
           </View>
-          )
         ) : (
           <RemoteProvider connection={connection} onUnauthorized={unpair}>
             {booting ? <RemoteReady onReady={markRemoteReady} /> : null}
-            <View style={[safeRegion, { flexDirection: expanded ? 'row' : 'column' }]}>
-              {(expanded || route.name === 'home') ? (
-                <View style={expanded ? { display: sidebarVisible ? 'flex' : 'none', width: verticalInside?.left ?? Math.min(380, Math.round(width * 0.42)), borderRightWidth: 1, borderRightColor: p.borderSoft } : { flex: 1 }}>
-                  <HomeScreen
-                    onOpen={(sessionId, title) => setRoute({ name: 'session', sessionId, title })}
-                    onSettings={() => setRoute({ name: 'settings' })}
-                    onOpenAssistant={() => setRoute({ name: 'assistant' })}
-                    alertsEnabled={alertsEnabled}
-                    alertsSupported={questionAlertsSupported(connection)}
-                    onEnableAlerts={() => void enableAlerts()}
-                    selectedSessionId={'sessionId' in route ? route.sessionId : undefined}
-                    project={project}
-                    onProjectChange={setProject}
-                  />
-                </View>
-              ) : null}
-              {sidebarVisible && verticalInside ? <View style={{ width: verticalInside.gap }} /> : null}
-              {(expanded || route.name !== 'home') ? (
-                <ContentEnter key={route.name === 'session' ? route.sessionId : route.name}>
-                  {route.name === 'settings' ? (
-                    <SettingsScreen
-                      connection={connection}
-                      alertsEnabled={alertsEnabled}
-                      onEnableAlerts={() => void enableAlerts()}
-                      onDisableAlerts={() => { void stopQuestionAlerts(); setAlertsEnabled(false) }}
-                      onUnpair={unpair}
-                      onBack={() => setRoute({ name: 'home' })}
-                      sidebarVisible={sidebarVisible}
-                      onToggleSidebar={expanded ? () => setSidebarCollapsed((current) => !current) : undefined}
-                      onOpenAssistantSettings={() => { assistantSettingsFrom.current = 'settings'; setRoute({ name: 'assistant-settings' }) }}
-                    />
-                  ) : route.name === 'session' ? (
-                    <SessionScreen
-                      key={route.sessionId}
-                      sessionId={route.sessionId}
-                      title={route.title}
-                      onBack={() => setRoute({ name: 'home' })}
-                      onOpenArtifact={(artifact) => setRoute({ name: 'artifact', sessionId: route.sessionId, title: route.title, artifact })}
-                      draft={drafts[route.sessionId] ?? ''}
-                      onDraftChange={(text) => onDraftChange(route.sessionId, text)}
-                      photos={photoDrafts[route.sessionId] ?? []}
-                      onPhotosChange={(photos) => setPhotoDrafts((current) => ({ ...current, [route.sessionId]: photos }))}
-                      tabletop={tabletop ?? undefined}
-                      sidebarVisible={sidebarVisible}
-                      onToggleSidebar={expanded ? () => setSidebarCollapsed((current) => !current) : undefined}
-                    />
-                  ) : route.name === 'artifact' ? (
-                    <ArtifactScreen
-                      sessionId={route.sessionId}
-                      artifact={route.artifact}
-                      onBack={() => setRoute({ name: 'session', sessionId: route.sessionId, title: route.title })}
-                      sidebarVisible={sidebarVisible}
-                      onToggleSidebar={expanded ? () => setSidebarCollapsed((current) => !current) : undefined}
-                    />
-                  ) : route.name === 'assistant' ? (
-                    <AssistantScreen conversation={assistantConversation} onConversationChange={setAssistantConversation} onBack={() => setRoute({ name: 'home' })} onConfigure={() => { assistantSettingsFrom.current = 'assistant'; setRoute({ name: 'assistant-settings' }) }} />
-                  ) : route.name === 'assistant-settings' ? (
-                    <AssistantSettingsScreen onBack={() => setRoute(assistantSettingsFrom.current === 'settings' ? { name: 'settings' } : { name: 'assistant' })} />
-                  ) : (
-                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                      <EmptyState>选择会话</EmptyState>
-                    </View>
-                  )}
-                </ContentEnter>
-              ) : null}
-            </View>
+            {remoteBody()}
           </RemoteProvider>
         )}
         </View>
@@ -289,3 +323,10 @@ export default function App() {
     </SafeAreaProvider>
   )
 }
+
+const styles = StyleSheet.create({
+  side: { minWidth: 0 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  banner: { maxHeight: '75%', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomLeftRadius: 16, borderBottomRightRadius: 16, overflow: 'hidden' },
+  scrim: { flex: 1 }
+})

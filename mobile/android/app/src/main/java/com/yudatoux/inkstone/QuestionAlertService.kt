@@ -9,9 +9,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 
 /**
@@ -23,7 +22,7 @@ class QuestionAlertService : Service() {
   private val preferences by lazy { getSharedPreferences("inkstone.question.alerts", MODE_PRIVATE) }
   @Volatile private var running = false
   @Volatile private var generation = 0
-  @Volatile private var stream: HttpURLConnection? = null
+  @Volatile private var link: RemoteLink? = null
   private var worker: Thread? = null
   private var known = emptySet<String>()
   private var knownHub = emptySet<String>()
@@ -49,13 +48,14 @@ class QuestionAlertService : Service() {
     }
     val baseUrl = intent?.getStringExtra(EXTRA_BASE_URL)?.trimEnd('/')
     val token = intent?.getStringExtra(EXTRA_TOKEN)
+    val relay = intent?.let { relayConfig(it) }
     if (baseUrl.isNullOrBlank() || token.isNullOrBlank() || !manager.areNotificationsEnabled()) {
       stopSelf()
       return START_NOT_STICKY
     }
     stopWorker()
     val identity = MessageDigest.getInstance("SHA-256")
-      .digest("$baseUrl:$token".toByteArray(Charsets.UTF_8))
+      .digest("$baseUrl:$token:${relay?.fingerprint ?: ""}".toByteArray(Charsets.UTF_8))
       .joinToString("") { "%02x".format(it) }
     if (preferences.getString("identity", null) != identity) {
       preferences.edit().putString("identity", identity).remove("known").remove("knownHub").apply()
@@ -77,54 +77,63 @@ class QuestionAlertService : Service() {
     running = true
     active = true
     val current = generation
-    worker = Thread({ monitor(baseUrl, token, current) }, "InkstoneQuestionAlerts").also { it.start() }
+    worker = Thread({ monitor(baseUrl, token, relay, current) }, "InkstoneQuestionAlerts").also { it.start() }
     return START_REDELIVER_INTENT
   }
 
-  private fun monitor(baseUrl: String, token: String, current: Int) {
+  private fun relayConfig(intent: Intent): RelayConfig? {
+    val join = intent.getStringExtra(EXTRA_RELAY_JOIN)
+    val hostKey = intent.getStringExtra(EXTRA_RELAY_HOST_KEY)
+    val clientKey = intent.getStringExtra(EXTRA_RELAY_CLIENT_KEY)
+    val clientPub = intent.getStringExtra(EXTRA_RELAY_CLIENT_PUB)
+    if (join.isNullOrBlank() || hostKey.isNullOrBlank() || clientKey.isNullOrBlank() || clientPub.isNullOrBlank()) return null
+    return RelayConfig(join, hostKey, clientKey, clientPub)
+  }
+
+  private fun monitor(baseUrl: String, token: String, relay: RelayConfig?, current: Int) {
     var retryMs = 1_000L
     while (running && generation == current) {
-      var currentStream: HttpURLConnection? = null
+      var currentLink: RemoteLink? = null
       try {
-        syncQuestions(baseUrl, token, current)
-        syncTask(baseUrl, token, current)
-        syncHub(baseUrl, token, current)
+        currentLink = if (relay != null) RelayLink(relay, token) else DirectLink(baseUrl, token)
+        link = currentLink
         if (!running || generation != current) break
-        val connection = open(baseUrl, token, "/remote/v1/events?since=0", 65_000)
-        currentStream = connection
-        stream = connection
-        if (connection.responseCode == 401) {
-          stopSelf()
-          return
-        }
-        if (connection.responseCode != 200) throw IllegalStateException("events: ${connection.responseCode}")
-        retryMs = 1_000L
-        connection.inputStream.bufferedReader().use { reader ->
-          while (running && generation == current) {
-            val line = reader.readLine() ?: break
-            if (line.startsWith("event:")) {
-              when (line.substringAfter(':').trim()) {
-                "ui-request", "ui-resolved", "ui-deadline", "resync" -> {
-                  syncQuestions(baseUrl, token, current)
-                  syncTask(baseUrl, token, current)
-                }
-                "runners", "proc", "session-title" -> syncTask(baseUrl, token, current)
-                "state" -> {
-                  if (System.currentTimeMillis() - lastStatusAt >= 1000) syncTask(baseUrl, token, current)
-                  syncHub(baseUrl, token, current)
-                }
+        if (currentLink is RelayLink) currentLink.connect()
+        syncQuestions(currentLink, current)
+        syncTask(currentLink, current)
+        syncHub(currentLink, current)
+        if (!running || generation != current) break
+        val status = currentLink.events("/remote/v1/events?since=0") { line ->
+          if (line.startsWith("event:")) {
+            when (line.substringAfter(':').trim()) {
+              "ui-request", "ui-resolved", "ui-deadline", "resync" -> {
+                syncQuestions(currentLink, current)
+                syncTask(currentLink, current)
               }
-            } else if (line.startsWith(":")) {
-              syncTask(baseUrl, token, current)
-              syncHub(baseUrl, token, current)
+              "runners", "proc", "session-title" -> syncTask(currentLink, current)
+              "state" -> {
+                if (System.currentTimeMillis() - lastStatusAt >= 1000) syncTask(currentLink, current)
+                syncHub(currentLink, current)
+              }
             }
+          } else if (line.startsWith(":")) {
+            syncTask(currentLink, current)
+            syncHub(currentLink, current)
           }
+          running && generation == current
         }
-      } catch (_: Exception) {
+        if (status == 401) throw RemoteDenied("events: 401")
+        if (status != 200) throw IllegalStateException("events: $status")
+        retryMs = 1_000L
+      } catch (_: RemoteDenied) {
+        stopSelf()
+        return
+      } catch (error: Exception) {
+        if (running && generation == current) Log.w(TAG, "${if (relay != null) "relay" else "direct"}: ${error.message}")
         updateOngoing("砚", "重新连接中", current)
       } finally {
-        currentStream?.disconnect()
-        if (stream === currentStream) stream = null
+        currentLink?.close()
+        if (link === currentLink) link = null
       }
       if (!running || generation != current) break
       try { Thread.sleep(retryMs) } catch (_: InterruptedException) { break }
@@ -132,15 +141,15 @@ class QuestionAlertService : Service() {
     }
   }
 
-  private fun syncHub(baseUrl: String, token: String, currentGeneration: Int) {
+  private fun syncHub(link: RemoteLink, currentGeneration: Int) {
     if (System.currentTimeMillis() - lastHubAt < 3000) return
     lastHubAt = System.currentTimeMillis()
-    val connection = open(baseUrl, token, "/remote/v1/hub/attention", 12_000)
     try {
-      if (connection.responseCode == 401) { stopSelf(); return }
-      if (connection.responseCode == 403 || connection.responseCode == 404) { manager.cancel(HUB_ID); return }
-      if (connection.responseCode != 200) return
-      val items = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getJSONObject("data").getJSONArray("items")
+      val reply = link.get("/remote/v1/hub/attention")
+      if (reply.status == 401) throw RemoteDenied("hub: 401")
+      if (reply.status == 403 || reply.status == 404) { manager.cancel(HUB_ID); return }
+      if (reply.status != 200) return
+      val items = JSONObject(reply.body).getJSONObject("data").getJSONArray("items")
       val pending = buildSet { for (index in 0 until items.length()) add(items.getJSONObject(index).getString("id")) }
       if (!running || generation != currentGeneration) return
       val hasNew = pending.any { it !in knownHub }
@@ -159,20 +168,18 @@ class QuestionAlertService : Service() {
         .setContentIntent(openHub).setVisibility(Notification.VISIBILITY_PRIVATE)
         .setPublicVersion(Notification.Builder(this, HUB_CHANNEL).setSmallIcon(R.drawable.ic_stat_inkstone).setContentTitle("砚").setContentText("${pending.size} 项待处理").build())
         .setOnlyAlertOnce(!hasNew).setAutoCancel(false).build())
+    } catch (error: RemoteDenied) {
+      throw error
     } catch (_: Exception) {
-      // Hub 的可选提醒不能中断已有问题和会话的监控。
-    } finally { connection.disconnect() }
+    }
   }
 
-  private fun syncQuestions(baseUrl: String, token: String, currentGeneration: Int) {
-    val connection = open(baseUrl, token, "/remote/v1/questions", 12_000)
-    try {
-      if (connection.responseCode == 401) {
-        stopSelf()
-        return
-      }
-      if (connection.responseCode != 200) return
-      val array = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+  private fun syncQuestions(link: RemoteLink, currentGeneration: Int) {
+    val reply = link.get("/remote/v1/questions")
+    run {
+      if (reply.status == 401) throw RemoteDenied("questions: 401")
+      if (reply.status != 200) return
+      val array = JSONObject(reply.body)
         .getJSONObject("data").getJSONArray("questions")
       val current = buildSet {
         for (index in 0 until array.length()) add(array.getJSONObject(index).getString("id"))
@@ -197,17 +204,15 @@ class QuestionAlertService : Service() {
           .build()
         manager.notify(QUESTION_ID, notification)
       }
-    } finally {
-      connection.disconnect()
     }
   }
 
-  private fun syncTask(baseUrl: String, token: String, current: Int) {
-    val connection = open(baseUrl, token, "/remote/v1/status", 12_000)
-    try {
-      if (connection.responseCode == 401) { stopSelf(); return }
-      if (connection.responseCode != 200) return
-      val snapshot = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getJSONObject("data")
+  private fun syncTask(link: RemoteLink, current: Int) {
+    val reply = link.get("/remote/v1/status")
+    run {
+      if (reply.status == 401) throw RemoteDenied("status: 401")
+      if (reply.status != 200) return
+      val snapshot = JSONObject(reply.body).getJSONObject("data")
       val agent = snapshot.optJSONObject("agent")
       val runners = agent?.optJSONArray("runners")
       val activeId = agent?.optString("activeSessionId")
@@ -236,7 +241,7 @@ class QuestionAlertService : Service() {
       }
       updateOngoing(title, state, current)
       lastStatusAt = System.currentTimeMillis()
-    } finally { connection.disconnect() }
+    }
   }
 
   private fun ongoingNotification(title: String, state: String): Notification = Notification.Builder(this, SERVICE_CHANNEL)
@@ -258,16 +263,6 @@ class QuestionAlertService : Service() {
     manager.notify(SERVICE_ID, ongoingNotification(title, state))
   }
 
-  private fun open(baseUrl: String, token: String, path: String, readTimeout: Int): HttpURLConnection =
-    (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
-      requestMethod = "GET"
-      setRequestProperty("Authorization", "Bearer $token")
-      setRequestProperty("Accept", if (path.contains("/events")) "text/event-stream" else "application/json")
-      connectTimeout = 12_000
-      this.readTimeout = readTimeout
-      useCaches = false
-    }
-
   private fun openAppIntent(): PendingIntent {
     val intent = Intent(this, MainActivity::class.java).apply {
       data = android.net.Uri.parse("inkstone://inbox")
@@ -280,7 +275,7 @@ class QuestionAlertService : Service() {
     running = false
     active = false
     generation++
-    stream?.disconnect()
+    link?.close()
     worker?.interrupt()
     worker = null
   }
@@ -302,6 +297,11 @@ class QuestionAlertService : Service() {
     const val ACTION_STOP = "com.yudatoux.inkstone.STOP_QUESTION_ALERTS"
     const val EXTRA_BASE_URL = "baseUrl"
     const val EXTRA_TOKEN = "token"
+    const val EXTRA_RELAY_JOIN = "relayJoin"
+    const val EXTRA_RELAY_HOST_KEY = "relayHostKey"
+    const val EXTRA_RELAY_CLIENT_KEY = "relayClientKey"
+    const val EXTRA_RELAY_CLIENT_PUB = "relayClientPub"
+    private const val TAG = "InkstoneAlerts"
     private const val SERVICE_CHANNEL = "inkstone.connection"
     private const val QUESTION_CHANNEL = "inkstone.questions"
     private const val HUB_CHANNEL = "inkstone.hub"

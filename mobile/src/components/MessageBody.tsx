@@ -1,15 +1,17 @@
 import { memo, useState } from 'react'
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
-import { font, lineHeight, mono, radius, space, touch, usePalette } from '../theme'
+import { font, lineHeight, mono, radius, space, touch, usePalette, weight } from '../theme'
 
 function Inline({ value }: { value: string }) {
   const p = usePalette()
-  const parts = value.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)]+\))/g)
+  const parts = value.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g)
   return <Text>{parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) return <Text key={index} style={{ color: p.fg, textDecorationLine: 'underline', textDecorationColor: p.borderStr }}>{part.slice(2, -2)}</Text>
-    if (part.startsWith('`') && part.endsWith('`')) return <Text key={index} style={{ fontFamily: mono, color: p.accent }}>{part.slice(1, -1)}</Text>
-    const link = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/.exec(part)
-    if (link) return <Text key={index} style={{ color: p.accent, textDecorationLine: 'underline' }} onPress={() => void Linking.openURL(link[2])}>{link[1]}</Text>
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <Text key={index} style={{ color: p.fg, fontWeight: weight.strong }}>{part.slice(2, -2)}</Text>
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) return <Text key={index} style={{ fontFamily: mono, fontSize: font.sm, color: p.fg, backgroundColor: p.codeInline }}> {part.slice(1, -1)} </Text>
+    const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part)
+    if (link) return /^https?:\/\//.test(link[2])
+      ? <Text key={index} style={{ color: p.accent }} onPress={() => void Linking.openURL(link[2])}>{link[1]}</Text>
+      : <Text key={index} style={{ color: p.accent }}>{link[1]}</Text>
     return <Text key={index}>{part}</Text>
   })}</Text>
 }
@@ -36,10 +38,10 @@ export const MessageBody = memo(function MessageBody({ text }: { text: string })
   if (code) blocks.push({ kind: 'code', value: code.join('\n') })
   return <View style={styles.body}>
     {blocks.map((block, index) => block.kind === 'code' ? (
-      <Pressable key={index} style={[styles.code, { backgroundColor: p.bg2, borderColor: p.borderSoft }]}><Text selectable style={{ color: p.fg, fontFamily: mono, fontSize: font.sm, lineHeight: 19 }}>{block.value}</Text></Pressable>
+      <Pressable key={index} style={[styles.code, { backgroundColor: p.sunken, borderColor: p.borderSoft }]}><Text selectable style={{ color: p.fg, fontFamily: mono, fontSize: font.sm, lineHeight: 19 }}>{block.value}</Text></Pressable>
     ) : block.value === '' ? <View key={index} style={{ height: 6 }} /> : (
       <Text key={index} selectable style={[styles.line, { color: p.fg }, block.kind === 'heading' && styles.heading]}>
-        {block.kind === 'list' ? <Text style={{ color: p.fgMute, fontFamily: mono }}>{'- '}</Text> : null}<Inline value={block.value} />
+        {block.kind === 'list' ? <Text style={{ color: p.fgMute }}>{'•  '}</Text> : null}<Inline value={block.value} />
       </Text>
     ))}
     {folded ? <Pressable accessibilityRole="button" onPress={() => setExpanded(true)} style={{ minHeight: touch.min, justifyContent: 'center' }}><Text style={{ color: p.fgMute, fontSize: font.sm }}>展开完整消息</Text></Pressable> : null}
@@ -49,6 +51,6 @@ export const MessageBody = memo(function MessageBody({ text }: { text: string })
 const styles = StyleSheet.create({
   body: { maxWidth: '100%', gap: 2 },
   line: { fontSize: font.body, lineHeight: lineHeight.body },
-  heading: { fontSize: font.lg, marginTop: space[3], marginBottom: space[1] },
-  code: { borderWidth: 1, borderRadius: radius.sm, padding: space[3], marginVertical: space[2] }
+  heading: { fontSize: 16, fontWeight: weight.strong, marginTop: space[3], marginBottom: space[1] },
+  code: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.md, padding: space[3], marginVertical: space[2] }
 })

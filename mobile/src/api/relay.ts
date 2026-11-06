@@ -141,6 +141,10 @@ export function newClientKey(): string {
   return toB64u(p256.utils.randomSecretKey())
 }
 
+export function relayClientPublicKey(clientKey: string): string {
+  return toB64u(p256.getPublicKey(fromB64u(clientKey), false))
+}
+
 function ecdh(secret: Uint8Array, publicRaw: Uint8Array): Uint8Array {
   return p256.getSharedSecret(secret, publicRaw, true).slice(1)
 }

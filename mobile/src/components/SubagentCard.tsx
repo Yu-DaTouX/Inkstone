@@ -40,7 +40,7 @@ function statusText(run: SubagentInfo): string {
   return '完成'
 }
 
-export function SubagentCard({ runs }: { runs: SubagentInfo[] }) {
+export function SubagentCard({ runs, plain = false }: { runs: SubagentInfo[]; plain?: boolean }) {
   const p = usePalette()
   const live = runs.filter(isLive).length
   const failed = runs.filter((run) => run.status === 'error').length
@@ -48,17 +48,17 @@ export function SubagentCard({ runs }: { runs: SubagentInfo[] }) {
   const [stored, setStored] = useState<boolean | null>(null)
   const [openRun, setOpenRun] = useState<string | null>(null)
   if (!runs.length) return null
-  const expanded = stored ?? live > 0
+  const expanded = plain || (stored ?? live > 0)
   const now = Date.now()
   const counts = [live ? `${live} 运行中` : '', done ? `${done} 完成` : '', failed ? `${failed} 失败` : ''].filter(Boolean).join(' · ')
-  return <View style={[styles.card, { backgroundColor: p.surface, borderColor: p.border }]}>
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`子代理 ${runs.length} 个，${counts}`} onPress={() => setStored(!expanded)} style={styles.head}>
+  return <View style={plain ? null : [styles.card, { backgroundColor: p.surface, borderColor: p.border }]}>
+    {plain ? null : <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`子代理 ${runs.length} 个，${counts}`} onPress={() => setStored(!expanded)} style={styles.head}>
       {live ? <GlyphSpinner /> : null}
       <Text style={{ color: p.fg, fontSize: font.sm, fontWeight: weight.medium }}>子代理 {runs.length}</Text>
       <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: p.fgMute, fontSize: font.sm }}>{[live ? `${live} 运行中` : '', done ? `${done} 完成` : ''].filter(Boolean).join(' · ')}{failed ? <Text style={{ color: p.err }}>{live || done ? ' · ' : ''}{failed} 失败</Text> : null}</Text>
       <View style={{ transform: [{ rotate: expanded ? '-90deg' : '90deg' }] }}><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></View>
-    </Pressable>
-    {expanded ? <ScrollView style={styles.list} nestedScrollEnabled>
+    </Pressable>}
+    {expanded ? <ScrollView style={plain ? null : styles.list} scrollEnabled={!plain} nestedScrollEnabled>
       {runs.map((run) => {
         const open = openRun === run.id
         const tone = run.status === 'error' ? p.err : isLive(run) ? p.fg : p.fgDim

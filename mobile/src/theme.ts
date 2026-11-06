@@ -1,5 +1,8 @@
+import { useMemo } from 'react'
 import { useColorScheme } from 'react-native'
-import { THEME_V3_ENABLED, v3Palette } from './theme-v3'
+import { v3Palette } from './theme-v3'
+import { v3Data } from './theme.v3.generated'
+import { AUTO_PROJECT_COLOR_COUNT, hashedProjectTone, projectMonogram } from '../../src/shared/project-monogram'
 
 export interface Palette {
   bg0: string
@@ -9,6 +12,7 @@ export interface Palette {
   bubble: string
   field: string
   surface: string
+  surface3: string
   sunken: string
   border: string
   borderSoft: string
@@ -24,74 +28,51 @@ export interface Palette {
   inkHover?: string
   onInk?: string
   ok: string
+  online: string
   warn: string
   warnSoft: string
   err: string
   errSoft: string
-}
-
-const dark: Palette = {
-  bg0: '#17191d',
-  bg1: '#1f2228',
-  bg2: '#282c34',
-  bg3: '#2d3340',
-  bubble: '#282c34',
-  field: 'rgba(255,255,255,0.05)',
-  surface: '#1f2228',
-  sunken: '#131518',
-  border: 'rgba(255,255,255,0.11)',
-  borderSoft: 'rgba(255,255,255,0.07)',
-  borderStr: 'rgba(255,255,255,0.18)',
-  fg: '#e5e7eb',
-  fgDim: '#b3bac5',
-  fgMute: '#929caa',
-  accent: '#93a8ff',
-  accentSoft: 'rgba(147,168,255,0.16)',
-  accentLine: 'rgba(147,168,255,0.5)',
-  onAccent: '#17191d',
-  ok: '#82c7a0',
-  warn: '#e8b17b',
-  warnSoft: 'rgba(232,177,123,0.14)',
-  err: '#f5a2a2',
-  errSoft: 'rgba(245,162,162,0.13)'
-}
-
-const light: Palette = {
-  bg0: '#f6f7f9',
-  bg1: '#eef0f3',
-  bg2: '#ffffff',
-  bg3: '#e3e7ee',
-  bubble: '#eef0f3',
-  field: 'rgba(255,255,255,0.5)',
-  surface: '#ffffff',
-  sunken: '#f1f2f4',
-  border: 'rgba(20,30,50,0.13)',
-  borderSoft: 'rgba(20,30,50,0.07)',
-  borderStr: 'rgba(20,30,50,0.2)',
-  fg: '#242830',
-  fgDim: '#505966',
-  fgMute: '#5e6876',
-  accent: '#4059ad',
-  accentSoft: 'rgba(64,89,173,0.10)',
-  accentLine: 'rgba(64,89,173,0.42)',
-  onAccent: '#ffffff',
-  ok: '#216a4b',
-  warn: '#8a430d',
-  warnSoft: 'rgba(138,67,13,0.10)',
-  err: '#a53030',
-  errSoft: 'rgba(165,48,48,0.09)'
+  fail: string
+  onFill: string
+  add: string
+  del: string
+  press: string
+  codeInline: string
+  btnPrimary: string
+  onBtnPrimary: string
 }
 
 export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32 } as const
-export const radius = { xs: 4, sm: 6, md: 8, lg: 10, bubble: 12, xl: 14, full: 999 } as const
-export const font = { xs: 12, sm: 13, base: 14, body: 16, lg: 17, title: 20 } as const
+export const radius = { xs: 4, sm: 6, md: 8, lg: 10, bubble: 12, xl: 14, composer: 16, full: 999 } as const
+export const font = { xs: 12, sm: 13, base: 14, body: 15, lg: 15, title: 20 } as const
 export const weight = { regular: '400', medium: '500', strong: '600' } as const
-export const lineHeight = { row: 24, body: 26 } as const
-export const icon = { sm: 16, md: 20, lg: 24 } as const
+export const lineHeight = { row: 24, body: 24 } as const
+export const icon = { sm: 16, md: 18, lg: 24 } as const
 export const touch = { min: 44, compact: 36 } as const
 export const mono = 'monospace'
 
 export function usePalette(): Palette {
-  const mode = useColorScheme() === 'light' ? 'light' : 'dark'
-  return THEME_V3_ENABLED ? v3Palette(mode) : mode === 'light' ? light : dark
+  return v3Palette(useColorScheme() === 'light' ? 'light' : 'dark')
+}
+
+export function useProjectLook(ids: readonly string[]): (id: string, name: string) => { color: string; text: string } {
+  const colors = v3Data[useColorScheme() === 'light' ? 'light' : 'dark']
+  const key = ids.join('\n')
+  const tones = useMemo(() => {
+    const assigned = new Map<string, number>()
+    const used = new Set<number>()
+    for (const id of key ? key.split('\n') : []) {
+      const preferred = hashedProjectTone(id)
+      let tone = preferred
+      for (let step = 0; step < AUTO_PROJECT_COLOR_COUNT; step++) {
+        const candidate = ((preferred - 1 + step) % AUTO_PROJECT_COLOR_COUNT) + 1
+        if (!used.has(candidate)) { tone = candidate; break }
+      }
+      assigned.set(id, tone)
+      used.add(tone)
+    }
+    return assigned
+  }, [key])
+  return (id, name) => ({ color: colors[(tones.get(id) ?? hashedProjectTone(id)) - 1], text: projectMonogram(name) })
 }

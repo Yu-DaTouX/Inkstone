@@ -8,6 +8,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReadableMap
 
 class QuestionAlertModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
   override fun getName(): String = "InkstoneQuestionAlerts"
@@ -33,11 +34,17 @@ class QuestionAlertModule(private val context: ReactApplicationContext) : ReactC
   }
 
   @ReactMethod
-  fun start(baseUrl: String, token: String, promise: Promise) {
+  fun start(baseUrl: String, token: String, relay: ReadableMap?, promise: Promise) {
     try {
       val intent = Intent(context, QuestionAlertService::class.java).apply {
         putExtra(QuestionAlertService.EXTRA_BASE_URL, baseUrl)
         putExtra(QuestionAlertService.EXTRA_TOKEN, token)
+        if (relay != null) {
+          putExtra(QuestionAlertService.EXTRA_RELAY_JOIN, relay.getString("join"))
+          putExtra(QuestionAlertService.EXTRA_RELAY_HOST_KEY, relay.getString("hostKey"))
+          putExtra(QuestionAlertService.EXTRA_RELAY_CLIENT_KEY, relay.getString("clientKey"))
+          putExtra(QuestionAlertService.EXTRA_RELAY_CLIENT_PUB, relay.getString("clientPub"))
+        }
       }
       ContextCompat.startForegroundService(context, intent)
       context.getSharedPreferences("inkstone.question.alerts", 0).edit().putBoolean("wanted", true).apply()

@@ -1,19 +1,20 @@
 import { RemoteImage } from '../components/RemoteImage'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
 import { idempotencyKey, RemoteHttpError, type HistoryMessage, type HistoryPage, type SubagentInfo } from '../api/client'
-import { PlanCard } from '../components/PlanCard'
-import { SubagentCard } from '../components/SubagentCard'
+import type { SessionDetail } from '../components/DetailPane'
 import { QuestionCard } from '../components/QuestionCard'
 import { MessageBody } from '../components/MessageBody'
 import { SpeechInputButton } from '../components/SpeechInputButton'
 import { useRemote } from '../state'
-import { font, icon, mono, radius, space, touch, usePalette } from '../theme'
+import { font, icon, mono, radius, space, touch, usePalette, weight } from '../theme'
 import { ActivityLine, EmptyState, Header, IconButton, Meta, STATUS_TEXT } from '../ui'
 import { Icon } from '../icons'
+import type { IconName } from '../../../src/renderer/src/icons/sprite'
 import { GlyphSpinner, RunDot } from '../motion'
 import type { SpeechPhase } from '../speech'
 import { mergeRecentHistory } from '../historyCache'
+import { useBottomInset } from '../insets'
 import { pickImages, type PhotoDraft } from '../device'
 import { ModelPicker } from '../components/ModelPicker'
 import type { RemoteModel } from '../../../src/shared/remote-protocol'
@@ -26,9 +27,28 @@ type ProcessStep =
   | { kind: 'tool'; key: string; tool: ToolStep }
 type TimelineEntry =
   | { kind: 'message'; key: string; message: HistoryMessage }
-  | { kind: 'process'; key: string; steps: ProcessStep[]; actions: number; thinking: number; failed: number }
+  | { kind: 'process'; key: string; steps: ProcessStep[]; actions: number; thinking: number; failed: number; ms?: number }
 
 const SHOWN_ROLES = new Set(['user', 'assistant', 'bash'])
+
+function toolIcon(name: string): IconName {
+  if (/bash|shell|exec|command|terminal/i.test(name)) return 'terminal'
+  if (/read|view|cat/i.test(name)) return 'file'
+  if (/write|edit|patch|apply/i.test(name)) return 'pencil'
+  if (/grep|find|glob|search|ls/i.test(name)) return 'search'
+  if (/web|fetch|browser|url/i.test(name)) return 'globe'
+  if (/agent|subagent|task/i.test(name)) return 'agent'
+  if (/todo|plan/i.test(name)) return 'checklist'
+  return 'activity'
+}
+
+function spanText(ms?: number): string {
+  if (!ms || ms < 1000) return ''
+  const seconds = Math.round(ms / 1000)
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+const clock = (at?: number) => at ? new Date(at).toTimeString().slice(0, 5) : ''
 const UNCOUNTED_TOOLS = new Set(['todo', 'todos', 'todo_write', 'update_todos'])
 const LIVE_STEPS = 3
 const ARG_KEYS = ['command', 'cmd', 'path', 'file_path', 'filePath', 'pattern', 'query', 'url', 'description', 'task', 'prompt']
@@ -56,10 +76,14 @@ function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
     turn.forEach((message, index) => { if (hasReply(message)) replyIndex = index })
     const steps: ProcessStep[] = []
     const tools = new Map<string, ToolStep>()
+    let first = Infinity
+    let last = 0
     turn.forEach((message, index) => {
       if (message.thinking?.trim()) steps.push({ kind: 'thinking', key: `thinking-${message.id}`, text: message.thinking.trim(), ms: message.thinkingMs })
       if (index !== replyIndex && hasReply(message)) steps.push({ kind: 'text', key: `text-${message.id}`, message })
       for (const [toolIndex, tool] of (message.toolCalls ?? []).entries()) {
+        if (tool.startedAt) first = Math.min(first, tool.startedAt)
+        if (tool.endedAt) last = Math.max(last, tool.endedAt)
         const key = tool.id || `${message.id}:${toolIndex}`
         const old = tools.get(key)
         const denied = tool.denied === true || !!old?.denied
@@ -84,7 +108,7 @@ function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
     const counted = [...tools.values()].filter((tool) => !tool.nested && !(UNCOUNTED_TOOLS.has(tool.name) && !tool.failed))
     const thinking = steps.filter((step) => step.kind === 'thinking').length
     if (counted.length || thinking) {
-      entries.push({ kind: 'process', key: `process-${turn[0].id}`, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length })
+      entries.push({ kind: 'process', key: `process-${turn[0].id}`, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length, ms: last > first ? last - first : undefined })
     } else {
       for (const step of steps) if (step.kind === 'text') entries.push({ kind: 'message', key: step.message.id, message: step.message })
     }
@@ -123,7 +147,11 @@ export function SessionScreen({
   showPending = true,
   tabletop,
   onToggleSidebar,
-  sidebarVisible
+  sidebarVisible,
+  onOpenDetail,
+  detailOpen,
+  onDetail,
+  banner
 }: {
   sessionId: string
   title: string
@@ -137,9 +165,14 @@ export function SessionScreen({
   tabletop?: { top: number; gap: number }
   onToggleSidebar?: () => void
   sidebarVisible?: boolean
+  onOpenDetail?: () => void
+  detailOpen?: boolean
+  onDetail?: (detail: SessionDetail) => void
+  banner?: ReactNode
 }) {
   const p = usePalette()
-  const { client, questions, runners, sessions, stream, onSessionEvent, refresh, info, marksReady, markRead, unread } = useRemote()
+  const bottomInset = useBottomInset()
+  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, info, marksReady, markRead, unread } = useRemote()
   const cached = useRef(client.historyCache.get(sessionId)).current
   const [messages, setMessages] = useState<HistoryMessage[]>(cached?.messages.filter((m) => SHOWN_ROLES.has(m.role)) ?? [])
   const [loading, setLoading] = useState(!cached)
@@ -195,6 +228,17 @@ export function SessionScreen({
   const cwdName = sessions.find((s) => s.id === sessionId)?.cwdName || '电脑工作目录'
   useEffect(() => { if (runner?.model) setSelectedModel(runner.model) }, [runner?.model?.id, runner?.model?.provider])
   const latestReply = [...messages].reverse().find((message) => message.role === 'assistant' && message.text?.trim() && message.timestamp)
+  const modelName = model?.name || model?.id || sessions.find((session) => session.id === sessionId)?.model || ''
+  const artifacts = useMemo(() => {
+    const byName = new Map<string, NonNullable<HistoryMessage['artifacts']>[number]>()
+    for (const message of messages) for (const artifact of message.artifacts ?? []) byName.set(artifact.filename, artifact)
+    return [...byName.values()]
+  }, [messages])
+  useEffect(() => {
+    onDetail?.({ sessionId, plan, subagents, artifacts, running: !!runner?.running, model: modelName })
+  }, [onDetail, sessionId, plan, subagents, artifacts, runner?.running, modelName])
+  const todosLeft = plan?.todos.filter((todo) => !(todo.done || todo.status === 'done')).length ?? 0
+  const liveSubagents = subagents.filter((run) => run.status === 'starting' || run.status === 'running').length
   const readLatest = useCallback(() => {
     if (marksReady && !loading && followBottom.current && AppState.currentState === 'active' && latestReply?.timestamp && visibleMessages.current.has(latestReply.id)) markRead(sessionId, { id: latestReply.id, at: latestReply.timestamp })
   }, [latestReply?.id, latestReply?.timestamp, loading, markRead, marksReady, sessionId])
@@ -348,9 +392,11 @@ export function SessionScreen({
       <View style={tabletop ? { height: tabletop.top } : { flex: 1 }}>
       <Header
         title={title || '会话'}
-        left={onToggleSidebar ? <IconButton name="sidebar-left" label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : <IconButton name="back" label="返回会话列表" onPress={onBack} />}
-        subtitle={`${cwdName} · ${info?.computer?.name || client.connection.computerName || STATUS_TEXT[stream]}`}
+        crumb={projects.find((project) => project.id === sessions.find((s) => s.id === sessionId)?.projectId)?.name || cwdName}
+        left={onToggleSidebar ? <IconButton name="sidebar-left" selected={sidebarVisible} label={sidebarVisible ? '收起项目和会话列表' : '展开项目和会话列表'} onPress={onToggleSidebar} /> : <IconButton name="back" label="返回会话列表" onPress={onBack} />}
+        right={onOpenDetail ? <IconButton name="sidebar-right" selected={detailOpen} label={detailOpen ? '收起会话详情' : '打开会话详情'} onPress={onOpenDetail} /> : undefined}
       />
+      <View style={styles.flex}>
       {(loading || sending) && !runner?.running ? <View style={styles.loading}><GlyphSpinner /><Text style={{ color: p.fgDim, fontSize: font.sm, fontFamily: mono }}>{sending ? '正在发送' : '正在读取会话'}</Text></View> : null}
       {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft, borderLeftColor: p.err }]}>{error}</Text> : null}
       <FlatList
@@ -388,8 +434,9 @@ export function SessionScreen({
         onLayout={({ nativeEvent }) => { listSize.current.viewport = nativeEvent.layout.height; requestAnimationFrame(() => snapBottom()) }}
         onContentSizeChange={(_, height) => { listSize.current.content = height; requestAnimationFrame(() => snapBottom()) }}
         ListEmptyComponent={<EmptyState>{loading ? '正在读取会话…' : '输入消息，开始这段会话'}</EmptyState>}
-        ListFooterComponent={
-          showPending && pending.length > 0 ? (
+        ListFooterComponent={<>
+          {runner?.running && !runInList ? <View style={styles.live}><GlyphSpinner /><Text style={{ color: p.accent, fontSize: font.sm }}>进行中</Text></View> : null}
+          {showPending && !tabletop && pending.length > 0 ? (
             <View style={styles.pending}>
               {pending.map((question) => (
                 <QuestionCard
@@ -399,20 +446,20 @@ export function SessionScreen({
                 />
               ))}
             </View>
-          ) : null
-        }
+          ) : null}
+        </>}
         renderItem={({ item }) => {
           if (item.kind === 'process') {
             const expanded = expandedTools.includes(item.key)
             const live = item.key === liveKey
-            const parts = [item.thinking ? `${item.thinking} 段思考` : '', item.actions ? `${item.actions} 次操作` : ''].filter(Boolean).join(' · ')
+            const parts = [item.actions ? `${item.actions} 次操作` : '', item.thinking ? `${item.thinking} 段思考` : '', spanText(item.ms)].filter(Boolean).join(' · ')
             const shown = expanded ? item.steps : live ? item.steps.slice(-LIVE_STEPS) : []
             return <View style={styles.process}>
               <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`过程，${parts}${item.failed ? `，${item.failed} 项失败` : ''}，${expanded ? '收起' : '展开'}`} onPress={() => toggleExpanded(item.key)} style={styles.processHead}>
-                {live ? <GlyphSpinner /> : null}
-                <Text style={{ color: p.fgMute, fontSize: font.sm }}>{parts}</Text>
+                <View style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}><Icon name="chevron-right" size={14} color={p.fgMute} /></View>
+                <Text style={{ color: p.fgDim, fontSize: font.sm }}>{parts}</Text>
                 {item.failed ? <Text style={{ color: p.err, fontSize: font.sm }}>· {item.failed} 项失败</Text> : null}
-                <View style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></View>
+                {live ? <GlyphSpinner /> : null}
               </Pressable>
               {shown.length ? <View style={[styles.steps, { borderLeftColor: p.borderSoft }]}>
                 {live && !expanded && item.steps.length > LIVE_STEPS ? <Meta>前面还有 {item.steps.length - LIVE_STEPS} 步</Meta> : null}
@@ -428,8 +475,9 @@ export function SessionScreen({
                   const tool = step.tool
                   return <View key={step.key}>
                     <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${tool.name} ${tool.summary}`} disabled={!tool.output} onPress={() => toggleExpanded(step.key)} style={[styles.toolRow, tool.nested ? { paddingLeft: space[4] } : null]}>
-                      {tool.running || (live && tool.awaiting && !tool.failed && !tool.denied) ? <GlyphSpinner /> :<Text style={[styles.toolMark, { color: tool.failed ? p.err : p.fgMute }]}>{tool.failed ? '✕' : tool.denied ? '–' : '✓'}</Text>}
+                      <Icon name={toolIcon(tool.name)} size={14} color={tool.failed ? p.err : p.fgMute} />
                       <Text numberOfLines={open ? undefined : 1} style={{ flex: 1, minWidth: 0, color: tool.failed ? p.err : p.fgDim, fontSize: font.sm }}>{tool.name}{tool.summary ? <Text style={{ color: p.fgMute, fontFamily: mono, fontSize: font.xs }}>  {tool.summary}</Text> : null}</Text>
+                      {tool.running || (live && tool.awaiting && !tool.failed && !tool.denied) ? <GlyphSpinner /> : <Text style={[styles.toolMark, { color: tool.failed ? p.err : p.fgMute }]}>{tool.failed ? '✕' : tool.denied ? '–' : '✓'}</Text>}
                     </Pressable>
                     {open ? <Text selectable style={[styles.output, { color: p.fgDim, backgroundColor: p.sunken }]}>{tool.output.length > 4000 ? `…${tool.output.slice(-4000)}` : tool.output}</Text> : null}
                   </View>
@@ -461,27 +509,36 @@ export function SessionScreen({
                   accessibilityRole="button"
                   disabled={artifact.unavailable}
                   onPress={() => onOpenArtifact(artifact)}
-                  style={[styles.artifact, { borderColor: p.border, opacity: artifact.unavailable ? 0.5 : 1 }]}
+                  style={[styles.artifact, { opacity: artifact.unavailable ? 0.5 : 1 }]}
                 >
-                  <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.sm }}>{artifact.version && artifact.version > 1 ? `${artifact.filename} · v${artifact.version}` : artifact.filename}</Text>
+                  <Icon name="file" size={icon.sm} color={p.fgDim} />
+                  <Text numberOfLines={1} style={{ flexShrink: 1, color: p.accent, fontSize: font.base }}>{artifact.version && artifact.version > 1 ? `${artifact.filename} · v${artifact.version}` : artifact.filename}</Text>
                   <Meta>{artifact.unavailable ? '文件已不可用' : `${Math.max(1, Math.round(artifact.bytes / 1024))} KB`}</Meta>
                 </Pressable>
               ))}
+              {!mine && message.timestamp && (message.text?.trim() || message.artifacts?.length) ? <Text style={[styles.metaLine, { color: p.fgMute }]}>{[clock(message.timestamp), modelName].filter(Boolean).join(' · ')}</Text> : null}
               </View>
             </View>
           )
         }}
       />
+      {banner ? <View style={StyleSheet.absoluteFill}>{banner}</View> : null}
+      </View>
       </View>
       {tabletop ? <View style={{ height: tabletop.gap }} /> : null}
       <View style={tabletop ? { flex: 1, justifyContent: 'flex-end' } : undefined}>
-      <View style={[styles.composer, { backgroundColor: p.bg0 }]}>
+      {tabletop && showPending && pending.length ? <ScrollView style={styles.deckQuestions} contentContainerStyle={{ gap: space[2], paddingHorizontal: space[3] }}>{pending.map((question) => <QuestionCard compact key={question.id} question={question} onAnswer={(answer, key) => client.answer(question.id, answer, key).finally(() => refresh())} />)}</ScrollView> : null}
+      <View style={[styles.composer, { backgroundColor: p.bg0, paddingBottom: Math.max(space[2], bottomInset) }]}>
         {awayFromBottom && unread.has(sessionId) ? <Pressable accessibilityRole="button" onPress={() => { followBottom.current = true; snapBottom(true); readLatest() }} style={{ alignSelf: 'center', minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space[4] }}><Text style={{ color: p.accent, fontSize: font.sm }}>新回复 ↓</Text></Pressable> : null}
         {photos.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{photos.map((photo, index) => <View key={photo.id} style={{ width: 72, height: 72 }}><Image accessibilityLabel={`待发送图片 ${index + 1}`} source={{ uri: `data:${photo.mimeType};base64,${photo.data}` }} style={{ width: 72, height: 72, borderRadius: radius.md }} /><Pressable disabled={sending} accessibilityLabel={`移除图片 ${index + 1}`} accessibilityRole="button" onPress={() => onPhotosChange(photos.filter((entry) => entry.id !== photo.id))} style={{ position: 'absolute', top: -4, right: -4, width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'flex-start', padding: 3 }}><View style={{ backgroundColor: p.bg1, borderRadius: 12, padding: 3 }}><Icon name="close" size={icon.sm} color={p.fg} /></View></Pressable></View>)}</View> : null}
-        {runner?.waiting || pending.length ? <ActivityLine state="wait" text={STATUS_TEXT.wait} /> : runner?.running && !runInList ? <ActivityLine state="run" text={STATUS_TEXT.run} /> : stream !== 'open' ? <ActivityLine state="offline" text={STATUS_TEXT[stream]} /> : null}
-        {subagents.length ? <SubagentCard runs={subagents} /> : null}
-        {plan ? <PlanCard todos={plan.todos} stale={plan.stale} running={!!runner?.running} /> : null}
-        <View style={[styles.inputFrame, { backgroundColor: p.surface, borderColor: p.border }]}>
+        {tabletop && pending.length ? null : runner?.waiting || pending.length ? <ActivityLine state="wait" text={STATUS_TEXT.wait} /> : stream !== 'open' ? <ActivityLine state="offline" text={STATUS_TEXT[stream]} /> : null}
+        {(todosLeft || subagents.length) && !(tabletop && pending.length) ? <Pressable accessibilityRole="button" accessibilityLabel="查看计划与子代理" disabled={!onOpenDetail} onPress={onOpenDetail} style={[styles.strip, { backgroundColor: p.bg3 }]}>
+          {plan?.todos.length ? <Text style={{ color: p.fgDim, fontSize: font.sm }}>计划 <Text style={{ color: p.fg, fontFamily: mono }}>{plan.todos.length - todosLeft}/{plan.todos.length}</Text></Text> : null}
+          {subagents.length ? <View style={styles.stripItem}>{liveSubagents ? <GlyphSpinner /> : null}<Text style={{ color: p.fgDim, fontSize: font.sm }}>子代理 <Text style={{ color: p.fg, fontFamily: mono }}>{subagents.length}</Text></Text></View> : null}
+          <View style={styles.flex} />
+          {onOpenDetail ? <Icon name="chevron-right" size={icon.sm} color={p.fgMute} /> : null}
+        </Pressable> : null}
+        <View style={[styles.inputFrame, { backgroundColor: p.surface, borderColor: p.borderSoft }]}>
         <TextInput
           disableFullscreenUI
           style={[styles.input, { color: p.fg }]}
@@ -497,14 +554,12 @@ export function SessionScreen({
           <IconButton name="plus" label="添加图片" busy={picking} disabled={!capabilityAllowed(info, 'send-images') || sending || photos.length >= 4 || voicePhase !== 'idle'} onPress={() => void addPhotos()} />
           <SpeechInputButton onText={(text) => onDraftChange(draft.trim() ? `${draft.trimEnd()} ${text}` : text)} onError={setVoiceError} onStateChange={setVoicePhase} disabled={sending} transcribe={capabilityAllowed(info, 'voice-transcribe') ? (wav) => client.transcribe(wav) : undefined} />
           {voicePhase !== 'idle' ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.flex, { color: p.accent, fontSize: font.xs }]}>{voicePhase === 'listening' ? '正在听…' : voicePhase === 'processing' ? '转写中…' : '准备中…'}</Text> : <>
-            <View accessibilityLabel={`工作目录 ${cwdName}`} style={styles.chip}><Icon name="folder" size={icon.sm} color={p.fgMute} /><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fgDim, fontSize: font.sm }}>{cwdName}</Text></View>
             <View style={styles.flex} />
-            <Pressable accessibilityRole="button" accessibilityLabel={`选择模型，当前 ${model?.name || model?.id || '电脑模型'}`} disabled={sending} onPress={() => { if (info?.capabilities.includes('models')) setModelPicker(true); else Alert.alert('请更新电脑端', '新版电脑端支持模型选择。') }} style={[styles.chip, { minHeight: touch.min }]}><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fgDim, fontSize: font.sm }}>{model?.name || model?.id || sessions.find((session) => session.id === sessionId)?.model || '模型'}</Text><View style={{ transform: [{ rotate: '90deg' }] }}><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></View></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={`选择模型，当前 ${modelName || '电脑模型'}`} disabled={sending} onPress={() => { if (info?.capabilities.includes('models')) setModelPicker(true); else Alert.alert('请更新电脑端', '新版电脑端支持模型选择。') }} style={[styles.chip, { minHeight: touch.min }]}><Text numberOfLines={1} style={{ flexShrink: 1, color: p.fg, fontSize: font.sm, fontWeight: weight.strong }}>{modelName || '模型'}</Text></Pressable>
           </>}
-          {runner?.running ? (
-            <IconButton name="stop" label="停止当前运行" busy={aborting} disabled={!capabilityAllowed(info, 'abort')} onPress={() => void abort(runner.runId)} />
-          ) : null}
-          <IconButton name="send" label="发送消息" primary busy={sending} disabled={!capabilityAllowed(info, 'send') || (!draft.trim() && !photos.length) || stream !== 'open' || voicePhase !== 'idle' || picking} onPress={() => void send()} />
+          {runner?.running && !draft.trim() && !photos.length ? (
+            <IconButton name="stop" label="停止当前运行" danger busy={aborting} disabled={!capabilityAllowed(info, 'abort')} onPress={() => void abort(runner.runId)} />
+          ) : <IconButton name="send" label="发送消息" primary busy={sending} disabled={!capabilityAllowed(info, 'send') || (!draft.trim() && !photos.length) || stream !== 'open' || voicePhase !== 'idle' || picking} onPress={() => void send()} />}
         </View>
         </View>
         {voiceError ? <Text accessibilityLiveRegion="polite" style={[styles.voiceError, { color: p.err }]}>{voiceError}</Text> : null}
@@ -517,23 +572,28 @@ export function SessionScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  list: { paddingHorizontal: space[4], paddingTop: space[4], paddingBottom: space[5], gap: space[4] },
+  list: { paddingHorizontal: space[4], paddingTop: space[3], paddingBottom: space[5], gap: space[4] },
   error: { fontSize: font.sm, paddingHorizontal: space[4], paddingVertical: space[2], borderLeftWidth: 2 },
   loading: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[4] },
   message: { flexDirection: 'row', gap: space[2], maxWidth: '100%' },
-  bubble: { alignSelf: 'flex-end', maxWidth: '86%', flexDirection: 'row', borderRadius: radius.bubble, paddingHorizontal: space[3], paddingVertical: space[2] },
+  bubble: { alignSelf: 'flex-end', maxWidth: '86%', flexDirection: 'row', borderRadius: radius.bubble, paddingHorizontal: space[3], paddingVertical: space[2] - 1 },
+  metaLine: { fontSize: font.xs, fontFamily: mono, marginTop: space[1] },
+  live: { flexDirection: 'row', alignItems: 'center', gap: space[1], marginTop: space[3] },
+  strip: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[3], borderRadius: radius.lg },
+  stripItem: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  deckQuestions: { flex: 1, marginTop: space[2] },
   messageMain: { flexShrink: 1, minWidth: 0, gap: space[1], alignItems: 'flex-start' },
   meta: { fontSize: font.xs },
   process: { alignSelf: 'stretch' },
-  processHead: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: space[1], alignSelf: 'flex-start' },
+  processHead: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[1], alignSelf: 'flex-start' },
   steps: { borderLeftWidth: 1, marginLeft: space[1], paddingLeft: space[3], gap: space[1], paddingVertical: space[1] },
-  toolRow: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  toolRow: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: space[2] },
   toolMark: { width: 14, textAlign: 'center', fontSize: font.xs },
   output: { fontFamily: mono, fontSize: font.xs, lineHeight: 17, borderRadius: radius.md, padding: space[2], marginVertical: space[1] },
-  artifact: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2], gap: 2, maxWidth: '92%' },
+  artifact: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space[2], maxWidth: '100%' },
   pending: { marginTop: space[4] },
   composer: { paddingHorizontal: space[3], paddingTop: space[2], paddingBottom: space[3], gap: space[2] },
-  inputFrame: { minWidth: 0, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.xl, paddingHorizontal: space[1], paddingTop: space[1] },
+  inputFrame: { minWidth: 0, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.composer, paddingHorizontal: space[1], paddingTop: space[1] },
   input: { minWidth: 0, minHeight: touch.min, maxHeight: 160, paddingHorizontal: space[3], paddingTop: space[3], paddingBottom: space[1], fontSize: font.body, textAlignVertical: 'top' },
   composerActions: { flexDirection: 'row', alignItems: 'center' },
   chip: { flexShrink: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: space[1] },

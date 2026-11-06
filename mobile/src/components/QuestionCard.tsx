@@ -11,7 +11,7 @@ import { Button, Input, STATUS_TEXT } from '../ui'
 
 type ApprovalInfo = { kind?: string; tool?: string; detail?: string; reasons?: string[]; cwd?: string }
 
-function approvalInfo(question: RemotePendingQuestion): ApprovalInfo | null {
+export function approvalInfo(question: RemotePendingQuestion): ApprovalInfo | null {
   if (!question.id.startsWith('approval:')) return null
   try {
     const parsed = JSON.parse(question.message) as ApprovalInfo
@@ -24,11 +24,13 @@ function approvalInfo(question: RemotePendingQuestion): ApprovalInfo | null {
 export function QuestionCard({
   question,
   sessionTitle,
-  onAnswer
+  onAnswer,
+  compact = false
 }: {
   question: RemotePendingQuestion
   sessionTitle?: string
   onAnswer: (answer: RemoteAnswer, key: string) => Promise<unknown>
+  compact?: boolean
 }) {
   const p = usePalette()
   const { client, info, refresh } = useRemote()
@@ -66,7 +68,7 @@ export function QuestionCard({
 
   const tone = approval || question.sensitive ? p.warn : p.accent
   return (
-    <View style={[styles.card, { backgroundColor: p.surface, borderColor: risky ? p.warn : p.border }]}>
+    <View style={[styles.card, compact && styles.compact, { backgroundColor: p.surface, borderColor: risky ? p.warn : p.border }]}>
       <View style={styles.head}>
         <Icon name={approval ? 'alert-circle' : 'bell'} size={icon.sm} color={tone} />
         <Text style={{ color: tone, fontSize: font.xs }}>{approval ? '等待批准' : question.sensitive ? '需要在电脑上确认' : STATUS_TEXT.wait}</Text>
@@ -74,7 +76,7 @@ export function QuestionCard({
       </View>
       {question.title ? <Text style={[styles.title, { color: p.fg }]}>{question.title}</Text> : null}
 
-      {approval ? <>
+      {approval && compact ? (approval.detail ? <Text numberOfLines={1} style={{ color: p.fgDim, fontFamily: mono, fontSize: font.xs }}>{approval.detail.split('\n')[0]}</Text> : null) : approval ? <>
         {approval.reasons?.length ? <View style={{ gap: 2 }}>{approval.reasons.map((reason, index) => <Text key={index} style={[styles.message, { color: p.fgDim }]}>· {reason}</Text>)}</View> : null}
         {approval.cwd ? <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.xs }}>目录：{approval.cwd}</Text> : null}
         {approval.detail ? <ScrollView nestedScrollEnabled style={[styles.detail, { backgroundColor: p.sunken }]}><Text selectable style={{ color: p.fgDim, fontFamily: mono, fontSize: font.xs, lineHeight: 17 }}>{approval.detail}</Text></ScrollView> : null}
@@ -131,6 +133,7 @@ export function QuestionCard({
 
 const styles = StyleSheet.create({
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, padding: space[3], gap: space[2], marginBottom: space[3] },
+  compact: { marginBottom: 0 },
   head: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   session: { flex: 1, textAlign: 'right', fontSize: font.xs },
   title: { fontSize: font.body, fontWeight: weight.medium },

@@ -8,6 +8,7 @@ import { font, icon, mono, radius, space, touch, usePalette, weight } from '../t
 import { Button, Input } from '../ui'
 import { Icon, BrandMark } from '../icons'
 import { deviceInfo } from '../device'
+import { useBottomInset } from '../insets'
 
 const TAILSCALE_URL = 'https://tailscale.com/download/android'
 const GUIDE_URL = 'https://github.com/Yu-DaTouX/Inkstone'
@@ -22,6 +23,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
   onCancel?: () => void
 }) {
   const p = usePalette()
+  const bottomInset = useBottomInset()
   const [address, setAddress] = useState('')
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
@@ -116,7 +118,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
 
   return (
     <KeyboardAvoidingView style={[styles.root, { backgroundColor: p.bg0 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: space[6] + bottomInset }]} keyboardShouldPersistTaps="handled">
         <View style={styles.topline}>
           <BrandMark size={40} />
           <Text style={[styles.kicker, { color: p.fgMute }]}>INKSTONE / PHONE</Text>

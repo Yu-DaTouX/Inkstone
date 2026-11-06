@@ -198,3 +198,5 @@ export const v3Dark = {
 } as const
 
 export const v3Radius = {"2xs":2,"xs":4,"sm":6,"md":8,"lg":10,"bubble":12,"side":12,"xl":14,"2xl":16,"full":999} as const
+
+export const v3Data = {"light":["#2A78D6","#0F9D9A","#8257E5","#D14D8B","#6F8F1F","#EB6834","#B5651D","#5B6577"],"dark":["#3987E5","#3FC9C4","#AE90FF","#F07AB0","#A6C94A","#F07A48","#E39A57","#98A2B3"]} as const

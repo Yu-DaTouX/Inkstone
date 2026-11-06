@@ -1,7 +1,9 @@
 import { useColorScheme } from 'react-native'
 import type { Palette } from './theme'
+import { v3PaletteDark, v3PaletteLight } from './theme-v3'
 
 const light: Palette = {
+  ...v3PaletteLight,
   bg0: '#F7F5EF',
   bg1: '#F2EFE7',
   bg2: '#FFFFFF',
@@ -28,6 +30,7 @@ const light: Palette = {
 }
 
 const dark: Palette = {
+  ...v3PaletteDark,
   bg0: '#181A1D',
   bg1: '#1E2125',
   bg2: '#22252A',
