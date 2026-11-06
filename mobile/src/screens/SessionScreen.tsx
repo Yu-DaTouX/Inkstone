@@ -17,10 +17,11 @@ import { mergeRecentHistory } from '../historyCache'
 import { useBottomInset } from '../insets'
 import { pickImages, type PhotoDraft } from '../device'
 import { ModelPicker } from '../components/ModelPicker'
-import type { RemoteModel } from '../../../src/shared/remote-protocol'
+import type { RemoteModel, RemoteSessionChanges, RemoteSessionStats } from '../../../src/shared/remote-protocol'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 
 const REFRESH_WINDOW = 24
+const INSIGHT_REFRESH_MS = 15_000
 const NO_EXPANDED: readonly string[] = []
 
 export function SessionScreen({
@@ -39,6 +40,7 @@ export function SessionScreen({
   onOpenDetail,
   detailOpen,
   onDetail,
+  detailVisible,
   banner
 }: {
   sessionId: string
@@ -56,11 +58,12 @@ export function SessionScreen({
   onOpenDetail?: () => void
   detailOpen?: boolean
   onDetail?: (detail: SessionDetail) => void
+  detailVisible?: boolean
   banner?: ReactNode
 }) {
   const p = usePalette()
   const bottomInset = useBottomInset()
-  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, info, marksReady, markRead, unread } = useRemote()
+  const { client, questions, runners, sessions, projects, stream, onSessionEvent, refresh, info, marksReady, markRead, unread, latestStats } = useRemote()
   const cached = useRef(client.historyCache.get(sessionId)).current
   const [messages, setMessages] = useState<HistoryMessage[]>(cached?.messages.filter((m) => SHOWN_ROLES.has(m.role)) ?? [])
   const [loading, setLoading] = useState(!cached)
@@ -79,6 +82,11 @@ export function SessionScreen({
   const [plan, setPlan] = useState<HistoryPage['plan']>(cached?.plan)
   const [subagents, setSubagents] = useState<SubagentInfo[]>([])
   const subagentsAllowed = capabilityAllowed(info, 'subagents')
+  const insightAllowed = capabilityAllowed(info, 'insight')
+  const [stats, setStats] = useState<RemoteSessionStats | undefined>(() => latestStats(sessionId))
+  const [changes, setChanges] = useState<RemoteSessionChanges | null>(null)
+  const insightAt = useRef(0)
+  const detailSeen = useRef(false)
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
@@ -125,8 +133,8 @@ export function SessionScreen({
     return [...byName.values()]
   }, [messages])
   useEffect(() => {
-    onDetail?.({ sessionId, plan, subagents, artifacts, running: !!runner?.running, model: modelName })
-  }, [onDetail, sessionId, plan, subagents, artifacts, runner?.running, modelName])
+    onDetail?.({ sessionId, plan, subagents, artifacts, running: !!runner?.running, model: modelName, stats, changes })
+  }, [onDetail, sessionId, plan, subagents, artifacts, runner?.running, modelName, stats, changes])
   const todosLeft = plan?.todos.filter((todo) => !(todo.done || todo.status === 'done')).length ?? 0
   const liveSubagents = subagents.filter((run) => run.status === 'starting' || run.status === 'running').length
   const readLatest = useCallback(() => {
@@ -222,16 +230,51 @@ export function SessionScreen({
     } catch { }
   }, [client, sessionId, subagentsAllowed])
 
+  const loadInsight = useCallback(async (): Promise<void> => {
+    if (!insightAllowed) return
+    insightAt.current = Date.now()
+    try {
+      const next = await client.insight(sessionId)
+      if (!alive.current) return
+      setStats((current) => next.stats ?? current)
+      setChanges((current) => (JSON.stringify(current) === JSON.stringify(next.changes) ? current : next.changes))
+    } catch { }
+  }, [client, insightAllowed, sessionId])
+
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    const running = !!runner?.running
+    if (wasRunning.current && !running) void loadInsight()
+    wasRunning.current = running
+  }, [loadInsight, runner?.running])
+
+  useEffect(() => { void loadInsight() }, [loadInsight])
+
+  useEffect(() => {
+    if (detailVisible && !detailSeen.current && Date.now() - insightAt.current > 4000) void loadInsight()
+    detailSeen.current = !!detailVisible
+  }, [detailVisible, loadInsight])
+
+  const detailVisibleRef = useRef(detailVisible)
+  detailVisibleRef.current = detailVisible
+
   useEffect(() => {
     alive.current = true
     followBottom.current = true
     void load()
     const unsubscribe = onSessionEvent(sessionId, (kinds) => {
-      if (kinds.has('messages')) void load()
+      if (kinds.has('messages')) {
+        void load()
+        if (detailVisibleRef.current && Date.now() - insightAt.current > INSIGHT_REFRESH_MS) void loadInsight()
+      }
       if (kinds.has('subagents')) void loadSubagents()
+      if (kinds.has('stats')) {
+        const live = latestStats(sessionId)
+        if (live) setStats(live)
+      }
     })
     return () => { alive.current = false; unsubscribe() }
-  }, [load, loadSubagents, onSessionEvent, sessionId])
+  }, [latestStats, load, loadInsight, loadSubagents, onSessionEvent, sessionId])
 
   useEffect(() => { void loadSubagents() }, [loadSubagents])
 

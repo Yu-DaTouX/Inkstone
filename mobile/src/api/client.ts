@@ -6,7 +6,7 @@ import type {
   RemotePendingQuestion,
   RemoteResyncEvent
 } from '../../../src/shared/remote-protocol'
-import type { RemoteImageInput, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
+import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
 import { bytesToUtf8, newClientKey, RelayError, RelayTunnel, toB64, type RelayConfig, type RelayPairing } from './relay'
 
@@ -251,6 +251,10 @@ export class RemoteClient {
 
   async subagents(sessionId: string): Promise<SubagentInfo[]> {
     return (await this.get<{ data: { runs: SubagentInfo[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents`)).data.runs
+  }
+
+  async insight(sessionId: string): Promise<RemoteInsight> {
+    return (await this.get<{ data: RemoteInsight }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/insight`)).data
   }
 
   async questions(): Promise<RemotePendingQuestion[]> {

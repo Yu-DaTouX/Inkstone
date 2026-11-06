@@ -3,7 +3,7 @@ import { build } from 'esbuild'
 
 const built = await build({
   stdin: {
-    contents: `export * from './src/timeline'; export * from './src/messageBlocks'`,
+    contents: `export * from './src/timeline'; export * from './src/messageBlocks'; export * from './src/format'`,
     resolveDir: 'mobile',
     loader: 'ts'
   },
@@ -64,6 +64,19 @@ const A = M.parseMessageBlocks('# 标题\n\n- 一\n\n```ts\nx\n```', false)
 assert.deepEqual(A.map((block) => block.kind), ['heading', 'text', 'list', 'text', 'code'])
 const folded = M.parseMessageBlocks('a'.repeat(9000), true)
 assert.ok(folded.at(-1).value.endsWith('…') || folded.at(-1).value.length < 9000, '折叠只解析前 8000 字')
+
+assert.equal(M.compactCount(999), '999')
+assert.equal(M.compactCount(1234), '1.2k')
+assert.equal(M.compactCount(45_600), '46k')
+assert.equal(M.compactCount(2_400_000), '2.4M')
+assert.equal(M.costText(0), '')
+assert.equal(M.costText(0.004), '<$0.01')
+assert.equal(M.costText(1.234), '$1.23')
+assert.equal(M.costText(42.5), '$42.5')
+assert.equal(M.contextRatio(undefined), null)
+assert.equal(M.contextRatio({ percent: 50, tokens: null, window: 100 }), 0.5)
+assert.equal(M.contextRatio({ percent: null, tokens: 30, window: 100 }), 0.3)
+assert.equal(M.contextRatio({ percent: 180, tokens: null, window: 100 }), 1)
 
 const bench = (label, run, rounds = 200) => {
   run()
