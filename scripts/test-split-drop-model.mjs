@@ -237,4 +237,4 @@ console.log('持久化')
 }
 
 console.log(`\n${fail === 0 ? '全部通过' : '有失败'}：${pass} 通过 / ${fail} 失败`)
-if (fail > 0 || pass === 0) process.exit(1)
+if (fail > 0 || pass === 0) throw new Error("分屏落点检查未通过")

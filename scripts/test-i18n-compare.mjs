@@ -53,6 +53,6 @@ for (const path of files) {
 if (failures.length) {
   console.error('按界面文案做判断（pick 的中文原文出现在比较的另一端），请改用错误码或常量：')
   console.error([...new Set(failures)].join('\n'))
-  process.exit(1)
+  throw new Error("i18n 检查未通过")
 }
 console.log(`pick 比较检查：${zhLiterals.size} 条双语文案，没有被拿来做比较`)

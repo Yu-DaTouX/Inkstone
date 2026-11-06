@@ -75,6 +75,6 @@ if (update) {
 if (failures.length) {
   console.error(failures.slice(0, 40).join('\n'))
   if (failures.length > 40) console.error(`…另有 ${failures.length - 40} 项`)
-  process.exit(1)
+  throw new Error("i18n 检查未通过")
 }
 console.log(`i18n 一致性：${Object.keys(zh).length} 个键，两份词表一致；${Object.keys(counts).length} 个文件含中文字面量，均在基线内`)
