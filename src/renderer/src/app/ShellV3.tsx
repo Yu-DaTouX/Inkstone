@@ -1,6 +1,6 @@
 import '../design/index.css'
 import { PANEL_MOTION_DEFAULT, sanitizePanelMotion } from '../../../shared/appearance'
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { FocusScope } from 'react-aria'
 import { flushSync } from 'react-dom'
 import { showToast, Splitter, useScrollbarReveal } from '../ui'
@@ -61,13 +61,11 @@ import { reopenLastClosed } from '../state/right-panel-reopen'
 import { railText } from '../features/workbench/rail-text'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import { createFrameBatch } from './frame-batch'
+import { ArtifactLibraryPage, CollabPage, UsagePage, scheduleIdlePreloads } from './route-pages'
 import './ShellV3.css'
 
 let bootstrapStarted = false
 
-const UsagePage = lazy(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
-const CollabPage = lazy(() => import('../features/collab').then((m) => ({ default: m.CollabPage })))
-const ArtifactLibraryPage = lazy(() => import('../features/artifacts/ArtifactLibraryPage').then((m) => ({ default: m.ArtifactLibraryPage })))
 
 const CHAT_MIN_WIDTH_PX = 420
 const SHEET_BELOW_PX = CHAT_MIN_WIDTH_PX + PANEL_WIDTH_MIN
@@ -246,6 +244,8 @@ export default function ShellV3(): ReactElement {
   }, [applyPush, bootstrap, startConnWatch])
 
   useEffect(() => startRunSync(), [])
+
+  useEffect(() => scheduleIdlePreloads(), [])
 
   useEffect(() => {
     if (!settings) return

@@ -8,6 +8,7 @@ import type { OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview, UIMessage } from '../../../../shared/ipc'
 import { latestArtifactVersions, managedArtifactName, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/LazyCodeEditor'
+import { preloadPdfView } from './LazyPdfView'
 import { Markdown } from '../session/Markdown'
 import { RemoteImageGroupScope, useRemoteImageGroup, useRemoteImageGroupSummary, type RemoteImageGroup } from '../session/RemoteImage'
 import { PaneTitle, PaneTools, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
@@ -146,6 +147,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
     const cwd = owner.cwd
     const name = previewBaseName(activePath)
     let cancelled = false
+    if (activePath.toLowerCase().endsWith('.pdf')) void preloadPdfView()
     const run = async (): Promise<void> => {
       const scoped = await ownerScopedRead<FilePreview>({
         expectedKey,

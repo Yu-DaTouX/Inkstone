@@ -24,8 +24,16 @@ export function SettingsPanelV3({ onShowOnboarding }: SettingsPanelV3Props = {})
   const presence = usePresence(open)
 
   useEffect(() => {
-    const idle = window.requestIdleCallback(() => { void loadSettings().catch(() => undefined) }, { timeout: 2000 })
-    return () => window.cancelIdleCallback(idle)
+    let cancelled = false
+    const idle = window.requestIdleCallback(() => {
+      void loadSettings().then(() => {
+        if (!cancelled) return import('../features/settings/root').then((m) => m.preloadSettingsSections())
+      }).catch(() => undefined)
+    }, { timeout: 2000 })
+    return () => {
+      cancelled = true
+      window.cancelIdleCallback(idle)
+    }
   }, [])
 
   useEffect(() => {
