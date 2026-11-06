@@ -3,7 +3,7 @@ import { PANEL_MOTION_DEFAULT, sanitizePanelMotion } from '../../../shared/appea
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { FocusScope } from 'react-aria'
 import { flushSync } from 'react-dom'
-import { showToast, Splitter, useScrollbarReveal, usePresence } from '../ui'
+import { LiveAnnouncer, showToast, Splitter, useScrollbarReveal, usePresence } from '../ui'
 import { useTranscriptViews } from '../state/transcript-view'
 import { transcriptViewText } from '../features/session/transcript-view-text'
 import { useI18n } from '../i18n'
@@ -33,6 +33,7 @@ import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { SessionSwitcher, useSessionSwitcher } from '../features/commands/SessionSwitcher'
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
+import { useA11yAnnouncements } from './a11y-announcements'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { BrowserSiteAskDialog } from '../features/browser/SiteAskDialog'
 import { SettingsPanelV3 } from './SettingsPanelV3'
@@ -216,6 +217,7 @@ export default function ShellV3(): ReactElement {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutSheetOpen, setShortcutSheetOpen] = useState(false)
   const sessionSwitcher = useSessionSwitcher()
+  useA11yAnnouncements()
   const stepSessionSwitcher = sessionSwitcher.step
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const onboardDecided = useRef(false)
@@ -732,6 +734,7 @@ export default function ShellV3(): ReactElement {
       />
       <ShortcutSheet isOpen={shortcutSheetOpen} onOpenChange={setShortcutSheetOpen} />
       <SessionSwitcher control={sessionSwitcher} />
+      <LiveAnnouncer />
       <SettingsPanelV3 onShowOnboarding={() => setOnboardingOpen(true)} />
       {onboardingOpen ? (
         <OnboardingWizard

@@ -106,9 +106,13 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
               <span className="v3-head-crumb-sep" aria-hidden>/</span>
             </>
           ) : null}
-          <TooltipText tooltip={title} className="v3-head-title__text">
-            {title}
-          </TooltipText>
+          {route === 'chat' && !splitActive ? (
+            <TooltipText tooltip={title} className="v3-head-title__text">
+              {title}
+            </TooltipText>
+          ) : (
+            <span className="v3-head-title__text">{title}</span>
+          )}
         </h1>
       </div>
 
