@@ -4,6 +4,7 @@ import { sessionViewIdentity } from './view-state'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { branchOriginOf } from './turn-lines'
+import { useTurnScope } from './turn-scope'
 
 export function BranchSummary(): JSX.Element | null {
   const tt = useSessionText()
@@ -11,7 +12,8 @@ export function BranchSummary(): JSX.Element | null {
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
-  const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
+  const scope = useTurnScope()
+  const view = scope?.view ?? sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const origin = branchOriginOf(sessions, view)
   if (!origin) return null
   return (

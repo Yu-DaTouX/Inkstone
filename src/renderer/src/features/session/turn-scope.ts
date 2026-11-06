@@ -1,11 +1,13 @@
 import { createContext, useContext } from 'react'
 import { useStore } from '../../state/store'
 import type { SessionState, UIMessage } from '../../../../shared/ipc'
+import type { SessionViewIdentity } from './view-state'
 
 export interface TurnScope {
   messages: readonly UIMessage[]
   session: SessionState | null
   cwd?: string
+  view?: SessionViewIdentity
 }
 
 export const TurnScopeContext = createContext<TurnScope | null>(null)
