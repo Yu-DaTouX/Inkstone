@@ -1,3 +1,4 @@
+import { pick } from './ui-lang'
 import type { QuotaWindow } from './ipc'
 
 export const CURRENCY_SYMBOL: Record<string, string> = {
@@ -36,10 +37,10 @@ export function quotaCompactWindows(windows: QuotaWindow[]): CompactQuotaWindow[
       match?.[1] ??
       (hour.label.includes('五') || hour.id === 'fiveHour' || hour.id === 'primary' ? '5' : undefined)
     const hourLabel = digits ? `${digits}h` : hour.label
-    return [{ window: hour, label: hourLabel }, ...(week ? [{ window: week, label: '周' }] : [])]
+    return [{ window: hour, label: hourLabel }, ...(week ? [{ window: week, label: pick('周', 'W') }] : [])]
   }
   return [
-    ...(week ? [{ window: week, label: '周' }] : []),
-    ...(month ? [{ window: month, label: '月' }] : [])
+    ...(week ? [{ window: week, label: pick('周', 'W') }] : []),
+    ...(month ? [{ window: month, label: pick('月', 'M') }] : [])
   ]
 }

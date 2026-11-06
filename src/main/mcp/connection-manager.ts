@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -35,7 +36,7 @@ const MAX_TOOL_LIST_ITEMS = 2000
 
 export class McpConnectionCancelledError extends Error {
   constructor() {
-    super('MCP 连接已由用户取消')
+    super(pick('MCP 连接已由用户取消', 'MCP connection canceled by the user'))
     this.name = 'McpConnectionCancelledError'
   }
 }
@@ -147,7 +148,7 @@ export class McpConnectionManager {
 
   statusOf(serverId: string): { status: McpServerStatus; error?: string } {
     const conn = this.connections.get(serverId)
-    if (!conn) return { status: 'error', error: `没有登记这个 MCP 服务：${serverId}` }
+    if (!conn) return { status: 'error', error: pick(`没有登记这个 MCP 服务：${serverId}`, `MCP service not registered: ${serverId}`) }
     return { status: conn.status, ...(conn.error ? { error: conn.error } : {}) }
   }
 
@@ -164,7 +165,7 @@ export class McpConnectionManager {
     let timer: NodeJS.Timeout | undefined
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        reject(new Error(`${what} 超时（${timeoutMs}ms）`))
+        reject(new Error(pick(`${what} 超时（${timeoutMs}ms）`, `${what} timed out (${timeoutMs}ms)`)))
         void onTimeout?.().catch(() => undefined)
       }, timeoutMs)
     })
@@ -177,7 +178,7 @@ export class McpConnectionManager {
 
   private makeTransport(config: McpServerConfig) {
     if (config.transport === 'stdio') {
-      if (!config.command) throw new Error(`MCP 服务 ${config.id} 缺少 command`)
+      if (!config.command) throw new Error(pick(`MCP 服务 ${config.id} 缺少 command`, `MCP service ${config.id} is missing command`))
       const allow = [
         'PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE',
         'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'ComSpec', 'PATHEXT'
@@ -194,10 +195,10 @@ export class McpConnectionManager {
       for (const [key, value] of Object.entries(config.env ?? {})) {
         const normalized = key.toUpperCase()
         if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || protectedKeys.has(normalized)) {
-          throw new Error(`MCP 服务 ${config.id} 不能覆盖受保护的环境变量：${key}`)
+          throw new Error(pick(`MCP 服务 ${config.id} 不能覆盖受保护的环境变量：${key}`, `MCP service ${config.id} cannot override the protected environment variable: ${key}`))
         }
         if (typeof value !== 'string') {
-          throw new Error(`MCP 服务 ${config.id} 的环境变量 ${key} 不是字符串`)
+          throw new Error(pick(`MCP 服务 ${config.id} 的环境变量 ${key} 不是字符串`, `Environment variable ${key} of MCP service ${config.id} is not a string`))
         }
         env[key] = value
       }
@@ -208,14 +209,14 @@ export class McpConnectionManager {
         stderr: 'ignore'
       })
     }
-    if (!config.url) throw new Error(`MCP 服务 ${config.id} 缺少 url`)
+    if (!config.url) throw new Error(pick(`MCP 服务 ${config.id} 缺少 url`, `MCP service ${config.id} is missing url`))
     return new StreamableHTTPClientTransport(new URL(config.url))
   }
 
   private require(serverId: string): Connection {
     const conn = this.connections.get(serverId)
-    if (!conn) throw new Error(`没有登记这个 MCP 服务：${serverId}`)
-    if (conn.config.enabled === false) throw new Error(`MCP 服务 ${serverId} 已在配置里禁用`)
+    if (!conn) throw new Error(pick(`没有登记这个 MCP 服务：${serverId}`, `MCP service not registered: ${serverId}`))
+    if (conn.config.enabled === false) throw new Error(pick(`MCP 服务 ${serverId} 已在配置里禁用`, `MCP service ${serverId} is disabled in config`))
     return conn
   }
 
@@ -262,7 +263,7 @@ export class McpConnectionManager {
         }
         await this.withTimeout(
           client.connect(transport),
-          `连接 ${conn.config.id}`,
+          pick(`连接 ${conn.config.id}`, `Connecting ${conn.config.id}`),
           () => this.cancelConnection(conn),
           conn.config.id === WINDOWS_MCP_SERVER_ID ? Math.max(this.timeoutMs, WINDOWS_MCP_CONNECT_TIMEOUT_MS) : this.timeoutMs
         )
@@ -315,7 +316,7 @@ export class McpConnectionManager {
 
   private assertRequestAllowed(options: McpRequestOptions): void {
     if (options.signal?.aborted) {
-      throw new McpRequestCancelledError('MCP 请求在发出前已被取消', options.signal.reason)
+      throw new McpRequestCancelledError(pick('MCP 请求在发出前已被取消', 'MCP request canceled before it was sent'), options.signal.reason)
     }
   }
 
@@ -342,7 +343,7 @@ export class McpConnectionManager {
     let timer: NodeJS.Timeout | undefined
     const timeoutMs = options.timeoutMs ?? this.timeoutMs
     if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-      timer = setTimeout(() => cancelThis(new McpRequestCancelledError(`${what} 超时（${timeoutMs}ms）`)), timeoutMs)
+      timer = setTimeout(() => cancelThis(new McpRequestCancelledError(pick(`${what} 超时（${timeoutMs}ms）`, `${what} timed out (${timeoutMs}ms)`))), timeoutMs)
     }
     const transportErrorBeforeRequest = conn.transportError
     try {
@@ -355,7 +356,7 @@ export class McpConnectionManager {
       if (cancelled) {
         throw cancelReason instanceof McpRequestCancelledError
           ? cancelReason
-          : new McpRequestCancelledError(`${what} 已取消`, error)
+          : new McpRequestCancelledError(pick(`${what} 已取消`, `${what} canceled`), error)
       }
       throw error
     } finally {
@@ -404,8 +405,8 @@ export class McpConnectionManager {
     const seenCursors = new Set<string>()
     let pages = 0
     do {
-      if (++pages > MAX_TOOL_LIST_PAGES) throw new Error(`${serverId} 的工具列表超过 ${MAX_TOOL_LIST_PAGES} 页，已停止读取`)
-      const page = await this.runRequest(conn, client, options, `列出 ${serverId} 的工具`, (signal) =>
+      if (++pages > MAX_TOOL_LIST_PAGES) throw new Error(pick(`${serverId} 的工具列表超过 ${MAX_TOOL_LIST_PAGES} 页，已停止读取`, `The tool list of ${serverId} exceeds ${MAX_TOOL_LIST_PAGES} pages. Stopped reading`))
+      const page = await this.runRequest(conn, client, options, pick(`列出 ${serverId} 的工具`, `Listing tools of ${serverId}`), (signal) =>
         client.listTools(cursor ? { cursor } : undefined, { signal })
       )
       for (const tool of page.tools ?? []) {
@@ -417,9 +418,9 @@ export class McpConnectionManager {
           ...(tool._meta !== undefined ? { meta: tool._meta as Record<string, unknown> } : {})
         })
       }
-      if (tools.length > MAX_TOOL_LIST_ITEMS) throw new Error(`${serverId} 的工具超过 ${MAX_TOOL_LIST_ITEMS} 个，已停止读取`)
+      if (tools.length > MAX_TOOL_LIST_ITEMS) throw new Error(pick(`${serverId} 的工具超过 ${MAX_TOOL_LIST_ITEMS} 个，已停止读取`, `${serverId} has more than ${MAX_TOOL_LIST_ITEMS} tools. Stopped reading`))
       cursor = page.nextCursor
-      if (cursor && seenCursors.has(cursor)) throw new Error(`${serverId} 的工具列表翻页游标重复，已停止读取`)
+      if (cursor && seenCursors.has(cursor)) throw new Error(pick(`${serverId} 的工具列表翻页游标重复，已停止读取`, `The tool list cursor of ${serverId} repeats. Stopped reading`))
       if (cursor) seenCursors.add(cursor)
     } while (cursor)
     return tools
@@ -431,7 +432,7 @@ export class McpConnectionManager {
     await this.connect(conn)
     const client = conn.client
     if (!client) throw new McpConnectionCancelledError()
-    return this.runRequest(conn, client, options, `读取 ${serverId} 的资源 ${uri}`, (signal) =>
+    return this.runRequest(conn, client, options, pick(`读取 ${serverId} 的资源 ${uri}`, `Reading resource ${uri} of ${serverId}`), (signal) =>
       client.readResource({ uri }, { signal })
     )
   }
@@ -467,7 +468,7 @@ export class McpConnectionManager {
     await this.connect(conn)
     const client = conn.client
     if (!client) throw new McpConnectionCancelledError()
-    return this.runRequest(conn, client, options, `调用 ${serverId}/${toolName}`, (signal) =>
+    return this.runRequest(conn, client, options, pick(`调用 ${serverId}/${toolName}`, `Calling ${serverId}/${toolName}`), (signal) =>
       client.callTool({ name: toolName, arguments: args }, undefined, { signal })
     )
   }

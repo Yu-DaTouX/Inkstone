@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import type { SubagentRun } from '../shared/ipc'
 import { supportsOAuthAccounts } from '../shared/oauth-accounts'
 import { buildSubagentQuotaNotice } from '../shared/subagent-notice'
@@ -38,10 +39,10 @@ export function createSubagentQuotaWatch(deps: SubagentQuotaWatchDeps): Subagent
       const accounts = run.quotaWait?.accounts ?? 1
       const name = subagentName(run)
       if (accounts > 1) {
-        deps.notifyUser({ run, title: '子代理撞上额度上限，可以换号', body: `「${name}」用的账号额度用完了。在额度页换一个账号后它会自动继续；不换就等额度恢复。` })
+        deps.notifyUser({ run, title: pick('子代理撞上额度上限，可以换号', 'Subagent hit its quota limit. You can switch accounts'), body: pick(`「${name}」用的账号额度用完了。在额度页换一个账号后它会自动继续；不换就等额度恢复。`, `The account used by "${name}" ran out of quota. Switch accounts on the quota page and it continues automatically, or wait for the quota to reset.`) })
         return
       }
-      deps.notifyUser({ run, title: '子代理在等额度', body: `「${name}」的额度用完了，额度恢复后会自动继续。` })
+      deps.notifyUser({ run, title: pick('子代理在等额度', 'Subagent is waiting for quota'), body: pick(`「${name}」的额度用完了，额度恢复后会自动继续。`, `"${name}" ran out of quota. It continues automatically when the quota resets.`) })
       deps.notifyParent(run, buildSubagentQuotaNotice(run))
     }
   }

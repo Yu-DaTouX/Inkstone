@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import type { Pipe } from './tunnel'
 
 const PING_MS = 25_000
@@ -115,7 +116,7 @@ export class RelayLink {
     ws.addEventListener('message', (ev) => this.onRelayMessage(typeof ev.data === 'string' ? ev.data : String(ev.data)))
     ws.addEventListener('close', (ev) => {
       if (this.ws !== ws) return
-      const detail = ev.code === 4001 ? '另一个程序用同一个房间连上了中继，本机被顶替' : `连接断开（${ev.code ?? '?'}）`
+      const detail = ev.code === 4001 ? pick('另一个程序用同一个房间连上了中继，本机被顶替', 'Another program joined the relay with the same room and replaced this computer') : pick(`连接断开（${ev.code ?? '?'}）`, `Disconnected (${ev.code ?? '?'})`)
       this.opts.onState?.(false, detail)
       this.teardown()
       if (ev.code !== 4001) this.schedule()

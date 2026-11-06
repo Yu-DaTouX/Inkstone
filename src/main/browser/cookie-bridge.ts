@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -200,6 +201,6 @@ export async function createCookieBridge(options: {
   } catch (error) { clearTimeout(timer); throw error }
   server.unref()
   const address = server.address()
-  if (!address || typeof address === 'string') { cancel(); throw new Error('导入桥接启动失败') }
+  if (!address || typeof address === 'string') { cancel(); throw new Error(pick('导入桥接启动失败', 'Failed to start the import bridge')) }
   return { id, url: `http://127.0.0.1:${address.port}/connect#${address.port}.${token}`, expiresAt, status: () => ({ ...status }), cancel }
 }

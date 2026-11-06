@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
@@ -92,52 +93,52 @@ export function piNativeSettingsOf(raw: unknown): PiNativeSettings {
 }
 
 export function validatePiNativePatch(input: unknown): { ok: true; patch: Partial<PiNativeSettings> } | { ok: false; error: string } {
-  if (!isObj(input)) return { ok: false, error: 'pi 设置参数无效' }
+  if (!isObj(input)) return { ok: false, error: pick('pi 设置参数无效', 'Invalid pi settings') }
   const patch: Partial<PiNativeSettings> = {}
   for (const [key, value] of Object.entries(input)) {
     switch (key) {
       case 'retryMaxRetries':
-        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 100) return { ok: false, error: '重试次数无效' }
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 100) return { ok: false, error: pick('重试次数无效', 'Invalid retry count') }
         patch.retryMaxRetries = value
         break
       case 'retryBaseDelayMs':
-        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > MAX_TIMEOUT_MS) return { ok: false, error: '重试等待时间无效' }
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > MAX_TIMEOUT_MS) return { ok: false, error: pick('重试等待时间无效', 'Invalid retry wait time') }
         patch.retryBaseDelayMs = value
         break
       case 'httpIdleTimeoutMs':
-        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > MAX_TIMEOUT_MS) return { ok: false, error: '空闲超时无效' }
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > MAX_TIMEOUT_MS) return { ok: false, error: pick('空闲超时无效', 'Invalid idle timeout') }
         patch.httpIdleTimeoutMs = value
         break
       case 'cacheWarming':
-        if (!CACHE_WARMING.includes(value as PiCacheWarming)) return { ok: false, error: '缓存预热模式无效' }
+        if (!CACHE_WARMING.includes(value as PiCacheWarming)) return { ok: false, error: pick('缓存预热模式无效', 'Invalid cache warming mode') }
         patch.cacheWarming = value as PiCacheWarming
         break
       case 'compactionEnabled':
-        if (typeof value !== 'boolean') return { ok: false, error: '自动压缩设置无效' }
+        if (typeof value !== 'boolean') return { ok: false, error: pick('自动压缩设置无效', 'Invalid auto-compaction setting') }
         patch.compactionEnabled = value
         break
       case 'imagesAutoResize':
       case 'imagesBlockImages':
-        if (typeof value !== 'boolean') return { ok: false, error: '图片设置无效' }
+        if (typeof value !== 'boolean') return { ok: false, error: pick('图片设置无效', 'Invalid image setting') }
         patch[key] = value
         break
       case 'defaultProjectTrust':
-        if (!PROJECT_TRUST.includes(value as PiProjectTrustDefault)) return { ok: false, error: '项目信任默认值无效' }
+        if (!PROJECT_TRUST.includes(value as PiProjectTrustDefault)) return { ok: false, error: pick('项目信任默认值无效', 'Invalid project trust default') }
         patch.defaultProjectTrust = value as PiProjectTrustDefault
         break
       case 'sessionShareDestination':
-        if (!SHARE_DESTINATIONS.includes(value as PiShareDestination)) return { ok: false, error: '分享目的地无效' }
+        if (!SHARE_DESTINATIONS.includes(value as PiShareDestination)) return { ok: false, error: pick('分享目的地无效', 'Invalid share destination') }
         patch.sessionShareDestination = value as PiShareDestination
         break
       case 'modelThinkingLevels': {
-        if (!isObj(value)) return { ok: false, error: '模型思考档位无效' }
+        if (!isObj(value)) return { ok: false, error: pick('模型思考档位无效', 'Invalid model thinking levels') }
         const levels = thinkingLevelsOf(value)
-        if (Object.keys(levels).length !== Object.keys(value).length || Object.keys(levels).length > 500) return { ok: false, error: '模型思考档位无效' }
+        if (Object.keys(levels).length !== Object.keys(value).length || Object.keys(levels).length > 500) return { ok: false, error: pick('模型思考档位无效', 'Invalid model thinking levels') }
         patch.modelThinkingLevels = levels
         break
       }
       default:
-        return { ok: false, error: `不支持的 pi 设置：${key}` }
+        return { ok: false, error: pick(`不支持的 pi 设置：${key}`, `Unsupported pi setting: ${key}`) }
     }
   }
   return { ok: true, patch }
@@ -168,7 +169,7 @@ export function applyPiNativePatch(settings: Json, patch: Partial<PiNativeSettin
 
 export async function readPiNativeSettings(file = settingsFile()): Promise<PiNativeSettingsResult> {
   const settings = await readJson(file)
-  if (!settings) return { ok: false, error: 'pi 的 settings.json 无法解析，未读取', settings: piNativeSettingsOf({}) }
+  if (!settings) return { ok: false, error: pick('pi 的 settings.json 无法解析，未读取', 'pi\'s settings.json cannot be parsed. Not read'), settings: piNativeSettingsOf({}) }
   return { ok: true, settings: piNativeSettingsOf(settings) }
 }
 
@@ -177,7 +178,7 @@ export function writePiNativeSettings(input: unknown, file = settingsFile()): Pr
   if (!checked.ok) return Promise.resolve({ ok: false, error: checked.error })
   return withPiSettingsLock(() =>
     modifyPiSettings<PiNativeSettingsResult>(file, (settings) => {
-      if (!settings) return { result: { ok: false, error: 'pi 的 settings.json 无法解析，未写入' } }
+      if (!settings) return { result: { ok: false, error: pick('pi 的 settings.json 无法解析，未写入', 'pi\'s settings.json cannot be parsed. Not written') } }
       const next = applyPiNativePatch(settings, checked.patch)
       return { next, result: { ok: true, settings: piNativeSettingsOf(next) } }
     })

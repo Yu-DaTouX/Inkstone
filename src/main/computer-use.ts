@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { spawn } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
 import { existsSync } from 'node:fs'
@@ -74,7 +75,7 @@ async function readRawServers(): Promise<{ shape: 'array' | 'object'; list: unkn
   if (raw && typeof raw === 'object' && Array.isArray((raw as { servers?: unknown }).servers)) {
     return { shape: 'object', list: (raw as { servers: unknown[] }).servers, raw }
   }
-  throw new Error(`MCP 配置不是数组或 { servers: [...] }：${file}`)
+  throw new Error(pick(`MCP 配置不是数组或 { servers: [...] }：${file}`, `MCP config is not an array or { servers: [...] }: ${file}`))
 }
 
 async function writeServers(shape: 'array' | 'object', raw: unknown, list: unknown[]): Promise<void> {
@@ -157,10 +158,10 @@ const tail = (log: string): string => log.trim().split('\n').slice(-12).join('\n
 
 export async function installUv(): Promise<ComputerUseResult> {
   const winget = findOnPath('winget')
-  if (!winget) return { ok: false, needsManual: true, error: '没有找到 winget，请按 uv 官方说明安装后回来刷新' }
+  if (!winget) return { ok: false, needsManual: true, error: pick('没有找到 winget，请按 uv 官方说明安装后回来刷新', 'winget not found. Install uv following its official instructions, then refresh') }
   const r = await run(winget, ['install', '--id', 'astral-sh.uv', '--exact', '--silent', '--accept-source-agreements', '--accept-package-agreements'], 5 * 60_000)
   if (findUvx()) return { ok: true, log: tail(r.log) }
-  return { ok: false, error: `winget 没有装好 uv（退出码 ${r.code ?? '?'}）`, log: tail(r.log) }
+  return { ok: false, error: pick(`winget 没有装好 uv（退出码 ${r.code ?? '?'}）`, `winget failed to install uv (exit code ${r.code ?? '?'})`), log: tail(r.log) }
 }
 
 const serverArgs = (): string[] => ['--python', WINDOWS_MCP_PYTHON, WINDOWS_MCP_PACKAGE, 'serve', '--tools', COMPUTER_USE_TOOLS.join(',')]
@@ -178,11 +179,11 @@ function serverEntry(uvx: string): Record<string, unknown> {
 }
 
 export async function enableComputerUse(): Promise<ComputerUseResult> {
-  if (process.platform !== 'win32') return { ok: false, error: '电脑操作目前只支持 Windows' }
+  if (process.platform !== 'win32') return { ok: false, error: pick('电脑操作目前只支持 Windows', 'Computer use only supports Windows for now') }
   const uvx = findUvx()
-  if (!uvx) return { ok: false, error: '还没有安装 uv' }
+  if (!uvx) return { ok: false, error: pick('还没有安装 uv', 'uv is not installed yet') }
   const warm = await run(uvx, ['--python', WINDOWS_MCP_PYTHON, WINDOWS_MCP_PACKAGE, '--help'], 10 * 60_000)
-  if (warm.code !== 0) return { ok: false, error: `下载或启动 windows-mcp 失败（退出码 ${warm.code ?? '?'}）`, log: tail(warm.log) }
+  if (warm.code !== 0) return { ok: false, error: pick(`下载或启动 windows-mcp 失败（退出码 ${warm.code ?? '?'}）`, `Failed to download or start windows-mcp (exit code ${warm.code ?? '?'})`), log: tail(warm.log) }
   try {
     await serializeServerWrite(async () => {
       const { shape, list, raw } = await readRawServers()

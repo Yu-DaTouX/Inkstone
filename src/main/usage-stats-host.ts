@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -57,7 +58,7 @@ async function ensureChild(): Promise<UtilityProcess> {
   })
   spawned.once('exit', () => {
     if (child === spawned) child = null
-    failAll('用量统计进程已退出')
+    failAll(pick('用量统计进程已退出', 'Usage stats process exited'))
   })
   child = spawned
   return spawned
@@ -81,5 +82,5 @@ export function readUsageStatsOffThread(range: UsageRange): Promise<UsageReply> 
 
 export function disposeUsageStatsWorker(): void {
   stopChild()
-  failAll('用量统计进程已退出')
+  failAll(pick('用量统计进程已退出', 'Usage stats process exited'))
 }

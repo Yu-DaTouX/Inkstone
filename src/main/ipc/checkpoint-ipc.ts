@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { reserveWorkspaceMutation } from '../workspace-mutation'
 import { isAbsolute } from 'node:path'
 import { executionBusy } from '../../core/run-state'
@@ -17,15 +18,15 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): voi
   }
   const restore = async (id: unknown): Promise<CheckpointRestoreResult> => {
     const t = target()
-    if (!t || typeof id !== 'string') return { ok: false, error: '没有活动会话', restored: 0 }
+    if (!t || typeof id !== 'string') return { ok: false, error: pick('没有活动会话', 'No active session'), restored: 0 }
     const release = reserveWorkspaceMutation(t.cwd)
-    if (!release) return { ok: false, error: '项目正在回退，请稍后重试', restored: 0 }
+    if (!release) return { ok: false, error: pick('项目正在回退，请稍后重试', 'The project is being rolled back. Try again shortly'), restored: 0 }
     try {
       const registry = host.runners()
       const agent = host.ac()
       const busy = registry?.hasBusyCwd(t.cwd) || registry?.hasExecutionAdmission(t.cwd) ||
         executionBusy(agent?.getState() ?? null, () => agent?.hasRunningBash() ?? false, () => agent?.getPendingUiCount() ?? 0)
-      if (busy) return { ok: false, error: '同一项目的会话仍在运行，请先停止再回退代码', restored: 0 }
+      if (busy) return { ok: false, error: pick('同一项目的会话仍在运行，请先停止再回退代码', 'A session in this project is still running. Stop it before rolling back code'), restored: 0 }
       return await restoreCheckpoint(t.cwd, id, t.key)
     } finally { release() }
   }
@@ -35,7 +36,7 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): voi
   })
   handle('yan:checkpoints:preview', async (recordId: unknown): Promise<CheckpointPreview> => {
     const t = target()
-    if (!t || typeof recordId !== 'string') return { ok: false, error: '没有活动会话', changes: [], total: 0 }
+    if (!t || typeof recordId !== 'string') return { ok: false, error: pick('没有活动会话', 'No active session'), changes: [], total: 0 }
     return previewCheckpoint(t.cwd, recordId)
   })
   handle('yan:checkpoints:restore', async (recordId: unknown): Promise<CheckpointRestoreResult> => {

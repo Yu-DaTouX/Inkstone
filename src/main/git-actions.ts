@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { isAbsolute, resolve } from 'node:path'
 import { stat } from 'node:fs/promises'
 import type { GitRepoState } from '../shared/git'
@@ -83,7 +84,7 @@ async function prepare(cwd: string): Promise<PrepareResult> {
   if (!repo) {
     return {
       ok: false,
-      failure: { code: "not-a-repo", message: "这个目录不是 Git 仓库", retrySafe: true }
+      failure: { code: "not-a-repo", message: pick("这个目录不是 Git 仓库", "This folder is not a Git repository"), retrySafe: true }
     }
   }
   return { ok: true, repo }
@@ -142,7 +143,7 @@ function normalizePaths(paths: unknown): { paths: string[]; rejected: string[] }
     if (!safe) rejected.push(String(raw ?? ''))
     else out.push(safe)
   }
-  if (list.length > MAX_ACTION_PATHS) rejected.push(`（超过 ${MAX_ACTION_PATHS} 个的上限）`)
+  if (list.length > MAX_ACTION_PATHS) rejected.push(pick(`（超过 ${MAX_ACTION_PATHS} 个的上限）`, `(over the limit of ${MAX_ACTION_PATHS})`))
   return { paths: out, rejected }
 }
 
@@ -159,7 +160,7 @@ async function stageOrUnstage(
       ok: false,
       failure: {
         code: 'path-rejected',
-        message: rejected.length ? '路径不合法或不在仓库内' : '没有选中文件',
+        message: rejected.length ? pick('路径不合法或不在仓库内', 'Invalid path or outside the repository') : pick('没有选中文件', 'No files selected'),
         ...(rejected.length ? { detail: rejected.join('\n') } : {}),
         retrySafe: true
       }
@@ -175,7 +176,7 @@ async function stageOrUnstage(
     const res = await runWrite(repo.root, args, { timeout: 30_000 })
     if (!res.ok) return { ok: false, failure: res.failure, headBefore, headAfter: headBefore }
 
-    const verb = request.kind === 'stage' ? '已暂存' : '已取消暂存'
+    const verb = request.kind === 'stage' ? pick('已暂存', 'Staged') : pick('已取消暂存', 'Unstaged')
     return finish(repo, headBefore, summarizeFiles(verb, paths), {}, false)
   })
 }
@@ -196,7 +197,7 @@ async function stageOrUnstageAll(
     const res = await runWrite(repo.root, args, { timeout: 60_000 })
     if (!res.ok) return { ok: false, failure: res.failure, headBefore, headAfter: headBefore }
 
-    return finish(repo, headBefore, request.kind === 'stage-all' ? '已暂存全部变更' : '已取消暂存全部变更', {}, false)
+    return finish(repo, headBefore, request.kind === 'stage-all' ? pick('已暂存全部变更', 'Staged all changes') : pick('已取消暂存全部变更', 'Unstaged all changes'), {}, false)
   })
 }
 
@@ -245,8 +246,8 @@ async function commitChanges(request: Extract<GitActionRequest, { kind: 'commit'
           failure: committed
             ? {
                 code: 'timeout',
-                message: '操作超时，但提交**已经完成**',
-                hint: '不需要再提交一次；刷新看历史即可',
+                message: pick('操作超时，但提交**已经完成**', 'Timed out, but the commit **was completed**'),
+                hint: pick('不需要再提交一次；刷新看历史即可', 'No need to commit again. Refresh to see history'),
                 retrySafe: false
               }
             : res.failure,
@@ -270,7 +271,7 @@ async function commitChanges(request: Extract<GitActionRequest, { kind: 'commit'
     const fromStdout = /\[[^\]]*?([0-9a-f]{7,40})\]/.exec(res.stdout)?.[1] ?? null
     return {
       ok: true,
-      summary: '已提交',
+      summary: pick('已提交', 'Committed'),
       headBefore: before.head,
       headAfter: head,
       committed: true,
@@ -289,9 +290,9 @@ function runningFailure(kind: 'switch' | 'create'): GitFailure {
     code: 'busy',
     message:
       kind === 'switch'
-        ? '这个目录有正在运行的任务，暂时不能切换分支'
-        : '这个目录有正在运行的任务，暂时不能新建并切换分支',
-    hint: '等它跑完（或先停止该会话）再切 —— 中途换掉工作区文件会让正在跑的任务读到混乱的代码',
+        ? pick('这个目录有正在运行的任务，暂时不能切换分支', 'A task is running in this folder. Cannot switch branch now')
+        : pick('这个目录有正在运行的任务，暂时不能新建并切换分支', 'A task is running in this folder. Cannot create and switch branch now'),
+    hint: pick('等它跑完（或先停止该会话）再切 —— 中途换掉工作区文件会让正在跑的任务读到混乱的代码', 'Wait for it to finish (or stop the session) first. Swapping files mid-run corrupts what the task reads'),
     retrySafe: true
   }
 }
@@ -301,7 +302,7 @@ async function switchDirtyFailure(root: string, branch: string): Promise<GitFail
   if (!status) {
     return {
       code: 'unknown',
-      message: '读不到仓库状态（Git 无响应或被锁），暂时不能切换分支',
+      message: pick('读不到仓库状态（Git 无响应或被锁），暂时不能切换分支', 'Cannot read repository state (Git unresponsive or locked). Cannot switch branch now'),
       retrySafe: true
     }
   }
@@ -328,12 +329,12 @@ async function switchDirtyFailure(root: string, branch: string): Promise<GitFail
     code: 'dirty-blocks-switch',
     message:
       check.reason === 'unmerged'
-        ? '还有未解决的合并冲突，暂时不能切换分支'
+        ? pick('还有未解决的合并冲突，暂时不能切换分支', 'Unresolved merge conflicts. Cannot switch branch now')
         : check.reason === 'overlap'
-          ? `${check.paths.length} 个未提交的文件与目标分支的改动重叠`
-          : '读不出目标分支的改动，工作区有未提交的文件时暂不切换',
-    ...(shown.length ? { detail: [...shown, ...(check.paths.length > shown.length ? [`…还有 ${check.paths.length - shown.length} 个`] : [])].join('\n') } : {}),
-    hint: '先提交或暂存这些文件再切换',
+          ? pick(`${check.paths.length} 个未提交的文件与目标分支的改动重叠`, `${check.paths.length} uncommitted files overlap with the target branch's changes`)
+          : pick('读不出目标分支的改动，工作区有未提交的文件时暂不切换', 'Cannot read the target branch\'s changes. Not switching while there are uncommitted files'),
+    ...(shown.length ? { detail: [...shown, ...(check.paths.length > shown.length ? [pick(`…还有 ${check.paths.length - shown.length} 个`, `…and ${check.paths.length - shown.length} more`)] : [])].join('\n') } : {}),
+    hint: pick('先提交或暂存这些文件再切换', 'Commit or stash these files before switching'),
     retrySafe: true
   }
 }
@@ -356,7 +357,7 @@ async function switchBranch(request: Extract<GitActionRequest, { kind: 'switch-b
     if (!(await refExists(repo.root, branch))) {
       return {
         ok: false,
-        failure: { code: 'branch-missing', message: `分支不存在：${branch}`, retrySafe: true }
+        failure: { code: 'branch-missing', message: pick(`分支不存在：${branch}`, `Branch not found: ${branch}`), retrySafe: true }
       }
     }
 
@@ -375,7 +376,7 @@ async function switchBranch(request: Extract<GitActionRequest, { kind: 'switch-b
         ...(state ? { state } : {})
       }
     }
-    return finish(repo, before.head, `已切换到 ${branch}`)
+    return finish(repo, before.head, pick(`已切换到 ${branch}`, `Switched to ${branch}`))
   })
 }
 
@@ -392,7 +393,7 @@ async function createBranch(request: Extract<GitActionRequest, { kind: 'create-b
   const repo = prep.repo
 
   if (startPoint && !(await refExists(repo.root, startPoint))) {
-    return { ok: false, failure: { code: 'branch-missing', message: `起点不存在：${startPoint}`, retrySafe: true } }
+    return { ok: false, failure: { code: 'branch-missing', message: pick(`起点不存在：${startPoint}`, `Start point not found: ${startPoint}`), retrySafe: true } }
   }
 
   return withRepoLock(repo.repoId, async () => {
@@ -415,10 +416,10 @@ async function createBranch(request: Extract<GitActionRequest, { kind: 'create-b
       const up = await runWrite(repo.root, buildSetUpstreamAfterCreateArgs(branch, startPoint, true), {
         timeout: 15_000
       })
-      if (!up.ok) upstreamNote = '（上游没设上，推送时勾「设置上游」即可）'
+      if (!up.ok) upstreamNote = pick('（上游没设上，推送时勾「设置上游」即可）', ' (upstream not set. Tick "Set upstream" when pushing)')
     }
 
-    return finish(repo, before.head, `${request.checkout ? '已新建并切换到' : '已新建分支'} ${branch}${upstreamNote}`)
+    return finish(repo, before.head, pick(`${request.checkout ? '已新建并切换到' : '已新建分支'} ${branch}${upstreamNote}`, `${request.checkout ? 'Created and switched to' : 'Created branch'} ${branch}${upstreamNote}`))
   })
 }
 
@@ -433,25 +434,25 @@ export async function listRemotes(root: string): Promise<string[]> {
 
 async function fetchRemote(request: Extract<GitActionRequest, { kind: 'fetch' }>): Promise<GitActionResult> {
   const repo = await resolveRepo(request.cwd)
-  if (!repo) return { ok: false, failure: { code: 'not-a-repo', message: '这个目录不是 Git 仓库', retrySafe: true } }
+  if (!repo) return { ok: false, failure: { code: 'not-a-repo', message: pick('这个目录不是 Git 仓库', 'This folder is not a Git repository'), retrySafe: true } }
 
   const remotes = await listRemotes(repo.root)
   if (remotes.length === 0) {
     return {
       ok: false,
-      failure: { code: 'no-remote', message: '这个仓库没有配置远程', hint: '添加 remote 后再拉取', retrySafe: true }
+      failure: { code: 'no-remote', message: pick('这个仓库没有配置远程', 'This repository has no remote'), hint: pick('添加 remote 后再拉取', 'Add a remote, then pull'), retrySafe: true }
     }
   }
   const remote = request.remote && remotes.includes(request.remote) ? request.remote : null
   if (request.remote && !remote) {
-    return { ok: false, failure: { code: 'no-remote', message: `没有这个远程：${request.remote}`, retrySafe: true } }
+    return { ok: false, failure: { code: 'no-remote', message: pick(`没有这个远程：${request.remote}`, `Remote not found: ${request.remote}`), retrySafe: true } }
   }
 
   return withRepoLock(repo.repoId, async () => {
     const before = await readExpected(repo.root)
     const res = await runWrite(repo.root, buildFetchArgs(remote), { timeout: NETWORK_TIMEOUT })
     if (!res.ok) return { ok: false, failure: res.failure, headBefore: before.head, headAfter: before.head }
-    return finish(repo, before.head, remote ? `已从 ${remote} 拉取` : '已拉取所有远程')
+    return finish(repo, before.head, remote ? pick(`已从 ${remote} 拉取`, `Pulled from ${remote}`) : pick('已拉取所有远程', 'Pulled all remotes'))
   })
 }
 
@@ -464,14 +465,14 @@ async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>, 
 
     const remotes = await listRemotes(repo.root)
     if (remotes.length === 0) {
-      return { ok: false, failure: { code: 'no-remote', message: '这个仓库没有配置远程', retrySafe: true } }
+      return { ok: false, failure: { code: 'no-remote', message: pick('这个仓库没有配置远程', 'This repository has no remote'), retrySafe: true } }
     }
     const state = await readRepoState(repo.root)
-    if (requiredBranch && request.remote && !remotes.includes(request.remote)) return { ok: false, failure: { code: 'no-remote', message: '指定的推送远程不存在', retrySafe: true } }
-    if (requiredBranch && state?.branch !== requiredBranch) return { ok: false, failure: { code: 'stale', message: '当前分支与 PR head 不一致，请刷新后重试', retrySafe: true } }
+    if (requiredBranch && request.remote && !remotes.includes(request.remote)) return { ok: false, failure: { code: 'no-remote', message: pick('指定的推送远程不存在', 'The specified push remote does not exist'), retrySafe: true } }
+    if (requiredBranch && state?.branch !== requiredBranch) return { ok: false, failure: { code: 'stale', message: pick('当前分支与 PR head 不一致，请刷新后重试', 'Current branch does not match the PR head. Refresh and retry'), retrySafe: true } }
     const branch = request.branch || state?.branch || null
     if (branch) {
-      const invalid = validateBranchName(branch) ?? (branch.startsWith('+') ? '分支名不能以 + 开头' : null)
+      const invalid = validateBranchName(branch) ?? (branch.startsWith('+') ? pick('分支名不能以 + 开头', 'Branch name cannot start with +') : null)
       if (invalid) return { ok: false, failure: { code: 'invalid-input', message: invalid, retrySafe: true } }
     }
     const remote =
@@ -494,8 +495,8 @@ async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>, 
         failure: res.timedOut
           ? {
               code: 'timeout',
-              message: '推送超时，结果未知',
-              hint: '先刷新看「待推送」数：为 0 说明已经推上去了',
+              message: pick('推送超时，结果未知', 'Push timed out. Result unknown'),
+              hint: pick('先刷新看「待推送」数：为 0 说明已经推上去了', 'Refresh and check the unpushed count. 0 means it was pushed'),
               retrySafe: false
             }
           : res.failure,
@@ -510,7 +511,7 @@ async function pushBranch(request: Extract<GitActionRequest, { kind: 'push' }>, 
     const upToDate = /everything up-to-date/i.test(res.stdout + res.stderr)
     return {
       ok: true,
-      summary: upToDate ? '远程已经是最新' : `已推送到 ${remote}${request.setUpstream ? '（并设置上游）' : ''}`,
+      summary: upToDate ? pick('远程已经是最新', 'Remote is already up to date') : `已推送到 ${remote}${request.setUpstream ? pick('（并设置上游）', ' (upstream set)') : ''}`,
       headBefore: before.head,
       headAfter: next?.head ?? null,
       pushed: true,
@@ -559,19 +560,19 @@ async function switchToPrBranch(root: string, number: number, headOid: string, o
       const target = named ?? options.headRepoUrl
       const remoteSet = await runWrite(root, ['config', `branch.${name}.remote`, target])
       const mergeSet = remoteSet.ok ? await runWrite(root, ['config', `branch.${name}.merge`, `refs/heads/${options.headRef}`]) : remoteSet
-      upstream = mergeSet.ok ? `，上游 ${named ?? '来源仓库'}/${options.headRef}` : '（上游没设上，推送时勾「设置上游」）'
+      upstream = mergeSet.ok ? pick(`，上游 ${named ?? '来源仓库'}/${options.headRef}`, `, upstream ${named ?? 'source repo'}/${options.headRef}`) : pick('（上游没设上，推送时勾「设置上游」）', ' (upstream not set. Tick "Set upstream" when pushing)')
     }
     const note = pushRightsNote(options)
-    return { ok: true, summary: `已检出 PR #${number} 到本地分支 ${name}${upstream}${note ? `。${note}` : ''}` }
+    return { ok: true, summary: pick(`已检出 PR #${number} 到本地分支 ${name}${upstream}${note ? `。${note}` : ''}`, `Checked out PR #${number} to local branch ${name}${upstream}${note ? `. ${note}` : ''}`) }
   }
-  return { ok: false, failure: { code: 'invalid-input', message: '本地已有同名分支且不是这个 PR 的分支，请先改名或删除后再检出', retrySafe: true } }
+  return { ok: false, failure: { code: 'invalid-input', message: pick('本地已有同名分支且不是这个 PR 的分支，请先改名或删除后再检出', 'A local branch with this name exists and is not this PR\'s. Rename or delete it first'), retrySafe: true } }
 }
 
 export async function checkoutPrHead(cwd: string, number: number, repositoryUrl: string, headOid: string, branchOptions?: PrCheckoutOptions): Promise<GitActionResult> {
-  if (!Number.isInteger(number) || number < 1 || number > 9_999_999 || !/^[0-9a-f]{40,64}$/.test(headOid)) return { ok: false, failure: { code: 'invalid-input', message: 'PR checkout 参数不合法', retrySafe: true } }
+  if (!Number.isInteger(number) || number < 1 || number > 9_999_999 || !/^[0-9a-f]{40,64}$/.test(headOid)) return { ok: false, failure: { code: 'invalid-input', message: pick('PR checkout 参数不合法', 'Invalid PR checkout parameters'), retrySafe: true } }
   try {
     const url = new URL(repositoryUrl)
-    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return { ok: false, failure: { code: 'invalid-input', message: 'PR 仓库地址不合法', retrySafe: true } }
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return { ok: false, failure: { code: 'invalid-input', message: pick('PR 仓库地址不合法', 'Invalid PR repository URL'), retrySafe: true } }
     const prep = await prepare(cwd)
     if (!prep.ok) return { ok: false, failure: prep.failure }
     const repo = prep.repo
@@ -592,7 +593,7 @@ export async function checkoutPrHead(cwd: string, number: number, repositoryUrl:
       }
       const switched = await runWrite(repo.root, ['switch', '--detach', headOid])
       if (!switched.ok) return { ok: false, failure: switched.failure }
-      return finish(repo, before.head, `已检出 PR #${number}（detached HEAD）`)
+      return finish(repo, before.head, pick(`已检出 PR #${number}（detached HEAD）`, `Checked out PR #${number} (detached HEAD)`))
     })
   } catch (error) {
     return { ok: false, failure: classifyGitFailure(String((error as Error)?.message ?? error)) }
@@ -604,7 +605,7 @@ export async function runGitAction(request: GitActionRequest): Promise<GitAction
   if (!suppliedCwd) {
     return {
       ok: false,
-      failure: { code: 'invalid-input', message: '缺少项目目录，Git 操作已取消', retrySafe: true }
+      failure: { code: 'invalid-input', message: pick('缺少项目目录，Git 操作已取消', 'No project folder. Git operation canceled'), retrySafe: true }
     }
   }
   const cwd = resolve(suppliedCwd)
@@ -631,7 +632,7 @@ export async function runGitAction(request: GitActionRequest): Promise<GitAction
         const never: never = normalized
         return {
           ok: false,
-          failure: { code: 'unknown', message: `不认识的操作：${JSON.stringify(never)}`, retrySafe: false }
+          failure: { code: 'unknown', message: pick(`不认识的操作：${JSON.stringify(never)}`, `Unknown operation: ${JSON.stringify(never)}`), retrySafe: false }
         }
       }
     }

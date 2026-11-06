@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
@@ -229,11 +230,11 @@ export async function resolveQuotaProviderCredential(
   const fromAuth = await readAuthKey(provider, options)
   const fromEnv = readNativeEnv(provider, env)
   if (lookup.kind === 'invalid') return fromAuth || fromEnv
-    ? { error: '无法读取 models.json，请检查文件格式与读取权限后刷新额度。' }
+    ? { error: pick('无法读取 models.json，请检查文件格式与读取权限后刷新额度。', 'Cannot read models.json. Check its format and permissions, then refresh quota.') }
     : {}
   let entry: Record<string, unknown> | undefined
   if (lookup.kind === 'entry') {
-    if (!entryEndpointAllowed(quotaProvider, lookup.entry)) return { error: '模型配置中的服务地址无法确认为官方地址，未发送额度凭据。请在模型设置中检查服务地址。' }
+    if (!entryEndpointAllowed(quotaProvider, lookup.entry)) return { error: pick('模型配置中的服务地址无法确认为官方地址，未发送额度凭据。请在模型设置中检查服务地址。', 'The service URL in the model config cannot be confirmed as official. Quota credentials were not sent. Check the URL in model settings.') }
     entry = lookup.entry as Record<string, unknown>
   }
 
@@ -242,14 +243,14 @@ export async function resolveQuotaProviderCredential(
   if (entry) {
     const rawApiKey = entry.apiKey
     if (rawApiKey !== undefined && rawApiKey !== null) {
-      if (typeof rawApiKey !== 'string' || !rawApiKey.trim()) return { error: '模型配置中的 API Key 为空或格式无效，请在模型设置中补充。' }
+      if (typeof rawApiKey !== 'string' || !rawApiKey.trim()) return { error: pick('模型配置中的 API Key 为空或格式无效，请在模型设置中补充。', 'The API key in the model config is empty or invalid. Fill it in model settings.') }
       const resolved = resolveNativeConfigValue(rawApiKey, env)
       if (resolved && resolved.trim()) return { secret: resolved }
       return { error: rawApiKey.startsWith('!')
-        ? '额度查询不执行 API Key 命令，请在模型设置中填写 Key 或使用环境变量引用。'
-        : '模型配置引用的 API Key 环境变量未找到，请检查后刷新额度。' }
+        ? pick('额度查询不执行 API Key 命令，请在模型设置中填写 Key 或使用环境变量引用。', 'Quota queries do not run API key commands. Enter the key in model settings or use an environment variable reference.')
+        : pick('模型配置引用的 API Key 环境变量未找到，请检查后刷新额度。', 'The environment variable for the API key was not found. Check it, then refresh quota.') }
     }
-    if (!OFFICIAL_ENDPOINTS[quotaProvider].nativeDefaultBaseUrl) return { error: '模型配置中未填写 API Key，请在模型设置中补充。' }
+    if (!OFFICIAL_ENDPOINTS[quotaProvider].nativeDefaultBaseUrl) return { error: pick('模型配置中未填写 API Key，请在模型设置中补充。', 'No API key in the model config. Fill it in model settings.') }
   }
 
   return fromEnv ? { secret: fromEnv } : {}

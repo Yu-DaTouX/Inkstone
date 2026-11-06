@@ -1,4 +1,4 @@
-import { setUiLang } from '../shared/ui-lang'
+import { pick, setUiLang } from '../shared/ui-lang'
 import { sanitizePeerLogins } from '../shared/collab-github'
 import { readFile, mkdir, copyFile, rename } from 'node:fs/promises'
 import { statSync } from 'node:fs'
@@ -164,8 +164,8 @@ let cacheGeneration = 0
 
 let writeQueue: Promise<unknown> = Promise.resolve()
 
-const GUARD_TAMPERED_NOTICE = '检测到权限设置被砚以外的程序改动，已恢复为你在设置里选择的档位。'
-const GUARD_UNSEALED_NOTICE = '权限档没有可核对的加密记录（首次升级或记录丢失），已回到「自动批准」；需要「不受限制」请在设置里重新选择。'
+const guardTamperedNotice = () => pick('检测到权限设置被砚以外的程序改动，已恢复为你在设置里选择的档位。', 'Permission settings were changed by a program other than Inkstone. Restored to the level you chose in settings.')
+const guardUnsealedNotice = () => pick('权限档没有可核对的加密记录（首次升级或记录丢失），已回到「自动批准」；需要「不受限制」请在设置里重新选择。', 'The permission level has no verifiable sealed record (first upgrade or record lost). Reverted to "Auto-approve". Choose "Unrestricted" again in settings if needed.')
 let guardNoticeSink: ((message: string) => void) | null = null
 let pendingGuardNotices: string[] = []
 let lastGuardNoticeKey = ''
@@ -192,7 +192,7 @@ async function enforceGuardSeal(settings: AppSettings, quiet = false): Promise<A
   const trusted = trustedGuardFields(file, seal)
   if (!seal || !sameGuardFields(seal, trusted)) await store.write(trusted).catch(() => undefined)
   if (!sameGuardFields(file, trusted)) {
-    if (!quiet) noticeGuardSettings(seal ? GUARD_TAMPERED_NOTICE : GUARD_UNSEALED_NOTICE, JSON.stringify(file))
+    if (!quiet) noticeGuardSettings(seal ? guardTamperedNotice() : guardUnsealedNotice(), JSON.stringify(file))
     void patchSettings({}).catch(() => undefined)
   }
   return { ...settings, ...trusted }
@@ -323,7 +323,7 @@ export async function getSettings(): Promise<AppSettings> {
     text = await readFile(FILE, 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw new Error(`设置读取失败：${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(pick(`设置读取失败：${error instanceof Error ? error.message : String(error)}`, `Failed to read settings: ${error instanceof Error ? error.message : String(error)}`))
     }
   }
   let healedBackup: string | null = null
@@ -331,7 +331,7 @@ export async function getSettings(): Promise<AppSettings> {
   else {
     try {
       const value: unknown = JSON.parse(text)
-      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置文件必须是对象')
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('设置文件必须是对象', 'The settings file must be an object'))
       parsed = value as Partial<AppSettings>
     } catch (error) {
       const backup = `${FILE}.corrupt-${randomUUID()}.bak`
@@ -341,7 +341,7 @@ export async function getSettings(): Promise<AppSettings> {
         try {
           await copyFile(FILE, backup)
         } catch {
-          throw new Error(`设置解析失败，且无法备份原文件，已拒绝覆盖：${error instanceof Error ? error.message : String(error)}`)
+          throw new Error(pick(`设置解析失败，且无法备份原文件，已拒绝覆盖：${error instanceof Error ? error.message : String(error)}`, `Failed to parse settings and could not back up the original. Refusing to overwrite: ${error instanceof Error ? error.message : String(error)}`))
         }
       }
       parsed = {}
@@ -349,8 +349,10 @@ export async function getSettings(): Promise<AppSettings> {
     }
   }
   if (typeof parsed.cwd !== 'string' || !parsed.cwd.trim() || !isAbsolute(parsed.cwd) || !isDirectory(parsed.cwd)) parsed.cwd = await defaultWorkFolder()
-  const loaded = await enforceGuardSeal(sanitizeSettings(parsed), healedBackup !== null)
-  if (healedBackup) noticeGuardSettings(`设置文件损坏，已备份为 ${basename(healedBackup)}，这次用默认设置启动（权限档按加密记录恢复）。`, `heal:${healedBackup}`)
+  const sanitized = sanitizeSettings(parsed)
+  setUiLang(sanitized.lang)
+  const loaded = await enforceGuardSeal(sanitized, healedBackup !== null)
+  if (healedBackup) noticeGuardSettings(pick(`设置文件损坏，已备份为 ${basename(healedBackup)}，这次用默认设置启动（权限档按加密记录恢复）。`, `The settings file is corrupt. Backed up as ${basename(healedBackup)}. Started with defaults (permission level restored from the sealed record).`), `heal:${healedBackup}`)
   if (generation !== cacheGeneration) return getSettings()
   cached = loaded
   setUiLang(loaded.lang)
@@ -414,8 +416,8 @@ function cleanAllowRoots(value: unknown): string[] {
 
 const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
-  for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('设置补丁必须是对象', 'The settings patch must be an object'))
+  for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(pick(`不允许修改设置项：${key}`, `Changing this setting is not allowed: ${key}`))
   return value as Partial<AppSettings>
 }
 
@@ -511,7 +513,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   } catch (e) {
     if (sealStore && sealWritten) await sealStore.write(guardFieldsOf(cur)).catch(() => undefined)
     invalidate()
-    throw new Error(`设置写入失败：${e instanceof Error ? e.message : String(e)}`)
+    throw new Error(pick(`设置写入失败：${e instanceof Error ? e.message : String(e)}`, `Failed to write settings: ${e instanceof Error ? e.message : String(e)}`))
   }
   cacheGeneration++
   cached = next

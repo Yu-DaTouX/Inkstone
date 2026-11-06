@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { McpSettingsMutation, McpSettingsResult, McpSettingsService, McpSettingsSnapshot } from '../../shared/mcp-settings'
@@ -34,7 +35,7 @@ async function readText(path: string): Promise<string | null> {
 async function readNative(path: string): Promise<Document> {
   const text = await readText(path)
   const value = text === null ? {} : object(JSON.parse(text))
-  if (!value || value.mcpServers !== undefined && !object(value.mcpServers)) throw new Error(`MCP 配置格式有误：${path}`)
+  if (!value || value.mcpServers !== undefined && !object(value.mcpServers)) throw new Error(pick(`MCP 配置格式有误：${path}`, `Invalid MCP config format: ${path}`))
   return { path, text, value, servers: object(value.mcpServers) ?? {} }
 }
 
@@ -74,7 +75,7 @@ export async function listMcpServiceSettings(host: McpSettingsHost): Promise<Mcp
   const errors: string[] = []
   for (const [name, raw] of Object.entries(data.global.servers)) {
     const entry = object(raw)
-    if (!entry) { errors.push(`服务 ${name} 的配置格式有误`); continue }
+    if (!entry) { errors.push(pick(`服务 ${name} 的配置格式有误`, `Invalid config format for service ${name}`)); continue }
     const base = nativeService(name, entry, data.global, 'global')
     global.push(base)
     if (host.project) {
@@ -86,12 +87,12 @@ export async function listMcpServiceSettings(host: McpSettingsHost): Promise<Mcp
   }
   if (data.project) for (const [name, raw] of Object.entries(data.project.servers)) {
     if (override(raw)) {
-      if (!object(data.global.servers[name])) errors.push(`项目里的 ${name} 只有覆盖设置，缺少全局服务定义`)
+      if (!object(data.global.servers[name])) errors.push(pick(`项目里的 ${name} 只有覆盖设置，缺少全局服务定义`, `${name} in the project only has overrides and no global service definition`))
       continue
     }
     const entry = object(raw)
     if (entry) projectServices.push(nativeService(name, entry, data.project, 'project'))
-    else errors.push(`项目服务 ${name} 的配置格式有误`)
+    else errors.push(pick(`项目服务 ${name} 的配置格式有误`, `Invalid config format for project service ${name}`))
   }
   for (const config of data.loaded.servers) {
     if (config.projectScope && config.projectScope !== host.project?.id) continue
@@ -107,7 +108,7 @@ export async function listMcpServiceSettings(host: McpSettingsHost): Promise<Mcp
     }
     const matching = config.projectScope ? nativeProject : nativeGlobal
     if (matching) {
-      if (config.enabled !== false) { matching.conflict = true; errors.push(`服务 ${name} 存在两份连接配置，请在高级设置中处理归属`) }
+      if (config.enabled !== false) { matching.conflict = true; errors.push(pick(`服务 ${name} 存在两份连接配置，请在高级设置中处理归属`, `Service ${name} has two connection configs. Resolve ownership in advanced settings`)) }
       continue
     }
     if (!config.projectScope) global.push(service)
@@ -120,7 +121,7 @@ export async function listMcpServiceSettings(host: McpSettingsHost): Promise<Mcp
     global.push({ key: 'host:windows-mcp', name: WINDOWS_MCP_SERVER_ID, title: 'windows-mcp', backend: 'host', owner: 'inkstone', scope: 'global', enabled: false, inherited: false, overridden: false, transport: 'stdio', source: data.hostPath, connection: '', special: true })
     if (host.project) projectServices.push({ ...global[global.length - 1], inherited: true })
   }
-  if (host.project && !host.projectTrusted && Object.keys(data.project?.servers ?? {}).length) errors.push('项目尚未受信任，项目配置暂不生效')
+  if (host.project && !host.projectTrusted && Object.keys(data.project?.servers ?? {}).length) errors.push(pick('项目尚未受信任，项目配置暂不生效', 'Project is not trusted. Project config is not in effect'))
   return { context: host.context, revision: data.revision, project: host.project, projectTrusted: host.projectTrusted, global, projectServices, errors, busy: host.busy, nativeConfigChanged: host.nativeConfigChanged }
 }
 
@@ -143,10 +144,10 @@ async function writeDocuments(host: McpSettingsHost, docs: Document[]): Promise<
       try {
         if (doc.text !== null) await atomicWrite(doc.path, doc.text, nativeMcpTextFingerprint(text))
         else if (await readText(doc.path) === text) await unlink(doc.path)
-        else throw new Error('文件已被其他操作修改')
+        else throw new Error(pick('文件已被其他操作修改', 'The file was modified by another operation'))
       } catch { failures.push(doc.path) }
     }
-    if (failures.length) throw new Error(`保存未完成，部分回退失败，请检查：${failures.join('、')}`)
+    if (failures.length) throw new Error(pick(`保存未完成，部分回退失败，请检查：${failures.join('、')}`, `Save incomplete. Some rollbacks failed. Check: ${failures.join(', ')}`))
     throw error
   }
 }
@@ -155,88 +156,88 @@ async function ensureNoOtherOverrides(host: McpSettingsHost, name: string): Prom
   for (const project of host.projects) {
     if (project.id === host.project?.id) continue
     const doc = await readNative(join(project.cwd, '.pi', 'mcp.json'))
-    if (doc.servers[name] && override(doc.servers[name])) throw new Error(`其他项目仍覆盖 ${name}，请先在对应项目恢复全局设置再修改范围或删除`)
+    if (doc.servers[name] && override(doc.servers[name])) throw new Error(pick(`其他项目仍覆盖 ${name}，请先在对应项目恢复全局设置再修改范围或删除`, `Other projects still override ${name}. Restore global settings there before changing scope or deleting`))
   }
 }
 
 function validateConfig(raw: unknown): ObjectValue {
   const config = object(raw)
-  if (!config || (!!config.command === !!config.url)) throw new Error('请填写启动命令或服务地址')
+  if (!config || (!!config.command === !!config.url)) throw new Error(pick('请填写启动命令或服务地址', 'Enter a start command or service URL'))
   if (config.url !== undefined) {
-    if (typeof config.url !== 'string' || !/^https?:$/.test(new URL(config.url).protocol)) throw new Error('服务地址必须是 HTTP 或 HTTPS')
-  } else if (typeof config.command !== 'string' || !config.command.trim()) throw new Error('启动命令不能为空')
-  if (config.args !== undefined && (!Array.isArray(config.args) || !config.args.every((arg) => typeof arg === 'string'))) throw new Error('启动参数必须是字符串数组')
-  if (config.env !== undefined && (!object(config.env) || !Object.values(object(config.env)!).every((value) => typeof value === 'string'))) throw new Error('环境变量必须是字符串键值')
+    if (typeof config.url !== 'string' || !/^https?:$/.test(new URL(config.url).protocol)) throw new Error(pick('服务地址必须是 HTTP 或 HTTPS', 'Service URL must be HTTP or HTTPS'))
+  } else if (typeof config.command !== 'string' || !config.command.trim()) throw new Error(pick('启动命令不能为空', 'Start command cannot be empty'))
+  if (config.args !== undefined && (!Array.isArray(config.args) || !config.args.every((arg) => typeof arg === 'string'))) throw new Error(pick('启动参数必须是字符串数组', 'Start arguments must be an array of strings'))
+  if (config.env !== undefined && (!object(config.env) || !Object.values(object(config.env)!).every((value) => typeof value === 'string'))) throw new Error(pick('环境变量必须是字符串键值', 'Environment variables must be string key-values'))
   return { ...(config.url ? { url: config.url } : { command: config.command, ...(config.args ? { args: config.args } : {}) }), ...(config.env ? { env: config.env } : {}) }
 }
 
 export function changeMcpServiceSettings(host: McpSettingsHost, input: McpSettingsMutation): Promise<McpSettingsResult> {
   return serializedWrite(async () => {
     try {
-      if (!object(input) || input.context !== host.context) throw new Error('当前会话或项目已切换，请重新读取服务列表')
-      if (!['global', 'project'].includes(input.scope) || !['add', 'enable', 'disable', 'inherit', 'remove', 'move'].includes(input.action)) throw new Error('不支持的 MCP 设置操作')
+      if (!object(input) || input.context !== host.context) throw new Error(pick('当前会话或项目已切换，请重新读取服务列表', 'The session or project changed. Reload the service list'))
+      if (!['global', 'project'].includes(input.scope) || !['add', 'enable', 'disable', 'inherit', 'remove', 'move'].includes(input.action)) throw new Error(pick('不支持的 MCP 设置操作', 'Unsupported MCP settings operation'))
       const data = await load(host)
-      if (input.revision !== data.revision) throw new Error('服务配置已变化，请重新读取后再试')
-      if (input.scope === 'project' && (!host.project || !data.project)) throw new Error('请先选择一个项目')
-      if (input.scope === 'project' && !host.projectTrusted) throw new Error('请先信任当前项目，再修改项目 MCP 配置')
+      if (input.revision !== data.revision) throw new Error(pick('服务配置已变化，请重新读取后再试', 'Service config changed. Reload and retry'))
+      if (input.scope === 'project' && (!host.project || !data.project)) throw new Error(pick('请先选择一个项目', 'Select a project first'))
+      if (input.scope === 'project' && !host.projectTrusted) throw new Error(pick('请先信任当前项目，再修改项目 MCP 配置', 'Trust the current project before changing its MCP config'))
       if (input.action === 'add') {
         const name = typeof input.name === 'string' ? input.name.trim() : ''
-        if (!/^[A-Za-z0-9_-]{1,100}$/.test(name) || ['__proto__', 'constructor', 'prototype', WINDOWS_MCP_SERVER_ID].includes(name)) throw new Error('服务名称无效，只能包含字母、数字、下划线和连字符，电脑操作请在本机工具中配置')
+        if (!/^[A-Za-z0-9_-]{1,100}$/.test(name) || ['__proto__', 'constructor', 'prototype', WINDOWS_MCP_SERVER_ID].includes(name)) throw new Error(pick('服务名称无效，只能包含字母、数字、下划线和连字符，电脑操作请在本机工具中配置', 'Invalid service name. Use letters, digits, underscores and hyphens only. Configure computer use in local tools'))
         const target = input.scope === 'global' ? data.global : data.project!
-        if (data.global.servers[name] || data.project?.servers[name] || data.loaded.servers.some((server) => server.id === name)) throw new Error('已有同名服务，请使用现有条目或更换名称')
+        if (data.global.servers[name] || data.project?.servers[name] || data.loaded.servers.some((server) => server.id === name)) throw new Error(pick('已有同名服务，请使用现有条目或更换名称', 'A service with this name exists. Use it or pick another name'))
         target.servers[name] = validateConfig(input.config)
         await writeDocuments(host, [target])
         return { ok: true, takesEffect: 'new-session' }
       }
       const snapshot = await listMcpServiceSettings(host)
       const service = [...snapshot.global, ...snapshot.projectServices].find((item) => item.key === input.key)
-      if (!service || service.conflict || service.special) throw new Error('服务不可修改，请重新读取列表或前往本机工具配置')
-      if (input.scope === 'global' && service.scope === 'project' && input.action !== 'move') throw new Error('项目服务只能从项目入口修改')
+      if (!service || service.conflict || service.special) throw new Error(pick('服务不可修改，请重新读取列表或前往本机工具配置', 'This service cannot be modified. Reload the list or use local tools'))
+      if (input.scope === 'global' && service.scope === 'project' && input.action !== 'move') throw new Error(pick('项目服务只能从项目入口修改', 'Project services can only be changed from the project'))
       if (service.backend === 'host') {
-        if (host.isBusy?.() ?? host.busy) throw new Error('有任务正在运行，任务结束后可调整此服务')
+        if (host.isBusy?.() ?? host.busy) throw new Error(pick('有任务正在运行，任务结束后可调整此服务', 'A task is running. Adjust this service after it finishes'))
         const document = data.loaded.document
         const list = Array.isArray(document) ? document : object(document)?.servers
-        if (!Array.isArray(list)) throw new Error('旧服务配置格式有误')
+        if (!Array.isArray(list)) throw new Error(pick('旧服务配置格式有误', 'Invalid legacy service config format'))
         const entry = list.find((item) => object(item)?.id === service.name) as ObjectValue | undefined
-        if (!entry || entry.migratedToNative) throw new Error('服务已迁移，请重新读取列表')
+        if (!entry || entry.migratedToNative) throw new Error(pick('服务已迁移，请重新读取列表', 'Service was migrated. Reload the list'))
         if (input.action === 'move') {
           if (input.scope === 'project') entry.projectScope = host.project!.id
           else delete entry.projectScope
         } else if (input.scope === 'project' && !entry.projectScope) {
-          if (input.action === 'remove') throw new Error('继承的服务请使用本项目关闭')
+          if (input.action === 'remove') throw new Error(pick('继承的服务请使用本项目关闭', 'For inherited services, disable them in this project'))
           const enabled = { ...(object(entry.projectEnabled) ?? {}) }
           if (input.action === 'inherit') delete enabled[host.project!.id]
           else enabled[host.project!.id] = input.action === 'enable'
           entry.projectEnabled = enabled
         } else if (input.action === 'remove') list.splice(list.indexOf(entry), 1)
         else if (input.action === 'enable' || input.action === 'disable') entry.enabled = input.action === 'enable'
-        else throw new Error('此服务不支持该操作')
+        else throw new Error(pick('此服务不支持该操作', 'This service does not support this operation'))
         host.assertContext?.()
-        if (host.isBusy?.() ?? host.busy) throw new Error('有任务正在运行，任务结束后可调整此服务')
+        if (host.isBusy?.() ?? host.busy) throw new Error(pick('有任务正在运行，任务结束后可调整此服务', 'A task is running. Adjust this service after it finishes'))
         await atomicWrite(data.hostPath, `${JSON.stringify(document, null, 2)}\n`, nativeMcpTextFingerprint(data.hostText))
         return { ok: true, takesEffect: 'next-call' }
       }
       const origin = service.scope === 'global' ? data.global : data.project!
       if (input.action === 'move') {
-        if (!data.project || !host.project || !host.projectTrusted) throw new Error('请先选择并信任当前项目')
+        if (!data.project || !host.project || !host.projectTrusted) throw new Error(pick('请先选择并信任当前项目', 'Select and trust the current project first'))
         const target = input.scope === 'global' ? data.global : data.project
-        if (target.path === origin.path) throw new Error('服务已经在这个范围内')
-        if (target.servers[service.name] && !override(target.servers[service.name])) throw new Error('目标范围已有同名服务，未覆盖')
+        if (target.path === origin.path) throw new Error(pick('服务已经在这个范围内', 'The service is already in this scope'))
+        if (target.servers[service.name] && !override(target.servers[service.name])) throw new Error(pick('目标范围已有同名服务，未覆盖', 'The target scope has a service with this name. Not overwritten'))
         if (service.scope === 'global') await ensureNoOtherOverrides(host, service.name)
         target.servers[service.name] = { ...object(origin.servers[service.name]), ...(object(target.servers[service.name]) ?? {}) }
         delete origin.servers[service.name]
         await writeDocuments(host, [target, origin])
       } else {
         const target = input.scope === 'global' ? data.global : data.project!
-        if (input.scope === 'global' && service.scope !== 'global') throw new Error('项目服务不能从全局入口修改')
+        if (input.scope === 'global' && service.scope !== 'global') throw new Error(pick('项目服务不能从全局入口修改', 'Project services cannot be changed from global'))
         if (input.action === 'inherit') {
-          if (service.scope !== 'global' || target === data.global || !override(target.servers[service.name])) throw new Error('没有可恢复的项目覆盖设置')
+          if (service.scope !== 'global' || target === data.global || !override(target.servers[service.name])) throw new Error(pick('没有可恢复的项目覆盖设置', 'No project overrides to restore'))
           const patch = { ...object(target.servers[service.name]) }
           delete patch.enabled
           if (Object.keys(patch).length) target.servers[service.name] = patch
           else delete target.servers[service.name]
         } else if (input.action === 'remove') {
-          if (input.scope === 'project' && service.scope === 'global') throw new Error('继承的服务请使用本项目关闭')
+          if (input.scope === 'project' && service.scope === 'global') throw new Error(pick('继承的服务请使用本项目关闭', 'For inherited services, disable them in this project'))
           if (service.scope === 'global') {
             await ensureNoOtherOverrides(host, service.name)
             if (data.project?.servers[service.name] && override(data.project.servers[service.name])) {

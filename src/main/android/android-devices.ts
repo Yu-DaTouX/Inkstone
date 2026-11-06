@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { AndroidControl, AndroidDevice, AndroidFrame } from '../../shared/android-sdk'
@@ -112,7 +113,7 @@ export function inputText(text: string): string {
 
 function requireAdb(): string {
   const adb = adbPath()
-  if (!adb) throw new Error('没有找到 adb，请先在设置 › 工具 › 安卓开发里安装 Platform-Tools')
+  if (!adb) throw new Error(pick('没有找到 adb，请先在设置 › 工具 › 安卓开发里安装 Platform-Tools', 'adb not found. Install Platform-Tools in Settings › Tools › Android development first'))
   return adb
 }
 
@@ -192,7 +193,7 @@ export class AndroidDeviceService {
 
   async boot(avd: string): Promise<void> {
     const emulator = emulatorPath()
-    if (!emulator) throw new Error('没有安装 Android 模拟器')
+    if (!emulator) throw new Error(pick('没有安装 Android 模拟器', 'Android emulator is not installed'))
     const child = spawn(emulator, ['-avd', avd, '-no-boot-anim'], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PATH')), ...emulatorEnv() } })
     await new Promise<void>((resolve, reject) => {
       child.on('error', reject)
@@ -269,13 +270,13 @@ export class AndroidDeviceService {
     const input = this.input
     if (action.kind === 'key') return input.send(`input keyevent ${KEYCODES[action.key]}`)
     if (action.kind === 'text') {
-      if (!/^[\x20-\x7e]*$/.test(action.text)) throw new Error('adb 只能输入英文字符；中文请在手机上用输入法')
+      if (!/^[\x20-\x7e]*$/.test(action.text)) throw new Error(pick('adb 只能输入英文字符；中文请在手机上用输入法', 'adb can only type ASCII characters. Use the phone\'s keyboard for other text'))
       if (action.text) input.send(`input text ${inputText(action.text)}`)
       return
     }
     const size = this.serial === serial && this.latest ? this.latest : await this.screenSize(adb, serial)
     const px = (value: number, max: number): string => String(Math.round(Math.max(0, Math.min(1, value)) * (max - 1)))
-    if (action.kind === 'touch' && !TOUCH_PHASES.has(action.phase)) throw new Error('设备操作无效')
+    if (action.kind === 'touch' && !TOUCH_PHASES.has(action.phase)) throw new Error(pick('设备操作无效', 'Invalid device action'))
     if (action.kind === 'touch') input.send(`input motionevent ${action.phase.toUpperCase()} ${px(action.x, size.width)} ${px(action.y, size.height)}`, action.phase === 'move')
     else if (action.kind === 'tap') input.send(`input tap ${px(action.x, size.width)} ${px(action.y, size.height)}`)
     else input.send(`input swipe ${px(action.x, size.width)} ${px(action.y, size.height)} ${px(action.toX, size.width)} ${px(action.toY, size.height)} ${Math.round(action.ms ?? 300)}`)
@@ -284,7 +285,7 @@ export class AndroidDeviceService {
   private async screenSize(adb: string, serial: string): Promise<{ width: number; height: number }> {
     const { stdout } = await run(adb, ['-s', serial, 'shell', 'wm', 'size'], { windowsHide: true, timeout: 10_000 })
     const match = /(?:Override|Physical) size:\s*(\d+)x(\d+)/.exec(stdout.split(/\r?\n/).reverse().join('\n'))
-    if (!match) throw new Error('无法读取设备屏幕尺寸')
+    if (!match) throw new Error(pick('无法读取设备屏幕尺寸', 'Cannot read the device screen size'))
     return { width: Number(match[1]), height: Number(match[2]) }
   }
 }

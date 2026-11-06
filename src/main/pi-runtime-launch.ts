@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { isAbsolute } from 'node:path'
 import type { PiProbe } from '../shared/ipc'
 
@@ -9,7 +10,7 @@ export type PiRpcRuntime =
 export function runtimeProbe(runtime: PiRpcRuntime): PiProbe {
   if (runtime.kind === 'native-exe') {
     if (!isAbsolute(runtime.executable)) {
-      throw new Error(`native-exe 运行时需要绝对路径：${runtime.executable}`)
+      throw new Error(pick(`native-exe 运行时需要绝对路径：${runtime.executable}`, `The native-exe runtime requires an absolute path: ${runtime.executable}`))
     }
     return {
       ok: true,
