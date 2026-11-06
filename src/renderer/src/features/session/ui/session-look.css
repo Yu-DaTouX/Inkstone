@@ -256,8 +256,6 @@
   .v3-diff-line[data-kind='skip'] { color: var(--fg3); }
   .v3-step-images { display: flex; flex-wrap: wrap; gap: var(--s-6); margin-top: var(--s-6); }
 
-  @keyframes v3-card-in { from { opacity: 0; transform: translateY(4px); } }
-
 
   .v3-empty { display: flex; flex-direction: column; gap: var(--s-8); padding: var(--s-48) var(--s-20); }
   .v3-empty-greet { color: var(--fg); font-size: var(--t-title); line-height: var(--t-title-lh); }

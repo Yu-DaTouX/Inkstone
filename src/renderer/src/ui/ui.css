@@ -1584,16 +1584,6 @@
       transform: translateX(320%);
     }
   }
-  @keyframes ui-pop-in {
-    from {
-      opacity: 0;
-      transform: scale(0.98);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
   @keyframes ui-popover-in {
     from {
       opacity: 0;
@@ -1622,16 +1612,6 @@
     to {
       opacity: 0;
       transform: translateY(-4px) scale(0.98);
-    }
-  }
-  @keyframes ui-pop-out {
-    from {
-      opacity: 1;
-      transform: scale(1);
-    }
-    to {
-      opacity: 0;
-      transform: scale(0.98);
     }
   }
   @keyframes ui-fade-in {
