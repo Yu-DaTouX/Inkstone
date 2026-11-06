@@ -10,6 +10,8 @@ const MAX_LINE_BYTES = 48 * 1024 * 1024
 
 const MAX_TEXT = 64 * 1024
 
+const PROJECTION_SLICE_MS = 8
+
 export interface ReadResult {
   messages: UIMessage[]
   total: number
@@ -298,7 +300,14 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
           (after.size === before.size && !sameVersion(before, after)) ||
           (current.size === before.size && !sameVersion(before, current))) continue
       if (after.size === before.size && current.size === before.size) flush()
-      for (const entry of leafBranch(entries, linked)) projector.appendPersisted(entry.value, entry.id)
+      let sliceStart = performance.now()
+      for (const entry of leafBranch(entries, linked)) {
+        projector.appendPersisted(entry.value, entry.id)
+        if (performance.now() - sliceStart > PROJECTION_SLICE_MS) {
+          await new Promise<void>(resolve => setImmediate(resolve))
+          sliceStart = performance.now()
+        }
+      }
       return { version: before, result: { messages: projector.uiMessages(), total, truncated, bytes: size,
         ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}), ...(contextFrom ? { contextFrom } : {}) } }
     } catch { if (attempt === 0) continue; return null }
