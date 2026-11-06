@@ -91,16 +91,46 @@ export default async function run({ cdp, check, waitFor, sleep, out, newSession,
     }
     await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(refs[0].path)})`)
     await sleep(1500)
-    await ev(`(() => { window.__p = { rows: [], stop: false, t0: performance.now() }; const tick = () => { const t = Math.round(performance.now() - window.__p.t0); const streams = [...document.querySelectorAll('.v3-stream')].filter((el) => el.clientHeight > 0); window.__p.rows.push({ t, s: streams.map((el) => [Math.round(el.scrollTop), el.scrollHeight, el.clientHeight, Math.round(el.getBoundingClientRect().left)]) }); if (!window.__p.stop) requestAnimationFrame(tick) }; requestAnimationFrame(tick) })()`)
+    await ev(`(() => { window.__p = { rows: [], stop: false, t0: performance.now() }; const tick = () => { const t = Math.round(performance.now() - window.__p.t0); const streams = [...document.querySelectorAll('.v3-stream')].filter((el) => el.clientHeight > 0); const pw = streams.length > 1 ? (() => { const p = streams[1].querySelector('.v3-msg.assistant .v3-prose'); const cs = p ? getComputedStyle(p) : null; return p ? Math.round(p.getBoundingClientRect().width) + '@' + cs.fontSize + '@' + cs.lineHeight : '' })() : ''; const blocks = pw + '|' + (streams.length > 1 ? [...streams[1].querySelectorAll('.v3-msg.assistant .v3-prose > *')].map((el) => (el.className || el.tagName).toString().slice(0, 24) + ':' + Math.round(el.getBoundingClientRect().height)).join(',') : ''); if (streams.length > 1 && !window.__p.an) window.__p.an = document.getAnimations().map((a) => (a.transitionProperty || a.animationName) + '@' + (a.effect?.target?.className || a.effect?.target?.tagName || '').toString().slice(0, 40)).join(' ; '); window.__p.rows.push({ t, b: blocks, s: streams.map((el) => [Math.round(el.scrollTop), el.scrollHeight, el.clientHeight, Math.round(el.getBoundingClientRect().left), el.clientWidth, Math.round(el.getBoundingClientRect().width)]) }); if (!window.__p.stop) requestAnimationFrame(tick) }; requestAnimationFrame(tick) })()`)
     await sleep(300)
     await NEW_RIGHT()
     await sleep(1500)
     const rows = await ev('window.__p.stop = true; window.__p.rows')
     let prev = ''
     const lines = []
-    for (const row of rows) { const key = JSON.stringify(row.s); if (key !== prev) { lines.push(row.t + ' ' + key); prev = key } }
+    for (const row of rows) { const key = JSON.stringify(row.s) + row.b; if (key !== prev) { lines.push(row.t + ' ' + key + ' ' + row.b); prev = key } }
+    writeFileSync(join(dir, 'probe-split-add.txt'), lines.join(String.fromCharCode(10)))
+    lines.push('ANIM ' + await ev('window.__p.an'))
     writeFileSync(join(dir, 'probe-split-add.txt'), lines.join(String.fromCharCode(10)))
     log('probe', lines.length + ' 变化')
+  }
+
+  if (PART === 'real') {
+    await autoApprove()
+    const untilDone = async (name, gap = 700, max = 150000) => {
+      const end = Date.now() + max
+      let i = 0
+      while (Date.now() < end) {
+        await snap(`${name}-${String(i++).padStart(3, '0')}`, dir)
+        if (!(await state(RUNNING))) break
+        await sleep(gap)
+      }
+    }
+    await newSession(box.project)
+    await ev(`window.__yanStore.getState().send('先用 bash 列出当前目录的文件，再读 INCIDENT.md 的前 20 行，然后用一个 markdown 表格总结，最后给一段 ts 代码示例。请先简短思考。')`)
+    await sleep(800)
+    await untilDone('70-real-dark')
+    await both('71-real-done')
+    await setTheme(cdp, 'light')
+    await ev(`window.__yanStore.getState().send('再用三句话总结上面的表格，并列出一个有序列表。')`)
+    await sleep(800)
+    await untilDone('72-real-light')
+    await setTheme(cdp, 'dark')
+    await ev(`window.__yanStore.getState().send('写一个 20 行的 ts 函数并解释每一步。')`)
+    await sleep(1500)
+    await screencast('73-real-split-add-while-streaming', NEW_RIGHT, 1500)
+    await untilDone('74-real-split-stream', 700, 90000)
+    await screencast('75-real-split-close', CLOSE, 900)
   }
 
   if (PART === 'all' || PART === 'chat') {
