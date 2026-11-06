@@ -859,6 +859,9 @@ export async function remoteSetSessionFlag(sessionId: string, flags: { pinned?: 
 export async function remoteDeleteSession(sessionId: string): Promise<RemoteOperationResult> {
   const resolved = await resolveChainSession(sessionId)
   if (!resolved.ok) return resolved
+  if (host.runners()?.statuses().some((item) => (item.sessionId === resolved.summary.id || (!!item.sessionFile && normalizeChainKey(item.sessionFile) === normalizeChainKey(resolved.summary.path))) && (item.running || item.waiting))) {
+    return { ok: false, status: 409, error: '会话正在运行，不能删除' }
+  }
   const result = await deleteSessionChain(host, resolved.summary.path)
   sessionsCache = null
   return result.ok ? { ok: true, data: { sessionId: resolved.summary.id } } : { ok: false, status: 409, error: result.error ?? '删除失败' }

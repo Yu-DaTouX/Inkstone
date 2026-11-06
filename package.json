@@ -47,7 +47,7 @@
     "test:ondemand": "node scripts/test-debug-demo.mjs && node scripts/test-browser-frame-network.mjs",
     "test:checkpoints": "node scripts/test-checkpoints.mjs",
     "test:agent-native-context": "node scripts/test-agent-native-context.mjs",
-    "test:remote-security": "node scripts/test-remote-security.mjs",
+    "test:remote-security": "node scripts/test-remote-security.mjs && node scripts/test-remote-host-security.mjs",
     "test:relay": "node scripts/test-relay-bridge.mjs && node scripts/test-relay-mobile.mjs",
     "test:skill-files": "node scripts/test-skill-files.mjs && node scripts/test-acquired-skills.mjs",
     "test:skill-source": "node scripts/test-skill-source.mjs",
