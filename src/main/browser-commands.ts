@@ -179,7 +179,8 @@ export class BrowserCommands {
         return {
           data: state,
           summary: this.browserSummary(action, state, {
-            tabs: (state.tabs ?? []).map((tab) => ({ id: tab.id, url: tab.url, title: tab.title }))
+            ...(state.activeTabId ? { activeTabId: state.activeTabId } : {}),
+            tabList: (state.tabs ?? []).map((tab) => ({ id: tab.id, url: tab.url, title: tab.title }))
           })
         }
       }
@@ -271,7 +272,7 @@ export class BrowserCommands {
             : action === 'switch-tab'
               ? await host.switchTab(id as string)
               : await host.closeTab(id)
-        return { data: state, summary: this.browserSummary(action, state, closing ? { closed: closing } : {}) }
+        return { data: state, summary: this.browserSummary(action, state, { ...(closing ? { closed: closing } : {}), activeTabId: state.activeTabId ?? null, refsReset: true, hint: '标签已变，之前的元素 ref 全部失效，先 yan browser observe 再操作' }) }
       }
 
       case 'screenshot': {
