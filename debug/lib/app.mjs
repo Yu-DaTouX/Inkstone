@@ -21,7 +21,7 @@ export function launchApp(env, { dev = false, inherit = false } = {}) {
   const fullEnv = cleanEnv(env)
   const child = dev
     ? spawn(process.execPath, [join(root, 'node_modules', 'electron-vite', 'bin', 'electron-vite.js'), 'dev'], { cwd: root, env: fullEnv, stdio: inherit ? 'inherit' : 'pipe', windowsHide: true })
-    : spawn(require('electron'), ['.'], { cwd: root, env: fullEnv, stdio: inherit ? 'inherit' : 'pipe', windowsHide: true })
+    : spawn(require('electron'), [...(process.env.YAN_DEBUG_MAIN_INSPECT ? ['--inspect=' + process.env.YAN_DEBUG_MAIN_INSPECT] : []), '.'], { cwd: root, env: fullEnv, stdio: inherit ? 'inherit' : 'pipe', windowsHide: true })
   let log = ''
   child.stdout?.on('data', (chunk) => { log += chunk })
   child.stderr?.on('data', (chunk) => { log += chunk })

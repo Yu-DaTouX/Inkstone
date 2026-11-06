@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileUrl } from '../shared/file-url'
 
@@ -14,17 +14,24 @@ function extOf(mimeType: string): string | null {
 
 export function imageFile(dir: string, mimeType: string, data: string): string | null {
   const ext = extOf(mimeType)
-  return ext ? join(dir, `${createHash('sha1').update(data).digest('hex')}.${ext}`) : null
+  return ext ? join(dir, `${createHash('sha1').update(data, 'latin1').digest('hex')}.${ext}`) : null
+}
+
+function decodedLength(data: string): number {
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0
+  return Math.floor(data.length * 3 / 4) - padding
+}
+
+function storedSize(file: string): number {
+  try { return statSync(file).size } catch { return -1 }
 }
 
 export function localizeImage(dir: string, mimeType: string, data: string): string {
   const file = imageFile(dir, mimeType, data)
   if (!file) return ''
+  if (storedSize(file) === decodedLength(data)) return fileUrl(file)
   const expected = Buffer.from(data, 'base64')
-  try {
-    const existing = readFileSync(file)
-    if (existing.length === expected.length && createHash('sha1').update(existing).digest('hex') === createHash('sha1').update(expected).digest('hex')) return fileUrl(file)
-  } catch { }
+  if (storedSize(file) === expected.length) return fileUrl(file)
   mkdirSync(dir, { recursive: true })
   const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
   try {
