@@ -37,6 +37,7 @@ export default async function run({ cdp, check, waitFor, sleep, shot }) {
   }
   for (const [theme, width, height] of [['light', 920, 860], ['dark', 680, 720]]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
+    await waitFor(`innerWidth === ${width} && innerHeight === ${height}`, 5000)
     await cdp.evaluate(`window.__yanStore.getState().patchSettings({ theme: '${theme}' })`)
     await cdp.evaluate(`document.querySelector('[data-chat-provider-model-picker]').click()`)
     await waitFor(`!!document.querySelector('[data-model-picker-content]')`)

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { delay } from '../../../../../shared/delay'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import type { CapabilityMcpServerSettingView, CapabilitySettingsSnapshot, CapabilityVerificationStatus } from '../../../../../shared/ipc'
@@ -13,7 +14,6 @@ import { McpServices } from './McpServices'
 
 type NativeMcpAction = 'login' | 'logout' | 'reconnect'
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
 export function McpSection(): ReactElement {
@@ -78,7 +78,7 @@ function McpServerRow({
       const operationId = started.operationId
       setOperation({ operationId, state: 'connecting' })
       for (let attempt = 0; attempt < 70 && mounted.current; attempt++) {
-        await sleep(350)
+        await delay(350)
         const state = await window.yan.capabilities.verification(operationId)
         if (!state || state.state !== 'connecting') {
           if (mounted.current && state) setOperation(state)

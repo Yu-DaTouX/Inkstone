@@ -430,6 +430,7 @@ async function main() {
   }
 
   const { RewindDialogV3, useStore: rewindStore } = rewindBundle
+  rt.cells = []
   const renderDialog = (ownerKey, active) => rt.render(RewindDialogV3, { ownerKey, active })
 
   group('RewindDialogV3：预览 → 确认 → 撤销走通，失败给文案')

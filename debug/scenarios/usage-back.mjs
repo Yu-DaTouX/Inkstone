@@ -12,7 +12,7 @@ export default async function run({ cdp, check, state, sleep }) {
     if (!back || !title) return null
     const a = back.getBoundingClientRect()
     const b = title.getBoundingClientRect()
-    const overlap = !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top)
+    const overlap = !(a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top || b.bottom <= a.top)
     const hits = [[0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9], [0.5, 0.5]].map(([fx, fy]) => {
       const x = a.left + a.width * fx
       const y = a.top + a.height * fy
