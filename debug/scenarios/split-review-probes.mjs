@@ -115,13 +115,19 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   await sleep(300)
 
   const scrollInfo = () => ev(`(() => {
-    const stream = [...document.querySelectorAll('.v3-stream')].find((el) => el.clientHeight > 0);
+    const stream = [...document.querySelectorAll('[data-live="1"] .v3-stream')].find((el) => el.clientHeight > 0) ?? [...document.querySelectorAll('.v3-stream')].find((el) => el.clientHeight > 0);
     if (!stream) return null;
     const top = stream.getBoundingClientRect().top;
     const block = [...stream.querySelectorAll('.v3-msg[data-turn-id] p, .v3-msg[data-turn-id] li, .v3-msg[data-turn-id] pre, .v3-msg[data-turn-id] h1, .v3-msg[data-turn-id] h2, .v3-msg[data-turn-id] h3')].find((el) => el.getBoundingClientRect().top >= top);
     return { scrollTop: Math.round(stream.scrollTop), scrollHeight: stream.scrollHeight, clientHeight: stream.clientHeight, turn: block ? block.closest('.v3-msg').dataset.turnId + ':' + block.textContent.slice(0, 40) : null, offset: block ? Math.round(block.getBoundingClientRect().top - top) : null };
   })()`)
-  await ev(`(() => { const stream = [...document.querySelectorAll('[data-live="1"] .v3-stream')].find((el) => el.clientHeight > 0); stream.scrollTop = Math.round((stream.scrollHeight - stream.clientHeight) * 0.4) })()`)
+  const liveBox = await ev(`(() => { const r = [...document.querySelectorAll('[data-live="1"] .v3-stream')].find((el) => el.clientHeight > 0).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`)
+  for (let i = 0; i < 120; i += 1) {
+    const info = await scrollInfo()
+    if (info && info.scrollTop < (info.scrollHeight - info.clientHeight) * 0.6) break
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: liveBox.x, y: liveBox.y, deltaX: 0, deltaY: -600 })
+    await sleep(30)
+  }
   await sleep(700)
   const beforeClose = await scrollInfo()
   await ev('window.__yanSplit.getState().close()')
