@@ -16,6 +16,7 @@ import {
 } from '../../shared/android-sdk'
 import { YAN_DIR } from '../paths'
 import { abi, adbPath, avdHome, emulatorPath, exe, installedSystemImage, javaOnPath, listAvds, MANAGED_JDK, resolveJavaHome, resolveSdkRoot, systemImageDir, WIN } from './android-paths'
+import { pick } from '../../shared/ui-lang'
 
 const REPO = 'https://dl.google.com/android/repository/'
 const SYS_IMG_REPO = `${REPO}sys-img/google_apis/`
@@ -75,13 +76,13 @@ export function pickArchive(packages: RemotePackage[], path: string, os = hostOs
 
 async function fetchText(url: string): Promise<string> {
   const response = await net.fetch(url)
-  if (!response.ok) throw new Error(`读取 ${url} 失败：HTTP ${response.status}`)
+  if (!response.ok) throw new Error(pick(`读取 ${url} 失败：HTTP ${response.status}`, `Failed to read ${url}: HTTP ${response.status}`))
   return response.text()
 }
 
 async function sdkArchive(xmlUrl: string, path: string, base: string): Promise<{ url: string; size: number; checksum: string }> {
   const archive = pickArchive(parseRepository(await fetchText(xmlUrl)), path)
-  if (!archive) throw new Error(`官方仓库里没有适合本机的 ${path}`)
+  if (!archive) throw new Error(pick(`官方仓库里没有适合本机的 ${path}`, `No suitable ${path} in the official repository for this machine`))
   return { url: new URL(archive.url, base).href, size: archive.size, checksum: archive.checksum }
 }
 
@@ -89,10 +90,10 @@ async function jdkArchive(): Promise<{ url: string; size: number; checksum: stri
   const os = WIN ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
   const arch = process.arch === 'arm64' ? 'aarch64' : 'x64'
   const response = await net.fetch(`${ADOPTIUM}?architecture=${arch}&image_type=jdk&os=${os}&vendor=eclipse`)
-  if (!response.ok) throw new Error(`读取 JDK 版本失败：HTTP ${response.status}`)
+  if (!response.ok) throw new Error(pick(`读取 JDK 版本失败：HTTP ${response.status}`, `Failed to read the JDK version: HTTP ${response.status}`))
   const list = (await response.json()) as Array<{ binary?: { package?: { link?: string; size?: number; checksum?: string } } }>
   const pkg = list[0]?.binary?.package
-  if (!pkg?.link || !pkg.checksum) throw new Error('没有找到适合本机的 JDK 21')
+  if (!pkg?.link || !pkg.checksum) throw new Error(pick('没有找到适合本机的 JDK 21', 'No suitable JDK 21 found for this machine'))
   return { url: pkg.link, size: pkg.size ?? 0, checksum: pkg.checksum.toLowerCase() }
 }
 
@@ -108,9 +109,9 @@ function extract(archive: string, into: string, signal: AbortSignal): Promise<vo
     child.on('error', reject)
     child.on('exit', (code) => {
       signal.removeEventListener('abort', abort)
-      if (signal.aborted) reject(new Error('已取消'))
+      if (signal.aborted) reject(new Error(pick('已取消', 'Canceled')))
       else if (code === 0) resolve()
-      else reject(new Error(`解压失败（${code}）：${stderr.trim()}`))
+      else reject(new Error(pick(`解压失败（${code}）：${stderr.trim()}`, `Extraction failed (${code}): ${stderr.trim()}`)))
     })
   })
 }
@@ -167,9 +168,9 @@ export class AndroidSdkService {
   }
 
   async install(ids: AndroidComponentId[]): Promise<{ ok: boolean; error?: string }> {
-    if (this.progress?.state === 'running') return { ok: false, error: '已有安装在进行' }
+    if (this.progress?.state === 'running') return { ok: false, error: pick('已有安装在进行', 'An install is already in progress') }
     const queue = [...new Set(ids)].filter((id) => id !== 'accel' || WIN)
-    if (!queue.length) return { ok: false, error: '没有需要安装的组件' }
+    if (!queue.length) return { ok: false, error: pick('没有需要安装的组件', 'No components to install') }
     this.abort = new AbortController()
     this.progress = { queue, current: null, phase: 'idle', received: 0, total: 0, done: [], state: 'running' }
     void this.runQueue(queue, this.abort.signal)
@@ -248,7 +249,7 @@ export class AndroidSdkService {
   private async download(plan: DownloadPlan, target: string, signal: AbortSignal): Promise<void> {
     const progress = this.progress!
     const response = await net.fetch(plan.url, { signal })
-    if (!response.ok || !response.body) throw new Error(`下载失败：HTTP ${response.status}`)
+    if (!response.ok || !response.body) throw new Error(pick(`下载失败：HTTP ${response.status}`, `Download failed: HTTP ${response.status}`))
     progress.total = Number(response.headers.get('content-length')) || plan.size
     const hash = createHash(plan.algorithm)
     let received = 0
@@ -261,8 +262,8 @@ export class AndroidSdkService {
       }
     })
     await pipeline(Readable.fromWeb(response.body.pipeThrough(counting) as import('node:stream/web').ReadableStream), createWriteStream(target))
-    if (plan.size && received !== plan.size) throw new Error('下载不完整，请重试')
-    if (hash.digest('hex') !== plan.checksum) throw new Error('文件校验失败，已删除下载内容')
+    if (plan.size && received !== plan.size) throw new Error(pick('下载不完整，请重试', 'Download incomplete; try again'))
+    if (hash.digest('hex') !== plan.checksum) throw new Error(pick('文件校验失败，已删除下载内容', 'File verification failed; download removed'))
   }
 
   private async writeLicenses(root: string): Promise<void> {
@@ -311,8 +312,8 @@ export class AndroidSdkService {
 
   private async installAccel(dir: string): Promise<void> {
     const script = join(dir, 'silent_install.bat')
-    if (!existsSync(script)) throw new Error('加速驱动安装包里没有 silent_install.bat')
+    if (!existsSync(script)) throw new Error(pick('加速驱动安装包里没有 silent_install.bat', 'silent_install.bat is missing from the acceleration driver package'))
     const code = await runElevated(script, dir)
-    if (code !== 0) throw new Error(`加速驱动安装未完成（${code}），可能取消了管理员授权`)
+    if (code !== 0) throw new Error(pick(`加速驱动安装未完成（${code}），可能取消了管理员授权`, `Acceleration driver install did not complete (${code}); admin permission may have been canceled`))
   }
 }

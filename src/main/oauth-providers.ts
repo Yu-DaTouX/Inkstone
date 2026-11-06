@@ -5,6 +5,7 @@ import { shell } from 'electron'
 import { mergeAuthEntry } from './credentials'
 import { openableAuthUrl } from './external-url'
 import type { OAuthLoginEvent, OAuthLoginResult } from '../shared/ipc'
+import { pick } from '../shared/ui-lang'
 
 const MODULES: Record<string, { file: string; exportName: string }> = {
   anthropic: { file: 'anthropic.js', exportName: 'anthropicOAuth' },
@@ -45,22 +46,22 @@ export async function startOAuthLogin(opts: {
 }): Promise<OAuthLoginResult> {
   const { provider, send } = opts
   const spec = MODULES[provider]
-  if (!spec) return { ok: false, error: '这个服务还不支持在应用内登录' }
-  if (running) return { ok: false, error: '已有一个登录正在进行，请先完成或取消它' }
+  if (!spec) return { ok: false, error: pick('这个服务还不支持在应用内登录', 'This service does not support in-app sign-in yet') }
+  if (running) return { ok: false, error: pick('已有一个登录正在进行，请先完成或取消它', 'A sign-in is already in progress; finish or cancel it first') }
 
   const file = join(dirname(opts.piEntry), 'chunks', spec.file)
   if (!existsSync(file)) {
-    return { ok: false, error: '当前 pi 版本里找不到这个服务的登录模块；可以在终端运行 pi，再输入 /login' }
+    return { ok: false, error: pick('当前 pi 版本里找不到这个服务的登录模块；可以在终端运行 pi，再输入 /login', 'This pi version has no sign-in module for this service; run pi in a terminal and enter /login') }
   }
   let mod: PiOAuthModule | undefined
   try {
     const loaded = (await import(pathToFileURL(file).href)) as Record<string, unknown>
     mod = loaded[spec.exportName] as PiOAuthModule | undefined
   } catch (error) {
-    return { ok: false, error: `加载登录模块失败：${error instanceof Error ? error.message : String(error)}` }
+    return { ok: false, error: pick(`加载登录模块失败：${error instanceof Error ? error.message : String(error)}`, `Failed to load the sign-in module: ${error instanceof Error ? error.message : String(error)}`) }
   }
   if (!mod || typeof mod.login !== 'function') {
-    return { ok: false, error: '当前 pi 版本的登录模块接口已变化；可以在终端运行 pi，再输入 /login' }
+    return { ok: false, error: pick('当前 pi 版本的登录模块接口已变化；可以在终端运行 pi，再输入 /login', 'The sign-in module interface changed in this pi version; run pi in a terminal and enter /login') }
   }
 
   const state: Running = { provider, abort: new AbortController(), pending: null, seq: 0 }
@@ -134,14 +135,14 @@ export async function startOAuthLogin(opts: {
       }
     })
     const saved = await mergeAuthEntry(provider, { type: 'oauth', ...credential })
-    if (!saved.ok) return { ok: false, error: `登录成功，但写入凭证失败：${saved.error ?? ''}` }
+    if (!saved.ok) return { ok: false, error: pick(`登录成功，但写入凭证失败：${saved.error ?? ''}`, `Signed in, but saving the credentials failed: ${saved.error ?? ''}`) }
     send({ provider, type: 'done' })
     return { ok: true }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const cancelled = state.abort.signal.aborted
     send({ provider, type: 'done' })
-    return { ok: false, cancelled, error: cancelled ? '已取消登录' : `登录失败：${message}` }
+    return { ok: false, cancelled, error: cancelled ? pick('已取消登录', 'Sign-in canceled') : pick(`登录失败：${message}`, `Sign-in failed: ${message}`) }
   } finally {
     if (running === state) running = null
   }

@@ -15,6 +15,7 @@ import {
   type CheckpointRestoreResult,
   type WorkspaceFit
 } from '../shared/checkpoints'
+import { pick } from '../shared/ui-lang'
 
 const ROOT = join(YAN_DIR, 'checkpoints')
 const KEEP_MS = 30 * 24 * 60 * 60 * 1000
@@ -84,7 +85,7 @@ async function readIndex(dir: string, cwd: string, onCorrupt: 'reset' | 'throw' 
     }
   } catch {
   }
-  if (onCorrupt === 'throw') throw new Error('检查点索引损坏')
+  if (onCorrupt === 'throw') throw new Error(pick('检查点索引损坏', 'Checkpoint index is corrupted'))
   await copyFile(file, `${file}.corrupt-${Date.now()}`)
   return { version: 1, cwd, records: [] }
 }
@@ -318,11 +319,11 @@ export function previewCheckpoint(cwd: string, recordId: string): Promise<Checkp
     const dir = projectDir(cwd)
     const index = await readIndex(dir, cwd)
     const sha = shaOf(index.records.find((r) => r.id === recordId))
-    if (!sha) return { ok: false, error: '找不到这个检查点（可能已过期被清理）', changes: [], total: 0 }
+    if (!sha) return { ok: false, error: pick('找不到这个检查点（可能已过期被清理）', 'Checkpoint not found (it may have expired)'), changes: [], total: 0 }
     const snapshot = await snapshotTree(cwd, dir)
-    if (!snapshot) return { ok: false, error: '没能读取项目文件当前的状态', changes: [], total: 0 }
+    if (!snapshot) return { ok: false, error: pick('没能读取项目文件当前的状态', 'Cannot read the current state of the project files'), changes: [], total: 0 }
     const diff = await shadowGit(cwd, dir, ['diff-index', '--cached', '--name-status', '--no-renames', sha], { allowFailure: true })
-    if (!diff.ok) return { ok: false, error: diff.error ?? '比较失败', changes: [], total: 0 }
+    if (!diff.ok) return { ok: false, error: diff.error ?? pick('比较失败', 'Comparison failed'), changes: [], total: 0 }
     const skip = new Set(snapshot.oversized)
     const lines = diff.stdout.split('\n').filter((line) => !skip.has(line.replace(/^[A-Z]\t/, '').trim()))
     return { ok: true, ...parseChanges(lines.join('\n')) }
@@ -346,22 +347,22 @@ export function restoreCheckpoint(cwd: string, recordId: string, sessionKey: str
     const index = await readIndex(dir, cwd)
     const target = index.records.find((r) => r.id === recordId)
     const sha = shaOf(target)
-    if (!target || !sha) return { ok: false, error: '找不到这个检查点（可能已过期被清理）', restored: 0 }
+    if (!target || !sha) return { ok: false, error: pick('找不到这个检查点（可能已过期被清理）', 'Checkpoint not found (it may have expired)'), restored: 0 }
     const before = await takeSnapshot(cwd, sessionKey || target.sessionKey, `回退前：${target.preview}`, 'restore')
-    if (!before) return { ok: false, error: '回退前没能存下现在的状态，已取消，文件没有改动', restored: 0 }
+    if (!before) return { ok: false, error: pick('回退前没能存下现在的状态，已取消，文件没有改动', 'Could not save the current state before rollback; canceled, files unchanged'), restored: 0 }
     const beforeSha = shaOf((await readIndex(dir, cwd)).records.find((r) => r.id === before.id))
     const kept = await oversizedInWorktree(cwd, dir, sha)
-    if (!kept) return { ok: false, error: '读不到检查点内容，已取消，文件没有改动', undoId: before.id, restored: 0 }
+    if (!kept) return { ok: false, error: pick('读不到检查点内容，已取消，文件没有改动', 'Cannot read the checkpoint content; canceled, files unchanged'), undoId: before.id, restored: 0 }
     let restoreTree = sha
     if (kept.length) {
       const narrowed = beforeSha ? await treeWithout(cwd, dir, sha, beforeSha, kept) : null
-      if (!narrowed) return { ok: false, error: '没能避开超大文件，已取消，文件没有改动', undoId: before.id, restored: 0 }
+      if (!narrowed) return { ok: false, error: pick('没能避开超大文件，已取消，文件没有改动', 'Could not skip oversized files; canceled, files unchanged'), undoId: before.id, restored: 0 }
       restoreTree = narrowed
     }
     const reset = await shadowGit(cwd, dir, ['read-tree', '-u', '--reset', restoreTree], { allowFailure: true })
     if (!reset.ok) return {
       ok: false,
-      error: `恢复失败，工作区可能已部分变更；可用撤销检查点 ${before.id} 恢复回退前状态。${reset.error ? ` ${reset.error}` : ''}`,
+      error: pick(`恢复失败，工作区可能已部分变更；可用撤销检查点 ${before.id} 恢复回退前状态。${reset.error ? ` ${reset.error}` : ''}`, `Restore failed; the workspace may be partly changed. Undo checkpoint ${before.id} restores the pre-rollback state.${reset.error ? ` ${reset.error}` : ''}`),
       undoId: before.id,
       restored: 0
     }

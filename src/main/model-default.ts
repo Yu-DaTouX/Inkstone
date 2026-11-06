@@ -1,4 +1,5 @@
 import type { ModelChoice } from '../shared/model-selection'
+import { pick } from '../shared/ui-lang'
 
 export async function applyRememberedModel(agent: {
   getState(): { model?: Pick<ModelChoice, 'provider' | 'id'> | null } | null
@@ -8,7 +9,7 @@ export async function applyRememberedModel(agent: {
   if (!model) return { ok: true }
   const models = await agent.listModels()
   if (!models.some(m => m.provider === model.provider && m.id === model.id)) {
-    return { ok: false, error: `上次使用的模型 ${model.provider}/${model.id} 当前不可用，请重新选择模型后新建会话。` }
+    return { ok: false, error: pick(`上次使用的模型 ${model.provider}/${model.id} 当前不可用，请重新选择模型后新建会话。`, `The last used model ${model.provider}/${model.id} is unavailable; pick a model and start a new session.`) }
   }
   const current = agent.getState()?.model
   if (current?.provider === model.provider && current.id === model.id) return { ok: true }

@@ -2,6 +2,7 @@ import { request as httpRequest, type ClientRequest } from 'node:http'
 import { fromB64u, generateKeyPair, RELAY_PROTOCOL_VERSION, serverSession, toB64u, type KeyPair, type SecureChannel } from './crypto'
 import type { RelayClient } from './store'
 import { REMOTE_IDEMPOTENCY_HEADER, REMOTE_MESSAGE_MAX_BYTES } from '../../shared/remote-protocol'
+import { pick } from '../../shared/ui-lang'
 
 export interface Pipe {
   send(text: string): void
@@ -150,31 +151,31 @@ export class TunnelSession {
   private request(msg: Record<string, unknown>): void {
     const id = typeof msg.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.id) ? msg.id : null
     if (!id) return
-    if (this.pending.has(id)) return this.fail(id, 400, '请求 id 重复')
+    if (this.pending.has(id)) return this.fail(id, 400, pick('请求 id 重复', 'Duplicate request id'))
     const method = msg.method === 'GET' || msg.method === 'POST' ? msg.method : null
     const path = typeof msg.path === 'string' ? msg.path : ''
     let url: URL
     try {
       url = new URL(path, 'http://relay.local')
     } catch {
-      return this.fail(id, 400, '路径无效')
+      return this.fail(id, 400, pick('路径无效', 'Invalid path'))
     }
     if (!method || !path.startsWith('/') || url.origin !== 'http://relay.local' || !url.pathname.startsWith('/remote/v1/') || url.pathname.includes('..')) {
-      return this.fail(id, 403, '经中继只能访问砚的远程接口')
+      return this.fail(id, 403, pick('经中继只能访问砚的远程接口', 'Only the Inkstone remote API is reachable through the relay'))
     }
     const kind = this.client?.kind ?? 'phone'
-    if (kind === 'agent' && !AGENT_PATHS.has(url.pathname)) return this.fail(id, 403, 'Agent Hub 已退役，礁石不能再使用远程接口')
-    if (this.pending.size >= MAX_REQUESTS) return this.fail(id, 429, '同时进行的请求太多')
+    if (kind === 'agent' && !AGENT_PATHS.has(url.pathname)) return this.fail(id, 403, pick('Agent Hub 已退役，礁石不能再使用远程接口', 'Agent Hub is retired; the remote API is no longer available'))
+    if (this.pending.size >= MAX_REQUESTS) return this.fail(id, 429, pick('同时进行的请求太多', 'Too many concurrent requests'))
     const target = this.hooks.target()
-    if (!target) return this.fail(id, 503, '电脑上的远程服务没有运行')
+    if (!target) return this.fail(id, 503, pick('电脑上的远程服务没有运行', 'The remote service on the computer is not running'))
 
     const body = typeof msg.body === 'string' ? msg.body : ''
     const maxBytes = method !== 'POST' ? null
       : url.pathname === '/remote/v1/voice/transcribe' ? VOICE_MAX_BODY_BYTES
         : /^\/remote\/v1\/sessions\/[^/]+\/messages$/.test(url.pathname) ? REMOTE_MESSAGE_MAX_BYTES : null
-    if (body.length > (maxBytes === null ? MAX_BODY_B64 : 4 * Math.ceil(maxBytes / 3))) return this.fail(id, 413, '请求太大')
+    if (body.length > (maxBytes === null ? MAX_BODY_B64 : 4 * Math.ceil(maxBytes / 3))) return this.fail(id, 413, pick('请求太大', 'Request too large'))
     let payload = body ? Buffer.from(body, 'base64') : Buffer.alloc(0)
-    if (maxBytes !== null && payload.length > maxBytes) return this.fail(id, 413, '请求太大')
+    if (maxBytes !== null && payload.length > maxBytes) return this.fail(id, 413, pick('请求太大', 'Request too large'))
     const given = msg.headers && typeof msg.headers === 'object' ? (msg.headers as Record<string, unknown>) : {}
     const headers: Record<string, string> = {}
     for (const name of FORWARD_HEADERS) {
@@ -186,7 +187,7 @@ export class TunnelSession {
       try {
         parsed = JSON.parse(payload.toString('utf8') || '{}') as Record<string, unknown>
       } catch {
-        return this.fail(id, 400, '配对请求格式不对')
+        return this.fail(id, 400, pick('配对请求格式不对', 'Invalid pairing request'))
       }
       payload = Buffer.from(JSON.stringify({ ...parsed, kind: kind === 'agent' ? 'agent' : 'phone' }))
       headers['content-type'] = 'application/json'
@@ -213,7 +214,7 @@ export class TunnelSession {
       if (streaming && [...this.pending.values()].filter((p) => p.stream).length > MAX_STREAMS) {
         res.destroy()
         this.pending.delete(id)
-        return this.fail(id, 429, '同时打开的事件流太多')
+        return this.fail(id, 429, pick('同时打开的事件流太多', 'Too many open event streams'))
       }
       if (streaming) {
         this.post({ t: 'res', id, status, headers: resHeaders, stream: true })
@@ -270,7 +271,7 @@ export class TunnelSession {
       if (!entry || entry.req !== req) return
       if (entry.finish) return entry.finish('电脑上的事件流异常断开')
       this.pending.delete(id)
-      this.fail(id, 502, '电脑上的远程服务没有响应')
+      this.fail(id, 502, pick('电脑上的远程服务没有响应', 'The remote service on the computer is not responding'))
     })
     this.pending.set(id, { req, stream: false })
     req.end(payload)

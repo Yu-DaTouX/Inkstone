@@ -1,5 +1,6 @@
 import { net } from 'electron'
 import { CLAUDE_OAUTH_HEADERS } from '../shared/account-quota'
+import { pick } from '../shared/ui-lang'
 
 const CLAUDE_MIN_GAP_MS = 60_000
 const CLAUDE_BACKOFF_MS = 5 * 60_000
@@ -17,12 +18,12 @@ export function forgetClaudeUsage(): void {
   claudeUsageCache.clear()
 }
 
-export async function claudeUsage(accessToken: string, revoked = '登录已失效'): Promise<unknown> {
+export async function claudeUsage(accessToken: string, revoked = pick('登录已失效', 'Sign-in expired')): Promise<unknown> {
   const now = Date.now()
   const cached = claudeUsageCache.get(accessToken)
   if (cached && now - cached.at < CLAUDE_MIN_GAP_MS) return cached.usage
   const until = claudeCooldown.get(accessToken) ?? 0
-  if (until > now) throw new Error(`查询太频繁，${Math.ceil((until - now) / 60_000)} 分钟后重试`)
+  if (until > now) throw new Error(pick(`查询太频繁，${Math.ceil((until - now) / 60_000)} 分钟后重试`, `Too many requests; retry in ${Math.ceil((until - now) / 60_000)} min`))
   const res = await net.fetch('https://api.anthropic.com/api/oauth/usage?cedar_ember=1', {
     headers: { Authorization: `Bearer ${accessToken}`, ...CLAUDE_OAUTH_HEADERS },
     signal: AbortSignal.timeout(10_000)
@@ -30,7 +31,7 @@ export async function claudeUsage(accessToken: string, revoked = '登录已失�
   if (res.status === 429) {
     const wait = Math.min(30 * 60_000, Math.max(CLAUDE_MIN_GAP_MS, retryAfterMs(res.headers.get('retry-after'))))
     claudeCooldown.set(accessToken, Date.now() + wait)
-    throw new Error(`查询太频繁（HTTP 429），${Math.ceil(wait / 60_000)} 分钟后重试`)
+    throw new Error(pick(`查询太频繁（HTTP 429），${Math.ceil(wait / 60_000)} 分钟后重试`, `Too many requests (HTTP 429); retry in ${Math.ceil(wait / 60_000)} min`))
   }
   if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? revoked : `HTTP ${res.status}`)
   const usage = await res.json()

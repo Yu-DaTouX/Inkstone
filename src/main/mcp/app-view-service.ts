@@ -27,6 +27,7 @@ import {
   type McpAppResourceFetch
 } from './app-resource-store'
 import type { McpAppCallOutcome, McpAppResource, McpAppToolDescriptor } from './app-host'
+import { pick } from '../../shared/ui-lang'
 
 export interface McpAppViewCallRecordLike {
   callId: string
@@ -231,7 +232,7 @@ function validateToolArgs(schema: unknown, args: Record<string, unknown>): strin
   if (!shape) return null
   if (Array.isArray(shape.required)) {
     for (const key of shape.required) {
-      if (typeof key === 'string' && !Object.prototype.hasOwnProperty.call(args, key)) return `缺少必填参数：${key}`
+      if (typeof key === 'string' && !Object.prototype.hasOwnProperty.call(args, key)) return pick(`缺少必填参数：${key}`, `Missing required parameter: ${key}`)
     }
   }
   const props = asRecord(shape.properties)
@@ -241,7 +242,7 @@ function validateToolArgs(schema: unknown, args: Record<string, unknown>): strin
     const def = asRecord(definition)
     if (!def) continue
     if (typeof def.type === 'string' && !matchesJsonType(def.type, args[key])) {
-      return `参数 ${key} 的类型与工具 schema 不符`
+      return pick(`参数 ${key} 的类型与工具 schema 不符`, `Parameter ${key} does not match the tool schema`)
     }
   }
   return null
@@ -370,9 +371,9 @@ export class McpAppViewService implements McpAppViewApi {
 
   async prepare(callId: string): Promise<McpAppViewDescriptor> {
     const id = typeof callId === 'string' ? callId.trim() : ''
-    if (!id || id.length > 200) return { kind: 'error', error: '缺少有效的工具调用 ID' }
+    if (!id || id.length > 200) return { kind: 'error', error: pick('缺少有效的工具调用 ID', 'Missing a valid tool call ID') }
     const facts = await this.resolveFacts(id)
-    if (!facts) return { kind: 'error', error: '当前没有可用的前台运行实例，或该调用不属于当前会话' }
+    if (!facts) return { kind: 'error', error: pick('当前没有可用的前台运行实例，或该调用不属于当前会话', 'No foreground runtime, or the call is not from this session') }
 
     let record: McpAppViewCallRecordLike | null
     try {
@@ -386,25 +387,25 @@ export class McpAppViewService implements McpAppViewApi {
       record = null
     }
     if (!record) {
-      return { kind: 'text', text: '', reason: '没有本机的工具调用结果；App 视图不恢复，也不会重跑工具' }
+      return { kind: 'text', text: '', reason: pick('没有本机的工具调用结果；App 视图不恢复，也不会重跑工具', 'No local tool result; the app view is not restored and the tool is not rerun') }
     }
     if (record.owner.sessionId !== facts.sessionId || record.owner.projectId !== facts.projectId) {
-      return { kind: 'error', error: '工具调用记录不属于当前会话，拒绝准备 App 视图' }
+      return { kind: 'error', error: pick('工具调用记录不属于当前会话，拒绝准备 App 视图', 'Tool call is not from this session; app view refused') }
     }
     if (record.owner.runnerId && record.owner.runnerId !== facts.runnerId) {
-      return { kind: 'error', error: '工具调用记录不属于当前运行实例，拒绝准备 App 视图' }
+      return { kind: 'error', error: pick('工具调用记录不属于当前运行实例，拒绝准备 App 视图', 'Tool call is not from this runtime; app view refused') }
     }
     if (typeof record.owner.epoch === 'number' && record.owner.epoch !== facts.generation) {
-      return { kind: 'error', error: '工具调用记录来自旧运行代次，拒绝准备 App 视图' }
+      return { kind: 'error', error: pick('工具调用记录来自旧运行代次，拒绝准备 App 视图', 'Tool call is from an older runtime generation; app view refused') }
     }
 
     const serverId = String(record.serverId ?? '').trim()
     const toolName = String(record.toolName ?? '').trim()
-    if (!serverId || !toolName) return { kind: 'error', error: '工具调用记录缺少服务或工具信息' }
+    if (!serverId || !toolName) return { kind: 'error', error: pick('工具调用记录缺少服务或工具信息', 'Tool call is missing server or tool info') }
 
     const resourceUri = await this.resolveResourceUri(record, facts)
     if (!resourceUri) {
-      return { kind: 'text', text: typeof record.text === 'string' ? record.text : '', reason: '该工具结果没有可渲染的 App 资源' }
+      return { kind: 'text', text: typeof record.text === 'string' ? record.text : '', reason: pick('该工具结果没有可渲染的 App 资源', 'This tool result has no renderable app resource') }
     }
 
     const owner: McpAppOwner = {
@@ -416,22 +417,22 @@ export class McpAppViewService implements McpAppViewApi {
       generation: facts.generation,
       toolCallId: id
     }
-    if (!isCompleteMcpAppOwner(owner)) return { kind: 'error', error: '实例归属信息不完整，拒绝准备 App 视图' }
+    if (!isCompleteMcpAppOwner(owner)) return { kind: 'error', error: pick('实例归属信息不完整，拒绝准备 App 视图', 'Incomplete owner info; app view refused') }
     if (this.instances.size >= this.maxInstances) {
-      return { kind: 'error', error: 'App 视图实例数已达上限，请先关闭其它视图' }
+      return { kind: 'error', error: pick('App 视图实例数已达上限，请先关闭其它视图', 'Too many app views open; close one first') }
     }
 
     let prepared: Awaited<ReturnType<McpAppResourceStore['prepare']>>
     try {
       prepared = await this.store.prepare({ serverId, resourceUri, owner })
     } catch {
-      return { kind: 'text', text: record.text ?? '', reason: 'App 资源读取失败' }
+      return { kind: 'text', text: record.text ?? '', reason: pick('App 资源读取失败', 'Failed to read the app resource') }
     }
     if (!prepared.ok) {
       if (prepared.error === 'owner' || prepared.error === 'revoked' || prepared.error === 'input') {
-        return { kind: 'error', error: `拒绝准备 App 视图（${prepared.error}）` }
+        return { kind: 'error', error: pick(`拒绝准备 App 视图（${prepared.error}）`, `App view refused (${prepared.error})`) }
       }
-      return { kind: 'text', text: record.text ?? '', reason: `App 视图不可用（${prepared.error}）` }
+      return { kind: 'text', text: record.text ?? '', reason: pick(`App 视图不可用（${prepared.error}）`, `App view unavailable (${prepared.error})`) }
     }
 
     const title = (facts.title ?? '').trim() || serverId
@@ -456,25 +457,25 @@ export class McpAppViewService implements McpAppViewApi {
 
   async dispatch(instanceId: string, message: unknown): Promise<unknown> {
     const binding = this.instances.get(String(instanceId ?? ''))
-    if (!binding) return this.rpcError(null, -32600, 'App 实例不存在或已释放')
+    if (!binding) return this.rpcError(null, -32600, pick('App 实例不存在或已释放', 'App instance does not exist or was released'))
 
     const parsed = this.parseRpc(message)
     if (!parsed.ok) return this.rpcError(parsed.id, -32600, parsed.error)
     const { id, method, params } = parsed
 
     if (id !== undefined && !this.rememberId(binding, id)) {
-      return this.rpcError(id, -32600, '重复的请求 ID，拒绝重放')
+      return this.rpcError(id, -32600, pick('重复的请求 ID，拒绝重放', 'Duplicate request ID; replay refused'))
     }
     if (!this.isOwnerActive(binding.owner)) {
-      return this.rpcError(id, -32001, 'App 实例归属已失效，拒绝请求')
+      return this.rpcError(id, -32001, pick('App 实例归属已失效，拒绝请求', 'App instance ownership expired; request refused'))
     }
 
-    if (!binding.initialized && method !== 'inkstone/activate') return this.rpcError(id, -32002, 'App 尚未完成初始化')
+    if (!binding.initialized && method !== 'inkstone/activate') return this.rpcError(id, -32002, pick('App 尚未完成初始化', 'App is not initialized yet'))
 
     switch (method) {
       case 'inkstone/activate': {
         const hostContext = await this.resolveHostContext()
-        if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, 'App 实例归属已失效')
+        if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, pick('App 实例归属已失效', 'App instance ownership expired'))
         binding.initialized = true
         return this.rpcResult(id, { hostContext, hostCapabilities: this.hostCapabilities(binding) })
       }
@@ -484,7 +485,7 @@ export class McpAppViewService implements McpAppViewApi {
       }
       case 'tools/list': {
         const tools = await this.host.listToolsWithMeta(binding.serverId, { projectId: binding.facts.projectId, signal: binding.abort.signal })
-        if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, 'App 实例归属已失效')
+        if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, pick('App 实例归属已失效', 'App instance ownership expired'))
         return this.rpcResult(id, { tools: tools.filter((tool) => tool.appVisible).map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema ?? { type: 'object' }, annotations: tool.annotations, _meta: tool.meta })) })
       }
       case 'resources/list':
@@ -492,20 +493,20 @@ export class McpAppViewService implements McpAppViewApi {
       case 'ui/message':
       case 'ui/open-link':
       case 'ui/download-file':
-        if (id === undefined) return this.rpcError(null, -32600, '宿主请求必须带 id')
+        if (id === undefined) return this.rpcError(null, -32600, pick('宿主请求必须带 id', 'Host requests must carry an id'))
         return this.handleHostRequest(binding, id, method, params)
       case MCP_APP_METHODS.toolsCall:
-        if (id === undefined) return this.rpcError(null, -32600, 'tools/call 必须是带 id 的请求')
-        if (!binding.initialized) return this.rpcError(id, -32002, 'App 尚未完成初始化，拒绝调用工具')
+        if (id === undefined) return this.rpcError(null, -32600, pick('tools/call 必须是带 id 的请求', 'tools/call must carry an id'))
+        if (!binding.initialized) return this.rpcError(id, -32002, pick('App 尚未完成初始化，拒绝调用工具', 'App is not initialized yet; tool call refused'))
         return this.handleToolsCall(binding, id, params)
       case MCP_APP_METHODS.resourcesRead:
-        if (id === undefined) return this.rpcError(null, -32600, 'resources/read 必须是带 id 的请求')
+        if (id === undefined) return this.rpcError(null, -32600, pick('resources/read 必须是带 id 的请求', 'resources/read must carry an id'))
         return this.handleResourcesRead(binding, id, params)
       default:
         return this.rpcError(
           id,
           -32601,
-          `不支持的 App 请求：${method}（宿主未声明此能力）`
+          pick(`不支持的 App 请求：${method}（宿主未声明此能力）`, `Unsupported app request: ${method} (capability not declared by the host)`)
         )
     }
   }
@@ -634,12 +635,12 @@ export class McpAppViewService implements McpAppViewApi {
     params: Record<string, unknown>
   ): Promise<unknown> {
     const toolName = typeof params.name === 'string' ? params.name.trim() : ''
-    if (!toolName) return this.rpcError(id, -32602, 'tools/call 缺少工具名')
+    if (!toolName) return this.rpcError(id, -32602, pick('tools/call 缺少工具名', 'tools/call is missing a tool name'))
     const args = asRecord(params.arguments) ?? {}
     const mode = await this.permissionMode()
 
     if (binding.inFlight >= this.maxConcurrent) {
-      return this.rpcError(id, -32000, 'App 并发调用过多，请稍后再试')
+      return this.rpcError(id, -32000, pick('App 并发调用过多，请稍后再试', 'Too many concurrent app calls; try again later'))
     }
     binding.inFlight++
     try {
@@ -650,18 +651,18 @@ export class McpAppViewService implements McpAppViewApi {
           signal: binding.abort.signal
         })
       } catch (error) {
-        return this.rpcError(id, -32000, `读取工具表失败：${messageOf(error)}`)
+        return this.rpcError(id, -32000, pick(`读取工具表失败：${messageOf(error)}`, `Failed to read the tool list: ${messageOf(error)}`))
       }
       const tool = tools.find((entry) => entry.name === toolName)
       if (!tool) {
         await this.tryWriteAudit(binding, 'denied', toolName, mode, `未知工具：${toolName}`, { reason: '工具不在当前工具表里' })
-        return this.rpcError(id, -32601, `当前服务没有工具 ${toolName}`)
+        return this.rpcError(id, -32601, pick(`当前服务没有工具 ${toolName}`, `This server has no tool ${toolName}`))
       }
 
       const visibility: McpAppVisibility[] = mcpAppVisibilityOf(tool.meta)
       if (!visibility.includes('app')) {
         await this.tryWriteAudit(binding, 'denied', toolName, mode, `visibility 拒绝：${toolName}`, { reason: '工具未向 App 视图开放' })
-        return this.rpcError(id, -32601, `工具 ${toolName} 未向 App 视图开放`)
+        return this.rpcError(id, -32601, pick(`工具 ${toolName} 未向 App 视图开放`, `Tool ${toolName} is not exposed to app views`))
       }
 
       const schemaError = validateToolArgs(tool.inputSchema, args)
@@ -673,14 +674,14 @@ export class McpAppViewService implements McpAppViewApi {
       const fingerprint = this.serverFingerprint(binding.serverId)
       if (!fingerprint) {
         await this.tryWriteAudit(binding, 'error', toolName, mode, `服务身份未知：${binding.serverId}`, { reason: '无法计算服务器身份指纹' })
-        return this.rpcError(id, -32000, '无法确认服务器身份，拒绝调用')
+        return this.rpcError(id, -32000, pick('无法确认服务器身份，拒绝调用', 'Cannot confirm server identity; call refused'))
       }
 
       const argsHash = hashMcpAppViewArgs(args)
       try {
         await this.writeAudit(binding, 'requested', toolName, mode, `App 请求调用 ${toolName}`, { argsHash })
       } catch (error) {
-        return this.rpcError(id, -32000, `App 审计写入失败，已拒绝执行：${messageOf(error)}`)
+        return this.rpcError(id, -32000, pick(`App 审计写入失败，已拒绝执行：${messageOf(error)}`, `App audit write failed; execution refused: ${messageOf(error)}`))
       }
 
       let grants: readonly HostTrustGrant[]
@@ -712,19 +713,19 @@ export class McpAppViewService implements McpAppViewApi {
         }
       )
       if (!decision.allowed) {
-        await this.tryWriteAudit(binding, 'denied', toolName, mode, `拒绝调用 ${toolName}`, { reason: decision.reason ?? '未获授权' })
-        return this.rpcError(id, -32000, decision.reason ?? '未获授权')
+        await this.tryWriteAudit(binding, 'denied', toolName, mode, `拒绝调用 ${toolName}`, { reason: decision.reason ?? pick('未获授权', 'Not authorized') })
+        return this.rpcError(id, -32000, decision.reason ?? pick('未获授权', 'Not authorized'))
       }
 
       try {
         await this.writeAudit(binding, 'approved', toolName, mode, `允许调用 ${toolName}`, { argsHash })
       } catch (error) {
-        return this.rpcError(id, -32000, `App 审计写入失败，已拒绝执行：${messageOf(error)}`)
+        return this.rpcError(id, -32000, pick(`App 审计写入失败，已拒绝执行：${messageOf(error)}`, `App audit write failed; execution refused: ${messageOf(error)}`))
       }
 
       if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) {
         await this.tryWriteAudit(binding, 'error', toolName, mode, `归属或服务身份已变化：${toolName}`, { reason: '调用前复核失败' })
-        return this.rpcError(id, -32000, 'App 实例归属或服务身份已变化，拒绝调用')
+        return this.rpcError(id, -32000, pick('App 实例归属或服务身份已变化，拒绝调用', 'App ownership or server identity changed; call refused'))
       }
 
       let outcome: McpAppCallOutcome
@@ -735,12 +736,12 @@ export class McpAppViewService implements McpAppViewApi {
         })
       } catch (error) {
         await this.tryWriteAudit(binding, 'error', toolName, mode, `调用失败：${toolName}`, { reason: messageOf(error) })
-        return this.rpcError(id, -32000, `工具调用失败：${messageOf(error)}`)
+        return this.rpcError(id, -32000, pick(`工具调用失败：${messageOf(error)}`, `Tool call failed: ${messageOf(error)}`))
       }
 
       if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) {
         await this.tryWriteAudit(binding, 'error', toolName, mode, `迟到结果已丢弃：${toolName}`, { reason: '调用后复核失败' })
-        return this.rpcError(id, -32000, 'App 实例归属或服务身份已变化，结果已丢弃')
+        return this.rpcError(id, -32000, pick('App 实例归属或服务身份已变化，结果已丢弃', 'App ownership or server identity changed; result discarded'))
       }
 
       await this.tryWriteAudit(binding, 'completed', toolName, mode, `调用完成：${toolName}`, { argsHash })
@@ -761,24 +762,24 @@ export class McpAppViewService implements McpAppViewApi {
     params: Record<string, unknown>
   ): Promise<unknown> {
     const uri = typeof params.uri === 'string' ? params.uri.trim() : ''
-    if (!uri) return this.rpcError(id, -32602, 'resources/read 缺少资源 URI')
+    if (!uri) return this.rpcError(id, -32602, pick('resources/read 缺少资源 URI', 'resources/read is missing a resource URI'))
     if (uri !== binding.resourceUri) {
-      return this.rpcError(id, -32601, '只允许读取本实例已声明的 App 资源')
+      return this.rpcError(id, -32601, pick('只允许读取本实例已声明的 App 资源', 'Only app resources declared by this instance can be read'))
     }
-    if (binding.inFlight >= this.maxConcurrent) return this.rpcError(id, -32000, '并发请求过多')
+    if (binding.inFlight >= this.maxConcurrent) return this.rpcError(id, -32000, pick('并发请求过多', 'Too many concurrent requests'))
     binding.inFlight++
     try {
-      if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, 'App 实例归属已失效')
+      if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, pick('App 实例归属已失效', 'App instance ownership expired'))
       const resource = await this.host.readResource(binding.serverId, uri, {
         projectId: binding.facts.projectId,
         signal: binding.abort.signal
       })
-      if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, 'App 实例归属已失效')
+      if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, pick('App 实例归属已失效', 'App instance ownership expired'))
       return this.rpcResult(id, {
         contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: resource.text, ...(resource.meta ? { _meta: resource.meta } : {}) }]
       })
     } catch (error) {
-      return this.rpcError(id, -32000, `资源读取失败：${messageOf(error)}`)
+      return this.rpcError(id, -32000, pick(`资源读取失败：${messageOf(error)}`, `Failed to read resource: ${messageOf(error)}`))
     } finally {
       binding.inFlight--
     }
@@ -795,30 +796,30 @@ export class McpAppViewService implements McpAppViewApi {
   }
 
   private async handleHostRequest(binding: InstanceBinding, id: string | number, method: string, params: Record<string, unknown>): Promise<unknown> {
-    if (binding.inFlight >= this.maxConcurrent) return this.rpcError(id, -32000, '并发请求过多')
+    if (binding.inFlight >= this.maxConcurrent) return this.rpcError(id, -32000, pick('并发请求过多', 'Too many concurrent requests'))
     const message = { method, params }
     let execute: (() => Promise<void>) | undefined
     if (method === 'ui/message' && this.hostRequests.message) {
       const parsed = McpUiMessageRequestSchema.safeParse(message)
-      if (!parsed.success || parsed.data.params.content.some((block) => block.type !== 'text')) return this.rpcError(id, -32602, '宿主只支持文本消息')
+      if (!parsed.success || parsed.data.params.content.some((block) => block.type !== 'text')) return this.rpcError(id, -32602, pick('宿主只支持文本消息', 'The host only supports text messages'))
       const text = parsed.data.params.content.map((block) => block.type === 'text' ? block.text : '').join('\n')
-      if (!text.trim()) return this.rpcError(id, -32602, '消息不能为空')
+      if (!text.trim()) return this.rpcError(id, -32602, pick('消息不能为空', 'Message cannot be empty'))
       execute = () => this.hostRequests.message!(text, binding.facts, binding.abort.signal)
     } else if (method === 'ui/open-link' && this.hostRequests.openLink) {
       const parsed = McpUiOpenLinkRequestSchema.safeParse(message)
-      if (!parsed.success) return this.rpcError(id, -32602, '链接请求无效')
+      if (!parsed.success) return this.rpcError(id, -32602, pick('链接请求无效', 'Invalid link request'))
       execute = () => this.hostRequests.openLink!(parsed.data.params.url, binding.facts, binding.abort.signal)
     } else if (method === 'ui/download-file' && this.hostRequests.downloadFile) {
       const parsed = McpUiDownloadFileRequestSchema.safeParse(message)
-      if (!parsed.success) return this.rpcError(id, -32602, '下载请求无效')
+      if (!parsed.success) return this.rpcError(id, -32602, pick('下载请求无效', 'Invalid download request'))
       execute = () => this.hostRequests.downloadFile!(parsed.data.params.contents, binding.facts, binding.abort.signal)
     }
-    if (!execute) return this.rpcError(id, -32601, '宿主未声明此能力')
+    if (!execute) return this.rpcError(id, -32601, pick('宿主未声明此能力', 'Capability not declared by the host'))
     binding.inFlight++
     try {
       const mode = await this.permissionMode()
       const fingerprint = this.serverFingerprint(binding.serverId)
-      if (!fingerprint) return this.rpcError(id, -32000, '无法确认服务器身份')
+      if (!fingerprint) return this.rpcError(id, -32000, pick('无法确认服务器身份', 'Cannot confirm server identity'))
       const argsHash = hashMcpAppViewArgs(params)
       await this.writeAudit(binding, 'requested', method, mode, `App 请求 ${method}`, { argsHash })
       const decision = await approveAppViewCall({ server: binding.serverId, tool: method, visibility: ['app'], annotations: { destructiveHint: true }, args: params, sessionId: binding.facts.sessionId, runId: binding.facts.runnerId, cwd: binding.facts.cwd, permissionMode: mode }, this.ask, { serverFingerprint: fingerprint })
@@ -827,9 +828,9 @@ export class McpAppViewService implements McpAppViewApi {
         return this.rpcResult(id, { isError: true })
       }
       await this.writeAudit(binding, 'approved', method, mode, `允许 ${method}`, { argsHash })
-      if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) return this.rpcError(id, -32001, '归属或服务身份已变化')
+      if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) return this.rpcError(id, -32001, pick('归属或服务身份已变化', 'Ownership or server identity changed'))
       await execute()
-      if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) return this.rpcError(id, -32001, '归属或服务身份已变化')
+      if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) return this.rpcError(id, -32001, pick('归属或服务身份已变化', 'Ownership or server identity changed'))
       await this.tryWriteAudit(binding, 'completed', method, mode, `完成 ${method}`, { argsHash })
       return this.rpcResult(id, {})
     } catch (error) {
@@ -985,23 +986,23 @@ export class McpAppViewService implements McpAppViewApi {
 
   private parseRpc(message: unknown): ParsedRpcOk | ParsedRpcError {
     const parsed = JSONRPCMessageSchema.safeParse(message)
-    if (!parsed.success || !('method' in parsed.data)) return { ok: false, id: null, error: '无效的 JSON-RPC 请求' }
+    if (!parsed.success || !('method' in parsed.data)) return { ok: false, id: null, error: pick('无效的 JSON-RPC 请求', 'Invalid JSON-RPC request') }
     const record = parsed.data
     const method = record.method
     const id = 'id' in record ? record.id : undefined
-    if (typeof id === 'string' && id.length > 128) return { ok: false, id: null, error: '请求 ID 过长' }
-    if (method.length > 128) return { ok: false, id: null, error: '方法名过长' }
+    if (typeof id === 'string' && id.length > 128) return { ok: false, id: null, error: pick('请求 ID 过长', 'Request ID too long') }
+    if (method.length > 128) return { ok: false, id: null, error: pick('方法名过长', 'Method name too long') }
     let serialized: string
     try {
       serialized = JSON.stringify(message)
     } catch {
-      return { ok: false, id: id ?? null, error: '消息无法序列化' }
+      return { ok: false, id: id ?? null, error: pick('消息无法序列化', 'Message cannot be serialized') }
     }
     if (Buffer.byteLength(serialized, 'utf8') > this.maxMessageBytes) {
-      return { ok: false, id: id ?? null, error: '消息超过体积上限' }
+      return { ok: false, id: id ?? null, error: pick('消息超过体积上限', 'Message exceeds the size limit') }
     }
     const params = record.params === undefined ? {} : asRecord(record.params)
-    if (!params) return { ok: false, id: id ?? null, error: 'params 必须是对象' }
+    if (!params) return { ok: false, id: id ?? null, error: pick('params 必须是对象', 'params must be an object') }
     return { ok: true, id, method, params }
   }
 

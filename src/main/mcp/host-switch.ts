@@ -17,6 +17,7 @@ import type {
   McpAppSwitchVerifyResult
 } from '../../shared/mcp-app-switch'
 import { summarizeMcpAppNativeEntry } from '../../shared/mcp-app-switch'
+import { pick } from '../../shared/ui-lang'
 
 export class McpAppSwitchError extends Error {
   constructor(
@@ -123,10 +124,10 @@ function pruneExpired(nowMs: number): void {
 
 export function mcpAppUnsupportedReason(config: McpServerConfig): string | undefined {
   if (config.id === WINDOWS_MCP_SERVER_ID) {
-    return '电脑操作由砚直接连接（需要排队与用户接管），不需要切换托管。'
+    return pick('电脑操作由砚直接连接（需要排队与用户接管），不需要切换托管。', 'Computer use is connected directly by Inkstone (queueing and user takeover); no hosting switch needed.')
   }
   if (config.transport !== 'stdio' && config.transport !== 'http') {
-    return `不支持的 transport：${String(config.transport)}`
+    return pick(`不支持的 transport：${String(config.transport)}`, `Unsupported transport: ${String(config.transport)}`)
   }
   return undefined
 }
@@ -185,7 +186,7 @@ function enrollHostEntry(options: {
   native: McpAppNativeEntry
 }): { ok: true; document: unknown } | { ok: false; reason: string } {
   const located = locateHostEntry(options.document, options.serverId)
-  if (!located) return { ok: false, reason: `砚配置里没有 id 为 ${options.serverId} 的条目` }
+  if (!located) return { ok: false, reason: pick(`砚配置里没有 id 为 ${options.serverId} 的条目`, `No entry with id ${options.serverId} in the Inkstone config`) }
   const existingHost = asRecord(located.record.appHost)
   const existingNatives = Array.isArray(existingHost?.natives) ? existingHost.natives : []
   const { migratedToNative: _drop, ...rest } = located.record
@@ -204,7 +205,7 @@ function releaseHostEntry(options: {
   mark: McpMigratedToNativeMark
 }): { ok: true; document: unknown } | { ok: false; reason: string } {
   const located = locateHostEntry(options.document, options.serverId)
-  if (!located) return { ok: false, reason: `砚配置里没有 id 为 ${options.serverId} 的条目` }
+  if (!located) return { ok: false, reason: pick(`砚配置里没有 id 为 ${options.serverId} 的条目`, `No entry with id ${options.serverId} in the Inkstone config`) }
   const { appHost: _drop, ...rest } = located.record
   const patched: Record<string, unknown> = {
     ...rest,
@@ -223,9 +224,9 @@ function nativeEntryOf(document: unknown, name: string): { present: boolean; ent
 
 function removeNativeEntry(document: unknown, name: string): { ok: true; document: unknown } | { ok: false; reason: string } {
   const root = asRecord(document)
-  if (!root) return { ok: false, reason: 'pi 原生配置顶层必须是 JSON 对象' }
+  if (!root) return { ok: false, reason: pick('pi 原生配置顶层必须是 JSON 对象', 'The pi native config root must be a JSON object') }
   const servers = asRecord(root.mcpServers)
-  if (!servers) return { ok: false, reason: 'pi 原生配置里的 mcpServers 必须是对象' }
+  if (!servers) return { ok: false, reason: pick('pi 原生配置里的 mcpServers 必须是对象', 'mcpServers in the pi native config must be an object') }
   const next = { ...servers }
   delete next[name]
   return { ok: true, document: { ...root, mcpServers: next } }
@@ -238,16 +239,16 @@ function insertNativeEntry(
   absent: boolean
 ): { ok: true; document: unknown } | { ok: false; reason: string } {
   if (absent) return { ok: true, document: { mcpServers: { [name]: entry } } }
-  if (document === null) return { ok: false, reason: 'pi 原生配置解析结果是 JSON null（坏配置），拒绝覆盖' }
+  if (document === null) return { ok: false, reason: pick('pi 原生配置解析结果是 JSON null（坏配置），拒绝覆盖', 'The pi native config parsed as JSON null (bad config); overwrite refused') }
   const root = asRecord(document)
-  if (!root) return { ok: false, reason: 'pi 原生配置顶层必须是 JSON 对象' }
+  if (!root) return { ok: false, reason: pick('pi 原生配置顶层必须是 JSON 对象', 'The pi native config root must be a JSON object') }
   const current = root.mcpServers
   if (current !== undefined && !asRecord(current)) {
-    return { ok: false, reason: 'pi 原生配置里的 mcpServers 必须是对象，拒绝改写成其它形状' }
+    return { ok: false, reason: pick('pi 原生配置里的 mcpServers 必须是对象，拒绝改写成其它形状', 'mcpServers in the pi native config must be an object; rewrite refused') }
   }
   const servers = (asRecord(current) ?? {}) as Record<string, unknown>
   if (Object.prototype.hasOwnProperty.call(servers, name)) {
-    return { ok: false, reason: `pi 原生配置已经有同名服务「${name}」，拒绝覆盖` }
+    return { ok: false, reason: pick(`pi 原生配置已经有同名服务「${name}」，拒绝覆盖`, `The pi native config already has a server named "${name}"; overwrite refused`) }
   }
   return { ok: true, document: { ...root, mcpServers: { ...servers, [name]: entry } } }
 }
@@ -312,23 +313,23 @@ async function requireHolders(
   if (!host.holders) {
     throw new McpAppSwitchError(
       'holders_unavailable',
-      '宿主未提供运行时持有者守卫，无法确认是否有运行实例仍持有该服务，拒绝切换'
+      pick('宿主未提供运行时持有者守卫，无法确认是否有运行实例仍持有该服务，拒绝切换', 'No runtime holder guard from the host; cannot confirm whether a runtime still holds this server. Switch refused')
     )
   }
   let epoch: string | undefined
   try {
     epoch = host.holders.runtimeEpoch?.()
   } catch {
-    throw new McpAppSwitchError('holders_unavailable', '运行时 epoch 不可用，无法在写入前复核实例状态，拒绝切换')
+    throw new McpAppSwitchError('holders_unavailable', pick('运行时 epoch 不可用，无法在写入前复核实例状态，拒绝切换', 'Runtime epoch unavailable; cannot recheck runtime state before writing. Switch refused'))
   }
   let holders: unknown
   try {
     holders = await host.holders.holdersFor(query)
   } catch {
-    throw new McpAppSwitchError('holders_unavailable', '读取运行时持有者失败，无法确认是否有实例持有该服务，拒绝切换')
+    throw new McpAppSwitchError('holders_unavailable', pick('读取运行时持有者失败，无法确认是否有实例持有该服务，拒绝切换', 'Failed to read runtime holders; cannot confirm whether any runtime holds this server. Switch refused'))
   }
   if (!Array.isArray(holders)) {
-    throw new McpAppSwitchError('holders_unavailable', '运行时持有者返回了非数组，无法确认是否无人持有，拒绝切换')
+    throw new McpAppSwitchError('holders_unavailable', pick('运行时持有者返回了非数组，无法确认是否无人持有，拒绝切换', 'Runtime holders returned a non-array; cannot confirm no one holds this server. Switch refused'))
   }
   return { holders: holders as McpAppSwitchHolder[], ...(epoch !== undefined ? { epoch } : {}) }
 }
@@ -342,11 +343,11 @@ async function recheckHoldersBeforeWrite(
   if (current.holders.length > 0) {
     throw new McpAppSwitchError(
       'holders_active',
-      `仍有 ${current.holders.length} 个已加载运行实例可能持有该服务，写入前拒绝切换`
+      pick(`仍有 ${current.holders.length} 个已加载运行实例可能持有该服务，写入前拒绝切换`, `${current.holders.length} loaded runtime(s) may still hold this server; switch refused before writing`)
     )
   }
   if (expectedEpoch !== undefined && current.epoch !== expectedEpoch) {
-    throw new McpAppSwitchError('runtime_changed', '运行时实例集合在核对后发生了变化，写入前拒绝切换')
+    throw new McpAppSwitchError('runtime_changed', pick('运行时实例集合在核对后发生了变化，写入前拒绝切换', 'The runtime set changed after the check; switch refused before writing'))
   }
 }
 
@@ -357,9 +358,9 @@ export async function prepareMcpAppSwitch(input: {
 }): Promise<McpAppSwitchPreview> {
   const { host, owner } = input
   const serverId = typeof input.serverId === 'string' ? input.serverId.trim() : ''
-  if (!serverId) throw new McpAppSwitchError('server_required', '需要明确的服务 id')
+  if (!serverId) throw new McpAppSwitchError('server_required', pick('需要明确的服务 id', 'A server id is required'))
   if (!owner || typeof owner.id !== 'string' || !owner.id.trim()) {
-    throw new McpAppSwitchError('owner_required', '缺少调用者身份，拒绝生成切换令牌')
+    throw new McpAppSwitchError('owner_required', pick('缺少调用者身份，拒绝生成切换令牌', 'Missing caller identity; switch token refused'))
   }
 
   const hostConfigFile = hostConfigPathOf(host)
@@ -367,15 +368,15 @@ export async function prepareMcpAppSwitch(input: {
   try {
     hostText = await readTextOrNull(hostConfigFile)
   } catch (error) {
-    throw new McpAppSwitchError('host_config_unreadable', `无法读取砚的 MCP 配置 ${hostConfigFile}：${messageOf(error)}`)
+    throw new McpAppSwitchError('host_config_unreadable', pick(`无法读取砚的 MCP 配置 ${hostConfigFile}：${messageOf(error)}`, `Cannot read the Inkstone MCP config ${hostConfigFile}: ${messageOf(error)}`))
   }
-  if (hostText === null) throw new McpAppSwitchError('host_config_missing', `砚的 MCP 配置不存在：${hostConfigFile}`)
+  if (hostText === null) throw new McpAppSwitchError('host_config_missing', pick(`砚的 MCP 配置不存在：${hostConfigFile}`, `Inkstone MCP config not found: ${hostConfigFile}`))
   const parsed = parseMcpServersDocument(hostText, hostConfigFile)
   if (parsed.error) {
-    throw new McpAppSwitchError('host_config_invalid', `砚的 MCP 配置存在解析问题，拒绝基于部分有效条目切换：${parsed.error}`)
+    throw new McpAppSwitchError('host_config_invalid', pick(`砚的 MCP 配置存在解析问题，拒绝基于部分有效条目切换：${parsed.error}`, `The Inkstone MCP config has parse errors; switching on partly valid entries refused: ${parsed.error}`))
   }
   const config = parsed.servers.find((server) => server.id === serverId)
-  if (!config) throw new McpAppSwitchError('server_unknown', `砚的 MCP 配置里没有 id 为 ${serverId} 的服务`)
+  if (!config) throw new McpAppSwitchError('server_unknown', pick(`砚的 MCP 配置里没有 id 为 ${serverId} 的服务`, `No server with id ${serverId} in the Inkstone MCP config`))
 
   const unsupported = mcpAppUnsupportedReason(config)
   if (unsupported) throw new McpAppSwitchError('unsupported', unsupported)
@@ -392,7 +393,7 @@ export async function prepareMcpAppSwitch(input: {
     if (!project || !project.cwd?.trim()) {
       throw new McpAppSwitchError(
         'unregistered_project',
-        `服务 ${serverId} 的项目范围指向未登记项目 ${projectId}；只认受信项目登记，不按目录反推`
+        pick(`服务 ${serverId} 的项目范围指向未登记项目 ${projectId}；只认受信项目登记，不按目录反推`, `Server ${serverId} is scoped to unregistered project ${projectId}; only trusted project registrations are accepted`)
       )
     }
     scope = 'project'
@@ -408,7 +409,7 @@ export async function prepareMcpAppSwitch(input: {
   if (direction === 'to-pi') {
     const record = mcpAppNativeRecord(config)
     if (!record) {
-      throw new McpAppSwitchError('missing_apphost', `服务 ${serverId} 缺少 appHost 回退记录，不能在未保存原条目的情况下交回 pi`)
+      throw new McpAppSwitchError('missing_apphost', pick(`服务 ${serverId} 缺少 appHost 回退记录，不能在未保存原条目的情况下交回 pi`, `Server ${serverId} has no appHost fallback record; cannot hand it back to pi without the original entry`))
     }
     nativeName = record.name
     targetPath = record.path
@@ -419,18 +420,18 @@ export async function prepareMcpAppSwitch(input: {
   try {
     targetText = await readTextOrNull(targetPath)
   } catch (error) {
-    throw new McpAppSwitchError('target_unreadable', `无法读取 pi 原生配置 ${targetPath}：${messageOf(error)}`)
+    throw new McpAppSwitchError('target_unreadable', pick(`无法读取 pi 原生配置 ${targetPath}：${messageOf(error)}`, `Cannot read the pi native config ${targetPath}: ${messageOf(error)}`))
   }
   const targetDocument: unknown = targetText === null ? undefined : safeParse(targetText)
   if (targetText !== null && targetDocument === undefined) {
-    throw new McpAppSwitchError('target_invalid_json', `pi 原生配置不是合法 JSON（${targetPath}），拒绝改写`)
+    throw new McpAppSwitchError('target_invalid_json', pick(`pi 原生配置不是合法 JSON（${targetPath}），拒绝改写`, `The pi native config is not valid JSON (${targetPath}); rewrite refused`))
   }
 
   const { collisions } = await inspectNativeLocations({ host, name: nativeName, targetPath })
   if (collisions.length > 0) {
     throw new McpAppSwitchError(
       'native_name_conflict',
-      `另有 pi 原生位置已有同名服务「${nativeName}」：${collisions.join('、')}；请先处理同名项再切换`
+      pick(`另有 pi 原生位置已有同名服务「${nativeName}」：${collisions.join('、')}；请先处理同名项再切换`, `Another pi native location already has a server named "${nativeName}": ${collisions.join(', ')}. Resolve the duplicate first`)
     )
   }
 
@@ -443,7 +444,7 @@ export async function prepareMcpAppSwitch(input: {
     if (!current.present) {
       throw new McpAppSwitchError(
         'native_entry_missing',
-        `pi 原生配置 ${targetPath} 里没有服务「${nativeName}」，没有可移出的条目`
+        pick(`pi 原生配置 ${targetPath} 里没有服务「${nativeName}」，没有可移出的条目`, `No server "${nativeName}" in the pi native config ${targetPath}; nothing to move out`)
       )
     }
     nativeEntry = current.entry
@@ -465,14 +466,14 @@ export async function prepareMcpAppSwitch(input: {
     })
     if (!enrolled.ok) throw new McpAppSwitchError('host_shape', enrolled.reason)
     hostContent = serializeDocument(enrolled.document)
-    warnings.push('原 pi 条目（含 env 等）已逐字保存到砚配置的 appHost.natives，回退时原样写回；请勿手动删除该记录。')
+    warnings.push(pick('原 pi 条目（含 env 等）已逐字保存到砚配置的 appHost.natives，回退时原样写回；请勿手动删除该记录。', 'The original pi entry (including env) is saved verbatim in appHost.natives of the Inkstone config and restored on fallback. Do not delete it.'))
     if (config.authRef?.trim()) {
-      warnings.push(`authRef「${config.authRef}」是砚侧凭证引用，不随条目迁移；砚托管连接仍需该凭证可用。`)
+      warnings.push(pick(`authRef「${config.authRef}」是砚侧凭证引用，不随条目迁移；砚托管连接仍需该凭证可用。`, `authRef "${config.authRef}" is an Inkstone-side credential reference and is not migrated; the Inkstone-hosted connection still needs it.`))
     }
   } else {
     const current = nativeEntryOf(targetDocument, nativeName)
     if (current.present) {
-      throw new McpAppSwitchError('native_name_conflict', `pi 原生配置已经有同名服务「${nativeName}」，拒绝覆盖`)
+      throw new McpAppSwitchError('native_name_conflict', pick(`pi 原生配置已经有同名服务「${nativeName}」，拒绝覆盖`, `The pi native config already has a server named "${nativeName}"; overwrite refused`))
     }
     const inserted = insertNativeEntry(targetDocument, nativeName, nativeEntry, targetText === null)
     if (!inserted.ok) throw new McpAppSwitchError('target_shape', inserted.reason)
@@ -487,10 +488,10 @@ export async function prepareMcpAppSwitch(input: {
     if (!released.ok) throw new McpAppSwitchError('host_shape', released.reason)
     hostContent = serializeDocument(released.document)
     if (config.authRef?.trim()) {
-      warnings.push(`authRef「${config.authRef}」是砚侧凭证引用，写回 pi 后请在 pi 里重新登录服务 ${nativeName}（pi mcp login ${nativeName}）。`)
+      warnings.push(pick(`authRef「${config.authRef}」是砚侧凭证引用，写回 pi 后请在 pi 里重新登录服务 ${nativeName}（pi mcp login ${nativeName}）。`, `authRef "${config.authRef}" is an Inkstone-side credential reference; after handing back to pi, sign in to ${nativeName} again in pi (pi mcp login ${nativeName}).`))
     }
     if (config.effect && config.effect !== 'unknown') {
-      warnings.push('effect 只作用于砚的权限判断，没有原生对应；pi 侧按工具注解与自身规则处理。')
+      warnings.push(pick('effect 只作用于砚的权限判断，没有原生对应；pi 侧按工具注解与自身规则处理。', 'effect only applies to Inkstone permission checks and has no native equivalent; pi uses tool annotations and its own rules.'))
     }
   }
 
@@ -509,7 +510,7 @@ export async function prepareMcpAppSwitch(input: {
   if (pendingSwitches.size >= MAX_PENDING_SWITCHES) {
     throw new McpAppSwitchError(
       'too_many_pending',
-      `同时待确认的切换已达上限（${MAX_PENDING_SWITCHES} 个），请先完成或等已过期的令牌释放后重试`
+      pick(`同时待确认的切换已达上限（${MAX_PENDING_SWITCHES} 个），请先完成或等已过期的令牌释放后重试`, `Too many pending switches (${MAX_PENDING_SWITCHES}); finish one or wait for expired tokens to be released`)
     )
   }
   const token = (host.generateToken ?? defaultToken)()
@@ -537,7 +538,7 @@ export async function prepareMcpAppSwitch(input: {
   })
 
   const blockedReason = blocked
-    ? `仍有 ${holders.length} 个已加载运行实例可能持有该服务；首版不自动重启。请先退出相关会话（或等其实例释放）后再切换。`
+    ? pick(`仍有 ${holders.length} 个已加载运行实例可能持有该服务；首版不自动重启。请先退出相关会话（或等其实例释放）后再切换。`, `${holders.length} loaded runtime(s) may still hold this server; no automatic restart. Exit the related sessions (or wait for release) first.`)
     : undefined
 
   return {
@@ -600,41 +601,41 @@ async function precheckSwitch(host: McpAppSwitchHost, pending: PendingSwitch): P
   try {
     hostText = await readTextOrNull(pending.hostConfigFile)
   } catch (error) {
-    throw new McpAppSwitchError('host_config_unreadable', `无法读取砚的 MCP 配置：${messageOf(error)}`)
+    throw new McpAppSwitchError('host_config_unreadable', pick(`无法读取砚的 MCP 配置：${messageOf(error)}`, `Cannot read the Inkstone MCP config: ${messageOf(error)}`))
   }
   if (nativeMcpTextFingerprint(hostText) !== pending.hostFingerprint) {
-    throw new McpAppSwitchError('host_changed', '预览后砚的 MCP 配置发生了变化，令牌已作废；请重新预览确认')
+    throw new McpAppSwitchError('host_changed', pick('预览后砚的 MCP 配置发生了变化，令牌已作废；请重新预览确认', 'The Inkstone MCP config changed after preview; token voided. Preview again'))
   }
   const parsed = parseMcpServersDocument(hostText ?? '', pending.hostConfigFile)
-  if (parsed.error) throw new McpAppSwitchError('host_config_invalid', `砚配置解析失败：${parsed.error}`)
+  if (parsed.error) throw new McpAppSwitchError('host_config_invalid', pick(`砚配置解析失败：${parsed.error}`, `Inkstone config parse failed: ${parsed.error}`))
   const config = parsed.servers.find((server) => server.id === pending.serverId)
-  if (!config) throw new McpAppSwitchError('server_unknown', `砚配置里已没有服务 ${pending.serverId}`)
+  if (!config) throw new McpAppSwitchError('server_unknown', pick(`砚配置里已没有服务 ${pending.serverId}`, `Server ${pending.serverId} is no longer in the Inkstone config`))
   if (pending.direction === 'to-inkstone' && isInkstoneManaged(config)) {
-    throw new McpAppSwitchError('already_managed', `服务 ${pending.serverId} 已被砚托管，请重新预览`)
+    throw new McpAppSwitchError('already_managed', pick(`服务 ${pending.serverId} 已被砚托管，请重新预览`, `Server ${pending.serverId} is already hosted by Inkstone; preview again`))
   }
   if (pending.direction === 'to-pi' && !isInkstoneManaged(config)) {
-    throw new McpAppSwitchError('not_managed', `服务 ${pending.serverId} 已不是砚托管状态，请重新预览`)
+    throw new McpAppSwitchError('not_managed', pick(`服务 ${pending.serverId} 已不是砚托管状态，请重新预览`, `Server ${pending.serverId} is no longer hosted by Inkstone; preview again`))
   }
 
   let targetText: string | null
   try {
     targetText = await readTextOrNull(pending.targetPath)
   } catch (error) {
-    throw new McpAppSwitchError('target_unreadable', `无法读取 pi 原生配置：${messageOf(error)}`)
+    throw new McpAppSwitchError('target_unreadable', pick(`无法读取 pi 原生配置：${messageOf(error)}`, `Cannot read the pi native config: ${messageOf(error)}`))
   }
   if (nativeMcpTextFingerprint(targetText) !== pending.targetFingerprint) {
-    throw new McpAppSwitchError('target_changed', '预览后 pi 原生配置发生了变化，令牌已作废；请重新预览确认')
+    throw new McpAppSwitchError('target_changed', pick('预览后 pi 原生配置发生了变化，令牌已作废；请重新预览确认', 'The pi native config changed after preview; token voided. Preview again'))
   }
   const present = targetText !== null && nativeEntryOf(safeParse(targetText), pending.nativeName).present
   if (pending.direction === 'to-inkstone' && !present) {
-    throw new McpAppSwitchError('native_entry_missing', `pi 原生配置里已没有服务「${pending.nativeName}」`)
+    throw new McpAppSwitchError('native_entry_missing', pick(`pi 原生配置里已没有服务「${pending.nativeName}」`, `Server "${pending.nativeName}" is no longer in the pi native config`))
   }
   if (pending.direction === 'to-pi' && present) {
-    throw new McpAppSwitchError('native_name_conflict', `pi 原生配置已有同名服务「${pending.nativeName}」，拒绝覆盖`)
+    throw new McpAppSwitchError('native_name_conflict', pick(`pi 原生配置已有同名服务「${pending.nativeName}」，拒绝覆盖`, `The pi native config already has a server named "${pending.nativeName}"; overwrite refused`))
   }
   const { collisions } = await inspectNativeLocations({ host, name: pending.nativeName, targetPath: pending.targetPath })
   if (collisions.length > 0) {
-    throw new McpAppSwitchError('native_name_conflict', `另有 pi 原生位置已有同名服务：${collisions.join('、')}`)
+    throw new McpAppSwitchError('native_name_conflict', pick(`另有 pi 原生位置已有同名服务：${collisions.join('、')}`, `Another pi native location already has a server with that name: ${collisions.join(', ')}`))
   }
 }
 
@@ -648,16 +649,16 @@ export async function commitMcpAppSwitch(input: {
   return serializedWrite(async (): Promise<McpAppSwitchCommitResult> => {
     const nowMs = (host.now ?? Date.now)()
     const pending = pendingSwitches.get(token)
-    if (!pending) throw new McpAppSwitchError('token_invalid', '切换令牌无效或已被使用，请重新预览')
+    if (!pending) throw new McpAppSwitchError('token_invalid', pick('切换令牌无效或已被使用，请重新预览', 'Switch token invalid or already used; preview again'))
     if (pending.expiresAt <= nowMs) {
       pendingSwitches.delete(token)
-      throw new McpAppSwitchError('token_expired', '切换令牌已过期，请重新预览')
+      throw new McpAppSwitchError('token_expired', pick('切换令牌已过期，请重新预览', 'Switch token expired; preview again'))
     }
     if (!owner || pending.ownerId !== owner.id) {
-      throw new McpAppSwitchError('token_owner_mismatch', '切换令牌与调用者身份不匹配，拒绝执行')
+      throw new McpAppSwitchError('token_owner_mismatch', pick('切换令牌与调用者身份不匹配，拒绝执行', 'Switch token does not match the caller; refused'))
     }
     if (pending.agentDir !== host.agentDir || pending.hostConfigFile !== hostConfigPathOf(host)) {
-      throw new McpAppSwitchError('host_mismatch', '切换令牌不是为当前宿主 / 数据目录生成的')
+      throw new McpAppSwitchError('host_mismatch', pick('切换令牌不是为当前宿主 / 数据目录生成的', 'Switch token was not issued for this host / data folder'))
     }
     pendingSwitches.delete(token)
 
@@ -689,7 +690,7 @@ export async function commitMcpAppSwitch(input: {
           ok: false,
           steps: { ...skippedSteps(), hostDisconnect: 'not-needed' },
           remediation: 'not-needed',
-          notice: `${error instanceof McpAppSwitchError ? error.message : '无法确认运行时持有者'}；未做任何写入。`
+          notice: pick(`${error instanceof McpAppSwitchError ? error.message : '无法确认运行时持有者'}；未做任何写入。`, `${error instanceof McpAppSwitchError ? error.message : 'Cannot confirm runtime holders'}. Nothing was written.`)
         }
       }
       if (resolved.holders.length > 0) {
@@ -698,7 +699,7 @@ export async function commitMcpAppSwitch(input: {
           ok: false,
           steps: { ...skippedSteps(), hostDisconnect: 'not-needed' },
           remediation: 'not-needed',
-          notice: `仍有 ${resolved.holders.length} 个已加载运行实例可能持有该服务；首版不自动重启，已在写入前拒绝切换。请先退出相关会话。`
+          notice: pick(`仍有 ${resolved.holders.length} 个已加载运行实例可能持有该服务；首版不自动重启，已在写入前拒绝切换。请先退出相关会话。`, `${resolved.holders.length} loaded runtime(s) may still hold this server; no automatic restart, switch refused before writing. Exit the related sessions first.`)
         }
       }
     }
@@ -712,7 +713,7 @@ export async function commitMcpAppSwitch(input: {
         ok: false,
         steps: { ...skippedSteps(), hostDisconnect: pending.direction === 'to-pi' ? 'skipped' : 'not-needed' },
         remediation: 'not-needed',
-        notice: `写入前核对失败（${code}）：${messageOf(error)}；未做任何写入。`
+        notice: pick(`写入前核对失败（${code}）：${messageOf(error)}；未做任何写入。`, `Pre-write check failed (${code}): ${messageOf(error)}. Nothing was written.`)
       }
     }
 
@@ -725,7 +726,7 @@ export async function commitMcpAppSwitch(input: {
           ok: false,
           steps: { ...skippedSteps(), hostDisconnect: 'not-needed' },
           remediation: 'not-needed',
-          notice: `${error instanceof McpAppSwitchError ? error.message : '运行时复核失败'}；未做任何写入。`
+          notice: pick(`${error instanceof McpAppSwitchError ? error.message : '运行时复核失败'}；未做任何写入。`, `${error instanceof McpAppSwitchError ? error.message : 'Runtime recheck failed'}. Nothing was written.`)
         }
       }
     }
@@ -736,7 +737,7 @@ export async function commitMcpAppSwitch(input: {
         ok: false,
         steps: { ...skippedSteps(), hostDisconnect: 'skipped' },
         remediation: 'not-needed',
-        notice: '宿主未提供断开砚连接的回调，无法确认唯一所有者，拒绝写回 pi（未做任何写入）。'
+        notice: pick('宿主未提供断开砚连接的回调，无法确认唯一所有者，拒绝写回 pi（未做任何写入）。', 'The host provides no callback to disconnect Inkstone; cannot confirm a sole owner. Handback to pi refused (nothing written).')
       }
     }
     let hostDisconnect: McpAppSwitchCommitResult['steps']['hostDisconnect'] =
@@ -752,7 +753,7 @@ export async function commitMcpAppSwitch(input: {
           ok: false,
           steps: { ...skippedSteps(), hostDisconnect: 'failed' },
           remediation: 'not-needed',
-          notice: `断开砚宿主连接失败：${messageOf(error)}；未写入 pi 配置，砚托管保持原状。`
+          notice: pick(`断开砚宿主连接失败：${messageOf(error)}；未写入 pi 配置，砚托管保持原状。`, `Failed to disconnect the Inkstone host connection: ${messageOf(error)}. pi config not written; Inkstone hosting unchanged.`)
         }
       }
     }
@@ -765,7 +766,7 @@ export async function commitMcpAppSwitch(input: {
         ok: false,
         steps: { native: 'failed', host: 'skipped', verify: 'skipped', hostDisconnect },
         remediation: 'not-needed',
-        notice: `写入 pi 原生配置失败：${messageOf(error)}；砚配置未改动。`
+        notice: pick(`写入 pi 原生配置失败：${messageOf(error)}；砚配置未改动。`, `Failed to write the pi native config: ${messageOf(error)}. Inkstone config unchanged.`)
       }
     }
 
@@ -776,16 +777,16 @@ export async function commitMcpAppSwitch(input: {
       const backup = remediation === 'restored' ? null : await keepNativeOriginal(pending)
       const suffix =
         remediation === 'restored'
-          ? '已用保存的原值把 pi 配置恢复回去。'
+          ? pick('已用保存的原值把 pi 配置恢复回去。', 'pi config restored from the saved original.')
           : backup
-            ? `pi 配置的自动恢复失败，两边可能都不完整；原来的 pi 配置已另存到 ${backup}，可用它手动恢复。`
-            : 'pi 配置的自动恢复失败，两边可能都不完整，请按上方路径手动修复。'
+            ? pick(`pi 配置的自动恢复失败，两边可能都不完整；原来的 pi 配置已另存到 ${backup}，可用它手动恢复。`, `Automatic pi config restore failed; both sides may be incomplete. The original pi config was saved to ${backup} for manual restore.`)
+            : pick('pi 配置的自动恢复失败，两边可能都不完整，请按上方路径手动修复。', 'Automatic pi config restore failed; both sides may be incomplete. Repair manually using the path above.')
       return {
         ...base,
         ok: false,
         steps: { native: nativeStep, host: 'failed', verify: 'skipped', hostDisconnect },
         remediation,
-        notice: `写入砚配置失败：${messageOf(error)}；${suffix}`
+        notice: pick(`写入砚配置失败：${messageOf(error)}；${suffix}`, `Failed to write the Inkstone config: ${messageOf(error)}. ${suffix}`)
       }
     }
 
@@ -815,14 +816,14 @@ export async function commitMcpAppSwitch(input: {
     const ok = verify !== 'failed'
     const how =
       pending.direction === 'to-inkstone'
-        ? `已把 ${pending.serverId} 从 pi 原生移出（${pending.targetPath}），并写入砚托管声明与回退条目。`
-        : `已把 ${pending.serverId} 交回 pi 原生（${pending.targetPath}），砚条目已停用并标记 migratedToNative。`
+        ? pick(`已把 ${pending.serverId} 从 pi 原生移出（${pending.targetPath}），并写入砚托管声明与回退条目。`, `Moved ${pending.serverId} out of pi native (${pending.targetPath}) and wrote the Inkstone hosting declaration and fallback entry.`)
+        : pick(`已把 ${pending.serverId} 交回 pi 原生（${pending.targetPath}），砚条目已停用并标记 migratedToNative。`, `Handed ${pending.serverId} back to pi native (${pending.targetPath}); the Inkstone entry is disabled and marked migratedToNative.`)
     const verifyTail =
       verify === 'passed'
-        ? '原生存在性复核通过。'
+        ? pick('原生存在性复核通过。', 'Native presence check passed.')
         : verify === 'unavailable'
-          ? '尚未接入 pi 原生存在性复核（宿主未注入 verify），已写入但未经运行确认。'
-          : `原生存在性复核未通过${verifyDetail ? `：${verifyDetail}` : ''}。`
+          ? pick('尚未接入 pi 原生存在性复核（宿主未注入 verify），已写入但未经运行确认。', 'Native presence check not wired (host did not inject verify); written but not confirmed at runtime.')
+          : pick(`原生存在性复核未通过${verifyDetail ? `：${verifyDetail}` : ''}。`, `Native presence check failed${verifyDetail ? `: ${verifyDetail}` : ''}.`)
     return {
       ...base,
       ok,
@@ -849,11 +850,11 @@ export function mcpAppOwnershipView(input: {
   const canSwitch =
     !unsupportedReason && !blockedByHolders && !blockedByUnknown && (managed ? Boolean(record) : true)
   const blockedReason = blockedByUnknown
-    ? '无法确认是否有运行实例仍持有该服务，已按不可切换处理（fail-closed）。'
+    ? pick('无法确认是否有运行实例仍持有该服务，已按不可切换处理（fail-closed）。', 'Cannot confirm whether a runtime still holds this server; treated as not switchable (fail-closed).')
     : blockedByHolders
-      ? `仍有 ${holders.length} 个已加载运行实例可能持有该服务；请先退出相关会话。`
+      ? pick(`仍有 ${holders.length} 个已加载运行实例可能持有该服务；请先退出相关会话。`, `${holders.length} loaded runtime(s) may still hold this server; exit the related sessions first.`)
       : managed && !record
-        ? '缺少 appHost 回退记录，不能在未保存原条目的情况下交回 pi。'
+        ? pick('缺少 appHost 回退记录，不能在未保存原条目的情况下交回 pi。', 'No appHost fallback record; cannot hand back to pi without the original entry.')
         : undefined
   const inkstoneConnection = !managed && !config.migratedToNative && config.enabled !== false
   const inkstoneOnly = config.id === WINDOWS_MCP_SERVER_ID

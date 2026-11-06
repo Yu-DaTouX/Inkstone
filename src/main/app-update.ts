@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AppUpdateStatus } from '../shared/app-update'
 import type { IpcRegistrar } from './ipc/registrar'
+import { pick } from '../shared/ui-lang'
 
 const RELEASES = 'https://github.com/Yu-DaTouX/Inkstone/releases'
 export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean): void {
@@ -49,8 +50,8 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean): void 
     return { ...state }
   })
   ipc.handle('yan:update:install', () => {
-    if (state.phase !== 'downloaded') return { ok: false, error: '更新尚未下载完成' }
-    if (busy()) return { ok: false, error: '请等任务结束后再重启安装' }
+    if (state.phase !== 'downloaded') return { ok: false, error: pick('更新尚未下载完成', 'The update has not finished downloading') }
+    if (busy()) return { ok: false, error: pick('请等任务结束后再重启安装', 'Restart to install after the task finishes') }
     setTimeout(() => autoUpdater.quitAndInstall(false, true), 300)
     return { ok: true }
   })

@@ -5,6 +5,7 @@ import { killProcessTree } from './git-service'
 import { randomBytes } from 'node:crypto'
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { pick } from '../shared/ui-lang'
 
 export const CODEGRAPH_MCP_NAME = 'codegraph'
 export const CODEGRAPH_MCP_SERVER = { command: 'codegraph', args: ['serve', '--mcp'] }
@@ -18,7 +19,7 @@ export function commandOnPath(command: string): Promise<boolean> {
 }
 
 export async function addCodegraphMcp(agentDir: string, installed: (command: string) => Promise<boolean> = commandOnPath): Promise<PluginExportResult> {
-  if (!await installed(CODEGRAPH_MCP_SERVER.command)) return { ok: false, error: `没有找到 codegraph 命令，先运行 ${CODEGRAPH_INSTALL}` }
+  if (!await installed(CODEGRAPH_MCP_SERVER.command)) return { ok: false, error: pick(`没有找到 codegraph 命令，先运行 ${CODEGRAPH_INSTALL}`, `codegraph command not found; run ${CODEGRAPH_INSTALL} first`) }
   const path = join(agentDir, 'mcp.json')
   let text: string | null = null
   try { text = await readFile(path, 'utf8') }
@@ -26,7 +27,7 @@ export async function addCodegraphMcp(agentDir: string, installed: (command: str
   let existing: unknown
   if (text !== null) {
     try { existing = JSON.parse(text) }
-    catch { return { ok: false, error: `${path} 不是合法 JSON，未改动` } }
+    catch { return { ok: false, error: pick(`${path} 不是合法 JSON，未改动`, `${path} is not valid JSON; left unchanged`) } }
   }
   const merged = buildNativeMcpDocument({ existing, name: CODEGRAPH_MCP_NAME, server: { ...CODEGRAPH_MCP_SERVER, args: [...CODEGRAPH_MCP_SERVER.args] } })
   if (!merged.ok) return merged.code === 'name_conflict' ? { ok: true, path, existed: true } : { ok: false, error: merged.reason }
@@ -64,8 +65,8 @@ export async function codegraphStatus(
 
 export async function indexCodegraphProject(cwd: string): Promise<{ ok: boolean; error?: string; log?: string }> {
   const project = cwd.trim() ? resolve(cwd) : ''
-  if (!project || !(await stat(project).then((s) => s.isDirectory(), () => false))) return { ok: false, error: '项目目录不存在' }
-  if (!await commandOnPath(CODEGRAPH_MCP_SERVER.command)) return { ok: false, error: `没有找到 codegraph 命令，先运行 ${CODEGRAPH_INSTALL}` }
+  if (!project || !(await stat(project).then((s) => s.isDirectory(), () => false))) return { ok: false, error: pick('项目目录不存在', 'Project folder does not exist') }
+  if (!await commandOnPath(CODEGRAPH_MCP_SERVER.command)) return { ok: false, error: pick(`没有找到 codegraph 命令，先运行 ${CODEGRAPH_INSTALL}`, `codegraph command not found; run ${CODEGRAPH_INSTALL} first`) }
   return new Promise((done) => {
     let log = ''
     const keep = (chunk: Buffer): void => { log = (log + chunk.toString('utf8')).slice(-4000) }
@@ -82,7 +83,7 @@ export async function indexCodegraphProject(cwd: string): Promise<{ ok: boolean;
     child.on('close', (code) => {
       clearTimeout(timer)
       const tail = log.trim().split('\n').slice(-8).join('\n')
-      done(code === 0 ? { ok: true, log: tail } : { ok: false, error: `codegraph init 退出码 ${code ?? '?'}`, log: tail })
+      done(code === 0 ? { ok: true, log: tail } : { ok: false, error: pick(`codegraph init 退出码 ${code ?? '?'}`, `codegraph init exit code ${code ?? '?'}`), log: tail })
     })
   })
 }
@@ -93,7 +94,7 @@ export async function exportHermesPlugin(source: string, parent: string): Promis
   const target = join(parent, 'inkstone')
   try { await mkdir(target) }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('目标目录已有 inkstone，请选择其他目录，避免覆盖现有插件')
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(pick('目标目录已有 inkstone，请选择其他目录，避免覆盖现有插件', 'The target folder already has inkstone; choose another folder to avoid overwriting the plugin'))
     throw error
   }
   try {
