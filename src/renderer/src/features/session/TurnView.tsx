@@ -20,7 +20,7 @@ import { MessageFiles } from './MessageFiles'
 import { splitFileReferences } from '../composer/file-refs'
 import { Icon } from './Icon'
 import { Badge, IconButton, Notice } from '../../ui'
-import { useArrival } from '../../ui/motion-hooks'
+import { motionAllowed, useArrival } from '../../ui/motion-hooks'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
@@ -57,10 +57,21 @@ export const TurnView = memo(function TurnView({ turn, streaming, readOnly = fal
   return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} tail={tail} answer={answer} outcome={outcome} />
 })
 
+const FRESH_USER_MS = 1500
+const freshUserStamps = new Set<number>()
+
+function claimFreshUser(timestamp: number | undefined): boolean {
+  if (!timestamp || freshUserStamps.has(timestamp) || Date.now() - timestamp > FRESH_USER_MS || !motionAllowed()) return false
+  freshUserStamps.add(timestamp)
+  if (freshUserStamps.size > 64) freshUserStamps.delete(freshUserStamps.values().next().value as number)
+  return true
+}
+
 function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
   const t = useT()
   const { lang } = useI18n()
   const msg = turn.msg
+  const [fresh] = useState(() => claimFreshUser(msg.timestamp))
   const checkpoints = useStore((s) => s.checkpoints)
   const checkpointId = useMemo(() => {
     if (readOnly || !msg.text || !rewindOwner || checkpoints.length === 0) return null
@@ -79,7 +90,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   const refPrefix = usedImageRefPrefix(displayText) ?? imageRefPrefix(lang)
   const showImageRefs = (msg.images?.length ?? 0) > 1 || referencedImageNumbers(displayText).length > 0
   return (
-    <article className="v3-msg user" data-msg-id={msg.id} data-turn-id={turn.id}>
+    <article className="v3-msg user" data-msg-id={msg.id} data-turn-id={turn.id} data-fresh={fresh ? '' : undefined}>
       <div className="v3-user-body">
         {msg.question ? (
           <Badge data-testid="v3-question-tag">

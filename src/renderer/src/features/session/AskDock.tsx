@@ -1,6 +1,7 @@
-import { useMemo, type JSX } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useStore } from '../../state/store'
 import { Badge, Button } from '../../ui'
+import { motionAllowed } from '../../ui/motion-hooks'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { ComposerBanner } from '../../t3/components/chat/ComposerBanner'
@@ -10,6 +11,7 @@ import { QuestionCard } from './QuestionCard'
 import { approvalMatchesView, sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 
 export const ASK_DOCK_SELECTOR = '[data-ask-dock]'
+const ASK_DOCK_OVERLAP = 17
 
 const ASK_FOCUS_ORDER = ['.v3-qoption-row', '.v3-qoption', 'textarea', 'input', '.ui-card [tabindex]', 'button:not([disabled])']
 
@@ -68,7 +70,38 @@ export function AskDock(): JSX.Element | null {
       ))
   const showQuestion = viewActive && asking
   const showHandoff = viewActive && handoff
-  if (!showApproval && !showQuestion && !showHandoff) return null
+  const shown = showApproval || showQuestion || showHandoff
+  const lastHeight = useRef(0)
+  const wasShown = useRef(false)
+  const [leaving, setLeaving] = useState<number | null>(null)
+  const [leaveGen, setLeaveGen] = useState(0)
+  useLayoutEffect(() => {
+    if (shown) {
+      wasShown.current = true
+      lastHeight.current = document.querySelector<HTMLElement>(ASK_DOCK_SELECTOR)?.offsetHeight ?? lastHeight.current
+      setLeaving(null)
+      return
+    }
+    if (!wasShown.current) return
+    wasShown.current = false
+    if (lastHeight.current > 0 && motionAllowed()) {
+      setLeaving(lastHeight.current)
+      setLeaveGen((n) => n + 1)
+    }
+  })
+  useLayoutEffect(() => {
+    if (leaving === ASK_DOCK_OVERLAP) {
+      const timer = window.setTimeout(() => setLeaving(null), 400)
+      return () => window.clearTimeout(timer)
+    }
+    if (leaving === null) return
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => setLeaving(ASK_DOCK_OVERLAP)))
+    return () => cancelAnimationFrame(frame)
+  }, [leaveGen, leaving])
+  if (!shown) {
+    if (leaving === null) return null
+    return <div key={leaveGen} className="ask-dock-leave" data-composer-banner-surface="attached" style={{ height: leaving }} aria-hidden="true" onTransitionEnd={() => setLeaving(null)} />
+  }
   return (
     <ComposerBanner.Root className="ask-dock" data-ask-dock="true" data-testid="v3-ask-dock">
       <span className="ask-dock-edge" aria-hidden="true" />
