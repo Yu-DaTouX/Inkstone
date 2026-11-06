@@ -219,6 +219,20 @@ export async function appendSnapshot(file, state, compactionNo, parts) {
 const REINJECT_MAX_FILES = 5
 const REINJECT_FILE_TOKENS = 10_000
 const REINJECT_TOTAL_TOKENS = 30_000
+const MIN_APPENDIX_TOKENS = 500
+const POST_COMPACT_WINDOW_SHARE = 0.75
+const PROMPT_FIXED_TOKENS = 12_000
+const DEFAULT_KEEP_RECENT_TOKENS = 20_000
+
+// 摘要之外的附加内容（用户原话、补回的文件）按压完后整体不超过窗口的 75% 收紧：
+// 窗口 − 摘要 − 保留的近期消息 − 系统提示与工具定义，剩下的才分给附加内容
+export function appendixBudgets({ window, summaryTokens, keptTokens, fixedTokens = PROMPT_FIXED_TOKENS }) {
+  const room = Math.max(0, Math.floor(window * POST_COMPACT_WINDOW_SHARE) - summaryTokens - keptTokens - fixedTokens)
+  const userTokens = Math.min(USER_MESSAGES_MAX_TOKENS, Math.floor(room / 2))
+  const fileTokens = Math.min(REINJECT_TOTAL_TOKENS, room - (userTokens >= MIN_APPENDIX_TOKENS ? userTokens : 0))
+  return { room, userTokens: userTokens >= MIN_APPENDIX_TOKENS ? userTokens : 0, fileTokens: fileTokens >= MIN_APPENDIX_TOKENS ? fileTokens : 0 }
+}
+
 const FILE_TOOLS = new Set(['read', 'edit', 'write', 'multiedit'])
 
 function toolPaths(message) {
@@ -248,9 +262,9 @@ function numbered(text) {
 }
 
 // 按磁盘上的当前内容补回文件，只补工作目录里的文本文件；放不下的只给路径
-export async function currentFilesBlock(paths, cwd, ratio) {
-  if (!paths.length || !cwd) return { block: '', files: [] }
-  let budget = REINJECT_TOTAL_TOKENS
+export async function currentFilesBlock(paths, cwd, ratio, totalTokens = REINJECT_TOTAL_TOKENS) {
+  if (!paths.length || !cwd || totalTokens < MIN_APPENDIX_TOKENS) return { block: '', files: [] }
+  let budget = Math.min(REINJECT_TOTAL_TOKENS, totalTokens)
   const sections = []
   const files = []
   for (const p of paths) {
@@ -665,13 +679,15 @@ export default function contextCompactExtension(pi) {
       const sourceTokens = Math.ceil((chars + (preparation.previousSummary?.length ?? 0)) * ratio)
       if (summaryTokens >= sourceTokens) throw new SummaryError('grew', `summary (${summaryTokens}) not smaller than source (${sourceTokens})`)
       failures = 0
+      const keptTokens = settings.keepRecentTokens > 0 ? settings.keepRecentTokens : DEFAULT_KEEP_RECENT_TOKENS
+      const budgets = appendixBudgets({ window, summaryTokens, keptTokens })
       const files = fileLists(preparation.fileOps)
       let current = { block: '', files: [] }
       if (process.env.YAN_COMPACT_REINJECT !== '0') {
         const keptAt = Array.isArray(branchEntries) ? branchEntries.findIndex((e) => e?.id === preparation.firstKeptEntryId) : -1
         const kept = keptAt >= 0 ? branchEntries.slice(keptAt).filter((e) => e?.type === 'message').map((e) => e.message) : []
         try {
-          current = await currentFilesBlock(recentFiles(messages, kept), ctx.cwd, ratio)
+          current = await currentFilesBlock(recentFiles(messages, kept), ctx.cwd, ratio, budgets.fileTokens)
         } catch {
         }
       }
@@ -687,14 +703,14 @@ export default function contextCompactExtension(pi) {
       }
       return {
         compaction: {
-          summary: summary + userMessagesBlock(preparation.previousSummary, messages, compactionNo, Math.floor(USER_MESSAGES_MAX_TOKENS / ratio))
+          summary: summary + (budgets.userTokens ? userMessagesBlock(preparation.previousSummary, messages, compactionNo, Math.floor(budgets.userTokens / ratio)) : '')
             + formatFileLists(files) + current.block + (snapshot ? snapshotPointer(snapshot) : ''),
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,
           details: {
             ...files, path, ...(fastMs !== undefined ? { fastMs } : {}), ...(fastError ? { fastError } : {}), chunks, calls, capacityRetries, lengthRetries, parts: parts.length, ms: Date.now() - startedAt, untruncated: true,
-            compactionNo, ...(current.files.length ? { reinjected: current.files } : {}), ...(snapshot ? { snapshot: snapshot.path, snapshotBytes: snapshot.bytes } : {}), ...(snapshotError ? { snapshotError } : {})
+            compactionNo, appendixTokens: { user: budgets.userTokens, files: budgets.fileTokens }, ...(current.files.length ? { reinjected: current.files } : {}), ...(snapshot ? { snapshot: snapshot.path, snapshotBytes: snapshot.bytes } : {}), ...(snapshotError ? { snapshotError } : {})
           }
         }
       }
