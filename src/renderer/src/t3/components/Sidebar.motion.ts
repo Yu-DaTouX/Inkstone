@@ -120,22 +120,50 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
     )
   }
 
+  const measure = () =>
+    new Map(
+      Array.from(parent.children)
+        .filter((node): node is HTMLElement => node instanceof HTMLElement && !exiting.has(node))
+        .map((node) => [
+          node,
+          {
+            top: node.offsetTop,
+            left: node.offsetLeft,
+            width: node.offsetWidth,
+            height: node.offsetHeight
+          }
+        ])
+    )
+  const resizeWatcher =
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          if (!disposed && positions !== null) positions = measure()
+        })
+  resizeWatcher?.observe(parent)
+  const watched = new Set<Element>()
+  const watchChildren = () => {
+    if (resizeWatcher === null) return
+    const current = new Set<Element>(parent.children)
+    for (const node of watched) {
+      if (!current.has(node)) {
+        resizeWatcher.unobserve(node)
+        watched.delete(node)
+      }
+    }
+    for (const node of current) {
+      if (!watched.has(node) && !exiting.has(node as HTMLElement)) {
+        resizeWatcher.observe(node)
+        watched.add(node)
+      }
+    }
+  }
+
   return {
     update(animate: boolean) {
       if (disposed) return
-      const next = new Map(
-        Array.from(parent.children)
-          .filter((node): node is HTMLElement => node instanceof HTMLElement && !exiting.has(node))
-          .map((node) => [
-            node,
-            {
-              top: node.offsetTop,
-              left: node.offsetLeft,
-              width: node.offsetWidth,
-              height: node.offsetHeight
-            }
-          ])
-      )
+      const next = measure()
+      watchChildren()
       let fadeCount = 0
       if (positions !== null) {
         for (const [node, position] of positions) {
@@ -242,6 +270,8 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
     dispose() {
       suspend()
       disposed = true
+      resizeWatcher?.disconnect()
+      watched.clear()
     }
   }
 }
