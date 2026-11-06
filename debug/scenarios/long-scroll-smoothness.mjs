@@ -81,9 +81,13 @@ export default async function run({ cdp, waitFor, report, sleep, log, shot, out 
     await ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
   }
   if (want('reload')) {
+    const other = await ev(`(window.__yanStore.getState().sessions.find((x) => x.path !== ${JSON.stringify(file)} && x.messageCount > 8) || {}).path`)
+    if (other) {
+      await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(other)})`)
+      await waitFor(`!s.switchLoading && s.session?.sessionFile === ${JSON.stringify(other)} && s.messages.length > 0`, 60000, 10)
+      await sleep(1000)
+    }
     await record('reopen', async () => {
-      await ev(`window.__yanStore.getState().newSession({ cwd: ${JSON.stringify(report.sandboxProject ?? '')} })`).catch(() => {})
-      await sleep(600)
       await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(file)})`)
       await waitFor(`!s.switchLoading && s.session?.sessionFile === ${JSON.stringify(file)} && s.messages.length > 20`, 120000, 10)
     }, 1500)
