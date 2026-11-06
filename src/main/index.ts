@@ -626,6 +626,7 @@ const YAN_THIN_EXTENSION_FILES = {
   languageExtension: 'language.js',
   userAddressExtension: 'user-address.js',
   ultracodeExtension: 'ultracode.js',
+  turnModelSwitchExtension: 'turn-model-switch.js',
   capabilityGuideExtension: 'capability-guide.js',
   mcpAppProxyExtension: 'mcp-app-proxy.js',
   autoCompactExtension: 'auto-compact.js',

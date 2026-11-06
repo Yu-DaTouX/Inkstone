@@ -4,6 +4,7 @@ import { countedWorkCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolC
 import { callPath, collectTurnChanges, isInsideCwd, readFileDiff, readPiDiff, type TurnChanges, type TurnFileChange, type TurnFileStatus } from './turn-changes'
 import { isHistoryQuestionCall } from './question-receipt'
 import { searchStepOf } from './web-search/model'
+import { isSubagentNotice } from '../../../../shared/subagent-notice'
 
 const LIVE_SEGMENTS = 3
 
@@ -443,15 +444,100 @@ export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_
   return { shown, hidden: tools || dropped.length }
 }
 
-export function turnSpanMs(messages: readonly Pick<UIMessage, 'id' | 'role' | 'timestamp'>[], sourceIds: readonly string[], tools: readonly Pick<UIToolCall, 'endedAt'>[]): number | undefined {
-  const first = sourceIds.length ? messages.findIndex((message) => message.id === sourceIds[0]) : -1
-  if (first < 0) return undefined
-  let start: number | undefined
-  for (let i = first - 1; i >= 0; i -= 1) {
-    if (messages[i].role !== 'user') continue
-    start = messages[i].timestamp
+type RunMessage = Pick<UIMessage, 'id' | 'role' | 'text' | 'timestamp' | 'toolCalls' | 'generationTiming' | 'turnTiming'>
+
+function previousUserIndex(messages: readonly Pick<UIMessage, 'role'>[], index: number): number {
+  for (let i = index - 1; i >= 0; i -= 1) if (messages[i].role === 'user') return i
+  return -1
+}
+
+function activityEnd(messages: readonly RunMessage[], from: number, to: number): number {
+  let end = 0
+  for (let i = Math.max(0, from); i < to; i += 1) {
+    const message = messages[i]
+    if (message.role !== 'assistant') continue
+    if (message.timestamp) end = Math.max(end, message.timestamp + (message.generationTiming?.durationMs ?? 0))
+    if (message.turnTiming) end = Math.max(end, message.turnTiming.endedAt)
+    for (const call of message.toolCalls ?? []) if (call.endedAt) end = Math.max(end, call.endedAt)
+  }
+  return end
+}
+
+function joinedRunAt(messages: readonly RunMessage[], userIndex: number): number | null {
+  const user = messages[userIndex]
+  if (!user || user.role !== 'user' || !user.timestamp || isSubagentNotice(user.text ?? '')) return null
+  const before = previousUserIndex(messages, userIndex)
+  let lastAssistant = -1
+  for (let i = userIndex - 1; i > before; i -= 1) {
+    if (messages[i].role !== 'assistant') continue
+    lastAssistant = i
     break
   }
+  if (lastAssistant < 0 || messages[lastAssistant].turnTiming) return null
+  const end = activityEnd(messages, before + 1, userIndex)
+  return user.timestamp < end ? end : null
+}
+
+export interface TurnRunPlace {
+  continues: boolean
+  startedAt: number | null
+  runFirstId: string | null
+}
+
+const OWN_RUN: TurnRunPlace = { continues: false, startedAt: null, runFirstId: null }
+
+export function turnRunPlace(messages: readonly RunMessage[], sourceIds: readonly string[]): TurnRunPlace {
+  const first = sourceIds.length ? messages.findIndex((message) => message.id === sourceIds[0]) : -1
+  if (first < 0) return OWN_RUN
+  const lastId = sourceIds[sourceIds.length - 1]
+  let last = first
+  while (last < messages.length - 1 && messages[last].id !== lastId) last += 1
+  let continues = false
+  for (let i = last + 1; i < messages.length; i += 1) {
+    if (messages[i].role !== 'user') continue
+    continues = joinedRunAt(messages, i) !== null
+    break
+  }
+  const userIndex = previousUserIndex(messages, first)
+  const startedAt = userIndex >= 0 ? joinedRunAt(messages, userIndex) : null
+  let runFirstId: string | null = null
+  for (let user = userIndex; user >= 0 && joinedRunAt(messages, user) !== null;) {
+    const before = previousUserIndex(messages, user)
+    for (let i = before + 1; i < user; i += 1) {
+      if (messages[i].role !== 'assistant') continue
+      runFirstId = messages[i].id
+      break
+    }
+    user = before
+  }
+  return continues || startedAt !== null || runFirstId !== null ? { continues, startedAt, runFirstId } : OWN_RUN
+}
+
+export function runMessagesFrom(messages: readonly UIMessage[], runFirstId: string | null, sourceIds: readonly string[]): UIMessage[] | null {
+  if (!runFirstId) return null
+  const from = messages.findIndex((message) => message.id === runFirstId)
+  const lastId = sourceIds[sourceIds.length - 1]
+  if (from < 0 || !lastId) return null
+  const run: UIMessage[] = []
+  for (let i = from; i < messages.length; i += 1) {
+    if (messages[i].role === 'assistant') run.push(messages[i])
+    if (messages[i].id === lastId) return run
+  }
+  return null
+}
+
+export function segmentSpanMs(messages: readonly RunMessage[], sourceIds: readonly string[], startedAt: number): number | undefined {
+  const ids = new Set(sourceIds)
+  const own = messages.filter((message) => ids.has(message.id))
+  const end = activityEnd(own, 0, own.length)
+  return end > startedAt ? end - startedAt : undefined
+}
+
+export function turnSpanMs(messages: readonly RunMessage[], sourceIds: readonly string[], tools: readonly Pick<UIToolCall, 'endedAt'>[]): number | undefined {
+  const first = sourceIds.length ? messages.findIndex((message) => message.id === sourceIds[0]) : -1
+  if (first < 0) return undefined
+  const userIndex = previousUserIndex(messages, first)
+  const start = userIndex >= 0 ? joinedRunAt(messages, userIndex) ?? messages[userIndex].timestamp : undefined
   if (!start) return undefined
   const ids = new Set(sourceIds)
   let end = 0

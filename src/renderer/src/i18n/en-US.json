@@ -531,6 +531,7 @@
   "approval.deny": "Deny",
   "approval.more": "{n} more waiting",
   "approval.once": "Allow once",
+  "approval.allowBatch": "Allow this batch",
   "approval.session": "Allow in this session",
   "approval.rememberDirs": "Allow and remember folders",
   "approval.feedback": "Add reason",
@@ -1967,6 +1968,7 @@
   "chat.taskTodo": "Not done",
   "link.dblclickHint": "Double-click to show in file explorer",
   "link.codeDblclickHint": "Click to open here · double-click to show in file explorer",
+  "link.folderHint": "Click to open in file explorer",
   "auth.loginOkGeneric": "Connected; restarting pi to load the new credentials",
   "auth.deviceWaiting": "Enter this code on the verification page",
   "auth.copyCode": "Copy code",
@@ -2979,5 +2981,5 @@
   "sidebar.t3.filter.manage": "Actions for {name}",
   "sidebar.t3.filter.current": "Current filter",
   "sidebar.t3.moreUtilities": "More",
-  "composer.modelChange.pending": "Switch next turn"
+  "composer.modelChange.pending": "From next message"
 }

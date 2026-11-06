@@ -43,10 +43,13 @@ import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } f
 import { withoutWrapUp } from './wrap-up'
 import { stripImageNotice } from './effective-messages'
 import { DecisionBlock, TurnResult } from './TurnOutcome'
-import { turnChangeSet, turnSpanMs } from './turn-process'
+import { runMessagesFrom, segmentSpanMs, turnChangeSet, turnRunPlace, turnSpanMs } from './turn-process'
+import { groupIntoTurns } from '../../../../shared/turns'
+import type { UIMessage } from '../../../../shared/ipc'
 import { splitDecision, type DecisionOutcome } from './turn-outcome'
 
 const COMPACTION_AT_END = '\u0000end'
+const NO_RUN_MESSAGES: UIMessage[] = []
 
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, tail, answer, outcome = null }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
@@ -237,10 +240,22 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const focusedCwd = useStore((s) => s.session?.cwd)
   const sessionCwd = scope ? scope.cwd ?? scope.session?.cwd : focusedCwd
   const changeCwd = sourceTurn.response?.sourceCwd || sessionCwd || undefined
-  const changes = useMemo(() => (streaming ? null : turnChangeSet(sourceTurn, changeCwd)), [streaming, sourceTurn, changeCwd])
   const scopedMessages = scope?.messages ?? null
+  const runPlace = useStore(useShallow((s) => turnRunPlace(scopedMessages ?? s.messages, sourceTurn.sourceIds)))
+  const runMessages = useStore(useShallow((s) => runMessagesFrom(scopedMessages ?? s.messages, runPlace.runFirstId, sourceTurn.sourceIds) ?? NO_RUN_MESSAGES))
+  const runTurn = useMemo(() => {
+    if (!runMessages.length) return sourceTurn
+    const merged = groupIntoTurns(runMessages).find((item): item is AssistantTurn => item.kind === 'assistant')
+    return merged ? withoutWrapUp(merged) : sourceTurn
+  }, [runMessages, sourceTurn])
+  const runEnded = !streaming && !runPlace.continues
+  const changes = useMemo(() => (runEnded ? turnChangeSet(runTurn, changeCwd) : null), [runEnded, runTurn, changeCwd])
   const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, scopedMessages ?? s.messages, !!streaming)))
-  const spanMs = useStore((s) => (streaming || sourceTurn.elapsedMs ? undefined : turnSpanMs(scopedMessages ?? s.messages, sourceTurn.sourceIds, sourceTurn.tools)))
+  const spanMs = useStore((s) => {
+    if (streaming) return undefined
+    if (runPlace.startedAt !== null) return segmentSpanMs(scopedMessages ?? s.messages, sourceTurn.sourceIds, runPlace.startedAt)
+    return sourceTurn.elapsedMs ? undefined : turnSpanMs(scopedMessages ?? s.messages, sourceTurn.sourceIds, sourceTurn.tools)
+  })
   const compactionSpot = useStore((s) => {
     const session = scope ? scope.session : s.session
     if (session?.compaction) return edge.last ? COMPACTION_AT_END : null
@@ -269,6 +284,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0
   const glowId = liveToolGlowId(turn.tools)
+  const errorCard = turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} readOnly={readOnly} recovered={!!turn.errorRecovered} /> : null
 
   return (
     <TranscriptViewScope.Provider value={view}>
@@ -280,8 +296,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {edge.first ? <BranchSummary /> : null}
           {thinkingNote ? <ThinkingAvailability empty={!!sourceTurn.thinkingEmpty} model={sourceTurn.model} /> : null}
           {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
-  
-          {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} readOnly={readOnly} recovered={!!turn.errorRecovered} /> : null}
   
           {split ? (
             <>
@@ -296,14 +310,16 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                 <TurnProcess
                   process={processSegs}
                   live={!!streaming}
-                  openByDefault={!split.reply && !split.tail.length}
+                  openByDefault={!split.reply && !split.tail.length && !!tail}
                   alertFailures={processFailuresAlert(sourceTurn, !!streaming)}
+                  showFailures={!runPlace.continues}
+                  liveStartedAt={runPlace.startedAt}
                   view={view}
                   sessionId={sessionId}
                   turnId={turn.id}
                   approvalIds={approvalIds}
                   glowId={glowId}
-                  elapsedMs={sourceTurn.elapsedMs ?? spanMs}
+                  elapsedMs={runPlace.startedAt !== null ? spanMs : sourceTurn.elapsedMs ?? spanMs}
                   filesShownBelow={!!changes}
                   compactionAfter={compactionInProcess}
                 />
@@ -378,12 +394,14 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   
           <SubagentLine turn={turn} scope={subagentScope} />
   
+          {streaming ? errorCard : null}
           {streaming ? <LiveRunNotice /> : null}
-          {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
-          {!streaming ? <TurnResult turn={sourceTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
+          {runEnded ? <TurnResult turn={runTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
           {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
-          {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
+          {streaming ? null : errorCard}
+          {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
+          {runEnded ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
         </WebSearchTurnProvider>

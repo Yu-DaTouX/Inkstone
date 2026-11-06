@@ -66,6 +66,15 @@
     gap: var(--s-2);
   }
 
+  .v3-files-crumb-item:last-child {
+    flex-shrink: 0;
+    max-width: 100%;
+  }
+
+  .v3-files-crumb-item:last-child > .v3-files-crumb {
+    max-width: none;
+  }
+
   .v3-files-crumb {
     max-width: 140px;
     min-width: 0;

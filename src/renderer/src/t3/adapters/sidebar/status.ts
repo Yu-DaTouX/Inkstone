@@ -38,6 +38,6 @@ export function formatWorkingDuration(ms: number): string {
 
 export function rowIsReceded(status: RowStatus, unread: boolean, active: boolean): boolean {
   if (active || status === 'input') return false
-  if (status === 'working' || status === 'waiting') return true
+  if (status === 'waiting') return true
   return status === 'approval' ? !unread : false
 }

@@ -46,7 +46,6 @@ export interface CommitPanelProps {
   onCommit: (andPush: boolean) => void
   onPush: (kind: 'push' | 'publish') => void
   onOpenFile: (path: string) => void
-  listedBeside?: boolean
 }
 
 const BUSY_KINDS: Record<PrimaryKind, GitActionKind[]> = {
@@ -129,7 +128,7 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
     const staged = key === 'staged'
     const shown = list.slice(0, COMMIT_GROUP_LIMIT)
     return (
-      <Collapsible key={props.listedBeside ? `${key}-beside` : key} defaultExpanded={!props.listedBeside} className="gitflow-commit__group" data-testid={`git-group-${key}`}>
+      <Collapsible key={key} defaultExpanded={false} className="gitflow-commit__group" data-testid={`git-group-${key}`}>
         <CollapsibleHeader
           size="compact"
           accessory={<span className="ui-meta-num">{count}</span>}

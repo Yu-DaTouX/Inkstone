@@ -1,18 +1,42 @@
 @layer primitives {
   .ui-area-chart {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--s-6);
+    row-gap: var(--s-4);
+    min-width: 0;
+  }
+  .ui-area-chart__y {
+    display: flex;
+    flex-direction: column-reverse;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-block: calc(var(--t-caption-lh) / -2);
+  }
+  .ui-area-chart__x {
+    grid-column: 2;
+    display: flex;
+    justify-content: space-between;
+    gap: var(--s-8);
+  }
+  .ui-area-chart__axis {
+    color: var(--fg3);
+    font-family: var(--font-num);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    white-space: nowrap;
+  }
+  .ui-area-chart__plot {
     display: block;
     width: 100%;
     height: auto;
+    aspect-ratio: 436 / 168;
     overflow: visible;
   }
   .ui-area-chart__grid {
     stroke: var(--line);
     stroke-width: 1;
-  }
-  .ui-area-chart__axis {
-    fill: var(--fg3);
-    font-family: var(--font-num);
-    font-size: 10px;
+    vector-effect: non-scaling-stroke;
   }
   .ui-area-chart__area {
     fill: var(--data-1);
@@ -23,6 +47,7 @@
     stroke: var(--data-1);
     stroke-width: 1.5;
     stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
   }
   .ui-area-chart__hit {
     fill: transparent;

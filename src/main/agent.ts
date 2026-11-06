@@ -19,7 +19,7 @@ import { assistantModelIdentity } from '../shared/assistant-model'
 import { continuationPrompt } from '../shared/continuation-prompt'
 import { NativeSessionRuntime, type NavigateTreeResult, type ScopedModelsSnapshot, type ProjectTrustSnapshot } from './native-session-runtime'
 import { nativeActiveBranch } from './native-session-history'
-import { capNativeTreeDepth, type NativeTreeNode } from '../shared/native-session'
+import { flattenNativeTree, type NativeTreeFlatNode } from '../shared/native-session'
 import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
@@ -161,6 +161,7 @@ import type {
 import { hasUsageNumbers } from '../shared/turns'
 import type { SubagentForkSource } from './subagent-fork'
 import { isUltracodeOn, setUltracodeOn } from './ultracode-sessions'
+import { readPendingModelSwitch, takePendingModelSwitch, writePendingModelSwitch } from './pending-model-switch'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 
 const FLUSH_MS = 16
@@ -439,6 +440,14 @@ export class AgentController extends EventEmitter {
   private languageExtension?: string
   private userAddressExtension?: string
   private ultracodeExtension?: string
+  private turnModelSwitchExtension?: string
+  private deferredModelSwitch?: {
+    sessionId: string
+    model?: ModelInfo
+    thinkingLevel?: string
+    previousModel?: ModelInfo
+    previousThinkingLevel: string
+  }
   private capabilityGuideExtension?: string
   private mcpAppProxyExtension?: string
   private mcpAppToolsSnapshot?: string
@@ -669,6 +678,7 @@ export class AgentController extends EventEmitter {
     languageExtension?: string
     userAddressExtension?: string
     ultracodeExtension?: string
+    turnModelSwitchExtension?: string
     capabilityGuideExtension?: string
     mcpAppProxyExtension?: string
     mcpAppToolsSnapshot?: string
@@ -747,6 +757,7 @@ export class AgentController extends EventEmitter {
     this.languageExtension = opts.languageExtension
     this.userAddressExtension = opts.userAddressExtension
     this.ultracodeExtension = opts.ultracodeExtension
+    this.turnModelSwitchExtension = opts.turnModelSwitchExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
@@ -909,6 +920,7 @@ export class AgentController extends EventEmitter {
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
         ...(this.userAddressExtension ? ['--extension', this.userAddressExtension] : []),
         ...(this.ultracodeExtension ? ['--extension', this.ultracodeExtension] : []),
+        ...(this.turnModelSwitchExtension ? ['--extension', this.turnModelSwitchExtension] : []),
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
           : []),
@@ -2212,14 +2224,25 @@ export class AgentController extends EventEmitter {
       modelKeyOf(model)
     )
     const availableThinkingLevels = levels.values
+    const actualThinkingLevel = String(data.thinkingLevel ?? 'off')
+    let deferred = this.deferredModelSwitch?.sessionId === String(data.sessionId ?? '') ? this.deferredModelSwitch : undefined
+    if (deferred && (!deferred.model || modelKeyOf(deferred.model) === modelKeyOf(model)) &&
+      (deferred.thinkingLevel === undefined || deferred.thinkingLevel === actualThinkingLevel)) {
+      this.deferredModelSwitch = undefined
+      deferred = undefined
+    }
+    if (deferred) {
+      deferred.previousModel = model ?? undefined
+      deferred.previousThinkingLevel = actualThinkingLevel
+    }
     this.state = {
       sessionId: String(data.sessionId ?? ''),
       sessionFile: data.sessionFile ? String(data.sessionFile) : undefined,
       sessionName: data.sessionName ? String(data.sessionName) : undefined,
-      model: model ?? undefined,
-      thinkingLevel: String(data.thinkingLevel ?? 'off'),
-      ...(previous?.sessionId === String(data.sessionId ?? '') && previous.pendingModelChange
-        ? { pendingModelChange: previous.pendingModelChange }
+      model: deferred?.model ?? model ?? undefined,
+      thinkingLevel: deferred?.thinkingLevel ?? actualThinkingLevel,
+      ...(deferred
+        ? { pendingModelChange: { previousModel: model ?? undefined, previousThinkingLevel: actualThinkingLevel } }
         : {}),
       ultracode: isUltracodeOn(String(data.sessionId ?? '')),
       availableThinkingLevels,
@@ -2241,7 +2264,7 @@ export class AgentController extends EventEmitter {
       followUpMode: normalizeQueueMode(data.followUpMode)
     }
     this.push({ ch: 'state', payload: this.state })
-    if (previous && previous.sessionId === this.state.sessionId && modelKeyOf(previous.model) !== modelKeyOf(model)) void this.refreshStats()
+    if (previous && previous.sessionId === this.state.sessionId && modelKeyOf(previous.model) !== modelKeyOf(this.state.model)) void this.refreshStats()
   }
 
   private runObserverContext(): RunObserverContext | null {
@@ -2318,6 +2341,7 @@ export class AgentController extends EventEmitter {
             this.push({ ch: 'msg-add', payload: added })
             this.consumeQueued(added.text, imagesOf(m.content) ?? [])
           }
+          this.syncDeferredModelSwitch()
         } else if (m?.role === 'custom') {
           const added = this.items.liveMessageStart(m, Date.now())
           if (added) this.push({ ch: 'msg-add', payload: added })
@@ -2526,7 +2550,6 @@ export class AgentController extends EventEmitter {
       }
 
       case 'turn_start':
-        this.clearPendingModelChange()
         this.pendingRequestMono = performance.now()
         break
 
@@ -2753,15 +2776,6 @@ export class AgentController extends EventEmitter {
         }
         if (evt.success === false) {
           const finalError = modelErrorText(evt.finalError)
-          this.push({
-            ch: 'notify',
-            payload: {
-              id: `retry-fail-${Date.now()}`,
-              method: 'notify',
-              notifyType: 'error',
-              message: `重试失败，本轮结束。${modelErrorNotice(finalError)}`
-            }
-          })
           this.push({
             ch: 'agent-error',
             payload: { message: modelErrorNotice(finalError), text: finalError, source: 'auto-retry' }
@@ -3553,6 +3567,9 @@ export class AgentController extends EventEmitter {
       }
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在回退代码，请稍后发送' }
       payload.streamingBehavior = mode ?? 'followUp'
+      if (!autoContinue && this.deferredModelSwitch && !this.executionActive()) {
+        await this.enqueueCapabilityChange(() => this.applyDeferredModelSwitch())
+      }
       const rpc = this.rpc
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
@@ -4200,7 +4217,7 @@ export class AgentController extends EventEmitter {
 
   async sessionTree(): Promise<{
     ok: boolean
-    tree?: NativeTreeNode[]
+    tree?: NativeTreeFlatNode[]
     leafId?: string | null
     error?: string
   }> {
@@ -4211,7 +4228,7 @@ export class AgentController extends EventEmitter {
         leafId?: string | null
       }>('get_tree')
       if (!res.success) return { ok: false, error: res.error }
-      return { ok: true, tree: capNativeTreeDepth(res.data?.tree ?? []), leafId: res.data?.leafId ?? null }
+      return { ok: true, tree: flattenNativeTree(res.data?.tree ?? []), leafId: res.data?.leafId ?? null }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
@@ -4392,29 +4409,79 @@ export class AgentController extends EventEmitter {
   async setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
     this.loopGuardContinuationVersion += 1
     return this.enqueueCapabilityChange(async () => {
-      const previous = this.state
-      const result = await this.applyModel(provider, modelId)
-      if (result.ok) this.recordPendingModelChange(previous)
-      return result
+      if (this.shouldDeferModelSwitch()) return this.deferModelSwitch({ provider, modelId })
+      return this.applyModel(provider, modelId)
     })
   }
 
-  private recordPendingModelChange(previous: SessionState | null): void {
-    const current = this.state
-    if (!previous || !current || previous.sessionId !== current.sessionId) return
-    const pending = previous.pendingModelChange ?? {
-      previousModel: previous.model,
-      previousThinkingLevel: previous.thinkingLevel
+  private shouldDeferModelSwitch(): boolean {
+    return this.executionActive() || (!!this.deferredModelSwitch && this.deferredModelSwitch.sessionId === this.state?.sessionId)
+  }
+
+  private async deferModelSwitch(change: { provider?: string; modelId?: string; thinkingLevel?: string }): Promise<{ ok: boolean; error?: string }> {
+    const state = this.state
+    if (!this.rpc || !state?.sessionId) return { ok: false, error: 'pi 尚未就绪' }
+    const sessionId = state.sessionId
+    const current = this.deferredModelSwitch?.sessionId === sessionId ? this.deferredModelSwitch : undefined
+    const previousModel = current ? current.previousModel : state.model
+    const previousThinkingLevel = current ? current.previousThinkingLevel : state.thinkingLevel
+    let model = current?.model
+    if (change.provider && change.modelId) {
+      const found = (await this.listModels()).find((item) => item.provider === change.provider && item.id === change.modelId)
+      if (!found) return { ok: false, error: `模型不可用：${change.provider}/${change.modelId}` }
+      model = modelKeyOf(found) === modelKeyOf(previousModel) ? undefined : this.withAssumedWindow(found) ?? found
     }
-    const changed = modelKeyOf(pending.previousModel) !== modelKeyOf(current.model) || pending.previousThinkingLevel !== current.thinkingLevel
+    const requestedLevel = change.thinkingLevel ?? current?.thinkingLevel
+    const thinkingLevel = requestedLevel === previousThinkingLevel ? undefined : requestedLevel
+    if (this.state?.sessionId !== sessionId) return { ok: false, error: '会话已切换，设置已取消' }
+    const pending = !!model || thinkingLevel !== undefined
+    this.deferredModelSwitch = pending ? { sessionId, model, thinkingLevel, previousModel, previousThinkingLevel } : undefined
+    writePendingModelSwitch(sessionId, pending
+      ? { ...(model ? { provider: model.provider, id: model.id } : {}), ...(thinkingLevel ? { thinkingLevel } : {}) }
+      : null)
+    const { pendingModelChange: _, ...rest } = this.state
     this.state = {
-      ...current,
-      pendingModelChange: changed && (this.executionActive() || previous.pendingModelChange) ? pending : undefined
+      ...rest,
+      model: model ?? previousModel,
+      thinkingLevel: thinkingLevel ?? previousThinkingLevel,
+      ...(pending ? { pendingModelChange: { previousModel, previousThinkingLevel } } : {})
     }
     this.push({ ch: 'state', payload: this.state })
+    return { ok: true }
+  }
+
+  private async applyDeferredModelSwitch(): Promise<{ ok: boolean; error?: string }> {
+    const deferred = this.deferredModelSwitch
+    const rpc = this.rpc
+    if (!deferred || !rpc || deferred.sessionId !== this.state?.sessionId) return { ok: true }
+    this.deferredModelSwitch = undefined
+    const target = takePendingModelSwitch(deferred.sessionId)
+    let error: string | undefined
+    if (target?.provider && target.id) {
+      const res = await rpc.command('set_model', { provider: target.provider, modelId: target.id })
+      if (!res.success) error = res.error
+    }
+    if (target?.thinkingLevel) {
+      const res = await rpc.command('set_thinking_level', { level: target.thinkingLevel })
+      if (!res.success) error ??= res.error
+    }
+    await this.refreshStateWithThinkingLevels()
+    void this.refreshStats()
+    return error ? { ok: false, error } : { ok: true }
+  }
+
+  private syncDeferredModelSwitch(): void {
+    const deferred = this.deferredModelSwitch
+    if (!deferred || deferred.sessionId !== this.state?.sessionId) return
+    if (readPendingModelSwitch(deferred.sessionId)) return
+    this.deferredModelSwitch = undefined
+    void this.refreshStateWithThinkingLevels().then(() => this.refreshStats())
   }
 
   private clearPendingModelChange(): void {
+    const deferred = this.deferredModelSwitch
+    this.deferredModelSwitch = undefined
+    if (deferred) writePendingModelSwitch(deferred.sessionId, null)
     if (!this.state?.pendingModelChange) return
     const { pendingModelChange: _, ...current } = this.state
     this.state = current
@@ -4424,12 +4491,9 @@ export class AgentController extends EventEmitter {
   async setThinking(level: string): Promise<{ ok: boolean; error?: string }> {
     return this.enqueueCapabilityChange(async () => {
       if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-      const previous = this.state
+      if (this.shouldDeferModelSwitch()) return this.deferModelSwitch({ thinkingLevel: level })
       const res = await this.rpc.command('set_thinking_level', { level })
-      if (res.success) {
-        await this.refreshState()
-        this.recordPendingModelChange(previous)
-      }
+      if (res.success) await this.refreshState()
       return res.success ? { ok: true } : { ok: false, error: res.error }
     })
   }

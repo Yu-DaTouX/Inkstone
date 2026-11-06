@@ -34,10 +34,11 @@ import { messageEntrySignature } from './turn-lines'
 import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
-import { SessionFindBar } from './SessionFindBar'
+import { SessionFindBar, type VirtualFindSource } from './SessionFindBar'
+import { turnFindText, type TurnFindText } from './session-find'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, type FollowDecision, type ReadingAnchor } from './scroll-follow'
 import { holdStreamTail } from './stream-tail-hold'
-import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
+import { advanceGlide, domAnchor, domMetrics, domReadingAnchors, GLIDE_FRAME_CAP_MS, glideSettle, keepSettleAnchor, startGlide, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
 import './session.css'
 import { sameComposerView } from '../../state/composer-recovery'
 import { withSubmittingMessages } from '../../state/submitting-messages'
@@ -66,8 +67,6 @@ function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-const easeInOut = (progress: number): number => progress * progress * (3 - 2 * progress)
-const easeOut = (progress: number): number => 1 - (1 - progress) ** 3
 const navigationGlideMs = (distance: number): number => Math.min(2400, Math.max(400, 350 + Math.sqrt(distance) * 5.5))
 const latestGlideMs = (distance: number): number => Math.min(1100, Math.max(280, 220 + Math.sqrt(distance) * 3.2))
 
@@ -203,16 +202,16 @@ export function SessionView(): JSX.Element {
         return
       }
     }
-    const run = branchRunRef.current
     const result = await navigatePagerBranch(request, pagerSessionId, targetId, uiText('state.error.branchSwitchFailed'))
-    if (!branchAliveRef.current || run !== branchRunRef.current) return
+    if (!branchAliveRef.current) return
     setBranchPending(null)
+    if (useStore.getState().session?.sessionId !== pagerSessionId) return
     if (!result.ok) {
       setBranchError(result.error || uiText('state.error.branchSwitchFailed'))
       return
     }
     await useStore.getState().refreshSessions()
-    if (!branchAliveRef.current || run !== branchRunRef.current) return
+    if (!branchAliveRef.current || useStore.getState().session?.sessionId !== pagerSessionId) return
     setBranchReload((value) => value + 1)
   }, [pagerSessionId, branchPending, pagerBusy])
 
@@ -423,6 +422,12 @@ export function SessionView(): JSX.Element {
       if ((event.key === 'Enter' || event.key === ' ') && togglesDisclosure(event.target)) holdForDisclosure()
       else if (isScrollIntentKey(event.key)) mark()
     }
+    const onFocusIn = (event: FocusEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element) || !target.closest('.v3-stream') || !target.matches(':focus-visible')) return
+      cancelNavigationRef.current()
+      if (stickRef.current) setStickNow(false)
+    }
     const release = (event: PointerEvent): void => {
       if (togglesDisclosure(event.target)) return
       const handle = vlistRef.current
@@ -437,6 +442,7 @@ export function SessionView(): JSX.Element {
     host.addEventListener('pointerdown', onPointerDown, options)
     host.addEventListener('pointerup', release, options)
     host.addEventListener('keydown', onKey, options)
+    host.addEventListener('focusin', onFocusIn, options)
     host.addEventListener(SCROLL_INTENT_EVENT, mark, options)
     return () => {
       host.removeEventListener('wheel', wheel, options)
@@ -444,7 +450,8 @@ export function SessionView(): JSX.Element {
       host.removeEventListener('pointerdown', onPointerDown, options)
       host.removeEventListener('pointerup', release, options)
       host.removeEventListener('keydown', onKey, options)
-    host.removeEventListener(SCROLL_INTENT_EVENT, mark, options)
+      host.removeEventListener('focusin', onFocusIn, options)
+      host.removeEventListener(SCROLL_INTENT_EVENT, mark, options)
     }
   }, [setStickNow])
 
@@ -712,24 +719,29 @@ export function SessionView(): JSX.Element {
     navRef.current = requestAnimationFrame(step)
   }, [endNavigation, readScroll, onVirtualScroll, revealTurn, virtual])
 
-  const glide = useCallback((box: HTMLElement, readOffset: () => number, destination: () => number, duration: (distance: number) => number, ease: (progress: number) => number, arrive: () => void) => {
+  const glide = useCallback((box: HTMLElement, destination: () => number, duration: (distance: number) => number, arrive: () => void) => {
     endNavigation()
     settlingRef.current = true
-    const length = duration(Math.abs(destination() - readOffset()))
-    const started = performance.now()
-    let previous = 0
+    let motion = startGlide(Math.abs(destination() - box.scrollTop), duration, box.clientHeight)
+    let last = performance.now()
+    let direction = 0
     const step = (now: number): void => {
       if (navRef.current === null) return
-      const progress = Math.min(1, (now - started) / length)
-      if (progress >= 1) {
+      const dt = Math.min(GLIDE_FRAME_CAP_MS, Math.max(0, now - last))
+      last = now
+      const offset = box.scrollTop
+      const remaining = destination() - offset
+      const sign = Math.sign(remaining)
+      if (direction && sign && sign !== direction) motion = { ...motion, speed: 0 }
+      if (sign) direction = sign
+      const next = advanceGlide(motion, Math.abs(remaining), dt)
+      motion = next.motion
+      if (next.done) {
+        if (Math.abs(remaining) > 0.5) box.scrollTo({ top: offset + remaining, behavior: 'instant' })
         arrive()
         return
       }
-      const eased = ease(progress)
-      const fraction = (eased - previous) / (1 - previous)
-      const offset = readOffset()
-      box.scrollTo({ top: offset + (destination() - offset) * fraction, behavior: 'instant' })
-      previous = eased
+      box.scrollTo({ top: offset + sign * next.move, behavior: 'instant' })
       navRef.current = requestAnimationFrame(step)
     }
     navRef.current = requestAnimationFrame(step)
@@ -739,8 +751,7 @@ export function SessionView(): JSX.Element {
     const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
     if (!box) return
     const destination = (): number => Math.max(0, Math.min(handle.getItemOffset(target), handle.scrollSize - handle.viewportSize))
-    glide(box, () => handle.scrollOffset, destination, navigationGlideMs, easeInOut, () => {
-      handle.scrollToIndex(target, { align: 'start' })
+    glide(box, destination, navigationGlideMs, () => {
       followNavigation(() => handle.scrollOffset, turnId)
     })
   }, [glide, followNavigation])
@@ -808,6 +819,42 @@ export function SessionView(): JSX.Element {
 
   const findScope = useCallback((): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null, [])
 
+  const findTextsRef = useRef<{ items: RenderItem[]; texts: TurnFindText[] } | null>(null)
+  const findSource = useMemo<VirtualFindSource>(() => ({
+    texts: () => {
+      const items = renderTurnsRef.current
+      const cached = findTextsRef.current
+      if (cached?.items === items) return cached.texts
+      const texts = items.map((item) => ({ id: item.id, text: isPending(item) ? '' : turnFindText(item) }))
+      findTextsRef.current = { items, texts }
+      return texts
+    },
+    firstVisible: () => {
+      const handle = vlistRef.current
+      return handle ? handle.findItemIndex(handle.scrollOffset) : 0
+    },
+    turnElement: (turnId) => turnNode(turnId),
+    mount: async (index) => {
+      const item = renderTurnsRef.current[index]
+      const handle = vlistRef.current
+      if (!item || !handle) return null
+      cancelNavigationRef.current()
+      intentRef.current = performance.now()
+      setStickNow(false)
+      handle.scrollToIndex(index, { align: 'start' })
+      for (let frame = 0; frame < LOCATE_MOUNT_FRAMES; frame++) {
+        await nextFrame()
+        const el = turnNode(item.id)
+        if (el) {
+          await nextFrame()
+          await nextFrame()
+          return el
+        }
+      }
+      return null
+    }
+  }), [setStickNow, turnNode])
+
   const jumpToBottom = useCallback(() => {
     endNavigation()
     setStickNow(true)
@@ -823,7 +870,7 @@ export function SessionView(): JSX.Element {
         pin()
         return
       }
-      glide(box, () => handle.scrollOffset, () => Math.max(0, handle.scrollSize - handle.viewportSize), latestGlideMs, easeOut, () => {
+      glide(box, () => Math.max(0, handle.scrollSize - handle.viewportSize), latestGlideMs, () => {
         endNavigation()
         pin()
       })
@@ -835,7 +882,7 @@ export function SessionView(): JSX.Element {
       el.scrollTop = el.scrollHeight
       return
     }
-    glide(el, () => el.scrollTop, () => Math.max(0, el.scrollHeight - el.clientHeight), latestGlideMs, easeOut, () => {
+    glide(el, () => Math.max(0, el.scrollHeight - el.clientHeight), latestGlideMs, () => {
       endNavigation()
       el.scrollTop = el.scrollHeight
     })
@@ -901,7 +948,7 @@ export function SessionView(): JSX.Element {
 
       <MessageMenuHost />
 
-      <SessionFindBar enabled={viewActive} sessionKey={view.key} getScope={findScope} />
+      <SessionFindBar enabled={viewActive} sessionKey={view.key} getScope={findScope} virtualSource={virtual ? findSource : undefined} />
 
     </div>
   )

@@ -3,7 +3,7 @@ import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { isModalOpen } from '../../lib/modalLayer'
 import { formatCountdown } from '../../../../shared/ui-timeout'
-import type { ApprovalChoice } from '../../../../shared/approval'
+import type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalRequest } from '../../../../shared/approval'
 import { Button, Kbd } from '../../ui'
 import { Card, CardActions, CardBody, CardCode, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
@@ -31,6 +31,12 @@ import './approval.css'
 
 function approvalFocusTarget(card: HTMLElement): HTMLElement {
   return card.querySelector<HTMLElement>('[data-testid="v3-approval-deny"]') ?? card
+}
+
+function approvalIdentity(request: ApprovalRequest): ApprovalAnswerIdentity | undefined {
+  return request.owner || request.revision !== undefined
+    ? { ...(request.owner ? { owner: request.owner } : {}), ...(request.revision !== undefined ? { revision: request.revision } : {}) }
+    : undefined
 }
 
 function overlayOutside(card: HTMLElement | null): boolean {
@@ -81,12 +87,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
       if (isApprovingChoice(choice) && requiresApprovalReadGate(request) && readId !== id) return
       const gate = gateRef.current
       if (!gate || !gate.begin(id)) return
-      const identity = request.owner || request.revision !== undefined
-        ? { ...(request.owner ? { owner: request.owner } : {}), ...(request.revision !== undefined ? { revision: request.revision } : {}) }
-        : undefined
       let result: Promise<unknown>
       try {
-        result = Promise.resolve(answerApproval(id, choice, identity, reason))
+        result = Promise.resolve(answerApproval(id, choice, approvalIdentity(request), reason))
       } catch {
         gate.release(id)
         return
@@ -95,6 +98,25 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
     },
     [current, answerApproval, readId]
   )
+
+  const allowBatch = useCallback((): void => {
+    const request = current
+    const id = request?.id
+    if (!id) return
+    const live = new Set(useStore.getState().approvals.map((item) => item.id))
+    const batch = approvals.filter((item) => live.has(item.id))
+    if (batch.length < 2 || !ownsApproval(batch, id)) return
+    if (!armingRef.current?.isArmed(id)) return
+    if (requiresApprovalReadGate(request) && readId !== id) return
+    const gate = gateRef.current
+    if (!gate) return
+    for (const item of batch) {
+      if (!gate.begin(item.id)) continue
+      void Promise.resolve(answerApproval(item.id, 'once', approvalIdentity(item)))
+        .catch(() => undefined)
+        .finally(() => gate.release(item.id))
+    }
+  }, [current, approvals, answerApproval, readId])
 
   useEffect(() => {
     if (!active) return undefined
@@ -337,6 +359,16 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
       >
         {current.canRemember && rememberLabel ? (
           <Button data-testid="v3-approval-remember" isDisabled={allowBlocked} onPress={clickOnly(() => answer('remember'))}>{rememberLabel}</Button>
+        ) : null}
+        {approvals.length > 1 ? (
+          <Button
+            data-testid="v3-approval-batch"
+            title={approvals.map((item) => item.title).join('\n')}
+            isDisabled={allowBlocked}
+            onPress={clickOnly(allowBatch)}
+          >
+            {t('approval.allowBatch')}
+          </Button>
         ) : null}
         {current.kind !== 'move' ? (
           <Button data-testid="v3-approval-session" isDisabled={allowBlocked} onPress={clickOnly(() => answer('session'))}>{t('approval.session')}</Button>

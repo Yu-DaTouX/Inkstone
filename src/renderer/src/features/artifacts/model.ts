@@ -5,6 +5,14 @@ export interface ArtifactIdentity {
   readonly toolCallId?: string
 }
 
+const MANAGED_ARTIFACT_FILE = /^art-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-(.+)$/i
+
+export function managedArtifactName(path: string): string | null {
+  const parts = path.split(/[\\/]+/).filter(Boolean)
+  if (parts.length < 3 || parts[parts.length - 3].toLowerCase() !== 'artifacts') return null
+  return MANAGED_ARTIFACT_FILE.exec(parts[parts.length - 1])?.[1] ?? null
+}
+
 export function identityKey(id: ArtifactIdentity): string {
   return [id.sessionId ?? '', id.messageId, String(id.partIndex), id.toolCallId ?? ''].join('\u0000')
 }

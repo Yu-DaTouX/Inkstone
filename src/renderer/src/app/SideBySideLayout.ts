@@ -1,4 +1,4 @@
-import type { SplitLayout, SplitSessionRef } from '../state/split-view'
+import { splitColumns, type SplitLayout, type SplitSessionRef } from '../state/split-view'
 
 export function isSessionTile(ref: SplitSessionRef | null | undefined): boolean {
   if (!ref) return false
@@ -14,10 +14,19 @@ export interface PaneLayout {
   live: number
 }
 
-export function collapsedPanes(split: SplitLayout | null, narrow: boolean): PaneLayout | null {
+export function collapsedPanes(split: SplitLayout | null, narrow: boolean, maxColumns = Number.POSITIVE_INFINITY): PaneLayout | null {
   if (!split || split.tiles.length < 2) return null
-  if (narrow) return { tiles: [split.tiles[split.live]], live: 0 }
-  return { tiles: split.tiles, live: split.live }
+  if (narrow || maxColumns <= 1) return { tiles: [split.tiles[split.live]], live: 0 }
+  const columns = splitColumns(split.tiles)
+  if (columns.length <= maxColumns) return { tiles: split.tiles, live: split.live }
+  const liveColumn = Math.max(0, columns.findIndex((column) => column.includes(split.live)))
+  const start = Math.min(Math.max(0, liveColumn - Math.floor((maxColumns - 1) / 2)), columns.length - maxColumns)
+  const kept = columns.slice(start, start + maxColumns).flat()
+  return { tiles: kept.map((index) => split.tiles[index]), live: kept.indexOf(split.live) }
+}
+
+export function splitColumnsThatFit(width: number, minPaneWidth: number): number {
+  return width > 0 ? Math.max(1, Math.floor(width / minPaneWidth)) : Number.POSITIVE_INFINITY
 }
 
 export interface SideBySideSession {

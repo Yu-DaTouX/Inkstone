@@ -11,6 +11,7 @@ export function PendingModelChange() {
   const label = (value: string) => value === 'xhigh' ? 'XHigh' : value.charAt(0).toUpperCase() + value.slice(1)
   const modelChanged = pending.previousModel?.provider !== model?.provider || pending.previousModel?.id !== model?.id
   const thinkingChanged = pending.previousThinkingLevel !== level
+  if (!modelChanged && !thinkingChanged) return null
   const display = (name: string | undefined, thinking: string) => [modelChanged ? name : null, thinkingChanged ? label(thinking) : null].filter(Boolean).join(' · ')
   return (
     <ModelChangeNotice

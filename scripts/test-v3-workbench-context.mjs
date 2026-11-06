@@ -199,6 +199,11 @@ async function main() {
     const tools = contextBreakdown(msgs, 1_000_000).find((s) => s.id === 'tools').tokens
     const listed = largestToolCalls(msgs, msgs, 99).reduce((n, r) => n + r.tokens, 0)
     ok(tools === listed, '构成里的工具一栏与列表合计口径相同（子调用不重复计）', [tools, listed])
+    const squeezed = contextBreakdown(msgs, 1000, 300)
+    ok(squeezed.find((s) => s.id === 'system').tokens >= 300 && squeezed.reduce((n, s) => n + s.tokens, 0) === 1000, '消息估算超过总量时系统提示按实测保底，不被挤成 0', squeezed)
+    const grown = contextBreakdown(msgs, 1_000_000, 20_000)
+    ok(Math.abs(grown.find((s) => s.id === 'system').tokens - 20_000) <= 4, '有实测时估算不足的部分按比例分给消息，不全算到系统', grown)
+    ok(contextBreakdown(msgs, 1_000_000).find((s) => s.id === 'system').tokens > 900_000, '没有实测时保持原来的剩余口径')
     const model = { provider: 'anthropic', id: 'claude-x', contextWindow: 200_000 }
     const stats = { contextUsage: { tokens: 20_000, contextWindow: 200_000, modelKey: 'anthropic/claude-x' } }
     ok(contextPaneToolCalls({ session: { model, lastCompaction: null }, stats, messages: msgs }).length === 5, '面板数据给出列表')

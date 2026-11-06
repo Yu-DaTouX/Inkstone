@@ -793,7 +793,6 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       ? {
           changes: {
             summary: changesSummary,
-            onOpenView: () => onOpenView('changes'),
             body:
               changesCount === 0 ? null : lineTotals && lineTotals.entries.length > 0 ? (
                 <ChangedRows files={lineTotals.entries} text={rail} onOpen={(path) => openOutput(/^(?:[a-zA-Z]:[\\/]|[\\/])/.test(path) || !cwd ? path : `${cwd.replace(/[\\/]+$/, '')}/${path}`)} />

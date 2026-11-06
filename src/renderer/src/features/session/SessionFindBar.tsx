@@ -13,11 +13,17 @@ import {
   FIND_MUTATION_DEBOUNCE_MS,
   clampActiveIndex,
   centeringOffset,
+  countTextMatches,
   findStepQuery,
+  firstTurnMatchFrom,
   matchFind,
   sessionFindAction,
   sessionFindAllowed,
-  type FindRange
+  stepTurnMatch,
+  turnMatchPosition,
+  type FindRange,
+  type TurnFindText,
+  type TurnMatch
 } from './session-find'
 import './session-find.css'
 
@@ -25,6 +31,30 @@ const FIND_Z = 9000
 const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 
 type PaintedMatch = FindRange & { range: Range }
+
+export interface VirtualFindSource {
+  texts: () => ReadonlyArray<TurnFindText>
+  firstVisible: () => number
+  turnElement: (id: string) => HTMLElement | null
+  mount: (index: number) => Promise<HTMLElement | null>
+}
+
+interface VirtualFindState {
+  query: string
+  texts: ReadonlyArray<TurnFindText> | null
+  estimates: number[]
+  measured: Map<string, number>
+  active: { id: string; k: number } | null
+  seq: number
+}
+
+const TURN_ROW = '.v3-stream-row'
+const TURN_NODE = '.v3-msg[data-turn-id]'
+
+function rowTurnId(element: Element | null): string | null {
+  const row = element?.closest(TURN_ROW)
+  return row?.querySelector<HTMLElement>(TURN_NODE)?.dataset.turnId ?? null
+}
 
 type HighlightLike = { priority: number }
 type HighlightRegistryLike = { set(name: string, highlight: unknown): unknown; delete(name: string): unknown }
@@ -67,11 +97,13 @@ function scrollable(element: HTMLElement): boolean {
 export function SessionFindBar({
   enabled,
   sessionKey,
-  getScope
+  getScope,
+  virtualSource
 }: {
   enabled: boolean
   sessionKey: string
   getScope: () => HTMLElement | null
+  virtualSource?: VirtualFindSource
 }): JSX.Element | null {
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -118,8 +150,103 @@ export function SessionFindBar({
     }
   }
 
+  const virtualRef = useRef<VirtualFindState>({ query: '', texts: null, estimates: [], measured: new Map(), active: null, seq: 0 })
+
+  const renderedMatches = (scope: HTMLElement, value: string): PaintedMatch[] => {
+    const matches: PaintedMatch[] = []
+    for (const match of matchFind(scope, value)) {
+      const range = toRange(match)
+      if (!range || !rendered(range)) continue
+      matches.push({ ...match, range })
+    }
+    return matches
+  }
+
+  const syncVirtual = (source: VirtualFindSource, scope: HTMLElement, value: string): { matches: PaintedMatch[]; groups: Map<string, PaintedMatch[]>; counts: number[]; texts: ReadonlyArray<TurnFindText> } => {
+    const state = virtualRef.current
+    const texts = source.texts()
+    if (state.query !== value || state.texts !== texts) {
+      if (state.query !== value) {
+        state.measured = new Map()
+        state.active = null
+      }
+      state.estimates = texts.map((item) => countTextMatches(item.text, value))
+      state.query = value
+      state.texts = texts
+    }
+    const matches = renderedMatches(scope, value)
+    const groups = new Map<string, PaintedMatch[]>()
+    for (const row of scope.querySelectorAll(TURN_ROW)) {
+      const id = row.querySelector<HTMLElement>(TURN_NODE)?.dataset.turnId
+      if (id) groups.set(id, [])
+    }
+    for (const match of matches) {
+      const id = rowTurnId(elementOf(match.range.startContainer))
+      if (id) groups.get(id)?.push(match)
+    }
+    for (const [id, list] of groups) state.measured.set(id, list.length)
+    const counts = texts.map((item, index) => state.measured.get(item.id) ?? state.estimates[index] ?? 0)
+    return { matches, groups, counts, texts }
+  }
+
+  const showVirtual = (matches: PaintedMatch[], groups: Map<string, PaintedMatch[]>, counts: number[], texts: ReadonlyArray<TurnFindText>, value: string): PaintedMatch | null => {
+    const state = virtualRef.current
+    const turn = state.active ? texts.findIndex((item) => item.id === state.active?.id) : -1
+    const group = turn >= 0 ? groups.get(texts[turn].id) ?? [] : []
+    const k = state.active && group.length ? Math.min(state.active.k, group.length - 1) : -1
+    const activeMatch = k >= 0 ? group[k] : null
+    const index = activeMatch ? matches.indexOf(activeMatch) : -1
+    found.current = { query: value, matches, index }
+    paint(matches, index)
+    const position = turnMatchPosition(counts, turn >= 0 && state.active ? { turn, k: state.active.k } : null)
+    setStatus({ current: turn >= 0 ? position.current : 0, total: position.total })
+    return activeMatch
+  }
+
+  const runVirtual = async (source: VirtualFindSource, value: string, mode: 'new' | 'step' | 'keep', forward: boolean): Promise<void> => {
+    const state = virtualRef.current
+    const scope = getScope()
+    if (!scope) return
+    let { matches, groups, counts, texts } = syncVirtual(source, scope, value)
+    if (mode === 'keep') {
+      showVirtual(matches, groups, counts, texts, value)
+      return
+    }
+    const seq = ++state.seq
+    const activeTurn = state.active ? texts.findIndex((item) => item.id === state.active?.id) : -1
+    const current: TurnMatch | null = activeTurn >= 0 && state.active ? { turn: activeTurn, k: state.active.k } : null
+    let target = mode === 'new' || !current ? (mode === 'step' && !forward ? stepTurnMatch(counts, null, false) : firstTurnMatchFrom(counts, source.firstVisible())) : stepTurnMatch(counts, current, forward)
+    for (let guard = 0; target && guard <= texts.length; guard++) {
+      const id = texts[target.turn].id
+      if (!source.turnElement(id)) {
+        await source.mount(target.turn)
+        if (seq !== state.seq) return
+        ;({ matches, groups, counts, texts } = syncVirtual(source, scope, value))
+        if (texts[target.turn]?.id !== id) break
+      }
+      const group = groups.get(id) ?? []
+      if (group.length) {
+        state.active = { id, k: Math.min(target.k, group.length - 1) }
+        counts[target.turn] = group.length
+        const activeMatch = showVirtual(matches, groups, counts, texts, value)
+        if (activeMatch) reveal(activeMatch.range)
+        return
+      }
+      state.measured.set(id, 0)
+      counts[target.turn] = 0
+      target = stepTurnMatch(counts, { turn: target.turn, k: 0 }, mode === 'new' ? true : forward)
+    }
+    state.active = null
+    showVirtual(matches, groups, counts, texts, value)
+  }
+
   const run = (value: string, mode: 'new' | 'step' | 'keep', forward = true): void => {
+    if (virtualSource && value) {
+      void runVirtual(virtualSource, value, mode, forward)
+      return
+    }
     if (!value) {
+      virtualRef.current = { query: '', texts: null, estimates: [], measured: new Map(), active: null, seq: virtualRef.current.seq + 1 }
       found.current = { query: '', matches: [], index: -1 }
       paint([], -1)
       setStatus({ current: 0, total: 0 })
@@ -172,6 +299,7 @@ export function SessionFindBar({
     setQuery('')
     setStatus({ current: 0, total: 0 })
     found.current = { query: '', matches: [], index: -1 }
+    virtualRef.current = { query: '', texts: null, estimates: [], measured: new Map(), active: null, seq: virtualRef.current.seq + 1 }
     paint([], -1)
     const target = via === 'auto' ? null : restoreRef.current
     restoreRef.current = null

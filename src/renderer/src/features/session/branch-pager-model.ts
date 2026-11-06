@@ -2,6 +2,7 @@ import {
   NATIVE_TREE_MAX_DEPTH,
   NATIVE_TREE_MAX_ROWS,
   describeEntry,
+  parseTreePayload,
   type NativeTreeNode
 } from '../../../../shared/native-session'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../../../shared/native-session-host'
@@ -35,8 +36,7 @@ export async function loadPagerTree(
   try {
     const result = await transport({ action: 'tree', expectedSessionId })
     if (!result || !result.ok) return { ok: false, error: result?.error || fallbackError }
-    const tree = Array.isArray(result.tree) ? (result.tree as NativeTreeNode[]) : []
-    const leafId = typeof result.leafId === 'string' && result.leafId ? result.leafId : null
+    const { tree, leafId } = parseTreePayload(result)
     return { ok: true, tree, leafId }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }

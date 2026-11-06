@@ -363,7 +363,7 @@ const api: YanBridge = {
   releaseHtmlArtifact: (url) => invoke<void>('yan:releaseHtmlArtifact', url),
   prepareHtmlWidget: (html) => invoke<HtmlArtifactPreviewResult>('yan:prepareHtmlWidget', html),
   statPreview: (p, cwd) =>
-    invoke<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>(
+    invoke<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string; directory?: boolean }>(
       'yan:statPreview',
       p,
       cwd

@@ -6,7 +6,7 @@ import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, Pa
 import { CondensingHeader, useCondensingHeader } from '../../ui/Motion'
 import type { OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview, UIMessage } from '../../../../shared/ipc'
-import { latestArtifactVersions, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
+import { latestArtifactVersions, managedArtifactName, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/LazyCodeEditor'
 import { Markdown } from '../session/Markdown'
 import { RemoteImageGroupScope, useRemoteImageGroup, useRemoteImageGroupSummary, type RemoteImageGroup } from '../session/RemoteImage'
@@ -265,7 +265,8 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
         ? { kind: 'loading', name: previewBaseName(activePath) }
         : { kind: 'empty' }
   const activeAbs = 'abs' in view ? view.abs : view.kind === 'problem' ? activePath ?? '' : ''
-  const name = 'name' in view ? view.name : ''
+  const artifactName = managedArtifactName(activeAbs || activePath || '')
+  const name = artifactName ?? ('name' in view ? view.name : '')
   const editing = !!draft && !!activeAbs && draft.abs === activeAbs
   const editable = view.kind === 'text' && editorIsEditableKind(name)
   const dirty = !!draft && draft.text !== draft.original
@@ -328,12 +329,12 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
   }, [activeAbs])
 
   const crumbs = useMemo(() => {
-    if (!activeAbs) return []
+    if (!activeAbs || artifactName) return []
     const cwd = owner.cwd.replace(/\\/g, '/').replace(/\/+$/, '')
     const abs = activeAbs.replace(/\\/g, '/')
     if (!cwd || !abs.startsWith(`${cwd}/`)) return []
     return abs.slice(cwd.length + 1).split('/').filter(Boolean)
-  }, [activeAbs, owner.cwd])
+  }, [activeAbs, artifactName, owner.cwd])
 
   const beginEdit = useCallback(async (): Promise<void> => {
     if (!activeAbs) return
@@ -537,7 +538,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
     ) : null
   const chromePathLabel = ((): { dir: string; name: string } => {
     if (crumbs.length > 1) return { dir: crumbs.slice(0, -1).join('/'), name }
-    if (!activeAbs) return { dir: '', name }
+    if (!activeAbs || artifactName) return { dir: '', name }
     const rel = owner.cwd && activeAbs.startsWith(owner.cwd) ? activeAbs.slice(owner.cwd.length).replace(/^[\\/]/, '') : activeAbs
     const dir = rel.replace(/[\\/][^\\/]*$/, '')
     if (dir !== rel) return { dir, name }
@@ -600,7 +601,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
             <PaneTitle>
               <span className="v3-preview-headrow gap-1" data-testid="v3-preview-headrow" data-single={singleTab ? '' : undefined}>
                 {singleTab ? null : tabStrip}
-                {activeAbs ? (crumbNav ?? (singleTab ? <span className="v3-preview-pathname ps-0" title={activeAbs}>{name}</span> : null)) : null}
+                {activeAbs ? (crumbNav ?? (singleTab ? <span className="v3-preview-pathname" title={activeAbs}>{name}</span> : null)) : null}
               </span>
             </PaneTitle>
             {activeAbs ? (
@@ -1079,7 +1080,26 @@ function ProblemView({ problem, text, onRetry }: { problem: PreviewProblem; text
 function RemoteImagesNotice({ group, text, inBar = false }: { group: RemoteImageGroup; text: PreviewText; inBar?: boolean }): ReactElement | null {
   const summary = useRemoteImageGroupSummary(group)
   const hosts = summary.hosts.join('\n')
-  const notice = (state: string, label: string, action?: { label: string; run: () => void; testId?: string }): ReactElement => (
+  const chip = (state: string, count: number, label: string, action?: { label: string; run: () => void; testId?: string }): ReactElement => {
+    const hint = action ? `${label} \u00b7 ${action.label}` : label
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="v3-preview-remote-chip ui-num"
+        icon={state === 'loading' ? <Spinner size="sm" /> : <ImageOff size={14} />}
+        aria-label={hint}
+        tooltip={hosts ? `${hint}\n${hosts}` : hint}
+        isDisabled={!action}
+        onPress={action?.run}
+        data-testid="v3-preview-remote-images"
+        data-state={state}
+      >
+        <span data-testid={action?.testId}>{count}</span>
+      </Button>
+    )
+  }
+  const notice = (state: string, label: string, action?: { label: string; run: () => void; testId?: string }, count = 0): ReactElement => inBar ? chip(state, count, label, action) : (
     <Notice
       variant="hint"
       loading={state === 'loading'}
@@ -1104,12 +1124,12 @@ function RemoteImagesNotice({ group, text, inBar = false }: { group: RemoteImage
       label: text.remoteImagesLoadAll,
       run: () => group.loadBlocked(),
       testId: 'v3-preview-remote-load-all'
-    })
+    }, summary.blocked)
   }
-  if (summary.loading > 0) return notice('loading', text.remoteImagesLoading.replace('{count}', String(summary.loading)))
+  if (summary.loading > 0) return notice('loading', text.remoteImagesLoading.replace('{count}', String(summary.loading)), undefined, summary.loading)
   if (summary.failed > 0) {
     const label = text.remoteImagesFailed.replace('{count}', String(summary.failed))
-    return notice('failed', label, { label: text.remoteImagesRetry, run: () => group.retryFailed() })
+    return notice('failed', label, { label: text.remoteImagesRetry, run: () => group.retryFailed() }, summary.failed)
   }
   return null
 }

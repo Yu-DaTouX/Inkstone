@@ -345,14 +345,11 @@ function treeFixture() {
             entry: { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'hi' } },
             children: [
               { entry: { id: 't1', parentId: 'a1', type: 'message', message: { role: 'toolResult', toolName: 'read' } }, children: [] },
+              { entry: { id: 'u2', parentId: 'a1', type: 'message', message: { role: 'user', content: 'side' } }, children: [{ entry: { id: 'b1', parentId: 'u2', type: 'message', message: { role: 'assistant', content: 'side answer' } }, children: [] }] },
               { entry: { id: 'a2', parentId: 'a1', type: 'message', message: { role: 'assistant', content: 'again' } }, children: [] }
             ]
           }
         ]
-      },
-      {
-        entry: { id: 'u2', parentId: null, type: 'message', message: { role: 'user', content: 'side' } },
-        children: [{ entry: { id: 'b1', parentId: 'u2', type: 'message', message: { role: 'assistant', content: 'side answer' } }, children: [] }]
       }
     ],
     leafId: 'a2'
@@ -428,7 +425,8 @@ async function main() {
     ok(view.leafId === 'a2', 'leafId 原样带回')
     assert.deepEqual(view.activePath, ['u1', 'a1', 'a2'], '活动路径 = leaf→根')
     const ids = view.rows.map((r) => r.entryId)
-    assert.deepEqual(ids, ['u1', 'a1', 't1', 'a2', 'u2'], '折叠后只渲染 u2 一行')
+    assert.deepEqual(ids, ['u1', 'a1', 't1', 'u2', 'a2'], '线性链平铺，分叉处的旁支排在分叉行下，折叠的 u2 只占一行')
+    assert.deepEqual(view.rows.map((r) => r.depth), [0, 0, 1, 1, 0], '只在分叉处缩进')
     const byId = new Map(view.rows.map((r) => [r.entryId, r]))
     ok(byId.get('a2').leaf === true, 'leaf 行标记 leaf')
     ok(byId.get('u1').onActiveBranch && byId.get('a1').onActiveBranch && byId.get('a2').onActiveBranch, '活动路径三行标 active')
@@ -437,19 +435,15 @@ async function main() {
     ok(byId.get('u1').kind === 'user' && byId.get('a1').kind === 'assistant' && byId.get('t1').kind === 'tool', '条目类型投影正确')
 
     const parsed = parseTreePayload({ tree, leafId, extra: 1 })
-    ok(parsed.tree.length === 2 && parsed.leafId === 'a2', 'parseTreePayload 取树与 leaf')
+    ok(parsed.tree.length === 1 && parsed.leafId === 'a2', 'parseTreePayload 取树与 leaf')
     ok(parseTreePayload(null).tree.length === 0 && parseTreePayload(null).leafId === null, '缺字段退回空树')
 
     const nested = nestBranchRows(view.rows)
-    assert.deepEqual(nested.map((n) => n.row.entryId), ['u1', 'u2'], '嵌套根 = 可见顶层行')
+    assert.deepEqual(nested.map((n) => n.row.entryId), ['u1', 'a1', 'a2'], '嵌套根 = 主线各行')
     const nById = new Map(nested.map((n) => [n.row.entryId, n]))
-    assert.deepEqual(nById.get('u1').children.map((n) => n.row.entryId), ['a1'], 'u1 的子节点 = a1')
-    assert.deepEqual(
-      nById.get('u1').children[0].children.map((n) => n.row.entryId),
-      ['t1', 'a2'],
-      'a1 的子节点保持顺序 t1 / a2'
-    )
-    assert.deepEqual(nById.get('u2').children, [], '折叠的 u2 不产生子节点（保护仍生效）')
+    assert.deepEqual(nById.get('u1').children, [], '线性链上的 u1 没有子节点')
+    assert.deepEqual(nById.get('a1').children.map((n) => n.row.entryId), ['t1', 'u2'], '分叉行 a1 的子节点 = 旁支 t1 / u2')
+    assert.deepEqual(nById.get('a1').children[1].children, [], '折叠的 u2 不产生子节点（保护仍生效）')
     const deep = nestBranchRows([
       { entryId: 'r', depth: 0 },
       { entryId: 'c', depth: 1 },
@@ -466,7 +460,7 @@ async function main() {
     assert.deepEqual(t.calls[0], { action: 'tree', expectedSessionId: 'sess-a' }, 'tree 请求只带 action + expectedSessionId')
     t.pending[0].resolve({ ok: true, tree: treeFixture().tree, leafId: 'a2', requiresReload: true })
     const loaded = await load
-    ok(loaded.ok && loaded.tree.length === 2 && loaded.leafId === 'a2', '成功时解析出树与 leaf')
+    ok(loaded.ok && loaded.tree.length === 1 && loaded.leafId === 'a2', '成功时解析出树与 leaf')
 
     const t2 = controlledTransport()
     const nav = navigateBranch(t2, 'sess-a', 'a1', '失败')
@@ -508,24 +502,24 @@ async function main() {
     ok(treeEl.props.selectionMode === 'single', '单选交给 RAC selectionMode')
     ok(treeEl.props.selectionBehavior === 'replace', '用 replace 让 Enter / 双击才触发显式激活（单击只选中）')
     ok(Array.isArray(treeEl.props.selectedKeys) && treeEl.props.selectedKeys.includes('a2'), '选中集合 = 当前叶子')
-    ok(treeEl.props.expandedKeys.has('u1') && treeEl.props.expandedKeys.has('a1'), '展开集合包含活动路径父行')
+    ok(treeEl.props.expandedKeys.has('a1') && !treeEl.props.expandedKeys.has('u1'), '展开集合只含活动路径上的分叉行')
     ok(!treeEl.props.expandedKeys.has('u2'), '折叠的非活动行不在展开集合')
 
-    assert.deepEqual(itemChildIds(tree, TreeItem, 'u1'), ['a1'], 'u1 行内嵌 a1')
-    assert.deepEqual(itemChildIds(tree, TreeItem, 'a1').slice().sort(), ['a2', 't1'], 'a1 行内嵌 t1 / a2')
+    assert.deepEqual(itemChildIds(tree, TreeItem, 'u1'), [], 'u1 不内嵌下一条')
+    assert.deepEqual(itemChildIds(tree, TreeItem, 'a1').slice().sort(), ['t1', 'u2'], 'a1 行内嵌旁支 t1 / u2')
     assert.deepEqual(itemChildIds(tree, TreeItem, 'u2'), [], 'u2 没有内嵌子行')
 
-    treeEl.props.onExpandedChange(new Set(['u1', 'a1', 'u2']))
+    treeEl.props.onExpandedChange(new Set(['a1', 'u2']))
     tree = await flush(rt, BranchTree, props)
     ok(rowIds(tree, TreeItem).includes('b1'), '展开 u2 后出现其子行 b1')
     ok(findByType(tree, Tree).props.expandedKeys.has('u2'), 'u2 进入 RAC 展开集合')
-    findByType(tree, Tree).props.onExpandedChange(new Set(['u1']))
+    findByType(tree, Tree).props.onExpandedChange(new Set([]))
     tree = await flush(rt, BranchTree, props)
-    ok(!rowIds(tree, TreeItem).includes('a2') && !rowIds(tree, TreeItem).includes('t1'), '收起 a1 后隐藏其子行')
+    ok(!rowIds(tree, TreeItem).includes('u2') && !rowIds(tree, TreeItem).includes('t1') && rowIds(tree, TreeItem).includes('a2'), '收起 a1 后隐藏旁支，主线保留')
     ok(!findByType(tree, Tree).props.expandedKeys.has('a1'), 'a1 退出 RAC 展开集合')
-    findByType(tree, Tree).props.onExpandedChange(new Set(['u1', 'a1']))
+    findByType(tree, Tree).props.onExpandedChange(new Set(['a1']))
     tree = await flush(rt, BranchTree, props)
-    assert.deepEqual(itemChildIds(tree, TreeItem, 'a1').slice().sort(), ['a2', 't1'], '重新展开 a1 后子行恢复')
+    assert.deepEqual(itemChildIds(tree, TreeItem, 'a1').slice().sort(), ['t1', 'u2'], '重新展开 a1 后子行恢复')
 
     const navButton = findByTestId(tree, 'branch-navigate')
     ok(navButton && navButton.props.isDisabled === true, '当前叶子就是选中行时禁用切换（不是假按钮）')
@@ -567,14 +561,31 @@ async function main() {
     let errTree = rtErr.render(BranchTree, { owner: ownerA, transport: tErr })
     tErr.pending[0].resolve({ ok: false, error: 'boo' })
     errTree = await flush(rtErr, BranchTree, { owner: ownerA, transport: tErr })
-    ok(findByTestId(errTree, 'branch-tree-error'), '首次失败显示错误态')
+    ok(!findByTestId(errTree, 'branch-tree-error'), '宿主短暂失败先自动重试，不立刻报错')
+    for (let i = 1; i <= 3; i += 1) {
+      for (let waited = 0; !tErr.pending[i] && waited < 3000; waited += 50) await new Promise((r) => setTimeout(r, 50))
+      ok(!!tErr.pending[i], `第 ${i} 次自动重试已发出`)
+      tErr.pending[i]?.resolve({ ok: false, error: 'boo' })
+      errTree = await flush(rtErr, BranchTree, { owner: ownerA, transport: tErr })
+    }
+    ok(findByTestId(errTree, 'branch-tree-error'), '重试用尽后显示错误态')
     ok(findByTestId(errTree, 'branch-retry'), '错误态提供重试')
     findByTestId(errTree, 'branch-retry').props.onPress()
     errTree = await flush(rtErr, BranchTree, { owner: ownerA, transport: tErr })
     ok(tErr.calls.filter((c) => c.action === 'tree').length >= 2, '重试再次发请求')
-    tErr.pending[1].resolve({ ok: true, ...treeFixture() })
+    tErr.pending[4].resolve({ ok: true, ...treeFixture() })
     errTree = await flush(rtErr, BranchTree, { owner: ownerA, transport: tErr })
     ok(findByType(errTree, Tree), '重试成功后回到树')
+
+    const rtRaw = makeHookRuntime()
+    globalThis.__V3_HOOKS = rtRaw
+    const tRaw = { calls: [], request(request) { this.calls.push(request); return Promise.reject(new TypeError('Electron contextBridge recursion depth exceeded.')) } }
+    rtRaw.render(BranchTree, { owner: ownerA, transport: tRaw })
+    const rawTree = await flush(rtRaw, BranchTree, { owner: ownerA, transport: tRaw })
+    const rawError = findByTestId(rawTree, 'branch-tree-error')
+    ok(rawError && !JSON.stringify(rawError, (key, value) => (key === 'title' ? undefined : value)).includes('contextBridge'), '异常原文不直接显示在面板里')
+    ok(JSON.stringify(rawError).includes('contextBridge'), '异常原文放在悬停提示里')
+    ok(tRaw.calls.length === 1, '异常不自动重试')
   }
 
   group('BranchTree：owner 切换使在途响应失效，旧树不覆盖新会话')
@@ -738,7 +749,7 @@ async function main() {
     const { React, renderToStaticMarkup, Tree: RacTree, renderBranchNodes, branchText, buildTreeView, initialCollapsedForLeaf } = rac
 
     const { tree, leafId } = treeFixture()
-    const view = buildTreeView(tree, leafId, initialCollapsedForLeaf(tree, leafId))
+    const view = buildTreeView(tree, leafId, new Set())
     const nodes = nestBranchRows(view.rows)
     const expandedKeys = new Set()
     const collect = (list) => {
@@ -767,7 +778,7 @@ async function main() {
     ok(html.includes('aria-selected="true"') && html.includes('aria-selected="false"'), '选中 / 未选中都带 aria-selected')
     const leafTag = html.match(/<[^>]*data-key="a2"[^>]*>/)?.[0] ?? ''
     ok(leafTag.includes('aria-selected="true"'), '当前叶子行（data-key=a2）是选中行')
-    ok(leafTag.includes('aria-level="3"'), '当前叶子行层级为 3（a1 的子节点）')
+    ok(leafTag.includes('aria-level="1"'), '当前叶子在主线上，层级为 1（线性链不缩进）')
 
     ok(html.includes('>again<') && html.includes('>hello<'), '真实条目文字进入 DOM（不截字符串）')
 

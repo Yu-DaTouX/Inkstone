@@ -686,8 +686,26 @@
     white-space: pre-wrap;
   }
 
-  .composer-text[data-suggestion='true'][data-placeholder-visible='true'][data-placeholder]::before {
-    content: attr(data-placeholder) '\2003\21E5\2009Tab';
+  .composer-suggestion {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    color: transparent;
+    font-family: var(--font-ui);
+    font-size: var(--t-prose);
+    line-height: var(--t-prose-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+  }
+
+  .composer-suggestion__keys {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-8);
+    margin-inline-start: var(--s-8);
+    color: var(--fg3);
+    vertical-align: text-bottom;
   }
 
   .composer-bar {
@@ -1183,6 +1201,7 @@
     flex-direction: column;
     min-width: 0;
     max-width: calc(100vw - var(--s-32));
+    max-height: var(--available-height);
   }
 
   .composer-model-menu__body {
@@ -1213,6 +1232,7 @@
   }
 
   .composer-model-menu__foot {
+    flex: none;
     padding: var(--s-8) var(--s-12);
     border-top: 1px solid var(--line);
   }

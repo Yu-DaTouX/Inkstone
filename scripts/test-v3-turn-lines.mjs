@@ -408,6 +408,7 @@ async function main() {
   const store = (over = {}) => {
     globalThis.__V3_STORE = {
       subagents: [],
+      approvals: [],
       session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A' },
       peekedSessionId: null,
       peekedPath: null,
@@ -565,6 +566,18 @@ async function main() {
     ok(live.status === 'subagentFailedCount' && live.tone === 'fail', '组头状态在前：有失败时失败优先、红色', JSON.stringify(live))
     ok(live.title === 'subagentCount · subagentLiveCount · subagentDoneCount · subagentStoppedCount', '标题写总数与其余状态计数', live.title)
     ok(live.meta === null, '运行中不写用量元信息', live.meta)
+    rt.cells = []
+    store({ subagents: many, models: [], approvals: [{ id: 'ap-1', subagentId: 'sub-1' }, { id: 'ap-3', subagentId: 'sub-3' }, { id: 'ap-5', subagentId: 'sub-5' }] })
+    const waitingLine = rt.render(bundle.SubagentLine, { turn })
+    const waiting = summaryOf(byTestId(waitingLine, 'v3-subagents-sum')[0])
+    ok(waiting.status === 'subagentAwaitingCount' && waiting.tone === 'ask', '有子 Agent 等审批时组头写「等你确认 n」、琥珀色', JSON.stringify(waiting))
+    ok(waiting.title === 'subagentCount · subagentFailedCount · subagentDoneCount · subagentStoppedCount', '等审批的不再计入「进行中」', waiting.title)
+    const waitingTile = renderRowEl(tilesOf(waitingLine).find((el) => el.props.run.id === 'sub-1'))
+    const waitingDetail = collect(waitingTile, (el) => el.props?.className === 'v3-sa-tile-detail')[0]
+    ok(flattenText(waitingDetail?.props.children) === 'awaitApproval' && waitingDetail?.props['data-warning'] === '', '等审批的块写「等你确认」，不再显示最近动作', flattenText(waitingDetail?.props.children))
+    ok(collect(waitingTile, kind('SubagentStateIcon'))[0]?.props.awaiting === true, '等审批的块状态点切成等待')
+    rt.cells = []
+    store({ subagents: many, models: [] })
     ok(kind('CardSummary')(sum) && sum.props.expanded === true && sum.props['data-failed'] === '1', '组头是卡片摘要行（展开箭头），有失败时带失败标记')
     ok(!collect(line, kind('Card'))[0].props.receipt, '运行中的列表是普通卡片，不是历史回执')
     ok(byTestId(line, 'v3-subagents-progress').length === 1, '有运行中的项时显示进度条')
@@ -728,6 +741,15 @@ async function main() {
     const inactive = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('429 rate limit exceeded') })
     ok(byTestId(inactive, 'v3-error-retry').length === 0 && byTestId(inactive, 'v3-error-model').length === 0, '未激活视图不提供任何动作（不操作别的会话）')
     ok(textOf(byTestId(inactive, 'v3-error-title')[0]) === 'errorTitleQuotaRate', '未激活视图仍如实显示原因')
+    rt.cells = []
+    store({ messages: [{ id: 'u1', role: 'user', text: '跑一下' }, { id: 'a2', role: 'assistant', text: 'x' }, { id: 'u2', role: 'user', text: '再来' }, { id: 'a3', role: 'assistant', text: 'y' }] })
+    const past = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('503 service unavailable') })
+    ok(byTestId(past, 'v3-error-card').length === 1 && byTestId(past, 'v3-error-retry').length === 0 && byTestId(past, 'v3-error-model').length === 0, '历史回合的错误卡只留原文与复制，不给重试')
+    rt.cells = []
+    store({ messages: [{ id: 'u1', role: 'user', text: '跑一下' }, { id: 'a2', role: 'assistant', text: 'x' }], session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', isAgentRunning: true, retry: { attempt: 1, maxAttempts: 3, delayMs: 2000, at: 0 } } })
+    ok(rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('503 service unavailable') }) === null, '自动重试进行中不画错误卡，只留重试倒计时一处')
+    rt.cells = []
+    store({ messages: [{ id: 'u1', role: 'user', text: '跑一下' }, { id: 'a2', role: 'assistant', text: 'x' }] })
   }
 
   group('压缩标记 / 分支摘要：复用现有投影，只读显示')

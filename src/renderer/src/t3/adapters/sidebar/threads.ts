@@ -3,6 +3,7 @@ import { useRunsV3 } from '../../../state/runs-v3'
 import { useStore } from '../../../state/store'
 import { sessionActivityAt } from '../../../features/sidebar/sidebar-model'
 import type { RunSnapshot } from '../../../../../shared/runs'
+import type { SubagentRun } from '../../../../../shared/ipc'
 import { scopedKeyOf, type SidebarThreadView, type ThreadRef } from './types'
 import { buildSidebarSections, type SidebarSections } from './sections'
 
@@ -48,6 +49,25 @@ export function useSidebarRuns(): readonly RunSnapshot[] {
   return useRunsV3((s) => selectSidebarRuns(s.runs))
 }
 
+function liveSubagentSignature(runs: readonly SubagentRun[]): string {
+  const since = new Map<string, number>()
+  for (const run of runs) {
+    if (!run.parentSessionId || (run.status !== 'starting' && run.status !== 'running')) continue
+    const previous = since.get(run.parentSessionId)
+    if (previous === undefined || run.startedAt < previous) since.set(run.parentSessionId, run.startedAt)
+  }
+  return [...since].sort(([a], [b]) => a.localeCompare(b)).map(([id, at]) => `${id}\t${at}`).join('\n')
+}
+
+function subagentsSinceOf(signature: string): ReadonlyMap<string, number> {
+  const since = new Map<string, number>()
+  for (const line of signature ? signature.split('\n') : []) {
+    const [id, at] = line.split('\t')
+    since.set(id, Number(at))
+  }
+  return since
+}
+
 export function useSidebarSections(): SidebarSections {
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
@@ -55,6 +75,7 @@ export function useSidebarSections(): SidebarSections {
   const projects = useStore((s) => s.settings?.projects)
   const projectNames = useStore((s) => s.settings?.projectNames)
   const runs = useSidebarRuns()
+  const subagentSignature = useStore((s) => liveSubagentSignature(s.subagents))
   const now = useMinuteClock()
   return useMemo(
     () =>
@@ -65,9 +86,10 @@ export function useSidebarSections(): SidebarSections {
         projectNames: projectNames ?? {},
         titles,
         manualTitles,
-        now
+        now,
+        subagentsSince: subagentsSinceOf(subagentSignature)
       }),
-    [sessions, runs, projects, projectNames, titles, manualTitles, now]
+    [sessions, runs, projects, projectNames, titles, manualTitles, now, subagentSignature]
   )
 }
 

@@ -2,9 +2,9 @@ import { trackPointerDrag, type DragStart } from '../sidebar/session-drag'
 import { labelGhost, setSplitBadge } from '../split/split-drag'
 import type { DropBadge, DropRect } from '../split/split-drop-model'
 import { useStore } from '../../state/store'
-import { PANEL_WIDTH_MIN, currentPanelEntry, moveSurfaceToGroup, panelGroups, useRightPanel, type RightPanelEntry } from '../../state/right-panel'
+import { PANEL_WIDTH_MIN, currentPanelEntry, moveSurfaceToGroup, panelGroups, splitSurface, useRightPanel, type RightPanelEntry } from '../../state/right-panel'
 
-export type PanelTabDrop = { kind: 'edge'; side: 'left' | 'right' } | { kind: 'group'; index: number }
+export type PanelTabDrop = { kind: 'edge'; side: 'left' | 'right' } | { kind: 'group'; index: number } | { kind: 'split'; index: number }
 
 export interface PanelTabDragText {
   splitLeft: string
@@ -20,23 +20,41 @@ export function samePanelTabDrop(a: PanelTabDrop | null, b: PanelTabDrop | null)
   if (a === null || b === null) return a === b
   if (a.kind === 'edge' && b.kind === 'edge') return a.side === b.side
   if (a.kind === 'group' && b.kind === 'group') return a.index === b.index
+  if (a.kind === 'split' && b.kind === 'split') return a.index === b.index
   return false
 }
 
-export function panelTabDropZone(columns: readonly DropRect[], x: number, y: number): PanelTabDrop | null {
+const inside = (rect: DropRect, x: number, y: number): boolean =>
+  x >= rect.left && x < rect.left + rect.width && y >= rect.top && y < rect.top + rect.height
+
+export function panelTabDropZone(
+  columns: readonly DropRect[],
+  x: number,
+  y: number,
+  source = -1,
+  sourceHead: DropRect | null = null
+): PanelTabDrop | null {
   if (!columns.length) return null
   const first = columns[0]
   const last = columns[columns.length - 1]
-  if (x < first.left || x >= last.left + last.width || y < first.top || y >= first.top + first.height) return null
+  if (y < first.top || y >= first.top + first.height) return null
+  if (x < first.left) return { kind: 'edge', side: 'left' }
+  if (x >= last.left + last.width) return null
+  if (sourceHead && inside(sourceHead, x, y)) return null
   const at = columns.findIndex((rect) => x >= rect.left && x < rect.left + rect.width)
   if (at < 0) return null
   const rect = columns[at]
   if (at === 0 && x < rect.left + rect.width * EDGE_SHARE) return { kind: 'edge', side: 'left' }
   if (at === columns.length - 1 && x >= rect.left + rect.width * (1 - EDGE_SHARE)) return { kind: 'edge', side: 'right' }
+  if (at === source) return { kind: 'split', index: at }
   return { kind: 'group', index: at }
 }
 
 export function droppedEntry(entry: RightPanelEntry, id: string, drop: PanelTabDrop): RightPanelEntry {
+  if (drop.kind === 'split') {
+    const group = panelGroups(entry)[drop.index]
+    return group && group.surfaces.length > 1 && group.surfaces.some((item) => item.id === id) ? splitSurface(entry, id) : entry
+  }
   const target = drop.kind === 'group' ? drop.index : drop.side === 'left' ? -1 : panelGroups(entry).length
   return moveSurfaceToGroup(entry, id, target)
 }
@@ -75,9 +93,13 @@ export function startPanelTabDrag(start: DragStart, id: string, label: string, r
   let release: (() => void) | null = null
   trackPointerDrag(start, () => {
     const host = document.querySelector<HTMLElement>('.rp-columns')
-    const columns = [...document.querySelectorAll<HTMLElement>('.rp-columns > .rp-column')].map((el) => toRect(el.getBoundingClientRect()))
+    const columnEls = [...document.querySelectorAll<HTMLElement>('.rp-columns > .rp-column')]
+    const columns = columnEls.map((el) => toRect(el.getBoundingClientRect()))
     const entry = currentPanelEntry()
     if (!host || !columns.length || columns.length !== panelGroups(entry).length) return null
+    const source = panelGroups(entry).findIndex((group) => group.surfaces.some((surface) => surface.id === id))
+    const headEl = source >= 0 ? columnEls[source].querySelector<HTMLElement>('.rp-column-head') : null
+    const sourceHead = headEl ? toRect(headEl.getBoundingClientRect()) : null
     const box = host.getBoundingClientRect()
     const frame: PanelFrame = { right: box.right, top: box.top, height: box.height, width: box.width, room }
     release = useStore.getState().acquireOverlayBlocker(OVERLAY_TOKEN)
@@ -91,14 +113,14 @@ export function startPanelTabDrag(start: DragStart, id: string, label: string, r
         box: rect,
         label: drop.kind === 'group' ? 'move' : 'split',
         hint: false,
-        text: drop.kind === 'group' ? text.moveHere : drop.side === 'left' ? text.splitLeft : text.splitRight
+        text: drop.kind === 'group' ? text.moveHere : drop.kind === 'edge' && drop.side === 'left' ? text.splitLeft : text.splitRight
       }
     }
     return {
       source: `rp-tab:${id}`,
       ghost: labelGhost(label),
       hover: ({ x, y }) => {
-        const zone = panelTabDropZone(columns, x, y)
+        const zone = panelTabDropZone(columns, x, y, source, sourceHead)
         const badge = zone ? badgeFor(zone) : null
         const next = badge ? zone : null
         if (samePanelTabDrop(next, target)) return
@@ -110,7 +132,8 @@ export function startPanelTabDrag(start: DragStart, id: string, label: string, r
         const next = droppedEntry(currentPanelEntry(), id, target)
         if (next === currentPanelEntry()) return
         const panel = useRightPanel.getState()
-        if (target.kind === 'group') panel.moveToGroup(id, target.index)
+        if (target.kind === 'split') panel.split(id)
+        else if (target.kind === 'group') panel.moveToGroup(id, target.index)
         else panel.moveToGroup(id, target.side === 'left' ? -1 : panelGroups(currentPanelEntry()).length)
       },
       end: () => {

@@ -31,8 +31,14 @@ export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, p
     const agent = host.ac()
     const check = validateNativeSessionRequest(input, agent?.getState() ?? null, !!agent && (agent.hasRunningBash() || agent.pendingUiRequests().length > 0))
     if (!check.ok || !agent) return check.ok ? { ok: false, error: 'pi 未运行' } : check
-    if (operations.has(agent)) return { ok: false, error: '此会话的另一项原生操作尚未结束' }
     const request = check.request
+    try {
+      if (request.action === 'tree') return await agent.sessionTree()
+      if (request.action === 'entries') return await agent.sessionEntries(request.since)
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    if (operations.has(agent)) return { ok: false, error: '此会话的另一项原生操作尚未结束' }
     const identity = agent.getState()?.sessionId
     const cwd = agent.workingDirectory
     const sourceFile = agent.getState()?.sessionFile
@@ -43,8 +49,6 @@ export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, p
     }
     operations.add(agent)
     try {
-      if (request.action === 'tree') return await agent.sessionTree()
-      if (request.action === 'entries') return await agent.sessionEntries(request.since)
       if (request.action === 'new-session') return await agent.newSession(request.parentSession ?? argumentPath(request.args, cwd))
       if (request.action === 'import') {
         let path = argumentPath(request.args, cwd)

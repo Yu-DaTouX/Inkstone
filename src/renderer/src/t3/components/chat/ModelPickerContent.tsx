@@ -26,6 +26,7 @@ import { MODEL_JUMP_LIMIT } from "../../adapters/shortcuts";
 import type { ProviderInstanceEntry, ProviderInstanceId } from "../../adapters/contracts";
 import { useT } from "../../../i18n";
 import { TOOLTIP_OPEN_DELAY_MS } from "../../../ui/Tooltip";
+import { useNarrowModelMenu } from "./ComposerModelMenuPanels";
 
 type ModelPickerItem = {
   slug: string;
@@ -46,6 +47,8 @@ const HEADER_ROW_UNITS = 7;
 const ROW_SEPARATOR_UNITS = 0.5;
 const LIST_CHROME_UNITS = 15.5;
 const MAX_LIST_UNITS = 108;
+const SIDEBAR_ITEM_UNITS = 11;
+const SIDEBAR_CHROME_UNITS = 2;
 const LEGACY_ROW_KEY = "__legacy__";
 
 type ModelPickerListEntry =
@@ -162,6 +165,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     onOpenProviderSetup,
   } = props;
   const [searchQuery, setSearchQuery] = useState("");
+  const narrow = useNarrowModelMenu();
   const pickerContentRef = useRef<HTMLDivElement>(null);
   const highlightedModelKeyRef = useRef<string | null>(null);
   const favoritesSet = props.favoriteKeys;
@@ -345,6 +349,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         : [],
   );
 
+  const listUnits = (units: number) =>
+    `min(calc(var(--spacing) * ${units + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * ${MAX_LIST_UNITS}))`;
+  const sidebarUnits = showSidebar
+    ? (sidebarInstanceEntries.length + 1) * SIDEBAR_ITEM_UNITS + SIDEBAR_CHROME_UNITS
+    : 0;
+  const currentTabUnits = Math.max(
+    ONE_LINE_ROW_UNITS,
+    sidebarUnits - LIST_CHROME_UNITS,
+    entryUnits(listEntries, (model) => rowsMixProviders || Boolean(model.subProvider)),
+  );
+
   const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
     if (event.defaultPrevented || event.repeat) return;
     if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
@@ -367,9 +382,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         style={
           isSearching
             ? { height: searchHeight }
-            : {
-                minHeight: `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * ${MAX_LIST_UNITS}))`,
-              }
+            : narrow
+              ? { height: listUnits(currentTabUnits) }
+              : { minHeight: listUnits(tallestTabUnits) }
         }
         data-model-picker-content="true"
       >

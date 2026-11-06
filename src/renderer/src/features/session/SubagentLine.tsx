@@ -8,7 +8,7 @@ import { findSubagentSnapshot, subagentLineModel, type SubagentLineModel } from 
 import { selectSubagentRuns, subagentRunsForTurnScope, type TurnSubagentScope } from '../../state/subagent-view'
 import { sessionViewIdentity } from './view-state'
 import { formatDuration } from '../../../../shared/duration'
-import { subagentSummaryLine, type SubagentTaskRow } from '../../../../shared/subagent-task-rows'
+import { isLiveSubagentRun, subagentSummaryLine, type SubagentTaskRow } from '../../../../shared/subagent-task-rows'
 import type { SubagentOutcomeKey } from '../../../../shared/subagent-outcome'
 import type { SubagentRun } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
@@ -100,26 +100,28 @@ function subagentCountsText(totals: SubagentListTotals, tt: SessionText): string
   ].filter(Boolean).join(' · ')
 }
 
-type SubagentCount = 'live' | 'failed' | 'done' | 'stopped'
+type SubagentCount = 'awaiting' | 'live' | 'failed' | 'done' | 'stopped'
 
 const COUNT_KEY: Record<SubagentCount, SessionTextKey> = {
+  awaiting: 'subagentAwaitingCount',
   live: 'subagentLiveCount',
   failed: 'subagentFailedCount',
   done: 'subagentDoneCount',
   stopped: 'subagentStoppedCount'
 }
 
-const COUNT_ORDER: readonly SubagentCount[] = ['live', 'failed', 'done', 'stopped']
+const COUNT_ORDER: readonly SubagentCount[] = ['awaiting', 'live', 'failed', 'done', 'stopped']
 
-const LEAD_TONE: Record<SubagentCount, CardStatusTone> = { failed: 'fail', live: 'run', stopped: 'muted', done: 'ok' }
+const LEAD_TONE: Record<SubagentCount, CardStatusTone> = { awaiting: 'ask', failed: 'fail', live: 'run', stopped: 'muted', done: 'ok' }
 
-function subagentSummary(totals: SubagentListTotals, tt: SessionText, lang: string): {
+function subagentSummary(listTotals: SubagentListTotals, awaiting: number, tt: SessionText, lang: string): {
   tone: CardStatusTone
   status: string
   title: string
   usage: string | null
 } {
-  const lead: SubagentCount | null = totals.failed ? 'failed' : totals.live ? 'live' : totals.stopped ? 'stopped' : null
+  const totals = { ...listTotals, awaiting, live: listTotals.live - awaiting }
+  const lead: SubagentCount | null = totals.awaiting ? 'awaiting' : totals.failed ? 'failed' : totals.live ? 'live' : totals.stopped ? 'stopped' : null
   const rest = lead ? COUNT_ORDER.filter((key) => key !== lead && totals[key] > 0).map((key) => tt(COUNT_KEY[key], { n: totals[key] })) : []
   const usage = totals.ended
     ? subagentSummaryLine({ toolCalls: totals.toolCalls, tokens: totals.tokens || null, durationMs: totals.spanMs }, rowLang(lang))
@@ -155,6 +157,10 @@ function subagentContextUsage(
   return { tokens: usage.tokens, windowSize: usage.contextWindow, percent, tone }
 }
 
+function useAwaitingApproval(runId: string): boolean {
+  return useStore((s) => s.approvals.some((request) => request.subagentId === runId))
+}
+
 function focusRow(list: HTMLElement, index: number): void {
   list.querySelectorAll<HTMLElement>(SUBAGENT_ITEM)[index]?.focus()
 }
@@ -180,6 +186,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   const [storedAll, setStoredAll] = useToolExpansion(`subagents-all:${turn.id}`)
   const publish = useSubagentGroups((s) => s.publish)
   const selectedRunId = useFocusedSubagentRun()
+  const awaitingIds = useStore(useShallow((s): string[] => s.approvals.flatMap((request) => request.subagentId ? [request.subagentId] : [])))
 
   const phases: Record<string, RunSnapshot['phase']['kind'] | undefined> = {}
   for (const run of mine) phases[run.id] = snapshots[run.id]?.phase.kind
@@ -209,7 +216,8 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
     focusRow(event.currentTarget, target)
   }
 
-  const summary = subagentSummary(totals, tt, lang)
+  const awaiting = ordered.filter((run) => isLiveSubagentRun(run) && awaitingIds.includes(run.id)).length
+  const summary = subagentSummary(totals, awaiting, tt, lang)
   const head = many ? (
     <>
       <CardSummary
@@ -274,9 +282,11 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
   const tt = useSessionText()
   const t = useT()
   const { lang } = useI18n()
-  const { model, status } = useSubagentView(run, snapshot)
+  const { model, status: phaseStatus } = useSubagentView(run, snapshot)
   const row = useSubagentRow(run)
   const selected = useSubagentPaneOpen(run.id)
+  const awaiting = useAwaitingApproval(run.id)
+  const status = awaiting ? tt('awaitApproval') : phaseStatus
   const models = useStore((s) => s.models)
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
   const thinking = run.thinkingLevel && run.thinkingLevel !== 'off' ? run.thinkingLevel : null
@@ -308,10 +318,10 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
         <SubagentBot run={run} snapshot={snapshot} model={model} size={SUBAGENT_CARD_BOT} />
       </span>
       <span className="v3-sa-state">
-        <SubagentStateIcon state={row.state} label={status} />
+        <SubagentStateIcon state={row.state} label={status} awaiting={awaiting} />
       </span>
       <span className="v3-sa-title" data-testid="v3-subagent-task">
-        {live ? <ShimmerText className="v3-sa-shimmer">{label}</ShimmerText> : label}
+        {live && !awaiting ? <ShimmerText className="v3-sa-shimmer">{label}</ShimmerText> : label}
       </span>
       {awaitingReview ? (
         <Badge
@@ -343,16 +353,18 @@ function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot
   const tt = useSessionText()
   const t = useT()
   const { lang } = useI18n()
-  const { model, status } = useSubagentView(run, snapshot)
+  const { model, status: phaseStatus } = useSubagentView(run, snapshot)
   const row = useSubagentRow(run)
   const selected = useSubagentPaneOpen(run.id)
   const models = useStore((s) => s.models)
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
   const live = row.state === 'starting' || row.state === 'running'
+  const awaiting = useAwaitingApproval(run.id) && live
+  const status = awaiting ? tt('awaitApproval') : phaseStatus
   const awaitingReview = !live && (run.review === 'pending' || run.review === 'conflict')
   const label = compactTaskPaths(live && row.description ? row.description : row.label)
   const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
-  const warning = live ? run.progressWarning?.trim() : ''
+  const warning = awaiting ? tt('awaitApproval') : live ? run.progressWarning?.trim() : ''
   const detail = live ? warning || row.latestActivity || '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
 
   return (
@@ -373,10 +385,10 @@ function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot
           <SubagentBot run={run} snapshot={snapshot} model={model} size={SUBAGENT_CARD_BOT} />
         </span>
         <span className="v3-sa-state">
-          <SubagentStateIcon state={row.state} label={status} />
+          <SubagentStateIcon state={row.state} label={status} awaiting={awaiting} />
         </span>
         <span className="v3-sa-title" data-testid="v3-subagent-task">
-          {live ? <ShimmerText className="v3-sa-shimmer">{label}</ShimmerText> : label}
+          {live && !awaiting ? <ShimmerText className="v3-sa-shimmer">{label}</ShimmerText> : label}
         </span>
         {time ? <span className="v3-sa-time">{time}</span> : null}
       </span>
@@ -396,13 +408,14 @@ function SubagentLive({ run }: { run: SubagentRun }): JSX.Element | null {
   const row = useSubagentRow(run)
   const [steering, setSteering] = useState(false)
   const live = row.state === 'starting' || row.state === 'running'
+  const awaiting = useAwaitingApproval(run.id) && live
   const canSteer = subagentComposerMode(run) === 'steer'
-  const activity = live ? run.progressWarning?.trim() || row.latestActivity : null
+  const activity = awaiting ? tt('awaitApproval') : live ? run.progressWarning?.trim() || row.latestActivity : null
   if (!steering && !(live && (activity || canSteer))) return null
   return (
     <>
     {live || steering ? (
-      <div className="v3-sa-live" data-warning={run.progressWarning ? '' : undefined} data-testid="v3-subagent-live">
+      <div className="v3-sa-live" data-warning={awaiting || run.progressWarning ? '' : undefined} data-testid="v3-subagent-live">
         <span className="v3-sa-activity" title={activity ?? undefined} aria-live="polite" data-testid="v3-subagent-activity">
           {activity ?? ''}
         </span>

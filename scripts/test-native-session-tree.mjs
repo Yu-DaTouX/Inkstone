@@ -49,7 +49,7 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   const tree = [node('a', null, [node('b', 'a', [userMsg('c', 'b', '第三句')], { entry: { message: { role: 'user', content: '第二句' } } })], { entry: { message: { role: 'user', content: '第一句' } } })]
   const view = native.buildTreeView(tree, 'c')
   ok(view.rows.map((r) => r.entryId).join('') === 'abc', 'line：按根到叶顺序投影')
-  ok(view.rows.map((r) => r.depth).join('') === '012', 'line：深度逐层加一')
+  ok(view.rows.map((r) => r.depth).join('') === '000', 'line：没有分叉的线性链平铺在同一层')
   ok(view.rows[2].leaf === true && view.rows[0].leaf === false, 'line：只标记当前 leaf')
   ok(view.activePath.join('') === 'abc', 'line：活动分支是 leaf → 根')
   ok(view.rows.every((r) => r.onActiveBranch), 'line：整条链都在活动分支上')
@@ -70,9 +70,11 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(!collapsed.has('root'), 'fold：活动分支的根默认展开')
 
   const view = native.buildTreeView(tree, 'b', collapsed)
-  ok(view.rows.map((r) => r.entryId).join(',') === 'root,a,b,c', 'fold：收起后只留每条岔路一行')
+  ok(view.rows.map((r) => r.entryId).join(',') === 'root,c,a,b', 'fold：旁支排在分叉行下，主线沿活动分支平铺')
+  ok(view.rows.map((r) => r.depth).join('') === '0100', 'fold：只有旁支缩进一级')
   const cRow = view.rows.find((r) => r.entryId === 'c')
   ok(cRow.folded === true && cRow.hiddenCount === 1, 'fold：折叠行给出隐藏后代数')
+  ok(view.rows.find((r) => r.entryId === 'root').hasChildren === true, 'fold：分叉行可展开收起')
 
   const expanded = native.buildTreeView(tree, 'b', new Set())
   ok(expanded.rows.length === 5, 'fold：展开后显示全部条目')
@@ -107,9 +109,9 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
     cursor = chain[i]
   }
   const view = native.buildTreeView([root], 'n29', new Set(), { maxDepth: 4 })
-  ok(view.rows.length === 5, 'depth：超过上限不再往下')
-  ok(view.rows[4].truncated === true, 'depth：截断节点有标记')
-  ok(view.stats.depthTruncated >= 1, 'depth：计入保护统计')
+  ok(view.rows.length === 30, 'depth：长线性链全部显示，不受分叉深度上限影响')
+  ok(view.rows.every((r) => r.depth === 0 && !r.truncated), 'depth：长线性链不缩进也不截断')
+  ok(view.stats.depthTruncated === 0 && view.rows[29].leaf === true, 'depth：不计保护统计，叶子可见')
 }
 
 {
@@ -117,6 +119,7 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   const view = native.buildTreeView([root], null, new Set(), { maxRows: 3 })
   ok(view.rows.length === 3, 'rows：超过上限只渲染上限行')
   ok(view.stats.rowTruncated === 3, 'rows：未渲染行如实计数')
+  ok(view.rows.map((r) => r.entryId).join('') === 'cde', 'rows：超出时保留最新的行')
 }
 
 {
@@ -135,68 +138,61 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
 }
 
 {
-  const shallow = [node('root', null, [node('a', 'root', [userMsg('b', 'a', 'x')], { label: '检查点' })])]
-  const capped = native.capNativeTreeDepth(shallow, 64)
-  ok(JSON.stringify(capped) === JSON.stringify(shallow), 'cap：深度在上限内原样返回（含 label）')
-  ok(capped[0] !== shallow[0], 'cap：返回的是拷贝，不是原对象引用')
+  const meta = node('m', null, [node('t', 'm', [userMsg('u', 't', '问题')], { type: 'thinking_level_change', entry: { thinkingLevel: 'medium' } })], { type: 'model_change', entry: { provider: 'anthropic', modelId: 'opus' } })
+  const view = native.buildTreeView([meta], 'u')
+  ok(view.rows.length === 1 && view.rows[0].entryId === 'u', 'meta：模型与档位切换不单独占行')
+  ok(JSON.stringify(view.rows[0].tags) === JSON.stringify(['anthropic/opus', 'medium']), 'meta：收成下一行的小标签')
+  ok(native.buildTreeView([meta], 'm').rows[0].entryId === 'm', 'meta：当前叶子是元信息时照常显示')
 }
 
 {
-  let node0 = userMsg('leaf', 'n-depth', '最深一条')
+  const huge = 'x'.repeat(100000)
+  const slim = native.slimNativeEntry({ id: 'a', parentId: null, type: 'message', timestamp: 't', message: { role: 'toolResult', toolName: 'read', content: [{ type: 'text', text: huge }], details: { blob: huge } } })
+  ok(JSON.stringify(slim).length < 400, 'slim：条目只保留预览所需的短字段')
+  ok(native.describeEntry(slim).kind === 'tool' && native.describeEntry(slim).text.startsWith('read x'), 'slim：瘦身后描述不变')
+}
+
+{
+  let node0 = userMsg('leaf', 'n2999', '最深一条')
   const DEPTH = 3000
   for (let i = DEPTH - 1; i >= 0; i -= 1) {
     node0 = node(`n${i}`, i === 0 ? null : `n${i - 1}`, [node0])
   }
-  const tree = [node0]
+  const side = userMsg('side', 'n10', '旁支')
+  let cursor = node0
+  for (let i = 0; i < 10; i += 1) cursor = cursor.children[0]
+  cursor.children.unshift(side)
 
-  const depthOf = (nodes) => {
-    let max = 0
-    const walk = (list, d) => {
-      for (const n of list) {
-        if (d > max) max = d
-        walk(n.children, d + 1)
-      }
-    }
-    walk(nodes, 0)
-    return max
-  }
-  ok(depthOf(tree) === DEPTH, 'cap：造出的测试树确实有 3000 层（自检）')
-
-  const capped = native.capNativeTreeDepth(tree, 500)
-  ok(depthOf(capped) === 500, 'cap：超过上限的长链被截到上限深度')
-  ok(capped[0].entry.id === 'n0', 'cap：根节点内容保留')
-
-  let cursor = capped[0]
-  let steps = 0
-  while (cursor.children.length) {
-    cursor = cursor.children[0]
-    steps += 1
-  }
-  ok(steps === 500, 'cap：从根往下正好能走到上限层数')
-  ok(cursor.children.length === 0, 'cap：上限层的节点子节点被清空')
-
-  ok(depthOf(tree) === DEPTH, 'cap：不修改传入的原始树')
-
+  const flat = native.flattenNativeTree([node0])
+  ok(flat.length === DEPTH + 2, 'flat：所有条目都被展平')
+  ok(flat.every((item) => !('children' in item)), 'flat：传输结构没有嵌套')
+  ok(flat.find((item) => item.entry.id === 'side').parentId === 'n10', 'flat：保留结构上的父节点')
   let threw = null
   try {
-    structuredClone({ ok: true, tree: capped, leafId: 'n0' })
+    structuredClone({ ok: true, tree: flat, leafId: 'leaf' })
   } catch (error) {
     threw = error
   }
-  ok(threw === null, 'cap：截断后的结果可以安全跨进程克隆（不再撑爆深度）')
+  ok(threw === null, 'flat：结果可以安全跨进程克隆')
 
-  const defaultCapped = native.capNativeTreeDepth(tree)
-  ok(depthOf(defaultCapped) === 500, 'cap：不传上限时使用 500 层的默认值')
+  const parsed = native.parseTreePayload({ tree: flat, leafId: 'leaf' })
+  ok(parsed.tree.length === 1 && parsed.tree[0].entry.id === 'n0', 'flat：渲染端按 parentId 还原成树')
+  ok(native.pathToEntry(parsed.tree, 'leaf').length === DEPTH + 1, 'flat：深链上 leaf → 根路径完整')
+  const view = native.buildTreeView(parsed.tree, 'leaf', native.initialCollapsedForLeaf(parsed.tree, 'leaf'))
+  ok(view.rows.length === native.NATIVE_TREE_MAX_ROWS && view.rows.at(-1).leaf, 'flat：超长深链保留最新的行，叶子可见')
+  const wide = native.buildTreeView(parsed.tree, 'leaf', new Set(), { maxRows: 5000 })
+  ok(wide.rows.length === DEPTH + 2, 'flat：上限足够时全部显示')
+  ok(wide.rows.find((r) => r.entryId === 'side').depth === 1 && wide.rows.filter((r) => r.depth > 0).length === 1, 'flat：只有旁支缩进')
 }
 
 {
-  const multiRoot = native.capNativeTreeDepth([
+  const flat = native.flattenNativeTree([
     node('r1', null, [userMsg('x', 'r1', '一')]),
     node('r2', null, [userMsg('y', 'r2', '二')]),
     'not-a-node',
     null
-  ], 64)
-  ok(multiRoot.length === 2, 'cap：多个根都保留，非法条目被跳过')
+  ])
+  ok(flat.filter((item) => item.parentId === null).length === 2, 'flat：多个根都保留，非法条目被跳过')
 }
 
 console.log(failed ? `\n${failed} 项失败` : '\n全部通过')

@@ -1243,12 +1243,23 @@
     border-radius: var(--r-lg);
     background: var(--surface-3);
     box-shadow: var(--shadow-pop);
+    z-index: calc(3 - var(--toast-index, 0));
     transform-origin: bottom;
     transform: translateY(calc(var(--toast-index, 0) * -14px)) scale(calc(1 - var(--toast-index, 0) * 0.04));
     transition:
       transform var(--dur-slow) var(--ease-glide),
       opacity var(--dur-slow) var(--ease-glide);
     pointer-events: auto;
+  }
+  .ui-toast-region:is(:hover, :focus-within) {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: var(--s-8);
+    pointer-events: auto;
+  }
+  .ui-toast-region:is(:hover, :focus-within) .ui-toast {
+    position: relative;
+    transform: none;
   }
   @starting-style {
     .ui-toast {

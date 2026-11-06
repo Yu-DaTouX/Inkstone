@@ -5,6 +5,7 @@ import {
   contextBreakdown,
   contextFromOf,
   inContextMessages,
+  measuredSystemTokens,
   modelVisibleToolCalls,
   toolCallTokens,
   type ContextSlice
@@ -50,6 +51,7 @@ interface ContextPaneInput {
   stats: Pick<SessionStats, 'contextUsage'> | null
   messages: readonly UIMessage[]
   autoCompactLimit?: number
+  summaryTokens?: number
 }
 
 export function autoCompactLimitOf(
@@ -171,7 +173,9 @@ export function contextPaneData(input: ContextPaneInput): ContextPaneData {
   const compacted = !!contextFromOf(input.session)
   const range = contextRange(input, usage)
   if (!range) return { usage, slices: [], compacted }
-  return { usage, slices: contextBreakdown(range.inContext, usage.tokens), compacted }
+  const system = measuredSystemTokens(range.settled)
+  const floor = system > 0 && compacted ? system + Math.max(0, input.summaryTokens ?? 0) : system
+  return { usage, slices: contextBreakdown(range.inContext, usage.tokens, floor), compacted }
 }
 
 export function contextPaneToolCalls(input: ContextPaneInput, limit = TOP_TOOL_CALLS): ContextToolCall[] {

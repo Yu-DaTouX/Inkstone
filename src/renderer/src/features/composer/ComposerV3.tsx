@@ -19,6 +19,7 @@ import { ComposerStashMenuV3, composerStashFrameProps } from '../../t3/component
 import { ProviderModelPicker } from '../../t3/components/chat/ProviderModelPicker'
 import { QueuedRunsControl } from '../../t3/components/chat/QueuedRunsControl'
 import { PlanCard } from './PlanCard'
+import { Kbd, KbdGroup } from '../../ui'
 import { AskDock } from '../session/AskDock'
 import { useComposerQuestionTitle } from '../session/question-composer'
 import { usePastedTextAttach } from './use-pasted-text'
@@ -160,7 +161,14 @@ export function ComposerV3(): JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
   useSessionQuoteDrop(rootRef)
   const attachPastedText = usePastedTextAttach(rootRef)
-  const stash = usePromptStashAdapter({ value, rootRef, onStashed: () => setValue('') })
+  const stash = usePromptStashAdapter({
+    value,
+    rootRef,
+    onStashed: () => {
+      setValue('')
+      useStore.getState().clearAttachments()
+    }
+  })
   const stashFrame = composerStashFrameProps(stash, t)
   const submitAdapter = useComposerSubmitAdapter({
     value,
@@ -580,7 +588,7 @@ export function ComposerV3(): JSX.Element {
           {mode === 'bash' ? t('composer.bashMode') : t('composer.cmdMode')}
         </span>
       ) : null}
-      <div className="min-w-0 flex-1">
+      <div className="relative min-w-0 flex-1">
         {historyNav ? (
           <div
             className="mb-1 text-3xs text-muted-foreground tabular-nums"
@@ -615,6 +623,15 @@ export function ComposerV3(): JSX.Element {
           onPaste={onPaste}
           onCompositionChange={setComposing}
         />
+        {suggestion && value === '' ? (
+          <div className="composer-suggestion" aria-hidden="true" data-testid="composer-suggestion">
+            {suggestion}
+            <span className="composer-suggestion__keys">
+              <Kbd>Tab</Kbd>
+              <KbdGroup keys={sendKey === 'ctrlEnter' ? ['Ctrl', 'Enter'] : ['Enter']} />
+            </span>
+          </div>
+        ) : null}
       </div>
     </div>
   )

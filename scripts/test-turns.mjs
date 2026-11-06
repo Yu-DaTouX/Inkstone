@@ -378,7 +378,9 @@ export async function runTurnTests(ok) {
       asst('a1', '第一次出错', { error: '第一' }),
       asst('a2', '第二次出错', { error: '第二' })
     ])
-    ok(two[1].error === '第一' && two[1].errorMsgId === 'a1', '多条出错消息取第一条', `${two[1].error}/${two[1].errorMsgId}`)
+    ok(two[1].error === '第二' && two[1].errorMsgId === 'a2', '多条出错消息取让回合结束的最后一条', `${two[1].error}/${two[1].errorMsgId}`)
+    const retried = groupIntoTurns([usr('u1', 'x'), asst('a1', '', { error: '模型侧错误' }), asst('a2', '继续干活'), asst('a3', '', { error: '额度用尽' })])
+    ok(retried[1].error === '额度用尽' && retried[1].errorRecovered !== true, '恢复后再出错时显示最后的错误且不算已恢复', `${retried[1].error}/${retried[1].errorRecovered}`)
 
     const clean = groupIntoTurns([usr('u1', 'x'), asst('a1', '答完', { elapsedMs: 900 })])
     ok(clean[1].error === undefined && clean[1].errorMsgId === undefined, '没有错误时不写错误字段')

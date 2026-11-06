@@ -21,12 +21,23 @@ function splitErrorBody(body: string): { explanation: string; raw: string } {
   return { explanation: body.slice(0, at).trim(), raw: body.slice(at + RAW_MARK.length).trim() }
 }
 
+function isLatestTurn(sourceIds: readonly string[], messages: readonly { id: string; role: string }[]): boolean {
+  const lastId = sourceIds.at(-1)
+  if (!lastId) return false
+  const at = messages.findIndex((message) => message.id === lastId)
+  if (at < 0) return false
+  for (let i = at + 1; i < messages.length; i += 1) if (messages[i].role === 'user') return false
+  return true
+}
+
 export function ErrorCard({ sourceIds, error, readOnly = false, recovered = false }: { sourceIds: readonly string[]; error: string; readOnly?: boolean; recovered?: boolean }): JSX.Element | null {
   const tt = useSessionText()
   const send = useStore((s) => s.send)
   const cycleModel = useStore((s) => s.cycleModel)
   const compact = useStore((s) => s.compact)
   const hasPrompt = useStore((s) => promptForTurn(sourceIds, s.messages) !== null)
+  const latest = useStore((s) => isLatestTurn(sourceIds, s.messages))
+  const running = useStore((s) => !!(s.session?.isAgentRunning || s.session?.isStreaming || s.session?.retry))
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
@@ -44,12 +55,13 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
     if (rateLimited && provider) void refreshLiveQuota(provider, { force: true })
   }, [rateLimited, provider])
   if (!parsed) return null
+  if (!recovered && latest && running) return null
   const windowFull = parsed.kind === 'quota' && parsed.quotaScope === 'rate' && !!liveQuota?.windows?.length && !liveQuota.staleError && blockedQuotaWindows(liveQuota.windows).length > 0
   const model = windowFull ? { ...parsed, quotaScope: 'usage' as const, actions: ['wait', 'model'] as ErrorCardAction[] } : parsed
 
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const active = viewMatchesProjectedSession(view, session)
-  const actions = active && !readOnly && !recovered
+  const actions = active && latest && !readOnly && !recovered
     ? model.actions.filter((action) => (action !== 'retry' || hasPrompt) && (action !== 'wait' || !quotaResume))
     : []
 

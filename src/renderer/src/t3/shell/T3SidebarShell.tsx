@@ -526,7 +526,13 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
 
   useEffect(() => clearQuoteTarget, [clearQuoteTarget])
 
-  const settledRemaining = Math.max(0, sections.settled.length - Math.min(settledVisible, sections.settled.length))
+  const settledShown = useMemo(() => {
+    const shown = sections.settled.slice(0, settledVisible)
+    const current = activeKey === null ? -1 : sections.settled.findIndex((view) => scopedKeyOf(view.id) === activeKey)
+    if (current >= settledVisible) shown.push(sections.settled[current])
+    return shown
+  }, [sections.settled, settledVisible, activeKey])
+  const settledRemaining = Math.max(0, sections.settled.length - settledShown.length)
   const undoNotice = undo.text === null ? null : { text: undo.text, label: undo.label, undo: undo.undo }
   const menuView = sessionMenu === null ? null : viewByKey.get(sessionMenu.key)
   const menuSession = menuView ? sessions.find((entry) => entry.id === menuView.id) : undefined
@@ -637,7 +643,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                 active: sections.active.map((view) => scopedKeyOf(view.id)),
                 working: sections.working.map((view) => scopedKeyOf(view.id)),
                 snoozed: sections.snoozed.map((view) => scopedKeyOf(view.id)),
-                settled: sections.settled.slice(0, settledVisible).map((view) => scopedKeyOf(view.id))
+                settled: settledShown.map((view) => scopedKeyOf(view.id))
               }}
               labels={{
                 tree: t('sidebar.t3.threads'),

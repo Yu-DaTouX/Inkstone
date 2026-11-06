@@ -31,6 +31,7 @@ export interface ThreadViewContext {
   readonly run: RunSnapshot | null
   readonly title: string
   readonly project: { readonly id: string; readonly label: string } | null
+  readonly subagentsSince?: number
 }
 
 function iso(at: number | undefined): string | null {
@@ -114,9 +115,27 @@ function runView(run: RunSnapshot | null): { latestRun: ThreadRunSummary | null;
   return { latestRun, runtime }
 }
 
+function withBackgroundSubagents(runtime: ThreadRuntimeSummary | null, since: number | undefined): ThreadRuntimeSummary | null {
+  if (since === undefined || (runtime !== null && runtime.status !== 'idle')) return runtime
+  const startedAt = runtime?.activityStartedAt ?? iso(since)
+  return {
+    status: 'running',
+    activeRunId: null,
+    activityStartedAt: startedAt,
+    providerInstanceId: runtime?.providerInstanceId ?? 'local',
+    providerName: runtime?.providerName ?? null,
+    lastError: null,
+    lastErrorClass: null,
+    lastErrorCode: null,
+    usageLimitResetAt: null,
+    updatedAt: runtime?.updatedAt ?? startedAt ?? new Date(since).toISOString()
+  }
+}
+
 export function toThreadView(item: SessionSummary, ctx: ThreadViewContext): SidebarThreadView {
   const phase = ctx.run?.phase ?? null
-  const { latestRun, runtime } = runView(ctx.run)
+  const { latestRun, runtime: ownRuntime } = runView(ctx.run)
+  const runtime = withBackgroundSubagents(ownRuntime, ctx.subagentsSince)
   const requests = requestKind(phase)
   const activityAt = item.lastActivityAt ?? item.updatedAt
   const unreadRun = phase !== null && (phase.kind === 'done' || phase.kind === 'failed') && !phase.seen

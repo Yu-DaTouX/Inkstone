@@ -52,7 +52,7 @@ const ZH: RailText = {
     usage: '用量',
     connectors: '连接器',
     outputs: '产出',
-    changes: '更改',
+    changes: '本会话改动',
     backgroundTasks: '后台任务',
     extensions: '扩展'
   },
@@ -104,7 +104,7 @@ const EN: RailText = {
     usage: 'Usage',
     connectors: 'Connectors',
     outputs: 'Outputs',
-    changes: 'Changes',
+    changes: 'Session edits',
     backgroundTasks: 'Background tasks',
     extensions: 'Extensions'
   },

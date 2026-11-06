@@ -64,6 +64,7 @@ export interface BuildSidebarSectionsInput {
   readonly titles: Record<string, string>
   readonly manualTitles: Record<string, string>
   readonly now: number
+  readonly subagentsSince?: ReadonlyMap<string, number>
 }
 
 export function buildSidebarSections(input: BuildSidebarSectionsInput): SidebarSections {
@@ -82,7 +83,7 @@ export function buildSidebarSections(input: BuildSidebarSectionsInput): SidebarS
       : session.cwd
         ? { id: NO_PROJECT_ID, label: input.projectNames[session.cwd] || shortProject(session.cwd) }
         : null
-    const view = toThreadView(session, { run: latestRunOf(session), title, project })
+    const view = toThreadView(session, { run: latestRunOf(session), title, project, subagentsSince: input.subagentsSince?.get(session.id) })
     const inArchivedProject =
       session.projectId !== undefined
         ? archivedProjectIds.has(session.projectId)

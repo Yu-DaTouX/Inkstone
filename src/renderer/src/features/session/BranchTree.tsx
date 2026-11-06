@@ -170,6 +170,7 @@ export function branchText(lang: Lang): BranchText {
 }
 
 const EMPTY_ROWS: NativeTreeRow[] = []
+const LOAD_RETRY_MS = [300, 800, 2000]
 
 const KIND_ICON: Record<NativeEntryKind, LucideIcon> = {
   user: User,
@@ -191,7 +192,7 @@ export interface BranchTransport {
 
 type BranchTreeLoad =
   | { ok: true; tree: NativeTreeNode[]; leafId: string | null }
-  | { ok: false; error: string }
+  | { ok: false; error: string; raw?: boolean }
 
 export async function loadBranchTree(
   transport: BranchTransport,
@@ -204,7 +205,7 @@ export async function loadBranchTree(
     const parsed = parseTreePayload(result)
     return { ok: true, tree: parsed.tree, leafId: parsed.leafId }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    return { ok: false, error: error instanceof Error ? error.message : String(error), raw: true }
   }
 }
 
@@ -341,11 +342,17 @@ export function renderBranchNodes(nodes: readonly BranchNode[], ctx: BranchNodeC
         textValue={label}
         className={classes.join(' ')}
         onAction={() => ctx.onNavigate(row.entryId)}
+        data-entry-id={row.entryId}
       >
         <TreeItemContent>
           <TreeChevron />
           <KindIcon size={13} className="branch-kind" aria-hidden="true" />
           <TreeItemLabel title={`${ctx.text.kind[row.kind]} · ${row.entryType}`}>{label}</TreeItemLabel>
+          {row.tags?.map((tag, index) => (
+            <Badge key={`${index}:${tag}`} className="branch-tag" title={tag}>
+              {tag}
+            </Badge>
+          ))}
           {row.label ? (
             <Badge className="branch-label" title={row.label}>
               {row.label}
@@ -378,7 +385,7 @@ interface BranchTreeProps {
 
 type LoadState =
   | { phase: 'loading' }
-  | { phase: 'error'; error: string }
+  | { phase: 'error'; error: string; raw?: boolean }
   | { phase: 'ready'; tree: NativeTreeNode[]; leafId: string | null }
 
 export function BranchTree({
@@ -427,18 +434,27 @@ export function BranchTree({
       setState({ phase: 'error', error: text.inactive })
       return
     }
-    void loadBranchTree(transportRef.current, expectedSessionId, text.loadFailed).then((result) => {
-      if (cancelled || !aliveRef.current || run !== runRef.current) return
-      if (!result.ok) {
-        setState({ phase: 'error', error: result.error })
-        return
-      }
-      setState({ phase: 'ready', tree: result.tree, leafId: result.leafId })
-      setCollapsed(initialCollapsedForLeaf(result.tree, result.leafId))
-      setOverrideId(result.leafId)
-    })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const attempt = (tries: number): void => {
+      void loadBranchTree(transportRef.current, expectedSessionId, text.loadFailed).then((result) => {
+        if (cancelled || !aliveRef.current || run !== runRef.current) return
+        if (!result.ok) {
+          if (!result.raw && tries < LOAD_RETRY_MS.length) {
+            timer = setTimeout(() => attempt(tries + 1), LOAD_RETRY_MS[tries])
+            return
+          }
+          setState({ phase: 'error', error: result.error, raw: result.raw })
+          return
+        }
+        setState({ phase: 'ready', tree: result.tree, leafId: result.leafId })
+        setCollapsed(initialCollapsedForLeaf(result.tree, result.leafId))
+        setOverrideId(result.leafId)
+      })
+    }
+    attempt(0)
     return () => {
       cancelled = true
+      if (timer !== undefined) clearTimeout(timer)
     }
   }, [expectedSessionId, reloadToken, retryToken, text.inactive, text.loadFailed])
 
@@ -469,6 +485,18 @@ export function BranchTree({
   }, [overrideId, rows, state])
 
   const selectedRow = rows.find((row) => row.entryId === selected) ?? null
+
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const readyLeaf = state.phase === 'ready' ? state.leafId : null
+  useEffect(() => {
+    if (!readyLeaf || typeof requestAnimationFrame !== 'function') return
+    const frame = requestAnimationFrame(() => {
+      const rowsInList = listRef.current?.querySelectorAll<HTMLElement>('[data-entry-id]') ?? []
+      const row = Array.from(rowsInList).find((item) => item.dataset.entryId === readyLeaf)
+      row?.scrollIntoView({ block: 'nearest' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [readyLeaf, state])
 
   const refreshInPlace = useCallback(async (keepSelected?: string): Promise<void> => {
     if (!expectedSessionId) return
@@ -562,8 +590,8 @@ export function BranchTree({
     return (
       <div className={`branch-tree${className ? ` ${className}` : ''}`} data-testid="branch-tree-error">
         <div className="branch-status">
-          <p className="branch-status__title">{text.loadFailed}</p>
-          <p className="branch-status__detail">{state.error}</p>
+          <p className="branch-status__title" title={state.raw ? state.error : undefined}>{text.loadFailed}</p>
+          {state.raw ? null : <p className="branch-status__detail">{state.error}</p>}
           <Button size="sm" onPress={() => setRetryToken((value) => value + 1)} data-testid="branch-retry">
             {text.retry}
           </Button>
@@ -573,7 +601,7 @@ export function BranchTree({
   }
 
   return (
-    <div className={`branch-tree${className ? ` ${className}` : ''}`} data-testid="branch-tree">
+    <div ref={listRef} className={`branch-tree${className ? ` ${className}` : ''}`} data-testid="branch-tree">
       {rows.length ? (
         <Tree
           className="branch-tree__list"

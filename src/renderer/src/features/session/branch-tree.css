@@ -70,6 +70,15 @@
     white-space: nowrap;
   }
 
+  .branch-tag {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 16ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .branch-meta {
     flex: none;
     font-family: var(--font-mono);

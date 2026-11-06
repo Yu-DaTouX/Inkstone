@@ -9,12 +9,17 @@ import {
 } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { IconButton, Menu, MenuItem, MenuSection, PanelTab, PanelTabList, Popover, Separator, SubmenuTrigger } from '../../ui'
-import { previewTabDirectory, previewTabLabel } from '../workbench/preview-state'
+import { previewTabDirectory, previewTabLabel as pathTabLabel } from '../workbench/preview-state'
+import { managedArtifactName } from '../artifacts/model'
 import { previewTabKeyAction, previewTabMenu, type PreviewTabAction, type PreviewTabFileAction } from './preview-tab-menu'
 import { TAB_DRAG_THRESHOLD, dropGapIndex, dropIndexFor, tabMoveKey } from './tab-reorder'
 import { hiddenTabsAt, tabStripLayout, type TabSpan } from './preview-tab-strip'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import type { PreviewText } from './preview-text'
+
+function previewTabLabel(tab: string): string {
+  return managedArtifactName(tab) ?? pathTabLabel(tab)
+}
 
 export interface PreviewTabsProps {
   tabs: readonly string[]

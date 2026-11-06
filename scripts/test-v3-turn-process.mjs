@@ -311,5 +311,42 @@ group('过程摘要：按工具类型归类并带改动行数')
   ok(fetched.fetches === 1 && fetched.lists === 1 && fetched.other === 1, '网页抓取与列目录各自计数，MCP 仍归其他', fetched)
 }
 
+group('插话与排队：同一次运行内的分段')
+{
+  const { turnRunPlace, segmentSpanMs, runMessagesFrom, turnSpanMs } = mod
+  const steered = [
+    { id: 'u1', role: 'user', text: '写工具', timestamp: 1000 },
+    { id: 'a1', role: 'assistant', text: '', timestamp: 2000, toolCalls: [{ id: 't1', name: 'write', status: 'ok', startedAt: 9000, endedAt: 40000 }] },
+    { id: 'u2', role: 'user', text: '顺便写 README', timestamp: 30000 },
+    { id: 'a2', role: 'assistant', text: '写好了', timestamp: 41000, generationTiming: { durationMs: 6000 }, turnTiming: { logicalTurnId: 'u2', startedAt: 1000, endedAt: 47000, elapsedMs: 46000, terminalReason: 'completed' } },
+    { id: 'u3', role: 'user', text: '下一件事', timestamp: 60000 },
+    { id: 'a3', role: 'assistant', text: '好', timestamp: 61000 }
+  ]
+  const head = turnRunPlace(steered, ['a1'])
+  ok(head.continues === true && head.startedAt === null, '插话前的段：运行未结束，不算回合结束', head)
+  const tail = turnRunPlace(steered, ['a2'])
+  ok(tail.continues === false && tail.startedAt === 40000 && tail.runFirstId === 'a1', '插话后的段：从上一批工具结束起算，运行从 a1 开始', tail)
+  ok(segmentSpanMs(steered, ['a2'], tail.startedAt) === 7000, '插话后的段只计自己的 7 秒', segmentSpanMs(steered, ['a2'], tail.startedAt))
+  ok(JSON.stringify(runMessagesFrom(steered, tail.runFirstId, ['a2']).map((m) => m.id)) === '["a1","a2"]', '整次运行的助手消息合并给改动卡', runMessagesFrom(steered, tail.runFirstId, ['a2']))
+  const next = turnRunPlace(steered, ['a3'])
+  ok(next.continues === false && next.startedAt === null && next.runFirstId === null, '运行结束后新发的消息是新的一次运行', next)
+  ok(turnSpanMs(steered, ['a3'], []) === undefined || turnSpanMs(steered, ['a3'], []) === 1000, '新运行仍从用户消息起算', turnSpanMs(steered, ['a3'], []))
+  const queued = [
+    { id: 'u1', role: 'user', text: '问题', timestamp: 1000 },
+    { id: 'a1', role: 'assistant', text: '答复', timestamp: 2000, generationTiming: { durationMs: 46000 } },
+    { id: 'u2', role: 'user', text: '做完告诉我总数', timestamp: 20000 },
+    { id: 'a2', role: 'assistant', text: '19 个', timestamp: 48500, generationTiming: { durationMs: 6500 } }
+  ]
+  const queuedPlace = turnRunPlace(queued, ['a2'])
+  ok(queuedPlace.startedAt === 48000 && segmentSpanMs(queued, ['a2'], queuedPlace.startedAt) === 7000, '排队消息从送达时起算，不用排队时刻', queuedPlace)
+  const notice = [
+    { id: 'u1', role: 'user', text: '派子代理', timestamp: 1000 },
+    { id: 'a1', role: 'assistant', text: '已派', timestamp: 2000, toolCalls: [{ id: 't', name: 'agent', status: 'ok', endedAt: 9000 }] },
+    { id: 'n1', role: 'user', text: '<subagent-notification id="s1" status="done">\nx\n这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。', timestamp: 5000 },
+    { id: 'a2', role: 'assistant', text: '汇总', timestamp: 9500 }
+  ]
+  ok(turnRunPlace(notice, ['a1']).continues === false, '子代理回传续跑保持现状，不当作插话', turnRunPlace(notice, ['a1']))
+}
+
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)
 if (fail > 0) process.exitCode = 1

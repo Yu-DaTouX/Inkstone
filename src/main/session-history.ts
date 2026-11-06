@@ -38,6 +38,7 @@ export async function readChainMessages(
   let bytes = 0
   let sessionId: string | undefined
   let sourceCwd: string | undefined
+  let contextFrom: ReadResult['contextFrom']
   let read = 0
   let missing = 0
 
@@ -58,6 +59,7 @@ export async function readChainMessages(
     if (read === 0) sourceCwd = result.sourceCwd
     else if (sourceCwd !== result.sourceCwd) sourceCwd = undefined
     if (result.sessionId) sessionId = result.sessionId
+    if (file === files.at(-1)) contextFrom = result.contextFrom
     read += 1
   }
 
@@ -69,6 +71,7 @@ export async function readChainMessages(
     bytes,
     ...(sessionId ? { sessionId } : {}),
     ...(sourceCwd ? { sourceCwd } : {}),
+    ...(contextFrom ? { contextFrom } : {}),
     segments: read,
     missing
   }

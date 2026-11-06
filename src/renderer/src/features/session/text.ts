@@ -21,6 +21,7 @@ export type SessionTextKey =
   | 'subagentArtifacts'
   | 'subagentCount'
   | 'subagentLiveCount'
+  | 'subagentAwaitingCount'
   | 'subagentDoneCount'
   | 'subagentFailedCount'
   | 'subagentStoppedCount'
@@ -156,6 +157,7 @@ export type SessionTextKey =
   | 'menuCopyLink'
   | 'menuPreviewFile'
   | 'menuRevealFile'
+  | 'menuOpenFolder'
   | 'menuCopyPath'
   | 'approvalCwd'
   | 'questionLabel'
@@ -274,6 +276,7 @@ const ZH: Record<SessionTextKey, string> = {
   subagentArtifacts: '成果',
   subagentCount: '{n} 个子 Agent',
   subagentLiveCount: '{n} 进行中',
+  subagentAwaitingCount: '{n} 等你确认',
   subagentDoneCount: '{n} 完成',
   subagentFailedCount: '{n} 失败',
   subagentStoppedCount: '{n} 已停止',
@@ -409,6 +412,7 @@ const ZH: Record<SessionTextKey, string> = {
   menuCopyLink: '复制链接',
   menuPreviewFile: '预览文件',
   menuRevealFile: '在文件夹中显示',
+  menuOpenFolder: '在资源管理器中打开',
   menuCopyPath: '复制路径',
   approvalCwd: '工作目录：{cwd}',
   questionLabel: '提问',
@@ -528,6 +532,7 @@ const EN: Record<SessionTextKey, string> = {
   subagentArtifacts: 'Outputs',
   subagentCount: '{n} subagents',
   subagentLiveCount: '{n} in progress',
+  subagentAwaitingCount: '{n} need approval',
   subagentDoneCount: '{n} done',
   subagentFailedCount: '{n} failed',
   subagentStoppedCount: '{n} stopped',
@@ -663,6 +668,7 @@ const EN: Record<SessionTextKey, string> = {
   menuCopyLink: 'Copy link',
   menuPreviewFile: 'Preview file',
   menuRevealFile: 'Show in folder',
+  menuOpenFolder: 'Open in file explorer',
   menuCopyPath: 'Copy path',
   approvalCwd: 'Working directory: {cwd}',
   questionLabel: 'Question',

@@ -55,24 +55,37 @@ function historyDetail(item: CompactionHistoryItem, text: ContextPaneText): stri
   return [tokens, summary].filter(Boolean).join(' · ')
 }
 
+const HISTORY_RETRY_MS = [300, 800, 2000, 5000]
+const historyCache = new Map<string, CompactionHistoryLoad>()
+
 function useCompactionHistory(visible: boolean, sessionId: string | null, reloadKey: string): CompactionHistoryLoad | null {
-  const [state, setState] = useState<{ key: string; load: CompactionHistoryLoad } | null>(null)
+  const [loaded, setLoaded] = useState<{ sessionId: string; load: CompactionHistoryLoad } | null>(null)
   const generation = useRef(0)
-  const key = `${sessionId ?? ''}|${reloadKey}`
   useEffect(() => {
     if (!visible || !sessionId) return undefined
     const run = ++generation.current
-    let cancelled = false
-    void loadCompactionHistory((request) => window.yan.nativeSession(request), sessionId).then((load) => {
-      if (cancelled || run !== generation.current) return
-      if (useStore.getState().session?.sessionId !== sessionId) return
-      setState({ key, load })
-    })
-    return () => {
-      cancelled = true
+    let timer: number | undefined
+    const attempt = (tries: number): void => {
+      void loadCompactionHistory((request) => window.yan.nativeSession(request), sessionId).then((load) => {
+        if (run !== generation.current) return
+        if (useStore.getState().session?.sessionId !== sessionId) return
+        if (!load.ok && tries < HISTORY_RETRY_MS.length) {
+          timer = window.setTimeout(() => attempt(tries + 1), HISTORY_RETRY_MS[tries])
+          return
+        }
+        if (load.ok) historyCache.set(sessionId, load)
+        setLoaded({ sessionId, load })
+      })
     }
-  }, [visible, sessionId, key])
-  return state && state.key.startsWith(`${sessionId ?? ''}|`) ? state.load : null
+    attempt(0)
+    return () => {
+      generation.current += 1
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [visible, sessionId, reloadKey])
+  if (!sessionId) return null
+  if (loaded?.sessionId === sessionId && (loaded.load.ok || !historyCache.has(sessionId))) return loaded.load
+  return historyCache.get(sessionId) ?? null
 }
 
 function ContextCells({ cells, focus, compacting }: { cells: CellKind[]; focus: CellKind | null; compacting: boolean }): ReactElement {
@@ -146,9 +159,15 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const autoCompactTokens = useStore((s) => s.settings?.autoCompactTokens)
   const autoCompactLimit = autoCompactLimitOf(session, { autoCompactTokens })
 
+  const sessionId = session?.sessionId ?? null
+  const last = session?.lastCompaction
+  const historyKey = [last?.status ?? '', last?.endedAt ?? last?.startedAt ?? '', last?.entryId ?? '', session?.contextFrom?.firstKeptEntryId ?? ''].join(':')
+  const history = useCompactionHistory(visible, sessionId, historyKey)
+  const summaryTokens = history?.ok ? history.items[0]?.summaryTokens ?? 0 : 0
+
   const data = useMemo(
-    () => contextPaneData({ session, stats, messages, autoCompactLimit }),
-    [session, stats, messages, autoCompactLimit]
+    () => contextPaneData({ session, stats, messages, autoCompactLimit, summaryTokens }),
+    [session, stats, messages, autoCompactLimit, summaryTokens]
   )
   const toolCalls = useMemo(
     () => contextPaneToolCalls({ session, stats, messages, autoCompactLimit }),
@@ -156,10 +175,6 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   )
   const { usage, slices, compacted } = data
 
-  const sessionId = session?.sessionId ?? null
-  const last = session?.lastCompaction
-  const historyKey = [last?.status ?? '', last?.endedAt ?? last?.startedAt ?? '', last?.entryId ?? '', session?.contextFrom?.firstKeptEntryId ?? ''].join(':')
-  const history = useCompactionHistory(visible, sessionId, historyKey)
   const [showAllHistory, setShowAllHistory] = useState(false)
   const [focusKind, setFocusKind] = useState<CellKind | null>(null)
 
@@ -330,7 +345,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
             {lastLine}
           </p>
         ) : null}
-        {!historyItems?.length && !unsettledLast && !historyPending && (historyItems || !lastLine) ? (
+        {!historyItems?.length && !unsettledLast && !historyPending && history?.ok !== false && (historyItems || !lastLine) ? (
           <p className="wb-ctx-note">{text.compactionNone}</p>
         ) : null}
       </div>

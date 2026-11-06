@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
 import {
   BarChart3,
   CircleHelp,
@@ -300,10 +300,10 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
     return items
   }, [text, settingsCopy, theme, running])
 
-  const sessionItems = useMemo<CommandItem[]>(
-    () =>
+  const sessionItemsOf = useCallback(
+    (archived: boolean): CommandItem[] =>
       [...sessions]
-        .filter((item) => !item.archivedAt)
+        .filter((item) => !item.archivedAt !== archived)
         .sort((a, b) => (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt))
         .map((item) => ({
           id: `session:${item.path}`,
@@ -315,6 +315,8 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         })),
     [sessions, titles, manualTitles]
   )
+  const sessionItems = useMemo(() => sessionItemsOf(false), [sessionItemsOf])
+  const archivedSessionItems = useMemo(() => sessionItemsOf(true), [sessionItemsOf])
 
   const parsed = useMemo(() => parsePaletteQuery(query), [query])
   const trimmedTerm = parsed.term.trim()
@@ -352,7 +354,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       case 'action':
         return rankCommands(actionItems, parsed.term)
       case 'session':
-        return limitCommands(rankCommands(sessionItems, parsed.term), SESSION_LIMIT)
+        return limitCommands(trimmedTerm ? [...rankCommands(sessionItems, parsed.term), ...rankCommands(archivedSessionItems, parsed.term)] : rankCommands(sessionItems, parsed.term), SESSION_LIMIT)
       case 'message':
         if (!trimmedTerm) return []
         return limitCommandGroup(rankCommands(messageItems, parsed.term), 'message', MESSAGE_LIMIT)
@@ -362,11 +364,11 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       case 'help':
         return rankCommands(helpItems, parsed.term)
       default: {
-        const pool = trimmedTerm ? [...actionItems, ...sessionItems] : actionItems
-        return limitCommands(rankCommands(pool, parsed.term), SESSION_LIMIT)
+        if (!trimmedTerm) return limitCommands(rankCommands(actionItems, parsed.term), SESSION_LIMIT)
+        return limitCommands([...rankCommands([...actionItems, ...sessionItems], parsed.term), ...rankCommands(archivedSessionItems, parsed.term)], SESSION_LIMIT)
       }
     }
-  }, [parsed.mode, parsed.term, trimmedTerm, actionItems, sessionItems, messageItems, helpItems, fileSearch.items])
+  }, [parsed.mode, parsed.term, trimmedTerm, actionItems, sessionItems, archivedSessionItems, messageItems, helpItems, fileSearch.items])
 
   const groups = useMemo(() => groupCommands(visible, PALETTE_GROUP_ORDER), [visible])
   const options = useMemo(() => navigableCommands(visible), [visible])

@@ -180,7 +180,7 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
 
 export type PreviewTargetResult =
   | { ok: true; real: string; st: Stats; outsideRoot: boolean }
-  | { ok: false; error: string; issue: FilePreviewIssue; dir?: string; creatable?: boolean }
+  | { ok: false; error: string; issue: FilePreviewIssue; dir?: string; creatable?: boolean; real?: string }
 
 export async function resolvePreviewTarget(rawPath: string, cwd: string): Promise<PreviewTargetResult> {
   if (typeof rawPath !== 'string' || !rawPath.trim()) return { ok: false, error: '路径为空', issue: 'invalid' }
@@ -216,7 +216,7 @@ export async function resolvePreviewTarget(rawPath: string, cwd: string): Promis
   } catch {
     return { ok: false, error: '无法读取文件信息', issue: 'unreadable', dir: dirname(real) }
   }
-  if (st.isDirectory()) return { ok: false, error: '这是文件夹', issue: 'directory', dir: dirname(real) }
+  if (st.isDirectory()) return { ok: false, error: '这是文件夹', issue: 'directory', dir: dirname(real), real }
   if (!st.isFile()) return { ok: false, error: '不是普通文件', issue: 'not_file', dir: dirname(real) }
   return { ok: true, real, st, outsideRoot }
 }
@@ -224,8 +224,9 @@ export async function resolvePreviewTarget(rawPath: string, cwd: string): Promis
 export async function statPreview(
   rawPath: string,
   cwd: string
-): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }> {
+): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string; directory?: boolean }> {
   const resolved = await resolvePreviewTarget(rawPath, cwd)
+  if (!resolved.ok && resolved.issue === 'directory' && resolved.real) return { ok: false, abs: resolved.real, mtimeMs: 0, size: 0, error: resolved.error, directory: true }
   if (!resolved.ok) return { ok: false, abs: '', mtimeMs: 0, size: 0, error: resolved.error }
   return { ok: true, abs: resolved.real, mtimeMs: resolved.st.mtimeMs, size: resolved.st.size }
 }

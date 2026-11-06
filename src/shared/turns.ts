@@ -406,10 +406,9 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (hasUsageNumbers(m.usage)) cur.usage = addUsage(cur.usage, m.usage)
     else cur.usagePartial = true
     if (m.model) cur.model = m.model
-    if (m.error && !cur.errorMsgId) {
+    if (m.error) {
       cur.error = m.error
       cur.errorMsgId = m.id
-    } else if (m.error) {
       cur.errorRecovered = false
     } else if (cur.errorMsgId && (m.text?.trim() || m.toolCalls?.length)) {
       cur.errorRecovered = true

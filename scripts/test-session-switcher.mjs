@@ -14,11 +14,13 @@ const sessions = [
   session('never', { lastActivityAt: 500 }),
   session('recent', { lastOpenedAt: 300 }),
   session('archived', { lastOpenedAt: 900, archivedAt: 901 }),
-  session('current', { lastOpenedAt: 200 })
+  session('current', { lastOpenedAt: 200 }),
+  session('archived-unopened', { lastActivityAt: 950, archivedAt: 951 })
 ]
 
-assert.deepEqual(switcherSessions(sessions, 'current').map((s) => s.path), ['current', 'recent', 'old', 'never'], '当前会话在首位，其余按最近打开排序，归档排除')
-assert.deepEqual(switcherSessions(sessions, null).map((s) => s.path), ['recent', 'current', 'old', 'never'], '没有当前会话时纯按最近打开')
+assert.deepEqual(switcherSessions(sessions, 'current').map((s) => s.path), ['current', 'archived', 'recent', 'old', 'never'], '当前会话在首位，其余按最近打开排序，打开过的归档会话保留，没打开过的归档排除')
+assert.deepEqual(switcherSessions(sessions, null).map((s) => s.path), ['archived', 'recent', 'current', 'old', 'never'], '没有当前会话时纯按最近打开')
+assert.deepEqual(switcherSessions(sessions, 'archived-unopened').map((s) => s.path)[0], 'archived-unopened', '当前会话即使已归档也在首位')
 assert.equal(switcherSessions(sessions, 'current', 2).length, 2, '数量上限生效')
 
 assert.equal(initialSwitcherIndex(4, 1, true), 1, 'Ctrl+Tab 先选上一个会话')

@@ -27,7 +27,7 @@ import { useSplitPersistence } from '../features/split/use-split-persistence'
 import { SIDEBAR_DRAG_COLLAPSE, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_STEP, SIDEBAR_WIDTH_STEP_LARGE, readSidebarWidth, sidebarMaxForWindow, shouldAutoCollapseSidebar } from '../features/sidebar/sidebar-layout'
 import { useSidebarWidthDraft } from '../features/sidebar/useSidebarWidthDraft'
 import { SideBySide } from './SideBySide'
-import { collapsedPanes, sessionTiles } from './SideBySideLayout'
+import { collapsedPanes, sessionTiles, splitColumnsThatFit } from './SideBySideLayout'
 import { CommandPalette } from '../features/commands/CommandPalette'
 import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { SessionSwitcher, useSessionSwitcher } from '../features/commands/SessionSwitcher'
@@ -303,14 +303,15 @@ export default function ShellV3(): ReactElement {
     useSplitView.getState().sync(displayed)
   }, [displayed, storedSplit])
   const splitParked = windowWidth <= SPLIT_CONSTRAINED_WIDTH
+  const splitFit = splitColumnsThatFit(route.name === 'chat' ? measuredChatWidth : 0, SPLIT_MIN_PANE_PX)
   const visibleSessions = useMemo(() => {
-    const layout = collapsedPanes(split, splitParked)
+    const layout = collapsedPanes(split, splitParked, splitFit)
     return layout ? sessionTiles(layout.tiles) : displayed ? [displayed] : []
-  }, [split, splitParked, displayed])
+  }, [split, splitParked, splitFit, displayed])
   useRunnerVisibility(visibleSessions)
   usePruneSubagentSurfaces()
   useSplitPersistence()
-  const paneLayout = collapsedPanes(split, splitParked)
+  const paneLayout = collapsedPanes(split, splitParked, splitFit)
   const singlePane = !paneLayout
   const laneMinWidth = paneLayout ? splitColumns(paneLayout.tiles).length * SPLIT_MIN_PANE_PX : MESSAGE_MIN_WIDTH
   useLayoutEffect(() => {
@@ -666,7 +667,7 @@ export default function ShellV3(): ReactElement {
             {route.name === 'chat' ? (
               <div className="v3-chat" ref={chatRef} data-single={singlePane ? '1' : undefined} data-sessionbar={sessionBarShown ? '1' : undefined} data-bar-anim={settledBarOn !== sessionBarOn ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, '--size-chat-min': `${MESSAGE_MIN_WIDTH}px` } as CSSProperties}>
                 <ConnBanner />
-                <SideBySide split={split} narrow={splitParked} />
+                <SideBySide split={split} narrow={splitParked} maxColumns={splitFit} />
                 {sessionBarShown ? (
                   <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
                     <OverviewPane owner={owner} onOpenView={openOverviewView} />

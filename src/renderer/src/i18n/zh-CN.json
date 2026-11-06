@@ -531,6 +531,7 @@
   "approval.deny": "拒绝",
   "approval.more": "还有 {n} 条",
   "approval.once": "允许这一次",
+  "approval.allowBatch": "这一批全部允许",
   "approval.session": "在此会话中允许",
   "approval.rememberDirs": "允许并记住目录",
   "approval.feedback": "说明理由",
@@ -1967,6 +1968,7 @@
   "chat.taskTodo": "未完成",
   "link.dblclickHint": "双击在资源管理器中定位",
   "link.codeDblclickHint": "单击在软件内打开，双击在资源管理器中定位",
+  "link.folderHint": "单击在资源管理器中打开",
   "auth.loginOkGeneric": "已接入，正在重启 pi 读取新凭证",
   "auth.deviceWaiting": "在验证页输入下面的验证码",
   "auth.copyCode": "复制验证码",
@@ -2979,5 +2981,5 @@
   "sidebar.t3.filter.manage": "「{name}」项目操作",
   "sidebar.t3.filter.current": "当前筛选",
   "sidebar.t3.moreUtilities": "更多",
-  "composer.modelChange.pending": "下轮切换"
+  "composer.modelChange.pending": "下条消息起"
 }

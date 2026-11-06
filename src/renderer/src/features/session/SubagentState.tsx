@@ -3,7 +3,14 @@ import { StatusDot, StatusSlot } from '../../ui'
 import type { SubagentRowState } from '../../../../shared/subagent-task-rows'
 import { Icon } from './Icon'
 
-export function SubagentStateIcon({ state, label }: { state: SubagentRowState; label?: string }): JSX.Element {
+export function SubagentStateIcon({ state, label, awaiting = false }: { state: SubagentRowState; label?: string; awaiting?: boolean }): JSX.Element {
+  if (awaiting && (state === 'starting' || state === 'running')) {
+    return (
+      <StatusSlot label={label} live>
+        <StatusDot kind="awaiting" />
+      </StatusSlot>
+    )
+  }
   switch (state) {
     case 'starting':
     case 'running':

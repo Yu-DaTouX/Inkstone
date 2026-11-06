@@ -242,9 +242,8 @@
     display: flex;
     justify-content: center;
     pointer-events: none;
-    animation: v3-fade-in var(--dur-base) var(--ease) both;
   }
-  .v3-jump-btn { pointer-events: auto; }
+  .v3-jump-btn { pointer-events: auto; animation: v3-fade-in var(--dur-base) var(--ease) both; }
 
   @media (max-width: 720px) {
     .v3-stream-host { --stream-px: var(--s-12); }

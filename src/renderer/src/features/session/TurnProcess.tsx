@@ -118,11 +118,13 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
   return { ref, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
-export function TurnProcess({ process, live, openByDefault = false, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false, compactionAfter = null }: {
+export function TurnProcess({ process, live, openByDefault = false, alertFailures, showFailures = true, liveStartedAt = null, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false, compactionAfter = null }: {
   process: TurnSegment[]
   live: boolean
   openByDefault?: boolean
   alertFailures: boolean
+  showFailures?: boolean
+  liveStartedAt?: number | null
   view: TranscriptView
   sessionId: string | null
   turnId?: string
@@ -171,7 +173,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
         {markerFirst || markerAfter && !picked.shown.some((segment) => segment.id === markerAfter) && merged.findIndex((segment) => segment.id === markerAfter) < merged.indexOf(picked.shown[0]) ? <CompactionMarker /> : null}
         {picked.shown.map((segment) => (
           <Fragment key={segment.id}>
-            <ProcessSegment segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} />
+            <ProcessSegment segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} quietNotes={!live} />
             {segment.id === markerAfter ? <CompactionMarker /> : null}
           </Fragment>
         ))}
@@ -198,8 +200,8 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
                 {part.file && part.file.added !== null && part.file.removed !== null && part.file.added + part.file.removed > 0 ? <DiffStat className="v3-process-diff" added={part.file.added} removed={part.file.removed} /> : null}
               </span>
             ))}
-            {live ? <LiveElapsed /> : elapsed ? <span className="v3-process-count ui-num" data-kind="elapsed">{elapsed}</span> : null}
-            {summary.failed ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
+            {live ? <LiveElapsed startedAt={liveStartedAt} /> : elapsed ? <span className="v3-process-count ui-num" data-kind="elapsed">{elapsed}</span> : null}
+            {summary.failed && showFailures ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
           </span>
         </CollapsibleHeader>
       )}
@@ -240,10 +242,11 @@ function fileText(tt: SessionText, list: readonly ProcessFileChange[], single: T
 
 const LEAD_ACTIVITIES = 2
 
-function LiveElapsed(): JSX.Element | null {
+function LiveElapsed({ startedAt }: { startedAt: number | null }): JSX.Element | null {
   const progress = useRunProgress()
   if (!progress) return null
-  return <span className="v3-process-count ui-num" data-kind="elapsed">{formatDuration(progress.elapsedMs)}</span>
+  const elapsedMs = startedAt !== null ? Math.max(0, Date.now() - startedAt) : progress.elapsedMs
+  return <span className="v3-process-count ui-num" data-kind="elapsed">{formatDuration(elapsedMs)}</span>
 }
 
 function joinActivities(phrases: readonly string[], join: string): string {
@@ -290,13 +293,14 @@ function processBreakdown(summary: ProcessSummary, tt: SessionText): string {
   return joinActivities(phrases, tt('processKindJoin'))
 }
 
-function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking, alertFailures }: {
+function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking, alertFailures, quietNotes }: {
   segment: TurnSegment
   sessionId: string | null
   approvalIds: ReadonlySet<string>
   glowId?: string | null
   openThinking: boolean
   alertFailures: boolean
+  quietNotes: boolean
 }): JSX.Element {
   const steps = segmentSteps(segment)
   return (
@@ -307,7 +311,7 @@ function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking,
           ? (
               <div key={step.key} className="v3-process-notes">
                 {step.notes.map((part) => (
-                  <div key={part.id} className="v3-para">
+                  <div key={part.id} className={quietNotes ? 'v3-para dim' : 'v3-para'}>
                     <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
                   </div>
                 ))}

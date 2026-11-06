@@ -87,7 +87,21 @@ function sumsOf(m: UIMessage): MessageSums {
   return sums
 }
 
-export function contextBreakdown(messages: readonly UIMessage[], total: number): ContextSlice[] {
+export function measuredSystemTokens(messages: readonly UIMessage[]): number {
+  let before = 0
+  for (const m of messages) {
+    if (m.role === 'assistant' && m.usage) {
+      const input = (m.usage.input || 0) + (m.usage.cacheRead || 0) + (m.usage.cacheWrite || 0)
+      return input > before ? input - before : 0
+    }
+    if (m.role === 'assistant') return 0
+    const own = sumsOf(m)
+    before += own.user + own.assistant + own.thinking + own.tools
+  }
+  return 0
+}
+
+export function contextBreakdown(messages: readonly UIMessage[], total: number, systemFloor = 0): ContextSlice[] {
   const sums: MessageSums = { user: 0, assistant: 0, thinking: 0, tools: 0 }
   for (const m of messages) {
     const own = sumsOf(m)
@@ -97,7 +111,9 @@ export function contextBreakdown(messages: readonly UIMessage[], total: number):
     sums.tools += own.tools
   }
   const counted = sums.user + sums.assistant + sums.thinking + sums.tools
-  const scale = counted > total ? total / counted : 1
+  const floor = Math.min(Math.max(0, systemFloor), total)
+  const room = total - floor
+  const scale = floor > 0 ? (counted > 0 ? room / counted : 1) : counted > total ? total / counted : 1
   const parts = (Object.keys(sums) as Array<keyof typeof sums>).map(id => ({ id, tokens: Math.round(sums[id] * scale) }))
   const system = Math.max(0, total - parts.reduce((n, p) => n + p.tokens, 0))
   return [{ id: 'system', tokens: system }, ...parts]

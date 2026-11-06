@@ -38,10 +38,11 @@ import './SideBySide.css'
 export interface SideBySideProps {
   split: SplitLayout | null
   narrow: boolean
+  maxColumns?: number
 }
 
-export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
-  const layout = collapsedPanes(split, narrow)
+export const SideBySide = memo(function SideBySide({ split, narrow, maxColumns }: SideBySideProps): JSX.Element {
+  const layout = collapsedPanes(split, narrow, maxColumns)
   const weights = useSplitView((s) => s.weights)
   const storedRow = useSplitView((s) => s.rowSplit)
   const [hostHeight, setHostHeight] = useState(0)

@@ -102,6 +102,7 @@ export const THIN_EXTENSION_FILES = [
   'preamble.js',
   'language.js',
   'ultracode.js',
+  'turn-model-switch.js',
   'capability-guide.js',
   'auto-compact.js',
   'image-labels.js',

@@ -10,7 +10,7 @@ export function switcherSessions<T extends SwitcherSession>(
   currentPath: string | null | undefined,
   limit = SWITCHER_LIMIT
 ): T[] {
-  const live = sessions.filter((session) => !session.archivedAt)
+  const live = sessions.filter((session) => !session.archivedAt || !!session.lastOpenedAt || (!!currentPath && session.path === currentPath))
   const current = currentPath ? live.find((session) => session.path === currentPath) : undefined
   const rest = live.filter((session) => session !== current).sort(compareRecency)
   return (current ? [current, ...rest] : rest).slice(0, Math.max(0, limit))

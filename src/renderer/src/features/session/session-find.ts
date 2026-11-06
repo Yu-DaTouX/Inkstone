@@ -1,4 +1,5 @@
 import { compileFind, DEFAULT_FIND_OPTIONS, findShortcut, type FindKeyState } from '../preview/code-find'
+import type { Turn } from '../../../../shared/turns'
 
 export interface FindNode {
   nodeType: number
@@ -183,6 +184,72 @@ export function matchFind(root: FindNode, query: string, exclude?: ReadonlySet<F
     if (tail < segments.length) matches.push(match)
   }
   return matches
+}
+
+export interface TurnFindText {
+  id: string
+  text: string
+}
+
+export interface TurnMatch {
+  turn: number
+  k: number
+}
+
+export function turnFindText(turn: Turn): string {
+  if (turn.kind !== 'assistant') return turn.msg.text ?? ''
+  return [turn.response?.text ?? '', ...turn.commentary.map((part) => part.text)].join('\n')
+}
+
+export function countTextMatches(text: string, query: string): number {
+  const matcher = query ? compileFind(query, DEFAULT_FIND_OPTIONS) : null
+  if (!matcher || !text) return 0
+  let count = 0
+  matcher.lastIndex = 0
+  let found: RegExpExecArray | null
+  while ((found = matcher.exec(text))) {
+    if (found[0].length === 0) {
+      if (matcher.lastIndex >= text.length) break
+      matcher.lastIndex += 1
+      continue
+    }
+    count += 1
+  }
+  return count
+}
+
+export function stepTurnMatch(counts: ReadonlyArray<number>, active: TurnMatch | null, forward: boolean): TurnMatch | null {
+  const total = counts.length
+  if (!counts.some((count) => count > 0)) return null
+  if (active && active.turn < total) {
+    const k = forward ? active.k + 1 : active.k - 1
+    if (k >= 0 && k < counts[active.turn]) return { turn: active.turn, k }
+  }
+  const from = active ? active.turn : forward ? -1 : total
+  for (let step = 1; step <= total; step++) {
+    const turn = (((from + (forward ? step : -step)) % total) + total) % total
+    if (counts[turn] > 0) return { turn, k: forward ? 0 : counts[turn] - 1 }
+  }
+  return null
+}
+
+export function firstTurnMatchFrom(counts: ReadonlyArray<number>, start: number): TurnMatch | null {
+  const total = counts.length
+  for (let step = 0; step < total; step++) {
+    const turn = (Math.max(0, start) + step) % total
+    if (counts[turn] > 0) return { turn, k: 0 }
+  }
+  return null
+}
+
+export function turnMatchPosition(counts: ReadonlyArray<number>, active: TurnMatch | null): { current: number; total: number } {
+  let total = 0
+  let before = 0
+  counts.forEach((count, turn) => {
+    total += count
+    if (active && turn < active.turn) before += count
+  })
+  return { current: active && total ? before + Math.min(active.k, Math.max(0, counts[active.turn] - 1)) + 1 : 0, total }
 }
 
 export function findStatusText(query: string, current: number, total: number): string {

@@ -1951,7 +1951,7 @@ export interface YanBridge {
   prepareHtmlArtifact(path: string, cwd?: string): Promise<HtmlArtifactPreviewResult>
   releaseHtmlArtifact(url: string): Promise<void>
   prepareHtmlWidget(html: string): Promise<HtmlArtifactPreviewResult>
-  statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>
+  statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string; directory?: boolean }>
   watchDirs(watchId: string, dirs: string[], context: FileRequestContext): Promise<{ dirs: string[]; dropped: string[] }>
   searchFiles(request: FileSearchRequest): Promise<FileSearchResult>
   searchFileContents(request: FileContentSearchRequest): Promise<FileContentSearchResult>

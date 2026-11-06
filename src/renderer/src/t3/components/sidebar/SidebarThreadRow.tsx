@@ -337,9 +337,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         : view.recede
           ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
           : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
-    view.recede &&
-      status === "working" &&
-      "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
     isFileDragOver && "ring-1 ring-inset ring-primary/70",
     isFileDragOver && !isActive && "bg-sidebar-row-hover",
     isDragging &&

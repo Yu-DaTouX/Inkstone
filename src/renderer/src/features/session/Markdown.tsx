@@ -107,13 +107,22 @@ function resolveAgainstCwd(path: string, cwd?: string): string {
   return `${cwd.replace(/[\\/]+$/, '')}/${path.replace(/^\.[\\/]/, '')}`
 }
 
-function useLinkMenu(target: LinkTarget, sourceCwd?: string): ((event: React.MouseEvent) => void) | undefined {
+function isFolderPath(path: string): boolean {
+  return /[\\/]$/.test(path)
+}
+
+function useLinkMenu(target: LinkTarget, sourceCwd?: string, folder?: string): ((event: React.MouseEvent) => void) | undefined {
   const tt = useSessionText()
   const openLink = useStore((s) => s.openLink)
   const previewFile = useStore((s) => s.previewFile)
   if (target.kind === 'invalid') return undefined
   return (event) => {
-    const items: MessageMenuItem[] = target.kind === 'url'
+    const items: MessageMenuItem[] = folder
+      ? [
+          { id: 'open-folder', label: tt('menuOpenFolder'), run: () => void window.yan.openPath(folder) },
+          { id: 'copy', label: tt('menuCopyPath'), run: () => copyText(folder) }
+        ]
+      : target.kind === 'url'
       ? [
           { id: 'open', label: tt('menuOpenLink'), run: () => void openLink(target.url) },
           { id: 'external', label: tt('menuOpenExternal'), run: () => void window.yan.browser.openExternal(target.url) },
@@ -138,7 +147,8 @@ function UrlLinkIcon({ url }: { url: string }): JSX.Element {
   return <Glyph size={13} strokeWidth={1.75} className="v3-md-link-icon" aria-hidden />
 }
 
-function LinkKindIcon({ target }: { target: ReturnType<typeof classifyLink> }): JSX.Element | null {
+function LinkKindIcon({ target, folder }: { target: ReturnType<typeof classifyLink>; folder?: boolean }): JSX.Element | null {
+  if (folder) return <><Folder size={13} strokeWidth={1.75} className="v3-md-link-icon" aria-hidden />{'\u2060'}</>
   if (target.kind === 'file') return <><FileLinkIcon path={target.path} />{'\u2060'}</>
   if (target.kind === 'url') return <><UrlLinkIcon url={target.url} />{'\u2060'}</>
   return null
@@ -149,22 +159,25 @@ function isPathLabel(label: string): boolean {
 }
 
 function FileLinkIcon({ path }: { path: string }): JSX.Element {
-  if (/[\\/]$/.test(path)) return <Folder size={13} strokeWidth={1.75} className="v3-md-link-icon" aria-hidden />
+  if (isFolderPath(path)) return <Folder size={13} strokeWidth={1.75} className="v3-md-link-icon" aria-hidden />
   const base = path.split(/[\\/]/).filter(Boolean).pop() ?? path
   return <FileTypeIcon name={base} size={14} className="v3-md-link-icon" />
 }
 
 const PATH_STAT_LIMIT = 2000
-const pathStats = new Map<string, string | null | Promise<string | null>>()
+type ResolvedPath = { abs: string; directory: boolean }
+const pathStats = new Map<string, ResolvedPath | null | Promise<ResolvedPath | null>>()
 
-function statKnown(path: string, cwd?: string): Promise<string | null> {
+function statKnown(path: string, cwd?: string): Promise<ResolvedPath | null> {
   const key = `${cwd ?? ''}|${path}`
   const hit = pathStats.get(key)
   if (hit !== undefined && !(hit instanceof Promise)) return Promise.resolve(hit)
   if (hit) return hit
   if (pathStats.size > PATH_STAT_LIMIT) pathStats.clear()
   const stat = window.yan?.statPreview
-  const pending = (typeof stat === 'function' ? stat(path, cwd).then((result) => (result.ok ? result.abs || path : null), () => null) : Promise.resolve(null))
+  const pending = (typeof stat === 'function'
+    ? stat(path, cwd).then((result): ResolvedPath | null => (result.ok ? { abs: result.abs || path, directory: false } : result.directory && result.abs ? { abs: result.abs, directory: true } : null), () => null)
+    : Promise.resolve(null))
     .then((abs) => {
       pathStats.set(key, abs)
       return abs
@@ -173,11 +186,11 @@ function statKnown(path: string, cwd?: string): Promise<string | null> {
   return pending
 }
 
-function useResolvedPath(path: string | null, cwd?: string): string | null {
+function useResolvedPath(path: string | null, cwd?: string): ResolvedPath | null {
   const key = path ? `${cwd ?? ''}|${path}` : ''
   const known = key ? pathStats.get(key) : undefined
   const settled = known !== undefined && !(known instanceof Promise)
-  const [resolved, setResolved] = useState<{ key: string; abs: string | null } | null>(null)
+  const [resolved, setResolved] = useState<{ key: string; abs: ResolvedPath | null } | null>(null)
   useEffect(() => {
     if (!path || settled) return undefined
     let alive = true
@@ -186,7 +199,7 @@ function useResolvedPath(path: string | null, cwd?: string): string | null {
     })
     return () => { alive = false }
   }, [key, settled, path, cwd])
-  if (settled) return known as string | null
+  if (settled) return known as ResolvedPath | null
   return resolved?.key === key ? resolved.abs : null
 }
 
@@ -239,13 +252,14 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
     e.preventDefault()
     e.stopPropagation()
     if (target.kind === 'url') void openLink(target.url)
+    else if (target.kind === 'file' && isFolderPath(target.path)) { if (e.detail <= 1) void window.yan.openPath(resolveAgainstCwd(target.path, sourceCwd)) }
     else if (target.kind === 'file') void previewFile(target.path, target.line, sourceCwd, target.lineEnd)
   }
   const onDoubleClick = (e: React.MouseEvent): void => {
     e.preventDefault()
     e.stopPropagation()
     if (target.kind === 'url') void window.yan.browser.openExternal(target.url)
-    else if (target.kind === 'file') void window.yan.revealPath(resolveAgainstCwd(target.path, sourceCwd))
+    else if (target.kind === 'file' && !isFolderPath(target.path)) void window.yan.revealPath(resolveAgainstCwd(target.path, sourceCwd))
   }
 
   const label = textOf(children).trim()
@@ -271,7 +285,7 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
       data-github={target.kind === 'url' && GITHUB_URL.test(target.url) ? '' : undefined}
       data-line={target.kind === 'file' && target.line ? String(target.line) : undefined}
       data-line-end={target.kind === 'file' && target.lineEnd ? String(target.lineEnd) : undefined}
-      title={target.kind === 'invalid' ? title : `${title}\n${t('link.dblclickHint')}`}
+      title={target.kind === 'invalid' ? title : `${title}\n${t(target.kind === 'file' && isFolderPath(target.path) ? 'link.folderHint' : 'link.dblclickHint')}`}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onAuxClick={(e) => e.preventDefault()}
@@ -313,34 +327,42 @@ function InlineCodeLink({ className, children }: { className?: string; children?
   const sourceCwd = useContext(MessageSourceCwd)
   const text = typeof children === 'string' ? children : Array.isArray(children) && children.length === 1 && typeof children[0] === 'string' ? children[0] : null
   const candidate = text && !className && !/\s/.test(text.trim()) &&
-    (/^(?:[a-zA-Z]:[\\/]|https?:\/\/|file:\/\/)/.test(text.trim()) || /^[\w.@-][^:*?"<>|]*[\\/][^\\/]*\.[a-zA-Z0-9]{1,8}(?::\d+)?$/.test(text.trim()))
+    (/^(?:[a-zA-Z]:[\\/]|https?:\/\/|file:\/\/)/.test(text.trim()) || /^[\w.@-][^:*?"<>|]*[\\/][^\\/]*\.[a-zA-Z0-9]{1,8}(?::\d+)?$/.test(text.trim()) || /^[\w.@-][^:*?"<>|]*[\\/]$/.test(text.trim()))
     ? classifyLink(text.trim())
     : null
-  const onContextMenu = useLinkMenu(candidate ?? NOT_A_LINK, sourceCwd)
   const resolved = useResolvedPath(candidate?.kind === 'file' ? candidate.path : null, sourceCwd)
+  const folder = resolved?.directory ? resolved.abs : undefined
+  const onContextMenu = useLinkMenu(candidate ?? NOT_A_LINK, sourceCwd, folder)
   if (!candidate || candidate.kind === 'invalid' || (candidate.kind === 'file' && !resolved)) return <code className={className}>{className ? children : pathPieces(children)}</code>
+  const activate = (): void => {
+    if (folder) void window.yan.openPath(folder)
+    else if (candidate.kind === 'url') void openLink(candidate.url)
+    else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
+  }
   const open = (e: React.MouseEvent): void => {
     e.preventDefault()
     e.stopPropagation()
-    if (candidate.kind === 'url') void openLink(candidate.url)
-    else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
+    if (folder && e.detail > 1) return
+    activate()
   }
   const openExternally = (e: React.MouseEvent): void => {
     e.preventDefault()
     e.stopPropagation()
     window.getSelection()?.removeAllRanges()
+    if (folder) return
     if (candidate.kind === 'url') void window.yan.browser.openExternal(candidate.url)
     else void window.yan.revealPath(resolveAgainstCwd(candidate.path, sourceCwd))
   }
+  const hint = folder ? t('link.folderHint') : t('link.codeDblclickHint')
+  const where = folder ?? (candidate.kind === 'file' ? resolved?.abs : undefined)
   return (
-    <code className="v3-md-code-link" data-link-kind={candidate.kind} role="link" tabIndex={0} title={candidate.kind === 'file' && resolved ? `${resolved}\n${t('link.codeDblclickHint')}` : t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu} onKeyDown={(event) => {
+    <code className="v3-md-code-link" data-link-kind={candidate.kind} data-folder={folder ? '' : undefined} role="link" tabIndex={0} title={where ? `${where}\n${hint}` : hint} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu} onKeyDown={(event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return
       event.preventDefault()
       event.stopPropagation()
-      if (candidate.kind === 'url') void openLink(candidate.url)
-      else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
+      activate()
     }}>
-      <LinkKindIcon target={candidate} />
+      <LinkKindIcon target={candidate} folder={!!folder} />
       {pathPieces(children)}
     </code>
   )
