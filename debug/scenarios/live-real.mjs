@@ -140,6 +140,46 @@ export default async function run({ cdp, check, waitFor, sleep, shot, state, out
     }
   }
 
+  const sessionEntries = () => findFiles(box.sessionsDir, /\.jsonl$/).flatMap((p) => readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean))
+  const blocksText = (e) => (e.message.content ?? []).filter((b) => b.type === 'thinking' || b.type === 'text').map((b) => b.thinking ?? b.text).join('\n')
+
+  if (parts.includes('searchnote')) {
+    await ev(`window.__yanStore.getState().patchSettings({ nativeWebSearch: true })`)
+    await sleep(800)
+    await newSession(sandboxProject)
+    await realTurn('联网搜索一下 Node.js 当前最新的 LTS 版本号，用一句话回答并说明来源。')
+    const searched = sessionEntries().filter((e) => e.type === 'message' && e.message?.yanWebSearch).length
+    log('第一轮搜索记录数', searched)
+    await realTurn('谢谢。现在读 INCIDENT.md 和 docs/REPORTING.md，告诉我 INCIDENT 里的三个现象，并说明你之前查到的 Node 版本信息可不可靠。')
+    const assistants = sessionEntries().filter((e) => e.type === 'message' && e.message?.role === 'assistant')
+    const records = assistants.filter((e) => e.message.yanWebSearch).length
+    const firstAt = assistants.findIndex((e) => e.message.yanWebSearch)
+    const afterText = assistants.slice(firstAt + 1).map(blocksText).join('\n')
+    const doubtRe = /(don't|do not|didn't|did not) (see|have|find)[^.]{0,40}search|not (grounded|from a tool|tool output)|wrote (it|that|this) myself|没看到|没有[^。]{0,8}搜索调用|自己(写|撰写)|并非工具/i
+    const doubt = doubtRe.test(afterText)
+    log('搜索记录对照', { variant: process.env.YAN_SEARCH_NOTE || 'current', searchRecords: records, doubt, snippet: (afterText.match(new RegExp('.{0,80}(' + doubtRe.source + ').{0,80}', 'i')) ?? [''])[0] })
+    check('第一轮确实走了原生搜索（否则本轮无效）', searched >= 1, { searched })
+    check('第二轮没有重搜', records <= searched, { records, searched })
+    check('第二轮没有怀疑搜索记录', !doubt)
+  }
+
+  if (parts.includes('langtest')) {
+    for (let round = 0; round < 2; round++) {
+      for (const [lang, q, wantZh] of [['en-US', '用一句话说说 README 讲什么', false], ['zh-CN', 'what does the README say? one sentence', true]]) {
+        await ev(`window.__yanStore.getState().patchSettings({ lang: '${lang}' })`)
+        await sleep(1500)
+        await newSession(sandboxProject)
+        const r = await realTurn(q)
+        const text = lastAssistant(r.msgs)
+        const last = sessionEntries().filter((e) => e.type === 'message' && e.message?.role === 'assistant').sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp))).at(-1)
+        const thinking = last ? (last.message.content ?? []).filter((b) => b.type === 'thinking').map((b) => b.thinking).join('\n') : ''
+        const ok = wantZh ? share(text) > 0.3 : share(text) < 0.1
+        log('语言对照', { variant: process.env.YAN_LANG_VARIANT || 'current', round, lang, ok, replyShare: +share(text).toFixed(2), thinkingShare: thinking ? +share(thinking).toFixed(2) : null })
+        check('界面 ' + lang + ' 回答跟随界面（第 ' + round + ' 轮）', ok, { replyShare: share(text) })
+      }
+    }
+  }
+
   if (parts.includes('tools')) {
     await newSession(sandboxProject)
     const q = await realTurn('我要在这个项目里加一个配置文件，格式用 JSON 还是 YAML 我拿不准。请用 question 工具问我，选项给两个，然后按我的选择创建 config 文件，内容写 {"name":"demo"} 之类的最小示例。')
