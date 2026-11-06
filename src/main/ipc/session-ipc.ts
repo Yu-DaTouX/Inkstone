@@ -13,17 +13,16 @@ import { cachedTitles, generateTitle, manualTitles, setManualTitle } from '../ti
 import { getSettings } from '../settings'
 import { compactionInfo } from '../compaction'
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../../shared/context-limits'
-import { listSessions, deleteSession, readTitleSamples, restoreSession, isSessionFileInSessionsDir, sessionsToDelete } from '../sessions'
+import { listSessions, readTitleSamples, restoreSession, isSessionFileInSessionsDir } from '../sessions'
 import { searchSessionText, warmSessionSearch } from '../session-search'
 import { archiveSessionsBatch, getSessionLayout, moveSessionLayout, setSessionFlags } from '../session-layout'
 import { resolveSessionOpenTarget } from '../session-open-target'
 import { rewriteSessionCwd } from '../session-move'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
-import { planHistoryRead } from '../../shared/session-chain'
 import { effectiveAutoArchiveDays } from '../../shared/session-archive'
 import { readUsageStats } from '../usage-stats'
-import { closeTerminalsForOwner } from '../terminal'
+import { deleteSessionChain } from '../session-delete'
 
 export interface SelectedSessionTarget {
   sessionFile: string
@@ -114,43 +113,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
       return { ok: false as const, error: error instanceof Error ? error.message : String(error) }
     }
   })
-  handle('yan:deleteSession', async (path: string) => {
-    const tokens: string[] = []
-    try {
-      await host.sessionChains.load()
-      const chain = host.sessionChains.chainOf(path)
-      const targets = chain && chain.segments.length > 1 ? planHistoryRead(chain) : [path]
-      const affected = new Set<string>(targets.map((target) => resolve(target)))
-      for (const item of await sessionsToDelete(resolve(path)).catch(() => [])) affected.add(item.path)
-      const current = host.ac()?.getState()?.sessionFile
-      if (current && affected.has(resolve(current))) {
-        return { ok: false, error: '不能删除当前正在使用的会话' }
-      }
-      for (const target of affected) await host.runners()?.stopBySessionFile(target)
-      for (const target of targets) {
-        tokens.push(await deleteSession(target, host.ac()?.getState()?.sessionFile))
-      }
-      for (const target of targets) closeTerminalsForOwner(target)
-      await host.sessionChains.forget(path).catch(() => false)
-      host.pushRunners()
-      return { ok: true, undoToken: tokens.join('|') }
-    } catch (e) {
-      const remaining: string[] = []
-      for (const token of tokens.reverse()) {
-        try {
-          await restoreSession(token)
-        } catch {
-          remaining.push(token)
-        }
-      }
-      host.pushRunners()
-      return {
-        ok: false,
-        error: `${e instanceof Error ? e.message : String(e)}${remaining.length ? '；部分会话恢复失败，仍可使用撤销令牌重试恢复' : ''}`,
-        ...(remaining.length ? { undoToken: remaining.join('|') } : {})
-      }
-    }
-  })
+  handle('yan:deleteSession', async (path: string) => deleteSessionChain(host, path))
   handle('yan:restoreSession', async (undoToken: string) => {
     try {
       const tokens = String(undoToken ?? '')

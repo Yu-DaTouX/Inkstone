@@ -122,6 +122,15 @@ try {
   assert.equal((await host.remoteStopSubagent('s1', 'sub-2', runs, stopper)).status, 409, '已结束的子代理不再停止')
   assert.deepEqual(stopped, ['sub-1'], '只停止了目标子代理')
 
+  const archiveRunning = await host.remoteSetSessionFlag('s-branch', { archived: true })
+  assert.equal(archiveRunning.status, 409, '运行中的会话不能归档')
+  assert.equal((await host.remoteSetSessionFlag('missing', { pinned: true })).status, 404, '置顶不存在的会话返回 404')
+  assert.equal((await host.remoteDeleteSession('missing')).status, 404, '删除不存在的会话返回 404')
+  assert.equal((await host.remoteSwitchBranch('s-branch', 'main')).status, 409, '运行中的会话不能切换分支')
+  assert.deepEqual((await host.remoteSearch('   ')).data, { hits: [] }, '空查询不搜索')
+  assert.equal(host.remoteSessionSummary({ id: 'p', title: 't', path: 'x', cwd: 'C:\a', pinned: true, archivedAt: 5, createdAt: 1, updatedAt: 2, messageCount: 0 }).pinned, true, '会话摘要带置顶标记')
+  assert.equal(host.remoteSessionState({ ...state, pendingModelChange: { previousThinkingLevel: 'off' } }).pendingModelChange, true, '状态只带「有待生效的切换」标记')
+
   const summary = host.remoteSessionSummary({
     id: 's-branch',
     title: '分支会话',

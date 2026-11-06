@@ -57,6 +57,12 @@ export interface RemoteServerHandlers {
   subagents?(sessionId: string): Promise<RemoteOperationResult>
   insight?(sessionId: string): Promise<RemoteOperationResult>
   stopSubagent?(sessionId: string, runId: string): Promise<RemoteOperationResult>
+  sessionFlags?(sessionId: string, flags: { pinned?: boolean; archived?: boolean }): Promise<RemoteOperationResult>
+  deleteSession?(sessionId: string): Promise<RemoteOperationResult>
+  compact?(sessionId: string): Promise<RemoteOperationResult>
+  branches?(sessionId: string): Promise<RemoteOperationResult>
+  switchBranch?(sessionId: string, branch: string): Promise<RemoteOperationResult>
+  search?(query: string, limit: number): Promise<RemoteOperationResult>
   image?(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult>
   command(command: RemoteCommand): Promise<RemoteOperationResult>
   questions?(): Promise<RemotePendingQuestion[]>
@@ -585,9 +591,14 @@ export class RemoteServer {
         ...(this.options.handlers.transcribe ? ['voice-transcribe'] : []),
         ...(this.options.handlers.subagents ? ['subagents'] : []),
         ...(this.options.handlers.insight ? ['insight'] : []),
-        ...(this.options.handlers.stopSubagent ? ['subagent-stop'] : [])
+        ...(this.options.handlers.stopSubagent ? ['subagent-stop'] : []),
+        ...(this.options.handlers.sessionFlags ? ['session-flags'] : []),
+        ...(this.options.handlers.deleteSession ? ['session-delete'] : []),
+        ...(this.options.handlers.compact ? ['compact'] : []),
+        ...(this.options.handlers.branches && this.options.handlers.switchBranch ? ['branches'] : []),
+        ...(this.options.handlers.search ? ['search'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight', 'subagent-stop'])]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents', 'insight', 'subagent-stop', 'session-flags', 'session-delete', 'compact', 'branches', 'search'])]
       const allowed = isPeer || isAgent ? [] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
@@ -657,6 +668,21 @@ export class RemoteServer {
       if (!validSessionId(sessionId)) return writeError(res, 400, '会话 id 无效')
       if (!this.options.handlers.subagents) return writeError(res, 404, '请更新电脑端')
       this.writeOperation(res, await this.options.handlers.subagents(sessionId))
+      return
+    }
+
+    if (req.method === 'GET' && url.pathname === '/remote/v1/search') {
+      if (!this.options.handlers.search) return writeError(res, 404, '请更新电脑端')
+      const query = (url.searchParams.get('q') ?? '').slice(0, 200)
+      this.writeOperation(res, await this.options.handlers.search(query, 30))
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && parts[4] === 'branches') {
+      const sessionId = decodeURIComponent(parts[3])
+      if (!validSessionId(sessionId)) return writeError(res, 400, '会话 id 无效')
+      if (!this.options.handlers.branches) return writeError(res, 404, '请更新电脑端')
+      this.writeOperation(res, await this.options.handlers.branches(sessionId))
       return
     }
 
@@ -787,6 +813,38 @@ export class RemoteServer {
         if (!validText(body.level, 40)) return writeError(res, 400, '思考档位无效')
         const level = body.level
         await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'thinking', sessionId, level }))
+        return
+      }
+      if (operation === 'flags') {
+        const handler = this.options.handlers.sessionFlags
+        if (!handler) return writeError(res, 404, '请更新电脑端')
+        const flags: { pinned?: boolean; archived?: boolean } = {}
+        if (typeof body.pinned === 'boolean') flags.pinned = body.pinned
+        if (typeof body.archived === 'boolean') flags.archived = body.archived
+        if (!Object.keys(flags).length) return writeError(res, 400, '需要 pinned 或 archived')
+        await this.idempotent(req, res, caller, false, () => handler(sessionId, flags), `flags:${sessionId}:${JSON.stringify(flags)}`)
+        return
+      }
+      if (operation === 'delete') {
+        const handler = this.options.handlers.deleteSession
+        if (!handler) return writeError(res, 404, '请更新电脑端')
+        if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, '删除会话需要配对的手机', 'paired_user_required')
+        if (body.confirm !== true) return writeError(res, 400, '删除需要明确确认')
+        await this.idempotent(req, res, caller, false, () => handler(sessionId), `delete:${sessionId}`)
+        return
+      }
+      if (operation === 'compact') {
+        const handler = this.options.handlers.compact
+        if (!handler) return writeError(res, 404, '请更新电脑端')
+        await this.idempotent(req, res, caller, false, () => handler(sessionId), `compact:${sessionId}`)
+        return
+      }
+      if (operation === 'branch') {
+        const handler = this.options.handlers.switchBranch
+        if (!handler) return writeError(res, 404, '请更新电脑端')
+        if (!validText(body.branch, 250)) return writeError(res, 400, '分支名无效')
+        const branch = body.branch
+        await this.idempotent(req, res, caller, false, () => handler(sessionId, branch), `branch:${sessionId}:${branch}`)
         return
       }
       if (operation === 'rename') {

@@ -117,7 +117,7 @@ import { createSubagentQuotaWatch } from './subagent-quota-watch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
-import { configureRemoteHost, cwdWithin, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, remoteInsight, remoteStopSubagent, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
+import { configureRemoteHost, cwdWithin, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, remoteInsight, remoteStopSubagent, remoteSetSessionFlag, remoteDeleteSession, remoteCompact, remoteBranches, remoteSwitchBranch, remoteSearch, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc, voiceTranscriber } from './ipc/voice-ipc'
 import { registerAndroidIpc } from './ipc/android-ipc'
 import { registerAppUpdate } from './app-update'
@@ -1414,6 +1414,12 @@ async function startRemoteServer(): Promise<void> {
         models: remoteModels,
         subagents: async (sessionId) => remoteSubagents(sessionId, (await subagentService.get()).list()),
         insight: remoteInsight,
+        sessionFlags: remoteSetSessionFlag,
+        deleteSession: remoteDeleteSession,
+        compact: remoteCompact,
+        branches: remoteBranches,
+        switchBranch: remoteSwitchBranch,
+        search: remoteSearch,
         stopSubagent: async (sessionId, runId) => {
           const subagents = await subagentService.get()
           return remoteStopSubagent(sessionId, runId, subagents.list(), (id) => subagents.stop(id))
