@@ -1,5 +1,6 @@
 import type { SubagentRun } from '../shared/ipc'
 import { buildSubagentNotice } from '../shared/subagent-notice'
+import { slimNoticeRun, type SubagentNoticeStore } from './subagent-notice-store'
 
 export const NOTICE_COALESCE_WINDOW_MS = 3_000
 export const NOTICE_BATCH_MIN_WAIT_MS = 60_000
@@ -11,11 +12,13 @@ export const NOTICE_MAX_UNDELIVERED_RUNS = 20
 const READ_RESULTS_MAX = 200
 
 const readResults = new Map<string, number | undefined>()
+const readListeners = new Set<(id: string, endedAt?: number) => void>()
 
 export function markSubagentResultRead(id: string, endedAt?: number): void {
   readResults.delete(id)
   readResults.set(id, endedAt)
   while (readResults.size > READ_RESULTS_MAX) readResults.delete(readResults.keys().next().value as string)
+  for (const listener of readListeners) listener(id, endedAt)
 }
 
 function resultAlreadyRead(run: SubagentRun): boolean {
@@ -46,6 +49,7 @@ export interface SubagentNotifierDeps {
   enabled(): boolean | Promise<boolean>
   runningSiblings?(run: SubagentRun): number | Promise<number>
   now?(): number
+  store?: SubagentNoticeStore
 }
 
 export type SubagentNotifier = ((run: SubagentRun) => void) & { retry(): void }
@@ -123,6 +127,32 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
   const undelivered = new Map<string, SubagentRun[]>()
   const failedAttempts = new Map<string, number>()
   let retrying = false
+  const persist = (): void => {
+    if (!deps.store) return
+    const state: Record<string, SubagentRun[]> = {}
+    for (const [key, runs] of undelivered) state[key] = runs.map(slimNoticeRun)
+    try {
+      deps.store.save(state)
+    } catch {
+    }
+  }
+  if (deps.store) {
+    try {
+      for (const [key, runs] of Object.entries(deps.store.load())) if (runs.length) undelivered.set(key, runs)
+    } catch {
+    }
+    readListeners.add((id, endedAt) => {
+      let changed = false
+      for (const [key, runs] of [...undelivered]) {
+        const kept = runs.filter((run) => !(run.id === id && (endedAt === undefined || run.endedAt === endedAt)))
+        if (kept.length === runs.length) continue
+        changed = true
+        if (kept.length) undelivered.set(key, kept)
+        else undelivered.delete(key)
+      }
+      if (changed) persist()
+    })
+  }
   const now = (): number => deps.now?.() ?? Date.now()
 
   const siblingsOf = async (run: SubagentRun): Promise<number> => {
@@ -170,6 +200,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
         failedAttempts.delete(key)
       }
     }
+    persist()
     console.warn(
       `[subagent-notify] 未投递通知超过 ${NOTICE_MAX_UNDELIVERED_RUNS} 条上限，丢弃最旧的 ${dropped.size} 条：${runIds([...dropped])}`
     )
@@ -185,6 +216,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     failedAttempts.set(key, attempts)
     undelivered.set(key, [...runs, ...(undelivered.get(key) ?? [])])
     trimUndelivered()
+    persist()
   }
 
   const flush = (key: string): void => {
@@ -197,19 +229,25 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
       if (!(await deps.enabled())) return
       const runs = takeUnread([...(undelivered.get(key) ?? []), ...batch.runs])
       undelivered.delete(key)
-      if (runs.length === 0) return
+      if (runs.length === 0) {
+        persist()
+        return
+      }
       const target = deps.find(runs[runs.length - 1])
       if (!target || target.holdsNotices?.()) {
         undelivered.set(key, runs)
         trimUndelivered()
+        persist()
         return
       }
       if (targetBusy(target)) {
         holdUntilIdle(key, runs)
         return
       }
-      if (await deliver(target, runs)) failedAttempts.delete(key)
-      else keepUndelivered(key, runs)
+      if (await deliver(target, runs)) {
+        failedAttempts.delete(key)
+        persist()
+      } else keepUndelivered(key, runs)
     })().catch(() => undefined)
   }
 
@@ -230,15 +268,23 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     void (async () => {
       if (!(await deps.enabled())) {
         undelivered.clear()
+        persist()
         return
       }
-      for (const [key, runs] of [...undelivered]) {
+      for (const [key, held] of [...undelivered]) {
         if (pending.has(key)) continue
-        const target = deps.find(runs[runs.length - 1])
+        const target = deps.find(held[held.length - 1])
         if (!target || target.holdsNotices?.()) continue
         undelivered.delete(key)
-        if (await deliver(target, runs)) failedAttempts.delete(key)
-        else keepUndelivered(key, runs)
+        const runs = takeUnread(held)
+        if (runs.length === 0) {
+          persist()
+          continue
+        }
+        if (await deliver(target, runs)) {
+          failedAttempts.delete(key)
+          persist()
+        } else keepUndelivered(key, runs)
       }
     })().catch(() => undefined).finally(() => {
       retrying = false
