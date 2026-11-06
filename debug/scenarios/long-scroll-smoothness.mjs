@@ -167,6 +167,7 @@ export default async function run({ cdp, waitFor, report, sleep, log, shot, out 
       await waitFor(`!s.switchLoading && s.session?.sessionFile === ${JSON.stringify(file)} && s.messages.length > 20`, 120000, 10)
       switchTimes.push(Date.now() - t0)
     }, 1500)
+    await record('revisit-up', () => wheel(-400, 100, 8), 800)
     log('switchMs', switchTimes)
     report.switchMs = switchTimes
   }
