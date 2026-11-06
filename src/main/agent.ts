@@ -1002,6 +1002,11 @@ export class AgentController extends EventEmitter {
       if (this.rpc !== rpc) return
       this.operations.reset()
       this.flushNow()
+      const interrupted = this.streaming
+      if (interrupted?.thinkingLive) {
+        interrupted.thinkingLive = false
+        this.push({ ch: 'msg-update', payload: { id: interrupted.id, patch: { thinkingLive: false } } })
+      }
       this.streaming = null
       for (const call of this.items.cancelUnfinishedTools(Date.now())) this.pushTool(call)
       this.items.discardStreaming()

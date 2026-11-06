@@ -94,7 +94,7 @@ export const FAKE_TRIGGERS = {
   MANYTOOLS: '连续 40 步，每步一句话加一次 bash 工具调用',
   BIGOUT: '一次 bash 输出 6000 行，期间分段停顿',
   WRITES: '用 write 工具新建两个文件（notes/a.md、notes/b.md），再流出一句答复，用来看运行结束时的改动卡',
-  FAIL: '返回 502，用来看模型错误与重试',
+  FAIL: '返回 502，用来看模型错误与重试；FAILQUOTA 429 额度用完，FAILAUTH 401，FAILHTML 503 网关错页，FAILNET 断开连接，FAILHANG 不响应，FAILFLAKY 前两次 502 之后成功，FAILMID 流到一半断开',
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
   MOBILEDEMO: '先用 read 读一张仓库里的 PNG，再发一个多字段表单提问，最后流出带长行代码块的答复，用来看手机端看图、表单与代码',
@@ -102,7 +102,7 @@ export const FAKE_TRIGGERS = {
   FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
   'CAMSHOT': '仿「拍照确认」：6 步（含 STEPS<n> 时为 n 步），每步一次快 bash、一次 read 读 DIR=<目录>（缺省为项目里 cam）下的 check<步>.png、一句叙述、一次约 20 秒的慢 bash；图片由场景预先放好',
-  SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM；写成 SUBAGENTS<n> 时派 n 个），再按 STORM 跑 60 步',
+  SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM；写成 SUBAGENTS<n> 时派 n 个；含 SUBBAD 时子代理的模型请求断网），再按 STORM 跑 60 步',
   'SUBSTORM-<名字>': '子代理压测：40 步，每步叙述加一次改文件（sub/）并输出 60 行的 bash',
   '<subagent-notification': '子代理完成回传只回一句，避免再次触发',
   [SUGGESTION_MARKER]: '砚的「预测下一句」请求，固定回「继续下一步」'
@@ -209,7 +209,7 @@ async function respond(res, text, done, requestNo) {
       else await streamText('子任务四十步完成。', 20, 10)
     } else if (text.includes('SUBAGENTS')) {
       const count = Number(/SUBAGENTS(\d+)/.exec(text)?.[1] ?? 4)
-      if (done < 1) await callTool('bash', { command: `for i in $(seq 1 ${count}); do yan subagent start --task "SUBSTORM-sub$i 压测子任务" --title "压测$i" --model fake/fake-model; done`, description: 'start subagents' })
+      if (done < 1) await callTool('bash', { command: `for i in $(seq 1 ${count}); do yan subagent start --task "${text.includes('SUBBAD') ? 'FAILNET' : 'SUBSTORM'}-sub$i 压测子任务" --title "压测$i" --model fake/fake-model; done`, description: 'start subagents' })
       else if (done < 61) await stormStep('storm', stormTag(text, 'SUBAGENTS'), done - 1, 120)
       else await streamText(longText(), 24, 8)
     } else if (text.includes('CAMSHOT')) {
@@ -287,6 +287,7 @@ async function respond(res, text, done, requestNo) {
 
 export function startFakeModel(port = 0) {
   const requests = []
+  const flaky = new Map()
   const server = createServer((req, res) => {
     let body = ''
     req.on('data', (chunk) => { body += chunk })
@@ -298,7 +299,48 @@ export function startFakeModel(port = 0) {
       const done = toolOutputsSinceUser(input)
       const images = JSON.stringify(input).split('"input_image"').length - 1
       requests.push({ at: Date.now(), text: text.slice(0, 40), done, tools: (json.tools ?? []).length, images, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
-      if (text.includes('FAIL')) {
+      const failTag = /FAIL[A-Z0-9]+/.exec(text)?.[0]
+      const flakyKey = text.slice(0, 40)
+      if (failTag === 'FAILQUOTA') {
+        res.writeHead(429, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { type: 'insufficient_quota', code: 'insufficient_quota', message: 'You exceeded your current quota, please check your plan and billing details.' } }))
+        return
+      }
+      if (failTag === 'FAILAUTH') {
+        res.writeHead(401, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { message: 'Incorrect API key provided' } }))
+        return
+      }
+      if (failTag === 'FAILHTML') {
+        res.writeHead(503, { 'content-type': 'text/html' })
+        res.end('<html><body><h1>503 Service Unavailable</h1><pre>at upstream.connect (proxy.js:42:13)</pre></body></html>')
+        return
+      }
+      if (failTag === 'FAILNET') {
+        req.socket.destroy()
+        return
+      }
+      if (failTag === 'FAILHANG') return
+      if (failTag === 'FAILFLAKY') {
+        flaky.set(flakyKey, (flaky.get(flakyKey) ?? 0) + 1)
+        if (flaky.get(flakyKey) <= 2) {
+          res.writeHead(502, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: 'fake flaky upstream failure' } }))
+          return
+        }
+      }
+      if (failTag === 'FAILMID') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        const send = (event) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+        send({ type: 'response.created', response: { id: 'resp_mid', status: 'in_progress', output: [] } })
+        const item = { id: 'msg_mid', type: 'message', role: 'assistant', status: 'in_progress', content: [] }
+        send({ type: 'response.output_item.added', output_index: 0, item })
+        send({ type: 'response.content_part.added', item_id: item.id, output_index: 0, content_index: 0, part: { type: 'output_text', text: '' } })
+        send({ type: 'response.output_text.delta', item_id: item.id, output_index: 0, content_index: 0, delta: '已经写到一半的回答，然后连接断开' })
+        setTimeout(() => req.socket.destroy(), 600)
+        return
+      }
+      if (text.includes('FAIL') && failTag !== 'FAILFLAKY') {
         res.writeHead(502, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ error: { message: 'fake upstream failure' } }))
         return

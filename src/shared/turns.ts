@@ -336,6 +336,12 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     cur.sourceIds.push(m.id)
     if (m.id === streamingId) cur.streaming = true
 
+    if (cur.errorMsgId && cur.errorMsgId !== m.id) {
+      const retried = `${cur.errorMsgId}#`
+      cur.texts = cur.texts.filter((item) => !item.id.startsWith(retried))
+      for (const part of cur.segments) part.texts = part.texts.filter((item) => !item.id.startsWith(retried))
+    }
+
     const seg = (): SegmentAccumulator => {
       const last = cur!.segments[cur!.segments.length - 1]
       if (last && !last.closed) return last
