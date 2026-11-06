@@ -157,7 +157,8 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   const timeout = m.reduceAction(s, { type: 'result', result: fail('timeout', false) })
   assert.equal(timeout.phase, 'failed')
   assert.equal(timeout.recovery, 'refresh')
-  assert.equal(m.reduceAction(s, { type: 'result', result: fail('forbidden', true) }).recovery, 'retry')
+  assert.equal(m.reduceAction(s, { type: 'result', result: fail('forbidden', true) }).recovery, 'none')
+  assert.equal(m.reduceAction(s, { type: 'result', result: fail('other', true) }).recovery, 'retry')
   assert.equal(m.reduceAction(s, { type: 'result', result: fail('not-mergeable', false) }).recovery, 'refresh')
   assert.equal(m.reduceAction(s, { type: 'result', result: fail('invalid-input', true) }).recovery, 'none')
   assert.equal(m.reduceAction(s, { type: 'result', result: { ok: false } }).recovery, 'refresh')
@@ -173,7 +174,7 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.deepEqual(m.reduceAction(timeout, { type: 'reset' }), { phase: 'idle' })
   assert.equal(
     m.failureCause({ code: 'git-failed', message: 'x', hint: '', retrySafe: true, gitFailure: { code: 'dirty-blocks-switch', message: '冲突', detail: 'a.ts', retrySafe: true } }),
-    'code: git-failed\ngit: dirty-blocks-switch\n冲突\na.ts'
+    'code: git-failed\nx\ngit: dirty-blocks-switch\n冲突\na.ts'
   )
 }
 

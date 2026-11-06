@@ -1,5 +1,4 @@
 import type { SidebarThreadSortOrder } from './contracts'
-import type { EnvironmentThreadShell } from './models'
 
 export interface ThreadSortInput {
   readonly createdAt: string
@@ -45,47 +44,6 @@ export function sortThreads<T extends { readonly id: string } & ThreadSortInput>
     .sort(
       (left, right) =>
         right.timestamp - left.timestamp ||
-        (left.thread.id < right.thread.id ? 1 : left.thread.id > right.thread.id ? -1 : 0)
-    )
-    .map(({ thread }) => thread)
-}
-
-export type SettledThreadTimestampInput = Pick<
-  EnvironmentThreadShell,
-  'settledAt' | 'latestUserMessageAt' | 'latestRun' | 'updatedAt'
->
-
-export function resolveSettledThreadTimestamp(thread: SettledThreadTimestampInput): string | null {
-  if (thread.settledAt !== null && toSortableTimestamp(thread.settledAt) !== null) return thread.settledAt
-  let latest: string | null = null
-  let latestMs = Number.NEGATIVE_INFINITY
-  for (const candidate of [
-    thread.latestUserMessageAt,
-    thread.latestRun?.requestedAt,
-    thread.latestRun?.startedAt,
-    thread.latestRun?.completedAt
-  ]) {
-    const parsed = toSortableTimestamp(candidate ?? undefined)
-    if (candidate !== null && candidate !== undefined && parsed !== null && parsed > latestMs) {
-      latest = candidate
-      latestMs = parsed
-    }
-  }
-  if (latest !== null) return latest
-  return toSortableTimestamp(thread.updatedAt) === null ? null : thread.updatedAt
-}
-
-export function sortSettledThreads<T extends SettledThreadTimestampInput & { readonly id: string }>(
-  threads: readonly T[]
-): T[] {
-  return threads
-    .map((thread) => {
-      const timestamp = resolveSettledThreadTimestamp(thread)
-      return { thread, timestampMs: timestamp === null ? 0 : Date.parse(timestamp) }
-    })
-    .sort(
-      (left, right) =>
-        right.timestampMs - left.timestampMs ||
         (left.thread.id < right.thread.id ? 1 : left.thread.id > right.thread.id ? -1 : 0)
     )
     .map(({ thread }) => thread)

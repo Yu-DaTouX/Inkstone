@@ -296,6 +296,12 @@ group('过程摘要：按工具类型归类并带改动行数')
   ok(mixed.creates.length === 1 && mixed.creates[0].added === 3 && mixed.creates[0].removed === 1, '新建后再编辑仍算新建，行数累加', mixed.creates)
   ok(mixed.searches === 1 && mixed.other === 0, '提问不算其他操作，grep 记为搜索', mixed)
   ok(mixed.tools === 8, '其余工具数按调用计，提问不算', mixed.tools)
+  const twoAgents = processSummary([seg('ag', { tools: [
+    tool('ag1', 'bash', 'ok', { args: { command: 'yan subagent start --task a && yan subagent start --task b' } }),
+    tool('ag2', 'bash', 'ok', { args: { command: 'yan subagent start --task c' } }),
+    tool('qq', 'question', 'running', { args: { question: 'x' } })
+  ] })])
+  ok(twoAgents.agents === 3 && twoAgents.questions === 1 && twoAgents.other === 0, '一条命令派出多个子 Agent 按个数计，进行中的提问单独归类', twoAgents)
   const nested = processSummary([seg('cm', { tools: [
     tool('cm1', 'codemode', 'ok', { args: { code: 'x' } }),
     tool('cm1a', 'bash', 'ok', { parentToolCallId: 'cm1', args: { command: 'ls' } }),

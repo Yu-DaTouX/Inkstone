@@ -8,6 +8,17 @@
     overflow: auto;
   }
 
+  .v3-office-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  .v3-office-info {
+    display: inline-flex;
+    cursor: help;
+  }
+
   .v3-office--sheet {
     overflow: hidden;
   }

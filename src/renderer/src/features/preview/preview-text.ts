@@ -159,6 +159,7 @@ export interface PreviewText {
   fold: string
   unfold: string
   folded: string
+  viewOptions: string
   wordWrap: string
   indentGuides: string
   showWhitespace: string
@@ -352,6 +353,7 @@ const ZH: PreviewText = {
   fold: '折叠',
   unfold: '展开',
   folded: '⋯',
+  viewOptions: '显示',
   wordWrap: '自动换行',
   indentGuides: '缩进参考线',
   showWhitespace: '显示空白字符',
@@ -545,6 +547,7 @@ const EN: PreviewText = {
   fold: 'Fold',
   unfold: 'Unfold',
   folded: '⋯',
+  viewOptions: 'View',
   wordWrap: 'Word wrap',
   indentGuides: 'Indent guides',
   showWhitespace: 'Show whitespace',

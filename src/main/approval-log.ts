@@ -1,7 +1,7 @@
 import { copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { isApprovalChoice, normalizeApprovalFeedback, type ApprovalAnswer, type ApprovalKind, type ApprovalReceipt, type ApprovalRequest } from '../shared/approval'
+import { approvalHeadline, isApprovalChoice, normalizeApprovalFeedback, type ApprovalAnswer, type ApprovalKind, type ApprovalReceipt, type ApprovalRequest } from '../shared/approval'
 import { isSafeSessionId } from './session-id'
 import { YAN_DIR } from './paths'
 
@@ -77,7 +77,7 @@ export function approvalReceiptOf(request: ApprovalRequest, answer: ApprovalAnsw
     subagentId: request.subagentId,
     kind: request.kind,
     tool: request.tool,
-    title: request.title,
+    title: approvalHeadline(request),
     choice: answer.choice,
     feedback: answer.feedback,
     askedAt: request.createdAt,

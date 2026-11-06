@@ -1,12 +1,14 @@
 import { useEffect, useState, type JSX } from 'react'
+import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { blockedQuotaWindows } from '../../../../shared/quota-resume'
+import { EMPTY_MODEL_ERROR_NOTICE, modelErrorCause, modelErrorResetTime, type ModelErrorCause } from '../../../../shared/model-errors'
 import { viewMatchesProjectedSession, sessionViewIdentity } from './view-state'
 import { Button } from '../../ui'
 import { Card, CardActions, CardBody, CardCode, CardHead, CardStatus, CardSummary, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
-import { useSessionText } from './text'
+import { useSessionText, type SessionTextKey } from './text'
 import { forgetToolExpansion, toolExpansionScopeOf } from './tool-expansion'
 import { errorCardModel, errorTitleKey, promptForTurn, type ErrorCardAction } from './turn-lines'
 import './error-card.css'
@@ -15,10 +17,35 @@ const PRIMARY_ACTIONS: ReadonlySet<ErrorCardAction> = new Set<ErrorCardAction>([
 
 const RAW_MARK = '原因：'
 
+const CAUSE_HINT: Record<ModelErrorCause, SessionTextKey> = {
+  empty: 'errHintEmpty',
+  refused: 'errHintRefused',
+  quotaRate: 'errHintQuotaRate',
+  quotaBalance: 'errHintQuotaBalance',
+  quotaUsage: 'errHintQuotaUsage',
+  auth: 'errHintAuth',
+  context: 'errHintContext',
+  aborted: 'errHintAborted',
+  request: 'errHintRequest',
+  restart: 'errHintRestart',
+  stream: 'errHintStream',
+  timeout: 'errHintTimeout',
+  overload: 'errHintOverload',
+  unreachable: 'errHintUnreachable',
+  unknown: 'errHintUnknown'
+}
+
 function splitErrorBody(body: string): { explanation: string; raw: string } {
+  if (body === EMPTY_MODEL_ERROR_NOTICE) return { explanation: body, raw: '' }
   const at = body.lastIndexOf(RAW_MARK)
-  if (at < 0) return { explanation: body, raw: '' }
+  if (at < 0) return { explanation: '', raw: body }
   return { explanation: body.slice(0, at).trim(), raw: body.slice(at + RAW_MARK.length).trim() }
+}
+
+function errorHint(raw: string, tt: (key: SessionTextKey, vars?: Record<string, string | number>) => string): string {
+  const cause = raw ? modelErrorCause(raw) : 'empty'
+  const reset = cause === 'quotaUsage' ? modelErrorResetTime(raw) : ''
+  return reset ? `${tt(CAUSE_HINT[cause])} · ${tt('errHintQuotaReset', { time: reset })}` : tt(CAUSE_HINT[cause])
 }
 
 function isLatestTurn(sourceIds: readonly string[], messages: readonly { id: string; role: string }[]): boolean {
@@ -32,6 +59,7 @@ function isLatestTurn(sourceIds: readonly string[], messages: readonly { id: str
 
 export function ErrorCard({ sourceIds, error, readOnly = false, recovered = false }: { sourceIds: readonly string[]; error: string; readOnly?: boolean; recovered?: boolean }): JSX.Element | null {
   const tt = useSessionText()
+  const zh = useI18n().lang !== 'en-US'
   const send = useStore((s) => s.send)
   const cycleModel = useStore((s) => s.cycleModel)
   const compact = useStore((s) => s.compact)
@@ -103,12 +131,9 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
 
   const title = tt(errorTitleKey(model))
   const bodyParts = splitErrorBody(model.body)
-  const explanation = (
-    <>
-      {windowFull ? <p className="v3-errorcard-body">{tt('errorQuotaWindowFull')}</p> : null}
-      <p className="v3-errorcard-body" data-testid="v3-error-explanation">{bodyParts.explanation}</p>
-    </>
-  )
+  const hint = windowFull ? tt('errorQuotaWindowFull') : errorHint(bodyParts.raw, tt)
+  const hintTip = zh && bodyParts.explanation ? bodyParts.explanation : undefined
+  const explanation = <p className="v3-errorcard-body" data-testid="v3-error-explanation" title={hintTip}>{hint}</p>
   const rawBlock = bodyParts.raw ? <CardCode tone="fail" className="v3-errorcard-raw" data-testid="v3-error-raw">{bodyParts.raw}</CardCode> : null
   const copyButton = (
     <>
@@ -128,13 +153,14 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
     </>
   )
 
-  if (recovered) {
+  const stopped = model.kind === 'aborted' && !recovered
+  if (recovered || stopped) {
     return (
-      <Card receipt padding="none" className="v3-errorcard" role="status" data-testid="v3-error-card" data-kind={model.kind} data-recovered>
+      <Card receipt padding="none" className="v3-errorcard" role="status" data-testid="v3-error-card" data-kind={model.kind} data-recovered={recovered || undefined} data-stopped={stopped || undefined}>
         <CardSummary expanded={detailsOpen} onPress={() => setDetailsOpen((open) => !open)} title={tt('errViewDetails')} data-testid="v3-error-toggle">
-          <CardStatus tone="muted" icon={<Icon name="refresh" size={13} />}>{tt('errRecoveredStatus')}</CardStatus>
-          <CardTitle clamp className="v3-errorcard-title" data-testid="v3-error-title">{title}</CardTitle>
-          {detailsOpen ? null : <span className="v3-errorcard-preview">{bodyParts.explanation}</span>}
+          <CardStatus tone="muted" icon={<Icon name={stopped ? 'stop' : 'refresh'} size={13} />}>{stopped ? tt('errStoppedStatus') : tt('errRecoveredStatus')}</CardStatus>
+          {stopped ? null : <CardTitle clamp className="v3-errorcard-title" data-testid="v3-error-title">{title}</CardTitle>}
+          {detailsOpen ? null : <span className="v3-errorcard-preview">{hint}</span>}
         </CardSummary>
         {detailsOpen ? (
           <CardBody className="v3-errorcard-details" data-testid="v3-error-body">

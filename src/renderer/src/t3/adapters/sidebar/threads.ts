@@ -3,7 +3,7 @@ import { useRunsV3 } from '../../../state/runs-v3'
 import { useStore } from '../../../state/store'
 import { sessionActivityAt } from '../../../features/sidebar/sidebar-model'
 import type { RunSnapshot } from '../../../../../shared/runs'
-import type { SubagentRun } from '../../../../../shared/ipc'
+import type { SessionSummary, SubagentRun } from '../../../../../shared/ipc'
 import { scopedKeyOf, type SidebarThreadView, type ThreadRef } from './types'
 import { buildSidebarSections, type SidebarSections } from './sections'
 
@@ -68,6 +68,36 @@ function subagentsSinceOf(signature: string): ReadonlyMap<string, number> {
   return since
 }
 
+function firstUserLine(messages: ReadonlyArray<{ role: string; text?: string }>): string {
+  const text = messages.find((message) => message.role === 'user' && message.text?.trim())?.text ?? ''
+  return text.trim().split('\n')[0].slice(0, 80)
+}
+
+export function withUnlistedRuns(sessions: readonly SessionSummary[], runs: readonly RunSnapshot[], current?: { sessionId: string; name: string; cwd?: string }): readonly SessionSummary[] {
+  const ids = new Set(sessions.map((session) => session.id))
+  const paths = new Set(sessions.map((session) => session.path))
+  const pending: SessionSummary[] = []
+  for (const run of runs) {
+    const live = run.phase.kind === 'running' || run.phase.kind === 'needs-you' || run.phase.kind === 'stalled' || run.phase.kind === 'queued'
+    if (run.kind !== 'session' || !run.sessionPath || !live || ids.has(run.sessionId) || paths.has(run.sessionPath)) continue
+    ids.add(run.sessionId)
+    paths.add(run.sessionPath)
+    pending.push({
+      id: run.sessionId,
+      path: run.sessionPath,
+      cwd: current?.sessionId === run.sessionId ? current.cwd ?? '' : '',
+      title: run.title || (current?.sessionId === run.sessionId ? current.name : ''),
+      named: false,
+      createdAt: run.startedAt,
+      updatedAt: run.startedAt,
+      lastActivityAt: run.startedAt,
+      messageCount: 0,
+      ...(run.projectId ? { projectId: run.projectId } : {})
+    })
+  }
+  return pending.length === 0 ? sessions : [...sessions, ...pending]
+}
+
 export function useSidebarSections(): SidebarSections {
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
@@ -75,12 +105,15 @@ export function useSidebarSections(): SidebarSections {
   const projects = useStore((s) => s.settings?.projects)
   const projectNames = useStore((s) => s.settings?.projectNames)
   const runs = useSidebarRuns()
+  const currentId = useStore((s) => s.session?.sessionId)
+  const currentName = useStore((s) => s.session?.sessionName || firstUserLine(s.messages))
+  const currentCwd = useStore((s) => s.session?.cwd)
   const subagentSignature = useStore((s) => liveSubagentSignature(s.subagents))
   const now = useMinuteClock()
   return useMemo(
     () =>
       buildSidebarSections({
-        sessions,
+        sessions: withUnlistedRuns(sessions, runs, currentId && currentName ? { sessionId: currentId, name: currentName, cwd: currentCwd } : undefined),
         runs,
         projects: projects ?? [],
         projectNames: projectNames ?? {},
@@ -89,7 +122,7 @@ export function useSidebarSections(): SidebarSections {
         now,
         subagentsSince: subagentsSinceOf(subagentSignature)
       }),
-    [sessions, runs, projects, projectNames, titles, manualTitles, now, subagentSignature]
+    [sessions, runs, currentId, currentName, currentCwd, projects, projectNames, titles, manualTitles, now, subagentSignature]
   )
 }
 

@@ -81,7 +81,7 @@ export type PeerConnectionState =
   | { state: 'waiting'; since: number }
   | { state: 'connected'; grant: PeerGrantView }
   | { state: 'ended' }
-  | { state: 'failed'; error: string }
+  | { state: 'failed'; error: string; code?: string }
 
 export interface PeerStatusView {
   peers: Array<PeerRecordView & { connection: PeerConnectionState }>

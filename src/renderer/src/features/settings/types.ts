@@ -134,6 +134,9 @@ const LEGACY_VIEW_TO_SECTION: Record<string, SettingsSectionId> = {
   github: 'code',
   android: 'capabilities',
   usage: 'usage',
+  schedule: DEFAULT_SETTINGS_SECTION,
+  schedules: DEFAULT_SETTINGS_SECTION,
+  scripts: DEFAULT_SETTINGS_SECTION,
   ...GENERAL_LEGACY_MAP
 }
 

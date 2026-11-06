@@ -46,7 +46,7 @@
     align-items: center;
     justify-content: flex-start;
     width: 24px;
-    height: 10px;
+    height: 16px;
     padding: 0 var(--s-2);
     cursor: pointer;
   }

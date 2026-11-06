@@ -37,15 +37,3 @@ export function heldModifiersReleased(
   if (primary === 'alt') return !state.altKey
   return !state.ctrlKey && !state.metaKey
 }
-
-export function relativeAge(at: number | undefined, now: number, lang: 'zh-CN' | 'en-US'): string {
-  if (!at || !Number.isFinite(at)) return ''
-  const minutes = Math.max(0, Math.floor((now - at) / 60_000))
-  const zh = lang !== 'en-US'
-  if (minutes < 1) return zh ? '刚刚' : 'now'
-  if (minutes < 60) return zh ? `${minutes} 分钟` : `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return zh ? `${hours} 小时` : `${hours}h`
-  const days = Math.floor(hours / 24)
-  return zh ? `${days} 天` : `${days}d`
-}

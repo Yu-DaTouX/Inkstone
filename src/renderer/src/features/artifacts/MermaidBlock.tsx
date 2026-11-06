@@ -120,7 +120,7 @@ export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Eleme
     return (
       <div className="v3-visual-invalid">
         {fallback}
-        <Notice tone="fail" compact className="v3-visual-invalid-note">{t('vb.invalid', { error: state.error })}</Notice>
+        <Notice tone="fail" variant="hint" className="v3-visual-invalid-note"><span title={state.error}>{t('vb.invalid')}</span></Notice>
       </div>
     )
   }

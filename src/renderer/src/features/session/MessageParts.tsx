@@ -11,6 +11,7 @@ import { artifactVersions } from '../artifacts/model'
 import type { AssistantArtifact, UIMessage } from '../../../../shared/ipc'
 import { Icon } from './Icon'
 import { ImageViewer } from '../composer/image-viewer'
+import { previewFormatOf } from '../preview/preview-format'
 
 const CODE_PREVIEW_LINES = 12
 
@@ -123,6 +124,7 @@ function ArtifactCardView({
   const isHtml = useMemo(() => isHtmlArtifact(artifact), [artifact])
   const isImage = isImageArtifact(artifact)
   const isCode = artifact.kind === 'code' || isHtml
+  const isVideo = !isImage && !isCode && previewFormatOf(artifact.filename) === 'video'
   const unavailable = artifact.unavailable === true || artifact.bytes <= 0
   const openTarget = artifact.sourcePath ?? artifact.path
   const identityKey = deriveArtifactIdentityKey(sessionId, messageId, artifact.id)
@@ -287,6 +289,8 @@ function ArtifactCardView({
         )
       ) : isCode ? (
         codeView(unavailable ? artifact.error || t('artifact.noPreview') : readError ? t('artifact.htmlRead') : shownCode ?? t('artifact.reading'))
+      ) : isImage ? null : isVideo && !unavailable ? (
+        <video className="v3-artifact-video" src={filePreviewUrl(artifact.path)} controls preload="metadata" aria-label={artifact.filename} data-testid="v3-artifact-video" />
       ) : artifact.previewable && !unavailable ? (
         <div className="v3-artifact-card-open">
           <Button size="sm" variant="ghost" onPress={() => void previewFile(artifact.path)} data-testid="v3-artifact-preview">

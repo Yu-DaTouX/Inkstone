@@ -23,6 +23,7 @@
   }
 
   .session-switcher__row {
+    padding-inline: var(--s-12) var(--s-8);
     color: var(--fg);
     cursor: pointer;
   }

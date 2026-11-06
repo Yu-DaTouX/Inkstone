@@ -589,6 +589,9 @@
   .ui-seg__item[data-focus-visible] {
     box-shadow: var(--ring-focus-inset);
   }
+  .ui-seg:not([data-disabled]) .ui-seg__item[data-disabled] .ui-seg__label {
+    opacity: 0.4;
+  }
   .ui-seg__item[data-pressed] .ui-seg__label {
     transform: scale(var(--press-scale));
   }
@@ -878,14 +881,6 @@
     padding: var(--s-6) var(--s-8) var(--s-2);
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     color: var(--fg3);
-  }
-  .ui-listbox--select .ui-listbox__item {
-    min-height: max(var(--size-btn), var(--t-body-lh));
-    gap: var(--s-8);
-    padding-block: var(--s-4);
-    padding-inline: var(--s-6);
-    font-size: var(--t-body);
-    line-height: var(--t-body-lh);
   }
   .ui-listbox--select .ui-listbox__item[data-selected]::after {
     content: '';

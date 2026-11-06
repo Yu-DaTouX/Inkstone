@@ -43,7 +43,7 @@ export const MESSAGE_HIGHLIGHT_LIMITS: HighlightLimits = {
   maxLineChars: HIGHLIGHT_MAX_LINE_CHARS
 }
 
-export const FILE_HIGHLIGHT_LIMITS: HighlightLimits = { maxChars: 100_000, maxLines: 2_000, maxLineChars: 1_000 }
+export const FILE_HIGHLIGHT_LIMITS: HighlightLimits = { maxChars: 1_000_000, maxLines: 20_000, maxLineChars: 1_000 }
 
 export function exceedsHighlightLimits(code: string, limits: HighlightLimits = MESSAGE_HIGHLIGHT_LIMITS): boolean {
   if (code.length > limits.maxChars) return true

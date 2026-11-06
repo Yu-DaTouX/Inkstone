@@ -5,6 +5,7 @@ export interface RailText {
   railLabel: string
   sections: Record<RailSectionId, string>
   show: string
+  sectionEmpty: string
   reset: string
   sectionsMenu: string
   reorder: (name: string) => string
@@ -57,6 +58,7 @@ const ZH: RailText = {
     extensions: '扩展'
   },
   show: '显示',
+  sectionEmpty: '暂无',
   reset: '恢复默认',
   sectionsMenu: '分区',
   reorder: (name) => `调整「${name}」的位置`,
@@ -109,6 +111,7 @@ const EN: RailText = {
     extensions: 'Extensions'
   },
   show: 'Show',
+  sectionEmpty: 'Nothing yet',
   reset: 'Reset to defaults',
   sectionsMenu: 'Sections',
   reorder: (name) => `Reorder ${name}`,

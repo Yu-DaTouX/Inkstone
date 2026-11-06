@@ -7,7 +7,7 @@ import { composerSubmitIdentity } from '../../state/composer-recovery'
 import { composerStoreActions } from '../../lib/composer-store-send'
 import { submitComposerInput } from '../../lib/composer-submit'
 import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-submit-ownership'
-import { roundRunningOf } from '../../features/composer/composer-keys'
+import { roundRunningOf, viewRunnerRunning } from '../../features/composer/composer-keys'
 import { composerLocalCommand } from '../../features/composer/composer-layout'
 import { hasComposerText } from '../../features/composer/composer-text'
 import { fileReferencePath } from '../../features/composer/file-refs'
@@ -56,7 +56,7 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
 
   const roundRunning = useStore((s) =>
     roundRunningOf({
-      runnerRunning: !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running,
+      runnerRunning: viewRunnerRunning(s),
       isStreaming: s.session?.isStreaming,
       isCompacting: s.session?.isCompacting
     })

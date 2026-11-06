@@ -36,7 +36,7 @@ export class UiRequests {
 
   requestHostUi(request: {
     method: 'select' | 'input'
-    title: string
+    title?: string
     message: string
     options?: string[]
     form?: import('../shared/question-form').QuestionField[]

@@ -122,9 +122,10 @@
 
   .v3-canvas-toolbar {
     position: absolute;
-    left: 50%;
+    inset-inline: 0;
     bottom: var(--s-12);
-    translate: -50% 0;
+    width: max-content;
+    margin-inline: auto;
     z-index: 4;
     display: flex;
     align-items: center;
@@ -134,8 +135,8 @@
     max-width: calc(100% - var(--s-32));
     padding: var(--s-2);
     border-radius: var(--r-md);
-    background: var(--bg);
-    box-shadow: var(--shadow-pop);
+    background: var(--surface-3);
+    box-shadow: inset 0 0 0 1px var(--float-edge), var(--shadow-pop);
     font-variant-numeric: tabular-nums;
   }
 
@@ -180,7 +181,8 @@
   .v3-canvas[data-narrow] .v3-canvas-toolbar {
     left: var(--s-8);
     right: var(--s-8);
-    translate: none;
+    width: auto;
+    margin-inline: 0;
     max-width: none;
   }
 }

@@ -10,7 +10,7 @@ import {
   toolCallTokens,
   type ContextSlice
 } from '../../state/context-breakdown'
-import { redactCommandSecrets, toolTarget } from '../session/tool-title'
+import { redactCommandSecrets, stepDescription, toolTarget } from '../session/tool-title'
 
 const TOP_TOOL_CALLS = 8
 
@@ -32,6 +32,8 @@ export interface ContextToolCall {
   anchorId: string
   name: string
   target: string
+  detail?: string
+  scriptLines?: number
   tokens: number
 }
 
@@ -139,6 +141,13 @@ function firstLine(text: string): string {
   return text.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
 }
 
+function toolCallRow(call: Parameters<typeof toolTarget>[0]): Pick<ContextToolCall, 'target' | 'detail' | 'scriptLines'> {
+  const code = (call.args as { code?: unknown } | undefined)?.code
+  if (typeof code !== 'string') return { target: firstLine(toolTarget(call)) }
+  const lines = code.split('\n').filter((line) => line.trim()).length
+  return { target: stepDescription(call), detail: redactCommandSecrets(firstLine(code)), scriptLines: lines }
+}
+
 export function largestToolCalls(
   messages: readonly UIMessage[],
   inContext: readonly UIMessage[],
@@ -156,7 +165,7 @@ export function largestToolCalls(
     if (m.role !== 'assistant') continue
     for (const call of modelVisibleToolCalls(m)) {
       const tokens = toolCallTokens(call)
-      if (tokens > 0) rows.push({ id: call.id, anchorId, name: call.name, target: firstLine(toolTarget(call)), tokens })
+      if (tokens > 0) rows.push({ id: call.id, anchorId, name: call.name, ...toolCallRow(call), tokens })
     }
   }
   return rows.sort((a, b) => b.tokens - a.tokens).slice(0, Math.max(0, limit))

@@ -530,8 +530,14 @@
     z-index: var(--z-rail);
     width: max-content;
     max-width: min(560px, calc(100% - var(--s-32)));
+    flex-wrap: nowrap;
+    align-items: center;
     transform: translateX(-50%);
     box-shadow: var(--shadow-pop);
+  }
+  .v3-conn-banner > .ui-notice__body {
+    flex: 0 1 auto;
+    white-space: nowrap;
   }
 }
 

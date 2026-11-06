@@ -163,7 +163,9 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
   }
   pickDigit.current = (value) => answer({ value })
 
+  const promoted = !req.title && !!req.message && !req.message.includes('\n')
   const title = req.title
+    ?? (promoted ? req.message : null)
     ?? (req.form?.length ? t('qf.title') : req.method === 'select' ? t('q.select') : req.method === 'confirm' ? t('q.confirm') : req.method === 'editor' ? t('q.editor') : t('q.input'))
 
   const text = draft || req.prefill || ''
@@ -193,7 +195,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
     >
       <CardHead className="v3-qhead">
         <CardStatus
-          tone={needsApproval ? 'ask' : 'accent'}
+          tone="ask"
           icon={<Icon name={req.purpose === 'approval' ? 'shield' : req.method === 'confirm' ? 'alert' : 'message'} size={14} />}
           data-purpose={req.purpose}
           data-testid="v3-question-badge"
@@ -253,7 +255,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
       {collapsed ? <div className="v3-qmini">{t('q.collapsed', { n: page.total })}</div> : null}
       {(
         <div className="v3-qbody" data-testid="v3-question-body" hidden={collapsed}>
-          {req.message ? <div className="v3-qmsg">{req.message}</div> : null}
+          {req.message && !promoted ? <div className="v3-qmsg">{req.message}</div> : null}
 
           {req.form?.length ? (
             <QuestionForm

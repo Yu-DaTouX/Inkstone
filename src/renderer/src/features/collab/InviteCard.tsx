@@ -53,9 +53,8 @@ export function InviteCard({ text, remoteState }: InviteCardProps): ReactElement
   return (
     <Card className="collab-card" data-testid="v3-collab-invite">
       <CardHead>
-        <CardTitle>{text.inviteTitle}</CardTitle>
+        <CardTitle title={text.inviteHint}>{text.inviteTitle}</CardTitle>
       </CardHead>
-      <p className="collab-hint">{text.inviteHint}</p>
       {error ? (
         <Notice tone="fail" compact>
           {error}

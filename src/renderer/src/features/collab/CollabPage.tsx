@@ -49,7 +49,7 @@ import {
 } from '../../ui'
 import { DiffView } from '../diff'
 import { collabBridge, collabPeerBridge, parsePairLink, type CollabPeerBridge } from './bridge'
-import { collabFailureText, collabText, fill, formatCollabTime, peerDisplayName, type CollabText } from './collab-text'
+import { collabFailureText, collabText, connectionFailureText, fill, formatCollabTime, peerDisplayName, type CollabText } from './collab-text'
 import { GithubChannel } from './GithubChannel'
 import { HostGrants } from './HostGrants'
 import { InviteCard } from './InviteCard'
@@ -414,7 +414,9 @@ function PeerCard({ peer, text, busy, canConnect, onConnect, onDisconnect, onRem
         <MiddleTruncate value={peer.address} className="collab-card__meta collab-peer__addr" />
       </CardHead>
       {connection.state === 'failed' ? (
-        <Notice tone="fail" compact>{fill(text.failedReason, { error: connection.error })}</Notice>
+        <Notice tone="fail" compact>
+          <span title={connection.error}>{connectionFailureText(text, connection.code) ?? fill(text.failedReason, { error: connection.error })}</span>
+        </Notice>
       ) : null}
       {grant ? (
         <p className="collab-hint">{grantSummary(grant, text)}</p>
@@ -528,10 +530,9 @@ function PairForm({ text, disabled, pending, notify, onPair }: PairFormProps): R
   return (
     <Card className="collab-card">
       <CardHead>
-        <CardTitle>{text.pairTitle}</CardTitle>
+        <CardTitle title={text.pairHint}>{text.pairTitle}</CardTitle>
       </CardHead>
       <form className="collab-stack" onSubmit={submit} data-testid="v3-collab-pair-form">
-        <p className="collab-hint">{text.pairHint}</p>
         <div className="collab-row">
           <TextField
             label={text.address}
@@ -836,7 +837,7 @@ function RemoteProjectPanel({
               return (
                 <li key={branch.name} className="collab-branch" data-testid={`v3-collab-branch-${branch.name}`}>
                   <div className="collab-branch__line">
-                    <MiddleTruncate value={label} className="collab-branch__name collab-code" />
+                    <MiddleTruncate value={branch.name} showTitle={false} title={label} className="collab-branch__name collab-code" />
                     {branch.current ? <Badge>{text.remoteCurrent}</Badge> : null}
                     {branchStates(branch, text).map((state) => (
                       <Badge key={state.label} tone={state.tone}>
@@ -852,9 +853,11 @@ function RemoteProjectPanel({
                       {branch.author} · {formatCollabTime(branch.committedAt, lang)}
                     </span>
                   </p>
-                  <p className="collab-branch__sessions" title={sessionTitles || undefined}>
-                    {branch.sessions.length ? fill(text.sessions, { n: branch.sessions.length }) : text.sessionsNone}
-                  </p>
+                  {branch.sessions.length ? (
+                    <p className="collab-branch__sessions" title={sessionTitles}>
+                      {fill(text.sessions, { n: branch.sessions.length })}
+                    </p>
+                  ) : null}
                   <div className="collab-actions">
                     <Button
                       size="sm"
@@ -866,6 +869,8 @@ function RemoteProjectPanel({
                     >
                       {text.fetch}
                     </Button>
+                    {fetchedHere ? (
+                    <>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -903,12 +908,9 @@ function RemoteProjectPanel({
                       </Button>
                       <Tooltip>{text.continueHint}</Tooltip>
                     </TooltipTrigger>
+                    </>
+                    ) : null}
                   </div>
-                  {usable && !fetchedHere ? (
-                    <Notice tone="info" variant="hint" role="note">
-                      {text.needFetch}
-                    </Notice>
-                  ) : null}
                   {compareOpen && localProject ? (
                     <ComparePanel
                       bridge={bridge}
@@ -1315,7 +1317,7 @@ export function CollabPage(): ReactElement {
       void refresh()
       const result = await pending
       if (result.ok) notify('info', fill(text.connected, { computer: peer.computer }))
-      else notify('fail', collabFailureText(text, result.code) ?? fill(text.connectFailed, { computer: peer.computer, error: result.error }))
+      else notify('fail', connectionFailureText(text, result.code) ?? fill(text.connectFailed, { computer: peer.computer, error: result.error }))
       await refreshAll()
     })
   }
@@ -1408,7 +1410,7 @@ export function CollabPage(): ReactElement {
 
   const requestList = (list: CollabMergeRequest[], empty: string): ReactElement =>
     list.length === 0 ? (
-      <p className="collab-hint">{empty}</p>
+      <EmptyState size="sm" align="start" title={empty} />
     ) : (
       <ul className="collab-list">
         {list.map((request) => (

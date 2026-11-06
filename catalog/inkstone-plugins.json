@@ -10,12 +10,12 @@
       "url": "https://github.com/Yu-DaTouX/Inkstone/tree/main/integrations/hermes-inkstone",
       "text": {
         "zh-CN": {
-          "desc": "在 Hermes 里查看会话、派任务、读结果，并批准或拒绝砚的危险操作。",
+          "desc": "在 Hermes 里看会话、派任务、审批砚的操作。",
           "target": "装在 Hermes 端；砚需开启远程接入并配对。",
           "hint": "放到 ~/.hermes/plugins/inkstone/，运行 hermes plugins enable inkstone，重启 Hermes。"
         },
         "en-US": {
-          "desc": "Read sessions, send tasks, get results, and approve or reject Inkstone's dangerous actions from Hermes.",
+          "desc": "View sessions, send tasks and approve Inkstone actions from Hermes.",
           "target": "Installs in Hermes; enable remote access in Inkstone and pair.",
           "hint": "Put it in ~/.hermes/plugins/inkstone/, run hermes plugins enable inkstone, then restart Hermes."
         }
@@ -29,12 +29,14 @@
       "url": "https://github.com/PC2005-cloud/dsh-pet",
       "text": {
         "zh-CN": {
-          "desc": "把社区插件 dsh-pet 的桌宠接进砚：会话思考、调用工具、等你确认、完成或出错时，桌宠切换对应动作和气泡。",
-          "target": "用 npm 装到砚的数据目录，在独立进程里运行；桌宠窗口用它自带的 Electron，首次启动会下载约 100 MB。插件来自社区，许可 MIT。"
+          "desc": "社区桌宠 dsh-pet，随会话状态切换动作和气泡。",
+          "target": "用 npm 装到砚的数据目录，在独立进程里运行；桌宠窗口用它自带的 Electron，首次启动会下载约 100 MB。插件来自社区，许可 MIT。",
+          "hint": "会话思考、调用工具、等你确认、完成或出错时切换对应动作。"
         },
         "en-US": {
-          "desc": "Brings the community dsh-pet desktop pet into Inkstone: it switches animations and bubbles while a session thinks, runs tools, waits for you, finishes or fails.",
-          "target": "Installed with npm into Inkstone's data directory and run in a separate process; the pet window uses its own Electron, about 100 MB downloaded on first start. Community plugin, MIT licensed."
+          "desc": "Community dsh-pet desktop pet that follows session state.",
+          "target": "Installed with npm into Inkstone's data directory and run in a separate process; the pet window uses its own Electron, about 100 MB downloaded on first start. Community plugin, MIT licensed.",
+          "hint": "Switches animations and bubbles while a session thinks, runs tools, waits for you, finishes or fails."
         }
       }
     },
@@ -46,14 +48,14 @@
       "url": "https://github.com/Yu-DaTouX/Inkstone/tree/main/integrations/comfyui",
       "text": {
         "zh-CN": {
-          "desc": "用已保存的 ComfyUI 工作流文生图、图生图、生成视频（含 MiniMax H3 Director 视频转视频），支持子图和 API 格式，自动探测与按需启动本机服务。",
+          "desc": "用已保存的 ComfyUI 工作流生成图片和视频。",
           "target": "从随包 integrations 安装 pi 扩展和技能，在 pi 独立进程运行；新建或重载会话后生效。需要本机 ComfyUI 和可用模型。",
-          "hint": "提供 comfyui_generate、comfyui_video、comfyui_job 与 comfyui_service 工具，视频任务可看进度、分段等待。需要时自动启动本机 ComfyUI；远程服务和云端 API 节点需要用户确认。移除插件保留图片与用户数据。"
+          "hint": "文生图、图生图、生成视频（含 MiniMax H3 Director 视频转视频），支持子图和 API 格式。提供 comfyui_generate、comfyui_video、comfyui_job 与 comfyui_service 工具，视频任务可看进度、分段等待。需要时自动启动本机 ComfyUI；远程服务和云端 API 节点需要用户确认。移除插件保留图片与用户数据。"
         },
         "en-US": {
-          "desc": "Generate or edit images and generate videos (including MiniMax H3 Director video-to-video) using saved ComfyUI workflows, including subgraphs and API format, with local detection and on-demand startup.",
+          "desc": "Generate images and videos with saved ComfyUI workflows.",
           "target": "Installs a bundled pi extension and skill running in pi's separate process. Start or reload a session to apply. Requires ComfyUI and local models.",
-          "hint": "Provides comfyui_generate, comfyui_video, comfyui_job and comfyui_service; video jobs report progress and can be awaited in steps. Starting a service, remote requests and cloud API nodes require confirmation. Removal preserves images and user data."
+          "hint": "Text-to-image, image editing and video (including MiniMax H3 Director video-to-video); supports subgraphs and API format. Provides comfyui_generate, comfyui_video, comfyui_job and comfyui_service; video jobs report progress and can be awaited in steps. Starting a service, remote requests and cloud API nodes require confirmation. Removal preserves images and user data."
         }
       }
     },
@@ -65,13 +67,13 @@
       "url": "https://github.com/Yu-DaTouX/Inkstone/tree/main/integrations/voice-input",
       "text": {
         "zh-CN": {
-          "desc": "在输入框旁加麦克风按钮，录音用本机 whisper.cpp 转成文字，不上传也不保存。",
+          "desc": "输入框麦克风，本机 whisper.cpp 转写，不上传。",
           "target": "从随包 integrations 安装，在独立进程运行；首次使用要在「设置 → 本机工具」下载转写程序和模型（约 150 MB–600 MB）。",
           "hint": "移除插件保留已下载的程序与模型（数据目录 voice/）。"
         },
         "en-US": {
           "name": "Voice input",
-          "desc": "Adds a microphone button to the composer; recordings are transcribed locally with whisper.cpp, never uploaded or kept.",
+          "desc": "Composer microphone, transcribed locally with whisper.cpp.",
           "target": "Installs from bundled integrations and runs in a separate process; on first use download the transcriber and a model (about 150–600 MB) in Settings → Local tools.",
           "hint": "Removing the plugin keeps downloaded programs and models (voice/ in the data directory)."
         }
@@ -86,15 +88,15 @@
       "text": {
         "zh-CN": {
           "name": "Minecraft 模组开发",
-          "desc": "让 agent 开发 Fabric 模组：编译与热替换、启动开发客户端、截图、执行命令、操作界面与输入、跑 GameTest、管理测试存档，共 22 个 mc_* 工具，附带开发技能。",
+          "desc": "让 agent 开发和测试 Fabric 模组。",
           "target": "从 GitHub 下载后装到砚的数据目录，用砚自带的运行时启动，写入 pi 的 mcp.json 与技能目录；新会话生效。",
-          "hint": "需要本机 Java（1.21.x 用 Java 21，26.x 用 Java 25）。支持 Minecraft 1.21–1.21.1 与 26.1.x。"
+          "hint": "编译与热替换、开发客户端、截图、命令、界面与输入、GameTest、测试存档，共 22 个 mc_* 工具，附带开发技能。需要本机 Java（1.21.x 用 Java 21，26.x 用 Java 25）。支持 Minecraft 1.21–1.21.1 与 26.1.x。"
         },
         "en-US": {
           "name": "Minecraft mod development",
-          "desc": "Lets the agent develop Fabric mods: build and hot-swap, run a dev client, take screenshots, run commands, drive screens and input, run GameTests and manage test worlds. 22 mc_* tools plus a development skill.",
+          "desc": "Lets the agent build and test Fabric mods.",
           "target": "Downloaded from GitHub into Inkstone's data directory, runs on Inkstone's bundled runtime and writes pi's mcp.json and skills folder; applies to new sessions.",
-          "hint": "Needs a local Java (Java 21 for 1.21.x, Java 25 for 26.x). Supports Minecraft 1.21–1.21.1 and 26.1.x."
+          "hint": "Build and hot-swap, dev client, screenshots, commands, screens and input, GameTests and test worlds: 22 mc_* tools plus a development skill. Needs a local Java (Java 21 for 1.21.x, Java 25 for 26.x). Supports Minecraft 1.21–1.21.1 and 26.1.x."
         }
       }
     }

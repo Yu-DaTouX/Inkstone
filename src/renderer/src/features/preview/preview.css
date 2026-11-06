@@ -51,6 +51,16 @@
     line-height: var(--t-prose-lh);
   }
 
+  .v3-preview-md .v3-prose {
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  .v3-preview-md .v3-prose h1 {
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+  }
+
   .v3-preview-md :is(img, picture) {
     max-width: 100%;
     height: auto;
@@ -328,6 +338,9 @@
 
   .v3-preview-editstate {
     flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
     min-width: 0;
     color: var(--fg3);
     font-size: var(--t-footnote);

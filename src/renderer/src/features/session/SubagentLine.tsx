@@ -8,7 +8,8 @@ import { findSubagentSnapshot, subagentLineModel, type SubagentLineModel } from 
 import { selectSubagentRuns, subagentRunsForTurnScope, type TurnSubagentScope } from '../../state/subagent-view'
 import { sessionViewIdentity } from './view-state'
 import { formatDuration } from '../../../../shared/duration'
-import { isLiveSubagentRun, subagentSummaryLine, type SubagentTaskRow } from '../../../../shared/subagent-task-rows'
+import { isLiveSubagentRun, subagentRowLabel, subagentSummaryLine, type SubagentTaskRow } from '../../../../shared/subagent-task-rows'
+import type { ModelInfo } from '../../../../shared/ipc'
 import type { SubagentOutcomeKey } from '../../../../shared/subagent-outcome'
 import type { SubagentRun } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
@@ -114,6 +115,25 @@ const COUNT_ORDER: readonly SubagentCount[] = ['awaiting', 'live', 'failed', 'do
 
 const LEAD_TONE: Record<SubagentCount, CardStatusTone> = { awaiting: 'ask', failed: 'fail', live: 'run', stopped: 'muted', done: 'ok' }
 
+const ALL_KEY: Record<SubagentCount, SessionTextKey> = {
+  awaiting: 'subagentAllAwaiting',
+  live: 'subagentAllLive',
+  failed: 'subagentAllFailed',
+  done: 'subagentAllDone',
+  stopped: 'subagentAllStopped'
+}
+
+function sameAsSessionModel(run: Pick<SubagentRun, 'model' | 'thinkingLevel' | 'fork'>, model: ModelInfo | undefined, thinking: string | undefined): boolean {
+  if (!run.model || !model || run.fork) return false
+  const sameId = run.model === `${model.provider}/${model.id}` || run.model === model.id
+  return sameId && (run.thinkingLevel || 'off') === (thinking || 'off')
+}
+
+function doneLabel(row: Pick<SubagentTaskRow, 'state' | 'label' | 'description'>, generic: string): string {
+  if (row.state !== 'done' || !row.description) return row.label
+  return row.label === `${generic}：${row.description}` || row.label === `${generic}: ${row.description}` ? row.description : row.label
+}
+
 function subagentSummary(listTotals: SubagentListTotals, awaiting: number, tt: SessionText, lang: string): {
   tone: CardStatusTone
   status: string
@@ -126,9 +146,10 @@ function subagentSummary(listTotals: SubagentListTotals, awaiting: number, tt: S
   const usage = totals.ended
     ? subagentSummaryLine({ toolCalls: totals.toolCalls, tokens: totals.tokens || null, durationMs: totals.spanMs }, rowLang(lang))
     : null
+  const all = lead !== null && totals[lead] === totals.total
   return {
     tone: lead ? LEAD_TONE[lead] : 'ok',
-    status: lead ? tt(COUNT_KEY[lead], { n: totals[lead] }) : tt('subagentAllDone'),
+    status: lead ? (all ? tt(ALL_KEY[lead]) : tt(COUNT_KEY[lead], { n: totals[lead] })) : tt('subagentAllDone'),
     title: [tt('subagentCount', { n: totals.total }), ...rest].join(' · '),
     usage
   }
@@ -288,13 +309,14 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
   const awaiting = useAwaitingApproval(run.id)
   const status = awaiting ? tt('awaitApproval') : phaseStatus
   const models = useStore((s) => s.models)
-  const modelName = run.model ? turnModelLabel(run.model, models).label : null
+  const sameModel = useStore((s) => sameAsSessionModel(run, s.session?.model, s.session?.thinkingLevel))
+  const modelName = run.model && !sameModel ? turnModelLabel(run.model, models).label : null
   const thinking = run.thinkingLevel && run.thinkingLevel !== 'off' ? run.thinkingLevel : null
   const thinkText = thinking ? (THINK_LABEL[thinking] ? t(THINK_LABEL[thinking]) : thinking) : null
   const modelTail = [thinkText, run.fork ? 'fork' : null].filter(Boolean).join(' · ')
   const live = row.state === 'starting' || row.state === 'running'
   const awaitingReview = !live && (run.review === 'pending' || run.review === 'conflict')
-  const label = compactTaskPaths(live && row.description ? row.description : row.label)
+  const label = compactTaskPaths(live && row.description ? row.description : doneLabel(row, subagentRowLabel('done', '', rowLang(lang))))
   const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
   const summary = live ? '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
   const context = row.state === 'failed' ? null : subagentContextUsage(run.contextUsage)
@@ -357,12 +379,13 @@ function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot
   const row = useSubagentRow(run)
   const selected = useSubagentPaneOpen(run.id)
   const models = useStore((s) => s.models)
-  const modelName = run.model ? turnModelLabel(run.model, models).label : null
+  const sameModel = useStore((s) => sameAsSessionModel(run, s.session?.model, s.session?.thinkingLevel))
+  const modelName = run.model && !sameModel ? turnModelLabel(run.model, models).label : null
   const live = row.state === 'starting' || row.state === 'running'
   const awaiting = useAwaitingApproval(run.id) && live
   const status = awaiting ? tt('awaitApproval') : phaseStatus
   const awaitingReview = !live && (run.review === 'pending' || run.review === 'conflict')
-  const label = compactTaskPaths(live && row.description ? row.description : row.label)
+  const label = compactTaskPaths(live && row.description ? row.description : doneLabel(row, subagentRowLabel('done', '', rowLang(lang))))
   const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
   const warning = awaiting ? tt('awaitApproval') : live ? run.progressWarning?.trim() : ''
   const detail = live ? warning || row.latestActivity || '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)

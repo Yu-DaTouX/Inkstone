@@ -173,7 +173,7 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
           )}
           <ToolRunStats summary={summary} alertFailures={alertFailures} />
           {summary.state === 'cancelled' ? <Badge className="v3-steps-badge" data-testid="v3-step-group-cancelled">{t('run.cancelled')}</Badge> : null}
-          {summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
+          {summary.needsApproval && !asking ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
         </span>
       </CollapsibleHeader>
       {asking ? <AskPill kind="approval" /> : null}
@@ -236,7 +236,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
           {exitCode !== null ? <span className="v3-step-time" data-testid="v3-step-exit-code">{tt('exitCode', { n: exitCode })}</span> : null}
           {call.cancelled ? <Badge className="v3-steps-badge" data-testid="v3-step-cancelled">{t('run.cancelled')}</Badge> : null}
           {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
-          {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
+          {blocked && !asking ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
         </span>
       </CollapsibleHeader>
       {asking ? <AskPill kind="approval" /> : call.approval ? <ApprovalReceipt approval={call.approval} /> : null}

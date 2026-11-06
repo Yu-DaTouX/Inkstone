@@ -28,7 +28,6 @@ import { forkAt } from '../../lib/fork'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import { findTurnModel, turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
-import { TurnApprovalLine } from './ApprovalReceipt'
 import { LiveRunNotice } from './RunNotice'
 import { QuotaResumeNotice } from './QuotaResumeNotice'
 import { CompactCommandEcho, CompactionMarker } from './CompactionMarker'
@@ -292,7 +291,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
         {asideThinking ? <ThinkingAside text={asideThinking} ms={sourceTurn.thinkingMs} live={sourceTurn.thinkingLive} stacked={!asideFits} /> : null}
         <WebSearchTurnProvider tools={turn.tools}>
         <div className="v3-assistant-body">
-          {compactionSpot !== null ? <CompactCommandEcho /> : null}
           {edge.first ? <BranchSummary /> : null}
           {thinkingNote ? <ThinkingAvailability empty={!!sourceTurn.thinkingEmpty} model={sourceTurn.model} /> : null}
           {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
@@ -322,9 +320,9 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   elapsedMs={runPlace.startedAt !== null ? spanMs : sourceTurn.elapsedMs ?? spanMs}
                   filesShownBelow={!!changes}
                   compactionAfter={compactionInProcess}
+                  approvals={processApprovals}
                 />
               ) : null}
-              {processApprovals.length ? <TurnApprovalLine approvals={processApprovals} /> : null}
               {split.earlierReplies.map((segment) => (
                 <div key={segment.id} className="v3-seg" data-testid="v3-seg">
                   <div className="v3-para">
@@ -402,6 +400,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {streaming ? null : errorCard}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {runEnded ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
+          {compactionSpot !== null ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
         </WebSearchTurnProvider>

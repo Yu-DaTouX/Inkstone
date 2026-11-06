@@ -30,7 +30,7 @@ const ZH: ShortcutText = {
   },
   purposes: {
     commandPalette: '命令面板',
-    newSession: '新会话',
+    newSession: '新建会话',
     switchSessionNext: '切换到最近使用的会话',
     switchSessionPrevious: '反向切换最近使用的会话',
     toggleSidebar: '展开或收起侧栏',

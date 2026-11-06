@@ -837,6 +837,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   }
 
   const visible = order.filter((id) => sections[id] && !isRailSectionHidden({ hidden }, id))
+  const emptySections = new Set(order.filter((id) => !sections[id]))
   const railRef = useRef<HTMLDivElement>(null)
   const reorder = useRailReorder(railRef, visible, order, setOrder, rail)
   const menuAnchor = useRef<HTMLElement | null>(null)
@@ -874,7 +875,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
           )
         })}
       </div>
-      <RailSectionsMenu anchor={menuAnchor} open={menuOpen} onOpenChange={setMenuOpen} text={rail} />
+      <RailSectionsMenu anchor={menuAnchor} open={menuOpen} onOpenChange={setMenuOpen} text={rail} empty={emptySections} />
     </div>
   )
 }, (left, right) => sameOwner(left.owner, right.owner) && left.onOpenView === right.onOpenView && left.onPreview === right.onPreview)

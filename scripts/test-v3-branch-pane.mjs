@@ -55,7 +55,9 @@ export function DialogTrigger() { return null }
 export function Popover() { return null }
 export function TextField() { return null }
 export function Switch() { return null }
-export function DialogFooter() { return null }`
+export function DialogFooter() { return null }
+export function ListBox() { return null }
+export function ListBoxItem() { return null }`
 
 const TREE_STUB = `export function Tree() { return null }
 export function TreeItem() { return null }
@@ -74,6 +76,7 @@ const LUCIDE_STUB = LUCIDE_NAMES.map((name) => `export function ${name}() { retu
 
 const UI_INDEX_PATH = normalize(resolve(ROOT, 'src/renderer/src/ui/index.ts'))
 const UI_TREE_PATH = normalize(resolve(ROOT, 'src/renderer/src/ui/Tree.tsx'))
+const UI_LISTBOX_PATH = normalize(resolve(ROOT, 'src/renderer/src/ui/ListBox.tsx'))
 const I18N_PATH = normalize(resolve(ROOT, 'src/renderer/src/i18n/index.tsx'))
 
 function makeStubMap() {
@@ -120,9 +123,8 @@ async function buildBehaviorBundle(outdir) {
   const entryFile = join(outdir, 'branch-entry.ts')
   await writeFile(
     entryFile,
-    `export { buildTreeView, initialCollapsedForLeaf, parseTreePayload } from '${posix(resolve(ROOT, 'src/shared/native-session'))}'
-export { BranchTree, loadBranchTree, navigateBranch, nestBranchRows, renderBranchNodes, branchText } from '${posix(resolve(ROOT, 'src/renderer/src/features/session/BranchTree'))}'
-export { Tree, TreeItem, TreeItemContent, TreeChevron, TreeItemLabel, TreeEmptyState } from '${posix(UI_TREE_PATH)}'
+    `export { parseTreePayload } from '${posix(resolve(ROOT, 'src/shared/native-session'))}'
+export { BranchTree, BranchGraph, loadBranchTree, navigateBranch, branchText } from '${posix(resolve(ROOT, 'src/renderer/src/features/session/BranchTree'))}'
 export { Badge, Button, IconButton, Spinner } from '${posix(UI_INDEX_PATH)}'
 `
   )
@@ -146,10 +148,9 @@ async function buildRacBundle(outdir) {
   const entry = [
     "import * as React from 'react'",
     "import { renderToStaticMarkup } from 'react-dom/server'",
-    `import { Tree } from '${posix(UI_TREE_PATH)}'`,
-    `import { nestBranchRows, renderBranchNodes, branchText } from '${posix(resolve(ROOT, 'src/renderer/src/features/session/BranchTree'))}'`,
-    `import { buildTreeView, initialCollapsedForLeaf } from '${posix(resolve(ROOT, 'src/shared/native-session'))}'`,
-    'export { React, renderToStaticMarkup, Tree, nestBranchRows, renderBranchNodes, branchText, buildTreeView, initialCollapsedForLeaf }'
+    `import { BranchGraph, branchText } from '${posix(resolve(ROOT, 'src/renderer/src/features/session/BranchTree'))}'`,
+    `import { buildBranchLanes } from '${posix(resolve(ROOT, 'src/shared/branch-lanes'))}'`,
+    'export { React, renderToStaticMarkup, BranchGraph, branchText, buildBranchLanes }'
   ].join('\n')
   const outfile = join(outdir, 'branch-rac.bundle.cjs')
   const plugin = {
@@ -168,7 +169,7 @@ async function buildRacBundle(outdir) {
       })
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         if (args.path === 'v3stub:lucide') return { contents: LUCIDE_STUB, loader: 'js' }
-        if (args.path === 'v3stub:ui') return { contents: UI_STUB, loader: 'js' }
+        if (args.path === 'v3stub:ui') return { contents: `${UI_STUB.replace(/export function ListBox(Item)?\(\) \{ return null \}\n?/g, '')}\nexport { ListBox, ListBoxItem } from '${posix(UI_LISTBOX_PATH)}'`, loader: 'js', resolveDir: ROOT }
         if (args.path === 'v3stub:i18n') return { contents: I18N_STUB, loader: 'js' }
         return { contents: 'export {}', loader: 'js' }
       })
@@ -302,21 +303,6 @@ function findAllByType(node, type) {
   })
   return hits
 }
-function itemById(node, TreeItem, id) {
-  return findAllByType(node, TreeItem).find((el) => el.props?.id === id) ?? null
-}
-function itemChildIds(node, TreeItem, id) {
-  const el = itemById(node, TreeItem, id)
-  if (!el) return null
-  return childrenArray(el.props?.children)
-    .filter((child) => child && child.type === TreeItem)
-    .map((child) => child.props.id)
-}
-function rowIds(node, TreeItem) {
-  return findAllByType(node, TreeItem)
-    .map((el) => el.props?.id)
-    .filter((id) => typeof id === 'string')
-}
 
 const ownerA = { key: 'sess-a', sessionId: 'sess-a', sessionFile: 'C:/data/a.jsonl', cwd: 'C:/proj/a', active: true }
 const ownerB = { key: 'sess-b', sessionId: 'sess-b', sessionFile: 'C:/data/b.jsonl', cwd: 'C:/proj/b', active: true }
@@ -403,54 +389,20 @@ async function main() {
   }
 
   const {
-    buildTreeView,
-    initialCollapsedForLeaf,
     parseTreePayload,
     BranchTree,
+    BranchGraph,
     loadBranchTree,
-    navigateBranch,
-    nestBranchRows,
-    Tree,
-    TreeItem
+    navigateBranch
   } = mod
+  const laneRows = (node) => findByType(node, BranchGraph)?.props.lanes.rows.map((row) => row.entryId) ?? []
 
-  group('shared/native-session 纯投影与 nestBranchRows 受限嵌套')
+  group('shared/native-session 树载荷解析')
   {
     const { tree, leafId } = treeFixture()
-    const collapsed = initialCollapsedForLeaf(tree, leafId)
-    ok(collapsed.has('u2'), '非活动分支 u2 默认折叠')
-    ok(!collapsed.has('u1') && !collapsed.has('a1'), '活动路径 u1 / a1 默认展开')
-
-    const view = buildTreeView(tree, leafId, collapsed)
-    ok(view.leafId === 'a2', 'leafId 原样带回')
-    assert.deepEqual(view.activePath, ['u1', 'a1', 'a2'], '活动路径 = leaf→根')
-    const ids = view.rows.map((r) => r.entryId)
-    assert.deepEqual(ids, ['u1', 'a1', 't1', 'u2', 'a2'], '线性链平铺，分叉处的旁支排在分叉行下，折叠的 u2 只占一行')
-    assert.deepEqual(view.rows.map((r) => r.depth), [0, 0, 1, 1, 0], '只在分叉处缩进')
-    const byId = new Map(view.rows.map((r) => [r.entryId, r]))
-    ok(byId.get('a2').leaf === true, 'leaf 行标记 leaf')
-    ok(byId.get('u1').onActiveBranch && byId.get('a1').onActiveBranch && byId.get('a2').onActiveBranch, '活动路径三行标 active')
-    ok(!byId.get('t1').onActiveBranch && !byId.get('u2').onActiveBranch, '旁支不标 active')
-    ok(byId.get('u2').folded === true && byId.get('u2').hiddenCount === 1, '折叠行记隐藏后代数')
-    ok(byId.get('u1').kind === 'user' && byId.get('a1').kind === 'assistant' && byId.get('t1').kind === 'tool', '条目类型投影正确')
-
     const parsed = parseTreePayload({ tree, leafId, extra: 1 })
     ok(parsed.tree.length === 1 && parsed.leafId === 'a2', 'parseTreePayload 取树与 leaf')
     ok(parseTreePayload(null).tree.length === 0 && parseTreePayload(null).leafId === null, '缺字段退回空树')
-
-    const nested = nestBranchRows(view.rows)
-    assert.deepEqual(nested.map((n) => n.row.entryId), ['u1', 'a1', 'a2'], '嵌套根 = 主线各行')
-    const nById = new Map(nested.map((n) => [n.row.entryId, n]))
-    assert.deepEqual(nById.get('u1').children, [], '线性链上的 u1 没有子节点')
-    assert.deepEqual(nById.get('a1').children.map((n) => n.row.entryId), ['t1', 'u2'], '分叉行 a1 的子节点 = 旁支 t1 / u2')
-    assert.deepEqual(nById.get('a1').children[1].children, [], '折叠的 u2 不产生子节点（保护仍生效）')
-    const deep = nestBranchRows([
-      { entryId: 'r', depth: 0 },
-      { entryId: 'c', depth: 1 },
-      { entryId: 'g', depth: 2 }
-    ])
-    ok(deep.length === 1 && deep[0].children[0].children[0].row.entryId === 'g', '连续 depth 还原为三层嵌套')
-    assert.deepEqual(nestBranchRows([]), [], '空行还原为空嵌套')
   }
 
   group('请求绑定 expectedSessionId；navigate 只发 entryId，不带 summarize')
@@ -482,7 +434,7 @@ async function main() {
     ok((await missing).error === '读取失败', '宿主错误为空时用兜底文案')
   }
 
-  group('BranchTree：加载、RAC 树接线、切换、忙禁用、错误重试')
+  group('BranchTree：加载、泳道图接线、切换到分支末尾、忙禁用、错误重试')
   {
     const rt = makeHookRuntime()
     globalThis.__V3_HOOKS = rt
@@ -497,41 +449,26 @@ async function main() {
     t.pending[0].resolve({ ok: true, ...treeFixture() })
     tree = await flush(rt, BranchTree, props)
 
-    const treeEl = findByType(tree, Tree)
-    ok(treeEl && treeEl.props['aria-label'] === '会话树', '树容器带 aria-label（交给 RAC 原语）')
-    ok(treeEl.props.selectionMode === 'single', '单选交给 RAC selectionMode')
-    ok(treeEl.props.selectionBehavior === 'replace', '用 replace 让 Enter / 双击才触发显式激活（单击只选中）')
-    ok(Array.isArray(treeEl.props.selectedKeys) && treeEl.props.selectedKeys.includes('a2'), '选中集合 = 当前叶子')
-    ok(treeEl.props.expandedKeys.has('a1') && !treeEl.props.expandedKeys.has('u1'), '展开集合只含活动路径上的分叉行')
-    ok(!treeEl.props.expandedKeys.has('u2'), '折叠的非活动行不在展开集合')
-
-    assert.deepEqual(itemChildIds(tree, TreeItem, 'u1'), [], 'u1 不内嵌下一条')
-    assert.deepEqual(itemChildIds(tree, TreeItem, 'a1').slice().sort(), ['t1', 'u2'], 'a1 行内嵌旁支 t1 / u2')
-    assert.deepEqual(itemChildIds(tree, TreeItem, 'u2'), [], 'u2 没有内嵌子行')
-
-    treeEl.props.onExpandedChange(new Set(['a1', 'u2']))
-    tree = await flush(rt, BranchTree, props)
-    ok(rowIds(tree, TreeItem).includes('b1'), '展开 u2 后出现其子行 b1')
-    ok(findByType(tree, Tree).props.expandedKeys.has('u2'), 'u2 进入 RAC 展开集合')
-    findByType(tree, Tree).props.onExpandedChange(new Set([]))
-    tree = await flush(rt, BranchTree, props)
-    ok(!rowIds(tree, TreeItem).includes('u2') && !rowIds(tree, TreeItem).includes('t1') && rowIds(tree, TreeItem).includes('a2'), '收起 a1 后隐藏旁支，主线保留')
-    ok(!findByType(tree, Tree).props.expandedKeys.has('a1'), 'a1 退出 RAC 展开集合')
-    findByType(tree, Tree).props.onExpandedChange(new Set(['a1']))
-    tree = await flush(rt, BranchTree, props)
-    assert.deepEqual(itemChildIds(tree, TreeItem, 'a1').slice().sort(), ['t1', 'u2'], '重新展开 a1 后子行恢复')
+    const graph = findByType(tree, BranchGraph)
+    ok(graph, '树载入后渲染泳道图')
+    assert.deepEqual(laneRows(tree), ['u1', 't1', 'u2', 'a2'], '行 = 用户消息、分叉后的分支起点与当前位置，当前分支在最后')
+    const byId = Object.fromEntries(graph.props.lanes.rows.map((row) => [row.entryId, row]))
+    ok(byId.u1.targetId === 'a1' && byId.u2.targetId === 'b1', '每行的切换目标是这一段的末尾')
+    ok(byId.a2.lane === 0 && byId.u1.lane === 0 && byId.u2.lane > 0, '当前分支在第 0 列，旁支向右')
+    ok(graph.props.selected === 'a2', '默认选中当前位置所在行')
 
     const navButton = findByTestId(tree, 'branch-navigate')
-    ok(navButton && navButton.props.isDisabled === true, '当前叶子就是选中行时禁用切换（不是假按钮）')
+    ok(navButton && navButton.props.isDisabled === true, '选中行就是当前位置时禁用切换（不是假按钮）')
 
-    treeEl.props.onSelectionChange(new Set(['a1']))
+    graph.props.onSelect('u2')
     tree = await flush(rt, BranchTree, props)
+    ok(findByType(tree, BranchGraph).props.selected === 'u2', '选中交给泳道图回调')
     const navButton2 = findByTestId(tree, 'branch-navigate')
-    ok(navButton2.props.isDisabled === false, '选到非 leaf 行后切换可用')
-    ok(!!itemById(tree, TreeItem, 'a1')?.props.onAction, '行带显式激活回调（Enter / 双击才导航）')
+    ok(navButton2.props.isDisabled === false, '选到旁支后切换可用')
+    ok(typeof findByType(tree, BranchGraph).props.onAction === 'function', '行带显式激活回调（Enter / 双击才导航）')
     navButton2.props.onPress()
     tree = await flush(rt, BranchTree, props)
-    ok(t.calls.some((c) => c.action === 'navigate' && c.entryId === 'a1'), '点击切换发出 navigate(a1)')
+    ok(t.calls.some((c) => c.action === 'navigate' && c.entryId === 'b1'), '切换到旁支末尾 b1，而不是旁支开头')
 
     const navCall = t.calls.find((c) => c.action === 'navigate')
     t.pending.find((p) => p.request === navCall).resolve({ ok: true })
@@ -546,7 +483,7 @@ async function main() {
     let busyTree = rtBusy.render(BranchTree, { owner: ownerA, transport: tBusy, busy: true })
     tBusy.pending[0].resolve({ ok: true, ...treeFixture() })
     busyTree = await flush(rtBusy, BranchTree, { owner: ownerA, transport: tBusy, busy: true })
-    findByType(busyTree, Tree).props.onSelectionChange(new Set(['a1']))
+    findByType(busyTree, BranchGraph).props.onSelect('u2')
     busyTree = await flush(rtBusy, BranchTree, { owner: ownerA, transport: tBusy, busy: true })
     const busyNav = findByTestId(busyTree, 'branch-navigate')
     ok(busyNav.props.isDisabled === true, 'busy 时禁用切换')
@@ -554,6 +491,8 @@ async function main() {
     busyTree = await flush(rtBusy, BranchTree, { owner: ownerA, transport: tBusy, busy: true })
     ok(tBusy.calls.filter((c) => c.action === 'navigate').length === 0, 'busy 时不发 navigate 请求')
     ok(before === 1, '忙情形的对照计数未被污染')
+    busyTree = await flush(rtBusy, BranchTree, { owner: ownerA, transport: tBusy, busy: false })
+    ok(tBusy.calls.filter((c) => c.action === 'tree').length === 2, '一轮结束（busy 变回 false）后原地重取树')
 
     const rtErr = makeHookRuntime()
     globalThis.__V3_HOOKS = rtErr
@@ -575,7 +514,7 @@ async function main() {
     ok(tErr.calls.filter((c) => c.action === 'tree').length >= 2, '重试再次发请求')
     tErr.pending[4].resolve({ ok: true, ...treeFixture() })
     errTree = await flush(rtErr, BranchTree, { owner: ownerA, transport: tErr })
-    ok(findByType(errTree, Tree), '重试成功后回到树')
+    ok(findByType(errTree, BranchGraph), '重试成功后回到泳道图')
 
     const rtRaw = makeHookRuntime()
     globalThis.__V3_HOOKS = rtRaw
@@ -605,13 +544,13 @@ async function main() {
     }
     t.pending[1].resolve({ ok: true, ...treeB })
     tree = await flush(rt, BranchTree, { owner: ownerB, transport: t })
-    ok(rowIds(tree, TreeItem).includes('b-root'), 'B 的树渲染出来')
-    ok(!rowIds(tree, TreeItem).includes('a2'), '此时还没有 A 的行')
+    ok(laneRows(tree).includes('b-root'), 'B 的树渲染出来')
+    ok(!laneRows(tree).includes('a2'), '此时还没有 A 的行')
 
     t.pending[0].resolve({ ok: true, ...treeFixture() })
     tree = await flush(rt, BranchTree, { owner: ownerB, transport: t })
-    ok(rowIds(tree, TreeItem).includes('b-root'), '迟到 A 响应后仍显示 B 的树')
-    ok(!rowIds(tree, TreeItem).includes('a2') && !rowIds(tree, TreeItem).includes('u1'), '旧 A 的树未覆盖新会话')
+    ok(laneRows(tree).includes('b-root'), '迟到 A 响应后仍显示 B 的树')
+    ok(!laneRows(tree).includes('a2') && !laneRows(tree).includes('u1'), '旧 A 的树未覆盖新会话')
 
     const rt2 = makeHookRuntime()
     globalThis.__V3_HOOKS = rt2
@@ -622,7 +561,7 @@ async function main() {
     let late = rt2.render(BranchTree, propsA)
     t2.pending[0].resolve({ ok: true, ...treeFixture() })
     late = await flush(rt2, BranchTree, propsA)
-    findByType(late, Tree).props.onSelectionChange(new Set(['a1']))
+    findByType(late, BranchGraph).props.onSelect('u2')
     late = await flush(rt2, BranchTree, propsA)
     findByTestId(late, 'branch-navigate').props.onPress()
     late = await flush(rt2, BranchTree, propsA)
@@ -633,7 +572,7 @@ async function main() {
     t2.pending.find((p) => p.request === navCall2).resolve({ ok: true })
     late = await flush(rt2, BranchTree, { owner: ownerB, transport: t2, onNavigated: onNav })
     ok(synced === 0, '切走后迟到的 navigate 不回调 sync')
-    ok(!!findByTestId(late, 'branch-tree-loading') || !!findByType(late, Tree), '迟到 navigate 不把面板改回旧状态')
+    ok(!!findByTestId(late, 'branch-tree-loading') || !!findByType(late, BranchGraph), '迟到 navigate 不把面板改回旧状态')
     ok(t2.calls.filter((c) => c.action === 'navigate').length === 1, '切走后未再发 navigate')
   }
 
@@ -730,7 +669,7 @@ async function main() {
     await rm(outdir2, { recursive: true, force: true })
   }
 
-  group('正式 Tree 原语：treegrid / aria-level / 展开 / 选中落在真实 DOM（SSR）')
+  group('泳道图落到真实 DOM：listbox / option / 选中 / 连线（SSR）')
   {
     installSsrGlobals()
     const require = createRequire(import.meta.url)
@@ -746,41 +685,22 @@ async function main() {
       process.exitCode = 1
       return
     }
-    const { React, renderToStaticMarkup, Tree: RacTree, renderBranchNodes, branchText, buildTreeView, initialCollapsedForLeaf } = rac
+    const { React, renderToStaticMarkup, BranchGraph: RacGraph, branchText, buildBranchLanes } = rac
 
     const { tree, leafId } = treeFixture()
-    const view = buildTreeView(tree, leafId, new Set())
-    const nodes = nestBranchRows(view.rows)
-    const expandedKeys = new Set()
-    const collect = (list) => {
-      for (const node of list) {
-        if (node.children.length) expandedKeys.add(node.row.entryId)
-        collect(node.children)
-      }
-    }
-    collect(nodes)
-
-    const ctx = { text: branchText('zh-CN'), pending: null, onNavigate: () => {} }
-    const element = React.createElement(
-      RacTree,
-      { 'aria-label': '会话树', selectionMode: 'single', selectionBehavior: 'replace', selectedKeys: ['a2'], expandedKeys },
-      renderBranchNodes(nodes, ctx)
+    const lanes = buildBranchLanes(tree, leafId)
+    const html = renderToStaticMarkup(
+      React.createElement(RacGraph, { lanes, text: branchText('zh-CN'), selected: 'a2', pending: null, onSelect: () => {}, onAction: () => {} })
     )
-    const html = renderToStaticMarkup(element)
 
-    ok(html.includes('class="ui-tree') && html.includes('role="treegrid"'), 'RAC 渲染为 role="treegrid" 的 .ui-tree 容器')
-    ok(html.includes('aria-label="会话树"'), '容器保留 aria-label')
-    ok(!/role="tree"/.test(html), '不是用旧 role="tree" 冒充')
-
-    ok(html.includes('aria-level="1"') && html.includes('aria-level="2"') && html.includes('aria-level="3"'), '真实嵌套产生 aria-level 1 / 2 / 3')
-    ok((html.match(/aria-expanded="true"/g) ?? []).length >= 2, '已展开父行带 aria-expanded="true"')
-
-    ok(html.includes('aria-selected="true"') && html.includes('aria-selected="false"'), '选中 / 未选中都带 aria-selected')
+    ok(html.includes('role="listbox"') && html.includes('aria-label="分支图"'), '行列表是带名称的 listbox')
+    ok((html.match(/role="option"/g) ?? []).length === 4, '每个关键节点一个 option')
     const leafTag = html.match(/<[^>]*data-key="a2"[^>]*>/)?.[0] ?? ''
-    ok(leafTag.includes('aria-selected="true"'), '当前叶子行（data-key=a2）是选中行')
-    ok(leafTag.includes('aria-level="1"'), '当前叶子在主线上，层级为 1（线性链不缩进）')
-
-    ok(html.includes('>again<') && html.includes('>hello<'), '真实条目文字进入 DOM（不截字符串）')
+    ok(leafTag.includes('aria-selected="true"'), '当前位置所在行是选中行')
+    ok((html.match(/class="branch-graph__edge"/g) ?? []).length === 3, '每个分支起点一条连线')
+    ok((html.match(/data-active="1"/g) ?? []).length >= 2, '当前分支上的行与连线带活动标记')
+    ok(html.includes('aria-hidden="true"') && html.includes('<svg'), '连线图对读屏隐藏')
+    ok(html.includes('>hello<') && html.includes('>side<'), '真实条目文字进入 DOM')
 
     await rm(outdirRac, { recursive: true, force: true })
   }

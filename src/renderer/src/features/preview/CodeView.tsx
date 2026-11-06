@@ -108,6 +108,7 @@ export interface CodeViewProps {
   firstNumber?: number
   target?: CodeViewTarget | null
   labels: CodeViewText
+  truncatedNote?: string
   onComment?: (comment: CodeComment) => void
 }
 
@@ -358,7 +359,7 @@ function LineCommentCard({
 
 const EMPTY_FIND_RESULT: FindResult = { matches: [], invalid: false, capped: false }
 
-export function CodeView({ text, name, settings, firstNumber = 1, target, labels, onComment }: CodeViewProps) {
+export function CodeView({ text, name, settings, firstNumber = 1, target, labels, truncatedNote, onComment }: CodeViewProps) {
   const listRef = useRef<VListHandle>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const language = useMemo(() => pickLanguage(name, (value) => highlightLanguage(value) !== null), [name])
@@ -752,6 +753,10 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
       {limited.capped ? (
         <p role="note" className="v3-code-note" data-testid="v3-code-capped">
           {labels.tooManyLines.replace('{n}', String(CODE_LINE_LIMIT))}
+        </p>
+      ) : truncatedNote ? (
+        <p role="note" className="v3-code-note" data-testid="v3-code-truncated">
+          {truncatedNote}
         </p>
       ) : null}
       {bar === 'find' ? (

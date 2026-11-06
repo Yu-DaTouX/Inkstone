@@ -130,13 +130,15 @@ export function RailStatsBody({ model, breakdownLabel }: { model: RailStatsModel
   const { tokens, time, speed } = model
   const breakdown: ReactElement[] = []
   if (tokens && tokens.segments.length) {
+    const fresh = tokens.segments.filter((seg) => seg.key !== 'cacheRead')
+    const barSegments = fresh.some((seg) => seg.value > 0) ? fresh : tokens.segments
     breakdown.push(
       <section key="tokens" className="wb-rs-block" data-block="tokens">
-        <SegmentBar aria-label={barLabel(tokens.ariaLabel, tokens.segments)} segments={tokens.segments} />
+        <SegmentBar aria-label={barLabel(tokens.ariaLabel, tokens.segments)} segments={barSegments} />
         <ul className="wb-rs-legend">
           {tokens.segments.map((seg) => (
             <li key={seg.key} title={seg.title} data-seg={seg.key}>
-              <Swatch tone={seg.tone} />
+              {barSegments.includes(seg) ? <Swatch tone={seg.tone} /> : <span aria-hidden="true" />}
               <span className="wb-rs-name">{seg.label}</span>
               <span className="wb-rs-num wb-rs-val">{seg.text}</span>
             </li>

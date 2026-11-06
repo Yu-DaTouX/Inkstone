@@ -167,7 +167,7 @@ export function PrActionBar({ cwd, detail, text, action, pending, onPendingChang
       {open && notes.length ? (
         <ul className="gh-pr-act__reasons ui-meta-text" data-testid="gh-pr-merge-reasons" data-merge-state={detail.mergeState || undefined}>
           {notes.map((reason) => (
-            <li key={reason}>{reason}</li>
+            <li key={reason} data-tone={reason === text.status.blockers.conflict ? 'fail' : undefined}>{reason}</li>
           ))}
         </ul>
       ) : null}

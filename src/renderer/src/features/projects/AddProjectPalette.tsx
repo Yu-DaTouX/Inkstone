@@ -319,7 +319,7 @@ function AddProjectBody({ isOpen }: { isOpen: boolean }): ReactElement {
     new: 'project.add.namePlaceholder',
     url: 'project.add.urlPlaceholder',
     github: 'project.add.reposSearch',
-    setup: 'project.add.search'
+    setup: 'project.add.reposSearch'
   }
   const titleKey: Record<View, MessageKey> = {
     root: 'project.add.title',
@@ -460,7 +460,7 @@ function AddProjectBody({ isOpen }: { isOpen: boolean }): ReactElement {
 
           {view === 'setup' ? (
             <div className="apm-setup" data-testid="v3-add-project-setup">
-              <span className="apm-setup__title">{account && !account.installed ? t('project.add.setupMissing') : account?.error ? t('project.add.failed', { error: account.error }) : `${t('project.add.setupTitle')} · ${t('project.add.setupLoggedOut')}`}</span>
+              <span className="apm-setup__title" title={account?.error || undefined}>{account && !account.installed ? t('project.add.setupMissing') : `${t('github.pr.signedOutTitle')} · ${t('project.add.setupLoggedOut')}`}</span>
               <code className="apm-code">gh auth login</code>
               <Button size="sm" variant="ghost" onPress={() => void navigator.clipboard?.writeText('gh auth login').catch(() => undefined)} data-testid="v3-add-project-copy">
                 {t('project.add.copy')}

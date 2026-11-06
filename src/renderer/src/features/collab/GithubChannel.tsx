@@ -162,8 +162,7 @@ export function GithubChannel({ lang, peerId, peerComputer, localProject, branch
 
       <div className="gh-channel__account" data-testid="v3-collab-github-account">
         <TextField
-          label={text.accountLabel}
-          description={text.accountHint}
+          label={<span title={text.accountHint}>{text.accountLabel}</span>}
           value={loginDraft}
           maxLength={40}
           isInvalid={loginInvalid}
@@ -206,8 +205,8 @@ export function GithubChannel({ lang, peerId, peerComputer, localProject, branch
                     {row.pr ? <Badge tone={row.pr.isDraft ? undefined : 'ok'}>{fill(text.prLabel, { n: row.pr.number })}{row.pr.isDraft ? ` · ${text.prDraft}` : ''}</Badge> : null}
                   </div>
                   <p className="gh-channel__meta">
-                    <span title={row.peerAuthor ?? undefined}>{row.peerAuthor ? `${peerComputer} · ${row.peerAuthor}` : row.pr?.title ?? ''}</span>
-                    <span className="gh-channel__owner">{row.owner ? `${fill(text.owner, { login: row.owner })} · ${row.ownerSource === 'manual' ? text.manualTag : text.inferredTag}` : text.unknownOwner}</span>
+                    <span title={row.peerAuthor ? peerComputer : undefined}>{row.peerAuthor ?? row.pr?.title ?? ''}</span>
+                    {row.owner ? <span className="gh-channel__owner">{`${fill(text.owner, { login: row.owner })} · ${row.ownerSource === 'manual' ? text.manualTag : text.inferredTag}`}</span> : null}
                   </p>
                   <div className="collab-actions">
                     {onPeer && !onGithub && state.status === 'ready' && state.login ? (

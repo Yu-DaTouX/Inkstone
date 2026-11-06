@@ -12,7 +12,6 @@ export interface GithubChannelText {
   sourcePeer: string
   sourceGithub: string
   owner: string
-  unknownOwner: string
   prLabel: string
   prDraft: string
   openPr: string
@@ -56,7 +55,6 @@ const ZH: GithubChannelText = {
   sourcePeer: '点对点',
   sourceGithub: 'GitHub',
   owner: '@{login}',
-  unknownOwner: '未关联 GitHub 账号',
   prLabel: 'PR #{n}',
   prDraft: '草稿',
   openPr: '打开 PR',
@@ -100,7 +98,6 @@ const EN: GithubChannelText = {
   sourcePeer: 'Peer',
   sourceGithub: 'GitHub',
   owner: '@{login}',
-  unknownOwner: 'No GitHub account linked',
   prLabel: 'PR #{n}',
   prDraft: 'Draft',
   openPr: 'Open PR',

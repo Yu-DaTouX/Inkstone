@@ -7,5 +7,6 @@ export function compactNumber(n: number): string {
 }
 
 export function shareText(share: number): string {
+  if (!(share > 0)) return '0%'
   return share >= 0.01 ? `${Math.round(share * 100)}%` : '<1%'
 }

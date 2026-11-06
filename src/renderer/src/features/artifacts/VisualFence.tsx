@@ -307,7 +307,7 @@ function DataBlock({
     return (
       <div className="v3-visual-invalid">
         {fallback}
-        <Notice tone="fail" compact className="v3-visual-invalid-note">{t('vb.invalid', { error: parsed.error })}</Notice>
+        <Notice tone="fail" variant="hint" className="v3-visual-invalid-note"><span title={parsed.error}>{t('vb.invalid')}</span></Notice>
       </div>
     )
   }

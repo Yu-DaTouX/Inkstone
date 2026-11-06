@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { compactNumber, shareText, useMoney, useUsageStats } from './UsageOverview'
 import { tokenBreakdownOf, type UsageRange } from '../../../../shared/usage-stats'
@@ -29,6 +29,11 @@ export function UsagePage() {
   const text = settingsText(lang)
   const en = lang === 'en-US'
   const models = useStore((s) => s.models)
+  const authProviders = useStore((s) => s.authProviders)
+  const loadAuthProviders = useStore((s) => s.loadAuthProviders)
+  useEffect(() => {
+    if (useStore.getState().authProviders.length === 0) void loadAuthProviders()
+  }, [loadAuthProviders])
   const [range, setRange] = useState<UsageRange>('all')
   const [dimension, setDimension] = useState<UsageDimension>('model')
   const stats = useUsageStats(range)
@@ -63,7 +68,7 @@ export function UsagePage() {
   }, [stats])
   const providerTone = (provider: string): number => Math.max(0, providers.listed.findIndex((item) => item.provider === provider)) % PALETTE + 1
   const providerName = (provider: string): string =>
-    !provider ? (en ? 'Other' : '其他') : GROUP_KEYS.has(provider) ? t(`quota.group.${provider}` as MessageKey) : provider
+    !provider ? (en ? 'Other' : '其他') : GROUP_KEYS.has(provider) ? t(`quota.group.${provider}` as MessageKey) : authProviders.find((info) => info.id === provider)?.name?.trim() || provider
   const shareTotal = providers.listed.reduce((sum, item) => sum + item.tokens, 0) + providers.rest
 
   const rows = !stats
@@ -132,8 +137,8 @@ export function UsagePage() {
               <li key={item.provider} style={{ '--tone': `var(--data-${providerTone(item.provider)})` } as CSSProperties}>
                 <i aria-hidden="true" />
                 <span>{providerName(item.provider)}</span>
-                <b className="ui-meta-num">{item.cost > 0 ? money(item.cost) : compactNumber(item.tokens)}</b>
-                <span className="ui-meta-num">{shareTotal > 0 ? shareText(item.tokens / shareTotal) : ''}</span>
+                <b className="ui-meta-num">{compactNumber(item.tokens)}</b>
+                <span className="ui-meta-num">{[shareTotal > 0 ? shareText(item.tokens / shareTotal) : '', item.cost > 0 ? money(item.cost) : ''].filter(Boolean).join(' · ')}</span>
               </li>
             ))}
           </ul>
@@ -148,29 +153,29 @@ export function UsagePage() {
         {dimension === 'day' && range === 'all' ? <p className="usage-page-note">{text.usageDailyCap}</p> : null}
         {stats && rows.length === 0 ? <p className="usage-page-note">{dimension === 'day' ? text.usageNoDays : text.usageNoModels}</p> : null}
         {rows.length ? (
-          <ol className="usage-page-rows">
-            <li className="usage-page-row" data-head="1" aria-hidden="true">
-              <span>#</span>
-              <span>{dimension === 'day' ? text.usageByDay : text.usageByModel}</span>
-              <span>{t('usage.cost')}</span>
-              <span>%</span>
-              <span>Token</span>
+          <ol className="usage-page-rows" role="table" aria-label={text.groupUsageBreakdown}>
+            <li className="usage-page-row" data-head="1" role="row">
+              <span role="columnheader">#</span>
+              <span role="columnheader">{dimension === 'day' ? text.usageByDay : text.usageByModel}</span>
+              {dimension === 'day' ? null : <span role="columnheader">{t('usage.cost')}</span>}
+              <span role="columnheader">%</span>
+              <span role="columnheader">Token</span>
             </li>
             {rows.map((row, i) => {
               const icon = row.provider ? providerFavicon(row.provider) : null
               return (
-                <li key={row.key} className="usage-page-row" title={row.title || row.key} style={{ '--tone': row.provider === null ? 'var(--fg3)' : `var(--data-${providerTone(row.provider)})` } as CSSProperties}>
-                  <span className="ui-meta-num">{i + 1}</span>
-                  <span className="usage-page-row-name">
+                <li key={row.key} className="usage-page-row" role="row" title={row.title || row.key} style={{ '--tone': row.provider === null ? 'var(--fg3)' : `var(--data-${providerTone(row.provider)})` } as CSSProperties}>
+                  <span className="ui-meta-num" role="cell">{i + 1}</span>
+                  <span className="usage-page-row-name" role="cell">
                     <span className="usage-page-row-label">
                       {icon ? <img src={icon} alt="" aria-hidden="true" /> : null}
                       <span>{row.label}</span>
                     </span>
                     <span className="usage-page-row-bar" style={{ width: `${Math.max(2, row.ratio * 100)}%` }} aria-hidden="true" />
                   </span>
-                  <span className="ui-num">{row.cost != null && row.cost > 0 ? money(row.cost) : ''}</span>
-                  <span className="ui-meta-num">{row.value > 0 ? shareText(row.share) : ''}</span>
-                  <span className="ui-num">{compactNumber(row.value)}</span>
+                  {dimension === 'day' ? null : <span className="ui-num" role="cell">{row.cost != null && row.cost > 0 ? money(row.cost) : ''}</span>}
+                  <span className="ui-meta-num" role="cell">{row.value > 0 ? shareText(row.share) : ''}</span>
+                  <span className="ui-num" role="cell">{compactNumber(row.value)}</span>
                 </li>
               )
             })}

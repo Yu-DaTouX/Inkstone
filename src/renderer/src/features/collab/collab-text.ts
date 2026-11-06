@@ -55,6 +55,7 @@ export interface CollabText {
   stateFailed: string
   stateEnded: string
   failedReason: string
+  connectionFailures: Record<'peer_denied' | 'peer_connection_required' | 'connection-lost', string>
   requestOps: string
   note: string
   connect: string
@@ -93,7 +94,6 @@ export interface CollabText {
   branchesTitle: string
   branchesEmpty: string
   sessions: string
-  sessionsNone: string
   remoteCurrent: string
   stateNotFetched: string
   stateUpToDate: string
@@ -136,7 +136,6 @@ export interface CollabText {
   continueFailed: string
   continueDone: string
   sessionFailed: string
-  needFetch: string
   noPull: string
   pushTitle: string
   pushHint: string
@@ -257,7 +256,7 @@ const ZH: CollabText = {
   },
   title: '多人协作',
   nav: '多人协作',
-  lede: '配对后像 git 一样拉取、对比、合并对方分支；推送只落在对方「你的名字/分支」下。',
+  lede: '配对后拉取、对比、合并彼此的分支',
   bridgeMissing: '当前构建还没有接入多人协作。',
   refresh: '刷新',
   loading: '正在读取…',
@@ -289,8 +288,8 @@ const ZH: CollabText = {
   inviteCopied: '已复制',
   inviteCode: '配对码',
   inviteExpires: '{seconds} 秒后失效',
-  inviteStopped: '先在「设置 › 手机与远程」开启接入，才能邀请别人。',
-  inviteLoopback: '接入只监听本机地址，别的电脑连不上。请在「设置 › 手机与远程」改为 Tailscale、Radmin VPN 或局域网。',
+  inviteStopped: '未开启手机与远程接入',
+  inviteLoopback: '接入只监听本机，别的电脑连不上',
   inviteOpenDevices: '打开手机与远程',
   inviteQrLabel: '邀请链接二维码',
   stateIdle: '未连接',
@@ -299,6 +298,11 @@ const ZH: CollabText = {
   stateFailed: '失败',
   stateEnded: '对方已结束连接',
   failedReason: '连接失败：{error}',
+  connectionFailures: {
+    peer_denied: '对方拒绝了连接，或没有及时处理',
+    peer_connection_required: '本次连接已失效，请重新申请',
+    'connection-lost': '连接断开且没能重连，请重新申请'
+  },
   requestOps: '申请的操作',
   note: '写给对方的说明（可选）',
   connect: '申请连接',
@@ -343,7 +347,6 @@ const ZH: CollabText = {
   branchesTitle: '对方的分支',
   branchesEmpty: '对方这个项目没有可拉取的分支。',
   sessions: '{n} 个相关会话',
-  sessionsNone: '没有相关会话',
   remoteCurrent: '对方当前分支',
   stateNotFetched: '未拉取',
   stateUpToDate: '已是最新',
@@ -385,7 +388,6 @@ const ZH: CollabText = {
   continueFailed: '没能接着做：{error}',
   continueDone: '已在 {worktree} 开了新会话，提示词已填好。',
   sessionFailed: '新建会话失败：{error}',
-  needFetch: '先拉取这个分支。',
   noPull: '这次连接没有「拉取」权限，需要重新申请连接并勾选「拉取」。',
   pushTitle: '推送到 {computer}',
   pushHint: '推送只会落在对方的「你的名字/分支」下，不会改动对方已有的分支。',
@@ -522,7 +524,7 @@ const EN: CollabText = {
   },
   title: 'Collaboration',
   nav: 'Collaboration',
-  lede: 'Pair once to pull, compare and merge each other’s branches like git; a push only lands under “your name/branch” on their side.',
+  lede: 'Pair to pull, compare and merge each other’s branches',
   bridgeMissing: 'Collaboration is not wired into this build yet.',
   refresh: 'Refresh',
   loading: 'Loading…',
@@ -554,8 +556,8 @@ const EN: CollabText = {
   inviteCopied: 'Copied',
   inviteCode: 'Pairing code',
   inviteExpires: 'Expires in {seconds}s',
-  inviteStopped: 'Turn on access in Settings › Phone & remote before inviting anyone.',
-  inviteLoopback: 'Access only listens on this computer, so others cannot reach it. Switch to Tailscale, Radmin VPN or LAN in Settings › Phone & remote.',
+  inviteStopped: 'Phone & remote access is off',
+  inviteLoopback: 'Access listens on this computer only; others cannot reach it',
   inviteOpenDevices: 'Open Phone & remote',
   inviteQrLabel: 'Invite link QR code',
   stateIdle: 'Not connected',
@@ -564,6 +566,11 @@ const EN: CollabText = {
   stateFailed: 'Failed',
   stateEnded: 'They ended the connection',
   failedReason: 'Connection failed: {error}',
+  connectionFailures: {
+    peer_denied: 'They declined or did not respond in time',
+    peer_connection_required: 'This connection expired; request again',
+    'connection-lost': 'Connection dropped and could not reconnect; request again'
+  },
   requestOps: 'Requested access',
   note: 'Note to the other person (optional)',
   connect: 'Request connection',
@@ -608,7 +615,6 @@ const EN: CollabText = {
   branchesTitle: 'Their branches',
   branchesEmpty: 'This project has no branches to pull.',
   sessions: '{n} related sessions',
-  sessionsNone: 'No related sessions',
   remoteCurrent: 'Their current branch',
   stateNotFetched: 'Not pulled',
   stateUpToDate: 'Up to date',
@@ -650,7 +656,6 @@ const EN: CollabText = {
   continueFailed: 'Could not continue: {error}',
   continueDone: 'Started a new session in {worktree} with the prompt filled in.',
   sessionFailed: 'Could not start a session: {error}',
-  needFetch: 'Pull this branch first.',
   noPull: 'This connection does not allow pulling. Request a new connection with “Pull” checked.',
   pushTitle: 'Push to {computer}',
   pushHint: 'A push only lands under “your name/branch” on their side and never changes their existing branches.',
@@ -730,6 +735,12 @@ export function collabFailureText(text: CollabText, code: string | null | undefi
   if (!code) return null
   const table: Record<string, string | undefined> = text.failures
   return table[code] ?? null
+}
+
+export function connectionFailureText(text: CollabText, code: string | null | undefined): string | null {
+  if (!code) return null
+  const table: Record<string, string | undefined> = text.connectionFailures
+  return table[code] ?? collabFailureText(text, code)
 }
 
 export function peerDisplayName(name: string): string {

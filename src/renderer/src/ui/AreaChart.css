@@ -49,10 +49,42 @@
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
   }
-  .ui-area-chart__hit {
-    fill: transparent;
+  .ui-area-chart__box {
+    position: relative;
+    min-width: 0;
+    border-radius: var(--r-xs);
+    outline: none;
   }
-  .ui-area-chart__hit:hover {
-    fill: var(--alpha-1);
+  .ui-area-chart__box:focus-visible {
+    box-shadow: var(--ring-focus);
+  }
+  .ui-area-chart__marker {
+    stroke: var(--line2);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  .ui-area-chart__dot {
+    position: absolute;
+    left: var(--chart-x);
+    top: var(--chart-y);
+    width: 8px;
+    height: 8px;
+    border-radius: var(--r-full);
+    background: var(--data-1);
+    box-shadow: 0 0 0 2px var(--bg);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .ui-area-chart__readout {
+    position: absolute;
+    top: 0;
+    left: var(--chart-x);
+    padding: var(--s-2) var(--s-8);
+    white-space: nowrap;
+    transform: translateX(var(--chart-shift));
+    pointer-events: none;
+  }
+  .ui-area-chart__readout:empty {
+    display: none;
   }
 }

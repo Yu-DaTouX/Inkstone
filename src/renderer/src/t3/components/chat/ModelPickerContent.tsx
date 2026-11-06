@@ -50,6 +50,7 @@ const MAX_LIST_UNITS = 108;
 const SIDEBAR_ITEM_UNITS = 11;
 const SIDEBAR_CHROME_UNITS = 2;
 const LEGACY_ROW_KEY = "__legacy__";
+const OTHERS_GROUP_KEY = "__others__";
 
 type ModelPickerListEntry =
   | { kind: "header"; key: string; label: string; vendorKey: string | null; favorites?: boolean }
@@ -62,6 +63,7 @@ function buildGroupedEntries(input: {
   isActive: (model: ModelPickerItem) => boolean;
   legacyExpanded: boolean;
   favoritesLabel: string;
+  othersLabel: string;
 }): ModelPickerListEntry[] {
   const favorites = input.models.filter(input.isFavorite);
   const rest = input.models.filter((model) => !input.isFavorite(model));
@@ -82,6 +84,15 @@ function buildGroupedEntries(input: {
         vendorKey: vendor?.key ?? null,
         models: [model],
       });
+  }
+  const singles = [...groups].filter(([, group]) => group.models.length === 1);
+  if (singles.length > 1 && singles.length < groups.size) {
+    for (const [key] of singles) groups.delete(key);
+    groups.set(OTHERS_GROUP_KEY, {
+      label: input.othersLabel,
+      vendorKey: null,
+      models: singles.flatMap(([, group]) => group.models),
+    });
   }
   const withHeaders = groups.size > 1;
   const entries: ModelPickerListEntry[] = [];
@@ -178,7 +189,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     ? modelPickerModelKey(props.activeInstanceId, activeModelSlug)
     : null;
   const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId | "favorites">(
-    () => (favoritesSet.size > 0 ? "favorites" : props.activeInstanceId),
+    () =>
+      favoritesSet.has(providerModelKey(props.activeInstanceId, activeModelSlug))
+        ? "favorites"
+        : props.activeInstanceId,
   );
   const [searchHeight, setSearchHeight] = useState(0);
   const [legacyExpanded, setLegacyExpanded] = useState(false);
@@ -267,6 +281,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       isActive: isActiveModel,
       legacyExpanded: expanded,
       favoritesLabel: t("composer.t3.picker.favorites"),
+      othersLabel: t("composer.t3.picker.otherVendors"),
     });
   const tallestTabUnits = (() => {
     const favorites = flatModels.filter(isFavoriteModel);

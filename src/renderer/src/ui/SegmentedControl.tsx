@@ -6,6 +6,7 @@ export interface SegmentedControlOption<T extends string> {
   value: T
   label: string
   testId?: string
+  disabled?: boolean
 }
 
 export interface SegmentedControlProps<T extends string> {
@@ -40,7 +41,7 @@ export function SegmentedControl<T extends string>({
       className={cx('ui-seg', className)}
     >
       {options.map((option) => (
-        <ToggleButton key={option.value} id={option.value} className="ui-seg__item" data-testid={option.testId}>
+        <ToggleButton key={option.value} id={option.value} className="ui-seg__item" isDisabled={option.disabled} data-testid={option.testId}>
           <SelectionIndicator className="ui-seg__thumb" />
           <span className="ui-seg__label" data-text={option.label}>
             {option.label}

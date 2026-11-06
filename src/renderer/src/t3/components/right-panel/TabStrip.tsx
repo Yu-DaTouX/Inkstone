@@ -306,6 +306,7 @@ export function TabStrip(props: TabStripProps) {
                 key={surface.id}
                 surface={surface}
                 active={surface.id === props.activeId}
+                focusable={props.tabs.some((tab) => tab.id === props.activeId) ? surface.id === props.activeId : surface.id === props.tabs[0]?.id}
                 controls={`rp-surface-${surface.id}`}
                 closeLabel={closeLabelOf(surface)}
                 dragging={drag?.id === surface.id}

@@ -13,8 +13,22 @@ function startsNewBlock(line: string): boolean {
   return !LIST_ITEM.test(line) && !DEFINITION.test(line) && !HTML_BLOCK.test(line)
 }
 
+function closeLeadingEmphasis(text: string): string {
+  const gap = text.lastIndexOf('\n\n')
+  const start = gap < 0 ? 0 : gap + 2
+  const paragraph = text.slice(start)
+  if (!/^\*(?![*\s])/.test(paragraph) || /^`{3,}|^~{3,}/m.test(paragraph)) return text
+  const stars = paragraph.replace(/\\\*/g, '').split('*').length - 1
+  return stars % 2 === 1 ? `${text.trimEnd()}*` : text
+}
+
 export function prepareStreamingMarkdown(text: string, live: boolean): string {
-  if (!live || !text.includes('`')) return text
+  if (!live) return text
+  return closeLeadingEmphasis(closeOpenCode(text))
+}
+
+function closeOpenCode(text: string): string {
+  if (!text.includes('`')) return text
   let fence: { char: string; size: number } | null = null
   let inline: { at: number; size: number } | null = null
   let offset = 0

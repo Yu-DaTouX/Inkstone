@@ -84,8 +84,10 @@ export function useComposerModelAdapter(): ComposerModelAdapter {
   const t = useT()
   const models = useStore((s) => s.models) ?? EMPTY_MODELS
   const providers = useStore((s) => s.authProviders) ?? EMPTY_PROVIDERS
-  const provider = useStore((s) => s.session?.model?.provider ?? '')
-  const id = useStore((s) => s.session?.model?.id ?? '')
+  const remembered = useStore((s) => (s.session ? '' : s.sessions.find((item) => item.id === s.peekedSessionId)?.model ?? ''))
+  const split = remembered.indexOf('/')
+  const provider = useStore((s) => s.session?.model?.provider ?? '') || (split > 0 ? remembered.slice(0, split) : '')
+  const id = useStore((s) => s.session?.model?.id ?? '') || (split > 0 ? remembered.slice(split + 1) : '')
   const favorites = useStore((s) => s.settings?.modelFavorites) ?? EMPTY_CHOICES
   const hidden = useStore((s) => s.settings?.modelHidden) ?? EMPTY_CHOICES
   const order = useStore((s) => s.settings?.modelProviderOrder) ?? EMPTY_ORDER

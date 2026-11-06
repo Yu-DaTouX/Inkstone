@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const source = fileURLToPath(new URL('../src/renderer/src/features/composer/composer-keys.ts', import.meta.url))
 const result = await build({ entryPoints: [source], bundle: true, write: false, platform: 'node', format: 'esm' })
-const { planComposerKey, isComposingKey, swallowStrayEnter, swallowsPendingCompletionKey, roundRunningOf } = await import(
+const { planComposerKey, isComposingKey, swallowStrayEnter, swallowsPendingCompletionKey, roundRunningOf, viewRunnerRunning } = await import(
   `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`
 )
 
@@ -127,5 +127,11 @@ assert.equal(
 )
 assert.equal(roundRunningOf({ runnerRunning: false, isCompacting: true }), true, '压缩中算「在跑」')
 assert.equal(roundRunningOf({ runnerRunning: false, isStreaming: false }), false, '空闲不算「在跑」')
+
+const runners = [{ id: 'r1', runId: 'r1', sessionId: 'old', running: true }]
+assert.equal(viewRunnerRunning({ runners, activeRunnerId: 'r1', peekedSessionId: 'old' }), true, '正在看的会话在跑')
+assert.equal(viewRunnerRunning({ runners, activeRunnerId: 'r1', peekedSessionId: 'new' }), false, '切到别的会话、新会话还没激活时不沿用旧会话的运行态')
+assert.equal(viewRunnerRunning({ runners, activeRunnerId: 'r1', peekedSessionId: null }), true, '没有在看的会话 id 时按活动实例判断')
+assert.equal(viewRunnerRunning({ runners: [{ id: 'r2', running: true }], activeRunnerId: 'r2', peekedSessionId: 'x' }), true, '新会话实例还没有 id 时按活动实例判断')
 
 console.log('输入框键位策略：发送/换行/排队/双击中止/IME 与补全消费检查通过')

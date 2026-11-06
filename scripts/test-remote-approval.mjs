@@ -45,6 +45,12 @@ export async function runRemoteApprovalTests(ok) {
   ok(!('toolCallId' in plainPayload), '没有 toolCallId 的提问不带该字段')
   asked.respondUi({ id: plainPayload.id, value: 'x' })
   await plain
+  const fields = [{ name: 'side', label: '哪一方', kind: 'choice', options: [{ label: '甲' }, { label: '乙' }] }, { name: 'note', label: '备注', kind: 'text' }]
+  const formAsk = asked.requestHostUi({ method: 'input', message: '合同选哪一方', form: fields, timeout: 1000 })
+  const formRequest = asked.pendingUiRequests().find(item => item.form)
+  ok(formRequest?.form?.length === 2 && formRequest.message === '合同选哪一方', '表单问题在待答列表里保留字段与问题正文')
+  ok(asked.answerUiRemotely(formRequest.id, { value: JSON.stringify({ side: '甲', note: '快' }) }).ok, '手机端可以提交表单答案')
+  ok((await formAsk).value === '{"side":"甲","note":"快"}', '表单答案原样交回提问方')
   ok(questionToolCallId({ toolCall: { id: 'call_n' } }) === 'call_n' && questionToolCallId({ toolCallId: 'call_f' }) === 'call_f' && questionToolCallId({}) === undefined, 'toolCallId 从 toolCall.id 或 toolCallId 取得')
 }
 

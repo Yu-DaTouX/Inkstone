@@ -14,7 +14,7 @@ import { PendingRunNotice } from './RunNotice'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
 import { HomeBackdrop } from '../ambient/HomeBackdrop'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
-import { Button } from '../../ui'
+import { Button, Skeleton } from '../../ui'
 import { ChevronDown } from 'lucide-react'
 import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { V3EmptyState } from './V3EmptyState'
@@ -80,6 +80,21 @@ function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>): R
   const item = items[index]
   if (!item) return null
   return { turnId: item.id, offset: Math.max(0, handle.scrollOffset - handle.getItemOffset(index)) }
+}
+
+function SwitchSkeleton({ label }: { label: string }): JSX.Element {
+  return (
+    <div className="v3-switch-skeleton" role="status" aria-label={label} data-testid="v3-switch-skeleton">
+      {[0, 1].map((round) => (
+        <div key={round} className="v3-switch-skeleton__round">
+          <Skeleton shape="rect" className="v3-switch-skeleton__ask" width="38%" height="var(--s-32)" />
+          <Skeleton width="92%" />
+          <Skeleton width="84%" />
+          <Skeleton width="56%" />
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function SessionView(): JSX.Element {
@@ -258,6 +273,7 @@ export function SessionView(): JSX.Element {
   const [stick, setStick] = useState(true)
   const [showJump, setShowJump] = useState(false)
   const stickRef = useRef(true)
+  const emptyRef = useRef(false)
   const intentRef = useRef<number | null>(null)
   const streamRef = useRef<HTMLDivElement | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -293,7 +309,7 @@ export function SessionView(): JSX.Element {
   const streamingSeenRef = useRef({ identity, streamingId })
   if (streamingSeenRef.current.identity !== identity || streamingSeenRef.current.streamingId !== streamingId) {
     const seen = streamingSeenRef.current
-    if (seen.identity === identity && seen.streamingId && !streamingId && !virtual && streamRef.current) settleRef.current = settleAnchor(streamRef.current)
+    if (seen.identity === identity && seen.streamingId && !streamingId && !virtual && streamRef.current) settleRef.current = settleAnchor(streamRef.current, stickRef.current)
     streamingSeenRef.current = { identity, streamingId }
   }
 
@@ -403,6 +419,7 @@ export function SessionView(): JSX.Element {
     const wheel = (event: WheelEvent): void => {
       const handle = vlistRef.current
       const metrics = handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
+      if (event.deltaY < 0 && metrics && metrics.size <= metrics.viewport + 1) return
       if (event.deltaY > 0 && metrics && distanceFromBottom(metrics) <= 1) {
         intentRef.current = performance.now()
         setStickNow(true)
@@ -469,7 +486,7 @@ export function SessionView(): JSX.Element {
       const narrowed = widthRef.current > 0 && Math.abs(width - widthRef.current) > 0.5
       widthRef.current = width
       if (stickRef.current) {
-        if (userScrollActive(intentRef.current, performance.now())) return
+        if (emptyRef.current || userScrollActive(intentRef.current, performance.now())) return
         node.scrollTop = node.scrollHeight
         return
       }
@@ -509,6 +526,7 @@ export function SessionView(): JSX.Element {
   }, [])
 
   const empty = !virtual && turns.length === 0 && !switchLoading
+  emptyRef.current = empty
 
   useLayoutEffect(() => {
     const chat = empty ? hostRef.current?.closest<HTMLElement>('.v3-chat') : null
@@ -540,7 +558,8 @@ export function SessionView(): JSX.Element {
         if (!bottom && handle) setShowJump(distanceFromBottom({ offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize }) > JUMP_THRESHOLD_PX)
       } else if (streamRef.current) {
         const box = streamRef.current
-        restoreDomScroll(box, snap)
+        if (emptyRef.current) box.scrollTop = 0
+        else restoreDomScroll(box, snap)
         if (!bottom) setShowJump(distanceFromBottom(domMetrics(box)) > JUMP_THRESHOLD_PX)
       }
       if (virtual && !bottom && snap) {
@@ -617,7 +636,7 @@ export function SessionView(): JSX.Element {
       return undefined
     }
     const el = streamRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el) el.scrollTop = emptyRef.current ? 0 : el.scrollHeight
     return undefined
   }, [renderTurns, stick, virtual])
 
@@ -922,7 +941,7 @@ export function SessionView(): JSX.Element {
         ) : (
           <div className="v3-stream" ref={setStreamNode} onScroll={onScroll}>
             <div className="v3-stream-inner">
-              {turns.length === 0 ? (switchLoading ? null : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
+              {turns.length === 0 ? (switchLoading ? <SwitchSkeleton label={t('chat.switchLoading')} /> : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
                   ? <PendingRunNotice key={`${identity}|${item.id}`} />
                   : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />

@@ -90,7 +90,7 @@ async function run() {
     assert.equal(store.record({ ...asked, sessionId: '../x' }, { choice: 'once' }, 2000), null, '不安全的会话 ID 被拒绝')
     const first = store.record(asked, { choice: 'deny', feedback: '  路径不对 ' }, 3000)
     assert.equal(first.sessionId, 's1')
-    assert.deepEqual(first.entries, [{ id: 'ap-1', toolCallId: 'c-1', kind: 'danger', tool: 'bash', title: 'Agent 想执行一个难以撤销的操作', choice: 'deny', feedback: '路径不对', askedAt: 1000, at: 3000 }])
+    assert.deepEqual(first.entries, [{ id: 'ap-1', toolCallId: 'c-1', kind: 'danger', tool: 'bash', title: '强制推送', choice: 'deny', feedback: '路径不对', askedAt: 1000, at: 3000 }])
     const again = store.record(asked, { choice: 'deny', feedback: '路径不对' }, 3500)
     assert.equal(again.entries.length, 1, '同一审批只留一条回执')
     store.record({ ...asked, id: 'ap-2', toolCallId: 'c-2', subagentId: 'sa-1' }, { choice: 'once', feedback: '不该保存' }, 4000)

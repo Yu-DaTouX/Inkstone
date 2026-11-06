@@ -99,7 +99,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
           <Badge
             variant="outline"
             size="sm"
-            className="tabular-nums"
+            className="tabular-nums sm:text-2xs"
             aria-label={t("composer.t3.picker.contextWindow", {
               size: formatContextWindow(props.contextWindow),
             })}

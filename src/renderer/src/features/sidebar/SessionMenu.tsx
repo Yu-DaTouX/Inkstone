@@ -20,12 +20,13 @@ export interface SessionMenuProps {
   title: string
   isCurrent: boolean
   anchor: RefObject<HTMLElement | null>
+  pointAnchor?: RefObject<HTMLElement | null> | undefined
   open: boolean
   onOpenChange: (open: boolean) => void
   onRename: () => void
 }
 
-export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange, onRename }: SessionMenuProps): JSX.Element {
+export function SessionMenu({ item, title, isCurrent, anchor, pointAnchor, open, onOpenChange, onRename }: SessionMenuProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   const t = useT()
@@ -132,8 +133,8 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
 
   return (
     <>
-      <Popover triggerRef={anchor} isOpen={open} onOpenChange={onOpenChange} placement="bottom end" offset={4}>
-        {open ? <SessionMenuContent item={item} title={title} isCurrent={isCurrent} anchor={anchor} open={open} onOpenChange={onOpenChange} onRename={onRename} onAction={run} /> : null}
+      <Popover triggerRef={pointAnchor ?? anchor} isOpen={open} onOpenChange={onOpenChange} placement={pointAnchor ? 'bottom start' : 'bottom end'} offset={pointAnchor ? 0 : 4}>
+        {open ? <SessionMenuContent item={item} title={title} isCurrent={isCurrent} anchor={anchor} pointAnchor={pointAnchor} open={open} onOpenChange={onOpenChange} onRename={onRename} onAction={run} /> : null}
       </Popover>
 
       <CustomSnoozeDialog

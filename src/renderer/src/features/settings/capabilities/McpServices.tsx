@@ -10,6 +10,7 @@ import { Entry, Group, ListSkeleton, Meta, Panel, Warn } from './parts'
 import { McpServiceForm } from './McpServiceForm'
 import { mcpServicesText } from './mcp-services-text'
 import { useCodegraphStatus } from './CodegraphStatusRow'
+import { SettingsAdvanced } from '../root/controls'
 
 function viewKey(): string {
   const state = useStore.getState()
@@ -33,7 +34,6 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const requestId = useRef(0)
   const statusTimer = useRef<number | undefined>(undefined)
   const ownedStatus = useRef<unknown>(null)
@@ -177,7 +177,7 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
   }
   const services = snapshot ? scope === 'global' ? snapshot.global : snapshot.projectServices : []
   return <Panel label={text.title}>
-    <Group title={text.title} desc={text.description} settingId="caps-mcp-servers" actions={<>
+    <Group title={text.title} settingId="caps-mcp-servers" actions={<>
       <Button variant="primary" isDisabled={!snapshot || busy || loading} onPress={() => setAdding((value) => !value)} data-testid="mcp-add">{text.add}</Button>
       <Button isPending={loading} isDisabled={busy} onPress={() => void refresh()} data-testid="caps-mcp-reload">{text.refresh}</Button>
       <Button isDisabled={busy || loading || runtimeBusy || !runtime?.nativeMcpAvailable || !useStore.getState().session?.sessionId || !!useStore.getState().peekedPath || !!useStore.getState().peekedSessionId} onPress={() => void apply()} data-testid="mcp-apply">{text.apply}</Button>
@@ -200,13 +200,11 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
         {services.map((service) => <McpServiceRow key={`${scope}:${service.key}`} service={service} snapshot={snapshot!} scope={scope} runtime={runtime} busy={busy || loading} onMutate={mutate} onCheck={check} />)}
       </div>}
       {snapshot && !services.length ? <Meta>{text.noServices}</Meta> : null}
-      <Meta>{text.loaded}</Meta>
       {nativeStatus && nativeStatus.sessionId === useStore.getState().session?.sessionId ? <div className="mcp-session-result" role="status"><Meta>{text.checkResult}</Meta><Meta>{nativeStatus.pending ? text.checking : nativeStatus.text}</Meta></div> : null}
     </Group>
-    <div>
-      <Button variant="ghost" aria-expanded={showAdvanced} onPress={() => setShowAdvanced((value) => !value)} data-testid="mcp-advanced">{text.advanced}</Button>
-      {showAdvanced ? <div className="caps-stack">{advanced}</div> : null}
-    </div>
+    <SettingsAdvanced label={text.advanced} testId="mcp-advanced">
+      <div className="caps-stack">{advanced}</div>
+    </SettingsAdvanced>
   </Panel>
 }
 
@@ -231,7 +229,7 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
     control={service.special ? undefined : <Switch aria-label={`${service.title} · ${scope === 'global' ? text.allSessions : text.projectOnly}`} isSelected={service.enabled} isDisabled={locked} onChange={(value) => void onMutate(service, value ? 'enable' : 'disable')} data-testid="mcp-service-toggle" />}
     meta={[service.enabled ? text.enabled : text.disabled, service.overridden ? service.enabled ? text.projectOn : text.projectOff : null]}
     actions={service.special ? <Button onPress={() => useStore.getState().openSettings('tools')}>{text.openTools}</Button> : <>
-      <Button isDisabled={checkDisabled} onPress={() => void onCheck(service)}>{service.backend === 'native' ? text.checkSession : text.check}</Button>
+      <Button isDisabled={checkDisabled} tooltip={text.loaded} onPress={() => void onCheck(service)}>{service.backend === 'native' ? text.checkSession : text.check}</Button>
       {scope === 'project' && service.inherited && service.overridden ? <Button isDisabled={locked} onPress={() => void onMutate(service, 'inherit')}>{text.inherit}</Button> : null}
       <Button variant="ghost" aria-expanded={details} onPress={() => setDetails((value) => !value)}>{text.details}</Button>
     </>}>

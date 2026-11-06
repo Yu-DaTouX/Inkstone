@@ -4,7 +4,7 @@ import { build } from 'esbuild'
 
 const entry = fileURLToPath(new URL('../src/renderer/src/features/commands/session-switcher-model.ts', import.meta.url))
 const result = await build({ entryPoints: [entry], bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent' })
-const { switcherSessions, initialSwitcherIndex, stepSwitcherIndex, heldModifiersReleased, relativeAge } = await import(
+const { switcherSessions, initialSwitcherIndex, stepSwitcherIndex, heldModifiersReleased } = await import(
   `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`
 )
 
@@ -35,9 +35,5 @@ assert.equal(heldModifiersReleased(['Ctrl', 'Tab'], { ...held, ctrlKey: false })
 assert.equal(heldModifiersReleased(['Ctrl', 'Shift', 'Tab'], { ...held, shiftKey: false }), false, '只松开 Shift 不确认')
 assert.equal(heldModifiersReleased(['Alt', 'Q'], { ...held, ctrlKey: false, altKey: true }), false, '改绑到 Alt 时按住 Alt 不确认')
 assert.equal(heldModifiersReleased(['F6'], held), true, '无修饰键的改绑立即确认')
-
-assert.equal(relativeAge(1_000, 1_000 + 30_000, 'zh-CN'), '刚刚')
-assert.equal(relativeAge(0, 5, 'zh-CN'), '')
-assert.equal(relativeAge(0 + 1, 1 + 3 * 3_600_000, 'en-US'), '3h')
 
 console.log('会话切换浮层模型：全部通过')

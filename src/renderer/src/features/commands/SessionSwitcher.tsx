@@ -5,7 +5,8 @@ import { useUiV3 } from '../../state/ui-v3'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { CommandSurfaceBody, CommandSurfaceHeader, CommandSurfacePanel, ListRow } from '../../ui'
-import { heldModifiersReleased, initialSwitcherIndex, relativeAge, stepSwitcherIndex, switcherSessions } from './session-switcher-model'
+import { heldModifiersReleased, initialSwitcherIndex, stepSwitcherIndex, switcherSessions } from './session-switcher-model'
+import { compactAgo, sessionActivityAt } from '../sidebar/sidebar-model'
 import './session-switcher.css'
 
 interface SwitcherState {
@@ -137,7 +138,7 @@ export function SessionSwitcher({ control }: { control: SessionSwitcherControl }
                 aria-selected={index === state.index}
                 data-selected={index === state.index ? '' : undefined}
                 className="session-switcher__row"
-                trailing={current ? (lang === 'en-US' ? 'Current' : '当前') : relativeAge(item.lastOpenedAt ?? item.lastActivityAt ?? item.updatedAt, now, lang)}
+                trailing={current ? (lang === 'en-US' ? 'Current' : '当前') : compactAgo(sessionActivityAt(item), now, lang === 'en-US' ? 'en-US' : 'zh-CN')}
                 data-testid="session-switcher-item"
                 onPointerDown={(event) => {
                   event.preventDefault()

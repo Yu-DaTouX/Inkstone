@@ -230,9 +230,47 @@ function moveTabFocus(event: KeyboardEvent<HTMLElement>): void {
   target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 
+function syncTabOverflow(bar: HTMLElement): void {
+  const max = bar.scrollWidth - bar.clientWidth
+  const start = Math.abs(bar.scrollLeft)
+  bar.toggleAttribute('data-more-start', max > 1 && start > 1)
+  bar.toggleAttribute('data-more-end', max > 1 && start < max - 1)
+}
+
 export function SettingsTabBar({ label, children }: { label: string; children: ReactNode }): ReactElement {
+  const bar = useRef<HTMLDivElement>(null)
+  const shownTab = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const node = bar.current
+    if (!node) return
+    const selected = node.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    if (selected && selected !== shownTab.current) {
+      shownTab.current = selected
+      selected.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+    syncTabOverflow(node)
+  })
+  useEffect(() => {
+    const node = bar.current
+    if (!node) return
+    const sync = (): void => syncTabOverflow(node)
+    const wheel = (event: WheelEvent): void => {
+      if (event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY) || node.scrollWidth <= node.clientWidth) return
+      event.preventDefault()
+      node.scrollLeft += event.deltaY
+    }
+    node.addEventListener('scroll', sync, { passive: true })
+    node.addEventListener('wheel', wheel, { passive: false })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(sync)
+    observer?.observe(node)
+    return () => {
+      node.removeEventListener('scroll', sync)
+      node.removeEventListener('wheel', wheel)
+      observer?.disconnect()
+    }
+  }, [])
   return (
-    <div className="ui-settings-tabs" role="tablist" aria-label={label} onKeyDown={moveTabFocus}>
+    <div ref={bar} className="ui-settings-tabs" role="tablist" aria-label={label} onKeyDown={moveTabFocus}>
       {children}
     </div>
   )

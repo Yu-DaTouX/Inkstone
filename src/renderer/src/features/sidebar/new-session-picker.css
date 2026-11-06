@@ -33,7 +33,7 @@
 
   .nsp__option {
     gap: var(--s-10);
-    min-height: calc(var(--s-32) + var(--s-4));
+    min-height: var(--size-menu-row);
     padding-inline: var(--s-10) var(--s-8);
     color: var(--fg);
     cursor: pointer;

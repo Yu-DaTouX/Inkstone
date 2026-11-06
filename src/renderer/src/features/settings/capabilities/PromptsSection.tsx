@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import type { PromptTemplateDirectories } from '../../../../../shared/ipc'
 import { useStore } from '../../../state/store'
-import { Button, MiddleTruncate } from '../../../ui'
+import { FolderOpen } from 'lucide-react'
+import { Button, IconButton, MiddleTruncate } from '../../../ui'
 import { useCapsText } from './text'
 import { Empty, Entry, Group, Meta, Panel, Warn } from './parts'
 import { promptCommands } from './model'
@@ -92,16 +93,18 @@ export function PromptsSection(): ReactElement {
                 <Entry
                   key={scope}
                   name={text(scope === 'user' ? 'promptUserDirectory' : 'promptProjectDirectory')}
-                  actions={
-                    <Button
-                      variant="secondary"
+                  control={
+                    <IconButton
+                      size="sm"
+                      aria-label={text('promptOpenDirectory')}
+                      tooltip={text('promptOpenDirectory')}
                       isPending={opening === path}
                       isDisabled={!!opening}
                       onPress={() => void openDirectory(path)}
                       data-testid={`caps-prompts-open-${scope}`}
                     >
-                      {text('promptOpenDirectory')}
-                    </Button>
+                      <FolderOpen size={14} aria-hidden />
+                    </IconButton>
                   }
                 >
                   <Meta>

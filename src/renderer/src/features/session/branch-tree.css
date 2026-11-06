@@ -5,6 +5,7 @@
     min-width: 0;
     min-height: 0;
     height: 100%;
+    padding-inline: var(--s-12);
   }
 
   .wb-branch__head {
@@ -45,44 +46,13 @@
     height: 100%;
   }
 
-  .branch-tree__list {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-right: var(--s-2);
-  }
-
-  .branch-kind {
-    flex: none;
-    color: var(--fg3);
-  }
-
-  .branch-node--leaf .branch-kind {
-    color: var(--accent-t);
-  }
-
   .branch-label {
+    display: block;
     flex: none;
     max-width: 10ch;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .branch-tag {
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: 16ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .branch-meta {
-    flex: none;
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
   }
 
   .branch-leaf,
@@ -92,21 +62,102 @@
 
   .wb-branch__summarize {
     flex: none;
-    margin-top: var(--s-8);
+    margin-block: var(--s-8);
   }
 
   .branch-bookmark {
     flex: none;
-    margin-left: auto;
-    opacity: 0;
   }
 
-  .ui-tree__item:hover .branch-bookmark,
-  .ui-tree__item[data-selected] .branch-bookmark,
-  .ui-tree__item[data-focus-visible] .branch-bookmark,
-  .branch-bookmark[data-focus-visible],
-  .branch-bookmark[aria-expanded="true"] {
-    opacity: 1;
+  .branch-graph {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .branch-graph__lines {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .branch-graph__edge {
+    fill: none;
+    stroke: var(--line2);
+    stroke-width: 1.5;
+  }
+
+  .branch-graph__edge[data-active] {
+    stroke: var(--accent);
+  }
+
+  .branch-graph__dot {
+    fill: var(--bg);
+    stroke: var(--line2);
+    stroke-width: 1.5;
+  }
+
+  .branch-graph__dot[data-kind='user'] {
+    fill: var(--fg3);
+    stroke: none;
+  }
+
+  .branch-graph__dot[data-active] {
+    stroke: var(--accent);
+  }
+
+  .branch-graph__dot[data-kind='user'][data-active] {
+    fill: var(--accent);
+  }
+
+  .branch-graph__dot[data-leaf] {
+    fill: var(--bg);
+    stroke: var(--accent);
+    stroke-width: 2.5;
+  }
+
+  .branch-graph__rows {
+    max-height: none;
+    overflow: visible;
+    gap: 0;
+  }
+
+  .branch-graph__row {
+    height: var(--branch-row);
+    min-height: 0;
+    padding-block: 0;
+    padding-inline-start: calc(var(--branch-graph-w) + var(--s-4));
+  }
+
+  .branch-graph__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .branch-graph__row:not([data-kind='user']) .branch-graph__text {
+    color: var(--fg3);
+  }
+
+  .branch-graph__row:not([data-active]):not([data-selected]) .branch-graph__text {
+    color: var(--fg2);
+  }
+
+  .branch-graph__row:not([data-active]):not([data-selected]):not([data-kind='user']) .branch-graph__text {
+    color: var(--fg3);
+  }
+
+  .branch-graph__steps {
+    flex: none;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
   }
 
   .branch-bookmark-form {

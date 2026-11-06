@@ -2,7 +2,7 @@ import type { CompactionRun, SessionSummary, SubagentRun, UIMessage } from '../.
 import type { RunSnapshot } from '../../../../shared/runs'
 import { isTerminalPhase } from '../../../../shared/runs'
 import { subagentOutcome, type SubagentOutcomeKey, type SubagentTone } from '../../../../shared/subagent-outcome'
-import { classifyModelError, type ModelErrorKind, type ModelErrorQuotaScope } from '../../../../shared/model-errors'
+import { classifyModelError, EMPTY_MODEL_ERROR_NOTICE, type ModelErrorKind, type ModelErrorQuotaScope } from '../../../../shared/model-errors'
 import { sameSessionFile } from '../../state/view-identity'
 import type { SessionTextKey } from './text'
 
@@ -24,7 +24,7 @@ function classifiableErrorText(body: string): string {
 export function errorCardModel(errorText: string | undefined | null): ErrorCardModel | null {
   const body = (errorText ?? '').trim()
   if (!body) return null
-  const info = classifyModelError(classifiableErrorText(body))
+  const info = classifyModelError(body === EMPTY_MODEL_ERROR_NOTICE ? '' : classifiableErrorText(body))
   const actions: ErrorCardAction[] = []
   switch (info.kind) {
     case 'context':

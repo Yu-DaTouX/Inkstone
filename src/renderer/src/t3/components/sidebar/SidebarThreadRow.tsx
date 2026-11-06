@@ -94,7 +94,7 @@ export interface SidebarThreadRowProps {
   fileDropHandlers?: DOMAttributes<HTMLElement> | undefined;
   onOpen?: (event: ReactMouseEvent) => void;
   onActivate?: () => void;
-  onContextMenu?: (position: { x: number; y: number }) => void;
+  onContextMenu?: (position: { x: number; y: number } | null) => void;
   onRenameStart?: () => void;
   onRenameChange?: (value: string) => void;
   onRenameCommit?: () => void;
@@ -705,7 +705,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               onKeyDown={handleKeyDown}
               onContextMenu={(event) => {
                 event.preventDefault();
-                onContextMenu?.({ x: event.clientX, y: event.clientY });
+                onContextMenu?.(event.button === 2 ? { x: event.clientX, y: event.clientY } : null);
               }}
             />
           }
@@ -789,7 +789,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     className={cn(
                       "flex shrink-0 items-center transition-opacity",
                       !isActive &&
-                        "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+                        "opacity-70 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
                     )}
                   >
                     <ProjectFavicon project={view.project} className="size-4" />

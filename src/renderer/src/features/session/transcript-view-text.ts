@@ -14,7 +14,7 @@ interface TranscriptViewText {
 const zh: TranscriptViewText = {
   menu: '显示方式',
   label: '对话显示方式',
-  description: '思考实时可见，结束后折叠进「过程」；Ctrl+O 可按会话切换。',
+  description: '思考结束后折进「过程」；Ctrl+O 切换。',
   views: { concise: '简洁', side: '侧边推理', thinking: '思考模式' },
   viewHints: {
     concise: '思考实时可见，结束后折叠进「过程」，可展开回看',
@@ -28,7 +28,7 @@ const zh: TranscriptViewText = {
 const en: TranscriptViewText = {
   menu: 'Display',
   label: 'Conversation display',
-  description: 'Reasoning shows live, then folds into Process; Ctrl+O switches per session.',
+  description: 'Reasoning folds into Process; Ctrl+O switches.',
   views: { concise: 'Concise', side: 'Side reasoning', thinking: 'Thinking' },
   viewHints: {
     concise: 'Reasoning visible while it runs, then folded into Process',

@@ -100,7 +100,8 @@
   }
 
   .composer-effort-text {
-    --effort-flow-src: color-mix(in oklch, var(--fg2), var(--effort-color) calc(var(--effort-tinted, 1) * 100%));
+    --effort-ink: light-dark(color-mix(in oklch, var(--effort-color), var(--fg) 35%), var(--effort-color));
+    --effort-flow-src: color-mix(in oklch, var(--fg2), var(--effort-ink) calc(var(--effort-tinted, 1) * 100%));
     --effort-flow-base: var(--effort-flow-src);
     --effort-flow-hi: color-mix(
       in oklch,
@@ -1165,8 +1166,8 @@
   }
 
   .v3-chat .v3-stream-host::after {
-    height: var(--s-32);
-    background: linear-gradient(to top, var(--bg) var(--s-16), transparent);
+    height: calc(var(--s-24) + var(--s-16));
+    background: linear-gradient(to top, var(--bg) var(--s-24), transparent);
   }
 
   @keyframes file-drop-card-in {

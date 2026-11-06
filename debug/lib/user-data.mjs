@@ -39,7 +39,7 @@ function readJson(file) {
   }
 }
 
-function recentSessions(root, days, budgetBytes) {
+function recentSessions(root, days, budgetBytes, include = []) {
   if (!existsSync(root)) return []
   const since = Date.now() - days * 86400000
   const files = []
@@ -49,7 +49,8 @@ function recentSessions(root, days, budgetBytes) {
     for (const name of readdirSync(dir)) {
       if (!name.endsWith('.jsonl')) continue
       const stat = statSync(join(dir, name))
-      if (stat.mtimeMs >= since) files.push({ bucket, name, size: stat.size, mtime: stat.mtimeMs })
+      const wanted = include.some((part) => name.includes(part))
+      if (wanted || stat.mtimeMs >= since) files.push({ bucket, name, size: stat.size, mtime: wanted ? Infinity : stat.mtimeMs })
     }
   }
   files.sort((a, b) => b.mtime - a.mtime)
@@ -63,9 +64,9 @@ function recentSessions(root, days, budgetBytes) {
   return kept
 }
 
-export function importUserData(box, { days = 7, budgetMb = 400 } = {}) {
+export function importUserData(box, { days = 7, budgetMb = 400, include = [] } = {}) {
   const realData = join(REAL_PI, 'yan')
-  const sessions = recentSessions(join(REAL_PI, 'sessions'), days, budgetMb * 1048576)
+  const sessions = recentSessions(join(REAL_PI, 'sessions'), days, budgetMb * 1048576, include)
   const snapshot = join(userSnapshotDir, 'sessions')
   const kept = new Set()
   let refreshed = 0

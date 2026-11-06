@@ -214,8 +214,20 @@
   .ms-vis-provider {
     min-width: 0;
     overflow: hidden;
+    color: var(--fg2);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .ms-vis-toggle {
+    min-width: 0;
+    gap: var(--s-8);
+  }
+
+  .ms-vis-summary {
+    flex: none;
+    color: var(--fg3);
+    font-variant-numeric: tabular-nums;
   }
 
   .ms-vis-row {

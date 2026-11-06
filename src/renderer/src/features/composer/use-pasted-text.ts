@@ -55,7 +55,7 @@ export function usePastedTextAttach(wrapRef: RefObject<HTMLElement | null>): (te
             return
           }
           await state.addFileRefPaths([saved.path], identity)
-          state.notify('info', t('composer.pasteAttached', { name: saved.name, size: pastedSizeLabel(saved.bytes) }))
+          state.notify('info', t('composer.pasteAttached', { size: pastedSizeLabel(saved.bytes) }))
         })
       return true
     },

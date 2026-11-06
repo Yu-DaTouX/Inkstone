@@ -66,7 +66,19 @@ export interface SettleAnchor {
   top: number
 }
 
-export function settleAnchor(box: HTMLElement): SettleAnchor | null {
+function readingNodeAnchor(box: HTMLElement): SettleAnchor | null {
+  const rect = box.getBoundingClientRect()
+  const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + Math.min(48, rect.height / 4))
+  if (!(hit instanceof HTMLElement) || hit === box || !box.contains(hit)) return null
+  const node = hit.closest<HTMLElement>('[data-testid="v3-process"]') ?? hit
+  return { node, top: node.getBoundingClientRect().top - rect.top }
+}
+
+export function settleAnchor(box: HTMLElement, following = true): SettleAnchor | null {
+  if (!following) {
+    const reading = readingNodeAnchor(box)
+    if (reading) return reading
+  }
   const turns = box.querySelectorAll<HTMLElement>('.v3-msg.assistant[data-turn-id]')
   const process = turns[turns.length - 1]?.querySelector<HTMLElement>('[data-testid="v3-process"]')
   const node = process?.nextElementSibling

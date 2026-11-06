@@ -3,7 +3,6 @@ import type { RunSnapshot } from '../../../../../shared/runs'
 import { shortProject } from '../../../features/sidebar/sidebar-model'
 import { isThreadWorking } from '../../internal/thread-inbox'
 import { effectiveSnoozed } from '../../internal/thread-settled'
-import { sortSettledThreads } from '../../internal/thread-sort'
 import { NO_PROJECT_ID, toThreadView, type SidebarThreadView } from './types'
 
 export interface SidebarSections {
@@ -110,7 +109,7 @@ export function buildSidebarSections(input: BuildSidebarSectionsInput): SidebarS
     active: active.sort(byActivity),
     working: working.sort((left, right) => (Date.parse(right.latestUserAuthoredMessageAt ?? '') || 0) - (Date.parse(left.latestUserAuthoredMessageAt ?? '') || 0) || byActivity(left, right)),
     snoozed: snoozed.sort((left, right) => (Date.parse(left.snoozedUntil ?? '') || 0) - (Date.parse(right.snoozedUntil ?? '') || 0)),
-    settled: sortSettledThreads(settled)
+    settled: settled.sort(byActivity)
   }
 }
 

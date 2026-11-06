@@ -32,6 +32,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   return (
     <div
       className="relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3"
+      data-slot="sidebar-chrome-header"
       data-testid="t3-sidebar-chrome-header"
     >
       {leading ? <div className="relative z-10 ml-3 flex shrink-0 items-center">{leading}</div> : null}
@@ -127,6 +128,7 @@ export function SidebarAttentionSummary({
       role="group"
       aria-label={ariaLabel}
       className="flex h-7 shrink-0 items-center gap-0.5"
+      data-slot="sidebar-attention"
       data-testid="t3-sidebar-attention"
     >
       {items.map((item) => {

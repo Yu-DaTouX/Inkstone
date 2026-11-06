@@ -207,8 +207,8 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
     return (
       <div className="v3-visual-invalid">
         {fallback}
-        <Notice tone="fail" compact className="v3-visual-invalid-note">
-          {t('vb.invalid', { error: tooLarge ? t('vb.widgetTooLarge') : t('vb.widgetFailed', { error: error ?? '' }) })}
+        <Notice tone="fail" variant="hint" className="v3-visual-invalid-note">
+          <span title={tooLarge ? t('vb.widgetTooLarge') : t('vb.widgetFailed', { error: error ?? '' })}>{t('vb.invalid')}</span>
         </Notice>
       </div>
     )

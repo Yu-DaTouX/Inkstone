@@ -126,7 +126,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(
           </div>
         )}
         <div
-          className="flex items-center gap-2 border-border border-t px-3 py-1.5 text-secondary-label text-3xs"
+          className="flex items-center gap-2 border-border border-t px-3 py-1.5 text-secondary-label text-2xs"
           data-slot="composer-command-footer"
         >
           <span className="inline-flex items-center gap-1">

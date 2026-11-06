@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactElement } from 'react'
 import { Star } from 'lucide-react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Button, EmptyState, IconButton, SearchField, Switch } from '../../../ui'
+import { Button, CollapsibleChevron, EmptyState, IconButton, SearchField, Switch } from '../../../ui'
 import { modelKey } from '../../../../../shared/model-selection'
 import type { ModelInfo } from '../../../../../shared/ipc'
 import { SettingsGroup } from '../root/controls'
@@ -22,6 +22,14 @@ export function ModelVisibilityGroup(): ReactElement {
   const patchSettings = useStore((s) => s.patchSettings)
   const notify = useStore((s) => s.notify)
   const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleProvider = (provider: string): void =>
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(provider)) next.delete(provider)
+      else next.add(provider)
+      return next
+    })
 
   const sorted = useMemo(() => sortByProviderThenNewest(models, providerOrder), [models, providerOrder])
   const q = query.trim().toLowerCase()
@@ -89,15 +97,31 @@ export function ModelVisibilityGroup(): ReactElement {
         <div className="ms-vis-list">
         {groups.map(([provider, list]) => {
           const allHidden = list.every((m) => isFavorite(favorites, m) || isHidden(hidden, m))
+          const open = !!q || expanded.has(provider)
+          const hiddenHere = list.filter((m) => isHidden(hidden, m) && !isFavorite(favorites, m)).length
+          const summary = [
+            text('visCount').replace('{n}', String(list.length)),
+            hiddenHere ? text('visCountHidden').replace('{n}', String(hiddenHere)) : ''
+          ].filter(Boolean).join(' · ')
           return (
-            <div key={provider} className="ms-vis-group" data-testid="ms-visibility-provider">
+            <div key={provider} className="ms-vis-group" data-open={open ? '1' : '0'} data-testid="ms-visibility-provider">
               <div className="ms-vis-head">
-                <span className="ms-vis-provider">{provider}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ms-vis-toggle"
+                  aria-expanded={open}
+                  icon={<CollapsibleChevron expanded={open} />}
+                  onPress={() => toggleProvider(provider)}
+                >
+                  <span className="ms-vis-provider">{provider}</span>
+                  <span className="ms-vis-summary">{summary}</span>
+                </Button>
                 <Button variant="ghost" size="sm" onPress={() => setHidden(list, !allHidden)}>
                   {allHidden ? text('visShowAll') : text('visHideAll')}
                 </Button>
               </div>
-              {list.map((m) => {
+              {open ? list.map((m) => {
                 const favorite = isFavorite(favorites, m)
                 const off = !favorite && isHidden(hidden, m)
                 return (
@@ -124,7 +148,7 @@ export function ModelVisibilityGroup(): ReactElement {
                     />
                   </div>
                 )
-              })}
+              }) : null}
             </div>
           )
         })}

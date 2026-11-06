@@ -1,6 +1,6 @@
 import type { UIMessage, UIToolCall } from '../../../../shared/ipc'
 import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../shared/turns'
-import { countedWorkCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolCategory } from './tool-run-model'
+import { countedWorkCalls, isWebTool, normalizeToolPath, subagentStartCount, summarizeToolRun, toolCategory } from './tool-run-model'
 import { callPath, collectTurnChanges, isInsideCwd, readFileDiff, readPiDiff, type TurnChanges, type TurnFileChange, type TurnFileStatus } from './turn-changes'
 import { isHistoryQuestionCall } from './question-receipt'
 import { searchStepOf } from './web-search/model'
@@ -281,6 +281,7 @@ export interface ProcessSummary {
   web: number
   fetches: number
   agents: number
+  questions: number
   other: number
 }
 
@@ -366,11 +367,15 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
   let fetches = 0
   let agents = 0
   let other = 0
+  let questions = 0
   const reads = new Set<string>()
   const edits = new Map<string, ProcessFileChange>()
   const creates = new Map<string, ProcessFileChange>()
   for (const call of counted) {
-    if (isHistoryQuestionCall(call)) continue
+    if (isHistoryQuestionCall(call)) {
+      if (call.status === 'running' || call.status === 'pending') questions += 1
+      continue
+    }
     const category = toolCategory(call)
     if (category !== 'command') tools += 1
     const step = searchStepOf(call)
@@ -381,7 +386,7 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
     else if (category === 'fetch') fetches += 1
     else if (category === 'search') searches += 1
     else if (category === 'list') lists += 1
-    else if (category === 'agent') agents += 1
+    else if (category === 'agent') agents += subagentStartCount(call)
     else if (category === 'command') {
       if (isCodeTool(call)) code += 1
       else commands += 1
@@ -412,6 +417,7 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
     web,
     fetches,
     agents,
+    questions,
     other
   }
 }

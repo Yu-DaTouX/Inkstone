@@ -5,7 +5,7 @@ import { Icon } from './Icon'
 import { useSessionText, type SessionTextKey } from './text'
 import './approval.css'
 
-const RECEIPT_STATUS: Record<ApprovalChoice, { tone: CardStatusTone; key: SessionTextKey; icon: 'check' | 'deny' }> = {
+const RECEIPT_STATUS: Record<ApprovalChoice, { tone: CardStatusTone; key: SessionTextKey; icon: 'check' | 'deny' | 'shield' }> = {
   once: { tone: 'ok', key: 'approvalAllowedOnce', icon: 'check' },
   session: { tone: 'ok', key: 'approvalAllowedSession', icon: 'check' },
   remember: { tone: 'ok', key: 'approvalAllowedRemember', icon: 'check' },
@@ -18,7 +18,8 @@ export function TurnApprovalLine({ approvals }: { approvals: readonly ApprovalRe
   if (!last) return null
   const denied = approvals.filter((approval) => approval.choice === 'deny').length
   const single = approvals.length === 1
-  const status = RECEIPT_STATUS[single ? last.choice : denied === approvals.length ? 'deny' : 'once']
+  const mixed = !single && denied > 0 && denied < approvals.length
+  const status = mixed ? { ...RECEIPT_STATUS.once, tone: 'muted' as const, icon: 'shield' as const } : RECEIPT_STATUS[single ? last.choice : denied === approvals.length ? 'deny' : 'once']
   const label = single ? tt(status.key) : tt('approvalSummary', { n: approvals.length, ok: approvals.length - denied, no: denied })
   const detail = approvals.map((approval) => `${tt(RECEIPT_STATUS[approval.choice].key)} · ${approval.title}${approval.feedback ? ` \u2014 ${approval.feedback}` : ''}`).join('\n')
   return (

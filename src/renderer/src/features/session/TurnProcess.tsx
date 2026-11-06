@@ -15,8 +15,12 @@ import { useRunProgress } from './run-status'
 import { isHistoryQuestionCall } from './question-receipt'
 import { QuestionHistory } from './QuestionReceipt'
 import type { TranscriptView } from './transcript-view-model'
+import type { ApprovalReceipt } from '../../../../shared/approval'
+import { TurnApprovalLine } from './ApprovalReceipt'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
+const NO_RECEIPTS: readonly ApprovalReceipt[] = []
+const HISTORY_SEGMENTS = 12
 const STEADY_HOLD_MS = 1200
 const USER_TOGGLE_MS = 500
 const BOTTOM_SLACK_PX = 48
@@ -118,7 +122,7 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
   return { ref, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
-export function TurnProcess({ process, live, openByDefault = false, alertFailures, showFailures = true, liveStartedAt = null, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false, compactionAfter = null }: {
+export function TurnProcess({ process, live, openByDefault = false, alertFailures, showFailures = true, liveStartedAt = null, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false, compactionAfter = null, approvals = NO_RECEIPTS }: {
   process: TurnSegment[]
   live: boolean
   openByDefault?: boolean
@@ -133,6 +137,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   elapsedMs?: number
   filesShownBelow?: boolean
   compactionAfter?: CompactionCut | null
+  approvals?: readonly ApprovalReceipt[]
 }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
@@ -155,11 +160,11 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const userOpened = (segment: TurnSegment): boolean => segment.tools.some((call) => ['step', 'group', 'web'].some((kind) => toolExpansion.get(expansionScope, `${kind}:${call.id}`) === true))
   const picked = stage
     ? pickLiveSegments(merged, stageSegmentCount(merged), userOpened)
-    : live && showAll !== true ? pickLiveSegments(merged, undefined, userOpened) : { shown: merged, hidden: 0 }
+    : showAll !== true && (live || (open && merged.length > HISTORY_SEGMENTS)) ? pickLiveSegments(merged, live ? undefined : HISTORY_SEGMENTS, userOpened) : { shown: merged, hidden: 0 }
   const single = summary.thinking === 1 && !summary.actions
   const elapsed = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
   const preview = live ? '' : processPreview(process)
-  const tip = [preview, processBreakdown(summary, tt)].filter(Boolean).join('\n')
+  const tip = [preview, processBreakdown(summary, tt), live && summary.failed ? t('tool.wsFailed', { n: summary.failed }) : ''].filter(Boolean).join('\n')
   const foldedQuestions = open || live ? [] : process.flatMap((segment) => segment.tools).filter((call) => !call.parentToolCallId && isHistoryQuestionCall(call) && call.status !== 'running' && call.status !== 'pending')
 
   const body = (
@@ -194,14 +199,14 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
           data-testid="v3-process-toggle"
         >
           <span className="v3-process-line" title={tip || undefined} data-testid="v3-process-line">
-            {processParts(summary, tt, filesShownBelow && !live).map((part) => (
+            {processParts(summary, tt, filesShownBelow && !live, live).map((part) => (
               <span key={part.key} className="v3-process-count" data-kind={part.kind}>
                 {part.text}
                 {part.file && part.file.added !== null && part.file.removed !== null && part.file.added + part.file.removed > 0 ? <DiffStat className="v3-process-diff" added={part.file.added} removed={part.file.removed} /> : null}
               </span>
             ))}
             {live ? <LiveElapsed startedAt={liveStartedAt} /> : elapsed ? <span className="v3-process-count ui-num" data-kind="elapsed">{elapsed}</span> : null}
-            {summary.failed && showFailures ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
+            {summary.failed && showFailures && !live ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
           </span>
         </CollapsibleHeader>
       )}
@@ -213,6 +218,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
         {foldedQuestions.map((call) => <QuestionHistory key={call.id} call={call} />)}
       </div>
     ) : null}
+    {approvals.length && !open ? <TurnApprovalLine approvals={approvals} /> : null}
     </>
   )
 }
@@ -262,11 +268,12 @@ function activityText(summary: ProcessSummary, tt: SessionText): string {
   return kinds.length > lead.length ? `${text}${tt('processMoreSteps', { n: summary.actions })}` : text
 }
 
-function processParts(summary: ProcessSummary, tt: SessionText, filesShownBelow = false): ProcessPart[] {
+function processParts(summary: ProcessSummary, tt: SessionText, filesShownBelow = false, live = false): ProcessPart[] {
   const parts: ProcessPart[] = []
   if (!summary.actions && summary.thinking) parts.push({ key: 'thinking', kind: 'thinking', text: countText(tt, summary.thinking, 'processThinking1', 'processThinking') })
   const activity = activityText(summary, tt)
   if (activity) parts.push({ key: 'activity', kind: 'activity', text: activity })
+  if (live) return parts.length ? parts : summary.actions ? [{ key: 'actions', kind: 'actions', text: countText(tt, summary.actions, 'processActions1', 'processActions') }] : parts
   if (summary.edits.length) parts.push({ key: 'edits', kind: 'edits', text: countText(tt, summary.edits.length, 'processEdits1', 'processEdits'), file: filesShownBelow ? undefined : totalLines(summary.edits) })
   if (summary.creates.length) parts.push({ key: 'creates', kind: 'creates', text: countText(tt, summary.creates.length, 'processCreates1', 'processCreates'), file: filesShownBelow ? undefined : totalLines(summary.creates) })
   if (!parts.length && summary.actions) parts.push({ key: 'actions', kind: 'actions', text: countText(tt, summary.actions, 'processActions1', 'processActions') })
@@ -282,6 +289,7 @@ function activityCounts(summary: ProcessSummary): [number, TextKey, TextKey][] {
     [summary.web, 'processWeb1', 'processWeb'],
     [summary.fetches, 'processFetch1', 'processFetch'],
     [summary.agents, 'processAgent1', 'processAgent'],
+    [summary.questions, 'processQuestion1', 'processQuestion'],
     [summary.other, 'processOther1', 'processOther']
   ]
 }

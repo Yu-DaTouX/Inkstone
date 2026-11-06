@@ -49,6 +49,14 @@
     min-width: calc(var(--t-caption) + var(--s-10));
   }
 
+  .cmd-surface .ui-kbd {
+    color: var(--fg2);
+  }
+
+  .cmd-option[data-active='true'] .ui-kbd {
+    color: var(--fg);
+  }
+
   .cmd-error {
     flex: none;
     margin: var(--s-4) var(--s-12) var(--s-8);

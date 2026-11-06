@@ -3,11 +3,12 @@ import { ExternalLink, FolderOpen, Layers, MessageSquare, Pin, PinOff } from 'lu
 import type { ArtifactLibraryItem as ArtifactLibraryEntry } from '../../../../shared/artifact-library'
 import { isHtmlArtifact } from '../../../../shared/html-artifact-preview'
 import { useI18n, useT } from '../../i18n'
-import { Button, EmptyState, IconButton, Notice, PageHeader, SearchField, SegmentedControl } from '../../ui'
+import { EmptyState, IconButton, Notice, PageHeader, SearchField, SegmentedControl } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { filePreviewUrl } from '../../lib/file-preview-url'
+import { previewFormatOf } from '../preview/preview-format'
 import { HtmlArtifactThumb } from './HtmlArtifactThumb'
 import { usePreviewSnapshot, useNearViewport } from './widget-lifecycle'
 import './artifacts.css'
@@ -64,6 +65,10 @@ function writeLocal(key: string, value: string): void {
 const isImageEntry = (entry: ArtifactLibraryEntry): boolean =>
   entry.artifact.previewable && (entry.artifact.kind === 'image' || entry.artifact.kind === 'svg')
 
+const isVideoEntry = (entry: ArtifactLibraryEntry): boolean => previewFormatOf(entry.artifact.filename) === 'video'
+
+const canPreviewEntry = (entry: ArtifactLibraryEntry): boolean => entry.artifact.previewable || isVideoEntry(entry)
+
 function LibraryThumb({ entry, openLabel, onOpen }: { entry: ArtifactLibraryEntry; openLabel: string; onOpen: () => void }): JSX.Element {
   const { artifact } = entry
   const unavailable = Boolean(artifact.unavailable)
@@ -83,6 +88,10 @@ function LibraryThumb({ entry, openLabel, onOpen }: { entry: ArtifactLibraryEntr
       ) : !unavailable && isImageEntry(entry) ? (
         <button type="button" className="artifact-library-thumb-image" aria-label={`${openLabel} · ${artifact.filename}`} onClick={onOpen}>
           <img src={filePreviewUrl(artifact.path)} alt="" loading="lazy" />
+        </button>
+      ) : !unavailable && isVideoEntry(entry) ? (
+        <button type="button" className="artifact-library-thumb-image" aria-label={`${openLabel} · ${artifact.filename}`} onClick={onOpen}>
+          {near ? <video src={filePreviewUrl(artifact.path)} preload="metadata" muted tabIndex={-1} /> : null}
         </button>
       ) : (
         <span className="artifact-library-thumb-icon" aria-hidden>
@@ -159,7 +168,7 @@ export function ArtifactLibraryPage(): JSX.Element {
 
   const openEntry = (entry: ArtifactLibraryEntry): void => {
     if (entry.artifact.unavailable) return
-    if (entry.artifact.previewable) void previewFile(entry.artifact.path)
+    if (canPreviewEntry(entry)) void previewFile(entry.artifact.path)
     else void window.yan.openPath(entry.artifact.path)
   }
 
@@ -179,24 +188,18 @@ export function ArtifactLibraryPage(): JSX.Element {
     const isPinned = pinned.has(libraryEntryKey(entry))
     return (
       <div className="artifact-library-actions">
-        <IconButton size="sm" aria-label={isPinned ? t('artifactLibrary.unpin') : t('artifactLibrary.pin')} onPress={() => togglePin(entry)}>
+        <IconButton size="sm" aria-label={isPinned ? t('artifactLibrary.unpin') : t('artifactLibrary.pin')} tooltip={isPinned ? t('artifactLibrary.unpin') : t('artifactLibrary.pin')} onPress={() => togglePin(entry)}>
           {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
         </IconButton>
-        <IconButton size="sm" aria-label={t('artifactLibrary.openSession')} isDisabled={!entry.sessionPath} onPress={() => openSession(entry)}>
+        <IconButton size="sm" aria-label={t('artifactLibrary.openSession')} tooltip={t('artifactLibrary.openSession')} isDisabled={!entry.sessionPath} onPress={() => openSession(entry)}>
           <MessageSquare size={14} />
         </IconButton>
-        <IconButton size="sm" aria-label={t('artifact.reveal')} isDisabled={unavailable} onPress={() => void window.yan.revealPath(artifact.path)}>
+        <IconButton size="sm" aria-label={t('artifact.reveal')} tooltip={t('artifact.reveal')} isDisabled={unavailable} onPress={() => void window.yan.revealPath(artifact.path)}>
           <FolderOpen size={14} />
         </IconButton>
-        {artifact.previewable || unavailable ? (
-          <IconButton size="sm" aria-label={t('artifactLibrary.openFile')} isDisabled={unavailable} onPress={() => void window.yan.openPath(artifact.path)}>
-            <ExternalLink size={14} />
-          </IconButton>
-        ) : (
-          <Button size="sm" variant="ghost" onPress={() => void window.yan.openPath(artifact.path)}>
-            {t('artifactLibrary.openFile')}
-          </Button>
-        )}
+        <IconButton size="sm" aria-label={t('artifactLibrary.openFile')} tooltip={t('artifactLibrary.openFile')} isDisabled={unavailable} onPress={() => void window.yan.openPath(artifact.path)}>
+          <ExternalLink size={14} />
+        </IconButton>
       </div>
     )
   }
@@ -205,7 +208,7 @@ export function ArtifactLibraryPage(): JSX.Element {
     const { artifact } = entry
     const unavailable = Boolean(artifact.unavailable)
     return (
-      <button type="button" className="artifact-library-name" disabled={unavailable || !artifact.previewable} onClick={() => openEntry(entry)} title={artifact.filename}>
+      <button type="button" className="artifact-library-name" disabled={unavailable || !canPreviewEntry(entry)} onClick={() => openEntry(entry)} title={artifact.filename}>
         {pinned.has(libraryEntryKey(entry)) ? <Pin size={12} aria-label={t('artifactLibrary.pinned')} className="artifact-library-pin" /> : null}
         {artifact.filename}
       </button>
@@ -217,11 +220,10 @@ export function ArtifactLibraryPage(): JSX.Element {
       <PageHeader
         className="artifact-library-head"
         title={
-          <span className="artifact-library-title">
+          <span className="artifact-library-title" title={t('artifactLibrary.subtitle')}>
             <Layers size={18} aria-hidden /> {t('artifactLibrary.title')}
           </span>
         }
-        description={t('artifactLibrary.subtitle')}
         actions={
           <div className="artifact-library-tools">
             <SegmentedControl

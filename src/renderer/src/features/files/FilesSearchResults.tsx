@@ -2,6 +2,7 @@ import { Fragment, type KeyboardEvent, type ReactElement, type RefObject } from 
 import { Folder } from 'lucide-react'
 import { Button, EmptyState, ListRow, Notice, Spinner } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
+import { splitForMiddleTruncate } from '../../ui/MiddleTruncate'
 import { toAbsolutePath } from './files-model'
 import { parseFilesQuery, resultDestination, type FilesSearchRow, type HighlightPart } from './files-search'
 import type { FilesText } from './files-text'
@@ -25,6 +26,34 @@ function Highlighted({ parts }: { parts: readonly HighlightPart[] }): ReactEleme
   return (
     <>
       {parts.map((part, index) => (part.hit ? <mark key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>))}
+    </>
+  )
+}
+
+function sliceParts(parts: readonly HighlightPart[], from: number, to: number): HighlightPart[] {
+  const out: HighlightPart[] = []
+  let at = 0
+  for (const part of parts) {
+    const start = Math.max(from, at)
+    const end = Math.min(to, at + part.text.length)
+    if (end > start) out.push({ text: part.text.slice(start - at, end - at), hit: part.hit })
+    at += part.text.length
+  }
+  return out
+}
+
+function ResultName({ name, parts }: { name: string; parts: readonly HighlightPart[] }): ReactElement {
+  const split = splitForMiddleTruncate(name)
+  if (!split) return <Highlighted parts={parts} />
+  const cut = split.head.length
+  return (
+    <>
+      <span className="v3-files-result-name-head">
+        <Highlighted parts={sliceParts(parts, 0, cut)} />
+      </span>
+      <span className="v3-files-result-name-tail">
+        <Highlighted parts={sliceParts(parts, cut, name.length)} />
+      </span>
     </>
   )
 }
@@ -203,7 +232,7 @@ export function FilesSearchResults({
           >
             <span className="v3-files-result-body">
               <span className="v3-files-result-name" data-matched={matched ? '1' : undefined}>
-                <Highlighted parts={row.nameParts} />
+                <ResultName name={row.name} parts={row.nameParts} />
               </span>
               {row.parent ? <span className="v3-files-result-path">{row.parent}</span> : null}
             </span>

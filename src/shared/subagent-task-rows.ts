@@ -160,7 +160,7 @@ export function subagentSummaryLine(
 ): string {
   const zh = lang === 'zh-CN'
   const parts = [zh ? `${input.toolCalls} 个工具` : `${input.toolCalls} ${input.toolCalls === 1 ? 'tool' : 'tools'}`]
-  if (input.tokens !== null && input.tokens > 0) parts.push(`${compactTokens(input.tokens)} tokens`)
+  if (input.tokens !== null && input.tokens > 0) parts.push(`${compactTokens(input.tokens)} ${zh ? 'token' : 'tokens'}`)
   if (input.durationMs !== null) parts.push(formatDuration(input.durationMs, { minSeconds: 1 }))
   return parts.join(' · ')
 }

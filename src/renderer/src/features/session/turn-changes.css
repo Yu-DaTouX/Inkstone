@@ -1,6 +1,13 @@
 @layer features {
   .v3-chg {
     min-width: 0;
+    container: v3-chg / inline-size;
+  }
+
+  @container v3-chg (max-width: 640px) {
+    .v3-chg-title > .v3-result-label {
+      display: none;
+    }
   }
 
   .v3-chg-head {

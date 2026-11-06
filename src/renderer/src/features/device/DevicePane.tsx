@@ -188,7 +188,6 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
           className="device-pane__empty"
           data-testid="device-pane-no-adb"
           title={t('android.pane.noAdb')}
-          description={t('android.pane.noAdbBody')}
           action={<Button onPress={() => openSettingsDialog('android')}>{t('android.pane.openSettings')}</Button>}
         />
       ) : null}

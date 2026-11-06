@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Switch } from '../../../ui'
+import { Switch, TooltipText } from '../../../ui'
 import { SettingsGroup, SettingsRow } from '../root/controls'
 
 export function AgentToolSwitches(): ReactElement {
@@ -11,7 +11,10 @@ export function AgentToolSwitches(): ReactElement {
   const patchSettings = useStore((s) => s.patchSettings)
   return (
     <SettingsGroup label={t('cap.codemodeTitle')} testId="cap-agent-switches">
-      <SettingsRow settingId="caps-tools-codemode" label={t('cap.codemodeTitle')} description={t('cap.codemodeDesc')}>
+      <SettingsRow
+        settingId="caps-tools-codemode"
+        label={<TooltipText tooltip={t('cap.codemodeHint')}>{t('cap.codemodeTitle')}</TooltipText>}
+        description={t('cap.codemodeDesc')}>
         <Switch
           aria-label={t('cap.codemodeTitle')}
           isSelected={codemode}

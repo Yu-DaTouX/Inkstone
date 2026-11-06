@@ -120,15 +120,20 @@
     background: var(--line);
   }
 
+  .v3-canvas-timeline-tick:not([data-major]) {
+    top: auto;
+    height: var(--s-2);
+  }
+
   .v3-canvas-timeline-tick[data-major] {
     background: var(--line2);
   }
 
   .v3-canvas-timeline-tick em {
     position: absolute;
-    left: 2px;
+    left: var(--s-4);
     top: 0;
-    color: var(--fg3);
+    color: var(--fg2);
     font-size: var(--t-caption);
     font-style: normal;
     font-family: var(--font-mono);

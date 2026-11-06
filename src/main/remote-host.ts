@@ -21,7 +21,7 @@ import { REMOTE_ARTIFACT_MAX_BYTES } from '../shared/remote-protocol'
 import type { RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
-import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary, SessionTodo, SubagentRun } from '../shared/ipc'
+import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary, SessionTodo, SubagentRun, UIToolCall } from '../shared/ipc'
 import { SessionEntriesLite } from './session-entries-lite'
 import { readTaskPlanLog } from './task-plan-store'
 import { taskPlanLogEntry } from '../shared/task-plan'
@@ -301,7 +301,7 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
   const messages = page.messages.map((message) => ({
     ...message,
     ...(message.images ? { images: message.images.map((image) => ({ mimeType: image.mimeType, data: '' })) } : {}),
-    ...(message.toolCalls ? { toolCalls: message.toolCalls.map(remoteToolCall) } : {}),
+    ...(message.toolCalls ? { toolCalls: remoteToolCallsWithImages(message.toolCalls, message.images?.length ?? 0) } : {}),
     ...(message.artifacts ? { artifacts: message.artifacts.map(remoteArtifactOf) } : {})
   }))
   const plan = before ? undefined : await remotePlan(summary.path, summary.id)
@@ -530,6 +530,7 @@ function pendingRemoteQuestions(): RemotePendingQuestion[] {
         title: request.title ?? '',
         message: request.message ?? '',
         ...(request.options ? { options: request.options } : {}),
+        ...(request.form?.length ? { form: request.form } : {}),
         ...(request.placeholder ? { placeholder: request.placeholder } : {}),
         sensitive: request.sensitive === true,
         deadline: typeof (request as { deadline?: unknown }).deadline === 'number' ? (request as { deadline: number }).deadline : 0
@@ -603,11 +604,22 @@ export async function remoteArtifact(sessionId: string, artifactId: string): Pro
   }
 }
 
+function remoteToolCallsWithImages(calls: UIToolCall[], start: number) {
+  let next = start
+  return calls.map((call) => {
+    const count = call.images?.length ?? 0
+    const imageIndexes = Array.from({ length: count }, (_, i) => next + i)
+    next += count
+    return count ? { ...remoteToolCall(call), imageIndexes } : remoteToolCall(call)
+  })
+}
+
 export async function remoteMessageImage(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult> {
   const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话' }
   const history = await host.readHistoryWithArtifacts(summary.path)
-  const image = history?.messages.find((message) => message.id === messageId)?.images?.[index]
+  const message = history?.messages.find((item) => item.id === messageId)
+  const image = message ? [...(message.images ?? []), ...(message.toolCalls ?? []).flatMap((call) => call.images ?? [])][index] : undefined
   const url = image?.url || (image?.data ? localizeImage(join(YAN_DIR, 'attachments'), image.mimeType, image.data) : '')
   if (!url.startsWith('file:')) return { ok: false, status: 404, error: '图片已不可用' }
   try {

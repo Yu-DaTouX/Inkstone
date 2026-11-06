@@ -219,7 +219,6 @@ function WelcomeStep({ text }: { text: OnboardingText }): ReactElement {
   return (
     <div className="v3-ob-lead">
       <h2 className="v3-ob-lead-title">{text.welcomeTitle}</h2>
-      <p className="v3-ob-lead-desc">{text.welcomeDesc}</p>
       <ul className="v3-ob-list">
         <ListItem icon={<Palette size={14} />} label={text.welcomeAppearance} />
         <ListItem icon={<Bell size={14} />} label={text.welcomeSound} />

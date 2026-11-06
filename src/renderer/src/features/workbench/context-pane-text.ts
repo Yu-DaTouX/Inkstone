@@ -11,6 +11,7 @@ export interface ContextPaneText {
   distanceHint: string
   topTools: string
   jumpTo: (name: string) => string
+  scriptLines: (lines: number) => string
   locateFailed: string
   estimateNote: string
   compaction: string
@@ -47,6 +48,7 @@ const ZH: ContextPaneText = {
   distanceHint: '接近用满时自动压缩。',
   topTools: '占用最多的工具结果',
   jumpTo: (name) => `在对话中定位 ${name}`,
+  scriptLines: (lines) => `脚本 · ${lines} 行`,
   locateFailed: '对话里找不到这一轮，它可能已不在当前会话中。',
   estimateNote: '分类与明细按可见消息估算，总量以上方 Agent 回报为准。',
   compaction: '压缩记录',
@@ -83,6 +85,7 @@ const EN: ContextPaneText = {
   distanceHint: 'Auto-compaction runs when the window is nearly full.',
   topTools: 'Largest tool results',
   jumpTo: (name) => `Show ${name} in the conversation`,
+  scriptLines: (lines) => `script · ${lines} ${lines === 1 ? 'line' : 'lines'}`,
   locateFailed: 'That turn is no longer in the current chat.',
   estimateNote: 'Categories and details are estimated from visible messages; the Agent total above is authoritative.',
   compaction: 'Compaction history',

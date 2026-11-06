@@ -15,6 +15,8 @@ export interface ContextWindowSnapshot {
   readonly cost: ContextWindowCost | null
   readonly compactsAutomatically: boolean
   readonly autoCompactThreshold: number | null
+  readonly modelWindow: number | null
+  readonly cappedByAutoCompact: boolean
 }
 
 export function formatContextWindowTokens(value: number | null): string {
@@ -25,7 +27,7 @@ export function formatContextWindowTokens(value: number | null): string {
 }
 
 export function useContextWindowSnapshot(): ContextWindowSnapshot | null {
-  const { known, tokens, windowSize, percent, autoCompactLimit } = useContextUsage()
+  const { known, tokens, windowSize, percent, autoCompactLimit, summary } = useContextUsage()
   const stats = useStore((s) => s.stats)
   const session = useStore((s) => s.session)
   if (!known) return null
@@ -38,7 +40,9 @@ export function useContextWindowSnapshot(): ContextWindowSnapshot | null {
     totalProcessedTokens: typeof total === 'number' && total > 0 ? total : null,
     cost: cost === null ? null : { amount: cost, currency: '$' },
     compactsAutomatically: session?.autoCompactionEnabled !== false,
-    autoCompactThreshold: autoCompactLimit ?? null
+    autoCompactThreshold: autoCompactLimit ?? null,
+    modelWindow: summary.modelWindow > 0 ? summary.modelWindow : null,
+    cappedByAutoCompact: summary.cappedByLimit
   }
 }
 
@@ -60,7 +64,7 @@ export function useContextCompactAdapter(): ContextCompactAdapter {
     modelDisplayName: session?.model?.name ?? null,
     busy,
     onCompact: () => void compact(),
-    compactDisabled: !hasSession || busy,
+    compactDisabled: !hasSession || busy || !session?.messageCount,
     compactDisabledReason: busy ? t('composer.t3.compactBusy') : null
   }
 }

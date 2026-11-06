@@ -95,6 +95,14 @@ export interface ApprovalReceipt {
   at: number
 }
 
+const HEADLINE_MAX = 80
+
+export function approvalHeadline(request: Pick<ApprovalRequest, 'kind' | 'title' | 'reasons'>): string {
+  const reason = request.kind === 'danger' ? request.reasons[0]?.trim() : ''
+  if (!reason) return request.title
+  return reason.length > HEADLINE_MAX ? `${reason.slice(0, HEADLINE_MAX - 1)}…` : reason
+}
+
 export function isApprovalChoice(value: unknown): value is ApprovalChoice {
   return value === 'deny' || value === 'once' || value === 'session' || value === 'remember'
 }

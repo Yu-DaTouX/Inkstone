@@ -429,6 +429,23 @@
     padding-inline: 1px;
     overflow-x: auto;
     scrollbar-width: none;
+    --tabs-fade-start: 0px;
+    --tabs-fade-end: 0px;
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--tabs-fade-start),
+      #000 calc(100% - var(--tabs-fade-end)),
+      transparent
+    );
+  }
+
+  .ui-settings-tabs[data-more-start] {
+    --tabs-fade-start: var(--s-32);
+  }
+
+  .ui-settings-tabs[data-more-end] {
+    --tabs-fade-end: var(--s-32);
   }
 
   .ui-settings-tab {

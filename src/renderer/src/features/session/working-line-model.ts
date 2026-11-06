@@ -115,8 +115,13 @@ export function workingLine(input: WorkingLineInput): WorkingLine | null {
   }
 }
 
+function estimatedOutputTokens(message: Partial<Pick<UIMessage, 'text' | 'thinking' | 'toolCalls'>>): number {
+  const argChars = (message.toolCalls ?? []).reduce((sum, call) => sum + (call.argsRaw?.length ?? 0), 0)
+  return Math.ceil(((message.text?.length ?? 0) + (message.thinking?.length ?? 0) + argChars) / 4)
+}
+
 export function turnOutputTokens(
-  messages: readonly Pick<UIMessage, 'id' | 'role' | 'usage'>[],
+  messages: readonly (Pick<UIMessage, 'id' | 'role' | 'usage'> & Partial<Pick<UIMessage, 'text' | 'thinking' | 'toolCalls'>>)[],
   turnUserId: string | null | undefined
 ): number | null {
   if (!turnUserId) return null
@@ -140,6 +145,12 @@ export function turnOutputTokens(
     if (typeof output === 'number' && Number.isFinite(output) && output > 0) {
       total += output
       counted = true
+    } else {
+      const estimate = estimatedOutputTokens(message)
+      if (estimate > 0) {
+        total += estimate
+        counted = true
+      }
     }
   }
   return counted ? total : null

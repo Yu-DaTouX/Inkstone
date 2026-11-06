@@ -13,7 +13,7 @@ import { transcriptViewText } from '../session/transcript-view-text'
 import { formatSnoozeWake, isSnoozed, resolveSnoozeOptions } from './session-snooze'
 import type { MenuKey, SessionMenuProps } from './SessionMenu'
 
-export function SessionMenuContent({ item, isCurrent, onOpenChange, onAction }: SessionMenuProps & { onAction: (key: MenuKey) => void }): JSX.Element {
+export function SessionMenuContent({ item, isCurrent, pointAnchor, onOpenChange, onAction }: SessionMenuProps & { onAction: (key: MenuKey) => void }): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = v3Text(lang)
@@ -30,7 +30,7 @@ export function SessionMenuContent({ item, isCurrent, onOpenChange, onAction }: 
   return (
     <Menu
       aria-label={text.sessionMenu}
-      autoFocus="first"
+      autoFocus={pointAnchor ? true : 'first'}
       onAction={(key) => onAction(key as MenuKey)}
       onClose={() => onOpenChange(false)}
       disabledKeys={isCurrent ? ['delete'] : []}

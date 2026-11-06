@@ -6,7 +6,6 @@ import { compactionRunningText } from '../../state/compaction-view'
 import { useSessionText } from './text'
 import { useWorkingLine } from './run-status'
 import { formatTokenCount, type WorkingKind } from './working-line-model'
-import { useApprovalSlotClaimed } from './approval-slot'
 
 const ACT_KIND: Record<WorkingKind, string> = {
   stopping: 'stop',
@@ -29,10 +28,8 @@ export function LiveRunNotice(): JSX.Element | null {
   const line = useWorkingLine()
   const compaction = useStore((s) => s.session?.compaction)
   const abortRetry = useStore((s) => s.abortRetry)
-  const approvalId = useStore((s) => s.approvals[0]?.id)
-  const inlineApproval = useApprovalSlotClaimed(approvalId)
   if (!line) return null
-  if (line.kind === 'waiting' && inlineApproval) return null
+  if (line.kind === 'waiting') return null
   if (line.kind === 'compacting' && compaction?.status === 'running') return null
   const text = line.textKey ? tt(line.textKey, line.vars) : compactionRunningText(t, compaction)
   return (

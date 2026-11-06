@@ -3,7 +3,7 @@ import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { isModalOpen } from '../../lib/modalLayer'
 import { formatCountdown } from '../../../../shared/ui-timeout'
-import type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalRequest } from '../../../../shared/approval'
+import { approvalHeadline, type ApprovalAnswerIdentity, type ApprovalChoice, type ApprovalRequest } from '../../../../shared/approval'
 import { Button, Kbd } from '../../ui'
 import { Card, CardActions, CardBody, CardCode, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
@@ -39,6 +39,15 @@ function approvalIdentity(request: ApprovalRequest): ApprovalAnswerIdentity | un
     : undefined
 }
 
+function shortCwd(cwd: string): string {
+  const parts = cwd.split(/[\\/]+/).filter(Boolean)
+  return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : cwd
+}
+
+function hasMoreBelow(node: HTMLElement): boolean {
+  return node.scrollHeight - node.scrollTop - node.clientHeight > 2
+}
+
 function overlayOutside(card: HTMLElement | null): boolean {
   return isModalOpen() || [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="menu"], [role="listbox"]')]
     .some((element) => element.getClientRects().length > 0 && !card?.contains(element))
@@ -61,6 +70,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const cardRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef<HTMLPreElement>(null)
   const feedbackRef = useRef<HTMLTextAreaElement>(null)
+  const [bodyMore, setBodyMore] = useState(false)
   const gateRef = useRef<ApprovalGate | null>(null)
   if (!gateRef.current) gateRef.current = createApprovalGate()
   const armingRef = useRef<ApprovalArming | null>(null)
@@ -183,6 +193,17 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
     return () => cancelAnimationFrame(frame)
   }, [gated, armId, detailKey])
 
+  useEffect(() => {
+    const node = cardRef.current?.querySelector<HTMLElement>('.v3-approval-body')
+    if (!node) return undefined
+    const measure = (): void => setBodyMore(hasMoreBelow(node))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    for (const child of node.children) observer.observe(child)
+    return () => observer.disconnect()
+  }, [armId, feedbackOpen, active])
+
   const onDetailScroll = (event: React.UIEvent<HTMLPreElement>): void => {
     if (armId && isApprovalDetailRead(event.currentTarget)) setReadId(armId)
   }
@@ -207,7 +228,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const risky = current.kind === 'danger' || current.kind === 'outside' || current.kind === 'delete'
   const rememberLabel = current.kind === 'outside' ? t('approval.rememberDirs') : ''
   const waited = current.createdAt ? formatCountdown(Math.max(0, Date.now() - current.createdAt)) : ''
-  const showSource = !inline || !isCurrent || !!current.subagentId
+  const showSource = !isCurrent || !!current.subagentId
+  const headline = approvalHeadline(current)
+  const reasons = headline === current.title ? current.reasons : current.reasons.slice(1)
   const clickOnly = (action: () => void) => (event: { pointerType?: string | null }): void => {
     if (!allowsPointerPress(event.pointerType)) return
     action()
@@ -223,7 +246,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
       tone={risky ? 'ask' : undefined}
       className={`v3-approval ${risky ? 'risky' : ''}`}
       role="alertdialog"
-      aria-label={current.title}
+      aria-label={headline}
       data-testid="v3-approval"
       data-kind={current.kind}
       data-inline={inline ? '1' : undefined}
@@ -233,7 +256,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
     >
       <CardHead className="v3-approval-head">
         <CardStatus tone="ask" icon={<Icon name={risky ? 'alert' : 'shield'} size={14} />}>{tt('awaitApproval')}</CardStatus>
-        <CardTitle className="v3-approval-title">{current.title}</CardTitle>
+        <CardTitle className="v3-approval-title" title={headline === current.title ? undefined : `${current.title}\n${current.reasons[0]}`}>{headline}</CardTitle>
         {waited || approvals.length > 1 ? (
           <CardMeta>
             {waited ? <span className="v3-approval-wait"><Icon name="clock" size={12} /><span className="ui-num">{waited}</span></span> : null}
@@ -242,7 +265,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
         ) : null}
       </CardHead>
 
-      <CardBody className="v3-approval-body">
+      <CardBody className="v3-approval-body" data-more={bodyMore || undefined} onScroll={(event) => setBodyMore(hasMoreBelow(event.currentTarget))}>
         {showSource ? (
           <div className="v3-approval-source" data-testid="v3-approval-source">
             <span>{t('approval.source', { name: sourceName })}</span>
@@ -258,13 +281,13 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
           </div>
         ) : null}
 
-        {current.reasons.length ? (
+        {reasons.length ? (
           <ul className="v3-approval-reasons" data-testid="v3-approval-reasons" aria-label={zh ? '为什么需要确认' : 'Why this needs approval'}>
-            {current.reasons.map((reason, i) => <li key={i}>{reason}</li>)}
+            {reasons.map((reason, i) => <li key={i}>{reason}</li>)}
           </ul>
         ) : null}
 
-        {current.cwd ? <div className="v3-approval-cwd" title={current.cwd}>{tt('approvalCwd', { cwd: current.cwd })}</div> : null}
+        {current.cwd ? <div className="v3-approval-cwd" title={current.cwd}>{tt('approvalCwd', { cwd: shortCwd(current.cwd) })}</div> : null}
 
         {current.detail ? (
           <CardCode
@@ -343,7 +366,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
         className="v3-approval-foot"
         lead={
           <>
-            <Button data-testid="v3-approval-deny" aria-keyshortcuts="Alt+N" onPress={clickOnly(denyWithFeedback)}>{t('approval.deny')}</Button>
+            {feedbackOpen ? null : (
+              <Button data-testid="v3-approval-deny" aria-keyshortcuts="Alt+N" onPress={clickOnly(denyWithFeedback)}>{t('approval.deny')}</Button>
+            )}
             {feedbackOpen ? null : (
               <Button
                 variant="ghost"

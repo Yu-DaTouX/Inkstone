@@ -96,6 +96,12 @@ export function isStandaloneTool(call: Pick<UIToolCall, 'name'>): boolean {
   return !call.name.startsWith('mcp__') && STANDALONE.has(bareName(call.name))
 }
 
+const SUBAGENT_COMMAND_ALL = new RegExp(SUBAGENT_COMMAND.source, 'g')
+
+export function subagentStartCount(call: Pick<UIToolCall, 'name' | 'args' | 'details'>): number {
+  return Math.max(1, commandOf(call).match(SUBAGENT_COMMAND_ALL)?.length ?? 0)
+}
+
 export function toolCategory(call: Pick<UIToolCall, 'name' | 'args' | 'details'>): ToolCategory {
   if (call.name.startsWith('mcp__')) return 'other'
   const bare = bareName(call.name)

@@ -37,7 +37,7 @@ export interface ComposerKeyPlan {
   lastEsc: number
 }
 
-const DOUBLE_ESC_WINDOW = 500
+export const ESC_ARM_WINDOW_MS = 500
 
 export function roundRunningOf(input: {
   runnerRunning: boolean
@@ -45,6 +45,16 @@ export function roundRunningOf(input: {
   isCompacting?: boolean
 }): boolean {
   return input.runnerRunning || input.isStreaming === true || input.isCompacting === true
+}
+
+export function viewRunnerRunning(state: {
+  runners: ReadonlyArray<{ id: string; runId?: string; sessionId?: string; running: boolean }>
+  activeRunnerId: string | null
+  peekedSessionId: string | null
+}): boolean {
+  const runner = state.runners.find((item) => (item.runId ?? item.id) === state.activeRunnerId)
+  if (!runner?.running) return false
+  return !state.peekedSessionId || !runner.sessionId || runner.sessionId === state.peekedSessionId
 }
 
 export function isComposingKey(event: ComposerKeyEvent): boolean {
@@ -101,7 +111,7 @@ export function planComposerKey(input: ComposerKeyInput): ComposerKeyPlan {
 
   if (event.key === 'Escape' && input.running) {
     if (input.hasText || input.hasAttachments) return idle
-    if (input.now - lastEsc < DOUBLE_ESC_WINDOW) return { action: 'abort', preventDefault: true, lastEsc: 0 }
+    if (input.now - lastEsc < ESC_ARM_WINDOW_MS) return { action: 'abort', preventDefault: true, lastEsc: 0 }
     return { action: 'armAbort', preventDefault: true, lastEsc: input.now }
   }
 

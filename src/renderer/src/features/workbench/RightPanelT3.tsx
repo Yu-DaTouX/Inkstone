@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
-import { Columns2, EllipsisVertical, Eye, Minimize2, PanelRightClose, X } from 'lucide-react'
+import { Columns2, EllipsisVertical, Eye, Minimize2, PanelRightClose, SquareX } from 'lucide-react'
 import { create } from 'zustand'
 import { Button, EmptyState, IconButton, Spinner, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
@@ -19,7 +19,7 @@ import { RightPanelFrame } from '../../t3/components/right-panel/RightPanelFrame
 import { TabStrip } from '../../t3/components/right-panel/TabStrip'
 import { Launcher } from '../../t3/components/right-panel/Launcher'
 import { TabContextMenu, type TabContextMenuItem } from '../../t3/components/right-panel/TabContextMenu'
-import { Menu, MenuCheckboxItem, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '../../t3/components/ui/menu'
+import { Menu, MenuCheckboxItem, MenuItem, MenuPopup, MenuSeparator, MenuSub, MenuSubPopup, MenuSubTrigger, MenuTrigger } from '../../t3/components/ui/menu'
 import { Button as T3Button } from '../../t3/components/ui/button'
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../../t3/components/ui/tooltip'
 import { closePanelMenu, useRightPanelAdapter } from '../../t3/adapters/right-panel'
@@ -171,7 +171,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
           ) : null}
           {groups.length > 1 ? (
             <IconButton size="sm" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
-              <X size={14} />
+              <SquareX size={14} />
             </IconButton>
           ) : null}
           {last && adapter.maximized ? (
@@ -413,6 +413,30 @@ interface LeafProps {
 
 const MENU_SOURCE_ORDER = ['preview', 'preview-view', 'files']
 
+function paneMenuEntry(item: PaneMenuItem): ReactElement {
+  if (item.items?.length) {
+    return (
+      <MenuSub key={item.id}>
+        <MenuSubTrigger disabled={item.disabled}>
+          {item.icon}
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        </MenuSubTrigger>
+        <MenuSubPopup>{item.items.map(paneMenuEntry)}</MenuSubPopup>
+      </MenuSub>
+    )
+  }
+  return item.checked === undefined ? (
+    <MenuItem key={item.id} disabled={item.disabled} onClick={() => item.onAction()}>
+      {item.icon}
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+    </MenuItem>
+  ) : (
+    <MenuCheckboxItem key={item.id} checked={item.checked} disabled={item.disabled} onCheckedChange={() => item.onAction()}>
+      {item.label}
+    </MenuCheckboxItem>
+  )
+}
+
 function menuSourceRank(source: string): number {
   const index = MENU_SOURCE_ORDER.indexOf(source)
   return index < 0 ? MENU_SOURCE_ORDER.length : index
@@ -548,18 +572,7 @@ function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel
               <MenuPopup align="end" side="bottom" sideOffset={6}>
                 {groups.flatMap((items, index) => [
                   ...(index > 0 ? [<MenuSeparator key={`sep:${index}`} />] : []),
-                  ...items.map((item) =>
-                    item.checked === undefined ? (
-                      <MenuItem key={item.id} disabled={item.disabled} onClick={() => item.onAction()}>
-                        {item.icon}
-                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                      </MenuItem>
-                    ) : (
-                      <MenuCheckboxItem key={item.id} checked={item.checked} disabled={item.disabled} onCheckedChange={() => item.onAction()}>
-                        {item.label}
-                      </MenuCheckboxItem>
-                    )
-                  )
+                  ...items.map(paneMenuEntry)
                 ])}
               </MenuPopup>
             </Menu>

@@ -22,7 +22,7 @@ import type { PrCheckItem, PrDetail, PrReviewerState, PrTimelineItem } from './p
 import { commentView } from './pr-actions-model'
 import type { PrActionText } from './pr-action-text'
 import type { PrDetailText } from './pr-detail-text'
-import type { PrActionController } from './PrActionStatus'
+import { PrActionStatus, type PrActionController } from './PrActionStatus'
 import { CandidatePicker, EditFooter, MarkdownEditor } from './PrEditors'
 import { ThreadsSection } from './PrThreads'
 
@@ -97,11 +97,23 @@ export function CommentCard({ item, cwd, when, reviewBadge }: CommentCardProps):
   )
 }
 
-export function FloatingComment({ number, action, text }: { number: number; action: PrActionController; text: PrActionText }): ReactElement {
+export function FloatingComment({
+  number,
+  action,
+  text,
+  onRefresh,
+  onOpenChange
+}: {
+  number: number
+  action: PrActionController
+  text: PrActionText
+  onRefresh: () => void
+  onOpenChange: (open: boolean) => void
+}): ReactElement {
   const [draft, setDraft] = useState('')
   return (
     <div className="gh-pr-float">
-      <DialogTrigger>
+      <DialogTrigger onOpenChange={onOpenChange}>
         <Button size="sm" variant="primary" icon={<MessageSquarePlus size={14} aria-hidden />} isDisabled={action.busy} data-testid="gh-pr-comment-open">
           {text.summary.comment}
         </Button>
@@ -111,6 +123,7 @@ export function FloatingComment({ number, action, text }: { number: number; acti
               <div className="gh-pr-act__form" data-testid="gh-pr-comment-box">
                 <span className="ui-field__label">{text.summary.commentTitle}</span>
                 <TextArea aria-label={text.summary.commentTitle} placeholder={text.comment.placeholder} value={draft} onChange={setDraft} rows={5} autoFocus isDisabled={action.busy} />
+                {action.state.phase === 'failed' && action.state.kind === 'comment' ? <PrActionStatus controller={action} text={text.result} onRefresh={onRefresh} /> : null}
                 <div className="gh-pr-act__footer">
                   <Button size="sm" variant="ghost" onPress={close} isDisabled={action.busy}>
                     {text.comment.cancel}

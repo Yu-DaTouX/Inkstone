@@ -7,6 +7,12 @@ import { useSessionText } from './text'
 import { showsThinkingInline } from './transcript-view-model'
 import { useToolExpansion, useTranscriptViewScope } from './use-tool-run'
 
+function livePeekText(text: string): string {
+  const paragraphs = text.trim().split(/\n\s*\n/)
+  const line = (paragraphs.at(-1) ?? '').split('\n').find((item) => item.trim())?.trim() ?? ''
+  return line.length > 160 ? line.slice(0, 160) : line
+}
+
 function peekText(text: string): string {
   const lines = text.trimEnd().split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -106,7 +112,7 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
   }
 
   const label = live ? t('reason.now') : secs ? t('proc.reason', { n: secs }) : t('reason.past')
-  const peek = open ? '' : peekText(text)
+  const peek = open ? '' : live ? livePeekText(text) : peekText(text)
 
   return (
     <Collapsible ref={rootRef} className={asStep ? 'v3-think v3-step' : 'v3-think'} data-live={live || undefined} data-open={open || undefined} data-row={asStep ? 'step' : undefined} data-testid="v3-thinking" isExpanded={open} onExpandedChange={toggle}>
@@ -119,7 +125,7 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
           )}
           {elapsed !== null ? <span className="v3-step-time v3-think-time" data-testid="v3-thinking-elapsed">{formatDuration(elapsed)}</span> : null}
           {peek ? (
-            <span className={asStep ? 'v3-step-target v3-think-peek' : 'v3-think-peek'} dir="rtl" data-testid="v3-thinking-peek">
+            <span className={asStep ? 'v3-step-target v3-think-peek' : 'v3-think-peek'} dir={live ? undefined : 'rtl'} data-testid="v3-thinking-peek">
               <span dir="ltr">{peek}</span>
             </span>
           ) : null}

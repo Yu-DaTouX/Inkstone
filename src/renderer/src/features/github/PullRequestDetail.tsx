@@ -47,7 +47,7 @@ import {
 } from './pr-model'
 import { prDetailText } from './pr-detail-text'
 import { prActionText } from './pr-action-text'
-import { addPendingComment, inferCommentSide, nextCondensed, parsePending, pendingStorageKey, removePendingComment, type PendingComment } from './pr-actions-model'
+import { addPendingComment, inferCommentSide, mergeVerdict, nextCondensed, parsePending, pendingStorageKey, removePendingComment, type PendingComment } from './pr-actions-model'
 import { PrActionStatus, usePrAction } from './PrActionStatus'
 import { PrActionBar } from './PrDetailActions'
 import { EditFooter } from './PrEditors'
@@ -180,7 +180,16 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [viewed, setViewed] = useState<string[]>(() => parseViewed(readViewedRaw()))
   const [notice, setNotice] = useState('')
-  const action = usePrAction(cwd, () => setReload((value) => value + 1))
+  const diffPatch = useRef('')
+  const [commentOpen, setCommentOpen] = useState(false)
+  const action = usePrAction(cwd, (_request, result) => {
+    if (result.pr && repo) {
+      const next = normalizePrDetail(result.pr, { repo: repo.name, diff: diffPatch.current })
+      setDetail(next)
+      onState?.(next.state, next.title)
+    }
+    setReload((value) => value + 1)
+  })
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const [target, setTarget] = useState<CommentTarget>('review')
@@ -304,7 +313,8 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
           setError(detailRes.error || t('github.pr.detail.failed', { msg: '' }))
           return
         }
-        const next = normalizePrDetail(detailRes.pr, { repo: name, diff: diffRes.ok ? diffRes.patch : '' })
+        diffPatch.current = diffRes.ok ? diffRes.patch : ''
+        const next = normalizePrDetail(detailRes.pr, { repo: name, diff: diffPatch.current })
         setDetail(next)
         onState?.(next.state, next.title)
         if (!diffRes.ok) setDiffNote({ kind: 'error', message: diffRes.error ?? '' })
@@ -597,6 +607,11 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
               {stateText(detail.state)}
             </Badge>
           ) : null}
+          {detail && (detail.state === 'open' || detail.state === 'draft') && mergeVerdict(detail).blockers.includes('conflict') ? (
+            <Badge tone="fail" className="gh-prd__state" data-testid="gh-pr-state-conflict">
+              {actText.list.conflicting}
+            </Badge>
+          ) : null}
           <IconButton size="sm" variant="ghost" aria-label={text.refresh} tooltip={text.refresh} onPress={() => setReload((value) => value + 1)} data-testid="gh-pr-detail-refresh">
             {loading ? <Spinner size="xs" /> : <RefreshCw size={14} aria-hidden />}
           </IconButton>
@@ -727,7 +742,9 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
         ) : null}
       </nav>
       {notice ? <Notice tone="fail" compact className="gh-prd__notice">{notice}</Notice> : null}
-      <PrActionStatus controller={action} text={actText.result} onRefresh={() => setReload((value) => value + 1)} className="gh-prd__notice" />
+      {commentOpen && tab !== 'code' && action.state.phase === 'failed' && action.state.kind === 'comment' ? null : (
+        <PrActionStatus controller={action} text={actText.result} onRefresh={() => setReload((value) => value + 1)} className="gh-prd__notice" />
+      )}
       {error ? (
         <Notice tone="fail" compact className="gh-prd__notice" data-testid="gh-pr-detail-error">
           {t('github.pr.detail.failed', { msg: error })}
@@ -749,7 +766,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
               </div>
             ))
           : null}
-        {detail && tab !== 'code' ? <FloatingComment number={number} action={action} text={actText} /> : null}
+        {detail && tab !== 'code' ? <FloatingComment number={number} action={action} text={actText} onRefresh={() => setReload((value) => value + 1)} onOpenChange={setCommentOpen} /> : null}
       </div>
     </div>
   )

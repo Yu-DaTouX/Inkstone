@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
+import { useVoicePluginInstalled } from '../../../state/installed-plugins'
 import {
   Button,
   Notice,
@@ -217,7 +218,6 @@ function LegacyNotice({
 
   return (
     <section className="settings-section" data-testid="settings-legacy">
-      <h3 className="settings-h2">{text.unknownTitle}</h3>
       <Notice tone="info" compact role="note">
         {body}
       </Notice>
@@ -256,13 +256,18 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
   const sectionLabel = useCallback((id: SettingsSectionId): string => text[SECTION_LABEL[id]], [text])
   const navLabel = useCallback((entry: SettingsNavEntry): string => settingsNavLabel(entry, text), [text])
   useRevealScroll(text.revealFolded)
+  const voiceInstalled = useVoicePluginInstalled()
+  const searchEntries = useMemo(
+    () => SETTINGS_SEARCH_ENTRIES.filter((entry) => entry.requires !== 'voice-plugin' || voiceInstalled),
+    [voiceInstalled]
+  )
 
   const search = useMemo(() => {
     const targets = new Map<string, SearchTarget>()
     const results: SettingsSearchResult[] = []
     const needle = query.trim().toLowerCase()
     if (!needle) return { results, targets }
-    const hits = matchSettings(SETTINGS_SEARCH_ENTRIES, query, lang, sectionLabel, 60)
+    const hits = matchSettings(searchEntries, query, lang, sectionLabel, 60)
     const order: string[] = []
     const byNav = new Map<string, SettingsSearchEntry[]>()
     for (const entry of NAV_ENTRIES) {
@@ -318,7 +323,7 @@ export function SettingsPage({ isOpen = true, onClose, onShowOnboarding }: Setti
       }
     }
     return { results, targets }
-  }, [query, lang, sectionLabel, navLabel, text])
+  }, [query, lang, sectionLabel, navLabel, text, searchEntries])
 
   useEffect(() => {
     if (!request) return

@@ -16,7 +16,7 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '@/t3/comp
 import { Tooltip, TooltipPopup, TooltipTrigger } from '@/t3/components/ui/tooltip'
 import { cn } from '@/t3/lib/utils'
 
-const QUEUE_VISIBLE_ROWS = 3
+const QUEUE_COLLAPSED_ROWS = 2
 
 function thumbUrl(image: { data: string; mimeType: string }): string {
   return `data:${image.mimeType};base64,${image.data}`
@@ -54,8 +54,8 @@ export function QueuedRunsControl({ className }: { className?: string }) {
     closeEdit()
   }
 
-  const collapsible = queue.total > QUEUE_VISIBLE_ROWS
-  const visibleRows = collapsible && !showAll ? queue.rows.slice(0, QUEUE_VISIBLE_ROWS - 1) : queue.rows
+  const collapsible = queue.total > QUEUE_COLLAPSED_ROWS
+  const visibleRows = collapsible && !showAll ? queue.rows.slice(0, QUEUE_COLLAPSED_ROWS) : queue.rows
 
   const rowActions = (row: QueueRow) =>
     row.kind === 'pending' ? (
@@ -166,7 +166,7 @@ export function QueuedRunsControl({ className }: { className?: string }) {
           >
             <EllipsisVerticalIcon />
           </MenuTrigger>
-          <MenuPopup align="end" side="bottom" sideOffset={4}>
+          <MenuPopup align="end" side="top" sideOffset={4}>
             <MenuItem
               disabled={!row.canMoveUp}
               onClick={() => queue.move(row, 'up')}
@@ -319,31 +319,29 @@ export function QueuedRunsControl({ className }: { className?: string }) {
           )
         })}
       </ol>
-      {collapsible ? (
-        <div className="self-end pe-1 text-xs pointer-coarse:[&_[data-slot=inline-button]]:relative pointer-coarse:[&_[data-slot=inline-button]]:after:absolute pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-x-1.5 pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-y-3.5">
-          <InlineButton
-            aria-controls={listId}
-            aria-expanded={showAll}
-            data-testid="queue-toggle"
-            onClick={() => setShowAll((value) => !value)}
-            onPointerDown={(event) => event.preventDefault()}
-            tone="muted"
-          >
-            {showAll
-              ? t('composer.t3.queue.showLess')
-              : t('composer.t3.queue.showAll', { n: queue.total })}
-            <ChevronDownIcon
-              aria-hidden
-              className={cn(
-                'size-3.5 transition-transform duration-150 motion-reduce:transition-none',
-                showAll && 'rotate-180'
-              )}
-            />
-          </InlineButton>
-        </div>
-      ) : null}
       {queue.total > 1 ? (
-        <div className="self-end pe-1">
+        <div className="flex items-center gap-3 self-end pe-1 text-xs pointer-coarse:[&_[data-slot=inline-button]]:relative pointer-coarse:[&_[data-slot=inline-button]]:after:absolute pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-x-1.5 pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-y-3.5">
+          {collapsible ? (
+            <InlineButton
+              aria-controls={listId}
+              aria-expanded={showAll}
+              data-testid="queue-toggle"
+              onClick={() => setShowAll((value) => !value)}
+              onPointerDown={(event) => event.preventDefault()}
+              tone="muted"
+            >
+              {showAll
+                ? t('composer.t3.queue.showLess')
+                : t('composer.t3.queue.showAll', { n: queue.total })}
+              <ChevronDownIcon
+                aria-hidden
+                className={cn(
+                  'size-3.5 transition-transform duration-150 motion-reduce:transition-none',
+                  showAll && 'rotate-180'
+                )}
+              />
+            </InlineButton>
+          ) : null}
           <InlineButton
             data-testid="queue-clear-all"
             onClick={() => {

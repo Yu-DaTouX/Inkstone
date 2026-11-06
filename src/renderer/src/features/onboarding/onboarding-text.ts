@@ -20,7 +20,6 @@ export interface OnboardingText {
   stepDone: string
 
   welcomeTitle: string
-  welcomeDesc: string
   welcomeAppearance: string
   welcomeSound: string
   welcomeAuth: string
@@ -89,7 +88,6 @@ const ZH: OnboardingText = {
   stepDone: '功能入口',
 
   welcomeTitle: '先把这几件配置好',
-  welcomeDesc: '下面几步里的每一项都可以跳过，之后在设置里随时再改。',
   welcomeAppearance: '外观：语言、主题与阅读偏好',
   welcomeSound: '提醒：完成、提问与出错时的声音',
   welcomeAuth: '模型接入：在设置里登录或填写凭证',
@@ -158,7 +156,6 @@ const EN: OnboardingText = {
   stepDone: 'Entry points',
 
   welcomeTitle: 'A few things to set up',
-  welcomeDesc: 'Every step can be skipped and changed later in Settings.',
   welcomeAppearance: 'Appearance: language, theme and reading preferences',
   welcomeSound: 'Alerts: sound for done, questions and errors',
   welcomeAuth: 'Model access: sign in or add credentials in Settings',

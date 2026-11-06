@@ -30,14 +30,37 @@ function textOf(content) {
   return content.filter((part) => part?.type === 'text').map((part) => part.text ?? '').join('')
 }
 
+function endedWithError(messages) {
+  if (!Array.isArray(messages)) return false
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'assistant') return messages[i].stopReason === 'error'
+  }
+  return false
+}
+
 export function createTurnModelSwitch(pi, root) {
   let queuedSteers = 0
+  const apply = async (ctx) => {
+    const target = takePendingSwitch(ctx?.sessionManager?.getSessionId?.(), root ?? yanDir())
+    if (!target) return
+    if (target.provider && target.id) {
+      const model = ctx?.modelRegistry?.find?.(target.provider, target.id)
+      if (model) await pi.setModel(model)
+    }
+    if (target.thinkingLevel) pi.setThinkingLevel(target.thinkingLevel)
+  }
+  const runIdle = (ctx) => !ctx?.hasPendingMessages?.()
   return {
     onInput(event) {
       if (event?.streamingBehavior === 'steer') queuedSteers += 1
     },
-    onAgentEnd() {
+    async onAgentEnd(event, ctx) {
       queuedSteers = 0
+      if (endedWithError(event?.messages) || !runIdle(ctx)) return
+      await apply(ctx)
+    },
+    async onAgentSettled(_event, ctx) {
+      if (runIdle(ctx)) await apply(ctx)
     },
     async onMessageStart(event, ctx) {
       const message = event?.message
@@ -47,13 +70,7 @@ export function createTurnModelSwitch(pi, root) {
         return
       }
       if (SUBAGENT_NOTICE.test(textOf(message.content))) return
-      const target = takePendingSwitch(ctx?.sessionManager?.getSessionId?.(), root ?? yanDir())
-      if (!target) return
-      if (target.provider && target.id) {
-        const model = ctx?.modelRegistry?.find?.(target.provider, target.id)
-        if (model) await pi.setModel(model)
-      }
-      if (target.thinkingLevel) pi.setThinkingLevel(target.thinkingLevel)
+      await apply(ctx)
     }
   }
 }
@@ -62,5 +79,6 @@ export default function turnModelSwitch(pi) {
   const handlers = createTurnModelSwitch(pi)
   pi.on('input', handlers.onInput)
   pi.on('agent_end', handlers.onAgentEnd)
+  pi.on('agent_settled', handlers.onAgentSettled)
   pi.on('message_start', handlers.onMessageStart)
 }

@@ -171,6 +171,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
   }
   const hasProjectFolders = props.projectFolders != null && props.projectFolders.length > 0
   const shelves = props.shelves ?? { working: true, snoozed: true, settled: true }
+  const routeThreadKey = props.settledRouteThreadKey ?? null
   const hasAnyRow =
     sections.pinned.length +
       sections.active.length +
@@ -187,9 +188,9 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
             active: sections.active,
             working: sections.working,
             snoozed: sections.snoozed,
-            settled: shelves.settled ? sections.settled : [],
-            visibleWorking: shelves.working ? sections.working : [],
-            visibleSnoozed: shelves.snoozed ? sections.snoozed : [],
+            settled: shelves.settled ? sections.settled : sections.settled.filter((key) => key === routeThreadKey),
+            visibleWorking: shelves.working ? sections.working : sections.working.filter((key) => key === routeThreadKey),
+            visibleSnoozed: shelves.snoozed ? sections.snoozed : sections.snoozed.filter((key) => key === routeThreadKey),
             showSettledShelf: props.showSettledShelf !== false
           })
         : [],
@@ -204,6 +205,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
       shelves.working,
       shelves.snoozed,
       shelves.settled,
+      routeThreadKey,
       props.showSettledShelf
     ]
   )
@@ -483,8 +485,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
                 }
               />
             )
-            if (folder.collapsed) continue
-            for (const threadKey of folder.threadKeys) {
+            for (const threadKey of folder.collapsed ? folder.threadKeys.filter((key) => key === routeThreadKey) : folder.threadKeys) {
               nodes.push(
                 <SortableRowSlot
                   key={`${folder.projectKey}:${threadKey}`}

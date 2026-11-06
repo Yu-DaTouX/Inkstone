@@ -121,19 +121,20 @@ function ToolCallRows({ rows, text }: { rows: ContextToolCall[]; text: ContextPa
     <>
       <ul className="wb-ctx-tools" data-testid="v3-wb-ctx-top-tools">
         {rows.map((row) => {
-          const label = row.target ? `${row.name} · ${row.target}` : row.name
+          const target = row.target || (row.scriptLines ? text.scriptLines(row.scriptLines) : '')
+          const label = target ? `${row.name} · ${target}` : row.name
           return (
             <li key={row.id}>
               <ListRow
                 className="wb-ctx-tool"
-                title={label}
+                title={row.detail ? `${label}\n${row.detail}` : label}
                 aria-label={`${text.jumpTo(label)} · ${shortTokens(row.tokens)}`}
                 data-testid="v3-wb-ctx-tool"
                 trailing={`≈${shortTokens(row.tokens)}`}
                 onClick={() => void useStore.getState().locateMessage(row.anchorId).then((found) => setMissed(found ? null : row.id))}
               >
                 {row.name}
-                {row.target ? <span className="wb-ctx-tool-target">{` ${row.target}`}</span> : null}
+                {target ? <span className="wb-ctx-tool-target">{` ${target}`}</span> : null}
               </ListRow>
             </li>
           )

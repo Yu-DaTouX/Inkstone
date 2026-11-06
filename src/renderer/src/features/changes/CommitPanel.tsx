@@ -159,6 +159,19 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
     )
   }
 
+  const idle = primary.kind === 'up-to-date' && items.length === 0 && repo.changedCount === 0 && stagedCount === 0 && !message.trim()
+  if (idle) {
+    return (
+      <section className="gitflow-commit" aria-label={t('gitflow.commitArea')} data-testid="git-commit-panel" data-idle="">
+        {reasonText ? (
+          <Notice variant="hint" className="gitflow-commit__reason" data-testid="git-primary-reason">
+            {reasonText}
+          </Notice>
+        ) : null}
+      </section>
+    )
+  }
+
   return (
     <section className="gitflow-commit" aria-label={t('gitflow.commitArea')} data-testid="git-commit-panel">
       {items.length > 0 || repo.changedCount > 0 ? (
@@ -208,16 +221,16 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
                   if (key === 'commit-push') props.onCommit(true)
                 }}
               >
-                <MenuItem
-                  id="commit-push"
-                  textValue={t('gitflow.action.commitPush')}
-                  disabledReason={
-                    primary.commitPushReason
-                      ? t(REASON[primary.commitPushReason], { upstream: repo.upstream ?? '', ahead: repo.ahead, behind: repo.behind })
-                      : undefined
-                  }
-                >
-                  {t('gitflow.action.commitPush')}
+                <MenuItem id="commit-push" textValue={t('gitflow.action.commitPush')}>
+                  <span
+                    title={
+                      primary.commitPushReason
+                        ? t(REASON[primary.commitPushReason], { upstream: repo.upstream ?? '', ahead: repo.ahead, behind: repo.behind })
+                        : undefined
+                    }
+                  >
+                    {t('gitflow.action.commitPush')}
+                  </span>
                 </MenuItem>
               </Menu>
             </Popover>

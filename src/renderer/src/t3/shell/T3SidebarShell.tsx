@@ -11,6 +11,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement
 } from 'react'
+import { createPortal } from 'react-dom'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import { v3Text } from '../../app/v3-text'
 import { useI18n, useT } from '../../i18n'
@@ -117,7 +118,8 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const [query, setQuery] = useState('')
   const [renamingKey, setRenamingKey] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [sessionMenu, setSessionMenu] = useState<{ key: string; open: boolean } | null>(null)
+  const menuPointRef = useRef<HTMLSpanElement>(null)
+  const [sessionMenu, setSessionMenu] = useState<{ key: string; open: boolean; point: { x: number; y: number } | null } | null>(null)
   const closeSessionMenu = useCallback((): void => setSessionMenu((previous) => previous ? { ...previous, open: false } : previous), [])
   const [projectMenu, setProjectMenu] = useState<{ id: string; open: boolean } | null>(null)
   const [draftMenuId, setDraftMenuId] = useState<string | null>(null)
@@ -129,6 +131,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
 
   const allSections = useSidebarSections()
   const projects = useSidebarProjects()
+  const activeKey = useActiveThreadKey()
   const [projectFilterState, setProjectFilterState] = useState<string | null>(() => {
     try { return window.localStorage.getItem(PROJECT_FILTER_KEY) || null } catch { return null }
   })
@@ -142,12 +145,11 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   }, [])
   const sections = useMemo(() => {
     if (projectFilter === null) return allSections
-    const keep = (list: SidebarThreadView[]): SidebarThreadView[] => list.filter((view) => view.projectId === projectFilter)
+    const keep = (list: SidebarThreadView[]): SidebarThreadView[] => list.filter((view) => view.projectId === projectFilter || scopedKeyOf(view.id) === activeKey)
     return { pinned: keep(allSections.pinned), active: keep(allSections.active), working: keep(allSections.working), snoozed: keep(allSections.snoozed), settled: keep(allSections.settled) }
-  }, [allSections, projectFilter])
+  }, [allSections, projectFilter, activeKey])
   const draftIdList = useSidebarDraftIds()
   const undo = useThreadUndoNotice()
-  const activeKey = useActiveThreadKey()
   const now = useMinuteClock()
   const wakeLabel = useSnoozeWakeLabel()
   const jump = useSessionNav((s) => s.jump)
@@ -364,13 +366,13 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         icon: project ? <ProjectFavicon project={{ projectId: project.projectId, displayName: project.displayName }} /> : null,
         collapsed,
         threadKeys: rows.map((view) => scopedKeyOf(view.id)),
-        hiddenCount: collapsed ? rows.length : 0,
+        hiddenCount: collapsed ? rows.filter((view) => scopedKeyOf(view.id) !== activeKey).length : 0,
         dot: collapsed ? dot : null,
         dotLabel: collapsed && dot !== null ? own.attention : null,
         manageable: project !== undefined
       }
     })
-  }, [collapsedFolders, now, own.attention, projects, sections.active, text.groupUngrouped])
+  }, [activeKey, collapsedFolders, now, own.attention, projects, sections.active, text.groupUngrouped])
 
   const toggleFolder = useCallback((projectKey: string): void => {
     setCollapsedFolders((previous) => {
@@ -381,12 +383,12 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
     })
   }, [])
 
-  const openMenu = useCallback((threadKey: string): void => {
+  const openMenu = useCallback((threadKey: string, point: { x: number; y: number } | null = null): void => {
     const row = asideRef.current?.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(threadKey)}"]`)
     menuAnchorRef.current = row ?? null
     setDraftMenuId(null)
     setProjectMenu((previous) => previous ? { ...previous, open: false } : previous)
-    setSessionMenu({ key: threadKey, open: true })
+    setSessionMenu({ key: threadKey, open: true, point })
   }, [])
 
   const openProjectMenu = useCallback((projectKey: string, anchor?: HTMLElement): void => {
@@ -455,7 +457,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
           } } : undefined}
           onOpen={() => openView(view)}
           onActivate={() => openView(view)}
-          onContextMenu={() => openMenu(threadKey)}
+          onContextMenu={(point) => openMenu(threadKey, point)}
           onRenameStart={() => {
             setRenameValue(view.title)
             setRenamingKey(threadKey)
@@ -539,6 +541,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const menuProject = projectMenu ? settings?.projects.find((project) => project.id === projectMenu.id) : undefined
   const menuDraftId = draftMenuId !== null && draftIds.has(draftMenuId) ? draftMenuId : null
   const flatLayout = settings?.sidebarLayout === 'flat'
+  const connBannerShown = useUiV3((s) => s.route.name === 'chat')
 
   const connLabel = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
   const userName = settings?.profile?.name?.trim() || own.localUser
@@ -762,7 +765,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
           utilities={utilities}
           retrying={retrying}
           retryLabel={t('conn.retry')}
-          onRetryConnection={() => {
+          onRetryConnection={connBannerShown ? undefined : () => {
             setRetrying(true)
             void window.yan
               .start()
@@ -789,6 +792,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         </Menu>
       </Popover>
 
+      {createPortal(<span ref={menuPointRef} className="v3-side-menu-point" style={sessionMenu?.point ? { left: sessionMenu.point.x, top: sessionMenu.point.y } : undefined} aria-hidden />, document.body)}
       {menuView && menuSession ? (
         <SessionMenu
           key={menuView.id}
@@ -796,6 +800,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
           title={menuView.title}
           isCurrent={scopedKeyOf(menuView.id) === activeKey}
           anchor={menuAnchorRef}
+          pointAnchor={sessionMenu?.point ? menuPointRef : undefined}
           open={sessionMenu?.open === true}
           onOpenChange={(open) => {
             if (!open) closeSessionMenu()

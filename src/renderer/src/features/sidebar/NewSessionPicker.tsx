@@ -182,7 +182,7 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
                 key={option.project.id}
                 {...common}
                 className="nsp__option nsp__option--project"
-                icon={<ProjectFavicon project={{ projectId: option.project.id, displayName: option.label }} className="size-5 text-[.5625rem]" />}
+                icon={<ProjectFavicon project={{ projectId: option.project.id, displayName: option.label }} className="size-5 text-[.6875rem]" />}
                 description={<span title={option.project.cwd}>{option.project.cwd}</span>}
                 trailing={index < SHORTCUT_SLOTS ? <KbdGroup keys={[MOD_KEY, String(index + 1)]} /> : undefined}
               >

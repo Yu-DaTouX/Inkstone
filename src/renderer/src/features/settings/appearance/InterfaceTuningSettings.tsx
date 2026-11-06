@@ -37,26 +37,26 @@ const TEXT: Record<'zh-CN' | 'en-US', TuningText> = {
   'zh-CN': {
     group: '界面',
     glass: '毛玻璃不透明度',
-    glassDesc: '数值越大，输入框、侧栏和弹出菜单越实，越少透出背后的内容。',
+    glassDesc: '越大越实，越少透出背后内容。',
     contrast: '对比度',
     contrastDesc: '整体调强或调弱次要文字和边框的颜色。',
     wrap: '代码自动换行',
-    wrapDesc: '对话里的代码块、diff 和文件预览默认把长行折到下一行；每个代码块仍可单独切换。',
+    wrapDesc: '代码块、diff 和预览默认折行，每块可单独切换。',
     panel: '面板动画时长',
-    panelDesc: '左栏、右栏和会话栏开合的快慢，0 为立即切换。',
+    panelDesc: '侧栏和会话栏开合速度，0 为立即。',
     instant: '立即',
     reset: (name) => `恢复默认${name}`
   },
   'en-US': {
     group: 'Interface',
     glass: 'Glass opacity',
-    glassDesc: 'Higher values make the composer, sidebar and menus more solid.',
+    glassDesc: 'Higher is more solid, less see-through.',
     contrast: 'Contrast',
-    contrastDesc: 'Strengthens or softens secondary text and borders across the interface.',
+    contrastDesc: 'Strength of secondary text and borders.',
     wrap: 'Word wrap',
-    wrapDesc: 'Wrap long lines in code blocks, diffs and file previews by default; each code block can still toggle.',
+    wrapDesc: 'Wrap long lines in code, diffs and previews; toggle per block.',
     panel: 'Panel animations',
-    panelDesc: 'How fast the sidebars and session bar open and close; 0 switches instantly.',
+    panelDesc: 'Sidebar and session bar speed; 0 is instant.',
     instant: 'Instant',
     reset: (name) => `Reset ${name.toLowerCase()}`
   }

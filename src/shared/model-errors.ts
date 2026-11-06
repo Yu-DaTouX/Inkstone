@@ -119,9 +119,54 @@ export function isTransientModelError(errorText: unknown): boolean {
   return UNREACHABLE_RE.test(info.text) && !CERTIFICATE_RE.test(info.text)
 }
 
+export const EMPTY_MODEL_ERROR_NOTICE = '模型请求失败：服务商未返回具体原因，无法判断是网络、额度还是请求问题。请查看运行日志，或稍后重试。'
+
+export type ModelErrorCause =
+  | 'empty'
+  | 'refused'
+  | 'quotaRate'
+  | 'quotaBalance'
+  | 'quotaUsage'
+  | 'auth'
+  | 'context'
+  | 'aborted'
+  | 'request'
+  | 'restart'
+  | 'stream'
+  | 'timeout'
+  | 'overload'
+  | 'unreachable'
+  | 'unknown'
+
+export function modelErrorCause(errorText: unknown): ModelErrorCause {
+  const info = classifyModelError(errorText)
+  if (!info.text) return 'empty'
+  switch (info.kind) {
+    case 'quota':
+      if (info.quotaScope === 'rate') return 'quotaRate'
+      return QUOTA_BALANCE_RE.test(info.text) ? 'quotaBalance' : 'quotaUsage'
+    case 'retryable':
+      if (STREAM_BROKEN_RE.test(info.text)) return /\b1012\b/.test(info.text) ? 'restart' : 'stream'
+      if (TIMEOUT_RE.test(info.text)) return 'timeout'
+      if (OVERLOAD_RE.test(info.text)) return 'overload'
+      if (UNREACHABLE_RE.test(info.text)) return 'unreachable'
+      return 'unknown'
+    default:
+      return info.kind
+  }
+}
+
+export function modelErrorResetTime(errorText: unknown): string {
+  const text = modelErrorText(errorText)
+  const hits = [...text.matchAll(/resets?\s+(?:at\s+)?([\d:.]+\s*[ap]\.?m\.?(?:\s*\([^)]+\))?)/gi)].map((m) => m[1].trim())
+  const best = hits.find((h) => h.includes('(')) ?? hits[0]
+  if (best) return best
+  return text.match(/try again in\s*~?\s*([0-9]+(?:\.[0-9]+)?\s*(?:min(?:ute)?s?|hours?|hrs?|seconds?|秒|分钟|小时))/i)?.[1].trim() ?? ''
+}
+
 export function modelErrorNotice(errorText: unknown): string {
   const info = classifyModelError(errorText)
-  if (!info.text) return '模型请求失败：服务商未返回具体原因，无法判断是网络、额度还是请求问题。请查看运行日志，或稍后重试。'
+  if (!info.text) return EMPTY_MODEL_ERROR_NOTICE
   let explanation: string
   switch (info.kind) {
     case 'refused': explanation = '服务商安全审核拦截了这轮请求。请检查请求内容与服务商政策；可换个模型继续，直接重发相同内容可能仍被拦截。'; break

@@ -8,6 +8,7 @@ export interface SettingsSearchEntry {
   en: string
   keywords?: readonly string[]
   more?: boolean
+  requires?: 'voice-plugin'
 }
 
 export interface SettingsRevealTarget {

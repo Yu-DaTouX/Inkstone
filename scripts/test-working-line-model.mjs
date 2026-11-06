@@ -97,6 +97,7 @@ async function run() {
     assert.equal(m.turnOutputTokens(messages, 'missing'), null, '回合身份对不上时不显示')
     assert.equal(m.turnOutputTokens(messages, null), null)
     assert.equal(m.turnOutputTokens([{ id: 'u1', role: 'user' }, { id: 'a1', role: 'assistant' }], 'u1'), null, '没有 usage 时不推断')
+    assert.equal(m.turnOutputTokens([{ id: 'u1', role: 'user' }, { id: 'a1', role: 'assistant', text: 'x'.repeat(40), toolCalls: [{ argsRaw: 'y'.repeat(400) }] }], 'u1'), 110, '还没有 usage 的消息按字符数估算，长参数生成期间数字也在走')
     assert.equal(m.turnOutputTokens([...messages, { id: 'a1', role: 'assistant', usage: { output: 1200 } }], 'u1'), 1500, '同一条消息的快照不重复累加')
 
     assert.equal(m.formatTokenCount(0), '0')

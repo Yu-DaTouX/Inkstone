@@ -26,6 +26,10 @@ export type SessionTextKey =
   | 'subagentFailedCount'
   | 'subagentStoppedCount'
   | 'subagentAllDone'
+  | 'subagentAllLive'
+  | 'subagentAllAwaiting'
+  | 'subagentAllFailed'
+  | 'subagentAllStopped'
   | 'subagentListLabel'
   | 'subagentShowMore'
   | 'subagentShowLess'
@@ -53,6 +57,23 @@ export type SessionTextKey =
   | 'errorTitleAborted'
   | 'errorTitleRefused'
   | 'errorTitleRequest'
+  | 'errHintEmpty'
+  | 'errHintRefused'
+  | 'errHintQuotaRate'
+  | 'errHintQuotaBalance'
+  | 'errHintQuotaUsage'
+  | 'errHintQuotaReset'
+  | 'errHintAuth'
+  | 'errHintContext'
+  | 'errHintAborted'
+  | 'errHintRequest'
+  | 'errHintRestart'
+  | 'errHintStream'
+  | 'errHintTimeout'
+  | 'errHintOverload'
+  | 'errHintUnreachable'
+  | 'errHintUnknown'
+  | 'errStoppedStatus'
   | 'errorRetry'
   | 'errorModel'
   | 'errorCompact'
@@ -197,6 +218,8 @@ export type SessionTextKey =
   | 'processFetch'
   | 'processAgent1'
   | 'processAgent'
+  | 'processQuestion1'
+  | 'processQuestion'
   | 'processOther1'
   | 'processOther'
   | 'processKindJoin'
@@ -281,6 +304,10 @@ const ZH: Record<SessionTextKey, string> = {
   subagentFailedCount: '{n} 失败',
   subagentStoppedCount: '{n} 已停止',
   subagentAllDone: '全部完成',
+  subagentAllLive: '进行中',
+  subagentAllAwaiting: '等你确认',
+  subagentAllFailed: '全部失败',
+  subagentAllStopped: '全部停止',
   subagentListLabel: '子 Agent 列表',
   subagentShowMore: '再显示 {n} 个',
   subagentShowLess: '收起',
@@ -302,12 +329,29 @@ const ZH: Record<SessionTextKey, string> = {
   errorTitleQuotaUsage: '额度已用完',
   errorTitleQuotaRate: '请求被限流',
   errorWaitQuota: '恢复后自动续跑',
-  errorQuotaWindowFull: '用量面板显示额度窗口已满，这次限流来自额度用尽，不是请求太快。',
+  errorQuotaWindowFull: '额度窗口已满，不是请求太快',
   errorTitleAuth: '认证或权限失败',
   errorTitleContext: '上下文超限',
   errorTitleAborted: '本轮已取消',
   errorTitleRefused: '服务商拦截',
   errorTitleRequest: '模型或参数不受支持',
+  errHintEmpty: '服务商没有返回原因，可稍后重试',
+  errHintRefused: '被安全审核拦截，可换个模型',
+  errHintQuotaRate: '请求太快或额度窗口已满',
+  errHintQuotaBalance: '余额不足，充值或换模型',
+  errHintQuotaUsage: '等额度恢复或换模型',
+  errHintQuotaReset: '恢复时间：{time}',
+  errHintAuth: '在设置中重新登录或检查凭证',
+  errHintContext: '压缩会话或换长上下文模型',
+  errHintAborted: '已执行的工具操作可能保留',
+  errHintRequest: '核对模型 ID、接口地址与参数',
+  errHintRestart: '服务重启（1012），可稍后重试',
+  errHintStream: '连接或响应流中断，可重试',
+  errHintTimeout: '等待响应超时，检查网络与代理',
+  errHintOverload: '服务暂时故障或过载',
+  errHintUnreachable: '连不上模型服务，检查网络与代理',
+  errHintUnknown: '见原文',
+  errStoppedStatus: '已停止',
   errorRetry: '重试',
   errorModel: '换模型',
   errorCompact: '压缩上下文',
@@ -452,6 +496,8 @@ const ZH: Record<SessionTextKey, string> = {
   processFetch: '打开 {n} 个网页',
   processAgent1: '派出 1 个子 Agent',
   processAgent: '派出 {n} 个子 Agent',
+  processQuestion1: '提问 1 次',
+  processQuestion: '提问 {n} 次',
   processOther1: '调用 1 次工具',
   processOther: '调用 {n} 次工具',
   processKindJoin: '、',
@@ -537,6 +583,10 @@ const EN: Record<SessionTextKey, string> = {
   subagentFailedCount: '{n} failed',
   subagentStoppedCount: '{n} stopped',
   subagentAllDone: 'all done',
+  subagentAllLive: 'in progress',
+  subagentAllAwaiting: 'need approval',
+  subagentAllFailed: 'all failed',
+  subagentAllStopped: 'all stopped',
   subagentListLabel: 'Subagents',
   subagentShowMore: 'Show {n} more',
   subagentShowLess: 'Show less',
@@ -558,12 +608,29 @@ const EN: Record<SessionTextKey, string> = {
   errorTitleQuotaUsage: 'Quota exhausted',
   errorTitleQuotaRate: 'Too many requests',
   errorWaitQuota: 'Auto-resume when quota resets',
-  errorQuotaWindowFull: 'The usage panel shows a full quota window, so this limit comes from exhausted quota, not request speed.',
+  errorQuotaWindowFull: 'Quota window full, not request speed',
   errorTitleAuth: 'Authentication or permission failed',
   errorTitleContext: 'Context limit exceeded',
   errorTitleAborted: 'Turn cancelled',
   errorTitleRefused: 'Blocked by provider',
   errorTitleRequest: 'Model or request unsupported',
+  errHintEmpty: 'The provider gave no reason; retry later',
+  errHintRefused: 'Blocked by safety review; try another model',
+  errHintQuotaRate: 'Too fast, or the quota window is full',
+  errHintQuotaBalance: 'Low balance; top up or switch models',
+  errHintQuotaUsage: 'Wait for quota or switch models',
+  errHintQuotaReset: 'Resets: {time}',
+  errHintAuth: 'Sign in again or check credentials in Settings',
+  errHintContext: 'Compact the session or use a longer-context model',
+  errHintAborted: 'Tool actions already run may remain',
+  errHintRequest: 'Check the model ID, endpoint and parameters',
+  errHintRestart: 'Service restarted (1012); retry later',
+  errHintStream: 'Connection or stream dropped; retry',
+  errHintTimeout: 'Response timed out; check network and proxy',
+  errHintOverload: 'Service down or overloaded',
+  errHintUnreachable: 'Cannot reach the service; check network and proxy',
+  errHintUnknown: 'See the raw message',
+  errStoppedStatus: 'Stopped',
   errorRetry: 'Retry',
   errorModel: 'Switch model',
   errorCompact: 'Compact context',
@@ -708,6 +775,8 @@ const EN: Record<SessionTextKey, string> = {
   processFetch: 'Opened {n} web pages',
   processAgent1: 'Sent out 1 subagent',
   processAgent: 'Sent out {n} subagents',
+  processQuestion1: 'Asked 1 question',
+  processQuestion: 'Asked {n} questions',
   processOther1: 'Called 1 tool',
   processOther: 'Called {n} tools',
   processKindJoin: ', ',

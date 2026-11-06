@@ -88,6 +88,18 @@ function tabHost(url: string): string {
   }
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0'])
+
+function tabMarkName(url: string, host: string, title: string): string {
+  if (!LOOPBACK_HOSTS.has(host)) return host
+  if (title) return title
+  try {
+    return new URL(url).port || host
+  } catch {
+    return host
+  }
+}
+
 function tabFavicon(url: string): string | null {
   try {
     const page = new URL(url)
@@ -468,7 +480,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
               label={label}
               iconOnly={tabsCollapsed}
               title={!blank && tab.url !== label ? `${label}\n${tab.url}` : label}
-              icon={host ? <SiteIcon name={host} src={tabFavicon(tab.url)} className="v3-browser__tab-mark" /> : <Globe size={14} aria-hidden="true" />}
+              icon={host ? <SiteIcon name={tabMarkName(tab.url, host, title)} src={tabFavicon(tab.url)} className="v3-browser__tab-mark" /> : <Globe size={14} aria-hidden="true" />}
               selected={tab.id === state.activeTabId}
               actionReveal="hover"
               data-testid={`browser-pane-tab-${tab.id}`}

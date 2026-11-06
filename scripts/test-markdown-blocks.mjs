@@ -115,6 +115,16 @@ check('脚注尾区块保留，标题靠 .sr-only 隐藏且结构不变', () => 
   assert.ok(footnoteHtml.includes('data-footnote-backref'), footnoteHtml)
 })
 
+check('流式段首未闭合的斜体先补上星号，已闭合或非段首星号不动', () => {
+  assert.equal(prepareStreamingMarkdown('*说明文字还在写', true), '*说明文字还在写*')
+  assert.equal(prepareStreamingMarkdown('前文\n\n*说明文字还在写  ', true), '前文\n\n*说明文字还在写*')
+  assert.equal(prepareStreamingMarkdown('*说明文字*', true), '*说明文字*')
+  assert.equal(prepareStreamingMarkdown('**加粗还在写', true), '**加粗还在写')
+  assert.equal(prepareStreamingMarkdown('* 列表项', true), '* 列表项')
+  assert.equal(prepareStreamingMarkdown('*说明文字还在写', false), '*说明文字还在写')
+  assert.equal(prepareStreamingMarkdown('先说 *中间', true), '先说 *中间')
+})
+
 check('流式未闭合行内代码暂缓到闭合，最终正文不变', () => {
   for (const delimiter of ['`', '``', '````']) {
     const prefix = `完成 ${delimiter}INCIDENT.md`

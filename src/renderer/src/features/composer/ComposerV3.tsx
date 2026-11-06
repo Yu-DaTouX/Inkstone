@@ -41,10 +41,12 @@ import {
 import { ComposerCommandMenuLayer } from '../../t3/components/chat/ComposerCommandMenuLayer'
 import { useComposerControlsLayout } from './composer-controls-layout'
 import {
+  ESC_ARM_WINDOW_MS,
   STRAY_ENTER_MS,
   isComposingKey,
   planComposerKey,
   roundRunningOf,
+  viewRunnerRunning,
   swallowStrayEnter,
   type ComposerKeyEvent,
   type ComposerPasteEvent
@@ -213,6 +215,16 @@ export function ComposerV3(): JSX.Element {
   const historyRef = useRef(INITIAL_PROMPT_HISTORY)
   const strayEnterUntil = useRef(-Infinity)
   const lastEsc = useRef(0)
+  const [escArmed, setEscArmed] = useState(false)
+  const escArmedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (escArmedTimer.current) clearTimeout(escArmedTimer.current)
+  }, [])
+  const armEscAbort = useCallback((armed: boolean, ms = 0): void => {
+    if (escArmedTimer.current) clearTimeout(escArmedTimer.current)
+    escArmedTimer.current = armed ? setTimeout(() => setEscArmed(false), ms) : null
+    setEscArmed(armed)
+  }, [])
   const commands = useStore((s) => s.commands)
   const composerFocus = useStore((s) => s.composerFocus)
   const composerInsert = useStore((s) => s.composerInsert)
@@ -225,7 +237,7 @@ export function ComposerV3(): JSX.Element {
   )
   const roundRunning = useStore((s) =>
     roundRunningOf({
-      runnerRunning: !!s.runners.find((runner) => (runner.runId ?? runner.id) === s.activeRunnerId)?.running,
+      runnerRunning: viewRunnerRunning(s),
       isStreaming: s.session?.isStreaming,
       isCompacting: s.session?.isCompacting
     })
@@ -387,7 +399,7 @@ export function ComposerV3(): JSX.Element {
     attachmentCount: attachments.count,
     composing
   })
-  const placeholder = suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
+  const placeholder = escArmed && roundRunning ? t('composer.phEscArmed') : suggestion ?? (mode === 'bash' ? t('composer.phBash') : answering !== null ? t('composer.phAnswerPlain') : roundRunning ? t('composer.phRunning') : t(composerPlaceholderKey({ bash: false, session: !!sessionId, firstRun: false })))
   const slashMode =
     completion.slashQuery !== null &&
     (completion.slashMatches.length > 0 || (completion.atQuery === null && completion.slashStatus !== 'idle'))
@@ -516,6 +528,8 @@ export function ComposerV3(): JSX.Element {
     })
     if (plan.preventDefault) event.preventDefault()
     lastEsc.current = plan.lastEsc
+    if (plan.action === 'armAbort') armEscAbort(true, ESC_ARM_WINDOW_MS)
+    else if (escArmed) armEscAbort(false)
     if (plan.action === 'steer') void submitMessage('steer')
     else if (plan.action === 'followUp') void submitMessage('followUp')
     else if (plan.action === 'abort') void abort()
@@ -584,6 +598,7 @@ export function ComposerV3(): JSX.Element {
           className="mt-0.5 inline-flex shrink-0 items-center gap-[0.2em] rounded-sm border border-border/60 bg-accent px-1 py-0.5 font-medium text-2xs text-foreground"
           data-mode={mode}
           data-testid="composer-mode"
+          title={mode === 'bash' ? t('composer.bashModeTip') : undefined}
         >
           {mode === 'bash' ? t('composer.bashMode') : t('composer.cmdMode')}
         </span>

@@ -120,10 +120,11 @@ export function CreatePullRequestDialog({ cwd, isOpen, onOpenChange, lang }: Cre
                 {text.create.blockedDetached}
               </Notice>
             ) : null}
+            {blocked && !loading ? null : (
+            <>
             <TextField
-              label={text.create.titleField}
+              label={<span title={defaults?.titleSource === 'commit' ? text.create.titleHint : text.create.titleHintBranch}>{text.create.titleField}</span>}
               placeholder={text.create.titlePlaceholder}
-              description={defaults?.titleSource === 'commit' ? text.create.titleHint : text.create.titleHintBranch}
               value={draft.title}
               onChange={(value) => set({ title: value })}
               isInvalid={touched && problem === 'title'}
@@ -134,10 +135,10 @@ export function CreatePullRequestDialog({ cwd, isOpen, onOpenChange, lang }: Cre
             />
             <div className="gh-pr-act__branches">
               <TextField
-                label={text.create.base}
+                label={<span title={defaults ? text.create.baseHint[defaults.baseSource] : undefined}>{text.create.base}</span>}
                 value={draft.base}
                 onChange={(value) => set({ base: value })}
-                description={defaults ? text.create.baseHint[defaults.baseSource] : undefined}
+                description={defaults?.baseSource === 'fallback' ? text.create.baseHint.fallback : undefined}
                 isInvalid={touched && (problem === 'base' || problem === 'same')}
                 errorMessage={problem === 'same' ? text.create.problem.same : text.create.problem.base}
                 isDisabled={busy}
@@ -165,6 +166,8 @@ export function CreatePullRequestDialog({ cwd, isOpen, onOpenChange, lang }: Cre
                 {text.create.pushFirst}
               </Checkbox>
             </div>
+            </>
+            )}
             <PrActionStatus controller={action} text={text.result} onRefresh={() => setRefresh((value) => value + 1)} />
             <DialogFooter>
               <Button variant="ghost" onPress={() => onOpenChange(false)} isDisabled={busy}>

@@ -466,8 +466,8 @@ async function main() {
     const stateIcon = collect(row, kind('SubagentStateIcon'))[0]
     ok(stateIcon?.props.state === 'done', '状态用小图标表示', stateIcon?.props.state)
     const task = textOf(byTestId(row, 'v3-subagent-task')[0])
-    ok(task.includes('PKCE') && task !== subagentRun().task, '标题是任务行带时态的状态文字', task)
-    ok(textOf(byTestId(row, 'v3-subagent-usage')[0]) === '4 个工具 · 12k tokens', '上下文未知时，完成后用量列是「N 个工具 · tokens」', textOf(byTestId(row, 'v3-subagent-usage')[0]))
+    ok(task.includes('PKCE') && !task.startsWith('已完成'), '完成后标题只写任务，状态交给图标', task)
+    ok(textOf(byTestId(row, 'v3-subagent-usage')[0]) === '4 个工具 · 12k token', '上下文未知时，完成后用量列是「N 个工具 · tokens」', textOf(byTestId(row, 'v3-subagent-usage')[0]))
     ok(textOf(byTestId(row, 'v3-subagent-time')[0]) === '4s', '用时单独一列', textOf(byTestId(row, 'v3-subagent-time')[0]))
     const bots = collect(row, kind('SubagentBot'))
     ok(bots.length === 1 && bots[0].props.size === 20, '行首 Bot 为 20px', bots.map((el) => el.props.size))
@@ -528,7 +528,7 @@ async function main() {
     const finished = renderRow().row
     const doneGauge = collect(finished, kind('ContextGauge'))[0]
     ok(doneGauge?.props.usage.percent === 10 && byTestId(finished, 'v3-subagent-usage').length === 0, '完成后与运行中同样显示上下文圆环', doneGauge?.props.usage)
-    ok(String(finished.props.title).includes('4 个工具 · 12k tokens'), '完成后的工具数与 tokens 放进行的悬停说明', finished.props.title)
+    ok(String(finished.props.title).includes('4 个工具 · 12k token'), '完成后的工具数与 tokens 放进行的悬停说明', finished.props.title)
     rt.cells = []
     const finishedLine = rt.render(bundle.SubagentLine, { turn })
     ok(renderRowEl(collect(finishedLine, kind('SubagentLive'))[0]) === null, '已结束的子 Agent 不显示进度行与插话')
@@ -623,7 +623,7 @@ async function main() {
     ok(summary.props['data-layout'] === 'summary' && rowsOf(summary).length === 0, '全部结束后自动收成一行摘要')
     ok(ended1.status === 'subagentFailedCount' && ended1.title === 'subagentCount · subagentDoneCount', '摘要状态写失败数，标题写总数与完成数', JSON.stringify(ended1))
     ok(ended1.meta === null, '组头只写状态与计数，窄屏不和用量争宽度', ended1.meta)
-    ok(byTestId(summary, 'v3-subagents-sum')[0].props.title === '21 个工具 · 7.0k tokens · 4s', '收起时悬停组头可看用量', byTestId(summary, 'v3-subagents-sum')[0].props.title)
+    ok(byTestId(summary, 'v3-subagents-sum')[0].props.title === '21 个工具 · 7.0k token · 4s', '收起时悬停组头可看用量', byTestId(summary, 'v3-subagents-sum')[0].props.title)
     ok(byTestId(summary, 'v3-subagents-usage').length === 0, '收起时不渲染列表里的用量行')
     ok(collect(summary, kind('Card'))[0].props.receipt === true, '全部结束后整组转为历史回执外观')
     ok(byTestId(summary, 'v3-subagents-progress').length === 0, '结束后不显示进度条')
@@ -631,7 +631,7 @@ async function main() {
     rt.cells = []
     const reopened = rt.render(bundle.SubagentLine, { turn })
     ok(reopened.props['data-layout'] === 'list' && tilesOf(reopened).length === 7, '点击摘要展开，用户展开过的状态保持（7 个铺成网格）', reopened.props['data-layout'])
-    ok(textOf(byTestId(reopened, 'v3-subagents-usage')[0]) === '21 个工具 · 7.0k tokens · 4s', '展开后在列表末尾写工具、tokens、整组用时', textOf(byTestId(reopened, 'v3-subagents-usage')[0]))
+    ok(textOf(byTestId(reopened, 'v3-subagents-usage')[0]) === '21 个工具 · 7.0k token · 4s', '展开后在列表末尾写工具、tokens、整组用时', textOf(byTestId(reopened, 'v3-subagents-usage')[0]))
     ok(byTestId(reopened, 'v3-subagents-sum')[0].props.title === undefined, '展开后组头不再重复用量提示')
 
     resetExpansion()

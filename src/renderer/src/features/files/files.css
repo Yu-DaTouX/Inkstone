@@ -305,11 +305,22 @@
 
   .v3-files-result-name {
     flex: none;
+    display: inline-flex;
     max-width: 70%;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .v3-files-result-name-head {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .v3-files-result-name-tail {
+    flex: none;
   }
 
   .v3-files-result-path {
@@ -374,8 +385,10 @@
     display: flex;
     align-items: center;
     padding-left: calc(var(--s-2) + var(--s-24) + var(--s-4) + 2.5ch + var(--s-4));
+    overflow: hidden;
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
+    white-space: nowrap;
     user-select: none;
   }
 

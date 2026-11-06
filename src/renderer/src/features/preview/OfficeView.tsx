@@ -1,4 +1,5 @@
 import { useState, type ReactElement } from 'react'
+import { Info } from 'lucide-react'
 import { Collapsible, CollapsibleHeader, CollapsiblePanel, EmptyState, Notice, Tab, TabList, Tabs } from '../../ui'
 import { useT } from '../../i18n'
 import {
@@ -232,10 +233,18 @@ function PlainSections({
           </pre>
         </section>
       ))}
-      <div className="v3-preview-note" title={labels.officeNote}>
-        {note}
-        {truncated || total > OFFICE_MAX_LINES ? ` ${labels.truncated}` : ''}
-      </div>
+      <OfficeFoot note={note} truncated={truncated || total > OFFICE_MAX_LINES} labels={labels} />
+    </div>
+  )
+}
+
+function OfficeFoot({ note, truncated, labels }: { note: string; truncated: boolean; labels: PreviewText }): ReactElement {
+  return (
+    <div className="v3-preview-note v3-office-foot">
+      <span className="v3-office-info" role="img" aria-label={note} title={`${note}\n${labels.officeNote}`}>
+        <Info size={12} aria-hidden />
+      </span>
+      {truncated ? <span>{labels.truncated}</span> : null}
     </div>
   )
 }
@@ -249,14 +258,7 @@ export function OfficeView({ view, labels }: { view: OfficeDocumentView; labels:
       </Notice>
     )
   }
-  const footer = (
-    <>
-      <div className="v3-preview-note" title={labels.officeNote}>
-        {view.note}
-        {view.truncated ? ` ${labels.truncated}` : ''}
-      </div>
-    </>
-  )
+  const footer = <OfficeFoot note={view.note} truncated={view.truncated} labels={labels} />
   if (view.format === 'docx' && view.blocks && view.blocks.length) {
     return (
       <div className="v3-office" data-testid="v3-preview-office" data-office-format="docx">

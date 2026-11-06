@@ -59,7 +59,7 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
   'en-US': {
     group: 'Home background',
     mode: 'Background',
-    modeDesc: 'Images stay on this computer; sessions show them a little fainter.',
+    modeDesc: 'Stored locally; fainter in sessions.',
     ascii: 'Drifting characters',
     image: 'Image',
     none: 'None',

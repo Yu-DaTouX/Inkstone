@@ -89,8 +89,9 @@ function FilterBody({ value, projects, onPick, onManage }: {
     const needle = query.trim().toLowerCase()
     const matches = (project: SidebarProjectView): boolean =>
       !needle || project.displayName.toLowerCase().includes(needle) || project.workspaceRoot.toLowerCase().includes(needle)
-    const live = projects.filter((project) => !project.archived && matches(project))
-    const archived = projects.filter((project) => project.archived && matches(project))
+    const recent = [...projects].sort((a, b) => b.updatedAt - a.updatedAt)
+    const live = recent.filter((project) => !project.archived && matches(project))
+    const archived = recent.filter((project) => project.archived && matches(project))
     const list: FilterOption[] = [{ kind: 'all' }, ...live.map((project) => ({ kind: 'project' as const, project })), { kind: 'none' }]
     if (archived.length > 0) {
       list.push({ kind: 'archived-toggle', count: archived.length })

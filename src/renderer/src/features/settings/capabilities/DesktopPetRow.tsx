@@ -111,7 +111,7 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
   const modelKnown = selectedModel === MODEL_OFF || models.some((model) => `${model.provider}/${model.id}` === selectedModel)
 
   const metaParts = [copy.desc, installed && status ? edgeMeta(status.edges, t) : null]
-  const metaTitle = [copy.desc, copy.target, installed ? t('pet.firstRun') : null].filter(Boolean).join('\n')
+  const metaTitle = [copy.desc, copy.hint, copy.target, installed ? t('pet.firstRun') : null].filter(Boolean).join('\n')
 
   return (
     <Entry

@@ -18,9 +18,10 @@ export interface RailSectionsMenuProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   text: RailText
+  empty?: ReadonlySet<RailSectionId>
 }
 
-export function RailSectionsMenu({ anchor, open, onOpenChange, text }: RailSectionsMenuProps): ReactElement {
+export function RailSectionsMenu({ anchor, open, onOpenChange, text, empty }: RailSectionsMenuProps): ReactElement {
   const hidden = useRailSections((s) => s.hidden)
   const order = useRailSections((s) => s.order)
   const setHidden = useRailSections((s) => s.setHidden)
@@ -48,7 +49,7 @@ export function RailSectionsMenu({ anchor, open, onOpenChange, text }: RailSecti
           {HIDEABLE.map((id) => {
             const visible = shown.includes(id)
             return (
-              <MenuItem key={id} id={id} textValue={text.sections[id]} aria-checked={visible} shouldCloseOnSelect={false} checked={visible} data-testid={`wb-rail-menu-${id}`}>
+              <MenuItem key={id} id={id} textValue={text.sections[id]} aria-checked={visible} shouldCloseOnSelect={false} checked={visible} trailingValue={visible && empty?.has(id) ? text.sectionEmpty : undefined} data-testid={`wb-rail-menu-${id}`}>
                 {text.sections[id]}
               </MenuItem>
             )

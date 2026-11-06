@@ -330,18 +330,17 @@ export function ModelsSettings(): ReactElement {
         <div className="ms-service-main">
           <span className="ms-service-head">
             <span className="ms-service-name">{providerName(p)}</span>
-            {state === 'ready' ? <Badge tone={stateTone(state)}>{stateLabel(state)}</Badge> : null}
+            {state === 'ready' && fromEnv ? (
+              <TooltipText tooltip={text('envActive')} tooltipDetail={p.envVar ? <code>{p.envVar}</code> : undefined}>
+                <Badge tone={stateTone(state)}>{stateLabel(state)}</Badge>
+              </TooltipText>
+            ) : state === 'ready' ? <Badge tone={stateTone(state)}>{stateLabel(state)}</Badge> : null}
           </span>
           {providerHint(p) ? <p className="ms-service-hint">{providerHint(p)}</p> : null}
         </div>
-        {p.envVar || fromEnv || p.envShadowed ? (
+        {(p.envVar && !fromEnv) || p.envShadowed ? (
           <div className="ms-service-detail">
-            {p.envVar ? <p className="ms-service-env">{t('auth.orEnv')} <code>{p.envVar}</code></p> : null}
-            {fromEnv ? (
-              <TooltipText tooltip={text('envActive')}>
-                <Badge tone="neutral">{text('envBadge')}</Badge>
-              </TooltipText>
-            ) : null}
+            {p.envVar && !fromEnv ? <p className="ms-service-env">{t('auth.orEnv')} <code>{p.envVar}</code></p> : null}
             {p.envShadowed ? <p className="ms-service-env">{text('envShadowed')}</p> : null}
           </div>
         ) : null}
@@ -492,7 +491,6 @@ export function ModelsSettings(): ReactElement {
             <span className="sr-only">{t('auth.summary', { ready: readyCount, total: authProviders.length })}</span>
           </span>
           <span className="ms-safety" data-testid="ms-file-info">
-            <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
             {fileInfo ? (
               <span className="ms-file">
                 <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
@@ -569,8 +567,6 @@ export function ModelsSettings(): ReactElement {
       <CustomEndpointSettings />
 
       <SettingsAdvanced label={labels.advanced} testId="ms-advanced">
-        <ModelVisibilityGroup />
-
         <SettingsGroup title={labels.groupModelsIntegrations} className="ms-group" plain>
           <div className="settings-rows ms-rows">
             <div data-setting-id="models-claude-code">
@@ -578,6 +574,8 @@ export function ModelsSettings(): ReactElement {
             </div>
           </div>
         </SettingsGroup>
+
+        <ModelVisibilityGroup />
 
         <PiThinkingLevelsGroup />
       </SettingsAdvanced>

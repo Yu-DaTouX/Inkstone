@@ -189,7 +189,7 @@ async function main() {
     const top = largestToolCalls(msgs, msgs)
     ok(top.map((r) => r.id).join() === 'w1,r1,c1,b1,g1', '按估算 token 从大到小排列', top.map((r) => `${r.id}:${r.tokens}`))
     ok(!top.some((r) => r.id === 'c1/1'), 'codemode 子调用不单列（模型只收到父调用的结果）')
-    ok(top.find((r) => r.id === 'c1').target === 'const a = await read("x")', '脚本取首个非空行作目标', top.find((r) => r.id === 'c1'))
+    ok(top.find((r) => r.id === 'c1').target === '' && top.find((r) => r.id === 'c1').detail === 'const a = await read("x")' && top.find((r) => r.id === 'c1').scriptLines === 2, '脚本不作标题，首行进悬停并给出行数', top.find((r) => r.id === 'c1'))
     ok(top.find((r) => r.id === 'r1').target === 'ContextPane.tsx' && top.find((r) => r.id === 'r1').anchorId === 'a1', '文件工具显示文件名并锚到所属轮次')
     ok(top.find((r) => r.id === 'b1').target === 'npm test' && top.find((r) => r.id === 'b1').anchorId === 'b1', '用户 bash 取命令首行，锚到自身')
     ok(top.find((r) => r.id === 'w1').tokens === 500 + 1200 + Math.ceil(JSON.stringify({ url: 'https://example.com' }).length / 4), '图片按 1200 计入，口径与构成一致', top.find((r) => r.id === 'w1'))

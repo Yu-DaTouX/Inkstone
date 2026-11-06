@@ -313,7 +313,7 @@ export default function ShellV3(): ReactElement {
   useSplitPersistence()
   const paneLayout = collapsedPanes(split, splitParked, splitFit)
   const singlePane = !paneLayout
-  const laneMinWidth = paneLayout ? splitColumns(paneLayout.tiles).length * SPLIT_MIN_PANE_PX : MESSAGE_MIN_WIDTH
+  const laneMinWidth = paneLayout ? splitColumns(paneLayout.tiles).length * MESSAGE_MIN_WIDTH : MESSAGE_MIN_WIDTH
   useLayoutEffect(() => {
     if (route.name !== 'chat') return
     const chat = chatRef.current

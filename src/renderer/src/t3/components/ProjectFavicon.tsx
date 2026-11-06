@@ -50,7 +50,7 @@ export function ProjectFavicon({
         className,
       )}
       style={{
-        color: `color-mix(in srgb, var(--data-${tone}) 78%, var(--color-foreground))`,
+        color: `color-mix(in srgb, var(--data-${tone}) 62%, var(--color-foreground))`,
         backgroundColor: `color-mix(in srgb, var(--data-${tone}) 16%, transparent)`,
       }}
     >

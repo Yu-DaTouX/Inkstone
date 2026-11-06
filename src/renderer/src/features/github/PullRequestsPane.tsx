@@ -323,7 +323,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
 
   const reload = (): void => setReloadToken((value) => value + 1)
 
-  const hint = (title: string, body: string, detail?: string): ReactElement => (
+  const hint = (title: string, body: string, detail?: string, tip?: string): ReactElement => (
     <EmptyState
       size="sm"
       className="gh-pr-empty"
@@ -331,7 +331,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
       title={title}
       description={
         <>
-          {body}
+          <span title={tip}>{body}</span>
           {detail ? <code className="gh-pr-empty__detail">{detail}</code> : null}
         </>
       }
@@ -345,8 +345,8 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
 
   const content = (): ReactElement | null => {
     if (!status) return loadingHint()
-    if (!status.installed) return hint(t('github.pr.missingGhTitle'), t('github.pr.missingGhBody'))
-    if (!status.authed) return hint(t('github.pr.signedOutTitle'), t('github.pr.signedOutBody'), status.error)
+    if (!status.installed) return hint(t('github.pr.missingGhTitle'), t('github.pr.missingGhBody'), undefined, t('github.pr.ghPrivacy'))
+    if (!status.authed) return hint(t('github.pr.signedOutTitle'), t('github.pr.signedOutBody'), status.error, t('github.pr.ghPrivacy'))
     if (!status.repo) return hint(t('github.pr.notRepoTitle'), t('github.pr.notRepoBody'), status.error)
     return null
   }

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import type { ComputerUseStatusView } from '../../../../../shared/ipc'
-import { Button, Switch } from '../../../ui'
-import { Actions, Group, Meta, Warn } from './parts'
+import { MoreHorizontal } from 'lucide-react'
+import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Switch } from '../../../ui'
+import { SettingsGroup, SettingsRow } from '../root/controls'
+import { Actions, Meta, Warn } from './parts'
 
 const REPO = 'https://github.com/cursortouch/windows-mcp'
 const UV_DOCS = 'https://docs.astral.sh/uv/getting-started/installation/'
@@ -86,11 +88,27 @@ export function ComputerUseSection(): ReactElement | null {
 
   return (
     <div data-testid="cap-computer-use" data-setting-id="caps-tools-computer-use">
-      <Group
-        title={t('cu.title')}
-        desc={t('cu.desc')}
-        card
-        actions={
+      <SettingsGroup label={t('cu.title')}>
+        <SettingsRow label={t('cu.title')} description={t('cu.desc')}>
+          <MenuTrigger>
+            <IconButton size="sm" aria-label={t('cu.more')} tooltip={t('cu.more')} data-testid="cap-computer-use-more">
+              <MoreHorizontal size={14} aria-hidden />
+            </IconButton>
+            <Popover placement="bottom end">
+              <Menu
+                aria-label={t('cu.more')}
+                onAction={(key) => {
+                  if (key === 'recheck') void refresh()
+                  else void window.yan.browser.openExternal(key === 'releases' ? RELEASES : REPO)
+                }}
+                disabledKeys={busy !== null ? ['recheck'] : []}
+              >
+                <MenuItem id="recheck">{t('set.extRecheck')}</MenuItem>
+                <MenuItem id="releases">{t('set.releasePage')}</MenuItem>
+                <MenuItem id="repo">{t('cu.repo')}</MenuItem>
+              </Menu>
+            </Popover>
+          </MenuTrigger>
           <Switch
             aria-label={t('cu.title')}
             isSelected={!!status?.enabled}
@@ -98,8 +116,7 @@ export function ComputerUseSection(): ReactElement | null {
             onChange={(next) => void toggle(next)}
             data-testid="cap-computer-use-switch"
           />
-        }
-      >
+        </SettingsRow>
         {busy === 'toggle' ? <Meta>{status?.enabled ? t('cu.disabling') : t('cu.preparing')}</Meta> : null}
         {statusError ? <Warn>{statusError}</Warn> : null}
         {status && !status.uvx ? (
@@ -136,18 +153,7 @@ export function ComputerUseSection(): ReactElement | null {
             </Actions>
           </>
         ) : null}
-        <Actions>
-          <Button variant="secondary" isDisabled={busy !== null} onPress={() => void refresh()}>
-            {t('set.extRecheck')}
-          </Button>
-          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(RELEASES)}>
-            {t('set.releasePage')}
-          </Button>
-          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(REPO)}>
-            {t('cu.repo')}
-          </Button>
-        </Actions>
-      </Group>
+      </SettingsGroup>
     </div>
   )
 }

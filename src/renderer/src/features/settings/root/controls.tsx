@@ -115,6 +115,7 @@ export interface SegmentedOption<T extends string> {
   value: T
   label: string
   testId?: string
+  disabled?: boolean
 }
 
 export interface SegmentedProps<T extends string> {

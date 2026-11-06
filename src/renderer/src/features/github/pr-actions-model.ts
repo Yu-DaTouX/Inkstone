@@ -239,7 +239,7 @@ export type PrActionEvent =
 
 export function recoveryOf(failure: GhPrFailure): 'retry' | 'refresh' | 'none' {
   if (failure.code === 'timeout' || !failure.retrySafe) return 'refresh'
-  if (failure.code === 'invalid-input' || failure.code === 'confirmation-required' || failure.code === 'gh-missing' || failure.code === 'not-authenticated') return 'none'
+  if (failure.code === 'invalid-input' || failure.code === 'confirmation-required' || failure.code === 'gh-missing' || failure.code === 'not-authenticated' || failure.code === 'forbidden' || failure.code === 'cwd-rejected') return 'none'
   return 'retry'
 }
 
@@ -269,7 +269,7 @@ export function canStartAction(state: PrActionPhase): boolean {
 }
 
 export function failureCause(failure: GhPrFailure): string {
-  const parts: string[] = [`code: ${failure.code}`]
+  const parts: string[] = [`code: ${failure.code}`, failure.message, failure.hint].filter(Boolean)
   const git = failure.gitFailure
   if (git) {
     parts.push(`git: ${git.code}`)

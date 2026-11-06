@@ -349,15 +349,15 @@ export class PeerClient implements PeerTransport {
       timeoutMs: PEER_APPROVAL_TIMEOUT_MS + 15_000
     })
     if (!result.ok) {
-      this.setState(peerId, { state: 'failed', error: result.error })
+      this.setState(peerId, { state: 'failed', error: result.error, ...(result.code ? { code: result.code } : {}) })
       return result
     }
     const grant = result.data.grant
     const opened = await this.openStream(peerId, grant)
     if (!opened.ok) {
       if (opened.ended) this.dropConnection(peerId, { state: 'ended' })
-      else this.setState(peerId, { state: 'failed', error: opened.error })
-      return { ok: false, error: opened.error }
+      else this.setState(peerId, { state: 'failed', error: opened.error, code: 'event-stream-failed' })
+      return { ok: false, error: opened.error, code: 'event-stream-failed' }
     }
     this.setState(peerId, { state: 'connected', grant })
     return { ok: true, data: grant }
@@ -409,7 +409,8 @@ export class PeerClient implements PeerTransport {
     if (attempt > RECONNECT_ATTEMPTS) {
       return this.dropConnection(peerId, {
         state: 'failed',
-        error: 'The connection dropped and could not be re-established; connecting again needs their approval'
+        error: 'The connection dropped and could not be re-established; connecting again needs their approval',
+        code: 'connection-lost'
       })
     }
     const opened = await this.openStream(peerId, grant, attempt, generation)

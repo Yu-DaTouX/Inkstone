@@ -57,14 +57,13 @@
   .v3-md-table-wrap { overflow-x: auto; max-width: 100%; scrollbar-width: thin; scrollbar-color: var(--alpha-3) transparent; }
   .v3-md-table-wrap table { width: 100%; border-collapse: separate; border-spacing: 2px; font-size: var(--d-prose); line-height: var(--d-prose-lh); }
   .v3-md-table-wrap :is(th, td) { min-width: 96px; padding: var(--s-6); border: 0; border-radius: var(--r-2xs); text-align: left; vertical-align: top; }
+  .v3-msg.streaming .v3-md-table-wrap table { table-layout: fixed; }
   .v3-md-table-wrap th { background: var(--alpha-2); font-weight: 500; }
   .v3-md-table-wrap td { background: var(--alpha-1); }
 
   .v3-code {
     position: relative;
-    width: fit-content;
-    min-width: min(100%, 318px);
-    max-width: 100%;
+    width: 100%;
     border-radius: var(--r-md);
     background: var(--surface);
     box-shadow: var(--shadow-ring);

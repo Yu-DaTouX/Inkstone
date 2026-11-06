@@ -165,6 +165,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const brief = subagentBriefText(run)
   const shown = useFullTranscript(run)
   const turns = useMemo(() => subagentTranscriptTurns(shown, approvalLog), [shown, approvalLog])
+  const errorInTranscript = turns.some((turn) => turn.kind === 'assistant' && !!turn.error && !turn.errorRecovered)
   const scope = useMemo<TurnSubagentScope>(() => ({ sessionIds: [], parentRunIds: [run.id] }), [run.id])
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -214,6 +215,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
           <span className="sa-pane-state text-xs text-secondary-label" aria-label={statusWord} title={statusWord} data-testid="v3-subagent-pane-status">
             <SubagentStateIcon state={row.state} />
             <span className="sa-pane-state-label">{statusWord}</span>
+            {isDismissed(run) ? <span className="sa-pane-state-label" data-testid="v3-subagent-pane-dismissed">{`· ${t('sa.state.dismissed')}`}</span> : null}
           </span>
         </span>
       </PaneTitle>
@@ -273,11 +275,13 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
             </div>
           ))}
           {turns.length === 0 && model.live ? <p className="sa-pane-wait" role="status"><Spinner size="sm" />{t('sa.waitingMessages')}</p> : null}
-          {model.error ? (
+          {model.error && !errorInTranscript ? (
             <Notice tone="fail" compact data-testid="v3-subagent-error">
               {model.recovery ? `${tt(model.recovery.key, 'n' in model.recovery ? { n: model.recovery.n } : undefined)} · ` : ''}
               {model.error}
             </Notice>
+          ) : model.error && model.recovery ? (
+            <p className="sa-pane-wait" data-testid="v3-subagent-error">{tt(model.recovery.key, 'n' in model.recovery ? { n: model.recovery.n } : undefined)}</p>
           ) : null}
           {gone ? <Notice tone="info" compact data-testid="v3-subagent-gone">{tt('subagentGone')}</Notice> : null}
           {dismissError ? <Notice tone="fail" compact data-testid="v3-subagent-dismiss-error">{dismissError}</Notice> : null}

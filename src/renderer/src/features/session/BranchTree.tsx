@@ -1,33 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from 'react'
-import {
-  Activity,
-  Archive,
-  CornerDownRight,
-  File,
-  GitBranch,
-  Layers,
-  Package,
-  Shield,
-  Sparkles,
-  Tag,
-  Terminal,
-  User,
-  type LucideIcon
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type JSX } from 'react'
+import { CornerDownRight, Tag } from 'lucide-react'
 import type { Lang } from '../../i18n'
 import { useI18n } from '../../i18n'
 import {
-  buildTreeView,
-  initialCollapsedForLeaf,
   parseTreePayload,
   type NativeEntryKind,
   type NativeActionResult,
-  type NativeTreeNode,
-  type NativeTreeRow
+  type NativeTreeNode
 } from '../../../../shared/native-session'
+import { buildBranchLanes, type BranchLaneRow, type BranchLanes } from '../../../../shared/branch-lanes'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../../../shared/native-session-host'
-import { Badge, Button, Dialog, DialogFooter, DialogTrigger, IconButton, Popover, Spinner, TextField } from '../../ui'
-import { Tree, TreeChevron, TreeItem, TreeItemContent, TreeItemLabel } from '../../ui/Tree'
+import { Badge, Button, Dialog, DialogFooter, DialogTrigger, IconButton, ListBox, ListBoxItem, Popover, Spinner, TextField } from '../../ui'
 import type { WorkspaceOwner } from '../workbench/types'
 import './branch-tree.css'
 
@@ -61,15 +44,13 @@ interface BranchText {
   atLeaf: string
   busyHint: string
   leaf: string
-  expand: string
-  collapse: string
-  guard: (stats: { cycles: number; depth: number; rows: number; scan: boolean }) => string
+  steps: (count: number) => string
   kind: Record<NativeEntryKind, string>
 }
 
 const ZH: BranchText = {
   title: '分支',
-  treeLabel: '会话树',
+  treeLabel: '分支图',
   hint: '切换只把当前叶子移到所选条目：不改写会话文件，也不会自动摘要。',
   hintSummarize: '切换时让模型总结离开的分支，摘要作为新条目写进会话，可能需要几十秒。',
   footHint: '只移动当前叶子，不改写会话',
@@ -90,17 +71,14 @@ const ZH: BranchText = {
   retry: '重试',
   refresh: '重新读取会话树',
   empty: '这条会话还没有可显示的分支。',
-  emptyHint: '开始会话后，分叉点会在这里以树的形式列出。',
+  emptyHint: '对话分叉后，每条分支在这里占一列。',
   navigate: '切换到此条目',
   navigated: '已切换；当前叶子已更新。',
   actionFailed: '分支切换失败。',
   atLeaf: '当前叶子已在此条目。',
   busyHint: '会话运行中不能切换分支，请等这一轮结束。',
   leaf: '当前',
-  expand: '展开',
-  collapse: '收起',
-  guard: ({ cycles, depth, rows, scan }) =>
-    `树已保护性折叠：环 ${cycles} 处 · 过深 ${depth} 处 · 超出 ${rows} 行${scan ? ' · 扫描上限' : ''}。`,
+  steps: (count) => `${count} 步`,
   kind: {
     user: '用户',
     assistant: '助手',
@@ -118,7 +96,7 @@ const ZH: BranchText = {
 
 const EN: BranchText = {
   title: 'Branches',
-  treeLabel: 'Session tree',
+  treeLabel: 'Branch graph',
   hint: 'Switching only moves the current leaf to the chosen entry: it does not rewrite the session file and never summarizes.',
   hintSummarize: 'Switching asks the model to summarize the branch you leave; the summary is added to the session and may take a while.',
   footHint: 'Moves the current leaf only',
@@ -139,17 +117,14 @@ const EN: BranchText = {
   retry: 'Retry',
   refresh: 'Reload session tree',
   empty: 'This session has no branches to show yet.',
-  emptyHint: 'Once the conversation forks, fork points appear here as a tree.',
+  emptyHint: 'Once the conversation forks, each branch gets its own lane here.',
   navigate: 'Switch to this entry',
   navigated: 'Switched; the current leaf is updated.',
   actionFailed: 'Branch switch failed.',
   atLeaf: 'The current leaf is already this entry.',
   busyHint: 'The session is running; wait for this turn before switching branches.',
   leaf: 'Current',
-  expand: 'Expand',
-  collapse: 'Collapse',
-  guard: ({ cycles, depth, rows, scan }) =>
-    `Tree was folded for safety: ${cycles} cycle(s) · ${depth} over-deep · ${rows} row(s) over limit${scan ? ' · scan cap' : ''}.`,
+  steps: (count) => `${count} ${count === 1 ? 'step' : 'steps'}`,
   kind: {
     user: 'User',
     assistant: 'Assistant',
@@ -169,22 +144,11 @@ export function branchText(lang: Lang): BranchText {
   return lang === 'en-US' ? EN : ZH
 }
 
-const EMPTY_ROWS: NativeTreeRow[] = []
+const EMPTY_LANES: BranchLanes = { rows: [], edges: [], lanes: 1 }
 const LOAD_RETRY_MS = [300, 800, 2000]
-
-const KIND_ICON: Record<NativeEntryKind, LucideIcon> = {
-  user: User,
-  assistant: Sparkles,
-  tool: Terminal,
-  system: Shield,
-  summary: Archive,
-  branch: GitBranch,
-  label: Tag,
-  meta: Layers,
-  custom: Package,
-  usage: Activity,
-  unknown: File
-}
+const ROW_PX = 30
+const LANE_PX = 14
+const EDGE_PX = 11
 
 export interface BranchTransport {
   request: (request: NativeSessionHostRequest) => Promise<NativeSessionHostResult>
@@ -243,33 +207,12 @@ async function labelBranch(
   }
 }
 
-interface BranchNode {
-  row: NativeTreeRow
-  children: BranchNode[]
+function rowTitle(row: BranchLaneRow, text: BranchText): string {
+  if (row.kind === 'user') return row.text || text.kind.user
+  return row.text ? `${text.kind[row.kind]} · ${row.text}` : text.kind[row.kind]
 }
 
-export function nestBranchRows(rows: readonly NativeTreeRow[]): BranchNode[] {
-  const roots: BranchNode[] = []
-  const stack: BranchNode[] = []
-  for (const row of rows) {
-    const node: BranchNode = { row, children: [] }
-    while (stack.length && stack[stack.length - 1].row.depth >= row.depth) stack.pop()
-    if (stack.length) stack[stack.length - 1].children.push(node)
-    else roots.push(node)
-    stack.push(node)
-  }
-  return roots
-}
-
-interface BranchNodeContext {
-  text: BranchText
-  pending: string | null
-  blocked: boolean
-  onNavigate: (entryId: string) => void
-  onLabel: (entryId: string, label: string) => Promise<boolean>
-}
-
-function BranchBookmark({ row, ctx }: { row: NativeTreeRow; ctx: BranchNodeContext }): JSX.Element {
+function BranchBookmark({ row, text, blocked, onLabel }: { row: BranchLaneRow; text: BranchText; blocked: boolean; onLabel: (entryId: string, label: string) => Promise<boolean> }): JSX.Element {
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState(row.label ?? '')
   const [saving, setSaving] = useState(false)
@@ -278,7 +221,7 @@ function BranchBookmark({ row, ctx }: { row: NativeTreeRow; ctx: BranchNodeConte
   }, [open, row.label])
   const save = async (label: string): Promise<void> => {
     setSaving(true)
-    const saved = await ctx.onLabel(row.entryId, label)
+    const saved = await onLabel(row.entryId, label)
     setSaving(false)
     if (saved) setOpen(false)
   }
@@ -291,33 +234,33 @@ function BranchBookmark({ row, ctx }: { row: NativeTreeRow; ctx: BranchNodeConte
       <IconButton
         size="sm"
         className="branch-bookmark"
-        aria-label={`${ctx.text.bookmarkEdit} · ${row.text || ctx.text.kind[row.kind]}`}
-        tooltip={ctx.text.bookmarkEdit}
-        isDisabled={ctx.blocked}
+        aria-label={`${text.bookmarkEdit} · ${rowTitle(row, text)}`}
+        tooltip={text.bookmarkEdit}
+        isDisabled={blocked}
         data-testid="branch-bookmark"
       >
-        <Tag size={12} aria-hidden="true" />
+        <Tag size={13} aria-hidden="true" />
       </IconButton>
-      <Popover className="branch-bookmark-pop" placement="bottom end" offset={4}>
-        <Dialog showClose={false} aria-label={ctx.text.bookmarkEdit} className="branch-bookmark-dialog">
+      <Popover className="branch-bookmark-pop" placement="top end" offset={4}>
+        <Dialog showClose={false} aria-label={text.bookmarkEdit} className="branch-bookmark-dialog">
           <form className="branch-bookmark-form" onSubmit={submit}>
             <TextField
               autoFocus
-              label={ctx.text.bookmark}
+              label={text.bookmark}
               value={value}
               onChange={setValue}
               maxLength={200}
-              placeholder={ctx.text.bookmarkPlaceholder}
+              placeholder={text.bookmarkPlaceholder}
               data-testid="branch-bookmark-input"
             />
             <DialogFooter>
               {row.label ? (
                 <Button size="sm" variant="ghost" isDisabled={saving} onPress={() => void save('')} data-testid="branch-bookmark-clear">
-                  {ctx.text.bookmarkClear}
+                  {text.bookmarkClear}
                 </Button>
               ) : null}
               <Button size="sm" variant="primary" type="submit" isDisabled={saving || !value.trim()} data-testid="branch-bookmark-save">
-                {ctx.text.bookmarkSave}
+                {text.bookmarkSave}
               </Button>
             </DialogFooter>
           </form>
@@ -327,50 +270,96 @@ function BranchBookmark({ row, ctx }: { row: NativeTreeRow; ctx: BranchNodeConte
   )
 }
 
-export function renderBranchNodes(nodes: readonly BranchNode[], ctx: BranchNodeContext): JSX.Element[] {
-  return nodes.map((node) => {
-    const { row } = node
-    const KindIcon = KIND_ICON[row.kind]
-    const label = row.text || ctx.text.kind[row.kind]
-    const classes = ['branch-node', `branch-node--${row.kind}`]
-    if (row.leaf) classes.push('branch-node--leaf')
-    if (row.onActiveBranch) classes.push('branch-node--active')
-    return (
-      <TreeItem
-        key={row.entryId}
-        id={row.entryId}
-        textValue={label}
-        className={classes.join(' ')}
-        onAction={() => ctx.onNavigate(row.entryId)}
-        data-entry-id={row.entryId}
+const laneX = (lane: number): number => EDGE_PX + lane * LANE_PX
+const rowY = (index: number): number => index * ROW_PX + ROW_PX / 2
+
+function edgePath(fromLane: number, from: number, toLane: number, to: number): string {
+  const x1 = laneX(fromLane)
+  const x2 = laneX(toLane)
+  const y1 = rowY(from)
+  const y2 = rowY(to)
+  if (x1 === x2) return `M${x1} ${y1}L${x2} ${y2}`
+  const bend = y1 + ROW_PX
+  return `M${x1} ${y1}C${x1} ${y1 + ROW_PX * 0.6} ${x2} ${bend - ROW_PX * 0.6} ${x2} ${bend}L${x2} ${y2}`
+}
+
+export function BranchGraph({
+  lanes,
+  text,
+  selected,
+  pending,
+  onSelect,
+  onAction
+}: {
+  lanes: BranchLanes
+  text: BranchText
+  selected: string | null
+  pending: string | null
+  onSelect: (entryId: string) => void
+  onAction: (entryId: string) => void
+}): JSX.Element {
+  const width = EDGE_PX * 2 + (lanes.lanes - 1) * LANE_PX
+  const style = { '--branch-row': `${ROW_PX}px`, '--branch-graph-w': `${width}px` } as CSSProperties
+  return (
+    <div className="branch-graph" style={style}>
+      <svg className="branch-graph__lines" width={width} height={lanes.rows.length * ROW_PX} aria-hidden="true">
+        {lanes.edges.map((edge) => (
+          <path
+            key={`${edge.from}:${edge.to}`}
+            className="branch-graph__edge"
+            data-active={edge.active ? '1' : undefined}
+            d={edgePath(edge.fromLane, edge.from, edge.toLane, edge.to)}
+          />
+        ))}
+        {lanes.rows.map((row, index) => (
+          <circle
+            key={row.entryId}
+            className="branch-graph__dot"
+            data-kind={row.kind === 'user' ? 'user' : row.kind === 'branch' || row.kind === 'summary' ? 'summary' : 'step'}
+            data-active={row.active ? '1' : undefined}
+            data-leaf={row.leaf ? '1' : undefined}
+            cx={laneX(row.lane)}
+            cy={rowY(index)}
+            r={row.leaf ? 5 : row.kind === 'user' ? 4 : 3}
+          />
+        ))}
+      </svg>
+      <ListBox
+        className="branch-graph__rows"
+        aria-label={text.treeLabel}
+        selectionMode="single"
+        selectionBehavior="replace"
+        disallowEmptySelection
+        selectedKeys={selected ? [selected] : []}
+        onSelectionChange={(keys) => {
+          const key = keys === 'all' ? selected : Array.from(keys)[0]
+          if (typeof key === 'string' && key) onSelect(key)
+        }}
+        onAction={(key) => onAction(String(key))}
       >
-        <TreeItemContent>
-          <TreeChevron />
-          <KindIcon size={13} className="branch-kind" aria-hidden="true" />
-          <TreeItemLabel title={`${ctx.text.kind[row.kind]} · ${row.entryType}`}>{label}</TreeItemLabel>
-          {row.tags?.map((tag, index) => (
-            <Badge key={`${index}:${tag}`} className="branch-tag" title={tag}>
-              {tag}
-            </Badge>
-          ))}
-          {row.label ? (
-            <Badge className="branch-label" title={row.label}>
-              {row.label}
-            </Badge>
-          ) : null}
-          {row.folded && row.hiddenCount > 0 ? <Badge className="branch-meta">+{row.hiddenCount}</Badge> : null}
-          {row.leaf ? (
-            <Badge tone="run" className="branch-leaf">
-              {ctx.text.leaf}
-            </Badge>
-          ) : null}
-          {ctx.pending === row.entryId ? <Spinner className="branch-spin" label={ctx.text.navigated} size={12} /> : null}
-          {row.kind === 'label' ? null : <BranchBookmark row={row} ctx={ctx} />}
-        </TreeItemContent>
-        {renderBranchNodes(node.children, ctx)}
-      </TreeItem>
-    )
-  })
+        {lanes.rows.map((row) => {
+          const title = rowTitle(row, text)
+          return (
+            <ListBoxItem
+              key={row.entryId}
+              id={row.entryId}
+              textValue={title}
+              className="branch-graph__row"
+              data-entry-id={row.entryId}
+              data-kind={row.kind}
+              data-active={row.active ? '1' : undefined}
+            >
+              <span className="branch-graph__text" title={title}>{title}</span>
+              {row.label ? <Badge className="branch-label" title={row.label}>{row.label}</Badge> : null}
+              {row.steps ? <span className="branch-graph__steps">{text.steps(row.steps)}</span> : null}
+              {row.leaf ? <Badge tone="run" className="branch-leaf">{text.leaf}</Badge> : null}
+              {pending === row.entryId ? <Spinner className="branch-spin" label={text.navigated} size={12} /> : null}
+            </ListBoxItem>
+          )
+        })}
+      </ListBox>
+    </div>
+  )
 }
 
 interface BranchTreeProps {
@@ -402,7 +391,6 @@ export function BranchTree({
 
   const [state, setState] = useState<LoadState>({ phase: 'loading' })
   const [retryToken, setRetryToken] = useState(0)
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set<string>())
   const [overrideId, setOverrideId] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
@@ -447,8 +435,7 @@ export function BranchTree({
           return
         }
         setState({ phase: 'ready', tree: result.tree, leafId: result.leafId })
-        setCollapsed(initialCollapsedForLeaf(result.tree, result.leafId))
-        setOverrideId(result.leafId)
+        setOverrideId(null)
       })
     }
     attempt(0)
@@ -458,45 +445,36 @@ export function BranchTree({
     }
   }, [expectedSessionId, reloadToken, retryToken, text.inactive, text.loadFailed])
 
-  const view = useMemo(
-    () => (state.phase === 'ready' ? buildTreeView(state.tree, state.leafId, collapsed) : null),
-    [state, collapsed]
+  const lanes = useMemo(
+    () => (state.phase === 'ready' ? buildBranchLanes(state.tree, state.leafId) : EMPTY_LANES),
+    [state]
   )
-  const rows = view?.rows ?? EMPTY_ROWS
-  const stats = view?.stats ?? null
-  const nested = useMemo(() => nestBranchRows(rows), [rows])
-
-  const expandedKeys = useMemo(() => {
-    const keys = new Set<string>()
-    const visit = (nodes: readonly BranchNode[]): void => {
-      for (const node of nodes) {
-        if (node.children.length) keys.add(node.row.entryId)
-        visit(node.children)
-      }
-    }
-    visit(nested)
-    return keys
-  }, [nested])
+  const rows = lanes.rows
+  const leafRowId = rows.find((row) => row.leaf)?.entryId ?? null
+  const leafId = state.phase === 'ready' ? state.leafId : null
 
   const selected = useMemo(() => {
     if (overrideId && rows.some((row) => row.entryId === overrideId)) return overrideId
-    if (state.phase === 'ready' && state.leafId && rows.some((row) => row.entryId === state.leafId)) return state.leafId
-    return rows[0]?.entryId ?? null
-  }, [overrideId, rows, state])
+    return leafRowId ?? rows[rows.length - 1]?.entryId ?? null
+  }, [overrideId, rows, leafRowId])
 
   const selectedRow = rows.find((row) => row.entryId === selected) ?? null
+  const selectedIsLeaf = !!selectedRow && selectedRow.targetId === leafId
 
   const listRef = useRef<HTMLDivElement | null>(null)
-  const readyLeaf = state.phase === 'ready' ? state.leafId : null
   useEffect(() => {
-    if (!readyLeaf || typeof requestAnimationFrame !== 'function') return
+    if (!leafRowId || typeof requestAnimationFrame !== 'function') return
     const frame = requestAnimationFrame(() => {
       const rowsInList = listRef.current?.querySelectorAll<HTMLElement>('[data-entry-id]') ?? []
-      const row = Array.from(rowsInList).find((item) => item.dataset.entryId === readyLeaf)
-      row?.scrollIntoView({ block: 'nearest' })
+      const row = Array.from(rowsInList).find((item) => item.dataset.entryId === leafRowId)
+      const scroller = row?.closest<HTMLElement>('.branch-graph')
+      if (!row || !scroller) return
+      const top = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+      if (top < scroller.scrollTop) scroller.scrollTop = top
+      else if (top + row.offsetHeight > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = top + row.offsetHeight - scroller.clientHeight
     })
     return () => cancelAnimationFrame(frame)
-  }, [readyLeaf, state])
+  }, [leafRowId, state])
 
   const refreshInPlace = useCallback(async (keepSelected?: string): Promise<void> => {
     if (!expectedSessionId) return
@@ -508,15 +486,21 @@ export function BranchTree({
       return
     }
     setState({ phase: 'ready', tree: result.tree, leafId: result.leafId })
-    setCollapsed(initialCollapsedForLeaf(result.tree, result.leafId))
-    setOverrideId(keepSelected ?? result.leafId)
+    setOverrideId(keepSelected ?? null)
   }, [expectedSessionId, text.loadFailed])
+
+  const wasBusy = useRef(busy)
+  useEffect(() => {
+    if (wasBusy.current && !busy && state.phase === 'ready') void refreshInPlace()
+    wasBusy.current = busy
+  }, [busy, state.phase, refreshInPlace])
 
   const navigate = useCallback(
     async (entryId: string | null): Promise<void> => {
       if (!entryId || !expectedSessionId || pending || busy) return
       const row = rows.find((item) => item.entryId === entryId)
-      if (row?.leaf) {
+      if (!row) return
+      if (row.targetId === leafId) {
         setActionError('')
         setNotice(text.atLeaf)
         return
@@ -525,7 +509,7 @@ export function BranchTree({
       setActionError('')
       setNotice('')
       const run = runRef.current
-      const result = await navigateBranch(transportRef.current, expectedSessionId, entryId, text.actionFailed, summarize)
+      const result = await navigateBranch(transportRef.current, expectedSessionId, row.targetId, text.actionFailed, summarize)
       if (!aliveRef.current || run !== runRef.current) return
       setPending(null)
       if (!result.ok) {
@@ -536,7 +520,7 @@ export function BranchTree({
       onNavigated?.()
       await refreshInPlace()
     },
-    [expectedSessionId, pending, busy, summarize, rows, text.atLeaf, text.actionFailed, text.navigated, onNavigated, refreshInPlace]
+    [expectedSessionId, pending, busy, summarize, rows, leafId, text.atLeaf, text.actionFailed, text.navigated, onNavigated, refreshInPlace]
   )
 
   const setLabel = useCallback(
@@ -558,21 +542,6 @@ export function BranchTree({
     [expectedSessionId, pending, busy, text.bookmarkFailed, text.bookmarkSaved, refreshInPlace]
   )
 
-  const ctx = useMemo<BranchNodeContext>(
-    () => ({
-      text,
-      pending,
-      blocked: busy || pending !== null,
-      onNavigate: (entryId: string) => {
-        void navigate(entryId)
-      },
-      onLabel: setLabel
-    }),
-    [text, pending, busy, navigate, setLabel]
-  )
-
-  const guard = stats ? stats.cycles + stats.depthTruncated + stats.rowTruncated : 0
-  const guarded = !!stats && (guard > 0 || stats.scanTruncated)
   const blocked = busy || pending !== null
 
   if (state.phase === 'loading') {
@@ -603,49 +572,24 @@ export function BranchTree({
   return (
     <div ref={listRef} className={`branch-tree${className ? ` ${className}` : ''}`} data-testid="branch-tree">
       {rows.length ? (
-        <Tree
-          className="branch-tree__list"
-          aria-label={text.treeLabel}
-          selectionMode="single"
-          selectionBehavior="replace"
-          selectedKeys={selected ? [selected] : []}
-          onSelectionChange={(keys) => {
-            const key = keys === 'all' ? selected : Array.from(keys)[0]
-            if (typeof key === 'string' && key) {
-              setOverrideId(key)
-              setActionError('')
-            }
+        <BranchGraph
+          lanes={lanes}
+          text={text}
+          selected={selected}
+          pending={pending}
+          onSelect={(entryId) => {
+            setOverrideId(entryId)
+            setActionError('')
+            setNotice('')
           }}
-          expandedKeys={expandedKeys}
-          onExpandedChange={(keys) => {
-            setCollapsed((prev) => {
-              const next = new Set(prev)
-              for (const row of rows) {
-                if (!row.hasChildren || row.truncated) continue
-                const wasExpanded = expandedKeys.has(row.entryId)
-                const nowExpanded = keys.has(row.entryId)
-                if (wasExpanded === nowExpanded) continue
-                if (nowExpanded) next.delete(row.entryId)
-                else next.add(row.entryId)
-              }
-              return next
-            })
-          }}
-        >
-          {renderBranchNodes(nested, ctx)}
-        </Tree>
+          onAction={(entryId) => void navigate(entryId)}
+        />
       ) : (
         <div className="branch-status" data-testid="branch-tree-empty">
           <p className="branch-status__title">{text.empty}</p>
           <p className="branch-status__detail">{text.emptyHint}</p>
         </div>
       )}
-
-      {guarded && stats ? (
-        <p className="branch-note" data-testid="branch-tree-guard">
-          {text.guard({ cycles: stats.cycles, depth: stats.depthTruncated, rows: stats.rowTruncated, scan: stats.scanTruncated })}
-        </p>
-      ) : null}
 
       <div className="branch-foot">
         <span className="branch-foot__hint" title={summarize ? text.hintSummarize : text.hint}>{pending && summarize ? text.summarizing : blocked ? text.busyHint : summarize ? text.footHintSummarize : text.footHint}</span>
@@ -659,12 +603,13 @@ export function BranchTree({
             {notice}
           </span>
         ) : null}
+        {selectedRow && selectedRow.kind !== 'label' ? <BranchBookmark row={selectedRow} text={text} blocked={blocked} onLabel={setLabel} /> : null}
         <Button
           size="sm"
           variant="primary"
           icon={<CornerDownRight size={13} aria-hidden="true" />}
-          isDisabled={!selected || blocked || !!selectedRow?.leaf}
-          title={selectedRow?.leaf ? text.atLeaf : blocked ? text.busyHint : undefined}
+          isDisabled={!selected || blocked || selectedIsLeaf}
+          title={selectedIsLeaf ? text.atLeaf : blocked ? text.busyHint : undefined}
           data-testid="branch-navigate"
           onPress={() => void navigate(selected)}
         >

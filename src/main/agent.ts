@@ -1369,15 +1369,17 @@ export class AgentController extends EventEmitter {
       throw error
     }
     const toolCallId = questionToolCallId(params)
-    const response = await this.ui.requestHostUi({ method: 'input', title: '需要你填写', message: question, form: fields, timeout: requestedTimeout(params.timeout), signal, ...(toolCallId ? { toolCallId } : {}) })
-    const answers = typeof response.value === 'string' ? parseQuestionAnswers(fields, response.value) : null
-    const answer = answers ? summarizeAnswers(fields, answers) : null
-    const cancelled = response.cancelled === true || answers === null
+    const response = await this.ui.requestHostUi({ method: 'input', message: question, form: fields, timeout: requestedTimeout(params.timeout), signal, ...(toolCallId ? { toolCallId } : {}) })
+    const raw = typeof response.value === 'string' ? response.value : null
+    const answers = raw !== null ? parseQuestionAnswers(fields, raw) : null
+    const freeText = !answers && raw?.trim() ? raw.trim().slice(0, 4000) : null
+    const answer = answers ? summarizeAnswers(fields, answers) : freeText
+    const cancelled = response.cancelled === true || answer === null
     const entries = questionLog.append(this.state?.sessionId, { question, options: [], answer, cancelled, at: Date.now() })
     if (entries) this.pushQuestionLog()
     return {
       data: { question, fields, answers, answer, cancelled, autonomous: false },
-      summary: { kind: 'question', action: 'ask', mode: 'standard', form: true, answered: answers !== null, cancelled }
+      summary: { kind: 'question', action: 'ask', mode: 'standard', form: true, answered: answer !== null, cancelled }
     }
   }
 
@@ -1412,7 +1414,6 @@ export class AgentController extends EventEmitter {
     if (options.length === 0) {
       response = await this.ui.requestHostUi({
         method: 'input',
-        title: '需要你的回答',
         message: question,
         timeout,
         signal,
@@ -1421,7 +1422,6 @@ export class AgentController extends EventEmitter {
     } else {
       response = await this.ui.requestHostUi({
         method: 'select',
-        title: '需要你的选择',
         message: question,
         options,
         timeout,
@@ -2597,6 +2597,7 @@ export class AgentController extends EventEmitter {
         this.pendingRequestMono = undefined
         this.timingContinues = false
         void this.persistTurnTiming()
+        this.syncDeferredModelSwitch()
         void this.refreshState()
         void this.refreshStats()
         void this.refreshTodos()
@@ -2628,6 +2629,7 @@ export class AgentController extends EventEmitter {
           this.streamLoopDetector = null
           void this.persistTurnTiming()
         }
+        this.syncDeferredModelSwitch()
         void this.refreshStats()
         break
 
@@ -2755,15 +2757,6 @@ export class AgentController extends EventEmitter {
           delayMs: Math.max(0, Number(evt.delayMs ?? 0)),
           at: Date.now(),
           ...(retryError ? { error: retryError } : {})
-        })
-        this.push({
-          ch: 'notify',
-          payload: {
-            id: `retry-${Date.now()}`,
-            method: 'notify',
-            notifyType: 'warning',
-            message: `${modelErrorNotice(evt.errorMessage ?? evt.error)} 第 ${Number(evt.attempt ?? 1)} 次重试…`
-          }
         })
         break
       }

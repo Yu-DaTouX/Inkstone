@@ -38,6 +38,9 @@
   .usage-page-row { display: grid; grid-template-columns: 2rem minmax(0, 1fr) 6rem 4rem 5rem; align-items: center; column-gap: var(--s-12); padding: var(--s-10) 0; border-top: var(--hair, 1px) solid var(--line); text-align: right; font-size: var(--t-body); }
   .usage-page-row > :nth-child(-n + 2) { text-align: left; }
   .usage-page-row > :first-child, .usage-page-row > :nth-child(4) { color: var(--fg3); }
+  .usage-page-breakdown[data-dimension='day'] .usage-page-row { grid-template-columns: 2rem minmax(0, 1fr) 4rem 5rem; }
+  .usage-page-breakdown[data-dimension='day'] .usage-page-row > :nth-child(3) { color: var(--fg3); }
+  .usage-page-breakdown[data-dimension='day'] .usage-page-row > :nth-child(4) { color: inherit; }
   .usage-page-row[data-head] { padding-top: 0; border-top: 0; color: var(--fg3); font-size: var(--t-footnote); }
   .usage-page-row-name { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
   .usage-page-row-label { display: flex; align-items: center; gap: var(--s-8); min-width: 0; }
@@ -52,5 +55,8 @@
     .usage-page-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .usage-page-row { grid-template-columns: 1.5rem minmax(0, 1fr) 5rem 4rem; }
     .usage-page-row > :nth-child(4) { display: none; }
+    .usage-page-breakdown[data-dimension='day'] .usage-page-row { grid-template-columns: 1.5rem minmax(0, 1fr) 5rem; }
+    .usage-page-breakdown[data-dimension='day'] .usage-page-row > :nth-child(3) { display: none; }
+    .usage-page-breakdown[data-dimension='day'] .usage-page-row > :nth-child(4) { display: block; }
   }
 }

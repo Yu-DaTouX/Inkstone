@@ -87,6 +87,10 @@
     list-style: none;
   }
 
+  .gh-pr-act__reasons [data-tone='fail'] {
+    color: var(--fail-t);
+  }
+
   .gh-pr-act__title-row {
     display: flex;
     align-items: flex-start;

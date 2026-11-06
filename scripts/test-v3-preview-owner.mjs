@@ -187,6 +187,7 @@ export const Menu = stub
 export const MenuItem = stub
 export const MenuSection = stub
 export const Popover = stub
+export const StatusDot = stub
 export const Separator = stub
 export const SubmenuTrigger = stub
 export const Spinner = stub

@@ -7,6 +7,7 @@ export interface PaneMenuItem {
   icon?: ReactNode
   checked?: boolean
   disabled?: boolean
+  items?: readonly PaneMenuItem[]
   onAction: () => void
 }
 
@@ -33,7 +34,26 @@ export function PaneTools({ children }: { children: ReactNode }): ReactNode {
 }
 
 export function paneMenuSignature(items: readonly PaneMenuItem[]): string {
-  return items.map((item) => `${item.id}:${item.label}:${item.checked === undefined ? '' : item.checked ? 1 : 0}:${item.disabled ? 1 : 0}`).join('|')
+  return items
+    .map((item) => `${item.id}:${item.label}:${item.checked === undefined ? '' : item.checked ? 1 : 0}:${item.disabled ? 1 : 0}${item.items ? `[${paneMenuSignature(item.items)}]` : ''}`)
+    .join('|')
+}
+
+function findPaneMenuItem(items: readonly PaneMenuItem[], id: string): PaneMenuItem | undefined {
+  for (const item of items) {
+    if (item.id === id) return item
+    const nested = item.items ? findPaneMenuItem(item.items, id) : undefined
+    if (nested) return nested
+  }
+  return undefined
+}
+
+function bindPaneMenu(items: readonly PaneMenuItem[], latest: { current: readonly PaneMenuItem[] }): PaneMenuItem[] {
+  return items.map((item) => ({
+    ...item,
+    items: item.items ? bindPaneMenu(item.items, latest) : undefined,
+    onAction: () => findPaneMenuItem(latest.current, item.id)?.onAction()
+  }))
 }
 
 export function usePaneMenu(source: string, items: readonly PaneMenuItem[]): void {
@@ -44,7 +64,7 @@ export function usePaneMenu(source: string, items: readonly PaneMenuItem[]): voi
   const signature = paneMenuSignature(items)
   useEffect(() => {
     if (!setMenu) return undefined
-    setMenu(source, latest.current.map((item) => ({ ...item, onAction: () => latest.current.find((next) => next.id === item.id)?.onAction() })))
+    setMenu(source, bindPaneMenu(latest.current, latest))
     return undefined
   }, [setMenu, source, signature])
   useEffect(() => {

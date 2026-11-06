@@ -115,7 +115,8 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     tab: 'tools',
     zh: '本地转写',
     en: 'Local transcription',
-    keywords: ['语音', 'voice', '语音输入', '听写', 'whisper', 'transcription']
+    keywords: ['语音', 'voice', '语音输入', '听写', 'whisper', 'transcription'],
+    requires: 'voice-plugin'
   },
   {
     id: 'caps-tools-voice-language',
@@ -123,7 +124,8 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     tab: 'tools',
     zh: '识别语言',
     en: 'Language',
-    keywords: ['语音语言', 'voice language', '转写语言', '中文', '英文']
+    keywords: ['语音语言', 'voice language', '转写语言', '中文', '英文'],
+    requires: 'voice-plugin'
   },
   {
     id: 'caps-tools-search-keys',
@@ -179,7 +181,8 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     zh: '转写程序与模型',
     en: 'Program & models',
     keywords: ['转写程序', '语音模型', '下载模型', 'whisper', 'model', 'download', '选择模型文件'],
-    more: true
+    more: true,
+    requires: 'voice-plugin'
   },
   {
     id: 'caps-market-inkstone',
@@ -187,7 +190,7 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     tab: 'market',
     zh: '砚插件',
     en: 'Inkstone plugins',
-    keywords: ['Hermes', 'CodeGraph', '加入 pi MCP', '插件市场', 'market', 'plugin']
+    keywords: ['Hermes', 'CodeGraph', '加入 pi MCP', '插件市场', 'market', 'plugin', '语音输入', 'voice input', 'ComfyUI', 'Minecraft']
   },
   {
     id: 'caps-market-pi',

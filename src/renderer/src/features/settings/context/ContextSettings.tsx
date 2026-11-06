@@ -120,6 +120,10 @@ export function ContextSettings({ piNative, lede }: { piNative: PiNativeSettings
 
   const windowText = contextWindow > 0 ? `${usage.windowAssumed ? '~' : ''}${kTokens(contextWindow)}` : text.contextUnknown
 
+  const compactOptions = COMPACT_OPTIONS.map((option) =>
+    contextWindow > 0 && Number(option.value) > contextWindow ? { ...option, disabled: true } : option
+  )
+
   const markers: UsageMarker[] = []
   if (autoEnabled) markers.push({ key: 'compact', at: effective, label: text.contextCompactAt })
 
@@ -137,7 +141,7 @@ export function ContextSettings({ piNative, lede }: { piNative: PiNativeSettings
         />
         <Button
           variant="secondary"
-          isDisabled={!available || busy}
+          isDisabled={!available || busy || contextTokens === 0}
           data-testid="v3-ctx-compact-now"
           onPress={() => void compact()}
         >
@@ -159,7 +163,7 @@ export function ContextSettings({ piNative, lede }: { piNative: PiNativeSettings
           <Segmented
             label={text.contextCompactAt}
             value={String(compactAtValue)}
-            options={COMPACT_OPTIONS}
+            options={compactOptions}
             onChange={(value) => void patchSettings({ autoCompactTokens: Number(value) })}
           />
         </SettingsRow>

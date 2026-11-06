@@ -92,13 +92,12 @@ export function PrActionStatus({ controller, text, onRefresh, className }: PrAct
   }
   const { failure, recovery } = state
   const unknown = failure.code === 'timeout' || recovery === 'refresh'
-  const line = failure.code === 'timeout' ? text.unknown : failure.message || (text.codes[failure.code] ?? failure.code)
+  const line = failure.code === 'timeout' ? `${text.codes.timeout} · ${text.unknown}` : `${text.failed} · ${text.codes[failure.code] ?? failure.code}`
   return (
     <Notice
       tone={unknown ? 'ask' : 'fail'}
       compact
       className={className}
-      title={`${text.failed} · ${text.codes[failure.code] ?? failure.code}`}
       data-testid="gh-pr-action-failed"
       data-recovery={recovery}
       action={
@@ -127,7 +126,7 @@ export function PrActionStatus({ controller, text, onRefresh, className }: PrAct
       }
     >
       <span className="gh-pr-act__status-body">
-        <span title={failure.code === 'timeout' ? undefined : failure.hint || undefined}>{line}</span>
+        <span>{line}</span>
         <Collapsible isExpanded={causeOpen} onExpandedChange={setCauseOpen}>
           <CollapsibleHeader tone="muted" aria-label={causeOpen ? text.hideCause : text.cause} data-testid="gh-pr-action-cause">
             {causeOpen ? text.hideCause : text.cause}

@@ -23,6 +23,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
   isImeComposing,
+  MiddleTruncate,
   Spinner,
   Toggle,
   ToggleGroup,
@@ -316,8 +317,12 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
   usePaneMenu('files', [
     ...(layout.showPreview ? [{ id: 'files:search', label: text.goToFile, icon: <Search size={14} aria-hidden />, onAction: focusFilter }] : []),
     ...(hasPreview ? [{ id: 'files:tree', label: text.showTree, checked: layout.treePressed, onAction: toggleTree }] : []),
-    { id: 'files:collapse', label: text.collapseAll, icon: <ChevronsDownUp size={14} aria-hidden />, onAction: collapseAll },
-    { id: 'files:refresh', label: text.refresh, icon: <RefreshCw size={14} aria-hidden />, onAction: refresh }
+    ...(layout.showTree
+      ? [
+          { id: 'files:collapse', label: text.collapseAll, icon: <ChevronsDownUp size={14} aria-hidden />, onAction: collapseAll },
+          { id: 'files:refresh', label: text.refresh, icon: <RefreshCw size={14} aria-hidden />, onAction: refresh }
+        ]
+      : [])
   ])
 
   const previewChrome = useMemo<PaneChrome | null>(
@@ -362,8 +367,8 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
           <span className="v3-files-headtabs" ref={setTabsHost} />
         </span>
       </PaneTitle>
-      {layout.showPreview ? null : (
-        <PaneTools>
+      <PaneTools>
+        {layout.showPreview ? null : (
           <IconButton
             size="sm"
             aria-label={text.goToFile}
@@ -375,22 +380,22 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
           >
             <Search size={14} />
           </IconButton>
-          {hasPreview ? (
-            <IconButton
-              size="sm"
-              aria-label={treeLabel}
-              tooltip={treeLabel}
-              tooltipShortcut={treeShortcut}
-              aria-pressed={layout.treePressed}
-              aria-keyshortcuts="Control+Shift+Y"
-              data-testid="v3-files-tree-toggle"
-              onPress={toggleTree}
-            >
-              <List size={14} />
-            </IconButton>
-          ) : null}
-        </PaneTools>
-      )}
+        )}
+        {hasPreview ? (
+          <IconButton
+            size="sm"
+            aria-label={treeLabel}
+            tooltip={treeLabel}
+            tooltipShortcut={treeShortcut}
+            aria-pressed={layout.treePressed}
+            aria-keyshortcuts="Control+Shift+Y"
+            data-testid="v3-files-tree-toggle"
+            onPress={toggleTree}
+          >
+            <List size={14} />
+          </IconButton>
+        ) : null}
+      </PaneTools>
 
       {Preview ? (
         <div className="v3-files-preview" ref={previewRef} tabIndex={-1} hidden={!layout.showPreview} data-testid="v3-files-preview">
@@ -751,7 +756,7 @@ function FilesRowView({
       onClick={(event) => onClick(row, event)}
       onContextMenu={onContextMenu}
     >
-      {row.name}
+      {row.dir ? row.name : <MiddleTruncate value={row.name} showTitle={false} />}
     </TreeRow>
   )
 }

@@ -110,7 +110,7 @@ export function TabChip(props: TabChipProps) {
           : undefined
       }
       className={cn(
-        'group/tab flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs',
+        'group/tab relative flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs has-[[role=tab]:focus-visible]:ring-2 has-[[role=tab]:focus-visible]:ring-inset has-[[role=tab]:focus-visible]:ring-ring',
         active
           ? 'bg-(--sel) text-(--accent-t)'
           : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
@@ -121,7 +121,7 @@ export function TabChip(props: TabChipProps) {
         type="button"
         tabIndex={-1}
         aria-label={props.closeLabel}
-        className="group/close relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm hover:bg-muted"
+        className="group/close relative z-10 flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm hover:bg-muted"
         onClick={(event) => {
           event.stopPropagation()
           props.onClose()
@@ -148,7 +148,7 @@ export function TabChip(props: TabChipProps) {
               aria-selected={active}
               aria-controls={props.controls}
               tabIndex={props.focusable === false ? -1 : 0}
-              className="flex min-w-0 cursor-pointer items-center rounded-sm bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="flex min-w-0 flex-1 cursor-pointer items-center bg-transparent p-0 outline-none after:absolute after:inset-0 after:rounded-md after:content-['']"
               onClick={props.onActivate}
             />
           }

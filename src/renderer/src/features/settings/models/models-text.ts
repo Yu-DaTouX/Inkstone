@@ -8,7 +8,6 @@ export type ModelsTextKey =
   | 'removeBody'
   | 'removeConfirm'
   | 'envActive'
-  | 'envBadge'
   | 'envShadowed'
   | 'showAllKeys'
   | 'hideAllKeys'
@@ -61,7 +60,6 @@ const ZH: Record<ModelsTextKey, string> = {
     '将移除该服务商的本机凭证；相关模型需重新登录后才可用。',
   removeConfirm: '移除',
   envActive: '正在使用环境变量里的 key；在此添加后优先用应用内 key。',
-  envBadge: '环境变量生效',
   envShadowed: '正在使用应用内 key，环境变量被忽略。',
   showAllKeys: '显示未配置的服务商（{n}）',
   hideAllKeys: '收起未配置的服务商',
@@ -116,7 +114,6 @@ const EN: Record<ModelsTextKey, string> = {
     'Removes this provider’s local credential; sign in again to use its models.',
   removeConfirm: 'Remove',
   envActive: 'Using the environment key; an in-app key here takes priority.',
-  envBadge: 'Env var active',
   envShadowed: 'Using the in-app key; the environment key is ignored.',
   showAllKeys: 'Show unconfigured providers ({n})',
   hideAllKeys: 'Hide unconfigured providers',

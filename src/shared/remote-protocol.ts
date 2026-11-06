@@ -128,6 +128,7 @@ export interface RemotePendingQuestion {
   title: string
   message: string
   options?: string[]
+  form?: import('./question-form').QuestionField[]
   placeholder?: string
   sensitive: boolean
   approvalDigest?: string

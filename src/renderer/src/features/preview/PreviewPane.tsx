@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from 'react'
-import { BookOpen, Code2, Copy, Download, FileText, Folder, FolderOpen, Image as ImageIcon, ImageOff, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
+import { BookOpen, Code2, Copy, Download, File as FileIcon, FileArchive, FileText, Folder, FolderOpen, ImageOff, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
+import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, PaneHeader, Skeleton, Spinner, StatusDot } from '../../ui'
 import { CondensingHeader, useCondensingHeader } from '../../ui/Motion'
 import type { OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview, UIMessage } from '../../../../shared/ipc'
@@ -163,7 +163,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
         setViewSlot({ key: expectedViewKey, view: { kind: 'problem', name: result.name || name, problem } })
         return
       }
-      const notes = previewNotes(result)
+      const notes = managedArtifactName(result.abs || activePath) ? previewNotes(result).filter((note) => note !== 'outside') : previewNotes(result)
       const body = previewBodyKind(result)
       const format = previewFormatOf(result.name)
       if (!cancelled) {
@@ -512,7 +512,10 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
       : []
   )
 
-  usePaneMenu('preview-view', activeAbs ? viewSettingsMenu(viewSettings, setViewSetting, text) : [])
+  usePaneMenu(
+    'preview-view',
+    activeAbs ? [{ id: 'preview-view', label: text.viewOptions, items: viewSettingsMenu(viewSettings, setViewSetting, text), onAction: () => undefined }] : []
+  )
 
   const condense = useCondensingHeader(activeAbs || activePath || '', { accept: acceptsCondenseScroll })
   const mergedHead = !!chrome && !!tabStrip
@@ -652,6 +655,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
       {editing && draft ? (
         <div className="v3-preview-editbar" data-testid="v3-preview-editbar">
           <span className="v3-preview-editstate">
+            {draft.conflict || draft.failed ? <StatusDot kind="fail" /> : dirty && !draft.saving ? <StatusDot kind="awaiting" /> : null}
             {draft.saving
               ? text.saving
               : draft.conflict
@@ -667,7 +671,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
               {text.reload}
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" isDisabled={draft.saving || !dirty} onPress={() => void saveDraft()}>
+          <Button size="sm" variant={dirty ? 'primary' : 'ghost'} isDisabled={draft.saving || !dirty} onPress={() => void saveDraft()}>
             {text.save}
           </Button>
           <Button size="sm" variant="ghost" onPress={() => setDraft(null)}>
@@ -905,7 +909,7 @@ function PreviewBody({
       return (
         <EmptyState
           data-testid="v3-preview-binary"
-          icon={<ImageIcon size={20} />}
+          icon={ARCHIVE_EXT.test(view.name) ? <FileArchive size={20} /> : <FileIcon size={20} />}
           title={text.binary}
           description={formatBytes(view.bytes)}
           action={
@@ -973,12 +977,14 @@ function TextView({
         firstNumber={view.windowStart ?? 1}
         target={target}
         labels={labels}
+        truncatedNote={view.truncated ? text.truncated : undefined}
         onComment={onComment}
       />
-      {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>
   )
 }
+
+const ARCHIVE_EXT = /\.(zip|7z|rar|tar|gz|tgz|bz2|xz|zst)$/i
 
 const CANVAS_CHOICE_KEY = 'yan.preview.htmlCanvas'
 

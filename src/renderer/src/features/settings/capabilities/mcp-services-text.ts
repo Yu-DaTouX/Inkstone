@@ -1,6 +1,6 @@
 const ZH = {
-  title: 'MCP 服务', description: '管理工具，以及哪些会话可以使用它们。', global: '全局服务', project: '当前项目',
-  globalHint: '这里的开关设置所有会话的默认状态。项目可以单独覆盖。', projectHint: '这里的开关只影响当前项目，其他项目不变。',
+  title: 'MCP 服务', global: '全局服务', project: '当前项目',
+  globalHint: '所有会话的默认值，项目可单独覆盖。', projectHint: '只影响当前项目。',
   noProject: '当前会话没有所属项目，可先管理全局服务。', noServices: '还没有服务，添加一个即可使用。',
   add: '添加服务', refresh: '重新读取', advanced: '高级设置与旧服务迁移', details: '详情',
   inherited: '来自全局', projectOnly: '仅当前项目', allSessions: '所有会话', enabled: '已启用', disabled: '已关闭',
@@ -17,14 +17,14 @@ const ZH = {
   hostNote: '由砚连接', piNote: '由 pi 连接', source: '配置位置', connection: '连接信息',
   busy: '有任务正在运行，结束后可调整此服务。', untrusted: '当前项目尚未受信任，项目配置暂不生效，也不能修改。',
   trust: '信任这个项目', confirmTrust: '信任这个项目？', trustBody: '信任后，pi 会读取并运行这个项目 .pi 目录里的 MCP、扩展和设置，相当于以你的身份运行其中的程序。只信任你了解来源的项目。', trusted: '已信任，新会话生效；也可以点击“应用到当前会话”。',
-  conflict: '存在重复连接配置，请在高级设置中处理归属。', computer: '电脑操作', computerHint: '需要操作排队和用户接管，请在本机工具中管理。', openTools: '前往本机工具',
+  conflict: '存在重复连接配置，请在高级设置中处理归属。', computer: '电脑操作', computerHint: '在本机工具中管理。', openTools: '前往本机工具',
   failed: '操作失败，请重试。', envInvalid: '环境变量需要填写 JSON 字符串键值对象。', scopeLabel: '管理范围',
   showAdvanced: '显示高级选项', loaded: '连接状态以实际检查结果为准，启用开关不代表已经连接。'
 }
 type Labels = typeof ZH
 const EN: Labels = {
-  title: 'MCP services', description: 'Manage tools and which conversations can use them.', global: 'Global services', project: 'Current project',
-  globalHint: 'These switches set defaults for all conversations. Projects can override them.', projectHint: 'These switches affect only this project.',
+  title: 'MCP services', global: 'Global services', project: 'Current project',
+  globalHint: 'Defaults for all conversations; projects can override.', projectHint: 'Affects only this project.',
   noProject: 'This conversation has no project. You can manage global services.', noServices: 'No services yet. Add one to get started.',
   add: 'Add service', refresh: 'Refresh', advanced: 'Advanced settings and migration', details: 'Details',
   inherited: 'From global', projectOnly: 'This project only', allSessions: 'All conversations', enabled: 'Enabled', disabled: 'Disabled',
@@ -41,7 +41,7 @@ const EN: Labels = {
   hostNote: 'Connected by Inkstone', piNote: 'Connected by pi', source: 'Configuration file', connection: 'Connection details',
   busy: 'A task is running. Adjust this service after it finishes.', untrusted: 'This project is not trusted. Its configuration is inactive and cannot be edited.',
   trust: 'Trust this project', confirmTrust: 'Trust this project?', trustBody: 'Once trusted, pi reads and runs the MCP servers, extensions and settings in this project’s .pi folder, as if you ran those programs yourself. Only trust projects whose source you know.', trusted: 'Trusted. New conversations use it; you can also apply it to this conversation.',
-  conflict: 'Duplicate connection definitions. Resolve ownership in advanced settings.', computer: 'Computer use', computerHint: 'Operation queuing and user takeover are managed in local tools.', openTools: 'Open local tools',
+  conflict: 'Duplicate connection definitions. Resolve ownership in advanced settings.', computer: 'Computer use', computerHint: 'Managed in Local tools.', openTools: 'Open local tools',
   failed: 'Operation failed. Please retry.', envInvalid: 'Enter environment variables as a JSON object with string values.', scopeLabel: 'Management scope',
   showAdvanced: 'Advanced options', loaded: 'Connection status comes from actual checks. An enabled switch does not mean connected.'
 }

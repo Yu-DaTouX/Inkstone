@@ -241,6 +241,8 @@
   }
 
   .v3-visual-invalid-note {
+    width: fit-content;
+    max-width: 100%;
     margin-top: var(--s-4);
   }
 
@@ -903,6 +905,8 @@
   }
 
   .v3-artifact-card-meta {
+    flex: none;
+    white-space: nowrap;
     color: var(--fg3);
     font-size: var(--t-footnote);
   }
@@ -970,6 +974,15 @@
     display: grid;
     place-items: center;
     padding: var(--s-8);
+  }
+
+  .v3-artifact-video {
+    display: block;
+    width: calc(100% - var(--s-16));
+    max-height: 360px;
+    margin: var(--s-8);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
   }
 
   .v3-artifact-card-open {

@@ -61,6 +61,7 @@ function SearchApiGroup(): ReactElement {
               </span>
             }
             meta={[t('search.role.deepseek')]}
+            metaTitle={`${t('search.role.deepseek')}\n${t('search.deepseekPrice')}`}
           />
           {SEARCH_PROVIDERS.map((provider) => (
             <SearchProviderItem key={provider.id} provider={provider} state={config?.providers[provider.id]} onChanged={load} />
@@ -105,6 +106,7 @@ function SearchProviderItem({
   const [key, setKey] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [adding, setAdding] = useState(false)
   const placeholder = t('search.apiPlaceholder', { name: provider.label })
 
   const save = async (event?: FormEvent): Promise<void> => {
@@ -119,6 +121,7 @@ function SearchProviderItem({
       }
       setError('')
       setKey('')
+      setAdding(false)
       await onChanged()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('search.apiSaveFailed'))
@@ -146,10 +149,14 @@ function SearchProviderItem({
           <Button variant="danger" onPress={() => void clear()}>
             {t('search.apiClear')}
           </Button>
+        ) : state?.source !== 'env' && !adding ? (
+          <Button variant="secondary" onPress={() => setAdding(true)} data-testid={`cap-search-api-add-${provider.id}`}>
+            {t('search.apiAdd')}
+          </Button>
         ) : undefined
       }
     >
-      {state?.source !== 'env' && !state?.configured ? (
+      {state?.source !== 'env' && !state?.configured && adding ? (
         <form className="caps-field" onSubmit={(event) => void save(event)}>
           <TextField
             aria-label={placeholder}
@@ -161,12 +168,23 @@ function SearchProviderItem({
             onChange={setKey}
             placeholder={placeholder}
             data-testid={`cap-search-api-key-${provider.id}`}
+            autoFocus
           />
           <Button variant="primary" type="submit" isDisabled={busy || !key.trim()}>
             {t('search.apiSave')}
           </Button>
           <Button variant="ghost" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
             {t('search.apiGet')}
+          </Button>
+          <Button
+            variant="ghost"
+            onPress={() => {
+              setAdding(false)
+              setKey('')
+              setError('')
+            }}
+          >
+            {t('ui.cancel')}
           </Button>
         </form>
       ) : null}

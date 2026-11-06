@@ -40,6 +40,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   const { lang } = useI18n()
   const rowId = sidebarFolderRowId(folder.projectKey)
   const displayName = folder.projectKey === NO_PROJECT_ID ? v3Text(lang).groupUngrouped : folder.displayName
+  const empty = folder.threadKeys.length === 0
   return (
     <li
       data-testid="sidebar-project-folder"
@@ -50,16 +51,16 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         role="treeitem"
         tabIndex={-1}
         data-sidebar-row={rowId}
-        aria-expanded={!folder.collapsed}
-        onClick={() => props.onToggle(folder.projectKey)}
+        aria-expanded={empty ? undefined : !folder.collapsed}
+        onClick={empty ? undefined : () => props.onToggle(folder.projectKey)}
         onContextMenu={(event) => {
           event.preventDefault()
           props.onContextMenu(folder.projectKey, { x: event.clientX, y: event.clientY })
         }}
-        className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className={cn('flex h-8 w-full items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring', !empty && 'cursor-pointer')}
       >
         {folder.icon}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
+        <span className={cn('min-w-0 flex-1 truncate text-sm font-medium', empty ? 'text-sidebar-muted-foreground' : 'text-sidebar-foreground/90')}>
           {displayName}
         </span>
         {folder.dot ? (
@@ -72,13 +73,15 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
             {folder.hiddenCount}
           </span>
         ) : null}
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            'size-3 shrink-0 text-sidebar-muted-foreground transition-transform',
-            folder.collapsed && '-rotate-90'
-          )}
-        />
+        {empty ? null : (
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              'size-3 shrink-0 text-sidebar-muted-foreground transition-transform',
+              folder.collapsed && '-rotate-90'
+            )}
+          />
+        )}
       </button>
       <span className="absolute inset-y-0 right-6 flex items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
         {folder.manageable ? <Button

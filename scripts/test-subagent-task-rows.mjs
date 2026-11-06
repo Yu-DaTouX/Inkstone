@@ -30,7 +30,7 @@ try {
   const done = rows.buildSubagentTaskRow({ ...base, status: 'done', endedAt: 11_000, usage: { input: 1200, output: 800, cacheRead: null, cacheWrite: null, totalTokens: null, cost: null, reportedMessages: 2 } }, { now: NOW })
   assert.equal(done.state, 'done')
   assert.equal(done.label, '已调查登录流程的并发问题')
-  assert.equal(done.summaryLine, '3 个工具 · 2.0k tokens · 10s')
+  assert.equal(done.summaryLine, '3 个工具 · 2.0k token · 10s')
   assert.equal(done.canStop, false)
   assert.equal(done.latestActivity, null)
   assert.equal(done.durationMs, 10_000)

@@ -25,6 +25,7 @@ export interface SidebarProjectView {
   readonly displayName: string
   readonly workspaceRoot: string
   readonly archived: boolean
+  readonly updatedAt: number
 }
 
 export interface ThreadViewContext {
@@ -210,7 +211,8 @@ export function toProjectView(record: ProjectRecord, projectNames: Record<string
     projectName: record.name || displayName,
     displayName,
     workspaceRoot: record.cwd,
-    archived: record.archived
+    archived: record.archived,
+    updatedAt: record.updatedAt
   }
 }
 

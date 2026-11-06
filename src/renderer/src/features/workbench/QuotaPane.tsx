@@ -173,18 +173,21 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
 
       {groups.map((group) => {
         const icon = providerFavicon(group.provider)
+        const groupName = GROUP_KEYS.has(group.provider) ? t(`quota.group.${group.provider}` as MessageKey) : group.cards[0]?.name ?? group.provider
+        const solo = group.cards.length === 1 && accountCardTitle(group.cards[0]) === groupName
         return (
-          <section key={group.provider} className="wb-quota-group" data-testid={`v3-wb-quota-group-${group.provider}`}>
-            <header className="wb-quota-group-head">
-              {icon ? <img className="wb-quota-group-icon" src={icon} alt="" aria-hidden="true" /> : null}
-              <span className="wb-quota-group-name">
-                {GROUP_KEYS.has(group.provider) ? t(`quota.group.${group.provider}` as MessageKey) : group.cards[0]?.name ?? group.provider}
-              </span>
-            </header>
+          <section key={group.provider} className="wb-quota-group" aria-label={solo ? groupName : undefined} data-testid={`v3-wb-quota-group-${group.provider}`}>
+            {solo ? null : (
+              <header className="wb-quota-group-head">
+                {icon ? <img className="wb-quota-group-icon" src={icon} alt="" aria-hidden="true" /> : null}
+                <span className="wb-quota-group-name">{groupName}</span>
+              </header>
+            )}
             {group.cards.map((card) => (
               <QuotaCard
                 key={`${card.source}:${card.key}`}
                 card={card}
+                icon={solo ? icon : null}
                 busy={busyKey === card.key}
                 locked={!!busyKey}
                 onSwitch={() => void switchTo(card)}
@@ -249,9 +252,11 @@ export function QuotaCard({
   busy,
   locked,
   onSwitch,
-  onRedeem
+  onRedeem,
+  icon = null
 }: {
   card: AccountQuotaCard
+  icon?: string | null
   busy: boolean
   locked: boolean
   onSwitch: () => void
@@ -278,6 +283,7 @@ export function QuotaCard({
   return (
     <Card as="section" padding="none" className="wb-quota-card" data-active={card.active ? '1' : undefined} data-limited={card.status === 'limited' ? '1' : undefined} data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
       <div className="wb-quota-id">
+        {icon ? <img className="wb-quota-group-icon" src={icon} alt="" aria-hidden="true" /> : null}
         <span className="wb-quota-name" title={tip || undefined}>{title}</span>
         {card.plan ? <Badge tone="accent" data-testid="v3-wb-quota-plan">{planLabel(card.plan)}</Badge> : null}
         {card.active ? <Badge tone="ok" data-testid="v3-wb-quota-active">{t('acct.active')}</Badge> : null}
