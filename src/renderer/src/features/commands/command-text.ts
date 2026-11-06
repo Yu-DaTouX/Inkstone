@@ -122,7 +122,7 @@ const EN: CommandText = {
   footRun: 'Run',
   footPrefixes: 'Search prefixes',
   groupAction: 'Commands',
-  groupSession: 'Chats',
+  groupSession: 'Sessions',
   groupMessage: 'Messages',
   groupHelp: 'Help',
   groupFile: 'Files',
