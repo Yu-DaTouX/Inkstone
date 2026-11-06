@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { FileFinder } from '@ff-labs/fff-node'
 import type { GrepCursor } from '@ff-labs/fff-node'
 import { homedir } from 'node:os'
@@ -106,7 +107,7 @@ async function open(root: string): Promise<IndexEntry> {
       finder.destroy()
     } catch {
     }
-    throw new Error('索引超时')
+    throw new Error(pick('索引超时', 'Indexing timed out'))
   }
   const health = finder.healthCheck(root)
   return { finder, git: health.ok && health.value.git.repositoryFound, usedAt: Date.now() }

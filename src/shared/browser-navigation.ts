@@ -1,3 +1,4 @@
+import { pick } from './ui-lang'
 export const ERR_ABORTED = -3
 
 export interface BrowserLoadFailure {
@@ -20,7 +21,7 @@ export interface SearchEnginePreset {
 export const SEARCH_ENGINE_PRESETS: readonly SearchEnginePreset[] = [
   { id: 'bing', name: 'Bing', template: 'https://www.bing.com/search?q=%s' },
   { id: 'google', name: 'Google', template: 'https://www.google.com/search?q=%s' },
-  { id: 'baidu', name: '百度', template: 'https://www.baidu.com/s?wd=%s' },
+  { id: 'baidu', name: pick('百度', 'Baidu'), template: 'https://www.baidu.com/s?wd=%s' },
   { id: 'duckduckgo', name: 'DuckDuckGo', template: 'https://duckduckgo.com/?q=%s' }
 ]
 

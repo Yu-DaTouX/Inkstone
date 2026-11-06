@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { fork, execFile, type ChildProcess } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { cp, mkdir, readFile, rename, rm, writeFile, lstat } from 'node:fs/promises'
@@ -81,17 +82,17 @@ export class BundledPlugins {
   inbox(id: string): string { return join(this.options.dataDir, 'plugins', id, 'inbox') }
 
   private async manifest(id: string): Promise<{ manifest: PluginManifest; source: string }> {
-    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) throw new Error('无效插件标识')
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) throw new Error(pick('无效插件标识', 'Invalid plugin id'))
     for (const parent of this.options.sources) {
       const source = join(parent, id)
       let raw: string
       try { raw = await readFile(join(source, 'inkstone-plugin.json'), 'utf8') }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error }
       const manifest = JSON.parse(raw) as PluginManifest
-      if (manifest.id !== id || [manifest.process, manifest.extension, ...(manifest.skills ?? [])].some(file => file !== undefined && !SAFE_FILE.test(file))) throw new Error('无效插件清单')
+      if (manifest.id !== id || [manifest.process, manifest.extension, ...(manifest.skills ?? [])].some(file => file !== undefined && !SAFE_FILE.test(file))) throw new Error(pick('无效插件清单', 'Invalid plugin manifest'))
       return { manifest, source }
     }
-    throw new Error('随包插件不存在')
+    throw new Error(pick('随包插件不存在', 'Bundled plugin not found'))
   }
 
   extensionPaths(): string[] {
@@ -136,7 +137,7 @@ export class BundledPlugins {
   action(id: string, action: string): Promise<BundledPluginResult> {
     const task = async (): Promise<BundledPluginResult> => {
       try {
-        if (this.closed) throw new Error('插件宿主已关闭')
+        if (this.closed) throw new Error(pick('插件宿主已关闭', 'Plugin host is closed'))
         const { manifest, source } = await this.manifest(id)
         const target = this.root(id)
         const installed = existsSync(join(target, MARKER))
@@ -147,14 +148,14 @@ export class BundledPlugins {
           if (installed) await rm(target, { recursive: true, force: true })
           return { ok: true, installed: false }
         }
-        if (action !== 'install') throw new Error('未知插件操作')
-        if (existsSync(target) && !installed) throw new Error('目标已有非砚安装的文件，未改动')
+        if (action !== 'install') throw new Error(pick('未知插件操作', 'Unknown plugin action'))
+        if (existsSync(target) && !installed) throw new Error(pick('目标已有非砚安装的文件，未改动', 'Target has files not installed by Inkstone; left unchanged'))
         if (installed) await this.disconnect(id)
         const staging = `${target}.${randomUUID()}.new`
         const previous = `${target}.${randomUUID()}.old`
         try {
           await cp(source, staging, { recursive: true, filter: async path => {
-            if ((await lstat(path)).isSymbolicLink()) throw new Error('插件包不能包含符号链接')
+            if ((await lstat(path)).isSymbolicLink()) throw new Error(pick('插件包不能包含符号链接', 'Plugin package cannot contain symbolic links'))
             return !path.split(/[\\/]/).some(part => ['node_modules', '.git', '.tmp'].includes(part))
           } })
           await writeFile(join(staging, MARKER), manifest.id, 'utf8')
@@ -193,9 +194,9 @@ export class BundledPlugins {
         if (id) break
       }
     }
-    if (!id || !action) throw new Error('此命令需要安装对应插件')
+    if (!id || !action) throw new Error(pick('此命令需要安装对应插件', 'This command needs the plugin installed'))
     const { manifest } = await this.manifest(id)
-    if (!manifest.publicActions?.includes(action)) throw new Error('插件没有公开此操作')
+    if (!manifest.publicActions?.includes(action)) throw new Error(pick('插件没有公开此操作', 'The plugin does not expose this action'))
     const value = await this.invoke(id, action, { input: command === 'plugin.invoke' ? params.input : params, context }, signal)
     const summary = value && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).slice(0, 32).flatMap(([key, field]) =>
@@ -206,11 +207,11 @@ export class BundledPlugins {
   }
 
   async invoke(id: string, action: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
-    if (signal?.aborted) throw new Error('已取消')
-    if (this.closed) throw new Error('插件宿主已关闭')
-    if (!/^[a-zA-Z][a-zA-Z0-9.-]{0,63}$/.test(action) || JSON.stringify(params ?? null).length > 64_000) throw new Error('插件请求无效')
+    if (signal?.aborted) throw new Error(pick('已取消', 'Cancelled'))
+    if (this.closed) throw new Error(pick('插件宿主已关闭', 'Plugin host is closed'))
+    if (!/^[a-zA-Z][a-zA-Z0-9.-]{0,63}$/.test(action) || JSON.stringify(params ?? null).length > 64_000) throw new Error(pick('插件请求无效', 'Invalid plugin request'))
     const { manifest } = await this.manifest(id)
-    if (!existsSync(join(this.root(id), MARKER))) throw new Error('插件尚未安装')
+    if (!existsSync(join(this.root(id), MARKER))) throw new Error(pick('插件尚未安装', 'Plugin is not installed'))
     const connection = await this.connect(manifest)
     const requestId = ++this.sequence
     return new Promise((resolve, reject) => {
@@ -222,12 +223,12 @@ export class BundledPlugins {
       const cancel = (): void => {
         cleanup()
         if (connection.child.connected) connection.child.send({ type: 'cancel-request', id: requestId }, () => undefined)
-        reject(new Error('已取消'))
+        reject(new Error(pick('已取消', 'Cancelled')))
       }
       const timer = setTimeout(() => {
         cleanup()
         if (connection.child.connected) connection.child.send({ type: 'cancel-request', id: requestId }, () => undefined)
-        reject(new Error('插件操作超时'))
+        reject(new Error(pick('插件操作超时', 'Plugin operation timed out')))
       }, 45 * 60_000)
       connection.pending.set(requestId, {
         resolve: value => { cleanup(); resolve(value) },
@@ -253,7 +254,7 @@ export class BundledPlugins {
   }
 
   private async spawn(manifest: PluginManifest): Promise<Connection> {
-    if (!manifest.process) throw new Error('此插件不提供进程接口')
+    if (!manifest.process) throw new Error(pick('此插件不提供进程接口', 'This plugin has no process interface'))
     const proxy = manifest.capabilities?.includes('system.proxy') ? await this.options.proxyEnvironment?.().catch(() => ({})) : undefined
     const child = fork(join(this.root(manifest.id), manifest.process), [], {
       execPath: this.options.runtime, execArgv: [], cwd: this.options.dataDir,
@@ -264,7 +265,7 @@ export class BundledPlugins {
     let readyReject!: (error: Error) => void
     const ready = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject })
     const connection: Connection = { child, capabilities: new Set(manifest.capabilities), ready, pending: new Map(), completions: new Map() }
-    const timer = setTimeout(() => { readyReject(new Error('插件启动超时')); void this.disconnect(manifest.id) }, 60_000)
+    const timer = setTimeout(() => { readyReject(new Error(pick('插件启动超时', 'Plugin start timed out'))); void this.disconnect(manifest.id) }, 60_000)
     this.connections.set(manifest.id, connection)
     child.stderr?.on('data', () => undefined)
     child.on('message', raw => {
@@ -278,8 +279,8 @@ export class BundledPlugins {
       if (message.type === 'capability') void this.capability(manifest, connection, message)
     })
     const finish = (): void => {
-      clearTimeout(timer); readyReject(new Error('插件进程已退出'))
-      for (const item of connection.pending.values()) { clearTimeout(item.timer); item.reject(new Error('插件进程已退出')) }
+      clearTimeout(timer); readyReject(new Error(pick('插件进程已退出', 'Plugin process exited')))
+      for (const item of connection.pending.values()) { clearTimeout(item.timer); item.reject(new Error(pick('插件进程已退出', 'Plugin process exited'))) }
       connection.pending.clear()
       for (const controller of connection.completions.values()) controller.abort()
       if (this.connections.get(manifest.id) === connection) this.connections.delete(manifest.id)

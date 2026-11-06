@@ -12,6 +12,7 @@ import { ArtifactStore, readSessionId } from './artifacts'
 import { sessionSkillsDir } from './capabilities/acquired-skills'
 import { dropSession } from './sources'
 import { plainTitleText } from '../shared/title-text'
+import { pick } from '../shared/ui-lang'
 
 export const SESSIONS_DIR =
   process.env.YAN_SESSIONS_DIR?.trim() || join(PI_AGENT_DIR, 'sessions')
@@ -289,7 +290,7 @@ async function readSessionSummary(f: { path: string; mtimeMs: number; size: numb
       id: head.id ?? f.path,
       path: f.path,
       cwd: head.cwd ?? decodeDirName(dirName) ?? '',
-      title: head.name ?? head.title ?? '(无标题)',
+      title: head.name ?? head.title ?? pick('(无标题)', '(Untitled)'),
       named,
       parentSession: head.parentSession,
       lastActivityAt:
@@ -447,15 +448,15 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
   const realFile = await realpath(resolved)
   const realRoot = await realpath(resolve(SESSIONS_DIR))
   if (!isUnderSessionsDir(realFile, realRoot)) {
-    throw new Error('只能删除会话目录下的文件')
+    throw new Error(pick('只能删除会话目录下的文件', 'Only files in the sessions folder can be deleted'))
   }
   if (!realFile.toLowerCase().endsWith('.jsonl')) {
-    throw new Error('不是会话文件')
+    throw new Error(pick('不是会话文件', 'Not a session file'))
   }
   const targets = await sessionsToDelete(resolved)
   const paths = targets.map((target) => target.path)
   if (protectedPath && paths.includes(resolve(protectedPath))) {
-    throw new Error('不能删除当前正在使用的会话')
+    throw new Error(pick('不能删除当前正在使用的会话', 'Cannot delete the session in use'))
   }
 
   await mkdir(TRASH_DIR, { recursive: true })
@@ -482,7 +483,7 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
       }
     }
     if (failed.length) {
-      throw new Error(`删除失败，回滚未完成：${failed.join(', ')}`, { cause: error })
+      throw new Error(pick(`删除失败，回滚未完成：${failed.join(', ')}`, `Delete failed and rollback is incomplete: ${failed.join(', ')}`), { cause: error })
     }
     throw error
   }
@@ -504,7 +505,7 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
 
 export async function restoreSession(token: string): Promise<void> {
   const entry = deleted.get(token)
-  if (!entry) throw new Error('此删除已无法撤销')
+  if (!entry) throw new Error(pick('此删除已无法撤销', 'This deletion can no longer be undone'))
   const restored: Array<{ from: string; to: string }> = []
   try {
     for (const item of entry) {
@@ -524,7 +525,7 @@ export async function restoreSession(token: string): Promise<void> {
       }
     }
     deleted.set(token, stillDeleted)
-    if (rollbackFailures) throw new Error(`恢复失败且 ${rollbackFailures} 个已恢复条目未能回滚；这些条目保留在原处，其余条目仍可重试恢复。`, { cause: error })
+    if (rollbackFailures) throw new Error(pick(`恢复失败且 ${rollbackFailures} 个已恢复条目未能回滚；这些条目保留在原处，其余条目仍可重试恢复。`, `Restore failed and ${rollbackFailures} restored item(s) could not be rolled back; they stay in place, and the rest can be retried.`), { cause: error })
     throw error
   }
 }

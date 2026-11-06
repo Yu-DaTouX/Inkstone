@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 export type ExitChoice = 'cancel' | 'save' | 'interrupt'
 
 export type QuitReason = 'sessions' | 'subagents' | 'terminal' | 'unsaved'
@@ -19,10 +20,10 @@ export function quitReasons(activity: QuitActivity): QuitReason[] {
 }
 
 const REASON_TEXT: Record<QuitReason, (activity: QuitActivity) => string> = {
-  sessions: () => '有会话正在运行',
-  subagents: (activity) => `${activity.runningSubagents} 个子代理正在运行`,
-  terminal: () => '终端里有命令正在执行',
-  unsaved: (activity) => `${activity.unsavedFiles ?? 0} 个文件有未保存的修改`
+  sessions: () => pick('有会话正在运行', 'A session is running'),
+  subagents: (activity) => pick(`${activity.runningSubagents} 个子 Agent正在运行`, `${activity.runningSubagents} subagent(s) running`),
+  terminal: () => pick('终端里有命令正在执行', 'A terminal command is running'),
+  unsaved: (activity) => pick(`${activity.unsavedFiles ?? 0} 个文件有未保存的修改`, `${activity.unsavedFiles ?? 0} file(s) have unsaved changes`)
 }
 
 export interface QuitPrompt {
@@ -34,9 +35,9 @@ export interface QuitPrompt {
 export function quitPrompt(activity: QuitActivity, reasons = quitReasons(activity)): QuitPrompt {
   const lines = reasons.map((reason) => REASON_TEXT[reason](activity))
   return {
-    message: `${lines.join('；')}。请选择退出方式。`,
-    detail: '保存并退出会记录运行实例快照；中断退出会立即停止当前任务。取消会继续把窗口留在托盘。',
-    buttons: ['取消', '保存并退出', '中断退出']
+    message: pick(`${lines.join('；')}。请选择退出方式。`, `${lines.join('; ')}. Choose how to quit.`),
+    detail: pick('保存并退出会记录运行实例快照；中断退出会立即停止当前任务。取消会继续把窗口留在托盘。', 'Save and quit records a runtime snapshot; interrupt stops current tasks immediately. Cancel keeps the window in the tray.'),
+    buttons: [pick('取消', 'Cancel'), pick('保存并退出', 'Save and quit'), pick('中断退出', 'Interrupt and quit')]
   }
 }
 

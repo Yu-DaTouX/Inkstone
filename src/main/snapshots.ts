@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { readFileSync, statSync } from 'node:fs'
 import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { join, relative, resolve as resolvePath, sep } from 'node:path'
@@ -223,7 +224,7 @@ function diffStats(before?: string, after?: string): { added: number; removed: n
   const CONTEXT = 3
   const head = start > 0 ? a.slice(Math.max(0, start - CONTEXT), start).map((l) => `  ${l}`) : []
   const tail = endA < a.length ? a.slice(endA, Math.min(a.length, endA + CONTEXT)).map((l) => `  ${l}`) : []
-  const body = lines.length > 400 ? [...lines.slice(0, 400), `…（还有 ${lines.length - 400} 行差异）`] : lines
+  const body = lines.length > 400 ? [...lines.slice(0, 400), pick(`…（还有 ${lines.length - 400} 行差异）`, `… (${lines.length - 400} more diff lines)`)] : lines
 
   return { added, removed, patch: [...head, ...body, ...tail].join('\n') }
 }

@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -50,7 +51,7 @@ function readJson<T>(path: string): T | null {
     return JSON.parse(readFileSync(path, 'utf8')) as T
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw new Error(`无法读取或解析 ${path}：${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(pick(`无法读取或解析 ${path}：${error instanceof Error ? error.message : String(error)}`, `Cannot read or parse ${path}: ${error instanceof Error ? error.message : String(error)}`))
   }
 }
 
@@ -68,7 +69,7 @@ export function readPackageSources(settingsPath: string): string[] {
       : /^(?:git:|https?:|ssh:)/.test(source)
         ? !source.slice(source.indexOf(':') + 1).startsWith('-')
         : /^(?:\.{1,2}[\\/]|[a-zA-Z]:[\\/])/.test(source)
-    if (!safe) throw new Error(`packages 中有无效来源「${source}」：${settingsPath}`)
+    if (!safe) throw new Error(pick(`packages 中有无效来源「${source}」：${settingsPath}`, `Invalid source "${source}" in packages: ${settingsPath}`))
     return [source]
   })
 }
@@ -177,9 +178,9 @@ export interface PackageActionResult {
 
 export function validatePackageSource(source: string): string | null {
   const s = String(source ?? '').trim()
-  if (!s) return '请填一个包名或来源'
-  if (s.startsWith('-')) return '来源不能以 - 开头（那会被当成命令行选项）'
-  if (/\s/.test(s)) return '来源里不能有空格'
+  if (!s) return pick('请填一个包名或来源', 'Enter a package name or source')
+  if (s.startsWith('-')) return pick('来源不能以 - 开头（那会被当成命令行选项）', 'Source cannot start with - (it would be read as a CLI option)')
+  if (/\s/.test(s)) return pick('来源里不能有空格', 'Source cannot contain spaces')
   const ok =
     /^npm:[^\s]+$/.test(s) ||
     /^git:[^\s]+$/.test(s) ||
@@ -187,19 +188,19 @@ export function validatePackageSource(source: string): string | null {
     /^ssh:\/\/[^\s]+$/.test(s) ||
     /^\.{1,2}[\\/][^\s]*$/.test(s) ||
     /^[a-zA-Z]:[\\/][^\s]*$/.test(s)
-  if (!ok) return '只接受 npm: / git: / https:// / ssh:// 或本地路径'
+  if (!ok) return pick('只接受 npm: / git: / https:// / ssh:// 或本地路径', 'Only npm: / git: / https:// / ssh:// or a local path is accepted')
   if (s.startsWith('ssh://')) {
     try {
       const url = new URL(s)
-      if (!url.hostname || url.hostname.startsWith('-')) return 'SSH 来源必须使用有效主机名，不能以 - 开头'
+      if (!url.hostname || url.hostname.startsWith('-')) return pick('SSH 来源必须使用有效主机名，不能以 - 开头', 'SSH source needs a valid host name that does not start with -')
     } catch {
-      return 'SSH 来源 URL 无效'
+      return pick('SSH 来源 URL 无效', 'Invalid SSH source URL')
     }
   }
   const body = s.replace(/^(?:npm|git|https?|ssh):/, '')
-  if (body.startsWith('-')) return '来源内容不能以 - 开头（那会被当成命令行选项）'
+  if (body.startsWith('-')) return pick('来源内容不能以 - 开头（那会被当成命令行选项）', 'Source content cannot start with - (it would be read as a CLI option)')
   if (s.startsWith('npm:') && !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@[^\s]+)?$/i.test(body)) {
-    return 'npm 来源必须是有效的包名，可选版本号'
+    return pick('npm 来源必须是有效的包名，可选版本号', 'npm source must be a valid package name with optional version')
   }
   return null
 }
@@ -227,7 +228,7 @@ function runPi(
 ): Promise<{ ok: boolean; output: string }> {
   const bin = ctx.bin?.() ?? null
   if (!bin) {
-    return Promise.resolve({ ok: false, output: '找不到 pi 的可执行入口（resolvePi 没解析出来）' })
+    return Promise.resolve({ ok: false, output: pick('找不到 pi 的可执行入口（resolvePi 没解析出来）', 'Cannot find the pi executable (resolvePi failed)') })
   }
   return new Promise((resolve) => {
     let timedOut = false
@@ -262,7 +263,7 @@ function runPi(
         settled = true
         clearTimeout(timer)
         const out = `${String(stdout ?? '')}${String(stderr ?? '')}`.trim()
-        resolve({ ok: !error, output: timedOut ? `${out}${out ? '\n' : ''}操作超时；Windows 已尝试结束 pi/npm/git 进程树，仍可能有未能结束的外部进程。` : out })
+        resolve({ ok: !error, output: timedOut ? `${out}${out ? '\n' : ''}${pick('操作超时；Windows 已尝试结束 pi/npm/git 进程树，仍可能有未能结束的外部进程。', 'Timed out. Windows tried to end the pi/npm/git process tree, but some external processes may remain.')}` : out })
       }
     )
   })
@@ -280,45 +281,45 @@ export async function installManagedPiPackage(request: {
   const managedRoot = resolve(String(request.managedRoot ?? ''))
   const rel = relative(managedRoot, sourceDir)
   if (!isAbsolute(request.sourceDir) || !rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    return { ok: false, error: '受管包路径无效（来源必须位于该事务的 staging 目录内）' }
+    return { ok: false, error: pick('受管包路径无效（来源必须位于该事务的 staging 目录内）', 'Invalid managed package path (source must be inside the transaction\'s staging folder)') }
   }
   try {
     if (lstatSync(sourceDir).isSymbolicLink() || !lstatSync(sourceDir).isDirectory()) {
-      return { ok: false, error: '受管包目录必须是普通目录，拒绝符号链接' }
+      return { ok: false, error: pick('受管包目录必须是普通目录，拒绝符号链接', 'Managed package folder must be a regular folder. Symlinks are refused') }
     }
     const realRoot = realpathSync(managedRoot)
     const realSource = realpathSync(sourceDir)
     const realRel = relative(realRoot, realSource)
     if (!realRel || realRel === '..' || realRel.startsWith(`..${sep}`) || isAbsolute(realRel)) {
-      return { ok: false, error: '受管包目录真实路径逃出了 staging 根' }
+      return { ok: false, error: pick('受管包目录真实路径逃出了 staging 根', 'Managed package folder\'s real path escapes the staging root') }
     }
     const manifestPath = join(realSource, 'package.json')
     const manifestInfo = lstatSync(manifestPath)
     const manifest = readJson<{ name?: unknown; version?: unknown }>(manifestPath)
     if (manifestInfo.isSymbolicLink() || !manifestInfo.isFile() || manifest?.name !== request.name || manifest.version !== request.version) {
-      return { ok: false, error: 'staging 内 package.json 与已固定的包名 / 版本不一致' }
+      return { ok: false, error: pick('staging 内 package.json 与已固定的包名 / 版本不一致', 'package.json in staging does not match the pinned package name / version') }
     }
     const cwd = String(request.cwd ?? '')
-    if (!cwd) return { ok: false, error: '缺少当前项目目录，拒绝改为用户级安装' }
+    if (!cwd) return { ok: false, error: pick('缺少当前项目目录，拒绝改为用户级安装', 'No current project folder. Refusing to fall back to a user-level install') }
     if (ctx.hasRunningTask?.(cwd)) {
       return {
         ok: false,
-        error: '这个目录仍有会话在运行，等待安全边界后再安装',
-        detail: 'pi 包在启动时加载；不能在该项目任何 runner 忙碌时更改项目包配置。'
+        error: pick('这个目录仍有会话在运行，等待安全边界后再安装', 'Sessions are still running in this folder. Install after a safe boundary'),
+        detail: pick('pi 包在启动时加载；不能在该项目任何 runner 忙碌时更改项目包配置。', 'pi packages load at startup. Project package config cannot change while any runner in the project is busy.')
       }
     }
     if (!(await ctx.isProjectTrusted?.(cwd))) {
       return {
         ok: false,
-        error: '当前项目尚未获 Pi 项目信任；请先在环境菜单中由你显式信任该目录，再重试安装',
-        detail: '拒绝用 --approve 临时扩大本次命令的信任范围。Pi 安装命令只允许在 trust.json 已明确包含该项目时修改项目级包配置。'
+        error: pick('当前项目尚未获 Pi 项目信任；请先在环境菜单中由你显式信任该目录，再重试安装', 'The project is not trusted by Pi. Trust the folder in the environment menu, then retry'),
+        detail: pick('拒绝用 --approve 临时扩大本次命令的信任范围。Pi 安装命令只允许在 trust.json 已明确包含该项目时修改项目级包配置。', 'Refusing to widen trust with --approve. Pi install may change project package config only when trust.json explicitly includes the project.')
       }
     }
     const env: Record<string, string | undefined> = {
       npm_config_ignore_scripts: request.allowLifecycleScripts ? 'false' : 'true'
     }
     const installed = await runPi(['install', realSource, '-l'], cwd, env)
-    if (!installed.ok) return { ok: false, error: 'pi 项目级包安装失败', detail: installed.output }
+    if (!installed.ok) return { ok: false, error: pick('pi 项目级包安装失败', 'pi project-level package install failed'), detail: installed.output }
     const listing = listPackages(cwd)
     const match = listing.entries.find(
       (entry) => entry.scope === 'project' && entry.name === request.name && entry.version === request.version && entry.installed
@@ -326,7 +327,7 @@ export async function installManagedPiPackage(request: {
     if (!listing.ok || !match) {
       return {
         ok: false,
-        error: 'pi 返回成功，但当前项目清单未确认到固定版本的已安装包',
+        error: pick('pi 返回成功，但当前项目清单未确认到固定版本的已安装包', 'pi reported success, but the project manifest does not confirm the pinned version as installed'),
         detail: installed.output,
         listing
       }
@@ -346,15 +347,15 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
   if (ctx.hasRunningTask?.(cwd)) {
     return {
       ok: false,
-      error: '这个目录有任务正在运行，等它跑完再改插件',
-      detail: '扩展是在 pi 启动时加载的，装/卸/更新只对新开的实例生效 —— 现在动手不会有任何即时效果，还会让正在跑的回合与磁盘状态对不上'
+      error: pick('这个目录有任务正在运行，等它跑完再改插件', 'A task is running in this folder. Change plugins after it finishes'),
+      detail: pick('扩展是在 pi 启动时加载的，装/卸/更新只对新开的实例生效 —— 现在动手不会有任何即时效果，还会让正在跑的回合与磁盘状态对不上', 'Extensions load when pi starts, so install, remove and update only affect new runtimes. Changing now has no immediate effect and desyncs the running turn from disk')
     }
   }
 
   const local = request.local === true
-  if (local && !cwd) return { ok: false, error: '缺少当前项目目录，拒绝改为项目级安装' }
+  if (local && !cwd) return { ok: false, error: pick('缺少当前项目目录，拒绝改为项目级安装', 'No current project folder. Refusing to fall back to a project-level install') }
   if (local && !(await ctx.isProjectTrusted?.(cwd))) {
-    return { ok: false, error: '当前项目尚未获 Pi 项目信任；请先显式信任该目录，再重试安装' }
+    return { ok: false, error: pick('当前项目尚未获 Pi 项目信任；请先显式信任该目录，再重试安装', 'The project is not trusted by Pi. Trust the folder first, then retry') }
   }
   const asArg =
     request.kind === 'install'
@@ -373,7 +374,7 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
   if (!res.ok) {
     return {
       ok: false,
-      error: `${request.kind === 'install' ? '安装' : request.kind === 'remove' ? '卸载' : '更新'}失败`,
+      error: pick(`${request.kind === 'install' ? '安装' : request.kind === 'remove' ? '卸载' : '更新'}失败`, `${request.kind === 'install' ? 'Install' : request.kind === 'remove' ? 'Uninstall' : 'Update'} failed`),
       detail: res.output
     }
   }

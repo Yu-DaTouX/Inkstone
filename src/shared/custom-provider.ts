@@ -1,3 +1,4 @@
+import { pick } from './ui-lang'
 export const PI_API_IDS = [
   'openai-completions',
   'openai-responses',
@@ -104,16 +105,16 @@ export function hasExecutablePrefix(value: string): boolean {
 }
 
 export function validateBaseUrl(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.trim()) return 'Base URL 不能为空'
+  if (typeof value !== 'string' || !value.trim()) return pick('Base URL 不能为空', 'Base URL is required')
   const raw = value.trim()
-  if (hasExecutablePrefix(raw)) return 'Base URL 不能以 ! 开头（可执行字符串不允许写盘）'
+  if (hasExecutablePrefix(raw)) return pick('Base URL 不能以 ! 开头（可执行字符串不允许写盘）', 'Base URL cannot start with ! (executable strings are not written to disk)')
   let url: URL
   try {
     url = new URL(raw)
   } catch {
-    return 'Base URL 不是合法地址'
+    return pick('Base URL 不是合法地址', 'Base URL is not a valid address')
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'Base URL 只支持 http / https'
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return pick('Base URL 只支持 http / https', 'Base URL must be http / https')
   return null
 }
 
@@ -127,11 +128,11 @@ export function validateCustomProvider(input: Partial<CustomProviderInput>): Val
   const errors: string[] = []
   const id = typeof input.id === 'string' ? input.id.trim() : ''
   if (!isYanProviderId(id)) {
-    errors.push(`Provider ID 必须形如 ${CUSTOM_PROVIDER_PREFIX}xxx（小写字母、数字、连字符）`)
+    errors.push(pick(`Provider ID 必须形如 ${CUSTOM_PROVIDER_PREFIX}xxx（小写字母、数字、连字符）`, `Provider ID must look like ${CUSTOM_PROVIDER_PREFIX}xxx (lowercase letters, digits, hyphens)`))
   }
   const api = typeof input.api === 'string' ? input.api : ''
   if (!CUSTOM_API_CHOICES.some((choice) => choice.id === api)) {
-    errors.push('请选择一个受支持的协议')
+    errors.push(pick('请选择一个受支持的协议', 'Choose a supported protocol'))
   }
   const urlError = validateBaseUrl(input.baseUrl)
   if (urlError) errors.push(urlError)
@@ -142,15 +143,15 @@ export function validateCustomProvider(input: Partial<CustomProviderInput>): Val
   for (const raw of models) {
     const modelId = typeof raw?.id === 'string' ? raw.id.trim() : ''
     if (!modelId) {
-      errors.push('模型 ID 不能为空')
+      errors.push(pick('模型 ID 不能为空', 'Model ID is required'))
       continue
     }
     if (hasExecutablePrefix(modelId)) {
-      errors.push(`模型 ID「${modelId}」不能以 ! 开头`)
+      errors.push(pick(`模型 ID「${modelId}」不能以 ! 开头`, `Model ID "${modelId}" cannot start with !`))
       continue
     }
     if (seen.has(modelId)) {
-      errors.push(`模型 ID 重复：${modelId}`)
+      errors.push(pick(`模型 ID 重复：${modelId}`, `Duplicate model ID: ${modelId}`))
       continue
     }
     seen.add(modelId)
@@ -167,11 +168,11 @@ export function validateCustomProvider(input: Partial<CustomProviderInput>): Val
     }
     if (raw.api !== undefined) {
       if (isCustomApiId(raw.api)) next.api = raw.api
-      else errors.push(`模型「${modelId}」的协议不受支持`)
+      else errors.push(pick(`模型「${modelId}」的协议不受支持`, `Protocol of model "${modelId}" is not supported`))
     }
     if (raw.baseUrl !== undefined) {
       const modelUrlError = validateBaseUrl(raw.baseUrl)
-      if (modelUrlError) errors.push(`模型「${modelId}」：${modelUrlError}`)
+      if (modelUrlError) errors.push(pick(`模型「${modelId}」：${modelUrlError}`, `Model "${modelId}": ${modelUrlError}`))
       else next.baseUrl = String(raw.baseUrl).trim()
     }
     if (next.reasoning) {
@@ -182,9 +183,9 @@ export function validateCustomProvider(input: Partial<CustomProviderInput>): Val
     if (cost) next.cost = cost
     cleaned.push(next)
   }
-  if (!cleaned.length) errors.push('至少要有一个模型')
+  if (!cleaned.length) errors.push(pick('至少要有一个模型', 'At least one model is required'))
   if (typeof input.apiKey === 'string' && hasExecutablePrefix(input.apiKey)) {
-    errors.push('API Key 不能是 ! 开头的可执行字符串')
+    errors.push(pick('API Key 不能是 ! 开头的可执行字符串', 'API key cannot be an executable string starting with !'))
   }
 
   if (errors.length) return { ok: false, errors }

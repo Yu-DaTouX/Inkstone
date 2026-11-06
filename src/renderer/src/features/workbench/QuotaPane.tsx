@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { Gauge, RefreshCw, RotateCcw, Settings, Ticket, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react'
-import { useT, type MessageKey, type TFunc } from '../../i18n'
+import { currentLang, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, publishAccountQuotaReport } from '../../state/live-quota'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, IconButton, Meter, Notice, Spinner, type ProgressTone } from '../../ui'
@@ -133,7 +133,7 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
   const cards = orderAccountCardsForProvider(report?.cards ?? [], provider)
   const groups = groupByProvider(cards)
   const time = report
-    ? new Date(report.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+    ? new Date(report.checkedAt).toLocaleTimeString(currentLang(), { hour: '2-digit', minute: '2-digit', hour12: false })
     : ''
 
   return (

@@ -1,3 +1,4 @@
+import { pick } from '../../src/shared/ui-lang'
 import { forwardRef, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native'
 import { font, icon, lineHeight, mono, radius, space, touch, usePalette, weight } from './theme'
@@ -6,12 +7,12 @@ import { GlyphSpinner, RunDot } from './motion'
 import type { IconName } from '../../src/renderer/src/icons/sprite'
 
 export const STATUS_TEXT = {
-  run: '运行中',
-  wait: '等你回答',
-  connecting: '连接中',
-  open: '已连接',
-  reconnecting: '重新连接中'
-} as const
+  get run() { return pick('运行中', 'Running') },
+  get wait() { return pick('等你回答', 'Needs you') },
+  get connecting() { return pick('连接中', 'Connecting') },
+  get open() { return pick('已连接', 'Connected') },
+  get reconnecting() { return pick('重新连接中', 'Reconnecting') }
+}
 
 export function IconButton({ name, label, onPress, disabled, busy, primary = false, danger = false, back = false, selected = false }: { name: IconName; label: string; onPress: () => void; disabled?: boolean; busy?: boolean; primary?: boolean; danger?: boolean; back?: boolean; selected?: boolean }) {
   const p = usePalette()
@@ -96,7 +97,7 @@ export function Header({ title, crumb, subtitle, left, right, background, onTitl
   return (
     <View style={[styles.header, { backgroundColor: background ?? p.bg0 }, !left && styles.headerBare]}>
       {left}
-      <Pressable disabled={!onTitleLongPress} onLongPress={onTitleLongPress} accessibilityActions={onTitleLongPress ? [{ name: 'longpress', label: '重命名会话' }] : undefined} onAccessibilityAction={onTitleLongPress ? () => onTitleLongPress() : undefined} style={styles.headerMain}>
+      <Pressable disabled={!onTitleLongPress} onLongPress={onTitleLongPress} accessibilityActions={onTitleLongPress ? [{ name: 'longpress', label: pick('重命名会话', 'Rename session') }] : undefined} onAccessibilityAction={onTitleLongPress ? () => onTitleLongPress() : undefined} style={styles.headerMain}>
         <Text numberOfLines={1} style={[styles.headerTitle, { color: p.fg }]} accessibilityRole="header">
           {crumb ? <Text style={{ color: p.fgDim, fontWeight: weight.regular }}>{crumb} / </Text> : null}{title}
         </Text>

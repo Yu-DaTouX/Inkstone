@@ -4,6 +4,7 @@ import { access, copyFile, mkdir, open, readFile, realpath, rename, rm, stat, wr
 import { basename, dirname, join, parse, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PI_AGENT_DIR } from './paths'
+import { pick } from '../shared/ui-lang'
 
 export const CURRENT_SESSION_VERSION = 3
 
@@ -216,22 +217,22 @@ export function parseSessionJsonl(
     try {
       parsed = JSON.parse(line)
     } catch {
-      return fail('invalid_json', `第 ${index + 1} 行不是合法 JSON，拒绝导入`)
+      return fail('invalid_json', pick(`第 ${index + 1} 行不是合法 JSON，拒绝导入`, `Line ${index + 1} is not valid JSON; import refused`))
     }
     const entry = asEntry(parsed)
     if (!entry) {
-      return fail('invalid_line', `第 ${index + 1} 行缺少字符串 type 字段，拒绝导入`)
+      return fail('invalid_line', pick(`第 ${index + 1} 行缺少字符串 type 字段，拒绝导入`, `Line ${index + 1} has no string type field; import refused`))
     }
     if (!header) {
       if (entry.type !== 'session' || typeof (entry as { id?: unknown }).id !== 'string') {
-        return fail('invalid_header', '第一行不是 pi 会话头（type:"session" 且 id 为字符串）')
+        return fail('invalid_header', pick('第一行不是 pi 会话头（type:"session" 且 id 为字符串）', 'The first line is not a pi session header (type:"session" with a string id)'))
       }
       header = entry as LiteSessionHeader
       continue
     }
     entries.push(entry)
   }
-  if (!header) return fail('empty', '文件里没有 pi 会话头，拒绝导入')
+  if (!header) return fail('empty', pick('文件里没有 pi 会话头，拒绝导入', 'No pi session header in the file; import refused'))
   let leafId: string | null = null
   for (const entry of entries) {
     if (typeof entry.id === 'string') leafId = entry.id
@@ -253,22 +254,22 @@ export async function readSessionFile(
   maxBytes: number = DEFAULT_MAX_IMPORT_BYTES
 ): Promise<{ ok: true; value: ParsedSessionFile; sizeBytes: number } | SessionIoFailure> {
   const source = resolve(String(path ?? ''))
-  if (!path || !(await pathExists(source))) return fail('not_found', `找不到会话文件：${source}`)
+  if (!path || !(await pathExists(source))) return fail('not_found', pick(`找不到会话文件：${source}`, `Session file not found: ${source}`))
   let stats
   try {
     stats = await stat(source)
   } catch (error) {
-    return fail('not_found', `无法读取会话文件：${error instanceof Error ? error.message : String(error)}`)
+    return fail('not_found', pick(`无法读取会话文件：${error instanceof Error ? error.message : String(error)}`, `Cannot read the session file: ${error instanceof Error ? error.message : String(error)}`))
   }
-  if (!stats.isFile()) return fail('invalid_path', `不是一个文件：${source}`)
+  if (!stats.isFile()) return fail('invalid_path', pick(`不是一个文件：${source}`, `Not a file: ${source}`))
   if (stats.size > maxBytes) {
-    return fail('too_large', `会话文件 ${stats.size} 字节，超过上限 ${maxBytes} 字节，拒绝导入`)
+    return fail('too_large', pick(`会话文件 ${stats.size} 字节，超过上限 ${maxBytes} 字节，拒绝导入`, `Session file is ${stats.size} bytes, over the ${maxBytes}-byte limit; import refused`))
   }
   let text: string
   try {
     text = await readFile(source, 'utf8')
   } catch (error) {
-    return fail('not_found', `无法读取会话文件：${error instanceof Error ? error.message : String(error)}`)
+    return fail('not_found', pick(`无法读取会话文件：${error instanceof Error ? error.message : String(error)}`, `Cannot read the session file: ${error instanceof Error ? error.message : String(error)}`))
   }
   const parsed = parseSessionJsonl(text)
   if (!parsed.ok) return parsed
@@ -316,7 +317,7 @@ export function buildActiveBranch(
   }
   if (leafId === null) return []
   const leaf = leafId === undefined ? entries[entries.length - 1] : byId.get(leafId)
-  if (!leaf && leafId !== undefined) throw new Error('原生会话叶子不在导出条目中')
+  if (!leaf && leafId !== undefined) throw new Error(pick('原生会话叶子不在导出条目中', 'The native session leaf is not among the exported entries'))
   if (!leaf) return []
   const path: LiteSessionEntry[] = []
   let current: LiteSessionEntry | undefined = leaf
@@ -422,7 +423,7 @@ async function sameSessionFile(sourcePath: string, outputPath: string): Promise<
 }
 
 async function writeSessionExport(sourcePath: string, outputPath: string, text: string, overwrite: boolean): Promise<void> {
-  if (await sameSessionFile(sourcePath, outputPath)) throw new Error('导出目标不能是源会话文件本身或它的别名')
+  if (await sameSessionFile(sourcePath, outputPath)) throw new Error(pick('导出目标不能是源会话文件本身或它的别名', 'The export target cannot be the source session file or an alias of it'))
   if (!overwrite) {
     const handle = await open(outputPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL)
     try {
@@ -449,15 +450,15 @@ export async function exportSessionJsonl(
   request: ExportJsonlRequest
 ): Promise<ExportJsonlSuccess | SessionIoFailure> {
   if (!request.outputPath || !String(request.outputPath).trim()) {
-    return fail('invalid_path', '缺少导出目标路径')
+    return fail('invalid_path', pick('缺少导出目标路径', 'Missing export target path'))
   }
   const read = await readSessionFile(request.sourcePath, request.maxBytes)
   if (!read.ok) return read
   const outputPath = resolve(String(request.outputPath))
   const sourcePath = resolve(String(request.sourcePath))
-  if (await sameSessionFile(sourcePath, outputPath)) return fail('invalid_path', '导出目标不能是源会话文件本身或它的别名')
+  if (await sameSessionFile(sourcePath, outputPath)) return fail('invalid_path', pick('导出目标不能是源会话文件本身或它的别名', 'The export target cannot be the source session file or an alias of it'))
   if ((await pathExists(outputPath)) && !request.overwrite) {
-    return fail('exists', `导出目标已存在：${outputPath}（pi 原生会覆盖，这里要求显式确认）`)
+    return fail('exists', pick(`导出目标已存在：${outputPath}（pi 原生会覆盖，这里要求显式确认）`, `Export target already exists: ${outputPath} (pi would overwrite; explicit confirmation required)`))
   }
   const scope: ExportScope = request.scope === 'full' ? 'full' : 'branch'
   const leafId = request.leafId === undefined ? read.value.leafId : request.leafId
@@ -473,7 +474,7 @@ export async function exportSessionJsonl(
       try {
         branch = buildActiveBranch(entries, leafId)
       } catch {
-        return fail('invalid_path', '导出分支的叶子不在当前会话条目中（未写入任何文件）')
+        return fail('invalid_path', pick('导出分支的叶子不在当前会话条目中（未写入任何文件）', 'The exported branch leaf is not in this session (nothing written)'))
       }
       const text = serializeSessionBranch({
         sessionId: header.id,
@@ -490,7 +491,7 @@ export async function exportSessionJsonl(
   } catch (error) {
     return fail(
       (error as NodeJS.ErrnoException).code === 'EEXIST' ? 'exists' : 'invalid_path',
-      `写入导出文件失败：${error instanceof Error ? error.message : String(error)}`
+      pick(`写入导出文件失败：${error instanceof Error ? error.message : String(error)}`, `Failed to write the export file: ${error instanceof Error ? error.message : String(error)}`)
     )
   }
   return { ok: true, outputPath, scope, entryCount }
@@ -540,7 +541,7 @@ export async function importSessionJsonl(
   } catch (error) {
     return fail(
       'invalid_path',
-      `无法创建会话目录 ${sessionDir}：${error instanceof Error ? error.message : String(error)}`
+      pick(`无法创建会话目录 ${sessionDir}：${error instanceof Error ? error.message : String(error)}`, `Cannot create session folder ${sessionDir}: ${error instanceof Error ? error.message : String(error)}`)
     )
   }
   const importedId = request.freshSessionId ? randomUUID() : read.value.header.id
@@ -571,7 +572,7 @@ export async function importSessionJsonl(
         }
         return fail(
           'exists',
-          `复制会话失败（不覆盖已有文件）：${error instanceof Error ? error.message : String(error)}`
+          pick(`复制会话失败（不覆盖已有文件）：${error instanceof Error ? error.message : String(error)}`, `Failed to clone the session (existing files are not overwritten): ${error instanceof Error ? error.message : String(error)}`)
         )
       }
     }
@@ -599,14 +600,14 @@ export async function checkGhStatus(options: CommandRunOptions = {}): Promise<Gh
     ...(options.signal ? { signal: options.signal } : {})
   })
   if (result.errorCode === 'ENOENT' || (result.code === null && result.error)) {
-    return { installed: false, authenticated: false, detail: result.error ?? 'gh 未安装' }
+    return { installed: false, authenticated: false, detail: result.error ?? pick('gh 未安装', 'gh is not installed') }
   }
-  if (result.timedOut) return { installed: true, authenticated: false, detail: 'gh auth status 超时' }
-  if (result.code === 0) return { installed: true, authenticated: true, detail: 'gh 已登录' }
+  if (result.timedOut) return { installed: true, authenticated: false, detail: pick('gh auth status 超时', 'gh auth status timed out') }
+  if (result.code === 0) return { installed: true, authenticated: true, detail: pick('gh 已登录', 'gh is signed in') }
   return {
     installed: true,
     authenticated: false,
-    detail: result.stderr.trim() || result.stdout.trim() || `gh auth status 退出码 ${result.code}`
+    detail: result.stderr.trim() || result.stdout.trim() || pick(`gh auth status 退出码 ${result.code}`, `gh auth status exit code ${result.code}`)
   }
 }
 
@@ -633,30 +634,30 @@ export async function shareViaGist(
   request: ShareViaGistRequest
 ): Promise<ShareViaGistSuccess | SessionIoFailure> {
   const htmlPath = resolve(String(request.htmlPath ?? ''))
-  if (!htmlPath || !existsSync(htmlPath)) return fail('not_found', `找不到要分享的 HTML：${htmlPath}`)
+  if (!htmlPath || !existsSync(htmlPath)) return fail('not_found', pick(`找不到要分享的 HTML：${htmlPath}`, `HTML to share not found: ${htmlPath}`))
   const status = await checkGhStatus({
     ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
     ...(request.signal ? { signal: request.signal } : {})
   })
-  if (!status.installed) return fail('unavailable', '未安装 GitHub CLI（gh）。请先安装：https://cli.github.com/')
+  if (!status.installed) return fail('unavailable', pick('未安装 GitHub CLI（gh）。请先安装：https://cli.github.com/', 'GitHub CLI (gh) is not installed. Install it first: https://cli.github.com/'))
   if (!status.authenticated) {
-    return fail('unavailable', `GitHub CLI 未登录。请先运行 gh auth login（${status.detail}）`)
+    return fail('unavailable', pick(`GitHub CLI 未登录。请先运行 gh auth login（${status.detail}）`, `GitHub CLI is not signed in. Run gh auth login first (${status.detail})`))
   }
-  if (request.beforeUpload && !request.beforeUpload()) return fail('aborted', '会话已切换，已取消上传')
+  if (request.beforeUpload && !request.beforeUpload()) return fail('aborted', pick('会话已切换，已取消上传', 'Session changed; upload canceled'))
   const result = await run('gh', ['gist', 'create', '--public=false', htmlPath], {
     timeoutMs: request.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS,
     ...(request.signal ? { signal: request.signal } : {})
   })
-  if (result.aborted) return fail('aborted', '分享已取消')
-  if (result.timedOut) return fail('timeout', '创建 gist 超时')
+  if (result.aborted) return fail('aborted', pick('分享已取消', 'Share canceled'))
+  if (result.timedOut) return fail('timeout', pick('创建 gist 超时', 'Creating the gist timed out'))
   if (result.code !== 0) {
     return fail(
       'command_failed',
-      `创建 gist 失败：${result.stderr.trim() || result.error || `退出码 ${result.code}`}`
+      pick(`创建 gist 失败：${result.stderr.trim() || result.error || `退出码 ${result.code}`}`, `Failed to create the gist: ${result.stderr.trim() || result.error || `exit code ${result.code}`}`)
     )
   }
   const gistUrl = result.stdout.trim().split(/\s+/).pop() ?? ''
   const gistId = gistUrl.split('/').filter(Boolean).pop() ?? ''
-  if (!gistUrl || !gistId) return fail('invalid_state', '无法从 gh 输出解析 gist 链接')
+  if (!gistUrl || !gistId) return fail('invalid_state', pick('无法从 gh 输出解析 gist 链接', 'Cannot parse the gist link from gh output'))
   return { ok: true, gistUrl, gistId, viewerUrl: shareViewerUrl(gistId) }
 }

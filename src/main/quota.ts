@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { net } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -21,7 +22,7 @@ async function claudeSubscriptionQuota(
   revoked: string
 ): Promise<ProviderQuota> {
   const windows = claudeUsageWindows(await claudeUsage(accessToken, revoked))
-  if (!windows.length) return { provider, supported: true, error: 'Claude 未返回额度窗口', checkedAt }
+  if (!windows.length) return { provider, supported: true, error: pick('Claude 未返回额度窗口', 'Claude returned no quota windows'), checkedAt }
   const binding = [...windows].filter((window) => !window.informational).sort((a, b) => b.used / b.total - a.used / a.total)[0]
   return {
     provider, supported: true, windows, checkedAt,
@@ -43,15 +44,15 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
       }
       const credential = auth.claudeAiOauth
       if (typeof credential?.accessToken !== 'string') {
-        return { provider, supported: true, error: '未找到 Claude Code 登录凭证', checkedAt }
+        return { provider, supported: true, error: pick('未找到 Claude Code 登录凭证', 'Claude Code sign-in credentials not found'), checkedAt }
       }
       if (Number(credential.expiresAt) <= Date.now()) {
-        return { provider, supported: true, error: 'Claude Code 登录令牌已过期，请先在终端使用一次 claude 刷新', checkedAt }
+        return { provider, supported: true, error: pick('Claude Code 登录令牌已过期，请先在终端使用一次 claude 刷新', 'Claude Code sign-in token expired. Run claude once in a terminal to refresh'), checkedAt }
       }
-      return await claudeSubscriptionQuota(provider, credential.accessToken, checkedAt, 'Claude Code 订阅', 'Claude Code 登录已失效')
+      return await claudeSubscriptionQuota(provider, credential.accessToken, checkedAt, pick('Claude Code 订阅', 'Claude Code subscription'), pick('Claude Code 登录已失效', 'Claude Code sign-in expired'))
     } catch (e) {
       const error = e instanceof Error && 'code' in e && e.code === 'ENOENT'
-        ? '未找到 Claude Code 登录凭证'
+        ? pick('未找到 Claude Code 登录凭证', 'Claude Code sign-in credentials not found')
         : e instanceof Error ? e.message : String(e)
       return { provider, supported: true, error, checkedAt }
     }
@@ -60,10 +61,10 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
     const entry = (await readAuthEntry('anthropic').catch(() => undefined)) as { type?: unknown; access?: unknown; expires?: unknown } | undefined
     if (entry?.type === 'oauth' && typeof entry.access === 'string') {
       if (Number(entry.expires) <= Date.now()) {
-        return { provider, supported: true, error: 'Claude 登录令牌已过期，下次用 Claude 模型对话时 pi 会自动刷新', checkedAt }
+        return { provider, supported: true, error: pick('Claude 登录令牌已过期，下次用 Claude 模型对话时 pi 会自动刷新', 'Claude sign-in token expired. pi refreshes it the next time you chat with a Claude model'), checkedAt }
       }
       try {
-        return await claudeSubscriptionQuota(provider, entry.access, checkedAt, 'Claude 订阅', 'Claude 登录已失效，请在设置里重新登录')
+        return await claudeSubscriptionQuota(provider, entry.access, checkedAt, pick('Claude 订阅', 'Claude subscription'), pick('Claude 登录已失效，请在设置里重新登录', 'Claude sign-in expired. Sign in again in settings'))
       } catch (e) {
         return { provider, supported: true, error: e instanceof Error ? e.message : String(e), checkedAt }
       }
@@ -74,14 +75,14 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
   const codexCredential = isCodex ? await hostImageCredentials.codex() : null
   const key = isCodex ? codexCredential?.access : openai ? (process.env.OPENAI_ADMIN_KEY || await resolveQuotaProviderSecret(provider)) : (resolvedSecret ?? await resolveQuotaProviderSecret(provider))
   const known = provider === 'openrouter' || provider === 'deepseek' || provider === 'commandcode' || isCodex || openai
-  if (!key) return { provider, supported: known, error: openai ? '请设置 OPENAI_ADMIN_KEY 以查询组织费用' : '未找到该供应商的 API Key', checkedAt }
+  if (!key) return { provider, supported: known, error: openai ? pick('请设置 OPENAI_ADMIN_KEY 以查询组织费用', 'Set OPENAI_ADMIN_KEY to query organization costs') : pick('未找到该供应商的 API Key', 'No API key found for this provider'), checkedAt }
   try {
     if (isCodex) {
       const accountId = codexCredential?.accountId ?? await resolveCodexAccountId()
-      if (!accountId) return { provider, supported: true, error: '凭证缺少 chatgpt-account-id，请重新登录 ChatGPT', checkedAt }
+      if (!accountId) return { provider, supported: true, error: pick('凭证缺少 chatgpt-account-id，请重新登录 ChatGPT', 'Credential is missing chatgpt-account-id. Sign in to ChatGPT again'), checkedAt }
       const usage = await fetchCodexUsage(key, accountId)
       const windows: QuotaWindow[] = usage.windows
-      if (windows.length === 0) return { provider, supported: true, error: '订阅未返回限速窗口', checkedAt }
+      if (windows.length === 0) return { provider, supported: true, error: pick('订阅未返回限速窗口', 'Subscription returned no rate limit windows'), checkedAt }
       const binding = [...windows].sort((a, b) => b.used / b.total - a.used / a.total)[0]
       const plan = usage.plan ? usage.plan.toUpperCase() : ''
       return {
@@ -110,7 +111,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
         headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000)
       })
       if (!r.ok) {
-        if (r.status === 401 || r.status === 403) throw new Error('需要 OpenAI 组织 Admin Key（OPENAI_ADMIN_KEY），普通 API Key 或 ChatGPT 订阅无法查询')
+        if (r.status === 401 || r.status === 403) throw new Error(pick('需要 OpenAI 组织 Admin Key（OPENAI_ADMIN_KEY），普通 API Key 或 ChatGPT 订阅无法查询', 'An OpenAI organization Admin Key (OPENAI_ADMIN_KEY) is required. Regular API keys and ChatGPT subscriptions cannot query this'))
         throw new Error(`HTTP ${r.status}`)
       }
       const j = await r.json() as { data?: Array<{ results?: Array<{ amount?: { value?: number; currency?: string } }> }> }
@@ -120,7 +121,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
       return {
         provider, supported: true, used, total: hasBudget ? budget : undefined,
         remaining: hasBudget ? Math.max(0, budget - used) : undefined,
-        currency: 'USD', label: hasBudget ? '本月预算剩余' : '本月组织费用', checkedAt
+        currency: 'USD', label: hasBudget ? pick('本月预算剩余', 'Budget left this month') : pick('本月组织费用', 'Organization cost this month'), checkedAt
       }
     }
     if (provider === 'deepseek') {
@@ -129,7 +130,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
       const j = await r.json() as { is_available?: boolean; balance_infos?: Array<{ currency?: string; total_balance?: string }> }
       const infos = j.balance_infos ?? []
       const info = infos.find((x) => Number(x.total_balance) > 0) ?? infos[0]
-      if (!info) return { provider, supported: true, error: '余额接口未返回数据', checkedAt }
+      if (!info) return { provider, supported: true, error: pick('余额接口未返回数据', 'Balance API returned no data'), checkedAt }
       return { provider, supported: true, remaining: Number(info.total_balance ?? 0), currency: info.currency ?? 'USD', checkedAt }
     }
     if (provider === 'commandcode') {
@@ -151,7 +152,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
       const windows = commandCodeWindows(credits, periodEnd)
 
       if (windows.length === 0) {
-        return { provider, supported: true, error: wl.limited === false ? '套餐未启用额度窗口' : '未返回额度窗口', checkedAt }
+        return { provider, supported: true, error: wl.limited === false ? pick('套餐未启用额度窗口', 'Plan has no quota windows enabled') : pick('未返回额度窗口', 'No quota windows returned'), checkedAt }
       }
       const binding = [...windows].sort(
         (a, b) => (a.total - a.used) / a.total - (b.total - b.used) / b.total
@@ -164,12 +165,12 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number,
         used: monthly ? monthly.used : binding.used,
         total: (monthly ?? binding).total,
         currency: 'USD',
-        label: monthly ? '本月已用' : `${binding.label}额度`,
+        label: monthly ? pick('本月已用', 'Used this month') : pick(`${binding.label}额度`, `${binding.label} quota`),
         windows,
         checkedAt
       }
     }
-    return { provider, supported: false, error: '该供应商没有可用的公开余额 API', checkedAt }
+    return { provider, supported: false, error: pick('该供应商没有可用的公开余额 API', 'This provider has no public balance API'), checkedAt }
   } catch (e) {
     return { provider, supported: true, error: e instanceof Error ? e.message : String(e), checkedAt }
   }
@@ -217,6 +218,6 @@ export async function fetchCodexUsage(accessToken: string, accountId: string): P
     },
     signal: AbortSignal.timeout(10_000)
   })
-  if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? `登录已失效（HTTP ${r.status}）` : `HTTP ${r.status}`)
+  if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? pick(`登录已失效（HTTP ${r.status}）`, `Sign-in expired (HTTP ${r.status})`) : `HTTP ${r.status}`)
   return codexUsageWindows(await r.json() as CodexUsagePayload)
 }

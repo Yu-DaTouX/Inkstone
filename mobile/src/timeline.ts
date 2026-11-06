@@ -1,3 +1,4 @@
+import { pick } from '../../src/shared/ui-lang'
 import type { HistoryMessage } from './api/client'
 
 export type ImageRef = { messageId: string; index: number }
@@ -52,7 +53,7 @@ export function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
         const denied = tool.denied === true || !!old?.denied
         const next: ToolStep = {
           id: key,
-          name: tool.name || old?.name || '工具',
+          name: tool.name || old?.name || pick('工具', 'Tool'),
           failed: (tool.status === 'error' && !denied) || !!old?.failed,
           denied,
           running: tool.status === 'running' || tool.status === 'pending',

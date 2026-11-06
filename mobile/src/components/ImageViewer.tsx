@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { Modal, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native'
 import type { RemoteClient } from '../api/client'
 import { Icon } from '../icons'
@@ -8,7 +9,7 @@ export function ImageViewer({ client, source, label, onClose }: { client: Remote
   const p = usePalette()
   return (
     <Modal visible={!!source} animationType="fade" onRequestClose={onClose}>
-      <Pressable accessibilityRole="button" accessibilityLabel="关闭图片" onPress={onClose} style={[styles.backdrop, { backgroundColor: p.bg0 }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={pick('关闭图片', 'Close image')} onPress={onClose} style={[styles.backdrop, { backgroundColor: p.bg0 }]}>
         {source ? <RemoteImage client={client} source={source} resizeMode="contain" accessibilityLabel={label} style={styles.image} /> : null}
         <View style={[styles.bar, { top: (StatusBar.currentHeight ?? 0) + space[2] }]} pointerEvents="none">
           <Text numberOfLines={1} style={[styles.label, { color: p.fgDim }]}>{label}</Text>

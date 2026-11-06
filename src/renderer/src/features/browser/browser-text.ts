@@ -109,8 +109,8 @@ const ZH: BrowserText = {
 }
 
 const EN: BrowserText = {
-  inactive: 'Activate this conversation before using the built-in browser.',
-  foreignOwner: 'The built-in browser belongs to another conversation; switch back or reopen it here.',
+  inactive: 'Activate this session before using the built-in browser.',
+  foreignOwner: 'The built-in browser belongs to another session; switch back or reopen it here.',
   notOpen: 'The built-in browser is not open.',
   open: 'Open browser',
   opening: 'Opening…',

@@ -7,6 +7,7 @@ import { sha256Hex, shortHash } from './canonical'
 import { isRecordKind } from './local-store'
 import { syncNote, type SyncNote } from '../../shared/sync'
 import type { ConflictRecord, RemoteRecord, SyncRecordKind } from './types'
+import { pick } from '../../shared/ui-lang'
 
 export const SYNC_SUBDIR = 'inkstone-sync'
 const KINDS: SyncRecordKind[] = ['settings', 'prompt', 'skill', 'bookmark']
@@ -154,7 +155,7 @@ async function readRecordFile(file: string, expectedKind: SyncRecordKind, skippe
   try {
     raw = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>
   } catch (error) {
-    skipped.push(`${file}：读取或解析失败（${describe(error)}），可能是云盘同步中的半写入文件，已跳过`)
+    skipped.push(pick(`${file}：读取或解析失败（${describe(error)}），可能是云盘同步中的半写入文件，已跳过`, `${file}: read or parse failed (${describe(error)}); possibly a half-written file from cloud sync; skipped`))
     return undefined
   }
   const key = typeof raw.key === 'string' ? raw.key : ''
@@ -173,7 +174,7 @@ async function readRecordFile(file: string, expectedKind: SyncRecordKind, skippe
     payload === undefined ||
     hash !== sha256Hex(payload)
   ) {
-    skipped.push(`${file}：记录形状或哈希校验不通过，已跳过`)
+    skipped.push(pick(`${file}：记录形状或哈希校验不通过，已跳过`, `${file}: record shape or hash check failed; skipped`))
     return undefined
   }
   return { key, kind, deviceId, deviceName, modifiedAt, payload, hash }

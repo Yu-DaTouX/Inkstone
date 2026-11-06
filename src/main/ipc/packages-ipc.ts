@@ -11,6 +11,7 @@ import type { MinecraftPluginStatus } from '../../shared/plugin-market'
 import { app, dialog, net } from 'electron'
 import { join, resolve } from 'node:path'
 import { access } from 'node:fs/promises'
+import { pick } from '../../shared/ui-lang'
 
 const ANTHROPIC_OVERRIDE_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']
 
@@ -74,13 +75,13 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
   const { hasBusyCwd } = deps
   handle('yan:packages:search', async (query: unknown, offset: unknown) => {
     if (typeof query !== 'string' || (offset !== undefined && (typeof offset !== 'number' || !Number.isFinite(offset)))) {
-      return { ok: false, entries: [], total: 0, error: '无效的搜索参数' }
+      return { ok: false, entries: [], total: 0, error: pick('无效的搜索参数', 'Invalid search parameters') }
     }
     return searchPiPackages(query.slice(0, 500), typeof offset === 'number' ? Math.max(0, Math.floor(offset)) : 0)
   })
   handle('yan:packages:catalog', async (refresh: unknown) => loadPluginCatalog(refresh === true))
   handle('yan:packages:exportPlugin', async (id: unknown) => {
-    if (id !== 'hermes-inkstone') return { ok: false, error: '未知插件' }
+    if (id !== 'hermes-inkstone') return { ok: false, error: pick('未知插件', 'Unknown plugin') }
     try {
       const files = HERMES_PLUGIN_FILES
       const candidates = [join(process.resourcesPath, 'integrations', 'hermes-inkstone'),
@@ -89,8 +90,8 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
       for (const candidate of candidates) {
         if (await Promise.all(files.map(file => access(join(candidate, file)))).then(() => true, () => false)) { source = candidate; break }
       }
-      if (!source) return { ok: false, error: '随包插件文件缺失，请更新砚' }
-      const selected = await dialog.showOpenDialog({ title: '导出 Hermes 插件：选择父目录', properties: ['openDirectory', 'createDirectory'] })
+      if (!source) return { ok: false, error: pick('随包插件文件缺失，请更新砚', 'Bundled plugin files are missing; update Inkstone') }
+      const selected = await dialog.showOpenDialog({ title: pick('导出 Hermes 插件：选择父目录', 'Export Hermes plugin: choose a parent folder'), properties: ['openDirectory', 'createDirectory'] })
       if (selected.canceled || !selected.filePaths[0]) return { ok: false, cancelled: true }
       const target = await exportHermesPlugin(source, selected.filePaths[0])
       return { ok: true, path: target }
@@ -98,7 +99,7 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
   })
 
   handle('yan:packages:addMcp', async (id: unknown) => {
-    if (id !== 'codegraph') return { ok: false, error: '未知插件' }
+    if (id !== 'codegraph') return { ok: false, error: pick('未知插件', 'Unknown plugin') }
     try { return await addCodegraphMcp(PI_AGENT_DIR) }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
   })
@@ -120,7 +121,7 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
     codegraphStatus(PI_AGENT_DIR, typeof cwd === 'string' ? cwd : ''))
 
   handle('yan:packages:codegraphIndex', async (cwd: unknown) => {
-    if (typeof cwd !== 'string' || !cwd.trim()) return { ok: false, error: '没有打开的项目' }
+    if (typeof cwd !== 'string' || !cwd.trim()) return { ok: false, error: pick('没有打开的项目', 'No project open') }
     try { return await indexCodegraphProject(cwd) }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
   })
@@ -140,7 +141,7 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
     const raw = (req ?? {}) as Record<string, unknown>
     try {
       const kind = raw.kind === 'install' || raw.kind === 'remove' || raw.kind === 'update' ? raw.kind : null
-      if (!kind) return { ok: false, error: '未知的操作' }
+      if (!kind) return { ok: false, error: pick('未知的操作', 'Unknown action') }
       const st = await getSettings()
       configurePackageContext({
         bin: () => resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null,

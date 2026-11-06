@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { useState, type ReactNode } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { RemoteChangedFile, RemoteSessionChanges, RemoteSessionStats } from '../../../src/shared/remote-protocol'
@@ -47,14 +48,14 @@ function UsageSection({ stats }: { stats: RemoteSessionStats }) {
   const ratio = contextRatio(stats.context)
   const warn = ratio !== null && ratio >= 0.85
   const cost = costText(stats.cost)
-  return <Section title="用量" value={ratio !== null ? `${Math.round(ratio * 100)}%` : undefined}>
+  return <Section title={pick('用量', 'Usage')} value={ratio !== null ? `${Math.round(ratio * 100)}%` : undefined}>
     {ratio !== null && stats.context ? <View style={styles.usage}>
       <View style={[styles.meter, { backgroundColor: p.borderSoft }]}><View style={[styles.meterFill, { width: `${Math.max(2, Math.round(ratio * 100))}%`, backgroundColor: warn ? p.warn : p.accent }]} /></View>
       <Text style={[styles.value, { color: p.fgDim }]}>{stats.context.tokens !== null ? `${compactCount(stats.context.tokens)} / ${compactCount(stats.context.window)}` : compactCount(stats.context.window)}</Text>
     </View> : null}
     <View style={styles.row}>
       <Text style={[styles.rowText, styles.mono, { color: p.fg }]}>{compactCount(stats.tokens)} tokens{cost ? ` · ${cost}` : ''}</Text>
-      <Text style={[styles.value, { color: p.fgMute }]}>{stats.toolCalls} 次工具</Text>
+      <Text style={[styles.value, { color: p.fgMute }]}>{pick(`${stats.toolCalls} 次工具`, `${stats.toolCalls} tool calls`)}</Text>
     </View>
   </Section>
 }
@@ -63,14 +64,14 @@ const STATUS_COLOR: Record<RemoteChangedFile['status'], 'add' | 'del' | 'warn' |
 
 function ChangesSection({ changes }: { changes: RemoteSessionChanges }) {
   const p = usePalette()
-  return <Section title="更改" value={<Text style={[styles.value, { color: p.fgDim }]}>{changes.added || changes.removed ? <><Text style={{ color: p.add }}>+{changes.added}</Text> <Text style={{ color: p.del }}>−{changes.removed}</Text></> : changes.total}</Text>}>
+  return <Section title={pick('更改', 'Changes')} value={<Text style={[styles.value, { color: p.fgDim }]}>{changes.added || changes.removed ? <><Text style={{ color: p.add }}>+{changes.added}</Text> <Text style={{ color: p.del }}>−{changes.removed}</Text></> : changes.total}</Text>}>
     {changes.branch ? <View style={styles.row}><Icon name="branch" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, styles.mono, { color: p.fgDim }]}>{changes.branch}</Text></View> : null}
     {changes.files.map((file) => <View key={file.path} style={styles.file}>
       <Text style={[styles.status, { color: p[STATUS_COLOR[file.status]] }]}>{file.status}</Text>
       <Text numberOfLines={1} ellipsizeMode="head" style={[styles.rowText, styles.mono, { color: p.fg, fontSize: font.sm }]}>{file.path}</Text>
       {typeof file.added === 'number' || typeof file.removed === 'number' ? <Text style={styles.value}><Text style={{ color: p.add }}>+{file.added ?? 0}</Text> <Text style={{ color: p.del }}>−{file.removed ?? 0}</Text></Text> : null}
     </View>)}
-    {changes.truncated ? <Text style={[styles.value, { color: p.fgMute, paddingVertical: 4 }]}>另有 {changes.total - changes.files.length} 个文件</Text> : null}
+    {changes.truncated ? <Text style={[styles.value, { color: p.fgMute, paddingVertical: 4 }]}>{pick(`另有 ${changes.total - changes.files.length} 个文件`, `${changes.total - changes.files.length} more files`)}</Text> : null}
   </Section>
 }
 
@@ -83,22 +84,22 @@ function ActionsSection({ sessionId, running, pinned, archived, onRemoved }: { s
     if (busy) return
     setBusy(key); setError(null)
     try { await task(); void refresh() }
-    catch (err) { setError(err instanceof Error ? err.message : '操作失败') }
+    catch (err) { setError(err instanceof Error ? err.message : pick('操作失败', 'Action failed')) }
     finally { setBusy(null) }
   }
-  const confirmDelete = () => Alert.alert('删除这个会话？', '会从电脑上删除，无法在手机上撤销。', [
-    { text: '取消', style: 'cancel' },
-    { text: '删除', style: 'destructive', onPress: () => void run('delete', async () => { await client.deleteSession(sessionId); onRemoved?.() }) }
+  const confirmDelete = () => Alert.alert(pick('删除这个会话？', 'Delete this session?'), pick('会从电脑上删除，无法在手机上撤销。', 'It will be deleted from the desktop and cannot be undone here.'), [
+    { text: pick('取消', 'Cancel'), style: 'cancel' },
+    { text: pick('删除', 'Delete'), style: 'destructive', onPress: () => void run('delete', async () => { await client.deleteSession(sessionId); onRemoved?.() }) }
   ])
   const items: Array<{ key: string; icon: IconName; label: string; danger?: boolean; disabled?: boolean; onPress: () => void }> = []
   if (capabilityAllowed(info, 'session-flags')) {
-    items.push({ key: 'pin', icon: 'pin', label: pinned ? '取消置顶' : '置顶', onPress: () => void run('pin', () => client.setSessionFlags(sessionId, { pinned: !pinned })) })
-    items.push({ key: 'archive', icon: 'compact', label: archived ? '取消归档' : '归档', disabled: running && !archived, onPress: () => void run('archive', () => client.setSessionFlags(sessionId, { archived: !archived })) })
+    items.push({ key: 'pin', icon: 'pin', label: pinned ? pick('取消置顶', 'Unpin') : pick('置顶', 'Pin'), onPress: () => void run('pin', () => client.setSessionFlags(sessionId, { pinned: !pinned })) })
+    items.push({ key: 'archive', icon: 'compact', label: archived ? pick('取消归档', 'Unarchive') : pick('归档', 'Archive'), disabled: running && !archived, onPress: () => void run('archive', () => client.setSessionFlags(sessionId, { archived: !archived })) })
   }
-  if (capabilityAllowed(info, 'compact')) items.push({ key: 'compact', icon: 'layers', label: '压缩上下文', disabled: running, onPress: () => void run('compact', () => client.compact(sessionId)) })
-  if (capabilityAllowed(info, 'session-delete')) items.push({ key: 'delete', icon: 'close', label: '删除', danger: true, onPress: confirmDelete })
+  if (capabilityAllowed(info, 'compact')) items.push({ key: 'compact', icon: 'layers', label: pick('压缩上下文', 'Compact context'), disabled: running, onPress: () => void run('compact', () => client.compact(sessionId)) })
+  if (capabilityAllowed(info, 'session-delete')) items.push({ key: 'delete', icon: 'close', label: pick('删除', 'Delete'), danger: true, onPress: confirmDelete })
   if (!items.length) return null
-  return <Section title="操作">
+  return <Section title={pick('操作', 'Actions')}>
     {items.map((item) => <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.label} disabled={item.disabled || !!busy} onPress={item.onPress} style={[styles.row, { opacity: item.disabled ? 0.4 : 1 }]}>
       <Icon name={item.icon} size={icon.sm} color={item.danger ? p.err : p.fgDim} />
       <Text style={[styles.rowText, { color: item.danger ? p.err : p.fg }]}>{item.label}</Text>
@@ -113,22 +114,22 @@ export function DetailPane({ detail, onOpenArtifact, onSessionRemoved, backgroun
   const bottomInset = useBottomInset()
   const { sessions, projects, info, client } = useRemote()
   const [branchOpen, setBranchOpen] = useState(false)
-  if (!detail) return <View style={[styles.root, { backgroundColor: background ?? p.bg1 }]}><Text style={[styles.empty, { color: p.fgMute }]}>打开一个会话后，这里显示它的环境、计划与子代理</Text></View>
+  if (!detail) return <View style={[styles.root, { backgroundColor: background ?? p.bg1 }]}><Text style={[styles.empty, { color: p.fgMute }]}>{pick('打开一个会话后，这里显示它的环境、计划与子代理', 'Open a session to see its environment, plan and subagents')}</Text></View>
   const session = sessions.find((entry) => entry.id === detail.sessionId)
   const project = projects.find((entry) => entry.id === session?.projectId)
   const todos = detail.plan?.todos ?? []
   const done = todos.filter(isDone).length
   const activeIndex = todos.findIndex((todo) => todo.status === 'running' || (!isDone(todo) && detail.running && !todos.some((t) => t.status === 'running')))
   return <ScrollView style={{ backgroundColor: background ?? p.bg1 }} contentContainerStyle={[styles.root, inset ? { paddingBottom: space[5] + bottomInset } : null]}>
-    <Section title="环境">
-      <View style={styles.row}><Icon name="terminal" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, { color: p.fg }]}>{info?.computer?.name || client.connection.computerName || '电脑'}</Text></View>
-      <View style={styles.row}><Icon name="folder" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} ellipsizeMode="head" style={[styles.rowText, { color: p.fg }]}>{project?.cwd || session?.cwdName || '电脑工作目录'}</Text></View>
-      {detail.changes?.branch && capabilityAllowed(info, 'branches') ? <Pressable accessibilityRole="button" accessibilityLabel={`分支 ${detail.changes.branch}，点按切换`} onPress={() => setBranchOpen(true)} style={styles.row}><Icon name="branch" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, styles.mono, { color: p.fg }]}>{detail.changes.branch}</Text><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></Pressable> : null}
+    <Section title={pick('环境', 'Environment')}>
+      <View style={styles.row}><Icon name="terminal" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, { color: p.fg }]}>{info?.computer?.name || client.connection.computerName || pick('电脑', 'Desktop')}</Text></View>
+      <View style={styles.row}><Icon name="folder" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} ellipsizeMode="head" style={[styles.rowText, { color: p.fg }]}>{project?.cwd || session?.cwdName || pick('电脑工作目录', 'Desktop working folder')}</Text></View>
+      {detail.changes?.branch && capabilityAllowed(info, 'branches') ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`分支 ${detail.changes.branch}，点按切换`, `Branch ${detail.changes.branch}, tap to switch`)} onPress={() => setBranchOpen(true)} style={styles.row}><Icon name="branch" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, styles.mono, { color: p.fg }]}>{detail.changes.branch}</Text><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></Pressable> : null}
       {detail.model ? <View style={styles.row}><Icon name="sparkles" size={icon.sm} color={p.fgDim} /><Text numberOfLines={1} style={[styles.rowText, { color: p.fg }]}>{detail.model}</Text></View> : null}
     </Section>
     {detail.stats ? <UsageSection stats={detail.stats} /> : null}
     {detail.changes && detail.changes.total > 0 ? <ChangesSection changes={detail.changes} /> : null}
-    {todos.length ? <Section title="计划" initiallyOpen={done < todos.length && !detail.plan?.stale} value={`${done}/${todos.length}${detail.plan?.stale ? ' · 上一轮' : ''}`}>
+    {todos.length ? <Section title={pick('计划', 'Plan')} initiallyOpen={done < todos.length && !detail.plan?.stale} value={`${done}/${todos.length}${detail.plan?.stale ? pick(' · 上一轮', ' · previous turn') : ''}`}>
       {todos.map((todo, index) => {
         const finished = isDone(todo)
         const active = index === activeIndex
@@ -138,16 +139,16 @@ export function DetailPane({ detail, onOpenArtifact, onSessionRemoved, backgroun
         </View>
       })}
     </Section> : null}
-    {detail.subagents.length ? <Section title="子代理" value={String(detail.subagents.length)}>
+    {detail.subagents.length ? <Section title={pick('子代理', 'Subagents')} value={String(detail.subagents.length)}>
       <SubagentCard runs={detail.subagents} plain sessionId={detail.sessionId} />
     </Section> : null}
     <ActionsSection sessionId={detail.sessionId} running={detail.running} pinned={!!session?.pinned} archived={!!session?.archivedAt} onRemoved={onSessionRemoved} />
     <BranchSheet sessionId={detail.sessionId} visible={branchOpen} running={detail.running} onClose={() => setBranchOpen(false)} onSwitched={() => undefined} />
-    {detail.artifacts.length ? <Section title="产物" value={String(detail.artifacts.length)}>
+    {detail.artifacts.length ? <Section title={pick('产物', 'Artifacts')} value={String(detail.artifacts.length)}>
       {detail.artifacts.map((artifact) => <Pressable key={artifact.id} accessibilityRole="button" disabled={artifact.unavailable} onPress={() => onOpenArtifact(artifact)} style={[styles.row, { opacity: artifact.unavailable ? 0.5 : 1 }]}>
         <Icon name="file" size={icon.sm} color={p.fgDim} />
         <Text numberOfLines={1} style={[styles.rowText, { color: p.accent }]}>{artifact.filename}</Text>
-        <Text style={[styles.value, { color: p.fgMute }]}>{artifact.unavailable ? '不可用' : `${Math.max(1, Math.round(artifact.bytes / 1024))} KB`}</Text>
+        <Text style={[styles.value, { color: p.fgMute }]}>{artifact.unavailable ? pick('不可用', 'Unavailable') : `${Math.max(1, Math.round(artifact.bytes / 1024))} KB`}</Text>
       </Pressable>)}
     </Section> : null}
   </ScrollView>

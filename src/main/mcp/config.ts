@@ -8,6 +8,7 @@ import {
   type McpAppServerConfig
 } from './app-spec'
 import { YAN_DIR } from '../paths'
+import { pick } from '../../shared/ui-lang'
 
 export function mcpServersFile(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.YAN_MCP_SERVERS_FILE
@@ -41,17 +42,17 @@ const KNOWN_SERVER_KEYS = new Set([
 ])
 
 function normalize(raw: unknown): McpAppServerConfig | { problem: string } {
-  if (!raw || typeof raw !== 'object') return { problem: '条目不是对象' }
+  if (!raw || typeof raw !== 'object') return { problem: pick('条目不是对象', 'Entry is not an object') }
   const r = raw as Record<string, unknown>
   const id = typeof r.id === 'string' ? r.id.trim() : ''
-  if (!id) return { problem: '缺少 id' }
+  if (!id) return { problem: pick('缺少 id', 'Missing id') }
   const transport = typeof r.transport === 'string' ? r.transport.trim() : ''
-  if (!TRANSPORTS.has(transport)) return { problem: `${id}: transport 必须是 stdio 或 http` }
+  if (!TRANSPORTS.has(transport)) return { problem: pick(`${id}: transport 必须是 stdio 或 http`, `${id}: transport must be stdio or http`) }
 
   if (transport === 'stdio') {
-    if (typeof r.command !== 'string' || !r.command.trim()) return { problem: `${id}: stdio 必须有 command` }
+    if (typeof r.command !== 'string' || !r.command.trim()) return { problem: pick(`${id}: stdio 必须有 command`, `${id}: stdio requires command`) }
   } else if (typeof r.url !== 'string' || !r.url.trim()) {
-    return { problem: `${id}: http 必须有 url` }
+    return { problem: pick(`${id}: http 必须有 url`, `${id}: http requires url`) }
   }
 
   const effect = typeof r.effect === 'string' && EFFECTS.has(r.effect) ? (r.effect as McpServerConfig['effect']) : undefined
@@ -59,27 +60,27 @@ function normalize(raw: unknown): McpAppServerConfig | { problem: string } {
     typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) || typeof value === 'boolean' ? String(value) : null
   const env: Record<string, string> = {}
   if (r.env !== undefined && (!r.env || typeof r.env !== 'object' || Array.isArray(r.env))) {
-    return { problem: `${id}: env 必须是对象` }
+    return { problem: pick(`${id}: env 必须是对象`, `${id}: env must be an object`) }
   }
   if (r.env && typeof r.env === 'object') {
     for (const [key, value] of Object.entries(r.env as Record<string, unknown>)) {
       const normalized = stringifyConfigValue(value)
-      if (normalized === null) return { problem: `${id}: env.${key} 必须是字符串、数字或布尔值` }
+      if (normalized === null) return { problem: pick(`${id}: env.${key} 必须是字符串、数字或布尔值`, `${id}: env.${key} must be a string, number or boolean`) }
       env[key] = normalized
     }
   }
-  if (r.args !== undefined && !Array.isArray(r.args)) return { problem: `${id}: args 必须是数组` }
+  if (r.args !== undefined && !Array.isArray(r.args)) return { problem: pick(`${id}: args 必须是数组`, `${id}: args must be an array`) }
   const args: string[] = []
   if (Array.isArray(r.args)) {
     for (let index = 0; index < r.args.length; index++) {
       const normalized = stringifyConfigValue(r.args[index])
-      if (normalized === null) return { problem: `${id}: args[${index}] 必须是字符串、数字或布尔值` }
+      if (normalized === null) return { problem: pick(`${id}: args[${index}] 必须是字符串、数字或布尔值`, `${id}: args[${index}] must be a string, number or boolean`) }
       args.push(normalized)
     }
   }
   const migratedToNative = parseMigratedMark(r.migratedToNative)
   if (r.projectEnabled !== undefined && (!r.projectEnabled || typeof r.projectEnabled !== 'object' || Array.isArray(r.projectEnabled) || Object.values(r.projectEnabled).some((value) => typeof value !== 'boolean'))) {
-    return { problem: `${id}: projectEnabled 必须是项目 ID 到布尔值的对象` }
+    return { problem: pick(`${id}: projectEnabled 必须是项目 ID 到布尔值的对象`, `${id}: projectEnabled must map project IDs to booleans`) }
   }
   const extras: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(r)) {
@@ -161,7 +162,7 @@ export function loadMcpServers(env: NodeJS.ProcessEnv = process.env): McpConfigL
   try {
     text = readFileSync(file, 'utf8')
   } catch (error) {
-    return { servers: [], file, error: `无法读取 MCP 配置（${file}）：${error instanceof Error ? error.message : String(error)}` }
+    return { servers: [], file, error: pick(`无法读取 MCP 配置（${file}）：${error instanceof Error ? error.message : String(error)}`, `Cannot read MCP config (${file}): ${error instanceof Error ? error.message : String(error)}`) }
   }
   return parseMcpServersDocument(text, file)
 }
@@ -192,14 +193,14 @@ export function parseMcpServersDocument(text: string, file: string): McpConfigLo
   try {
     parsed = JSON.parse(text)
   } catch (error) {
-    return { servers: [], file, error: `MCP 配置不是合法 JSON（${file}）：${error instanceof Error ? error.message : String(error)}` }
+    return { servers: [], file, error: pick(`MCP 配置不是合法 JSON（${file}）：${error instanceof Error ? error.message : String(error)}`, `MCP config is not valid JSON (${file}): ${error instanceof Error ? error.message : String(error)}`) }
   }
   const list = Array.isArray(parsed)
     ? parsed
     : parsed && typeof parsed === 'object' && Array.isArray((parsed as { servers?: unknown }).servers)
       ? ((parsed as { servers: unknown[] }).servers as unknown[])
       : null
-  if (!list) return { servers: [], file, document: parsed, error: `MCP 配置必须是数组或 { servers: [...] }（${file}）` }
+  if (!list) return { servers: [], file, document: parsed, error: pick(`MCP 配置必须是数组或 { servers: [...] }（${file}）`, `MCP config must be an array or { servers: [...] } (${file})`) }
 
   const servers: McpAppServerConfig[] = []
   const problems: string[] = []
@@ -211,7 +212,7 @@ export function parseMcpServersDocument(text: string, file: string): McpConfigLo
       continue
     }
     if (seen.has(result.id)) {
-      problems.push(`重复的服务 id：${result.id}（已忽略后一条）`)
+      problems.push(pick(`重复的服务 id：${result.id}（已忽略后一条）`, `Duplicate server id: ${result.id} (later entry ignored)`))
       continue
     }
     seen.add(result.id)

@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -57,7 +58,7 @@ export function buildChromeArgs(opts: ChromeLaunchOptions): string[] {
 
 export function launchChrome(opts: ChromeLaunchOptions): ChildProcess {
   const exe = opts.executable ?? findChrome()
-  if (!exe) throw new Error('没有找到 Chrome / Chromium；请先安装，或在设置中指定可执行文件')
+  if (!exe) throw new Error(pick('没有找到 Chrome / Chromium；请先安装，或在设置中指定可执行文件', 'Chrome / Chromium not found; install it or set the executable in settings'))
   return spawn(exe, buildChromeArgs(opts), {
     stdio: 'ignore',
     detached: false,

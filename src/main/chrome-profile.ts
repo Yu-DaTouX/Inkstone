@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { execFile } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, cpSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -113,7 +114,7 @@ export function syncChromeProfile(targetProfileDir: string, location: ChromeProf
     const from = join(location.root, rel)
     const to = join(targetProfileDir, item.rel.replace('{p}', 'Default'))
     if (!existsSync(from)) {
-      if (!item.optional) failed.push({ item: rel, reason: '源文件不存在' })
+      if (!item.optional) failed.push({ item: rel, reason: pick('源文件不存在', 'Source file not found') })
       return false
     }
     try {
@@ -125,7 +126,7 @@ export function syncChromeProfile(targetProfileDir: string, location: ChromeProf
       const code = (e as NodeJS.ErrnoException).code ?? ''
       const reason =
         code === 'EBUSY' || code === 'EPERM'
-          ? 'Chrome 正在运行，文件被占用（退出 Chrome 后重试）'
+          ? pick('Chrome 正在运行，文件被占用（退出 Chrome 后重试）', 'Chrome is running and the file is in use (quit Chrome and retry)')
           : code || (e instanceof Error ? e.message : String(e))
       failed.push({ item: rel, reason })
       return false
@@ -136,7 +137,7 @@ export function syncChromeProfile(targetProfileDir: string, location: ChromeProf
 
   let cookieOk = !options.skipCookies
   if (options.skipCookies) {
-    failed.push({ item: 'Cookies / Local State', reason: 'Chrome 正在运行；退出后可同步 Cookie 与解密密钥' })
+    failed.push({ item: 'Cookies / Local State', reason: pick('Chrome 正在运行；退出后可同步 Cookie 与解密密钥', 'Chrome is running; quit it to sync cookies and the decryption key') })
   }
   for (const item of options.skipCookies ? [] : COOKIE_ITEMS) {
     const okOne = copyItem(item)
@@ -145,7 +146,7 @@ export function syncChromeProfile(targetProfileDir: string, location: ChromeProf
   if (cookieOk) {
     copyItem(COOKIE_KEY_ITEM)
   } else if (!options.skipCookies) {
-    failed.push({ item: COOKIE_KEY_ITEM.rel, reason: 'Cookie 未能同步，密钥一并跳过（否则会弄坏本已可用的 cookie）' })
+    failed.push({ item: COOKIE_KEY_ITEM.rel, reason: pick('Cookie 未能同步，密钥一并跳过（否则会弄坏本已可用的 cookie）', 'Cookies were not synced, so the key was skipped too (otherwise working cookies could break)') })
   }
 
   return { found: true, source: location.root, target: targetProfileDir, copied, failed }
@@ -161,7 +162,7 @@ export async function syncLocalChromeData(targetProfileDir: string): Promise<Chr
     return {
       found: false,
       copied: [],
-      failed: [{ item: '本机 Chrome profile', reason: '没找到本机 Chrome 的用户数据（未安装或从未登录过）' }],
+      failed: [{ item: pick('本机 Chrome profile', 'Local Chrome profile'), reason: pick('没找到本机 Chrome 的用户数据（未安装或从未登录过）', 'Local Chrome user data not found (not installed or never signed in)') }],
       chromeRunning,
       cookiesSynced: false
     }

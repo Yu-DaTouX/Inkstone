@@ -1,3 +1,4 @@
+import { setUiLang } from '../../../shared/ui-lang'
 export const LANGS = ['zh-CN', 'en-US'] as const
 
 export type Lang = (typeof LANGS)[number]
@@ -25,6 +26,7 @@ export function writeStoredLang(lang: Lang): void {
 }
 
 let activeLang: Lang = readStoredLang() ?? 'zh-CN'
+setUiLang(activeLang)
 
 export function currentLang(): Lang {
   return activeLang
@@ -32,4 +34,5 @@ export function currentLang(): Lang {
 
 export function rememberLang(lang: Lang): void {
   activeLang = lang
+  setUiLang(lang)
 }

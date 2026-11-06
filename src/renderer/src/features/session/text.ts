@@ -571,7 +571,7 @@ const EN: Record<SessionTextKey, string> = {
   subagentScopeWorktree: 'Worktree',
   subagentScopeReadOnly: 'Read-only',
   subagentScopeShared: 'Shared folder',
-  subagentScopeFork: 'fork · inherits this conversation',
+  subagentScopeFork: 'fork · inherits this session',
   subagentReviewPending: 'Awaiting review',
   subagentResize: 'Resize',
   subagentSources: 'Sources',

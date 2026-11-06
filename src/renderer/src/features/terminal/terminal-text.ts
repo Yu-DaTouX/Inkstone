@@ -1,4 +1,5 @@
 import type { Lang } from '../../i18n'
+import { singularizeOne } from '../../../../shared/ui-lang'
 
 export interface TerminalText {
   activateFirst: string
@@ -101,7 +102,7 @@ const ZH: TerminalText = {
 }
 
 const EN: TerminalText = {
-  activateFirst: 'Activate this conversation to run the terminal.',
+  activateFirst: 'Activate this session to run the terminal.',
   starting: 'Starting terminal…',
   connecting: 'Connecting to terminal…',
   startFailed: 'Could not start the terminal. You can retry.',
@@ -125,7 +126,7 @@ const EN: TerminalText = {
   cursorBlock: 'Block',
   cursorBar: 'Bar',
   cursorUnderline: 'Underline',
-  lines: (n) => `${n.toLocaleString()} lines`,
+  lines: (n) => singularizeOne(`${n.toLocaleString()} lines`),
   copy: 'Copy',
   paste: 'Paste',
   selectAll: 'Select all',

@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile, copyFile, unlink } from 'node:fs/promises'
 import { extname, join, relative, resolve, sep } from 'node:path'
@@ -156,11 +157,11 @@ async function readManifestFile(file: string): Promise<ArtifactManifestItem[]> {
   }
   try {
     const raw = JSON.parse(text) as unknown
-    if (!Array.isArray(raw) || !raw.every(isManifestItem)) throw new Error('清单结构无效')
+    if (!Array.isArray(raw) || !raw.every(isManifestItem)) throw new Error(pick('清单结构无效', 'Invalid manifest structure'))
     return raw
   } catch (error) {
     await copyFile(file, `${file}.corrupt-${randomUUID()}.bak`).catch(() => undefined)
-    throw new Error(`成果清单损坏，为保护已有记录已拒绝写入：${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(pick(`成果清单损坏，为保护已有记录已拒绝写入：${error instanceof Error ? error.message : String(error)}`, `The artifact manifest is damaged; write refused to protect existing records: ${error instanceof Error ? error.message : String(error)}`))
   }
 }
 
@@ -358,7 +359,7 @@ export class ArtifactStore {
     items.forEach((item, index) => {
       const artifact = available[index]
         ? item.artifact
-        : { ...item.artifact, unavailable: true, error: item.artifact.error ?? '原始文件不可用，无法预览。' }
+        : { ...item.artifact, unavailable: true, error: item.artifact.error ?? pick('原始文件不可用，无法预览。', 'The original file is unavailable, so it cannot be previewed.') }
       const current = byMessage.get(item.messageId) ?? []
       if (!current.some((existing) => existing.id === artifact.id)) current.push(artifact)
       byMessage.set(item.messageId, current)

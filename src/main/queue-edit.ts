@@ -1,5 +1,6 @@
 import type { QueueItem, QueueState } from '../shared/ipc'
 import { isSubagentNotice } from '../shared/subagent-notice'
+import { pick } from '../shared/ui-lang'
 
 export interface QueueRewriteResult {
   ok: boolean
@@ -95,7 +96,7 @@ export async function applyQueueRewrite(
   }
   const cleared = await port.clearQueue()
   if (!cleared.success) {
-    return { ok: false, error: cleared.error || '清空队列失败', dropped: allItems(target) }
+    return { ok: false, error: cleared.error || pick('清空队列失败', 'Failed to clear the queue'), dropped: allItems(target) }
   }
   const adopted = port.adoptCleared(cleared.steering, cleared.followUp)
   if (adopted && Array.isArray(adopted.steering) && Array.isArray(adopted.followUp)) {
@@ -117,19 +118,19 @@ export async function applyQueueRewrite(
       if (!reset.success) {
         return {
           ok: false,
-          error: `队列编辑失败，且恢复失败：${reason}；${reset.error || '再次清空失败'}`,
+          error: pick(`队列编辑失败，且恢复失败：${reason}；${reset.error || '再次清空失败'}`, `Queue edit failed and restore failed: ${reason}; ${reset.error || 'clearing again failed'}`),
           dropped: allItems(target)
         }
       }
       port.adoptCleared(reset.steering, reset.followUp)
       port.publish(backup)
       await port.refill(backup.steering, backup.followUp)
-      return { ok: false, error: `队列编辑失败，原队列已恢复：${reason}` }
+      return { ok: false, error: pick(`队列编辑失败，原队列已恢复：${reason}`, `Queue edit failed; the original queue was restored: ${reason}`) }
     } catch (restoreError) {
       const restoreReason = restoreError instanceof Error ? restoreError.message : String(restoreError)
       return {
         ok: false,
-        error: `队列编辑失败，且恢复失败：${reason}；${restoreReason}`,
+        error: pick(`队列编辑失败，且恢复失败：${reason}；${restoreReason}`, `Queue edit failed and restore failed: ${reason}; ${restoreReason}`),
         dropped: allItems(target)
       }
     }

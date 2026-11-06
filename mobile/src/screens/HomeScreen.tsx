@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { LIFE_ASSISTANT_ENABLED } from '../features'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
@@ -73,30 +74,30 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     for (const session of [...sessions].sort((a, b) => activityAt(b) - activityAt(a))) {
       if (session.archivedAt) { archived.push(session); continue }
       const id = session.projectId && known.has(session.projectId) ? session.projectId : folderKey(session)
-      const group = map.get(id) ?? { id, name: session.cwdName || '未分类', sessions: [], latest: 0 }
+      const group = map.get(id) ?? { id, name: session.cwdName || pick('未分类', 'Ungrouped'), sessions: [], latest: 0 }
       group.sessions.push(session)
       group.latest = Math.max(group.latest, activityAt(session))
       map.set(id, group)
     }
     const ordered = [...map.values()].sort((a, b) => (a.id === UNGROUPED ? 1 : b.id === UNGROUPED ? -1 : b.latest - a.latest))
-    if (archived.length) ordered.push({ id: ARCHIVED, name: '已归档', sessions: archived, latest: 0 })
+    if (archived.length) ordered.push({ id: ARCHIVED, name: pick('已归档', 'Archived'), sessions: archived, latest: 0 })
     return ordered
   }, [projects, sessions])
   const lookOf = useProjectLook(useMemo(() => projects.map((item) => item.id), [projects]))
   const projectName = (session: SessionListItem) => groups.find((group) => group.sessions.includes(session))?.name ?? session.cwdName ?? ''
-  const titleOf = (id: string | null | undefined) => sessions.find((s) => s.id === id)?.title ?? '会话'
+  const titleOf = (id: string | null | undefined) => sessions.find((s) => s.id === id)?.title ?? pick('会话', 'Session')
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = []
     const needle = query.trim().toLowerCase()
     if (needle) {
       const hits = [...sessions].filter((s) => `${s.title} ${s.cwdName ?? ''}`.toLowerCase().includes(needle)).sort((a, b) => activityAt(b) - activityAt(a))
-      out.push({ kind: 'section', key: 'search', title: '搜索结果', count: hits.length })
+      out.push({ kind: 'section', key: 'search', title: pick('搜索结果', 'Results'), count: hits.length })
       for (const s of hits) out.push({ kind: 'session', key: `hit-${s.id}`, session: s, meta: s.cwdName })
       const titled = new Set(hits.map((s) => s.id))
       const inside = contentHits.filter((hit) => !titled.has(hit.sessionId)).flatMap((hit) => { const found = sessions.find((s) => s.id === hit.sessionId); return found ? [{ session: found, snippet: hit.snippet }] : [] })
       if (inside.length) {
-        out.push({ kind: 'section', key: 'content', title: '内容匹配', count: inside.length })
+        out.push({ kind: 'section', key: 'content', title: pick('内容匹配', 'Content matches'), count: inside.length })
         for (const entry of inside) out.push({ kind: 'session', key: `content-${entry.session.id}`, session: entry.session, meta: entry.snippet })
       }
       return out
@@ -107,7 +108,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     }
     const pinned = sessions.filter((s) => s.pinned && !s.archivedAt).sort((a, b) => activityAt(b) - activityAt(a))
     if (pinned.length) {
-      out.push({ kind: 'section', key: 'pinned', title: '置顶', count: pinned.length })
+      out.push({ kind: 'section', key: 'pinned', title: pick('置顶', 'Pinned'), count: pinned.length })
       for (const s of pinned) out.push({ kind: 'session', key: `pin-${s.id}`, session: s, meta: s.cwdName })
     }
     const live = sessions.filter((s) => running.has(s.id) && !asking.has(s.id) && !s.archivedAt)
@@ -116,7 +117,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       for (const s of live) out.push({ kind: 'run', key: `run-${s.id}`, session: s })
     }
     if (LIFE_ASSISTANT_ENABLED) out.push({ kind: 'assistant', key: 'assistant' })
-    out.push({ kind: 'section', key: 'projects', title: '项目' })
+    out.push({ kind: 'section', key: 'projects', title: pick('项目', 'Projects') })
     groups.forEach((group, index) => {
       const holdsCurrent = group.sessions.some((s) => s.id === selectedSessionId)
       const open = toggled[group.id] ?? (holdsCurrent || (index === 0 && group.id !== ARCHIVED))
@@ -140,11 +141,11 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       const result = await client.newSession(projectId, attempt.key)
       newAttempt.current = null
       await refresh()
-      if (result.sessionId) onOpen(result.sessionId, '新会话')
-      else Alert.alert('电脑已接收', '新会话尚未返回，请在会话列表中查看。')
+      if (result.sessionId) onOpen(result.sessionId, pick('新会话', 'New session'))
+      else Alert.alert(pick('电脑已接收', 'Desktop received'), pick('新会话尚未返回，请在会话列表中查看。', 'The new session has not returned yet. Check the session list.'))
     } catch (err) {
       if (!(err instanceof RemoteHttpError) || err.status !== 0) newAttempt.current = null
-      Alert.alert('创建失败', err instanceof Error ? err.message : '请稍后重试')
+      Alert.alert(pick('创建失败', 'Create failed'), err instanceof Error ? err.message : pick('请稍后重试', 'Try again later'))
     } finally { setCreating(false) }
   }
 
@@ -157,17 +158,17 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
 
   const renderRow = ({ item }: { item: Row }) => {
     if (item.kind === 'section') return <SectionTitle count={item.count}>{item.title}</SectionTitle>
-    if (item.kind === 'assistant') return <Pressable accessibilityRole="button" accessibilityLabel="打开生活助手" onPress={onOpenAssistant} style={({ pressed }) => [styles.group, { opacity: pressed ? 0.6 : 1 }]}>
-      <Icon name="sparkles" color={p.accent} size={icon.sm} /><Text style={[styles.groupName, { color: p.fg }]}>生活助手</Text><Icon name="chevron-right" color={p.fgMute} size={icon.sm} />
+    if (item.kind === 'assistant') return <Pressable accessibilityRole="button" accessibilityLabel={pick('打开生活助手', 'Open assistant')} onPress={onOpenAssistant} style={({ pressed }) => [styles.group, { opacity: pressed ? 0.6 : 1 }]}>
+      <Icon name="sparkles" color={p.accent} size={icon.sm} /><Text style={[styles.groupName, { color: p.fg }]}>{pick('生活助手', 'Assistant')}</Text><Icon name="chevron-right" color={p.fgMute} size={icon.sm} />
     </Pressable>
     if (item.kind === 'ask') {
       const q = questions.find((entry) => entry.id === item.questionId)
       if (!q) return null
       if (!q.sessionId) return <View style={styles.cardWrap}><QuestionCard question={q} onAnswer={(answer, key) => client.answer(q.id, answer, key).finally(() => refresh())} /></View>
       const session = sessions.find((s) => s.id === q.sessionId)
-      const headline = (approvalInfo(q) ? q.title : q.message || q.title) || '砚需要你回答'
+      const headline = (approvalInfo(q) ? q.title : q.message || q.title) || pick('砚需要你回答', 'Inkstone needs your answer')
       return <Pressable accessibilityRole="button" accessibilityLabel={`${STATUS_TEXT.wait}：${headline}，${titleOf(q.sessionId)}`} onPress={() => onOpen(q.sessionId!, titleOf(q.sessionId))} style={({ pressed }) => [styles.card, { backgroundColor: p.warnSoft, opacity: pressed ? 0.75 : 1 }]}>
-        <View style={styles.cardTop}><Text numberOfLines={1} style={[styles.cardProject, { color: p.fgMute }]}>{session ? projectName(session) : ''}</Text><Text style={{ color: p.warn, fontSize: font.xs }}>◆ {approvalInfo(q) ? '等待批准' : q.sensitive ? '需在电脑确认' : STATUS_TEXT.wait}</Text></View>
+        <View style={styles.cardTop}><Text numberOfLines={1} style={[styles.cardProject, { color: p.fgMute }]}>{session ? projectName(session) : ''}</Text><Text style={{ color: p.warn, fontSize: font.xs }}>◆ {approvalInfo(q) ? pick('等待批准', 'Awaiting approval') : q.sensitive ? pick('需在电脑确认', 'Confirm on desktop') : STATUS_TEXT.wait}</Text></View>
         <Text numberOfLines={3} style={[styles.cardTitle, { color: p.fg }]}>{headline}</Text>
         <Text numberOfLines={1} style={{ color: p.fgDim, fontSize: font.sm }}>{titleOf(q.sessionId)}</Text>
       </Pressable>
@@ -176,26 +177,26 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
       const selected = item.session.id === selectedSessionId
       return <Pressable accessibilityRole="button" accessibilityLabel={`${item.session.title}，${STATUS_TEXT.run}`} onPress={() => onOpen(item.session.id, item.session.title)} style={({ pressed }) => [styles.card, { backgroundColor: selected ? p.press : p.bg3, borderColor: p.borderSoft, borderWidth: StyleSheet.hairlineWidth, opacity: pressed ? 0.75 : 1 }]}>
         <View style={styles.cardTop}><Text numberOfLines={1} style={[styles.cardProject, { color: p.fgMute }]}>{projectName(item.session)}</Text><View style={styles.runState}><GlyphSpinner /><Text style={{ color: p.accent, fontSize: font.xs, fontFamily: mono }}>{STATUS_TEXT.run}</Text></View></View>
-        <Text numberOfLines={1} style={[styles.cardTitle, { color: p.fg }]}>{item.session.title || '未命名会话'}</Text>
+        <Text numberOfLines={1} style={[styles.cardTitle, { color: p.fg }]}>{item.session.title || pick('未命名会话', 'Untitled session')}</Text>
       </Pressable>
     }
     if (item.kind === 'group') {
       const { color, text } = lookOf(item.group.id, item.group.name)
-      return <Pressable accessibilityRole="button" accessibilityState={{ expanded: item.open }} accessibilityLabel={`${item.group.name}，${item.group.sessions.length} 个会话${item.group.cwd ? `，${item.group.cwd}` : ''}`} onPress={() => setToggled((current) => ({ ...current, [item.group.id]: !item.open }))} style={({ pressed }) => [styles.group, { opacity: pressed ? 0.6 : 1 }]}>
+      return <Pressable accessibilityRole="button" accessibilityState={{ expanded: item.open }} accessibilityLabel={pick(`${item.group.name}，${item.group.sessions.length} 个会话${item.group.cwd ? `，${item.group.cwd}` : ''}`, `${item.group.name}, ${item.group.sessions.length} sessions${item.group.cwd ? `, ${item.group.cwd}` : ''}`)} onPress={() => setToggled((current) => ({ ...current, [item.group.id]: !item.open }))} style={({ pressed }) => [styles.group, { opacity: pressed ? 0.6 : 1 }]}>
         <View style={[styles.badge, { backgroundColor: `${color}2E` }]}><Text style={[styles.badgeText, { color }]}>{text}</Text></View>
         <Text numberOfLines={1} style={[styles.groupName, { color: p.fg }]}>{item.group.name}</Text>
         <View style={{ transform: [{ rotate: item.open ? '90deg' : '0deg' }] }}><Icon name="chevron-right" color={p.fgMute} size={icon.sm} /></View>
       </Pressable>
     }
-    if (item.kind === 'more') return <Pressable accessibilityRole="button" onPress={() => setShowAll((current) => ({ ...current, [item.groupId]: true }))} style={[styles.session, styles.indent]}><Text style={{ color: p.fgMute, fontSize: font.sm }}>更多（{item.hidden}）</Text></Pressable>
+    if (item.kind === 'more') return <Pressable accessibilityRole="button" onPress={() => setShowAll((current) => ({ ...current, [item.groupId]: true }))} style={[styles.session, styles.indent]}><Text style={{ color: p.fgMute, fontSize: font.sm }}>{pick(`更多（${item.hidden}）`, `More (${item.hidden})`)}</Text></Pressable>
     const session = item.session
     const selected = session.id === selectedSessionId
     const status = sessionStatus(session)
     const isUnread = unread.has(session.id)
-    return <Pressable accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={`${session.title}${status ? `，${status.text}` : isUnread ? '，未读回复' : ''}`} onPress={() => onOpen(session.id, session.title)} style={({ pressed }) => [styles.session, item.meta === undefined && styles.indent, { backgroundColor: selected ? p.press : pressed ? p.bg3 : 'transparent' }]}>
+    return <Pressable accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={`${session.title}${status ? `${pick('，', ', ')}${status.text}` : isUnread ? pick('，未读回复', ', unread reply') : ''}`} onPress={() => onOpen(session.id, session.title)} style={({ pressed }) => [styles.session, item.meta === undefined && styles.indent, { backgroundColor: selected ? p.press : pressed ? p.bg3 : 'transparent' }]}>
       {isUnread && !status ? <View style={[styles.unread, { backgroundColor: p.accent }]} /> : null}
       <View style={styles.rowMain}>
-        <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.base, fontWeight: selected ? weight.strong : weight.regular }}>{session.title || '未命名会话'}</Text>
+        <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.base, fontWeight: selected ? weight.strong : weight.regular }}>{session.title || pick('未命名会话', 'Untitled session')}</Text>
         {item.meta ? <Meta numberOfLines={1}>{item.meta}</Meta> : null}
       </View>
       {status ? <Text style={{ color: status.color, fontSize: font.xs }}>{status.text}</Text> : <Text style={[styles.time, { color: p.fgMute }]}>{timeAgo(activityAt(session))}</Text>}
@@ -207,29 +208,29 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
     <View style={styles.head}>
       <BrandMark size={20} />
       <Text style={[styles.brand, { color: p.fg }]}>Inkstone</Text>
-      {liveCount ? <View accessibilityLabel={`${liveCount} 个会话运行中`} style={styles.runState}><GlyphSpinner /><Text style={{ color: p.accent, fontSize: font.xs, fontFamily: mono }}>{liveCount}</Text></View> : null}
-      {questions.length ? <Text accessibilityLabel={`${questions.length} 个待回答`} style={{ color: p.warn, fontSize: font.xs, fontFamily: mono }}>◆ {questions.length}</Text> : null}
+      {liveCount ? <View accessibilityLabel={pick(`${liveCount} 个会话运行中`, `${liveCount} sessions running`)} style={styles.runState}><GlyphSpinner /><Text style={{ color: p.accent, fontSize: font.xs, fontFamily: mono }}>{liveCount}</Text></View> : null}
+      {questions.length ? <Text accessibilityLabel={pick(`${questions.length} 个待回答`, `${questions.length} awaiting answer`)} style={{ color: p.warn, fontSize: font.xs, fontFamily: mono }}>◆ {questions.length}</Text> : null}
     </View>
     <View style={styles.searchRow}>
       <Icon name="search" size={icon.sm} color={p.fgMute} />
-      <TextInput disableFullscreenUI value={query} onChangeText={setQuery} placeholder="搜索" placeholderTextColor={p.fgMute} accessibilityLabel="搜索会话" style={[styles.search, { color: p.fg }]} />
-      <IconButton name="pencil" label="新建会话" busy={creating} disabled={stream !== 'open'} onPress={() => setPicker(true)} />
+      <TextInput disableFullscreenUI value={query} onChangeText={setQuery} placeholder={pick('搜索', 'Search')} placeholderTextColor={p.fgMute} accessibilityLabel={pick('搜索会话', 'Search sessions')} style={[styles.search, { color: p.fg }]} />
+      <IconButton name="pencil" label={pick('新建会话', 'New session')} busy={creating} disabled={stream !== 'open'} onPress={() => setPicker(true)} />
     </View>
-    {(refreshing || creating || stream === 'connecting' || stream === 'reconnecting') ? <View style={styles.activity}><ActivityLine state="run" text={creating ? '正在新建会话' : refreshing ? '正在刷新会话' : STATUS_TEXT[stream]} /></View> : null}
-    {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{/连接超时/.test(error) ? '连接超时，请检查电脑和 Tailscale。' : error}</Text> : null}
+    {(refreshing || creating || stream === 'connecting' || stream === 'reconnecting') ? <View style={styles.activity}><ActivityLine state="run" text={creating ? pick('正在新建会话', 'Creating session') : refreshing ? pick('正在刷新会话', 'Refreshing sessions') : STATUS_TEXT[stream]} /></View> : null}
+    {error ? <Text style={[styles.error, { color: p.err, backgroundColor: p.errSoft }]}>{/连接超时|Timed out/.test(error) ? pick('连接超时，请检查电脑和 Tailscale。', 'Timed out. Check the desktop and Tailscale.') : error}</Text> : null}
     <FlatList data={rows} keyExtractor={(row) => row.key} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list} renderItem={renderRow}
-      ListFooterComponent={rows.length && !query && !sessions.length ? <Meta style={styles.empty}>{stream === 'open' ? '还没有会话' : '正在等待电脑的会话…'}</Meta> : null} />
-    {!alertsEnabled ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm }}>开启待回答提醒</Text></Pressable> : null}
+      ListFooterComponent={rows.length && !query && !sessions.length ? <Meta style={styles.empty}>{stream === 'open' ? pick('还没有会话', 'No sessions yet') : pick('正在等待电脑的会话…', 'Waiting for desktop sessions…')}</Meta> : null} />
+    {!alertsEnabled ? <Pressable accessibilityRole="button" onPress={onEnableAlerts} style={styles.alertPrompt}><Icon name="bell" color={p.accent} size={icon.sm} /><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('开启待回答提醒', 'Enable question alerts')}</Text></Pressable> : null}
     <View style={[styles.foot, { borderTopColor: p.borderSoft, paddingBottom: Math.max(0, bottomInset - space[2]) }]}>
       <StatusDot color={stream === 'open' ? p.online : p.warn} label={STATUS_TEXT[stream]} />
       <Text accessibilityLabel={`${client.connection.baseUrl}，${STATUS_TEXT[stream]}`} numberOfLines={1} style={[styles.computer, { color: p.fgDim }]}>{info?.computer?.name || client.connection.computerName || client.connection.baseUrl.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}</Text>
-      <IconButton name="refresh" label="刷新会话" busy={refreshing} onPress={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} />
-      <IconButton name="settings" label="打开手机设置" onPress={onSettings} />
+      <IconButton name="refresh" label={pick('刷新会话', 'Refresh sessions')} busy={refreshing} onPress={() => { setRefreshing(true); void refresh().finally(() => setRefreshing(false)) }} />
+      <IconButton name="settings" label={pick('打开手机设置', 'Open phone settings')} onPress={onSettings} />
     </View>
     <Modal visible={picker} transparent animationType="fade" onRequestClose={() => setPicker(false)}>
-      <Pressable accessibilityLabel="关闭" onPress={() => setPicker(false)} style={styles.scrim}>
+      <Pressable accessibilityLabel={pick('关闭', 'Close')} onPress={() => setPicker(false)} style={styles.scrim}>
         <Pressable style={[styles.sheet, { backgroundColor: p.surface3, borderColor: p.borderSoft }]}>
-          <Text style={[styles.sheetTitle, { color: p.fg }]}>在哪个项目新建会话？</Text>
+          <Text style={[styles.sheetTitle, { color: p.fg }]}>{pick('在哪个项目新建会话？', 'New session in which project?')}</Text>
           <FlatList
             data={projects}
             keyExtractor={(item) => item.id}
@@ -243,7 +244,7 @@ export function HomeScreen({ onOpen, onOpenAssistant, onSettings, alertsEnabled,
             }}
             ListFooterComponent={<Pressable accessibilityRole="button" onPress={() => void create()} style={({ pressed }) => [styles.group, { opacity: pressed ? 0.6 : 1 }]}>
               <Icon name="folder" color={p.fgDim} size={icon.md} />
-              <View style={styles.rowMain}><Text style={{ color: p.fg, fontSize: font.base }}>电脑当前目录</Text><Meta>不选项目，用电脑上正在用的目录</Meta></View>
+              <View style={styles.rowMain}><Text style={{ color: p.fg, fontSize: font.base }}>{pick('电脑当前目录', 'Desktop current folder')}</Text><Meta>{pick('不选项目，用电脑上正在用的目录', 'No project; use the folder the desktop is using')}</Meta></View>
             </Pressable>}
           />
         </Pressable>

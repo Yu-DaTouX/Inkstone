@@ -1,6 +1,7 @@
 import type { Attachment } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
 import type { CanvasElementInfo } from './canvas-tools/types'
+import { pick } from '../../../../shared/ui-lang'
 
 export type { CanvasElementInfo }
 
@@ -66,12 +67,12 @@ export async function captureElementRegion(
     width: inner ? inner.w : box.width,
     height: inner ? inner.h : box.height
   }
-  if (!(rect.width > 0) || !(rect.height > 0)) throw new Error('截图区域为空')
+  if (!(rect.width > 0) || !(rect.height > 0)) throw new Error(pick('截图区域为空', 'Capture area is empty'))
   const result = await window.yan.canvas.capture(
     rect,
     scope ? { x: scope.x, y: scope.y, width: scope.w, height: scope.h } : undefined
   )
-  if (!result.ok) throw new Error(result.error || '截图失败')
+  if (!result.ok) throw new Error(result.error || pick('截图失败', 'Capture failed'))
   return imageAttachment(result.data, name ?? attachmentName('canvas', 'png'))
 }
 
@@ -79,7 +80,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('图片解码失败'))
+    img.onerror = () => reject(new Error(pick('图片解码失败', 'Could not decode image')))
     img.src = src
   })
 }
@@ -97,12 +98,12 @@ export async function composeAnnotatedImage(base: Attachment, overlaySvg: string
   const source = await loadImage(`data:${base.mimeType || IMAGE_MIME};base64,${base.data}`)
   const width = source.naturalWidth
   const height = source.naturalHeight
-  if (!width || !height) throw new Error('底图尺寸无效')
+  if (!width || !height) throw new Error(pick('底图尺寸无效', 'Invalid base image size'))
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
   const context = canvas.getContext('2d')
-  if (!context) throw new Error('无法创建合成画布')
+  if (!context) throw new Error(pick('无法创建合成画布', 'Could not create canvas'))
   context.drawImage(source, 0, 0, width, height)
   if (overlaySvg.trim()) {
     const overlay = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(sizedSvg(overlaySvg, width, height))}`)
@@ -110,7 +111,7 @@ export async function composeAnnotatedImage(base: Attachment, overlaySvg: string
   }
   const dataUrl = canvas.toDataURL(IMAGE_MIME)
   const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
-  if (!base64) throw new Error('合成图片为空')
+  if (!base64) throw new Error(pick('合成图片为空', 'Composite image is empty'))
   return imageAttachment(base64, name ?? attachmentName('canvas-annotated', 'png'))
 }
 

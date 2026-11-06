@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import type { AgentController } from './agent'
 import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
 import type { McpNativeBootWitness } from './mcp/app-native-witness'
@@ -7,8 +8,8 @@ import { canReclaimIdle, IDLE_RECLAIM_SCAN_MS } from './runner-reclaim'
 import {
   admissionClaimedBy,
   guardSameCwdExecute,
-  SAME_CWD_ADMISSION_ERROR,
-  SAME_CWD_BUSY_ERROR,
+  sameCwdAdmissionError,
+  sameCwdBusyError,
   type ExecuteAdmissionClaim,
   type ExecuteAdmissionPort,
   type ExecuteGuardResult
@@ -153,15 +154,15 @@ export class RunnerRegistry {
 
   admitExecute(id: string): { ok: true; token: number } | { ok: false; error: string } {
     const runner = this.runners.get(id)
-    if (!runner) return { ok: false, error: '运行实例不存在' }
+    if (!runner) return { ok: false, error: pick('运行实例不存在', 'Runtime not found') }
     this.pruneAdmissions()
     const key = this.admissionKey(runner)
     const existing = this.admissions.get(key)
     if (existing) {
       if (admissionClaimedBy(existing, id, runner.generation)) return { ok: true, token: existing.token }
-      return { ok: false, error: SAME_CWD_ADMISSION_ERROR }
+      return { ok: false, error: sameCwdAdmissionError() }
     }
-    if (this.blocksConcurrentRun(runner.cwd, id)) return { ok: false, error: SAME_CWD_BUSY_ERROR }
+    if (this.blocksConcurrentRun(runner.cwd, id)) return { ok: false, error: sameCwdBusyError() }
     const token = ++this.admissionCounter
     this.admissions.set(key, { token, runId: id, generation: runner.generation, cwd: runner.cwd })
     return { ok: true, token }
@@ -438,17 +439,21 @@ export class RunnerRegistry {
           return {
             ok: false,
             error:
-              '隔离目标目录里还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。' +
-              '请等它跑完或停止它。'
+              pick(
+                '隔离目标目录里还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。请等它跑完或停止它。',
+                'A session is still running in the isolated target folder; two turns writing files at once would overwrite each other. Wait for it to finish or stop it.'
+              )
           }
         }
       } else {
-        const reason = escalated && 'reason' in escalated && escalated.reason ? `（${escalated.reason}）` : ''
+        const reason = escalated && 'reason' in escalated && escalated.reason ? pick(`（${escalated.reason}）`, ` (${escalated.reason})`) : ''
         return {
           ok: false,
           error:
-            `同一工作目录还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。${reason}` +
-            '请等它跑完或停止它。'
+            pick(
+              `同一工作目录还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。${reason}请等它跑完或停止它。`,
+              `A session is still running in this working folder; two turns writing files at once would overwrite each other${reason}. Wait for it to finish or stop it.`
+            )
         }
       }
     }
@@ -479,7 +484,7 @@ export class RunnerRegistry {
           replacement.setRunnerGeneration(generation)
           const started = await replacement.start()
           if (!started.ok) {
-            failure = started.error ?? '替代运行实例启动失败'
+            failure = started.error ?? pick('替代运行实例启动失败', 'Replacement runtime failed to start')
           } else {
             let prepared = target.sessionFile
               ? await replacement.switchSession(target.sessionFile)
@@ -488,14 +493,14 @@ export class RunnerRegistry {
               prepared = await this.opts.prepareNewSession(replacement)
             }
             if (!prepared.ok) {
-              failure = prepared.error ?? '替代运行实例准备会话失败'
+              failure = prepared.error ?? pick('替代运行实例准备会话失败', 'Replacement runtime failed to prepare the session')
             }
           }
         } catch (error) {
           failure = error instanceof Error ? error.message : String(error)
         }
         if (failure === undefined && (this.disposed || this.runners.get(idle.id) !== idle || idle.agent !== previous)) {
-          failure = '运行实例在替换过程中被停止'
+          failure = pick('运行实例在替换过程中被停止', 'Runtime was stopped during replacement')
         }
         if (failure !== undefined) {
           try {
@@ -564,12 +569,14 @@ export class RunnerRegistry {
       return {
         ok: false,
         error:
-          `同时运行的会话已达上限（${this.limit} 个）。` +
-          '先等其中一个跑完，或停止它，再试 —— 不会为了腾位置停掉正在跑的会话。'
+          pick(
+            `同时运行的会话已达上限（${this.limit} 个）。先等其中一个跑完，或停止它，再试 —— 不会为了腾位置停掉正在跑的会话。`,
+            `Concurrent session limit reached (${this.limit}). Wait for one to finish or stop it; running sessions are never stopped to make room.`
+          )
       }
     }
 
-    if (this.disposed) return { ok: false, error: '运行实例正在重启，请稍后再打开这个会话' }
+    if (this.disposed) return { ok: false, error: pick('运行实例正在重启，请稍后再打开这个会话', 'Runtime is restarting; try opening this session again shortly') }
     const id = `r${++this.seq}`
     const generation = nextGeneration()
     const agent = this.spawnAgent(id, target.cwd, generation)
@@ -591,21 +598,21 @@ export class RunnerRegistry {
     try {
       const started = await agent.start()
       if (!started.ok) {
-        failure = started.error ?? '实例启动失败'
+        failure = started.error ?? pick('实例启动失败', 'Runtime failed to start')
       } else if (target.sessionFile) {
         const sw = await agent.switchSession(target.sessionFile)
-        if (!sw.ok) failure = sw.error ?? '切换会话失败'
+        if (!sw.ok) failure = sw.error ?? pick('切换会话失败', 'Failed to switch session')
       } else {
         if (this.opts.prepareNewSession) {
           const prepared = await this.opts.prepareNewSession(agent)
-          if (!prepared.ok) failure = prepared.error ?? '新会话模型初始化失败'
+          if (!prepared.ok) failure = prepared.error ?? pick('新会话模型初始化失败', 'Failed to initialize the model for the new session')
         }
       }
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error)
     }
     if (failure === undefined && (this.disposed || this.runners.get(id) !== runner)) {
-      failure = '运行实例在启动过程中被停止'
+      failure = pick('运行实例在启动过程中被停止', 'Runtime was stopped during startup')
       if (this.runners.get(id) !== runner) {
         await agent.stop().catch(() => undefined)
         return { ok: false, error: failure }
@@ -652,13 +659,13 @@ export class RunnerRegistry {
 
   private async restartOneNow(id: string): Promise<SelectResult> {
     const runner = this.runners.get(id)
-    if (!runner) return { ok: false, error: `运行实例不存在：${id}` }
-    if (this.busy(runner)) return { ok: false, error: '目标运行实例仍忙，拒绝重载' }
+    if (!runner) return { ok: false, error: pick(`运行实例不存在：${id}`, `Runtime not found: ${id}`) }
+    if (this.busy(runner)) return { ok: false, error: pick('目标运行实例仍忙，拒绝重载', 'Target runtime is busy; reload refused') }
     if (this.hasBusyCwd(runner.cwd, id)) {
-      return { ok: false, error: '同一工作目录还有其它运行实例在工作，拒绝重载' }
+      return { ok: false, error: pick('同一工作目录还有其它运行实例在工作，拒绝重载', 'Another runtime is working in the same folder; reload refused') }
     }
     const sessionFile = runner.agent.getState()?.sessionFile
-    if (!sessionFile) return { ok: false, error: '目标会话尚无已保存的会话文件，无法安全重载' }
+    if (!sessionFile) return { ok: false, error: pick('目标会话尚无已保存的会话文件，无法安全重载', 'Target session has no saved file yet; cannot reload safely') }
 
     const previous = runner.agent
     const previousGeneration = runner.generation
@@ -672,14 +679,14 @@ export class RunnerRegistry {
     let failure: string | undefined
     try {
       const started = await replacement.start()
-      if (!started.ok) failure = started.error ?? '替代运行实例启动失败'
+      if (!started.ok) failure = started.error ?? pick('替代运行实例启动失败', 'Replacement runtime failed to start')
       if (!failure) {
         const switched = await replacement.switchSession(sessionFile)
-        if (!switched.ok) failure = switched.error ?? '替代运行实例载入原会话失败'
+        if (!switched.ok) failure = switched.error ?? pick('替代运行实例载入原会话失败', 'Replacement runtime failed to load the original session')
       }
       if (!failure) {
         const restored = await replacement.restoreQueueSnapshot(queue)
-        if (!restored.ok) failure = restored.error ?? '替代运行实例恢复排队消息失败'
+        if (!restored.ok) failure = restored.error ?? pick('替代运行实例恢复排队消息失败', 'Replacement runtime failed to restore queued messages')
       }
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error)
@@ -690,7 +697,7 @@ export class RunnerRegistry {
       await replacement.stop().catch(() => undefined)
       await previous.stop().catch(() => undefined)
       this.opts.onChanged?.()
-      return { ok: false, error: failure ?? '运行实例在重载过程中被停止' }
+      return { ok: false, error: failure ?? pick('运行实例在重载过程中被停止', 'Runtime was stopped during reload') }
     }
     if (failure) {
       runner.agent = previous

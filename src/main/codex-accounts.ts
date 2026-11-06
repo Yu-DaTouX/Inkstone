@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { constants as fsConstants } from 'node:fs'
 import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -76,11 +77,11 @@ async function readStore(): Promise<Store> {
     raw = JSON.parse(text) as Partial<Store>
   } catch (error) {
     await backupCorruptStore()
-    throw new Error(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`)
+    throw new Error(pick(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`, `The account credentials file is invalid; write refused to protect existing accounts: ${STORE_FILE}`))
   }
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.accounts)) {
     await backupCorruptStore()
-    throw new Error(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`)
+    throw new Error(pick(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`, `The account credentials file is invalid; write refused to protect existing accounts: ${STORE_FILE}`))
   }
   const store: Store = { version: 1, accounts: [] }
   for (const account of raw.accounts) {
@@ -146,7 +147,7 @@ export function switchCodexAccount(key: string): Promise<{ ok: boolean; error?: 
   return serial(async () => {
     try {
       const store = await readStore()
-      if (!store.accounts.some((a) => a.key === key)) return { ok: false, error: '没有找到这个账号，可能已被移除' }
+      if (!store.accounts.some((a) => a.key === key)) return { ok: false, error: pick('没有找到这个账号，可能已被移除', 'Account not found; it may have been removed') }
       await updateAuthFile(async (auth) => {
         const current = auth[PROVIDER]
         if (isCodexCredential(current)) {
@@ -172,7 +173,7 @@ export function removeCodexAccount(key: string): Promise<{ ok: boolean; wasActiv
         const current = auth[PROVIDER]
         if (isCodexCredential(current)) upsert(store, current)
         const target = store.accounts.find((a) => a.key === key)
-        if (!target) throw new Error('没有找到这个账号，可能已被移除')
+        if (!target) throw new Error(pick('没有找到这个账号，可能已被移除', 'Account not found; it may have been removed'))
         wasActive = isCodexCredential(current) && (identityOf(current).key === key || sameAccount(target, current))
         store.accounts = store.accounts.filter((a) => a.key !== key)
         await writeStore(store)

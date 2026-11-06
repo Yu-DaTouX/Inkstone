@@ -6,6 +6,7 @@ import type { MainPush } from '../shared/ipc'
 import type { ApprovalRequest } from '../shared/approval'
 import type { RunObserver, RunObserverContext } from './agent'
 import { YAN_DIR } from './paths'
+import { pick } from '../shared/ui-lang'
 
 export interface RunsSnapshot {
   revision: number
@@ -130,7 +131,7 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
             id: `runs-code-${sessionId}-${clock()}`,
             method: 'notify',
             notifyType: 'warning',
-            message: '会话编号连续分配失败，运行状态不会显示；重新打开该会话后会再试'
+            message: pick('会话编号连续分配失败，运行状态不会显示；重新打开该会话后会再试', 'Session numbering failed repeatedly; run status will not show. Reopen the session to retry')
           }
         })
       }

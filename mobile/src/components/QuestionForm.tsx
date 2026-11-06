@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import type { QuestionField } from '../../../src/shared/question-form'
@@ -15,7 +16,7 @@ function hintOf(field: QuestionField): string | undefined {
   if (field.kind === 'date') return 'YYYY-MM-DD'
   if (field.kind === 'number' || field.kind === 'range') {
     if (field.min !== undefined && field.max !== undefined) return `${field.min} – ${field.max}`
-    return '数字'
+    return pick('数字', 'Number')
   }
   return undefined
 }
@@ -45,7 +46,7 @@ export function QuestionForm({ fields, busy, onSubmit, onSkip }: { fields: Quest
           <View key={field.name} style={styles.field}>
             <Text style={[styles.label, { color: p.fg }]}>
               {field.label}
-              {field.optional ? <Text style={{ color: p.fgMute }}>（可选）</Text> : null}
+              {field.optional ? <Text style={{ color: p.fgMute }}>{pick('（可选）', ' (optional)')}</Text> : null}
             </Text>
             {field.kind === 'choice' || field.kind === 'multi' ? (
               <View style={styles.options}>
@@ -81,8 +82,8 @@ export function QuestionForm({ fields, busy, onSubmit, onSkip }: { fields: Quest
         )
       })}
       <View style={styles.row}>
-        <Button label="跳过" variant="ghost" busy={busy} onPress={onSkip} />
-        <Button label="发送回答" variant="primary" busy={busy} disabled={!ready} style={styles.flex} onPress={submit} />
+        <Button label={pick('跳过', 'Skip')} variant="ghost" busy={busy} onPress={onSkip} />
+        <Button label={pick('发送回答', 'Send answer')} variant="primary" busy={busy} disabled={!ready} style={styles.flex} onPress={submit} />
       </View>
     </View>
   )

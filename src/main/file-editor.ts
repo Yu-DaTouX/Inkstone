@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { createHash, randomBytes } from 'node:crypto'
 import { chmod, lstat, open, readFile, realpath, rename, rm } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
@@ -207,10 +208,10 @@ export async function writeEditableFile(
       try {
         parentAfter = await realpath(dir)
       } catch {
-        return { status: 'failed' as const, error: '保存时目标目录已不可用' }
+        return { status: 'failed' as const, error: pick('保存时目标目录已不可用', 'The target folder became unavailable while saving') }
       }
       if (pathKey(parentAfter) !== pathKey(parentReal)) {
-        return { status: 'failed' as const, error: '目标目录在校验后发生变化' }
+        return { status: 'failed' as const, error: pick('目标目录在校验后发生变化', 'The target folder changed after verification') }
       }
       if (!isStrictlyWithin(rootReal, join(parentAfter, name))) return { status: 'denied' as const }
 

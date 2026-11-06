@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { shell } from 'electron'
 import type { IpcRegistrar } from './registrar'
 import type { AuthorizeReadCwd } from '../git-inspect'
@@ -68,7 +69,7 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
     try {
       return await listGithubRepos(request ?? {})
     } catch {
-      const failure = prFailure('other', '获取仓库列表失败')
+      const failure = prFailure('other', pick('获取仓库列表失败', 'Failed to list repositories'))
       return { ok: false, items: [], owners: [], error: failure.message, failure }
     }
   })
@@ -77,7 +78,7 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
     try {
       return await searchGithubRepos(String(query ?? ''))
     } catch {
-      const failure = prFailure('other', '搜索 GitHub 仓库失败')
+      const failure = prFailure('other', pick('搜索 GitHub 仓库失败', 'Failed to search GitHub repositories'))
       return { ok: false, items: [], owners: [], error: failure.message, failure }
     }
   })
@@ -109,9 +110,9 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
   handle('yan:github:publishPeerBranch', async (cwd: string, request: GithubPeerPublishRequest): Promise<GhPrActionResult> => {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
-      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', pick('此项目目录未获授权', 'This project folder is not authorized')) }
       const root = await repoRootOf(auth.cwd)
-      if (!root) return { ok: false, failure: prFailure('invalid-input', '此项目不是 git 仓库') }
+      if (!root) return { ok: false, failure: prFailure('invalid-input', pick('此项目不是 git 仓库', 'This project is not a git repository')) }
       return await publishPeerBranch(request, {
         login: async () => (await readGithubAccount()).login ?? null,
         resolve: (ref) => resolveCommit(root, ref),
@@ -122,17 +123,17 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
         createPr: (input) => githubPrBackend.action(auth.cwd, { kind: 'create', ...input })
       })
     } catch {
-      return { ok: false, failure: prFailure('other', '发布到 GitHub 未得到确认，请刷新确认', false) }
+      return { ok: false, failure: prFailure('other', pick('发布到 GitHub 未得到确认，请刷新确认', 'Publishing to GitHub was not confirmed. Refresh to check'), false) }
     }
   })
 
   handle('yan:github:branches', async (cwd: string): Promise<GithubBranchListResult> => {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
-      if (!auth.ok) return { ok: false, branches: [], pulls: [], error: auth.error, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      if (!auth.ok) return { ok: false, branches: [], pulls: [], error: auth.error, failure: prFailure('cwd-rejected', pick('此项目目录未获授权', 'This project folder is not authorized')) }
       return await ghBranchesAndPulls(auth.cwd)
     } catch {
-      return { ok: false, branches: [], pulls: [], error: '获取 GitHub 分支失败' }
+      return { ok: false, branches: [], pulls: [], error: pick('获取 GitHub 分支失败', 'Failed to list GitHub branches') }
     }
   })
 
@@ -150,10 +151,10 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
     const empty = { currentBranch: null, latestCommit: null, defaultBranch: null }
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
-      if (!auth.ok) return { ok: false, ...empty, error: auth.error, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      if (!auth.ok) return { ok: false, ...empty, error: auth.error, failure: prFailure('cwd-rejected', pick('此项目目录未获授权', 'This project folder is not authorized')) }
       return await readPrCreateDefaults(auth.cwd)
     } catch {
-      const failure = prFailure('other', '读取新建 PR 默认值失败')
+      const failure = prFailure('other', pick('读取新建 PR 默认值失败', 'Failed to read new-PR defaults'))
       return { ok: false, ...empty, error: failure.message, failure }
     }
   })
@@ -162,10 +163,10 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
     const wanted = (state ?? 'open') as GhPrListState | GhPrListOptions
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
-      if (!auth.ok) return { ok: false, items: [], error: auth.error, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      if (!auth.ok) return { ok: false, items: [], error: auth.error, failure: prFailure('cwd-rejected', pick('此项目目录未获授权', 'This project folder is not authorized')) }
       return await ghPrList(auth.cwd, wanted)
     } catch {
-      const failure = prFailure('other', '获取 PR 列表失败')
+      const failure = prFailure('other', pick('获取 PR 列表失败', 'Failed to list PRs'))
       return { ok: false, items: [], error: failure.message, failure }
     }
   })
@@ -173,20 +174,20 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
   handle('yan:github:action', async (cwd: string, request: GhPrActionRequest): Promise<GhPrActionResult> => {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
-      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', pick('此项目目录未获授权', 'This project folder is not authorized')) }
       return await githubPrBackend.action(auth.cwd, request)
     } catch {
-      return { ok: false, failure: prFailure('other', 'PR 操作未得到确认，请刷新确认', false) }
+      return { ok: false, failure: prFailure('other', pick('PR 操作未得到确认，请刷新确认', 'The PR action was not confirmed. Refresh to check'), false) }
     }
   })
 
   handle('yan:github:candidates', async (cwd: string, request: GhPrCandidatesRequest): Promise<GhPrCandidatesResult> => {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
-      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', '此项目目录未获授权') }
+      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', pick('此项目目录未获授权', 'This project folder is not authorized')) }
       return await githubPrBackend.candidates(auth.cwd, request)
     } catch {
-      return { ok: false, failure: prFailure('other', '获取 PR 候选列表失败') }
+      return { ok: false, failure: prFailure('other', pick('获取 PR 候选列表失败', 'Failed to list PR candidates')) }
     }
   })
 
@@ -212,7 +213,7 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
 
   handle('yan:github:openUrl', async (url: unknown): Promise<{ ok: boolean; error?: string }> => {
     const safe = externalUrl(String(url ?? ''))
-    if (!safe) return { ok: false, error: '只支持用系统浏览器打开 https 链接' }
+    if (!safe) return { ok: false, error: pick('只支持用系统浏览器打开 https 链接', 'Only https links can be opened in the system browser') }
     try {
       await shell.openExternal(safe)
       return { ok: true }

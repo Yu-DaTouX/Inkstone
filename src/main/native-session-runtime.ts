@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { randomUUID } from 'node:crypto'
 
 export const NATIVE_COMMAND = '__inkstone_native'
@@ -194,7 +195,7 @@ export class NativeSessionRuntime {
       if (receipt.ok) pending.resolve(receipt)
       else {
         const code = receipt.error?.code === 'busy' ? 'busy' : 'extension_error'
-        pending.reject(new NativeBridgeError(receipt.error?.message ?? `原生操作失败：${pending.op}`, code))
+        pending.reject(new NativeBridgeError(receipt.error?.message ?? pick(`原生操作失败：${pending.op}`, `Native operation failed: ${pending.op}`), code))
       }
     } else {
       this.onSignal?.(receipt)
@@ -224,7 +225,7 @@ export class NativeSessionRuntime {
         this.readyWaiters.delete(waiter)
         reject(
           new NativeBridgeError(
-            '原生会话桥未就绪（未收到扩展报到），请确认已把 native-session-bridge.js 作为 --extension 注入',
+            pick('原生会话桥未就绪（未收到扩展报到），请确认已把 native-session-bridge.js 作为 --extension 注入', 'Native session bridge not ready (extension did not check in). Make sure native-session-bridge.js is injected as --extension'),
             'bridge_unavailable'
           )
         )
@@ -233,7 +234,7 @@ export class NativeSessionRuntime {
     })
   }
 
-  dispose(reason = 'pi 进程已退出'): void {
+  dispose(reason = pick('pi 进程已退出', 'pi process exited')): void {
     for (const [, pending] of this.pending) {
       clearTimeout(pending.timer)
       pending.reject(new NativeBridgeError(reason, 'rpc_failed'))
@@ -249,7 +250,7 @@ export class NativeSessionRuntime {
   private async invoke(op: string, args: Record<string, unknown>, timeoutMs: number): Promise<NativeReceipt> {
     if (!this.ready) {
       throw new NativeBridgeError(
-        '原生会话桥未就绪：尚未收到扩展报到，命令不会发出（避免被当成提问交给模型）',
+        pick('原生会话桥未就绪：尚未收到扩展报到，命令不会发出（避免被当成提问交给模型）', 'Native session bridge not ready: extension has not checked in. The command was not sent (to avoid it being treated as a prompt)'),
         'bridge_unavailable'
       )
     }
@@ -259,7 +260,7 @@ export class NativeSessionRuntime {
     const receiptPromise = new Promise<NativeReceipt>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new NativeBridgeError(`原生操作 ${op} 超时（${timeoutMs}ms）`, 'timeout'))
+        reject(new NativeBridgeError(pick(`原生操作 ${op} 超时（${timeoutMs}ms）`, `Native operation ${op} timed out (${timeoutMs}ms)`), 'timeout'))
       }, timeoutMs)
       this.pending.set(id, { op, timer, resolve, reject })
     })
@@ -281,19 +282,19 @@ export class NativeSessionRuntime {
       response = await this.transport.command('prompt', { message }, { id: `inkstone-native-rpc-${randomUUID()}`, timeoutMs })
     } catch (error) {
       return abandon(
-        new NativeBridgeError(`${op} 的 RPC 发送失败：${error instanceof Error ? error.message : String(error)}`, 'rpc_failed')
+        new NativeBridgeError(pick(`${op} 的 RPC 发送失败：${error instanceof Error ? error.message : String(error)}`, `RPC send failed for ${op}: ${error instanceof Error ? error.message : String(error)}`), 'rpc_failed')
       )
     }
 
     if (response.success !== true) {
       return abandon(
-        new NativeBridgeError(`${op} 被 pi 拒绝：${JSON.stringify(response.error ?? response)}`, 'rpc_failed')
+        new NativeBridgeError(pick(`${op} 被 pi 拒绝：${JSON.stringify(response.error ?? response)}`, `${op} was rejected by pi: ${JSON.stringify(response.error ?? response)}`), 'rpc_failed')
       )
     }
     if (responseData(response).disposition !== 'handled') {
       return abandon(
         new NativeBridgeError(
-          `${op} 未被扩展命令识别（disposition=${String(responseData(response).disposition ?? 'unknown')}），命令可能已进入模型，已中止`,
+          pick(`${op} 未被扩展命令识别（disposition=${String(responseData(response).disposition ?? 'unknown')}），命令可能已进入模型，已中止`, `${op} was not recognized by the extension command (disposition=${String(responseData(response).disposition ?? 'unknown')}). The command may have reached the model. Aborted`),
           'command_not_handled'
         )
       )
@@ -304,7 +305,7 @@ export class NativeSessionRuntime {
   async navigateTree(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {
     const summarize = options?.summarize === true
     if (summarize && !this.capabilities.includes('navigate_tree_summary')) {
-      throw new NativeBridgeError('当前 pi 原生桥不支持切换时生成分支摘要', 'bridge_unavailable')
+      throw new NativeBridgeError(pick('当前 pi 原生桥不支持切换时生成分支摘要', 'The current pi native bridge does not support branch summaries on switch'), 'bridge_unavailable')
     }
     const receipt = await this.invoke(
       'navigate_tree',
@@ -344,7 +345,7 @@ export class NativeSessionRuntime {
   }
 
   async setLabel(entryId: string, label: string): Promise<{ ok: true; label: string | null }> {
-    if (!this.capabilities.includes('set_label')) throw new NativeBridgeError('当前 pi 原生桥不支持书签', 'bridge_unavailable')
+    if (!this.capabilities.includes('set_label')) throw new NativeBridgeError(pick('当前 pi 原生桥不支持书签', 'The current pi native bridge does not support bookmarks'), 'bridge_unavailable')
     const receipt = await this.invoke('set_label', { targetId: entryId, label }, this.defaultTimeoutMs)
     const result = (receipt.result ?? {}) as Record<string, unknown>
     return { ok: true, label: typeof result.label === 'string' ? result.label : null }
@@ -363,8 +364,8 @@ export class NativeSessionRuntime {
       settingsPath: String(result.settingsFile ?? ''),
       note:
         enabledModels.length === 0
-          ? '已保存为「全部模型可用」；需要重建运行实例后生效。'
-          : '已保存模型范围；需要重建运行实例后生效。'
+          ? pick('已保存为「全部模型可用」；需要重建运行实例后生效。', 'Saved as "all models available". Rebuild the runtime to apply.')
+          : pick('已保存模型范围；需要重建运行实例后生效。', 'Model scope saved. Rebuild the runtime to apply.')
     }
   }
 

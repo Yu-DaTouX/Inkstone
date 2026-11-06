@@ -6,6 +6,7 @@ import { encodeBase64Url } from '../shared/base64url'
 import { escapeHtml } from '../shared/escape'
 import { mergeAuthEntry } from './credentials'
 import { CLIENT_ID, TOKEN_URL, extractAccountId } from './codex-token'
+import { pick } from '../shared/ui-lang'
 
 export { refreshCodexCredential, type CodexOAuthCredential } from './codex-token'
 
@@ -83,28 +84,28 @@ async function exchangeCode(code: string, verifier: string, signal: AbortSignal)
       signal
     })
   } catch (e) {
-    return { ok: false, error: `网络请求失败：${e instanceof Error ? e.message : String(e)}` }
+    return { ok: false, error: pick(`网络请求失败：${e instanceof Error ? e.message : String(e)}`, `Network request failed: ${e instanceof Error ? e.message : String(e)}`) }
   }
   if (!tokenRes.ok) {
-    return { ok: false, error: `换取 token 失败（HTTP ${tokenRes.status}）` }
+    return { ok: false, error: pick(`换取 token 失败（HTTP ${tokenRes.status}）`, `Token exchange failed (HTTP ${tokenRes.status})`) }
   }
   const json = (await tokenRes.json().catch(() => null)) as
     | { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown }
     | null
-  if (!json) return { ok: false, error: 'token 响应缺少必需字段：access_token、refresh_token、expires_in' }
+  if (!json) return { ok: false, error: pick('token 响应缺少必需字段：access_token、refresh_token、expires_in', 'Token response is missing required fields: access_token, refresh_token, expires_in') }
   const missing = [
     ...(typeof json.access_token !== 'string' ? ['access_token'] : []),
     ...(typeof json.refresh_token !== 'string' ? ['refresh_token'] : []),
     ...(typeof json.expires_in !== 'number' ? ['expires_in'] : [])
   ]
-  if (missing.length) return { ok: false, error: `token 响应缺少必需字段：${missing.join(', ')}` }
+  if (missing.length) return { ok: false, error: pick(`token 响应缺少必需字段：${missing.join(', ')}`, `Token response is missing required fields: ${missing.join(', ')}`) }
   if (typeof json.access_token !== 'string' || typeof json.refresh_token !== 'string' || typeof json.expires_in !== 'number') {
-    return { ok: false, error: 'token 响应缺少必需字段' }
+    return { ok: false, error: pick('token 响应缺少必需字段', 'Token response is missing required fields') }
   }
   const accountId = extractAccountId(json.access_token)
-  if (!accountId) return { ok: false, error: '无法从 token 里取到 accountId，登录未完成' }
+  if (!accountId) return { ok: false, error: pick('无法从 token 里取到 accountId，登录未完成', 'Cannot get accountId from the token; sign-in incomplete') }
 
-  if (signal.aborted) return { ok: false, error: '已取消登录' }
+  if (signal.aborted) return { ok: false, error: pick('已取消登录', 'Sign-in canceled') }
   const written = await mergeAuthEntry('openai-codex', {
     type: 'oauth',
     access: json.access_token,
@@ -112,7 +113,7 @@ async function exchangeCode(code: string, verifier: string, signal: AbortSignal)
     expires: Date.now() + json.expires_in * 1000,
     accountId
   }, signal)
-  if (!written.ok) return { ok: false, error: written.error ?? '写入 auth.json 失败' }
+  if (!written.ok) return { ok: false, error: written.error ?? pick('写入 auth.json 失败', 'Failed to write auth.json') }
   return { ok: true, accountId }
 }
 
@@ -123,7 +124,7 @@ export function cancelCodexLogin(): void {
 }
 
 export async function startCodexLogin(): Promise<CodexLoginResult> {
-  if (active) return { ok: false, error: '已有一次登录在进行中' }
+  if (active) return { ok: false, error: pick('已有一次登录在进行中', 'A sign-in is already in progress') }
 
   const { verifier, challenge } = createPkce()
   const state = encodeBase64Url(randomBytes(16))
@@ -164,37 +165,37 @@ export async function startCodexLogin(): Promise<CodexLoginResult> {
     try {
       reqUrl = new URL(req.url || '', 'http://localhost')
     } catch {
-      reply(400, resultPage('登录失败', '回调地址无法解析。'))
-      settle({ ok: false, error: '回调地址无法解析' })
+      reply(400, resultPage(pick('登录失败', 'Sign-in failed'), pick('回调地址无法解析。', 'The callback URL cannot be parsed.')))
+      settle({ ok: false, error: pick('回调地址无法解析', 'The callback URL cannot be parsed') })
       return
     }
     if (reqUrl.pathname !== CALLBACK_PATH) {
-      reply(404, resultPage('登录失败', '回调路由不存在。'))
+      reply(404, resultPage(pick('登录失败', 'Sign-in failed'), pick('回调路由不存在。', 'Callback route not found.')))
       return
     }
     if (reqUrl.searchParams.get('state') !== state) {
-      reply(400, resultPage('登录失败', 'state 不匹配，已拒绝这个回调。'))
-      settle({ ok: false, error: 'state 不匹配，已拒绝这个回调' })
+      reply(400, resultPage(pick('登录失败', 'Sign-in failed'), pick('state 不匹配，已拒绝这个回调。', 'State mismatch; callback rejected.')))
+      settle({ ok: false, error: pick('state 不匹配，已拒绝这个回调', 'State mismatch; callback rejected') })
       return
     }
     const err = reqUrl.searchParams.get('error')
     if (err) {
       const desc = reqUrl.searchParams.get('error_description') ?? ''
       const detail = `${err}${desc ? ': ' + desc : ''}`
-      reply(400, resultPage('登录失败', '授权被拒绝。', detail))
+      reply(400, resultPage(pick('登录失败', 'Sign-in failed'), pick('授权被拒绝。', 'Authorization denied.'), detail))
       settle({ ok: false, error: detail })
       return
     }
     const code = reqUrl.searchParams.get('code')
     if (!code) {
-      reply(400, resultPage('登录失败', '回调里没有授权码。'))
-      settle({ ok: false, error: '回调里没有授权码' })
+      reply(400, resultPage(pick('登录失败', 'Sign-in failed'), pick('回调里没有授权码。', 'No authorization code in the callback.')))
+      settle({ ok: false, error: pick('回调里没有授权码', 'No authorization code in the callback') })
       return
     }
     void (async () => {
       const r = await exchangeCode(code, verifier, controller.signal)
-      if (r.ok) reply(200, resultPage('登录成功', 'ChatGPT 已接入，可以关闭这个页面回到砚。'))
-      else reply(500, resultPage('登录失败', '换取凭证失败。', r.error))
+      if (r.ok) reply(200, resultPage(pick('登录成功', 'Signed in'), pick('ChatGPT 已接入，可以关闭这个页面回到砚。', 'ChatGPT is connected. You can close this page and return to Inkstone.')))
+      else reply(500, resultPage(pick('登录失败', 'Sign-in failed'), pick('换取凭证失败。', 'Credential exchange failed.'), r.error))
       settle(r)
     })()
   })
@@ -208,19 +209,19 @@ export async function startCodexLogin(): Promise<CodexLoginResult> {
     if (listenError === 'EADDRINUSE') {
       return {
         ok: false,
-        error: `本地端口 ${CALLBACK_PORT} 被占用（可能上一次登录还没结束，或 pi 的 TUI 正在登录）。稍后重试，或退回终端跑 pi → /login。`
+        error: pick(`本地端口 ${CALLBACK_PORT} 被占用（可能上一次登录还没结束，或 pi 的 TUI 正在登录）。稍后重试，或退回终端跑 pi → /login。`, `Local port ${CALLBACK_PORT} is in use (a previous sign-in may still be running, or the pi TUI is signing in). Try again later, or run pi > /login in a terminal.`)
       }
     }
-    return { ok: false, error: `无法监听本地回调端口 ${CALLBACK_PORT}：${listenError}` }
+    return { ok: false, error: pick(`无法监听本地回调端口 ${CALLBACK_PORT}：${listenError}`, `Cannot listen on local callback port ${CALLBACK_PORT}: ${listenError}`) }
   }
 
   const timer = setTimeout(() => {
     controller.abort()
-    settle({ ok: false, error: '登录超时（5 分钟未完成）' })
+    settle({ ok: false, error: pick('登录超时（5 分钟未完成）', 'Sign-in timed out (not completed in 5 minutes)') })
   }, LOGIN_TIMEOUT_MS)
   active = { cancel: () => {
     controller.abort()
-    settle({ ok: false, error: '已取消登录' })
+    settle({ ok: false, error: pick('已取消登录', 'Sign-in canceled') })
   } }
 
   try {
@@ -229,7 +230,7 @@ export async function startCodexLogin(): Promise<CodexLoginResult> {
     clearTimeout(timer)
     active = null
     server.close()
-    return { ok: false, error: `打不开浏览器：${e instanceof Error ? e.message : String(e)}` }
+    return { ok: false, error: pick(`打不开浏览器：${e instanceof Error ? e.message : String(e)}`, `Cannot open the browser: ${e instanceof Error ? e.message : String(e)}`) }
   }
 
   try {

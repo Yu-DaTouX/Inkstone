@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -78,7 +79,7 @@ export async function saveUserSkill(
   if (!checked.ok) return { ok: false, code: checked.code, error: checked.message }
   const { name } = checked.value
   if (opts.reservedNames?.includes(name)) {
-    return { ok: false, code: 'reserved-name', error: `「${name}」是砚随包技能的名字，请换一个` }
+    return { ok: false, code: 'reserved-name', error: pick(`「${name}」是砚随包技能的名字，请换一个`, `"${name}" is the name of a bundled Inkstone skill. Choose another`) }
   }
   const content = userSkillMarkdown(checked.value)
   const review = reviewSkillFiles([{ path: `skills/${name}/SKILL.md`, content }])
@@ -88,7 +89,7 @@ export async function saveUserSkill(
   const file = join(dir, 'SKILL.md')
   const exists = existsSync(file)
   if (exists && raw.replace !== true) {
-    return { ok: false, code: 'exists', error: `技能「${name}」已存在；确认要覆盖时传 replace: true` }
+    return { ok: false, code: 'exists', error: pick(`技能「${name}」已存在；确认要覆盖时传 replace: true`, `Skill "${name}" already exists. Pass replace: true to overwrite`) }
   }
   await mkdir(dir, { recursive: true })
   await writeAtomic(file, content)

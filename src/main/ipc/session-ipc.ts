@@ -1,7 +1,7 @@
 import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
 import type { ExpectedRuntimeOwner } from '../../shared/ipc'
-import { sessionActionAgent, SESSION_ACTION_CHANGED } from './session-action-target'
+import { sessionActionAgent, sessionActionChanged } from './session-action-target'
 import { shell } from 'electron'
 import { rememberSyncBaseline, takeSyncBaseline } from '../sync-baseline'
 import { existsSync } from 'node:fs'
@@ -23,6 +23,7 @@ import { filterChainRepresentatives } from '../remote-host'
 import { effectiveAutoArchiveDays } from '../../shared/session-archive'
 import { readUsageStatsOffThread } from '../usage-stats-host'
 import { deleteSessionChain } from '../session-delete'
+import { pick } from '../../shared/ui-lang'
 
 export interface SelectedSessionTarget {
   sessionFile: string
@@ -36,7 +37,7 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
   let cwdResult = await host.validateCwd(target.cwd)
   if (!cwdResult.ok && !target.preview && host.relocateMissingCwd && typeof target.sessionFile === 'string' && target.sessionFile.trim() && existsSync(target.sessionFile) && typeof target.cwd === 'string' && target.cwd.trim() && !existsSync(resolve(target.cwd))) {
     const picked = await host.relocateMissingCwd(target.cwd)
-    if (!picked) return { ok: false, error: `这个会话的项目文件夹不在了：${target.cwd}` }
+    if (!picked) return { ok: false, error: pick(`这个会话的项目文件夹不在了：${target.cwd}`, `The project folder for this session no longer exists: ${target.cwd}`) }
     cwdResult = await host.validateCwd(picked)
   }
   if (!cwdResult.ok) return cwdResult
@@ -69,20 +70,20 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
 export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
   handle('yan:usageStats', async (range: 'all' | '30d' | '7d') => readUsageStatsOffThread(range))
-  handle('yan:fork', async (entryId: string, expected?: ExpectedRuntimeOwner) => sessionActionAgent(host, expected)?.fork(entryId) ?? { ok: false, error: SESSION_ACTION_CHANGED })
-  handle('yan:clone', async () => host.ac()?.clone() ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:fork', async (entryId: string, expected?: ExpectedRuntimeOwner) => sessionActionAgent(host, expected)?.fork(entryId) ?? { ok: false, error: sessionActionChanged() })
+  handle('yan:clone', async () => host.ac()?.clone() ?? { ok: false, error: pick('pi 未运行', 'pi is not running') })
   handle('yan:forkPoints', async () => host.ac()?.forkPoints() ?? [])
   handle('yan:exportHtml', async (outputPath?: string, expected?: ExpectedRuntimeOwner) => {
-    if (outputPath !== undefined && (typeof outputPath !== 'string' || !outputPath.trim())) return { ok: false, error: '导出路径无效' }
+    if (outputPath !== undefined && (typeof outputPath !== 'string' || !outputPath.trim())) return { ok: false, error: pick('导出路径无效', 'Invalid export path') }
     const agent = sessionActionAgent(host, expected)
-    if (!agent) return { ok: false, error: SESSION_ACTION_CHANGED }
+    if (!agent) return { ok: false, error: sessionActionChanged() }
     const path = outputPath === undefined ? undefined : resolve(agent.workingDirectory, outputPath)
     const sessionId = agent.getState()?.sessionId
-    if (path && path === agent.getState()?.sessionFile) return { ok: false, error: '不能覆盖原始会话文件' }
+    if (path && path === agent.getState()?.sessionFile) return { ok: false, error: pick('不能覆盖原始会话文件', 'Cannot overwrite the original session file') }
     if (path && existsSync(path)) {
-      const confirmed = await agent.confirmNativeOperation({ title: '覆盖 HTML 导出文件？', message: `将覆盖 ${path}。`, acceptLabel: '覆盖' })
+      const confirmed = await agent.confirmNativeOperation({ title: pick('覆盖 HTML 导出文件？', 'Overwrite HTML export file?'), message: pick(`将覆盖 ${path}。`, `${path} will be overwritten.`), acceptLabel: pick('覆盖', 'Overwrite') })
       if (!confirmed) return { ok: false, cancelled: true }
-      if (sessionActionAgent(host, expected) !== agent || agent.getState()?.sessionId !== sessionId) return { ok: false, error: '会话已切换，导出已取消' }
+      if (sessionActionAgent(host, expected) !== agent || agent.getState()?.sessionId !== sessionId) return { ok: false, error: pick('会话已切换，导出已取消', 'Session changed; export cancelled') }
     }
     const res = await agent.exportHtml(path)
     if (res.ok && res.path) await shell.openPath(res.path)
@@ -120,7 +121,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
         .split('|')
         .map((item) => item.trim())
         .filter(Boolean)
-      if (!tokens.length) return { ok: false, error: '没有可撤销的删除' }
+      if (!tokens.length) return { ok: false, error: pick('没有可撤销的删除', 'Nothing to undo') }
       for (const token of tokens) await restoreSession(token)
       return { ok: true }
     } catch (e) {
@@ -131,10 +132,10 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   handle('yan:moveSession', async (sessionId: string, projectId: string | null, cwd?: string) => {
     const settings = await getSettings()
     if (projectId !== null && !settings.projects.some((project) => project.id === projectId)) {
-      return { ok: false, error: '目标项目不存在或已被移除' }
+      return { ok: false, error: pick('目标项目不存在或已被移除', 'Target project does not exist or was removed') }
     }
     const target = await locateSession(sessionId)
-    if (!target) return { ok: false, error: '找不到要移动的会话' }
+    if (!target) return { ok: false, error: pick('找不到要移动的会话', 'Session to move not found') }
     try {
       let nextCwd = target.cwd
       let cwdChanged = false
@@ -144,7 +145,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
         if (resolve(checked.cwd).toLowerCase() !== resolve(target.cwd || '.').toLowerCase()) {
           const sessionFile = resolve(target.path).toLowerCase()
           const live = host.runners()?.statuses().find((status) => !!status.sessionFile && resolve(status.sessionFile).toLowerCase() === sessionFile)
-          if (live && (live.running || live.waiting)) return { ok: false, error: '会话正在运行，等这一轮结束再移动工作目录' }
+          if (live && (live.running || live.waiting)) return { ok: false, error: pick('会话正在运行，等这一轮结束再移动工作目录', 'Session is running; move the working folder after this turn ends') }
           if (live) await host.runners()?.stopBySessionFile(target.path)
           await rewriteSessionCwd(target.path, checked.cwd)
           nextCwd = checked.cwd
@@ -168,7 +169,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
       if (!r.ok) return r
     }
     if (target?.projectId && !settings.projects.some((project) => project.id === target.projectId)) {
-      return { ok: false, error: '目标项目不存在或已被移除' }
+      return { ok: false, error: pick('目标项目不存在或已被移除', 'Target project does not exist or was removed') }
     }
     const cwd = cwdResult.cwd
     const projectId = target?.scope === 'global'
@@ -202,7 +203,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
 
   handle('yan:switchSession', async (path: string) => {
     const registry = host.runners()
-    if (!registry) return { ok: false, error: 'pi 未运行' }
+    if (!registry) return { ok: false, error: pick('pi 未运行', 'pi is not running') }
     const settings = await getSettings()
     const fallback = await host.validateCwd(settings.cwd)
     if (!fallback.ok) return fallback
@@ -215,7 +216,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     if (target.missingCwd && host.relocateMissingCwd) {
       const picked = await host.relocateMissingCwd(target.missingCwd)
       const checked = picked ? await host.validateCwd(picked) : null
-      if (!checked) return { ok: false, error: `这个会话的项目文件夹不在了：${target.missingCwd}` }
+      if (!checked) return { ok: false, error: pick(`这个会话的项目文件夹不在了：${target.missingCwd}`, `The project folder for this session no longer exists: ${target.missingCwd}`) }
       if (!checked.ok) return checked
       target.cwd = checked.cwd
     }
@@ -231,8 +232,8 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     return res.ok ? { ok: true } : { ok: false, error: res.error }
   })
   handle('yan:compact', async (customInstructions?: string) => {
-    if (customInstructions !== undefined && typeof customInstructions !== 'string') return { ok: false, error: '压缩要求必须是文本' }
-    return host.ac()?.compact(customInstructions) ?? { ok: false, error: 'pi 未运行' }
+    if (customInstructions !== undefined && typeof customInstructions !== 'string') return { ok: false, error: pick('压缩要求必须是文本', 'Compaction instructions must be text') }
+    return host.ac()?.compact(customInstructions) ?? { ok: false, error: pick('pi 未运行', 'pi is not running') }
   })
 
   handle('yan:compactionInfo', async (cwd: unknown, contextWindow: unknown) => {
@@ -242,23 +243,23 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   })
 
   handle('yan:cachedTitles', async () => cachedTitles())
-  handle('yan:renameSession', async (name: string, sessionId?: string) => host.ac()?.renameSession(name, typeof sessionId === 'string' ? sessionId : undefined) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:renameSession', async (name: string, sessionId?: string) => host.ac()?.renameSession(name, typeof sessionId === 'string' ? sessionId : undefined) ?? { ok: false, error: pick('pi 未运行', 'pi is not running') })
   handle('yan:manualTitles', async () => manualTitles())
   handle('yan:setManualTitle', async (sessionId: string, name: string) =>
     setManualTitle(String(sessionId ?? ''), String(name ?? ''))
   )
   handle('yan:regenerateTitle', async (sessionId: string) => {
     const sid = String(sessionId ?? '').trim()
-    if (!sid) return { ok: false, error: '缺少目标会话' }
+    if (!sid) return { ok: false, error: pick('缺少目标会话', 'Missing target session') }
 
     const live = host.runners()?.agentForSession(sid)
     if (live) return live.regenerateTitle()
 
     const session = await locateSession(sid)
-    if (!session) return { ok: false, error: '找不到目标会话，可能已被删除' }
+    if (!session) return { ok: false, error: pick('找不到目标会话，可能已被删除', 'Target session not found; it may have been deleted') }
 
     const samples = await readTitleSamples(session.path)
-    if (!samples.length) return { ok: false, error: '该会话没有可用的用户文字，已保留原标题' }
+    if (!samples.length) return { ok: false, error: pick('该会话没有可用的用户文字，已保留原标题', 'No usable user text in this session; kept the original title') }
 
     const manual = (await manualTitles())[sid]
     const settings = await getSettings()
@@ -271,7 +272,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
       allowManual: !!manual,
       persist: !manual
     })
-    if (!result?.title) return { ok: false, error: '标题生成失败，已保留原标题' }
+    if (!result?.title) return { ok: false, error: pick('标题生成失败，已保留原标题', 'Title generation failed; kept the original title') }
     if (!manual) host.push({ ch: 'session-title', payload: { sessionId: sid, title: result.title } })
     return { ok: true, title: result.title }
   })
@@ -319,7 +320,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
 
   async function setFlags(sessionId: string, flags: { archived?: boolean; pinned?: boolean; snoozedUntil?: number | null; markedUnread?: boolean }): Promise<{ ok: boolean; error?: string }> {
     const target = await locateSession(sessionId)
-    if (!target) return { ok: false, error: '找不到这条会话' }
+    if (!target) return { ok: false, error: pick('找不到这条会话', 'Session not found') }
     try {
       await setSessionFlags({ sessionId, sessionFile: target.path, cwd: target.cwd }, flags)
       return { ok: true }

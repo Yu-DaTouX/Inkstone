@@ -1,4 +1,5 @@
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { pick } from '../shared/ui-lang'
 
 export interface SessionMovePrompt {
   dir: string
@@ -53,10 +54,10 @@ export function withSessionHeaderCwd(text: string, cwd: string): string {
   try {
     header = JSON.parse(body)
   } catch {
-    throw new Error('会话文件头不是有效的 JSON')
+    throw new Error(pick('会话文件头不是有效的 JSON', 'The session file header is not valid JSON'))
   }
   if (!header || typeof header !== 'object' || (header as { type?: unknown }).type !== 'session') {
-    throw new Error('不是 pi 会话文件（首行不是会话头）')
+    throw new Error(pick('不是 pi 会话文件（首行不是会话头）', 'Not a pi session file (first line is not a session header)'))
   }
   return JSON.stringify({ ...(header as Record<string, unknown>), cwd }) + line.slice(body.length) + rest
 }

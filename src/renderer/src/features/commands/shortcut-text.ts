@@ -85,7 +85,7 @@ const EN: ShortcutText = {
   },
   purposes: {
     commandPalette: 'Command palette',
-    newSession: 'New chat',
+    newSession: 'New session',
     switchSessionNext: 'Switch to a recent session',
     switchSessionPrevious: 'Switch recent sessions in reverse',
     toggleSidebar: 'Show or hide the sidebar',

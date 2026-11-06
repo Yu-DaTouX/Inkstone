@@ -135,7 +135,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
       win.setProgressBar(busy ? 2 : -1, busy ? { mode: 'indeterminate' as const } : undefined)
     }
     if (force || previous?.waiting !== waiting) {
-      win.setOverlayIcon(waiting ? deps.trayImage() : null, waiting ? '有任务等待你的处理' : '')
+      win.setOverlayIcon(waiting ? deps.trayImage() : null, waiting ? (zh() ? '有任务等待你的处理' : 'Tasks are waiting for you') : '')
     }
     projection = { windowId: win.id, busy, waiting }
   }

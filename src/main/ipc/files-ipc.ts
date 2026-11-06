@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import type { IpcRegistrar } from './registrar'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
@@ -285,7 +286,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   })
   handle('yan:attachments:usage',() => attachmentsUsage(join(YAN_DIR, 'attachments')))
   handle('yan:attachments:prune', async () => {
-    if (deps.isSessionBusy()) throw new Error('会话正在运行，请结束后再清理附件')
+    if (deps.isSessionBusy()) throw new Error(pick('会话正在运行，请结束后再清理附件', 'The session is running; clean up attachments after it finishes'))
     const before = Date.now()
     const sessionsDir = SESSIONS_DIR
     if (!existsSync(sessionsDir)) return { removed: 0, bytes: 0, kept: 0 }
@@ -313,7 +314,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     }
     const initial = await fingerprint()
     const referenced = await referencedAttachmentNames(listSessionFiles(sessionsDir))
-    if (deps.isSessionBusy() || initial !== (await fingerprint())) throw new Error('会话在扫描期间发生变化，已停止附件清理，请稍后重试')
+    if (deps.isSessionBusy() || initial !== (await fingerprint())) throw new Error(pick('会话在扫描期间发生变化，已停止附件清理，请稍后重试', 'The session changed during the scan; attachment cleanup stopped. Try again shortly'))
     const result = await pruneAttachments(join(YAN_DIR, 'attachments'), referenced, { before })
     clearSessionReadCache()
     return result

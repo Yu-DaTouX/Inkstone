@@ -1,11 +1,12 @@
+import { pick } from '../shared/ui-lang'
 import { PiRpc } from './protocol'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { getSettings } from './settings'
 
 export async function completePluginText(model: string, system: string, prompt: string, signal: AbortSignal): Promise<string> {
-  if (signal.aborted) throw new Error('已取消')
+  if (signal.aborted) throw new Error(pick('已取消', 'Cancelled'))
   const settings = await getSettings()
-  if (signal.aborted) throw new Error('已取消')
+  if (signal.aborted) throw new Error(pick('已取消', 'Cancelled'))
   const rpc = new PiRpc({
     cwd: YAN_DIR,
     piBin: settings.piBin,
@@ -26,10 +27,10 @@ export async function completePluginText(model: string, system: string, prompt: 
         clearTimeout(timer)
         if (error) reject(error)
         else if (text.trim()) resolve(text.trim())
-        else reject(new Error(failure || '模型未返回文本'))
+        else reject(new Error(failure || pick('模型未返回文本', 'The model returned no text')))
       }
-      const timer = setTimeout(() => finish(new Error('插件文本补全超时')), 60_000)
-      cancel = () => finish(new Error('已取消'))
+      const timer = setTimeout(() => finish(new Error(pick('插件文本补全超时', 'Plugin text completion timed out'))), 60_000)
+      cancel = () => finish(new Error(pick('已取消', 'Cancelled')))
       signal.addEventListener('abort', cancel, { once: true })
       if (signal.aborted) { cancel(); return }
       rpc.on('event', (event: Record<string, unknown>) => {
@@ -38,7 +39,7 @@ export async function completePluginText(model: string, system: string, prompt: 
           const update = event.assistantMessageEvent as Record<string, unknown> | undefined
           if (update?.type === 'text_delta') {
             text += String(update.delta ?? '')
-            if (text.length > 128_000) finish(new Error('插件文本输出过长'))
+            if (text.length > 128_000) finish(new Error(pick('插件文本输出过长', 'Plugin text output is too long')))
           }
         } else if (event.type === 'message_end') {
           const message = event.message as { errorMessage?: unknown } | undefined
@@ -57,7 +58,7 @@ export async function completePluginText(model: string, system: string, prompt: 
             try { if ((await rpc.command('get_state')).success) { ready = true; break } } catch {}
           }
           if (settled) return
-          if (!ready) throw new Error('插件文本模型未就绪')
+          if (!ready) throw new Error(pick('插件文本模型未就绪', 'Plugin text model is not ready'))
           await rpc.command('set_thinking_level', { level: 'off' })
           if (!settled) await rpc.command('prompt', { message: prompt })
         } catch (error) { finish(error instanceof Error ? error : new Error(String(error))) }

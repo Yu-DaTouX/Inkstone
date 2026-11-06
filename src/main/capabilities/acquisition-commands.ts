@@ -10,6 +10,7 @@ import { acquisitionServiceFor, operationIdOf } from './acquisition-service'
 import { PackageAuthorizationService } from './package-authorization-service'
 import { readRepoState } from '../git-service'
 import { fetchNpmPackageMetadata } from './npm-artifact'
+import { pick } from '../../shared/ui-lang'
 import { stageNpmAcquisition } from './npm-acquisition'
 import { discoverCapabilities, planForCandidate } from './discovery/discover'
 import type { AcquisitionPlan, CapabilityCandidate } from '../../shared/discovery'
@@ -53,8 +54,8 @@ export interface CapabilityAcquisitionHost {
 }
 
 const SKILL_SCOPE_OPTIONS: Record<AcquiredSkillScope, string> = {
-  session: '仅本次会话使用',
-  user: '安装到我的技能（所有会话可用）'
+  get session() { return pick('仅本次会话使用', 'This session only') },
+  get user() { return pick('安装到我的技能（所有会话可用）', 'Install to My skills (all sessions)') }
 }
 const SCRIPT_EXT = /\.(?:py|js|mjs|cjs|ts|sh|bash|ps1|bat|cmd|rb|pl)$/i
 
@@ -531,22 +532,22 @@ export class CapabilityAcquisition {
     const { candidate, files } = input
     const github = candidate.githubSkill
     const source = github
-      ? `github.com/${github.owner}/${github.repo}${github.dir ? `/${github.dir}` : ''}（提交 ${github.commit.slice(0, 12)}）`
+      ? pick(`github.com/${github.owner}/${github.repo}${github.dir ? `/${github.dir}` : ''}（提交 ${github.commit.slice(0, 12)}）`, `github.com/${github.owner}/${github.repo}${github.dir ? `/${github.dir}` : ''} (commit ${github.commit.slice(0, 12)})`)
       : (candidate.sourceUrls[0] ?? candidate.candidateId).replace(/^https?:\/\//, '')
     const total = files.reduce((sum, file) => sum + file.content.byteLength, 0)
     const scripts = files.filter((file) => SCRIPT_EXT.test(file.path))
     const exts = [...new Set(scripts.map((file) => file.path.slice(file.path.lastIndexOf('.'))))].join(' ')
     const review = input.warnings.length > 0
-      ? `需要留意 ${input.warnings.length} 处：${input.warnings.slice(0, 3).map((f) => `${f.detail}（${f.path}:${f.line}）`).join('；')}`
-      : input.truncated ? '命中较多，已截断，请自行查看来源' : '未发现高风险写法'
+      ? pick(`需要留意 ${input.warnings.length} 处：${input.warnings.slice(0, 3).map((f) => `${f.detail}（${f.path}:${f.line}）`).join('；')}`, `${input.warnings.length} to review: ${input.warnings.slice(0, 3).map((f) => `${f.detail} (${f.path}:${f.line})`).join('; ')}`)
+      : input.truncated ? pick('命中较多，已截断，请自行查看来源', 'Many hits, truncated. Check the source yourself') : pick('未发现高风险写法', 'No high-risk patterns found')
     return [
-      `Agent 想接入技能「${input.name}」`,
-      `来源：${source}`,
-      `发布方自述：${input.description.length > 240 ? `${input.description.slice(0, 239)}…` : input.description || '（没有描述）'}`,
-      `内容：${files.length} 个文件，${formatSize(total)}${scripts.length > 0 ? `；含 ${scripts.length} 个脚本（${exts}），按技能做事时模型可能运行它们` : ''}`,
-      `审查：${review}`,
+      pick(`Agent 想接入技能「${input.name}」`, `Agent wants to add skill "${input.name}"`),
+      pick(`来源：${source}`, `Source: ${source}`),
+      pick(`发布方自述：${input.description.length > 240 ? `${input.description.slice(0, 239)}…` : input.description || pick('（没有描述）', '(no description)')}`, `Publisher says: ${input.description.length > 240 ? `${input.description.slice(0, 239)}…` : input.description || pick('（没有描述）', '(no description)')}`),
+      pick(`内容：${files.length} 个文件，${formatSize(total)}${scripts.length > 0 ? `；含 ${scripts.length} 个脚本（${exts}），按技能做事时模型可能运行它们` : ''}`, `Contents: ${files.length} files, ${formatSize(total)}${scripts.length > 0 ? `; ${scripts.length} scripts (${exts}) the model may run` : ''}`),
+      pick(`审查：${review}`, `Review: ${review}`),
       ...(input.userBlocked ? [input.userBlocked] : []),
-      '不批准就点「跳过」；到时间没有选择也会自动跳过。'
+      pick('不批准就点「跳过」；到时间没有选择也会自动跳过。', 'Click Skip to decline. It is skipped automatically on timeout.')
     ].join('\n')
   }
 
@@ -599,19 +600,19 @@ export class CapabilityAcquisition {
     const reserved = this.host.bundledSkills().map((path) => basename(dirname(path)))
     const userDir = join(userSkillsDir(), name)
     const userBlocked = reserved.includes(name)
-      ? `与砚随包技能「${name}」同名，只能在本次会话使用。`
+      ? pick(`与砚随包技能「${name}」同名，只能在本次会话使用。`, `Same name as bundled skill "${name}". This session only.`)
       : existsSync(userDir) && !existsSync(join(userDir, SOURCE_META_FILE))
-        ? `我的技能里已有自己写的「${name}」，只能在本次会话使用。`
+        ? pick(`我的技能里已有自己写的「${name}」，只能在本次会话使用。`, `My skills already has your own "${name}". This session only.`)
         : undefined
     const options = userBlocked ? [SKILL_SCOPE_OPTIONS.session] : [SKILL_SCOPE_OPTIONS.session, SKILL_SCOPE_OPTIONS.user]
 
     let answer: { value?: string; cancelled?: boolean }
     try {
       answer = await this.host.requestApproval({
-        title: `授权接入技能「${name}」`,
+        title: pick(`授权接入技能「${name}」`, `Allow skill "${name}"`),
         message: this.skillApprovalMessage({ name, description, candidate, files, warnings, truncated: review.truncated, userBlocked }),
         options,
-        placeholder: '或告诉 Agent 换个做法（不安装）',
+        placeholder: pick('或告诉 Agent 换个做法（不安装）', 'Or tell the Agent to do it another way (no install)'),
         timeout: UI_TIMEOUT_APPROVAL
       })
     } catch (error) {

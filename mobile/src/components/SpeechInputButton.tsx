@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { useEffect, useRef, useState } from 'react'
 import { Animated, BackHandler, Easing, Keyboard, Pressable, Text, View } from 'react-native'
 import { cancelSpeech, recognizeSpeech, recordSpeech, stopSpeech, subscribeSpeech, type SpeechPhase } from '../speech'
@@ -84,12 +85,12 @@ export function SpeechInputButton({ onText, onError, onStateChange, disabled, tr
           callbacks.current.onStateChange?.('processing')
         }
         text = wav && !isCancelled() ? (await transcribe(wav)).trim() : null
-        if (wav && !text && !isCancelled()) throw new Error('没有听清，请再试一次')
+        if (wav && !text && !isCancelled()) throw new Error(pick('没有听清，请再试一次', 'Could not hear that. Try again.'))
       } else text = await recognizeSpeech(isCancelled)
       if (text && !cancelled.current && mounted.current) callbacks.current.onText(text)
     } catch (err) {
       if (!cancelled.current && mounted.current) {
-        const message = err instanceof Error ? err.message : '语音识别失败'
+        const message = err instanceof Error ? err.message : pick('语音识别失败', 'Speech recognition failed')
         setError(message)
         callbacks.current.onError?.(message)
       }
@@ -107,11 +108,11 @@ export function SpeechInputButton({ onText, onError, onStateChange, disabled, tr
   return <View style={{ gap: space[1] }}>
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {busy ? <>
-        <Pressable accessibilityRole="button" accessibilityLabel={phase === 'processing' ? '正在转写语音' : '结束录音并转写'} accessibilityState={{ disabled: phase !== 'listening' }} disabled={phase !== 'listening'} onPress={stopSpeech} style={({ pressed }) => ({ minHeight: touch.min, minWidth: touch.min, paddingHorizontal: 8, borderRadius: radius.md, backgroundColor: p.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.65 : 1 })}>
+        <Pressable accessibilityRole="button" accessibilityLabel={phase === 'processing' ? pick('正在转写语音', 'Transcribing') : pick('结束录音并转写', 'Stop and transcribe')} accessibilityState={{ disabled: phase !== 'listening' }} disabled={phase !== 'listening'} onPress={stopSpeech} style={({ pressed }) => ({ minHeight: touch.min, minWidth: touch.min, paddingHorizontal: 8, borderRadius: radius.md, backgroundColor: p.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.65 : 1 })}>
           {phase === 'listening' ? <><VoiceWave level={level} /><Icon name="stop" size={icon.sm} color={p.accent} /></> : <RunDot />}
         </Pressable>
-        <IconButton name="close" label="取消语音输入" onPress={cancel} />
-      </> : <IconButton name="mic" label="语音转文字，核对后发送" disabled={disabled} onPress={() => void start()} />}
+        <IconButton name="close" label={pick('取消语音输入', 'Cancel voice input')} onPress={cancel} />
+      </> : <IconButton name="mic" label={pick('语音转文字，核对后发送', 'Voice to text; review before sending')} disabled={disabled} onPress={() => void start()} />}
     </View>
     {error && !onError ? <Text accessibilityLiveRegion="polite" style={{ color: p.err, fontSize: font.xs }}>{error}</Text> : null}
   </View>

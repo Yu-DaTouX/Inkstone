@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import type { CdpChannel } from './CdpChannel'
 export type StorageTransferReport = { copied: number; failed: number; kind: 'localStorage' | 'sessionStorage' }
 export async function transferPageStorage(source: CdpChannel, target: CdpChannel, kind: StorageTransferReport['kind']): Promise<StorageTransferReport> {
@@ -7,11 +8,11 @@ export async function transferPageStorage(source: CdpChannel, target: CdpChannel
     exceptionDetails?: { text?: string }
   }>('Runtime.evaluate', { expression, returnByValue: true })
   if (result.exceptionDetails) {
-    throw new Error(`读取 ${kind} 失败：${result.exceptionDetails.text ?? '页面脚本异常'}`)
+    throw new Error(pick(`读取 ${kind} 失败：${result.exceptionDetails.text ?? '页面脚本异常'}`, `Failed to read ${kind}: ${result.exceptionDetails.text ?? 'page script error'}`))
   }
   const values = result.result?.value
   if (!values || typeof values !== 'object' || Array.isArray(values)) {
-    throw new Error(`读取 ${kind} 失败：页面未返回存储数据`)
+    throw new Error(pick(`读取 ${kind} 失败：页面未返回存储数据`, `Failed to read ${kind}: the page returned no storage data`))
   }
   const targetExpression = `(() => { const data = ${JSON.stringify(values)}; const s = ${kind}; let copied = 0; for (const [k, v] of Object.entries(data)) { try { if (v === null) s.removeItem(k); else s.setItem(k, v); copied++; } catch {} } return copied })()`
   const written = await target.send<{

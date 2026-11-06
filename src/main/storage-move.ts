@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import {
   createReadStream,
   existsSync,
@@ -155,16 +156,16 @@ export function syncFolderService(target: string, env: NodeJS.ProcessEnv = proce
 }
 
 export function checkTarget(from: string, to: string): string | undefined {
-  if (/^[\\/]{2}/.test(to)) return '不能迁移到网络共享路径，请选本机磁盘上的文件夹'
+  if (/^[\\/]{2}/.test(to)) return pick('不能迁移到网络共享路径，请选本机磁盘上的文件夹', 'Cannot move to a network share. Choose a folder on a local disk')
   const rel = relative(from, to)
 
-  if (!rel || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))) return '不能迁移到原数据目录里面'
+  if (!rel || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))) return pick('不能迁移到原数据目录里面', 'Cannot move into the original data folder')
   const back = relative(to, from)
-  if (!back || (back !== '..' && !back.startsWith(`..${sep}`) && !isAbsolute(back))) return '不能迁移到包含原数据目录的文件夹'
+  if (!back || (back !== '..' && !back.startsWith(`..${sep}`) && !isAbsolute(back))) return pick('不能迁移到包含原数据目录的文件夹', 'Cannot move into a folder that contains the original data folder')
   try {
-    if (existsSync(to) && readdirSync(to).length > 0) return '目标文件夹不是空的，请选一个空文件夹或新建一个'
+    if (existsSync(to) && readdirSync(to).length > 0) return pick('目标文件夹不是空的，请选一个空文件夹或新建一个', 'The target folder is not empty. Choose an empty folder or create one')
   } catch {
-    return '无法读取目标文件夹（可能没有访问权限）'
+    return pick('无法读取目标文件夹（可能没有访问权限）', 'Cannot read the target folder (access may be denied)')
   }
   return undefined
 }
@@ -199,7 +200,7 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
   }
   if (!storageMovable()) {
     rmSync(PENDING_FILE(), { force: true })
-    return write({ ok: false, error: '便携版或测试环境的数据位置由启动方式决定，不能在这里迁移' })
+    return write({ ok: false, error: pick('便携版或测试环境的数据位置由启动方式决定，不能在这里迁移', 'The data location of portable or test builds is set by how they start. It cannot be moved here') })
   }
   try {
     mkdirSync(controlDir(), { recursive: true })
@@ -207,14 +208,14 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
     writeFileSync(LOCK_FILE(), String(process.pid), { flag: 'wx' })
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      return write({ ok: false, error: '另一次数据位置迁移正在进行，请等它结束后重试' })
+      return write({ ok: false, error: pick('另一次数据位置迁移正在进行，请等它结束后重试', 'Another data move is in progress. Retry after it finishes') })
     }
-    return write({ ok: false, error: `无法创建迁移标记文件：${error instanceof Error ? error.message : String(error)}` })
+    return write({ ok: false, error: pick(`无法创建迁移标记文件：${error instanceof Error ? error.message : String(error)}`, `Cannot create the move marker file: ${error instanceof Error ? error.message : String(error)}`) })
   }
   rmSync(PENDING_FILE(), { force: true })
   try {
-    if (isJunction(from)) return write({ ok: false, error: '数据目录已经迁移过了' })
-    if (!existsSync(from)) return write({ ok: false, error: '原数据目录不存在' })
+    if (isJunction(from)) return write({ ok: false, error: pick('数据目录已经迁移过了', 'The data folder has already been moved') })
+    if (!existsSync(from)) return write({ ok: false, error: pick('原数据目录不存在', 'The original data folder does not exist') })
     const bad = checkTarget(from, to)
     if (bad) return write({ ok: false, error: bad })
     const progress: StorageMoveProgress = { phase: 'scan', files: 0, bytes: 0, totalFiles: 0, totalBytes: 0 }
@@ -253,12 +254,12 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
       const [source, after] = await Promise.all([tally(from), tally(to)])
       if (after.content !== source.content || source.content !== before.content) {
         await discardTarget()
-        return write({ ok: false, error: `复制核对不一致（${source.files} → ${after.files} 个文件），已撤回，原数据未动` })
+        return write({ ok: false, error: pick(`复制核对不一致（${source.files} → ${after.files} 个文件），已撤回，原数据未动`, `Copy check mismatch (${source.files} → ${after.files} files). Rolled back, original data untouched`) })
       }
       const recheck = await tally(from)
       if (recheck.files !== before.files || recheck.bytes !== before.bytes || recheck.latestMtime !== before.latestMtime || recheck.content !== before.content) {
         await discardTarget()
-        return write({ ok: false, error: '迁移期间数据目录仍在被写入（可能还有别的 pi 或砚在运行），已撤回，原数据未动' })
+        return write({ ok: false, error: pick('迁移期间数据目录仍在被写入（可能还有别的 pi 或砚在运行），已撤回，原数据未动', 'The data folder was still being written during the move (another pi or Inkstone may be running). Rolled back, original data untouched') })
       }
     } catch (error) {
       await discardTarget()
@@ -269,7 +270,7 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
       renameSync(from, backup)
     } catch (e) {
       await discardTarget()
-      return write({ ok: false, error: `原目录被占用，无法切换（请关掉终端里的 pi 后重试）：${e instanceof Error ? e.message : String(e)}` })
+      return write({ ok: false, error: pick(`原目录被占用，无法切换（请关掉终端里的 pi 后重试）：${e instanceof Error ? e.message : String(e)}`, `The original folder is in use and cannot be switched (close pi in terminals and retry): ${e instanceof Error ? e.message : String(e)}`) })
     }
     try {
       symlinkSync(to, from, 'junction')
@@ -278,10 +279,10 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
       try {
         renameSync(backup, from)
       } catch (e2) {
-        return write({ ok: false, leftover: backup, error: `无法建立联接，也无法自动恢复原目录。你的数据完整保存在：${backup}（把它改回「agent」即可恢复）。${why}；${e2 instanceof Error ? e2.message : String(e2)}` })
+        return write({ ok: false, leftover: backup, error: pick(`无法建立联接，也无法自动恢复原目录。你的数据完整保存在：${backup}（把它改回「agent」即可恢复）。${why}；${e2 instanceof Error ? e2.message : String(e2)}`, `Cannot create the junction or restore the original folder. Your data is intact at: ${backup} (rename it back to "agent" to restore). ${why}; ${e2 instanceof Error ? e2.message : String(e2)}`) })
       }
       await discardTarget()
-      return write({ ok: false, error: `无法在原位置建立联接，已恢复原状：${why}` })
+      return write({ ok: false, error: pick(`无法在原位置建立联接，已恢复原状：${why}`, `Cannot create a junction at the original location. Restored: ${why}`) })
     }
     report({ phase: 'cleanup' })
     return write({ ok: true, leftover: backup })
@@ -331,10 +332,10 @@ export async function storageSize(dir: string): Promise<number> {
 }
 
 export async function scheduleStorageMove(target: string): Promise<{ ok: boolean; error?: string }> {
-  if (!storageMovable()) return { ok: false, error: '便携版或测试环境的数据位置由启动方式决定，不能在这里迁移' }
+  if (!storageMovable()) return { ok: false, error: pick('便携版或测试环境的数据位置由启动方式决定，不能在这里迁移', 'The data location of portable or test builds is set by how they start. It cannot be moved here') }
   const from = defaultAgentDir()
-  if (isJunction(from)) return { ok: false, error: '数据目录已经迁移过了' }
-  if (!target || !isAbsolute(target)) return { ok: false, error: '请选择一个完整的文件夹路径' }
+  if (isJunction(from)) return { ok: false, error: pick('数据目录已经迁移过了', 'The data folder has already been moved') }
+  if (!target || !isAbsolute(target)) return { ok: false, error: pick('请选择一个完整的文件夹路径', 'Choose a full folder path') }
   const to = resolve(target)
   const bad = checkTarget(from, to)
   if (bad) return { ok: false, error: bad }
@@ -343,7 +344,7 @@ export async function scheduleStorageMove(target: string): Promise<{ ok: boolean
     const fsInfo = await statfs(existsSync(to) ? to : dirname(to))
     const free = Number(fsInfo.bavail) * Number(fsInfo.bsize)
     if (free < need * 1.1) {
-      return { ok: false, error: `目标磁盘空间不足：需要约 ${(need / 1024 ** 3).toFixed(1)} GB，可用 ${(free / 1024 ** 3).toFixed(1)} GB` }
+      return { ok: false, error: pick(`目标磁盘空间不足：需要约 ${(need / 1024 ** 3).toFixed(1)} GB，可用 ${(free / 1024 ** 3).toFixed(1)} GB`, `Not enough disk space on the target: about ${(need / 1024 ** 3).toFixed(1)} GB needed, ${(free / 1024 ** 3).toFixed(1)} GB available`) }
     }
   } catch {
   }

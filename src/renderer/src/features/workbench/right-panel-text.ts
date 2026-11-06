@@ -67,7 +67,7 @@ const ZH: RightPanelText = {
   overview: '概览',
   pullRequest: (n) => `#${n}`,
   file: '文件',
-  subagent: '子代理',
+  subagent: '子 Agent',
   copyPath: '复制路径',
   reopenPanel: '重新打开面板',
   deviceHint: '观看 Android 模拟器画面。',

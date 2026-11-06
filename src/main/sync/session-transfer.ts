@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -35,16 +36,16 @@ export async function exportSession(
   targetPath: string,
   options: SessionTransferOptions = {}
 ): Promise<ExportSessionResult> {
-  if (!sessionFilePath || !existsSync(sessionFilePath)) return { ok: false, error: `会话文件不存在：${sessionFilePath}` }
-  if (!targetPath) return { ok: false, error: '缺少导出目标路径' }
+  if (!sessionFilePath || !existsSync(sessionFilePath)) return { ok: false, error: pick(`会话文件不存在：${sessionFilePath}`, `Session file not found: ${sessionFilePath}`) }
+  if (!targetPath) return { ok: false, error: pick('缺少导出目标路径', 'Missing export target path') }
   let content: string
   try {
     content = await readFile(sessionFilePath, 'utf8')
   } catch (error) {
-    return { ok: false, error: `读取会话失败：${describe(error)}` }
+    return { ok: false, error: pick(`读取会话失败：${describe(error)}`, `Failed to read session: ${describe(error)}`) }
   }
   if (Buffer.byteLength(content, 'utf8') > SESSION_TRANSFER_MAX_BYTES) {
-    return { ok: false, error: '会话过大，超过单次导出上限 64MB' }
+    return { ok: false, error: pick('会话过大，超过单次导出上限 64MB', 'Session is too large; exceeds the 64MB export limit') }
   }
   const sourceSessionId = readSessionId(content)
   const bundle: SessionBundle = {
@@ -59,7 +60,7 @@ export async function exportSession(
   try {
     await atomicWriteFile(file, JSON.stringify(bundle, null, 2))
   } catch (error) {
-    return { ok: false, error: `写出会话包失败：${describe(error)}` }
+    return { ok: false, error: pick(`写出会话包失败：${describe(error)}`, `Failed to write session bundle: ${describe(error)}`) }
   }
   return { ok: true, path: file, bytes: Buffer.byteLength(content, 'utf8'), ...(sourceSessionId ? { sourceSessionId } : {}) }
 }
@@ -69,18 +70,18 @@ export async function importSession(
   sessionsDir: string,
   options: SessionTransferOptions = {}
 ): Promise<ImportSessionResult> {
-  if (!bundlePath || !existsSync(bundlePath)) return { ok: false, error: `会话包不存在：${bundlePath}` }
-  if (!sessionsDir) return { ok: false, error: '缺少会话目录' }
+  if (!bundlePath || !existsSync(bundlePath)) return { ok: false, error: pick(`会话包不存在：${bundlePath}`, `Session bundle not found: ${bundlePath}`) }
+  if (!sessionsDir) return { ok: false, error: pick('缺少会话目录', 'Missing sessions folder') }
   const size = await stat(bundlePath).then(
     (info) => info.size,
     () => 0
   )
-  if (size > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: '会话包过大，超过导入上限 64MB' }
+  if (size > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: pick('会话包过大，超过导入上限 64MB', 'Session bundle is too large; exceeds the 64MB import limit') }
   let bundle: SessionBundle
   try {
     bundle = JSON.parse(await readFile(bundlePath, 'utf8')) as SessionBundle
   } catch (error) {
-    return { ok: false, error: `会话包解析失败：${describe(error)}` }
+    return { ok: false, error: pick(`会话包解析失败：${describe(error)}`, `Failed to parse session bundle: ${describe(error)}`) }
   }
   if (
     !bundle ||
@@ -89,11 +90,11 @@ export async function importSession(
     typeof bundle.content !== 'string' ||
     !bundle.content
   ) {
-    return { ok: false, error: '不是有效的砚会话包' }
+    return { ok: false, error: pick('不是有效的砚会话包', 'Not a valid Inkstone session bundle') }
   }
   const nextId = options.newId ?? (() => randomUUID())
   const originalId = readSessionId(bundle.content)
-  if (!originalId) return { ok: false, error: '会话包缺少唯一有效的 session 头' }
+  if (!originalId) return { ok: false, error: pick('会话包缺少唯一有效的 session 头', 'Session bundle lacks exactly one valid session header') }
   let sessionId = ''
   let file = ''
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -103,14 +104,14 @@ export async function importSession(
     if (!existsSync(file)) break
     file = ''
   }
-  if (!file) return { ok: false, error: '生成新会话名失败（目标目录已有同名文件）' }
+  if (!file) return { ok: false, error: pick('生成新会话名失败（目标目录已有同名文件）', 'Failed to create a new session name (file already exists)') }
   const content = rewriteSessionId(bundle.content, sessionId)
-  if (readSessionId(content) !== sessionId) return { ok: false, error: '改写会话 session 头失败' }
+  if (readSessionId(content) !== sessionId) return { ok: false, error: pick('改写会话 session 头失败', 'Failed to rewrite the session header') }
   try {
     await mkdir(sessionsDir, { recursive: true })
     await atomicWriteFile(file, content)
   } catch (error) {
-    return { ok: false, error: `写出会话失败：${describe(error)}` }
+    return { ok: false, error: pick(`写出会话失败：${describe(error)}`, `Failed to write session: ${describe(error)}`) }
   }
   return { ok: true, path: file, sessionId, ...(originalId ? { renamedFrom: originalId } : {}) }
 }

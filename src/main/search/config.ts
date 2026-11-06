@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from '../paths'
@@ -72,13 +73,13 @@ export async function searchApiConfig(): Promise<SearchApiConfigView> {
 
 export async function setSearchKey(id: SearchProviderId, key: string): Promise<{ ok: boolean; error?: string }> {
   const value = key.trim()
-  if (!value) return { ok: false, error: 'API key 不能为空' }
-  if (/\s/.test(value)) return { ok: false, error: 'API key 不应包含空白字符' }
+  if (!value) return { ok: false, error: pick('API key 不能为空', 'API key cannot be empty') }
+  if (/\s/.test(value)) return { ok: false, error: pick('API key 不应包含空白字符', 'API key must not contain whitespace') }
   try {
     await serial(async () => write({ ...(await read()), [fieldOf(id)]: value }))
     return { ok: true }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : '写入失败' }
+    return { ok: false, error: e instanceof Error ? e.message : pick('写入失败', 'Write failed') }
   }
 }
 
@@ -91,7 +92,7 @@ export async function clearSearchKey(id: SearchProviderId): Promise<{ ok: boolea
     })
     return { ok: true }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : '删除失败' }
+    return { ok: false, error: e instanceof Error ? e.message : pick('删除失败', 'Delete failed') }
   }
 }
 

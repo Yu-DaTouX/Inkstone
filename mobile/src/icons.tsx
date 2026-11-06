@@ -15,5 +15,5 @@ export function Icon({ name, color, size = 20 }: { name: IconName; color: string
 }
 
 export function BrandMark({ size = 36 }: { size?: number }) {
-  return <SvgXml xml={BRAND_MARK} width={size} height={size} accessibilityLabel="砚 Inkstone" />
+  return <SvgXml xml={BRAND_MARK} width={size} height={size} accessibilityLabel="Inkstone" />
 }

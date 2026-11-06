@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 import { useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { SubagentInfo } from '../api/client'
@@ -22,9 +23,9 @@ function shortModel(model?: string): string {
 function duration(run: SubagentInfo, now: number): string {
   const ms = Math.max(0, (run.endedAt ?? now) - run.startedAt)
   const seconds = Math.round(ms / 1000)
-  if (seconds < 60) return `${seconds} 秒`
+  if (seconds < 60) return pick(`${seconds} 秒`, `${seconds}s`)
   const minutes = Math.floor(seconds / 60)
-  return minutes < 60 ? `${minutes} 分 ${seconds % 60} 秒` : `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`
+  return minutes < 60 ? pick(`${minutes} 分 ${seconds % 60} 秒`, `${minutes}m ${seconds % 60}s`) : pick(`${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`, `${Math.floor(minutes / 60)}h ${minutes % 60}m`)
 }
 
 function botMood(run: SubagentInfo): BotSpriteMood {
@@ -36,10 +37,10 @@ function botMood(run: SubagentInfo): BotSpriteMood {
 }
 
 function statusText(run: SubagentInfo): string {
-  if (isLive(run)) return run.status === 'starting' ? '启动中' : '运行中'
-  if (run.status === 'error') return run.endReason === 'timeout' ? '超时' : '失败'
-  if (run.status === 'cancelled') return '已停止'
-  return '完成'
+  if (isLive(run)) return run.status === 'starting' ? pick('启动中', 'Starting') : pick('运行中', 'Running')
+  if (run.status === 'error') return run.endReason === 'timeout' ? pick('超时', 'Timed out') : pick('失败', 'Failed')
+  if (run.status === 'cancelled') return pick('已停止', 'Stopped')
+  return pick('完成', 'Done')
 }
 
 export function SubagentCard({ runs, plain = false, sessionId }: { runs: SubagentInfo[]; plain?: boolean; sessionId?: string }) {
@@ -52,7 +53,7 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
     if (!sessionId || stopping) return
     setStopping(runId); setStopError(null)
     try { await client.stopSubagent(sessionId, runId) }
-    catch (err) { setStopError(err instanceof Error ? err.message : '停止失败') }
+    catch (err) { setStopError(err instanceof Error ? err.message : pick('停止失败', 'Stop failed')) }
     finally { setStopping(null) }
   }
   const live = runs.filter(isLive).length
@@ -63,19 +64,19 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
   if (!runs.length) return null
   const expanded = plain || (stored ?? live > 0)
   const now = Date.now()
-  const counts = [live ? `${live} 运行中` : '', done ? `${done} 完成` : '', failed ? `${failed} 失败` : ''].filter(Boolean).join(' · ')
+  const counts = [live ? pick(`${live} 运行中`, `${live} running`) : '', done ? pick(`${done} 完成`, `${done} done`) : '', failed ? pick(`${failed} 失败`, `${failed} failed`) : ''].filter(Boolean).join(' · ')
   return <View style={plain ? null : [styles.card, { backgroundColor: p.surface, borderColor: p.border }]}>
-    {plain ? null : <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`子代理 ${runs.length} 个，${counts}`} onPress={() => setStored(!expanded)} style={styles.head}>
+    {plain ? null : <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={pick(`子代理 ${runs.length} 个，${counts}`, `${runs.length} subagents, ${counts}`)} onPress={() => setStored(!expanded)} style={styles.head}>
       {live ? <GlyphSpinner /> : null}
-      <Text style={{ color: p.fg, fontSize: font.sm, fontWeight: weight.medium }}>子代理 {runs.length}</Text>
-      <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: p.fgMute, fontSize: font.sm }}>{[live ? `${live} 运行中` : '', done ? `${done} 完成` : ''].filter(Boolean).join(' · ')}{failed ? <Text style={{ color: p.err }}>{live || done ? ' · ' : ''}{failed} 失败</Text> : null}</Text>
+      <Text style={{ color: p.fg, fontSize: font.sm, fontWeight: weight.medium }}>{pick('子代理', 'Subagents')} {runs.length}</Text>
+      <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: p.fgMute, fontSize: font.sm }}>{[live ? pick(`${live} 运行中`, `${live} running`) : '', done ? pick(`${done} 完成`, `${done} done`) : ''].filter(Boolean).join(' · ')}{failed ? <Text style={{ color: p.err }}>{live || done ? ' · ' : ''}{pick(`${failed} 失败`, `${failed} failed`)}</Text> : null}</Text>
       <View style={{ transform: [{ rotate: expanded ? '-90deg' : '90deg' }] }}><Icon name="chevron-right" size={icon.sm} color={p.fgMute} /></View>
     </Pressable>}
     {expanded ? <ScrollView style={plain ? null : styles.list} scrollEnabled={!plain} nestedScrollEnabled>
       {runs.map((run) => {
         const open = openRun === run.id
         const tone = run.status === 'error' ? p.err : isLive(run) ? p.fg : p.fgDim
-        const meta = [statusText(run), shortModel(run.model), typeof run.toolCalls === 'number' ? `${run.toolCalls} 次工具` : '', duration(run, now)].filter(Boolean).join(' · ')
+        const meta = [statusText(run), shortModel(run.model), typeof run.toolCalls === 'number' ? pick(`${run.toolCalls} 次工具`, `${run.toolCalls} tool calls`) : '', duration(run, now)].filter(Boolean).join(' · ')
         const detail = run.status === 'error' ? (run.error || run.summary) : (run.summary || (isLive(run) ? run.latestActivity : ''))
         return <Pressable key={run.id} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${run.title}，${meta}`} onPress={() => setOpenRun(open ? null : run.id)} style={styles.row}>
           <ModelBot model={run.model} mood={botMood(run)} size={BOT_SIZE} />
@@ -85,7 +86,7 @@ export function SubagentCard({ runs, plain = false, sessionId }: { runs: Subagen
             {!open && isLive(run) && run.latestActivity ? <Text numberOfLines={1} style={{ color: p.fgMute, fontSize: font.xs }}>{run.latestActivity}</Text> : null}
             {open && detail && run.status === 'error' ? <Text selectable style={[styles.detail, { color: p.err, backgroundColor: p.sunken }]}>{detail}</Text> : null}
             {open && detail && run.status !== 'error' ? <View style={[styles.summary, { backgroundColor: p.sunken }]}><MessageBody text={detail} /></View> : null}
-            {open && canStop && isLive(run) ? <Pressable accessibilityRole="button" accessibilityLabel={`停止子代理 ${run.title}`} disabled={stopping !== null} onPress={() => void stop(run.id)} style={[styles.stop, { borderColor: p.err, opacity: stopping === run.id ? 0.5 : 1 }]}><Icon name="stop" size={icon.sm} color={p.err} /><Text style={{ color: p.err, fontSize: font.sm }}>停止</Text></Pressable> : null}
+            {open && canStop && isLive(run) ? <Pressable accessibilityRole="button" accessibilityLabel={pick(`停止子代理 ${run.title}`, `Stop subagent ${run.title}`)} disabled={stopping !== null} onPress={() => void stop(run.id)} style={[styles.stop, { borderColor: p.err, opacity: stopping === run.id ? 0.5 : 1 }]}><Icon name="stop" size={icon.sm} color={p.err} /><Text style={{ color: p.err, fontSize: font.sm }}>{pick('停止', 'Stop')}</Text></Pressable> : null}
             {open && stopError ? <Text style={{ color: p.err, fontSize: font.xs }}>{stopError}</Text> : null}
             {open && run.task !== run.title ? <Text selectable style={{ color: p.fgMute, fontSize: font.xs, lineHeight: 17 }}>{run.task}</Text> : null}
           </View>

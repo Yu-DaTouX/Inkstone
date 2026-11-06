@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import zhCN from './zh-CN.json'
 import enUS from './en-US.json'
+import { singularizeOne } from '../../../shared/ui-lang'
 import { readStoredLang, rememberLang, writeStoredLang, type Lang } from './lang'
 
 export { LANGS, currentLang, type Lang } from './lang'
@@ -26,7 +27,7 @@ export function translate(lang: Lang, key: MessageKey, vars?: TVars): string {
   if (vars) {
     for (const [n, v] of Object.entries(vars)) s = s.split(`{${n}}`).join(String(v))
   }
-  return s
+  return lang === 'en-US' ? singularizeOne(s) : s
 }
 
 interface I18nValue {

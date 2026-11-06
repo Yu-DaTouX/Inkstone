@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -70,20 +71,20 @@ export function createGhRunner(execute: typeof execFile = execFile, fallbacks: (
 
 export const runGh = createGhRunner()
 
-export function prFailure(code: GhPrFailure['code'], message: string, retrySafe = true, hint = '刷新后确认状态再操作'): GhPrFailure {
+export function prFailure(code: GhPrFailure['code'], message: string, retrySafe = true, hint = pick('刷新后确认状态再操作', 'Refresh to confirm the state before acting')): GhPrFailure {
   return { code, message, hint, retrySafe }
 }
 
 export function classifyGhFailure(run: GhRun, writing = false): GhPrFailure {
-  if (run.missingCwd) return prFailure('cwd-rejected', '项目目录不存在')
-  if (run.missing) return prFailure('gh-missing', '未安装 GitHub CLI', true, '请安装 gh 后再操作')
-  if (run.timedOut) return prFailure('timeout', writing ? '请求超时，结果未知，请刷新确认' : 'GitHub 请求超时', !writing, '请刷新确认远端状态，不要直接重复写操作')
+  if (run.missingCwd) return prFailure('cwd-rejected', pick('项目目录不存在', 'Project folder does not exist'))
+  if (run.missing) return prFailure('gh-missing', pick('未安装 GitHub CLI', 'GitHub CLI is not installed'), true, pick('请安装 gh 后再操作', 'Install gh first'))
+  if (run.timedOut) return prFailure('timeout', writing ? pick('请求超时，结果未知，请刷新确认', 'Request timed out. Result unknown. Refresh to confirm') : pick('GitHub 请求超时', 'GitHub request timed out'), !writing, pick('请刷新确认远端状态，不要直接重复写操作', 'Refresh to confirm the remote state. Do not repeat the write'))
   const text = `${run.stderr}\n${run.stdout}`.toLowerCase()
-  if (/not logged|gh auth login|authentication required|http 401|bad credentials|authentication failed/.test(text)) return prFailure('not-authenticated', 'GitHub CLI 未登录或登录已失效', true, '请在终端运行 gh auth login')
-  if (/http 403|forbidden|resource not accessible|permission|not permitted/.test(text)) return prFailure('forbidden', '没有执行此操作的权限', true, '请核对仓库权限与组织策略')
-  if (/http 404|not found|could not resolve to a pullrequest|no pull requests found/.test(text)) return prFailure('pr-not-found', 'PR 或关联资源不存在或不可见')
-  if (/protected branch|required status|status check|checks? (?:have |has )?failed|branch policy|review is required|base branch policy|review required/.test(text)) return prFailure('checks-rejected', '检查或保护分支规则拒绝合并', true, '请先满足检查、评审及保护分支要求')
-  if (/not mergeable|not cleanly mergeable|merge conflict|mergeable state|cannot be merged/.test(text)) return prFailure('not-mergeable', 'PR 有冲突或当前不可合并', true, '请刷新并先解决合并冲突')
-  if (/timed? out|timeout|deadline exceeded|tls handshake timeout/.test(text)) return prFailure('timeout', writing ? '网络超时，结果未知，请刷新确认' : 'GitHub 网络超时', !writing, '先刷新确认，不要直接重复写操作')
-  return prFailure('other', writing ? 'GitHub 操作未得到确认，结果可能未知' : 'GitHub 请求失败', !writing, '请刷新确认；必要时在终端核对 gh 状态')
+  if (/not logged|gh auth login|authentication required|http 401|bad credentials|authentication failed/.test(text)) return prFailure('not-authenticated', pick('GitHub CLI 未登录或登录已失效', 'GitHub CLI is not signed in or the sign-in expired'), true, pick('请在终端运行 gh auth login', 'Run gh auth login in a terminal'))
+  if (/http 403|forbidden|resource not accessible|permission|not permitted/.test(text)) return prFailure('forbidden', pick('没有执行此操作的权限', 'No permission for this operation'), true, pick('请核对仓库权限与组织策略', 'Check repository permissions and organization policy'))
+  if (/http 404|not found|could not resolve to a pullrequest|no pull requests found/.test(text)) return prFailure('pr-not-found', pick('PR 或关联资源不存在或不可见', 'PR or related resource does not exist or is not visible'))
+  if (/protected branch|required status|status check|checks? (?:have |has )?failed|branch policy|review is required|base branch policy|review required/.test(text)) return prFailure('checks-rejected', pick('检查或保护分支规则拒绝合并', 'Checks or branch protection rules block the merge'), true, pick('请先满足检查、评审及保护分支要求', 'Satisfy the checks, reviews and branch protection first'))
+  if (/not mergeable|not cleanly mergeable|merge conflict|mergeable state|cannot be merged/.test(text)) return prFailure('not-mergeable', pick('PR 有冲突或当前不可合并', 'PR has conflicts or cannot be merged now'), true, pick('请刷新并先解决合并冲突', 'Refresh and resolve the merge conflicts first'))
+  if (/timed? out|timeout|deadline exceeded|tls handshake timeout/.test(text)) return prFailure('timeout', writing ? pick('网络超时，结果未知，请刷新确认', 'Network timed out. Result unknown. Refresh to confirm') : pick('GitHub 网络超时', 'GitHub network timed out'), !writing, pick('先刷新确认，不要直接重复写操作', 'Refresh to confirm first. Do not repeat the write'))
+  return prFailure('other', writing ? pick('GitHub 操作未得到确认，结果可能未知', 'GitHub operation was not confirmed. The result may be unknown') : pick('GitHub 请求失败', 'GitHub request failed'), !writing, pick('请刷新确认；必要时在终端核对 gh 状态', 'Refresh to confirm. Check gh in a terminal if needed'))
 }

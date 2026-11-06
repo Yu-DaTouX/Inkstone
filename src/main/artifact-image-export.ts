@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { BrowserWindow } from 'electron'
 import { existsSync } from 'node:fs'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
@@ -84,7 +85,7 @@ async function within<T>(work: Promise<T>, code: ImageExportErrorCode, label: st
     return await Promise.race([
       work,
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new ImageExportError(code, `${label} 超过 ${Math.round(ms / 1000)} 秒没有完成`)), ms)
+        timer = setTimeout(() => reject(new ImageExportError(code, pick(`${label} 超过 ${Math.round(ms / 1000)} 秒没有完成`, `${label} did not finish within ${Math.round(ms / 1000)} s`))), ms)
       })
     ])
   } finally {
@@ -126,7 +127,7 @@ function selectorProbe(selector: string): string {
 let busy = false
 
 export async function exportHtmlImage(input: ImageExportInput): Promise<ImageExportOutput> {
-  if (busy) throw new ImageExportError('export-busy', '已经有一张图在导出，等它结束再试')
+  if (busy) throw new ImageExportError('export-busy', pick('已经有一张图在导出，等它结束再试', 'An image is already being exported; try again when it finishes'))
   busy = true
   try {
     return await runImageExport(input)
@@ -138,11 +139,11 @@ export async function exportHtmlImage(input: ImageExportInput): Promise<ImageExp
 async function runImageExport(input: ImageExportInput): Promise<ImageExportOutput> {
   const prepared = await input.previews.prepare(input.htmlPath, input.root)
   if (!prepared.ok) {
-    if (prepared.error === 'outside') throw new ImageExportError('bad-request', 'HTML 文件必须在当前项目目录内')
-    if (prepared.error === 'type') throw new ImageExportError('bad-request', '只支持 .html / .htm 文件')
-    if (prepared.error === 'size') throw new ImageExportError('bad-request', 'HTML 文件为空或超过 5MB')
-    if (prepared.error === 'busy') throw new ImageExportError('export-busy', '同时渲染的预览太多，等它们结束再试')
-    throw new ImageExportError('load-failed', '读不了这个 HTML 文件')
+    if (prepared.error === 'outside') throw new ImageExportError('bad-request', pick('HTML 文件必须在当前项目目录内', 'The HTML file must be inside the current project folder'))
+    if (prepared.error === 'type') throw new ImageExportError('bad-request', pick('只支持 .html / .htm 文件', 'Only .html / .htm files are supported'))
+    if (prepared.error === 'size') throw new ImageExportError('bad-request', pick('HTML 文件为空或超过 5MB', 'The HTML file is empty or larger than 5 MB'))
+    if (prepared.error === 'busy') throw new ImageExportError('export-busy', pick('同时渲染的预览太多，等它们结束再试', 'Too many previews are rendering; try again when they finish'))
+    throw new ImageExportError('load-failed', pick('读不了这个 HTML 文件', 'Could not read this HTML file'))
   }
   const width = clampSide(input.width, IMAGE_EXPORT_DEFAULT_WIDTH)
   const height = clampSide(input.height, 800)
@@ -163,22 +164,22 @@ async function runImageExport(input: ImageExportInput): Promise<ImageExportOutpu
   })
   const dbg = win.webContents.debugger
   try {
-    await within(win.loadURL(prepared.url), 'load-failed', '加载页面', LOAD_TIMEOUT_MS)
+    await within(win.loadURL(prepared.url), 'load-failed', pick('加载页面', 'Loading the page'), LOAD_TIMEOUT_MS)
     await within(
       win.webContents.executeJavaScript('(document.fonts ? document.fonts.ready.then(() => true) : Promise.resolve(true))', true),
       'load-failed',
-      '等待字体'
+      pick('等待字体', 'Waiting for fonts')
     ).catch(() => true)
     await delay(SETTLE_MS)
 
     let target: ImageExportOutput['target'] = 'page'
     let clip: Rect | null = null
     if (input.selector) {
-      clip = (await within(win.webContents.executeJavaScript(selectorProbe(input.selector), true), 'capture-failed', '查找元素')) as Rect | null
-      if (!clip) throw new ImageExportError('selector-missing', `页面里找不到 ${input.selector}`)
+      clip = (await within(win.webContents.executeJavaScript(selectorProbe(input.selector), true), 'capture-failed', pick('查找元素', 'Finding the element'))) as Rect | null
+      if (!clip) throw new ImageExportError('selector-missing', pick(`页面里找不到 ${input.selector}`, `${input.selector} not found on the page`))
       target = 'selector'
     } else if (input.width === undefined && input.height === undefined) {
-      clip = (await within(win.webContents.executeJavaScript(POSTER_PROBE, true), 'capture-failed', '识别海报区域').catch(() => null)) as Rect | null
+      clip = (await within(win.webContents.executeJavaScript(POSTER_PROBE, true), 'capture-failed', pick('识别海报区域', 'Detecting the poster area')).catch(() => null)) as Rect | null
       if (clip) target = 'poster'
     }
     if (!clip) {
@@ -186,7 +187,7 @@ async function runImageExport(input: ImageExportInput): Promise<ImageExportOutpu
         await within(
           win.webContents.executeJavaScript('Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)', true),
           'capture-failed',
-          '测量页面'
+          pick('测量页面', 'Measuring the page')
         ).catch(() => height)
       ) || height
       clip = { x: 0, y: 0, width, height: input.height === undefined ? Math.min(IMAGE_EXPORT_MAX_SIDE, pageHeight) : height }
@@ -202,9 +203,9 @@ async function runImageExport(input: ImageExportInput): Promise<ImageExportOutpu
     const shot = (await within(
       dbg.sendCommand('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { ...rect, scale } }),
       'capture-failed',
-      '截图'
+      pick('截图', 'Capturing')
     )) as { data?: string }
-    if (!shot?.data) throw new ImageExportError('capture-failed', '截图结果是空的')
+    if (!shot?.data) throw new ImageExportError('capture-failed', pick('截图结果是空的', 'The capture is empty'))
     const png = Buffer.from(shot.data, 'base64')
     const outPath = input.outPath ? uniqueImagePath(input.outPath, existsSync) : defaultImagePath(input.htmlPath, existsSync)
     await mkdir(dirname(outPath), { recursive: true })

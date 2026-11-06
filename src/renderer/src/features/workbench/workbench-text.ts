@@ -1,5 +1,6 @@
 import type { Lang } from '../../i18n'
 import type { WorkbenchTabId } from './types'
+import { singularizeOne } from '../../../../shared/ui-lang'
 
 export interface OverviewText {
   title: string
@@ -267,10 +268,10 @@ const EN: WorkbenchText = {
     balance: 'Balance',
     mcpFailed: 'Could not read MCP status',
     mcpConnected: (ready, total) => `${ready}/${total} connected`,
-    mcpTools: (n) => `${n} tools`,
+    mcpTools: (n) => singularizeOne(`${n} tools`),
     mcpStatus: { ready: 'Connected', connecting: 'Connecting', disconnected: 'Disconnected', 'needs-auth': 'Needs auth', error: 'Error' },
     changesNone: 'No changes',
-    changesFiles: (n) => `${n} files`,
+    changesFiles: (n) => singularizeOne(`${n} files`),
     changesStaged: 'Staged',
     changesUnstaged: 'Unstaged',
     changesUntracked: 'Untracked'

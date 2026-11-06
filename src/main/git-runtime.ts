@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { createHash } from 'node:crypto'
 import { createWriteStream, existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -209,8 +210,8 @@ async function download(
     } finally {
       await new Promise<void>((resolve) => out.end(() => resolve()))
     }
-    if (received !== expected.size) throw new Error(`大小不符（${received} / ${expected.size}）`)
-    if (hash.digest('hex') !== expected.sha256) throw new Error('SHA-256 校验失败')
+    if (received !== expected.size) throw new Error(pick(`大小不符（${received} / ${expected.size}）`, `Size mismatch (${received} / ${expected.size})`))
+    if (hash.digest('hex') !== expected.sha256) throw new Error(pick('SHA-256 校验失败', 'SHA-256 verification failed'))
   } finally {
     if (timer) clearTimeout(timer)
     signal.removeEventListener('abort', onAbort)
@@ -238,9 +239,9 @@ function extractSfx(file: string, stageDir: string, signal: AbortSignal): Promis
     child.on('close', (code) => {
       clearTimeout(timer)
       signal.removeEventListener('abort', onAbort)
-      if (signal.aborted) reject(new Error('已取消'))
+      if (signal.aborted) reject(new Error(pick('已取消', 'Cancelled')))
       else if (code === 0) resolve()
-      else reject(new Error(`解压失败（退出码 ${code}）`))
+      else reject(new Error(pick(`解压失败（退出码 ${code}）`, `Extraction failed (exit code ${code})`)))
     })
   })
 }
@@ -254,8 +255,8 @@ function gitVersionOf(gitExe: string): Promise<string> {
 }
 
 export async function installManagedGit(options: InstallOptions = {}): Promise<{ ok: boolean; error?: string }> {
-  if (process.platform !== 'win32' && !options.extract) return { ok: false, error: '只有 Windows 需要这一步' }
-  if (installing) return { ok: false, error: '已经在安装中' }
+  if (process.platform !== 'win32' && !options.extract) return { ok: false, error: pick('只有 Windows 需要这一步', 'Only Windows needs this step') }
+  if (installing) return { ok: false, error: pick('已经在安装中', 'Already installing') }
   const controller = new AbortController()
   installing = controller
   const pin = options.pin ?? GIT_RUNTIME_PIN
@@ -275,9 +276,9 @@ export async function installManagedGit(options: InstallOptions = {}): Promise<{
     let lastError = ''
     let downloaded = false
     for (const url of urls) {
-      if (controller.signal.aborted) throw new Error('已取消')
+      if (controller.signal.aborted) throw new Error(pick('已取消', 'Cancelled'))
       try {
-        report({ phase: 'downloading', received: 0, total: pin.size, message: url === pin.mirror ? '从国内镜像下载' : '从 GitHub 下载' })
+        report({ phase: 'downloading', received: 0, total: pin.size, message: url === pin.mirror ? pick('从国内镜像下载', 'Downloading from mirror') : pick('从 GitHub 下载', 'Downloading from GitHub') })
         let lastReport = 0
         await download(url, file, pin, controller.signal, (received) => {
           const now = Date.now()
@@ -288,20 +289,20 @@ export async function installManagedGit(options: InstallOptions = {}): Promise<{
         downloaded = true
         break
       } catch (error) {
-        if (controller.signal.aborted) throw new Error('已取消')
+        if (controller.signal.aborted) throw new Error(pick('已取消', 'Cancelled'))
         lastError = error instanceof Error ? error.message : String(error)
         await rm(file, { force: true })
       }
     }
-    if (!downloaded) throw new Error(`下载失败：${lastError || '无法连接'}。检查网络后重试，或手动安装 Git for Windows。`)
+    if (!downloaded) throw new Error(pick(`下载失败：${lastError || '无法连接'}。检查网络后重试，或手动安装 Git for Windows。`, `Download failed: ${lastError || 'cannot connect'}. Check the network and retry, or install Git for Windows manually.`))
 
-    report({ phase: 'verifying', message: '校验通过' })
-    report({ phase: 'extracting', message: '正在解压（约半分钟）' })
+    report({ phase: 'verifying', message: pick('校验通过', 'Verified') })
+    report({ phase: 'extracting', message: pick('正在解压（约半分钟）', 'Extracting (about 30 seconds)') })
     await (options.extract ?? extractSfx)(file, stage, controller.signal)
     await rm(file, { force: true })
 
     if (!existsSync(join(stage, 'cmd', 'git.exe')) || !existsSync(join(stage, 'bin', 'bash.exe'))) {
-      throw new Error('解压后的目录里没有找到 git.exe / bash.exe')
+      throw new Error(pick('解压后的目录里没有找到 git.exe / bash.exe', 'git.exe / bash.exe not found in the extracted folder'))
     }
     if (!options.extract) await gitVersionOf(join(stage, 'cmd', 'git.exe'))
     await writeFile(join(stage, 'install.json'), JSON.stringify({ version: pin.version, sha256: pin.sha256, at: Date.now() }, null, 2), 'utf8')
@@ -324,7 +325,7 @@ export async function installManagedGit(options: InstallOptions = {}): Promise<{
       await rm(backup, { recursive: true, force: true })
       movedOld = false
     }
-    report({ phase: 'done', message: `已安装 Git ${pin.version}` })
+    report({ phase: 'done', message: pick(`已安装 Git ${pin.version}`, `Git ${pin.version} installed`) })
     return { ok: true }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

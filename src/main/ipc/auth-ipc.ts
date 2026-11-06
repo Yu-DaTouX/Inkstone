@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import type { IpcRegistrar } from './registrar'
 import { getSettings } from '../settings'
 import { resolvePi } from '../protocol'
@@ -97,7 +98,7 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
     try {
       await captureActiveCodexAccount()
     } catch (error) {
-      return { ok: false, error: `无法安全保存当前 ChatGPT 账号，已取消登录：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: pick(`无法安全保存当前 ChatGPT 账号，已取消登录：${error instanceof Error ? error.message : String(error)}`, `Could not safely save the current ChatGPT account; sign-in canceled: ${error instanceof Error ? error.message : String(error)}`) }
     }
     const r = await startCodexLogin()
     if (r.ok) {
@@ -106,7 +107,7 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
       try {
         await captureActiveCodexAccount()
       } catch (error) {
-        return { ok: false, error: `ChatGPT 已登录，但保存账号列表失败：${error instanceof Error ? error.message : String(error)}` }
+        return { ok: false, error: pick(`ChatGPT 已登录，但保存账号列表失败：${error instanceof Error ? error.message : String(error)}`, `Signed in to ChatGPT, but saving the account list failed: ${error instanceof Error ? error.message : String(error)}`) }
       }
     }
     return r
@@ -116,13 +117,13 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   })
 
   handle('yan:oauthLogin', async (provider: string) => {
-    if (!supportsOAuthAccounts(provider)) return { ok: false, error: '这个服务不支持应用内登录' }
+    if (!supportsOAuthAccounts(provider)) return { ok: false, error: pick('这个服务不支持应用内登录', 'This service does not support in-app sign-in') }
     try {
       const savedKey = await captureActiveApiKey(provider)
       if (!savedKey.ok) return savedKey
       await captureActiveOAuthAccount(provider)
     } catch (error) {
-      return { ok: false, error: `无法安全保存当前凭证，已取消登录：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: pick(`无法安全保存当前凭证，已取消登录：${error instanceof Error ? error.message : String(error)}`, `Could not safely save the current credentials; sign-in canceled: ${error instanceof Error ? error.message : String(error)}`) }
     }
     const s = await getSettings()
     const probe = resolvePi({ override: s.piBin })
@@ -133,7 +134,7 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
       try {
         await captureActiveOAuthAccount(provider)
       } catch (error) {
-        return { ok: false, error: `已登录，但保存账号列表失败：${error instanceof Error ? error.message : String(error)}` }
+        return { ok: false, error: pick(`已登录，但保存账号列表失败：${error instanceof Error ? error.message : String(error)}`, `Signed in, but saving the account list failed: ${error instanceof Error ? error.message : String(error)}`) }
       }
     }
     return r
@@ -147,7 +148,7 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
 
   handle('yan:oauthAccounts', async () => listOAuthAccounts())
   handle('yan:oauthAccountSwitch', async (provider: string, key: string) => {
-    if (!supportsOAuthAccounts(provider)) return { ok: false, error: '这个服务不支持订阅账号管理' }
+    if (!supportsOAuthAccounts(provider)) return { ok: false, error: pick('这个服务不支持订阅账号管理', 'This service does not support subscription account management') }
     const saved = await captureActiveApiKey(provider)
     if (!saved.ok) return saved
     const r = await switchOAuthAccount(provider, key)

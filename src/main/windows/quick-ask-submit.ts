@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import type { QuickAskResult, QuickAskSubmit } from './aux-types'
 import { validateQuickAsk } from './aux-state'
 
@@ -22,7 +23,7 @@ export function quickAskSessionTarget(
 ): QuickAskSessionTarget {
   if (!projectId) return { ok: true, cwd: settings.cwd }
   const project = settings.projects.find((item) => item.id === projectId && !item.archived)
-  if (!project) return { ok: false, error: '找不到所选项目，可能已被移除或归档' }
+  if (!project) return { ok: false, error: pick('找不到所选项目，可能已被移除或归档', 'Selected project not found; it may have been removed or archived') }
   return { ok: true, cwd: project.cwd, projectId: project.id }
 }
 

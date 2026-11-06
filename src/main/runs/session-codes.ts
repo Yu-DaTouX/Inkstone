@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { parsePersistedDocument } from '../persisted-document'
@@ -89,7 +90,7 @@ export class SessionCodeStore {
             this.commit({ version: 1, entries: [] })
             return
           }
-          throw new Error('会话编号文件读取或解析失败，已拒绝覆盖', { cause: error })
+          throw new Error(pick('会话编号文件读取或解析失败，已拒绝覆盖', 'Failed to read or parse the session code file; overwrite refused'), { cause: error })
         }
       })()
     }

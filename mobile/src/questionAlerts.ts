@@ -1,3 +1,4 @@
+import { pick } from '../../src/shared/ui-lang'
 import { NativeModules, PermissionsAndroid, Platform } from 'react-native'
 import type { Connection } from './api/client'
 import { relayClientPublicKey } from './api/relay'
@@ -23,10 +24,10 @@ export async function startQuestionAlerts(connection: Connection, requestPermiss
     if (!await PermissionsAndroid.check(permission)) {
       if (!requestPermission) return false
       const result = await PermissionsAndroid.request(permission, {
-        title: '开启待回答提醒',
-        message: '电脑上的砚需要你回答时，在这台手机显示通知。开启后会有一条持续的连接状态通知。',
-        buttonPositive: '开启',
-        buttonNegative: '暂不开启'
+        title: pick('开启待回答提醒', 'Enable question alerts'),
+        message: pick('电脑上的砚需要你回答时，在这台手机显示通知。开启后会有一条持续的连接状态通知。', 'Show a notification when Inkstone on the desktop needs an answer. A persistent connection notice will appear.'),
+        buttonPositive: pick('开启', 'Enable'),
+        buttonNegative: pick('暂不开启', 'Not now')
       })
       if (result !== PermissionsAndroid.RESULTS.GRANTED) return false
     }

@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -39,8 +40,8 @@ export class SyncService {
   private chain: Promise<unknown> = Promise.resolve()
 
   constructor(options: SyncServiceOptions) {
-    if (!options.dataDir) throw new Error('SyncService 需要一个本机数据目录')
-    if (!options.syncRoot) throw new Error('SyncService 需要一个同步文件夹')
+    if (!options.dataDir) throw new Error(pick('SyncService 需要一个本机数据目录', 'SyncService needs a local data folder'))
+    if (!options.syncRoot) throw new Error(pick('SyncService 需要一个同步文件夹', 'SyncService needs a sync folder'))
     this.now = options.now ?? Date.now
     this.dataDir = options.dataDir
     this.paths = { ...defaultSyncPaths(options.dataDir, options.piAgentDir), ...options.paths }
@@ -388,7 +389,7 @@ export class SyncService {
     try {
       const raw = JSON.parse(await readFile(this.stateFile, 'utf8')) as Partial<BaselineFile>
       if (!raw || raw.v !== 1 || !raw.records || typeof raw.records !== 'object' || Array.isArray(raw.records)) {
-        throw new Error('基线结构无效')
+        throw new Error(pick('基线结构无效', 'Invalid baseline structure'))
       }
       const records: BaselineFile['records'] = {}
       for (const [key, value] of Object.entries(raw.records as Record<string, unknown>)) {
@@ -404,7 +405,7 @@ export class SyncService {
     } catch (error) {
       const backup = `${this.stateFile}.corrupt-${randomUUID()}`
       await rename(this.stateFile, backup).catch(() => undefined)
-      report.skipped.push(`${this.stateFile}：基线损坏（${describe(error)}），已隔离到 ${backup}`)
+      report.skipped.push(pick(`${this.stateFile}：基线损坏（${describe(error)}），已隔离到 ${backup}`, `${this.stateFile}: baseline corrupted (${describe(error)}); quarantined to ${backup}`))
       return empty
     }
   }
@@ -418,7 +419,7 @@ export class SyncService {
         if (raw && raw.v === 1 && typeof raw.deviceId === 'string' && raw.deviceId) {
           stored = raw
         } else {
-          throw new Error('设备标识结构无效')
+          throw new Error(pick('设备标识结构无效', 'Invalid device id structure'))
         }
       } catch {
         const backup = `${this.deviceFile}.corrupt-${randomUUID()}`

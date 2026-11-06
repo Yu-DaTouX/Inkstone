@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -151,7 +152,7 @@ export class SubagentHistory {
       toolCalls: !interrupted && Number.isFinite(data.toolCalls) ? data.toolCalls : transcript.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0),
       review: data.review ?? 'none',
       ...(interrupted ? { status: 'error', endReason: 'exited', endedAt: data.endedAt ?? (await stat(path)).mtimeMs,
-        error: '应用退出时子代理未完成，未自动恢复执行', latestActivity: '运行已中断' } : {})
+        error: pick('应用退出时子 Agent未完成，未自动恢复执行', 'Subagent unfinished at app exit; not resumed'), latestActivity: pick('运行已中断', 'Run interrupted') } : {})
     }
     return { run, rootCwd: data.rootCwd, resume: data.resume && typeof data.resume === 'object' ? data.resume as ResumeMeta : undefined }
   }

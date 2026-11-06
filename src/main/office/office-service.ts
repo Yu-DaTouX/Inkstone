@@ -1,3 +1,4 @@
+import { pick, uiLang } from '../../shared/ui-lang'
 import { Worker } from 'node:worker_threads'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,16 +10,16 @@ let active = 0
 
 export async function previewOffice(rawPath: string, cwd: string): Promise<OfficeDocumentView> {
   const format = officeFormatOf(rawPath)
-  if (!format) return { ok: false, error: '不是支持的办公文件（docx / xlsx / pptx / pdf）' }
+  if (!format) return { ok: false, error: pick('不是支持的办公文件（docx / xlsx / pptx / pdf）', 'Not a supported office file (docx / xlsx / pptx / pdf)') }
   const resolved = await resolvePreviewTarget(rawPath, cwd)
   if (!resolved.ok) return { ok: false, error: resolved.error }
-  if (resolved.st.size > MAX_OFFICE_BYTES) return { ok: false, error: '文件超过 64MB，请用系统程序打开' }
-  if (active >= 2) return { ok: false, error: '正在解析其他文件，请稍后重试' }
+  if (resolved.st.size > MAX_OFFICE_BYTES) return { ok: false, error: pick('文件超过 64MB，请用系统程序打开', 'File is over 64MB. Open it with a system app') }
+  if (active >= 2) return { ok: false, error: pick('正在解析其他文件，请稍后重试', 'Another file is being parsed. Try again shortly') }
   active += 1
   try {
     return await new Promise<OfficeDocumentView>((resolve) => {
       const worker = new Worker(join(dirname(fileURLToPath(import.meta.url)), 'office-worker.js'), {
-        workerData: { path: resolved.real, format }, resourceLimits: { maxOldGenerationSizeMb: 256 }
+        workerData: { path: resolved.real, format, lang: uiLang() }, resourceLimits: { maxOldGenerationSizeMb: 256 }
       })
       let settled = false
       const finish = (result: OfficeDocumentView): void => {
@@ -28,12 +29,12 @@ export async function previewOffice(rawPath: string, cwd: string): Promise<Offic
         void worker.terminate()
         resolve(result)
       }
-      const timer = setTimeout(() => finish({ ok: false, error: '解析超时，请用系统程序打开' }), 30_000)
+      const timer = setTimeout(() => finish({ ok: false, error: pick('解析超时，请用系统程序打开', 'Parsing timed out. Open it with a system app') }), 30_000)
       worker.once('message', (result: OfficeDocumentView) => finish(result))
-      worker.once('error', () => finish({ ok: false, error: '文件解析失败，请用系统程序打开' }))
-      worker.once('exit', () => finish({ ok: false, error: '文件解析中断，请用系统程序打开' }))
+      worker.once('error', () => finish({ ok: false, error: pick('文件解析失败，请用系统程序打开', 'Parsing failed. Open it with a system app') }))
+      worker.once('exit', () => finish({ ok: false, error: pick('文件解析中断，请用系统程序打开', 'Parsing was interrupted. Open it with a system app') }))
     })
   } catch {
-    return { ok: false, error: '无法启动文件解析，请用系统程序打开' }
+    return { ok: false, error: pick('无法启动文件解析，请用系统程序打开', 'Cannot start parsing. Open it with a system app') }
   } finally { active -= 1 }
 }

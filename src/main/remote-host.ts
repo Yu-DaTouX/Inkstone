@@ -4,6 +4,7 @@ import { nativeImage } from 'electron'
 import { join, basename, resolve } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { hostname } from 'node:os'
+import { pick } from '../shared/ui-lang'
 import { remoteHistoryPage, remoteToolCall } from '../shared/remote-history-page'
 import { approvalDigest, applyHumanApproval, remoteApprovalQuestion } from './remote-approval'
 import type { ApprovalBroker } from './approval-broker'
@@ -244,10 +245,10 @@ export async function remoteStopSubagent(
   stop: (id: string) => Promise<{ ok: boolean; error?: string; noop?: boolean }>
 ): Promise<RemoteOperationResult> {
   const run = runs.find((item) => item.id === runId && item.parentSessionId === sessionId)
-  if (!run) return { ok: false, status: 404, error: '找不到这个子代理' }
-  if (run.status !== 'starting' && run.status !== 'running') return { ok: false, status: 409, error: '这个子代理已经结束' }
+  if (!run) return { ok: false, status: 404, error: pick('找不到这个子 Agent', 'Subagent not found') }
+  if (run.status !== 'starting' && run.status !== 'running') return { ok: false, status: 409, error: pick('这个子 Agent已经结束', 'This subagent has already finished') }
   const result = await stop(run.id)
-  return result.ok ? { ok: true, data: { id: run.id, status: 'cancelled' } } : { ok: false, status: 409, error: result.error ?? '停止失败' }
+  return result.ok ? { ok: true, data: { id: run.id, status: 'cancelled' } } : { ok: false, status: 409, error: result.error ?? pick('停止失败', 'Stop failed') }
 }
 
 export function remotePushPayload(channel: string, payload: unknown): unknown {
@@ -267,7 +268,7 @@ export function remotePushPayload(channel: string, payload: unknown): unknown {
 export async function remoteSnapshot(): Promise<Record<string, unknown>> {
   const summaries = await filterChainRepresentatives(await remoteSessions(200))
   const state = host.ac()?.getState() ?? null
-  const connection = host.ac()?.getConn() ?? { state: 'exited' as const, detail: 'pi 未运行' }
+  const connection = host.ac()?.getConn() ?? { state: 'exited' as const, detail: pick('pi 未运行', 'pi is not running') }
   const win = host.win()
   const windowReady = !!win && !win.isDestroyed()
   const settings = await getSettings()
@@ -338,7 +339,7 @@ async function resolveChainSession(sessionId: string, options: { allowUnsaved?: 
   if (!requested) {
     const unsaved = options.allowUnsaved ? unsavedSessionSummary(sessionId) : null
     if (unsaved) return { ok: true, summary: unsaved }
-    return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+    return { ok: false, status: 404, error: pick('找不到目标会话，可能已被删除', 'Session not found. It may have been deleted') }
   }
   await host.sessionChains.load()
   const representativePath = host.sessionChains.representativeOf(requested.path)
@@ -348,9 +349,9 @@ async function resolveChainSession(sessionId: string, options: { allowUnsaved?: 
   }
   const representativeKey = normalizeChainKey(representativePath)
   const representative = list.find((item) => normalizeChainKey(item.path) === representativeKey)
-  if (!representative) return { ok: false, status: 409, error: '会话链的代表段已不可用，请刷新后重试' }
+  if (!representative) return { ok: false, status: 409, error: pick('会话链的代表段已不可用，请刷新后重试', 'The session chain\'s representative segment is unavailable. Refresh and retry') }
   if ((representative.projectId ?? null) !== (requested.projectId ?? null)) {
-    return { ok: false, status: 409, error: '该会话链跨项目，已拒绝把操作归一到代表段' }
+    return { ok: false, status: 409, error: pick('该会话链跨项目，已拒绝把操作归一到代表段', 'This session chain spans projects. The operation was not routed to the representative segment') }
   }
   return { ok: true, summary: representative }
 }
@@ -370,13 +371,13 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
   if (!summary) {
     const unsaved = unsavedSessionSummary(sessionId)
     if (unsaved) return { ok: true, data: { session: remoteSessionSummary(unsaved), messages: [], total: 0, returned: 0, hasMore: false, truncated: false, truncatedBytes: 0, bytes: 0 } }
-    return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+    return { ok: false, status: 404, error: pick('找不到目标会话，可能已被删除', 'Session not found. It may have been deleted') }
   }
 
   const result = await host.readHistoryWithArtifacts(summary.path)
-  if (!result) return { ok: false, status: 502, error: '无法读取该会话历史' }
+  if (!result) return { ok: false, status: 502, error: pick('无法读取该会话历史', 'Cannot read this session\'s history') }
   const page = remoteHistoryPage(result.messages, limit, before)
-  if (!page) return { ok: false, status: 409, error: '会话历史已变化，请重新打开', code: 'history_cursor_expired' }
+  if (!page) return { ok: false, status: 409, error: pick('会话历史已变化，请重新打开', 'Session history changed. Reopen it'), code: 'history_cursor_expired' }
   const messages = page.messages.map((message) => ({
     ...message,
     ...(message.images ? { images: message.images.map((image) => ({ mimeType: image.mimeType, data: '' })) } : {}),
@@ -409,7 +410,7 @@ export async function remoteSelectSession(sessionId: string): Promise<RemoteOper
 
   if (!host.runners()) {
     const started = await host.startAgent()
-    if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+    if (!started.ok) return { ok: false, status: 503, error: started.error ?? pick('pi 未运行', 'pi is not running') }
   }
   const cwdResult = await host.validateCwd(summary.cwd)
   if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
@@ -431,10 +432,10 @@ export async function remoteSelectSession(sessionId: string): Promise<RemoteOper
 export async function remoteNewSession(requestedProjectId?: string): Promise<RemoteOperationResult> {
   const settings = await getSettings()
   const project = requestedProjectId ? settings.projects.find((item) => item.id === requestedProjectId && !item.archived) : undefined
-  if (requestedProjectId && !project) return { ok: false, status: 404, error: '找不到这个项目' }
+  if (requestedProjectId && !project) return { ok: false, status: 404, error: pick('找不到这个项目', 'Project not found') }
   if (!host.runners()) {
     const started = await host.startAgent()
-    if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+    if (!started.ok) return { ok: false, status: 503, error: started.error ?? pick('pi 未运行', 'pi is not running') }
   }
   const cwdResult = await host.validateCwd(project?.cwd ?? settings.cwd)
   if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
@@ -455,7 +456,7 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
 
   if (!host.runners()) {
     const started = await host.startAgent()
-    if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+    if (!started.ok) return { ok: false, status: 503, error: started.error ?? pick('pi 未运行', 'pi is not running') }
   }
   const cwdResult = await host.validateCwd(summary.cwd)
   if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
@@ -472,17 +473,17 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
     activate: false
   })
   if (!selected.ok || !selected.id) {
-    return { ok: false, status: 409, error: selected.error ?? '无法为目标会话准备后台运行实例' }
+    return { ok: false, status: 409, error: selected.error ?? pick('无法为目标会话准备后台运行实例', 'Cannot prepare a background runtime for the session') }
   }
   if (registry.blocksConcurrentRun(cwdResult.cwd, selected.id)) {
-    return { ok: false, status: 409, error: '同一工作目录的另一个运行实例正在工作，暂不向目标会话发送以避免并发写入' }
+    return { ok: false, status: 409, error: pick('同一工作目录的另一个运行实例正在工作，暂不向目标会话发送以避免并发写入', 'Another runtime in the same working folder is busy. Not sending to avoid concurrent writes') }
   }
   const agent = registry.agentOf(selected.id)
   const generation = selected.generation
   const current = () => host.runners() === registry && registry.agentOf(selected.id!) === agent &&
     generation !== undefined && registry.runtimeOf(selected.id!)?.generation === generation &&
     agent?.getState()?.sessionId === summary.id && selected.sessionId === summary.id
-  const changed = { ok: false, status: 409, error: '目标会话运行实例已变化，请刷新后重试' }
+  const changed = { ok: false, status: 409, error: pick('目标会话运行实例已变化，请刷新后重试', 'The session\'s runtime changed. Refresh and retry') }
   if (!agent || !current() || generation === undefined) return changed
   if (authorize) {
     const denied = await authorize(summary.id)
@@ -506,7 +507,7 @@ export async function remoteModels(sessionId: string): Promise<RemoteOperationRe
   const summary = resolved.summary
   const status = host.runners()?.statuses().find((item) => item.sessionId === summary.id)
   const agent = status ? host.runners()?.agentOf(status.runId) : host.ac()
-  if (!agent) return { ok: false, status: 503, error: '请先在电脑启动模型连接' }
+  if (!agent) return { ok: false, status: 503, error: pick('请先在电脑启动模型连接', 'Start the model connection on the computer first') }
   const models = await agent.listModels()
   const levels = status ? await agent.listThinkingLevels().catch(() => []) : []
   const thinking = status && levels.length > 1 ? { level: agent.getState()?.thinkingLevel ?? 'off', levels } : null
@@ -524,20 +525,20 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
   if (command.action === 'new') return remoteNewSession(command.projectId)
 
   if (command.action === 'send') {
-    if (command.images?.some((image) => nativeImage.createFromBuffer(Buffer.from(image.data, 'base64')).isEmpty())) return { ok: false, status: 400, error: '图片无法解码，请重新选择' }
+    if (command.images?.some((image) => nativeImage.createFromBuffer(Buffer.from(image.data, 'base64')).isEmpty())) return { ok: false, status: 400, error: pick('图片无法解码，请重新选择', 'Cannot decode the image. Choose another') }
     return withRemoteSession(command.sessionId, async (agent, runId, summary, generation) => {
       const model = agent.getState()?.model
-      if (command.images?.length && model?.input && !model.input.includes('image')) return { ok: false, status: 409, error: '当前模型不支持图片，请选择支持图片的模型' }
+      if (command.images?.length && model?.input && !model.input.includes('image')) return { ok: false, status: 409, error: pick('当前模型不支持图片，请选择支持图片的模型', 'This model does not support images. Choose one that does') }
       userMessageSent(agent.getState()?.sessionId)
       const result = await agent.send(command.text, command.images, command.mode, undefined, generation)
-      return result.ok ? { ok: true, data: { ...result, runId, sessionId: summary.id } } : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
+      return result.ok ? { ok: true, data: { ...result, runId, sessionId: summary.id } } : { ok: false, status: 409, error: result.error ?? pick('目标会话未能接收消息', 'The session could not accept the message') }
     }, command.authorize)
   }
   if (command.action === 'model') {
     return withRemoteSession(command.sessionId, async (agent, _runId, _summary, _generation, current) => {
       const model = (await agent.listModels()).find((item) => item.provider === command.provider && item.id === command.modelId)
-      if (!model) return { ok: false, status: 400, error: '模型不在电脑可用列表中' }
-      if (!current()) return { ok: false, status: 409, error: '目标会话运行实例已变化' }
+      if (!model) return { ok: false, status: 400, error: pick('模型不在电脑可用列表中', 'Model is not in the computer\'s available list') }
+      if (!current()) return { ok: false, status: 409, error: pick('目标会话运行实例已变化', 'The session\'s runtime changed') }
       const result = await agent.setModel(model.provider, model.id)
       host.pushRunners()
       return result.ok ? { ok: true, data: { current: { id: model.id, provider: model.provider, name: model.name, input: model.input }, pending: !!agent.getState()?.pendingModelChange } } : { ok: false, status: 409, error: result.error }
@@ -547,8 +548,8 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
   if (command.action === 'thinking') {
     return withRemoteSession(command.sessionId, async (agent, _runId, _summary, _generation, current) => {
       const levels = await agent.listThinkingLevels()
-      if (!current()) return { ok: false, status: 409, error: '目标会话运行实例已变化' }
-      if (!levels.includes(command.level)) return { ok: false, status: 400, error: '当前模型不支持这个思考档位' }
+      if (!current()) return { ok: false, status: 409, error: pick('目标会话运行实例已变化', 'The session\'s runtime changed') }
+      if (!levels.includes(command.level)) return { ok: false, status: 400, error: pick('当前模型不支持这个思考档位', 'This model does not support this thinking level') }
       const result = await agent.setThinking(command.level)
       host.pushRunners()
       return result.ok ? { ok: true, data: { level: command.level, levels, pending: !!agent.getState()?.pendingModelChange } } : { ok: false, status: 409, error: result.error }
@@ -557,10 +558,10 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
 
   if (command.action === 'abort') {
     const agent = host.runners()?.agentOf(command.runId)
-    if (!agent) return { ok: false, status: 404, error: '找不到目标运行实例' }
+    if (!agent) return { ok: false, status: 404, error: pick('找不到目标运行实例', 'Target runtime not found') }
     const state = agent.getState()
     if (!state?.isAgentRunning && !state?.isStreaming && !state?.isCompacting && !agent.hasRunningBash()) {
-      return { ok: false, status: 409, error: '目标 runId 当前没有正在运行的任务' }
+      return { ok: false, status: 409, error: pick('目标 runId 当前没有正在运行的任务', 'The target runId has no running task') }
     }
     return { ok: true, data: { runId: command.runId, ...(await agent.abort()) } }
   }
@@ -569,10 +570,10 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
   if (!resolved.ok) return resolved
   const summary = resolved.summary
   const saved = await setManualTitle(summary.id, command.name)
-  if (!saved.ok) return { ok: false, status: 500, error: saved.error ?? '保存会话名称失败' }
+  if (!saved.ok) return { ok: false, status: 500, error: saved.error ?? pick('保存会话名称失败', 'Failed to save the session name') }
   if (host.ac()?.getState()?.sessionId === summary.id) {
     const renamed = await host.ac()!.renameSession(command.name, summary.id)
-    if (!renamed.ok) return { ok: false, status: 409, error: renamed.error ?? '当前会话名称未能同步到 pi' }
+    if (!renamed.ok) return { ok: false, status: 409, error: renamed.error ?? pick('当前会话名称未能同步到 pi', 'The session name could not be synced to pi') }
   }
   host.push({ ch: 'session-title', payload: { sessionId: summary.id, title: command.name } })
   return { ok: true, data: { sessionId: summary.id, name: command.name } }
@@ -634,7 +635,7 @@ export async function remoteHumanApproval(questionId: string, answer: RemoteHuma
   const question = pendingRemoteQuestions().find(item => item.id === questionId && item.runId === answer.runId)
   const agent = host.runners()?.agentOf(answer.runId)
   if (!agent?.pendingUiRequests().some(item => item.id === questionId)) {
-    return { ok: false, status: 404, code: 'question_not_pending', error: '该审批已处理或已过期' }
+    return { ok: false, status: 404, code: 'question_not_pending', error: pick('该审批已处理或已过期', 'This approval was already handled or has expired') }
   }
   return applyHumanApproval(question, answer, confirmed => agent.respondUi({ id: questionId, confirmed }, 'remote'))
 }
@@ -643,12 +644,12 @@ export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Pr
   if (questionId.startsWith('approval:')) {
     const approvalId = questionId.slice('approval:'.length)
     const request = host.approvals?.list().find(item => item.id === approvalId)
-    if (!request) return { ok: false, status: 404, code: 'question_not_pending', error: '该审批已处理或已过期' }
+    if (!request) return { ok: false, status: 404, code: 'question_not_pending', error: pick('该审批已处理或已过期', 'This approval was already handled or has expired') }
     const declines = ('cancelled' in answer && answer.cancelled === true) || ('confirmed' in answer && answer.confirmed === false)
     if (!declines) {
-      return { ok: false, status: 403, code: 'sensitive_confirmation_requires_desktop', error: '这是敏感确认，请在电脑上确认，或通过已配对客户端的人工批准通道处理' }
+      return { ok: false, status: 403, code: 'sensitive_confirmation_requires_desktop', error: pick('这是敏感确认，请在电脑上确认，或通过已配对客户端的人工批准通道处理', 'This is a sensitive confirmation. Confirm on the computer or via a paired client\'s manual approval') }
     }
-    if (!host.approvals?.answer(approvalId, 'deny')) return { ok: false, status: 409, code: 'question_not_pending', error: '该审批已处理或已过期' }
+    if (!host.approvals?.answer(approvalId, 'deny')) return { ok: false, status: 409, code: 'question_not_pending', error: pick('该审批已处理或已过期', 'This approval was already handled or has expired') }
     return { ok: true, data: { questionId, runId: request.runId ?? questionId } }
   }
   for (const status of host.runners()?.statuses() ?? []) {
@@ -657,28 +658,28 @@ export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Pr
     const result = agent.answerUiRemotely(questionId, answer)
     if (result.ok) return { ok: true, data: { questionId, runId: status.runId } }
     return result.code === 'sensitive_confirmation_requires_desktop'
-      ? { ok: false, status: 403, code: result.code, error: '这是敏感确认，请在电脑上确认，或通过已配对客户端的人工批准通道处理' }
-      : { ok: false, status: 409, code: result.code, error: '这个问题已经答复或已过期' }
+      ? { ok: false, status: 403, code: result.code, error: pick('这是敏感确认，请在电脑上确认，或通过已配对客户端的人工批准通道处理', 'This is a sensitive confirmation. Confirm on the computer or via a paired client\'s manual approval') }
+      : { ok: false, status: 409, code: result.code, error: pick('这个问题已经答复或已过期', 'This question was already answered or has expired') }
   }
-  return { ok: false, status: 404, code: 'question_not_pending', error: '这个问题已经答复或已过期' }
+  return { ok: false, status: 404, code: 'question_not_pending', error: pick('这个问题已经答复或已过期', 'This question was already answered or has expired') }
 }
 
 export async function remoteArtifact(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult> {
   const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
-  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+  if (!summary) return { ok: false, status: 404, error: pick('找不到目标会话，可能已被删除', 'Session not found. It may have been deleted') }
   const result = await host.readHistoryWithArtifacts(summary.path)
   const artifact = result?.messages.flatMap((message) => message.artifacts ?? []).find((item) => item.id === artifactId)
-  if (!artifact) return { ok: false, status: 404, error: '这个会话里没有这份成果' }
-  if (artifact.unavailable) return { ok: false, status: 410, error: '这份成果的文件已被移动或删除' }
+  if (!artifact) return { ok: false, status: 404, error: pick('这个会话里没有这份成果', 'This artifact is not in the session') }
+  if (artifact.unavailable) return { ok: false, status: 410, error: pick('这份成果的文件已被移动或删除', 'The artifact\'s file was moved or deleted') }
   try {
     const info = await stat(artifact.path)
-    if (!info.isFile()) return { ok: false, status: 410, error: '这份成果的文件已不可用' }
+    if (!info.isFile()) return { ok: false, status: 410, error: pick('这份成果的文件已不可用', 'The artifact\'s file is unavailable') }
     if (info.size > REMOTE_ARTIFACT_MAX_BYTES) {
-      return { ok: false, status: 413, error: '成果文件超过 10MB，请在电脑上查看' }
+      return { ok: false, status: 413, error: pick('成果文件超过 10MB，请在电脑上查看', 'Artifact is over 10MB. View it on the computer') }
     }
     return { path: artifact.path, mediaType: artifact.mediaType, bytes: info.size, filename: artifact.filename }
   } catch {
-    return { ok: false, status: 410, error: '这份成果的文件已不可用' }
+    return { ok: false, status: 410, error: pick('这份成果的文件已不可用', 'The artifact\'s file is unavailable') }
   }
 }
 
@@ -694,15 +695,15 @@ function remoteToolCallsWithImages(calls: UIToolCall[], start: number) {
 
 export async function remoteMessageImage(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult> {
   const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
-  if (!summary) return { ok: false, status: 404, error: '找不到目标会话' }
+  if (!summary) return { ok: false, status: 404, error: pick('找不到目标会话', 'Session not found') }
   const history = await host.readHistoryWithArtifacts(summary.path)
   const message = history?.messages.find((item) => item.id === messageId)
   const image = message ? [...(message.images ?? []), ...(message.toolCalls ?? []).flatMap((call) => call.images ?? [])][index] : undefined
   const url = image?.url || (image?.data ? localizeImage(join(YAN_DIR, 'attachments'), image.mimeType, image.data) : '')
-  if (!url.startsWith('file:')) return { ok: false, status: 404, error: '图片已不可用' }
+  if (!url.startsWith('file:')) return { ok: false, status: 404, error: pick('图片已不可用', 'Image unavailable') }
   const file = await managedAttachment(url)
-  if (!file) return { ok: false, status: 403, error: '图片不在受管目录中' }
-  if (file.size > REMOTE_ARTIFACT_MAX_BYTES) return { ok: false, status: 413, error: '图片过大，请在电脑查看' }
+  if (!file) return { ok: false, status: 403, error: pick('图片不在受管目录中', 'Image is not in a managed folder') }
+  if (file.size > REMOTE_ARTIFACT_MAX_BYTES) return { ok: false, status: 413, error: pick('图片过大，请在电脑查看', 'Image too large. View it on the computer') }
   return { path: file.path, mediaType: image!.mimeType, bytes: file.size, filename: file.name }
 }
 
@@ -771,9 +772,9 @@ export const peerHostHandlers: PeerHostHandlers = {
   },
   async exportSession(sessionId) {
     const summary = await peerSummaryOf(sessionId)
-    if (!summary?.projectId || !(await peerProjectOf(summary))) return { ok: false, status: 404, error: '找不到目标会话' }
+    if (!summary?.projectId || !(await peerProjectOf(summary))) return { ok: false, status: 404, error: pick('找不到目标会话', 'Session not found') }
     const history = await host.readHistoryWithArtifacts(summary.path)
-    if (!history) return { ok: false, status: 502, error: '无法读取该会话历史' }
+    if (!history) return { ok: false, status: 502, error: pick('无法读取该会话历史', 'Cannot read this session\'s history') }
     const settings = await getSettings()
     const project = settings.projects.find((item) => item.id === summary.projectId)
     const artifacts: PeerExportedArtifact[] = []
@@ -809,28 +810,28 @@ export const peerHostHandlers: PeerHostHandlers = {
   },
   async startSession(projectId, text) {
     const project = (await getSettings()).projects.find((item) => item.id === projectId && !item.archived)
-    if (!project) return { ok: false, status: 404, error: '找不到这个项目' }
+    if (!project) return { ok: false, status: 404, error: pick('找不到这个项目', 'Project not found') }
     if (!host.runners()) {
       const started = await host.startAgent()
-      if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
+      if (!started.ok) return { ok: false, status: 503, error: started.error ?? pick('pi 未运行', 'pi is not running') }
     }
     const cwdResult = await host.validateCwd(project.cwd)
     if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
     const registry = host.runners()!
     const selected = await registry.select({ cwd: cwdResult.cwd, projectId: project.id, scope: 'project', activate: false })
-    if (!selected.ok || !selected.id) return { ok: false, status: 409, error: selected.error ?? '无法为新任务准备运行实例' }
+    if (!selected.ok || !selected.id) return { ok: false, status: 409, error: selected.error ?? pick('无法为新任务准备运行实例', 'Cannot prepare a runtime for the new task') }
     const agent = registry.agentOf(selected.id)
     const generation = selected.generation
     const sessionId = selected.sessionId
     const current = () => host.runners() === registry && registry.agentOf(selected.id!) === agent &&
       generation !== undefined && registry.runtimeOf(selected.id!)?.generation === generation &&
       agent?.getState()?.sessionId === sessionId
-    if (!agent || !sessionId || generation === undefined || !current()) return { ok: false, status: 409, error: '新任务运行实例已变化' }
+    if (!agent || !sessionId || generation === undefined || !current()) return { ok: false, status: 409, error: pick('新任务运行实例已变化', 'The new task\'s runtime changed') }
     await host.rememberRunnerSession(selected, { cwd: cwdResult.cwd, projectId: project.id, scope: 'project' })
-    if (!current()) return { ok: false, status: 409, error: '新任务运行实例已变化' }
+    if (!current()) return { ok: false, status: 409, error: pick('新任务运行实例已变化', 'The new task\'s runtime changed') }
     const sent = await agent.send(text, undefined, undefined, undefined, generation)
     host.pushRunners()
-    if (!sent.ok) return { ok: false, status: 409, error: sent.error ?? '新任务未能接收消息' }
+    if (!sent.ok) return { ok: false, status: 409, error: sent.error ?? pick('新任务未能接收消息', 'The new task could not accept the message') }
     return { ok: true, data: { sessionId: sessionId ?? null, runId: selected.runId ?? selected.id, projectId: project.id } }
   }
 }
@@ -840,7 +841,7 @@ export async function remoteSetSessionFlag(sessionId: string, flags: { pinned?: 
   if (!resolved.ok) return resolved
   const summary = resolved.summary
   if (flags.archived === true && host.runners()?.statuses().some((item) => item.sessionId === summary.id && (item.running || item.waiting))) {
-    return { ok: false, status: 409, error: '会话正在运行，不能归档' }
+    return { ok: false, status: 409, error: pick('会话正在运行，不能归档', 'Session is running and cannot be archived') }
   }
   try {
     await setSessionFlags({ sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd }, flags)
@@ -856,20 +857,20 @@ export async function remoteDeleteSession(sessionId: string): Promise<RemoteOper
   const resolved = await resolveChainSession(sessionId)
   if (!resolved.ok) return resolved
   if (host.runners()?.statuses().some((item) => (item.sessionId === resolved.summary.id || (!!item.sessionFile && normalizeChainKey(item.sessionFile) === normalizeChainKey(resolved.summary.path))) && (item.running || item.waiting))) {
-    return { ok: false, status: 409, error: '会话正在运行，不能删除' }
+    return { ok: false, status: 409, error: pick('会话正在运行，不能删除', 'Session is running and cannot be deleted') }
   }
   const result = await deleteSessionChain(host, resolved.summary.path)
   sessionsCache = null
-  return result.ok ? { ok: true, data: { sessionId: resolved.summary.id } } : { ok: false, status: 409, error: result.error ?? '删除失败' }
+  return result.ok ? { ok: true, data: { sessionId: resolved.summary.id } } : { ok: false, status: 409, error: result.error ?? pick('删除失败', 'Delete failed') }
 }
 
 export async function remoteCompact(sessionId: string): Promise<RemoteOperationResult> {
   return withRemoteSession(sessionId, async (agent) => {
     const state = agent.getState()
-    if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可压缩上下文' }
+    if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: pick('任务完成后可压缩上下文', 'Compaction is available after the task finishes') }
     const result = await agent.compact()
     host.pushRunners()
-    return result.ok ? { ok: true, data: { sessionId } } : { ok: false, status: 409, error: result.error ?? '压缩失败' }
+    return result.ok ? { ok: true, data: { sessionId } } : { ok: false, status: 409, error: result.error ?? pick('压缩失败', 'Compaction failed') }
   })
 }
 
@@ -913,16 +914,16 @@ export async function remoteSwitchBranch(sessionId: string, branch: string): Pro
   if (!resolved.ok) return resolved
   const summary = resolved.summary
   if (host.runners()?.statuses().some((item) => item.sessionId === summary.id && (item.running || item.waiting))) {
-    return { ok: false, status: 409, error: '任务完成后可切换分支' }
+    return { ok: false, status: 409, error: pick('任务完成后可切换分支', 'Branches can be switched after the task finishes') }
   }
   try {
     const repo = await resolveRepo(summary.cwd)
-    if (!repo) return { ok: false, status: 409, error: '这个目录不在 Git 仓库里' }
+    if (!repo) return { ok: false, status: 409, error: pick('这个目录不在 Git 仓库里', 'This folder is not in a Git repository') }
     const listing = await listRefs(repo.root)
-    if (!listing.refs.some((ref) => ref.kind === 'local' && ref.ref === branch)) return { ok: false, status: 404, error: '找不到这个本地分支' }
+    if (!listing.refs.some((ref) => ref.kind === 'local' && ref.ref === branch)) return { ok: false, status: 404, error: pick('找不到这个本地分支', 'Local branch not found') }
     const snapshot = await readRepoSnapshot(repo)
     const result = await runGitAction({ requestId: randomUUID(), cwd: summary.cwd, kind: 'switch-branch', branch, expected: snapshot.expected })
-    if (!result.ok) return { ok: false, status: 409, error: (result as { failure?: { message?: string } }).failure?.message ?? '切换分支失败' }
+    if (!result.ok) return { ok: false, status: 409, error: (result as { failure?: { message?: string } }).failure?.message ?? pick('切换分支失败', 'Switch branch failed') }
     return { ok: true, data: { branch } }
   } catch (error) {
     return { ok: false, status: 500, error: error instanceof Error ? error.message : String(error) }

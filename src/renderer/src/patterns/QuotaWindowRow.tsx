@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import { Badge, Meter, type ProgressTone } from '../ui'
-import { useT, type MessageKey, type TFunc } from '../i18n'
+import { currentLang, useT, type MessageKey, type TFunc } from '../i18n'
 import type { QuotaWindow } from '../../../shared/ipc'
 import { quotaTone } from '../../../shared/quota-tone'
 import {
@@ -27,7 +27,7 @@ export function quotaCountdown(t: TFunc, ms: number): string {
   return t('quota.durM', { m: Math.max(1, m) })
 }
 
-const clock = (at: number): string => new Date(at).toLocaleString(undefined, { hour12: false })
+const clock = (at: number): string => new Date(at).toLocaleString(currentLang(), { hour12: false })
 
 export function quotaReadAgo(t: TFunc, checkedAt: number, now: number): string {
   return now - checkedAt < READ_NOW_MS ? t('quota.readNow') : t('quota.readAgo', { t: quotaCountdown(t, now - checkedAt) })

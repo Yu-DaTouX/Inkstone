@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { resolve } from 'node:path'
 import type { SessionHost } from './session-host'
 import { deleteSession, restoreSession, sessionsToDelete } from './sessions'
@@ -14,7 +15,7 @@ export async function deleteSessionChain(host: SessionHost, path: string): Promi
     for (const item of await sessionsToDelete(resolve(path)).catch(() => [])) affected.add(item.path)
     const current = host.ac()?.getState()?.sessionFile
     if (current && affected.has(resolve(current))) {
-      return { ok: false, error: '不能删除当前正在使用的会话' }
+      return { ok: false, error: pick('不能删除当前正在使用的会话', 'Cannot delete the session in use') }
     }
     for (const target of affected) await host.runners()?.stopBySessionFile(target)
     for (const target of targets) {
@@ -36,7 +37,7 @@ export async function deleteSessionChain(host: SessionHost, path: string): Promi
     host.pushRunners()
     return {
       ok: false,
-      error: `${e instanceof Error ? e.message : String(e)}${remaining.length ? '；部分会话恢复失败，仍可使用撤销令牌重试恢复' : ''}`,
+      error: `${e instanceof Error ? e.message : String(e)}${remaining.length ? pick('；部分会话恢复失败，仍可使用撤销令牌重试恢复', '; some sessions failed to restore; retry with the undo token') : ''}`,
       ...(remaining.length ? { undoToken: remaining.join('|') } : {})
     }
   }

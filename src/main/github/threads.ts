@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import type { GhPrReviewThreadCommentJson, GhPrReviewThreadJson } from '../../shared/github'
 import { classifyGhFailure, runGh } from './command'
 import type { GhRunner } from './command'
@@ -37,8 +38,8 @@ export async function readReviewThreads(cwd: string, number: number, run: GhRunn
     const result = await run(cwd, ['api', 'graphql', '-f', `query=${text}`, ...fields])
     if (!result.ok) throw new Error(classifyGhFailure(result).message)
     const parsed = object(JSON.parse(result.stdout))
-    if (Array.isArray(parsed.errors) && parsed.errors.length) throw new Error('无法读取行内评审讨论')
-    if (!parsed.data) throw new Error('行内评审讨论数据无法解析')
+    if (Array.isArray(parsed.errors) && parsed.errors.length) throw new Error(pick('无法读取行内评审讨论', 'Could not read inline review threads'))
+    if (!parsed.data) throw new Error(pick('行内评审讨论数据无法解析', 'Could not parse inline review thread data'))
     return object(parsed.data)
   }
   async function moreComments(thread: GhPrReviewThreadJson, connection: Json): Promise<void> {
@@ -49,7 +50,7 @@ export async function readReviewThreads(cwd: string, number: number, run: GhRunn
       seen.add(cursor)
       const data = await query(COMMENT_QUERY, ['-f', `id=${thread.id}`, '-f', `cursor=${cursor}`])
       connection = object(object(data.node).comments)
-      if (!Array.isArray(connection.nodes)) throw new Error('行内评审评论数据无法解析')
+      if (!Array.isArray(connection.nodes)) throw new Error(pick('行内评审评论数据无法解析', 'Could not parse inline review comment data'))
       thread.comments.push(...comments(connection.nodes, thread))
     }
   }
@@ -59,7 +60,7 @@ export async function readReviewThreads(cwd: string, number: number, run: GhRunn
     for (let page = 0; page < MAX_PAGES; page++) {
       const data = await query(THREAD_QUERY, ['-F', 'owner={owner}', '-F', 'name={repo}', '-F', `number=${number}`, ...(cursor ? ['-f', `cursor=${cursor}`] : [])])
       const connection = object(object(object(data.repository).pullRequest).reviewThreads)
-      if (!Array.isArray(connection.nodes)) throw new Error('行内评审讨论数据无法解析')
+      if (!Array.isArray(connection.nodes)) throw new Error(pick('行内评审讨论数据无法解析', 'Could not parse inline review thread data'))
       for (const raw of connection.nodes) {
         const t = object(raw)
         if (typeof t.id !== 'string' || typeof t.path !== 'string') continue
@@ -78,6 +79,6 @@ export async function readReviewThreads(cwd: string, number: number, run: GhRunn
     }
     return { reviewThreads: threads, reviewThreadsTruncated: true }
   } catch (error) {
-    return { reviewThreads: threads, reviewThreadsTruncated: true, reviewThreadsError: error instanceof SyntaxError ? '行内评审讨论数据无法解析' : error instanceof Error ? error.message : '无法读取行内评审讨论' }
+    return { reviewThreads: threads, reviewThreadsTruncated: true, reviewThreadsError: error instanceof SyntaxError ? pick('行内评审讨论数据无法解析', 'Could not parse inline review thread data') : error instanceof Error ? error.message : pick('无法读取行内评审讨论', 'Could not read inline review threads') }
   }
 }

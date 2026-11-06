@@ -1,3 +1,4 @@
+import { currentLang } from '../i18n/lang'
 import { forwardRef, type HTMLAttributes, type ReactNode } from 'react'
 import { cx } from './cx'
 import './Card.css'
@@ -109,15 +110,17 @@ export function CardChevron() {
   )
 }
 
-let timeFormats: { clock: Intl.DateTimeFormat; day: Intl.DateTimeFormat; full: Intl.DateTimeFormat } | null = null
+let timeFormats: { lang: string; clock: Intl.DateTimeFormat; day: Intl.DateTimeFormat; full: Intl.DateTimeFormat } | null = null
 
 function cardTimeFormats(): NonNullable<typeof timeFormats> {
-  timeFormats ??= {
-    clock: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }),
-    day: new Intl.DateTimeFormat(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
-    full: new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const lang = currentLang()
+  if (timeFormats?.lang !== lang) timeFormats = {
+    lang,
+    clock: new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit' }),
+    day: new Intl.DateTimeFormat(lang, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    full: new Intl.DateTimeFormat(lang, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
   }
-  return timeFormats
+  return timeFormats!
 }
 
 export function CardTime({ at, className }: { at: number; className?: string }) {

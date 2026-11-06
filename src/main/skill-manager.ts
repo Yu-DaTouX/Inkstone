@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { allUserSkillPaths, disabledUserSkillNames, setUserSkillDisabled } from './user-skills'
 import { modifyPiSettings, readJson, withPiSettingsLock } from './native-compaction-line'
+import { pick } from '../shared/ui-lang'
 
 export type SkillManageScope = 'yan' | 'pi'
 
@@ -122,7 +123,7 @@ async function setPiSkillDisabled(skillDir: string, disabled: boolean, agentDir:
   const pattern = piSkillPattern(skillDir, agentDir)
   return withPiSettingsLock(() =>
     modifyPiSettings<{ ok: boolean; error?: string }>(file, (settings) => {
-      if (!settings) return { result: { ok: false, error: `${file} 不是有效的 JSON，没有改动` } }
+      if (!settings) return { result: { ok: false, error: pick(`${file} 不是有效的 JSON，没有改动`, `${file} is not valid JSON; nothing changed`) } }
       const current = Array.isArray(settings.skills) ? settings.skills : []
       const kept = current.filter(
         (entry) =>
@@ -147,7 +148,7 @@ export async function setManagedSkillEnabled(
   paths: SkillManagerPaths = defaultPaths()
 ): Promise<{ ok: boolean; error?: string }> {
   const dir = managedSkillDir(scope, dirName, paths)
-  if (!dir) return { ok: false, error: `没有找到技能「${dirName}」` }
+  if (!dir) return { ok: false, error: pick(`没有找到技能「${dirName}」`, `Skill "${dirName}" not found`) }
   if (scope === 'yan') {
     await setUserSkillDisabled(dirName, !enabled, paths.yanRoot)
     return { ok: true }
@@ -162,7 +163,7 @@ export async function trashManagedSkill(
   paths: SkillManagerPaths = defaultPaths()
 ): Promise<{ ok: boolean; error?: string }> {
   const dir = managedSkillDir(scope, dirName, paths)
-  if (!dir) return { ok: false, error: `没有找到技能「${dirName}」` }
+  if (!dir) return { ok: false, error: pick(`没有找到技能「${dirName}」`, `Skill "${dirName}" not found`) }
   await trash(dir)
   if (scope === 'yan') await setUserSkillDisabled(dirName, false, paths.yanRoot)
   else await setPiSkillDisabled(dir, false, paths.agentDir)

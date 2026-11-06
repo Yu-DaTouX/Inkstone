@@ -1,6 +1,7 @@
 import type { FileNameSearchResult } from '../shared/file-name-search'
 import type { GitRemoteIdentity } from '../shared/git'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { stripIpcErrorPrefix } from '../shared/ipc-error'
 import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
 import {
   CANVAS_CAPTURE_CHANNEL,
@@ -131,7 +132,13 @@ import type { OAuthAccountPools } from '../shared/oauth-accounts'
 import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
 import type { LocalServerSnapshot } from '../shared/local-servers'
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
-  ipcRenderer.invoke(ch, ...args) as Promise<T>
+  (ipcRenderer.invoke(ch, ...args) as Promise<T>).catch((error: unknown) => {
+    if (error instanceof Error) {
+      const message = stripIpcErrorPrefix(error.message)
+      if (message !== error.message) throw new Error(message)
+    }
+    throw error
+  })
 
 let rendererReadySent = false
 

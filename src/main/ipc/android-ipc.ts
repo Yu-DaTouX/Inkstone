@@ -4,6 +4,7 @@ import { AndroidDeviceService } from '../android/android-devices'
 import { AndroidSdkService } from '../android/android-sdk'
 import { resolveSdkRoot } from '../android/android-paths'
 import type { IpcRegistrar } from './registrar'
+import { pick } from '../../shared/ui-lang'
 
 function isComponent(value: unknown): value is AndroidComponentId {
   return typeof value === 'string' && (ANDROID_COMPONENTS as string[]).includes(value)
@@ -29,7 +30,7 @@ export function registerAndroidIpc(ipc: IpcRegistrar, window: () => BrowserWindo
   handle('yan:android:boot', (avd: unknown) => devices.boot(String(avd ?? '')))
   handle('yan:android:watch', (serial: unknown) => (typeof serial === 'string' && serial ? devices.watch(serial) : devices.unwatch()))
   handle('yan:android:control', (serial: unknown, action: unknown) => {
-    if (typeof serial !== 'string' || !isControl(action)) throw new Error('设备操作无效')
+    if (typeof serial !== 'string' || !isControl(action)) throw new Error(pick('设备操作无效', 'Invalid device action'))
     return devices.control(serial, action)
   })
 }

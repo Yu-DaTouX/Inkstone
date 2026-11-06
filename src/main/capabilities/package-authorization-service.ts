@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -30,7 +31,7 @@ export class PackageAuthorizationService {
   async list(): Promise<PackageExecutionGrant[]> {
     try {
       const info = await stat(this.file)
-      if (info.size > MAX_STORE_BYTES) throw new Error('本地包授权文件超过大小上限，拒绝读取 / 覆盖')
+      if (info.size > MAX_STORE_BYTES) throw new Error(pick('本地包授权文件超过大小上限，拒绝读取 / 覆盖', 'The local package authorization file is over the size limit; not read or overwritten'))
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
       throw error
@@ -39,10 +40,10 @@ export class PackageAuthorizationService {
     try {
       parsed = JSON.parse(await readFile(this.file, 'utf8'))
     } catch (error) {
-      throw new Error(`本地包授权文件损坏，拒绝按空授权覆盖：${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(pick(`本地包授权文件损坏，拒绝按空授权覆盖：${error instanceof Error ? error.message : String(error)}`, `The local package authorization file is damaged; not overwritten with an empty one: ${error instanceof Error ? error.message : String(error)}`))
     }
     const items = parsed && typeof parsed === 'object' ? (parsed as { items?: unknown }).items : null
-    if (!Array.isArray(items)) throw new Error('本地包授权文件结构无效，拒绝按空授权覆盖')
+    if (!Array.isArray(items)) throw new Error(pick('本地包授权文件结构无效，拒绝按空授权覆盖', 'The local package authorization file is malformed; not overwritten with an empty one'))
     return items
       .filter((item): item is PackageExecutionGrant => !!item && typeof item === 'object' && validPackageExecutionGrant(item as PackageExecutionGrant))
       .slice(-MAX_GRANTS)
@@ -69,7 +70,7 @@ export class PackageAuthorizationService {
       grantedAt: input.at ?? new Date().toISOString(),
       via: 'settings-ui'
     }
-    if (!validPackageExecutionGrant(grant)) throw new Error('本地包授权字段不合法')
+    if (!validPackageExecutionGrant(grant)) throw new Error(pick('本地包授权字段不合法', 'Invalid local package authorization fields'))
     const items = await this.list()
     const next = items.filter((item) => !(item.candidateId === grant.candidateId && item.digest === grant.digest && item.projectId === grant.projectId))
     next.push(grant)

@@ -48,6 +48,7 @@ import { isForbiddenOrigin, normalizeSiteOrigin } from './preview-site-access'
 import { decideRequestBoundary } from './browser/network-boundary'
 import { decideExternalRequest } from './browser/external-boundary'
 import { createStateFlush, ownedViewVisible } from './browser/host-state'
+import { pick } from '../shared/ui-lang'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -306,11 +307,11 @@ export class BrowserController {
 
   private async showLoginImportExtension(): Promise<void> {
     const error = await shell.openPath(this.loginImportExtensionPath())
-    if (error) throw new Error('无法打开扩展目录')
+    if (error) throw new Error(pick('无法打开扩展目录', 'Cannot open the extensions folder'))
   }
 
   async startLoginImport(): Promise<{ id: string }> {
-    if (this.loginImportStarting || this.loginImport?.status().phase === 'importing') throw new Error('登录态正在写入，请稍后再试')
+    if (this.loginImportStarting || this.loginImport?.status().phase === 'importing') throw new Error(pick('登录态正在写入，请稍后再试', 'Sign-in data is being written; try again shortly'))
     this.loginImportStarting = true
     try {
       if (this.loginImport?.status().phase !== 'waiting') {
@@ -322,7 +323,7 @@ export class BrowserController {
           receive: (cookies) => this.receiveLoginCookies(cookies)
         })
       }
-      try { await shell.openExternal(this.loginImport.url) } catch { this.loginImport.cancel(); throw new Error('无法打开来源浏览器') }
+      try { await shell.openExternal(this.loginImport.url) } catch { this.loginImport.cancel(); throw new Error(pick('无法打开来源浏览器', 'Cannot open the source browser')) }
       return { id: this.loginImport.id }
     } finally { this.loginImportStarting = false }
   }
@@ -507,7 +508,7 @@ export class BrowserController {
       const target = safeUrl(url)
       if (target) {
         void this.openBackgroundTab(target, tab.committedUrl || tab.openerUrl, tab.sessionId).catch((error) =>
-          this.pushError(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`)
+          this.pushError(pick(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`, `Cannot open background tab: ${error instanceof Error ? error.message : String(error)}`))
         )
       }
       return { action: 'deny' }
@@ -526,12 +527,12 @@ export class BrowserController {
           const owner = !this.userControl && this.activeMode !== 'external' && contents?.id === this.activeTab()?.view.webContents.id ? this.automationOwner : undefined
           void this.handleDownload(item, owner).catch((error) => {
             item.cancel()
-            this.pushError(`浏览器下载无法保存：${error instanceof Error ? error.message : String(error)}`)
+            this.pushError(pick(`浏览器下载无法保存：${error instanceof Error ? error.message : String(error)}`, `Browser download cannot be saved: ${error instanceof Error ? error.message : String(error)}`))
           })
         })
         this.downloadSessionAttached = true
       } catch (error) {
-        this.pushError(`浏览器下载监听未能启用：${error instanceof Error ? error.message : String(error)}`)
+        this.pushError(pick(`浏览器下载监听未能启用：${error instanceof Error ? error.message : String(error)}`, `Browser download listener failed to start: ${error instanceof Error ? error.message : String(error)}`))
       }
     }
     if (!this.permissionHandlersAttached) {
@@ -552,7 +553,7 @@ export class BrowserController {
         })
         this.permissionHandlersAttached = true
       } catch (error) {
-        this.pushError(`浏览器权限处理未能启用：${error instanceof Error ? error.message : String(error)}`)
+        this.pushError(pick(`浏览器权限处理未能启用：${error instanceof Error ? error.message : String(error)}`, `Browser permission handling failed to start: ${error instanceof Error ? error.message : String(error)}`))
       }
     }
     if (!this.requestBoundaryAttached) {
@@ -596,13 +597,13 @@ export class BrowserController {
       })
         this.requestBoundaryAttached = true
       } catch (error) {
-        this.pushError(`浏览器网络边界未能启用：${error instanceof Error ? error.message : String(error)}`)
+        this.pushError(pick(`浏览器网络边界未能启用：${error instanceof Error ? error.message : String(error)}`, `Browser network boundary failed to start: ${error instanceof Error ? error.message : String(error)}`))
       }
     }
     void cdp.attach().catch((error) => {
       const message = error instanceof Error ? error.message : String(error)
       if (tab.view.webContents.isDestroyed() || /target closed|closed|destroyed/i.test(message)) return
-      this.pushError(`浏览器 CDP 启动失败：${message}`)
+      this.pushError(pick(`浏览器 CDP 启动失败：${message}`, `Browser CDP failed to start: ${message}`))
     })
     this.tabs.set(id, tab)
     return tab
@@ -634,7 +635,7 @@ export class BrowserController {
 
   async openFromUser(url?: string, sessionId = 'workspace'): Promise<BrowserState> {
     const open = async (): Promise<BrowserState> => {
-      if (this.activeTab()?.borrowedBy) throw new Error('浏览器正在独立窗口中使用，请先归还后重试')
+      if (this.activeTab()?.borrowedBy) throw new Error(pick('浏览器正在独立窗口中使用，请先归还后重试', 'The browser is in a separate window; return it first'))
       await this.open(url)
       this.agentSessionId = undefined
       this.updateState()
@@ -642,7 +643,7 @@ export class BrowserController {
     }
     if (this.userControl) {
       const resource = sharedResources.snapshot().find(item => item.resourceId === INTERACTIVE_RESOURCE)
-      if (resource?.owner || resource?.uncertain) throw new Error('浏览器操作尚未结束，请稍后重试')
+      if (resource?.owner || resource?.uncertain) throw new Error(pick('浏览器操作尚未结束，请稍后重试', 'A browser operation is still running; try again shortly'))
       return open()
     }
     return sharedResources.run(INTERACTIVE_RESOURCE, `browser-user:${sessionId}`, open)
@@ -650,7 +651,7 @@ export class BrowserController {
 
   async open(url = INITIAL_URL): Promise<BrowserState> {
     const next = safeUrl(url)
-    if (!next) throw new Error('只允许打开 http(s) 网页')
+    if (!next) throw new Error(pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened'))
     this.activeMode = 'embedded'
     let tab = this.activeTab()
     if (!tab) {
@@ -705,7 +706,7 @@ export class BrowserController {
 
   async newTab(rawUrl = INITIAL_URL): Promise<BrowserState> {
     const url = safeUrl(rawUrl)
-    if (!url) throw new Error('只允许打开 http(s) 网页')
+    if (!url) throw new Error(pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened'))
     if (this.external && this.activeMode === 'external') {
       const created = await createCdpTab(this.external.port, url)
       if (created?.webSocketDebuggerUrl) await this.attachExternalTarget(created)
@@ -737,7 +738,7 @@ export class BrowserController {
       const target = (await listTargets(this.external.port)).find(
         (t) => t.id === externalTargetId && !!t.webSocketDebuggerUrl
       )
-      if (!target) throw new Error('找不到浏览器标签页')
+      if (!target) throw new Error(pick('找不到浏览器标签页', 'Browser tab not found'))
       await this.attachExternalTarget(target)
       this.activeMode = 'external'
       this.hideOwnedViews()
@@ -745,7 +746,7 @@ export class BrowserController {
       return this.getState()
     }
     const tab = this.tabs.get(id)
-    if (!tab) throw new Error('找不到浏览器标签页')
+    if (!tab) throw new Error(pick('找不到浏览器标签页', 'Browser tab not found'))
     this.activeMode = 'embedded'
     this.activeBySession.set(tab.sessionId, id)
     this.showOnlyOwnedView(this.activeTabId)
@@ -825,11 +826,11 @@ export class BrowserController {
 
   beginHostTransfer(request: BrowserHostTransferRequest): BrowserHostTransferResult {
     const tab = this.tabs.get(request.tabId)
-    if (!tab) return { ok: false, code: 'not-found', message: '找不到浏览器标签页' }
-    if (tab.view.webContents.isDestroyed()) return { ok: false, code: 'destroyed', message: '浏览器标签页已销毁' }
+    if (!tab) return { ok: false, code: 'not-found', message: pick('找不到浏览器标签页', 'Browser tab not found') }
+    if (tab.view.webContents.isDestroyed()) return { ok: false, code: 'destroyed', message: pick('浏览器标签页已销毁', 'Browser tab was destroyed') }
     const existing = this.hostTransfers.get(tab.id)
     if (existing && existing.ownerKey !== request.ownerKey) {
-      return { ok: false, code: 'owner-conflict', message: '该标签页已借给其它归属，不能抢占' }
+      return { ok: false, code: 'owner-conflict', message: pick('该标签页已借给其它归属，不能抢占', 'This tab is lent to another owner and cannot be taken') }
     }
     if (tab.borrowedBy !== request.ownerKey) tab.view.setVisible(false)
     tab.borrowedBy = request.ownerKey
@@ -875,11 +876,11 @@ export class BrowserController {
     const record = this.hostTransfers.get(tabId)
     const tab = this.tabs.get(tabId)
     if (!record || record.ownerKey !== ownerKey || record.generation !== generation || !tab) {
-      return { ok: false, error: '标签页已归还主窗口' }
+      return { ok: false, error: pick('标签页已归还主窗口', 'Tab was returned to the main window') }
     }
-    if (tab.view.webContents.isDestroyed()) return { ok: false, error: '标签页已关闭' }
+    if (tab.view.webContents.isDestroyed()) return { ok: false, error: pick('标签页已关闭', 'Tab is closed') }
     const url = safeUrl(raw)
-    if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
+    if (!url) return { ok: false, error: pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened') }
     if (url !== tab.view.webContents.getURL()) {
       tab.state.url = url
       tab.state.title = ''
@@ -888,7 +889,7 @@ export class BrowserController {
       this.updateState()
       await tab.view.webContents.loadURL(url).catch(() => undefined)
     }
-    if (tab.view.webContents.isDestroyed()) return { ok: false, error: '标签页已关闭' }
+    if (tab.view.webContents.isDestroyed()) return { ok: false, error: pick('标签页已关闭', 'Tab is closed') }
     this.syncTabNavigation(tab)
     this.updateState()
     return { ok: true }
@@ -930,12 +931,12 @@ export class BrowserController {
 
   async navigate(raw: string): Promise<BrowserActionResult> {
     const url = safeUrl(raw)
-    if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
+    if (!url) return { ok: false, error: pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened') }
     try {
-      if (this.automationOwner) await this.parts()?.input.showActivity('打开网页')
+      if (this.automationOwner) await this.parts()?.input.showActivity(pick('打开网页', 'Opening page'))
       if (this.external && this.activeMode === 'external') await this.navigateExternal(url)
       else await this.open(url)
-      if (this.automationOwner) await this.parts()?.input.showActivity('打开网页')
+      if (this.automationOwner) await this.parts()?.input.showActivity(pick('打开网页', 'Opening page'))
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -945,7 +946,7 @@ export class BrowserController {
   async back(): Promise<BrowserActionResult> {
     if (this.external && this.activeMode === 'external') return this.externalHistory(-1)
     const tab = this.activeTab()
-    if (!tab?.view.webContents.canGoBack()) return { ok: false, error: '没有可返回的页面' }
+    if (!tab?.view.webContents.canGoBack()) return { ok: false, error: pick('没有可返回的页面', 'Nothing to go back to') }
     const settled = this.navigationSettled(tab)
     tab.view.webContents.goBack()
     await settled
@@ -955,7 +956,7 @@ export class BrowserController {
   async forward(): Promise<BrowserActionResult> {
     if (this.external && this.activeMode === 'external') return this.externalHistory(1)
     const tab = this.activeTab()
-    if (!tab?.view.webContents.canGoForward()) return { ok: false, error: '没有可前进的页面' }
+    if (!tab?.view.webContents.canGoForward()) return { ok: false, error: pick('没有可前进的页面', 'Nothing to go forward to') }
     const settled = this.navigationSettled(tab)
     tab.view.webContents.goForward()
     await settled
@@ -975,7 +976,7 @@ export class BrowserController {
       }
     }
     const tab = this.activeTab()
-    if (!tab) return { ok: false, error: '浏览器尚未打开' }
+    if (!tab) return { ok: false, error: pick('浏览器尚未打开', 'Browser is not open') }
     tab.registry.clear()
     const settled = this.navigationSettled(tab)
     tab.view.webContents.reload()
@@ -987,9 +988,9 @@ export class BrowserController {
     const tab = this.activeTab()
     const value = raw && raw.trim() ? raw.trim() : tab?.state.url ?? ''
     const url = safeUrl(value)
-    if (!url || url === 'about:blank') return { ok: false, error: '没有可打开的外部地址' }
+    if (!url || url === 'about:blank') return { ok: false, error: pick('没有可打开的外部地址', 'No external address to open') }
     void shell.openExternal(url).catch((error) => {
-      this.pushError(`无法用系统浏览器打开：${error instanceof Error ? error.message : String(error)}`)
+      this.pushError(pick(`无法用系统浏览器打开：${error instanceof Error ? error.message : String(error)}`, `Cannot open in the system browser: ${error instanceof Error ? error.message : String(error)}`))
     })
     return { ok: true }
   }
@@ -1007,7 +1008,7 @@ export class BrowserController {
 
   private async openExternalChromeImpl(rawUrl?: string): Promise<BrowserActionResult> {
     const url = safeUrl(rawUrl ?? this.activeTab()?.state.url ?? INITIAL_URL)
-    if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
+    if (!url) return { ok: false, error: pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened') }
     if (this.external) {
       this.activeMode = 'external'
       await this.navigateExternal(url)
@@ -1029,7 +1030,7 @@ export class BrowserController {
       })
       await waitForCdp(port, 20_000)
       const page = pickPageTarget(await listTargets(port))
-      if (!page?.webSocketDebuggerUrl) throw new Error('Chrome 已启动，但没有可调试的页面目标')
+      if (!page?.webSocketDebuggerUrl) throw new Error(pick('Chrome 已启动，但没有可调试的页面目标', 'Chrome started, but there is no debuggable page target'))
 
       cdp = new RawCdp(page.webSocketDebuggerUrl)
       await cdp.attach()
@@ -1091,7 +1092,7 @@ export class BrowserController {
         await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: directory })
       }
     } catch (error) {
-      this.pushError(`外部 Chrome 下载监听未能启用：${error instanceof Error ? error.message : String(error)}`)
+      this.pushError(pick(`外部 Chrome 下载监听未能启用：${error instanceof Error ? error.message : String(error)}`, `External Chrome download listener failed to start: ${error instanceof Error ? error.message : String(error)}`))
       return
     }
     cdp.on('Browser.downloadWillBegin', (params) => {
@@ -1120,7 +1121,7 @@ export class BrowserController {
   async syncLocalProfile(): Promise<ChromeSyncReport> {
     if (this.external) {
       const embedded = this.activeTab()
-      if (!embedded) throw new Error('请先打开内置浏览器页面，再复制 Cookie')
+      if (!embedded) throw new Error(pick('请先打开内置浏览器页面，再复制 Cookie', 'Open a built-in browser page first, then copy cookies'))
       const fromChrome = this.activeMode === 'external'
       const result = await transferCookies(
         fromChrome ? this.external.cdp : embedded.cdp,
@@ -1128,10 +1129,10 @@ export class BrowserController {
       )
       const report: ChromeSyncReport = {
         found: true, chromeRunning: true, cookiesSynced: result.failed === 0,
-        source: fromChrome ? 'Chrome' : '内置浏览器',
-        target: fromChrome ? '内置浏览器' : 'Chrome',
+        source: fromChrome ? 'Chrome' : pick('内置浏览器', 'Built-in browser'),
+        target: fromChrome ? pick('内置浏览器', 'Built-in browser') : 'Chrome',
         copied: [`Cookies: ${result.copied}`],
-        failed: result.failed ? [{ item: 'Cookies', reason: `${result.failed} 项未能复制` }] : []
+        failed: result.failed ? [{ item: 'Cookies', reason: pick(`${result.failed} 项未能复制`, `${result.failed} failed to copy`) }] : []
       }
       this.external.syncReport = report
       this.updateState()
@@ -1144,17 +1145,17 @@ export class BrowserController {
   }
 
   async syncPageStorage(): Promise<ChromeSyncReport> {
-    if (!this.external) throw new Error('请先接入本机 Chrome')
+    if (!this.external) throw new Error(pick('请先接入本机 Chrome', 'Connect local Chrome first'))
     const embedded = this.activeTab()
-    if (!embedded) throw new Error('请先打开内置浏览器页面，再复制当前页面存储')
+    if (!embedded) throw new Error(pick('请先打开内置浏览器页面，再复制当前页面存储', 'Open a built-in browser page first, then copy page storage'))
     const externalUrl = safeUrl(this.external.url)
     const embeddedUrl = safeUrl(embedded.state.url)
-    if (!externalUrl || !embeddedUrl || externalUrl === 'about:blank' || embeddedUrl === 'about:blank') throw new Error('两个页面都需要先打开 http(s) 网站，才能复制当前页面存储')
-    if (new URL(externalUrl).origin !== new URL(embeddedUrl).origin) throw new Error('两个页面必须处于同一网站，才能复制当前页面存储')
+    if (!externalUrl || !embeddedUrl || externalUrl === 'about:blank' || embeddedUrl === 'about:blank') throw new Error(pick('两个页面都需要先打开 http(s) 网站，才能复制当前页面存储', 'Both pages must have an http(s) site open to copy page storage'))
+    if (new URL(externalUrl).origin !== new URL(embeddedUrl).origin) throw new Error(pick('两个页面必须处于同一网站，才能复制当前页面存储', 'Both pages must be on the same site to copy page storage'))
     const from = this.activeMode === 'external' ? this.external.cdp : embedded.cdp
     const to = this.activeMode === 'external' ? embedded.cdp : this.external.cdp
     const results = await Promise.all([transferPageStorage(from, to, 'localStorage'), transferPageStorage(from, to, 'sessionStorage')])
-    const report: ChromeSyncReport = { found: true, chromeRunning: true, cookiesSynced: false, source: this.activeMode === 'external' ? 'Chrome 当前页面' : '内置浏览器当前页面', target: this.activeMode === 'external' ? '内置浏览器当前页面' : 'Chrome 当前页面', copied: results.map((r) => `${r.kind}: ${r.copied}`), failed: results.flatMap((r) => r.failed ? [{ item: r.kind, reason: `${r.failed} 项未能复制` }] : []) }
+    const report: ChromeSyncReport = { found: true, chromeRunning: true, cookiesSynced: false, source: this.activeMode === 'external' ? pick('Chrome 当前页面', 'Chrome current page') : pick('内置浏览器当前页面', 'Built-in browser current page'), target: this.activeMode === 'external' ? pick('内置浏览器当前页面', 'Built-in browser current page') : pick('Chrome 当前页面', 'Chrome current page'), copied: results.map((r) => `${r.kind}: ${r.copied}`), failed: results.flatMap((r) => r.failed ? [{ item: r.kind, reason: pick(`${r.failed} 项未能复制`, `${r.failed} failed to copy`) }] : []) }
     this.external.syncReport = report
     this.updateState()
     return report
@@ -1268,7 +1269,7 @@ export class BrowserController {
       this.externalBoundaryCdp = cdp
     } catch (error) {
       unsubscribe()
-      throw new Error(`外部 Chrome 的网络边界未能启用：${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(pick(`外部 Chrome 的网络边界未能启用：${error instanceof Error ? error.message : String(error)}`, `External Chrome network boundary failed to start: ${error instanceof Error ? error.message : String(error)}`))
     }
   }
 
@@ -1316,14 +1317,14 @@ export class BrowserController {
 
   private async externalHistory(delta: 1 | -1): Promise<BrowserActionResult> {
     const ext = this.external
-    if (!ext) return { ok: false, error: '外部浏览器未接入' }
+    if (!ext) return { ok: false, error: pick('外部浏览器未接入', 'External browser is not connected') }
     try {
       const history = await ext.cdp.send<{ currentIndex: number; entries: Array<{ id: number }> }>(
         'Page.getNavigationHistory'
       )
       const index = history.currentIndex + delta
       if (index < 0 || index >= history.entries.length) {
-        return { ok: false, error: delta < 0 ? '没有可返回的页面' : '没有可前进的页面' }
+        return { ok: false, error: delta < 0 ? pick('没有可返回的页面', 'Nothing to go back to') : pick('没有可前进的页面', 'Nothing to go forward to') }
       }
       await ext.cdp.send('Page.navigateToHistoryEntry', { entryId: history.entries[index].id })
       await this.syncExternalHistory()
@@ -1466,8 +1467,8 @@ export class BrowserController {
 
   async observe(): Promise<BrowserObservation> {
     const p = this.parts()
-    if (!p) throw new Error('浏览器尚未打开')
-    if (!this.userControl) await p.input.showActivity('读取页面')
+    if (!p) throw new Error(pick('浏览器尚未打开', 'Browser is not open'))
+    if (!this.userControl) await p.input.showActivity(pick('读取页面', 'Reading page'))
     return this.observeTarget(p)
   }
 
@@ -1532,7 +1533,7 @@ export class BrowserController {
 
   async network(): Promise<BrowserNetworkSnapshot> {
     const p = this.parts()
-    if (!p) throw new Error('浏览器尚未打开')
+    if (!p) throw new Error(pick('浏览器尚未打开', 'Browser is not open'))
     await p.network.start()
     return p.network.snapshot()
   }
@@ -1574,7 +1575,7 @@ export class BrowserController {
     options: BrowserActionOptions = {}
   ): Promise<BrowserActionOutcome & { chosen?: SelectOutcome }> {
     const p = this.parts()
-    if (!p) return { ok: false, error: '浏览器尚未打开' }
+    if (!p) return { ok: false, error: pick('浏览器尚未打开', 'Browser is not open') }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
     const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
     const tabsBefore = new Set(this.tabs.keys())
@@ -1645,7 +1646,7 @@ export class BrowserController {
 
   async screenshot(): Promise<{ mimeType: string; data: Buffer }> {
     const p = this.parts()
-    if (!p) throw new Error('浏览器尚未打开')
+    if (!p) throw new Error(pick('浏览器尚未打开', 'Browser is not open'))
     const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
     if (tab) await this.layoutHiddenTab(tab, true)
     return { mimeType: 'image/png', data: await p.cdp.screenshot() }
@@ -1662,8 +1663,8 @@ export class BrowserController {
   setPermission(permission: string, origin: string, allowed: boolean): BrowserActionResult {
     const name = typeof permission === 'string' ? permission.trim() : ''
     const normalizedOrigin = normalizePermissionOrigin(origin)
-    if (!name) return { ok: false, error: '权限名称不能为空' }
-    if (!normalizedOrigin) return { ok: false, error: '权限只接受 http/https origin' }
+    if (!name) return { ok: false, error: pick('权限名称不能为空', 'Permission name cannot be empty') }
+    if (!normalizedOrigin) return { ok: false, error: pick('权限只接受 http/https origin', 'Permissions only accept http/https origins') }
     const key = permissionKey(name, normalizedOrigin)
     if (allowed) this.permissionGrants.add(key)
     else this.permissionGrants.delete(key)
@@ -1750,7 +1751,7 @@ export class BrowserController {
             return
           }
           item.cancel()
-          this.pushError(`已取消下载 ${filename}：文件超过 ${DOWNLOAD_CONFIRM_BYTES / 1024 / 1024} MB，没有得到确认`)
+          this.pushError(pick(`已取消下载 ${filename}：文件超过 ${DOWNLOAD_CONFIRM_BYTES / 1024 / 1024} MB，没有得到确认`, `Download of ${filename} canceled: file exceeds ${DOWNLOAD_CONFIRM_BYTES / 1024 / 1024} MB and was not confirmed`))
         })
     }
     confirmIfLarge(item.getTotalBytes())

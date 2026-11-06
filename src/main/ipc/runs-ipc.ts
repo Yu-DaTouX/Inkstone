@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 import type { IpcRegistrar } from './registrar'
@@ -64,10 +65,10 @@ function dayStart(day: string): number | null {
 function resolveDays(query: RunsHistoryQuery): { days: string[]; error?: string } {
   const date = typeof query.date === 'string' && query.date ? query.date : undefined
   const range = query.range && typeof query.range === 'object' ? query.range : undefined
-  if (date && range) return { days: [], error: 'date 与 range 只能给一个' }
+  if (date && range) return { days: [], error: pick('date 与 range 只能给一个', 'Give either date or range, not both') }
 
   if (date) {
-    if (dayStart(date) === null) return { days: [], error: `日期格式不对：${date}` }
+    if (dayStart(date) === null) return { days: [], error: pick(`日期格式不对：${date}`, `Invalid date format: ${date}`) }
     return { days: [date] }
   }
 
@@ -76,8 +77,8 @@ function resolveDays(query: RunsHistoryQuery): { days: string[]; error?: string 
     const to = range.to ? String(range.to) : from
     const fromAt = dayStart(from)
     const toAt = dayStart(to)
-    if (fromAt === null) return { days: [], error: `起始日期格式不对：${from}` }
-    if (toAt === null) return { days: [], error: `结束日期格式不对：${to}` }
+    if (fromAt === null) return { days: [], error: pick(`起始日期格式不对：${from}`, `Invalid start date format: ${from}`) }
+    if (toAt === null) return { days: [], error: pick(`结束日期格式不对：${to}`, `Invalid end date format: ${to}`) }
     const lo = Math.min(fromAt, toAt)
     const hi = Math.max(fromAt, toAt)
     const days: string[] = []
@@ -85,7 +86,7 @@ function resolveDays(query: RunsHistoryQuery): { days: string[]; error?: string 
       days.push(
         `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`
       )
-      if (days.length > MAX_DAYS) return { days: [], error: `一次最多读 ${MAX_DAYS} 天` }
+      if (days.length > MAX_DAYS) return { days: [], error: pick(`一次最多读 ${MAX_DAYS} 天`, `At most ${MAX_DAYS} days at a time`) }
     }
     return { days }
   }
@@ -206,15 +207,15 @@ export function registerRunsIpc(ipc: IpcRegistrar, deps: RunsIpcDeps): void {
 
   handle('yan:runs:stop', async (runId: unknown): Promise<RunsStopResult> => {
     const id = typeof runId === 'string' ? runId.trim() : ''
-    if (!id) return { ok: false, error: '缺少运行编号' }
+    if (!id) return { ok: false, error: pick('缺少运行编号', 'Missing run id') }
     const run = findActiveRun(deps, id)
-    if (!run) return { ok: false, error: '这次运行不在当前登记表里，或已经结束', runId: id }
+    if (!run) return { ok: false, error: pick('这次运行不在当前登记表里，或已经结束', 'This run is not in the registry or has already ended'), runId: id }
     if (run.kind === 'subagent') {
       const result = await deps.stopSubagentRun(id)
       return result.ok ? { ok: true, runId: id, kind: run.kind } : { ok: false, error: result.error, runId: id }
     }
     if (run.kind !== 'session') {
-      return { ok: false, error: '这种运行暂不支持在这里停止', runId: id, kind: run.kind }
+      return { ok: false, error: pick('这种运行暂不支持在这里停止', 'This kind of run cannot be stopped here'), runId: id, kind: run.kind }
     }
     const result = await deps.stopSessionRun({ sessionId: run.sessionId, ...(run.sessionPath ? { sessionPath: run.sessionPath } : {}) })
     return result.ok

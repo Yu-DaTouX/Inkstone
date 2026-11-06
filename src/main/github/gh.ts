@@ -1,3 +1,4 @@
+import { pick } from '../../shared/ui-lang'
 import { classifyGhFailure, prFailure, runGh } from './command'
 import { listArguments } from './validation'
 import { readReviewThreads } from './threads'
@@ -42,7 +43,7 @@ function isPrNumber(value: unknown): value is number {
 export async function readGithubStatus(cwd: string, run = runGh): Promise<GithubStatus> {
   const version = await run(cwd, ['--version'])
   if (!version.ok) {
-    if (version.missingCwd) return { installed: false, authed: false, repo: null, error: `项目目录不存在：${cwd}` }
+    if (version.missingCwd) return { installed: false, authed: false, repo: null, error: pick(`项目目录不存在：${cwd}`, `Project folder does not exist: ${cwd}`) }
     return {
       installed: false,
       authed: false,
@@ -61,7 +62,7 @@ export async function readGithubStatus(cwd: string, run = runGh): Promise<Github
   if (!repo.ok) return { installed: true, authed: true, repo: null, viewerLogin, error: failureText(repo) }
   const parsed = parseJson<{ nameWithOwner?: unknown; url?: unknown; defaultBranchRef?: { name?: unknown } | null }>(repo.stdout)
   const nameWithOwner = typeof parsed?.nameWithOwner === 'string' ? parsed.nameWithOwner : ''
-  if (!nameWithOwner) return { installed: true, authed: true, repo: null, viewerLogin, error: '无法识别当前项目对应的 GitHub 仓库' }
+  if (!nameWithOwner) return { installed: true, authed: true, repo: null, viewerLogin, error: pick('无法识别当前项目对应的 GitHub 仓库', 'Could not identify the GitHub repository for this project') }
   return {
     installed: true,
     authed: true,
@@ -79,21 +80,21 @@ export async function ghPrList(cwd: string, options: GhPrListState | GhPrListOpt
     return { ok: false, items: [], error: failure.message, failure }
   }
   const parsed = parseJson<GhPrListItemJson[]>(res.stdout)
-  if (!Array.isArray(parsed)) return { ok: false, items: [], error: 'gh 返回的 PR 列表无法解析', failure: prFailure('other', 'gh 返回的 PR 列表无法解析') }
+  if (!Array.isArray(parsed)) return { ok: false, items: [], error: pick('gh 返回的 PR 列表无法解析', 'Could not parse the PR list from gh'), failure: prFailure('other', pick('gh 返回的 PR 列表无法解析', 'Could not parse the PR list from gh')) }
   return { ok: true, items: parsed.slice(0, built.limit), limit: built.limit, hasMore: parsed.length > built.limit }
 }
 
 export async function ghPrDetail(cwd: string, number: number, run = runGh): Promise<GhPrDetailResult> {
-  if (!isPrNumber(number)) return { ok: false, pr: null, error: 'PR 编号不合法' }
+  if (!isPrNumber(number)) return { ok: false, pr: null, error: pick('PR 编号不合法', 'Invalid PR number') }
   const res = await run(cwd, ['pr', 'view', String(number), '--json', DETAIL_FIELDS])
   if (!res.ok) return { ok: false, pr: null, error: failureText(res), failure: classifyGhFailure(res) }
   const parsed = parseJson<GhPrDetailJson>(res.stdout)
-  if (!parsed || typeof parsed !== 'object' || parsed.number !== number) return { ok: false, pr: null, error: 'gh 返回的 PR 详情无法解析' }
+  if (!parsed || typeof parsed !== 'object' || parsed.number !== number) return { ok: false, pr: null, error: pick('gh 返回的 PR 详情无法解析', 'Could not parse PR details from gh') }
   return { ok: true, pr: { ...parsed, ...await readReviewThreads(cwd, number, run) } }
 }
 
 export async function ghPrDiff(cwd: string, number: number): Promise<GhPrDiffResult> {
-  if (!isPrNumber(number)) return { ok: false, patch: '', truncated: false, bytes: 0, error: 'PR 编号不合法' }
+  if (!isPrNumber(number)) return { ok: false, patch: '', truncated: false, bytes: 0, error: pick('PR 编号不合法', 'Invalid PR number') }
   const res = await runGh(cwd, ['pr', 'diff', String(number)], DIFF_MAX_BUFFER)
   const bytes = Buffer.byteLength(res.stdout, 'utf8')
   if (!res.ok && !res.overflow) {
@@ -113,7 +114,7 @@ export async function ghPrDiff(cwd: string, number: number): Promise<GhPrDiffRes
       patch: '',
       truncated,
       bytes,
-      error: res.timedOut ? failureText(res) : '这个 PR 没有可显示的 diff'
+      error: res.timedOut ? failureText(res) : pick('这个 PR 没有可显示的 diff', 'This PR has no diff to show')
     }
   }
   return { ok: true, patch, truncated, bytes }

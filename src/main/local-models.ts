@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile, rename, unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -31,7 +32,7 @@ export async function readLocalModelUrls(): Promise<string[]> {
     return Array.isArray(json.urls) ? json.urls.filter((url): url is string => typeof url === 'string' && !!url.trim()) : []
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw new Error(`本地模型地址配置损坏；为保护原配置，已拒绝继续：${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(pick(`本地模型地址配置损坏；为保护原配置，已拒绝继续：${error instanceof Error ? error.message : String(error)}`, `The local model address config is corrupt; refusing to continue to protect it: ${error instanceof Error ? error.message : String(error)}`))
   }
 }
 
@@ -116,7 +117,7 @@ async function probeChat(root: string, target?: ChatTarget): Promise<LocalModelS
   return {
     kind: ollama ? 'ollama' : target?.kind ?? 'openai',
     purpose: 'chat',
-    name: ollama ? 'Ollama' : target?.name ?? 'OpenAI 兼容服务',
+    name: ollama ? 'Ollama' : target?.name ?? pick('OpenAI 兼容服务', 'OpenAI-compatible service'),
     baseUrl: `${root}/v1`,
     models,
     suggestedId: ollama ? 'yan-ollama' : target?.suggestedId ?? `yan-local-${port}`,

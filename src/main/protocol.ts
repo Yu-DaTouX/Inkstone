@@ -1,3 +1,4 @@
+import { pick } from '../shared/ui-lang'
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
@@ -293,14 +294,14 @@ export class PiRpc extends EventEmitter {
       if (this.finished) return
       this.sawExit = true
       this.closed = true
-      this.failAll(new Error(`pi 进程已退出（code=${code ?? 'null'}）`))
+      this.failAll(new Error(pick(`pi 进程已退出（code=${code ?? 'null'}）`, `pi process exited (code=${code ?? 'null'})`)))
       this.exitDrainTimer = setTimeout(() => this.finishExit(code, signal), EXIT_DRAIN_MS)
       this.exitDrainTimer.unref?.()
     })
 
     child.on('error', (err: Error) => {
       this.spawnError = err
-      this.failAll(new Error(`无法启动 pi：${err.message}`))
+      this.failAll(new Error(pick(`无法启动 pi：${err.message}`, `Could not start pi: ${err.message}`)))
     })
 
     child.on('close', (code: number | null, signal: NodeJS.Signals | null) => this.finishExit(code, signal))
@@ -362,7 +363,7 @@ export class PiRpc extends EventEmitter {
     this.closed = true
     this.child = null
     this.flushStderr()
-    this.failAll(new Error(`pi 进程已退出（code=${code ?? 'null'}）`))
+    this.failAll(new Error(pick(`pi 进程已退出（code=${code ?? 'null'}）`, `pi process exited (code=${code ?? 'null'})`)))
     if (this.spawnError) this.emit('spawn-error', this.spawnError)
     this.emit('exit', code, signal)
   }
@@ -435,7 +436,7 @@ export class PiRpc extends EventEmitter {
     opts: { id?: string; timeoutMs?: number } = {}
   ): Promise<RpcResponse & { data?: T }> {
     if (!this.child || this.closed) {
-      return Promise.reject(new Error('pi 未运行'))
+      return Promise.reject(new Error(pick('pi 未运行', 'pi is not running')))
     }
 
     const id = opts.id ?? `yan-${++this.seq}`
@@ -444,7 +445,7 @@ export class PiRpc extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`命令 ${type} 超时（${limit}ms）`))
+        reject(new Error(pick(`命令 ${type} 超时（${limit}ms）`, `Command ${type} timed out (${limit}ms)`)))
       }, limit)
 
       this.pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
@@ -454,7 +455,7 @@ export class PiRpc extends EventEmitter {
         if (!err) return
         clearTimeout(timer)
         this.pending.delete(id)
-        reject(new Error(`写入 stdin 失败：${err.message}`))
+        reject(new Error(pick(`写入 stdin 失败：${err.message}`, `Could not write to stdin: ${err.message}`)))
       })
     })
   }

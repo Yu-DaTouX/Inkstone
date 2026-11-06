@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
+import { pick } from '../shared/ui-lang'
 
 export const WORKTREE_LINK_FILE_NAME = 'worktree-links.json'
 const MAX_LINKS = 2000
@@ -114,11 +115,11 @@ export class WorktreeLinkStore {
     try {
       await this.load()
     } catch (error) {
-      return { ok: false, error: `读取工作树关联表失败，未覆盖原数据：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: pick(`读取工作树关联表失败，未覆盖原数据：${error instanceof Error ? error.message : String(error)}`, `Failed to read the worktree link table; original data kept: ${error instanceof Error ? error.message : String(error)}`) }
     }
     const sessionId = text(input.sessionId)
     const worktree = text(input.worktree)
-    if (!sessionId || !worktree) return { ok: false, error: '会话 id 与工作树目录都不能为空' }
+    if (!sessionId || !worktree) return { ok: false, error: pick('会话 id 与工作树目录都不能为空', 'Session id and worktree folder are both required') }
 
     const next: WorktreeLink = {
       sessionId,

@@ -1,3 +1,4 @@
+import { pick } from '../../../src/shared/ui-lang'
 export type ChatRole = 'system' | 'user' | 'assistant'
 export type ChatMessage = { role: ChatRole; content: string }
 
@@ -17,13 +18,13 @@ export type ChatResult = {
 }
 
 function readableError(status: number, body: string): string {
-  if (status === 401 || status === 403) return '密钥无效或没有权限（401/403）'
-  if (status === 402) return '额度不足（402）'
-  if (status === 404) return '接口或模型名不对（404）：检查地址是否以 /v1 结尾、模型名是否正确'
-  if (status === 429) return '请求太频繁（429），稍后再试'
-  if (status >= 500) return `服务商出错（${status}），稍后再试`
+  if (status === 401 || status === 403) return pick('密钥无效或没有权限（401/403）', 'Invalid key or no permission (401/403)')
+  if (status === 402) return pick('额度不足（402）', 'Insufficient quota (402)')
+  if (status === 404) return pick('接口或模型名不对（404）：检查地址是否以 /v1 结尾、模型名是否正确', 'Wrong endpoint or model (404). Check the URL ends with /v1 and the model name.')
+  if (status === 429) return pick('请求太频繁（429），稍后再试', 'Too many requests (429). Try later.')
+  if (status >= 500) return pick(`服务商出错（${status}），稍后再试`, `Provider error (${status}). Try later.`)
   const detail = body.replace(/\s+/g, ' ').slice(0, 200)
-  return detail ? `请求失败（${status}）：${detail}` : `请求失败（${status}）`
+  return detail ? pick(`请求失败（${status}）：${detail}`, `Request failed (${status}): ${detail}`) : pick(`请求失败（${status}）`, `Request failed (${status})`)
 }
 
 type CompletionPayload = {
@@ -36,7 +37,7 @@ export function safeModelBaseUrl(input: string): string {
   const host = url.hostname.toLowerCase()
   const loopback = host === 'localhost' || host === '[::1]' || host === '::1' || /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(host)
   if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))) {
-    throw new Error('模型地址必须使用 HTTPS；只有本机回环地址允许 HTTP，不允许在地址中携带凭证。')
+    throw new Error(pick('模型地址必须使用 HTTPS；只有本机回环地址允许 HTTP，不允许在地址中携带凭证。', 'The model URL must use HTTPS (HTTP only for loopback) and carry no credentials.'))
   }
   return url.toString().replace(/\/+$/, '')
 }
@@ -62,11 +63,11 @@ export async function chat(request: ChatRequest): Promise<ChatResult> {
     }
     const data = (await response.json()) as CompletionPayload
     const text = data.choices?.[0]?.message?.content
-    if (typeof text !== 'string' || !text.trim()) throw new Error('模型没有返回内容')
+    if (typeof text !== 'string' || !text.trim()) throw new Error(pick('模型没有返回内容', 'The model returned nothing'))
     return { text, usage: data.usage ? { promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens } : undefined }
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw new Error('请求超时或已取消')
-    if (error instanceof TypeError) throw new Error('连不上服务商：检查网络、地址与证书')
+    if (error instanceof Error && error.name === 'AbortError') throw new Error(pick('请求超时或已取消', 'Request timed out or was cancelled'))
+    if (error instanceof TypeError) throw new Error(pick('连不上服务商：检查网络、地址与证书', 'Cannot reach the provider. Check network, URL and certificate.'))
     throw error
   } finally {
     clearTimeout(timer)
@@ -87,8 +88,8 @@ export async function listModels(baseUrl: string, apiKey: string, timeoutMs = 15
     const data = (await response.json()) as { data?: { id?: unknown }[] }
     return (data.data ?? []).map((m) => (typeof m.id === 'string' ? m.id : '')).filter((id) => id.length > 0)
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw new Error('连接超时')
-    if (error instanceof TypeError) throw new Error('连不上服务商：检查网络、地址与证书')
+    if (error instanceof Error && error.name === 'AbortError') throw new Error(pick('连接超时', 'Connection timed out'))
+    if (error instanceof TypeError) throw new Error(pick('连不上服务商：检查网络、地址与证书', 'Cannot reach the provider. Check network, URL and certificate.'))
     throw error
   } finally {
     clearTimeout(timer)
