@@ -106,5 +106,22 @@ console.log('--- 溢出压缩后马上重跑：不提前释放 ---')
   check(!armed(ctl) && releases.length === 0 && ctl.executionAdmissionToken === 7, 'willRetry 时占位留给重跑的回合')
 }
 
+console.log('--- 运行已结束后收尾：立即释放，只有尚未观察到运行时才留宽限 ---')
+{
+  const { ctl, releases } = controller()
+  ctl.executionAdmissionToken = 7
+  ctl.setAgentRunning(true)
+  ctl.agentRunning = false
+  ctl.settleExecutionAdmission()
+  check(releases.length === 1 && ctl.executionAdmissionToken === undefined && !armed(ctl), '已观察到运行且已结束：同目录其他会话不必再等宽限')
+}
+{
+  const { ctl, releases } = controller()
+  ctl.executionAdmissionToken = 7
+  ctl.settleExecutionAdmission()
+  check(releases.length === 0 && armed(ctl), '发送刚返回、运行还没开始：保留宽限防止并发抢占')
+  disarm(ctl)
+}
+
 await rm(root, { recursive: true, force: true })
 console.log(`\n压缩后释放执行占位：${checks} 项通过`)

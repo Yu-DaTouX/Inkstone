@@ -8,7 +8,7 @@ export const meta = { description: '恢复类状态：间歇失败自动重试�
 
 export default async function run({ cdp, box, fake, check, report, sleep, log, newSession, state, waitFor, until, shot, runDir, running }) {
   const ev = (expr) => cdp.evaluate(expr)
-  const fresh = async () => { const before = await state("s.session?.sessionId ?? null"); await newSession(box.project); await until(`(s.session?.sessionId ?? null) !== ${JSON.stringify(before)} || s.messages.length === 0`, 8000); await sleep(11000) }
+  const fresh = async () => { const before = await state("s.session?.sessionId ?? null"); await newSession(box.project); await until(`(s.session?.sessionId ?? null) !== ${JSON.stringify(before)} || s.messages.length === 0`, 8000); await sleep(1500) }
   report.cases = {}
   const only = (process.env.YAN_STATES_ONLY ?? 'flaky,hang,retry,crash').split(',')
   const record = (name, rows) => {

@@ -483,6 +483,7 @@ export class AgentController extends EventEmitter {
   private capabilityServer?: CapabilityServer
   private capabilityOpts?: CapabilityRunOptions
   private executionAdmissionToken?: number
+  private executionRunObserved = false
   private executionAdmissionTimer?: ReturnType<typeof setTimeout>
   private runObserver?: RunObserver
 
@@ -3025,6 +3026,7 @@ export class AgentController extends EventEmitter {
   private setAgentRunning(v: boolean): void {
     if (this.agentRunning === v) return
     this.agentRunning = v
+    if (v) this.executionRunObserved = true
     if (!this.state) return
     this.state = { ...this.state, isAgentRunning: v }
     this.push({ ch: 'state', payload: this.state })
@@ -3047,6 +3049,7 @@ export class AgentController extends EventEmitter {
     const claim = port.claim()
     if (!claim.ok) return claim
     this.executionAdmissionToken = claim.token
+    this.executionRunObserved = false
     return { ok: true }
   }
 
@@ -3071,6 +3074,10 @@ export class AgentController extends EventEmitter {
   private settleExecutionAdmission(): void {
     if (this.executionAdmissionToken === undefined) return
     if (this.executionActive()) return
+    if (this.executionRunObserved && !this.queueState.steering.length && !this.queueState.followUp.length) {
+      this.releaseExecutionAdmission()
+      return
+    }
     if (this.executionAdmissionTimer) clearTimeout(this.executionAdmissionTimer)
     this.executionAdmissionTimer = setTimeout(() => {
       this.executionAdmissionTimer = undefined
