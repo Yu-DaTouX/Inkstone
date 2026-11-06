@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type JSX, type ReactNode } from 'react'
 import { ImageDown } from 'lucide-react'
 import { useT } from '../../i18n'
-import { useStore } from '../../state/store'
 import { Button } from '../../ui'
 import { MessageImage } from './Image'
+import { useTurnSession } from './turn-scope'
 import type { RemoteImageResult } from '../../../../shared/ipc'
 
 type RemoteState = { phase: 'checking' } | { phase: 'idle' } | { phase: 'loading' } | { phase: 'ready'; dataUrl: string } | { phase: 'failed'; code: string }
@@ -129,7 +129,7 @@ export function useRemoteImageGroupSummary(group: RemoteImageGroup): RemoteImage
 
 export function RemoteImage({ src, alt, className }: { src: string; alt?: string; className?: string }): JSX.Element | null {
   const t = useT()
-  const sessionId = useStore((s) => s.session?.sessionId ?? s.session?.conversationId ?? '')
+  const sessionId = useTurnSession((session) => session?.sessionId ?? session?.conversationId ?? '')
   const group = useContext(RemoteImageGroupContext)
   const memberKey = useState(() => ({}))[0]
   const cached = loaded.get(src)
