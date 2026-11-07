@@ -6,6 +6,7 @@ const SAVES_IMAGE = /^SaveImage|SaveImage$|^Image Save$/;
 const SAVES_VIDEO = /SaveVideo|SaveAnimated|SaveWEBM|VHS_VideoCombine/i;
 const SAVES_UNSUPPORTED = /SaveAudio|Save3D|SaveGLB/i;
 const DIRECTOR = 'MiniMaxH3Director';
+const DIRECTOR_END_FRAMES = 5;
 const DIRECTOR_DEFAULT_SECONDS = 10;
 const DIRECTOR_MAX_SECONDS = 30;
 const SAMPLES = /Sampler|Guider|Sample|Director/i;
@@ -110,6 +111,8 @@ export function classifyWorkflow(workflow) {
         if (loads.length)
             return null;
         const task = directorTask(director.values);
+        if (DIRECTOR_IMAGE_LIMITS[task])
+            return 'image-to-video';
         return task === 'v2v' || task === 'rv2v' ? 'video-to-video' : task === 't2v' ? 'text-to-video' : null;
     }
     if (!loads.length)
@@ -128,6 +131,34 @@ function fitAspect(width, height, aspect) {
     const area = Math.max(1, width) * Math.max(1, height);
     const w = Math.sqrt(area * aspect);
     return [snap32(w), snap32(w / aspect)];
+}
+const DIRECTOR_IMAGE_LIMITS = { i2v: 1, fl2v: 2, r2v: 9 };
+function directorNodeTask(node) {
+    return directorTask([node.inputs.task_type, node.inputs.timeline_data]);
+}
+function applyDirectorImages(next, task, images, frames, fps) {
+    const limit = DIRECTOR_IMAGE_LIMITS[task];
+    if (!images.length || images.length > limit)
+        throw new WorkflowError('local_workflow_unsupported', `MiniMax H3 Director ${task} 需要 1${limit > 1 ? `-${limit}` : ''} 张源图，收到 ${images.length} 张`);
+    const segment = { id: 's0', start: 0, length: frames, frameCount: frames, durationSec: frames / fps, prompt: '', taskType: '', refs: [], referenceVideo: {}, genImage: { imageFile: '' }, negativePrompt: '' };
+    Object.assign(next, { editMode: 'global', totalFrames: frames, splitPoints: [], runSelectEnabled: false, runSelection: [], gen: { ...(next.gen ?? {}), defaultFrameCount: frames } });
+    if (task === 'i2v') {
+        next.timelineMode = 'gen_image';
+        next.global.genImage = { imageFile: images[0] };
+        next.segments = [{ ...segment, genImage: { imageFile: images[0] } }];
+    }
+    else if (task === 'r2v') {
+        next.timelineMode = 'gen_blank';
+        const refs = images.map((imageFile, index) => ({ index, imageFile }));
+        next.global.refs = refs;
+        next.segments = [{ ...segment, refs }];
+    }
+    else {
+        next.timelineMode = 'fl2v';
+        next.segments = [{ ...segment, imageFile: images[0], genImage: { imageFile: images[0] }, isStartFrame: true, isEndFrame: false }];
+        if (images[1])
+            next.segments.push({ ...segment, id: 's1', start: frames - DIRECTOR_END_FRAMES, length: DIRECTOR_END_FRAMES, frameCount: DIRECTOR_END_FRAMES, durationSec: DIRECTOR_END_FRAMES / fps, imageFile: images[1], genImage: { imageFile: images[1] }, isStartFrame: false, isEndFrame: true });
+    }
 }
 function patchDirector(node, request) {
     let timeline = {};
@@ -164,6 +195,12 @@ function patchDirector(node, request) {
                 storageWidth: width, storageHeight: height
             }
         });
+    }
+    else if (DIRECTOR_IMAGE_LIMITS[directorNodeTask(node)]) {
+        const frames = request.seconds ? Math.round(seconds * fps) : Number(timeline.gen?.defaultFrameCount || timeline.totalFrames) || Math.round(seconds * fps);
+        applyDirectorImages(next, directorNodeTask(node), request.images ?? [], Math.max(frames, DIRECTOR_END_FRAMES + 1), fps);
+        if ('total_frames' in node.inputs)
+            node.inputs.total_frames = next.totalFrames;
     }
     else {
         if (String(timeline.timelineMode ?? '').toLowerCase() === 'video')
@@ -422,7 +459,7 @@ export function applyRequest(prompt, request) {
         for (const node of loaders)
             node.inputs[node.class_type === 'LoadVideo' ? 'file' : 'video'] = request.video.name;
     }
-    if (request.images?.length) {
+    if (request.images?.length && !Object.values(next).some((node) => node.class_type === DIRECTOR && DIRECTOR_IMAGE_LIMITS[directorNodeTask(node)])) {
         const loaders = Object.values(next).filter((node) => LOADS_SINGLE_IMAGE.test(node.class_type) && 'image' in node.inputs);
         if (!loaders.length)
             throw new WorkflowError('local_workflow_unsupported', '工作流里没有 LoadImage 节点');

@@ -2,13 +2,16 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { classifyWorkflow, toApiPrompt } from '../integrations/comfyui/workflow.mjs'
+import { applyRequest, classifyWorkflow, toApiPrompt } from '../integrations/comfyui/workflow.mjs'
 import { comfyGenerate, loadVideoSource } from '../integrations/comfyui/generation.mjs'
 import { createComfyService } from '../integrations/comfyui/service.mjs'
 
 const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(16)])
 const V2V = 'v2v — 视频转视频(Video to Video)'
 const T2V = 't2v — 文生视频(Text to Video)'
+const I2V = 'i2v — 图生视频(Image to Video)'
+const FL2V = 'fl2v — 首尾帧生视频(First-Last Frame)'
+const R2V = 'r2v — 参考主体生视频(Reference to Video)'
 const DIRECTOR_WIDGETS = ['task_type', 'global_prompt', 'bd_grp_sample', 'cfg', 'seed', 'frame_rate', 'width', 'height', 'ref_max_size', 'total_frames', 'timeline_data', 'bd_grp_advanced', 'steps', 'sampler', 'scheduler', 'shift_video', 'shift_audio', 'bd_grp_perf', 'clear_vram_between_segments', 'export_source_images']
 
 export function directorWorkflow(task = V2V) {
@@ -129,6 +132,24 @@ export async function runComfyVideoTests() {
 
     ok(classifyWorkflow(directorWorkflow()) === 'video-to-video', 'Director v2v workflow is video-to-video')
     ok(classifyWorkflow(directorWorkflow(T2V)) === 'text-to-video', 'Director t2v workflow is text-to-video')
+    const directorTimeline = (task, images, seconds) => {
+      const api = toApiPrompt(directorWorkflow(task), OBJECT_INFO)
+      const patched = applyRequest(api, { prompt: 'walks', images, seconds })
+      return { node: patched['5'].inputs, timeline: JSON.parse(patched['5'].inputs.timeline_data) }
+    }
+    for (const task of [I2V, FL2V, R2V]) ok(classifyWorkflow(directorWorkflow(task)) === 'image-to-video', `Director ${task.split(' ')[0]} workflow is image-to-video`)
+    const i2v = directorTimeline(I2V, ['a.png'], 3)
+    ok(i2v.timeline.timelineMode === 'gen_image' && i2v.timeline.global.genImage.imageFile === 'a.png' && i2v.timeline.segments[0].genImage.imageFile === 'a.png' && i2v.timeline.segments[0].frameCount === 72, 'Director i2v fills the first frame on global and segment')
+    ok(i2v.timeline.global.prompt === 'walks' && i2v.timeline.totalFrames === 72, 'Director i2v keeps prompt and requested length')
+    const fl2v = directorTimeline(FL2V, ['a.png', 'b.png'], 3).timeline
+    ok(fl2v.timelineMode === 'fl2v' && fl2v.segments[0].isStartFrame && fl2v.segments[0].imageFile === 'a.png' && fl2v.segments[1].isEndFrame && !fl2v.segments[1].isStartFrame && fl2v.segments[1].imageFile === 'b.png', 'Director fl2v pairs first and last frames')
+    ok(fl2v.segments[1].start + fl2v.segments[1].frameCount === 72, 'Director fl2v end frame closes at the requested length')
+    ok(directorTimeline(FL2V, ['a.png'], 3).timeline.segments.length === 1, 'Director fl2v accepts only a first frame')
+    const r2v = directorTimeline(R2V, ['a.png', 'b.png'], 3).timeline
+    ok(r2v.timelineMode === 'gen_blank' && r2v.segments[0].refs.map(ref => ref.imageFile).join() === 'a.png,b.png' && r2v.global.refs[1].index === 1, 'Director r2v writes references to global and segment')
+    assert.throws(() => directorTimeline(I2V, ['a.png', 'b.png']), /1 张源图/); checks++
+    assert.throws(() => directorTimeline(FL2V, []), /1-2 张源图/); checks++
+    assert.throws(() => directorTimeline(T2V, ['a.png']), /LoadImage/); checks++
     ok(classifyWorkflow(genericVideoWorkflow('LoadVideo')) === 'video-to-video', 'LoadVideo + SaveVideo is video-to-video')
     ok(classifyWorkflow(genericVideoWorkflow()) === 'text-to-video', 'SaveVideo without loaders is text-to-video')
     ok(classifyWorkflow(genericVideoWorkflow('LoadImage')) === 'image-to-video', 'LoadImage + SaveVideo is image-to-video')

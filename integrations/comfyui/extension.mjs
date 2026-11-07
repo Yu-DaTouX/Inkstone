@@ -128,7 +128,7 @@ export default function comfyui(pi) {
   })
   pi.registerTool({
     name: 'comfyui_video', label: 'ComfyUI 生视频',
-    description: '用 ComfyUI 已保存的视频工作流生成视频：给 videoPath 走 video-to-video，给 sourcePaths 走 image-to-video，都不给走 text-to-video。保留工作流里的模型、LoRA 等设置，支持 MiniMax H3 Director。workflow 可选，先用 comfyui_service status 看可用工作流。size 如 672x384，不给时 Director 按源视频比例保持工作流像素量；seconds 限制生成时长（Director 默认 10 秒）。路径只允许项目内或插件成果目录内的文件。生成在后台任务里跑，卡片实时显示进度；最多等 waitSeconds（默认 240，0 为立即返回），到时没完成就返回进度和 jobId，再用 comfyui_job 继续等待或取消。需要时自动启动本机 ComfyUI；外部请求和云端节点由宿主向用户确认。',
+    description: '用 ComfyUI 已保存的视频工作流生成视频：给 videoPath 走 video-to-video，给 sourcePaths 走 image-to-video，都不给走 text-to-video。保留工作流里的模型、LoRA 等设置，支持 MiniMax H3 Director（i2v 给 1 张首帧，fl2v 给 1-2 张首尾帧，r2v 给参考图并在提示词里用 <Picture 1> 指代）。workflow 可选，先用 comfyui_service status 看可用工作流。size 如 672x384，不给时 Director 按源视频比例保持工作流像素量；seconds 限制生成时长（Director 默认 10 秒）。路径只允许项目内或插件成果目录内的文件。生成在后台任务里跑，卡片实时显示进度；最多等 waitSeconds（默认 240，0 为立即返回），到时没完成就返回进度和 jobId，再用 comfyui_job 继续等待或取消。需要时自动启动本机 ComfyUI；外部请求和云端节点由宿主向用户确认。',
     parameters: {
       type: 'object', properties: {
         prompt: { type: 'string', minLength: 1, maxLength: 20000 }, workflow: { type: 'string' }, size: { type: 'string' },
