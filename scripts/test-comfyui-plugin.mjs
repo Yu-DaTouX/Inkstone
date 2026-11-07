@@ -10,6 +10,7 @@ import extension from '../integrations/comfyui/extension.mjs'
 import { runComfyWorkflowTests } from './test-comfyui-workflows.mjs'
 import { runComfyVideoTests, directorWorkflow } from './test-comfyui-video.mjs'
 import { runComfyRawTests } from './test-comfyui-raw.mjs'
+import { runComfyIdleTests } from './test-comfyui-idle.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-comfy-plugin-'))
 const oldEnv = { ...process.env }, originalFetch = globalThis.fetch
@@ -23,6 +24,7 @@ try {
   checks += await runComfyWorkflowTests()
   checks += await runComfyVideoTests()
   checks += await runComfyRawTests()
+  checks += await runComfyIdleTests()
   const project = join(root, 'project'), artifactDir = join(root, 'artifacts'), outside = join(root, 'outside')
   await mkdir(project); await mkdir(artifactDir); await mkdir(outside)
   await writeFile(join(project, 'normal.png'), PNG); await writeFile(join(outside, 'secret.png'), PNG)

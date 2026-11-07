@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PROBES, RENDER_HOOK, RENDER_START, RENDER_TAKE, SUMMARY, useRealWindow } from '../lib/perf-probes.mjs'
 import { memoryByKind, sampleProcessTree } from '../lib/process-tree.mjs'
@@ -83,7 +83,7 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   }
 
   await phase('idle', async () => { await sleep(3000) }, 0)
-  const realSessions = await ev(`window.__yanStore.getState().sessions.filter((x) => x.messageCount > 4 && !x.path.includes('--long-scroll-fixture--') && !${JSON.stringify(box.samples)}.includes(x.path)).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, 6).map((x) => x.path)`)
+  const realSessions = (await ev(`window.__yanStore.getState().sessions.filter((x) => x.messageCount > 4 && !x.path.includes('--long-scroll-fixture--') && !${JSON.stringify(box.samples)}.includes(x.path)).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).map((x) => ({ path: x.path, cwd: x.cwd }))`)).filter((x) => existsSync(x.cwd)).slice(0, 6).map((x) => x.path)
   check('有可切换的真实会话', realSessions.length >= 3, { count: realSessions.length })
   if (realSessions[0]) await switchTo(realSessions[0])
   await sleep(1500)
