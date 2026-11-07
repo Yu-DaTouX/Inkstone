@@ -834,6 +834,7 @@ export interface AppSettings {
   profile: UserProfile
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
+  apiKeyFailover?: boolean
   subagentHistoryPrune?: boolean
   promptSuggestions?: boolean
   workspaceTiles?: boolean

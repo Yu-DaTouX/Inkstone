@@ -32,6 +32,15 @@ export function withCurrentKey(list: readonly StoredApiKey[], current: string | 
   return [{ id: id(), label: nextKeyLabel(list), key: current, addedAt: now }, ...list]
 }
 
+export function nextUsableKey(list: readonly StoredApiKey[], current: string | undefined, failed: ReadonlySet<string>): StoredApiKey | undefined {
+  const at = list.findIndex((k) => k.key === current)
+  for (let step = 1; step < list.length; step += 1) {
+    const candidate = list[((at < 0 ? 0 : at) + step) % list.length]
+    if (candidate.key !== current && !failed.has(candidate.id)) return candidate
+  }
+  return undefined
+}
+
 export function poolView(list: readonly StoredApiKey[], current: string | undefined): ApiKeyView[] {
   const views = list.map((k) => ({ id: k.id, label: k.label, masked: maskApiKey(k.key), active: !!current && k.key === current }))
   if (current && !list.some((k) => k.key === current)) {

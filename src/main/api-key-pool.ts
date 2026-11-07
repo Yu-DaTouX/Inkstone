@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { atomicWriteFile } from './sync/atomic'
 import { readAuth, readAuthEntry, updateAuthFile, validProviderId } from './credentials'
-import { CURRENT_KEY_ID, poolView, withCurrentKey, type ApiKeyPools, type StoredApiKey } from '../shared/api-keys'
+import { CURRENT_KEY_ID, nextUsableKey, poolView, withCurrentKey, type ApiKeyPools, type StoredApiKey } from '../shared/api-keys'
 import { pick } from '../shared/ui-lang'
 
 const STORE_FILE = join(YAN_DIR, 'api-keys.json')
@@ -156,6 +156,42 @@ export function switchApiKey(provider: string, id: string, preservedOAuth?: unkn
       return { write: true, result: undefined }
     })
   }, pick('切换失败', 'Switch failed'))
+}
+
+const FAILED_KEY_TTL_MS = 10 * 60_000
+const RECENT_FAILOVER_MS = 30_000
+const failover = new Map<string, { failed: Map<string, number>; switchedAt: number; label: string }>()
+
+export type ApiKeyFailover = { from?: string; to: string; switched: boolean }
+
+export function failoverApiKey(provider: string, now = Date.now()): Promise<ApiKeyFailover | null> {
+  return serial(async () => {
+    if (!validProviderId(provider)) return null
+    const state = failover.get(provider) ?? { failed: new Map<string, number>(), switchedAt: 0, label: '' }
+    if (state.switchedAt && now - state.switchedAt < RECENT_FAILOVER_MS) return { to: state.label, switched: false }
+    for (const [id, at] of state.failed) if (now - at >= FAILED_KEY_TTL_MS) state.failed.delete(id)
+    const store = await readStore()
+    return updateAuthFile(async (data) => {
+      const current = apiKeyOf(data[provider])
+      if (!current) return { write: false, result: null }
+      const list = withCurrentKey(store.providers[provider] ?? [], current, randomUUID)
+      const active = list.find((k) => k.key === current)
+      if (active) state.failed.set(active.id, now)
+      const target = nextUsableKey(list, current, new Set(state.failed.keys()))
+      failover.set(provider, state)
+      if (!target) return { write: false, result: null }
+      store.providers[provider] = list
+      await writeStore(store)
+      data[provider] = { type: 'api_key', key: target.key }
+      state.switchedAt = now
+      state.label = target.label
+      return { write: true, result: { from: active?.label, to: target.label, switched: true } }
+    })
+  })
+}
+
+export function resetApiKeyFailoverForTest(): void {
+  failover.clear()
 }
 
 export function renameApiKey(provider: string, id: string, label: string): Promise<Result> {

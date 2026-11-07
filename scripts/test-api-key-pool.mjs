@@ -96,6 +96,33 @@ export async function runApiKeyPoolTests(ok) {
 
     ok((await pool.clearApiKeys('deepseek')).ok && !(await store()).providers.deepseek, '移除供应商时清空它的 key 列表')
 
+    const start = 1_000_000
+    pool.resetApiKeyFailoverForTest()
+    await pool.addApiKey('moonshot', 'sk-aaa-1111', 'A')
+    await pool.addApiKey('moonshot', 'sk-bbb-2222', 'B')
+    await pool.addApiKey('moonshot', 'sk-ccc-3333', 'C')
+    await pool.switchApiKey('moonshot', (await pool.listApiKeyPools()).moonshot.find((k) => k.label === 'A').id)
+    const first = await pool.failoverApiKey('moonshot', start)
+    ok(first?.switched && first.from === 'A' && first.to === 'B' && (await auth()).moonshot.key === 'sk-bbb-2222', '切到下一个 Key', JSON.stringify(first))
+    ok(!JSON.stringify(first).includes('sk-'), '结果里只有备注，没有 Key 原文')
+    const again = await pool.failoverApiKey('moonshot', start + 5_000)
+    ok(again && !again.switched && (await auth()).moonshot.key === 'sk-bbb-2222', '刚切过时别的会话的同一批失败不再多切一次', JSON.stringify(again))
+    const second = await pool.failoverApiKey('moonshot', start + 40_000)
+    ok(second?.to === 'C' && (await auth()).moonshot.key === 'sk-ccc-3333', '新 Key 也失败时跳过已失败的，切到下一个', JSON.stringify(second))
+    const none = await pool.failoverApiKey('moonshot', start + 80_000)
+    ok(none === null && (await auth()).moonshot.key === 'sk-ccc-3333', '都失败后不再切，也不来回换', JSON.stringify(none))
+    const later = await pool.failoverApiKey('moonshot', start + 40_000 + 11 * 60_000)
+    ok(later?.switched === true, '失败记录过期后可以再试', JSON.stringify(later))
+    await writeFile(authPath, JSON.stringify({ ...(await auth()), solo: { type: 'api_key', key: 'sk-solo-9999' }, sub: { type: 'oauth', access: 'a', refresh: 'r' } }))
+    ok((await pool.failoverApiKey('solo', start)) === null, '只有一个 Key 时不切')
+    ok((await pool.failoverApiKey('sub', start)) === null && (await auth()).sub.type === 'oauth', '订阅登录不切')
+    ok((await pool.failoverApiKey('../bad', start)) === null, '无效的服务商名不处理')
+
+    await build({ entryPoints: ['src/shared/model-errors.ts'], outfile: 'out/test/model-errors-failover.mjs', bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
+    const errors = await import(pathToFileURL(fileURLToPath(new URL('../out/test/model-errors-failover.mjs', import.meta.url))).href + `?t=${Date.now()}`)
+    for (const text of ['401 Incorrect API key provided', 'Unauthorized', 'invalid_api_key', '402 insufficient balance', 'You exceeded your current quota, please check your plan and billing details']) ok(errors.apiKeyLooksUnusable(text), `Key 不可用：${text}`)
+    for (const text of ['429 Too Many Requests', 'rate limit exceeded', '403 insufficient permissions for this model', '502 Bad Gateway', 'connection reset', '']) ok(!errors.apiKeyLooksUnusable(text), `不切 Key：${text}`)
+
     await writeFile(storePath, '{bad json')
     ok(!(await pool.addApiKey('deepseek', 'sk-z')).ok, '列表文件损坏时拒绝写入，保护已存的 key')
   } finally {

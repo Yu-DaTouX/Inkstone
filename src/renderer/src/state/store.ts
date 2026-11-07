@@ -1483,6 +1483,10 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     if (m.ch === 'quota-wait') {
+      if ((m.payload as { cancel?: boolean } | undefined)?.cancel === true) {
+        get().cancelQuotaResume()
+        return
+      }
       void get().armQuotaResume((m.payload as { ifWindowFull?: boolean } | undefined)?.ifWindowFull === true)
       return
     }

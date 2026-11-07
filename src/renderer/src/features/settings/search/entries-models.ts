@@ -16,6 +16,13 @@ export const MODELS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     keywords: ['密钥', 'key', 'token', '凭证', 'credential', 'OpenRouter', 'Anthropic', 'DeepSeek', 'xAI', '服务商', 'provider']
   },
   {
+    id: 'models-key-failover',
+    section: 'models',
+    zh: 'Key 失效时自动切换',
+    en: 'Switch keys when one stops working',
+    keywords: ['key', '密钥', '故障转移', 'failover', '额度', '余额']
+  },
+  {
     id: 'models-recheck',
     section: 'models',
     zh: '重新检测',

@@ -94,6 +94,12 @@ export function modelErrorText(value: unknown, depth = 0): string {
   return [...new Set(parts)].join('；').slice(0, 900)
 }
 
+export function apiKeyLooksUnusable(text: unknown): boolean {
+  const info = classifyModelError(text)
+  if (info.kind === 'quota') return info.quotaScope === 'usage'
+  return info.kind === 'auth' && /\b401\b|unauthorized|unauthenticated|invalid[ _-]api[ _-]key|api[ _-]key[ _-]invalid|api key not valid|incorrect api key/i.test(info.text)
+}
+
 export function classifyModelError(text: unknown): ModelErrorInfo {
   const raw = modelErrorText(text)
   for (const item of PATTERNS) {

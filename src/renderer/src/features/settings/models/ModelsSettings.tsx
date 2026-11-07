@@ -16,10 +16,11 @@ import {
   StatusDot,
   TextField,
   TooltipText,
-  type BadgeTone
+  type BadgeTone,
+  Switch
 } from '../../../ui'
 import { canRemoveCredential, credentialFromEnv, entryState, type ServiceState } from './models-model'
-import { SettingsAdvanced, SettingsGroup, SettingsReveal } from '../root/controls'
+import { SettingsAdvanced, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { PiThinkingLevelsGroup } from '../general/PiNativeSettings'
 import { ClaudeCodeBridgeRow } from './ClaudeCodeBridgeRow'
@@ -75,6 +76,8 @@ async function retryAfterOrphan<T extends { ok: boolean; error?: string }>(start
 export function ModelsSettings(): ReactElement {
   const t = useT()
   const text = useModelsText()
+  const keyFailover = useStore((s) => s.settings?.apiKeyFailover === true)
+  const patchSettings = useStore((s) => s.patchSettings)
   const labels = settingsText(useI18n().lang)
   const authProviders = useStore((s) => s.authProviders)
   const loadAuthProviders = useStore((s) => s.loadAuthProviders)
@@ -541,6 +544,9 @@ export function ModelsSettings(): ReactElement {
       {keys.length > 0 ? (
         <SettingsGroup title={t('auth.keys')} settingId="models-api-keys" className="ms-group" plain>
           <div className="settings-rows ms-rows">
+            <SettingsRow settingId="models-key-failover" label={text('keyFailover')} description={text('keyFailoverDesc')}>
+              <Switch aria-label={text('keyFailover')} isSelected={keyFailover} onChange={(on) => void patchSettings({ apiKeyFailover: on })} data-testid="ms-key-failover" />
+            </SettingsRow>
             {readyKeys.map(serviceRow)}
             {otherKeys.length > 0 ? (
               <>

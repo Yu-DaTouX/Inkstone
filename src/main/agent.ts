@@ -31,7 +31,8 @@ import { messageSyncSignature } from '../shared/session-sync'
 import { clearQueueFile, keepReclaimedQueue, loadQueue, saveQueue, type PersistedQueueItem } from './queue-persistence'
 import { mergeToolDetails, streamsHtmlWriteArgs, toolOutputPushMode, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
-import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { apiKeyLooksUnusable, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
@@ -218,7 +219,7 @@ export interface RunObserverContext {
 export type RunObserver = (ctx: RunObserverContext, signal: RunSignal) => void
 
 type BrowserCommandResult = { ok: boolean; error?: string; code?: string }
-type AutoContinueScope = { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number; reason?: 'model-error' }
+type AutoContinueScope = { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number; reason?: 'model-error' | 'key-failover' }
 
 export type BrowserObservationResult = BrowserCommandResult & { observation?: BrowserObservation; receipt?: BrowserActionReceipt }
 
@@ -2617,6 +2618,11 @@ export class AgentController extends EventEmitter {
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
             runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'model-error' as const }
           : null
+        const failedProvider = this.state?.model?.provider
+        const keyFailover = !continuation && !errorContinuation && modelError && failedProvider && apiKeyLooksUnusable(modelError.text) && this.rpc && this.state?.sessionId
+          ? { provider: failedProvider, scope: { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
+            runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'key-failover' as const } }
+          : null
         this.pendingModelError = undefined
         this.retrySeenThisRun = false
         if (this.loopGuardHit) this.logStreamLoopGuard('settled', { rule: this.loopGuardHit.rule, stream: this.loopGuardHit.stream, outcome: 'agent-settled' })
@@ -2643,7 +2649,8 @@ export class AgentController extends EventEmitter {
         void this.attachLiveEntryIds()
         void this.maybeGenerateTitle()
         const task = continuation ? this.continueAfterLoopGuard(continuation)
-          : errorContinuation ? this.continueAfterModelError(errorContinuation) : undefined
+          : errorContinuation ? this.continueAfterModelError(errorContinuation)
+            : keyFailover ? this.continueAfterKeyFailover(keyFailover.scope, keyFailover.provider) : undefined
         if (task) {
           this.loopGuardContinueTask = task
           void task.then((resumed) => {
@@ -3286,6 +3293,26 @@ export class AgentController extends EventEmitter {
     }
   }
 
+  private async continueAfterKeyFailover(scope: AutoContinueScope, provider: string): Promise<boolean> {
+    try {
+      if ((await getSettings()).apiKeyFailover !== true) return false
+      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue()) || this.loopGuardAutoContinueCount >= 1) return false
+      const moved = await failoverApiKey(provider)
+      if (!moved || !this.canContinueAfterLoopGuard(scope)) return false
+      this.quotaExhausted = false
+      this.push({ ch: 'quota-wait', payload: { cancel: true } } as unknown as MainPush)
+      this.push({ ch: 'notify', payload: { id: `key-failover-${Date.now()}`, method: 'notify', notifyType: 'info',
+        message: moved.switched
+          ? pick(`${moved.from ?? '当前 Key'} 不可用，已切到 ${moved.to} 继续`, `${moved.from ?? 'The current key'} is unusable; continuing with ${moved.to}`)
+          : pick(`继续使用刚切换的 ${moved.to}`, `Continuing with ${moved.to}, switched just now`) } })
+      const result = await this.send(continuationPrompt('key-failover'), undefined, undefined, scope)
+      return result.ok
+    } catch (error) {
+      this.push({ ch: 'log', payload: { level: 'error', text: `[key-failover] ${error instanceof Error ? error.message : String(error)}` } })
+      return false
+    }
+  }
+
   private async continueAfterModelError(scope: AutoContinueScope): Promise<boolean> {
     try {
       if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return false
@@ -3618,7 +3645,7 @@ export class AgentController extends EventEmitter {
         if (autoContinue.reason === 'model-error') {
           this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
             message: pick('模型请求因暂时性错误中断且未自动重试，正在同一会话自动继续（1/1）。', 'The model request was interrupted by a temporary error without auto-retry; continuing in the same session (1/1).') } })
-        } else {
+        } else if (autoContinue.reason !== 'key-failover') {
           this.logStreamLoopGuard('auto-continue-requested', { sessionId: autoContinue.sessionId, runId: autoContinue.runId, count: 1, limit: 1, outcome: 'sending' })
           this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
             message: pick('已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。', 'Loop aborted safely; continuing in the same session (1/1). Withdrawn queued drafts will not run.') } })
