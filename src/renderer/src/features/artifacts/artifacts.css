@@ -249,6 +249,7 @@
   .v3-visual-mermaid {
     position: relative;
     overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .v3-mermaid-svg {

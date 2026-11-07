@@ -25,7 +25,7 @@ export const MERMAID_TEXT_TOKENS = {
 } as const
 
 export const MERMAID_FONT_SIZE = 13
-export const MERMAID_MIN_SCALE = 0.8
+export const MERMAID_MIN_SCALE = 0.55
 
 export type MermaidThemeVariable = keyof typeof MERMAID_COLOR_TOKENS | keyof typeof MERMAID_TEXT_TOKENS
 
