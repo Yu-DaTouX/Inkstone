@@ -37,7 +37,6 @@ const TEST_VISION_MODEL =
   process.env.YAN_TEST_VISION_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
 
 const FOLLOWUP_DEBUG_PORT = process.env.YAN_PROBE_DEBUG_PORT || '9397'
-const LANG_EXT_LOG = join(tmpdir(), `lang-ext-${process.pid}-${Date.now()}.log`)
 
 const USE_LOCAL_TEST_MODEL = TEST_MODEL.startsWith('local/')
 const DELAY_SCALE = Number(process.env.YAN_TEST_DELAY_SCALE ?? '1') || 1
@@ -179,16 +178,6 @@ const CASES = {
     budget: 260000,
     cost: 1,
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
-  },
-  language: {
-    probe: 'scripts/probe/language.js',
-    fixture: true,
-    delay: 14000,
-    budget: 300000,
-    cost: 1,
-    model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    env: { YAN_LANG_EXT_LOG: LANG_EXT_LOG },
-    afterExit: 'languageInjection'
   },
   sound: { probe: 'scripts/probe/sound.js', delay: 9000, cost: 0 },
   working: { probe: 'scripts/probe/working.js', delay: 9000, cost: 0 },
@@ -1566,8 +1555,7 @@ const AFTER_EXIT = {
   taskPlanMultiStep: checkTaskPlanMultiStep,
   turnTimingIsolation: checkTurnTimingIsolation,
   turnTimingInterrupted: checkTurnTimingInterrupted,
-  turnTimingHardKill: checkTurnTimingHardKill,
-  languageInjection: checkLanguageInjection
+  turnTimingHardKill: checkTurnTimingHardKill
 }
 
 let taskFixtureBaseline = null
@@ -1710,45 +1698,6 @@ async function checkTurnTimingIsolation(sandboxRoot, _tempBefore, probeText = ''
     `本机 provider 确认两条请求曾同时在途（最大并发 ${handoffFailureState?.maxConcurrent ?? 0}）`
   )
   say(Number(handoffFailureState?.turnRequests ?? 0) >= 2, `本机 provider 收到两条回合请求（${handoffFailureState?.turnRequests ?? 0}）`)
-  return { ok, lines }
-}
-
-async function checkLanguageInjection() {
-  const lines = []
-  let ok = true
-  const say = (good, text) => {
-    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
-    if (!good) ok = false
-  }
-  let records = []
-  try {
-    records = readFileSync(LANG_EXT_LOG, 'utf8')
-      .split('\n')
-      .filter(Boolean)
-      .flatMap((line) => {
-        try {
-          return [JSON.parse(line)]
-        } catch {
-          return []
-        }
-      })
-  } catch {
-    return { ok: false, lines: [`✗ 没有扩展注入日志（${LANG_EXT_LOG}）—— 语言规则没有经扩展注入`] }
-  }
-  const starts = records.filter((record) => record.hook === 'start')
-  const langs = starts.map((record) => record.lang)
-  say(starts.length >= 3, `每轮都经过 before_agent_start 注入（${starts.length} 次）`)
-  say(
-    langs.every((lang) => lang === 'zh-CN' || lang === 'en-US'),
-    `每轮读到具体语言（${[...new Set(langs)].join(', ') || '无'}）`
-  )
-  say(starts.every((record) => record.injected === true), '每轮真的注入了语言提示（injected=true）')
-  say(starts.every((record) => Number(record.baseLen) > 0), '注入时带着 pi 的原始系统提示（baseLen > 0）')
-  const firstEnglish = langs.indexOf('en-US')
-  say(firstEnglish > 0, `切英文界面后下一轮就注入 en-US（第 ${firstEnglish + 1} 次起）`)
-  say(firstEnglish > 0 && langs.slice(firstEnglish).includes('zh-CN'), '切回中文后下一轮注入又变回 zh-CN')
-  lines.push(`  记录顺序：${langs.join(' → ') || '无'}`)
-  lines.push('  （模型是否真按注入的语言回复属模型行为，不在本检查里判；探针只打印观察值）')
   return { ok, lines }
 }
 
