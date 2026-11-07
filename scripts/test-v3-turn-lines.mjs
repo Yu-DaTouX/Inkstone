@@ -515,24 +515,29 @@ async function main() {
     const liveTitle = textOf(byTestId(row, 'v3-subagent-task')[0])
     ok(!liveTitle.startsWith('进行中') && !liveTitle.startsWith('Running'), '运行中标题不带状态词', liveTitle)
     ok(byTestId(row, 'v3-subagent-time').length === 1, '运行中显示用时')
-    const liveStrip = renderRowEl(collect(line, kind('SubagentLive'))[0])
-    ok(flattenText(byTestId(liveStrip, 'v3-subagent-activity')[0] ?? {}) === '运行 read', '运行中在行下显示最近动作', liveStrip && flattenText(byTestId(liveStrip, 'v3-subagent-activity')[0] ?? {}))
-    ok(byTestId(liveStrip, 'v3-subagent-steer-toggle').length === 1, '运行中可以在卡片上就地插话')
-    ok(byTestId(liveStrip, 'v3-subagent-steer').length === 0, '插话框默认收起')
-
+    ok(collect(line, kind('SubagentLive')).length === 0, '列表行只占一行，不在行下另起进度行')
+    ok(String(row.props.title).includes('运行 read'), '运行中的最近动作放进行的悬停说明', row.props.title)
     store({ subagents: [subagentRun({ model: flash })], models: [] })
     const bare = renderRow().row
     ok(flattenText(byTestId(bare, 'v3-subagent-model')[0]) === 'deepseek/deepseek-v4.1-flash', '目录查不到时退回模型 id', flattenText(byTestId(bare, 'v3-subagent-model')[0] ?? {}))
     ok(byTestId(bare, 'v3-subagent-usage').length === 0 && collect(bare, kind('ContextGauge')).length === 0, '上下文未知时不画圆环与空的用量列')
+
+    store({ subagents: [subagentRun({ model: flash, thinkingLevel: 'high' })], models: [], session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', model: { provider: 'commandcode', id: 'deepseek/deepseek-v4.1-flash' }, thinkingLevel: 'high' } })
+    const sameRow = renderRow().row
+    ok(flattenText(byTestId(sameRow, 'v3-subagent-model')[0] ?? {}) === 'sa.thinkLevel{"level":"state.think.high"}', '与会话同模型时不写模型名，但仍显示「思考 档位」', flattenText(byTestId(sameRow, 'v3-subagent-model')[0] ?? {}))
+    rt.cells = []
+    store({ subagents: Array.from({ length: 5 }, (_, i) => subagentRun({ id: 'think-' + i, startedAt: 1000 + i, model: flash, thinkingLevel: 'low', latestActivity: '运行 bash' })), models: [] })
+    const thinkTile = renderRowEl(tilesOf(rt.render(bundle.SubagentLine, { turn }))[0])
+    ok(flattenText(byTestId(thinkTile, 'v3-subagent-think')[0] ?? {}) === '· state.think.low', '块的第三行在模型名后显示思考档位', flattenText(byTestId(thinkTile, 'v3-subagent-think')[0] ?? {}))
+    ok(collect(thinkTile, (el) => el.props?.className === 'v3-sa-tile-detail').length === 1 && collect(thinkTile, (el) => el.props?.className === 'v3-sa-tile-foot').length === 1, '块固定三行：标题、详情、模型与档位')
+    rt.cells = []
+
 
     store({ subagents: [subagentRun({ status: 'done', endedAt: 5_000, toolCalls: 4, usage: { input: 9_000, output: 3_000 }, contextUsage: { tokens: 20_000, contextWindow: 200_000, percent: 10 } })], models: [] })
     const finished = renderRow().row
     const doneGauge = collect(finished, kind('ContextGauge'))[0]
     ok(doneGauge?.props.usage.percent === 10 && byTestId(finished, 'v3-subagent-usage').length === 0, '完成后与运行中同样显示上下文圆环', doneGauge?.props.usage)
     ok(String(finished.props.title).includes('4 个工具 · 12k token'), '完成后的工具数与 tokens 放进行的悬停说明', finished.props.title)
-    rt.cells = []
-    const finishedLine = rt.render(bundle.SubagentLine, { turn })
-    ok(renderRowEl(collect(finishedLine, kind('SubagentLive'))[0]) === null, '已结束的子 Agent 不显示进度行与插话')
 
     store({ subagents: [subagentRun({ status: 'error', endedAt: 4_000, error: '模型请求超时\n详细堆栈', toolCalls: 2 })], models: [] })
     const failed = renderRow().row

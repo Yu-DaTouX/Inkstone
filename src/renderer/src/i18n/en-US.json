@@ -1348,6 +1348,7 @@
   "state.move.moved": "Session moved to {cwd}{note}",
   "state.conn.kernelExited": "Agent kernel exited (code={code})",
   "state.think.off": "Off",
+  "sa.thinkLevel": "Thinking {level}",
   "state.think.minimal": "Minimal",
   "state.think.low": "Low",
   "state.think.medium": "Medium",

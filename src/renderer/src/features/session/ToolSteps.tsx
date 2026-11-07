@@ -1,6 +1,6 @@
 import { createContext, lazy, memo, Suspense, useContext, useId, useMemo, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
-import { InlineImage } from '../../ui/InlineImage'
+import { MessageImage } from './Image'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { useSessionText } from './text'
@@ -339,7 +339,7 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
       {call.nestedCallsIncomplete ? <div className="v3-step-note">{t('tool2.nestedIncomplete')}</div> : null}
       {call.images?.length ? (
         <div className="v3-step-images">
-          {call.images.map((im, i) => im.data ? <InlineImage key={i} src={`data:${im.mimeType};base64,${im.data}`} alt={t('tool.image', { tool: call.name })} className="v3-md-image" /> : im.url ? <InlineImage key={i} src={im.url} alt={t('tool.image', { tool: call.name })} className="v3-md-image" /> : null)}
+          {call.images.map((im, i) => im.data ? <MessageImage key={i} src={`data:${im.mimeType};base64,${im.data}`} alt={t('tool.image', { tool: call.name })} sourceCwd={cwd} className="v3-md-image" /> : im.url ? <MessageImage key={i} src={im.url} alt={t('tool.image', { tool: call.name })} sourceCwd={cwd} className="v3-md-image" /> : null)}
         </div>
       ) : null}
       {kind === 'change' ? (

@@ -1348,6 +1348,7 @@
   "state.move.moved": "会话已移到 {cwd}{note}",
   "state.conn.kernelExited": "Agent 内核已退出（code={code}）",
   "state.think.off": "关",
+  "sa.thinkLevel": "思考 {level}",
   "state.think.minimal": "最低",
   "state.think.low": "低",
   "state.think.medium": "中",

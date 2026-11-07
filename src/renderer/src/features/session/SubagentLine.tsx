@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
+import { useEffect, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -17,8 +17,6 @@ import type { AssistantTurn } from '../../../../shared/turns'
 import { Icon } from './Icon'
 import { useSmoothHeight } from './smooth-height'
 import { SubagentBot } from './SubagentBot'
-import { SubagentComposer } from './SubagentComposer'
-import { subagentComposerMode } from './subagent-composer'
 import { SubagentStateIcon } from './SubagentState'
 import { useSessionText, type SessionTextKey } from './text'
 import { openSubagentPane, rowLang, useFocusedSubagentRun, useSubagentPaneOpen, useSubagentRow } from './subagent-actions'
@@ -179,6 +177,16 @@ function subagentContextUsage(
   return { tokens: usage.tokens, windowSize: usage.contextWindow, percent, tone }
 }
 
+function useSubagentModelParts(run: SubagentRun): { name: string | null; think: string | null } {
+  const t = useT()
+  const models = useStore((s) => s.models)
+  const sameModel = useStore((s) => sameAsSessionModel(run, s.session?.model, s.session?.thinkingLevel))
+  const name = run.model && !sameModel ? turnModelLabel(run.model, models).label : null
+  const level = run.thinkingLevel?.trim()
+  const think = level ? (THINK_LABEL[level] ? t(THINK_LABEL[level]) : level) : null
+  return { name, think: [think, run.fork ? 'fork' : null].filter(Boolean).join(' · ') || null }
+}
+
 function useAwaitingApproval(runId: string): boolean {
   return useStore((s) => s.approvals.some((request) => request.subagentId === runId))
 }
@@ -278,10 +286,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
             {shown.map((run, index) => grid ? (
               <SubagentTile key={run.id} run={run} snapshot={snapshots[run.id]} index={index} />
             ) : (
-              <Fragment key={run.id}>
-                <SubagentRow run={run} snapshot={snapshots[run.id]} index={index} />
-                <SubagentLive run={run} />
-              </Fragment>
+              <SubagentRow key={run.id} run={run} snapshot={snapshots[run.id]} index={index} />
             ))}
             {canFold ? (
               <Button
@@ -311,20 +316,16 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
   const selected = useSubagentPaneOpen(run.id)
   const awaiting = useAwaitingApproval(run.id)
   const status = awaiting ? tt('awaitApproval') : phaseStatus
-  const models = useStore((s) => s.models)
-  const sameModel = useStore((s) => sameAsSessionModel(run, s.session?.model, s.session?.thinkingLevel))
-  const modelName = run.model && !sameModel ? turnModelLabel(run.model, models).label : null
-  const thinking = run.thinkingLevel && run.thinkingLevel !== 'off' ? run.thinkingLevel : null
-  const thinkText = thinking ? (THINK_LABEL[thinking] ? t(THINK_LABEL[thinking]) : thinking) : null
-  const modelTail = [thinkText, run.fork ? 'fork' : null].filter(Boolean).join(' · ')
+  const { name: modelName, think: modelTail } = useSubagentModelParts(run)
   const live = row.state === 'starting' || row.state === 'running'
   const awaitingReview = !live && (run.review === 'pending' || run.review === 'conflict')
   const label = compactTaskPaths(live && row.description ? row.description : doneLabel(row, subagentRowLabel('done', '', rowLang(lang))))
   const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
+  const activity = live ? (awaiting ? tt('awaitApproval') : run.progressWarning?.trim() || row.latestActivity || '') : ''
   const summary = live ? '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
   const context = row.state === 'failed' ? null : subagentContextUsage(run.contextUsage)
   const usage = context ? '' : summary
-  const rowTitle = [model.task, context && summary ? summary : null, tt('subagentOpenPane')].filter(Boolean).join('\n')
+  const rowTitle = [model.task, activity || null, context && summary ? summary : null, tt('subagentOpenPane')].filter(Boolean).join('\n')
 
   return (
     <button
@@ -358,10 +359,10 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
           {t('sa.reviewBadge')}
         </Badge>
       ) : null}
-      {modelName ? (
+      {modelName || modelTail ? (
         <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>
-          <span className="v3-sa-model-name">{modelName}</span>
-          {modelTail ? <span className="v3-sa-model-tail">{` · ${modelTail}`}</span> : null}
+          {modelName ? <span className="v3-sa-model-name">{modelName}</span> : null}
+          {modelTail ? <span className="v3-sa-model-tail" data-testid="v3-subagent-think">{modelName ? ` · ${modelTail}` : t('sa.thinkLevel', { level: modelTail })}</span> : null}
         </span>
       ) : null}
       {context ? <ContextGauge usage={context} className="v3-sa-usage" data-testid="v3-subagent-context" /> : null}
@@ -381,9 +382,7 @@ function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot
   const { model, status: phaseStatus } = useSubagentView(run, snapshot)
   const row = useSubagentRow(run)
   const selected = useSubagentPaneOpen(run.id)
-  const models = useStore((s) => s.models)
-  const sameModel = useStore((s) => sameAsSessionModel(run, s.session?.model, s.session?.thinkingLevel))
-  const modelName = run.model && !sameModel ? turnModelLabel(run.model, models).label : null
+  const { name: modelName, think } = useSubagentModelParts(run)
   const live = row.state === 'starting' || row.state === 'running'
   const awaiting = useAwaitingApproval(run.id) && live
   const status = awaiting ? tt('awaitApproval') : phaseStatus
@@ -418,53 +417,15 @@ function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot
         </span>
         {time ? <span className="v3-sa-time">{time}</span> : null}
       </span>
-      {detail ? <span className="v3-sa-tile-detail" data-warning={warning ? '' : undefined}>{detail}</span> : null}
-      {modelName || awaitingReview ? (
+      <span className="v3-sa-tile-detail" data-warning={warning ? '' : undefined} title={detail || undefined}>{detail}</span>
+      {modelName || think || awaitingReview ? (
         <span className="v3-sa-tile-foot">
           {modelName ? <span className="v3-sa-model-name">{modelName}</span> : null}
+          {think ? <span className="v3-sa-model-tail" data-testid="v3-subagent-think">{modelName ? `· ${think}` : t('sa.thinkLevel', { level: think })}</span> : null}
           {awaitingReview ? <Badge tone={run.review === 'conflict' ? 'stall' : 'ask'} className="v3-sa-review">{t('sa.reviewBadge')}</Badge> : null}
         </span>
       ) : null}
     </button>
-  )
-}
-
-function SubagentLive({ run }: { run: SubagentRun }): JSX.Element | null {
-  const tt = useSessionText()
-  const row = useSubagentRow(run)
-  const [steering, setSteering] = useState(false)
-  const live = row.state === 'starting' || row.state === 'running'
-  const awaiting = useAwaitingApproval(run.id) && live
-  const canSteer = subagentComposerMode(run) === 'steer'
-  const activity = awaiting ? tt('awaitApproval') : live ? run.progressWarning?.trim() || row.latestActivity : null
-  if (!steering && !(live && (activity || canSteer))) return null
-  return (
-    <>
-    {live || steering ? (
-      <div className="v3-sa-live" data-warning={awaiting || run.progressWarning ? '' : undefined} data-testid="v3-subagent-live">
-        <span className="v3-sa-activity" title={activity ?? undefined} aria-live="polite" data-testid="v3-subagent-activity">
-          {activity ?? ''}
-        </span>
-        {canSteer || steering ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="v3-sa-steer-toggle"
-            aria-expanded={steering}
-            onPress={() => setSteering(!steering)}
-            data-testid="v3-subagent-steer-toggle"
-          >
-            {steering ? tt('subagentInterjectClose') : tt('subagentInterject')}
-          </Button>
-        ) : null}
-      </div>
-    ) : null}
-    {steering ? (
-      <div className="v3-sa-steer" data-testid="v3-subagent-steer">
-        <SubagentComposer run={run} />
-      </div>
-    ) : null}
-    </>
   )
 }
 
