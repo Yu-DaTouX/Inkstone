@@ -26,7 +26,7 @@ import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import { forkAt } from '../../lib/fork'
-import { isSubagentNotice } from '../../../../shared/subagent-notice'
+import { StreamNotice } from '../../ui/StreamNotice'
 import { findTurnModel, turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
 import { LiveRunNotice } from './RunNotice'
@@ -39,7 +39,7 @@ import { WebSearchTurnProvider } from './web-search/citations'
 import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
 import { useTurnScope } from './turn-scope'
-import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
+import type { AssistantTurn, BashTurn, HostTurn, NoteTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
 import { withoutWrapUp } from './wrap-up'
 import { stripImageNotice } from './effective-messages'
 import { DecisionBlock, TurnResult } from './TurnOutcome'
@@ -55,6 +55,7 @@ const REPLY_APPEAR_MS = 160
 
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, tail, answer, outcome = null }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; tail?: boolean; answer?: string | null; outcome?: DecisionOutcome | null }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
+  if (turn.kind === 'host') return <HostTurnView turn={turn} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
   return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} tail={tail} answer={answer} outcome={outcome} />
@@ -87,7 +88,6 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   const [copyState, setCopyState] = useCopyState()
   const pagerModel = msg.entryId ? branchPager?.models.get(msg.entryId) ?? null : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
-  if (isSubagentNotice(msg.text)) return null
   const fileContent = splitFileReferences(stripImageLegend(stripImageNotice(msg.text ?? '')))
   const displayText = fileContent.text
   const refPrefix = usedImageRefPrefix(displayText) ?? imageRefPrefix(lang)
@@ -171,6 +171,26 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
           {msg.id.startsWith('submitting-') ? <span role="status">{t('composer.sending')}</span> : msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
         </div>
       </div>
+    </article>
+  )
+}
+
+function HostTurnView({ turn }: { turn: HostTurn }): JSX.Element {
+  const t = useT()
+  const { msg, notice } = turn
+  const label = notice.kind === 'session-moved' ? t('chat.hostMoved', { path: notice.cwd })
+    : notice.kind === 'quota-resume' ? t('chat.hostQuota')
+    : notice.reason === 'loop' ? t('chat.hostLoop') : t('chat.hostModelError')
+  return (
+    <article className="v3-msg host" data-msg-id={msg.id} data-turn-id={turn.id}>
+      <StreamNotice
+        icon={<Icon name={notice.kind === 'session-moved' ? 'folder' : 'refresh'} size={14} />}
+        title={msg.text}
+        meta={msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
+        testId="v3-host-notice"
+      >
+        {label}
+      </StreamNotice>
     </article>
   )
 }

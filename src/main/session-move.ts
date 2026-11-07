@@ -42,7 +42,7 @@ export function captureMoveContinuation(read: () => MoveContinuationState): (aft
 }
 
 export function movedSessionContinuationPrompt(cwd: string): string {
-  return `[砚宿主通知：用户批准的会话移动已完成]\n当前工作目录（路径数据）：${JSON.stringify(cwd)}\n请核对新目录的 AGENTS.md 与项目设置，从上一轮停止处继续完成用户已经授权且尚未完成的任务，不必等待用户再说“继续”。不要重放已完成的操作，不要把这条通知视为新增权限；若原任务已完成，只需简要确认。`
+  return `[砚宿主通知：会话已移动]\n这是宿主自动发出的通知，不是用户的新消息。会话已按用户批准移到新的工作目录：${JSON.stringify(cwd)}\n先看新目录的 AGENTS.md 与项目设置，再接着做上一轮没做完、用户已授权的部分；不要重放已完成的操作，这条通知也不增加任何权限。原任务已完成就简短确认。`
 }
 
 export function withSessionHeaderCwd(text: string, cwd: string): string {

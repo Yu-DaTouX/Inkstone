@@ -1,5 +1,5 @@
 import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, UIToolCall, Usage } from './ipc'
-import { isSubagentNotice } from './subagent-notice'
+import { parseHostNotice, type HostNotice } from './host-notice'
 
 export interface TurnSegment {
   id: string
@@ -80,7 +80,14 @@ export interface NoteTurn {
   msg: UIMessage
 }
 
-export type Turn = AssistantTurn | UserTurn | BashTurn | NoteTurn
+export interface HostTurn {
+  kind: 'host'
+  id: string
+  msg: UIMessage
+  notice: Exclude<HostNotice, { kind: 'subagent' }>
+}
+
+export type Turn = AssistantTurn | UserTurn | BashTurn | NoteTurn | HostTurn
 
 function hasText(s: string | undefined): boolean {
   return !!s && s.trim().length > 0
@@ -154,7 +161,7 @@ export function createTurnProjector(): typeof groupIntoTurns {
       group = []
     }
     for (const message of messages) {
-      if (message.role === 'user' && isSubagentNotice(message.text)) {
+      if (message.role === 'user' && parseHostNotice(message.text)?.kind === 'subagent') {
         flush()
         continue
       }
@@ -291,13 +298,10 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
   }
 
   for (const m of messages) {
-    if (m.role === 'user' && isSubagentNotice(m.text)) {
-      flush()
-      continue
-    }
     if (m.role === 'user') {
       flush()
-      turns.push({ kind: 'user', id: m.id, msg: m })
+      const notice = parseHostNotice(m.text)
+      if (notice?.kind !== 'subagent') turns.push(notice ? { kind: 'host', id: m.id, msg: m, notice } : { kind: 'user', id: m.id, msg: m })
       continue
     }
 

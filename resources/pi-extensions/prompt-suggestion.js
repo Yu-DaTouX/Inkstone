@@ -18,7 +18,7 @@ export const EVIDENCE_LOW_CHARS = 80_000
 
 const COMPLETIONS_APIS = new Set(['openai-completions'])
 const RESPONSES_APIS = new Set(['openai-responses', 'azure-openai-responses', 'openai-codex-responses'])
-const HOST_MESSAGE = /^(?:<subagent-notification|\[(?:循环恢复|模型错误恢复|Auto-continue)|额度已恢复)/
+const HOST_MESSAGE = /^(?:<subagent-notification|\[(?:循环恢复|模型错误恢复|Auto-continue|砚宿主通知：)|额度已恢复)/
 
 const PREDICT_RULES = 'Write the single message the user is most likely to send next, in their own voice and language, exactly as they would type it: for example a short go-ahead, a pick among options just offered, or the natural next request. Predict what they would type, not what you think they should do. Do not answer, continue the task or call tools. If the reply asks for something only the user can supply (a fact about them, a file, a name or a date), or nothing is reasonably predictable, output only NONE. Otherwise output only the message, at most 20 words.'
 
