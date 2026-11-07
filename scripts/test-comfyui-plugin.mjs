@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createComfyService } from '../integrations/comfyui/service.mjs'
 import { comfyImage, comfyAbortRequests, loadSources } from '../integrations/comfyui/generation.mjs'
-import { comfyLaunchCommand, findLaunchableComfy, comfyStatus } from '../integrations/comfyui/launcher.mjs'
+import { comfyLaunchCommand, findLaunchableComfy, comfyStatus, comfyQueueBusy } from '../integrations/comfyui/launcher.mjs'
 import { createServer } from 'node:http'
 import extension from '../integrations/comfyui/extension.mjs'
 import { runComfyWorkflowTests } from './test-comfyui-workflows.mjs'
@@ -83,6 +83,14 @@ try {
   ok(JSON.parse(deletion.init.body).delete[0] === 'owned-prompt' && !calls.some(call => call.href.endsWith('/interrupt')), 'cancellation removes only its own queued external job')
   assert.deepEqual(comfyAbortRequests('p1', true).map(request => request.path), ['/interrupt', '/queue']); checks++
   assert.deepEqual(comfyAbortRequests('p1', false).map(request => request.path), ['/queue']); checks++
+  globalThis.fetch = async () => Response.json({ queue_running: [[1]], queue_pending: [] })
+  ok(await comfyQueueBusy('http://comfy') === true, 'running prompt keeps managed ComfyUI alive')
+  globalThis.fetch = async () => Response.json({ queue_running: [], queue_pending: [[2]] })
+  ok(await comfyQueueBusy('http://comfy') === true, 'pending prompt keeps managed ComfyUI alive')
+  globalThis.fetch = async () => Response.json({ queue_running: [], queue_pending: [] })
+  ok(await comfyQueueBusy('http://comfy') === false, 'empty queue allows idle stop')
+  globalThis.fetch = async () => { throw new Error('offline') }
+  ok(await comfyQueueBusy('http://comfy') === false, 'unreachable server allows idle stop')
   globalThis.fetch = async () => Response.json({}, { status: 404 })
   const installDir = join(root, 'fake-comfy'), python = process.platform === 'win32' ? join(installDir, 'venv', 'Scripts', 'python.exe') : join(installDir, 'venv', 'bin', 'python')
   await mkdir(join(python, '..'), { recursive: true }); await mkdir(join(installDir, 'user'))

@@ -99,6 +99,18 @@ function resetLocalCaches() {
     resetLocalImageCache();
     launchCache = null;
 }
+export async function comfyQueueBusy(baseUrl) {
+    try {
+        const response = await fetch(`${baseUrl}/queue`, { signal: AbortSignal.timeout(5_000) });
+        if (!response.ok)
+            return false;
+        const queue = await response.json();
+        return (queue.queue_running?.length ?? 0) + (queue.queue_pending?.length ?? 0) > 0;
+    }
+    catch {
+        return false;
+    }
+}
 function scheduleIdleStop() {
     if (!managed)
         return;
@@ -108,9 +120,18 @@ function scheduleIdleStop() {
     const minutes = idleMinutes();
     if (!minutes || managed.busy > 0)
         return;
-    managed.idleStopAt = Date.now() + minutes * 60_000;
-    managed.idleTimer = setTimeout(() => {
-        if (managed && managed.busy === 0)
+    const state = managed;
+    const stopAt = Date.now() + minutes * 60_000;
+    state.idleStopAt = stopAt;
+    state.idleTimer = setTimeout(async () => {
+        if (managed !== state || state.busy > 0)
+            return;
+        const queued = await comfyQueueBusy(state.baseUrl);
+        if (managed !== state || state.busy > 0 || state.idleStopAt !== stopAt)
+            return;
+        if (queued)
+            scheduleIdleStop();
+        else
             stopManagedComfy();
     }, minutes * 60_000);
     managed.idleTimer.unref?.();
