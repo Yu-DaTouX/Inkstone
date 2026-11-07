@@ -184,8 +184,9 @@ export async function renderTerminalText(raw: string, cols: number, context = ''
 }
 
 export interface DangerRules {
-  detectDanger(toolName: string, input: { command: string }, cwd: string): string[]
+  detectDanger(toolName: string, input: { command: string }, cwd: string, options?: { base?: string | null }): string[]
   outsideWrites(toolName: string, input: { command: string }, cwd: string, prefs: unknown): string[]
+  shellLocationAfter(command: string, base: string | null): string | null
 }
 
 let dangerRules: Promise<DangerRules | null> | null = null
@@ -205,7 +206,7 @@ export function loadDangerRules(): Promise<DangerRules | null> {
     if (!path) return null
     try {
       const mod = (await import(/* @vite-ignore */ pathToFileURL(path).href)) as Partial<DangerRules>
-      return typeof mod.detectDanger === 'function' && typeof mod.outsideWrites === 'function' ? (mod as DangerRules) : null
+      return typeof mod.detectDanger === 'function' && typeof mod.outsideWrites === 'function' && typeof mod.shellLocationAfter === 'function' ? (mod as DangerRules) : null
     } catch {
       return null
     }
@@ -256,11 +257,13 @@ export function agentTerminalIds(): string[] {
   return [...agentTerminals]
 }
 const typedLines = new Map<string, string>()
+const terminalLocations = new Map<string, string | null>()
 const lastUsed = new Map<string, string>()
 
 export function resetTerminalAgentState(): void {
   agentTerminals.clear()
   typedLines.clear()
+  terminalLocations.clear()
   lastUsed.clear()
 }
 
@@ -434,14 +437,16 @@ export class TerminalAgentCommands {
     const plan = planSubmission(typedLines.get(stream.info.id) ?? '', data)
     if (plan.submitted.length > 0) {
       const prefs = await this.host.prefs()
+      const command = plan.submitted.join('\n')
+      const rules = await this.host.rules()
+      const root = this.ctx.cwd()
+      const tracked = terminalLocations.get(stream.info.id)
+      const base = tracked === undefined ? stream.info.cwd || root : tracked
       if (prefs.mode !== 'all') {
-        const command = plan.submitted.join('\n')
-        const rules = await this.host.rules()
         if (!rules) throw new CapabilityCommandError('terminal_guard_unavailable', '危险命令检查不可用，暂不执行写入终端的命令')
         const tool = shellToolName(stream.info)
-        const cwd = stream.info.cwd || this.ctx.cwd()
-        const outside = rules.outsideWrites(tool, { command }, cwd, prefs)
-        const reasons = [...new Set([...rules.detectDanger(tool, { command }, cwd), ...outside.map((target) => `写入项目之外的路径：${target}`)])]
+        const outside = rules.outsideWrites(tool, { command }, root, { ...prefs, base })
+        const reasons = [...new Set([...rules.detectDanger(tool, { command }, root, { base }), ...outside.map((target) => `写入项目之外的路径：${target}`)])]
         if (reasons.length > 0) {
           const answer = await this.ctx.confirm({ detail: command, reasons, outsideDirs: outside })
           if (!answer.allowed) {
@@ -450,6 +455,7 @@ export class TerminalAgentCommands {
           }
         }
       }
+      if (rules) terminalLocations.set(stream.info.id, rules.shellLocationAfter(command, base))
     }
     typedLines.set(stream.info.id, plan.pending)
   }
@@ -618,6 +624,7 @@ export class TerminalAgentCommands {
     this.host.kill(stream.info.id)
     agentTerminals.delete(stream.info.id)
     typedLines.delete(stream.info.id)
+    terminalLocations.delete(stream.info.id)
     return { summary: { kind: 'terminal', action: 'stop', id: stream.info.id, stopped: true } }
   }
 }

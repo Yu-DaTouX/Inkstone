@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
 const PREFS_TIMEOUT_MS = 5000
@@ -62,6 +63,10 @@ export function splitSegments(command) {
     }
     if (ch === '\\' && i + 1 < text.length) { current += ch + text[++i]; continue }
     if (ch === "'" || ch === '"') { quote = ch; current += ch; continue }
+    if (ch === '$' && text[i + 1] === '(') {
+      const end = closingParen(text, i + 1)
+      if (end > 0) { current += text.slice(i, end + 1); i = end; continue }
+    }
     if (ch === '<' && text[i + 1] === '<') {
       const found = heredocDelimiter(text, i)
       if (found) { heredoc = found.tag; current += text.slice(i, i + found.length); i += found.length - 1; continue }
@@ -75,20 +80,111 @@ export function splitSegments(command) {
   return parts
 }
 
+function closingParen(text, open) {
+  let depth = 0
+  let quote = null
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i]
+    if (quote) {
+      if (ch === quote) quote = null
+      continue
+    }
+    if (ch === "'" || ch === '"') quote = ch
+    else if (ch === '(') depth += 1
+    else if (ch === ')' && --depth === 0) return i
+  }
+  return -1
+}
+
+function substitutions(text) {
+  const found = []
+  let quote = null
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === "'" && quote !== '"') { quote = quote ? null : "'"; continue }
+    if (quote === "'") continue
+    if (ch === '"') { quote = quote ? null : '"'; continue }
+    if (ch === '\\') { i += 1; continue }
+    if ((ch === '$' || ch === '<' || ch === '>') && text[i + 1] === '(') {
+      const end = closingParen(text, i + 1)
+      if (end > 0) { found.push(text.slice(i + 2, end)); i = end }
+    } else if (ch === '`') {
+      const end = text.indexOf('`', i + 1)
+      if (end > 0) { found.push(text.slice(i + 1, end)); i = end }
+    }
+  }
+  return found
+}
+
+const SEGMENT_TOKEN = /"[^"]*"|'[^']*'|\S+/g
+
 function tokens(segment) {
-  return segment.trim().match(/"[^"]*"|'[^']*'|\S+/g) ?? []
+  return segment.trim().match(SEGMENT_TOKEN) ?? []
+}
+
+function bareName(word) {
+  return String(word ?? '').toLowerCase().replace(/^["']+|["']+$/g, '').replace(/^.*[\\/]/, '').replace(/\.exe$/, '')
+}
+
+const PREFIX_COMMANDS = new Map(Object.entries({
+  sudo: { valued: ['-u', '-g', '-h', '-p', '-C', '-T', '-r', '-t', '-U', '--user', '--group', '--host', '--prompt'] },
+  doas: { valued: ['-u', '-C'] },
+  env: { valued: ['-u', '--unset', '-C', '--chdir'] },
+  timeout: { valued: ['-k', '--kill-after', '-s', '--signal'], positionals: 1 },
+  nohup: {},
+  command: {},
+  builtin: {},
+  exec: { valued: ['-a'] },
+  time: { valued: ['-f', '-o', '--format', '--output'] },
+  nice: { valued: ['-n', '--adjustment'] },
+  ionice: { valued: ['-c', '-n'] },
+  stdbuf: { valued: ['-i', '-o', '-e'] },
+  setsid: {},
+  xargs: { valued: ['-I', '-L', '-n', '-P', '-s', '-d', '-E', '-a', '--replace', '--max-lines', '--max-args', '--max-procs', '--max-chars', '--delimiter', '--eof', '--arg-file'], stdinArgs: true },
+  if: {},
+  then: {},
+  elif: {},
+  else: {},
+  do: {},
+  while: {},
+  until: {},
+  '!': {}
+}))
+
+function commandStart(parts) {
+  let start = 0
+  let stdinArgs = false
+  while (start < parts.length) {
+    if (/^\w+=/.test(parts[start])) { start += 1; continue }
+    const prefix = PREFIX_COMMANDS.get(bareName(parts[start]))
+    if (!prefix) break
+    stdinArgs ||= prefix.stdinArgs === true
+    start += 1
+    let positionals = prefix.positionals ?? 0
+    while (start < parts.length) {
+      const arg = parts[start]
+      if (prefix.valued?.includes(arg)) start += 2
+      else if (/^-./.test(arg)) start += 1
+      else if (positionals > 0) { positionals -= 1; start += 1 }
+      else break
+    }
+  }
+  return { start, stdinArgs }
+}
+
+function stripGrouping(segment) {
+  return String(segment).replace(/^\s*[({]+\s*/, '')
 }
 
 function commandOf(segment) {
-  const parts = tokens(segment)
-  let start = 0
-  while (start < parts.length && (/^sudo$/i.test(parts[start]) || /^\w+=/.test(parts[start]))) start += 1
-  const head = (parts[start] ?? '').toLowerCase().replace(/^.*[\\/]/, '').replace(/\.exe$/, '')
-  return { head, args: parts.slice(start + 1) }
+  const parts = tokens(stripGrouping(segment))
+  const { start, stdinArgs } = commandStart(parts)
+  return { head: bareName(parts[start]), args: parts.slice(start + 1), stdinArgs }
 }
 
-function deletesOutsideProject(raw, cwd) {
-  const target = resolveTarget(raw, cwd)
+function deletesOutsideProject(raw, cwd, base = cwd) {
+  if (base === null && !isAbsolutePath(expandHome(expandEnv(unquote(raw))))) return true
+  const target = resolveTarget(raw, base ?? cwd)
   if (!target) return false
   const roots = [cwd || process.cwd(), tmpdir(), '/tmp', '/var/tmp'].map((p) => physicalPath(normalizePath(p)).replace(/\/$/, ''))
   return !isInside(target, roots)
@@ -96,26 +192,73 @@ function deletesOutsideProject(raw, cwd) {
 
 const PS_RECURSE = /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?(?::\$?true)?$/i
 
-function recursiveDeleteTarget({ head, args }, cwd) {
-  let recursive = false
-  if (head === 'rm') {
-    recursive = args.some((a) => /^-[a-z]*r[a-z]*$/i.test(a) || a === '--recursive' || /^-recurse$/i.test(a))
-  } else if (['rmdir', 'rd', 'del', 'erase'].includes(head)) {
-    recursive = args.some((a) => /^\/s$/i.test(a) || PS_RECURSE.test(a))
-  } else if (['remove-item', 'ri'].includes(head)) {
-    recursive = args.some((a) => PS_RECURSE.test(a))
-  } else {
-    return null
-  }
-  if (!recursive) return null
-  const cmdFlag = head === 'rm' ? /^-/ : /^(-|\/[a-z]$)/i
-  const targets = args.filter((a) => !cmdFlag.test(a) && !/^-{1,2}\w/.test(a))
-  return targets.find((target) => isBroadTarget(target) || deletesOutsideProject(target, cwd)) ?? null
+function isRecursiveDelete({ head, args }) {
+  if (head === 'rm') return args.some((a) => /^-[a-z]*r[a-z]*$/i.test(a) || a === '--recursive' || /^-recurse$/i.test(a))
+  if (['rmdir', 'rd', 'del', 'erase'].includes(head)) return args.some((a) => /^\/s$/i.test(a) || PS_RECURSE.test(a))
+  if (['remove-item', 'ri'].includes(head)) return args.some((a) => PS_RECURSE.test(a))
+  return false
+}
+
+function recursiveDeleteTarget(cmd, cwd, base = cwd) {
+  if (!isRecursiveDelete(cmd)) return null
+  const cmdFlag = cmd.head === 'rm' ? /^-/ : /^(-|\/[a-z]$)/i
+  const targets = cmd.args.filter((a) => !cmdFlag.test(a) && !/^-{1,2}\w/.test(a))
+  return targets.find((target) => isBroadTarget(target) || deletesOutsideProject(target, cwd, base)) ?? null
 }
 
 const POWER_COMMANDS = new Set(['shutdown', 'reboot', 'halt', 'poweroff', 'stop-computer', 'restart-computer'])
 
-const SHELL_WRAPPER = /^\s*(?:sudo\s+)?(?:\S*[\\/])?(?:bash|sh|zsh|dash|powershell|pwsh|cmd)(?:\.exe)?\s+(?:-\S+\s+)*?(?:-c|-command|\/c)\s+([\s\S]+)$/i
+const POSIX_SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'ash'])
+const POSIX_VALUED_FLAGS = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
+const PS_VALUED_FLAGS = ['executionpolicy', 'ep', 'windowstyle', 'inputformat', 'outputformat', 'configurationname', 'configurationfile', 'custompipename', 'psconsolefile', 'settingsfile', 'version', 'workingdirectory', 'wd']
+
+function cmdBody(rest, text) {
+  for (const token of rest) {
+    const flag = /^(?:\/[a-z](?::\w+)?)*?\/[ck]/i.exec(token[0])
+    if (flag) return text.slice(token.index + flag[0].length)
+    if (!token[0].startsWith('/')) return ''
+  }
+  return ''
+}
+
+function posixBody(rest, text) {
+  const after = (i) => (i < rest.length ? text.slice(rest[i].index) : '')
+  for (let i = 0; i < rest.length; i++) {
+    const word = rest[i][0]
+    if (POSIX_VALUED_FLAGS.has(word)) { i += 1; continue }
+    if (word.startsWith('--')) continue
+    if (!/^[-+][a-z]+$/i.test(word)) return ''
+    const takesOption = /[oO]$/.test(word)
+    if (word[0] === '-' && word.includes('c')) return after(i + 1 + (takesOption ? 1 : 0))
+    if (takesOption) i += 1
+  }
+  return ''
+}
+
+function powershellBody(rest, text) {
+  const after = (i) => (i < rest.length ? text.slice(rest[i].index) : '')
+  for (let i = 0; i < rest.length; i++) {
+    const word = rest[i][0]
+    if (!/^[-/]/.test(word)) return after(i)
+    const [name, inlineValue] = word.slice(1).toLowerCase().split(/:(.*)/s)
+    if (!name) return ''
+    if ('command'.startsWith(name)) return after(i + 1)
+    if (name === 'ec' || 'encodedcommand'.startsWith(name) || 'file'.startsWith(name)) return ''
+    if (inlineValue === undefined && PS_VALUED_FLAGS.some((flag) => flag.startsWith(name))) i += 1
+  }
+  return ''
+}
+
+function shellBody(segment) {
+  const text = stripGrouping(segment)
+  const found = [...text.matchAll(SEGMENT_TOKEN)]
+  const { start } = commandStart(found.map((match) => match[0]))
+  const head = bareName(found[start]?.[0])
+  const rest = found.slice(start + 1)
+  if (head === 'cmd') return cmdBody(rest, text)
+  if (head === 'powershell' || head === 'pwsh') return powershellBody(rest, text)
+  return POSIX_SHELLS.has(head) ? posixBody(rest, text) : ''
+}
 
 const GIT_PREFIX = String.raw`\bgit\s+(?:(?:-C|-c|--git-dir|--work-tree|--namespace)(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)\s+|-\S+\s+)*`
 const gitRule = (rest) => new RegExp(GIT_PREFIX + rest, 'i')
@@ -197,22 +340,26 @@ function isAbsolutePath(p) {
   return /^(?:[a-z]:)?[\\/]/i.test(p) || /^[a-z]:/i.test(p)
 }
 
-function scanCommand(command, reasons, depth = 0, cwd = '') {
+function scanCommand(command, reasons, depth = 0, cwd = '', base = cwd) {
+  if (depth < MAX_SHELL_DEPTH) {
+    for (const inner of substitutions(command)) scanCommand(inner, reasons, depth + 1, cwd, base)
+  }
   for (const segment of command.split(SEGMENT_SPLIT)) {
     const cmd = commandOf(segment)
-    const hit = recursiveDeleteTarget(cmd, cwd)
+    const hit = recursiveDeleteTarget(cmd, cwd, base)
     if (hit) reasons.push(isBroadTarget(hit) ? `递归删除大范围目录：${hit}` : `递归删除项目之外的目录：${hit}`)
+    if (cmd.stdinArgs && isRecursiveDelete(cmd)) reasons.push('递归删除的目标来自管道输入，砚无法判断范围')
     if (POWER_COMMANDS.has(cmd.head)) reasons.push('关机或重启')
     const encoded = encodedPowerShell(cmd)
     if (encoded === '') reasons.push('PowerShell 编码命令无法解读，砚无法检查其中的操作')
     else if (encoded !== null) {
       const inner = []
-      if (depth < MAX_SHELL_DEPTH) scanCommand(encoded, inner, depth + 1, cwd)
+      if (depth < MAX_SHELL_DEPTH) scanCommand(encoded, inner, depth + 1, cwd, base)
       else inner.push('命令嵌套层数过多，砚无法检查最内层的操作')
       if (inner.length) reasons.push(...inner, `PowerShell 编码命令，解码后为：${encoded.slice(0, 300)}`)
     }
-    const wrapped = SHELL_WRAPPER.exec(segment)
-    if (wrapped && depth < MAX_SHELL_DEPTH) scanCommand(unwrapShellBody(wrapped[1]), reasons, depth + 1, cwd)
+    const wrapped = shellBody(segment)
+    if (wrapped && depth < MAX_SHELL_DEPTH) scanCommand(unwrapShellBody(wrapped), reasons, depth + 1, cwd, base)
     else if (wrapped) reasons.push('命令嵌套层数过多，砚无法检查最内层的操作')
   }
   const ruleSource = ruleText(command)
@@ -237,13 +384,13 @@ export function hostScansTerminalInput(command) {
   return /^yan(?:\.cmd|\.ps1)?$/.test(head) && args[0] === 'terminal' && ['run', 'write', 'keys'].includes(args[1])
 }
 
-export function detectDanger(toolName, input, cwd) {
+export function detectDanger(toolName, input, cwd, options = {}) {
   const reasons = []
   const name = String(toolName ?? '')
   if (name === 'bash' || name === 'powershell') {
     const command = String(input?.command ?? '')
-    if (!hostScansTerminalInput(command)) scanCommand(command, reasons, 0, cwd)
-    for (const { target } of shellWrites(command, cwd)) {
+    if (!hostScansTerminalInput(command)) scanCommand(command, reasons, 0, cwd, options.base === undefined ? cwd : options.base)
+    for (const { target } of shellWrites(command, cwd, 0, options.base === undefined ? undefined : { base: options.base, vars: new Map() })) {
       if (touchesHostConfig(target, cwd)) reasons.push(`${HOST_CONFIG_REASON}${target}`)
     }
     if (/\bsudo\b/i.test(command) && reasons.length === 0 && /\brm\b/i.test(command)) reasons.push('以管理员身份删除文件')
@@ -461,8 +608,20 @@ function segmentWriteTargets(segment, { head, args }) {
   return out
 }
 
+const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g
+
 function fileToolPath(raw) {
-  return typeof raw === 'string' && raw.trimStart().startsWith('@') ? raw.trimStart().slice(1) : raw
+  if (typeof raw !== 'string') return raw
+  let text = raw.replace(UNICODE_SPACES, ' ')
+  if (text.trimStart().startsWith('@')) text = text.trimStart().slice(1)
+  if (process.platform === 'win32') text = text.replace(/^\/mnt\/([a-z])(?=\/|$)/i, '$1:')
+  if (/^~(?:[\\/]|$)/.test(text)) return homedir() + text.slice(1)
+  if (!/^file:\/\//i.test(text)) return text
+  try {
+    return fileURLToPath(text)
+  } catch {
+    return text
+  }
 }
 
 const LOOP_ITEM = Symbol('loop-item')
@@ -543,8 +702,8 @@ function resolveFrom(raw, base, vars = new Map()) {
 function nestedScript(segment, cmd) {
   const encoded = encodedPowerShell(cmd)
   if (encoded) return encoded
-  const wrapped = SHELL_WRAPPER.exec(segment)
-  return wrapped ? unwrapShellBody(wrapped[1]) : ''
+  const wrapped = shellBody(segment)
+  return wrapped ? unwrapShellBody(wrapped) : ''
 }
 
 export function shellWrites(command, cwd, depth = 0, scope) {
@@ -558,18 +717,30 @@ export function shellWrites(command, cwd, depth = 0, scope) {
     for (const raw of segmentWriteTargets(segment, cmd)) out.push({ raw, target: resolveFrom(raw, base, vars) })
     const inner = depth < MAX_SHELL_DEPTH ? nestedScript(segment, cmd) : ''
     if (inner) out.push(...shellWrites(inner, cwd, depth + 1, { base, vars: new Map(vars) }))
+    if (depth < MAX_SHELL_DEPTH) {
+      for (const sub of substitutions(part.text)) out.push(...shellWrites(sub, cwd, depth + 1, { base, vars: new Map(vars) }))
+    }
     if (LOCATION_COMMANDS.has(cmd.head)) base = nextLocation(cmd, base)
   }
   return out
 }
 
-function writeTargets(toolName, input, cwd) {
+export function shellLocationAfter(command, base) {
+  let current = base
+  for (const part of splitSegments(String(command ?? ''))) {
+    const cmd = commandOf(part.text)
+    if (LOCATION_COMMANDS.has(cmd.head)) current = nextLocation(cmd, current)
+  }
+  return current
+}
+
+function writeTargets(toolName, input, cwd, base) {
   const name = String(toolName ?? '')
   if (FILE_TOOLS.has(name)) {
     const raw = fileToolPath(input?.path ?? input?.file_path ?? input?.filePath)
     return typeof raw === 'string' && raw.trim() ? [{ raw, target: resolveTarget(raw, cwd) }] : []
   }
-  if (name === 'bash' || name === 'powershell') return shellWrites(String(input?.command ?? ''), cwd)
+  if (name === 'bash' || name === 'powershell') return shellWrites(String(input?.command ?? ''), cwd, 0, base === undefined ? undefined : { base, vars: new Map() })
   return []
 }
 
@@ -577,7 +748,7 @@ export function outsideWrites(toolName, input, cwd, prefs = {}) {
   if (!prefs.outsideWrites) return []
   const roots = allowedRoots(cwd || process.cwd(), prefs)
   const hits = []
-  for (const { raw, target } of writeTargets(toolName, input, cwd)) {
+  for (const { raw, target } of writeTargets(toolName, input, cwd, prefs.base)) {
     if (/^(?:\/dev\/(?:null|stdout|stderr)|nul|\$null|&\d|-)$/i.test(String(raw).trim())) continue
     if (target === null) hits.push(`${unquote(raw)}${UNKNOWN_BASE_NOTE}`)
     else if (target === undefined) hits.push(`${unquote(raw)}${UNKNOWN_VARIABLE_NOTE}`)

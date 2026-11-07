@@ -294,6 +294,33 @@ try {
     assert.equal(host.terms.has(started.summary.id), false)
   })
 
+  await check('项目外写入按终端实际位置判断，基准是会话项目而不是终端目录', async () => {
+    const prefs = { mode: 'danger', outsideWrites: true, allowRoots: [] }
+    const away = setup({ prefs, allow: true })
+    away.host.adopt({ id: 'away', owner: 'sid-a', cwd: 'D:/elsewhere' })
+    await away.commands.run('run', { id: 'away', command: 'echo x > a.txt' })
+    assert.equal(away.confirms.length, 1)
+
+    const local = setup({ prefs, allow: true })
+    local.host.adopt({ id: 'local', owner: 'sid-a', cwd: process.cwd() })
+    await local.commands.run('run', { id: 'local', command: 'echo x > a.txt' })
+    assert.equal(local.confirms.length, 0)
+    await local.commands.run('run', { id: 'local', command: 'cd D:/elsewhere' })
+    assert.equal(local.confirms.length, 0)
+    await local.commands.run('run', { id: 'local', command: 'echo x > a.txt' })
+    assert.equal(local.confirms.length, 1)
+    assert.match(local.confirms[0].reasons.join(), /d:\/elsewhere\/a\.txt/)
+    await local.commands.run('run', { id: 'local', command: 'popd' })
+    await local.commands.run('run', { id: 'local', command: 'echo x > b.txt' })
+    assert.equal(local.confirms.length, 2)
+
+    const free = setup({ prefs: { ...prefs, mode: 'all' } })
+    free.host.adopt({ id: 'free', owner: 'sid-a', cwd: process.cwd() })
+    await free.commands.run('run', { id: 'free', command: 'cd D:/elsewhere' })
+    await free.commands.run('run', { id: 'free', command: 'echo x > a.txt' })
+    assert.equal(free.confirms.length, 0)
+  })
+
   await check('start --cwd 不存在时报错，终端上限时报错', async () => {
     const { commands } = setup()
     await failsWith(commands.run('start', { cwd: 'no/such/dir' }), 'terminal_bad_cwd')

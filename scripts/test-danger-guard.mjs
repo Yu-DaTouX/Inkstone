@@ -1,8 +1,103 @@
 import { homedir } from 'node:os'
 
+function runWrapperAndPathTests(ok, mod) {
+  const { detectDanger, outsideWrites, shellLocationAfter } = mod
+  const on = { outsideWrites: true, allowRoots: [] }
+  const asks = (command, tool = 'bash') => detectDanger(tool, { command }, 'C:/proj').length > 0
+  const outside = (command, extra = {}) => outsideWrites('bash', { command }, 'C:/proj', { ...on, ...extra })
+
+  for (const cmd of [
+    String.raw`powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item -Recurse -Force C:\x"`,
+    String.raw`powershell -WindowStyle Hidden -Command "Remove-Item -Recurse -Force C:\x"`,
+    String.raw`powershell -ep Bypass Remove-Item -Recurse -Force C:\x`,
+    String.raw`"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -c "Remove-Item -Recurse C:\x"`,
+    'bash -lc "rm -rf /home/x"',
+    'bash -ec "rm -rf /home/x"',
+    'bash -o pipefail -c "rm -rf /home/x"',
+    String.raw`cmd /d /c rd /s /q C:\x`,
+    String.raw`cmd /k rd /s /q C:\x`,
+    String.raw`cmd /v:on /c"rd /s /q C:\x"`
+  ]) ok(asks(cmd), `shell 包装带前置参数不能绕过检查：${cmd}`)
+  ok(outside(String.raw`powershell -ExecutionPolicy Bypass -Command "Set-Content D:\x hi"`).length > 0, '带值参数的包装里，项目外写入仍被识别')
+  ok(outside('bash -lc "echo hi > D:/x"').length > 0, '合并短参数的包装里，项目外写入仍被识别')
+
+  for (const cmd of [
+    'env rm -rf /home/x',
+    'env FOO=1 rm -rf /home/x',
+    'env -u FOO rm -rf /home/x',
+    'timeout 5 rm -rf /home/x',
+    'timeout -k 1 5 rm -rf /home/x',
+    'nohup rm -rf /home/x',
+    'command rm -rf /home/x',
+    'time rm -rf /home/x',
+    'nice -n 5 rm -rf /home/x',
+    'sudo -u root rm -rf /home/x',
+    'xargs rm -rf /home/x',
+    'find . -name x | xargs rm -rf',
+    'cat list | xargs -I{} rm -rf {}',
+    'echo $(rm -rf /home/x)',
+    'echo "$(rm -rf /home/x)"',
+    'echo `rm -rf /home/x`',
+    'diff <(rm -rf /home/x) y',
+    '(rm -rf /home/x)',
+    'if true; then rm -rf /home/x; fi',
+    'env bash -lc "rm -rf /home/x"'
+  ]) ok(asks(cmd), `前缀命令与命令替换不能绕过检查：${cmd}`)
+  ok(outside('nohup touch D:/x').length > 0, '前缀命令后的项目外写入仍被识别')
+  ok(outside('echo $(touch D:/x)').length > 0, '命令替换里的项目外写入仍被识别')
+  ok(outside('cd D:/ && echo $(touch y)').length > 0, '命令替换按切换后的目录判断')
+
+  for (const cmd of [
+    'env FOO=1 npm test',
+    'timeout 5 npm test',
+    'nohup npm start',
+    'command -v rm',
+    'echo $(git status)',
+    "echo '$(rm -rf /home/x)'",
+    'git ls-files | xargs wc -l',
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem"',
+    'bash -lc "npm test"',
+    'cmd /d /c dir',
+    'bash script.sh rm -rf /home/x',
+    'rm -rf build',
+    'env rm -rf build'
+  ]) ok(!asks(cmd), `普通写法不打扰：${cmd}`, JSON.stringify(detectDanger('bash', { command: cmd }, 'C:/proj')))
+
+  const home = homedir().replace(/\\/g, '/')
+  const fileDanger = (path) => detectDanger('write', { path }, 'C:/proj')
+  const urlHome = home.startsWith('/') ? home : `/${home}`
+  for (const path of [
+    '~/.ssh/authorized_keys',
+    String.raw`~\.ssh\authorized_keys`,
+    '~/.pi/agent/settings.json',
+    '~/.pi/agent/extensions/x.js',
+    `file://${urlHome}/.ssh/authorized_keys`,
+    `file://${urlHome}/.pi/agent/settings.json`,
+    ...(process.platform === 'win32' ? [`/mnt/${home[0].toLowerCase()}${home.slice(2)}/.ssh/authorized_keys`] : []),
+    `\u00A0~/.ssh/x`.trimStart()
+  ]) ok(fileDanger(path).length > 0, `文件工具的路径按 pi 的规整方式判断：${path}`, JSON.stringify(fileDanger(path)))
+  ok(outsideWrites('write', { path: 'file:///D:/x' }, 'C:/proj', on).length > 0, 'file:// 路径的项目外写入被识别')
+  for (const path of ['a.txt', 'src/~/x.txt', '~backup/x.txt', 'file.txt', 'file:/not-url']) {
+    ok(fileDanger(path).length === 0, `项目内路径不打扰：${path}`, JSON.stringify(fileDanger(path)))
+  }
+
+  ok(outside('echo x > a.txt', { base: 'D:/elsewhere' }).length > 0, '终端在项目外时，相对路径写入算项目外')
+  ok(outside('echo x > a.txt', { base: 'C:/proj/sub' }).length === 0, '终端在项目子目录时，相对路径写入不打扰')
+  ok(outside('echo x > a.txt', { base: null }).length > 0, '终端位置未知时，相对路径写入要问')
+  ok(detectDanger('bash', { command: 'rm -rf sub' }, 'C:/proj', { base: 'D:/elsewhere' }).length > 0, '终端在项目外时，递归删除相对路径要问')
+  ok(detectDanger('bash', { command: 'rm -rf sub' }, 'C:/proj', { base: null }).length > 0, '终端位置未知时，递归删除相对路径要问')
+  ok(detectDanger('bash', { command: 'rm -rf sub' }, 'C:/proj', { base: 'C:/proj' }).length === 0, '终端在项目内时，递归删除子目录不打扰')
+  ok(shellLocationAfter('cd D:/x', 'C:/proj') === 'd:/x', '记住跨命令的目录切换')
+  ok(shellLocationAfter('npm test', 'C:/proj') === 'C:/proj', '没切换目录时位置不变')
+  ok(shellLocationAfter('popd', 'C:/proj') === null, '无法确定的切换记为未知')
+  ok(shellLocationAfter('cd sub', null) === null, '未知位置上的相对切换仍未知')
+  ok(shellLocationAfter('cd D:/x', null) === 'd:/x', '绝对路径切换可以恢复已知位置')
+}
+
 export function runDangerGuardTests(ok, mod) {
   runTargetParsingTests(ok, mod)
   runBypassTests(ok, mod)
+  runWrapperAndPathTests(ok, mod)
   const { detectDanger, isBroadTarget } = mod
   const bash = (command) => detectDanger('bash', { command }, 'C:/proj')
   const asks = (command) => bash(command).length > 0

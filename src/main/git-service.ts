@@ -57,7 +57,7 @@ export interface GitRunOptions {
   timeout?: number
   allowFailure?: boolean
   env?: Record<string, string>
-  stdin?: string
+  stdin?: string | Buffer
   deadline?: GitDeadline
 }
 
@@ -65,8 +65,21 @@ function gitFailure(message: string, timedOut: boolean, code: GitErrorCode): Err
   return Object.assign(new Error(message), { timedOut, code })
 }
 
+const GIT_BASE_ARGS = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', '-c', 'core.fsmonitor=false']
+
+export function gitReadBytes(cwd: string, args: string[], timeout = DEFAULT_TIMEOUT): Promise<{ ok: true; stdout: Buffer } | { ok: false; error: string }> {
+  return new Promise((resolve) => {
+    const child = execFile('git', [...GIT_BASE_ARGS, ...args], { cwd, windowsHide: true, maxBuffer: MAX_BUFFER, encoding: 'buffer', env: sanitizedGitEnv(process.env, {}) }, (error, stdout, stderr) => {
+      clearTimeout(timer)
+      if (error) resolve({ ok: false, error: stderr.toString('utf8').trim() || error.message })
+      else resolve({ ok: true, stdout })
+    })
+    const timer = setTimeout(() => killProcessTree(child), timeout)
+  })
+}
+
 export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = {}): Promise<GitRunResult> {
-  const full = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', '-c', 'core.fsmonitor=false', ...args]
+  const full = [...GIT_BASE_ARGS, ...args]
   const env = sanitizedGitEnv(process.env, opts.env ?? {})
   const timeout = timeoutWithin(opts.timeout ?? DEFAULT_TIMEOUT, opts.deadline)
   if (timeout <= 0) {
