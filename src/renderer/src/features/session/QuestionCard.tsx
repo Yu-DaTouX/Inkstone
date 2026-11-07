@@ -179,7 +179,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
     if (canSubmit) answer({ value: trimmed })
   }
 
-  const needsApproval = req.purpose === 'approval' || req.sensitive === true
+  const needsApproval = req.purpose === 'approval' || (req.sensitive === true && !req.form?.length)
 
   return (
     <Card
@@ -260,6 +260,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
           {req.form?.length ? (
             <QuestionForm
               fields={req.form as QuestionField[]}
+              question={req.message}
               busy={busy}
               submitLabel={page.total > 1 ? t('q.next') : t('q.submit')}
               onSubmit={(json) => answer({ value: json })}

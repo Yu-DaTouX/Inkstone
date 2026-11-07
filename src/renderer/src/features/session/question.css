@@ -40,6 +40,7 @@
   .v3-qcheck { width: 14px; height: 14px; margin-left: auto; border: var(--hair, 1px) solid var(--line2); border-radius: var(--r-xs); flex: none; }
   .v3-qoption.on .v3-qcheck { background: var(--accent); border-color: var(--accent); }
   .v3-qother { margin-top: var(--s-4); }
+  .v3-qsecret-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); margin-top: var(--s-4); color: var(--fg3); font-size: var(--t-footnote); }
   .v3-qerror { display: block; margin-top: var(--s-4); color: var(--fail-t); font-size: var(--t-footnote); }
   .v3-qform { display: block; }
 

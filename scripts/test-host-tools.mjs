@@ -77,6 +77,73 @@ try {
   assert.equal(calls[0].signal, signal)
   assert.match(result.content[0].text, /Answer: B/)
 
+  assert.equal(question.asksForSecret('请提供数据库密码'), true)
+  assert.equal(question.asksForSecret('What is your API key?'), true)
+  assert.equal(question.asksForSecret('密码策略放在哪个文件？'), false, '只提到密码、没有索要时不切密文')
+  assert.equal(question.asksForSecret('要继续吗？'), false)
+  const detected = question.protectSecretRequest({ question: '请输入 GitHub token 和密码' })
+  assert.equal(detected.fields[0].kind, 'secret')
+  assert.equal(detected.fields[0].detected, true)
+  assert.equal(question.protectSecretRequest({ question: '请提供密码', options: ['A', 'B'] }).fields, undefined, '有选项的问题不改')
+  const secretForm = question.protectSecretRequest({ question: 'Q', fields: [{ name: 'pw', label: '数据库密码', kind: 'text' }, { name: 'host', label: '主机', kind: 'text' }] })
+  assert.deepEqual(secretForm.fields.map((f) => f.kind), ['secret', 'text'], '表单里只转标签是秘密的文本字段')
+
+  const held = {}
+  const store = question.createSecretStore(held)
+  const secretValue = 'hunter2-value'
+  const secretCalls = []
+  const secretTool = question.createQuestionTool(async (input) => {
+    secretCalls.push(input)
+    return { ok: true, secrets: { YAN_SECRET_VALUE: secretValue, BAD_NAME: 'x' }, data: { question: 'Q', fields: [], answers: { value: '已提供' }, answer: 'Q：已提供', cancelled: false } }
+  }, store)
+  const secretResult = await secretTool.execute('tc-s', { question: '请提供密码' }, undefined, undefined, {})
+  assert.equal(secretCalls[0].params.fields[0].kind, 'secret')
+  assert.equal(held.YAN_SECRET_VALUE, secretValue)
+  assert.equal(held.BAD_NAME, undefined, '只接受 YAN_SECRET_ 前缀，不能覆盖其他环境变量')
+  assert.ok(!JSON.stringify(secretResult).includes(secretValue), '给模型的结果和 details 都没有原文')
+  assert.match(secretResult.content[0].text, /\$YAN_SECRET_VALUE/)
+
+  const masked = question.maskToolResult({ content: [
+    { type: 'text', text: `a ${secretValue} b ${Buffer.from(secretValue).toString('base64')}` },
+    { type: 'image', data: 'x' }
+  ] }, store.values())
+  assert.equal(masked.content[0].text, 'a [REDACTED] b [REDACTED]')
+  assert.equal(masked.content[1].type, 'image')
+  assert.equal(question.maskToolResult({ content: [{ type: 'text', text: 'clean' }] }, store.values()), undefined)
+  assert.equal(question.maskSecrets('abc abc', ['abc']), 'abc abc', '太短的值不替换，免得误伤输出')
+  store.clear()
+  assert.equal(held.YAN_SECRET_VALUE, undefined)
+  assert.deepEqual(store.values(), [])
+
+  const handlers = {}
+  const previous = process.env.YAN_SECRET_LEFT
+  question.default({ on: (name, fn) => { handlers[name] = fn } })
+  assert.equal(typeof handlers.tool_result, 'function')
+  assert.equal(typeof handlers.session_start, 'function')
+  assert.equal(previous, undefined)
+
+  const { build } = await import('esbuild')
+  const formOut = join(dir, 'question-form.mjs')
+  await build({ entryPoints: ['src/shared/question-form.ts'], outfile: formOut, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
+  const qf = await import(new URL(`file:///${formOut.replaceAll('\\', '/')}`).href)
+  const fields = qf.parseQuestionFields([{ name: 'db-pw', label: '密码', kind: 'secret', detected: true }, { name: 'host', label: '主机', kind: 'text' }])
+  assert.equal(fields[0].detected, true)
+  const rawAnswer = JSON.stringify({ 'db-pw': ' sp ace\n', host: 'h1' })
+  const parsedAnswers = qf.parseQuestionAnswers(fields, rawAnswer)
+  assert.equal(parsedAnswers['db-pw'], ' sp ace', '密文不去空格，只去结尾换行')
+  const split = qf.separateSecrets(fields, parsedAnswers, rawAnswer)
+  assert.deepEqual(split.secrets, { YAN_SECRET_DB_PW: ' sp ace' })
+  assert.notEqual(split.answers['db-pw'], ' sp ace')
+  assert.equal(split.answers.host, 'h1')
+  assert.ok(!qf.summarizeAnswers(fields, split.answers).includes('sp ace'))
+  const plainRaw = JSON.stringify({ 'db-pw': 'not secret', [qf.QUESTION_PLAIN_KEY]: ['db-pw'] })
+  const plainSplit = qf.separateSecrets(fields, qf.parseQuestionAnswers(fields, plainRaw), plainRaw)
+  assert.deepEqual(plainSplit.secrets, {}, '用户选了按普通文本回答')
+  assert.equal(plainSplit.answers['db-pw'], 'not secret')
+  const declared = qf.parseQuestionFields([{ name: 'pw', label: '密码', kind: 'secret' }])
+  const forgedRaw = JSON.stringify({ pw: 'v', [qf.QUESTION_PLAIN_KEY]: ['pw'] })
+  assert.deepEqual(qf.separateSecrets(declared, qf.parseQuestionAnswers(declared, forgedRaw), forgedRaw).secrets, { YAN_SECRET_PW: 'v' }, '模型声明的密文字段不能转普通文本')
+
   const todoCalls = []
   const todos = guide.createTodosTool(async (input) => {
     todoCalls.push(input)

@@ -1231,6 +1231,8 @@
   "qf.title": "需要你填写",
   "qf.optional": "可选",
   "qf.required": "请先填写这一项",
+  "qf.secretHint": "不会发给模型",
+  "qf.secretPlain": "按普通文本回答",
   "proc.title": "过程",
   "proc.reason": "思考 {n}s",
   "act.done": "完成",

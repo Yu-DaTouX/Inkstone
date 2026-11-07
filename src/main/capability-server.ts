@@ -28,6 +28,7 @@ export interface CapabilityContext {
 export interface CapabilityCommandResult {
   data?: unknown
   summary: Record<string, unknown>
+  secrets?: Record<string, string>
 }
 
 export interface CapabilityHandlers {
@@ -416,6 +417,7 @@ export class CapabilityServer {
         summary: out.summary,
         resultFile: file?.path,
         resultBytes: file?.bytes,
+        ...('secrets' in out && out.secrets ? { secrets: out.secrets } : {}),
         ...(!file && out.data !== undefined ? { resultError: '结果文件没能写盘，完整结果丢失；摘要仍然有效，需要完整内容时重新执行这条命令' } : {})
       })
     } catch (err) {

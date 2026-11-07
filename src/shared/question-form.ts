@@ -1,4 +1,6 @@
-export type QuestionFieldKind = 'choice' | 'multi' | 'text' | 'date' | 'number' | 'range'
+import { pick } from './ui-lang'
+
+export type QuestionFieldKind = 'choice' | 'multi' | 'text' | 'date' | 'number' | 'range' | 'secret'
 
 export interface QuestionFieldOption {
   label: string
@@ -16,12 +18,15 @@ export interface QuestionField {
   step?: number
   placeholder?: string
   optional?: boolean
+  detected?: boolean
 }
 
 export type QuestionAnswers = Record<string, string | string[] | number | null>
 
 export const QUESTION_FORM_MAX_FIELDS = 5
-const KINDS: readonly QuestionFieldKind[] = ['choice', 'multi', 'text', 'date', 'number', 'range']
+const KINDS: readonly QuestionFieldKind[] = ['choice', 'multi', 'text', 'date', 'number', 'range', 'secret']
+const SECRET_MAX_CHARS = 16000
+export const QUESTION_PLAIN_KEY = '__plain'
 
 export class QuestionFormError extends Error {}
 
@@ -82,6 +87,7 @@ export function parseQuestionFields(raw: unknown): QuestionField[] {
     }
     out.placeholder = text(field.placeholder, `fields[${i}].placeholder`, 120, true)
     if (field.optional === true) out.optional = true
+    if (kind === 'secret' && field.detected === true) out.detected = true
     return out
   })
 }
@@ -99,6 +105,8 @@ export function parseQuestionAnswers(fields: QuestionField[], raw: string): Ques
     } else if (field.kind === 'number' || field.kind === 'range') {
       const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
       out[field.name] = Number.isFinite(n) ? Math.min(field.max ?? Infinity, Math.max(field.min ?? -Infinity, n)) : null
+    } else if (field.kind === 'secret') {
+      out[field.name] = typeof value === 'string' && value.trim() ? value.replace(/\r?\n$/, '').slice(0, SECRET_MAX_CHARS) : null
     } else if (field.kind === 'date') {
       const valid = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
       const parsed = valid ? new Date(`${value}T00:00:00.000Z`) : null
@@ -108,6 +116,29 @@ export function parseQuestionAnswers(fields: QuestionField[], raw: string): Ques
     }
   }
   return out
+}
+
+export function secretEnvName(fieldName: string): string {
+  return `YAN_SECRET_${fieldName.toUpperCase().replaceAll('-', '_')}`
+}
+
+export function separateSecrets(fields: QuestionField[], answers: QuestionAnswers, raw: string): { answers: QuestionAnswers; secrets: Record<string, string> } {
+  let plain: unknown
+  try { plain = (JSON.parse(raw) as Record<string, unknown>)[QUESTION_PLAIN_KEY] } catch { plain = null }
+  const plainNames = new Set(Array.isArray(plain) ? plain : [])
+  const shown: QuestionAnswers = { ...answers }
+  const secrets: Record<string, string> = {}
+  for (const field of fields) {
+    const value = answers[field.name]
+    if (field.kind !== 'secret' || typeof value !== 'string') continue
+    if (field.detected && plainNames.has(field.name)) {
+      shown[field.name] = value.trim().slice(0, 2000)
+      continue
+    }
+    secrets[secretEnvName(field.name)] = value
+    shown[field.name] = pick('已提供', 'Provided')
+  }
+  return { answers: shown, secrets }
 }
 
 export function summarizeAnswers(fields: QuestionField[], answers: QuestionAnswers): string {

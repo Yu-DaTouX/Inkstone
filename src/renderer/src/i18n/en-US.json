@@ -1231,6 +1231,8 @@
   "qf.title": "Please fill in",
   "qf.optional": "optional",
   "qf.required": "Fill this in first",
+  "qf.secretHint": "Not sent to the model",
+  "qf.secretPlain": "Answer as plain text",
   "proc.title": "Process",
   "proc.reason": "Thought {n}s",
   "act.done": "Done",

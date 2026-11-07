@@ -75,7 +75,7 @@ import { isSafeSessionId } from './session-id'
 
 import { questionLog } from './question-log'
 import { approvalLog } from './approval-log'
-import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, summarizeAnswers, type QuestionField } from '../shared/question-form'
+import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, separateSecrets, summarizeAnswers, type QuestionField } from '../shared/question-form'
 
 import { requestedTimeout } from '../shared/ui-timeout'
 import { createStreamLoopDetector, type LoopHit, type StreamLoopDetector } from '../shared/stream-loop-detector'
@@ -1389,7 +1389,7 @@ export class AgentController extends EventEmitter {
     question: string,
     params: Record<string, unknown>,
     signal?: AbortSignal
-  ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+  ): Promise<{ data?: unknown; summary: Record<string, unknown>; secrets?: Record<string, string> }> {
     let fields: QuestionField[]
     try {
       fields = parseQuestionFields(params.fields)
@@ -1398,17 +1398,23 @@ export class AgentController extends EventEmitter {
       throw error
     }
     const toolCallId = questionToolCallId(params)
-    const response = await this.ui.requestHostUi({ method: 'input', message: question, form: fields, timeout: requestedTimeout(params.timeout), signal, ...(toolCallId ? { toolCallId } : {}) })
+    const asksSecret = fields.some((field) => field.kind === 'secret')
+    if (asksSecret && !toolCallId) throw new CapabilityCommandError('question_secret_needs_tool', 'secret fields only work through the question tool')
+    const response = await this.ui.requestHostUi({ method: 'input', message: question, form: fields, timeout: requestedTimeout(params.timeout), signal, ...(asksSecret ? { sensitive: true } : {}), ...(toolCallId ? { toolCallId } : {}) })
     const raw = typeof response.value === 'string' ? response.value : null
-    const answers = raw !== null ? parseQuestionAnswers(fields, raw) : null
-    const freeText = !answers && raw?.trim() ? raw.trim().slice(0, 4000) : null
+    const parsed = raw !== null ? parseQuestionAnswers(fields, raw) : null
+    const separated = parsed && raw !== null ? separateSecrets(fields, parsed, raw) : null
+    const answers = separated?.answers ?? null
+    const secrets = separated && Object.keys(separated.secrets).length ? separated.secrets : undefined
+    const freeText = !answers && !asksSecret && raw?.trim() ? raw.trim().slice(0, 4000) : null
     const answer = answers ? summarizeAnswers(fields, answers) : freeText
     const cancelled = response.cancelled === true || answer === null
     const entries = questionLog.append(this.state?.sessionId, { question, options: [], answer, cancelled, at: Date.now() })
     if (entries) this.pushQuestionLog()
     return {
       data: { question, fields, answers, answer, cancelled, autonomous: false },
-      summary: { kind: 'question', action: 'ask', mode: 'standard', form: true, answered: answer !== null, cancelled }
+      summary: { kind: 'question', action: 'ask', mode: 'standard', form: true, answered: answer !== null, cancelled },
+      ...(secrets ? { secrets } : {})
     }
   }
 

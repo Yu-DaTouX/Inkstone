@@ -1,13 +1,14 @@
 import { useState, type JSX } from 'react'
 import { useT } from '../../i18n'
-import type { QuestionField } from '../../../../shared/question-form'
+import { QUESTION_PLAIN_KEY, type QuestionField } from '../../../../shared/question-form'
 import { Button, Input, Slider, TextArea, TextField } from '../../ui'
 import { CardActions } from '../../ui/Card'
 
 type Value = string | string[]
 
-export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
+export function QuestionForm({ fields, question, busy, submitLabel, onSubmit, onSkip }: {
   fields: QuestionField[]
+  question?: string
   busy: boolean
   submitLabel: string
   onSubmit: (json: string) => void
@@ -19,6 +20,7 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
   )
   const [other, setOther] = useState<Record<string, string>>({})
   const [missing, setMissing] = useState<string[]>([])
+  const [plain, setPlain] = useState<string[]>([])
 
   const set = (name: string, value: Value): void => {
     setValues((prev) => ({ ...prev, [name]: value }))
@@ -42,7 +44,7 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
       return v === null || v === '' || (Array.isArray(v) && v.length === 0)
     }).map((f) => f.name)
     if (empty.length) { setMissing(empty); return }
-    onSubmit(JSON.stringify(data))
+    onSubmit(JSON.stringify(plain.length ? { ...data, [QUESTION_PLAIN_KEY]: plain } : data))
   }
 
   return (
@@ -58,7 +60,7 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
               <span className="v3-qfield-label">
                 {f.label}{f.optional ? <span className="v3-qoptional">{t('qf.optional')}</span> : null}
               </span>
-            ) : (
+            ) : f.label === question?.trim() ? null : (
               <label className="v3-qfield-label" htmlFor={`v3qf-${f.name}`}>
                 {f.label}{f.optional ? <span className="v3-qoptional">{t('qf.optional')}</span> : null}
               </label>
@@ -122,7 +124,26 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
                 aria-describedby={describedBy}
                 onChange={(next) => set(f.name, String(Array.isArray(next) ? next[0] : next))}
               />
-            ) : f.kind === 'text' ? (
+            ) : f.kind === 'secret' && !plain.includes(f.name) ? (
+              <div className="v3-qsecret">
+                <TextField
+                  id={`v3qf-${f.name}`}
+                  aria-label={f.label}
+                  type="password"
+                  value={v as string}
+                  isDisabled={busy}
+                  isInvalid={bad}
+                  aria-describedby={describedBy}
+                  onChange={(text) => set(f.name, text)}
+                >
+                  <Input className="ui-input" autoComplete="off" spellCheck={false} placeholder={f.placeholder} data-testid="v3-question-secret" />
+                </TextField>
+                <div className="v3-qsecret-foot">
+                  <span>{t('qf.secretHint')}</span>
+                  {f.detected ? <Button size="xs" variant="ghost" isDisabled={busy} onPress={() => setPlain((prev) => [...prev, f.name])} data-testid="v3-question-secret-plain">{t('qf.secretPlain')}</Button> : null}
+                </div>
+              </div>
+            ) : f.kind === 'text' || f.kind === 'secret' ? (
               <TextArea id={`v3qf-${f.name}`} aria-label={f.label} rows={2} placeholder={f.placeholder} value={v as string} isDisabled={busy} isInvalid={bad} aria-describedby={describedBy} onChange={(text) => set(f.name, text)} />
             ) : (
               <TextField
