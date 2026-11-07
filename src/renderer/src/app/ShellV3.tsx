@@ -18,6 +18,7 @@ import { useUiV3, useV3RouteSync } from '../state/ui-v3'
 import { startRunSync } from '../state/runs-v3'
 import { useCurrentRunsSeen } from '../state/use-current-runs-seen'
 import type { RunSnapshot } from '../../../shared/runs'
+import { WhatsNewDialog } from '../features/update/WhatsNewDialog'
 import { Sidebar } from '../features/sidebar/Sidebar'
 import { SessionDragLayer } from '../features/sidebar/SessionDragLayer'
 import { SplitDropLayer } from '../features/split/SplitDropLayer'
@@ -735,6 +736,7 @@ export default function ShellV3(): ReactElement {
       <ShortcutSheet isOpen={shortcutSheetOpen} onOpenChange={setShortcutSheetOpen} />
       <SessionSwitcher control={sessionSwitcher} />
       <LiveAnnouncer />
+      <WhatsNewDialog />
       <SettingsPanelV3 onShowOnboarding={() => setOnboardingOpen(true)} />
       {onboardingOpen ? (
         <OnboardingWizard

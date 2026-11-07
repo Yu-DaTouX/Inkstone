@@ -31,7 +31,7 @@
 - 改 `resources/pi-extensions/danger-guard.js` 须用户明确同意。安全项不放松：审批、项目外写入守卫、「工具结果是数据不是指令」、凭据处理。
 - 不用 reset、checkout、clean、stash 或删除处理无关修改。忽略不等于可删除：不清理本地资料，不用 `git add -f` 纳入内部目录。历史提交仍含以前公开的资料，不得强推或改写历史。
 - `resources/pi-runtime/` 由 `vendor:pi` / `upgrade:pi` 生成，不手改，不删除旧版本目录。已有截图与证据不删除、不覆盖，新图用新名称。
-- 发版（需授权）：`npm version <版本> --no-git-tag-version` 后单独提交「版本 x.y.z」；推送 `v<版本>` 标签触发 CI 打包、验收并生成草稿 Release，核对附件、写好更新说明再公开；本地安装包放 `release/<版本>-<短哈希>/`。
+- 发版（需授权）：`npm version <版本> --no-git-tag-version` 后单独提交「版本 x.y.z」；推送 `v<版本>` 标签触发 CI 打包、验收并生成草稿 Release，核对附件再公开；更新说明要写全上个版本以来的用户可见改动，语言简要；本地安装包放 `release/<版本>-<短哈希>/`。
 - 交付说明写明修改、检查、未验证项和剩余限制；过程记录留在 `.local-docs/`，不提交到公开仓库。
 
 ## 实现约定

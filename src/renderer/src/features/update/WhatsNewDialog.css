@@ -1,0 +1,4 @@
+@layer features {
+  .v3-whats-new { width: min(560px, calc(100vw - var(--s-32))); }
+  .v3-whats-new__body { max-height: calc(100vh - 240px); overflow-y: auto; min-width: 0; }
+}

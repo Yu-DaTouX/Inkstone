@@ -1717,6 +1717,8 @@ export interface YanBridge {
     check(): Promise<import('./app-update').AppUpdateStatus>
     automatic(enabled: boolean): Promise<import('./app-update').AppUpdateStatus>
     download(): Promise<import('./app-update').AppUpdateStatus>
+    whatsNew(): Promise<import('./app-update').AppUpdateWhatsNew | null>
+    whatsNewSeen(version: string): Promise<void>
     install(): Promise<{ ok: boolean; error?: string }>
   }
   selectSession(target: {

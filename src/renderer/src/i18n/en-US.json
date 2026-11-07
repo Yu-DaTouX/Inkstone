@@ -942,6 +942,8 @@
   "sm.liveStep": "In progress",
   "sm.liveSpeedEstimate": "Estimated from received text, thinking and tool arguments while streaming; recomputed with actual output tokens and matching timing when finished. A reasoning summary does not represent all reasoning tokens.",
   "update.available": "New release available",
+  "update.whatsNewTitle": "What's new in Inkstone {v}",
+  "update.whatsNewDone": "Got it",
   "update.notice": "Inkstone {v} is available",
   "quota.resetIn": "resets in {t}",
   "quota.resetOn": "resets {d}",

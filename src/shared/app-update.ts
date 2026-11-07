@@ -1,3 +1,8 @@
+export interface AppUpdateWhatsNew {
+  version: string
+  notes: string
+}
+
 export interface AppUpdateStatus {
   phase: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'downloaded' | 'error' | 'manual'
   current: string

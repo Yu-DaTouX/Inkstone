@@ -152,7 +152,9 @@ const api: YanBridge = {
     check: () => invoke('yan:update:check'),
     automatic: (enabled) => invoke('yan:update:automatic', enabled),
     download: () => invoke('yan:update:download'),
-    install: () => invoke('yan:update:install')
+    install: () => invoke('yan:update:install'),
+    whatsNew: () => invoke('yan:update:whatsNew'),
+    whatsNewSeen: (version) => invoke('yan:update:whatsNewSeen', version)
   },
   isProbe: !!process.env.YAN_PROBE,
 

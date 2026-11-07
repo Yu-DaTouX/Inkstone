@@ -942,6 +942,8 @@
   "sm.liveStep": "进行中",
   "sm.liveSpeedEstimate": "进行中按已到达正文、思考文字与工具参数估算；完成后按真实输出 Token 与对应计时重算，推理摘要不代表全部推理 Token",
   "update.available": "有新版本可下载",
+  "update.whatsNewTitle": "砚 {v} 更新内容",
+  "update.whatsNewDone": "知道了",
   "update.notice": "砚有新版本 {v}",
   "quota.resetIn": "{t}后重置",
   "quota.resetOn": "{d} 重置",
