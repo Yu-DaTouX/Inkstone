@@ -60,7 +60,7 @@ export default async function run({ cdp, check, waitFor, sleep, shot, state, out
   const allCalls = (msgs) => msgs.flatMap((m) => m.toolCalls ?? [])
 
   await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN', promptSuggestions: true })`)
-  if (parts.includes('guard')) await denyAll()
+  if (parts.includes('guard') || parts.includes('errsdeny')) await denyAll()
   else await approveAll()
   await answerQuestions()
   await sleep(500)
@@ -178,6 +178,73 @@ export default async function run({ cdp, check, waitFor, sleep, shot, state, out
         check('界面 ' + lang + ' 回答跟随界面（第 ' + round + ' 轮）', ok, { replyShare: share(text) })
       }
     }
+  }
+
+  const toolResultTexts = () => sessionEntries().filter((e) => e.type === 'message' && e.message?.role === 'toolResult').map((e) => ({ tool: e.message.toolName, isError: !!e.message.isError, text: (e.message.content ?? []).map((b) => b.text ?? '').join('\n') }))
+
+  if (parts.includes('stream')) {
+    await newSession(sandboxProject)
+    await ev(`(() => { window.__frames = []; let on = true; window.__stopFrames = () => { on = false }; const tick = () => { if (!on) return; const s = window.__yanStore.getState(); const a = [...s.messages].reverse().find((m) => m.role === 'assistant'); const proses = document.querySelectorAll('.v3-stream .v3-prose'); const last = proses[proses.length - 1]; const r = last?.getBoundingClientRect(); const sc = document.querySelector('.v3-stream'); window.__frames.push({ t: performance.now(), running: !!(s.session?.isStreaming || s.session?.isAgentRunning), storeLen: (a?.text ?? '').length, domLen: (last?.innerText ?? '').length, top: r ? Math.round(r.top * 10) / 10 : null, scroll: sc ? sc.scrollTop : null, procH: Math.round((document.querySelector('.v3-process')?.getBoundingClientRect().height ?? -1) * 10) / 10, leaveH: document.querySelector('.v3-process-leave')?.getBoundingClientRect().height ?? 0, proseN: proses.length, lastTag: last?.closest('[data-testid]')?.getAttribute('data-testid') ?? null }); requestAnimationFrame(tick) }; requestAnimationFrame(tick) })()`)
+    await realTurn('读一下 README.md、INCIDENT.md 和 docs/REPORTING.md，然后用三四句话概括这个项目要解决什么问题。')
+    await sleep(2500)
+    const frames = await ev('window.__frames')
+    await ev('window.__stopFrames()')
+    const firstStore = frames.find((f) => f.storeLen > 0)
+    const firstDom = frames.find((f) => f.domLen > 0 && f.t >= (firstStore?.t ?? 0))
+    const endIdx = frames.findIndex((f, i) => i > 0 && frames[i - 1].running && !f.running)
+    const post = endIdx >= 0 ? frames.slice(endIdx) : []
+    let maxJump = 0
+    let jumps = 0
+    for (let i = 1; i < post.length; i++) {
+      const d = post[i].top !== null && post[i - 1].top !== null ? Math.abs(post[i].top - post[i - 1].top) : 0
+      if (d > 3) jumps++
+      maxJump = Math.max(maxJump, d)
+    }
+    const during = frames.filter((f) => f.running && f.top !== null)
+    let streamJumps = 0
+    for (let i = 1; i < during.length; i++) if (Math.abs(during[i].top - during[i - 1].top) > 40 && during[i].scroll === during[i - 1].scroll) streamJumps++
+    const worstGap = frames.reduce((m, f, i) => (i ? Math.max(m, f.t - frames[i - 1].t) : m), 0)
+    log('流式节奏', { frames: frames.length, firstCharLagMs: firstStore && firstDom ? Math.round(firstDom.t - firstStore.t) : null, endJumpFrames: jumps, endMaxJumpPx: maxJump, midStreamJumps: streamJumps, worstFrameGapMs: Math.round(worstGap) })
+    writeFileSync(join(out, 'stream-frames.json'), JSON.stringify(frames.map((f) => ({ ...f, t: Math.round(f.t) }))))
+    check('答复首字在存储出现后 200ms 内显示', !!firstStore && !!firstDom && firstDom.t - firstStore.t < 200, { lag: firstStore && firstDom ? firstDom.t - firstStore.t : null })
+    check('结束收起后答复位置不跳（单帧位移 ≤3px 的帧占全部）', jumps === 0, { jumps, maxJump })
+    await shot('live-stream-end')
+  }
+
+  if (parts.includes('errs') || parts.includes('errsdeny')) {
+    await ev(`window.__yanStore.getState().patchSettings({ lang: 'en-US', permissionMode: 'danger', guardOutsideWrites: true })`)
+    await sleep(1500)
+    await newSession(sandboxProject)
+    await realTurn('Read the file does-not-exist.txt, then run the command `nosuchcommand-xyz --help`, then list the project root. Report exactly what each tool returned.')
+    const outside = (runDir + '/outside').replace(/\\/g, '/')
+    await realTurn('Use the write tool to create ' + outside + '/e.txt with content x. If it is blocked, just say so.')
+    const results = toolResultTexts()
+    const cjk = results.filter((r) => /[一-鿿]/.test(r.text))
+    log('工具结果里含中文的条数 / 总数', { cjk: cjk.length, total: results.length })
+    for (const r of cjk) log('含中文的工具结果', r.tool, r.isError, r.text.slice(0, 300).replace(/\n/g, ' | '))
+    writeFileSync(join(out, 'tool-results-en-ui.json'), JSON.stringify(results.map((r) => ({ ...r, text: r.text.slice(0, 600) })), null, 1))
+    check('英文界面下发给模型的工具错误/拦截文本没有中文', cjk.length === 0, cjk.map((r) => r.text.slice(0, 120)))
+  }
+
+  if (parts.includes('compact2')) {
+    writeFileSync(join(box.piDir, 'settings.json'), JSON.stringify({ defaultProvider: 'fake', defaultModel: 'fake-model', compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 3000 } }))
+    await sleep(500)
+    await newSession(sandboxProject)
+    await realTurn('读一下 README.md 和 INCIDENT.md，用两句话说它们讲什么。')
+    await realTurn('再读 docs/REPORTING.md 和 src 下所有源文件，列出每个函数名。')
+    const before = await state('s.messages.length')
+    const compacted = await ev(`window.__yanStore.getState().compact()`)
+    log('压缩', compacted)
+    await waitFor('!(s.session?.isStreaming || s.session?.isAgentRunning)', 180000)
+    await sleep(2500)
+    const entry = sessionEntries().filter((e) => e.type === 'compaction').at(-1)
+    log('压缩条目', entry ? { tokensBefore: entry.tokensBefore, summaryChars: String(entry.summary ?? '').length, firstKept: !!entry.firstKeptEntryId } : null)
+    check('压缩成功（keepRecentTokens=3000）', compacted?.ok === true && !!entry, compacted)
+    writeFileSync(join(out, 'compaction-summary2.txt'), String(entry?.summary ?? ''))
+    const next = await realTurn('基于之前读过的内容，INCIDENT 里的三个现象分别对应哪个文件？一句话每条。')
+    const lastAsst = sessionEntries().filter((e) => e.type === 'message' && e.message?.role === 'assistant' && e.message.usage).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp))).at(-1)
+    log('压缩后下一轮', { inputTokens: (lastAsst?.message.usage.input ?? 0) + (lastAsst?.message.usage.cacheRead ?? 0) + (lastAsst?.message.usage.cacheWrite ?? 0), reply: lastAssistant(next.msgs).slice(0, 300) })
+    check('压缩后会话还能继续回答', lastAssistant(next.msgs).length > 20)
   }
 
   if (parts.includes('tools')) {
