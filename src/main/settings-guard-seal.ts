@@ -32,7 +32,7 @@ export function sameGuardFields(a: GuardFields, b: GuardFields): boolean {
 }
 
 export function trustedGuardFields(file: GuardFields, seal: GuardFields | null): GuardFields {
-  if (!seal) return { ...file, guardAllowRoots: [...file.guardAllowRoots], permissionMode: DEFAULT_PERMISSION_MODE }
+  if (!seal) return { permissionMode: DEFAULT_PERMISSION_MODE, guardOutsideWrites: true, guardAllowRoots: [] }
   return {
     permissionMode: file.permissionMode === 'all' && seal.permissionMode === 'all' ? 'all' : DEFAULT_PERMISSION_MODE,
     guardOutsideWrites: file.guardOutsideWrites || seal.guardOutsideWrites,

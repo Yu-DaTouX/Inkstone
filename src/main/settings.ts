@@ -165,7 +165,7 @@ let cacheGeneration = 0
 let writeQueue: Promise<unknown> = Promise.resolve()
 
 const guardTamperedNotice = () => pick('检测到权限设置被砚以外的程序改动，已恢复为你在设置里选择的档位。', 'Permission settings were changed by a program other than Inkstone. Restored to the level you chose in settings.')
-const guardUnsealedNotice = () => pick('权限档没有可核对的加密记录（首次升级或记录丢失），已回到「自动批准」；需要「不受限制」请在设置里重新选择。', 'The permission level has no verifiable sealed record (first upgrade or record lost). Reverted to "Auto-approve". Choose "Unrestricted" again in settings if needed.')
+const guardUnsealedNotice = () => pick('权限设置没有可核对的加密记录（首次升级或记录丢失），已回到「自动批准」并开启项目外写入确认，允许目录已清空；需要时请在设置里重新选择。', 'Permission settings have no verifiable sealed record (first upgrade or record lost). Reverted to "Auto-approve" with outside-project write confirmation on and allowed folders cleared. Change them again in settings if needed.')
 let guardNoticeSink: ((message: string) => void) | null = null
 let pendingGuardNotices: string[] = []
 let lastGuardNoticeKey = ''

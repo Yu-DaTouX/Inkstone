@@ -134,7 +134,7 @@ export async function runSettingsStoreTests(ok) {
   const stricter = trustedGuardFields({ permissionMode: 'danger', guardOutsideWrites: true, guardAllowRoots: [] }, { permissionMode: 'all', guardOutsideWrites: false, guardAllowRoots: ['/a'] })
   ok(stricter.permissionMode === 'danger' && stricter.guardOutsideWrites && stricter.guardAllowRoots.length === 0, '文件被改得更严格时接受')
   const unsealed = trustedGuardFields({ permissionMode: 'all', guardOutsideWrites: false, guardAllowRoots: ['/a'] }, null)
-  ok(unsealed.permissionMode === 'danger' && unsealed.guardOutsideWrites === false && unsealed.guardAllowRoots.join() === '/a', '没有封签时不信任「不受限制」，其余沿用')
+  ok(unsealed.permissionMode === 'danger' && unsealed.guardOutsideWrites === true && unsealed.guardAllowRoots.length === 0, '封签缺失或解不开时三项都回到默认，不接受文件里放宽的值')
   ok(await electronGuardSealStore() === null, '没有系统加密时不启用封签')
   await rm(temp, { recursive: true, force: true })
 }
