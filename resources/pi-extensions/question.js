@@ -150,9 +150,11 @@ export function maskToolResult(event, values) {
   return changed ? { content } : undefined
 }
 
+const STORE_KEY = Symbol.for('yan.question.secretStore')
+
 export default function question(pi) {
   const tools = hostToolsAvailable() && typeof pi.registerTool === 'function'
-  const store = createSecretStore()
+  const store = (globalThis[STORE_KEY] ??= createSecretStore())
   if (tools) pi.registerTool(createQuestionTool(callHostTool, store))
   pi.on('tool_result', (event) => maskToolResult(event, store.values()))
   pi.on('session_start', (event) => {

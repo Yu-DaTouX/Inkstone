@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n, useT } from '../../../i18n'
 import type { RemoteAccessSettings, RemoteAccessStatus, RemoteRelaySettings } from '../../../../../shared/remote-protocol'
-import { Badge, Button, QrCode, Switch, TextField } from '../../../ui'
+import { Badge, Button, isImeComposing, QrCode, Switch, TextField } from '../../../ui'
 import { SettingsRow } from '../root/controls'
 import { devicesDataText } from './devices-data-text'
 
@@ -78,7 +78,7 @@ export function RelayRows({ saved, status, busy, configure }: RelayRowsProps): R
           onChange={setUrl}
           onBlur={commitUrl}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') commitUrl()
+            if (event.key === 'Enter' && !isImeComposing(event)) commitUrl()
           }}
           data-testid="v3-relay-url"
         />

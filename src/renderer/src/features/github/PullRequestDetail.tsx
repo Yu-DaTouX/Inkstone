@@ -27,7 +27,8 @@ import {
   TextField,
   Tooltip,
   TooltipHint,
-  TooltipTrigger
+  TooltipTrigger,
+  isImeComposing
 } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { DiffView } from '../diff'
@@ -651,7 +652,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
                     isDisabled={action.busy}
                     onKeyDown={(event) => {
                       if (event.key === 'Escape') setEditingTitle(false)
-                      if (event.key === 'Enter') void saveTitle()
+                      if (event.key === 'Enter' && !isImeComposing(event)) void saveTitle()
                     }}
                   />
                   <EditFooter

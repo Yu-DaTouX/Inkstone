@@ -321,6 +321,17 @@ try {
     assert.equal(free.confirms.length, 0)
   })
 
+  await check('--until 的灾难性正则会超时报错，不会冻住主进程', async () => {
+    const { host, commands } = setup({
+      prefs: { mode: 'all', outsideWrites: false, allowRoots: [] },
+      respond: (_term, _command, emit) => emit(`${'a'.repeat(40)}!\r\n`)
+    })
+    host.adopt({ id: 'slow', owner: 'sid-a' })
+    const started = Date.now()
+    await failsWith(commands.run('run', { id: 'slow', command: 'x', until: '(a+)+$', timeout: 5 }), 'terminal_bad_until')
+    assert.ok(Date.now() - started < 5000)
+  })
+
   await check('start --cwd 不存在时报错，终端上限时报错', async () => {
     const { commands } = setup()
     await failsWith(commands.run('start', { cwd: 'no/such/dir' }), 'terminal_bad_cwd')

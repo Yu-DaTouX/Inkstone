@@ -1023,7 +1023,7 @@ export class AgentController extends EventEmitter {
       this.cancelApprovals?.(this.approvalOwner())
       this.retireApprovals?.(this.approvalOwner())
       if (this.state) {
-        this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false }
+        this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false, pendingMessageCount: 0 }
         this.push({ ch: 'state', payload: this.state })
       }
       this.setConn('exited', pick(`pi 已退出（code=${code ?? 'null'}）`, `pi exited (code=${code ?? 'null'})`))
@@ -2673,7 +2673,9 @@ export class AgentController extends EventEmitter {
         if (evt.willRetry === true) this.timingContinues = true
         if (evt.willRetry !== true) {
           this.streamLoopDetector = null
+          const terminal = this.turn.terminal
           void this.persistTurnTiming()
+          this.turn.terminal = terminal
         }
         this.syncDeferredModelSwitch()
         void this.refreshStats()
@@ -3210,7 +3212,10 @@ export class AgentController extends EventEmitter {
             steering: this.queueItems(result.data.steering, original.steering),
             followUp: this.queueItems(result.data.followUp, original.followUp)
           })
-          if (ownsRun()) this.resetQueue(true)
+          if (ownsRun()) {
+            this.resetQueue(true)
+            this.clearSavedQueue()
+          }
           if (reclaimed.steering.length || reclaimed.followUp.length) {
             this.push({ ch: 'queue-reclaimed', payload: { ...reclaimed, sessionId } })
             record('queue-reclaimed', { rule: hit.rule, stream, messageId, outcome: 'reclaimed' })
@@ -3405,6 +3410,10 @@ export class AgentController extends EventEmitter {
     } })
     this.queueWrite = this.persistQueue().catch(() => undefined)
     return next
+  }
+
+  private clearSavedQueue(): void {
+    this.queueWrite = this.queueWrite.then(() => this.persistQueue()).catch(() => undefined)
   }
 
   private persistQueue(): Promise<void> {
@@ -3871,6 +3880,7 @@ export class AgentController extends EventEmitter {
         if (result.success && result.data) {
           cleared = snapshotQueue(this.publishQueue(result.data.steering ?? [], result.data.followUp ?? [], true))
           this.resetQueue(true)
+          this.clearSavedQueue()
         }
         return result
       })
@@ -3936,6 +3946,8 @@ export class AgentController extends EventEmitter {
       const b = this.bash
       this.bash = null
       void endTreeSnapshot(b.msgId).catch(() => null)
+      const endedAt = Date.now()
+      this.items.settleBash(b.msgId, { bash: { command: b.command, exitCode: null, cancelled: true } }, { status: 'error', output: b.output, endedAt })
       this.push({
         ch: 'msg-update',
         payload: {
@@ -3949,7 +3961,7 @@ export class AgentController extends EventEmitter {
                 args: { command: b.command },
                 status: 'error',
                 output: b.output,
-                endedAt: Date.now()
+                endedAt
               }
             ]
           }
@@ -4067,6 +4079,9 @@ export class AgentController extends EventEmitter {
     if (changes && (changes.files.length > 0 || changes.unknown)) details.workspaceChanges = changes
     this.pushedOut.set(msgId, output.length)
     this.dirtyTools.delete(msgId)
+    const endedAt = Date.now()
+    const detailsPatch = Object.keys(details).length ? details : undefined
+    this.items.settleBash(msgId, { text: command, bash: { command, exitCode, cancelled }, error }, { status: failed ? 'error' : 'ok', output, details: detailsPatch, endedAt })
     this.push({
       ch: 'msg-update',
       payload: {
@@ -4082,8 +4097,8 @@ export class AgentController extends EventEmitter {
               args: { command },
               status: failed ? 'error' : 'ok',
               output,
-              details: Object.keys(details).length ? details : undefined,
-              endedAt: Date.now()
+              details: detailsPatch,
+              endedAt
             }
           ]
         }

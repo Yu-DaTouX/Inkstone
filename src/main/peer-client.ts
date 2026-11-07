@@ -102,14 +102,24 @@ export class PeerClient implements PeerTransport {
     this.loading ??= this.readPeers().then((peers) => {
       this.peers = peers
       return peers
+    }).finally(() => {
+      this.loading = null
     })
     return this.loading
   }
 
   private async readPeers(): Promise<StoredPeer[]> {
+    let text: string
     try {
-      const parsed = JSON.parse(await readFile(PEERS_FILE, 'utf8')) as Partial<PeersFile>
-      return parsed.version === 1 && Array.isArray(parsed.peers) ? parsed.peers.filter((peer) => typeof peer?.id === 'string' && typeof peer.token === 'string') : []
+      text = await readFile(PEERS_FILE, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+    try {
+      const parsed = JSON.parse(text) as Partial<PeersFile>
+      if (parsed.version !== 1 || !Array.isArray(parsed.peers)) throw new SyntaxError('invalid peers file')
+      return parsed.peers.filter((peer) => typeof peer?.id === 'string' && typeof peer.token === 'string')
     } catch {
       await copyFile(PEERS_FILE, `${PEERS_FILE}.${Date.now()}.corrupt`).catch(() => undefined)
       return []

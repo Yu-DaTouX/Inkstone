@@ -262,7 +262,7 @@ export interface Store {
   composerFocus: { tick: number; at: number; sessionId?: string; path?: string }
   queueRestore: string | null
   attachments: Attachment[]
-  pendingSourceLinks: { sessionId: string; sourceIds: string[]; attempts?: number }[]
+  pendingSourceLinks: { sessionId: string; sourceIds: string[] }[]
   submittingMessages: SubmittingMessage[]
   locateMessage: (messageId: string) => Promise<boolean>
 
@@ -1692,14 +1692,7 @@ export const useStore = create<Store>((rawSet, get) => {
                 }
               })
               .catch(() => {
-                const latest = get().pendingSourceLinks.find((item) => item === head)
-                if (latest && (latest as { attempts?: number }).attempts === undefined) {
-                  set({ pendingSourceLinks: get().pendingSourceLinks.map((item) => item === head ? { ...item, attempts: 1 } : item) })
-                } else if (latest && ((latest as { attempts: number }).attempts < 3)) {
-                  set({ pendingSourceLinks: get().pendingSourceLinks.map((item) => item === head ? { ...item, attempts: (latest as { attempts: number }).attempts + 1 } : item) })
-                } else if (latest) {
-                  set({ pendingSourceLinks: get().pendingSourceLinks.filter((item) => item !== head) })
-                }
+                set({ pendingSourceLinks: get().pendingSourceLinks.filter((item) => item !== head) })
               })
           }
         }
@@ -1895,9 +1888,11 @@ export const useStore = create<Store>((rawSet, get) => {
     const provider = session?.model?.provider
     if (!session || !provider) return false
     if (get().quotaResume) return true
+    const armGen = quotaResumeGen
     const snapshot = await window.yan
       .providerQuota(provider, get().settings?.providerBudgets?.[provider])
       .catch(() => null)
+    if (armGen !== quotaResumeGen) return !!get().quotaResume
     if (ifWindowFull) {
       if (!snapshot?.windows?.length || snapshot.staleError || !blockedQuotaWindows(snapshot.windows).length) return false
       if (get().quotaResume) return true

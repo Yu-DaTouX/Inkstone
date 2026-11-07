@@ -2949,7 +2949,7 @@ function registerIpc(): void {
   })
 
   handle('yan:revealPath', async (p: string) => {
-    if (!p || !existsSync(p)) return { ok: false }
+    if (typeof p !== 'string' || !p.trim() || /^[\\/]{2}/.test(p.trim()) || !existsSync(p)) return { ok: false }
     shell.showItemInFolder(p)
     return { ok: true }
   })
@@ -3223,7 +3223,7 @@ function registerIpc(): void {
     return resolved.context.cwd
   })
 
-  registerAppUpdate(ipc, () => (runners?.statuses() ?? []).some((status) => status.running))
+  registerAppUpdate(ipc, () => quitReasons(quitActivity()).length > 0)
   registerVoiceIpc(ipc, {
     plugins: bundledPlugins,
     window: () => win,
@@ -3518,7 +3518,7 @@ configureRemoteHost({
 
 app.whenReady().then(async () => {
   await storageMoveReady
-  try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { exitReason = 'data-root-lock'; reportMainError('data-root-writer', error); app.exit(1); return }
+  try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { exitReason = 'data-root-lock'; reportMainError('data-root-writer', error); dialog.showErrorBox(pick('砚无法启动', 'Inkstone failed to start'), error instanceof Error ? error.message : String(error)); app.exit(1); return }
   registerDeepLinkProtocol(app, { isPackaged: app.isPackaged, execPath: process.execPath, appPath: process.argv[1] })
   registerHtmlArtifactProtocol()
   void loadModelPricing()

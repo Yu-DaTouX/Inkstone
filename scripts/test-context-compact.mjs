@@ -118,6 +118,16 @@ const ok = (text, usage) => ({ stopReason: 'stop', content: [{ type: 'text', tex
   assert.equal(h.calls.length, callsBefore, '连续失败 3 次后熔断，不再调用模型')
   h.compacted(false)
   assert.equal(h.entries.at(-1).data.category, 'circuit-open')
+  const realNow = Date.now
+  Date.now = () => realNow() + 11 * 60 * 1000
+  try {
+    await h.run()
+    assert.equal(h.calls.length, callsBefore + 1, '熔断 10 分钟后放行一次')
+    await h.run()
+    assert.equal(h.calls.length, callsBefore + 1, '放行失败后继续熔断')
+  } finally {
+    Date.now = realNow
+  }
 }
 {
   const h = harness(() => ok('很长'.repeat(20_000)))

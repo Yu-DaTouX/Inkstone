@@ -160,7 +160,7 @@ async function readManifestFile(file: string): Promise<ArtifactManifestItem[]> {
     if (!Array.isArray(raw) || !raw.every(isManifestItem)) throw new Error(pick('清单结构无效', 'Invalid manifest structure'))
     return raw
   } catch (error) {
-    await copyFile(file, `${file}.corrupt-${randomUUID()}.bak`).catch(() => undefined)
+    await copyFile(file, `${file}.corrupt-${createHash('sha256').update(text).digest('hex').slice(0, 16)}.bak`).catch(() => undefined)
     throw new Error(pick(`成果清单损坏，为保护已有记录已拒绝写入：${error instanceof Error ? error.message : String(error)}`, `The artifact manifest is damaged; write refused to protect existing records: ${error instanceof Error ? error.message : String(error)}`))
   }
 }

@@ -65,7 +65,7 @@ export class RelayBridgeStore {
       }
       throw new Error(pick('中继配对存储格式无效', 'Invalid relay pairing store format'))
     } catch (error) {
-      const backup = `${this.file}.${Date.now()}.${randomUUID()}.corrupt`
+      const backup = `${this.file}.${hash(text).slice(0, 16)}.corrupt`
       await copyFile(this.file, backup).catch(() => undefined)
       throw error
     }

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { ListBoxItem, Select, SettingRow, TextField } from '../../ui'
+import { isImeComposing, ListBoxItem, Select, SettingRow, TextField } from '../../ui'
 import {
   currencyLabel,
   DEFAULT_USD_RATES,
@@ -61,7 +61,7 @@ export function UsageCurrency({ text }: { text: SettingsText }): ReactElement {
             inputMode="decimal"
             onChange={setDraft}
             onBlur={commitRate}
-            onKeyDown={(event) => { if (event.key === 'Enter') commitRate() }}
+            onKeyDown={(event) => { if (event.key === 'Enter' && !isImeComposing(event)) commitRate() }}
             data-testid="v3-usage-rate"
           />
         </SettingRow>

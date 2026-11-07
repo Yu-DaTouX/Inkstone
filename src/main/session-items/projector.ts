@@ -157,6 +157,15 @@ export class SessionItemProjector {
     return this.compose(this.addSlot({ ...message }))
   }
 
+  settleBash(id: string, header: Partial<UIMessage>, call: Partial<UIToolCall>): void {
+    const slot = this.slots.find((candidate) => candidate.header.id === id)
+    if (slot) Object.assign(slot.header, header)
+    const entry = this.callIndex.get(id)?.call
+    if (!entry) return
+    Object.assign(entry, call)
+    this.syncCall(entry)
+  }
+
   previewLive(m: PiMessage): UIMessage | null {
     if (m.role !== 'user' && m.role !== 'custom') return null
     return normalizeMessage(m, this.settledCount(), this.localizeImage)

@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { existsSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { runInNewContext } from 'node:vm'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
 import { safeTerminalCut } from './terminal-registry'
 import type { TerminalSessionInfo, TerminalSnapshot, TerminalStartOptions, TerminalStream, TerminalAgentPhase } from './terminal'
@@ -17,6 +18,7 @@ export const TERMINAL_QUIET_MS = 15_000
 export const TERMINAL_WRITE_WAIT_MS = 1500
 export const TERMINAL_WRITE_WAIT_MAX_MS = 30_000
 const SETTLE_IDLE_MS = 500
+const UNTIL_MATCH_TIMEOUT_MS = 200
 const WRITE_IDLE_MS = 300
 const READY_TIMEOUT_MS = 8000
 const NEW_TERMINAL_SETTLE_MS = 1200
@@ -291,6 +293,14 @@ function secondsParam(params: Record<string, unknown>, key: string, fallbackMs: 
   return Math.min(maxMs, Math.round(seconds * 1000))
 }
 
+function untilMatches(pattern: RegExp, text: string): boolean {
+  try {
+    return runInNewContext('pattern.test(text)', { pattern, text }, { timeout: UNTIL_MATCH_TIMEOUT_MS }) === true
+  } catch {
+    throw new CapabilityCommandError('terminal_bad_until', `--until pattern timed out; use a simpler one: ${pattern.source}`)
+  }
+}
+
 function untilPattern(params: Record<string, unknown>): RegExp | null {
   const source = stringParam(params, 'until')
   if (!source) return null
@@ -475,7 +485,7 @@ export class TerminalAgentCommands {
       const now = this.host.now()
       const fresh = sliceSince(stream, from).raw
       const plain = options.until || options.mode === 'command' ? stripTerminalControls(fresh) : ''
-      if (options.until && options.until.test(plain)) return 'matched'
+      if (options.until && untilMatches(options.until, plain)) return 'matched'
       const quietFor = now - Math.max(stream.lastOutputAt, started)
       const sawOutput = stream.total > from
       if (options.mode === 'settle') {

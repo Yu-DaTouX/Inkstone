@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { findGitRoot } from './subagent-isolation'
+import { findGitRoot, hasGitCommit } from './subagent-isolation'
 import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer, type SubagentQuotaWatch } from './subagents'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
@@ -102,7 +102,7 @@ export interface SubagentServiceDeps {
 }
 
 const AUTO_WORKTREE_NOTE = 'Another subagent is already writing in this folder, so this one runs in its own worktree. It starts from HEAD without uncommitted changes; review and merge its patch when it finishes. Pass --isolation none to share the folder instead.'
-const SHARED_WRITER_NOTE = 'Another subagent is already writing in this folder and this is not a Git project, so they share it; keep their files separate.'
+const SHARED_WRITER_NOTE = 'Another subagent is already writing in this folder, which cannot use a worktree (not a Git project, or no commits yet), so they share it; keep their files separate.'
 
 export function parseIsolation(value: unknown): 'worktree' | undefined {
   if (value === undefined || value === null || value === false || value === '') return undefined
@@ -123,7 +123,8 @@ export class SubagentService {
     this.startingWriters.set(root, claimed + 1)
     try {
       if (claimed === 0 && !ctrl.hasActiveWriter(root)) return { result: await start('shared-cwd') }
-      if (await findGitRoot(root)) return { result: await start('worktree'), note: AUTO_WORKTREE_NOTE }
+      const repo = await findGitRoot(root)
+      if (repo && await hasGitCommit(repo)) return { result: await start('worktree'), note: AUTO_WORKTREE_NOTE }
       return { result: await start('shared-cwd'), note: SHARED_WRITER_NOTE }
     } finally {
       const left = (this.startingWriters.get(root) ?? 1) - 1

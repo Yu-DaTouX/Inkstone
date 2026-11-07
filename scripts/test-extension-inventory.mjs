@@ -114,7 +114,7 @@ export async function runExtensionInventoryTests(ok) {
         const mcpAppProxy =
           file === 'mcp-app-proxy.js' && toolCalls === 1 && /\.registerTool\(definition\)/.test(source)
         const hostTool =
-          (file === 'question.js' && toolCalls === 1 && /\.registerTool\(createQuestionTool\(\)\)/.test(source)) ||
+          (file === 'question.js' && toolCalls === 1 && /\.registerTool\(createQuestionTool\(callHostTool, store\)\)/.test(source)) ||
           (file === 'capability-guide.js' && toolCalls === 2 && /\.registerTool\(createTodosTool\(\)\)/.test(source) && /createWebTools\(\)/.test(source))
         const readOnlyTools =
           file === 'readonly-tools.js' &&

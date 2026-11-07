@@ -175,6 +175,15 @@ export async function prepareWorkspace(
   }
 }
 
+export async function hasGitCommit(repoRoot: string): Promise<boolean> {
+  try {
+    await git(repoRoot, ['rev-parse', '--verify', 'HEAD'], 10_000)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function parseNameStatus(text: string): string[] {
   const paths: string[] = []
   for (const line of text.split(/\r?\n/)) {

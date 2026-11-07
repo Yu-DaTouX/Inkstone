@@ -58,6 +58,9 @@ try {
   await writeFile(join(gitDir, 'a.txt'), 'x')
   const { spawnSync } = await import('node:child_process')
   spawnSync('git', ['init', '-q'], { cwd: gitDir })
+  spawnSync('git', ['-c', 'user.email=t@example.invalid', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'x'], { cwd: gitDir })
+  const unbornDir = await mkdtemp(join(tmpdir(), 'yan-auto-unborn-'))
+  spawnSync('git', ['init', '-q'], { cwd: unbornDir })
   const plainDir = await mkdtemp(join(tmpdir(), 'yan-auto-shared-'))
   let release
   const gate = new Promise((done) => { release = done })
@@ -86,6 +89,8 @@ try {
   const nonGit = await service.run('subagent.start', { task: 'z' }, { cwd: plainDir })
   assert.equal(nonGit.summary.isolation, 'shared-cwd', '非 Git 目录退回共享')
   assert.match(nonGit.summary.note, /not a Git project/)
+  assert.equal((await service.run('subagent.start', { task: 'z' }, { cwd: unbornDir })).summary.isolation, 'shared-cwd', '还没有提交的仓库退回共享，不启动失败')
+  await rm(unbornDir, { recursive: true, force: true })
   await rm(gitDir, { recursive: true, force: true })
   await rm(plainDir, { recursive: true, force: true })
 

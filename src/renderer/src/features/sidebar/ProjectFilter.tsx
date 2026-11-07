@@ -1,7 +1,7 @@
 import { Check, ChevronRight, FolderMinus, Layers, ListFilter, MoreHorizontal, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react'
 import { useT } from '../../i18n'
-import { Dialog, InputGroup, InputGroupAddon, InputGroupInput, ListRow, Popover } from '../../ui'
+import { Dialog, InputGroup, InputGroupAddon, InputGroupInput, isImeComposing, ListRow, Popover } from '../../ui'
 import { ProjectFavicon } from '../../t3/components/ProjectFavicon'
 import { SidebarHeaderIconButton } from '../../t3/components/sidebar/SidebarThreadHeader'
 import { NO_PROJECT_ID } from '../../t3/adapters/sidebar/types'
@@ -121,6 +121,7 @@ function FilterBody({ value, projects, onPick, onManage }: {
       const step = event.key === 'ArrowDown' ? 1 : -1
       setActive((safeActive + step + options.length) % options.length)
     } else if (event.key === 'Enter') {
+      if (isImeComposing(event)) return
       event.preventDefault()
       run(options[safeActive])
     } else if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {

@@ -87,7 +87,7 @@ export class RemoteDeviceStore {
             .filter((device) => typeof device?.id === 'string' && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash))
             .map((device) => ({ ...device, name: cleanName(device.name) }))
         } catch (error) {
-          await copyFile(this.file, `${this.file}.corrupt-${randomUUID()}`).catch(() => undefined)
+          await copyFile(this.file, `${this.file}.corrupt-${createHash('sha256').update(text).digest('hex').slice(0, 16)}`).catch(() => undefined)
           throw error
         }
       })()

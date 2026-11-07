@@ -141,8 +141,9 @@ try {
   await writeFile(sessionFile, validImageRow)
   const source = await readFile('src/main/ipc/files-ipc.ts', 'utf8')
   const handlerSource = source.slice(source.indexOf("  handle('yan:attachments:prune'"), source.lastIndexOf('\n}'))
-  let prune, busy = true, mutate = false
+  let prune, busy = true, mutate = false, clockShift = 0
   vm.runInNewContext((await transform(handlerSource, { loader: 'ts', target: 'es2022' })).code, {
+    Date: { now: () => Date.now() + clockShift },
     handle: (_channel, callback) => { prune = callback }, deps: { isSessionBusy: () => busy },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
     SESSIONS_DIR: join(historyDir, 'sessions'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, pick, clearSessionReadCache: () => {}, ...attachments,
@@ -161,9 +162,13 @@ try {
   await assert.rejects(prune(), /扫描期间发生变化/)
   assert.ok(existsSync(join(imageDir, hash + '.png')) && existsSync(join(imageDir, 'unreferenced.png')))
   mutate = false
-  await new Promise(done => setTimeout(done, 10))
+  assert.equal((await prune()).removed, 0, '刚落盘的未引用附件可能是草稿，不清理')
+  assert.ok(existsSync(join(imageDir, 'unreferenced.png')))
+  clockShift = 2 * 24 * 60 * 60 * 1000
   const cleaned = await prune()
   assert.equal(cleaned.removed, 1); assert.ok(existsSync(join(imageDir, hash + '.png')))
+  assert.ok(!existsSync(join(imageDir, 'unreferenced.png')), '超过一天的未引用附件才清理')
+  clockShift = 0
 
   let missing
   await writeFile(join(imageDir, 'orphan.png'), 'synthetic orphan image')

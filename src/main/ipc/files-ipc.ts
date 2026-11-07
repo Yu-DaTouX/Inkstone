@@ -287,7 +287,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   handle('yan:attachments:usage',() => attachmentsUsage(join(YAN_DIR, 'attachments')))
   handle('yan:attachments:prune', async () => {
     if (deps.isSessionBusy()) throw new Error(pick('会话正在运行，请结束后再清理附件', 'The session is running; clean up attachments after it finishes'))
-    const before = Date.now()
+    const before = Date.now() - 24 * 60 * 60 * 1000
     const sessionsDir = SESSIONS_DIR
     if (!existsSync(sessionsDir)) return { removed: 0, bytes: 0, kept: 0 }
     const fingerprint = async (): Promise<string> => {

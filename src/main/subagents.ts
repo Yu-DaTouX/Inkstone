@@ -8,6 +8,7 @@ import { pruneSubagentArchive } from './subagent-prune'
 import { delimiter, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { reserveWorkspaceMutation, workspaceMutationInProgress } from './workspace-mutation'
 import type { QuotaWindow, SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
 import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../shared/quota-resume'
 import { continuationPrompt } from '../shared/continuation-prompt'
@@ -299,6 +300,20 @@ export function subagentHostCommands(opts: {
       if (command === 'artifact.preview') return runArtifactPreview(opts.previewHtml, params.path, cwd, params.at)
       return undefined
     }
+  }
+}
+
+function workspaceBusy(): { ok: false; error: string } {
+  return { ok: false, error: pick('这个文件夹正在回退代码，稍后再合并', 'This folder is restoring a checkpoint; merge again shortly') }
+}
+
+async function applyPatchExclusive(cwd: string, patchPath: string): ReturnType<typeof applyPatch> {
+  const release = reserveWorkspaceMutation(cwd)
+  if (!release) return workspaceBusy()
+  try {
+    return await applyPatch(cwd, patchPath)
+  } finally {
+    release()
   }
 }
 
@@ -1397,7 +1412,8 @@ export class SubagentController {
     }
 
     try {
-      const res = await applyPatch(run.workspace.rootCwd, patchPath)
+      if (workspaceMutationInProgress(run.workspace.rootCwd)) return workspaceBusy()
+      const res = await applyPatchExclusive(run.workspace.rootCwd, patchPath)
       if (!res.ok) {
         run.review = 'conflict'
         run.error = res.error
@@ -1444,7 +1460,7 @@ export class SubagentController {
       if (!['pending', 'conflict', 'archived'].includes(run.review ?? '') || !run.diff?.files || !run.diff.patchPath) {
         return { ok: false, error: pick('历史任务没有可合并的补丁', 'This past task has no patch to merge') }
       }
-      const result = await applyPatch(record.rootCwd, run.diff.patchPath)
+      const result = await applyPatchExclusive(record.rootCwd, run.diff.patchPath)
       if (!result.ok) return result
     }
     const kept = keptWorktreeOf(record)

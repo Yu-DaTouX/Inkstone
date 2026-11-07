@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEve
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, InputGroup, InputGroupAddon, InputGroupInput, KbdGroup, ListRow, Notice, Popover } from '../../ui'
+import { Button, Dialog, InputGroup, InputGroupAddon, InputGroupInput, isImeComposing, KbdGroup, ListRow, Notice, Popover } from '../../ui'
 import { ProjectFavicon } from '../../t3/components/ProjectFavicon'
 import { newSessionInFolder, newSessionInPickedFolder } from '../../lib/new-session-in-folder'
 import { shortProject } from './sidebar-model'
@@ -111,6 +111,7 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
       const step = event.key === 'ArrowDown' ? 1 : -1
       setActive((safeActive + step + options.length) % options.length)
     } else if (event.key === 'Enter') {
+      if (isImeComposing(event)) return
       event.preventDefault()
       run(options[safeActive])
     }

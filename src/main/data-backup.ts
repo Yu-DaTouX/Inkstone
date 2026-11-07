@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, lstat, mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { BackupSummary } from '../shared/data-backup'
 
@@ -83,7 +83,8 @@ export async function createDataBackup(parent: string, sessions: string, yan: st
     await writeFile(join(path, MANIFEST), JSON.stringify(manifest, null, 2), { flag: 'wx', mode: 0o600 })
     return await verifyDataBackup(path)
   } catch (e) {
-    throw new Error(`${e instanceof Error ? e.message : String(e)}\nIncomplete backup retained: ${path}`)
+    const removed = await rm(path, { recursive: true, force: true }).then(() => true, () => false)
+    throw new Error(`${e instanceof Error ? e.message : String(e)}${removed ? '' : `\nIncomplete backup retained: ${path}`}`)
   }
 }
 

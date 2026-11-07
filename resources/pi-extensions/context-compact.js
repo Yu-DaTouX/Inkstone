@@ -84,6 +84,7 @@ const SUMMARY_MAX_TOKENS = 32_000
 const MIN_CHUNK_TOKENS = 4_000
 const MAX_CAPACITY_RETRIES = 2
 const MAX_CONSECUTIVE_FAILURES = 3
+const CIRCUIT_RETRY_MS = 10 * 60 * 1000
 export const ENTRY_TYPE = 'yan-compaction'
 const SNAPSHOT_HEADER = '=== compaction '
 const SECRET_PATTERNS = [
@@ -569,6 +570,7 @@ const FAST_MARGIN_TOKENS = 4_000
 
 export default function contextCompactExtension(pi) {
   let failures = 0
+  let lastFailureAt = 0
   let pendingNote = null
   let lastRequest = null
   let pendingMark = null
@@ -613,7 +615,7 @@ export default function contextCompactExtension(pi) {
       }
       return undefined
     }
-    if (failures >= MAX_CONSECUTIVE_FAILURES) return fallback('circuit-open', `${failures} consecutive failures`)
+    if (failures >= MAX_CONSECUTIVE_FAILURES && Date.now() - lastFailureAt < CIRCUIT_RETRY_MS) return fallback('circuit-open', `${failures} consecutive failures`)
     try {
       const messages = [...(preparation.messagesToSummarize ?? []), ...(preparation.turnPrefixMessages ?? [])]
       const historyFile = snapshotPath(ctx.sessionManager?.getSessionFile?.())
@@ -733,6 +735,7 @@ export default function contextCompactExtension(pi) {
     } catch (error) {
       if (signal?.aborted) return { cancel: true }
       failures++
+      lastFailureAt = Date.now()
       return fallback(error?.category ?? 'error', error?.message)
     }
   })

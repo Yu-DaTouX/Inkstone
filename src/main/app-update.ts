@@ -51,7 +51,7 @@ export function registerAppUpdate(ipc: IpcRegistrar, busy: () => boolean): void 
   })
   ipc.handle('yan:update:install', () => {
     if (state.phase !== 'downloaded') return { ok: false, error: pick('更新尚未下载完成', 'The update has not finished downloading') }
-    if (busy()) return { ok: false, error: pick('请等任务结束后再重启安装', 'Restart to install after the task finishes') }
+    if (busy()) return { ok: false, error: pick('请等任务结束并保存文件后再重启安装', 'Finish running tasks and save your files, then restart to install') }
     setTimeout(() => autoUpdater.quitAndInstall(false, true), 300)
     return { ok: true }
   })

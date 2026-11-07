@@ -75,7 +75,7 @@ let fullReads = 0
 let stops = 0
 let starts = []
 const controller = {
-  setContext() {}, list: () => [own, foreign, { ...own, id: 'sub-c3c3c3c3', parentSessionId: undefined }],
+  setContext() {}, hasActiveWriter: () => false, list: () => [own, foreign, { ...own, id: 'sub-c3c3c3c3', parentSessionId: undefined }],
   get: id => [own, foreign].find(run => run.id === id),
   getFull: async id => { fullReads++; return controller.get(id) },
   stop: async () => { stops++; return { ok: true } },
