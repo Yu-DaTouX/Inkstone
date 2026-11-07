@@ -278,6 +278,8 @@ export interface SubagentQuotaWatch {
 }
 
 const QUOTA_BOUNCE_LIMIT = 3
+export const QUOTA_SWITCH_AFTER_MS = 15 * 60_000
+export const QUOTA_GIVE_UP_AFTER_MS = 30 * 60_000
 const ignoredOnlyNote = () => pick('子 Agent只写了被 .gitignore 忽略的文件', 'Subagent only wrote files ignored by .gitignore')
 const skippedOutputsNote = (skipped: readonly string[]) => {
   const list = `${skipped.slice(0, 5).join(pick('、', ', '))}${skipped.length > 5 ? pick(' 等', ' and more') : ''}`
@@ -1763,7 +1765,7 @@ export class SubagentController {
     }
     clearTimeout(run.timer)
     run.quotaBounces = (run.quotaBounces ?? 0) + 1
-    if (!first.ready && first.accounts > 1 && await this.trySpareAccount(run, live)) return
+    if (!first.ready && await this.avoidLongQuotaWait(run, first, live)) return
     if (!live()) return
     run.quotaWait = { since: Date.now(), ...(first.resetAt !== undefined ? { resetAt: first.resetAt } : {}), accounts: first.accounts }
     run.stopReason = undefined
@@ -1782,7 +1784,7 @@ export class SubagentController {
       if (!live() || !run.quotaWait) return
       const next = await this.quotaDecision(run)
       if (!live() || !run.quotaWait) return
-      if (!next?.ready && (next?.accounts ?? 1) > 1 && await this.trySpareAccount(run, live)) return
+      if (next && !next.ready && await this.avoidLongQuotaWait(run, next, live)) return
       if (!live() || !run.quotaWait) return
       if (!next?.ready) {
         if (next && next.resetAt !== run.quotaWait.resetAt) {
@@ -1796,6 +1798,23 @@ export class SubagentController {
       await this.resumeAfterQuota(run)
     }
     schedule(first.ready ? Date.now() + QUOTA_RESUME_POLL_MS : first.nextCheckAt)
+  }
+
+  private async avoidLongQuotaWait(run: Run, decision: { resetAt?: number; accounts: number }, live: () => boolean): Promise<boolean> {
+    const remaining = decision.resetAt === undefined ? Infinity : decision.resetAt - Date.now()
+    if (remaining <= QUOTA_SWITCH_AFTER_MS) return false
+    if (decision.accounts > 1 && await this.trySpareAccount(run, live)) return true
+    if (!live() || remaining <= QUOTA_GIVE_UP_AFTER_MS) return !live()
+    const reset = decision.resetAt === undefined ? '' : new Date(decision.resetAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const resetEn = decision.resetAt === undefined ? '' : new Date(decision.resetAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const noSpare = decision.accounts > 1 ? pick('其他账号也没有额度，', 'no other account has quota, ') : ''
+    run.quotaWait = undefined
+    run.stopReason = 'error'
+    run.error = reset
+      ? pick(`额度用完，${noSpare}约 ${reset} 才重置，超过 30 分钟，已停下汇报。额度恢复或换号后可续派，也可以改用别的模型。`, `Quota exhausted; ${noSpare}it resets around ${resetEn}, more than 30 minutes away, so the subagent stopped to report. Resume it after the quota resets or after switching accounts, or use another model.`)
+      : pick(`额度用完，${noSpare}查不到重置时间，已停下汇报。额度恢复或换号后可续派，也可以改用别的模型。`, `Quota exhausted; ${noSpare}the reset time is unknown, so the subagent stopped to report. Resume it after the quota resets or after switching accounts, or use another model.`)
+    this.settle(run)
+    return true
   }
 
   private async trySpareAccount(run: Run, live: () => boolean): Promise<boolean> {

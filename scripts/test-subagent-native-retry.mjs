@@ -462,27 +462,49 @@ await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)
   ok(stopped.status === 'cancelled' && stopped.quotaWait === undefined && promptCount(rpc) === 1, '等额度时可以停止，且不再续跑', JSON.stringify({ status: stopped.status, quotaWait: stopped.quotaWait }))
 })
 
-await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)], accounts: 3 })], async ({ ctrl, id, rpc, state }) => {
+const MIN = 60_000
+const hitQuota = (rpc) => {
   rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
   rpc.emit('event', { type: 'agent_settled' })
-  ok(await waitFor(() => promptCount(rpc) === 2), '多账号撞额度时自动换号并立即续跑', rpc.commands.join(','))
+}
+
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 120 * MIN)], accounts: 3 })], async ({ ctrl, id, rpc, state }) => {
+  hitQuota(rpc)
+  ok(await waitFor(() => promptCount(rpc) === 2), '重置还要很久且有别的账号时自动换号并立即续跑', rpc.commands.join(','))
   const run = ctrl.get(id)
   ok(state.switches === 1 && state.waiting.length === 0 && run.quotaWait === undefined && /已换到 备用号/.test(run.latestActivity ?? ''), '换号成功时不进入等待，进度写明换到哪个账号', JSON.stringify({ switches: state.switches, waiting: state.waiting.length, activity: run.latestActivity }))
 }, async () => '备用号')
 
-await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)], accounts: 3 })], async ({ ctrl, id, rpc, state }) => {
-  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
-  rpc.emit('event', { type: 'agent_settled' })
-  ok(await waitFor(() => state.waiting.length === 1), '所有账号都用完时照旧等额度', String(state.waiting.length))
-  ok(state.switches === 1 && promptCount(rpc) === 1 && ctrl.get(id).quotaWait?.accounts === 3, '没有可换的账号时不续跑', JSON.stringify({ switches: state.switches, prompts: promptCount(rpc) }))
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 120 * MIN)], accounts: 3 })], async ({ ctrl, id, rpc, state }) => {
+  hitQuota(rpc)
+  ok(await waitFor(() => state.finished === 1), '超过 30 分钟又没有可换的账号时停下', String(state.finished))
+  const run = ctrl.get(id)
+  ok(run.status === 'error' && state.waiting.length === 0 && promptCount(rpc) === 1 && /其他账号也没有额度.*超过 30 分钟.*续派/.test(run.error ?? ''), '停下时写明原因、重置时间与可续派', JSON.stringify({ status: run.status, error: run.error, waiting: state.waiting.length }))
 }, async () => null)
 
-await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)], accounts: 1 })], async ({ rpc, state }) => {
-  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
-  rpc.emit('event', { type: 'agent_settled' })
-  ok(await waitFor(() => state.waiting.length === 1), '单账号撞额度直接等待', String(state.waiting.length))
-  ok(!state.switches, '单账号时不尝试换号', String(state.switches))
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 20 * MIN)], accounts: 3 })], async ({ ctrl, id, rpc, state }) => {
+  hitQuota(rpc)
+  ok(await waitFor(() => state.waiting.length === 1), '15～30 分钟且换不了号时等待', String(state.waiting.length))
+  ok(state.switches === 1 && promptCount(rpc) === 1 && ctrl.get(id).status === 'running', '先试过换号再等待', JSON.stringify({ switches: state.switches, prompts: promptCount(rpc) }))
+}, async () => null)
+
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 5 * MIN)], accounts: 3 })], async ({ rpc, state }) => {
+  hitQuota(rpc)
+  ok(await waitFor(() => state.waiting.length === 1), '15 分钟内就重置时直接等待', String(state.waiting.length))
+  ok(!state.switches, '15 分钟内不换号', String(state.switches))
 }, async () => '不该用到')
+
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 120 * MIN)], accounts: 1 })], async ({ ctrl, id, rpc, state }) => {
+  hitQuota(rpc)
+  ok(await waitFor(() => state.finished === 1), '单账号且超过 30 分钟时停下汇报', String(state.finished))
+  ok(!state.switches && !/其他账号/.test(ctrl.get(id).error ?? '') && /超过 30 分钟/.test(ctrl.get(id).error ?? ''), '单账号不尝试换号，原因里不提其他账号', ctrl.get(id).error)
+}, async () => '不该用到')
+
+await withQuotaController([async () => ({ windows: [{ id: 'five', label: '5 小时', used: 100, total: 100 }], accounts: 1 })], async ({ ctrl, id, rpc, state }) => {
+  hitQuota(rpc)
+  ok(await waitFor(() => state.finished === 1), '查不到重置时间时不无限等待', String(state.finished))
+  ok(/查不到重置时间/.test(ctrl.get(id).error ?? ''), '原因写明查不到重置时间', ctrl.get(id).error)
+})
 
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
