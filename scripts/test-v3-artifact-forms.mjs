@@ -90,7 +90,7 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
   }
 
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" class="pele" viewBox="0 0 200 50" width="200" height="50" style="max-width:100%;height:auto"></svg>'
-  assert.match(mermaid.withMinWidth(svg, 200), /^<svg[^>]* style="min-width:160px;max-width:100%/, '保留 80% 最小宽度，过宽时横向滚动')
+  assert.match(mermaid.withMinWidth(svg, 200), /^<svg[^>]* style="min-width:111px;max-width:100%/, '保留 55% 最小宽度，过宽时横向滚动')
   assert.equal(mermaid.withMinWidth(svg, Number.NaN), svg)
 
   const standalone = mermaid.inlineMermaidTheme(svg, { '--pele-bg': 'rgb(1, 2, 3)', '--pele-font': '"Segoe UI", sans-serif' })
