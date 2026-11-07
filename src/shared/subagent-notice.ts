@@ -73,12 +73,13 @@ export function buildSubagentNotice(
 }
 
 export function buildSubagentQuotaNotice(run: Pick<SubagentRun, 'id' | 'task' | 'model' | 'quotaWait'> & Partial<Pick<SubagentRun, 'followUp'>>): string {
+  const switchable = (run.quotaWait?.accounts ?? 1) > 1
   const resetAt = run.quotaWait?.resetAt
   const reset = resetAt !== undefined ? `（约 ${new Date(resetAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 重置）` : ''
   const lines = [
     `子代理 ${run.id} 撞上模型额度上限，已暂停：${clip(run.followUp || run.task, HEADLINE_TASK_MAX)}`,
     ...(run.model ? [`模型：${run.model}`] : []),
-    `它会在额度恢复${reset}后自动继续，不用重派。等不及时可以 yan subagent stop --id ${run.id}，然后自己接手或改派别的模型。`,
+    `${switchable ? '用户在额度页换号后它会立即继续，否则' : '它会'}在额度恢复${reset}后自动继续，不用重派。等不及时可以 yan subagent stop --id ${run.id}，然后自己接手或改派别的模型。`,
     '这是宿主自动发出的通知，不是用户的新消息：请据此安排后续，不要复述本通知。'
   ]
   return `<${SUBAGENT_NOTICE_TAG} id="${run.id}" status="waiting">\n${lines.join('\n')}\n</${SUBAGENT_NOTICE_TAG}>`

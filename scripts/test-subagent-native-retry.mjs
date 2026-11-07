@@ -468,4 +468,17 @@ await withQuotaController([async () => null], async ({ ctrl, id, rpc, state }) =
   ok(ctrl.get(id).status === 'error' && state.waiting.length === 0, '查不到额度数据时不等也不提醒', ctrl.get(id).status)
 })
 
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  await build({ entryPoints: ['src/main/subagent-quota-watch.ts'], outfile: `${BUILD_DIR}/subagent-quota-watch.mjs`, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', plugins: [{ name: 'stub-deps', setup(b) { b.onResolve({ filter: /^\.\/(quota|codex-accounts|oauth-accounts)$/ }, (args) => ({ path: args.path, namespace: 'stub' })); b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const providerQuotaWithFallback = async () => ({}); export const codexAccountTargets = async () => []; export const oauthAccountTargets = async () => []', loader: 'js' })) } }] })
+  const { createSubagentQuotaWatch } = await import(`../${BUILD_DIR}/subagent-quota-watch.mjs`)
+  for (const accounts of [1, 3]) {
+    const sent = { user: [], parent: [] }
+    const watch = createSubagentQuotaWatch({ notifyUser: (input) => sent.user.push(input), notifyParent: (_run, text) => sent.parent.push(text) })
+    watch.waiting({ id: 'sub-q', task: '删输入方案', model: 'openai-codex/gpt-6.1', quotaWait: { since: 1, resetAt: Date.UTC(2026, 10, 8, 8, 37), accounts } })
+    ok(sent.user.length === 1 && sent.parent.length === 1, `${accounts} 个账号时主会话也收到等额度通知`, JSON.stringify({ user: sent.user.length, parent: sent.parent.length }))
+    ok(/yan subagent stop --id sub-q/.test(sent.parent[0] ?? '') && /换号/.test(sent.parent[0] ?? '') === (accounts > 1), `${accounts} 个账号时主会话通知写明可停止接手${accounts > 1 ? '、可换号' : ''}`, sent.parent[0])
+  }
+}
+
 console.log(`subagent-native-retry: ${checks} assertions passed（注入假事件流，未启动真实 pi / 未联网）`)
