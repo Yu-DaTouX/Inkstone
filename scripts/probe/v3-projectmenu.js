@@ -20,7 +20,7 @@
   const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
   const store = window.__yanStore
   const PROJECT_ID = 'probe-project'
-  const PROJECT_CWD = 'E:\\pi-desktop-worktrees'
+  const PROJECT_CWD = 'D:\\projects\\demo'
   const labelOf = () => document.querySelector('.v3-group .v3-grp-label')?.textContent?.trim()
   const menuItem = (text) => [...document.querySelectorAll('[data-testid="v3-project-menu"] [role="menuitem"]')].find((el) => el.textContent?.includes(text))
   const setNativeValue = (el, text) => {
@@ -51,8 +51,8 @@
     const base = {
       named: false, createdAt: now, updatedAt: now, messageCount: 2, model: 'probe', lastActivityAt: now
     }
-    const inProject = { ...base, id: 'probe-s1', path: 'E:\\pi-desktop-worktrees\\probe-s1.jsonl', cwd: PROJECT_CWD, title: '项目内会话', projectId: PROJECT_ID }
-    const archivedAlone = { ...base, id: 'probe-s2', path: 'E:\\pi-desktop-worktrees\\probe-s2.jsonl', cwd: 'E:\\probe-elsewhere', title: '单独归档的会话', archivedAt: now }
+    const inProject = { ...base, id: 'probe-s1', path: 'D:\\projects\\demo\\probe-s1.jsonl', cwd: PROJECT_CWD, title: '项目内会话', projectId: PROJECT_ID }
+    const archivedAlone = { ...base, id: 'probe-s2', path: 'D:\\projects\\demo\\probe-s2.jsonl', cwd: 'E:\\probe-elsewhere', title: '单独归档的会话', archivedAt: now }
     const record = { id: PROJECT_ID, cwd: PROJECT_CWD, name: 'ProbeDemo', archived: false, createdAt: now, updatedAt: now }
     const settings = store.getState().settings
     const realSessions = store.getState().sessions

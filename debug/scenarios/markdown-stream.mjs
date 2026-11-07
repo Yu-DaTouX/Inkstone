@@ -170,7 +170,7 @@ export default async function run({ box, cdp, newSession, check, sleep, shot, re
   const burstDir = join(runDir, `burst-${tag}`)
   mkdirSync(burstDir, { recursive: true })
   mkdirSync(join(box.project, 'fig'), { recursive: true })
-  copyFileSync(join(import.meta.dirname, '../../assets/inkstone/workspace-dark.png'), join(box.project, 'fig/pic.png'))
+  copyFileSync(join(import.meta.dirname, '../../assets/inkstone/workspace-0.14.1-dark.png'), join(box.project, 'fig/pic.png'))
   await autoApprove()
   await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN', reduceMotion: false })`)
   await newSession()

@@ -1,6 +1,7 @@
+import { evidenceDir } from '../lib/env.mjs'
 import { mkdirSync } from 'node:fs'
 
-const EVIDENCE = 'E:/pi-desktop/.local-docs/evidence/2026-10-31-quota-t3'
+const EVIDENCE = evidenceDir('2026-10-31-quota-t3')
 const PREFIX = 'v2-'
 
 export const meta = { demo: true, description: '右栏用量页：多账号 / 接近上限 / 已用尽 / 过期 / 错误 / 无数据 的浅深主题截图' }

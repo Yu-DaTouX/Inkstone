@@ -1483,7 +1483,7 @@ export const TextUtilityStates: Story = {
         <>
           <div style={{ display: 'grid', gap: 'var(--s-4)', width: 220, fontSize: 'var(--t-body)' }}>
             <MiddleTruncate value="src/renderer/src/features/changes/ChangesPane.tsx" />
-            <MiddleTruncate value="E:/pi-desktop/.local-docs/evidence/2026-10-29-c-route/ui-inventory.md" />
+            <MiddleTruncate value="D:/projects/demo/docs/notes/2026-10-29/ui-inventory.md" />
             <MiddleTruncate value="short.ts" />
           </div>
           <Row label="行数">
@@ -1699,7 +1699,7 @@ function CommandBody() {
           <MenuItem icon={<SearchGlyph />} shortcut="Ctrl+F">
             在会话中查找
           </MenuItem>
-          <MenuItem icon={<FolderGlyph />} description="E:/pi-desktop">
+          <MenuItem icon={<FolderGlyph />} description="D:/projects/demo">
             切换项目
           </MenuItem>
         </Menu>

@@ -2,11 +2,10 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { userSnapshotDir } from './env.mjs'
+import { fixtureRoot, userSnapshotDir } from './env.mjs'
 import { restoreSample } from './sessions.mjs'
 import { linkOrCopy, linkTree, mirrorTree } from './shared-files.mjs'
 
-const FIXTURE_ROOT = process.env.YAN_DEBUG_FIXTURES || 'E:/Inkstone/bench/Harness-test/tasks'
 const FIXTURE_TASKS = ['40-ledger-incident', '30-async-refactor', '50-expr-lang', '10-cache-bugs', '20-csv-spec']
 
 function gitInit(dir) {
@@ -19,7 +18,7 @@ function gitInit(dir) {
 function seedProjects(root) {
   const projects = []
   for (const task of FIXTURE_TASKS) {
-    const source = join(FIXTURE_ROOT, task, 'fixture')
+    const source = join(fixtureRoot, task, 'fixture')
     if (!existsSync(source)) continue
     const target = join(root, task.replace(/^\d+-/, ''))
     cpSync(source, target, { recursive: true, filter: (path) => !/[\\/](node_modules|\.git)([\\/]|$)/.test(path) })

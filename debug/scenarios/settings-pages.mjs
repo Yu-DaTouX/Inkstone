@@ -1,6 +1,7 @@
+import { evidenceDir } from '../lib/env.mjs'
 import { mkdirSync } from 'node:fs'
 
-const EVIDENCE = 'E:/pi-desktop/.local-docs/evidence/2026-10-31-settings-t3'
+const EVIDENCE = evidenceDir('2026-10-31-settings-t3')
 
 export const meta = { demo: true, description: '设置各页截图：SETTINGS_TAG 前缀（before/after），中文深色，外观页加浅色' }
 

@@ -8,7 +8,7 @@ export const debugDir = join(root, 'debug')
 export const dataDir = join(debugDir, 'data')
 export const runsDir = join(debugDir, 'runs')
 
-function mainCheckout() {
+export function mainCheckout() {
   const result = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8', windowsHide: true })
   const common = result.status === 0 ? result.stdout.trim() : ''
   return common && basename(common) === '.git' ? dirname(common) : root
@@ -18,6 +18,8 @@ export const sharedDataDir = join(mainCheckout(), 'debug', 'data')
 export const sessionSamplesDir = join(sharedDataDir, 'sessions')
 export const userSnapshotDir = join(sharedDataDir, 'user-snapshot')
 export const currentFile = join(runsDir, 'current.json')
+export const fixtureRoot = process.env.YAN_DEBUG_FIXTURES || resolve(mainCheckout(), '..', 'Inkstone', 'bench', 'Harness-test', 'tasks')
+export const evidenceDir = (name) => join(mainCheckout(), '.local-docs', 'evidence', name)
 
 export const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
 

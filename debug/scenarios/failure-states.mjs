@@ -1,9 +1,10 @@
 import { mkdirSync } from 'node:fs'
 import { analyse, sample } from '../lib/state-probe.mjs'
+import { evidenceDir } from '../lib/env.mjs'
 
 export const meta = { description: '模型失败各类状态（502 / 额度 / 鉴权 / HTML 错页 / 断网 / 半途断开 / 挂起 / 间歇失败后重试）：逐帧采样错误卡进出、消息数回退、转圈卡死、原始英文与堆栈外露，并截图' }
 
-const OUT = process.env.YAN_STATES_OUT ?? 'E:/pi-desktop/.local-docs/evidence/2026-11-07-night/states'
+const OUT = process.env.YAN_STATES_OUT ?? evidenceDir('2026-11-07-night/states')
 
 export default async function run({ cdp, box, fake, check, report, sleep, log, newSession, state, waitFor, until, shot }) {
   mkdirSync(OUT, { recursive: true })

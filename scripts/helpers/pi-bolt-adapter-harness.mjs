@@ -3,11 +3,12 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { mainCheckout } from '../../debug/lib/env.mjs'
 import { fileURLToPath } from 'node:url'
 
 export const REPO = fileURLToPath(new URL('../..', import.meta.url))
 export const EXT_DIR = join(REPO, 'resources', 'pi-extensions')
-export const PI_BOLT_EXE_DEFAULT = 'E:/pi-desktop/.tmp/pi-bolt-eval/ext/pi-bolt-win32-x64/pi-bolt.exe'
+export const PI_BOLT_EXE_DEFAULT = join(mainCheckout(), '.tmp', 'pi-bolt-eval', 'ext', 'pi-bolt-win32-x64', 'pi-bolt.exe')
 export const PI_BOLT_KNOWN_SHA256 = 'b3a706e5521099798cc92113ba4a87ea5bfdf3af43d457fc098ae13109e0626c'
 
 export function bundledCliJs() {
