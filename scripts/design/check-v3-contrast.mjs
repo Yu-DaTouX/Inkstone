@@ -132,10 +132,10 @@ const ACRYLIC_ROWS = [
   { tint: 'hover', over: ACRYLIC_PANEL }
 ]
 add('fg', [ACRYLIC_PANEL, ...ACRYLIC_ROWS], 4.5, true, '正文·左栏亚克力最坏背景')
-add('fg2', [ACRYLIC_PANEL, ...ACRYLIC_ROWS], 4.5, true, '次要文字·左栏亚克力最坏背景')
-add('fg3', [ACRYLIC_PANEL], 4.5, true, '元信息·左栏亚克力最坏背景')
-add('fg3', ACRYLIC_ROWS, 4.5, false, '元信息·左栏亚克力最坏背景·选中行')
-add('accent-t', [ACRYLIC_PANEL, ACRYLIC_ROWS[0]], 4.5, true, '链接·左栏亚克力最坏背景')
+add('side-fg2', [ACRYLIC_PANEL, ...ACRYLIC_ROWS], 4.5, true, '次要文字·左栏亚克力最坏背景')
+add('side-fg3', [ACRYLIC_PANEL], 4.5, true, '元信息·左栏亚克力最坏背景')
+add('side-fg3', ACRYLIC_ROWS, 4.5, false, '元信息·左栏亚克力最坏背景·选中行')
+add('side-accent-t', [ACRYLIC_PANEL, ACRYLIC_ROWS[0]], 4.5, true, '链接·左栏亚克力最坏背景')
 
 add('fg', SEL_BASES, 4.5, true, '正文·选中')
 add('fg2', SEL_BASES, 4.5, true, '次要文字·选中')

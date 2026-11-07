@@ -567,7 +567,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       <div
         data-slot="sidebar-wrapper"
         data-sidebar-state={preview ? 'preview' : 'open'}
-        className="flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground"
+        className="flex min-h-0 flex-1 flex-col text-sidebar-foreground"
         style={{ '--workspace-topbar-height': 'var(--size-head)' } as CSSProperties}
       >
         <SidebarChromeHeader

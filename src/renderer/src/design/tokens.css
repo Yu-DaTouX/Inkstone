@@ -5,7 +5,10 @@
     --bg: light-dark(#FCFCFB, #000000);
     --side: light-dark(#F6F9FC, #111111);
     --side-glass: light-dark(rgba(246,249,252,.95), rgba(0,0,0,.95));
-    --side-tint: light-dark(rgba(247,249,252,.88), rgba(0,0,0,.96));
+    --side-tint: light-dark(rgba(247,249,252,.75), rgba(0,0,0,.45));
+    --side-fg2: light-dark(#4D4F49, #E0E0E0);
+    --side-fg3: light-dark(#615F5A, #C8C8C8);
+    --side-accent-t: light-dark(#184F95, #B8D5F8);
     --side-sel: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.07));
     --side-rim-hi: light-dark(rgba(255,255,255,.95), rgba(255,255,255,.08));
     --side-rim-lo: light-dark(rgba(11,11,11,.07), rgba(255,255,255,.04));

@@ -297,7 +297,7 @@ function MotionPrimitivesDemo() {
           {open ? '收起' : '展开'}
         </Button>
         <Expand open={open}>
-          <p style={{ margin: 0, padding: 'var(--s-8) 0', color: 'var(--fg2)' }}>右栏分区、侧栏分段和贪睡列表共用这一种展开：先让行高过渡，再让内容淡入；收起时内容先淡出，行高随后归零。</p>
+          <p style={{ margin: 0, padding: 'var(--s-8) 0', color: 'var(--fg2)' }}>右栏分区、侧栏分段和休眠列表共用这一种展开：先让行高过渡，再让内容淡入；收起时内容先淡出，行高随后归零。</p>
         </Expand>
       </Section>
       <Section title="CondensingHeader · 滚动收缩头部（滞回 + scrollTop 补偿）">
