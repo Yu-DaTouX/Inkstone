@@ -118,6 +118,7 @@ import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { createSubagentNoticeStore } from './subagent-notice-store'
 import { createSubagentQuotaWatch } from './subagent-quota-watch'
+import { switchToSpareAccount } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
@@ -396,6 +397,11 @@ const notifySubagentFinished = createSubagentNotifier({
   runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
 })
 const subagentQuotaWatch = createSubagentQuotaWatch({
+  switchAccount: async (provider) => {
+    const result = await switchToSpareAccount(provider)
+    if (result?.switched) void restartAgent('订阅账号已自动切换').catch((error) => reportMainError('刷新运行实例', error))
+    return result
+  },
   notifyUser: ({ run, title, body }) => {
     push({ ch: 'notify', payload: { id: `subagent-quota-${run.id}`, method: 'notify', notifyType: 'warning', message: `${title}：${body}` } })
     void getSettings().then((settings) => {

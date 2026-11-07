@@ -402,7 +402,7 @@ await withController('续跑中人工停止', async ({ ctrl, id, rpc, state }) =
   ok(await waitFor(() => state.finished === 1), '停止只收口一次', String(state.finished))
 })
 
-async function withQuotaController(answers, body) {
+async function withQuotaController(answers, body, switchAccount) {
   const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-quota-'))
   const factory = makeRpcFactory()
   const state = { finished: 0, waiting: [], checks: 0 }
@@ -410,7 +410,8 @@ async function withQuotaController(answers, body) {
     cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc: factory.createRpc,
     quotaWatch: {
       check: async () => answers[Math.min(state.checks++, answers.length - 1)](),
-      waiting: (run) => state.waiting.push(run)
+      waiting: (run) => state.waiting.push(run),
+      ...(switchAccount ? { switchAccount: async (run) => { state.switches = (state.switches ?? 0) + 1; return switchAccount(run) } } : {})
     },
     onChange: () => {}, onFinished: () => { state.finished += 1 }
   })
@@ -461,6 +462,40 @@ await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)
   ok(stopped.status === 'cancelled' && stopped.quotaWait === undefined && promptCount(rpc) === 1, '等额度时可以停止，且不再续跑', JSON.stringify({ status: stopped.status, quotaWait: stopped.quotaWait }))
 })
 
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)], accounts: 3 })], async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => promptCount(rpc) === 2), '多账号撞额度时自动换号并立即续跑', rpc.commands.join(','))
+  const run = ctrl.get(id)
+  ok(state.switches === 1 && state.waiting.length === 0 && run.quotaWait === undefined && /已换到 备用号/.test(run.latestActivity ?? ''), '换号成功时不进入等待，进度写明换到哪个账号', JSON.stringify({ switches: state.switches, waiting: state.waiting.length, activity: run.latestActivity }))
+}, async () => '备用号')
+
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)], accounts: 3 })], async ({ ctrl, id, rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.waiting.length === 1), '所有账号都用完时照旧等额度', String(state.waiting.length))
+  ok(state.switches === 1 && promptCount(rpc) === 1 && ctrl.get(id).quotaWait?.accounts === 3, '没有可换的账号时不续跑', JSON.stringify({ switches: state.switches, prompts: promptCount(rpc) }))
+}, async () => null)
+
+await withQuotaController([async () => ({ windows: [blocked(Date.now() + 60_000)], accounts: 1 })], async ({ rpc, state }) => {
+  rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
+  rpc.emit('event', { type: 'agent_settled' })
+  ok(await waitFor(() => state.waiting.length === 1), '单账号撞额度直接等待', String(state.waiting.length))
+  ok(!state.switches, '单账号时不尝试换号', String(state.switches))
+}, async () => '不该用到')
+
+{
+  const { build } = await import('../node_modules/esbuild/lib/main.js')
+  const stub = { name: 'stub-switch', setup(b) { b.onResolve({ filter: /^\.\/(account-quota|api-key-pool|codex-accounts|oauth-accounts)$/ }, (args) => ({ path: args.path, namespace: 'stub' })); b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const accountQuotaReport = async () => ({ cards: [] }); export const invalidateAccountQuotaReport = () => {}; export const captureActiveApiKey = async () => ({ ok: true }); export const switchCodexAccount = async () => ({ ok: true }); export const switchOAuthAccount = async () => ({ ok: true })', loader: 'js' })) } }
+  await build({ entryPoints: ['src/main/account-autoswitch.ts'], outfile: `${BUILD_DIR}/account-autoswitch.mjs`, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', plugins: [stub] })
+  const { pickSpareAccount } = await import(`../${BUILD_DIR}/account-autoswitch.mjs`)
+  const card = (key, used, extra = {}) => ({ key, source: 'yan', provider: 'openai-codex', name: 'ChatGPT', switchable: true, status: used >= 100 ? 'limited' : 'ok', windows: [{ id: 'five', label: '5 小时', used, total: 100 }], checkedAt: 0, ...extra })
+  ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 70), card('c', 20), card('d', 100)], 'openai-codex')?.key === 'c', '挑剩余额度最多的可用账号')
+  ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 100), card('c', 5, { staleError: '读取失败' })], 'openai-codex') === null, '都用完或额度读不准时不换')
+  ok(pickSpareAccount([card('a', 10, { active: true }), card('b', 0)], 'openai-codex')?.key === 'a', '当前账号已可用时不再换（别的子代理刚换过）')
+  ok(pickSpareAccount([card('a', 100, { active: true }), card('b', 0, { provider: 'anthropic' }), card('c', 0, { source: 'codex-cli' })], 'openai-codex') === null, '只在同一服务商、砚自己管理的账号间换')
+}
+
 await withQuotaController([async () => null], async ({ ctrl, id, rpc, state }) => {
   rpc.emit('event', assistant('', { stopReason: 'error', errorMessage: USAGE_LIMIT }))
   rpc.emit('event', { type: 'agent_settled' })
@@ -478,6 +513,10 @@ await withQuotaController([async () => null], async ({ ctrl, id, rpc, state }) =
     watch.waiting({ id: 'sub-q', task: '删输入方案', model: 'openai-codex/gpt-6.1', quotaWait: { since: 1, resetAt: Date.UTC(2026, 10, 8, 8, 37), accounts } })
     ok(sent.user.length === 1 && sent.parent.length === 1, `${accounts} 个账号时主会话也收到等额度通知`, JSON.stringify({ user: sent.user.length, parent: sent.parent.length }))
     ok(/yan subagent stop --id sub-q/.test(sent.parent[0] ?? '') && /换号/.test(sent.parent[0] ?? '') === (accounts > 1), `${accounts} 个账号时主会话通知写明可停止接手${accounts > 1 ? '、可换号' : ''}`, sent.parent[0])
+    const switched = { user: [] }
+    const swWatch = createSubagentQuotaWatch({ notifyUser: (input) => switched.user.push(input), notifyParent: () => {}, switchAccount: async (provider) => accounts > 1 ? { label: `${provider}-备用`, switched: true } : null })
+    const label = await swWatch.switchAccount({ id: 'sub-q', task: '删输入方案', model: 'openai-codex/gpt-6.1' })
+    ok(accounts > 1 ? label === 'openai-codex-备用' && switched.user.length === 1 && /已自动换号/.test(switched.user[0].title) : label === null && switched.user.length === 0, `${accounts} 个账号时自动换号${accounts > 1 ? '成功并提醒' : '失败不提醒'}`, JSON.stringify({ label, user: switched.user.map((u) => u.title) }))
   }
 }
 

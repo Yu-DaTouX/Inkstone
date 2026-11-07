@@ -51,7 +51,7 @@
   "src/main/extensions-inventory.ts": 8,
   "src/main/file-search-host.ts": 2,
   "src/main/image-generation.ts": 8,
-  "src/main/index.ts": 72,
+  "src/main/index.ts": 73,
   "src/main/interactive-resources.ts": 6,
   "src/main/ipc/auth-ipc.ts": 12,
   "src/main/ipc/browser-ipc.ts": 2,

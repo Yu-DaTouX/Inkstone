@@ -10,6 +10,7 @@ import type { SubagentQuotaWatch } from './subagents'
 export interface SubagentQuotaWatchDeps {
   notifyUser(input: { run: SubagentRun; title: string; body: string }): void
   notifyParent(run: SubagentRun, text: string): void
+  switchAccount?(provider: string): Promise<{ label: string; switched: boolean } | null>
 }
 
 async function accountCount(provider: string): Promise<number> {
@@ -26,10 +27,21 @@ function subagentName(run: SubagentRun): string {
   return name.length > 40 ? `${name.slice(0, 40)}…` : name
 }
 
+const providerOf = (model: string): string => model.slice(0, Math.max(0, model.indexOf('/'))).trim().toLowerCase()
+
 export function createSubagentQuotaWatch(deps: SubagentQuotaWatchDeps): SubagentQuotaWatch {
   return {
+    ...(deps.switchAccount ? {
+      async switchAccount(run) {
+        const provider = run.model ? providerOf(run.model) : ''
+        const result = provider ? await deps.switchAccount!(provider).catch(() => null) : null
+        if (!result) return null
+        if (result.switched) deps.notifyUser({ run, title: pick('子 Agent额度用完，已自动换号', 'Subagent ran out of quota; switched accounts'), body: pick(`「${subagentName(run)}」的账号额度用完了，已换到 ${result.label} 继续。`, `"${subagentName(run)}" ran out of quota and continues on ${result.label}.`) })
+        return result.label
+      }
+    } : {}),
     async check(model) {
-      const provider = model.slice(0, Math.max(0, model.indexOf('/'))).trim().toLowerCase()
+      const provider = providerOf(model)
       if (!provider) return null
       const [quota, accounts] = await Promise.all([providerQuotaWithFallback(provider), accountCount(provider)])
       if (!quota.windows?.length || quota.staleError) return null

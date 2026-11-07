@@ -272,6 +272,7 @@ export interface SubagentOptions {
 }
 
 export interface SubagentQuotaWatch {
+  switchAccount?(run: SubagentRun): Promise<string | null>
   check(model: string): Promise<{ windows: QuotaWindow[]; accounts: number } | null>
   waiting(run: SubagentRun): void
 }
@@ -1762,6 +1763,8 @@ export class SubagentController {
     }
     clearTimeout(run.timer)
     run.quotaBounces = (run.quotaBounces ?? 0) + 1
+    if (!first.ready && first.accounts > 1 && await this.trySpareAccount(run, live)) return
+    if (!live()) return
     run.quotaWait = { since: Date.now(), ...(first.resetAt !== undefined ? { resetAt: first.resetAt } : {}), accounts: first.accounts }
     run.stopReason = undefined
     run.error = undefined
@@ -1779,6 +1782,8 @@ export class SubagentController {
       if (!live() || !run.quotaWait) return
       const next = await this.quotaDecision(run)
       if (!live() || !run.quotaWait) return
+      if (!next?.ready && (next?.accounts ?? 1) > 1 && await this.trySpareAccount(run, live)) return
+      if (!live() || !run.quotaWait) return
       if (!next?.ready) {
         if (next && next.resetAt !== run.quotaWait.resetAt) {
           run.quotaWait = { ...run.quotaWait, ...(next.resetAt !== undefined ? { resetAt: next.resetAt } : {}) }
@@ -1793,14 +1798,21 @@ export class SubagentController {
     schedule(first.ready ? Date.now() + QUOTA_RESUME_POLL_MS : first.nextCheckAt)
   }
 
-  private async resumeAfterQuota(run: Run): Promise<void> {
+  private async trySpareAccount(run: Run, live: () => boolean): Promise<boolean> {
+    const label = await this.opts.quotaWatch!.switchAccount?.(this.snapshot(run)).catch(() => null)
+    if (!label || !live()) return false
+    await this.resumeAfterQuota(run, pick(`额度用完，已换到 ${label} 继续…`, `Quota exhausted; continuing on ${label}…`))
+    return true
+  }
+
+  private async resumeAfterQuota(run: Run, activity = pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…')): Promise<void> {
     const waited = run.quotaWait ? Date.now() - run.quotaWait.since : 0
     run.activeSince += waited
     run.quotaWait = undefined
     run.lastModelErrorText = undefined
     run.retryAttempt = undefined
     run.lastProgressAt = Date.now()
-    run.latestActivity = pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…')
+    run.latestActivity = activity
     this.armWatch(run)
     this.emit(run)
     try {
