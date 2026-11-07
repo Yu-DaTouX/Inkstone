@@ -9,7 +9,7 @@ import { remoteHistoryPage, remoteToolCall } from '../shared/remote-history-page
 import { approvalDigest, applyHumanApproval, remoteApprovalQuestion } from './remote-approval'
 import type { ApprovalBroker } from './approval-broker'
 import { localizeImage } from './image-store'
-import { setManualTitle } from './title'
+import { cachedTitles, manualTitles, setManualTitle } from './title'
 import { getSettings } from './settings'
 import { listSessions } from './sessions'
 import { PeerGrantRegistry } from './peer-grants'
@@ -51,13 +51,24 @@ let host: RemoteHost
 const REMOTE_SESSIONS_TTL_MS = 2000
 let sessionsCache: { at: number; limit: number; list: SessionSummary[] } | null = null
 
+export function withDesktopTitles(list: SessionSummary[], manual: Record<string, string>, generated: Record<string, string>): SessionSummary[] {
+  return list.map((summary) => {
+    const title = manual[summary.id]?.trim() || generated[summary.id]?.trim()
+    return title && title !== summary.title ? { ...summary, title, named: summary.named || !!manual[summary.id]?.trim() } : summary
+  })
+}
+
 async function remoteSessions(limit: number, fresh = false): Promise<SessionSummary[]> {
   const now = Date.now()
-  if (!fresh && sessionsCache && sessionsCache.limit === limit && now - sessionsCache.at < REMOTE_SESSIONS_TTL_MS) return sessionsCache.list
-  const settings = await getSettings()
-  const list = await listSessions(limit, settings.projects)
-  sessionsCache = { at: now, limit, list }
-  return list
+  let list: SessionSummary[]
+  if (!fresh && sessionsCache && sessionsCache.limit === limit && now - sessionsCache.at < REMOTE_SESSIONS_TTL_MS) list = sessionsCache.list
+  else {
+    const settings = await getSettings()
+    list = await listSessions(limit, settings.projects)
+    sessionsCache = { at: now, limit, list }
+  }
+  const [manual, generated] = await Promise.all([manualTitles().catch(() => ({})), cachedTitles().catch(() => ({}))])
+  return withDesktopTitles(list, manual, generated)
 }
 
 export function configureRemoteHost(next: RemoteHost): void {
@@ -366,11 +377,34 @@ async function remotePlan(sessionFile: string, sessionId: string): Promise<{ tod
   return { todos: latest.todos, stale: rounds > latest.round }
 }
 
+const QUEUE_ITEMS_MAX = 20
+const QUEUE_TEXT_MAX = 500
+
+export function remoteQueueOf(snapshot: { steering: string[]; followUp: string[] } | null | undefined): { steering: string[]; followUp: string[] } | undefined {
+  if (!snapshot) return undefined
+  const clip = (list: string[]) => list.filter((text) => text.trim() && !text.trimStart().startsWith('<subagent-notification')).slice(0, QUEUE_ITEMS_MAX).map((text) => text.length > QUEUE_TEXT_MAX ? `${text.slice(0, QUEUE_TEXT_MAX)}…` : text)
+  const queue = { steering: clip(snapshot.steering), followUp: clip(snapshot.followUp) }
+  return queue.steering.length || queue.followUp.length ? queue : undefined
+}
+
+function sessionQueue(sessionId: string): { steering: string[]; followUp: string[] } | undefined {
+  const status = host.runners()?.statuses().find((item) => item.sessionId === sessionId)
+  const agent = status ? host.runners()?.agentOf(status.runId) : null
+  try {
+    return remoteQueueOf(agent?.queueSnapshot())
+  } catch {
+    return undefined
+  }
+}
+
 export async function remoteHistory(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult> {
   const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
   if (!summary) {
     const unsaved = unsavedSessionSummary(sessionId)
-    if (unsaved) return { ok: true, data: { session: remoteSessionSummary(unsaved), messages: [], total: 0, returned: 0, hasMore: false, truncated: false, truncatedBytes: 0, bytes: 0 } }
+    if (unsaved) {
+      const queue = before ? undefined : sessionQueue(sessionId)
+      return { ok: true, data: { session: remoteSessionSummary(unsaved), messages: [], ...(queue ? { queue } : {}), total: 0, returned: 0, hasMore: false, truncated: false, truncatedBytes: 0, bytes: 0 } }
+    }
     return { ok: false, status: 404, error: pick('找不到目标会话，可能已被删除', 'Session not found. It may have been deleted') }
   }
 
@@ -385,12 +419,14 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
     ...(message.artifacts ? { artifacts: message.artifacts.map(remoteArtifactOf) } : {})
   }))
   const plan = before ? undefined : await remotePlan(summary.path, summary.id)
+  const queue = before ? undefined : sessionQueue(summary.id)
   return {
     ok: true,
     data: {
       session: remoteSessionSummary(summary),
       messages,
       ...(plan ? { plan } : {}),
+      ...(queue ? { queue } : {}),
       total: result.total,
       returned: messages.length,
       hasMore: page.hasMore,

@@ -6,9 +6,10 @@ import { font, lineHeight, mono, radius, space, touch, usePalette, weight } from
 
 function Inline({ value }: { value: string }) {
   const p = usePalette()
-  const parts = value.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g)
+  const parts = value.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\)|(?<![\w*])\*(?![\s*])[^*\n]*?[^\s*]\*(?![\w*]))/g)
   return <Text>{parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <Text key={index} style={{ color: p.fg, fontWeight: weight.strong }}>{part.slice(2, -2)}</Text>
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <Text key={index} style={{ color: p.ink ?? p.fg, fontWeight: weight.bold }}>{part.slice(2, -2)}</Text>
+    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) return <Text key={index} style={{ color: p.fgMute }}>{part.slice(1, -1)}</Text>
     if (part.startsWith('`') && part.endsWith('`') && part.length > 2) return <Text key={index} style={{ fontFamily: mono, fontSize: font.sm, color: p.fg, backgroundColor: p.codeInline }}> {part.slice(1, -1)} </Text>
     const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part)
     if (link) return /^https?:\/\//.test(link[2])

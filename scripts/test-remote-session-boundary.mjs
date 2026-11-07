@@ -10,7 +10,7 @@ const stubs = {
   electron: 'export const nativeImage = { createFromBuffer: () => ({ isEmpty: () => false }) }',
   './remote-approval': 'export const approvalDigest = () => "d"; export const applyHumanApproval = async () => ({ok:false}); export const remoteApprovalQuestion = x => x',
   './image-store': 'export const localizeImage = () => ""',
-  './title': 'export const setManualTitle = async () => ({ok:true})',
+  './title': 'export const setManualTitle = async () => ({ok:true}); export const manualTitles = async () => ({}); export const cachedTitles = async () => ({})',
   './settings': 'export const getSettings = async () => globalThis.__boundary.settings',
   './sessions': 'export const listSessions = async () => globalThis.__boundary.sessions.map(x => ({...x})); export const deleteSession = async () => ""; export const restoreSession = async () => undefined; export const sessionsToDelete = async () => []; export const SESSIONS_DIR = ""',
   './peer-grants': 'export class PeerGrantRegistry {}',

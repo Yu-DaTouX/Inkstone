@@ -167,7 +167,7 @@ export function AssistantScreen({ onBack, onOpenSettings, onConfigure, conversat
         >
           {isUser
             ? <Text style={[styles.bubbleText, { color: p.fg }]}>{m.text.length ? m.text : ' '}</Text>
-            : <Markdown text={m.text.length ? m.text : ' '} color={p.fg} codeBg={p.bg3} accent={p.accent} />}
+            : <Markdown text={m.text.length ? m.text : ' '} color={p.fg} codeBg={p.bg3} accent={p.accent} dim={p.fgMute} ink={p.ink ?? p.fg} />}
         </Pressable>
         {m.pending ? <Meta style={{ marginTop: space[1] }}>{pick('正在等待回复…', 'Waiting for reply…')}</Meta> : null}
         {m.error ? (

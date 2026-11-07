@@ -214,6 +214,7 @@ export interface PlanTodo {
 export interface HistoryPage {
   messages: HistoryMessage[]
   plan?: { todos: PlanTodo[]; stale: boolean }
+  queue?: { steering: string[]; followUp: string[] }
   truncated?: number | boolean
   total?: number
   hasMore?: boolean

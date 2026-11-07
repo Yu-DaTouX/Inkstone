@@ -338,7 +338,7 @@ try {
       oldSrc = ''
     }
     const oldHasFlush =
-      /isSubagentNotice\(m\.text\)\)\s*\{\s*\n\s*flush\(\)/.test(oldSrc)
+      /(?:isSubagentNotice\(m\.text\)\)|\?\.kind === 'subagent'\))\s*\{\s*\n\s*flush\(\)/.test(oldSrc)
     if (!oldSrc || oldHasFlush) {
       console.log('• HEAD 已含边界 flush（或取不到历史源码），跳过修复前复现')
     } else {
@@ -347,6 +347,7 @@ try {
       const patched = oldSrc
         .replaceAll("from './ipc'", "from '../../src/shared/ipc'")
         .replaceAll("from './subagent-notice'", "from '../../src/shared/subagent-notice'")
+        .replaceAll("from './host-notice'", "from '../../src/shared/host-notice'")
       await writeFile(join(dir, 'old-turns.ts'), patched, 'utf8')
       const oldOut = join(dir, 'old-turns.mjs')
       await build({

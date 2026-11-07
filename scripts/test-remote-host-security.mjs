@@ -16,7 +16,7 @@ const stubModules = {
   electron: 'export const nativeImage = { createFromBuffer: () => ({ isEmpty: () => false }) }',
   './remote-approval': 'export const approvalDigest = () => "d"; export const applyHumanApproval = async () => ({ ok: false }); export const remoteApprovalQuestion = (request) => request',
   './image-store': 'export const localizeImage = () => ""',
-  './title': 'export const setManualTitle = async () => ({ ok: true })',
+  './title': 'export const setManualTitle = async () => ({ ok: true }); export const manualTitles = async () => ({}); export const cachedTitles = async () => ({})',
   './settings': 'export const getSettings = (...args) => globalThis.__rh.getSettings(...args)',
   './sessions': 'export const listSessions = (...args) => globalThis.__rh.listSessions(...args); export const deleteSession = async (file) => { globalThis.__rh.deleted.push(file); return "tok" }; export const restoreSession = async () => undefined; export const sessionsToDelete = async () => []; export const SESSIONS_DIR = ""',
   './session-search': 'export const searchSessionText = (...args) => globalThis.__rh.search(...args)',

@@ -44,7 +44,7 @@ export function useRemote(): RemoteState {
   return value
 }
 
-const MESSAGE_CHANNELS = new Set(['msg-add', 'msg-update', 'msg-remove', 'tool', 'session-title'])
+const MESSAGE_CHANNELS = new Set(['msg-add', 'msg-update', 'msg-remove', 'tool', 'session-title', 'queue'])
 
 export type SessionEventKind = 'messages' | 'subagents' | 'stats'
 const QUESTION_CHANNELS = new Set(['ui-request', 'ui-resolved', 'ui-deadline', 'approval', 'approval-close'])

@@ -42,8 +42,32 @@ export function liveFlows({ boot, openSession, check, env }) {
     await ctx.close()
   }
 
+  async function flowQueue() {
+    const tag = '[排队消息]'
+    const ctx = await boot()
+    const { desk, h } = ctx
+    await h.waitFor(() => h.matchLabel(/已连接/).length, `${tag} 事件流连上`)
+    desk.state.running = true
+    desk.state.queue = { 's-1': { steering: ['先停一下，改用 pnpm'], followUp: ['做完顺便跑一下测试'] } }
+    desk.state.messages = [...desk.state.messages, { id: 'a2', role: 'assistant', text: '改好了 *顺手清了缓存* 但 **还没推送**', timestamp: Date.now() - 1000 }]
+    await openSession(h, '第一个会话')
+    await h.waitFor(() => h.has('先停一下，改用 pnpm'), `${tag} 打开会话就显示插话`)
+    check(h.has('做完顺便跑一下测试') && h.has('插话') && h.has('排队'), `${tag} 插话与排队分别标出`)
+    check(h.matchLabel(/2 条消息等待发送/).length === 1, `${tag} 读屏说明等待条数`)
+    check(h.has('顺手清了缓存') && !h.text().includes('*顺手清了缓存*') && !h.text().includes('**还没推送**'), `${tag} 附带说明与需要注意不再显示星号`, h.text().slice(-200))
+    desk.state.queue = { 's-1': { steering: [], followUp: ['做完顺便跑一下测试'] } }
+    desk.server.publish({ ch: 'queue', payload: {}, runtime: { sessionId: 's-1' } })
+    await h.waitFor(() => !h.has('先停一下，改用 pnpm'), `${tag} 插话被消费后由 queue 推送刷新掉`)
+    check(h.has('做完顺便跑一下测试'), `${tag} 剩下的排队仍在`)
+    desk.state.queue = {}
+    desk.server.publish({ ch: 'queue', payload: {}, runtime: { sessionId: 's-1' } })
+    await h.waitFor(() => !h.has('做完顺便跑一下测试') && !h.matchLabel(/条消息等待发送/).length, `${tag} 队列清空后整块消失`)
+    await ctx.close()
+  }
+
   return [
     ['实时事件与发送', flowLive],
+    ['排队消息', flowQueue],
     ['连接中被撤销', flowRevokedLive]
   ]
 }

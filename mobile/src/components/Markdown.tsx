@@ -14,7 +14,7 @@ type Block =
 
 function parseInline(line: string): Inline[] {
   const segments: Inline[] = []
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/g
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|(?<![\w*])\*(?![\s*])[^*\n]*?[^\s*]\*(?![\w*]))/g
   let last = 0
   for (const match of line.matchAll(pattern)) {
     const at = match.index ?? 0
@@ -73,20 +73,20 @@ function parseBlocks(text: string): Block[] {
   return blocks
 }
 
-function InlineText({ parts, color, codeBg, accent, style }: { parts: Inline[]; color: string; codeBg: string; accent: string; style?: object }) {
+function InlineText({ parts, color, codeBg, accent, style, dim, ink }: { parts: Inline[]; color: string; codeBg: string; accent: string; style?: object; dim?: string; ink?: string }) {
   return (
     <Text style={[{ color, fontSize: font.body, lineHeight: 24 }, style]}>
       {parts.map((part, index) => {
         if (part.code) return <Text key={index} style={{ fontFamily: mono, fontSize: font.sm, backgroundColor: codeBg, color: accent }}>{part.text}</Text>
-        if (part.bold) return <Text key={index} style={{ fontWeight: weight.strong }}>{part.text}</Text>
-        if (part.italic) return <Text key={index} style={{ fontStyle: 'italic' }}>{part.text}</Text>
+        if (part.bold) return <Text key={index} style={{ fontWeight: weight.bold, color: ink ?? color }}>{part.text}</Text>
+        if (part.italic) return <Text key={index} style={{ color: dim ?? color }}>{part.text}</Text>
         return <Text key={index}>{part.text}</Text>
       })}
     </Text>
   )
 }
 
-export function Markdown({ text, color, codeBg, accent }: { text: string; color: string; codeBg: string; accent: string }) {
+export function Markdown({ text, color, codeBg, accent, dim, ink }: { text: string; color: string; codeBg: string; accent: string; dim?: string; ink?: string }) {
   const blocks = useMemo(() => parseBlocks(text), [text])
   return (
     <View style={styles.root}>
@@ -110,7 +110,7 @@ export function Markdown({ text, color, codeBg, accent }: { text: string; color:
               {block.items.map((item, itemIndex) => (
                 <View key={itemIndex} style={styles.listItem}>
                   <Text style={{ color: accent, fontSize: font.body, lineHeight: 24 }}>{block.ordered ? `${itemIndex + 1}.` : '·'}</Text>
-                  <InlineText parts={parseInline(item)} color={color} codeBg={codeBg} accent={accent} style={styles.listText} />
+                  <InlineText parts={parseInline(item)} color={color} codeBg={codeBg} accent={accent} dim={dim} ink={ink} style={styles.listText} />
                 </View>
               ))}
             </View>
@@ -119,11 +119,11 @@ export function Markdown({ text, color, codeBg, accent }: { text: string; color:
         if (block.kind === 'quote') {
           return (
             <View key={index} style={[styles.quote, { borderLeftColor: accent }]}>
-              <InlineText parts={parseInline(block.lines.join(' '))} color={color} codeBg={codeBg} accent={accent} />
+              <InlineText parts={parseInline(block.lines.join(' '))} color={color} codeBg={codeBg} accent={accent} dim={dim} ink={ink} />
             </View>
           )
         }
-        return <InlineText key={index} parts={parseInline(block.lines.join(' '))} color={color} codeBg={codeBg} accent={accent} />
+        return <InlineText key={index} parts={parseInline(block.lines.join(' '))} color={color} codeBg={codeBg} accent={accent} dim={dim} ink={ink} />
       })}
     </View>
   )

@@ -46,7 +46,7 @@ export interface Palette {
 export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32 } as const
 export const radius = { xs: 4, sm: 6, md: 8, lg: 10, bubble: 12, xl: 14, composer: 16, full: 999 } as const
 export const font = { xs: 12, sm: 13, base: 14, body: 15, lg: 15, title: 20 } as const
-export const weight = { regular: '400', medium: '500', strong: '600' } as const
+export const weight = { regular: '400', medium: '500', strong: '600', bold: '700' } as const
 export const lineHeight = { row: 24, body: 24 } as const
 export const icon = { sm: 16, md: 18, lg: 24 } as const
 export const touch = { min: 44, compact: 36 } as const

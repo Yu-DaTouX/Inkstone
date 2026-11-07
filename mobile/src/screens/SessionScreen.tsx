@@ -4,6 +4,7 @@ import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Press
 import { idempotencyKey, RemoteHttpError, type HistoryMessage, type HistoryPage, type SubagentInfo } from '../api/client'
 import type { SessionDetail } from '../components/DetailPane'
 import { QuestionCard } from '../components/QuestionCard'
+import { QueuedMessages } from '../components/QueuedMessages'
 import { TimelineRow } from '../components/TimelineRow'
 import { SHOWN_ROLES, liveProcessKey, makeTimeline, reuseMessages, stabilizeTimeline, type ImageRef, type TimelineEntry } from '../timeline'
 import { ImageViewer } from '../components/ImageViewer'
@@ -82,6 +83,7 @@ export function SessionScreen({
   const legacyLimit = useRef(60)
   const [error, setError] = useState<string | null>(null)
   const [plan, setPlan] = useState<HistoryPage['plan']>(cached?.plan)
+  const [queue, setQueue] = useState<HistoryPage['queue']>(cached?.queue)
   const [subagents, setSubagents] = useState<SubagentInfo[]>([])
   const subagentsAllowed = capabilityAllowed(info, 'subagents')
   const insightAllowed = capabilityAllowed(info, 'insight')
@@ -166,6 +168,7 @@ export function SessionScreen({
         pagination.current = typeof history.hasMore === 'boolean'
         if (pagination.current) setLimitedOlder(false)
         setPlan((current) => (JSON.stringify(current) === JSON.stringify(history.plan) ? current : history.plan))
+        setQueue((current) => (JSON.stringify(current) === JSON.stringify(history.queue) ? current : history.queue))
         const merged = mergeRecentHistory(rawHistory.current, history.messages)
         const reused = reuseMessages(rawHistory.current, merged.messages)
         if (reused !== rawHistory.current) {
@@ -414,6 +417,7 @@ export function SessionScreen({
           <View style={styles.flex} />
           {onOpenDetail ? <Icon name="chevron-right" size={icon.sm} color={p.fgMute} /> : null}
         </Pressable> : null}
+        <QueuedMessages queue={queue} />
         <View style={[styles.inputFrame, { backgroundColor: p.surface, borderColor: p.borderSoft }]}>
         <TextInput
           disableFullscreenUI
