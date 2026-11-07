@@ -339,7 +339,7 @@ if (process.env.YAN_PROBE) {
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 if (smoothTextEnabledSync()) app.commandLine.appendSwitch('disable-lcd-text')
 
-const APP_ID = 'com.yudatoux.yan'
+const APP_ID = app.isPackaged ? 'com.yudatoux.yan' : 'com.yudatoux.yan.dev'
 
 
 try {

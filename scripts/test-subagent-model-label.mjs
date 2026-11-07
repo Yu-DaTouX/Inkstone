@@ -29,7 +29,15 @@ try {
   assert.deepEqual(resolve('gpt-6-luna', models, parent), { ok: true, label: 'openai-codex/gpt-6-luna' }, '唯一匹配补全供应商')
   assert.deepEqual(resolve('DeepSeek V4.1 Flash', models, parent), { ok: true, label: parent }, '按显示名匹配')
   assert.deepEqual(resolve('deepseek-v4.1-flash-fast', models, parent), { ok: true, label: 'commandcode/deepseek/deepseek-v4.1-flash-fast' }, '后缀不同的模型不会互相误配')
-  assert.deepEqual(resolve('unknown-model', models, parent), { ok: true, label: 'unknown-model' }, '找不到时原样交给 pi 报错')
+  assert.deepEqual(resolve('deepseek4.1flash', models, parent), { ok: true, label: parent }, '省略 v 和连字符也能认出')
+  assert.deepEqual(resolve('commandcode/DeepSeek-V4.1-Flash-Fast', models, parent), { ok: true, label: 'commandcode/deepseek/deepseek-v4.1-flash-fast' }, '宽松匹配不会把 fast 误配成普通版')
+  assert.deepEqual(resolve('gpt6luna', models, parent), { ok: true, label: 'openai-codex/gpt-6-luna' }, '宽松匹配补全供应商')
+  const unknown = resolve('deepseek-r9', models, parent)
+  assert.equal(unknown.ok, false, '找不到时在派发前就报错，不再原样放行')
+  assert.match(unknown.error, /deepseek-r9/, '报错写明要的模型')
+  assert.match(unknown.error, /相近的有：commandcode\/deepseek\/deepseek-v4\.1-flash/, '报错列出相近候选')
+  assert.ok(!/gpt-6-luna/.test(unknown.error), '相近候选只列同名族的模型')
+  assert.match(resolve('zzz', models, parent).error, /可用的有：/, '完全不像时列出可用模型')
   assert.deepEqual(resolve('deepseek-v4.1-flash', [], parent), { ok: true, label: 'deepseek-v4.1-flash' }, '没有模型清单时不改写')
 
   const ambiguous = resolve('deepseek-v4.1-flash', models, 'openai-codex/gpt-6-luna')
@@ -54,7 +62,7 @@ try {
   assert.deepEqual(pick(undefined, [], parent, pref), { ok: true, label: 'openai-codex/gpt-6-luna' }, '没有模型清单时直接信任设置')
   assert.equal(pick('deepseek-v4.1-flash', models, 'openai-codex/gpt-6-luna').ok, false, '无设置时保持原有歧义报错')
 
-  console.log('test-subagent-model-label: 22 项通过')
+  console.log('test-subagent-model-label: 29 项通过')
 } finally {
   await rm(dir, { recursive: true, force: true })
 }

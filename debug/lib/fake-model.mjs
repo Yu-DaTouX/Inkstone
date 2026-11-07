@@ -100,6 +100,7 @@ export const FAKE_TRIGGERS = {
   FAIL: '返回 502，用来看模型错误与重试；FAILQUOTA 429 额度用完，FAILAUTH 401，FAILHTML 503 网关错页，FAILNET 断开连接，FAILHANG 不响应，FAILFLAKY 前两次 502 之后成功，FAILMID 流到一半断开',
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
+  PHONE: '用 yan phone 依次查设备、读界面、按 Home 键（PHONEDEV=<序列号> 指定设备），用来验证手机操控走通 CLI 与宿主',
   MULTIASK: '一次只有一个多选字段的表单提问，自填答案走主输入框，用来看表单题接到输入框',
   KEYFAILOVER: '当前 Key 是 bad-key 时返回 401，换 Key 后正常回答，用来验证 Key 故障转移',
   CRASHBASH: '跑一条 60 秒的 bash，用来测进程被杀后的历史与续接',
@@ -310,6 +311,18 @@ async function respond(res, text, done, requestNo) {
       if (done < 1) await callTool('question', { question: '请提供数据库密码' })
       else if (done === 1) await callTool('bash', { command: 'echo "pw=$YAN_SECRET_VALUE"; printf %s "$YAN_SECRET_VALUE" | base64', description: '读取密文环境变量' })
       else await streamText(secretMarkerSeen ? 'MODEL-SAW-SECRET' : 'MODEL-CLEAN', 20, 10)
+    } else if (text.includes('PHONE')) {
+      const dev = /PHONEDEV=(\S+)/.exec(text)?.[1]
+      const flag = dev ? ` --device ${dev}` : ''
+      const steps = [
+        { command: 'yan phone devices', description: '查连着的手机' },
+        { command: `yan phone ui${flag}`, description: '读手机界面' },
+        { command: `yan phone key --key home${flag}`, description: '手机回到桌面' }
+      ]
+      if (done < steps.length) {
+        await streamText(`手机第 ${done + 1} 步。`, 20, 0)
+        await callTool('bash', steps[done])
+      } else await streamText('手机测试结束。', 20, 10)
     } else if (text.includes('MULTIASK')) {
       if (done < 1) await callTool('question', { question: '按键还有几处和微信不同，要改成微信那样的勾选上：', fields: [
         { name: 'keys', label: '要跟微信一致的按键', kind: 'multi', options: ['第二行左右各缩进半个键', '第三行左下角换成 Shift', '底行去掉「符」键'] }

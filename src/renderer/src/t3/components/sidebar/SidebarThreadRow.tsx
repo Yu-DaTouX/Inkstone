@@ -173,7 +173,13 @@ const DROP_VERB_PRESENTATION: Record<
 
 function TopStatusIcon({ icon, className }: { icon: TopStatusIconName; className: string }) {
   const Icon = TOP_STATUS_ICONS[icon];
-  return <Icon aria-hidden className={cn("shrink-0", className)} />;
+  return (
+    <Icon
+      aria-hidden
+      data-status-icon={icon}
+      className={cn("shrink-0", icon === "working" && "motion-safe:animate-[spin_3s_linear_infinite]", className)}
+    />
+  );
 }
 
 function formatElapsed(ms: number): string {
@@ -751,12 +757,13 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                           )}
                         >
                           <TopStatusIcon icon={topStatus.icon} className="size-4" />
-                          {t(topStatus.labelKey)}
-                          {status === "working" ? (
-                            <span aria-hidden>
+                          {status === "working" && view.workingStartedAt !== null ? (
+                            <span aria-hidden title={t(topStatus.labelKey)}>
                               <WorkingDuration startedAt={view.workingStartedAt} />
                             </span>
-                          ) : null}
+                          ) : (
+                            t(topStatus.labelKey)
+                          )}
                         </span>
                       ) : (
                         clockTime
