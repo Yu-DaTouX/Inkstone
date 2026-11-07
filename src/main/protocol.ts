@@ -250,6 +250,10 @@ export class PiRpc extends EventEmitter {
     return this.child !== null && !this.closed
   }
 
+  get pid(): number | undefined {
+    return this.running ? this.child?.pid : undefined
+  }
+
   spawn(): void {
     if (this.child) return
     this.closed = false

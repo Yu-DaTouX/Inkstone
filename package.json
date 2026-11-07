@@ -45,6 +45,7 @@
     "check": "npm run typecheck && npm run check:shell-icons && npm run check:icons && npm run build && npm run test:unit && npm run test:ondemand && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live sound hotkeys browserframes pending working queuestack deltas fileref modelswitch sessionlayout runnerselect",
     "test:unit": "node scripts/test-unit.mjs",
     "test:ondemand": "node scripts/test-debug-demo.mjs && node scripts/test-browser-frame-network.mjs",
+    "test:browser-t3": "node scripts/test-browser-session-scope.mjs && node scripts/test-local-servers.mjs && node scripts/test-local-server-owner.mjs",
     "test:checkpoints": "node scripts/test-checkpoints.mjs",
     "test:agent-native-context": "node scripts/test-agent-native-context.mjs",
     "test:remote-security": "node scripts/test-remote-security.mjs && node scripts/test-remote-host-security.mjs",

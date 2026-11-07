@@ -59,7 +59,9 @@ import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController, DOWNLOAD_CONFIRM_BYTES, type LargeDownload } from './browser'
 import { openableExternalUrl } from './external-url'
-import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSink } from './terminal'
+import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSink, terminalProcessId } from './terminal'
+import { agentTerminalIds } from './terminal-agent'
+import { installLocalServerControl } from './browser/local-server-owner'
 import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
@@ -3193,7 +3195,11 @@ function registerIpc(): void {
     }
   })
   void previewSites.ready()
-  registerBrowserIpc(ipc, () => browser, previewSites, answerBrowserSiteApproval)
+  const localServerControl = installLocalServerControl(() => [
+    ...(runners?.agents() ?? []).map((agent) => agent.processId()),
+    ...agentTerminalIds().map(terminalProcessId)
+  ].filter((pid): pid is number => typeof pid === 'number'))
+  registerBrowserIpc(ipc, () => browser, previewSites, answerBrowserSiteApproval, localServerControl)
 
   registerPeerIpc(ipc, peerClient)
 

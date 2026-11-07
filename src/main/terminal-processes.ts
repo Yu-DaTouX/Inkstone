@@ -68,7 +68,7 @@ function run(file: string, args: string[]): Promise<string> {
   })
 }
 
-async function readProcessTable(platform: NodeJS.Platform): Promise<ProcessRow[]> {
+export async function readProcessTable(platform: NodeJS.Platform): Promise<ProcessRow[]> {
   if (platform === 'win32') {
     const shell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
     const output = await run(shell, [

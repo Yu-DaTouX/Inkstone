@@ -45,8 +45,8 @@ import type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalKind, ApprovalReceipt, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
 import type { BrowserLoadFailure } from './browser-navigation'
-import type { LocalServerSnapshot } from './local-servers'
-export type { LocalServerInfo, LocalServerSnapshot } from './local-servers'
+import type { LocalServerSnapshot, LocalServerStopResult } from './local-servers'
+export type { LocalServerInfo, LocalServerSnapshot, LocalServerStopResult } from './local-servers'
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
@@ -2045,6 +2045,7 @@ export interface YanBridge {
     snapshot(): Promise<string | null>
     setViewport(viewport: BrowserViewport): Promise<void>
     localServers(): Promise<LocalServerSnapshot>
+    stopLocalServer(port: number): Promise<LocalServerStopResult>
   }
   office: {
     preview(path: string, cwd?: string): Promise<import('./office').OfficeDocumentView>

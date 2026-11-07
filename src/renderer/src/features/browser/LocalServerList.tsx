@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { Globe, RotateCw, Server } from 'lucide-react'
+import { Globe, RotateCw, Server, Square } from 'lucide-react'
 import { useT } from '../../i18n'
 import { IconButton, Notice, RailRow } from '../../ui'
 import type { LocalServerInfo } from '../../../../shared/local-servers'
@@ -36,6 +36,7 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
   const [servers, setServers] = useState<LocalServerInfo[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const alive = useRef(true)
+  const [stopping, setStopping] = useState<number | null>(null)
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true)
@@ -44,6 +45,14 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
     setRefreshing(false)
     if (snapshot) setServers(snapshot.servers ?? [])
   }, [])
+
+  const stop = useCallback(async (port: number) => {
+    setStopping(port)
+    await window.yan.browser.stopLocalServer(port).catch(() => null)
+    if (!alive.current) return
+    setStopping(null)
+    void load()
+  }, [load])
 
   useEffect(() => {
     alive.current = true
@@ -108,6 +117,20 @@ export function LocalServerList({ active, compact, iconOnly, onOpen }: LocalServ
               icon={<ServerFavicon url={server.url} />}
               value={`${server.host}:${server.port}`}
               title={server.url}
+              action={
+                server.agentStarted ? (
+                  <IconButton
+                    aria-label={t('browser.localServerStop')}
+                    tooltip={t('browser.localServerStop')}
+                    size="sm"
+                    isPending={stopping === server.port}
+                    data-testid="browser-local-server-stop"
+                    onPress={() => void stop(server.port)}
+                  >
+                    <Square size={12} aria-hidden="true" />
+                  </IconButton>
+                ) : undefined
+              }
               data-testid="browser-local-server-row"
               buttonProps={{ 'data-testid': 'browser-local-server-open' }}
               onPress={() => onOpen(server.url)}

@@ -49,6 +49,7 @@ import { decideRequestBoundary } from './browser/network-boundary'
 import { decideExternalRequest } from './browser/external-boundary'
 import { createStateFlush, ownedViewVisible } from './browser/host-state'
 import { pick } from '../shared/ui-lang'
+import { SessionScope } from './browser/session-scope'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -221,7 +222,14 @@ export class BrowserController {
       revoke: (reason: BrowserTransferRevokeReason) => void
     }
   >()
-  private focusSessionId = 'workspace'
+  private readonly sessionScope = new SessionScope()
+  private ambientFocusSessionId = 'workspace'
+  private get focusSessionId(): string {
+    return this.sessionScope.current() ?? this.ambientFocusSessionId
+  }
+  private set focusSessionId(id: string) {
+    this.ambientFocusSessionId = id
+  }
   private viewerSessionId = 'workspace'
   private readonly activeBySession = new Map<string, string | null>()
   private get activeTabId(): string | null {
@@ -231,19 +239,20 @@ export class BrowserController {
     this.activeBySession.set(this.focusSessionId, id)
   }
   forSession(sessionId: string): this {
-    if (sessionId && sessionId !== this.focusSessionId) {
-      this.focusSessionId = sessionId
+    if (!sessionId) return this
+    if (sessionId !== this.ambientFocusSessionId) {
+      this.ambientFocusSessionId = sessionId
       this.updateState()
     }
-    return this
+    return this.sessionScope.bind(this, sessionId)
   }
   userSession(sessionId?: string): this {
     const target = sessionId || this.viewerSessionId
-    const changed = target !== this.focusSessionId || target !== this.viewerSessionId
+    const changed = target !== this.ambientFocusSessionId || target !== this.viewerSessionId
     this.viewerSessionId = target
-    this.focusSessionId = target
-    if (changed) this.showOnlyOwnedView(this.activeTabId)
-    return this
+    this.ambientFocusSessionId = target
+    if (changed) this.showOnlyOwnedView(this.activeBySession.get(target) ?? null)
+    return this.sessionScope.bind(this, target)
   }
   activateSession(sessionId: string): BrowserState {
     this.viewerSessionId = sessionId

@@ -110,6 +110,7 @@
   "browser.localServers": "Local servers",
   "browser.localServersEmpty": "No local development server is listening",
   "browser.localServersListening": "Listening",
+  "browser.localServerStop": "Stop (started by the agent)",
   "browser.localServersRefresh": "Refresh local servers",
   "browser.more": "More actions",
   "browser.navigateError": "Could not open this address",
