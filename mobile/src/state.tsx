@@ -15,6 +15,8 @@ export interface RunnerInfo {
   isActive?: boolean
   failed?: boolean
   model?: RemoteModel
+  compacting?: boolean
+  retry?: { attempt: number; maxAttempts: number }
 }
 
 interface RemoteState {

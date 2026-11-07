@@ -124,7 +124,8 @@ export function remoteSessionState(state: SessionState | null): Record<string, u
 }
 
 export function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown> {
-  const model = host ? host.runners()?.agentOf(status.runId)?.getState()?.model : undefined
+  const state = host ? host.runners()?.agentOf(status.runId)?.getState() : undefined
+  const model = state?.model
   return {
     id: status.id,
     runId: status.runId,
@@ -134,6 +135,8 @@ export function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown
     cwdName: basename(status.cwd) || status.cwd,
     running: status.running,
     waiting: status.waiting,
+    ...(state?.isCompacting ? { compacting: true } : {}),
+    ...(state?.retry ? { retry: { attempt: state.retry.attempt, maxAttempts: state.retry.maxAttempts } } : {}),
     ...(model ? { model: { id: model.id, provider: model.provider, name: model.name, input: model.input } } : {}),
     failed: status.failed,
     conn: status.conn,
@@ -666,7 +669,7 @@ export async function remoteHumanApproval(questionId: string, answer: RemoteHuma
   if (questionId.startsWith('approval:')) {
     const request = host.approvals?.list().find(item => `approval:${item.id}` === questionId)
     return applyHumanApproval(request ? remoteApprovalQuestion(request) : undefined, answer,
-      confirmed => host.approvals?.answer(questionId.slice('approval:'.length), confirmed ? 'once' : 'deny') ?? false)
+      confirmed => host.approvals?.answer(questionId.slice('approval:'.length), !confirmed ? 'deny' : answer.scope === 'session' && request?.kind !== 'move' ? 'session' : 'once') ?? false)
   }
   const question = pendingRemoteQuestions().find(item => item.id === questionId && item.runId === answer.runId)
   const agent = host.runners()?.agentOf(answer.runId)

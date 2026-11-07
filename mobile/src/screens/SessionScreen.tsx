@@ -123,6 +123,21 @@ export function SessionScreen({
   const timelineRef = useRef<TimelineEntry[]>([])
   const timeline = useMemo(() => (timelineRef.current = stabilizeTimeline(timelineRef.current, makeTimeline(messages))), [messages])
   const liveKey = liveProcessKey(timeline, !!runner?.running)
+  const failedKey = useMemo(() => {
+    for (let index = timeline.length - 1; index >= 0; index--) {
+      const entry = timeline[index]
+      if (entry.kind !== 'message') continue
+      if (entry.message.role === 'user') return null
+      if (entry.message.error) return entry.key
+    }
+    return null
+  }, [timeline])
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const compose = useCallback((text: string) => {
+    const current = draftRef.current.trim()
+    onDraftChange(current ? `${draftRef.current.trimEnd()}\n${text}` : text)
+  }, [onDraftChange])
   const runInList = !!liveKey
   const snapBottom = (animated = false) => {
     if (alive.current && followBottom.current && listSize.current.viewport > 0) listRef.current?.scrollToOffset({ offset: Math.max(0, listSize.current.content - listSize.current.viewport), animated })
@@ -290,6 +305,28 @@ export function SessionScreen({
 
   useEffect(() => { void loadSubagents() }, [loadSubagents])
 
+  const retryFailed = useCallback(async () => {
+    const at = rawHistory.current.findIndex((message) => message.id === failedKey)
+    let text = ''
+    for (let index = at - 1; index >= 0 && !text; index--) if (rawHistory.current[index].role === 'user') text = rawHistory.current[index].text?.trim() ?? ''
+    if (!text) { setError(pick('找不到要重试的消息，请重新输入', 'Could not find the message to retry. Type it again.')); return }
+    try {
+      await client.send(sessionId, text, idempotencyKey())
+      followBottom.current = true
+      void load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : pick('重试没发出去', 'Retry not sent'))
+    }
+  }, [client, failedKey, sessionId, load])
+  const compactNow = useCallback(async () => {
+    try {
+      await client.compact(sessionId)
+      void load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : pick('压缩失败', 'Compaction failed'))
+    }
+  }, [client, sessionId, load])
+
   const send = async (): Promise<void> => {
     const text = draft.trim()
     if (!text && !photos.length) return
@@ -298,7 +335,7 @@ export function SessionScreen({
     const key = sendAttempt.current?.text === fingerprint ? sendAttempt.current.key : idempotencyKey()
     sendAttempt.current = { text: fingerprint, key }
     try {
-      await client.send(sessionId, text, key, photos.length ? photos.map(({ mimeType, data }) => ({ mimeType, data })) : undefined)
+      await client.send(sessionId, text, key, photos.length ? photos.map(({ mimeType, data }) => ({ mimeType, data })) : undefined, runner?.running ? 'steer' : undefined)
       sendAttempt.current = null
       onDraftChange('')
       onPhotosChange([])
@@ -398,7 +435,7 @@ export function SessionScreen({
             </View>
           ) : null}
         </>}
-        renderItem={({ item }) => <TimelineRow item={item} live={item.key === liveKey} expandedTools={item.kind === 'process' || item.message.role === 'bash' ? expandedTools : NO_EXPANDED} client={client} sessionId={sessionId} modelName={modelName} onToggle={toggleExpanded} onView={setViewing} onOpenArtifact={onOpenArtifact} />}
+        renderItem={({ item }) => <TimelineRow item={item} live={item.key === liveKey} expandedTools={item.kind === 'process' || item.kind === 'notice' || item.message.role === 'bash' ? expandedTools : NO_EXPANDED} client={client} sessionId={sessionId} modelName={modelName} onToggle={toggleExpanded} onView={setViewing} onOpenArtifact={onOpenArtifact} onCompose={compose} onRetry={item.key === failedKey && !runner?.running && capabilityAllowed(info, 'send') ? retryFailed : undefined} onCompact={item.key === failedKey && !runner?.running && capabilityAllowed(info, 'compact') ? compactNow : undefined} />}
       />
       {banner ? <View style={StyleSheet.absoluteFill}>{banner}</View> : null}
       <ImageViewer client={client} source={viewing ? client.imageSource(sessionId, viewing.messageId, viewing.index) : null} label={viewing?.label ?? ''} onClose={() => setViewing(null)} />
@@ -410,7 +447,7 @@ export function SessionScreen({
       <View style={[styles.composer, { backgroundColor: p.bg0, paddingBottom: Math.max(space[2], bottomInset) }]}>
         {awayFromBottom && unread.has(sessionId) ? <Pressable accessibilityRole="button" onPress={() => { followBottom.current = true; snapBottom(true); readLatest() }} style={{ alignSelf: 'center', minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space[4] }}><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('新回复 ↓', 'New reply ↓')}</Text></Pressable> : null}
         {photos.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{photos.map((photo, index) => <View key={photo.id} style={{ width: 72, height: 72 }}><Image accessibilityLabel={pick(`待发送图片 ${index + 1}`, `Pending image ${index + 1}`)} source={{ uri: `data:${photo.mimeType};base64,${photo.data}` }} style={{ width: 72, height: 72, borderRadius: radius.md }} /><Pressable disabled={sending} accessibilityLabel={pick(`移除图片 ${index + 1}`, `Remove image ${index + 1}`)} accessibilityRole="button" onPress={() => onPhotosChange(photos.filter((entry) => entry.id !== photo.id))} style={{ position: 'absolute', top: -4, right: -4, width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'flex-start', padding: 3 }}><View style={{ backgroundColor: p.bg1, borderRadius: 12, padding: 3 }}><Icon name="close" size={icon.sm} color={p.fg} /></View></Pressable></View>)}</View> : null}
-        {tabletop && pending.length ? null : runner?.waiting || pending.length ? <ActivityLine state="wait" text={STATUS_TEXT.wait} /> : stream !== 'open' ? <ActivityLine state="offline" text={STATUS_TEXT[stream]} /> : null}
+        {tabletop && pending.length ? null : runner?.waiting || pending.length ? <ActivityLine state="wait" text={STATUS_TEXT.wait} /> : stream !== 'open' ? <ActivityLine state="offline" text={STATUS_TEXT[stream]} /> : runner?.compacting ? <ActivityLine state="run" text={pick('正在压缩上下文', 'Compacting context')} /> : runner?.retry ? <ActivityLine state="run" text={pick(`模型请求失败，自动重试 ${runner.retry.attempt}/${runner.retry.maxAttempts}`, `Model request failed, retrying ${runner.retry.attempt}/${runner.retry.maxAttempts}`)} /> : null}
         {(todosLeft || subagents.length) && !(tabletop && pending.length) ? <Pressable accessibilityRole="button" accessibilityLabel={pick('查看计划与子代理', 'View plan and subagents')} disabled={!onOpenDetail} onPress={onOpenDetail} style={[styles.strip, { backgroundColor: p.bg3 }]}>
           {plan?.todos.length ? <Text style={{ color: p.fgDim, fontSize: font.sm }}>{pick('计划', 'Plan')} <Text style={{ color: p.fg, fontFamily: mono }}>{plan.todos.length - todosLeft}/{plan.todos.length}</Text></Text> : null}
           {subagents.length ? <View style={styles.stripItem}>{liveSubagents ? <GlyphSpinner /> : null}<Text style={{ color: p.fgDim, fontSize: font.sm }}>{pick('子代理', 'Subagents')} <Text style={{ color: p.fg, fontFamily: mono }}>{subagents.length}</Text></Text></View> : null}

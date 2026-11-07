@@ -97,4 +97,36 @@ const results = [
   bench('正文解析（30 条）', () => { for (const message of big) if (message.text) M.parseMessageBlocks(message.text, false) })
 ]
 if (process.env.MOBILE_BENCH) console.log(JSON.stringify(results))
+{
+  const moved = '[砚宿主通知：会话已移动]\n这是宿主自动发出的通知，不是用户的新消息。会话已按用户批准移到新的工作目录：' + JSON.stringify('C:\\work\\new') + '\n先看新目录的 AGENTS.md'
+  const timeline = M.makeTimeline([
+    { id: 'u1', role: 'user', text: '开始' },
+    { id: 'a1', role: 'assistant', text: '好' },
+    { id: 'h1', role: 'user', text: moved, timestamp: 1 },
+    { id: 'a2', role: 'assistant', text: '继续' },
+    { id: 'h2', role: 'user', text: '[循环恢复 · 自动继续 1/1]\n上一轮因输出重复被安全中止。' },
+    { id: 'h3', role: 'user', text: '额度已恢复，请从上一轮中断的地方继续完成任务。' },
+    { id: 's1', role: 'user', text: '<subagent-notification id="x" status="done">\n子代理完成\n</subagent-notification>' },
+    { id: 'n1', role: 'note', text: '切换前讨论了两种方案', note: { kind: 'branchSummary' } }
+  ])
+  const notices = timeline.filter((entry) => entry.kind === 'notice')
+  assert.deepEqual(notices.map((entry) => entry.key), ['h1', 'h2', 'h3', 'n1'], '宿主续接与分支摘要都成为短提示，子代理通知仍隐藏')
+  assert.ok(notices[0].label.includes('C:\\work\\new') && notices[0].icon === 'folder', '会话移动提示带新目录')
+  assert.equal(notices[3].body, '切换前讨论了两种方案', '分支摘要可展开看正文')
+  assert.ok(!timeline.some((entry) => entry.kind === 'message' && /砚宿主通知|自动继续|额度已恢复/.test(entry.message.text ?? '')), '宿主消息不再当用户气泡')
+  assert.ok(M.SHOWN_ROLES.has('note'), 'note 角色会被显示')
+}
+{
+  const summary = M.argSummary({ command: 'curl -H "Authorization: Bearer sk-live-123" https://api.x/y?token=abc && API_KEY=zzz run' })
+  assert.ok(!/sk-live-123|token=abc|zzz/.test(summary) && summary.includes('***'), '工具摘要里的密钥被遮蔽')
+}
+{
+  const blocks = M.parseMessageBlocks('前言\n| 项目 | 数值 |\n| --- | ---: |\n| A | 1 |\n| B \\| C | 2 |\n后记\n![图](https://x.y/a.png)\n- [x] 完成\n- [ ] 待办', false)
+  const table = blocks.find((block) => block.kind === 'table')
+  assert.deepEqual(table.rows, [['项目', '数值'], ['A', '1'], ['B | C', '2']], '表格按行列解析，转义竖线保留')
+  assert.ok(blocks.some((block) => block.kind === 'image' && block.url === 'https://x.y/a.png'), '独占一行的图片成为图片块')
+  assert.ok(blocks.some((block) => block.kind === 'text' && block.value === '后记'), '表格后的正文照常')
+  assert.deepEqual(blocks.filter((block) => block.kind === 'list').map((block) => block.value), ['[x] 完成', '[ ] 待办'], '任务清单保留勾选标记交给渲染')
+  assert.equal(M.parseMessageBlocks('| 只有一行 |', false)[0].kind, 'text', '没有分隔行时不当表格')
+}
 console.log('mobile-timeline: 时间线复用与消息块解析通过')

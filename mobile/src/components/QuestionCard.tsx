@@ -66,7 +66,8 @@ export function QuestionCard({
     }
   }
   const send = (answer: RemoteAnswer) => submit(JSON.stringify(answer), (key) => onAnswer(answer, key))
-  const decide = (confirmed: boolean) => submit(`approval:${confirmed}`, (key) => client.approve(question, confirmed, key).finally(() => refresh()))
+  const decide = (confirmed: boolean, scope?: 'session') => submit(`approval:${confirmed}:${scope ?? 'once'}`, (key) => client.approve(question, confirmed, key, scope).finally(() => refresh()))
+  const sessionScope = !!approval && question.id.startsWith('approval:') && approval.kind !== 'move'
 
   const tone = approval || question.sensitive ? p.warn : p.accent
   return (
@@ -85,9 +86,12 @@ export function QuestionCard({
       </> : question.message ? <Text selectable style={[styles.question, { color: p.fg }]}>{question.message}</Text> : null}
 
       {canApprove ? (
-        <View style={styles.row}>
-          <Button label={pick('拒绝', 'Deny')} busy={busy} style={styles.flex} onPress={() => void decide(false)} />
-          <Button label={pick('允许这一次', 'Allow once')} variant="primary" busy={busy} style={styles.flex} onPress={() => void decide(true)} />
+        <View style={{ gap: space[2] }}>
+          <View style={styles.row}>
+            <Button label={pick('拒绝', 'Deny')} busy={busy} style={styles.flex} onPress={() => void decide(false)} />
+            <Button label={pick('允许这一次', 'Allow once')} variant="primary" busy={busy} style={styles.flex} onPress={() => void decide(true)} />
+          </View>
+          {sessionScope && !compact ? <Button label={pick('本会话内都允许', 'Allow for this session')} busy={busy} onPress={() => void decide(true, 'session')} /> : null}
         </View>
       ) : question.sensitive ? (
         <View style={styles.actions}>

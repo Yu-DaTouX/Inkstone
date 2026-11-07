@@ -123,10 +123,17 @@ function num(value: unknown, where: string, { min = -Infinity }: { min?: number 
   return value as number
 }
 
+type UrlParts = { protocol: string; username: string; password: string; href: string }
+const FULL_URL = (() => {
+  try { return (new URL('http://a/') as unknown as UrlParts).protocol === 'http:' } catch { return false }
+})()
+const PLAIN_HTTP_URL = /^https?:\/\/[a-z0-9.-]+(?::\d{1,5})?(?:[/?#][^\s]*)?$/i
+
 export function safeHttpUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2000) return null
+  if (!FULL_URL) return PLAIN_HTTP_URL.test(value) ? value : null
   try {
-    const url = new URL(value)
+    const url = new URL(value) as unknown as UrlParts
     return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password ? url.href : null
   } catch { return null }
 }

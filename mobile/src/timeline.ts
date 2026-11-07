@@ -1,5 +1,7 @@
 import { pick } from '../../src/shared/ui-lang'
 import type { HistoryMessage } from './api/client'
+import { parseHostTextNotice, type HostTextNotice } from '../../src/shared/host-notice-text'
+import { redactCommandSecrets } from '../../src/shared/command-redact'
 
 export type ImageRef = { messageId: string; index: number }
 export type ToolStep = { id: string; name: string; failed: boolean; denied: boolean; running: boolean; awaiting: boolean; summary: string; output: string; nested: boolean; images: ImageRef[] }
@@ -10,20 +12,33 @@ export type ProcessStep =
 export type TimelineEntry =
   | { kind: 'message'; key: string; message: HistoryMessage; sources: readonly HistoryMessage[] }
   | { kind: 'process'; key: string; sources: readonly HistoryMessage[]; steps: ProcessStep[]; actions: number; thinking: number; failed: number; images: number; ms?: number }
+  | { kind: 'notice'; key: string; message: HistoryMessage; sources: readonly HistoryMessage[]; label: string; icon: 'folder' | 'refresh' | 'branch' | 'message-dots'; body?: string }
 
-export const SHOWN_ROLES = new Set(['user', 'assistant', 'bash'])
+export const SHOWN_ROLES = new Set(['user', 'assistant', 'bash', 'note'])
+
+export function hostNoticeLabel(notice: HostTextNotice): string {
+  if (notice.kind === 'session-moved') return pick(`会话已移到 ${notice.cwd}，自动继续`, `Session moved to ${notice.cwd}; continuing`)
+  if (notice.kind === 'quota-resume') return pick('额度已恢复，继续任务', 'Quota restored; continuing')
+  return notice.reason === 'loop' ? pick('输出重复已中止，自动继续', 'Stopped a repeating reply; continuing') : pick('模型请求中断，自动继续', 'Model request failed; continuing')
+}
+
+function noteEntry(message: HistoryMessage): TimelineEntry {
+  const summary = message.note?.kind === 'branchSummary'
+  const custom = message.note?.customType
+  return { kind: 'notice', key: message.id, message, sources: [message], icon: summary ? 'branch' : 'message-dots', label: summary ? pick('分支摘要', 'Branch summary') : custom ? pick(`扩展消息 · ${custom}`, `Extension message · ${custom}`) : pick('扩展消息', 'Extension message'), ...(message.text?.trim() ? { body: message.text } : {}) }
+}
 
 export const UNCOUNTED_TOOLS = new Set(['todo', 'todos', 'todo_write', 'update_todos'])
 export const LIVE_STEPS = 3
 export const ARG_KEYS = ['command', 'cmd', 'path', 'file_path', 'filePath', 'pattern', 'query', 'url', 'description', 'task', 'prompt', 'question']
 
 export function argSummary(args: unknown): string {
-  if (typeof args === 'string') return args.split('\n')[0].slice(0, 160)
+  if (typeof args === 'string') return redactCommandSecrets(args.split('\n')[0]).slice(0, 160)
   if (!args || typeof args !== 'object') return ''
   const record = args as Record<string, unknown>
   const key = ARG_KEYS.find((name) => typeof record[name] === 'string' && record[name])
   const text = key ? String(record[key]) : JSON.stringify(args)
-  return text.split('\n')[0].slice(0, 160)
+  return redactCommandSecrets(text.split('\n')[0]).slice(0, 160)
 }
 
 export const SUBAGENT_NOTICE_RE = /^<subagent-notification id="[^"]+" status="[^"]+">/
@@ -81,9 +96,13 @@ export function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
     turn = []
   }
   for (const message of messages) {
-    if (message.role === 'user' || message.role === 'bash') {
+    if (message.role === 'user' || message.role === 'bash' || message.role === 'note') {
       flushTurn()
-      if (!isSubagentNotice(message)) entries.push({ kind: 'message', key: message.id, message, sources: [message] })
+      if (message.role === 'note') { entries.push(noteEntry(message)); continue }
+      if (isSubagentNotice(message)) continue
+      const notice = message.role === 'user' ? parseHostTextNotice(message.text) : null
+      if (notice) entries.push({ kind: 'notice', key: message.id, message, sources: [message], label: hostNoticeLabel(notice), icon: notice.kind === 'session-moved' ? 'folder' : 'refresh' })
+      else entries.push({ kind: 'message', key: message.id, message, sources: [message] })
     } else turn.push(message)
   }
   flushTurn()

@@ -744,8 +744,9 @@ export class RemoteServer {
       const body = await this.readJson(req)
       if (!validQuestionId(questionId) || !(body.sessionId === null || (typeof body.sessionId === 'string' && validSessionId(body.sessionId))) ||
           !(validRunId(body.runId) || (typeof body.runId === 'string' && /^approval:[0-9a-f-]{36}$/.test(body.runId))) ||
-          typeof body.confirmed !== 'boolean' || typeof body.digest !== 'string' || !/^[0-9a-f]{64}$/.test(body.digest)) return writeError(res, 400, pick('人工批准必须绑定有效的问题、会话、运行和操作摘要', 'Manual approval must be bound to a valid question, session, run and action digest'))
-      const answer: RemoteHumanApproval = { sessionId: body.sessionId, runId: body.runId, digest: body.digest, confirmed: body.confirmed }
+          typeof body.confirmed !== 'boolean' || typeof body.digest !== 'string' || !/^[0-9a-f]{64}$/.test(body.digest) ||
+          !(body.scope === undefined || ((body.scope === 'once' || body.scope === 'session') && body.confirmed === true))) return writeError(res, 400, pick('人工批准必须绑定有效的问题、会话、运行和操作摘要', 'Manual approval must be bound to a valid question, session, run and action digest'))
+      const answer: RemoteHumanApproval = { sessionId: body.sessionId, runId: body.runId, digest: body.digest, confirmed: body.confirmed, ...(body.scope === 'session' ? { scope: 'session' as const } : {}) }
       await this.idempotent(req, res, caller, true, () => handler(questionId, answer))
       return
     }

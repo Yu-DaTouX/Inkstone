@@ -178,6 +178,9 @@ export interface HistoryMessage {
   images?: Array<{ mimeType: string }>
   toolCalls?: HistoryToolCall[]
   artifacts?: Array<{ id: string; filename: string; mediaType: string; kind: string; bytes: number; version?: number; unavailable?: boolean }>
+  note?: { kind: 'custom' | 'branchSummary' | string; customType?: string }
+  question?: boolean
+  qa?: Array<{ question: string; answer?: string }>
 }
 
 export interface SubagentInfo {
@@ -304,12 +307,12 @@ export class RemoteClient {
     return this.post(`/remote/v1/questions/${encodeURIComponent(questionId)}/answer`, answer, key)
   }
 
-  approve(question: RemotePendingQuestion, confirmed: boolean, key = idempotencyKey()): Promise<unknown> {
-    return this.post(`/remote/v1/questions/${encodeURIComponent(question.id)}/approval`, { sessionId: question.sessionId, runId: question.runId, digest: question.approvalDigest, confirmed }, key)
+  approve(question: RemotePendingQuestion, confirmed: boolean, key = idempotencyKey(), scope?: 'session'): Promise<unknown> {
+    return this.post(`/remote/v1/questions/${encodeURIComponent(question.id)}/approval`, { sessionId: question.sessionId, runId: question.runId, digest: question.approvalDigest, confirmed, ...(scope ? { scope } : {}) }, key)
   }
 
-  send(sessionId: string, text: string, key = idempotencyKey(), images?: RemoteImageInput[]): Promise<unknown> {
-    return this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { text, images }, key)
+  send(sessionId: string, text: string, key = idempotencyKey(), images?: RemoteImageInput[], mode?: 'steer' | 'followUp'): Promise<unknown> {
+    return this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { text, images, ...(mode ? { mode } : {}) }, key)
   }
 
   async revokeSelf(): Promise<void> {

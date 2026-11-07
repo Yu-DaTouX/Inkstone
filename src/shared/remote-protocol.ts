@@ -145,6 +145,7 @@ export interface RemoteHumanApproval {
   runId: string
   digest: string
   confirmed: boolean
+  scope?: 'once' | 'session'
 }
 
 export interface RemoteArtifact {

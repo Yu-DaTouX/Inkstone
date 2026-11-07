@@ -1,7 +1,7 @@
 import type { QuotaWindow } from './ipc'
 import { classifyModelError } from './model-errors'
 
-export const QUOTA_RESUME_PROMPT = '额度已恢复，请从上一轮中断的地方继续完成任务。'
+export { QUOTA_RESUME_PROMPT } from './host-notice-text'
 
 export const QUOTA_RESUME_POLL_MS = 60_000
 
