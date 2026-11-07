@@ -85,6 +85,7 @@ import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 
 import { BrowserCommands } from './browser-commands'
 import { TerminalAgentCommands } from './terminal-agent'
+import { PhoneAgentCommands } from './phone-agent'
 import { terminalAgentHost } from './terminal-agent-host'
 import { LookupCommands } from './lookup-commands'
 import { TurnTimingTracker } from './turn-timing-tracker'
@@ -527,6 +528,8 @@ export class AgentController extends EventEmitter {
       return { allowed: result.summary.allowed === true, ...(typeof feedback === 'string' && feedback ? { feedback } : {}) }
     }
   })
+
+  private readonly phoneCommands = new PhoneAgentCommands({ opsDir: () => this.capabilityOpts?.opsDir ?? join(YAN_DIR, 'ops') })
 
   private readonly acquisition = new CapabilityAcquisition({
     capabilityOpts: () => this.capabilityOpts,
@@ -1296,6 +1299,9 @@ export class AgentController extends EventEmitter {
     }
     if (command.startsWith('terminal.')) {
       return this.terminalCommands.run(command.slice('terminal.'.length), params, signal)
+    }
+    if (command.startsWith('phone.')) {
+      return this.phoneCommands.run(command.slice('phone.'.length), params, signal)
     }
     if (command.startsWith('subagent.')) {
       if (!this.subagentHost) {

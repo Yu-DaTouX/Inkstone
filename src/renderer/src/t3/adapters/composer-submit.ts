@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Attachment } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -13,7 +13,7 @@ import { hasComposerText } from '../../features/composer/composer-text'
 import { fileReferencePath } from '../../features/composer/file-refs'
 import { imageRefPrefix, withImageLegend } from '../../features/composer/image-refs'
 import { loadDraft, saveDraft } from '../../features/composer/draft-store'
-import { composerQuestion } from '../../features/session/question-composer'
+import { answerComposerForm, composerQuestion, setComposerTextPort } from '../../features/session/question-composer'
 
 export type ComposerSubmitMode = 'steer' | 'followUp'
 
@@ -51,6 +51,9 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
   const { lang } = useI18n()
   const portsRef = useRef(ports)
   portsRef.current = ports
+  useEffect(() => {
+    return setComposerTextPort({ read: () => portsRef.current.value, clear: () => portsRef.current.clearText() })
+  }, [])
   const submittingRef = useRef(false)
   const [busy, setBusy] = useState(false)
 
@@ -136,7 +139,9 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
           : body
         const question = composerQuestion()
         if (question) {
-          useStore.getState().answerUi({ id: question.id, value: outgoing || t('composer.answerImages') })
+          if (question.form?.length) {
+            if (!answerComposerForm(question.id, outgoing || t('composer.answerImages'))) return
+          } else useStore.getState().answerUi({ id: question.id, value: outgoing || t('composer.answerImages') })
           portsRef.current.clearText()
           useStore.getState().dropSentAttachments(sentIds, sentFrom ? [sentFrom] : [])
           cleared = true

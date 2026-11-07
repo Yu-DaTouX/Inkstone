@@ -22,6 +22,7 @@ const NO_APPROVALS: ReadonlySet<string> = new Set()
 const NO_RECEIPTS: readonly ApprovalReceipt[] = []
 const HISTORY_SEGMENTS = 12
 const STEADY_HOLD_MS = 30000
+const SHRINK_HOLD_MS = 1200
 const USER_TOGGLE_MS = 500
 const BOTTOM_SLACK_PX = 48
 
@@ -56,8 +57,11 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
     let suspendedUntil = 0
     let lastHeight = 0
     let held = false
+    let shrinkRelease = 0
     const releaseHold = (): void => {
       window.clearTimeout(release)
+      window.clearTimeout(shrinkRelease)
+      shrinkRelease = 0
       held = false
       setMinHeight(0)
     }
@@ -82,7 +86,17 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
       }
       if (held && shrinking) {
         releaseIfGapShows()
+        if (held && !shrinkRelease && !readingHistory(node)) {
+          shrinkRelease = window.setTimeout(() => {
+            shrinkRelease = 0
+            if (held && (!readingHistory(node) || heldGapVisible(node))) releaseHold()
+          }, SHRINK_HOLD_MS)
+        }
         return
+      }
+      if (shrinkRelease && height >= box.height - 0.5) {
+        window.clearTimeout(shrinkRelease)
+        shrinkRelease = 0
       }
       if (box.height <= 0.5) return
       held = true
@@ -113,6 +127,7 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
       scope.removeEventListener('keydown', releaseNow, true)
       stream?.removeEventListener('scroll', releaseIfGapShows)
       window.clearTimeout(release)
+      window.clearTimeout(shrinkRelease)
     }
   }, [active, node])
   const ref = useCallback<RefCallback<HTMLDivElement>>((element) => {

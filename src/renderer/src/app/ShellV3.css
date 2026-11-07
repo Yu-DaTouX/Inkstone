@@ -335,10 +335,11 @@
   }
 
   .v3-head-crumb {
-    flex: 0 0 auto;
+    flex: 0 0.2 auto;
     min-width: 0;
-    max-width: 40%;
+    max-width: 16em;
     overflow: hidden;
+    white-space: nowrap;
     text-overflow: ellipsis;
     font-weight: var(--w-regular);
     color: var(--fg3);

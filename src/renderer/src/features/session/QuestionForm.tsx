@@ -1,18 +1,20 @@
-import { useState, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { QUESTION_PLAIN_KEY, type QuestionField } from '../../../../shared/question-form'
 import { Button, Input, Slider, TextArea, TextField } from '../../ui'
 import { CardActions } from '../../ui/Card'
+import { clearComposerText, readComposerText, setComposerFormAnswer } from './question-composer'
 
 type Value = string | string[]
 
-export function QuestionForm({ fields, question, busy, submitLabel, onSubmit, onSkip }: {
+export function QuestionForm({ fields, question, busy, submitLabel, onSubmit, onSkip, composer }: {
   fields: QuestionField[]
   question?: string
   busy: boolean
   submitLabel: string
   onSubmit: (json: string) => void
   onSkip: () => void
+  composer?: { requestId: string; field: string }
 }): JSX.Element {
   const t = useT()
   const [values, setValues] = useState<Record<string, Value>>(() =>
@@ -27,25 +29,35 @@ export function QuestionForm({ fields, question, busy, submitLabel, onSubmit, on
     setMissing((prev) => prev.filter((n) => n !== name))
   }
 
-  const collect = (): Record<string, unknown> => Object.fromEntries(fields.map((f) => {
-    const own = other[f.name]?.trim()
+  const collect = (typed: string): Record<string, unknown> => Object.fromEntries(fields.map((f) => {
+    const own = f.name === composer?.field ? typed : other[f.name]?.trim()
     const v = values[f.name]
+    if (f.kind === 'text' && f.name === composer?.field) return [f.name, typed]
     if (f.kind === 'multi') return [f.name, own ? [...(v as string[]), own] : v]
     if (f.kind === 'choice') return [f.name, own || v]
     if (f.kind === 'number' || f.kind === 'range') return [f.name, v === '' ? null : Number(v)]
     return [f.name, v]
   }))
 
-  const submit = (): void => {
-    const data = collect()
+  const submitWith = (typed: string): boolean => {
+    const data = collect(typed.trim())
     const empty = fields.filter((f) => {
       if (f.optional) return false
       const v = data[f.name]
       return v === null || v === '' || (Array.isArray(v) && v.length === 0)
     }).map((f) => f.name)
-    if (empty.length) { setMissing(empty); return }
+    if (empty.length) { setMissing(empty); return false }
     onSubmit(JSON.stringify(plain.length ? { ...data, [QUESTION_PLAIN_KEY]: plain } : data))
+    return true
   }
+  const submit = (): void => {
+    const typed = composer ? readComposerText() : ''
+    if (submitWith(typed) && typed.trim()) clearComposerText()
+  }
+  const latest = useRef(submitWith)
+  latest.current = submitWith
+  const composerId = composer?.requestId
+  useEffect(() => composerId ? setComposerFormAnswer(composerId, (text) => latest.current(text)) : undefined, [composerId])
 
   return (
     <div className="v3-qform" data-testid="v3-question-form">
@@ -94,7 +106,7 @@ export function QuestionForm({ fields, question, busy, submitLabel, onSubmit, on
                     )
                   })}
                 </div>
-                <TextField
+                {f.name === composer?.field ? null : <TextField
                   className="v3-qother"
                   id={`v3qf-${f.name}`}
                   aria-label={`${f.label} (${t('q.customReply')})`}
@@ -108,7 +120,7 @@ export function QuestionForm({ fields, question, busy, submitLabel, onSubmit, on
                     if (f.kind === 'choice' && text.trim()) set(f.name, '')
                     else setMissing((prev) => prev.filter((n) => n !== f.name))
                   }}
-                />
+                />}
               </>
             ) : f.kind === 'range' ? (
               <Slider
@@ -143,6 +155,8 @@ export function QuestionForm({ fields, question, busy, submitLabel, onSubmit, on
                   {f.detected ? <Button size="xs" variant="ghost" isDisabled={busy} onPress={() => setPlain((prev) => [...prev, f.name])} data-testid="v3-question-secret-plain">{t('qf.secretPlain')}</Button> : null}
                 </div>
               </div>
+            ) : f.kind === 'text' && f.name === composer?.field ? (
+              <span className="v3-qoption-desc" data-testid="v3-question-answer-below">{t('q.answerBelow')}</span>
             ) : f.kind === 'text' || f.kind === 'secret' ? (
               <TextArea id={`v3qf-${f.name}`} aria-label={f.label} rows={2} placeholder={f.placeholder} value={v as string} isDisabled={busy} isInvalid={bad} aria-describedby={describedBy} onChange={(text) => set(f.name, text)} />
             ) : (

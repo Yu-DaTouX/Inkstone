@@ -23,6 +23,7 @@ const GUIDE_LINES = [
   'Command groups:',
   '- browser: open or operate pages in the built-in browser; `browser run --file` runs multi-step scripts',
   '- terminal: the session terminal the user sees; read it, run commands the user should watch, long-running servers or interactive programs',
+  '- phone: the user\'s Android phone over adb; read the screen\'s elements, screenshot, tap, swipe, type, launch apps',
   '- search: web search, page text, library docs',
   '- subagent: independent parallel work or a model the user names; read skill subagent first; do not sleep-poll, the host notifies you',
   '- image: generate images; artifact: attach an existing file to this reply (pages, tools or designs the user will open: skill artifact)',

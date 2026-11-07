@@ -94,6 +94,13 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     'yan terminal --help'
   ),
   builtin(
+    'phone',
+    '操控安卓手机',
+    '经 adb 操控用户连着的安卓（Android）手机：读界面元素、截图、按文字或坐标点按、滑动、输入英文、按键、启动应用。用 `yan phone --help` 查参数。',
+    'external-action',
+    'yan phone --help'
+  ),
+  builtin(
     'operations.status',
     '操作状态查询',
     '传 --id 查某一次操作的完整结果（stdout 只有摘要，细节在这里），找不到会报错；不传 id 则列出最近若干次操作。',

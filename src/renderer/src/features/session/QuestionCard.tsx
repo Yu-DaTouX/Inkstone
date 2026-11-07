@@ -8,7 +8,7 @@ import { Button, IconButton, Kbd, TextArea, TextField } from '../../ui'
 import { Card, CardActions, CardChevron, CardControl, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { QuestionForm } from './QuestionForm'
-import { answersInComposer, releaseComposerQuestion, setComposerQuestion } from './question-composer'
+import { answersInComposer, composerFormField, releaseComposerQuestion, setComposerQuestion } from './question-composer'
 import { useSessionText } from './text'
 import { approvalSlotClaimed, useApprovalSlotVersion, useClaimApprovalSlot } from './approval-slot'
 import { claimDigitKeys, digitChoiceIndex } from './question-keys'
@@ -117,6 +117,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
 
   const deferred = useTypingDeferredFocus(cardRef, reqId, questionFocusTarget, true)
   const viaComposer = answersInComposer(req)
+  const formField = viaComposer ? composerFormField(req) : null
 
   useEffect(() => {
     if (!viaComposer) return undefined
@@ -203,9 +204,9 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
           {needsApproval ? tt('awaitApproval') : tt('awaitAnswer')}
         </CardStatus>
         <CardTitle className="v3-qtitle" id={titleId}>{title}</CardTitle>
-        {deadline || page.total > 1 || viaComposer ? (
+        {deadline || page.total > 1 || (viaComposer && !formField) ? (
           <CardMeta>
-            {viaComposer && !collapsed ? (
+            {viaComposer && !formField && !collapsed ? (
               <Button size="xs" variant="ghost" isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>
             ) : null}
             {deadline ? (
@@ -265,6 +266,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
               submitLabel={page.total > 1 ? t('q.next') : t('q.submit')}
               onSubmit={(json) => answer({ value: json })}
               onSkip={() => answer({ cancelled: true })}
+              composer={formField ? { requestId: reqId, field: formField } : undefined}
             />
           ) : null}
 

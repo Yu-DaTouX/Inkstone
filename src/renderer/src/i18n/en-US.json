@@ -520,6 +520,7 @@
   "q.collapsed": "{n} question(s) waiting",
   "q.confirm": "Needs your confirmation",
   "q.customReply": "Or write your own reply",
+  "q.answerBelow": "Answer in the box below",
   "q.editor": "Needs your input",
   "q.expand": "Expand question panel",
   "q.extendBump": "Added 2 min",

@@ -100,6 +100,7 @@ export const FAKE_TRIGGERS = {
   FAIL: '返回 502，用来看模型错误与重试；FAILQUOTA 429 额度用完，FAILAUTH 401，FAILHTML 503 网关错页，FAILNET 断开连接，FAILHANG 不响应，FAILFLAKY 前两次 502 之后成功，FAILMID 流到一半断开',
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
+  MULTIASK: '一次只有一个多选字段的表单提问，自填答案走主输入框，用来看表单题接到输入框',
   KEYFAILOVER: '当前 Key 是 bad-key 时返回 401，换 Key 后正常回答，用来验证 Key 故障转移',
   CRASHBASH: '跑一条 60 秒的 bash，用来测进程被杀后的历史与续接',
   SECRETASK: '先问密码，再用 bash 读密文环境变量，最后回答模型是否收到过测试密文，用来验证密文不进上下文',
@@ -309,6 +310,11 @@ async function respond(res, text, done, requestNo) {
       if (done < 1) await callTool('question', { question: '请提供数据库密码' })
       else if (done === 1) await callTool('bash', { command: 'echo "pw=$YAN_SECRET_VALUE"; printf %s "$YAN_SECRET_VALUE" | base64', description: '读取密文环境变量' })
       else await streamText(secretMarkerSeen ? 'MODEL-SAW-SECRET' : 'MODEL-CLEAN', 20, 10)
+    } else if (text.includes('MULTIASK')) {
+      if (done < 1) await callTool('question', { question: '按键还有几处和微信不同，要改成微信那样的勾选上：', fields: [
+        { name: 'keys', label: '要跟微信一致的按键', kind: 'multi', options: ['第二行左右各缩进半个键', '第三行左下角换成 Shift', '底行去掉「符」键'] }
+      ] })
+      else await streamText('收到你的选择。', 20, 10)
     } else if (text.includes('QUESTION')) {
       if (done < 1) await callTool('question', { question: '会话栏（环境/统计/上下文/更改那一列）和右栏，你想要哪种？现在的逻辑是右栏一打开会话栏就让位隐藏，而右栏的「概览」标签又和会话栏内容重复。', options: ['两者共存：右栏打开时会话栏照常显示（窗口太窄才让位），右栏去掉重复的「概览」', '合并：去掉独立会话栏，概览变成右栏固定的第一个标签（T3 式只有一个右侧区域）', '保持现状'] })
       else await streamText('好的，按你的选择来。', 20, 10)

@@ -520,6 +520,7 @@
   "q.collapsed": "有 {n} 个问题待回答",
   "q.confirm": "需要你确认",
   "q.customReply": "或自行撰写回复",
+  "q.answerBelow": "在下方输入框里回答",
   "q.editor": "需要你补充",
   "q.expand": "展开问题面板",
   "q.extendBump": "已加 2 分钟",

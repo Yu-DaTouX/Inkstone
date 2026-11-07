@@ -65,8 +65,15 @@ export default async function run({ cdp, box, check, report, sleep, newSession, 
     }
   })
   check('过渡中的叙述不会在答复区闪现', flashes.length === 0, flashes)
-  const shrinks = fr.filter((f, i) => i && f.live === true && fr[i - 1].live === true && f.procH !== null && fr[i - 1].procH !== null && f.procH < fr[i - 1].procH - 1)
-  check('直播期过程区高度只增不缩', shrinks.length === 0, shrinks.slice(0, 5).map((f) => f.t))
+  const steadyFor = (i) => {
+    let j = i - 1
+    while (j > 0 && fr[j - 1].procH === fr[i - 1].procH) j -= 1
+    return fr[i - 1].t - fr[j].t
+  }
+  const shrinks = fr.map((f, i) => ({ f, i })).filter(({ f, i }) => i && f.live === true && fr[i - 1].live === true && f.procH !== null && fr[i - 1].procH !== null && f.procH < fr[i - 1].procH - 1)
+  const hasty = shrinks.filter(({ i }) => steadyFor(i) < 1000)
+  report.liveShrinks = shrinks.map(({ f, i }) => ({ t: f.t, by: fr[i - 1].procH - f.procH, steadyMs: steadyFor(i) }))
+  check('直播期过程区不来回抖：高度稳定 1 秒以上才收回留白', hasty.length === 0, report.liveShrinks.slice(0, 5))
   const endAt = fr.findIndex((f, i) => i && fr[i - 1].live === true && f.live === false)
   let maxStep = 0
   for (let i = Math.max(1, endAt); i < Math.min(fr.length, endAt + 60); i += 1) if (fr[i].seg !== null && fr[i - 1].seg !== null && fr[i].st === fr[i - 1].st) maxStep = Math.max(maxStep, Math.abs(fr[i].seg - fr[i - 1].seg))
