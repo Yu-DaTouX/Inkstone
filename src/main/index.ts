@@ -397,11 +397,7 @@ const notifySubagentFinished = createSubagentNotifier({
   runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
 })
 const subagentQuotaWatch = createSubagentQuotaWatch({
-  switchAccount: async (provider) => {
-    const result = await switchToSpareAccount(provider)
-    if (result?.switched) void restartAgent('订阅账号已自动切换').catch((error) => reportMainError('刷新运行实例', error))
-    return result
-  },
+  switchAccount: switchToSpareAccount,
   notifyUser: ({ run, title, body }) => {
     push({ ch: 'notify', payload: { id: `subagent-quota-${run.id}`, method: 'notify', notifyType: 'warning', message: `${title}：${body}` } })
     void getSettings().then((settings) => {
@@ -412,7 +408,9 @@ const subagentQuotaWatch = createSubagentQuotaWatch({
   notifyParent: (run, text) => {
     void (async () => {
       if ((await getSettings()).subagentNotify === false || !runners) return
-      await findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners)?.send(text, undefined, 'followUp')
+      const target = findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners)
+      if (!target || target.holdsNotices()) return
+      await target.send(text, undefined, 'followUp')
     })().catch(() => undefined)
   }
 })
@@ -2069,6 +2067,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
         subagentHost: subagentService.capabilityHost,
+        switchSpareAccount: switchToSpareAccount,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
         providerExtensions: providerExtensionPaths(),
         bundledSkills: [...bundledSkillPaths(), ...bundledPlugins.skillPaths()],

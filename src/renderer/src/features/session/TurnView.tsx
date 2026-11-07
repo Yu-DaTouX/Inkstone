@@ -180,6 +180,7 @@ function HostTurnView({ turn }: { turn: HostTurn }): JSX.Element {
   const { msg, notice } = turn
   const label = notice.kind === 'session-moved' ? t('chat.hostMoved', { path: notice.cwd })
     : notice.kind === 'quota-resume' ? t('chat.hostQuota')
+    : notice.kind === 'account-switch' ? t('chat.hostAccountSwitch')
     : notice.reason === 'loop' ? t('chat.hostLoop') : t('chat.hostModelError')
   return (
     <article className="v3-msg host" data-msg-id={msg.id} data-turn-id={turn.id}>

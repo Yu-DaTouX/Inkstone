@@ -106,14 +106,16 @@ if (process.env.MOBILE_BENCH) console.log(JSON.stringify(results))
     { id: 'a2', role: 'assistant', text: '继续' },
     { id: 'h2', role: 'user', text: '[循环恢复 · 自动继续 1/1]\n上一轮因输出重复被安全中止。' },
     { id: 'h3', role: 'user', text: '额度已恢复，请从上一轮中断的地方继续完成任务。' },
+    { id: 'h4', role: 'user', text: '[额度换号 · 自动继续 1/1]\n上一轮因订阅账号额度用完中断。' },
     { id: 's1', role: 'user', text: '<subagent-notification id="x" status="done">\n子代理完成\n</subagent-notification>' },
     { id: 'n1', role: 'note', text: '切换前讨论了两种方案', note: { kind: 'branchSummary' } }
   ])
   const notices = timeline.filter((entry) => entry.kind === 'notice')
-  assert.deepEqual(notices.map((entry) => entry.key), ['h1', 'h2', 'h3', 'n1'], '宿主续接与分支摘要都成为短提示，子代理通知仍隐藏')
+  assert.deepEqual(notices.map((entry) => entry.key), ['h1', 'h2', 'h3', 'h4', 'n1'], '宿主续接与分支摘要都成为短提示，子代理通知仍隐藏')
   assert.ok(notices[0].label.includes('C:\\work\\new') && notices[0].icon === 'folder', '会话移动提示带新目录')
-  assert.equal(notices[3].body, '切换前讨论了两种方案', '分支摘要可展开看正文')
-  assert.ok(!timeline.some((entry) => entry.kind === 'message' && /砚宿主通知|自动继续|额度已恢复/.test(entry.message.text ?? '')), '宿主消息不再当用户气泡')
+  assert.ok(notices[3].label.includes('换号'), '换号续跑显示为换号短提示')
+  assert.equal(notices[4].body, '切换前讨论了两种方案', '分支摘要可展开看正文')
+  assert.ok(!timeline.some((entry) => entry.kind === 'message' && /砚宿主通知|自动继续|额度已恢复|额度换号/.test(entry.message.text ?? '')), '宿主消息不再当用户气泡')
   assert.ok(M.SHOWN_ROLES.has('note'), 'note 角色会被显示')
 }
 {

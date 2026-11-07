@@ -220,7 +220,7 @@ export interface RunObserverContext {
 export type RunObserver = (ctx: RunObserverContext, signal: RunSignal) => void
 
 type BrowserCommandResult = { ok: boolean; error?: string; code?: string }
-type AutoContinueScope = { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number; reason?: 'model-error' | 'key-failover' }
+type AutoContinueScope = { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number; reason?: 'model-error' | 'key-failover' | 'account-switch' }
 
 export type BrowserObservationResult = BrowserCommandResult & { observation?: BrowserObservation; receipt?: BrowserActionReceipt }
 
@@ -479,6 +479,7 @@ export class AgentController extends EventEmitter {
   private readonly operations = new SessionOperationGate()
   private getPermissionMode?: () => Promise<'danger' | 'all'>
   private requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
+  private switchSpareAccount?: (provider: string) => Promise<{ label: string; switched: boolean } | null>
   private dangerGuardExtension?: string
   private providerExtensions: string[] = []
   private yanCliEnv?: YanCliEnv
@@ -713,6 +714,7 @@ export class AgentController extends EventEmitter {
     retireApprovals?: (owner: ApprovalOwner) => void
     getPermissionMode?: () => Promise<'danger' | 'all'>
     requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
+    switchSpareAccount?: (provider: string) => Promise<{ label: string; switched: boolean } | null>
     dangerGuardExtension?: string
     providerExtensions?: string[]
     yanCliEnv?: YanCliEnv
@@ -790,6 +792,7 @@ export class AgentController extends EventEmitter {
     this.retireApprovals = opts.retireApprovals
     this.getPermissionMode = opts.getPermissionMode
     this.requestSessionMove = opts.requestSessionMove
+    this.switchSpareAccount = opts.switchSpareAccount
     this.dangerGuardExtension = opts.dangerGuardExtension
     this.providerExtensions = opts.providerExtensions ?? []
     this.yanCliEnv = opts.yanCliEnv
@@ -2626,7 +2629,7 @@ export class AgentController extends EventEmitter {
           : null
         const failedProvider = this.state?.model?.provider
         const keyFailover = !continuation && !errorContinuation && modelError && failedProvider && apiKeyLooksUnusable(modelError.text) && this.rpc && this.state?.sessionId
-          ? { provider: failedProvider, scope: { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
+          ? { provider: failedProvider, quota: isQuotaWaitError(modelError.text), scope: { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
             runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'key-failover' as const } }
           : null
         this.pendingModelError = undefined
@@ -2656,7 +2659,8 @@ export class AgentController extends EventEmitter {
         void this.maybeGenerateTitle()
         const task = continuation ? this.continueAfterLoopGuard(continuation)
           : errorContinuation ? this.continueAfterModelError(errorContinuation)
-            : keyFailover ? this.continueAfterKeyFailover(keyFailover.scope, keyFailover.provider) : undefined
+            : keyFailover ? this.continueAfterKeyFailover(keyFailover.scope, keyFailover.provider)
+              .then((ok) => ok || !keyFailover.quota ? ok : this.continueAfterQuota(keyFailover.scope, keyFailover.provider)) : undefined
         if (task) {
           this.loopGuardContinueTask = task
           void task.then((resumed) => {
@@ -2798,7 +2802,6 @@ export class AgentController extends EventEmitter {
               message: pick(`模型额度已到限，已停止自动重试。${modelErrorNotice(retryError)}`, `Model quota reached; auto-retry stopped. ${modelErrorNotice(retryError)}`)
             }
           })
-          this.push({ ch: 'quota-wait', payload: {} } as unknown as MainPush)
           void this.abortRetry()
           break
         }
@@ -3324,6 +3327,29 @@ export class AgentController extends EventEmitter {
     }
   }
 
+  private async continueAfterQuota(scope: AutoContinueScope, provider: string): Promise<boolean> {
+    if (!this.canContinueAfterLoopGuard(scope)) return false
+    scope = { ...scope, reason: 'account-switch' }
+    const account = this.loopGuardAutoContinueCount < 1 ? await this.switchSpareAccount?.(provider).catch(() => null) : null
+    if (!account || !this.canContinueAfterLoopGuard(scope)) {
+      if (this.canContinueAfterLoopGuard(scope)) this.push({ ch: 'quota-wait', payload: {} } as unknown as MainPush)
+      return false
+    }
+    this.quotaExhausted = false
+    this.push({ ch: 'quota-wait', payload: { cancel: true } } as unknown as MainPush)
+    this.push({ ch: 'notify', payload: { id: `account-switch-${Date.now()}`, method: 'notify', notifyType: 'info',
+      message: account.switched
+        ? pick(`额度用完，已换到 ${account.label} 继续`, `Quota exhausted; continuing on ${account.label}`)
+        : pick(`继续使用刚切换的 ${account.label}`, `Continuing with ${account.label}, switched just now`) } })
+    try {
+      const result = await this.send(continuationPrompt('account-switch'), undefined, undefined, scope)
+      return result.ok
+    } catch (error) {
+      this.push({ ch: 'log', payload: { level: 'error', text: `[account-switch] ${error instanceof Error ? error.message : String(error)}` } })
+      return false
+    }
+  }
+
   private async continueAfterModelError(scope: AutoContinueScope): Promise<boolean> {
     try {
       if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return false
@@ -3642,7 +3668,7 @@ export class AgentController extends EventEmitter {
     }
 
     return this.queueRun(async () => {
-      if (autoContinue && (!(await this.readStreamLoopAutoContinue()) || !this.canContinueAfterLoopGuard(autoContinue) || this.loopGuardAutoContinueCount >= 1)) {
+      if (autoContinue && ((autoContinue.reason !== 'account-switch' && !(await this.readStreamLoopAutoContinue())) || !this.canContinueAfterLoopGuard(autoContinue) || this.loopGuardAutoContinueCount >= 1)) {
         return { ok: false, error: pick('自动继续已取消或运行归属改变', 'Auto-continue was cancelled or the run owner changed') }
       }
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后发送', 'The project is reverting code. Try sending again shortly') }
@@ -3660,7 +3686,7 @@ export class AgentController extends EventEmitter {
         if (autoContinue.reason === 'model-error') {
           this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
             message: pick('模型请求因暂时性错误中断且未自动重试，正在同一会话自动继续（1/1）。', 'The model request was interrupted by a temporary error without auto-retry; continuing in the same session (1/1).') } })
-        } else if (autoContinue.reason !== 'key-failover') {
+        } else if (autoContinue.reason !== 'key-failover' && autoContinue.reason !== 'account-switch') {
           this.logStreamLoopGuard('auto-continue-requested', { sessionId: autoContinue.sessionId, runId: autoContinue.runId, count: 1, limit: 1, outcome: 'sending' })
           this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'info',
             message: pick('已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。', 'Loop aborted safely; continuing in the same session (1/1). Withdrawn queued drafts will not run.') } })

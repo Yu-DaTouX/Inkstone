@@ -212,6 +212,7 @@
   "chat.hostLoop": "输出重复已中止，自动继续",
   "chat.hostModelError": "模型请求中断，自动继续",
   "chat.hostQuota": "额度已恢复，继续任务",
+  "chat.hostAccountSwitch": "额度用完，已换号继续",
   "chat.stopRetry": "停止重试",
   "usage.title": "本机用量",
   "usage.models": "模型",

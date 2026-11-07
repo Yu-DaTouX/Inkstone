@@ -4,6 +4,7 @@ export type HostTextNotice =
   | { kind: 'session-moved'; cwd: string }
   | { kind: 'auto-continue'; reason: 'loop' | 'model-error' }
   | { kind: 'quota-resume' }
+  | { kind: 'account-switch' }
 
 const MOVE_HEAD = /^\[砚宿主通知：(?:用户批准的会话移动已完成|会话已移动)\]/
 const MOVE_CWD = /(?:当前工作目录（路径数据）|新的工作目录)：("(?:[^"\\]|\\.)*")/
@@ -20,5 +21,6 @@ export function parseHostTextNotice(text: string | undefined): HostTextNotice | 
   if (body.startsWith('[循环恢复 · 自动继续')) return { kind: 'auto-continue', reason: 'loop' }
   if (body.startsWith('[模型错误恢复 · 自动继续')) return { kind: 'auto-continue', reason: 'model-error' }
   if (body === QUOTA_RESUME_PROMPT) return { kind: 'quota-resume' }
+  if (body.startsWith('[额度换号 · 自动继续')) return { kind: 'account-switch' }
   return null
 }

@@ -28,6 +28,12 @@ const server = createServer((req, res) => {
   req.on('end', () => {
     requests.push(JSON.parse(body))
     const plan = plans.shift() ?? 'hold'
+    if (plan === 'quota429') {
+      controls.push({ emit: () => {}, finish: () => {}, closed: true })
+      res.writeHead(429, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { message: "You've hit your usage limit. Your limit resets at 5pm." } }))
+      return
+    }
     if (plan === 'error502') {
       controls.push({ emit: () => {}, finish: () => {}, closed: true })
       res.writeHead(502, { 'content-type': 'application/json' })
@@ -153,6 +159,52 @@ try {
   await new Promise(done => setTimeout(done, 300))
   equal(requests.length, errorRequests + 1, 'continuation respects the auto-continue setting')
   equal(outcomes(errorOffset), 'failed', 'disabled continuation reports the failure')
+
+  const quotaPushes = offset => pushes.slice(offset).filter(e => e.ch === 'quota-wait').map(e => e.payload?.cancel === true ? 'cancel' : 'wait')
+  let switchCalls = []
+  agent.switchSpareAccount = async provider => { switchCalls.push(provider); return null }
+  errorOffset = pushes.length
+  errorRequests = requests.length
+  plans.push('quota429')
+  check((await agent.send('QUOTA-NO-SPARE')).ok, 'quota turn accepted')
+  await settled('quota turn settles')
+  await wait(() => quotaPushes(errorOffset).length > 0, 'quota wait armed')
+  await new Promise(done => setTimeout(done, 300))
+  equal(switchCalls, ['fixture'], 'quota exhaustion checks for a spare account first')
+  equal(quotaPushes(errorOffset), ['wait'], 'no spare account: starts waiting for the quota reset')
+  equal(requests.length, errorRequests + 1, 'no spare account: no extra model request')
+  check(agent.holdsNotices(), 'host notices are held while waiting for quota')
+  equal(outcomes(errorOffset), 'failed', 'waiting turn reports the failure once')
+
+  switchCalls = []
+  agent.switchSpareAccount = async provider => { switchCalls.push(provider); return { label: '备用号', switched: true } }
+  errorOffset = pushes.length
+  errorRequests = requests.length
+  plans.push('quota429', 'normal')
+  check((await agent.send('QUOTA-WITH-SPARE')).ok, 'quota turn with spare account accepted')
+  await wait(() => requests.length === errorRequests + 2, 'switched account continues once')
+  await settled('switched continuation settles')
+  equal(switchCalls, ['fixture'], 'spare account looked up once')
+  equal(quotaPushes(errorOffset), ['cancel'], 'switched account: no quota wait, any pending wait cancelled')
+  check(JSON.stringify(requests.at(-1)).includes('额度换号'), 'continuation prompt says the account was switched')
+  check(pushes.slice(errorOffset).some(e => e.ch === 'notify' && /已换到 备用号/.test(e.payload?.message ?? '')), 'user told which account is now in use')
+  check(!agent.holdsNotices(), 'held notices released after switching')
+  equal(outcomes(errorOffset), 'completed', 'switched turn reports only the final completion')
+
+  switchCalls = []
+  errorOffset = pushes.length
+  errorRequests = requests.length
+  plans.push('quota429', 'quota429')
+  check((await agent.send('QUOTA-TWICE')).ok, 'quota turn that fails again after switching accepted')
+  await wait(() => requests.length === errorRequests + 2, 'first switch continues')
+  await settled('second quota failure settles')
+  await wait(() => quotaPushes(errorOffset).includes('wait'), 'second failure falls back to waiting')
+  await new Promise(done => setTimeout(done, 300))
+  equal(switchCalls, ['fixture'], 'switches at most once per user turn')
+  equal(quotaPushes(errorOffset), ['cancel', 'wait'], 'second exhaustion waits instead of switching again')
+  equal(requests.length, errorRequests + 2, 'no third model request')
+  check(agent.holdsNotices(), 'notices held again while waiting')
+  agent.switchSpareAccount = undefined
 
   c = await hold('THINKING-LOOP')
   const thinkingOffset = pushes.length

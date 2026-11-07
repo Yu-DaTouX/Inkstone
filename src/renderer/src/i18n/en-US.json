@@ -212,6 +212,7 @@
   "chat.hostLoop": "Stopped a repeating reply; continuing",
   "chat.hostModelError": "Model request failed; continuing",
   "chat.hostQuota": "Quota restored; continuing",
+  "chat.hostAccountSwitch": "Quota exhausted; switched accounts and continuing",
   "chat.stopRetry": "Stop retrying",
   "usage.title": "Local usage",
   "usage.models": "Models",

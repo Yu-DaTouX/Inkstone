@@ -1,16 +1,18 @@
-export type ContinuationReason = 'loop' | 'model-error' | 'key-failover'
+export type ContinuationReason = 'loop' | 'model-error' | 'key-failover' | 'account-switch'
 export type ContinuationAudience = 'session' | 'subagent'
 
 const SESSION_HEADS: Record<ContinuationReason, string> = {
   loop: '[循环恢复 · 自动继续 1/1]',
   'model-error': '[模型错误恢复 · 自动继续 1/1]',
-  'key-failover': '[模型错误恢复 · 自动继续 1/1]'
+  'key-failover': '[模型错误恢复 · 自动继续 1/1]',
+  'account-switch': '[额度换号 · 自动继续 1/1]'
 }
 
 const SESSION_CAUSES: Record<ContinuationReason, string> = {
   loop: '上一轮因输出重复被安全中止。',
   'model-error': '上一轮模型请求因暂时性错误（超时、连接中断或服务过载）中断，且没有自动重试。',
-  'key-failover': '上一轮因 API Key 不可用中断，已换成同服务商的另一个 Key。'
+  'key-failover': '上一轮因 API Key 不可用中断，已换成同服务商的另一个 Key。',
+  'account-switch': '上一轮因订阅账号额度用完中断，已换到同服务商还有额度的另一个账号。'
 }
 
 const SESSION_LOOP_EXTRA = '也不复述循环内容；回收的排队消息不在本次续跑范围内。'
@@ -18,7 +20,8 @@ const SESSION_LOOP_EXTRA = '也不复述循环内容；回收的排队消息不�
 const SUBAGENT_CAUSES: Record<ContinuationReason, string> = {
   loop: 'The previous turn was stopped because its output started repeating. Do not repeat the looping content.',
   'model-error': 'The previous model request failed with a temporary error (timeout, dropped connection or overload) and was not retried.',
-  'key-failover': 'The API key stopped working and was replaced.'
+  'key-failover': 'The API key stopped working and was replaced.',
+  'account-switch': 'The subscription account ran out of quota and was switched to another account.'
 }
 
 export function continuationPrompt(reason: ContinuationReason, audience: ContinuationAudience = 'session'): string {

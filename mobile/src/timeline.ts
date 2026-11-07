@@ -19,6 +19,7 @@ export const SHOWN_ROLES = new Set(['user', 'assistant', 'bash', 'note'])
 export function hostNoticeLabel(notice: HostTextNotice): string {
   if (notice.kind === 'session-moved') return pick(`会话已移到 ${notice.cwd}，自动继续`, `Session moved to ${notice.cwd}; continuing`)
   if (notice.kind === 'quota-resume') return pick('额度已恢复，继续任务', 'Quota restored; continuing')
+  if (notice.kind === 'account-switch') return pick('额度用完，已换号继续', 'Quota exhausted; switched accounts and continuing')
   return notice.reason === 'loop' ? pick('输出重复已中止，自动继续', 'Stopped a repeating reply; continuing') : pick('模型请求中断，自动继续', 'Model request failed; continuing')
 }
 
