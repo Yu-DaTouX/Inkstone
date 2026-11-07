@@ -1,3 +1,5 @@
+import { resolve } from 'node:path'
+import { findGitRoot } from './subagent-isolation'
 import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer, type SubagentQuotaWatch } from './subagents'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
@@ -50,12 +52,13 @@ function patchPathInside(path: string): boolean {
 const SUBAGENT_THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const SUMMARY_TASK_CHARS = 80
 
-function startSummary(run: SubagentRun): { data: SubagentRun; summary: Record<string, unknown> } {
+function startSummary(run: SubagentRun, note?: string): { data: SubagentRun; summary: Record<string, unknown> } {
   return {
     data: run,
     summary: {
       kind: 'subagent',
       action: 'start',
+      ...(note ? { note } : {}),
       id: run.id,
       status: run.status,
       model: run.model,
@@ -98,6 +101,9 @@ export interface SubagentServiceDeps {
   onEvent?(runId: string, evt: Record<string, unknown>, run: SubagentRun): void
 }
 
+const AUTO_WORKTREE_NOTE = 'Another subagent is already writing in this folder, so this one runs in its own worktree. It starts from HEAD without uncommitted changes; review and merge its patch when it finishes. Pass --isolation none to share the folder instead.'
+const SHARED_WRITER_NOTE = 'Another subagent is already writing in this folder and this is not a Git project, so they share it; keep their files separate.'
+
 export function parseIsolation(value: unknown): 'worktree' | undefined {
   if (value === undefined || value === null || value === false || value === '') return undefined
   const text = typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -109,6 +115,22 @@ export function parseIsolation(value: unknown): 'worktree' | undefined {
 export class SubagentService {
   private controller: SubagentController | null = null
   private loading?: Promise<SubagentController>
+  private readonly startingWriters = new Map<string, number>()
+
+  private async startDefaultWriter(ctrl: SubagentController, cwd: string, start: (isolation: 'worktree' | 'shared-cwd') => ReturnType<SubagentController['start']>): Promise<{ result: Awaited<ReturnType<SubagentController['start']>>; note?: string }> {
+    const root = resolve(cwd)
+    const claimed = this.startingWriters.get(root) ?? 0
+    this.startingWriters.set(root, claimed + 1)
+    try {
+      if (claimed === 0 && !ctrl.hasActiveWriter(root)) return { result: await start('shared-cwd') }
+      if (await findGitRoot(root)) return { result: await start('worktree'), note: AUTO_WORKTREE_NOTE }
+      return { result: await start('shared-cwd'), note: SHARED_WRITER_NOTE }
+    } finally {
+      const left = (this.startingWriters.get(root) ?? 1) - 1
+      if (left > 0) this.startingWriters.set(root, left)
+      else this.startingWriters.delete(root)
+    }
+  }
 
   constructor(private readonly deps: SubagentServiceDeps) {}
 
@@ -219,14 +241,19 @@ export class SubagentService {
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
-      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, thinkingLevel ? { ...context, thinkingLevel } : context)
+      const startContext = thinkingLevel ? { ...context, thinkingLevel } : context
+      const autoIsolate = !readOnly && !isolation && (params.isolation === undefined || params.isolation === null || params.isolation === '')
+      const started = autoIsolate
+        ? await this.startDefaultWriter(ctrl, context.cwd, (choice) => ctrl.start(task, model ?? context.model, choice, briefInput, undefined, startContext))
+        : { result: await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, startContext) }
+      const result = started.result
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(
           'subagent_start_failed',
           result.error ?? '子代理启动失败'
         )
       }
-      return startSummary(result.run)
+      return startSummary(result.run, 'note' in started ? started.note : undefined)
     }
 
     if (command === 'subagent.list') {

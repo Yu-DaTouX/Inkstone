@@ -14,7 +14,7 @@ description: 用户指定另一个模型完成任务，或需要独立上下文�
    推理档位用 `--thinking` 指定；不传时由宿主按模型选默认档。各模型支持的档位不同，以启动结果里的实际档位为准。
    `claude-bridge/*` 模型不支持 `--read-only`，用它时不要加该选项。启动报错时如实告诉用户原因，不要自行省略 `--model` 或换成别的模型重试。
 4. 查询用 `yan subagent list` / `yan subagent get --id <ID>`，停止用 `yan subagent stop --id <ID>`。用 `yan subagent send --id <ID> --message "信息"` 给子 Agent 发信息：运行中用于补充资料或纠正方向（当前工具结束后送达，要它做完原任务再处理时加 `--mode follow-up`）；已结束的会按原会话续接，它记得之前的工作，追问时优先用它而不是重派。worktree 子 Agent 在合并或放弃前也能续接，会在原工作树继续修改；合并、放弃或归档清理后不能。完成通知和 `get` 会标明能否续派。不用固定间隔 sleep 轮询；开启完成通知时结果会回到父会话。
-5. 不让多个写入任务同时修改相同文件；需要用户选择的问题留给主会话。子 Agent（包括 fork）不再派出子 Agent。
+5. 同一文件夹已有写入型子 Agent 在跑时，新派的写入型子 Agent 自动进 worktree（从 HEAD 开始，看不到未提交的改动，结束后由你合并），启动结果的 `note` 会说明；要共享文件夹时加 `--isolation none`。不让多个写入任务同时修改相同文件；需要用户选择的问题留给主会话。子 Agent（包括 fork）不再派出子 Agent。
 6. 汇报时以启动结果或查询结果的实际 `model` 为准，标明子 Agent 的模型、结论和未验证项；出错或部分完成不能称为任务成功。worktree 的改动由你审阅处置，不交给用户：看过补丁和结论后用 `yan subagent merge --id <ID>` 合并，或 `yan subagent discard --id <ID>` 放弃；有冲突时 merge 会报错并保留工作树，用 `send` 让它解决后再合并。当前文件夹任务已经直接写入，不假装有待合并补丁。
 
 不要求任务模板、空间、资料库、预算配置或外部 CLI Hub；旧的 `hub.*` 命令已退役。

@@ -117,7 +117,7 @@ export async function runSubagentIsolationTests(ok, isolation) {
     ok(preserved.ok && (await readText(join(preserved.path, 'reports', 'summary.md'))) === '# 报告\n', '另存保留目录结构与内容')
     ok(preserved.ok && !preserved.files.some((file) => file.includes('node_modules')), '可重建目录不另存', JSON.stringify(preserved))
     const tooBig = await isolation.preserveIgnoredOutputs(ignoredWork, archive, 'ignored-big', 2)
-    ok(!tooBig.ok && /超过/.test(tooBig.error), '超过上限时不另存并说明原因', JSON.stringify(tooBig))
+    ok(tooBig.ok && tooBig.skipped?.includes('reports') && !tooBig.path, '超过上限的产物跳过并列出，不再让工作区卡住', JSON.stringify(tooBig))
     const nothing = await isolation.preserveIgnoredOutputs({ isolation: 'shared-cwd', rootCwd: commitRepo, cwd: commitRepo }, archive, 'shared')
     ok(nothing.ok && !nothing.path && nothing.files.length === 0, '非 worktree 不做另存')
     await isolation.cleanupWorkspace(ignoredWork)

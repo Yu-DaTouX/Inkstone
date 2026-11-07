@@ -39,6 +39,7 @@ try {
   const service = new SubagentService({ resolveModelLabel: async () => ({ ok: true, label: 'fixture/fixture' }) })
   service.get = async () => ({
     setContext() {},
+    hasActiveWriter: () => false,
     start: async (_task, _model, isolation) => { starts.push(isolation); return { ok: true, run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task: 't' } } }
   })
   const context = { cwd: work, parentSessionId: 'p' }
@@ -51,6 +52,43 @@ try {
   }
   await assert.rejects(service.run('subagent.start', { task: 'x', isolation: 'worktre', fork: true }, context), { code: 'subagent_isolation_invalid' })
   assert.equal(starts.length, 3, '写错 isolation 时不启动子代理，也不退回共享目录')
+  const autoStarts = []
+  let activeWriter = false
+  const gitDir = await mkdtemp(join(tmpdir(), 'yan-auto-worktree-'))
+  await writeFile(join(gitDir, 'a.txt'), 'x')
+  const { spawnSync } = await import('node:child_process')
+  spawnSync('git', ['init', '-q'], { cwd: gitDir })
+  const plainDir = await mkdtemp(join(tmpdir(), 'yan-auto-shared-'))
+  let release
+  const gate = new Promise((done) => { release = done })
+  service.get = async () => ({
+    setContext() {},
+    hasActiveWriter: () => activeWriter,
+    start: async (_task, _model, isolation) => {
+      autoStarts.push(isolation)
+      if (autoStarts.length === 1) await gate
+      return { ok: true, run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task: 't', isolation } }
+    }
+  })
+  const first = service.run('subagent.start', { task: 'x' }, { cwd: gitDir, parentSessionId: 'p' })
+  await new Promise((done) => setTimeout(done, 20))
+  const second = await service.run('subagent.start', { task: 'y' }, { cwd: gitDir, parentSessionId: 'p' })
+  assert.equal(second.summary.isolation, 'worktree', '同时派出的第二个写入型子代理自动进 worktree，不被启动竞态漏掉')
+  assert.match(second.summary.note, /worktree/)
+  release()
+  const firstResult = await first
+  assert.equal(firstResult.summary.isolation, 'shared-cwd', '第一个仍在当前目录')
+  assert.equal(firstResult.summary.note, undefined)
+  activeWriter = true
+  assert.equal((await service.run('subagent.start', { task: 'z' }, { cwd: gitDir })).summary.isolation, 'worktree', '已有写入者在跑时自动隔离')
+  assert.equal((await service.run('subagent.start', { task: 'z', isolation: 'none' }, { cwd: gitDir })).summary.isolation, 'shared-cwd', '显式 none 不隔离')
+  assert.equal((await service.run('subagent.start', { task: 'z', 'read-only': true }, { cwd: gitDir })).summary.isolation, 'controlled-cwd', '只读不隔离')
+  const nonGit = await service.run('subagent.start', { task: 'z' }, { cwd: plainDir })
+  assert.equal(nonGit.summary.isolation, 'shared-cwd', '非 Git 目录退回共享')
+  assert.match(nonGit.summary.note, /not a Git project/)
+  await rm(gitDir, { recursive: true, force: true })
+  await rm(plainDir, { recursive: true, force: true })
+
   const finished = { id: 'sub-a1b2c3d4', status: 'done', task: 't', parentSessionId: 'p', isolation: 'shared-cwd', startedAt: 1, endedAt: 2, review: 'none', transcript: [{ id: 'm1', role: 'assistant', text: '最终结论全文' }], deliverables: [], toolCalls: 0 }
   service.get = async () => ({ setContext() {}, get: () => finished, getFull: async () => finished })
   const plain = await service.run('subagent.get', { id: finished.id }, context)

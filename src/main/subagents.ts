@@ -5,7 +5,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { SubagentHistory, type SubagentHistoryRecord } from './subagent-history'
 import { launchDigest, persistableForkLaunch, resolveResumeLaunch, restoreForkSource, subagentResumability, type ResumeLaunch, type ResumeMeta } from './subagent-resume'
 import { pruneSubagentArchive } from './subagent-prune'
-import { delimiter, join } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import type { QuotaWindow, SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
@@ -277,6 +277,10 @@ export interface SubagentQuotaWatch {
 
 const QUOTA_BOUNCE_LIMIT = 3
 const ignoredOnlyNote = () => pick('子 Agent只写了被 .gitignore 忽略的文件', 'Subagent only wrote files ignored by .gitignore')
+const skippedOutputsNote = (skipped: readonly string[]) => {
+  const list = `${skipped.slice(0, 5).join(pick('、', ', '))}${skipped.length > 5 ? pick(' 等', ' and more') : ''}`
+  return pick(`被忽略的产物太大，没有另存，已随工作区清理：${list}`, `Ignored outputs were too large to save and were removed with the workspace: ${list}`)
+}
 
 export interface SubagentHostCommands {
   onlyCommands: string[]
@@ -519,6 +523,14 @@ export class SubagentController {
       run.pushTimer = undefined
       if (this.runs.get(run.id) === run) this.emitDelta(run)
     }, STREAM_PUSH_MS)
+  }
+
+  hasActiveWriter(cwd: string): boolean {
+    const root = resolve(cwd)
+    for (const run of this.runs.values()) {
+      if (run.isolation === 'shared-cwd' && (run.status === 'starting' || run.status === 'running') && resolve(run.workspace?.rootCwd ?? run.cwd) === root) return true
+    }
+    return false
   }
 
   list(): SubagentRun[] {
@@ -1303,6 +1315,7 @@ export class SubagentController {
         if (run.error?.startsWith(ignoredOnlyNote())) run.error = pick(`${ignoredOnlyNote()}，已另存到 ${saved.path}`, `${ignoredOnlyNote()}; saved to ${saved.path}`)
         if (!run.diff?.patchPath) run.resultPath = saved.path
       }
+      if (saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join('\n')
     }
     const result = await cleanupWorkspace(run.workspace)
     run.worktreeDone = result.ok
@@ -1440,6 +1453,7 @@ export class SubagentController {
       if (!saved.ok) return { ok: false, error: pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${kept.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${kept.worktreePath}`) }
       const cleaned = await cleanupWorkspace(kept)
       if (saved.path) run.savedOutputsPath = saved.path
+      if ('skipped' in saved && saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join(String.fromCharCode(10))
       if (!cleaned.ok) run.error = [run.error, ...cleaned.errors].filter(Boolean).join(String.fromCharCode(10))
     }
     run.review = review

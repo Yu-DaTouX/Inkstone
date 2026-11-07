@@ -275,7 +275,7 @@ async function sizeWithin(path: string, budget: number): Promise<number> {
   return total
 }
 
-export type PreservedOutputs = { ok: true; path?: string; files: string[] } | { ok: false; error: string }
+export type PreservedOutputs = { ok: true; path?: string; files: string[]; skipped?: string[] } | { ok: false; error: string }
 
 export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archiveDir: string, id: string, limit = IGNORED_OUTPUT_COPY_LIMIT): Promise<PreservedOutputs> {
   if (workspace.isolation !== 'worktree' || !workspace.worktreePath) return { ok: true, files: [] }
@@ -288,14 +288,24 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
   }
   if (outputs.length === 0) return { ok: true, files: [] }
   try {
+    const sized: Array<{ rel: string; size: number }> = []
+    for (const rel of outputs) sized.push({ rel, size: await sizeWithin(join(workspace.cwd, rel), limit + 1) })
+    sized.sort((a, b) => a.size - b.size)
     let total = 0
-    for (const rel of outputs) {
-      total += await sizeWithin(join(workspace.cwd, rel), limit - total)
-      if (total > limit) return { ok: false, error: pick(`被忽略的产物超过 ${Math.round(limit / 1024 / 1024)} MB，没有自动另存`, `Ignored outputs exceed ${Math.round(limit / 1024 / 1024)} MB and were not saved`) }
+    const files: string[] = []
+    const skipped: string[] = []
+    for (const item of sized) {
+      if (total + item.size > limit) {
+        skipped.push(item.rel)
+        continue
+      }
+      total += item.size
+      files.push(item.rel)
     }
+    if (!files.length) return { ok: true, files, skipped }
     const target = join(archiveDir, `${id}-outputs`)
-    for (const rel of outputs) await cp(join(workspace.cwd, rel), join(target, rel), { recursive: true, force: true, verbatimSymlinks: true })
-    return { ok: true, path: target, files: outputs }
+    for (const rel of files) await cp(join(workspace.cwd, rel), join(target, rel), { recursive: true, force: true, verbatimSymlinks: true })
+    return { ok: true, path: target, files, ...(skipped.length ? { skipped } : {}) }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
