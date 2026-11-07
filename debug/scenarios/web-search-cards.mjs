@@ -21,6 +21,10 @@ export default async function run({ cdp, newSession, check, sleep, shot, report 
   await cdp.evaluate(`window.__yanStore.setState({ messages: ${JSON.stringify(messages)}, historyLoading: false, switchLoading: false })`)
   await sleep(400)
   await cdp.evaluate(`document.querySelector('[data-testid=v3-process-toggle]')?.click()`)
+  await sleep(250)
+  await cdp.evaluate(`document.querySelector('[data-testid=ws-group]')?.click()`)
+  await sleep(250)
+  await cdp.evaluate(`document.querySelector('[data-testid=ws-capsule]')?.click()`)
   const deadline = Date.now() + 12000
   let icons = []
   while (Date.now() < deadline) {
