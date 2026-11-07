@@ -117,7 +117,7 @@ function stormTag(text, word) {
 function stormCommand(dir, tag, step, lines) {
   const touch = `mkdir -p ${dir} && for i in 1 2 3; do printf 'step ${step} ${tag} %s\\n' "$RANDOM" >> "${dir}/${tag}-$(( (${step} + i) % 12 )).txt"; done`
   const tracked = step % 10 === 0 ? ` && printf 'touch ${tag} ${step}\\n' >> README.md` : ''
-  return `${touch}${tracked} && seq -f 'out ${step} line %g ................................................' 1 ${lines}`
+  return `case "$PWD" in */debug/runs/*) ${touch}${tracked};; esac; seq -f 'out ${step} line %g ................................................' 1 ${lines}`
 }
 
 function stormNarration(step) {
