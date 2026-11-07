@@ -189,7 +189,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const rootRef = useRef<HTMLDivElement | null>(null)
   const liveHeightRef = useRef(0)
   const wasLiveRef = useRef(live)
-  const [leave, setLeave] = useState(0)
+  const leaveRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const root = rootRef.current
     if (!live || !root) return undefined
@@ -203,7 +203,6 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   useLayoutEffect(() => {
     if (live) {
       wasLiveRef.current = true
-      setLeave(0)
       return
     }
     const root = rootRef.current
@@ -211,7 +210,10 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
     wasLiveRef.current = false
     const gap = parseFloat(getComputedStyle(root).rowGap) || 0
     const delta = liveHeightRef.current - root.getBoundingClientRect().height - gap
-    setLeave(delta > 2 ? delta : 0)
+    const spacer = leaveRef.current
+    if (!spacer || delta <= 2) return
+    spacer.style.height = delta + 'px'
+    spacer.dataset.leaving = ''
   }, [live])
   return (
     <>
@@ -238,7 +240,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
         </CollapsibleHeader>
       )}
       {live ? body : <CollapsiblePanel animated className="v3-step-panel">{open ? body : null}</CollapsiblePanel>}
-      {leave > 0 && !live ? <div className="v3-process-leave" aria-hidden style={{ height: leave }} onAnimationEnd={() => setLeave(0)} /> : null}
+      {live ? null : <div ref={leaveRef} className="v3-process-leave" aria-hidden onAnimationEnd={(event) => { event.currentTarget.style.height = ''; delete event.currentTarget.dataset.leaving }} />}
       {compactionAfter && !open && !stage ? <CompactionMarker /> : null}
     </Collapsible>
     {foldedQuestions.length ? (
