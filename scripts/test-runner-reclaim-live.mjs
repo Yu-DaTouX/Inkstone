@@ -10,7 +10,7 @@ import { sampleProcessTree, remainingProcessIds } from './lib/process-sample.mjs
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-runner-reclaim-'))
 const compiledDir = await mkdtemp(resolve('node_modules/.inkstone-runner-reclaim-'))
-const evidence = resolve(process.env.YAN_RECLAIM_EVIDENCE || `.local-docs/evidence/runner-reclaim-${Date.now()}`)
+const evidence = resolve(process.env.YAN_RECLAIM_EVIDENCE || `.local-docs/evidence/runner-reclaim/${Date.now()}`)
 const pi = join(root, 'pi'), data = join(root, 'data'), sessions = join(root, 'sessions')
 const beforeEnv = { ...process.env }
 const agents = [], logs = [], setupPending = new Set()
