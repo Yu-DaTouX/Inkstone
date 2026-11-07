@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">让想法成形。</h1>
-<p align="center">砚（Inkstone）是基于 pi 的轻量桌面 Agent 客户端。选好模型，把任务交给 AI，在同一个窗口里读回复、看过程、改文件、预览成果。</p>
+<p align="center">砚（Inkstone）是基于 pi 的个人全能 Agent。把事情交给它，它自己动手做完：写代码、查资料、操作网页和文件，每一步都看得见，做完把结果说清楚。</p>
 
 <p align="center">
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><b>下载</b></a> ·
@@ -19,19 +19,19 @@
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/inkstone/workspace-0.12.0-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/inkstone/workspace-0.12.0-light.png">
-  <img src="assets/inkstone/workspace-0.12.0-light.png" alt="Inkstone 0.12.0：浮板会话栏、可展开的任务过程、框内状态行，以及右侧会话统计与工作区。" width="1280">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/inkstone/workspace-0.14.1-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/inkstone/workspace-0.14.1-light.png">
+  <img src="assets/inkstone/workspace-0.14.1-light.png" alt="Inkstone 0.14.1：左栏按项目整理会话，中间是回复与改动摘要，右栏查看更改并提交。" width="1280">
 </picture>
 
-<p align="center"><sub>0.12.0 版界面 · 图中会话、模型与用量均为本机演示数据</sub></p>
+<p align="center"><sub>0.14.1 版界面 · 图中会话、模型与文件均为演示数据</sub></p>
 
 ## 它能帮你做什么
 
 - **把任务交给 AI**：贴图片、用 `@` 引用文件、用 `/` 调命令。正文保持连续阅读，思考与工具步骤按需展开；计划和排队消息收在输入框附近。
-- **按项目整理会话**：在左栏切换项目和会话，查看运行状态、置顶、归档或全文搜索。`Ctrl+K` 打开搜索与命令面板。
+- **按项目整理会话**：在左栏切换项目和会话，查看运行状态、置顶、归档或全文搜索；多个会话可以并排分屏。`Ctrl+K` 打开搜索与命令面板。
 - **边做边看成果**：HTML 页面可以直接预览，文件、PDF、代码和改动差异都能在会话旁查看；改动、文件、浏览器、终端、Pull 请求等以标签形式在右栏打开，最多可分 3 列、拖动调宽或最大化，窄屏时变为抽屉，每个会话记住自己的布局。Agent 也能读取和操作会话终端，写入同样走审批。
-- **浏览器操作**：Agent 操作的网页直接显示在砚的侧栏，支持多步脚本、下载和用户接管，无需额外浏览器；标签竖排在左侧，视口可切换自适应、手机、平板、桌面。点击「一键导入登录态」，可从默认 Chrome / Edge 当前档案导入网站 Cookie；首次需按提示安装配套扩展。不迁移密码、通行密钥或完整浏览器设置，部分网站仍需重新登录。
+- **浏览器操作**：Agent 操作的网页直接显示在砚的侧栏，支持多步脚本、下载和用户接管，无需额外浏览器；标签竖排在左侧，视口可切换自适应、手机、平板、桌面；每个会话的标签互不干扰，Agent 起的本地服务可以一键停止。点击「一键导入登录态」，可从默认 Chrome / Edge 当前档案导入网站 Cookie；首次需按提示安装配套扩展。不迁移密码、通行密钥或完整浏览器设置，部分网站仍需重新登录。
 - **让子 Agent 分头做事**：为子任务指定模型，在后台并行处理；运行中可直接向子代理插话。会话中汇总进度，打开右侧工作区即可读完整转录。
 - **自己决定操作权限**：「自动批准」下，常规操作直接执行，危险操作与项目外写入先确认；可以允许一次、在本会话允许，或附理由拒绝。「不受限制」按 pi 原生行为执行。符合条件的项目还会在发送前保存本地快照，方便预览和回退。
 - **模型、技能和 MCP**：在设置里登录模型服务或填入 API Key，随时切换模型与思考档位；技能和 MCP 可按全局或当前项目配置。输入框显示上下文占用，会话栏展示用量与速度，支持的服务可查看额度窗口。
@@ -43,7 +43,7 @@
 
 ## 平台
 
-当前桌面公开版为 **0.14.0**，只交付和验证 Windows（x64）。macOS 和 Linux 是规划中的目标，现在还不能视为已支持。Android 客户端公开版为 **0.3.0**，可在 **设置 → 手机与远程** 扫码配对电脑（仍在测试）；iOS 尚未交付。开发版的改动不一定包含在已发布的安装包里。
+当前桌面公开版为 **0.14.1**，只交付和验证 Windows（x64）。macOS 和 Linux 是规划中的目标，现在还不能视为已支持。Android 客户端公开版为 **0.3.1**，可在 **设置 → 手机与远程** 扫码配对电脑（仍在测试）；iOS 尚未交付。开发版的改动不一定包含在已发布的安装包里。
 
 ## 开始使用
 
@@ -99,6 +99,7 @@ npm run launch
 | `npm run test:live -- <场景>` | Electron 场景检查；部分场景会请求真实模型，按场景选择 |
 | `npm run check` | 完整检查（类型、图标、构建、单测、设计度量、核心 live 场景） |
 | `npm run vendor:pi` / `npm run upgrade:pi` | 提取或升级随包 pi 运行时 |
+| `npm run debug -- help` | 隔离实例、假模型、截图与回归场景 |
 | `npm run storybook` | 界面控件的 Storybook |
 | `npm run dist` | 打包 Windows 安装包 |
 
@@ -123,13 +124,3 @@ AI 协作约定见 [AGENTS.md](AGENTS.md)。
 ## 许可证
 
 [MIT](LICENSE) · © 2026 Yu-DaTouX。第三方组件的许可见[第三方许可](THIRD-PARTY.md)。
-touch a 10
-touch a 20
-touch a 10
-touch a 20
-touch a 10
-touch a 20
-touch a 10
-touch a 20
-touch a 10
-touch a 20
