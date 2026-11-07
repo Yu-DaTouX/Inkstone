@@ -2006,7 +2006,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     return { ok: false, error: pick(`重启这个会话失败：${restarted.error ?? '未知原因'}。其他会话或子 Agent还在运行，没有把它们一起重启；等它们停下后再试。`, `Failed to restart this session: ${restarted.error ?? 'unknown reason'}. Other sessions or subagents are still running and were not restarted; try again after they stop.`) }
   }
   await runners?.stopAll()
-  await subagentService.current()?.stopAll()
 
   const settings = await getSettings()
   await refreshManagedGit().catch(() => undefined)

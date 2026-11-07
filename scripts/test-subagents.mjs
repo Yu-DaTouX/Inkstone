@@ -1070,6 +1070,28 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       const merged = await history.merge(run.id)
       ok(merged.ok && existsSync(join(root, 'new.txt')), '历史合并应用到原 rootCwd，不使用当前项目或旧 worktree')
       ok((await history.merge(run.id)).ok, '历史合并审阅状态持久化且重复操作不重复套补丁')
+
+      const liveFactory = makeRpcFactory()
+      const live = new SubagentController({ cwd: root, archiveDir: archive, createRpc: liveFactory.createRpc, onChange: () => {} })
+      const liveRun = (await live.start('归档后不重启直接合并', undefined, 'worktree')).run
+      await writeFile(join(liveRun.cwd, 'live.txt'), 'live\n', 'utf8')
+      liveFactory.created[0].emit('event', { type: 'agent_settled' })
+      ok(await waitFor(() => live.get(liveRun.id)?.review === 'pending'), '第二个 worktree 进入待审阅')
+      await live.stopAll()
+      ok(live.get(liveRun.id)?.review === 'archived' && !existsSync(liveRun.cwd), '「全部停止」后归档且工作树已删')
+      const liveMerged = await live.merge(liveRun.id)
+      ok(liveMerged.ok && existsSync(join(root, 'live.txt')) && live.get(liveRun.id)?.review === 'merged', '不重启也能合并已归档的补丁', JSON.stringify(liveMerged))
+      await rm(join(root, 'live.txt'), { force: true })
+
+      const dropFactory = makeRpcFactory()
+      const drop = new SubagentController({ cwd: root, archiveDir: archive, createRpc: dropFactory.createRpc, onChange: () => {} })
+      const dropRun = (await drop.start('归档后放弃', undefined, 'worktree')).run
+      await writeFile(join(dropRun.cwd, 'drop.txt'), 'drop\n', 'utf8')
+      dropFactory.created[0].emit('event', { type: 'agent_settled' })
+      ok(await waitFor(() => drop.get(dropRun.id)?.review === 'pending'), '第三个 worktree 进入待审阅')
+      await drop.stopAll()
+      const dropped = await drop.discard(dropRun.id)
+      ok(dropped.ok && drop.get(dropRun.id)?.review === 'discarded' && !existsSync(join(root, 'drop.txt')), '已归档的也能放弃，且不动项目', JSON.stringify(dropped))
       await history.discard(run.id)
       ok(existsSync(join(root, 'new.txt')) && history.get(run.id)?.review === 'discarded', '历史放弃不清理旧 cwd 或删除原项目，调用快照仍保留')
     } finally {

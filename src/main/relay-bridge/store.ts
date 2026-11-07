@@ -81,7 +81,7 @@ export class RelayBridgeStore {
 
   private save(): Promise<void> {
     const snapshot = JSON.stringify(this.state, null, 2)
-    this.writing = this.writing.then(async () => {
+    const write = async (): Promise<void> => {
       await mkdir(dirname(this.file), { recursive: true })
       const temporary = `${this.file}.${process.pid}.${randomUUID()}.tmp`
       try {
@@ -92,8 +92,10 @@ export class RelayBridgeStore {
         await unlink(temporary).catch(() => undefined)
         throw error
       }
-    })
-    return this.writing
+    }
+    const task = this.writing.then(write, write)
+    this.writing = task.catch(() => undefined)
+    return task
   }
 
   async hostKey(): Promise<KeyPair> {

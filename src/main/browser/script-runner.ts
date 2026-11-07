@@ -1,11 +1,14 @@
-import { runInNewContext } from 'node:vm'
+import { spawn } from 'node:child_process'
 import type { BrowserObservation } from '../../shared/ipc'
 import { WAIT_POLL_MS, describeWait, parseWaitCondition, sameWaitElement, waitSatisfied } from '../../shared/browser-wait'
 import type { BrowserActionOptions, BrowserActionReceipt } from './receipt'
+import { SCRIPT_WORKER_SOURCE } from './script-worker'
 
 export const SCRIPT_TIMEOUT_MS = 120_000
 const MAX_LOG_LINES = 200
 const MAX_LOG_CHARS = 20_000
+const STATE_PUSH_MS = 200
+const STDERR_TAIL_CHARS = 500
 
 type ActionResult = { ok: boolean; error?: string; code?: string; observation?: BrowserObservation; receipt?: BrowserActionReceipt }
 
@@ -66,17 +69,6 @@ task.switchTo(id) / task.closePage(id?)
 click / fill / select / press 返回 { url, title, receipt }，字段都在 receipt 里：dialogs（弹窗及处理方式）、openedTabs（新开的标签）、downloadStarted、value、obscuredBy（点击点被别的元素挡住时的遮挡者）；scroll 直接返回位置。
 例如 const r = await page.fill(ref, '18:30'); r.receipt.value === '18:30'。切换标签后旧标签的 ref 不能用，先 observe 或 find。
 动作失败会抛出 Error，message 以错误码开头，例如 "STALE_ELEMENT: …"。ref 在同一页面上保持不变，页面导航后需要重新 observe 或 find。`
-
-function formatLog(args: unknown[]): string {
-  return args.map((arg) => {
-    if (typeof arg === 'string') return arg
-    try {
-      return JSON.stringify(arg)
-    } catch {
-      return String(arg)
-    }
-  }).join(' ')
-}
 
 function plain(value: unknown): unknown {
   if (value === undefined) return null
@@ -202,25 +194,80 @@ export async function runBrowserScript(
     }
   })
 
-  const log = (...args: unknown[]): void => {
+  const log = (text: string): void => {
     if (logs.length >= MAX_LOG_LINES || logChars >= MAX_LOG_CHARS) return
-    const line = formatLog(args).slice(0, MAX_LOG_CHARS - logChars)
+    const line = text.slice(0, MAX_LOG_CHARS - logChars)
     logChars += line.length
     logs.push(line)
   }
-  const sandbox = {
-    page,
-    task,
-    console: Object.freeze({ log, info: log, warn: log, error: log }),
-    sleep: (ms: unknown) => new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(Number(ms) || 0, 0), 30_000)))
+  const sleep = (ms: unknown): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(Number(ms) || 0, 0), 30_000)))
+  const { url: _url, title: _title, ...pageCalls } = page
+  const { pages: _pages, ...taskCalls } = task
+  const calls = new Map<string, (...args: never[]) => unknown>([
+    ...Object.entries(pageCalls).map(([name, fn]) => [`page.${name}`, fn] as [string, (...args: never[]) => unknown]),
+    ...Object.entries(taskCalls).map(([name, fn]) => [`task.${name}`, fn] as [string, (...args: never[]) => unknown]),
+    ['sleep', sleep]
+  ])
+
+  const permission = process.allowedNodeEnvironmentFlags?.has('--permission') ? ['--permission'] : []
+  const child = spawn(process.execPath, [...permission, '-e', SCRIPT_WORKER_SOURCE], {
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    windowsHide: true,
+    env: { ELECTRON_RUN_AS_NODE: '1', ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) }
+  })
+  let stderrTail = ''
+  child.stderr?.on('data', (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL_CHARS) })
+  const tell = (message: Record<string, unknown>): void => {
+    if (child.connected) child.send(message, () => undefined)
+  }
+  const pushState = (): void => {
+    if (stopped) return
+    try {
+      const state = browser.state()
+      tell({ type: 'state', state: JSON.stringify({ url: state.url, title: state.title, pages: task.pages() }) })
+    } catch {
+    }
+  }
+  const handleCall = async (id: unknown, method: unknown, args: unknown): Promise<void> => {
+    let reply: Record<string, unknown>
+    try {
+      const fn = typeof method === 'string' ? calls.get(method) : undefined
+      const list = typeof args === 'string' ? JSON.parse(args) as unknown : null
+      if (!fn || !Array.isArray(list)) throw new ScriptError('script_error', `script_error: unknown call ${String(method)}`)
+      const value = await (fn as (...items: unknown[]) => unknown)(...list)
+      reply = { ok: true, ...(value === undefined ? {} : { value: JSON.stringify(plain(value)) }) }
+    } catch (error) {
+      const code = error instanceof ScriptError ? error.code : undefined
+      reply = { ok: false, ...(code ? { code } : {}), message: error instanceof Error ? error.message : String(error) }
+    }
+    pushState()
+    tell({ type: 'reply', id, ...reply })
   }
 
-  let running: Promise<unknown>
-  try {
-    running = runInNewContext(`(async () => {\n${code}\n})()`, sandbox, { timeout: 2_000, filename: 'browser-script.js' }) as Promise<unknown>
-  } catch (error) {
-    throw new ScriptError('script_error', `script_error: ${error instanceof Error ? error.message : String(error)}`)
-  }
+  const running = new Promise<unknown>((resolve, reject) => {
+    child.on('message', (raw) => {
+      if (stopped || !raw || typeof raw !== 'object') return
+      const message = raw as { type?: unknown; id?: unknown; method?: unknown; args?: unknown; line?: unknown; result?: unknown; code?: unknown; message?: unknown }
+      if (message.type === 'ready') {
+        pushState()
+        tell({ type: 'start', code })
+      } else if (message.type === 'call') void handleCall(message.id, message.method, message.args)
+      else if (message.type === 'log' && typeof message.line === 'string') log(message.line)
+      else if (message.type === 'done') {
+        try {
+          resolve(JSON.parse(String(message.result)))
+        } catch {
+          resolve(null)
+        }
+      } else if (message.type === 'failed') {
+        const text = String(message.message ?? '')
+        reject(typeof message.code === 'string' ? new ScriptError(message.code, text) : new ScriptError('script_error', `script_error: ${text}`))
+      }
+    })
+    child.on('error', (error) => reject(new ScriptError('script_error', `script_error: ${error.message}`)))
+    child.once('exit', (exitCode) => reject(new ScriptError('script_error', `script_error: script process exited early (${exitCode ?? '?'})${stderrTail ? `: ${stderrTail}` : ''}`)))
+  })
+  const statePush = setInterval(pushState, STATE_PUSH_MS)
 
   const timeoutMs = options.timeoutMs ?? SCRIPT_TIMEOUT_MS
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -240,6 +287,8 @@ export async function runBrowserScript(
     throw Object.assign(new ScriptError('script_error', `script_error: ${error instanceof Error ? error.message : String(error)}`), { logs })
   } finally {
     stopped = true
+    clearInterval(statePush)
+    child.kill()
     clearTimeout(timer)
     if (onAbort) options.signal?.removeEventListener('abort', onAbort)
   }

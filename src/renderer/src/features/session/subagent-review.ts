@@ -22,9 +22,10 @@ type ReviewableRun = Pick<SubagentRun, 'isolation' | 'review' | 'status' | 'diff
 export function subagentReviewGate(run: ReviewableRun): SubagentReviewGate {
   const worktree = run.isolation === 'worktree'
   const running = run.status === 'starting' || run.status === 'running'
-  const reviewing = run.review === 'pending' || run.review === 'conflict'
   const files = run.diff?.files ?? 0
-  const canPatch = worktree && !running && reviewing && !!run.diff?.patchPath && files > 0
+  const hasPatch = !!run.diff?.patchPath && files > 0
+  const reviewing = run.review === 'pending' || run.review === 'conflict' || (run.review === 'archived' && hasPatch)
+  const canPatch = worktree && !running && reviewing && hasPatch
   const canDiscard = worktree && !running && reviewing
   const canReview = canPatch || canDiscard
   let blocked: SubagentReviewBlock | null = null

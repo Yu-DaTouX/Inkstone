@@ -347,6 +347,8 @@ export async function runSubagentParentOwnershipTests(ok) {
         check(emitted.length === hookBefore + 1 && emitted.at(-1).parentSessionId === 'A-real', '钩子只推一次 updated 快照')
         const indexSource = await fs.readFile(fileURLToPath(new URL('../src/main/index.ts', import.meta.url)), 'utf8')
         check(/if \(msg\.ch === 'state'\) pushRunners\(\)/.test(indexSource), '生产调用链：pushFrom 的 state 分支会通知 pushRunners（钩子可达）')
+        const doStart = indexSource.slice(indexSource.indexOf('async function doStartAgent'), indexSource.indexOf('runners = new RunnerRegistry'))
+        check(doStart.includes('runners?.stopAll()') && !doStart.includes('subagentService'.concat('.current()?.stopAll')), '换号、换 Key、登录触发的重建不停子代理')
 
         putRun('sub-reuse', { parentRunId: 'rA', parentGeneration: 5, parentSessionId: 'pending:rA' })
         context.runners = { statuses: () => [{ runId: 'rA', sessionId: 'A-real', generation: 6 }] }

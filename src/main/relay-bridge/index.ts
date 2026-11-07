@@ -118,9 +118,11 @@ export class RelayBridge {
   }
 
   async revoke(id: string): Promise<boolean> {
-    const ok = await this.store.revoke(id)
-    for (const s of this.sessions) if (s.client?.id === id) s.close()
-    return ok
+    try {
+      return await this.store.revoke(id)
+    } finally {
+      for (const s of this.sessions) if (s.client?.id === id) s.close()
+    }
   }
 
   forget(id: string): Promise<boolean> {

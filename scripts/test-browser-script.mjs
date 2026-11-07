@@ -94,6 +94,65 @@ await check('脚本：沙箱里没有 require / process / fetch', async () => {
   assert.deepEqual(out.result, ['undefined', 'undefined', 'undefined', 'object', 'object', 'function'])
 })
 
+await check('脚本：拿不到宿主 process，也拿不到 API 的内部通道', async () => {
+  const fake = fakeBrowser()
+  const out = await runBrowserScript(`return [
+    page.url.constructor('return typeof process')(),
+    page.goto.constructor('return typeof require')(),
+    sleep.constructor('return typeof process')(),
+    console.log.constructor('return typeof process')(),
+    this === undefined ? 'strict' : this.constructor.constructor('return typeof process')(),
+    Object.keys(globalThis).sort().join()
+  ]`, fake.browser)
+  assert.deepEqual(out.result.slice(0, 4), ['undefined', 'undefined', 'undefined', 'undefined'])
+  assert.notEqual(out.result[4], 'object')
+  assert.equal(out.result[5], 'console,page,sleep,task')
+})
+
+await check('脚本：进程环境里没有密钥，文件和子进程被拒绝', async () => {
+  const fake = fakeBrowser()
+  process.env.YAN_TEST_SECRET_FOR_SCRIPT = 'must-not-leak'
+  const { spawnSync } = await import('node:child_process')
+  const probe = `
+    const report = { secret: process.env.YAN_TEST_SECRET_FOR_SCRIPT ?? null }
+    try { require('node:fs').readFileSync(process.execPath); report.read = 'allowed' } catch (e) { report.read = e.code }
+    try { require('node:child_process').spawnSync(process.execPath, ['-v']); report.spawn = 'allowed' } catch (e) { report.spawn = e.code }
+    console.log(JSON.stringify(report))`
+  const res = spawnSync(process.execPath, ['--permission', '-e', probe], { encoding: 'utf8', env: { ELECTRON_RUN_AS_NODE: '1', SystemRoot: process.env.SystemRoot } })
+  assert.deepEqual(JSON.parse(res.stdout), { secret: null, read: 'ERR_ACCESS_DENIED', spawn: 'ERR_ACCESS_DENIED' })
+  delete process.env.YAN_TEST_SECRET_FOR_SCRIPT
+  assert.ok(typeof fake.browser.state === 'function')
+})
+
+await check('脚本：await 之后的死循环不冻住主进程，超时后被杀掉', async () => {
+  const fake = fakeBrowser()
+  let ticks = 0
+  const timer = setInterval(() => { ticks += 1 }, 20)
+  const started = Date.now()
+  await assert.rejects(
+    runBrowserScript('await sleep(1); while (true) {}', fake.browser, { timeoutMs: 800 }),
+    (error) => error.code === 'script_timeout'
+  )
+  clearInterval(timer)
+  assert.ok(Date.now() - started < 5000, '超时按时生效')
+  assert.ok(ticks >= 10, `主线程事件循环没有被卡住：${ticks}`)
+})
+
+await check('脚本：不 await 的失败动作和抛出普通异常都不会弄坏运行器', async () => {
+  const fake = fakeBrowser()
+  const out = await runBrowserScript("page.click('missing'); await sleep(50); return 'ok'", fake.browser)
+  assert.equal(out.result, 'ok')
+  await assert.rejects(runBrowserScript("throw new Error('boom')", fake.browser), (error) => error.code === 'script_error' && /boom/.test(error.message))
+})
+
+await check('脚本：sleep 之后 page.url 读到最新地址，日志有上限', async () => {
+  const fake = fakeBrowser()
+  setTimeout(() => { fake.browser.state().url = 'https://later.example/' }, 400)
+  const out = await runBrowserScript("for (let i = 0; i < 500; i++) console.log('line', i); await sleep(900); return page.url()", fake.browser)
+  assert.equal(out.result, 'https://later.example/')
+  assert.equal(out.logs.length, 200)
+})
+
 await check('脚本：超时后报 script_timeout，之后的动作不再执行', async () => {
   const fake = fakeBrowser()
   await assert.rejects(

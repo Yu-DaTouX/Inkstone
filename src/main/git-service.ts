@@ -66,7 +66,7 @@ function gitFailure(message: string, timedOut: boolean, code: GitErrorCode): Err
 }
 
 export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = {}): Promise<GitRunResult> {
-  const full = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', ...args]
+  const full = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', '-c', 'core.fsmonitor=false', ...args]
   const env = sanitizedGitEnv(process.env, opts.env ?? {})
   const timeout = timeoutWithin(opts.timeout ?? DEFAULT_TIMEOUT, opts.deadline)
   if (timeout <= 0) {
@@ -236,10 +236,40 @@ interface StatusSnapshot {
   stdout: string
 }
 
+const TRUSTED_LFS_FILTERS = new Set(['git-lfs clean -- %f', 'git-lfs smudge -- %f', 'git-lfs filter-process'])
+
+async function repoFilterGuard(root: string): Promise<Record<string, string>> {
+  const res = await gitRun(root, ['config', '--show-scope', '--includes', '-z', '--get-regexp', '^filter\\.'], { allowFailure: true, timeout: 8000 })
+  const parts = res.stdout.split('\0')
+  const names = new Set<string>()
+  for (let index = 0; index + 1 < parts.length; index += 2) {
+    if (parts[index] !== 'local' && parts[index] !== 'worktree') continue
+    const entry = parts[index + 1]
+    const newline = entry.indexOf('\n')
+    const key = newline < 0 ? entry : entry.slice(0, newline)
+    const match = /^filter\.(.+)\.(?:clean|smudge|process)$/.exec(key)
+    if (match && !TRUSTED_LFS_FILTERS.has(newline < 0 ? '' : entry.slice(newline + 1))) names.add(match[1])
+  }
+  const overrides = [...names].flatMap((name) => [
+    [`filter.${name}.clean`, ''],
+    [`filter.${name}.smudge`, ''],
+    [`filter.${name}.process`, ''],
+    [`filter.${name}.required`, 'false']
+  ])
+  if (!overrides.length) return {}
+  const env: Record<string, string> = { GIT_CONFIG_COUNT: String(overrides.length) }
+  overrides.forEach(([key, value], index) => {
+    env[`GIT_CONFIG_KEY_${index}`] = key
+    env[`GIT_CONFIG_VALUE_${index}`] = value
+  })
+  return env
+}
+
 async function readStatusSnapshot(root: string): Promise<StatusSnapshot> {
-  const res = await gitRun(root, STATUS_ARGS, { allowFailure: true })
+  const env = await repoFilterGuard(root)
+  const res = await gitRun(root, STATUS_ARGS, { allowFailure: true, env })
   if (res.ok || res.stdout) return { status: parseStatusV2(res.stdout), stdout: res.stdout }
-  const fallback = await gitRun(root, STATUS_FALLBACK_ARGS, { allowFailure: true })
+  const fallback = await gitRun(root, STATUS_FALLBACK_ARGS, { allowFailure: true, env })
   if (!fallback.ok && !fallback.stdout) {
     throw new Error(res.error ?? fallback.error ?? pick('git status 失败', 'git status failed'))
   }

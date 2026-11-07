@@ -263,7 +263,9 @@ async function main() {
     }
 
     const archived = lib.subagentReviewGate(run({ review: 'archived' }))
-    ok(!archived.canReview && archived.blocked === 'no-worktree', '已归档（工作树已清理）：不给假入口', archived)
+    ok(archived.canPatch && archived.canDiscard && archived.blocked === null, '已归档且补丁还在：可以合并或放弃', archived)
+    const archivedEmpty = lib.subagentReviewGate(run({ review: 'archived', diff: undefined }))
+    ok(!archivedEmpty.canReview && archivedEmpty.blocked === 'no-worktree', '已归档且没有补丁：不给假入口', archivedEmpty)
 
     for (const review of ['merged', 'discarded', 'none']) {
       const r = lib.subagentReviewGate(run({ review }))
@@ -319,7 +321,8 @@ async function main() {
     ok(render({ run: run({ isolation: 'controlled-cwd' }), ...callbacks() }) === null, 'controlled-cwd：不渲染审阅控件')
     ok(render({ run: run({ isolation: 'shared-cwd' }), ...callbacks() }) === null, 'shared-cwd：不渲染审阅控件')
     ok(render({ run: run({ status: 'running' }), ...callbacks() }) === null, '运行中：不渲染审阅控件')
-    ok(render({ run: run({ review: 'archived' }), ...callbacks() }) === null, '已归档：不渲染审阅控件')
+    ok(render({ run: run({ review: 'archived', diff: undefined }), ...callbacks() }) === null, '已归档且没有补丁：不渲染审阅控件')
+    ok(render({ run: run({ review: 'archived' }), ...callbacks() }) !== null, '已归档且补丁还在：仍可审阅')
     ok(render({ run: run({ review: 'merged' }), ...callbacks() }) === null, '已采纳：不渲染审阅控件')
   }
 

@@ -482,6 +482,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
           aria-label={editing ? text.viewMode : text.edit}
           tooltip={editing ? text.viewMode : text.edit}
           aria-pressed={editing}
+          isDisabled={editing && dirty}
           data-testid="v3-preview-edit-toggle"
           onPress={() => {
             if (editing) setDraft(null)

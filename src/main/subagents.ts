@@ -1388,7 +1388,7 @@ export class SubagentController {
     await this.awaitSettled(run)
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子 Agent仍在运行，结束后才能合并', 'Subagent is still running; merge after it finishes') }
     if (run.review === 'merged') return { ok: true }
-    if (run.review !== 'pending' && run.review !== 'conflict') {
+    if (run.review !== 'pending' && run.review !== 'conflict' && run.review !== 'archived') {
       return { ok: false, error: pick('该任务没有待合并的改动', 'This task has no changes to merge') }
     }
     const patchPath = run.diff?.patchPath
@@ -1409,7 +1409,7 @@ export class SubagentController {
       run.review = 'merged'
       run.resultPath = patchPath
       run.error = undefined
-      await this.cleanupRunWorkspace(run)
+      if (!run.worktreeDone) await this.cleanupRunWorkspace(run)
       await this.writeMetadata(run, patchPath)
       this.emit(run)
       return { ok: true }
@@ -1426,7 +1426,7 @@ export class SubagentController {
     try {
       run.review = 'discarded'
       run.resultPath = run.diff?.patchPath
-      await this.cleanupRunWorkspace(run, false)
+      if (!run.worktreeDone) await this.cleanupRunWorkspace(run, false)
       await this.writeMetadata(run, run.diff?.patchPath)
       this.emit(run)
       return { ok: true }
