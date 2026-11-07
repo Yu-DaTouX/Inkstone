@@ -2594,7 +2594,7 @@ function registerIpc(): void {
       return { ok: false, error: pick('不支持的原生操作', 'Unsupported native action') }
     }
   })
-  registerCheckpointIpc(ipc, sessionHost)
+  registerCheckpointIpc(ipc, sessionHost, (cwd) => subagentService.current()?.hasActiveWriter(cwd) === true)
   setTimeout(() => void pruneCheckpoints().catch(() => undefined), 60_000).unref?.()
 
   const syncCompactionLines = async (models: LineModel[]): Promise<void> => {

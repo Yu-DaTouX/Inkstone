@@ -212,8 +212,13 @@ console.log('✓ 旧 generation 发送及迟到的状态读取被拒绝')
   const active = reg.agentOf(a.id)
   const other = reg.agentOf(b.id)
   const handlers = new Map()
-  registerCheckpointIpc({ handle: (channel, fn) => handlers.set(channel, fn) }, { ac: () => active, runners: () => reg })
+  let subagentWriting = true
+  registerCheckpointIpc({ handle: (channel, fn) => handlers.set(channel, fn) }, { ac: () => active, runners: () => reg }, () => subagentWriting)
   const restore = handlers.get('yan:checkpoints:restore')
+  const blockedBySubagent = await restore('point')
+  assert.equal(blockedBySubagent.ok, false, '子代理正在这个文件夹写文件时不能回退')
+  assert.match(blockedBySubagent.error, /子 Agent|subagent/)
+  subagentWriting = false
   other.bashRunning = true
   assert.equal((await restore('point')).ok, false)
   other.bashRunning = false

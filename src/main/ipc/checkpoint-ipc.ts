@@ -7,7 +7,7 @@ import type { SessionHost } from '../session-host'
 import { assessCheckpointFit, listCheckpoints, previewCheckpoint, restoreCheckpoint } from '../checkpoints'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../../shared/checkpoints'
 
-export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): void {
+export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost, hasSubagentWriter: (cwd: string) => boolean = () => false): void {
   const { handle } = ipc
   const target = (): { cwd: string; key: string } | null => {
     const agent = host.ac()
@@ -26,6 +26,7 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): voi
       const agent = host.ac()
       const busy = registry?.hasBusyCwd(t.cwd) || registry?.hasExecutionAdmission(t.cwd) ||
         executionBusy(agent?.getState() ?? null, () => agent?.hasRunningBash() ?? false, () => agent?.getPendingUiCount() ?? 0)
+      if (hasSubagentWriter(t.cwd)) return { ok: false, error: pick('有子 Agent 正在这个文件夹里写文件，请等它结束或先停止再回退代码', 'A subagent is writing in this folder. Wait for it or stop it before rolling back.'), restored: 0 }
       if (busy) return { ok: false, error: pick('同一项目的会话仍在运行，请先停止再回退代码', 'A session in this project is still running. Stop it before rolling back code'), restored: 0 }
       return await restoreCheckpoint(t.cwd, id, t.key)
     } finally { release() }

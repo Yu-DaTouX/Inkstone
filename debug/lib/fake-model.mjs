@@ -101,6 +101,7 @@ export const FAKE_TRIGGERS = {
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
   QUESTION: '一次带 3 个选项的 question 提问，用来看问答卡的待回答与已回答',
   KEYFAILOVER: '当前 Key 是 bad-key 时返回 401，换 Key 后正常回答，用来验证 Key 故障转移',
+  CRASHBASH: '跑一条 60 秒的 bash，用来测进程被杀后的历史与续接',
   SECRETASK: '先问密码，再用 bash 读密文环境变量，最后回答模型是否收到过测试密文，用来验证密文不进上下文',
   MOBILEDEMO: '先用 read 读一张仓库里的 PNG，再发一个多字段表单提问，最后流出带长行代码块的答复，用来看手机端看图、表单与代码',
   BROWSERLOOP: '用 yan browser 连续导航（BROWSERURL1=<地址> BROWSERURL2=<地址> 轮流，BROWSERSTEPS<n> 步，默认 8），中间夹慢命令，用来看标签按会话归属与 agent 一轮内保持焦点',
@@ -301,6 +302,9 @@ async function respond(res, text, done, requestNo) {
         { name: 'notes', label: '更新说明补充', kind: 'text', optional: true }
       ] })
       else await streamText('收到。打包脚本大致是这样：\n\n```ts\nexport async function packageAll(platforms: string[], version: string, options: { sign: boolean; publish: boolean; retries: number }): Promise<void> { for (const platform of platforms) await runBuild(platform, version, options) }\nconst veryLongConfigurationLine = { appId: "com.inkstone.desktop", productName: "Inkstone", artifactName: "${productName}-${version}-${os}-${arch}.${ext}" }\n```\n\n上面第一行很长，手机上应该能横向滑动。', 20, 10)
+    } else if (text.includes('CRASHBASH')) {
+      if (done < 1) await callTool('bash', { command: 'echo before; sleep 60; echo after', description: '长时间命令，用来测强杀' })
+      else await streamText('命令结束。', 20, 10)
     } else if (text.includes('SECRETASK')) {
       if (done < 1) await callTool('question', { question: '请提供数据库密码' })
       else if (done === 1) await callTool('bash', { command: 'echo "pw=$YAN_SECRET_VALUE"; printf %s "$YAN_SECRET_VALUE" | base64', description: '读取密文环境变量' })
@@ -328,7 +332,7 @@ export function startFakeModel(port = 0) {
       const text = lastUserText(input)
       const done = toolOutputsSinceUser(input)
       const images = JSON.stringify(input).split('"input_image"').length - 1
-      requests.push({ at: Date.now(), text: text.slice(0, 40), done, tools: (json.tools ?? []).length, images, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
+      requests.push({ at: Date.now(), text: text.slice(0, 40), done, tools: (json.tools ?? []).length, images, unpairedCalls: input.filter((item) => item?.type === 'function_call' && !input.some((o) => o?.type === 'function_call_output' && o.call_id === item.call_id)).length, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
       const failTag = /FAIL[A-Z0-9]+/.exec(text)?.[0]
       const flakyKey = text.slice(0, 40)
       if (failTag === 'FAILQUOTA') {
