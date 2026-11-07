@@ -1688,6 +1688,9 @@ await guarded("runApiKeyPoolTests(ok)", () => runApiKeyPoolTests(ok))
 const { runOAuthAccountTests } = await import('./test-oauth-accounts.mjs')
 await guarded("runOAuthAccountTests(ok)", () => runOAuthAccountTests(ok))
 
+const { runAgentsDocTests } = await import('./test-agents-doc.mjs')
+await guarded("runAgentsDocTests(ok)", () => runAgentsDocTests(ok))
+
 const { runSettingsStoreTests } = await import('./test-settings-store.mjs')
 await guarded("runSettingsStoreTests(ok)", () => runSettingsStoreTests(ok))
 
