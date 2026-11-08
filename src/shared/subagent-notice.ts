@@ -37,7 +37,7 @@ function headlineWord(key: SubagentOutcomeKey, status: string): string {
 
 export function buildSubagentNotice(
   run: Pick<SubagentRun, 'id' | 'task' | 'status' | 'isolation' | 'model' | 'diff' | 'review' | 'error' | 'result'> &
-    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable' | 'followUp'>>
+    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable' | 'followUp' | 'contextUsage'>>
 ): string {
   const status = run.status === 'done' || run.status === 'error' || run.status === 'cancelled' ? run.status : 'done'
   const mode = run.isolation === 'controlled-cwd' ? '只读' : '可修改'
@@ -66,6 +66,10 @@ export function buildSubagentNotice(
     if (run.review === 'pending' || run.review === 'conflict') lines.push(`处置：合并 yan subagent merge --id ${run.id}；放弃 yan subagent discard --id ${run.id}；要它继续改或解决冲突用 yan subagent send --id ${run.id}`)
   }
   if (outcome.partial || status === 'error') lines.push(`完整过程：yan subagent get --id ${run.id}`)
+  const context = run.contextUsage
+  if (context && typeof context.tokens === 'number' && context.tokens > 0 && context.contextWindow > 0) {
+    lines.push(`上下文：已用 ${context.estimated ? '约 ' : ''}${context.tokens.toLocaleString('en-US')} / ${context.contextWindow.toLocaleString('en-US')} token（${Math.round((context.tokens / context.contextWindow) * 100)}%）`)
+  }
   if (run.resumable?.ok) lines.push(`可续派：yan subagent send --id ${run.id} --message <追加任务>（保留它之前的全部上下文，比重新派更省）`)
   else if (run.resumable?.reason) lines.push(`不可续派：${clip(toModelText(run.resumable.reason), 120)}`)
   lines.push('这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。')

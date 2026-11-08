@@ -128,6 +128,10 @@ export async function runSubagentResumeTests(ok, mods) {
   const blocked = notice.buildSubagentNotice({ ...run, resumable: { ok: false, reason: '工作树已清理' } })
   ok(blocked.includes('不可续派：工作树已清理'), '完成通知：不可续派时说明原因')
   ok(!notice.buildSubagentNotice(run).includes('续派'), '完成通知：没有 resumable 字段时不加提示')
+  const used = notice.buildSubagentNotice({ ...run, resumable: { ok: true }, contextUsage: { tokens: 241041, contextWindow: 1000000, percent: 24 } })
+  ok(used.includes('上下文：已用 241,041 / 1,000,000 token（24%）') && used.indexOf('上下文：') < used.indexOf('可续派'), '完成通知：附实际上下文用量，排在续派提示前')
+  ok(notice.buildSubagentNotice({ ...run, contextUsage: { tokens: 1200, contextWindow: 200000, percent: 1, estimated: true } }).includes('已用 约 1,200 / 200,000'), '完成通知：估算用量标「约」')
+  ok(!notice.buildSubagentNotice({ ...run, contextUsage: { tokens: null, contextWindow: 200000, percent: null } }).includes('上下文：'), '完成通知：没有用量时不写')
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

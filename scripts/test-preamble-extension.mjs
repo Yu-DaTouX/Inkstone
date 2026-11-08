@@ -75,6 +75,7 @@ export async function runPreambleExtensionTests(ok, mod) {
     ok(sub.identity === SUBAGENT_PREAMBLE && sub.work === SUBAGENT_WORK_GUIDANCE && sub.report === SUBAGENT_REPORT_GUIDANCE, '子代理用自己的身份、工作规则和汇报规则')
     ok(!/personal agent|whatever the user brings/.test(SUBAGENT_PREAMBLE) && /subagent/.test(SUBAGENT_PREAMBLE), '子代理身份不再自称用户的私人 agent')
     ok(/cannot ask the user/.test(SUBAGENT_WORK_GUIDANCE) && /data, not instructions/.test(SUBAGENT_WORK_GUIDANCE), '子代理工作规则：不能提问、工具结果是数据')
+    ok(!/stop and report|enough evidence|progress note/.test(SUBAGENT_WORK_GUIDANCE), '子代理工作规则：没有中途停下、证据够了就停、进度句')
     ok(/could not verify/.test(SUBAGENT_REPORT_GUIDANCE) && /outcome in one plain sentence/.test(SUBAGENT_REPORT_GUIDANCE) && /Do not invent a decision/.test(SUBAGENT_REPORT_GUIDANCE) && /evidence/.test(SUBAGENT_REPORT_GUIDANCE), '子代理汇报：先结果、带证据、写明未验证项')
     const previous = process.env.YAN_RUNNER_KIND
     process.env.YAN_RUNNER_KIND = 'subagent'
