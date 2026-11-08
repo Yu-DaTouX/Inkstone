@@ -100,6 +100,12 @@ export function apiKeyLooksUnusable(text: unknown): boolean {
   return info.kind === 'auth' && /\b401\b|unauthorized|unauthenticated|invalid[ _-]api[ _-]key|api[ _-]key[ _-]invalid|api key not valid|incorrect api key/i.test(info.text)
 }
 
+export function isAuthRejected(text: unknown): boolean {
+  const info = classifyModelError(text)
+  return info.kind === 'auth' && !/\b403\b|forbidden|insufficient permissions/i.test(info.text) &&
+    /\b401\b|unauthorized|unauthenticated|authentication[ _]error|invalid authentication/i.test(info.text)
+}
+
 export function classifyModelError(text: unknown): ModelErrorInfo {
   const raw = modelErrorText(text)
   for (const item of PATTERNS) {

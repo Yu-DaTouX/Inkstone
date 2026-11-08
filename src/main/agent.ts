@@ -31,7 +31,8 @@ import { messageSyncSignature } from '../shared/session-sync'
 import { clearQueueFile, keepReclaimedQueue, loadQueue, saveQueue, type PersistedQueueItem } from './queue-persistence'
 import { mergeToolDetails, streamsHtmlWriteArgs, toolOutputPushMode, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
-import { apiKeyLooksUnusable, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { apiKeyLooksUnusable, isAuthRejected, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { readAuthEntry } from './credentials'
 import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
@@ -168,6 +169,7 @@ import { readPendingModelSwitch, takePendingModelSwitch, writePendingModelSwitch
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 
 const FLUSH_MS = 16
+const AUTH_BLIP_RETRY_MS = 5000
 const MAX_FLUSH_MS = 120
 const HTML_ARGS_PUSH_MS = 600
 
@@ -2646,6 +2648,11 @@ export class AgentController extends EventEmitter {
             runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'model-error' as const }
           : null
         const failedProvider = this.state?.model?.provider
+        const authBlip = !continuation && !errorContinuation && modelError && !modelError.retried && failedProvider &&
+          this.loopGuardAutoContinueCount < 1 && isAuthRejected(modelError.text) && this.rpc && this.state?.sessionId
+          ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
+            runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'model-error' as const }
+          : null
         const keyFailover = !continuation && !errorContinuation && modelError && failedProvider && apiKeyLooksUnusable(modelError.text) && this.rpc && this.state?.sessionId
           ? { provider: failedProvider, quota: isQuotaWaitError(modelError.text), scope: { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
             runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'key-failover' as const } }
@@ -2675,10 +2682,14 @@ export class AgentController extends EventEmitter {
         void this.refreshTodos()
         void this.attachLiveEntryIds()
         void this.maybeGenerateTitle()
+        const failover = keyFailover
+          ? () => this.continueAfterKeyFailover(keyFailover.scope, keyFailover.provider)
+            .then((ok) => ok || !keyFailover.quota ? ok : this.continueAfterQuota(keyFailover.scope, keyFailover.provider))
+          : undefined
         const task = continuation ? this.continueAfterLoopGuard(continuation)
           : errorContinuation ? this.continueAfterModelError(errorContinuation)
-            : keyFailover ? this.continueAfterKeyFailover(keyFailover.scope, keyFailover.provider)
-              .then((ok) => ok || !keyFailover.quota ? ok : this.continueAfterQuota(keyFailover.scope, keyFailover.provider)) : undefined
+            : authBlip && failedProvider ? this.continueAfterAuthBlip(authBlip, failedProvider).then((ok) => ok || !failover ? ok : failover())
+              : failover ? failover() : undefined
         if (task) {
           this.loopGuardContinueTask = task
           void task.then((resumed) => {
@@ -3366,6 +3377,13 @@ export class AgentController extends EventEmitter {
       this.push({ ch: 'log', payload: { level: 'error', text: `[account-switch] ${error instanceof Error ? error.message : String(error)}` } })
       return false
     }
+  }
+
+  private async continueAfterAuthBlip(scope: AutoContinueScope, provider: string): Promise<boolean> {
+    const entry = await readAuthEntry(provider).catch(() => undefined) as { type?: unknown } | undefined
+    if (entry?.type !== 'oauth') return false
+    await new Promise((done) => setTimeout(done, AUTH_BLIP_RETRY_MS))
+    return this.continueAfterModelError(scope)
   }
 
   private async continueAfterModelError(scope: AutoContinueScope): Promise<boolean> {
