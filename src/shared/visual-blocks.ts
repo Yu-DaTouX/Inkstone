@@ -51,7 +51,7 @@ export interface CardsBlock {
   kind: 'cards'
   title?: string
   layout: 'list' | 'grid'
-  items: Array<{ title: string; icon?: string; badge?: string; recommended?: boolean; description?: string; meta?: string; links?: VisualLink[] }>
+  items: Array<{ title: string; icon?: string; badge?: string; recommended?: boolean; description?: string; meta?: string; image?: string; links?: VisualLink[] }>
   sources?: VisualSource[]
 }
 export interface RecordBlock {
@@ -146,6 +146,12 @@ function sources(value: unknown): VisualSource[] | undefined {
     return { url: url(item.url, `sources[${i}].url`), label: optStr(item.label, `sources[${i}].label`) }
   })
 }
+const ABSOLUTE_PATH = /^(?:[a-zA-Z]:[\\/]|\/(?!\/))/
+function image(value: unknown, where: string): string | undefined {
+  const text = optStr(value, where, 500)
+  if (text === undefined) return undefined
+  return safeHttpUrl(text) ?? (ABSOLUTE_PATH.test(text) ? text : fail(`${where} 应为 http(s) 地址或本地绝对路径`))
+}
 function links(value: unknown, where: string): VisualLink[] | undefined {
   return optList(value, where, LIMIT.links)?.map((raw, j) => {
     const link = obj(raw, `${where}[${j}]`)
@@ -220,6 +226,7 @@ function parseCards(data: Record<string, unknown>): CardsBlock {
       recommended: item.recommended === true ? true : undefined,
       description: optStr(item.description, `items[${i}].description`, LIMIT.long),
       meta: optStr(item.meta, `items[${i}].meta`),
+      image: image(item.image, `items[${i}].image`),
       links: links(item.links, `items[${i}].links`)
     }
   })

@@ -609,6 +609,15 @@
     font-weight: var(--w-medium);
   }
 
+  .v3-visual-card-image {
+    min-width: 0;
+  }
+
+  .v3-visual-card-image img {
+    max-width: 100%;
+    height: auto;
+  }
+
   .v3-visual-card-desc {
     margin: 0;
     color: var(--fg2);

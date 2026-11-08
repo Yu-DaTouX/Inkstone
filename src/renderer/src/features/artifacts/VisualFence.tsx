@@ -14,6 +14,9 @@ import {
   type VisualBlockLang,
   type VisualSource
 } from '../../../../shared/visual-blocks'
+import { fileUrl } from '../../../../shared/file-url'
+import { MessageImage } from '../session/Image'
+import { RemoteImage } from '../session/RemoteImage'
 import { VisualChart } from './VisualChart'
 import { WidgetBlock } from './WidgetBlock'
 
@@ -161,6 +164,13 @@ function Cards({ block }: { block: CardsBlock }): JSX.Element {
               {item.recommended ? <Badge tone="accent">{t('vb.recommended')}</Badge> : null}
               {item.badge ? <Badge tone="neutral">{item.badge}</Badge> : null}
             </div>
+            {item.image ? (
+              <div className="v3-visual-card-image">
+                {/^https?:/i.test(item.image)
+                  ? <RemoteImage src={item.image} alt={item.title} className="v3-md-image" />
+                  : <MessageImage src={fileUrl(item.image)} alt={item.title} className="v3-md-image" />}
+              </div>
+            ) : null}
             {item.description ? <p className="v3-visual-card-desc">{item.description}</p> : null}
             {item.meta ? <div className="v3-visual-card-meta">{item.meta}</div> : null}
             {item.links?.length ? (

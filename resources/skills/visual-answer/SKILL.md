@@ -108,7 +108,7 @@ description: 写 yan-chart、yan-stats、yan-cards 等回答块、mermaid 图或
   { "title": "Scaling Laws for Neural Language Models", "description": "参数、数据与算力的幂律。", "meta": "2020 · OpenAI" } ] }
 ```
 
-- `items` 1–8 个，只有 `title` 必填；`links` 最多 4 个；最多一个 `"recommended": true`。
+- `items` 1–8 个，只有 `title` 必填；可选 `image`（http(s) 地址或本地绝对路径，如截图）；`links` 最多 4 个；最多一个 `"recommended": true`。
 
 ## yan-record
 
