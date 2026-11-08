@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -11,7 +11,6 @@ import { useOptionalT } from '@/i18n'
 import { Button } from '@/t3/components/ui/button'
 import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from '@/t3/components/ui/menu'
 import { ScrollArea } from '@/t3/components/ui/scroll-area'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '@/t3/components/ui/tooltip'
 import { cn } from '@/t3/lib/utils'
 import {
   DisabledReasonTooltip,
@@ -153,16 +152,6 @@ export function TabStrip(props: TabStripProps) {
     const active = chipsOf(rootRef.current).find((chip) => chip.dataset.activeTab === 'true')
     active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [props.activeId, scroll.hasOverflow, props.tabs.length])
-
-  const scrollTabs = (direction: -1 | 1) => {
-    const viewport = tabScrollViewport(rootRef.current)
-    if (!viewport) return
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    viewport.scrollBy({
-      left: direction * Math.max(120, viewport.clientWidth * 0.75),
-      behavior: reduceMotion ? 'auto' : 'smooth'
-    })
-  }
 
   const focusTabAt = (index: number) => {
     const chips = chipsOf(rootRef.current)
@@ -347,50 +336,6 @@ export function TabStrip(props: TabStripProps) {
           )}
         </div>
       </ScrollArea>
-      {scroll.hasOverflow ? (
-        <div
-          className="flex shrink-0 items-center gap-0.5"
-          role="group"
-          aria-label={props.listLabel ?? t('panel.t3.tabs')}
-        >
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span className="inline-flex">
-                  <Button
-                    aria-label={t('panel.t3.scrollLeft')}
-                    disabled={!scroll.canScrollLeft}
-                    onClick={() => scrollTabs(-1)}
-                    size="icon-xs"
-                    variant="ghost"
-                  >
-                    <ChevronLeft />
-                  </Button>
-                </span>
-              }
-            />
-            <TooltipPopup>{t('panel.t3.scrollLeft')}</TooltipPopup>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span className="inline-flex">
-                  <Button
-                    aria-label={t('panel.t3.scrollRight')}
-                    disabled={!scroll.canScrollRight}
-                    onClick={() => scrollTabs(1)}
-                    size="icon-xs"
-                    variant="ghost"
-                  >
-                    <ChevronRight />
-                  </Button>
-                </span>
-              }
-            />
-            <TooltipPopup>{t('panel.t3.scrollRight')}</TooltipPopup>
-          </Tooltip>
-        </div>
-      ) : null}
     </div>
   )
 }

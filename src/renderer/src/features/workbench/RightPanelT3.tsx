@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
-import { Columns2, EllipsisVertical, Eye, Minimize2, PanelRightClose, SquareX } from 'lucide-react'
+import { EllipsisVertical, Eye, Minimize2, PanelRightClose, SquareX } from 'lucide-react'
 import { create } from 'zustand'
 import { Button, EmptyState, IconButton, Spinner, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, canSplitSurface, fileSurface, panelFocus, panelGroups, pullRequestSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
+import { PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, fileSurface, panelFocus, panelGroups, pullRequestSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
 import { SubagentTranscriptPane } from '../session/SubagentTranscriptPane'
 import { PullRequestDetail } from '../github/PullRequestDetail'
 import { PaneChromeContext, paneMenuSignature, type PaneChrome, type PaneMenuItem } from './pane-chrome'
@@ -142,7 +142,6 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
 
   const columnHead = (group: RightPanelGroup, index: number): ReactNode => {
     const last = index === groups.length - 1
-    const splittable = !!group.active && canSplitSurface(entry, group.active) && last
     return (
       <div
         data-right-panel-tabbar
@@ -164,11 +163,6 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
           onDragOut={(id, start) => startPanelTabDrag(start, id, tabById.get(id)?.label ?? '', room, panel)}
         />
         <span className="rp-tabbar-actions">
-          {splittable ? (
-            <IconButton size="sm" aria-label={panel.splitRight} tooltip={panel.splitRight} data-testid={`rp-split-${index}`} onPress={() => useRightPanel.getState().split(group.active!)}>
-              <Columns2 size={14} />
-            </IconButton>
-          ) : null}
           {groups.length > 1 ? (
             <IconButton size="sm" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
               <SquareX size={14} />
