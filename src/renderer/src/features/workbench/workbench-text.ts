@@ -34,6 +34,7 @@ export interface OverviewText {
   hideOutput: string
   earlierOutput: string
   taskGone: string
+  terminalJobState: Record<import('../../../../shared/terminal-jobs').TerminalJobState, string>
   moreTools: string
   quotaFailed: string
   quotaExpired: string
@@ -165,6 +166,7 @@ const ZH: WorkbenchText = {
     hideOutput: '收起输出',
     earlierOutput: '（更早的输出未显示）',
     taskGone: '任务已经结束，无需停止',
+    terminalJobState: { running: '终端运行中', stopping: '正在停止', completed: '已结束', matched: '已就绪', exited: '终端已退出', timeout: '超时仍在运行', stopped: '已停止' },
     moreTools: '更多工具',
     quotaFailed: '额度查询失败',
     quotaExpired: '登录已过期',
@@ -262,6 +264,7 @@ const EN: WorkbenchText = {
     hideOutput: 'Hide output',
     earlierOutput: '(Earlier output not shown)',
     taskGone: 'The task already ended; nothing to stop',
+    terminalJobState: { running: 'Running in terminal', stopping: 'Stopping', completed: 'Finished', matched: 'Ready', exited: 'Terminal exited', timeout: 'Timed out, still running', stopped: 'Stopped' },
     moreTools: 'More tools',
     quotaFailed: 'Quota check failed',
     quotaExpired: 'Sign-in expired',

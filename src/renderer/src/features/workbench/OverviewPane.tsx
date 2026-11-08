@@ -46,7 +46,8 @@ import {
 import { railText, type RailText } from './rail-text'
 import { useRailReorder } from './use-rail-reorder'
 import { showPreview } from './preview-bindings'
-import { BackgroundTasks } from './BackgroundTasks'
+import { BackgroundTasks, useViewTerminalJobs } from './BackgroundTasks'
+import { isLiveTerminalJob } from '../../../../shared/terminal-jobs'
 import { useMcpConnections } from './McpConnections'
 import './workbench.css'
 
@@ -566,6 +567,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const messages = useStreamingThrottledStore((s) => s.messages)
   const childTasks = useStore((s) => viewSubagentRuns(s).length)
   const childTasksLive = useStore((s) => viewSubagentRuns(s).filter(isLiveSubagentRun).length)
+  const terminalJobs = useViewTerminalJobs()
   const widgets = useStore((s) => s.widgets)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
@@ -637,7 +639,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const [dismissedOutputs, dismissOutput] = useDismissedOutputs(view.sessionId || view.key || '')
   const outputs = useMemo(() => visibleOutputs(outputPool, outputScreen, dismissedOutputs), [outputPool, outputScreen, dismissedOutputs])
 
-  const taskCount = { running: childTasksLive, total: childTasks }
+  const taskCount = { running: childTasksLive + terminalJobs.filter(isLiveTerminalJob).length, total: childTasks + terminalJobs.length }
   const taskTotal = taskCount.total
   const taskSummary =
     taskCount.running > 0 ? (

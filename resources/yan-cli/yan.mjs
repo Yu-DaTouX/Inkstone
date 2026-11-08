@@ -444,13 +444,16 @@ GROUP_USAGE.terminal = `yan terminal <动作> [选项]
 
 动作：
   list                            本会话的终端：id、标题、目录、是否存活、是否你开的
-  run   --command "<命令>" [--id <终端>] [--new] [--cwd <目录>] [--until <正则>] [--timeout <秒>] [--quiet <秒>]
+  run   --command "<命令>" [--id <终端>] [--new] [--cwd <目录>] [--until <正则>] [--timeout <秒>] [--quiet <秒>] [--background]
                                   在终端里输入命令并回车，等它跑完后返回这段输出（已渲染成文字）。
                                   不带 --id 时用本会话的空闲终端，没有就新开；--new 总是新开。
                                   state：completed 跑完回到提示符；matched 输出命中 --until；
                                   quiet 超过 --quiet 秒（默认 15）没有新输出（可能在等输入或安静地运行）；
                                   timeout 超过 --timeout 秒（默认 120，最多 900）；exited 终端退出。
                                   常驻进程（dev server、watch）用 --until 等到就绪，例如 --until "ready|Local:"
+                                  --background：长命令（构建、测试、下载）约 3 秒后就返回 state=background，
+                                  命令结束、命中 --until 或超过 --timeout（默认 3 小时，最多 24 小时）时，
+                                  砚会在你空闲时发来「后台终端命令」通知；期间可以做别的事，不要轮询或 sleep 等待
   read  --id <终端> [--lines 80] [--since <cursor>]
                                   读终端内容；--since 填上次结果里的 cursor，只取之后的新输出
   write --id <终端> --text "<文本>" [--enter] [--wait <毫秒>]

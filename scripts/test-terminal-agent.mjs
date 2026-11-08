@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
@@ -86,7 +86,11 @@ function fakeHost(options = {}) {
 }
 
 try {
-  const mod = await bundle('src/main/terminal-agent.ts', 'terminal-agent.mjs')
+  const entry = join(dir, 'entry.ts')
+  const src = (path) => JSON.stringify(join(process.cwd(), path).replace(/\\/g, '/'))
+  await writeFile(entry, `export * from ${src('src/main/terminal-agent.ts')}\nexport * from ${src('src/main/terminal-jobs.ts')}\n`)
+  const mod = await bundle(entry, 'terminal-agent.mjs')
+  const { listTerminalJobs, requestTerminalJobStop, clearFinishedTerminalJobs, resetTerminalJobs } = mod
   const { keySequence, keysToSequence, planSubmission, stripTerminalControls, looksLikePrompt, lastNonEmptyLine, sliceSince, tailText, renderTerminalText, loadDangerRules, TerminalAgentCommands, resetTerminalAgentState } = mod
 
   const setup = (options = {}) => {
@@ -95,7 +99,9 @@ try {
     host.render = options.realRender ? renderTerminalText : async (raw) => stripTerminalControls(raw)
     host.rules = loadDangerRules
     const confirms = []
+    const notices = []
     const ctx = {
+      notify: (text, stillOwner) => notices.push({ text, owned: stillOwner() }),
       ownerKeys: () => ['E:/sessions/A.jsonl', 'sid-a'],
       cwd: () => process.cwd(),
       confirm: async (request) => {
@@ -103,7 +109,7 @@ try {
         return { allowed: options.allow ?? false, ...(options.feedback ? { feedback: options.feedback } : {}) }
       }
     }
-    return { host, confirms, commands: new TerminalAgentCommands(host, ctx) }
+    return { host, confirms, notices, commands: new TerminalAgentCommands(host, ctx) }
   }
   const failsWith = async (promise, code) => {
     await assert.rejects(promise, (error) => {
@@ -330,6 +336,77 @@ try {
     const started = Date.now()
     await failsWith(commands.run('run', { id: 'slow', command: 'x', until: '(a+)+$', timeout: 5 }), 'terminal_bad_until')
     assert.ok(Date.now() - started < 5000)
+  })
+
+  const { parseHostTextNotice } = await bundle('src/shared/host-notice-text.ts', 'host-notice-text.mjs')
+  const settle = async (notices) => {
+    for (let i = 0; i < 200 && !notices.length; i++) await new Promise((done) => setImmediate(done))
+  }
+
+  await check('--background：长命令先返回 background，结束后发宿主通知；期间终端算忙', async () => {
+    let finish = () => {}
+    const { commands, notices } = setup({
+      respond: (_term, _command, emit) => {
+        emit('building...\r\n')
+        finish = () => emit('done ```\r\nPS C:\\work> ')
+      }
+    })
+    const started = await commands.run('run', { command: 'npm run build', background: true, timeout: 600 })
+    assert.equal(started.summary.state, 'background')
+    assert.match(started.summary.output, /building/)
+    assert.match(started.summary.hint, /通知/)
+    await failsWith(commands.run('run', { id: started.summary.id, command: 'ls' }), 'terminal_busy')
+    finish()
+    await settle(notices)
+    assert.equal(notices.length, 1)
+    assert.equal(notices[0].owned, true)
+    assert.match(notices[0].text, /done ```/)
+    assert.match(notices[0].text, /\n````\n/)
+    assert.match(notices[0].text, new RegExp(`--id ${started.summary.id} --since \\d+`))
+    assert.deepEqual(parseHostTextNotice(notices[0].text), { kind: 'terminal', command: 'npm run build', state: 'completed' })
+  })
+
+  await check('--background：短命令直接返回结果不发通知；超时发 timeout 通知；stop 后不再通知', async () => {
+    const quick = setup()
+    const done = await quick.commands.run('run', { command: 'git status', background: true })
+    assert.equal(done.summary.state, 'completed')
+    await settle(quick.notices)
+    assert.equal(quick.notices.length, 0)
+
+    const slow = setup({ respond: (_term, _command, emit) => emit('waiting\r\n') })
+    await slow.commands.run('run', { command: 'sleep 9999', background: true, timeout: 5 })
+    await settle(slow.notices)
+    assert.equal(parseHostTextNotice(slow.notices[0]?.text)?.state, 'timeout')
+
+    const stopped = setup({ respond: (_term, _command, emit) => emit('waiting\r\n') })
+    const job = await stopped.commands.run('run', { command: 'sleep 9999', background: true, timeout: 600 })
+    await stopped.commands.run('stop', { id: job.summary.id })
+    await settle(stopped.notices)
+    assert.equal(stopped.notices.length, 0)
+  })
+
+  await check('后台命令登记为后台任务；从面板停止会发 ctrl+c，结束后记为 stopped 并通知；清除只删已结束的', async () => {
+    resetTerminalJobs()
+    const { host, commands, notices } = setup({
+      respond: (_term, command, emit) => emit(command ? 'working\r\n' : '^C\r\nPS C:\\work> ')
+    })
+    const started = await commands.run('run', { command: 'npm run long', background: true, timeout: 600 })
+    const [job] = listTerminalJobs()
+    assert.equal(started.summary.jobId, job.id)
+    assert.equal(job.state, 'running')
+    assert.equal(job.terminalId, started.summary.id)
+    assert.deepEqual(job.owners, ['E:/sessions/A.jsonl', 'sid-a'])
+    clearFinishedTerminalJobs()
+    assert.equal(listTerminalJobs().length, 1)
+    assert.equal(requestTerminalJobStop(job.id), started.summary.id)
+    assert.equal(requestTerminalJobStop(job.id), null)
+    host.write(started.summary.id, '\r')
+    await settle(notices)
+    assert.equal(listTerminalJobs()[0].state, 'stopped')
+    assert.ok(listTerminalJobs()[0].endedAt)
+    assert.equal(parseHostTextNotice(notices[0]?.text)?.state, 'stopped')
+    clearFinishedTerminalJobs([job.id])
+    assert.equal(listTerminalJobs().length, 0)
   })
 
   await check('start --cwd 不存在时报错，终端上限时报错', async () => {

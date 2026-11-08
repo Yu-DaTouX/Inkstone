@@ -24,8 +24,25 @@ import {
   type BackgroundTaskEntry
 } from './background-tasks'
 import type { OverviewText } from './workbench-text'
+import { terminalJobsForView, useTerminalJobs } from '../../state/terminal-jobs'
+import { isLiveTerminalJob, type TerminalJob } from '../../../../shared/terminal-jobs'
+import type { SubagentRowState } from '../../../../shared/subagent-task-rows'
+import { openPanelTool } from './panel-actions'
+import { activateTerminal } from '../terminal/terminal-activate'
 
 type TaskEntry = BackgroundTaskEntry & { run: SubagentRun; row: SubagentTaskRow }
+type JobEntry = BackgroundTaskEntry & { job: TerminalJob }
+
+export function useViewTerminalJobs(): TerminalJob[] {
+  const jobs = useTerminalJobs((s) => s.jobs)
+  const peekedSessionId = useStore((s) => s.peekedSessionId)
+  const peekedPath = useStore((s) => s.peekedPath)
+  const session = useStore((s) => s.session)
+  useEffect(() => {
+    void useTerminalJobs.getState().load()
+  }, [])
+  return useMemo(() => terminalJobsForView(jobs, { peekedSessionId, peekedPath, session }), [jobs, peekedSessionId, peekedPath, session])
+}
 
 export interface BackgroundTasksProps {
   lang: RunLang
@@ -37,22 +54,29 @@ export function BackgroundTasks({ lang, text }: BackgroundTasksProps): ReactElem
   const stopping = useSubagentStopping((s) => s.ids)
   const anyLive = latestSubagents.some(isLiveSubagentRun)
   const subagents = useThrottledValue(latestSubagents, anyLive)
-  const now = useTicker(anyLive)
+  const terminalJobs = useViewTerminalJobs()
+  const now = useTicker(anyLive || terminalJobs.some(isLiveTerminalJob))
   const entries = useMemo<TaskEntry[]>(() => {
     return subagents.map((run) => {
       const row = buildSubagentTaskRow(run, { now, lang: rowLang(lang), stopping: stopping.has(run.id) })
       return { id: run.id, live: isLiveTaskRow(row), startedAt: row.startedAt, endedAt: row.endedAt, run, row }
     })
   }, [subagents, now, lang, stopping])
-  const sections = sectionTasks(entries)
+  const jobEntries = useMemo<JobEntry[]>(
+    () => terminalJobs.map((job) => ({ id: job.id, live: isLiveTerminalJob(job), startedAt: job.startedAt, endedAt: job.endedAt ?? null, job })),
+    [terminalJobs]
+  )
+  const sections = sectionTasks<TaskEntry | JobEntry>([...entries, ...jobEntries])
   const [finishedOpen, setFinishedOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const t = useT()
   const finishedRunIds = sections.finished.map((entry) => entry.id)
+  const finishedJobIds = sections.finished.filter((entry) => 'job' in entry).map((entry) => entry.id)
   const clearFinished = async (): Promise<void> => {
     try {
-      await window.yan.subagents.clearFinished(finishedRunIds)
+      if (finishedJobIds.length) await window.yan.terminal.clearJobs(finishedJobIds)
+      await window.yan.subagents.clearFinished(finishedRunIds.filter((id) => !finishedJobIds.includes(id)))
     } catch (failure) {
       setNotice(failure instanceof Error ? failure.message : String(failure))
     }
@@ -67,9 +91,9 @@ export function BackgroundTasks({ lang, text }: BackgroundTasksProps): ReactElem
         <section className="wb-bg-section" aria-label={text.runningSection(sections.running.length)} data-testid="wb-bg-running">
           <p className="wb-bg-section-title">{text.runningSection(sections.running.length)}</p>
           <ul className="wb-bg-list">
-            {sections.running.map((entry) => (
-              <TaskRow key={entry.id} entry={entry} now={now} text={text} onGone={onGone} />
-            ))}
+            {sections.running.map((entry) =>
+              'job' in entry ? <JobRow key={entry.id} job={entry.job} now={now} text={text} onGone={onGone} /> : <TaskRow key={entry.id} entry={entry} now={now} text={text} onGone={onGone} />
+            )}
           </ul>
         </section>
       ) : null}
@@ -95,9 +119,9 @@ export function BackgroundTasks({ lang, text }: BackgroundTasksProps): ReactElem
           </div>
           {finishedOpen ? (
             <ul className="wb-bg-list">
-              {sections.finished.map((entry) => (
-                <TaskRow key={entry.id} entry={entry} now={now} text={text} onGone={onGone} />
-              ))}
+              {sections.finished.map((entry) =>
+                'job' in entry ? <JobRow key={entry.id} job={entry.job} now={now} text={text} onGone={onGone} /> : <TaskRow key={entry.id} entry={entry} now={now} text={text} onGone={onGone} />
+              )}
             </ul>
           ) : null}
         </section>
@@ -175,6 +199,49 @@ function TaskRowView({ entry, text, onGone }: TaskRowProps): ReactElement {
       </div>
       {detail ? <p className="wb-bg-detail" title={detail}>{detail}</p> : null}
       {open && output ? <TaskOutput text={output} earlier={text.earlierOutput} label={label} /> : null}
+    </li>
+  )
+}
+
+const JOB_ROW_STATE: Record<TerminalJob['state'], SubagentRowState> = {
+  running: 'running',
+  stopping: 'stopping',
+  completed: 'done',
+  matched: 'done',
+  exited: 'stopped',
+  timeout: 'failed',
+  stopped: 'stopped'
+}
+
+function JobRow({ job, now, text, onGone }: { job: TerminalJob; now: number; text: OverviewText; onGone: () => void }): ReactElement {
+  const live = isLiveTerminalJob(job)
+  const time = formatDuration(Math.max(0, (job.endedAt ?? now) - job.startedAt), { minSeconds: 1 })
+  const detail = [text.terminalJobState[job.state], job.cwd.split(/[\\/]/).filter(Boolean).pop()].filter(Boolean).join(' · ')
+  const open = (): void => {
+    const owner = job.owners[0]
+    openPanelTool('terminal')
+    if (owner) activateTerminal(owner, job.terminalId)
+  }
+  const stop = async (): Promise<void> => {
+    try {
+      if (!(await window.yan.terminal.stopJob(job.id))) onGone()
+    } catch {
+      useStore.getState().notify('error', text.stopFailed)
+    }
+  }
+  return (
+    <li className="wb-bg-row" data-state={JOB_ROW_STATE[job.state]} data-testid="wb-bg-row">
+      <div className="wb-bg-line">
+        <ListRow className="wb-bg-open" icon={<SubagentStateIcon state={JOB_ROW_STATE[job.state]} />} trailing={live ? time : undefined} title={job.command} onClick={open} data-testid="wb-bg-open">
+          <span className="wb-bg-label">{job.command}</span>
+        </ListRow>
+        {live ? (
+          <IconButton size="sm" aria-label={text.stopTask} tooltip={text.stopTask} isDisabled={job.state === 'stopping'} onPress={() => void stop()} data-testid="wb-bg-stop">
+            <Square size={12} aria-hidden />
+          </IconButton>
+        ) : null}
+      </div>
+      {live ? <p className="wb-bg-detail" title={detail}>{detail}</p> : null}
     </li>
   )
 }

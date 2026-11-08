@@ -69,6 +69,7 @@ import { sessionActionAgent, sessionActionChanged } from './ipc/session-action-t
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
+import { onTerminalJobs } from './terminal-jobs'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
@@ -3539,6 +3540,7 @@ app.whenReady().then(async () => {
   watchPowerSource()
   browser = new BrowserController(() => win, push, askProfileSyncApproval, askLargeDownloadApproval)
   setUserHandoffRelease((sessionId) => browser?.releaseUserControlFor(sessionId))
+  onTerminalJobs((jobs) => push({ ch: 'terminal-jobs', payload: jobs }))
   setTerminalSink((event) => {
     if (event.kind === 'exit') {
       blockedTerminalNotices.delete(event.id)

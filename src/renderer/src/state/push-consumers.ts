@@ -4,6 +4,7 @@ import type { Notice, Store } from './store'
 import { releaseResource } from './resource-owners'
 import { isNativeMcpActionResult, isNativeMcpSignInPrompt, isNativeMcpStatus } from '../lib/native-mcp-status'
 import { noteTerminalAgent } from '../features/terminal/terminal-agent-activity'
+import { useTerminalJobs } from './terminal-jobs'
 
 export interface PushContext {
   get(): Store
@@ -65,6 +66,9 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       ctx.applyBrowserVisibility()
       break
     }
+    case 'terminal-jobs':
+      useTerminalJobs.getState().set(m.payload)
+      break
     case 'terminal':
       if (m.payload.kind === 'exit') {
         set({

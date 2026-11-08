@@ -181,11 +181,12 @@ function HostTurnView({ turn }: { turn: HostTurn }): JSX.Element {
   const label = notice.kind === 'session-moved' ? t('chat.hostMoved', { path: notice.cwd })
     : notice.kind === 'quota-resume' ? t('chat.hostQuota')
     : notice.kind === 'account-switch' ? t('chat.hostAccountSwitch')
+    : notice.kind === 'terminal' ? t(`chat.hostTerminal.${notice.state}`, { command: notice.command })
     : notice.reason === 'loop' ? t('chat.hostLoop') : t('chat.hostModelError')
   return (
     <article className="v3-msg host" data-msg-id={msg.id} data-turn-id={turn.id}>
       <StreamNotice
-        icon={<Icon name={notice.kind === 'session-moved' ? 'folder' : 'refresh'} size={14} />}
+        icon={<Icon name={notice.kind === 'session-moved' ? 'folder' : notice.kind === 'terminal' ? 'terminal' : 'refresh'} size={14} />}
         title={msg.text}
         meta={msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
         testId="v3-host-notice"

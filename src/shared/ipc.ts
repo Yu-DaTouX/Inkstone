@@ -1325,6 +1325,7 @@ export type MainPushBody =
   | { ch: 'proc'; payload: { state: 'starting' | 'ready' | 'exited' | 'stderr' | 'error'; detail?: string; code?: number | null } }
   | { ch: 'ui-scale'; payload: { uiScale: number; effective: number; scaleFactor: number; autoScale: number } }
   | { ch: 'browser-state'; payload: BrowserState }
+  | { ch: 'terminal-jobs'; payload: import('./terminal-jobs').TerminalJob[] }
   | { ch: 'terminal'; payload: { id: string; kind: 'data' | 'exit' | 'status' | 'agent'; data?: string; seq?: number; exitCode?: number | null; status?: TerminalProgramStatus; owner?: string; agentPhase?: 'start' | 'end'; agentAction?: string } }
   | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
   | { ch: 'search-api-hint'; payload: Record<string, never> }
@@ -2119,6 +2120,9 @@ export interface YanBridge {
     attach(id: string): Promise<TerminalSnapshot | null>
     clear(id: string): Promise<boolean>
     processes(id: string): Promise<TerminalProcessList>
+    jobs(): Promise<import('./terminal-jobs').TerminalJob[]>
+    stopJob(id: string): Promise<boolean>
+    clearJobs(ids?: string[]): Promise<boolean>
   }
 
 }

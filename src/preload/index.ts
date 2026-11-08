@@ -694,7 +694,10 @@ const api: YanBridge = {
     kill: (id) => invoke<boolean>('yan:terminal:kill', id),
     attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id),
     clear: (id) => invoke<boolean>('yan:terminal:clear', id),
-    processes: (id) => invoke<TerminalProcessList>('yan:terminal:processes', id)
+    processes: (id) => invoke<TerminalProcessList>('yan:terminal:processes', id),
+    jobs: () => invoke<import('../shared/terminal-jobs').TerminalJob[]>('yan:terminal:jobs'),
+    stopJob: (id) => invoke<boolean>('yan:terminal:jobStop', id),
+    clearJobs: (ids) => invoke<boolean>('yan:terminal:jobsClear', ids)
   },
 
   win: {

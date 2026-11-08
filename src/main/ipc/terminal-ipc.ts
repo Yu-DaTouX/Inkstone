@@ -12,6 +12,7 @@ import {
   writeTerminal
 } from '../terminal'
 import { listProcessTree } from '../terminal-processes'
+import { clearFinishedTerminalJobs, listTerminalJobs, requestTerminalJobStop } from '../terminal-jobs'
 import type { IpcRegistrar } from './registrar'
 
 export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string | undefined): void {
@@ -36,4 +37,13 @@ export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string
   rawHandle('yan:terminal:attach', (_e, id: string) => attachTerminal(String(id ?? '')))
   rawHandle('yan:terminal:clear', (_e, id: string) => clearTerminal(String(id ?? '')))
   rawHandle('yan:terminal:processes', (_e, id: string) => listProcessTree(terminalProcessId(String(id ?? ''))))
+  rawHandle('yan:terminal:jobs', () => listTerminalJobs())
+  rawHandle('yan:terminal:jobStop', (_e, id: string) => {
+    const terminalId = requestTerminalJobStop(String(id ?? ''))
+    return terminalId ? writeTerminal(terminalId, '\x03') : false
+  })
+  rawHandle('yan:terminal:jobsClear', (_e, ids?: string[]) => {
+    clearFinishedTerminalJobs(Array.isArray(ids) ? ids.map(String) : undefined)
+    return true
+  })
 }

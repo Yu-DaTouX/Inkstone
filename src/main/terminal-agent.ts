@@ -5,6 +5,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
 import { safeTerminalCut } from './terminal-registry'
+import { buildTerminalNotice, type TerminalNoticeState } from '../shared/host-notice-text'
+import type { TerminalJob } from '../shared/terminal-jobs'
+import { addTerminalJob, terminalJob, updateTerminalJob } from './terminal-jobs'
 import type { TerminalSessionInfo, TerminalSnapshot, TerminalStartOptions, TerminalStream, TerminalAgentPhase } from './terminal'
 
 const requireModule = createRequire(import.meta.url)
@@ -15,6 +18,11 @@ export const TERMINAL_READ_LINES_MAX = 2000
 export const TERMINAL_RUN_TIMEOUT_MS = 120_000
 export const TERMINAL_RUN_TIMEOUT_MAX_MS = 900_000
 export const TERMINAL_QUIET_MS = 15_000
+export const TERMINAL_BACKGROUND_TIMEOUT_MS = 3 * 3600_000
+export const TERMINAL_BACKGROUND_TIMEOUT_MAX_MS = 24 * 3600_000
+export const TERMINAL_BACKGROUND_SETTLE_MS = 3000
+const BACKGROUND_NOTICE_LINES = 40
+const BACKGROUND_NOTICE_CHARS = 4000
 export const TERMINAL_WRITE_WAIT_MS = 1500
 export const TERMINAL_WRITE_WAIT_MAX_MS = 30_000
 const SETTLE_IDLE_MS = 500
@@ -249,6 +257,7 @@ export interface TerminalAgentContext {
   ownerKeys(): string[]
   cwd(): string
   confirm(request: TerminalConfirmRequest): Promise<{ allowed: boolean; feedback?: string }>
+  notify?(text: string, stillOwner: () => boolean): void
 }
 
 type WaitState = 'completed' | 'matched' | 'quiet' | 'timeout' | 'exited' | 'cancelled' | 'settled'
@@ -261,8 +270,11 @@ export function agentTerminalIds(): string[] {
 const typedLines = new Map<string, string>()
 const terminalLocations = new Map<string, string | null>()
 const lastUsed = new Map<string, string>()
+const backgroundJobs = new Map<string, AbortController>()
 
 export function resetTerminalAgentState(): void {
+  for (const job of backgroundJobs.values()) job.abort()
+  backgroundJobs.clear()
   agentTerminals.clear()
   typedLines.clear()
   terminalLocations.clear()
@@ -379,6 +391,7 @@ export class TerminalAgentCommands {
   }
 
   private async busy(stream: TerminalStream): Promise<boolean> {
+    if (backgroundJobs.has(stream.info.id)) return true
     const state = stream.info.status?.state
     if (state === 'working' || state === 'blocked') return true
     if (!stream.pid) return false
@@ -561,14 +574,33 @@ export class TerminalAgentCommands {
     const until = untilPattern(params)
     const timeoutMs = secondsParam(params, 'timeout', TERMINAL_RUN_TIMEOUT_MS, TERMINAL_RUN_TIMEOUT_MAX_MS)
     const quietMs = secondsParam(params, 'quiet', TERMINAL_QUIET_MS, TERMINAL_RUN_TIMEOUT_MAX_MS)
+    const background = flagParam(params, 'background')
     const { stream, created } = await this.pickForRun(params)
     const id = stream.info.id
     await this.guard(stream, `${command}\r`)
-    lastUsed.set(this.ownerKey(), id)
+    const owner = this.ownerKey()
+    lastUsed.set(owner, id)
     return this.withAnnounce(id, 'run', async () => {
       if (created || stream.total === 0) await this.waitReady(id, signal, created ? NEW_TERMINAL_SETTLE_MS : 0)
       const from = this.host.stream(id)?.total ?? stream.total
       if (!this.host.write(id, `${command}\r`)) throw new CapabilityCommandError('terminal_write_failed', '写入终端失败（终端可能已退出）')
+      if (background) {
+        const startedAt = this.host.now()
+        const first = await this.waitFor(id, from, { mode: 'command', timeoutMs: TERMINAL_BACKGROUND_SETTLE_MS, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until }, signal)
+        const early = await this.outputSince(id, from)
+        if (first === 'completed' || first === 'matched' || first === 'exited') {
+          return this.result('run', early.info ?? stream.info, early, { command, state: first, created })
+        }
+        const backgroundTimeoutMs = secondsParam(params, 'timeout', TERMINAL_BACKGROUND_TIMEOUT_MS, TERMINAL_BACKGROUND_TIMEOUT_MAX_MS)
+        const job = this.watchBackground({ id, from, command, until, timeoutMs: backgroundTimeoutMs, owner, startedAt, cwd: (early.info ?? stream.info).cwd })
+        return this.result('run', early.info ?? stream.info, early, {
+          command,
+          state: 'background',
+          jobId: job.id,
+          created,
+          hint: '命令在后台运行，结束、命中 --until 或超时后砚会发通知给你；期间可以做别的事，不要轮询。看进度用 read --id <id> --since <cursor>，停止用 keys ctrl+c'
+        })
+      }
       const state = await this.waitFor(id, from, { mode: 'command', timeoutMs, quietMs, idleMs: SETTLE_IDLE_MS, until }, signal)
       const output = await this.outputSince(id, from)
       const info = output.info ?? stream.info
@@ -578,6 +610,45 @@ export class TerminalAgentCommands {
           : undefined
       return this.result('run', info, output, { command, state, created, ...(hint ? { hint } : {}) })
     })
+  }
+
+  private watchBackground(job: { id: string; from: number; command: string; until: RegExp | null; timeoutMs: number; owner: string; startedAt: number; cwd: string }): TerminalJob {
+    const controller = new AbortController()
+    backgroundJobs.get(job.id)?.abort()
+    backgroundJobs.set(job.id, controller)
+    const record = addTerminalJob({ terminalId: job.id, owners: this.ctx.ownerKeys(), command: job.command, cwd: job.cwd, startedAt: job.startedAt })
+    const release = (): void => {
+      if (backgroundJobs.get(job.id) === controller) backgroundJobs.delete(job.id)
+    }
+    void (async () => {
+      const waited = await this.waitFor(job.id, job.from, { mode: 'command', timeoutMs: job.timeoutMs, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until: job.until }, controller.signal)
+      release()
+      const stopping = terminalJob(record.id)?.state === 'stopping'
+      if (waited !== 'completed' && waited !== 'matched' && waited !== 'exited' && waited !== 'timeout') {
+        updateTerminalJob(record.id, { state: 'stopped', endedAt: this.host.now() })
+        return
+      }
+      const state: TerminalNoticeState = stopping && waited !== 'timeout' ? 'stopped' : waited
+      updateTerminalJob(record.id, { state, endedAt: this.host.now() })
+      const output = await this.outputSince(job.id, job.from)
+      const tail = tailText(output.text, BACKGROUND_NOTICE_LINES, BACKGROUND_NOTICE_CHARS)
+      const text = buildTerminalNotice({
+        id: job.id,
+        command: job.command,
+        state,
+        seconds: (this.host.now() - job.startedAt) / 1000,
+        exitCode: output.info?.exitCode ?? null,
+        output: tail.text,
+        truncated: tail.truncated || output.truncated,
+        since: job.from
+      })
+      this.ctx.notify?.(text, () => this.ctx.ownerKeys().some((key) => key && this.host.sameOwner(job.owner, key)))
+    })().catch((error: unknown) => {
+      release()
+      if (terminalJob(record.id)?.endedAt === undefined) updateTerminalJob(record.id, { state: 'stopped', endedAt: this.host.now() })
+      console.warn('[terminal-agent] 后台命令监视失败：', error)
+    })
+    return record
   }
 
   private async write(params: Record<string, unknown>, signal?: AbortSignal): Promise<CapabilityCommandResult> {
@@ -631,6 +702,8 @@ export class TerminalAgentCommands {
     if (!agentTerminals.has(stream.info.id)) {
       throw new CapabilityCommandError('terminal_not_agent_opened', '这个终端不是你开的，不能直接关闭；要停下里面的程序用 keys ctrl+c')
     }
+    backgroundJobs.get(stream.info.id)?.abort()
+    backgroundJobs.delete(stream.info.id)
     this.host.kill(stream.info.id)
     agentTerminals.delete(stream.info.id)
     typedLines.delete(stream.info.id)

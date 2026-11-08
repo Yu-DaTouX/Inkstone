@@ -527,8 +527,26 @@ export class AgentController extends EventEmitter {
       const result = await this.runDangerConfirmCommand({ tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs })
       const feedback = result.summary.feedback
       return { allowed: result.summary.allowed === true, ...(typeof feedback === 'string' && feedback ? { feedback } : {}) }
+    },
+    notify: (text, stillOwner) => {
+      void this.deliverTerminalNotice(text, stillOwner)
     }
   })
+
+  private async deliverTerminalNotice(text: string, stillOwner: () => boolean): Promise<void> {
+    let failures = 0
+    for (let waited = 0; waited < 2 * 3600_000 && failures < 5; waited += 3000) {
+      if (!stillOwner()) return
+      const state = this.state
+      if (this.rpc?.running && state && !state.isAgentRunning && !state.isStreaming && !state.isCompacting && !this.holdsNotices()) {
+        const result = await this.send(text, undefined, 'followUp').catch(() => ({ ok: false }))
+        if (result.ok) return
+        failures += 1
+      }
+      await new Promise((done) => setTimeout(done, 3000))
+    }
+    console.warn('[agent] 后台终端通知未能投递')
+  }
 
   private readonly phoneCommands = new PhoneAgentCommands({ opsDir: () => this.capabilityOpts?.opsDir ?? join(YAN_DIR, 'ops') })
 
