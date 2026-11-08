@@ -4,6 +4,7 @@ import {
   CODEX_SEARCH_TOOL,
   joinCitedText,
   withCitationLinks,
+  withContextUsage,
   createSearchCollector,
   searchRecordText,
   withSearchRecords,
@@ -96,6 +97,17 @@ ok(injected[1].content[2].text === searchRecordText(ar) && injected[1].content[2
 ok(withTool.content.length === 3 && injected[0] === history[0], '不改会话里的原消息')
 ok(withSearchRecords([{ role: 'assistant', content: [] }]) === undefined, '没有记录时不改上下文')
 ok(searchRecordText(ar) === searchRecordText(JSON.parse(JSON.stringify(ar))), '同一记录每次补的文字一致（不破坏缓存）')
+
+const usageEvents = createSearchCollector()
+usageEvents.observe({ type: 'message_start', message: { usage: { input_tokens: 4, cache_read_input_tokens: 334000, cache_creation_input_tokens: 900 } } })
+usageEvents.observe({ type: 'message_start', message: { usage: { input_tokens: 9, cache_read_input_tokens: 1, cache_creation_input_tokens: 1 } } })
+const summed = { role: 'assistant', content: [], usage: { input: 4, output: 1500, cacheRead: 668000, cacheWrite: 18300, totalTokens: 687800 } }
+const fixed = withContextUsage(summed, usageEvents.firstUsage(), true)
+ok(fixed.usage.totalTokens === 4 + 334000 + 900 + (18300 - 900) + 1500, '联网搜索多轮采样累加的用量，按首轮提示加搜索结果与输出估计上下文')
+ok(fixed.usage.cacheRead === 668000 && fixed.usage.input === 4 && summed.usage.totalTokens === 687800, '只改 totalTokens，不改计费用量也不改原消息')
+ok(withContextUsage(summed, usageEvents.firstUsage(), false) === summed && withContextUsage(summed, null, true) === summed, '没搜索或没有首轮用量时不改')
+const small = { role: 'assistant', content: [], usage: { input: 4, output: 10, cacheRead: 100, cacheWrite: 0, totalTokens: 114 } }
+ok(withContextUsage(small, { input: 4, cacheRead: 100, cacheWrite: 0 }, true) === small, '估计值不小于原总数时不改')
 
 ok(withNativeSearch(codexPayload, null) === undefined, '不符合条件时不改请求')
 ok(withNativeSearch({ model: 'x' }, 'anthropic') === undefined, '没有工具列表的请求不改')

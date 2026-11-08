@@ -100,6 +100,7 @@ export function createSearchCollector() {
   const errors = []
   const pendingQuery = new Map()
   const textBlocks = []
+  let firstUsage = null
   const addUnique = (list, item, key) => {
     if (list.length < MAX_ITEMS && !list.some((existing) => key(existing) === key(item))) list.push(item)
   }
@@ -116,6 +117,10 @@ export function createSearchCollector() {
   return {
     observe(data) {
       if (!data || typeof data !== 'object') return
+      if (data.type === 'message_start' && !firstUsage) {
+        const usage = data.message?.usage
+        if (usage && typeof usage === 'object') firstUsage = { input: Number(usage.input_tokens) || 0, cacheRead: Number(usage.cache_read_input_tokens) || 0, cacheWrite: Number(usage.cache_creation_input_tokens) || 0 }
+      }
       if (data.type === 'content_block_start') {
         const block = data.content_block
         if (block?.type === 'text') textBlocks.push({ index: data.index, urls: [] })
@@ -156,6 +161,7 @@ export function createSearchCollector() {
       if (data.type === 'response.output_text.annotation.added' && data.annotation?.type === 'url_citation') addCitation(data.annotation)
     },
     textCitations: () => textBlocks,
+    firstUsage: () => firstUsage,
     record() {
       if (!queries.length && !opened.length && !results.length && !cited.length && !errors.length) return null
       return {
@@ -167,6 +173,17 @@ export function createSearchCollector() {
       }
     }
   }
+}
+
+export function withContextUsage(message, first, searched) {
+  const usage = message?.usage
+  if (!searched || !first || !usage) return message
+  const prompt = first.input + first.cacheRead + first.cacheWrite
+  const output = Number(usage.output) || 0
+  const results = Math.max(0, (Number(usage.cacheWrite) || 0) - first.cacheWrite)
+  const total = prompt + results + output
+  if (!(Number(usage.totalTokens) > total)) return message
+  return { ...message, usage: { ...usage, totalTokens: total } }
 }
 
 export function searchRecordText(record) {
@@ -211,12 +228,14 @@ export default function nativeWebSearch(pi) {
   pi.on('message_end', (event) => {
     if (event?.message?.role !== 'assistant') return
     const record = collector?.record() ?? null
+    const first = anthropicSearch ? collector?.firstUsage() : null
     const linked = anthropicSearch ? withCitationLinks(event.message, collector?.textCitations()) : undefined
     const joined = anthropicSearch ? joinCitedText(linked ?? event.message) : undefined
     anthropicSearch = false
     collector = null
     if (!record && !joined && !linked) return
-    const message = joined ?? linked ?? event.message
+    const base = joined ?? linked ?? event.message
+    const message = withContextUsage(base, first, !!record)
     return { message: record ? { ...message, [RECORD_FIELD]: record } : message }
   })
   pi.on('context', (event) => {
