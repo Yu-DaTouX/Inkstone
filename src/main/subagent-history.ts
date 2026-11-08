@@ -25,6 +25,7 @@ const RUN_FIELDS: readonly (keyof SubagentRun)[] = [
   'parentRunId',
   'parentGeneration',
   'parentMessageId',
+  'parentMessageIds',
   'projectId',
   'fork',
   'resultPath',

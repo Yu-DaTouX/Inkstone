@@ -204,7 +204,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
     const identity = viewIdentityOf(s)
     const sessionIds = identity.sessionId ? [identity.sessionId] : []
     return (scope ? subagentRunsForTurnScope(s.subagents, scope) : selectSubagentRuns(s.subagents, { sessionIds }).all).filter(
-      (run) => run.parentMessageId && ids.has(run.parentMessageId) && run.review !== 'merged' && run.review !== 'discarded'
+      (run) => (run.parentMessageId && ids.has(run.parentMessageId) || run.parentMessageIds?.some((id) => ids.has(id))) && run.review !== 'merged' && run.review !== 'discarded'
     )
   }))
   const snapshots = useRunsV3(useShallow((s): Record<string, RunSnapshot | undefined> => {

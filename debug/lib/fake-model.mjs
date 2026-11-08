@@ -113,6 +113,7 @@ export const FAKE_TRIGGERS = {
   FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
   'CAMSHOT': '仿「拍照确认」：6 步（含 STEPS<n> 时为 n 步），每步一次快 bash、一次 read 读 DIR=<目录>（缺省为项目里 cam）下的 check<步>.png、一句叙述、一次约 20 秒的慢 bash；图片由场景预先放好',
+  'SUBRESUME=<子代理 id>': '用 yan subagent send 续派指定子代理一条消息，再回一句，用来看续派后的归属与显示',
   SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM；写成 SUBAGENTS<n> 时派 n 个；含 SUBBAD 时子代理的模型请求断网），再按 STORM 跑 60 步；含 THENREST 时派完只回一句话就结束本轮',
   'SUBSTORM-<名字>': '子代理压测：40 步，每步叙述加一次改文件（sub/）并输出 60 行的 bash',
   '<subagent-notification': '子代理完成回传只回一句，避免再次触发',
@@ -215,7 +216,10 @@ async function respond(res, text, done, requestNo) {
   try {
     if (text.includes(SUGGESTION_MARKER)) await streamText('继续下一步', 20, 5)
     else if (text.includes('<subagent-notification')) await streamText('好的，收到。', 20, 10)
-    else if (text.includes('SUBSTORM')) {
+    else if (/SUBRESUME=sub-[0-9a-f]+/.test(text)) {
+      if (done < 1) await callTool('bash', { command: `yan subagent send --id ${/SUBRESUME=(sub-[0-9a-f]+)/.exec(text)[1]} --message "请继续补充一句结论"`, description: 'resume subagent' })
+      else await streamText('已续派。', 20, 10)
+    } else if (text.includes('SUBSTORM')) {
       if (done < 40) await stormStep('sub', stormTag(text, 'SUBSTORM'), done, 60)
       else await streamText('子任务四十步完成。', 20, 10)
     } else if (text.includes('SUBAGENTS')) {

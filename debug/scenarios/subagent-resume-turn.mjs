@@ -1,0 +1,28 @@
+export const meta = { description: '子代理续派：第一轮派 1 个子代理跑完，第二轮由主会话续派它，两轮的消息流里都要出现它的卡片' }
+
+export default async function run({ cdp, check, waitFor, sleep, shot }) {
+  const ev = (expr) => cdp.evaluate(expr)
+  await waitFor('s.conn === "ready"')
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false })
+  await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN', permissionMode: 'all' })`)
+  await ev(`window.__yanStore.getState().send('SUBAGENTS1 THENREST 先派一个子代理')`)
+  await waitFor(`(s.subagents ?? []).length >= 1`, 60000)
+  const id = await ev(`window.__yanStore.getState().subagents[0].id`)
+  await waitFor(`(s.subagents ?? []).every((a) => a.status !== 'running' && a.status !== 'starting') && !(s.session?.isStreaming || s.session?.isAgentRunning)`, 180000, 100)
+  await sleep(1500)
+  const boxes = () => ev(`document.querySelectorAll('[data-testid="v3-subagents"]').length`)
+  check('第一轮结束后消息流里有 1 个子代理卡片', await boxes() === 1, String(await boxes()))
+  const first = await ev(`window.__yanStore.getState().subagents[0].parentMessageId`)
+  await ev(`window.__yanStore.getState().send(${JSON.stringify('SUBRESUME=' + id + ' 续派它')})`)
+  await waitFor(`(s.subagents ?? []).some((a) => a.id === ${JSON.stringify(id)} && a.resumed === true || a.status === 'running' || a.status === 'starting') || (s.subagents ?? [])[0]?.parentMessageIds?.length > 0`, 60000, 100)
+  await waitFor(`(s.subagents ?? []).every((a) => a.status !== 'running' && a.status !== 'starting') && !(s.session?.isStreaming || s.session?.isAgentRunning)`, 180000, 100)
+  await sleep(1500)
+  const run = await ev(`JSON.stringify(window.__yanStore.getState().subagents[0])`)
+  const parsed = JSON.parse(run)
+  console.log('RUN', JSON.stringify({ id: parsed.id, parentMessageId: parsed.parentMessageId, parentMessageIds: parsed.parentMessageIds, first }))
+  check('续派后子代理归属换成第二轮', !!parsed.parentMessageId && parsed.parentMessageId !== first)
+  check('旧的归属保留在 parentMessageIds', Array.isArray(parsed.parentMessageIds) && parsed.parentMessageIds.includes(first))
+  const count = await boxes()
+  check('续派后两轮的消息流里都有子代理卡片', count === 2, String(count))
+  await shot('subagent-resume-turn')
+}

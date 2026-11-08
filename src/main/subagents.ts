@@ -425,6 +425,7 @@ export class SubagentController {
       parentRunId: run.parentRunId,
       parentGeneration: run.parentGeneration,
       parentMessageId: run.parentMessageId,
+      ...(run.parentMessageIds?.length ? { parentMessageIds: run.parentMessageIds } : {}),
       projectId: run.projectId,
       isolation: run.isolation,
       ...(run.fork ? { fork: true } : {}),
@@ -1069,7 +1070,10 @@ export class SubagentController {
       }
       run.launch = resolvedLaunch.launch
       clearTimeout(run.timer)
+      const resumedIn = from === 'parent' && this.opts.parentMessageId && this.opts.parentSessionId === run.parentSessionId ? this.opts.parentMessageId : undefined
+      const earlier = [...(run.parentMessageIds ?? []), ...(run.parentMessageId ? [run.parentMessageId] : [])]
       Object.assign(run, {
+        ...(resumedIn && resumedIn !== run.parentMessageId ? { parentMessageId: resumedIn, parentMessageIds: [...new Set(earlier)].slice(-20) } : {}),
         rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now, followUp: text, quotaWait: undefined,
         latestActivity: pick('正在续接…', 'Resuming…'), stderrTail: [], runningTools: new Set<string>(),
         contextRevision: (run.contextRevision ?? 0) + 1, diff: undefined, resultPath: undefined,

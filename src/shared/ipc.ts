@@ -1216,6 +1216,7 @@ export interface SubagentRun {
   parentRunId?: string
   parentGeneration?: number
   parentMessageId?: string
+  parentMessageIds?: string[]
   projectId?: string
   isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd'
   fork?: boolean
