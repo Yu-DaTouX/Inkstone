@@ -400,13 +400,23 @@ function sessionQueue(sessionId: string): { steering: string[]; followUp: string
   }
 }
 
+async function streamingMessage(sessionId: string) {
+  const status = host.runners()?.statuses().find((item) => item.sessionId === sessionId)
+  const agent = status ? host.runners()?.agentOf(status.runId) : null
+  if (!agent) return null
+  const [saved, withLive] = await Promise.all([agent.getMessages(), agent.getMessages({ includeStreaming: true })])
+  return withLive.length > saved.length ? withLive.at(-1) ?? null : null
+}
+
 export async function remoteHistory(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult> {
   const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
+  const live = before ? null : await streamingMessage(sessionId).catch(() => null)
   if (!summary) {
     const unsaved = unsavedSessionSummary(sessionId)
     if (unsaved) {
       const queue = before ? undefined : sessionQueue(sessionId)
-      return { ok: true, data: { session: remoteSessionSummary(unsaved), messages: [], ...(queue ? { queue } : {}), total: 0, returned: 0, hasMore: false, truncated: false, truncatedBytes: 0, bytes: 0 } }
+      const messages = live ? [{ ...live, images: undefined }] : []
+      return { ok: true, data: { session: remoteSessionSummary(unsaved), messages, ...(queue ? { queue } : {}), total: messages.length, returned: messages.length, hasMore: false, truncated: false, truncatedBytes: 0, bytes: 0 } }
     }
     return { ok: false, status: 404, error: pick('找不到目标会话，可能已被删除', 'Session not found. It may have been deleted') }
   }
@@ -415,7 +425,8 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
   if (!result) return { ok: false, status: 502, error: pick('无法读取该会话历史', 'Cannot read this session\'s history') }
   const page = remoteHistoryPage(result.messages, limit, before)
   if (!page) return { ok: false, status: 409, error: pick('会话历史已变化，请重新打开', 'Session history changed. Reopen it'), code: 'history_cursor_expired' }
-  const messages = page.messages.map((message) => ({
+  const tail = live && !page.messages.some((message) => message.id === live.id) ? [live] : []
+  const messages = [...page.messages, ...tail].map((message) => ({
     ...message,
     ...(message.images ? { images: message.images.map((image) => ({ mimeType: image.mimeType, data: '' })) } : {}),
     ...(message.toolCalls ? { toolCalls: remoteToolCallsWithImages(message.toolCalls, message.images?.length ?? 0) } : {}),

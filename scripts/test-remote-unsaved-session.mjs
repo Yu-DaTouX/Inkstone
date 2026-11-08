@@ -54,7 +54,9 @@ try {
       return { ok: true }
     },
     listModels: async () => [{ id: 'm', provider: 'p', name: 'M', input: ['text'] }],
-    listThinkingLevels: async () => ['off']
+    listThinkingLevels: async () => ['off'],
+    live: null,
+    getMessages: async (opts = {}) => (opts.includeStreaming && agent.live ? [agent.live] : [])
   }
   const unsaved = {
     id: 'r1',
@@ -122,6 +124,13 @@ try {
   assert.equal(history.ok, true, '未落盘的新会话历史返回空页，手机端可直接打开')
   assert.equal(history.data.session.id, 'pending-2', '空页带上会话摘要')
   assert.equal(history.data.messages.length, 0, '未落盘会话没有历史消息')
+
+  agent.live = { id: 's7', role: 'assistant', text: '正在生成的半段回复', timestamp: 3, thinkingLive: true }
+  const streaming = await host.remoteHistory('pending-2', 10)
+  assert.deepEqual(streaming.data.messages.map((m) => [m.id, m.text]), [['s7', '正在生成的半段回复']], '运行中的回复追加在历史末尾，手机端能实时看到')
+  const older = await host.remoteHistory('pending-2', 10, 's7')
+  assert.equal(older.data?.messages?.some((m) => m.id === 's7') ?? false, false, '往前翻页不带运行中的回复')
+  agent.live = null
 
   const missingHistory = await host.remoteHistory('nowhere', 10)
   assert.equal(missingHistory.status, 404, '不存在的会话历史仍然 404')
