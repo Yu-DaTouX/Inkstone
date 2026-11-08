@@ -1,4 +1,5 @@
 import { request as httpRequest, type ClientRequest } from 'node:http'
+import { StringDecoder } from 'node:string_decoder'
 import { fromB64u, generateKeyPair, RELAY_PROTOCOL_VERSION, serverSession, toB64u, type KeyPair, type SecureChannel } from './crypto'
 import type { RelayClient } from './store'
 import { REMOTE_IDEMPOTENCY_HEADER, REMOTE_MESSAGE_MAX_BYTES } from '../../shared/remote-protocol'
@@ -37,6 +38,12 @@ const COALESCE_MS = 50
 const REQUEST_TIMEOUT_MS = 120_000
 const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, 'last-event-id', 'accept']
 const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair'])
+const TEXT_PROTOCOL = 2
+
+function textual(contentType: string | undefined): boolean {
+  const type = (contentType ?? '').toLowerCase()
+  return type.startsWith('text/') || type.includes('json') || type.includes('javascript') || type.includes('xml')
+}
 
 type Pending = { req: ClientRequest; stream: boolean; finish?(error?: string): void }
 
@@ -44,6 +51,7 @@ export class TunnelSession {
   private state: 'hello' | 'auth' | 'open' | 'closed' = 'hello'
   private channel: SecureChannel | undefined
   private clientKey = ''
+  private version = RELAY_PROTOCOL_VERSION
   private chain: Promise<void> = Promise.resolve()
   private readonly timer: ReturnType<typeof setTimeout>
   private readonly pending = new Map<string, Pending>()
@@ -105,13 +113,14 @@ export class TunnelSession {
   }
 
   private async hello(text: string): Promise<void> {
-    const msg = JSON.parse(text) as { t?: unknown; v?: unknown; c?: unknown; e?: unknown }
+    const msg = JSON.parse(text) as { t?: unknown; v?: unknown; x?: unknown; c?: unknown; e?: unknown }
     if (msg.t !== 'hi' || msg.v !== RELAY_PROTOCOL_VERSION || typeof msg.c !== 'string' || typeof msg.e !== 'string') throw new Error('握手消息不对')
+    this.version = typeof msg.x === 'number' && msg.x >= TEXT_PROTOCOL ? TEXT_PROTOCOL : RELAY_PROTOCOL_VERSION
     const serverEph = await generateKeyPair()
     this.channel = await serverSession({ serverStatic: this.hooks.hostKey, serverEph, clientStaticRaw: fromB64u(msg.c), clientEphRaw: fromB64u(msg.e) })
     this.clientKey = msg.c
     this.state = 'auth'
-    this.pipe.send(JSON.stringify({ t: 'hi', v: RELAY_PROTOCOL_VERSION, e: toB64u(serverEph.raw) }))
+    this.pipe.send(JSON.stringify({ t: 'hi', v: this.version, e: toB64u(serverEph.raw) }))
   }
 
   private async auth(msg: Record<string, unknown>): Promise<void> {
@@ -145,7 +154,8 @@ export class TunnelSession {
   }
 
   private fail(id: string, status: number, error: string): void {
-    this.post({ t: 'res', id, status, headers: { 'content-type': 'application/json; charset=utf-8' }, body: Buffer.from(JSON.stringify({ ok: false, error })).toString('base64') })
+    const text = JSON.stringify({ ok: false, error })
+    this.post({ t: 'res', id, status, headers: { 'content-type': 'application/json; charset=utf-8' }, ...(this.version >= TEXT_PROTOCOL ? { text } : { body: Buffer.from(text).toString('base64') }) })
   }
 
   private request(msg: Record<string, unknown>): void {
@@ -170,11 +180,13 @@ export class TunnelSession {
     if (!target) return this.fail(id, 503, pick('电脑上的远程服务没有运行', 'The remote service on the computer is not running'))
 
     const body = typeof msg.body === 'string' ? msg.body : ''
+    const bodyText = typeof msg.text === 'string' ? msg.text : null
     const maxBytes = method !== 'POST' ? null
       : url.pathname === '/remote/v1/voice/transcribe' ? VOICE_MAX_BODY_BYTES
         : /^\/remote\/v1\/sessions\/[^/]+\/messages$/.test(url.pathname) ? REMOTE_MESSAGE_MAX_BYTES : null
-    if (body.length > (maxBytes === null ? MAX_BODY_B64 : 4 * Math.ceil(maxBytes / 3))) return this.fail(id, 413, pick('请求太大', 'Request too large'))
-    let payload = body ? Buffer.from(body, 'base64') : Buffer.alloc(0)
+    const limit = maxBytes === null ? MAX_BODY_B64 : 4 * Math.ceil(maxBytes / 3)
+    if (bodyText !== null ? Buffer.byteLength(bodyText) > (maxBytes ?? MAX_BODY_B64) : body.length > limit) return this.fail(id, 413, pick('请求太大', 'Request too large'))
+    let payload = bodyText !== null ? Buffer.from(bodyText, 'utf8') : body ? Buffer.from(body, 'base64') : Buffer.alloc(0)
     if (maxBytes !== null && payload.length > maxBytes) return this.fail(id, 413, pick('请求太大', 'Request too large'))
     const given = msg.headers && typeof msg.headers === 'object' ? (msg.headers as Record<string, unknown>) : {}
     const headers: Record<string, string> = {}
@@ -210,6 +222,16 @@ export class TunnelSession {
         if (typeof v === 'string') resHeaders[name] = v
       }
       const streaming = (resHeaders['content-type'] ?? '').startsWith('text/event-stream')
+      const asText = this.version >= TEXT_PROTOCOL && textual(resHeaders['content-type'])
+      const decoder = asText ? new StringDecoder('utf8') : null
+      const chunk = (bytes: Buffer, last = false): void => {
+        if (!decoder) {
+          if (bytes.length) this.post({ t: 'chunk', id, data: bytes.toString('base64') })
+          return
+        }
+        const text = decoder.write(bytes) + (last ? decoder.end() : '')
+        if (text) this.post({ t: 'chunk', id, text })
+      }
       entry.stream = streaming
       if (streaming && [...this.pending.values()].filter((p) => p.stream).length > MAX_STREAMS) {
         res.destroy()
@@ -223,7 +245,7 @@ export class TunnelSession {
         const flush = () => {
           timer = undefined
           if (!buf.length) return
-          this.post({ t: 'chunk', id, data: Buffer.concat(buf).toString('base64') })
+          chunk(Buffer.concat(buf))
           buf = []
         }
         let finished = false
@@ -233,6 +255,7 @@ export class TunnelSession {
           if (timer) clearTimeout(timer)
           if (this.pending.get(id) === entry) {
             flush()
+            if (decoder) chunk(Buffer.alloc(0), true)
             this.pending.delete(id)
             this.post({ t: 'end', id, ...(error ? { error } : {}) })
           }
@@ -256,11 +279,11 @@ export class TunnelSession {
         this.pending.delete(id)
         const all = Buffer.concat(parts)
         if (all.length <= INLINE_RESPONSE) {
-          this.post({ t: 'res', id, status, headers: resHeaders, ...(all.length ? { body: all.toString('base64') } : {}) })
+          this.post({ t: 'res', id, status, headers: resHeaders, ...(!all.length ? {} : asText ? { text: all.toString('utf8') } : { body: all.toString('base64') }) })
           return
         }
         this.post({ t: 'res', id, status, headers: resHeaders, stream: true })
-        for (let off = 0; off < all.length; off += CHUNK) this.post({ t: 'chunk', id, data: all.subarray(off, off + CHUNK).toString('base64') })
+        for (let off = 0; off < all.length; off += CHUNK) chunk(all.subarray(off, off + CHUNK), off + CHUNK >= all.length)
         this.post({ t: 'end', id })
       })
       res.on('error', () => this.pending.delete(id))

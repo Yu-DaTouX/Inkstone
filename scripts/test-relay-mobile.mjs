@@ -44,7 +44,10 @@ globalThis.WebSocket = class {
       this.onopen?.({})
     }, 0)
   }
-  send(text) { relay.host.emit('message', { data: JSON.stringify({ t: 'msg', c: this.id, d: text }) }) }
+  send(text) {
+    if (relay.legacy && text.startsWith('{"t":"hi"')) { const hi = JSON.parse(text); delete hi.x; text = JSON.stringify(hi) }
+    relay.host.emit('message', { data: JSON.stringify({ t: 'msg', c: this.id, d: text }) })
+  }
   close() { if (relay.clients.delete(this.id)) relay.host.emit('message', { data: JSON.stringify({ t: 'close', c: this.id }) }) }
 }
 const M = await import(pathToFileURL(join(root, 'mobile.mjs')))
@@ -52,7 +55,7 @@ const M = await import(pathToFileURL(join(root, 'mobile.mjs')))
 const dataDir = await mkdtemp(join(tmpdir(), 'inkstone-relay-mobile-data-'))
 const devices = new D.RemoteDeviceStore(dataDir)
 const handlers = {
-  async snapshot() { return { sessions: [{ id: 's1', name: '会话一' }] } }, async history() { return { ok: true } }, async command() { return { ok: true } }
+  async snapshot() { return { sessions: [{ id: 's1', name: relay.bigName ?? '会话一' }] } }, async history() { return { ok: true } }, async command() { return { ok: true } }
 }
 const relayToken = 'mobile-test-token-0123456789'
 const server = new D.RemoteServer({ host: '127.0.0.1', port: 0, devices, handlers, relayToken })
@@ -77,7 +80,29 @@ try {
       assert.equal(M.toB64(b), b.toString('base64'))
       assert.deepEqual(Buffer.from(M.fromB64(b.toString('base64'))), b)
       assert.equal(M.toB64u(b), b.toString('base64url'))
+      assert.deepEqual(Buffer.from(M.fromB64u(b.toString('base64url'))), b)
     }
+    let seed = 7
+    const rand = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n }
+    for (let round = 0; round < 300; round++) {
+      const b = Buffer.from(Array.from({ length: rand(9000) }, () => rand(256)))
+      assert.equal(M.toB64(b), b.toString('base64'))
+      assert.equal(M.toB64u(b), b.toString('base64url'))
+      assert.deepEqual(Buffer.from(M.fromB64(b.toString('base64'))), b)
+      assert.deepEqual(Buffer.from(M.fromB64u(b.toString('base64url'))), b)
+      assert.equal(M.bytesToUtf8(b), b.toString('utf8'))
+      const pool = ['a', '中', 'é', '😀', '\n', '"', '𐀀', '🤖']
+      const s = Array.from({ length: rand(6000) }, () => pool[rand(pool.length)]).join('')
+      const bytes = Buffer.from(s)
+      assert.deepEqual(Buffer.from(M.utf8ToBytes(s)), bytes)
+      const cut = rand(bytes.length + 1)
+      const head = M.decodeUtf8(bytes.subarray(0, cut))
+      const tail = M.decodeUtf8(bytes.subarray(cut - head.rest))
+      assert.equal(head.text + tail.text, s)
+    }
+    assert.equal(M.bytesToUtf8(Buffer.from([0xff, 0x41, 0xe4, 0xb8])), Buffer.from([0xff, 0x41, 0xe4, 0xb8]).toString('utf8'))
+    assert.throws(() => M.fromB64u('ab+c'))
+    assert.throws(() => M.fromB64('a$bc'))
   })
 
   let connection
@@ -114,6 +139,83 @@ try {
     await new Promise((r) => setTimeout(r, 200))
     stream.stop()
     assert.ok(JSON.stringify(got).includes('来自电脑的通知：任务完成 ✅'), JSON.stringify(got).slice(0, 200))
+  })
+
+  await check('协议 v2：文本不再套 base64，大响应分块拼回不乱码', async () => {
+    const tunnel = M.RelayTunnel.for(connection.relay)
+    assert.equal(tunnel.version, 2)
+    relay.bigName = '长标题😀'.repeat(150_000)
+    try {
+      const client = new M.RemoteClient(connection)
+      const sessions = await client.sessions()
+      assert.equal(JSON.stringify(sessions).includes(relay.bigName), true)
+    } finally { delete relay.bigName }
+  })
+
+  await check('旧手机（握手不带 x）仍走 v1，请求与事件流正常', async () => {
+    relay.legacy = true
+    const old = new M.RelayTunnel(connection.relay)
+    try {
+      const res = await old.request('GET', '/remote/v1/info', { headers: { authorization: `Bearer ${connection.token}` } })
+      assert.equal(old.version, 1)
+      assert.equal(res.status, 200)
+      assert.ok(res.text.includes('"sessions"'), res.text.slice(0, 200))
+      const got = []
+      let started
+      const opened = new Promise((r) => { started = r })
+      const stop = old.stream('/remote/v1/events?since=0', { authorization: `Bearer ${connection.token}`, accept: 'text/event-stream' }, { onStart: () => started(), onChunk: (t) => got.push(t), onEnd: () => undefined })
+      await opened
+      server.publish({ ch: 'notify', payload: { text: '旧版协议的中文 😀' } })
+      await new Promise((r) => setTimeout(r, 200))
+      stop()
+      assert.ok(got.join('').includes('旧版协议的中文 😀'))
+      const post = await old.request('POST', '/remote/v1/device', { headers: { authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ name: '旧手机' }) })
+      assert.ok(post.status < 500, String(post.status))
+    } finally {
+      relay.legacy = false
+      old.close()
+    }
+  })
+
+  await check('原生 AES-GCM（按 Android 实现模拟）通过自检，并与电脑互通', async () => {
+    const { createCipheriv, createDecipheriv } = await import('node:crypto')
+    const iv = (n) => { const b = Buffer.alloc(12); b.writeBigUInt64BE(BigInt(n), 4); return b }
+    const native = {
+      open(key, frame, expected) {
+        const bytes = Buffer.from(frame.slice(2), 'base64url')
+        const n = Number(bytes.readBigUInt64BE(0))
+        if (n !== expected) throw new Error('count')
+        const d = createDecipheriv('aes-256-gcm', Buffer.from(key, 'base64url'), iv(n))
+        d.setAuthTag(bytes.subarray(bytes.length - 16))
+        return Buffer.concat([d.update(bytes.subarray(8, bytes.length - 16)), d.final()]).toString('utf8')
+      },
+      seal(key, counter, text) {
+        const c = createCipheriv('aes-256-gcm', Buffer.from(key, 'base64url'), iv(counter))
+        const ct = Buffer.concat([c.update(text, 'utf8'), c.final(), c.getAuthTag()])
+        const head = Buffer.alloc(8)
+        head.writeBigUInt64BE(BigInt(counter))
+        return 'x.' + Buffer.concat([head, ct]).toString('base64url')
+      }
+    }
+    assert.equal(M.setFrameCipher({ open: () => 'nope', seal: native.seal }), false)
+    assert.equal(M.setFrameCipher(native), true)
+    const tunnel = new M.RelayTunnel(connection.relay)
+    try {
+      const res = await tunnel.request('GET', '/remote/v1/info', { headers: { authorization: `Bearer ${connection.token}` } })
+      assert.equal(res.status, 200)
+      const got = []
+      let started
+      const opened = new Promise((r) => { started = r })
+      const stop = tunnel.stream('/remote/v1/events?since=0', { authorization: `Bearer ${connection.token}`, accept: 'text/event-stream' }, { onStart: () => started(), onChunk: (t) => got.push(t), onEnd: () => undefined })
+      await opened
+      server.publish({ ch: 'notify', payload: { text: '原生解密的中文 😀' } })
+      await new Promise((r) => setTimeout(r, 200))
+      stop()
+      assert.ok(got.join('').includes('原生解密的中文 😀'))
+    } finally {
+      M.setFrameCipher(null)
+      tunnel.close()
+    }
   })
 
   await check('电脑撤销后，手机的请求失败', async () => {

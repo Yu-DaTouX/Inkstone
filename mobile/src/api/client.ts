@@ -9,7 +9,7 @@ import type {
 } from '../../../src/shared/remote-protocol'
 import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
-import { bytesToUtf8, newClientKey, RelayError, RelayTunnel, toB64, type RelayConfig, type RelayPairing } from './relay'
+import { bytesToUtf8, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
 
 export interface Connection {
   baseUrl: string
@@ -97,7 +97,7 @@ async function relayRequest<T>(
     })
     let json: Record<string, unknown> = {}
     try {
-      json = JSON.parse(bytesToUtf8(res.body)) as Record<string, unknown>
+      json = JSON.parse(res.text) as Record<string, unknown>
     } catch {
     }
     if (res.status < 200 || res.status >= 300 || json.ok === false) {
@@ -364,7 +364,7 @@ export class RemoteClient {
     const path = source.uri.slice(this.connection.baseUrl.length)
     const res = await RelayTunnel.for(relay).request('GET', path, { headers: source.headers, timeoutMs: 60_000 })
     if (res.status !== 200) throw new RemoteHttpError(res.status, pick('读取图片失败', 'Failed to load image'))
-    return { uri: `data:${res.headers['content-type'] ?? 'application/octet-stream'};base64,${toB64(res.body)}` }
+    return { uri: `data:${res.headers['content-type'] ?? 'application/octet-stream'};base64,${res.base64}` }
   }
 
   async artifactText(sessionId: string, artifactId: string): Promise<string> {
@@ -374,8 +374,8 @@ export class RemoteClient {
     if (relay) {
       const res = await RelayTunnel.for(relay).request('GET', source.uri.slice(this.connection.baseUrl.length), { headers: source.headers, timeoutMs: 60_000 })
       if (res.status !== 200) throw new RemoteHttpError(res.status, pick('读取成果失败', 'Failed to load artifact'))
-      if (res.body.byteLength > maxBytes) throw new RemoteHttpError(res.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
-      return bytesToUtf8(res.body)
+      if (res.byteLength > maxBytes) throw new RemoteHttpError(res.status, pick('成果文本超过 2 MiB，无法在手机端预览', 'Text over 2 MiB cannot be previewed on mobile'))
+      return res.text
     }
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 60_000)
