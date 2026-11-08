@@ -88,8 +88,10 @@ android {
         manifestPlaceholders = [inkstoneAppLabel: testSuffix != null ? "Inkstone Test" : project.hasProperty("inkstoneHubTest") ? "Inkstone Hub Test" : "@string/app_name"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
-        versionName "0.3.1"
+        def mobileVersion = new groovy.json.JsonSlurper().parse(file("../../package.json")).version as String
+        def versionParts = mobileVersion.tokenize(".-")[0..2].collect { it as int }
+        versionCode versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+        versionName mobileVersion
         testInstrumentationRunner "com.yudatoux.inkstone.QuestionAlertProbe"
     }
     testBuildType "release"

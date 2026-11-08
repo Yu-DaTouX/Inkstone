@@ -24,6 +24,7 @@ import { computeLayout, type Frame } from './windowLayout'
 import { cancelSpeech, isSpeechActive } from './speech'
 import { LangProvider } from './lang'
 import { pick } from '../../src/shared/ui-lang'
+import { checkForUpdate, type AppUpdate } from './appUpdate'
 
 type ArtifactLink = { id: string; filename: string; mediaType: string; kind: string }
 
@@ -74,6 +75,7 @@ function AppRoot() {
   const mode = layout.mode
 
   const [connection, setConnection] = useState<Connection | null | undefined>(undefined)
+  const [availableUpdate, setAvailableUpdate] = useState<AppUpdate | null>(null)
   const [route, setRoute] = useState<Route>({ name: 'home' })
   const [assistantConversation, setAssistantConversation] = useState<AssistantConversation>({ messages: [], draft: '' })
   const [localRoute, setLocalRoute] = useState<'welcome' | 'assistant' | 'assistant-settings'>('welcome')
@@ -96,6 +98,22 @@ function AppRoot() {
   const markRemoteReady = useCallback(() => setRemoteReady(true), [])
   const endBoot = useCallback(() => setBooting(false), [])
   const sessionId = 'sessionId' in route ? route.sessionId : undefined
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void checkForUpdate().then(async (update) => {
+        if (!update) return
+        setAvailableUpdate(update)
+        if ((await readUiPrefs()).updatePrompted === update.version) return
+        await writeUiPrefs({ updatePrompted: update.version })
+        Alert.alert(pick('发现新版本', 'Update available'), pick(`砚手机端 ${update.version} 已发布，可在设置里下载安装。`, `Inkstone mobile ${update.version} is available. Install it from Settings.`), [
+          { text: pick('以后再说', 'Later'), style: 'cancel' },
+          { text: pick('去更新', 'Update'), onPress: () => setRoute({ name: 'settings' }) }
+        ])
+      }).catch(() => undefined)
+    }, 5000)
+    return () => clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -245,6 +263,7 @@ function AppRoot() {
       onOpenAssistantSettings={() => { assistantSettingsFrom.current = 'settings'; setRoute({ name: 'assistant-settings' }) }}
       leftHanded={leftHanded}
       onLeftHandedChange={changeLeftHanded}
+      update={availableUpdate}
     />
   ) : route.name === 'artifact' ? (
     <ArtifactScreen

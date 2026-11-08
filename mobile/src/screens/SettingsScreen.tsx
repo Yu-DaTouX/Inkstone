@@ -10,6 +10,8 @@ import { Button, Header, IconButton, Input, Meta, SectionTitle, STATUS_TEXT, Sta
 import { deviceInfo } from '../device'
 import { useBottomInset } from '../insets'
 import { useLang, type LangChoice } from '../lang'
+import { UpdateCard } from '../components/UpdateCard'
+import type { AppUpdate } from '../appUpdate'
 
 const GUIDE = 'https://github.com/Yu-DaTouX/Inkstone'
 const LANG_TITLE = 'Language / 语言'
@@ -19,8 +21,9 @@ const LANG_OPTIONS: Array<{ value: LangChoice; label: () => string }> = [
   { value: 'en-US', label: () => 'English' }
 ]
 
-export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible, onOpenAssistantSettings, leftHanded, onLeftHandedChange }: {
+export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDisableAlerts, onUnpair, onBack, onToggleSidebar, sidebarVisible, onOpenAssistantSettings, leftHanded, onLeftHandedChange, update }: {
   connection: Connection
+  update?: AppUpdate | null
   leftHanded: boolean
   onLeftHandedChange: (value: boolean) => void
   alertsEnabled: boolean
@@ -85,6 +88,8 @@ export function SettingsScreen({ connection, alertsEnabled, onEnableAlerts, onDi
         <View style={[styles.card, { borderColor: p.borderSoft, backgroundColor: p.bg1 }]}>
           {LANG_OPTIONS.map((option) => <Button key={option.value} label={option.label()} compact variant={lang.choice === option.value ? 'primary' : 'secondary'} onPress={() => lang.setChoice(option.value)} />)}
         </View>
+        <SectionTitle>{pick('版本', 'Version')}</SectionTitle>
+        <UpdateCard initial={update} />
         <SectionTitle>{pick('帮助', 'Help')}</SectionTitle>
         <Button label={pick('使用说明', 'Guide')} icon="external" onPress={() => open(GUIDE)} />
         <Button label={pick('下载 Tailscale', 'Get Tailscale')} icon="external" onPress={() => open('https://tailscale.com/download/android')} />

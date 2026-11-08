@@ -25,6 +25,8 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 120
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
     env:
       PI_VERSION: '1.5.0'
     defaults:
@@ -91,3 +93,75 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "Inkstone ${{ steps.meta.outputs.version }}" \
             --notes "$notes"
+
+  android:
+    needs: windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Check signing secrets
+        id: signing
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "::warning::没有配置 APK 签名密钥（ANDROID_KEYSTORE_BASE64 等），跳过手机安装包"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.signing.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.signing.outputs.ready == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        if: steps.signing.outputs.ready == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          npm ci --ignore-scripts
+          npm ci --prefix mobile
+
+      - name: Build signed APK
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          INKSTONE_PREBUILT_ASSETS: '1'
+        run: |
+          dir="$RUNNER_TEMP/inkstone-signing"
+          mkdir -p "$dir"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$dir/release.jks"
+          {
+            echo "storeFile=$dir/release.jks"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > "$dir/keystore.properties"
+          INKSTONE_SIGNING="$dir/keystore.properties" node mobile/scripts/build-apk.mjs
+          rm -rf "$dir"
+
+      - name: Attach APK to draft release
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=$(ls release/apk-*/Inkstone-mobile-*.apk | grep -v debug-signed | head -1)
+          [ -n "$apk" ] || { echo "没有找到正式签名的 APK" >&2; exit 1; }
+          gh release upload "${{ needs.windows.outputs.tag }}" "$apk" --clobber
