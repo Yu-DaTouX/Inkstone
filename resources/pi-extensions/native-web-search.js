@@ -47,6 +47,32 @@ export function withNativeSearch(payload, kind) {
   return { ...payload, input, tools: [native] }
 }
 
+const CITE_LINKS_PER_BLOCK = 3
+const hostOf = (url) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
+export function withCitationLinks(message, blocks) {
+  const content = message?.content
+  if (!Array.isArray(content) || !Array.isArray(blocks) || !blocks.some((block) => block.urls.length)) return undefined
+  const texts = content.filter((block) => block?.type === 'text')
+  if (texts.length !== blocks.length) return undefined
+  let at = 0
+  const next = content.map((block) => {
+    if (block?.type !== 'text') return block
+    const urls = blocks[at++].urls
+    if (!urls.length || typeof block.text !== 'string') return block
+    const links = urls.map((url) => `[${hostOf(url) || url}](${url})`).join(' ')
+    const body = block.text.trimEnd()
+    return { ...block, text: `${body} ${links}${block.text.slice(body.length)}` }
+  })
+  return { ...message, content: next }
+}
+
 export function joinCitedText(message) {
   const content = message?.content
   if (!Array.isArray(content)) return undefined
@@ -73,6 +99,7 @@ export function createSearchCollector() {
   const cited = []
   const errors = []
   const pendingQuery = new Map()
+  const textBlocks = []
   const addUnique = (list, item, key) => {
     if (list.length < MAX_ITEMS && !list.some((existing) => key(existing) === key(item))) list.push(item)
   }
@@ -91,7 +118,8 @@ export function createSearchCollector() {
       if (!data || typeof data !== 'object') return
       if (data.type === 'content_block_start') {
         const block = data.content_block
-        if (block?.type === 'server_tool_use' && block.name === 'web_search') {
+        if (block?.type === 'text') textBlocks.push({ index: data.index, urls: [] })
+        else if (block?.type === 'server_tool_use' && block.name === 'web_search') {
           pendingQuery.set(data.index, '')
           if (block.input?.query) addQuery(block.input.query)
         } else if (block?.type === 'web_search_tool_result') {
@@ -102,7 +130,12 @@ export function createSearchCollector() {
       }
       if (data.type === 'content_block_delta') {
         if (data.delta?.type === 'input_json_delta' && pendingQuery.has(data.index)) pendingQuery.set(data.index, pendingQuery.get(data.index) + (data.delta.partial_json ?? ''))
-        else if (data.delta?.type === 'citations_delta') addCitation(data.delta.citation)
+        else if (data.delta?.type === 'citations_delta') {
+          addCitation(data.delta.citation)
+          const url = data.delta.citation?.url
+          const target = textBlocks.findLast((block) => block.index === data.index)
+          if (typeof url === 'string' && url && target && target.urls.length < CITE_LINKS_PER_BLOCK && !target.urls.includes(url)) target.urls.push(url)
+        }
         return
       }
       if (data.type === 'content_block_stop' && pendingQuery.has(data.index)) {
@@ -122,6 +155,7 @@ export function createSearchCollector() {
       }
       if (data.type === 'response.output_text.annotation.added' && data.annotation?.type === 'url_citation') addCitation(data.annotation)
     },
+    textCitations: () => textBlocks,
     record() {
       if (!queries.length && !opened.length && !results.length && !cited.length && !errors.length) return null
       return {
@@ -177,11 +211,12 @@ export default function nativeWebSearch(pi) {
   pi.on('message_end', (event) => {
     if (event?.message?.role !== 'assistant') return
     const record = collector?.record() ?? null
-    const joined = anthropicSearch ? joinCitedText(event.message) : undefined
+    const linked = anthropicSearch ? withCitationLinks(event.message, collector?.textCitations()) : undefined
+    const joined = anthropicSearch ? joinCitedText(linked ?? event.message) : undefined
     anthropicSearch = false
     collector = null
-    if (!record && !joined) return
-    const message = joined ?? event.message
+    if (!record && !joined && !linked) return
+    const message = joined ?? linked ?? event.message
     return { message: record ? { ...message, [RECORD_FIELD]: record } : message }
   })
   pi.on('context', (event) => {

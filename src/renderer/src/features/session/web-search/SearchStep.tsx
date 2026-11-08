@@ -40,7 +40,7 @@ function uniqueSites(sources: readonly WebSearchSourceView[]): { site: string; u
 export function SearchStepView({ call, step, children, glow = true }: { call: UIToolCall; step: SearchStep; children: ReactNode; glow?: boolean }): JSX.Element {
   const tt = useWebSearchText()
   const panelId = useId()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!call.serverSide)
   const [showAll, setShowAll] = useState(false)
   const running = call.status === 'running' || call.status === 'pending'
   const fromDetails = step.sources !== undefined

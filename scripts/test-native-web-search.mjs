@@ -3,6 +3,7 @@ import {
   ANTHROPIC_SEARCH_TOOL,
   CODEX_SEARCH_TOOL,
   joinCitedText,
+  withCitationLinks,
   createSearchCollector,
   searchRecordText,
   withSearchRecords,
@@ -65,6 +66,17 @@ for (const data of [
 const ar = anthropicEvents.record()
 ok(ar.queries.join() === 'Electron latest' && ar.results[0].url === 'https://releases.electronjs.org/' && ar.cited[0].text === 'Latest version: 45.2.1', 'Anthropic：从流事件里记下查询词、结果和引用原文')
 ok(!JSON.stringify(ar).includes('encrypted'), '不保存加密的结果正文')
+
+const linkEvents = createSearchCollector()
+for (const data of [
+  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_delta', index: 0, delta: { type: 'citations_delta', citation: { url: 'https://www.npmjs.com/package/electron', title: 'electron - npm' } } },
+  { type: 'content_block_delta', index: 0, delta: { type: 'citations_delta', citation: { url: 'https://www.npmjs.com/package/electron', title: 'electron - npm' } } },
+  { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }
+]) linkEvents.observe(data)
+const linkedMsg = withCitationLinks({ role: 'assistant', content: [{ type: 'text', text: 'v45\n' }, { type: 'text', text: 'plain' }] }, linkEvents.textCitations())
+ok(linkedMsg.content[0].text === 'v45 [npmjs.com](https://www.npmjs.com/package/electron)\n' && linkedMsg.content[1].text === 'plain', 'Anthropic：引用写成文本块末尾的来源链接，重复引用只写一次')
+ok(withCitationLinks({ content: [{ type: 'text', text: 'a' }] }, linkEvents.textCitations()) === undefined, '文本块数量对不上时不改')
 
 const codexEvents = createSearchCollector()
 for (const data of [
