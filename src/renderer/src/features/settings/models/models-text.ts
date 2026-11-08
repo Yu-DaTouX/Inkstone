@@ -28,6 +28,8 @@ export type ModelsTextKey =
   | 'keySwitched'
   | 'removeBodyMany'
   | 'keyFailover'
+  | 'accountFailover'
+  | 'accountFailoverDesc'
   | 'keyFailoverDesc'
   | 'addAccount'
   | 'accountList'
@@ -81,6 +83,8 @@ const ZH: Record<ModelsTextKey, string> = {
   keyDelete: "移除",
   keyDeleteConfirm: "确认移除",
   keySwitched: "已切换到「{label}」，空闲后生效",
+  accountFailover: "额度用完时自动换号",
+  accountFailoverDesc: "订阅账号额度用完时，换同服务商还有额度的账号继续（主会话和子代理）。换号会改变当前使用的账号。",
   keyFailover: "Key 失效时自动切换",
   keyFailoverDesc: "Key 无效或额度用完时，换同服务商的下一个 Key 继续。限流不切。",
   removeBodyMany: "将移除该服务商保存的全部 {n} 个 key；相关模型需重新配置后才可用。",
@@ -137,6 +141,8 @@ const EN: Record<ModelsTextKey, string> = {
   keyDelete: "Remove",
   keyDeleteConfirm: "Confirm remove",
   keySwitched: "Switched to “{label}”; applies once idle",
+  accountFailover: "Switch accounts when quota runs out",
+  accountFailoverDesc: "When a subscription account runs out of quota, continue on another account of the same provider (main session and subagents). Switching changes the account in use.",
   keyFailover: "Switch keys when one stops working",
   keyFailoverDesc: "When a key is invalid or out of credit, continue with the provider's next key. Not for rate limits.",
   removeBodyMany: "Removes all {n} saved keys for this provider; set a key again to use its models.",

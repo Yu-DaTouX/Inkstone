@@ -835,6 +835,7 @@ export interface AppSettings {
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
   apiKeyFailover?: boolean
+  accountFailover?: boolean
   subagentHistoryPrune?: boolean
   promptSuggestions?: boolean
   workspaceTiles?: boolean

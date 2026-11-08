@@ -2,6 +2,7 @@ import type { AccountQuotaCard } from '../shared/account-quota'
 import { supportsOAuthAccounts } from '../shared/oauth-accounts'
 import { blockedQuotaWindows } from '../shared/quota-resume'
 import { accountQuotaReport, invalidateAccountQuotaReport } from './account-quota'
+import { getSettings } from './settings'
 import { captureActiveApiKey } from './api-key-pool'
 import { switchCodexAccount } from './codex-accounts'
 import { switchOAuthAccount } from './oauth-accounts'
@@ -26,6 +27,7 @@ export function switchToSpareAccount(provider: string): Promise<{ key: string; l
 
 async function switchNow(provider: string): Promise<{ key: string; label: string; switched: boolean } | null> {
   if (provider !== 'openai-codex' && !supportsOAuthAccounts(provider)) return null
+  if ((await getSettings()).accountFailover !== true) return null
   invalidateAccountQuotaReport()
   const target = pickSpareAccount((await accountQuotaReport()).cards, provider)
   if (!target) return null

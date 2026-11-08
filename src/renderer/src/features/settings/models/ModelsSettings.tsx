@@ -76,6 +76,7 @@ async function retryAfterOrphan<T extends { ok: boolean; error?: string }>(start
 export function ModelsSettings(): ReactElement {
   const t = useT()
   const text = useModelsText()
+  const accountFailover = useStore((s) => s.settings?.accountFailover === true)
   const keyFailover = useStore((s) => s.settings?.apiKeyFailover === true)
   const patchSettings = useStore((s) => s.patchSettings)
   const labels = settingsText(useI18n().lang)
@@ -537,7 +538,12 @@ export function ModelsSettings(): ReactElement {
 
       {subscriptions.length > 0 ? (
         <SettingsGroup title={t('auth.subs')} settingId="models-subscriptions" className="ms-group" plain>
-          <div className="settings-rows ms-rows">{subscriptions.map(serviceRow)}</div>
+          <div className="settings-rows ms-rows">
+            <SettingsRow settingId="models-account-failover" label={text('accountFailover')} description={text('accountFailoverDesc')}>
+              <Switch aria-label={text('accountFailover')} isSelected={accountFailover} onChange={(on) => void patchSettings({ accountFailover: on })} data-testid="ms-account-failover" />
+            </SettingsRow>
+            {subscriptions.map(serviceRow)}
+          </div>
         </SettingsGroup>
       ) : null}
 
