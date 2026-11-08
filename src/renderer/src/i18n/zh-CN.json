@@ -812,7 +812,7 @@
   "remote.relayUrl": "中继地址",
   "remote.relayConnected": "已连接中继",
   "remote.relayConnecting": "正在连接中继…",
-  "remote.relayQr": "中继配对二维码",
+  "remote.relayQr": "配对二维码",
   "remote.relayPhoneHint": "用砚手机端扫码（或复制链接），一次完成配对。",
   "remote.relayExpires": "{seconds} 秒后失效。",
   "remote.relayCopy": "复制配对链接",

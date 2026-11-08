@@ -2,7 +2,7 @@ import { LIFE_ASSISTANT_ENABLED } from './features'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, StatusBar, StyleSheet, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
-import { RemoteClient, RemoteHttpError, type Connection } from './api/client'
+import { RemoteClient, RemoteHttpError, secureConnection, type Connection } from './api/client'
 import { readUiPrefs, writeUiPrefs, type PhotoDraft } from './device'
 import { parsePairingLink, type PairingPrefill } from './pairLink'
 import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
@@ -97,7 +97,18 @@ function AppRoot() {
   const endBoot = useCallback(() => setBooting(false), [])
   const sessionId = 'sessionId' in route ? route.sessionId : undefined
 
-  useEffect(() => { void loadConnection().then(setConnection) }, [])
+  useEffect(() => {
+    let alive = true
+    void loadConnection().then(async (saved) => {
+      if (!alive) return
+      setConnection(saved)
+      const secured = saved ? await secureConnection(saved) : null
+      if (!secured || !alive) return
+      await saveConnection(secured)
+      if (alive) setConnection(secured)
+    })
+    return () => { alive = false }
+  }, [])
 
   useEffect(() => {
     const receive = (url: string | null) => {

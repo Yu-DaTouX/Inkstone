@@ -117,6 +117,7 @@ const scriptsOutsideUnitRun = {
   'test-packaged': 'needs-packaged-release',
   'test-upgrade-read': 'needs-packaged-release',
   'test-relay-mobile': 'needs-mobile-dependencies',
+  'test-remote-tunnel': 'needs-mobile-dependencies',
   'test-mobile-render': 'needs-mobile-dependencies',
   'test-mobile-remote-sequence': 'needs-mobile-dependencies',
   'test-hermes-plugin-desktop': 'sessions-list-race-in-unit-run',

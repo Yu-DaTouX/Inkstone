@@ -142,7 +142,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
             <Button label={pick('扫码配对', 'Scan code')} variant="secondary" onPress={() => void scan()} style={styles.pairAction} />
             <Button label={pick('粘贴链接', 'Paste link')} variant="secondary" onPress={() => void paste()} style={styles.pairAction} />
           </View>
-          {relay ? <Text style={[styles.scanned, { color: p.ok }]}>{pick(`经中继连接「${relay.computerName}」，不需要 Tailscale`, `Via relay to ${relay.computerName}; no Tailscale needed`)}</Text> : prefill ? <Text style={[styles.scanned, { color: p.ok }]}>{pick('已填入配对信息', 'Pairing info filled in')}</Text> : null}
+          {relay ? <Text style={[styles.scanned, { color: p.ok }]}>{(relay.join ? pick(`加密连接「${relay.computerName}」，在外也能经中继连上`, `Encrypted link to ${relay.computerName}; works away from home via relay`) : pick(`加密连接「${relay.computerName}」，需与电脑在同一网络或同一个 Tailscale`, `Encrypted link to ${relay.computerName}; needs the same network or Tailscale`))}</Text> : prefill ? <Text style={[styles.scanned, { color: p.ok }]}>{pick('已填入配对信息', 'Pairing info filled in')}</Text> : null}
           <Text style={[styles.label, { color: p.fgDim }]}>{pick('配对链接或 Tailscale 地址', 'Pairing link or Tailscale address')}</Text>
           <Input code value={address} onChangeText={acceptInput} placeholder="100.101.102.103:37892" autoCapitalize="none" autoCorrect={false} keyboardType="url" accessibilityLabel={pick('配对链接或 Tailscale 地址', 'Pairing link or Tailscale address')} />
           <Text style={[styles.label, { color: p.fgDim }]}>{pick('6 位配对码', '6-digit code')}</Text>

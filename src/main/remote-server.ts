@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
-import type { Readable } from 'node:stream'
+import type { Duplex, Readable } from 'node:stream'
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { hostname } from 'node:os'
 import { negotiateCapabilities } from '../shared/capability-negotiation'
@@ -95,7 +95,16 @@ export interface RemoteServerOptions {
   onLog?: (text: string, level?: 'info' | 'error') => void
   relayToken?: string
   peerGraceMs?: number
+  tunnel?: RemoteTunnelHooks
 }
+
+export interface RemoteTunnelHooks {
+  upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void
+  invite(): Promise<{ hostKey: string; code: string }>
+  stop?(): void
+}
+
+export const REMOTE_TUNNEL_PATH = '/remote/v1/tunnel'
 
 
 export interface RemoteServerInfo {
@@ -228,6 +237,12 @@ function constantTimeEqual(expected: string, actual: string | undefined): boolea
 
 type Caller = { device: RemoteDeviceSummary | null }
 
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+
+function fromLoopback(req: IncomingMessage): boolean {
+  return LOOPBACK_ADDRESSES.has(req.socket?.remoteAddress ?? '')
+}
+
 export class RemoteServer {
   private server: Server | null = null
   private heartbeat: NodeJS.Timeout | null = null
@@ -274,6 +289,15 @@ export class RemoteServer {
       })
     })
     this.server = server
+    const tunnel = this.options.tunnel
+    server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      const path = new URL(req.url ?? '/', 'http://tunnel.local').pathname
+      const origin = req.headers.origin
+      let sameOrigin = !origin
+      try { if (origin) sameOrigin = new URL(origin).host === req.headers.host } catch { }
+      if (tunnel && path === REMOTE_TUNNEL_PATH && sameOrigin) tunnel.upgrade(req, socket, head)
+      else socket.destroy()
+    })
 
     try {
       await new Promise<void>((resolve, reject) => {
@@ -325,6 +349,7 @@ export class RemoteServer {
       try { client.end() } catch { }
     }
     this.peerClients.clear()
+    this.options.tunnel?.stop?.()
     const server = this.server
     this.server = null
     if (!server) return
@@ -553,12 +578,20 @@ export class RemoteServer {
     }
 
     if (req.method === 'GET' && url.pathname === '/remote/v1/health') {
-      writeJson(res, 200, { ok: true, apiVersion: REMOTE_API_VERSION })
+      writeJson(res, 200, { ok: true, apiVersion: REMOTE_API_VERSION, ...(this.options.tunnel ? { tunnel: REMOTE_TUNNEL_PATH } : {}) })
       return
     }
 
+    const plaintext = !!this.options.tunnel && !this.options.relayToken && !fromLoopback(req)
+
     if (req.method === 'POST' && url.pathname === '/remote/v1/pair') {
-      await this.pair(req, res)
+      await this.pair(req, res, plaintext)
+      return
+    }
+
+    if (req.method === 'GET' && url.pathname === '/remote/v1/tunnel/invite' && this.options.tunnel) {
+      if (!this.options.devices?.currentPairing()) return writeError(res, 403, pick('电脑上没有正在进行的配对，请先在电脑上生成配对码', 'No pairing in progress on the computer. Generate a pairing code first'), 'no_pairing')
+      writeJson(res, 200, { ok: true, ...(await this.options.tunnel.invite()), path: REMOTE_TUNNEL_PATH, computer: { name: hostname() } })
       return
     }
 
@@ -566,6 +599,18 @@ export class RemoteServer {
     if (!caller) {
       writeError(res, 401, pick('需要有效的远程访问令牌', 'A valid remote access token is required'), 'unauthorized')
       return
+    }
+
+    if (plaintext && caller.device && (caller.device.kind ?? 'phone') === 'phone') {
+      if (caller.device.encrypted) return writeError(res, 403, pick('这台手机只能经加密通道连接', 'This phone can only connect through the encrypted tunnel'), 'tunnel_required')
+      if (req.method === 'POST' && url.pathname === '/remote/v1/tunnel/enroll') {
+        writeJson(res, 200, { ok: true, ...(await this.options.tunnel!.invite()), path: REMOTE_TUNNEL_PATH, computer: { name: hostname() } })
+        return
+      }
+    }
+    if (this.options.relayToken && caller.device && !caller.device.encrypted && (caller.device.kind ?? 'phone') === 'phone') {
+      const client = req.headers[RELAY_HANDOFF_HEADER]
+      await this.options.devices?.markEncrypted(caller.device.id, typeof client === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(client) ? client : undefined)
     }
 
     if (req.method === 'POST' && url.pathname === '/remote/v1/devices/self/revoke') {
@@ -1079,7 +1124,7 @@ export class RemoteServer {
     this.pipeStream(stream, res)
   }
 
-  private async pair(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  private async pair(req: IncomingMessage, res: ServerResponse, plaintext = false): Promise<void> {
     if (!this.options.devices) {
       writeError(res, 404, pick('这台电脑没有开启手机配对', 'Phone pairing is not enabled on this computer'), 'pairing_disabled')
       return
@@ -1107,7 +1152,11 @@ export class RemoteServer {
       writeError(res, 403, pick('Agent Hub 已退役，不再接受礁石配对', 'Agent Hub is retired and no longer accepts reef pairing'), 'agent_retired')
       return
     }
-    const result = await this.options.devices.pair(body.code, body.deviceName, body.kind)
+    if (plaintext && body.kind !== 'peer') {
+      writeError(res, 426, pick('请把手机上的砚更新到最新版再配对：新版经加密通道连接电脑', 'Update Inkstone on your phone and pair again: the new version connects through an encrypted tunnel'), 'tunnel_required')
+      return
+    }
+    const result = await this.options.devices.pair(body.code, body.deviceName, body.kind, !!this.options.relayToken, source.startsWith('relay:') ? source.slice(6) : undefined)
     if (!result.ok) {
       const message = {
         no_pairing: pick('电脑上没有正在进行的配对，请先在砚的设置里生成配对码', 'No pairing in progress on the computer. Generate a pairing code in Inkstone settings first'),

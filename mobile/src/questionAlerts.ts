@@ -32,7 +32,8 @@ export async function startQuestionAlerts(connection: Connection, requestPermiss
       if (result !== PermissionsAndroid.RESULTS.GRANTED) return false
     }
   }
-  const relay = connection.relay ? { ...connection.relay, clientPub: relayClientPublicKey(connection.relay.clientKey) } : null
+  const config = connection.relay
+  const relay = config ? { join: [...(config.direct ?? []), ...(config.join ? [config.join] : [])].join('\n'), hostKey: config.hostKey, clientKey: config.clientKey, clientPub: relayClientPublicKey(config.clientKey) } : null
   return alerts.start(connection.baseUrl, connection.token, relay)
 }
 

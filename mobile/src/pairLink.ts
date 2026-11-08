@@ -10,7 +10,7 @@ export interface PairingPrefill {
 
 export function parsePairingLink(url: string): PairingPrefill | null {
   const relay = parseRelayLink(url)
-  if (relay) return { address: pick(`经中继连接 ${relay.computerName}`, `Via relay: ${relay.computerName}`), code: relay.code, relay }
+  if (relay) return { address: pick(`加密连接 ${relay.computerName}`, `Encrypted: ${relay.computerName}`), code: relay.code, relay }
   const match = /^inkstone:\/\/pair\?([^#]+)$/i.exec(url)
   if (!match) return null
   const query = new Map<string, string>()

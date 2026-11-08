@@ -3,7 +3,7 @@ import type { Lang } from '../../../i18n'
 export interface DevicesDataText {
   viaDirect: string
   viaRelay: string
-  pairViaRelay: string
+  plaintext: string
   pairRelayWaiting: string
   online: string
   network: string
@@ -22,8 +22,8 @@ export interface DevicesDataText {
 
 const ZH: DevicesDataText = {
   viaDirect: '直连',
-  viaRelay: '中继',
-  pairViaRelay: '经中继配对',
+  viaRelay: '加密通道',
+  plaintext: '未加密',
   pairRelayWaiting: '中继未连接，暂不能经中继配对。',
   online: '在线',
   network: '网络',
@@ -42,8 +42,8 @@ const ZH: DevicesDataText = {
 
 const EN: DevicesDataText = {
   viaDirect: 'Direct',
-  viaRelay: 'Relay',
-  pairViaRelay: 'Pair via relay',
+  viaRelay: 'Encrypted',
+  plaintext: 'Unencrypted',
   pairRelayWaiting: 'Relay not connected yet; relay pairing is unavailable.',
   online: 'Online',
   network: 'Network',

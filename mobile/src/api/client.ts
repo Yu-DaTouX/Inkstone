@@ -9,7 +9,7 @@ import type {
 } from '../../../src/shared/remote-protocol'
 import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
-import { bytesToUtf8, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
+import { bytesToUtf8, directTunnelUrl, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
 
 export interface Connection {
   baseUrl: string
@@ -111,7 +111,7 @@ async function relayRequest<T>(
 }
 
 export async function pairViaRelay(pairing: RelayPairing, deviceName: string): Promise<Connection> {
-  const relay: RelayConfig = { join: pairing.join, hostKey: pairing.hostKey, clientKey: newClientKey() }
+  const relay: RelayConfig = { ...(pairing.join ? { join: pairing.join } : {}), ...(pairing.direct?.length ? { direct: pairing.direct } : {}), hostKey: pairing.hostKey, clientKey: newClientKey() }
   const tunnel = RelayTunnel.for(relay, deviceName)
   try {
     await tunnel.connect(pairing.relayCode)
@@ -129,12 +129,57 @@ export async function pairViaRelay(pairing: RelayPairing, deviceName: string): P
   }
 }
 
+interface TunnelInvite {
+  hostKey: string
+  code: string
+  path: string
+  computer?: { name?: string }
+}
+
+function tunnelPairing(baseUrl: string, invite: TunnelInvite, code: string): RelayPairing {
+  const direct = directTunnelUrl(baseUrl, invite.path)
+  if (!direct || typeof invite.hostKey !== 'string' || typeof invite.code !== 'string') throw new RemoteHttpError(0, pick('电脑返回的加密通道信息不对', 'Invalid encrypted tunnel details from the desktop'))
+  return { direct: [direct], hostKey: invite.hostKey, relayCode: invite.code, code, computerName: invite.computer?.name?.slice(0, 60) || baseUrl.replace(/^https?:\/\//, '') }
+}
+
 export async function pair(baseUrl: string, code: string, deviceName: string): Promise<Connection> {
+  let invite: TunnelInvite | null = null
+  try {
+    invite = await request<TunnelInvite>(baseUrl, '/remote/v1/tunnel/invite')
+  } catch (error) {
+    if (!(error instanceof RemoteHttpError) || (error.status !== 401 && error.status !== 404)) throw error
+  }
+  if (invite) return pairViaRelay(tunnelPairing(baseUrl, invite, code), deviceName)
   const result = await request<RemotePairResponse>(baseUrl, '/remote/v1/pair', {
     method: 'POST',
     body: { code, deviceName }
   })
   return { baseUrl, token: result.token, deviceId: result.deviceId, computerName: result.computer?.name, deviceName: result.device?.name ?? deviceName }
+}
+
+export async function secureConnection(connection: Connection): Promise<Connection | null> {
+  if (connection.relay || !/^https?:\/\//i.test(connection.baseUrl)) return null
+  let invite: TunnelInvite
+  try {
+    invite = await request<TunnelInvite>(connection.baseUrl, '/remote/v1/tunnel/enroll', { method: 'POST', token: connection.token, body: {} })
+  } catch {
+    return null
+  }
+  let pairing: RelayPairing
+  try {
+    pairing = tunnelPairing(connection.baseUrl, invite, '')
+  } catch {
+    return null
+  }
+  const relay: RelayConfig = { direct: pairing.direct, hostKey: pairing.hostKey, clientKey: newClientKey() }
+  const tunnel = RelayTunnel.for(relay, connection.deviceName)
+  try {
+    await tunnel.connect(pairing.relayCode)
+  } catch {
+    tunnel.close()
+    return null
+  }
+  return { ...connection, baseUrl: `relay://${connection.computerName || pairing.computerName}`, relay }
 }
 
 export interface SessionListItem {

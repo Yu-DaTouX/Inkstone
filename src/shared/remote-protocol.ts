@@ -47,6 +47,8 @@ export interface RemoteDeviceSummary {
   kind?: 'phone' | 'peer' | 'agent'
   createdAt: number
   lastSeenAt: number | null
+  encrypted?: boolean
+  tunnelClientId?: string
 }
 
 export interface RemoteDeviceRecord extends RemoteDeviceSummary {

@@ -143,7 +143,7 @@ export class RemoteDeviceStore {
     return { code: this.pairing.code, expiresAt: this.pairing.expiresAt }
   }
 
-  async pair(code: unknown, deviceName: unknown, kind: unknown = 'phone'): Promise<PairResult> {
+  async pair(code: unknown, deviceName: unknown, kind: unknown = 'phone', encrypted = false, tunnelClientId?: string): Promise<PairResult> {
     return this.enqueue(async () => {
       const pairing = this.pairing
       if (!pairing) return { ok: false, error: 'no_pairing' }
@@ -175,7 +175,9 @@ export class RemoteDeviceStore {
         createdAt: this.now(),
         lastSeenAt: null,
         revokedAt: null,
-        tokenHash: hashToken(token)
+        tokenHash: hashToken(token),
+        ...(encrypted ? { encrypted: true } : {}),
+        ...(tunnelClientId ? { tunnelClientId } : {})
       }
       const next = [...devices, device]
       await this.save(next)
@@ -199,6 +201,16 @@ export class RemoteDeviceStore {
       })
     }
     return summaryOf(device)
+  }
+
+  async markEncrypted(id: string, tunnelClientId?: string): Promise<void> {
+    return this.enqueue(async () => {
+      const devices = await this.load()
+      if (!devices.some((item) => item.id === id && !item.encrypted)) return
+      const next = devices.map((item) => (item.id === id ? { ...item, encrypted: true, ...(tunnelClientId ? { tunnelClientId } : {}) } : item))
+      await this.save(next)
+      this.devices = next
+    })
   }
 
   async list(): Promise<RemoteDeviceRecord[]> {
@@ -245,5 +257,5 @@ export class RemoteDeviceStore {
 }
 
 function summaryOf(device: StoredDevice): RemoteDeviceSummary {
-  return { id: device.id, name: device.name, kind: device.kind === 'peer' || device.kind === 'agent' ? device.kind : 'phone', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt }
+  return { id: device.id, name: device.name, kind: device.kind === 'peer' || device.kind === 'agent' ? device.kind : 'phone', createdAt: device.createdAt, lastSeenAt: device.lastSeenAt, ...(device.encrypted ? { encrypted: true } : {}), ...(device.tunnelClientId ? { tunnelClientId: device.tunnelClientId } : {}) }
 }

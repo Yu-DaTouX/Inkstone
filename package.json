@@ -49,7 +49,7 @@
     "test:checkpoints": "node scripts/test-checkpoints.mjs",
     "test:agent-native-context": "node scripts/test-agent-native-context.mjs",
     "test:remote-security": "node scripts/test-remote-security.mjs && node scripts/test-remote-host-security.mjs",
-    "test:relay": "node scripts/test-relay-bridge.mjs && node scripts/test-relay-mobile.mjs",
+    "test:relay": "node scripts/test-relay-bridge.mjs && node scripts/test-relay-mobile.mjs && node scripts/test-remote-tunnel.mjs",
     "test:skill-files": "node scripts/test-skill-files.mjs && node scripts/test-acquired-skills.mjs",
     "test:skill-source": "node scripts/test-skill-source.mjs",
     "audit:project": "node scripts/audit/project.cjs",
@@ -88,6 +88,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.2.1",
     "electron": "^45.2.3",
     "electron-builder": "^26.18.0",
@@ -165,6 +166,7 @@
     "tailwind-merge": "^3.4.0",
     "tar": "7.5.22",
     "virtua": "^0.51.2",
+    "ws": "^8.22.1",
     "zustand": "^5.0.15"
   },
   "allowScripts": {

@@ -95,10 +95,9 @@ class QuestionAlertService : Service() {
     while (running && generation == current) {
       var currentLink: RemoteLink? = null
       try {
-        currentLink = if (relay != null) RelayLink(relay, token) else DirectLink(baseUrl, token)
+        currentLink = if (relay != null) connectRelay(relay, token) else DirectLink(baseUrl, token)
         link = currentLink
         if (!running || generation != current) break
-        if (currentLink is RelayLink) currentLink.connect()
         syncQuestions(currentLink, current)
         syncTask(currentLink, current)
         syncHub(currentLink, current)

@@ -812,7 +812,7 @@
   "remote.relayUrl": "Relay URL",
   "remote.relayConnected": "Connected to relay",
   "remote.relayConnecting": "Connecting to relay…",
-  "remote.relayQr": "Relay pairing QR code",
+  "remote.relayQr": "Pairing QR code",
   "remote.relayPhoneHint": "Scan with the Inkstone phone app (or copy the link) to pair in one step.",
   "remote.relayExpires": "Expires in {seconds}s.",
   "remote.relayCopy": "Copy pairing link",

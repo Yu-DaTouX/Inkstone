@@ -9,6 +9,7 @@ const TEXT_PROTOCOL = 2
 const LABEL = utf8ToBytes('reef-v1')
 const INFO = utf8ToBytes('reef-v1 keys')
 const HANDSHAKE_MS = 15_000
+const DIRECT_MS = 2_500
 
 export function utf8ToBytes(text: string): Uint8Array {
   const out = new Uint8Array(text.length * 3)
@@ -204,7 +205,8 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 }
 
 export interface RelayPairing {
-  join: string
+  join?: string
+  direct?: string[]
   hostKey: string
   computerName: string
   relayCode: string
@@ -217,19 +219,31 @@ export function parseRelayLink(input: string): RelayPairing | null {
   try {
     const p = JSON.parse(bytesToUtf8(fromB64u(match[1]))) as Record<string, unknown>
     if (p.v !== 1 || p.k !== 'yan' || p.m !== 'phone') return null
-    if (typeof p.s !== 'string' || typeof p.c !== 'string' || typeof p.r !== 'string' || typeof p.y !== 'string') return null
-    if (!/^wss?:\/\/[^\s]+\/v1\/join\/[A-Za-z0-9_-]{10,64}$/.test(p.r) || !/^\d{6}$/.test(p.y)) return null
+    if (typeof p.s !== 'string' || typeof p.c !== 'string' || typeof p.y !== 'string' || !/^\d{6}$/.test(p.y)) return null
+    const join = typeof p.r === 'string' && /^wss?:\/\/[^\s]+\/v1\/join\/[A-Za-z0-9_-]{10,64}$/.test(p.r) ? p.r : undefined
+    if (p.r !== undefined && !join) return null
+    const direct = Array.isArray(p.d) ? p.d.filter((url): url is string => typeof url === 'string' && DIRECT_URL.test(url)).slice(0, 4) : []
+    if (!join && !direct.length) return null
     if (fromB64u(p.s).length !== 65) return null
-    return { join: p.r, hostKey: p.s, computerName: typeof p.n === 'string' ? p.n.slice(0, 60) : pick('电脑', 'Desktop'), relayCode: p.c, code: p.y }
+    return { ...(join ? { join } : {}), ...(direct.length ? { direct } : {}), hostKey: p.s, computerName: typeof p.n === 'string' ? p.n.slice(0, 60) : pick('电脑', 'Desktop'), relayCode: p.c, code: p.y }
   } catch {
     return null
   }
 }
 
 export interface RelayConfig {
-  join: string
+  join?: string
+  direct?: string[]
   hostKey: string
   clientKey: string
+}
+
+export const DIRECT_URL = /^wss?:\/\/[^\s/]+\/remote\/v1\/tunnel$/
+
+export function directTunnelUrl(baseUrl: string, path = '/remote/v1/tunnel'): string | null {
+  const match = /^(http|https):\/\/([^\s/]+)\/?$/i.exec(baseUrl.trim())
+  if (!match || path !== '/remote/v1/tunnel') return null
+  return `${match[1].toLowerCase() === 'https' ? 'wss' : 'ws'}://${match[2]}${path}`
 }
 
 export function newClientKey(): string {
@@ -378,9 +392,11 @@ export class RelayTunnel {
   private readonly pending = new Map<string, Pending>()
   private seq = 0
   private version = PROTOCOL_VERSION
+  private generation = 0
+  private via: 'direct' | 'relay' = 'relay'
 
   static for(config: RelayConfig, deviceName?: string): RelayTunnel {
-    const key = `${config.join}|${config.clientKey}`
+    const key = `${config.hostKey}|${config.clientKey}`
     let tunnel = RelayTunnel.shared.get(key)
     if (!tunnel) {
       tunnel = new RelayTunnel(config, deviceName)
@@ -391,13 +407,74 @@ export class RelayTunnel {
 
   constructor(private readonly config: RelayConfig, private readonly deviceName = pick('砚手机端', 'Inkstone mobile')) {}
 
+  get route(): 'direct' | 'relay' | null {
+    return this.ws ? this.via : null
+  }
+
+  private openDirect(): Promise<WebSocket | null> {
+    const urls = this.config.direct ?? []
+    if (!urls.length) return Promise.resolve(null)
+    return new Promise((resolve) => {
+      let left = urls.length
+      let done = false
+      const sockets: WebSocket[] = []
+      const finish = (winner: WebSocket | null) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        for (const s of sockets) {
+          s.onopen = null
+          s.onerror = null
+          s.onclose = null
+          if (s !== winner) try { s.close() } catch { }
+        }
+        resolve(winner)
+      }
+      const lost = () => {
+        left -= 1
+        if (left <= 0) finish(null)
+      }
+      const timer = setTimeout(() => finish(null), DIRECT_MS)
+      for (const url of urls) {
+        let s: WebSocket
+        try {
+          s = new WebSocket(url)
+        } catch {
+          lost()
+          continue
+        }
+        sockets.push(s)
+        let gone = false
+        const drop = () => {
+          if (gone) return
+          gone = true
+          lost()
+        }
+        s.onopen = () => finish(s)
+        s.onerror = drop
+        s.onclose = drop
+      }
+    })
+  }
+
   connect(pairCode?: string): Promise<void> {
     if (this.ready) return this.ready
-    const attempt = new Promise<void>((resolve, reject) => {
+    const generation = ++this.generation
+    const attempt = this.openDirect().then((direct) => new Promise<void>((resolve, reject) => {
+      if (generation !== this.generation) {
+        try { direct?.close() } catch { }
+        reject(new RelayError(pick('与电脑的连接断开了', 'Disconnected from the desktop')))
+        return
+      }
+      if (!direct && !this.config.join) {
+        reject(new RelayError(pick('连不上电脑：请确认手机与电脑在同一网络（或同一个 Tailscale），电脑上的砚在运行', 'Cannot reach the desktop. Check that both devices share a network (or Tailscale) and Inkstone is running.')))
+        return
+      }
       const clientSecret = fromB64u(this.config.clientKey)
       const ephSecret = p256.utils.randomSecretKey()
-      const ws = new WebSocket(this.config.join)
+      const ws = direct ?? new WebSocket(this.config.join!)
       this.ws = ws
+      this.via = direct ? 'direct' : 'relay'
       let state: 'hello' | 'auth' | 'open' = 'hello'
       let timer: ReturnType<typeof setTimeout>
       const fail = (error: Error) => {
@@ -407,10 +484,12 @@ export class RelayTunnel {
         this.teardown(error)
       }
       timer = setTimeout(() => fail(new RelayError(pick('连接电脑超时：请确认电脑上的砚在运行，并开启了中继接入', 'Timed out. Check that Inkstone is running with relay enabled.'))), HANDSHAKE_MS)
-      ws.onopen = () => {
+      const hello = () => {
         if (this.ws !== ws) return
         ws.send(JSON.stringify({ t: 'hi', v: PROTOCOL_VERSION, x: TEXT_PROTOCOL, c: toB64u(p256.getPublicKey(clientSecret, false)), e: toB64u(p256.getPublicKey(ephSecret, false)) }))
       }
+      if (direct) hello()
+      else ws.onopen = hello
       ws.onmessage = (event) => {
         if (this.ws !== ws) return
         const text = String(event.data)
@@ -438,9 +517,9 @@ export class RelayTunnel {
           fail(error instanceof Error ? error : new RelayError(String(error)))
         }
       }
-      ws.onerror = () => fail(new RelayError(pick('连不上中继：请检查手机网络', 'Cannot reach relay. Check your phone network.')))
+      ws.onerror = () => fail(new RelayError(direct ? pick('与电脑的连接断开了', 'Disconnected from the desktop') : pick('连不上中继：请检查手机网络', 'Cannot reach relay. Check your phone network.')))
       ws.onclose = (event) => fail(new RelayError(event.code === 4004 ? pick('电脑不在线：请确认电脑开机、砚在运行并开启了中继接入', 'Desktop offline. Check that it is on, Inkstone is running and relay is enabled.') : pick('与电脑的连接断开了', 'Disconnected from the desktop')))
-    })
+    }))
     const ready = attempt.catch((error: unknown) => {
       if (this.ready === ready) this.teardown(error instanceof Error ? error : new RelayError(String(error)))
       throw error
@@ -451,6 +530,7 @@ export class RelayTunnel {
 
   private teardown(error: Error): void {
     const ws = this.ws
+    this.generation++
     this.ws = null
     this.channel = null
     this.ready = null

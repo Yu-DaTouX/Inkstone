@@ -11,7 +11,8 @@ import {
 import { RemoteDeviceStore } from './remote-devices'
 import { randomBytes } from 'node:crypto'
 import { RelayBridge } from './relay-bridge'
-import { RemoteServer, type PeerHostHandlers, type RemoteServerHandlers } from './remote-server'
+import { DirectTunnelEndpoint } from './relay-bridge/direct'
+import { REMOTE_TUNNEL_PATH, RemoteServer, type PeerHostHandlers, type RemoteServerHandlers } from './remote-server'
 import { RemotePushCoalescer } from './remote-push-coalesce'
 import { remotePushPayload } from './remote-host'
 import type { PeerGrantRegistry } from './peer-grants'
@@ -83,6 +84,7 @@ export class RemoteAccess {
   private relayToken = ''
   private relayPairing: { kind: 'phone' | 'agent'; link: string; expiresAt: number } | null = null
   private readonly outgoing: RemotePushCoalescer
+  private readonly direct: DirectTunnelEndpoint
 
   constructor(
     dataDir: string,
@@ -97,6 +99,7 @@ export class RemoteAccess {
       startYanPairing: () => this.devices.startPairing(),
       log: this.log
     })
+    this.direct = new DirectTunnelEndpoint((pipe) => this.relay.acceptPipe(pipe))
   }
 
   private envOverride(): { host: string; port: number; token?: string } | null {
@@ -119,9 +122,9 @@ export class RemoteAccess {
   }
 
   private async applyNow(): Promise<void> {
-    await this.applyRelay()
     const env = this.envOverride()
     const wanted = env ?? (this.settings.enabled ? { host: await resolveBindHost(this.settings.bind), port: this.settings.port } : null)
+    await this.applyRelay(!!wanted?.host)
     if (wanted && !wanted.host) {
       await this.stopServer()
       this.lastError = this.settings.bind === 'radmin'
@@ -134,6 +137,7 @@ export class RemoteAccess {
     await this.stopServer()
     this.lastError = null
     if (!wanted?.host) return
+    await this.relay.prepare()
     const server = new RemoteServer({
       host: wanted.host,
       port: wanted.port,
@@ -141,6 +145,11 @@ export class RemoteAccess {
       devices: this.devices,
       handlers: this.handlers,
       ...(this.peers ? { peers: this.peers } : {}),
+      tunnel: {
+        upgrade: (req, socket, head) => this.direct.upgrade(req, socket, head),
+        invite: () => this.relay.invite(),
+        stop: () => this.direct.stop()
+      },
       onLog: this.log
     })
     await server.start()
@@ -148,9 +157,9 @@ export class RemoteAccess {
     if (env && server.info.token) this.log('旧版单令牌模式已启用')
   }
 
-  private async applyRelay(): Promise<void> {
+  private async applyRelay(direct: boolean): Promise<void> {
     const relay = this.settings.relay
-    if (relay?.enabled && relay.url.trim()) {
+    if (direct || (relay?.enabled && relay.url.trim())) {
       if (!this.relayServer) {
         this.relayToken = randomBytes(24).toString('base64url')
         const server = new RemoteServer({
@@ -173,7 +182,9 @@ export class RemoteAccess {
   }
 
   async relayPair(kind: 'phone' | 'agent'): Promise<void> {
-    const { link, expiresAt } = await this.relay.pairLink(kind)
+    const info = this.server?.running ? this.server.info : null
+    const direct = info && !['127.0.0.1', 'localhost', '::1'].includes(info.host) ? [`ws://${info.host.includes(':') ? `[${info.host}]` : info.host}:${info.port}${REMOTE_TUNNEL_PATH}`] : []
+    const { link, expiresAt } = await this.relay.pairLink(kind, direct)
     this.relayPairing = { kind, link, expiresAt }
   }
 
@@ -209,6 +220,7 @@ export class RemoteAccess {
   async stop(): Promise<void> {
     this.outgoing.dispose()
     this.relay.stop()
+    this.direct.dispose()
     const relayServer = this.relayServer
     this.relayServer = null
     await relayServer?.stop().catch(() => undefined)

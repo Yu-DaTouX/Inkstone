@@ -40,7 +40,8 @@ export default defineConfig({
           '@mozilla/readability',
           'node-html-markdown',
           'tar',
-          'electron-updater'
+          'electron-updater',
+          'ws'
         ]
       })
     ],

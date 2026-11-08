@@ -95,9 +95,28 @@ class DirectLink(private val baseUrl: String, private val token: String) : Remot
 
 class RelayConfig(val join: String, val hostKey: String, val clientKey: String, val clientPub: String) {
   val fingerprint: String get() = join + "|" + clientPub
+  val urls: List<String> get() = join.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
 }
 
-class RelayLink(private val config: RelayConfig, private val token: String) : RemoteLink {
+fun connectRelay(config: RelayConfig, token: String): RelayLink {
+  var last: Exception = IOException("没有可用的连接地址")
+  for (url in config.urls) {
+    val link = RelayLink(config, token, url)
+    try {
+      link.connect()
+      return link
+    } catch (error: RemoteDenied) {
+      link.close()
+      throw error
+    } catch (error: Exception) {
+      link.close()
+      last = error
+    }
+  }
+  throw last
+}
+
+class RelayLink(private val config: RelayConfig, private val token: String, private val url: String = config.urls.firstOrNull() ?: config.join) : RemoteLink {
   private sealed class Item {
     class Res(val status: Int, val body: ByteArray, val stream: Boolean) : Item()
     class Chunk(val bytes: ByteArray) : Item()
@@ -161,7 +180,7 @@ class RelayLink(private val config: RelayConfig, private val token: String) : Re
         fail(IOException("连不上中继：${t.message}"))
       }
     }
-    socket = http.newWebSocket(Request.Builder().url(config.join).build(), listener)
+    socket = http.newWebSocket(Request.Builder().url(url).build(), listener)
     if (!ready.await(HANDSHAKE_MS, TimeUnit.MILLISECONDS)) {
       fail(IOException("中继握手超时"))
     }

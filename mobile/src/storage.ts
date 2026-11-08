@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain'
 import type { Connection } from './api/client'
+import { DIRECT_URL } from './api/relay'
 
 const SERVICE = 'inkstone.remote.connection'
 
@@ -9,8 +10,11 @@ export async function loadConnection(): Promise<Connection | null> {
     if (!entry) return null
     const parsed = JSON.parse(entry.password) as Partial<Connection>
     if (typeof parsed.baseUrl !== 'string' || typeof parsed.token !== 'string' || typeof parsed.deviceId !== 'string') return null
-    const relay = parsed.relay && typeof parsed.relay.join === 'string' && typeof parsed.relay.hostKey === 'string' && typeof parsed.relay.clientKey === 'string'
-      ? { join: parsed.relay.join, hostKey: parsed.relay.hostKey, clientKey: parsed.relay.clientKey }
+    const saved = parsed.relay
+    const direct = Array.isArray(saved?.direct) ? saved.direct.filter((url): url is string => typeof url === 'string' && DIRECT_URL.test(url)) : []
+    const join = typeof saved?.join === 'string' ? saved.join : undefined
+    const relay = saved && (join || direct.length) && typeof saved.hostKey === 'string' && typeof saved.clientKey === 'string'
+      ? { ...(join ? { join } : {}), ...(direct.length ? { direct } : {}), hostKey: saved.hostKey, clientKey: saved.clientKey }
       : undefined
     return { baseUrl: parsed.baseUrl, token: parsed.token, deviceId: parsed.deviceId, computerName: typeof parsed.computerName === 'string' ? parsed.computerName : undefined, deviceName: typeof parsed.deviceName === 'string' ? parsed.deviceName : undefined, ...(relay ? { relay } : {}) }
   } catch {

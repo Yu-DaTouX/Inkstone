@@ -34,6 +34,7 @@ interface PairedEntry {
   name: string
   via: 'direct' | 'relay'
   peer: boolean
+  plaintext: boolean
   online: boolean
   pairedAt: number
   lastSeenAt: number | null
@@ -66,24 +67,37 @@ export function DeviceList({
   onRelayForget
 }: DeviceListProps): ReactElement {
   const local = devicesDataText(lang === 'en-US' ? 'en-US' : 'zh-CN')
+  const tunnelOf = new Map(relayClients.map((client) => [client.id, client]))
+  const linked = new Set(devices.map((device) => device.tunnelClientId).filter((id): id is string => !!id && tunnelOf.has(id)))
   const entries: PairedEntry[] = [
-    ...devices.map((device) => ({
-      key: `direct:${device.id}`,
-      name: device.name,
-      via: 'direct' as const,
-      peer: device.kind === 'peer',
-      online: false,
-      pairedAt: device.createdAt,
-      lastSeenAt: device.lastSeenAt,
-      revokedAt: device.revokedAt,
-      revoke: () => onRevoke(device.id),
-      forget: () => onForget(device.id)
-    })),
-    ...relayClients.map((client) => ({
+    ...devices.map((device) => {
+      const tunnel = device.tunnelClientId ? tunnelOf.get(device.tunnelClientId) : undefined
+      return {
+        key: `direct:${device.id}`,
+        name: device.name,
+        via: tunnel ? ('relay' as const) : ('direct' as const),
+        peer: device.kind === 'peer',
+        plaintext: (device.kind ?? 'phone') === 'phone' && !device.encrypted,
+        online: !!tunnel?.online,
+        pairedAt: device.createdAt,
+        lastSeenAt: Math.max(device.lastSeenAt ?? 0, tunnel?.lastSeenAt ?? 0) || null,
+        revokedAt: device.revokedAt,
+        revoke: () => {
+          onRevoke(device.id)
+          if (tunnel && tunnel.revokedAt === null) onRelayRevoke?.(tunnel.id)
+        },
+        forget: () => {
+          onForget(device.id)
+          if (tunnel) onRelayForget?.(tunnel.id)
+        }
+      }
+    }),
+    ...relayClients.filter((client) => !linked.has(client.id)).map((client) => ({
       key: `relay:${client.id}`,
       name: client.name,
       via: 'relay' as const,
       peer: client.kind === 'agent',
+      plaintext: false,
       online: client.online,
       pairedAt: client.addedAt,
       lastSeenAt: client.lastSeenAt,
@@ -110,6 +124,7 @@ export function DeviceList({
             <span className="settings-device__name">
               {entry.name} {viaBadge(entry)}
               {entry.peer ? <> <Badge tone="accent">peer</Badge></> : null}
+              {entry.plaintext ? <> <Badge tone="stall">{local.plaintext}</Badge></> : null}
               {entry.online ? <> <Badge tone="ok">{local.online}</Badge></> : null}
             </span>
             <span className="settings-row__desc">
@@ -251,15 +266,17 @@ export function DevicesSettings(): ReactElement {
   const link = pairingLinkOf(status)
   const directSeconds = secondsUntil(status?.pairing?.expiresAt, now)
   const relaySeconds = secondsUntil(relayPairing?.expiresAt, now)
-  const directPairing = status?.pairing && directSeconds > 0 ? status.pairing : null
   const activeRelayPairing = relayPairing && relaySeconds > 0 ? relayPairing : null
+  const directPairing = status?.pairing && directSeconds > 0 && !activeRelayPairing ? status.pairing : null
+  const directReady = !!status?.running && !loopbackOnly
+  const canPair = directReady || (relay.enabled && relayConnected)
   const grants: readonly PeerGrantView[] = status?.grants ?? []
 
   const pairing = Boolean(directPairing || activeRelayPairing)
   const pairHints = [
     !status?.running && !saved.enabled ? text.devicesPairNeedsRunning : '',
-    loopbackOnly ? text.devicesPairLoopback : '',
-    relay.enabled && !relayConnected ? local.pairRelayWaiting : ''
+    loopbackOnly && !(relay.enabled && relayConnected) ? text.devicesPairLoopback : '',
+    relay.enabled && !relayConnected && !directReady ? local.pairRelayWaiting : ''
   ].filter(Boolean)
 
   return (
@@ -365,26 +382,14 @@ export function DevicesSettings(): ReactElement {
             />
           ) : null}
           {!pairing ? (
-            <>
-              {relay.enabled ? (
-                <Button
-                  variant="secondary"
-                  isDisabled={busy || !relayConnected}
-                  data-testid="v3-relay-pair"
-                  onPress={() => run(() => window.yan.remote.relayPair('phone'))}
-                >
-                  {local.pairViaRelay}
-                </Button>
-              ) : null}
-              <Button
-                variant="secondary"
-                isDisabled={busy || !status?.running}
-                data-testid="v3-devices-pair"
-                onPress={() => run(() => window.yan.remote.pair())}
-              >
-                {text.devicesPairStart}
-              </Button>
-            </>
+            <Button
+              variant="secondary"
+              isDisabled={busy || !canPair}
+              data-testid="v3-devices-pair"
+              onPress={() => run(() => window.yan.remote.relayPair('phone'))}
+            >
+              {text.devicesPairStart}
+            </Button>
           ) : null}
         </SettingsRow>
       </SettingsGroup>
