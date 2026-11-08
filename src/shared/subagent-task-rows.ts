@@ -150,6 +150,7 @@ export function subagentRowLabel(state: SubagentRowState, description: string, l
 
 function compactTokens(n: number): string {
   if (n < 1000) return String(n)
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   const k = n / 1000
   return `${k >= 10 ? Math.round(k) : k.toFixed(1)}k`
 }
