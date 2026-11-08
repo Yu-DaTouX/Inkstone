@@ -645,7 +645,7 @@ export class BrowserController {
   async openFromUser(url?: string, sessionId = 'workspace'): Promise<BrowserState> {
     const open = async (): Promise<BrowserState> => {
       if (this.activeTab()?.borrowedBy) throw new Error(pick('浏览器正在独立窗口中使用，请先归还后重试', 'The browser is in a separate window; return it first'))
-      await this.open(url)
+      await this.open(url, false)
       this.agentSessionId = undefined
       this.updateState()
       return this.getState()
@@ -658,7 +658,7 @@ export class BrowserController {
     return sharedResources.run(INTERACTIVE_RESOURCE, `browser-user:${sessionId}`, open)
   }
 
-  async open(url = INITIAL_URL): Promise<BrowserState> {
+  async open(url = INITIAL_URL, waitForLoad = true): Promise<BrowserState> {
     const next = safeUrl(url)
     if (!next) throw new Error(pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened'))
     this.activeMode = 'embedded'
@@ -678,7 +678,8 @@ export class BrowserController {
       tab.state.loading = true
       tab.pendingMainFrameUrl = next
       this.updateState()
-      await tab.view.webContents.loadURL(next).catch(() => undefined)
+      const loading = tab.view.webContents.loadURL(next).catch(() => undefined)
+      if (waitForLoad) await loading
     }
     if (tab.view.webContents.isDestroyed()) return this.getState()
     this.syncTabNavigation(tab)
