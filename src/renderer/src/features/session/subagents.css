@@ -58,6 +58,17 @@
   .v3-sa-title { --shimmer-base: var(--fg2); color: var(--fg); }
   .v3-sa-row:is([data-state='done'], [data-state='stopped']) .v3-sa-title { color: var(--fg2); }
   .v3-sa-row:is(:hover, [data-selected]) .v3-sa-title { color: var(--fg); }
+  :is(.v3-sa-row, .v3-sa-tile):is([data-state='done'], [data-state='stopped']) { position: relative; }
+  :is(.v3-sa-row, .v3-sa-tile):is([data-state='done'], [data-state='stopped'])::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--bg) 28%, transparent);
+    pointer-events: none;
+    transition: opacity var(--dur-fast, 120ms) var(--ease);
+  }
+  :is(.v3-sa-row, .v3-sa-tile):is([data-state='done'], [data-state='stopped']):is(:hover, :focus-visible, [data-selected])::after { opacity: 0; }
   .v3-sa-model, .v3-sa-usage, .v3-sa-time { color: var(--fg3); font-size: var(--t-footnote); }
   .v3-sa-totals { color: var(--fg3); }
   .v3-sa-time { font-variant-numeric: tabular-nums; }
