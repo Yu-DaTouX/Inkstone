@@ -185,7 +185,7 @@ async function testF05(SubagentController) {
 
 async function testF06(SubagentController) {
   console.log('F06 迟到 steer 失败 × 终态单调')
-  process.env.YAN_SUBAGENT_TIMEOUT_MS = '120'
+  process.env.YAN_SUBAGENT_IDLE_MS = '120'
   process.env.YAN_SUBAGENT_GRACE_MS = '8000'
   const steerBlocked = () => {
     const factory = makeRpcFactory()
@@ -275,7 +275,7 @@ async function testF06(SubagentController) {
       }
     }
   } finally {
-    delete process.env.YAN_SUBAGENT_TIMEOUT_MS
+    delete process.env.YAN_SUBAGENT_IDLE_MS
     delete process.env.YAN_SUBAGENT_GRACE_MS
   }
 }

@@ -132,6 +132,10 @@ export async function runSubagentResumeTests(ok, mods) {
   ok(used.includes('上下文：已用 241,041 / 1,000,000 token（24%）') && used.indexOf('上下文：') < used.indexOf('可续派'), '完成通知：附实际上下文用量，排在续派提示前')
   ok(notice.buildSubagentNotice({ ...run, contextUsage: { tokens: 1200, contextWindow: 200000, percent: 1, estimated: true } }).includes('已用 约 1,200 / 200,000'), '完成通知：估算用量标「约」')
   ok(!notice.buildSubagentNotice({ ...run, contextUsage: { tokens: null, contextWindow: 200000, percent: null } }).includes('上下文：'), '完成通知：没有用量时不写')
+  const over = notice.buildSubagentOvertimeNotice({ ...run, model: 'fake/m', latestActivity: '运行 bash', toolCalls: 42, contextUsage: { tokens: 300000, contextWindow: 1000000, percent: 30 } }, 60)
+  ok(over.includes('已运行 60 分钟') && over.includes('最近动作：运行 bash') && over.includes('已调用工具：42 次') && over.includes('（30%）'), '超时提醒：写明已用时长、最近动作、工具次数与上下文')
+  ok(over.includes('宿主不会停止它') && over.includes('yan subagent stop --id sub-aaaaaaaa') && over.includes('yan subagent send --id sub-aaaaaaaa'), '超时提醒：说明不会被停止并给出收尾与停止命令')
+  ok(notice.isSubagentNotice(over) && notice.parseSubagentNotice(over)?.status === 'running', '超时提醒按子代理通知格式发出，界面不当用户消息显示')
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

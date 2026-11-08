@@ -117,6 +117,7 @@ import { LookupCommands } from './lookup-commands'
 import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { createSubagentNoticeStore } from './subagent-notice-store'
+import { buildSubagentOvertimeNotice } from '../shared/subagent-notice'
 import { createSubagentQuotaWatch } from './subagent-quota-watch'
 import { switchToSpareAccount } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
@@ -500,6 +501,14 @@ const subagentService: SubagentService = new SubagentService({
   },
   onEvent: (_runId, evt, run) => {
     runsHost?.observeSubagentEvent(run, evt)
+  },
+  onOvertime: (run, minutes) => {
+    void (async () => {
+      if ((await getSettings()).subagentNotify === false || !runners) return
+      const target = findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners)
+      if (!target || target.holdsNotices()) return
+      await target.send(buildSubagentOvertimeNotice(run, minutes), undefined, 'followUp')
+    })().catch(() => undefined)
   },
   onFinished: (run) => {
     runsHost?.settleSubagent(run, run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed', run.error)

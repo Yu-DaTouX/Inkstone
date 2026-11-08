@@ -248,7 +248,7 @@
   "src/shared/search.ts": 4,
   "src/shared/skill-security.ts": 7,
   "src/shared/subagent-brief.ts": 16,
-  "src/shared/subagent-notice.ts": 29,
+  "src/shared/subagent-notice.ts": 36,
   "src/shared/subagent-pi-launch.ts": 1,
   "src/shared/subagent-task-rows.ts": 4,
   "src/shared/system-error.ts": 17,

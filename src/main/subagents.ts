@@ -63,7 +63,7 @@ function spanText(ms: number): string {
   if (ms >= 1_000) return pick(`${Math.round(ms / 1000)} 秒`, `${Math.round(ms / 1000)} s`)
   return pick(`${ms} 毫秒`, `${ms} ms`)
 }
-const totalTimeoutText = (ms: number): string => pick(`运行超时（超过 ${spanText(ms)}）`, `Timed out (over ${spanText(ms)})`)
+const overtimeText = (ms: number): string => pick(`已超过设定的 ${spanText(ms)}，已告知主会话，继续运行`, `Past the ${spanText(ms)} limit; the main agent was told and it keeps running`)
 const stallTimeoutText = (ms: number): string => pick(`停滞超时（超过 ${spanText(ms)} 未收到模型输出或工具事件）`, `Stalled (no model output or tool events for over ${spanText(ms)})`)
 
 function wrapUpMessage(text: string): string {
@@ -156,6 +156,7 @@ interface Run extends SubagentRun {
   retryMaxAttempts?: number
   lastModelErrorText?: string
   quotaBounces?: number
+  overtimeNoticed?: boolean
   workspace: PreparedWorkspace
   finalizing?: Promise<void>
   settling?: Promise<void>
@@ -266,6 +267,7 @@ export interface SubagentOptions {
   onPatch?: (payload: { id: string; run: SubagentRun; transcriptFrom: number }) => void
   onRemove?: (id: string) => void
   onFinished?: (run: SubagentRun) => void
+  onOvertime?: (run: SubagentRun, minutes: number) => void
   onEvent?: (runId: string, evt: Record<string, unknown>, run: SubagentRun) => void
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
   prepare?: (rootCwd: string, id: string, isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<PreparedWorkspace>
@@ -1074,7 +1076,7 @@ export class SubagentController {
         settling: undefined, finalizing: undefined, notified: false, reviewDecided: false, worktreeDone: false,
         endedAt: undefined, endReason: undefined, error: undefined, stopReason: undefined, wrapUp: undefined,
         progressWarning: undefined, recovery: undefined, retryAttempt: undefined, retryMaxAttempts: undefined,
-        lastModelErrorText: undefined, quotaBounces: undefined, exitInfo: undefined, streamingId: undefined, dismissedAt: undefined
+        lastModelErrorText: undefined, quotaBounces: undefined, overtimeNoticed: undefined, exitInfo: undefined, streamingId: undefined, dismissedAt: undefined
       })
       this.runs.set(id, run)
       release()
@@ -1488,16 +1490,27 @@ export class SubagentController {
   private armWatch(run: Run): void {
     if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
     clearTimeout(run.timer)
-    const at = Math.min(run.totalMs ? run.activeSince + run.totalMs : Infinity, run.lastProgressAt + this.stallLimit(run))
+    const at = Math.min(run.totalMs && !run.overtimeNoticed ? run.activeSince + run.totalMs : Infinity, run.lastProgressAt + this.stallLimit(run))
     run.timer = setTimeout(() => this.onWatch(run), Math.max(10, at - Date.now()))
   }
 
   private onWatch(run: Run): void {
     if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
     const now = Date.now()
-    if (run.totalMs && now >= run.activeSince + run.totalMs) void this.wrapUp(run, totalTimeoutText(run.totalMs))
+    if (run.totalMs && !run.overtimeNoticed && now >= run.activeSince + run.totalMs) this.noticeOvertime(run, run.totalMs)
     else if (now >= run.lastProgressAt + this.stallLimit(run)) void this.wrapUp(run, stallTimeoutText(this.stallLimit(run)))
     else this.armWatch(run)
+  }
+
+  private noticeOvertime(run: Run, totalMs: number): void {
+    run.overtimeNoticed = true
+    run.progressWarning = overtimeText(totalMs)
+    this.emit(run)
+    try {
+      this.opts.onOvertime?.(this.snapshot(run), Math.round(totalMs / 60_000))
+    } catch {
+    }
+    this.armWatch(run)
   }
 
   private async wrapUp(run: Run, text: string): Promise<void> {

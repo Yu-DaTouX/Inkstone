@@ -694,31 +694,30 @@ export async function runSubagentControllerTests(ok, SubagentController) {
 
   {
     const factory = makeRpcFactory()
+    const overtime = []
     const ctrl = new SubagentController({
       cwd: 'C:/proj-a',
       createRpc: factory.createRpc,
       onChange: () => {},
+      onOvertime: (run, minutes) => overtime.push({ id: run.id, minutes }),
       prepare: fakePrepare
     })
     process.env.YAN_SUBAGENT_TIMEOUT_MS = '200'
     process.env.YAN_SUBAGENT_GRACE_MS = '150'
     const res = await ctrl.start('挂着不动', undefined, 'controlled-cwd')
     const rpc = factory.created[0]
-    let timedOut = false
+    const id = res.run?.id ?? ''
     try {
-      timedOut = await waitFor(() => {
-        const r = ctrl.get(res.run?.id ?? '')
-        return r?.status === 'error' && /运行超时/.test(r.error ?? '')
-      }, 5000)
+      ok(await waitFor(() => overtime.length === 1, 3000), '到了设定的总时长：通知主会话一次', JSON.stringify(overtime))
+      await new Promise((r) => setTimeout(r, 500))
+      const run = ctrl.get(id)
+      ok(overtime.length === 1 && overtime[0].id === id, '超时后不重复通知', JSON.stringify(overtime))
+      ok(run?.status === 'running' && !run?.wrapUp && rpc?.closed !== true, '超过总时长后子代理继续运行，不收尾也不关进程', JSON.stringify({ status: run?.status, wrapUp: run?.wrapUp, closed: rpc?.closed }))
+      ok(/已告知主会话/.test(run?.progressWarning ?? ''), '界面说明已超过设定时长并已告知主会话', String(run?.progressWarning))
     } finally {
       delete process.env.YAN_SUBAGENT_TIMEOUT_MS
       delete process.env.YAN_SUBAGENT_GRACE_MS
     }
-    const finalRun = ctrl.get(res.run?.id ?? '')
-    ok(timedOut, '收尾宽限内没有结束：转 error 且原因写着运行超时', String(finalRun?.error))
-    ok(finalRun?.endReason === 'timeout', '结束原因记为 timeout（界面据此区分超时与其他失败）', String(finalRun?.endReason))
-    ok(!/10 分钟|30 分钟/.test(finalRun?.error ?? ''), '提示报的是覆盖后的上限（不是写死的分钟数）')
-    ok(rpc?.closed === true, '超时后 pi 子进程被收掉（不留僵尸）')
     await ctrl.stopAll()
   }
 
@@ -745,16 +744,14 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     const rpc = factory.created[0]
     const id = res.run?.id ?? ''
     try {
-      ok(await waitFor(() => steers.length > 0, 3000), '到点后发出收尾指令（steer）')
-      ok(ctrl.get(id)?.status === 'running' && ctrl.get(id)?.wrapUp?.reason === 'timeout', '收尾期间仍在运行并标着 wrapUp', JSON.stringify(ctrl.get(id)?.wrapUp))
-      ok(/立刻|不要再调用/.test(String(steers[0]?.message ?? '')), '收尾指令要求立刻交结论')
-      rpc.emit('event', { type: 'message_start', message: { role: 'assistant', content: [{ type: 'text', text: '已确认 A 一致；B 没来得及核实。' }] } })
-      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '已确认 A 一致；B 没来得及核实。' }], stopReason: 'stop' } })
+      ok(await waitFor(() => !!ctrl.get(id)?.progressWarning, 3000), '到点后标出已超过设定时长')
+      await new Promise((r) => setTimeout(r, 300))
+      ok(steers.length === 0, '到点不向子代理插话催收尾', JSON.stringify(steers))
+      rpc.emit('event', { type: 'message_start', message: { role: 'assistant', content: [{ type: 'text', text: '全部做完。' }] } })
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '全部做完。' }], stopReason: 'stop' } })
       rpc.emit('event', { type: 'agent_settled' })
-      ok(await waitFor(() => ctrl.get(id)?.status === 'done', 5000), '收尾交出结论后按完成落')
-      const done = ctrl.get(id)
-      ok(done?.endReason === 'timeout', '结束原因仍是 timeout（不伪装成正常完成）', String(done?.endReason))
-      ok(/B 没来得及核实/.test(done?.result?.summary ?? ''), '摘要取收尾时的那段话')
+      ok(await waitFor(() => ctrl.get(id)?.status === 'done', 5000), '超过设定时长后自己做完按完成落')
+      ok(ctrl.get(id)?.endReason === 'completed', '结束原因是正常完成，不记成超时', String(ctrl.get(id)?.endReason))
     } finally {
       delete process.env.YAN_SUBAGENT_TIMEOUT_MS
       delete process.env.YAN_SUBAGENT_GRACE_MS
@@ -807,10 +804,12 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     process.env.YAN_SUBAGENT_GRACE_MS = '70'
     const ctrl = new SubagentController({ cwd: 'C:/proj-a', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
     try {
-      const res = await ctrl.start('工具静默，但总时长仍有效', undefined, 'controlled-cwd', { timeoutMinutes: 15 })
+      const res = await ctrl.start('工具静默，总时长只提醒', undefined, 'controlled-cwd', { timeoutMinutes: 15 })
       const id = res.run.id
-      ok(await waitFor(() => ctrl.get(id)?.status === 'error'), '显式总期限仍能先于停滞期限终止任务')
-      ok(/运行超时/.test(ctrl.get(id)?.error ?? '') && factory.created[0].closed, '终止原因是总时长，且清理子进程')
+      ok(await waitFor(() => /已告知主会话/.test(ctrl.get(id)?.progressWarning ?? '')), '总时长先到：只标记并通知')
+      ok(ctrl.get(id)?.status === 'running', '总时长到了仍在运行')
+      ok(await waitFor(() => ctrl.get(id)?.status === 'error', 5000), '之后真的停滞仍按停滞超时收尾')
+      ok(/停滞超时/.test(ctrl.get(id)?.error ?? '') && factory.created[0].closed, '终止原因是停滞，且清理子进程', ctrl.get(id)?.error)
     } finally {
       delete process.env.YAN_SUBAGENT_IDLE_MS
       delete process.env.YAN_SUBAGENT_TIMEOUT_MS
