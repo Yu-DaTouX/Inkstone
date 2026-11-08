@@ -15,7 +15,7 @@
 
   .v3-side {
     overflow: hidden;
-    transition: width var(--panel-dur, var(--dur-base)) var(--ease), opacity var(--panel-dur, var(--dur-base)) var(--ease), transform var(--panel-dur, var(--dur-base)) var(--ease), visibility 0s;
+    transition: opacity var(--panel-dur, var(--dur-base)) var(--ease), transform var(--panel-dur, var(--dur-base)) var(--ease), visibility 0s;
   }
   .v3-side > * { min-width: var(--side-panel-w); transition: transform var(--panel-dur, var(--dur-base)) var(--ease); }
 
@@ -68,7 +68,7 @@
     border-right-width: 0;
     visibility: hidden;
     pointer-events: none;
-    transition: width var(--panel-dur, var(--dur-base)) var(--ease), border-right-width 0s linear var(--panel-dur, var(--dur-base)), visibility 0s linear var(--panel-dur, var(--dur-base));
+    transition: border-right-width 0s linear var(--panel-dur, var(--dur-base)), visibility 0s linear var(--panel-dur, var(--dur-base));
   }
   .v3-root[data-narrow='0'][data-side='closed']:not([data-sidebar-preview]) .v3-side > * { transform: translateX(-100%); }
   .v3-root[data-narrow='1'][data-side='closed'] .v3-side {
