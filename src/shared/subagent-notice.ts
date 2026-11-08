@@ -37,7 +37,7 @@ function headlineWord(key: SubagentOutcomeKey, status: string): string {
 
 export function buildSubagentNotice(
   run: Pick<SubagentRun, 'id' | 'task' | 'status' | 'isolation' | 'model' | 'diff' | 'review' | 'error' | 'result'> &
-    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable' | 'followUp' | 'contextUsage'>>
+    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable' | 'followUp'>>
 ): string {
   const status = run.status === 'done' || run.status === 'error' || run.status === 'cancelled' ? run.status : 'done'
   const mode = run.isolation === 'controlled-cwd' ? '只读' : '可修改'
@@ -66,10 +66,6 @@ export function buildSubagentNotice(
     if (run.review === 'pending' || run.review === 'conflict') lines.push(`处置：合并 yan subagent merge --id ${run.id}；放弃 yan subagent discard --id ${run.id}；要它继续改或解决冲突用 yan subagent send --id ${run.id}`)
   }
   if (outcome.partial || status === 'error') lines.push(`完整过程：yan subagent get --id ${run.id}`)
-  const context = run.contextUsage
-  if (context && typeof context.tokens === 'number' && context.tokens > 0 && context.contextWindow > 0) {
-    lines.push(`上下文：已用 ${context.estimated ? '约 ' : ''}${context.tokens.toLocaleString('en-US')} / ${context.contextWindow.toLocaleString('en-US')} token（${Math.round((context.tokens / context.contextWindow) * 100)}%）`)
-  }
   if (run.resumable?.ok) lines.push(`可续派：yan subagent send --id ${run.id} --message <追加任务>（保留它之前的全部上下文，比重新派更省）`)
   else if (run.resumable?.reason) lines.push(`不可续派：${clip(toModelText(run.resumable.reason), 120)}`)
   lines.push('这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。')
@@ -90,16 +86,14 @@ export function buildSubagentQuotaNotice(run: Pick<SubagentRun, 'id' | 'task' | 
 }
 
 export function buildSubagentOvertimeNotice(
-  run: Pick<SubagentRun, 'id' | 'task'> & Partial<Pick<SubagentRun, 'followUp' | 'model' | 'latestActivity' | 'toolCalls' | 'contextUsage'>>,
+  run: Pick<SubagentRun, 'id' | 'task'> & Partial<Pick<SubagentRun, 'followUp' | 'model' | 'latestActivity' | 'toolCalls'>>,
   minutes: number
 ): string {
-  const context = run.contextUsage
   const lines = [
     `子代理 ${run.id} 已运行 ${minutes} 分钟，到了派发时设的时间上限，仍在继续：${clip(run.followUp || run.task, HEADLINE_TASK_MAX)}`,
     ...(run.model ? [`模型：${run.model}`] : []),
     ...(run.latestActivity ? [`最近动作：${clip(toModelText(run.latestActivity), 160)}`] : []),
     ...(typeof run.toolCalls === 'number' ? [`已调用工具：${run.toolCalls} 次`] : []),
-    ...(context && typeof context.tokens === 'number' && context.tokens > 0 && context.contextWindow > 0 ? [`上下文：已用 ${context.estimated ? '约 ' : ''}${context.tokens.toLocaleString('en-US')} / ${context.contextWindow.toLocaleString('en-US')} token（${Math.round((context.tokens / context.contextWindow) * 100)}%）`] : []),
     `宿主不会停止它。要它收尾：yan subagent send --id ${run.id} --message "<收尾要求>"；要停止：yan subagent stop --id ${run.id}；也可以继续等它做完。`,
     '这是宿主自动发出的通知，不是用户的新消息：请据此安排后续，不要复述本通知。'
   ]
