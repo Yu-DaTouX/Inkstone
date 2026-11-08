@@ -168,19 +168,34 @@ function FileLinkIcon({ path }: { path: string }): JSX.Element {
 const PATH_STAT_LIMIT = 2000
 type ResolvedPath = { abs: string; directory: boolean }
 const pathStats = new Map<string, ResolvedPath | null | Promise<ResolvedPath | null>>()
+const MISS_TTL_MS = 3000
+const pathMisses = new Map<string, number>()
+
+function cachedStat(key: string): ResolvedPath | null | Promise<ResolvedPath | null> | undefined {
+  const hit = pathStats.get(key)
+  if (hit !== null) return hit
+  if (Date.now() - (pathMisses.get(key) ?? 0) < MISS_TTL_MS) return hit
+  pathStats.delete(key)
+  pathMisses.delete(key)
+  return undefined
+}
 
 function statKnown(path: string, cwd?: string): Promise<ResolvedPath | null> {
   const key = `${cwd ?? ''}|${path}`
-  const hit = pathStats.get(key)
+  const hit = cachedStat(key)
   if (hit !== undefined && !(hit instanceof Promise)) return Promise.resolve(hit)
   if (hit) return hit
-  if (pathStats.size > PATH_STAT_LIMIT) pathStats.clear()
+  if (pathStats.size > PATH_STAT_LIMIT) {
+    pathStats.clear()
+    pathMisses.clear()
+  }
   const stat = window.yan?.statPreview
   const pending = (typeof stat === 'function'
     ? stat(path, cwd).then((result): ResolvedPath | null => (result.ok ? { abs: result.abs || path, directory: false } : result.directory && result.abs ? { abs: result.abs, directory: true } : null), () => null)
     : Promise.resolve(null))
     .then((abs) => {
       pathStats.set(key, abs)
+      if (abs === null) pathMisses.set(key, Date.now())
       return abs
     })
   pathStats.set(key, pending)
@@ -189,7 +204,7 @@ function statKnown(path: string, cwd?: string): Promise<ResolvedPath | null> {
 
 function useResolvedPath(path: string | null, cwd?: string): ResolvedPath | null {
   const key = path ? `${cwd ?? ''}|${path}` : ''
-  const known = key ? pathStats.get(key) : undefined
+  const known = key ? cachedStat(key) : undefined
   const settled = known !== undefined && !(known instanceof Promise)
   const [resolved, setResolved] = useState<{ key: string; abs: ResolvedPath | null } | null>(null)
   useEffect(() => {
