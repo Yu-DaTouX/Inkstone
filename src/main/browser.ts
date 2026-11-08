@@ -123,8 +123,6 @@ interface BrowserTab {
   uaReloadTimer?: ReturnType<typeof setTimeout>
 }
 
-const NARROW_ENTER_PX = 600
-const NARROW_EXIT_PX = 640
 const UA_RELOAD_DELAY_MS = 600
 
 const VIEWPORT_PRESETS: Partial<Record<BrowserViewport, { width: number; height: number }>> = {
@@ -1382,7 +1380,7 @@ export class BrowserController {
     if (!pane || tab.borrowedBy || tab.view.webContents.isDestroyed()) return Promise.resolve()
     const fitted = viewportRect(pane, viewport)
     tab.view.setBounds({ x: fitted.x, y: fitted.y, width: fitted.width, height: fitted.height })
-    const mobileUa = viewport === 'mobile' || (viewport === 'responsive' && (tab.mobileUa ? pane.width < NARROW_EXIT_PX : pane.width < NARROW_ENTER_PX))
+    const mobileUa = viewport === 'mobile'
     const key = `${viewport}:${mobileUa ? 'm' : 'd'}:${fitted.emulated ? `${fitted.emulated.width}x${fitted.emulated.height}@${fitted.scale.toFixed(4)}` : ''}`
     if (tab.emulatedKey === key) return Promise.resolve()
     tab.emulatedKey = key
