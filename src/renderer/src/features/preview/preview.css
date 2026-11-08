@@ -45,7 +45,6 @@
   }
 
   .v3-preview-md {
-    max-width: 76ch;
     min-width: 0;
     font-size: var(--t-prose);
     line-height: var(--t-prose-lh);
@@ -395,7 +394,6 @@
 
   .v3-preview-csv-table {
     width: 100%;
-    max-width: 96ch;
     border-collapse: collapse;
     color: var(--fg);
     font-size: var(--t-footnote);
