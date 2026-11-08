@@ -71,6 +71,7 @@
     position: relative;
     display: inline-grid;
     place-items: center;
+    justify-items: start;
     overflow: hidden;
   }
 

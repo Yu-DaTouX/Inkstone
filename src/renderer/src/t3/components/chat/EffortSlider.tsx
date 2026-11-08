@@ -114,16 +114,11 @@ export function EffortSlider(props: {
     const natural = sample?.getBoundingClientRect().width ?? 0
     if (natural <= 0) return
     const lock = lockRef.current
-    const locked = lock.trigger || lock.column || lock.open
-    const widest = lock.open
-      ? Math.max(...samples.map((child) => child.getBoundingClientRect().width))
-      : 0
-    const next = locked ? Math.max(lock.width, natural, widest) : natural
-    lock.width = locked ? next : 0
+    const next = Math.max(natural, ...samples.map((child) => child.getBoundingClientRect().width))
+    lock.width = next
     const previous = parseFloat(slot.style.width) || slot.getBoundingClientRect().width
     if (Math.abs(next - previous) < 0.25) return
-    if (next < previous && !locked) slot.dataset.effortSettling = 'true'
-    else delete slot.dataset.effortSettling
+    delete slot.dataset.effortSettling
     slot.style.width = `${next}px`
     const trigger = triggerRef.current
     if (next > previous && lock.open && trigger) setAnchor(readAnchor(trigger))
