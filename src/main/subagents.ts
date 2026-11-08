@@ -1833,11 +1833,11 @@ export class SubagentController {
   private async trySpareAccount(run: Run, live: () => boolean): Promise<boolean> {
     const label = await this.opts.quotaWatch!.switchAccount?.(this.snapshot(run)).catch(() => null)
     if (!label || !live()) return false
-    await this.resumeAfterQuota(run, pick(`额度用完，已换到 ${label} 继续…`, `Quota exhausted; continuing on ${label}…`))
+    await this.resumeAfterQuota(run, pick(`额度用完，已换到 ${label} 继续…`, `Quota exhausted; continuing on ${label}…`), continuationPrompt('account-switch'))
     return true
   }
 
-  private async resumeAfterQuota(run: Run, activity = pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…')): Promise<void> {
+  private async resumeAfterQuota(run: Run, activity = pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…'), message = QUOTA_RESUME_PROMPT): Promise<void> {
     const waited = run.quotaWait ? Date.now() - run.quotaWait.since : 0
     run.activeSince += waited
     run.quotaWait = undefined
@@ -1848,7 +1848,7 @@ export class SubagentController {
     this.armWatch(run)
     this.emit(run)
     try {
-      const res = await run.rpc.command('prompt', { message: QUOTA_RESUME_PROMPT }, { timeoutMs: 10_000 })
+      const res = await run.rpc.command('prompt', { message }, { timeoutMs: 10_000 })
       if (!res.success) await this.fail(run.id, res.error ?? pick('额度恢复后续跑失败', 'Could not continue after quota recovery'))
     } catch (error) {
       await this.fail(run.id, error instanceof Error ? error.message : String(error))
