@@ -39,7 +39,7 @@ import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awak
 import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { resolveSessionOpenTarget } from './session-open-target'
 import { readChainMessages } from './session-history'
-import { localizeImage } from './image-store'
+import { imageFile, localizeImage } from './image-store'
 import { ArtifactStore, sessionArtifactDir } from './artifacts'
 import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames, htmlArtifactPreviews } from './html-artifact-preview'
 import { captureHtmlPreviewShots } from './artifact-preview-shots'
@@ -2985,6 +2985,19 @@ function registerIpc(): void {
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
+  })
+
+  handle('yan:image:stash', async (images: unknown) => {
+    if (!Array.isArray(images) || images.length > 16) return []
+    const dir = join(YAN_DIR, 'attachments')
+    const paths: string[] = []
+    for (const item of images as Array<{ data?: unknown; mimeType?: unknown }>) {
+      if (typeof item?.data !== 'string' || typeof item.mimeType !== 'string') continue
+      const file = imageFile(dir, item.mimeType, item.data)
+      if (!file || !localizeImage(dir, item.mimeType, item.data)) continue
+      paths.push(file)
+    }
+    return paths
   })
 
   handle('yan:image:copy', async (dataUrl: unknown) => {

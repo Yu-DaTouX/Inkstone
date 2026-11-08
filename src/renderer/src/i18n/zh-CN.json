@@ -303,7 +303,7 @@
   "composer.phSession": "问点什么。@ 文件，/ 命令",
   "composer.phRunning": "Enter 插话 · Ctrl+Q 排队",
   "composer.phEscArmed": "再按 Esc 停止",
-  "composer.answerImages": "（上一条回答附带的图片）",
+  "composer.answerImages": "（回答附带的图片文件，请用 read 工具查看）\n{list}",
   "composer.phAnswerPlain": "输入回答，可附图片和文件",
   "composer.historyStatus": "历史记录 {n}/{total}",
   "composer.historyDraftHint": "按 ↓ 回到草稿",

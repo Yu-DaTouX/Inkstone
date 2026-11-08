@@ -303,7 +303,7 @@
   "composer.phSession": "Ask anything. @ files, / commands",
   "composer.phRunning": "Enter to cut in · Ctrl+Q to queue",
   "composer.phEscArmed": "Press Esc again to stop",
-  "composer.answerImages": "(Images attached to the answer above)",
+  "composer.answerImages": "(Images attached to this answer — view them with the read tool)\n{list}",
   "composer.phAnswerPlain": "Type your answer; images and files welcome",
   "composer.historyStatus": "History {n}/{total}",
   "composer.historyDraftHint": "↓ to restore your draft",

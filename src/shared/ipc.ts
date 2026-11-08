@@ -1915,6 +1915,7 @@ export interface YanBridge {
   revealPath(p: string): Promise<{ ok: boolean }>
   exportHtmlImage(p: string): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
   copyImage(dataUrl: string): Promise<{ ok: boolean; error?: string }>
+  stashImages(images: Array<{ data: string; mimeType: string }>): Promise<string[]>
   saveImage(dataUrl: string, suggestedName?: string): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
   backup(action: import('./data-backup').BackupAction): Promise<import('./data-backup').BackupResult>
   storage: {

@@ -139,16 +139,20 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
           : body
         const question = composerQuestion()
         if (question) {
+          const stashed = images.length ? await window.yan.stashImages(images).catch(() => []) : []
+          if (images.length && stashed.length !== images.length) {
+            useStore.getState().notify('error', t('state.error.sendFailed'))
+            return
+          }
+          const answer = stashed.length
+            ? `${outgoing ? `${outgoing}\n\n` : ''}${t('composer.answerImages', { list: stashed.map((path) => `- ${path}`).join('\n') })}`
+            : outgoing
           if (question.form?.length) {
-            if (!answerComposerForm(question.id, outgoing || t('composer.answerImages'))) return
-          } else useStore.getState().answerUi({ id: question.id, value: outgoing || t('composer.answerImages') })
+            if (!answerComposerForm(question.id, answer)) return
+          } else useStore.getState().answerUi({ id: question.id, value: answer })
           portsRef.current.clearText()
           useStore.getState().dropSentAttachments(sentIds, sentFrom ? [sentFrom] : [])
           cleared = true
-          if (images.length) {
-            const ok = await send(t('composer.answerImages'), images, 'steer')
-            if (!ok) useStore.getState().recoverComposerInput({ identity, text: '', attachments: attachments.filter((a) => a.kind !== 'file') })
-          }
           return
         }
         const sending = roundRunning
