@@ -44,9 +44,9 @@ export function isLayoutShift(previous: ScrollMetrics | null | undefined, metric
   return metrics.offset >= previous.offset
 }
 
-export function decideFollow(wasStuck: boolean, metrics: ScrollMetrics, intentAt: number | null, now: number): FollowDecision {
+export function decideFollow(wasStuck: boolean, metrics: ScrollMetrics, intentAt: number | null, now: number, previous?: ScrollMetrics | null): FollowDecision {
   const distance = distanceFromBottom(metrics)
-  const intent = userScrollActive(intentAt, now)
+  const intent = userScrollActive(intentAt, now) && !(wasStuck && previous && Math.abs(previous.size - metrics.size) > 1)
   if (distance <= 1 && (wasStuck || intent) || wasStuck && distance < BOTTOM_EPSILON_PX && !intent) return { stick: true, showJump: false, repin: false }
   if (wasStuck && !intent) return { stick: true, showJump: false, repin: true }
   return { stick: false, showJump: distance > JUMP_THRESHOLD_PX, repin: false }

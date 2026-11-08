@@ -1,4 +1,4 @@
-import { useLayoutEffect } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 
 const HEIGHT_MS = 160
 const MIN_STEP_PX = 6
@@ -11,6 +11,10 @@ function motionReduced(): boolean {
 }
 
 export function useSmoothHeight(el: HTMLElement | null): void {
+  const checkRef = useRef<(() => void) | null>(null)
+  useLayoutEffect(() => {
+    checkRef.current?.()
+  })
   useLayoutEffect(() => {
     if (!el || typeof ResizeObserver === 'undefined') return undefined
     let height = el.offsetHeight
@@ -38,6 +42,18 @@ export function useSmoothHeight(el: HTMLElement | null): void {
       running.addEventListener('finish', done, { once: true })
       running.addEventListener('cancel', done, { once: true })
     }
+    checkRef.current = () => {
+      if (animation) return
+      const natural = el.offsetHeight
+      const nextWidth = el.offsetWidth
+      const from = height
+      const widthChanged = nextWidth !== width
+      height = natural
+      width = nextWidth
+      target = natural
+      if (widthChanged || Math.abs(natural - from) < MIN_STEP_PX || motionReduced() || from === 0) return
+      animateFrom(from, natural)
+    }
     const observer = new ResizeObserver(() => {
       if (animation && el.offsetWidth === width) return
       const shown = animation ? el.getBoundingClientRect().height : height
@@ -55,6 +71,7 @@ export function useSmoothHeight(el: HTMLElement | null): void {
     })
     observer.observe(el)
     return () => {
+      checkRef.current = null
       observer.disconnect()
       const running = animation
       animation = null

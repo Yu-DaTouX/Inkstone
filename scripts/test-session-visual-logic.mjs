@@ -137,6 +137,10 @@ check('跟随：无用户操作的版面回弹继续跟随并重新贴底', () =
   assert.equal(stale.repin, true)
   const shrink = follow.decideFollow(true, { offset: 600, size: 1200, viewport: 500 }, null, 5000, { offset: 700, size: 1400, viewport: 500 })
   assert.equal(shrink.repin, true, '内容高度变化导致的位移按回弹处理')
+  const settled = follow.decideFollow(true, { offset: 900, size: 1500, viewport: 500 }, 4800, 5000, { offset: 1000, size: 1600, viewport: 500 })
+  assert.deepEqual(settled, { stick: true, showJump: false, repin: true }, '刚滚到底时尾部变矮引起的位移不当作用户离开底部')
+  const leftByUser = follow.decideFollow(true, { offset: 900, size: 1500, viewport: 500 }, 4800, 5000, { offset: 1000, size: 1500, viewport: 500 })
+  assert.equal(leftByUser.stick, false, '高度未变时的位移仍按用户滚动处理')
 })
 
 check('跟随：没有用户操作时高度不变的上移也重新贴底（拖滚动条与查找跳转经用户意图解除）', () => {

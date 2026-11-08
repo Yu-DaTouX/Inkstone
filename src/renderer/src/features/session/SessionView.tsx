@@ -40,7 +40,7 @@ import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar, type VirtualFindSource } from './SessionFindBar'
 import { turnFindText, type TurnFindText } from './session-find'
-import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, type FollowDecision, type ReadingAnchor } from './scroll-follow'
+import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import { holdStreamTail } from './stream-tail-hold'
 import { advanceGlide, domAnchor, domMetrics, domReadingAnchors, GLIDE_FRAME_CAP_MS, glideSettle, keepSettleAnchor, resolveAnchorPoint, startGlide, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
 import './session.css'
@@ -356,11 +356,13 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
 
   const scrollFrameRef = useRef(0)
   const virtualRecordTimerRef = useRef(0)
+  const lastMetricsRef = useRef<ScrollMetrics | null>(null)
   const readScroll = useCallback(() => {
     const el = streamRef.current
     if (!el) return
     const metrics = domMetrics(el)
-    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now())
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), lastMetricsRef.current)
+    lastMetricsRef.current = metrics
     applyFollow(decision)
     if (decision.repin) el.scrollTop = el.scrollHeight
     const anchors = decision.stick ? null : domReadingAnchors(el)
@@ -388,7 +390,8 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     const h = vlistRef.current
     if (!h || settlingRef.current) return
     const metrics = { offset: h.scrollOffset, size: h.scrollSize, viewport: h.viewportSize }
-    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now())
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), lastMetricsRef.current)
+    lastMetricsRef.current = metrics
     applyFollow(decision)
     if (decision.repin) h.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
     record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current))
@@ -488,7 +491,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       const narrowed = widthRef.current > 0 && Math.abs(width - widthRef.current) > 0.5
       widthRef.current = width
       if (stickRef.current) {
-        if (emptyRef.current || userScrollActive(intentRef.current, performance.now())) return
+        if (emptyRef.current) return
         node.scrollTop = node.scrollHeight
         return
       }
@@ -618,7 +621,6 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     if (!root) return undefined
     const repin = (): void => {
       if (settlingRef.current || !stickRef.current) return
-      if (userScrollActive(intentRef.current, performance.now())) return
       root.scrollTop = root.scrollHeight
     }
     const observer = new ResizeObserver(repin)
