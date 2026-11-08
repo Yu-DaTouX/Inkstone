@@ -14,7 +14,7 @@ import { scenarioContext } from './lib/scenario-context.mjs'
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(`--${name}`)
 const value = (name, fallback) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : fallback }
-const [scriptArg, outArg] = args.filter((arg, i) => !arg.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && ['timeout-min', 'days', 'real-model', 'include-sessions'].includes(args[i - 1].slice(2))))
+const [scriptArg, outArg] = args.filter((arg, i) => !arg.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && ['timeout-min', 'days', 'real-model', 'include-sessions', 'env'].includes(args[i - 1].slice(2))))
 if (!scriptArg || !outArg) {
   console.log('用法：node debug/review.mjs <审查脚本.mjs> <截图目录> [--demo] [--cards] [--no-user-data] [--days 7] [--include-sessions 片段,片段] [--timeout-min 8] [--real-model commandcode/deepseek/deepseek-v4.1-flash]')
   process.exit(1)
@@ -36,6 +36,7 @@ if (flag('demo')) { prepareDemo(box); at('演示仓库就绪') }
 if (flag('cards')) { prepareCards(box); at('卡片会话就绪') }
 const realModel = value('real-model', null)
 const realEnv = {}
+args.forEach((arg, i) => { if (args[i - 1] === '--env' && arg.includes('=')) realEnv[arg.slice(0, arg.indexOf('='))] = arg.slice(arg.indexOf('=') + 1) })
 const REAL_MODELS = { 'commandcode/deepseek/deepseek-v4.1-flash': 'commandcode', 'anthropic/claude-haiku-5-5': 'anthropic', 'openai-codex/gpt-6-luna': 'openai-codex' }
 if (realModel) {
   const provider = REAL_MODELS[realModel]

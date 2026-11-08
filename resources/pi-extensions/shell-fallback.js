@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileTransportOperations } from './shell-transport.js'
+import { autoBackgroundOperations, backgroundSeconds } from './shell-background.js'
 import { createPythonEnvFixer } from './windows-python.js'
 import { registerEditHint } from './edit-hint.js'
 import { findLegacyPowerShell, findPowerShellInBash, hasPwsh, legacyPowerShellReason, findPowerShellQuotingConflict, powerShellConflictReason, powerShellInBashReason } from './windows-powershell.js'
@@ -247,7 +248,10 @@ export function registerBashFileTransport(pi, core, { fixEnv = createPythonEnvFi
       shellPath,
       commandPrefix: settings.getShellCommandPrefix(),
       spawnHook,
-      operations: fileTransportOperations(core.createLocalBashOperations({ shellPath }), { preamble: withPipefail(utf8ConsolePreamble) })
+      operations: autoBackgroundOperations(
+        fileTransportOperations(core.createLocalBashOperations({ shellPath }), { preamble: withPipefail(utf8ConsolePreamble) }),
+        { seconds: backgroundSeconds(), notify: (text) => pi.sendUserMessage(text, { deliverAs: 'followUp' }) }
+      )
     })
   }
   const template = core.createBashToolDefinition(process.cwd())

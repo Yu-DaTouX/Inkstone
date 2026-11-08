@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const STALE_COMMAND_MS = 60 * 60 * 1000
-const COMMAND_FILE = /^yan-bash-(\d+)-[0-9a-f]+\.sh$/
+const COMMAND_FILE = /^yan-bash-(\d+)-[0-9a-f]+\.(?:sh|log)$/
 
 export function bashQuotedPath(path) {
   return `'${path.replace(/\\/g, '/').replace(/'/g, `'\\''`)}'`
