@@ -81,6 +81,18 @@ export async function runAutoCompactTests(ok, mod, limits) {
       handlers.agent_settled({}, failing(500_000))
       ok(fails === 2, '自动压缩：失败后增长超过 20% 再试')
 
+      const inSession = (id, tokens, compact) => ({ sessionManager: { getSessionId: () => id }, getContextUsage: () => ({ tokens, contextWindow: 1_050_000 }), compact })
+      let switched = 0
+      handlers.agent_settled({}, inSession('A', 410_000, (o) => { switched += 1; o.onError?.(new Error('Nothing to compact')) }))
+      handlers.agent_settled({}, inSession('B', 420_000, () => { switched += 1 }))
+      ok(switched === 2, '自动压缩：切到另一会话时不沿用上一会话的失败退避')
+      let late
+      handlers.agent_settled({}, inSession('C', 410_000, (o) => { late = o }))
+      handlers.agent_settled({}, inSession('D', 410_000, () => { switched += 1 }))
+      late?.onError?.(new Error('late'))
+      handlers.agent_settled({}, inSession('D', 1_000_000, () => { switched += 1 }))
+      ok(switched === 3, '自动压缩：旧会话迟到的失败回调不改当前会话的退避状态')
+
       process.env.YAN_COMPACT_WATCHDOG_MS = '20'
       let stuck = 0
       const never = (tokens) => ({ getContextUsage: () => ({ tokens, contextWindow: 1_050_000 }), compact: () => { stuck += 1 } })

@@ -66,7 +66,17 @@ export default function autoCompactExtension(pi) {
   let compacting = false
   let holdUntil
   let justCompacted = false
+  let sessionId
+  let epoch = 0
   pi.on('agent_settled', (_event, ctx) => {
+    const current = ctx?.sessionManager?.getSessionId?.()
+    if (current !== sessionId) {
+      sessionId = current
+      epoch += 1
+      compacting = false
+      holdUntil = undefined
+      justCompacted = false
+    }
     const settings = readContextSettings(ctx?.cwd)
     if (!settings.compact || compacting) return
     const usage = ctx?.getContextUsage?.()
@@ -85,16 +95,19 @@ export default function autoCompactExtension(pi) {
     if (holdUntil !== undefined && usage.tokens < holdUntil) return
     compacting = true
     const tokens = usage.tokens
-    const watchdog = setTimeout(() => { compacting = false }, compactWatchdogMs())
+    const started = epoch
+    const watchdog = setTimeout(() => { if (started === epoch) compacting = false }, compactWatchdogMs())
     watchdog.unref?.()
     const done = () => {
       clearTimeout(watchdog)
+      if (started !== epoch) return
       compacting = false
       holdUntil = undefined
       justCompacted = true
     }
     const failed = () => {
       clearTimeout(watchdog)
+      if (started !== epoch) return
       compacting = false
       holdUntil = tokens * RETRY_GROWTH
     }

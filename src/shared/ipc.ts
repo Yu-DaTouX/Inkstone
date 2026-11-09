@@ -1752,7 +1752,7 @@ export interface YanBridge {
     stop(runId: string): Promise<RunsStopResult>
   }
   sync: import('./sync').SyncBridge
-  start(cwd?: string): Promise<{ ok: boolean; error?: string; state?: SessionState }>
+  start(): Promise<{ ok: boolean; error?: string; state?: SessionState }>
   send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   steer(text: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
