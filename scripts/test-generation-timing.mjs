@@ -395,6 +395,11 @@ try {
       generationTimings: [g1, g2],
       final: true
     })
+    await store.appendTurnTiming(dataDir, 'sess-live', { ...base, runId: 'run-9', logicalTurnId: 'm0', sourceIds: ['m1'], generationTimings: [g1], final: false })
+    check((await store.readTurnTimings(dataDir, 'sess-live')).length === 1, '没有收尾快照的 run 默认仍按中断显示')
+    check((await store.readTurnTimings(dataDir, 'sess-live', 'run-9')).length === 0, '进行中的 run 只有未结束快照时整轮不带计时')
+    const liveHidden = await store.readTurnTimings(dataDir, 'sess-runs', 'run-1')
+    check(liveHidden.length === 1 && liveHidden[0].final !== false, '读取时跳过进行中 run 的未结束快照，不会被显示成已中断', JSON.stringify(liveHidden.map((r) => [r.runId, r.final])))
     const sameRun = await store.readTurnTimings(dataDir, 'sess-runs')
     check(sameRun.length === 1, '同一 run 的中途 + 收尾快照只出一个回合', String(sameRun.length))
     check(sameRun[0].generationTimings?.length === 2, '同一 run 取收尾快照（不是两次相加）', String(sameRun[0].generationTimings?.length))

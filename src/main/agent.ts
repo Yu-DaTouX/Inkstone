@@ -463,7 +463,7 @@ export class AgentController extends EventEmitter {
   private repeatGuardExtension?: string
   private bundledSkills: string[] = []
   private userSkills?: () => Promise<string[]>
-  private readHistory?: (sessionFile: string) => Promise<ReadResult | null>
+  private readHistory?: (sessionFile: string, liveRunId?: string) => Promise<ReadResult | null>
   private getResponseDetail?: () => ResponseDetail
   private getBrowserHost?: () => BrowserCommandHost | null
   private subagentHost?: SubagentCommandHost
@@ -680,8 +680,12 @@ export class AgentController extends EventEmitter {
   private readonly localizeHistoryImage = (mimeType: string, data: string): string =>
     localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
 
+  liveTimingRunId(): string | undefined {
+    return this.agentRunning ? this.turn.runId : undefined
+  }
+
   private async readHistoryOf(sessionFile: string): Promise<ReadResult | null> {
-    if (this.readHistory) return this.readHistory(sessionFile).catch(() => null)
+    if (this.readHistory) return this.readHistory(sessionFile, this.liveTimingRunId()).catch(() => null)
     return readSessionMessages(sessionFile, { localizeImage: this.localizeHistoryImage })
       .then(result => result ? { ...result, messages: structuredClone(result.messages) } : null)
       .catch(() => null)
@@ -719,7 +723,7 @@ export class AgentController extends EventEmitter {
     repeatGuardExtension?: string
     bundledSkills?: string[]
     userSkills?: () => Promise<string[]>
-    readHistory?: (sessionFile: string) => Promise<ReadResult | null>
+    readHistory?: (sessionFile: string, liveRunId?: string) => Promise<ReadResult | null>
     getResponseDetail?: () => ResponseDetail
     browserHost?: () => BrowserCommandHost | null
     subagentHost?: SubagentCommandHost
@@ -1199,9 +1203,7 @@ export class AgentController extends EventEmitter {
 
     const timingBucket = presentationReady ? undefined : timingKey(this.state?.sessionFile)
     if (timingBucket) {
-      const liveRunId = this.agentRunning ? this.turn.runId : undefined
-      const records = (await readTurnTimings(YAN_DIR, timingBucket).catch(() => []))
-        .filter((record) => !(liveRunId && record.runId === liveRunId && record.final === false))
+      const records = await readTurnTimings(YAN_DIR, timingBucket, this.liveTimingRunId()).catch(() => [])
       if (records.length) this.messages = applyTurnTimings(this.messages, records)
     }
 

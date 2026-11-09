@@ -191,7 +191,8 @@ export function effectiveTerminalReason(record: TurnTimingRecord): TurnTerminalR
 
 export async function readTurnTimings(
   dataDir: string,
-  sessionId: string
+  sessionId: string,
+  liveRunId?: string
 ): Promise<TurnTimingRecord[]> {
   let text: string
   try {
@@ -204,6 +205,7 @@ export async function readTurnTimings(
     if (!line.trim()) continue
     const record = parseRecord(line)
     if (!record) continue
+    if (liveRunId && record.runId === liveRunId && record.final === false) continue
     const list = byId.get(record.logicalTurnId)
     if (list) list.push(record)
     else byId.set(record.logicalTurnId, [record])

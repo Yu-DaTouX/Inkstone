@@ -19,6 +19,6 @@ export interface SessionHost {
     result: { ok: boolean; id?: string; sessionId?: string },
     target: { sessionFile?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; cwd: string }
   ): Promise<void>
-  readHistoryWithArtifacts(sessionFile: string): ReturnType<typeof readChainMessages>
+  readHistoryWithArtifacts(sessionFile: string, liveRunId?: string): ReturnType<typeof readChainMessages>
   projectIdForCwd(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string | undefined
 }

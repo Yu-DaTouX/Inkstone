@@ -896,14 +896,14 @@ onSessionPurged(async (sessionId) => {
 const localizeHistoryImage = (mimeType: string, data: string): string =>
   localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
 
-function readHistoryWithArtifacts(sessionFile: string) {
+function readHistoryWithArtifacts(sessionFile: string, liveRunId?: string) {
   return readChainMessages(sessionFile, sessionChains, (file, messages) =>
     artifactStore.hydrateMessages(file, messages), localizeHistoryImage
   ).then(async (result) => {
     if (!result) return result
     const bucket = timingKey(sessionFile)
     if (!bucket) return result
-    const records = await readTurnTimings(YAN_DIR, bucket).catch(() => [])
+    const records = await readTurnTimings(YAN_DIR, bucket, liveRunId).catch(() => [])
     if (!records.length) return result
     return { ...result, messages: applyTurnTimings(result.messages, records) }
   })
@@ -1293,7 +1293,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
     let payload = await ag.getMessages({ includeStreaming: true })
     if (runners?.agentOf(id) !== ag || !sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) return
     if (opts.chainHistory && st?.sessionFile) {
-      const chain = await readHistoryWithArtifacts(st.sessionFile).catch(() => null)
+      const chain = await readHistoryWithArtifacts(st.sessionFile, ag.liveTimingRunId()).catch(() => null)
       if (runners?.agentOf(id) !== ag || !sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) return
       if (chain?.messages?.length && chain.messages.length >= payload.length) payload = chain.messages
     }
