@@ -359,12 +359,6 @@
     align-items: center;
   }
 
-  .v3-archive-toggle {
-    width: calc(100% - var(--s-20));
-    min-width: calc(var(--side-panel-w) - var(--s-20));
-    margin: 0 var(--s-10) var(--s-4);
-  }
-
   .v3-flat-shelves {
     flex: none;
     display: flex;
@@ -390,11 +384,6 @@
 
   .v3-srow:is([data-variant='card'], [data-variant='slim']) > .v3-row:is([aria-current='true'], [data-status='unread']) .v3-row-title {
     font-weight: var(--w-medium);
-  }
-
-  .v3-archive-toggle[aria-pressed='true'] {
-    background: var(--alpha-1);
-    color: var(--fg);
   }
 
   .v3-tip-label,

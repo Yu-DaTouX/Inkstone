@@ -1,6 +1,6 @@
 import type { WorkspaceOwner } from './types'
 import { workspaceKeyFor } from '../../state/workspace-key'
-import { viewIdentityOf } from '../../state/view-identity'
+import { sameSessionFile as sameFile, viewIdentityOf } from '../../state/view-identity'
 
 export interface OwnerViewSession {
   sessionId?: string
@@ -34,12 +34,6 @@ export interface OwnerViewInput {
   activeRunnerId: string | null
   runners: readonly OwnerViewRunner[]
   sessions: readonly { id: string; path: string; cwd: string }[]
-}
-
-const normPath = (p?: string | null): string => (p ?? '').replace(/[\\/]+/g, '/').toLowerCase()
-
-function sameFile(a?: string | null, b?: string | null): boolean {
-  return !!a && !!b && normPath(a) === normPath(b)
 }
 
 export function viewIdentity(input: OwnerViewInput): { sessionId: string | null; sessionFile: string | null } {

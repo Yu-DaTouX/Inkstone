@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { sameSessionFile } from './view-identity'
 
 export const MAX_SPLIT_TILES = 5
 export const SPLIT_COLUMN_MIN_WIDTH = 360
@@ -26,12 +27,11 @@ export interface SplitLayout {
 let nextUid = 0
 export const withUid = (ref: SplitSessionRef, uid?: string): SplitSessionRef => ({ ...ref, uid: uid ?? ref.uid ?? `t${++nextUid}` })
 
-const normPath = (p?: string): string => (p ?? '').replace(/[\\/]+/g, '/').toLowerCase()
 
 export function sameSplitSession(a: SplitSessionRef | null | undefined, b: SplitSessionRef | null | undefined): boolean {
   if (!a || !b) return false
   if (a.sessionId && b.sessionId) return a.sessionId === b.sessionId
-  return !!a.path && !!b.path && normPath(a.path) === normPath(b.path)
+  return sameSessionFile(a.path, b.path)
 }
 
 export const indexOfSession = (tiles: readonly SplitSessionRef[], target: SplitSessionRef): number => tiles.findIndex((t) => sameSplitSession(t, target))

@@ -385,11 +385,6 @@
     line-height: var(--t-footnote-lh);
   }
 
-  .cq-pill {
-    flex: none;
-    font-weight: 600;
-  }
-
   .composer-attachments {
     display: flex;
     flex-wrap: wrap;

@@ -7,8 +7,6 @@ import { python } from '@codemirror/lang-python'
 import type { Extension } from '@codemirror/state'
 import { DOC_EXTENSIONS, MARKUP_EXTENSIONS, SCRIPT_EXTENSIONS, STYLE_EXTENSIONS, TYPESCRIPT_EXTENSIONS, fileExtension } from './editable-kind'
 
-export { editorIsEditableKind } from './editable-kind'
-
 export function editorLanguage(name: string): Extension {
   const ext = fileExtension(name)
   if (TYPESCRIPT_EXTENSIONS.has(ext)) return javascript({ typescript: true, jsx: ext === 'tsx' })

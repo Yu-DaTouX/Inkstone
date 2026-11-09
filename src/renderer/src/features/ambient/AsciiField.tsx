@@ -1,12 +1,11 @@
 import { useEffect, useRef, type JSX } from 'react'
-import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
-import { subscribeReducedMotion } from '../../lib/reduced-motion'
+import { prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
+import { usePresence } from '../../ui'
 import {
   ALPHA_LEVELS,
   CELL_SIZE,
   CHARSET,
   ENTER_MS,
-  EXIT_MS,
   FIELD_SEED,
   FRAME_SLACK_MS,
   STATIC_TIME,
@@ -431,7 +430,7 @@ export interface AsciiFieldProps {
 }
 
 export function AsciiField({ active, enabled = true }: AsciiFieldProps): JSX.Element | null {
-  const { mounted, closing } = usePresence(active && enabled, EXIT_MS)
+  const { present: mounted, closing } = usePresence(active && enabled)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const handleRef = useRef<FieldHandle | null>(null)
