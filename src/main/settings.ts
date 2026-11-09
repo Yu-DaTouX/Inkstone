@@ -20,6 +20,7 @@ import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
 import { DEFAULT_PERMISSION_MODE, isLegacyPermissionMode, normalizePermissionMode } from '../shared/approval'
+import { setThinkingDisplayMode } from '../shared/thinking-display'
 import { AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, pickTokenStep } from '../shared/context-limits'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
@@ -260,6 +261,8 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.browserSearchEngine = normalizeSearchEngine(settings.browserSearchEngine)
   settings.nativeWebSearch = settings.nativeWebSearch === true ? true : undefined
   settings.fastMode = settings.fastMode === true ? true : undefined
+  settings.compressArchivedSessions = settings.compressArchivedSessions === true ? true : undefined
+  settings.thinkingDisplay = settings.thinkingDisplay === 'updates' ? 'updates' : undefined
   settings.subagentNotify = settings.subagentNotify === false ? false : undefined
   settings.streamLoopAutoContinue = settings.streamLoopAutoContinue === false ? false : undefined
   settings.apiKeyFailover = settings.apiKeyFailover === true ? true : undefined
@@ -358,6 +361,7 @@ export async function getSettings(): Promise<AppSettings> {
   if (generation !== cacheGeneration) return getSettings()
   cached = loaded
   setUiLang(loaded.lang)
+  setThinkingDisplayMode(loaded.thinkingDisplay)
   return structuredClone(loaded)
 }
 
@@ -416,7 +420,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('设置补丁必须是对象', 'The settings patch must be an object'))
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(pick(`不允许修改设置项：${key}`, `Changing this setting is not allowed: ${key}`))
@@ -456,6 +460,8 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.browserSearchEngine = normalizeSearchEngine(next.browserSearchEngine)
   next.nativeWebSearch = next.nativeWebSearch === true ? true : undefined
   next.fastMode = next.fastMode === true ? true : undefined
+  next.compressArchivedSessions = next.compressArchivedSessions === true ? true : undefined
+  next.thinkingDisplay = next.thinkingDisplay === 'updates' ? 'updates' : undefined
   next.usageCurrency = normalizeUsageCurrency(next.usageCurrency)
   next.sidebarLayout = next.sidebarLayout === 'flat' ? 'flat' : undefined
   next.cloneDir = cleanCloneDir(next.cloneDir)
@@ -520,5 +526,6 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   cacheGeneration++
   cached = next
   setUiLang(next.lang)
+  setThinkingDisplayMode(next.thinkingDisplay)
   return structuredClone(next)
 }

@@ -13,6 +13,7 @@ try {
       contents: [
         "export * from './src/main/session-items/projector'",
         "export * from './src/main/session-items/tool-events'",
+        "export * from './src/shared/thinking-display'",
         "export * from './src/shared/session-items'",
         "export { normalizeMessage, restoreNestedCalls, imagesOf, assistantError } from './src/main/normalize'"
       ].join('\n'),
@@ -205,6 +206,7 @@ try {
   const replay = new m.SessionItemProjector()
   for (const raw of persisted) replay.appendPersisted(raw)
   {
+    m.setThinkingDisplayMode('updates')
     const progressUser = { role: 'user', content: 'go', timestamp: 300 }
     const progress = new m.SessionItemProjector()
     progress.liveMessageStart(progressUser, 300)
@@ -226,10 +228,17 @@ try {
     const progressView = (p) => p.uiMessages().filter((msg) => msg.role === 'assistant').map((msg) => [msg.text, msg.thinking, msg.thinkingEmpty, msg.toolCalls.map((call) => call.id)])
     assert.deepEqual(progressView(progressReplay), [['Found it, checking config next.', undefined, undefined, ['p1']]], '回放时进度更新为正文，不再显示为思考')
     assert.deepEqual(progressView(progress), progressView(progressReplay), '直播与回放一致')
+    m.setThinkingDisplayMode('summarized')
+    const summarizedReplay = new m.SessionItemProjector()
+    summarizedReplay.appendPersisted(progressUser)
+    summarizedReplay.appendPersisted({ role: 'assistant', model: 'claude-opus-5-5', content: progressBlocks, timestamp: 301 })
+    assert.deepEqual(summarizedReplay.uiMessages().filter((msg) => msg.role === 'assistant').map((msg) => [msg.text, msg.thinking]), [['', 'Found it, checking config next.']], '思考摘要模式：思考留在思考格子里，不转成正文')
+    m.setThinkingDisplayMode('updates')
     const older = new m.SessionItemProjector()
     older.appendPersisted(progressUser)
     older.appendPersisted({ role: 'assistant', model: 'claude-opus-4-6', content: progressBlocks, timestamp: 301 })
     assert.deepEqual(older.uiMessages().filter((msg) => msg.role === 'assistant').map((msg) => [msg.text, msg.thinking]), [['', 'Found it, checking config next.']], '其他模型的交错思考不改')
+    m.setThinkingDisplayMode('summarized')
   }
 
   {
@@ -444,6 +453,7 @@ try {
   assert.equal(streamed.map((patch) => patch.textDelta ?? '').join(''), 'Reading.', '流式正文增量拼接等于最终正文')
   assert.equal(streamed.map((patch) => patch.thinkingDelta ?? '').join(''), 'look ', '流式思考增量拼接等于最终思考')
   {
+    m.setThinkingDisplayMode('updates')
     const progressPushes = []
     const progressCtl = new AgentController({ push: (msg) => progressPushes.push(msg), cwd: dir })
     const progressUpdate = (assistantMessageEvent) => progressCtl.handleEvent({ type: 'message_update', assistantMessageEvent })
@@ -471,6 +481,7 @@ try {
   assert.deepEqual(await ctl.getMessages(), [])
   for (const via of ['abort', 'agent-settled']) {
     const stopPushes = []
+    m.setThinkingDisplayMode('summarized')
     const stopping = new AgentController({ push: msg => stopPushes.push(msg), cwd: dir })
     stopping.state = { sessionId: 'stop-args', cwd: dir }
     stopping.rpc = { command: async () => ({ success: true, data: {} }) }

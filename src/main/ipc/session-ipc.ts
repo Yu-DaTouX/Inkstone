@@ -21,6 +21,7 @@ import { rewriteSessionCwd } from '../session-move'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { effectiveAutoArchiveDays } from '../../shared/session-archive'
+import { archivedCompressionStatus, compressArchivedSessions, COMPRESS_SWEEP_INTERVAL_MS } from '../session-compress'
 import { readUsageStatsOffThread } from '../usage-stats-host'
 import { deleteSessionChain } from '../session-delete'
 import { pick } from '../../shared/ui-lang'
@@ -317,6 +318,24 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     timer.unref?.()
   }
   scheduleAutoArchiveSweep()
+
+  const busySessionFiles = (): (string | undefined)[] => (host.runners()?.statuses() ?? []).map((runner) => runner.sessionFile)
+  function scheduleCompressionSweep(): void {
+    const sweep = async (): Promise<void> => {
+      try {
+        if ((await getSettings()).compressArchivedSessions !== true) return
+        await compressArchivedSessions({ busyFiles: busySessionFiles() })
+      } catch {
+        return
+      }
+    }
+    const first = setTimeout(() => void sweep(), 2 * 60 * 1000)
+    first.unref?.()
+    const timer = setInterval(() => void sweep(), COMPRESS_SWEEP_INTERVAL_MS)
+    timer.unref?.()
+  }
+  scheduleCompressionSweep()
+  handle('yan:archivedCompression', async (run: boolean) => (run === true ? compressArchivedSessions({ busyFiles: busySessionFiles() }) : archivedCompressionStatus()))
 
   async function setFlags(sessionId: string, flags: { archived?: boolean; pinned?: boolean; snoozedUntil?: number | null; markedUnread?: boolean }): Promise<{ ok: boolean; error?: string }> {
     const target = await locateSession(sessionId)

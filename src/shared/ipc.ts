@@ -824,6 +824,8 @@ export interface AppSettings {
   browserSearchEngine?: string
   nativeWebSearch?: boolean
   fastMode?: boolean
+  compressArchivedSessions?: boolean
+  thinkingDisplay?: 'summarized' | 'updates'
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]
@@ -1777,6 +1779,7 @@ export interface YanBridge {
   }>
 
   setSessionArchived(sessionId: string, archived: boolean): Promise<{ ok: boolean; error?: string }>
+  archivedCompression(run: boolean): Promise<{ supported: boolean; files: number; savedBytes: number }>
   setSessionPinned(sessionId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>
   setSessionSnoozed(sessionId: string, until: number | null): Promise<{ ok: boolean; error?: string }>
   setSessionMarkedUnread(sessionId: string, marked: boolean): Promise<{ ok: boolean; error?: string }>

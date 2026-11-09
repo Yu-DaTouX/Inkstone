@@ -47,11 +47,20 @@ export function SessionSettings(): ReactElement {
   const setSteeringMode = useStore((s) => s.setSteeringMode)
   const setFollowUpMode = useStore((s) => s.setFollowUpMode)
   const [prefs, setPrefs] = useState<PiRuntimePrefs | null>(null)
+  const [compression, setCompression] = useState<{ supported: boolean; files: number; savedBytes: number } | null>(null)
+  const [compressing, setCompressing] = useState(false)
+  const compressEnabled = settings?.compressArchivedSessions === true
+  const runCompression = (run: boolean): void => {
+    setCompressing(run)
+    void window.yan.archivedCompression(run).then(setCompression).catch(() => undefined).finally(() => setCompressing(false))
+  }
   const piText = piNativeText(lang)
   const piNative = usePiNativeSettings(piText)
 
   useEffect(() => {
     let alive = true
+    if (compressEnabled) runCompression(true)
+    else void window.yan.archivedCompression(false).then((next) => { if (alive) setCompression(next) }).catch(() => undefined)
     void window.yan.piRuntimePrefs().then((next) => {
       if (!alive) return
       setPrefs(next)
@@ -141,6 +150,32 @@ export function SessionSettings(): ReactElement {
               testId: `v3-session-archive-${value}`
             }))}
             onChange={(value) => void patchSettings({ autoArchiveDays: Number(value) })}
+          />
+        </SettingsRow>
+        <SettingsRow
+          settingId="session-compress-archived"
+          label={text.sessionCompress}
+          description={compression && !compression.supported ? text.sessionCompressUnsupported : `${text.sessionCompressDesc} ${compressing ? text.sessionCompressRunning : compression && compression.files > 0 ? text.sessionCompressSaved.replace('{n}', String(compression.files)).replace('{size}', `${Math.round(compression.savedBytes / 1_048_576)} MB`) : compressEnabled && compression ? text.sessionCompressNone : ''}`.trim()}
+        >
+          <Switch
+            aria-label={text.sessionCompress}
+            isSelected={compressEnabled}
+            isDisabled={!compression?.supported}
+            onChange={(on) => {
+              void patchSettings({ compressArchivedSessions: on }).then(() => { if (on) runCompression(true) }).catch(() => undefined)
+            }}
+            data-testid="v3-session-compress-archived"
+          />
+        </SettingsRow>
+        <SettingsRow settingId="session-thinking-display" label={text.sessionThinkingDisplay} description={text.sessionThinkingDisplayDesc}>
+          <Segmented
+            label={text.sessionThinkingDisplay}
+            value={settings?.thinkingDisplay === 'updates' ? 'updates' : 'summarized'}
+            options={[
+              { value: 'summarized', label: text.thinkingDisplaySummarized, testId: 'v3-session-thinking-summarized' },
+              { value: 'updates', label: text.thinkingDisplayUpdates, testId: 'v3-session-thinking-updates' }
+            ]}
+            onChange={(value) => void patchSettings({ thinkingDisplay: value === 'updates' ? 'updates' : 'summarized' })}
           />
         </SettingsRow>
       </SettingsGroup>

@@ -186,6 +186,7 @@ const api: YanBridge = {
   moveSession: (sessionId, projectId, cwd) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry; cwdChanged?: boolean }>('yan:moveSession', sessionId, projectId, cwd),
   setSessionArchived: (sessionId, archived) => invoke<{ ok: boolean; error?: string }>('yan:setSessionArchived', sessionId, archived),
+  archivedCompression: (run) => invoke<{ supported: boolean; files: number; savedBytes: number }>('yan:archivedCompression', run),
   setSessionPinned: (sessionId, pinned) => invoke<{ ok: boolean; error?: string }>('yan:setSessionPinned', sessionId, pinned),
   setSessionSnoozed: (sessionId, until) => invoke<{ ok: boolean; error?: string }>('yan:setSessionSnoozed', sessionId, until),
   setSessionMarkedUnread: (sessionId, marked) => invoke<{ ok: boolean; error?: string }>('yan:setSessionMarkedUnread', sessionId, marked),

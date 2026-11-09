@@ -17,6 +17,16 @@ export interface GeneralText {
   sessionKeepAwakeBatteryOff: string
   sessionAutoArchive: string
   sessionAutoArchiveDesc: string
+  sessionCompress: string
+  sessionCompressDesc: string
+  sessionCompressSaved: string
+  sessionCompressUnsupported: string
+  sessionCompressRunning: string
+  sessionThinkingDisplay: string
+  sessionThinkingDisplayDesc: string
+  thinkingDisplaySummarized: string
+  thinkingDisplayUpdates: string
+  sessionCompressNone: string
   archiveNever: string
   archiveDays: string
   sessionKeepAwake: string
@@ -189,6 +199,16 @@ const ZH: GeneralText = {
   sessionKeepAwakeBatteryOff: '需先开启上一项。',
   sessionAutoArchive: '自动归档闲置会话',
   sessionAutoArchiveDesc: '可在「已归档」找回。',
+  sessionCompress: '压缩已归档会话文件',
+  sessionCompressDesc: '闲置 7 天以上的已归档会话在后台压缩，用到时自动还原。',
+  sessionCompressSaved: '已压缩 {n} 个，省 {size}。',
+  sessionCompressUnsupported: '当前系统暂不支持。',
+  sessionCompressRunning: '正在压缩，请稍候…',
+  sessionThinkingDisplay: 'Claude 5.5 思考展示',
+  sessionThinkingDisplayDesc: '摘要：思考格子里实时显示思考内容。进度更新：只在途中给几句进展，等待时可能没有内容。',
+  thinkingDisplaySummarized: '摘要',
+  thinkingDisplayUpdates: '进度更新',
+  sessionCompressNone: '暂时没有符合条件的会话。',
   archiveNever: '从不',
   archiveDays: '{n} 天',
   sessionKeepAwake: '运行时保持唤醒',
@@ -364,6 +384,16 @@ const EN: GeneralText = {
   sessionKeepAwakeBatteryOff: 'Turn on the option above first.',
   sessionAutoArchive: 'Archive idle sessions',
   sessionAutoArchiveDesc: 'Find them under Archived.',
+  sessionCompress: 'Compress archived session files',
+  sessionCompressDesc: 'Archived sessions idle for 7+ days are compressed in the background and restored when used.',
+  sessionCompressSaved: '{n} compressed, {size} saved.',
+  sessionCompressUnsupported: 'Not supported on this system yet.',
+  sessionCompressRunning: 'Compressing, please wait…',
+  sessionThinkingDisplay: 'Claude 5.5 thinking display',
+  sessionThinkingDisplayDesc: 'Summary: thinking streams into the thinking box. Progress updates: a few progress notes now and then; the box may stay empty while waiting.',
+  thinkingDisplaySummarized: 'Summary',
+  thinkingDisplayUpdates: 'Progress updates',
+  sessionCompressNone: 'No eligible sessions right now.',
   archiveNever: 'Never',
   archiveDays: '{n} days',
   sessionKeepAwake: 'Keep awake while running',

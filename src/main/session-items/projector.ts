@@ -13,12 +13,14 @@ import {
 import { normalizeMessage, restoreNestedCalls, type PiContentBlock, type PiMessage } from '../normalize'
 import { appendToolCallArgs, endToolExecution, finishToolCallArgs, startToolExecution, streamingToolCall, updateToolExecution, type ToolExecutionEnd, type ToolResultPayload } from './tool-events'
 
+import { thinkingDisplayMode } from '../../shared/thinking-display'
+
 export type LocalizeImage = (mimeType: string, data: string) => string
 
 const PROGRESS_UPDATE_MODEL = /claude-(?:(?:opus|sonnet)-5[-.]5|(?:fable|mythos)-5[-.]1|fable-5(?![-.][0-9]{1,2}(?![0-9])))/i
 
 export function writesProgressUpdates(model: unknown): boolean {
-  return typeof model === 'string' && PROGRESS_UPDATE_MODEL.test(model)
+  return thinkingDisplayMode() === 'updates' && typeof model === 'string' && PROGRESS_UPDATE_MODEL.test(model)
 }
 
 function promoteProgressUpdate(item: SessionItem | undefined): void {

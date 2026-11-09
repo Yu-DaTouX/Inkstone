@@ -50,4 +50,15 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   let failed = 0
   await runSessionArchiveTests((cond, msg) => { if (!cond) { failed++; console.error('FAIL', msg) } else console.log('ok  ', msg) })
   process.exit(failed ? 1 : 0)
+  await build({ entryPoints: ['src/shared/session-compress.ts'], outfile: 'out/test/session-compress.mjs', bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
+  const { selectCompressible, COMPRESS_MIN_BYTES } = await import(pathToFileURL('out/test/session-compress.mjs').href)
+  const big = COMPRESS_MIN_BYTES * 4
+  const cand = (name, ageDays, extra = {}) => ({ path: `C:/s/${name}.jsonl`, archived: true, size: big, mtimeMs: now - ageDays * DAY, ...extra })
+  const pool = [cand('idle', 10), cand('fresh', 2), cand('edge', 7), cand('live', 10, { archived: false }), cand('tiny', 30, { size: 1000 }), cand('busy', 30), cand('opened', 30, { lastOpenedAt: now - DAY }), cand('same', 30), cand('grown', 30)]
+  const done = new Map([['c:/s/same.jsonl', { size: big, mtimeMs: now - 30 * DAY }], ['c:/s/grown.jsonl', { size: big - 5, mtimeMs: now - 30 * DAY }]])
+  const chosen = (busy = [], d = new Map()) => selectCompressible(pool, { now, busyFiles: busy, done: d }).map((p) => p.slice(5, -6)).sort().join()
+  ok(chosen() === 'busy,grown,idle,same', '压缩：只选已归档、闲置满 7 天、够大的会话；正好 7 天、最近打开过、未归档、过小的不选')
+  ok(chosen(['c:\\s\\BUSY.jsonl']) === 'grown,idle,same', '压缩：运行中的实例占用的文件不选（路径归一化比较）')
+  ok(chosen([], done) === 'busy,grown,idle', '压缩：已压缩且大小与修改时间没变的跳过，之后被写过的重新进入候选')
+
 }

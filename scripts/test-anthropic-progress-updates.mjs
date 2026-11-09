@@ -1,4 +1,12 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const dataDir = mkdtempSync(join(tmpdir(), 'yan-progress-'))
+process.env.YAN_DATA_DIR = dataDir
+const setDisplay = (value) => writeFileSync(join(dataDir, 'desktop.json'), JSON.stringify(value ? { thinkingDisplay: value } : {}))
+setDisplay('updates')
 import extension, { DISPLAY_REJECTED_RETRY_HINT, PROGRESS_UPDATES_BETA, isProgressUpdateModel } from '../resources/pi-extensions/anthropic-progress-updates.js'
 
 const model = (id, extra = {}) => ({ api: 'anthropic-messages', provider: 'anthropic', baseUrl: 'https://api.anthropic.com', id, ...extra })
@@ -74,3 +82,11 @@ const ok = { role: 'assistant', stopReason: 'toolUse', content: [] }
 }
 
 console.log('anthropic progress updates ok')
+
+{
+  setDisplay(undefined)
+  const ext = load()
+  assert.equal(ext.request(model('claude-opus-5-5'), payload()), undefined, '默认（思考摘要）不改请求，沿用 pi 原生')
+  setDisplay('updates')
+  assert.equal(ext.request(model('claude-opus-5-5'), payload()).thinking.display, 'updates', '设置为进度更新时才改写')
+}

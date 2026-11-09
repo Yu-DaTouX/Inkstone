@@ -1,9 +1,23 @@
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
 export const PROGRESS_UPDATES_BETA = 'thinking-display-updates-2026-08-18'
 export const PROGRESS_UPDATE_MODEL = /claude-(?:(?:opus|sonnet)-5[-.]5|(?:fable|mythos)-5[-.]1|fable-5(?![-.][0-9]{1,2}(?![0-9])))/i
 export const DISPLAY_REJECTED_RETRY_HINT = 'Inkstone: this endpoint rejected thinking display "updates"; you can retry your request with summarized thinking.'
 
 const BAD_REQUEST = /\b(?:400|422)\b|invalid_request|bad request|unsupported|unknown|unrecognized|not permitted|extra inputs/i
 const DISPLAY_FIELD = /display|updates|anthropic-beta|\bbetas?\b/i
+
+const yanDir = () => process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
+
+export const wantsProgressUpdates = () => {
+  try {
+    return JSON.parse(readFileSync(join(yanDir(), 'desktop.json'), 'utf8'))?.thinkingDisplay === 'updates'
+  } catch {
+    return false
+  }
+}
 
 export const isProgressUpdateModel = (model) =>
   model?.api === 'anthropic-messages' && typeof model.id === 'string' && PROGRESS_UPDATE_MODEL.test(model.id)
@@ -23,7 +37,7 @@ export default function anthropicProgressUpdates(pi) {
     pending = null
     const model = ctx?.model
     const payload = event?.payload
-    if (!isProgressUpdateModel(model) || !payload || typeof payload !== 'object') return
+    if (!isProgressUpdateModel(model) || !payload || typeof payload !== 'object' || !wantsProgressUpdates()) return
     const thinking = payload.thinking
     if (!thinking || typeof thinking !== 'object' || !('display' in thinking)) return
     const key = endpointKey(model)
