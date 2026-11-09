@@ -36,11 +36,11 @@
 
 ## 界面基元（T3 Code）
 
-左栏、右栏与输入框的外观和交互按 [T3 Code](https://github.com/pingdotgg/t3code) 的实现复刻。拷入的源码保持上游相对结构：界面基元在 [`src/renderer/src/t3/components/ui/`](src/renderer/src/t3/components/ui/)，`cn` 与少量工具在 [`src/renderer/src/t3/lib/`](src/renderer/src/t3/lib/)，设计变量与 Tailwind 入口在 [`src/renderer/src/t3/t3.css`](src/renderer/src/t3/t3.css)。拷入的文件删去注释，`~/` 导入改成相对路径，对 `@t3tools/*` 内部包的依赖在本目录写最小替身，数据层换成砚自己的 store 与 `window.yan.*`。
+左栏、右栏与输入框的外观和交互按 [T3 Code](https://github.com/pingdotgg/t3code) 的实现复刻，代码在 [`src/renderer/src/t3/`](src/renderer/src/t3/)，保持上游相对结构。拷入的文件删去注释，`~/` 导入改成相对路径，对 `@t3tools/*` 内部包的依赖在本目录写最小替身，数据层换成砚自己的 store 与 `window.yan.*`。上游的界面基元、Tailwind 样式与 base-ui 已移除，控件改用砚的 `src/renderer/src/ui/`，样式为砚手写的版面 CSS。
 
 | 组件 | 许可 | 说明 |
 | --- | --- | --- |
-| T3 Code（`apps/web/src/index.css`、`apps/web/src/components/ui/`、`apps/web/src/lib/utils.ts`） | MIT，Copyright (c) 2026 T3 Tools Inc. | 许可原文见 [`src/renderer/src/t3/LICENSE`](src/renderer/src/t3/LICENSE)。`t3.css` 只引入 Tailwind 的 theme 与 utilities 层，未启用 preflight，颜色角色改由砚的设计令牌驱动 |
+| T3 Code（`apps/web/src/components/` 中左栏、右栏与输入框相关组件） | MIT，Copyright (c) 2026 T3 Tools Inc. | 许可原文见 [`src/renderer/src/t3/LICENSE`](src/renderer/src/t3/LICENSE) |
 
 ## 其它运行时组件
 

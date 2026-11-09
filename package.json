@@ -84,7 +84,6 @@
   "devDependencies": {
     "@storybook/addon-a11y": "^10.6.5",
     "@storybook/react-vite": "^10.6.5",
-    "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -95,13 +94,11 @@
     "electron-vite": "^6.0.0",
     "esbuild": "^0.28.2",
     "storybook": "^10.6.5",
-    "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3",
     "typescript7": "npm:typescript@^7.0.2",
     "vite": "^8.3.5"
   },
   "dependencies": {
-    "@base-ui/react": "^1.4.1",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.12",
@@ -130,7 +127,6 @@
     "@xterm/addon-webgl": "0.19.0",
     "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "^6.0.0",
-    "class-variance-authority": "^0.7.1",
     "dequal": "^2.0.3",
     "dompurify": "^3.4.17",
     "electron-updater": "^6.8.9",
@@ -163,7 +159,6 @@
     "remark-cjk-friendly": "^2.3.3",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "tailwind-merge": "^3.4.0",
     "tar": "7.5.22",
     "virtua": "^0.51.2",
     "ws": "^8.22.1",
