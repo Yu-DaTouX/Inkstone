@@ -187,24 +187,6 @@ export {
   type SettingsSearchResultKind,
   type SettingsTabProps
 } from './SettingsDialog'
-export {
-  Tree,
-  TreeChevron,
-  TreeEmptyState,
-  TreeHeader,
-  TreeItem,
-  TreeItemContent,
-  TreeItemLabel,
-  TreeSection,
-  type TreeChevronProps,
-  type TreeEmptyStateProps,
-  type TreeHeaderProps,
-  type TreeItemContentProps,
-  type TreeItemLabelProps,
-  type TreeItemProps,
-  type TreeProps,
-  type TreeSectionProps
-} from './Tree'
 export { Splitter, type SplitterProps, type SplitterOrientation } from './Splitter'
 export { PanelTab, PanelTabCloseButton, PanelTabList, type PanelTabCloseButtonProps, type PanelTabListProps, type PanelTabProps } from './PanelTabs'
 export { Sheet, type SheetProps } from './Sheet'

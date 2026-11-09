@@ -1,7 +1,6 @@
 @layer reset, tokens, base, primitives, patterns, features, utilities;
 
 @import './Slider.css';
-@import './Tree.css';
 @import './Settings.css';
 @import './Row.css';
 @import './Controls.css';
