@@ -7,7 +7,8 @@ export const ChatMain = memo(function ChatMain(): JSX.Element {
   const convRef = useRef<HTMLDivElement | null>(null)
   const composerRef = useCallback((element: HTMLDivElement | null) => {
     return observeHeight(element, (height) => {
-      convRef.current?.style.setProperty('--composer-h', `${height}px`)
+      const planList = element?.querySelector<HTMLElement>('.plan-card-scroll')?.offsetHeight ?? 0
+      convRef.current?.style.setProperty('--composer-h', `${Math.max(0, height - planList)}px`)
     })
   }, [])
   return (
