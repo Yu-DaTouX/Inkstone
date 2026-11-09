@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readResult, toolText as text } from './host-tool-call.js'
 import { createWebTools } from './web-tools.js'
 
 const GIT_ACTIONS = ['diff', 'log', 'show', 'status', 'blame']
@@ -12,10 +12,6 @@ const HOST_TIMEOUT_MS = 90_000
 const FORBIDDEN_GIT_ARG = /^(--output|--ext-diff|--textconv|--exec|--upload-pack|--receive-pack|--open-files-in-pager|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--paginate|-p$|-o|-O)/
 const GIT_GLOBALS = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', '-c', 'core.fsmonitor=false', '-c', 'diff.external=', '--no-pager', '--no-optional-locks']
 const NO_DRIVERS = { diff: ['--no-ext-diff', '--no-textconv'], show: ['--no-ext-diff', '--no-textconv'], log: ['--no-ext-diff', '--no-textconv'], status: [], blame: [] }
-
-function text(value, details = {}, isError = false) {
-  return { content: [{ type: 'text', text: value }], details, ...(isError ? { isError: true } : {}) }
-}
 
 function clip(value) {
   if (value.length <= OUTPUT_MAX_CHARS) return value
@@ -43,15 +39,6 @@ function runGit(argv, cwd, signal) {
       resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), error: error && typeof error.code !== 'number' ? String(error.message ?? error) : '' })
     })
   })
-}
-
-function readResult(path) {
-  if (typeof path !== 'string' || !path) return undefined
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'))
-  } catch {
-    return undefined
-  }
 }
 
 async function callHost(command, params, signal, env = process.env) {

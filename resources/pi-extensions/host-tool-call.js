@@ -8,7 +8,7 @@ export function toolText(text, details = {}, isError = false) {
   return { content: [{ type: 'text', text }], details, ...(isError ? { isError: true } : {}) }
 }
 
-function readResult(path) {
+export function readResult(path) {
   if (typeof path !== 'string' || !path) return undefined
   try {
     return JSON.parse(readFileSync(path, 'utf8'))

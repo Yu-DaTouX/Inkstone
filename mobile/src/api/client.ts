@@ -52,13 +52,9 @@ async function request<T>(
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), init.timeoutMs ?? 15_000)
   try {
-    const headers: Record<string, string> = { accept: 'application/json' }
-    if (init.token) headers.authorization = `Bearer ${init.token}`
-    if (init.body !== undefined) headers['content-type'] = 'application/json'
-    if (init.idempotencyKey) headers['idempotency-key'] = init.idempotencyKey
     const response = await fetch(`${baseUrl}${path}`, {
       method: init.method ?? 'GET',
-      headers,
+      headers: requestHeaders(init),
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       signal: controller.signal
     })

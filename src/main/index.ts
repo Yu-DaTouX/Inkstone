@@ -1077,17 +1077,14 @@ function requestPiPackageActivationTick(): void {
   if (piPackageActivationTimer) clearTimeout(piPackageActivationTimer)
   piPackageActivationTimer = setTimeout(() => {
     piPackageActivationTimer = null
-    const schedulers = [piPackageActivationScheduler].filter(
-      (scheduler): scheduler is NonNullable<typeof scheduler> => scheduler !== null
-    )
-    if (schedulers.length === 0) return
+    const scheduler = piPackageActivationScheduler
+    if (!scheduler) return
     if (piPackageActivationInFlight) {
       piPackageActivationAgain = true
       return
     }
     piPackageActivationInFlight = true
-    void Promise.all(schedulers.map((scheduler) => scheduler.tick())).then((groups) => {
-      const results = groups.flat()
+    void scheduler.tick().then((results) => {
       for (const result of results) {
         if (result.state === 'deferred') {
           const previous = piPackageActivationDeferred.get(result.operationId)

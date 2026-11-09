@@ -3664,20 +3664,15 @@ export class AgentController extends EventEmitter {
     expectGeneration?: number
   ): Promise<{ ok: boolean; error?: string }> {
     if (isRestoredReadonly()) return { ok: false, error: restoredReadonlyMessage() }
-    return this.withOperation('send', expectGeneration, () => this.sendClaimed(text, images, mode, autoContinue))
+    return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.sendAdmitted(text, images, mode, autoContinue)))
   }
 
-  private async sendClaimed(
-    text: string,
-    images?: { data: string; mimeType: string }[],
-    mode?: 'steer' | 'followUp',
-    autoContinue?: AutoContinueScope
-  ): Promise<{ ok: boolean; error?: string }> {
+  private async withExecutionAdmission(task: () => Promise<{ ok: boolean; error?: string }>): Promise<{ ok: boolean; error?: string }> {
     const admission = this.claimExecutionAdmission()
     if (!admission.ok) return { ok: false, error: admission.error }
     let started = false
     try {
-      const result = await this.sendAdmitted(text, images, mode, autoContinue)
+      const result = await task()
       started = result.ok
       return result
     } finally {
@@ -3738,21 +3733,7 @@ export class AgentController extends EventEmitter {
   }
 
   async steer(text: string, images?: QueueItem['images'], expectGeneration?: number): Promise<{ ok: boolean; error?: string }> {
-    return this.withOperation('send', expectGeneration, () => this.steerClaimed(text, images))
-  }
-
-  private async steerClaimed(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
-    const admission = this.claimExecutionAdmission()
-    if (!admission.ok) return { ok: false, error: admission.error }
-    let started = false
-    try {
-      const result = await this.steerAdmitted(text, images)
-      started = result.ok
-      return result
-    } finally {
-      if (started) this.settleExecutionAdmission()
-      else this.releaseExecutionAdmission()
-    }
+    return this.withOperation('send', expectGeneration, () => this.withExecutionAdmission(() => this.steerAdmitted(text, images)))
   }
 
   private async steerAdmitted(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
@@ -3772,21 +3753,7 @@ export class AgentController extends EventEmitter {
   }
 
   async followUp(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
-    return this.withOperation('send', undefined, () => this.followUpClaimed(text, images))
-  }
-
-  private async followUpClaimed(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
-    const admission = this.claimExecutionAdmission()
-    if (!admission.ok) return { ok: false, error: admission.error }
-    let started = false
-    try {
-      const result = await this.followUpAdmitted(text, images)
-      started = result.ok
-      return result
-    } finally {
-      if (started) this.settleExecutionAdmission()
-      else this.releaseExecutionAdmission()
-    }
+    return this.withOperation('send', undefined, () => this.withExecutionAdmission(() => this.followUpAdmitted(text, images)))
   }
 
   private async followUpAdmitted(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
@@ -4045,17 +4012,7 @@ export class AgentController extends EventEmitter {
   }
 
   async runBash(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }> {
-    const admission = this.claimExecutionAdmission()
-    if (!admission.ok) return { ok: false, error: admission.error }
-    let started = false
-    try {
-      const result = await this.runBashAdmitted(command, options)
-      started = result.ok
-      return result
-    } finally {
-      if (started) this.settleExecutionAdmission()
-      else this.releaseExecutionAdmission()
-    }
+    return this.withExecutionAdmission(() => this.runBashAdmitted(command, options))
   }
 
   private async runBashAdmitted(command: string, options?: { excludeFromContext?: boolean }): Promise<{ ok: boolean; error?: string }> {

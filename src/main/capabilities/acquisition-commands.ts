@@ -15,7 +15,7 @@ import { stageNpmAcquisition } from './npm-acquisition'
 import { discoverCapabilities, planForCandidate } from './discovery/discover'
 import type { AcquisitionPlan, CapabilityCandidate } from '../../shared/discovery'
 import { fetchSkillFiles } from './skill-source'
-import { fetchGithubSkillFiles, parseSkillRepo } from './github-skills'
+import { fetchGithubSkillFiles, formatBytes, parseSkillRepo } from './github-skills'
 import {
   acquiredSkillName,
   declaredSkillFile,
@@ -58,10 +58,6 @@ const SKILL_SCOPE_OPTIONS: Record<AcquiredSkillScope, string> = {
   get user() { return pick('安装到我的技能（所有会话可用）', 'Install to My skills (all sessions)') }
 }
 const SCRIPT_EXT = /\.(?:py|js|mjs|cjs|ts|sh|bash|ps1|bat|cmd|rb|pl)$/i
-
-function formatSize(bytes: number): string {
-  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
-}
 
 export class CapabilityAcquisition {
   constructor(private readonly host: CapabilityAcquisitionHost) {}
@@ -544,7 +540,7 @@ export class CapabilityAcquisition {
       pick(`Agent 想接入技能「${input.name}」`, `Agent wants to add skill "${input.name}"`),
       pick(`来源：${source}`, `Source: ${source}`),
       pick(`发布方自述：${input.description.length > 240 ? `${input.description.slice(0, 239)}…` : input.description || pick('（没有描述）', '(no description)')}`, `Publisher says: ${input.description.length > 240 ? `${input.description.slice(0, 239)}…` : input.description || pick('（没有描述）', '(no description)')}`),
-      pick(`内容：${files.length} 个文件，${formatSize(total)}${scripts.length > 0 ? `；含 ${scripts.length} 个脚本（${exts}），按技能做事时模型可能运行它们` : ''}`, `Contents: ${files.length} files, ${formatSize(total)}${scripts.length > 0 ? `; ${scripts.length} scripts (${exts}) the model may run` : ''}`),
+      pick(`内容：${files.length} 个文件，${formatBytes(total)}${scripts.length > 0 ? `；含 ${scripts.length} 个脚本（${exts}），按技能做事时模型可能运行它们` : ''}`, `Contents: ${files.length} files, ${formatBytes(total)}${scripts.length > 0 ? `; ${scripts.length} scripts (${exts}) the model may run` : ''}`),
       pick(`审查：${review}`, `Review: ${review}`),
       ...(input.userBlocked ? [input.userBlocked] : []),
       pick('不批准就点「跳过」；到时间没有选择也会自动跳过。', 'Click Skip to decline. It is skipped automatically on timeout.')

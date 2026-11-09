@@ -28,32 +28,6 @@ export function ContentEnter({ children }: { children: ReactNode }) {
   return <Animated.View style={{ flex: 1, minWidth: 0, opacity: value, transform: [{ translateY: value.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }] }}>{children}</Animated.View>
 }
 
-const RING = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]] as const
-
-export function Spinner({ size = 12, mute = false, color, label }: { size?: number; mute?: boolean; color?: string; label?: string }) {
-  const p = usePalette()
-  const reduced = useReducedMotion()
-  const [step, setStep] = useState(0)
-  useEffect(() => {
-    if (reduced !== false) return
-    const id = setInterval(() => setStep((current) => (current + 1) % RING.length), 100)
-    return () => clearInterval(id)
-  }, [reduced])
-  const head = color ?? (mute ? p.fgDim : p.accent)
-  const tail = mute ? p.fgMute : color ? head : p.accentLine
-  const dot = Math.max(2, Math.round(size / 4))
-  const gap = (size - dot * 3) / 2
-  const cells = []
-  for (let y = 0; y < 3; y++) {
-    for (let x = 0; x < 3; x++) {
-      const at = RING.findIndex(([rx, ry]) => rx === x && ry === y)
-      const fill = at === step ? head : at === (step + RING.length - 1) % RING.length ? tail : p.borderStr
-      cells.push(<View key={`${x}${y}`} style={{ position: 'absolute', left: x * (dot + gap), top: y * (dot + gap), width: dot, height: dot, backgroundColor: fill, opacity: at === (step + RING.length - 1) % RING.length && color ? 0.52 : 1 }} />)
-    }
-  }
-  return <View accessibilityRole={label ? 'progressbar' : undefined} accessibilityLabel={label} importantForAccessibility={label ? 'yes' : 'no-hide-descendants'} style={{ width: size, height: size }}>{cells}</View>
-}
-
 const BRAILLE = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 export function GlyphSpinner({ color }: { color?: string }) {

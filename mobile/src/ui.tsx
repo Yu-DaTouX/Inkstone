@@ -75,18 +75,6 @@ export function Button({
   )
 }
 
-export type BadgeTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'err'
-
-export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; children: ReactNode }) {
-  const p = usePalette()
-  const color = { neutral: p.fgDim, accent: p.accent, ok: p.ok, warn: p.warn, err: p.err }[tone]
-  return (
-    <View style={[styles.badge, { borderColor: tone === 'neutral' ? p.borderSoft : color }]}>
-      <Text style={[styles.badgeText, { color }]}>{children}</Text>
-    </View>
-  )
-}
-
 export function EmptyState({ children }: { children: ReactNode }) {
   const p = usePalette()
   return <Text style={[styles.empty, { color: p.fgMute }]}>{children}</Text>
@@ -160,14 +148,6 @@ const styles = StyleSheet.create({
   buttonCompact: { minHeight: touch.compact, paddingHorizontal: space[3] },
   buttonInner: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   buttonText: { fontSize: font.base, fontWeight: weight.medium },
-  badge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1
-  },
-  badgeText: { fontSize: font.xs, fontWeight: weight.medium },
   empty: { fontSize: font.sm, paddingVertical: space[4], textAlign: 'center' },
   header: {
     minHeight: 48,
