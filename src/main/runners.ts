@@ -464,9 +464,14 @@ export class RunnerRegistry {
     return this.result(idle, 'reuse')
   }
 
+  needsIsolation(id: string): boolean {
+    const runner = this.runners.get(id)
+    return !!runner && !this.busy(runner) && !this.sharesCwd(runner.cwd) && this.hasBusyCwd(runner.cwd, id)
+  }
+
   async isolateIfConflicting(id: string): Promise<{ moved: boolean; error?: string }> {
     const runner = this.runners.get(id)
-    if (!runner || this.busy(runner) || this.sharesCwd(runner.cwd) || !this.hasBusyCwd(runner.cwd, id)) return { moved: false }
+    if (!runner || !this.needsIsolation(id)) return { moved: false }
     const state = runner.agent.getState()
     const escalated = await this.opts.resolveCwdConflict?.({
       cwd: runner.cwd,

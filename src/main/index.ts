@@ -2452,7 +2452,7 @@ function registerIpc(): void {
       return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
     }
     const id = targetId
-    if (id && runners) {
+    if (id && runners?.needsIsolation(id)) {
       const isolated = await runners.isolateIfConflicting(id)
       if (isolated.error) return { ok: false, error: isolated.error }
       if (isolated.moved) {

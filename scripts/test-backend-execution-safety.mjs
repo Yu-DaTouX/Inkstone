@@ -81,6 +81,7 @@ for (const changed of [false, true]) {
   const registry = {
     activeRunnerId: 'r1', agentOf: () => agent, runtimeOf: () => target,
     guardExecute: () => ({ ok: true }),
+    needsIsolation: () => false,
     admitExecute: () => { claimed = true; return { ok: true, token: 1 } },
     releaseExecute: () => { released = true }
   }

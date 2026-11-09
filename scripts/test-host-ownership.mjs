@@ -171,6 +171,7 @@ export async function runHostOwnershipTests(ok) {
       createAgent: (id, cwd, generation) => mkSendAgent(id, cwd, generation, deliveries)
     })
     const context = vm.createContext({
+      pick: (zh) => zh,
       runners: registry,
       startAgent: async () => ({ ok: true }),
       getSettings: () => gate.promise,
@@ -276,6 +277,7 @@ export async function runHostOwnershipTests(ok) {
     const deliveries = []
     const registry = new RunnerRegistry({ limit: 3, createAgent: (id, cwd, generation) => mkSendAgent(id, cwd, generation, deliveries) })
     const context = vm.createContext({
+      pick: (zh) => zh,
       runners: registry,
       startAgent: async () => ({ ok: true }),
       getSettings: () => Promise.resolve({ checkpointsEnabled: true }),

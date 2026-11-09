@@ -52,6 +52,7 @@ try {
   const runners = {
     activeRunnerId: 'a',
     agentOf: id => id === 'a' ? agent : undefined,
+    needsIsolation: () => false,
     runtimeOf: id => id === 'a' ? { runId: id, generation: 1, sessionId: agent.getState()?.sessionId, sessionFile: agent.getState()?.sessionFile } : undefined,
     guardExecute: id => {
       const target = id === 'a' ? agent : undefined
