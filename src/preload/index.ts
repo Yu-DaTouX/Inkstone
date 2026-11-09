@@ -163,9 +163,9 @@ const api: YanBridge = {
   send: (text, images, mode, expectedRuntime) => invoke<Ok>('yan:send', text, images, mode, expectedRuntime),
   steer: (text, expectedRuntime) => invoke<Ok>('yan:steer', text, expectedRuntime),
   followUp: (text) => invoke<Ok>('yan:followUp', text),
-  steerQueued: (queueId) => invoke<Ok>('yan:steerQueued', queueId),
-  removeQueued: (queueId) => invoke<Awaited<ReturnType<YanBridge['removeQueued']>>>('yan:removeQueued', queueId),
-  queueEdit: (next) => invoke<Awaited<ReturnType<YanBridge['queueEdit']>>>('yan:queueEdit', next),
+  steerQueued: (queueId, expectedRuntime) => invoke<Ok>('yan:steerQueued', queueId, expectedRuntime),
+  removeQueued: (queueId, expectedRuntime) => invoke<Awaited<ReturnType<YanBridge['removeQueued']>>>('yan:removeQueued', queueId, expectedRuntime),
+  queueEdit: (next, expectedRuntime) => invoke<Awaited<ReturnType<YanBridge['queueEdit']>>>('yan:queueEdit', next, expectedRuntime),
   abort: (expectedRuntime) => invoke<Awaited<ReturnType<YanBridge['abort']>>>('yan:abort', expectedRuntime),
   newSession: (target) =>
     invoke<Ok & { id?: string; runId?: string; sessionId?: string; generation?: number }>('yan:newSession', target),

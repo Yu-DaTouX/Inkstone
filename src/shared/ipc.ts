@@ -1756,9 +1756,9 @@ export interface YanBridge {
   send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   steer(text: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
-  steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }>
-  removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
-  queueEdit(arg: QueueState | QueueEditOp): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
+  steerQueued(queueId: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  removeQueued(queueId: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
+  queueEdit(arg: QueueState | QueueEditOp, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
   abort(expectedRuntime?: ExpectedRuntimeOwner): Promise<QueueSnapshot & { error?: string }>
   newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope }): Promise<{
     ok: boolean

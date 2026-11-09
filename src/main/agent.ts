@@ -4891,19 +4891,21 @@ export class AgentController extends EventEmitter {
 
       if (opts.candidate) return res.title
 
-      const stillSameSession = this.state?.sessionId === sessionId
-      if (stillSameSession && automatic) {
+      const stillSameSession = (): boolean => !this.stopping && this.rpc === rpc && this.titleLifecycle === titleLifecycle && this.state?.sessionId === sessionId
+      if (stillSameSession() && automatic) {
         const fresh = await rpc.command('get_state').catch(() => null)
-        const current = fresh?.success ? String((fresh.data as { sessionName?: unknown } | undefined)?.sessionName ?? '').trim() : ''
+        const data = fresh?.success ? fresh.data as { sessionId?: unknown; sessionName?: unknown } | undefined : undefined
+        if (data?.sessionId !== undefined && data.sessionId !== sessionId) return null
+        const current = String(data?.sessionName ?? '').trim()
         if (current && current !== res.title) {
-          await this.adoptExternalTitle(sessionId, current)
+          if (stillSameSession()) await this.adoptExternalTitle(sessionId, current)
           return null
         }
       }
-      if (stillSameSession && this.lastTitle !== res.title) {
+      if (stillSameSession() && this.lastTitle !== res.title) {
         this.lastTitle = res.title
-        const ok = await this.rpc?.command('set_session_name', { name: res.title })
-        if (ok?.success) await this.refreshState()
+        const ok = await rpc.command('set_session_name', { name: res.title })
+        if (ok?.success && stillSameSession()) await this.refreshState()
       }
       if (this.stopping || this.rpc !== rpc || this.titleLifecycle !== titleLifecycle) return null
       this.push({ ch: 'session-title', payload: { sessionId, title: res.title } })

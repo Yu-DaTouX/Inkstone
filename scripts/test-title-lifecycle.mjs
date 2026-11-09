@@ -92,6 +92,22 @@ try {
     assert.deepEqual(calls, ['get_state'], '写入前重读到外部名字时放弃写入')
     assert.equal(pushes.some(event => event.ch === 'session-title'), false)
   }
+  for (const reportsSession of [true, false]) {
+    const { agent } = makeAgent()
+    const calls = []
+    agent.rpc = {
+      command: async command => {
+        calls.push(command)
+        if (command !== 'get_state') return { success: true }
+        agent.state = { sessionId: 's2', sessionFile: join(root, 's2.jsonl') }
+        return { success: true, data: reportsSession ? { sessionId: 's2' } : {} }
+      },
+      close: async () => {}
+    }
+    globalThis.__titleFixture = { promise: Promise.resolve({ title: '属于 s1 的标题' }) }
+    await agent.maybeGenerateTitle()
+    assert.deepEqual(calls, ['get_state'], '重读期间切到另一会话时不得把旧会话标题写进新会话')
+  }
   const firstSend = () => {
     const { agent, pushes, calls } = makeAgent()
     agent.messages = []

@@ -2513,11 +2513,13 @@ function registerIpc(): void {
     return agent?.steer(text, undefined, expected?.generation) ?? { ok: false, error: piDown() }
   })
   handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: piDown() })
-  handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: piDown() })
-  handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: piDown() })
-  handle('yan:queueEdit', async (arg: QueueState | QueueEditOp) => {
-    const agent = ac()
-    if (!agent) return { ok: false, error: piDown() }
+  const queueAgent = (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)
+  const queueMissing = (expected?: unknown) => ({ ok: false, error: expected === undefined ? piDown() : sessionActionChanged() })
+  handle('yan:steerQueued', async (queueId: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => queueAgent(expected)?.steerQueued(queueId) ?? queueMissing(expected))
+  handle('yan:removeQueued', async (queueId: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => queueAgent(expected)?.removeQueued(queueId) ?? queueMissing(expected))
+  handle('yan:queueEdit', async (arg: QueueState | QueueEditOp, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => {
+    const agent = queueAgent(expected)
+    if (!agent) return queueMissing(expected)
     return 'op' in arg ? agent.editQueue(arg) : agent.rewriteQueue(arg)
   })
   handle('yan:abort', async (expectedInput?: unknown) => {
@@ -2586,17 +2588,8 @@ function registerIpc(): void {
         if (!runnerId || !sessionFile || !existsSync(sessionFile)) return { ok: true, requiresReload: true }
         const restarted = await runners!.restartOne(runnerId)
         if (!restarted.ok) return { ok: false, error: pick(`原生设置已保存，但应用失败：${restarted.error ?? '请重新打开会话'}`, `Native settings saved, but applying them failed: ${restarted.error ?? 'reopen the session'}`) }
-        const current = runners!.active()
-        if (current) {
-          const state = current.getState()
-          if (state) push({ ch: 'state', payload: state })
-          const currentId = runners!.idOf(current)
-          const before = currentId ? runners!.runtimeOf(currentId) : null
-          const payload = await current.getMessages()
-          const after = currentId ? runners!.runtimeOf(currentId) : null
-          if (!before || (after && sameRuntimeEnvelope(after, before))) push({ ch: 'sync', payload })
-        }
-        pushRunners()
+        const current = runners!.agentOf(runnerId)
+        await pushRunnerSnapshot(runnerId)
         if (request.action === 'set-scoped-models' && current) {
           const applied = await current.nativeScopedModels()
           const keys = new Set(applied.scopedModels.map(item => item.key))

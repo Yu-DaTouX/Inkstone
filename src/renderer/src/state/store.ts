@@ -1067,8 +1067,8 @@ async function persistSettingsPatch(patch: Partial<AppSettings>): Promise<AppSet
 type QueueEditArg = QueueState | QueueOp
 type QueueEditResult = { ok: boolean; error?: string; dropped?: QueueItem[] }
 
-function queueEditRequest(arg: QueueEditArg): Promise<QueueEditResult> {
-  return (window.yan.queueEdit as unknown as (arg: QueueEditArg) => Promise<QueueEditResult>)(arg)
+function queueEditRequest(arg: QueueEditArg, expected: ExpectedRuntimeOwner): Promise<QueueEditResult> {
+  return (window.yan.queueEdit as unknown as (arg: QueueEditArg, expected: ExpectedRuntimeOwner) => Promise<QueueEditResult>)(arg, expected)
 }
 
 const pendingMessagePatches = new MessagePatchBatch()
@@ -1982,8 +1982,12 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   steerQueued: async (queueId) => {
-    if (!(await get().ensureActivated())) return
-    const res = await piCall(() => window.yan.steerQueued(queueId))
+    const target = await sessionActionTarget(get)
+    if (!target) {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.sessionNotActivated')) })
+      return
+    }
+    const res = await piCall(() => window.yan.steerQueued(queueId, target.expected))
     if (!res.ok) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.steerFailed'))
@@ -1993,7 +1997,12 @@ export const useStore = create<Store>((rawSet, get) => {
 
   removeQueued: async (queueId) => {
     const sessionId = get().session?.sessionId
-    const res = await piCall(() => window.yan.removeQueued(queueId))
+    const target = await sessionActionTarget(get)
+    if (!target) {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.sessionNotActivated')) })
+      return
+    }
+    const res = await piCall(() => window.yan.removeQueued(queueId, target.expected))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.removeQueuedFailed')) })
       return
@@ -2027,12 +2036,16 @@ export const useStore = create<Store>((rawSet, get) => {
 
   applyQueueOrder: async (next) => {
     const sessionId = get().session?.sessionId
-    await settleQueueEdit(sessionId, await piCall(() => window.yan.queueEdit(next)))
+    const target = await sessionActionTarget(get)
+    if (!target) return settleQueueEdit(sessionId, { ok: false, error: uiText('state.error.sessionNotActivated') })
+    await settleQueueEdit(sessionId, await piCall(() => window.yan.queueEdit(next, target.expected)))
   },
 
   applyQueueOp: async (op) => {
     const sessionId = get().session?.sessionId
-    await settleQueueEdit(sessionId, await piCall(() => queueEditRequest(op)))
+    const target = await sessionActionTarget(get)
+    if (!target) return settleQueueEdit(sessionId, { ok: false, error: uiText('state.error.sessionNotActivated') })
+    await settleQueueEdit(sessionId, await piCall(() => queueEditRequest(op, target.expected)))
   },
 
   abort: async () => {
@@ -2757,7 +2770,12 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   startSubagent: async (task, model, isolation) => {
-    const res = await window.yan.subagents.start(task, model, isolation)
+    const target = await sessionActionTarget(get)
+    if (!target) {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.sessionNotActivated')) })
+      return
+    }
+    const res = await window.yan.subagents.start(task, model, isolation, target.expected)
     if (!res.ok) {
       set({
         notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.subagentStartFailed'))
