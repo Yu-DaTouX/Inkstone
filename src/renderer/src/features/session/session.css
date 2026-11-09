@@ -292,12 +292,12 @@
 
   .v3-jump {
     position: absolute;
-    right: var(--col-pr, var(--s-20));
+    right: var(--col-pad-r, var(--col-pr, var(--s-20)));
     bottom: calc(var(--composer-h, 0px) + var(--s-24) + var(--s-8));
     left: var(--col-pl, var(--s-20));
     z-index: var(--z-rail);
     display: flex;
-    justify-content: center;
+    justify-content: flex-end;
     pointer-events: none;
   }
   .v3-jump-btn { pointer-events: auto; animation: v3-fade-in var(--dur-base) var(--ease) both; }

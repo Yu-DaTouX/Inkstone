@@ -966,7 +966,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
 
         {showJump && !stick && !readOnly ? (
           <div className="v3-jump">
-            <Button className="v3-jump-btn" data-testid="v3-jump" variant="glass" icon={<ChevronDown size={14} />} aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')} onPress={jumpToBottom}>
+            <Button className="v3-jump-btn" data-testid="v3-jump" variant="glass" size="sm" icon={<ChevronDown size={14} />} aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')} onPress={jumpToBottom}>
               {t('chat.jumpToBottom')}
             </Button>
           </div>
