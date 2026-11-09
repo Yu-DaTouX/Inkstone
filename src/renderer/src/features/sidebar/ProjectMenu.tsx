@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, FolderOpen, Link, Palette, Pencil, Plus, Replace, Type } from 'lucide-react'
+import { Archive, ArchiveRestore, FolderOpen, Link, Palette, Pencil, Plus, Replace, Trash2, Type } from 'lucide-react'
 import { useEffect, useState, type ReactElement, type RefObject } from 'react'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
@@ -7,6 +7,7 @@ import { Button, Dialog, DialogFooter, Menu, MenuItem, Modal, ModalOverlay, Noti
 import { normalizeIconText, PROJECT_ICON_COLORS, projectIconLook } from '../../patterns/project-icon'
 import { v3Text } from '../../app/v3-text'
 import { ArchiveConfirm, ProjectDirectoryDialog, setProjectArchived } from './ProjectHeader'
+import { ProjectDeleteDialog } from './ProjectDeleteDialog'
 import { shortProject } from './sidebar-model'
 import { sidebarText } from './sidebar-text'
 import './ProjectMenu.css'
@@ -24,7 +25,7 @@ export function ProjectMenu({ project, anchor, open, onOpenChange, onNew }: Prop
   const { lang } = useI18n()
   const text = v3Text(lang)
   const own = sidebarText(lang)
-  const [dialog, setDialog] = useState<'rename' | 'directory' | 'archive' | 'icon-text' | null>(null)
+  const [dialog, setDialog] = useState<'rename' | 'directory' | 'archive' | 'delete' | 'icon-text' | null>(null)
   const [ready, setReady] = useState(false)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -103,6 +104,7 @@ export function ProjectMenu({ project, anchor, open, onOpenChange, onNew }: Prop
         else if (key === 'icon-text') { setName(project.iconText ?? ''); setDialog('icon-text') }
         else if (key === 'directory') setDialog('directory')
         else if (key === 'archive') setDialog('archive')
+        else if (key === 'delete') setDialog('delete')
         else if (key === 'restore') void setProjectArchived(project.id, false).then((ok) => { if (!ok) useStore.getState().notify('error', own.restoreProjectFailed) })
         else if (key === 'reveal') void window.yan.revealPath(project.cwd).catch((cause) => useStore.getState().notify('error', String(cause)))
         else if (key === 'copy') void navigator.clipboard.writeText(project.cwd).catch((cause) => useStore.getState().notify('error', String(cause)))
@@ -133,9 +135,11 @@ export function ProjectMenu({ project, anchor, open, onOpenChange, onNew }: Prop
         {project.archived
           ? <MenuItem id="restore" icon={<ArchiveRestore size={14} />}>{own.restoreProject}</MenuItem>
           : <MenuItem id="archive" tone="danger" icon={<Archive size={14} />}>{t('rail.removeProject')}</MenuItem>}
+        <MenuItem id="delete" tone="danger" icon={<Trash2 size={14} />} data-testid="v3-project-delete-item">{t('rail.deleteProject')}</MenuItem>
       </Menu>
     </Popover>
     {dialog === 'directory' && ready ? <ProjectDirectoryDialog project={project} onClose={() => setDialog(null)} /> : null}
+    {dialog === 'delete' && ready ? <ProjectDeleteDialog project={project} name={label} onClose={() => setDialog(null)} /> : null}
     <ModalOverlay isDismissable={!busy} isOpen={ready && (dialog === 'rename' || dialog === 'archive' || dialog === 'icon-text')} onOpenChange={(next) => { if (!next) setDialog(null) }}>
       <Modal>
         <Dialog title={dialog === 'icon-text' ? own.iconText.replace('…', '') : t(dialog === 'archive' ? 'rail.removeProjectTitle' : 'rail.renameProject')} closeLabel={text.cancel} data-testid={dialog === 'archive' ? 'v3-project-archive' : dialog === 'icon-text' ? 'v3-project-icon-text-dialog' : 'v3-project-rename'}>

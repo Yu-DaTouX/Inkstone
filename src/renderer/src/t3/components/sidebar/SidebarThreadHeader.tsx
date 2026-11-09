@@ -1,4 +1,4 @@
-import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -16,8 +16,8 @@ import "./SidebarThreadHeader.css";
 export interface SidebarThreadHeaderProps {
   searchFieldRef?: RefObject<HTMLDivElement | null>;
   hasProjects: boolean;
-  projectScope: ReactNode;
-  onNewProject: () => void;
+  statusFilter: ReactNode;
+  folderManager: ReactNode;
   onNewThread: (event: PressEvent) => void;
   newThreadDisabled: boolean;
   newThreadShortcutLabel: string | null | undefined;
@@ -36,8 +36,8 @@ export interface SidebarThreadHeaderProps {
 export function SidebarThreadHeader({
   searchFieldRef,
   hasProjects,
-  projectScope,
-  onNewProject,
+  statusFilter,
+  folderManager,
   onNewThread,
   newThreadDisabled,
   newThreadShortcutLabel,
@@ -93,17 +93,8 @@ export function SidebarThreadHeader({
         ) : null}
       </div>
       <div className="t3-sidebar-header__actions">
-        {hasProjects ? (
-          <>
-            {projectScope}
-            <SidebarHeaderIconButton
-              label={t("sidebar.t3.addProject")}
-              onPress={() => onNewProject()}
-            >
-              <FolderPlusIcon />
-            </SidebarHeaderIconButton>
-          </>
-        ) : null}
+        {statusFilter}
+        {hasProjects ? folderManager : null}
         <SidebarHeaderIconButton
           label={newThreadLabel}
           tooltip={

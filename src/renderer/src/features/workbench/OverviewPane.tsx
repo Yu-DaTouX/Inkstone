@@ -747,7 +747,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
           ),
           summaryWhenOpen: true,
           body: (
-            <div className={agentRunning ? 'wb-ov-stats-slot' : undefined}>
+            <div className={agentRunning && statsModel.facts.length + (statsModel.time ? 1 : 0) + (statsModel.speed ? 1 : 0) >= 3 ? 'wb-ov-stats-slot' : undefined}>
               <RailStatsBody model={statsModel} breakdownLabel={rail.statsBreakdown} />
             </div>
           )
@@ -755,7 +755,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       : agentRunning
         ? {
             summary: <RailValue value="—" />,
-            body: <div className="wb-ov-stats-slot" data-testid="wb-rail-stats-pending" aria-hidden />
+            body: <div data-testid="wb-rail-stats-pending" aria-hidden />
           }
         : undefined,
     context: {

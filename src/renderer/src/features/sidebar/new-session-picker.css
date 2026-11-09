@@ -111,18 +111,18 @@
     height: var(--s-24);
     border-radius: var(--r-sm, 4px);
     color: var(--fg2);
-    opacity: 0;
     cursor: pointer;
-  }
-
-  .nsp__option--manage:hover .nsp__more,
-  .nsp__option--manage[aria-selected='true'] .nsp__more {
-    opacity: 1;
   }
 
   .nsp__more:hover {
     background: var(--hover, var(--press));
     color: var(--fg);
+  }
+
+  .nsp__count {
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+    font-variant-numeric: tabular-nums;
   }
 
   .nsp__option--muted {

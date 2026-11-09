@@ -24,7 +24,8 @@ import { setSessionOrder, useSessionNav } from '../../features/sidebar/session-n
 import { SessionMenu } from '../../features/sidebar/SessionMenu'
 import { ProjectMenu } from '../../features/sidebar/ProjectMenu'
 import { NewSessionPicker } from '../../features/sidebar/NewSessionPicker'
-import { ProjectFilter } from '../../features/sidebar/ProjectFilter'
+import { FolderManager } from '../../features/sidebar/FolderManager'
+import { matchesStatusFilter, StatusFilter, type SessionStatusFilter } from '../../features/sidebar/StatusFilter'
 import { openAddProjectPalette } from '../../features/projects'
 import { quoteTargetUnder, SESSION_QUOTE_DROP_EVENT, sidebarEdge, startSessionRowDrag } from '../../features/sidebar/session-drag'
 import { createSessionSplitDrag, setSplitBadge, type SessionSplitDrag } from '../../features/split/split-drag'
@@ -141,14 +142,24 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       else window.localStorage.setItem(PROJECT_FILTER_KEY, next)
     } catch {}
   }, [])
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const list of [allSections.pinned, allSections.active, allSections.working, allSections.snoozed, allSections.settled]) {
+      for (const view of list) counts.set(view.projectId, (counts.get(view.projectId) ?? 0) + 1)
+    }
+    return counts
+  }, [allSections])
+  const [statusFilter, setStatusFilter] = useState<SessionStatusFilter | null>(null)
+  const now = useMinuteClock()
   const sections = useMemo(() => {
-    if (projectFilter === null) return allSections
-    const keep = (list: SidebarThreadView[]): SidebarThreadView[] => list.filter((view) => view.projectId === projectFilter || scopedKeyOf(view.id) === activeKey)
+    if (projectFilter === null && statusFilter === null) return allSections
+    const keep = (list: SidebarThreadView[]): SidebarThreadView[] => list.filter((view) =>
+      scopedKeyOf(view.id) === activeKey ||
+      ((projectFilter === null || view.projectId === projectFilter) && (statusFilter === null || matchesStatusFilter(statusFilter, view, resolveRowStatus(view, now)))))
     return { pinned: keep(allSections.pinned), active: keep(allSections.active), working: keep(allSections.working), snoozed: keep(allSections.snoozed), settled: keep(allSections.settled) }
-  }, [allSections, projectFilter, activeKey])
+  }, [allSections, projectFilter, statusFilter, activeKey, now])
   const draftIdList = useSidebarDraftIds()
   const undo = useThreadUndoNotice()
-  const now = useMinuteClock()
   const wakeLabel = useSnoozeWakeLabel()
   const jump = useSessionNav((s) => s.jump)
   const fileDropPath = useSessionNav((s) => s.fileDropPath)
@@ -547,8 +558,8 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
           <SidebarThreadHeader
             searchFieldRef={searchFieldRef}
             hasProjects={projects.list.length > 0}
-            projectScope={<ProjectFilter value={projectFilter} projects={projects.list} onChange={setProjectFilter} onManage={(projectId, anchor) => openProjectMenu(projectId, anchor)} />}
-            onNewProject={openAddProjectPalette}
+            statusFilter={<StatusFilter value={statusFilter} onChange={setStatusFilter} />}
+            folderManager={<FolderManager value={projectFilter} projects={projects.list} onChange={setProjectFilter} onManage={(projectId, anchor) => openProjectMenu(projectId, anchor)} onAdd={openAddProjectPalette} counts={folderCounts} />}
             onNewThread={newThread}
             newThreadDisabled={false}
             newThreadShortcutLabel={newThreadShortcut}
