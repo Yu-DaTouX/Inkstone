@@ -92,18 +92,6 @@
     white-space: nowrap;
   }
 
-  .t3-sidebar-attention {
-    display: flex;
-    align-items: center;
-    gap: 0.125rem;
-    flex-shrink: 0;
-    height: 1.75rem;
-  }
-  .t3-sidebar-attention__running {
-    color: var(--run-t);
-    animation: ui-spin 1s linear infinite;
-  }
-
   .t3-sidebar-footer {
     display: flex;
     flex-direction: column;

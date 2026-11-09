@@ -1,4 +1,4 @@
-import { CircleAlert, CircleDot, LoaderCircle, MoreHorizontal, PanelLeft, Unplug } from "lucide-react";
+import { MoreHorizontal, PanelLeft, Unplug } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { useT } from "../../../i18n";
@@ -14,7 +14,6 @@ export interface SidebarChromeHeaderProps {
   onHome?: (() => void) | undefined;
   toggleLabel: string;
   onToggleSidebar?: (() => void) | undefined;
-  status?: ReactNode;
   leading?: ReactNode;
 }
 
@@ -24,7 +23,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   onHome,
   toggleLabel,
   onToggleSidebar,
-  status,
   leading,
 }: SidebarChromeHeaderProps) {
   return (
@@ -43,7 +41,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       ) : null}
       <div className="t3-sidebar-chrome__title">
         <SidebarBrand brandLabel={brandLabel} homeLabel={homeLabel} onHome={onHome} flush={leading != null} />
-        {status}
       </div>
     </div>
   );
@@ -88,61 +85,6 @@ function SidebarBrand({
     >
       {content}
     </button>
-  );
-}
-
-export type SidebarAttentionKind = "running" | "awaiting" | "unread";
-
-export interface SidebarAttentionItem {
-  kind: SidebarAttentionKind;
-  count: number;
-  label: string;
-}
-
-const ATTENTION_GLYPH = {
-  running: { Icon: LoaderCircle, tone: "t3-sidebar-attention__running" },
-  awaiting: { Icon: CircleAlert, tone: "t3-status--approval" },
-  unread: { Icon: CircleDot, tone: "t3-status--done" },
-} as const;
-
-export function SidebarAttentionSummary({
-  ariaLabel,
-  items,
-  onJump,
-}: {
-  ariaLabel: string;
-  items: readonly SidebarAttentionItem[];
-  onJump: (kind: SidebarAttentionKind) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <span
-      role="group"
-      aria-label={ariaLabel}
-      className="t3-sidebar-attention"
-      data-slot="sidebar-attention"
-      data-testid="t3-sidebar-attention"
-    >
-      {items.map((item) => {
-        const { Icon, tone } = ATTENTION_GLYPH[item.kind];
-        return (
-          <Button
-            key={item.kind}
-            data-t3-btn
-            variant="plain"
-            size="micro"
-            aria-label={item.label}
-            onPress={() => onJump(item.kind)}
-            data-kind={item.kind}
-            tooltip={item.label}
-            tooltipPlacement="bottom"
-            icon={<Icon className={tone} />}
-          >
-            {item.count}
-          </Button>
-        );
-      })}
-    </span>
   );
 }
 

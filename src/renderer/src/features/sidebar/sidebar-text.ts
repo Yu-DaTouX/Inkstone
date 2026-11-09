@@ -58,10 +58,6 @@ export interface SidebarText {
   recencyWeek: string
   recencyOlder: string
   attention: string
-  attentionRunning: string
-  attentionAwaiting: string
-  attentionUnread: string
-  attentionJump: string
 }
 
 const zh: SidebarText = {
@@ -123,11 +119,7 @@ const zh: SidebarText = {
   recencyYesterday: '昨天',
   recencyWeek: '7 天内',
   recencyOlder: '更早',
-  attention: '会话状态',
-  attentionRunning: '运行',
-  attentionAwaiting: '等你',
-  attentionUnread: '未读',
-  attentionJump: '{state} {n} 个，跳到下一个'
+  attention: '会话状态'
 }
 
 const en: SidebarText = {
@@ -189,11 +181,7 @@ const en: SidebarText = {
   recencyYesterday: 'Yesterday',
   recencyWeek: 'Previous 7 days',
   recencyOlder: 'Older',
-  attention: 'Session status',
-  attentionRunning: 'running',
-  attentionAwaiting: 'need you',
-  attentionUnread: 'unread',
-  attentionJump: '{n} {state}, jump to the next'
+  attention: 'Session status'
 }
 
 export function sidebarText(lang: string): SidebarText {

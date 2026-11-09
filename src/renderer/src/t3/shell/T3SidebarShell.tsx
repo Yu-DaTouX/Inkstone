@@ -57,10 +57,8 @@ import {
 import { SidebarThreadList, type SidebarDropInput, type SidebarRowRenderProps } from '../components/Sidebar'
 import { ProjectFavicon } from '../components/ProjectFavicon'
 import {
-  SidebarAttentionSummary,
   SidebarChromeFooter,
   SidebarChromeHeader,
-  type SidebarAttentionKind,
   type SidebarUtilityEntry
 } from '../components/sidebar/SidebarChrome'
 import { SidebarDraftBlock } from '../components/sidebar/SidebarDraftBlock'
@@ -115,7 +113,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const [newPickerOpen, setNewPickerOpen] = useState(false)
   const quoteTargetRef = useRef<HTMLElement | null>(null)
   const splitDragRef = useRef<{ key: string; drag: SessionSplitDrag } | null>(null)
-  const jumpCursor = useRef<Partial<Record<SidebarAttentionKind, string>>>({})
   const [query, setQuery] = useState('')
   const [renamingKey, setRenamingKey] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -288,51 +285,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   )
   useSessionJump(asideRef, jumpToPath)
   useSessionFileDrop(asideRef, t)
-
-  const attention = useMemo(() => {
-    const counts: Record<SidebarAttentionKind, number> = { running: 0, awaiting: 0, unread: 0 }
-    const paths: Record<SidebarAttentionKind, string[]> = { running: [], awaiting: [], unread: [] }
-    for (const view of allViews) {
-      const status = resolveRowStatus(view, now)
-      const kind: SidebarAttentionKind | null =
-        status === 'working'
-          ? 'running'
-          : status === 'approval' || status === 'input' || status === 'waiting'
-            ? 'awaiting'
-            : status === 'done'
-              ? 'unread'
-              : null
-      if (kind === null) continue
-      counts[kind] += 1
-      paths[kind].push(view.path)
-    }
-    const stateLabel = (kind: SidebarAttentionKind): string =>
-      kind === 'running' ? own.attentionRunning : kind === 'awaiting' ? own.attentionAwaiting : own.attentionUnread
-    return {
-      items: (['running', 'awaiting', 'unread'] as const)
-        .filter((kind) => counts[kind] > 0)
-        .map((kind) => ({
-          kind,
-          count: counts[kind],
-          label: own.attentionJump.replace('{state}', stateLabel(kind)).replace('{n}', String(counts[kind]))
-        })),
-      paths
-    }
-  }, [allViews, now, own.attentionAwaiting, own.attentionJump, own.attentionRunning, own.attentionUnread])
-
-  const jumpToAttention = useCallback(
-    (kind: SidebarAttentionKind): void => {
-      const list = attention.paths[kind]
-      if (list.length === 0) return
-      const last = jumpCursor.current[kind]
-      const at = last === undefined ? -1 : list.findIndex((path) => path === last)
-      const next = list[(at + 1) % list.length]
-      if (next === undefined) return
-      jumpCursor.current[kind] = next
-      jumpToPath(next)
-    },
-    [attention.paths, jumpToPath]
-  )
 
   const projectFolders = useMemo<SidebarProjectFolderView[]>(() => {
     const grouped = new Map<string, SidebarThreadView[]>()
@@ -588,11 +540,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                 <PanelLeftClose />
               </IconButton>
             ) : null
-          }
-          status={
-            <span className="t3-sidebar-shell__status">
-              <SidebarAttentionSummary ariaLabel={own.attention} items={attention.items} onJump={jumpToAttention} />
-            </span>
           }
         />
 

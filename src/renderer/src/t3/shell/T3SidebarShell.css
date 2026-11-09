@@ -10,12 +10,6 @@
     width: 1.5rem;
     height: 1.5rem;
   }
-  .t3-sidebar-shell__status {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    min-width: 0;
-  }
   .t3-sidebar-shell__header {
     display: flex;
     flex-direction: column;
