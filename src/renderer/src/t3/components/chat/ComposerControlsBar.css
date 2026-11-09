@@ -10,6 +10,13 @@
   [data-chat-provider-model-picker] + .t3-controls-bar__block--traits {
     margin-inline-start: -0.125rem;
   }
+  .t3-controls-bar__block--traits:not(.t3-controls-bar__block--icon-only, .t3-controls-bar__block--hidden),
+  .t3-controls-bar__block--traits:not(.t3-controls-bar__block--icon-only) + .t3-controls-bar__block:not(.t3-controls-bar__block--hidden) {
+    margin-inline-end: var(--effort-slack, 0px);
+  }
+  .t3-controls-bar__block--traits:has(+ .t3-controls-bar__block:not(.t3-controls-bar__block--hidden)) {
+    margin-inline-end: 0;
+  }
   .t3-controls-bar__block--hidden {
     position: absolute;
     visibility: hidden;

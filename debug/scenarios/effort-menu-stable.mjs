@@ -22,10 +22,22 @@ export default async function run({ cdp, check, waitFor, sleep, shot }) {
     closed.push({ level, picker: await rect(picker), trigger: await rect(trigger) })
   }
   const pickerXs = new Set(closed.map((item) => item.picker?.x))
-  const triggerWs = new Set(closed.map((item) => item.trigger?.w))
+  const triggerXs = new Set(closed.map((item) => item.trigger?.x))
   console.log('CLOSED', JSON.stringify(closed))
   check('菜单关闭时各档位下模型按钮位置相同', pickerXs.size === 1, [...pickerXs].join(','))
-  check('菜单关闭时档位按钮宽度相同', triggerWs.size === 1, [...triggerWs].join(','))
+  check('菜单关闭时档位按钮左缘相同', triggerXs.size === 1, [...triggerXs].join(','))
+  await ev('window.__yanStore.getState().patchSettings({ permissionMode: "all" })')
+  await waitFor('!!document.querySelector("[data-composer-permission-trigger] svg")')
+  const gaps = []
+  for (const level of levels) {
+    await setLevel(level)
+    gaps.push(await ev('(() => { const l = document.querySelector("[data-composer-effort-label]").getBoundingClientRect(); const i = document.querySelector("[data-composer-permission-trigger] svg").getBoundingClientRect(); return Math.round((i.left - l.right) * 10) / 10 })()'))
+    closed.push({ level, mode: 'all', picker: await rect(picker) })
+  }
+  console.log('GAPS', JSON.stringify(gaps))
+  check('全部权限时各档位下档位文字到权限图标的距离相同且不超过 20px', new Set(gaps).size === 1 && gaps[0] <= 20, gaps.join(','))
+  check('全部权限时各档位下模型按钮位置相同', new Set(closed.filter((item) => item.mode === 'all').map((item) => item.picker?.x)).size === 1)
+  await ev('window.__yanStore.getState().patchSettings({ permissionMode: "danger" })')
   await setLevel(levels[0])
   await ev(`document.querySelector(${JSON.stringify(trigger)}).click()`)
   await waitFor(`!!document.querySelector(${JSON.stringify(panel)})`)
