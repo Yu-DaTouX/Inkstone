@@ -444,6 +444,41 @@ export async function runSessionConcurrencySendGuardTests(ok) {
   }
 
   {
+    const seen = []
+    const { reg, created } = make({ resolveCwdConflict: async (target) => { seen.push(target); return { cwd: 'C:/proj-wt' } } })
+    const { first, secondId } = await twoIdleSameCwd(reg)
+    ok((await reg.isolateIfConflicting(secondId)).moved === false, '同 cwd 没有忙碌实例：不迁移')
+    ok(seen.length === 0, '没有冲突时不去创建隔离目录')
+    busy(first)
+    const r = await reg.isolateIfConflicting(secondId)
+    ok(r.moved === true, '自己空闲、同 cwd 另有忙碌实例：迁进隔离目录', JSON.stringify(r))
+    ok(seen.length === 1 && seen[0].sessionFile === 'C:/proj/b.jsonl', '按这个会话的记录文件请求隔离', JSON.stringify(seen))
+    ok(reg.runtimeOf(secondId) !== undefined && created.at(-1).cwd === 'C:/proj-wt', '新实例在隔离目录里启动', JSON.stringify(created))
+    ok(reg.agentOf(secondId).calls.switchSession[0] === 'C:/proj/b.jsonl', '新实例续接原来的会话记录')
+    ok(first.calls.stop === 0 && first.state.isAgentRunning === true, '忙碌的那个会话不受影响')
+    ok(reg.hasBusyCwd('C:/proj-wt', secondId) === false, '隔离目录里没有别的忙碌实例')
+    const again = await reg.isolateIfConflicting(secondId)
+    ok(again.moved === false, '已经在隔离目录里：不再迁移')
+  }
+
+  {
+    const { reg } = make({ resolveCwdConflict: async () => ({ reason: '这个目录不是 Git 仓库' }) })
+    const { first, secondId } = await twoIdleSameCwd(reg)
+    busy(first)
+    const r = await reg.isolateIfConflicting(secondId)
+    ok(r.moved === false && !r.error, '隔离不了时不迁移也不报错，照常放行')
+    ok(reg.guardExecute(secondId).ok === true, '隔离不了时发送仍放行')
+  }
+
+  {
+    const { reg } = make({ resolveCwdConflict: async () => ({ cwd: 'C:/proj-wt' }) })
+    const { first, second, secondId } = await twoIdleSameCwd(reg)
+    busy(first)
+    busy(second)
+    ok((await reg.isolateIfConflicting(secondId)).moved === false, '自己正在运行：不迁移')
+  }
+
+  {
     const { reg } = make()
     ok(reg.guardExecute('missing').ok === true, '目标实例不存在：放行')
     let seenLookup = false

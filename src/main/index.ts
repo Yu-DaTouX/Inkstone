@@ -2455,6 +2455,15 @@ function registerIpc(): void {
       return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
     }
     const id = targetId
+    if (id && runners) {
+      const isolated = await runners.isolateIfConflicting(id)
+      if (isolated.error) return { ok: false, error: isolated.error }
+      if (isolated.moved) {
+        const runtime = runners.runtimeOf(id)
+        if (expected && runtime) expected.generation = runtime.generation
+        pin = pinSendTarget(id)
+      }
+    }
     if (id) {
       const guard = runners?.guardExecute(id)
       if (guard && !guard.ok) return guard
