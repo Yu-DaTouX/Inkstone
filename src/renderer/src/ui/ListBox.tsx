@@ -1,3 +1,4 @@
+import { forwardRef, type HTMLAttributes } from 'react'
 import {
   ListBox as RACListBox,
   ListBoxItem as RACListBoxItem,
@@ -24,3 +25,36 @@ export function ListBoxItem<T extends object = object>({ className, ...props }: 
 export function ListBoxSection<T extends object = object>({ className, ...props }: ListBoxSectionProps<T>) {
   return <RACListBoxSection {...props} className={cx('ui-listbox__section', className)} />
 }
+
+export interface StaticListBoxProps extends HTMLAttributes<HTMLDivElement> {
+  'aria-label': string
+}
+
+export const StaticListBox = forwardRef<HTMLDivElement, StaticListBoxProps>(function StaticListBox({ className, ...props }, ref) {
+  return <div {...props} ref={ref} role="listbox" className={cx('ui-listbox', 'ui-listbox--static', className)} />
+})
+
+export interface StaticListBoxItemProps extends HTMLAttributes<HTMLDivElement> {
+  active?: boolean
+  selected?: boolean
+  disabled?: boolean
+}
+
+export const StaticListBoxItem = forwardRef<HTMLDivElement, StaticListBoxItemProps>(function StaticListBoxItem(
+  { active, selected, disabled, className, ...props },
+  ref
+) {
+  return (
+    <div
+      {...props}
+      ref={ref}
+      role="option"
+      aria-selected={selected ?? false}
+      aria-disabled={disabled || undefined}
+      data-focused={active ? '' : undefined}
+      data-selected={selected ? '' : undefined}
+      data-disabled={disabled ? '' : undefined}
+      className={cx('ui-listbox__item', className)}
+    />
+  )
+})

@@ -597,3 +597,33 @@
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 }
+
+@layer primitives {
+  .ui-listbox--static {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@layer primitives {
+  .ui-bare-btn {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: default;
+    user-select: none;
+  }
+}
+
+@layer primitives {
+  .ui-toolbar {
+    display: flex;
+  }
+  .ui-toolbar[aria-orientation='vertical'] {
+    flex-direction: column;
+  }
+}

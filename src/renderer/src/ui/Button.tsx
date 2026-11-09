@@ -96,3 +96,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     </TooltipTrigger>
   )
 })
+
+export const BareButton = forwardRef<HTMLButtonElement, RACButtonProps>(function BareButton({ className, ...props }, ref) {
+  return <RACButton {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-bare-btn', cn))} />
+})

@@ -225,6 +225,27 @@
     min-height: 0;
     outline: none;
   }
+  .ui-sheet-overlay--retained {
+    --ui-sheet-ms: var(--dur-sheet);
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--ui-sheet-ms) var(--ease), visibility 0s linear var(--ui-sheet-ms);
+  }
+  .ui-sheet-overlay--retained[data-open] {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity var(--ui-sheet-ms) var(--ease);
+  }
+  .ui-sheet--retained {
+    position: absolute;
+    transform: translateX(100%);
+    transition: transform var(--ui-sheet-ms) var(--ease);
+  }
+  .ui-sheet-overlay--retained[data-open] .ui-sheet--retained {
+    transform: none;
+  }
   @keyframes ui-sheet-in {
     from {
       transform: translateX(100%);

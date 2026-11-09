@@ -1,0 +1,36 @@
+@layer primitives {
+  .ui-scroll-area {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: inherit;
+  }
+  .ui-scroll-area__viewport {
+    --fade-size: 1.5rem;
+    width: 100%;
+    height: 100%;
+    max-height: inherit;
+    overflow: auto;
+    overscroll-behavior: contain;
+    border-radius: inherit;
+  }
+  .ui-scroll-area__viewport[data-hide-scrollbars] {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .ui-scroll-area__viewport[data-hide-scrollbars]::-webkit-scrollbar {
+    display: none;
+  }
+  .ui-scroll-area__viewport[data-fade] {
+    scroll-padding: var(--fade-size);
+    mask-image:
+      linear-gradient(to bottom, transparent, black min(var(--fade-size), var(--scroll-area-overflow-y-start, 0px)), black calc(100% - min(var(--fade-size), var(--scroll-area-overflow-y-end, 0px))), transparent),
+      linear-gradient(to right, transparent, black min(var(--fade-size), var(--scroll-area-overflow-x-start, 0px)), black calc(100% - min(var(--fade-size), var(--scroll-area-overflow-x-end, 0px))), transparent);
+    mask-composite: intersect;
+  }
+  .ui-scroll-area__viewport[data-fade]:has(:focus-visible) {
+    mask-image: none;
+  }
+}

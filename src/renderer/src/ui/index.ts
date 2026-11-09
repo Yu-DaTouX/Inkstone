@@ -3,7 +3,7 @@ import './ui.css'
 export { cx } from './cx'
 export { useScrollbarReveal } from './scrollbar-reveal'
 
-export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button'
+export { BareButton, Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button'
 export { CloseButton, IconButton, type CloseButtonProps, type IconButtonProps } from './IconButton'
 export {
   InputGroup,
@@ -88,6 +88,10 @@ export {
   ListBox,
   ListBoxItem,
   ListBoxSection,
+  StaticListBox,
+  StaticListBoxItem,
+  type StaticListBoxItemProps,
+  type StaticListBoxProps,
   type ListBoxItemProps,
   type ListBoxProps,
   type ListBoxSectionProps
@@ -204,6 +208,19 @@ export {
 export { Splitter, type SplitterProps, type SplitterOrientation } from './Splitter'
 export { PanelTab, PanelTabCloseButton, PanelTabList, type PanelTabCloseButtonProps, type PanelTabListProps, type PanelTabProps } from './PanelTabs'
 export { Sheet, type SheetProps } from './Sheet'
+export { ScrollArea, type ScrollAreaProps } from './ScrollArea'
+export { Toolbar, type ToolbarProps } from './Toolbar'
+export {
+  Combobox,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxSearchInput,
+  type ComboboxItemProps,
+  type ComboboxListProps,
+  type ComboboxProps,
+  type ComboboxSearchInputProps
+} from './Combobox'
 
 export {
   FieldError,
