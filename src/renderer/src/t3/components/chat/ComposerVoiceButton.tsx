@@ -4,9 +4,7 @@ import { encodeWav16k, VOICE_MAX_SECONDS } from '../../../../../shared/voice-inp
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { useVoicePluginInstalled } from '../../../state/installed-plugins'
-import { IconButton } from '../../../ui'
-import { Button } from '../ui/button'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
+import { IconButton, TooltipTrigger, Tooltip, TooltipHint } from '../../../ui'
 
 type Phase =
   | { kind: 'idle' }
@@ -185,7 +183,7 @@ export function ComposerVoiceButton({ onText, disabled, scope }: { onText: (text
         </span>
         <span className="composer-voice-dot" aria-hidden />
         <span className="composer-voice-time">{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</span>
-        <IconButton
+        <IconButton data-t3-btn
           size="sm"
           className="composer-voice-action"
           aria-label={t('voice.stop')}
@@ -195,7 +193,7 @@ export function ComposerVoiceButton({ onText, disabled, scope }: { onText: (text
         >
           <Square size={12} aria-hidden />
         </IconButton>
-        <IconButton
+        <IconButton data-t3-btn
           size="sm"
           className="composer-voice-action"
           aria-label={t('voice.cancel')}
@@ -212,25 +210,12 @@ export function ComposerVoiceButton({ onText, disabled, scope }: { onText: (text
   const busy = disabled || phase.kind === 'preparing' || phase.kind === 'transcribing'
   return (
     <span className="composer-voice" data-state={phase.kind}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('voice.start')}
-              disabled={busy}
-              data-testid="voice-start"
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => void start()}
-            />
-          }
-        >
+      <TooltipTrigger>
+        <IconButton data-t3-btn variant="ghost" size="md" isDisabled={busy} preventFocusOnPress onPress={() => void start()} aria-label={t('voice.start')} data-testid="voice-start">
           <Mic aria-hidden />
-        </TooltipTrigger>
-        <TooltipPopup>{t('voice.start')}</TooltipPopup>
-      </Tooltip>
+        </IconButton>
+        <Tooltip><TooltipHint label={t('voice.start')} /></Tooltip>
+      </TooltipTrigger>
       {phase.kind === 'preparing' ? <span className="composer-voice-state">{t('voice.preparing')}</span> : null}
       {phase.kind === 'transcribing' ? <span className="composer-voice-state">{t('voice.transcribing')}</span> : null}
       {phase.kind === 'error' ? (

@@ -1,11 +1,43 @@
 import { Minimize2Icon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { DialogTrigger } from "react-aria-components";
 
 import { useT } from "../../../i18n";
 import { formatContextWindowTokens, type ContextWindowSnapshot } from "../../adapters/context";
-import { Button } from "../ui/button";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Button, IconButton, Popover } from "../../../ui";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import { formatContextWindowCost } from "./ContextWindowMeter.logic";
+import "./ContextWindowMeter.css";
+
+const HOVER_OPEN_DELAY_MS = 150;
+
+function useHoverPopover(closeDelay: number) {
+  const [open, setOpen] = useState(false);
+  const timer = useRef<number | null>(null);
+  const clear = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => clear, []);
+  const schedule = (next: boolean, delay: number) => {
+    clear();
+    if (delay <= 0) {
+      setOpen(next);
+      return;
+    }
+    timer.current = window.setTimeout(() => setOpen(next), delay);
+  };
+  return {
+    open,
+    setOpen: (next: boolean) => {
+      clear();
+      setOpen(next);
+    },
+    hoverEnter: () => schedule(true, HOVER_OPEN_DELAY_MS),
+    hoverLeave: () => schedule(false, closeDelay),
+    keepOpen: clear,
+  };
+}
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -35,33 +67,24 @@ export function ContextWindowMeter(props: {
   const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
   const isOverloaded = normalizedPercentage > 90;
   const usageColor = isOverloaded
-    ? "var(--color-error)"
-    : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
+    ? "var(--fail)"
+    : "color-mix(in oklab, var(--fg3) 72%, transparent)";
+
+  const hover = useHoverPopover(onCompact ? 150 : 0);
 
   return (
-    <Popover>
-      <PopoverTrigger
-        openOnHover
-        delay={150}
-        closeDelay={onCompact ? 150 : 0}
-        render={
-          <Button
-            size="icon-sm"
-            variant="ghost-muted"
-            className="size-7"
-            data-testid="composer-context-meter"
-            aria-label={
+    <DialogTrigger isOpen={hover.open} onOpenChange={hover.setOpen}>
+          <IconButton data-t3-btn variant="ghost" size="md" onHoverStart={hover.hoverEnter} onHoverEnd={hover.hoverLeave} className="t3-ctx-meter" data-testid="composer-context-meter" aria-label={
               usage.maxTokens !== null && usedPercentage
                 ? t("composer.t3.contextUsageAria", { pct: usedPercentage })
                 : t("composer.t3.contextTokensAria", {
                     n: formatContextWindowTokens(usage.usedTokens),
                   })
-            }
-          >
-            <span className="relative flex size-4 items-center justify-center">
+            }>
+            <span className="t3-ctx-meter__ring">
               <svg
                 viewBox="0 0 24 24"
-                className="-rotate-90 absolute inset-0 size-full transform-gpu mx-0!"
+                className="t3-ctx-meter__svg"
                 aria-hidden="true"
               >
                 <circle
@@ -69,7 +92,7 @@ export function ContextWindowMeter(props: {
                   cy="12"
                   r={radius}
                   fill="none"
-                  className="stroke-muted-foreground/40"
+                  className="t3-ctx-meter__track"
                   strokeWidth="3"
                 />
                 <circle
@@ -82,45 +105,43 @@ export function ContextWindowMeter(props: {
                   strokeLinecap={normalizedPercentage < 5 ? "butt" : "round"}
                   strokeDasharray={circumference}
                   strokeDashoffset={dashOffset}
-                  className="transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none"
+                  className="t3-ctx-meter__arc"
                 />
               </svg>
             </span>
-          </Button>
-        }
-      />
-      <PopoverPopup
+          </IconButton>
+      <Popover
         {...composerFloatingLayerProps}
-        side="top"
-        align="end"
-        padding="none"
-        width="sm"
-        className="text-left whitespace-normal"
+        variant="panel"
+        isNonModal
+        placement="top end"
+        offset={4}
+        className="t3-ctx-popover"
         data-testid="composer-context-popover"
       >
-        <div className="flex flex-col gap-2 p-(--floating-content-inset)">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-medium text-muted-foreground text-xs">
+        <div className="t3-ctx-popover__body" onPointerEnter={hover.keepOpen} onPointerLeave={hover.hoverLeave}>
+          <div className="t3-ctx-popover__head">
+            <div className="t3-ctx-popover__title">
               {usage.cappedByAutoCompact ? t("ctx.toAutoCompact") : t("ctx.window")}
             </div>
             {usage.maxTokens !== null && usedPercentage ? (
-              <div className="text-secondary-label text-2xs tabular-nums">
+              <div className="t3-ctx-popover__usage">
                 <span>{usedPercentage}</span>
-                <span className="mx-1">·</span>
+                <span className="t3-ctx-popover__dot">·</span>
                 <span>
                   {formatContextWindowTokens(usage.usedTokens)}/
                   {formatContextWindowTokens(usage.maxTokens ?? null)}
                 </span>
               </div>
             ) : (
-              <div className="text-secondary-label text-2xs tabular-nums">
+              <div className="t3-ctx-popover__usage">
                 {formatContextWindowTokens(usage.usedTokens)}
               </div>
             )}
           </div>
           {usage.maxTokens !== null ? (
             <div
-              className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
+              className="t3-ctx-popover__bar"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -128,57 +149,49 @@ export function ContextWindowMeter(props: {
               aria-label={t("composer.t3.contextUsageBar")}
             >
               <div
-                className="h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
+                className="t3-ctx-popover__fill"
                 style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
               />
             </div>
           ) : null}
           {usage.cappedByAutoCompact && usage.modelWindow !== null ? (
-            <div className="flex items-center justify-between gap-3 text-2xs leading-4">
-              <span className="text-secondary-label">{t("ctx.window")}</span>
-              <span className="font-medium tabular-nums text-secondary-label">
+            <div className="t3-ctx-popover__row">
+              <span>{t("ctx.window")}</span>
+              <span className="t3-ctx-popover__value">
                 {formatContextWindowTokens(usage.modelWindow)}
               </span>
             </div>
           ) : null}
           {showTotalProcessed ? (
-            <div className="flex items-center justify-between gap-3 text-2xs leading-4">
-              <span className="text-secondary-label">{t("composer.t3.totalProcessed")}</span>
-              <span className="font-medium tabular-nums text-secondary-label">
+            <div className="t3-ctx-popover__row">
+              <span>{t("composer.t3.totalProcessed")}</span>
+              <span className="t3-ctx-popover__value">
                 {formatContextWindowTokens(totalProcessedTokens)}
               </span>
             </div>
           ) : null}
           {usage.cost != null ? (
-            <div className="flex items-center justify-between gap-3 text-2xs leading-4">
-              <span className="text-secondary-label">{t("composer.t3.cost")}</span>
-              <span className="font-medium tabular-nums text-secondary-label">
+            <div className="t3-ctx-popover__row">
+              <span>{t("composer.t3.cost")}</span>
+              <span className="t3-ctx-popover__value">
                 {formatContextWindowCost(usage.cost)}
               </span>
             </div>
           ) : null}
           {onCompact ? (
             <>
-              <Button
-                size="xs"
-                variant="outline"
-                className="mt-1 w-full justify-center"
-                disabled={compactDisabled}
-                title={compactDisabled ? (compactDisabledReason ?? undefined) : undefined}
-                data-testid="composer-context-compact"
-                onClick={onCompact}
-              >
+              <Button data-t3-btn variant="secondary" isDisabled={compactDisabled} onPress={onCompact} className="t3-ctx-popover__compact" title={compactDisabled ? (compactDisabledReason ?? undefined) : undefined} data-testid="composer-context-compact">
                 <Minimize2Icon aria-hidden="true" />
                 {t("status.compact")}
               </Button>
             </>
           ) : null}
         </div>
-      </PopoverPopup>
-    </Popover>
+      </Popover>
+    </DialogTrigger>
   );
 }
 
 export function ContextWindowMeterPlaceholder() {
-  return <span aria-hidden="true" className="size-7 shrink-0" />;
+  return <span aria-hidden="true" className="t3-ctx-meter__placeholder" />;
 }

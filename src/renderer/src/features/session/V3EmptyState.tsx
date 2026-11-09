@@ -106,7 +106,7 @@ function ProjectChooser({ text }: { text: HomeText }): JSX.Element {
               className="v3-home-project"
               current={here}
               disabled={busy && !here}
-              icon={<ProjectFavicon project={{ projectId: project.id, displayName: label }} className="size-5 text-[.6875rem]" />}
+              icon={<ProjectFavicon project={{ projectId: project.id, displayName: label }} className="t3-favicon--lg" />}
               description={<span title={project.cwd}>{project.cwd}</span>}
               trailing={here ? <Check size={14} aria-hidden /> : undefined}
               onClick={() => void start(project)}

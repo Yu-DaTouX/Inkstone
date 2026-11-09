@@ -3,17 +3,18 @@ import { memo, type ReactNode } from 'react'
 import { useI18n } from '../../../i18n'
 import { v3Text } from '../../../app/v3-text'
 import { NO_PROJECT_ID } from '../../adapters/sidebar/types'
-import { cn } from '../../lib/utils'
+import { cx } from '../../../ui/cx'
 import { sidebarFolderRowId } from '../Sidebar.logic'
-import { Button } from '../ui/button'
+import { IconButton, StatusDot } from '../../../ui'
+import './SidebarProjectFolderHeader.css'
 
 export type SidebarFolderDot = 'attention' | 'failed' | 'unread' | 'working'
 
-const FOLDER_DOT_CLASS_NAME = {
-  attention: 'bg-warning',
-  failed: 'bg-error',
-  unread: 'bg-success',
-  working: 'bg-info'
+const FOLDER_DOT_KIND = {
+  attention: 'awaiting',
+  failed: 'fail',
+  unread: 'ok',
+  working: 'running'
 } as const
 
 export interface SidebarProjectFolderView {
@@ -44,7 +45,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   return (
     <li
       data-testid="sidebar-project-folder"
-      className="group/project-folder relative mt-2 list-none first:mt-0"
+      className="t3-folder"
     >
       <button
         type="button"
@@ -57,53 +58,41 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           event.preventDefault()
           props.onContextMenu(folder.projectKey, { x: event.clientX, y: event.clientY })
         }}
-        className={cn('flex h-8 w-full items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring', !empty && 'cursor-pointer')}
+        className={cx('t3-folder__header', !empty && 't3-folder__header--expandable')}
       >
         {folder.icon}
-        <span className={cn('min-w-0 flex-1 truncate text-sm font-medium', empty ? 'text-sidebar-muted-foreground' : 'text-sidebar-foreground/90')}>
+        <span className={cx('t3-folder__name', empty && 't3-folder__name--empty')}>
           {displayName}
         </span>
         {folder.dot ? (
-          <span className={cn('size-1.5 shrink-0 rounded-full', FOLDER_DOT_CLASS_NAME[folder.dot])}>
+          <>
+            <StatusDot kind={FOLDER_DOT_KIND[folder.dot]} />
             <span className="sr-only">{folder.dotLabel}</span>
-          </span>
+          </>
         ) : null}
         {folder.collapsed && folder.hiddenCount > 0 ? (
-          <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
+          <span className="t3-folder__hidden-count">
             {folder.hiddenCount}
           </span>
         ) : null}
         {empty ? null : (
           <ChevronDownIcon
             aria-hidden
-            className={cn(
-              'size-3 shrink-0 text-sidebar-muted-foreground transition-transform',
-              folder.collapsed && '-rotate-90'
+            className={cx(
+              't3-icon--xs t3-chevron t3-folder__chevron',
+              folder.collapsed && 't3-chevron--collapsed'
             )}
           />
         )}
       </button>
-      <span className="absolute inset-y-0 right-6 flex items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
-        {folder.manageable ? <Button
-          data-sidebar-action-for={rowId}
-          size="icon-xs"
-          variant="ghost-muted"
-          aria-label={props.menuLabel}
-          data-testid="v3-project-more"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect()
+      <span className="t3-folder__actions">
+        {folder.manageable ? <IconButton data-t3-btn variant="ghost" size="md" className="t3-folder__action" onPress={(event) => {
+            const rect = (event.target as HTMLElement).getBoundingClientRect()
             props.onContextMenu(folder.projectKey, { x: rect.left, y: rect.bottom })
-          }}
-        ><EllipsisIcon aria-hidden /></Button> : null}
-        <Button
-          data-sidebar-action-for={rowId}
-          size="icon-xs"
-          variant="ghost-muted"
-          aria-label={props.newThreadLabel}
-          onClick={() => props.onNewThread(folder.projectKey)}
-        >
+          }} data-sidebar-action-for={rowId} aria-label={props.menuLabel} data-testid="v3-project-more"><EllipsisIcon aria-hidden /></IconButton> : null}
+        <IconButton data-t3-btn variant="ghost" size="md" className="t3-folder__action" onPress={() => props.onNewThread(folder.projectKey)} data-sidebar-action-for={rowId} aria-label={props.newThreadLabel}>
           <SquarePenIcon aria-hidden />
-        </Button>
+        </IconButton>
       </span>
     </li>
   )

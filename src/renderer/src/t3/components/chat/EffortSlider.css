@@ -1,0 +1,37 @@
+@layer features {
+  .t3-effort__trigger {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  [data-chat-provider-model-picker] + [data-resting-block] > .t3-effort__trigger {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    padding-inline-start: 2px;
+  }
+  [data-chat-provider-model-picker]:hover + [data-resting-block] > .t3-effort__trigger {
+    background: var(--hover);
+  }
+  .t3-effort__trigger--blocked {
+    cursor: default;
+    opacity: 0.4;
+  }
+  .t3-effort__tip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+  .t3-effort__tip-hint {
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1.333;
+  }
+  .t3-effort__panel {
+    position: fixed;
+    z-index: 130;
+    overflow: hidden;
+    outline: none;
+  }
+  .t3-effort__panel:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+}

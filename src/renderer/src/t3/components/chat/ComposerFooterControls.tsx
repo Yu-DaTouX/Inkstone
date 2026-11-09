@@ -1,16 +1,15 @@
-import { Menu as MenuPrimitive } from '@base-ui/react/menu'
+import { Dialog } from 'react-aria-components'
 import { ShieldCheckIcon, ShieldOffIcon } from 'lucide-react'
 import { memo, useId, useRef, useState } from 'react'
 import type { PermissionMode } from '../../../../../shared/approval'
 import type { RuntimeModeOption } from '../../adapters/composer-permissions'
 import { useT } from '../../../i18n'
-import { Button } from '../ui/button'
-import { Popover, PopoverPopup } from '../ui/popover'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
+import { Button, Popover, Toggle, ToggleGroup, TooltipTrigger, Tooltip, TooltipHint } from '../../../ui'
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from './ComposerControl'
 import { composerFloatingLayerProps } from './composerEventScope'
 import { runtimeModeIcons } from './runtimeModeConfig'
-import { cn } from '../../lib/utils'
+import { cx } from '../../../ui/cx'
+import './ComposerFooterControls.css'
 
 const fallbackRuntimeModeOption: RuntimeModeOption = {
   mode: 'danger',
@@ -44,64 +43,43 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComposerControl
-              ref={buttonRef}
-              data-composer-shortcut="composer.mode"
-              data-composer-permission-trigger="true"
-              data-permission-mode={props.runtimeMode}
-              size={size}
-              className={cn(
-                'aspect-square px-0 text-(--fg2) hover:text-foreground [&_svg[data-composer-control-icon]]:text-current',
-                size === 'xs' ? 'w-7 sm:w-6' : 'w-7'
-              )}
-              aria-label={toggleHint ? `${t('permission.title')}: ${fullLabel}. ${toggleHint}` : `${t('permission.title')}: ${fullLabel}`}
-              onClick={() => (props.onOpen ? props.onOpen() : props.onRuntimeModeChange(unrestricted ? 'danger' : 'all'))}
-            />
-          }
-        >
+      <TooltipTrigger>
+        <ComposerControl ref={buttonRef} data-composer-shortcut="composer.mode" data-composer-permission-trigger="true" data-permission-mode={props.runtimeMode} size={size} className={cx(
+                't3-permission-toggle',
+                size === 'xs' && 't3-permission-toggle--xs'
+              )} aria-label={toggleHint ? `${t('permission.title')}: ${fullLabel}. ${toggleHint}` : `${t('permission.title')}: ${fullLabel}`} onPress={() => (props.onOpen ? props.onOpen() : props.onRuntimeModeChange(unrestricted ? 'danger' : 'all'))}>
           <ComposerControlIcon icon={Icon} size={size} />
-        </TooltipTrigger>
-        <TooltipPopup side="top">
-          {toggleHint ? `${t('permission.title')}: ${fullLabel} · ${toggleHint}` : `${t('permission.title')}: ${fullLabel}`}
-        </TooltipPopup>
-      </Tooltip>
+        </ComposerControl>
+        <Tooltip><TooltipHint label={toggleHint ? `${t('permission.title')}: ${fullLabel} · ${toggleHint}` : `${t('permission.title')}: ${fullLabel}`} /></Tooltip>
+      </TooltipTrigger>
       <Popover
-        open={confirmOpen}
+        triggerRef={buttonRef}
+        isOpen={confirmOpen}
         onOpenChange={(next) => {
           if (!next) props.onCancelPending()
         }}
+        variant="panel"
+        placement="top start"
+        offset={8}
+        data-composer-permission-confirm="true"
+        {...composerFloatingLayerProps}
       >
-        <PopoverPopup
-          anchor={buttonRef}
-          side="top"
-          align="start"
-          sideOffset={8}
-          data-composer-permission-confirm="true"
-          {...composerFloatingLayerProps}
-        >
-          <div className="grid w-60 gap-2.5">
-            <div className="grid gap-0.5">
-              <div className="font-medium text-sm">{t('permission.confirmAll.title')}</div>
-              <div className="text-muted-foreground text-xs">{t('permission.confirmAll.desc')}</div>
+        <Dialog aria-label={t('permission.confirmAll.title')} >
+          <div className="t3-permission-confirm">
+            <div className="t3-permission-confirm__text">
+              <div className="t3-permission-confirm__title">{t('permission.confirmAll.title')}</div>
+              <div className="t3-permission-confirm__desc">{t('permission.confirmAll.desc')}</div>
             </div>
-            <div className="flex justify-end gap-1.5">
-              <Button size="xs" variant="ghost" onClick={props.onCancelPending}>
+            <div className="t3-permission-confirm__actions">
+              <Button data-t3-btn variant="ghost" onPress={props.onCancelPending}>
                 {t('ui.cancel')}
               </Button>
-              <Button
-                size="xs"
-                autoFocus
-                className="bg-(--stall) text-(--on-fill) hover:bg-(--stall)/90"
-                onClick={props.onConfirmPending}
-              >
+              <Button data-t3-btn variant="primary" onPress={props.onConfirmPending} autoFocus className="t3-permission-confirm__ok">
                 {t('permission.confirmAll.confirm')}
               </Button>
             </div>
           </div>
-        </PopoverPopup>
+        </Dialog>
       </Popover>
     </>
   )
@@ -120,65 +98,50 @@ export function ComposerPermissionsSection(props: {
     fallbackRuntimeModeOption
   const descriptionId = useId()
   return (
-    <div data-composer-permissions className="grid w-72 gap-1.5 px-2 py-1.5">
-      <div className="font-medium text-muted-foreground text-xs">{t('permission.title')}</div>
-      <MenuPrimitive.RadioGroup
+    <div data-composer-permissions className="t3-permissions">
+      <div className="t3-permissions__title">{t('permission.title')}</div>
+      <ToggleGroup
         aria-label={t('permission.title')}
-        value={props.runtimeMode}
-        onValueChange={(value: PermissionMode) => {
-          if (value !== props.runtimeMode) props.onRuntimeModeChange(value)
+        selectionMode="single"
+        disallowEmptySelection
+        selectedKeys={[props.runtimeMode]}
+        onSelectionChange={(keys) => {
+          const value = [...keys][0] as PermissionMode | undefined
+          if (value !== undefined && value !== props.runtimeMode) props.onRuntimeModeChange(value)
         }}
-        className="flex gap-0.5 rounded-lg bg-input/40 p-0.5"
-        onKeyDown={(event) => {
-          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-          const items = Array.from(
-            event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]')
-          )
-          const index = items.findIndex((item) => item === document.activeElement)
-          const next = items[index + (event.key === 'ArrowRight' ? 1 : -1)]
-          if (index < 0 || !next) return
-          event.preventDefault()
-          event.stopPropagation()
-          next.focus()
-        }}
+        className="t3-permissions__group"
       >
         {props.runtimeModeOptions.map((option) => {
           const OptionIcon = option.icon
           return (
-            <MenuPrimitive.RadioItem
+            <Toggle
               key={option.mode}
-              value={option.mode}
-              label={option.label}
+              id={option.mode}
               aria-label={option.label}
               aria-describedby={`${descriptionId}-${option.mode}`}
-              closeOnClick
-              onPointerEnter={() => setPreviewMode(option.mode)}
-              onPointerLeave={() => setPreviewMode(null)}
+              onHoverStart={() => setPreviewMode(option.mode)}
+              onHoverEnd={() => setPreviewMode(null)}
               onFocus={() => setPreviewMode(option.mode)}
               onBlur={() => setPreviewMode(null)}
-              className="flex h-6 flex-1 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none data-checked:bg-input/72 data-checked:text-foreground data-highlighted:text-foreground not-data-checked:data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="t3-permissions__option"
             >
-              <OptionIcon aria-hidden="true" className="size-3.5" />
-            </MenuPrimitive.RadioItem>
+              <OptionIcon aria-hidden="true" className="t3-icon--sm" />
+            </Toggle>
           )
         })}
-      </MenuPrimitive.RadioGroup>
+      </ToggleGroup>
       {props.runtimeModeOptions.map((option) => (
         <span key={option.mode} id={`${descriptionId}-${option.mode}`} className="sr-only">
           {option.description}
         </span>
       ))}
-      <div className="grid gap-0.5" aria-hidden="true">
+      <div className="t3-permissions__summary" aria-hidden="true">
         <span
-          className={
-            shownMode === props.runtimeMode
-              ? 'text-foreground text-sm'
-              : 'text-muted-foreground text-sm'
-          }
+          className={cx('t3-permissions__label', shownMode === props.runtimeMode && 't3-permissions__label--current')}
         >
           {shown.label}
         </span>
-        <span className="min-h-8 text-muted-foreground text-xs leading-4">{shown.description}</span>
+        <span className="t3-permissions__desc">{shown.description}</span>
       </div>
     </div>
   )

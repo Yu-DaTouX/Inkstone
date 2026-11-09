@@ -8,7 +8,7 @@ import {
   TriangleAlertIcon,
   Unlink2Icon
 } from 'lucide-react'
-import { cn } from '@/t3/lib/utils'
+import { cx } from '@/ui/cx'
 
 export const PullRequestGlyph = {
   pullRequest: GitPullRequestArrowIcon,
@@ -33,19 +33,19 @@ export interface PullRequestStatePresentation {
 
 export const PULL_REQUEST_STATE_PRESENTATION = {
   open: {
-    toneClassName: 'text-(--ok-t)',
+    toneClassName: 't3-status--done',
     Icon: PullRequestGlyph.pullRequest
   },
   draft: {
-    toneClassName: 'text-(--fg3)',
+    toneClassName: 't3-status--muted',
     Icon: PullRequestGlyph.draft
   },
   closed: {
-    toneClassName: 'text-(--fail-t)',
+    toneClassName: 't3-status--failed',
     Icon: PullRequestGlyph.closed
   },
   merged: {
-    toneClassName: 'text-(--data-3)',
+    toneClassName: 't3-status--merged',
     Icon: PullRequestGlyph.merged
   }
 } as const satisfies Record<PullRequestGlyphState, PullRequestStatePresentation>
@@ -68,7 +68,7 @@ export function PullRequestStateIcon(props: {
     return (
       <PullRequestGlyph.pullRequest
         aria-hidden
-        className={cn('size-3 shrink-0 text-muted-foreground', props.className)}
+        className={cx('t3-icon--xs t3-status--waiting', props.className)}
       />
     )
   }
@@ -77,6 +77,6 @@ export function PullRequestStateIcon(props: {
     ...(props.isDraft === undefined ? {} : { isDraft: props.isDraft })
   })
   return (
-    <presentation.Icon aria-hidden className={cn('size-3 shrink-0', presentation.toneClassName, props.className)} />
+    <presentation.Icon aria-hidden className={cx('t3-icon--xs', presentation.toneClassName, props.className)} />
   )
 }

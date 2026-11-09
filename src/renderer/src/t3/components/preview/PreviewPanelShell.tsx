@@ -15,8 +15,9 @@ import {
   type PreviewPanelInlineSize,
   usePreviewPanelInlineSize,
 } from "../../hooks/usePreviewPanelInlineSize";
-import { cn } from "../../lib/utils";
+import { cx } from "../../../ui/cx";
 import { RightPanelResizeHandle } from "./RightPanelResizeHandle";
+import "./PreviewPanelShell.css";
 
 export type PreviewPanelMode = "inline" | "sheet";
 
@@ -158,14 +159,14 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
       data-preview-panel-mode={props.mode}
       data-preview-panel-maximized={maximized ? "true" : "false"}
       data-rp-overlay={overlay ? "" : undefined}
-      className={cn(
-        "t3-rp relative flex h-full min-h-0 min-w-0 max-w-full flex-col self-stretch",
-        !docked && "bg-background",
-        isInline ? (docked ? "z-(--z-panel) shrink-0" : "flex-1") : "w-full",
-        docked && "w-[min(var(--rp-w),var(--rp-dock,var(--rp-w)))]",
-        docked && collapsible && "transition-[width] duration-[var(--panel-dur,var(--dur-sheet))] ease-(--ease)",
-        docked && collapsible && open && "starting:w-0",
-        docked && collapsible && !open && "pointer-events-none w-0",
+      className={cx(
+        "t3-rp",
+        !docked && "t3-rp--floating",
+        !isInline && "t3-rp--block",
+        isInline && !docked && "t3-rp--inline",
+        docked && "t3-rp--docked",
+        docked && collapsible && "t3-rp--collapsible",
+        docked && collapsible && !open && "t3-rp--collapsed",
       )}
       style={
         isInline
@@ -185,24 +186,22 @@ function PreviewPanelShellFrame(props: PreviewPanelShellProps & { inlineSize: Pr
           min={minWidth}
           max={maxWidth}
           onKeyDown={onHandleKeyDown}
-          className="left-[calc(min(var(--rp-w),var(--rp-dock,var(--rp-w)))-var(--rp-w)-0.25rem)]"
+          className="t3-rp__resize"
         />
       ) : null}
       <div
         data-rp-surface
-        className={cn(
-          "flex h-full min-h-0 flex-col",
-          docked
-            ? cn("absolute inset-y-0 right-0 border-l border-border", !maximized && "w-(--rp-w)")
-            : "w-full",
-          docked && collapsible && "transition-[translate] duration-[var(--panel-dur,var(--dur-sheet))] ease-(--ease)",
-          docked && collapsible && open && "translate-x-0 starting:translate-x-(--rp-w)",
-          docked && collapsible && !open && "translate-x-(--rp-w)",
+        className={cx(
+          "t3-rp__surface",
+          docked && "t3-rp__surface--docked",
+          docked && maximized && "t3-rp__surface--maximized",
+          docked && collapsible && "t3-rp__surface--slides",
+          docked && collapsible && (open ? "t3-rp__surface--open" : "t3-rp__surface--closed"),
         )}
         style={maximized && docked && props.span !== undefined ? { width: `${Math.floor(props.span)}px` } : undefined}
       >
-        <div className={cn("h-full min-h-0 w-full", collapsible && "overflow-clip")}>
-          <div className="flex h-full min-h-0 min-w-0 flex-col">{props.children}</div>
+        <div className={cx("t3-rp__body", collapsible && "t3-rp__body--clip")}>
+          <div className="t3-rp__content">{props.children}</div>
         </div>
       </div>
     </div>

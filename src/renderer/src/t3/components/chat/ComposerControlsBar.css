@@ -1,0 +1,36 @@
+@layer features {
+  .t3-controls-bar__block {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+    width: max-content;
+    min-width: max-content;
+  }
+  [data-chat-provider-model-picker] + .t3-controls-bar__block--traits {
+    margin-inline-start: -0.125rem;
+  }
+  .t3-controls-bar__block--hidden {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .t3-controls-bar__block--icon-only [data-composer-control-compact-icon] {
+    position: relative;
+    visibility: inherit;
+  }
+  .t3-controls-bar__block--icon-only [data-composer-control-label] {
+    position: absolute;
+    visibility: hidden;
+    width: max-content;
+    max-width: none;
+    pointer-events: none;
+  }
+  .t3-controls-bar__overflow {
+    flex-shrink: 0;
+    min-width: 0;
+  }
+  .t3-controls-bar__setup {
+    flex-shrink: 0;
+  }
+}

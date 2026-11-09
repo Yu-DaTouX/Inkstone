@@ -690,9 +690,9 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
 
   const scopeMenu = source.changes ? (
     <MenuTrigger>
-      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={repo?.root} className="changes-pane__scope h-6 gap-1 rounded-[var(--control-radius)] px-2 text-xs text-secondary-label">
+      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={repo?.root} className="changes-pane__scope">
         <span className="changes-pane__clip">{scopeLabels[scope.kind]}</span>
-        <ChevronDown size={12} aria-hidden="true" className="shrink-0" />
+        <ChevronDown size={12} aria-hidden="true" />
       </Button>
       <Popover placement="bottom end">
         <Menu
@@ -724,7 +724,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
         ref={branchRef}
         size="sm"
         variant="ghost"
-        className="changes-pane__branch h-6 gap-1 rounded-[var(--control-radius)] px-2 text-xs text-foreground"
+        className="changes-pane__branch"
         icon={<GitBranch size={14} />}
         trailingIcon={<ChevronDown size={12} />}
         aria-label={t('gitflow.branch.trigger', { branch: branchLabel })}
@@ -909,17 +909,17 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     <>
       {scopeMenu ? (
         <PaneTitle>
-          <span className="changes-pane__title min-w-0 gap-1">
+          <span className="changes-pane__title">
             {branchButton}
             {syncMark}
             {scopeMenu}
             {countLabel ? (
-              <span className="changes-pane__count text-xs text-secondary-label" data-testid="changes-stats">
+              <span className="changes-pane__count" data-testid="changes-stats">
                 {countLabel}
               </span>
             ) : null}
             {!fileList.shown && shownItems.length > 0 ? (
-              <span className="changes-pane__count text-xs text-secondary-label" data-testid="changes-viewed-head">
+              <span className="changes-pane__count" data-testid="changes-viewed-head">
                 {t('changes.viewedOf', { viewed: viewedPaths.size, total: shownItems.length })}
               </span>
             ) : null}

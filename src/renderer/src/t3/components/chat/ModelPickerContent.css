@@ -1,0 +1,118 @@
+@layer features {
+  .t3-model-picker {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    width: 100vw;
+    max-width: 25rem;
+    max-height: 27rem;
+    overflow: hidden;
+  }
+  .t3-model-picker__main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    background: color-mix(in oklab, var(--hover-main) 40%, transparent);
+  }
+  .t3-model-picker__main--sided {
+    border-left: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
+  }
+  .t3-model-picker__list-frame {
+    position: relative;
+    min-height: 0;
+    padding-right: 1px;
+    overflow: hidden;
+  }
+  .t3-model-picker__list-frame--filled {
+    flex: 1;
+  }
+  .t3-model-picker__list-frame--empty {
+    height: 0;
+  }
+  .t3-model-picker__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    height: 100%;
+    padding: 0.375rem 1px 0.375rem 0.5rem;
+    overscroll-behavior-y: contain;
+  }
+  .t3-model-picker__list::-webkit-scrollbar-track {
+    margin-block: 0.5rem;
+  }
+  .t3-model-picker__group {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.375rem;
+    flex-shrink: 0;
+    height: 1.75rem;
+    padding: 0 0.5rem 0.25rem;
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    font-weight: 500;
+  }
+  .t3-model-picker__group-star {
+    fill: currentcolor;
+  }
+  .t3-model-picker__group-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .t3-model-picker__legacy {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 2.5rem;
+    color: var(--root-fg2);
+    cursor: pointer;
+  }
+  .t3-model-picker__legacy-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.875rem;
+    line-height: 1.429;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .t3-model-picker__legacy-chevron {
+    transition: rotate var(--dur-quick);
+  }
+  .t3-model-picker__legacy-chevron--open {
+    rotate: 90deg;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .t3-model-picker__legacy-chevron {
+      transition: none;
+    }
+  }
+  .t3-model-picker__setup {
+    flex-shrink: 0;
+    max-height: 11rem;
+    padding: 0.5rem;
+    overflow-y: auto;
+    border-top: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
+  }
+  .t3-model-picker__setup-item {
+    padding: 0.375rem 0.25rem;
+    font-size: 0.75rem;
+    line-height: 1.333;
+  }
+  .t3-model-picker__setup-message {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    color: var(--root-fg2);
+  }
+  .t3-model-picker__setup-action {
+    margin-top: 0.25rem;
+  }
+  .t3-model-picker__empty:empty {
+    height: 0;
+  }
+}

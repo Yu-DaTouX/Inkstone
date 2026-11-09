@@ -38,8 +38,8 @@ export function ProjectFilter({ value, projects, onChange, onManage }: Props): R
         aria-haspopup="dialog"
         aria-expanded={open}
         data-testid="v3-project-filter"
-        onClick={(event) => {
-          anchorRef.current = event.currentTarget
+        onPress={(event) => {
+          anchorRef.current = event.target as HTMLElement
           setOpen(true)
         }}
       >

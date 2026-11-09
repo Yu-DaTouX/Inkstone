@@ -11,10 +11,9 @@ import {
 import { useEffect, useId, useState } from 'react'
 import { useT } from '@/i18n'
 import { useQueueAdapter, type QueueRow } from '@/t3/adapters/composer-queue'
-import { Button, InlineButton } from '@/t3/components/ui/button'
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '@/t3/components/ui/menu'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '@/t3/components/ui/tooltip'
-import { cn } from '@/t3/lib/utils'
+import { Button, IconButton, Focusable, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, TooltipTrigger, Tooltip, TooltipHint } from '../../../ui'
+import { cx } from '@/ui/cx'
+import './QueuedRunsControl.css'
 
 const QUEUE_COLLAPSED_ROWS = 2
 
@@ -60,149 +59,103 @@ export function QueuedRunsControl({ className }: { className?: string }) {
   const rowActions = (row: QueueRow) =>
     row.kind === 'pending' ? (
       <>
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex shrink-0" />}>
-            <Button
-              data-testid="pending-follow"
-              onClick={() => queue.sendNow(row)}
-              size="xs"
-              variant="ghost-muted"
-            >
+        <TooltipTrigger>
+          <Focusable excludeFromTabOrder><span className="t3-queue__action">
+            <Button data-t3-btn variant="ghost" onPress={() => queue.sendNow(row)} data-testid="pending-follow">
               <ArrowUpIcon />
               {queue.running ? t('queue.queueIt') : t('queue.sendNow')}
             </Button>
-          </TooltipTrigger>
-          <TooltipPopup>
-            {queue.running ? t('queue.queueItTip') : t('queue.sendNowTip')}
-          </TooltipPopup>
-        </Tooltip>
+          </span></Focusable>
+          <Tooltip><TooltipHint label={queue.running ? t('queue.queueItTip') : t('queue.sendNowTip')} /></Tooltip>
+        </TooltipTrigger>
         {queue.running ? (
-          <Tooltip>
-            <TooltipTrigger render={<span className="flex shrink-0" />}>
-              <Button
-                data-testid="pending-steer"
-                onClick={() => queue.steer(row)}
-                size="icon-xs"
-                variant="ghost-muted"
-                aria-label={t('queue.steerNow')}
-              >
+          <TooltipTrigger>
+            <Focusable excludeFromTabOrder><span className="t3-queue__action">
+              <IconButton data-t3-btn variant="ghost" size="md" onPress={() => queue.steer(row)} data-testid="pending-steer" aria-label={t('queue.steerNow')}>
                 <CornerUpRightIcon />
-              </Button>
-            </TooltipTrigger>
-            <TooltipPopup>{t('queue.steerNowTip')}</TooltipPopup>
-          </Tooltip>
+              </IconButton>
+            </span></Focusable>
+            <Tooltip><TooltipHint label={t('queue.steerNowTip')} /></Tooltip>
+          </TooltipTrigger>
         ) : null}
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex shrink-0" />}>
-            <Button
-              data-testid="pending-restore"
-              onClick={() => queue.restore(row)}
-              size="icon-xs"
-              variant="ghost-muted"
-              aria-label={t('queue.restore')}
-            >
+        <TooltipTrigger>
+          <Focusable excludeFromTabOrder><span className="t3-queue__action">
+            <IconButton data-t3-btn variant="ghost" size="md" onPress={() => queue.restore(row)} data-testid="pending-restore" aria-label={t('queue.restore')}>
               <Undo2Icon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipPopup>{t('queue.restoreTip')}</TooltipPopup>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex shrink-0" />}>
-            <Button
-              data-testid="pending-discard"
-              onClick={() => queue.discard(row)}
-              size="icon-xs"
-              variant="ghost"
-              aria-label={t('queue.delete')}
-            >
+            </IconButton>
+          </span></Focusable>
+          <Tooltip><TooltipHint label={t('queue.restoreTip')} /></Tooltip>
+        </TooltipTrigger>
+        <TooltipTrigger>
+          <Focusable excludeFromTabOrder><span className="t3-queue__action">
+            <IconButton data-t3-btn variant="ghost" size="md" onPress={() => queue.discard(row)} data-testid="pending-discard" aria-label={t('queue.delete')}>
               <XIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipPopup>{t('queue.deleteTip')}</TooltipPopup>
-        </Tooltip>
+            </IconButton>
+          </span></Focusable>
+          <Tooltip><TooltipHint label={t('queue.deleteTip')} /></Tooltip>
+        </TooltipTrigger>
       </>
     ) : (
       <>
         {row.canSteer ? (
-          <Tooltip>
-            <TooltipTrigger render={<span className="flex shrink-0" />}>
-              <Button
-                data-testid="queue-steer"
-                onClick={() => queue.steer(row)}
-                size="xs"
-                variant="ghost-muted"
-              >
+          <TooltipTrigger>
+            <Focusable excludeFromTabOrder><span className="t3-queue__action">
+              <Button data-t3-btn variant="ghost" onPress={() => queue.steer(row)} data-testid="queue-steer">
                 <CornerUpRightIcon />
                 {t('queue.steer')}
               </Button>
-            </TooltipTrigger>
-            <TooltipPopup>{t('queue.steerTip')}</TooltipPopup>
-          </Tooltip>
-        ) : null}
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex shrink-0" />}>
-            <Button
-              data-testid="queue-edit-start"
-              onClick={() => startEdit(row)}
-              size="icon-xs"
-              variant="ghost-muted"
-              aria-label={t('queue.edit')}
-            >
-              <PencilIcon />
-            </Button>
+            </span></Focusable>
+            <Tooltip><TooltipHint label={t('queue.steerTip')} /></Tooltip>
           </TooltipTrigger>
-          <TooltipPopup>{t('queue.editTip')}</TooltipPopup>
-        </Tooltip>
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button
-                data-testid="queue-actions"
-                size="icon-xs"
-                variant="ghost-muted"
-                aria-label={t('queue.actions')}
-              />
-            }
-          >
+        ) : null}
+        <TooltipTrigger>
+          <Focusable excludeFromTabOrder><span className="t3-queue__action">
+            <IconButton data-t3-btn variant="ghost" size="md" onPress={() => startEdit(row)} data-testid="queue-edit-start" aria-label={t('queue.edit')}>
+              <PencilIcon />
+            </IconButton>
+          </span></Focusable>
+          <Tooltip><TooltipHint label={t('queue.editTip')} /></Tooltip>
+        </TooltipTrigger>
+        <MenuTrigger>
+          <IconButton data-t3-btn variant="ghost" size="md" data-testid="queue-actions" aria-label={t('queue.actions')}>
             <EllipsisVerticalIcon />
-          </MenuTrigger>
-          <MenuPopup align="end" side="top" sideOffset={4}>
-            <MenuItem
-              disabled={!row.canMoveUp}
-              onClick={() => queue.move(row, 'up')}
-              density="touch"
+          </IconButton>
+          <Popover placement="top end" offset={4}>
+            <Menu
+              aria-label={t('queue.actions')}
+              autoFocus="first"
+              disabledKeys={[...(row.canMoveUp ? [] : ['up']), ...(row.canMoveDown ? [] : ['down'])]}
+              onAction={(key) => {
+                if (key === 'up') queue.move(row, 'up')
+                else if (key === 'down') queue.move(row, 'down')
+                else if (key === 'retract') queue.retract(row)
+                else if (key === 'delete') queue.drop(row)
+              }}
             >
-              {t('queue.moveUp')}
-            </MenuItem>
-            <MenuItem
-              disabled={!row.canMoveDown}
-              onClick={() => queue.move(row, 'down')}
-              density="touch"
-            >
-              {t('queue.moveDown')}
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem data-testid="queue-retract" onClick={() => queue.retract(row)} density="touch">
-              {t('queue.retract')}
-            </MenuItem>
-            <MenuItem
-              data-testid="queue-delete"
-              onClick={() => queue.drop(row)}
-              variant="destructive"
-              density="touch"
-            >
-              {t('queue.delete')}
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
+              <MenuItem id="up" textValue={t('queue.moveUp')}>
+                {t('queue.moveUp')}
+              </MenuItem>
+              <MenuItem id="down" textValue={t('queue.moveDown')}>
+                {t('queue.moveDown')}
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem id="retract" textValue={t('queue.retract')} data-testid="queue-retract">
+                {t('queue.retract')}
+              </MenuItem>
+              <MenuItem id="delete" textValue={t('queue.delete')} tone="danger" data-testid="queue-delete">
+                {t('queue.delete')}
+              </MenuItem>
+            </Menu>
+          </Popover>
+        </MenuTrigger>
       </>
     )
 
   return (
     <section
       aria-label={t('queue.count', { n: queue.total })}
-      className={cn(
-        'relative mx-auto flex w-full max-w-(--chat-content-max-width) flex-col gap-2 pb-4',
+      className={cx(
+        't3-queue',
         className
       )}
       data-testid="queue-stack"
@@ -212,7 +165,7 @@ export function QueuedRunsControl({ className }: { className?: string }) {
       <span aria-live="polite" className="sr-only">
         {t('queue.count', { n: queue.total })}
       </span>
-      <ol className="flex flex-col items-end gap-3" id={listId} data-testid="queue-list">
+      <ol className="t3-queue__list" id={listId} data-testid="queue-list">
         {visibleRows.map((row, position) => {
           const isEditing = row.id === editingId
           return (
@@ -220,17 +173,15 @@ export function QueuedRunsControl({ className }: { className?: string }) {
               aria-current={isEditing ? 'true' : undefined}
               aria-posinset={position + 1}
               aria-setsize={queue.total}
-              className="group/queued flex w-full flex-col items-end gap-1 transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none"
+              className="t3-queue__item"
               data-kind={row.kind}
               data-testid={row.kind === 'pending' ? 'queue-pending' : 'queue-row'}
               key={row.id}
             >
               <div
-                className={cn(
-                  'flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed px-3 py-2 text-sm',
-                  isEditing
-                    ? 'w-full max-w-full border-primary/60 text-foreground'
-                    : 'border-muted-foreground/40 text-muted-foreground'
+                className={cx(
+                  't3-queue__bubble',
+                  isEditing && 't3-queue__bubble--editing'
                 )}
                 title={isEditing ? undefined : row.text}
               >
@@ -239,7 +190,7 @@ export function QueuedRunsControl({ className }: { className?: string }) {
                     <textarea
                       aria-label={t('queue.editTip')}
                       autoFocus
-                      className="block max-h-40 w-full resize-none rounded-lg bg-input/40 px-2 py-1.5 text-foreground text-sm leading-relaxed outline-none field-sizing-content placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      className="t3-queue__editor"
                       data-testid="queue-edit-input"
                       onChange={(event) => setDraft(event.target.value)}
                       onKeyDown={(event) => {
@@ -258,22 +209,11 @@ export function QueuedRunsControl({ className }: { className?: string }) {
                       spellCheck={false}
                       value={draft}
                     />
-                    <div className="mt-1 flex items-center justify-end gap-1">
-                      <Button
-                        data-testid="queue-edit-cancel"
-                        onClick={closeEdit}
-                        size="xs"
-                        variant="ghost"
-                      >
+                    <div className="t3-queue__editor-actions">
+                      <Button data-t3-btn variant="ghost" onPress={closeEdit} data-testid="queue-edit-cancel">
                         {t('queue.editCancel')}
                       </Button>
-                      <Button
-                        data-testid="queue-edit-save"
-                        disabled={!draft.trim()}
-                        onClick={() => commitEdit(editingRow)}
-                        size="xs"
-                        variant="default"
-                      >
+                      <Button data-t3-btn variant="primary" isDisabled={!draft.trim()} onPress={() => commitEdit(editingRow)} data-testid="queue-edit-save">
                         {t('queue.editSave')}
                       </Button>
                     </div>
@@ -281,37 +221,37 @@ export function QueuedRunsControl({ className }: { className?: string }) {
                 ) : (
                   <>
                     {row.imageCount > 0 ? (
-                      <span className="mb-1 flex flex-wrap items-center gap-1">
+                      <span className="t3-queue__thumbs">
                         {row.images.map((image, index) => (
                           <span
-                            className="size-8 overflow-hidden rounded-md border border-border/70 bg-background"
+                            className="t3-queue__thumb"
                             key={`${row.id}-img-${index}`}
                           >
-                            <img alt="" className="size-full object-cover" src={thumbUrl(image)} />
+                            <img alt="" src={thumbUrl(image)} />
                           </span>
                         ))}
                       </span>
                     ) : null}
                     {row.text ? (
-                      <p className="whitespace-pre-wrap wrap-anywhere">{row.text}</p>
+                      <p className="t3-queue__text">{row.text}</p>
                     ) : null}
                   </>
                 )}
               </div>
-              <div className="flex items-center gap-0.5 pe-1 text-xs text-muted-foreground">
+              <div className="t3-queue__meta">
                 {row.kind === 'pending' ? (
-                  <span className="px-1 text-2xs">{t('queue.hold')}</span>
+                  <span className="t3-queue__tag">{t('queue.hold')}</span>
                 ) : null}
                 {row.kind === 'steering' ? (
-                  <span className="px-1 text-2xs">{t('queue.inserting')}</span>
+                  <span className="t3-queue__tag">{t('queue.inserting')}</span>
                 ) : null}
                 {row.imageCount > 0 ? (
-                  <span className="flex items-center gap-1 px-1 text-2xs">
-                    <ImageIcon aria-hidden className="size-3" />
+                  <span className="t3-queue__tag">
+                    <ImageIcon aria-hidden className="t3-icon--xs" />
                     {t('queue.images', { n: row.imageCount })}
                   </span>
                 ) : null}
-                <span className="me-1 flex items-center gap-0.5 px-1 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/queued:opacity-100 pointer-coarse:opacity-100">
+                <span className="t3-queue__actions">
                   {rowActions(row)}
                 </span>
               </div>
@@ -320,39 +260,41 @@ export function QueuedRunsControl({ className }: { className?: string }) {
         })}
       </ol>
       {queue.total > 1 ? (
-        <div className="flex items-center gap-3 self-end pe-1 text-xs pointer-coarse:[&_[data-slot=inline-button]]:relative pointer-coarse:[&_[data-slot=inline-button]]:after:absolute pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-x-1.5 pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-y-3.5">
+        <div className="t3-queue__footer">
           {collapsible ? (
-            <InlineButton
+            <Button data-t3-btn
+              variant="plain"
+              size="sm"
               aria-controls={listId}
               aria-expanded={showAll}
               data-testid="queue-toggle"
-              onClick={() => setShowAll((value) => !value)}
-              onPointerDown={(event) => event.preventDefault()}
-              tone="muted"
+              onPress={() => setShowAll((value) => !value)}
+              preventFocusOnPress
             >
               {showAll
                 ? t('composer.t3.queue.showLess')
                 : t('composer.t3.queue.showAll', { n: queue.total })}
               <ChevronDownIcon
                 aria-hidden
-                className={cn(
-                  'size-3.5 transition-transform duration-150 motion-reduce:transition-none',
-                  showAll && 'rotate-180'
+                className={cx(
+                  't3-icon--sm t3-queue__chevron',
+                  showAll && 't3-queue__chevron--open'
                 )}
               />
-            </InlineButton>
+            </Button>
           ) : null}
-          <InlineButton
+          <Button data-t3-btn
+            variant="plain"
+            size="sm"
             data-testid="queue-clear-all"
-            onClick={() => {
+            onPress={() => {
               closeEdit()
               queue.clearAll()
             }}
-            onPointerDown={(event) => event.preventDefault()}
-            tone="muted"
+            preventFocusOnPress
           >
             {t('queue.clearAll')}
-          </InlineButton>
+          </Button>
         </div>
       ) : null}
     </section>

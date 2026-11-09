@@ -1,0 +1,62 @@
+@layer features {
+  .t3-send,
+  .t3-stop {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: var(--r-full);
+  }
+  .t3-send svg,
+  .t3-stop svg {
+    pointer-events: none;
+  }
+  .t3-send {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: var(--shadow-lift);
+    transition: scale var(--dur-quick), box-shadow var(--dur-quick), background-color var(--dur-quick);
+  }
+  .t3-send:hover {
+    scale: 1.05;
+    background: var(--message-action-hover);
+  }
+  .t3-send:enabled {
+    cursor: pointer;
+    box-shadow: 0 1px var(--ctl-hi);
+  }
+  .t3-send:active {
+    box-shadow: 0 1px var(--ctl-press);
+  }
+  .t3-send:disabled {
+    background: color-mix(in oklab, var(--fg) 12%, transparent);
+    color: var(--root-fg2);
+    box-shadow: none;
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  .t3-send:disabled:hover {
+    scale: 1;
+  }
+  .t3-stop {
+    flex-shrink: 0;
+    background: color-mix(in oklab, var(--fail) 90%, transparent);
+    color: var(--on-fill);
+    box-shadow: 0 1px var(--ctl-hi), 0 1px 2px color-mix(in oklab, var(--fail) 24%, transparent);
+    cursor: pointer;
+    transition: background-color var(--dur-quick);
+  }
+  .t3-stop:hover {
+    background: var(--fail);
+  }
+  .t3-stop:active {
+    box-shadow: 0 1px var(--ctl-press);
+  }
+  .t3-send-slot {
+    display: inline-flex;
+  }
+}

@@ -1,51 +1,52 @@
-import { memo, useRef, type ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import { GaugeIcon } from 'lucide-react'
 import type { ComposerTraitsAdapter } from '../../adapters/composer-thinking'
-import { cn } from '../../lib/utils'
-import {
-  Menu,
-  MenuGroup,
-  MenuPopup,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuSeparator as MenuDivider,
-  MenuTrigger
-} from '../ui/menu'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
+import { cx } from '../../../ui/cx'
+import { Dialog, DialogTrigger } from 'react-aria-components'
+import { ListBox, ListBoxItem, Popover, Separator, Tooltip, TooltipHint, TooltipTrigger } from '../../../ui'
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from './ComposerControl'
 import { EffortSlider } from './EffortSlider'
-import { focusRequestedPermission } from './composerEventScope'
+import { ComposerMenuCloseProvider, useComposerMenuClose } from './composerMenuClose'
 import { useComposerMenuState } from './useComposerMenuState'
+import './ComposerControlMenus.css'
 
 export function TraitsMenuContent({ traits }: { traits: ComposerTraitsAdapter }) {
   const { descriptor } = traits
+  const closeMenu = useComposerMenuClose()
   return (
-    <MenuGroup>
-      <div className="px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs">
+    <div role="group" aria-label={descriptor.label}>
+      <div className="t3-traits__title">
         {descriptor.label}
       </div>
-      <MenuRadioGroup
-        value={descriptor.currentValue ?? ''}
-        onValueChange={(value) => {
-          if (typeof value === 'string') traits.select(value)
+      <ListBox
+        aria-label={descriptor.label}
+        selectionMode="single"
+        disallowEmptySelection
+        selectedKeys={descriptor.currentValue ? [descriptor.currentValue] : []}
+        onSelectionChange={(keys) => {
+          const next = [...keys][0]
+          if (next === undefined) return
+          traits.select(String(next))
+          closeMenu()
         }}
+        className="t3-traits__list"
       >
         {descriptor.options.map((option) => (
-          <MenuRadioItem key={option.id} value={option.id} hideIndicator closeOnClick>
-            <span className="flex w-full min-w-0 flex-col">
-              <span className="flex min-w-0 items-center gap-1">
-                <span className="min-w-0 truncate">{option.label}</span>
+          <ListBoxItem key={option.id} id={option.id} textValue={option.label}>
+            <span className="t3-traits__option">
+              <span className="t3-traits__option-head">
+                <span className="t3-traits__option-label">{option.label}</span>
               </span>
               {option.description ? (
-                <span className="max-w-56 text-pretty text-muted-foreground/80 text-xs">
+                <span className="t3-traits__option-desc">
                   {option.description}
                 </span>
               ) : null}
             </span>
-          </MenuRadioItem>
+          </ListBoxItem>
         ))}
-      </MenuRadioGroup>
-    </MenuGroup>
+      </ListBox>
+    </div>
   )
 }
 
@@ -71,7 +72,6 @@ export const TraitsPicker = memo(function TraitsPicker({
   expanded?: boolean
 }) {
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled || traits.busy)
-  const triggerRef = useRef<HTMLButtonElement>(null)
   const { display } = traits
   const triggerLabel = display.label
 
@@ -90,43 +90,37 @@ export const TraitsPicker = memo(function TraitsPicker({
   }
 
   return (
-    <Menu
-      open={isMenuOpen}
+    <DialogTrigger
+      isOpen={isMenuOpen}
       onOpenChange={(open) => {
         setIsMenuOpen(open && !disabled && !traits.busy)
       }}
-      onOpenChangeComplete={(open) => focusRequestedPermission(open, triggerRef.current)}
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <MenuTrigger
-              render={
-                <ComposerControl
-                  ref={triggerRef}
-                  disabled={disabled || traits.busy}
-                  aria-label={triggerLabel}
-                  size={size}
-                  className={cn('shrink-0 whitespace-nowrap', triggerClassName)}
-                />
-              }
-            />
-          }
+      <TooltipTrigger>
+        <ComposerControl
+          isDisabled={disabled || traits.busy}
+          aria-label={triggerLabel}
+          size={size}
+          className={cx('t3-traits__trigger', triggerClassName)}
         >
           <ComposerControlIcon icon={GaugeIcon} size={size} />
           <span data-composer-control-label>{triggerLabel}</span>
-        </TooltipTrigger>
-        <TooltipPopup side="top">{triggerLabel}</TooltipPopup>
-      </Tooltip>
-      <MenuPopup align="start">
-        <TraitsMenuContent traits={traits} />
-        {extraMenuContent ? (
-          <>
-            <MenuDivider />
-            {extraMenuContent}
-          </>
-        ) : null}
-      </MenuPopup>
-    </Menu>
+        </ComposerControl>
+        <Tooltip><TooltipHint label={triggerLabel} /></Tooltip>
+      </TooltipTrigger>
+      <Popover placement="top start">
+        <Dialog aria-label={triggerLabel} className="t3-traits__dialog">
+          <ComposerMenuCloseProvider value={() => setIsMenuOpen(false)}>
+          <TraitsMenuContent traits={traits} />
+          {extraMenuContent ? (
+            <>
+              <Separator />
+              {extraMenuContent}
+            </>
+          ) : null}
+          </ComposerMenuCloseProvider>
+        </Dialog>
+      </Popover>
+    </DialogTrigger>
   )
 })

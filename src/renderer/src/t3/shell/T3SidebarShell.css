@@ -1,0 +1,50 @@
+@layer features {
+  .t3-sidebar-shell {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    color: var(--fg);
+  }
+  .t3-sidebar-shell__close {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  .t3-sidebar-shell__status {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .t3-sidebar-shell__header {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 0 var(--sidebar-content-inset) 0.25rem;
+  }
+  .t3-sidebar-shell__scroll {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0 var(--sidebar-content-inset) 0.5rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .t3-sidebar-shell__empty {
+    padding: 1.5rem 0.5rem;
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    text-align: center;
+  }
+  .t3-sidebar-shell__results {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .t3-sidebar-shell__threads {
+    padding-bottom: 0.25rem;
+  }
+}

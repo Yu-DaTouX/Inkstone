@@ -1,0 +1,14 @@
+@layer features {
+  .t3-sidebar__shelf-header--last {
+    margin-top: auto;
+  }
+  .t3-sidebar__list {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .t3-sidebar__list--filled {
+    flex: 1;
+  }
+}

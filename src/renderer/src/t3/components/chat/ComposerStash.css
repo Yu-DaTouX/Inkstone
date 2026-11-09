@@ -1,0 +1,115 @@
+@layer features {
+  .t3-stash-badge {
+    margin-left: auto;
+  }
+  .t3-stash-badge__row {
+    color: var(--root-fg2);
+    transition: color var(--dur-base), background-color var(--dur-base), border-color var(--dur-base);
+  }
+  .t3-stash-badge__row:hover,
+  .t3-stash-badge__row[aria-expanded="true"] {
+    color: var(--fg);
+  }
+  .t3-stash-badge__row[aria-expanded="true"] {
+    pointer-events: none;
+  }
+  .t3-stash-badge__row--pulse-a {
+    animation: t3-stash-pulse-row 1400ms;
+  }
+  .t3-stash-badge__row--pulse-b {
+    animation: t3-stash-pulse-row-alt 1400ms;
+  }
+  .t3-stash-badge__count {
+    color: var(--root-fg2);
+  }
+  .t3-stash-badge__count--pulse {
+    animation: t3-stash-pulse-count 1400ms step-start;
+    transition: opacity 180ms, translate 180ms;
+  }
+  @keyframes t3-stash-pulse-row {
+    from,
+    85.7% {
+      color: var(--fg);
+    }
+  }
+  @keyframes t3-stash-pulse-row-alt {
+    from,
+    85.7% {
+      color: var(--fg);
+    }
+  }
+  @keyframes t3-stash-pulse-count {
+    from,
+    85.7% {
+      color: var(--accent);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .t3-stash-badge__count--pulse {
+      transition: none;
+    }
+  }
+  .t3-stash-menu__muted {
+    color: var(--root-fg2);
+  }
+  .t3-stash-menu__row {
+    position: relative;
+    border-radius: var(--r-xs);
+  }
+  .t3-stash-menu__row--active {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .t3-stash-menu__restore {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: color-mix(in oklab, var(--fg) 80%, transparent);
+    cursor: pointer;
+    outline: none;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .t3-stash-menu__restore::before {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--r-xs);
+    content: "";
+  }
+  .t3-stash-menu__restore:focus-visible::before {
+    box-shadow: var(--ring-selected);
+  }
+  .t3-stash-menu__thumbs {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+  }
+  .t3-stash-menu__thumb {
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
+    border-radius: 0.25rem;
+    object-fit: cover;
+  }
+  .t3-stash-menu__files {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--root-fg2);
+  }
+  .t3-stash-menu__time {
+    flex-shrink: 0;
+    color: var(--root-fg2);
+    font-variant-numeric: tabular-nums;
+  }
+  @media (width < 40rem) {
+    .t3-stash-menu__time {
+      display: none;
+    }
+  }
+  .t3-stash-menu__dismiss {
+    z-index: 10;
+  }
+}

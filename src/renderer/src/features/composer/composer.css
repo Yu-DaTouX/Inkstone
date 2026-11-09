@@ -978,7 +978,7 @@
     flex-direction: column;
     min-width: 0;
     max-width: calc(100vw - var(--s-32));
-    max-height: var(--available-height);
+    max-height: inherit;
   }
 
   .composer-model-menu__body {

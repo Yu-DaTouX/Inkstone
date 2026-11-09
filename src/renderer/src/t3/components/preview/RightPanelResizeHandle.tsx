@@ -1,5 +1,6 @@
-import { cn } from "../../lib/utils";
+import { cx } from "../../../ui/cx";
 import type { ResizableWidthHandlers } from "../../hooks/useResizableWidth";
+import "./RightPanelResizeHandle.css";
 
 interface Props {
   handlers: ResizableWidthHandlers;
@@ -33,15 +34,15 @@ export function RightPanelResizeHandle({
       tabIndex={onKeyDown ? 0 : undefined}
       onKeyDown={onKeyDown}
       onDoubleClick={onDoubleClick}
-      className={cn(
-        "group absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize select-none outline-none",
+      className={cx(
+        "t3-rp-handle",
         className,
       )}
       {...handlers}
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-transparent transition-colors duration-150 group-hover:bg-(--line2) group-focus-visible:bg-(--accent) group-active:bg-(--accent)"
+        className="t3-rp-handle__grip"
       />
     </div>
   );

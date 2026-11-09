@@ -1,3 +1,5 @@
+import "./ComposerFrame.css";
+
 export function ComposerNotice({
   message,
   tone = "destructive",
@@ -12,11 +14,7 @@ export function ComposerNotice({
   return (
     <p
       role="alert"
-      className={
-        tone === "warning"
-          ? "px-3 pb-2 text-xs text-warning-foreground sm:px-4"
-          : "px-3 pb-2 text-xs text-destructive sm:px-4"
-      }
+      className={tone === "warning" ? "t3-prompt-error t3-prompt-error--warning" : "t3-prompt-error"}
       data-chat-composer-validation={slot}
     >
       {message}

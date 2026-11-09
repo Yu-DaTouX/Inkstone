@@ -4,11 +4,11 @@ import { memo, useLayoutEffect, useRef } from "react";
 import type { SlashCommand } from "../../../../../shared/ipc";
 import { useT } from "../../../i18n";
 import { InlineImage } from "../../../ui/InlineImage";
-import { cn } from "../../lib/utils";
+import { cx } from "../../../ui/cx";
 import { FileTypeIcon } from "../../../ui/FileTypeIcon";
-import { Kbd } from "../ui/kbd";
-import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
+import { Button, Kbd, ScrollArea, StaticListBox, StaticListBoxItem } from "../../../ui";
 import { ComposerBanner } from "./ComposerBanner";
+import "./ComposerCommandMenu.css";
 
 export type ComposerCommandItem =
   | {
@@ -77,76 +77,70 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(
         : t("composer.pathError");
 
   return (
-    <Command data-composer-command-root="true">
+    <div data-composer-command-root="true" className="t3-cmd">
       <ComposerBanner.Surface
         ref={surfaceRef}
-        className="flex min-h-0 w-full flex-col overflow-hidden pb-(--chat-composer-attachment-overlap) **:data-[slot=command-item]:rounded-lg **:data-[slot=scroll-area-scrollbar]:data-[orientation=vertical]:my-4"
+        className="t3-cmd__surface"
         data-composer-command-drawer="true"
       >
         {props.error ? (
-          <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-7 text-secondary-label text-xs">
+          <div className="t3-cmd__error">
             <span>{errorText}</span>
             {props.onRetry ? (
-              <button
-                type="button"
-                className="rounded-(--control-radius) px-1.5 py-0.5 font-medium text-foreground text-xs hover:bg-accent"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={props.onRetry}
-              >
+              <Button variant="ghost" size="xs" preventFocusOnPress onPress={props.onRetry}>
                 {t("composer.slashRetry")}
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : props.items.length > 0 ? (
-          <CommandList
-            id={props.listId}
-            role="listbox"
-            aria-label={slashMode ? t("composer.t3.menu.commands") : t("composer.t3.menu.files")}
-            className="max-h-72 min-h-0 scroll-pb-6"
-          >
-            <CommandGroup>
-              {props.items.map((item, index) => (
-                <CommandMenuItem
-                  key={item.id}
-                  optionId={composerSuggestionOptionId(props.listId, item.id)}
-                  item={item}
-                  previous={props.items[index - 1]}
-                  isActive={props.activeItemId === item.id}
-                  onHighlight={props.onHighlightedItemChange}
-                  onSelect={props.onSelect}
-                />
-              ))}
-            </CommandGroup>
-          </CommandList>
+          <ScrollArea fade className="t3-cmd__scroll">
+            <StaticListBox
+              id={props.listId}
+              aria-label={slashMode ? t("composer.t3.menu.commands") : t("composer.t3.menu.files")}
+              className="t3-cmd__list"
+            >
+            {props.items.map((item, index) => (
+              <CommandMenuItem
+                key={item.id}
+                optionId={composerSuggestionOptionId(props.listId, item.id)}
+                item={item}
+                previous={props.items[index - 1]}
+                isActive={props.activeItemId === item.id}
+                onHighlight={props.onHighlightedItemChange}
+                onSelect={props.onSelect}
+              />
+            ))}
+            </StaticListBox>
+          </ScrollArea>
         ) : (
-          <div className="px-5 pt-3.5 pb-7">
-            <p className="text-secondary-label text-xs">
+          <div className="t3-cmd__empty">
+            <p>
               {props.isLoading ? t("composer.t3.menu.searching") : emptyText}
             </p>
           </div>
         )}
         <div
-          className="flex items-center gap-2 border-border border-t px-3 py-1.5 text-secondary-label text-2xs"
+          className="t3-cmd__footer"
           data-slot="composer-command-footer"
         >
-          <span className="inline-flex items-center gap-1">
+          <span className="t3-cmd__hint">
             <Kbd>↑↓</Kbd>
             {t("composer.slashSelect")}
           </span>
-          <span className="inline-flex items-center gap-1">
+          <span className="t3-cmd__hint">
             <Kbd>Enter</Kbd>
             {t("composer.slashFill")}
           </span>
-          <span className="inline-flex items-center gap-1">
+          <span className="t3-cmd__hint">
             <Kbd>Esc</Kbd>
             {t("composer.slashClose")}
           </span>
-          <span className="ms-auto tabular-nums">
+          <span className="t3-cmd__count">
             {t("composer.slashCount", { n: props.total })}
           </span>
         </div>
       </ComposerBanner.Surface>
-    </Command>
+    </div>
   );
 });
 
@@ -173,20 +167,20 @@ const CommandMenuItem = memo(function CommandMenuItem(props: {
     <>
       {groupLabel ? (
         <div
-          className="px-2 py-1.5 font-medium text-muted-foreground text-xs"
+          className="t3-cmd__group"
           data-slot="command-group-label"
           role="presentation"
         >
           {groupLabel}
         </div>
       ) : null}
-      <CommandItem
+      <StaticListBoxItem
         id={props.optionId}
-        role="option"
-        aria-selected={isActive}
+        selected={isActive}
         aria-disabled={item.type === "slash-command" && !item.command.executable}
         data-composer-item-id={item.id}
         active={isActive}
+        className="t3-cmd__item"
         onMouseMove={() => {
           if (!isActive) props.onHighlight(item.id);
         }}
@@ -199,32 +193,32 @@ const CommandMenuItem = memo(function CommandMenuItem(props: {
       >
         {item.type === "path" ? (
           item.path.endsWith("/") ? (
-            <Folder aria-hidden="true" className="size-4 shrink-0 text-secondary-label" />
+            <Folder aria-hidden="true" className="t3-cmd__folder" />
           ) : (
-            <FileTypeIcon name={item.path} size={16} className="shrink-0" />
+            <FileTypeIcon name={item.path} size={16} className="t3-cmd__file-icon" />
           )
         ) : null}
         {item.type === "image" ? (
           <InlineImage
-            className="size-4 shrink-0 rounded-[3px] object-cover"
+            className="t3-cmd__thumb"
             src={item.preview}
             alt=""
           />
         ) : null}
-        <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="t3-cmd__body">
           <span
-            className={cn(
-              "min-w-0 max-w-[45%] shrink-0 truncate font-sans text-xs font-medium",
-              item.type === "slash-command" && !item.command.executable && "text-secondary-label",
+            className={cx(
+              "t3-cmd__label",
+              item.type === "slash-command" && !item.command.executable && "t3-cmd__label--disabled",
             )}
           >
             {item.label}
           </span>
-          <span className="min-w-0 flex-1 truncate text-left text-secondary-label text-xs">
+          <span className="t3-cmd__desc">
             {item.type === "image" ? item.name : item.description}
           </span>
         </span>
-      </CommandItem>
+      </StaticListBoxItem>
     </>
   );
 });

@@ -1,6 +1,7 @@
 import { Globe2 } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
-import { cn } from '@/t3/lib/utils'
+import { cx } from '@/ui/cx'
+import './PreviewFaviconIcon.css'
 
 export function faviconUrlForOrigin(url: string | null): string | null {
   if (!url || url.length > 4096) return null
@@ -50,8 +51,8 @@ export function PreviewFaviconIcon(props: {
   return (
     <FaviconImage
       sources={[props.capturedUrl, faviconUrlForOrigin(props.url)]}
-      fallback={<Globe2 className={cn('size-3 shrink-0', props.className)} />}
-      className={cn('size-3 shrink-0 rounded-sm object-contain', props.className)}
+      fallback={<Globe2 className={cx('t3-icon--xs', props.className)} />}
+      className={cx('t3-icon--xs t3-favicon-image', props.className)}
     />
   )
 }

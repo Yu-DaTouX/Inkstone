@@ -1,0 +1,76 @@
+@layer features {
+  .t3-frame {
+    position: relative;
+    z-index: 10;
+  }
+  .t3-frame__form {
+    width: 100%;
+    min-width: 0;
+    max-width: var(--chat-content-max-width);
+    margin-inline: auto;
+  }
+  .t3-frame__main {
+    position: relative;
+  }
+  .t3-frame__surface {
+    border-radius: var(--r-2xl);
+    transition: background-color var(--dur-base);
+  }
+  .t3-frame__surface--active,
+  :where([data-thread-context-over], [data-quote-over]) .t3-frame__surface {
+    background: color-mix(in oklab, var(--hover) 45%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 70%, transparent);
+  }
+  .t3-frame__body {
+    position: relative;
+    padding: 0.875rem 1rem 0.5rem;
+  }
+  @media (width >= 40rem) {
+    .t3-frame__body {
+      padding-top: 1rem;
+    }
+  }
+  .t3-frame__footer {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    min-width: 0;
+    padding: 0 0.5rem 0.5rem;
+    overflow: visible;
+  }
+  .t3-frame__leading {
+    margin-inline-end: 0.5rem;
+  }
+  .t3-frame__actions {
+    display: flex;
+    flex: 1;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .t3-frame__controls {
+    position: relative;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+  .t3-prompt-error {
+    padding: 0 0.75rem 0.5rem;
+    color: var(--fail);
+    font-size: 0.75rem;
+    line-height: 1.333;
+  }
+  .t3-prompt-error--warning {
+    color: var(--ask-t);
+  }
+  @media (width >= 40rem) {
+    .t3-prompt-error {
+      padding-inline: 1rem;
+    }
+  }
+}

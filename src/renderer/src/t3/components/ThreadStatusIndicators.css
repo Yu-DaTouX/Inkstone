@@ -1,0 +1,21 @@
+@layer features {
+  .t3-worktree-mark {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+  }
+  .t3-worktree-mark svg {
+    color: var(--root-fg3);
+  }
+  .t3-diff-count {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+  }
+  .t3-diff-count__add {
+    color: var(--add);
+  }
+  .t3-diff-count__del {
+    color: var(--del);
+  }
+}

@@ -77,7 +77,7 @@ export function PlanCard(): ReactElement | null {
   const hint = expanded ? t('plan.collapse') : nowText ? t('plan.workingOn', { text: nowText }) : t('plan.expand')
 
   return (
-    <ComposerBanner.Root className="[--composer-banner-padding-block:0px]">
+    <ComposerBanner.Root className="plan-card__root">
     <div className="plan-card" data-testid="plan-card" data-expanded={expanded}>
       <button
         type="button"

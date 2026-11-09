@@ -1,7 +1,8 @@
 import { useState } from "react";
 
-import { InlineButton } from "../ui/button";
-import { cn } from "../../lib/utils";
+import { Button } from "../../../ui";
+import { cx } from "../../../ui/cx";
+import "./SidebarThreadUndoNotice.css";
 
 export interface SidebarUndoNotice {
   text: string;
@@ -29,15 +30,15 @@ export function SidebarThreadUndoNotice({
       onTransitionEnd={(event) => {
         if (!notice && event.target === event.currentTarget) setShownNotice(null);
       }}
-      className={cn(
-        "flex gap-1 px-2 text-2xs leading-6 text-sidebar-muted-foreground transition-opacity duration-200 ease-out starting:opacity-0",
-        !notice && "opacity-0",
+      className={cx(
+        "t3-undo-notice",
+        !notice && "t3-undo-notice--hidden",
         className,
       )}
       data-testid="t3-sidebar-undo-notice"
     >
-      <span className="min-w-0 truncate">{text.text},</span>
-      <InlineButton onClick={text.undo}>{text.label}</InlineButton>
+      <span className="t3-undo-notice__text">{text.text},</span>
+      <Button data-t3-btn variant="plain" size="sm" onPress={text.undo}>{text.label}</Button>
     </div>
   );
 }

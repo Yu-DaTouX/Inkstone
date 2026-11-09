@@ -1,6 +1,7 @@
 import type { ComponentType, SVGProps } from "react";
 
-import { cn } from "../lib/utils";
+import { cx } from "../../ui/cx";
+import "./MorphIcon.css";
 
 export function MorphIcon({
   from: From,
@@ -13,16 +14,15 @@ export function MorphIcon({
   active: boolean;
   className?: string;
 }) {
-  const layer =
-    "absolute inset-0 size-full transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-none";
+  const layer = "t3-morph-icon__layer";
   return (
     <span
       aria-hidden="true"
       data-slot="morph-icon"
-      className={cn("relative inline-flex size-4 items-center justify-center", className)}
+      className={cx("t3-morph-icon", className)}
     >
-      <From className={cn(layer, active ? "scale-75 opacity-0" : "scale-100 opacity-100")} />
-      <To className={cn(layer, active ? "scale-100 opacity-100" : "scale-75 opacity-0")} />
+      <From className={cx(layer, active ? "t3-morph-icon__layer--hidden" : "t3-morph-icon__layer--shown")} />
+      <To className={cx(layer, active ? "t3-morph-icon__layer--shown" : "t3-morph-icon__layer--hidden")} />
     </span>
   );
 }

@@ -1,4 +1,7 @@
 @layer features {
+  .t3-banner.plan-card__root {
+    --composer-banner-padding-block: 0;
+  }
   .plan-card {
     display: flex;
     flex-direction: column;

@@ -1,9 +1,10 @@
 import type { DragEvent, ReactNode } from "react";
 
-import { cn } from "../../lib/utils";
+import { cx } from "../../../ui/cx";
 import { ComposerSurface } from "../ComposerSurface";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerStashBadge } from "./ComposerStashBadge";
+import "./ComposerFrame.css";
 
 export interface ComposerFrameStash {
   readonly count: number;
@@ -61,10 +62,10 @@ export function ComposerFrame({
   return (
     <ComposerSurface.Shell contextRow={!!contextStrip} className={className}>
       <ComposerSurface.Host>
-        <div className="relative z-10">
+        <div className="t3-frame">
           <div
             data-chat-composer-form="true"
-            className="mx-auto w-full min-w-0 max-w-(--chat-content-max-width)"
+            className="t3-frame__form"
             {...dropProps}
           >
             <ComposerBanner.Dock>
@@ -80,23 +81,20 @@ export function ComposerFrame({
                 />
               ) : null}
             </ComposerBanner.Dock>
-            <div className="relative">
+            <div className="t3-frame__main">
               <ComposerSurface.Main data-inline-resting-controls="true">
                 <div
                   data-chat-composer-surface="true"
                   data-chat-composer-mobile-collapsed="false"
-                  className={cn(
-                    "rounded-2xl transition-[background-color] duration-200",
-                    "in-data-[thread-context-over]:bg-accent/45 in-data-[thread-context-over]:ring-1 in-data-[thread-context-over]:ring-inset in-data-[thread-context-over]:ring-primary/70",
-                    "in-data-[quote-over]:bg-accent/45 in-data-[quote-over]:ring-1 in-data-[quote-over]:ring-inset in-data-[quote-over]:ring-primary/70",
-                    quoteActive && "bg-accent/45 ring-1 ring-inset ring-primary/70",
-                    dropActive && "bg-accent/45 ring-1 ring-inset ring-primary/70",
+                  className={cx(
+                    "t3-frame__surface",
+                    (quoteActive || dropActive) && "t3-frame__surface--active",
                     surfaceClassName,
                   )}
                 >
                   <div
                     data-chat-composer-body="true"
-                    className="relative px-4 pb-2 pt-3.5 sm:pt-4"
+                    className="t3-frame__body"
                   >
                     {menuLayer}
                     {attachments}
@@ -105,19 +103,19 @@ export function ComposerFrame({
                   {notice}
                   <div
                     data-chat-composer-footer="true"
-                    className="flex min-w-0 flex-nowrap items-center overflow-visible px-2 pb-2"
+                    className="t3-frame__footer"
                   >
-                    {footerLeading ? <div className="me-2">{footerLeading}</div> : null}
+                    {footerLeading ? <div className="t3-frame__leading">{footerLeading}</div> : null}
                     <div
                       data-chat-composer-actions="right"
                       data-chat-composer-transition-actions="true"
                       data-chat-composer-primary-actions-compact="false"
-                      className="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2"
+                      className="t3-frame__actions"
                     >
                       <div
                         data-chat-composer-controls="footer"
                         data-chat-composer-footer-controls="true"
-                        className="relative flex min-w-0 flex-1 items-center justify-end gap-0.5"
+                        className="t3-frame__controls"
                       >
                         {controls}
                       </div>

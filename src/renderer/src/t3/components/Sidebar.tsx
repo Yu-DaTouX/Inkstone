@@ -19,7 +19,7 @@ import {
   useRef,
   useState
 } from 'react'
-import { cn } from '../lib/utils'
+import { cx } from '../../ui/cx'
 import { attachSidebarTree, sidebarTreeProps } from '../lib/sidebarTree'
 import { useT } from '../../i18n'
 import {
@@ -54,6 +54,7 @@ import {
   type SidebarProjectFolderView
 } from './sidebar/SidebarProjectFolderHeader'
 import type { SidebarSortableBag } from './sidebar/SidebarThreadRow'
+import './Sidebar.css'
 
 const SIDEBAR_DRAG_DISTANCE = 6
 const SIDEBAR_DRAG_LABEL_HEIGHT = 24
@@ -543,7 +544,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
           <SidebarSectionHeader
             key="snoozed-shelf-header"
             marker="snoozed-header"
-            className={shelfFirst === 'snoozed' ? 'mt-auto' : undefined}
+            className={shelfFirst === 'snoozed' ? 't3-sidebar__shelf-header--last' : undefined}
             label={labels.snoozed}
             count={sections.snoozed.length}
             undoNotice={shelfFirst === 'snoozed' ? props.undoNotice : undefined}
@@ -559,7 +560,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
           <SidebarSectionHeader
             key="settled-shelf-header"
             marker="settled-header"
-            className={shelfFirst === 'settled' ? 'mt-auto' : undefined}
+            className={shelfFirst === 'settled' ? 't3-sidebar__shelf-header--last' : undefined}
             label={labels.settled}
             count={props.settledCount ?? sections.settled.length}
             dragging={from !== null}
@@ -617,7 +618,7 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
         <ul
           {...sidebarTreeProps(labels.tree)}
           ref={attachTreeRef}
-          className={cn('relative flex flex-col gap-px', items.length > 0 && 'flex-1', props.className)}
+          className={cx('t3-sidebar__list', items.length > 0 && 't3-sidebar__list--filled', props.className)}
         >
           {nodes}
         </ul>

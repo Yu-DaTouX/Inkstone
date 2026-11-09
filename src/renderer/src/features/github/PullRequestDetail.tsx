@@ -717,7 +717,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
           />
         ) : null}
       </header>
-      <nav className="gh-prd__tabs gap-2 border-t border-b-0 border-border/60 px-4 py-2" aria-label={text.tabsLabel}>
+      <nav className="gh-prd__tabs" aria-label={text.tabsLabel}>
         <SegmentedControl<PrDetailTab>
           label={text.tabsLabel}
           value={tab}
@@ -726,7 +726,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
         />
         {detail ? (
           <DialogTrigger>
-            <Button size="xs" variant="ghost" className="gh-prd__checks h-6 gap-1 px-1.5 text-xs text-secondary-label" data-testid="gh-pr-checks-line" aria-label={checksLabel(detail.checks)}>
+            <Button size="xs" variant="ghost" className="gh-prd__checks" data-testid="gh-pr-checks-line" aria-label={checksLabel(detail.checks)}>
               <StatusDot kind={checksDot(detail.checks)} />
               <span>{checksLabel(detail.checks)}</span>
             </Button>

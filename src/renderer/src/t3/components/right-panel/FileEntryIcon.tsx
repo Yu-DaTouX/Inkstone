@@ -10,7 +10,8 @@ import {
   SquareTerminal
 } from 'lucide-react'
 import { memo } from 'react'
-import { cn } from '@/t3/lib/utils'
+import { cx } from '@/ui/cx'
+import './FileEntryIcon.css'
 
 const ICON_BY_EXTENSION: Record<string, LucideIcon> = {
   bash: SquareTerminal,
@@ -58,5 +59,5 @@ export const FileEntryIcon = memo(function FileEntryIcon(props: {
   className?: string
 }) {
   const Icon = fileEntryIcon(props.pathValue, props.kind ?? 'file')
-  return <Icon aria-hidden className={cn('size-4 shrink-0 text-icon-muted', props.className)} />
+  return <Icon aria-hidden className={cx('t3-file-icon', props.className)} />
 })

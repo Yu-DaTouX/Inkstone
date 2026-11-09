@@ -1,0 +1,127 @@
+@layer features {
+  .t3-cmd-layer {
+    position: fixed;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    pointer-events: auto;
+  }
+  .t3-cmd {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 0;
+  }
+  .t3-cmd__surface {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 0;
+    padding-bottom: var(--chat-composer-attachment-overlap);
+    overflow: hidden;
+  }
+  .t3-cmd__error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.75rem 0.75rem 1.75rem;
+    color: var(--root-fg3);
+    font-size: 0.75rem;
+    line-height: 1.333;
+  }
+  .t3-cmd__scroll {
+    max-height: 18rem;
+  }
+  .t3-cmd__list {
+    gap: 0;
+    min-height: 0;
+    padding: 0.5rem;
+    scroll-padding-bottom: 1.5rem;
+  }
+  .t3-cmd__empty {
+    padding: 0.875rem 1.25rem 1.75rem;
+    color: var(--root-fg3);
+    font-size: 0.75rem;
+    line-height: 1.333;
+  }
+  .t3-cmd__footer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    border-top: 1px solid var(--line);
+    color: var(--root-fg3);
+    font-size: 0.6875rem;
+    line-height: 1.455;
+  }
+  .t3-cmd__hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .t3-cmd__count {
+    margin-inline-start: auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .t3-cmd__group {
+    padding: 0.375rem 0.5rem;
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    font-weight: 500;
+  }
+  .t3-cmd__item {
+    border-radius: var(--r-md);
+  }
+  .t3-cmd__folder {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    color: var(--root-fg3);
+  }
+  .t3-cmd__file-icon {
+    flex-shrink: 0;
+  }
+  .t3-cmd__thumb {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 3px;
+    object-fit: cover;
+  }
+  .t3-cmd__body {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .t3-cmd__label {
+    flex-shrink: 0;
+    min-width: 0;
+    max-width: 45%;
+    overflow: hidden;
+    font-family: var(--font-ui);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .t3-cmd__label--disabled {
+    color: var(--root-fg3);
+  }
+  .t3-cmd__desc {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--root-fg3);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

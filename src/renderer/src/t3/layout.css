@@ -1,0 +1,76 @@
+@layer tokens {
+  :root {
+    --root-fg2: var(--fg2);
+    --root-fg3: var(--fg3);
+    --root-accent-t: var(--accent-t);
+    --sidebar-content-inset: 0.5rem;
+    --sidebar-control-gap: 0.5rem;
+    --sidebar-row-content-inset: 0.625rem;
+    --floating-content-inset: 0.75rem;
+    --z-sheet: 46;
+    --workspace-topbar-height: 52px;
+    --workspace-controls-top: 0px;
+    --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
+    --surface-raised: color-mix(in srgb, var(--surface) 20%, transparent);
+    --message-action-hover: color-mix(in srgb, var(--accent) 90%, var(--bg));
+  }
+
+  :root[data-theme='dark'] {
+    --surface-raised: color-mix(in srgb, var(--surface) 97%, var(--fg));
+  }
+}
+
+@layer features {
+  .t3-icon,
+  .t3-icon--xs,
+  .t3-icon--sm,
+  .t3-icon--md {
+    flex-shrink: 0;
+  }
+  .t3-icon--xs {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .t3-icon--sm {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .t3-icon--md {
+    width: 1rem;
+    height: 1rem;
+  }
+  .t3-chevron {
+    transition: rotate var(--dur-quick);
+  }
+  .t3-chevron--collapsed {
+    rotate: -90deg;
+  }
+  .t3-status--working {
+    color: var(--run-t);
+  }
+  .t3-status--waiting {
+    color: var(--root-fg2);
+  }
+  .t3-status--approval {
+    color: var(--ask-t);
+  }
+  .t3-status--failed {
+    color: var(--fail-t);
+  }
+  .t3-status--done {
+    color: var(--ok-t);
+  }
+  .t3-status--muted {
+    color: var(--fg3);
+  }
+  .t3-status--merged {
+    color: var(--data-3);
+  }
+}
+
+@layer components {
+  [data-t3-btn] svg {
+    width: 1rem;
+    height: 1rem;
+  }
+}

@@ -1,0 +1,109 @@
+@layer features {
+  .t3-composer-shell {
+    --chat-composer-drawer-inset: 1.375rem;
+    --chat-composer-glass-surface: var(--surface);
+    --chat-composer-outline: var(--comp-rim-lo);
+    container: composer-surface / inline-size;
+    position: relative;
+    isolation: isolate;
+    width: 100%;
+    max-width: var(--chat-content-max-width);
+    margin-inline: auto;
+  }
+  [data-theme="dark"] .t3-composer-shell {
+    --chat-composer-glass-surface: var(--surface-raised);
+  }
+
+  .t3-composer-shell::before,
+  .t3-composer-shell[data-context-row] .t3-composer-host::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: var(--r-2xl);
+    background: var(--glass-noise-image), color-mix(in oklab, var(--chat-composer-glass-surface) var(--glass-opacity), transparent);
+    box-shadow: inset 0 1px 0 var(--glass-rim);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    pointer-events: none;
+  }
+  .t3-composer-shell[data-context-row] .t3-composer-host::before {
+    z-index: -1;
+  }
+  .t3-composer-shell:has([data-composer-banner-surface="attached"])::before,
+  .t3-composer-shell[data-context-row]::before {
+    display: none;
+  }
+
+  .t3-composer-host,
+  .t3-composer-main {
+    position: relative;
+    z-index: 10;
+    border-radius: var(--r-2xl);
+  }
+  .t3-composer-host::after,
+  .t3-composer-main::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--chat-composer-outline);
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .t3-composer-host {
+    width: 100%;
+    box-shadow: var(--shadow-lift);
+  }
+  .t3-composer-host::after {
+    z-index: 1;
+  }
+  [data-theme="dark"] .t3-composer-host {
+    box-shadow: none;
+  }
+  .t3-composer-main {
+    padding: 1px;
+  }
+  .t3-composer-main::after {
+    z-index: 20;
+    display: none;
+  }
+
+  .t3-composer-shell:has([data-composer-banner-surface="attached"]) .t3-composer-host {
+    box-shadow: none;
+  }
+  .t3-composer-shell:has([data-composer-banner-surface="attached"]) .t3-composer-host::after {
+    display: none;
+  }
+  .t3-composer-shell:has([data-composer-banner-surface="attached"]) .t3-composer-main {
+    background: var(--glass-noise-image), color-mix(in oklab, var(--chat-composer-glass-surface) var(--glass-opacity), transparent);
+    box-shadow: var(--shadow-lift);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  }
+  [data-theme="dark"] .t3-composer-shell:has([data-composer-banner-surface="attached"]) .t3-composer-main {
+    box-shadow: none;
+  }
+  .t3-composer-shell:has([data-composer-banner-surface="attached"]) .t3-composer-main::after {
+    display: block;
+  }
+  .t3-composer-shell:has([data-composer-banner-surface="attached"]) .t3-composer-main [data-chat-composer-mobile-collapsed="true"] {
+    min-height: calc(1rem + 1px);
+  }
+  @supports not (backdrop-filter: blur(1px)) {
+    .t3-composer-shell::before {
+      background: var(--chat-composer-glass-surface);
+    }
+    .t3-composer-shell:has([data-composer-banner-surface="attached"]) .t3-composer-main {
+      background: var(--chat-composer-glass-surface);
+    }
+  }
+
+  .t3-composer-context {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.5rem 0;
+    overflow-x: clip;
+    color: var(--root-fg2);
+  }
+}

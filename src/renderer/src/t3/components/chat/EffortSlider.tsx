@@ -3,11 +3,12 @@ import { createPortal } from 'react-dom'
 import { useT } from '../../../i18n'
 import { FluidEffortSlider } from '../../../ui/FluidEffortSlider'
 import { EFFORT_TITLE, effortHint, type ComposerTraitsAdapter } from '../../adapters/composer-thinking'
-import { cn } from '../../lib/utils'
-import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
+import { cx } from '../../../ui/cx'
+import { Tooltip, TooltipTrigger } from '../../../ui'
 import { ComposerControl, type ComposerControlSize } from './ComposerControl'
 import { composerFloatingLayerProps } from './composerEventScope'
 import { useComposerMenuState } from './useComposerMenuState'
+import './EffortSlider.css'
 
 const WHEEL_STEP_INTERVAL_MS = 130
 const WHEEL_STEP_DELTA = 4
@@ -333,10 +334,7 @@ export function EffortSlider(props: {
 
   return (
     <>
-      <TooltipProvider delay={150}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
+      <TooltipTrigger delay={150}>
               <ComposerControl
                 ref={triggerRef}
                 aria-disabled={blocked || undefined}
@@ -347,7 +345,7 @@ export function EffortSlider(props: {
                 data-composer-effort-trigger="true"
                 data-effort-level={currentLevel}
                 size={props.size}
-                onClick={() => {
+                onPress={() => {
                   if (props.onOpen) {
                     props.onOpen()
                     return
@@ -355,14 +353,12 @@ export function EffortSlider(props: {
                   if (blocked) return
                   setOpen(!open)
                 }}
-                className={cn(
-                  'composer-effort-trigger shrink-0 whitespace-nowrap [[data-chat-provider-model-picker]+[data-resting-block]>&]:rounded-s-none [[data-chat-provider-model-picker]+[data-resting-block]>&]:ps-[2px] [[data-chat-provider-model-picker]:hover+[data-resting-block]>&]:bg-accent',
+                className={cx(
+                  'composer-effort-trigger t3-effort__trigger',
                   props.className,
-                  blocked && 'cursor-default opacity-40'
+                  blocked && 't3-effort__trigger--blocked'
                 )}
-              />
-            }
-          >
+              >
             <span ref={slotRef} className="composer-effort-slot" data-composer-effort-slot>
               <span ref={measureRef} className="composer-effort-measure" aria-hidden="true">
                 {sizerLabels.map((text) => (
@@ -375,19 +371,18 @@ export function EffortSlider(props: {
                 <EffortTextContent text={triggerLabel} />
               </span>
             </span>
-          </TooltipTrigger>
+              </ComposerControl>
           {props.onOpen ? null : (
-            <TooltipPopup side="top">
-              <span className="flex flex-col gap-0.5">
+            <Tooltip placement="top">
+              <span className="t3-effort__tip">
                 <span>{tooltip}</span>
                 {blocked ? null : (
-                  <span className="text-muted-foreground text-xs">{t('composer.t3.effort.wheel')}</span>
+                  <span className="t3-effort__tip-hint">{t('composer.t3.effort.wheel')}</span>
                 )}
               </span>
-            </TooltipPopup>
+            </Tooltip>
           )}
-        </Tooltip>
-      </TooltipProvider>
+      </TooltipTrigger>
       {open && anchor
         ? createPortal(
             <div
@@ -400,7 +395,7 @@ export function EffortSlider(props: {
               aria-label={descriptor.label}
               data-composer-effort-panel="true"
               {...composerFloatingLayerProps}
-              className="composer-effort-column fixed z-[130] overflow-hidden dropdown-glass outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="composer-effort-column ui-float t3-effort__panel"
               style={{
                 top: columnTop,
                 left: columnLeft,

@@ -3,13 +3,14 @@ import { useRef } from "react";
 
 import { useT } from "../../../i18n";
 import { fmtSize } from "../../../features/composer/attachment-files";
+import { cx } from "../../../ui/cx";
 import { FileTypeIcon } from "../../../ui/FileTypeIcon";
 import type {
   ComposerFileAttachment,
   ComposerImageAttachment,
 } from "../../adapters/composer-attachments";
-import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { IconButton, TooltipTrigger, Tooltip, TooltipHint } from "../../../ui";
+import "./ComposerAttachmentStrip.css";
 
 export function ComposerAttachmentMediaRow({
   images,
@@ -27,17 +28,17 @@ export function ComposerAttachmentMediaRow({
   return (
     <div
       data-chat-composer-media-row="true"
-      className="mb-3 flex max-w-full flex-wrap gap-2"
+      className="t3-attachments"
     >
       {images.map((image, index) => (
         <div
           key={image.id}
           data-chat-composer-expanded-image="true"
-          className="group/attachment relative h-16 w-16 shrink-0 snap-start overflow-hidden rounded-lg border border-border/80 bg-background"
+          className="t3-attachment"
         >
           <button
             type="button"
-            className="h-full w-full cursor-zoom-in"
+            className="t3-attachment__open"
             aria-label={t("composer.t3.previewImage", { name: image.name })}
             onClick={() => onExpandImage(image.id)}
           >
@@ -45,26 +46,20 @@ export function ComposerAttachmentMediaRow({
               <img
                 src={image.previewUrl}
                 alt={image.name}
-                className="h-full w-full object-cover"
               />
             ) : (
-              <span className="flex h-full items-center justify-center px-1 text-3xs text-secondary-label">
+              <span className="t3-attachment__name">
                 {image.name}
               </span>
             )}
           </button>
-          <span className="pointer-events-none absolute bottom-1 left-1 inline-flex items-center rounded-sm bg-background/85 px-1 text-[length:var(--t-caption)] leading-(--t-caption-lh) tabular-nums text-muted-foreground">
+          <span className="t3-attachment__ref">
             {refLabel(index)}
           </span>
-          <span className="absolute right-1 top-1 flex opacity-0 transition-opacity group-hover/attachment:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
-            <Button
-              variant="media-close"
-              size="icon-xs"
-              onClick={() => onRemoveImage(image.id)}
-              aria-label={t("composer.t3.removeAttachment", { name: image.name })}
-            >
+          <span className="t3-attachment__remove">
+            <IconButton data-t3-btn variant="ghost" size="md" onPress={() => onRemoveImage(image.id)} aria-label={t("composer.t3.removeAttachment", { name: image.name })}>
               <XIcon />
-            </Button>
+            </IconButton>
           </span>
         </div>
       ))}
@@ -84,29 +79,24 @@ export function ComposerAttachmentFileList({
   const t = useT();
   if (files.length === 0) return null;
   return (
-    <div className="mb-3 flex flex-col gap-1">
+    <div className="t3-attachment-files">
       {files.map((file) => (
-        <div key={file.id} className="flex min-w-0 items-center gap-2 py-1 text-sm text-foreground">
+        <div key={file.id} className="t3-attachment-file">
           <FileTypeIcon name={file.name} size={16} mono />
           <button
             type="button"
             disabled={!file.isDirectory && !file.name}
-            className="min-w-0 flex-1 truncate text-left hover:underline focus-visible:outline-2"
+            className="t3-attachment-file__name"
             onClick={() => onPreviewFile(file.id)}
           >
             {file.name}
           </button>
-          <span className="shrink-0 text-xs text-secondary-label">
+          <span className="t3-attachment-file__size">
             {file.isDirectory ? t("composer.dir") : fmtSize(file.sizeBytes)}
           </span>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => onRemoveFile(file.id)}
-            aria-label={t("composer.t3.removeAttachment", { name: file.name })}
-          >
+          <IconButton data-t3-btn variant="ghost" size="md" onPress={() => onRemoveFile(file.id)} aria-label={t("composer.t3.removeAttachment", { name: file.name })}>
             <XIcon />
-          </Button>
+          </IconButton>
         </div>
       ))}
     </div>
@@ -129,31 +119,19 @@ export function ComposerAttachButton({
         ref={inputRef}
         type="file"
         multiple
-        className="hidden"
+        className="t3-attachment-input"
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? []);
           event.currentTarget.value = "";
           if (files.length > 0) onFiles(files);
         }}
       />
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className={className}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => inputRef.current?.click()}
-              aria-label={label}
-            />
-          }
-        >
-          <PaperclipIcon className="translate-y-px" />
-        </TooltipTrigger>
-        <TooltipPopup>{label}</TooltipPopup>
-      </Tooltip>
+      <TooltipTrigger>
+        <IconButton data-t3-btn variant="ghost" size="md" preventFocusOnPress onPress={() => inputRef.current?.click()} className={cx("t3-attach-btn", className)} aria-label={label}>
+          <PaperclipIcon className="t3-attach-icon" />
+        </IconButton>
+        <Tooltip><TooltipHint label={label} /></Tooltip>
+      </TooltipTrigger>
     </>
   );
 }

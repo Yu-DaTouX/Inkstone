@@ -9,6 +9,7 @@ import { v3Text } from '../../app/v3-text'
 import { ArchiveConfirm, ProjectDirectoryDialog, setProjectArchived } from './ProjectHeader'
 import { shortProject } from './sidebar-model'
 import { sidebarText } from './sidebar-text'
+import './ProjectMenu.css'
 
 interface Props {
   project: ProjectRecord
@@ -166,5 +167,5 @@ export function ProjectMenu({ project, anchor, open, onOpenChange, onNew }: Prop
 }
 
 function IconSwatch({ tone }: { tone: number }): ReactElement {
-  return <span aria-hidden className="inline-block size-3 rounded-[3px]" style={{ backgroundColor: `var(--data-${tone})` }} />
+  return <span aria-hidden className="project-menu__swatch" style={{ backgroundColor: `var(--data-${tone})` }} />
 }

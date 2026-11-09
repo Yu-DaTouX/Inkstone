@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 
-import { cn } from "../lib/utils";
+import { cx } from "../../ui/cx";
+import "./ComposerSurface.css";
 
 function Shell({
   contextRow = false,
@@ -11,14 +12,8 @@ function Shell({
     <div
       data-slot="composer-shell"
       data-context-row={contextRow || undefined}
-      className={cn(
-        "@container/composer-surface group/composer-surface relative isolate mx-auto w-full max-w-(--chat-content-max-width)",
-        "[--chat-composer-drawer-inset:1.375rem] [--chat-composer-glass-surface:var(--card)] [--chat-composer-outline:var(--comp-rim-lo)]",
-        "dark:[--chat-composer-glass-surface:var(--surface-raised)]",
-        "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-2xl before:bg-(--chat-composer-glass-surface)/(--glass-opacity) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation) before:bg-[image:var(--glass-noise-image)] before:shadow-[inset_0_1px_0_var(--glass-rim)]",
-        "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-glass-surface)",
-        "has-data-[composer-banner-surface=attached]:before:hidden",
-        "data-context-row:before:hidden",
+      className={cx(
+        "t3-composer-shell",
         className,
       )}
       {...props}
@@ -26,18 +21,12 @@ function Shell({
   );
 }
 
-const outlineClasses =
-  "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-(--chat-composer-outline) dark:after:inset-shadow-2xs dark:after:inset-shadow-(color:--chat-composer-highlight)";
-
 function Host({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="composer-host"
-      className={cn(
-        "relative z-10 w-full rounded-2xl shadow-composer after:z-1 dark:shadow-none",
-        "group-data-context-row/composer-surface:before:pointer-events-none group-data-context-row/composer-surface:before:absolute group-data-context-row/composer-surface:before:inset-0 group-data-context-row/composer-surface:before:-z-1 group-data-context-row/composer-surface:before:rounded-2xl group-data-context-row/composer-surface:before:bg-(--chat-composer-glass-surface)/(--glass-opacity) group-data-context-row/composer-surface:before:backdrop-blur-(--glass-blur) group-data-context-row/composer-surface:before:backdrop-saturate-(--glass-saturation) group-data-context-row/composer-surface:before:bg-[image:var(--glass-noise-image)] group-data-context-row/composer-surface:before:shadow-[inset_0_1px_0_var(--glass-rim)]",
-        outlineClasses,
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none group-has-data-[composer-banner-surface=attached]/composer-surface:after:hidden",
+      className={cx(
+        "t3-composer-host",
         className,
       )}
       {...props}
@@ -49,14 +38,8 @@ function Main({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-chat-composer-main-surface="true"
-      className={cn(
-        "group relative z-10 rounded-2xl p-px",
-        outlineClasses,
-        "after:z-20 after:hidden group-has-data-[composer-banner-surface=attached]/composer-surface:after:block",
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:bg-(--chat-composer-glass-surface)/(--glass-opacity) group-has-data-[composer-banner-surface=attached]/composer-surface:backdrop-blur-(--glass-blur) group-has-data-[composer-banner-surface=attached]/composer-surface:backdrop-saturate-(--glass-saturation) group-has-data-[composer-banner-surface=attached]/composer-surface:bg-[image:var(--glass-noise-image)]",
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-composer dark:group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none",
-        "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:group-has-data-[composer-banner-surface=attached]/composer-surface:bg-(--chat-composer-glass-surface)",
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:**:data-[chat-composer-mobile-collapsed=true]:min-h-[calc(1rem+1px)]",
+      className={cx(
+        "t3-composer-main",
         className,
       )}
       {...props}
@@ -68,8 +51,8 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="composer-context-strip"
-      className={cn(
-        "group/composer-context relative flex w-full items-center gap-2 overflow-x-clip px-2 pt-2 text-muted-foreground",
+      className={cx(
+        "t3-composer-context",
         className,
       )}
       {...props}

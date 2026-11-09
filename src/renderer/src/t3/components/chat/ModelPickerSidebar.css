@@ -1,0 +1,83 @@
+@layer features {
+  .t3-model-sidebar {
+    flex-shrink: 0;
+    width: 3rem;
+    overflow: hidden;
+    background: color-mix(in oklab, var(--hover-main) 30%, transparent);
+  }
+  .t3-model-sidebar__scroll {
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  .t3-model-sidebar__scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .t3-model-sidebar__content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-height: 100%;
+    padding: 0.25rem;
+  }
+  .t3-model-sidebar__indicator {
+    position: absolute;
+    right: 0.25rem;
+    z-index: 10;
+    width: 0.1875rem;
+    height: 1.25rem;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    pointer-events: none;
+    transition: top var(--dur-base);
+  }
+  .t3-model-sidebar__row {
+    position: relative;
+    width: 100%;
+  }
+  .t3-model-sidebar__item {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: background-color var(--dur-quick);
+  }
+  .t3-model-sidebar__item:hover,
+  .t3-model-sidebar__item:focus-visible {
+    background: color-mix(in oklab, var(--fg) 10%, transparent);
+    outline: none;
+  }
+  .t3-model-sidebar__item[aria-pressed="true"] {
+    background: color-mix(in oklab, var(--fg) 7%, transparent);
+  }
+  .t3-model-sidebar__item--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .t3-model-sidebar__item--disabled:hover {
+    background: transparent;
+  }
+  .t3-model-sidebar__item .t3-provider-icon {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .t3-model-sidebar__favorites {
+    flex-shrink: 0;
+    fill: currentcolor;
+  }
+  .t3-model-sidebar__divider {
+    border-bottom: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
+  }
+  .t3-model-sidebar__wrap {
+    position: relative;
+    display: block;
+    width: 100%;
+  }
+}

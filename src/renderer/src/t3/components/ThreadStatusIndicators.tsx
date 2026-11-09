@@ -1,8 +1,9 @@
 import { FolderGit2Icon } from "lucide-react";
 
 import { useT } from "../../i18n";
-import { cn } from "../lib/utils";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { cx } from "../../ui/cx";
+import { Focusable, TooltipTrigger, Tooltip, TooltipHint } from "../../ui";
+import "./ThreadStatusIndicators.css";
 
 export interface ThreadDiff {
   insertions: number;
@@ -27,31 +28,21 @@ export function ThreadWorktreeIndicator({
   const path = worktreePath?.trim();
   if (!path) return null;
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            role="img"
-            aria-label={t("sidebar.t3.worktree", { path })}
-            className={cn("inline-flex shrink-0 items-center justify-center", className)}
-          />
-        }
-      >
-        <FolderGit2Icon className="size-3.5 shrink-0 text-icon-muted" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        {branch ? t("sidebar.t3.worktreeBranch", { path, branch }) : t("sidebar.t3.worktree", { path })}
-      </TooltipPopup>
-    </Tooltip>
+    <TooltipTrigger>
+      <Focusable excludeFromTabOrder><span role="img" aria-label={t("sidebar.t3.worktree", { path })} className={cx("t3-worktree-mark", className)}>
+        <FolderGit2Icon className="t3-icon--sm" />
+      </span></Focusable>
+      <Tooltip><TooltipHint label={branch ? t("sidebar.t3.worktreeBranch", { path, branch }) : t("sidebar.t3.worktree", { path })} /></Tooltip>
+    </TooltipTrigger>
   );
 }
 
 export function ThreadDiffCount({ diff, className }: { diff: ThreadDiff | null; className?: string }) {
   if (diff === null || (diff.insertions === 0 && diff.deletions === 0)) return null;
   return (
-    <span className={cn("shrink-0 font-mono", className)}>
-      <span className="text-diff-addition-foreground">+{formatDiffCount(diff.insertions)}</span>{" "}
-      <span className="text-diff-deletion-foreground">−{formatDiffCount(diff.deletions)}</span>
+    <span className={cx("t3-diff-count", className)}>
+      <span className="t3-diff-count__add">+{formatDiffCount(diff.insertions)}</span>{" "}
+      <span className="t3-diff-count__del">−{formatDiffCount(diff.deletions)}</span>
     </span>
   );
 }

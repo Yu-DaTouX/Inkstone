@@ -6,13 +6,14 @@ import { usePermissionAdapter } from '../../adapters/composer-permissions'
 import { useStore } from '../../../state/store'
 import { fastModeSupported } from '../../../../../shared/fast-mode'
 import { UltracodeConfirmDialog } from '../../../patterns/UltracodeConfirmDialog'
-import { cn } from '../../lib/utils'
+import { cx } from '../../../ui/cx'
 import { ComposerControl } from './ComposerControl'
 import { ComposerFooterModeControls } from './ComposerFooterControls'
 import { CompactComposerControlsMenu } from './CompactComposerControlsMenu'
 import { ComposerAccessFooter, ComposerReasoningPanel, FastBolt } from './ComposerModelMenuPanels'
 import { TraitsMenuContent, TraitsPicker } from './TraitsPicker'
 import { resolveComposerControlsOwnership } from './composerControlsOwnership'
+import './ComposerControlsBar.css'
 
 export type ComposerModelMenu = {
   open: boolean
@@ -132,13 +133,12 @@ export function ComposerControlsBar(props: {
     <>
       {props.showProviderUnavailable ? (
         <ComposerControl
-          type="button"
-          disabled={!props.onOpenProviderSetup}
-          onClick={() => props.onOpenProviderSetup?.()}
+          isDisabled={!props.onOpenProviderSetup}
+          onPress={() => props.onOpenProviderSetup?.()}
           data-chat-provider-unavailable="true"
-          className="shrink-0"
+          className="t3-controls-bar__setup"
         >
-          <CircleAlertIcon className="size-4" />
+          <CircleAlertIcon className="t3-icon--md" />
           {props.providerSetupLabel}
         </ComposerControl>
       ) : (
@@ -155,12 +155,12 @@ export function ComposerControlsBar(props: {
                 }
                 aria-hidden={hidden || undefined}
                 inert={hidden || undefined}
-                className={cn(
-                  'flex w-max min-w-max shrink-0 items-center gap-1',
-                  def.id === 'traits' && '[[data-chat-provider-model-picker]+&]:-ms-0.5',
-                  hidden && 'pointer-events-none invisible absolute',
+                className={cx(
+                  't3-controls-bar__block',
+                  def.id === 'traits' && 't3-controls-bar__block--traits',
+                  hidden && 't3-controls-bar__block--hidden',
                   index >= restingBlockDefs.length - iconOnlyBlockCount &&
-                    '[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative'
+                    't3-controls-bar__block--icon-only'
                 )}
               >
                 {def.content}
@@ -171,9 +171,9 @@ export function ComposerControlsBar(props: {
             data-resting-controls-overflow
             aria-hidden={!overflowTraits || undefined}
             inert={!overflowTraits || undefined}
-            className={cn(
-              'min-w-0 shrink-0',
-              !overflowTraits && 'pointer-events-none invisible absolute'
+            className={cx(
+              't3-controls-bar__overflow',
+              !overflowTraits && 't3-controls-bar__block--hidden'
             )}
           >
             <CompactComposerControlsMenu

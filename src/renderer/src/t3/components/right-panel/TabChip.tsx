@@ -13,13 +13,14 @@ import {
 } from 'lucide-react'
 import { useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { motionAllowed, motionMs } from '../../../ui/motion-hooks'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '@/t3/components/ui/tooltip'
-import { cn } from '@/t3/lib/utils'
+import { Focusable, TooltipTrigger, Tooltip, TooltipHint } from '../../../ui'
+import { cx } from '@/ui/cx'
 import { AndroidIcon, AppleIcon } from '../icons/device'
 import { PullRequestGlyph, PullRequestStateIcon } from '../pullRequest/pullRequestIcons'
 import { PreviewFaviconIcon } from '../preview/PreviewFaviconIcon'
 import { FileEntryIcon } from './FileEntryIcon'
 import type { T3Surface } from './model'
+import './TabChip.css'
 
 export interface TabSurface extends T3Surface {
   faviconUrl?: string
@@ -46,20 +47,20 @@ export function SurfaceIcon({ surface }: { surface: TabSurface }): ReactNode {
   if (surface.icon !== undefined) return surface.icon
   switch (surface.kind) {
     case 'file':
-      return <FileEntryIcon pathValue={surface.detail ?? surface.label} className="size-3 text-current" />
+      return <FileEntryIcon pathValue={surface.detail ?? surface.label} className="t3-icon--xs" />
     case 'browser':
       return <PreviewFaviconIcon url={surface.faviconUrl ?? null} />
     case 'pullRequest':
       return <PullRequestStateIcon state={surface.tone} />
     case 'pullRequests':
-      return <PullRequestGlyph.link className="size-3 shrink-0" aria-hidden />
+      return <PullRequestGlyph.link className="t3-icon--xs" aria-hidden />
     case 'device':
-      if (surface.devicePlatform === 'ios') return <AppleIcon className="size-3 shrink-0" />
-      if (surface.devicePlatform === 'android') return <AndroidIcon className="size-3 shrink-0" />
-      return <Smartphone className="size-3 shrink-0" aria-hidden />
+      if (surface.devicePlatform === 'ios') return <AppleIcon className="t3-icon--xs" />
+      if (surface.devicePlatform === 'android') return <AndroidIcon className="t3-icon--xs" />
+      return <Smartphone className="t3-icon--xs" aria-hidden />
     default: {
       const Icon = KIND_ICONS[surface.kind]
-      return <Icon className="size-3 shrink-0" aria-hidden />
+      return <Icon className="t3-icon--xs" aria-hidden />
     }
   }
 }
@@ -122,56 +123,41 @@ export function TabChip(props: TabChipProps) {
             ? { transform: `translateX(${props.offsetX}px)` }
             : undefined
       }
-      className={cn(
-        'rp-tab-chip group/tab relative flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs has-[[role=tab]:focus-visible]:ring-2 has-[[role=tab]:focus-visible]:ring-inset has-[[role=tab]:focus-visible]:ring-ring',
-        active
-          ? 'bg-(--sel) text-(--accent-t)'
-          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-        props.dragging && 'relative z-10 cursor-grabbing'
+      className={cx(
+        'rp-tab-chip t3-tab-chip',
+        active ? 't3-tab-chip--active' : 't3-tab-chip--idle',
+        props.dragging && 't3-tab-chip--dragging'
       )}
     >
       <button
         type="button"
         tabIndex={-1}
         aria-label={props.closeLabel}
-        className="group/close relative z-10 flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm hover:bg-muted"
+        className="t3-tab-chip__close"
         onClick={(event) => {
           event.stopPropagation()
           requestClose()
         }}
       >
-        <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
+        <span className="t3-tab-chip__glyph">
           <SurfaceIcon surface={surface} />
         </span>
-        <X className="hidden size-3 group-hover/tab:block group-focus-visible/close:block" />
+        <X className="t3-icon--xs t3-tab-chip__x" />
         {surface.badge === 'pending' ? (
           <span
             aria-hidden
-            className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
+            className="t3-tab-chip__pending"
           />
         ) : null}
       </button>
-      <Tooltip disabled={!surface.detail}>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              role="tab"
-              id={`rp-tab-${surface.id}`}
-              aria-selected={active}
-              aria-controls={props.controls}
-              tabIndex={props.focusable === false ? -1 : 0}
-              className="flex min-w-0 flex-1 cursor-pointer items-center bg-transparent p-0 outline-none after:absolute after:inset-0 after:rounded-md after:content-['']"
-              onClick={props.onActivate}
-            />
-          }
-        >
-          <span className="truncate">{surface.label}</span>
-        </TooltipTrigger>
-        <TooltipPopup side="bottom" sideOffset={8}>{title}</TooltipPopup>
-      </Tooltip>
+      <TooltipTrigger isDisabled={!surface.detail}>
+        <Focusable><button type="button" role="tab" id={`rp-tab-${surface.id}`} aria-selected={active} aria-controls={props.controls} tabIndex={props.focusable === false ? -1 : 0} className="t3-tab-chip__tab" onClick={props.onActivate}>
+          <span className="t3-tab-chip__label">{surface.label}</span>
+        </button></Focusable>
+        <Tooltip placement="bottom" offset={8}><TooltipHint label={title} /></Tooltip>
+      </TooltipTrigger>
       {surface.muted ? (
-        <span aria-hidden className="ml-0.5 size-1 rounded-full bg-current opacity-50" />
+        <span aria-hidden className="t3-tab-chip__muted" />
       ) : null}
     </div>
   )

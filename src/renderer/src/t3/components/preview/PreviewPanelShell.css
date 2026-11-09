@@ -1,0 +1,87 @@
+@layer features {
+  .t3-rp {
+    --workspace-topbar-height: var(--size-head);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    min-width: 0;
+    max-width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+  .t3-rp--floating {
+    background: var(--bg);
+  }
+  .t3-rp--block {
+    width: 100%;
+  }
+  .t3-rp--inline {
+    flex: 1;
+  }
+  .t3-rp--docked {
+    z-index: var(--z-panel);
+    flex: none;
+    width: min(var(--rp-w), var(--rp-dock, var(--rp-w)));
+  }
+  .t3-rp--collapsible {
+    transition: width var(--panel-dur, var(--dur-sheet));
+  }
+  .t3-rp--collapsed {
+    width: 0;
+    pointer-events: none;
+  }
+  .t3-rp > .t3-rp__resize {
+    left: calc(min(var(--rp-w), var(--rp-dock, var(--rp-w))) - var(--rp-w) - 0.25rem);
+  }
+
+  .t3-rp__surface {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+  .t3-rp__surface--docked {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    border-left: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .t3-rp__surface--docked:not(.t3-rp__surface--maximized) {
+    width: var(--rp-w);
+  }
+  .t3-rp__surface--maximized {
+    width: auto;
+  }
+  .t3-rp[data-rp-overlay] > .t3-rp__surface--docked {
+    background: var(--glass-noise-image), color-mix(in srgb, var(--surface-3) calc(var(--glass-opacity) + 25%), transparent);
+    box-shadow: inset 1px 0 0 var(--glass-rim), var(--shadow-side);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  }
+  .t3-rp__surface--slides {
+    transition: translate var(--panel-dur, var(--dur-sheet));
+  }
+  .t3-rp__surface--open {
+    translate: 0 0;
+  }
+  .t3-rp__surface--closed {
+    translate: var(--rp-w) 0;
+  }
+  .t3-rp__body {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+  .t3-rp__body--clip {
+    overflow: clip;
+  }
+  .t3-rp__content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+  }
+}

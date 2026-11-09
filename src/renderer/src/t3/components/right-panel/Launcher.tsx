@@ -1,24 +1,13 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type ReactElement, useEffect, useEffectEvent, useState } from 'react'
+import { type DOMAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, useEffect, useEffectEvent, useState } from 'react'
 import { useOptionalT } from '@/i18n'
-import { Kbd } from '@/t3/components/ui/kbd'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '@/t3/components/ui/tooltip'
-import { cn } from '@/t3/lib/utils'
+import { Focusable, Kbd, Tooltip, TooltipHint, TooltipTrigger } from '../../../ui'
+import { cx } from '@/ui/cx'
 import type { LauncherAction } from './model'
+import './Launcher.css'
 
 export type { LauncherAction }
 
-export const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
-  'dialog-popup',
-  'alert-dialog-popup',
-  'command-dialog-popup',
-  'menu-popup',
-  'select-popup',
-  'popover-popup',
-  'combobox-popup',
-  'autocomplete-popup'
-]
-  .map((slot) => `[data-slot="${slot}"]:is([data-open],[data-ending-style])`)
-  .join(',')
+export const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = '.ui-popover, .ui-dialog, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]'
 
 type ShortcutEvent = Pick<
   KeyboardEvent,
@@ -40,12 +29,14 @@ export function surfaceShortcutTargetsTypingContext(
   return target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') != null
 }
 
-export function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement }) {
+export function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement<DOMAttributes<HTMLElement>, string> }) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={props.trigger} />
-      <TooltipPopup side="top">{props.reason}</TooltipPopup>
-    </Tooltip>
+    <TooltipTrigger>
+      <Focusable>{props.trigger}</Focusable>
+      <Tooltip placement="top">
+        <TooltipHint label={props.reason} />
+      </Tooltip>
+    </TooltipTrigger>
   )
 }
 
@@ -64,10 +55,10 @@ export function LauncherActionRow(props: {
           <div
             tabIndex={0}
             aria-disabled="true"
-            className="flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-(length:--t-body) opacity-50"
+            className="t3-launcher__row t3-launcher__row--disabled"
           >
-            <span className="relative inline-flex shrink-0">{action.icon}</span>
-            <span className="min-w-0 flex-1 truncate">{action.label}</span>
+            <span className="t3-launcher__icon">{action.icon}</span>
+            <span className="t3-launcher__label">{action.label}</span>
             <Kbd>{action.shortcut}</Kbd>
           </div>
         }
@@ -76,20 +67,19 @@ export function LauncherActionRow(props: {
   }
   return (
     <div
-      className="group relative"
       onMouseEnter={props.onHighlight}
       onMouseLeave={props.onClearHighlight}
     >
       <button
         type="button"
         onClick={action.onPick}
-        className={cn(
-          'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-(length:--t-body) transition-colors group-hover:bg-accent/60',
-          props.highlighted && 'bg-accent/60'
+        className={cx(
+          't3-launcher__row',
+          props.highlighted && 't3-launcher__row--highlighted'
         )}
       >
-        <span className="relative inline-flex shrink-0">{action.icon}</span>
-        <span className="min-w-0 flex-1 truncate">{action.label}</span>
+        <span className="t3-launcher__icon">{action.icon}</span>
+        <span className="t3-launcher__label">{action.label}</span>
         <Kbd>{action.shortcut}</Kbd>
       </button>
     </div>
@@ -165,15 +155,14 @@ export function Launcher(props: LauncherProps) {
       onKeyDown={onKeyDown}
       aria-label={props.label ?? title}
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join('')}
-      className={cn(
-        'flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none',
-        'pb-10',
+      className={cx(
+        't3-launcher',
         props.className
       )}
     >
-      <div className="w-full max-w-xs py-6">
-        <h3 className="mb-3 text-center font-medium text-foreground text-sm">{title}</h3>
-        <div className="flex flex-col gap-0.5">
+      <div className="t3-launcher__panel">
+        <h3 className="t3-launcher__title">{title}</h3>
+        <div className="t3-launcher__list">
           {props.actions.map((action) => (
             <LauncherActionRow
               key={action.kind}

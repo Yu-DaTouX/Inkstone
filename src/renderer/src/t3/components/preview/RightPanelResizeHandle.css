@@ -1,0 +1,29 @@
+@layer features {
+  .t3-rp-handle {
+    position: absolute;
+    inset-block: 0;
+    left: -0.25rem;
+    z-index: 20;
+    width: 0.5rem;
+    cursor: col-resize;
+    outline: none;
+    user-select: none;
+  }
+  .t3-rp-handle__grip {
+    position: absolute;
+    inset-block: 0;
+    left: 50%;
+    width: 0.125rem;
+    translate: -50% 0;
+    border-radius: var(--r-full);
+    pointer-events: none;
+    transition: background-color var(--dur-quick);
+  }
+  .t3-rp-handle:hover .t3-rp-handle__grip {
+    background: var(--line2);
+  }
+  .t3-rp-handle:focus-visible .t3-rp-handle__grip,
+  .t3-rp-handle:active .t3-rp-handle__grip {
+    background: var(--accent);
+  }
+}

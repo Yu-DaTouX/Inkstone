@@ -1,0 +1,49 @@
+@layer features {
+  .t3-provider-icon {
+    position: relative;
+    isolation: isolate;
+    z-index: 30;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: visible;
+  }
+  .t3-provider-icon__img {
+    flex-shrink: 0;
+    border-radius: 3px;
+    object-fit: contain;
+  }
+  .t3-provider-icon__badge {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0.875rem;
+    height: 0.875rem;
+    padding-inline: 0.125rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-full);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    color: var(--root-fg2);
+    font-size: 0.5rem;
+    font-weight: 600;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .t3-provider-icon__badge--small {
+    right: -0.125rem;
+    bottom: -0.125rem;
+    min-width: 0.75rem;
+    height: 0.75rem;
+    font-size: 0.4375rem;
+    line-height: 1;
+  }
+  .t3-provider-icon__badge--flat {
+    box-shadow: none;
+  }
+}

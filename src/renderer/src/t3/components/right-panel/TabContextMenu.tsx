@@ -1,6 +1,5 @@
-import { Fragment } from 'react'
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut } from '@/t3/components/ui/menu'
-import { DisabledReasonTooltip } from './Launcher'
+import { Fragment, useMemo } from 'react'
+import { Menu, MenuItem, MenuSeparator, Popover } from '../../../ui'
 
 export interface TabContextMenuItem {
   id: string
@@ -21,45 +20,30 @@ export interface TabContextMenuProps {
   onOpenChange: (open: boolean) => void
 }
 
-function ContextMenuItemRow(props: { item: TabContextMenuItem }) {
-  const { item } = props
-  const entry = (
-    <MenuItem
-      variant={item.danger ? 'destructive' : 'default'}
-      className={item.disabled ? 'data-disabled:pointer-events-auto' : undefined}
-      disabled={item.disabled}
-      aria-keyshortcuts={item.shortcut}
-      onClick={() => {
-        if (item.disabled) return
-        item.onSelect()
-      }}
-    >
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {item.shortcut ? <MenuShortcut>{item.shortcut}</MenuShortcut> : null}
-    </MenuItem>
-  )
-  if (!item.disabled || !item.disabledReason) return entry
-  return <DisabledReasonTooltip reason={item.disabledReason} trigger={entry} />
-}
-
 export function TabContextMenu(props: TabContextMenuProps) {
+  const triggerRef = useMemo(() => ({ current: props.anchor }), [props.anchor])
   if (!props.anchor) return null
   return (
-    <Menu open={props.open} onOpenChange={props.onOpenChange}>
-      <MenuPopup
-        anchor={props.anchor}
-        align="start"
-        side="bottom"
-        sideOffset={4}
-        aria-label={props.label}
-      >
+    <Popover triggerRef={triggerRef} isOpen={props.open} onOpenChange={props.onOpenChange} placement="bottom start" offset={4}>
+      <Menu aria-label={props.label} autoFocus="first" onClose={() => props.onOpenChange(false)}>
         {props.items.map((item) => (
           <Fragment key={item.id}>
             {item.separatorBefore ? <MenuSeparator /> : null}
-            <ContextMenuItemRow item={item} />
+            <MenuItem
+              id={item.id}
+              textValue={item.label}
+              tone={item.danger ? 'danger' : 'default'}
+              isDisabled={item.disabled}
+              disabledReason={item.disabledReason}
+              shortcut={item.shortcut}
+              aria-keyshortcuts={item.shortcut}
+              onAction={item.onSelect}
+            >
+              {item.label}
+            </MenuItem>
           </Fragment>
         ))}
-      </MenuPopup>
-    </Menu>
+      </Menu>
+    </Popover>
   )
 }

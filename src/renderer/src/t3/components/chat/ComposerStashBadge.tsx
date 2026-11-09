@@ -1,8 +1,9 @@
 import { BookmarkIcon } from "lucide-react";
 import { memo } from "react";
 
-import { cn } from "../../lib/utils";
+import { cx } from "../../../ui/cx";
 import { ComposerBanner } from "./ComposerBanner";
+import "./ComposerStash.css";
 
 export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   count: number;
@@ -17,10 +18,9 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   const count = (
     <ComposerBanner.Count
       key={props.pulseKey}
-      className={cn(
-        "text-muted-foreground",
-        pulsed &&
-          "animate-stash-pulse-count transition-[opacity,translate] duration-180 ease-out starting:translate-y-0.5 starting:opacity-0 motion-reduce:transition-none",
+      className={cx(
+        "t3-stash-badge__count",
+        pulsed && "t3-stash-badge__count--pulse",
       )}
     >
       {props.count}
@@ -32,19 +32,16 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       density="comfortable"
       width="content"
       data-composer-shoulder-tab
-      className="ml-auto"
+      className="t3-stash-badge"
     >
       <ComposerBanner.Row
-        render={<button type="button" />}
+        as="button"
         data-prompt-stash-badge="true"
         aria-label={props.ariaLabel}
         aria-expanded={props.menuOpen}
-        className={cn(
-          "transition-colors duration-200",
-          props.menuOpen && "pointer-events-none",
-          props.menuOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-          pulsed &&
-            (props.pulseKey % 2 === 0 ? "animate-stash-pulse-row-alt" : "animate-stash-pulse-row"),
+        className={cx(
+          "t3-stash-badge__row",
+          pulsed && (props.pulseKey % 2 === 0 ? "t3-stash-badge__row--pulse-b" : "t3-stash-badge__row--pulse-a"),
         )}
         onPointerDown={(event) => event.preventDefault()}
         onClick={props.onToggleMenu}

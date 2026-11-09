@@ -17,18 +17,14 @@ export function setComposerEditorHandle(handle: { current: ComposerEditorHandle 
   composerEditorHandle = handle
 }
 
-export function useComposerMenuProps() {
-  return {
-    ...composerFloatingLayerProps,
-    finalFocus: () => {
-      const handle = composerEditorHandle
-      if (!handle) return undefined
-      const activeElement = document.activeElement
-      if (activeElement !== document.body && !isInsideComposerFloatingLayer(activeElement)) return false
-      handle.current?.focusAtEnd()
-      return false
-    }
-  }
+export function composerMenuClosed(): void {
+  const handle = composerEditorHandle
+  if (!handle) return
+  const activeElement = document.activeElement
+  if (activeElement !== document.body && !isInsideComposerFloatingLayer(activeElement)) return
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => handle.current?.focusAtEnd())
+  })
 }
 
 function isInsideComposerFloatingLayer(target: EventTarget | null): boolean {
@@ -50,19 +46,4 @@ export function isInsideRestingComposerControlScope(target: EventTarget | null):
       target.closest('[data-composer-context-control]') !== null ||
       isInsideComposerFloatingLayer(target))
   )
-}
-
-export function markOpenToPermissions(trigger: HTMLElement): void {
-  trigger.dataset.openToPermissions = 'true'
-}
-
-export function focusRequestedPermission(open: boolean, trigger: HTMLElement | null): void {
-  if (!trigger?.dataset.openToPermissions) return
-  delete trigger.dataset.openToPermissions
-  if (!open) return
-  const popupId = trigger.getAttribute('aria-controls')
-  const popup = popupId ? document.getElementById(popupId) : null
-  popup
-    ?.querySelector<HTMLElement>("[data-composer-permissions] [aria-checked='true']")
-    ?.focus({ preventScroll: true })
 }

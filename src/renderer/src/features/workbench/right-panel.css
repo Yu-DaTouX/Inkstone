@@ -142,9 +142,11 @@
   .rp-sub .rp-sub-menu {
     flex: none;
   }
-  [data-slot='sheet-backdrop']:has(+ [data-slot='sheet-viewport'] [data-rp-sheet]),
-  [data-slot='sheet-viewport']:has([data-rp-sheet]) {
-    top: var(--size-head) !important;
+  .rp-sheet-overlay {
+    top: var(--size-head);
+    z-index: var(--z-sheet);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
   }
   :root[data-rp-sheet-open] .v3-win {
     position: relative;

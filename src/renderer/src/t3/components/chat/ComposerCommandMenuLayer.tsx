@@ -2,6 +2,7 @@ import { type ReactNode, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { observeResize } from "../../lib/observeResize";
+import "./ComposerCommandMenu.css";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -79,7 +80,7 @@ export function ComposerCommandMenuLayer(props: {
 
   return createPortal(
     <div
-      className="pointer-events-auto fixed z-40 flex flex-col"
+      className="t3-cmd-layer"
       data-composer-drawer-layer="true"
       style={{
         bottom: position.bottom,

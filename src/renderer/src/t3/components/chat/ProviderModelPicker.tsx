@@ -1,72 +1,21 @@
 import { memo, useRef, useState, type ReactNode } from "react";
-import { Badge } from "../ui/badge";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { cn } from "../../lib/utils";
+import { Dialog, DialogTrigger } from "react-aria-components";
+import { BareButton, Badge, Focusable, Popover, Tooltip, TooltipHint, TooltipTrigger } from "../../../ui";
+import { composerMenuClosed, composerFloatingLayerProps } from "./composerEventScope";
+import { cx } from "../../../ui/cx";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { getDisplayModelName, getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils";
 import { shouldShowInstanceBadge } from "../../adapters/providers";
 import type { ProviderInstanceEntry, ProviderInstanceId } from "../../adapters/contracts";
 import { useT } from "../../../i18n";
+import "./ProviderModelPicker.css";
+import "./ComposerControl.css";
 
 export type ModelPickerSize = "sm" | "xs";
 
 export function modelPickerTriggerClassName(size: ModelPickerSize, className?: string): string {
-  return cn(
-    "relative inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-(--control-radius) border border-transparent text-base outline-none transition-colors hover:bg-accent data-pressed:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 data-disabled:pointer-events-none data-disabled:opacity-64 pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 [&:active:not([aria-haspopup])]:scale-(--press-scale) [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:-mx-0.5 [&_svg[data-composer-control-icon]]:mx-0",
-    "[&_:is([data-composer-control-label],[data-chat-provider-model-picker-label])]:[text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:[&_:is([data-composer-control-label],[data-chat-provider-model-picker-label])]:py-1.5",
-    size === "xs"
-      ? "h-7 gap-1 px-1.75 font-normal text-foreground/70 text-sm hover:text-foreground dark:text-muted-foreground sm:h-6 sm:text-xs [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5 [&_svg[data-composer-control-chevron]]:ms-0 [&_svg[data-composer-control-chevron]]:-me-1"
-      : "h-7 gap-1.5 px-2 font-medium font-[family-name:var(--font-ui)] tracking-[-0.005em] text-[13px] text-[color:var(--fg-ctl)] [&_svg:not([class*='text-'])]:text-muted-foreground hover:text-foreground sm:text-[13px] [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
-    "aria-pressed:bg-accent aria-pressed:text-accent-foreground aria-pressed:hover:bg-accent/80",
-    className,
-  );
-}
-
-function lockBackgroundScroll(popup: HTMLElement | null) {
-  if (!popup) return;
-  const { documentElement, body } = document;
-  const previousDocumentOverscrollBehavior = documentElement.style.overscrollBehavior;
-  const previousBodyOverflow = body.style.overflow;
-  const previousBodyPaddingRight = body.style.paddingRight;
-  const scrollbarWidth = window.innerWidth - documentElement.clientWidth;
-
-  documentElement.style.overscrollBehavior = "contain";
-  body.style.overflow = "hidden";
-  if (scrollbarWidth > 0) {
-    body.style.paddingRight = `${scrollbarWidth}px`;
-  }
-
-  const shouldAllowOverlayScroll = (target: EventTarget | null) => {
-    return target instanceof Element && target.closest("[data-model-picker-content]");
-  };
-  const preventBackgroundWheel = (event: WheelEvent) => {
-    if (shouldAllowOverlayScroll(event.target)) {
-      return;
-    }
-    event.preventDefault();
-  };
-  const preventBackgroundTouchMove = (event: TouchEvent) => {
-    if (shouldAllowOverlayScroll(event.target)) {
-      return;
-    }
-    event.preventDefault();
-  };
-
-  document.addEventListener("wheel", preventBackgroundWheel, { capture: true, passive: false });
-  document.addEventListener("touchmove", preventBackgroundTouchMove, {
-    capture: true,
-    passive: false,
-  });
-
-  return () => {
-    document.removeEventListener("wheel", preventBackgroundWheel, { capture: true });
-    document.removeEventListener("touchmove", preventBackgroundTouchMove, { capture: true });
-    documentElement.style.overscrollBehavior = previousDocumentOverscrollBehavior;
-    body.style.overflow = previousBodyOverflow;
-    body.style.paddingRight = previousBodyPaddingRight;
-  };
+  return cx("t3-ctl", size === "xs" ? "t3-ctl--xs" : "t3-ctl--sm", className);
 }
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
@@ -83,7 +32,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerClassName?: string;
   triggerLabel?: string;
   triggerAriaLabel?: string;
-  floatingLayerProps?: Record<string, unknown>;
   aside?: ReactNode;
   triggerBadge?: ReactNode;
   footer?: ReactNode;
@@ -119,6 +67,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     if (props.open === undefined) {
       setUncontrolledIsMenuOpen(open);
     }
+    if (!open && props.isComposerOwned) composerMenuClosed();
   };
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
@@ -130,8 +79,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const triggerTooltipContent = props.triggerLabel ?? triggerLabel;
 
   return (
-    <Popover
-      open={isMenuOpen}
+    <DialogTrigger
+      isOpen={isMenuOpen}
       onOpenChange={(open) => {
         if (props.disabled) {
           setIsMenuOpen(false);
@@ -140,102 +89,90 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         setIsMenuOpen(open);
       }}
     >
-      <PopoverTrigger
-        render={
-          <button
-            type="button"
-            aria-label={props.triggerAriaLabel ?? props.triggerLabel ?? triggerLabel}
-            data-chat-provider-model-picker="true"
-            className={cn(
-              modelPickerTriggerClassName(size),
-              "min-w-0 shrink justify-between whitespace-nowrap",
-              props.compact
-                ? "max-w-42 shrink-0"
-                : !props.isComposerOwned && "max-w-48 sm:max-w-56",
-              props.isComposerOwned &&
-                "[&:has(+[data-resting-block=traits]:not([aria-hidden=true]))]:rounded-e-none [&:has(+[data-resting-block=traits]:not([aria-hidden=true]))]:pe-[2px] [&:has(+[data-resting-block=traits]_.composer-effort-trigger:hover)]:bg-accent [&:has(+[data-resting-block=traits]_.composer-effort-trigger:hover)]:text-foreground",
-              props.triggerClassName,
-            )}
-            disabled={props.disabled}
-          />
-        }
+      <BareButton
+        aria-label={props.triggerAriaLabel ?? props.triggerLabel ?? triggerLabel}
+        data-chat-provider-model-picker="true"
+        className={cx(
+          modelPickerTriggerClassName(size),
+          "t3-model-trigger",
+          props.compact
+            ? "t3-model-trigger--compact"
+            : !props.isComposerOwned && "t3-model-trigger--free",
+          props.isComposerOwned && "t3-model-trigger--owned",
+          props.triggerClassName,
+        )}
+        isDisabled={props.disabled}
       >
         <span
-          className={cn(
-            "flex min-w-0 flex-1 items-center",
-            size === "xs" ? "gap-1" : "gap-1.5",
-          )}
+          className={cx("t3-model-trigger__row", size === "xs" && "t3-model-trigger__row--xs")}
         >
           {activeEntry && props.triggerLabel === undefined && !props.isComposerOwned ? (
-            <span data-chat-provider-model-picker-icon className="contents">
+            <span data-chat-provider-model-picker-icon className="t3-model-trigger__icon">
               <ProviderInstanceIcon
                 driverKind={activeEntry.driverKind}
                 displayName={activeEntry.displayName}
                 showBadge={showInstanceBadge}
-                className="size-4"
                 iconSize={16}
-                badgeClassName={cn(
-                  "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs",
-                  size === "xs" && "shadow-none",
-                )}
+                badgeClassName={cx("t3-provider-icon__badge--small", size === "xs" && "t3-provider-icon__badge--flat")}
               />
             </span>
           ) : null}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  className="min-w-0 flex-1 overflow-hidden truncate"
-                  data-chat-provider-model-picker-label="true"
-                />
-              }
-            >
+          {props.isComposerOwned ? (
+            <span className="t3-model-trigger__label" data-chat-provider-model-picker-label="true">
               {props.triggerLabel ?? triggerTitle}
+            </span>
+          ) : (
+            <TooltipTrigger>
+              <Focusable excludeFromTabOrder>
+                <span className="t3-model-trigger__label" data-chat-provider-model-picker-label="true">
+                  {props.triggerLabel ?? triggerTitle}
+                </span>
+              </Focusable>
+              <Tooltip placement="top">
+                <TooltipHint label={triggerTooltipContent} />
+              </Tooltip>
             </TooltipTrigger>
-            {props.isComposerOwned ? null : <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>}
-          </Tooltip>
+          )}
           {props.triggerBadge}
           {selectedModel?.isUnavailable && props.triggerLabel === undefined ? (
-            <Badge variant="outline" size="sm">
-              {t("composer.t3.picker.unavailable")}
-            </Badge>
+            <Badge tone="neutral">{t("composer.t3.picker.unavailable")}</Badge>
           ) : null}
         </span>
-      </PopoverTrigger>
-      <PopoverPopup
-        {...(props.isComposerOwned ? props.floatingLayerProps : {})}
-        ref={lockBackgroundScroll}
-        initialFocus={searchInputRef}
-        align="start"
-        className="before:hidden"
-        padding="none"
-        touchBackdrop
+      </BareButton>
+      <Popover
+        {...(props.isComposerOwned ? composerFloatingLayerProps : {})}
+        variant="panel"
+        placement="top start"
+        offset={4}
+        className="t3-model-popover"
       >
-        <div
-          className="composer-model-menu"
-          data-composer-model-menu={props.aside || props.footer ? "true" : undefined}
-        >
-          <div className="composer-model-menu__body">
-            <ModelPickerContent
-              searchInputRef={searchInputRef}
-              activeInstanceId={activeInstanceId}
-              model={props.model}
-              instanceEntries={props.instanceEntries}
-              modelOptionsByInstance={props.modelOptionsByInstance}
-              favoriteKeys={props.favoriteKeys}
-              onRequestClose={() => setIsMenuOpen(false)}
-              {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
-              {...(props.getModelDisabledReason
-                ? { getModelDisabledReason: props.getModelDisabledReason }
-                : {})}
-              onInstanceModelChange={handleInstanceModelChange}
-              onToggleFavorite={props.onToggleFavorite}
-            />
-            {props.aside ? <div className="composer-model-menu__aside">{props.aside}</div> : null}
+        <Dialog aria-label={props.triggerAriaLabel ?? props.triggerLabel ?? triggerLabel} className="t3-model-dialog">
+          <div
+            className="composer-model-menu"
+            data-composer-model-menu={props.aside || props.footer ? "true" : undefined}
+          >
+            <div className="composer-model-menu__body">
+              <ModelPickerContent
+                searchInputRef={searchInputRef}
+                activeInstanceId={activeInstanceId}
+                model={props.model}
+                instanceEntries={props.instanceEntries}
+                modelOptionsByInstance={props.modelOptionsByInstance}
+                favoriteKeys={props.favoriteKeys}
+                onRequestClose={() => setIsMenuOpen(false)}
+                {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
+                {...(props.getModelDisabledReason
+                  ? { getModelDisabledReason: props.getModelDisabledReason }
+                  : {})}
+                onInstanceModelChange={handleInstanceModelChange}
+                onToggleFavorite={props.onToggleFavorite}
+              />
+              {props.aside ? <div className="composer-model-menu__aside">{props.aside}</div> : null}
+            </div>
+            {props.footer ? <div className="composer-model-menu__foot">{props.footer}</div> : null}
           </div>
-          {props.footer ? <div className="composer-model-menu__foot">{props.footer}</div> : null}
-        </div>
-      </PopoverPopup>
-    </Popover>
+        </Dialog>
+      </Popover>
+    </DialogTrigger>
   );
 });

@@ -1,10 +1,11 @@
 import { useEffect, type ReactNode } from "react";
 
 import { usePresence } from "../../../ui/motion-hooks";
-import { cn } from "../../lib/utils";
+import { cx } from "../../../ui/cx";
 import { PreviewPanelShell } from "../preview/PreviewPanelShell";
-import { Sheet, SheetPopup } from "../ui/sheet";
+import { Sheet } from "../../../ui";
 import type { PanelFrameProps, PanelMode } from "./model";
+import "./RightPanelFrame.css";
 
 export function RightPanelFrame(props: PanelFrameProps): ReactNode {
   const {
@@ -57,15 +58,15 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
       {tabbar ? (
         <div
           data-right-panel-tabbar
-          className={cn(
-            "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pr-3 pl-2",
+          className={cx(
+            "t3-rp-frame__tabbar",
             tabbarClassName,
           )}
         >
           {tabbar}
         </div>
       ) : null}
-      <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
+      <div className="t3-rp-frame__content" data-right-panel-surface-content>
         {children}
       </div>
     </PreviewPanelShell>
@@ -74,22 +75,17 @@ export function RightPanelFrame(props: PanelFrameProps): ReactNode {
   if (mode === "sheet") {
     return (
       <Sheet
-        open={open}
+        isOpen={open}
         onOpenChange={(next) => {
           if (!next) sheet?.onClose();
         }}
+        label={label}
+        keepMounted
+        transitionMs={sheet?.transitionMs}
+        overlayClassName="rp-sheet-overlay"
+        className="t3-rp-frame__sheet"
       >
-        <SheetPopup
-          aria-label={label}
-          side="right"
-          showCloseButton={false}
-          keepMounted
-          transitionDurationMs={sheet?.transitionMs}
-          data-rp-sheet
-          className="h-full max-h-full w-[min(42vw,28rem)] min-w-80 max-w-[28rem] max-[760px]:w-[min(88vw,24rem)] max-[760px]:min-w-0"
-        >
-          {content("sheet")}
-        </SheetPopup>
+        {content("sheet")}
       </Sheet>
     );
   }

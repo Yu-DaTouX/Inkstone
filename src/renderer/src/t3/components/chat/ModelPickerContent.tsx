@@ -3,20 +3,12 @@ import { ChevronRightIcon, StarIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { legacyModelSlugs, modelVendor } from "./modelPickerGroups";
-import { ComboboxItem } from "../ui/combobox";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { modelPickerModelKey, parseModelPickerModelKey } from "./modelPickerKeys";
 import { rankModelPickerSearch } from "./modelPickerSearch";
-import {
-  Combobox,
-  ComboboxEmpty,
-  ComboboxSearchInput,
-  ComboboxList,
-} from "../ui/combobox";
+import { Button, Combobox, ComboboxEmpty, ComboboxItem, ComboboxList, ComboboxSearchInput } from "../../../ui";
 import type { ModelEsque } from "./providerIconUtils";
-import { cn } from "../../lib/utils";
-import { TooltipProvider } from "../ui/tooltip";
-import { InlineButton } from "../ui/button";
+import { cx } from "../../../ui/cx";
 import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
@@ -25,8 +17,8 @@ import { providerModelKey, sortProviderModelItems } from "../../adapters/compose
 import { MODEL_JUMP_LIMIT } from "../../adapters/shortcuts";
 import type { ProviderInstanceEntry, ProviderInstanceId } from "../../adapters/contracts";
 import { useT } from "../../../i18n";
-import { TOOLTIP_OPEN_DELAY_MS } from "../../../ui/Tooltip";
 import { useNarrowModelMenu } from "./ComposerModelMenuPanels";
+import "./ModelPickerContent.css";
 
 type ModelPickerItem = {
   slug: string;
@@ -352,10 +344,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     isSearching || selectedInstanceId === "favorites"
       ? filteredModels.map((model) => ({ kind: "model", model }) as const)
       : groupedEntriesFor(filteredModels, legacyExpanded);
-  const allItemKeys = [
-    ...flatModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
-    LEGACY_ROW_KEY,
-  ];
   const filteredItemKeys = listEntries.flatMap((entry) =>
     entry.kind === "model"
       ? [modelPickerModelKey(entry.model.instanceId, entry.model.slug)]
@@ -365,7 +353,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
 
   const listUnits = (units: number) =>
-    `min(calc(var(--spacing) * ${units + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * ${MAX_LIST_UNITS}))`;
+    `min(calc(0.25rem * ${units + LIST_CHROME_UNITS} + 1px), calc(0.25rem * ${MAX_LIST_UNITS}))`;
   const sidebarUnits = showSidebar
     ? (sidebarInstanceEntries.length + 1) * SIDEBAR_ITEM_UNITS + SIDEBAR_CHROME_UNITS
     : 0;
@@ -389,11 +377,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   };
 
   return (
-    <TooltipProvider delay={TOOLTIP_OPEN_DELAY_MS}>
+    <>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
-        className="relative flex max-h-108 w-screen max-w-100 flex-row overflow-hidden"
+        className="t3-model-picker"
         style={
           isSearching
             ? { height: searchHeight }
@@ -414,19 +402,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           />
         )}
 
-        <Combobox<string>
-          inline
-          items={allItemKeys}
-          filteredItems={filteredItemKeys}
-          filter={null}
+        <Combobox
+          keys={filteredItemKeys}
           autoHighlight
-          open
-          value={activeModelKey}
-          onItemHighlighted={(modelKey) => {
-            highlightedModelKeyRef.current = typeof modelKey === "string" ? modelKey : null;
+          onHighlightChange={(modelKey) => {
+            highlightedModelKeyRef.current = modelKey;
           }}
           onValueChange={(value) => {
-            if (typeof value !== "string") return;
             if (value === LEGACY_ROW_KEY) {
               setLegacyExpanded((expanded) => !expanded);
               return;
@@ -436,13 +418,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           }}
         >
           <div
-            className={cn(
-              "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40",
-              showSidebar && "border-l border-border/70",
+            className={cx(
+              "t3-model-picker__main",
+              showSidebar && "t3-model-picker__main--sided",
             )}
           >
             <ComboboxSearchInput
               ref={searchInputRef}
+              autoFocus
+              aria-label={t("picker.searchModel")}
               placeholder={t("picker.searchModel")}
               value={searchQuery}
               onChange={(e) => {
@@ -479,7 +463,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   return;
                 }
                 if (e.key === "Enter" && highlightedModelKeyRef.current) {
-                  (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
                   e.preventDefault();
                   e.stopPropagation();
                   if (highlightedModelKeyRef.current === LEGACY_ROW_KEY) {
@@ -497,14 +480,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             />
 
             <div
-              className={cn(
-                "relative min-h-0 overflow-hidden pr-px",
-                filteredItemKeys.length > 0 ? "flex-1" : "h-0",
+              className={cx(
+                "t3-model-picker__list-frame",
+                filteredItemKeys.length > 0 ? "t3-model-picker__list-frame--filled" : "t3-model-picker__list-frame--empty",
               )}
             >
-              <ComboboxList className="flex h-full flex-col gap-0.5 overscroll-y-contain py-1.5 pl-2 pr-px [&::-webkit-scrollbar-track]:my-2">
+              <ComboboxList aria-label={t("picker.searchModel")} className="t3-model-picker__list">
                 {(() => {
-                  let itemIndex = 0;
                   return listEntries.map((entry) => {
                     if (entry.kind === "header") {
                       return (
@@ -512,42 +494,37 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                           key={`header:${entry.key}`}
                           role="presentation"
                           data-model-picker-group={entry.key}
-                          className="flex h-7 shrink-0 items-end gap-1.5 px-2 pb-1 font-medium text-muted-foreground text-xs"
+                          className="t3-model-picker__group"
                         >
                           {entry.favorites ? (
-                            <StarIcon className="size-3.5 fill-current" aria-hidden />
+                            <StarIcon className="t3-icon--sm t3-model-picker__group-star" aria-hidden />
                           ) : (
                             <ProviderInstanceIcon
                               driverKind={entry.vendorKey ?? ""}
                               displayName={entry.label}
-                              className="size-3.5"
                               iconSize={14}
                             />
                           )}
-                          <span className="truncate">{entry.label}</span>
+                          <span className="t3-model-picker__group-label">{entry.label}</span>
                         </div>
                       );
                     }
-                    const index = itemIndex;
-                    itemIndex += 1;
                     if (entry.kind === "legacy") {
                       return (
                         <ComboboxItem
                           key={LEGACY_ROW_KEY}
-                          hideIndicator
-                          index={index}
                           value={LEGACY_ROW_KEY}
                           aria-expanded={legacyExpanded}
                           data-model-picker-legacy="true"
-                          className="min-h-10 w-full !min-w-0 max-w-full cursor-pointer text-muted-foreground sm:min-h-10"
+                          className="t3-model-picker__legacy"
                         >
-                          <span className="min-w-0 flex-1 truncate text-sm">
+                          <span className="t3-model-picker__legacy-label">
                             {t("composer.t3.picker.legacyModels", { count: entry.count })}
                           </span>
                           <ChevronRightIcon
-                            className={cn(
-                              "size-4 transition-transform duration-150 motion-reduce:transition-none",
-                              legacyExpanded && "rotate-90",
+                            className={cx(
+                              "t3-icon--md t3-model-picker__legacy-chevron",
+                              legacyExpanded && "t3-model-picker__legacy-chevron--open",
                             )}
                             aria-hidden
                           />
@@ -561,7 +538,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     return (
                       <ModelListRow
                         key={modelKey}
-                        index={index}
                         slug={model.slug}
                         name={model.name}
                         subProvider={model.subProvider}
@@ -583,13 +559,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               </ComboboxList>
             </div>
             {providerSetupEntries.length > 0 ? (
-              <div className="max-h-44 shrink-0 overflow-y-auto border-t border-border/70 p-2">
+              <div className="t3-model-picker__setup">
                 {providerSetupEntries.map((entry) => (
-                  <div key={entry.instanceId} className="px-1 py-1.5 text-xs leading-snug">
-                    <p className="line-clamp-3 text-muted-foreground">{entry.snapshot.message}</p>
-                    <InlineButton
-                      className="mt-1"
-                      onClick={() => {
+                  <div key={entry.instanceId} className="t3-model-picker__setup-item">
+                    <p className="t3-model-picker__setup-message">{entry.snapshot.message}</p>
+                    <Button data-t3-btn
+                      variant="plain"
+                      size="sm"
+                      className="t3-model-picker__setup-action"
+                      onPress={() => {
                         onRequestClose?.();
                         onOpenProviderSetup?.(entry.instanceId);
                       }}
@@ -597,20 +575,20 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       {providerSetupEntries.length > 1
                         ? t("composer.t3.picker.setUpProvider", { name: entry.displayName })
                         : t("composer.t3.picker.openProviderSetup")}
-                    </InlineButton>
+                    </Button>
                   </div>
                 ))}
               </div>
-            ) : (
-              <ComboboxEmpty className="empty:h-0">
+            ) : filteredItemKeys.length === 0 ? (
+              <ComboboxEmpty className="t3-model-picker__empty">
                 {selectedInstanceId === "favorites" && !isSearching
                   ? t("composer.t3.picker.noFavorites")
                   : t("picker.noMatch")}
               </ComboboxEmpty>
-            )}
+            ) : null}
           </div>
         </Combobox>
       </div>
-    </TooltipProvider>
+    </>
   );
 });

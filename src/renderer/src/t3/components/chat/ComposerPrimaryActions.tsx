@@ -4,9 +4,8 @@ import { MorphIcon } from "../MorphIcon";
 import { useT } from "../../../i18n";
 import { useShortcutModifierState } from "../../adapters/shortcut-modifier";
 import { resolveComposerDispatchMode } from "../../adapters/composer-dispatch";
-import { Spinner } from "../ui/spinner";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { cn } from "../../lib/utils";
+import { Focusable, Spinner, TooltipTrigger, Tooltip, TooltipHint } from "../../../ui";
+import "./ComposerPrimaryActions.css";
 
 interface ComposerPrimaryActionsProps {
   isRunning: boolean;
@@ -20,12 +19,6 @@ interface ComposerPrimaryActionsProps {
   onSubmitMessage?: (mode: "steer" | "followUp") => void;
   onInterrupt: () => void;
 }
-
-const sendButtonClassName =
-  "relative isolate flex size-7 items-center justify-center overflow-hidden rounded-full shadow-xs transition-[scale,box-shadow,background-color] duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 disabled:opacity-40 [&_svg]:pointer-events-none";
-
-const stopButtonClassName =
-  "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-(--on-fill) shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none size-7 [&_svg]:pointer-events-none";
 
 const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
   event.preventDefault();
@@ -58,27 +51,16 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const canOperate = true;
 
   const renderStopGenerationButton = () => (
-    <Tooltip key="interrupt">
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            className={stopButtonClassName}
-            {...pointerFocusProps}
-            disabled={!canOperate}
-            onClick={() => {
+    <TooltipTrigger key="interrupt">
+      <Focusable><button type="button" className="t3-stop" {...pointerFocusProps} disabled={!canOperate} onClick={() => {
               if (canOperate) onInterrupt();
-            }}
-            aria-label={t("composer.t3.stopAria")}
-          />
-        }
-      >
+            }} aria-label={t("composer.t3.stopAria")}>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
-      </TooltipTrigger>
-      <TooltipPopup>{t("composer.t3.interrupt")}</TooltipPopup>
-    </Tooltip>
+      </button></Focusable>
+      <Tooltip><TooltipHint label={t("composer.t3.interrupt")} /></Tooltip>
+    </TooltipTrigger>
   );
 
   if (canInterrupt && !hasSendableContent) return renderStopGenerationButton();
@@ -103,10 +85,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const sendButton = (
     <button
       type="button"
-      className={cn(
-        sendButtonClassName,
-        "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover disabled:bg-foreground/12 disabled:text-muted-foreground",
-      )}
+      className="t3-send"
       {...pointerFocusProps}
       onClick={() => onSubmitMessage?.(isQueuing ? "followUp" : "steer")}
       disabled={isSendBusy || sendDisabledReason !== null || !hasSendableContent}
@@ -115,7 +94,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       {isSendBusy ? (
         <Spinner size="sm" aria-hidden="true" />
       ) : isRunning ? (
-        <MorphIcon from={CornerUpRight} to={ListPlus} active={isQueuing} className="size-4" />
+        <MorphIcon from={CornerUpRight} to={ListPlus} active={isQueuing} className="t3-icon--md" />
       ) : (
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
           <path
@@ -131,9 +110,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   );
 
   return (
-    <Tooltip key="submit">
-      <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
-      <TooltipPopup>{submitTooltip}</TooltipPopup>
-    </Tooltip>
+    <TooltipTrigger key="submit">
+      <Focusable excludeFromTabOrder><span className="t3-send-slot">{sendButton}</span></Focusable>
+      <Tooltip><TooltipHint label={submitTooltip} /></Tooltip>
+    </TooltipTrigger>
   );
 });

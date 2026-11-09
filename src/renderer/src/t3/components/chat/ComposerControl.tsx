@@ -1,39 +1,26 @@
-import { mergeProps } from "@base-ui/react/merge-props";
-import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { useRender } from "@base-ui/react/use-render";
-import type { ComponentType, SVGProps } from "react";
+import { forwardRef, type ComponentType, type SVGProps } from "react";
 
-import { cn } from "../../lib/utils";
+import { BareButton, type ButtonProps } from "../../../ui";
+import { cx } from "../../../ui/cx";
+import "./ComposerControl.css";
 
 export type ComposerControlSize = "sm" | "xs";
 
 function composerControlClassName(size: ComposerControlSize, className?: string) {
-  return cn(
-    "relative inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-(--control-radius) border border-transparent text-base outline-none transition-colors hover:bg-accent data-pressed:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 data-disabled:pointer-events-none data-disabled:opacity-64 pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 [&:active:not([aria-haspopup])]:scale-(--press-scale) [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:-mx-0.5 [&_svg[data-composer-control-icon]]:mx-0",
-    "[&_:is([data-composer-control-label],[data-chat-provider-model-picker-label])]:[text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:[&_:is([data-composer-control-label],[data-chat-provider-model-picker-label])]:py-1.5",
-    size === "xs"
-      ? "h-7 gap-1 px-1.75 font-normal text-foreground/70 text-sm hover:text-foreground dark:text-muted-foreground sm:h-6 sm:text-xs [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5 [&_svg[data-composer-control-chevron]]:ms-0 [&_svg[data-composer-control-chevron]]:-me-1"
-      : "h-7 gap-1.5 px-2 font-medium font-[family-name:var(--font-ui)] tracking-[-0.005em] text-[13px] text-[color:var(--fg-ctl)] [&_svg:not([class*='text-'])]:text-muted-foreground hover:text-foreground sm:text-[13px] [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
-    "aria-pressed:bg-accent aria-pressed:text-accent-foreground aria-pressed:hover:bg-accent/80",
-    className,
-  );
+  return cx("t3-ctl", size === "xs" ? "t3-ctl--xs" : "t3-ctl--sm", className);
 }
 
-type ComposerControlProps = useRender.ComponentProps<"button"> & {
+type ComposerControlProps = Omit<ButtonProps, "className" | "size" | "variant" | "icon" | "trailingIcon" | "tooltip" | "tooltipShortcut" | "tooltipPlacement"> & {
   size?: ComposerControlSize;
+  className?: string | undefined;
 };
 
-export function ComposerControl({ className, size = "sm", render, ...props }: ComposerControlProps) {
-  const defaultProps = {
-    className: composerControlClassName(size, className),
-    type: render ? undefined : ("button" as const),
-  };
-  return useRender({
-    defaultTagName: "button",
-    props: mergeProps<"button">(defaultProps, props),
-    render,
-  });
-}
+export const ComposerControl = forwardRef<HTMLButtonElement, ComposerControlProps>(function ComposerControl(
+  { className, size = "sm", ...props },
+  ref,
+) {
+  return <BareButton {...props} ref={ref} className={composerControlClassName(size, className)} />;
+});
 
 export function ComposerControlIcon({
   icon: Icon,
@@ -49,28 +36,12 @@ export function ComposerControlIcon({
   return (
     <Icon
       aria-hidden="true"
-      className={cn(
-        "shrink-0",
-        size === "xs" ? "size-3" : opticalSize === "large" ? "size-4.5" : "size-4",
+      className={cx(
+        "t3-ctl__icon",
+        size === "xs" ? "t3-ctl__icon--xs" : opticalSize === "large" && "t3-ctl__icon--lg",
         className,
       )}
       data-composer-control-icon
     />
-  );
-}
-
-export function ComposerSelectControl({
-  className,
-  children,
-  size = "sm",
-  ...props
-}: Omit<SelectPrimitive.Trigger.Props, "className"> & {
-  className?: string | undefined;
-  size?: ComposerControlSize;
-}) {
-  return (
-    <SelectPrimitive.Trigger className={composerControlClassName(size, className)} {...props}>
-      {children}
-    </SelectPrimitive.Trigger>
   );
 }

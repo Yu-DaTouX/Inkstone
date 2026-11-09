@@ -1,0 +1,6 @@
+@layer features {
+  .t3-favicon-image {
+    border-radius: var(--r-xs);
+    object-fit: contain;
+  }
+}

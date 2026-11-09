@@ -19,13 +19,13 @@ import { ComposerStashMenuV3, composerStashFrameProps } from '../../t3/component
 import { ProviderModelPicker } from '../../t3/components/chat/ProviderModelPicker'
 import { QueuedRunsControl } from '../../t3/components/chat/QueuedRunsControl'
 import { PlanCard } from './PlanCard'
-import { Kbd, KbdGroup } from '../../ui'
+import { Badge, Kbd, KbdGroup } from '../../ui'
 import { AskDock } from '../session/AskDock'
 import { useComposerQuestionTitle } from '../session/question-composer'
 import { usePastedTextAttach } from './use-pasted-text'
 import { PROMPT_SUGGESTION_STATUS_KEY, suggestionKeyAction, visibleSuggestion } from './prompt-suggestion'
 import { ComposerVoiceButton } from '../../t3/components/chat/ComposerVoiceButton'
-import { setComposerEditorHandle, useComposerMenuProps } from '../../t3/components/chat/composerEventScope'
+import { setComposerEditorHandle } from '../../t3/components/chat/composerEventScope'
 import { useAttachmentAdapter, useComposerDropTarget } from '../../t3/adapters/composer-attachments'
 import { useComposerSubmitAdapter } from '../../t3/adapters/composer-submit'
 import { useContextCompactAdapter, useContextWindowSnapshot } from '../../t3/adapters/context'
@@ -69,6 +69,7 @@ import { PendingModelChange } from './PendingModelChange'
 import { ComposerWidthHandles } from './ComposerWidthHandles'
 import { loadDraft, restoreDraft, saveDraft } from './draft-store'
 import './composer.css'
+import './ComposerV3.css'
 
 let consumedComposerFocus = 0
 let attachmentsConversation: string | null = null
@@ -100,7 +101,6 @@ function dirName(path: string): string {
 const ComposerModelControls = memo(function ComposerModelControls(): JSX.Element {
   const t = useT()
   const model = useComposerModelAdapter()
-  const menuProps = useComposerMenuProps()
   const layout = useComposerControlsLayout()
   return (
     <>
@@ -117,7 +117,6 @@ const ComposerModelControls = memo(function ComposerModelControls(): JSX.Element
             onToggleFavorite={model.toggleFavorite}
             onOpenProviderSetup={model.openProviderSetup}
             isComposerOwned
-            floatingLayerProps={menuProps}
             open={menu.open}
             onOpenChange={menu.onOpenChange}
             aside={menu.aside}
@@ -602,21 +601,21 @@ export function ComposerV3(): JSX.Element {
     ) : null
 
   const editor = (
-    <div className="flex min-w-0 items-start gap-2" data-composer-editor-row="true">
+    <div className="composer-v3__editor-row" data-composer-editor-row="true">
       {mode ? (
-        <span
-          className="mt-0.5 inline-flex shrink-0 items-center gap-[0.2em] rounded-sm border border-border/60 bg-accent px-1 py-0.5 font-medium text-2xs text-foreground"
+        <Badge
+          className="composer-v3__mode"
           data-mode={mode}
           data-testid="composer-mode"
           title={mode === 'bash' ? t('composer.bashModeTip') : undefined}
         >
           {mode === 'bash' ? t('composer.bashMode') : t('composer.cmdMode')}
-        </span>
+        </Badge>
       ) : null}
-      <div className="relative min-w-0 flex-1">
+      <div className="composer-v3__editor">
         {historyNav ? (
           <div
-            className="mb-1 text-3xs text-muted-foreground tabular-nums"
+            className="composer-v3__history"
             role="status"
             aria-live="polite"
             data-testid="composer-history-status"

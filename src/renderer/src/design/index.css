@@ -3,4 +3,4 @@
 @import './reset.css' layer(reset);
 @import './tokens.css' layer(tokens);
 @import './base.css' layer(base);
-@import '../t3/t3.css';
+@import '../t3/layout.css';

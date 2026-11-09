@@ -6,7 +6,7 @@ import { FluidEffortSlider } from '../../../ui/FluidEffortSlider'
 import { Switch } from '../../../ui/Switch'
 import { VerticalEffortSlider } from '../../../ui/VerticalEffortSlider'
 import type { ComposerTraitsAdapter } from '../../adapters/composer-thinking'
-import { cn } from '../../lib/utils'
+import { cx } from '../../../ui/cx'
 import { levelFallbackLabel } from './EffortSlider'
 
 const WHEEL_STEP_INTERVAL_MS = 130
@@ -30,7 +30,7 @@ export function useNarrowModelMenu(): boolean {
 export function FastBolt(props: { className?: string; label?: string }) {
   return (
     <span
-      className={cn('composer-fast-bolt', props.className)}
+      className={cx('composer-fast-bolt', props.className)}
       data-composer-fast-badge="true"
       role={props.label ? 'img' : undefined}
       aria-label={props.label}

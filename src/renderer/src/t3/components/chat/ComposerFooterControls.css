@@ -1,0 +1,112 @@
+@layer features {
+  .t3-permission-toggle {
+    width: 1.75rem;
+    aspect-ratio: 1;
+    padding-inline: 0;
+    color: var(--fg2);
+  }
+  .t3-permission-toggle:hover {
+    color: var(--fg);
+  }
+  .t3-permission-toggle svg[data-composer-control-icon] {
+    color: currentcolor;
+  }
+  @media (width >= 40rem) {
+    .t3-permission-toggle--xs {
+      width: 1.5rem;
+    }
+  }
+  .t3-permission-confirm {
+    display: grid;
+    gap: 0.625rem;
+    width: 15rem;
+    outline: none;
+  }
+  .t3-permission-confirm__text {
+    display: grid;
+    gap: 0.125rem;
+  }
+  .t3-permission-confirm__title {
+    font-size: 0.875rem;
+    line-height: 1.429;
+    font-weight: 500;
+  }
+  .t3-permission-confirm__desc {
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1.333;
+  }
+  .t3-permission-confirm__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.375rem;
+  }
+  .t3-permission-confirm__ok {
+    background: var(--stall);
+    color: var(--on-fill);
+  }
+  .t3-permission-confirm__ok:hover {
+    background: color-mix(in oklab, var(--stall) 90%, transparent);
+  }
+  .t3-permissions {
+    display: grid;
+    gap: 0.375rem;
+    width: 18rem;
+    padding: 0.375rem 0.5rem;
+  }
+  .t3-permissions__title {
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    font-weight: 500;
+  }
+  .t3-permissions__group {
+    display: flex;
+    gap: 0.125rem;
+    padding: 0.125rem;
+    border-radius: var(--r-md);
+    background: color-mix(in oklab, var(--line2) 40%, transparent);
+  }
+  .t3-permissions__option {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    height: 1.5rem;
+    border-radius: var(--r-sm);
+    color: var(--root-fg2);
+    cursor: pointer;
+    outline: none;
+  }
+  .t3-permissions__option:focus-visible {
+    box-shadow: var(--ring-selected);
+  }
+  .t3-permissions__option[data-selected] {
+    background: color-mix(in oklab, var(--line2) 72%, transparent);
+    color: var(--fg);
+  }
+  .t3-permissions__option:is([data-hovered], [data-focus-visible]) {
+    color: var(--fg);
+  }
+  .t3-permissions__option:not([data-selected]):is([data-hovered], [data-focus-visible]) {
+    background: var(--hover);
+  }
+  .t3-permissions__summary {
+    display: grid;
+    gap: 0.125rem;
+  }
+  .t3-permissions__label {
+    color: var(--root-fg2);
+    font-size: 0.875rem;
+    line-height: 1.429;
+  }
+  .t3-permissions__label--current {
+    color: var(--fg);
+  }
+  .t3-permissions__desc {
+    min-height: 2rem;
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+}

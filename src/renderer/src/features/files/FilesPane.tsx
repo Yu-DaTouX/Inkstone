@@ -362,8 +362,8 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
       data-files-quickopen=""
     >
       <PaneTitle>
-        <span className="v3-files-headlead gap-1" data-testid="v3-files-head">
-          <span className="v3-files-headtitle px-0 text-xs text-muted-foreground">{text.title}</span>
+        <span className="v3-files-headlead" data-testid="v3-files-head">
+          <span className="v3-files-headtitle">{text.title}</span>
           <span className="v3-files-headtabs" ref={setTabsHost} />
         </span>
       </PaneTitle>

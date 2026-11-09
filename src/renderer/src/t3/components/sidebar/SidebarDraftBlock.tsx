@@ -1,11 +1,11 @@
 import { SquarePenIcon, XIcon } from 'lucide-react'
 import { memo, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
-import { cn } from '../../lib/utils'
+import { cx } from '../../../ui/cx'
 import { resolveSidebarRowAccessibility } from '../Sidebar.logic'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip'
+import { Focusable, TooltipTrigger, Tooltip, TooltipHint } from '../../../ui'
+import './SidebarThreadRow.css'
+import './SidebarDraftBlock.css'
 
-export const DRAFT_SURFACE_CLASS_NAME = 'bg-warning/4 hover:bg-warning/8'
-export const DRAFT_PEN_CLASS_NAME = 'size-3 shrink-0 text-warning-foreground'
 
 export interface SidebarDraftRowData {
   draftId: string
@@ -52,7 +52,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
     onDiscard(draft.draftId)
   }
   return (
-    <li className="list-none py-0.5">
+    <li className="t3-draft-row">
       <div
         role="treeitem"
         tabIndex={-1}
@@ -60,41 +60,32 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         aria-label={accessibility.label}
         aria-current={accessibility.current}
         data-testid="sidebar-draft-row"
-        className={cn(
-          'group/sidebar-row relative w-full cursor-pointer transition-colors overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-          draft.isActive ? 'bg-sidebar-row-active' : DRAFT_SURFACE_CLASS_NAME
+        className={cx(
+          't3-g-sidebar-row t3-thread-row__surface',
+          draft.isActive ? 't3-thread-row__surface--active' : 't3-thread-row__surface--draft'
         )}
         onClick={handleActivate}
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
       >
         <span className="sr-only">{draft.preview}</span>
-        <div className="relative z-10 px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)">
-          <div className="flex h-5 min-w-0 items-center gap-1.5">
-            <SquarePenIcon aria-hidden className={DRAFT_PEN_CLASS_NAME} />
+        <div className="t3-draft-row__body">
+          <div className="t3-draft-row__head">
+            <SquarePenIcon aria-hidden className="t3-icon--xs t3-thread-row__draft-mark" />
             {draft.projectIcon}
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
+            <span className="t3-draft-row__project">
               {draft.projectDisplayName ?? props.unsentLabel}
             </span>
-            <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-end">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={props.discardLabel}
-                      onClick={handleDiscard}
-                      className="pointer-events-none inline-flex cursor-pointer items-center rounded-md bg-transparent px-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100"
-                    >
-                      <XIcon className="size-3" />
-                    </button>
-                  }
-                />
-                <TooltipPopup side="top">{props.discardLabel}</TooltipPopup>
-              </Tooltip>
+            <span className="t3-draft-row__discard-slot">
+              <TooltipTrigger>
+                <Focusable><button type="button" aria-label={props.discardLabel} onClick={handleDiscard} className="t3-thread-row__action t3-draft-row__discard">
+                      <XIcon className="t3-icon--xs" />
+                    </button></Focusable>
+                <Tooltip><TooltipHint label={props.discardLabel} /></Tooltip>
+              </TooltipTrigger>
             </span>
           </div>
-          <div aria-hidden className="mt-0.5 truncate text-sm font-medium text-foreground/90">
+          <div aria-hidden className="t3-draft-row__preview">
             {draft.preview}
           </div>
         </div>
@@ -128,7 +119,7 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
       <li
         aria-hidden
         data-testid="sidebar-draft-divider"
-        className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60"
+        className="t3-draft-divider"
       />
     </>
   )

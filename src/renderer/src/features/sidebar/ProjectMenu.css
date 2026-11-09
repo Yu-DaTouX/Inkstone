@@ -1,0 +1,8 @@
+@layer features {
+  .project-menu__swatch {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 3px;
+  }
+}

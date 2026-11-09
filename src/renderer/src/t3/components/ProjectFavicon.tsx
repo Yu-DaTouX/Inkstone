@@ -1,8 +1,9 @@
 import type { ComponentType } from "react";
 import { Globe, FolderCodeIcon } from "lucide-react";
 
-import { cn } from "../lib/utils";
+import { cx } from "../../ui/cx";
 import { useProjectIconLook } from "../../patterns/project-icon";
+import "./ProjectFavicon.css";
 
 export { projectMonogram } from "../../patterns/project-icon";
 
@@ -27,30 +28,30 @@ export function ProjectFavicon({
     return (
       <span
         aria-hidden
-        className={cn(
-          "inline-flex size-4 shrink-0 items-center justify-center rounded-[.25rem] bg-[color-mix(in_srgb,var(--data-8)_18%,transparent)] text-[color-mix(in_srgb,var(--data-8)_70%,var(--color-foreground))]",
+        className={cx(
+          "t3-favicon t3-favicon--web",
           className,
         )}
       >
-        <Globe className="size-2.5" />
+        <Globe />
       </span>
     );
   }
   const label = project.displayName.trim();
   if (label.length === 0) {
     const Icon = FallbackIcon ?? FolderCodeIcon;
-    return <Icon className={cn("size-3.5 shrink-0 text-icon-muted", className)} />;
+    return <Icon className={cx("t3-favicon-fallback", className)} />;
   }
   const tone = look.tone;
   return (
     <span
       aria-hidden
-      className={cn(
-        "inline-flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-[.25rem] text-[.5rem] font-semibold leading-none tracking-tight",
+      className={cx(
+        "t3-favicon t3-favicon--initials",
         className,
       )}
       style={{
-        color: `color-mix(in srgb, var(--data-${tone}) 62%, var(--color-foreground))`,
+        color: `color-mix(in srgb, var(--data-${tone}) 62%, var(--fg))`,
         backgroundColor: `color-mix(in srgb, var(--data-${tone}) 16%, transparent)`,
       }}
     >

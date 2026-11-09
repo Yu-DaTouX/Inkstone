@@ -1,0 +1,61 @@
+@layer features {
+  .t3-compact-menu__trigger {
+    flex-shrink: 0;
+  }
+  .t3-compact-menu__dialog {
+    min-width: 12rem;
+    max-height: inherit;
+    overflow-y: auto;
+    outline: none;
+  }
+  .t3-compact-menu__separator {
+    height: 1px;
+    margin: 0.25rem 0.5rem;
+    background: var(--line);
+  }
+  .t3-traits__title {
+    padding: 0.375rem 0.5rem 0.25rem;
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    font-weight: 500;
+  }
+  .t3-traits__dialog {
+    max-height: inherit;
+    overflow-y: auto;
+    outline: none;
+  }
+  .t3-traits__list {
+    max-height: none;
+    overflow: visible;
+  }
+  .t3-traits__option {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+  }
+  .t3-traits__option-head {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .t3-traits__option-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .t3-traits__option-desc {
+    max-width: 14rem;
+    color: color-mix(in oklab, var(--root-fg2) 80%, transparent);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    text-wrap: pretty;
+  }
+  .t3-traits__trigger {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}

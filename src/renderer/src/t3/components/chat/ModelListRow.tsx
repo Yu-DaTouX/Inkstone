@@ -1,15 +1,13 @@
 import { memo } from "react";
 import { CheckIcon, StarIcon } from "lucide-react";
 import { getDisplayModelName, getProviderRowLabel } from "./providerIconUtils";
-import { ComboboxItem } from "../ui/combobox";
-import { Button } from "../ui/button";
-import { Badge } from "../ui/badge";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { cn } from "../../lib/utils";
+import { Badge, ComboboxItem, Focusable, IconButton, Tooltip, TooltipHint, TooltipTrigger } from "../../../ui";
+import { cx } from "../../../ui/cx";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { useT } from "../../../i18n";
 import type { ProviderDriverKind, ProviderInstanceId } from "../../adapters/contracts";
+import "./ModelListRow.css";
 
 export function formatContextWindow(tokens: number): string {
   if (tokens >= 1_000_000) return `${String(Math.round(tokens / 100_000) / 10)}M`;
@@ -17,7 +15,6 @@ export function formatContextWindow(tokens: number): string {
 }
 
 export const ModelListRow = memo(function ModelListRow(props: {
-  index: number;
   slug: string;
   name: string;
   subProvider?: string | undefined;
@@ -43,63 +40,51 @@ export const ModelListRow = memo(function ModelListRow(props: {
 
   const row = (
     <ComboboxItem
-      hideIndicator
-      index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
+      selected={props.isSelected}
       disabled={Boolean(props.disabledReason)}
-      className={cn(
-        "group relative min-h-10 w-full !min-w-0 max-w-full cursor-pointer py-1.5 sm:min-h-10",
-        props.disabledReason &&
-          "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed",
+      className={cx(
+        "t3-model-row",
+        props.disabledReason && "t3-model-row--blocked",
       )}
     >
-      <div className="min-w-0 flex-1 text-left">
-        <div className="flex min-w-0 items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <div className="min-w-0 truncate font-medium text-[14px] leading-snug" />
-              }
-            >
+      <div className="t3-model-row__main">
+        <div className="t3-model-row__title">
+          <TooltipTrigger>
+            <Focusable excludeFromTabOrder><div className="t3-model-row__name">
               {getDisplayModelName(model)}
-            </TooltipTrigger>
-            <TooltipPopup side="top">{getDisplayModelName(model)}</TooltipPopup>
-          </Tooltip>
+            </div></Focusable>
+            <Tooltip><TooltipHint label={getDisplayModelName(model)} /></Tooltip>
+          </TooltipTrigger>
           {props.showNewBadge ? (
-            <span
-              className="shrink-0 rounded border border-update/35 bg-update/15 px-0.5 py-px text-3xs font-bold uppercase leading-none tracking-wide text-update-foreground"
-              aria-label={t("composer.t3.picker.newModelLabel")}
-            >
+            <Badge tone="accent" className="t3-model-row__new" aria-label={t("composer.t3.picker.newModelLabel")}>
               {t("composer.t3.picker.newModel")}
-            </span>
+            </Badge>
           ) : null}
           {props.unavailable ? (
-            <Badge variant="outline" size="sm">
+            <Badge tone="neutral">
               {t("composer.t3.picker.unavailable")}
             </Badge>
           ) : null}
         </div>
         {props.showProvider && (
-          <div className="mt-1 flex items-center gap-1.5">
+          <div className="t3-model-row__provider">
             <ProviderInstanceIcon
               driverKind={props.driverKind}
               displayName={props.providerDisplayName}
-              className="size-3"
               iconSize={12}
             />
-            <span className="truncate text-xs font-normal leading-snug text-muted-foreground">
+            <span className="t3-model-row__provider-name">
               {providerLabel}
             </span>
           </div>
         )}
       </div>
 
-      <div className="shrink-0 items-center gap-1.5 flex">
+      <div className="t3-model-row__aside">
         {props.contextWindow ? (
           <Badge
-            variant="outline"
-            size="sm"
-            className="tabular-nums sm:text-2xs"
+            tone="neutral"
             aria-label={t("composer.t3.picker.contextWindow", {
               size: formatContextWindow(props.contextWindow),
             })}
@@ -108,44 +93,27 @@ export const ModelListRow = memo(function ModelListRow(props: {
             {formatContextWindow(props.contextWindow)}
           </Badge>
         ) : null}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost-muted"
-                className="-mr-1 shrink-0"
-                onClick={(event) => {
-                  event.stopPropagation();
+        <TooltipTrigger>
+          <IconButton data-t3-btn variant="ghost" size="md" excludeFromTabOrder onPress={() => {
                   props.onToggleFavorite(props.instanceId, props.slug);
-                }}
-                onKeyDown={(event) => {
+                }} isDisabled={Boolean(props.disabledReason)} className="t3-model-row__favorite" onKeyDown={(event) => {
                   event.stopPropagation();
-                }}
-                disabled={Boolean(props.disabledReason)}
-                aria-label={
+                }} aria-label={
                   props.isFavorite
                     ? t("composer.t3.picker.favoriteRemove")
                     : t("composer.t3.picker.favoriteAdd")
-                }
-              >
+                }>
                 <StarIcon
-                  className={cn(
-                    "size-3.5 sm:size-3",
-                    props.isFavorite
-                      ? "fill-current text-warning"
-                      : "opacity-0 group-hover:opacity-100 group-data-highlighted:opacity-100 in-focus-visible:opacity-100 pointer-coarse:opacity-100",
+                  className={cx(
+                    "t3-icon--xs",
+                    props.isFavorite ? "t3-model-row__star--on" : "t3-model-row__star--off",
                   )}
                 />
-              </Button>
-            }
-          />
-          <TooltipPopup side="top" align="center">
-            {props.isFavorite ? t("composer.t3.picker.favoriteRemove") : t("composer.t3.picker.favoriteAdd")}
-          </TooltipPopup>
-        </Tooltip>
+              </IconButton>
+          <Tooltip><TooltipHint label={props.isFavorite ? t("composer.t3.picker.favoriteRemove") : t("composer.t3.picker.favoriteAdd")} /></Tooltip>
+        </TooltipTrigger>
         <CheckIcon
-          className={cn("size-3.5", !props.isSelected && "invisible")}
+          className={cx("t3-icon--sm", !props.isSelected && "t3-model-row__check--hidden")}
           aria-hidden="true"
         />
       </div>
@@ -157,11 +125,11 @@ export const ModelListRow = memo(function ModelListRow(props: {
   }
 
   return (
-    <Tooltip>
-      <TooltipTrigger render={row} />
-      <TooltipPopup side="left" align="center">
-        {props.disabledReason}
-      </TooltipPopup>
-    </Tooltip>
+    <TooltipTrigger>
+      <Focusable excludeFromTabOrder>{row}</Focusable>
+      <Tooltip placement="left">
+        <TooltipHint label={props.disabledReason} />
+      </Tooltip>
+    </TooltipTrigger>
   );
 });

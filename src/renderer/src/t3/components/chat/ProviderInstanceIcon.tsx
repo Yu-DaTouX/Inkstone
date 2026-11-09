@@ -1,10 +1,11 @@
 import { memo } from "react";
 
 import type { ProviderDriverKind } from "../../adapters/contracts";
-import { cn } from "../../lib/utils";
+import { cx } from "../../../ui/cx";
 import { ModelBot } from "../../../patterns/ModelBot";
 import { brandOfModel } from "../../../patterns/model-vendor";
 import { providerFavicon } from "../../../patterns/provider-favicon";
+import "./ProviderInstanceIcon.css";
 
 export function providerInitials(displayName: string): string {
   const words = displayName.trim().split(/[\s._/-]+/u).filter(Boolean);
@@ -28,8 +29,8 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   const favicon = providerFavicon(props.driverKind);
   return (
     <span
-      className={cn(
-        "relative isolate z-30 inline-flex shrink-0 items-center justify-center overflow-visible",
+      className={cx(
+        "t3-provider-icon",
         props.className,
       )}
       data-provider-brand={brand}
@@ -42,19 +43,19 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
           height={iconSize}
           draggable={false}
           data-provider-favicon
-          className={cn("shrink-0 rounded-[3px] object-contain", props.iconClassName)}
+          className={cx("t3-provider-icon__img", props.iconClassName)}
           style={{ width: iconSize, height: iconSize }}
         />
       ) : (
-        <ModelBot brand={brand} mood="icon" size={iconSize} className={cn(props.iconClassName)} />
+        <ModelBot brand={brand} mood="icon" size={iconSize} className={cx(props.iconClassName)} />
       )}
       {props.showBadge ? (
         <span
-          className={cn(
-            "pointer-events-none absolute right-0 bottom-0 z-10 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border bg-card px-0.5 text-4xs font-semibold leading-none text-muted-foreground shadow-sm",
+          className={cx(
+            "t3-provider-icon__badge",
             props.badgeClassName,
           )}
-          style={{ borderColor: props.indicatorBackground ?? "var(--card)" }}
+          style={{ borderColor: props.indicatorBackground ?? "var(--surface)" }}
           aria-hidden
         >
           {providerInitials(props.displayName)}

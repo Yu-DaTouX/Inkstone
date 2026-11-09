@@ -4,20 +4,19 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useEffectEvent,
   useRef,
   useState
 } from 'react'
 import { useOptionalT } from '@/i18n'
-import { Button } from '@/t3/components/ui/button'
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from '@/t3/components/ui/menu'
-import { ScrollArea } from '@/t3/components/ui/scroll-area'
-import { cn } from '@/t3/lib/utils'
+import { IconButton, Kbd, Menu, MenuItem, MenuTrigger, Popover, ScrollArea } from '../../../ui'
+import { cx } from '@/ui/cx'
 import {
-  DisabledReasonTooltip,
   type LauncherAction,
   surfaceShortcutActionForKey
 } from './Launcher'
 import { TabChip, type TabSurface } from './TabChip'
+import './TabStrip.css'
 
 const TAB_SCROLL_EDGE_TOLERANCE = 1
 const TAB_DRAG_THRESHOLD = 4
@@ -63,23 +62,20 @@ const TAB_DRAG_OUT_PX = 12
 
 function AddSurfaceMenuAction(props: { action: LauncherAction }) {
   const { action } = props
-  const entry = (
+  return (
     <MenuItem
-      className={action.available ? undefined : 'data-disabled:pointer-events-auto'}
-      disabled={!action.available}
+      id={action.kind}
+      textValue={action.label}
+      icon={action.icon}
+      isDisabled={!action.available}
+      disabledReason={action.disabledReason}
+      shortcut={<Kbd>{action.shortcut}</Kbd>}
       aria-keyshortcuts={action.shortcut}
-      onClick={() => {
-        if (!action.available) return
-        action.onPick()
-      }}
+      onAction={action.onPick}
     >
-      {action.icon}
-      <span className="min-w-0 flex-1 truncate">{action.label}</span>
-      <MenuShortcut>{action.shortcut}</MenuShortcut>
+      {action.label}
     </MenuItem>
   )
-  if (action.available || !action.disabledReason) return entry
-  return <DisabledReasonTooltip reason={action.disabledReason} trigger={entry} />
 }
 
 export function TabStrip(props: TabStripProps) {
@@ -264,30 +260,36 @@ export function TabStrip(props: TabStripProps) {
   const closeLabelOf = (surface: TabSurface) =>
     t('panel.t3.closeTab', { name: surface.label })
 
-  const handleAddMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const action = surfaceShortcutActionForKey(props.actions, event.nativeEvent)
+  const handleAddMenuKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    const action = surfaceShortcutActionForKey(props.actions, event)
     if (!action) return
     event.preventDefault()
     event.stopPropagation()
     setAddMenuOpen(false)
     action.onPick()
-  }
+  })
+
+  useEffect(() => {
+    if (!addMenuOpen) return undefined
+    const handler = (event: KeyboardEvent) => handleAddMenuKeyDown(event)
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [addMenuOpen])
 
   return (
-    <div className={cn('flex h-full min-w-0 flex-1 items-center gap-1', props.className)}>
+    <div className={cx('t3-tab-strip', props.className)}>
       <ScrollArea
-        radius="none"
         ref={attachTabList}
         hideScrollbars
-        scrollFade
-        className="min-w-0 flex-1"
+        fade
+        className="t3-tab-strip__scroll"
         data-right-panel-tab-list
       >
-        <div className="flex h-full w-max min-w-full items-center gap-1">
+        <div className="t3-tab-strip__track">
           <div
             role="tablist"
             aria-label={props.listLabel ?? t('panel.t3.tabs')}
-            className="flex items-center gap-1"
+            className="t3-tab-strip__tabs"
             onKeyDown={onKeyDown}
           >
             {props.tabs.map((surface) => (
@@ -308,31 +310,18 @@ export function TabStrip(props: TabStripProps) {
             ))}
           </div>
           {props.showAdd === false ? null : (
-            <Menu open={addMenuOpen} onOpenChange={setAddMenuOpen}>
-              <MenuTrigger
-                render={
-                  <Button
-                    aria-label={props.addLabel ?? t('panel.t3.addSurface')}
-                    className="shrink-0"
-                    data-testid="rp-new-tab"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                  />
-                }
-              >
-                <Plus className="size-3.5" />
-              </MenuTrigger>
-              <MenuPopup
-                align="start"
-                side="bottom"
-                sideOffset={6}
-                onKeyDownCapture={handleAddMenuKeyDown}
-              >
-                {props.actions.map((action) => (
-                  <AddSurfaceMenuAction key={action.kind} action={action} />
-                ))}
-              </MenuPopup>
-            </Menu>
+            <MenuTrigger isOpen={addMenuOpen} onOpenChange={setAddMenuOpen}>
+              <IconButton data-t3-btn variant="ghost" size="md" aria-label={props.addLabel ?? t('panel.t3.addSurface')} className="t3-tab-strip__add" data-testid="rp-new-tab">
+                <Plus className="t3-icon--sm" />
+              </IconButton>
+              <Popover placement="bottom start" offset={6}>
+                <Menu autoFocus="first" className="t3-tab-strip__menu" aria-label={props.addLabel ?? t('panel.t3.addSurface')}>
+                  {props.actions.map((action) => (
+                    <AddSurfaceMenuAction key={action.kind} action={action} />
+                  ))}
+                </Menu>
+              </Popover>
+            </MenuTrigger>
           )}
         </div>
       </ScrollArea>

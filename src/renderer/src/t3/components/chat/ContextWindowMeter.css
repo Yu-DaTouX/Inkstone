@@ -1,0 +1,103 @@
+@layer features {
+  .t3-ctx-meter {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .t3-ctx-meter__ring {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+  }
+  .t3-ctx-meter__svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin-inline: 0;
+    rotate: -90deg;
+    transform: translateZ(0);
+  }
+  .t3-ctx-meter__track {
+    stroke: color-mix(in oklab, var(--root-fg2) 40%, transparent);
+  }
+  .t3-ctx-meter__arc {
+    transition: stroke-dashoffset 500ms, stroke 500ms;
+  }
+  .t3-ctx-meter__placeholder {
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .t3-ctx-popover {
+    width: 16rem;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .t3-ctx-popover__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: var(--floating-content-inset);
+  }
+  .t3-ctx-popover__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .t3-ctx-popover__title {
+    color: var(--root-fg2);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    font-weight: 500;
+  }
+  .t3-ctx-popover__usage {
+    color: var(--root-fg3);
+    font-size: 0.6875rem;
+    line-height: 1.455;
+    font-variant-numeric: tabular-nums;
+  }
+  .t3-ctx-popover__dot {
+    margin-inline: 0.25rem;
+  }
+  .t3-ctx-popover__bar {
+    width: 100%;
+    height: 0.375rem;
+    overflow: hidden;
+    border-radius: var(--r-full);
+    background: color-mix(in oklab, var(--hover-main) 60%, transparent);
+  }
+  .t3-ctx-popover__fill {
+    height: 100%;
+    border-radius: var(--r-full);
+    transition: width 500ms, background-color 500ms;
+  }
+  .t3-ctx-popover__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: var(--root-fg3);
+    font-size: 0.6875rem;
+    line-height: 1rem;
+  }
+  .t3-ctx-popover__value {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .t3-ctx-popover__compact {
+    justify-content: center;
+    width: 100%;
+    margin-top: 0.25rem;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .t3-ctx-meter__arc,
+    .t3-ctx-popover__fill {
+      transition: none;
+    }
+  }
+}

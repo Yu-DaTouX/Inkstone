@@ -26,9 +26,8 @@ import {
 } from "lucide-react";
 
 import { useT, type MessageKey, type TFunc } from "../../../i18n";
-import { cn } from "../../lib/utils";
-import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuTrigger } from "../ui/menu";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { cx } from "../../../ui/cx";
+import { BareButton, Badge, Focusable, Kbd, Menu, MenuItem, MenuTrigger, Popover, TooltipTrigger, Tooltip, TooltipHint } from "../../../ui";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import {
@@ -36,6 +35,7 @@ import {
   ThreadWorktreeIndicator,
   type ThreadDiff,
 } from "../ThreadStatusIndicators";
+import "./SidebarThreadRow.css";
 
 export type SidebarRowVariant = "card" | "slim" | "folder" | "folder-multiline";
 
@@ -131,32 +131,32 @@ const TOP_STATUS: Record<SidebarRowStatus, TopStatus> = {
   working: {
     labelKey: "sidebar.t3.status.working",
     icon: "working",
-    className: "text-info-foreground",
+    className: "t3-status--working",
   },
   waiting: {
     labelKey: "sidebar.t3.status.waiting",
     icon: "waiting",
-    className: "text-muted-foreground",
+    className: "t3-status--waiting",
   },
   approval: {
     labelKey: "sidebar.t3.status.approval",
     icon: "approval",
-    className: "text-warning-foreground",
+    className: "t3-status--approval",
   },
   input: {
     labelKey: "sidebar.t3.status.input",
     icon: "input",
-    className: "text-warning-foreground",
+    className: "t3-status--approval",
   },
   failed: {
     labelKey: "sidebar.t3.status.failed",
     icon: "failed",
-    className: "text-error-foreground",
+    className: "t3-status--failed",
   },
   done: {
     labelKey: "sidebar.t3.status.done",
     icon: "done",
-    className: "text-success-foreground",
+    className: "t3-status--done",
   },
 };
 
@@ -177,7 +177,7 @@ function TopStatusIcon({ icon, className }: { icon: TopStatusIconName; className
     <Icon
       aria-hidden
       data-status-icon={icon}
-      className={cn("shrink-0", icon === "working" && "motion-safe:animate-[spin_3s_linear_infinite]", className)}
+      className={cx("t3-icon", icon === "working" && "t3-thread-row__spin", className)}
     />
   );
 }
@@ -204,30 +204,24 @@ function useNowSecond(): number {
 function WorkingDuration({ startedAt }: { startedAt: number | null }) {
   const now = useNowSecond();
   if (startedAt === null || Number.isNaN(startedAt)) return null;
-  return <span className="tabular-nums">{formatElapsed(now - startedAt)}</span>;
+  return <span className="t3-thread-row__elapsed">{formatElapsed(now - startedAt)}</span>;
 }
 
 function JumpHintBadge({ label }: { label: string }) {
   return (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute right-1.5 top-1/2 z-10 inline-flex h-5 -translate-y-1/2 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono text-3xs font-medium tracking-tight text-foreground shadow-sm"
-    >
+    <Kbd aria-hidden className="t3-thread-row__jump">
       {label}
-    </span>
+    </Kbd>
   );
 }
 
 function DragDestination({ verb, t }: { verb: SidebarRowDropVerb; t: TFunc }) {
   const { labelKey, Icon } = DROP_VERB_PRESENTATION[verb];
   return (
-    <span
-      role="status"
-      className="pointer-events-none ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-primary/40 bg-primary/10 px-1.5 text-2xs font-medium text-primary"
-    >
-      <Icon aria-hidden className="size-3" />
+    <Badge tone="accent" role="status" className="t3-thread-row__drop-hint">
+      <Icon aria-hidden className="t3-icon--xs" />
       {t(labelKey)}
-    </span>
+    </Badge>
   );
 }
 
@@ -270,7 +264,7 @@ function RenameInput({
       onBlur={() => {
         if (!settledRef.current) onCommit();
       }}
-      className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm font-medium text-card-foreground outline-none focus:border-foreground"
+      className="ui-inline-rename t3-thread-row__rename"
     />
   );
 }
@@ -334,19 +328,18 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
       }
     : {};
 
-  const rowSurfaceClassName = cn(
-    "group/sidebar-row relative w-full cursor-pointer transition-colors overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+  const rowSurfaceClassName = cx(
+    "t3-g-sidebar-row t3-thread-row__surface",
     isActive
-      ? "bg-sidebar-row-active text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+      ? "t3-thread-row__surface--active"
       : view.hasUnsentDraft
-        ? "bg-warning/4 text-sidebar-foreground hover:bg-warning/8"
+        ? "t3-thread-row__surface--draft"
         : view.recede
-          ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-          : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
-    isFileDragOver && "ring-1 ring-inset ring-primary/70",
-    isFileDragOver && !isActive && "bg-sidebar-row-hover",
+          ? "t3-thread-row__surface--receded"
+          : "t3-thread-row__surface--idle",
+    isFileDragOver && "t3-thread-row__surface--drop-target",
     isDragging &&
-      "bg-sidebar bg-linear-to-b from-sidebar-row-active to-sidebar-row-active text-sidebar-foreground opacity-70 shadow-lg",
+      "t3-thread-row__surface--lifted",
   );
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -376,23 +369,12 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   ) : (
     <span
       aria-hidden
-      className={cn(
-        "min-w-0 flex-1 truncate text-start text-sm transition-[opacity,color] motion-reduce:transition-none",
-        view.recede ? "font-normal" : "font-medium",
-        variant !== "slim"
-          ? cn(
-              view.recede
-                ? "text-foreground/75 group-hover/sidebar-row:text-foreground group-focus-visible/sidebar-row:text-foreground"
-                : status === "failed" && !view.isUnread && !view.isWoke
-                  ? "text-foreground/95"
-                  : "text-foreground",
-            )
-          : cn(
-              "group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
-              isActive || view.isWoke || status === "input" || view.isUnread
-                ? "text-foreground"
-                : "text-muted-foreground",
-            ),
+      className={cx(
+        "t3-thread-row__title",
+        view.recede && "t3-thread-row__title--receded",
+        variant === "slim" &&
+          !(isActive || view.isWoke || status === "input" || view.isUnread) &&
+          "t3-thread-row__title--muted",
       )}
       dir="auto"
     >
@@ -401,215 +383,147 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   );
 
   const draftIndicator = view.hasUnsentDraft ? (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            role="img"
-            aria-label={t("sidebar.t3.unsentDraft")}
-            data-testid={`sidebar-draft-indicator-${view.threadKey}`}
-            className="inline-flex shrink-0 items-center"
-          />
-        }
-      >
-        <SquarePen aria-hidden className="size-3 text-warning-foreground" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{t("sidebar.t3.unsentDraft")}</TooltipPopup>
-    </Tooltip>
+    <TooltipTrigger>
+      <Focusable excludeFromTabOrder><span role="img" aria-label={t("sidebar.t3.unsentDraft")} data-testid={`sidebar-draft-indicator-${view.threadKey}`} className="t3-thread-row__draft-mark">
+        <SquarePen aria-hidden className="t3-icon--xs" />
+      </span></Focusable>
+      <Tooltip><TooltipHint label={t("sidebar.t3.unsentDraft")} /></Tooltip>
+    </TooltipTrigger>
   ) : null;
 
   const pinIndicator = !view.pinned ? null : renaming ? (
-    <Pin aria-label={t("sidebar.t3.pinned")} role="img" className="size-3 shrink-0 text-muted-foreground/65" />
+    <Pin aria-label={t("sidebar.t3.pinned")} role="img" className="t3-icon--xs t3-thread-row__pinned" />
   ) : (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={t("sidebar.t3.unpin")}
-            onClick={(event) => {
+    <TooltipTrigger>
+      <Focusable><button type="button" aria-label={t("sidebar.t3.unpin")} onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               onUnpin?.();
-            }}
-            className="group/unpin -my-1 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          />
-        }
-      >
+            }} className="t3-g-unpin t3-thread-row__unpin">
         <Pin
           aria-hidden
-          className="size-3 shrink-0 group-hover/unpin:hidden group-focus-visible/unpin:hidden"
+          className="t3-icon--xs t3-thread-row__pin-icon"
         />
         <PinOff
           aria-hidden
-          className="hidden size-3 shrink-0 group-hover/unpin:block group-focus-visible/unpin:block"
+          className="t3-icon--xs t3-thread-row__unpin-icon"
         />
-      </TooltipTrigger>
-      <TooltipPopup>{t("sidebar.t3.unpin")}</TooltipPopup>
-    </Tooltip>
+      </button></Focusable>
+      <Tooltip><TooltipHint label={t("sidebar.t3.unpin")} /></Tooltip>
+    </TooltipTrigger>
   );
 
   const wokeButton = (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={t("sidebar.t3.dismissWoke")}
-            onClick={(event) => {
+    <TooltipTrigger>
+      <Focusable><button type="button" aria-label={t("sidebar.t3.dismissWoke")} onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               onAcknowledgeWoke?.();
-            }}
-            className="inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium text-warning-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          />
-        }
-      >
-        <AlarmClock aria-hidden className="size-4 shrink-0" />
+            }} className="t3-thread-row__woke">
+        <AlarmClock aria-hidden className="t3-icon--md" />
         <span role="status">{t("sidebar.t3.status.woke")}</span>
-      </TooltipTrigger>
-      <TooltipPopup side="top">{t("sidebar.t3.dismissWoke")}</TooltipPopup>
-    </Tooltip>
+      </button></Focusable>
+      <Tooltip><TooltipHint label={t("sidebar.t3.dismissWoke")} /></Tooltip>
+    </TooltipTrigger>
   );
 
   const snoozeMenu =
     snoozePresets.length > 0 && onSnooze ? (
-      <Menu>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <MenuTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={t("sidebar.t3.snooze")}
-                    onClick={(event) => event.stopPropagation()}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                    className="inline-flex h-full cursor-pointer items-center gap-0.5 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
-                  />
-                }
-              />
-            }
+      <MenuTrigger>
+        <TooltipTrigger>
+          <BareButton
+            aria-label={t("sidebar.t3.snooze")}
+            onDoubleClick={(event) => event.stopPropagation()}
+            className="t3-thread-row__action"
           >
-            <Clock className="size-3" />
-          </TooltipTrigger>
-          <TooltipPopup>{t("sidebar.t3.snooze")}</TooltipPopup>
-        </Tooltip>
-        <MenuPopup side="bottom" align="end" className="min-w-40">
-          {snoozePresets.map((preset) => (
-            <MenuItem
-              key={preset.id}
-              onClick={() => onSnooze(preset.until)}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              <AlarmClock className="size-3.5" />
-              <MenuItemLabel>{preset.label}</MenuItemLabel>
-            </MenuItem>
-          ))}
-        </MenuPopup>
-      </Menu>
+            <Clock className="t3-icon--xs" />
+          </BareButton>
+          <Tooltip><TooltipHint label={t("sidebar.t3.snooze")} /></Tooltip>
+        </TooltipTrigger>
+        <Popover placement="bottom end" className="t3-thread-row__snooze-menu">
+          <Menu
+            aria-label={t("sidebar.t3.snooze")}
+            autoFocus="first"
+            onAction={(key) => {
+              const preset = snoozePresets.find((entry) => entry.id === key);
+              if (preset) onSnooze(preset.until);
+            }}
+          >
+            {snoozePresets.map((preset) => (
+              <MenuItem
+                key={preset.id}
+                id={preset.id}
+                textValue={preset.label}
+                icon={<AlarmClock className="t3-icon--sm" />}
+              >
+                {preset.label}
+              </MenuItem>
+            ))}
+          </Menu>
+        </Popover>
+      </MenuTrigger>
     ) : null;
 
   const archiveButton = onArchive ? (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={t("sidebar.t3.archive")}
-            onClick={(event) => {
+    <TooltipTrigger>
+      <Focusable><button type="button" aria-label={t("sidebar.t3.archive")} onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               onArchive();
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
-          />
-        }
-      >
-        <Check aria-hidden className="size-3.5" />
-      </TooltipTrigger>
-      <TooltipPopup>{t("sidebar.t3.archive")}</TooltipPopup>
-    </Tooltip>
+            }} onPointerDown={(event) => event.stopPropagation()} className="t3-thread-row__action t3-thread-row__action--flush">
+        <Check aria-hidden className="t3-icon--sm" />
+      </button></Focusable>
+      <Tooltip><TooltipHint label={t("sidebar.t3.archive")} /></Tooltip>
+    </TooltipTrigger>
   ) : null;
 
   const unarchiveButton = onUnarchive ? (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={t("sidebar.t3.unarchive")}
-            onClick={(event) => {
+    <TooltipTrigger>
+      <Focusable><button type="button" aria-label={t("sidebar.t3.unarchive")} onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               onUnarchive();
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
-          />
-        }
-      >
-        <Undo2 className="mb-px size-3.5" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{t("sidebar.t3.unarchive")}</TooltipPopup>
-    </Tooltip>
+            }} onPointerDown={(event) => event.stopPropagation()} className="t3-thread-row__action t3-thread-row__action--flush">
+        <Undo2 className="t3-icon--sm" />
+      </button></Focusable>
+      <Tooltip><TooltipHint label={t("sidebar.t3.unarchive")} /></Tooltip>
+    </TooltipTrigger>
   ) : null;
 
   const unsnoozeButton = onUnsnooze ? (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={t("sidebar.t3.wake")}
-            onClick={(event) => {
+    <TooltipTrigger>
+      <Focusable><button type="button" aria-label={t("sidebar.t3.wake")} onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               onUnsnooze();
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            className="pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100"
-          />
-        }
-      >
-        <AlarmClockOff className="mb-px size-3" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{t("sidebar.t3.wake")}</TooltipPopup>
-    </Tooltip>
+            }} onPointerDown={(event) => event.stopPropagation()} className="t3-thread-row__action t3-thread-row__action--flush t3-thread-row__action--reveal">
+        <AlarmClockOff className="t3-icon--xs" />
+      </button></Focusable>
+      <Tooltip><TooltipHint label={t("sidebar.t3.wake")} /></Tooltip>
+    </TooltipTrigger>
   ) : null;
 
   const discardDraftButton =
     view.hasUnsentDraft && onDiscardDraft ? (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              aria-label={t("sidebar.t3.discardDraft")}
-              onClick={(event) => {
+      <TooltipTrigger>
+        <Focusable><button type="button" aria-label={t("sidebar.t3.discardDraft")} onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 onDiscardDraft();
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-              className="inline-flex cursor-pointer items-center rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
-            />
-          }
-        >
-          <X className="size-3.5" />
-        </TooltipTrigger>
-        <TooltipPopup side="top">{t("sidebar.t3.discardDraft")}</TooltipPopup>
-      </Tooltip>
+              }} onPointerDown={(event) => event.stopPropagation()} className="t3-thread-row__action">
+          <X className="t3-icon--sm" />
+        </button></Focusable>
+        <Tooltip><TooltipHint label={t("sidebar.t3.discardDraft")} /></Tooltip>
+      </TooltipTrigger>
     ) : null;
 
   const clockTime =
-    view.timeLabel === null ? null : <span className="text-xs">{view.timeLabel}</span>;
+    view.timeLabel === null ? null : <span className="t3-thread-row__time">{view.timeLabel}</span>;
 
   const wakeTimeLabel =
     view.snoozeWakeLabel === null ? null : (
-      <span className="inline-flex items-center gap-1 text-xs text-info-foreground tabular-nums">
-        <AlarmClock aria-hidden className="size-3" />
+      <span className="t3-thread-row__wake">
+        <AlarmClock aria-hidden className="t3-icon--xs" />
         {view.snoozeWakeLabel}
       </span>
     );
@@ -617,42 +531,42 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   const dragDestination = dropVerb !== null ? <DragDestination verb={dropVerb} t={t} /> : null;
 
   const metaLine = metaLineEmpty ? null : (
-    <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
+    <div className="t3-thread-row__meta">
       {view.branch ? (
         <>
           <ThreadWorktreeIndicator worktreePath={view.worktreePath} branch={view.branch} />
-          <span className="flex min-w-0 flex-1">
-            <span className="min-w-0 truncate font-mono text-2xs">{view.branch}</span>
+          <span className="t3-thread-row__branch">
+            <span className="t3-thread-row__branch-name">{view.branch}</span>
           </span>
         </>
       ) : (
-        <span className="flex-1" />
+        <span className="t3-thread-row__spacer" />
       )}
       <ThreadDiffCount diff={view.diff} />
     </div>
   );
 
   const hoverCard = (
-    <ThreadHoverCardPopup side="right" align="start" sideOffset={4}>
+    <ThreadHoverCardPopup>
       <ThreadHoverCard title={view.title}>
         {view.projectDisplayName !== null ? (
-          <div className="flex min-w-0 items-center gap-2">
-            <ProjectFavicon project={view.project} className="size-3 shrink-0" />
-            <div className="min-w-0 truncate text-foreground/75">{view.projectDisplayName}</div>
+          <div className="t3-thread-row__hover-row">
+            <ProjectFavicon project={view.project} className="t3-icon--xs" />
+            <div className="t3-thread-row__hover-line t3-thread-row__dim">{view.projectDisplayName}</div>
           </div>
         ) : null}
         {view.branch !== null ? (
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate font-mono text-2xs text-foreground/75">
+          <div className="t3-thread-row__hover-row">
+            <span className="t3-thread-row__branch-name t3-thread-row__dim">
               {view.branch}
             </span>
           </div>
         ) : null}
         {view.modelLabel !== null ? (
-          <div className="min-w-0 truncate text-foreground/75">{view.modelLabel}</div>
+          <div className="t3-thread-row__hover-line t3-thread-row__dim">{view.modelLabel}</div>
         ) : null}
         {statusLabel !== null ? (
-          <div className={cn("min-w-0 truncate", topStatus?.className)}>{statusLabel}</div>
+          <div className={cx("t3-thread-row__hover-line", topStatus?.className)}>{statusLabel}</div>
         ) : null}
       </ThreadHoverCard>
     </ThreadHoverCardPopup>
@@ -663,19 +577,18 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
       data-thread-item={view.threadKey}
       {...sortableProps}
       {...fileDropHandlers}
-      className={cn(
-        "list-none",
-        variant === "slim" && navigationParent === "shelf:settled" && "[content-visibility:auto] [contain-intrinsic-size:auto_36px]",
-        variant === "folder" && "[content-visibility:auto] [contain-intrinsic-size:auto_36px]",
-        variant === "card" && "py-0.5",
-        variant === "folder-multiline" && "[content-visibility:auto] [contain-intrinsic-size:auto_54px]",
-        variant === "folder-multiline" && metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
-        isDragging && "relative z-20",
+      className={cx(
+        "t3-thread-row",
+        ((variant === "slim" && navigationParent === "shelf:settled") || variant === "folder") &&
+          "t3-thread-row--compact",
+        variant === "card" && "t3-thread-row--card",
+        variant === "folder-multiline" && "t3-thread-row--multiline",
+        variant === "folder-multiline" && metaLineEmpty && "t3-thread-row--multiline-bare",
+        isDragging && "t3-thread-row--dragging",
       )}
     >
-      <Tooltip disabled={isDragging}>
-        <TooltipTrigger
-          render={
+      <TooltipTrigger isDisabled={isDragging}>
+        <Focusable excludeFromTabOrder>
             <div
               ref={sortable?.setNodeRef}
               role="treeitem"
@@ -692,14 +605,14 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     ? "sidebar-row-slim"
                     : "sidebar-row-folder"
               }
-              className={cn(
+              className={cx(
                 rowSurfaceClassName,
                 variant === "card"
                   ? undefined
                   : variant === "folder-multiline"
-                    ? "flex flex-col justify-center px-2.5 py-1.5"
-                    : "flex h-9 items-center gap-2.5 px-2.5",
-                inFolder && "ps-9",
+                    ? "t3-thread-row__surface--multiline"
+                    : "t3-thread-row__surface--inline",
+                inFolder && "t3-thread-row__surface--nested",
               )}
               onClick={(event) => onOpen?.(event)}
               onDoubleClick={(event) => {
@@ -713,50 +626,46 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 event.preventDefault();
                 onContextMenu?.(event.button === 2 ? { x: event.clientX, y: event.clientY } : null);
               }}
-            />
-          }
-        >
+            >
           {renaming ? null : <span className="sr-only">{view.title}</span>}
           {variant === "card" ? (
             <div
-              className={cn(
-                "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-                metaLineEmpty && "h-auto",
+              className={cx(
+                "t3-thread-row__card",
+                metaLineEmpty && "t3-thread-row__card--bare",
               )}
             >
-              <div className="flex h-5 min-w-0 items-center gap-1.5">
+              <div className="t3-thread-row__head">
                 {draftIndicator}
-                <ProjectFavicon project={view.project} className="size-4 shrink-0" />
+                <ProjectFavicon project={view.project} className="t3-icon--md" />
                 {pinIndicator}
                 {view.projectDisplayName !== null ? (
-                  <span className="min-w-0 flex-1 truncate font-normal text-secondary-label text-xs">
+                  <span className="t3-thread-row__project">
                     {view.projectDisplayName}
                   </span>
                 ) : (
-                  <span className="flex-1" />
+                  <span className="t3-thread-row__spacer" />
                 )}
                 {isDragging ? (
                   dragDestination
                 ) : (
-                  <span className="group/sidebar-status-slot relative ml-auto flex h-5 min-w-8 shrink-0 items-stretch justify-end text-xs">
+                  <span className="t3-g-sidebar-status-slot t3-thread-row__status-slot">
                     <span
-                      className={cn(
-                        view.isWoke
-                          ? "pointer-events-auto"
-                          : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
-                        "flex items-center self-center justify-self-end tabular-nums text-secondary-label",
+                      className={cx(
+                        !view.isWoke && "t3-thread-row__status--passive",
+                        "t3-thread-row__status",
                       )}
                     >
                       {view.isWoke ? (
                         wokeButton
                       ) : topStatus !== null ? (
                         <span
-                          className={cn(
-                            "inline-flex items-center gap-1 font-medium",
+                          className={cx(
+                            "t3-thread-row__status-chip",
                             topStatus.className,
                           )}
                         >
-                          <TopStatusIcon icon={topStatus.icon} className="size-4" />
+                          <TopStatusIcon icon={topStatus.icon} className="t3-icon--md" />
                           {status === "working" && view.workingStartedAt !== null ? (
                             <span aria-hidden title={t(topStatus.labelKey)}>
                               <WorkingDuration startedAt={view.workingStartedAt} />
@@ -770,7 +679,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                       )}
                     </span>
                     {onArchive || onUnarchive || snoozeMenu || discardDraftButton ? (
-                      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100">
+                      <span className="t3-thread-row__actions">
                         {discardDraftButton}
                         {snoozeMenu}
                         {onUnarchive ? unarchiveButton : archiveButton}
@@ -779,7 +688,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                   </span>
                 )}
               </div>
-              <div className="mt-1 flex min-w-0 items-center gap-1.5">{title}</div>
+              <div className="t3-thread-row__title-row">{title}</div>
               {metaLine}
             </div>
           ) : (
@@ -787,19 +696,19 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               <div
                 className={
                   variant === "folder-multiline"
-                    ? "flex h-6 min-w-0 items-center gap-2.5"
-                    : "contents"
+                    ? "t3-thread-row__line"
+                    : "t3-thread-row__line--flat"
                 }
               >
                 {inFolder ? null : (
                   <span
-                    className={cn(
-                      "flex shrink-0 items-center transition-opacity",
+                    className={cx(
+                      "t3-thread-row__favicon",
                       !isActive &&
-                        "opacity-70 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+                        "t3-thread-row__favicon--dimmed",
                     )}
                   >
-                    <ProjectFavicon project={view.project} className="size-4" />
+                    <ProjectFavicon project={view.project} className="t3-icon--md" />
                   </span>
                 )}
                 {draftIndicator}
@@ -808,26 +717,26 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 {isDragging ? (
                   dragDestination
                 ) : (
-                  <span className="relative ml-auto flex h-6 min-w-8 shrink-0 items-center justify-end">
+                  <span className="t3-thread-row__trailing">
                     <span
-                      className={cn(
-                        "inline-flex justify-end tabular-nums text-secondary-label transition-opacity",
-                        !view.isWoke && "group-any-hover/sidebar-row:opacity-0",
+                      className={cx(
+                        "t3-thread-row__trailing-info",
+                        !view.isWoke && "t3-thread-row__trailing-info--fading",
                       )}
                     >
                       {wakeTimeLabel ?? (view.isWoke ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-foreground">
-                          <TopStatusIcon icon="woke" className="size-3" />
+                        <span className="t3-thread-row__status-chip t3-status--approval">
+                          <TopStatusIcon icon="woke" className="t3-icon--xs" />
                           {t("sidebar.t3.status.woke")}
                         </span>
                       ) : inFolder && topStatus !== null ? (
                         <span
-                          className={cn(
-                            "inline-flex items-center gap-1 text-xs font-medium",
+                          className={cx(
+                            "t3-thread-row__status-chip",
                             topStatus.className,
                           )}
                         >
-                          <TopStatusIcon icon={topStatus.icon} className="size-3" />
+                          <TopStatusIcon icon={topStatus.icon} className="t3-icon--xs" />
                           {t(topStatus.labelKey)}
                         </span>
                       ) : (
@@ -836,7 +745,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     </span>
                     {onUnarchive ? unsnoozeButton : null}
                     {onArchive || onUnarchive ? (
-                      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100">
+                      <span className="t3-thread-row__actions">
                         {onUnarchive ? unarchiveButton : (
                           <>
                             {unsnoozeButton}
@@ -852,9 +761,10 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
             </>
           )}
           {view.jumpLabel !== null ? <JumpHintBadge label={view.jumpLabel} /> : null}
-        </TooltipTrigger>
+            </div>
+        </Focusable>
         {hoverCard}
-      </Tooltip>
+      </TooltipTrigger>
     </li>
   );
 });

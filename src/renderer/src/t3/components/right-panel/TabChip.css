@@ -1,0 +1,105 @@
+@layer features {
+  .t3-tab-chip {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    flex-shrink: 0;
+    max-width: 9rem;
+    height: 1.5rem;
+    padding: 0 0.5rem 0 0.375rem;
+    border-radius: var(--r-sm);
+    font-size: 0.75rem;
+    line-height: 1.333;
+    cursor: pointer;
+  }
+  .t3-tab-chip:has([role="tab"]:focus-visible) {
+    box-shadow: var(--ring-selected);
+  }
+  .t3-tab-chip--active {
+    background: var(--sel);
+    color: var(--accent-t);
+  }
+  .t3-tab-chip--idle {
+    color: var(--root-fg2);
+  }
+  .t3-tab-chip--idle:hover {
+    background: color-mix(in oklab, var(--hover) 60%, transparent);
+    color: var(--fg);
+  }
+  .t3-tab-chip--dragging {
+    position: relative;
+    z-index: 10;
+    cursor: grabbing;
+  }
+  .t3-tab-chip__close {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    border-radius: var(--r-xs);
+    cursor: pointer;
+  }
+  .t3-tab-chip__close:hover {
+    background: var(--hover-main);
+  }
+  .t3-tab-chip__glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .t3-tab-chip__x {
+    display: none;
+  }
+  .t3-tab-chip:hover .t3-tab-chip__glyph,
+  .t3-tab-chip__close:focus-visible .t3-tab-chip__glyph {
+    display: none;
+  }
+  .t3-tab-chip:hover .t3-tab-chip__x,
+  .t3-tab-chip__close:focus-visible .t3-tab-chip__x {
+    display: block;
+  }
+  .t3-tab-chip__pending {
+    position: absolute;
+    right: -0.125rem;
+    bottom: -0.125rem;
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: var(--r-full);
+    background: currentcolor;
+  }
+  .t3-tab-chip__tab {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+  }
+  .t3-tab-chip__tab::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--r-sm);
+  }
+  .t3-tab-chip__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .t3-tab-chip__muted {
+    width: 0.25rem;
+    height: 0.25rem;
+    margin-left: 0.125rem;
+    border-radius: var(--r-full);
+    background: currentcolor;
+    opacity: 0.5;
+  }
+}

@@ -2,43 +2,23 @@ import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
 
+import type { PressEvent } from "react-aria-components";
 import { useT } from "../../../i18n";
 import { focusSnippet, splitSnippet, type ContentMatch } from "../../../features/sidebar/content-search";
-import { cn } from "../../lib/utils";
-import { Button } from "../ui/button";
-import { Input, type InputProps } from "../ui/input";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-
-export const SIDEBAR_MENU_BUTTON =
-  "peer/menu-button flex w-full cursor-pointer items-center gap-[var(--sidebar-control-gap)] overflow-hidden text-left font-medium text-sidebar-muted-foreground/80 outline-hidden ring-ring transition-[width,height,padding,background-color,color] hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset active:bg-sidebar-row-active active:text-sidebar-foreground disabled:pointer-events-none disabled:opacity-64 aria-disabled:pointer-events-none aria-disabled:opacity-64 data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-row-hover data-[state=open]:hover:text-sidebar-foreground [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0 [&>svg]:text-[var(--sidebar-icon-color)] hover:[&>svg]:text-sidebar-foreground active:[&>svg]:text-sidebar-foreground data-[active=true]:[&>svg]:text-sidebar-foreground";
-
-export const SIDEBAR_MENU_ICON_BUTTON =
-  "size-8 justify-center rounded-[var(--control-radius)] p-0";
-
-function SidebarSearchInput({ className, ...props }: Omit<InputProps, "unstyled">) {
-  return (
-    <Input
-      className={cn(
-        "[&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground",
-        className,
-      )}
-      unstyled
-      {...props}
-    />
-  );
-}
+import { cx } from "../../../ui/cx";
+import { Badge, IconButton, Input } from "../../../ui";
+import "./SidebarThreadHeader.css";
 
 export interface SidebarThreadHeaderProps {
   searchFieldRef?: RefObject<HTMLDivElement | null>;
   hasProjects: boolean;
   projectScope: ReactNode;
   onNewProject: () => void;
-  onNewThread: (event: ReactMouseEvent) => void;
+  onNewThread: (event: PressEvent) => void;
   newThreadDisabled: boolean;
   newThreadShortcutLabel: string | null | undefined;
   newThreadInProjectShortcutLabel: string | null | undefined;
@@ -80,15 +60,14 @@ export function SidebarThreadHeader({
     : t("sidebar.t3.newThread");
 
   return (
-    <div className="flex items-center gap-1" data-testid="t3-sidebar-thread-header">
+    <div className="t3-sidebar-header" data-testid="t3-sidebar-thread-header">
       <div
         ref={searchFieldRef}
-        className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/70"
+        className="t3-sidebar-search"
       >
-        <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
-        <SidebarSearchInput
+        <SearchIcon className="t3-icon--md" />
+        <Input
           ref={searchInputRef}
-          nativeInput
           type="search"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
@@ -102,31 +81,24 @@ export function SidebarThreadHeader({
           aria-activedescendant={
             activeResultExists ? `sidebar-thread-search-result-${activeSearchResultIndex}` : undefined
           }
-          className="min-w-0 flex-1"
+          className="t3-sidebar-search__input"
         />
         {isSearching ? (
-          <Button
-            type="button"
-            size="icon-micro"
-            variant="ghost-muted"
-            className="shrink-0"
-            aria-label={t("sidebar.t3.clearSearch")}
-            onClick={() => {
+          <IconButton data-t3-btn variant="ghost" size="sm" onPress={() => {
               onClearSearch();
               searchInputRef.current?.focus();
-            }}
-          >
-            <XIcon className="size-3" />
-          </Button>
+            }} className="t3-sidebar-search__clear" aria-label={t("sidebar.t3.clearSearch")}>
+            <XIcon className="t3-icon--xs" />
+          </IconButton>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center">
+      <div className="t3-sidebar-header__actions">
         {hasProjects ? (
           <>
             {projectScope}
             <SidebarHeaderIconButton
               label={t("sidebar.t3.addProject")}
-              onClick={() => onNewProject()}
+              onPress={() => onNewProject()}
             >
               <FolderPlusIcon />
             </SidebarHeaderIconButton>
@@ -136,9 +108,9 @@ export function SidebarThreadHeader({
           label={newThreadLabel}
           tooltip={
             showNewThreadInProjectHint ? (
-              <span className="flex flex-col gap-0.5">
+              <span className="t3-sidebar-header__tip">
                 <span>{newThreadLabel}</span>
-                <span className="text-muted-foreground">
+                <span className="t3-sidebar-header__tip-detail">
                   {t("sidebar.t3.newThreadInProject")}
                   {newThreadInProjectShortcutLabel
                     ? t("sidebar.t3.newThreadInProjectWithShortcut", {
@@ -151,8 +123,8 @@ export function SidebarThreadHeader({
               newThreadLabel
             )
           }
-          disabled={newThreadDisabled}
-          onClick={onNewThread}
+          isDisabled={newThreadDisabled}
+          onPress={onNewThread}
         >
           <SquarePenIcon />
         </SidebarHeaderIconButton>
@@ -165,44 +137,29 @@ export function SidebarHeaderIconButton({
   label,
   tooltip = label,
   className,
-  children,
   ...rest
 }: {
   label: string;
   tooltip?: ReactNode;
   className?: string | undefined;
-  children?: ReactNode;
-} & Omit<
-  ComponentProps<"button">,
-  "children" | "className" | "aria-label" | "type" | "title"
->) {
+} & Omit<ComponentProps<typeof IconButton>, "aria-label" | "tooltip" | "variant" | "size" | "className">) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={label}
-            {...rest}
-            className={cn(SIDEBAR_MENU_BUTTON, SIDEBAR_MENU_ICON_BUTTON, "relative size-7 shrink-0", className)}
-          />
-        }
-      >
-        {children}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-        />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{tooltip}</TooltipPopup>
-    </Tooltip>
+    <IconButton
+      data-t3-btn
+      {...rest}
+      variant="ghost"
+      size="md"
+      aria-label={label}
+      tooltip={tooltip}
+      className={cx("t3-sidebar-icon-btn t3-sidebar-icon-btn--header", className)}
+    />
   );
 }
 
 export function SidebarThreadSearchStatus({ pending }: { pending: boolean }) {
   const t = useT();
   return (
-    <p role="status" className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
+    <p role="status" className="t3-sidebar-search-status">
       {pending ? t("sidebar.t3.searching") : t("sidebar.t3.noResults")}
     </p>
   );
@@ -230,48 +187,42 @@ export function SidebarSearchContentMatches({
       role="group"
       aria-label={t("sidebar.t3.contentMatches")}
       aria-busy={pending}
-      className="mt-1 flex flex-col gap-px"
+      className="t3-sidebar-matches"
       data-testid="t3-sidebar-content-matches"
     >
-      <span className="flex h-8 items-center gap-2 px-2 text-xs font-medium text-sidebar-muted-foreground">
-        <span className="truncate">{t("sidebar.t3.contentMatches")}</span>
-        <span className="h-px flex-1 bg-sidebar-border/50" />
-        <span className="text-xs tabular-nums">{matches.length}</span>
+      <span className="t3-sidebar-matches__title">
+        <span className="t3-sidebar-matches__title-text">{t("sidebar.t3.contentMatches")}</span>
+        <span className="t3-sidebar-matches__rule" />
+        <span className="t3-sidebar-matches__count">{matches.length}</span>
       </span>
       {matches.length === 0 ? (
-        <p role="status" className="px-2 py-2 text-xs text-sidebar-muted-foreground">
+        <p role="status" className="t3-sidebar-matches__hint">
           {t("sidebar.t3.searching")}
         </p>
       ) : null}
-      <ul role="list" className="flex flex-col gap-px">
+      <ul role="list" className="t3-sidebar-matches__list">
         {matches.map((match) => (
           <li key={match.path}>
             <button
               type="button"
               onClick={() => onOpen(match)}
               aria-current={currentPath === match.path ? "true" : undefined}
-              className={cn(
-                SIDEBAR_MENU_BUTTON,
-                "h-auto items-start rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-1.5",
-                currentPath === match.path && "bg-sidebar-row-selected",
-              )}
+              className="t3-sidebar-match"
               data-testid="t3-sidebar-content-match"
             >
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+              <span className="t3-sidebar-match__body">
+                <span className="t3-sidebar-match__head">
+                  <span className="t3-sidebar-match__title">
                     {match.title}
                   </span>
                   {match.archived ? (
-                    <span className="shrink-0 rounded-sm border border-border/80 px-1 text-3xs text-muted-foreground">
-                      {t("sidebar.t3.archive")}
-                    </span>
+                    <Badge>{t("sidebar.t3.archive")}</Badge>
                   ) : null}
                 </span>
-                <span className="truncate text-xs text-muted-foreground/85">
+                <span className="t3-sidebar-match__snippet">
                   {splitSnippet(focusSnippet(match.snippet, query), query).map((part, index) =>
                     part.hit ? (
-                      <mark key={index} className="bg-transparent font-semibold text-foreground">
+                      <mark key={index} className="t3-sidebar-match__mark">
                         {part.text}
                       </mark>
                     ) : (

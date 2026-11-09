@@ -1,0 +1,118 @@
+@layer features {
+  .t3-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    max-width: 100%;
+    margin-bottom: 0.75rem;
+  }
+  .t3-attachment {
+    position: relative;
+    flex-shrink: 0;
+    width: 4rem;
+    height: 4rem;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--line) 80%, transparent);
+    border-radius: var(--r-md);
+    background: var(--bg);
+    scroll-snap-align: start;
+  }
+  .t3-attachment__open {
+    width: 100%;
+    height: 100%;
+    cursor: zoom-in;
+  }
+  .t3-attachment__open img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .t3-attachment__name {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding-inline: 0.25rem;
+    color: var(--root-fg3);
+    font-size: 0.625rem;
+    line-height: 1.4;
+  }
+  .t3-attachment__ref {
+    position: absolute;
+    bottom: 0.25rem;
+    left: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 0.25rem;
+    border-radius: var(--r-xs);
+    background: color-mix(in oklab, var(--bg) 85%, transparent);
+    color: var(--root-fg2);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .t3-attachment__remove {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    display: flex;
+    opacity: 0;
+    transition: opacity var(--dur-quick);
+  }
+  .t3-attachment:hover .t3-attachment__remove,
+  .t3-attachment__remove:focus-within {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .t3-attachment__remove {
+      transition: none;
+    }
+  }
+  .t3-attachment-files {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+  }
+  .t3-attachment-file {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding-block: 0.25rem;
+    color: var(--fg);
+    font-size: 0.875rem;
+    line-height: 1.429;
+  }
+  .t3-attachment-file__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .t3-attachment-file__name:hover {
+    text-decoration: underline;
+  }
+  .t3-attachment-file__name:focus-visible {
+    outline: 2px solid;
+  }
+  .t3-attachment-file__size {
+    flex-shrink: 0;
+    color: var(--root-fg3);
+    font-size: 0.75rem;
+    line-height: 1.333;
+  }
+  .t3-attachment-input {
+    display: none;
+  }
+  .t3-attach-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .t3-attach-icon {
+    translate: 0 1px;
+  }
+}

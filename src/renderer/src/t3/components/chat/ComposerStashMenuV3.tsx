@@ -11,8 +11,9 @@ import {
   type PromptStashEntry
 } from '@/features/composer/prompt-stash'
 import type { PromptStashAdapter } from '@/t3/adapters/composer-stash'
-import { cn } from '@/t3/lib/utils'
+import { cx } from '@/ui/cx'
 import { ComposerBanner } from './ComposerBanner'
+import './ComposerStash.css'
 
 function attachmentLabel(kind: 'image' | 'file', count: number, t: TFunc): string {
   if (kind === 'image') return count === 1 ? t('stash.imageOne') : t('stash.images', { n: count })
@@ -146,12 +147,12 @@ export function ComposerStashMenuV3(props: {
         aria-label={t('composer.t3.stash.closeAria')}
         onClick={onClose}
         onPointerDown={(event) => event.preventDefault()}
-        render={<button type="button" />}
+        as="button"
       >
         <ComposerBanner.Icon>
           <BookmarkIcon />
         </ComposerBanner.Icon>
-        <ComposerBanner.Content className="text-muted-foreground">
+        <ComposerBanner.Content className="t3-stash-menu__muted">
           {t('composer.t3.stash')}
         </ComposerBanner.Content>
         <ComposerBanner.Actions>
@@ -160,11 +161,11 @@ export function ComposerStashMenuV3(props: {
         </ComposerBanner.Actions>
       </ComposerBanner.Row>
       <ComposerBanner.Scroll>
-        <ComposerBanner.Children aria-label={t('stash.title')} render={<ul role="list" />}>
+        <ComposerBanner.Children aria-label={t('stash.title')} as="ul">
           {entries.length === 0 ? (
-            <ComposerBanner.Row render={<li />}>
+            <ComposerBanner.Row as="li">
               <ComposerBanner.Icon />
-              <ComposerBanner.Content className="text-muted-foreground">
+              <ComposerBanner.Content className="t3-stash-menu__muted">
                 {t('stash.empty')} {t('stash.emptyHint', { keys: t('stash.shortcut') })}
               </ComposerBanner.Content>
             </ComposerBanner.Row>
@@ -175,9 +176,9 @@ export function ComposerStashMenuV3(props: {
               const label = entryLabel(entry, t)
               return (
                 <ComposerBanner.Row
-                  className={cn(
-                    'relative rounded-sm',
-                    highlighted?.id === entry.id && 'bg-accent text-accent-foreground'
+                  className={cx(
+                    't3-stash-menu__row',
+                    highlighted?.id === entry.id && 't3-stash-menu__row--active'
                   )}
                   data-highlighted={highlighted?.id === entry.id || undefined}
                   data-stash-entry={entry.id}
@@ -186,7 +187,7 @@ export function ComposerStashMenuV3(props: {
                   onMouseMove={() => {
                     if (highlightedId !== entry.id) setHighlightedId(entry.id)
                   }}
-                  render={<li />}
+                  as="li"
                 >
                   <ComposerBanner.Icon>
                     <FileTextIcon />
@@ -194,7 +195,7 @@ export function ComposerStashMenuV3(props: {
                   <ComposerBanner.Content>
                     <button
                       aria-label={t('stash.restore', { snippet: label })}
-                      className="min-w-0 flex-1 cursor-pointer truncate text-left text-foreground/80 outline-none before:absolute before:inset-0 before:rounded-sm focus-visible:before:ring-2 focus-visible:before:ring-inset focus-visible:before:ring-ring"
+                      className="t3-stash-menu__restore"
                       data-stash-restore={entry.id}
                       onClick={() => onRestore(entry)}
                       onPointerDown={(event) => event.preventDefault()}
@@ -205,12 +206,12 @@ export function ComposerStashMenuV3(props: {
                   </ComposerBanner.Content>
                   <ComposerBanner.Actions>
                     {images.length > 0 ? (
-                      <span className="flex shrink-0 items-center -space-x-1.5">
+                      <span className="t3-stash-menu__thumbs">
                         {images.slice(0, 3).map((image) => (
                           <img
                             alt=""
                             aria-hidden="true"
-                            className="size-4 rounded border border-border/70 object-cover"
+                            className="t3-stash-menu__thumb"
                             key={image.id}
                             src={thumbSource(image)}
                           />
@@ -218,20 +219,20 @@ export function ComposerStashMenuV3(props: {
                       </span>
                     ) : null}
                     {files > 0 ? (
-                      <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
-                        <FileIcon aria-hidden className="size-3" />
+                      <span className="t3-stash-menu__files">
+                        <FileIcon aria-hidden className="t3-icon--xs" />
                         {files}
                       </span>
                     ) : null}
                     <time
-                      className="shrink-0 text-muted-foreground tabular-nums max-sm:hidden"
+                      className="t3-stash-menu__time"
                       dateTime={new Date(entry.createdAt).toISOString()}
                     >
                       {ageLabel(entry, now, lang, t)}
                     </time>
                     <ComposerBanner.Dismiss
                       aria-label={t('stash.delete')}
-                      className="z-10"
+                      className="t3-stash-menu__dismiss"
                       data-stash-delete={entry.id}
                       onClick={() => onDelete(entry)}
                       onPointerDown={(event) => event.preventDefault()}

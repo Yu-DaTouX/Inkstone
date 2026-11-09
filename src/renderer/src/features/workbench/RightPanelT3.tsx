@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
 import { EllipsisVertical, Eye, Minimize2, PanelRightClose, SquareX } from 'lucide-react'
 import { create } from 'zustand'
-import { Button, EmptyState, IconButton, Spinner, motionAllowed, useReducedMotion } from '../../ui'
+import { Button, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, Spinner, SubmenuTrigger, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PANEL_GROUP_MIN_WIDTH, PANEL_WIDTH_MIN, fileSurface, panelFocus, panelGroups, pullRequestSurface, useRightPanel, useRightPanelEntry, type PanelToolKind, type RightPanelGroup, type RightPanelSurface } from '../../state/right-panel'
@@ -19,9 +19,6 @@ import { RightPanelFrame } from '../../t3/components/right-panel/RightPanelFrame
 import { TabStrip } from '../../t3/components/right-panel/TabStrip'
 import { Launcher } from '../../t3/components/right-panel/Launcher'
 import { TabContextMenu, type TabContextMenuItem } from '../../t3/components/right-panel/TabContextMenu'
-import { Menu, MenuCheckboxItem, MenuItem, MenuPopup, MenuSeparator, MenuSub, MenuSubPopup, MenuSubTrigger, MenuTrigger } from '../../t3/components/ui/menu'
-import { Button as T3Button } from '../../t3/components/ui/button'
-import { Tooltip, TooltipPopup, TooltipTrigger } from '../../t3/components/ui/tooltip'
 import { closePanelMenu, useRightPanelAdapter } from '../../t3/adapters/right-panel'
 import { startPanelTabDrag } from './panel-tab-drag'
 import './right-panel.css'
@@ -164,12 +161,12 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         />
         <span className="rp-tabbar-actions">
           {groups.length > 1 ? (
-            <IconButton size="sm" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
+            <IconButton data-t3-btn size="sm" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
               <SquareX size={14} />
             </IconButton>
           ) : null}
           {last && adapter.maximized ? (
-            <IconButton size="sm" aria-label={panel.restore} tooltip={panel.restore} aria-pressed data-testid="rp-maximize" onPress={adapter.onToggleMaximized}>
+            <IconButton data-t3-btn size="sm" aria-label={panel.restore} tooltip={panel.restore} aria-pressed data-testid="rp-maximize" onPress={adapter.onToggleMaximized}>
               <Minimize2 size={14} />
             </IconButton>
           ) : null}
@@ -248,12 +245,12 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
       />
       <span className="rp-tabbar-actions">
         {mode === 'inline' && adapter.maximized ? (
-          <IconButton size="sm" aria-label={panel.restore} tooltip={panel.restore} aria-pressed data-testid="rp-maximize" onPress={adapter.onToggleMaximized}>
+          <IconButton data-t3-btn size="sm" aria-label={panel.restore} tooltip={panel.restore} aria-pressed data-testid="rp-maximize" onPress={adapter.onToggleMaximized}>
             <Minimize2 size={14} />
           </IconButton>
         ) : null}
         {mode === 'inline' ? null : (
-          <IconButton size="sm" aria-label={panel.hidePanel} tooltip={panel.hidePanel} data-testid="rp-hide" onPress={adapter.onHide}>
+          <IconButton data-t3-btn size="sm" aria-label={panel.hidePanel} tooltip={panel.hidePanel} data-testid="rp-hide" onPress={adapter.onHide}>
             <PanelRightClose size={14} />
           </IconButton>
         )}
@@ -286,7 +283,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         onWidth={adapter.onWidth}
         minWidth={columns && groups.length > 1 ? Math.min(room, PANEL_WIDTH_MIN * groups.length) : undefined}
         tabbar={columns ? null : tabbar}
-        tabbarClassName={windowControls ? 'pr-0' : undefined}
+        tabbarClassName={windowControls ? 't3-rp-frame__tabbar--flush' : undefined}
         toggleSelector='[data-right-panel-toggle]'
         sheet={{ onClose: adapter.onHide, transitionMs: reducedMotion || mode !== 'sheet' ? 0 : motionMs('sheet') }}
         onKeyDown={onPanelKey}
@@ -410,24 +407,28 @@ const MENU_SOURCE_ORDER = ['preview', 'preview-view', 'files']
 function paneMenuEntry(item: PaneMenuItem): ReactElement {
   if (item.items?.length) {
     return (
-      <MenuSub key={item.id}>
-        <MenuSubTrigger disabled={item.disabled}>
-          {item.icon}
-          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-        </MenuSubTrigger>
-        <MenuSubPopup>{item.items.map(paneMenuEntry)}</MenuSubPopup>
-      </MenuSub>
+      <SubmenuTrigger key={item.id}>
+        <MenuItem id={item.id} textValue={item.label} icon={item.icon} isDisabled={item.disabled}>
+          {item.label}
+        </MenuItem>
+        <Popover placement="end top" offset={2}>
+          <Menu aria-label={item.label}>{item.items.map(paneMenuEntry)}</Menu>
+        </Popover>
+      </SubmenuTrigger>
     )
   }
-  return item.checked === undefined ? (
-    <MenuItem key={item.id} disabled={item.disabled} onClick={() => item.onAction()}>
-      {item.icon}
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-    </MenuItem>
-  ) : (
-    <MenuCheckboxItem key={item.id} checked={item.checked} disabled={item.disabled} onCheckedChange={() => item.onAction()}>
+  return (
+    <MenuItem
+      key={item.id}
+      id={item.id}
+      textValue={item.label}
+      icon={item.checked === undefined ? item.icon : undefined}
+      checked={item.checked}
+      isDisabled={item.disabled}
+      onAction={() => item.onAction()}
+    >
       {item.label}
-    </MenuCheckboxItem>
+    </MenuItem>
   )
 }
 
@@ -541,35 +542,19 @@ function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel
           <span className="rp-sub-title" ref={setTitleEl} />
           <span className="rp-sub-tools" ref={setToolsEl} />
           {allItems.length ? (
-            <Menu>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <MenuTrigger
-                      render={
-                        <T3Button
-                          type="button"
-                          variant="ghost-muted"
-                          size="icon-xs"
-                          className="rp-sub-menu"
-                          aria-label={text.paneMenu(name || panel.file)}
-                          data-testid={`rp-menu-${surface.id}`}
-                        />
-                      }
-                    />
-                  }
-                >
-                  <EllipsisVertical />
-                </TooltipTrigger>
-                <TooltipPopup>{text.paneMenu(name || panel.file)}</TooltipPopup>
-              </Tooltip>
-              <MenuPopup align="end" side="bottom" sideOffset={6}>
-                {groups.flatMap((items, index) => [
-                  ...(index > 0 ? [<MenuSeparator key={`sep:${index}`} />] : []),
-                  ...items.map(paneMenuEntry)
-                ])}
-              </MenuPopup>
-            </Menu>
+            <MenuTrigger>
+              <IconButton data-t3-btn variant="ghost" size="md" className="rp-sub-menu" aria-label={text.paneMenu(name || panel.file)} tooltip={text.paneMenu(name || panel.file)} data-testid={`rp-menu-${surface.id}`}>
+                <EllipsisVertical />
+              </IconButton>
+              <Popover placement="bottom end" offset={6}>
+                <Menu autoFocus="first" aria-label={text.paneMenu(name || panel.file)}>
+                  {groups.flatMap((items, index) => [
+                    ...(index > 0 ? [<MenuSeparator key={`sep:${index}`} />] : []),
+                    ...items.map(paneMenuEntry)
+                  ])}
+                </Menu>
+              </Popover>
+            </MenuTrigger>
           ) : null}
         </div>
       ) : null}
@@ -581,7 +566,7 @@ function SurfaceView({ surface, panelKey, shown, live, owner, panes, text, panel
               size="sm"
               title={text.activateHint}
               action={
-                <Button size="sm" variant="primary" onPress={activate} isDisabled={activating} icon={activating ? <Spinner size="xs" /> : undefined} data-testid="rp-activate">
+                <Button data-t3-btn size="sm" variant="primary" onPress={activate} isDisabled={activating} icon={activating ? <Spinner size="xs" /> : undefined} data-testid="rp-activate">
                   {text.activate}
                 </Button>
               }

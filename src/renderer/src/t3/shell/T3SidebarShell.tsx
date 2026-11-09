@@ -8,10 +8,10 @@ import {
   useState,
   type ComponentProps,
   type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
   type ReactElement
 } from 'react'
 import { createPortal } from 'react-dom'
+import type { PressEvent } from 'react-aria-components'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import { v3Text } from '../../app/v3-text'
 import { useI18n, useT } from '../../i18n'
@@ -28,7 +28,7 @@ import { ProjectFilter } from '../../features/sidebar/ProjectFilter'
 import { openAddProjectPalette } from '../../features/projects'
 import { quoteTargetUnder, SESSION_QUOTE_DROP_EVENT, sidebarEdge, startSessionRowDrag } from '../../features/sidebar/session-drag'
 import { createSessionSplitDrag, setSplitBadge, type SessionSplitDrag } from '../../features/split/split-drag'
-import { Menu, MenuItem, Popover } from '../../ui'
+import { IconButton, Menu, MenuItem, Popover } from '../../ui'
 import { compactAgo } from '../../features/sidebar/sidebar-model'
 import { modelDisplayName } from '../../patterns/model-display-name'
 import { sidebarText } from '../../features/sidebar/sidebar-text'
@@ -71,6 +71,7 @@ import {
   type SidebarThreadRowView
 } from '../components/sidebar/SidebarThreadRow'
 import type { SidebarProjectFolderView } from '../components/sidebar/SidebarProjectFolderHeader'
+import './T3SidebarShell.css'
 
 const SHELF_PAGE_SIZE = 10
 const PROJECT_FILTER_KEY = 'inkstone.v3.sidebarProjectFilter'
@@ -228,12 +229,12 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   )
 
   const newThread = useCallback(
-    (event: ReactMouseEvent): void => {
+    (event: PressEvent): void => {
       if (event.shiftKey) {
         newThreadInProject(currentProjectId)
         return
       }
-      newPickerAnchorRef.current = event.currentTarget as HTMLElement
+      newPickerAnchorRef.current = event.target as HTMLElement
       setNewPickerOpen(true)
     },
     [currentProjectId, newThreadInProject]
@@ -567,33 +568,35 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
       <div
         data-slot="sidebar-wrapper"
         data-sidebar-state={preview ? 'preview' : 'open'}
-        className="flex min-h-0 flex-1 flex-col text-sidebar-foreground"
+        className="t3-sidebar-shell"
         style={{ '--workspace-topbar-height': 'var(--size-head)' } as CSSProperties}
       >
         <SidebarChromeHeader
           toggleLabel={closeLabel}
           leading={
             onClose || onPin ? (
-              <button
-                type="button"
+              <IconButton
+                data-t3-btn
+                variant="ghost"
+                size="md"
                 aria-label={closeLabel}
                 title={closeLabel}
-                onClick={preview ? onPin : onClose}
+                onPress={preview ? onPin : onClose}
+                className="t3-sidebar-shell__close"
                 data-testid="v3-side-close"
-                className="flex size-6 shrink-0 cursor-pointer transition-colors items-center justify-center rounded-(--control-radius) text-(--sidebar-icon-color) outline-hidden ring-ring hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset"
               >
-                <PanelLeftClose className="size-4" />
-              </button>
+                <PanelLeftClose />
+              </IconButton>
             ) : null
           }
           status={
-            <span className="flex min-w-0 items-center gap-1">
+            <span className="t3-sidebar-shell__status">
               <SidebarAttentionSummary ariaLabel={own.attention} items={attention.items} onJump={jumpToAttention} />
             </span>
           }
         />
 
-        <div className="flex flex-col gap-px px-[var(--sidebar-content-inset)] pb-1">
+        <div className="t3-sidebar-shell__header">
           <SidebarThreadHeader
             searchFieldRef={searchFieldRef}
             hasProjects={projects.list.length > 0}
@@ -617,17 +620,17 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
 
         <div
           data-slot="sidebar-content"
-          className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-[var(--sidebar-content-inset)] pb-2 [scrollbar-width:none]"
+          className="t3-sidebar-shell__scroll"
         >
           {searching ? (
             <>
               {search.threads.length === 0 && search.matches.length === 0 ? (
-                <p role="status" className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
+                <p role="status" className="t3-sidebar-shell__empty">
                   {search.pending ? t('sidebar.t3.searching') : t('sidebar.t3.noResults')}
                 </p>
               ) : null}
               {search.threads.length > 0 ? (
-                <ul aria-label={t('sidebar.t3.searchThreads')} className="v3-swap-fade flex flex-col gap-px">
+                <ul aria-label={t('sidebar.t3.searchThreads')} className="v3-swap-fade t3-sidebar-shell__results">
                   {search.threads.map((view) => renderRow({ threadKey: scopedKeyOf(view.id), section: 'active', variant: 'slim', dropVerb: null, sortable: {} }))}
                 </ul>
               ) : null}
@@ -716,7 +719,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
               undoNotice={undoNotice === null ? null : <SidebarThreadUndoNotice notice={undoNotice} />}
               emptyState={
                 allViews.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">{t('rail.empty')}</p>
+                  <p className="t3-sidebar-shell__empty">{t('rail.empty')}</p>
                 ) : null
               }
               renderRow={renderRow}
@@ -746,7 +749,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
                 return splitDragFor(threadKey)?.drop(x, y, sidebarEdge()) === true
               }}
               onDragFinish={clearQuoteTarget}
-              className="v3-swap-fade pb-1"
+              className="v3-swap-fade t3-sidebar-shell__threads"
             />
           )}
           <span className="v3-visually-hidden" role="status">

@@ -149,7 +149,6 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
     <Select
       aria-label={t('android.pane.device')}
       className="device-pane__select"
-      triggerClassName="h-6 min-h-6 gap-1 rounded-[var(--control-radius)] px-1.5 text-xs text-secondary-label"
       selectedKey={serial}
       onSelectionChange={(key) => setSerial(String(key))}
     >

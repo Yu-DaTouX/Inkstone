@@ -606,7 +606,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
         mergedHead ? (
           <>
             <PaneTitle>
-              <span className="v3-preview-headrow gap-1" data-testid="v3-preview-headrow" data-single={singleTab ? '' : undefined}>
+              <span className="v3-preview-headrow" data-testid="v3-preview-headrow" data-single={singleTab ? '' : undefined}>
                 {singleTab ? null : tabStrip}
                 {activeAbs ? (crumbNav ?? (singleTab ? <span className="v3-preview-pathname" title={activeAbs}>{name}</span> : null)) : null}
               </span>

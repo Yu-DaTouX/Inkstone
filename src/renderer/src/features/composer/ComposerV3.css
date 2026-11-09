@@ -1,0 +1,23 @@
+@layer features {
+  .composer-v3__editor-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .composer-v3__mode {
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+  .composer-v3__editor {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+  .composer-v3__history {
+    margin-bottom: 0.25rem;
+    color: var(--root-fg2);
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+  }
+}
