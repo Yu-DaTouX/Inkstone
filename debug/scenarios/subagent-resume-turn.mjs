@@ -1,4 +1,4 @@
-export const meta = { description: '子代理续派：第一轮派 1 个子代理跑完，第二轮由主会话续派它，两轮的消息流里都要出现它的卡片' }
+export const meta = { description: '子代理续派：第一轮派 1 个子代理跑完，第二轮由主会话续派它，卡片只出现在第二轮，第一轮不再留一张' }
 
 export default async function run({ cdp, check, waitFor, sleep, shot }) {
   const ev = (expr) => cdp.evaluate(expr)
@@ -23,6 +23,6 @@ export default async function run({ cdp, check, waitFor, sleep, shot }) {
   check('续派后子代理归属换成第二轮', !!parsed.parentMessageId && parsed.parentMessageId !== first)
   check('旧的归属保留在 parentMessageIds', Array.isArray(parsed.parentMessageIds) && parsed.parentMessageIds.includes(first))
   const count = await boxes()
-  check('续派后两轮的消息流里都有子代理卡片', count === 2, String(count))
+  check('续派后只剩 1 张卡片', count === 1, String(count))
   await shot('subagent-resume-turn')
 }
