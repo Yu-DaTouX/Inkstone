@@ -58,37 +58,6 @@
     flex: none;
   }
 
-  .nsp--create {
-    gap: var(--s-8);
-    padding: var(--s-4);
-  }
-
-  .nsp__head {
-    display: flex;
-  }
-
-  .nsp__field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-4);
-  }
-
-  .nsp__label {
-    color: var(--fg2);
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-  }
-
-  .nsp__hint {
-    margin: 0;
-    color: var(--fg3);
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-    overflow-wrap: anywhere;
-  }
-
-  .nsp__actions {
-    display: flex;
-    justify-content: flex-end;
-  }
 }
 
 @layer features {

@@ -52,7 +52,7 @@ export function AddProjectPalette(): ReactElement | null {
 function AddProjectBody({ isOpen }: { isOpen: boolean }): ReactElement {
   const { t } = useI18n()
   const setOpen = useAddProjectPalette((s) => s.setOpen)
-  const [view, setView] = useState<View>('root')
+  const [view, setView] = useState<View>(() => useAddProjectPalette.getState().initialView)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const [busy, setBusy] = useState<Busy | null>(null)

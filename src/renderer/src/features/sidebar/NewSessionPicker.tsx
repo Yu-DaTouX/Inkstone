@@ -1,11 +1,12 @@
-import { ArrowLeft, FolderOpen, FolderPlus, Search } from 'lucide-react'
+import { FolderOpen, FolderPlus, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactElement, type RefObject } from 'react'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, InputGroup, InputGroupAddon, InputGroupInput, isImeComposing, KbdGroup, ListRow, Notice, Popover } from '../../ui'
+import { Dialog, InputGroup, InputGroupAddon, InputGroupInput, isImeComposing, KbdGroup, ListRow, Popover } from '../../ui'
 import { ProjectFavicon } from '../../t3/components/ProjectFavicon'
-import { newSessionInFolder, newSessionInPickedFolder } from '../../lib/new-session-in-folder'
+import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
+import { openAddProjectPalette } from '../projects'
 import { shortProject } from './sidebar-model'
 import './new-session-picker.css'
 
@@ -41,11 +42,6 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
   const projectNames = useStore((s) => s.settings?.projectNames)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
-  const [mode, setMode] = useState<'list' | 'create'>('list')
-  const [folderName, setFolderName] = useState('')
-  const [root, setRoot] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
 
   const options = useMemo<PickerOption[]>(() => {
@@ -65,11 +61,6 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
   useEffect(() => {
     listRef.current?.querySelector(`[data-index="${safeActive}"]`)?.scrollIntoView({ block: 'nearest' })
   }, [safeActive])
-  useEffect(() => {
-    if (mode !== 'create' || root) return
-    void window.yan.workFolderRoot().then(setRoot).catch(() => setRoot(''))
-  }, [mode, root])
-
   const run = (option: PickerOption | undefined): void => {
     if (!option) return
     if (option.kind === 'project') {
@@ -79,24 +70,9 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
       close()
       void newSessionInPickedFolder(t).then((created) => { if (created) onStarted() })
     } else {
-      setError('')
-      setMode('create')
+      close()
+      openAddProjectPalette('new')
     }
-  }
-
-  const createFolder = async (): Promise<void> => {
-    const name = folderName.trim()
-    if (!name || busy) return
-    setBusy(true)
-    setError('')
-    const result = await window.yan.createWorkFolder(name).catch((cause) => ({ ok: false, cwd: undefined, error: String(cause) }))
-    if (!result.ok || !result.cwd) {
-      setBusy(false)
-      setError(result.error === 'invalid-name' ? t('sidebar.t3.newPicker.invalidName') : (result.error ?? t('sidebar.t3.newPicker.invalidName')))
-      return
-    }
-    close()
-    if (await newSessionInFolder(result.cwd, t)) onStarted()
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
@@ -115,25 +91,6 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
       event.preventDefault()
       run(options[safeActive])
     }
-  }
-
-  if (mode === 'create') {
-    return (
-      <form className="nsp nsp--create" data-testid="v3-new-session-folder" onSubmit={(event) => { event.preventDefault(); void createFolder() }}>
-        <div className="nsp__head">
-          <Button variant="ghost" size="sm" icon={<ArrowLeft size={14} />} onPress={() => { setMode('list'); setError('') }}>{t('sidebar.t3.newPicker.back')}</Button>
-        </div>
-        <label className="nsp__field">
-          <span className="nsp__label">{t('sidebar.t3.newPicker.folderName')}</span>
-          <input className="ui-input" autoFocus value={folderName} disabled={busy} onChange={(event) => setFolderName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setMode('list') } }} data-testid="v3-new-session-folder-name" />
-        </label>
-        {root ? <p className="nsp__hint">{t('sidebar.t3.newPicker.folderHint', { path: folderName.trim() ? `${root}${root.includes('\\') ? '\\' : '/'}${folderName.trim()}` : root })}</p> : null}
-        {error ? <Notice tone="fail" compact>{error}</Notice> : null}
-        <div className="nsp__actions">
-          <Button variant="primary" size="sm" type="submit" isDisabled={busy || !folderName.trim()}>{t('sidebar.t3.newPicker.create')}</Button>
-        </div>
-      </form>
-    )
   }
 
   return (

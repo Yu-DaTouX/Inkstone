@@ -150,7 +150,6 @@ import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { ApprovalBroker } from './approval-broker'
 import { approvalLog } from './approval-log'
-import { createWorkFolder, workFolderRoot } from './work-folder'
 import { approvalIdentityFrom } from './approval-ledger'
 import { refreshManagedGit } from './git-runtime'
 import { applyBundledSearchTools } from './search-tools'
@@ -3098,9 +3097,6 @@ function registerIpc(): void {
     if (r.canceled || !r.filePaths[0]) return null
     return r.filePaths[0]
   })
-
-  handle('yan:workFolderRoot', async () => workFolderRoot())
-  handle('yan:createWorkFolder', async (name: string) => createWorkFolder(name))
 
   handle('yan:setCwd', async (cwd: string) => {
     const cwdResult = await validateCwd(cwd)

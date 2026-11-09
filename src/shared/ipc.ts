@@ -1912,8 +1912,6 @@ export interface YanBridge {
   changeProjectDirectory(request: ProjectDirectoryChange): Promise<ProjectDirectoryResult>
   pickCwd(): Promise<string | null>
   setCwd(cwd: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
-  workFolderRoot(): Promise<string>
-  createWorkFolder(name: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
 
   respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void
   extendUi(id: string, extraMs?: number): Promise<{ ok: boolean; timeout?: number; deadline?: number; error?: string }>

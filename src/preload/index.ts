@@ -525,8 +525,6 @@ const api: YanBridge = {
   changeProjectDirectory: (request) => invoke<import('../shared/ipc').ProjectDirectoryResult>('yan:project:changeDirectory', request),
   pickCwd: () => invoke<string | null>('yan:pickCwd'),
   setCwd: (cwd) => invoke<Ok>('yan:setCwd', cwd),
-  workFolderRoot: () => invoke<string>('yan:workFolderRoot'),
-  createWorkFolder: (name) => invoke<{ ok: boolean; cwd?: string; error?: string }>('yan:createWorkFolder', name),
 
   respondUi: (res) => ipcRenderer.send('yan:respondUi', res),
   extendUi: (id, extraMs) => invoke('yan:extendUi', id, extraMs),
