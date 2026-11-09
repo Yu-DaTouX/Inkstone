@@ -16,6 +16,13 @@ export const MODELS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     keywords: ['密钥', 'key', 'token', '凭证', 'credential', 'OpenRouter', 'Anthropic', 'DeepSeek', 'xAI', '服务商', 'provider']
   },
   {
+    id: 'models-image-generation',
+    section: 'models',
+    zh: '生图',
+    en: 'Image generation',
+    keywords: ['生图', '画图', '图像', '图片模型', 'key', '密钥', 'image', 'gpt-image', 'dall-e', 'seedream', 'gemini', '兼容接口']
+  },
+  {
     id: 'models-key-failover',
     section: 'models',
     zh: 'Key 失效时自动切换',

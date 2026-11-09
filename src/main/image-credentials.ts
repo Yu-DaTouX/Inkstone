@@ -2,9 +2,10 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readAuthEntry, updateAuthFile } from './credentials'
+import { imageFileKey } from './image-config'
 import { decodeJwtPayload, isCodexCredential, refreshCodexCredential } from './codex-token'
 
-export type ImageSecretProvider = 'openai' | 'google' | 'doubao'
+export type ImageSecretProvider = 'openai' | 'compatible' | 'google' | 'doubao'
 
 export interface CodexImageAuth {
   access: string
@@ -22,6 +23,7 @@ const EXPIRY_MARGIN_MS = 60_000
 
 const SECRET_SOURCES: Record<ImageSecretProvider, { authKey: string; env: string[] }> = {
   openai: { authKey: 'openai', env: ['OPENAI_API_KEY'] },
+  compatible: { authKey: '', env: ['YAN_IMAGE_API_KEY'] },
   google: { authKey: 'google', env: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'] },
   doubao: { authKey: 'volcengine-ark', env: ['ARK_API_KEY'] }
 }
@@ -76,7 +78,9 @@ export const hostImageCredentials: ImageCredentialSource = {
   },
   async secret(provider) {
     const source = SECRET_SOURCES[provider]
-    const stored = entryKey(await readAuthEntry(source.authKey))
+    const own = imageFileKey(provider)
+    if (own) return own
+    const stored = source.authKey ? entryKey(await readAuthEntry(source.authKey)) : undefined
     if (stored) return stored
     for (const name of source.env) {
       const value = process.env[name]?.trim()

@@ -3,6 +3,9 @@ import type { IpcRegistrar } from './registrar'
 import { searchDoctor } from '../search/search'
 import { clearSearchKey, searchApiConfig, setSearchHintDismissed, setSearchKey } from '../search/config'
 import { isSearchProviderId } from '../../shared/search'
+import { IMAGE_KEY_SERVICES, IMAGE_MODEL_SERVICES, type ImageConfigPatch, type ImageKeyService, type ImageModelService } from '../../shared/image-config'
+import { clearImageKey, setImageKey, updateImageConfig } from '../image-config'
+import { imageConfigView } from '../image-config-view'
 import { computerUseStatus, disableComputerUse, enableComputerUse, installUv, refreshComputerUseEntry, resolveComputerUseInteraction } from '../computer-use'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -96,6 +99,23 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   )
   handle('yan:search:clearApiKey', async (provider: unknown) =>
     isSearchProviderId(provider) ? clearSearchKey(provider) : { ok: false, error: pick('不认识的搜索服务', 'Unknown search provider') }
+  )
+  handle('yan:image:config', async () => imageConfigView())
+  handle('yan:image:update', async (patch: unknown) => {
+    const input = (patch && typeof patch === 'object' ? patch : {}) as Partial<ImageConfigPatch>
+    const model = input.model && typeof input.model === 'object' && (IMAGE_MODEL_SERVICES as readonly string[]).includes(input.model.service as ImageModelService) && typeof input.model.value === 'string' ? { service: input.model.service as ImageModelService, value: input.model.value } : undefined
+    return updateImageConfig({
+      ...(typeof input.provider === 'string' ? { provider: input.provider } : {}),
+      ...(typeof input.baseUrl === 'string' ? { baseUrl: input.baseUrl } : {}),
+      ...(typeof input.complexity === 'string' ? { complexity: input.complexity } : {}),
+      ...(model ? { model } : {})
+    })
+  })
+  handle('yan:image:setKey', async (service: unknown, key: unknown) =>
+    (IMAGE_KEY_SERVICES as readonly unknown[]).includes(service) ? setImageKey(service as ImageKeyService, String(key ?? '')) : { ok: false, error: pick('不认识的生图服务', 'Unknown image service') }
+  )
+  handle('yan:image:clearKey', async (service: unknown) =>
+    (IMAGE_KEY_SERVICES as readonly unknown[]).includes(service) ? clearImageKey(service as ImageKeyService) : { ok: false, error: pick('不认识的生图服务', 'Unknown image service') }
   )
   handle('yan:search:setApiHintDismissed', async (dismissed: unknown) => setSearchHintDismissed(dismissed === true))
 

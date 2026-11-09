@@ -574,6 +574,51 @@
     flex: 1;
   }
 
+  .ms-image-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    padding: var(--s-12) var(--s-16);
+    border: var(--hair, 1px) solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  .ms-image-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .ms-image-name {
+    font-weight: 600;
+  }
+
+  .ms-image-note {
+    color: var(--fg3);
+  }
+
+  .ms-image-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--s-8);
+    align-items: end;
+  }
+
+  .ms-image-key {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: end;
+    gap: var(--s-8);
+    flex-wrap: wrap;
+  }
+
+  .ms-image-key .ui-field {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+
   .ms-custom-form {
     display: flex;
     flex-direction: column;

@@ -50,6 +50,7 @@ export type { LocalServerInfo, LocalServerSnapshot, LocalServerStopResult } from
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
+import type { ImageConfigPatch, ImageConfigView, ImageKeyService } from './image-config'
 import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from './account-quota'
 import type { OAuthAccountPools } from './oauth-accounts'
 import type { QuotaForecast } from './quota-forecast'
@@ -1999,6 +2000,12 @@ export interface YanBridge {
   searchOps: SearchOpsBridge
   packages: PackagesBridge
   builtinCapabilities: BuiltinCapabilitiesBridge
+  image: {
+    config(): Promise<ImageConfigView>
+    update(patch: ImageConfigPatch): Promise<{ ok: boolean; error?: string }>
+    setKey(service: ImageKeyService, key: string): Promise<{ ok: boolean; error?: string }>
+    clearKey(service: ImageKeyService): Promise<{ ok: boolean; error?: string }>
+  }
   search: {
     doctor(): Promise<SearchBackendStatus>
     apiConfig(): Promise<SearchApiConfigView>

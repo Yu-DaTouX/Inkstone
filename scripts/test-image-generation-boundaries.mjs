@@ -32,7 +32,7 @@ try {
   globalThis.fetch = async () => { throw new Error('No network allowed in image boundary tests') }
   const outfile = join(compiled, 'fixture.mjs')
   await build({
-    stdin: { contents: "export * from './src/main/artifacts.ts'; export * from './src/main/image-generation.ts'; export * from './src/main/local-models.ts'; export { AgentController } from './src/main/agent.ts';", resolveDir: process.cwd(), sourcefile: 'image-boundary-fixture.ts' },
+    stdin: { contents: "export * from './src/main/artifacts.ts'; export * from './src/main/image-generation.ts'; export * from './src/main/image-config.ts'; export * from './src/main/image-credentials.ts'; export * from './src/main/local-models.ts'; export { AgentController } from './src/main/agent.ts';", resolveDir: process.cwd(), sourcefile: 'image-boundary-fixture.ts' },
     outfile, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent',
     plugins: [{ name: 'unused-electron', setup(b) {
       b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }))
@@ -187,6 +187,47 @@ try {
     mod.resetLocalImageCache()
     await mod.detectLocalModelServers()
     ok(probes.count > afterFirst, 'an explicit reset probes again')
+  }
+
+  {
+    const bodies = []
+    globalThis.fetch = async (_url, init = {}) => {
+      bodies.push(JSON.parse(init.body))
+      return new Response('data: ' + JSON.stringify({ type: 'response.completed', response: { output: [{ type: 'image_generation_call', result: PNG.toString('base64') }] } }) + '\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+    }
+    const codexContext = { ...context, sessionFile: join(project, 'codex-effort.jsonl'), credentials: { ...credentials, hasCodex: async () => true, codex: async () => ({ access: 'fixture', source: 'yan' }) } }
+    await generateImage({ provider: 'codex', prompt: 'x' }, codexContext)
+    ok(bodies.length === 1 && !('reasoning' in bodies[0]), 'codex image requests carry no reasoning effort, which the image tool rejects')
+  }
+
+  {
+    delete process.env.YAN_IMAGE_API_BASE
+    delete process.env.YAN_IMAGE_API_KEY
+    delete process.env.YAN_IMAGE_PROVIDER
+    delete process.env.YAN_IMAGE_OPENAI_MODEL
+    await mod.refreshImageConfig()
+    ok(!(await mod.detectImageProviders(mod.hostImageCredentials, async () => null)).compatible, 'compatible is unavailable before it is configured')
+    ok((await mod.updateImageConfig({ provider: 'openai', model: { service: 'openai', value: 'my-image-model' }, baseUrl: 'https://relay.invalid/v1' })).ok, 'image settings save')
+    ok(mod.defaultImageModel('openai') === 'my-image-model', 'a model chosen in settings replaces the default')
+    ok(mod.imageProviderEndpoint('compatible') === 'https://relay.invalid/v1', 'the endpoint chosen in settings is used')
+    ok(mod.resolveImageProvider(undefined, { ...none, codex: true }) === 'openai', 'the provider chosen in settings beats automatic order')
+    const bodies = []
+    globalThis.fetch = async (_url, init = {}) => { bodies.push(JSON.parse(init.body)); return response() }
+    await mod.updateImageConfig({ complexity: 'default' })
+    await generateImage({ provider: 'openai', prompt: 'x' }, context)
+    ok(!('complexity' in bodies.at(-1)), 'complexity is omitted unless chosen')
+    ok((await mod.updateImageConfig({ complexity: 'low' })).ok, 'complexity saves')
+    await generateImage({ provider: 'openai', prompt: 'x' }, context)
+    ok(bodies.at(-1).complexity === 'low' && bodies.at(-1).model === 'my-image-model', 'a chosen complexity and model reach the image API')
+    await mod.updateImageConfig({ complexity: 'default' })
+    ok(!(await mod.updateImageConfig({ baseUrl: 'ftp://x' })).ok, 'a non-http endpoint is rejected')
+    ok((await mod.setImageKey('compatible', 'sk-from-settings')).ok, 'image key saves')
+    ok(await mod.hostImageCredentials.secret('compatible') === 'sk-from-settings', 'a saved key is read back')
+    ok((await mod.detectImageProviders(mod.hostImageCredentials, async () => null)).compatible, 'endpoint plus saved key makes the compatible service available')
+    ok(!(await mod.setImageKey('compatible', 'has space')).ok, 'a key with whitespace is rejected')
+    ok((await mod.clearImageKey('compatible')).ok && !(await mod.hostImageCredentials.secret('compatible')), 'a cleared key is gone')
+    await mod.updateImageConfig({ provider: 'auto', model: { service: 'openai', value: '' }, baseUrl: '' })
+    ok(mod.defaultImageModel('openai') === 'gpt-image-2.6-flare' && mod.defaultImageModel('codex') === 'gpt-image-2-codex' && mod.resolveImageProvider(undefined, { ...none, codex: true }) === 'codex', 'clearing settings returns to the defaults')
   }
 
   console.log(`image-generation-boundaries: ${checks} checks passed (no real network/model, no app build)`)

@@ -6,6 +6,7 @@ import type { AssistantArtifact, ImageGenerationStage } from '../shared/ipc'
 import type { LocalModelServer } from '../shared/custom-provider'
 import { ArtifactStore } from './artifacts'
 import { hostImageCredentials, type ImageCredentialSource } from './image-credentials'
+import { imageComplexity, imageEnv, refreshImageConfig } from './image-config'
 import { detectLocalImageService, detectLocalModelServers } from './local-models'
 
 export const IMAGE_PROVIDERS = ['auto', 'codex', 'openai', 'compatible', 'google', 'doubao', 'local', 'mock'] as const
@@ -53,9 +54,11 @@ export async function detectImageProviders(
   credentials: ImageCredentialSource = hostImageCredentials,
   detectLocal: () => Promise<LocalModelServer | null> = detectLocalImageService
 ): Promise<ImageAvailability> {
-  const [codex, openai, google, doubao, local] = await Promise.all([
+  await refreshImageConfig()
+  const [codex, openai, compatibleKey, google, doubao, local] = await Promise.all([
     credentials.hasCodex(),
     credentials.secret('openai'),
+    credentials.secret('compatible'),
     credentials.secret('google'),
     credentials.secret('doubao'),
     detectLocal()
@@ -63,7 +66,7 @@ export async function detectImageProviders(
   return {
     codex,
     openai: !!openai,
-    compatible: !!process.env.YAN_IMAGE_API_BASE?.trim() && !!process.env.YAN_IMAGE_API_KEY?.trim(),
+    compatible: !!imageEnv('YAN_IMAGE_API_BASE') && !!compatibleKey,
     google: !!google,
     doubao: !!doubao,
     local
@@ -71,7 +74,7 @@ export async function detectImageProviders(
 }
 
 export function resolveImageProvider(requested: ImageProvider | undefined, available: ImageAvailability): ResolvedImageProvider {
-  const configured = process.env.YAN_IMAGE_PROVIDER?.trim()
+  const configured = imageEnv('YAN_IMAGE_PROVIDER')
   const value = requested && requested !== 'auto' ? requested : isImageProvider(configured) ? configured : 'auto'
   if (value !== 'auto') return value
   for (const provider of AUTO_ORDER) {
@@ -84,25 +87,33 @@ const GOOGLE_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 const DOUBAO_BASE = 'https://ark.cn-beijing.volces.com/api/v3'
 
 function envOr(name: string, fallback: string): string {
-  return process.env[name]?.trim() || fallback
+  return imageEnv(name) || fallback
 }
 
-const OPENAI_IMAGE_MODEL = 'gpt-image-2.5-flare'
+const OPENAI_IMAGE_MODEL = 'gpt-image-2.6-flare'
+const CODEX_IMAGE_MODEL = 'gpt-image-2-codex'
+const GOOGLE_IMAGE_MODEL = 'gemini-3.1-flash-image'
+const DOUBAO_IMAGE_MODEL = 'doubao-seedream-5-0-flash-260915'
+const COMPATIBLE_IMAGE_MODEL = 'gpt-image-2'
+
+export const IMAGE_MODEL_DEFAULTS = { compatible: COMPATIBLE_IMAGE_MODEL, openai: OPENAI_IMAGE_MODEL, google: GOOGLE_IMAGE_MODEL, doubao: DOUBAO_IMAGE_MODEL } as const
 
 export function defaultImageModel(provider: ResolvedImageProvider, available?: ImageAvailability): string {
   switch (provider) {
     case 'google':
-      return envOr('YAN_IMAGE_GOOGLE_MODEL', 'gemini-3.1-flash-image')
+      return envOr('YAN_IMAGE_GOOGLE_MODEL', GOOGLE_IMAGE_MODEL)
     case 'doubao':
-      return envOr('YAN_IMAGE_DOUBAO_MODEL', 'doubao-seedream-5-0-flash-260915')
+      return envOr('YAN_IMAGE_DOUBAO_MODEL', DOUBAO_IMAGE_MODEL)
     case 'local':
       return available?.local?.models[0] ?? 'local'
     case 'mock':
       return 'yan-mock-svg'
+    case 'codex':
+      return CODEX_IMAGE_MODEL
     case 'unavailable':
       return ''
     case 'compatible':
-      return envOr('YAN_IMAGE_COMPATIBLE_MODEL', 'gpt-image-2')
+      return envOr('YAN_IMAGE_COMPATIBLE_MODEL', COMPATIBLE_IMAGE_MODEL)
     default:
       return envOr('YAN_IMAGE_OPENAI_MODEL', OPENAI_IMAGE_MODEL)
   }
@@ -113,7 +124,7 @@ export function imageProviderEndpoint(provider: ResolvedImageProvider, available
     case 'openai':
       return 'https://api.openai.com/v1'
     case 'compatible':
-      return process.env.YAN_IMAGE_API_BASE?.trim() ?? ''
+      return imageEnv('YAN_IMAGE_API_BASE') ?? ''
     case 'google':
       return envOr('YAN_IMAGE_GOOGLE_BASE', GOOGLE_BASE)
     case 'doubao':
@@ -299,7 +310,7 @@ interface Generated {
 }
 
 const CODEX_RELAY_MODEL = 'gpt-6-luna'
-const CODEX_RELAY_FALLBACK = 'gpt-5.5'
+const CODEX_RELAY_FALLBACK = 'gpt-5.6-sol'
 
 async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], credentials: ImageCredentialSource, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const auth = await credentials.codex()
@@ -313,7 +324,6 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
     instructions: sources.length
       ? 'Call the image_generation tool once to edit the provided image(s). Use the user message verbatim as the prompt; do not rewrite, expand or translate it. Do not reply with text or ask questions.'
       : 'Call the image_generation tool once. Use the user message verbatim as the prompt; do not rewrite, expand or translate it. Do not reply with text or ask questions.',
-    reasoning: { effort: 'low' },
     input: [{
       type: 'message',
       role: 'user',
@@ -369,6 +379,7 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
   let failure: string | undefined
   let partials = 0
   let replyText = ''
+  let serverModel: string | undefined
   const seenTypes = new Set<string>()
   const takeImage = (item: { type?: string; result?: string; revised_prompt?: string } | undefined): void => {
     if (item?.type !== 'image_generation_call' || !item.result) return
@@ -384,12 +395,13 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
         const event = JSON.parse(text) as {
           type?: string
           item?: { type?: string; result?: string; revised_prompt?: string }
-          response?: { error?: { message?: string }; output?: Array<{ type?: string; result?: string; revised_prompt?: string }> }
+          response?: { error?: { message?: string }; tools?: Array<{ type?: string; model?: string }>; output?: Array<{ type?: string; result?: string; revised_prompt?: string }> }
           error?: { message?: string }
           message?: string
           delta?: string
         }
         if (event.type) seenTypes.add(event.type)
+        serverModel ??= event.response?.tools?.find((tool) => tool.type === 'image_generation')?.model
         takeImage(event.item)
         if (!finalB64 && event.type === 'response.completed') for (const output of event.response?.output ?? []) takeImage(output)
         if (event.type === 'response.output_text.delta' && typeof event.delta === 'string' && replyText.length < 400) replyText += event.delta
@@ -416,7 +428,7 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
   if (!finalB64 && failure) throw new ImageProviderError('codex_response_failed', failure.slice(0, 200))
   if (!finalB64 && replyText.trim()) throw new ImageProviderError('codex_image_tool_not_called', replyText.trim().slice(0, 200))
   if (!finalB64) throw new ImageProviderError('codex_image_result_missing', `事件：${[...seenTypes].slice(0, 12).join(', ') || '无'}；预览图 ${partials} 张`)
-  return { bytes: Buffer.from(finalB64, 'base64'), model: imageModel, revisedPrompt }
+  return { bytes: Buffer.from(finalB64, 'base64'), model: serverModel ?? imageModel, revisedPrompt }
 }
 
 async function openAiImage(req: ImageGenerationRequest, sources: SourceImage[], baseUrl: string, token: string, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
@@ -429,6 +441,7 @@ async function openAiImage(req: ImageGenerationRequest, sources: SourceImage[], 
     quality: stringParam(req.quality, 'auto'),
     background: stringParam(req.background, 'auto'),
     output_format: formatOf(req.format),
+    ...(imageComplexity() ? { complexity: imageComplexity() } : {}),
     n: '1'
   }
   report?.('requesting')
@@ -519,7 +532,7 @@ function latestSeedreamModel(base: string, key: string): Promise<string | null> 
 
 async function googleImage(req: ImageGenerationRequest, sources: SourceImage[], key: string, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const base = envOr('YAN_IMAGE_GOOGLE_BASE', GOOGLE_BASE).replace(/\/+$/, '')
-  const pinned = stringParam(req.model, '') || process.env.YAN_IMAGE_GOOGLE_MODEL?.trim() || ''
+  const pinned = stringParam(req.model, '') || imageEnv('YAN_IMAGE_GOOGLE_MODEL') || ''
   const model = (pinned || await latestGoogleImageModel(base, key) || defaultImageModel('google')).replace(/^models\//, '')
   const aspectRatio = nearestAspectRatio(req.size)
   report?.('requesting')
@@ -560,7 +573,7 @@ async function googleImage(req: ImageGenerationRequest, sources: SourceImage[], 
 
 async function doubaoImage(req: ImageGenerationRequest, sources: SourceImage[], key: string, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const base = envOr('YAN_IMAGE_DOUBAO_BASE', DOUBAO_BASE).replace(/\/+$/, '')
-  const pinned = stringParam(req.model, '') || process.env.YAN_IMAGE_DOUBAO_MODEL?.trim() || ''
+  const pinned = stringParam(req.model, '') || imageEnv('YAN_IMAGE_DOUBAO_MODEL') || ''
   const model = pinned || await latestSeedreamModel(base, key) || defaultImageModel('doubao')
   report?.('requesting')
   const response = await fetch(`${base}/images/generations`, {
@@ -655,6 +668,7 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
   if (!prompt) throw new ImageProviderError('image_prompt_missing')
   if (request.provider !== undefined && !isImageProvider(request.provider)) throw new ImageProviderError('image_provider_unknown', String(request.provider))
   const credentials = context.credentials ?? hostImageCredentials
+  await refreshImageConfig()
   const availability = context.availability ?? await detectImageProviders(credentials)
   const provider = resolveImageProvider(request.provider, availability)
   if (provider === 'unavailable') throw new ImageProviderError('image_provider_unavailable', await unavailableHint())
@@ -690,7 +704,7 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
     if (!server) throw new ImageProviderError('local_service_missing')
     generated = await sdWebUiImage(req, sources, server, report, signal)
   } else {
-    const key = provider === 'compatible' ? process.env.YAN_IMAGE_API_KEY?.trim() : await credentials.secret('openai')
+    const key = await credentials.secret(provider === 'compatible' ? 'compatible' : 'openai')
     if (!key) throw new ImageProviderError(provider === 'compatible' ? 'compatible_api_key_missing' : 'openai_api_key_missing')
     generated = await openAiImage({ ...req, model: stringParam(req.model, defaultImageModel(provider)) }, sources, imageProviderEndpoint(provider, availability), key, report, signal)
   }

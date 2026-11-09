@@ -30,6 +30,7 @@ import { supportsOAuthAccounts, type OAuthAccountPools, type OAuthAccountView } 
 import type { CodexAccountView } from '../../../../../shared/account-quota'
 import type { ApiKeyPools, ApiKeyView } from '../../../../../shared/api-keys'
 import { CustomEndpointSettings } from './CustomEndpointSettings'
+import { ImageGenerationSettings } from './ImageGenerationSettings'
 import { ModelVisibilityGroup } from './ModelVisibilityGroup'
 import { useModelsText } from './models-text'
 import '../capabilities/capabilities.css'
@@ -577,6 +578,8 @@ export function ModelsSettings(): ReactElement {
       ) : null}
 
       <CustomEndpointSettings />
+
+      <ImageGenerationSettings />
 
       <SettingsAdvanced label={labels.advanced} testId="ms-advanced">
         <SettingsGroup title={labels.groupModelsIntegrations} className="ms-group" plain>

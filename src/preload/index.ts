@@ -127,6 +127,7 @@ import type { OfficeDocumentView } from '../shared/office'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { AndroidDevice, AndroidFrame, AndroidSdkStatus } from '../shared/android-sdk'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
+import type { ImageConfigView } from '../shared/image-config'
 import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from '../shared/account-quota'
 import type { OAuthAccountPools } from '../shared/oauth-accounts'
 import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
@@ -418,6 +419,12 @@ const api: YanBridge = {
   },
   builtinCapabilities: {
     list: () => invoke<BuiltinCapabilityView[]>('yan:capabilities:builtin')
+  },
+  image: {
+    config: () => invoke<ImageConfigView>('yan:image:config'),
+    update: (patch) => invoke<{ ok: boolean; error?: string }>('yan:image:update', patch),
+    setKey: (service, key) => invoke<{ ok: boolean; error?: string }>('yan:image:setKey', service, key),
+    clearKey: (service) => invoke<{ ok: boolean; error?: string }>('yan:image:clearKey', service)
   },
   search: {
     doctor: () => invoke<SearchBackendStatus>('yan:search:doctor'),
