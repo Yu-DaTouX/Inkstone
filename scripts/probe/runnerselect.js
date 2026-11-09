@@ -58,7 +58,8 @@
         return out.join('\n')
       }
       const list2 = await window.yan.runnerStatuses()
-      ok(list2.length === list.length, `切到已有会话后实例数不变（${list.length} → ${list2.length}）`)
+      const sameCwd = String(target.cwd || cwd).replace(/[\\/]+$/, '').toLowerCase() === String(cwd).replace(/[\\/]+$/, '').toLowerCase()
+      ok(list2.length === list.length + (sameCwd ? 0 : 1), `切到${sameCwd ? '同项目' : '其他项目'}的已有会话后实例数${sameCwd ? '不变' : '加一（未到上限时保留热实例）'}（${list.length} → ${list2.length}）`)
 
       const hit2 = await window.yan.selectSession({ sessionFile: target.path, cwd: target.cwd || cwd })
       ok(hit2.ok && hit2.via === 'hit', '再次选同一会话是「命中」（只改视图）', `via=${hit2.via}`)

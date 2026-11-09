@@ -10,7 +10,7 @@
   const working = () => q('[data-testid="v3-turn-activity"][data-kind="run"]:not([data-quiet])')
   const quiet = () => q('[data-testid="v3-turn-activity"][data-quiet]')
   const retrying = () => q('[data-testid="v3-turn-activity"][data-kind="retry"]')
-  const border = () => q('[data-testid="composer-border"]')
+  const stopButton = () => q('[data-testid="composer-v3"] .t3-stop')
   const runningTool = (tool, target) =>
     [q(`.v3-step[data-state="running"][data-tool="${tool}"]`), q('[data-testid="v3-process-toggle"]')]
       .find((el) => (el?.textContent ?? '').includes(target))
@@ -36,23 +36,22 @@
     await sleep(250)
   }
   const original = { session: store.getState().session, messages: store.getState().messages }
-  out.push('=== 工作行：作答与思考时显示阶段与秒数，工具运行时静默占位，重试时显示次数 ===')
+  out.push('=== 工作行：运行中静默显示「进行中」与用时，重试时显示活动行 ===')
 
   try {
     setState({ isStreaming: true, isAgentRunning: true }, { text: '流式输出' })
-    ok(await until(() => border()?.dataset.state === 'working'), '正文流时输入框顶边处于忙碌态', border()?.dataset.phase ?? '')
-    ok(await until(() => working()?.dataset.working === 'responding'), '正文流时工作行显示作答阶段', working()?.textContent ?? '')
+    ok(await until(() => !!stopButton()), '正文流时输入框主按钮是「停止」')
+    ok(await until(() => quiet()?.dataset.working === 'working' && !working()), '正文流时工作行静默占位（正文已在流出）', quiet()?.textContent ?? '')
     const placeholder = () => q('[data-testid="composer-input"]')?.getAttribute('data-placeholder') ?? ''
     ok(await until(() => placeholder().includes('Ctrl+Q') && !placeholder().includes('Alt+Enter')), '运行中占位只写「Enter 插话 · Ctrl+Q 排队」', placeholder())
-    const picker = q('[data-testid="model-picker"]')
+    const picker = q('[data-chat-provider-model-picker]')
     ok(!!picker && getComputedStyle(picker).opacity === '1', '运行中模型名保持常态，不变灰', picker ? getComputedStyle(picker).opacity : '')
-    const arc = q('.composer .ctx-ring-arc')
+    const arc = q('[data-testid="composer-v3"] .t3-ctx-meter__arc')
     ok(!arc || (getComputedStyle(arc).animationName === 'none' && getComputedStyle(arc.closest('svg')).animationName === 'none'), '运行中上下文环不转动')
 
     setState({ isStreaming: false, isAgentRunning: true }, {
       toolCalls: [{ id: 'working-probe', name: 'bash', args: { command: 'echo probe' }, status: 'running' }]
     })
-    ok(await until(() => border()?.dataset.state === 'working'), '工具等待时输入框顶边仍处于忙碌态', border()?.dataset.phase ?? '')
     ok(await until(() => !!quiet() && !working()), '工具执行期间工作行静默占位（运行中的过程行已显示工具）')
     ok(await until(() => !!runningTool('bash', 'echo probe')), '运行中的过程行带真实工具与命令', runningTool('bash', 'echo probe')?.textContent ?? '')
 
@@ -60,7 +59,7 @@
     ok(await until(() => !!quiet() && !working()), '再次思考且有实时文字时工作行转为安静状态（不再显示思考阶段）', quiet()?.textContent ?? '')
     ok(await until(() => (quiet()?.textContent ?? '').includes('进行中')), '安静状态写「进行中」而非具体阶段', quiet()?.textContent ?? '')
     ok(await until(() => /\d/.test(quiet()?.textContent ?? '')), '安静状态仍带用时', quiet()?.textContent ?? '')
-    ok(await until(() => (q('[data-testid="v3-thinking-body"]')?.textContent ?? '').includes('再想想')), '思考内容在消息里仍可见', q('[data-testid="v3-thinking-body"]')?.textContent ?? '')
+    ok(await until(() => (q('[data-testid="v3-thinking"]')?.textContent ?? '').includes('再想想')), '思考内容在消息里仍可见', q('[data-testid="v3-thinking"]')?.textContent ?? '')
 
     setState({ isStreaming: false, isAgentRunning: true, retry: { attempt: 1, maxAttempts: 3, at: Date.now(), delayMs: 30000, error: 'probe' } }, { text: '' })
     ok(await until(() => !!retrying()), '重试等待时显示活动行')
@@ -68,7 +67,7 @@
 
     setState({ isStreaming: false, isAgentRunning: false, retry: undefined }, { text: '完成' })
     ok(await until(() => !working() && !retrying() && !quiet()), '回合结束后提示消失')
-    ok(border()?.dataset.state === 'idle', 'idle 状态不保留忙碌标记')
+    ok(await until(() => !stopButton()), '回合结束后主按钮不再是「停止」')
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   } finally {

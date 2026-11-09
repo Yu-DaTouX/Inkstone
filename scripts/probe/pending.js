@@ -23,29 +23,12 @@
 
   const pending = () => store.getState().pendingSends ?? []
   const pendingRows = () => qa('[data-testid="queue-pending"]')
-  const openMenus = () => qa('.cq-menu')
-  const menuItems = (testIds = false) => {
-    const menu = openMenus()[openMenus().length - 1]
-    if (!menu) return []
-    const items = [...menu.querySelectorAll('[role="menuitem"]')]
-    return testIds ? items.map((el) => el.dataset.testid ?? '?') : items
+  const rowActions = () => {
+    const row = pendingRows()[0]
+    return row ? [...row.querySelectorAll('[data-testid^="pending-"]')].map((el) => el.dataset.testid) : []
   }
-  const openPendingMenu = async () => {
-    const opened = openMenus()
-    opened[opened.length - 1]?.querySelector('[role="menuitem"]')?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-    )
-    await until(() => openMenus().length === 0, 3000)
-    const before = openMenus().length
-    q('[data-testid="pending-actions"]')?.click()
-    await until(() => openMenus().length === before + 1, 3000)
-    await sleep(150)
-    return menuItems(true)
-  }
-  const clickMenuItem = (testId) => {
-    const menu = openMenus().find((el) => el.querySelector(`[data-testid="${testId}"]`))
-    menu?.querySelector(`[data-testid="${testId}"]`)?.click()
-  }
+  const rowButton = (testId) => pendingRows()[0]?.querySelector(`[data-testid="${testId}"]`) ?? null
+  const clickRowButton = (testId) => rowButton(testId)?.click()
 
   const runner = (running, streaming) => ({
     id: 'probe-run-1',
@@ -180,7 +163,7 @@
     }
 
     out.push('')
-    out.push('=== 4. 待定区：行、标签与行菜单 ===')
+    out.push('=== 4. 待定区：行、标签与行内操作 ===')
     sent.length = 0
     idle()
     await sleep(150)
@@ -188,21 +171,21 @@
     ok(await until(() => pendingRows().length === 1), '待定消息渲染成一行')
     const row = pendingRows()[0]
     ok((row?.textContent ?? '').includes('YAN-PENDING-HOLD'), '行里显示待投递文本')
-    const pillText = row?.querySelector('.cq-pill')?.textContent ?? ''
-    ok(/^(排队|Queued) · 1$/.test(pillText), '单条行首是「排队 · 1」胶囊', JSON.stringify(pillText))
-    ok(!/下一条|Next:/.test(row?.textContent ?? ''), '单条时不带「下一条」前缀')
-    ok(!!q('[data-testid="queue-toggle"]') === false, '只有一条时不折叠成计数条')
-    ok(!q('[data-testid="queue-clear-all"]'), '只有一条时不另起「全部清除」行，删除收在行菜单里')
-    const idleMenu = await openPendingMenu()
-    note(`空闲时行菜单 = ${JSON.stringify(idleMenu)}`)
-    ok(idleMenu.includes('pending-follow') && idleMenu.includes('pending-restore'), '行菜单有「发送」与「撤回」')
-    ok(idleMenu.includes('pending-discard'), '行菜单有「删除」（直接丢弃，不回填草稿）')
-    ok(!idleMenu.includes('pending-steer'), '回合没跑时没有「插话」项')
+    const tagText = row?.querySelector('.t3-queue__tag')?.textContent ?? ''
+    ok(/^(待投递|pending)$/.test(tagText), '行里标出「待投递」', JSON.stringify(tagText))
+    ok(/(发送|Send)$/.test(rowButton('pending-follow')?.textContent ?? ''), '空闲时主按钮是「发送」', JSON.stringify(rowButton('pending-follow')?.textContent))
+    ok(!q('[data-testid="queue-toggle"]'), '只有一条时不折叠')
+    ok(!q('[data-testid="queue-clear-all"]'), '只有一条时没有「全部清除」，删除在行内')
+    const idleActions = rowActions()
+    note(`空闲时行内操作 = ${JSON.stringify(idleActions)}`)
+    ok(idleActions.includes('pending-follow') && idleActions.includes('pending-restore'), '行内有「发送」与「撤回」')
+    ok(idleActions.includes('pending-discard'), '行内有「删除」（直接丢弃，不回填草稿）')
+    ok(!idleActions.includes('pending-steer'), '回合没跑时没有「插话」')
 
     out.push('')
     out.push('=== 5. 「发送」投递并清行 ===')
     sent.length = 0
-    clickMenuItem('pending-follow')
+    clickRowButton('pending-follow')
     ok(await until(() => sent.length === 1), '点「发送」投递一次', `投递记录 = ${JSON.stringify(sent)}`)
     ok(sent[0]?.text === 'YAN-PENDING-HOLD', '投递的是这条待定消息')
     ok(await until(() => pending().length === 0 && pendingRows().length === 0), '投完行消失')
@@ -212,9 +195,8 @@
     sent.length = 0
     store.getState().holdSend('YAN-PENDING-RESTORE')
     await until(() => pendingRows().length === 1)
-    const restoreMenu = await openPendingMenu()
-    ok(restoreMenu.includes('pending-restore'), '行菜单里有「撤回」')
-    clickMenuItem('pending-restore')
+    ok(!!rowButton('pending-restore'), '行内有「撤回」')
+    clickRowButton('pending-restore')
     ok(await until(() => composer.text(editor()).includes('YAN-PENDING-RESTORE')), '文字回到输入草稿', JSON.stringify(composer.text(editor())))
     ok(sent.length === 0, '撤回**不**投递')
     ok(await until(() => pending().length === 0 && pendingRows().length === 0), '行消失')
@@ -226,11 +208,9 @@
     sent.length = 0
     store.getState().holdSend('YAN-PENDING-RUNNING')
     busy()
-    await until(() => pendingRows().length === 1)
-    const runningMenu = await openPendingMenu()
-    note(`运行中行菜单 = ${JSON.stringify(runningMenu)}`)
-    ok(runningMenu.includes('pending-steer'), '回合在跑时多出「插话」项')
-    clickMenuItem('pending-steer')
+    ok(await until(() => rowActions().includes('pending-steer')), '回合在跑时多出「插话」', JSON.stringify(rowActions()))
+    ok(/(排队|Queue)$/.test(rowButton('pending-follow')?.textContent ?? ''), '回合在跑时主按钮变成「排队」', JSON.stringify(rowButton('pending-follow')?.textContent))
+    clickRowButton('pending-steer')
     ok(await until(() => sent.length === 1), '点「插话」投递一次', `投递记录 = ${JSON.stringify(sent)}`)
     ok(sent[0]?.mode === 'steer', '插话以 steer 投递')
     ok(await until(() => pending().length === 0 && pendingRows().length === 0), '投完行消失')
@@ -241,14 +221,12 @@
     sendOk = false
     store.getState().holdSend('YAN-PENDING-FAIL')
     await until(() => pendingRows().length === 1)
-    await openPendingMenu()
-    clickMenuItem('pending-follow')
+    clickRowButton('pending-follow')
     await sleep(400)
     note(`投递尝试 = ${JSON.stringify(sent)} · 剩余待定 = ${pending().length}`)
     ok(sent.length === 1, '确实尝试过投递')
     ok(pending().length === 1 && pendingRows().length === 1, '失败时行**留在原地**（用户能重试或撤回，而不是默默丢消息）')
-    const retryMenu = await openPendingMenu()
-    ok(retryMenu.includes('pending-follow'), '行菜单还在，可以再试一次')
+    ok(!!rowButton('pending-follow'), '「发送」还在，可以再试一次')
 
     out.push('')
     out.push('=== 9. 收尾：清掉探针造的状态 ===')
@@ -259,9 +237,8 @@
     sent.length = 0
     store.getState().holdSend('YAN-PENDING-CLEAR')
     await until(() => pendingRows().length === 1)
-    await openPendingMenu()
-    clickMenuItem('pending-discard')
-    ok(await until(() => pending().length === 0 && pendingRows().length === 0), '行菜单「删除」直接丢弃待定条目')
+    clickRowButton('pending-discard')
+    ok(await until(() => pending().length === 0 && pendingRows().length === 0), '「删除」直接丢弃待定条目')
     await sleep(200)
     ok(!composer.text(editor()).includes('YAN-PENDING-CLEAR'), '删除不把文字放回输入框', JSON.stringify(composer.text(editor())))
     ok(sent.length === 0, '删除不投递')

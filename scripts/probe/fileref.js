@@ -41,22 +41,21 @@
     ])
     await sleep(300)
 
-    const tag = q('.ca-tile[data-kind="file"]')
-    ok(!!tag, '文件引用渲染成独立标签（data-kind=file）')
+    const tag = [...document.querySelectorAll('[data-testid="composer-v3"] .t3-attachment-file')].find((el) => (el.textContent ?? '').includes('probe.ts'))
+    ok(!!tag, '文件引用渲染成独立的文件行')
     if (tag) {
-      const text = tag.textContent ?? ''
-      ok(/probe\.ts/.test(text), '标签带文件名（可访问名）')
-      ok(tag.querySelector('.ui-file-card__name')?.textContent === 'probe.ts', '文件卡片显示名称')
-      const title = tag.getAttribute('title') ?? ''
-      ok(/probe\.ts/.test(title) && /2 KB/.test(title), '文件名与大小进 tooltip', JSON.stringify(title))
-      ok(!!tag.querySelector('svg.lucide') && !tag.querySelector('img'), '标签用图标而不是图片缩略图')
-      ok(!tag.querySelector('.ca-ref') && !tag.querySelector('[data-testid="attachment-open"]'), '文件标签没有 @图N 徽标与图片查看入口')
+      ok(tag.querySelector('.t3-attachment-file__name')?.textContent === 'probe.ts', '文件行显示名称')
+      const size = tag.querySelector('.t3-attachment-file__size')?.textContent ?? ''
+      ok(/^2(\.0)? ?KB$/.test(size), '文件行显示大小', JSON.stringify(size))
+      ok(!!tag.querySelector('.ui-file-icon svg') && !tag.querySelector('img'), '用文件类型图标而不是图片缩略图')
+      ok(!tag.querySelector('.t3-attachment__ref') && !tag.querySelector('.t3-attachment__open'), '文件行没有 @图N 徽标与图片查看入口')
+      ok(/probe\.ts/.test(tag.querySelector('button[aria-label]')?.getAttribute('aria-label') ?? ''), '移除按钮的可访问名带文件名', tag.querySelector('button[aria-label]')?.getAttribute('aria-label') ?? '')
       const box = tag.getBoundingClientRect()
-      const nameBox = tag.querySelector('.ui-file-card__name')?.getBoundingClientRect()
-      ok(box.width > 40 && nameBox?.width > 1 && nameBox?.height > 1, '文件名在卡片内可见', `${Math.round(box.width)}×${Math.round(box.height)}`)
+      const nameBox = tag.querySelector('.t3-attachment-file__name')?.getBoundingClientRect()
+      ok(box.width > 40 && nameBox?.width > 1 && nameBox?.height > 1, '文件名可见', `${Math.round(box.width)}×${Math.round(box.height)}`)
     }
 
-    const send = q('[data-testid="composer-send"]')
+    const send = q('[data-testid="composer-v3"] .t3-send')
     ok(!!send, '找到发送按钮')
     if (send) {
       const st = store.getState()
@@ -67,7 +66,7 @@
 
     store.getState().clearAttachments()
     await sleep(200)
-    ok(!q('.ca-tile[data-kind="file"]'), '清理后标签消失')
+    ok(!q('[data-testid="composer-v3"] .t3-attachment-file'), '清理后文件行消失')
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   }
