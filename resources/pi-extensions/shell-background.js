@@ -43,7 +43,6 @@ export function autoBackgroundOperations(base, { seconds, notify, dir = tmpdir()
   return {
     ...base,
     async exec(command, cwd, options) {
-      if (options?.timeout !== undefined) return base.exec(command, cwd, options)
       const outer = options?.signal
       const inner = new AbortController()
       const abortInner = () => inner.abort()

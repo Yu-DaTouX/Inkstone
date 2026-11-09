@@ -56,9 +56,20 @@ try {
   await sleep(600)
   assert.ok(notices[0].includes('退出码 3'), '非零退出码写进通知')
 
-  const withTimeout = await ops.exec('slow', dir, { timeout: 5, onData: () => {} })
+  notices.length = 0
+  let seenTimeout
+  const timeoutOps = autoBackgroundOperations(fakeBase(async (_c, _d, options) => {
+    seenTimeout = options.timeout
+    options.onData(Buffer.from('start\n'))
+    await sleep(400)
+    return { exitCode: 0 }
+  }), { seconds: 0.15, notify: (text) => notices.push(text), dir })
+  const withTimeout = await timeoutOps.exec('slow', dir, { timeout: 5, onData: () => {} })
   assert.equal(withTimeout.exitCode, 0)
-  assert.equal(notices.length, 1, '带 timeout 的调用保持原行为，不转后台')
+  assert.equal(seenTimeout, 5, '带 timeout 的调用把超时原样交给底层命令')
+  assert.equal(notices.length, 0, '带 timeout 的调用返回时还没结束，不通知')
+  await sleep(500)
+  assert.equal(notices.length, 1, '带 timeout 的调用同样转后台，结束后通知')
 
   const controller = new AbortController()
   const aborted = ops.exec('slow', dir, { signal: controller.signal, onData: () => {} })
@@ -77,5 +88,6 @@ try {
   assert.ok(fence.includes('````'), '输出里有围栏时加长围栏')
   console.log('shell-background: ok')
 } finally {
-  await rm(dir, { recursive: true, force: true })
+  await sleep(500)
+  await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }
