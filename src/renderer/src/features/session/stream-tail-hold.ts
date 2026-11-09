@@ -1,4 +1,5 @@
 const BLANK_LIMIT_OF_VIEWPORT = 0.5
+const USER_TOGGLE_PAUSE_MS = 700
 
 function naturalHeight(el: HTMLElement, top: number): number {
   const style = getComputedStyle(el)
@@ -18,6 +19,8 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
   let target: HTMLElement | null = null
   let written = ''
   let frame = 0
+  let pausedUntil = 0
+  let resume = 0
   const release = (): void => {
     if (target) target.style.minHeight = ''
     target = null
@@ -30,6 +33,10 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
       target = tail
     }
     if (!target) return
+    if (performance.now() < pausedUntil) {
+      release()
+      return
+    }
     observer.observe(target)
     if (target.lastElementChild) observer.observe(target.lastElementChild)
     const rect = target.getBoundingClientRect()
@@ -41,6 +48,15 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
     target.style.minHeight = value
   }
   const observer = new ResizeObserver(sync)
+  const onToggle = (event: Event): void => {
+    const tail = target ?? findTail()
+    const hit = event.target instanceof Element ? event.target.closest('button, [role="button"], [aria-expanded]') : null
+    if (!tail || !hit || !tail.contains(hit)) return
+    pausedUntil = performance.now() + USER_TOGGLE_PAUSE_MS
+    release()
+    clearTimeout(resume)
+    resume = window.setTimeout(sync, USER_TOGGLE_PAUSE_MS + 50)
+  }
   const onScroll = (): void => {
     if (frame) return
     frame = requestAnimationFrame(() => {
@@ -50,9 +66,12 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
   }
   sync()
   scroller.addEventListener('scroll', onScroll, { passive: true })
+  scroller.addEventListener('click', onToggle, true)
   return () => {
     cancelAnimationFrame(frame)
+    clearTimeout(resume)
     scroller.removeEventListener('scroll', onScroll)
+    scroller.removeEventListener('click', onToggle, true)
     observer.disconnect()
     release()
   }
