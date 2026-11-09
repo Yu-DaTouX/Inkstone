@@ -19,6 +19,7 @@ interface ImageText {
   keyElsewhere: string
   noKey: string
   inUse: string
+  current: string
   complexity: string
   complexityDesc: string
   complexityDefault: string
@@ -62,8 +63,9 @@ const zh: ImageText = {
   keyElsewhere: '已有 key（来自其他设置）',
   noKey: '未配置',
   inUse: '默认',
+  current: '当前：{name}',
   complexity: '思考强度',
-  complexityDesc: '生图前规划多少：低适合小改动，高适合文字多、布局复杂的图。仅 GPT Image 2.6 经 OpenAI 或兼容接口时有效，默认高。',
+  complexityDesc: '生图前的规划量：低适合小改动，高适合文字多、布局复杂。仅 GPT Image 2.6 经 OpenAI 或兼容接口有效。',
   complexityDefault: '默认',
   complexityLow: '低',
   complexityMedium: '中',
@@ -105,8 +107,9 @@ const en: ImageText = {
   keyElsewhere: 'Key found elsewhere',
   noKey: 'Not set',
   inUse: 'Default',
+  current: 'Current: {name}',
   complexity: 'Thinking level',
-  complexityDesc: 'How much the model plans before drawing: low for small edits, high for dense text and complex layouts. Only applies to GPT Image 2.6 through OpenAI or a compatible endpoint; the default is high.',
+  complexityDesc: 'Planning before drawing: low for small edits, high for dense text or complex layouts. GPT Image 2.6 via OpenAI or a compatible endpoint only.',
   complexityDefault: 'Default',
   complexityLow: 'Low',
   complexityMedium: 'Medium',

@@ -36,6 +36,7 @@ export interface SettingsGroupProps {
   className?: string
   settingId?: string
   testId?: string
+  fold?: { summary?: ReactNode }
   children: ReactNode
 }
 
@@ -48,8 +49,50 @@ export function SettingsGroup({
   className,
   settingId,
   testId,
+  fold,
   children
 }: SettingsGroupProps): ReactElement {
+  const [open, setOpen] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
+  const bodyId = useId()
+  const reveal = useSyncExternalStore(subscribeSettingReveal, getSettingReveal, getSettingReveal)
+  useEffect(() => {
+    if (!fold || !reveal) return
+    if (reveal.id === settingId || body.current?.querySelector(settingSelector(reveal.id))) setOpen(true)
+  }, [fold, reveal, settingId])
+  if (fold) {
+    return (
+      <SettingSection
+        className={cx('settings-group', 'settings-fold', className)}
+        title={
+          <Button
+            variant="ghost"
+            className="settings-fold__toggle"
+            aria-expanded={open}
+            aria-controls={bodyId}
+            icon={<CollapsibleChevron expanded={open} />}
+            data-testid={testId ? `${testId}-toggle` : undefined}
+            onPress={() => setOpen((value) => !value)}
+          >
+            <span className="settings-fold__title">{title}</span>
+            {fold.summary != null ? <span className="settings-fold__summary">{fold.summary}</span> : null}
+          </Button>
+        }
+        plain
+        data-setting-id={settingId}
+        data-testid={testId}
+      >
+        <div className="settings-reveal" data-open={open ? '1' : '0'} inert={!open} aria-hidden={!open}>
+          <div className="settings-reveal__inner">
+            <div className="settings-fold__body" id={bodyId} ref={body}>
+              {description != null ? <p className="ui-setting-section__desc">{description}</p> : null}
+              {plain ? children : <div className="ui-setting-rows">{children}</div>}
+            </div>
+          </div>
+        </div>
+      </SettingSection>
+    )
+  }
   return (
     <SettingSection
       className={cx('settings-group', className)}

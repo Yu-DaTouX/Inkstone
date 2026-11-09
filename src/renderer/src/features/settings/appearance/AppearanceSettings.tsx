@@ -220,25 +220,12 @@ export function AppearanceSettings(): ReactElement {
           onChange={(next) => void patchSettings({ workspaceTiles: next }).catch(() => undefined)}
           testId="v3-workspace-tiles-toggle"
         />
-
-        <SwitchRow
-          settingId="appearance-files-show-hidden"
-          label={files.showHidden}
-          description={files.showHiddenDesc}
-          isSelected={showHidden}
-          onChange={(next) => hiddenStore.set(next)}
-          testId="v3-files-show-hidden-toggle"
-        />
       </SettingsGroup>
 
       <SettingsGroup title={text.groupAppearanceFonts}>
         <FontRow kind="ui" />
         <FontRow kind="code" />
       </SettingsGroup>
-
-      <InterfaceTuningSettings />
-
-      <HomeBackgroundSettings />
 
       <SettingsGroup title={text.groupAppearanceInput}>
         <SettingsRow settingId="appearance-language" label={text.language}>
@@ -274,6 +261,21 @@ export function AppearanceSettings(): ReactElement {
       </SettingsGroup>
 
       <SettingsAdvanced label={text.advanced} testId="v3-appearance-advanced">
+        <InterfaceTuningSettings />
+
+        <HomeBackgroundSettings />
+
+        <SettingsGroup title={text.groupAppearanceFiles}>
+          <SwitchRow
+            settingId="appearance-files-show-hidden"
+            label={files.showHidden}
+            description={files.showHiddenDesc}
+            isSelected={showHidden}
+            onChange={(next) => hiddenStore.set(next)}
+            testId="v3-files-show-hidden-toggle"
+          />
+        </SettingsGroup>
+
         <SettingsGroup title={text.groupAppearanceMotion}>
           <SwitchRow
             settingId="appearance-reduce-motion"

@@ -118,6 +118,9 @@ export function SessionSettings(): ReactElement {
           />
         </SettingsRow>
 
+      </SettingsGroup>
+
+      <SettingsGroup title={labels.groupSessionRun}>
         <SettingsRow settingId="session-keep-awake" label={text.sessionKeepAwake} description={text.sessionKeepAwakeDesc}>
           <Switch
             aria-label={text.sessionKeepAwake}
@@ -168,6 +171,9 @@ export function SessionSettings(): ReactElement {
             data-testid="v3-session-compress-archived"
           />
         </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup title={labels.groupSessionThinking}>
         <SettingsRow settingId="session-thinking-display" label={text.sessionThinkingDisplay} description={text.sessionThinkingDisplayDesc}>
           <Segmented
             label={text.sessionThinkingDisplay}

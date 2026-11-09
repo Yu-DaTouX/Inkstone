@@ -238,6 +238,7 @@ export function CustomEndpointSettings(): ReactElement {
       testId="ms-custom"
       className="ms-custom"
       plain
+      fold={{ summary: list?.length ? list.map((item) => item.id).join('、') : undefined }}
     >
 
       {list === null ? <p className="ms-note">{t('customApi.loading')}</p> : null}

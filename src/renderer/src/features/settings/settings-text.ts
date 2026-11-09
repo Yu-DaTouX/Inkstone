@@ -40,9 +40,12 @@ export interface SettingsText {
   groupAppearanceLook: string
   groupAppearanceFonts: string
   groupAppearanceMotion: string
+  groupAppearanceFiles: string
   groupAppearanceInput: string
   groupSessionContext: string
   groupSessionGeneral: string
+  groupSessionRun: string
+  groupSessionThinking: string
   groupSessionRetry: string
   groupSessionSubagents: string
   groupNotifSound: string
@@ -178,10 +181,13 @@ const ZH: SettingsText = {
   notReady: '设置还没就绪，稍后重试。',
   groupAppearanceLook: '外观',
   groupAppearanceFonts: '字体',
-  groupAppearanceMotion: '动效与背景',
+  groupAppearanceMotion: '动效与文字',
+  groupAppearanceFiles: '文件',
   groupAppearanceInput: '语言与输入',
   groupSessionContext: '上下文',
   groupSessionGeneral: '常规',
+  groupSessionRun: '运行与归档',
+  groupSessionThinking: '思考',
   groupSessionRetry: '出错与重试',
   groupSessionSubagents: '子 Agent',
   groupNotifSound: '声音与系统通知',
@@ -317,10 +323,13 @@ const EN: SettingsText = {
   notReady: 'Settings are not ready yet. Try again shortly.',
   groupAppearanceLook: 'Appearance',
   groupAppearanceFonts: 'Fonts',
-  groupAppearanceMotion: 'Motion & background',
+  groupAppearanceMotion: 'Motion & text',
+  groupAppearanceFiles: 'Files',
   groupAppearanceInput: 'Language & input',
   groupSessionContext: 'Context',
   groupSessionGeneral: 'General',
+  groupSessionRun: 'Running & archive',
+  groupSessionThinking: 'Reasoning',
   groupSessionRetry: 'Errors & retries',
   groupSessionSubagents: 'Subagents',
   groupNotifSound: 'Sound & system notifications',

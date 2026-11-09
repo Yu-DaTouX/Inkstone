@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { IMAGE_SERVICES, type ImageComplexity, type ImageConfigView, type ImageKeyService, type ImageModelService, type ImageProviderChoice, type ImageService } from '../../../../../shared/image-config'
 import { useI18n } from '../../../i18n'
-import { Badge, Button, ListBoxItem, Notice, Select, TextField } from '../../../ui'
+import { Badge, Button, CollapsibleChevron, ListBoxItem, Notice, Select, TextField } from '../../../ui'
 import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
 import { imageText } from './image-text'
 import './models-settings.css'
@@ -15,6 +15,8 @@ export function ImageGenerationSettings(): ReactElement {
   const text = imageText(lang)
   const [view, setView] = useState<ImageConfigView | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
+  const toggleCard = (service: string): void => setOpened((current) => { const next = new Set(current); if (next.has(service)) next.delete(service); else next.add(service); return next })
   const [msg, setMsg] = useState<{ kind: 'ok' | 'fail'; text: string } | null>(null)
   const alive = useRef(true)
   useEffect(() => {
@@ -51,7 +53,7 @@ export function ImageGenerationSettings(): ReactElement {
       return rest
     })
 
-  if (!view) return <SettingsGroup title={text.title} settingId="models-image-generation" className="ms-group" plain>{msg ? <Notice tone={msg.kind}>{msg.text}</Notice> : null}</SettingsGroup>
+  if (!view) return <SettingsGroup title={text.title} settingId="models-image-generation" className="ms-group" plain fold={{}}>{msg ? <Notice tone={msg.kind}>{msg.text}</Notice> : null}</SettingsGroup>
 
   const labelOf = (service: ImageProviderChoice | 'unavailable' | 'mock'): string => (service === 'auto' ? text.auto : service === 'unavailable' ? text.unavailable : service === 'mock' ? text.mock : text.service[service])
   const status = (service: ImageService): { tone: 'ok' | 'neutral'; label: string } => {
@@ -64,7 +66,7 @@ export function ImageGenerationSettings(): ReactElement {
   }
 
   return (
-    <SettingsGroup title={text.title} description={text.description} settingId="models-image-generation" className="ms-group" plain testId="ms-image-generation">
+    <SettingsGroup title={text.title} description={text.description} settingId="models-image-generation" className="ms-group" plain testId="ms-image-generation" fold={{ summary: text.current.replace('{name}', labelOf(view.provider === 'auto' ? view.resolved : view.provider)) }}>
       <SettingsRow label={text.defaultService} description={view.provider === 'auto' ? text.autoHint.replace('{name}', labelOf(view.resolved)) : undefined}>
         <Select
           aria-label={text.defaultService}
@@ -98,17 +100,18 @@ export function ImageGenerationSettings(): ReactElement {
         const modelField = `model:${service}`
         const keyField = `key:${service}`
         const baseField = 'baseUrl'
+        const cardOpen = opened.has(service)
         const savedModel = hasModelField(service) ? view.models[service] ?? '' : ''
         const keySource = hasKeyField(service) ? view.keys[service] : undefined
         return (
           <div className="ms-image-card" key={service} data-testid={`ms-image-${service}`}>
-            <div className="ms-image-head">
+            <Button variant="ghost" className="ms-image-head" aria-expanded={cardOpen} icon={<CollapsibleChevron expanded={cardOpen} />} onPress={() => toggleCard(service)} data-testid={`ms-image-toggle-${service}`}>
               <span className="ms-image-name">{text.service[service]}</span>
               <Badge tone={state.tone}>{state.label}</Badge>
               {view.provider === service ? <Badge tone="accent">{text.inUse}</Badge> : null}
-            </div>
-            <div className="ms-image-note">{text.note[service]}</div>
-            <div className="ms-image-fields">
+            </Button>
+            {cardOpen ? <div className="ms-image-note">{text.note[service]}</div> : null}
+            {cardOpen ? <div className="ms-image-fields">
               {service === 'compatible' ? (
                 <TextField
                   label={text.baseUrl}
@@ -169,7 +172,7 @@ export function ImageGenerationSettings(): ReactElement {
                   ) : null}
                 </form>
               ) : null}
-            </div>
+            </div> : null}
           </div>
         )
       })}
