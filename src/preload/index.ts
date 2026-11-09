@@ -128,6 +128,7 @@ import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from 
 import type { AndroidDevice, AndroidFrame, AndroidSdkStatus } from '../shared/android-sdk'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
 import type { ImageConfigView } from '../shared/image-config'
+import type { TranslateResult } from '../shared/translate'
 import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from '../shared/account-quota'
 import type { OAuthAccountPools } from '../shared/oauth-accounts'
 import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
@@ -187,6 +188,7 @@ const api: YanBridge = {
   moveSession: (sessionId, projectId, cwd) =>
     invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry; cwdChanged?: boolean }>('yan:moveSession', sessionId, projectId, cwd),
   setSessionArchived: (sessionId, archived) => invoke<{ ok: boolean; error?: string }>('yan:setSessionArchived', sessionId, archived),
+  translateText: (text) => invoke<TranslateResult>('yan:translateText', text),
   archivedCompression: (run) => invoke<{ supported: boolean; files: number; savedBytes: number }>('yan:archivedCompression', run),
   setSessionPinned: (sessionId, pinned) => invoke<{ ok: boolean; error?: string }>('yan:setSessionPinned', sessionId, pinned),
   setSessionSnoozed: (sessionId, until) => invoke<{ ok: boolean; error?: string }>('yan:setSessionSnoozed', sessionId, until),

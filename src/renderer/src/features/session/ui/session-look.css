@@ -160,6 +160,11 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  .v3-think-translate { display: inline-flex; align-items: center; gap: var(--s-6); min-width: 0; margin-inline-start: var(--s-4); }
+  .v3-think-translate-btn { color: var(--fg3); font-size: var(--t-footnote); }
+  .v3-think-translate[data-showing] .v3-think-translate-btn { color: var(--accent); }
+  .v3-think-translate-error { min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--err); font-size: var(--t-footnote); }
+  .v3-think-aside-head .v3-think-translate { margin-inline-start: auto; }
   .v3-think-body:focus-visible { outline: none; box-shadow: var(--ring-focus); border-radius: var(--r-xs); }
   .v3-think[data-live] .v3-think-body { border-left-color: var(--run); }
   .v3-think-step .v3-think-peek { flex: 1 1 auto; margin-left: var(--s-4); font-size: var(--t-body); }

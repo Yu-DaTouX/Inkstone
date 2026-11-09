@@ -21,6 +21,7 @@ import { rewriteSessionCwd } from '../session-move'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { effectiveAutoArchiveDays } from '../../shared/session-archive'
+import { translateText } from '../translate'
 import { archivedCompressionStatus, compressArchivedSessions, COMPRESS_SWEEP_INTERVAL_MS } from '../session-compress'
 import { readUsageStatsOffThread } from '../usage-stats-host'
 import { deleteSessionChain } from '../session-delete'
@@ -243,6 +244,10 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     return compactionInfo(resolve(cwd), contextWindow, cap)
   })
 
+  handle('yan:translateText', async (text: unknown) => {
+    const settings = await getSettings()
+    return translateText(text, { service: settings.translateService ?? 'bing', target: settings.translateTarget, model: settings.translateModel, piBin: settings.piBin })
+  })
   handle('yan:cachedTitles', async () => cachedTitles())
   handle('yan:renameSession', async (name: string, sessionId?: string) => host.ac()?.renameSession(name, typeof sessionId === 'string' ? sessionId : undefined) ?? { ok: false, error: pick('pi 未运行', 'pi is not running') })
   handle('yan:manualTitles', async () => manualTitles())

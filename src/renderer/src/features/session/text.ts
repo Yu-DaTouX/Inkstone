@@ -249,6 +249,12 @@ export type SessionTextKey =
   | 'thinkingEmptyRecord'
   | 'thinkingUnavailable'
   | 'asideStacked'
+  | 'translate'
+  | 'translating'
+  | 'translateRetry'
+  | 'translateShowOriginal'
+  | 'translateGlyph'
+  | 'translateOriginalGlyph'
   | 'detailArgs'
   | 'stepRunningMark'
   | 'stepDoneMark'
@@ -527,6 +533,12 @@ const ZH: Record<SessionTextKey, string> = {
   thinkingEmptyRecord: '这一轮的思考没有留下文字记录',
   thinkingUnavailable: '{model} 不提供思考文字',
   asideStacked: '窗口不够宽，推理暂时放在正文上方',
+  translate: '翻译这段思考',
+  translating: '正在翻译…',
+  translateRetry: '翻译失败，点击重试',
+  translateShowOriginal: '查看原文',
+  translateGlyph: '译',
+  translateOriginalGlyph: '原',
   detailArgs: '参数',
   stepRunningMark: '运行中',
   stepDoneMark: '完成',
@@ -806,6 +818,12 @@ const EN: Record<SessionTextKey, string> = {
   thinkingEmptyRecord: 'This turn left no reasoning text',
   thinkingUnavailable: '{model} does not return reasoning text',
   asideStacked: 'Not enough width; reasoning is shown above the reply for now',
+  translate: 'Translate this reasoning',
+  translating: 'Translating…',
+  translateRetry: 'Translation failed, click to retry',
+  translateShowOriginal: 'Show original',
+  translateGlyph: 'Tr',
+  translateOriginalGlyph: 'Orig',
   detailArgs: 'Arguments',
   stepRunningMark: 'Running',
   stepDoneMark: 'Done',

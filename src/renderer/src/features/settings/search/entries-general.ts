@@ -29,6 +29,7 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'session-keep-awake', section: 'session', zh: '运行时保持唤醒', en: 'Keep awake while running', keywords: ['保持唤醒', '睡眠', '休眠', 'sleep', 'awake'] },
   { id: 'session-keep-awake-battery', section: 'session', zh: '用电池时也保持唤醒', en: 'Also on battery', keywords: ['电池', '笔记本', 'battery'] },
   { id: 'session-auto-archive', section: 'session', zh: '自动归档闲置会话', en: 'Auto-archive idle sessions', keywords: ['归档', '闲置', 'archive'] },
+  { id: 'session-translate', section: 'session', zh: '思考翻译服务', en: 'Reasoning translation service', keywords: ['翻译', '思考', '译', 'translate', 'translation', 'bing', 'google', '模型', 'reasoning'] },
   { id: 'session-thinking-display', section: 'session', zh: 'Claude 5.5 思考展示', en: 'Claude 5.5 thinking display', keywords: ['思考', '摘要', '进度', 'thinking', 'updates', 'summarized'] },
   { id: 'session-compress-archived', section: 'session', zh: '压缩已归档会话文件', en: 'Compress archived session files', keywords: ['压缩', '归档', '磁盘', '空间', 'compress', 'disk'] },
   { id: 'session-auto-retry', section: 'session', zh: '自动重试', en: 'Auto-retry', keywords: ['重试', '限流', '过载', '5xx', 'retry', 'rate limit'], more: true },

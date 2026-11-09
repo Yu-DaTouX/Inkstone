@@ -50,6 +50,7 @@ export type { LocalServerInfo, LocalServerSnapshot, LocalServerStopResult } from
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
+import type { TranslateResult } from './translate'
 import type { ImageConfigPatch, ImageConfigView, ImageKeyService } from './image-config'
 import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from './account-quota'
 import type { OAuthAccountPools } from './oauth-accounts'
@@ -827,6 +828,9 @@ export interface AppSettings {
   fastMode?: boolean
   compressArchivedSessions?: boolean
   thinkingDisplay?: 'summarized' | 'updates'
+  translateService?: 'bing' | 'google' | 'model'
+  translateTarget?: 'auto' | 'zh-Hans' | 'zh-Hant' | 'en' | 'ja' | 'ko'
+  translateModel?: string
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]
@@ -1780,6 +1784,7 @@ export interface YanBridge {
   }>
 
   setSessionArchived(sessionId: string, archived: boolean): Promise<{ ok: boolean; error?: string }>
+  translateText(text: string): Promise<TranslateResult>
   archivedCompression(run: boolean): Promise<{ supported: boolean; files: number; savedBytes: number }>
   setSessionPinned(sessionId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>
   setSessionSnoozed(sessionId: string, until: number | null): Promise<{ ok: boolean; error?: string }>

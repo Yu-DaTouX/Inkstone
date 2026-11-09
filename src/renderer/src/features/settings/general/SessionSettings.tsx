@@ -50,6 +50,7 @@ export function SessionSettings(): ReactElement {
   const [compression, setCompression] = useState<{ supported: boolean; files: number; savedBytes: number } | null>(null)
   const [compressing, setCompressing] = useState(false)
   const compressEnabled = settings?.compressArchivedSessions === true
+  const translateService = settings?.translateService ?? 'bing'
   const runCompression = (run: boolean): void => {
     setCompressing(run)
     void window.yan.archivedCompression(run).then(setCompression).catch(() => undefined).finally(() => setCompressing(false))
@@ -177,6 +178,50 @@ export function SessionSettings(): ReactElement {
             ]}
             onChange={(value) => void patchSettings({ thinkingDisplay: value === 'updates' ? 'updates' : 'summarized' })}
           />
+        </SettingsRow>
+        <SettingsRow settingId="session-translate" label={text.translateService} description={text.translateServiceDesc}>
+          <Segmented
+            label={text.translateService}
+            value={translateService}
+            options={[
+              { value: 'bing', label: text.translateServiceBing, testId: 'v3-session-translate-bing' },
+              { value: 'google', label: text.translateServiceGoogle, testId: 'v3-session-translate-google' },
+              { value: 'model', label: text.translateServiceModel, testId: 'v3-session-translate-model' }
+            ]}
+            onChange={(value) => void patchSettings({ translateService: value })}
+          />
+        </SettingsRow>
+        {translateService === 'model' ? (
+          <SettingsRow nested settingId="session-translate-model" label={text.translateModel}>
+            <Select
+              aria-label={text.translateModel}
+              selectedKey={settings?.translateModel ?? FOLLOW_SESSION}
+              onSelectionChange={(next) => void patchSettings({ translateModel: String(next) === FOLLOW_SESSION ? '' : String(next) })}
+              data-testid="v3-session-translate-model-select"
+            >
+              <ListBoxItem id={FOLLOW_SESSION}>{text.translateModelDefault}</ListBoxItem>
+              {models.map((item) => (
+                <ListBoxItem key={`${item.provider}/${item.id}`} id={`${item.provider}/${item.id}`}>
+                  {item.name || item.id}
+                </ListBoxItem>
+              ))}
+            </Select>
+          </SettingsRow>
+        ) : null}
+        <SettingsRow nested settingId="session-translate-target" label={text.translateTarget}>
+          <Select
+            aria-label={text.translateTarget}
+            selectedKey={settings?.translateTarget ?? 'auto'}
+            onSelectionChange={(next) => void patchSettings({ translateTarget: String(next) as NonNullable<typeof settings>['translateTarget'] })}
+            data-testid="v3-session-translate-target"
+          >
+            <ListBoxItem id="auto">{text.translateTargetAuto}</ListBoxItem>
+            <ListBoxItem id="zh-Hans">简体中文</ListBoxItem>
+            <ListBoxItem id="zh-Hant">繁體中文</ListBoxItem>
+            <ListBoxItem id="en">English</ListBoxItem>
+            <ListBoxItem id="ja">日本語</ListBoxItem>
+            <ListBoxItem id="ko">한국어</ListBoxItem>
+          </Select>
         </SettingsRow>
       </SettingsGroup>
 

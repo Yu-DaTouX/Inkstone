@@ -6,6 +6,7 @@ import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { showsThinkingInline } from './transcript-view-model'
 import { useToolExpansion, useTranscriptViewScope } from './use-tool-run'
+import { TranslateButton, useThinkingTranslation } from './thinking-translate'
 
 function livePeekText(text: string): string {
   const paragraphs = text.trim().split(/\n\s*\n/)
@@ -27,6 +28,7 @@ export function ThinkingAside({ text, ms, live, stacked = false }: { text: strin
   const tt = useSessionText()
   const followRef = useRef(true)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const translation = useThinkingTranslation(text)
 
   useLayoutEffect(() => {
     const el = bodyRef.current
@@ -43,6 +45,7 @@ export function ThinkingAside({ text, ms, live, stacked = false }: { text: strin
         <Icon name="brain" size={13} />
         <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
         {stacked ? <span className="v3-think-aside-hint" data-testid="v3-thinking-aside-stacked">{tt('asideStacked')}</span> : null}
+        {live ? null : <TranslateButton state={translation} />}
       </div>
       <div
         ref={bodyRef}
@@ -53,7 +56,7 @@ export function ThinkingAside({ text, ms, live, stacked = false }: { text: strin
           followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
         }}
       >
-        {text}
+        {translation.showing ? translation.translated : text}
       </div>
     </aside>
   )
@@ -90,6 +93,7 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
   const rootRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const elapsed = useLiveElapsed(!!live)
+  const translation = useThinkingTranslation(text)
 
   useEffect(() => {
     if (!touchedRef.current) setOpen(defaultOpen && !liveRef.current)
@@ -112,11 +116,12 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
   }
 
   const label = live ? t('reason.now') : secs ? t('proc.reason', { n: secs }) : t('reason.past')
-  const peek = open ? '' : live ? livePeekText(text) : peekText(text)
+  const shown = translation.showing && translation.translated !== null ? translation.translated : text
+  const peek = open ? '' : live ? livePeekText(text) : peekText(shown)
 
   return (
     <Collapsible ref={rootRef} className={asStep ? 'v3-think v3-step' : 'v3-think'} data-live={live || undefined} data-open={open || undefined} data-row={asStep ? 'step' : undefined} data-testid="v3-thinking" isExpanded={open} onExpandedChange={toggle}>
-      <CollapsibleHeader className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} size="compact" chevron="end" icon={<Icon name="brain" size={13} />} data-testid="v3-thinking-toggle">
+      <CollapsibleHeader className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} size="compact" chevron="end" icon={<Icon name="brain" size={13} />} actions={live ? undefined : <TranslateButton state={translation} />} data-testid="v3-thinking-toggle">
         <span className="v3-step-line">
           {asStep ? (
             <span className="v3-step-label"><ShimmerText active={!!live}>{label}</ShimmerText></span>
@@ -138,12 +143,13 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
             className="v3-think-body"
             tabIndex={0}
             data-testid="v3-thinking-body"
+            data-translated={translation.showing || undefined}
             onScroll={(event) => {
               const el = event.currentTarget
               followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
             }}
           >
-            {text}
+            {translation.showing ? translation.translated : text}
           </div>
         ) : null}
       </CollapsiblePanel>

@@ -23,6 +23,15 @@ export interface GeneralText {
   sessionCompressUnsupported: string
   sessionCompressRunning: string
   sessionThinkingDisplay: string
+  translateService: string
+  translateServiceDesc: string
+  translateServiceBing: string
+  translateServiceGoogle: string
+  translateServiceModel: string
+  translateModel: string
+  translateModelDefault: string
+  translateTarget: string
+  translateTargetAuto: string
   sessionThinkingDisplayDesc: string
   thinkingDisplaySummarized: string
   thinkingDisplayUpdates: string
@@ -205,6 +214,15 @@ const ZH: GeneralText = {
   sessionCompressUnsupported: '当前系统暂不支持。',
   sessionCompressRunning: '正在压缩，请稍候…',
   sessionThinkingDisplay: 'Claude 5.5 思考展示',
+  translateService: '思考翻译服务',
+  translateServiceDesc: '思考格旁的「译」按钮点击后，这一段思考会发给所选服务翻译；原文不变，也不会发给模型。Bing 和 Google 是免费的匿名接口，可能限流；选模型则按该模型计费。',
+  translateServiceBing: 'Bing',
+  translateServiceGoogle: 'Google',
+  translateServiceModel: '模型',
+  translateModel: '翻译用的模型',
+  translateModelDefault: '默认模型',
+  translateTarget: '翻译成',
+  translateTargetAuto: '跟随界面语言',
   sessionThinkingDisplayDesc: '摘要：思考格子里实时显示思考内容。进度更新：只在途中给几句进展，等待时可能没有内容。',
   thinkingDisplaySummarized: '摘要',
   thinkingDisplayUpdates: '进度更新',
@@ -390,6 +408,15 @@ const EN: GeneralText = {
   sessionCompressUnsupported: 'Not supported on this system yet.',
   sessionCompressRunning: 'Compressing, please wait…',
   sessionThinkingDisplay: 'Claude 5.5 thinking display',
+  translateService: 'Reasoning translation service',
+  translateServiceDesc: 'The "Tr" button next to a reasoning row sends that block to the chosen service. The original stays unchanged and is never sent to the model. Bing and Google are free anonymous endpoints that may rate-limit; a model is billed to its account.',
+  translateServiceBing: 'Bing',
+  translateServiceGoogle: 'Google',
+  translateServiceModel: 'Model',
+  translateModel: 'Translation model',
+  translateModelDefault: 'Default model',
+  translateTarget: 'Translate into',
+  translateTargetAuto: 'Follow app language',
   sessionThinkingDisplayDesc: 'Summary: thinking streams into the thinking box. Progress updates: a few progress notes now and then; the box may stay empty while waiting.',
   thinkingDisplaySummarized: 'Summary',
   thinkingDisplayUpdates: 'Progress updates',
