@@ -19,7 +19,7 @@ import { afterFenceKey, fenceTailPosition } from './after-fence'
 
 const OBJECT = '\uFFFC'
 const LINK_TARGET = /^(?:https?:\/\/|mailto:|tel:)[\w\-.~:/?#[\]@!$&'*+,;=%{}|^()]+$/i
-const BARE_URL = /(?:^|[\s(])((?:https?:\/\/|mailto:)[^\s<>"]+)$/i
+const BARE_URL = /(?:^|[\s(])((?:https?:\/\/|mailto:)[^\s<>"\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]+)$/i
 const INLINE_CODE = /(?<=^|[^`])(`[^`\n]+`)(?!`)$/
 const STRIKE = /(?:^|\s)(~~(?!\s+~~)[^~\n]+~~(?!\s+~~))$/
 

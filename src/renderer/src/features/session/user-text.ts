@@ -8,7 +8,7 @@ const FENCE = /^(`{3,})(\S*)\s*$/
 const CLOSING_FENCE = /^\s*(`{3,})\s*$/
 const INLINE_CODE = /`([^`\n]+)`/g
 const MARKDOWN_LINK = /(?<!\w)\[([^\]\n]+)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/g
-const BARE_URL = /https?:\/\/[^\s<>]+/g
+const BARE_URL = /https?:\/\/[^\s<>\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]+/g
 const TRAILING_PUNCTUATION = /[.,;:!?]$/
 const BIDI_CONTROLS = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g
 

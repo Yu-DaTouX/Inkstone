@@ -200,7 +200,7 @@ export function docToText(doc: ProseNode): string {
 
 const LANGUAGE = /^(?=[\w+#.-]{1,24}$)(?!.*www\.)/i
 const AT_BOUNDARY = /[\s([{<'"：:;,，]/
-const INLINE_TOKEN = /(`[^`\n]+`)|(~~[^~\n]+~~)|((?:https?:\/\/|mailto:)[^\s<>"`~]+)/g
+const INLINE_TOKEN = /(`[^`\n]+`)|(~~[^~\n]+~~)|((?:https?:\/\/|mailto:)[^\s<>"`~\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]+)/g
 
 export function trimUrlTail(url: string): string {
   let value = url.replace(/[.,;:!?'"]+$/, '')

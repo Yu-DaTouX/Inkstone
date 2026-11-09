@@ -87,6 +87,18 @@ check('裸链接与 Markdown 链接都渲染成 link run', () => {
   ])
 })
 
+check('链接紧跟中文时在中文处截断', () => {
+  assert.deepEqual(parseUserInline('https://github.com/morluto/rea先安装一下这个项目'), [
+    { kind: 'link', text: 'https://github.com/morluto/rea', href: 'https://github.com/morluto/rea' },
+    { kind: 'text', text: '先安装一下这个项目' }
+  ])
+  assert.deepEqual(parseUserInline('看https://example.com/a，然后'), [
+    { kind: 'text', text: '看' },
+    { kind: 'link', text: 'https://example.com/a', href: 'https://example.com/a' },
+    { kind: 'text', text: '，然后' }
+  ])
+})
+
 check('链接尾随标点与不成对括号留在文字里', () => {
   assert.deepEqual(trimBareUrl('https://example.com/a.'), { href: 'https://example.com/a', trailing: '.' })
   assert.deepEqual(trimBareUrl('https://example.com/a_(b)'), { href: 'https://example.com/a_(b)', trailing: '' })
