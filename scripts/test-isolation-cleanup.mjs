@@ -95,7 +95,7 @@ try {
     ok(res.ok, '建出隔离工作树')
     return res.record
   }
-  const branches = () => git(repo, ['branch', '--list', 'yan/auto-*'])
+  const branches = () => git(repo, ['branch', '--list', 'Inkstone/*'])
 
   const clean = await make()
   ok(await mod.discardUnusedIsolation(clean), '干净且没有新提交：删除成功')

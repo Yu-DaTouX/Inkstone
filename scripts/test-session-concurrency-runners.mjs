@@ -413,13 +413,11 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     busy(first)
 
     const g = reg.guardExecute(secondId)
-    ok(g.ok === false, '自己空闲、同 cwd 另有忙碌实例：发送前复核拒绝', JSON.stringify(g))
-    ok(g.error === SAME_CWD_BUSY_ERROR, '拒绝用统一的同 cwd 冲突文案', g.error)
-    ok(/请等它跑完或停止它/.test(g.error ?? ''), '拒绝信息给出等待 / 停止原任务的提示', g.error)
-    ok(first.calls.stop === 0, '拒绝时没有停掉忙碌会话')
-    ok(reg.size === 2, '拒绝后实例数不变（不另起写者）')
-    ok(first.state.isAgentRunning === true, '拒绝不改动忙碌会话状态')
-    ok(reg.activeRunnerId === firstId, '拒绝不改动当前视图')
+    ok(g.ok === true, '自己空闲、同 cwd 另有忙碌实例：发送前复核也放行', JSON.stringify(g))
+    ok(first.calls.stop === 0, '放行时没有停掉忙碌会话')
+    ok(reg.size === 2, '放行后实例数不变')
+    ok(first.state.isAgentRunning === true, '放行不改动忙碌会话状态')
+    ok(reg.activeRunnerId === firstId, '放行不改动当前视图')
   }
 
   {
@@ -464,7 +462,7 @@ export async function runSessionConcurrencySendGuardTests(ok) {
     const { firstId, secondId, first } = await twoIdleSameCwd(reg, 'C:/Proj/', 'c:\\proj')
     busy(first)
     const g = reg.guardExecute(secondId)
-    ok(g.ok === false, '大小写 / 斜杠 / 末尾分隔符差异不能绕过发送前复核', JSON.stringify(g))
+    ok(g.ok === true, '大小写 / 斜杠 / 末尾分隔符差异下发送前复核也放行', JSON.stringify(g))
     ok(reg.guardExecute(firstId).ok === true, '规范化下发起者自己仍放行')
   }
 

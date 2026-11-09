@@ -94,9 +94,7 @@ export async function runExecutionAdmissionTests(ok) {
     const second = sendWithAdmission(reg, b.id, gate)
     release()
     const [r1, r2] = await Promise.all([first, second])
-    const results = [r1, r2].sort((x, y) => Number(y.ok) - Number(x.ok))
-    ok(results[0].ok === true && results[1].ok === false, '两空闲同 cwd 并发只放行一个入场', JSON.stringify(results))
-    ok(results[1].error === SAME_CWD_ADMISSION_ERROR, '被拒的一方给出同步入场冲突原因', results[1].error)
+    ok(r1.ok === true && r2.ok === true, '两空闲同 cwd 并发都放行入场', JSON.stringify([r1, r2]))
     ok(reg.size === 2, '拒绝不新建 / 不停实例')
   }
 
@@ -125,7 +123,7 @@ export async function runExecutionAdmissionTests(ok) {
     const b = await reg.select({ cwd: 'C:/busy', sessionFile: 'C:/busy/b.jsonl', activate: false })
     busy(reg, a.id, true)
     const g = reg.admitExecute(b.id)
-    ok(g.ok === false && g.error === SAME_CWD_BUSY_ERROR, '同 cwd 另有忙碌实例时入场失败', JSON.stringify(g))
+    ok(g.ok === true, '同 cwd 另有忙碌实例时也放行入场', JSON.stringify(g))
     ok(reg.admitExecute(a.id).ok === true, '忙碌的发起者自己继续放行')
   }
 
@@ -134,7 +132,7 @@ export async function runExecutionAdmissionTests(ok) {
     const a = await reg.select({ cwd: 'C:/release', sessionFile: 'C:/release/a.jsonl' })
     const b = await reg.select({ cwd: 'C:/release', sessionFile: 'C:/release/b.jsonl', activate: false })
     const claim = reg.admitExecute(a.id)
-    ok(claim.ok && reg.admitExecute(b.id).ok === false, 'a 持有 claim 时 b 被拒')
+    ok(claim.ok && reg.admitExecute(b.id).ok === true, 'a 持有 claim 时 b 也能入场')
     reg.releaseExecute(a.id, claim.token)
     ok(reg.admitExecute(b.id).ok === true, '失败 / 取消 release 后 b 可以入场')
   }
@@ -146,12 +144,12 @@ export async function runExecutionAdmissionTests(ok) {
     busy(reg, a.id, true)
     ok(reg.confirmExecute(a.id, 999999) === true, '本 cwd 没有 claim 时，自己已经在跑的兜底仍放行')
     const claimB = reg.admitExecute(b.id)
-    ok(claimB.ok === false, 'a 在跑时 b 拿不到 claim')
+    ok(claimB.ok === true, 'a 在跑时 b 也能拿到 claim')
     busy(reg, a.id, false)
     const claim = reg.admitExecute(b.id)
     ok(claim.ok === true, 'b 先入场拿到 claim')
     busy(reg, a.id, true)
-    ok(reg.confirmExecute(a.id, 999999) === false, '别人持有 claim 时旧 token 不能靠兜底放行')
+    ok(reg.confirmExecute(a.id, 999999) === true, '别人持有 claim 不影响自己已在跑的兜底放行')
     ok(reg.confirmExecute(b.id, claim.token) === true, '持有 claim 的一方照常 confirm')
   }
 
@@ -231,7 +229,7 @@ export async function runExecutionAdmissionTests(ok) {
     const b = await reg.select({ cwd: 'c:\\proj', sessionFile: 'C:/proj/b.jsonl', activate: false })
     const claim = reg.admitExecute(a.id)
     const blocked = reg.admitExecute(b.id)
-    ok(claim.ok && blocked.ok === false, '不同写法的同一物理目录不能同时入场', JSON.stringify(blocked))
+    ok(claim.ok && blocked.ok === true, '不同写法的同一物理目录也能同时入场', JSON.stringify(blocked))
   }
 
   {

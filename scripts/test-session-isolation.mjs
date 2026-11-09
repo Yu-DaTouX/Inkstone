@@ -124,7 +124,7 @@ export async function runSessionIsolationTests(ok) {
 
   const stamp = new Date(2026, 8, 25, 14, 30, 12, 7)
   const branch = autoIsolationBranch(stamp)
-  ok(branch === 'yan/auto-20260925-143012007', '分支名按时间戳生成且带毫秒', branch)
+  ok(branch === 'Inkstone/20260925-143012007', '分支名按时间戳生成且带毫秒', branch)
   ok(autoIsolationBranch(new Date(2026, 8, 25, 14, 30, 12, 8)) !== branch, '同秒不同毫秒不会撞名')
 
   const sanitized = sanitizeAutoIsolationDocument({
@@ -176,7 +176,7 @@ export async function runSessionIsolationTests(ok) {
     const record = isolated.record
     ok(existsSync(join(record.worktree, 'a.txt')), '隔离工作树里有 HEAD 的内容', record.worktree)
     ok(record.baseBranch === 'main', '记下主干分支', record.baseBranch)
-    ok(record.mainCwd === repo && record.branch.startsWith('yan/auto-'), '记录含主干目录与自动分支名', record.branch)
+    ok(record.mainCwd === repo && record.branch.startsWith('Inkstone/'), '记录含主干目录与自动分支名', record.branch)
     ok(isolatedSessionCwd(record) === record.worktree, '在仓库根目录起的会话，隔离后就在工作树根')
     const subdir = join(repo, 'docs', 'notes')
     mkdirSync(subdir, { recursive: true })

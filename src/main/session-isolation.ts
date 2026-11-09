@@ -54,7 +54,7 @@ export function autoIsolationBranch(now: Date = new Date()): string {
   const stamp =
     `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
     `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${pad(now.getMilliseconds(), 3)}`
-  return `yan/auto-${stamp}`
+  return `Inkstone/${stamp}`
 }
 
 export function sanitizeAutoIsolationDocument(raw: unknown): { version: 1; records: AutoIsolationRecord[] } {

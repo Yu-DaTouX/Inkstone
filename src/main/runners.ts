@@ -135,12 +135,11 @@ export class RunnerRegistry {
   }
 
   private admissionKey(runner: Runner): string {
-    const cwd = canonicalCwd(runner.cwd)
-    return this.sharesCwd(runner.cwd) ? `${cwd}#${runner.id}` : cwd
+    return `${canonicalCwd(runner.cwd)}#${runner.id}`
   }
 
-  blocksConcurrentRun(cwd: string, exceptRunId?: string): boolean {
-    return !this.sharesCwd(cwd) && this.hasBusyCwd(cwd, exceptRunId)
+  blocksConcurrentRun(_cwd: string, _exceptRunId?: string): boolean {
+    return false
   }
 
   private pruneAdmissions(): void {

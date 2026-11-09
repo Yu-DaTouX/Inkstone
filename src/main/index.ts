@@ -1040,7 +1040,7 @@ async function refreshIsolationViews(): Promise<void> {
 const sharedCwdWarned = new Set<string>()
 
 function warnSharedCwdOnce(runnerId: string, cwd: string, registry: RunnerRegistry): void {
-  if (sharedCwdWarned.has(runnerId) || !registry.hasBusyCwd(cwd, runnerId) || !allowsConcurrentSessions(cwd)) return
+  if (sharedCwdWarned.has(runnerId) || !registry.hasBusyCwd(cwd, runnerId)) return
   sharedCwdWarned.add(runnerId)
   push({
     ch: 'notify',
