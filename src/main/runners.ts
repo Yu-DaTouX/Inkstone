@@ -414,6 +414,83 @@ export class RunnerRegistry {
     return this.serialize(() => this.selectNow(target))
   }
 
+  private async relaunch(idle: Runner, target: SelectTarget): Promise<SelectResult> {
+    const previous = idle.agent
+    const generation = nextGeneration()
+    let replacement: AgentController | undefined
+    let failure: string | undefined
+    try {
+      replacement = this.spawnAgent(idle.id, target.cwd, generation)
+      replacement.setRunnerGeneration(generation)
+      const started = await replacement.start()
+      if (!started.ok) {
+        failure = started.error ?? pick('替代运行实例启动失败', 'Replacement runtime failed to start')
+      } else {
+        let prepared = target.sessionFile
+          ? await replacement.switchSession(target.sessionFile)
+          : await replacement.newSession()
+        if (prepared.ok && !target.sessionFile && this.opts.prepareNewSession) {
+          prepared = await this.opts.prepareNewSession(replacement)
+        }
+        if (!prepared.ok) {
+          failure = prepared.error ?? pick('替代运行实例准备会话失败', 'Replacement runtime failed to prepare the session')
+        }
+      }
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error)
+    }
+    if (failure === undefined && (this.disposed || this.runners.get(idle.id) !== idle || idle.agent !== previous)) {
+      failure = pick('运行实例在替换过程中被停止', 'Runtime was stopped during replacement')
+    }
+    if (failure !== undefined) {
+      try {
+        await replacement?.stop()
+      } catch {
+      }
+      return { ok: false, error: failure }
+    }
+
+    idle.agent = replacement!
+    idle.cwd = target.cwd
+    idle.generation = generation
+    idle.projectId = target.projectId
+    idle.lastActiveAt = this.now()
+    if (target.activate !== false) this.activateRunner(idle.id)
+    try {
+      await previous.stop()
+    } catch {
+    }
+    this.opts.onChanged?.()
+    return this.result(idle, 'reuse')
+  }
+
+  async isolateIfConflicting(id: string): Promise<{ moved: boolean; error?: string }> {
+    const runner = this.runners.get(id)
+    if (!runner || this.busy(runner) || this.sharesCwd(runner.cwd) || !this.hasBusyCwd(runner.cwd, id)) return { moved: false }
+    const state = runner.agent.getState()
+    const escalated = await this.opts.resolveCwdConflict?.({
+      cwd: runner.cwd,
+      sessionId: state?.sessionId,
+      sessionFile: state?.sessionFile,
+      projectId: runner.projectId
+    })
+    if (!escalated || !('cwd' in escalated) || canonicalCwd(escalated.cwd) === canonicalCwd(runner.cwd)) return { moved: false }
+    if (this.hasBusyCwd(escalated.cwd, id)) return { moved: false }
+    const result = await this.relocate(id, escalated.cwd)
+    return result.ok ? { moved: true } : { moved: false, error: result.error }
+  }
+
+  async relocate(id: string, cwd: string): Promise<SelectResult> {
+    return this.serialize(async () => {
+      const runner = this.runners.get(id)
+      if (!runner) return { ok: false, error: pick('运行实例不存在', 'Runtime not found') }
+      if (this.busy(runner)) return { ok: false, error: pick('会话正在运行，不能迁移目录', 'The session is running; its folder cannot be changed') }
+      const sessionFile = runner.agent.getState()?.sessionFile
+      if (!sessionFile) return { ok: false, error: pick('会话还没有记录文件，不能迁移目录', 'The session has no record file yet; its folder cannot be changed') }
+      return this.relaunch(runner, { cwd, sessionFile, projectId: runner.projectId, activate: this.activeId === runner.id })
+    })
+  }
+
   private async selectNow(target: SelectTarget): Promise<SelectResult> {
     if (target.sessionId || target.sessionFile) {
       const hit = (target.sessionId && this.findBySessionId(target.sessionId)) ||
@@ -474,53 +551,7 @@ export class RunnerRegistry {
 
     if (idle) {
       if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd) || !agentAlive(idle.agent) || this.launchedWithStaleResources(idle.agent)) {
-        const previous = idle.agent
-        const generation = nextGeneration()
-        let replacement: AgentController | undefined
-        let failure: string | undefined
-        try {
-          replacement = this.spawnAgent(idle.id, target.cwd, generation)
-          replacement.setRunnerGeneration(generation)
-          const started = await replacement.start()
-          if (!started.ok) {
-            failure = started.error ?? pick('替代运行实例启动失败', 'Replacement runtime failed to start')
-          } else {
-            let prepared = target.sessionFile
-              ? await replacement.switchSession(target.sessionFile)
-              : await replacement.newSession()
-            if (prepared.ok && !target.sessionFile && this.opts.prepareNewSession) {
-              prepared = await this.opts.prepareNewSession(replacement)
-            }
-            if (!prepared.ok) {
-              failure = prepared.error ?? pick('替代运行实例准备会话失败', 'Replacement runtime failed to prepare the session')
-            }
-          }
-        } catch (error) {
-          failure = error instanceof Error ? error.message : String(error)
-        }
-        if (failure === undefined && (this.disposed || this.runners.get(idle.id) !== idle || idle.agent !== previous)) {
-          failure = pick('运行实例在替换过程中被停止', 'Runtime was stopped during replacement')
-        }
-        if (failure !== undefined) {
-          try {
-            await replacement?.stop()
-          } catch {
-          }
-          return { ok: false, error: failure }
-        }
-
-        idle.agent = replacement!
-        idle.cwd = target.cwd
-        idle.generation = generation
-        idle.projectId = target.projectId
-        idle.lastActiveAt = this.now()
-        if (target.activate !== false) this.activateRunner(idle.id)
-        try {
-          await previous.stop()
-        } catch {
-        }
-        this.opts.onChanged?.()
-        return this.result(idle, 'reuse')
+        return this.relaunch(idle, target)
       }
 
       const oldProjectId = idle.projectId
