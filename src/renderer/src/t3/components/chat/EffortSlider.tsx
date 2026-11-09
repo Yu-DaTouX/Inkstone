@@ -115,10 +115,7 @@ export function EffortSlider(props: {
     const natural = sample?.getBoundingClientRect().width ?? 0
     if (natural <= 0) return
     const lock = lockRef.current
-    const widest = Math.max(natural, ...samples.map((child) => child.getBoundingClientRect().width))
-    lock.width = widest
-    const bar = slot.closest('[data-resting-block]')?.parentElement
-    bar?.style.setProperty('--effort-slack', `${widest - natural}px`)
+    lock.width = Math.max(natural, ...samples.map((child) => child.getBoundingClientRect().width))
     const next = natural
     const previous = parseFloat(slot.style.width) || slot.getBoundingClientRect().width
     if (Math.abs(next - previous) < 0.25) return
