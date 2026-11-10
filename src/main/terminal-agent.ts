@@ -9,6 +9,7 @@ import { buildTerminalNotice, type TerminalNoticeState } from '../shared/host-no
 import type { TerminalJob } from '../shared/terminal-jobs'
 import { addTerminalJob, terminalJob, updateTerminalJob } from './terminal-jobs'
 import type { TerminalSessionInfo, TerminalSnapshot, TerminalStartOptions, TerminalStream, TerminalAgentPhase } from './terminal'
+import type { TerminalProgramStatus } from '../shared/ipc'
 
 const requireModule = createRequire(import.meta.url)
 
@@ -114,6 +115,153 @@ export function stripTerminalControls(raw: string): string {
     lines.push(line.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ''))
   }
   return lines.join('\n')
+}
+
+const CONTROL_CHARS = /[\x00-\x08\x0b-\x1f\x7f]/g
+const MAX_ESCAPE_CARRY = 4096
+
+function unfinishedEscapeIndex(text: string): number {
+  let index = 0
+  while (index < text.length) {
+    const at = text.indexOf('\x1b', index)
+    if (at < 0) return -1
+    const rest = text.slice(at + 1)
+    if (!rest) return at
+    const head = rest[0]
+    const lineBreak = rest.search(/[\r\n]/)
+    if (head === '[') {
+      const complete = /^\[[0-9;:?<=>!]*[ -\/]*[@-~]/.exec(rest)
+      if (complete) {
+        index = at + 1 + complete[0].length
+        continue
+      }
+      if (lineBreak >= 0) {
+        index = at + 1
+        continue
+      }
+      if (/^\[[0-9;:?<=>!]*[ -\/]*$/.test(rest)) return at
+      index = at + 1
+      continue
+    }
+    if (head === ']' || head === 'P' || head === 'X' || head === '^' || head === '_') {
+      const terminated = /\x07|\x1b\\/.exec(rest)
+      if (terminated) {
+        index = at + 1 + terminated.index + terminated[0].length
+        continue
+      }
+      if (lineBreak >= 0) {
+        index = at + 1
+        continue
+      }
+      return at
+    }
+    if (head === '(' || head === ')' || head === '#' || head === '%') {
+      if (rest.length < 2) return at
+      index = at + 3
+      continue
+    }
+    index = at + 2
+  }
+  return -1
+}
+
+export class TerminalPlainText {
+  private head = ''
+  private line = ''
+  private segment = ''
+  private carry = ''
+  private cached = ''
+
+  get text(): string {
+    return this.cached
+  }
+
+  push(chunk: string): string {
+    if (!chunk) return this.cached
+    let text = this.carry + chunk
+    this.carry = ''
+    const at = unfinishedEscapeIndex(text)
+    if (at >= 0) {
+      this.carry = text.slice(at)
+      text = text.slice(0, at)
+      if (this.carry.length > MAX_ESCAPE_CARRY) this.carry = ''
+    }
+    if (text) this.consume(text.replace(ANSI_PATTERN, ''))
+    this.cached = this.head + this.merge().replace(CONTROL_CHARS, '')
+    return this.cached
+  }
+
+  private consume(text: string): void {
+    let start = 0
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i]
+      if (ch !== '\r' && ch !== '\n') continue
+      this.segment += text.slice(start, i)
+      this.line = this.merge()
+      this.segment = ''
+      if (ch === '\n') {
+        this.head += this.line.replace(CONTROL_CHARS, '') + '\n'
+        this.line = ''
+      }
+      start = i + 1
+    }
+    this.segment += text.slice(start)
+  }
+
+  private merge(): string {
+    return this.segment.length >= this.line.length ? this.segment : this.segment + this.line.slice(this.segment.length)
+  }
+}
+
+interface PlainStreamState {
+  from: number
+  start: number
+  next: number
+  tracker: TerminalPlainText
+}
+
+interface TruncatedPlainState {
+  start: number
+  total: number
+  text: string
+}
+
+const plainStreams = new Map<string, PlainStreamState>()
+const truncatedPlains = new Map<string, TruncatedPlainState>()
+
+export function plainSince(id: string, stream: Pick<TerminalStream, 'buffer' | 'total'>, from: number): string {
+  const start = stream.total - stream.buffer.length
+  if (from >= stream.total) {
+    plainStreams.delete(id)
+    truncatedPlains.delete(id)
+    return ''
+  }
+  if (from < start) {
+    plainStreams.delete(id)
+    const cached = truncatedPlains.get(id)
+    if (cached && cached.start === start && cached.total === stream.total) return cached.text
+    const text = stripTerminalControls(stream.buffer)
+    truncatedPlains.set(id, { start, total: stream.total, text })
+    return text
+  }
+  truncatedPlains.delete(id)
+  const cached = plainStreams.get(id)
+  if (!cached || cached.from !== from || cached.start !== start || cached.next > stream.total) {
+    const tracker = new TerminalPlainText()
+    tracker.push(stream.buffer.slice(from - start))
+    plainStreams.set(id, { from, start, next: stream.total, tracker })
+    return tracker.text
+  }
+  if (cached.next < stream.total) {
+    cached.tracker.push(stream.buffer.slice(cached.next - start))
+    cached.next = stream.total
+  }
+  return cached.tracker.text
+}
+
+export function programBusy(program: TerminalProgramStatus | undefined, childCount: number | null): boolean {
+  if (childCount === null) return program?.state === 'working' || program?.state === 'blocked'
+  return childCount > 0
 }
 
 export function lastNonEmptyLine(text: string): string {
@@ -271,6 +419,7 @@ const typedLines = new Map<string, string>()
 const terminalLocations = new Map<string, string | null>()
 const lastUsed = new Map<string, string>()
 const backgroundJobs = new Map<string, AbortController>()
+const userInputChains = new Map<string, Promise<void>>()
 
 export function resetTerminalAgentState(): void {
   for (const job of backgroundJobs.values()) job.abort()
@@ -279,6 +428,70 @@ export function resetTerminalAgentState(): void {
   typedLines.clear()
   terminalLocations.clear()
   lastUsed.clear()
+  userInputChains.clear()
+  plainStreams.clear()
+  truncatedPlains.clear()
+}
+
+export function pendingTerminalUserInput(id: string): Promise<void> {
+  return userInputChains.get(id) ?? Promise.resolve()
+}
+
+const LOCATION_SAFE_HEADS = new Set([
+  'ls', 'dir', 'cat', 'type', 'echo', 'printf', 'write-output', 'write-host', 'pwd', 'get-location', 'gl',
+  'git', 'npm', 'npx', 'pnpm', 'yarn', 'bun', 'deno', 'node', 'nodejs',
+  'python', 'python3', 'py', 'pip', 'pip3', 'uv', 'poetry', 'conda',
+  'cargo', 'rustc', 'rustup', 'go', 'java', 'javac', 'mvn', 'mvnw', 'gradle', 'gradlew', 'dotnet',
+  'make', 'cmake', 'ninja', 'msbuild', 'docker', 'docker-compose', 'kubectl', 'helm', 'gh',
+  'rg', 'grep', 'find', 'findstr', 'select-string', 'sls', 'fzf', 'sed', 'awk',
+  'head', 'tail', 'get-content', 'gc', 'wc', 'sort', 'uniq', 'diff', 'compare-object',
+  'curl', 'wget', 'invoke-webrequest', 'iwr', 'tar', 'unzip', 'zip', 'gzip',
+  'cp', 'copy', 'copy-item', 'mv', 'move', 'move-item', 'rm', 'del', 'remove-item', 'mkdir', 'md', 'new-item', 'rmdir', 'touch',
+  'code', 'vim', 'nvim', 'nano', 'less', 'more', 'man', 'help', 'get-help',
+  'where', 'where.exe', 'which', 'get-command', 'test-path', 'get-childitem', 'gci',
+  'tree', 'ps', 'tasklist', 'taskkill', 'kill', 'stop-process', 'export', 'set', 'env', 'printenv',
+  'clear', 'cls', 'clear-host', 'history', 'get-history', 'whoami', 'hostname', 'date', 'time',
+  'ping', 'ipconfig', 'nslookup', 'netstat', 'format', 'prettier', 'eslint', 'tsc', 'vite', 'esbuild'
+])
+
+const SHELL_LAUNCHERS = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', 'nu', 'pwsh', 'powershell', 'cmd', 'cmd.exe', 'wsl', 'ssh', 'mintty', 'winpty', 'script', 'tmux', 'screen'])
+
+const LOCATION_COMMAND_HEADS = new Set(['cd', 'chdir', 'pushd', 'popd', 'push-location', 'pop-location', 'set-location', 'sl'])
+
+function commandHeads(command: string): string[] {
+  const text = command.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, ' ')
+  return text
+    .split(/\r?\n|&&|\|\||[;|]|\$\(|`/)
+    .map((part) => part.trim().replace(/^[({]+/, '').split(/\s+/)[0] ?? '')
+    .map((head) => head.replace(/^['"]|['"]$/g, '').toLowerCase())
+    .filter(Boolean)
+}
+
+export function userLocationAfterUserInput(rules: DangerRules, command: string, base: string | null): string | null {
+  const heads = commandHeads(command)
+  if (!heads.length) return base
+  if (heads.some((head) => SHELL_LAUNCHERS.has(head))) return null
+  if (heads.some((head) => !LOCATION_SAFE_HEADS.has(head) && !LOCATION_COMMAND_HEADS.has(head))) return null
+  return rules.shellLocationAfter(command, base)
+}
+
+export function noteTerminalUserInput(id: string, data: string, cwd: string): Promise<void> {
+  const previous = userInputChains.get(id) ?? Promise.resolve()
+  const next = previous.catch(() => undefined).then(async () => {
+    const plan = planSubmission(typedLines.get(id) ?? '', data)
+    typedLines.set(id, plan.pending)
+    if (!plan.submitted.length) return
+    const rules = await loadDangerRules()
+    const base = terminalLocations.has(id) ? (terminalLocations.get(id) ?? null) : cwd || null
+    const command = plan.submitted.join('\n')
+    terminalLocations.set(id, rules ? userLocationAfterUserInput(rules, command, base) : null)
+  })
+  const settled = next.catch(() => undefined)
+  userInputChains.set(id, settled)
+  void settled.then(() => {
+    if (userInputChains.get(id) === settled) userInputChains.delete(id)
+  })
+  return next
 }
 
 function stringParam(params: Record<string, unknown>, key: string): string {
@@ -392,11 +605,8 @@ export class TerminalAgentCommands {
 
   private async busy(stream: TerminalStream): Promise<boolean> {
     if (backgroundJobs.has(stream.info.id)) return true
-    const state = stream.info.status?.state
-    if (state === 'working' || state === 'blocked') return true
-    if (!stream.pid) return false
-    const count = await this.host.childCount(stream.pid)
-    return count === null ? false : count > 0
+    const count = stream.pid ? await this.host.childCount(stream.pid) : 0
+    return programBusy(stream.info.status, count)
   }
 
   private async pickForRun(params: Record<string, unknown>): Promise<{ stream: TerminalStream; created: boolean }> {
@@ -457,6 +667,7 @@ export class TerminalAgentCommands {
   }
 
   private async guard(stream: TerminalStream, data: string): Promise<void> {
+    await pendingTerminalUserInput(stream.info.id)
     const plan = planSubmission(typedLines.get(stream.info.id) ?? '', data)
     if (plan.submitted.length > 0) {
       const prefs = await this.host.prefs()
@@ -473,8 +684,11 @@ export class TerminalAgentCommands {
         if (reasons.length > 0) {
           const answer = await this.ctx.confirm({ detail: command, reasons, outsideDirs: outside })
           if (!answer.allowed) {
-            const why = answer.feedback ? `用户拒绝了这次操作，并给出理由：${answer.feedback}` : '用户没有批准'
-            throw new CapabilityCommandError('terminal_blocked', `高危操作未获用户确认：${reasons.join('；')}。${why}。请换一种更安全的做法，或向用户说明为什么必须这样做。`)
+            const why = answer.feedback ? `The user declined this operation and said: ${answer.feedback}` : 'The user declined this operation'
+            throw new CapabilityCommandError(
+              'terminal_blocked',
+              `High-risk operation not confirmed by the user: ${reasons.join('; ')}. ${why}. Do not retry it and do not work around the refusal by another route; tell the user why this one is needed, or ask which alternative they want.`
+            )
           }
         }
       }
@@ -496,8 +710,7 @@ export class TerminalAgentCommands {
       const stream = this.host.stream(id)
       if (!stream || !stream.info.alive) return 'exited'
       const now = this.host.now()
-      const fresh = sliceSince(stream, from).raw
-      const plain = options.until || options.mode === 'command' ? stripTerminalControls(fresh) : ''
+      const plain = options.until || options.mode === 'command' ? plainSince(id, stream, from) : ''
       if (options.until && untilMatches(options.until, plain)) return 'matched'
       const quietFor = now - Math.max(stream.lastOutputAt, started)
       const sawOutput = stream.total > from
@@ -708,6 +921,9 @@ export class TerminalAgentCommands {
     agentTerminals.delete(stream.info.id)
     typedLines.delete(stream.info.id)
     terminalLocations.delete(stream.info.id)
+    userInputChains.delete(stream.info.id)
+    plainStreams.delete(stream.info.id)
+    truncatedPlains.delete(stream.info.id)
     return { summary: { kind: 'terminal', action: 'stop', id: stream.info.id, stopped: true } }
   }
 }

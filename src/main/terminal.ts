@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import type { IPty } from 'node-pty'
 import { PROGRAM_STATUS_REPLY, TerminalProgramStatusTracker } from './terminal-status'
 import { clampRounded } from '../shared/clamp'
+import { withoutExeSearchGuard } from './exe-search-guard'
 import {
   EXITED_REPLAY_CHARS,
   MAX_UNOWNED_TERMINALS,
@@ -222,7 +223,7 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
       cols,
       rows,
       cwd,
-      env: terminalEnvironment({ ...process.env, ...options.env })
+      env: terminalEnvironment(withoutExeSearchGuard({ ...process.env, ...options.env }))
     })
   } catch {
     return null

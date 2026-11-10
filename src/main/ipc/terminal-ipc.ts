@@ -4,6 +4,7 @@ import {
   clearTerminal,
   killTerminal,
   listTerminals,
+  readTerminal,
   resizeTerminal,
   startTerminal,
   terminalAvailable,
@@ -11,6 +12,7 @@ import {
   terminalProcessId,
   writeTerminal
 } from '../terminal'
+import { noteTerminalUserInput } from '../terminal-agent'
 import { listProcessTree } from '../terminal-processes'
 import { clearFinishedTerminalJobs, listTerminalJobs, requestTerminalJobStop } from '../terminal-jobs'
 import type { IpcRegistrar } from './registrar'
@@ -29,7 +31,14 @@ export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string
       title: request?.title
     })
   )
-  rawHandle('yan:terminal:write', (_e, id: string, data: string) => writeTerminal(String(id ?? ''), String(data ?? '')))
+  rawHandle('yan:terminal:write', (_e, id: string, data: string) => {
+    const terminalId = String(id ?? '')
+    const text = String(data ?? '')
+    const cwd = readTerminal(terminalId)?.cwd
+    const written = writeTerminal(terminalId, text)
+    if (written) void noteTerminalUserInput(terminalId, text, cwd ?? '').catch(() => undefined)
+    return written
+  })
   rawHandle('yan:terminal:resize', (_e, id: string, cols: number, rows: number) =>
     resizeTerminal(String(id ?? ''), Number(cols), Number(rows))
   )
