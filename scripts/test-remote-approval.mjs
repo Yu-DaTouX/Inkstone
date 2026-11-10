@@ -30,26 +30,26 @@ export async function runRemoteApprovalTests(ok) {
   ok((await waiting)?.choice === 'once' && broker.list().length === 0 && closed[0] === request.id, '原任务解除等待，桌面卡片同步移除')
   ok(!broker.answer(request.id, 'once'), '处理过的批准不能再次放行')
   const piResponses = []
-  const ui = new UiRequests({ push: () => {}, respondToPi: response => piResponses.push(response) })
+  const ui = new UiRequests({ push: () => {}, respondToPi: response => { piResponses.push(response); return true } })
   ui.handleUi({ id: 'sensitive', method: 'confirm', sensitive: true })
-  ok(!ui.answerUiRemotely('sensitive', { confirmed: true }).ok && piResponses.length === 0, '普通远程 answer 仍不能批准敏感操作')
-  ok(ui.answerUiRemotely('sensitive', { cancelled: true }).ok, '原有取消路径保留')
+  ok(!(await ui.answerUiRemotely('sensitive', { confirmed: true })).ok && piResponses.length === 0, '普通远程 answer 仍不能批准敏感操作')
+  ok((await ui.answerUiRemotely('sensitive', { cancelled: true })).ok, '原有取消路径保留')
   const pushed = []
   const asked = new UiRequests({ push: msg => pushed.push(msg), respondToPi: () => {} })
   const answering = asked.requestHostUi({ method: 'select', title: 'Q', message: 'pick', options: ['a'], timeout: 1000, toolCallId: 'call_q1' })
   ok(pushed[0]?.payload.toolCallId === 'call_q1', '提问请求携带 toolCallId 推送到渲染端')
-  asked.respondUi({ id: pushed[0].payload.id, value: 'a' })
+  await asked.respondUi({ id: pushed[0].payload.id, value: 'a' })
   ok((await answering).value === 'a', '带 toolCallId 的提问仍可正常回答')
   const plain = asked.requestHostUi({ method: 'input', title: 'Q', message: 'm', timeout: 1000 })
   const plainPayload = pushed.filter(msg => msg.ch === 'ui-request')[1].payload
   ok(!('toolCallId' in plainPayload), '没有 toolCallId 的提问不带该字段')
-  asked.respondUi({ id: plainPayload.id, value: 'x' })
+  await asked.respondUi({ id: plainPayload.id, value: 'x' })
   await plain
   const fields = [{ name: 'side', label: '哪一方', kind: 'choice', options: [{ label: '甲' }, { label: '乙' }] }, { name: 'note', label: '备注', kind: 'text' }]
   const formAsk = asked.requestHostUi({ method: 'input', message: '合同选哪一方', form: fields, timeout: 1000 })
   const formRequest = asked.pendingUiRequests().find(item => item.form)
   ok(formRequest?.form?.length === 2 && formRequest.message === '合同选哪一方', '表单问题在待答列表里保留字段与问题正文')
-  ok(asked.answerUiRemotely(formRequest.id, { value: JSON.stringify({ side: '甲', note: '快' }) }).ok, '手机端可以提交表单答案')
+  ok((await asked.answerUiRemotely(formRequest.id, { value: JSON.stringify({ side: '甲', note: '快' }) })).ok, '手机端可以提交表单答案')
   ok((await formAsk).value === '{"side":"甲","note":"快"}', '表单答案原样交回提问方')
   ok(questionToolCallId({ toolCall: { id: 'call_n' } }) === 'call_n' && questionToolCallId({ toolCallId: 'call_f' }) === 'call_f' && questionToolCallId({}) === undefined, 'toolCallId 从 toolCall.id 或 toolCallId 取得')
 }

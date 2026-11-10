@@ -200,6 +200,29 @@ try {
   await store.revoke(phone.device.id)
   assert.equal((await call('GET', '/remote/v1/status', phone)).status, 401, '桌面端撤销后令牌失效')
 
+  const pairRequest = (code) => callOnce('POST', '/remote/v1/pair', null, { code, deviceName: '暴力枚举' })
+  const pairing = store.startPairing()
+  const wrong = pairing.code === '000000' ? '111111' : '000000'
+  const outcomes = []
+  for (let i = 0; i < 10; i += 1) outcomes.push(await pairRequest(wrong))
+  assert.deepEqual(outcomes.slice(0, 4).map((r) => [r.status, r.body?.code ?? r.body?.error]), Array(4).fill([403, 'invalid_code']), '前四次输错报 invalid_code')
+  assert.deepEqual([outcomes[4].status, outcomes[4].body?.code ?? outcomes[4].body?.error], [403, 'too_many_attempts'], '第五次输错作废配对码')
+  assert.ok(outcomes.slice(5).every((r) => r.status === 403 && (r.body?.code ?? r.body?.error) === 'no_pairing'), '作废后继续猜只得到 no_pairing')
+  assert.equal(store.currentPairing(), null, '配对码已作废')
+  const limited = await pairRequest(wrong)
+  assert.equal(limited.status, 429, '同一来源一分钟内超过 10 次配对请求得到 429')
+  assert.equal(limited.body?.code ?? limited.body?.error, 'rate_limited', '限流错误码为 rate_limited')
+
+  const fresh = store.startPairing()
+  for (let i = 0; i < 3; i += 1) {
+    const blocked = await pairRequest(wrong)
+    assert.equal(blocked.status, 429)
+    assert.equal(blocked.body?.code ?? blocked.body?.error, 'rate_limited')
+  }
+  assert.equal(store.currentPairing()?.code, fresh.code, '被限流的请求不消耗配对码的错误次数，码仍有效')
+  const correctAfterLimit = await store.pair(fresh.code, '限流后的正确码')
+  assert.ok(correctAfterLimit.ok, '被限流的错误请求不会让随后的正确配对提前作废')
+
   console.log('remote security attacks ok')
 } finally {
   await server?.stop().catch(() => undefined)

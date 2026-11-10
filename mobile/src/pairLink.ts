@@ -8,6 +8,11 @@ export interface PairingPrefill {
   relay?: RelayPairing
 }
 
+export function pairingPrefillFor(url: string | null, state: 'unknown' | 'connected' | 'disconnected'): PairingPrefill | null {
+  if (!url || state !== 'disconnected') return null
+  return parsePairingLink(url)
+}
+
 export function parsePairingLink(url: string): PairingPrefill | null {
   const relay = parseRelayLink(url)
   if (relay) return { address: pick(`加密连接 ${relay.computerName}`, `Encrypted: ${relay.computerName}`), code: relay.code, relay }

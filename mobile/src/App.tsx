@@ -4,7 +4,7 @@ import { Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Linking, 
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { RemoteClient, RemoteHttpError, secureConnection, type Connection } from './api/client'
 import { readUiPrefs, writeUiPrefs, type PhotoDraft } from './device'
-import { parsePairingLink, type PairingPrefill } from './pairLink'
+import { pairingPrefillFor, parsePairingLink, type PairingPrefill } from './pairLink'
 import { restoreQuestionAlerts, startQuestionAlerts, stopQuestionAlerts } from './questionAlerts'
 import { ArtifactScreen } from './screens/ArtifactScreen'
 import { AssistantScreen, type AssistantConversation } from './screens/AssistantScreen'
@@ -81,6 +81,8 @@ function AppRoot() {
   const [localRoute, setLocalRoute] = useState<'welcome' | 'assistant' | 'assistant-settings'>('welcome')
   const assistantSettingsFrom = useRef<'assistant' | 'settings'>('assistant')
   const [pairingPrefill, setPairingPrefill] = useState<PairingPrefill | null>(null)
+  const connectionState = useRef<Connection | null | undefined>(undefined)
+  const pendingLink = useRef<string | null>(null)
   const [alertsEnabled, setAlertsEnabled] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft[]>>({})
@@ -120,6 +122,13 @@ function AppRoot() {
     void loadConnection().then(async (saved) => {
       if (!alive) return
       setConnection(saved)
+      connectionState.current = saved
+      const pending = pendingLink.current
+      pendingLink.current = null
+      if (pending) {
+        const parsed = pairingPrefillFor(pending, saved ? 'connected' : 'disconnected')
+        if (parsed) setPairingPrefill(parsed)
+      }
       const secured = saved ? await secureConnection(saved) : null
       if (!secured || !alive) return
       await saveConnection(secured)
@@ -132,7 +141,12 @@ function AppRoot() {
     const receive = (url: string | null) => {
       if (!url) return
       if (url === 'inkstone://inbox' || url === 'inkstone://hub') { setRoute({ name: 'home' }); return }
-      const parsed = parsePairingLink(url)
+      const state = connectionState.current === undefined ? 'unknown' : connectionState.current ? 'connected' : 'disconnected'
+      if (state === 'unknown') {
+        if (parsePairingLink(url)) pendingLink.current = url
+        return
+      }
+      const parsed = pairingPrefillFor(url, state)
       if (parsed) setPairingPrefill(parsed)
     }
     void Linking.getInitialURL().then(receive)

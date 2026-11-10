@@ -96,11 +96,13 @@ export interface RemoteServerOptions {
   relayToken?: string
   peerGraceMs?: number
   tunnel?: RemoteTunnelHooks
+  relayClientPaired?: (clientId: string) => void | Promise<void>
+  relayClientRevoked?: (clientId: string) => void | Promise<void>
 }
 
 export interface RemoteTunnelHooks {
   upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void
-  invite(): Promise<{ hostKey: string; code: string }>
+  invite(): Promise<{ hostKey: string; code: string; hostFingerprint?: string }>
   stop?(): void
 }
 
@@ -121,6 +123,7 @@ const MAX_NAME_CHARS = 200
 const SESSION_ID_MAX = 200
 const PAIR_RATE_WINDOW_MS = 60_000
 const PAIR_RATE_LIMIT = 10
+const INVITE_RATE_LIMIT = 20
 const PEER_STREAM_GRACE_MS = 60_000
 const RELAY_HANDOFF_HEADER = 'x-yan-relay-client'
 const CORS_HEADERS = {
@@ -243,6 +246,11 @@ function fromLoopback(req: IncomingMessage): boolean {
   return LOOPBACK_ADDRESSES.has(req.socket?.remoteAddress ?? '')
 }
 
+function relayHeaderSource(req: IncomingMessage): string | null {
+  const client = req.headers[RELAY_HANDOFF_HEADER]
+  return typeof client === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(client) ? `relay:${client}` : null
+}
+
 export class RemoteServer {
   private server: Server | null = null
   private heartbeat: NodeJS.Timeout | null = null
@@ -259,6 +267,8 @@ export class RemoteServer {
   private readonly idempotency = new Map<string, { at: number; result: Promise<RemoteOperationResult>; fingerprint?: string }>()
   private pairAttempts: number[] = []
   private readonly pairAttemptsBySource = new Map<string, number[]>()
+  private readonly inviteAttempts = new Map<string, number[]>()
+  private inviteCache: { key: string; value: { hostKey: string; code: string; hostFingerprint?: string } } | null = null
 
   constructor(private readonly options: RemoteServerOptions) {
     const explicit = options.token?.trim()
@@ -334,6 +344,8 @@ export class RemoteServer {
   async stop(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = null
+    this.inviteCache = null
+    this.inviteAttempts.clear()
     for (const timer of this.peerGraceTimers.values()) clearTimeout(timer)
     this.peerGraceTimers.clear()
     for (const stream of this.openStreams) stream.destroy()
@@ -389,6 +401,19 @@ export class RemoteServer {
     try { client.end() } catch { }
   }
 
+  private allowInvite(source: string): boolean {
+    const now = Date.now()
+    for (const [key, attempts] of this.inviteAttempts) {
+      const recent = attempts.filter((at) => now - at < PAIR_RATE_WINDOW_MS)
+      if (recent.length) this.inviteAttempts.set(key, recent)
+      else this.inviteAttempts.delete(key)
+    }
+    const recent = this.inviteAttempts.get(source) ?? []
+    if (recent.length >= INVITE_RATE_LIMIT) return false
+    this.inviteAttempts.set(source, [...recent, now])
+    return true
+  }
+
   private peerGrace(): number {
     return this.options.peerGraceMs ?? PEER_STREAM_GRACE_MS
   }
@@ -409,6 +434,19 @@ export class RemoteServer {
     }, this.peerGrace())
     timer.unref?.()
     this.peerGraceTimers.set(connectionId, timer)
+  }
+
+  disconnectAll(): void {
+    for (const client of this.clients) {
+      try { client.end() } catch { }
+    }
+    this.clients.clear()
+    for (const [id, client] of this.peerClients) {
+      this.peerClients.delete(id)
+      try { client.end() } catch { }
+    }
+    for (const timer of this.peerGraceTimers.values()) clearTimeout(timer)
+    this.peerGraceTimers.clear()
   }
 
   disconnectDevice(deviceId: string): void {
@@ -590,8 +628,15 @@ export class RemoteServer {
     }
 
     if (req.method === 'GET' && url.pathname === '/remote/v1/tunnel/invite' && this.options.tunnel) {
-      if (!this.options.devices?.currentPairing()) return writeError(res, 403, pick('电脑上没有正在进行的配对，请先在电脑上生成配对码', 'No pairing in progress on the computer. Generate a pairing code first'), 'no_pairing')
-      writeJson(res, 200, { ok: true, ...(await this.options.tunnel.invite()), path: REMOTE_TUNNEL_PATH, computer: { name: hostname() } })
+      const pairing = this.options.devices?.currentPairing()
+      if (!pairing) return writeError(res, 403, pick('电脑上没有正在进行的配对，请先在电脑上生成配对码', 'No pairing in progress on the computer. Generate a pairing code first'), 'no_pairing')
+      const source = relayHeaderSource(req) ?? req.socket?.remoteAddress ?? 'unknown'
+      if (!this.allowInvite(source)) return writeError(res, 429, pick('配对通道请求过于频繁，请稍后再试', 'Too many pairing channel requests. Try again later'), 'rate_limited')
+      const key = `${pairing.code}:${pairing.expiresAt}`
+      if (!this.inviteCache || this.inviteCache.key !== key) {
+        this.inviteCache = { key, value: await this.options.tunnel.invite() }
+      }
+      writeJson(res, 200, { ok: true, ...this.inviteCache.value, path: REMOTE_TUNNEL_PATH, computer: { name: hostname() } })
       return
     }
 
@@ -619,9 +664,13 @@ export class RemoteServer {
         return writeError(res, 403, pick('需要配对令牌', 'A pairing token is required'))
       }
       await this.readJson(req)
+      const tunnelClientId = caller.device.tunnelClientId
       const revoked = await this.options.devices.revoke(caller.device.id)
       writeJson(res, revoked ? 200 : 404, revoked ? { ok: true } : { ok: false, error: pick('设备已撤销', 'Device revoked') })
-      if (revoked) this.disconnectDevice(caller.device.id)
+      if (revoked) {
+        this.disconnectDevice(caller.device.id)
+        if (tunnelClientId) await this.options.relayClientRevoked?.(tunnelClientId)
+      }
       return
     }
 
@@ -1156,7 +1205,8 @@ export class RemoteServer {
       writeError(res, 426, pick('请把手机上的砚更新到最新版再配对：新版经加密通道连接电脑', 'Update Inkstone on your phone and pair again: the new version connects through an encrypted tunnel'), 'tunnel_required')
       return
     }
-    const result = await this.options.devices.pair(body.code, body.deviceName, body.kind, !!this.options.relayToken, source.startsWith('relay:') ? source.slice(6) : undefined)
+    const tunnelClientId = source.startsWith('relay:') ? source.slice(6) : undefined
+    const result = await this.options.devices.pair(body.code, body.deviceName, body.kind, !!this.options.relayToken, tunnelClientId)
     if (!result.ok) {
       const message = {
         no_pairing: pick('电脑上没有正在进行的配对，请先在砚的设置里生成配对码', 'No pairing in progress on the computer. Generate a pairing code in Inkstone settings first'),
@@ -1169,6 +1219,7 @@ export class RemoteServer {
       return
     }
     this.log(`新设备已配对：${result.device.name}`)
+    if (tunnelClientId && result.device.tunnelClientId === tunnelClientId) await this.options.relayClientPaired?.(tunnelClientId)
     writeJson(res, 200, { ok: true, deviceId: result.device.id, token: result.token, apiVersion: REMOTE_API_VERSION, device: result.device, computer: { name: hostname() } })
   }
 

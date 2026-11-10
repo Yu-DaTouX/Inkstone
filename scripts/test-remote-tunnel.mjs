@@ -88,7 +88,13 @@ try {
 
   await check('手输地址与配对码：先取电脑公钥，再经直连加密通道配对', async () => {
     const { code } = access.startPairing()
-    const manual = await M.pair(base, code, '手输手机')
+    let confirmed = null
+    const manual = await M.pair(base, code, '手输手机', async (identity) => {
+      confirmed = identity
+      return true
+    })
+    assert.ok(confirmed?.fingerprint, '手输配对必须核对电脑身份')
+    assert.equal(confirmed.fingerprint, await access.hostIdentity())
     assert.ok(manual.relay?.direct?.length)
     assert.match(manual.baseUrl, /^relay:\/\//)
     assert.ok((await new M.RemoteClient(manual).info()).capabilities.includes('sessions'))

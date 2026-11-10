@@ -7,7 +7,7 @@ import { exportKeyPair, generateKeyPair, importKeyPair, randomB64u, sha256, toB6
 export const RELAY_PAIR_TTL_MS = 10 * 60_000
 const MAX_CLIENTS = 16
 
-export type RelayClientKind = 'phone' | 'agent'
+export type RelayClientKind = 'phone' | 'peer' | 'agent'
 
 export interface RelayClient {
   id: string
@@ -17,7 +17,11 @@ export interface RelayClient {
   addedAt: number
   lastSeenAt: number | null
   revokedAt: number | null
+  pairedAt: number | null
+  pendingUntil: number | null
 }
+
+const KINDS: RelayClientKind[] = ['phone', 'peer', 'agent']
 
 interface StoredState {
   version: 1
@@ -37,14 +41,23 @@ export class RelayBridgeStore {
   private state: StoredState | null = null
   private key: KeyPair | null = null
   private writing: Promise<void> = Promise.resolve()
-  private readonly codes = new Map<string, { kind: RelayClientKind; expiresAt: number }>()
+  private readonly codes = new Map<string, { kind: RelayClientKind | 'any'; expiresAt: number }>()
 
   constructor(dir: string, private readonly now: () => number = Date.now) {
     this.file = join(dir, 'relay-bridge.json')
   }
 
+  private loading: Promise<StoredState> | null = null
+
   private async load(): Promise<StoredState> {
     if (this.state) return this.state
+    this.loading ??= this.readState().finally(() => {
+      this.loading = null
+    })
+    return this.loading
+  }
+
+  private async readState(): Promise<StoredState> {
     let text: string
     try {
       text = await readFile(this.file, 'utf8')
@@ -59,7 +72,13 @@ export class RelayBridgeStore {
           version: 1,
           secret: parsed.secret,
           hostKey: parsed.hostKey,
-          clients: parsed.clients.filter((c) => typeof c?.id === 'string' && typeof c.key === 'string' && (c.kind === 'phone' || c.kind === 'agent'))
+          clients: parsed.clients
+            .filter((c) => typeof c?.id === 'string' && typeof c.key === 'string' && KINDS.includes(c.kind))
+            .map((c) => ({
+              ...c,
+              pairedAt: typeof c.pairedAt === 'number' ? c.pairedAt : (c.revokedAt === null ? c.addedAt : null),
+              pendingUntil: typeof c.pendingUntil === 'number' ? c.pendingUntil : null
+            }))
         }
         return this.state
       }
@@ -73,14 +92,21 @@ export class RelayBridgeStore {
 
   private async createFreshState(): Promise<StoredState> {
     const pair = await generateKeyPair()
-    this.state = { version: 1, secret: randomB64u(24), hostKey: (await exportKeyPair(pair)) as webcrypto.JsonWebKey, clients: [] }
+    const state: StoredState = { version: 1, secret: randomB64u(24), hostKey: (await exportKeyPair(pair)) as webcrypto.JsonWebKey, clients: [] }
+    try {
+      await this.save(state)
+    } catch (error) {
+      this.state = null
+      this.key = null
+      throw error
+    }
+    this.state = state
     this.key = pair
-    await this.save()
-    return this.state
+    return state
   }
 
-  private save(): Promise<void> {
-    const snapshot = JSON.stringify(this.state, null, 2)
+  private save(state: StoredState | null = this.state): Promise<void> {
+    const snapshot = JSON.stringify(state ?? this.state, null, 2)
     const write = async (): Promise<void> => {
       await mkdir(dirname(this.file), { recursive: true })
       const temporary = `${this.file}.${process.pid}.${randomUUID()}.tmp`
@@ -98,6 +124,17 @@ export class RelayBridgeStore {
     return task
   }
 
+  private queue: Promise<unknown> = Promise.resolve()
+
+  private mutate<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(task, task)
+    this.queue = next.then(
+      () => undefined,
+      () => undefined
+    )
+    return next
+  }
+
   async hostKey(): Promise<KeyPair> {
     const state = await this.load()
     this.key ??= await importKeyPair(state.hostKey as Parameters<typeof importKeyPair>[0])
@@ -108,7 +145,7 @@ export class RelayBridgeStore {
     return (await this.load()).secret
   }
 
-  startPairing(kind: RelayClientKind): { code: string; expiresAt: number } {
+  startPairing(kind: RelayClientKind | 'any'): { code: string; expiresAt: number } {
     const code = randomB64u(16)
     const expiresAt = this.now() + RELAY_PAIR_TTL_MS
     for (const [h, entry] of this.codes) if (entry.expiresAt <= this.now()) this.codes.delete(h)
@@ -116,59 +153,144 @@ export class RelayBridgeStore {
     return { code, expiresAt }
   }
 
-  async authenticate(clientKey: string, name: string, code: string | undefined): Promise<{ ok: true; client: RelayClient } | { ok: false; reason: string }> {
-    const state = await this.load()
-    const known = state.clients.find((c) => c.key === clientKey)
-    if (known && known.revokedAt === null) {
-      known.lastSeenAt = this.now()
-      void this.save().catch(() => undefined)
-      return { ok: true, client: { ...known } }
-    }
-    if (known && known.revokedAt !== null && !code) return { ok: false, reason: pick('这台设备已被撤销，请重新配对', 'This device was revoked. Pair again') }
-    if (!code) return { ok: false, reason: pick('需要配对：请在电脑上生成中继配对二维码', 'Pairing required: generate a relay pairing QR code on the computer') }
-    const h = hash(code)
-    const entry = this.codes.get(h)
-    if (!entry || entry.expiresAt <= this.now()) return { ok: false, reason: pick('配对码无效或已过期，请在电脑上重新生成', 'Pairing code is invalid or expired. Generate a new one on the computer') }
-    this.codes.delete(h)
-    if (state.clients.filter((c) => c.revokedAt === null).length >= MAX_CLIENTS) return { ok: false, reason: pick('已配对的设备太多，请先在电脑上移除不用的', 'Too many paired devices. Remove unused ones on the computer first') }
-    const client: RelayClient = {
-      id: `relay-${randomUUID()}`,
-      key: clientKey,
-      name: (name || pick('未命名设备', 'Unnamed device')).replace(/[\u0000-\u001f]/g, '').slice(0, 60),
-      kind: entry.kind,
-      addedAt: this.now(),
-      lastSeenAt: this.now(),
-      revokedAt: null
-    }
-    state.clients = state.clients.filter((c) => c.key !== clientKey)
-    state.clients.push(client)
-    await this.save()
-    return { ok: true, client: { ...client } }
+  private async expireLocked(state: StoredState): Promise<string[]> {
+    const now = this.now()
+    const expired = state.clients.filter((c) => c.revokedAt === null && c.pairedAt === null && c.pendingUntil !== null && c.pendingUntil <= now)
+    if (!expired.length) return []
+    const ids = new Set(expired.map((c) => c.id))
+    state.clients = state.clients.map((c) => (ids.has(c.id) ? { ...c, revokedAt: now } : c))
+    await this.save().catch(() => undefined)
+    return [...ids]
   }
 
-  async list(): Promise<RelayClient[]> {
-    return (await this.load()).clients.map((c) => ({ ...c }))
+  async expireUnpaired(): Promise<string[]> {
+    return this.mutate(async () => this.expireLocked(await this.load()))
+  }
+
+  authenticate(clientKey: string, name: string, code: string | undefined, declared?: RelayClientKind): Promise<{ ok: true; client: RelayClient } | { ok: false; reason: string }> {
+    return this.mutate(async () => {
+      const state = await this.load()
+      await this.expireLocked(state)
+      const known = state.clients.find((c) => c.key === clientKey)
+      if (known && known.revokedAt === null) {
+        const now = this.now()
+        const next = state.clients.map((c) => (c.id === known.id ? { ...c, lastSeenAt: now } : c))
+        state.clients = next
+        void this.save().catch(() => undefined)
+        return { ok: true, client: { ...known, lastSeenAt: now } }
+      }
+      if (known && known.revokedAt !== null && !code) return { ok: false, reason: pick('这台设备已被撤销，请重新配对', 'This device was revoked. Pair again') }
+      if (!code) return { ok: false, reason: pick('需要配对：请在电脑上生成中继配对二维码', 'Pairing required: generate a relay pairing QR code on the computer') }
+      const h = hash(code)
+      const entry = this.codes.get(h)
+      if (!entry || entry.expiresAt <= this.now()) return { ok: false, reason: pick('配对码无效或已过期，请在电脑上重新生成', 'Pairing code is invalid or expired. Generate a new one on the computer') }
+      if (declared !== undefined && entry.kind !== 'any' && entry.kind !== declared) {
+        return { ok: false, reason: pick('这个配对码不属于这类设备，请在电脑上重新生成', 'This pairing code is not for this kind of device. Generate a new one on the computer') }
+      }
+      const kind: RelayClientKind = entry.kind === 'any' ? (declared ?? 'phone') : entry.kind
+      if (state.clients.filter((c) => c.revokedAt === null).length >= MAX_CLIENTS) {
+        return { ok: false, reason: pick('已配对的设备太多，请先在电脑上移除不用的', 'Too many paired devices. Remove unused ones on the computer first') }
+      }
+      const now = this.now()
+      const client: RelayClient = {
+        id: `relay-${randomUUID()}`,
+        key: clientKey,
+        name: (name || pick('未命名设备', 'Unnamed device')).replace(/[\u0000-\u001f]/g, '').slice(0, 60),
+        kind,
+        addedAt: now,
+        lastSeenAt: now,
+        revokedAt: null,
+        pairedAt: null,
+        pendingUntil: now + RELAY_PAIR_TTL_MS
+      }
+      const next = [...state.clients.filter((c) => c.key !== clientKey), client]
+      await this.save({ ...state, clients: next })
+      state.clients = next
+      this.codes.delete(h)
+      return { ok: true, client: { ...client } }
+    })
+  }
+
+  markPaired(id: string): Promise<boolean> {
+    return this.mutate(async () => {
+      const state = await this.load()
+      const client = state.clients.find((c) => c.id === id && c.revokedAt === null)
+      if (!client || client.pairedAt !== null) return false
+      const next = state.clients.map((c) => (c.id === id ? { ...c, pairedAt: this.now(), pendingUntil: null } : c))
+      try {
+        await this.save({ ...state, clients: next })
+      } catch {
+        return false
+      }
+      state.clients = next
+      return true
+    })
+  }
+
+  list(): Promise<RelayClient[]> {
+    return this.mutate(async () => {
+      const state = await this.load()
+      await this.expireLocked(state)
+      return state.clients.map((c) => ({ ...c }))
+    })
   }
 
   async isActive(id: string): Promise<boolean> {
-    return (await this.load()).clients.some((c) => c.id === id && c.revokedAt === null)
+    const list = await this.list()
+    return list.some((c) => c.id === id && c.revokedAt === null)
   }
 
-  async revoke(id: string): Promise<boolean> {
-    const state = await this.load()
-    const client = state.clients.find((c) => c.id === id && c.revokedAt === null)
-    if (!client) return false
-    client.revokedAt = this.now()
-    await this.save()
-    return true
+  revoke(id: string): Promise<boolean> {
+    return this.mutate(async () => {
+      const state = await this.load()
+      if (!state.clients.some((c) => c.id === id && c.revokedAt === null)) return false
+      const next = state.clients.map((c) => (c.id === id ? { ...c, revokedAt: this.now() } : c))
+      try {
+        await this.save({ ...state, clients: next })
+      } catch {
+        return false
+      }
+      state.clients = next
+      return true
+    })
   }
 
-  async forget(id: string): Promise<boolean> {
-    const state = await this.load()
-    const before = state.clients.length
-    state.clients = state.clients.filter((c) => c.id !== id || c.revokedAt === null)
-    if (state.clients.length === before) return false
-    await this.save()
-    return true
+  forget(id: string): Promise<boolean> {
+    return this.mutate(async () => {
+      const state = await this.load()
+      const next = state.clients.filter((c) => c.id !== id || c.revokedAt === null)
+      if (next.length === state.clients.length) return false
+      try {
+        await this.save({ ...state, clients: next })
+      } catch {
+        return false
+      }
+      state.clients = next
+      return true
+    })
+  }
+
+  resetIdentity(): Promise<void> {
+    return this.mutate(async () => {
+      const state = await this.load()
+      const previousKey = this.key
+      const pair = await generateKeyPair()
+      const next: StoredState = {
+        version: 1,
+        secret: randomB64u(24),
+        hostKey: (await exportKeyPair(pair)) as webcrypto.JsonWebKey,
+        clients: []
+      }
+      try {
+        await this.save(next)
+      } catch (error) {
+        this.state = state
+        this.key = previousKey
+        throw error
+      }
+      this.state = next
+      this.key = pair
+      this.codes.clear()
+    })
   }
 }

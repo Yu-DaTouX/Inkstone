@@ -472,7 +472,8 @@ export async function remoteSelectSession(sessionId: string): Promise<RemoteOper
     sessionId: summary.id,
     cwd: cwdResult.cwd,
     projectId,
-    scope: summary.scope
+    scope: summary.scope,
+    activate: false
   })
   if (result.ok && result.id) void host.pushRunnerSnapshot(result.id)
   host.pushRunners()
@@ -687,7 +688,10 @@ export async function remoteHumanApproval(questionId: string, answer: RemoteHuma
   if (!agent?.pendingUiRequests().some(item => item.id === questionId)) {
     return { ok: false, status: 404, code: 'question_not_pending', error: pick('该审批已处理或已过期', 'This approval was already handled or has expired') }
   }
-  return applyHumanApproval(question, answer, confirmed => agent.respondUi({ id: questionId, confirmed }, 'remote'))
+  const accepted = applyHumanApproval(question, answer, () => true)
+  if (!accepted.ok) return accepted
+  const result = await agent.respondUiResult({ id: questionId, confirmed: answer.confirmed }, 'remote')
+  return result.ok ? accepted : { ok: false, status: 409, code: 'question_not_pending', error: pick('该审批已处理或已过期', 'This approval was already handled or has expired') }
 }
 
 export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Promise<RemoteOperationResult> {
@@ -705,11 +709,15 @@ export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Pr
   for (const status of host.runners()?.statuses() ?? []) {
     const agent = host.runners()?.agentOf(status.runId)
     if (!agent?.pendingUiRequests().some((request) => request.id === questionId)) continue
-    const result = agent.answerUiRemotely(questionId, answer)
+    const result = await agent.answerUiRemotely(questionId, answer)
     if (result.ok) return { ok: true, data: { questionId, runId: status.runId } }
-    return result.code === 'sensitive_confirmation_requires_desktop'
-      ? { ok: false, status: 403, code: result.code, error: pick('这是敏感确认，请在电脑上确认，或通过已配对客户端的人工批准通道处理', 'This is a sensitive confirmation. Confirm on the computer or via a paired client\'s manual approval') }
-      : { ok: false, status: 409, code: result.code, error: pick('这个问题已经答复或已过期', 'This question was already answered or has expired') }
+    if (result.code === 'sensitive_confirmation_requires_desktop') {
+      return { ok: false, status: 403, code: result.code, error: pick('这是敏感确认，请在电脑上确认，或通过已配对客户端的人工批准通道处理', 'This is a sensitive confirmation. Confirm on the computer or via a paired client\'s manual approval') }
+    }
+    if (result.code === 'pi_down') {
+      return { ok: false, status: 503, code: 'pi_down', error: pick('答案没能送进 pi，问题还没有结束，请重试', 'The answer did not reach pi and the question is still open. Please retry') }
+    }
+    return { ok: false, status: 409, code: result.code, error: pick('这个问题已经答复或已过期', 'This question was already answered or has expired') }
   }
   return { ok: false, status: 404, code: 'question_not_pending', error: pick('这个问题已经答复或已过期', 'This question was already answered or has expired') }
 }

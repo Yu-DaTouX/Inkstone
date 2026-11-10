@@ -1,7 +1,7 @@
 import { pick } from '../../../src/shared/ui-lang'
 import { useEffect, useState } from 'react'
-import { KeyboardAvoidingView, Linking, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { pair, pairViaRelay, RemoteHttpError, type Connection } from '../api/client'
+import { Alert, KeyboardAvoidingView, Linking, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { pair, pairViaRelay, RemoteHttpError, type Connection, type HostIdentity } from '../api/client'
 import { normalizeBaseUrl } from '../api/base-url'
 import type { RelayPairing } from '../api/relay'
 import { parsePairingLink, type PairingPrefill } from '../pairLink'
@@ -88,12 +88,24 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
     }
   }
 
+  const confirmHostIdentity = (identity: HostIdentity): Promise<boolean> => new Promise((resolve) => {
+    Alert.alert(
+      pick('核对电脑身份', 'Confirm the desktop'),
+      pick(`电脑「${identity.computer}」上显示的身份指纹应当与下面一致：\n\n${identity.fingerprint}\n\n不一致就取消：可能有人在中间冒充这台电脑。`, `The identity fingerprint shown on "${identity.computer}" should match:\n\n${identity.fingerprint}\n\nCancel if it does not: someone may be impersonating that desktop.`),
+      [
+        { text: pick('取消', 'Cancel'), style: 'cancel', onPress: () => resolve(false) },
+        { text: pick('一致，连接', 'Matches, connect'), onPress: () => resolve(true) }
+      ],
+      { cancelable: false }
+    )
+  })
+
   const submit = async (): Promise<void> => {
     if (relay) {
       setBusy(true)
       setError(null)
       try {
-        await onPaired(await pairViaRelay(relay, name.trim() || '我的手机'))
+        await onPaired(await pairViaRelay(relay, name.trim() || pick('我的手机', 'My phone')))
       } catch (err) {
         setError(err instanceof RemoteHttpError ? err.message : pick('经中继配对失败，请在电脑「中继接入」重新生成二维码。', 'Relay pairing failed. Regenerate the code in Relay access on the desktop.'))
       } finally {
@@ -109,7 +121,7 @@ export function PairScreen({ onPaired, prefill, onCancel }: {
     setBusy(true)
     setError(null)
     try {
-      await onPaired(await pair(baseUrl, code, name.trim() || '我的手机'))
+      await onPaired(await pair(baseUrl, code, name.trim() || pick('我的手机', 'My phone'), confirmHostIdentity))
     } catch (err) {
       setError(err instanceof RemoteHttpError ? err.message : pick('配对失败，请在电脑上重新生成配对码。', 'Pairing failed. Regenerate the code on the desktop.'))
     } finally {

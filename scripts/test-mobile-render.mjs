@@ -29,7 +29,7 @@ async function boot({ lang = 'zh-CN', left = false, width = 390, height = 844, f
   marksSet('ui:prefs', JSON.stringify({ lang, leftHanded: left }))
   let conn
   for (let attempt = 0; ; attempt++) {
-    try { conn = await lib.pair(desk.baseUrl, desk.startPairing(), '测试手机'); break } catch (error) { if (attempt >= 2) throw error; await sleep(200) }
+    try { conn = await lib.pair(desk.baseUrl, desk.startPairing(), '测试手机', async () => true); break } catch (error) { if (attempt >= 2) throw error; await sleep(200) }
   }
   globalThis.__keychain.entry = { username: 'x', password: JSON.stringify(conn) }
   const h = createHarness(lib)

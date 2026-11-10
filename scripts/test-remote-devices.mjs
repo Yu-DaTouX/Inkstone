@@ -64,6 +64,44 @@ export async function runRemoteDeviceTests(ok, { RemoteDeviceStore }) {
   }
 
   {
+    const dir = await mkdtemp(join(tmpdir(), 'yan-devices-brute-'))
+    const store = new RemoteDeviceStore(dir)
+    await store.list()
+    const pairing = store.startPairing()
+    const wrong = pairing.code === '000000' ? '111111' : '000000'
+    const errors = []
+    for (let i = 0; i < 5; i += 1) {
+      const result = await store.pair(wrong, '暴力枚举')
+      errors.push(result.ok ? 'ok' : result.error)
+    }
+    ok(errors.slice(0, 4).every((e) => e === 'invalid_code'), '前四次输错返回 invalid_code', errors.join(','))
+    ok(errors[4] === 'too_many_attempts', '第五次输错返回 too_many_attempts', errors[4])
+    ok(store.currentPairing() === null, '输错到上限后配对码作废')
+    const afterVoid = await store.pair(pairing.code, '正确的码')
+    ok(afterVoid.ok === false && afterVoid.error === 'no_pairing', '作废后即使输入正确的码也配不上', JSON.stringify(afterVoid))
+    ok((await store.list()).length === 0, '暴力枚举没有产生任何设备')
+  }
+
+  {
+    const dir = await mkdtemp(join(tmpdir(), 'yan-devices-expire-'))
+    let clock = 1_000_000
+    const store = new RemoteDeviceStore(dir, () => clock)
+    await store.list()
+    const pairing = store.startPairing()
+    clock = pairing.expiresAt
+    const expired = await store.pair(pairing.code, '过期设备')
+    ok(expired.ok === false && expired.error === 'expired', '配对码到期后返回 expired', JSON.stringify(expired))
+    ok(store.currentPairing() === null, '过期的配对码被清除')
+    const again = await store.pair(pairing.code, '过期设备')
+    ok(again.ok === false && again.error === 'no_pairing', '过期后再试得到 no_pairing', JSON.stringify(again))
+
+    const second = store.startPairing()
+    clock = second.expiresAt - 1
+    const live = await store.pair(second.code, '临界设备')
+    ok(live.ok === true, '到期前一刻仍可配对', JSON.stringify(live))
+  }
+
+  {
     const dir = await mkdtemp(join(tmpdir(), 'yan-devices-revoke-'))
     const store = new RemoteDeviceStore(dir)
     await store.list()

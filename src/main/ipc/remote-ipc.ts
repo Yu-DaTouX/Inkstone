@@ -2,6 +2,7 @@ import type { AppSettings } from '../../shared/ipc'
 import type { RemoteAccessSettings, RemoteAccessStatus } from '../../shared/remote-protocol'
 import type { RemoteAccess } from '../remote-access'
 import type { IpcRegistrar } from './registrar'
+import { pick } from '../../shared/ui-lang'
 
 export interface RemoteIpcDeps {
   access(): RemoteAccess | null
@@ -69,5 +70,17 @@ export function registerRemoteIpc(ipc: IpcRegistrar, deps: RemoteIpcDeps): void 
   handle('yan:remote:forget', async (deviceId: string) => {
     await deps.access()?.forget(String(deviceId ?? ''))
     return status()
+  })
+
+  handle('yan:remote:resetIdentity', async () => {
+    if (!deps.access()) await deps.ensureStarted()
+    const access = deps.access()
+    if (!access) return { ok: false, error: pick('远程访问还没有启动', 'Remote access is not started') }
+    try {
+      const result = await access.resetIdentity()
+      return { ok: true, revokedDevices: result.revokedDevices, hostFingerprint: result.hostFingerprint }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
 }

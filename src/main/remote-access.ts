@@ -150,6 +150,8 @@ export class RemoteAccess {
         invite: () => this.relay.invite(),
         stop: () => this.direct.stop()
       },
+      relayClientPaired: (clientId) => this.relay.store.markPaired(clientId).then(() => undefined),
+      relayClientRevoked: (clientId) => this.relay.revoke(clientId).then(() => undefined),
       onLog: this.log
     })
     await server.start()
@@ -168,6 +170,9 @@ export class RemoteAccess {
           devices: this.devices,
           handlers: this.handlers,
           relayToken: this.relayToken,
+          ...(this.peers ? { peers: this.peers } : {}),
+          relayClientPaired: (clientId) => this.relay.store.markPaired(clientId).then(() => undefined),
+          relayClientRevoked: (clientId) => this.relay.revoke(clientId).then(() => undefined),
           onLog: this.log
         })
         await server.start()
@@ -248,22 +253,49 @@ export class RemoteAccess {
   }
 
   async revoke(deviceId: string): Promise<boolean> {
+    const tunnelClientId = (await this.devices.list()).find((device) => device.id === deviceId)?.tunnelClientId
     const revoked = await this.devices.revoke(deviceId)
     if (revoked) {
       this.server?.disconnectDevice(deviceId)
       this.relayServer?.disconnectDevice(deviceId)
+      if (tunnelClientId) await this.relay.revoke(tunnelClientId)
     }
     return revoked
   }
 
-  forget(deviceId: string): Promise<boolean> {
-    return this.devices.forget(deviceId)
+  async forget(deviceId: string): Promise<boolean> {
+    const tunnelClientId = (await this.devices.list()).find((device) => device.id === deviceId)?.tunnelClientId
+    const forgotten = await this.devices.forget(deviceId)
+    if (forgotten && tunnelClientId) {
+      await this.relay.revoke(tunnelClientId)
+      await this.relay.forget(tunnelClientId)
+    }
+    return forgotten
+  }
+
+  hostIdentity(): Promise<string> {
+    return this.relay.identity()
+  }
+
+  async resetIdentity(): Promise<{ revokedDevices: number; hostFingerprint: string }> {
+    let revokedDevices = 0
+    for (const device of await this.devices.list()) {
+      if (device.revokedAt !== null) continue
+      if (await this.devices.revoke(device.id)) revokedDevices += 1
+    }
+    this.peers?.grants.revokeAll()
+    this.server?.disconnectAll()
+    this.relayServer?.disconnectAll()
+    const hostFingerprint = await this.relay.resetIdentity()
+    this.log(pick('已更换本机配对身份：主机密钥已更换，旧连接失效，所有设备需要重新配对', 'Host identity replaced: the host key changed, old connections no longer work and every device must pair again'))
+    return { revokedDevices, hostFingerprint }
   }
 
   async status(): Promise<RemoteAccessStatus> {
     const info = this.server?.info
     return {
       enabled: this.settings.enabled || this.envOverride() !== null,
+      hostFingerprint: await this.relay.identity().catch(() => ''),
       running: !!this.server?.running,
       host: info?.host ?? '',
       port: info?.port ?? this.settings.port,

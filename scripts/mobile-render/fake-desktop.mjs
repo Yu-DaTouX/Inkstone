@@ -8,10 +8,43 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 export async function loadDesktopModules() {
   const built = await build({
-    stdin: { contents: `export { RemoteServer } from './src/main/remote-server'; export { RemoteDeviceStore } from './src/main/remote-devices'`, resolveDir: root, loader: 'ts' },
-    bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent'
+    stdin: {
+      contents: `export { RemoteServer } from './src/main/remote-server'
+export { RemoteDeviceStore } from './src/main/remote-devices'
+export { DirectTunnelEndpoint } from './src/main/relay-bridge/direct'
+export { TunnelSession } from './src/main/relay-bridge/tunnel'
+export { generateKeyPair, toB64u } from './src/main/relay-bridge/crypto'`,
+      resolveDir: root,
+      loader: 'ts'
+    },
+    bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent',
+    banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(process.cwd() + '/index.js');" }
   })
   return import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+}
+
+function createTunnel(mods) {
+  const state = { hostKey: null, target: () => null, pairCodes: new Set(), keys: new Set() }
+  const client = (clientKey, name) => ({ id: `relay-${clientKey.slice(0, 8)}`, key: clientKey, name, kind: 'phone', addedAt: Date.now(), lastSeenAt: Date.now(), revokedAt: null, pairedAt: Date.now(), pendingUntil: null })
+  const direct = new mods.DirectTunnelEndpoint((pipe) => {
+    const session = new mods.TunnelSession(pipe, {
+      hostKey: state.hostKey,
+      authenticate: async (clientKey, name, pair) => {
+        if (pair && state.pairCodes.has(pair)) {
+          state.pairCodes.delete(pair)
+          state.keys.add(clientKey)
+          return { ok: true, client: client(clientKey, name) }
+        }
+        if (state.keys.has(clientKey)) return { ok: true, client: client(clientKey, name) }
+        return { ok: false, reason: '需要配对' }
+      },
+      target: () => state.target(),
+      onOpen: () => undefined,
+      onClose: () => undefined
+    })
+    void session
+  })
+  return { direct, state }
 }
 
 const fail = (status, error) => ({ ok: false, status, error })
@@ -22,7 +55,8 @@ export const defaultSessions = () => [
 ]
 
 export async function startFakeDesktop({ omit = [], tweak } = {}) {
-  const { RemoteServer, RemoteDeviceStore } = await loadDesktopModules()
+  const mods = await loadDesktopModules()
+  const { RemoteServer, RemoteDeviceStore } = mods
   const dir = await mkdtemp(join(tmpdir(), 'yan-mobile-fake-'))
   const devices = new RemoteDeviceStore(dir)
   const calls = []
@@ -103,12 +137,37 @@ export async function startFakeDesktop({ omit = [], tweak } = {}) {
   }
   for (const key of omit) delete handlers[key]
   tweak?.(handlers, state)
-  const server = new RemoteServer({ host: '127.0.0.1', port: 0, devices, handlers })
+  const hostPair = await mods.generateKeyPair()
+  const { direct, state: tunnelState } = createTunnel(mods)
+  tunnelState.hostKey = hostPair
+  let invite = null
+  const server = new RemoteServer({
+    host: '127.0.0.1',
+    port: 0,
+    devices,
+    handlers,
+    tunnel: {
+      upgrade: (req, socket, head) => direct.upgrade(req, socket, head),
+      invite: async () => {
+        if (!invite) {
+          const code = `relay-${Math.random().toString(36).slice(2)}`
+          tunnelState.pairCodes.add(code)
+          invite = { hostKey: mods.toB64u(hostPair.raw), code }
+        }
+        return invite
+      },
+      stop: () => direct.stop()
+    }
+  })
+  tunnelState.target = () => ({ host: '127.0.0.1', port: server.info.port, relayToken: '' })
   const info = await server.start()
   const baseUrl = `http://127.0.0.1:${info.port}`
   return {
     server, devices, state, calls, baseUrl,
-    startPairing: () => devices.startPairing().code,
-    async stop() { await server.stop(); await rm(dir, { recursive: true, force: true }) }
+    startPairing: () => {
+      invite = null
+      return devices.startPairing().code
+    },
+    async stop() { await server.stop(); direct.dispose(); await rm(dir, { recursive: true, force: true }) }
   }
 }

@@ -1,12 +1,10 @@
 import { safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile, copyFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
 import { COLLAB_BUNDLE_MAX_BYTES } from '../shared/collab'
+import { formatHostFingerprint } from '../shared/host-identity'
 import {
   PEER_APPROVAL_TIMEOUT_MS,
   PEER_ARTIFACT_MAX_BYTES,
@@ -21,13 +19,19 @@ import {
 } from '../shared/peer-protocol'
 import { YAN_DIR } from './paths'
 import { sanitizePrRefs } from '../shared/collab-github'
+import { newPeerTunnelKeys, PeerTunnel, tunnelUrlFor, type PeerTunnelKeys } from './peer-tunnel'
+import { fromB64u, sha256 } from './relay-bridge/crypto'
 
 const PEERS_FILE = join(YAN_DIR, 'peers.json')
 const IMPORTS_DIR = join(YAN_DIR, 'peer-imports')
+const PEER_JSON_MAX_BYTES = 16 * 1024 * 1024
+const PEER_EXPORT_MAX_BYTES = 64 * 1024 * 1024
 
 interface StoredPeer extends PeerRecordView {
   deviceId: string
   token: string
+  hostKey?: string
+  keys?: string
 }
 
 interface PeersFile {
@@ -39,7 +43,10 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code
 
 export type PeerDownload<T> = { kind: 'file'; bytes: number } | { kind: 'json'; data: T }
 
-type StreamOpened = { ok: true; data: true } | { ok: false; error: string; ended?: boolean }
+export interface PeerIdentity {
+  computer: string
+  fingerprint: string
+}
 
 export interface PeerTransport {
   call<T>(peerId: string, path: string, init?: { method?: string; body?: unknown; timeoutMs?: number }): Promise<Result<T>>
@@ -47,18 +54,34 @@ export interface PeerTransport {
   upload<T>(peerId: string, path: string, file: string | null): Promise<Result<T>>
 }
 
-function sealToken(token: string): string {
-  if (safeStorage.isEncryptionAvailable()) return `enc:${safeStorage.encryptString(token).toString('base64')}`
-  return `raw:${token}`
+function sealText(text: string): string {
+  if (safeStorage.isEncryptionAvailable()) return `enc:${safeStorage.encryptString(text).toString('base64')}`
+  return `raw:${text}`
 }
 
-function openToken(sealed: string): string | null {
+function openText(sealed: string): string | null {
   try {
     if (sealed.startsWith('enc:')) return safeStorage.decryptString(Buffer.from(sealed.slice(4), 'base64'))
     if (sealed.startsWith('raw:')) return sealed.slice(4)
   } catch {
   }
   return null
+}
+
+function sealKeys(keys: PeerTunnelKeys): string {
+  return sealText(JSON.stringify(keys))
+}
+
+function openKeys(sealed: string | undefined): PeerTunnelKeys | null {
+  if (!sealed) return null
+  const text = openText(sealed)
+  if (!text) return null
+  try {
+    const parsed = JSON.parse(text) as Partial<PeerTunnelKeys>
+    return typeof parsed.publicKey === 'string' && parsed.privateJwk ? { publicKey: parsed.publicKey, privateJwk: parsed.privateJwk } : null
+  } catch {
+    return null
+  }
 }
 
 export function normalizePeerAddress(input: string): string | null {
@@ -83,9 +106,21 @@ const TRANSFER_TIMEOUT_MS = 30 * 60_000
 const RECONNECT_DELAY_MS = 3000
 const RECONNECT_ATTEMPTS = 3
 const PEER_NOTICE_TIMEOUT_MS = 3000
+const PAIR_INVITE_TIMEOUT_MS = 15_000
 
 function connectionEnded(code: string | undefined): boolean {
   return code === 'peer_connection_required' || code === 'unauthorized'
+}
+
+export async function peerHostFingerprint(hostKey: string): Promise<string> {
+  return formatHostFingerprint(await sha256(fromB64u(hostKey)))
+}
+
+interface PairInvite {
+  hostKey: string
+  code: string
+  hostFingerprint: string
+  computer: string
 }
 
 export class PeerClient implements PeerTransport {
@@ -93,9 +128,10 @@ export class PeerClient implements PeerTransport {
   private loading: Promise<StoredPeer[]> | null = null
   private saving: Promise<void> = Promise.resolve()
   private readonly connections = new Map<string, PeerConnectionState>()
-  private readonly streams = new Map<string, AbortController>()
+  private readonly streams = new Map<string, () => void>()
   private readonly reconnects = new Map<string, { timer: ReturnType<typeof setTimeout>; wake: () => void }>()
   private readonly generations = new Map<string, number>()
+  private readonly tunnels = new Map<string, PeerTunnel>()
 
   private load(): Promise<StoredPeer[]> {
     if (this.peers) return Promise.resolve(this.peers)
@@ -162,42 +198,80 @@ export class PeerClient implements PeerTransport {
     this.connections.set(peerId, state)
   }
 
-  async pair(addressInput: string, code: string): Promise<Result<PeerRecordView>> {
+  private async inviteOf(address: string): Promise<Result<PairInvite>> {
+    try {
+      const response = await fetch(`${address}/remote/v1/tunnel/invite`, { signal: AbortSignal.timeout(PAIR_INVITE_TIMEOUT_MS) })
+      if (!response.ok) {
+        return { ok: false, error: 'That desktop did not offer an encrypted channel. Update Inkstone there and generate a pairing code again', code: 'peer-no-tunnel' }
+      }
+      const body = (await response.json()) as { ok?: boolean; hostKey?: unknown; code?: unknown; computer?: { name?: unknown }; hostFingerprint?: unknown }
+      if (!body.ok || typeof body.hostKey !== 'string' || typeof body.code !== 'string') {
+        return { ok: false, error: 'That desktop returned an invalid encrypted channel', code: 'peer-no-tunnel' }
+      }
+      const hostKey = body.hostKey
+      const fingerprint = await peerHostFingerprint(hostKey)
+      if (typeof body.hostFingerprint === 'string' && body.hostFingerprint && body.hostFingerprint !== fingerprint) {
+        return { ok: false, error: 'The identity that desktop reported does not match the key it sent. Someone may be impersonating it; pairing stopped', code: 'peer-identity-mismatch' }
+      }
+      return { ok: true, data: { hostKey, code: body.code, hostFingerprint: fingerprint, computer: String(body.computer?.name ?? address).slice(0, 80) } }
+    } catch (error) {
+      return { ok: false, error: `Could not reach them: ${error instanceof Error ? error.message : String(error)}`, code: 'peer-unreachable' }
+    }
+  }
+
+  async pair(addressInput: string, code: string, confirm: (identity: PeerIdentity) => Promise<boolean>): Promise<Result<PeerRecordView>> {
+    if (typeof confirm !== 'function') {
+      return { ok: false, error: 'Pairing another Inkstone requires confirming the identity fingerprint shown on it', code: 'pair-identity-required' }
+    }
     const address = normalizePeerAddress(addressInput)
     if (!address) {
       return { ok: false, error: 'That address is not in the right format, for example 100.101.102.103:37892', code: 'address-invalid' }
     }
+    const invite = await this.inviteOf(address)
+    if (!invite.ok) return invite
+    const identity: PeerIdentity = { computer: invite.data.computer, fingerprint: invite.data.hostFingerprint }
+    if (!(await confirm(identity))) {
+      return { ok: false, error: 'Pairing was cancelled because the desktop identity was not confirmed', code: 'pair-cancelled' }
+    }
+    const keys = await newPeerTunnelKeys()
+    const tunnel = new PeerTunnel({ url: tunnelUrlFor(address), hostKey: invite.data.hostKey, keys, deviceName: hostname().slice(0, 60), pairingCode: invite.data.code })
     try {
-      const response = await fetch(`${address}/remote/v1/pair`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code: code.trim(), deviceName: hostname(), kind: 'peer' }),
-        signal: AbortSignal.timeout(15_000)
-      })
-      const body = (await response.json()) as { ok?: boolean; error?: string; deviceId?: string; token?: string; computer?: { name?: string } }
-      if (!response.ok || !body.ok || !body.token || !body.deviceId) {
-        return { ok: false, error: body.error ?? `Pairing failed (HTTP ${response.status})`, code: 'pair-failed' }
+      await tunnel.connect()
+      const reply = await tunnel.request('POST', '/remote/v1/pair', { body: { code: code.trim(), deviceName: hostname(), kind: 'peer' }, timeoutMs: 20_000, maxBytes: 64 * 1024 })
+      let body: { ok?: boolean; error?: string; deviceId?: string; token?: string; computer?: { name?: string } } = {}
+      try {
+        body = JSON.parse(reply.text) as typeof body
+      } catch {
+      }
+      if (!body.ok || !body.token || !body.deviceId) {
+        return { ok: false, error: body.error ?? `Pairing failed (HTTP ${reply.status})`, code: 'pair-failed' }
       }
       const peers = await this.load()
       const peer: StoredPeer = {
         id: `peer-${randomUUID()}`,
-        computer: String(body.computer?.name ?? address).slice(0, 80),
+        computer: String(body.computer?.name ?? identity.computer).slice(0, 80),
         address,
         pairedAt: Date.now(),
         deviceId: body.deviceId,
-        token: sealToken(body.token)
+        token: sealText(body.token),
+        hostKey: invite.data.hostKey,
+        keys: sealKeys(keys)
       }
       peers.push(peer)
       await this.save()
+      this.tunnels.set(peer.id, tunnel)
       return { ok: true, data: { id: peer.id, computer: peer.computer, address: peer.address, pairedAt: peer.pairedAt } }
     } catch (error) {
-      return { ok: false, error: `Could not reach them: ${error instanceof Error ? error.message : String(error)}`, code: 'peer-unreachable' }
+      tunnel.close()
+      const message = error instanceof Error ? error.message : String(error)
+      return { ok: false, error: message, code: 'peer-unreachable' }
     }
   }
 
   async remove(peerId: string): Promise<boolean> {
     await this.bestEffort(peerId, '/remote/v1/devices/self/revoke', {})
     this.disconnect(peerId)
+    this.dropTunnel(peerId)
     const peers = await this.load()
     const index = peers.findIndex((peer) => peer.id === peerId)
     if (index < 0) return false
@@ -211,12 +285,8 @@ export class PeerClient implements PeerTransport {
     const auth = await this.credentials(peerId)
     if (!auth) return
     try {
-      await fetch(`${auth.peer.address}${path}`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${auth.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(PEER_NOTICE_TIMEOUT_MS)
-      })
+      const tunnel = await this.tunnelOf(auth.peer)
+      await tunnel.request('POST', path, { headers: { authorization: `Bearer ${auth.token}` }, body, timeoutMs: PEER_NOTICE_TIMEOUT_MS, maxBytes: 64 * 1024 })
     } catch {
     }
   }
@@ -231,11 +301,34 @@ export class PeerClient implements PeerTransport {
 
   private async credentials(peerId: string): Promise<{ peer: StoredPeer; token: string } | null> {
     const peer = (await this.load()).find((item) => item.id === peerId)
-    const token = peer ? openToken(peer.token) : null
+    const token = peer ? openText(peer.token) : null
     return peer && token ? { peer, token } : null
   }
 
-  private async request<T>(peerId: string, path: string, init: { method?: string; body?: unknown; idempotent?: boolean; timeoutMs?: number } = {}): Promise<Result<T>> {
+  private async tunnelOf(peer: StoredPeer): Promise<PeerTunnel> {
+    const existing = this.tunnels.get(peer.id)
+    if (existing?.connected) return existing
+    const keys = openKeys(peer.keys)
+    if (!peer.hostKey || !keys) throw new Error('This computer was paired before encrypted transfer; pair it again')
+    const tunnel = new PeerTunnel({ url: tunnelUrlFor(peer.address), hostKey: peer.hostKey, keys, deviceName: hostname().slice(0, 60) })
+    this.tunnels.set(peer.id, tunnel)
+    try {
+      await tunnel.connect()
+      return tunnel
+    } catch (error) {
+      this.tunnels.delete(peer.id)
+      tunnel.close()
+      throw error
+    }
+  }
+
+  private dropTunnel(peerId: string): void {
+    const tunnel = this.tunnels.get(peerId)
+    this.tunnels.delete(peerId)
+    tunnel?.close()
+  }
+
+  private async request<T>(peerId: string, path: string, init: { method?: string; body?: unknown; idempotent?: boolean; timeoutMs?: number; maxBytes?: number } = {}): Promise<Result<T>> {
     const auth = await this.credentials(peerId)
     if (!auth) return { ok: false, error: 'That computer could not be found or the token expired; pair again', code: 'peer-auth-missing' }
     const connection = this.connections.get(peerId)
@@ -246,16 +339,21 @@ export class PeerClient implements PeerTransport {
     if (idempotencyKey) headers['idempotency-key'] = idempotencyKey
     for (let attempt = 0; ; attempt += 1) {
       try {
-        const response = await fetch(`${auth.peer.address}${path}`, {
-          method: init.method ?? 'GET',
+        const tunnel = await this.tunnelOf(auth.peer)
+        const reply = await tunnel.request(init.method === 'POST' ? 'POST' : 'GET', path, {
           headers,
-          body: init.body === undefined ? undefined : JSON.stringify(init.body),
-          signal: AbortSignal.timeout(init.timeoutMs ?? 30_000)
+          ...(init.body === undefined ? {} : { body: init.body }),
+          timeoutMs: init.timeoutMs ?? 30_000,
+          maxBytes: init.maxBytes ?? PEER_JSON_MAX_BYTES
         })
-        const body = (await response.json()) as { ok?: boolean; data?: T; error?: string; code?: string }
-        if (!response.ok || !body.ok) {
+        let body: { ok?: boolean; data?: T; error?: string; code?: string } = {}
+        try {
+          body = JSON.parse(reply.text) as typeof body
+        } catch {
+        }
+        if (reply.status < 200 || reply.status >= 300 || !body.ok) {
           if (connectionEnded(body.code)) this.dropConnection(peerId, { state: 'ended' }, false)
-          return { ok: false, error: body.error ?? `Request failed (HTTP ${response.status})`, code: body.code ?? 'peer-request-failed' }
+          return { ok: false, error: body.error ?? `Request failed (HTTP ${reply.status})`, code: body.code ?? 'peer-request-failed' }
         }
         return { ok: true, data: body.data as T }
       } catch (error) {
@@ -269,81 +367,73 @@ export class PeerClient implements PeerTransport {
     return this.request<T>(peerId, path, init)
   }
 
-  private async authHeaders(peerId: string): Promise<{ address: string; headers: Record<string, string> } | null> {
-    const auth = await this.credentials(peerId)
-    if (!auth) return null
-    const connection = this.connections.get(peerId)
-    return {
-      address: auth.peer.address,
-      headers: {
-        authorization: `Bearer ${auth.token}`,
-        ...(connection?.state === 'connected' ? { [PEER_CONNECTION_HEADER]: connection.grant.connectionId } : {})
-      }
-    }
-  }
-
-  private async failureOf(peerId: string, response: Response): Promise<{ ok: false; error: string; code?: string }> {
-    const body = (await response.json().catch(() => ({}))) as { error?: string; code?: string }
-    if (connectionEnded(body.code)) {
-      this.dropConnection(peerId, { state: 'ended' })
-      return { ok: false, error: body.error ?? 'They ended this connection', code: body.code }
-    }
-    return { ok: false, error: body.error ?? `Request failed (HTTP ${response.status})`, ...(body.code ? { code: body.code } : {}) }
-  }
-
   async download<T>(peerId: string, path: string, body: unknown, file: string): Promise<Result<PeerDownload<T>>> {
-    const auth = await this.authHeaders(peerId)
+    const auth = await this.credentials(peerId)
     if (!auth) return { ok: false, error: 'That computer could not be found or the token expired; pair again', code: 'peer-auth-missing' }
+    const connection = this.connections.get(peerId)
+    const headers: Record<string, string> = { authorization: `Bearer ${auth.token}` }
+    if (connection?.state === 'connected') headers[PEER_CONNECTION_HEADER] = connection.grant.connectionId
     try {
-      const response = await fetch(`${auth.address}${path}`, {
-        method: 'POST',
-        headers: { ...auth.headers, 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS)
-      })
-      if (!response.ok) return this.failureOf(peerId, response)
-      if ((response.headers.get('content-type') ?? '').includes('application/json')) {
-        const parsed = (await response.json()) as { ok?: boolean; data?: T; error?: string }
+      const tunnel = await this.tunnelOf(auth.peer)
+      const reply = await tunnel.download(path, body, file, COLLAB_BUNDLE_MAX_BYTES, TRANSFER_TIMEOUT_MS, headers)
+      if (reply.status < 200 || reply.status >= 300) {
+        const parsed = ((): { ok?: boolean; error?: string; code?: string } => {
+          try {
+            return JSON.parse(reply.text) as { error?: string; code?: string }
+          } catch {
+            return {}
+          }
+        })()
+        if (connectionEnded(parsed.code)) this.dropConnection(peerId, { state: 'ended' })
+        return { ok: false, error: parsed.error ?? `Request failed (HTTP ${reply.status})`, ...(parsed.code ? { code: parsed.code } : {}) }
+      }
+      if ((reply.headers['content-type'] ?? '').includes('application/json')) {
+        const parsed = ((): { ok?: boolean; data?: T; error?: string } => {
+          try {
+            return JSON.parse(reply.text) as { ok?: boolean; data?: T; error?: string }
+          } catch {
+            return {}
+          }
+        })()
         return parsed.ok
           ? { ok: true, data: { kind: 'json', data: parsed.data as T } }
           : { ok: false, error: parsed.error ?? 'They returned a failure', code: 'peer-request-failed' }
       }
-      const declared = Number(response.headers.get('content-length') ?? NaN)
-      if (Number.isFinite(declared) && declared > COLLAB_BUNDLE_MAX_BYTES) {
+      const info = await stat(file).catch(() => null)
+      const bytes = info?.size ?? reply.bytes
+      if (bytes > COLLAB_BUNDLE_MAX_BYTES) {
+        await rm(file, { force: true }).catch(() => undefined)
         return { ok: false, error: 'The code bundle is over the size limit', code: 'bundle-too-large' }
       }
-      if (!response.body) return { ok: false, error: 'They did not return a code bundle', code: 'bundle-not-returned' }
-      await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), createWriteStream(file))
-      const info = await stat(file)
-      if (info.size > COLLAB_BUNDLE_MAX_BYTES) {
-        return { ok: false, error: 'The code bundle is over the size limit', code: 'bundle-too-large' }
-      }
-      return { ok: true, data: { kind: 'file', bytes: info.size } }
+      return { ok: true, data: { kind: 'file', bytes } }
     } catch (error) {
-      return { ok: false, error: `Download failed: ${error instanceof Error ? error.message : String(error)}`, code: 'download-failed' }
+      await rm(file, { force: true }).catch(() => undefined)
+      const code = (error as { code?: string }).code
+      return { ok: false, error: `Download failed: ${error instanceof Error ? error.message : String(error)}`, ...(code ? { code } : {}) }
     }
   }
 
   async upload<T>(peerId: string, path: string, file: string | null): Promise<Result<T>> {
-    const auth = await this.authHeaders(peerId)
+    const auth = await this.credentials(peerId)
     if (!auth) return { ok: false, error: 'That computer could not be found or the token expired; pair again', code: 'peer-auth-missing' }
+    const connection = this.connections.get(peerId)
+    const headers: Record<string, string> = { authorization: `Bearer ${auth.token}`, 'content-type': 'application/octet-stream' }
+    if (connection?.state === 'connected') headers[PEER_CONNECTION_HEADER] = connection.grant.connectionId
     try {
-      const size = file ? (await stat(file)).size : 0
-      const init: RequestInit & { duplex?: 'half' } = {
-        method: 'POST',
-        headers: { ...auth.headers, 'content-type': 'application/octet-stream', 'content-length': String(size) },
-        signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS)
+      const tunnel = await this.tunnelOf(auth.peer)
+      const reply = file
+        ? await tunnel.upload(path, file, headers)
+        : await tunnel.request('POST', path, { headers, timeoutMs: TRANSFER_TIMEOUT_MS, maxBytes: 64 * 1024 })
+      let parsed: { ok?: boolean; data?: T; error?: string; code?: string } = {}
+      try {
+        parsed = JSON.parse(reply.text) as typeof parsed
+      } catch {
       }
-      if (file) {
-        init.body = Readable.toWeb(createReadStream(file)) as unknown as NonNullable<RequestInit['body']>
-        init.duplex = 'half'
+      if (reply.status < 200 || reply.status >= 300 || !parsed.ok) {
+        if (connectionEnded(parsed.code)) this.dropConnection(peerId, { state: 'ended' })
+        return { ok: false, error: parsed.error ?? `Request failed (HTTP ${reply.status})`, code: parsed.code ?? 'peer-request-failed' }
       }
-      const response = await fetch(`${auth.address}${path}`, init)
-      if (!response.ok) return this.failureOf(peerId, response)
-      const parsed = (await response.json()) as { ok?: boolean; data?: T; error?: string }
-      return parsed.ok
-        ? { ok: true, data: parsed.data as T }
-        : { ok: false, error: parsed.error ?? 'They returned a failure', code: 'peer-request-failed' }
+      return { ok: true, data: parsed.data as T }
     } catch (error) {
       return { ok: false, error: `Upload failed: ${error instanceof Error ? error.message : String(error)}`, code: 'upload-failed' }
     }
@@ -373,44 +463,50 @@ export class PeerClient implements PeerTransport {
     return { ok: true, data: grant }
   }
 
-  private async openStream(peerId: string, grant: PeerGrantView, attempt = 0, generation = this.generation(peerId)): Promise<StreamOpened> {
+  private async openStream(peerId: string, grant: PeerGrantView, attempt = 0, generation = this.generation(peerId)): Promise<{ ok: true } | { ok: false; error: string; ended?: boolean }> {
     const auth = await this.credentials(peerId)
     if (!auth) return { ok: false, error: 'The token expired; pair again' }
-    const controller = new AbortController()
-    this.streams.set(peerId, controller)
+    let tunnel: PeerTunnel
     try {
-      const response = await fetch(`${auth.peer.address}/remote/v1/peer/events`, {
-        headers: { authorization: `Bearer ${auth.token}`, [PEER_CONNECTION_HEADER]: grant.connectionId, accept: 'text/event-stream' },
-        signal: controller.signal
-      })
-      if (!response.ok) {
-        this.streams.delete(peerId)
-        const body = (await response.json().catch(() => ({}))) as { code?: string; error?: string }
-        if (connectionEnded(body.code)) return { ok: false, error: body.error ?? 'They ended this connection', ended: true }
-        return { ok: false, error: body.error ?? `They refused the event stream (HTTP ${response.status})` }
-      }
-      if (!response.body) {
-        this.streams.delete(peerId)
-        return { ok: false, error: 'They did not return an event stream' }
-      }
-      const reader = response.body.getReader()
-      void (async () => {
-        try {
-          for (;;) {
-            const { done } = await reader.read()
-            if (done) break
-          }
-        } catch {
-        }
-        if (this.streams.get(peerId) !== controller) return
-        if (controller.signal.aborted) return this.dropConnection(peerId, { state: 'idle' }, false)
-        await this.retryStream(peerId, grant, attempt + 1, generation)
-      })()
-      return { ok: true, data: true }
+      tunnel = await this.tunnelOf(auth.peer)
     } catch (error) {
-      this.streams.delete(peerId)
       return { ok: false, error: `Could not open the event stream: ${error instanceof Error ? error.message : String(error)}` }
     }
+    let ended = false
+    let stop: (() => void) | null = null
+    const opened = await tunnel.openStream('/remote/v1/peer/events', {
+      authorization: `Bearer ${auth.token}`,
+      [PEER_CONNECTION_HEADER]: grant.connectionId,
+      accept: 'text/event-stream'
+    }, (error) => {
+      if (stop && this.streams.get(peerId) !== stop) return
+      this.streams.delete(peerId)
+      if (ended) return
+      if (!error) {
+        if (generation !== this.generation(peerId)) return
+        void this.retryStream(peerId, grant, attempt + 1, generation)
+        return
+      }
+      const code = (error as { code?: string }).code
+      if (code === 'tunnel-denied' || /connection|approval|expired/i.test(error.message)) {
+        ended = true
+        return this.dropConnection(peerId, { state: 'ended' }, false)
+      }
+      if (generation !== this.generation(peerId)) return
+      void this.retryStream(peerId, grant, attempt + 1, generation)
+    })
+    if (!opened.ok) {
+      let code: string | undefined
+      try {
+        code = (JSON.parse(opened.text) as { code?: string }).code
+      } catch {
+      }
+      if (connectionEnded(code)) return { ok: false, error: 'They ended this connection', ended: true }
+      return { ok: false, error: `They refused the event stream (HTTP ${opened.status})` }
+    }
+    stop = opened.stop
+    this.streams.set(peerId, opened.stop)
+    return { ok: true }
   }
 
   private async retryStream(peerId: string, grant: PeerGrantView, attempt: number, generation: number): Promise<void> {
@@ -451,12 +547,17 @@ export class PeerClient implements PeerTransport {
   }
 
   private dropConnection(peerId: string, state: PeerConnectionState = { state: 'idle' }, abort = true): void {
-    const controller = this.streams.get(peerId)
+    const stop = this.streams.get(peerId)
     this.streams.delete(peerId)
-    if (abort) controller?.abort()
+    if (abort) stop?.()
     this.cancelReconnect(peerId)
     this.generations.set(peerId, this.generation(peerId) + 1)
     this.setState(peerId, state)
+  }
+
+  closeAll(): void {
+    for (const peerId of [...this.streams.keys()]) this.dropConnection(peerId, { state: 'idle' }, true)
+    for (const peerId of [...this.tunnels.keys()]) this.dropTunnel(peerId)
   }
 
   disconnect(peerId: string): void {
@@ -469,7 +570,7 @@ export class PeerClient implements PeerTransport {
 
   history(peerId: string, sessionId: string, before?: string): Promise<Result<unknown>> {
     const query = new URLSearchParams({ limit: '50', ...(before ? { before } : {}) })
-    return this.request(peerId, `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}?${query}`)
+    return this.request(peerId, `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}?${query}`, { maxBytes: PEER_EXPORT_MAX_BYTES })
   }
 
   send(peerId: string, sessionId: string, text: string): Promise<Result<unknown>> {
@@ -488,7 +589,7 @@ export class PeerClient implements PeerTransport {
     const exportPath = via === 'collab'
       ? `/remote/v1/peer/collab/sessions/${encodeURIComponent(sessionId)}/export`
       : `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}/export`
-    const exported = await this.request<PeerSessionExport>(peerId, exportPath, { timeoutMs: 60_000 })
+    const exported = await this.request<PeerSessionExport>(peerId, exportPath, { timeoutMs: 60_000, maxBytes: PEER_EXPORT_MAX_BYTES })
     if (!exported.ok) return exported
     const pack = exported.data
     if (pack?.version !== 1 || !pack.source || !Array.isArray(pack.messages)) {
@@ -512,16 +613,17 @@ export class PeerClient implements PeerTransport {
         continue
       }
       try {
-        const response = await fetch(`${auth.peer.address}/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifact.id)}`, {
+        const tunnel = await this.tunnelOf(auth.peer)
+        const reply = await tunnel.request('GET', `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifact.id)}`, {
           headers: {
             authorization: `Bearer ${auth.token}`,
             ...(connection?.state === 'connected' ? { [PEER_CONNECTION_HEADER]: connection.grant.connectionId } : {})
           },
-          signal: AbortSignal.timeout(60_000)
+          timeoutMs: 60_000,
+          maxBytes: PEER_ARTIFACT_MAX_BYTES
         })
-        const bytes = response.ok ? Buffer.from(await response.arrayBuffer()) : null
-        if (!bytes || bytes.byteLength > PEER_ARTIFACT_MAX_BYTES) throw new Error('unavailable')
-        await writeFile(join(artifactDir, `${safeFileName(artifact.id)}-${safeFileName(artifact.filename)}`), bytes)
+        if (reply.status < 200 || reply.status >= 300 || reply.bytes > PEER_ARTIFACT_MAX_BYTES) throw new Error('unavailable')
+        await writeFile(join(artifactDir, `${safeFileName(artifact.id)}-${safeFileName(artifact.filename)}`), reply.body)
         artifacts.push({ id: artifact.id, filename: artifact.filename, status: 'copied' })
       } catch {
         artifacts.push({ id: artifact.id, filename: artifact.filename, status: 'missing' })

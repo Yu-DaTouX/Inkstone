@@ -61,6 +61,7 @@ export type RemoteBindMode = 'tailscale' | 'radmin' | 'loopback'
 
 export interface RemoteAccessStatus {
   enabled: boolean
+  hostFingerprint?: string
   running: boolean
   host: string
   port: number
@@ -80,7 +81,7 @@ export interface RemoteRelaySettings {
 export interface RemoteRelayClient {
   id: string
   name: string
-  kind: 'phone' | 'agent'
+  kind: 'phone' | 'peer' | 'agent'
   addedAt: number
   lastSeenAt: number | null
   revokedAt: number | null

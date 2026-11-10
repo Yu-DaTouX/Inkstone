@@ -1,6 +1,7 @@
 import { pick } from '../../shared/ui-lang'
 import { hostname } from 'node:os'
-import { toB64u, type KeyPair } from './crypto'
+import { formatHostFingerprint } from '../../shared/host-identity'
+import { sha256, toB64u, type KeyPair } from './crypto'
 import { RelayLink, relayWsBase, type WsCtor } from './link'
 import { RelayBridgeStore, roomIdFor, type RelayClient, type RelayClientKind } from './store'
 import { TunnelSession, type Pipe, type TunnelTarget } from './tunnel'
@@ -36,8 +37,32 @@ export class RelayBridge {
   private readonly relaySessions = new WeakSet<TunnelSession>()
   private key: KeyPair | null = null
 
+  private readonly expirer: ReturnType<typeof setInterval>
+
   constructor(dataDir: string, private readonly opts: RelayBridgeOptions) {
     this.store = new RelayBridgeStore(dataDir)
+    this.expirer = setInterval(() => void this.sweepExpiredIdentities(), 60_000)
+    this.expirer.unref?.()
+  }
+
+  async sweepExpiredIdentities(): Promise<void> {
+    let expired: Set<string>
+    try {
+      expired = new Set(await this.store.expireUnpaired())
+    } catch {
+      return
+    }
+    let closed = 0
+    for (const session of [...this.sessions]) {
+      const id = session.client?.id
+      if (!id) continue
+      let alive = expired.has(id)
+      if (!alive) alive = await this.store.isActive(id).catch(() => false)
+      if (alive) continue
+      session.close()
+      closed += 1
+    }
+    if (closed) this.opts.log?.(pick('未完成配对或已失效的隧道身份已断开', 'Tunnel identities that never finished pairing or are no longer valid were disconnected'))
   }
 
   async apply(settings: RelayBridgeSettings | undefined): Promise<void> {
@@ -70,7 +95,7 @@ export class RelayBridge {
   private open(pipe: Pipe, hostKey: KeyPair, viaRelay: boolean): void {
     const session = new TunnelSession(pipe, {
       hostKey,
-      authenticate: (key, name, pair) => this.store.authenticate(key, name, pair),
+      authenticate: (key, name, pair, kind) => this.store.authenticate(key, name, pair, kind),
       target: () => this.opts.target(),
       onOpen: (s) => this.sessions.add(s),
       onClose: (s) => this.sessions.delete(s),
@@ -91,9 +116,26 @@ export class RelayBridge {
     this.open(pipe, this.key, false)
   }
 
-  async invite(): Promise<{ hostKey: string; code: string }> {
+  async invite(kind: RelayClientKind | 'any' = 'any'): Promise<{ hostKey: string; code: string; hostFingerprint: string }> {
     const hostKey = await this.store.hostKey()
-    return { hostKey: toB64u(hostKey.raw), code: this.store.startPairing('phone').code }
+    return { hostKey: toB64u(hostKey.raw), code: this.store.startPairing(kind).code, hostFingerprint: await this.identity() }
+  }
+
+  async identity(): Promise<string> {
+    return formatHostFingerprint(await sha256((await this.store.hostKey()).raw))
+  }
+
+  async resetIdentity(): Promise<string> {
+    const wasEnabled = this.settings.enabled && !!this.settings.url
+    this.stopLink()
+    for (const s of [...this.sessions]) s.close()
+    this.sessions.clear()
+    await this.store.resetIdentity()
+    this.key = null
+    if (wasEnabled) await this.apply(this.settings)
+    else await this.prepare()
+    this.opts.log?.(pick('已更换主机身份，旧连接与旧配对全部失效', 'Host identity replaced; old connections and pairings no longer work'))
+    return this.identity()
   }
 
   private stopLink(): void {
@@ -108,6 +150,7 @@ export class RelayBridge {
   }
 
   stop(): void {
+    clearInterval(this.expirer)
     this.stopLink()
   }
 
@@ -138,7 +181,8 @@ export class RelayBridge {
       c: relay.code,
       ...(viaRelay ? { r: `${relayWsBase(this.settings.url)}/v1/join/${room}` } : {}),
       ...(direct.length ? { d: direct } : {}),
-      y: yan.code
+      y: yan.code,
+      f: await this.identity()
     }
     return { link: `yan://relay#p=${Buffer.from(JSON.stringify(payload)).toString('base64url')}`, expiresAt: Math.min(relay.expiresAt, yan.expiresAt) }
   }
@@ -149,6 +193,10 @@ export class RelayBridge {
     } finally {
       for (const s of this.sessions) if (s.client?.id === id) s.close()
     }
+  }
+
+  async reviveWithCode(id: string): Promise<boolean> {
+    return this.store.forget(id)
   }
 
   forget(id: string): Promise<boolean> {

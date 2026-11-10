@@ -9,7 +9,9 @@ import type {
 } from '../../../src/shared/remote-protocol'
 import type { RemoteImageInput, RemoteInsight, RemoteModel, RemoteDeviceSummary } from '../../../src/shared/remote-protocol'
 import { HistoryCache } from '../historyCache'
-import { bytesToUtf8, directTunnelUrl, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
+import { bytesToUtf8, directTunnelUrl, fromB64u, newClientKey, RelayError, RelayTunnel, type RelayConfig, type RelayPairing } from './relay'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { formatHostFingerprint } from '../../../src/shared/host-identity'
 
 export interface Connection {
   baseUrl: string
@@ -18,6 +20,16 @@ export interface Connection {
   deviceId: string
   computerName?: string
   deviceName?: string
+  clientKey?: string
+}
+
+export interface HostIdentity {
+  computer: string
+  fingerprint: string
+}
+
+export function hostFingerprint(hostKey: string): string {
+  return formatHostFingerprint(sha256(fromB64u(hostKey)))
 }
 
 export class RemoteHttpError extends Error {
@@ -118,7 +130,7 @@ export async function pairViaRelay(pairing: RelayPairing, deviceName: string): P
   const target = { baseUrl: `relay://${pairing.computerName}`, relay }
   try {
     const result = await request<RemotePairResponse>(target, '/remote/v1/pair', { method: 'POST', body: { code: pairing.code, deviceName } })
-    return { ...target, token: result.token, deviceId: result.deviceId, computerName: result.computer?.name ?? pairing.computerName, deviceName: result.device?.name ?? deviceName }
+    return { ...target, token: result.token, deviceId: result.deviceId, computerName: result.computer?.name ?? pairing.computerName, deviceName: result.device?.name ?? deviceName, clientKey: relay.clientKey }
   } catch (error) {
     tunnel.close()
     throw error
@@ -130,6 +142,25 @@ interface TunnelInvite {
   code: string
   path: string
   computer?: { name?: string }
+  hostFingerprint?: string
+}
+
+export async function manualPairInvite(baseUrl: string): Promise<{ invite: TunnelInvite; identity: HostIdentity; code: string } | { error: RemoteHttpError }> {
+  try {
+    const invite = await request<TunnelInvite>(baseUrl, '/remote/v1/tunnel/invite')
+    if (typeof invite.hostKey !== 'string' || typeof invite.code !== 'string') {
+      return { error: new RemoteHttpError(0, pick('电脑返回的加密通道信息不对', 'Invalid encrypted channel details from the desktop'), 'tunnel_invalid') }
+    }
+    const fingerprint = hostFingerprint(invite.hostKey)
+    if (typeof invite.hostFingerprint === 'string' && invite.hostFingerprint && invite.hostFingerprint !== fingerprint) {
+      return { error: new RemoteHttpError(0, pick('电脑报出的身份指纹和它给出的公钥不一致，可能有人在中间冒充这台电脑；已停止配对。', 'The identity the desktop reported does not match the key it sent. Someone may be impersonating it; pairing stopped.'), 'host_identity_mismatch') }
+    }
+    const identity = { computer: invite.computer?.name?.slice(0, 60) || baseUrl.replace(/^https?:\/\//, ''), fingerprint }
+    return { invite, identity, code: invite.code }
+  } catch (error) {
+    if (error instanceof RemoteHttpError) return { error }
+    throw error
+  }
 }
 
 function tunnelPairing(baseUrl: string, invite: TunnelInvite, code: string): RelayPairing {
@@ -138,19 +169,19 @@ function tunnelPairing(baseUrl: string, invite: TunnelInvite, code: string): Rel
   return { direct: [direct], hostKey: invite.hostKey, relayCode: invite.code, code, computerName: invite.computer?.name?.slice(0, 60) || baseUrl.replace(/^https?:\/\//, '') }
 }
 
-export async function pair(baseUrl: string, code: string, deviceName: string): Promise<Connection> {
-  let invite: TunnelInvite | null = null
-  try {
-    invite = await request<TunnelInvite>(baseUrl, '/remote/v1/tunnel/invite')
-  } catch (error) {
-    if (!(error instanceof RemoteHttpError) || (error.status !== 401 && error.status !== 404)) throw error
+export async function pair(baseUrl: string, code: string, deviceName: string, confirm: (identity: HostIdentity) => Promise<boolean>): Promise<Connection> {
+  if (typeof confirm !== 'function') {
+    throw new RemoteHttpError(0, pick('手动输入地址配对前必须核对电脑上显示的身份指纹。', 'Pairing by address requires confirming the identity fingerprint shown on the desktop.'), 'identity_confirm_required')
   }
-  if (invite) return pairViaRelay(tunnelPairing(baseUrl, invite, code), deviceName)
-  const result = await request<RemotePairResponse>(baseUrl, '/remote/v1/pair', {
-    method: 'POST',
-    body: { code, deviceName }
-  })
-  return { baseUrl, token: result.token, deviceId: result.deviceId, computerName: result.computer?.name, deviceName: result.device?.name ?? deviceName }
+  const preflight = await manualPairInvite(baseUrl)
+  if ('error' in preflight) {
+    const error = preflight.error
+    if (error.status === 404) throw new RemoteHttpError(404, pick('这台电脑的砚版本太旧，还没有加密配对通道；请先在电脑上更新砚。', 'That desktop runs an older Inkstone without the encrypted pairing channel. Update Inkstone on it first.'), 'tunnel_required')
+    if (error.status === 401 || error.status === 403) throw new RemoteHttpError(error.status, pick('电脑上没有正在进行的配对，请先在电脑「设置 → 设备连接」生成配对码。', 'No pairing is in progress on the desktop. Generate a code in Settings → Device connection first.'), 'no_pairing')
+    throw error
+  }
+  if (!(await confirm(preflight.identity))) throw new RemoteHttpError(0, pick('已取消：没有确认电脑身份', 'Cancelled: the desktop identity was not confirmed'), 'identity_not_confirmed')
+  return pairViaRelay(tunnelPairing(baseUrl, preflight.invite, code), deviceName)
 }
 
 export async function secureConnection(connection: Connection): Promise<Connection | null> {
@@ -167,7 +198,8 @@ export async function secureConnection(connection: Connection): Promise<Connecti
   } catch {
     return null
   }
-  const relay: RelayConfig = { direct: pairing.direct, hostKey: pairing.hostKey, clientKey: newClientKey() }
+  const clientKey = connection.clientKey ?? newClientKey()
+  const relay: RelayConfig = { direct: pairing.direct, hostKey: pairing.hostKey, clientKey }
   const tunnel = RelayTunnel.for(relay, connection.deviceName)
   try {
     await tunnel.connect(pairing.relayCode)
@@ -175,7 +207,7 @@ export async function secureConnection(connection: Connection): Promise<Connecti
     tunnel.close()
     return null
   }
-  return { ...connection, baseUrl: `relay://${connection.computerName || pairing.computerName}`, relay }
+  return { ...connection, baseUrl: `relay://${connection.computerName || pairing.computerName}`, relay, clientKey }
 }
 
 export interface SessionListItem {
