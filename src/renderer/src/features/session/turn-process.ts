@@ -5,6 +5,7 @@ import { callPath, collectTurnChanges, isInsideCwd, readFileDiff, readPiDiff, ty
 import { isHistoryQuestionCall } from './question-receipt'
 import { searchStepOf } from './web-search/model'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
+import { messageIndex } from './message-index'
 
 const LIVE_SEGMENTS = 3
 
@@ -491,13 +492,27 @@ export interface TurnRunPlace {
 }
 
 const OWN_RUN: TurnRunPlace = { continues: false, startedAt: null, runFirstId: null }
+const runPlaces = new WeakMap<readonly RunMessage[], WeakMap<readonly string[], TurnRunPlace>>()
 
 export function turnRunPlace(messages: readonly RunMessage[], sourceIds: readonly string[]): TurnRunPlace {
-  const first = sourceIds.length ? messages.findIndex((message) => message.id === sourceIds[0]) : -1
+  if (!sourceIds.length) return OWN_RUN
+  let bySource = runPlaces.get(messages)
+  const cached = bySource?.get(sourceIds)
+  if (cached) return cached
+  const place = computeTurnRunPlace(messages, sourceIds)
+  if (!bySource) {
+    bySource = new WeakMap<readonly string[], TurnRunPlace>()
+    runPlaces.set(messages, bySource)
+  }
+  bySource.set(sourceIds, place)
+  return place
+}
+
+function computeTurnRunPlace(messages: readonly RunMessage[], sourceIds: readonly string[]): TurnRunPlace {
+  const first = messageIndex(messages).pos.get(sourceIds[0]) ?? -1
   if (first < 0) return OWN_RUN
   const lastId = sourceIds[sourceIds.length - 1]
-  let last = first
-  while (last < messages.length - 1 && messages[last].id !== lastId) last += 1
+  const last = messageIndex(messages).pos.get(lastId) ?? messages.length - 1
   let continues = false
   for (let i = last + 1; i < messages.length; i += 1) {
     if (messages[i].role !== 'user') continue
@@ -521,35 +536,42 @@ export function turnRunPlace(messages: readonly RunMessage[], sourceIds: readonl
 
 export function runMessagesFrom(messages: readonly UIMessage[], runFirstId: string | null, sourceIds: readonly string[]): UIMessage[] | null {
   if (!runFirstId) return null
-  const from = messages.findIndex((message) => message.id === runFirstId)
+  const index = messageIndex(messages)
+  const from = index.pos.get(runFirstId) ?? -1
   const lastId = sourceIds[sourceIds.length - 1]
-  if (from < 0 || !lastId) return null
+  const to = lastId ? index.pos.get(lastId) : undefined
+  if (from < 0 || to === undefined) return null
   const run: UIMessage[] = []
-  for (let i = from; i < messages.length; i += 1) {
+  for (let i = from; i <= to; i += 1) {
     if (messages[i].role === 'assistant') run.push(messages[i])
-    if (messages[i].id === lastId) return run
   }
-  return null
+  return run
 }
 
 export function segmentSpanMs(messages: readonly RunMessage[], sourceIds: readonly string[], startedAt: number): number | undefined {
-  const ids = new Set(sourceIds)
-  const own = messages.filter((message) => ids.has(message.id))
+  const index = messageIndex(messages)
+  const positions = sourceIds
+    .map((id) => index.pos.get(id))
+    .filter((pos): pos is number => pos !== undefined)
+    .sort((a, b) => a - b)
+  const own = positions.map((pos) => messages[pos])
   const end = activityEnd(own, 0, own.length)
   return end > startedAt ? end - startedAt : undefined
 }
 
 export function turnSpanMs(messages: readonly RunMessage[], sourceIds: readonly string[], tools: readonly Pick<UIToolCall, 'endedAt'>[]): number | undefined {
-  const first = sourceIds.length ? messages.findIndex((message) => message.id === sourceIds[0]) : -1
+  const index = messageIndex(messages)
+  const first = sourceIds.length ? index.pos.get(sourceIds[0]) ?? -1 : -1
   if (first < 0) return undefined
   const userIndex = previousUserIndex(messages, first)
   const start = userIndex >= 0 ? joinedRunAt(messages, userIndex) ?? messages[userIndex].timestamp : undefined
   if (!start) return undefined
-  const ids = new Set(sourceIds)
   let end = 0
-  for (let i = first; i < messages.length; i += 1) {
-    const stamp = messages[i].timestamp
-    if (stamp && ids.has(messages[i].id)) end = Math.max(end, stamp)
+  for (const id of sourceIds) {
+    const pos = index.pos.get(id)
+    if (pos === undefined) continue
+    const stamp = messages[pos].timestamp
+    if (stamp) end = Math.max(end, stamp)
   }
   for (const call of tools) if (call.endedAt) end = Math.max(end, call.endedAt)
   return end > start ? end - start : undefined

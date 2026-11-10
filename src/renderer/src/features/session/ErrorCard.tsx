@@ -123,7 +123,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
       return
     }
     if (action === 'wait') {
-      void armQuotaResume()
+      void armQuotaResume(windowFull)
       return
     }
     void compact()

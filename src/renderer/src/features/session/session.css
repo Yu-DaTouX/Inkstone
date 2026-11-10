@@ -278,7 +278,7 @@
   .ask-dock { position: relative; }
   .ask-dock-leave { flex: none; overflow: hidden; transition: height var(--dur-base) var(--ease); }
   .ask-dock-edge { position: absolute; top: 0; left: var(--s-20); right: var(--s-20); height: 2px; border-radius: var(--r-full); background: var(--ask); }
-  .ask-dock-list { display: flex; flex-direction: column; gap: var(--s-8); max-height: min(45vh, 28rem); overflow-y: auto; padding: var(--s-2) var(--s-2) 0; font-size: var(--t-body); line-height: var(--t-body-lh); }
+  .ask-dock-list { display: flex; flex-direction: column; gap: var(--s-8); max-height: min(45vh, 28rem); overflow-y: auto; padding: var(--s-2) var(--s-2) var(--s-8); scrollbar-width: thin; scrollbar-color: var(--line2) transparent; scroll-padding-block-end: var(--s-8); font-size: var(--t-body); line-height: var(--t-body-lh); }
   .ask-dock-list > * { flex-shrink: 0; }
   .ask-dock-list > .ui-card { border-color: transparent; background: transparent; box-shadow: none; }
   .ask-dock-list .ui-card__head { flex-wrap: wrap; row-gap: var(--s-4); }

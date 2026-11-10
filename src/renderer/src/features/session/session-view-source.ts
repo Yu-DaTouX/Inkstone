@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { UIMessage } from '../../../../shared/ipc'
+import type { QuestionLogEntry, UIMessage } from '../../../../shared/ipc'
+import type { ApprovalReceipt } from '../../../../shared/approval'
 import { useStore, type Store } from '../../state/store'
+import { viewingSessionId } from '../../state/push-routing'
 import { displayedSessionOf, sameSplitSession, type SplitSessionRef } from '../../state/split-view'
 import { newestMessages } from '../../state/split-snapshots'
 import { sameComposerView, type ComposerSubmitIdentity } from '../../state/composer-recovery'
@@ -17,17 +19,18 @@ export type SessionViewData = Pick<
   Store,
   | 'messages'
   | 'session'
-  | 'questionLog'
-  | 'questionLogSession'
-  | 'approvalLog'
-  | 'approvalLogSession'
   | 'runTail'
   | 'peekedSessionId'
   | 'peekedPath'
   | 'settings'
   | 'switchLoading'
   | 'submittingMessages'
->
+> & {
+  questionLog: QuestionLogEntry[]
+  questionLogSession: string | null
+  approvalLog: ApprovalReceipt[]
+  approvalLogSession: string | null
+}
 
 export interface SessionViewSource extends SessionViewData {
   readOnly: boolean
@@ -40,8 +43,8 @@ export interface SessionViewSource extends SessionViewData {
 }
 
 const NO_MESSAGES: UIMessage[] = []
-const NO_QUESTION_LOG: Store['questionLog'] = []
-const NO_APPROVAL_LOG: Store['approvalLog'] = []
+const NO_QUESTION_LOG: QuestionLogEntry[] = []
+const NO_APPROVAL_LOG: ApprovalReceipt[] = []
 const ownsStoreSubmission = (identity: ComposerSubmitIdentity): boolean => sameComposerView(useStore.getState(), identity)
 
 const paneKey = (target: SplitSessionRef): string => target.path ?? target.sessionId ?? ''
@@ -76,10 +79,11 @@ export function useSessionViewSource(pane?: SessionPaneBinding): SessionViewSour
 
   const messages = useStore((s) => (fromStore ? s.messages : NO_MESSAGES))
   const session = useStore((s) => (fromStore ? s.session : null))
-  const questionLog = useStore((s) => (fromStore ? s.questionLog : NO_QUESTION_LOG))
-  const questionLogSession = useStore((s) => (fromStore ? s.questionLogSession : null))
-  const approvalLog = useStore((s) => (fromStore ? s.approvalLog : NO_APPROVAL_LOG))
-  const approvalLogSession = useStore((s) => (fromStore ? s.approvalLogSession : null))
+  const loggedSession = useStore((s) => (fromStore ? viewingSessionId(s) ?? null : null))
+  const questionLog = useStore((s) => (loggedSession ? s.questionLogs[loggedSession] ?? NO_QUESTION_LOG : NO_QUESTION_LOG))
+  const questionLogSession = loggedSession
+  const approvalLog = useStore((s) => (loggedSession ? s.approvalLogs[loggedSession] ?? NO_APPROVAL_LOG : NO_APPROVAL_LOG))
+  const approvalLogSession = loggedSession
   const runTail = useStore((s) => (fromStore ? s.runTail : null))
   const peekedSessionId = useStore((s) => (fromStore ? s.peekedSessionId : null))
   const peekedPath = useStore((s) => (fromStore ? s.peekedPath : null))

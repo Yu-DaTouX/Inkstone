@@ -149,7 +149,7 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
             : outgoing
           if (question.form?.length) {
             if (!answerComposerForm(question.id, answer)) return
-          } else useStore.getState().answerUi({ id: question.id, value: answer })
+          } else if (!(await useStore.getState().answerUi({ id: question.id, value: answer }))) return
           portsRef.current.clearText()
           useStore.getState().dropSentAttachments(sentIds, sentFrom ? [sentFrom] : [])
           cleared = true

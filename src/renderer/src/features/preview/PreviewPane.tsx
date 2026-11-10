@@ -44,6 +44,18 @@ import { HtmlCanvas } from './HtmlCanvas'
 import { MediaView } from './MediaView'
 import { SvgView } from './SvgView'
 import { reportUnsavedEditor } from '../editor/unsaved-registry'
+import {
+  EMPTY_PREVIEW_DRAFTS,
+  draftIsDirty,
+  dropCleanDrafts,
+  dropDraft,
+  failedDraft,
+  loadedDraft,
+  patchDraft,
+  putDraft,
+  unsavedDraftPaths,
+  type PreviewDrafts
+} from './preview-drafts'
 import { serializeLineComment } from './code-line-comment'
 import { movePreviewTab, previewTabDetail } from '../workbench/preview-state'
 import {
@@ -61,16 +73,6 @@ import './preview.css'
 function parentDir(abs: string): string {
   const at = Math.max(abs.lastIndexOf('/'), abs.lastIndexOf('\\'))
   return at > 0 ? abs.slice(0, at) : abs
-}
-
-interface PreviewDraft {
-  abs: string
-  text: string
-  original: string
-  hash: string
-  saving: boolean
-  conflict: boolean
-  failed: boolean
 }
 
 type PreviewView =
@@ -103,7 +105,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
   const [reload, setReload] = useState(0)
   const [selections, setSelections] = useState<ReadonlyMap<string, PreviewSelectionEntry>>(() => new Map())
   const previewTabs = usePreviewTabs(owner.key)
-  const [draft, setDraft] = useState<PreviewDraft | null>(null)
+  const [drafts, setDrafts] = useState<PreviewDrafts>(EMPTY_PREVIEW_DRAFTS)
   const [sourceChoice, setSourceChoice] = useState<boolean | null>(null)
   const [viewSettings, setViewSetting] = useFileViewSettings()
   const chrome = usePaneChrome()
@@ -270,15 +272,26 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
   const activeAbs = 'abs' in view ? view.abs : view.kind === 'problem' ? activePath ?? '' : ''
   const artifactName = managedArtifactName(activeAbs || activePath || '')
   const name = artifactName ?? ('name' in view ? view.name : '')
-  const editing = !!draft && !!activeAbs && draft.abs === activeAbs
+  const draft = activeAbs ? drafts.get(activeAbs) ?? null : null
+  const editing = !!draft
   const editable = view.kind === 'text' && editorIsEditableKind(name)
-  const dirty = !!draft && draft.text !== draft.original
+  const dirty = draftIsDirty(draft)
   const editorId = useId()
-  const unsavedPath = dirty && draft ? draft.abs : null
+  const reportedPaths = useRef<ReadonlySet<string>>(new Set())
   useEffect(() => {
-    reportUnsavedEditor(editorId, unsavedPath)
-  }, [editorId, unsavedPath])
-  useEffect(() => () => reportUnsavedEditor(editorId, null), [editorId])
+    const paths = unsavedDraftPaths(drafts)
+    const now = new Set(paths)
+    for (const path of reportedPaths.current) if (!now.has(path)) reportUnsavedEditor(`${editorId}:${path}`, null)
+    for (const path of paths) reportUnsavedEditor(`${editorId}:${path}`, path)
+    reportedPaths.current = now
+  }, [drafts, editorId])
+  useEffect(
+    () => () => {
+      for (const path of reportedPaths.current) reportUnsavedEditor(`${editorId}:${path}`, null)
+      reportedPaths.current = new Set()
+    },
+    [editorId]
+  )
   const textPreview = view.kind === 'text' && previewFormatUsesText(view.format)
   const tabTarget = previewTabs?.target
   const codeTarget: CodeViewTarget | null =
@@ -341,49 +354,49 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
 
   const beginEdit = useCallback(async (): Promise<void> => {
     if (!activeAbs) return
+    const abs = activeAbs
     if (activePath) usePreviewBindings.getState().keep(owner.key, activePath)
     try {
-      const result = await window.yan.readEditableFile(activeAbs, owner.cwd)
-      if (!result.ok) {
-        setDraft({ abs: activeAbs, text: '', original: '', hash: '', saving: false, conflict: false, failed: true })
-        return
-      }
-      setDraft({ abs: activeAbs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
+      const result = await window.yan.readEditableFile(abs, owner.cwd)
+      setDrafts((prev) => (prev.has(abs) ? prev : putDraft(prev, result.ok ? loadedDraft(abs, result.text, result.hash) : failedDraft(abs))))
     } catch {
-      setDraft({ abs: activeAbs, text: '', original: '', hash: '', saving: false, conflict: false, failed: true })
+      setDrafts((prev) => (prev.has(abs) ? prev : putDraft(prev, failedDraft(abs))))
     }
   }, [activeAbs, activePath, owner.key, owner.cwd])
 
   const saveDraft = useCallback(async (): Promise<void> => {
     if (!draft) return
     const current = draft
-    setDraft((prev) => (prev ? { ...prev, saving: true } : prev))
+    const abs = current.abs
+    setDrafts((prev) => patchDraft(prev, abs, (value) => ({ ...value, saving: true })))
     try {
-      const result = await window.yan.writeEditableFile(current.abs, current.text, current.hash, owner.cwd)
-      setDraft((prev) => {
-        if (!prev || prev.abs !== current.abs) return prev
-        if (result.status === 'saved') {
-          return { ...prev, original: current.text, hash: result.hash ?? prev.hash, saving: false, conflict: false, failed: false }
-        }
-        return { ...prev, saving: false, conflict: result.status === 'conflict', failed: result.status !== 'conflict' }
-      })
+      const result = await window.yan.writeEditableFile(abs, current.text, current.hash, owner.cwd)
+      setDrafts((prev) =>
+        patchDraft(prev, abs, (value) => {
+          if (result.status === 'saved') {
+            return { ...value, original: current.text, hash: result.hash ?? value.hash, saving: false, conflict: false, failed: false }
+          }
+          return { ...value, saving: false, conflict: result.status === 'conflict', failed: result.status !== 'conflict' }
+        })
+      )
       if (result.status === 'saved') setReload((value) => value + 1)
     } catch {
-      setDraft((prev) => (prev && prev.abs === current.abs ? { ...prev, saving: false, failed: true } : prev))
+      setDrafts((prev) => patchDraft(prev, abs, (value) => ({ ...value, saving: false, failed: true })))
     }
   }, [draft, owner.cwd])
 
   const reloadDraft = useCallback(async (): Promise<void> => {
     if (!draft) return
+    const abs = draft.abs
     try {
-      const result = await window.yan.readEditableFile(draft.abs, owner.cwd)
+      const result = await window.yan.readEditableFile(abs, owner.cwd)
       if (!result.ok) {
-        setDraft((prev) => (prev ? { ...prev, conflict: false, failed: true } : prev))
+        setDrafts((prev) => patchDraft(prev, abs, (value) => ({ ...value, conflict: false, failed: true })))
         return
       }
-      setDraft({ abs: draft.abs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
+      setDrafts((prev) => (prev.has(abs) ? putDraft(prev, loadedDraft(abs, result.text, result.hash)) : prev))
     } catch {
-      setDraft((prev) => (prev ? { ...prev, conflict: false, failed: true } : prev))
+      setDrafts((prev) => patchDraft(prev, abs, (value) => ({ ...value, conflict: false, failed: true })))
     }
   }, [draft, owner.cwd])
 
@@ -431,6 +444,11 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
 
   const tabList = previewTabs && previewTabs.tabs.length > 0 ? previewTabs.tabs : activePath ? [activePath] : []
   const activeTab = previewTabs?.active ?? activePath ?? ''
+  const tabListKey = tabList.join('\n')
+  useEffect(() => {
+    const tabs = tabListKey ? tabListKey.split('\n') : []
+    setDrafts((prev) => dropCleanDrafts(prev, (abs) => abs === activeAbs || tabs.some((tab) => samePath(tab, abs))))
+  }, [drafts, tabListKey, activeAbs])
   const bindings = usePreviewBindings.getState
   const tabStrip = tabList.length && !standalone ? (
     <PreviewTabs
@@ -485,7 +503,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
           isDisabled={editing && dirty}
           data-testid="v3-preview-edit-toggle"
           onPress={() => {
-            if (editing) setDraft(null)
+            if (editing && activeAbs) setDrafts((prev) => dropDraft(prev, activeAbs))
             else void beginEdit()
           }}
         >
@@ -678,7 +696,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
           <Button size="sm" variant={dirty ? 'primary' : 'ghost'} isDisabled={draft.saving || !dirty} onPress={() => void saveDraft()}>
             {text.save}
           </Button>
-          <Button size="sm" variant="ghost" onPress={() => setDraft(null)}>
+          <Button size="sm" variant="ghost" onPress={() => setDrafts((prev) => dropDraft(prev, draft.abs))}>
             {dirty ? text.discard : text.closeEditor}
           </Button>
         </div>
@@ -691,7 +709,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
           name={name}
           settings={viewSettings}
           onChange={(value) =>
-            setDraft((prev) => (prev && prev.abs === draft.abs ? { ...prev, text: value, failed: false } : prev))
+            setDrafts((prev) => patchDraft(prev, draft.abs, (current) => ({ ...current, text: value, failed: false })))
           }
           onSave={() => void saveDraft()}
         />

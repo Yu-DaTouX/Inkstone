@@ -30,9 +30,20 @@ function isAttachment(value: unknown): value is Attachment {
   return typeof item.data === 'string' && typeof item.preview === 'string'
 }
 
+const attachmentChars = new WeakMap<readonly Attachment[], number>()
+
+function serializedChars(attachments: readonly Attachment[]): number {
+  if (!attachments.length) return 2
+  const cached = attachmentChars.get(attachments)
+  if (cached !== undefined) return cached
+  const size = JSON.stringify(attachments).length
+  attachmentChars.set(attachments, size)
+  return size
+}
+
 export function trimDraftAttachments(attachments: readonly Attachment[], budget = DRAFT_ATTACHMENT_BUDGET): Attachment[] {
   if (attachments.length === 0) return []
-  if (JSON.stringify(attachments).length <= budget) return attachments.map((item) => ({ ...item }))
+  if (serializedChars(attachments) <= budget) return attachments.map((item) => ({ ...item }))
   return attachments.filter((item) => item.kind === 'file').map((item) => ({ ...item }))
 }
 
@@ -54,8 +65,19 @@ export function parseDrafts(raw: unknown): DraftMap {
   return out
 }
 
+function entryChars(key: string, draft: StoredDraft): number {
+  return JSON.stringify(key).length + 1 + 8 + JSON.stringify(draft.text).length + 15 + serializedChars(draft.attachments) + 6 + String(draft.at).length + 1
+}
+
 function totalChars(map: DraftMap): number {
-  return JSON.stringify(map).length
+  let total = 2
+  let first = true
+  for (const [key, draft] of Object.entries(map)) {
+    if (!first) total += 1
+    first = false
+    total += entryChars(key, draft)
+  }
+  return total
 }
 
 function evictOldest(map: DraftMap, protectKey: string, maxTotal: number): DraftMap {

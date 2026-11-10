@@ -248,10 +248,8 @@ export interface Store {
   widgets: Record<string, string[]>
   widgetPlacements: Record<string, WidgetPlacement>
   uiRequests: ExtensionUiRequest[]
-  questionLog: QuestionLogEntry[]
-  questionLogSession: string | null
-  approvalLog: ApprovalReceipt[]
-  approvalLogSession: string | null
+  questionLogs: Record<string, QuestionLogEntry[]>
+  approvalLogs: Record<string, ApprovalReceipt[]>
   uiCollapsed: boolean
   uiDrafts: Record<string, string>
   composerInsert: string | null
@@ -373,7 +371,7 @@ export interface Store {
   syncPageStorage: () => Promise<ChromeSyncReport>
   patchSettings: (p: Partial<AppSettings>) => Promise<void>
   removeGuardAllowRoot: (path: string) => Promise<void>
-  answerApproval: (id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity, feedback?: string) => Promise<void>
+  answerApproval: (id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity, feedback?: string) => Promise<boolean>
   gitInstall: GitInstallProgress
   installGit: () => Promise<void>
   cancelGitInstall: () => Promise<void>
@@ -388,7 +386,7 @@ export interface Store {
   pickImages: () => Promise<void>
   pickFiles: () => Promise<void>
 
-  answerUi: (res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }) => void
+  answerUi: (res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }) => Promise<boolean>
   extendUi: (id: string, extraMs?: number) => Promise<boolean>
   startUiTimer: (id: string) => Promise<boolean>
   setUiCollapsed: (v: boolean) => void
@@ -490,6 +488,14 @@ function hasComposerIdentity(id: ComposerSubmitIdentity): boolean {
   return !!(id.sessionId || id.path || id.runId)
 }
 
+function lastAssistantTextOf(messages: readonly UIMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role === 'assistant' && typeof message.text === 'string' && message.text.trim()) return message.text
+  }
+  return ''
+}
+
 function expectedRuntimeFor(state: Store, id: ComposerSubmitIdentity): ExpectedRuntimeOwner | undefined {
   const norm = (p?: string): string => (p ?? '').replace(/\\/g, '/').toLowerCase()
   const byRun = id.runId ? state.runners.find((item) => (item.runId ?? item.id) === id.runId) : undefined
@@ -516,6 +522,14 @@ function expectedRuntimeFor(state: Store, id: ComposerSubmitIdentity): ExpectedR
     ...(runner.projectId ? { projectId: runner.projectId } : {}),
     ...(runner.generation !== undefined ? { generation: runner.generation } : {})
   }
+}
+
+async function submitRuntimeFor(get: () => Store, id: ComposerSubmitIdentity): Promise<ExpectedRuntimeOwner | null | undefined> {
+  const found = expectedRuntimeFor(get(), id)
+  const saved = (!!id.sessionId && !id.sessionId.startsWith('pending:')) || !!id.path
+  if (found || !saved) return found
+  await get().syncRunners()
+  return expectedRuntimeFor(get(), id) ?? (get().runners.length ? null : undefined)
 }
 
 async function sessionActionTarget(get: () => Store) {
@@ -1010,6 +1024,19 @@ function beginNewSession(): () => void {
 let quotaResumeGen = 0
 let quotaResumeTimer: ReturnType<typeof setTimeout> | undefined
 
+async function stopRetryWhenQuotaWindowFull(): Promise<void> {
+  const state = useStore.getState()
+  const provider = state.session?.model?.provider
+  if (!provider) return
+  const snapshot = await window.yan
+    .providerQuota(provider, state.settings?.providerBudgets?.[provider])
+    .catch(() => null)
+  if (!snapshot?.windows?.length || snapshot.staleError) return
+  if (!blockedQuotaWindows(snapshot.windows).length) return
+  if (useStore.getState().session?.sessionId !== state.session?.sessionId) return
+  await useStore.getState().abortRetry()
+}
+
 async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<void> {
   const wait = useStore.getState().quotaResume
   if (gen !== quotaResumeGen || !wait) return
@@ -1097,11 +1124,11 @@ function flushPendingMessagePatches(): void {
     const patch: Partial<Store> = {}
     if (runtimePushes.length) patch.sessionRuntimes = reduceRuntimePushes(state.sessionRuntimes, runtimePushes)
     if (drained.length) {
-      const known = new Set(state.messages.map((message) => message.id))
       let messages = state.messages
       for (const item of drained) {
-        if (!known.has(item.id)) missing = true
+        const before = messages
         messages = patchMessage(messages, item.id, item.patch) as typeof state.messages
+        if (messages === before) missing = true
       }
       patch.messages = messages
     }
@@ -1290,10 +1317,8 @@ export const useStore = create<Store>((rawSet, get) => {
   subagents: [],
   zoom: null,
   uiRequests: [],
-  questionLog: [],
-  questionLogSession: null,
-  approvalLog: [],
-  approvalLogSession: null,
+  questionLogs: {},
+  approvalLogs: {},
   uiCollapsed: false,
   uiDrafts: {},
   composerInsert: null,
@@ -1483,11 +1508,8 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     if (m.ch === 'quota-wait') {
-      if ((m.payload as { cancel?: boolean } | undefined)?.cancel === true) {
-        get().cancelQuotaResume()
-        return
-      }
-      void get().armQuotaResume((m.payload as { ifWindowFull?: boolean } | undefined)?.ifWindowFull === true)
+      if ((m.payload as { cancel?: boolean } | undefined)?.cancel === true) get().cancelQuotaResume()
+      else if ((m.payload as { ifWindowFull?: boolean } | undefined)?.ifWindowFull === true) void stopRetryWhenQuotaWindowFull()
       return
     }
 
@@ -1814,6 +1836,8 @@ export const useStore = create<Store>((rawSet, get) => {
     const current = get()
     key = key ?? composerDraftKey(current)
     if (!key) return
+    const entry = current.sessionRuntimes[key]
+    if (entry?.draftInitialized && entry.draft === value) return
     set({
       sessionRuntimes: updateSessionRuntimeAt(current.sessionRuntimes, key, { draft: value }, draftSeedRuntime(current, key))
     })
@@ -1868,8 +1892,11 @@ export const useStore = create<Store>((rawSet, get) => {
       if (sourceIds.length) {
         set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
       }
-      const expected = expectedRuntimeFor(get(), target)
-      const res = await piCall(() => window.yan.send(text, images, mode, expected))
+      const expected = await submitRuntimeFor(get, target)
+      if (guardView && !sameComposerView(get(), target)) return false
+      const res = expected === null
+        ? { ok: false, error: uiText('state.error.sessionNotActivated') }
+        : await piCall(() => window.yan.send(text, images, mode, expected))
       if (!res.ok) {
         if (sourceIds.length) {
           set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x.sourceIds !== sourceIds) })
@@ -2052,7 +2079,9 @@ export const useStore = create<Store>((rawSet, get) => {
     const sessionId = get().session?.sessionId
     markStopRequested(sessionId)
     try {
-      const cleared = await window.yan.abort(expectedRuntimeFor(get(), composerSubmitIdentity(get())))
+      const expected = await submitRuntimeFor(get, composerSubmitIdentity(get()))
+      if (expected === null) return
+      const cleared = await window.yan.abort(expected)
       if (cleared.error) set({ notices: pushNotice(get().notices, 'error', cleared.error) })
       const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)
       const items = [...(cleared.items?.steering ?? []), ...(cleared.items?.followUp ?? [])]
@@ -2077,8 +2106,11 @@ export const useStore = create<Store>((rawSet, get) => {
     const guardView = hasComposerIdentity(target)
     if (!(await get().ensureActivated(target))) return { ok: false, error: uiText('state.error.sessionNotActivated') }
     if (guardView && !sameComposerView(get(), target)) return { ok: false, error: uiText('state.error.sessionSwitchedCommandSkipped') }
-    const expected = expectedRuntimeFor(get(), target)
-    const res = await piCall(() => window.yan.runBash(command, options, expected))
+    const expected = await submitRuntimeFor(get, target)
+    if (guardView && !sameComposerView(get(), target)) return { ok: false, error: uiText('state.error.sessionSwitchedCommandSkipped') }
+    const res = expected === null
+      ? { ok: false, error: uiText('state.error.sessionNotActivated') }
+      : await piCall(() => window.yan.runBash(command, options, expected))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.commandFailed')) })
     }
@@ -2086,7 +2118,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   abortBash: async () => {
-    await window.yan.abortBash()
+    const target = await sessionActionTarget(get)
+    if (!target) return
+    await window.yan.abortBash(target.expected)
+    if (!target.current()) return
   },
 
   newSession: async (target) => {
@@ -2525,7 +2560,10 @@ export const useStore = create<Store>((rawSet, get) => {
   clone: async () => {
     ++sessionSwitchGate
     if (get().switchLoading) set({ switchLoading: false })
-    const res = await piCall(() => window.yan.clone())
+    const target = await sessionActionTarget(get)
+    const res = target
+      ? await piCall(() => window.yan.clone(target.expected))
+      : { ok: false, error: uiText('state.error.sessionNotActivated') }
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.cloneFailed')) })
       return
@@ -2543,10 +2581,11 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   compact: async (customInstructions) => {
-    if (!(await get().ensureActivated())) return { ok: false, error: uiText('state.error.sessionNotActivated') }
+    const target = await sessionActionTarget(get)
+    if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
     const sessionId = get().session?.sessionId
     if (sessionId) set({ compactCommand: { sessionId, text: customInstructions ? `/compact ${customInstructions}` : '/compact' } })
-    return piCall(() => window.yan.compact(customInstructions))
+    return piCall(() => window.yan.compact(customInstructions, target.expected))
   },
 
   stop: async () => {
@@ -2619,8 +2658,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   abortRetry: async () => {
+    const target = await sessionActionTarget(get)
+    if (!target) return
     try {
-      await window.yan.abortRetry()
+      await window.yan.abortRetry(target.expected)
     } catch {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.error.commandFailed')) })
     }
@@ -2669,11 +2710,16 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   copyLastReply: async () => {
+    const target = await sessionActionTarget(get)
     let text: string | null = null
-    try {
-      text = await window.yan.lastAssistantText()
-    } catch {
+    if (target) {
+      try {
+        text = await window.yan.lastAssistantText(target.expected)
+      } catch {
+      }
+      if (!target.current()) return
     }
+    if (!text) text = lastAssistantTextOf(get().messages)
     if (!text) {
       set({ notices: pushNotice(get().notices, 'info', uiText('state.error.noReplyToCopy')) })
       return
@@ -2855,16 +2901,30 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   answerApproval: async (id, choice, identity, feedback) => {
+    if (!get().approvals.some((item) => item.id === id)) return false
     set({ approvals: get().approvals.filter((item) => item.id !== id) })
-    try {
-      const res = await window.yan.answerApproval(id, choice, identity, feedback)
-      if (res && res.ok === false) {
+    const reconcile = async (): Promise<boolean> => {
+      try {
         const pending = await window.yan.pendingApprovals()
         const have = new Set(get().approvals.map((item) => item.id))
         const back = pending.filter((item) => !have.has(item.id))
         if (back.length) set({ approvals: [...get().approvals, ...back].sort((a, b) => a.createdAt - b.createdAt) })
+        return pending.some((item) => item.id === id)
+      } catch {
+        return false
       }
+    }
+    const failed = async (): Promise<boolean> => {
+      const stillPending = await reconcile()
+      if (stillPending) set({ notices: pushNotice(get().notices, 'error', uiText('state.error.approvalAnswerFailed')) })
+      return false
+    }
+    try {
+      const res = await window.yan.answerApproval(id, choice, identity, feedback)
+      if (!res || res.ok !== true) return await failed()
+      return true
     } catch {
+      return await failed()
     }
   },
 
@@ -3029,8 +3089,12 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  answerUi: (res) => {
-    window.yan.respondUi(res)
+  answerUi: async (res) => {
+    const result = await window.yan.respondUi(res).catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+    if (!result || result.ok !== true) {
+      set({ notices: pushNotice(get().notices, 'error', result?.error || uiText('state.error.answerFailed')) })
+      return false
+    }
     const drafts = { ...get().uiDrafts }
     delete drafts[res.id]
     const next = get().uiRequests.filter((r) => r.id !== res.id)
@@ -3042,6 +3106,7 @@ export const useStore = create<Store>((rawSet, get) => {
         ? { sessionRuntimes: updateSessionRuntime(get().sessionRuntimes, runtime, { uiRequests: next }) }
         : {})
     })
+    return true
   },
 
   setUiCollapsed: (v) => set({ uiCollapsed: v }),

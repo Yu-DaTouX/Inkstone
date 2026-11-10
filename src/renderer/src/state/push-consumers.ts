@@ -144,14 +144,22 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
   return true
 }
 
+const SESSION_LOG_LIMIT = 32
+
+export function keepSessionLog<T>(logs: Record<string, T[]>, sessionId: string, entries: T[]): Record<string, T[]> {
+  const { [sessionId]: _, ...rest } = logs
+  const kept = Object.entries(rest).slice(-(SESSION_LOG_LIMIT - 1))
+  return { ...Object.fromEntries(kept), [sessionId]: entries }
+}
+
 export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): boolean {
   const { set } = ctx
   switch (m.ch) {
     case 'question-log':
-      set({ questionLog: m.payload.entries, questionLogSession: m.payload.sessionId })
+      set({ questionLogs: keepSessionLog(s.questionLogs, m.payload.sessionId, m.payload.entries) })
       break
     case 'approval-log':
-      set({ approvalLog: m.payload.entries, approvalLogSession: m.payload.sessionId })
+      set({ approvalLogs: keepSessionLog(s.approvalLogs, m.payload.sessionId, m.payload.entries) })
       break
     case 'ui-request': {
       const duplicate = s.uiRequests.some((request) => request.id === m.payload.id)
@@ -176,6 +184,17 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
       break
     case 'notify': {
       const text = m.payload.message ?? ''
+      if (m.payload.id === 'pinned-network-guard') {
+        set({
+          notices: ctx.pushNotice(
+            s.notices,
+            'error',
+            ctx.t('net.guardDisabled', { reason: text || ctx.t('state.error.unknownReason') }),
+            m.payload.id
+          )
+        })
+        break
+      }
       const query = s.nativeMcpStatus
       if (query?.pending && m.runtime?.sessionId === query.sessionId && (query.action ? isNativeMcpActionResult(text) : isNativeMcpStatus(text))) {
         set({ nativeMcpStatus: { ...query, pending: query.action === 'login' && isNativeMcpSignInPrompt(text), text } })

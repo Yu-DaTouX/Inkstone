@@ -86,6 +86,35 @@ const guarded = putDraft(
 assert.ok(draftOf(guarded, 'a') === undefined, '总量超预算时淘汰其它草稿')
 assert.ok(draftOf(guarded, 'b'), '刚保存的草稿保留')
 
+const reference = (map, key, draft, maxTotal) => {
+  const next = { ...map, [key]: { text: draft.text, attachments: [], at: draft.at } }
+  if (JSON.stringify(next).length <= maxTotal) return next
+  const oldest = Object.entries(next)
+    .filter(([item]) => item !== key)
+    .sort((a, b) => a[1].at - b[1].at)
+  for (const [item] of oldest) {
+    delete next[item]
+    if (JSON.stringify(next).length <= maxTotal) break
+  }
+  return next
+}
+const seed = {
+  's:1': { text: '引号"与\\反斜杠\n换行', attachments: [], at: 1 },
+  's:2': { text: '中文内容 · 空格', attachments: [], at: 2 },
+  's:3': { text: '', attachments: [], at: 3 }
+}
+for (const maxTotal of [10, 60, 120, 200, 260]) {
+  const draft = { text: '新增:\n第二行', at: 4 }
+  const actual = putDraft(seed, 's:new', draft, 4, { maxTotal })
+  const expected = reference(seed, 's:new', draft, maxTotal)
+  assert.deepEqual(actual, expected, `总量预算与整表序列化一致（maxTotal=${maxTotal}）`)
+  assert.ok(Object.keys(actual).includes('s:new'), `刚保存的草稿在预算内保留（maxTotal=${maxTotal}）`)
+}
+const cacheProbe = [image('c1'), fileRef('cf')]
+assert.equal(trimDraftAttachments(cacheProbe, DRAFT_ATTACHMENT_BUDGET).length, 2, '同一附件数组重复预算检查结果一致')
+assert.equal(trimDraftAttachments(cacheProbe, JSON.stringify(cacheProbe).length).length, 2, '预算边界按序列化长度判定')
+assert.equal(trimDraftAttachments(cacheProbe, JSON.stringify(cacheProbe).length - 1).length, 1, '序列化长度刚好超预算时裁剪图片')
+
 const storage = new Map()
 globalThis.localStorage = {
   getItem: (key) => (storage.has(String(key)) ? storage.get(String(key)) : null),

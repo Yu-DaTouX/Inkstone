@@ -20,6 +20,7 @@ import { useUiV3 } from '../../state/ui-v3'
 import { collabText } from '../../features/collab/collab-text'
 import { usePendingPairInvite } from '../../features/collab/pending-invite'
 import { openSidebarSession } from '../../features/sidebar/session-advance'
+import { sameSessionPathLoose } from '../../features/sidebar/session-nav'
 import { setSessionOrder, useSessionNav } from '../../features/sidebar/session-nav-store'
 import { SessionMenu } from '../../features/sidebar/SessionMenu'
 import { ProjectMenu } from '../../features/sidebar/ProjectMenu'
@@ -179,7 +180,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const refreshSessions = useStore((s) => s.refreshSessions)
   const running = useStore((s) => !!(s.session?.isAgentRunning || s.session?.isStreaming))
   const currentListed = useStore(
-    (s) => !s.session?.sessionFile || s.sessions.some((entry) => entry.path === s.session?.sessionFile)
+    (s) => !s.session?.sessionFile || s.sessions.some((entry) => sameSessionPathLoose(entry.path, s.session?.sessionFile))
   )
 
   useEffect(() => {

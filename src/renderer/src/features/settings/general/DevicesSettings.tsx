@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { useI18n } from '../../../i18n'
+import { useI18n, useT } from '../../../i18n'
 import {
   DEFAULT_REMOTE_ACCESS_SETTINGS,
   type RemoteAccessSettings,
@@ -17,6 +17,7 @@ import { formatWhen } from './general-model'
 import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { RelayPairingPanel, RelayRows, relaySettingsOf } from './RelaySettings'
+import { ConfirmProvider, useConfirm } from '../capabilities/confirm'
 import './devices-data.css'
 
 type BindMode = 'tailscale' | 'radmin' | 'lan' | 'loopback'
@@ -96,7 +97,7 @@ export function DeviceList({
       key: `relay:${client.id}`,
       name: client.name,
       via: 'relay' as const,
-      peer: client.kind === 'agent',
+      peer: client.kind === 'agent' || client.kind === 'peer',
       plaintext: false,
       online: client.online,
       pairedAt: client.addedAt,
@@ -163,7 +164,17 @@ function pairingLinkOf(status: RemoteAccessStatus | null): string | null {
 }
 
 export function DevicesSettings(): ReactElement {
+  return (
+    <ConfirmProvider>
+      <DevicesSettingsInner />
+    </ConfirmProvider>
+  )
+}
+
+function DevicesSettingsInner(): ReactElement {
   const { lang } = useI18n()
+  const t = useT()
+  const confirm = useConfirm()
   const text = generalText(lang)
   const labels = settingsText(lang)
   const local = devicesDataText(lang)
@@ -171,6 +182,7 @@ export function DevicesSettings(): ReactElement {
   const [status, setStatus] = useState<RemoteAccessStatus | null>(null)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [copied, setCopied] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const alive = useRef(true)
@@ -279,11 +291,55 @@ export function DevicesSettings(): ReactElement {
     relay.enabled && !relayConnected && !directReady ? local.pairRelayWaiting : ''
   ].filter(Boolean)
 
+  const resetIdentity = async (): Promise<void> => {
+    setNotice('')
+    const first = await confirm({
+      title: t('devices.resetIdentity'),
+      body: t('devices.resetIdentityBody'),
+      detail: t('devices.resetIdentityDetail'),
+      confirmLabel: t('devices.resetIdentityAction'),
+      tone: 'danger'
+    })
+    if (!first) return
+    const again = await confirm({
+      title: t('devices.resetIdentityAgain'),
+      body: t('devices.resetIdentityAgainBody'),
+      confirmLabel: t('devices.resetIdentityAgainAction'),
+      tone: 'danger'
+    })
+    if (!again) return
+    setBusy(true)
+    try {
+      const result = await window.yan.remote.resetIdentity()
+      if (!result?.ok) {
+        setError(t('devices.resetIdentityFailed', { error: result?.error ?? '' }))
+        return
+      }
+      setError('')
+      setNotice(
+        t('devices.resetIdentityDone', {
+          count: String(result.revokedDevices ?? 0),
+          fingerprint: result.hostFingerprint ?? ''
+        })
+      )
+      await refresh()
+    } catch (cause) {
+      setError(t('devices.resetIdentityFailed', { error: cause instanceof Error ? cause.message : String(cause) }))
+    } finally {
+      if (alive.current) setBusy(false)
+    }
+  }
+
   return (
     <section className="settings-section" data-testid="v3-devices-settings">
       {error ? (
         <Notice tone="fail" compact>
           {error}
+        </Notice>
+      ) : null}
+      {notice ? (
+        <Notice tone="ok" compact data-testid="v3-devices-identity-reset-done">
+          {notice}
         </Notice>
       ) : null}
 
@@ -381,6 +437,14 @@ export function DevicesSettings(): ReactElement {
               onCancel={() => run(() => window.yan.remote.relayCancel())}
             />
           ) : null}
+          {pairing && status?.hostFingerprint ? (
+            <div className="settings-device" data-testid="v3-devices-host-fingerprint">
+              <span className="settings-value">
+                {t('devices.hostFingerprint')}: <strong className="ui-num">{status.hostFingerprint}</strong>
+              </span>
+              <span className="settings-row__desc">{t('devices.hostFingerprintHint')}</span>
+            </div>
+          ) : null}
           {!pairing ? (
             <Button
               variant="secondary"
@@ -391,6 +455,19 @@ export function DevicesSettings(): ReactElement {
               {text.devicesPairStart}
             </Button>
           ) : null}
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup title={t('devices.identity')} settingId="devices-identity">
+        <SettingsRow settingId="devices-reset-identity" label={t('devices.resetIdentity')} description={t('devices.resetIdentityDesc')}>
+          <Button
+            variant="danger"
+            isDisabled={busy || !status}
+            data-testid="v3-devices-reset-identity"
+            onPress={() => void resetIdentity()}
+          >
+            {t('devices.resetIdentityAction')}
+          </Button>
         </SettingsRow>
       </SettingsGroup>
 

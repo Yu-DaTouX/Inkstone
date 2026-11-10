@@ -99,6 +99,16 @@ export function PackagesPanel({
       })
       if (!accepted) return
     }
+    const allowLifecycleScripts = kind === 'remove'
+      ? false
+      : await confirm({
+          title: t('pkg.scriptsTitle'),
+          body: t('pkg.scriptsBody'),
+          detail: src,
+          confirmLabel: t('pkg.scriptsAllow'),
+          cancelLabel: t('pkg.scriptsSkip'),
+          tone: 'danger'
+        })
     setShowRaw(false)
     setStaleNotice(null)
     await runGuardedOperation<PackageActionResultView>({
@@ -108,7 +118,13 @@ export function PackagesPanel({
         setBusy(value ? `${kind}:${targetLocal ? 'project' : 'user'}:${src}` : ''),
       action: async () => {
         try {
-          return await window.yan.packages.action({ kind, source: src, local: targetLocal, cwd })
+          return await window.yan.packages.action({
+            kind,
+            source: src,
+            local: targetLocal,
+            cwd,
+            ...(allowLifecycleScripts ? { allowLifecycleScripts: true } : {})
+          })
         } catch (cause) {
           return { ok: false, error: cause instanceof Error ? cause.message : String(cause) }
         }

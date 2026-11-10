@@ -160,7 +160,11 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
     if (answered.current) return
     answered.current = true
     setBusy(true)
-    answerUi({ id: reqId, ...res })
+    void answerUi({ id: reqId, ...res }).then((delivered) => {
+      if (delivered) return
+      answered.current = false
+      setBusy(false)
+    })
   }
   pickDigit.current = (value) => answer({ value })
 

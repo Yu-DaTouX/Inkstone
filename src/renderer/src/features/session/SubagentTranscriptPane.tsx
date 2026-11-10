@@ -145,7 +145,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const row = useSubagentRow(run)
   const models = useStore((s) => s.models)
   const currentSessionId = useStore((s) => s.session?.sessionId ?? null)
-  const approvalLog = useStore((s) => s.approvalLogSession && s.approvalLogSession === run.parentSessionId ? s.approvalLog : NO_APPROVAL_RECEIPTS)
+  const approvalLog = useStore((s) => (run.parentSessionId ? s.approvalLogs[run.parentSessionId] : undefined) ?? NO_APPROVAL_RECEIPTS)
   const [retrying, setRetrying] = useState(false)
   const [gone, setGone] = useState(false)
   const [dismissing, setDismissing] = useState(false)

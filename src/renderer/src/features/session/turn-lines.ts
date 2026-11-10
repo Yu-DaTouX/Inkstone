@@ -4,6 +4,7 @@ import { isTerminalPhase } from '../../../../shared/runs'
 import { subagentOutcome, type SubagentOutcomeKey, type SubagentTone } from '../../../../shared/subagent-outcome'
 import { classifyModelError, EMPTY_MODEL_ERROR_NOTICE, type ModelErrorKind, type ModelErrorQuotaScope } from '../../../../shared/model-errors'
 import { sameSessionFile } from '../../state/view-identity'
+import { messageIndex } from './message-index'
 import type { SessionTextKey } from './text'
 
 export type ErrorCardAction = 'retry' | 'model' | 'compact' | 'wait'
@@ -155,11 +156,11 @@ interface ViewEdge {
 
 export function viewEdge(sourceIds: readonly string[], messages: readonly UIMessage[], streaming: boolean): ViewEdge {
   if (!sourceIds.length) return { first: false, last: false }
-  const firstAssistant = messages.find((message) => message.role === 'assistant')
-  const lastMessage = messages[messages.length - 1]
+  const index = messageIndex(messages)
+  const lastId = index.lastMessageId
   return {
-    first: firstAssistant?.id === sourceIds[0],
-    last: !!streaming || (!!lastMessage && sourceIds.includes(lastMessage.id))
+    first: index.firstAssistantId === sourceIds[0],
+    last: !!streaming || (!!lastId && sourceIds.includes(lastId))
   }
 }
 
