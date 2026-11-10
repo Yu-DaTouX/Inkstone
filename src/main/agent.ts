@@ -79,18 +79,20 @@ import { questionLog } from './question-log'
 import { approvalLog } from './approval-log'
 import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, separateSecrets, summarizeAnswers, type QuestionField } from '../shared/question-form'
 
-import { requestedTimeout } from '../shared/ui-timeout'
+import { requestedTimeout, UI_TIMEOUT_APPROVAL } from '../shared/ui-timeout'
 import { createStreamLoopDetector, type LoopHit, type StreamLoopDetector } from '../shared/stream-loop-detector'
 import { skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
 import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 
 import { BrowserCommands } from './browser-commands'
 import { TerminalAgentCommands } from './terminal-agent'
+import { listTerminalJobs } from './terminal-jobs'
+import { isLiveTerminalJob, terminalJobOwnedBy } from '../shared/terminal-jobs'
 import { PhoneAgentCommands } from './phone-agent'
 import { terminalAgentHost } from './terminal-agent-host'
 import { LookupCommands } from './lookup-commands'
 import { TurnTimingTracker } from './turn-timing-tracker'
-import { UiRequests, questionToolCallId, type HostUiResponse } from './ui-requests'
+import { UiRequests, questionToolCallId, type HostUiResponse, type UiAnswerResult } from './ui-requests'
 import { runSignalFromUiRequest, runSignalFromUiResolved, signalFromQueueUpdate, signalsFromPiEvent } from './runs/pi-events'
 import type { RunModel, RunSignal } from '../shared/runs'
 import { McpConnectionManager } from './mcp/connection-manager'
@@ -405,6 +407,37 @@ async function projectPiPackageArgs(cwd: string): Promise<string[]> {
 
 const EXECUTION_ADMISSION_GRACE_MS = 10_000
 
+interface HydrateExpectation {
+  sessionId?: string
+  sessionFile?: string
+  notSessionId?: string
+  notSessionFile?: string
+}
+
+interface HydrateResult {
+  ok: boolean
+  error?: string
+  changed?: boolean
+}
+
+function sameSessionPath(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b
+  return resolve(a).replace(/[\\/]+$/, '').toLowerCase() === resolve(b).replace(/[\\/]+$/, '').toLowerCase()
+}
+
+async function sameSessionFileIdentity(a: string | undefined, b: string | undefined): Promise<boolean> {
+  if (!a || !b) return false
+  if (sameSessionPath(a, b)) return true
+  const [left, right] = await Promise.all([realpath(a).catch(() => null), realpath(b).catch(() => null)])
+  if (left && right && sameSessionPath(left, right)) return true
+  const [leftStat, rightStat] = await Promise.all([stat(a, { bigint: true }).catch(() => null), stat(b, { bigint: true }).catch(() => null)])
+  return !!leftStat && !!rightStat && leftStat.isFile() && rightStat.isFile() && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino
+}
+
+function sessionSwitchUnconfirmed(): string {
+  return pick('没能确认已经切到目标会话，请重新打开这个会话', 'Could not confirm the switch to the target session; reopen this session')
+}
+
 function planQueueEditOp(state: QueueState, op: QueueEditOp): { next: QueueState } | { error: string } {
   if (op.op === 'clear') return { next: { steering: [], followUp: [] } }
   const steering = state.steering.findIndex((item) => item.id === op.id)
@@ -535,19 +568,33 @@ export class AgentController extends EventEmitter {
     }
   })
 
+  private pendingTerminalNotices = 0
+
   private async deliverTerminalNotice(text: string, stillOwner: () => boolean): Promise<void> {
-    let failures = 0
-    for (let waited = 0; waited < 2 * 3600_000 && failures < 5; waited += 3000) {
-      if (!stillOwner()) return
-      const state = this.state
-      if (this.rpc?.running && state && !state.isAgentRunning && !state.isStreaming && !state.isCompacting && !this.holdsNotices()) {
-        const result = await this.send(text, undefined, 'followUp').catch(() => ({ ok: false }))
-        if (result.ok) return
-        failures += 1
+    this.pendingTerminalNotices += 1
+    try {
+      let failures = 0
+      for (let waited = 0; waited < 2 * 3600_000 && failures < 5; waited += 3000) {
+        if (this.stopping || !stillOwner()) return
+        const state = this.state
+        if (this.rpc?.running && state && !state.isAgentRunning && !state.isStreaming && !state.isCompacting && !this.holdsNotices()) {
+          const result = await this.send(text, undefined, 'followUp').catch(() => ({ ok: false }))
+          if (result.ok) return
+          failures += 1
+        }
+        await new Promise((done) => setTimeout(done, 3000))
       }
-      await new Promise((done) => setTimeout(done, 3000))
+      console.warn('[agent] 后台终端通知未能投递')
+    } finally {
+      this.pendingTerminalNotices -= 1
     }
-    console.warn('[agent] 后台终端通知未能投递')
+  }
+
+  hasPendingTerminalWork(): boolean {
+    if (this.pendingTerminalNotices > 0) return true
+    const keys = [this.state?.sessionFile, this.state?.sessionId].filter((key): key is string => typeof key === 'string' && key.length > 0)
+    if (!keys.length) return false
+    return listTerminalJobs().some((job) => isLiveTerminalJob(job) && keys.some((key) => terminalJobOwnedBy(job, key)))
   }
 
   private readonly phoneCommands = new PhoneAgentCommands({ opsDir: () => this.capabilityOpts?.opsDir ?? join(YAN_DIR, 'ops') })
@@ -566,24 +613,26 @@ export class AgentController extends EventEmitter {
     getState: () => this.getState(),
     confirmCapabilityAuthorization: () => this.confirmCapabilityAuthorization,
     bundledSkills: () => this.bundledSkills,
-    requestApproval: async (request) => {
-      let response: HostUiResponse | undefined
-      try {
-        response = await this.ui.requestHostUi({ method: 'select', purpose: 'approval', ...request })
-        return response
-      } finally {
-        const answer = typeof response?.value === 'string' && response.value.trim() ? response.value.trim() : null
-        const entries = questionLog.append(this.state?.sessionId, {
-          question: request.title,
-          options: request.options,
-          answer,
-          cancelled: answer === null,
-          at: Date.now()
-        })
-        if (entries) this.pushQuestionLog()
-      }
-    }
+    requestApproval: (request) => this.requestApprovalChoice(request)
   })
+
+  private async requestApprovalChoice(request: { title: string; message: string; options: string[]; placeholder: string; timeout: number }): Promise<HostUiResponse> {
+    let response: HostUiResponse | undefined
+    try {
+      response = await this.ui.requestHostUi({ method: 'select', purpose: 'approval', ...request })
+      return response
+    } finally {
+      const answer = typeof response?.value === 'string' && response.value.trim() ? response.value.trim() : null
+      const entries = questionLog.append(this.state?.sessionId, {
+        question: request.title,
+        options: request.options,
+        answer,
+        cancelled: answer === null,
+        at: Date.now()
+      })
+      if (entries) this.pushQuestionLog()
+    }
+  }
 
   private readonly items = new SessionItemProjector((mimeType, data) => this.localizeHistoryImage(mimeType, data))
   private get messages(): UIMessage[] {
@@ -593,6 +642,7 @@ export class AgentController extends EventEmitter {
     this.items.load(messages)
   }
   private suppressPush = false
+  private afterScope: Array<() => void> = []
   private scopeDepth = 0
   private scopeChanged = false
   private extUi = new Map<string, ExtUiPush>()
@@ -1142,7 +1192,7 @@ export class AgentController extends EventEmitter {
     return false
   }
 
-  private async hydrate(expected?: { sessionId?: string; sessionFile?: string }): Promise<void> {
+  private async hydrate(expected?: HydrateExpectation): Promise<HydrateResult> {
     const syncedBefore = this.messages
     const scopeBefore = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
     const editsBefore = this.liveItemEdits
@@ -1151,25 +1201,34 @@ export class AgentController extends EventEmitter {
       this.hydrateDeferred = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
       return true
     }
-    const outsideExpected = (): boolean => !!expected && (this.state?.sessionId !== expected.sessionId || this.state?.sessionFile !== expected.sessionFile)
-    if (outsideExpected()) return
-    const state = await this.requireRpc().command('get_state').catch(() => null)
-    if (expected && state?.success) {
-      const data = state.data as Record<string, unknown>
-      if (String(data.sessionId ?? '') !== (expected.sessionId ?? '') || (data.sessionFile ? String(data.sessionFile) : undefined) !== expected.sessionFile) return
+    const matchesExpected = (): boolean => {
+      if (!expected) return true
+      if (expected.sessionId !== undefined && this.state?.sessionId !== expected.sessionId) return false
+      if (expected.sessionFile !== undefined && !sameSessionPath(this.state?.sessionFile, expected.sessionFile)) return false
+      if (expected.notSessionId !== undefined && this.state?.sessionId === expected.notSessionId) return false
+      if (expected.notSessionFile !== undefined && sameSessionPath(this.state?.sessionFile, expected.notSessionFile)) return false
+      return true
     }
-    if (outsideExpected()) return
+    const superseded = (): HydrateResult => ({ ok: false, changed: true })
+    const outsideExpected = (): boolean => !!expected && !matchesExpected()
+    const state = await this.requireRpc().command('get_state').catch(() => null)
+    if (expected && !state?.success) {
+      return { ok: false, error: pick('读不到会话状态，没能确认当前会话；请重新打开这个会话', 'Could not read the session state, so the current session is unconfirmed. Reopen this session') }
+    }
     if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
+    if (outsideExpected()) {
+      return { ok: false, changed: true, error: pick('会话状态与预期不一致，请重新打开这个会话', 'Session state does not match what was expected; reopen this session') }
+    }
     if (this.state?.sessionId && this.state.sessionId !== scopeBefore.sessionId) await this.reclaimSavedQueue().catch(() => undefined)
     const sessionFile = this.state?.sessionFile
 
     const fromFile = sessionFile ? await this.readHistoryOf(sessionFile) : null
     let presentationReady = false
-    if (!this.nativeBranchView && outsideExpected()) return
-    if (supersededByLive()) return
+    if (!this.nativeBranchView && outsideExpected()) return superseded()
+    if (supersededByLive()) return superseded()
     if (this.nativeBranchView) {
       const snapshot = await this.sessionEntries()
-      if (outsideExpected()) return
+      if (outsideExpected()) return superseded()
       if (!snapshot.ok) throw new Error(snapshot.error ?? pick('无法读取当前原生分支', 'Cannot read the current native branch'))
       const path = nativeActiveBranch(snapshot.entries ?? [], snapshot.leafId ?? null)
       const messageEntries = path.flatMap(entry => {
@@ -1188,7 +1247,7 @@ export class AgentController extends EventEmitter {
       presentationReady = this.readHistory !== undefined
     } else {
       const msgs = await this.requireRpc().command('get_messages').catch(() => null)
-      if (outsideExpected()) return
+      if (outsideExpected()) return superseded()
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
       this.messages = Array.isArray(raw)
         ? projectHistory(raw, this.localizeHistoryImage)
@@ -1197,7 +1256,7 @@ export class AgentController extends EventEmitter {
     if (sessionFile && !presentationReady) {
       const hydrated = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
         .hydrateMessages(sessionFile, this.messages)
-      if (outsideExpected() || supersededByLive()) return
+      if (outsideExpected() || supersededByLive()) return superseded()
       this.messages = hydrated
     }
 
@@ -1224,6 +1283,7 @@ export class AgentController extends EventEmitter {
     this.titleTried.clear()
     this.lastTitle = undefined
     void this.maybeGenerateTitle()
+    return { ok: true }
   }
 
   private pushSessionSync(
@@ -1417,6 +1477,11 @@ export class AgentController extends EventEmitter {
     this.push({ ch: 'question-log', payload: { sessionId, entries: questionLog.list(sessionId) } })
   }
 
+  pushSessionLogs(): void {
+    this.pushQuestionLog()
+    this.pushApprovalLog()
+  }
+
   private async runQuestionForm(
     question: string,
     params: Record<string, unknown>,
@@ -1573,7 +1638,7 @@ export class AgentController extends EventEmitter {
     const settings = await getSettings()
     if (settings.guardOutsideWrites && (await this.getPermissionMode?.()) !== 'all') {
       const roots = await Promise.all([
-        this.cwd, tmpdir(), '/tmp', '/var/tmp', join(homedir(), '.pi'), PI_AGENT_DIR, YAN_DIR,
+        this.cwd, tmpdir(), '/tmp', '/var/tmp', join(YAN_DIR, 'tmp'), join(YAN_DIR, 'artifacts'),
         ...(settings.guardAllowRoots ?? [])
       ].map((root) => realpath(root).catch(() => resolve(root))))
       const outside: string[] = []
@@ -1883,7 +1948,27 @@ export class AgentController extends EventEmitter {
         body: typeof params.body === 'string' ? params.body : '',
         replace: params.replace === true || params.replace === 'true'
       },
-      { reservedNames }
+      {
+        reservedNames,
+        confirm: async ({ name, description, body, replaced }) => {
+          const option = replaced ? pick('覆盖', 'Overwrite') : pick('保存到我的技能', 'Save to My skills')
+          try {
+            const answer = await this.requestApprovalChoice({
+              title: replaced ? pick(`覆盖技能「${name}」`, `Overwrite skill "${name}"`) : pick(`保存技能「${name}」`, `Save skill "${name}"`),
+              message: [description, body.length > 4000 ? `${body.slice(0, 4000)}\n…` : body].join('\n\n'),
+              options: [option],
+              placeholder: pick('或告诉 Agent 换个做法（不保存）', 'Or tell the Agent to do it another way (no save)'),
+              timeout: UI_TIMEOUT_APPROVAL
+            })
+            if (answer.value === option) return { ok: true }
+            const reply = answer.cancelled ? undefined : answer.value?.trim() || undefined
+            return { ok: false, ...(reply ? { reply } : {}) }
+          } catch (error) {
+            if (!(error instanceof CapabilityCommandError) || error.code !== 'question_timeout') throw error
+            return { ok: false, timedOut: true }
+          }
+        }
+      }
     )
     if (!res.ok) throw new CapabilityCommandError(`skill_${res.code.replace(/-/g, '_')}`, res.error)
     return {
@@ -2677,7 +2762,18 @@ export class AgentController extends EventEmitter {
         const deferredHydrate = this.hydrateDeferred
         this.hydrateDeferred = null
         const persisted = this.persistTurnTiming()
-        if (deferredHydrate) void persisted.catch(() => undefined).then(() => this.hydrate(deferredHydrate)).catch(() => undefined)
+        if (deferredHydrate) void persisted.catch(() => undefined).then(() => this.hydrate(deferredHydrate)).then((refreshed) => {
+          if (refreshed.ok || refreshed.changed) return
+          this.push({
+            ch: 'notify',
+            payload: {
+              id: `hydrate-${Date.now()}`,
+              method: 'notify',
+              notifyType: 'warning',
+              message: pick('回合结束后刷新会话失败，请切一次会话或重新打开', 'Failed to refresh the session after the turn. Switch sessions or reopen it')
+            }
+          })
+        }).catch(() => undefined)
         this.syncDeferredModelSwitch()
         void this.refreshState()
         void this.refreshStats()
@@ -2760,8 +2856,20 @@ export class AgentController extends EventEmitter {
         if (evt.willRetry !== true) this.settleExecutionAdmission()
         void this.refreshState()
         void this.refreshStats()
-        void this.hydrate({ sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }).catch((error) => {
-          console.warn('[agent] 压缩后刷新会话失败', error)
+        void this.hydrate({ sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }).then((refreshed) => {
+          if (refreshed.ok || refreshed.changed) return
+          console.warn('[agent] session refresh after compaction failed', refreshed.error)
+          this.push({
+            ch: 'notify',
+            payload: {
+              id: `hydrate-${Date.now()}`,
+              method: 'notify',
+              notifyType: 'warning',
+              message: pick('压缩后刷新会话失败，请切一次会话或重新打开', 'Failed to refresh the session after compaction. Switch sessions or reopen it')
+            }
+          })
+        }).catch((error) => {
+          console.warn('[agent] session refresh after compaction failed', error)
           this.push({
             ch: 'notify',
             payload: {
@@ -3430,15 +3538,19 @@ export class AgentController extends EventEmitter {
     return this.ui.pendingUiRequests()
   }
 
-  answerUiRemotely(
-    id: string,
-    answer: { value: string } | { confirmed: boolean } | { cancelled: true }
-  ): { ok: true } | { ok: false; code: 'question_not_pending' | 'sensitive_confirmation_requires_desktop' } {
-    return this.ui.answerUiRemotely(id, answer)
+  async answerUiRemotely(
+    id: Parameters<UiRequests['answerUiRemotely']>[0],
+    answer: Parameters<UiRequests['answerUiRemotely']>[1]
+  ): Promise<Awaited<ReturnType<UiRequests['answerUiRemotely']>>> {
+    return await this.ui.answerUiRemotely(id, answer)
   }
 
   respondUi(res: HostUiResponse & { id: string }, by: 'desktop' | 'remote' = 'desktop'): void {
-    this.ui.respondUi(res, by)
+    void Promise.resolve(this.ui.respondUi(res, by)).catch(() => undefined)
+  }
+
+  async respondUiResult(res: HostUiResponse & { id: string }, by: 'desktop' | 'remote' = 'desktop'): Promise<UiAnswerResult> {
+    return await this.ui.respondUi(res, by)
   }
 
   private queueItems(raw: string[], previous: QueueItem[]): QueueItem[] {
@@ -3509,7 +3621,9 @@ export class AgentController extends EventEmitter {
       followUp: saved.items.followUp.map(item => this.newQueueItem(item.text, item.images))
     }
     if (items.steering.length || items.followUp.length) {
-      this.push({ ch: 'queue-reclaimed', payload: { steering: saved.steering, followUp: saved.followUp, items, sessionId } })
+      const emit = (): void => this.push({ ch: 'queue-reclaimed', payload: { steering: saved.steering, followUp: saved.followUp, items, sessionId } })
+      if (this.suppressPush) this.afterScope.push(emit)
+      else emit()
     }
     if (saved.lostImages) {
       this.push({ ch: 'notify', payload: { id: `queue-lost-images-${Date.now()}`, method: 'notify', notifyType: 'warning', message: pick(`旧版本保存的排队消息里有 ${saved.lostImages} 张图片没能保存，需要重新添加。`, `${saved.lostImages} image(s) in queued messages saved by an older version could not be kept. Add them again.`) } })
@@ -3707,7 +3821,14 @@ export class AgentController extends EventEmitter {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后发送', 'The project is reverting code. Try sending again shortly') }
       payload.streamingBehavior = mode ?? 'followUp'
       if (!autoContinue && this.deferredModelSwitch && !this.executionActive()) {
-        await this.enqueueCapabilityChange(() => this.applyDeferredModelSwitch())
+        const wanted = this.deferredModelSwitch
+        const label = wanted.model ? `${wanted.model.provider}/${wanted.model.id}` : wanted.thinkingLevel ? pick(`思考档 ${wanted.thinkingLevel}`, `thinking level ${wanted.thinkingLevel}`) : ''
+        const switched = await this.enqueueCapabilityChange(() => this.applyDeferredModelSwitch())
+          .catch((error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : String(error) }))
+        if (!switched.ok) {
+          const detail = switched.error ? `：${switched.error}` : ''
+          return { ok: false, error: pick(`没能切换到 ${label}，消息未发送，草稿已保留${detail}`, `Could not switch to ${label}; message not sent, draft kept${switched.error ? `: ${switched.error}` : ''}`) }
+        }
       }
       const rpc = this.rpc
       const sessionId = this.state?.sessionId
@@ -4201,6 +4322,13 @@ export class AgentController extends EventEmitter {
         }
         this.scopeChanged = false
         for (const msg of pending.values()) this.push(msg)
+        for (const emit of this.afterScope.splice(0)) {
+          try {
+            emit()
+          } catch (error) {
+            console.warn('[agent] push after session switch failed', error)
+          }
+        }
       }
     }
   }
@@ -4209,6 +4337,7 @@ export class AgentController extends EventEmitter {
     if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
     const payload: Record<string, unknown> = typeof parentSession === 'string' && parentSession ? { parentSession } : {}
     return this.changeSessionScope(async (changed) => {
+      const previous = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
       try {
         const res = await this.requireRpc().command('new_session', payload)
         if (!res.success) return { ok: false, error: res.error }
@@ -4218,8 +4347,11 @@ export class AgentController extends EventEmitter {
         changed()
         this.ui.cancelPending()
         this.resetSessionScope()
-        await this.hydrate()
-        return { ok: true }
+        const hydrated = await this.hydrate({
+          ...(previous.sessionId ? { notSessionId: previous.sessionId } : {}),
+          ...(previous.sessionFile ? { notSessionFile: previous.sessionFile } : {})
+        })
+        return hydrated.ok ? { ok: true } : { ok: false, error: hydrated.error ?? sessionSwitchUnconfirmed() }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
@@ -4237,8 +4369,15 @@ export class AgentController extends EventEmitter {
       changed()
       this.ui.cancelPending()
       this.resetSessionScope()
-      await this.hydrate()
-      return { ok: true }
+      const hydrated = await this.hydrate({ sessionFile: path })
+      if (hydrated.ok) return { ok: true }
+      const current = this.state?.sessionFile
+      if (current && await sameSessionFileIdentity(current, path)) {
+        const retried = await this.hydrate({ sessionFile: current })
+        if (retried.ok) return { ok: true }
+        return { ok: false, error: retried.error ?? sessionSwitchUnconfirmed() }
+      }
+      return { ok: false, error: hydrated.error ?? sessionSwitchUnconfirmed() }
     })
   }
 
@@ -4479,7 +4618,12 @@ export class AgentController extends EventEmitter {
 
   private async applyModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
-    const res = await this.rpc.command('set_model', { provider, modelId })
+    let res: Awaited<ReturnType<PiRpc['command']>>
+    try {
+      res = await this.rpc.command('set_model', { provider, modelId })
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
     if (!res.success) return { ok: false, error: res.error }
     await this.refreshStateWithThinkingLevels()
     await this.refreshStats()
@@ -4582,7 +4726,14 @@ export class AgentController extends EventEmitter {
     if (!deferred || deferred.sessionId !== this.state?.sessionId) return
     if (readPendingModelSwitch(deferred.sessionId)) return
     this.deferredModelSwitch = undefined
-    void this.refreshStateWithThinkingLevels().then(() => this.refreshStats())
+    void this.refreshStateWithThinkingLevels().then(() => {
+      const state = this.state
+      if (deferred.model && state?.sessionId === deferred.sessionId && modelKeyOf(state.model) !== modelKeyOf(deferred.model)) {
+        const label = `${deferred.model.provider}/${deferred.model.id}`
+        this.push({ ch: 'notify', payload: { id: `model-switch-unapplied-${Date.now()}`, method: 'notify', notifyType: 'warning', message: pick(`没能切换到 ${label}，仍在使用原来的模型。`, `Could not switch to ${label}; still using the previous model.`) } })
+      }
+      return this.refreshStats()
+    })
   }
 
   private clearPendingModelChange(): void {

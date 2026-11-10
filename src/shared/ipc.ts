@@ -1415,6 +1415,7 @@ export interface PackageActionView {
   source: string
   local?: boolean
   cwd: string
+  allowLifecycleScripts?: boolean
 }
 
 export interface PackageActionResultView {
@@ -1714,9 +1715,18 @@ export type DeepLinkIntent =
   | { action: 'settings'; section: string }
   | { action: 'pair'; address: string; code: string }
 
+export interface PinnedNetworkStatus {
+  guard: { status: 'idle' | 'starting' | 'ready' | 'system-proxy' | 'failed'; reason: string }
+  routing: { direct: number; upstream: number; unsupported: number; lastUpstream: string }
+}
+
 export interface YanBridge {
   readonly probeMode: boolean
   readonly windowMaterial: string
+  pinnedNetwork: {
+    status(): Promise<PinnedNetworkStatus>
+  }
+
   appUpdate: {
     status(): Promise<import('./app-update').AppUpdateStatus>
     check(): Promise<import('./app-update').AppUpdateStatus>
@@ -1785,12 +1795,12 @@ export interface YanBridge {
   setSessionSnoozed(sessionId: string, until: number | null): Promise<{ ok: boolean; error?: string }>
   setSessionMarkedUnread(sessionId: string, marked: boolean): Promise<{ ok: boolean; error?: string }>
   nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
-  compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }>
+  compact(customInstructions?: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   compactionInfo(cwd: string, contextWindow: number): Promise<CompactionInfo | null>
   renameSession(name: string, sessionId?: string): Promise<{ ok: boolean; error?: string }>
 
   fork(entryId: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; text?: string }>
-  clone(): Promise<{ ok: boolean; error?: string }>
+  clone(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   forkPoints(): Promise<ForkPoint[]>
   exportHtml(outputPath?: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; path?: string; error?: string }>
   deleteSession(path: string): Promise<{ ok: boolean; undoToken?: string; error?: string }>
@@ -1799,7 +1809,7 @@ export interface YanBridge {
   saveInlineArtifact(input: SaveInlineArtifactInput): Promise<SaveInlineArtifactResult>
 
   runBash(command: string, options?: { excludeFromContext?: boolean }, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  abortBash(): Promise<void>
+  abortBash(expected?: ExpectedRuntimeOwner): Promise<void>
 
   listModels(): Promise<ModelInfo[]>
   setModel(provider: string, modelId: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
@@ -1820,11 +1830,11 @@ export interface YanBridge {
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
 
-  abortRetry(): Promise<{ ok: boolean; error?: string }>
+  abortRetry(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   cycleModel(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
   cycleModelBack(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
   cycleThinking(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
-  lastAssistantText(): Promise<string | null>
+  lastAssistantText(expected?: ExpectedRuntimeOwner): Promise<string | null>
 
   piInfo(): Promise<PiInfo>
   redetectPi(): Promise<PiInfo>
@@ -1908,7 +1918,7 @@ export interface YanBridge {
   pickCwd(): Promise<string | null>
   setCwd(cwd: string): Promise<{ ok: boolean; cwd?: string; error?: string }>
 
-  respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): void
+  respondUi(res: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean }): Promise<{ ok: boolean; error?: string; code?: 'not_pending' | 'pi_down' | 'invalid' }>
   extendUi(id: string, extraMs?: number): Promise<{ ok: boolean; timeout?: number; deadline?: number; error?: string }>
   startUiTimer(id: string): Promise<{ ok: boolean; timeout?: number; deadline?: number; error?: string }>
 
@@ -2114,6 +2124,7 @@ export interface YanBridge {
     relayCancel(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayRevoke(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     relayForget(id: string): Promise<import('./remote-protocol').RemoteAccessStatus | null>
+    resetIdentity(): Promise<{ ok: boolean; revokedDevices?: number; hostFingerprint?: string; error?: string }>
   }
 
   terminal: {

@@ -7,12 +7,19 @@ export interface QuickAskAgentPort {
   getState(): { sessionId?: string; sessionFile?: string } | null
 }
 
+export interface QuickAskPreviousSession {
+  runId: string | null
+  sessionId?: string
+  sessionFile?: string
+}
+
 export interface QuickAskSubmitDeps {
   activeRunId(): string | null
   agentOf(runId: string): QuickAskAgentPort | null
   start(): Promise<{ ok: boolean; error?: string }>
   createSession(opts: { projectId?: string }): Promise<{ ok: boolean; error?: string; id?: string }>
   applyModel?(runId: string, model: { provider: string; id: string }): Promise<{ ok: boolean; error?: string }>
+  abandonSession?(runId: string, previous: QuickAskPreviousSession): Promise<void>
 }
 
 export type QuickAskSessionTarget = { ok: true; cwd: string; projectId?: string } | { ok: false; error: string }
@@ -32,30 +39,56 @@ export async function submitQuickAsk(deps: QuickAskSubmitDeps, payload: QuickAsk
   const invalid = validateQuickAsk(payload.prompt, payload.target, hasCurrent)
   if (invalid) return { ok: false, code: invalid }
 
+  const previousRunId = deps.activeRunId()
+  const previousState = previousRunId ? deps.agentOf(previousRunId)?.getState() ?? null : null
+  const previous: QuickAskPreviousSession = {
+    runId: previousRunId,
+    ...(previousState?.sessionId ? { sessionId: previousState.sessionId } : {}),
+    ...(previousState?.sessionFile ? { sessionFile: previousState.sessionFile } : {})
+  }
+
   let runId: string | null = null
+  let created = false
   if (payload.target === 'new') {
     const started = await deps.start()
     if (!started.ok) return { ok: false, code: 'start-failed', message: started.error }
-    const created = await deps.createSession({
+    const session = await deps.createSession({
       ...(payload.projectId ? { projectId: payload.projectId } : {})
     })
-    if (!created.ok || !created.id) return { ok: false, code: 'create-failed', message: created.error }
-    runId = created.id
+    if (!session.ok || !session.id) return { ok: false, code: 'create-failed', message: session.error }
+    runId = session.id
+    created = true
   } else {
     runId = deps.activeRunId()
   }
 
   const agent = runId ? deps.agentOf(runId) : null
-  if (!agent || !runId) return { ok: false, code: 'unavailable' }
+  const abandonCreated = async (): Promise<void> => {
+    if (!created || !runId || !deps.abandonSession) return
+    await deps.abandonSession(runId, previous).catch(() => undefined)
+  }
+  if (!agent || !runId) {
+    await abandonCreated()
+    return { ok: false, code: 'unavailable' }
+  }
 
   if (payload.model) {
-    if (!deps.applyModel) return { ok: false, code: 'model-failed' }
+    if (!deps.applyModel) {
+      await abandonCreated()
+      return { ok: false, code: 'model-failed' }
+    }
     const applied = await deps.applyModel(runId, payload.model)
-    if (!applied.ok) return { ok: false, code: 'model-failed', message: applied.error }
+    if (!applied.ok) {
+      await abandonCreated()
+      return { ok: false, code: 'model-failed', message: applied.error }
+    }
   }
 
   const sent = await agent.send(payload.prompt.trim())
-  if (!sent.ok) return { ok: false, code: 'send-failed', message: sent.error }
+  if (!sent.ok) {
+    await abandonCreated()
+    return { ok: false, code: 'send-failed', message: sent.error }
+  }
   const state = agent.getState()
   return {
     ok: true,

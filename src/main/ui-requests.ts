@@ -24,8 +24,14 @@ export function questionToolCallId(params: Record<string, unknown>): string | un
 
 export interface UiRequestsHost {
   push(msg: MainPush): void
-  respondToPi(res: Record<string, unknown>): void
+  respondToPi(res: Record<string, unknown>): boolean | Promise<boolean> | undefined
 }
+
+export type UiAnswerResult = { ok: true } | { ok: false; code: 'not_pending' | 'pi_down' }
+
+export type RemoteUiAnswerResult =
+  | { ok: true }
+  | { ok: false; code: 'question_not_pending' | 'sensitive_confirmation_requires_desktop' | 'pi_down' }
 
 export class UiRequests {
   constructor(private readonly host: UiRequestsHost) {}
@@ -79,7 +85,7 @@ export class UiRequests {
       } as unknown as ExtensionUiRequest
       this.payloads.set(id, payload)
       this.host.push({ ch: 'ui-request', payload })
-      request.signal?.addEventListener('abort', () => this.respondUi({ id, cancelled: true }), { once: true })
+      request.signal?.addEventListener('abort', () => this.deliverUi({ id, cancelled: true }, 'desktop'), { once: true })
     })
   }
 
@@ -100,6 +106,8 @@ export class UiRequests {
   private expireHostUi(id: string): void {
     const pending = this.pendingHostUi.get(id)
     if (!pending) return
+    const payload = this.payloads.get(id)
+    const authorization = payload?.purpose === 'approval' || payload?.sensitive === true
     this.pendingHostUi.delete(id)
     this.pending.delete(id)
     if (pending.timer) clearTimeout(pending.timer)
@@ -108,9 +116,11 @@ export class UiRequests {
     this.host.push({ ch: 'ui-resolved', payload: { id, by: 'timeout' } })
     pending.reject(new CapabilityCommandError(
       'question_timeout',
-      pending.started
-        ? '问题等待超时，未猜测用户答案'
-        : '问题等待超时：问题面板始终没有显示给用户（用户很可能没看到），未猜测用户答案'
+      authorization
+        ? pick('等待确认超时：没有人批准，没有获得授权，审批仍然有效。', 'Timed out waiting for confirmation: nobody approved, so authorization was not granted; the approval request is still valid.')
+        : pending.started
+          ? pick('提问等待超时，用户可能不在。请根据现有上下文按最佳判断继续，在最终回复中写明你作的假设；之后仍需要时再问；审批与高风险确认仍然有效。', 'The question timed out; the user may be away. Continue with your best judgment from the current context, state your assumptions in the final reply, ask again later if still needed; approvals and high-risk confirmations remain required.')
+          : pick('提问面板始终没有显示给用户（用户很可能没看到）。请按最佳判断继续并在最终回复写明假设；审批与高风险确认仍然有效。', 'The question panel never reached the user (they likely did not see it). Continue with your best judgment and state your assumptions in the final reply; approvals and high-risk confirmations remain required.')
     ))
   }
 
@@ -184,23 +194,28 @@ export class UiRequests {
     })
   }
 
-  answerUiRemotely(
+  private deliverUi(res: HostUiResponse & { id: string }, by: 'desktop' | 'remote'): void {
+    void this.respondUi(res, by)
+  }
+
+  async answerUiRemotely(
     id: string,
     answer: { value: string } | { confirmed: boolean } | { cancelled: true }
-  ): { ok: true } | { ok: false; code: 'question_not_pending' | 'sensitive_confirmation_requires_desktop' } {
+  ): Promise<RemoteUiAnswerResult> {
     const request = this.pendingUiRequests().find((item) => item.id === id)
     if (!request) return { ok: false, code: 'question_not_pending' }
     if ((request.sensitive === true || request.purpose === 'approval') && !('cancelled' in answer)) {
       return { ok: false, code: 'sensitive_confirmation_requires_desktop' }
     }
-    this.respondUi({ id, ...answer } as HostUiResponse & { id: string }, 'remote')
-    return { ok: true }
+    const result = await this.respondUi({ id, ...answer } as HostUiResponse & { id: string }, 'remote')
+    if (result.ok) return { ok: true }
+    return { ok: false, code: result.code === 'pi_down' ? 'pi_down' : 'question_not_pending' }
   }
 
-  respondUi(res: HostUiResponse & { id: string }, by: 'desktop' | 'remote' = 'desktop'): void {
-    const wasPending = !!res.id && this.pending.has(res.id)
+  async respondUi(res: HostUiResponse & { id: string }, by: 'desktop' | 'remote' = 'desktop'): Promise<UiAnswerResult> {
     const hostPending = this.pendingHostUi.get(res.id)
-    if (res.id?.startsWith('yan-question-') && !hostPending) return
+    const wasPending = !!res.id && this.pending.has(res.id)
+    if (res.id?.startsWith('yan-question-') && !hostPending) return { ok: false, code: 'not_pending' }
     if (hostPending) {
       if (hostPending.timer) clearTimeout(hostPending.timer)
       clearTimeout(hostPending.hardTimer)
@@ -208,15 +223,22 @@ export class UiRequests {
       this.pending.delete(res.id)
       hostPending.resolve(res)
     } else {
+      let written = false
+      try {
+        written = (await this.host.respondToPi(res)) === true
+      } catch {
+        written = false
+      }
+      if (!written) return { ok: false, code: wasPending ? 'pi_down' : 'not_pending' }
       if (res.id) this.pending.delete(res.id)
-      this.host.respondToPi(res as Record<string, unknown>)
     }
     if (res.id) this.payloads.delete(res.id)
     if (wasPending) this.host.push({ ch: 'ui-resolved', payload: { id: res.id, by } })
+    return { ok: true }
   }
 
   cancelPending(): void {
-    for (const id of [...this.pending]) this.respondUi({ id, cancelled: true })
+    for (const id of [...this.pending]) this.deliverUi({ id, cancelled: true }, 'desktop')
     this.pending.clear()
     this.payloads.clear()
     this.seen.clear()

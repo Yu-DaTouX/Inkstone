@@ -464,9 +464,18 @@ export class PiRpc extends EventEmitter {
     })
   }
 
-  respondUi(res: Record<string, unknown>): void {
-    if (!this.child || this.closed) return
-    this.child.stdin.write(JSON.stringify({ type: 'extension_ui_response', ...res }) + '\n')
+  respondUi(res: Record<string, unknown>): Promise<boolean> {
+    const child = this.child
+    const stdin = child?.stdin
+    if (!child || this.closed || !stdin || stdin.destroyed || !stdin.writable) return Promise.resolve(false)
+    const line = JSON.stringify({ type: 'extension_ui_response', ...res }) + '\n'
+    return new Promise<boolean>((resolve) => {
+      try {
+        stdin.write(line, 'utf8', (error) => resolve(!error))
+      } catch {
+        resolve(false)
+      }
+    })
   }
 
   private failAll(err: Error): void {

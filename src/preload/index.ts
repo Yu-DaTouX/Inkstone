@@ -148,6 +148,10 @@ type Ok = { ok: boolean; error?: string }
 const api: YanBridge = {
   probeMode: process.argv.includes('--yan-isolated-probe'),
   windowMaterial: (process.argv.find((a) => a.startsWith('--yan-window-material=')) ?? '').slice('--yan-window-material='.length),
+  pinnedNetwork: {
+    status: () => invoke('yan:pinnedNetworkStatus')
+  },
+
   appUpdate: {
     status: () => invoke('yan:update:status'),
     check: () => invoke('yan:update:check'),
@@ -214,11 +218,11 @@ const api: YanBridge = {
       invoke<Awaited<ReturnType<YanBridge['sync']['exportSession']>>>('yan:sync:exportSession', sessionPath),
     importSession: () => invoke<Awaited<ReturnType<YanBridge['sync']['importSession']>>>('yan:sync:importSession')
   },
-  compact: (customInstructions) => invoke<Ok>('yan:compact', customInstructions),
+  compact: (customInstructions, expected) => invoke<Ok>('yan:compact', customInstructions, expected),
   compactionInfo: (cwd, contextWindow) => invoke<Awaited<ReturnType<YanBridge['compactionInfo']>>>('yan:compactionInfo', cwd, contextWindow),
   renameSession: (name, sessionId) => invoke<Ok>('yan:renameSession', name, sessionId),
   fork: (entryId, expected) => invoke<{ ok: boolean; error?: string; text?: string }>('yan:fork', entryId, expected),
-  clone: () => invoke<Ok>('yan:clone'),
+  clone: (expected) => invoke<Ok>('yan:clone', expected),
   forkPoints: () => invoke<ForkPoint[]>('yan:forkPoints'),
   exportHtml: (outputPath, expected) => invoke<{ ok: boolean; path?: string; error?: string }>('yan:exportHtml', outputPath, expected),
   deleteSession: (path) => invoke<{ ok: boolean; undoToken?: string; error?: string }>('yan:deleteSession', path),
@@ -227,7 +231,7 @@ const api: YanBridge = {
   saveInlineArtifact: (input) => invoke<SaveInlineArtifactResult>('yan:saveInlineArtifact', input),
 
   runBash: (command, options, expectedRuntime) => invoke<Ok>('yan:runBash', command, options, expectedRuntime),
-  abortBash: () => invoke<void>('yan:abortBash'),
+  abortBash: (expected) => invoke<void>('yan:abortBash', expected),
 
   listModels: () => invoke<ModelInfo[]>('yan:listModels'),
   setModel: (provider, modelId, expected) => invoke<Ok>('yan:setModel', provider, modelId, expected),
@@ -248,11 +252,11 @@ const api: YanBridge = {
   resyncView: (reason) => invoke<{ ok: boolean }>('yan:resyncView', reason),
   setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
   setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
-  abortRetry: () => invoke<Ok>('yan:abortRetry'),
+  abortRetry: (expected) => invoke<Ok>('yan:abortRetry', expected),
   cycleModel: (expected) => invoke<Ok>('yan:cycleModel', expected),
   cycleModelBack: (expected) => invoke<Ok>('yan:cycleModelBack', expected),
   cycleThinking: (expected) => invoke<Ok>('yan:cycleThinking', expected),
-  lastAssistantText: () => invoke<string | null>('yan:lastAssistantText'),
+  lastAssistantText: (expected) => invoke<string | null>('yan:lastAssistantText', expected),
   piInfo: () => invoke<PiInfo>('yan:piInfo'),
   redetectPi: () => invoke<PiInfo>('yan:redetectPi'),
 
@@ -525,7 +529,7 @@ const api: YanBridge = {
   pickCwd: () => invoke<string | null>('yan:pickCwd'),
   setCwd: (cwd) => invoke<Ok>('yan:setCwd', cwd),
 
-  respondUi: (res) => ipcRenderer.send('yan:respondUi', res),
+  respondUi: (res) => invoke<{ ok: boolean; error?: string; code?: 'not_pending' | 'pi_down' | 'invalid' }>('yan:respondUi', res),
   extendUi: (id, extraMs) => invoke('yan:extendUi', id, extraMs),
   startUiTimer: (id) => invoke('yan:startUiTimer', id),
 
@@ -685,7 +689,8 @@ const api: YanBridge = {
     relayPair: (kind) => invoke<RemoteAccessStatus | null>('yan:remote:relayPair', kind),
     relayCancel: () => invoke<RemoteAccessStatus | null>('yan:remote:relayCancel'),
     relayRevoke: (id) => invoke<RemoteAccessStatus | null>('yan:remote:relayRevoke', id),
-    relayForget: (id) => invoke<RemoteAccessStatus | null>('yan:remote:relayForget', id)
+    relayForget: (id) => invoke<RemoteAccessStatus | null>('yan:remote:relayForget', id),
+    resetIdentity: () => invoke<{ ok: boolean; revokedDevices?: number; hostFingerprint?: string; error?: string }>('yan:remote:resetIdentity')
   },
 
   terminal: {

@@ -1,3 +1,4 @@
+import './exe-search-guard'
 import { isRestoredReadonly, restoredReadonlyMessage } from './restored-readonly'
 import { setUserHandoffRelease, userMessageSent } from './browser/user-handoff'
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
@@ -37,12 +38,14 @@ import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize, syncFolderService } from './storage-move'
 import { getSessionLayout, moveSessionLayout, rememberSession } from './session-layout'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
-import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
+import { rewriteSessionCwd, movedSessionContinuationPrompt, beginSessionMove, restoreSessionHeaderCwd, type SessionMoveAnswer, type SessionMovePrompt, type SessionMoveLease } from './session-move'
 import { resolveSessionOpenTarget } from './session-open-target'
 import { readChainMessages } from './session-history'
 import { imageFile, localizeImage } from './image-store'
 import { ArtifactStore, sessionArtifactDir } from './artifacts'
 import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames, htmlArtifactPreviews } from './html-artifact-preview'
+import { attachPinnedNetworkGuard, pinnedGuardStatus, pinnedRoutingStatus, shutdownPinnedNetworkGuard } from './net/pinned-network'
+import { pinnedGuardNotice, type PinnedGuardNotice } from './pinned-guard-notice'
 import { captureHtmlPreviewShots } from './artifact-preview-shots'
 import { exportVideo } from './video-export'
 import { exportHtmlImage } from './artifact-image-export'
@@ -63,10 +66,12 @@ import { openableExternalUrl } from './external-url'
 import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSink, terminalProcessId } from './terminal'
 import { agentTerminalIds } from './terminal-agent'
 import { installLocalServerControl } from './browser/local-server-owner'
+import { installSessionPermissionBoundary, trustedFrameTrust } from './browser/permission-boundary'
 import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
 import { sessionActionAgent, sessionActionChanged } from './ipc/session-action-target'
+import { abortBashFor, lastAssistantTextFor } from './ipc/session-command-target'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
@@ -99,6 +104,7 @@ import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
 import { registerRunsIpc } from './ipc/runs-ipc'
 import { registerSyncIpc } from './ipc/sync-ipc'
+import type { SyncImportConfirm } from './sync/local-store'
 import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
 import { registerCanvasCaptureIpc } from './ipc/canvas-capture-ipc'
 import { registerHtmlEditIpc } from './ipc/html-edit-ipc'
@@ -130,6 +136,7 @@ import { registerVoiceIpc, voiceTranscriber } from './ipc/voice-ipc'
 import { registerAndroidIpc } from './ipc/android-ipc'
 import { registerAppUpdate } from './app-update'
 import { registerPeerIpc } from './ipc/peer-ipc'
+import { prepareUpdateAfterWriters } from './shutdown-update'
 import { registerCollabIpc } from './ipc/collab-ipc'
 import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
@@ -159,7 +166,7 @@ import { cachedTitlesSync, primeCachedTitles } from './title'
 import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
-import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueEditOp, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
+import type { Attachment, AttentionNotify, ExpectedRuntimeOwner, FileRequestContext, MainPush, QueueEditOp, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -351,6 +358,9 @@ try {
 }
 
 let win: BrowserWindow | null = null
+let pendingPinnedGuardNotice: PinnedGuardNotice | null = null
+let primaryRestoring = false
+let primaryRestoreFile: string | null = null
 let trayLanguage: string | undefined
 let trayAssets: ReturnType<typeof createTrayAssetStore> | null = null
 let trayMotionAllowed = false
@@ -385,6 +395,7 @@ let runsHost: RunsHost | null = null
 let mcpAppViewService: McpAppViewService | null = null
 let appViewForeground: { runnerId: string; sessionId: string; sessionFile: string; generation: number } | null = null
 let syncController: ReturnType<typeof registerSyncIpc> | null = null
+let updateControl: ReturnType<typeof registerAppUpdate> | null = null
 const runnerVisibility = new RunnerVisibility()
 let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
 let piPackageActivationTimer: ReturnType<typeof setTimeout> | null = null
@@ -423,6 +434,7 @@ const subagentService: SubagentService = new SubagentService({
   codemodeExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.codemodeExtension),
   providerExtensions: providerExtensionPaths,
   guardExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.dangerGuardExtension),
+  contextCompactExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.contextCompactExtension),
   shellExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.shellFallbackExtension),
   guideExtension: () => yanThinResourcePath('subagent-guide.js'),
   readOnlyExtension: () => yanThinResourcePath('readonly-tools.js'),
@@ -1049,6 +1061,10 @@ function warnSharedCwdOnce(runnerId: string, cwd: string, registry: RunnerRegist
 }
 
 function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnvelope | null): void {
+  if (primaryRestoring && msg.ch === 'state' && primaryRestoreFile) {
+    const file = (msg.payload as SessionState | undefined)?.sessionFile
+    if (file && resolve(file) !== resolve(primaryRestoreFile)) return
+  }
   const runtime = runners?.runtimeOf(runnerId)
   if (!runtime) {
     if (msg.ch === 'ui-request') console.warn(`[ui-request] 实例 ${runnerId} 已摘登记，问题推送被丢弃：${msg.payload.id}`)
@@ -1310,6 +1326,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
   }
   void ag.refreshStats({ expectGeneration: expected.generation }).catch(() => {})
   void ag.refreshTodos().catch(() => {})
+  if (runners?.agentOf(id) === ag) ag.pushSessionLogs()
   pushRunners()
 }
 
@@ -1335,7 +1352,7 @@ async function runShutdown(): Promise<void> {
   bundledPlugins.close()
   attention?.dispose()
   auxWindows?.dispose()
-  await runShutdownSteps(
+  const outcomes = await runShutdownSteps(
     [
       { name: 'remote-access', run: async () => { try { await remoteAccess?.stop() } finally { remoteAccess = null } } },
       { name: 'runners', run: () => runners?.stopAll() },
@@ -1350,13 +1367,31 @@ async function runShutdown(): Promise<void> {
       { name: 'runs-host', run: async () => { try { await runsHost?.dispose() } finally { runsHost = null } } },
       { name: 'browser', run: () => browser?.dispose() },
       { name: 'terminals', run: () => disposeTerminals() },
+      { name: 'pinned-network', run: () => shutdownPinnedNetworkGuard() },
       { name: 'file-name-search', run: () => disposeFileNameSearch() },
       { name: 'usage-stats-worker', run: () => disposeUsageStatsWorker() },
-      { name: 'content-search', run: () => disposeContentSearch() },
-      { name: 'data-root-unlock', run: () => releaseDesktopDataRoot?.() }
+      { name: 'content-search', run: () => disposeContentSearch() }
     ],
     (outcome) => reportMainError(`shutdown-${outcome.name}`, outcome.timedOut ? new Error('退出步骤超时') : outcome.error)
   )
+  try {
+    const control = updateControl
+    await prepareUpdateAfterWriters(
+      outcomes,
+      control
+        ? {
+            prepare: (options) => control.prepareAutomaticInstallOnQuit(options),
+            cancel: () => control.cancelAutomaticInstallPreparation()
+          }
+        : null
+    )
+  } finally {
+    try {
+      await releaseDesktopDataRoot?.()
+    } catch (error) {
+      reportMainError('data-root-unlock', error)
+    }
+  }
 }
 
 type ExitResult = { action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting' }
@@ -1488,7 +1523,7 @@ async function executeControlCommand(command: ControlCommand): Promise<ControlRe
       return { ok: true, action: command.action, data: controlStatus() }
     }
 
-    if ((command.action === 'click' || command.action === 'type' || command.action === 'key') && approvals.list().length > 0) {
+    if ((command.action === 'click' || command.action === 'type' || command.action === 'key') && (approvals.list().length > 0 || pendingUiReplay().length > 0)) {
       return { ok: false, action: command.action, error: pick('有待处理的审批时不接受遥控输入，请在砚窗口里手动处理审批', 'Remote input is blocked while an approval is pending; handle it in the window') }
     }
 
@@ -1779,6 +1814,10 @@ async function moveSessionWhenIdle(job: SessionMoveJob): Promise<void> {
   const key = normalizeCwdForIdentity(job.sessionFile)
   if (pendingSessionMoves.get(key) !== job || job.claimed) return
   job.claimed = true
+  let lease: SessionMoveLease | null = null
+  let stopped = false
+  let headerCwd: string | undefined
+  let failure: string | undefined
   try {
     const deadline = Date.now() + 30 * 60_000
     for (;;) {
@@ -1789,19 +1828,43 @@ async function moveSessionWhenIdle(job: SessionMoveJob): Promise<void> {
       await new Promise(resolve => setTimeout(resolve, 500))
     }
     const resume = job.continuation()
+    lease = beginSessionMove(job.sessionFile)
+    if (!lease) throw new Error(pick('这条会话已有正在进行的移动，没有移动', 'This session is already being moved; nothing was moved'))
     await job.registry.stopOne(job.origin.runId)
+    stopped = !job.origin.agent.running
     if (shuttingDown || job.origin.agent.running) throw new Error('原会话进程未安全关闭，没有改写会话文件')
-    await rewriteSessionCwd(job.sessionFile, job.target)
+    const { previousCwd } = await rewriteSessionCwd(job.sessionFile, job.target, lease)
+    headerCwd = previousCwd
     let settings = await getSettings()
-    const projectOf = () => settings.projects.find(p => !p.archived && normalizeCwdForIdentity(p.cwd) === normalizeCwdForIdentity(job.target))
-    if (!projectOf()) settings = await patchSettings({ recentCwds: [job.target, ...(settings.recentCwds ?? [])] })
-    await moveSessionLayout({ sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target }, projectOf()?.id ?? null)
-    const continuation = resume ? await continueMovedSession(job, projectOf()?.id) :
+    const before = settings
+    const projectOf = (current: typeof settings) => current.projects.find(p => !p.archived && normalizeCwdForIdentity(p.cwd) === normalizeCwdForIdentity(job.target))
+    const previousProjectId = before.projects.find(p => normalizeCwdForIdentity(p.cwd) === normalizeCwdForIdentity(headerCwd ?? ''))?.id ?? null
+    try {
+      if (!projectOf(settings)) settings = await patchSettings({ recentCwds: [job.target, ...(settings.recentCwds ?? [])] })
+      await moveSessionLayout({ sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target }, projectOf(settings)?.id ?? null)
+    } catch (error) {
+      const rollbackCwd = headerCwd ?? job.origin.agent.getState()?.cwd ?? ''
+      const restored = await restoreSessionHeaderCwd(job.sessionFile, rollbackCwd, lease)
+      if (settings !== before) await patchSettings({ recentCwds: before.recentCwds }).catch(() => undefined)
+      await moveSessionLayout({ sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: rollbackCwd }, previousProjectId).catch(() => undefined)
+      headerCwd = rollbackCwd
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(restored
+        ? pick(`保存会话位置失败，已回滚会话文件：${reason}`, `Could not save the session location; the session file was rolled back: ${reason}`)
+        : pick(`保存会话位置失败，会话文件回滚失败：${reason}`, `Could not save the session location, and rolling the session file back failed: ${reason}`))
+    }
+    const continuation = resume ? await continueMovedSession(job, projectOf(settings)?.id) :
       { continued: false, continuationError: '原回合已停止、失败或有新的输入，未自动继续' }
     push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: true, ...continuation } })
   } catch (error) {
-    push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: false, error: error instanceof Error ? error.message : String(error) } })
+    failure = error instanceof Error ? error.message : String(error)
+    if (stopped && !shuttingDown && runners === job.registry) {
+      const reopened = await job.registry.select({ sessionFile: job.sessionFile, cwd: headerCwd ?? job.origin.agent.getState()?.cwd ?? '' })
+      if (!reopened.ok && reopened.error) failure = pick(`${failure}；重新打开原会话失败：${reopened.error}`, `${failure}; reopening the original session failed: ${reopened.error}`)
+    }
+    push({ ch: 'session-moved', payload: { sessionId: job.sessionId, sessionFile: job.sessionFile, cwd: job.target, ok: false, error: failure } })
   } finally {
+    lease?.release()
     pushRunners()
   }
 }
@@ -1938,6 +2001,10 @@ async function restorePreviousSession(): Promise<SessionRestore | undefined> {
   return restored
 }
 
+async function whenAgentStarted(): Promise<void> {
+  if (starting) await starting.catch(() => undefined)
+}
+
 function flushRestoreNotice(): void {
   const message = restoreNotice
   if (!message) return
@@ -2012,7 +2079,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   const crashedId = runners?.activeRunnerId
   const crashedFile = crashedId ? runners?.agentOf(crashedId)?.getState()?.sessionFile : undefined
   const othersWorking = !!crashedId && (
-    (runners?.statuses() ?? []).some((status) => status.id !== crashedId && (status.running || status.waiting)) ||
+    (runners?.hasPendingWorkExcept(crashedId) ?? false) ||
     (subagentService.current()?.list() ?? []).some((run) => run.status === 'running' || run.status === 'starting')
   )
   if (runners && crashedId && othersWorking && (!restore?.sessionFile || restore.sessionFile === crashedFile)) {
@@ -2266,8 +2333,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             detail: parts.resource,
             reasons: [
               ...(request.purpose ? [`用途：${request.purpose}`] : []),
-              verdict.reason,
-              verdict.danger ? '危险类别不会因为同意次数多而自动放行。' : '同类操作多次同意后会自动放行。'
+              verdict.reason
             ],
             cwd: request.cwd,
             canRemember: false,
@@ -2367,7 +2433,11 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
     return
   }
   if (starting) await starting
-  if (!runners) return
+  if (shuttingDown || !runners) return
+  if (agentRestarting) {
+    agentRestartQueued = reason
+    return
+  }
   if (runners.hasBusy()) {
     if (retries <= 0) {
       agentRestartQueued = null
@@ -2386,7 +2456,11 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
   try {
     await runners.stopAll()
     const res = await startAgent(file ? { sessionFile: file } : undefined)
-    if (res.ok && file && ac()?.getState()?.sessionFile !== file) {
+    if (!res.ok) {
+      reportMainError('refresh-runners', new Error(res.error ?? 'pi did not start'))
+      return
+    }
+    if (file && ac()?.getState()?.sessionFile !== file) {
       const sw = await ac()?.switchSession(file)
       if (sw && !sw.ok) {
         push({ ch: 'log', payload: { text: `[会话] 重建 pi 后没能接回原会话：${sw.error ?? '未知原因'}` } })
@@ -2554,9 +2628,7 @@ function registerIpc(): void {
     }
     return (id ? runners?.agentOf(id)?.runBash(command, options) : undefined) ?? { ok: false, error: piDown() }
   })
-  handle('yan:abortBash', async () => {
-    await ac()?.abortBash()
-  })
+  handle('yan:abortBash', async (expected?: ExpectedRuntimeOwner) => abortBashFor({ ac, runners: () => runners }, expected))
 
   handle('yan:setVisibleRunnerSessions', (sessions: unknown) => {
     runners?.noteVisibleActivity()
@@ -2612,7 +2684,23 @@ function registerIpc(): void {
       return { ok: false, error: pick('不支持的原生操作', 'Unsupported native action') }
     }
   })
-  registerCheckpointIpc(ipc, sessionHost, (cwd) => subagentService.current()?.hasActiveWriter(cwd) === true)
+  registerCheckpointIpc(
+    ipc,
+    sessionHost,
+    (cwd) => subagentService.current()?.hasActiveWriter(cwd) === true,
+    {
+      activeWriterRoots: () =>
+        subagentService.current()?.list()
+          .filter((run) => run.isolation === 'shared-cwd' && (run.status === 'starting' || run.status === 'running'))
+          .map((run) => run.cwd) ?? [],
+      busyRoots: () => {
+        const registry = runners
+        if (!registry) return []
+        const provider: { busyRoots?: () => readonly string[] } = registry
+        return provider.busyRoots ? provider.busyRoots() : registry.statuses().filter((status) => status.running || status.waiting).map((status) => status.cwd)
+      }
+    }
+  )
   setTimeout(() => void pruneCheckpoints().catch(() => undefined), 60_000).unref?.()
 
   const syncCompactionLines = async (models: LineModel[]): Promise<void> => {
@@ -2635,7 +2723,7 @@ function registerIpc(): void {
 
   handle(
     'yan:setAutoCompaction',
-    async (enabled: boolean) => ac()?.setAutoCompaction(enabled) ?? { ok: false, error: piDown() }
+    async (enabled: boolean) => applyToAllAgents((agent) => agent.setAutoCompaction(enabled))
   )
   handle(
     'yan:setAutoRetry',
@@ -2656,7 +2744,7 @@ function registerIpc(): void {
   )
   handle(
     'yan:abortRetry',
-    async () => ac()?.abortRetry() ?? { ok: false, error: piDown() }
+    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.abortRetry() ?? { ok: false, error: expected === undefined ? piDown() : sessionActionChanged() }
   )
   handle(
     'yan:cycleModel',
@@ -2670,12 +2758,17 @@ function registerIpc(): void {
     'yan:cycleThinking',
     async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleThinking() ?? { ok: false, error: sessionActionChanged() }
   )
-  handle('yan:lastAssistantText', async () => ac()?.lastAssistantText() ?? null)
+  handle('yan:lastAssistantText', async (expected?: ExpectedRuntimeOwner) => lastAssistantTextFor({ ac, runners: () => runners }, expected))
 
   handle('yan:approvalAnswer', async (id: string, choice: unknown, identity?: unknown, feedback?: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice, approvalIdentityFrom(identity), feedback) }))
   handle('yan:approvalPending', async () => approvals.list())
   handle('yan:pendingUiRequests', async () => pendingUiReplay())
   handle('yan:resyncView', async (reason?: unknown) => resyncActiveView(reason))
+  handle('yan:pinnedNetworkStatus', () => ({
+    guard: pinnedGuardStatus(session.defaultSession),
+    routing: pinnedRoutingStatus()
+  }))
+
   handle('yan:piInfo', async () => {
     const s = await getSettings()
     return piInfo(s.piBin)
@@ -2693,6 +2786,7 @@ function registerIpc(): void {
   })
 
   handle('yan:getState', async () => {
+    await whenAgentStarted()
     flushRestoreNotice()
     return ac()?.getState() ?? null
   })
@@ -2715,8 +2809,33 @@ function registerIpc(): void {
   handle('yan:agentStatus', async () =>
     ac()?.getConn() ?? { state: 'starting' as const, detail: '' }
   )
-  handle('yan:getMessages', async () => ac()?.getMessages() ?? [])
-  handle('yan:getStats', async () => ac()?.refreshStats() ?? null)
+  handle('yan:getMessages', async () => {
+    await whenAgentStarted()
+    return ac()?.getMessages() ?? []
+  })
+  handle('yan:getStats', async () => {
+    await whenAgentStarted()
+    return ac()?.refreshStats() ?? null
+  })
+
+  const confirmSyncImport: SyncImportConfirm = async (candidate) => {
+    const label = candidate.kind === 'skill' ? pick('技能', 'skill') : pick('提示词模板', 'prompt template')
+    const message = candidate.previous === undefined
+      ? pick(`同步文件夹里有新的${label}「${candidate.name}」，要写入本机吗？`, `A new ${label} "${candidate.name}" arrived from the sync folder. Write it here?`)
+      : pick(`同步文件夹里的${label}「${candidate.name}」有改动，要用它覆盖本机版本吗？`, `The ${label} "${candidate.name}" changed in the sync folder. Overwrite the local copy?`)
+    const detail = `${candidate.key}\n\n${candidate.payload.slice(0, 4000)}`
+    const options = {
+      type: 'question' as const,
+      buttons: [pick('写入', 'Write'), pick('跳过', 'Skip')],
+      defaultId: 0,
+      cancelId: 1,
+      title: pick('同步确认', 'Sync confirmation'),
+      message,
+      detail
+    }
+    const result = win && !win.isDestroyed() ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
+    return result.response === 0
+  }
 
   syncController = registerSyncIpc(ipc, {
     dataDir: YAN_DIR,
@@ -2726,6 +2845,7 @@ function registerIpc(): void {
         dataDir: YAN_DIR,
         syncRoot: root,
         piAgentDir: PI_AGENT_DIR,
+        confirmImport: confirmSyncImport,
         settingsApplier: async (patch) => {
           const next = await patchSettings(patch)
           if (typeof patch.theme === 'string') syncNativeThemeSource(next.theme)
@@ -2825,6 +2945,7 @@ function registerIpc(): void {
       reportMainError('设置', e)
       throw e
     }
+    refreshPackageProjectRoots(next)
     if (typeof patch.theme === 'string' && patch.theme !== before.theme) {
       syncNativeThemeSource(next.theme)
     }
@@ -2844,10 +2965,24 @@ function registerIpc(): void {
     return next
   })
 
-  ipcMain.on('yan:respondUi', (event, res) => {
-    if (!isTrustedIpc(event) || !isObject(res) || typeof res.id !== 'string' || !res.id) return
-    if (runners) runners.respondUi(res as never)
-    else ac()?.respondUi(res as never)
+  handle('yan:respondUi', async (res: unknown) => {
+    if (!isObject(res) || typeof res.id !== 'string' || !res.id) {
+      return { ok: false, code: 'invalid' as const, error: pick('无效的答复', 'Invalid answer') }
+    }
+    const result = await (runners ? runners.respondUiResult(res as never) : ac()?.respondUiResult(res as never))
+    if (!result) {
+      return { ok: false, code: 'not_pending' as const, error: pick('这个问题已经结束或不属于当前会话，答案没有送达', 'This question already ended or belongs to another session; the answer was not delivered') }
+    }
+    if (!result.ok) {
+      return {
+        ok: false,
+        code: result.code,
+        error: result.code === 'pi_down'
+          ? piDown()
+          : pick('这个问题已经结束，答案没有送达', 'This question already ended; the answer was not delivered')
+      }
+    }
+    return { ok: true }
   })
 
   handle('yan:extendUi', async (id: string, extraMs?: number) =>
@@ -3172,7 +3307,7 @@ function registerIpc(): void {
     }
   })
 
-  registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
+  registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true, isKnownProject: isKnownPackageProject })
   refreshMinecraftPluginOnStartup()
   ipc.handle('yan:plugins:action', async (id: unknown, action: unknown) => {
     if (typeof id !== 'string' || !['status', 'install', 'remove'].includes(String(action))) return { ok: false, error: pick('无效插件操作', 'Invalid plugin action') }
@@ -3229,7 +3364,7 @@ function registerIpc(): void {
   ].filter((pid): pid is number => typeof pid === 'number'))
   registerBrowserIpc(ipc, () => browser, previewSites, answerBrowserSiteApproval, localServerControl)
 
-  registerPeerIpc(ipc, peerClient)
+  registerPeerIpc(ipc, peerClient, { window: () => win })
 
   registerPeerHostIpc(ipc, { grants: peerGrants })
 
@@ -3252,7 +3387,7 @@ function registerIpc(): void {
     return resolved.context.cwd
   })
 
-  registerAppUpdate(ipc, () => quitReasons(quitActivity()).length > 0)
+  updateControl = registerAppUpdate(ipc, () => quitReasons(quitActivity()).length > 0)
   registerVoiceIpc(ipc, {
     plugins: bundledPlugins,
     window: () => win,
@@ -3344,6 +3479,15 @@ function createWindow(): void {
   })
   if (windowMaterialActive) win.setBackgroundMaterial(material)
   guardHtmlArtifactFrames(win.webContents)
+  win.webContents.once('did-finish-load', () => {
+    const notice = pendingPinnedGuardNotice
+    if (!notice) return
+    pendingPinnedGuardNotice = null
+    push({
+      ch: 'notify',
+      payload: { id: 'pinned-network-guard', method: 'notify', notifyType: 'error', message: notice.message }
+    })
+  })
 
   if (process.platform === 'win32') {
     win.setAppDetails({
@@ -3545,12 +3689,59 @@ configureRemoteHost({
   }
 })
 
+function rendererPageOrigin(): string {
+  const dev = process.env.ELECTRON_RENDERER_URL
+  if (!dev) return 'file://'
+  try {
+    return new URL(dev).origin
+  } catch {
+    return 'file://'
+  }
+}
+
+function installDefaultSessionPermissions(): void {
+  installSessionPermissionBoundary(session.defaultSession, {
+    allow: ['clipboard-sanitized-write', 'media'],
+    trust: trustedFrameTrust({
+      isTrustedContents: (id) => !!win && !win.isDestroyed() && id === win.webContents.id,
+      origins: [rendererPageOrigin()]
+    })
+  })
+}
+
+let packageProjectRoots: string[] = []
+
+function refreshPackageProjectRoots(settings: Awaited<ReturnType<typeof getSettings>>): void {
+  packageProjectRoots = [settings.cwd, ...settings.projects.map((project) => project.cwd)].filter(
+    (path): path is string => typeof path === 'string' && path.length > 0
+  )
+}
+
+function isKnownPackageProject(cwd: string): boolean {
+  const wanted = normalizeCwdForIdentity(cwd)
+  if (!wanted) return false
+  if (packageProjectRoots.some((root) => normalizeCwdForIdentity(root) === wanted)) return true
+  return (runners?.statuses() ?? []).some((status) => normalizeCwdForIdentity(status.cwd) === wanted)
+}
+
 app.whenReady().then(async () => {
   await storageMoveReady
   try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { exitReason = 'data-root-lock'; reportMainError('data-root-writer', error); dialog.showErrorBox(pick('砚无法启动', 'Inkstone failed to start'), error instanceof Error ? error.message : String(error)); app.exit(1); return }
   await (async () => { if ((await getSettings()).permissionMode === 'all') await patchSettings({ permissionMode: 'danger' }) })().catch((error) => reportMainError('permission-reset', error))
+  refreshPackageProjectRoots(await getSettings())
   registerDeepLinkProtocol(app, { isPackaged: app.isPackaged, execPath: process.execPath, appPath: process.argv[1] })
   registerHtmlArtifactProtocol()
+  try {
+    const guard = await attachPinnedNetworkGuard(session.defaultSession)
+    const notice = pinnedGuardNotice(guard)
+    if (notice) {
+      pendingPinnedGuardNotice = notice
+      reportMainError('pinned-network-guard', new Error(notice.message))
+    }
+  } catch (error) {
+    pendingPinnedGuardNotice = { message: error instanceof Error ? error.message : String(error) }
+    reportMainError('pinned-network-guard', error)
+  }
   void loadModelPricing()
   watchPowerSource()
   browser = new BrowserController(() => win, push, askProfileSyncApproval, askLargeDownloadApproval)
@@ -3577,6 +3768,7 @@ app.whenReady().then(async () => {
     })
   })
   registerIpc()
+  installDefaultSessionPermissions()
   void primeCachedTitles().catch(() => undefined)
   void bundledPlugins.startInstalled().catch((error) => reportMainError('plugins-startup', error))
   trayLanguage = (await getSettings()).lang
@@ -3644,7 +3836,15 @@ app.whenReady().then(async () => {
             return res.ok && res.id ? { ok: true, id: res.id } : { ok: false, error: res.error }
           },
           applyModel: async (runId, model) =>
-            (await runners?.agentOf(runId)?.setModel(model.provider, model.id)) ?? { ok: false, error: piDown() }
+            (await runners?.agentOf(runId)?.setModel(model.provider, model.id)) ?? { ok: false, error: piDown() },
+          abandonSession: async (runId, previous) => {
+            const registry = runners
+            const agent = registry?.agentOf(runId) ?? null
+            let restored = false
+            if (agent && previous.sessionFile) restored = (await agent.switchSession(previous.sessionFile)).ok
+            if (!restored) await registry?.stopOne(runId)
+            pushRunners()
+          }
         },
         payload
       ),
@@ -3744,10 +3944,17 @@ app.whenReady().then(async () => {
     migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error)),
     restorePreviousSession()
   ])
-  await Promise.all([
-    startAgent(restore ? { sessionFile: restore.sessionFile } : undefined),
-    startRemoteServer()
-  ])
+  primaryRestoring = true
+  primaryRestoreFile = restore?.sessionFile ?? null
+  try {
+    await Promise.all([
+      startAgent(restore ? { sessionFile: restore.sessionFile } : undefined),
+      startRemoteServer()
+    ])
+  } finally {
+    primaryRestoring = false
+    primaryRestoreFile = null
+  }
 
   const initialControl = decodeControlCommand(process.argv)
   if (initialControl) void dispatchControlCommand(initialControl)
