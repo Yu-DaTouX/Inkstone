@@ -32,7 +32,7 @@ const SEGMENT_SPLIT = /&&|\|\||[;&|\n]/
 
 function heredocDelimiter(text, at) {
   const match = /^<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1/.exec(text.slice(at))
-  return match ? { tag: match[2], length: match[0].length } : null
+  return match ? { tag: match[2], length: match[0].length, quoted: match[1] !== '' } : null
 }
 
 export function splitSegments(command) {
@@ -587,9 +587,27 @@ function toolWriteTargets(head, args) {
   return []
 }
 
+export function withoutHeredocBodies(segment, quotedOnly = false) {
+  let text = String(segment ?? '')
+  let from = 0
+  for (;;) {
+    const at = text.indexOf('<<', from)
+    if (at < 0) return text
+    const found = heredocDelimiter(text, at)
+    if (!found || (quotedOnly && !found.quoted)) { from = at + 2; continue }
+    const lineEnd = text.indexOf('\n', at + found.length)
+    if (lineEnd < 0) return text
+    const lines = text.slice(lineEnd + 1).split('\n')
+    const end = lines.findIndex((line) => line.trim() === found.tag)
+    const rest = end < 0 ? '' : lines.slice(end + 1).join('\n')
+    text = `${text.slice(0, lineEnd)}${rest ? `\n${rest}` : ''}`
+    from = lineEnd
+  }
+}
+
 function segmentWriteTargets(segment, { head, args }) {
   const out = []
-  for (const match of segment.matchAll(REDIRECT)) out.push(match[1])
+  for (const match of withoutHeredocBodies(segment).matchAll(REDIRECT)) out.push(match[1])
   if (head === 'yan') {
     args.forEach((arg, index) => { if (arg === '--output' && args[index + 1]) out.push(args[index + 1]) })
   }
@@ -626,7 +644,13 @@ function fileToolPath(raw) {
 
 const LOOP_ITEM = Symbol('loop-item')
 const TEMP_DIR = Symbol('temp-dir')
-const UNKNOWN_VARIABLE_NOTE = '（路径里的变量无法确定，无法判断写入位置）'
+const UNKNOWN_VARIABLE_NOTE = '（写入目标含无法静态确定的变量或表达式，无法判断位置）'
+const RAW_TARGET_MAX = 80
+
+function shownTarget(raw) {
+  const text = unquote(raw).replace(/\s+/g, ' ').trim()
+  return text.length > RAW_TARGET_MAX ? `${text.slice(0, RAW_TARGET_MAX)}…` : text
+}
 
 function variableValue(rawValue) {
   const value = unquote(rawValue)
@@ -718,7 +742,7 @@ export function shellWrites(command, cwd, depth = 0, scope) {
     const inner = depth < MAX_SHELL_DEPTH ? nestedScript(segment, cmd) : ''
     if (inner) out.push(...shellWrites(inner, cwd, depth + 1, { base, vars: new Map(vars) }))
     if (depth < MAX_SHELL_DEPTH) {
-      for (const sub of substitutions(part.text)) out.push(...shellWrites(sub, cwd, depth + 1, { base, vars: new Map(vars) }))
+      for (const sub of substitutions(withoutHeredocBodies(part.text, true))) out.push(...shellWrites(sub, cwd, depth + 1, { base, vars: new Map(vars) }))
     }
     if (LOCATION_COMMANDS.has(cmd.head)) base = nextLocation(cmd, base)
   }
@@ -750,8 +774,8 @@ export function outsideWrites(toolName, input, cwd, prefs = {}) {
   const hits = []
   for (const { raw, target } of writeTargets(toolName, input, cwd, prefs.base)) {
     if (/^(?:\/dev\/(?:null|stdout|stderr)|nul|\$null|&\d|-)$/i.test(String(raw).trim())) continue
-    if (target === null) hits.push(`${unquote(raw)}${UNKNOWN_BASE_NOTE}`)
-    else if (target === undefined) hits.push(`${unquote(raw)}${UNKNOWN_VARIABLE_NOTE}`)
+    if (target === null) hits.push(`${shownTarget(raw)}${UNKNOWN_BASE_NOTE}`)
+    else if (target === undefined) hits.push(`${shownTarget(raw)}${UNKNOWN_VARIABLE_NOTE}`)
     else if (target && !isInside(target, roots)) hits.push(target)
   }
   return [...new Set(hits)].slice(0, 6)
