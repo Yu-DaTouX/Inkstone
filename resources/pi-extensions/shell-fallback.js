@@ -250,7 +250,7 @@ export function registerBashFileTransport(pi, core, { fixEnv = createPythonEnvFi
       spawnHook,
       operations: autoBackgroundOperations(
         fileTransportOperations(core.createLocalBashOperations({ shellPath }), { preamble: withPipefail(utf8ConsolePreamble) }),
-        { seconds: backgroundSeconds(), notify: (text) => pi.sendUserMessage(text, { deliverAs: 'followUp' }) }
+        { seconds: backgroundSeconds(), notify: (text) => pi.sendUserMessage(text, { deliverAs: 'steer' }) }
       )
     })
   }
