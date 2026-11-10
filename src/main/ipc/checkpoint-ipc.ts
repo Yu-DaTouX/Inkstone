@@ -1,5 +1,5 @@
 import { pick } from '../../shared/ui-lang'
-import { reserveWorkspaceMutation } from '../workspace-mutation'
+import { busyWorkspaceOverlap, reserveWorkspaceMutation, workspacePathsOverlap } from '../workspace-mutation'
 import { isAbsolute } from 'node:path'
 import { executionBusy } from '../../core/run-state'
 import type { IpcRegistrar } from './registrar'
@@ -7,7 +7,17 @@ import type { SessionHost } from '../session-host'
 import { assessCheckpointFit, listCheckpoints, previewCheckpoint, restoreCheckpoint } from '../checkpoints'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../../shared/checkpoints'
 
-export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost, hasSubagentWriter: (cwd: string) => boolean = () => false): void {
+export interface CheckpointIpcOptions {
+  activeWriterRoots?: () => readonly string[]
+  busyRoots?: () => readonly string[]
+}
+
+export function registerCheckpointIpc(
+  ipc: IpcRegistrar,
+  host: SessionHost,
+  hasSubagentWriter: (cwd: string) => boolean = () => false,
+  options: CheckpointIpcOptions = {}
+): void {
   const { handle } = ipc
   const target = (): { cwd: string; key: string } | null => {
     const agent = host.ac()
@@ -15,6 +25,12 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost, hasS
     if (!agent || !state) return null
     const key = state.conversationId ?? state.sessionId
     return key ? { cwd: agent.workingDirectory, key } : null
+  }
+  const overlappingRunnerBusy = (cwd: string): boolean => {
+    const registry = host.runners()
+    if (!registry) return false
+    const statuses = registry.statuses()
+    return statuses.some((status) => (status.running || status.waiting) && workspacePathsOverlap(status.cwd, cwd))
   }
   const restore = async (id: unknown): Promise<CheckpointRestoreResult> => {
     const t = target()
@@ -26,8 +42,10 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost, hasS
       const agent = host.ac()
       const busy = registry?.hasBusyCwd(t.cwd) || registry?.hasExecutionAdmission(t.cwd) ||
         executionBusy(agent?.getState() ?? null, () => agent?.hasRunningBash() ?? false, () => agent?.getPendingUiCount() ?? 0)
-      if (hasSubagentWriter(t.cwd)) return { ok: false, error: pick('有子 Agent 正在这个文件夹里写文件，请等它结束或先停止再回退代码', 'A subagent is writing in this folder. Wait for it or stop it before rolling back.'), restored: 0 }
-      if (busy) return { ok: false, error: pick('同一项目的会话仍在运行，请先停止再回退代码', 'A session in this project is still running. Stop it before rolling back code'), restored: 0 }
+      const writer = hasSubagentWriter(t.cwd) || busyWorkspaceOverlap(t.cwd, options.activeWriterRoots?.() ?? [])
+      if (writer) return { ok: false, error: pick('有子 Agent 正在这个文件夹里写文件，请等它结束或先停止再回退代码', 'A subagent is writing in this folder. Wait for it or stop it before rolling back.'), restored: 0 }
+      const overlapBusy = overlappingRunnerBusy(t.cwd) || busyWorkspaceOverlap(t.cwd, options.busyRoots?.() ?? [])
+      if (busy || overlapBusy) return { ok: false, error: pick('同一项目的会话仍在运行，请先停止再回退代码', 'A session in this project is still running. Stop it before rolling back code'), restored: 0 }
       return await restoreCheckpoint(t.cwd, id, t.key)
     } finally { release() }
   }

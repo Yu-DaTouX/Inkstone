@@ -421,11 +421,11 @@ async function pruneTrash(): Promise<void> {
   for (const entry of entries) {
     const target = join(TRASH_DIR, entry.name)
     try {
-      const deletion = /^(\d+)-[a-z0-9]+-\d+-.+\.jsonl$/.exec(entry.name)
+      const deletion = /^(\d+)-[a-z0-9]+-\d+-.+\.jsonl(\.history\.txt)?$/.exec(entry.name)
       if (!entry.isFile() || !deletion) continue
       const deletedAt = Number(deletion[1])
       if (!Number.isSafeInteger(deletedAt) || deletedAt <= 0 || now - deletedAt <= TRASH_MAX_AGE_MS) continue
-      const sessionId = entry.isFile() && entry.name.endsWith('.jsonl') ? await readSessionId(target) : null
+      const sessionId = entry.name.endsWith('.jsonl') ? await readSessionId(target) : null
       await rm(target, { recursive: true, force: true })
       if (sessionId) await sessionPurged?.(sessionId).catch(() => undefined)
     } catch {

@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { atomicWriteFile } from './atomic'
 import { canonicalJson, sha256Hex } from './canonical'
 import { findForbiddenFields, pickSyncSettings } from './settings-whitelist'
+import { isWindowsDeviceName } from '../win-file-names'
 import type { AppSettings } from '../../shared/ipc'
 import type { SyncPaths, SyncRecord, SyncRecordKind } from './types'
 
@@ -81,6 +82,27 @@ async function writeSettings(paths: SyncPaths, incoming: Record<string, unknown>
 
 const PROMPT_SUFFIX = '.md'
 
+export interface SyncImportCandidate {
+  kind: 'skill' | 'prompt'
+  key: string
+  name: string
+  payload: string
+  previous?: string
+}
+
+export type SyncImportConfirm = (candidate: SyncImportCandidate) => Promise<boolean>
+
+export interface LocalApplyOptions {
+  confirmed?: boolean
+}
+
+export class SyncImportConfirmation extends Error {
+  constructor(readonly reason: 'needs-confirmation' | 'declined' | 'changed', message: string) {
+    super(message)
+    this.name = 'SyncImportConfirmation'
+  }
+}
+
 async function readPrompts(paths: SyncPaths): Promise<ReadResult> {
   const records: SyncRecord[] = []
   const skipped: string[] = []
@@ -94,7 +116,7 @@ async function readPrompts(paths: SyncPaths): Promise<ReadResult> {
   for (const entry of entries) {
     if (!entry.isFile() || entry.name.startsWith('.') || !entry.name.endsWith(PROMPT_SUFFIX)) continue
     const name = entry.name.slice(0, -PROMPT_SUFFIX.length)
-    if (!name || name !== basename(name)) continue
+    if (!name || name !== basename(name) || isWindowsDeviceName(name)) continue
     const file = join(paths.promptsDir, entry.name)
     try {
       const payload = await readFile(file, 'utf8')
@@ -108,7 +130,7 @@ async function readPrompts(paths: SyncPaths): Promise<ReadResult> {
 
 function promptNameFromKey(key: string): string | undefined {
   const name = key.startsWith('prompt:') ? key.slice('prompt:'.length) : ''
-  if (!name || name !== basename(name) || name.includes('/') || name.includes('\\')) return undefined
+  if (!name || name !== basename(name) || name.includes('/') || name.includes('\\') || isWindowsDeviceName(name)) return undefined
   return name
 }
 
@@ -147,7 +169,7 @@ async function readSkills(paths: SyncPaths): Promise<ReadResult> {
 
 function skillNameFromKey(key: string): string | undefined {
   const name = key.startsWith('skill:') ? key.slice('skill:'.length) : ''
-  if (!name || name === '.' || name === '..' || name !== basename(name) || !/^[\w.-]+$/.test(name)) return undefined
+  if (!name || name === '.' || name === '..' || name !== basename(name) || !/^[\w.-]+$/.test(name) || isWindowsDeviceName(name)) return undefined
   return name
 }
 
@@ -274,6 +296,7 @@ async function applyBookmark(paths: SyncPaths, record: SyncRecord, exclusive = f
 
 export interface LocalStoreAppliers {
   applySettings?: (patch: Partial<AppSettings>) => Promise<void>
+  confirmImport?: SyncImportConfirm
 }
 
 export class LocalStore {
@@ -324,17 +347,35 @@ export class LocalStore {
     await applyBookmark(this.paths, record, true)
   }
 
-  async apply(record: SyncRecord): Promise<void> {
+  async apply(record: SyncRecord, options: LocalApplyOptions = {}): Promise<void> {
     switch (record.kind) {
       case 'settings': {
         const patch = pickSyncSettings(JSON.parse(record.payload))
         if (this.appliers.applySettings) return this.appliers.applySettings(patch as Partial<AppSettings>)
         return writeSettings(this.paths, patch)
       }
-      case 'prompt':
-        return applyPrompt(this.paths, record)
-      case 'skill':
-        return applySkill(this.paths, record)
+      case 'prompt': {
+        const name = promptNameFromKey(record.key)
+        if (!name) throw new Error(pick(`提示词模板 key 非法：${record.key}`, `Invalid prompt template key: ${record.key}`))
+        const write = await this.confirmIncoming('prompt', record, name, options.confirmed === true, () =>
+          readFile(join(this.paths.promptsDir, `${name}${PROMPT_SUFFIX}`), 'utf8').then(
+            (value) => value,
+            () => undefined
+          )
+        )
+        if (write) await applyPrompt(this.paths, record)
+        return
+      }
+      case 'skill': {
+        const name = skillNameFromKey(record.key)
+        if (!name) throw new Error(pick(`技能 key 非法：${record.key}`, `Invalid skill key: ${record.key}`))
+        const write = await this.confirmIncoming('skill', record, name, options.confirmed === true, async () => {
+          const file = await checkedSkillFile(this.paths, name).catch(() => null)
+          return file ? readFile(file, 'utf8').then((value) => value, () => undefined) : undefined
+        })
+        if (write) await applySkill(this.paths, record)
+        return
+      }
       case 'bookmark':
         return applyBookmark(this.paths, record)
       default: {
@@ -342,6 +383,49 @@ export class LocalStore {
         throw new Error(pick(`未知的同步类别：${String(never)}`, `Unknown sync kind: ${String(never)}`))
       }
     }
+  }
+
+  private async confirmIncoming(
+    kind: 'skill' | 'prompt',
+    record: SyncRecord,
+    name: string,
+    confirmed: boolean,
+    current: () => Promise<string | undefined>
+  ): Promise<boolean> {
+    const label = kind === 'skill' ? pick('技能', 'skill') : pick('提示词模板', 'prompt template')
+    const previous = await current()
+    if (previous === record.payload) return false
+    if (confirmed) {
+      await this.assertUnchanged(label, name, previous, current)
+      return true
+    }
+    const confirm = this.appliers.confirmImport
+    if (!confirm) {
+      throw new SyncImportConfirmation(
+        'needs-confirmation',
+        pick(`同步来的${label}「${name}」要先确认才会写入本机，已跳过`, `The synced ${label} "${name}" needs your confirmation before it is written here; skipped`)
+      )
+    }
+    const accepted = await confirm({ kind, key: record.key, name, payload: record.payload, ...(previous !== undefined ? { previous } : {}) })
+    if (!accepted) {
+      throw new SyncImportConfirmation('declined', pick(`没有确认，已跳过同步来的${label}「${name}」`, `Not confirmed; the synced ${label} "${name}" was skipped`))
+    }
+    await this.assertUnchanged(label, name, previous, current)
+    return true
+  }
+
+  private async assertUnchanged(
+    label: string,
+    name: string,
+    previous: string | undefined,
+    current: () => Promise<string | undefined>
+  ): Promise<void> {
+    const latest = await current()
+    if (latest === previous) return
+    throw new SyncImportConfirmation(
+      'changed',
+      pick(`等待确认期间本机的${label}「${name}」被改过，这次没有覆盖；下次同步会按冲突处理`, `The local ${label} "${name}" changed while waiting for confirmation; it was not overwritten and the next sync treats it as a conflict`)
+    )
   }
 }
 

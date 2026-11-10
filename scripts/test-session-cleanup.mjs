@@ -54,7 +54,7 @@ const entry = join(root, 'entry.ts')
 const sourceOf = (relative) => fileURLToPath(new URL(relative, import.meta.url)).replace(/\\/g, '/')
 await writeFile(
   entry,
-  `export { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession } from '${sourceOf('../src/main/sessions.ts')}'`
+  `export { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged } from '${sourceOf('../src/main/sessions.ts')}'`
 )
 await build({
   entryPoints: [entry],
@@ -82,7 +82,7 @@ async function writeSession(id, extra = {}) {
   return file
 }
 
-const { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession } = await import(pathToFileURL(outfile).href)
+const { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSession, onSessionPurged } = await import(pathToFileURL(outfile).href)
 
 process.stdout.write('\n▌回收站按时间清理\n')
 await check('超过 7 天的回收站条目在删除时清掉，别的保留', async () => {
@@ -127,6 +127,39 @@ await check('十天旧会话删除后保留完整七天，仍可撤销', async (
     now += 7 * DAY + 61 * 60_000
     await deleteSession(await writeSession('prune-week'))
     await assert.rejects(restoreSession(expiredToken))
+  } finally {
+    Date.now = originalNow
+  }
+})
+
+await check('过期的历史快照一并清掉且不触发 sessionPurged，未过期的会话与快照都保留', async () => {
+  const originalNow = Date.now
+  const purged = []
+  onSessionPurged(async (id) => {
+    purged.push(id)
+  })
+  let now = originalNow() + 30 * DAY
+  Date.now = () => now
+  try {
+    await mkdir(trashDir, { recursive: true })
+    const staleAt = now - 8 * DAY
+    const freshAt = now - DAY
+    const staleSession = join(trashDir, `${staleAt}-snapold-0-stale-sess.jsonl`)
+    const staleSnapshot = join(trashDir, `${staleAt}-snapold-1-stale-sess.jsonl.history.txt`)
+    const freshSession = join(trashDir, `${freshAt}-snapnew-0-fresh-sess.jsonl`)
+    const freshSnapshot = join(trashDir, `${freshAt}-snapnew-1-fresh-sess.jsonl.history.txt`)
+    await writeFile(staleSession, `${JSON.stringify({ type: 'session', version: 3, id: 'stale-sess', cwd: 'C:/proj' })}\n`)
+    await writeFile(staleSnapshot, '历史快照')
+    await writeFile(freshSession, `${JSON.stringify({ type: 'session', version: 3, id: 'fresh-sess', cwd: 'C:/proj' })}\n`)
+    await writeFile(freshSnapshot, '历史快照')
+    now += 2 * 60 * 60_000
+    await deleteSession(await writeSession('snapshot-prune-trigger'))
+    assert.equal(existsSync(staleSession), false, '过期会话文件应被删')
+    assert.equal(existsSync(staleSnapshot), false, '过期历史快照应被删')
+    assert.equal(existsSync(freshSession), true, '未过期会话文件保留')
+    assert.equal(existsSync(freshSnapshot), true, '未过期历史快照保留')
+    assert.equal(purged.filter((id) => id === 'stale-sess').length, 1, '会话文件被清时触发一次 sessionPurged，快照不再触发')
+    assert.ok(!purged.includes('fresh-sess'), '未过期会话不触发 sessionPurged')
   } finally {
     Date.now = originalNow
   }

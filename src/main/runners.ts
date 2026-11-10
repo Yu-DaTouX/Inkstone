@@ -1,6 +1,7 @@
 import { pick } from '../shared/ui-lang'
 import type { AgentController } from './agent'
 import type { RunnerStatus, RuntimeEnvelope, SessionScope } from '../shared/ipc'
+import type { UiAnswerResult } from './ui-requests'
 import type { McpNativeBootWitness } from './mcp/app-native-witness'
 import type { McpServerStatus } from '../shared/mcp'
 import { executionBusy, runEnvelope, runStatus } from '../core/run-state'
@@ -14,6 +15,7 @@ import {
   type ExecuteAdmissionPort,
   type ExecuteGuardResult
 } from './session-send-guard'
+import { workspacePathsOverlap } from './workspace-mutation'
 
 export const RUNNER_LIMIT = 3
 
@@ -264,7 +266,7 @@ export class RunnerRegistry {
         const facts = {
           active: runner.id === this.activeId,
           hidden: runner.hidden === true,
-          busy: this.busy(runner),
+          busy: this.busy(runner) || this.awaitingTerminal(runner),
           busyCwd: this.hasBusyCwd(runner.cwd, runner.id),
           ready: runner.agent.getConn().state === 'ready',
           saved: !!state?.sessionFile,
@@ -327,13 +329,14 @@ export class RunnerRegistry {
   }
 
   respondUi(res: Parameters<AgentController['respondUi']>[0]): void {
+    void this.respondUiResult(res).catch(() => undefined)
+  }
+
+  async respondUiResult(res: Parameters<AgentController['respondUi']>[0], by?: 'desktop' | 'remote'): Promise<UiAnswerResult | undefined> {
     for (const runner of this.runners.values()) {
-      if (runner.agent.pendingUiRequests().some((item) => item.id === res.id)) {
-        runner.agent.respondUi(res)
-        return
-      }
+      if (runner.agent.pendingUiRequests().some((item) => item.id === res.id)) return await runner.agent.respondUiResult(res, by ?? 'desktop')
     }
-    this.active()?.respondUi(res)
+    return await this.active()?.respondUiResult(res, by ?? 'desktop')
   }
 
   startHostUiTimer(id: string): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
@@ -378,6 +381,10 @@ export class RunnerRegistry {
       () => runner.agent.hasRunningBash(),
       () => runner.agent.getPendingUiCount()
     )
+  }
+
+  private awaitingTerminal(runner: Runner): boolean {
+    return runner.agent.hasPendingTerminalWork?.() ?? false
   }
 
   private awaitingSubagents(runner: Runner): boolean {
@@ -548,6 +555,7 @@ export class RunnerRegistry {
           !this.busy(runner) &&
           ![...this.admissions.values()].some((claim) => claim.runId === runner.id) &&
           !this.awaitingSubagents(runner) &&
+          !this.awaitingTerminal(runner) &&
           (target.activate !== false || runner.id !== this.activeId)
       )
       .sort((a, b) => a.lastActiveAt - b.lastActiveAt)
@@ -578,9 +586,11 @@ export class RunnerRegistry {
       if (res.ok && !target.sessionFile && this.opts.prepareNewSession) res = await this.opts.prepareNewSession(idle.agent)
       if (!res.ok) {
         const currentFile = idle.agent.getState()?.sessionFile
-        if (oldSessionFile && currentFile !== oldSessionFile) {
+        const stillOld = !!oldSessionFile && currentFile === oldSessionFile
+        let restored = stillOld
+        if (!stillOld && oldSessionFile) {
           try {
-            await idle.agent.switchSession(oldSessionFile)
+            restored = (await idle.agent.switchSession(oldSessionFile)).ok
           } catch (error) {
             console.warn('[runners] 回滚到原会话失败，请重新选择会话', error)
           }
@@ -589,6 +599,10 @@ export class RunnerRegistry {
           try { await idle.agent.restoreQueueSnapshot(oldQueue) } catch { }
         }
         idle.projectId = oldProjectId
+        if (!restored) {
+          await this.stopOne(idle.id, true)
+          return { ok: false, error: pick('新会话没有准备好，原来的会话也没能恢复，已经停止这个运行实例；请重新选择会话', 'The new session was not ready and the previous session could not be restored; this runtime was stopped. Select a session again') }
+        }
         this.opts.onChanged?.()
         return { ok: false, error: res.error }
       }
@@ -696,8 +710,8 @@ export class RunnerRegistry {
     const runner = this.runners.get(id)
     if (!runner) return { ok: false, error: pick(`运行实例不存在：${id}`, `Runtime not found: ${id}`) }
     if (this.busy(runner)) return { ok: false, error: pick('目标运行实例仍忙，拒绝重载', 'Target runtime is busy; reload refused') }
-    if (this.hasBusyCwd(runner.cwd, id)) {
-      return { ok: false, error: pick('同一工作目录还有其它运行实例在工作，拒绝重载', 'Another runtime is working in the same folder; reload refused') }
+    if (this.hasBusyWorkspace(runner.cwd, id)) {
+      return { ok: false, error: pick('工作目录重叠的其它运行实例还在工作，拒绝重载', 'Another runtime working in an overlapping folder; reload refused') }
     }
     const sessionFile = runner.agent.getState()?.sessionFile
     if (!sessionFile) return { ok: false, error: pick('目标会话尚无已保存的会话文件，无法安全重载', 'Target session has no saved file yet; cannot reload safely') }
@@ -809,11 +823,38 @@ export class RunnerRegistry {
     return [...this.runners.values()].some((r) => this.busy(r))
   }
 
+  hasPendingWorkExcept(exceptRunId?: string): boolean {
+    return [...this.runners.values()].some((runner) => {
+      if (runner.id === exceptRunId) return false
+      if (this.busy(runner) || this.awaitingTerminal(runner) || this.awaitingSubagents(runner)) return true
+      const queue = runner.agent.queueSnapshot()
+      return queue.steering.length > 0 || queue.followUp.length > 0
+    })
+  }
+
   hasBusyCwd(cwd: string, exceptRunId?: string): boolean {
     const key = canonicalCwd(cwd)
     return [...this.runners.values()].some(
       (runner) => runner.id !== exceptRunId && canonicalCwd(runner.cwd) === key && this.busy(runner)
     )
+  }
+
+  hasBusyWorkspace(cwd: string, exceptRunId?: string): boolean {
+    return [...this.runners.values()].some(
+      (runner) => runner.id !== exceptRunId && this.busy(runner) && workspacePathsOverlap(runner.cwd, cwd)
+    )
+  }
+
+  busyRoots(): string[] {
+    this.pruneAdmissions()
+    const roots = new Set<string>()
+    for (const runner of this.runners.values()) {
+      const queue = runner.agent.queueSnapshot()
+      const writes = this.busy(runner) || this.awaitingTerminal(runner) || queue.steering.length > 0 || queue.followUp.length > 0
+      if (writes) roots.add(runner.cwd)
+    }
+    for (const claim of this.admissions.values()) roots.add(claim.cwd)
+    return [...roots]
   }
 
   guardExecute(id: string): ExecuteGuardResult {

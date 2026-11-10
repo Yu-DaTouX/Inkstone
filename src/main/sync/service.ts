@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { atomicWriteFile } from './atomic'
 import { sha256Hex, shortHash } from './canonical'
-import { LocalStore, defaultSyncPaths, forbiddenFieldsInRecord } from './local-store'
+import { LocalStore, SyncImportConfirmation, defaultSyncPaths, forbiddenFieldsInRecord, type SyncImportConfirm } from './local-store'
 import { buildConflictCopy } from './resolve'
 import { SyncFolder } from './sync-folder'
 import type { SyncResolution, SyncNote } from '../../shared/sync'
@@ -23,6 +23,7 @@ export interface SyncServiceOptions {
   deviceName?: string
   now?: () => number
   settingsApplier?: (patch: Partial<AppSettings>) => Promise<void>
+  confirmImport?: SyncImportConfirm
 }
 
 const DEVICE_FILE = 'sync-device.json'
@@ -47,7 +48,8 @@ export class SyncService {
     this.paths = { ...defaultSyncPaths(options.dataDir, options.piAgentDir), ...options.paths }
     this.folder = new SyncFolder(options.syncRoot)
     this.store = new LocalStore(this.paths, {
-      ...(options.settingsApplier ? { applySettings: options.settingsApplier } : {})
+      ...(options.settingsApplier ? { applySettings: options.settingsApplier } : {}),
+      ...(options.confirmImport ? { confirmImport: options.confirmImport } : {})
     })
     this.deviceFile = join(options.dataDir, DEVICE_FILE)
     this.stateFile = join(options.dataDir, STATE_FILE)
@@ -135,7 +137,7 @@ export class SyncService {
       }
 
       if (resolution === 'remote') {
-        await this.store.apply(this.remoteRecordOf(conflict))
+        await this.store.apply(this.remoteRecordOf(conflict), { confirmed: true })
         await this.updateBaseline(conflict.key, { localHash: remoteHash, remoteHash, syncedAt: now })
         await this.folder.removeConflict(id)
         return { ok: true }
@@ -159,7 +161,7 @@ export class SyncService {
         })
         await this.updateBaseline(conflict.key, { localHash, remoteHash: localHash, syncedAt: now })
       } else if (resolution === 'both') {
-        await this.store.apply(this.remoteRecordOf(conflict))
+        await this.store.apply(this.remoteRecordOf(conflict), { confirmed: true })
         await this.updateBaseline(conflict.key, { localHash: remoteHash, remoteHash, syncedAt: now })
       } else {
         await this.updateBaseline(conflict.key, { remoteHash, syncedAt: now })
@@ -253,6 +255,11 @@ export class SyncService {
           next
         })
       } catch (error) {
+        if (error instanceof SyncImportConfirmation) {
+          report.skipped.push(error.message)
+          if (base) next.records[key] = base
+          continue
+        }
         report.errors.push(syncNote('record.failed', { key, reason: describe(error) }))
         if (base) next.records[key] = base
       }

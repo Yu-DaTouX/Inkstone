@@ -11,6 +11,8 @@ const MAX_FILES = 50000
 const MAX_METADATA_BYTES = 16 * 1024 * 1024
 const MAX_BYTES = 10 * 1024 ** 3
 const MANIFEST = 'manifest.json'
+export const AUTO_BACKUP_DIRNAME = 'auto-backups'
+export const AUTO_BACKUP_MARKER = 'auto-backup.json'
 
 function allowed(path: string, version: 1 | 2): boolean {
   if (!path || path.includes('\\') || path.split('/').some((p) => !p || p === '.' || p === '..' || /[<>:"|?*\x00-\x1f]/.test(p) || /[. ]$/.test(p) || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(p))) return false
@@ -117,4 +119,51 @@ export async function readDataBackup(root: string): Promise<{ summary: BackupSum
 
 export async function verifyDataBackup(root: string): Promise<BackupSummary> {
   return (await readDataBackup(root)).summary
+}
+
+export function autoBackupRoot(userData: string): string {
+  return join(userData, AUTO_BACKUP_DIRNAME)
+}
+
+async function pruneUpdateAutoBackups(root: string, keep: string): Promise<void> {
+  let entries
+  try {
+    entries = await readdir(root, { withFileTypes: true })
+  } catch {
+    return
+  }
+  const keepPath = resolve(keep)
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const path = join(root, entry.name)
+    if (resolve(path) === keepPath) continue
+    const marker = await readFile(join(path, AUTO_BACKUP_MARKER), 'utf8').catch(() => null)
+    if (marker === null) continue
+    let ours = false
+    try {
+      ours = (JSON.parse(marker) as { format?: unknown } | null)?.format === 'inkstone-auto-backup'
+    } catch {
+      ours = false
+    }
+    if (!ours) continue
+    await rm(path, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+export async function createUpdateAutoBackup(input: { userData: string; sessions: string; yan: string }): Promise<BackupSummary> {
+  const root = autoBackupRoot(input.userData)
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  const summary = await createDataBackup(root, input.sessions, input.yan)
+  try {
+    await writeFile(
+      join(summary.path, AUTO_BACKUP_MARKER),
+      JSON.stringify({ format: 'inkstone-auto-backup', version: 1, createdAt: summary.createdAt }),
+      { flag: 'wx', mode: 0o600 }
+    )
+  } catch (error) {
+    await rm(summary.path, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
+  await pruneUpdateAutoBackups(root, summary.path)
+  return summary
 }

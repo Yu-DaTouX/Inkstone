@@ -1,10 +1,12 @@
 import { pick } from '../shared/ui-lang'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 import { reviewSkillFiles, formatSkillSecurityReview } from '../shared/skill-security'
 import { legacyPlaybookToSkill, userSkillMarkdown, validateUserSkill, type UserSkillInput } from '../shared/user-skill'
+import { isWindowsDeviceName } from './win-file-names'
 
 export const USER_SKILLS_DIRNAME = 'skills'
 const LEGACY_PLAYBOOK_FILE = 'playbooks.json'
@@ -53,31 +55,25 @@ export async function setUserSkillDisabled(name: string, disabled: boolean, root
   if (disabled) names.add(name)
   else names.delete(name)
   await mkdir(userSkillsDir(root), { recursive: true })
-  await writeAtomic(disabledUserSkillsFile(root), `${JSON.stringify([...names].sort(), null, 2)}\n`)
-}
-
-async function writeAtomic(file: string, content: string): Promise<void> {
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
-  try {
-    await writeFile(tmp, content, { encoding: 'utf8', flag: 'wx' })
-    await rename(tmp, file)
-  } catch (error) {
-    await rm(tmp, { force: true }).catch(() => undefined)
-    throw error
-  }
+  await atomicWriteFile(disabledUserSkillsFile(root), `${JSON.stringify([...names].sort(), null, 2)}\n`)
 }
 
 export type SaveUserSkillResult =
   | { ok: true; name: string; path: string; replaced: boolean }
   | { ok: false; code: string; error: string }
 
+export type SaveUserSkillConfirm = (request: UserSkillInput & { replaced: boolean }) => Promise<{ ok: true } | { ok: false; reply?: string; timedOut?: boolean }>
+
 export async function saveUserSkill(
   raw: Partial<UserSkillInput> & { replace?: boolean },
-  opts: { root?: string; reservedNames?: readonly string[] } = {}
+  opts: { root?: string; reservedNames?: readonly string[]; confirm?: SaveUserSkillConfirm } = {}
 ): Promise<SaveUserSkillResult> {
   const checked = validateUserSkill(raw)
   if (!checked.ok) return { ok: false, code: checked.code, error: checked.message }
   const { name } = checked.value
+  if (isWindowsDeviceName(name)) {
+    return { ok: false, code: 'bad-name', error: pick(`「${name}」是 Windows 设备名，不能用作技能名，请换一个`, `"${name}" is a reserved Windows device name; choose another skill name`) }
+  }
   if (opts.reservedNames?.includes(name)) {
     return { ok: false, code: 'reserved-name', error: pick(`「${name}」是砚随包技能的名字，请换一个`, `"${name}" is the name of a bundled Inkstone skill. Choose another`) }
   }
@@ -91,8 +87,19 @@ export async function saveUserSkill(
   if (exists && raw.replace !== true) {
     return { ok: false, code: 'exists', error: pick(`技能「${name}」已存在；确认要覆盖时传 replace: true`, `Skill "${name}" already exists. Pass replace: true to overwrite`) }
   }
+  if (opts.confirm) {
+    const decision = await opts.confirm({ ...checked.value, replaced: exists })
+    if (!decision.ok) {
+      const error = decision.reply
+        ? pick(`用户没有同意保存，并回复：${decision.reply}。按用户的话调整，不要再次请求保存这个技能。`, `The user did not approve saving and replied: ${decision.reply}. Follow the reply; do not ask to save this skill again.`)
+        : decision.timedOut
+          ? pick('用户没有在时限内确认，技能未保存。不要再次请求保存；在回复里说明这一点。', 'The user did not confirm in time; the skill was not saved. Do not ask again; say so in your reply.')
+          : pick('用户没有同意保存这个技能。不要再次请求保存。', 'The user did not approve saving this skill. Do not ask again.')
+      return { ok: false, code: 'declined', error }
+    }
+  }
   await mkdir(dir, { recursive: true })
-  await writeAtomic(file, content)
+  await atomicWriteFile(file, content)
   return { ok: true, name, path: file, replaced: exists }
 }
 
@@ -138,7 +145,7 @@ export async function migrateLegacyPlaybooks(root: string = YAN_DIR): Promise<{ 
 
   for (const item of list) {
     const skill = legacyPlaybookToSkill(item)
-    if (!skill) {
+    if (!skill || isWindowsDeviceName(skill.name)) {
       skipped += 1
       continue
     }
@@ -147,7 +154,7 @@ export async function migrateLegacyPlaybooks(root: string = YAN_DIR): Promise<{ 
     try {
       if (!existsSync(target)) {
         await mkdir(join(dir, skill.name), { recursive: true })
-        await writeAtomic(target, userSkillMarkdown(skill))
+        await atomicWriteFile(target, userSkillMarkdown(skill))
         exported.push(skill.name)
       }
       doneSet.add(skill.id)
@@ -161,7 +168,7 @@ export async function migrateLegacyPlaybooks(root: string = YAN_DIR): Promise<{ 
   if (doneSet.size !== done.length) {
     try {
       await mkdir(dir, { recursive: true })
-      await writeAtomic(markerPath, JSON.stringify({ version: 1, ids: [...doneSet] }, null, 2))
+      await atomicWriteFile(markerPath, JSON.stringify({ version: 1, ids: [...doneSet] }, null, 2))
     } catch {
     }
   }

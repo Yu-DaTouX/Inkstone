@@ -17,14 +17,13 @@ async function run() {
     const consent = await compile('src/shared/tool-consent.ts', join(dir, 'tool-consent.mjs'))
     const move = await compile('src/main/session-move.ts', join(dir, 'session-move.mjs'))
 
-    const now = Date.UTC(2026, 9, 21)
     const calendar = { capability: 'calendar', action: 'update event', resource: 'work', device: 'd1', scene: 'local' }
-    const allowed = { key: consent.consentKeyOf(calendar), parts: calendar, records: Array.from({ length: 6 }, (_, i) => ({ decision: 'allow', at: now - i * 3_600_000 })) }
-    assert.equal(consent.consentVerdict(undefined, calendar, now).mode, 'ask')
-    assert.equal(consent.consentVerdict(allowed, calendar, now).mode, 'auto', 'declared non-category operations auto-allow after repeated consent')
+    assert.equal(consent.consentVerdict(calendar).danger, null, 'declared operations outside danger categories carry no category')
+    assert.ok(consent.consentVerdict(calendar).reason.length > 0)
+    assert.equal('mode' in consent.consentVerdict(calendar), false, 'no verdict can auto-allow from past answers')
+    assert.equal(consent.recordConsent, undefined, 'answers are no longer recorded for later auto-allow')
     const mail = { ...calendar, capability: 'mail', action: 'send' }
-    const mailAllowed = { ...allowed, key: consent.consentKeyOf(mail), parts: mail }
-    assert.equal(consent.consentVerdict(mailAllowed, mail, now).mode, 'ask', 'danger categories always ask')
+    assert.equal(consent.consentVerdict(mail).danger, '对外发送或发布', 'danger categories are labelled')
 
     assert.equal(approval.normalizeApprovalFeedback('  路径写错了  '), '路径写错了')
     assert.equal(approval.normalizeApprovalFeedback('   '), undefined)

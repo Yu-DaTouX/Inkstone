@@ -3,6 +3,9 @@ import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const RETRY_CODES = new Set(['EEXIST', 'EPERM', 'EACCES'])
+const TRANSIENT_RENAME_CODES = new Set(['EBUSY', 'EPERM', 'EACCES'])
+const RENAME_ATTEMPTS = 8
+const RENAME_BACKOFF_MS = 25
 
 export interface AtomicWriteOptions {
   mode?: number
@@ -20,6 +23,23 @@ async function syncDirectory(file: string): Promise<void> {
   }
 }
 
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!code || !TRANSIENT_RENAME_CODES.has(code) || attempt >= RENAME_ATTEMPTS) throw error
+      if (attempt === 0) {
+        const target = await lstat(to).catch(() => null)
+        if (target?.isDirectory()) throw error
+      }
+      await new Promise((done) => setTimeout(done, RENAME_BACKOFF_MS * (attempt + 1)))
+    }
+  }
+}
+
 export async function atomicWriteFile(file: string, content: string, options: AtomicWriteOptions = {}): Promise<void> {
   await mkdir(dirname(file), { recursive: true })
   const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
@@ -30,7 +50,7 @@ export async function atomicWriteFile(file: string, content: string, options: At
     throw error
   }
   try {
-    await rename(temp, file)
+    await renameWithRetry(temp, file)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (!code || !RETRY_CODES.has(code)) {
@@ -44,15 +64,15 @@ export async function atomicWriteFile(file: string, content: string, options: At
     }
     const backup = `${file}.${randomUUID()}.bak`
     try {
-      await rename(file, backup)
+      await renameWithRetry(file, backup)
     } catch {
       await rm(temp, { force: true }).catch(() => undefined)
       throw error
     }
     try {
-      await rename(temp, file)
+      await renameWithRetry(temp, file)
     } catch (retryError) {
-      await rename(backup, file).catch(() => undefined)
+      await renameWithRetry(backup, file).catch(() => undefined)
       await rm(temp, { force: true }).catch(() => undefined)
       throw retryError
     }

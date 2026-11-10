@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, parse, resolve } from 'node:path'
+import { dirname, join, parse, resolve } from 'node:path'
 import { YAN_DIR } from './paths'
 import { atomicWriteFile } from './sync/atomic'
 import { gitRun } from './git-service'
@@ -25,6 +25,8 @@ const MAX_LISTED_CHANGES = 200
 const MAX_FILE_BYTES = 20 * 1024 * 1024
 const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 const STALE_TEMP_MS = 10 * 60 * 1000
+const LOCK_EVIDENCE_SLACK_MS = 1_000
+const ATTRIBUTE_OVERRIDES = '* -text -filter -ident -working-tree-encoding\n'
 const STAT_BATCH = 64
 const ASSESS_TIMEOUT_MS = 8_000
 const EXTRA_EXCLUDES = ['node_modules/', '.venv/', 'venv/', '__pycache__/', '.gradle/', '.next/', '.cache/', '.turbo/']
@@ -106,7 +108,17 @@ function shadowGit(cwd: string, dir: string, args: string[], opts: { timeout?: n
       ...args
     ],
     { timeout: opts.timeout ?? 60_000, allowFailure: opts.allowFailure, stdin: opts.stdin, deadline: opts.deadline }
-  )
+  ).then((result) => {
+    if (result.timedOut) killedGitAt.set(dir, Date.now())
+    return result
+  })
+}
+
+const killedGitAt = new Map<string, number>()
+
+export function noteCheckpointGitKilled(cwd: string, at = Date.now()): void {
+  if (!cwd) return
+  killedGitAt.set(projectDir(cwd), at)
 }
 
 async function removeStaleTemp(dir: string, now = Date.now(), deadline?: GitDeadline): Promise<void> {
@@ -148,7 +160,32 @@ async function ensureRepo(cwd: string, dir: string, deadline?: GitDeadline): Pro
     await writeFile(exclude, `${EXTRA_EXCLUDES.join('\n')}\n`, 'utf8')
   } catch {
   }
+  if (!(await keepAttributeOverrides(dir))) return false
   return !deadline?.expired()
+}
+
+async function keepAttributeOverrides(dir: string): Promise<boolean> {
+  const file = join(dir, 'repo.git', 'info', 'attributes')
+  try {
+    const current = await readFile(file, 'utf8').catch(() => '')
+    if (current === ATTRIBUTE_OVERRIDES) return true
+    await mkdir(dirname(file), { recursive: true })
+    await writeFile(file, ATTRIBUTE_OVERRIDES, 'utf8')
+    return true
+  } catch (error) {
+    console.warn('[checkpoints] cannot disable project git attributes; skipping this checkpoint to keep original bytes: ', error instanceof Error ? error.message : error)
+    return false
+  }
+}
+
+async function reclaimKilledGitLock(dir: string): Promise<boolean> {
+  const killedAt = killedGitAt.get(dir)
+  if (killedAt === undefined) return false
+  killedGitAt.delete(dir)
+  const lock = join(dir, 'repo.git', 'index.lock')
+  const info = await stat(lock).catch(() => null)
+  if (!info || !info.isFile() || info.mtimeMs > killedAt + LOCK_EVIDENCE_SLACK_MS) return false
+  return rm(lock, { force: true }).then(() => true, () => false)
 }
 
 async function measureFiles(cwd: string, paths: string[], deadline?: GitDeadline): Promise<{ oversized: string[]; total: number; largest: { path: string; bytes: number } | null } | null> {
@@ -254,10 +291,24 @@ export async function captureCheckpoint(cwd: string, sessionKey: string, text: s
   return serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn', deadline)).catch(() => null)
 }
 
+async function snapshotWithLockRecovery(cwd: string, dir: string, deadline?: GitDeadline): Promise<{ tree: string; oversized: string[] } | null> {
+  const first = await snapshotTree(cwd, dir, deadline)
+  if (first || deadline?.expired()) return first
+  const lock = join(dir, 'repo.git', 'index.lock')
+  if (!(await stat(lock).then((info) => info.isFile(), () => false))) return null
+  if (!(await reclaimKilledGitLock(dir))) {
+    console.warn('[checkpoints] snapshot blocked by index.lock that cannot be attributed to a git process of ours that already exited; skipping this checkpoint')
+    return null
+  }
+  const retried = await snapshotTree(cwd, dir, deadline)
+  if (!retried) console.warn('[checkpoints] still no checkpoint after removing the leftover index.lock')
+  return retried
+}
+
 async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind'], deadline?: GitDeadline): Promise<CheckpointRecord | null> {
   const dir = projectDir(cwd)
   if (deadline?.expired() || !(await ensureRepo(cwd, dir, deadline))) return null
-  const snapshot = await snapshotTree(cwd, dir, deadline)
+  const snapshot = await snapshotWithLockRecovery(cwd, dir, deadline)
   if (!snapshot || deadline?.expired()) return null
   const tree = snapshot.tree
   const index = await readIndex(dir, cwd)
@@ -320,7 +371,7 @@ export function previewCheckpoint(cwd: string, recordId: string): Promise<Checkp
     const index = await readIndex(dir, cwd)
     const sha = shaOf(index.records.find((r) => r.id === recordId))
     if (!sha) return { ok: false, error: pick('找不到这个检查点（可能已过期被清理）', 'Checkpoint not found (it may have expired)'), changes: [], total: 0 }
-    const snapshot = await snapshotTree(cwd, dir)
+    const snapshot = await snapshotWithLockRecovery(cwd, dir)
     if (!snapshot) return { ok: false, error: pick('没能读取项目文件当前的状态', 'Cannot read the current state of the project files'), changes: [], total: 0 }
     const diff = await shadowGit(cwd, dir, ['diff-index', '--cached', '--name-status', '--no-renames', sha], { allowFailure: true })
     if (!diff.ok) return { ok: false, error: diff.error ?? pick('比较失败', 'Comparison failed'), changes: [], total: 0 }

@@ -17,7 +17,7 @@ import { listSessions, readTitleSamples, restoreSession, isSessionFileInSessions
 import { searchSessionText, warmSessionSearch } from '../session-search'
 import { archiveSessionsBatch, getSessionLayout, moveSessionLayout, setSessionFlags } from '../session-layout'
 import { resolveSessionOpenTarget } from '../session-open-target'
-import { rewriteSessionCwd } from '../session-move'
+import { beginSessionMove, restoreSessionHeaderCwd, rewriteSessionCwd, sessionMoveInProgress } from '../session-move'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { effectiveAutoArchiveDays } from '../../shared/session-archive'
@@ -35,7 +35,15 @@ export interface SelectedSessionTarget {
   preview?: boolean
 }
 
+function moveStageError(stage: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return pick(`移动工作目录失败（${stage}）：${detail}`, `Moving the folder failed (${stage}): ${detail}`)
+}
+
 export async function selectSessionWithHost(host: SessionHost, target: SelectedSessionTarget) {
+  if (target.sessionFile && sessionMoveInProgress(target.sessionFile)) {
+    return { ok: false, error: pick('这条会话正在移动工作目录，稍后再打开', 'This session is moving folders; open it again shortly') }
+  }
   let cwdResult = await host.validateCwd(target.cwd)
   if (!cwdResult.ok && !target.preview && host.relocateMissingCwd && typeof target.sessionFile === 'string' && target.sessionFile.trim() && existsSync(target.sessionFile) && typeof target.cwd === 'string' && target.cwd.trim() && !existsSync(resolve(target.cwd))) {
     const picked = await host.relocateMissingCwd(target.cwd)
@@ -73,7 +81,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
   handle('yan:usageStats', async (range: 'all' | '30d' | '7d') => readUsageStatsOffThread(range))
   handle('yan:fork', async (entryId: string, expected?: ExpectedRuntimeOwner) => sessionActionAgent(host, expected)?.fork(entryId) ?? { ok: false, error: sessionActionChanged() })
-  handle('yan:clone', async () => host.ac()?.clone() ?? { ok: false, error: pick('pi 未运行', 'pi is not running') })
+  handle('yan:clone', async (expected?: ExpectedRuntimeOwner) => sessionActionAgent(host, expected)?.clone() ?? { ok: false, error: expected === undefined ? pick('pi 未运行', 'pi is not running') : sessionActionChanged() })
   handle('yan:forkPoints', async () => host.ac()?.forkPoints() ?? [])
   handle('yan:exportHtml', async (outputPath?: string, expected?: ExpectedRuntimeOwner) => {
     if (outputPath !== undefined && (typeof outputPath !== 'string' || !outputPath.trim())) return { ok: false, error: pick('导出路径无效', 'Invalid export path') }
@@ -138,9 +146,12 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     }
     const target = await locateSession(sessionId)
     if (!target) return { ok: false, error: pick('找不到要移动的会话', 'Session to move not found') }
+    const lease = beginSessionMove(target.path)
+    if (!lease) return { ok: false, error: pick('这条会话正在移动，请稍后再试', 'This session is being moved; try again shortly') }
     try {
       let nextCwd = target.cwd
       let cwdChanged = false
+      let previousCwd: string | undefined
       if (typeof cwd === 'string' && cwd) {
         const checked = await host.validateCwd(cwd)
         if (!checked.ok) return checked
@@ -149,16 +160,36 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
           const live = host.runners()?.statuses().find((status) => !!status.sessionFile && resolve(status.sessionFile).toLowerCase() === sessionFile)
           if (live && (live.running || live.waiting)) return { ok: false, error: pick('会话正在运行，等这一轮结束再移动工作目录', 'Session is running; move the working folder after this turn ends') }
           if (live) await host.runners()?.stopBySessionFile(target.path)
-          await rewriteSessionCwd(target.path, checked.cwd)
+          try {
+            const rewritten = await rewriteSessionCwd(target.path, checked.cwd, lease)
+            previousCwd = rewritten.previousCwd
+          } catch (error) {
+            return { ok: false, error: moveStageError(pick('改写会话文件', 'rewriting the session file'), error) }
+          }
           nextCwd = checked.cwd
           cwdChanged = true
         }
       }
-      const entry = await moveSessionLayout({ sessionId, sessionFile: target.path, cwd: nextCwd }, projectId)
+      let entry
+      try {
+        entry = await moveSessionLayout({ sessionId, sessionFile: target.path, cwd: nextCwd }, projectId)
+      } catch (error) {
+        if (!cwdChanged || !previousCwd) return { ok: false, error: moveStageError(pick('保存会话位置', 'saving the session position'), error) }
+        const restored = await restoreSessionHeaderCwd(target.path, previousCwd, lease)
+        host.pushRunners()
+        return {
+          ok: false,
+          error: restored
+            ? moveStageError(pick('保存会话位置', 'saving the session position'), error)
+            : pick('保存会话位置失败，工作目录也没能改回去；请重新指定这个会话的文件夹', 'Saving the session position failed and the folder could not be restored; set this session\'s folder again')
+        }
+      }
       if (cwdChanged) host.pushRunners()
       return { ok: true, entry, cwdChanged }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    } finally {
+      lease.release()
     }
   })
 
@@ -206,6 +237,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   handle('yan:switchSession', async (path: string) => {
     const registry = host.runners()
     if (!registry) return { ok: false, error: pick('pi 未运行', 'pi is not running') }
+    if (sessionMoveInProgress(path)) return { ok: false, error: pick('这条会话正在移动工作目录，稍后再打开', 'This session is moving folders; open it again shortly') }
     const settings = await getSettings()
     const fallback = await host.validateCwd(settings.cwd)
     if (!fallback.ok) return fallback
@@ -233,9 +265,9 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     host.pushRunners()
     return res.ok ? { ok: true } : { ok: false, error: res.error }
   })
-  handle('yan:compact', async (customInstructions?: string) => {
+  handle('yan:compact', async (customInstructions?: string, expected?: ExpectedRuntimeOwner) => {
     if (customInstructions !== undefined && typeof customInstructions !== 'string') return { ok: false, error: pick('压缩要求必须是文本', 'Compaction instructions must be text') }
-    return host.ac()?.compact(customInstructions) ?? { ok: false, error: pick('pi 未运行', 'pi is not running') }
+    return sessionActionAgent(host, expected)?.compact(customInstructions) ?? { ok: false, error: expected === undefined ? pick('pi 未运行', 'pi is not running') : sessionActionChanged() }
   })
 
   handle('yan:compactionInfo', async (cwd: unknown, contextWindow: unknown) => {

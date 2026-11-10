@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { approvalHeadline, isApprovalChoice, normalizeApprovalFeedback, type ApprovalAnswer, type ApprovalKind, type ApprovalReceipt, type ApprovalRequest } from '../shared/approval'
@@ -7,6 +7,7 @@ import { YAN_DIR } from './paths'
 
 const PER_SESSION_LIMIT = 200
 const TEXT_LIMIT = 200
+const QUARANTINE_LIMIT = 32
 const KINDS: readonly ApprovalKind[] = ['permission', 'delete', 'danger', 'outside', 'consent', 'move']
 
 interface ApprovalLogDocument {
@@ -17,6 +18,13 @@ interface ApprovalLogDocument {
 export interface ApprovalLogUpdate {
   sessionId: string
   entries: ApprovalReceipt[]
+}
+
+interface CacheEntry {
+  file: string
+  mtimeMs: number
+  size: number
+  doc: ApprovalLogDocument
 }
 
 export function approvalLogPath(): string {
@@ -86,6 +94,9 @@ export function approvalReceiptOf(request: ApprovalRequest, answer: ApprovalAnsw
 }
 
 export class ApprovalLogStore {
+  private cache: CacheEntry | null = null
+  private readonly quarantined = new Set<string>()
+
   constructor(private readonly file: () => string = approvalLogPath) {}
 
   list(sessionId: string | undefined | null): ApprovalReceipt[] {
@@ -107,34 +118,71 @@ export class ApprovalLogStore {
   }
 
   private read(): ApprovalLogDocument {
-    let raw: string
-    try { raw = readFileSync(this.file(), 'utf8') }
-    catch (error) {
+    const file = this.file()
+    let stamp: { mtimeMs: number; size: number }
+    try {
+      const info = statSync(file)
+      stamp = { mtimeMs: info.mtimeMs, size: info.size }
+    } catch (error) {
+      this.cache = null
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, sessions: {} }
       throw error
     }
+    const cached = this.cache
+    if (cached && cached.file === file && cached.mtimeMs === stamp.mtimeMs && cached.size === stamp.size) return cached.doc
+    let raw: string
     try {
-      return sanitizeDocument(JSON.parse(raw))
+      raw = readFileSync(file, 'utf8')
+    } catch (error) {
+      this.cache = null
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, sessions: {} }
+      throw error
+    }
+    let doc: ApprovalLogDocument
+    try {
+      doc = sanitizeDocument(JSON.parse(raw))
     } catch {
-      copyFileSync(this.file(), `${this.file()}.corrupt-${Date.now()}`)
-      return { version: 1, sessions: {} }
+      this.quarantine(file, stamp)
+      doc = { version: 1, sessions: {} }
+    }
+    this.cache = { file, ...stamp, doc }
+    return doc
+  }
+
+  private quarantine(file: string, stamp: { mtimeMs: number; size: number }): void {
+    const signature = `${file}|${stamp.mtimeMs}|${stamp.size}`
+    if (this.quarantined.has(signature)) return
+    this.quarantined.add(signature)
+    if (this.quarantined.size > QUARANTINE_LIMIT) {
+      const oldest = this.quarantined.values().next().value
+      if (typeof oldest === 'string') this.quarantined.delete(oldest)
+    }
+    const target = `${file}.corrupt-${Math.round(stamp.mtimeMs)}-${stamp.size}`
+    if (existsSync(target)) return
+    try {
+      copyFileSync(file, target)
+    } catch (error) {
+      console.warn('[approval-log] failed to back up the corrupt file: ', error instanceof Error ? error.message : error)
     }
   }
 
   private write(doc: ApprovalLogDocument): void {
+    const file = this.file()
     try {
-      const path = this.file()
-      mkdirSync(dirname(path), { recursive: true })
-      const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
+      mkdirSync(dirname(file), { recursive: true })
+      const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
       try {
         writeFileSync(temp, JSON.stringify(doc), { encoding: 'utf8', flag: 'wx' })
-        renameSync(temp, path)
+        renameSync(temp, file)
       } catch (error) {
         rmSync(temp, { force: true })
         throw error
       }
+      const info = statSync(file)
+      this.cache = { file, mtimeMs: info.mtimeMs, size: info.size, doc }
     } catch (error) {
-      console.warn('[approval-log] 写入失败：', error instanceof Error ? error.message : error)
+      this.cache = null
+      console.warn('[approval-log] write failed; this receipt was not saved: ', error instanceof Error ? error.message : error)
     }
   }
 }
