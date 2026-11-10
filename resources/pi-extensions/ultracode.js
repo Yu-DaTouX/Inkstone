@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { isHostAutomatedMessage } from './host-message.js'
 
 export const ULTRACODE_TYPE = 'yan-ultracode'
 export const ULTRACODE_STATE_FILE = 'ultracode-sessions.json'
@@ -13,7 +14,6 @@ const SUBAGENT_START = /\bsubagent\b["'\s,]+start\b([^;&|\n]*)/g
 const CODEMODE_EDIT = /\btools\s*\.\s*(?:edit|write|multi_edit|apply_patch)\s*\(/g
 const HELP_FLAG = /(?:^|["'`\s,])(?:-h|--help)(?=$|["'`\s,=\\])/
 const QUOTED = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g
-const SUBAGENT_NOTICE = /^\s*<subagent-notification\b/
 
 const KEYWORD = /^\s*\/ultracode(?=$|\s)/i
 
@@ -108,7 +108,7 @@ export function requestSlice(branch) {
   const entries = branch ?? []
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const message = entries[i]?.type === 'message' ? entries[i].message : undefined
-    if (message?.role === 'user' && !SUBAGENT_NOTICE.test(messageText(message))) {
+    if (message?.role === 'user' && !isHostAutomatedMessage(messageText(message))) {
       return { prompt: messageText(message), entries: entries.slice(i + 1) }
     }
   }

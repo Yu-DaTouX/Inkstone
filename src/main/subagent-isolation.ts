@@ -2,12 +2,36 @@ import { pick } from '../shared/ui-lang'
 import { execFile } from 'node:child_process'
 import { cp, lstat, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { sanitizedGitEnv } from './git-run-policy'
 
 const execFileAsync = promisify(execFile)
 const GIT_MAX_BUFFER = 24 * 1024 * 1024
+const GIT_CONFIG_HARDENING = ['-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false', '-c', 'diff.external=', '-c', 'color.ui=false']
+let cachedGitEnv: NodeJS.ProcessEnv | undefined
+let cachedHooksDir: string | undefined
+
+export function gitHooksDisabledDir(): string {
+  if (!cachedHooksDir) {
+    const dir = mkdtempSync(join(tmpdir(), 'yan-subagent-no-hooks-'))
+    cachedHooksDir = dir
+    try {
+      process.once('exit', () => { try { rmSync(dir, { recursive: true, force: true }) } catch { } })
+    } catch { }
+  }
+  return cachedHooksDir
+}
+
+function gitEnv(): NodeJS.ProcessEnv {
+  if (!cachedGitEnv) cachedGitEnv = sanitizedGitEnv(process.env)
+  return cachedGitEnv
+}
+
+function gitHardening(): string[] {
+  return ['-c', `core.hooksPath=${gitHooksDisabledDir()}`, ...GIT_CONFIG_HARDENING]
+}
 
 export type SubagentIsolation = 'worktree' | 'controlled-cwd' | 'shared-cwd'
 
@@ -68,12 +92,13 @@ function gitErrorDetail(error: unknown): string {
 
 async function runGitBytes(cwd: string, args: string[], timeout = 30_000): Promise<Buffer> {
   try {
-    const result = await execFileAsync('git', args, {
+    const result = await execFileAsync('git', [...gitHardening(), ...args], {
       cwd,
       windowsHide: true,
       timeout,
       maxBuffer: GIT_MAX_BUFFER,
-      encoding: 'buffer'
+      encoding: 'buffer',
+      env: gitEnv()
     })
     return Buffer.from((result as { stdout?: unknown }).stdout as Buffer)
   } catch (error) {
@@ -82,11 +107,12 @@ async function runGitBytes(cwd: string, args: string[], timeout = 30_000): Promi
 }
 
 async function runGit(cwd: string, args: string[], timeout = 30_000, input?: string): Promise<GitOutput> {
+  const argv = [...gitHardening(), ...args]
   try {
-    const options = { cwd, windowsHide: true, timeout, maxBuffer: GIT_MAX_BUFFER, encoding: 'utf8' as const }
+    const options = { cwd, windowsHide: true, timeout, maxBuffer: GIT_MAX_BUFFER, encoding: 'utf8' as const, env: gitEnv() }
     if (input !== undefined) {
       const result = await new Promise<GitOutput>((resolvePromise, rejectPromise) => {
-        const child = execFile('git', args, options, (error, stdout, stderr) => {
+        const child = execFile('git', argv, options, (error, stdout, stderr) => {
           if (error) {
             const detail = String(stderr || stdout || error.message || error).trim()
             rejectPromise(new Error(detail || pick('git 命令失败', 'Git command failed')))
@@ -98,7 +124,7 @@ async function runGit(cwd: string, args: string[], timeout = 30_000, input?: str
       })
       return result
     }
-    const result = await execFileAsync('git', args, options)
+    const result = await execFileAsync('git', argv, options)
     return {
       stdout: String((result as { stdout?: unknown }).stdout ?? ''),
       stderr: String((result as { stderr?: unknown }).stderr ?? '')

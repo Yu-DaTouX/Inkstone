@@ -28,15 +28,18 @@ const b = { ...a, id: 'b', name: 'Model B' }
 const levels = ['off', 'minimal', 'low', 'medium', 'high']
 const native = { sessionId: 'one', model: a, thinkingLevel: 'low', availableThinkingLevels: levels, isStreaming: true }
 const events = []
+let failModelSwitch = false
+const prompts = []
 const agent = new AgentController({ cwd: root, push: (event) => events.push(event) })
 agent.agentRunning = true
 agent.refreshStats = async () => {}
 agent.rpc = { command: async (type, payload) => {
   if (type === 'set_model') {
-    if (payload.modelId === 'missing') return { success: false, error: 'missing' }
+    if (failModelSwitch || payload.modelId === 'missing') return { success: false, error: 'switch failed' }
     native.model = payload.modelId === 'a' ? a : b
   }
   if (type === 'set_thinking_level') native.thinkingLevel = payload.level
+  if (type === 'prompt') prompts.push(payload)
   const data = type === 'get_state' ? { ...native }
     : type === 'get_available_thinking_levels' ? { levels }
     : type === 'get_available_models' ? { models: [a, b] }
@@ -91,6 +94,16 @@ await agent.applyDeferredModelSwitch()
 check('下一条消息发送前应用待切换项', native.model.id === 'b' && !agent.getState().pendingModelChange && await readPending('one') === null)
 await agent.setThinking('medium')
 check('空闲时切换直接生效，不显示等待', agent.getState().thinkingLevel === 'medium' && !agent.getState().pendingModelChange)
+agent.agentRunning = true
+await agent.setModel('fixture', 'a')
+agent.agentRunning = false
+native.isStreaming = false
+await agent.refreshState()
+check('发送前仍有待切换项', !!agent.getState().pendingModelChange)
+agent.applyDeferredModelSwitch = async () => ({ ok: false, error: 'switch failed' })
+const failedSend = await agent.send('hello')
+check('待切换应用失败时不发 prompt、返回失败并保留草稿', !failedSend.ok && /草稿已保留/.test(failedSend.error ?? '') && prompts.length === 0)
+check('待切换应用失败后提示仍保留，下一次发送会再试', !!agent.getState().pendingModelChange)
 agent.agentRunning = true
 await agent.setModel('fixture', 'a')
 native.sessionId = 'two'

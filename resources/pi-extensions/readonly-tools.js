@@ -10,8 +10,40 @@ const ARGS_MAX = 40
 const ARG_MAX_CHARS = 500
 const HOST_TIMEOUT_MS = 90_000
 const FORBIDDEN_GIT_ARG = /^(--output|--ext-diff|--textconv|--exec|--upload-pack|--receive-pack|--open-files-in-pager|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--paginate|-p$|-o|-O)/
-const GIT_GLOBALS = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', '-c', 'core.fsmonitor=false', '-c', 'diff.external=', '--no-pager', '--no-optional-locks']
-const NO_DRIVERS = { diff: ['--no-ext-diff', '--no-textconv'], show: ['--no-ext-diff', '--no-textconv'], log: ['--no-ext-diff', '--no-textconv'], status: [], blame: [] }
+const GIT_GLOBALS = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'log.showSignature=false', '-c', 'diff.external=', '--no-pager', '--no-optional-locks']
+const NO_DRIVERS = { diff: ['--no-ext-diff', '--no-textconv'], show: ['--no-ext-diff', '--no-textconv'], log: ['--no-ext-diff', '--no-textconv'], status: [], blame: ['--no-textconv'] }
+const KEPT_GIT_VARIABLES = new Set(['GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_SSH_VARIANT', 'GIT_ASKPASS', 'GIT_SSL_CAINFO', 'GIT_SSL_CAPATH', 'GIT_PROXY_COMMAND', 'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_NOSYSTEM'])
+
+export function gitFilterOverrides(configNames) {
+  const names = new Set()
+  for (const line of String(configNames ?? '').split('\0')) {
+    const match = /^filter\.([\s\S]+)\.(?:clean|process|smudge|required)$/.exec(line)
+    if (match) names.add(match[1])
+  }
+  return [...names].flatMap((name) => [
+    [`filter.${name}.clean`, ''],
+    [`filter.${name}.process`, ''],
+    [`filter.${name}.smudge`, ''],
+    [`filter.${name}.required`, 'false']
+  ])
+}
+
+export function gitInspectEnv(base = process.env, overrides = []) {
+  const env = {}
+  for (const [key, value] of Object.entries(base)) {
+    if (/^GIT_/i.test(key) && !KEPT_GIT_VARIABLES.has(key.toUpperCase())) continue
+    env[key] = value
+  }
+  Object.assign(env, { GIT_EXTERNAL_DIFF: '', GIT_PAGER: 'cat', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' })
+  if (overrides.length) {
+    env.GIT_CONFIG_COUNT = String(overrides.length)
+    overrides.forEach(([key, value], index) => {
+      env[`GIT_CONFIG_KEY_${index}`] = key
+      env[`GIT_CONFIG_VALUE_${index}`] = value
+    })
+  }
+  return env
+}
 
 function clip(value) {
   if (value.length <= OUTPUT_MAX_CHARS) return value
@@ -33,9 +65,9 @@ export function gitInspectArgs(action, args = []) {
   return { argv: [...GIT_GLOBALS, action, ...NO_DRIVERS[action], ...args] }
 }
 
-function runGit(argv, cwd, signal) {
+function runGit(argv, cwd, signal, env) {
   return new Promise((resolve) => {
-    execFile('git', argv, { cwd, timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BUFFER, windowsHide: true, signal, env: { ...process.env, GIT_PAGER: 'cat', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } }, (error, stdout, stderr) => {
+    execFile('git', argv, { cwd, timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BUFFER, windowsHide: true, signal, env }, (error, stdout, stderr) => {
       resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), error: error && typeof error.code !== 'number' ? String(error.message ?? error) : '' })
     })
   })
@@ -74,7 +106,9 @@ export const GIT_INSPECT_TOOL = {
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
     const built = gitInspectArgs(params?.action, params?.args ?? [])
     if (built.error) return text(built.error, {}, true)
-    const result = await runGit(built.argv, ctx?.cwd ?? process.cwd(), signal)
+    const cwd = ctx?.cwd ?? process.cwd()
+    const listed = await runGit([...GIT_GLOBALS, 'config', '--name-only', '--list', '-z'], cwd, signal, gitInspectEnv())
+    const result = await runGit(built.argv, cwd, signal, gitInspectEnv(process.env, gitFilterOverrides(listed.stdout)))
     if (result.error) return text(`git failed: ${result.error}`, { code: result.code }, true)
     const body = result.stdout || (result.code === 0 ? '(no output)' : '')
     const stderr = result.stderr.trim() ? `\n[stderr]\n${result.stderr.trim().slice(0, 4000)}` : ''

@@ -872,11 +872,11 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       onChange: () => {},
       prepare: fakePrepare
     })
-    const res = await ctrl.start('只许查五次', undefined, 'controlled-cwd', { goal: '只许查五次', maxToolCalls: 5 })
+    const res = await ctrl.start('连续查很多次', undefined, 'controlled-cwd', { goal: '连续查很多次' })
     const rpc = factory.created[0]
     const id = res.run?.id ?? ''
     for (let i = 0; i < 350; i += 1) rpc.emit('event', { type: 'tool_execution_start', toolName: 'read' })
-    ok(steers.length === 0 && !ctrl.get(id)?.wrapUp, '超过旧参数和旧300次上限也不被宿主收尾')
+    ok(steers.length === 0 && !ctrl.get(id)?.wrapUp, '调用次数不设宿主上限，超过旧阈值也不收尾')
     ok(ctrl.get(id)?.toolCalls === 350, '统计所有调用供用户查看')
     rpc.emit('event', { type: 'agent_settled' })
     ok(await waitFor(() => ctrl.get(id)?.status === 'done', 5000) && ctrl.get(id)?.endReason === 'completed', '自主结束标为正常完成', String(ctrl.get(id)?.endReason))

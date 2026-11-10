@@ -1,10 +1,9 @@
 import { readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { isHostAutomatedMessage } from './host-message.js'
 
 export const PENDING_MODEL_SWITCH_DIR = 'pending-model-switch'
-
-const SUBAGENT_NOTICE = /^\s*<subagent-notification\b/
 
 const yanDir = () => process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
 
@@ -69,7 +68,7 @@ export function createTurnModelSwitch(pi, root) {
         queuedSteers -= 1
         return
       }
-      if (SUBAGENT_NOTICE.test(textOf(message.content))) return
+      if (isHostAutomatedMessage(textOf(message.content))) return
       await apply(ctx)
     }
   }

@@ -872,7 +872,7 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
     const payload = await response.json()
     if (payload?.ok && payload?.summary?.allowed === true) return { allowed: true }
     const feedback = typeof payload?.summary?.feedback === 'string' ? payload.summary.feedback.trim() : ''
-    if (feedback) return { allowed: false, why: `The user declined this operation and said: ${feedback}. Adjust your approach accordingly and try again` }
+    if (feedback) return { allowed: false, why: `The user declined this operation and said: ${feedback}. Honour the refusal: do not retry this operation and do not reach the same result through another tool or route; tell the user what you would need, or ask which alternative they want` }
     const reason = typeof payload?.summary?.reason === 'string' ? payload.summary.reason.trim() : ''
     if (reason) return { allowed: false, why: reason }
     return { allowed: false, why: payload?.summary?.decision === 'no-answer' ? 'No answer from the user' : 'The user declined this operation' }
@@ -905,6 +905,6 @@ export default function dangerGuardExtension(pi) {
       if (inputDigest(event?.input ?? {}) === approvedDigest) return undefined
       return { block: true, reason: CHANGED_AFTER_APPROVAL }
     }
-    return { block: true, reason: `High-risk operation not confirmed by the user: ${reasons.join('; ')}. ${answer.why}. Try a safer approach, or tell the user why this one is necessary.` }
+    return { block: true, reason: `High-risk operation not confirmed by the user: ${reasons.join('; ')}. ${answer.why}. Do not retry it and do not work around the refusal by another route; tell the user why this one is needed, or ask which alternative they want.` }
   })
 }

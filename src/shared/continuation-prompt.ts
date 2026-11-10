@@ -24,6 +24,9 @@ const SUBAGENT_CAUSES: Record<ContinuationReason, string> = {
   'account-switch': 'The subscription account ran out of quota and was switched to another account.'
 }
 
+export const SUBAGENT_QUOTA_RESUME_PROMPT =
+  '[Auto-continue 1/1] The subscription account ran out of quota and it has been restored. Check the tool results so far and finish the delegated task without repeating completed steps. If you cannot continue safely, stop and say why at the start of your report.'
+
 export function continuationPrompt(reason: ContinuationReason, audience: ContinuationAudience = 'session'): string {
   if (audience === 'subagent') {
     return `[Auto-continue 1/1] ${SUBAGENT_CAUSES[reason]} Check the tool results so far and finish the delegated task without repeating completed steps. If you cannot continue safely, stop and say why at the start of your report.`

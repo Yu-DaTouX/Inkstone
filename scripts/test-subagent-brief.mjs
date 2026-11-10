@@ -42,12 +42,12 @@ export function runSubagentBriefTests(ok, mod) {
     ok(/要交回的东西：/.test(prompt) && /- 一段结论/.test(prompt), 'prompt 列出交付物')
     ok(/只依据这些来源（不要自行扩大）：/.test(prompt) && /src\/main\/agent\.ts/.test(prompt), 'prompt 写明只准依据的来源')
     ok(/边界：只读，不要改代码/.test(prompt), 'prompt 写出边界')
-    ok(/先说结论/.test(prompt), 'prompt 要求先给结论')
+    ok(!/先说结论|简要汇报/.test(prompt), '任务外壳不再重复通用汇报要求（系统提示里保留一次）')
 
     const sameGoal = briefPrompt(minimal.brief, '查一下这两个模块')
     ok(!/任务原话/.test(sameGoal), '目标与任务描述相同时不重复写一遍')
     const legacyBudget = parseSubagentBrief({ maxToolCalls: 1000 }, '模型自主决定调用次数')
-    ok(legacyBudget.ok && legacyBudget.brief.maxToolCalls === undefined, '旧调用预算兼容接收但不设置限制')
+    ok(legacyBudget.ok && !('maxToolCalls' in legacyBudget.brief), '旧调用预算字段不再保留（当作未知字段忽略）')
     ok(!/预算|最多.*次工具调用/.test(briefPrompt({ ...minimal.brief, maxToolCalls: 5 }, 'x')), '旧历史brief也不会生成调用预算指令')
     const explicitDeadline = parseSubagentBrief({ timeoutMinutes: 10 }, '有明确截止时间')
     ok(explicitDeadline.ok && explicitDeadline.brief.timeoutMinutes === 10, '显式总期限仍可选择')
@@ -74,6 +74,7 @@ export function runSubagentBriefTests(ok, mod) {
     )
     ok(result.summary === '两个模块的读法不一致：一个吞掉错误，一个往上抛。', '摘要取最后一条助手消息（并去掉首尾空白）')
     ok(result.summaryFrom === 'last-message' && !result.summaryTruncated, '摘要来源如实标注（最后一段话）')
+    ok(result.fullText === result.summary, '没有超长时全文与短摘要一致')
     ok(result.sources.join(',') === 'src/main/agent.ts,src/main/index.ts', '来源只取读类工具的位置参数（bash / write / 搜索词不算）', result.sources.join(','))
     ok(result.artifacts.join(',') === 'src/main/index.ts,src/main/agent.ts,src/main/not-source.ts,/tmp/sub.json', '成果：改动文件去重 + 成功写入的文件 + 结果文件', result.artifacts.join(','))
     ok(result.openQuestions.length === 0, '未决问题**不猜**（恒为空，留给主 agent 判断）')
@@ -91,8 +92,9 @@ export function runSubagentBriefTests(ok, mod) {
       { transcript: [{ role: 'assistant', text: 'a'.repeat(SUBAGENT_SUMMARY_MAX + 50) }], status: 'done' },
       5
     )
-    ok(long.summaryTruncated && [...long.summary].length === SUBAGENT_SUMMARY_MAX + 1, '超长摘要截断并带省略号')
+    ok(long.summaryTruncated && [...long.summary].length === SUBAGENT_SUMMARY_MAX + 1, '超长摘要截断并带省略号（界面用）')
     ok(long.summary.endsWith('…'), '截断用省略号标明')
+    ok(long.fullText.length === SUBAGENT_SUMMARY_MAX + 50 && !long.fullText.endsWith('…'), '全文另存一份，不受界面短摘要截断影响')
 
     const readOnly = summarizeSubagentRun(
       {

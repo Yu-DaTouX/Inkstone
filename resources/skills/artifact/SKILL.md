@@ -18,8 +18,9 @@ description: 用户要可打开查看或操作的单页成果（表格页、仪�
 动手前读两类资料（用 read 打开，路径相对本技能目录），不要全部读完：
 
 1. **视觉方向，用大厂官方设计资料**（`official/` 下原样收录，见下一节的砚内差异）：
-   - 每次都读 `official/frontend-design/SKILL.md`（Anthropic）和 `official/openai-codex-frontend/frontend-tasks.md`（OpenAI，十来行），学它们的方法和品质要求，对照两份里列的「AI 默认长相」检查。两份说法不一致时（如动效多少），以 Anthropic 那份为准。
-   - 每次也读 `official/open-design-craft/anti-ai-slop.md`（open-design 整理的「AI 套路」清单，规则具体到色值和字距），再按下面指南表「加读 craft」一列读对应的一两份同目录文件。craft 只管字距、层级、对比度、状态、动效时长这类通用手艺，配色和字体仍按风格牌。
+   - 每次都读 `official/open-design-craft/anti-ai-slop.md`（open-design 整理的「AI 套路」清单，规则具体到色值和字距），再按下面指南表「先加读 craft」一列读对应的一份同目录文件（表里要求两份时先读第一份，另一份等确实需要再做）。craft 只管字距、层级、对比度、状态、动效时长这类通用手艺，配色和字体仍按风格牌。
+   - 需要设计方法或品质校准，或方向拿不准时，读 `official/frontend-design/SKILL.md`（Anthropic）；做网页类（官网、落地页、工具、仪表盘）再读 `official/openai-codex-frontend/frontend-tasks.md`（OpenAI，十来行）。对照两份里列的「AI 默认长相」检查，两份说法不一致时（如动效多少）以 Anthropic 那份为准。
+   - 只读与当前成果相关的小节，不必通读；一次性读完的固定资料越少越好。
    - **风格怎么定，按用户说了多少**（用户说的永远优先，牌只补用户没说的部分）：
      - 用户给了具体要求（品牌色、指定颜色、深色 / 浅色、字体、logo、参考图或参考网站、已有项目的设计规范）：照用户的来；其余没说的维度再抽牌补齐，用户要深色就加 `--theme dark`。牌和用户要求冲突的地方，以用户为准。
      - 用户点名了风格名（「瑞士风」「包豪斯」「国潮」「赛博朋克」「像素风」等）：先运行 `yan artifact style --list`，有同名或相近的牌就用 `yan artifact style --id <id 或中文名>` 取那一张；没有对应的牌时看 `guides/styles.md`；那里也没有，就按用户的描述和对这个风格的公认特征自己定配色、字体、母题，仍然只用系统字体。
@@ -35,18 +36,18 @@ description: 用户要可打开查看或操作的单页成果（表格页、仪�
    - `guides/styles.md` 只在用户点名的风格没有对应风格牌时用。
 2. **结构与砚里的技术写法**：同目录 `guides/` 按成果类型分了指南，挑一份最贴近的读。指南只管结构、画幅和沙箱写法；其中的版式、配色建议和官方技能冲突时，以风格牌和官方技能为准。
 
-| 用户要的 | 读 | 加读 craft（`official/open-design-craft/`） |
+| 用户要的 | 读 | 先加读 craft（`official/open-design-craft/`） |
 | --- | --- | --- |
 | 海报、邀请函、名片、证书、封面、社交配图 | `guides/poster.md` | `typography.md`、`color.md` |
-| 数据表、仪表盘、报告、对比、排行 | `guides/dashboard.md` | `typography-hierarchy.md`、`state-coverage.md` |
+| 数据表、仪表盘、报告、对比、排行 | `guides/dashboard.md` | `typography-hierarchy.md` |
 | 小游戏 | `guides/game.md` | `animation-discipline.md` |
-| 讲解概念、演示原理、教学可视化 | `guides/explainer.md` | `typography-hierarchy.md`、`animation-discipline.md` |
-| 计算器、换算、生成器、格式化等小工具 | `guides/tool.md` | `form-validation.md`、`state-coverage.md` |
-| 官网、落地页、个人主页、App 页面原型 | `guides/landing.md` | `typography-hierarchy.md`、`laws-of-ux.md` |
-| 几页演示 / 幻灯片（不要 .pptx 文件时） | `guides/slides.md` | `typography-hierarchy.md`、`color.md` |
-| 逐镜头推进的短片、片头、动态海报、讲解视频 | `guides/video.md` | `animation-discipline.md`、`typography.md` |
+| 讲解概念、演示原理、教学可视化 | `guides/explainer.md` | `typography-hierarchy.md` |
+| 计算器、换算、生成器、格式化等小工具 | `guides/tool.md` | `state-coverage.md` |
+| 官网、落地页、个人主页、App 页面原型 | `guides/landing.md` | `typography-hierarchy.md` |
+| 几页演示 / 幻灯片（不要 .pptx 文件时） | `guides/slides.md` | `typography-hierarchy.md` |
+| 逐镜头推进的短片、片头、动态海报、讲解视频 | `guides/video.md` | `animation-discipline.md` |
 
-风格牌是杂志编辑、学术报告这类长文阅读风格时，把 `typography-hierarchy.md` 换成 `typography-hierarchy-editorial.md`；页面里有表单或强交互时加读 `accessibility-baseline.md`。
+按问题加读，不通读：页面有加载中、空、错误等状态时读 `state-coverage.md`；有表单或输入校验时读 `form-validation.md`；交互取舍拿不准时读 `laws-of-ux.md`；要求无障碍或页面表单与强交互较多时读 `accessibility-baseline.md`；需要第二种配色方向时再读 `color.md`。风格牌是杂志编辑、学术报告这类长文阅读风格时，把 `typography-hierarchy.md` 换成 `typography-hierarchy-editorial.md`。
 
 视频类型也写成单文件 HTML，但按 hyperframes 的合成格式约定写：根元素带 `data-composition-id` / `data-width` / `data-height` / `data-duration`，片段带 `data-start` / `data-duration` / `data-track-index`。画布会识别根元素上的 `data-composition-id`，动画统一挂在 `window.__timelines[<composition-id>]` 的控制器上（接口见 `guides/video.md`），预览后可以按时间点检查画面。要 3D 画面时用 `<script data-yan-lib="three"></script>` 引入砚随包的 three.js，写法见 `guides/video.md` 的「三维画面」。
 

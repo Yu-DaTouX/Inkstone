@@ -10,8 +10,8 @@ import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { reserveWorkspaceMutation, workspaceMutationInProgress } from './workspace-mutation'
 import type { QuotaWindow, SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
-import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../shared/quota-resume'
-import { continuationPrompt } from '../shared/continuation-prompt'
+import { decideQuotaResume, isQuotaWaitError, QUOTA_RESUME_POLL_MS } from '../shared/quota-resume'
+import { continuationPrompt, SUBAGENT_QUOTA_RESUME_PROMPT } from '../shared/continuation-prompt'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { SessionItemProjector } from './session-items/projector'
 import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type SubagentUsageTotals, type UsageSnapshots } from '../shared/subagent-usage'
@@ -169,6 +169,7 @@ interface Run extends SubagentRun {
   resultKey?: string
   stopReason?: string
   usageSnapshots: UsageSnapshots
+  queued?: QueuedMessage[]
   contextRevision?: number
   contextRefresh?: Promise<void>
   brief: SubagentBrief
@@ -237,6 +238,7 @@ export interface SubagentContext {
 
 export type SubagentSendMode = 'steer' | 'followUp'
 export type SubagentSendFrom = 'parent' | 'user'
+interface QueuedMessage { text: string; mode: SubagentSendMode; from: SubagentSendFrom }
 export interface SubagentSendResult { ok: boolean; error?: string; run?: SubagentRun; delivery?: 'queued' | 'started' | 'resumed' }
 
 export interface SubagentOptions {
@@ -308,6 +310,11 @@ export function subagentHostCommands(opts: {
       return undefined
     }
   }
+}
+
+function mergeCleanupPending(run: Run): string {
+  const detail = run.error ?? run.workspace.worktreePath ?? ''
+  return pick(`补丁已合并，但工作树没能清理，可再次 merge 只重试清理（不会重复应用补丁）：${detail}`, `The patch is merged, but the worktree could not be cleaned up; merge again retries the cleanup only (the patch is not applied twice): ${detail}`)
 }
 
 function workspaceBusy(): { ok: false; error: string } {
@@ -454,7 +461,7 @@ export class SubagentController {
       error: run.error,
       usage: run.usage,
       brief: run.brief,
-      result: this.resultOf(run),
+      result: this.resultFor(run),
       resumable: subagentResumability({
         status: run.status, isolation: run.isolation, review: run.review, fork: run.fork, launchFailed: run.launchFailed,
         live: true, worktreeAlive: worktreeAlive(run), forkLaunchSaved: !!run.forkSource
@@ -472,6 +479,11 @@ export class SubagentController {
       console.warn('[subagent] 推送子代理状态失败', error)
     }
     this.rememberPushedTranscript(run)
+  }
+
+  private resultFor(run: Run): NonNullable<SubagentRun['result']> {
+    const result = this.resultOf(run)
+    return run.status === 'running' || run.status === 'starting' ? { ...result, fullText: '' } : result
   }
 
   private resultOf(run: Run): NonNullable<SubagentRun['result']> {
@@ -878,7 +890,7 @@ export class SubagentController {
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
     const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension, thinkingLevel: ctx.thinkingLevel })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
-    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR, YAN_RUNNER_KIND: 'subagent' }, ctx.runReadOnlyCommand)
+    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR, YAN_RUNNER_KIND: 'subagent', ...(isolation === 'controlled-cwd' ? { YAN_READ_ONLY_SUBAGENT: '1' } : {}) }, ctx.runReadOnlyCommand)
   }
 
   private async createForkRpc(ctx: SubagentOptions, id: string, fork: SubagentForkSource, sessionFile?: string): Promise<SubagentRpc> {
@@ -909,7 +921,7 @@ export class SubagentController {
           const handled = await host.handle(command, params, cwd, signal, id)
           if (handled) return handled
           if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await ctx.dangerPrefs?.() ?? { mode: 'danger', outsideWrites: true, allowRoots: [] }) } }
-          const origin = { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }
+          const origin = approvalOriginFor(this.runs.get(id), ctx, id)
           const answer = ctx.confirmDanger && !signal?.aborted && !stopApprovals.signal.aborted
             ? await awaitApprovalAnswer(ctx.confirmDanger(params, cwd, origin, signal), [signal, stopApprovals.signal])
             : undefined
@@ -963,6 +975,14 @@ export class SubagentController {
     if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: pick('子 Agent正在启动，稍后再发', 'Subagent is starting; send again shortly') }
     if (!live || live.status !== 'running' || live.settled) return this.resume(id, text, from)
     if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: pick('子 Agent正在收尾，等它结束后再发即可续接', 'Subagent is wrapping up; send again after it finishes to resume it') }
+    if (live.quotaWait) {
+      const queued = live.queued ?? (live.queued = [])
+      queued.push({ text, mode, from })
+      if (mode === 'followUp') live.followUp = text
+      live.latestActivity = pick(`额度等待中：已收下这条追加信息（共 ${queued.length} 条），额度恢复后一起处理`, `Waiting for quota: message queued (${queued.length} in total); handled together once quota is restored`)
+      this.emit(live)
+      return { ok: true, run: this.snapshot(live), delivery: 'queued' }
+    }
     const activation = live.activation
     const current = (): boolean => this.runs.get(id) === live && live.activation === activation && live.status === 'running' && !live.settled && !live.settling
     try {
@@ -1078,7 +1098,7 @@ export class SubagentController {
       const earlier = [...(run.parentMessageIds ?? []), ...(run.parentMessageId ? [run.parentMessageId] : [])]
       Object.assign(run, {
         ...(resumedIn && resumedIn !== run.parentMessageId ? { parentMessageId: resumedIn, parentMessageIds: [...new Set(earlier)].slice(-20) } : {}),
-        rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now, followUp: text, quotaWait: undefined,
+        rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now, followUp: text, quotaWait: undefined, queued: undefined,
         latestActivity: pick('正在续接…', 'Resuming…'), stderrTail: [], runningTools: new Set<string>(),
         contextRevision: (run.contextRevision ?? 0) + 1, diff: undefined, resultPath: undefined,
         settling: undefined, finalizing: undefined, notified: false, reviewDecided: false, worktreeDone: false,
@@ -1180,6 +1200,7 @@ export class SubagentController {
       run.endReason = 'stopped'
       run.wrapUp = undefined
       run.quotaWait = undefined
+      run.queued = undefined
       run.endedAt = Date.now()
       run.latestActivity = pick('已停止', 'Stopped')
       this.emit(run)
@@ -1236,6 +1257,7 @@ export class SubagentController {
     run.endReason = 'exited'
     run.wrapUp = undefined
     run.quotaWait = undefined
+    run.queued = undefined
     run.error = run.error ?? describeProcessExit(run.exitInfo ?? {}, run.stderrTail)
     run.endedAt = Date.now()
     this.emit(run)
@@ -1259,10 +1281,17 @@ export class SubagentController {
     run.quotaWait = undefined
     run.progressWarning = undefined
     if (cancelled) {
+      run.queued = undefined
       run.error = undefined
       run.latestActivity = pick('已停止', 'Stopped')
     } else {
-      run.error = reason === 'startup' && run.stderrTail.length ? `${message}；stderr：${run.stderrTail.join(' | ')}` : message
+      if (run.queued?.length) {
+        const unsent = run.queued.length
+        run.queued = undefined
+        run.error = [reason === 'startup' && run.stderrTail.length ? `${message}；stderr：${run.stderrTail.join(' | ')}` : message, pick(`额度等待期间收下的 ${unsent} 条追加信息没有送出；续接后再发`, `${unsent} queued message(s) were not delivered while waiting for quota; send them again after resuming`)].join('\n')
+      } else {
+        run.error = reason === 'startup' && run.stderrTail.length ? `${message}；stderr：${run.stderrTail.join(' | ')}` : message
+      }
       run.latestActivity = message
     }
     run.endedAt = Date.now()
@@ -1415,7 +1444,13 @@ export class SubagentController {
     if (!run) return this.reviewHistory(id, 'merged')
     await this.awaitSettled(run)
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子 Agent仍在运行，结束后才能合并', 'Subagent is still running; merge after it finishes') }
-    if (run.review === 'merged') return { ok: true }
+    if (run.review === 'merged') {
+      if (run.worktreeDone) return { ok: true }
+      await this.cleanupRunWorkspace(run)
+      await this.writeMetadata(run, run.diff?.patchPath)
+      this.emit(run)
+      return run.worktreeDone ? { ok: true } : { ok: false, error: mergeCleanupPending(run) }
+    }
     if (run.review !== 'pending' && run.review !== 'conflict' && run.review !== 'archived') {
       return { ok: false, error: pick('该任务没有待合并的改动', 'This task has no changes to merge') }
     }
@@ -1441,7 +1476,7 @@ export class SubagentController {
       if (!run.worktreeDone) await this.cleanupRunWorkspace(run)
       await this.writeMetadata(run, patchPath)
       this.emit(run)
-      return { ok: true }
+      return run.worktreeDone ? { ok: true } : { ok: false, error: mergeCleanupPending(run) }
     } catch (error) {
       return { ok: false, error: pick(`合并失败：${error instanceof Error ? error.message : String(error)}`, `Merge failed: ${error instanceof Error ? error.message : String(error)}`) }
     }
@@ -1452,14 +1487,22 @@ export class SubagentController {
     if (!run) return this.reviewHistory(id, 'discarded')
     await this.awaitSettled(run)
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子 Agent仍在运行，先停止它', 'Subagent is still running; stop it first') }
+    const previousReview = run.review
     try {
+      if (!run.worktreeDone) await this.cleanupRunWorkspace(run, false)
+      if (!run.worktreeDone) {
+        const error = run.error ?? pick('清理工作树失败，改动仍未放弃；工作树已保留', 'Could not clean up the worktree; the changes were not discarded and the workspace was kept')
+        await this.writeMetadata(run, run.diff?.patchPath)
+        this.emit(run)
+        return { ok: false, error }
+      }
       run.review = 'discarded'
       run.resultPath = run.diff?.patchPath
-      if (!run.worktreeDone) await this.cleanupRunWorkspace(run, false)
       await this.writeMetadata(run, run.diff?.patchPath)
       this.emit(run)
       return { ok: true }
     } catch (error) {
+      run.review = previousReview
       return { ok: false, error: pick(`放弃改动失败：${error instanceof Error ? error.message : String(error)}`, `Could not discard changes: ${error instanceof Error ? error.message : String(error)}`) }
     }
   }
@@ -1468,22 +1511,35 @@ export class SubagentController {
     const record = this.history.get(id)
     if (!record) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
     const run = { ...record.run }
-    if (run.review === review) return { ok: true }
-    if (review === 'merged') {
+    const kept = keptWorktreeOf(record)
+    const cleanupRetry = review === 'merged' && run.review === 'merged' && run.isolation === 'worktree' && !!kept
+    if (run.review === review && !cleanupRetry) return { ok: true }
+    if (review === 'merged' && run.review !== 'merged') {
       if (!['pending', 'conflict', 'archived'].includes(run.review ?? '') || !run.diff?.files || !run.diff.patchPath) {
         return { ok: false, error: pick('历史任务没有可合并的补丁', 'This past task has no patch to merge') }
       }
       const result = await applyPatchExclusive(record.rootCwd, run.diff.patchPath)
       if (!result.ok) return result
+      run.review = 'merged'
+      run.error = undefined
+      await this.history.save(run, record.rootCwd)
+      this.opts.onChange(run)
     }
-    const kept = keptWorktreeOf(record)
     if (kept && run.isolation === 'worktree') {
       const saved = review === 'merged' ? await preserveIgnoredOutputs(kept, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id) : { ok: true as const, path: undefined }
       if (!saved.ok) return { ok: false, error: pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${kept.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${kept.worktreePath}`) }
       const cleaned = await cleanupWorkspace(kept)
       if (saved.path) run.savedOutputsPath = saved.path
       if ('skipped' in saved && saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join(String.fromCharCode(10))
-      if (!cleaned.ok) run.error = [run.error, ...cleaned.errors].filter(Boolean).join(String.fromCharCode(10))
+      if (!cleaned.ok) {
+        run.error = [run.error, ...cleaned.errors].filter(Boolean).join(String.fromCharCode(10))
+        if (review === 'merged') run.review = 'merged'
+        await this.history.save(run, record.rootCwd)
+        this.opts.onChange(run)
+        return { ok: false, error: review === 'merged'
+          ? pick(`补丁已合并，但工作树没能清理，可再次 merge 只重试清理（不会重复应用补丁）：${cleaned.errors.join('；') || kept.worktreePath}`, `The patch is merged, but the worktree could not be cleaned up; merge again retries the cleanup only (the patch is not applied twice): ${cleaned.errors.join('; ') || kept.worktreePath}`)
+          : pick(`工作树没能清理，改动仍未放弃：${cleaned.errors.join('；') || kept.worktreePath}`, `The worktree could not be cleaned up, so the changes were not discarded: ${cleaned.errors.join('; ') || kept.worktreePath}`) }
+      }
     }
     run.review = review
     await this.history.save(run, record.rootCwd)
@@ -1841,11 +1897,11 @@ export class SubagentController {
   private async trySpareAccount(run: Run, live: () => boolean): Promise<boolean> {
     const label = await this.opts.quotaWatch!.switchAccount?.(this.snapshot(run)).catch(() => null)
     if (!label || !live()) return false
-    await this.resumeAfterQuota(run, pick(`额度用完，已换到 ${label} 继续…`, `Quota exhausted; continuing on ${label}…`), continuationPrompt('account-switch'))
+    await this.resumeAfterQuota(run, pick(`额度用完，已换到 ${label} 继续…`, `Quota exhausted; continuing on ${label}…`), continuationPrompt('account-switch', 'subagent'))
     return true
   }
 
-  private async resumeAfterQuota(run: Run, activity = pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…'), message = QUOTA_RESUME_PROMPT): Promise<void> {
+  private async resumeAfterQuota(run: Run, activity = pick('额度已恢复，继续原任务…', 'Quota restored; continuing the task…'), message = SUBAGENT_QUOTA_RESUME_PROMPT): Promise<void> {
     const waited = run.quotaWait ? Date.now() - run.quotaWait.since : 0
     run.activeSince += waited
     run.quotaWait = undefined
@@ -1857,7 +1913,20 @@ export class SubagentController {
     this.emit(run)
     try {
       const res = await run.rpc.command('prompt', { message }, { timeoutMs: 10_000 })
-      if (!res.success) await this.fail(run.id, res.error ?? pick('额度恢复后续跑失败', 'Could not continue after quota recovery'))
+      if (!res.success) {
+        await this.fail(run.id, res.error ?? pick('额度恢复后续跑失败', 'Could not continue after quota recovery'))
+        return
+      }
+      while (run.queued?.length) {
+        if (run.status !== 'running' || run.settled) return
+        const item = run.queued[0]
+        const sent = await run.rpc.command('prompt', { message: forwardedMessage(item.text, item.mode, item.from), streamingBehavior: item.mode }, { timeoutMs: 10_000 })
+        if (!sent.success) {
+          await this.fail(run.id, sent.error ?? pick('额度恢复后送出排队的追加信息失败', 'Could not deliver a queued message after quota recovery'))
+          return
+        }
+        run.queued.shift()
+      }
     } catch (error) {
       await this.fail(run.id, error instanceof Error ? error.message : String(error))
     }
@@ -1893,6 +1962,9 @@ export class SubagentController {
   private settle(run: Run): void {
     run.settled = true
     clearTimeout(run.timer)
+    const unsent = run.queued?.length ?? 0
+    run.queued = undefined
+    run.quotaWait = undefined
     const modelFailed = run.status !== 'cancelled' && run.stopReason === 'error'
     const wrapped = run.status !== 'cancelled' && !modelFailed ? run.wrapUp : undefined
     run.status = run.status === 'cancelled' ? 'cancelled' : modelFailed ? 'error' : 'done'
@@ -1901,6 +1973,9 @@ export class SubagentController {
     run.progressWarning = undefined
     run.endedAt = Date.now()
     if (modelFailed) run.error = run.error ?? modelErrorNotice(undefined)
+    if (unsent) {
+      run.error = [run.error, pick(`额度等待期间收下的 ${unsent} 条追加信息没有送出；续接后再发`, `${unsent} queued message(s) were not delivered while waiting for quota; send them again after resuming`)].filter(Boolean).join('\n')
+    }
     run.latestActivity = modelFailed
       ? modelFailureActivity(run.recovery)
       : wrapped ? pick('超时，已收尾', 'Timed out; wrapped up') : pick('已完成', 'Done')
@@ -1941,6 +2016,20 @@ export class SubagentController {
   }
 }
 
+function usableParentSession(id: string | undefined): string | undefined {
+  return id && !id.startsWith('pending:') ? id : undefined
+}
+
+export function approvalOriginFor(
+  live: { parentSessionId?: string; parentRunId?: string } | undefined,
+  fallback: { parentSessionId?: string; parentRunId?: string },
+  subagentId: string
+): SubagentApprovalOrigin {
+  const sessionId = usableParentSession(live?.parentSessionId ?? fallback.parentSessionId)
+  const runId = live?.parentRunId ?? fallback.parentRunId
+  return { ...(sessionId ? { sessionId } : {}), ...(runId ? { runId } : {}), subagentId }
+}
+
 function modelLabel(raw: unknown): string | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const { provider, id } = raw as { provider?: unknown; id?: unknown }
@@ -1963,7 +2052,7 @@ function forwardedMessage(text: string, mode: SubagentSendMode | 'resume', from:
   const timing = mode === 'resume'
     ? '你已经完成过原任务，这是新的消息；在之前的工作基础上继续'
     : mode === 'steer' ? '请在继续之前先考虑这条信息' : '这是在你完成原任务后补充的要求'
-  return `${label}${timing}；仍在原任务范围内工作，结束时简短汇报。\n\n${text}`
+  return `${label}${timing}；Stay within the original task.\n\n${text}`
 }
 
 function addUsage(base: SubagentUsageTotals | undefined, next: SubagentUsageTotals): SubagentUsageTotals {

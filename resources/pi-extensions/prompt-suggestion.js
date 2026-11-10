@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { appendInstruction } from './context-compact.js'
+import { isHostAutomatedMessage } from './host-message.js'
 
 export const SUGGESTION_STATUS_KEY = 'inkstone_prompt_suggestion'
 export const SUGGESTION_MARKER = '[Inkstone: predict the user\'s next message]'
@@ -18,7 +19,6 @@ export const EVIDENCE_LOW_CHARS = 80_000
 
 const COMPLETIONS_APIS = new Set(['openai-completions'])
 const RESPONSES_APIS = new Set(['openai-responses', 'azure-openai-responses', 'openai-codex-responses'])
-const HOST_MESSAGE = /^(?:<subagent-notification|\[(?:循环恢复|模型错误恢复|Auto-continue|砚宿主通知：)|额度已恢复)/
 
 const PREDICT_RULES = 'Write the single message the user is most likely to send next, in their own voice and language, exactly as they would type it: for example a short go-ahead, a pick among options just offered, or the natural next request. Predict what they would type, not what you think they should do. Do not answer, continue the task or call tools. If the reply asks for something only the user can supply (a fact about them, a file, a name or a date), or nothing is reasonably predictable, output only NONE. Otherwise output only the message, at most 20 words.'
 
@@ -105,7 +105,7 @@ export function visibleTurns(entries) {
     const text = textOf(message.content).trim()
     if (!text) continue
     if (message.role === 'user') {
-      if (HOST_MESSAGE.test(text)) continue
+      if (isHostAutomatedMessage(text)) continue
       turns.push({ user: text, assistant: [] })
     } else if (message.role === 'assistant' && turns.length) turns.at(-1).assistant.push(text)
   }
@@ -125,7 +125,7 @@ function lastUserText(entries) {
     const message = entry?.type === 'message' ? entry.message : null
     if (message?.role !== 'user') continue
     const text = textOf(message.content).trim()
-    if (text && !HOST_MESSAGE.test(text)) return text
+    if (text && !isHostAutomatedMessage(text)) return text
   }
   return ''
 }

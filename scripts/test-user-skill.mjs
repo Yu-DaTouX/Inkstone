@@ -83,6 +83,23 @@ export async function runUserSkillTests(ok, shared, main, fs) {
     const reserved = await main.saveUserSkill({ name: 'office', description: 'x', body: 'x' }, { root, reservedNames: ['office'] })
     ok(!reserved.ok && reserved.code === 'reserved-name', '与随包技能重名被拒')
 
+    const asked = []
+    const declined = await main.saveUserSkill({ name: 'needs-ok', description: '要确认', body: '# 新' }, { root, confirm: async (request) => { asked.push(request); return { ok: false } } })
+    ok(!declined.ok && declined.code === 'declined' && !existsSync(join(root, 'skills', 'needs-ok')), '用户不同意时不写入任何文件')
+    ok(asked.length === 1 && asked[0].name === 'needs-ok' && asked[0].replaced === false && asked[0].body === '# 新', '确认请求带技能名、正文和是否覆盖')
+    const replied = await main.saveUserSkill({ name: 'needs-ok', description: '要确认', body: '# 新' }, { root, confirm: async () => ({ ok: false, reply: '换个名字' }) })
+    ok(!replied.ok && replied.error.includes('换个名字'), '用户的回复原样带给模型')
+    const timedOut = await main.saveUserSkill({ name: 'needs-ok', description: '要确认', body: '# 新' }, { root, confirm: async () => ({ ok: false, timedOut: true }) })
+    ok(!timedOut.ok && timedOut.code === 'declined' && !existsSync(join(root, 'skills', 'needs-ok')), '超时未确认时不写入')
+    const approved = await main.saveUserSkill({ name: 'needs-ok', description: '要确认', body: '# 新' }, { root, confirm: async () => ({ ok: true }) })
+    ok(approved.ok && existsSync(join(root, 'skills', 'needs-ok', 'SKILL.md')), '用户同意后才保存')
+    const overwriteAsked = []
+    const kept = await main.saveUserSkill({ name: 'my-flow', description: '我的做法', body: '# 被改', replace: true }, { root, confirm: async (request) => { overwriteAsked.push(request.replaced); return { ok: false } } })
+    ok(!kept.ok && overwriteAsked[0] === true && readFileSync(join(root, 'skills', 'my-flow', 'SKILL.md'), 'utf8').includes('# 改'), '覆盖已有技能前先问，不同意时原文件不变')
+    let invalidAsked = false
+    const invalid = await main.saveUserSkill({ name: 'Bad Name', description: 'x', body: 'x' }, { root, confirm: async () => { invalidAsked = true; return { ok: true } } })
+    ok(!invalid.ok && !invalidAsked, '不合法的技能不会打扰用户确认')
+
     mkdirSync(join(root, 'skills', '.hidden'), { recursive: true })
     writeFileSync(join(root, 'skills', '.hidden', 'SKILL.md'), 'x')
     ok(!(await main.userSkillPaths(root)).some((p) => p.includes('.hidden')), '点开头的目录不当作技能')

@@ -81,24 +81,12 @@ async function runRetiredHubCliTests(ok, mod) {
       ok(trap.seen.length === before, '帮助路径不发任何请求')
     }
 
-    const missingRequest = join(tmpDir, 'does-not-exist.json')
-    const retiredCases = [
-      ['hub', '--help'],
-      ['hub', 'list'],
-      ['hub', 'start', '--request-file', missingRequest]
-    ]
-    for (const args of retiredCases) {
+    {
       const before = trap.seen.length
-      const r = await runCli(args, fakeEnv(trap.url))
+      const r = await runCli(['hub', 'list'], fakeEnv(trap.url))
       await settle()
-      const text = `${r.stdout}${r.stderr}`
-      const label = `yan ${args.join(' ')}`
-      ok(r.status === 2, `${label} 以用法码退出`, `status=${r.status}`)
-      ok(text.includes('\u5df2\u9000\u5f79') && text.includes('subagent'), `${label} 提示退役并指向 subagent`, text.slice(0, 200))
-      ok(trap.seen.length === before, `${label} 不发请求`)
-      if (args.includes('--request-file')) {
-        ok(!text.includes('\u8bfb\u4e0d\u5230'), `${label} 在读取请求文件之前就返回`)
-      }
+      const parsed = trap.seen.length > before ? JSON.parse(trap.seen[trap.seen.length - 1].body) : {}
+      ok(trap.seen.length === before + 1 && parsed.command === 'hub.list' && r.status === 0, 'hub 组不再有本地退役兼容，原样交给宿主处理', JSON.stringify(parsed))
     }
 
     {
@@ -110,8 +98,8 @@ async function runRetiredHubCliTests(ok, mod) {
       const before = trap.seen.length
       const r = await runCli(['hub', 'list'], env)
       await settle()
-      ok(r.status === 2 && `${r.stdout}${r.stderr}`.includes('\u5df2\u9000\u5f79'), '缺身份环境变量时仍先给退役提示')
-      ok(trap.seen.length === before, '缺身份时退役调用也不发请求')
+      ok(r.status !== 0, '缺身份环境变量时调用失败', `status=${r.status}`)
+      ok(trap.seen.length === before, '缺身份时不发请求')
     }
 
     {
@@ -175,8 +163,7 @@ async function runRetiredHubCliTests(ok, mod) {
       for (const cmd of ['hub.start', 'hub.list', 'hub.get', 'hub.stop', 'hub.handoff', 'hub.reply', 'hub.send']) {
         const before = handled.length
         const body = await rpc(cmd)
-        ok(body.ok === false && body.code === 'retired_command', `${cmd} 被白名单拒绝并标记退役`, JSON.stringify(body))
-        ok(String(body.error).includes('subagent'), `${cmd} 回执指向 subagent`)
+        ok(body.ok === false && body.error === 'unknown_command' && !body.code, `${cmd} 不再有退役兼容，按未知命令拒绝`, JSON.stringify(body))
         ok(handled.length === before, `${cmd} 未抵达 handler（不会拉起工作台进程）`)
       }
 
@@ -211,7 +198,7 @@ async function runRetiredHubCliTests(ok, mod) {
         body: JSON.stringify({ apiVersion: CAPABILITY_API_VERSION, sessionId: 's', projectId: 'p', command: 'hub.start', params: {} })
       })
       const body = await res.json()
-      ok(body.ok === false && body.error === 'unknown_command' && String(body.hint).includes('search.query') && !String(body.hint).includes('subagent'), '不能派子代理的会话里，hub.* 只提示本会话开放的命令', JSON.stringify(body))
+      ok(body.ok === false && body.error === 'unknown_command' && !body.code, '不能派子代理的会话里，hub.* 同样按未知命令拒绝（不再提示迁移）', JSON.stringify(body))
     } finally {
       limited.stop()
     }
@@ -364,8 +351,8 @@ export async function runCapabilityResultTests(ok, mod) {
 
       const retired = await call({ command: 'hub.start' })
       ok(
-        retired.status === 400 && retired.body.code === 'retired_command' && /subagent/.test(String(retired.body.error)),
-        '退役命令回可读的迁移提示',
+        retired.status === 400 && retired.body.error === 'unknown_command' && !retired.body.code,
+        'hub.* 不再有退役迁移提示，按未知命令拒绝',
         JSON.stringify(retired.body)
       )
 

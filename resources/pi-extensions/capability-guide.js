@@ -112,9 +112,10 @@ function computerUseEnabled() {
 
 const OS_NAMES = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }
 
-export function environmentGuide(now = new Date(), platform = process.platform, shell = process.env.YAN_SHELL, pwsh = platform === 'win32' && hasPwsh()) {
+export function environmentGuide(now = new Date(), platform = process.platform, shell = process.env.YAN_SHELL, pwsh = platform === 'win32' && hasPwsh(), options = {}) {
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const os = OS_NAMES[platform] ?? platform
+  if (options.readOnly) return [`Today: ${day} (local date).`, 'There is no shell in this task; work with the tools you have.']
   const shellLine = platform !== 'win32'
     ? `OS: ${os}.`
     : shell === 'powershell'

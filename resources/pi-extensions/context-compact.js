@@ -6,6 +6,7 @@
 // 摘要末尾给出路径，模型缺细节时可以 grep 或读局部。
 import { appendFile, open, readFile, rm, stat, truncate } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
+import { isHostAutomatedMessage } from './host-message.js'
 
 const SYSTEM_PROMPT = `You are a context summarization assistant. Read a conversation between a user and an AI assistant and output only a structured summary in the format the request gives. Do not continue the conversation or answer anything in it.`
 
@@ -326,19 +327,6 @@ export function stripAppendices(summary) {
 }
 
 const USER_ENTRY = /^\[#\d+\.\d+\] /
-
-const HOST_MESSAGE_PREFIXES = [
-  /^<subagent-notification\b/,
-  /^\[循环恢复 · 自动继续/,
-  /^\[模型错误恢复 · 自动继续/,
-  /^\[砚宿主通知：/
-]
-const QUOTA_RESUME_EXACT_TEXT = '额度已恢复，请从上一轮中断的地方继续完成任务。'
-
-function isHostAutomatedMessage(text) {
-  if (text === QUOTA_RESUME_EXACT_TEXT) return true
-  return HOST_MESSAGE_PREFIXES.some((re) => re.test(text))
-}
 
 // 用户原话由代码逐条保留：上次附的加上这次被压缩的，超出上限时从最早的丢
 export function userMessagesBlock(previousSummary, messages, compactionNo, maxChars) {
