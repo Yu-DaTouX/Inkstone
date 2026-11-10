@@ -17,7 +17,7 @@ const SUBAGENT_NOTICE = /^\s*<subagent-notification\b/
 
 const KEYWORD = /^\s*\/ultracode(?=$|\s)/i
 
-const FULL = `<system-reminder>
+const FULL = `<yan-reminder>
 Ultracode is on for this conversation. This is a standing request: the user wants the most complete and correct result and accepts the extra time and tokens. Token usage is not limited and cost is not a concern: never cut subagents, review rounds or coverage to save tokens. Before the first substantive task, read \`ultracode.md\` in the subagent skill's directory (next to its SKILL.md); it is the playbook.
 
 For every substantive task:
@@ -29,19 +29,19 @@ For every substantive task:
 - Size the team to the user's wording: a quick check needs a few subagents, "thorough" or "audit" needs a larger team and several reviewers per claim. Stay within 24 concurrent subagents.
 
 Casual questions and trivial edits: do them yourself. In the report, say which parts were verified and which were not.
-</system-reminder>`
+</yan-reminder>`
 
-const SPARSE = `<system-reminder>
+const SPARSE = `<yan-reminder>
 Ultracode is still on: scout, then fan out by phase, review adversarially until two rounds find nothing new, and finish with a completeness check (\`ultracode.md\` next to the subagent skill). Token usage is not limited; do not trade coverage for cost.
-</system-reminder>`
+</yan-reminder>`
 
-const EXIT = `<system-reminder>
+const EXIT = `<yan-reminder>
 Ultracode is now off. Go back to normal behaviour: do the work yourself and use subagents only when the task or the user calls for them.
-</system-reminder>`
+</yan-reminder>`
 
-const KEYWORD_ONLY = `<system-reminder>
+const KEYWORD_ONLY = `<yan-reminder>
 The user asked for Ultracode on this request only (/ultracode). Follow \`ultracode.md\` in the subagent skill's directory for this request: scout the scope, fan out by phase to parallel subagents, review adversarially until two rounds find nothing new, and finish with a completeness check. Token usage is not limited and cost is not a concern for this request.
-</system-reminder>`
+</yan-reminder>`
 
 export function dataDir(env = process.env) {
   return env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
@@ -90,9 +90,9 @@ export function chooseReminder({ enabled, keyword, last }) {
   return undefined
 }
 
-const GATE = `<system-reminder>
+const GATE = `<yan-reminder>
 Ultracode check: you changed files in this request but no subagent has reviewed the changes since the last edit. Before you report, start at least one independent read-only reviewer (preferably on a different model) to refute the changes and check for gaps, then act on its findings. If the change is genuinely trivial, say so in one line and finish.
-</system-reminder>`
+</yan-reminder>`
 
 function messageText(message) {
   const content = message?.content
