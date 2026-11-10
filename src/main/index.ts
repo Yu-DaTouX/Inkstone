@@ -29,6 +29,7 @@ import { createAuxWindows, quickAskSessionTarget, registerAuxIpc, submitQuickAsk
 import { registerDeepLinkProtocol, windowDeepLinkRouter, type DeepLink } from './deeplink'
 import { approvalNoticeTitle, createAttentionNotices, noticeLang, terminalNoticeText } from './attention-notice'
 import { RunnerVisibility } from './runner-reclaim'
+import { isBroadAllowRoot } from './guard-roots'
 import { getSettings, patchSettings, setGuardSettingsNoticeSink, updateSettings, validateRendererSettingsPatch } from './settings'
 import { syncNativeCompactionLines, type LineModel } from './native-compaction-line'
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../shared/context-limits'
@@ -1562,17 +1563,21 @@ function requestExit(options: { relaunch?: boolean; source?: string } = {}): Pro
     let choice = probeExitChoice()
     if (!choice && reasons.length > 0 && win && !win.isDestroyed()) {
       const prompt = quitPrompt(activity, reasons)
-      const response = await dialog.showMessageBox(win, {
-        type: 'warning',
-        title: pick('退出砚', 'Quit Inkstone'),
-        message: prompt.message,
-        detail: prompt.detail,
-        buttons: prompt.buttons,
-        defaultId: 1,
-        cancelId: 0,
-        noLink: true
-      })
-      choice = choiceFromResponse(response.response)
+      try {
+        const response = await dialog.showMessageBox(win, {
+          type: 'warning',
+          title: pick('退出砚', 'Quit Inkstone'),
+          message: prompt.message,
+          detail: prompt.detail,
+          buttons: prompt.buttons,
+          defaultId: 1,
+          cancelId: 0,
+          noLink: true
+        })
+        choice = choiceFromResponse(response.response)
+      } catch (error) {
+        reportMainError('quit-dialog', error)
+      }
     }
     if (!choice) choice = 'save'
     if (choice === 'cancel') return { action: 'cancelled' }
@@ -2208,7 +2213,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         },
         getPermissionMode: async () => (await getSettings()).permissionMode ?? 'danger',
         confirmDanger: async (request): Promise<ApprovalDecision | null> => {
-          const rememberDirs = [...new Set((request.outsideDirs ?? []).filter((p) => typeof p === 'string' && isAbsolute(p)).map((p) => dirname(resolve(p))))]
+          const outsideDirs = [...new Set((request.outsideDirs ?? []).filter((p) => typeof p === 'string' && isAbsolute(p)).map((p) => dirname(resolve(p))))]
+          const rememberDirs = outsideDirs.filter((dir) => !isBroadAllowRoot(dir))
           const isPermission = request.kind === 'permission'
           const isDelete = request.kind === 'delete'
           const isShell = request.tool === 'bash' || request.tool === 'powershell'
@@ -2216,13 +2222,13 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             runId: id, sessionId: runners?.agentOf(id)?.getState()?.sessionId,
             ...(request.owner ? { owner: request.owner } : {}),
             ...(request.toolCallId ? { toolCallId: request.toolCallId } : {}),
-            kind: isDelete ? 'delete' : isPermission ? 'permission' : rememberDirs.length ? 'outside' : 'danger',
+            kind: isDelete ? 'delete' : isPermission ? 'permission' : outsideDirs.length ? 'outside' : 'danger',
             tool: request.tool,
             title: isDelete
               ? 'Agent 想删除文件'
               : isPermission
               ? isShell ? 'Agent 想运行一条命令' : 'Agent 想修改文件'
-              : rememberDirs.length ? 'Agent 想写入项目之外的位置' : 'Agent 想执行一个难以撤销的操作',
+              : outsideDirs.length ? 'Agent 想写入项目之外的位置' : 'Agent 想执行一个难以撤销的操作',
             detail: request.detail,
             reasons: request.reasons,
             cwd: request.cwd,
@@ -3542,6 +3548,7 @@ configureRemoteHost({
 app.whenReady().then(async () => {
   await storageMoveReady
   try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { exitReason = 'data-root-lock'; reportMainError('data-root-writer', error); dialog.showErrorBox(pick('砚无法启动', 'Inkstone failed to start'), error instanceof Error ? error.message : String(error)); app.exit(1); return }
+  await (async () => { if ((await getSettings()).permissionMode === 'all') await patchSettings({ permissionMode: 'danger' }) })().catch((error) => reportMainError('permission-reset', error))
   registerDeepLinkProtocol(app, { isPackaged: app.isPackaged, execPath: process.execPath, appPath: process.argv[1] })
   registerHtmlArtifactProtocol()
   void loadModelPricing()

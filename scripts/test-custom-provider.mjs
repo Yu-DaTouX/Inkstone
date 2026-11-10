@@ -30,6 +30,7 @@ export async function runCustomProviderTests(ok, mod) {
   ok(validateBaseUrl('https://api.example.com/v1') === null, 'https 合法')
   ok(validateBaseUrl('http://127.0.0.1:8080/v1') === null, '本地 http 合法')
   ok(typeof validateBaseUrl('ftp://x') === 'string', '非 http(s) 协议被拒')
+  ok(typeof validateBaseUrl('https://user:pw@api.example.com/v1') === 'string', 'Base URL 内嵌账号密码被拒')
   ok(typeof validateBaseUrl('not a url') === 'string', '不是 URL 被拒')
   ok(typeof validateBaseUrl('!curl evil') === 'string', '! 开头的 URL 被拒')
   ok(typeof validateBaseUrl('') === 'string', '空 URL 被拒')

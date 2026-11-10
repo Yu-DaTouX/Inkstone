@@ -2857,7 +2857,13 @@ export const useStore = create<Store>((rawSet, get) => {
   answerApproval: async (id, choice, identity, feedback) => {
     set({ approvals: get().approvals.filter((item) => item.id !== id) })
     try {
-      await window.yan.answerApproval(id, choice, identity, feedback)
+      const res = await window.yan.answerApproval(id, choice, identity, feedback)
+      if (res && res.ok === false) {
+        const pending = await window.yan.pendingApprovals()
+        const have = new Set(get().approvals.map((item) => item.id))
+        const back = pending.filter((item) => !have.has(item.id))
+        if (back.length) set({ approvals: [...get().approvals, ...back].sort((a, b) => a.createdAt - b.createdAt) })
+      }
     } catch {
     }
   },

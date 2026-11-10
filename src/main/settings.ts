@@ -7,6 +7,7 @@ import { basename, isAbsolute, parse, resolve } from 'node:path'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { isBroadAllowRoot } from './guard-roots'
 import { cleanModelChoice, cleanModelFavorites, cleanModelHidden, cleanProviderOrder } from '../shared/model-selection'
 import {
   SOUND_VOLUME_MAX,
@@ -418,7 +419,7 @@ function cleanAllowRoots(value: unknown): string[] {
     const candidate = resolve(raw)
     const volumeRoot = parse(candidate).root
     const systemRoots = new Set([`${volumeRoot}Windows`.toLowerCase(), '/system', '/usr', '/etc'])
-    if (candidate === volumeRoot || systemRoots.has(candidate.toLowerCase())) continue
+    if (candidate === volumeRoot || systemRoots.has(candidate.toLowerCase()) || isBroadAllowRoot(candidate)) continue
     try { if (statSync(candidate).isDirectory()) roots.push(candidate) } catch { }
   }
   return [...new Set(roots)].slice(0, 30)

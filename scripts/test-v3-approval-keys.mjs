@@ -16,9 +16,14 @@ const {
   createApprovalArming,
   isApprovingChoice,
   requiresApprovalReadGate,
+  revealHiddenChars,
   isApprovalDetailRead,
   APPROVAL_ARM_MS
 } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
+
+assert.equal(revealHiddenChars('a\tb\nc'), 'a\tb\nc')
+assert.equal(revealHiddenChars('rm\u202Efdp.exe\u0007'), 'rm[U+202E]fdp.exe[U+0007]')
+assert.equal(revealHiddenChars('中文 path'), '中文 path')
 
 const key = (overrides = {}) => ({ key: '', altKey: false, ctrlKey: false, metaKey: false, ...overrides })
 

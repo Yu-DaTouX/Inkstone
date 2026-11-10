@@ -23,6 +23,7 @@ import {
   isEditableElement,
   ownsApproval,
   requiresApprovalReadGate,
+  revealHiddenChars,
   type ApprovalArming,
   type ApprovalGate
 } from './approval-keys'
@@ -86,6 +87,8 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const gated = !!current && active && requiresApprovalReadGate(current)
   const readThrough = !!current && readId === current.id
   const allowBlocked = gated && !readThrough
+  const visibleDetail = revealHiddenChars(current?.detail ?? '')
+  const batchable = current ? approvals.filter((item) => item.id === current.id || !requiresApprovalReadGate(item)) : []
   const deferred = useTypingDeferredFocus(cardRef, active ? current?.id : null, approvalFocusTarget, false)
 
   const answer = useCallback(
@@ -115,7 +118,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
     const id = request?.id
     if (!id) return
     const live = new Set(useStore.getState().approvals.map((item) => item.id))
-    const batch = approvals.filter((item) => live.has(item.id))
+    const batch = approvals.filter((item) => live.has(item.id) && (item.id === id || !requiresApprovalReadGate(item)))
     if (batch.length < 2 || !ownsApproval(batch, id)) return
     if (!armingRef.current?.isArmed(id)) return
     if (requiresApprovalReadGate(request) && readId !== id) return
@@ -297,11 +300,11 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
             tone={risky ? 'ask' : undefined}
             className="v3-approval-detail"
             data-testid="v3-approval-detail"
-            title={current.detail}
+            title={visibleDetail}
             tabIndex={allowBlocked ? 0 : undefined}
             onScroll={onDetailScroll}
           >
-            {current.detail}
+            {visibleDetail}
           </CardCode>
         ) : null}
 
@@ -387,10 +390,10 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
         {current.canRemember && rememberLabel ? (
           <Button data-testid="v3-approval-remember" isDisabled={allowBlocked} onPress={clickOnly(() => answer('remember'))}>{rememberLabel}</Button>
         ) : null}
-        {approvals.length > 1 ? (
+        {batchable.length > 1 ? (
           <Button
             data-testid="v3-approval-batch"
-            title={approvals.map((item) => item.title).join('\n')}
+            title={batchable.map((item) => item.title).join('\n')}
             isDisabled={allowBlocked}
             onPress={clickOnly(allowBatch)}
           >

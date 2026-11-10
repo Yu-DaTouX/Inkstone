@@ -115,6 +115,7 @@ export function validateBaseUrl(value: unknown): string | null {
     return pick('Base URL 不是合法地址', 'Base URL is not a valid address')
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return pick('Base URL 只支持 http / https', 'Base URL must be http / https')
+  if (url.username || url.password) return pick('Base URL 不要内嵌账号密码，请把密钥填在 API Key 栏', 'Base URL must not embed credentials; put the key in the API Key field')
   return null
 }
 

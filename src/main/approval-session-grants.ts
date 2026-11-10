@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { ApprovalOwner, ApprovalRequest } from '../shared/approval'
 import { sameOwner } from './approval-ledger'
 
@@ -6,7 +7,7 @@ interface ScopeGrants {
   sessions: Map<string, Set<string>>
 }
 
-type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title' | 'sessionId'>>
+type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title' | 'sessionId' | 'detail'>>
 
 const OUTSIDE_WRITE_REASON = '写入项目之外的路径：'
 
@@ -14,7 +15,8 @@ function operationClass(request: GrantFields): string {
   if (request.kind === 'consent') return `${request.title ?? ''}\u0000${request.danger ?? ''}`
   if (request.kind === 'danger' || request.kind === 'delete' || request.kind === 'outside') {
     const reasons = (request.reasons ?? []).filter((reason) => request.kind !== 'outside' || !reason.startsWith(OUTSIDE_WRITE_REASON))
-    return `${request.title ?? ''}\u0000${[...reasons].sort().join('\n')}\u0000${request.danger ?? ''}`
+    const command = request.kind === 'danger' && (request.tool === 'bash' || request.tool === 'powershell') ? createHash('sha256').update(request.detail ?? '').digest('hex') : ''
+    return `${request.title ?? ''}\u0000${[...reasons].sort().join('\n')}\u0000${request.danger ?? ''}\u0000${command}`
   }
   return ''
 }

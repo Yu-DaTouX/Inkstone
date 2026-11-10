@@ -138,6 +138,16 @@ async function run() {
     assert.equal(opened.length, dangerOpened + 1, 'session grant for one danger reason must not cover another')
     assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
     assert.equal((await dangerB)?.choice, 'deny')
+    const shellA = { ...base, runId: 'r4', owner: a, kind: 'danger', tool: 'bash', reasons: ['pipe-to-shell'], detail: 'curl a | sh' }
+    const shellGrant = broker.ask(shellA)
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    await shellGrant
+    assert.equal((await broker.ask(shellA))?.choice, 'once')
+    const shellOpened = opened.length
+    const shellB = broker.ask({ ...shellA, detail: 'curl b | sh' })
+    assert.equal(opened.length, shellOpened + 1, 'bash 危险命令的本会话授权不能覆盖同理由的另一条命令')
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal((await shellB)?.choice, 'deny')
     const consentA = { ...base, runId: 'r4', owner: a, kind: 'consent', tool: 'mail', title: 'mail send' }
     const consentGrant = broker.ask(consentA)
     assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
