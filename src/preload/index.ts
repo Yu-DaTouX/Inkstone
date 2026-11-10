@@ -70,7 +70,6 @@ import type {
   GitRuntimeStatus,
   CustomProviderDiscoverResult,
   CodexLoginResult,
-  TrustStatusView,
   DirListing,
   EditableFileView,
   EditableFileWriteResult,
@@ -559,11 +558,6 @@ const api: YanBridge = {
     invoke<EditableFileWriteResult>('yan:writeEditableFile', path, text, expectedHash, cwd),
   reportUnsavedFiles: (paths) => invoke<number>('yan:files:unsaved', paths),
   searchFileNames: (request) => invoke<FileNameSearchResult>('yan:files:searchNames', request),
-  trust: {
-    status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
-    allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),
-    revoke: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:revoke', cwd)
-  },
   providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
 
   attachments: {

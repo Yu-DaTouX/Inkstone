@@ -905,12 +905,6 @@ export interface QuotaWindow {
   forecast?: QuotaForecast
 }
 
-export interface TrustStatusView {
-  cwd: string
-  trusted: boolean
-  entry: string | null
-}
-
 export interface CompactionInfo {
   enabled: boolean
   reserveTokens: number
@@ -1974,11 +1968,6 @@ export interface YanBridge {
   writeEditableFile(path: string, text: string, expectedHash: string | null, cwd?: string): Promise<EditableFileWriteResult>
   reportUnsavedFiles(paths: string[]): Promise<number>
   searchFileNames(request: FileNameSearchRequest): Promise<FileNameSearchResult>
-  trust: {
-    status(cwd?: string): Promise<TrustStatusView>
-    allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
-    revoke(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
-  }
   providerQuota(provider: string, monthlyBudget?: number): Promise<ProviderQuota>
 
   attachments: {

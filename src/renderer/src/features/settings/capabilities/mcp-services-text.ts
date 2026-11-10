@@ -15,8 +15,7 @@ const ZH = {
   configChanged: '配置已变化，当前会话需要重新加载；新会话使用新配置。', configRead: '当前会话已读取配置，连接状态尚未查询。', configUnknown: '配置已保存，尚未核对当前会话是否已加载。',
   check: '检查连接', checkSession: '检查当前会话', checking: '检查中…', checkResult: '当前会话检查结果',
   hostNote: '由砚连接', piNote: '由 pi 连接', source: '配置位置', connection: '连接信息',
-  busy: '有任务正在运行，结束后可调整此服务。', untrusted: '当前项目尚未受信任，项目配置暂不生效，也不能修改。',
-  trust: '信任这个项目', confirmTrust: '信任这个项目？', trustBody: '信任后，pi 会读取并运行这个项目 .pi 目录里的 MCP、扩展和设置，相当于以你的身份运行其中的程序。只信任你了解来源的项目。', trusted: '已信任，新会话生效；也可以点击“应用到当前会话”。',
+  busy: '有任务正在运行，结束后可调整此服务。', untrusted: '当前项目尚未受信任，项目配置暂不生效，也不能修改。可在「权限」里调整项目信任策略。',
   conflict: '存在重复连接配置，请在高级设置中处理归属。', computer: '电脑操作', computerHint: '在本机工具中管理。', openTools: '前往本机工具',
   failed: '操作失败，请重试。', envInvalid: '环境变量需要填写 JSON 字符串键值对象。', scopeLabel: '管理范围',
   showAdvanced: '显示高级选项', loaded: '连接状态以实际检查结果为准，启用开关不代表已经连接。'
@@ -39,8 +38,7 @@ const EN: Labels = {
   configChanged: 'Configuration changed. This session needs a reload; new sessions use the new settings.', configRead: 'This session read the configuration. Connection status has not been queried.', configUnknown: 'Configuration saved. Loading in this session has not been verified.',
   check: 'Check connection', checkSession: 'Check this session', checking: 'Checking…', checkResult: 'Current session status',
   hostNote: 'Connected by Inkstone', piNote: 'Connected by pi', source: 'Configuration file', connection: 'Connection details',
-  busy: 'A task is running. Adjust this service after it finishes.', untrusted: 'This project is not trusted. Its configuration is inactive and cannot be edited.',
-  trust: 'Trust this project', confirmTrust: 'Trust this project?', trustBody: 'Once trusted, pi reads and runs the MCP servers, extensions and settings in this project’s .pi folder, as if you ran those programs yourself. Only trust projects whose source you know.', trusted: 'Trusted. New sessions use it; you can also apply it to this session.',
+  busy: 'A task is running. Adjust this service after it finishes.', untrusted: 'This project is not trusted. Its configuration is inactive and cannot be edited. Adjust project trust in Permissions.',
   conflict: 'Duplicate connection definitions. Resolve ownership in advanced settings.', computer: 'Computer use', computerHint: 'Managed in Local tools.', openTools: 'Open local tools',
   failed: 'Operation failed. Please retry.', envInvalid: 'Enter environment variables as a JSON object with string values.', scopeLabel: 'Management scope',
   showAdvanced: 'Advanced options', loaded: 'Connection status comes from actual checks. An enabled switch does not mean connected.'
