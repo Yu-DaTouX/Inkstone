@@ -232,6 +232,7 @@ export interface SubagentContext {
   parentMessageId?: string
   projectId?: string
   thinkingLevel?: string
+  modelPinned?: boolean
 }
 
 export type SubagentSendMode = 'steer' | 'followUp'
@@ -242,6 +243,7 @@ export interface SubagentOptions {
   cwd: string
   piBin?: string
   thinkingLevel?: string
+  modelPinned?: boolean
   parentSessionId?: string
   parentRunId?: string
   parentGeneration?: number
@@ -432,6 +434,7 @@ export class SubagentController {
       resultPath: run.resultPath,
       ...(run.savedOutputsPath ? { savedOutputsPath: run.savedOutputsPath } : {}),
       model: run.model,
+      ...(run.modelPinned ? { modelPinned: true } : {}),
       thinkingLevel: run.thinkingLevel,
       contextUsage: run.contextUsage,
       status: run.status,
@@ -758,6 +761,7 @@ export class SubagentController {
       ...(fork ? { fork: true, forkSource: fork } : {}),
       launch: { appendSystemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension },
       model,
+      ...(ctx.modelPinned ? { modelPinned: true } : {}),
       status: 'starting',
       startedAt: Date.now(),
       activeSince: Date.now(),

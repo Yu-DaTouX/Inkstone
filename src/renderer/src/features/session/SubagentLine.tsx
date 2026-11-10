@@ -122,8 +122,8 @@ const ALL_KEY: Record<SubagentCount, SessionTextKey> = {
   stopped: 'subagentAllStopped'
 }
 
-function sameAsSessionModel(run: Pick<SubagentRun, 'model' | 'thinkingLevel' | 'fork'>, model: ModelInfo | undefined, thinking: string | undefined): boolean {
-  if (!run.model || !model || run.fork) return false
+function sameAsSessionModel(run: Pick<SubagentRun, 'model' | 'thinkingLevel' | 'fork' | 'modelPinned'>, model: ModelInfo | undefined, thinking: string | undefined): boolean {
+  if (!run.model || !model || run.fork || run.modelPinned) return false
   const sameId = run.model === `${model.provider}/${model.id}` || run.model === model.id
   return sameId && (run.thinkingLevel || 'off') === (thinking || 'off')
 }

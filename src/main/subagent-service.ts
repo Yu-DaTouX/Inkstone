@@ -244,7 +244,7 @@ export class SubagentService {
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
-      const startContext = thinkingLevel ? { ...context, thinkingLevel } : context
+      const startContext = { ...context, ...(model ? { modelPinned: true } : {}), ...(thinkingLevel ? { thinkingLevel } : {}) }
       const autoIsolate = !readOnly && !isolation && (params.isolation === undefined || params.isolation === null || params.isolation === '')
       const started = autoIsolate
         ? await this.startDefaultWriter(ctrl, context.cwd, (choice) => ctrl.start(task, model ?? context.model, choice, briefInput, undefined, startContext))

@@ -1230,6 +1230,7 @@ export interface SubagentRun {
   resultPath?: string
   savedOutputsPath?: string
   model?: string
+  modelPinned?: boolean
   thinkingLevel?: string
   contextUsage?: SessionStats['contextUsage']
   status: 'starting' | 'running' | 'done' | 'error' | 'cancelled'
