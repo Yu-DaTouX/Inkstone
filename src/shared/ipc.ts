@@ -147,6 +147,7 @@ export interface UIMessage {
   text: string
   images?: UIMessageImage[]
   thinking?: string
+  thinkingStartedAt?: number
   thinkingMs?: number
   thinkingLive?: boolean
   thinkingEmpty?: boolean

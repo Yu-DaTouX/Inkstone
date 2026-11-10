@@ -149,6 +149,7 @@ try {
     assert.equal(big.args?.path, 'big.txt', '结束时没有 toolCall 也从原文解析一次')
   }
   const ended = live.liveMessageEnd({ usage: { input: 1, output: 2 }, model: 'p/m', text: 'ignored' })
+  assert.equal(ended.thinkingStartedAt, 101, '思考起点来自宿主事件，视图重挂不改变')
   assert.deepEqual([ended.text, ended.thinking, ended.toolCalls.map((call) => call.id), ended.usage.output], ['Hi there', 'hmm', ['call_live'], 2])
   live.liveToolStart({ toolCallId: 'call_live', toolName: 'bash', args: { command: 'ls' } }, 103)
   live.liveToolUpdate('call_live', { content: [{ type: 'text', text: 'par' }] })

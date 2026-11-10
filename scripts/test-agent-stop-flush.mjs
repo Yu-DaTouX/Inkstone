@@ -74,7 +74,7 @@ function fakeRpc({ reply = true, onCommand } = {}) {
     running: true,
     command: async (type, _payload, opts) => {
       calls.push(type)
-      onCommand?.(type)
+      await onCommand?.(type)
       if (!reply) {
         return new Promise((_, reject) => {
           setTimeout(() => reject(new Error(`${type} 未回执`)), opts?.timeoutMs ?? 60_000)
@@ -239,6 +239,119 @@ console.log('\n--- 10. 强杀（无退出钩子）也能留住最近的排队 --
   await ctl.reclaimSavedQueue()
   const payload = pushes.find((msg) => msg.ch === 'queue-reclaimed')?.payload
   check(payload?.steering[0] === '强杀前排队的插话', '强杀后重启仍能回填排队内容', JSON.stringify(payload))
+}
+
+console.log('\n--- 11. 停止回执：agent_end / agent_settled 先清 tracker 也不丢 stopped ---')
+{
+  const seed = (ctl) => {
+    ctl.messages = [
+      { id: 'm1', role: 'user', text: '跑长任务', timestamp: Date.now() - 5000 },
+      { id: 'a1', role: 'assistant', text: '做到一半', timestamp: Date.now() - 4000 }
+    ]
+    ctl.turn.messageIds = ['a1']
+    ctl.turn.startedAt = Date.now() - 3000
+    ctl.turn.startedMono = performance.now() - 3000
+    ctl.turn.elapsedMs = 500
+    ctl.turn.runId = 'run-stop-test'
+    ctl.turn.terminal = 'completed'
+    ctl.agentRunning = true
+  }
+  const patchOf = (pushes, id = 'a1') => pushes
+    .filter((msg) => msg.ch === 'msg-update' && msg.payload?.id === id)
+    .map((msg) => msg.payload.patch)
+    .find((patch) => patch?.turnTiming)
+
+  {
+    const { ctl, pushes } = controller()
+    seed(ctl)
+    const { rpc } = fakeRpc({
+      onCommand: async (type) => {
+        if (type !== 'abort') return
+        ctl.agentRunning = false
+        ctl.turn.startedAt = undefined
+        ctl.turn.startedMono = undefined
+        await ctl.turn.persist(true, ctl.state?.sessionFile, ctl.messages)
+      }
+    })
+    ctl.rpc = rpc
+    await ctl.abort()
+    const patch = patchOf(pushes)
+    check(patch?.turnTiming?.terminalReason === 'stopped', 'agent_settled 先收尾：当前回合仍收到 stopped 回执', JSON.stringify(patch))
+    check(patch?.turnTiming?.elapsedMs >= 2500, '停止用时取停止发起时的计时，不因 tracker 被清而丢失', patch?.turnTiming?.elapsedMs)
+    check(patch?.elapsedMs === patch?.turnTiming?.elapsedMs, '消息用时与 turnTiming 同步', patch?.elapsedMs)
+  }
+
+  {
+    const { ctl, pushes } = controller()
+    seed(ctl)
+    const { rpc } = fakeRpc({
+      onCommand: async (type) => {
+        if (type !== 'abort') return
+        const terminal = ctl.turn.terminal
+        await ctl.turn.persist(true, ctl.state?.sessionFile, ctl.messages)
+        ctl.turn.terminal = terminal
+      }
+    })
+    ctl.rpc = rpc
+    await ctl.abort()
+    const patch = patchOf(pushes)
+    check(patch?.turnTiming?.terminalReason === 'stopped', 'agent_end 先落盘并清空 messageIds：当前回合仍拿到 stopped', JSON.stringify(patch))
+    check(patch?.turnTiming?.elapsedMs >= 2500, 'agent_end 先落盘也不影响停止用时', patch?.turnTiming?.elapsedMs)
+  }
+}
+
+console.log('\n--- 12. 流式阶段：streaming.id 尚未进 messageIds，也要拿到 stopped ---')
+{
+  const patchOf = (pushes, id) => pushes
+    .filter((msg) => msg.ch === 'msg-update' && msg.payload?.id === id)
+    .map((msg) => msg.payload.patch)
+    .find((patch) => patch?.turnTiming)
+  const seedStream = (ctl) => {
+    ctl.messages = [{ id: 'm0', role: 'user', text: '流式停止', timestamp: Date.now() - 5000 }]
+    const started = ctl.items.liveMessageStart({ role: 'assistant' }, Date.now())
+    ctl.streaming = { id: started.id, responseDetail: 'unknown', startedAt: Date.now() - 1000, pushedText: 0, pushedThinking: 0 }
+    ctl.turn.messageIds = []
+    ctl.turn.startedAt = Date.now() - 3000
+    ctl.turn.startedMono = performance.now() - 3000
+    ctl.turn.elapsedMs = 500
+    ctl.turn.runId = 'run-stream-stop-test'
+    ctl.turn.terminal = 'completed'
+    ctl.agentRunning = true
+    return started.id
+  }
+
+  {
+    const { ctl, pushes } = controller()
+    const id = seedStream(ctl)
+    const { rpc } = fakeRpc()
+    ctl.rpc = rpc
+    await ctl.abort()
+    const patch = patchOf(pushes, id)
+    check(patch?.turnTiming?.terminalReason === 'stopped', 'streaming 仍在：停止回执挂在流式消息上', JSON.stringify(patch))
+    check(patch?.turnTiming?.elapsedMs >= 2500, 'streaming 仍在：停止用时来自停止发起时的快照', patch?.turnTiming?.elapsedMs)
+  }
+
+  {
+    const { ctl, pushes } = controller()
+    const id = seedStream(ctl)
+    const { rpc } = fakeRpc({
+      onCommand: async (type) => {
+        if (type !== 'abort') return
+        ctl.settleStreaming(id, { text: '停前已出的文字', timestamp: Date.now() })
+        ctl.streaming = null
+        ctl.agentRunning = false
+        ctl.turn.startedAt = undefined
+        ctl.turn.startedMono = undefined
+        ctl.turn.elapsedMs = undefined
+        ctl.turn.messageIds = []
+      }
+    })
+    ctl.rpc = rpc
+    await ctl.abort()
+    const patch = patchOf(pushes, id)
+    check(patch?.turnTiming?.terminalReason === 'stopped', 'abort 回执前 streaming 被 settle 且 tracker 清空：current msg 仍有 stopped', JSON.stringify(patch))
+    check(patch?.turnTiming?.elapsedMs >= 2500, '被提前 settle 的流式消息也保留停止用时', patch?.turnTiming?.elapsedMs)
+  }
 }
 
 console.log(`\n退出落盘与排队恢复：${checks} 项通过`)

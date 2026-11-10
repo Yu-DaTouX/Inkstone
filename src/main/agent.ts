@@ -2755,6 +2755,9 @@ export class AgentController extends EventEmitter {
         this.loopGuardHit = undefined
         this.markStreaming(false)
         this.setAgentRunning(false)
+        if (this.turn.terminal === 'stopped' && this.turn.startedMono !== undefined) {
+          this.turn.elapsedMs = Math.max(this.turn.elapsedMs ?? 0, Math.max(1, Math.round(performance.now() - this.turn.startedMono)))
+        }
         this.turn.startedAt = undefined
         this.turn.startedMono = undefined
         this.pendingRequestMono = undefined
@@ -2811,6 +2814,9 @@ export class AgentController extends EventEmitter {
         if (evt.willRetry !== true) {
           this.streamLoopDetector = null
           const terminal = this.turn.terminal
+          if (terminal === 'stopped' && this.turn.startedMono !== undefined) {
+            this.turn.elapsedMs = Math.max(this.turn.elapsedMs ?? 0, Math.max(1, Math.round(performance.now() - this.turn.startedMono)))
+          }
           void this.persistTurnTiming()
           this.turn.terminal = terminal
         }
@@ -3116,6 +3122,7 @@ export class AgentController extends EventEmitter {
           ...(thinkingDelta ? { thinkingDelta } : null),
           ...(thinkingShrank ? { thinking } : null),
           thinkingMs: s.thinkingMs,
+          thinkingStartedAt: s.thinkingStartedAt,
           thinkingLive: s.thinkingLive,
           usage: s.usage,
           speed: sp.speed,
@@ -4025,6 +4032,19 @@ export class AgentController extends EventEmitter {
     this.cancelImages()
     this.cancelApprovals?.(this.approvalOwner())
     this.turn.terminal = 'stopped'
+    const stoppingActive = this.streaming !== null || this.agentRunning || this.turn.startedMono !== undefined
+    const stoppedAt = Date.now()
+    const stoppedElapsed = this.turn.startedMono !== undefined
+      ? Math.max(1, Math.round(performance.now() - this.turn.startedMono))
+      : this.turn.elapsedMs
+    const stoppedAnchor = [...this.messages].reverse().find((m) => m.role === 'user' && /^m\d+$/.test(m.id))?.id
+    const stoppedMessageId = this.streaming?.id ?? (stoppingActive ? this.turn.messageIds.at(-1) : undefined)
+    const stoppedMeta = (id: string): Pick<UIMessage, 'turnTiming' | 'elapsedMs'> => stoppedElapsed === undefined
+      ? {}
+      : {
+          elapsedMs: stoppedElapsed,
+          turnTiming: { logicalTurnId: stoppedAnchor ?? id, startedAt: stoppedAt - stoppedElapsed, endedAt: stoppedAt, elapsedMs: stoppedElapsed, terminalReason: 'stopped' }
+        }
     const rpc = this.rpc
     const generation = this.capabilityOpts?.runnerGeneration
     const sessionId = this.state?.sessionId
@@ -4061,19 +4081,9 @@ export class AgentController extends EventEmitter {
       return { ...cleared, error: error instanceof Error ? error.message : String(error) }
     }
 
-    const stoppedAt = Date.now()
-    for (const call of this.items.cancelUnfinishedTools(stoppedAt)) this.pushTool(call)
-    const stoppedElapsed = this.turn.startedMono !== undefined
-      ? Math.max(1, Math.round(performance.now() - this.turn.startedMono))
-      : this.turn.elapsedMs
-    const stoppedAnchor = [...this.messages].reverse().find((m) => m.role === 'user' && /^m\d+$/.test(m.id))?.id
-    const stoppedMeta = (id: string): Pick<UIMessage, 'turnTiming' | 'elapsedMs'> => stoppedElapsed === undefined
-      ? {}
-      : {
-          elapsedMs: stoppedElapsed,
-          turnTiming: { logicalTurnId: stoppedAnchor ?? id, startedAt: stoppedAt - stoppedElapsed, endedAt: stoppedAt, elapsedMs: stoppedElapsed, terminalReason: 'stopped' }
-        }
-    const settledId = this.streaming ? null : this.agentRunning ? this.turn.messageIds.at(-1) : undefined
+    const stoppedTime = Date.now()
+    for (const call of this.items.cancelUnfinishedTools(stoppedTime)) this.pushTool(call)
+    const settledId = this.streaming ? null : stoppedMessageId ?? (this.agentRunning ? this.turn.messageIds.at(-1) : undefined)
     if (settledId) {
       const settled = this.messages.find((m) => m.id === settledId)
       const patch = stoppedMeta(settledId)

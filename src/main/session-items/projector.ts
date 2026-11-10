@@ -216,7 +216,10 @@ export class SessionItemProjector {
     const index = typeof ev.contentIndex === 'number' ? ev.contentIndex : this.fallbackBlock(slot, blockKind, kind === 'thinking_start')
     if (kind === 'thinking_start' || kind === 'thinking_delta' || kind === 'thinking_end') {
       const item = this.blockItem(slot, 'reasoning', index) as ReasoningItem
-      if (kind === 'thinking_start') item.live = true
+      if (kind === 'thinking_start') {
+        item.live = true
+        slot.header.thinkingStartedAt = now
+      }
       if (kind === 'thinking_delta') item.text += String(ev.delta ?? '')
       if (kind === 'thinking_end') item.live = false
       return null

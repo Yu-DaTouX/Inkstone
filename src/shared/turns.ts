@@ -18,6 +18,7 @@ export interface TurnSegment {
 
 export interface TurnThinking {
   text: string
+  startedAt?: number
   ms?: number
   at: number
 }
@@ -370,7 +371,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       const target = seg()
       target.thinking.push(m.thinking!.trim())
       target.thinkingMs += m.thinkingMs ?? 0
-      target.thinkingParts.push({ text: m.thinking!.trim(), at: target.tools.length, ...(m.thinkingMs ? { ms: m.thinkingMs } : {}) })
+      target.thinkingParts.push({ text: m.thinking!.trim(), at: target.tools.length, ...(m.thinkingMs ? { ms: m.thinkingMs } : {}), ...(m.thinkingStartedAt !== undefined ? { startedAt: m.thinkingStartedAt } : {}) })
     }
     if (m.thinkingEmpty) cur.thinkingEmpty = true
     if (m.thinkingLive !== undefined) {
