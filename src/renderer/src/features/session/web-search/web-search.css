@@ -1,4 +1,6 @@
 @layer features {
+  .ws-entry { display: flex; flex-direction: column; min-width: 0; }
+  .ws-cap-chevron { margin-inline-start: calc(-1 * var(--s-2)); }
   .ws-cap {
     display: flex;
     align-items: center;
@@ -43,7 +45,7 @@
     animation: ws-ring-spin var(--dur-spin) linear infinite;
   }
   @keyframes ws-ring-spin { to { transform: rotate(360deg); } }
-  .ws-cap-label { flex: none; white-space: nowrap; }
+  .ws-cap-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ws-cap-target {
     flex: 0 1 auto;
     min-width: 0;
@@ -70,9 +72,6 @@
     margin: var(--s-8) 0 var(--s-10);
   }
   .ws-op[data-single] { grid-template-columns: minmax(0, 1fr); max-width: 240px; align-items: start; }
-  .ws-source-pending { flex-direction: column; justify-content: space-between; gap: var(--s-8); }
-  .ws-source-pending-title { display: grid; gap: var(--s-6); }
-  .ws-source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-6); min-width: 0; color: var(--fg3); font-size: var(--t-caption); }
   .ws-less { align-self: center; justify-self: start; gap: var(--s-4); }
   .ws-empty { color: var(--fg3); font-size: var(--t-footnote); }
 
@@ -115,9 +114,11 @@
   @media (prefers-reduced-motion: reduce) {
     .ws-ring-arc { animation: none; }
     .ws-cap, .ws-cite { transition: none; }
+    .ws-cap-chevron > svg { transition: none; }
   }
   :root[data-reduce-motion='true'] .ws-ring-arc { animation: none; }
   :root[data-reduce-motion='true'] :is(.ws-cap, .ws-cite) { transition: none; }
+  :root[data-reduce-motion='true'] .ws-cap-chevron > svg { transition: none; }
 
   @media (max-width: 720px) {
     .ws-cap-target { display: none; }

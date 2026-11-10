@@ -1,0 +1,100 @@
+export const meta = { description: '消息流控件：搜索自动开合和持久化、待办显式状态、思考重挂计时、过程树稳定；隔离假模型与合成消息' }
+
+export default async function run({ cdp, newSession, turn, waitFor, sleep, check, shot, report }) {
+  await newSession()
+  await cdp.evaluate(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN', reduceMotion: false, rightPanelOpen: false, promptSuggestions: false })`)
+  const evaluate = (script) => cdp.evaluate(script)
+  const sources = [{ title: '原始资料', url: 'https://example.invalid/reference', domain: 'example.invalid', snippet: '隔离样本来源', source: '' }]
+  const user = { id: 'controls-user', role: 'user', text: '消息流控件验收', timestamp: Date.now() - 20000 }
+  const search = (id, status = 'running') => ({ id, name: 'web_search', args: { query: id }, status, ...(status === 'ok' ? { details: { search: { action: 'query', query: id, items: sources } } } : {}) })
+  const message = (call) => ({ id: 'controls-search', role: 'assistant', text: '', toolCalls: [call], timestamp: Date.now() })
+  const inject = async (messages, extra = {}) => {
+    await evaluate(`(() => { const s = window.__yanStore.getState(); window.__yanStore.setState({ messages: ${JSON.stringify(messages)}, session: {...s.session, isAgentRunning:true, isStreaming:true}, historyLoading:false, switchLoading:false, ...${JSON.stringify(extra)} }) })()`)
+    await sleep(120)
+  }
+  const capOpen = () => evaluate(`document.querySelector('[data-testid="ws-capsule"]')?.getAttribute('aria-expanded')`)
+  const moveAway = () => cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 })
+
+  await inject([user, message(search('auto-search'))])
+  check('运行中的搜索自动展开轻量进度', await capOpen() === 'true' && await evaluate(`!!document.querySelector('[data-testid="ws-sources-pending"]')`))
+  await moveAway()
+  await inject([user, message(search('auto-search', 'ok'))])
+  check('搜索完成后不会立即收起', await capOpen() === 'true')
+  await sleep(1100)
+  check('停留后自动收起，容器常驻且不可聚焦', await evaluate(`(() => { const cap=document.querySelector('[data-testid="ws-capsule"]'); const panel=document.getElementById(cap?.getAttribute('aria-controls')); return cap?.getAttribute('aria-expanded')==='false' && panel?.inert && panel.getBoundingClientRect().height<1 })()`))
+
+  await inject([user, message(search('manual-search'))])
+  await evaluate(`document.querySelector('[data-testid="ws-capsule"]').click()`)
+  await inject([user, message(search('manual-search', 'ok'))])
+  await sleep(1000)
+  check('运行中手动收起后，完成不再改用户选择', await capOpen() === 'false')
+  await evaluate(`document.querySelector('[data-testid="ws-capsule"]').click()`)
+  await inject([user])
+  await inject([user, message(search('manual-search', 'ok'))])
+  check('搜索重挂保留手动展开', await capOpen() === 'true')
+  await inject([user, { ...message(search('manual-search', 'ok')), toolCalls: [search('manual-search', 'ok'), search('second-search', 'ok')] }])
+  check('合并搜索组继承已打开的来源', await evaluate(`document.querySelector('[data-testid="ws-group"]')?.getAttribute('aria-expanded')==='true' && document.querySelectorAll('[data-testid="ws-capsule"]').length===2`))
+  await shot('search-dark-expanded')
+  const merged = (third) => [user, { ...message(search('merge-first', 'ok')), toolCalls: [search('merge-first', 'ok'), search('merge-second', 'ok'), ...(third ? [search('merge-third', third)] : [])] }]
+  await inject(merged())
+  check('未手动打开的搜索组默认收起', await evaluate(`document.querySelector('[data-testid="ws-group"]')?.getAttribute('aria-expanded')==='false'`))
+  await inject(merged('running'))
+  await evaluate(`[...document.querySelectorAll('[data-testid="ws-capsule"]')].at(-1).click()`)
+  await sleep(80)
+  await evaluate(`[...document.querySelectorAll('[data-testid="ws-capsule"]')].at(-1).click()`)
+  await sleep(80)
+  await inject(merged('ok'))
+  check('第三次搜索并入已有分组，仍保留其手动展开', await evaluate(`document.querySelector('[data-testid="ws-group"]')?.getAttribute('aria-expanded')==='true' && document.querySelectorAll('[data-testid="ws-capsule"]').length===3`))
+  await cdp.call('Emulation.setDeviceMetricsOverride', { width: 720, height: 900, deviceScaleFactor: 1, mobile: false })
+  await evaluate(`window.__yanStore.getState().patchSettings({ theme:'light', lang:'en-US' })`)
+  await sleep(500)
+  check('浅色英文窄窗搜索胶囊不横向溢出', await evaluate(`(() => { const host=document.querySelector('.v3-stream'); return !!host && host.scrollWidth<=host.clientWidth+1 && document.documentElement.scrollWidth<=innerWidth+1 })()`))
+  await shot('search-light-en-narrow')
+  await evaluate(`window.__yanStore.getState().patchSettings({ theme:'dark', lang:'zh-CN', reduceMotion:true })`)
+  await sleep(100)
+  check('减少动效时来源开合无过渡', await evaluate(`getComputedStyle(document.querySelector('.ui-source-reveal')).transitionDuration.split(',').every(value=>parseFloat(value)<=0.00001)`))
+  await cdp.call('Emulation.clearDeviceMetricsOverride')
+  await evaluate(`window.__yanStore.getState().patchSettings({ reduceMotion:false })`)
+
+  const thinking = { id: 'controls-thinking', role: 'assistant', text: '', thinking: '核对运行状态', thinkingLive: true, thinkingStartedAt: Date.now() - 15000, timestamp: Date.now() - 20000 }
+  await inject([user, thinking])
+  const elapsed = () => evaluate(`document.querySelector('[data-testid="v3-thinking-elapsed"]')?.textContent ?? ''`)
+  const before = await elapsed()
+  await inject([user])
+  await inject([user, thinking])
+  const after = await elapsed()
+  check('思考视图重挂继续使用宿主起点，不从0秒重放', parseInt(before, 10) >= 15 && parseInt(after, 10) >= 15, { before, after })
+
+  const todo = (text, status) => ({ text, done: status === 'done', status })
+  const todos = [todo('等待资料', 'pending'), todo('修改', 'running'), todo('初步检查', 'done')]
+  await inject([user, thinking], { todos, todoHistory: [{ id: 'controls-plan', round: 1, at: new Date().toISOString(), todos }] })
+  check('待办以显式running项显示当前工作', await evaluate(`document.querySelector('.plan-card-now')?.textContent==='修改'`))
+  const completed = todos.map((item) => todo(item.text, 'done'))
+  await inject([user, thinking], { todos: completed, todoHistory: [{ id: 'controls-plan-done', round: 1, at: new Date().toISOString(), todos: completed }] })
+  check('全部完成保留完成回执', await evaluate(`document.querySelector('[data-testid="plan-card"]')?.hasAttribute('data-complete') && document.querySelector('[data-testid="plan-card"]')?.textContent.includes('3/3')`))
+  await shot('plan-completed')
+  await inject([user, thinking, { ...user, id: 'next-user' }], { todos: completed, todoHistory: [{ id: 'controls-plan-done', round: 1, at: new Date().toISOString(), todos: completed }] })
+  check('新一轮开始清场已完成计划', await evaluate(`!document.querySelector('[data-testid="plan-card"]')`))
+  await inject([user, thinking, { ...user, id: 'next-user' }], { todos, todoHistory: [{ id: 'controls-stale', round: 1, at: new Date().toISOString(), todos }] })
+  await evaluate(`document.querySelector('[data-testid="plan-card-close"]')?.click()`)
+  check('上一轮计划可本地关闭，不删除待办数据', await evaluate(`!document.querySelector('[data-testid="plan-card"]') && window.__yanStore.getState().todos.length===3`))
+
+  await evaluate(`(() => { const s=window.__yanStore.getState(); window.__yanStore.setState({session:{...s.session,isAgentRunning:false,isStreaming:false},todos:[],todoHistory:[],messages:[]}) })()`)
+  await newSession()
+  let captured = false
+  await turn('FLOW SHORT 消息流稳定性', { timeout: 180000, settleMs: 800, during: async () => {
+    await waitFor(`!!document.querySelector('[data-testid="v3-step"]')`, 60000)
+    check('运行预览的头部展开语义与可见面板一致', await evaluate(`(() => { const head=document.querySelector('[data-testid="v3-process-toggle"]'); const panel=document.getElementById(head?.getAttribute('aria-controls')); return head?.getAttribute('aria-expanded')==='true' && panel?.getBoundingClientRect().height>0 })()`))
+    await evaluate(`document.querySelector('[data-testid="v3-process-toggle"]')?.click()`)
+    await sleep(350)
+    check('运行中可手动完全收起过程', await evaluate(`(() => { const head=document.querySelector('[data-testid="v3-process-toggle"]'); const panel=document.getElementById(head?.getAttribute('aria-controls')); return head?.getAttribute('aria-expanded')==='false' && panel?.getBoundingClientRect().height<1 })()`))
+    await evaluate(`document.querySelector('[data-testid="v3-process-toggle"]')?.click()`)
+    await sleep(350)
+    await evaluate(`document.querySelector('[data-testid="v3-step"]')?.click()`)
+    await sleep(300)
+    captured = await evaluate(`(() => { const step=document.querySelector('[data-testid="v3-step"]'); window.__controlsStep=step; return !!step })()`)
+  } })
+  check('运行结束沿用同一棵过程树，已打开工具行不重挂', captured && await evaluate(`!!window.__controlsStep?.isConnected && window.__controlsStep.getAttribute('aria-expanded')==='true'`))
+  await shot('flow-ended-preserved')
+  report.controls = { thinkingElapsed: { before, after } }
+}

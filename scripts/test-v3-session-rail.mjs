@@ -145,6 +145,7 @@ async function buildRail(outdir) {
   await writeFile(
     entry,
     `export { OutlineRail, userTurnRenderIndex } from '${posix(abs('src/renderer/src/features/session/OutlineRail.tsx'))}'
+export { minimapIndexAt, minimapTopPercent, plainPreview, firstLine, turnPreview } from '${posix(abs('src/renderer/src/features/session/outline-minimap.ts'))}'
 export { sessionViewIdentity, sameViewPath } from '${posix(abs('src/renderer/src/features/session/view-state.ts'))}'
 `
   )
@@ -283,7 +284,7 @@ async function main() {
     process.exit(1)
   }
 
-  const { OutlineRail, userTurnRenderIndex } = rail
+  const { OutlineRail, userTurnRenderIndex, minimapIndexAt, minimapTopPercent, plainPreview, firstLine, turnPreview } = rail
 
   group('userTurnRenderIndex：用户回合下标 → 含助手块的回合下标')
   {
@@ -301,26 +302,68 @@ async function main() {
     globalThis.__V3_HOOKS = rt
     const jumps = []
     let tree = rt.render(OutlineRail, { messages: CONVO, onJump: (i) => jumps.push(i) })
-    ok(tree !== null, '3 轮以上：轨道渲染出来')
+    ok(tree !== null && byTestId(tree, 'v3-outline-rail').length === 1, '3 轮以上：小地图根节点渲染出来')
     const ticks = byTestId(tree, 'v3-outline-tick')
     ok(ticks.length === 3, '每轮用户消息一个刻度（助手不产生刻度）', ticks.length)
-    ok(byTestId(tree, 'v3-outline-zone').length === 1, '右缘有独立的悬停窄带（显隐由 CSS 控制）')
+    ok(ticks.every((tick, i) => tick.props['data-index'] === i), '刻度保留 data-index 序号', ticks.map((tick) => tick.props['data-index']))
+    ok(ticks.every((tick) => tick.props['aria-hidden']), '刻度本身对读屏隐藏')
+    ok(ticks[0].props.style.top === '0%' && ticks[2].props.style.top === '100%' && ticks[1].props.style.top === '50%', '刻度按比例均匀分布在竖轨上', ticks.map((tick) => tick.props.style.top))
 
-    ticks[1].props.onClick()
+    const stopped = []
+    const click = () => ({ stopPropagation: () => stopped.push(true) })
+    ticks[1].props.onClick(click())
     ok(jumps.length === 1 && jumps[0] === 1, '点第 2 个刻度报告用户回合下标 1，不自行换算', jumps)
-    ticks[2].props.onClick()
+    ticks[2].props.onClick(click())
     ok(jumps[1] === 2, '点第 3 个刻度报告下标 2', jumps)
-    ok(byTestId(tree, 'v3-outline-tick')[0].props['aria-label'].includes('1'), '刻度带「第 N 轮」无障碍名称')
-    ok(byTestId(tree, 'v3-outline-tick')[0].props.title === '第一问：改标题', '刻度 title 用该轮用户原话')
+    ok(stopped.length === 2, '刻度自己的点击不再冒泡到轨道的按坐标换算', stopped.length)
+
+    const sliders = collect(tree, (el) => el.props?.role === 'slider')
+    ok(sliders.length === 1, '整条轨道是一个滑块控件', sliders.length)
+    const slider = sliders[0]
+    ok(slider?.props.tabIndex === 0 && slider?.props['aria-orientation'] === 'vertical', '滑块可聚焦且为竖向')
+    ok(slider?.props['aria-valuemin'] === 1 && slider?.props['aria-valuemax'] === 3, '取值范围是轮次序号 1..N', [slider?.props['aria-valuemin'], slider?.props['aria-valuemax']])
+    ok(byTestId(tree, 'v3-outline-prev').length === 1 && byTestId(tree, 'v3-outline-next').length === 1, '上一轮、下一轮按钮都在')
+    ok(byTestId(tree, 'v3-outline-prev')[0].props['aria-label'] === 'outline.prev' && byTestId(tree, 'v3-outline-next')[0].props.title === 'outline.next', '上下按钮带无障碍名称与 title')
+    ok(byTestId(tree, 'v3-outline-preview').length === 1, '预览卡容器常驻（悬停或聚焦时才填内容）')
+    ok(byTestId(tree, 'v3-outline-preview')[0].props.children === null, '未悬停时不计算预览摘要')
   }
 
-  group('OutlineRail：短会话也可导航，空会话不渲染')
+  group('OutlineRail：短会话也可导航，单轮只占位，空会话不渲染')
   {
     const rt = makeHookRuntime()
     globalThis.__V3_HOOKS = rt
     const short = CONVO.slice(0, 4)
     ok(byTestId(rt.render(OutlineRail, { messages: short, onJump: () => {} }), 'v3-outline-tick').length === 2, '2 轮也显示可点击的导航刻度')
+    const single = rt.render(OutlineRail, { messages: CONVO.slice(0, 2), onJump: () => {} })
+    ok(single !== null && single.props.hidden === true && byTestId(single, 'v3-outline-tick').length === 0, '1 轮：只渲染隐藏占位，用来提前留出正文列的位置', single && single.props)
     ok(rt.render(OutlineRail, { messages: [], onJump: () => {} }) === null, '空会话：返回 null')
+  }
+
+  group('小地图换算：纵坐标比例 → 最近的轮次')
+  {
+    ok(minimapTopPercent(0, 5) === 0 && minimapTopPercent(4, 5) === 100 && minimapTopPercent(2, 5) === 50, '首尾在 0% 与 100%，中间均分')
+    ok(minimapTopPercent(0, 1) === 0, '单轮落在顶端')
+    ok(minimapIndexAt(0, 400, 147) === 0 && minimapIndexAt(400, 400, 147) === 146, '顶端是第一轮，底端是最后一轮')
+    ok(minimapIndexAt(-30, 400, 147) === 0 && minimapIndexAt(999, 400, 147) === 146, '越界坐标夹到首尾')
+    ok(minimapIndexAt(200, 400, 147) === 73, '中点换算到最近的轮次', minimapIndexAt(200, 400, 147))
+    ok(minimapIndexAt(3, 8, 2) === 0 && minimapIndexAt(5, 8, 2) === 1, '两轮时按就近取整')
+    ok(minimapIndexAt(10, 0, 3) === 0 && minimapIndexAt(10, 100, 0) === -1, '零高度回落到首轮，零轮返回 -1')
+  }
+
+  group('预览卡文字：首行与答复纯文字')
+  {
+    ok(firstLine('\n\n  第一行  \n第二行') === '第一行', '用户首行跳过空行并去掉首尾空白')
+    const md = '# 标题\n\n**加粗** 与 *斜体*、`code` 和 [链接](https://x.y)。\n\n- 列表项\n- [x] 任务\n\n> 引用\n\n```ts\nconst a = 1\n```\n\n| 列 | 值 |\n| --- | --- |\n| a | 1 |\n\n---\n~~删~~ snake_case_name'
+    const plain = plainPreview(md)
+    ok(!/[#*`>|~]|\]\(|```/.test(plain), '去掉 markdown 记号', plain)
+    ok(plain.startsWith('标题 加粗 与 斜体、code 和 链接。 列表项 任务 引用 const a = 1'), '保留正文顺序并压成一行', plain)
+    ok(plain.includes('列 · 值') && plain.includes('a · 1'), '表格行改成分隔的纯文字', plain)
+    ok(plain.includes('snake_case_name'), '标识符里的下划线不当作斜体', plain)
+    ok(plainPreview('x'.repeat(1000)).length === 400, '最多只处理前 400 字符', plainPreview('x'.repeat(1000)).length)
+    const turn = { user: '问\n补充', assistant: '**答**', msgId: 'm', index: 0, failed: false, steps: 0 }
+    const a = turnPreview(turn)
+    ok(a.line === '问' && a.answer === '答', '每轮预览取用户首行与答复摘要', a)
+    ok(turnPreview(turn) === a, '同一轮对象的预览按对象缓存')
   }
 
   await rm(outdir, { recursive: true, force: true })

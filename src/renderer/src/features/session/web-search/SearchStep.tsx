@@ -1,10 +1,12 @@
-import { useId, useMemo, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { ArrowUpRight, Globe } from 'lucide-react'
 import { useStore } from '../../../state/store'
-import { Button, Card, ShimmerText, Skeleton, SourceCard as SourceCardFrame } from '../../../ui'
+import { Button, Card, CollapsibleChevron, revealCollapsedHeader, ShimmerText, SourceCard as SourceCardFrame } from '../../../ui'
 import type { UIToolCall, WebSearchSourceView } from '../../../../../shared/ipc'
 import { Icon } from '../Icon'
+import { useToolExpansion } from '../use-tool-run'
 import { useCitationIndex } from './citations'
+import { canAutoCollapse, holdSearchAuto, resolveSearchAuto, searchExpansionKeys, searchExpansionOpen, seedSearchAuto, SEARCH_BOTTOM_SLACK_PX, type SearchAutoState } from './expansion'
 import { citationFor, domainOf, isBlockedPage, searchStepLabel, searchStepsOf, siteLabel, type SearchStep } from './model'
 import { useSearchOp } from './op-store'
 import { useWebSearchText } from './text'
@@ -12,7 +14,6 @@ import { WebsiteIcon } from './WebsiteIcon'
 import './web-search.css'
 
 const MAX_SITES = 3
-const PENDING_CARDS = 4
 
 function pageSource(state: ReturnType<typeof useSearchOp>): WebSearchSourceView[] {
   if (state.status !== 'ready' || !state.view.ok) return []
@@ -40,8 +41,7 @@ function uniqueSites(sources: readonly WebSearchSourceView[]): { site: string; u
 export function SearchStepView({ call, step, children, glow = true }: { call: UIToolCall; step: SearchStep; children: ReactNode; glow?: boolean }): JSX.Element {
   const tt = useWebSearchText()
   const panelId = useId()
-  const [open, setOpen] = useState(!!call.serverSide)
-  const [showAll, setShowAll] = useState(false)
+  const entryRef = useRef<HTMLDivElement | null>(null)
   const running = call.status === 'running' || call.status === 'pending'
   const fromDetails = step.sources !== undefined
   const state = useSearchOp(running || fromDetails ? null : step.operationId)
@@ -56,32 +56,96 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
   const target = fetching ? pageTitle || searchStepLabel(step.command) : `\u201c${searchStepLabel(step.command)}\u201d`
   const count = settled && !fetching && sources.length ? tt('results', { n: sources.length }) : ''
   const summary = [label, target, count ? `\u00b7 ${count}` : '', pageTitle ? searchStepLabel(step.command) : ''].filter(Boolean).join(' ')
+  const keys = searchExpansionKeys(call.id, step)
+  const [stableOpen, setStableOpen] = useToolExpansion(keys.stable)
+  const [taggedOpen, setTaggedOpen] = useToolExpansion(keys.tagged)
+  const [showAll, setShowAll] = useState(false)
+  const [auto, setAuto] = useState<SearchAutoState>(() => seedSearchAuto(running))
+  const open = searchExpansionOpen(stableOpen ?? taggedOpen, auto)
+
+  const canCollapseNow = (): boolean => {
+    const node = entryRef.current
+    if (!node) return true
+    if (node.contains(document.activeElement) || node.matches(':hover')) return false
+    const stream = node.closest<HTMLElement>('.v3-stream')
+    if (!stream) return true
+    const rect = node.getBoundingClientRect()
+    const view = stream.getBoundingClientRect()
+    const atBottom = stream.scrollHeight - stream.clientHeight - stream.scrollTop <= SEARCH_BOTTOM_SLACK_PX
+    return canAutoCollapse({ top: rect.top, bottom: rect.bottom, viewTop: view.top, viewBottom: view.bottom, atBottom })
+  }
+
+  useEffect(() => {
+    if (!settled) return
+    setAuto((current) => (current.phase === 'live' ? holdSearchAuto(Date.now()) : current))
+  }, [settled])
+
+  useEffect(() => {
+    if (auto.phase !== 'hold' || auto.holdUntil === null) return
+    const left = auto.holdUntil - Date.now()
+    if (left <= 0) {
+      setAuto((current) => resolveSearchAuto(current, Date.now(), canCollapseNow()))
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setAuto((current) => resolveSearchAuto(current, Date.now(), canCollapseNow()))
+    }, left)
+    return () => window.clearTimeout(timer)
+  }, [auto.phase, auto.holdUntil])
+
+  useEffect(() => {
+    if (auto.phase !== 'waiting') return
+    const check = (): void => {
+      if (!canCollapseNow()) return
+      setAuto((current) => resolveSearchAuto(current, Date.now(), true))
+    }
+    const checkAfterFocus = (): void => {
+      window.setTimeout(check, 0)
+    }
+    const node = entryRef.current
+    check()
+    node?.addEventListener('pointerleave', check)
+    window.addEventListener('scroll', check, true)
+    window.addEventListener('resize', check)
+    window.addEventListener('focusin', check, true)
+    window.addEventListener('focusout', checkAfterFocus, true)
+    return () => {
+      node?.removeEventListener('pointerleave', check)
+      window.removeEventListener('scroll', check, true)
+      window.removeEventListener('resize', check)
+      window.removeEventListener('focusin', check, true)
+      window.removeEventListener('focusout', checkAfterFocus, true)
+    }
+  }, [auto.phase])
 
   if (!running && !step.fromTool) {
     if (!step.operationId) return <>{children}</>
     if (state.status === 'ready' && !state.view.ok) return <>{children}</>
   }
 
-  const expanded = open && settled
-  const pending = open && !settled && !fetching
+  const toggle = (): void => {
+    const next = !open
+    if (!next) revealCollapsedHeader(entryRef.current?.querySelector<HTMLElement>('.ws-cap') ?? null)
+    setStableOpen(next)
+    setTaggedOpen(next)
+    setShowAll(false)
+  }
 
   return (
-    <>
+    <div className="ws-entry" ref={entryRef}>
       <button
         type="button"
         className="ws-cap"
-        aria-expanded={expanded}
+        aria-expanded={open}
         aria-controls={panelId}
         aria-label={summary}
         title={summary}
-        onClick={() => {
-          setOpen((value) => !value)
-          setShowAll(false)
-        }}
+        onClick={toggle}
         data-testid="ws-capsule"
         data-state={running ? 'running' : 'done'}
         data-tone={blocked ? 'warn' : undefined}
       >
+        <CollapsibleChevron expanded={open} className="ws-cap-chevron" />
         <span className="ws-cap-icon" data-done={running ? undefined : true} aria-hidden="true">
           <Globe size={13} strokeWidth={1.75} />
           <svg className="ws-ring" viewBox="0 0 24 24" aria-hidden="true">
@@ -97,20 +161,26 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
         <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
           {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
         </span>
-        <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
-      <div id={panelId} className="ui-source-reveal" data-open={expanded || pending} aria-hidden={!expanded || undefined} inert={!expanded}>
+      <div id={panelId} className="ui-source-reveal" data-open={open} aria-hidden={!open || undefined} inert={!open}>
         <div className="ui-source-reveal__inner">
-          {pending ? (
-            <div className="ws-op" aria-hidden="true" data-testid="ws-sources-pending">
-              {Array.from({ length: PENDING_CARDS }, (_, i) => <PendingCard key={i} index={i} />)}
-            </div>
-          ) : (
+          {settled ? (
             <SourceList sources={sources} showAll={showAll} onShowAll={setShowAll} testId="ws-sources" />
+          ) : (
+            <SearchProgress />
           )}
         </div>
       </div>
-    </>
+    </div>
+  )
+}
+
+function SearchProgress(): JSX.Element {
+  return (
+    <div className="ui-source-progress" data-testid="ws-sources-pending" aria-hidden="true">
+      <span className="ui-source-progress__icon"><Globe size={13} strokeWidth={1.75} /></span>
+      <span className="ui-source-progress__track"><span /></span>
+    </div>
   )
 }
 
@@ -119,10 +189,12 @@ export function WebGroupCap({ calls, open, panelId, onToggle }: { calls: readonl
   const steps = calls.flatMap((call) => searchStepsOf(call))
   const fetched = steps.filter((step) => step.command.action === 'fetch').length
   const searched = steps.length - fetched
-  const label = [searched ? tt('groupSearched', { n: searched }) : '', fetched ? tt('groupFetched', { n: fetched }) : ''].filter(Boolean).join(' \u00b7 ')
+  const sourceCount = new Set(steps.flatMap((step) => step.sources?.map((source) => source.url) ?? [])).size
+  const label = [searched ? tt('groupSearched', { n: searched }) : '', fetched ? tt('groupFetched', { n: fetched }) : '', sourceCount ? tt('results', { n: sourceCount }) : ''].filter(Boolean).join(' \u00b7 ')
   const sites = uniqueSites(steps.flatMap((step): WebSearchSourceView[] => step.sources?.length ? step.sources : step.command.url ? [{ title: '', url: step.command.url, domain: domainOf(step.command.url), snippet: '', source: '' }] : []))
   return (
-    <button type="button" className="ws-cap" aria-expanded={open} aria-controls={panelId} title={label} onClick={onToggle} data-testid="ws-group" data-state="done">
+    <button type="button" className="ws-cap" aria-expanded={open} aria-controls={panelId} title={label} onClick={(event) => { if (open) revealCollapsedHeader(event.currentTarget); onToggle() }} data-testid="ws-group" data-state="done">
+      <CollapsibleChevron expanded={open} className="ws-cap-chevron" />
       <span className="ws-cap-icon" data-done aria-hidden="true">
         <Globe size={13} strokeWidth={1.75} />
         <svg className="ws-ring" viewBox="0 0 24 24" aria-hidden="true">
@@ -133,7 +205,6 @@ export function WebGroupCap({ calls, open, panelId, onToggle }: { calls: readonl
       <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
         {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
       </span>
-      <Icon name="chevron-right" size={14} className="v3-chev" />
     </button>
   )
 }
@@ -172,22 +243,6 @@ export function SourceList({ sources, showAll, onShowAll, testId }: { sources: r
 }
 
 const SOURCE_PREVIEW = 3
-
-function PendingCard({ index }: { index: number }): JSX.Element {
-  return (
-    <Card padding="sm" quiet className="ui-source-card ws-source ws-source-pending" style={{ '--source-index': index } as CSSProperties}>
-      <span className="ws-source-meta">
-        <Skeleton shape="circle" width={24} height={24} />
-        <Skeleton width="48%" height="0.8em" />
-      </span>
-      <span className="ws-source-pending-title">
-        <Skeleton width="92%" height="0.8em" />
-        <Skeleton width="64%" height="0.8em" />
-      </span>
-      <Skeleton width="38%" height="0.8em" />
-    </Card>
-  )
-}
 
 function MoreSourcesCard({ rest, onPress }: { rest: WebSearchSourceView[]; onPress: () => void }): JSX.Element {
   const tt = useWebSearchText()

@@ -138,7 +138,7 @@ function segmentThinking(segment: TurnSegment): ProcessThinking[] {
     const last = joined[joined.length - 1]
     if (last && last.at === at) {
       const ms = (last.ms ?? 0) + (part.ms ?? 0)
-      joined[joined.length - 1] = { text: `${last.text}\n\n${part.text}`, at, ...(ms ? { ms } : {}) }
+      joined[joined.length - 1] = { text: `${last.text}\n\n${part.text}`, at, ...(ms ? { ms } : {}), ...(part.startedAt ?? last.startedAt ? { startedAt: part.startedAt ?? last.startedAt } : {}) }
     } else {
       joined.push({ ...part, at })
     }

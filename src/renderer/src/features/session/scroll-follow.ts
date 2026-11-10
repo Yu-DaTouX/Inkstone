@@ -34,6 +34,10 @@ export function distanceFromBottom(metrics: ScrollMetrics): number {
   return Math.max(0, metrics.size - metrics.offset - metrics.viewport)
 }
 
+export function wheelReachesBottom(metrics: ScrollMetrics, deltaY: number, deltaMode: number): boolean {
+  return deltaY > 0 && (distanceFromBottom(metrics) <= 1 || deltaMode === 0 && deltaY >= distanceFromBottom(metrics))
+}
+
 export function userScrollActive(intentAt: number | null, now: number): boolean {
   return intentAt !== null && now - intentAt >= 0 && now - intentAt <= USER_SCROLL_INTENT_MS
 }
@@ -44,12 +48,12 @@ export function isLayoutShift(previous: ScrollMetrics | null | undefined, metric
   return metrics.offset >= previous.offset
 }
 
-export function decideFollow(wasStuck: boolean, metrics: ScrollMetrics, intentAt: number | null, now: number, previous?: ScrollMetrics | null): FollowDecision {
+export function decideFollow(wasStuck: boolean, metrics: ScrollMetrics, intentAt: number | null, now: number, previous?: ScrollMetrics | null, jumpAt = JUMP_THRESHOLD_PX): FollowDecision {
   const distance = distanceFromBottom(metrics)
   const intent = userScrollActive(intentAt, now) && !(wasStuck && previous && Math.abs(previous.size - metrics.size) > 1)
   if (distance <= 1 && (wasStuck || intent) || wasStuck && distance < BOTTOM_EPSILON_PX && !intent) return { stick: true, showJump: false, repin: false }
   if (wasStuck && !intent) return { stick: true, showJump: false, repin: true }
-  return { stick: false, showJump: distance > JUMP_THRESHOLD_PX, repin: false }
+  return { stick: false, showJump: distance > jumpAt, repin: false }
 }
 
 export function isScrollIntentKey(key: string): boolean {

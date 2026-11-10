@@ -43,6 +43,7 @@ const MD_REHYPE_PLAIN: PluginList = [rehypeKbd]
 const MD_HTML_SCHEMA = { ...defaultSchema, tagNames: (defaultSchema.tagNames ?? []).filter((tag) => tag !== 'source') }
 const MD_REHYPE_HTML: PluginList = [rehypeRaw, [rehypeSanitize, MD_HTML_SCHEMA]]
 const NO_FADE: readonly FadeSpan[] = []
+const FADE_FRAME_MS = 16
 
 const pluginCache = new Map<string, { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList }>()
 
@@ -631,14 +632,30 @@ function LiveMarkdown({ text, settled = false, math = null, fade = NO_FADE, thro
 
 function useRevealFade(text: string, live: boolean): readonly FadeSpan[] {
   const track = useRef<FadeTrack | null>(null)
-  if (!live || prefersReducedMotion()) {
-    track.current = null
-    return NO_FADE
-  }
-  const now = performance.now()
-  track.current = trackReveal(track.current, text, now)
-  const spans = fadeSpans(track.current, now)
-  return spans.length ? spans : NO_FADE
+  const [, repaint] = useState(0)
+  let spans: readonly FadeSpan[] = NO_FADE
+  if (live && !prefersReducedMotion()) {
+    const now = performance.now()
+    track.current = trackReveal(track.current, text, now)
+    const fading = fadeSpans(track.current, now)
+    if (fading.length) spans = fading
+  } else track.current = null
+  const fading = spans.length > 0
+  useEffect(() => {
+    if (!fading) return undefined
+    let raf = 0
+    let last = 0
+    const tick = (now: number): void => {
+      if (now - last >= FADE_FRAME_MS) {
+        last = now
+        repaint((n) => n + 1)
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [fading])
+  return spans
 }
 
 function whenIdle(callback: () => void): () => void {

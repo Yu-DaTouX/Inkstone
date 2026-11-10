@@ -26,7 +26,11 @@ export function prepareStreamingMarkdown(text: string, live: boolean): string {
   if (!live) return text
   const scan = scanTail(text)
   let out = text
-  if (scan.inlineAt >= 0) out = out.slice(0, scan.inlineAt)
+  if (scan.inlineAt >= 0) {
+    const tail = out.slice(scan.inlineAt)
+    const marker = /^`+/.exec(tail)?.[0] ?? '`'
+    out = holdPartialTable(tail.slice(marker.length).trim() ? `${out}${marker}` : out.slice(0, scan.inlineAt))
+  }
   else if (scan.mathAt >= 0) out = out.slice(0, scan.mathAt).replace(/\s+$/, '')
   else if (scan.fenceEdgeAt >= 0) out = out.slice(0, scan.fenceEdgeAt)
   else if (!scan.fenceOpen) out = closeOpenMarks(holdBareMarker(holdPartialTable(holdPartialLink(out))))

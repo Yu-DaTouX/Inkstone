@@ -2,6 +2,7 @@ import './ui.css'
 
 export { cx } from './cx'
 export { useScrollbarReveal } from './scrollbar-reveal'
+export { revealCollapsedHeader } from './disclosure-scroll'
 
 export { BareButton, Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button'
 export { CloseButton, IconButton, type CloseButtonProps, type IconButtonProps } from './IconButton'

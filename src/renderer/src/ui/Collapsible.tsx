@@ -1,4 +1,4 @@
-import { forwardRef, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { forwardRef, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import {
   Button as RACButton,
   Disclosure as RACDisclosure,
@@ -13,11 +13,18 @@ import { ChevronRight } from 'lucide-react'
 import { cx } from './cx'
 import { CHEVRON_ICON_SIZE } from './sizes'
 import { motionAllowed, motionMs } from './motion-hooks'
+import { revealCollapsedHeader } from './disclosure-scroll'
 
 export type CollapsibleProps = RACDisclosureProps
 
-export const Collapsible = forwardRef<HTMLDivElement, CollapsibleProps>(function Collapsible({ className, ...props }, ref) {
-  return <RACDisclosure {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-collapsible', cn))} />
+export const Collapsible = forwardRef<HTMLDivElement, CollapsibleProps>(function Collapsible({ className, onExpandedChange, ...props }, ref) {
+  const root = useRef<HTMLDivElement>(null)
+  useImperativeHandle(ref, () => root.current!)
+  const change = (expanded: boolean): void => {
+    if (!expanded) revealCollapsedHeader(root.current?.querySelector<HTMLElement>('.ui-collapsible__trigger, .ws-cap') ?? null)
+    onExpandedChange?.(expanded)
+  }
+  return <RACDisclosure {...props} onExpandedChange={change} ref={root} className={composeRenderProps(className, (cn) => cx('ui-collapsible', cn))} />
 })
 
 export interface CollapsiblePanelProps extends RACDisclosurePanelProps {

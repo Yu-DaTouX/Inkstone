@@ -158,8 +158,10 @@ export function settleAnchor(box: HTMLElement, following = true): SettleAnchor |
     if (reading) return reading
   }
   const turns = box.querySelectorAll<HTMLElement>('.v3-msg.assistant[data-turn-id]')
-  const process = turns[turns.length - 1]?.querySelector<HTMLElement>('[data-testid="v3-process"]')
-  const node = process?.nextElementSibling
+  const turn = turns[turns.length - 1]
+  const process = turn?.querySelector<HTMLElement>('[data-testid="v3-process"]')
+  const reply = [...(turn?.querySelectorAll<HTMLElement>('.v3-para') ?? [])].findLast((node) => !node.closest('[data-testid="v3-process"]'))
+  const node = reply ?? process?.nextElementSibling
   if (!(node instanceof HTMLElement)) return null
   const top = node.getBoundingClientRect().top - box.getBoundingClientRect().top
   return top < box.clientHeight ? { node, top } : null
@@ -175,31 +177,6 @@ export function keepSettleAnchor(box: HTMLElement, anchor: SettleAnchor): boolea
   if (Math.abs(shift) < 0.5) return false
   box.scrollTop += shift
   return true
-}
-
-export interface GlideMotion {
-  speed: number
-  peak: number
-  accel: number
-}
-
-export const GLIDE_FRAME_CAP_MS = 20
-const GLIDE_FRAME_MS = 1000 / 60
-const GLIDE_VIEWPORT_STEP = 0.6
-const GLIDE_MIN_SPEED = 0.06
-
-export function startGlide(distance: number, duration: (distance: number) => number, viewport: number): GlideMotion {
-  const ms = Math.max(1, duration(distance))
-  const cap = Math.max(1, viewport * GLIDE_VIEWPORT_STEP) / GLIDE_FRAME_MS
-  const peak = Math.min(cap, Math.max(GLIDE_MIN_SPEED, (distance * 1.5) / ms))
-  return { speed: 0, peak, accel: peak / (ms / 3) }
-}
-
-export function advanceGlide(motion: GlideMotion, remaining: number, dt: number): { motion: GlideMotion; move: number; done: boolean } {
-  if (remaining <= 0.5) return { motion: { ...motion, speed: 0 }, move: remaining, done: true }
-  const braking = Math.sqrt(2 * motion.accel * remaining)
-  const speed = Math.max(GLIDE_MIN_SPEED, Math.min(motion.speed + motion.accel * dt, motion.peak, braking))
-  return { motion: { ...motion, speed }, move: Math.min(remaining, speed * dt), done: false }
 }
 
 function motionReduced(): boolean {

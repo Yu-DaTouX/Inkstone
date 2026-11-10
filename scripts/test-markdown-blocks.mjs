@@ -124,25 +124,25 @@ check('流式段首未闭合的斜体先补上星号，已闭合或非段首星�
   assert.equal(prepareStreamingMarkdown('先说 *中间', true), '先说 *中间')
 })
 
-check('流式未闭合行内代码暂缓到闭合，最终正文不变', () => {
+check('流式行内代码边写边显示，虚拟闭合不改变最终正文', () => {
   for (const delimiter of ['`', '``', '````']) {
     const prefix = `完成 ${delimiter}INCIDENT.md`
-    assert.equal(prepareStreamingMarkdown(prefix, true), '完成 ')
+    assert.equal(prepareStreamingMarkdown(prefix, true), `${prefix}${delimiter}`)
     assert.equal(prepareStreamingMarkdown(prefix, false), prefix)
     assert.equal(prepareStreamingMarkdown(`${prefix}${delimiter}。`, true), `${prefix}${delimiter}。`)
     assert.ok(html(prepareStreamingMarkdown(`${prefix}${delimiter}`, true)).includes('<code>INCIDENT.md</code>'))
   }
   assert.equal(prepareStreamingMarkdown('完成 `', true), '完成 ')
-  assert.equal(prepareStreamingMarkdown('完成 `ok`，以及 `pending', true), '完成 `ok`，以及 ')
-  assert.equal(prepareStreamingMarkdown('跨行 `one\ntwo', true), '跨行 ')
+  assert.equal(prepareStreamingMarkdown('完成 `ok`，以及 `pending', true), '完成 `ok`，以及 `pending`')
+  assert.equal(prepareStreamingMarkdown('跨行 `one\ntwo', true), '跨行 `one\ntwo`')
   assert.equal(prepareStreamingMarkdown('旧段 `literal\n\n新段', true), '旧段 `literal\n\n新段')
 })
 
 check('流式预处理保留转义、围栏、代码里的反斜杠与不同长度反引号', () => {
   const samples = [String.raw`转义 \`literal`, '`a\\`', '``a`b``', '```js\nconst x = `pending\n', '~~~js\nconst x = `pending\n~~~', '    indented `code', '\tindented `code', '> ```js\n> const x = `pending', '- ```js\n  const x = `pending']
   for (const source of samples) assert.equal(prepareStreamingMarkdown(source, true), source)
-  assert.equal(prepareStreamingMarkdown('```js\nconst x = `a`\n```\n\n后文 `pending', true), '```js\nconst x = `a`\n```\n\n后文 ')
-  assert.equal(prepareStreamingMarkdown('``a`b', true), '')
+  assert.equal(prepareStreamingMarkdown('```js\nconst x = `a`\n```\n\n后文 `pending', true), '```js\nconst x = `a`\n```\n\n后文 `pending`')
+  assert.equal(prepareStreamingMarkdown('``a`b', true), '``a`b``')
 })
 
 check('流式预处理：没写完的加粗和删除线先补上收尾，已闭合的不动', () => {
@@ -214,6 +214,19 @@ check('流式预处理：表头没写完或分隔行没到时整块先不显示�
   assert.equal(prepareStreamingMarkdown('```md\n| a | b |', true), '```md\n| a | b |')
   assert.equal(prepareStreamingMarkdown('| a \\| b | c |\n| --- | --- |\n| 1 \\| 2 | 3 |', true), '| a \\| b | c |\n| --- | --- |\n| 1 \\| 2 | 3 |')
   assert.equal(prepareStreamingMarkdown(`${head}\n${delimiter}\n| a1 | b1 |`, false), `${head}\n${delimiter}\n| a1 | b1 |`)
+})
+
+check('表格行里的行内代码生成时不先露出半行再消失', () => {
+  const header = '| 场景 | 做法 | 避免 |\n| --- | --- | --- |\n'
+  const row = '| 业务规则不满足 | 返回失败 | 抛出 `Error` |'
+  for (let length = 1; length < row.length; length++) {
+    assert.equal(prepareStreamingMarkdown(header + row.slice(0, length), true), header, `prefix ${length}`)
+  }
+  assert.equal(prepareStreamingMarkdown(header + row, true), header + row)
+  for (let length = 1; length <= 20; length++) {
+    const result = prepareStreamingMarkdown('标识符 `' + 'x'.repeat(length), true)
+    assert.ok(html(result).includes('<code>' + 'x'.repeat(length) + '</code>'))
+  }
 })
 
 check('流式预处理：没闭合的块公式先不显示，闭合或在代码里不受影响', () => {

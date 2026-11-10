@@ -1,55 +1,126 @@
 import { useEffect, useRef, useState } from 'react'
 import { prefersReducedMotion } from '../../lib/reduced-motion'
 
-export const REVEAL_SNAP_CHARS = 22
-export const REVEAL_DRAIN_MS = 150
-const REVEAL_FLOOR_CHARS = 60
+export const REVEAL_DRAIN_MS = 160
+export const LIVE_TAIL_GRACE_MS = 200
+const RATE_TAU_MS = 1000
+const CHUNK_WEIGHT = 0.3
+const BUFFER_CHUNKS = 0.9
+const BUFFER_MS = 60
+const BUFFER_MIN_CHARS = 2
+const BUFFER_MAX_CHARS = 200
+const CATCH_MS = 500
+const EASE_OFF = 0.35
+const FLOOR_RATE = 0.04
+const FRAME_CAP_MS = 50
+const WORD_SNAP_CHARS = 12
+
+export interface RevealState {
+  shown: number
+  seen: number
+  rate: number
+  chunk: number
+  drain: number
+  at: number
+}
 
 function isHighSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff
 }
 
-export function nextRevealLength(text: string, shown: number, elapsedMs: number): number {
-  const target = text.length
-  if (shown >= target) return target
-  const backlog = target - Math.max(0, shown)
-  if (backlog <= REVEAL_SNAP_CHARS) return target
-  const step = Math.max(1, Math.ceil((Math.max(backlog, REVEAL_FLOOR_CHARS) * Math.max(0, elapsedMs)) / REVEAL_DRAIN_MS))
-  let next = Math.min(target, Math.max(0, shown) + step)
-  if (next < target && isHighSurrogate(text.charCodeAt(next - 1))) next += 1
-  return next
+export function startReveal(length: number, now: number): RevealState {
+  return { shown: length, seen: length, rate: 0, chunk: 0, drain: 0, at: now }
 }
 
+export function stepReveal(state: RevealState, length: number, now: number, live: boolean): RevealState {
+  const elapsed = Math.max(0, now - state.at)
+  const dt = Math.min(FRAME_CAP_MS, elapsed)
+  const arrived = Math.max(0, length - state.seen)
+  const rate = state.rate * Math.exp(-elapsed / RATE_TAU_MS) + arrived / RATE_TAU_MS
+  const chunk = arrived > 0 ? (state.chunk > 0 ? state.chunk + (arrived - state.chunk) * CHUNK_WEIGHT : arrived) : state.chunk
+  const seen = length
+  const shown = Math.min(state.shown, length)
+  const backlog = length - shown
+  if (backlog <= 0) return { shown: length, seen, rate, chunk, drain: 0, at: now }
+  const drain = live ? 0 : state.drain || backlog / REVEAL_DRAIN_MS
+  const buffer = Math.min(BUFFER_MAX_CHARS, Math.max(BUFFER_MIN_CHARS, chunk * BUFFER_CHUNKS, rate * BUFFER_MS))
+  const paced = backlog < buffer ? rate * (EASE_OFF + (1 - EASE_OFF) * (backlog / buffer)) : rate + (backlog - buffer) / CATCH_MS
+  const speed = Math.max(paced, FLOOR_RATE, drain)
+  return { shown: Math.min(length, shown + speed * dt), seen, rate, chunk, drain, at: now }
+}
+
+function isWordChar(code: number): boolean {
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95
+}
+
+export function revealActive(live: boolean, liveUntil: number, now: number, clamped: number, length: number, reduced: boolean): boolean {
+  return !reduced && (live || (liveUntil > now && clamped < length))
+}
+
+export function revealDraining(draining: boolean, clamped: number, length: number, reduced: boolean): boolean {
+  return !reduced && draining && clamped < length
+}
+
+export function revealLength(text: string, shown: number): number {
+  let length = Math.min(text.length, Math.max(0, Math.floor(shown)))
+  if (length <= 0 || length >= text.length) return length
+  if (isHighSurrogate(text.charCodeAt(length - 1))) return length + 1
+  if (!isWordChar(text.charCodeAt(length - 1))) return length
+  const limit = Math.min(text.length, length + WORD_SNAP_CHARS)
+  while (length < limit && isWordChar(text.charCodeAt(length))) length += 1
+  return length
+}
 
 export function useSmoothReveal(text: string, live: boolean): string {
-  const [shown, setShown] = useState(() => (live && !prefersReducedMotion() ? nextRevealLength(text, 0, 0) : text.length))
+  const [shown, setShown] = useState(text.length)
   const shownRef = useRef(shown)
+  const stateRef = useRef<RevealState | null>(null)
   const textRef = useRef(text)
-  const wasLive = useRef(live)
+  const liveRef = useRef(live)
+  const liveUntil = useRef(0)
+  const wasLiveProp = useRef(live)
+  const drainRef = useRef(false)
+  const baseRef = useRef(text.length)
   textRef.current = text
-  if (live) wasLive.current = true
+  liveRef.current = live
 
   const reduced = prefersReducedMotion()
-  const clamped = Math.min(shown, text.length)
-  const animate = !reduced && (live || (wasLive.current && clamped < text.length))
-  const pending = animate && clamped < text.length
-  if (!live && !pending) wasLive.current = false
+  const now = performance.now()
+  if (live || wasLiveProp.current) liveUntil.current = now + LIVE_TAIL_GRACE_MS
+  wasLiveProp.current = live
+  const clamped = Math.min(Math.max(shown, baseRef.current), text.length)
+  const withinGrace = revealActive(live, liveUntil.current, now, clamped, text.length, reduced)
+  if (reduced || live) drainRef.current = false
+  else if (withinGrace && clamped < text.length) drainRef.current = true
+  const draining = revealDraining(drainRef.current, clamped, text.length, reduced)
+  if (!draining && clamped >= text.length) drainRef.current = false
+  const animate = withinGrace || draining
+  if (!animate) {
+    if (reduced || now >= liveUntil.current) liveUntil.current = 0
+    baseRef.current = text.length
+  }
 
   useEffect(() => {
-    if (!pending) return undefined
+    if (!animate) {
+      stateRef.current = null
+      return undefined
+    }
     let raf = 0
-    let last = performance.now()
     const tick = (now: number): void => {
       const current = textRef.current
-      const next = nextRevealLength(current, Math.min(shownRef.current, current.length), now - last)
-      last = now
-      shownRef.current = next
-      setShown(next)
-      if (next < current.length) raf = requestAnimationFrame(tick)
+      const state = stateRef.current ?? startReveal(Math.min(shownRef.current, current.length), now)
+      const step = stepReveal(state, current.length, now, liveRef.current)
+      stateRef.current = step
+      const next = revealLength(current, step.shown)
+      if (next !== shownRef.current) {
+        shownRef.current = next
+        setShown(next)
+      }
+      raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [pending, text])
+  }, [animate])
 
   if (!animate) {
     shownRef.current = text.length

@@ -1,29 +1,61 @@
 @layer features {
-  .v3-rail-dock { animation: v3-rail-in var(--dur-base) var(--ease) both; }
-  .v3-rail-track { transition: opacity var(--dur-snap) var(--ease); }
-  .v3-rail[data-open] .v3-rail-track { opacity: 0; }
+  .v3-rail-dock { animation: v3-rail-in var(--dur-base) var(--ease); }
   @keyframes v3-rail-in { from { opacity: 0; transform: translateX(-6px); } }
-  @keyframes v3-rail-tick-in { from { opacity: 0; transform: scaleX(0.2); } }
 
-  .v3-rail-tick { border: 0; border-radius: var(--r-xs); background: none; }
-  .v3-rail-tick:focus-visible { outline: none; box-shadow: var(--ring-focus); }
-  .v3-rail-bar {
-    display: block;
-    width: 16px;
-    flex: none;
-    height: 2px;
+  .v3-rail-track { border-radius: var(--r-sm); outline: none; }
+  .v3-rail-track:focus-visible { box-shadow: var(--ring-focus); }
+
+  .v3-rail-tick {
+    --k: .35;
+    --base: .5;
+    --lit: 0;
     border-radius: var(--r-full);
-    corner-shape: round;
-    background: var(--fg3);
-    opacity: 0.8;
     transform-origin: left center;
-    transform: scaleX(0.625);
-    transition: transform var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease);
-    animation: v3-rail-tick-in var(--dur-base) var(--ease) both;
-    animation-delay: calc(min(var(--i, 0), 12) * 22ms);
+    transform: scaleX(var(--k));
+    transition: transform var(--dur-quick) var(--ease);
   }
-  .v3-rail-tick:hover .v3-rail-bar { transform: scaleX(0.8125); opacity: 1; }
-  .v3-rail-tick[aria-current] .v3-rail-bar { transform: scaleX(1); background: var(--fg); opacity: 1; }
+  .v3-rail-tick::before {
+    background: var(--fg3);
+    opacity: var(--base);
+    transition: opacity var(--dur-quick) var(--ease);
+  }
+  .v3-rail-tick::after {
+    background: var(--fg);
+    opacity: var(--lit);
+    transition: opacity var(--dur-quick) var(--ease);
+  }
+  .v3-rail-tick[data-in-view] { --k: .5; --lit: .6; }
+  .v3-rail-tick[data-current] { --k: .7; --lit: .95; }
+  .v3-rail-tick[data-near='2']:not([data-current]) { --k: .55; }
+  .v3-rail-tick[data-near='2']:not([data-in-view], [data-current]) { --lit: .4; }
+  .v3-rail-tick[data-near='1'] { --k: .8; }
+  .v3-rail-tick[data-near='1']:not([data-current]) { --lit: .8; }
+  .v3-rail-tick[data-near='0'] { --k: 1; --lit: 1; }
+  .v3-rail-lane::before {
+    border-radius: var(--r-full);
+    background: var(--fg3);
+    opacity: .35;
+  }
+  .v3-rail-band {
+    border-radius: var(--r-full);
+    background: var(--fg);
+    opacity: .5;
+  }
+  .v3-rail[data-dense] .v3-rail-tick { --base: 0; }
+  .v3-rail[data-dense] .v3-rail-tick[data-in-view]:not([data-current], [data-near]) { --lit: 0; }
+  .v3-rail-tick[data-failed]::before,
+  .v3-rail-tick[data-failed]::after { background: var(--fail); }
+  .v3-rail .v3-rail-tick[data-failed] { --base: .6; }
+
+  .v3-rail-step {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-quick) var(--ease);
+  }
+  .v3-rail:is(:hover, :focus-within) .v3-rail-step {
+    opacity: 1;
+    pointer-events: auto;
+  }
 
   .v3-rail-card {
     border: var(--hair, 1px) solid var(--float-edge);
@@ -35,54 +67,67 @@
     color: var(--fg2);
     opacity: 0;
     visibility: hidden;
-    transform: translate(-6px, -50%) scale(0.98);
-    transform-origin: left center;
-    transition: opacity var(--dur-snap) var(--ease), transform var(--dur-snap) var(--ease), visibility 0s linear var(--dur-snap);
+    translate: calc(-1 * var(--s-4)) 0;
+    transform: translateY(var(--card-y, 0px));
+    transition: opacity var(--dur-snap) var(--ease), translate var(--dur-snap) var(--ease), visibility 0s linear var(--dur-snap);
   }
-  .v3-rail[data-open] .v3-rail-card {
+  .v3-rail[data-preview] .v3-rail-card {
     opacity: 1;
     visibility: visible;
-    transform: translate(0, -50%);
-    transition: opacity var(--dur-snap) var(--ease), transform var(--dur-snap) var(--ease), visibility 0s;
+    translate: 0 0;
+    transition: opacity var(--dur-snap) var(--ease), translate var(--dur-snap) var(--ease), visibility 0s;
+  }
+  .v3-rail[data-preview] .v3-rail-card[data-follow] {
+    transition: opacity var(--dur-snap) var(--ease), translate var(--dur-snap) var(--ease), transform var(--dur-snap) var(--ease), visibility 0s;
   }
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .v3-rail-card { background: var(--surface-3); }
   }
-  .v3-rail-card-head {
+  .v3-rail-card-num {
     color: var(--fg3);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    font-variant-numeric: tabular-nums;
   }
-  .v3-rail-card-title { font-weight: 600; }
-  .v3-rail-card-count { font-variant-numeric: tabular-nums; }
-  .v3-rail-item {
-    border: 0;
-    border-radius: var(--r-sm);
-    background: none;
-    color: var(--fg2);
+  .v3-rail-card[data-failed] .v3-rail-card-num { color: var(--fail-t); }
+  .v3-rail-card-user {
+    color: var(--fg);
     font-family: var(--font-ui);
     font-size: var(--t-body);
     line-height: var(--t-body-lh);
-    transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+    font-weight: 500;
   }
-  .v3-rail-item:hover { background: var(--hover); color: var(--fg); }
-  .v3-rail-item:active { background: var(--press); color: var(--fg); }
-  .v3-rail-item[data-current] { background: var(--sel); color: var(--fg); }
-  .v3-rail-item[data-focus] { background: var(--hover); color: var(--fg); }
-  .v3-rail-item[data-current][data-focus] { background: var(--sel); box-shadow: var(--ring-focus-inset); }
-  .v3-rail-num {
-    color: var(--fg3);
+  .v3-rail-card-answer {
+    color: var(--fg2);
     font-size: var(--t-footnote);
-    font-variant-numeric: tabular-nums;
+    line-height: var(--t-footnote-lh);
   }
-  .v3-rail-item[data-current] .v3-rail-num { color: var(--accent-t); }
+
+  @container (max-width: 720px) {
+    .v3-rail-dock {
+      opacity: .55;
+      transition: opacity var(--dur-quick) var(--ease);
+    }
+    .v3-rail:is(:hover, :focus-within) .v3-rail-dock { opacity: 1; }
+  }
 
   @media (prefers-reduced-motion: reduce) {
+    .v3-rail,
     .v3-rail-dock,
-    .v3-rail-track,
-    .v3-rail-bar,
+    .v3-rail-tick,
+    .v3-rail-tick::before,
+    .v3-rail-tick::after,
+    .v3-rail-step,
     .v3-rail-card,
-    .v3-rail[data-open] .v3-rail-card,
-    .v3-rail-item { transition: none; animation: none; }
+    .v3-rail[data-preview] .v3-rail-card,
+    .v3-rail[data-preview] .v3-rail-card[data-follow] { transition: none; animation: none; }
   }
+  :root[data-reduce-motion='true'] .v3-rail,
+  :root[data-reduce-motion='true'] .v3-rail-dock,
+  :root[data-reduce-motion='true'] .v3-rail-tick,
+  :root[data-reduce-motion='true'] .v3-rail-tick::before,
+  :root[data-reduce-motion='true'] .v3-rail-tick::after,
+  :root[data-reduce-motion='true'] .v3-rail-step,
+  :root[data-reduce-motion='true'] .v3-rail .v3-rail-card,
+  :root[data-reduce-motion='true'] .v3-rail[data-preview] .v3-rail-card[data-follow] { transition: none; animation: none; }
 }

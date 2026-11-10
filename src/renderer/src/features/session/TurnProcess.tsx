@@ -1,17 +1,18 @@
-import { Fragment, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
+import { Fragment, useCallback, useContext, useId, useLayoutEffect, useMemo, useState, useSyncExternalStore, type JSX, type RefCallback } from 'react'
 import { CompactionMarker } from './CompactionMarker'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
 import { Markdown } from './Markdown'
 import { ToolSteps, ToolTallyScope } from './ToolSteps'
 import { ThinkingLine } from './Thinking'
-import { Button, Collapsible, CollapsibleChevron, CollapsibleHeader, CollapsiblePanel, DiffStat, TermSpinner } from '../../ui'
+import { AnimatedHeight, Button, Collapsible, CollapsibleHeader, DiffStat, Expand, TermSpinner } from '../../ui'
+import { CirclePause } from 'lucide-react'
 import { formatDuration } from '../../../../shared/duration'
 import { useSessionText } from './text'
 import { conciseSegment, hasSegmentContent, mergeQuietSegments, splitAtCompaction, type CompactionCut, pickLiveSegments, processPreview, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
 import { ToolExpansionScope, useToolExpansion } from './use-tool-run'
 import { toolExpansion } from './tool-expansion'
-import { useRunProgress } from './run-status'
+import { useRunProgress, useWorkingLine } from './run-status'
 import { isHistoryQuestionCall } from './question-receipt'
 import { QuestionHistory } from './QuestionReceipt'
 import type { TranscriptView } from './transcript-view-model'
@@ -25,6 +26,18 @@ const STEADY_HOLD_MS = 30000
 const SHRINK_HOLD_MS = 1200
 const USER_TOGGLE_MS = 500
 const BOTTOM_SLACK_PX = 48
+
+const OPEN_KINDS = ['step', 'group', 'web'] as const
+
+function callOpened(scope: string, id: string): boolean {
+  return OPEN_KINDS.some((kind) => toolExpansion.get(scope, `${kind}:${id}`) === true)
+}
+
+function openedCalls(process: readonly TurnSegment[], scope: string): string {
+  let key = ''
+  for (const segment of process) for (const call of segment.tools) if (callOpened(scope, call.id)) key += `${call.id}|`
+  return key
+}
 
 function readingHistory(node: HTMLElement): boolean {
   const stream = node.closest<HTMLElement>('.v3-stream')
@@ -156,13 +169,15 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
 }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
+  const panelId = useId()
   const key = `process:${turnId ?? process[0]?.id ?? ''}`
   const [manual, setManual] = useToolExpansion(key)
   const [showAll, setShowAll] = useToolExpansion(`${key}:all`)
-  const summary = processSummary(process)
+  const summary = useMemo(() => processSummary(process), [process])
   const headless = !summary.thinking && !summary.actions
   const open = headless || (manual ?? (view === 'thinking' || (openByDefault && !live)))
-  const stage = !open && live
+  const stage = !open && live && manual !== false
+  const visible = open || stage
   const steady = useSteadyHeight(live)
   const source = stage ? process.map(view === 'side' ? withoutThinking : conciseSegment).filter(hasSegmentContent) : process
   const halves = compactionAfter ? splitAtCompaction(source, compactionAfter) : null
@@ -171,8 +186,9 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const markerAfter = before?.at(-1)?.id ?? null
   const markerFirst = !!compactionAfter && (!halves || !before?.length)
   const expansionScope = useContext(ToolExpansionScope)
-  useSyncExternalStore(toolExpansion.subscribe, toolExpansion.version)
-  const userOpened = (segment: TurnSegment): boolean => segment.tools.some((call) => ['step', 'group', 'web'].some((kind) => toolExpansion.get(expansionScope, `${kind}:${call.id}`) === true))
+  const tracksOpened = live || process.length > HISTORY_SEGMENTS
+  useSyncExternalStore(toolExpansion.subscribe, () => (tracksOpened ? openedCalls(process, expansionScope) : ''))
+  const userOpened = (segment: TurnSegment): boolean => segment.tools.some((call) => callOpened(expansionScope, call.id))
   const picked = stage
     ? pickLiveSegments(merged, stageSegmentCount(merged), userOpened)
     : showAll !== true && (live || (open && merged.length > HISTORY_SEGMENTS)) ? pickLiveSegments(merged, live ? undefined : HISTORY_SEGMENTS, userOpened) : { shown: merged, hidden: 0 }
@@ -184,16 +200,16 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
 
   const body = (
     <div ref={steady.ref} className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body" style={steady.minHeight ? { minHeight: steady.minHeight } : undefined}>
-      {picked.hidden > 0 && !stage ? (
-        <Button size="sm" variant="ghost" className="v3-process-more" onPress={() => setShowAll(true)} data-testid="v3-process-more">
-          {tt('moreItems', { n: picked.hidden })}
+      {stage || picked.hidden > 0 || showAll === true ? (
+        <Button size="sm" variant="ghost" className="v3-process-more" aria-expanded={showAll === true} onPress={() => { if (stage) setManual(true); setShowAll(showAll !== true) }} data-testid="v3-process-more">
+          {stage ? t('proc.showAll') : showAll === true ? t('proc.showRecent') : tt('moreItems', { n: picked.hidden })}
         </Button>
       ) : null}
       <ToolTallyScope.Provider value>
         {markerFirst || markerAfter && !picked.shown.some((segment) => segment.id === markerAfter) && merged.findIndex((segment) => segment.id === markerAfter) < merged.indexOf(picked.shown[0]) ? <CompactionMarker /> : null}
         {picked.shown.map((segment) => (
           <Fragment key={segment.id}>
-            <ProcessSegment segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} quietNotes={!live} />
+            <ProcessSegment segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} staged={stage} />
             {segment.id === markerAfter ? <CompactionMarker /> : null}
           </Fragment>
         ))}
@@ -201,44 +217,17 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
     </div>
   )
 
-  const rootRef = useRef<HTMLDivElement | null>(null)
-  const liveHeightRef = useRef(0)
-  const wasLiveRef = useRef(live)
-  const leaveRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    const root = rootRef.current
-    if (!live || !root) return undefined
-    const observer = new ResizeObserver((entries) => {
-      const box = entries[entries.length - 1]?.borderBoxSize?.[0]
-      liveHeightRef.current = box ? box.blockSize : root.offsetHeight
-    })
-    observer.observe(root)
-    return () => observer.disconnect()
-  }, [live])
-  useLayoutEffect(() => {
-    if (live) {
-      wasLiveRef.current = true
-      return
-    }
-    const root = rootRef.current
-    if (!root || !wasLiveRef.current) return
-    wasLiveRef.current = false
-    const gap = parseFloat(getComputedStyle(root).rowGap) || 0
-    const delta = liveHeightRef.current - root.getBoundingClientRect().height - gap
-    const spacer = leaveRef.current
-    if (!spacer || delta <= 2) return
-    spacer.style.height = delta + 'px'
-    spacer.dataset.leaving = ''
-  }, [live])
   return (
     <>
-    <Collapsible ref={rootRef} className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={open} onExpandedChange={setManual}>
+    <Collapsible className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={visible} onExpandedChange={setManual}>
       {headless ? null : (
         <CollapsibleHeader
           className="v3-process-head"
           size="compact"
-          chevron="none"
-          icon={live ? <TermSpinner className="v3-process-spin" /> : <CollapsibleChevron className="ui-collapsible__chevron" />}
+          chevron="start"
+          rowHover
+          aria-controls={panelId}
+          icon={live ? <LiveProcessIcon /> : undefined}
           tone="emphasized"
           data-testid="v3-process-toggle"
         >
@@ -254,8 +243,10 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
           </span>
         </CollapsibleHeader>
       )}
-      {live ? body : <CollapsiblePanel animated className="v3-step-panel">{open ? body : null}</CollapsiblePanel>}
-      {live ? null : <div ref={leaveRef} className="v3-process-leave" aria-hidden onAnimationEnd={(event) => { event.currentTarget.style.height = ''; delete event.currentTarget.dataset.leaving }} />}
+      {preview && !open ? <div className="v3-process-preview" data-testid="v3-process-preview">{preview}</div> : null}
+      <Expand id={panelId} className="v3-step-panel" open={visible} role="group" aria-label={t('proc.title')} aria-hidden={!visible || undefined}>
+        {visible ? <AnimatedHeight>{body}</AnimatedHeight> : null}
+      </Expand>
       {compactionAfter && !open && !stage ? <CompactionMarker /> : null}
     </Collapsible>
     {foldedQuestions.length ? (
@@ -292,6 +283,11 @@ function fileText(tt: SessionText, list: readonly ProcessFileChange[], single: T
 }
 
 const LEAD_ACTIVITIES = 2
+
+function LiveProcessIcon(): JSX.Element {
+  const line = useWorkingLine()
+  return line?.kind === 'waiting' ? <CirclePause size={13} className="v3-process-wait" /> : <TermSpinner className="v3-process-spin" />
+}
 
 function LiveElapsed({ startedAt }: { startedAt: number | null }): JSX.Element | null {
   const progress = useRunProgress()
@@ -346,31 +342,31 @@ function processBreakdown(summary: ProcessSummary, tt: SessionText): string {
   return joinActivities(phrases, tt('processKindJoin'))
 }
 
-function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking, alertFailures, quietNotes }: {
+function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking, alertFailures, staged }: {
   segment: TurnSegment
   sessionId: string | null
   approvalIds: ReadonlySet<string>
   glowId?: string | null
   openThinking: boolean
   alertFailures: boolean
-  quietNotes: boolean
+  staged: boolean
 }): JSX.Element {
   const steps = segmentSteps(segment)
   return (
     <div className="v3-process-seg" data-lead={steps[0]?.kind} data-tail={steps.at(-1)?.kind}>
       {steps.map((step) => step.kind === 'tools'
-        ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} glowId={glowId} alertFailures={alertFailures} />
+        ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} glowId={glowId} alertFailures={alertFailures} staged={staged} />
         : step.kind === 'notes'
           ? (
               <div key={step.key} className="v3-process-notes">
                 {step.notes.map((part) => (
-                  <div key={part.id} className={quietNotes ? 'v3-para dim' : 'v3-para'}>
+                  <div key={part.id} className="v3-para dim">
                     <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
                   </div>
                 ))}
               </div>
             )
-          : <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} step defaultOpen={openThinking} expansionId={`${segment.id}:${step.key}`} />)}
+          : <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} startedAt={step.thinking.startedAt} step defaultOpen={openThinking} expansionId={`${segment.id}:${step.key}`} />)}
     </div>
   )
 }

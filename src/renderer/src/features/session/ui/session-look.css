@@ -79,12 +79,33 @@
   .v3-code pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-code code { color: var(--fg); background: none; }
 
-  .v3-fade, .v3-msg.streaming .v3-md-image { animation: v3-fade-in var(--dur-base) var(--ease) both; }
+  .v3-msg.streaming :is(.v3-md-image, .v3-md-table-wrap tr, .v3-code, .katex-display, .v3-mermaid-svg) { animation: v3-fade-in var(--dur-base) var(--ease) both; }
+  .v3-msg.streaming .v3-code [class^='hljs-'] { animation: v3-code-color var(--dur-base) var(--ease) both; }
   @keyframes v3-fade-in { from { opacity: 0; } }
+  @keyframes v3-code-color { from { color: var(--fg); } }
   @media (prefers-reduced-motion: reduce) {
-    .v3-fade, .v3-code-head, .v3-msg.streaming .v3-md-image, .v3-md-table-wrap col { animation: none; transition: none; }
+    .v3-fade, .v3-code-head, .v3-msg.streaming :is(.v3-md-image, .v3-md-table-wrap tr, .v3-code, .katex-display, .v3-mermaid-svg, [class^='hljs-']), .v3-md-table-wrap col { animation: none; transition: none; }
   }
-  :root[data-reduce-motion='true'] :is(.v3-fade, .v3-code-head, .v3-msg.streaming .v3-md-image, .v3-md-table-wrap col) { animation: none; transition: none; }
+  :root[data-reduce-motion='true'] :is(.v3-fade, .v3-code-head, .v3-msg.streaming .v3-md-image, .v3-md-table-wrap tr, .v3-code, .katex-display, .v3-mermaid-svg, .v3-code [class^='hljs-'], .v3-md-table-wrap col) { animation: none; transition: none; }
+
+  .v3-stream-host[data-flight-skim]::before {
+    content: '';
+    position: absolute;
+    inset: var(--s-20) var(--col-pr, var(--s-20)) 0 var(--col-pl, var(--s-20));
+    max-width: var(--size-chat);
+    margin-inline: auto;
+    z-index: 2;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(to bottom, transparent 0 var(--s-8), var(--alpha-2) var(--s-8) var(--s-16), transparent var(--s-16) calc(var(--s-24) * 4)),
+      repeating-linear-gradient(to bottom, transparent 0 var(--s-32), var(--alpha-2) var(--s-32) calc(var(--s-32) + var(--s-8)), transparent calc(var(--s-32) + var(--s-8)) calc(var(--s-24) * 4)),
+      repeating-linear-gradient(to bottom, transparent 0 calc(var(--s-24) * 2 + var(--s-8)), var(--alpha-2) calc(var(--s-24) * 2 + var(--s-8)) calc(var(--s-24) * 2 + var(--s-16)), transparent calc(var(--s-24) * 2 + var(--s-16)) calc(var(--s-24) * 4));
+    background-size: 92% calc(var(--s-24) * 4), 74% calc(var(--s-24) * 4), 62% calc(var(--s-24) * 4);
+    background-repeat: repeat-y;
+  }
+  .v3-msg.msg-located { border-radius: var(--r-md); animation: v3-msg-nav-flash calc(var(--dur-slow) * 2) var(--ease-glide) both; }
+  @media (prefers-reduced-motion: reduce) { .v3-msg.msg-located { animation: none; } }
+  :root[data-reduce-motion='true'] .v3-msg.msg-located { animation: none; }
 
   .v3-fallback-note { margin: var(--s-6) 0; }
 
@@ -209,7 +230,15 @@
   .v3-step-line > .v3-steps-stats:is([data-kind='files'], [data-kind='failed'])::before { margin-inline-start: var(--s-4); }
   .v3-process-note { color: var(--fg3); font-size: var(--t-footnote); }
   .v3-steps-list { display: flex; flex-direction: column; min-width: 0; }
-  .v3-step-head { position: relative; width: fit-content; max-width: 100%; border-radius: var(--r-xs); }
+  .v3-step-head { position: relative; width: 100%; max-width: 100%; border-radius: var(--r-xs); }
+  :is(.v3-step-head, .v3-process-head) .ui-collapsible__trigger { cursor: pointer; }
+  .v3-process-preview { min-width: 0; padding-inline-start: calc(var(--s-16) + var(--s-6)); overflow: hidden; color: var(--fg3); font-size: var(--t-footnote); text-overflow: ellipsis; white-space: nowrap; }
+  .v3-process-wait { color: var(--ask-t); }
+  .v3-sa-title:has(.v3-sa-activity) { display: flex; flex-direction: column; gap: var(--s-2); }
+  .v3-sa-row:has(.v3-sa-activity) { padding-block: var(--s-4); }
+  .v3-sa-activity { min-width: 0; overflow: hidden; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); text-overflow: ellipsis; white-space: nowrap; }
+  .v3-step-live-output { padding-inline-start: calc(var(--s-16) + var(--s-6)); overflow: hidden; color: var(--fg3); font-family: var(--font-mono); font-size: var(--t-footnote); text-overflow: ellipsis; white-space: nowrap; }
+  .v3-web-group .v3-step-nest { margin: 0 0 var(--s-4) var(--s-8); }
   .v3-step-line { display: flex; align-items: center; gap: var(--s-6); min-width: 0; }
   .v3-step-line > svg { flex-shrink: 0; }
   .v3-step-verb { color: var(--fg2); font-family: var(--font-mono); font-size: var(--t-footnote); flex: none; }

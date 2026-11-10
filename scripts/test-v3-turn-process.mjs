@@ -178,10 +178,11 @@ group('推理按段留在过程里：排在同段工具之前，回复段的推�
     ...seg('i0', { tools: [tool('a', 'bash'), tool('b', 'read'), tool('c', 'read')] }),
     thinking: '一\n\n二\n\n三',
     thinkingLive: true,
-    thinkingParts: [{ text: '一', at: 0 }, { text: '二', at: 1, ms: 300 }, { text: '三', at: 3, ms: 200 }]
+    thinkingParts: [{ text: '一', at: 0 }, { text: '二', at: 1, ms: 300 }, { text: '三', at: 3, ms: 200, startedAt: 1700000000000 }]
   })
   ok(inner.map((s) => s.kind === 'tools' ? s.tools.map((c) => c.id).join('+') : s.kind === 'notes' ? 'note:' + s.notes.map((n) => n.id).join('+') : 'think:' + s.thinking.text).join(' > ') === 'think:一 > a > think:二 > b+c > think:三', '同一段内多次推理按工具位置穿插', inner)
   ok(inner.at(-1).thinking.live === true && inner[2].thinking.live === false && inner[0].thinking.live === false, '只有最后一段推理标为进行中', inner)
+  ok(inner.at(-1).thinking.startedAt === 1700000000000, '运行中思考保留宿主起点，重挂后不从零计时')
   const narrated = segmentSteps({
     ...seg('n0', { commentary: [{ ...text('k1', '开始修复'), at: 1 }], tools: [tool('a', 'bash'), tool('b', 'bash')] }),
     thinking: '先读\n\n再改',

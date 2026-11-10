@@ -20,7 +20,7 @@ import { UserText } from './UserText'
 import { MessageFiles } from './MessageFiles'
 import { splitFileReferences } from '../composer/file-refs'
 import { Icon } from './Icon'
-import { Badge, IconButton, Notice } from '../../ui'
+import { AnimatedHeight, Badge, IconButton, Notice } from '../../ui'
 import { motionAllowed, useArrival } from '../../ui/motion-hooks'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
@@ -276,6 +276,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const sessionCwd = scope ? scope.cwd ?? scope.session?.cwd : focusedCwd
   const changeCwd = sourceTurn.response?.sourceCwd || sessionCwd || undefined
   const scopedMessages = scope?.messages ?? null
+  const thinkingStartedAt = useStore((s) => sourceTurn.thinkingLive ? (scopedMessages ?? s.messages).findLast((message) => sourceTurn.sourceIds.includes(message.id) && message.thinkingLive)?.thinkingStartedAt : undefined)
   const runPlace = useStore(useShallow((s) => turnRunPlace(scopedMessages ?? s.messages, sourceTurn.sourceIds)))
   const runMessages = useStore(useShallow((s) => runMessagesFrom(scopedMessages ?? s.messages, runPlace.runFirstId, sourceTurn.sourceIds) ?? NO_RUN_MESSAGES))
   const runTurn = useMemo(() => {
@@ -306,7 +307,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const commentary = promoted.length ? [...turn.commentary, ...promoted] : turn.commentary
   const liveImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
   const replyReady = useAppearDelay(sourceTurn.segments.filter((segment) => segment.response).map((segment) => segment.id), !!streaming && (turn.tools.length > 0 || !!turn.thinking), REPLY_APPEAR_MS)
-  const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error
+  const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error || !!turn.terminalReason
   if (!hasBody && !streaming) return null
   const flow = flowSegments(sourceTurn, commentary)
   const split = flow ? splitTurnProcess(flow, { keepThinking: !aside }) : null
@@ -330,7 +331,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
         <div className="v3-assistant-body">
           {edge.first ? <BranchSummary /> : null}
           {thinkingNote ? <ThinkingAvailability empty={!!sourceTurn.thinkingEmpty} model={sourceTurn.model} /> : null}
-          {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
+          {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} startedAt={thinkingStartedAt} />}
   
           {split ? (
             <>
@@ -380,7 +381,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                 const last = si === tailSegments.length - 1
                 return (
                   <div key={seg.id} className="v3-seg" data-testid="v3-seg">
-                    {thinkingBySegment ? <ThinkingLine text={seg.thinking} ms={seg.thinkingMs} live={seg.thinkingLive} /> : null}
+                    {thinkingBySegment ? <ThinkingLine text={seg.thinking} ms={seg.thinkingMs} live={seg.thinkingLive} startedAt={thinkingStartedAt} /> : null}
                     {seg.commentary.length ? (
                       <div className="v3-commentary">
                         {seg.commentary.map((part, i) => (
@@ -430,9 +431,11 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           <SubagentLine turn={turn} scope={subagentScope} />
   
           {streaming ? errorCard : null}
-          {streaming ? <LiveRunNotice /> : null}
+          {streaming ? <LiveRunNotice hasProcess={processSegs.length > 0} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
-          {runEnded ? <TurnResult turn={runTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
+          <AnimatedHeight className="v3-result-shell">
+            {runEnded ? <TurnResult turn={runTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
+          </AnimatedHeight>
           {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
           {streaming ? null : errorCard}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
@@ -511,7 +514,7 @@ function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }
     <div className="v3-msg-meta v3-turn-meta" data-testid="v3-turn-meta">
       {turn.timestamp ? <span className="v3-msg-meta-part" title={elapsedTip}><TurnClock timestamp={turn.timestamp} /></span> : null}
       {modelDisplay ? <span className="v3-act-model" title={elapsedTip ? `${modelDisplay.identity}\n${elapsedTip}` : modelDisplay.identity}>{modelDisplay.label}</span> : null}
-      {stopLabel ? <span className="v3-msg-meta-stop">{stopLabel}</span> : null}
+      {stopLabel || elapsed ? <span className={stopLabel ? 'v3-msg-meta-stop v3-turn-receipt' : 'v3-turn-receipt'} data-testid="v3-turn-receipt">{stopLabel ? <Icon name="stop" size={12} /> : turn.terminalReason === 'completed' && !turn.error && !turn.tools.some((call) => call.cancelled) ? <Icon name="check" size={12} /> : null}{stopLabel ?? elapsed}</span> : null}
       {reply && !readOnly ? (
         <IconButton
           className="v3-msg-meta-copy"

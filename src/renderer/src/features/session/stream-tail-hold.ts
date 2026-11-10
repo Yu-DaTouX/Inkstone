@@ -47,7 +47,7 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
     written = value
     target.style.minHeight = value
   }
-  const observer = new ResizeObserver(sync)
+  const observer = new ResizeObserver(() => onScroll())
   const onToggle = (event: Event): void => {
     const tail = target ?? findTail()
     const hit = event.target instanceof Element ? event.target.closest('button, [role="button"], [aria-expanded]') : null

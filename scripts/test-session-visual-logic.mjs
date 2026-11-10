@@ -18,6 +18,7 @@ async function load(name, entry, external = []) {
 const fade = await load('reveal-fade', 'src/renderer/src/features/session/reveal-fade.ts')
 const follow = await load('scroll-follow', 'src/renderer/src/features/session/scroll-follow.ts')
 const position = await load('scroll-position', 'src/renderer/src/features/session/scroll-position.ts')
+const disclosure = await load('disclosure-scroll', 'src/renderer/src/ui/disclosure-scroll.ts')
 const tailHold = await load('stream-tail-hold', 'src/renderer/src/features/session/stream-tail-hold.ts')
 const receipt = await load('question-receipt', 'src/renderer/src/features/session/question-receipt.ts')
 const mdKey = await load('markdown-cache-key', 'src/renderer/src/features/session/markdown-cache-key.ts')
@@ -31,6 +32,37 @@ function check(label, fn) {
   pass += 1
   process.stdout.write(`  ✓ ${label}\n`)
 }
+
+check('收起：只把视口上方且仍为收起态的标题带回视口', () => {
+  const previous = globalThis.requestAnimationFrame
+  const frames = []
+  globalThis.requestAnimationFrame = (fn) => { frames.push(fn); return frames.length }
+  try {
+    const stream = { scrollTop: 100, getBoundingClientRect: () => ({ top: 10 }) }
+    const head = { isConnected: true, expanded: 'true', top: -80, closest: () => stream, getBoundingClientRect() { return { top: this.top } }, getAttribute() { return this.expanded } }
+    disclosure.revealCollapsedHeader(head)
+    assert.equal(frames.length, 1)
+    head.expanded = 'false'
+    frames.shift()()
+    assert.equal(stream.scrollTop, 10)
+    head.top = 20
+    disclosure.revealCollapsedHeader(head)
+    assert.equal(frames.length, 0)
+    head.top = -80
+    disclosure.revealCollapsedHeader(head)
+    head.expanded = 'true'
+    frames.shift()()
+    assert.equal(stream.scrollTop, 10)
+    disclosure.revealCollapsedHeader(head)
+    head.expanded = 'false'
+    head.isConnected = false
+    frames.shift()()
+    assert.equal(stream.scrollTop, 10)
+    disclosure.revealCollapsedHeader(null)
+  } finally {
+    globalThis.requestAnimationFrame = previous
+  }
+})
 
 check('历史代码块复用高亮处理器后语言别名、纯文本与超限跳过保持一致', () => {
   const make = (classes, text) => ({ type: 'root', children: [{ type: 'element', tagName: 'pre', properties: {}, children: [{ type: 'element', tagName: 'code', properties: { className: classes }, children: [{ type: 'text', value: text }] }] }] })
@@ -97,8 +129,48 @@ check('渐显：rehype 只包正文文本，跳过代码', () => {
   assert.equal(p.children[0].value, 'abc')
   assert.equal(p.children[1].tagName, 'span')
   assert.deepEqual(p.children[1].properties.className, ['v3-fade'])
-  assert.equal(p.children[1].properties.style, 'animation-delay:-40ms')
+  assert.equal(p.children[1].properties.style, `opacity:${fade.fadeOpacity(40).toFixed(3)}`)
+  assert.ok(fade.fadeOpacity(0) > 0 && fade.fadeOpacity(0) < 0.1 && fade.fadeOpacity(fade.FADE_MS) === 1 && fade.fadeOpacity(fade.FADE_MS / 2) > 0.7)
   assert.equal(tree.children[1].children[0].children[0].type, 'text')
+})
+
+check('尾部观察器：尺寸通知只排队，合并到下一帧写入，清理取消待处理帧', () => {
+  const previous = { ResizeObserver: globalThis.ResizeObserver, requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame, getComputedStyle: globalThis.getComputedStyle }
+  const frames = new Map()
+  let next = 0
+  let notify
+  let disconnected = false
+  globalThis.ResizeObserver = class {
+    constructor(callback) { notify = callback }
+    observe() {}
+    disconnect() { disconnected = true }
+  }
+  globalThis.requestAnimationFrame = (fn) => { frames.set(++next, fn); return next }
+  globalThis.cancelAnimationFrame = (id) => frames.delete(id)
+  globalThis.getComputedStyle = () => ({ borderTopWidth: '0', borderBottomWidth: '0', paddingTop: '0', paddingBottom: '0', marginBottom: '0' })
+  try {
+    let height = 200
+    const tail = { style: { minHeight: '' }, lastElementChild: { getBoundingClientRect: () => ({ bottom: 100 }) }, getBoundingClientRect: () => ({ top: 0, height }) }
+    const scroller = { clientHeight: 300, getBoundingClientRect: () => ({ bottom: 300 }), addEventListener() {}, removeEventListener() {} }
+    const release = tailHold.holdStreamTail(scroller, () => tail)
+    assert.equal(tail.style.minHeight, '200px')
+    height = 180
+    notify()
+    notify()
+    assert.equal(frames.size, 1)
+    assert.equal(tail.style.minHeight, '200px')
+    const frame = [...frames.values()][0]
+    frames.clear()
+    frame()
+    assert.equal(tail.style.minHeight, '180px')
+    notify()
+    release()
+    assert.equal(frames.size, 0)
+    assert.equal(tail.style.minHeight, '')
+    assert.equal(disconnected, true)
+  } finally {
+    Object.assign(globalThis, previous)
+  }
 })
 
 check('运行中末行变矮：看得见的空白留住，视口下方的空白收回，最多留半屏', () => {
@@ -159,6 +231,15 @@ check('跟随：用户上滚解除跟随，超过 200px 才显示回到底部', 
   const far = follow.decideFollow(true, { offset: 700, size: 1500, viewport: 500 }, 100, 200)
   assert.deepEqual(far, { stick: false, showJump: true, repin: false })
   assert.equal(follow.JUMP_THRESHOLD_PX, 200)
+})
+
+check('跟随：向下滚轮越过当前底部时明确恢复，不靠接近底部的容差', () => {
+  const metrics = { offset: 700, size: 1500, viewport: 500 }
+  assert.equal(follow.wheelReachesBottom(metrics, 3000, 0), true)
+  assert.equal(follow.wheelReachesBottom(metrics, 100, 0), false)
+  assert.equal(follow.wheelReachesBottom(metrics, -3000, 0), false)
+  assert.equal(follow.wheelReachesBottom(metrics, 3000, 1), false)
+  assert.equal(follow.wheelReachesBottom({ ...metrics, offset: 1000 }, 1, 1), true)
 })
 
 check('跟随：阅读锚点取视口顶部所在的回合', () => {
@@ -234,6 +315,23 @@ check('滚动锚点：一次读取兼顾被截断行和完整行，找到后停�
   assert.equal(reads, 3)
   assert.deepEqual(position.domReadingAnchors({ ...box, querySelectorAll: () => [] }), { snapshot: null, resize: null })
   assert.deepEqual(position.domAnchor(box), { turnId: 'row-0', offset: 20, path: [], sub: 20 })
+})
+
+check('纯文字收尾也记录正文锚点，不依赖过程区', () => {
+  const saved = globalThis.HTMLElement
+  class Element { getBoundingClientRect() { return { top: 140 } } closest() { return null } }
+  globalThis.HTMLElement = Element
+  try {
+    const answer = new Element()
+    const turn = { querySelector: () => null, querySelectorAll: () => [answer] }
+    const box = { querySelectorAll: () => [turn], getBoundingClientRect: () => ({ top: 100 }), clientHeight: 500 }
+    assert.deepEqual(position.settleAnchor(box), { node: answer, top: 40 })
+    const note = new Element()
+    note.closest = () => ({})
+    const earlier = new Element()
+    turn.querySelectorAll = () => [note, earlier, answer]
+    assert.equal(position.settleAnchor(box)?.node, answer)
+  } finally { globalThis.HTMLElement = saved }
 })
 
 check('分屏：共享滚动记录有界，不无限保留历史会话', () => {

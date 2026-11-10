@@ -83,6 +83,40 @@
   }
   .ui-source-reveal[data-open='true'] { grid-template-rows: minmax(0, 1fr); opacity: 1; visibility: visible; }
   .ui-source-reveal__inner { min-height: 0; overflow: clip; padding-inline: var(--s-4); margin-inline: calc(-1 * var(--s-4)); }
+  .ui-source-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-height: var(--d-row);
+    margin-block: var(--s-8) var(--s-10);
+    padding: 0 var(--s-10);
+    border-radius: var(--r-md);
+    background: var(--alpha-1);
+    color: var(--fg3);
+  }
+  .ui-source-progress__icon { display: inline-flex; flex: none; }
+  .ui-source-progress__track {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 3px;
+    overflow: hidden;
+    border-radius: var(--r-full);
+    background: var(--line);
+  }
+  .ui-source-progress__track > span {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 38%;
+    border-radius: inherit;
+    background: var(--fg3);
+    animation: ui-source-progress-sweep var(--dur-shimmer) var(--ease-inout) infinite;
+  }
+  @keyframes ui-source-progress-sweep {
+    from { transform: translateX(-120%); }
+    to { transform: translateX(340%); }
+  }
   .ui-source-reveal[data-open='true'] .ui-source-card {
     animation: ui-source-arrive var(--dur-slow) var(--ease) both;
     animation-delay: calc(var(--source-index, 0) * 45ms);
@@ -105,7 +139,11 @@
   @media (prefers-reduced-motion: reduce) {
     .ui-source-card.ui-card:is(:hover, :focus-within), .ui-source-card.ui-card:has(.ui-source-card__link:active), .ui-source-card__arrow, .ui-source-stack > .ui-site-icon { translate: none; scale: none; }
     .ui-source-reveal[data-open='true'] .ui-source-card { animation: none; }
+    .ui-source-reveal { transition: none; }
+    .ui-source-progress__track > span { animation: none; transform: none; }
   }
   :root[data-reduce-motion='true'] :is(.ui-source-card.ui-card, .ui-source-card__arrow, .ui-source-stack > .ui-site-icon) { translate: none; scale: none; }
   :root[data-reduce-motion='true'] .ui-source-reveal[data-open='true'] .ui-source-card { animation: none; }
+  :root[data-reduce-motion='true'] .ui-source-reveal { transition: none; }
+  :root[data-reduce-motion='true'] .ui-source-progress__track > span { animation: none; transform: none; }
 }

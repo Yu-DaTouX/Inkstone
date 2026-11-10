@@ -1,6 +1,8 @@
 import type { Element, ElementContent, Root, RootContent, Text } from 'hast'
 
-export const FADE_MS = 200
+export const FADE_MS = 220
+const FADE_FLOOR = 0.06
+const MARK_MIN_MS = 14
 export const FADE_SKIP_INITIAL_CHARS = 400
 const FADE_REWRITE_TAIL_CHARS = 16
 
@@ -38,6 +40,8 @@ export function trackReveal(previous: FadeTrack | null, text: string, now: numbe
   const shared = sharedPrefixLength(previous.text, text)
   if ((shared === 0 && previous.text) || previous.text.length - shared > FADE_REWRITE_TAIL_CHARS) return emptyFadeTrack(text)
   const marks = previous.marks.filter((mark) => now - mark.at < FADE_MS && mark.from < shared)
+  const last = marks[marks.length - 1]
+  if (last && now - last.at < MARK_MIN_MS) return { text, marks }
   return { text, marks: [...marks, { from: shared, at: now }] }
 }
 
@@ -61,13 +65,18 @@ export function spansForBlock(spans: readonly FadeSpan[], offset: number, length
   return out
 }
 
+export function fadeOpacity(age: number): number {
+  const rest = 1 - Math.min(1, Math.max(0, age / FADE_MS))
+  return FADE_FLOOR + (1 - FADE_FLOOR) * (1 - rest * rest)
+}
+
 const SKIP_TAGS = new Set(['pre', 'code', 'svg', 'math'])
 
 function fadeElement(value: string, age: number): Element {
   return {
     type: 'element',
     tagName: 'span',
-    properties: { className: ['v3-fade'], style: `animation-delay:-${Math.round(age)}ms` },
+    properties: { className: ['v3-fade'], style: `opacity:${fadeOpacity(age).toFixed(3)}` },
     children: [{ type: 'text', value }]
   }
 }

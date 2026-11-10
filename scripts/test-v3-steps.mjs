@@ -150,7 +150,7 @@ async function buildSteps(outdir) {
   await writeFile(reactShim, REACT_SHIM)
   await writeFile(jsxShim, JSX_SHIM)
   const entry = join(outdir, 'steps-entry.ts')
-  await writeFile(entry, `export { ToolSteps, detailKind, visibleNestedNodes, collapsedNest, stepIconName, groupIconName } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\n`)
+  await writeFile(entry, `export { ToolSteps, ToolTallyScope, detailKind, visibleNestedNodes, collapsedNest, stepIconName, groupIconName } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\n`)
   const out = join(outdir, 'steps-bundle.mjs')
   await build({
     entryPoints: [entry],
@@ -377,6 +377,30 @@ async function main() {
 
     const one = renderSteps([tool({ id: 'solo', name: 'read' })])
     ok(byTypeName(one.tree, 'ToolGroupRow').length === 0 && byTypeName(one.tree, 'StepNode').length === 1, '只有 1 条时保持单行')
+  }
+
+  group('过程区不重复分组，运行舞台只留最近几项')
+  {
+    bundle.ToolTallyScope.__value = true
+    const tools = Array.from({ length: 7 }, (_, i) => tool({ id: 'stage-' + i, name: 'read', args: { path: 'file-' + i } }))
+    const rt = makeHookRuntime()
+    const props = { tools, staged: true }
+    const stage = renderComponent(rt, ToolSteps, props)
+    ok(byTypeName(stage, 'ToolGroupRow').length === 0, '过程头已有汇总，不再套唯一的一组')
+    ok(byTypeName(stage, 'StepNode').length === 3, '运行舞台默认只显示最近三项')
+    byTestId(stage, 'v3-tools-earlier').props.onPress()
+    const all = renderComponent(rt, ToolSteps, props)
+    ok(byTypeName(all, 'StepNode').length === 7, '可以原地查看前面的调用')
+    byTestId(all, 'v3-tools-earlier').props.onPress()
+    const folded = renderComponent(rt, ToolSteps, props)
+    ok(byTypeName(folded, 'StepNode').length === 3, '前面的调用可以收回')
+    bundle.ToolTallyScope.__value = false
+    toolExpansion.clear()
+    const pending = renderSteps([tool({ id: 'args-pending', name: 'write', args: undefined, argsRaw: '{', status: 'pending' })])
+    const node = renderStepNode(pending.tree, 'args-pending')
+    const head = byTestId(node.tree, 'v3-step')
+    ok(textOf(head).includes('tool2.generatingArgs'), '生成大参数时显示对应工具行')
+    ok(head.props.chevron === 'start' && head.props.rowHover === true, '步骤的箭头和整行反馈统一')
   }
 
   group('失败：组头可见文字不写失败数（避免和独立失败状态重复），分段只留红字，不再自动展开')
@@ -659,6 +683,11 @@ async function main() {
     earlier.props.onPress()
     const again = renderComponent(parent.rt, parent.el.type, parent.el.props)
     ok(byTypeName(again, 'StepNode').length === 7, '点开后显示全部子调用', byTypeName(again, 'StepNode').length)
+    const less = byTestId(again, 'v3-step-earlier')
+    ok(less?.props['aria-expanded'] === true, '展开所有子调用后仍保留收起入口')
+    less.props.onPress()
+    const folded = renderComponent(parent.rt, parent.el.type, parent.el.props)
+    ok(byTypeName(folded, 'StepNode').length === 3, '再次点击回到最近三项')
     ok(bundle.visibleNestedNodes([1, 2, 3], false).earlier === 0, '不超过 3 条时不折叠')
     const all = bundle.visibleNestedNodes([1, 2, 3, 4], false)
     ok(bundle.collapsedNest(all, [1, 2, 3, 4], false, true).shown.join() === '4', '收起但仍在运行时只显示正在执行的那条')

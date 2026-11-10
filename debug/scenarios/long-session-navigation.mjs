@@ -80,7 +80,7 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   const target = index => cdp.evaluate(`(() => {
     const el = document.querySelector('.v3-stream'); const base = el.getBoundingClientRect().top;
     const row = [...el.querySelectorAll('.v3-msg.user')].map(node => ({ id: node.dataset.turnId, top: node.getBoundingClientRect().top - base }));
-    return { active: document.querySelector('[data-testid="v3-outline-tick"][aria-current="location"]')?.getAttribute('data-index'), rows: row, expected: ${index} };
+    return { active: document.querySelector('[data-testid="v3-outline-tick"][data-current]')?.getAttribute('data-index'), rows: row, expected: ${index} };
   })()`)
   const topMotion = await phase('navTop', () => jump(3))
   report.navTop = await target(3)
@@ -117,15 +117,17 @@ export default async function run({ cdp, box, waitFor, check, report, sleep, sho
   check('回到最新经过中间滚动位置', intermediatePositions(latestMotion) >= 3, intermediatePositions(latestMotion))
   check('回到最新期间保留虚拟化', latestMotion.maxMountedRows <= 16, latestMotion.maxMountedRows)
   check('回到最新停在底部并隐藏按钮', await cdp.evaluate(`(() => { const el = document.querySelector('.v3-stream'); return el.scrollHeight - el.clientHeight - el.scrollTop <= 2 && !document.querySelector('[data-testid="v3-jump"]') })()`))
-  const railPoint = await cdp.evaluate(`(() => { const r = document.querySelector('.v3-rail').getBoundingClientRect(); return { x: r.left+r.width/2, y: r.top+r.height/2 } })()`)
+  const railPoint = await cdp.evaluate(`(() => { const r = document.querySelector('.v3-rail-track').getBoundingClientRect(); return { x: r.left+r.width/2, y: r.top+r.height/2 } })()`)
   await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...railPoint })
   await sleep(250)
-  check('悬停展开导航后当前项可见', await cdp.evaluate(`(() => {
-    const rail = document.querySelector('.v3-rail[data-open]');
-    const list = rail?.querySelector('.v3-rail-list'); const active = list?.querySelector('[data-current]');
-    if (!list || !active) return false;
-    const r = active.getBoundingClientRect(); const box = list.getBoundingClientRect();
-    return r.top >= box.top-1 && r.bottom <= box.bottom+1;
+  check('悬停小地图后预览卡出现在所指轮次旁且不出容器', await cdp.evaluate(`(() => {
+    const rail = document.querySelector('.v3-rail[data-preview]');
+    const card = rail?.querySelector('[data-testid="v3-outline-preview"]');
+    const near = rail?.querySelector('[data-testid="v3-outline-tick"][data-near="0"]');
+    if (!card || !near || getComputedStyle(card).visibility !== 'visible') return false;
+    const r = card.getBoundingClientRect(); const box = rail.getBoundingClientRect();
+    const num = card.querySelector('.v3-rail-card-num')?.textContent ?? '';
+    return r.top >= box.top-1 && r.bottom <= box.bottom+1 && num.startsWith((Number(near.dataset.index)+1) + ' / ');
   })()`))
   await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 900, y: 450 })
   await sleep(350)

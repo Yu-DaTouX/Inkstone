@@ -142,7 +142,9 @@
   .v3-assistant-body > .ui-card:first-child { margin-top: var(--s-8); }
   :is(.v3-stream-inner > .v3-msg.user:first-child, .v3-stream-row--head > .v3-msg.user) { padding-top: 0; }
   .v3-msg.user .v3-user-body { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-4); max-width: 85%; }
+  .v3-result-shell:has(> .ui-height__content:empty), .v3-result-shell:has(> .ui-height__content > .v3-result:empty) { display: none; }
   .v3-msg.assistant .v3-assistant-body { display: flex; flex-direction: column; gap: var(--s-10); min-width: 0; }
+  .v3-turn-receipt { display: inline-flex; align-items: center; gap: var(--s-4); }
   .v3-msg.bash { gap: var(--s-6); }
   .v3-msg.host { padding-block: var(--s-8); }
   .v3-note { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
@@ -167,7 +169,7 @@
 
   .v3-process { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
   .v3-process-head { width: 100%; gap: var(--s-12); }
-  .v3-process-head > .ui-collapsible__trigger { flex: 0 1 auto; }
+  .v3-process-head > .ui-collapsible__trigger { flex: 1 1 auto; }
   .v3-process-head > .ui-collapsible__actions { flex: 1 1 0; min-width: 0; gap: var(--s-12); }
   .v3-process-head .ui-collapsible__icon { inline-size: var(--s-16); justify-content: center; }
   .v3-process-line { display: flex; flex-wrap: nowrap; align-items: center; column-gap: var(--s-6); min-width: 0; }
@@ -193,7 +195,6 @@
   .v3-process-seg[data-tail='tools'] + .v3-process-seg[data-lead='notes'] { margin-top: calc(var(--s-4) - var(--s-16)); }
   .v3-process-notes { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
   .v3-think-time { font-variant-numeric: tabular-nums; }
-  .v3-think[data-live] .ui-collapsible__chevron { visibility: hidden; }
   .v3-think[data-live] > :is(.v3-step-head, .v3-think-head) { width: 100%; }
   .v3-think[data-live] > * > .ui-collapsible__trigger > .ui-collapsible__label { flex: 1 1 auto; }
   .v3-think[data-live] .v3-think-peek { flex: 1 1 0; }
@@ -206,7 +207,7 @@
   .v3-step[data-state='denied'] > .v3-step-head :is(.v3-step-label, .v3-steps-label) { color: var(--fg3); }
   .v3-step-deny { flex: none; color: var(--fg3); }
   .v3-step-target { flex: 0 1 auto; }
-  .v3-step-line > .v3-step-label { flex-shrink: 0; max-width: 100%; }
+  .v3-step-line > .v3-step-label { flex-shrink: 1; max-width: 100%; }
   .v3-process:not([data-headless]) .v3-step-group > .v3-step-panel > .v3-step-nest { border-left: 0; }
   .v3-step-sec { min-width: 0; }
   .v3-step-sec + .v3-step-sec { margin-top: var(--s-6); padding-top: var(--s-6); border-top: var(--hair, 1px) solid var(--line); }
@@ -217,7 +218,7 @@
   .v3-step-cmd-prompt { color: var(--fg3); }
   .v3-step-pre.args, .v3-step-patch { max-height: 400px; }
   .v3-step-pre.out { max-height: 60vh; overflow: auto; }
-  .v3-step-patch.v3-step-file { max-height: none; }
+  .v3-step-patch.v3-step-file { max-height: 60vh; }
   .v3-step-code { margin: 0; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; }
   .v3-step-fail { display: inline-flex; flex: none; }
   .v3-step-state, .v3-step-diff { display: inline-flex; flex: none; }

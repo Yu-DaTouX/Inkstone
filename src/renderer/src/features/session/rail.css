@@ -9,7 +9,8 @@
     z-index: 3;
     width: 28px;
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    justify-content: center;
     pointer-events: none;
   }
   .v3-root:not([data-side='open']) .v3-rail {
@@ -17,87 +18,103 @@
   }
   .v3-rail-dock {
     position: relative;
-    display: flex;
-    flex-direction: column;
+    flex: 0 1 auto;
     min-height: 0;
+    height: calc((var(--n, 2) - 1) * var(--s-8) + 2 * var(--s-6));
     max-height: 70%;
   }
-  .v3-rail-zone {
-    position: absolute;
-    inset: calc(-1 * var(--s-8)) calc(-1 * var(--s-6));
-    pointer-events: auto;
-  }
   .v3-rail-track {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: var(--s-6) var(--s-2);
+    position: absolute;
+    inset: 0;
     pointer-events: auto;
-    scrollbar-width: none;
-  }
-  .v3-rail-track::-webkit-scrollbar { display: none; }
-  .v3-rail[data-open] .v3-rail-track { pointer-events: none; }
-  .v3-rail-tick {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    width: 24px;
-    height: 16px;
-    padding: 0 var(--s-2);
     cursor: pointer;
+    user-select: none;
+  }
+  .v3-rail-ticks {
+    position: absolute;
+    inset: var(--s-6) var(--s-4);
+  }
+  .v3-rail-tick {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    margin-top: -1px;
+    pointer-events: none;
+  }
+  .v3-rail-lane {
+    position: absolute;
+    inset: var(--s-6) var(--s-4);
+    display: none;
+    pointer-events: none;
+  }
+  .v3-rail[data-dense] .v3-rail-lane {
+    display: block;
+  }
+  .v3-rail-lane::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    left: 0;
+    width: 35%;
+  }
+  .v3-rail-band {
+    position: absolute;
+    left: 0;
+    width: 50%;
+    top: calc(var(--band-a, 0) * 100% - 1px);
+    height: calc((var(--band-b, 0) - var(--band-a, 0)) * 100% + 2px);
+    display: none;
+  }
+  .v3-rail-lane[data-band] .v3-rail-band {
+    display: block;
+  }
+  .v3-rail-tick::before,
+  .v3-rail-tick::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+  .v3-rail-step {
+    position: absolute;
+    display: flex;
+    left: 50%;
+    translate: -50% 0;
+  }
+  .v3-rail-step[data-dir='prev'] {
+    bottom: calc(100% + var(--s-2));
+  }
+  .v3-rail-step[data-dir='next'] {
+    top: calc(100% + var(--s-2));
   }
 
   .v3-rail-card {
     position: absolute;
-    top: 50%;
-    left: 0;
-    width: min(240px, calc(100cqw - var(--s-24)));
-    max-height: min(60vh, 100%);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    box-sizing: border-box;
-    pointer-events: none;
-  }
-  .v3-rail[data-open] .v3-rail-card { pointer-events: auto; }
-  .v3-rail-card-head {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-8);
-    padding: var(--s-8) var(--s-12) var(--s-4);
-  }
-  .v3-rail-list {
-    position: relative;
+    top: 0;
+    left: calc(100% + var(--s-8));
+    width: min(20rem, calc(100cqw - var(--rail-gutter, 44px) - var(--s-32)));
     display: flex;
     flex-direction: column;
     gap: var(--s-2);
-    min-height: 0;
-    margin: 0;
-    padding: 0 var(--s-6) var(--s-6);
-    list-style: none;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    min-width: 0;
+    padding: var(--s-8) var(--s-12) var(--s-10);
+    box-sizing: border-box;
+    pointer-events: none;
   }
-  .v3-rail-item {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: var(--s-8);
-    width: 100%;
-    padding: var(--s-4) var(--s-8);
-    text-align: left;
-    cursor: pointer;
-  }
-  .v3-rail-num { min-width: 2ch; text-align: right; }
-  .v3-rail-text {
+  .v3-rail-card-user {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .v3-rail-card-answer {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+    overflow-wrap: anywhere;
   }
 }

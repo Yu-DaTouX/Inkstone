@@ -108,12 +108,6 @@
   .v3-chat[data-outline] {
     --outline-on: 1;
   }
-  .v3-chat .v3-rail-track {
-    opacity: .5;
-  }
-  .v3-chat .v3-rail:is(:hover, :focus-within):not([data-open]) .v3-rail-track {
-    opacity: 1;
-  }
   .v3-chat[data-sessionbar='1'] {
     --bar-reserve: calc(var(--size-tiles) + var(--s-16));
   }

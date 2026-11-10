@@ -40,10 +40,12 @@ import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar, type VirtualFindSource } from './SessionFindBar'
 import { turnFindText, type TurnFindText } from './session-find'
-import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
+import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, wheelReachesBottom, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import { holdStreamTail } from './stream-tail-hold'
-import { advanceGlide, domAnchor, domMetrics, domReadingAnchors, GLIDE_FRAME_CAP_MS, glideSettle, keepSettleAnchor, resolveAnchorPoint, startGlide, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
+import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, resolveAnchorPoint, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
+import { FLIGHT_FRAME_CAP_MS, FLIGHT_INSET_PX, FLIGHT_SETTLE_FRAMES, FLIGHT_SETTLE_STILL, flightPhase, flightTravel, landingIndices, planFlight } from './timeline-flight'
 import './session.css'
+import { readVirtualCache, saveVirtualCache, virtualizeSession } from './virtual-cache'
 import { withSubmittingMessages } from '../../state/submitting-messages'
 import { cssQuoted, highlightMessageElement, nextFrame, registerMessageLocator } from '../../state/message-locator'
 
@@ -58,22 +60,69 @@ function nativeSessionBridge(): BranchPagerRequest | undefined {
   return (window as unknown as { yan?: NativeSessionBridge }).yan?.nativeSession
 }
 
-const VIRTUALIZE_TURNS_AT = 80
-const VIRTUALIZE_MSGS_AT = 200
-const VIRTUAL_BUFFER_PX = 3000
-const VIRTUAL_BUFFER_FOLLOW_PX = 400
+const VIRTUAL_BUFFER_PX = 1600
+const VIRTUAL_BUFFER_NARROW_PX = 400
+const VIRTUAL_BUFFER_WIDEN_MS = 320
+const VIRTUAL_ITEM_SIZE_PX = 240
+const FOLLOW_RESUME_SLACK_PX = 96
+const DISCLOSURE_SETTLE_MS = 280
+const JUMP_LIVE_THRESHOLD_PX = 32
+const FOLLOW_FRAME_CAP_MS = 50
+const END_GLIDE_MS = 400
 const LOCATE_MOUNT_FRAMES = 30
-const NAV_SETTLE_STILL_FRAMES = 3
-const NAV_SETTLE_MAX_MS = 3000
 const NAV_FLASH_MS = 900
 const NAV_MOUNT_FRAMES = 30
 
 function prefersReducedMotion(): boolean {
+  if (document.documentElement.dataset.reduceMotion === 'true') return true
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-const navigationGlideMs = (distance: number): number => Math.min(2400, Math.max(400, 350 + Math.sqrt(distance) * 5.5))
-const latestGlideMs = (distance: number): number => Math.min(1100, Math.max(280, 220 + Math.sqrt(distance) * 3.2))
+interface Flight {
+  skim: boolean
+  real: Set<number>
+}
+
+interface FlightRequest {
+  destination: () => number
+  exact?: () => number | null
+  landing?: () => number[]
+  instant?: boolean
+  arrive?: () => void
+}
+
+function jumpThreshold(running: boolean): number {
+  return running ? JUMP_LIVE_THRESHOLD_PX : JUMP_THRESHOLD_PX
+}
+
+function followTau(gap: number): number {
+  return gap > 400 ? 45 : gap > 120 ? 75 : 115
+}
+
+function pinBottom(box: HTMLElement): void {
+  box.scrollTop = box.scrollHeight
+}
+
+function paintSkim(box: HTMLElement, enabled: boolean): boolean {
+  const host = box.closest<HTMLElement>('.v3-stream-host')
+  if (!enabled) {
+    host?.removeAttribute('data-flight-skim')
+    return false
+  }
+  const view = box.getBoundingClientRect()
+  const visible = [...box.querySelectorAll<HTMLElement>('.v3-msg')].some((node) => {
+    const rect = node.getBoundingClientRect()
+    return rect.bottom > view.top && rect.top < view.bottom
+  })
+  host?.toggleAttribute('data-flight-skim', !visible)
+  return !visible
+}
+
+function mountedRows(box: HTMLElement): Set<number> {
+  const rows = new Set<number>()
+  for (const node of box.querySelectorAll<HTMLElement>('.v3-stream-row[data-row]')) rows.add(Number(node.dataset.row))
+  return rows
+}
 
 type PendingTurn = { kind: 'pending'; id: string }
 type RenderItem = Turn | PendingTurn
@@ -255,7 +304,34 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     () => awaitingReply ? [...turns, { kind: 'pending' as const, id: '__pending__' }] : turns,
     [turns, awaitingReply]
   )
-  const virtual = turns.length > VIRTUALIZE_TURNS_AT || messages.length > VIRTUALIZE_MSGS_AT
+  const keyAliasRef = useRef<{ identity: string; aliases: Map<string, string>; submitting: Map<string, string>; seen: Set<string> } | null>(null)
+  const turnKey = useMemo(() => {
+    const state = keyAliasRef.current?.identity === view.key ? keyAliasRef.current : { identity: view.key, aliases: new Map<string, string>(), submitting: new Map<string, string>(), seen: new Set<string>() }
+    keyAliasRef.current = state
+    const submitting = new Map<string, string>()
+    for (const item of renderTurns) {
+      if (isPending(item) || item.kind !== 'user') continue
+      const text = item.msg.text
+      if (item.id.startsWith('submitting-')) submitting.set(text, item.id)
+      else if (!state.seen.has(item.id)) {
+        const from = state.submitting.get(text)
+        if (from && !submitting.has(text)) state.aliases.set(item.id, from)
+      }
+      state.seen.add(item.id)
+    }
+    state.submitting = submitting
+    return (id: string): string => state.aliases.get(id) ?? id
+  }, [renderTurns, view.key])
+  const virtualModeRef = useRef({ identity: view.key, active: false })
+  const virtual = virtualizeSession(virtualModeRef.current.identity === view.key && virtualModeRef.current.active, turns.length, messages.length)
+  virtualModeRef.current = { identity: view.key, active: virtual }
+  const tailRunning = viewActive && !!(session?.isAgentRunning || session?.isStreaming)
+  const tailRunningRef = useRef(tailRunning)
+  tailRunningRef.current = tailRunning
+  const followRunRef = useRef({ identity: view.key, running: tailRunning, endedAt: 0 })
+  if (followRunRef.current.identity !== view.key) followRunRef.current = { identity: view.key, running: tailRunning, endedAt: 0 }
+  if (followRunRef.current.running && !tailRunning) followRunRef.current.endedAt = performance.now()
+  followRunRef.current.running = tailRunning
 
   const identity = view.key
   const [stick, setStick] = useState(true)
@@ -271,8 +347,17 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   const vlistRef = useRef<VListHandle>(null)
   const settlingRef = useRef(false)
   const cancelNavigationRef = useRef<() => void>(() => undefined)
+  const flightRef = useRef<Flight | null>(null)
+  const [keepMounted, setKeepMounted] = useState<readonly number[] | undefined>(undefined)
+  const [flying, setFlying] = useState(false)
+  const [wideBuffer, setWideBuffer] = useState(false)
   const renderTurnsRef = useRef(renderTurns)
   renderTurnsRef.current = renderTurns
+  const measurementRun = useMemo(() => ({ items: renderTurns }), [identity, virtual])
+  measurementRun.items = renderTurns
+  const measurementIds = renderTurns.map((item) => item.id)
+  const measurementWidth = hostRef.current?.querySelector<HTMLElement>('.v3-stream')?.clientWidth ?? hostRef.current?.clientWidth ?? 0
+  const measurementCache = virtual ? readVirtualCache(identity, measurementIds, measurementWidth) : undefined
   const userIndices = useMemo(() => {
     let userIndex = -1
     return renderTurns.map((turn) => {
@@ -291,7 +376,22 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     const index = handle.findItemIndex(offset + Math.min(handle.viewportSize * .25, 120))
     return Math.max(0, indices[index] ?? -1)
   }, [])
+  const readRange = useCallback((): { first: number; last: number } | undefined => {
+    const handle = vlistRef.current
+    const indices = userIndicesRef.current
+    if (!handle || !indices.length) return undefined
+    const top = handle.findItemIndex(handle.scrollOffset)
+    const bottom = Math.min(indices.length - 1, handle.findItemIndex(handle.scrollOffset + handle.viewportSize))
+    return { first: Math.max(0, indices[top] ?? 0), last: Math.max(0, indices[bottom] ?? 0) }
+  }, [])
   const [remountKey, setRemountKey] = useState(0)
+  useLayoutEffect(() => {
+    const handle = vlistRef.current
+    const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+    if (!virtual || !handle || !box) return undefined
+    const width = box.clientWidth
+    return () => saveVirtualCache(identity, measurementRun.items.map((item) => item.id), box.clientWidth || width, handle.cache)
+  }, [identity, virtual, remountKey, switchLoading])
   const arriveStage = `${identity}|${switchLoading ? 'l' : 'r'}`
   const [seenStage, setSeenStage] = useState(arriveStage)
   const [arriveFlip, setArriveFlip] = useState(0)
@@ -307,16 +407,17 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   if (seenStage !== arriveStage) setSeenStage(arriveStage)
   const remountsRef = useRef(0)
   const settleRef = useRef<SettleAnchor | null>(null)
-  const streamingSeenRef = useRef({ identity, streamingId })
-  if (streamingSeenRef.current.identity !== identity || streamingSeenRef.current.streamingId !== streamingId) {
+  const streamingSeenRef = useRef({ identity, streamingId, tailRunning })
+  if (streamingSeenRef.current.identity !== identity || streamingSeenRef.current.streamingId !== streamingId || streamingSeenRef.current.tailRunning !== tailRunning) {
     const seen = streamingSeenRef.current
-    if (seen.identity === identity && seen.streamingId && !streamingId && !virtual && streamRef.current) settleRef.current = settleAnchor(streamRef.current, stickRef.current)
-    streamingSeenRef.current = { identity, streamingId }
+    const settleBox = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+    if (seen.identity === identity && (seen.streamingId && !streamingId || seen.tailRunning && !tailRunning) && settleBox) settleRef.current = settleAnchor(settleBox, stickRef.current)
+    streamingSeenRef.current = { identity, streamingId, tailRunning }
   }
 
   useLayoutEffect(() => {
     const anchor = settleRef.current
-    const box = streamRef.current
+    const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
     settleRef.current = null
     if (!anchor || !box) return undefined
     if (stickRef.current) {
@@ -332,7 +433,30 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       keepSettleAnchor(box, anchor)
     })
     return () => cancelAnimationFrame(raf)
-  }, [streamingId])
+  }, [streamingId, tailRunning])
+
+  const followGlideRef = useRef(0)
+  const followBottom = useCallback((box: HTMLElement, instant = false) => {
+    if (instant || !tailRunningRef.current && performance.now() - followRunRef.current.endedAt > END_GLIDE_MS || prefersReducedMotion()) {
+      cancelAnimationFrame(followGlideRef.current)
+      followGlideRef.current = 0
+      pinBottom(box)
+      return
+    }
+    if (followGlideRef.current) return
+    let last = performance.now()
+    const step = (now: number): void => {
+      followGlideRef.current = 0
+      if (!stickRef.current || settlingRef.current || !box.isConnected) return
+      const gap = box.scrollHeight - box.clientHeight - box.scrollTop
+      if (gap <= 0.5) return
+      const dt = Math.min(FOLLOW_FRAME_CAP_MS, Math.max(0, now - last))
+      last = now
+      box.scrollTop += Math.min(gap, Math.max(1, gap * (1 - Math.exp(-dt / followTau(gap)))))
+      followGlideRef.current = requestAnimationFrame(step)
+    }
+    followGlideRef.current = requestAnimationFrame(step)
+  }, [])
 
   const setStickNow = useCallback((value: boolean) => {
     stickRef.current = value
@@ -356,19 +480,21 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
 
   const scrollFrameRef = useRef(0)
   const virtualRecordTimerRef = useRef(0)
+  const manualSkimFrameRef = useRef(0)
+  const lastVirtualOffsetRef = useRef(0)
   const lastMetricsRef = useRef<ScrollMetrics | null>(null)
   const readScroll = useCallback(() => {
     const el = streamRef.current
     if (!el) return
     const metrics = domMetrics(el)
-    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), lastMetricsRef.current)
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), lastMetricsRef.current, jumpThreshold(tailRunningRef.current))
     lastMetricsRef.current = metrics
     applyFollow(decision)
-    if (decision.repin) el.scrollTop = el.scrollHeight
+    if (decision.repin) followBottom(el)
     const anchors = decision.stick ? null : domReadingAnchors(el)
     readingRef.current = anchors?.resize ?? null
     record(el.scrollTop, decision.stick, anchors?.snapshot ?? null)
-  }, [applyFollow, record])
+  }, [applyFollow, record, followBottom])
 
   const onScroll = useCallback(() => {
     if (scrollFrameRef.current) return
@@ -382,18 +508,25 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   useEffect(() => () => {
     cancelAnimationFrame(scrollFrameRef.current)
     scrollFrameRef.current = 0
+    cancelAnimationFrame(followGlideRef.current)
+    followGlideRef.current = 0
     clearTimeout(virtualRecordTimerRef.current)
     virtualRecordTimerRef.current = 0
+    cancelAnimationFrame(manualSkimFrameRef.current)
+    manualSkimFrameRef.current = 0
+    lastVirtualOffsetRef.current = 0
+    hostRef.current?.removeAttribute('data-flight-skim')
   }, [identity, virtual])
 
   const readVirtualScroll = useCallback(() => {
     const h = vlistRef.current
     if (!h || settlingRef.current) return
     const metrics = { offset: h.scrollOffset, size: h.scrollSize, viewport: h.viewportSize }
-    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), lastMetricsRef.current)
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), lastMetricsRef.current, jumpThreshold(tailRunningRef.current))
     lastMetricsRef.current = metrics
     applyFollow(decision)
-    if (decision.repin) h.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
+    const root = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+    if (decision.repin && root) followBottom(root)
     record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current))
     clearTimeout(virtualRecordTimerRef.current)
     if (!decision.stick) virtualRecordTimerRef.current = window.setTimeout(() => {
@@ -403,13 +536,25 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       if (!handle || !root || settlingRef.current || stickRef.current) return
       record(handle.scrollOffset, false, domAnchor(root) ?? virtualAnchor(handle, renderTurnsRef.current))
     }, 120)
-  }, [record, applyFollow])
+  }, [record, applyFollow, followBottom])
 
   const onVirtualScroll = useCallback(() => {
     if (scrollFrameRef.current) return
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = 0
       readVirtualScroll()
+      const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+      if (!box) return
+      const distance = Math.abs(box.scrollTop - lastVirtualOffsetRef.current)
+      lastVirtualOffsetRef.current = box.scrollTop
+      if (flightRef.current || stickRef.current || distance < box.clientHeight) return
+      cancelAnimationFrame(manualSkimFrameRef.current)
+      const sync = (): void => {
+        manualSkimFrameRef.current = 0
+        if (!box.isConnected || flightRef.current) return
+        if (paintSkim(box, true)) manualSkimFrameRef.current = requestAnimationFrame(sync)
+      }
+      sync()
     })
   }, [readVirtualScroll])
 
@@ -425,22 +570,41 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       const handle = vlistRef.current
       const metrics = handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
       if (event.deltaY < 0 && metrics && metrics.size <= metrics.viewport + 1) return
-      if (event.deltaY > 0 && metrics && distanceFromBottom(metrics) <= 1) {
-        intentRef.current = performance.now()
+      if (metrics && wheelReachesBottom(metrics, event.deltaY, event.deltaMode)) {
+        cancelNavigationRef.current()
+        intentRef.current = null
         setStickNow(true)
       } else mark()
     }
     const togglesDisclosure = (target: EventTarget | null): boolean => target instanceof Element && !!target.closest('[aria-expanded]')
+    const currentMetrics = (): ScrollMetrics | null => {
+      const handle = vlistRef.current
+      return handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
+    }
+    const resumeIfNear = (): void => {
+      const metrics = currentMetrics()
+      if (!metrics || stickRef.current || distanceFromBottom(metrics) > FOLLOW_RESUME_SLACK_PX) return
+      intentRef.current = null
+      setStickNow(true)
+    }
+    let disclosureTimer = 0
+    let pressedWhileStuck = false
     const holdForDisclosure = (): void => {
       cancelNavigationRef.current()
-      if (stickRef.current) setStickNow(false)
+      if (!stickRef.current) return
+      setStickNow(false)
+      window.clearTimeout(disclosureTimer)
+      disclosureTimer = window.setTimeout(resumeIfNear, DISCLOSURE_SETTLE_MS)
     }
     const onPointerDown = (event: PointerEvent): void => {
+      pressedWhileStuck = false
       if (togglesDisclosure(event.target)) return holdForDisclosure()
       if (event.target instanceof Element && event.target.closest('a, button, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"]')) return
+      pressedWhileStuck = stickRef.current && event.target instanceof Element && !!event.target.closest('.v3-msg')
       mark()
     }
     const onKey = (event: KeyboardEvent): void => {
+      if (event.target instanceof Element && event.target.closest('.v3-rail')) return
       if ((event.key === 'Enter' || event.key === ' ') && togglesDisclosure(event.target)) holdForDisclosure()
       else if (isScrollIntentKey(event.key)) mark()
     }
@@ -451,9 +615,11 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       if (stickRef.current) setStickNow(false)
     }
     const release = (event: PointerEvent): void => {
+      const plainClick = pressedWhileStuck && (window.getSelection()?.isCollapsed ?? true)
+      pressedWhileStuck = false
       if (togglesDisclosure(event.target)) return
-      const handle = vlistRef.current
-      const metrics = handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
+      if (plainClick) return resumeIfNear()
+      const metrics = currentMetrics()
       if (!metrics || stickRef.current || distanceFromBottom(metrics) > 1) return
       intentRef.current = performance.now()
       setStickNow(true)
@@ -467,6 +633,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     host.addEventListener('focusin', onFocusIn, options)
     host.addEventListener(SCROLL_INTENT_EVENT, mark, options)
     return () => {
+      window.clearTimeout(disclosureTimer)
       host.removeEventListener('wheel', wheel, options)
       host.removeEventListener('touchmove', mark, options)
       host.removeEventListener('pointerdown', onPointerDown, options)
@@ -492,10 +659,10 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       widthRef.current = width
       if (stickRef.current) {
         if (emptyRef.current) return
-        node.scrollTop = node.scrollHeight
+        followBottom(node, narrowed)
         return
       }
-      setShowJump(distanceFromBottom(domMetrics(node)) > JUMP_THRESHOLD_PX)
+      setShowJump(distanceFromBottom(domMetrics(node)) > jumpThreshold(tailRunningRef.current))
       const now = performance.now()
       const open = widthWindowRef.current
       if (narrowed) widthWindowRef.current = { until: now + WIDTH_SETTLE_MS, anchor: open && now <= open.until ? open.anchor : readingRef.current }
@@ -558,22 +725,30 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     intentRef.current = null
     settlingRef.current = true
     let settleRaf = 0
-    if (virtual && bottom) vlistRef.current?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
+    const virtualRoot = (): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null
+    const openAtBottom = (): void => {
+      const root = virtualRoot()
+      if (tailRunningRef.current) {
+        if (root) pinBottom(root)
+      } else vlistRef.current?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
+    }
+    if (virtual && bottom) openAtBottom()
     const raf = requestAnimationFrame(() => {
       const anchor = snap?.anchor ?? null
       if (virtual) {
         const handle = vlistRef.current
+        const root = virtualRoot()
         const index = anchor ? renderTurnsRef.current.findIndex((item) => item.id === anchor.turnId) : -1
         if (bottom) {
-          if (handle && handle.scrollSize - handle.scrollOffset - handle.viewportSize > 1) handle.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
-        } else if (anchor && index >= 0) handle?.scrollToIndex(index, { align: 'start', offset: anchor.offset })
-        else if (snap) handle?.scrollTo(snap.top)
-        if (!bottom && handle) setShowJump(distanceFromBottom({ offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize }) > JUMP_THRESHOLD_PX)
+          if (handle && handle.scrollSize - handle.scrollOffset - handle.viewportSize > 1) openAtBottom()
+        } else if (anchor && index >= 0 && handle && root) root.scrollTop = Math.max(0, handle.getItemOffset(index) + anchor.offset)
+        else if (snap && root) root.scrollTop = snap.top
+        if (!bottom && handle) setShowJump(distanceFromBottom({ offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize }) > jumpThreshold(tailRunningRef.current))
       } else if (streamRef.current) {
         const box = streamRef.current
         if (emptyRef.current) box.scrollTop = 0
         else restoreDomScroll(box, snap)
-        if (!bottom) setShowJump(distanceFromBottom(domMetrics(box)) > JUMP_THRESHOLD_PX)
+        if (!bottom) setShowJump(distanceFromBottom(domMetrics(box)) > jumpThreshold(tailRunningRef.current))
       }
       if (virtual && !bottom && snap) {
         const started = performance.now()
@@ -589,7 +764,6 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
             const previous = box.scrollTop
             restoreDomScroll(box, snap)
             const shift = Math.abs(previous - box.scrollTop)
-            if (shift > .5) vlistRef.current?.scrollTo(box.scrollTop)
             stable = shift <= .5 ? stable + 1 : 0
           }
           const elapsed = performance.now() - started
@@ -607,7 +781,6 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
 
   useEffect(() => { remountsRef.current = 0 }, [identity])
 
-  const tailRunning = viewActive && !!(session?.isAgentRunning || session?.isStreaming)
   const tailId = renderTurns.at(-1)?.id
   useLayoutEffect(() => {
     const scroller = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
@@ -619,9 +792,12 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     if (!virtual) return undefined
     const root = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
     if (!root) return undefined
+    let width = root.clientWidth
     const repin = (): void => {
+      const resized = Math.abs(root.clientWidth - width) > 0.5
+      width = root.clientWidth
       if (settlingRef.current || !stickRef.current) return
-      root.scrollTop = root.scrollHeight
+      followBottom(root, resized)
     }
     const observer = new ResizeObserver(repin)
     observer.observe(root)
@@ -636,7 +812,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
         if (stickRef.current) return
         const handle = vlistRef.current
         const metrics = virtual && handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
-        if (metrics) setShowJump(distanceFromBottom(metrics) > JUMP_THRESHOLD_PX)
+        if (metrics) setShowJump(distanceFromBottom(metrics) > jumpThreshold(tailRunningRef.current))
       }
       measure()
       let raf = requestAnimationFrame(() => { raf = requestAnimationFrame(measure) })
@@ -644,13 +820,15 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     }
     if (userScrollActive(intentRef.current, performance.now())) return undefined
     if (virtual) {
-      vlistRef.current?.scrollToIndex(renderTurns.length - 1, { align: 'end' })
+      const root = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+      if (root) followBottom(root)
       return undefined
     }
     const el = streamRef.current
-    if (el) el.scrollTop = emptyRef.current ? 0 : el.scrollHeight
+    if (el && emptyRef.current) el.scrollTop = 0
+    else if (el) followBottom(el)
     return undefined
-  }, [renderTurns, stick, virtual])
+  }, [renderTurns, stick, virtual, followBottom])
 
   useEffect(() => {
     if (!virtual) return undefined
@@ -660,6 +838,8 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       const root = (virtual ? hostRef.current?.querySelector('.v3-stream') : streamRef.current) as HTMLElement | null
       const blank = !!root && root.clientHeight > 0 && root.scrollHeight <= root.clientHeight + 1 && renderTurnsRef.current.length > 0
       if (blank && remountsRef.current < 3) {
+        const handle = vlistRef.current
+        if (handle && root) saveVirtualCache(identity, renderTurnsRef.current.map((item) => item.id), root.clientWidth, handle.cache)
         remountsRef.current += 1
         setRemountKey((k) => k + 1)
         return
@@ -668,13 +848,14 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [virtual, identity])
+  }, [virtual, identity, remountKey])
 
   const turnsRef = useRef(turns)
   turnsRef.current = turns
   const outlineMessages = useThrottledValue(visibleMessages, !!streamingId)
 
   const navRef = useRef<number | null>(null)
+  const landingReleaseRef = useRef(0)
   const flashRef = useRef<{ timer: number; el: HTMLElement | null }>({ timer: 0, el: null })
 
   const turnNode = useCallback((turnId: string): HTMLElement | null =>
@@ -694,18 +875,25 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     flashRef.current = { timer, el }
   }, [])
 
-  const endNavigation = useCallback(() => {
+  const endNavigation = useCallback((retainLanding = false) => {
+    window.clearTimeout(landingReleaseRef.current)
+    landingReleaseRef.current = 0
     const frame = navRef.current
     navRef.current = null
     if (frame !== null) cancelAnimationFrame(frame)
     settlingRef.current = false
+    flightRef.current = null
+    hostRef.current?.removeAttribute('data-flight-skim')
+    if (retainLanding) landingReleaseRef.current = window.setTimeout(() => {
+      landingReleaseRef.current = 0
+      setKeepMounted(undefined)
+    }, VIRTUAL_BUFFER_WIDEN_MS)
+    else setKeepMounted(undefined)
+    setFlying(false)
   }, [])
-  cancelNavigationRef.current = () => {
-    const handle = vlistRef.current
-    const navigating = navRef.current !== null
-    endNavigation()
-    if (navigating && handle) handle.scrollTo(handle.scrollOffset)
-  }
+  cancelNavigationRef.current = endNavigation
+
+  const scrollBox = useCallback((): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null, [])
 
   const revealTurn = useCallback((turnId: string) => {
     let frames = 0
@@ -720,72 +908,117 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     reveal()
   }, [flashTurn, turnNode])
 
-  const followNavigation = useCallback((readOffset: () => number, turnId: string) => {
+  const fly = useCallback((request: FlightRequest) => {
     endNavigation()
+    const box = scrollBox()
+    if (!box) return
     settlingRef.current = true
-    const started = performance.now()
-    const initialOffset = readOffset()
-    let last = Number.NaN
+    const flight: Flight = { skim: false, real: new Set() }
+    flightRef.current = flight
+    setFlying(true)
+    let origin = box.scrollTop
+    let written = origin
+    let elapsed = 0
+    let last = performance.now()
+    let prepared = false
+    let landing: number[] = []
+    let frames = 0
     let still = 0
-    let moved = false
+    const first = request.destination()
+    const direction = Math.sign(first - origin) || 1
+    const plan = planFlight(Math.abs(first - origin), box.clientHeight)
+    const instant = !!request.instant || prefersReducedMotion() || plan.duration === 0
+    const write = (top: number): void => {
+      const next = Math.min(Math.max(0, box.scrollHeight - box.clientHeight), Math.max(0, top))
+      if (Math.abs(next - box.scrollTop) > 0.25) box.scrollTo({ top: next, behavior: 'instant' })
+      written = box.scrollTop
+      if (flight.skim) paintSkim(box, true)
+    }
+    const prepare = (): void => {
+      if (prepared) return
+      prepared = true
+      landing = request.landing?.() ?? []
+      if (!landing.length) return
+      flight.real = mountedRows(box)
+      for (const index of landing) flight.real.add(index)
+      setKeepMounted(landing)
+    }
     const finish = (): void => {
-      endNavigation()
+      endNavigation(true)
       if (virtual) onVirtualScroll()
       else readScroll()
-      revealTurn(turnId)
+      request.arrive?.()
     }
-    const step = (): void => {
-      if (navRef.current === null) return
-      const offset = readOffset()
-      moved ||= Math.abs(offset - initialOffset) > 0.5
-      still = Math.abs(offset - last) < 0.5 ? still + 1 : 0
-      last = offset
-      const elapsed = performance.now() - started
-      if (still >= NAV_SETTLE_STILL_FRAMES && (moved || elapsed >= 200) || elapsed > NAV_SETTLE_MAX_MS) {
+    const settle = (): void => {
+      if (flightRef.current !== flight) return
+      const exact = request.exact?.() ?? null
+      const before = box.scrollTop
+      write(exact ?? request.destination())
+      still = exact !== null && Math.abs(box.scrollTop - before) < 0.5 ? still + 1 : 0
+      if (still >= FLIGHT_SETTLE_STILL || ++frames >= FLIGHT_SETTLE_FRAMES) {
         finish()
         return
       }
-      navRef.current = requestAnimationFrame(step)
+      navRef.current = requestAnimationFrame(settle)
     }
-    navRef.current = requestAnimationFrame(step)
-  }, [endNavigation, readScroll, onVirtualScroll, revealTurn, virtual])
-
-  const glide = useCallback((box: HTMLElement, destination: () => number, duration: (distance: number) => number, arrive: () => void) => {
-    endNavigation()
-    settlingRef.current = true
-    let motion = startGlide(Math.abs(destination() - box.scrollTop), duration, box.clientHeight)
-    let last = performance.now()
-    let direction = 0
     const step = (now: number): void => {
-      if (navRef.current === null) return
-      const dt = Math.min(GLIDE_FRAME_CAP_MS, Math.max(0, now - last))
+      if (flightRef.current !== flight) return
+      elapsed += Math.min(FLIGHT_FRAME_CAP_MS, Math.max(0, now - last))
       last = now
-      const offset = box.scrollTop
-      const remaining = destination() - offset
-      const sign = Math.sign(remaining)
-      if (direction && sign && sign !== direction) motion = { ...motion, speed: 0 }
-      if (sign) direction = sign
-      const next = advanceGlide(motion, Math.abs(remaining), dt)
-      motion = next.motion
-      if (next.done) {
-        if (Math.abs(remaining) > 0.5) box.scrollTo({ top: offset + remaining, behavior: 'instant' })
-        arrive()
+      const drift = box.scrollTop - written
+      if (Math.abs(drift) > 0.5) origin += drift
+      const phase = flightPhase(plan, elapsed)
+      if (phase !== 'lead' && plan.far && landing.length && !flight.skim) {
+        flight.skim = true
+        setKeepMounted([...landing])
+      }
+      if (phase === 'done') {
+        settle()
         return
       }
-      box.scrollTo({ top: offset + sign * next.move, behavior: 'instant' })
+      const destination = request.destination()
+      const way = Math.sign(destination - origin) || direction
+      write(origin + way * flightTravel(plan, elapsed, Math.abs(destination - origin)))
       navRef.current = requestAnimationFrame(step)
     }
+    prepare()
+    if (instant) {
+      write(first)
+      navRef.current = requestAnimationFrame(settle)
+      return
+    }
     navRef.current = requestAnimationFrame(step)
-  }, [endNavigation])
+  }, [endNavigation, scrollBox, virtual, onVirtualScroll, readScroll])
 
-  const navigateVirtual = useCallback((handle: VListHandle, target: number, turnId: string) => {
-    const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+  const flyToRow = useCallback((index: number, turnId: string, align: 'start' | 'center', options: { instant?: boolean; arrive?: () => void } = {}) => {
+    const box = scrollBox()
     if (!box) return
-    const destination = (): number => Math.max(0, Math.min(handle.getItemOffset(target), handle.scrollSize - handle.viewportSize))
-    glide(box, destination, navigationGlideMs, () => {
-      followNavigation(() => handle.scrollOffset, turnId)
-    })
-  }, [glide, followNavigation])
+    const handle = virtual ? vlistRef.current : null
+    const limit = (top: number): number => Math.min(Math.max(0, box.scrollHeight - box.clientHeight), Math.max(0, top))
+    const lead = (height: number, viewport: number): number => align === 'center' ? Math.max(FLIGHT_INSET_PX, (viewport - height) / 2) : FLIGHT_INSET_PX
+    const exact = (): number | null => {
+      const el = turnNode(turnId)
+      if (!el) return null
+      const rect = el.getBoundingClientRect()
+      return limit(rect.top - box.getBoundingClientRect().top + box.scrollTop - lead(rect.height, box.clientHeight))
+    }
+    const destination = (): number => {
+      const top = exact()
+      if (top !== null || !handle) return top ?? box.scrollTop
+      return limit(handle.getItemOffset(index) - lead(handle.getItemSize(index), handle.viewportSize))
+    }
+    const landing = handle
+      ? (): number[] => {
+          const top = destination()
+          const around: number[] = []
+          const from = handle.findItemIndex(Math.max(0, top - handle.viewportSize * 0.6))
+          const to = handle.findItemIndex(top + handle.viewportSize * 1.6)
+          for (let row = from; row <= to; row += 1) around.push(row)
+          return landingIndices(index, around, renderTurnsRef.current.length)
+        }
+      : undefined
+    fly({ destination, exact, landing, instant: options.instant, arrive: options.arrive ?? (() => revealTurn(turnId)) })
+  }, [fly, scrollBox, turnNode, revealTurn, virtual])
 
   useEffect(() => () => {
     endNavigation()
@@ -796,46 +1029,20 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   }, [endNavigation, identity])
 
   const jumpToTurn = useCallback((userIndex: number) => {
-    cancelNavigationRef.current()
-    setStickNow(false)
     const list = turnsRef.current
     const target = userTurnRenderIndex(list, userIndex)
     const turn = target === undefined ? undefined : list[target]
     if (target === undefined || !turn) return
-    const instant = prefersReducedMotion()
-    const turnId = turn.id
-    if (virtual) {
-      const handle = vlistRef.current
-      if (!handle) return
-      if (instant) {
-        handle.scrollToIndex(target, { align: 'start' })
-        onVirtualScroll()
-        revealTurn(turnId)
-        return
-      }
-      navigateVirtual(handle, target, turnId)
-      return
-    }
-    const box = streamRef.current
-    const el = turnNode(turnId)
-    if (!box || !el) return
-    const top = Math.max(0, el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop)
-    if (instant) {
-      box.scrollTop = top
-      readScroll()
-      flashTurn(el)
-      return
-    }
-    box.scrollTo({ top, behavior: 'smooth' })
-    followNavigation(() => box.scrollTop, turnId)
-  }, [virtual, setStickNow, followNavigation, navigateVirtual, flashTurn, onVirtualScroll, readScroll, revealTurn, turnNode])
+    setStickNow(false)
+    flyToRow(target, turn.id, 'start')
+  }, [setStickNow, flyToRow])
 
   useEffect(() => readOnly ? undefined : registerMessageLocator(async (messageId) => {
     const items = renderTurnsRef.current
     const index = items.findIndex((item) => !isPending(item) && (item.id === messageId || (item.kind === 'assistant' && item.sourceIds.includes(messageId))))
     if (index < 0) return false
     setStickNow(false)
-    if (virtual) vlistRef.current?.scrollToIndex(index, { align: 'center' })
+    await new Promise<void>((arrived) => flyToRow(index, items[index].id, 'center', { arrive: arrived }))
     const selector = `[data-msg-id="${cssQuoted(messageId)}"], .v3-msg[data-turn-id="${cssQuoted(items[index].id)}"]`
     for (let frame = 0; frame < LOCATE_MOUNT_FRAMES; frame++) {
       const el = hostRef.current?.querySelector(selector)
@@ -846,7 +1053,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       await nextFrame()
     }
     return false
-  }), [virtual, setStickNow, readOnly])
+  }), [flyToRow, setStickNow, readOnly])
 
   const findScope = useCallback((): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null, [])
 
@@ -867,57 +1074,44 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     turnElement: (turnId) => turnNode(turnId),
     mount: async (index) => {
       const item = renderTurnsRef.current[index]
-      const handle = vlistRef.current
-      if (!item || !handle) return null
-      cancelNavigationRef.current()
+      if (!item || !vlistRef.current) return null
       intentRef.current = performance.now()
       setStickNow(false)
-      handle.scrollToIndex(index, { align: 'start' })
+      await new Promise<void>((arrived) => flyToRow(index, item.id, 'start', { instant: true, arrive: arrived }))
       for (let frame = 0; frame < LOCATE_MOUNT_FRAMES; frame++) {
-        await nextFrame()
         const el = turnNode(item.id)
-        if (el) {
-          await nextFrame()
-          await nextFrame()
-          return el
-        }
+        if (el) return el
+        await nextFrame()
       }
       return null
     }
-  }), [setStickNow, turnNode])
+  }), [setStickNow, turnNode, flyToRow])
 
   const jumpToBottom = useCallback(() => {
-    endNavigation()
     setStickNow(true)
     setShowJump(false)
     intentRef.current = null
-    const instant = prefersReducedMotion()
-    if (virtual) {
-      const handle = vlistRef.current
-      const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
-      if (!handle) return
-      const pin = (): void => handle.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
-      if (instant || !box) {
-        pin()
-        return
-      }
-      glide(box, () => Math.max(0, handle.scrollSize - handle.viewportSize), latestGlideMs, () => {
-        endNavigation()
-        pin()
-      })
-      return
+    const box = scrollBox()
+    if (!box) return
+    const bottom = (): number => Math.max(0, box.scrollHeight - box.clientHeight)
+    const landing = virtual
+      ? (): number[] => {
+          const count = renderTurnsRef.current.length
+          return landingIndices(count - 1, [count - 2, count - 3], count)
+        }
+      : undefined
+    fly({ destination: bottom, exact: bottom, landing, arrive: () => pinBottom(box) })
+  }, [setStickNow, scrollBox, fly, virtual])
+
+  const narrowBuffer = flying || (stick && tailRunning)
+  useEffect(() => {
+    if (narrowBuffer) {
+      setWideBuffer(false)
+      return undefined
     }
-    const el = streamRef.current
-    if (!el) return
-    if (instant) {
-      el.scrollTop = el.scrollHeight
-      return
-    }
-    glide(el, () => Math.max(0, el.scrollHeight - el.clientHeight), latestGlideMs, () => {
-      endNavigation()
-      el.scrollTop = el.scrollHeight
-    })
-  }, [setStickNow, virtual, glide, endNavigation])
+    const timer = window.setTimeout(() => setWideBuffer(true), VIRTUAL_BUFFER_WIDEN_MS)
+    return () => window.clearTimeout(timer)
+  }, [narrowBuffer, identity])
 
   const userCount = useMemo(() => countUserMessages(effectiveMessages), [effectiveMessages])
   const sentRef = useRef<{ identity: string | null; count: number }>({ identity: null, count: 0 })
@@ -942,12 +1136,16 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
             ref={vlistRef}
             data={renderTurns}
             className="v3-stream"
-            bufferSize={stick && tailRunning ? VIRTUAL_BUFFER_FOLLOW_PX : VIRTUAL_BUFFER_PX}
-            itemSize={240}
+            bufferSize={wideBuffer && !narrowBuffer ? VIRTUAL_BUFFER_PX : VIRTUAL_BUFFER_NARROW_PX}
+            itemSize={VIRTUAL_ITEM_SIZE_PX}
+            keepMounted={keepMounted}
+            cache={measurementCache}
             onScroll={onVirtualScroll}
           >
-            {(item, index) => (
-              <div key={`${identity}|${item.id}`} className={`v3-stream-row${index === 0 ? ' v3-stream-row--head' : ''}${index === renderTurns.length - 1 ? ' v3-stream-row--tail' : ''}`}>
+            {(item, index) => flightRef.current?.skim && !flightRef.current.real.has(index) ? (
+              <div key={`${identity}|${turnKey(item.id)}`} className="v3-stream-skim" data-row={index} style={{ height: vlistRef.current?.getItemSize(index) ?? VIRTUAL_ITEM_SIZE_PX }} aria-hidden />
+            ) : (
+              <div key={`${identity}|${turnKey(item.id)}`} data-row={index} className={`v3-stream-row${index === 0 ? ' v3-stream-row--head' : ''}${index === renderTurns.length - 1 ? ' v3-stream-row--tail' : ''}`}>
                 {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} subagentScope={source.subagentScope} readOnly={readOnly} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />}
               </div>
             )}
@@ -957,8 +1155,8 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
             <div className="v3-stream-inner">
               {turns.length === 0 ? (readOnly ? <PeerEmpty running={!!(session?.isAgentRunning || session?.isStreaming)} /> : switchLoading ? <SwitchSkeleton label={t('chat.switchLoading')} /> : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
-                  ? <PendingRunNotice key={`${identity}|${item.id}`} />
-                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} subagentScope={source.subagentScope} readOnly={readOnly} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />
+                  ? <PendingRunNotice key={`${identity}|${turnKey(item.id)}`} />
+                  : <TurnView key={`${identity}|${turnKey(item.id)}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} subagentScope={source.subagentScope} readOnly={readOnly} streaming={item.kind === 'assistant' && item.streaming} tail={item === renderTurns.at(-1)} answer={answers.get(item.id)} outcome={outcomes.get(item.id)} />
               )}
             </div>
           </div>
@@ -972,7 +1170,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
           </div>
         ) : null}
 
-        {readOnly ? null : <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} readActiveIndex={readActiveIndex} />}
+        {readOnly ? null : <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} readActiveIndex={readActiveIndex} readRange={readRange} />}
       </div>
       </AsideFitScope.Provider>
       </TurnScopeContext.Provider>

@@ -1,22 +1,27 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useRef, useSyncExternalStore } from 'react'
 import type { TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { deriveRunProgress, resolveRunClock, type RunClock, type RunProgress } from '../../../../shared/run-progress'
 import { compactionRunningText } from '../../state/compaction-view'
 import { isStopRequested, stopIntent, subscribeStopIntent } from './stop-intent'
 import { trackThinking, turnOutputTokens, workingLine, type ThinkingClock, type WorkingLine } from './working-line-model'
+import { useTurnScope } from './turn-scope'
+import { useRunNow } from './run-clock'
 
 const ASKING_METHODS = new Set(['select', 'confirm', 'input', 'editor'])
 
 export function useWorkingLine(): WorkingLine | null {
   const progress = useRunProgress()
-  const session = useStore((s) => s.session)
-  const messages = useStore((s) => s.messages)
+  const scope = useTurnScope()
+  const ownSession = useStore((s) => s.session)
+  const ownMessages = useStore((s) => s.messages)
+  const session = scope ? scope.session : ownSession
+  const messages = scope ? scope.messages : ownMessages
   const approvals = useStore((s) => s.approvals)
   const uiRequests = useStore((s) => s.uiRequests)
   const intent = useSyncExternalStore(subscribeStopIntent, stopIntent)
   const thinkingRef = useRef<ThinkingClock | null>(null)
-  const now = Date.now()
+  const now = useRunNow(!!progress)
 
   let lastUser = -1
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -45,8 +50,8 @@ export function useWorkingLine(): WorkingLine | null {
   const running = !!progress
   const elapsedMs = progress ? progress.elapsedMs : null
   const runStartedAt = progress ? now - progress.elapsedMs : null
-  const waiting = approvals.some((request) => !request.subagentId && (!request.sessionId || request.sessionId === sessionId))
-    || uiRequests.some((request) => ASKING_METHODS.has(request.method))
+  const waiting = approvals.some((request) => !request.subagentId && (request.sessionId ? request.sessionId === sessionId : !scope))
+    || (!scope && uiRequests.some((request) => ASKING_METHODS.has(request.method)))
 
   return workingLine({
     running,
@@ -66,13 +71,16 @@ export function useWorkingLine(): WorkingLine | null {
 }
 
 export function useRunProgress(): RunProgress | null {
-  const session = useStore((s) => s.session)
-  const messages = useStore((s) => s.messages)
+  const scope = useTurnScope()
+  const ownSession = useStore((s) => s.session)
+  const ownMessages = useStore((s) => s.messages)
+  const session = scope ? scope.session : ownSession
+  const messages = scope ? scope.messages : ownMessages
   const runnerId = useStore((s) => s.activeRunnerId)
   const compacting = !!session?.isCompacting
   const running = !!session?.isAgentRunning || !!session?.isStreaming || compacting
   const startedRef = useRef<RunClock | null>(null)
-  const [now, setNow] = useState(() => Date.now())
+  const now = useRunNow(running)
 
   let lastUser = -1
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -88,14 +96,7 @@ export function useRunProgress(): RunProgress | null {
     standaloneCompaction ? session?.compaction?.startedAt ?? 'compact' : 'turn'])
   const reportedStartedAt = standaloneCompaction ? session?.compaction?.startedAt : user?.timestamp ?? turn[0]?.timestamp
   const clock = resolveRunClock(startedRef.current, { identity, running, startedAt: reportedStartedAt, now })
-
-  useEffect(() => {
-    startedRef.current = resolveRunClock(startedRef.current, { identity, running, startedAt: reportedStartedAt, now: Date.now() })
-    if (!running) return undefined
-    setNow(Date.now())
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(id)
-  }, [identity, running, reportedStartedAt])
+  startedRef.current = clock
 
   if (!running) return null
 

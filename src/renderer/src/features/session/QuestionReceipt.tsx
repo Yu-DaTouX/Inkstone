@@ -39,7 +39,8 @@ function QuestionRow({ call, testId }: { call: UIToolCall; testId: string }): JS
       <CollapsibleHeader
         className="v3-step-head"
         size="compact"
-        chevron="end"
+        chevron="start"
+        rowHover
         icon={<Icon name={model.state === 'failed' ? 'warn' : 'message'} size={13} />}
         accessory={at ? <CardTime at={at} className="v3-qrow-time" /> : undefined}
       >

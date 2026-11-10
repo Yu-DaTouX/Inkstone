@@ -30,6 +30,7 @@ import {
   type SubagentListTotals
 } from './subagent-list'
 import { useToolExpansion } from './use-tool-run'
+import { useRunNow } from './run-clock'
 import './subagents.css'
 import { turnModelLabel } from './turn-model-label'
 import { Badge, Button, ProgressBar, ShimmerText } from '../../ui'
@@ -63,14 +64,8 @@ export function useSubagentView(run: SubagentRun, snapshot?: RunSnapshot): {
 } {
   const t = useT()
   const { lang } = useI18n()
-  const [now, setNow] = useState(() => Date.now())
+  const now = useRunNow(isLiveSubagentRun(run))
   const model = subagentLineModel(run, snapshot, now)
-
-  useEffect(() => {
-    if (!model.live) return undefined
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [model.live])
 
   const status = model.phase ? phaseWord(lang, model.phase) : t(OUTCOME_KEY[model.outcomeKey])
   const dotTone = model.phase ? runTone(model.phase) : model.outcomeTone
@@ -348,6 +343,7 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       </span>
       <span className="v3-sa-title" data-testid="v3-subagent-task">
         {live && !awaiting ? <ShimmerText className="v3-sa-shimmer">{label}</ShimmerText> : label}
+        {activity && activity !== label ? <span className="v3-sa-activity" data-testid="v3-subagent-activity">{activity}</span> : null}
       </span>
       {awaitingReview ? (
         <Badge

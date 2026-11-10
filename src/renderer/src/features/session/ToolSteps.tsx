@@ -1,4 +1,4 @@
-import { createContext, lazy, memo, Suspense, useContext, useId, useMemo, useRef, useState, type JSX } from 'react'
+import { createContext, lazy, memo, Suspense, useContext, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { MessageImage } from './Image'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
@@ -17,11 +17,15 @@ import { QuestionReceipt } from './QuestionReceipt'
 import { ApprovalReceipt } from './ApprovalReceipt'
 import { isQuestionCall } from './question-receipt'
 import { ToolRunStats } from './ToolRunStats'
-import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
+import { ToolExpansionScope, useHeldRunLabel, useToolExpansion } from './use-tool-run'
+import { toolExpansion } from './tool-expansion'
+import { useRunNow } from './run-clock'
+import { formatDuration } from '../../../../shared/duration'
 import { Icon, type SessionIconName } from './Icon'
-import { Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, DiffStat, IconButton, ShimmerText, Spinner } from '../../ui'
+import { AnimatedHeight, Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, DiffStat, Expand, IconButton, ShimmerText, Spinner } from '../../ui'
 import { SearchStepView, WebGroupCap } from './web-search/SearchStep'
 import { searchStepsOf } from './web-search/model'
+import { searchExpansionKeys } from './web-search/expansion'
 
 const McpAppResult = lazy(() => import('../artifacts/McpAppFrame').then((m) => ({ default: m.McpAppResult })))
 const McpAppStepAudit = lazy(() => import('../artifacts/McpAppFrame').then((m) => ({ default: m.McpAppStepAudit })))
@@ -90,20 +94,27 @@ function holdsCall(nodes: readonly ToolCallNode[], id: string): boolean {
   return nodes.some((node) => node.call.id === id || holdsCall(node.children, id))
 }
 
-export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveToolGlowId(tools), alertFailures = true }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null; alertFailures?: boolean }): JSX.Element | null {
+export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveToolGlowId(tools), alertFailures = true, staged = false }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null; alertFailures?: boolean; staged?: boolean }): JSX.Element | null {
   const t = useT()
+  const tt = useSessionText()
+  const tallied = useContext(ToolTallyScope)
+  const scope = useContext(ToolExpansionScope)
+  const [showAll, setShowAll] = useToolExpansion(`tools:${tools[0]?.id ?? ''}`)
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
   const askedCalls = useStore((s) => s.uiRequests)
   const cache = useRef<ToolRowsCache | null>(null)
-  const ready = tools.some(generatingArgs) ? tools.filter((call) => !generatingArgs(call)) : tools
-  if (!ready.length) return null
-  cache.current = cachedToolRows(cache.current, ready, approvalIds)
-  const rows = cache.current.rows
+  cache.current = cachedToolRows(cache.current, tools, approvalIds)
+  const grouped = cache.current.rows
+  const sole = tallied && grouped.length === 1 && grouped[0].kind === 'group' ? grouped[0] : null
+  const rows: ToolRow[] = sole ? sole.nodes.map((node) => ({ kind: 'single', id: node.call.id, node, standalone: false, blocked: approvalIds.has(node.call.id) })) : grouped
   if (!rows.length) return null
+  const shown = !staged || showAll === true ? rows : rows.filter((row, index) => index >= rows.length - NEST_VISIBLE || toolExpansion.get(scope, row.id) === true || (row.kind === 'single' && (isRunning(row.node.call) || toolExpansion.get(scope, `step:${row.id}`) === true)) || (row.kind === 'group' && row.summary.running))
+  const hidden = rows.length - shown.length
   return (
     <section className="v3-steps" data-testid="v3-steps" aria-label={t('proc.title')}>
       <div className="v3-steps-list" data-testid="v3-steps-list">
-        {rows.map((row) => {
+        {staged && (hidden > 0 || showAll === true) ? <Button variant="ghost" size="sm" className="v3-step-earlier" aria-expanded={showAll === true} onPress={() => setShowAll(showAll !== true)} data-testid="v3-tools-earlier">{showAll === true ? tt('outputLess') : t('tool2.nestEarlier', { n: hidden })}</Button> : null}
+        {shown.map((row) => {
           if (row.kind === 'group') return <MemoToolGroupRow key={row.id} row={row} glowId={glowId} alertFailures={alertFailures} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
           if (row.kind === 'web') return <WebGroupRow key={row.id} row={row} glowId={glowId} />
           if (row.standalone && isQuestionCall(row.node.call)) {
@@ -128,17 +139,19 @@ function sameStepProps(a: StepNodeProps, b: StepNodeProps): boolean {
 
 function WebGroupRow({ row, glowId }: { row: Extract<ToolRow, { kind: 'web' }>; glowId: string | null }): JSX.Element {
   const [stored, setOpen] = useToolExpansion(row.id)
-  const open = stored ?? false
+  const scope = useContext(ToolExpansionScope)
+  const inheritedOpen = useSyncExternalStore(toolExpansion.subscribe, () => row.nodes.some(({ call }) => searchStepsOf(call).some((step) => toolExpansion.get(scope, searchExpansionKeys(call.id, step).stable) === true)))
+  const open = stored ?? inheritedOpen
   const panelId = useId()
   const calls = useMemo(() => row.nodes.map((node) => node.call), [row.nodes])
   return (
     <div className="v3-web-group" data-testid="v3-web-group">
       <WebGroupCap calls={calls} open={open} panelId={panelId} onToggle={() => setOpen(!open)} />
-      {open ? (
-        <div id={panelId} className="v3-step-nest" data-testid="v3-web-group-list">
+      <Expand id={panelId} open={open} role="group" aria-hidden={!open || undefined}>
+        {open ? <div className="v3-step-nest" data-testid="v3-web-group-list">
           {row.nodes.map((node) => <MemoStepNode key={node.call.id} node={node} glowId={glowId} depth={1} />)}
-        </div>
-      ) : null}
+        </div> : null}
+      </Expand>
     </div>
   )
 }
@@ -160,10 +173,10 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
 
   return (
     <Collapsible className="v3-step v3-step-group" data-state={summary.state} data-depth={0} isExpanded={open} onExpandedChange={setOpen}>
-      <CollapsibleHeader className="v3-step-head" size="compact" chevron="end" data-testid="v3-step-group" icon={<Icon name={groupIconName(row.nodes)} size={13} />}>
+      <CollapsibleHeader className="v3-step-head" size="compact" chevron="start" rowHover data-testid="v3-step-group" icon={<Icon name={groupIconName(row.nodes)} size={13} />}>
         <span className="v3-step-line" title={label}>
           {running ? (
-            <ShimmerText className="v3-steps-label" active={!open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
+            <ShimmerText className="v3-steps-label" active={summary.state !== 'blocked' && !open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
           ) : tally ? (
             <span className="v3-steps-label v3-steps-tally" data-testid="v3-step-group-tally">
               {tally.map((part) => <span key={part.key} data-failed={(part.failed > 0 && alertFailures) || undefined}>{toolTallyText(part, tt)}</span>)}
@@ -173,7 +186,7 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
               {parts.map((part, index) => <span key={index} data-failed={(part.failed && alertFailures) || undefined}>{part.text}</span>)}
             </span>
           )}
-          <ToolRunStats summary={summary} alertFailures={alertFailures} />
+          {running ? <>{summary.state !== 'blocked' ? <Spinner size="xs" className="v3-step-state" label={tt('stepRunningMark')} /> : null}<StepElapsed call={running} paused={summary.state === 'blocked'} /></> : <ToolRunStats summary={summary} alertFailures={alertFailures} />}
           {summary.state === 'cancelled' ? <Badge className="v3-steps-badge" data-testid="v3-step-group-cancelled">{t('run.cancelled')}</Badge> : null}
           {summary.needsApproval && !asking ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
         </span>
@@ -218,7 +231,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
 
   const step = (
     <>
-      <CollapsibleHeader className="v3-step-head" size="compact" chevron="end" data-testid="v3-step" icon={<Icon name={stepIconName(call)} size={13} />}>
+      <CollapsibleHeader className="v3-step-head" size="compact" chevron="start" rowHover data-testid="v3-step" icon={<Icon name={stepIconName(call)} size={13} />}>
         <CompletionSweep done={!running && !call.cancelled && !denied} settledAt={call.endedAt} />
         <span className="v3-step-line" title={tooltip}>
           <span className="v3-step-label">
@@ -232,7 +245,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
           ) : null}
           {lines ? <DiffStat className="v3-step-diff" added={lines.added} removed={lines.removed} data-testid="v3-step-diff-stat" /> : null}
           {tests ? <Badge tone={tests.failed ? 'fail' : 'ok'} className="v3-steps-badge" data-testid="v3-step-tests">{tt('testSummary', { p: tests.passed, f: tests.failed })}</Badge> : null}
-          {kind === 'command' && running && !blocked ? <Spinner size="xs" className="v3-step-state" label={tt('stepRunningMark')} /> : null}
+          {running && !blocked ? <><Spinner size="xs" className="v3-step-state" label={tt('stepRunningMark')} /><StepElapsed call={call} /></> : null}
           {kind === 'command' && call.status === 'ok' && !call.cancelled ? <span className="v3-step-state" role="img" aria-label={tt('stepDoneMark')} data-testid="v3-step-done"><Icon name="check" size={13} /></span> : null}
           {failed ? <span className="v3-step-fail" role="img" aria-label={tt('stepFailedMark')} data-testid="v3-step-failed"><Icon name="close" size={13} /></span> : null}
           {exitCode !== null ? <span className="v3-step-time" data-testid="v3-step-exit-code">{tt('exitCode', { n: exitCode })}</span> : null}
@@ -242,17 +255,20 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
         </span>
       </CollapsibleHeader>
       {asking ? <AskPill kind="approval" /> : call.approval ? <ApprovalReceipt approval={call.approval} /> : null}
+      {running && !blocked && !open && call.output ? <div className="v3-step-live-output" data-testid="v3-step-live-output">{call.output.trimEnd().split('\n').at(-1)?.slice(-180)}</div> : null}
       <CollapsiblePanel animated className="v3-step-panel">{open ? <StepDetail call={call} /> : null}</CollapsiblePanel>
+      <Expand open={open || running} aria-hidden={!open && !running || undefined}>
       {nested.shown.length ? (
-        <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>
-          {nested.earlier ? (
-            <Button variant="ghost" size="sm" className="v3-step-earlier" onPress={() => setNestAll(true)} data-testid="v3-step-earlier">
-              {t('tool2.nestEarlier', { n: nested.earlier })}
+        <AnimatedHeight><div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>
+          {open && children.length > NEST_VISIBLE ? (
+            <Button variant="ghost" size="sm" className="v3-step-earlier" aria-expanded={nestAll === true} onPress={() => setNestAll(nestAll !== true)} data-testid="v3-step-earlier">
+              {nestAll === true ? tt('outputLess') : t('tool2.nestEarlier', { n: nested.earlier })}
             </Button>
           ) : null}
           {nested.shown.map((child) => <MemoStepNode key={child.call.id} node={child} glowId={glowId} depth={depth + 1} />)}
-        </div>
+        </div></AnimatedHeight>
       ) : null}
+      </Expand>
     </>
   )
 
@@ -265,6 +281,12 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
         : step}
     </Collapsible>
   )
+}
+
+function StepElapsed({ call, paused = false }: { call: UIToolCall; paused?: boolean }): JSX.Element | null {
+  const now = useRunNow(isRunning(call) && !paused)
+  if (call.startedAt === undefined) return null
+  return <span className="v3-step-time ui-num" data-testid="v3-step-elapsed">{formatDuration(Math.max(0, now - call.startedAt))}</span>
 }
 
 const MemoToolGroupRow = memo(ToolGroupRow)
@@ -449,6 +471,13 @@ function YanSummaryList({ summaries }: { summaries: readonly YanSummary[] }): JS
 function StepOutput({ text, error = false, tail = false }: { text: string; error?: boolean; tail?: boolean }): JSX.Element {
   const tt = useSessionText()
   const [expanded, setExpanded] = useState(false)
+  const preRef = useRef<HTMLPreElement>(null)
+  const position = useRef<{ top: number; height: number } | null>(null)
+  useLayoutEffect(() => {
+    const saved = position.current
+    position.current = null
+    if (saved && expanded && tail && preRef.current) preRef.current.scrollTop = saved.top + preRef.current.scrollHeight - saved.height
+  }, [expanded, tail])
   const preview = previewOutput(text, { tail, maxLines: OUTPUT_PREVIEW_LINES, maxChars: OUTPUT_PREVIEW_CHARS })
   const truncated = preview.hidden > 0
   const shown = truncated && !expanded ? preview.text : text
@@ -456,26 +485,24 @@ function StepOutput({ text, error = false, tail = false }: { text: string; error
   const cut = shown.indexOf('\n')
   return (
     <>
+      {truncated ? (
+        <Button size="sm" variant="ghost" aria-expanded={expanded} data-testid="v3-step-output-toggle" onPress={() => {
+          const pre = preRef.current
+          if (pre) position.current = { top: pre.scrollTop, height: pre.scrollHeight }
+          setExpanded((value) => !value)
+        }}>
+          {expanded ? tt('outputLess') : tt('outputMore', { n: preview.total })}
+        </Button>
+      ) : null}
       {truncated && !expanded && tail ? <div className="v3-step-note" data-testid="v3-step-output-earlier">{tt('outputEarlier', { n: preview.hidden })}</div> : null}
-      <pre className="v3-step-pre out" data-testid="v3-step-output" data-error={error || undefined} role="group">
+      <AnimatedHeight><pre ref={preRef} className="v3-step-pre out" data-testid="v3-step-output" data-error={error || undefined} role="group">
         {leadShown ? (
           <>
             <span className="v3-step-out-lead">{cut < 0 ? shown : shown.slice(0, cut)}</span>
             {cut < 0 ? null : shown.slice(cut)}
           </>
         ) : shown}
-      </pre>
-      {truncated ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-expanded={expanded}
-          data-testid="v3-step-output-toggle"
-          onPress={() => setExpanded((v) => !v)}
-        >
-          {expanded ? tt('outputLess') : tt('outputMore', { n: preview.total })}
-        </Button>
-      ) : null}
+      </pre></AnimatedHeight>
     </>
   )
 }
@@ -516,12 +543,12 @@ function FileContentPreview({ path, content }: { path: string; content: string }
   const nowrap = useCodeNowrap()
   return (
     <>
-      <pre className="v3-step-patch v3-step-file" data-nowrap={nowrap} data-testid="v3-step-content"><HighlightedCode code={shown} lang={languageOf(path)} /></pre>
       {long ? (
         <Button size="sm" variant="ghost" aria-expanded={all} data-testid="v3-step-content-toggle" onPress={() => setAll((v) => !v)}>
           {all ? tt('contentLess') : tt('contentMore', { n: lines.length })}
         </Button>
       ) : null}
+      <pre className="v3-step-patch v3-step-file" data-nowrap={nowrap} data-testid="v3-step-content"><HighlightedCode code={shown} lang={languageOf(path)} /></pre>
     </>
   )
 }

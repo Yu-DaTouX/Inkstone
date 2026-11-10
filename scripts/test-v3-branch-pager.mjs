@@ -604,6 +604,8 @@ async function main() {
         session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', isAgentRunning: false, isStreaming: false, isCompacting: false },
         messages: [{ id: 'm0', role: 'user', text: 'hi', entryId: 'u2' }],
         questionLog: [],
+        questionLogs: {},
+        approvalLogs: {},
         submittingMessages: [],
         questionLogSession: null,
         runTail: null,
