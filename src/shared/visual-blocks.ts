@@ -217,15 +217,15 @@ function parseStats(data: Record<string, unknown>): StatsBlock {
 
 function parseCards(data: Record<string, unknown>): CardsBlock {
   const layout = data.layout === undefined || data.layout === 'list' ? 'list' : data.layout === 'grid' ? 'grid' : fail('layout 只能是 list 或 grid')
-  const items = list(data.items, 'items', 1, LIMIT.items).map((raw, i) => {
+  const items = list(data.items ?? data.cards, 'items', 1, LIMIT.items).map((raw, i) => {
     const item = obj(raw, `items[${i}]`)
     return {
       title: str(item.title, `items[${i}].title`, 80),
       icon: optStr(item.icon, `items[${i}].icon`, 32),
       badge: optStr(item.badge, `items[${i}].badge`, 24),
       recommended: item.recommended === true ? true : undefined,
-      description: optStr(item.description, `items[${i}].description`, LIMIT.long),
-      meta: optStr(item.meta, `items[${i}].meta`),
+      description: optStr(item.description ?? item.desc ?? item.caption, `items[${i}].description`, LIMIT.long),
+      meta: optStr(item.meta ?? item.value, `items[${i}].meta`),
       image: image(item.image, `items[${i}].image`),
       links: links(item.links, `items[${i}].links`)
     }
