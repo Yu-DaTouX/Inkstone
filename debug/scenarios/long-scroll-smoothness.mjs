@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { startProfile, stopProfile } from '../lib/cpu-profile.mjs'
 import { SCROLL_HOOK, scrollStats, trackStats } from '../lib/scroll-probes.mjs'
 
-export const meta = { description: '真实数据副本（配 --days 0 --include-sessions <片段>，YAN_SCROLL_SESSION 指定片段）：大会话切入、滚轮上下滚、大纲跳转、查找跳转、回到底部、过程区展开的逐帧位移/白屏/长帧，不调用模型' }
+export const meta = { observation: true, description: '真实数据副本（配 --days 0 --include-sessions <片段>，YAN_SCROLL_SESSION 指定片段）：大会话切入、滚轮上下滚、大纲跳转、查找跳转、回到底部、过程区展开的逐帧位移/白屏/长帧，不调用模型' }
 
 export default async function run({ cdp, waitFor, report, sleep, log, shot, out }) {
   const ev = (expr) => cdp.evaluate(expr)

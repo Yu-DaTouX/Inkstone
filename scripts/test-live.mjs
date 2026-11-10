@@ -168,8 +168,8 @@ const CASES = {
   },
   searchopen: { probe: 'scripts/probe/search-open.js', delay: 12000, cost: 0, budget: 180000 },
   browserreal: { probe: 'scripts/probe/browser-real-sites.js', delay: 9000, cost: 0, budget: 240000, visible: true },
-  composersize: { probe: 'scripts/probe/composer-size.js', delay: 9000, cost: 0, wins: ['1440x900', '1100x700', '940x640', '900x520'] },
-  questionshot: { probe: 'scripts/probe/question-shot.js', delay: 9000, cost: 0 },
+  composersize: { probe: 'scripts/probe/composer-size.js', delay: 9000, cost: 0, observation: true, wins: ['1440x900', '1100x700', '940x640', '900x520'] },
+  questionshot: { probe: 'scripts/probe/question-shot.js', delay: 9000, cost: 0, observation: true },
   sidebardensity: { probe: 'scripts/probe/sidebar-density.js', delay: 4000, cost: 0, visible: true },
   restartempty: { probe: 'scripts/probe/restart-empty.js', delay: 9000, cost: 0 },
   title: {
@@ -3010,6 +3010,8 @@ async function main() {
   }
 
   console.log(`将运行：${names.join(', ')}`)
+  const observations = names.filter((n) => CASES[n].observation)
+  if (observations.length) console.log(`观察工具（人工看图/读数，不计自动验收）：${observations.join(', ')}`)
   console.log(`测试模型：${TEST_MODEL}（可用 YAN_TEST_MODEL 覆盖）；思考档：${process.env.YAN_TEST_THINKING || 'off'}（可用 YAN_TEST_THINKING 覆盖）`)
   const spends = names.filter((n) => CASES[n].cost > 0)
   if (spends.length) {

@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const meta = { demo: true, description: '完成卡入场扫线连续截帧：运行结束后 1.3s 内按完成卡区域连续截图，写到 SWEEP_DIR' }
+export const meta = { observation: true, demo: true, description: '完成卡入场扫线连续截帧：运行结束后 1.3s 内按完成卡区域连续截图，写到 SWEEP_DIR' }
 
 export default async function run({ cdp, box, sleep, waitFor, report, log, autoApprove, newSession, running }) {
   const ev = (x) => cdp.evaluate(x)

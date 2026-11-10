@@ -23,30 +23,34 @@
   }
   const query = (testId) => document.querySelector(`[data-testid="${testId}"]`)
   const closeSettings = async () => {
-    ;(query('settings-close') ?? query('v3-back'))?.click()
+    query('settings-close')?.click()
     return until(() => !query('settings-root') && !!query('composer-input'))
   }
-
-  const openTool = async (tab) => {
-    const direct = query(`wb-open-${tab}`)
-    if (direct) {
-      if (direct.getAttribute('aria-pressed') !== 'true') direct.click()
-      await wait(200)
-      return
+  const openSettingsFromSidebar = async () => {
+    const direct = query('t3-sidebar-utility-settings')
+    if (direct) direct.click()
+    else {
+      query('t3-sidebar-utility-more')?.click()
+      await until(() => !!query('t3-sidebar-utility-menu'), 2000)
+      const item = [...document.querySelectorAll('[data-testid="t3-sidebar-utility-menu"] [role="menuitem"]')]
+        .find((el) => /设置|Settings/i.test(el.textContent ?? ''))
+      item?.click()
     }
-    if (query(`wb-card-${tab}`)) return
-    query('wb-more-tools')?.click()
-    const pick = () => query(`wb-view-${tab}`) ?? document.querySelector(`.wb-more-menu [data-key="${tab}"]`)
-    for (let i = 0; i < 40 && !pick(); i++) await wait(50)
-    pick()?.click()
-    await wait(200)
+    return until(() => !!query('settings-root'), 4000)
   }
-  const closeAllCards = () => {
-    for (const close of document.querySelectorAll('[data-testid^="wb-card-close-"]')) close.click()
+  const openRightPanel = async () => {
+    if (query('v3-head-panel-toggle')?.getAttribute('aria-pressed') !== 'true') query('v3-head-panel-toggle')?.click()
+    return until(() => !!query('rp') && (!!query('rp-hide') || !!query('rp-new-tab')), 4000)
+  }
+  const hideRightPanel = async () => {
+    if (query('rp-hide')) query('rp-hide')?.click()
+    else query('v3-head-panel-toggle')?.click()
+    return until(() => query('v3-head-panel-toggle')?.getAttribute('aria-pressed') === 'false', 3000)
   }
   const store = window.__yanStore
   const oldAnswer = store?.getState().answerApproval
   const oldApprovals = store?.getState().approvals
+  const browserBefore = store?.getState().browserState?.open
   let onNativeKey
   try {
     out.push('=== v3 独立外壳与真实 Chromium 按键 ===')
@@ -56,32 +60,41 @@
     check(!!document.querySelector('[data-testid="composer-input"]'), '正式输入框已挂载')
     check(await until(() => !!query('v3-empty')), '新会话空态已挂载')
     check(await until(() => { const el = query('v3-ascii-field'); return !!el && el.getAttribute('data-closing') === '0' }), '空态挂载动态 ASCII 背景（未淡出）')
-    check(document.querySelectorAll('.wb-pane').length === 0, '默认关闭的工作区没有提前挂载叶子')
+    check(document.querySelectorAll('.wb-pane').length === 0, '旧的 wb 工作区叶子没有被挂载')
     const runsSnapshot = await window.yan.runs.snapshot()
     check(Number.isInteger(runsSnapshot.revision) && Array.isArray(runsSnapshot.runs), '正式运行快照 IPC 可用，未以渲染端伪造状态替代')
     const sidebarWidth = document.querySelector('.v3-main').getBoundingClientRect().left
     check(Math.abs(sidebarWidth - 288) <= 2, `默认侧栏宽度 ${sidebarWidth.toFixed(1)}px（参考默认 288）`)
     check(document.documentElement.scrollWidth <= innerWidth + 1, '默认宽度无页面横向溢出')
     check(!getComputedStyle(document.body).fontFamily.toLowerCase().includes('maple'), 'v3 不以随包 Maple 字体排版')
-    const aligned = (container, label) => {
+    const aligned = (container, labelSelector) => {
       const icon = container?.querySelector('svg')
-      const text = container?.querySelector(label)
+      const text = container?.querySelector(labelSelector)
       if (!icon || !text) return false
       const a = icon.getBoundingClientRect()
       const b = text.getBoundingClientRect()
       return Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)) <= 1.5
     }
-    check(aligned(document.querySelector('.mtp-trigger'), '.mtp-model'), '模型按钮图标与标签在同一行')
-    check(aligned(document.querySelector('.composer-permission'), '.cp-label'), '权限按钮图标与标签在同一行')
+    check(
+      aligned(document.querySelector('[data-chat-provider-model-picker]'), '[data-chat-provider-model-picker-label]'),
+      '模型按钮图标与标签在同一行'
+    )
+    const permissionChip = query('v3-empty') ? document.querySelector('[data-composer-permission-trigger]') : null
+    check(!!permissionChip && ['danger', 'all'].includes(permissionChip.dataset.permissionMode ?? ''), '输入框权限按钮带当前档位')
+    check(!!permissionChip?.getAttribute('aria-label'), '权限按钮有可访问名')
 
-    check(!query('v3-header-settings') && !document.querySelector('.v3-head-sep'), '顶栏不再单放设置按钮，也没有分隔线')
-    const headIcons = document.querySelectorAll('.v3-head-actions .ui-icon-btn').length
-    check(headIcons <= 7, `顶栏除窗口控件外 ${headIcons} 个图标（不超过 7）`)
-    check(!query('v3-nav-new-chat') && !!query('v3-new-chat') && !!query('v3-nav-new-chat-folder'), '左栏没有重复的「新建会话」行，保留顶部新建图标与「打开项目…」')
-    const sideSettings = query('v3-side-settings')
-    check(!!sideSettings, '左栏页脚设置入口存在')
-    sideSettings?.click()
-    check(await until(() => query('settings-root')), '设置弹层打开')
+    check(!query('v3-head-settings'), '顶栏不再单放设置按钮')
+    check(!!query('v3-head-actions') && !!query('v3-always-on-top'), '顶栏操作区含窗口置顶按钮')
+    check(query('v3-always-on-top')?.getAttribute('aria-pressed') !== null, '置顶按钮回显开关状态')
+    check(['true', 'false'].includes(query('v3-head-panel-toggle')?.getAttribute('aria-pressed') ?? ''), '右栏按钮回显开关状态')
+    check(!!query('v3-head-sessionbar-toggle') && !!query('v3-head-panel-toggle'), '顶栏有会话栏与右栏两个开关')
+    check(!query('v3-head-new-chat'), '侧栏展开时顶栏不重复放「新建会话」')
+    const folderNewThread = document.querySelector('[data-testid="sidebar-project-folder"] button[aria-label]')
+    check(!!folderNewThread, '项目分区头部有新建会话按钮')
+
+    out.push('')
+    out.push('--- 左栏页脚设置入口 / 外观 / 动态背景 ---')
+    check(await openSettingsFromSidebar(), '左栏页脚设置入口打开设置')
     query('v3-settings-nav-appearance')?.click()
     check(await until(() => query('v3-theme-light')), '设置导航进入外观分区')
     query('v3-theme-light')?.click()
@@ -90,32 +103,35 @@
     query('v3-theme-dark')?.click()
     check(await until(() => document.documentElement.dataset.theme === 'dark'), '可切换深色主题')
     check(lightBg !== getComputedStyle(document.querySelector('.v3-main') ?? document.body).backgroundColor, '亮暗主题实际背景不同')
-    const asciiToggle = query('v3-ascii-background-toggle')
-    check(!!asciiToggle, '外观分区有动态背景开关')
-    const asciiSwitch = () => query('v3-ascii-background-toggle')?.querySelector('input[role="switch"]')
-    check(!!asciiSwitch(), '动态背景开关内部是 role="switch" 的输入')
+    query('v3-appearance-advanced')?.click()
+    check(await until(() => !!query('v3-home-bg-ascii'), 3000), '外观高级里有动态背景档位')
+    const asciiOption = () => query('v3-home-bg-ascii')
+    const asciiPressed = () => ['aria-pressed', 'aria-checked'].some((name) => asciiOption()?.getAttribute(name) === 'true')
+    check(asciiPressed(), '动态背景缺省为开')
     check((await window.yan.getSettings()).asciiBackground === undefined, '动态背景缺省不写该键（视为开）')
-    asciiSwitch()?.click()
-    check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === false), '关掉开关后主进程持久化 false')
-    check(asciiSwitch()?.checked === false, '关闭后内部输入不再选中')
+    query('v3-home-bg-none')?.click()
+    check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === false), '选「无」后主进程持久化 false')
+    check(!asciiPressed(), '关闭后档位不再选中')
     check(await closeSettings(), '可返回会话')
-    check(await until(() => !query('v3-ascii-field')), '关掉开关后空态不再挂载 ASCII 背景')
-    query('wb-more-tools')?.click()
-    check(await until(() => !!query('v3-menu-settings') && !!query('v3-always-on-top')), '顶栏 ⋮ 菜单含窗口置顶与设置')
-    query('v3-menu-settings')?.click()
-    check(await until(() => query('v3-ascii-background-toggle')), '再次打开设置回到上次的外观分区')
-    check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === false, 2000), '恢复前确认开关实际已关闭（主进程回显 false）')
-    asciiSwitch()?.click()
-    check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === undefined), '开回来只回落缺省，不写 true')
+    check(await until(() => !query('v3-ascii-field')), '关掉动态背景后空态不再挂载 ASCII 背景')
+    check(await openSettingsFromSidebar(), '再次从页脚打开设置')
+    check(await until(() => !!query('v3-settings-nav-appearance'), 3000), '重新打开回到设置页')
+    query('v3-settings-nav-appearance')?.click()
+    query('v3-appearance-advanced')?.click()
+    check(await until(() => !!query('v3-home-bg-ascii'), 3000), '高级重新展开后可见动态背景档位')
+    asciiOption()?.click()
+    check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === true), '开回来写 true')
     check(await closeSettings(), '返回会话')
-    check(await until(() => !!query('v3-ascii-field')), '恢复缺省后空态重新挂载 ASCII 背景')
+    check(await until(() => !!query('v3-ascii-field')), '恢复动态背景后空态重新挂载 ASCII 背景')
+    await store.getState().patchSettings({ asciiBackground: undefined }).catch(() => undefined)
+
     const focusTrail = []
     const onFocusIn = (event) => focusTrail.push(`${event.target?.tagName}:${event.target?.getAttribute?.('data-testid') ?? ''}`)
     document.addEventListener('focusin', onFocusIn, true)
     query('composer-input')?.focus()
     check(await until(() => query('v3-command-input'), 20000), '真实 Ctrl+K 打开命令面板')
     check(document.activeElement === query('v3-command-input'), '命令面板接管搜索焦点')
-    check(await until(() => [...document.querySelectorAll('.cmd-option__label')].some((el) => /并排|side by side/i.test(el.textContent ?? ''))), '命令面板有「并排打开」入口')
+    check(await until(() => [...document.querySelectorAll('.cmd-option')].some((el) => /并排|side by side/i.test(el.textContent ?? ''))), '命令面板有「并排打开」入口')
     check(await until(() => !query('v3-command-input'), 5000), '真实 Esc 关闭命令面板')
     const focusRestored = await until(() => document.activeElement === query('composer-input'), 500)
     check(focusRestored, '关闭命令面板后归还输入框焦点')
@@ -160,30 +176,21 @@
     check(answered.at(-1)?.id === pending.id && answered.at(-1)?.choice === 'once', '明确点击仅答复原请求一次')
     store.setState({ approvals: oldApprovals, answerApproval: oldAnswer })
 
-    check(['terminal', 'files', 'browser'].every((tab) => !!query(`wb-open-${tab}`)) && !!query('wb-more-tools'), '工作区有明确打开入口（标题栏工具按钮与更多工具）')
-    await openTool('files')
-    check(await until(() => {
-      const panel = document.querySelector('.wb-panel')
-      return panel && !panel.hidden && panel.getBoundingClientRect().width > 0
-    }), '工作区点击后实际可见')
-    const panel = document.querySelector('.wb-panel')
-    const noOwner = () => !!query('wb-empty')
-    const browserWasOpen = store.getState().browserState.open
-    for (const tab of ['changes', 'browser']) await openTool(tab)
-    check(await until(() => noOwner() || ['changes', 'files', 'browser'].every((tab) => query(`wb-card-${tab}`))), '打开过的工具各自以面板卡片挂载')
-    check(noOwner() || (!!query('wb-card-expand-files') && !!query('wb-card-grip-files') && !!query('wb-card-close-files')), '面板卡片有展开、拖拽平铺与关闭入口')
-    check(await until(() => query('wb-pane-files')?.querySelector('[data-testid="v3-files"]') || noOwner()), '文件卡显示真实组件或明确的无会话门闩')
-    check(await until(() => query('wb-pane-browser') || noOwner()), '浏览器卡挂载且保留归属门闩')
-    await wait(150)
-    check(store.getState().browserState.open === browserWasOpen, '只挂载浏览器卡不会自行打开或导航原生网页')
-    check(!query('terminal-pane'), '探针未挂载终端，不执行用户默认 shell/profile')
-    const frame = panel?.getBoundingClientRect()
-    check(frame && frame.left >= -1 && frame.right <= innerWidth + 1, '工作区保持在窗口可读范围内')
-    closeAllCards()
-    check(await until(() => [...document.querySelectorAll('.wb-pane-tile[data-tile-id]')].every((tile) => tile.dataset.tileId === 'chat' || tile.getBoundingClientRect().width === 0)), '关掉所有卡片后只剩对话，工具卡实际卸下而不是只改状态')
-    await openTool('changes')
-    check(await until(() => panel && !panel.hidden && panel.getBoundingClientRect().width > 0), '重新打开保留面板，不创建终端资源')
-    check(document.querySelectorAll('.wb-pane').length <= 6, '叶子实例数量不随操作增加')
+    out.push('')
+    out.push('--- 右栏（替代旧 wb 工作区卡片）---')
+    check(await openRightPanel(), '点顶栏右栏按钮打开右栏')
+    check(query('v3-head-panel-toggle')?.getAttribute('aria-pressed') === 'true', '右栏按钮回显已打开')
+    const panelRoot = query('rp')
+    const panelBox = panelRoot?.getBoundingClientRect()
+    check(!!panelBox && panelBox.left >= -1 && panelBox.right <= innerWidth + 1, '右栏保持在窗口可读范围内')
+    check(
+      !!query('rp-new-tab') || document.querySelectorAll('.t3-launcher__row').length > 0,
+      '右栏有新建标签入口或启动器，不是空壳'
+    )
+    check(!query('terminal-pane') && !query('terminal-host'), '打开右栏不会自动挂载终端面板')
+    check(store.getState().browserState?.open === browserBefore, '打开右栏不会自行打开或导航原生网页')
+    check(await hideRightPanel(), '点右栏收起按钮关闭右栏')
+    check(query('v3-head-panel-toggle')?.getAttribute('aria-pressed') === 'false', '收起后顶栏按钮回到关闭')
 
     store.getState().openSettings('auth')
     check(await until(() => query('ms-services')), '模型与服务正式懒加载入口可挂载')
@@ -208,19 +215,18 @@
     check(await closeSettings(), '能力页返回对话，不执行配置写入')
 
     out.push('')
-    out.push('--- 首页用量（正式取数 / v3 pattern / pane 布局）---')
+    out.push('--- 首页用量（正式取数 + 详情页）---')
     const usageExpect = { main: 3000, sub: 5000, messages: 4 }
     check(await until(() => !!document.querySelector('.v3-empty-page'), 6000), '空态根节点带 v3-empty-page')
     const emptyPage = document.querySelector('.v3-empty-page')
     const paneWidth = emptyPage ? emptyPage.getBoundingClientRect().width : innerWidth
-    const paneNarrow = paneWidth <= 760
-    out.push(`  pane 宽度 ${paneWidth.toFixed(1)}px / window ${innerWidth}px（窄容器=${paneNarrow}）`)
-    check(Math.abs(paneWidth - innerWidth) > 1, '用量容器按对话 pane 取宽，不是整个 window')
+    out.push(`  pane 宽度 ${paneWidth.toFixed(1)}px / window ${innerWidth}px`)
+    check(Math.abs(paneWidth - innerWidth) > 1, '空态按对话 pane 取宽，不是整个 window')
     const containerType = emptyPage ? getComputedStyle(emptyPage).containerType : ''
     check(String(containerType).includes('inline-size'), `v3-empty-page 真实 CSS 已加载（container-type=${containerType}）`)
-    check(!!query('usage-overview'), '空态右栏渲染用量面板（正式组件，不是静态占位）')
-    const usageDisplay = query('usage-overview') ? getComputedStyle(query('usage-overview')).display : 'missing'
-    check(paneNarrow ? usageDisplay === 'none' : usageDisplay !== 'none', `对话列${paneNarrow ? '窄' : '宽'}时用量面板${paneNarrow ? '收起' : '展开'}（display=${usageDisplay}）`)
+    check(await until(() => !!query('usage-strip'), 6000), '空态渲染本机用量卡片（正式组件，不是静态占位）')
+    check(await until(() => query('usage-strip')?.getAttribute('aria-busy') !== 'true', 6000), '用量卡片取数完成')
+    check(/\d/.test(query('usage-strip')?.querySelector('.v3-home-usage-num')?.textContent ?? ''), '用量卡片显示数字而不是占位')
 
     const statsAll = await window.yan.usageStats('all')
     const stats30 = await window.yan.usageStats('30d')
@@ -253,108 +259,27 @@
       '7d：只有子代理那次 5000 token'
     )
 
-    if (!paneNarrow) {
-      const usageTabs = (control) => [...document.querySelectorAll(`[data-usage-control="${control}"] [role="tab"], [data-usage-control="${control}"] [role="radio"]`)]
-      const clickRange = async (label) => {
-        const tab = usageTabs('range').find((el) => (el.textContent ?? '').trim() === label)
-        tab?.click()
-        if (!tab) return false
-        return until(() => tab.getAttribute('aria-selected') === 'true' || tab.getAttribute('aria-checked') === 'true', 4000)
-      }
-      check(await until(() => (query('usage-tokens')?.textContent ?? '').includes('8,000'), 6000), '概览主数字显示 8,000（all）')
-      check(
-        !query('usage-token-breakdown'),
-        '概览只显示总数，不拆主会话 / 子代理'
-      )
-      check(await clickRange('7 天'), '点「7 天」范围页签切换选中')
-      check(await until(() => (query('usage-tokens')?.textContent ?? '').includes('5,000'), 5000), '7 天主数字 5,000（只子代理）')
-      check(
-        !query('usage-token-breakdown'),
-        '7 天同样不拆分'
-      )
-      check(await clickRange('30 天'), '点「30 天」范围页签切换选中')
-      check(await until(() => (query('usage-tokens')?.textContent ?? '').includes('8,000'), 5000), '30 天主数字回到 8,000')
-      check(await clickRange('全部'), '点「全部」范围页签切回')
-      const modelsTab = usageTabs('tab').find((el) => (el.textContent ?? '').trim() === '模型')
-      modelsTab?.click()
-      check(await until(() => !!document.querySelector('.start-models .start-model'), 4000), '「模型」页按 cost 展示模型列表')
-      check((document.querySelector('.start-models')?.textContent ?? '').includes('usage-main'), '模型列表含合成模型名（provider/model 回退显示）')
-      const backTab = usageTabs('tab').find((el) => (el.textContent ?? '').trim() === '概览')
-      backTab?.click()
-      await until(() => !!query('usage-tokens'), 3000)
-      const rangeTab = usageTabs('range').find((el) => el.getAttribute('aria-selected') === 'true')
-      const beforeKey = rangeTab?.textContent?.trim() ?? ''
-      rangeTab?.focus()
-      rangeTab?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
-      rangeTab?.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowLeft', bubbles: true }))
-      check(
-        await until(() => usageTabs('range').some((el) => el.getAttribute('aria-selected') === 'true' && el.textContent?.trim() !== beforeKey), 3000),
-        '键盘方向键切换范围页签（合成 KeyboardEvent；非真实 Chromium 输入）'
-      )
-      await clickRange('全部')
-      await wait(2400)
+    const usageRange = (label) =>
+      [...document.querySelectorAll('[data-usage-control="range"] [role="radio"], [data-usage-control="range"] button')]
+        .find((el) => (el.textContent ?? '').trim() === label)
+    const clickUsageRange = async (label) => {
+      const tab = usageRange(label)
+      tab?.click()
+      if (!tab) return false
+      return until(() => tab.getAttribute('aria-pressed') === 'true' || tab.getAttribute('aria-checked') === 'true', 4000)
     }
-
-    const splitStore = window.__yanSplit
-    if (splitStore && !paneNarrow) {
-      const st = store.getState()
-      const current = {
-        peekedSessionId: st.peekedSessionId,
-        peekedPath: st.peekedPath,
-        session: st.session ? { sessionId: st.session.sessionId, sessionFile: st.session.sessionFile } : null
-      }
-      const candidate = (st.sessions ?? []).find((s) => s.path && s.id !== st.session?.sessionId)
-      if (candidate) {
-        splitStore.getState().open({ sessionId: candidate.id, path: candidate.path }, current)
-        const narrowed = await until(() => {
-          const page = document.querySelector('.v3-empty-page')
-          return !!page && page.getBoundingClientRect().width <= 760
-        }, 6000)
-        const page = document.querySelector('.v3-empty-page')
-        const splitPaneWidth = page ? page.getBoundingClientRect().width : null
-        out.push(`  并排后 pane 宽度 ${splitPaneWidth == null ? 'n/a' : splitPaneWidth.toFixed(1)}px / window ${innerWidth}px`)
-        check(narrowed && !!page && Math.abs(page.getBoundingClientRect().width - innerWidth) > 100, '同一个宽 window 并排后对话 pane 明显收窄')
-        check(
-          !!query('usage-overview') && getComputedStyle(query('usage-overview')).display === 'none',
-          '对话 pane 收窄到阈值内时用量面板收起（按 pane 而不是 window）'
-        )
-        await wait(2400)
-        splitStore.getState().close()
-        await until(() => {
-          const p = document.querySelector('.v3-empty-page')
-          return !!p && p.getBoundingClientRect().width > 760
-        }, 6000)
-        check(
-          !!query('usage-overview') && getComputedStyle(query('usage-overview')).display !== 'none',
-          '关闭并排、pane 变宽后用量面板重新展开'
-        )
-      } else {
-        out.push('  ~ 跳过并排收窄：隔离会话表里没有可并排的第二条会话')
-      }
-    }
-
-    {
-      const shotSettings = query('v3-side-settings')
-      shotSettings?.click()
-      await until(() => !!query('settings-root'), 5000)
-      query('v3-settings-nav-appearance')?.click()
-      await until(() => !!query('v3-theme-light'), 5000)
-      query('v3-theme-light')?.click()
-      await until(() => document.documentElement.dataset.theme === 'light', 4000)
-      await closeSettings()
-      await until(() => !!document.querySelector('.v3-empty-page'), 4000)
-      await wait(2600)
-      shotSettings?.click()
-      await until(() => !!query('v3-theme-dark'), 5000)
-      query('v3-theme-dark')?.click()
-      await until(() => document.documentElement.dataset.theme === 'dark', 4000)
-      await closeSettings()
-      await until(() => !!query('composer-input'), 4000)
-      await wait(1200)
-    }
-
-    await openTool('changes')
-    await until(() => panel && !panel.hidden && panel.getBoundingClientRect().width > 0)
+    query('v3-home-usage-details')?.click()
+    check(await until(() => !!query('usage-details'), 6000), '「查看详情」进入用量页')
+    check(await until(() => (query('usage-page-tokens')?.textContent ?? '').includes('8,000'), 6000), '用量页主数字显示 8,000（all）')
+    check(!!query('v3-usage-breakdown'), '用量页有分维度的用量明细')
+    check(await clickUsageRange('7 天'), '点「7 天」范围切换选中')
+    check(await until(() => (query('usage-page-tokens')?.textContent ?? '').includes('5,000'), 5000), '7 天主数字 5,000（只子代理）')
+    check(await clickUsageRange('30 天'), '点「30 天」范围切换选中')
+    check(await until(() => (query('usage-page-tokens')?.textContent ?? '').includes('8,000'), 5000), '30 天主数字回到 8,000')
+    check(await clickUsageRange('全部'), '点「全部」范围切回')
+    check(document.querySelectorAll('[data-testid="v3-usage-breakdown"] .usage-page-row[role="row"]').length > 1, '用量明细列出至少一条模型行')
+    query('v3-back')?.click()
+    check(await until(() => !!query('v3-empty') && !query('usage-details'), 5000), '从用量页返回对话')
 
     store.getState().applyPush({ ch: 'sync', payload: [
       { id: 'v3-ui-fixture-u1', role: 'user', text: '请检查这次 UI 升级的进度。' },
@@ -370,23 +295,26 @@
     check(await until(() => query('v3-artifact-list') && query('v3-artifact-card')), '正式回合已接成果卡，缺失文件夹具不触发真实文件读取')
     check(document.documentElement.scrollWidth <= innerWidth + 1, '正文与代码块不造成页面横向溢出')
     check(await until(() => !query('v3-ascii-field')), '离开空态后动态 ASCII 背景淡出并卸载')
+
+    out.push('')
+    out.push('--- 排队行与模型菜单 ---')
     const queueBefore = store.getState().queue
     store.setState({ queue: { steering: [], followUp: [{ id: 'v3-fixture-queue-1', text: '隔离夹具：排队中的消息' }] } })
+    check(await until(() => query('queue-stack')?.dataset.count === '1'), '队列项渲染成一行')
     check(await until(() => query('queue-actions')), '队列项有操作菜单')
-    query('queue-actions')?.click()
-    check(await until(() => query('queue-edit-start')), '队列项菜单有编辑入口')
+    check(await until(() => !!query('queue-edit-start')), '队列行有编辑入口')
     query('queue-edit-start')?.click()
-    check(await until(() => query('queue-edit-panel')), '队列编辑面板可打开')
+    check(await until(() => !!query('queue-edit-input')), '队列行内编辑框可打开')
+    check(query('queue-edit-input')?.value === '隔离夹具：排队中的消息', '编辑框预填队列文本')
     query('queue-edit-cancel')?.click()
-    check(await until(() => !query('queue-edit-panel')), '队列编辑面板可取消')
+    check(await until(() => !query('queue-edit-input')), '队列编辑可取消')
     store.setState({ queue: queueBefore })
-    const modelsBefore = store.getState().models
-    store.setState({ models: [{ id: 'v3-fixture-price', name: '价格夹具', provider: 'fixture', api: 'openai', reasoning: false, contextWindow: 200000, cost: { input: 3, output: 15 } }] })
-    query('model-picker')?.click()
-    check(await until(() => !!document.querySelector('.mtp-item-name')) && !document.querySelector('.mtp-tag-price'), '模型菜单显示模型，不显示价格')
-    query('model-picker')?.click()
-    check(await until(() => !document.querySelector('.mtp-tag-price')), '关闭选择器后价格标签卸载')
-    store.setState({ models: modelsBefore })
+    document.querySelector('[data-chat-provider-model-picker]')?.click()
+    check(await until(() => document.querySelectorAll('.t3-model-row__name').length > 0, 5000), '模型菜单列出可选的模型行')
+    check(!/[¥$]\s?\d/.test(document.querySelector('.t3-model-picker')?.textContent ?? ''), '模型菜单不显示价格')
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await until(() => !document.querySelector('.t3-model-picker'), 3000)
+    check(!document.querySelector('.t3-model-picker'), 'Esc 关闭模型菜单')
 
     const runsStore = window.__yanRuns
     check(!!runsStore, '运行镜像 store 在隔离探针中可用')
@@ -432,13 +360,10 @@
         syncing: false,
         error: null
       })
-      await openTool('files')
-      closeAllCards()
       await wait(9000)
     }
     await wait(50)
-    const endPanel = document.querySelector('.wb-panel')
-    if (endPanel && !endPanel.hidden) closeAllCards()
+    if (query('rp-hide')) await hideRightPanel()
     await wait(100)
     check(
       !document.querySelector('[data-testid="terminal-pane"]') &&
@@ -448,14 +373,7 @@
     )
     const endTerminals = await window.yan.terminal.list().catch(() => null)
     check(Array.isArray(endTerminals) && endTerminals.length === 0, '场景结束前宿主终端表为空，没有隐式创建真实 PTY')
-    let savedTab = 'unknown'
-    try {
-      const rawPref = JSON.parse(localStorage.getItem('inkstone.v3.prefs') ?? 'null')
-      savedTab = rawPref?.workbenchTab ?? 'none'
-    } catch {
-      savedTab = 'unreadable'
-    }
-    check(savedTab !== 'terminal' && savedTab !== 'browser', `场景结束时持久化页签不是终端 / 浏览器（实际 ${savedTab}）`)
+    check(store.getState().browserState?.open === browserBefore, '场景结束前没有隐式打开原生网页')
     out.push('证据范围：界面夹具、真实 Chromium 按键与截图；不代表真实模型或完整工作流验收。')
     if (window.yan.isProbe) await wait(12000)
   } catch (error) {

@@ -165,7 +165,8 @@ async function runScenarioOnce(name, flags) {
   const samples = need ? samplePaths('all').slice(0, need) : []
   if (samples.length < need) throw new Error(`场景 ${name} 需要 ${need} 个大会话样本：先 npm run debug -- samples pick`)
   const instance = await startInstance({ label: name, flags: { ...flags, 'no-fake': false, demo: !!flags.demo || !!mod.meta?.demo }, samples })
-  const report = { scenario: name, startedAt: new Date().toISOString(), checks: [], timings: {}, log: [] }
+  const observation = mod.meta?.observation === true
+  const report = { scenario: name, observation, startedAt: new Date().toISOString(), checks: [], timings: {}, log: [] }
   let cdp
   try {
     cdp = await connectCdp(instance.cdpPort, { shotDir: instance.runDir })
@@ -188,7 +189,8 @@ async function runScenarioOnce(name, flags) {
   }
   const failed = report.checks.filter((check) => !check.ok).map((check) => check.name)
   const ok = !report.fatal && failed.length === 0
-  console.log(`${ok ? '通过' : '失败'}  ${name}  ${instance.runDir}${failed.length ? `\n  失败项：${failed.join('；')}` : ''}`)
+  const verdict = observation ? (ok ? '观察完成（不计自动验收）' : '观察失败') : ok ? '通过' : '失败'
+  console.log(`${verdict}  ${name}  ${instance.runDir}${failed.length ? `\n  失败项：${failed.join('；')}` : ''}`)
   return ok
 }
 
@@ -197,7 +199,7 @@ async function cmdScenario(name, flags) {
   if (!name) {
     for (const scenario of all) {
       const mod = await import(pathToFileURL(join(scenariosDir, `${scenario}.mjs`)).href)
-      console.log(`${scenario.padEnd(22)} ${mod.meta?.description ?? ''}`)
+      console.log(`${scenario.padEnd(22)} ${mod.meta?.observation ? '[观察] ' : ''}${mod.meta?.description ?? ''}`)
     }
     return true
   }

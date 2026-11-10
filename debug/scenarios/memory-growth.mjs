@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { useRealWindow } from '../lib/perf-probes.mjs'
 import { memoryByKind, sampleProcessTree } from '../lib/process-tree.mjs'
 
-export const meta = { description: '内存增长：三个会话各跑 FLOW/MANYTOOLS/LONGTEXT，之后循环 N 轮（YAN_MEM_ROUNDS，默认 25）切换会话、开关分屏与文件预览、再发一轮流式，每轮强制 GC 后记录 JS 堆、DOM 节点、事件监听器，输出曲线与首尾增量；YAN_MEM_SNAPSHOT=1 在第 3 轮与最后一轮存堆快照', }
+export const meta = { observation: true, description: '内存增长：三个会话各跑 FLOW/MANYTOOLS/LONGTEXT，之后循环 N 轮（YAN_MEM_ROUNDS，默认 25）切换会话、开关分屏与文件预览、再发一轮流式，每轮强制 GC 后记录 JS 堆、DOM 节点、事件监听器，输出曲线与首尾增量；YAN_MEM_SNAPSHOT=1 在第 3 轮与最后一轮存堆快照', }
 
 export default async function run({ cdp, box, runDir, check, report, sleep, log, autoApprove, newSession, state, turn, waitFor }) {
   const ev = (expr) => cdp.evaluate(expr)

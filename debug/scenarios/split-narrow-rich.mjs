@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const meta = { description: '窄格里的 Mermaid、宽代码块、KaTeX 块公式、表格：是否被裁、是否可横向滚动，输出每项宽度与截图（NARROW_DIR）' }
+export const meta = { observation: true, description: '窄格里的 Mermaid、宽代码块、KaTeX 块公式、表格：是否被裁、是否可横向滚动，输出每项宽度与截图（NARROW_DIR）' }
 
 const MEASURE = `(() => {
   const out = {};

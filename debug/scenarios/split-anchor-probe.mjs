@@ -1,6 +1,6 @@
 import { useRealWindow } from '../lib/perf-probes.mjs'
 
-export const meta = { description: '分屏两种渲染（焦点格与非焦点格）下同一会话的 .v3-msg 高度、行容器与内边距对比，定位锚点位移来源' }
+export const meta = { observation: true, description: '分屏两种渲染（焦点格与非焦点格）下同一会话的 .v3-msg 高度、行容器与内边距对比，定位锚点位移来源' }
 
 const DUMP = `(() => {
   const out = {};

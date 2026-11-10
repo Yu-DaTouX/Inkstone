@@ -70,6 +70,9 @@ jobs:
 
       - run: npm run dist
 
+      - name: Unit tests (release gate)
+        run: npm run test:unit
+
       - name: Packaged acceptance
         if: github.event_name == 'push' || inputs.packaged_test
         run: node scripts/test-packaged.mjs

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { cleanEnv, root, sleep } from './env.mjs'
@@ -7,8 +7,10 @@ import { cleanEnv, root, sleep } from './env.mjs'
 const require = createRequire(join(root, 'package.json'))
 export const holdProbe = join(import.meta.dirname, 'hold.js')
 
+const appDir = process.env.YAN_DEBUG_APP_DIR || root
+
 export function builtAppAge() {
-  const main = join(root, 'out', 'main', 'index.js')
+  const main = appDir === root ? join(root, 'out', 'main', 'index.js') : join(appDir, JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8')).main)
   return existsSync(main) ? Date.now() - statSync(main).mtimeMs : null
 }
 
@@ -21,7 +23,7 @@ export function launchApp(env, { dev = false, inherit = false } = {}) {
   const fullEnv = cleanEnv(env)
   const child = dev
     ? spawn(process.execPath, [join(root, 'node_modules', 'electron-vite', 'bin', 'electron-vite.js'), 'dev'], { cwd: root, env: fullEnv, stdio: inherit ? 'inherit' : 'pipe', windowsHide: true })
-    : spawn(require('electron'), [...(process.env.YAN_DEBUG_MAIN_INSPECT ? ['--inspect=' + process.env.YAN_DEBUG_MAIN_INSPECT] : []), '.'], { cwd: root, env: fullEnv, stdio: inherit ? 'inherit' : 'pipe', windowsHide: true })
+    : spawn(require('electron'), [...(process.env.YAN_DEBUG_MAIN_INSPECT ? ['--inspect=' + process.env.YAN_DEBUG_MAIN_INSPECT] : []), appDir], { cwd: root, env: fullEnv, stdio: inherit ? 'inherit' : 'pipe', windowsHide: true })
   let log = ''
   child.stdout?.on('data', (chunk) => { log += chunk })
   child.stderr?.on('data', (chunk) => { log += chunk })

@@ -127,7 +127,10 @@ const scriptsOutsideUnitRun = {
   'test-cross-provider-live': 'needs-real-claude-subscription',
   'test-git-runtime-real': 'needs-real-portablegit-download',
   'test-debug-demo': 'on-demand-npm-run-test-ondemand',
-  'test-browser-frame-network': 'on-demand-npm-run-test-ondemand'
+  'test-browser-frame-network': 'on-demand-npm-run-test-ondemand',
+  'test-comfyui-video': 'helper-module-of-test-comfyui-plugin',
+  'test-comfyui-workflows': 'helper-module-of-test-comfyui-plugin',
+  'test-comfyui-idle': 'helper-module-of-test-comfyui-plugin'
 }
 
 const scriptTimeouts = {
@@ -904,6 +907,28 @@ const networkBoundary = await import('../node_modules/esbuild/lib/main.js').then
   }).then(() => import('../out/test/network-boundary.mjs'))
 )
 
+const pinnedResolver = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/net/pinned-resolver.ts'],
+    outfile: 'out/test/pinned-resolver.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/pinned-resolver.mjs'))
+)
+
+const pinnedProxy = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/net/pinned-proxy.ts'],
+    outfile: 'out/test/pinned-proxy.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/pinned-proxy.mjs'))
+)
+
 const atQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/features/composer/at-query.ts'],
@@ -1648,6 +1673,12 @@ await guarded("import('./test-v3-side-by-side-resize.mjs')", () => import('./tes
 {
   const { runNetworkBoundaryTests } = await import('./test-network-boundary.mjs')
   await runNetworkBoundaryTests(ok, networkBoundary)
+}
+
+{
+  const { runPinnedResolverTests, runPinnedProxyTests } = await import('./test-pinned-network.mjs')
+  await runPinnedResolverTests(ok, pinnedResolver)
+  await runPinnedProxyTests(ok, pinnedProxy)
 }
 
 {

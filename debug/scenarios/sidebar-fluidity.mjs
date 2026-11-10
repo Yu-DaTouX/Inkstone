@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { startProfile, stopProfile } from '../lib/cpu-profile.mjs'
 import { FX_HOOK, frameStats, sidebarStats, streamStats, switchStats } from '../lib/sidebar-probes.mjs'
 
-export const meta = { description: '真实数据副本（用 debug/review.mjs 跑）：多会话同时运行时的左栏重排、状态变化、搜索、折叠，以及切会话中间帧；输出逐帧指标，不调用真实模型' }
+export const meta = { observation: true, description: '真实数据副本（用 debug/review.mjs 跑）：多会话同时运行时的左栏重排、状态变化、搜索、折叠，以及切会话中间帧；输出逐帧指标，不调用真实模型' }
 
 const LOADS = [
   'SUBAGENTS3 STEPS24 STORM-a',

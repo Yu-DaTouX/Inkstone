@@ -26,6 +26,30 @@
 
   const calls = []
   const retractCalls = []
+  const opCalls = []
+  const lastMenu = () => [...document.querySelectorAll('[role="menu"]')].pop()
+  const menuItems = () => [...(lastMenu()?.querySelectorAll('[role="menuitem"]') ?? [])]
+  const closeMenu = async () => {
+    const menu = lastMenu()
+    if (!menu) return
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    if (!await until(() => !lastMenu(), 2000)) {
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      await until(() => !lastMenu(), 2000)
+    }
+  }
+  const openRowMenu = async (index) => {
+    await closeMenu()
+    qa('queue-actions')[index]?.click()
+    await until(() => menuItems().length > 0, 3000)
+    await wait(120)
+    return menuItems()
+  }
+  const setNativeValue = (el, value) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+    setter.call(el, value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
 
   try {
     out.push('=== v3 排队消息（隔离探针）===')
@@ -57,6 +81,9 @@
       },
       removeQueued: async (queueId) => {
         retractCalls.push(queueId)
+      },
+      applyQueueOp: async (op) => {
+        opCalls.push(op)
       }
     })
 
@@ -64,79 +91,106 @@
     out.push('--- 1. 位置与折叠 ---')
     check(await until(() => !!q('queue-stack')), '出现排队消息区（queue-stack）')
     const stack = q('queue-stack')
-    const composer = document.querySelector('.composer')
-    check(!!composer, '输入框 .composer 存在')
+    const composer = q('composer-v3')
+    check(!!composer, '输入框 composer-v3 存在')
     if (stack && composer) {
-      const line = composer.querySelector('.composer-line')
-      check(stack.parentElement === composer, '排队是输入框里的一行')
-      check(!!line && stack.getBoundingClientRect().bottom <= line.getBoundingClientRect().top + 2, '排队行在输入行上方')
+      check(stack.parentElement === composer, '排队区挂在输入框外壳里')
+      const form = composer.querySelector('[data-chat-composer-form="true"]')
+      check(!!form, '输入框表单存在')
+      if (form) {
+        check(!!(stack.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING), '排队区在输入表单之前')
+        check(stack.getBoundingClientRect().bottom <= form.getBoundingClientRect().top + 2, '排队区显示在输入表单上方')
+        check(!form.contains(stack), '排队区不在提交表单内部')
+      }
       const plan = composer.querySelector('[data-testid="plan-card"]')
-      if (plan) check(plan.compareDocumentPosition(stack) & Node.DOCUMENT_POSITION_FOLLOWING, '排队行在计划行下面')
-      check(getComputedStyle(stack.querySelector('.cq-row')).backgroundColor === 'rgba(0, 0, 0, 0)', '排队行无底色，和计划行同款')
+      if (plan) check(!!(stack.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING), '排队区在计划卡之前')
     }
-    check(stack?.dataset.count === '3', '计数条记录总条数', `data-count=${stack?.dataset.count}`)
-    check(q('queue-toggle')?.getAttribute('aria-expanded') === 'false', '多条时默认折叠成计数条')
-    check(/^(排队|Queued) · 3$/.test(q('queue-toggle')?.querySelector('.cq-pill')?.textContent ?? ''), '计数条行首是「排队 · 3」胶囊')
-    check(qa('queue-row').length === 0, '折叠时不渲染消息行')
+    check(stack?.dataset.count === '3', '计数记录总条数', `data-count=${stack?.dataset.count}`)
+    check(stack?.getAttribute('aria-label') === '3 条排队', `区域可访问名带条数（${stack?.getAttribute('aria-label')}）`)
+    const toggle = () => q('queue-toggle')
+    check(toggle()?.getAttribute('aria-expanded') === 'false', '多条时默认折叠')
+    check((toggle()?.textContent ?? '').includes('显示全部 3 条排队'), `折叠时按钮提示展开（${(toggle()?.textContent ?? '').trim()}）`)
+    check(qa('queue-row').length === 2, `折叠时只渲染两行（实际 ${qa('queue-row').length}）`)
 
     out.push('')
     out.push('--- 2. 展开后的内容 ---')
-    q('queue-toggle')?.click()
+    toggle()?.click()
     check(await until(() => qa('queue-row').length === 3), '展开后三条都渲染', `实际 ${qa('queue-row').length}`)
+    check(toggle()?.getAttribute('aria-expanded') === 'true', '展开状态写回 aria-expanded')
+    check((toggle()?.textContent ?? '').includes('收起排队'), '展开后按钮提示收起')
     const text = stack?.textContent ?? ''
     check(text.includes(S) && text.includes(F1) && text.includes(F2), '三条文本都显示出来')
-    check(text.includes('插话中'), 'steering 行显示「插话中」')
+    const rows = qa('queue-row')
+    check(rows[0]?.dataset.kind === 'steering' && rows[1]?.dataset.kind === 'followUp', '行按插话 → 排队的顺序排列')
+    check(rows[0]?.querySelector('.t3-queue__tag')?.textContent === '插话中', '插话行显示「插话中」')
     check(!!q('queue-clear-all'), '展开后有「全部清除」')
 
     out.push('')
-    out.push('--- 3. 行操作收在行菜单 ---')
-    const openMenus = () => [...document.querySelectorAll('.cq-menu')]
-    const openMenu = async (index) => {
-      const opened = openMenus()
-      opened[opened.length - 1]?.querySelector('[role="menuitem"]')?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-      )
-      await until(() => openMenus().length === 0, 3000)
-      qa('queue-actions')[index]?.click()
-      await until(() => openMenus().length === 1, 3000)
-      await wait(150)
-      const menu = openMenus()[0]
-      return {
-        items: menu ? [...menu.querySelectorAll('[role="menuitem"]')].map((el) => el.dataset.testid ?? el.textContent ?? '') : [],
-        item: (testId) => menu?.querySelector(`[data-testid="${testId}"]`) ?? null
-      }
-    }
-    const steerRow = await openMenu(0)
-    check(!steerRow.items.includes('queue-steer'), '插话行没有插队项', JSON.stringify(steerRow.items))
-    check(steerRow.items.includes('queue-retract'), '插话行菜单里有撤回')
-    const followRow = await openMenu(1)
-    check(followRow.items.includes('queue-steer'), '排队行有插队项', JSON.stringify(followRow.items))
+    out.push('--- 3. 行操作 ---')
+    const steerButtons = qa('queue-steer')
+    check(steerButtons.length === 2, `只有排队行有插话按钮（实际 ${steerButtons.length}）`)
+    check(!rows[0]?.querySelector('[data-testid="queue-steer"]'), '插话行没有插话按钮')
+    check(!!rows[1]?.querySelector('[data-testid="queue-steer"]'), '排队行有插话按钮')
+    check(qa('queue-actions').length === 3, '每行都有行菜单入口')
+
+    const steeringMenu = await openRowMenu(0)
+    const steeringLabels = steeringMenu.map((el) => el.textContent ?? '')
+    check(steeringLabels.includes('上移') && steeringLabels.includes('下移'), `行菜单有上下移（${JSON.stringify(steeringLabels)}）`)
+    check(!!steeringMenu.find((el) => el.dataset.testid === 'queue-retract'), '行菜单有撤回')
+    check(!!steeringMenu.find((el) => el.dataset.testid === 'queue-delete'), '行菜单有删除')
+    check(steeringMenu[0]?.getAttribute('aria-disabled') === 'true', '第一条的「上移」不可用')
+    await closeMenu()
 
     out.push('')
     out.push('--- 4. 插队接线 ---')
-    followRow.item('queue-steer')?.click()
-    check(await until(() => calls.length === 1), '点击插队调用了 steerQueued')
+    rows[1]?.querySelector('[data-testid="queue-steer"]')?.click()
+    check(await until(() => calls.length === 1), '点击插话调用了 steerQueued')
     check(calls[0] === 'f1', `携带稳定 queueId=f1（实际 ${JSON.stringify(calls)}）`)
 
     out.push('')
     out.push('--- 5. 撤回接线 ---')
-    const retractRow = await openMenu(0)
-    retractRow.item('queue-retract')?.click()
+    const retractMenu = await openRowMenu(0)
+    retractMenu.find((el) => el.dataset.testid === 'queue-retract')?.click()
     check(await until(() => retractCalls.length === 1), '点击撤回调用了 removeQueued')
     check(retractCalls[0] === 's1', `携带稳定 queueId=s1（实际 ${JSON.stringify(retractCalls)}）`)
+    await closeMenu()
 
-    const opened = openMenus()
-    opened[opened.length - 1]?.querySelector('[role="menuitem"]')?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-    )
-    await until(() => openMenus().length === 0, 3000)
+    out.push('')
+    out.push('--- 6. 编辑与移动 ---')
+    qa('queue-edit-start')[1]?.click()
+    check(await until(() => !!q('queue-edit-input')), '点编辑出现行内输入框')
+    const editor = q('queue-edit-input')
+    check(editor?.value === F1, `输入框预填当前文本（${JSON.stringify(editor?.value)}）`)
+    if (editor) setNativeValue(editor, '排队一：改过的文本')
+    q('queue-edit-save')?.click()
+    check(await until(() => opCalls.some((op) => op.op === 'edit' && op.id === 'f1' && op.text === '排队一：改过的文本')), '保存走 applyQueueOp edit')
+    check(await until(() => !q('queue-edit-input')), '保存后输入框关闭')
+    qa('queue-edit-start')[1]?.click()
+    await until(() => !!q('queue-edit-input'))
+    q('queue-edit-cancel')?.click()
+    check(await until(() => !q('queue-edit-input')), '取消不写队列')
+    check(!opCalls.some((op) => op.op === 'edit' && op.text === '排队一：改过的文本' && op.id !== 'f1'), '取消没有产生额外编辑')
+    check(opCalls.filter((op) => op.op === 'edit').length === 1, '只提交了一次编辑')
+
+    const moveMenu = await openRowMenu(2)
+    moveMenu.find((el) => (el.textContent ?? '') === '上移')?.click()
+    check(await until(() => opCalls.some((op) => op.op === 'move' && op.id === 'f2' && op.direction === 'up')), '上移走 applyQueueOp move')
+    await closeMenu()
+
+    out.push('')
+    out.push('--- 7. 全部清除 ---')
+    q('queue-clear-all')?.click()
+    check(await until(() => opCalls.some((op) => op.op === 'clear')), '全部清除走 applyQueueOp clear')
+    check(await until(() => [...document.querySelectorAll('.ui-toast')].some((el) => /已清除 3 条排队消息/.test(el.textContent ?? ''))), '清除后有可撤销提示')
+
     store.setState({ queue: { steering: [], followUp: [] } })
     check(await until(() => !q('queue-stack'), 3000), '清空队列后排队条消失')
-    out.push('证据范围：隔离注入的队列 DOM、折叠交互与 spy 接线；不代表真实队列投递 / 模型。')
+    note('证据范围：隔离注入的队列 DOM、折叠/编辑交互与 spy 接线；不代表真实队列投递 / 模型。')
   } catch (error) {
     out.push(`  ✗ 场景异常：${error?.stack ?? error}`)
   }
   try {
+    await closeMenu()
     store.setState({ queue: { steering: [], followUp: [] } })
   } catch {}
   return out.join('\n')

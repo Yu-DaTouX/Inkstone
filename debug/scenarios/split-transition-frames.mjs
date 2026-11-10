@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { useRealWindow } from '../lib/perf-probes.mjs'
 
-export const meta = { description: '分屏新增与关闭的过渡逐帧截取（screencast），写到 SPLIT_FRAMES_DIR' }
+export const meta = { observation: true, description: '分屏新增与关闭的过渡逐帧截取（screencast），写到 SPLIT_FRAMES_DIR' }
 
 export default async function run({ cdp, box, sleep, report, log, autoApprove, newSession, state, turn }) {
   const ev = (x) => cdp.evaluate(x)

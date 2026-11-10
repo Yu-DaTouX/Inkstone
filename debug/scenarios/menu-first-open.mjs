@@ -1,4 +1,4 @@
-export const meta = { description: '模型菜单首开帧间隔：点开后 900ms 内的最大帧间隔与超过 20ms 的帧数，再关闭重开作对照' }
+export const meta = { observation: true, description: '模型菜单首开帧间隔：点开后 900ms 内的最大帧间隔与超过 20ms 的帧数，再关闭重开作对照' }
 
 const SAMPLE = `new Promise((resolve) => {
   const gaps = [];

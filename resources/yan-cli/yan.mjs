@@ -9,10 +9,6 @@ const API_VERSION = 1
 
 const EXIT = { ok: 0, failed: 1, usage: 2, unavailable: 3 }
 
-const RETIRED_GROUPS = {
-  hub: '多 Agent 工作台命令（hub.*）已退役：请改用 yan subagent start|list|get|stop 派子代理。'
-}
-
 const USAGE = `yan — 砚宿主能力 CLI
 
 用法：
@@ -284,7 +280,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   subagent: `yan subagent <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
-  start --task <任务> [--title <短标题>] [--model <模型>] [--thinking <档位>] [--read-only] [--isolation worktree] [--fork]
+  start --task <任务> [--title <短标题>] [--model <模型>] [--thinking <档位>] [--read-only] [--isolation worktree|none] [--fork]
        或 --request-file subagent.json
        请求文件示例：{"task":"检查当前项目的测试入口","title":"查测试入口","readOnly":true}
        带上任务输入（并行的子任务建议都带，免得跑偏）：
@@ -304,6 +300,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                                向本会话派出的子代理发信息；也可 --request-file send.json
                                运行中：steer（默认）在当前工具结束后送达，用来纠偏或补充资料；
                                        follow-up 等它做完原任务再处理
+                               等额度时：先收下排队，额度恢复或换号后与原任务一起处理
                                已结束：用它原来的会话续接，它记得之前做过的事（追问不用重派、不用重讲背景）
                                没启动成功、或 worktree 已合并/放弃的，不能续接
   merge  --id <子代理ID>        worktree 子代理的改动由你审阅处置：把补丁应用到当前项目目录；有冲突时报错、工作树保留，可 send 让它继续解决
@@ -314,23 +311,24 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · title 是界面上显示的 2–8 字短标题，并行派多个时每个都写，互相区分；
   · --model 写完整名称「供应商/模型」（例：commandcode/deepseek/deepseek-v4.1-flash）；只写模型名时按已登录模型匹配，优先当前会话的供应商，仍有歧义会列出候选；
   · --thinking（请求文件 "thinkingLevel"）取 off / minimal / low / medium / high / xhigh；不传时由宿主按模型选默认档（DeepSeek V4.1 Flash 为 high，其余用 pi 设置里的 defaultThinkingLevel），各模型实际支持的档位以启动结果为准；fork 沿用当前会话的档位、不能再传；
-  · start 默认在当前目录执行，可能直接改文件；未指定 --model 时优先使用设置中的默认子 Agent 模型，否则跟随当前会话；启用强制模型时由宿主按该设置选模；
-    readOnly=true 开放 read/grep/find/ls/git_inspect/web_search/web_fetch/web_docs；只读不代表离线，联网搜索可能使用已配置的付费来源；需要代码隔离时显式传 --isolation worktree（要求 Git）；
+  · start 默认在当前目录执行；同目录已有写入型子代理在跑时，新的写入型子代理自动进 worktree（从 HEAD 开始，看不见未提交改动，结束时由你合并），启动结果的 note 会说明；
+    要用同一目录时传 --isolation none；只读任务不隔离；未指定 --model 时优先使用设置中的默认子 Agent 模型，否则跟随当前会话；启用强制模型时由宿主按该设置选模；
+    readOnly=true 开放 read/grep/find/ls/git_inspect/web_search/web_fetch/web_docs；只读不代表离线，联网搜索可能使用已配置的付费来源；代码修改要隔离时传 --isolation worktree（要求 Git）；
   · --fork（请求文件 "fork":true）让子代理继承当前会话的全部历史，沿用当前会话的模型与推理档位，首个请求复用当前会话的提示缓存；
     任务依赖对话里已有的讨论或读过的文件时用 fork，能几句话讲清时用普通子代理；fork 只在当前目录运行，
     不能与 --read-only、--isolation worktree 或其他 --model 同用，当前上下文已用超过 60% 时会被拒绝；
   · 任务要窄（一个文件或一个问题，结论几行说完）；
   · 任务输入里的 goal 决定它做什么，deliverables / sources / boundary 决定它交回什么与不碰什么；
-    工具调用次数由执行模型自主决定，旧 maxToolCalls 参数不再生效；全应用最多同时24个子代理。
+    工具调用次数由执行模型自主决定，宿主只统计次数；全应用最多同时24个子代理。
     默认连续10分钟没有模型输出或工具事件才超时；timeoutMinutes（1–60）可选，到点时宿主只通知你、不会停止子代理，不设置则不提醒，写在 task 正文中不会设置宿主提醒。
     超时先让它收尾交结论，75秒宽限内仍不结束才停止；
   · 派出后不要 sleep 轮询：结束时宿主会通知你（用户关掉通知时才需要自己 list / get）；
     继续做不依赖它的事，或结束本轮并告诉用户「子代理在跑，结束会通知」；
-  · 子代理结束后，宿主会汇总「摘要 / 来源 / 成果」给主 agent ——
-    摘要取的是它**最后一段话**（会在数据里标名），不是子代理自报的结论；
+  · 子代理结束后，宿主把它的**完整最终报告**（最后一段话，不是自报的结论）连「来源 / 成果」一起发给主 agent；
+    界面只显示短摘要；报告末尾另给「yan subagent get --id <ID> --final」全文入口，不附带全部思考与工具转录；
     「未决问题」不自动猜：那要主 agent 判断，宿主不替它下结论；
   · 启动后对话里以卡组显示子代理进度，用户点开后在右侧工作区查看转录、工具活动、耗时与变更；
-  · 子代理的 worktree 变更不会自动合并，合并 / 放弃由用户在 UI 里审阅确认。
+  · 子代理的 worktree 变更不会自动合并：由你（主会话）审阅后 merge 或 discard，界面上也可以由用户操作。
 `,
   search: `yan search <动作> [选项]
 
@@ -679,12 +677,6 @@ function readJsonFile(path, label) {
 }
 
 const { flags, positional } = parseArgs(process.argv.slice(2))
-
-if (positional[0] && RETIRED_GROUPS[positional[0]]) {
-  fail(EXIT.usage, RETIRED_GROUPS[positional[0]], {
-    detail: '普通会话请改用 yan subagent start|list|get|stop；用 yan --help 看当前可用命令'
-  })
-}
 
 if (flags.help || positional.length === 0) {
   if (flags.help && positional.length >= 1 && GROUP_USAGE[positional[0]]) {

@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const meta = { demo: true, description: '左栏搜索结果与普通列表互换：逐帧记录行数、首行位置、内容区不透明度与滚动高度，并连续截帧' }
+export const meta = { observation: true, demo: true, description: '左栏搜索结果与普通列表互换：逐帧记录行数、首行位置、内容区不透明度与滚动高度，并连续截帧' }
 
 const PROBE = `(() => {
   const box = document.querySelector('[data-slot="sidebar-content"]');

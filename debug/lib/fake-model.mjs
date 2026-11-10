@@ -12,6 +12,16 @@ function lastUserText(input) {
   return ''
 }
 
+export function usageFromText(text) {
+  const head = /^\s*USAGEIN=(\d+)/.exec(text ?? '')
+  if (!head) return { input: 100, output: 50 }
+  const out = Number(/USAGEOUT=(\d+)/.exec(text)?.[1])
+  return {
+    input: Math.min(Math.round(Number(head[1])), 2_000_000),
+    output: Number.isFinite(out) ? Math.min(Math.round(out), 200_000) : 50
+  }
+}
+
 function toolOutputsSinceUser(input) {
   let count = 0
   for (let i = input.length - 1; i >= 0; i--) {
@@ -103,6 +113,7 @@ export const FAKE_TRIGGERS = {
   PHONE: '用 yan phone 依次查设备、读界面、按 Home 键（PHONEDEV=<序列号> 指定设备），用来验证手机操控走通 CLI 与宿主',
   MULTIASK: '一次只有一个多选字段的表单提问，自填答案走主输入框，用来看表单题接到输入框',
   KEYFAILOVER: '当前 Key 是 bad-key 时返回 401，换 Key 后正常回答，用来验证 Key 故障转移',
+  'USAGEIN=<n>': '消息以 USAGEIN=<n> 开头时，把这一次响应的 input tokens 报成 n（USAGEOUT=<n> 报 output tokens），用来触发自动压缩阈值',
   CRASHBASH: '跑一条 60 秒的 bash，用来测进程被杀后的历史与续接',
   SECRETASK: '先问密码，再用 bash 读密文环境变量，最后回答模型是否收到过测试密文，用来验证密文不进上下文',
   MOBILEDEMO: '先用 read 读一张仓库里的 PNG，再发一个多字段表单提问，最后流出带长行代码块的答复，用来看手机端看图、表单与代码',
@@ -157,6 +168,7 @@ const FLOW_STEPS = [
 ]
 
 async function respond(res, text, done, requestNo) {
+  const usage = usageFromText(text)
   const send = (event) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
   const id = `resp_${requestNo}`
   const output = []
@@ -344,7 +356,7 @@ async function respond(res, text, done, requestNo) {
       else await streamText('好的，按你的选择来。', 20, 10)
     } else await streamText('好的，收到。', 20, 10)
   } catch {}
-  send({ type: 'response.completed', response: { id, status: 'completed', output, usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150, input_tokens_details: { cached_tokens: 0 } } } })
+  send({ type: 'response.completed', response: { id, status: 'completed', output, usage: { input_tokens: usage.input, output_tokens: usage.output, total_tokens: usage.input + usage.output, input_tokens_details: { cached_tokens: 0 } } } })
   res.end()
 }
 
@@ -362,7 +374,7 @@ export function startFakeModel(port = 0) {
       const text = lastUserText(input)
       const done = toolOutputsSinceUser(input)
       const images = JSON.stringify(input).split('"input_image"').length - 1
-      requests.push({ at: Date.now(), text: text.slice(0, 40), done, tools: (json.tools ?? []).length, images, unpairedCalls: input.filter((item) => item?.type === 'function_call' && !input.some((o) => o?.type === 'function_call_output' && o.call_id === item.call_id)).length, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
+      requests.push({ at: Date.now(), text: text.slice(0, 40), usage: usageFromText(text), done, tools: (json.tools ?? []).length, images, unpairedCalls: input.filter((item) => item?.type === 'function_call' && !input.some((o) => o?.type === 'function_call_output' && o.call_id === item.call_id)).length, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
       const failTag = /FAIL[A-Z0-9]+/.exec(text)?.[0]
       const flakyKey = text.slice(0, 40)
       if (failTag === 'FAILQUOTA') {

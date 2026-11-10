@@ -6,6 +6,7 @@ export function defaultLiveCases(cases) {
   return Object.keys(cases).filter(
     (name) =>
       cases[name].cost === 0 &&
+      !cases[name].observation &&
       !cases[name].needsCredentials &&
       !cases[name].needsDownload &&
       !ownsLocalProvider(cases[name])
