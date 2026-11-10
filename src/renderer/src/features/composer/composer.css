@@ -596,7 +596,7 @@
   .ui-model-change-notice,
   [data-chat-composer-media-row] {
     interpolate-size: allow-keywords;
-    animation: composer-block-in var(--dur-base) var(--ease-glide) both;
+    animation: composer-block-in var(--dur-base) var(--ease-glide) backwards;
   }
 
   @keyframes composer-block-in {
