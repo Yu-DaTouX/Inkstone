@@ -6,7 +6,7 @@ import { resolvePi } from '../protocol'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
 import { loadPluginCatalog } from '../plugin-catalog'
-import { installMinecraftPlugin, latestMinecraftPluginVersion, minecraftPluginStatus, refreshMinecraftPlugin, removeMinecraftPlugin, type FetchLike, type MinecraftPluginPaths } from '../minecraft-plugin'
+import { installMinecraftPlugin, MINECRAFT_PLUGIN_PIN, minecraftPluginStatus, refreshMinecraftPlugin, removeMinecraftPlugin, type FetchLike, type MinecraftPluginPaths } from '../minecraft-plugin'
 import type { MinecraftPluginStatus } from '../../shared/plugin-market'
 import { app, dialog, net } from 'electron'
 import { join, resolve } from 'node:path'
@@ -17,6 +17,7 @@ const ANTHROPIC_OVERRIDE_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'AN
 
 export interface PackagesIpcDeps {
   hasBusyCwd(cwd: string): boolean
+  isKnownProject?(cwd: string): boolean
 }
 
 async function minecraftPaths(): Promise<MinecraftPluginPaths> {
@@ -31,27 +32,9 @@ async function minecraftPaths(): Promise<MinecraftPluginPaths> {
 
 const pluginFetch: FetchLike = (url, init) => net.fetch(url, init)
 
-const LATEST_FRESH_MS = 6 * 60 * 60_000
-const LATEST_RETRY_MS = 10 * 60_000
-let latestCache: { version: string | undefined; expiresAt: number } | null = null
-let latestInflight: Promise<string | undefined> | null = null
-
-function cachedLatestVersion(): Promise<string | undefined> {
-  if (latestCache && latestCache.expiresAt > Date.now()) return Promise.resolve(latestCache.version)
-  latestInflight ??= latestMinecraftPluginVersion(pluginFetch)
-    .then((version) => {
-      latestCache = { version, expiresAt: Date.now() + (version ? LATEST_FRESH_MS : LATEST_RETRY_MS) }
-      return version
-    })
-    .finally(() => {
-      latestInflight = null
-    })
-  return latestInflight
-}
-
 async function minecraftStatus(paths: MinecraftPluginPaths): Promise<MinecraftPluginStatus> {
-  const [status, latestVersion] = await Promise.all([minecraftPluginStatus(paths), cachedLatestVersion()])
-  return { ...status, latestVersion }
+  const status = await minecraftPluginStatus(paths)
+  return { ...status, latestVersion: MINECRAFT_PLUGIN_PIN.version }
 }
 
 let minecraftQueue: Promise<unknown> = Promise.resolve()
@@ -72,7 +55,7 @@ export function refreshMinecraftPluginOnStartup(): void {
 
 export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): void {
   const { handle } = ipc
-  const { hasBusyCwd } = deps
+  const { hasBusyCwd, isKnownProject } = deps
   handle('yan:packages:search', async (query: unknown, offset: unknown) => {
     if (typeof query !== 'string' || (offset !== undefined && (typeof offset !== 'number' || !Number.isFinite(offset)))) {
       return { ok: false, entries: [], total: 0, error: pick('无效的搜索参数', 'Invalid search parameters') }
@@ -147,13 +130,15 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
         bin: () => resolvePi(st.piBin ? { override: st.piBin } : {}).args.at(-1) ?? null,
         agentDir: () => PI_AGENT_DIR,
         hasRunningTask: hasBusyCwd,
+        isKnownProject,
         isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted
       })
       return await runPackageAction({
         kind,
         source: String(raw.source ?? ''),
         local: raw.local === true,
-        cwd: String(raw.cwd ?? '')
+        cwd: String(raw.cwd ?? ''),
+        allowLifecycleScripts: raw.allowLifecycleScripts === true
       })
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

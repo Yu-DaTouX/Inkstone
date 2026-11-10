@@ -2,12 +2,15 @@ import { execFile } from 'node:child_process'
 import type { GhPrCreateDefaultsResult } from '../../shared/github'
 import { classifyGhFailure, prFailure, runGh } from './command'
 import type { GhRunner } from './command'
+import { sanitizedGitEnv } from '../git-run-policy'
 import { pick } from '../../shared/ui-lang'
 
 export type ReadPrGit = (cwd: string, args: string[]) => Promise<{ ok: boolean; stdout: string }>
 
+export const PR_GIT_CONFIG = ['-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false', '-c', 'color.ui=false', '-c', 'diff.external=']
+
 const readGit: ReadPrGit = (cwd, args) => new Promise(resolve => {
-  execFile('git', args, { cwd, timeout: 10_000, maxBuffer: 256 * 1024, encoding: 'utf8', windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } }, (error, stdout) => resolve({ ok: !error, stdout: typeof stdout === 'string' ? stdout : '' }))
+  execFile('git', [...PR_GIT_CONFIG, ...args], { cwd, timeout: 10_000, maxBuffer: 256 * 1024, encoding: 'utf8', windowsHide: true, env: sanitizedGitEnv(process.env, { GIT_OPTIONAL_LOCKS: '0' }) }, (error, stdout) => resolve({ ok: !error, stdout: typeof stdout === 'string' ? stdout : '' }))
 })
 
 export async function readPrCreateDefaults(cwd: string, run: GhRunner = runGh, git: ReadPrGit = readGit): Promise<GhPrCreateDefaultsResult> {

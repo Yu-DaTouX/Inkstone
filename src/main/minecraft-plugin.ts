@@ -1,5 +1,5 @@
 import { pick } from '../shared/ui-lang'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createWriteStream, existsSync } from 'node:fs'
 import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -11,7 +11,24 @@ import type { MinecraftPluginResult, MinecraftPluginStatus } from '../shared/plu
 export const MINECRAFT_PLUGIN_ID = 'inkstone-minecraft'
 export const MINECRAFT_SKILL = 'inkstone-fabric-dev'
 export const MINECRAFT_PLUGIN_REPO = 'Yu-DaTouX/inkstone-minecraft-plugin'
-export const MINECRAFT_PLUGIN_ARCHIVE = `https://github.com/${MINECRAFT_PLUGIN_REPO}/releases/latest/download/inkstone-minecraft-plugin.zip`
+
+export interface MinecraftPluginPin {
+  version: string
+  sha256: string
+  size: number
+}
+
+export const MINECRAFT_PLUGIN_PIN: MinecraftPluginPin = {
+  version: '0.1.1',
+  sha256: '09b1caa5b07442884ddab2578a4c025089af6a8b863d9634d1eeb8cfd043a9f4',
+  size: 1_392_640
+}
+
+export function minecraftArchiveUrl(version: string): string {
+  return `https://github.com/${MINECRAFT_PLUGIN_REPO}/releases/download/v${version}/inkstone-minecraft-plugin.zip`
+}
+
+export const MINECRAFT_PLUGIN_ARCHIVE = minecraftArchiveUrl(MINECRAFT_PLUGIN_PIN.version)
 export const MINECRAFT_PLUGIN_LATEST = `https://api.github.com/repos/${MINECRAFT_PLUGIN_REPO}/releases/latest`
 const PLUGIN_PARTS = ['package.json', 'mcp', 'src', 'skills', 'templates', 'companion-mod']
 const SKIPPED_DIRS = new Set(['.gradle', 'run', '.inkstone', 'node_modules', 'out'])
@@ -32,6 +49,7 @@ export interface MinecraftPluginPaths {
 
 export interface MinecraftInstallDeps {
   fetch: FetchLike
+  pin?: MinecraftPluginPin
 }
 
 type McpDocument = { mcpServers?: Record<string, unknown> } & Record<string, unknown>
@@ -180,21 +198,28 @@ function extractArchive(archive: string, into: string): Promise<void> {
   })
 }
 
-async function downloadArchive(request: FetchLike, url: string, target: string): Promise<void> {
+async function downloadArchive(request: FetchLike, url: string, target: string, pin: MinecraftPluginPin): Promise<void> {
   const response = await request(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT) })
   if (!response.ok || !response.body) throw new Error(pick(`下载插件失败：HTTP ${response.status}`, `Plugin download failed: HTTP ${response.status}`))
   const declared = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declared) && declared > ARCHIVE_LIMIT) throw new Error(archiveTooLarge())
+  if (Number.isFinite(declared) && declared > 0 && (declared > ARCHIVE_LIMIT || declared !== pin.size)) throw new Error(archiveSizeMismatch())
+  const hash = createHash('sha256')
   let received = 0
   const counting = new TransformStream<Uint8Array, Uint8Array>({
     transform: (chunk, controller) => {
       received += chunk.byteLength
       if (received > ARCHIVE_LIMIT) controller.error(new Error(archiveTooLarge()))
-      else controller.enqueue(chunk)
+      else if (received > pin.size) controller.error(new Error(archiveSizeMismatch()))
+      else {
+        hash.update(chunk)
+        controller.enqueue(chunk)
+      }
     }
   })
   await pipeline(Readable.fromWeb(response.body.pipeThrough(counting) as import('node:stream/web').ReadableStream), createWriteStream(target))
   if (!received) throw new Error(pick('下载的插件包是空的', 'The downloaded plugin package is empty'))
+  if (received !== pin.size) throw new Error(archiveSizeMismatch())
+  if (hash.digest('hex') !== pin.sha256.toLowerCase()) throw new Error(archiveDigestMismatch())
 }
 
 async function contentRoot(dir: string): Promise<string> {
@@ -220,8 +245,9 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths, deps: 
     }
     work = join(paths.tempDir, `minecraft-plugin-${randomBytes(4).toString('hex')}`)
     await mkdir(work, { recursive: true })
+    const pin = deps.pin ?? MINECRAFT_PLUGIN_PIN
     const archive = join(work, 'inkstone-minecraft-plugin.zip')
-    await downloadArchive(deps.fetch, MINECRAFT_PLUGIN_ARCHIVE, archive)
+    await downloadArchive(deps.fetch, minecraftArchiveUrl(pin.version), archive, pin)
     const unpacked = join(work, 'unpacked')
     await mkdir(unpacked)
     await extractArchive(archive, unpacked)
@@ -292,4 +318,12 @@ export async function removeMinecraftPlugin(paths: MinecraftPluginPaths): Promis
 function archiveTooLarge(): string {
   const mb = Math.round(ARCHIVE_LIMIT / 1024 / 1024)
   return pick(`插件包超过 ${mb} MB，已停止下载`, `Plugin package exceeds ${mb} MB; download stopped`)
+}
+
+function archiveSizeMismatch(): string {
+  return pick('下载的插件包大小与固定版本不一致，未解压', 'The downloaded plugin package does not match the pinned size; nothing was extracted')
+}
+
+function archiveDigestMismatch(): string {
+  return pick('下载的插件包摘要与固定版本不一致，未解压', 'The downloaded plugin package does not match the pinned digest; nothing was extracted')
 }

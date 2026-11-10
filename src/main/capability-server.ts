@@ -151,21 +151,6 @@ export const KNOWN_COMMANDS = new Set([
   'search.doctor'
 ])
 
-const RETIRED_COMMAND_HINTS: ReadonlyArray<{ prefix: string; message: string }> = [
-  {
-    prefix: 'hub.',
-    message:
-      '多 Agent 工作台命令（hub.*）已退役：请改用 `yan subagent start|list|get|stop` 派子代理。'
-  }
-]
-
-function retiredCommandMessage(command: string): string | null {
-  for (const hint of RETIRED_COMMAND_HINTS) {
-    if (command.startsWith(hint.prefix)) return hint.message
-  }
-  return null
-}
-
 function shapeOf(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) {
     return {
@@ -385,18 +370,13 @@ export class CapabilityServer {
 
     const command = typeof body.command === 'string' ? body.command : ''
     if (!this.allowCommands.has(command)) {
-      const retirement = retiredCommandMessage(command)
-      if (retirement && this.allowCommands.has('subagent.start')) {
-        reply(400, { ok: false, error: retirement, code: 'retired_command', detail: command })
-        return
-      }
       const opened = `这个会话只开放：${[...this.allowCommands].join(', ')}`
       if (KNOWN_COMMANDS.has(command)) {
         const group = command.split('.')[0]
         reply(400, { ok: false, error: 'unknown_command', code: 'command_not_available', detail: command, hint: `本会话未开放 ${group} 命令（${command}）。${opened}` })
         return
       }
-      reply(400, { ok: false, error: 'unknown_command', detail: command, ...(retirement ? { hint: opened } : {}) })
+      reply(400, { ok: false, error: 'unknown_command', detail: command })
       return
     }
 

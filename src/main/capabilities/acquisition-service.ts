@@ -1,5 +1,6 @@
-import { createHash, randomBytes } from 'node:crypto'
-import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { atomicWriteFile } from '../sync/atomic'
 import { join, dirname, isAbsolute, resolve, sep } from 'node:path'
 import {
   ARTIFACT_LIMITS,
@@ -80,12 +81,6 @@ function safeSegment(operationId: string): string {
 export function operationIdOf(input: { planId: string; planRevision?: number }): string {
   const stable = [input.planId, String(input.planRevision ?? 1)].join('\u0000')
   return createHash('sha256').update(stable).digest('hex').slice(0, 24)
-}
-
-async function writeFileAtomic(path: string, text: string): Promise<void> {
-  const tmp = `${path}.${randomBytes(4).toString('hex')}.tmp`
-  await writeFile(tmp, text, 'utf8')
-  await rename(tmp, path)
 }
 
 function sha256Of(content: Uint8Array): string {
@@ -238,7 +233,7 @@ export class AcquisitionService {
         totalBytes,
         ...(input.securityReview ? { securityReview: input.securityReview } : {})
       }
-      await writeFileAtomic(join(dir, MANIFEST_FILENAME), JSON.stringify(manifest, null, 2))
+      await atomicWriteFile(join(dir, MANIFEST_FILENAME), JSON.stringify(manifest, null, 2))
       await this.saveTransaction(
         advanceAcquisition(tx, 'verifying', { at, stagingDir: dir, detail: `${manifestFiles.length} 个文件已落盘` })
       )
@@ -552,7 +547,7 @@ export class AcquisitionService {
       const log = await this.readLog()
       log.transactions[tx.operationId] = tx
       await mkdir(acquisitionRoot(this.root), { recursive: true })
-      await writeFileAtomic(
+      await atomicWriteFile(
         acquisitionLogPath(this.root),
         JSON.stringify({ version: ACQUISITION_LOG_VERSION, transactions: log.transactions }, null, 2)
       )

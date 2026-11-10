@@ -1,6 +1,5 @@
 import { pick } from '../../shared/ui-lang'
-import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   packageExecutionGrantCovers,
@@ -8,15 +7,10 @@ import {
   type PackageExecutionGrant
 } from '../../shared/package-authorization'
 import { acquisitionRoot } from './acquisition-service'
+import { atomicWriteFile } from '../sync/atomic'
 
 const MAX_GRANTS = 1000
 const MAX_STORE_BYTES = 512 * 1024
-
-async function writeAtomic(path: string, content: string): Promise<void> {
-  const temp = `${path}.${randomBytes(4).toString('hex')}.tmp`
-  await writeFile(temp, content, 'utf8')
-  await rename(temp, path)
-}
 
 export class PackageAuthorizationService {
   private readonly file: string
@@ -75,7 +69,7 @@ export class PackageAuthorizationService {
     const next = items.filter((item) => !(item.candidateId === grant.candidateId && item.digest === grant.digest && item.projectId === grant.projectId))
     next.push(grant)
     await mkdir(this.dir, { recursive: true })
-    await writeAtomic(this.file, JSON.stringify({ version: 1, items: next.slice(-MAX_GRANTS) }, null, 2))
+    await atomicWriteFile(this.file, JSON.stringify({ version: 1, items: next.slice(-MAX_GRANTS) }, null, 2))
     return grant
     })
   }
@@ -86,7 +80,7 @@ export class PackageAuthorizationService {
     const next = items.filter((item) => !(item.candidateId === input.candidateId && item.digest === input.digest && item.projectId === input.projectId))
     if (next.length === items.length) return false
     await mkdir(this.dir, { recursive: true })
-    await writeAtomic(this.file, JSON.stringify({ version: 1, items: next }, null, 2))
+    await atomicWriteFile(this.file, JSON.stringify({ version: 1, items: next }, null, 2))
     return true
     })
   }

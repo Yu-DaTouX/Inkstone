@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readAuthEntry, updateAuthFile } from './credentials'
-import { imageFileKey } from './image-config'
+import { imageEnv, imageFileKey, normalizeImageEndpoint } from './image-config'
 import { decodeJwtPayload, isCodexCredential, refreshCodexCredential } from './codex-token'
 
 export type ImageSecretProvider = 'openai' | 'compatible' | 'google' | 'doubao'
@@ -32,6 +32,14 @@ function entryKey(entry: unknown): string | undefined {
   if (typeof entry === 'string') return entry.trim() || undefined
   const key = (entry as { key?: unknown } | null)?.key
   return typeof key === 'string' && key.trim() ? key.trim() : undefined
+}
+
+function envCompatibleKey(): string | undefined {
+  const value = process.env.YAN_IMAGE_API_KEY?.trim()
+  if (!value) return undefined
+  const declared = normalizeImageEndpoint(process.env.YAN_IMAGE_API_BASE)
+  if (!declared) return undefined
+  return declared === normalizeImageEndpoint(imageEnv('YAN_IMAGE_API_BASE')) ? value : undefined
 }
 
 async function readCodexCliAuth(): Promise<CodexImageAuth | null> {
@@ -83,6 +91,11 @@ export const hostImageCredentials: ImageCredentialSource = {
     const stored = source.authKey ? entryKey(await readAuthEntry(source.authKey)) : undefined
     if (stored) return stored
     for (const name of source.env) {
+      if (provider === 'compatible' && name === 'YAN_IMAGE_API_KEY') {
+        const value = envCompatibleKey()
+        if (value) return value
+        continue
+      }
       const value = process.env[name]?.trim()
       if (value) return value
     }

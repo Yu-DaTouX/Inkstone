@@ -1,7 +1,8 @@
 import { pick } from '../shared/ui-lang'
-import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 import {
   describeDiscoveredModels,
   mergeCustomProviders,
@@ -66,15 +67,7 @@ async function backupModels(): Promise<void> {
 async function writeAtomic(json: Json): Promise<void> {
   await mkdir(PI_AGENT_DIR, { recursive: true })
   await backupModels()
-  const tmp = `${MODELS_FILE}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
-  try {
-    await writeFile(tmp, `${JSON.stringify(json, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
-    await rename(tmp, MODELS_FILE)
-  } catch (error) {
-    const { unlink } = await import('node:fs/promises')
-    await unlink(tmp).catch(() => undefined)
-    throw error
-  }
+  await atomicWriteFile(MODELS_FILE, `${JSON.stringify(json, null, 2)}\n`)
 }
 
 export async function contextWindowAssumed(provider: string, modelId: string): Promise<boolean> {

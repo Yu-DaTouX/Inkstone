@@ -32,7 +32,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'subagent.start',
     '委派子代理',
-    '指定模型执行独立子任务并返回结果；默认当前文件夹，代码任务可显式选择 worktree 隔离。按需调用：任务确实可独立并行或需要隔离上下文时才派，能续派已有子代理时优先续派。',
+    '指定模型执行独立子任务并返回结果；默认当前文件夹，同目录已有写入型子代理时新的写入型自动进 worktree，代码任务也可显式选择 worktree 隔离。按需调用：任务确实可独立并行或需要隔离上下文时才派，能续派已有子代理时优先续派。',
     'external-action',
     'yan subagent start --task <text> --model <provider/model> [--thinking low|medium|high]'
   ),
@@ -67,14 +67,14 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'subagent.discard',
     '放弃子代理改动',
-    '放弃 worktree 子代理尚未合并的改动并清理它的工作树。',
+    '由你审阅后放弃 worktree 子代理尚未合并的改动并清理它的工作树；界面上也可以由用户操作。',
     'external-action',
     'yan subagent discard --id <id>'
   ),
   builtin(
     'subagent.stop',
     '停止子代理',
-    '停止一个正在运行的子代理；用 worktree 隔离时改动保留在工作树里，由用户决定合并或放弃，其他隔离方式直接停止、不额外保留改动。',
+    '停止一个正在运行的子代理；用 worktree 隔离时改动保留在工作树里，由你审阅后合并或放弃（界面上也可以由用户操作），其他隔离方式直接停止、不额外保留改动。',
     'external-action',
     'yan subagent stop --id <id>'
   ),

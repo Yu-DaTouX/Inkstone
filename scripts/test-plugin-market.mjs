@@ -1,4 +1,5 @@
 import { build } from 'esbuild'
+import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { mkdtemp, mkdir, readdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -61,6 +62,11 @@ function zipArchive(files) {
   end.writeUInt32LE(central.length, 12)
   end.writeUInt32LE(offset, 16)
   return Buffer.concat([...locals, central, end])
+}
+
+function pinFor(body, version = '0.1.0') {
+  const bytes = Buffer.from(body)
+  return { version, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length }
 }
 
 function pluginFiles() {
@@ -142,15 +148,16 @@ export async function runPluginMarketTests(ok) {
       seen.push(url)
       return new Response(body, { status, headers })
     }
+    const install = (body, status = 200, headers = {}) => mc.installMinecraftPlugin(paths, { fetch: serve(body, status, headers), pin: pinFor(body) })
     const has = (name) => readFile(join(paths.pluginDir, name), 'utf8').then(() => true, () => false)
     await mkdir(agentDir, { recursive: true })
     await writeFile(join(agentDir, 'mcp.json'), JSON.stringify({ keep: 1, mcpServers: { codegraph: { command: 'codegraph' } } }))
     const before = await mc.minecraftPluginStatus(paths)
     ok(!before.installed && !before.configured && !before.conflict && !before.skill && before.installedVersion === undefined, 'Minecraft 插件：安装前没有目录、登记、技能与版本')
-    const installed = await mc.installMinecraftPlugin(paths, { fetch: serve(archive) })
+    const installed = await install(archive)
     const doc = JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8'))
     const entry = doc.mcpServers['inkstone-minecraft']
-    ok(seen.length === 1 && seen[0] === 'https://github.com/Yu-DaTouX/inkstone-minecraft-plugin/releases/latest/download/inkstone-minecraft-plugin.zip', 'Minecraft 插件：只从新仓库的稳定地址下载')
+    ok(seen.length === 1 && seen[0] === 'https://github.com/Yu-DaTouX/inkstone-minecraft-plugin/releases/download/v0.1.0/inkstone-minecraft-plugin.zip', 'Minecraft 插件：只从固定版本的发布资产地址下载')
     ok(installed.ok && installed.status.installed && installed.status.configured && installed.status.skill, 'Minecraft 插件：下载解压后登记 MCP 并装好技能')
     ok(installed.status.installedVersion === '0.1.0', 'Minecraft 插件：状态带已装版本')
     ok(entry.command === paths.runtime && entry.env.ELECTRON_RUN_AS_NODE === '1' && entry.args.at(-1) === join(paths.pluginDir, 'mcp', 'server.ts'), 'Minecraft 插件：用砚自带运行时启动解压后的服务')
@@ -170,36 +177,38 @@ export async function runPluginMarketTests(ok) {
     doc.mcpServers['inkstone-minecraft'].enabled = false
     await writeFile(join(agentDir, 'mcp.json'), JSON.stringify(doc))
     const next = zipArchive(Object.entries({ ...pluginFiles(), 'package.json': JSON.stringify({ version: '0.2.0' }), 'mcp/server.ts': 'export const changed = 1\n' }))
-    const updated = await mc.installMinecraftPlugin(paths, { fetch: serve(next) })
+    const updated = await install(next)
     ok(updated.ok && updated.status.installedVersion === '0.2.0' && !updated.status.configured, 'Minecraft 插件：更新换掉插件目录并保留停用设置')
     ok((await readFile(join(paths.pluginDir, 'mcp', 'server.ts'), 'utf8')).includes('changed'), 'Minecraft 插件：更新后插件目录是新版本内容')
     const downloads = seen.length
     ok((await mc.refreshMinecraftPlugin(paths)) === 'current', 'Minecraft 插件：启动检查在路径没变时不动')
     ok((await mc.refreshMinecraftPlugin({ ...paths, runtime: 'D:/New/Inkstone.exe' })) === 'updated' && JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8')).mcpServers['inkstone-minecraft'].command === 'D:/New/Inkstone.exe', 'Minecraft 插件：启动检查只在运行时路径变化时改写 mcp.json')
     ok(seen.length === downloads, 'Minecraft 插件：启动检查不联网')
-    const failed = await mc.installMinecraftPlugin(paths, { fetch: serve(archive, 404) })
+    const failed = await mc.installMinecraftPlugin(paths, { fetch: serve(archive, 404), pin: pinFor(archive) })
     ok(!failed.ok && /HTTP 404/.test(failed.error) && (await readFile(join(paths.pluginDir, 'mcp', 'server.ts'), 'utf8')).includes('changed'), 'Minecraft 插件：下载失败保留已装版本')
-    const huge = await mc.installMinecraftPlugin(paths, { fetch: serve(archive, 200, { 'content-length': String(300 * 1024 * 1024) }) })
-    ok(!huge.ok && /200 MB/.test(huge.error) && (await readFile(join(paths.pluginDir, 'package.json'), 'utf8')).includes('0.2.0'), 'Minecraft 插件：超过大小上限时停止且不动已装版本')
-    const empty = await mc.installMinecraftPlugin(paths, { fetch: serve(new Uint8Array()) })
+    const huge = await install(archive, 200, { 'content-length': String(300 * 1024 * 1024) })
+    ok(!huge.ok && /大小与固定版本不一致/.test(huge.error) && (await readFile(join(paths.pluginDir, 'package.json'), 'utf8')).includes('0.2.0'), 'Minecraft 插件：声明的包大小与固定版本不一致时停止且不动已装版本')
+    const tampered = await mc.installMinecraftPlugin(paths, { fetch: serve(archive), pin: { ...pinFor(archive), sha256: '0'.repeat(64) } })
+    ok(!tampered.ok && /摘要与固定版本不一致/.test(tampered.error) && (await readFile(join(paths.pluginDir, 'package.json'), 'utf8')).includes('0.2.0'), 'Minecraft 插件：摘要不符时不解包也不覆盖已装版本')
+    const empty = await mc.installMinecraftPlugin(paths, { fetch: serve(new Uint8Array()), pin: pinFor(new Uint8Array()) })
     ok(!empty.ok && /空的/.test(empty.error) && (await has('mcp/server.ts')), 'Minecraft 插件：下载内容为空时说明原因')
-    const noFiles = await mc.installMinecraftPlugin(paths, { fetch: serve(zipArchive(Object.entries({ 'package.json': '{}', 'README.md': 'x' }))) })
+    const noFiles = await install(zipArchive(Object.entries({ 'package.json': '{}', 'README.md': 'x' })))
     ok(!noFiles.ok && /没有插件文件/.test(noFiles.error) && (await has('mcp/server.ts')), 'Minecraft 插件：包里没有插件文件时拒绝替换')
     const removed = await mc.removeMinecraftPlugin(paths)
     const afterDoc = JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8'))
     ok(removed.ok && !removed.status.installed && !removed.status.skill && !afterDoc.mcpServers['inkstone-minecraft'] && afterDoc.mcpServers.codegraph, 'Minecraft 插件：移除只删自己的登记、目录与技能')
     ok((await mc.refreshMinecraftPlugin(paths)) === 'skipped', 'Minecraft 插件：没装时启动检查不联网也不装回')
     await writeFile(join(agentDir, 'mcp.json'), JSON.stringify({ mcpServers: { 'inkstone-minecraft': { command: 'node', args: ['other/server.ts'] } } }))
-    const conflict = await mc.installMinecraftPlugin(paths, { fetch: serve(archive) })
+    const conflict = await install(archive)
     ok(!conflict.ok && conflict.status.conflict && !conflict.status.installed, 'Minecraft 插件：同名服务不是砚装的时拒绝覆盖')
     await writeFile(join(agentDir, 'mcp.json'), '{bad')
-    const broken = await mc.installMinecraftPlugin(paths, { fetch: serve(archive) })
+    const broken = await install(archive)
     ok(!broken.ok && (await readFile(join(agentDir, 'mcp.json'), 'utf8')) === '{bad', 'Minecraft 插件：坏 JSON 拒绝改写')
     await writeFile(join(agentDir, 'mcp.json'), '{}')
     const skillTarget = join(paths.skillsDir, 'inkstone-fabric-dev')
     await mkdir(skillTarget, { recursive: true })
     await writeFile(join(skillTarget, 'SKILL.md'), 'someone else')
-    const foreignSkill = await mc.installMinecraftPlugin(paths, { fetch: serve(archive) })
+    const foreignSkill = await install(archive)
     ok(!foreignSkill.ok && /不是砚装的/.test(foreignSkill.error) && (await readFile(join(skillTarget, 'SKILL.md'), 'utf8')) === 'someone else', 'Minecraft 插件：同名技能不是砚装的时拒绝覆盖')
   } finally { await rm(mcRoot, { recursive: true, force: true }) }
   await build({ entryPoints: ['src/shared/plugin-catalog.ts'], outfile: 'out/test/plugin-catalog-shared.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })

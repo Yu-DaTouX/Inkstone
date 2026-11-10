@@ -1,8 +1,8 @@
 import { pick } from '../shared/ui-lang'
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { PI_AGENT_DIR } from './paths'
+import { PI_AGENT_DIR, YAN_DIR } from './paths'
 
 export interface PackageEntry {
   source: string
@@ -166,6 +166,7 @@ export interface PackageActionRequest {
   source: string
   local?: boolean
   cwd: string
+  allowLifecycleScripts?: boolean
 }
 
 export interface PackageActionResult {
@@ -208,6 +209,7 @@ export function validatePackageSource(source: string): string | null {
 export interface PackageContext {
   hasRunningTask?: (cwd: string) => boolean
   isProjectTrusted?: (cwd: string) => boolean | Promise<boolean>
+  isKnownProject?: (cwd: string) => boolean
   bin?: () => string | null
   agentDir?: () => string
 }
@@ -338,6 +340,17 @@ export async function installManagedPiPackage(request: {
   }
 }
 
+function globalPackageCwd(): string {
+  const dir = join(YAN_DIR, 'tmp', 'package-ops')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function scriptPolicyEnv(request: PackageActionRequest): Record<string, string | undefined> {
+  if (request.kind === 'remove') return {}
+  return { npm_config_ignore_scripts: request.allowLifecycleScripts === true ? 'false' : 'true' }
+}
+
 export async function runPackageAction(request: PackageActionRequest): Promise<PackageActionResult> {
   const cwd = String(request.cwd ?? '')
   const source = String(request.source ?? '').trim()
@@ -354,6 +367,9 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
 
   const local = request.local === true
   if (local && !cwd) return { ok: false, error: pick('缺少当前项目目录，拒绝改为项目级安装', 'No current project folder. Refusing to fall back to a project-level install') }
+  if (local && ctx.isKnownProject && !ctx.isKnownProject(cwd)) {
+    return { ok: false, error: pick('这个目录不是当前打开的项目，拒绝按项目级安装', 'This folder is not an open project. Refusing a project-level install') }
+  }
   if (local && !(await ctx.isProjectTrusted?.(cwd))) {
     return { ok: false, error: pick('当前项目尚未获 Pi 项目信任；请先显式信任该目录，再重试安装', 'The project is not trusted by Pi. Trust the folder first, then retry') }
   }
@@ -370,7 +386,7 @@ export async function runPackageAction(request: PackageActionRequest): Promise<P
         ? ['remove', ...(local ? ['-l'] : []), asArg]
         : ['update', asArg]
 
-  const res = await runPi(args, cwd || process.cwd())
+  const res = await runPi(args, local ? cwd : globalPackageCwd(), scriptPolicyEnv(request))
   if (!res.ok) {
     return {
       ok: false,

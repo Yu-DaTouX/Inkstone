@@ -5,6 +5,8 @@ import { randomBytes } from 'node:crypto'
 import { reviewSkillFiles, type SkillSecurityFinding, type SkillSecurityReview } from '../../shared/skill-security'
 import { USER_SKILL_NAME_PATTERN } from '../../shared/user-skill'
 import { userSkillsDir } from '../user-skills'
+import { atomicWriteFile } from '../sync/atomic'
+import { isWindowsDeviceName } from '../win-file-names'
 
 export type AcquiredSkillScope = 'session' | 'user'
 export type SkillFileInput = { path: string; content: string | Uint8Array }
@@ -75,9 +77,9 @@ export function parseSkillFrontmatter(text: string): { name?: string; descriptio
 export function acquiredSkillName(...choices: Array<string | undefined>): string {
   for (const choice of choices) {
     const name = String(choice ?? '').trim().toLowerCase()
-    if (name && name.length <= 64 && USER_SKILL_NAME_PATTERN.test(name)) return name
+    if (name && name.length <= 64 && USER_SKILL_NAME_PATTERN.test(name) && !isWindowsDeviceName(name)) return name
   }
-  throw new AcquiredSkillError('bad-name', '技能名只能用小写字母、数字和连字符')
+  throw new AcquiredSkillError('bad-name', '技能名只能用小写字母、数字和连字符，且不能用 con、nul 这类 Windows 设备名')
 }
 
 export function safeSkillRelativePath(path: string): string {
@@ -85,7 +87,7 @@ export function safeSkillRelativePath(path: string): string {
   const parts = value.split('/')
   if (
     !value || value.includes('\0') || value.startsWith('/') || /^[A-Za-z]:/.test(value) ||
-    parts.some((part) => !part || part === '.' || part === '..' || /[<>:"|?*\x00-\x1f]/.test(part) || /[. ]$/.test(part))
+    parts.some((part) => !part || part === '.' || part === '..' || /[<>:"|?*\x00-\x1f]/.test(part) || /[. ]$/.test(part) || isWindowsDeviceName(part))
   ) {
     throw new AcquiredSkillError('file-path', `技能文件路径不安全：${path}`)
   }
@@ -173,9 +175,7 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
 }
 
 async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
-  const tmp = `${file}.${randomBytes(4).toString('hex')}.tmp`
-  await writeFile(tmp, JSON.stringify(value, null, 2), 'utf8')
-  await renameWithRetry(tmp, file)
+  await atomicWriteFile(file, JSON.stringify(value, null, 2))
 }
 
 async function readIndex(root: string, sessionId: string): Promise<SessionSkillIndex> {

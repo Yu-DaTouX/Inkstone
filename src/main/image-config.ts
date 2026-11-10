@@ -14,7 +14,9 @@ const MODEL_ENV = {
   doubao: 'YAN_IMAGE_DOUBAO_MODEL'
 } as const
 
-let current: ImageConfigFile = {}
+type StoredImageConfig = ImageConfigFile & { keyEndpoints?: Partial<Record<ImageKeyService, string>> }
+
+let current: StoredImageConfig = {}
 let chain: Promise<unknown> = Promise.resolve()
 
 function serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -27,9 +29,40 @@ function text(value: unknown, max: number): string | undefined {
   return typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : undefined
 }
 
-function sanitize(raw: unknown): ImageConfigFile {
+export function normalizeImageEndpoint(value: string | undefined): string | undefined {
+  const raw = value?.trim()
+  if (!raw) return undefined
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return `!${raw}`
+  }
+  if (url.username || url.password || url.hash) return `!${raw}`
+  const path = url.pathname.replace(/\/+$/, '')
+  return `${url.protocol.toLowerCase()}//${url.host.toLowerCase()}${path}${url.search}`
+}
+
+function endpointIssue(value: string): string | undefined {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return pick('接口地址无效', 'The endpoint is not a valid URL')
+  }
+  if (url.username || url.password) return pick('接口地址不能带账号或密码', 'The endpoint must not include credentials')
+  if (url.search) return pick('接口地址不能带查询参数', 'The endpoint must not include a query string')
+  if (url.hash) return pick('接口地址不能带 # 片段', 'The endpoint must not include a # fragment')
+  return undefined
+}
+
+function effectiveCompatibleBase(file: ImageConfigFile): string | undefined {
+  return file.baseUrl?.trim() || process.env.YAN_IMAGE_API_BASE?.trim() || undefined
+}
+
+function sanitize(raw: unknown): StoredImageConfig {
   const input = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
-  const out: ImageConfigFile = {}
+  const out: StoredImageConfig = {}
   if (isImageChoice(input.provider) && input.provider !== 'auto') out.provider = input.provider
   if ((IMAGE_COMPLEXITIES as readonly unknown[]).includes(input.complexity)) out.complexity = input.complexity as ImageConfigFile['complexity']
   const baseUrl = text(input.baseUrl, 2048)
@@ -48,10 +81,17 @@ function sanitize(raw: unknown): ImageConfigFile {
     if (value) keys[service] = value
   }
   if (Object.keys(keys).length) out.keys = keys
+  const endpoints: NonNullable<StoredImageConfig['keyEndpoints']> = {}
+  const rawEndpoints = input.keyEndpoints && typeof input.keyEndpoints === 'object' ? (input.keyEndpoints as Record<string, unknown>) : {}
+  for (const service of IMAGE_KEY_SERVICES) {
+    const value = text(rawEndpoints[service], 2048)
+    if (value) endpoints[service] = value
+  }
+  if (Object.keys(endpoints).length) out.keyEndpoints = endpoints
   return out
 }
 
-async function readFileConfig(): Promise<ImageConfigFile> {
+async function readFileConfig(): Promise<StoredImageConfig> {
   try {
     return sanitize(JSON.parse(await readFile(CONFIG_FILE(), 'utf8')))
   } catch {
@@ -81,13 +121,30 @@ export function imageComplexity(): ImageConfigFile['complexity'] {
 }
 
 export function imageFileKey(service: ImageKeyService): string | undefined {
-  return current.keys?.[service]
+  const key = current.keys?.[service]
+  if (!key) return undefined
+  if (service === 'compatible') {
+    const bound = current.keyEndpoints?.compatible
+    if (bound && bound !== normalizeImageEndpoint(effectiveCompatibleBase(current))) return undefined
+  }
+  return key
 }
 
-async function update(change: (file: ImageConfigFile) => ImageConfigFile): Promise<{ ok: boolean; error?: string }> {
+function withoutCompatibleBinding(file: StoredImageConfig): StoredImageConfig {
+  const keys = { ...file.keys }
+  delete keys.compatible
+  const keyEndpoints = { ...file.keyEndpoints }
+  delete keyEndpoints.compatible
+  return { ...file, keys, keyEndpoints }
+}
+
+async function update(change: (file: StoredImageConfig) => StoredImageConfig): Promise<{ ok: boolean; error?: string }> {
   try {
     await serial(async () => {
-      const next = sanitize(change(await readFileConfig()))
+      const file = await readFileConfig()
+      const changed = change(file)
+      const baseChanged = normalizeImageEndpoint(effectiveCompatibleBase(file)) !== normalizeImageEndpoint(effectiveCompatibleBase(changed))
+      const next = sanitize(baseChanged ? withoutCompatibleBinding(changed) : changed)
       await atomicWriteFile(CONFIG_FILE(), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
       current = next
     })
@@ -111,6 +168,8 @@ export function updateImageConfig(patch: ImageConfigPatch): Promise<{ ok: boolea
     if (patch.baseUrl !== undefined) {
       const value = patch.baseUrl.trim()
       if (value && !/^https?:\/\//i.test(value)) throw new Error(pick('接口地址需要以 http:// 或 https:// 开头', 'The endpoint must start with http:// or https://'))
+      const issue = value ? endpointIssue(value) : undefined
+      if (issue) throw new Error(issue)
       if (value) next.baseUrl = value
       else delete next.baseUrl
     }
@@ -130,13 +189,23 @@ export function setImageKey(service: ImageKeyService, key: string): Promise<{ ok
   if (!(IMAGE_KEY_SERVICES as readonly string[]).includes(service)) return Promise.resolve({ ok: false, error: pick('不认识的生图服务', 'Unknown image service') })
   if (!value) return Promise.resolve({ ok: false, error: pick('API key 不能为空', 'API key cannot be empty') })
   if (/\s/.test(value)) return Promise.resolve({ ok: false, error: pick('API key 不应包含空白字符', 'API key must not contain whitespace') })
-  return update((file) => ({ ...file, keys: { ...file.keys, [service]: value } }))
+  return update((file) => {
+    const keyEndpoints = { ...file.keyEndpoints }
+    if (service === 'compatible') {
+      const endpoint = normalizeImageEndpoint(effectiveCompatibleBase(file))
+      if (endpoint) keyEndpoints.compatible = endpoint
+      else delete keyEndpoints.compatible
+    }
+    return { ...file, keys: { ...file.keys, [service]: value }, keyEndpoints }
+  })
 }
 
 export function clearImageKey(service: ImageKeyService): Promise<{ ok: boolean; error?: string }> {
   return update((file) => {
     const keys = { ...file.keys }
     delete keys[service]
-    return { ...file, keys }
+    const keyEndpoints = { ...file.keyEndpoints }
+    delete keyEndpoints[service]
+    return { ...file, keys, keyEndpoints }
   })
 }
