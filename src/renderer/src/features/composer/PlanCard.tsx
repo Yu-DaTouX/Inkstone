@@ -1,11 +1,12 @@
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, CircleCheck } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Meter } from '../../ui'
+import { CloseButton, Meter } from '../../ui'
 import { activeTodoRow, anchorTodoIndex, buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
 import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
 import { ComposerBanner } from '../../t3/components/chat/ComposerBanner'
+import { planCardKeyOf, planCardVisible } from './plan-card-state'
 import './plan-card.css'
 
 const PLAN_EXPANDED_STORAGE_KEY = 'inkstone.v3.planCard.expanded'
@@ -44,10 +45,13 @@ export function PlanCard(): ReactElement | null {
   const activeRow = activeTodoRow(model)
   const anchorIndex = anchorTodoIndex(model)
 
-  const latestRound = todoHistory.length ? todoHistory[todoHistory.length - 1].round : null
+  const latestSnapshot = todoHistory.length ? todoHistory[todoHistory.length - 1] : null
+  const latestRound = latestSnapshot?.round ?? null
   const stale = latestRound !== null && userMessageCount > latestRound
+  const planKey = planCardKeyOf(latestSnapshot?.id ?? null, todos)
 
   const [expanded, setExpanded] = useState(readExpanded)
+  const [dismissed, setDismissed] = useState<string | null>(null)
   const [overflowing, setOverflowing] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const anchorRowRef = useRef<HTMLLIElement | null>(null)
@@ -63,8 +67,7 @@ export function PlanCard(): ReactElement | null {
     setOverflowing(hidesRowsBelow(el))
   }, [anchorIndex, model.rows.length, expanded, todos])
 
-  if (!hasTodoTileContent(todos)) return null
-  if (model.total > 0 && model.done >= model.total) return null
+  if (!planCardVisible({ hasTodos: hasTodoTileContent(todos), total: model.total, done: model.done, stale, dismissed: dismissed === planKey })) return null
 
   const toggle = (): void => {
     const next = !expanded
@@ -72,40 +75,53 @@ export function PlanCard(): ReactElement | null {
     writeExpanded(next)
   }
 
-  const headline = t('plan.title', { done: model.done, total: model.total })
+  const complete = model.total > 0 && model.done >= model.total
+  const headline = complete ? `${model.done}/${model.total}` : t('plan.title', { done: model.done, total: model.total })
   const nowText = !expanded && !stale && activeRow ? activeRow.text : ''
   const hint = expanded ? t('plan.collapse') : nowText ? t('plan.workingOn', { text: nowText }) : t('plan.expand')
 
   return (
     <ComposerBanner.Root className="plan-card__root">
-    <div className="plan-card" data-testid="plan-card" data-expanded={expanded}>
-      <button
-        type="button"
-        className="plan-card-head"
-        aria-expanded={expanded}
-        aria-controls={expanded ? listId : undefined}
-        title={hint}
-        data-testid="plan-card-toggle"
-        onClick={toggle}
-      >
-        <span className="plan-card-title">
-          <span className="plan-card-count">{headline}</span>
-          {model.total > 0 ? (
-            <Meter
-              className="plan-card-meter"
-              aria-label={headline}
-              value={model.done + (activeRow ? 0.5 : 0)}
-              minValue={0}
-              maxValue={model.total}
-              style={{ width: `${Math.min(160, Math.max(48, model.total * 16))}px` }}
-              data-testid="plan-card-meter"
-            />
-          ) : null}
-          {stale ? <span className="plan-card-stale">{t('plan.stale')}</span> : null}
-          {nowText ? <span className="plan-card-now">{nowText}</span> : null}
-        </span>
-        {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-      </button>
+    <div className="plan-card" data-testid="plan-card" data-expanded={expanded} data-complete={complete || undefined}>
+      <div className="plan-card-head">
+        <button
+          type="button"
+          className="plan-card-toggle"
+          aria-expanded={expanded}
+          aria-controls={expanded ? listId : undefined}
+          title={hint}
+          data-testid="plan-card-toggle"
+          onClick={toggle}
+        >
+          <span className="plan-card-title">
+            {complete ? <CircleCheck className="plan-card-check" size={14} aria-hidden /> : null}
+            <span className="plan-card-count" data-complete={complete || undefined}>{headline}</span>
+            {!complete && model.total > 0 ? (
+              <Meter
+                className="plan-card-meter"
+                aria-label={headline}
+                value={model.done + (activeRow ? 0.5 : 0)}
+                minValue={0}
+                maxValue={model.total}
+                style={{ width: `${Math.min(160, Math.max(48, model.total * 16))}px` }}
+                data-testid="plan-card-meter"
+              />
+            ) : null}
+            {stale ? <span className="plan-card-stale">{t('plan.stale')}</span> : null}
+            {nowText ? <span className="plan-card-now">{nowText}</span> : null}
+          </span>
+          {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+        </button>
+        {stale ? (
+          <CloseButton
+            className="plan-card-close"
+            size="sm"
+            aria-label={t('plan.dismiss')}
+            onPress={() => setDismissed(planKey)}
+            data-testid="plan-card-close"
+          />
+        ) : null}
+      </div>
       {expanded ? (
         <div
           id={listId}

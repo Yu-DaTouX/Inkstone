@@ -121,7 +121,7 @@
     const monotonic = seq.every((s, i) => i === 0 || s.done >= seq[i - 1].done)
     check(monotonic, '完成数单调不减（没有回退）')
 
-    check(await until(() => !q('plan-card'), 10000), '全部完成后计划卡整块隐藏（不残留已完成清单）')
+    check(await until(() => q('plan-card')?.hasAttribute('data-complete'), 10000), '全部完成后保留完成数回执，下一轮再清场')
 
     const statsAfter = store.getState().stats?.tokens?.total ?? 0
     note(`会话统计 token：${statsBefore} → ${statsAfter}`)

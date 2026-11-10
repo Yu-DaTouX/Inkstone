@@ -61,7 +61,8 @@ async function buildBundle(outdir) {
     "import { renderToStaticMarkup } from 'react-dom/server'",
     `import * as Model from '${posix(abs('src/renderer/src/features/todos/todo-tile-model.ts'))}'`,
     `import * as View from '${posix(abs('src/renderer/src/features/todos/TodoTileView.tsx'))}'`,
-    'export { React, renderToStaticMarkup, Model, View }'
+    `import * as Plan from '${posix(abs('src/renderer/src/features/composer/plan-card-state.ts'))}'`,
+    'export { React, renderToStaticMarkup, Model, View, Plan }'
   ].join('\n')
   const outfile = join(outdir, 'v3-todo-tile.bundle.cjs')
   await build({
@@ -85,7 +86,7 @@ async function main() {
   const outdir = await mkdtemp(join(tmpdir(), 'inkstone-v3-todo-tile-'))
   const require = createRequire(import.meta.url)
   const bundle = require(await buildBundle(outdir))
-  const { React, renderToStaticMarkup, Model, View } = bundle
+  const { React, renderToStaticMarkup, Model, View, Plan } = bundle
   const { createElement } = React
 
   const render = ({ todos = [], agentRunning = false, lang = 'zh-CN' }) =>
@@ -110,6 +111,9 @@ async function main() {
   const runningInferred = Model.buildTodoTileModel([todo('a', { done: true }), todo('b'), todo('c')], true)
   ok(runningInferred.activeIndex === 1 && kinds(runningInferred)[1] === 'running', '无 status 但回合在跑：第一个未完成算进行中', { activeIndex: runningInferred.activeIndex, kinds: kinds(runningInferred) })
   ok(Model.activeTodoRow(runningInferred)?.text === 'b', 'activeTodoRow 取到当前项文字')
+
+  const afterComplete = Model.buildTodoTileModel([todo('a', { done: true, status: 'done' }), todo('b'), todo('c')], true)
+  ok(afterComplete.activeIndex === 1 && kinds(afterComplete)[1] === 'running', '完成项带 status 而其余没有：仍把第一个未完成算进行中', { activeIndex: afterComplete.activeIndex, kinds: kinds(afterComplete) })
 
   const explicit = Model.buildTodoTileModel(
     [todo('a', { done: true, status: 'done' }), todo('b', { status: 'running' }), todo('c', { status: 'blocked' }), todo('d', { status: 'pending' })],
@@ -168,6 +172,17 @@ async function main() {
 
   const enHtml = render({ todos: [todo('blocked', { status: 'blocked' })], lang: 'en-US' })
   ok(enHtml.includes('Blocked'), '英文语言走自有常量', { blocked: enHtml.includes('Blocked') })
+
+  const planBase = { hasTodos: true, total: 3, done: 1, stale: false, dismissed: false }
+  ok(!Plan.planCardVisible({ ...planBase, hasTodos: false }), '计划卡：没有待办时不显示')
+  ok(Plan.planCardVisible(planBase), '计划卡：进行中的计划显示')
+  ok(Plan.planCardVisible({ ...planBase, done: 3 }), '计划卡：全部完成仍保留到本轮结束')
+  ok(!Plan.planCardVisible({ ...planBase, done: 3, stale: true }), '计划卡：全部完成后下一轮开始即清场')
+  ok(Plan.planCardVisible({ ...planBase, stale: true }), '计划卡：上一轮未完成清单仍显示（可关闭）')
+  ok(!Plan.planCardVisible({ ...planBase, stale: true, dismissed: true }), '计划卡：上一轮可本地关闭')
+  ok(Plan.planCardKeyOf('snap-1', [todo('a')]) !== Plan.planCardKeyOf('snap-2', [todo('a')]), '计划卡：新快照换 key，关闭后新计划会再出现')
+  ok(Plan.planCardKeyOf(null, [todo('a')]) !== Plan.planCardKeyOf(null, [todo('a', { done: true })]), '计划卡：没有快照 id 时按内容区分')
+  ok(Plan.planCardKeyOf('snap-1', [todo('a')]) === Plan.planCardKeyOf('snap-1', [todo('a', { done: true })]), '计划卡：同一快照内容变化仍沿用 key')
 
   await rm(outdir, { recursive: true, force: true })
   console.log(`\nv3-todo-tile: ${checks} checks passed`)

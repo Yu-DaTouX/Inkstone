@@ -85,6 +85,10 @@ export async function runTaskPlanTests(ok) {
       [{ action: 'set', items: [{ text: 123 }] }, 'empty_text', 'text 不是字符串'],
       [{ action: 'set', items: [{ text: '   ' }] }, 'empty_text', 'text 只有空白'],
       [{ action: 'set', items: [{ text: '甲', done: 'true' }] }, 'bad_done', 'done 不是 boolean'],
+      [{ action: 'set', items: [{ text: '甲', status: 'doing' }] }, 'bad_status', 'status 不是规范值'],
+      [{ action: 'set', items: [{ text: '甲', status: 'in_progress' }] }, 'bad_status', 'status 不接受历史别名'],
+      [{ action: 'set', items: [{ text: '甲', status: 1 }] }, 'bad_status', 'status 不是字符串'],
+      [{ action: 'set', items: [{ text: '甲', status: null }] }, 'bad_status', 'status 显式传 null 也拒绝'],
       [{ action: 'set', items: [{ text: 'x'.repeat(TASK_PLAN_LIMITS.maxTextLength + 1) }] }, 'text_too_long', '单项超长'],
       [{ action: 'complete', index: 0 }, 'bad_index', 'index 0'],
       [{ action: 'complete', index: -1 }, 'bad_index', 'index 负数'],
@@ -104,7 +108,7 @@ export async function runTaskPlanTests(ok) {
       }
       if (JSON.stringify(prev) !== snapshot) allUnchanged = false
     }
-    ok(allRejected, `14 类非法输入全部被拒（且错误码正确）`)
+    ok(allRejected, `${cases.length} 类非法输入全部被拒（且错误码正确）`)
     ok(allUnchanged, '非法输入没有修改状态（不变式 ②）')
 
     const noId = applyTaskRequest(prev, { action: 'clear', operationId: '' })
@@ -192,6 +196,51 @@ export async function runTaskPlanTests(ok) {
     const parsed = parseRequestItems(src)
     src[0].text = '改了'
     ok(parsed.ok && parsed.items[0].text === '甲', '校验结果不复用请求里的对象（调用方改写不会反向污染）')
+  }
+
+  {
+    const statuses = parseRequestItems([
+      { text: '待做', status: 'pending' },
+      { text: '进行中', status: 'running' },
+      { text: '完成', status: 'done' },
+      { text: '受阻', status: 'blocked' },
+      { text: '旧写法', done: true }
+    ])
+    ok(statuses.ok, 'status：四个规范值都能通过校验')
+    ok(statuses.ok && statuses.items[0].status === 'pending' && statuses.items[0].done === false, 'status：pending')
+    ok(statuses.ok && statuses.items[1].status === 'running' && statuses.items[1].done === false, 'status：running 不改 done')
+    ok(statuses.ok && statuses.items[2].status === 'done' && statuses.items[2].done === true, 'status：done 同步 done')
+    ok(statuses.ok && statuses.items[3].status === 'blocked' && statuses.items[3].done === false, 'status：blocked')
+    ok(statuses.ok && statuses.items[4].done === true && statuses.items[4].status === undefined, 'done 旧写法仍可用，不凭空补 status')
+
+    const conflicts = parseRequestItems([
+      { text: '完成压过进行中', status: 'running', done: true },
+      { text: '完成状态压过 done false', status: 'done', done: false }
+    ])
+    ok(conflicts.ok && conflicts.items[0].done === true && conflicts.items[0].status === 'done', '冲突：done true 优先，status 归 done')
+    ok(conflicts.ok && conflicts.items[1].done === true && conflicts.items[1].status === 'done', '冲突：status done 也把 done 置真')
+
+    const set = apply(emptyTaskPlan(), { action: 'set', items: [{ text: '甲', status: 'running' }, { text: '乙' }] })
+    ok(set.state.todos[0].status === 'running' && set.state.todos[0].done === false, 'set：running 写进状态')
+    ok(set.state.todos[1].status === undefined, 'set：没写 status 的旧项保持原样')
+    const added = apply(set.state, { action: 'add', items: [{ text: '丙', status: 'blocked' }] })
+    ok(added.state.todos[2].status === 'blocked', 'add：blocked 写进状态')
+
+    const round = toTaskPlanEntryData(added.state)
+    const back = readTaskPlanEntry(round)
+    ok(back.todos[0].status === 'running' && back.todos[2].status === 'blocked', '序列化往返保留 running / blocked')
+    ok(back.todos[1].status === undefined, '序列化往返不伪造 status')
+
+    const legacyStatuses = readTaskPlanEntry({
+      todos: [
+        { text: '甲', status: 'in_progress' },
+        { text: '乙', status: 'failed' },
+        { text: '丙', status: 'nope' }
+      ]
+    })
+    ok(legacyStatuses.todos[0].status === 'running', '旧数据：in_progress 别名仍是 running')
+    ok(legacyStatuses.todos[1].status === 'blocked', '旧数据：failed 别名仍是 blocked')
+    ok(legacyStatuses.todos[2].status === undefined, '旧数据：认不出的 status 丢掉，不猜')
   }
 
   {

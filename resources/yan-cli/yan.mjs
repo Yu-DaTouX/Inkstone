@@ -178,10 +178,11 @@ const GROUP_USAGE = {
 建的时候一次写全，之后只在完成一项或计划变化时更新，不要每做一步就更新一次。
 
 task-update.json：
-  {"action":"set","items":[{"text":"读现有实现","done":false},{"text":"改写","done":false}]}
+  {"action":"set","items":[{"text":"读现有实现","status":"running"},{"text":"改写","status":"pending"}]}
   {"action":"add","items":[{"text":"补测试","done":false}]}
   {"action":"complete","index":1}        index 从 1 开始；uncomplete / remove 同样写法
   {"action":"clear"}
+  items.status 可选 pending / running / done / blocked；兼容旧的 done 布尔值。
 回执里有 operationId：重试同一次提交时把它一起传回来，同一个 operationId 只生效一次。
 `,
   operations: `yan operations status --id <操作ID>

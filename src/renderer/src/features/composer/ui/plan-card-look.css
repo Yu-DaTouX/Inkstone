@@ -1,0 +1,6 @@
+@layer features {
+  .plan-card-check, .plan-card-count[data-complete] { color: var(--ok-t); }
+  .plan-card .v3-todo-row { transition: color var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease); }
+  @media (prefers-reduced-motion: reduce) { .plan-card .v3-todo-row { transition: none; } }
+  :root[data-reduce-motion='true'] .plan-card .v3-todo-row { transition: none; }
+}

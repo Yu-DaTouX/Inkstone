@@ -9,6 +9,8 @@ export const TASK_PLAN_SCHEMA_VERSION = 1
 export const TASK_ACTIONS = ['set', 'add', 'complete', 'uncomplete', 'remove', 'clear'] as const
 export type TaskAction = (typeof TASK_ACTIONS)[number]
 
+export const TASK_STATUSES = ['pending', 'running', 'done', 'blocked'] as const
+
 export const TASK_PLAN_LIMITS = {
   maxItems: 20,
   maxTextLength: 80
@@ -67,6 +69,7 @@ export type TaskErrorCode =
   | 'empty_text'
   | 'text_too_long'
   | 'bad_done'
+  | 'bad_status'
   | 'too_many_items'
   | 'bad_index'
   | 'index_out_of_range'
@@ -99,9 +102,18 @@ const STATUS_ALIASES: Record<string, TodoStatus> = {
   error: 'blocked'
 }
 
+export function isTaskStatus(v: unknown): v is TodoStatus {
+  return typeof v === 'string' && (TASK_STATUSES as readonly string[]).includes(v)
+}
+
 export function normalizeTaskStatus(v: unknown): TodoStatus | undefined {
   if (typeof v !== 'string') return undefined
   return STATUS_ALIASES[v.trim().toLowerCase().replace(/[\s-]+/g, '_')]
+}
+
+function resolveTaskStatus(status: TodoStatus | undefined, done: boolean): { done: boolean; status?: TodoStatus } {
+  const complete = done || status === 'done'
+  return { done: complete, ...(status ? { status: complete ? ('done' as const) : status } : {}) }
 }
 
 export function normalizeTaskItem(raw: unknown): TaskItemShape | undefined {
@@ -110,8 +122,8 @@ export function normalizeTaskItem(raw: unknown): TaskItemShape | undefined {
   const text = typeof t.text === 'string' ? t.text : t.text == null ? '' : String(t.text)
   if (text.length === 0) return undefined
   const status = normalizeTaskStatus(t.status)
-  const done = status === 'done' || t.done === true
-  return { text, done, ...(status ? { status: done ? ('done' as const) : status } : {}) }
+  const resolved = resolveTaskStatus(status, t.done === true)
+  return { text, ...resolved }
 }
 
 export function normalizeTaskItems(raw: unknown): TaskItemShape[] {
@@ -167,7 +179,7 @@ export function parseRequestItems(
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
       return fail('bad_items', `第 ${at} 项不是任务对象`)
     }
-    const t = item as { text?: unknown; done?: unknown }
+    const t = item as { text?: unknown; done?: unknown; status?: unknown }
     if (typeof t.text !== 'string') return fail('empty_text', `第 ${at} 项缺少 text（必须是字符串）`)
     if (t.text.trim().length === 0) return fail('empty_text', `第 ${at} 项的 text 是空的`)
     if (charLength(t.text) > TASK_PLAN_LIMITS.maxTextLength) {
@@ -179,7 +191,14 @@ export function parseRequestItems(
     if (t.done !== undefined && typeof t.done !== 'boolean') {
       return fail('bad_done', `第 ${at} 项的 done 必须是 true / false`)
     }
-    items.push({ text: t.text, done: t.done === true })
+    let status: TodoStatus | undefined
+    if (t.status !== undefined) {
+      if (!isTaskStatus(t.status)) {
+        return fail('bad_status', `第 ${at} 项的 status 必须是 ${TASK_STATUSES.join(' / ')}`)
+      }
+      status = t.status
+    }
+    items.push({ text: t.text, ...resolveTaskStatus(status, t.done === true) })
   }
   return { ok: true, items }
 }

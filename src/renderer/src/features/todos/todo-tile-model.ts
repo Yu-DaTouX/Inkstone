@@ -26,7 +26,7 @@ function isDone(todo: SessionTodo): boolean {
 function resolveActiveIndex(todos: readonly SessionTodo[], agentRunning: boolean): number {
   const explicit = todos.findIndex((todo) => todo.status === 'running')
   if (explicit >= 0) return explicit
-  if (todos.some((todo) => todo.status !== undefined)) return -1
+  if (todos.some((todo) => !isDone(todo) && todo.status !== undefined)) return -1
   if (!agentRunning) return -1
   return todos.findIndex((todo) => !isDone(todo))
 }

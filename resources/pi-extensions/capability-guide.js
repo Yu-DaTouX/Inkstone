@@ -133,7 +133,7 @@ const ENVIRONMENT_SECTION = 'inkstone_environment'
 const TODOS_TOOL = {
   name: 'todos',
   label: 'To-dos',
-  description: 'Update the user\'s to-do panel. action: "set" (the default when only items are given) replaces the whole list with items; "add" appends items; "complete"/"uncomplete"/"remove" take a 1-based index; "clear" empties it. At most 20 items; each text is a short title of 80 characters or fewer.',
+  description: 'Update the user\'s to-do panel. action: "set" (the default when only items are given) replaces the whole list with items; "add" appends items; "complete"/"uncomplete"/"remove" take a 1-based index; "clear" empties it. Each item may set status: pending, running (the step in progress), done, or blocked; status "done" and done: true mean the same. At most 20 items; each text is a short title of 80 characters or fewer.',
   parameters: {
     type: 'object',
     properties: {
@@ -141,24 +141,43 @@ const TODOS_TOOL = {
       items: {
         type: 'array',
         maxItems: 20,
-        items: { type: 'object', properties: { text: { type: 'string', maxLength: 80 }, done: { type: 'boolean' } }, required: ['text'] }
+        items: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', maxLength: 80 },
+            done: { type: 'boolean' },
+            status: { type: 'string', enum: ['pending', 'running', 'done', 'blocked'] }
+          },
+          required: ['text']
+        }
       },
       index: { type: 'integer', minimum: 1 }
     },
   }
 }
 
+function todoDone(todo) {
+  return todo?.done === true || todo?.status === 'done'
+}
+
+function todoLine(todo, index) {
+  const done = todoDone(todo)
+  const status = done ? '' : todo?.status === 'running' ? ' (in progress)' : todo?.status === 'blocked' ? ' (blocked)' : ''
+  const mark = done ? '[x]' : todo?.status === 'running' ? '[>]' : todo?.status === 'blocked' ? '[!]' : '[ ]'
+  return `${mark} ${index + 1}. ${todo?.text ?? ''}${status}`
+}
+
 export function todosResult(outcome) {
   if (!outcome.ok) {
     const current = Array.isArray(outcome.data?.todos) ? outcome.data.todos : null
     const lines = [outcome.cancelled ? 'To-do update cancelled.' : `To-do update failed: ${outcome.error}`]
-    if (current) lines.push(...current.map((todo, index) => `${todo.done ? '[x]' : '[ ]'} ${index + 1}. ${todo.text}`))
+    if (current) lines.push(...current.map(todoLine))
     return toolText(lines.join('\n'), { code: outcome.code, ...(current ? { todos: current } : {}) }, !outcome.cancelled)
   }
   const data = outcome.data ?? {}
   const todos = Array.isArray(data.todos) ? data.todos : []
-  const done = todos.filter((todo) => todo.done).length
-  const lines = [`To-dos (${done}/${todos.length} done):`, ...todos.map((todo, index) => `${todo.done ? '[x]' : '[ ]'} ${index + 1}. ${todo.text}`)]
+  const done = todos.filter(todoDone).length
+  const lines = [`To-dos (${done}/${todos.length} done):`, ...todos.map(todoLine)]
   return toolText(lines.join('\n'), { action: data.action, revision: data.revision, replayed: data.replayed === true, todos })
 }
 

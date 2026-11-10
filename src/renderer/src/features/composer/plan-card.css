@@ -1,3 +1,5 @@
+@import './ui/plan-card-look.css';
+
 @layer features {
   .t3-banner.plan-card__root {
     --composer-banner-padding-block: 0;
@@ -11,8 +13,15 @@
   .plan-card-head {
     display: flex;
     align-items: center;
+    min-width: 0;
+    padding-inline-end: var(--s-4);
+  }
+
+  .plan-card-toggle {
+    display: flex;
+    align-items: center;
     gap: var(--s-4);
-    width: 100%;
+    flex: 1 1 auto;
     min-width: 0;
     padding: var(--s-2) var(--s-8);
     border: 0;
@@ -26,16 +35,18 @@
     cursor: pointer;
   }
 
-  .plan-card-head:hover {
+  .plan-card-toggle:hover {
     color: var(--fg2);
   }
 
-  .plan-card-head:focus-visible {
+  .plan-card-toggle:focus-visible {
     outline: none;
     box-shadow: var(--ring-focus);
   }
 
-  .plan-card-head > svg {
+  .plan-card-toggle > svg,
+  .plan-card-check,
+  .plan-card-close {
     flex: none;
   }
 
