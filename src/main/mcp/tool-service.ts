@@ -10,6 +10,7 @@ import {
   type McpToolDescriptor
 } from '../../shared/mcp'
 import type { McpConnectionManager } from './connection-manager'
+import { COMPUTER_USE_SERVER_ID } from '../computer-use'
 
 export class McpToolError extends Error {
   constructor(
@@ -108,19 +109,31 @@ export function imageExtensionOf(mimeType: string): string {
   return IMAGE_EXTENSIONS[mimeType.trim().toLowerCase().split(';')[0]] ?? 'bin'
 }
 
-function imageSavedText(mimeType: string, file: string): string {
-  return `[图片 ${mimeType || '未知类型'}，已保存：${file}。支持图片的模型可用 read 工具打开；只收文字的模型看不到图片，请改用 Snapshot（use_vision=false）读取界面树。]`
+function imageSavedText(mimeType: string, file: string, snapshotAdvice: boolean): string {
+  const base = `[Image ${mimeType || 'unknown type'} saved to: ${file}. Models that accept images can open it with the read tool; text-only models cannot see it, so use the text returned by that tool or call again for the information you need.]`
+  return snapshotAdvice ? `${base}[${COMPUTER_USE_SERVER_ID} can use Snapshot (use_vision=false) to read the UI tree.]` : base
+}
+
+async function offersSnapshotTool(manager: McpConnectionManager, serverId: string, signal?: AbortSignal): Promise<boolean> {
+  if (serverId !== COMPUTER_USE_SERVER_ID) return false
+  try {
+    const tools = await manager.listToolsCached(serverId, { signal })
+    return tools.some((tool) => tool.name === 'Snapshot')
+  } catch {
+    return false
+  }
 }
 
 function imageFailedText(mimeType: string, reason: string): string {
-  return `[图片 ${mimeType || '未知类型'}，未能保存：${reason}]`
+  return `[Image ${mimeType || 'unknown type'} could not be saved: ${reason}]`
 }
 
 async function saveResultImages(
   raw: unknown,
   serverId: string,
   toolName: string,
-  resultsDir: string
+  resultsDir: string,
+  snapshotAdvice: boolean
 ): Promise<{ options?: McpResultTextOptions; files: string[] }> {
   const parts = mcpImageParts(raw)
   if (parts.length === 0) return { files: [] }
@@ -146,7 +159,7 @@ async function saveResultImages(
       const file = join(resultsDir, name)
       await writeFile(file, buffer)
       files.push(file)
-      replacements.set(part.index, imageSavedText(part.mimeType, file))
+      replacements.set(part.index, imageSavedText(part.mimeType, file, snapshotAdvice))
     } catch (error) {
       replacements.set(part.index, imageFailedText(part.mimeType, error instanceof Error ? error.message : String(error)))
     }
@@ -186,7 +199,8 @@ export async function callMcpTool(
 
   options.signal?.throwIfAborted()
   const raw = await manager.callTool(serverId, toolName, args, { signal: options.signal })
-  const saved = await saveResultImages(raw, serverId, toolName, options.resultsDir)
+  const snapshotAdvice = await offersSnapshotTool(manager, serverId, options.signal)
+  const saved = await saveResultImages(raw, serverId, toolName, options.resultsDir, snapshotAdvice)
   const { toolError, text } = classifyMcpResult(raw, saved.options)
   const bytes = Buffer.byteLength(text, 'utf8')
   const images = saved.files.length > 0 ? { images: saved.files } : {}

@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns/promises'
 import { BlockList } from 'node:net'
+import { isMetadataAddress } from '../net/address-policy'
 
 const blockedIpv4 = new BlockList()
 for (const [address, prefix] of [
@@ -17,6 +18,7 @@ blockedIpv6.addSubnet('2001:db8::', 32, 'ipv6')
 blockedIpv6.addSubnet('2002::', 16, 'ipv6')
 
 export function isMcpAppPrivateAddress(address: string, family: number): boolean {
+  if (isMetadataAddress(address)) return true
   if (family === 4) return blockedIpv4.check(address, 'ipv4')
   if (family === 6) return !publicIpv6.check(address, 'ipv6') || blockedIpv6.check(address, 'ipv6')
   return true

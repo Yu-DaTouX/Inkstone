@@ -27,12 +27,16 @@ export class BrowserWindow {
 export const session = {
   fromPartition(name) {
     globalThis.__hiddenPartitions = [...(globalThis.__hiddenPartitions ?? []), name]
-    return { webRequest: { onBeforeRequest(callback) { globalThis.__hiddenBeforeRequest = callback } } }
+    return {
+      webRequest: { onBeforeRequest(callback) { globalThis.__hiddenBeforeRequest = callback } },
+      setPermissionRequestHandler(handler) { globalThis.__hiddenPermissionRequest = handler },
+      setPermissionCheckHandler(handler) { globalThis.__hiddenPermissionCheck = handler }
+    }
   }
 }
 `
 const DNS_STUB = `
-export async function lookup() { return [{ address: '93.184.216.34', family: 4 }] }
+export async function lookup() { if (globalThis.__hiddenDnsFail) throw Object.assign(new Error('dns unavailable'), { code: 'ENOTFOUND' }); return [{ address: '93.184.216.34', family: 4 }] }
 `
 
 export async function runHiddenPageTests(ok) {
@@ -52,8 +56,9 @@ export async function runHiddenPageTests(ok) {
         b.onResolve({ filter: /public-page$/ }, (args) => args.importer.endsWith('read-page.ts') ? { path: 'public-page', namespace: 'hidden-stub' } : undefined)
         b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'hidden-stub' }))
         b.onResolve({ filter: /^node:dns\/promises$/ }, () => ({ path: 'dns', namespace: 'hidden-stub' }))
+        b.onResolve({ filter: /pinned-network$/ }, () => ({ path: 'pinned-network', namespace: 'hidden-stub' }))
         b.onLoad({ filter: /.*/, namespace: 'hidden-stub' }, (args) => ({
-          contents: args.path === 'public-page' ? `export async function fetchPublicPage() { throw new Error('offline fixture') }` : args.path === 'boundary' ? `import { shouldBlockHiddenPageRequest as real } from 'fixture-real-boundary'; export async function shouldBlockHiddenPageRequest(...args) { if (globalThis.__hiddenBoundaryError) throw new Error('fixture boundary failure'); return real(...args) }` : args.path === 'dns' ? DNS_STUB : ELECTRON_STUB,
+          contents: args.path === 'public-page' ? `export async function fetchPublicPage() { throw new Error('offline fixture') }` : args.path === 'boundary' ? `import { shouldBlockHiddenPageRequest as real } from 'fixture-real-boundary'; export async function shouldBlockHiddenPageRequest(...args) { if (globalThis.__hiddenBoundaryError) throw new Error('fixture boundary failure'); return real(...args) }` : args.path === 'dns' ? DNS_STUB : args.path === 'pinned-network' ? `export async function attachPinnedNetworkGuard() { globalThis.__hiddenGuardCalls = (globalThis.__hiddenGuardCalls ?? 0) + 1; if (globalThis.__hiddenGuardFail) return { status: 'failed', message: 'fixture guard failure' }; return { status: 'attached', port: 1234 } }\nexport function pinnedGuardStatus() { return { status: globalThis.__hiddenGuardFail ? 'failed' : 'ready', reason: '' } }\nexport async function shutdownPinnedNetworkGuard() {}` : ELECTRON_STUB,
           loader: 'js'
         }))
       }
@@ -147,7 +152,29 @@ export async function runHiddenPageTests(ok) {
       ok((await decide('https://example.com/article')) === false, '解析到公网的域名放行')
       ok((await decide('http://127.0.0.1:8080/x')) === true, '字面回环地址直接拦')
       ok((await decide('http://169.254.169.254/latest/meta-data/')) === true, '云 metadata 地址拦')
+      ok((await decide('ws://127.0.0.1:8080/socket')) === true, '私网 WebSocket 握手同样拦')
+      ok((await decide('wss://169.254.169.254/socket')) === true, '云 metadata 地址的 WSS 同样拦')
+      ok((await decide('ws://example.com/socket')) === false, '公网 WebSocket 握手放行')
+      ok((await decide('wss://hidden-review.test/socket')) === false, '公网 WSS 且解析到公网时放行')
+      globalThis.__hiddenDnsFail = true
+      try {
+        ok((await decide('https://dns-down.test/article')) === true, 'DNS 解析失败时隐藏页按拒绝处理（无法验证不放行）')
+      } finally {
+        delete globalThis.__hiddenDnsFail
+      }
       ok((await decide('about:blank')) === false, 'about: 不当网络请求判')
+      {
+        const requestPermission = globalThis.__hiddenPermissionRequest
+        const checkPermission = globalThis.__hiddenPermissionCheck
+        ok(typeof requestPermission === 'function', '隐藏页分区装了权限请求处理器')
+        ok(typeof checkPermission === 'function', '隐藏页分区装了权限检查处理器')
+        for (const permission of ['media', 'geolocation', 'notifications', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'display-capture', 'usb', 'serial']) {
+          let granted = null
+          requestPermission({}, permission, (value) => { granted = value })
+          ok(granted === false, `隐藏页权限请求默认拒绝：${permission}`)
+          ok(checkPermission({}, permission, 'https://example.com') === false, `隐藏页权限检查默认拒绝：${permission}`)
+        }
+      }
       globalThis.__hiddenBoundaryError = true
       try {
         ok((await decide('https://example.com/error')) === true, '请求边界异常 fail closed')
@@ -209,8 +236,14 @@ export async function runHiddenPageTests(ok) {
     ok((await reader.readPage(page.url).catch(e => e)).code === 'bad_url', '重定向后仍校验 URL')
   }
 
+    ok(globalThis.__hiddenGuardCalls >= 1 && globalThis.__hiddenGuardCalls <= 2, '隐藏页反复开关不重复 attach 分区 guard')
+    globalThis.__hiddenGuardFail = true
+    const failingGuard = await bundle('src/main/search/hidden-page.ts', 'hidden-page-guard-fail.mjs')
+    const guardError = await failingGuard.withHiddenPage(100, async () => 'x').catch((error) => error)
+    ok(String(guardError?.message).includes('隐藏页连接防护未启用'), '隐藏页 guard 初始化失败时 fail closed 并报可见原因')
+    globalThis.__hiddenGuardFail = false
   } finally {
-    for (const key of ['__hiddenResult', '__hiddenJsCalls', '__hiddenBeforeRequest', '__hiddenPartitions', '__hiddenStatus', '__hiddenBoundaryError']) delete globalThis[key]
+    for (const key of ['__hiddenResult', '__hiddenJsCalls', '__hiddenBeforeRequest', '__hiddenPartitions', '__hiddenStatus', '__hiddenBoundaryError', '__hiddenPermissionRequest', '__hiddenPermissionCheck', '__hiddenDnsFail', '__hiddenGuardCalls', '__hiddenGuardFail']) delete globalThis[key]
     await rm(temp, { recursive: true, force: true })
   }
 }

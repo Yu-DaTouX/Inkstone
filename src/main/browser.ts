@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { app, shell, BrowserWindow, View, WebContentsView } from 'electron'
+import { app, shell, BrowserWindow, session, View, WebContentsView } from 'electron'
 import { cp, mkdir } from 'node:fs/promises'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -50,6 +50,7 @@ import { decideExternalRequest } from './browser/external-boundary'
 import { createStateFlush, ownedViewVisible } from './browser/host-state'
 import { pick } from '../shared/ui-lang'
 import { SessionScope } from './browser/session-scope'
+import { attachPinnedNetworkGuard, pinnedGuardStatus } from './net/pinned-network'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -304,6 +305,23 @@ export class BrowserController {
     private readonly approveProfileSync: () => Promise<boolean> = async () => false,
     private readonly approveLargeDownload: (download: LargeDownload) => Promise<boolean> = async () => false
   ) {}
+
+  private networkGuard: Promise<void> | null = null
+
+  private ensureNetworkGuard(): Promise<void> {
+    if (!this.networkGuard) {
+      this.networkGuard = attachPinnedNetworkGuard(session.fromPartition('persist:yan-browser'), 'https://example.com/')
+        .then((result) => {
+          if (result.status === 'attached') return
+          const detail = result.status === 'failed' ? result.message : result.status
+          this.pushError(pick(`内置浏览器连接防护未启用：${detail}`, `Embedded browser connection guard unavailable: ${detail}`))
+        })
+        .catch((error) => {
+          this.pushError(pick(`内置浏览器连接防护未启用：${error instanceof Error ? error.message : String(error)}`, `Embedded browser connection guard unavailable: ${error instanceof Error ? error.message : String(error)}`))
+        })
+    }
+    return this.networkGuard
+  }
 
   private loginImport?: Awaited<ReturnType<typeof createCookieBridge>>
   private loginImportStarting = false
@@ -573,6 +591,10 @@ export class BrowserController {
           callback({})
           return
         }
+        if (/^(?:https?|wss?):/i.test(details.url) && pinnedGuardStatus(view.webContents.session).status !== 'ready') {
+          callback({ cancel: true })
+          return
+        }
         const owner = [...this.tabs.values()].find(
           (t) => t.view.webContents.id === details.webContentsId
         )
@@ -659,6 +681,7 @@ export class BrowserController {
   async open(url = INITIAL_URL, waitForLoad = true): Promise<BrowserState> {
     const next = safeUrl(url)
     if (!next) throw new Error(pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened'))
+    await this.ensureNetworkGuard()
     this.activeMode = 'embedded'
     let tab = this.activeTab()
     if (!tab) {
@@ -692,6 +715,7 @@ export class BrowserController {
   private async openBackgroundTab(rawUrl: string, openerUrl: string, sessionId: string): Promise<void> {
     const url = safeUrl(rawUrl)
     if (!url) return
+    await this.ensureNetworkGuard()
     const tab = this.createTab(sessionId)
     const win = this.getWindow()
     if (win) {
@@ -721,6 +745,7 @@ export class BrowserController {
       else await this.navigateExternal(url)
       return this.getState()
     }
+    await this.ensureNetworkGuard()
     const tab = this.createTab()
     this.activeTabId = tab.id
     const win = this.getWindow()
@@ -889,6 +914,7 @@ export class BrowserController {
     if (tab.view.webContents.isDestroyed()) return { ok: false, error: pick('标签页已关闭', 'Tab is closed') }
     const url = safeUrl(raw)
     if (!url) return { ok: false, error: pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened') }
+    await this.ensureNetworkGuard()
     if (url !== tab.view.webContents.getURL()) {
       tab.state.url = url
       tab.state.title = ''

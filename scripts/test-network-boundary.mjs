@@ -1,3 +1,6 @@
+import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
+
 export async function runNetworkBoundaryTests(ok, mod) {
   const { decideRequestBoundary, isPrivateHost, isLinkLocalHost: isLinkLocal } = mod
 
@@ -106,6 +109,35 @@ export async function runNetworkBoundaryTests(ok, mod) {
   )
   ok(isLinkLocal('fe80::1'), 'IPv6 link-local 被识别')
   ok(!isLinkLocal('169.255.0.1'), '相邻的公网段不被误判为 link-local')
+  ok(isLinkLocal('::ffff:169.254.169.254'), 'IPv4 映射形式的 link-local 也被识别')
+  ok(isLinkLocal('[fe80::1]'), '带方括号的 IPv6 仍被识别')
+  ok(
+    decide({
+      targetHost: '168.63.129.16',
+      initiatorUrl: 'https://example.com/',
+      requestedByUs: true,
+      resourceType: 'mainFrame'
+    }) === 'block-private',
+    '明确要求也不放行 Azure 元数据地址'
+  )
+  ok(
+    decide({
+      targetHost: 'fd00:ec2::254',
+      initiatorUrl: 'https://example.com/',
+      requestedByUs: true,
+      resourceType: 'mainFrame'
+    }) === 'block-private',
+    '明确要求也不放行 AWS IPv6 元数据地址'
+  )
+  ok(
+    decide({
+      targetHost: '::ffff:169.254.169.254',
+      initiatorUrl: 'https://example.com/',
+      requestedByUs: true,
+      resourceType: 'mainFrame'
+    }) === 'block-private',
+    '映射形式的元数据地址不走“明确顶层导航”例外'
+  )
 
   ok(
     decide({
@@ -159,7 +191,38 @@ export async function runNetworkBoundaryTests(ok, mod) {
     })
     ok(asked === 'lookup-target.test', '隐藏页面：把域名（不带端口与路径）交给解析器', asked)
     ok(!(await blockHidden('about:blank')), '隐藏页面：about: 不当网络请求判')
+    ok(await blockHidden('ws://127.0.0.1:8080/socket', publicOnly), '隐藏页面：私网 WebSocket 握手拦')
+    ok(await blockHidden('wss://169.254.169.254/socket', publicOnly), '隐藏页面：元数据地址 WSS 拦')
+    ok(!(await blockHidden('ws://example.com/socket', publicOnly)), '隐藏页面：公网 WebSocket 握手放行')
+    ok(!(await blockHidden('wss://example.com/socket', publicOnly)), '隐藏页面：公网 WSS 放行')
+    ok(await blockHidden('ws://hidden-review.test/socket', privateOnly), '隐藏页面：解析到内网的 WebSocket 也拦')
     ok(!(await blockHidden('data:text/html,<p>x</p>')), '隐藏页面：data: 不当网络请求判')
     ok(!(await blockHidden('这不是网址')), '隐藏页面：解析不出的地址不误拦')
   }
+}
+
+
+async function main() {
+  const { build } = await import('esbuild')
+  const result = await build({ entryPoints: ['src/main/browser/network-boundary.ts'], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })
+  const mod = await import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'))
+  let checks = 0
+  let failures = 0
+  const ok = (value, label, detail) => {
+    checks += 1
+    if (!value) {
+      failures += 1
+      console.log('✗ ' + label + (detail === undefined ? '' : ': ' + detail))
+    }
+  }
+  await runNetworkBoundaryTests(ok, mod)
+  console.log(`network-boundary: ${checks - failures}/${checks} 通过`)
+  if (failures) process.exitCode = 1
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error('network-boundary: ' + (error?.stack ?? error))
+    process.exitCode = 1
+  })
 }

@@ -1,6 +1,9 @@
 import { BrowserWindow, session } from 'electron'
+import { installSessionPermissionBoundary } from '../browser/permission-boundary'
 import { shouldBlockHiddenPageRequest } from '../browser/network-boundary'
-import { resolvesToPrivateAddress } from '../browser/network-policy'
+import { resolvesToPrivateAddressStrict } from '../browser/network-policy'
+import { attachPinnedNetworkGuard, pinnedGuardStatus } from '../net/pinned-network'
+import { pick } from '../../shared/ui-lang'
 
 export function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -30,6 +33,19 @@ export class HiddenPageCancelled extends Error {
 
 const HIDDEN_PARTITION = 'yan-hidden-search'
 let openHiddenPages = 0
+let hiddenPermissionsAttached = false
+let hiddenNetworkGuard: Promise<void> | null = null
+
+function ensureHiddenNetworkGuard(): Promise<void> {
+  if (!hiddenNetworkGuard) {
+    hiddenNetworkGuard = attachPinnedNetworkGuard(session.fromPartition(HIDDEN_PARTITION), 'https://example.com/').then((result) => {
+      if (result.status === 'attached') return
+      const detail = result.status === 'failed' ? result.message : result.status
+      throw new Error(pick(`隐藏页连接防护未启用：${detail}`, `Hidden page connection guard is not enabled: ${detail}`))
+    })
+  }
+  return hiddenNetworkGuard
+}
 
 export async function withHiddenPage<T>(
   timeoutMs: number,
@@ -48,6 +64,7 @@ export async function withHiddenPage<T>(
   }
   if (external?.aborted) cancel()
   else external?.addEventListener('abort', cancel, { once: true })
+  await ensureHiddenNetworkGuard()
   const win = new BrowserWindow({
     show: false,
     width: 1100,
@@ -56,14 +73,23 @@ export async function withHiddenPage<T>(
   })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   const privateDns = new Map<string, { privateTarget: boolean; expiresAt: number }>()
-  const request = session.fromPartition(HIDDEN_PARTITION).webRequest
+  const hiddenSession = session.fromPartition(HIDDEN_PARTITION)
+  if (!hiddenPermissionsAttached) {
+    installSessionPermissionBoundary(hiddenSession)
+    hiddenPermissionsAttached = true
+  }
+  const request = hiddenSession.webRequest
   openHiddenPages += 1
   request.onBeforeRequest((details, callback) => {
+    if (/^(?:https?|wss?):/i.test(details.url) && pinnedGuardStatus(hiddenSession).status !== 'ready') {
+      callback({ cancel: true })
+      return
+    }
     void shouldBlockHiddenPageRequest(details.url, async (hostname) => {
       const key = hostname.toLowerCase()
       const cached = privateDns.get(key)
       if (cached && cached.expiresAt > Date.now()) return cached.privateTarget
-      const privateTarget = await resolvesToPrivateAddress(key)
+      const privateTarget = await resolvesToPrivateAddressStrict(key)
       privateDns.set(key, { privateTarget, expiresAt: Date.now() + 2000 })
       return privateTarget
     })

@@ -5,6 +5,7 @@ import { HtmlArtifactPreviewStore } from './html-artifact-preview-store'
 import { HTML_ARTIFACT_CSP, HTML_ARTIFACT_SCHEME, htmlArtifactAsset, htmlArtifactToken, withPreviewRuntime } from '../shared/html-artifact-preview'
 import { parseMcpAppUrl } from '../shared/mcp-app-preview'
 import { withBundledLibs } from './artifact-libs'
+import { pinnedGuardStatus } from './net/pinned-network'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: HTML_ARTIFACT_SCHEME, privileges: { standard: true, secure: true, corsEnabled: true } }
@@ -46,6 +47,10 @@ export function registerHtmlArtifactProtocol(): void {
   })
 
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    if (/^(?:https?|wss?):/i.test(details.url) && pinnedGuardStatus(session.defaultSession).status !== 'ready') {
+      callback({ cancel: true })
+      return
+    }
     const source = details.frame?.url ?? ''
     if (details.resourceType === 'subFrame') {
       const controlled =
