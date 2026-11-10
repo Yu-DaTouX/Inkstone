@@ -74,7 +74,7 @@ try {
   const file = outcome.images?.[0] ?? ''
   ok(file.startsWith(resultsDir) && file.endsWith('.png'), '文件落在 resultsDir，扩展名按 mime')
   ok(existsSync(file) && Buffer.compare(await readFile(file), png) === 0, '文件内容是解码后的原始字节')
-  ok(outcome.text.includes(file) && outcome.text.includes('read 工具') && outcome.text.includes('use_vision=false'), '文字里带路径与引导')
+  ok(outcome.text.includes(file) && outcome.text.includes('read tool') && outcome.text.includes('use_vision=false'), '文字里带路径与引导')
   ok(!outcome.text.includes(png.toString('base64')), '文字里没有 base64')
   ok(outcome.bytes === Buffer.byteLength(outcome.text, 'utf8') && !outcome.resultFile, '字节数只算文字，小结果不落 .txt')
 
@@ -120,7 +120,7 @@ try {
     { resultsDir: join(blocker, 'sub') }
   )
   ok(failedOutcome.images === undefined, '失败时没有 images')
-  ok(failedOutcome.text.startsWith('ok\n[图片 image/png，未能保存：') && !failedOutcome.toolError, '失败时退回占位并附原因，不抛错')
+  ok(failedOutcome.text.startsWith('ok\n[Image image/png could not be saved: ') && !failedOutcome.toolError, '失败时退回占位并附原因，不抛错')
   const emptyData = await toolService.callMcpTool(
     fakeManager({ content: [{ type: 'image', mimeType: 'image/png', data: '' }] }),
     'windows-mcp',
@@ -128,7 +128,7 @@ try {
     {},
     { resultsDir }
   )
-  ok(emptyData.images === undefined && emptyData.text.includes('未能保存'), '空图片数据退回占位')
+  ok(emptyData.images === undefined && emptyData.text.includes('could not be saved'), '空图片数据退回占位')
 
   console.log('computerUseGuide')
   const textGuide = guide.computerUseGuide({ input: ['text'] })
