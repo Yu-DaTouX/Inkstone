@@ -194,17 +194,11 @@ async function translateProse(prose: string, target: Exclude<TranslateTarget, 'a
   const chunks = chunkProse(body)
   const protectedChunks = chunks.map(protectSpans)
   const raw = await remote(protectedChunks.map((item) => item.text), target)
-  const results: string[] = []
-  const retry: number[] = []
-  raw.forEach((value, index) => {
-    const restored = restoreSpans(value, protectedChunks[index].spans)
-    if (restored === null) retry.push(index)
-    results[index] = restored ?? ''
+  const results = protectedChunks.map((chunk, index) => {
+    const restored = typeof raw[index] === 'string' ? restoreSpans(raw[index], chunk.spans) : null
+    if (restored === null) throw new TranslateError(pick('翻译未能保留代码或路径，已停止重试', 'Translation could not preserve code or paths. Retry stopped.'))
+    return restored
   })
-  if (retry.length) {
-    const plain = await remote(retry.map((index) => chunks[index]), target)
-    retry.forEach((index, at) => { results[index] = plain[at] })
-  }
   return lead + results.join('') + tail
 }
 

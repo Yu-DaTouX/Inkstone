@@ -48,10 +48,25 @@ try {
   const withCode = await m.translateText('Look at `foo.bar()` now\n```\nkeep me\n```\n', { service: 'bing', target: 'zh-Hans' }, remotes)
   ok(withCode.ok && withCode.text.includes('`foo.bar()`') && withCode.text.includes('keep me') && !calls.flat().some((t) => t.includes('keep me')), 'code is kept and not sent to the service')
 
-  let attempts = 0
-  const dropping = async (texts) => { attempts++; return texts.map((t) => (attempts === 1 ? 'lost it' : t.replace('Open', '打开'))) }
-  const retried = await m.translateText('Open `a.b` please', { service: 'bing', target: 'zh-Hans' }, { bing: dropping, google: dropping })
-  ok(retried.ok && attempts === 2 && retried.text.includes('打开'), 'when a placeholder is lost the piece is retranslated without protection')
+  for (const service of ['bing', 'google']) {
+    for (const damage of ['lost', 'duplicated', 'missing-piece']) {
+      const sent = []
+      const secrets = ['`private_command()`', 'C:\\private\\fixture.txt', 'https://private.invalid/fixture']
+      const input = `Open ${secrets.join(' and ')} please (${service}/${damage}).\n\n${'Ordinary prose. '.repeat(150)}\n\nLast paragraph.\n\`\`\`js\nprivate_fenced_code()\n\`\`\`\n`
+      const broken = async (texts) => {
+        sent.push(...texts)
+        if (damage === 'missing-piece') return []
+        return texts.map((text) => damage === 'lost' ? text.replace('<x0/>', '') : text.replace('<x0/>', '<x0/><x0/>'))
+      }
+      let attempts = 0
+      const remote = async (texts) => { attempts++; return broken(texts) }
+      const failed = await m.translateText(input, { service, target: 'zh-Hans' }, { bing: remote, google: remote })
+      ok(!failed.ok && failed.error.includes('已停止重试') && attempts === 1, `${service}/${damage}: damaged placeholders fail without retry`)
+      ok(sent.length > 1 && !sent.some((text) => secrets.some((secret) => text.includes(secret)) || text.includes('private_fenced_code')), `${service}/${damage}: multi-chunk requests never send protected spans or fenced code`)
+      const retry = await m.translateText(input, { service, target: 'zh-Hans' }, { bing: async (texts) => texts, google: async (texts) => texts })
+      ok(retry.ok && !retry.cached && retry.text === input, `${service}/${damage}: failure is not cached and intact placeholders restore exactly`)
+    }
+  }
 
   const failing = await m.translateText('Will fail', { service: 'bing', target: 'zh-Hans' }, { bing: async () => { throw new Error('boom') }, google: async () => ['should not run'] })
   ok(!failing.ok && failing.error === 'boom', 'a failure is reported and never falls back to another service')

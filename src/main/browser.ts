@@ -591,7 +591,11 @@ export class BrowserController {
           callback({})
           return
         }
-        if (/^(?:https?|wss?):/i.test(details.url) && pinnedGuardStatus(view.webContents.session).status !== 'ready') {
+        if (!['http:', 'https:', 'ws:', 'wss:'].includes(target.protocol)) {
+          callback({})
+          return
+        }
+        if (pinnedGuardStatus(view.webContents.session).status !== 'ready') {
           callback({ cancel: true })
           return
         }
@@ -622,7 +626,7 @@ export class BrowserController {
             if (privateTarget) this.recordBlockedRequest(target.hostname, 'dns-rebind', initiator)
             callback(privateTarget ? { cancel: true } : {})
           })
-          .catch(() => callback({}))
+          .catch(() => callback({ cancel: true }))
       })
         this.requestBoundaryAttached = true
       } catch (error) {
