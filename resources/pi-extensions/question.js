@@ -1,7 +1,7 @@
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 import { reserveInkstoneSections } from './prompt-sections.js'
 
-const WHEN_TO_ASK = 'Ask the user only when a reasonable reading of the request could produce something they did not mean, or when you cannot tell what they want. Check the files, the conversation and the environment first; never ask what you can find out yourself. If the user says to ask more or less, follow that; asking or not never changes approvals or high-risk confirmations.'
+const WHEN_TO_ASK = 'Ask the user only when you cannot tell what they want, or when reasonable readings of the request differ materially. Check the files, the conversation and the environment first; never ask what you can find out yourself. If the user says to ask more or less, follow that; asking or not never changes approvals or high-risk confirmations.'
 
 export const TOOL_GUIDANCE = `${WHEN_TO_ASK} Ask with the \`question\` tool, one focused question at a time, and wait for the answer.`
 

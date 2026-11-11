@@ -41,7 +41,7 @@ async function runWithoutHost(ok) {
     /at most 3 concrete options/.test(std?.systemPrompt ?? ''),
     '提示词把选项上限写成 3（与宿主硬校验同口径）'
   )
-  ok(/could produce something they did not mean/.test(std?.systemPrompt ?? '') && !/frequency/i.test(std?.systemPrompt ?? ''), '提问时机写成「可能偏离预期或没理解才问」，不再提已删除的频率设置')
+  ok(/reasonable readings of the request differ materially/.test(std?.systemPrompt ?? '') && !/frequency/i.test(std?.systemPrompt ?? ''), '提问时机写成「可能偏离预期或没理解才问」，不再提已删除的频率设置')
 
   const sections = {}
   const sectioned = handlers.before_agent_start({ systemPrompt: 'BASE', systemPromptOptions: { sections } })

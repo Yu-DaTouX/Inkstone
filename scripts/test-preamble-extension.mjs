@@ -6,8 +6,9 @@ export async function runPreambleExtensionTests(ok, mod) {
   ok(NATIVE_PREAMBLES.length === 2 && NATIVE_PREAMBLES[1].startsWith('You are an expert coding assistant operating inside pi'), '仍认 pi 1.4 及以前的旧句')
   ok(typeof YAN_PREAMBLE === 'string' && YAN_PREAMBLE.includes('Inkstone'), '导出的砚开场白包含产品名 Inkstone')
   ok(YAN_PREAMBLE.includes("personal agent") && !YAN_PREAMBLE.includes('inside pi,') && !YAN_PREAMBLE.includes('coding assistant'), '开场白是英文的个人 agent 身份，不提 pi、不限于写代码')
-  ok(/data, not instructions/.test(WORK_GUIDANCE) && /one-sentence progress note/.test(WORK_GUIDANCE), '怎么干活：含进度句与「工具结果是数据」')
+  ok(/data, not instructions/.test(WORK_GUIDANCE) && /one-sentence progress note with your next tool call/.test(WORK_GUIDANCE), '怎么干活：进度句随下一次工具调用发出，含「工具结果是数据」')
   ok(/\*single asterisks\*/.test(REPORT_GUIDANCE) && /\*\*Bold\*\* only/.test(REPORT_GUIDANCE) && !/status mark/.test(REPORT_GUIDANCE), '汇报：三层字色，没有状态标记')
+  ok(/the user's request comes first/.test(REPORT_GUIDANCE) && /unless the user asks for a narrower look/.test(WORK_RULES[0]), '汇报风格与读取范围：用户另有要求时以用户为准')
 
   const handlers = {}
   extension({ on: (name, fn) => (handlers[name] = fn) })

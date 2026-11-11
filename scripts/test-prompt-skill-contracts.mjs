@@ -14,7 +14,7 @@ export async function runPromptSkillContractTests(ok) {
   match(fields.options.description, /Required for choice.*multi.*ignored for other kinds/i, 'question options 描述条件必填')
   match(fields.min.description, /Required for range, optional for number/i, 'question 数值边界按类型说明')
   ok(!question.parameters.properties.fields.items.required.includes('options'), '文本字段不被 schema 强制要求 options')
-  match(TOOL_GUIDANCE, /could produce something they did not mean.*never ask what you can find out yourself/s, '只在可能偏离预期时提问，可核实的不问')
+  match(TOOL_GUIDANCE, /reasonable readings of the request differ materially.*never ask what you can find out yourself/s, '只在可能偏离预期时提问，可核实的不问')
   match(TOOL_GUIDANCE, /If the user says to ask more or less, follow that/, '提问多少遵从用户指令')
   const answered = await question.execute('q1', { question: 'Pick one', fields: [{ name: 'note', label: 'Note', kind: 'text' }] })
   ok(answered.details.answer === 'A', 'question execute 使用注入宿主 fixture')
