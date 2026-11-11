@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inkstone · 砚 · 让想法成形</title>
+<meta name="description" content="砚（Inkstone）是基于 pi 的个人全能 Agent。把事情交给它，它自己动手做完：写代码、查资料、操作网页和文件，每一步都看得见。">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6'/%3E%3Cpath d='M8 10l7 6-7 6M17 23h8' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='square'/%3E%3C/svg%3E">
+<link rel="preload" href="./fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./fonts/noto-sans-sc.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="./styles.css">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+<header class="hero" id="hero">
+  <canvas id="stone" aria-hidden="true"></canvas>
+  <div class="word" id="word" aria-hidden="true"><span>INK</span><span>STONE</span></div>
+
+  <nav class="nav" aria-label="站点">
+    <a class="brand" href="./" aria-label="Inkstone">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5 9 10l-5.5 4.5"/><path class="blink" d="M10.5 15h6"/></svg>
+      <span>inkstone</span>
+    </a>
+    <div class="links">
+      <a href="#steps" data-i18n="nav.steps">过程</a>
+      <a href="#approve" data-i18n="nav.approve">审批</a>
+      <a href="#bench" data-i18n="nav.bench">工作区</a>
+      <a href="#phone" data-i18n="nav.phone">手机</a>
+      <a href="https://github.com/Yu-DaTouX/Inkstone">GitHub</a>
+    </div>
+    <div class="tools">
+      <button type="button" id="lang" aria-label="Switch to English">EN</button>
+      <button type="button" id="theme" aria-label="切换深浅主题">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.2"/><path d="M10 3.8v12.4a6.2 6.2 0 0 0 0-12.4z" class="half"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <div class="pitch" id="pitch">
+    <h1><span data-i18n="hero.title">让想法成形。</span><span class="caret" aria-hidden="true"></span></h1>
+    <p data-i18n="hero.sub">把事情交给它，它自己动手做完：写代码、查资料、操作网页和文件，每一步都看得见。</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/Yu-DaTouX/Inkstone/releases/latest">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path class="drop" d="M10 3v9.5M5.8 8.6 10 12.8l4.2-4.2"/><path d="M4 16.5h12"/></svg>
+        <span data-i18n="cta.download">下载 Windows 版</span>
+      </a>
+      <a class="ghost" href="https://github.com/Yu-DaTouX/Inkstone" data-i18n="cta.source">查看源码</a>
+    </div>
+  </div>
+  <p class="spec"><span data-version>v0.15.0</span> · windows x64<br>mit · <span data-i18n="hero.pi">基于 pi</span></p>
+</header>
+
+<div class="tape" aria-hidden="true"><div class="tape-run"><span>写代码 / 查资料 / 操作网页 / 读写文件 / 会话终端 / Git 改动与提交 / 子 Agent / 技能 / MCP / 插件 / 手机接力 / 本地快照 / </span><span>写代码 / 查资料 / 操作网页 / 读写文件 / 会话终端 / Git 改动与提交 / 子 Agent / 技能 / MCP / 插件 / 手机接力 / 本地快照 / </span></div></div>
+
+<main>
+  <section class="sec" id="steps" data-sec>
+    <div class="sec-head">
+      <h2 class="rv"><span class="ps1" aria-hidden="true">&gt;</span><span data-i18n="steps.title">每一步都看得见</span><span class="caret" aria-hidden="true"></span></h2>
+      <p class="rv" data-i18n="steps.lead">正文保持连续阅读，思考与工具步骤按需展开。读了哪些文件、改了哪几行、跑了什么命令，都摆在会话里；做完把结果说清楚。</p>
+    </div>
+    <figure class="pane rv" id="stream">
+      <figcaption><span data-i18n="steps.pane">会话</span><span data-i18n="demo">演示</span></figcaption>
+      <div class="pane-body" id="streamBody"></div>
+    </figure>
+  </section>
+
+  <section class="sec flip" id="approve" data-sec>
+    <div class="sec-head">
+      <h2 class="rv"><span class="ps1" aria-hidden="true">&gt;</span><span data-i18n="approve.title">危险操作先问你</span><span class="caret" aria-hidden="true"></span></h2>
+      <p class="rv" data-i18n="approve.lead">「自动批准」下，常规操作直接执行，危险操作与项目外写入先确认。可以允许一次、在本会话允许，或者拒绝。</p>
+    </div>
+    <figure class="pane rv" id="approval" data-state="ask">
+      <figcaption><span data-i18n="approve.pane">审批</span><span data-i18n="demo">演示</span></figcaption>
+      <div class="pane-body">
+        <p class="cmd"><span class="dim">bash</span><span id="cmdText">git push --force origin main</span></p>
+        <p class="why" data-i18n="approve.why">Git 强制推送，会覆盖远端历史</p>
+        <div class="choices">
+          <button type="button" data-act="once" data-i18n="approve.once">允许这一次</button>
+          <button type="button" data-act="session" data-i18n="approve.session">在此会话中允许</button>
+          <button type="button" data-act="deny" data-i18n="approve.deny">拒绝</button>
+        </div>
+        <p class="verdict" id="verdict" role="status"></p>
+      </div>
+      <div class="pane-foot"><button type="button" id="again" data-i18n="approve.again">再来一次</button></div>
+    </figure>
+  </section>
+
+  <section class="wide" id="bench" data-sec>
+    <div class="wide-head">
+      <h2 class="rv"><span class="ps1" aria-hidden="true">&gt;</span><span data-i18n="bench.title">成果就在会话旁边</span><span class="caret" aria-hidden="true"></span></h2>
+      <p class="rv" data-i18n="bench.lead">改动、网页、终端以标签开在右栏。Agent 操作的网页直接显示在这里，随时可以接管。</p>
+    </div>
+    <figure class="pane rv" id="benchPane" data-tab="diff">
+      <figcaption><span data-i18n="bench.pane">工作区</span><span data-i18n="demo">演示</span></figcaption>
+      <div class="bench-grid">
+        <div class="bench-chat">
+          <div class="ln user"><span class="st">&gt;</span><span class="tx" data-i18n="bench.ask">给登录页加上「记住我」，在浏览器里试一下。</span><span class="tail"></span></div>
+          <button type="button" class="ln tool done pick" data-tab="diff"><span class="st">✓</span><span class="tx" data-i18n="bench.t1">编辑 src/pages/Login.tsx</span><span class="tail"><span class="diff"><b>+5</b> <i>−1</i></span></span></button>
+          <button type="button" class="ln tool done pick" data-tab="web"><span class="st">✓</span><span class="tx" data-i18n="bench.t2">打开 localhost:5173/login</span><span class="tail"></span></button>
+          <button type="button" class="ln tool done pick" data-tab="term"><span class="st">✓</span><span class="tx" data-i18n="bench.t3">运行 npm test</span><span class="tail"><span class="out" data-i18n="bench.t3out">24 项通过</span></span></button>
+        </div>
+        <div class="bench-side">
+          <div class="tabs" role="tablist">
+            <button type="button" role="tab" data-tab="diff" data-i18n="bench.tab1">改动</button>
+            <button type="button" role="tab" data-tab="web" data-i18n="bench.tab2">浏览器</button>
+            <button type="button" role="tab" data-tab="term" data-i18n="bench.tab3">终端</button>
+          </div>
+          <div class="view" role="tabpanel" data-view="diff">
+            <p class="path">src/pages/Login.tsx</p>
+            <div class="code">
+              <div>  41    &lt;PasswordField value={password} /&gt;</div>
+              <div class="a">+ 42    &lt;label className="remember"&gt;</div>
+              <div class="a">+ 43      &lt;input type="checkbox" {...remember} /&gt;</div>
+              <div class="a">+ 44      {t('login.remember')}</div>
+              <div class="a">+ 45    &lt;/label&gt;</div>
+              <div class="d">− 46    &lt;Button onClick={submit}&gt;</div>
+              <div class="a">+ 46    &lt;Button onClick={() =&gt; submit({ remember })}&gt;</div>
+              <div>  47      {t('login.submit')}</div>
+            </div>
+          </div>
+          <div class="view" role="tabpanel" data-view="web">
+            <div class="addr"><span>localhost:5173/login</span><span class="take" data-i18n="bench.take">接管</span></div>
+            <div class="page" aria-hidden="true">
+              <span class="field"></span>
+              <span class="field"></span>
+              <span class="check"><i></i><span data-i18n="bench.remember">记住我</span></span>
+              <span class="submit"></span>
+              <span class="cursor"></span>
+            </div>
+          </div>
+          <div class="view" role="tabpanel" data-view="term">
+            <div class="code">
+              <div class="p">$ npm test</div>
+              <div><span class="ok"> ✓</span> login › renders the form</div>
+              <div><span class="ok"> ✓</span> login › remembers the session</div>
+              <div><span class="ok"> ✓</span> login › rejects a wrong password</div>
+              <div> …</div>
+              <div> Tests  <span class="ok">24 passed</span> (24)</div>
+              <div> Time   3.1s</div>
+              <div class="p">$ <span class="caret"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </figure>
+  </section>
+
+  <section class="duo" data-sec>
+    <div class="half" id="agents">
+      <h2 class="rv"><span class="ps1" aria-hidden="true">&gt;</span><span data-i18n="agents.title">子 Agent 分头做事</span><span class="caret" aria-hidden="true"></span></h2>
+      <p class="rv" data-i18n="agents.lead">给子任务指定模型，在后台并行处理；进度汇总回会话，运行中可以直接插话。</p>
+      <figure class="pane rv" id="lanes">
+        <figcaption><span data-i18n="agents.pane">子代理</span><span data-i18n="demo">演示</span></figcaption>
+        <div class="pane-body" id="lanesBody"></div>
+      </figure>
+    </div>
+    <div class="half" id="compact">
+      <h2 class="rv"><span class="ps1" aria-hidden="true">&gt;</span><span data-i18n="compact.title">长任务继续聊</span></h2>
+      <p class="rv" data-i18n="compact.lead">接近你设定的上下文上限时自动压缩，留下摘要，原文快照可查回。</p>
+      <figure class="pane rv" id="meter">
+        <figcaption><span data-i18n="compact.pane">上下文</span><span data-i18n="demo">演示</span></figcaption>
+        <div class="pane-body" id="meterBody"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="sec" id="phone" data-sec>
+    <div class="sec-head">
+      <h2 class="rv"><span class="ps1" aria-hidden="true">&gt;</span><span data-i18n="phone.title">手机上接着办</span><span class="caret" aria-hidden="true"></span></h2>
+      <p class="rv" data-i18n="phone.lead">Android 客户端配对电脑后，可以看进度、回复、审批、切换模型。仍在测试。</p>
+    </div>
+    <figure class="pair rv" id="pair" aria-hidden="true">
+      <div class="pc"><i></i><i></i><i></i></div>
+      <div class="wire"></div>
+      <div class="handset">
+        <p class="hs-top"><span>inkstone</span><span class="hs-on" data-i18n="phone.paired">已配对</span></p>
+        <p class="hs-title" data-i18n="phone.session">登录页深色主题</p>
+        <div class="ln tool done p1"><span class="st">✓</span><span class="tx" data-i18n="phone.l1">编辑 2 个文件</span><span class="tail"><span class="diff"><b>+24</b> <i>−5</i></span></span></div>
+        <div class="ln tool run p2"><span class="st" data-spin>⠹</span><span class="tx" data-i18n="phone.l2">运行 npm test</span><span class="tail"></span></div>
+        <div class="hs-ask p3">
+          <p class="cmd">git push --force</p>
+          <p class="hs-btns"><span data-i18n="phone.allow">允许</span><span data-i18n="phone.deny">拒绝</span></p>
+        </div>
+      </div>
+    </figure>
+  </section>
+
+  <section class="more" id="more" data-sec>
+    <h2 class="rv"><span class="ps1" aria-hidden="true">&gt;</span><span data-i18n="more.title">还有这些</span><span class="caret" aria-hidden="true"></span></h2>
+    <dl class="specs rv">
+      <div><dt data-i18n="more.k1">模型</dt><dd data-i18n="more.v1">登录模型服务或填入 API Key，随时切换模型与思考档位。</dd></div>
+      <div><dt data-i18n="more.k2">技能与 MCP</dt><dd data-i18n="more.v2">按全局或当前项目配置。</dd></div>
+      <div><dt data-i18n="more.k3">本地快照</dt><dd data-i18n="more.v3">符合条件的项目在发送前保存快照，方便预览和回退。</dd></div>
+      <div><dt data-i18n="more.k4">预测下一句</dt><dd data-i18n="more.v4">回复结束后用灰字预测，Tab 填入。</dd></div>
+      <div><dt data-i18n="more.k5">插件</dt><dd data-i18n="more.v5">语音输入、桌宠、ComfyUI，按需安装。</dd></div>
+      <div><dt data-i18n="more.k6">数据在本机</dt><dd data-i18n="more.v6">聊天记录和设置都存在你自己的电脑上。</dd></div>
+    </dl>
+  </section>
+
+  <section class="close" id="start" data-sec>
+    <h2 class="rv"><span class="ps1" aria-hidden="true">&gt;</span><span data-i18n="start.title">开始使用</span><span class="caret" aria-hidden="true"></span></h2>
+    <ol class="how rv">
+      <li data-i18n="start.s1">下载安装包并安装，之后在后台自动更新。</li>
+      <li data-i18n="start.s2">在 设置 → 模型 里登录，或填入 API Key。</li>
+      <li data-i18n="start.s3">新建会话，选好项目文件夹，说出要做的事。</li>
+    </ol>
+    <div class="cta rv">
+      <a class="btn" href="https://github.com/Yu-DaTouX/Inkstone/releases/latest">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path class="drop" d="M10 3v9.5M5.8 8.6 10 12.8l4.2-4.2"/><path d="M4 16.5h12"/></svg>
+        <span data-i18n="cta.download">下载 Windows 版</span>
+        <span class="ver" data-version>v0.15.0</span>
+      </a>
+      <a class="ghost" href="https://github.com/Yu-DaTouX/Inkstone/releases" data-i18n="start.all">便携版、Android 与更新日志</a>
+    </div>
+    <p class="note rv" data-i18n="start.note">安装包还没有数字签名，Windows 可能提示「未知发布者」，请只从 GitHub 发布页下载。桌面端目前只交付 Windows x64；Android 客户端仍在测试。</p>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>MIT · © 2026 Yu-DaTouX</span>
+  <span><a href="https://github.com/badlogic/pi-mono" data-i18n="foot.pi">基于 pi</a> · <a href="https://github.com/Yu-DaTouX/Inkstone">GitHub</a> · <a href="https://github.com/Yu-DaTouX/Inkstone/issues" data-i18n="foot.issues">反馈</a></span>
+</footer>
+
+<div class="status" id="status">
+  <a class="st-home" href="#hero" aria-label="Inkstone">&gt;_</a>
+  <span class="st-sec"><b id="stNum">01/07</b><span id="stName"></span></span>
+  <span class="bar" aria-hidden="true"><i id="stFill"></i></span>
+  <span class="st-pct" id="stPct">0%</span>
+  <a class="st-get" href="https://github.com/Yu-DaTouX/Inkstone/releases/latest">↓ <span data-i18n="st.get">下载</span></a>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
