@@ -9,7 +9,7 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dir = await mkdtemp(resolve('node_modules/.inkstone-smooth-reveal-'))
 const outfile = join(dir, 'smooth-reveal.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/smooth-reveal.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error', external: ['react'] })
-const { startReveal, stepReveal, revealLength, revealActive, revealDraining, REVEAL_DRAIN_MS, LIVE_TAIL_GRACE_MS } = await import(pathToFileURL(outfile).href)
+const { startReveal, stepReveal, revealLength, revealActive, revealDraining, drainMs, REVEAL_DRAIN_MS, MAX_DRAIN_MS, LIVE_TAIL_GRACE_MS } = await import(pathToFileURL(outfile).href)
 await rm(dir, { recursive: true, force: true })
 
 let pass = 0
@@ -87,6 +87,43 @@ check('结束后在排空时限内显示完', () => {
     assert.equal(run.shown, run.length)
     assert.ok(run.doneAt !== null && run.doneAt <= REVEAL_DRAIN_MS + FRAME * 2, `排空用时 ${run.doneAt}`)
   }
+})
+
+function burst({ silenceMs, size, endAfter }) {
+  const arrivals = []
+  for (let t = 0; t < 3000; t += 33) arrivals.push([t, 2])
+  const at = 3000 + silenceMs
+  arrivals.push([at, size])
+  const end = endAfter ? at : at + 4000
+  if (!endAfter) for (let t = at + 33; t < end; t += 33) arrivals.push([t, 2])
+  let state = startReveal(0, 0)
+  let length = 0
+  let index = 0
+  let maxStep = 0
+  let doneAt = null
+  for (let now = FRAME; now <= end + 3000; now += FRAME) {
+    while (index < arrivals.length && arrivals[index][0] <= now) length += arrivals[index++][1]
+    const before = state.shown
+    state = stepReveal(state, length, now, now <= end)
+    maxStep = Math.max(maxStep, state.shown - before)
+    if (now > end && doneAt === null && state.shown >= length) doneAt = now - end
+  }
+  return { maxStep, doneAt, done: state.shown === length }
+}
+
+check('细流中停顿后整块到达：摊开显示，不一下弹出', () => {
+  const run = burst({ silenceMs: 3000, size: 1500 })
+  assert.ok(run.done)
+  assert.ok(run.maxStep <= 20, `单帧 ${run.maxStep}`)
+})
+
+check('最后一段整块到达后结束：排空按积压伸缩且有上限', () => {
+  const run = burst({ silenceMs: 2000, size: 800, endAfter: true })
+  assert.ok(run.done)
+  assert.ok(run.maxStep <= 24, `单帧 ${run.maxStep}`)
+  assert.ok(run.doneAt <= MAX_DRAIN_MS + FRAME * 2, `排空用时 ${run.doneAt}`)
+  assert.equal(drainMs(50), REVEAL_DRAIN_MS)
+  assert.equal(drainMs(100000), MAX_DRAIN_MS)
 })
 
 check('文字被改短时跟着收回', () => {
