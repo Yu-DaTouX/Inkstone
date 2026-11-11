@@ -87,6 +87,7 @@ export function quotaPace(window: QuotaWindow, now: number): { pace: 'ahead' | '
 }
 
 export function quotaWindowName(t: TFunc, window: QuotaWindow): string {
+  if (window.id.startsWith('weekly_scoped:') || window.id === 'seven_day_overage_included') return window.label
   const { span } = windowSpan(window)
   if (span === 'fiveHour') return t('quota.win.fiveHour')
   if (span === 'week') return t('quota.win.thisWeek')

@@ -12,7 +12,8 @@ import {
   orderAccountCardsForProvider,
   type AccountQuotaCard,
   type AccountQuotaReport,
-  type AccountQuotaSource
+  type AccountQuotaSource,
+  type ResetCreditGroup
 } from '../../../../shared/account-quota'
 import { providerFavicon } from '../../patterns/provider-favicon'
 import { quotaCountdown, quotaPace, quotaReadAgo, quotaWindowName, quotaWindowTone, type QuotaWindowTone } from '../../patterns/QuotaWindowRow'
@@ -25,6 +26,15 @@ const METER_TONE: Record<QuotaWindowTone, ProgressTone> = { ok: 'muted', ask: 'a
 const PACE_ICON: Record<'ahead' | 'on' | 'under', LucideIcon> = { ahead: TrendingUp, on: Gauge, under: TrendingDown }
 
 const pad = (value: number): string => String(value).padStart(2, '0')
+
+function claudeCreditLimitName(t: TFunc, id: string): string {
+  if (id === 'five_hour') return t('quota.win.fiveHour')
+  if (id === 'seven_day') return t('quota.win.thisWeek')
+  if (id === 'seven_day_opus') return 'Opus'
+  if (id === 'seven_day_sonnet') return 'Sonnet'
+  if (id === 'seven_day_overage_included') return 'Fable'
+  return t('quota.credit.limits')
+}
 
 function clockAt(at: number, now: number): string {
   const date = new Date(at)
@@ -113,8 +123,7 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
     }
   }
 
-  const redeem = async (card: AccountQuotaCard): Promise<void> => {
-    const creditId = card.resetCredits?.nextId
+  const redeem = async (card: AccountQuotaCard, creditId: string): Promise<void> => {
     if (!creditId) return
     setBusyKey(card.key)
     setNotice('')
@@ -191,7 +200,7 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
                 busy={busyKey === card.key}
                 locked={!!busyKey}
                 onSwitch={() => void switchTo(card)}
-                onRedeem={() => redeem(card)}
+                onRedeem={(creditId) => redeem(card, creditId)}
               />
             ))}
           </section>
@@ -260,10 +269,10 @@ export function QuotaCard({
   busy: boolean
   locked: boolean
   onSwitch: () => void
-  onRedeem: () => Promise<void>
+  onRedeem: (creditId: string) => Promise<void>
 }): ReactElement {
   const t = useT()
-  const [confirming, setConfirming] = useState(false)
+  const [confirming, setConfirming] = useState<ResetCreditGroup | null>(null)
   const now = Date.now()
   const stale = quotaReadingStale(card.checkedAt, now, !!card.staleError)
   const title = accountCardTitle(card)
@@ -278,7 +287,10 @@ export function QuotaCard({
   const credits = card.resetCredits
   const shortNames = card.windows.map((window) => quotaWindowName(t, window))
   const names = shortNames.map((name, index) => (shortNames.indexOf(name) === shortNames.lastIndexOf(name) ? name : card.windows[index].label))
-  const creditsExpire = credits?.nextExpiresAt
+  const creditGroups = credits?.groups ?? (credits ? [credits] : [])
+  const creditName = (group: ResetCreditGroup): string => t(`quota.credit.kind.${group.kind ?? 'default'}` as MessageKey)
+  const confirmedGroup = creditGroups.find((group) => group.nextId && group.nextId === confirming?.nextId)
+  const confirmLimits = confirming?.clears?.map((id) => claudeCreditLimitName(t, id)).join('、') || t('quota.credit.limits')
 
   return (
     <Card as="section" padding="none" className="wb-quota-card" data-active={card.active ? '1' : undefined} data-limited={card.status === 'limited' ? '1' : undefined} data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
@@ -317,25 +329,31 @@ export function QuotaCard({
         </div>
       ) : null}
 
-      {credits && credits.count > 0 ? (
-        <div className="wb-quota-credits" data-testid="v3-wb-quota-credits" title={[t('quota.credit.count', { n: credits.count }), creditsExpire ? t('quota.credit.expireIn', { t: quotaCountdown(t, creditsExpire - now) }) : ''].filter(Boolean).join(' \u00b7 ')}>
-          <Ticket size={13} aria-hidden="true" />
-          <span className="wb-quota-credits-count ui-num" aria-label={t('quota.credit.count', { n: credits.count })}>×{credits.count}</span>
-          <span className="wb-quota-credits-exp ui-meta-num">{creditsExpire ? t('quota.credit.expireIn', { t: quotaCountdown(t, creditsExpire - now) }) : ''}</span>
-          {credits.nextId ? (
-            <Button className="wb-quota-credits-use" size="sm" variant="secondary" isDisabled={locked} icon={busy && confirming ? <Spinner size="xs" /> : undefined} onPress={() => setConfirming(true)} data-testid="v3-wb-quota-credit-use">
-              {t('quota.credit.use')}
+      {creditGroups.filter((group) => group.count > 0).map((group) => {
+        const name = creditName(group)
+        const expired = group.nextExpiresAt !== undefined && group.nextExpiresAt <= now
+        const available = !!group.nextId && !expired && !stale
+        const expiry = group.nextExpiresAt !== undefined ? t('quota.credit.expireIn', { t: quotaCountdown(t, group.nextExpiresAt - now) }) : ''
+        return (
+          <div key={group.kind ?? 'default'} className="wb-quota-credits" data-testid="v3-wb-quota-credits" data-credit-kind={group.kind ?? 'default'} title={[name, expiry, available ? '' : t('quota.credit.unavailable')].filter(Boolean).join(' · ')}>
+            <Ticket size={13} aria-hidden="true" />
+            <span className="wb-quota-credits-count ui-num">{name} ×{group.count}</span>
+            <span className="wb-quota-credits-exp ui-meta-num">{expiry}</span>
+            <Button className="wb-quota-credits-use" size="sm" variant="secondary" isDisabled={locked || !available} icon={busy && confirming?.kind === group.kind ? <Spinner size="xs" /> : undefined} onPress={() => setConfirming({ ...group })} data-testid="v3-wb-quota-credit-use" aria-label={t('quota.credit.useKind', { kind: name })}>
+              {available ? t('quota.credit.use') : t('quota.credit.unavailable')}
             </Button>
-          ) : null}
-        </div>
-      ) : null}
+          </div>
+        )
+      })}
       <ConfirmDialog
-        isOpen={confirming}
-        onOpenChange={setConfirming}
-        title={t('quota.credit.confirmTitle')}
-        description={t('quota.credit.confirmDesc', { name: title })}
-        confirmLabel={t('quota.credit.use')}
-        onConfirm={onRedeem}
+        isOpen={confirming !== null}
+        onOpenChange={(open) => { if (!open) setConfirming(null) }}
+        title={t('quota.credit.confirmTitle', { kind: confirming ? creditName(confirming) : '' })}
+        description={t(confirming?.kind === 'fable' ? 'quota.credit.confirmFableDesc' : 'quota.credit.confirmDesc', { name: title, limits: confirmLimits })}
+        confirmLabel={t('quota.credit.confirmUse')}
+        tone="danger"
+        isConfirmDisabled={locked || stale || !confirmedGroup || (confirmedGroup.nextExpiresAt !== undefined && confirmedGroup.nextExpiresAt <= now)}
+        onConfirm={() => { if (confirmedGroup?.nextId && confirming?.nextId === confirmedGroup.nextId) return onRedeem(confirming.nextId) }}
         confirmTestId="v3-wb-quota-credit-confirm"
       />
     </Card>

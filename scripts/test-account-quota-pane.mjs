@@ -331,9 +331,9 @@ export async function runAccountQuotaPaneTests(ok) {
       { id: 'g3', resets_left: 5, paused: true, usable_now: true },
       { id: 'BAD ID', resets_left: 9, usable_now: true }
     ] }, now)
-    check(claude?.count === 3 && claude?.nextId === 'g1' && claude?.nextExpiresAt === Date.parse(future), 'Claude 重置卡：合计可用次数，跳过暂停和非法编号')
+    check(claude?.count === 8 && claude?.groups[0].nextId === 'g1' && claude?.groups[0].nextExpiresAt === Date.parse(future), 'Claude 重置卡：保留持有次数，暂停卡不作为使用目标，非法编号跳过')
     check(shared.claudeResetCredits({ eligible: false, grants: [] }, now) === undefined, 'Claude 重置卡：不符合资格时不显示')
-    check(shared.claudeResetCredits({ eligible: true, next_grant_id: 'gone', grants: [{ id: 'g1', resets_left: 1, usable_now: true }] }, now)?.count === 0, 'Claude 重置卡：没有下一张可用时计 0')
+    check(shared.claudeResetCredits({ eligible: true, next_grant_id: 'gone', grants: [{ id: 'g1', resets_left: 1, usable_now: true }] }, now)?.count === 1, 'Claude 重置卡：没有全局下一张时仍显示持有次数')
   }
 
   const main = await loadAccountQuotaMain()

@@ -6,10 +6,18 @@ export type AccountQuotaSource = 'yan' | 'codex-cli' | 'claude-code' | 'gemini-c
 
 export type AccountQuotaStatus = 'ok' | 'limited' | 'expired' | 'error'
 
-export interface ResetCredits {
+export type ResetCreditKind = 'fable' | 'session' | 'weekly' | 'full'
+
+export interface ResetCreditGroup {
   count: number
   nextId?: string
   nextExpiresAt?: number
+  kind?: ResetCreditKind
+  clears?: string[]
+}
+
+export interface ResetCredits extends ResetCreditGroup {
+  groups?: ResetCreditGroup[]
 }
 
 export type ResetCreditOutcome = 'reset' | 'nothingToReset' | 'noCredit' | 'alreadyRedeemed'
@@ -57,7 +65,7 @@ export interface CodexAccountView {
 export const CLAUDE_OAUTH_HEADERS: Readonly<Record<string, string>> = {
   'anthropic-beta': 'oauth-2025-04-20',
   Accept: 'application/json',
-  'User-Agent': 'claude-code/2.1.273'
+  'User-Agent': 'claude-code/2.1.322'
 }
 
 export function accountCardTitle(card: Pick<AccountQuotaCard, 'label' | 'email' | 'name'>): string {
@@ -172,6 +180,7 @@ const claudeWindowLabels = (): Record<string, string> => ({
   seven_day: pick('本周', 'This week'),
   seven_day_opus: pick('本周 · Opus', 'This week · Opus'),
   seven_day_sonnet: pick('本周 · Sonnet', 'This week · Sonnet'),
+  seven_day_overage_included: 'Fable',
   seven_day_oauth_apps: pick('本周 · 第三方应用', 'This week · Third-party apps'),
   extra_usage: pick('额外用量', 'Extra usage')
 })
@@ -197,6 +206,23 @@ export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
       exceeded: listed && w.utilization >= 100,
       ...(key === 'five_hour' && allowsOverage ? { allowsOverage: true } : {}),
       ...(durationMs ? { durationMs } : {})
+    })
+  }
+  for (const raw of Array.isArray(root.limits) ? root.limits : []) {
+    const limit = obj(raw)
+    const model = str(obj(obj(limit?.scope)?.model)?.display_name)
+    if (limit?.kind !== 'weekly_scoped' || !model || typeof limit.percent !== 'number' || !Number.isFinite(limit.percent)) continue
+    const id = `weekly_scoped:${model}`
+    if (windows.some((window) => window.id === id)) continue
+    const resetAt = typeof limit.resets_at === 'string' ? Date.parse(limit.resets_at) : NaN
+    windows.push({
+      id,
+      label: model,
+      used: limit.percent,
+      total: 100,
+      resetAt: Number.isFinite(resetAt) ? resetAt : undefined,
+      durationMs: WINDOW_DURATION.week,
+      exceeded: limit.percent >= 100
     })
   }
   return windows
@@ -244,19 +270,36 @@ export function claudeResetCredits(block: unknown, now: number): ResetCredits | 
     .map((raw) => obj(raw))
     .flatMap((grant) => {
       const id = str(grant?.id)
-      const left = Number(grant?.resets_left)
+      const left = grant?.resets_left
       const endsAt = typeof grant?.ends_at === 'string' ? Date.parse(grant.ends_at) : undefined
-      if (!id || !/^[a-z0-9_-]{1,40}$/.test(id) || !Number.isInteger(left) || left < 0) return []
-      if (grant?.paused === true || grant?.usable_now !== true) return []
+      const startsAt = typeof grant?.starts_at === 'string' ? Date.parse(grant.starts_at) : undefined
+      if (!id || !/^[a-z0-9_-]{1,40}$/.test(id) || typeof left !== 'number' || !Number.isInteger(left) || left <= 0) return []
       if (endsAt !== undefined && !(endsAt > now)) return []
-      return [{ id, left, endsAt }]
+      const clears = Array.isArray(grant?.clears) ? grant.clears.filter((value): value is string => typeof value === 'string') : []
+      const kind: ResetCreditKind = grant?.gives_back_weekly === true ? 'fable'
+        : grant?.type === 'session' || grant?.type === 'weekly' || grant?.type === 'full' ? grant.type
+          : clears.length && clears.every((value) => value === 'five_hour') ? 'session'
+            : clears.length && !clears.includes('five_hour') ? 'weekly' : 'full'
+      const usable = grant?.paused !== true && grant?.usable_now === true
+        && (startsAt === undefined || startsAt <= now)
+        && (!Array.isArray(grant?.blocking) || grant.blocking.length === 0)
+        && (root.cooldown_until == null || (typeof root.cooldown_until === 'string' && Date.parse(root.cooldown_until) <= now))
+      return [{ id, left, endsAt, kind, clears, usable }]
     })
-  const next = grants.find((grant) => grant.id === root.next_grant_id)
-  return {
-    count: next ? grants.reduce((sum, grant) => sum + grant.left, 0) : 0,
-    ...(next ? { nextId: next.id } : {}),
-    ...(next?.endsAt ? { nextExpiresAt: next.endsAt } : {})
+    .sort((a, b) => (a.endsAt ?? Infinity) - (b.endsAt ?? Infinity))
+  const groups: ResetCreditGroup[] = []
+  for (const kind of ['fable', 'session', 'weekly', 'full'] as const) {
+    const held = grants.filter((grant) => grant.kind === kind)
+    if (!held.length) continue
+    const next = held.find((grant) => grant.usable && grant.id === root.next_grant_id) ?? held.find((grant) => grant.usable)
+    groups.push({
+      kind,
+      count: held.reduce((sum, grant) => sum + grant.left, 0),
+      ...(held[0].endsAt !== undefined ? { nextExpiresAt: held[0].endsAt } : {}),
+      ...(next ? { nextId: next.id, clears: next.clears } : {})
+    })
   }
+  return { count: groups.reduce((sum, group) => sum + group.count, 0), groups }
 }
 
 export function mergeDuplicateCards(cards: AccountQuotaCard[]): AccountQuotaCard[] {

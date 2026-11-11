@@ -240,7 +240,7 @@ async function runQuotaCardTests() {
     await writeFile(
       entry,
       `export { QuotaCard } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/features/workbench/QuotaPane.tsx')))}\n` +
-        `export { quotaResetLine, quotaForecastLine } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/patterns/QuotaWindowRow.tsx')))}\n` +
+        `export { quotaResetLine, quotaForecastLine, quotaWindowName } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/patterns/QuotaWindowRow.tsx')))}\n` +
         `export { I18nProvider } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/i18n/index.tsx')))}\n`
     )
     const out = join(dir, 'bundle.mjs')
@@ -262,6 +262,13 @@ async function runQuotaCardTests() {
     ok(mod.quotaResetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1 }, now).text === '', '没有重置时间不显示')
     ok(mod.quotaResetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1, resetAt: now - 1000 }, now).text.startsWith('quota.resetDue'), '已到点显示待刷新（不本地归零）')
     ok(mod.quotaResetLine(t, { id: 'monthly', label: 'x', used: 0, total: 1, resetAt: now + 5 * 86400_000 }, now).text.startsWith('quota.resetOn'), '月窗口显示日期')
+    ok(mod.quotaWindowName(t, { id: 'weekly_scoped:Fable', label: 'Fable', durationMs: 7 * 86400_000 }) === 'Fable', '单个模型周窗口也保留 Fable 名称，不缩成“本周”')
+    ok(mod.quotaWindowName(t, { id: 'seven_day_overage_included', label: 'Fable', durationMs: 7 * 86400_000 }) === 'Fable', '兼容模型周窗口保留名称')
+    const card = { key: 'fixture', source: 'yan', provider: 'anthropic', name: 'Claude', status: 'ok', windows: [{ id: 'weekly_scoped:Fable', label: 'Fable', used: 99, total: 100, durationMs: 7 * 86400_000, resetAt: now + 86400_000 }], checkedAt: now, resetCredits: { count: 3, groups: [{ kind: 'fable', count: 1, nextId: 'fable' }, { kind: 'full', count: 2 }] } }
+    const html = renderToStaticMarkup(createElement(mod.I18nProvider, null, createElement(mod.QuotaCard, { card, busy: false, locked: false, onSwitch() {}, async onRedeem() {} })))
+    ok(html.includes('Fable 重置卡 ×1') && html.includes('普通重置卡 ×2'), '两类重置卡各自显示名称和次数')
+    ok(html.includes('暂不可用') && html.includes('disabled'), '未提供使用目标的卡仍可见但按钮禁用')
+    ok(html.includes('99%') && html.includes('Fable'), '右栏保留 Fable 用量百分比')
     console.log(`\nv3-quota-card: ${checks} checks passed`)
   } finally {
     await rm(dir, { recursive: true, force: true })
