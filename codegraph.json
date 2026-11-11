@@ -1,0 +1,4 @@
+{
+  "include": ["src/renderer/src/features/artifacts/"],
+  "deprioritize": ["scripts/", "debug/"]
+}
