@@ -1,6 +1,6 @@
 import { pick } from '../../src/shared/ui-lang'
 import type { HistoryMessage } from './api/client'
-import { parseHostTextNotice, type HostTextNotice } from '../../src/shared/host-notice-text'
+import { parseHostTextNotice, type HostTextNotice, type TerminalNoticeState } from '../../src/shared/host-notice-text'
 import { redactCommandSecrets } from '../../src/shared/command-redact'
 
 export type ImageRef = { messageId: string; index: number }
@@ -12,14 +12,25 @@ export type ProcessStep =
 export type TimelineEntry =
   | { kind: 'message'; key: string; message: HistoryMessage; sources: readonly HistoryMessage[] }
   | { kind: 'process'; key: string; sources: readonly HistoryMessage[]; steps: ProcessStep[]; actions: number; thinking: number; failed: number; images: number; ms?: number }
-  | { kind: 'notice'; key: string; message: HistoryMessage; sources: readonly HistoryMessage[]; label: string; icon: 'folder' | 'refresh' | 'branch' | 'message-dots'; body?: string }
+  | { kind: 'notice'; key: string; message: HistoryMessage; sources: readonly HistoryMessage[]; label: string; icon: 'folder' | 'refresh' | 'terminal' | 'branch' | 'message-dots'; body?: string }
 
 export const SHOWN_ROLES = new Set(['user', 'assistant', 'bash', 'note'])
+
+const TERMINAL_LABEL: Record<TerminalNoticeState, (command: string) => string> = {
+  completed: (command) => pick(`后台命令已结束：${command}`, `Background command finished: ${command}`),
+  matched: (command) => pick(`后台命令已就绪：${command}`, `Background command is ready: ${command}`),
+  exited: (command) => pick(`后台命令所在终端已退出：${command}`, `Terminal of a background command exited: ${command}`),
+  timeout: (command) => pick(`后台命令超时仍在运行：${command}`, `Background command timed out and is still running: ${command}`),
+  stopped: (command) => pick(`后台命令已被停止：${command}`, `Background command was stopped: ${command}`)
+}
 
 export function hostNoticeLabel(notice: HostTextNotice): string {
   if (notice.kind === 'session-moved') return pick(`会话已移到 ${notice.cwd}，自动继续`, `Session moved to ${notice.cwd}; continuing`)
   if (notice.kind === 'quota-resume') return pick('额度已恢复，继续任务', 'Quota restored; continuing')
   if (notice.kind === 'account-switch') return pick('额度用完，已换号继续', 'Quota exhausted; switched accounts and continuing')
+  if (notice.kind === 'terminal') return TERMINAL_LABEL[notice.state](notice.command)
+  if (notice.kind === 'wrap-up') return pick('已要求收尾', 'Asked to wrap up')
+  if (notice.kind === 'generic') return notice.title
   return notice.reason === 'loop' ? pick('输出重复已中止，自动继续', 'Stopped a repeating reply; continuing') : pick('模型请求中断，自动继续', 'Model request failed; continuing')
 }
 
@@ -102,7 +113,7 @@ export function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
       if (message.role === 'note') { entries.push(noteEntry(message)); continue }
       if (isSubagentNotice(message)) continue
       const notice = message.role === 'user' ? parseHostTextNotice(message.text) : null
-      if (notice) entries.push({ kind: 'notice', key: message.id, message, sources: [message], label: hostNoticeLabel(notice), icon: notice.kind === 'session-moved' ? 'folder' : 'refresh' })
+      if (notice) entries.push({ kind: 'notice', key: message.id, message, sources: [message], label: hostNoticeLabel(notice), icon: notice.kind === 'session-moved' ? 'folder' : notice.kind === 'terminal' ? 'terminal' : 'refresh' })
       else entries.push({ kind: 'message', key: message.id, message, sources: [message] })
     } else turn.push(message)
   }

@@ -37,6 +37,7 @@ import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
+import { isHostTextNotice } from '../shared/host-notice-text'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
@@ -3594,8 +3595,8 @@ export class AgentController extends EventEmitter {
     }
     this.queueState = next
     this.push({ ch: 'queue', payload: {
-      steering: next.steering.filter(item => !isSubagentNotice(item.text)),
-      followUp: next.followUp.filter(item => !isSubagentNotice(item.text))
+      steering: next.steering.filter(item => !isSubagentNotice(item.text) && !isHostTextNotice(item.text)),
+      followUp: next.followUp.filter(item => !isSubagentNotice(item.text) && !isHostTextNotice(item.text))
     } })
     this.queueWrite = this.persistQueue().catch(() => undefined)
     return next

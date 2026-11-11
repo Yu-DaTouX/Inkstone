@@ -6,6 +6,8 @@ export type HostTextNotice =
   | { kind: 'quota-resume' }
   | { kind: 'account-switch' }
   | { kind: 'terminal'; command: string; state: TerminalNoticeState }
+  | { kind: 'wrap-up' }
+  | { kind: 'generic'; title: string }
 
 export type TerminalNoticeState = 'completed' | 'matched' | 'exited' | 'timeout' | 'stopped'
 
@@ -53,7 +55,9 @@ const TERMINAL_COMMAND = /^命令：(".*")$/m
 const TERMINAL_STATE = /^状态：(completed|matched|exited|timeout|stopped)/m
 
 const MOVE_HEAD = /^\[砚宿主通知：(?:用户批准的会话移动已完成|会话已移动)\]/
-const MOVE_CWD = /(?:当前工作目录（路径数据）|新的工作目录)：("(?:[^"\\]|\\.)*")/
+const WRAP_UP = /^【宿主提示】[\s\S]*不要再调用任何工具，立刻用已有的资料交出结论/
+const GENERIC_HEAD = /^\[砚宿主通知：([^\]\n]{1,40})\]/
+const MOVE_CWD =/(?:当前工作目录（路径数据）|新的工作目录)：("(?:[^"\\]|\\.)*")/
 
 export function parseHostTextNotice(text: string | undefined): HostTextNotice | null {
   const body = (text ?? '').trim()
@@ -75,5 +79,22 @@ export function parseHostTextNotice(text: string | undefined): HostTextNotice | 
   if (body.startsWith('[模型错误恢复 · 自动继续')) return { kind: 'auto-continue', reason: 'model-error' }
   if (body === QUOTA_RESUME_PROMPT) return { kind: 'quota-resume' }
   if (body.startsWith('[额度换号 · 自动继续')) return { kind: 'account-switch' }
+  if (body.startsWith('[Auto-continue 1/1]')) {
+    if (body.includes('has been restored')) return { kind: 'quota-resume' }
+    if (body.includes('switched to another account')) return { kind: 'account-switch' }
+    return { kind: 'auto-continue', reason: body.includes('started repeating') ? 'loop' : 'model-error' }
+  }
+  if (WRAP_UP.test(body)) return { kind: 'wrap-up' }
+  const title = GENERIC_HEAD.exec(body)?.[1].trim()
+  if (title) return { kind: 'generic', title }
   return null
+}
+
+export function isHostTextNotice(text: string | undefined): boolean {
+  return parseHostTextNotice(text) !== null
+}
+
+export function isForkDirective(text: string | undefined): boolean {
+  const body = (text ?? '').trim()
+  return body.startsWith('<fork-directive>\n') && body.endsWith('\n</fork-directive>')
 }

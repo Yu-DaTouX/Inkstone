@@ -9,6 +9,7 @@ import { groupIntoTurns, type Turn } from '../../../../shared/turns'
 import { mergeApprovalLog } from '../../../../shared/approval-log'
 import type { ApprovalReceipt } from '../../../../shared/approval'
 import { briefDisplay, briefPrompt } from '../../../../shared/subagent-brief'
+import { isForkDirective } from '../../../../shared/host-notice-text'
 import { subagentRowLabel } from '../../../../shared/subagent-task-rows'
 import { isDismissed } from '../../../../shared/subagent-outcome'
 import type { SubagentRun } from '../../../../shared/ipc'
@@ -44,7 +45,7 @@ function subagentTranscriptTurns(run: Pick<SubagentRun, 'id' | 'task' | 'brief' 
   const task = run.task.trim()
   return groupIntoTurns(
     mergeApprovalLog(run.transcript, approvals, run.id)
-      .filter((item) => item.role !== 'user' || (item.text.trim() !== brief && item.text.trim() !== prompt && item.text.trim() !== task))
+      .filter((item) => item.role !== 'user' || (item.text.trim() !== brief && item.text.trim() !== prompt && item.text.trim() !== task && !isForkDirective(item.text)))
       .map((item) => ({ ...item, ...(item.role === 'user' ? { text: forwardedText(item.text).text } : {}), sourceCwd: item.sourceCwd ?? run.cwd }))
   )
 }

@@ -213,6 +213,7 @@
   "chat.hostModelError": "Model request failed; continuing",
   "chat.hostQuota": "Quota restored; continuing",
   "chat.hostAccountSwitch": "Quota exhausted; switched accounts and continuing",
+  "chat.hostWrapUp": "Asked to wrap up",
   "chat.hostTerminal.completed": "Background command finished: {command}",
   "chat.hostTerminal.matched": "Background command is ready: {command}",
   "chat.hostTerminal.exited": "Terminal of a background command exited: {command}",

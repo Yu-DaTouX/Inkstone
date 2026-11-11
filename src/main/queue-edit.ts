@@ -1,5 +1,6 @@
 import type { QueueItem, QueueState } from '../shared/ipc'
 import { isSubagentNotice } from '../shared/subagent-notice'
+import { isHostTextNotice } from '../shared/host-notice-text'
 import { pick } from '../shared/ui-lang'
 
 export interface QueueRewriteResult {
@@ -75,7 +76,7 @@ export function planQueueRewrite(original: QueueState, next: QueueState): QueueS
   }
   for (const kind of ['steering', 'followUp'] as const) {
     for (const item of original[kind]) {
-      if (seen.has(item.id) || !isSubagentNotice(item.text)) continue
+      if (seen.has(item.id) || !(isSubagentNotice(item.text) || isHostTextNotice(item.text))) continue
       seen.add(item.id)
       planned[kind].push(item)
     }

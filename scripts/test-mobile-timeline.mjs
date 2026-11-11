@@ -119,6 +119,27 @@ if (process.env.MOBILE_BENCH) console.log(JSON.stringify(results))
   assert.ok(M.SHOWN_ROLES.has('note'), 'note 角色会被显示')
 }
 {
+  const terminal = ['[砚宿主通知：后台终端命令]', '终端：bash', '命令："npm run dev"', '状态：stopped（用户在后台任务里停止了这条命令）', '用时：3 秒'].join('\n')
+  const timeline = M.makeTimeline([
+    { id: 't1', role: 'user', text: terminal },
+    { id: 'c1', role: 'user', text: '[Auto-continue 1/1] The previous model request failed with a temporary error (timeout, dropped connection or overload) and was not retried. Check the tool results so far.' },
+    { id: 'c2', role: 'user', text: '[Auto-continue 1/1] The previous turn was stopped because its output started repeating. Do not repeat the looping content.' },
+    { id: 'c3', role: 'user', text: '[Auto-continue 1/1] The subscription account ran out of quota and it has been restored. Check the tool results so far.' },
+    { id: 'c4', role: 'user', text: '[Auto-continue 1/1] The subscription account ran out of quota and was switched to another account. Check the tool results so far.' },
+    { id: 'w1', role: 'user', text: '【宿主提示】已到时间上限。不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。' },
+    { id: 'g1', role: 'user', text: '[砚宿主通知：以后新增的通知]\n正文' },
+    { id: 'u1', role: 'user', text: '【宿主提示】是什么意思？' },
+    { id: 'u2', role: 'user', text: '请解释 [砚宿主通知：会话已移动] 这一行' }
+  ])
+  const notices = timeline.filter((entry) => entry.kind === 'notice')
+  assert.deepEqual(notices.map((entry) => entry.key), ['t1', 'c1', 'c2', 'c3', 'c4', 'w1', 'g1'], '后台终端、子代理续跑、收尾提示与未知宿主通知都收成短提示')
+  assert.ok(notices[0].label.includes('npm run dev') && notices[0].label.includes('停止') && notices[0].icon === 'terminal', '后台终端提示带命令与状态')
+  assert.ok(notices[1].label.includes('模型请求') && notices[2].label.includes('重复') && notices[3].label.includes('额度已恢复') && notices[4].label.includes('换号'), '子代理英文续跑句按原因归类')
+  assert.equal(notices[5].label, '已要求收尾')
+  assert.equal(notices[6].label, '以后新增的通知', '未知宿主通知显示方括号里的标题')
+  assert.deepEqual(timeline.filter((entry) => entry.kind === 'message').map((entry) => entry.key), ['u1', 'u2'], '只是提到这些字样的用户消息照常显示')
+}
+{
   const summary = M.argSummary({ command: 'curl -H "Authorization: Bearer sk-live-123" https://api.x/y?token=abc && API_KEY=zzz run' })
   assert.ok(!/sk-live-123|token=abc|zzz/.test(summary) && summary.includes('***'), '工具摘要里的密钥被遮蔽')
 }
