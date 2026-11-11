@@ -97,6 +97,7 @@ export const KNOWN_COMMANDS = new Set([
   'consent.request',
   'danger.confirm',
   'danger.prefs',
+  'shell.background',
   'session.move',
   'subagent.start',
   'subagent.list',

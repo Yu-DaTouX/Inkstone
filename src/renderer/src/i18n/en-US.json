@@ -1806,5 +1806,11 @@
   "sidebar.t3.statusFilter.label": "Filter sessions",
   "sidebar.t3.folders.add": "Add folder…",
   "sidebar.t3.moreUtilities": "More",
-  "composer.modelChange.pending": "From next message"
+  "composer.modelChange.pending": "From next message",
+  "stopBg.title": "Stop background commands too?",
+  "stopBg.desc": "Background commands still running in this session: {count}",
+  "stopBg.more": "…and {count} more",
+  "stopBg.hint": "\"Stop all\" also ends these commands; \"Stop turn only\" leaves them running. Closing this window stops nothing.",
+  "stopBg.together": "Stop all",
+  "stopBg.turnOnly": "Stop turn only"
 }

@@ -37,6 +37,7 @@ import { NoticeBridge } from './NoticeBridge'
 import { useA11yAnnouncements } from './a11y-announcements'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { BrowserSiteAskDialog } from '../features/browser/SiteAskDialog'
+import { StopBackgroundDialog } from '../features/session/StopBackgroundDialog'
 import { SettingsPanelV3 } from './SettingsPanelV3'
 import { openSettingsDialog } from '../features/settings/root/deep-link'
 import { RunAttentionToasts } from '../patterns/RunAttentionToasts'
@@ -752,6 +753,7 @@ export default function ShellV3(): ReactElement {
       <NoticeBridge />
       <PeerApprovalDialog />
       <BrowserSiteAskDialog />
+      <StopBackgroundDialog />
     </V3ErrorBoundary>
   )
 }

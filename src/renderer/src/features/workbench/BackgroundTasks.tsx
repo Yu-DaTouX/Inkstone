@@ -218,6 +218,7 @@ function JobRow({ job, now, text, onGone }: { job: TerminalJob; now: number; tex
   const time = formatDuration(Math.max(0, (job.endedAt ?? now) - job.startedAt), { minSeconds: 1 })
   const detail = [text.terminalJobState[job.state], job.cwd.split(/[\\/]/).filter(Boolean).pop()].filter(Boolean).join(' · ')
   const open = (): void => {
+    if (job.kind === 'bash') return
     const owner = job.owners[0]
     openPanelTool('terminal')
     if (owner) activateTerminal(owner, job.terminalId)

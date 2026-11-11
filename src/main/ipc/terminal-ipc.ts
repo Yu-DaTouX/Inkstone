@@ -14,7 +14,8 @@ import {
 } from '../terminal'
 import { noteTerminalUserInput } from '../terminal-agent'
 import { listProcessTree } from '../terminal-processes'
-import { clearFinishedTerminalJobs, listTerminalJobs, markTerminalJobsStopping, requestTerminalJobStop } from '../terminal-jobs'
+import { stopBackgroundBash } from '../background-bash'
+import { clearFinishedTerminalJobs, listTerminalJobs, markTerminalJobsStopping, requestTerminalJobStop, terminalJob } from '../terminal-jobs'
 import type { IpcRegistrar } from './registrar'
 
 export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string | undefined): void {
@@ -52,8 +53,11 @@ export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string
   rawHandle('yan:terminal:processes', (_e, id: string) => listProcessTree(terminalProcessId(String(id ?? ''))))
   rawHandle('yan:terminal:jobs', () => listTerminalJobs())
   rawHandle('yan:terminal:jobStop', (_e, id: string) => {
-    const terminalId = requestTerminalJobStop(String(id ?? ''))
-    return terminalId ? writeTerminal(terminalId, '\x03') : false
+    const jobId = String(id ?? '')
+    const bash = terminalJob(jobId)?.kind === 'bash'
+    const terminalId = requestTerminalJobStop(jobId)
+    if (terminalId === null) return false
+    return bash ? stopBackgroundBash(jobId) : writeTerminal(terminalId, '\x03')
   })
   rawHandle('yan:terminal:jobsClear', (_e, ids?: string[]) => {
     clearFinishedTerminalJobs(Array.isArray(ids) ? ids.map(String) : undefined)

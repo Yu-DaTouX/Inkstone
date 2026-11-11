@@ -1806,5 +1806,11 @@
   "sidebar.t3.statusFilter.label": "筛选会话",
   "sidebar.t3.folders.add": "添加文件夹…",
   "sidebar.t3.moreUtilities": "更多",
-  "composer.modelChange.pending": "下条消息起"
+  "composer.modelChange.pending": "下条消息起",
+  "stopBg.title": "同时停止后台命令？",
+  "stopBg.desc": "本会话还有 {count} 条后台命令在运行：",
+  "stopBg.more": "……另有 {count} 条",
+  "stopBg.hint": "「一起停止」会同时结束这些后台命令；「只停止回合」让它们继续运行。关闭此窗口则什么都不停止。",
+  "stopBg.together": "一起停止",
+  "stopBg.turnOnly": "只停止回合"
 }

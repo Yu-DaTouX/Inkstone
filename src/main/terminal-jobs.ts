@@ -55,7 +55,7 @@ export function requestTerminalJobStop(id: string): string | null {
 export function markTerminalJobsStopping(terminalId: string): void {
   let changed = false
   for (const job of jobs.values()) {
-    if (job.terminalId !== terminalId || job.state !== 'running') continue
+    if (job.kind === 'bash' || job.terminalId !== terminalId || job.state !== 'running') continue
     job.state = 'stopping'
     changed = true
   }

@@ -53,6 +53,8 @@ import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/brows
 import { toolSurface, useRightPanel } from './right-panel'
 import { useUiV3 } from './ui-v3'
 import { markStopRequested } from '../features/session/stop-intent'
+import { requestStopConfirm, runStopFlow } from '../features/session/stop-with-background'
+import { terminalJobsForView, useTerminalJobs } from './terminal-jobs'
 import { requestTerminalTab } from '../features/terminal/terminal-requests'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
@@ -319,6 +321,7 @@ export interface Store {
   armQuotaResume: (ifWindowFull?: boolean) => Promise<boolean>
   cancelQuotaResume: () => void
   abort: () => Promise<void>
+  abortTurn: () => Promise<void>
   runBash: (command: string, options?: { excludeFromContext?: boolean }) => Promise<{ ok: boolean; error?: string }>
   abortBash: () => Promise<void>
   newSession: (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; worktree?: boolean }) => Promise<{
@@ -2101,6 +2104,19 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   abort: async () => {
+    await runStopFlow({
+      jobs: async () => {
+        await useTerminalJobs.getState().load().catch(() => undefined)
+        const { peekedSessionId, peekedPath, session } = get()
+        return terminalJobsForView(useTerminalJobs.getState().jobs, { peekedSessionId, peekedPath, session })
+      },
+      confirm: requestStopConfirm,
+      abortTurn: () => get().abortTurn(),
+      stopJob: (id) => window.yan.terminal.stopJob(id)
+    })
+  },
+
+  abortTurn: async () => {
     const sessionId = get().session?.sessionId
     markStopRequested(sessionId)
     try {

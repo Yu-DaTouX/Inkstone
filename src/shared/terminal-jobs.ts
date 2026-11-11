@@ -8,6 +8,7 @@ export interface TerminalJob {
   owners: string[]
   command: string
   cwd: string
+  kind?: 'bash'
   startedAt: number
   endedAt?: number
   state: TerminalJobState

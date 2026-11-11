@@ -87,6 +87,7 @@ import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 
 import { BrowserCommands } from './browser-commands'
 import { TerminalAgentCommands } from './terminal-agent'
+import { BackgroundBashCommands } from './background-bash'
 import { listTerminalJobs } from './terminal-jobs'
 import { HELD_TERMINAL_NOTICES_MAX, terminalNoticeStep } from './terminal-notice-step'
 import { isLiveTerminalJob, terminalJobOwnedBy } from '../shared/terminal-jobs'
@@ -578,6 +579,14 @@ export class AgentController extends EventEmitter {
       const feedback = result.summary.feedback
       return { allowed: result.summary.allowed === true, ...(typeof feedback === 'string' && feedback ? { feedback } : {}) }
     },
+    notify: (text, stillOwner, wake) => {
+      void this.deliverTerminalNotice(text, stillOwner, wake)
+    }
+  })
+
+  private readonly backgroundBash = new BackgroundBashCommands({
+    ownerKeys: () => [this.state?.sessionFile, this.state?.sessionId].filter((key): key is string => typeof key === 'string' && key.length > 0),
+    now: () => Date.now(),
     notify: (text, stillOwner, wake) => {
       void this.deliverTerminalNotice(text, stillOwner, wake)
     }
@@ -1130,6 +1139,7 @@ export class AgentController extends EventEmitter {
       for (const call of this.items.cancelUnfinishedTools(Date.now())) this.pushTool(call)
       this.items.discardStreaming()
       this.bash = null
+      this.backgroundBash.dispose()
       this.agentRunning = false
       this.releaseExecutionAdmission()
       this.compactionState = EMPTY_COMPACTION_STATE
@@ -1454,6 +1464,9 @@ export class AgentController extends EventEmitter {
     }
     if (command.startsWith('terminal.')) {
       return this.terminalCommands.run(command.slice('terminal.'.length), params, signal)
+    }
+    if (command === 'shell.background') {
+      return this.backgroundBash.run(params, signal)
     }
     if (command.startsWith('phone.')) {
       return this.phoneCommands.run(command.slice('phone.'.length), params, signal)
@@ -5275,6 +5288,7 @@ export class AgentController extends EventEmitter {
     this.nativeRuntime = null
     this.titleLifecycle += 1
     this.cancelImages()
+    this.backgroundBash.dispose()
     this.capabilityServer?.stop()
     this.capabilityServer = undefined
     this.yanCliEnv = undefined
