@@ -1,8 +1,18 @@
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const HOST_ENV = /^(YAN|PI)_|_API_KEY$|_TOKEN$|^ELECTRON_RUN_AS_NODE$|^ELECTRON_RENDERER_URL$/
+
+function longTempEnv() {
+  if (process.platform !== 'win32') return {}
+  try {
+    const dir = realpathSync.native(tmpdir())
+    return { TEMP: dir, TMP: dir }
+  } catch {
+    return {}
+  }
+}
 
 export function applyTestEnv() {
   for (const key of Object.keys(process.env)) {
@@ -26,7 +36,8 @@ export function isolatedChildEnv() {
 }
 
 function isolatedPaths() {
-  const root = mkdtempSync(join(tmpdir(), 'inkstone-test-'))
+  const temp = longTempEnv()
+  const root = mkdtempSync(join(temp.TEMP ?? tmpdir(), 'inkstone-test-'))
   const paths = {
     data: join(root, 'data'),
     pi: join(root, 'pi'),
@@ -38,6 +49,7 @@ function isolatedPaths() {
   return {
     root,
     env: {
+      ...temp,
       YAN_DATA_DIR: paths.data,
       YAN_PI_DIR: paths.pi,
       YAN_SESSIONS_DIR: paths.sessions,

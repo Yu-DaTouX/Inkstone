@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -244,7 +243,7 @@ function forkTree() {
 }
 
 async function main() {
-  const outdir = await mkdtemp(join(tmpdir(), 'yan-v3-branch-pager-'))
+  const outdir = await mkdtemp(resolve('node_modules/.inkstone-v3-branch-pager-'))
   const shims = await makeShims(outdir)
 
   let model
@@ -437,7 +436,7 @@ async function main() {
 
   group('TurnView：只有用户消息带稳定 entryId 且命中模型才画 pager（真实 SSR）')
   {
-    const outdirTurn = await mkdtemp(join(tmpdir(), 'yan-v3-branch-pager-turn-'))
+    const outdirTurn = await mkdtemp(resolve('node_modules/.inkstone-v3-branch-pager-turn-'))
     try {
       const entry = [
         "import * as React from 'react'",
@@ -769,7 +768,7 @@ async function main() {
 
   group('真实 ui/IconButton SSR：分组 / 名称 / 序号落在真实 DOM')
   {
-    const outdirSsr = await mkdtemp(join(tmpdir(), 'yan-v3-branch-pager-ssr-'))
+    const outdirSsr = await mkdtemp(resolve('node_modules/.inkstone-v3-branch-pager-ssr-'))
     try {
       const entry = [
         "import * as React from 'react'",

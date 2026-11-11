@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
+import { pngImage } from './lib/test-png.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-queue-rpc-'))
 const pi = join(root, 'pi')
@@ -122,8 +123,8 @@ try {
   equal(consumed.filter(text => text === 'STEER-LIVE').length, 1, 'steering consumed exactly once')
   equal(consumed.filter(text => text === 'FOLLOW-LIVE').length, 2, 'identical follow-ups consumed as two independent messages')
   equal(agent.queueSnapshot(), { steering: [], followUp: [] }, 'consumption clears host queue without relying on a final queue_update')
-  const red = { data: Buffer.from('queue-red-image').toString('base64'), mimeType: 'image/png' }
-  const blue = { data: Buffer.from('queue-blue-image').toString('base64'), mimeType: 'image/png' }
+  const red = pngImage('queue-red-image')
+  const blue = pngImage('queue-blue-image')
   const hold = async label => {
     const count = requests.length
     holdNext = true

@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
-const dir = await mkdtemp(join(tmpdir(), 'inkstone-browser-reveal-'))
+const dir = await mkdtemp(resolve('node_modules/.inkstone-browser-reveal-'))
 let pass = 0
 async function check(label, fn) {
   await fn()

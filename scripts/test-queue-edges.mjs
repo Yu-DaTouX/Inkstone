@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
+import { pngImage } from './lib/test-png.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-queue-edges-'))
 const pi = join(root, 'pi')
@@ -46,10 +47,9 @@ const waitTick = async (condition, label) => {
   }
   throw new Error(`Timeout(tick): ${label}`)
 }
-const img = (tag) => ({ data: Buffer.from(tag).toString('base64'), mimeType: 'image/png' })
-const red = img('edge-red')
-const blue = img('edge-blue')
-const green = img('edge-green')
+const red = pngImage('edge-red')
+const blue = pngImage('edge-blue')
+const green = pngImage('edge-green')
 const sameImages = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const shape = (snapshot) => ({
   steering: snapshot.steering,

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { writePackageSourcesForTest } from './helpers/package-sources-fixture.mjs'
+import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 
 export async function runPackagesTests(ok) {
   const {
@@ -116,7 +117,7 @@ export async function runPackagesTests(ok) {
     )
     writeFileSync(join(ext, 'extensions', 'index.js'), 'export default {}\n')
 
-    const cli = join(process.cwd(), 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')
+    const cli = join(selectedPiRuntime(join(process.cwd(), 'resources', 'pi-runtime')), 'dist', 'bundle', 'cli.js')
     configurePackageContext({
       agentDir: () => agent,
       bin: () => cli,
@@ -259,7 +260,7 @@ export async function runPackagesTests(ok) {
   }
 
   {
-    const cli = join(process.cwd(), 'resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')
+    const cli = join(selectedPiRuntime(join(process.cwd(), 'resources', 'pi-runtime')), 'dist', 'bundle', 'cli.js')
     const root = mkdtempSync(join(tmpdir(), 'yan-pkg-deep-'))
     const agent = join(root, 'nested', 'agent')
     const stagedRoot = join(root, 'managed-staging')

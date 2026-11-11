@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict'
 import { mock } from 'node:test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
-const dir = await mkdtemp(join(tmpdir(), 'inkstone-question-timeout-'))
+const dir = await mkdtemp(resolve('node_modules/.inkstone-question-timeout-'))
 try {
   const file = join(dir, 'question.mjs')
   await build({ stdin: { contents: `export * from './src/main/ui-requests'; export * from './src/shared/ui-timeout'; export * from './src/renderer/src/state/session-runtime'; export { consumeQuestionPush } from './src/renderer/src/state/push-consumers'`, resolveDir: process.cwd() }, outfile: file, bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent' })

@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyTestEnv, isIsolatedTestEnv } from './lib/test-env.mjs'
+import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 import { runHtmlArtifactPreviewTests } from './test-html-artifact-preview.mjs'
 import { runRunStateTests } from './test-run-state.mjs'
 import { runCapabilityNegotiationTests } from './test-capability-negotiation.mjs'
@@ -897,7 +898,7 @@ const { runQuestionLogTests } = await import('./test-question-log.mjs')
 console.log('\n--- 宿主提问：回放合并 + 按会话落盘 ---')
 await guarded("runQuestionLogTests(ok)", () => runQuestionLogTests(ok))
 console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
-const piCliPath = join('resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')
+const piCliPath = join(selectedPiRuntime(join('resources', 'pi-runtime')), 'dist', 'bundle', 'cli.js')
 if (!existsSync(piCliPath)) throw new Error(`内置 pi CLI 不在（${piCliPath}）：先跑 npm run vendor:pi`)
 await guarded("runPackagesTests(ok)", () => runPackagesTests(ok))
 const { runPluginMarketTests } = await import('./test-plugin-market.mjs')

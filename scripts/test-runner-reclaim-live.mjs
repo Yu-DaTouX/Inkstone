@@ -98,7 +98,11 @@ try {
   console.log(`Evidence: ${evidence}`)
 } finally {
   await registry?.stopAll()
-  if (process.platform === 'win32' && allPids.length) assert.equal(remainingProcessIds(allPids).length, 0, '夹具收尾无残留pi进程')
+  if (process.platform === 'win32' && allPids.length) {
+    const deadline = Date.now() + 10000
+    while (remainingProcessIds(allPids).length && Date.now() < deadline) await new Promise(done => setTimeout(done, 250))
+    assert.equal(remainingProcessIds(allPids).length, 0, '夹具收尾无残留pi进程')
+  }
   server.closeAllConnections()
   if (server.listening) await new Promise(done => server.close(done))
   for (const key of Object.keys(process.env)) if (!(key in beforeEnv)) delete process.env[key]

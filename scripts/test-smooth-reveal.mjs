@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const dir = await mkdtemp(join(tmpdir(), 'yan-smooth-reveal-'))
+const dir = await mkdtemp(resolve('node_modules/.inkstone-smooth-reveal-'))
 const outfile = join(dir, 'smooth-reveal.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/smooth-reveal.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error', external: ['react'] })
 const { startReveal, stepReveal, revealLength, revealActive, revealDraining, REVEAL_DRAIN_MS, LIVE_TAIL_GRACE_MS } = await import(pathToFileURL(outfile).href)

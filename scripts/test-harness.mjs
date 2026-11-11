@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
@@ -54,7 +54,8 @@ await runSuite(import.meta.url, async (ok) => {
     const sandbox = createTestSandbox({ PATH: 'keep', YAN_CLI_TOKEN: 'drop', PI_PROBE: 'drop', FAKE_API_KEY: 'drop', FAKE_TOKEN: 'drop', ELECTRON_RUN_AS_NODE: '1', ELECTRON_RENDERER_URL: 'drop' })
     try {
       ok(sandbox.env.PATH === 'keep' && !sandbox.env.YAN_CLI_TOKEN && !sandbox.env.PI_PROBE && !sandbox.env.FAKE_API_KEY && !sandbox.env.FAKE_TOKEN && !sandbox.env.ELECTRON_RUN_AS_NODE && !sandbox.env.ELECTRON_RENDERER_URL, '子进程环境清除宿主能力、凭据和 Electron 启动参数')
-      ok(sandbox.env.YAN_PI_DIR === sandbox.env.PI_CODING_AGENT_DIR && Object.values(sandbox.env).filter((v) => v !== 'keep').every((path) => path.startsWith(sandbox.root) && existsSync(path)), '所有用户数据路径指向新建沙箱')
+      ok(sandbox.env.YAN_PI_DIR === sandbox.env.PI_CODING_AGENT_DIR && Object.entries(sandbox.env).filter(([key]) => /^(YAN|PI)_/.test(key)).every(([, path]) => path.startsWith(sandbox.root) && existsSync(path)), '所有用户数据路径指向新建沙箱')
+      ok(process.platform !== 'win32' || (sandbox.env.TEMP === sandbox.env.TMP && sandbox.root.startsWith(sandbox.env.TEMP) && sandbox.env.TEMP === realpathSync.native(sandbox.env.TEMP)), 'Windows 下子进程临时目录是展开后的长路径，沙箱建在其中')
     } finally {
       await rm(sandbox.root, { recursive: true, force: true })
     }
