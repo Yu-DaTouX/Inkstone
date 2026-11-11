@@ -99,6 +99,7 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
   const hidden = rows.length - shownRows.length
   const totals = changes && changes.added >= 0 && changes.added + changes.removed > 0 ? changes : null
   const openFile = (file: ReplyFileLink): void => void previewFile(file.path, file.line, previewCwd, file.lineEnd)
+  const openChange = (path: string): void => void previewFile(path, undefined, previewCwd || cwd)
 
   return (
     <section className="v3-chg" data-testid="v3-turn-changes" data-single={single || undefined} aria-label={`${text.title} \u00b7 ${summary}`}>
@@ -107,7 +108,7 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
           <span className="v3-result-label" data-testid="v3-turn-changes-label">{text.title}</span>
           <span className="v3-chg-summary" data-testid="v3-turn-changes-summary">{summary}</span>
           {single ? <span className="v3-chg-sep" aria-hidden>{'\u00b7'}</span> : null}
-          {single && rows[0] ? <ChangePath row={rows[0]} /> : null}
+          {single && rows[0] ? <ChangePath row={rows[0]} onOpen={openChange} /> : null}
           {single && deliverables[0] ? <DeliverableButton file={deliverables[0]} onOpen={openFile} /> : null}
           {totals ? <DiffStat className="v3-chg-stats" added={totals.added} removed={totals.removed} /> : null}
         </div>
@@ -129,7 +130,7 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
         <ul className="v3-chg-list">
           {shownRows.map((row) => (
             <li key={row.file.path} className="v3-chg-row" data-testid="v3-turn-changes-row" title={row.file.path}>
-              <ChangePath row={row} />
+              <ChangePath row={row} onOpen={openChange} />
               {row.file.added + row.file.removed > 0 ? <DiffStat className="v3-chg-stats" added={row.file.added} removed={row.file.removed} /> : null}
             </li>
           ))}
@@ -150,15 +151,14 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
   )
 }
 
-function ChangePath({ row }: { row: TurnChangeRow }): JSX.Element {
+function ChangePath({ row, onOpen }: { row: TurnChangeRow; onOpen: (path: string) => void }): JSX.Element {
   return (
-    <span className="v3-chg-path" title={row.file.path}>
-      <FileTypeIcon name={row.base} size={14} />
+    <Button size="sm" variant="ghost" className="v3-chg-path" title={row.file.path} icon={<FileTypeIcon name={row.base} size={14} />} onPress={() => onOpen(row.file.path)} data-testid="v3-turn-change-file">
       <span className="v3-chg-name">
         {row.dir ? <span className="v3-chg-dir">{row.dir}</span> : null}
         <span className="v3-chg-base">{row.base}</span>
       </span>
-    </span>
+    </Button>
   )
 }
 

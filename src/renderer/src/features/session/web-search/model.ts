@@ -252,6 +252,29 @@ export function citationFor(index: Map<string, CitationRef> | null | undefined, 
   return key ? index.get(key) ?? null : null
 }
 
+export function mergeSearchSources(sources: readonly WebSearchSourceView[]): WebSearchSourceView[] {
+  const merged = new Map<string, WebSearchSourceView>()
+  const rank = { discovered: 0, partial: 1, read: 2 }
+  for (const source of sources) {
+    const key = normalizeUrl(source.url)
+    if (!key) continue
+    const before = merged.get(key)
+    if (!before) {
+      merged.set(key, source)
+      continue
+    }
+    const readState = (rank[source.readState ?? 'discovered'] >= rank[before.readState ?? 'discovered']) ? source.readState ?? before.readState : before.readState
+    merged.set(key, {
+      ...before,
+      ...source,
+      title: source.title && source.title !== source.domain && source.title !== source.url ? source.title : before.title,
+      snippet: source.snippet || before.snippet,
+      readState
+    })
+  }
+  return [...merged.values()]
+}
+
 export interface SearchStep {
   command: SearchCommand
   operationId: string | null

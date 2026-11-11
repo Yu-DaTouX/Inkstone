@@ -37,7 +37,7 @@ async function loadView() {
   const session = posix(resolve(ROOT, 'src/renderer/src/features/session'))
   const i18n = posix(resolve(ROOT, 'src/renderer/src/i18n/index.tsx'))
   await writeFile(entry, [
-    `export { SearchStepView } from '${session}/web-search/SearchStep.tsx'`,
+    `export { SearchStepView, WebGroupView } from '${session}/web-search/SearchStep.tsx'`,
     `export { CitationLink } from '${session}/web-search/citations.tsx'`,
     `export { webSearchText } from '${session}/web-search/text.ts'`,
     `export { I18nProvider } from '${i18n}'`
@@ -457,6 +457,15 @@ async function run() {
     ok(m.searchSourcesFromDetails({ search: { action: 'docs', items: [item(1)] } }) === undefined, '非 query/fetch 动作返回 undefined')
     ok(m.searchSourcesFromDetails({ search: { action: 'fetch', url: 'file:///x' } }) === undefined, '网页细节网址非法返回 undefined')
     ok(m.searchSourcesFromDetails({ search: { action: 'fetch', url: 'https://example.com/a', title: '' } })?.[0]?.title === 'example.com', '网页标题为空时回落到域名')
+    const merged = m.mergeSearchSources([
+      { title: '原始标题', url: 'https://example.com/a?utm_source=fixture', domain: 'example.com', snippet: '检索摘要', source: '', readState: 'discovered', published: '2026-10-29' },
+      { title: 'example.com', url: 'https://example.com/a', domain: 'example.com', snippet: '', source: '', readState: 'partial', cached: true },
+      { title: '完整原文', url: 'https://example.com/a#section', domain: 'example.com', snippet: '', source: '', readState: 'read' },
+      { title: '完整原文', url: 'https://example.com/a', domain: 'example.com', snippet: '', source: '', readState: 'discovered' }
+    ])
+    ok(merged.length === 1 && merged[0].snippet === '检索摘要', '跨搜索与读取规范化去重，保留已有摘要', merged)
+    ok(merged[0].readState === 'read' && merged[0].cached && merged[0].published === '2026-10-29', '合并时保留原文状态、缓存与发布日期，后续检索不降级已读状态', merged)
+    ok(m.mergeSearchSources([{ title: '原始标题', url: 'https://example.com/a', domain: 'example.com', snippet: '摘要', source: '' }, { title: 'example.com', url: 'https://example.com/a', domain: 'example.com', snippet: '', source: '' }])[0].title === '原始标题', '读取只有域名时不覆盖原始标题')
   }
 
   group('组件渲染烟测：胶囊与引用标签能从真实组件输出')
@@ -487,6 +496,7 @@ async function run() {
     const directHtml = renderWith(createElement(view.SearchStepView, { call: searchCall, step: m.searchStepOf(searchCall) }, plain))
     ok(directHtml.includes('data-testid="ws-capsule"') && !directHtml.includes('id="plain"'), 'web_search 完成后仍渲染胶囊', directHtml.slice(0, 120))
     ok(directHtml.includes('data-state="done"'), '完成的子代理搜索胶囊标记为完成')
+    ok(directHtml.includes('aria-expanded="true"') && directHtml.includes('data-open="true"'), '完成及历史来源卡片默认展开')
     ok(directHtml.includes('aria-label="搜索 “electron 窗口” · 2 条结果"'), '胶囊标签写成「搜索 “q” · N 条结果」', directHtml.slice(0, 400))
     ok(directHtml.includes('data-testid="ws-capsule-count"') && directHtml.includes('>2 条结果<'), '结果数单独成段，不再写「个网站」', directHtml.slice(0, 900))
     ok(!directHtml.includes('搜索命中'), '只是搜索命中的来源不挂状态标签')
@@ -508,6 +518,15 @@ async function run() {
     const fetchCall = { id: 'w3', name: 'web_fetch', args: { url: 'https://example.com/a' }, status: 'ok', details: { search: { action: 'fetch', url: 'https://example.com/a', title: '示例' } } }
     const fetchHtml = renderWith(createElement(view.SearchStepView, { call: fetchCall, step: m.searchStepOf(fetchCall) }, plain))
     ok(fetchHtml.includes('已读取网页'), 'web_fetch 胶囊显示已读取', fetchHtml.slice(0, 300))
+    const groupedFetch = { ...fetchCall, id: 'group-fetch', args: { url: item(1).url }, details: { search: { action: 'fetch', url: item(1).url, title: '原始页面', readState: 'partial', cached: true } } }
+    const groupedHtml = renderWith(createElement(view.WebGroupView, { calls: [searchCall, groupedFetch], renderFallback: () => plain }))
+    ok((groupedHtml.match(/data-testid="ws-group"/g) ?? []).length === 1 && !groupedHtml.includes('data-testid="ws-capsule"'), '搜索组只保留一个主条，没有逐步嵌套搜索条', groupedHtml.slice(0, 900))
+    ok((groupedHtml.match(/ui-source-card ws-source/g) ?? []).length === 2 && groupedHtml.includes('部分原文') && groupedHtml.includes('摘要 1') && groupedHtml.includes('缓存'), '搜索组来源去重并合并读取状态和原摘要', groupedHtml.slice(-1800))
+    ok(groupedHtml.includes('aria-expanded="true"') && groupedHtml.includes('data-open="true"'), '合并来源默认展开')
+    const activeHtml = renderWith(createElement(view.WebGroupView, { calls: [searchCall, { ...groupedFetch, status: 'running' }], renderFallback: () => plain }))
+    ok(activeHtml.includes('data-state="running"') && activeHtml.includes('ws-sources-pending') && activeHtml.includes('摘要 1'), '读取运行中，已取得来源仍可见且保留进度')
+    const fallbackGroup = renderWith(createElement(view.WebGroupView, { calls: [searchCall, call({ id: 'legacy-shell', status: 'ok' })], renderFallback: () => plain }))
+    ok(fallbackGroup.includes('id="plain"') && fallbackGroup.includes('摘要 1'), '合并组中旧CLI无法读取结果时保留原工具行，不吞输出')
 
     const botCall = { id: 'w4', name: 'web_fetch', args: { url: 'https://raybyte.example/post' }, status: 'ok', details: { search: { action: 'fetch', url: 'https://raybyte.example/post', title: "Making sure you're not a bot!", readState: 'read' } } }
     const botHtml = renderWith(createElement(view.SearchStepView, { call: botCall, step: m.searchStepOf(botCall) }, plain))

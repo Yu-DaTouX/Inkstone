@@ -592,10 +592,6 @@ export function ComposerV3(): JSX.Element {
                 : null
           }
           onRetry={slashMode ? completion.retrySlash : undefined}
-          onHighlightedItemChange={(itemId) => {
-            const index = menuItems.findIndex((item) => item.id === itemId)
-            if (index >= 0) completion.setIndex(index)
-          }}
           onSelect={selectMenuItem}
         />
       </ComposerCommandMenuLayer>

@@ -17,10 +17,10 @@ export function useAsideFit(): boolean {
   return useContext(AsideFitScope)
 }
 
-export function useToolExpansion(id: string): [boolean | undefined, (open: boolean) => void] {
+export function useToolExpansion(id: string): [boolean | undefined, (open: boolean | undefined) => void] {
   const scope = useContext(ToolExpansionScope)
   const stored = useSyncExternalStore(toolExpansion.subscribe, () => toolExpansion.get(scope, id), () => toolExpansion.get(scope, id))
-  return [stored, (open: boolean) => toolExpansion.set(scope, id, open)]
+  return [stored, (open: boolean | undefined) => toolExpansion.set(scope, id, open)]
 }
 
 export function useHeldRunLabel(key: string | null, label: string): HeldRunLabel {

@@ -45,7 +45,6 @@ export interface ComposerCommandMenuProps {
   total: number;
   error: "slash" | "permission" | "path" | null;
   onRetry?: () => void;
-  onHighlightedItemChange: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }
 
@@ -106,7 +105,6 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(
                 item={item}
                 previous={props.items[index - 1]}
                 isActive={props.activeItemId === item.id}
-                onHighlight={props.onHighlightedItemChange}
                 onSelect={props.onSelect}
               />
             ))}
@@ -149,7 +147,6 @@ const CommandMenuItem = memo(function CommandMenuItem(props: {
   item: ComposerCommandItem;
   previous: ComposerCommandItem | undefined;
   isActive: boolean;
-  onHighlight: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
   const { item, isActive } = props;
@@ -181,9 +178,6 @@ const CommandMenuItem = memo(function CommandMenuItem(props: {
         data-composer-item-id={item.id}
         active={isActive}
         className="t3-cmd__item"
-        onMouseMove={() => {
-          if (!isActive) props.onHighlight(item.id);
-        }}
         onMouseDown={(event) => {
           event.preventDefault();
         }}

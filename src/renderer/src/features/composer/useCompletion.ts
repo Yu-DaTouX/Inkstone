@@ -31,7 +31,6 @@ export interface CompletionState {
   cwd: string
   open: boolean
   index: number
-  setIndex: (index: number) => void
   completeSlash: (command: SlashCommand) => void
   completeAt: (path: string) => void
   completeImage: (option: ImageRefOption) => void
@@ -355,8 +354,6 @@ export function useCompletion({
     [cursor, insertAtom, placeCursor, setValue, value]
   )
 
-  const setIndex = useCallback((index: number) => setMenu((m) => ({ ...m, index })), [])
-
   const handleKey = (event: ComposerKeyEvent): boolean => {
     const count = slashMatches.length > 0 ? slashMatches.length : atImages.length + paths.length
     if (!menu.open) return false
@@ -417,7 +414,6 @@ export function useCompletion({
     cwd: activeCwd,
     open: menu.open,
     index: menu.index,
-    setIndex,
     completeSlash,
     completeAt,
     completeImage,

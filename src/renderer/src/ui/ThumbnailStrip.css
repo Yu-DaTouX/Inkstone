@@ -1,0 +1,5 @@
+@layer primitives {
+  .ui-thumbnail-strip { display: inline-flex; align-items: center; gap: var(--s-4); min-width: 0; overflow-x: auto; padding: var(--s-2); }
+  .ui-thumbnail-strip__image { display: block; flex: none; width: var(--s-32); height: var(--s-20); object-fit: contain; border: var(--hair, 1px) solid var(--line); border-radius: var(--r-xs); background: var(--sunken); cursor: pointer; }
+  .ui-thumbnail-strip__image:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+}

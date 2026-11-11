@@ -1,6 +1,7 @@
-import { createContext, lazy, memo, Suspense, useContext, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX } from 'react'
+import { createContext, lazy, memo, Suspense, useContext, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { MessageImage } from './Image'
+import { ToolImagePreviews, ToolImagePreviewScope } from './ToolImagePreviews'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { useSessionText } from './text'
@@ -23,9 +24,8 @@ import { useRunNow } from './run-clock'
 import { formatDuration } from '../../../../shared/duration'
 import { Icon, type SessionIconName } from './Icon'
 import { AnimatedHeight, Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, DiffStat, Expand, IconButton, ShimmerText, Spinner } from '../../ui'
-import { SearchStepView, WebGroupCap } from './web-search/SearchStep'
+import { SearchStepView, WebGroupView } from './web-search/SearchStep'
 import { searchStepsOf } from './web-search/model'
-import { searchExpansionKeys } from './web-search/expansion'
 
 const McpAppResult = lazy(() => import('../artifacts/McpAppFrame').then((m) => ({ default: m.McpAppResult })))
 const McpAppStepAudit = lazy(() => import('../artifacts/McpAppFrame').then((m) => ({ default: m.McpAppStepAudit })))
@@ -96,10 +96,8 @@ function holdsCall(nodes: readonly ToolCallNode[], id: string): boolean {
 
 export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveToolGlowId(tools), alertFailures = true, staged = false }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null; alertFailures?: boolean; staged?: boolean }): JSX.Element | null {
   const t = useT()
-  const tt = useSessionText()
   const tallied = useContext(ToolTallyScope)
   const scope = useContext(ToolExpansionScope)
-  const [showAll, setShowAll] = useToolExpansion(`tools:${tools[0]?.id ?? ''}`)
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
   const askedCalls = useStore((s) => s.uiRequests)
   const cache = useRef<ToolRowsCache | null>(null)
@@ -108,12 +106,10 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
   const sole = tallied && grouped.length === 1 && grouped[0].kind === 'group' ? grouped[0] : null
   const rows: ToolRow[] = sole ? sole.nodes.map((node) => ({ kind: 'single', id: node.call.id, node, standalone: false, blocked: approvalIds.has(node.call.id) })) : grouped
   if (!rows.length) return null
-  const shown = !staged || showAll === true ? rows : rows.filter((row, index) => index >= rows.length - NEST_VISIBLE || toolExpansion.get(scope, row.id) === true || (row.kind === 'single' && (isRunning(row.node.call) || toolExpansion.get(scope, `step:${row.id}`) === true)) || (row.kind === 'group' && row.summary.running))
-  const hidden = rows.length - shown.length
+  const shown = !staged ? rows : rows.filter((row, index) => index >= rows.length - NEST_VISIBLE || toolExpansion.get(scope, row.id) === true || (row.kind === 'single' && (isRunning(row.node.call) || toolExpansion.get(scope, `step:${row.id}`) === true)) || (row.kind === 'group' && row.summary.running))
   return (
     <section className="v3-steps" data-testid="v3-steps" aria-label={t('proc.title')}>
       <div className="v3-steps-list" data-testid="v3-steps-list">
-        {staged && (hidden > 0 || showAll === true) ? <Button variant="ghost" size="sm" className="v3-step-earlier" aria-expanded={showAll === true} onPress={() => setShowAll(showAll !== true)} data-testid="v3-tools-earlier">{showAll === true ? tt('outputLess') : t('tool2.nestEarlier', { n: hidden })}</Button> : null}
         {shown.map((row) => {
           if (row.kind === 'group') return <MemoToolGroupRow key={row.id} row={row} glowId={glowId} alertFailures={alertFailures} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
           if (row.kind === 'web') return <WebGroupRow key={row.id} row={row} glowId={glowId} />
@@ -138,23 +134,11 @@ function sameStepProps(a: StepNodeProps, b: StepNodeProps): boolean {
 }
 
 function WebGroupRow({ row, glowId }: { row: Extract<ToolRow, { kind: 'web' }>; glowId: string | null }): JSX.Element {
-  const [stored, setOpen] = useToolExpansion(row.id)
-  const scope = useContext(ToolExpansionScope)
-  const readInheritedOpen = () => row.nodes.some(({ call }) => searchStepsOf(call).some((step) => toolExpansion.get(scope, searchExpansionKeys(call.id, step).stable) === true))
-  const inheritedOpen = useSyncExternalStore(toolExpansion.subscribe, readInheritedOpen, readInheritedOpen)
-  const open = stored ?? inheritedOpen
-  const panelId = useId()
   const calls = useMemo(() => row.nodes.map((node) => node.call), [row.nodes])
-  return (
-    <div className="v3-web-group" data-testid="v3-web-group">
-      <WebGroupCap calls={calls} open={open} panelId={panelId} onToggle={() => setOpen(!open)} />
-      <Expand id={panelId} open={open} role="group" aria-hidden={!open || undefined}>
-        {open ? <div className="v3-step-nest" data-testid="v3-web-group-list">
-          {row.nodes.map((node) => <MemoStepNode key={node.call.id} node={node} glowId={glowId} depth={1} />)}
-        </div> : null}
-      </Expand>
-    </div>
-  )
+  return <WebGroupView calls={calls} glow={!!glowId && holdsCall(row.nodes, glowId)} renderFallback={(call) => {
+    const node = row.nodes.find((node) => node.call.id === call.id)
+    return node ? <MemoStepNode node={node} glowId={glowId} depth={0} /> : null
+  }} />
 }
 
 function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<ToolRow, { kind: 'group' }>; asking: boolean; glowId: string | null; alertFailures: boolean }): JSX.Element {
@@ -169,12 +153,13 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
   const held = useHeldRunLabel(running ? running.id : null, running ? toolRunningLabel(running, t('tool2.generatingArgs'), tt) : label)
   const shown = held.key !== null ? held.label : label
   const members = open ? coalesceNodes(row.nodes) : []
+  const showImages = useContext(ToolImagePreviewScope)
   const tallied = useContext(ToolTallyScope)
   const tally = useMemo(() => tallied ? groupTally(row.nodes) : null, [tallied, row.nodes])
 
   return (
     <Collapsible className="v3-step v3-step-group" data-state={summary.state} data-depth={0} isExpanded={open} onExpandedChange={setOpen}>
-      <CollapsibleHeader className="v3-step-head" size="compact" chevron="start" rowHover data-testid="v3-step-group" icon={<Icon name={groupIconName(row.nodes)} size={13} />}>
+      <CollapsibleHeader className="v3-step-head" size="compact" chevron="none" rowHover data-testid="v3-step-group" icon={<Icon name={groupIconName(row.nodes)} size={13} />} actions={open || !showImages ? undefined : <ToolImagePreviews calls={flattenToolNodes(row.nodes).map((node) => node.call)} />}>
         <span className="v3-step-line" title={label}>
           {running ? (
             <ShimmerText className="v3-steps-label" active={summary.state !== 'blocked' && !open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
@@ -215,6 +200,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
   const open = stored ?? false
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
   const tallied = useContext(ToolTallyScope)
+  const showImages = useContext(ToolImagePreviewScope)
   const nestedTitle = nestedStepTitle(call, node.children, tt, tallied)
   const title = nestedTitle ?? toolStepTitle(call, tt)
   const selfContained = !!nestedTitle || (stepCategory(call.name) === 'bash' && !!stepDescription(call))
@@ -232,7 +218,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
 
   const step = (
     <>
-      <CollapsibleHeader className="v3-step-head" size="compact" chevron="start" rowHover data-testid="v3-step" icon={<Icon name={stepIconName(call)} size={13} />}>
+      <CollapsibleHeader className="v3-step-head" size="compact" chevron="none" rowHover data-testid="v3-step" icon={<Icon name={stepIconName(call)} size={13} />} actions={!showImages ? undefined : <ToolImagePreviews calls={[call, ...(!nested.shown.length ? flattenToolNodes(node.children).map((child) => child.call) : [])]} limit={node.children.length ? 3 : Infinity} />}>
         <CompletionSweep done={!running && !call.cancelled && !denied} settledAt={call.endedAt} />
         <span className="v3-step-line" title={tooltip}>
           <span className="v3-step-label">
@@ -276,9 +262,9 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
   return (
     <Collapsible className="v3-step" data-state={call.cancelled ? 'cancelled' : denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth} isExpanded={open} onExpandedChange={setOpen}>
       {searches.length
-        ? searches.map((search, i) => (
-            <SearchStepView key={i} call={call} step={search} glow={call.id === glowId}>{i === 0 ? step : null}</SearchStepView>
-          ))
+        ? searches.length > 1
+          ? <WebGroupView calls={[call]} glow={call.id === glowId} renderFallback={() => step} />
+          : <SearchStepView call={call} step={searches[0]} glow={call.id === glowId}>{step}</SearchStepView>
         : step}
     </Collapsible>
   )

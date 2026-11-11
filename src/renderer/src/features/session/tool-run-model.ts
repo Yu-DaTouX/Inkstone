@@ -316,9 +316,9 @@ function isStandaloneNode(node: ToolCallNode): boolean {
   return isStandaloneTool(node.call) || isWebTool(node.call) || !!node.call.approval
 }
 
-function isSettledWebNode(node: ToolCallNode, approvalIds: ReadonlySet<string>): boolean {
+function isGroupedWebNode(node: ToolCallNode, approvalIds: ReadonlySet<string>): boolean {
   const call = node.call
-  return isWebTool(call) && !node.children.length && !isLive(call) && !isFailure(call) && !call.approval && !approvalIds.has(call.id)
+  return isWebTool(call) && !node.children.length && !isFailure(call) && !call.approval && !approvalIds.has(call.id)
 }
 
 function isHiddenTodoCall(call: Pick<UIToolCall, 'name' | 'status' | 'cancelled' | 'denied' | 'output'>): boolean {
@@ -470,7 +470,7 @@ export function buildToolRows(
     run = []
   }
   for (const node of withVisibleWebNodes(toolCallForest(tools.filter((call) => !isHiddenTodoCall(call))))) {
-    if (isSettledWebNode(node, approvalIds)) {
+    if (isGroupedWebNode(node, approvalIds)) {
       flush()
       web.push(node)
     } else if (isStandaloneNode(node)) {
@@ -514,7 +514,7 @@ export function cachedToolRows(cache: ToolRowsCache | null, tools: readonly UITo
 
 function coalesceKey(node: ToolCallNode): string | null {
   const call = node.call
-  if (node.children.length || isLive(call)) return null
+  if (node.children.length || isLive(call) || call.images?.some((image) => image.data || image.url)) return null
   const category = toolCategory(call)
   if (!isFileCategory(category)) return null
   const path = pathOf(call)

@@ -25,6 +25,10 @@
     border-end-end-radius: 0;
     padding-inline-end: 2px;
   }
+  .t3-model-trigger--owned .t3-model-trigger__label[data-chat-provider-model-picker-label] {
+    padding-block: 0;
+    text-box: normal;
+  }
   .t3-model-trigger__row {
     display: flex;
     align-items: center;

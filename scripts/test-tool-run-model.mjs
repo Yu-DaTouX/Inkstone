@@ -49,7 +49,12 @@ async function run() {
       call('w1', 'web_fetch', { url: 'https://a.invalid' }),
       call('w2', 'web_fetch', { url: 'https://b.invalid' }, { status: 'running' })
     ])
-    assert.deepEqual(liveWeb.map((row) => `${row.kind}:${row.id}`), ['single:w1', 'single:w2'], '运行中的网页读取单独显示，不并入')
+    assert.deepEqual(liveWeb.map((row) => `${row.kind}:${row.id}`), ['web:web:w1'], '运行中的网页读取与已有来源保持一个主搜索条')
+    const approvedWeb = m.buildToolRows([
+      call('approval-web-1', 'web_fetch', { url: 'https://a.invalid' }),
+      call('approval-web-2', 'web_fetch', { url: 'https://b.invalid' }, { status: 'running' })
+    ], new Set(['approval-web-2']))
+    assert.ok(approvedWeb.every((row) => row.kind === 'single'), '等待审批的读取仍独立显示，不被合并吞掉')
     const failedWeb = m.buildToolRows([
       call('f1', 'web_fetch', { url: 'https://a.invalid' }),
       call('f2', 'web_fetch', { url: 'https://b.invalid' }, { status: 'error', output: 'boom' }),
@@ -296,6 +301,12 @@ async function run() {
     ])
     assert.deepEqual(coalesced.map((item) => [item.node.call.id, item.repeat]), [['r2', 2], ['e1', 1], ['r3', 1], ['r4', 1]], '相邻同路径同操作折成一行，结果不同不合并')
 
+    const imageReads = m.coalesceNodes([
+      { call: call('image-read-1', 'read', { path: 'shot.png' }, { images: [{ mimeType: 'image/png', data: 'first' }] }), children: [] },
+      { call: call('image-read-2', 'read', { path: 'shot.png' }, { images: [{ mimeType: 'image/png', data: 'second' }] }), children: [] }
+    ])
+    assert.equal(imageReads.length, 2, '重复读取图片保留各自结果，不因同路径合并丢掉早先图片')
+
     const store = m.createExpansionStore(3)
     let notified = 0
     const off = store.subscribe(() => { notified += 1 })
@@ -313,6 +324,13 @@ async function run() {
     assert.equal(store.get('s1', 'group:a'), undefined, '重试时清掉该会话')
     assert.equal(store.get('s2', 'group:a'), true, '其他会话不受影响')
     assert.ok(notified >= 4)
+    const beforeReset = notified
+    store.set('s2', 'group:a', undefined)
+    assert.equal(store.get('s2', 'group:a'), undefined, '复位回默认短显示')
+    assert.equal(store.size(), 0, '复位移除旧选择，不占容量')
+    assert.equal(notified, beforeReset + 1, '复位通知订阅者')
+    store.set('s2', 'group:a', undefined)
+    assert.equal(notified, beforeReset + 1, '重复复位不通知')
     off()
     assert.equal(m.EXPANSION_LIMIT, 1000)
     const big = m.createExpansionStore()

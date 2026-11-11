@@ -8,11 +8,12 @@ import {
   Undo2Icon,
   XIcon
 } from 'lucide-react'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useT } from '@/i18n'
 import { useQueueAdapter, type QueueRow } from '@/t3/adapters/composer-queue'
 import { Button, IconButton, Focusable, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, TooltipTrigger, Tooltip, TooltipHint } from '../../../ui'
 import { cx } from '@/ui/cx'
+import { stripImageLegend } from '../../../features/composer/image-refs'
 import './QueuedRunsControl.css'
 
 const QUEUE_COLLAPSED_ROWS = 2
@@ -28,6 +29,24 @@ export function QueuedRunsControl({ className }: { className?: string }) {
   const [showAll, setShowAll] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const rootRef = useRef<HTMLElement>(null)
+  const hasRows = queue.total > 0
+
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const onWheel = (event: WheelEvent): void => {
+      if (event.ctrlKey || event.defaultPrevented || event.deltaY === 0 || event.target instanceof Element && event.target.closest('textarea')) return
+      const stream = root.closest('.v3-split-peer, .v3-chat')?.querySelector<HTMLElement>('.v3-stream')
+      if (!stream) return
+      event.preventDefault()
+      stream.dispatchEvent(new WheelEvent('wheel', { deltaY: event.deltaY, deltaX: event.deltaX, deltaMode: event.deltaMode, bubbles: true }))
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? stream.clientHeight : 1
+      stream.scrollBy({ top: event.deltaY * unit, left: event.deltaX * unit })
+    }
+    root.addEventListener('wheel', onWheel, { passive: false })
+    return () => root.removeEventListener('wheel', onWheel)
+  }, [hasRows])
 
   const editingRow = editingId ? queue.rows.find((row) => row.id === editingId) : undefined
   useEffect(() => {
@@ -153,6 +172,7 @@ export function QueuedRunsControl({ className }: { className?: string }) {
 
   return (
     <section
+      ref={rootRef}
       aria-label={t('queue.count', { n: queue.total })}
       className={cx(
         't3-queue',
@@ -183,7 +203,7 @@ export function QueuedRunsControl({ className }: { className?: string }) {
                   't3-queue__bubble',
                   isEditing && 't3-queue__bubble--editing'
                 )}
-                title={isEditing ? undefined : row.text}
+                title={isEditing ? undefined : stripImageLegend(row.text)}
               >
                 {isEditing && editingRow ? (
                   <>
@@ -233,7 +253,7 @@ export function QueuedRunsControl({ className }: { className?: string }) {
                       </span>
                     ) : null}
                     {row.text ? (
-                      <p className="t3-queue__text">{row.text}</p>
+                      <p className="t3-queue__text">{stripImageLegend(row.text)}</p>
                     ) : null}
                   </>
                 )}

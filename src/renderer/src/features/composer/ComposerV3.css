@@ -1,4 +1,10 @@
 @layer features {
+  .v3-composer > .composer-v3 {
+    pointer-events: none;
+  }
+  .composer-v3 > :not(.t3-queue) {
+    pointer-events: auto;
+  }
   .composer-v3__editor-row {
     display: flex;
     align-items: flex-start;

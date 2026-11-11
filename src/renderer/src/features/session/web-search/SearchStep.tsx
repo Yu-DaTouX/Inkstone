@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
+import { useId, useMemo, useRef, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { ArrowUpRight, Globe } from 'lucide-react'
 import { useStore } from '../../../state/store'
 import { Button, Card, CollapsibleChevron, revealCollapsedHeader, ShimmerText, SourceCard as SourceCardFrame } from '../../../ui'
@@ -6,17 +6,17 @@ import type { UIToolCall, WebSearchSourceView } from '../../../../../shared/ipc'
 import { Icon } from '../Icon'
 import { useToolExpansion } from '../use-tool-run'
 import { useCitationIndex } from './citations'
-import { canAutoCollapse, holdSearchAuto, resolveSearchAuto, searchExpansionKeys, searchExpansionOpen, seedSearchAuto, SEARCH_BOTTOM_SLACK_PX, type SearchAutoState } from './expansion'
-import { citationFor, domainOf, isBlockedPage, searchStepLabel, searchStepsOf, siteLabel, type SearchStep } from './model'
-import { useSearchOp } from './op-store'
+import { searchExpansionKeys, searchExpansionOpen } from './expansion'
+import { citationFor, domainOf, isBlockedPage, mergeSearchSources, searchStepLabel, searchStepsOf, siteLabel, type SearchStep } from './model'
+import { useSearchOp, useSearchOps, type SearchOpState } from './op-store'
 import { useWebSearchText } from './text'
 import { WebsiteIcon } from './WebsiteIcon'
 import './web-search.css'
 
 const MAX_SITES = 3
 
-function pageSource(state: ReturnType<typeof useSearchOp>): WebSearchSourceView[] {
-  if (state.status !== 'ready' || !state.view.ok) return []
+function pageSource(state: SearchOpState | undefined): WebSearchSourceView[] {
+  if (state?.status !== 'ready' || !state.view.ok) return []
   if (state.view.kind === 'fetch') {
     const page = state.view.page
     return [{ title: page.title, url: page.url, domain: page.domain, snippet: page.excerpt, source: '', fetchedAt: page.fetchedAt, cached: page.cached, readState: page.truncated || page.sourceTruncated ? 'partial' : 'read' }]
@@ -60,63 +60,7 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
   const [stableOpen, setStableOpen] = useToolExpansion(keys.stable)
   const [taggedOpen, setTaggedOpen] = useToolExpansion(keys.tagged)
   const [showAll, setShowAll] = useState(false)
-  const [auto, setAuto] = useState<SearchAutoState>(() => seedSearchAuto(running))
-  const open = searchExpansionOpen(stableOpen ?? taggedOpen, auto)
-
-  const canCollapseNow = (): boolean => {
-    const node = entryRef.current
-    if (!node) return true
-    if (node.contains(document.activeElement) || node.matches(':hover')) return false
-    const stream = node.closest<HTMLElement>('.v3-stream')
-    if (!stream) return true
-    const rect = node.getBoundingClientRect()
-    const view = stream.getBoundingClientRect()
-    const atBottom = stream.scrollHeight - stream.clientHeight - stream.scrollTop <= SEARCH_BOTTOM_SLACK_PX
-    return canAutoCollapse({ top: rect.top, bottom: rect.bottom, viewTop: view.top, viewBottom: view.bottom, atBottom })
-  }
-
-  useEffect(() => {
-    if (!settled) return
-    setAuto((current) => (current.phase === 'live' ? holdSearchAuto(Date.now()) : current))
-  }, [settled])
-
-  useEffect(() => {
-    if (auto.phase !== 'hold' || auto.holdUntil === null) return
-    const left = auto.holdUntil - Date.now()
-    if (left <= 0) {
-      setAuto((current) => resolveSearchAuto(current, Date.now(), canCollapseNow()))
-      return
-    }
-    const timer = window.setTimeout(() => {
-      setAuto((current) => resolveSearchAuto(current, Date.now(), canCollapseNow()))
-    }, left)
-    return () => window.clearTimeout(timer)
-  }, [auto.phase, auto.holdUntil])
-
-  useEffect(() => {
-    if (auto.phase !== 'waiting') return
-    const check = (): void => {
-      if (!canCollapseNow()) return
-      setAuto((current) => resolveSearchAuto(current, Date.now(), true))
-    }
-    const checkAfterFocus = (): void => {
-      window.setTimeout(check, 0)
-    }
-    const node = entryRef.current
-    check()
-    node?.addEventListener('pointerleave', check)
-    window.addEventListener('scroll', check, true)
-    window.addEventListener('resize', check)
-    window.addEventListener('focusin', check, true)
-    window.addEventListener('focusout', checkAfterFocus, true)
-    return () => {
-      node?.removeEventListener('pointerleave', check)
-      window.removeEventListener('scroll', check, true)
-      window.removeEventListener('resize', check)
-      window.removeEventListener('focusin', check, true)
-      window.removeEventListener('focusout', checkAfterFocus, true)
-    }
-  }, [auto.phase])
+  const open = searchExpansionOpen(stableOpen ?? taggedOpen)
 
   if (!running && !step.fromTool) {
     if (!step.operationId) return <>{children}</>
@@ -184,28 +128,63 @@ function SearchProgress(): JSX.Element {
   )
 }
 
-export function WebGroupCap({ calls, open, panelId, onToggle }: { calls: readonly UIToolCall[]; open: boolean; panelId: string; onToggle: () => void }): JSX.Element {
+export function WebGroupView({ calls, glow = true, renderFallback }: { calls: readonly UIToolCall[]; glow?: boolean; renderFallback: (call: UIToolCall) => ReactNode }): JSX.Element {
   const tt = useWebSearchText()
-  const steps = calls.flatMap((call) => searchStepsOf(call))
-  const fetched = steps.filter((step) => step.command.action === 'fetch').length
-  const searched = steps.length - fetched
-  const sourceCount = new Set(steps.flatMap((step) => step.sources?.map((source) => source.url) ?? [])).size
-  const label = [searched ? tt('groupSearched', { n: searched }) : '', fetched ? tt('groupFetched', { n: fetched }) : '', sourceCount ? tt('results', { n: sourceCount }) : ''].filter(Boolean).join(' \u00b7 ')
-  const sites = uniqueSites(steps.flatMap((step): WebSearchSourceView[] => step.sources?.length ? step.sources : step.command.url ? [{ title: '', url: step.command.url, domain: domainOf(step.command.url), snippet: '', source: '' }] : []))
+  const panelId = useId()
+  const groups = useMemo(() => calls.map((call) => ({ call, running: call.status === 'running' || call.status === 'pending', steps: searchStepsOf(call) })), [calls])
+  const ids = groups.flatMap(({ running, steps }) => running ? [] : steps.flatMap((step) => step.sources === undefined && step.operationId ? [step.operationId] : []))
+  const states = useSearchOps(ids)
+  const byId = new Map(ids.map((id, i) => [id, states[i]]))
+  const fallback = groups.filter(({ running, steps }) => !steps.length || !running && steps.some((step) => {
+    const state = step.operationId ? byId.get(step.operationId) : undefined
+    return !step.fromTool && (!step.operationId || state?.status === 'ready' && !state.view.ok)
+  }))
+  const entries = groups.filter((group) => !fallback.includes(group)).flatMap(({ running, steps }) => steps.map((step) => ({ running, step })))
+  const sources = mergeSearchSources(entries.flatMap(({ running, step }) => running ? [] : step.sources ?? pageSource(step.operationId ? byId.get(step.operationId) : undefined)))
+  const sites = uniqueSites(sources)
+  const running = entries.some((entry) => entry.running)
+  const loading = running || entries.some(({ step }) => step.sources === undefined && !!step.operationId && byId.get(step.operationId)?.status === 'loading')
+  const fetched = entries.filter(({ step }) => step.command.action === 'fetch').length
+  const searched = entries.length - fetched
+  const label = [searched ? tt('groupSearched', { n: searched }) : '', fetched ? tt('groupFetched', { n: fetched }) : '', sources.length ? tt('results', { n: sources.length }) : ''].filter(Boolean).join(' \u00b7 ')
+  const first = groups[0]
+  const keys = first?.steps[0] ? searchExpansionKeys(first.call.id, first.steps[0]) : { stable: `web:${first?.call.id ?? ''}`, tagged: `web:${first?.call.id ?? ''}` }
+  const [stableOpen, setStableOpen] = useToolExpansion(keys.stable)
+  const [taggedOpen, setTaggedOpen] = useToolExpansion(keys.tagged)
+  const [showAll, setShowAll] = useState(false)
+  const open = searchExpansionOpen(stableOpen ?? taggedOpen)
+  const title = [label, ...entries.map(({ step }) => searchStepLabel(step.command))].join('\n')
   return (
-    <button type="button" className="ws-cap" aria-expanded={open} aria-controls={panelId} title={label} onClick={(event) => { if (open) revealCollapsedHeader(event.currentTarget); onToggle() }} data-testid="ws-group" data-state="done">
-      <CollapsibleChevron expanded={open} className="ws-cap-chevron" />
-      <span className="ws-cap-icon" data-done aria-hidden="true">
-        <Globe size={13} strokeWidth={1.75} />
-        <svg className="ws-ring" viewBox="0 0 24 24" aria-hidden="true">
-          <circle className="ws-ring-track" cx="12" cy="12" r="10" />
-        </svg>
-      </span>
-      <span className="ws-cap-label">{label}</span>
-      <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
-        {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
-      </span>
-    </button>
+    <div className="v3-web-group" data-testid="v3-web-group">
+      {entries.length ? <div className="ws-entry">
+        <button type="button" className="ws-cap" aria-label={label} aria-expanded={open} aria-controls={panelId} title={title} onClick={(event) => {
+          if (open) revealCollapsedHeader(event.currentTarget)
+          setStableOpen(!open)
+          setTaggedOpen(!open)
+          setShowAll(false)
+        }} data-testid="ws-group" data-state={running ? 'running' : 'done'}>
+          <CollapsibleChevron expanded={open} className="ws-cap-chevron" />
+          <span className="ws-cap-icon" data-done={running ? undefined : true} aria-hidden="true">
+            <Globe size={13} strokeWidth={1.75} />
+            <svg className="ws-ring" viewBox="0 0 24 24" aria-hidden="true">
+              <circle className="ws-ring-track" cx="12" cy="12" r="10" />
+              {running ? <circle className="ws-ring-arc" cx="12" cy="12" r="10" /> : null}
+            </svg>
+          </span>
+          <span className="ws-cap-label"><ShimmerText active={loading && glow}>{label}</ShimmerText></span>
+          <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
+            {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
+          </span>
+        </button>
+        <div id={panelId} className="ui-source-reveal" data-open={open} aria-hidden={!open || undefined} inert={!open}>
+          <div className="ui-source-reveal__inner">
+            {sources.length || !loading ? <SourceList sources={sources} showAll={showAll} onShowAll={setShowAll} testId="ws-sources" /> : null}
+            {loading ? <SearchProgress /> : null}
+          </div>
+        </div>
+      </div> : null}
+      {fallback.map(({ call }) => <div key={call.id}>{renderFallback(call)}</div>)}
+    </div>
   )
 }
 

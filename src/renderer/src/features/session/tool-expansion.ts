@@ -2,7 +2,7 @@ export const EXPANSION_LIMIT = 1000
 
 interface ExpansionStore {
   get(scope: string, id: string): boolean | undefined
-  set(scope: string, id: string, open: boolean): void
+  set(scope: string, id: string, open: boolean | undefined): void
   forget(scope: string): void
   clear(): void
   size(): number
@@ -30,6 +30,10 @@ export function createExpansionStore(limit = EXPANSION_LIMIT): ExpansionStore {
     },
     set(scope, id, open) {
       const key = expansionKey(scope, id)
+      if (open === undefined) {
+        if (entries.delete(key)) emit()
+        return
+      }
       if (entries.get(key) === open) {
         entries.delete(key)
         entries.set(key, open)

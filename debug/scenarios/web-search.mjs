@@ -10,7 +10,7 @@ export default async function run({ cdp, newSession, check, sleep, shot }) {
   ]
   const messages = [
     { id: 'web-user', role: 'user', text: '查找原始资料，并定位长文章中的例外条件。', timestamp: Date.now() - 5000 },
-    { id: 'web-tools', role: 'assistant', text: '', toolCalls: [
+    { id: 'web-tools', role: 'assistant', text: '', thinking: '核对候选来源，再读取原文。', thinkingMs: 4000, toolCalls: [
       { id: 'web-search-fixture', name: 'web_search', args: { queries: ['original documentation', 'research exception clause'] }, status: 'ok', output: 'Search candidate links', details: { search: { action: 'query', query: 'original documentation', items: sources } } },
       { id: 'web-fetch-fixture', name: 'web_fetch', args: { url: sources[0].url }, status: 'ok', output: 'Partial original page; continue with offset=12000', details: { search: { action: 'fetch', url: sources[0].url, title: sources[0].title, readState: 'partial', cached: true, fetchedAt: '2026-10-29T00:00:00Z', truncated: true } } },
       { id: 'web-error-fixture', name: 'web_fetch', args: { url: 'https://blocked.example.com/' }, status: 'error', output: 'web_fetch failed: 网页返回了验证页面，未取得正文' }
@@ -19,25 +19,22 @@ export default async function run({ cdp, newSession, check, sleep, shot }) {
   ]
   await cdp.evaluate(`window.__yanStore.setState({ messages: ${JSON.stringify(messages)}, historyLoading: false, switchLoading: false })`)
   await sleep(700)
-  await cdp.evaluate(`document.querySelector('[data-testid=v3-process-toggle]')?.click()`)
-  await sleep(250)
-  check('搜索与读取合并成一个胶囊', await cdp.evaluate(`document.querySelectorAll('[data-testid=ws-group]').length === 1 && document.body.innerText.includes('搜索 1 次')`))
+  check('搜索与读取默认展开，只保留一个主搜索条', await cdp.evaluate(`document.querySelectorAll('[data-testid=ws-group]').length === 1 && !document.querySelector('[data-testid=ws-capsule], [data-testid=v3-process-toggle]') && document.querySelector('[data-testid=ws-group]').getAttribute('aria-expanded') === 'true'`))
   await cdp.evaluate(`document.querySelector('[data-testid=v3-step]')?.click()`)
   await sleep(150)
   check('失败原因保持可见', await cdp.evaluate(`document.body.innerText.includes('验证页面')`))
-  await cdp.evaluate(`document.querySelector('[data-testid=ws-group]')?.click()`)
-  await sleep(250)
-  check('展开合并胶囊后逐条显示', await cdp.evaluate(`document.querySelectorAll('[data-testid=ws-capsule]').length === 2`))
-  await cdp.evaluate(`(() => { const cap = document.querySelectorAll('[data-testid=ws-capsule]')[1]; cap.focus(); cap.click(); })()`)
+  check('合并来源去重，不再逐步嵌套卡片', await cdp.evaluate(`document.querySelectorAll('.ui-source-card').length === 3`))
+  await cdp.evaluate(`document.querySelector('[data-testid=ws-group]').focus()`)
   await sleep(600)
   check('部分原文与缓存状态显示', await cdp.evaluate(`document.body.innerText.includes('部分原文') && document.body.innerText.includes('缓存')`))
-  check('展开控件可聚焦', await cdp.evaluate(`document.activeElement?.matches('[data-testid=ws-capsule]')`))
+  check('展开控件可聚焦', await cdp.evaluate(`document.activeElement?.matches('[data-testid=ws-group]')`))
   const width = await cdp.evaluate('innerWidth')
   for (const [theme, lang] of [['dark', 'zh-CN'], ['light', 'zh-CN'], ['dark', 'en-US'], ['light', 'en-US']]) {
     await cdp.evaluate(`window.__yanStore.getState().patchSettings(${JSON.stringify({ theme, lang })})`)
     await sleep(350)
     const state = await cdp.evaluate(`({ overflow: document.documentElement.scrollWidth > innerWidth + 1, candidates: document.querySelectorAll('.ui-source-card').length > 0, partial: document.body.innerText.includes(${JSON.stringify(lang === 'en-US' ? 'Partial text' : '部分原文')}) })`)
     check(`${theme}/${lang}/${width} 状态完整且无横向溢出`, !state.overflow && state.candidates && state.partial, state)
+    check(`${theme}/${lang} 原文状态、日期和缓存不重叠`, await cdp.evaluate(`Array.from(document.querySelectorAll('.ui-source-card__foot')).every(foot=>{const status=foot.querySelector('.ui-card__status'),meta=foot.querySelector('.ui-source-card__meta');if(!status||!meta)return true;const a=status.getBoundingClientRect(),b=meta.getBoundingClientRect();return a.right<=b.left+1||b.right<=a.left+1||a.bottom<=b.top+1||b.bottom<=a.top+1})`))
     await Promise.race([shot(`web-search-${theme}-${lang}-${width}`), sleep(5000).then(() => { throw new Error(`截图超时：${theme}/${lang}/${width}`) })])
   }
 }

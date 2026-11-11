@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { formatDuration } from '../../../../shared/duration'
-import { Collapsible, CollapsibleHeader, CollapsiblePanel, ShimmerText } from '../../ui'
+import { Collapsible, CollapsibleChevron, CollapsibleHeader, CollapsiblePanel, ShimmerText } from '../../ui'
 import { elapsedSince, useRunNow } from './run-clock'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
@@ -121,7 +121,7 @@ export function ThinkingLine({ text, ms, live, startedAt, defaultOpen = false, s
 
   return (
     <Collapsible ref={rootRef} className={asStep ? 'v3-think v3-step' : 'v3-think'} data-live={live || undefined} data-open={open || undefined} data-row={asStep ? 'step' : undefined} data-testid="v3-thinking" isExpanded={open} onExpandedChange={toggle}>
-      <CollapsibleHeader className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} size="compact" chevron="start" rowHover icon={<Icon name="brain" size={13} />} actions={live ? undefined : <TranslateButton state={translation} />} data-testid="v3-thinking-toggle">
+      <CollapsibleHeader className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} size="compact" chevron="none" rowHover icon={<Icon name="brain" size={13} />} actions={live ? undefined : <TranslateButton state={translation} />} data-testid="v3-thinking-toggle">
         <span className="v3-step-line">
           {asStep ? (
             <span className="v3-step-label"><ShimmerText active={!!live}>{label}</ShimmerText></span>
@@ -129,6 +129,7 @@ export function ThinkingLine({ text, ms, live, startedAt, defaultOpen = false, s
             <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
           )}
           {elapsed !== null ? <span className="v3-step-time v3-think-time" data-testid="v3-thinking-elapsed">{formatDuration(elapsed)}</span> : null}
+          <CollapsibleChevron expanded={open} />
           {peek ? (
             <span className={asStep ? 'v3-step-target v3-think-peek' : 'v3-think-peek'} dir={live ? undefined : 'rtl'} data-testid="v3-thinking-peek">
               <span dir="ltr">{peek}</span>

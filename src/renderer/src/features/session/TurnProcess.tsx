@@ -19,10 +19,11 @@ import { QuestionHistory } from './QuestionReceipt'
 import type { TranscriptView } from './transcript-view-model'
 import type { ApprovalReceipt } from '../../../../shared/approval'
 import { TurnApprovalLine } from './ApprovalReceipt'
+import { isWebTool } from './tool-run-model'
+import { ToolImagePreviews, ToolImagePreviewScope } from './ToolImagePreviews'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 const NO_RECEIPTS: readonly ApprovalReceipt[] = []
-const HISTORY_SEGMENTS = 12
 const SPREAD_HISTORY_ITEMS = 40
 const STEADY_HOLD_MS = 30000
 const SHRINK_HOLD_MS = 1200
@@ -235,9 +236,8 @@ function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, 
   const panelId = useId()
   const key = `process:${groupKey}`
   const [manual, setManual] = useToolExpansion(key)
-  const [showAll, setShowAll] = useToolExpansion(`${key}:all`)
   const summary = useMemo(() => processSummary(segments), [segments])
-  const headless = !summary.thinking && !summary.actions
+  const headless = (!summary.thinking && !summary.actions) || (summary.actions > 0 && segments.every((segment) => segment.tools.every(isWebTool)))
   const open = headless || (manual ?? (view === 'thinking' || (openByDefault && !live)))
   const stage = !open && live && manual !== false
   const visible = open || stage
@@ -249,24 +249,20 @@ function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, 
   const markerAfter = before?.at(-1)?.id ?? null
   const markerFirst = !!compactionAfter && (!halves || !before?.length)
   const expansionScope = useContext(ToolExpansionScope)
-  const tracksOpened = live || segments.length > HISTORY_SEGMENTS
-  useSyncExternalStore(toolExpansion.subscribe, () => (tracksOpened ? openedCalls(segments, expansionScope) : ''), () => '')
+  useSyncExternalStore(toolExpansion.subscribe, () => (live ? openedCalls(segments, expansionScope) : ''), () => '')
   const userOpened = (segment: TurnSegment): boolean => segment.tools.some((call) => callOpened(expansionScope, call.id))
   const picked = stage
     ? pickLiveSegments(merged, stageSegmentCount(merged), userOpened)
-    : showAll !== true && (live || (open && merged.length > HISTORY_SEGMENTS)) ? pickLiveSegments(merged, live ? undefined : HISTORY_SEGMENTS, userOpened) : { shown: merged, hidden: 0 }
+    : { shown: merged, hidden: 0 }
   const single = summary.thinking === 1 && !summary.actions
   const lines = live ? null : totalLines([...summary.edits, ...summary.creates])
   const foldedQuestions = open || live ? [] : segments.flatMap((segment) => segment.tools).filter((call) => !call.parentToolCallId && isHistoryQuestionCall(call) && call.status !== 'running' && call.status !== 'pending')
   const approvals = open || live ? NO_RECEIPTS : segments.flatMap((segment) => segment.tools.flatMap((call) => (call.approval ? [call.approval] : [])))
 
   const body = (
-    <div ref={steady.ref} className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body" style={steady.minHeight ? { minHeight: steady.minHeight } : undefined}>
-      {picked.hidden > 0 || showAll === true ? (
-        <Button size="sm" variant="ghost" className="v3-process-more" aria-expanded={showAll === true} onPress={() => { if (stage) setManual(true); setShowAll(showAll !== true) }} data-testid="v3-process-more">
-          {stage ? t('proc.showAll') : showAll === true ? t('proc.showRecent') : tt('moreItems', { n: picked.hidden })}
-        </Button>
-      ) : null}
+    <div ref={steady.ref} style={steady.minHeight ? { minHeight: steady.minHeight } : undefined}>
+    <div className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body">
+      <ToolImagePreviewScope.Provider value={open}>
       <ToolTallyScope.Provider value>
         {markerFirst || markerAfter && !picked.shown.some((segment) => segment.id === markerAfter) && merged.findIndex((segment) => segment.id === markerAfter) < merged.indexOf(picked.shown[0]) ? <CompactionMarker /> : null}
         {picked.shown.map((segment) => (
@@ -276,12 +272,14 @@ function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, 
           </Fragment>
         ))}
       </ToolTallyScope.Provider>
+      </ToolImagePreviewScope.Provider>
+    </div>
     </div>
   )
 
   return (
     <>
-    <Collapsible className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={visible} onExpandedChange={setManual}>
+    <Collapsible className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={visible} onExpandedChange={() => setManual(open ? false : stage ? true : live ? undefined : true)}>
       {headless ? null : (
         <CollapsibleHeader
           className="v3-process-head"
@@ -289,6 +287,7 @@ function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, 
           chevron="end"
           aria-controls={panelId}
           icon={live ? <LiveProcessIcon /> : undefined}
+          actions={open ? undefined : <ToolImagePreviews calls={segments.flatMap((segment) => segment.tools)} />}
           data-testid="v3-process-toggle"
         >
           <span className="v3-process-line" data-testid="v3-process-line">

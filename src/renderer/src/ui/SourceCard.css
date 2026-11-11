@@ -58,8 +58,8 @@
     overflow-wrap: anywhere;
   }
   .ui-source-card__title:has(+ .ui-source-card__snippet) { min-height: 0; }
-  .ui-source-card__foot { display: flex; align-items: center; gap: var(--s-6); min-width: 0; margin-top: auto; }
-  .ui-source-card__foot > .ui-card__status { flex: 1; min-width: 0; font-size: var(--t-caption); }
+  .ui-source-card__foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-6); min-width: 0; margin-top: auto; }
+  .ui-source-card__foot > .ui-card__status { flex: none; min-width: 0; font-size: var(--t-caption); }
   .ui-source-card__foot > .ui-source-card__meta { flex: none; font-variant-numeric: tabular-nums; }
   .ui-source-card__dot { flex: none; width: 4px; height: 4px; border-radius: var(--r-full); corner-shape: round; background: currentColor; opacity: 0.75; }
   .ui-source-card__arrow { flex: none; margin-left: auto; color: var(--fg3); transition: translate var(--dur-sheet) var(--ease-spring), color var(--dur-base) var(--ease); }

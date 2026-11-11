@@ -18,6 +18,7 @@ export function heldTailHeight(current: number, natural: number, visibleBottom: 
 export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElement | null): () => void {
   let target: HTMLElement | null = null
   let written = ''
+  let paddingBottom: string | null = null
   let frame = 0
   let pausedUntil = 0
   let resume = 0
@@ -25,6 +26,7 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
     if (target) target.style.minHeight = ''
     target = null
     written = ''
+    paddingBottom = null
   }
   const sync = (): void => {
     const tail = findTail()
@@ -39,6 +41,12 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
     }
     observer.observe(target)
     if (target.lastElementChild) observer.observe(target.lastElementChild)
+    const padding = getComputedStyle(target).paddingBottom
+    if (paddingBottom !== null && paddingBottom !== padding) {
+      target.style.minHeight = ''
+      written = ''
+    }
+    paddingBottom = padding
     const rect = target.getBoundingClientRect()
     const natural = naturalHeight(target, rect.top)
     const held = heldTailHeight(rect.height, natural, scroller.getBoundingClientRect().bottom - rect.top, scroller.clientHeight)
