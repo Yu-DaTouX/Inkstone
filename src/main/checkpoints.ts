@@ -62,6 +62,8 @@ export function isCheckpointableDir(cwd: string): boolean {
 }
 
 const locks = new Map<string, Promise<unknown>>()
+const maintenance = new Map<string, string>()
+const skippedCaptures = new Map<string, { at: number; reason: 'maintenance' | 'busy'; count: number }>()
 const GC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 function serialized<T>(key: string, task: () => Promise<T>): Promise<T> {
   const previous = locks.get(key) ?? Promise.resolve()
@@ -69,6 +71,31 @@ function serialized<T>(key: string, task: () => Promise<T>): Promise<T> {
   locks.set(key, next)
   void next.finally(() => { if (locks.get(key) === next) locks.delete(key) }).catch(() => undefined)
   return next
+}
+
+export function checkpointSkipState(cwd: string): { at: number; reason: 'maintenance' | 'busy'; count: number } | null {
+  return skippedCaptures.get(normalizeCwd(cwd)) ?? null
+}
+
+function noteCaptureSkipped(key: string, waitedMs: number): void {
+  const reason = maintenance.has(key) ? 'maintenance' : 'busy'
+  const previous = skippedCaptures.get(key)
+  skippedCaptures.set(key, { at: Date.now(), reason, count: (previous?.count ?? 0) + 1 })
+  console.warn(
+    reason === 'maintenance'
+      ? `[checkpoints] checkpoint skipped: the project lock stayed held by ${maintenance.get(key)} for ${waitedMs}ms; the next turn will try again`
+      : `[checkpoints] checkpoint skipped: the project lock stayed busy for ${waitedMs}ms; the next turn will try again`
+  )
+}
+
+async function dropRefs(cwd: string, dir: string, shas: Iterable<string>): Promise<void> {
+  const list = [...new Set(shas)].filter((sha) => /^[0-9a-f]{40}$/.test(sha))
+  if (!list.length) return
+  await shadowGit(cwd, dir, ['update-ref', '--stdin'], {
+    allowFailure: true,
+    timeout: 30_000,
+    stdin: `${list.map((sha) => `delete refs/cp/${sha}`).join('\n')}\n`
+  })
 }
 
 async function readIndex(dir: string, cwd: string, onCorrupt: 'reset' | 'throw' = 'reset'): Promise<Index> {
@@ -276,8 +303,12 @@ export async function captureCheckpoint(cwd: string, sessionKey: string, text: s
   if (!isCheckpointableDir(cwd) || !sessionKey) return null
   const key = normalizeCwd(cwd)
   const deadline = createGitDeadline(budgetMs, () => performance.now())
+  const waitStart = performance.now()
   while (locks.has(key)) {
-    if (deadline.expired()) return null
+    if (deadline.expired()) {
+      noteCaptureSkipped(key, Math.round(performance.now() - waitStart))
+      return null
+    }
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       await Promise.race([
@@ -331,8 +362,12 @@ async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind:
   index.records.push(record)
   index.lastTree = tree
   index.lastSha = sha
-  if (index.records.length > MAX_RECORDS) index.records.splice(0, index.records.length - MAX_RECORDS)
+  const discarded = index.records.length > MAX_RECORDS ? index.records.splice(0, index.records.length - MAX_RECORDS) : []
   await writeIndex(dir, index)
+  if (discarded.length) {
+    const alive = new Set(index.records.map((r) => shaOf(r)).filter((x): x is string => !!x))
+    await dropRefs(cwd, dir, discarded.map((r) => shaOf(r)).filter((x): x is string => !!x && !alive.has(x))).catch(() => undefined)
+  }
   return viewOf(record)
 }
 
@@ -423,6 +458,25 @@ export function restoreCheckpoint(cwd: string, recordId: string, sessionKey: str
   })
 }
 
+async function hasCorruptBackup(dir: string): Promise<boolean> {
+  try {
+    return (await readdir(dir)).some((name) => name.startsWith('index.json.corrupt-'))
+  } catch {
+    return true
+  }
+}
+
+async function orphanRefs(cwd: string, dir: string, alive: Set<string>): Promise<string[]> {
+  const listed = await shadowGit(cwd, dir, ['for-each-ref', '--format=%(refname)', 'refs/cp/'], { allowFailure: true, timeout: 30_000 })
+  if (!listed.ok) return []
+  const orphans: string[] = []
+  for (const line of listed.stdout.split('\n')) {
+    const match = /^refs\/cp\/([0-9a-f]{40})$/.exec(line.trim())
+    if (match && !alive.has(match[1])) orphans.push(match[1])
+  }
+  return orphans
+}
+
 export async function pruneCheckpoints(now = Date.now()): Promise<void> {
   let dirs: string[]
   try {
@@ -446,15 +500,21 @@ export async function pruneCheckpoints(now = Date.now()): Promise<void> {
         await rm(dir, { recursive: true, force: true })
         return
       }
-      if (kept.length === index.records.length) return
       const alive = new Set(kept.map((r) => shaOf(r)).filter((s): s is string => !!s))
       const dropped = new Set(index.records.map((r) => shaOf(r)).filter((s): s is string => !!s && !alive.has(s)))
       const cwd = index.cwd
+      const orphans = cwd && existsSync(cwd) && !(await hasCorruptBackup(dir)) ? await orphanRefs(cwd, dir, alive) : []
+      if (kept.length === index.records.length && !orphans.length) return
       let gcAt = index.lastGcAt
       if (cwd && existsSync(cwd)) {
-        for (const sha of dropped) await shadowGit(cwd, dir, ['update-ref', '-d', `refs/cp/${sha}`], { allowFailure: true })
+        await dropRefs(cwd, dir, [...dropped, ...orphans])
         if (now - (index.lastGcAt ?? 0) >= GC_INTERVAL_MS) {
-          await shadowGit(cwd, dir, ['gc', '--prune=now', '--quiet'], { allowFailure: true, timeout: 120_000 })
+          maintenance.set(lockKey, 'gc')
+          try {
+            await shadowGit(cwd, dir, ['gc', '--prune=now', '--quiet'], { allowFailure: true, timeout: 120_000 })
+          } finally {
+            maintenance.delete(lockKey)
+          }
           gcAt = now
         }
       }

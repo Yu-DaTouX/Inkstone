@@ -8,7 +8,7 @@ import type { GitActionExpected } from '../shared/git-actions'
 import { digestOf } from '../shared/git-actions'
 import type { GitRefOption, GitRepoState, GitStatusParse } from '../shared/git'
 import { parseStatusV2 } from '../shared/git'
-import { classifyGitRunError, sanitizedGitEnv, timeoutWithin } from './git-run-policy'
+import { classifyGitRunError, readOnlyGitEnv, sanitizedGitEnv, timeoutWithin } from './git-run-policy'
 import type { GitDeadline, GitErrorCode } from './git-run-policy'
 
 export function killProcessTree(child: ChildProcess): void {
@@ -69,7 +69,7 @@ const GIT_BASE_ARGS = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', '-c
 
 export function gitReadBytes(cwd: string, args: string[], timeout = DEFAULT_TIMEOUT): Promise<{ ok: true; stdout: Buffer } | { ok: false; error: string }> {
   return new Promise((resolve) => {
-    const child = execFile('git', [...GIT_BASE_ARGS, ...args], { cwd, windowsHide: true, maxBuffer: MAX_BUFFER, encoding: 'buffer', env: sanitizedGitEnv(process.env, {}) }, (error, stdout, stderr) => {
+    const child = execFile('git', [...GIT_BASE_ARGS, ...args], { cwd, windowsHide: true, maxBuffer: MAX_BUFFER, encoding: 'buffer', env: sanitizedGitEnv(process.env, readOnlyGitEnv(args)) }, (error, stdout, stderr) => {
       clearTimeout(timer)
       if (error) resolve({ ok: false, error: stderr.toString('utf8').trim() || error.message })
       else resolve({ ok: true, stdout })
@@ -80,7 +80,7 @@ export function gitReadBytes(cwd: string, args: string[], timeout = DEFAULT_TIME
 
 export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = {}): Promise<GitRunResult> {
   const full = [...GIT_BASE_ARGS, ...args]
-  const env = sanitizedGitEnv(process.env, opts.env ?? {})
+  const env = sanitizedGitEnv(process.env, { ...readOnlyGitEnv(args), ...(opts.env ?? {}) })
   const timeout = timeoutWithin(opts.timeout ?? DEFAULT_TIMEOUT, opts.deadline)
   if (timeout <= 0) {
     const message = pick('git 查询总期限已到', 'Git query deadline reached')

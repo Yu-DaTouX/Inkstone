@@ -50,6 +50,57 @@ export const GIT_READ_CONFIG: readonly string[] = [
   '-c', 'color.ui=false'
 ]
 
+const READ_ONLY_GIT_COMMANDS = new Set([
+  'status',
+  'diff',
+  'diff-index',
+  'diff-tree',
+  'diff-files',
+  'log',
+  'show',
+  'rev-parse',
+  'rev-list',
+  'ls-files',
+  'ls-tree',
+  'cat-file',
+  'for-each-ref',
+  'show-ref',
+  'merge-base',
+  'name-rev',
+  'describe',
+  'blame',
+  'grep',
+  'check-ignore'
+])
+
+const GLOBAL_OPTIONS_WITH_VALUE = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--super-prefix', '--config-env'])
+
+export function gitSubcommand(args: readonly string[]): { name: string; rest: string[] } | null {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]
+    if (GLOBAL_OPTIONS_WITH_VALUE.has(arg)) {
+      i += 1
+      continue
+    }
+    if (arg.startsWith('-')) continue
+    return { name: arg, rest: args.slice(i + 1) as string[] }
+  }
+  return null
+}
+
+export function isReadOnlyGitInvocation(args: readonly string[]): boolean {
+  const command = gitSubcommand(args)
+  if (!command) return false
+  if (READ_ONLY_GIT_COMMANDS.has(command.name)) return !command.rest.some((arg) => arg === '--output' || arg.startsWith('--output='))
+  if (command.name === 'worktree') return command.rest[0] === 'list'
+  if (command.name === 'symbolic-ref') return command.rest.filter((arg) => !arg.startsWith('-')).length <= 1 && !command.rest.some((arg) => arg === '-d' || arg === '--delete')
+  return false
+}
+
+export function readOnlyGitEnv(args: readonly string[]): Record<string, string> {
+  return isReadOnlyGitInvocation(args) ? { GIT_OPTIONAL_LOCKS: '0' } : {}
+}
+
 export interface GitDeadline {
   remaining(): number
   expired(): boolean
