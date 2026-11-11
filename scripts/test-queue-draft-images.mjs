@@ -1,7 +1,10 @@
-export async function runQueueImageTests(ok) {
-  const { queueImagesToAttachments, mergeQueueAttachments, planQueueRecovery } = await import(
-    '../out/test/queue-images.mjs'
-  )
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  await runQueueImageTests(ok, await compile('src/renderer/src/state/queue-images.ts', { platform: 'neutral' }))
+})
+
+export async function runQueueImageTests(ok, { queueImagesToAttachments, mergeQueueAttachments, planQueueRecovery }) {
 
   console.log('\n--- 队列图片回到输入框 ---')
 

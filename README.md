@@ -95,7 +95,8 @@ npm run launch
 | `npm run dev` | electron-vite 开发服务器 |
 | `npm run build` | 构建到 `out/` |
 | `npm run typecheck` | 主进程与渲染端类型检查、CSS 与分层检查 |
-| `npm run test:unit` | 单元测试（依赖已构建的 `out/`） |
+| `npm run test:unit` | 完整单元测试（依赖已构建的 `out/`） |
+| `npm run test:unit -- queue agents-doc` | 按文件名前缀运行独立套件；加 `--list` 只看清单。未迁移套件明确报错，不会退回全量执行 |
 | `npm run test:live -- <场景>` | Electron 场景检查；部分场景会请求真实模型，按场景选择 |
 | `npm run check` | 完整检查（类型、图标、构建、单测、设计度量、核心 live 场景） |
 | `npm run vendor:pi` / `npm run upgrade:pi` | 提取或升级随包 pi 运行时 |

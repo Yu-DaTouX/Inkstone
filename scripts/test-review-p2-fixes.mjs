@@ -133,7 +133,7 @@ try {
   const source = (file) => readFileSync(file, 'utf8')
   const agent = source('src/main/agent.ts')
   assert.match(agent, /isCompacting: false, pendingMessageCount: 0 \}/)
-  assert.match(agent, /const terminal = this\.turn\.terminal\s+void this\.persistTurnTiming\(\)\s+this\.turn\.terminal = terminal/)
+  assert.match(agent, /const terminal = this\.turn\.terminal[\s\S]{0,240}void this\.persistTurnTiming\(\)\s+this\.turn\.terminal = terminal/)
   assert.equal((agent.match(/this\.clearSavedQueue\(\)/g) ?? []).length, 2)
   const main = source('src/main/index.ts')
   assert.match(main, /'data-root-writer', error\); dialog\.showErrorBox/)

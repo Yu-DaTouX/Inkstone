@@ -18,6 +18,20 @@ export class BrowserWindow {
 }
 export class Menu {}
 export class View {}
+export const session = {
+  defaultSession: {},
+  fromPartition() {
+    return {
+      on() {},
+      setPermissionRequestHandler() {},
+      setPermissionCheckHandler() {},
+      webRequest: { onBeforeRequest() {}, onHeadersReceived() {} },
+      setProxy: async () => {},
+      resolveProxy: async () => 'PROXY 127.0.0.1:1',
+      closeAllConnections: async () => {}
+    }
+  }
+}
 export class MenuItem {}
 export class WebContentsView {
   constructor() {
@@ -101,11 +115,13 @@ const window = {
 }
 globalThis.__browserWindows = [window]
 
+let shutdownPinnedNetworkGuard = async () => {}
+
 try {
   const outfile = join(dir, 'browser.mjs')
   await build({
     stdin: {
-      contents: "export { BrowserController } from './src/main/browser'",
+      contents: "export { BrowserController } from './src/main/browser'\nexport { shutdownPinnedNetworkGuard } from './src/main/net/pinned-network'",
       resolveDir: process.cwd(),
       loader: 'ts'
     },
@@ -124,7 +140,8 @@ try {
       }
     ]
   })
-  const { BrowserController } = await import(pathToFileURL(outfile).href)
+  const { BrowserController, shutdownPinnedNetworkGuard: shutdown } = await import(pathToFileURL(outfile).href)
+  shutdownPinnedNetworkGuard = shutdown
 
   const gateCalls = []
   const gate = {
@@ -177,5 +194,6 @@ try {
 
   console.log('test-browser-redirect-gate: 全部通过')
 } finally {
+  await shutdownPinnedNetworkGuard()
   await rm(dir, { recursive: true, force: true })
 }

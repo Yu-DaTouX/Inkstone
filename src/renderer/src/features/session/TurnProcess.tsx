@@ -187,7 +187,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const markerFirst = !!compactionAfter && (!halves || !before?.length)
   const expansionScope = useContext(ToolExpansionScope)
   const tracksOpened = live || process.length > HISTORY_SEGMENTS
-  useSyncExternalStore(toolExpansion.subscribe, () => (tracksOpened ? openedCalls(process, expansionScope) : ''))
+  useSyncExternalStore(toolExpansion.subscribe, () => (tracksOpened ? openedCalls(process, expansionScope) : ''), () => '')
   const userOpened = (segment: TurnSegment): boolean => segment.tools.some((call) => callOpened(expansionScope, call.id))
   const picked = stage
     ? pickLiveSegments(merged, stageSegmentCount(merged), userOpened)

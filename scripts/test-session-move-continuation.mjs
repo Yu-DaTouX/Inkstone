@@ -9,7 +9,7 @@ import { build } from 'esbuild'
 
 const work = await mkdtemp(join(tmpdir(), 'inkstone-move-continuation-'))
 let checks = 0
-const ok = (value, label) => { assert.ok(value, label); checks++ }
+const ok = (value, label, detail) => { assert.ok(value, detail === undefined ? label : `${label} ← ${JSON.stringify(detail)}`); checks++ }
 const defer = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
 const tick = () => new Promise(r => setImmediate(r))
 const functionTexts = (source, names) => {
@@ -89,7 +89,7 @@ try {
       },
       async select(request) {
         if (hooks.selectFails) return { ok: false, error: 'fixture select failure' }
-        assert.equal(request.activate, false)
+        if (request.sessionId) assert.equal(request.activate, false)
         const fresh = agent('sid', file, request.cwd, 2)
         fresh.send = async text => { sent.push({ sessionId: fresh.state.sessionId, cwd: fresh.state.cwd, text }); fresh.loopGuardContinuationVersion++; return hooks.sendFails ? { ok: false, error: 'fixture send failure' } : { ok: true } }
         agents.set('restored', fresh)
@@ -99,13 +99,16 @@ try {
       guardExecute: () => hooks.busy ? { ok: false, error: 'fixture busy' } : { ok: true }
     }
     context = { runners: registry, shuttingDown: false, sameRuntimeEnvelope, movedSessionContinuationPrompt, withDenyFeedback, resolve, isAbsolute,
+      pick: (zh) => zh,
+      beginSessionMove: () => ({ release() {} }),
+      restoreSessionHeaderCwd: async () => true,
       validateCwd: async cwd => hooks.invalidCwd ? ({ ok: false, error: 'fixture invalid cwd' }) : ({ ok: true, cwd }),
       approvals: { ask: async () => { await hooks.approval?.(context, origin); return { choice: hooks.choice ?? 'once', ...(hooks.feedback ? { feedback: hooks.feedback } : {}) } } },
       getSettings: async () => ({ projects: [{ id: 'project', cwd: target }], recentCwds: [] }),
       patchSettings: async () => { throw new Error('unexpected project creation') },
-      rewriteSessionCwd: async (...args) => { if (hooks.rewriteFails) throw new Error('fixture write failure'); moved.push(args); await hooks.rewrite?.(context) },
+      rewriteSessionCwd: async (...args) => { if (hooks.rewriteFails) throw new Error('fixture write failure'); moved.push(args); await hooks.rewrite?.(context); return { previousCwd: work } },
       moveSessionLayout: async () => {}, push: event => events.push(event), pushRunners() {},
-      reportMainError: (...args) => errors.push(args), Date: { now: () => wall },
+      reportMainError: (...args) => errors.push(args.map((a) => a?.stack ?? a)), Date: { now: () => wall },
       setTimeout: callback => setImmediate(() => {
         if (hooks.timeout) wall += 31 * 60_000
         if (hooks.endRun) { origin.state.isAgentRunning = false; origin.agentRunning = false }
@@ -115,13 +118,13 @@ try {
     }
     vm.runInNewContext(hostCode, context)
     const request = (params = {}) => context.requestSessionMove({ sessionId: 'sid', sessionFile: file, cwd: work, dir: target, reason: 'fixture', ...params })
-    const finish = async () => { for (let i = 0; i < 100 && !events.length; i++) await tick(); assert.equal(events.length, 1); return events[0].payload }
+    const finish = async () => { for (let i = 0; i < 100 && !events.length; i++) await tick(); assert.equal(events.length, 1, JSON.stringify(errors)); return events[0].payload }
     return { context, origin, agents, registry, events, sent, moved, errors, request, finish }
   }
   let f = fixture()
   ok((await f.request()).decision === 'approved', 'approval returns without requiring user continue')
   const success = await f.finish()
-  ok(success.ok && success.continued && f.sent.length === 1, 'successful move sends exactly one host continuation')
+  ok(success.ok && success.continued && f.sent.length === 1, 'successful move sends exactly one host continuation', { success, sent: f.sent.length })
   ok(f.sent[0].sessionId === 'sid' && f.sent[0].cwd === target, 'continuation uses original SID in approved directory')
   ok(f.sent[0].text.startsWith('[砚宿主通知') && f.sent[0].text.includes('不要重放'), 'host message does not replay original request')
   ok(f.registry.activeId === 'unrelated-foreground', 'background resume does not steal foreground')

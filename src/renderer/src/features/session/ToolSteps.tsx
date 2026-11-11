@@ -140,7 +140,8 @@ function sameStepProps(a: StepNodeProps, b: StepNodeProps): boolean {
 function WebGroupRow({ row, glowId }: { row: Extract<ToolRow, { kind: 'web' }>; glowId: string | null }): JSX.Element {
   const [stored, setOpen] = useToolExpansion(row.id)
   const scope = useContext(ToolExpansionScope)
-  const inheritedOpen = useSyncExternalStore(toolExpansion.subscribe, () => row.nodes.some(({ call }) => searchStepsOf(call).some((step) => toolExpansion.get(scope, searchExpansionKeys(call.id, step).stable) === true)))
+  const readInheritedOpen = () => row.nodes.some(({ call }) => searchStepsOf(call).some((step) => toolExpansion.get(scope, searchExpansionKeys(call.id, step).stable) === true))
+  const inheritedOpen = useSyncExternalStore(toolExpansion.subscribe, readInheritedOpen, readInheritedOpen)
   const open = stored ?? inheritedOpen
   const panelId = useId()
   const calls = useMemo(() => row.nodes.map((node) => node.call), [row.nodes])

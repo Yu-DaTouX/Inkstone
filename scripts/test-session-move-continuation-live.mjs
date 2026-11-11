@@ -13,7 +13,7 @@ const root = await mkdtemp(join(tmpdir(), 'inkstone-move-live-'))
 const srcDir = join(root, 'proj-a')
 const targetDir = join(root, 'proj-b')
 let checks = 0
-const ok = (value, label) => { assert.ok(value, label); checks++ }
+const ok = (value, label, detail) => { assert.ok(value, detail === undefined ? label : `${label} ← ${JSON.stringify(detail)}`); checks++ }
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const waitFor = async (condition, label, timeoutMs = 30000) => {
   const end = Date.now() + timeoutMs
@@ -96,7 +96,7 @@ try {
   const { AgentController } = await bundle('src/main/agent.ts', 'agent.mjs')
   const { RunnerRegistry } = await bundle('src/main/runners.ts', 'runners.mjs')
   const { sameRuntimeEnvelope } = await bundle('src/core/run-state.ts', 'run-state.mjs')
-  const { rewriteSessionCwd, movedSessionContinuationPrompt } = await bundle('src/main/session-move.ts', 'session-move.mjs')
+  const { rewriteSessionCwd, movedSessionContinuationPrompt, beginSessionMove, restoreSessionHeaderCwd } = await bundle('src/main/session-move.ts', 'session-move.mjs')
 
   const hostCode = functionsOf(await readFile('src/main/index.ts', 'utf8'),
     ['requestSessionMove', 'moveSessionWhenIdle', 'continueMovedSession', 'pinSendTarget', 'pinnedTargetMatches', 'normalizeCwdForIdentity'])
@@ -130,6 +130,7 @@ try {
       getSettings: async () => ({ projects: [{ id: 'p-b', name: 'b', cwd: targetDir }], recentCwds: [] }),
       patchSettings: async patch => { warnings.push('patchSettings 被调用：' + JSON.stringify(patch)); return { projects: [], recentCwds: [] } },
       rewriteSessionCwd,
+      beginSessionMove, restoreSessionHeaderCwd, pick: zh => zh,
       moveSessionLayout: async () => {},
       push: event => events.push({ internal: true, ...event }),
       pushRunners: () => {},
@@ -163,7 +164,7 @@ try {
     ok(answer.decision === 'approved', '批准返回，不要求用户再说继续')
     await waitFor(() => events.some(e => e.ch === 'session-moved'), '宿主发出移动结果')
     const moved = events.find(e => e.ch === 'session-moved').payload
-    ok(moved.ok && moved.continued, '移动成功并在新目录续接（真实 pi）')
+    ok(moved.ok && moved.continued, '移动成功并在新目录续接（真实 pi）', moved)
     const raw = await readFile(started.sessionFile, 'utf8')
     ok(JSON.parse(raw.split('\n')[0]).cwd === targetDir, '会话文件头 cwd 已改写为目标目录')
     ok(raw.split('\n').filter(Boolean).length > 1, '改写没有丢掉会话正文')

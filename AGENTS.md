@@ -17,9 +17,9 @@
 | 命令 | 用途 |
 | --- | --- |
 | `npm run typecheck` | 类型、CSS 与分层检查 |
-| `npm run build` | 构建到 `out/`；`test:unit` 依赖它，`test:live` 不自动构建 |
-| `node scripts/test-<名>.mjs` | 单个测试；只导出 `run…Tests` 的那些由 `test:unit` 汇总调用，不能单跑 |
-| `npm run test:unit` / `npm run test:live -- <场景>` | 全部单元测试 / 单个 Electron 场景 |
+| `npm run build` | 构建到 `out/`；完整 `test:unit` 依赖它，`test:live` 不自动构建 |
+| `npm run test:unit -- <前缀> [<前缀> ...]` | 定向运行，如 `queue agents-doc`；加 `--list` 只看独立/兼容/排除清单，选中未迁移或排除项会拒绝执行 |
+| `npm run test:unit` / `npm run test:live -- <场景>` | 全部单元测试 / 单个 Electron 场景；独立套件也可直接 `node scripts/test-<名>.mjs` |
 | `npm run debug -- help` | 隔离实例、假模型、截图；`npm run debug -- scenario <名>` 跑单个回归场景（源码在 `debug/`） |
 | `npm run dist` / `npm run test:packaged` | 打包 / 验收打包产物；`node_modules` 必须是真实目录，联接目录会漏原生依赖 |
 
@@ -39,6 +39,7 @@
 ## 实现约定
 
 - 不写代码注释（工具指令如 `@ts-expect-error`、`eslint-disable`、许可声明除外），不维护设计、架构或使用文档；仓库里的说明只有根 `README.md`、`THIRD-PARTY.md` 与本文。
+- 新测试写成可直接执行的 `scripts/test-*.mjs`，自动发现，不再加进兼容套件；纯逻辑套件复用 `scripts/lib/test-suite.mjs`，迁移旧套件时从 `scripts/lib/test-legacy-scripts.mjs` 移除登记。真实模型、打包等需单独环境的入口在 `scripts/lib/test-catalog.mjs` 显式排除。
 - 渲染端通过 preload 和 `src/shared/ipc.ts` 调用宿主能力，不直接导入 pi 内部模块。
 - 上下文、恢复、技能、MCP、压缩触发与会话记录交给 pi 原生管理。砚只自己生成压缩摘要（`resources/pi-extensions/context-compact.js`，须排在所有 `before_provider_request` 改写者之后加载，见 `src/main/agent.ts`），并在到达「自动压缩上限」时调用原生 `compact()`（`resources/pi-extensions/auto-compact.js`）。
 - 不裁剪或删改发给模型的历史消息；不恢复旧的预算、召回与目标自动续跑，现有续跑范围以 `DECISIONS.md`「续跑」为准。pi 新增且与砚重复的能力优先适配原生，随包 pi 扩展保持必要且薄。

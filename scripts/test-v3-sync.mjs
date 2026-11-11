@@ -166,8 +166,8 @@ async function runSyncAuditRegressions() {
       const bFile = join(bDir, 'prompts', 'review.md')
       await mkdir(cloud, { recursive: true })
       await put(aFile, 'base')
-      const a = new SyncService({ dataDir: aDir, syncRoot: cloud, piAgentDir: aDir, deviceId: 'a' })
-      const b = new SyncService({ dataDir: bDir, syncRoot: cloud, piAgentDir: bDir, deviceId: 'b' })
+      const a = new SyncService({ dataDir: aDir, syncRoot: cloud, piAgentDir: aDir, deviceId: 'a', confirmImport: async () => true })
+      const b = new SyncService({ dataDir: bDir, syncRoot: cloud, piAgentDir: bDir, deviceId: 'b', confirmImport: async () => true })
       for (const service of [a, b]) assert.equal((await service.sync()).ok, true)
       await writeFile(aFile, 'remote-old')
       await writeFile(bFile, 'local-old')
@@ -228,7 +228,7 @@ async function runSyncAuditRegressions() {
     })
     const skillDir = join(root, 'skill-store')
     const paths = defaultSyncPaths(skillDir)
-    const store = new LocalStore(paths)
+    const store = new LocalStore(paths, { confirmImport: async () => true })
     const skill = name => ({ key: `skill:${name}`, kind: 'skill', payload: 'incoming', modifiedAt: 1 })
     await put(join(skillDir, 'SKILL.md'), 'parent-safe')
     for (const name of ['.', '..', '../escape', 'x/../../escape', 'x\\..\\escape']) {
@@ -320,7 +320,7 @@ const dataB = join(root, 'device-b')
 const sessionValue = 'sess-1111-aaaa'
 
 function service(dataDir, deviceId, deviceName, syncFolder = syncRoot) {
-  return new SyncService({ dataDir, syncRoot: syncFolder, piAgentDir: dataDir, deviceId, deviceName })
+  return new SyncService({ dataDir, syncRoot: syncFolder, piAgentDir: dataDir, deviceId, deviceName, confirmImport: async () => true })
 }
 
 try {

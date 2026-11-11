@@ -90,6 +90,8 @@ try {
           case 'export_html':
             return Promise.resolve({ success: true, data: { path: data.export_html ?? '/tmp/session.html' } })
           case 'new_session':
+            script.newSessions = (script.newSessions ?? 0) + 1
+            data.get_state = { ...(data.get_state ?? { sessionId: 's-1', thinkingLevel: 'off' }), sessionId: `s-${script.newSessions + 1}` }
             return Promise.resolve({ success: true, data: { cancelled: false } })
           case 'bash':
             return Promise.resolve({ success: true, data: { output: 'ok', exitCode: 0, cancelled: false } })

@@ -13,9 +13,16 @@ export function applyTestEnv() {
   return root
 }
 
+export function createTestSandbox(parentEnv = process.env) {
+  const { root, env } = isolatedPaths()
+  return {
+    root,
+    env: { ...Object.fromEntries(Object.entries(parentEnv).filter(([key]) => !HOST_ENV.test(key))), ...env }
+  }
+}
+
 export function isolatedChildEnv() {
-  const { env } = isolatedPaths()
-  return { ...process.env, ...env }
+  return createTestSandbox().env
 }
 
 function isolatedPaths() {

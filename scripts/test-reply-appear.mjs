@@ -8,7 +8,7 @@ import { build } from 'esbuild'
 import { parseHTML } from 'linkedom'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const dir = await mkdtemp(join(tmpdir(), 'yan-reply-appear-'))
+const dir = await mkdtemp(join(ROOT, 'node_modules', '.test-reply-appear-'))
 const outfile = join(dir, 'reply-appear.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/reply-appear.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error', external: ['react'] })
 const { window } = parseHTML('<!doctype html><html><body><div id="root"></div></body></html>')

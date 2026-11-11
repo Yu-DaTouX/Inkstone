@@ -68,6 +68,7 @@ export async function runSnapshotIdentityTests(ok) {
       },
       getState() { return this.state },
       getPendingUiCount() { return 0 },
+      pushSessionLogs() {},
       hasRunningBash() { return false },
       getConn() { return { state: 'ready' } },
       setRunnerGeneration() {},
@@ -98,6 +99,8 @@ export async function runSnapshotIdentityTests(ok) {
     const context = {
       runners: null,
       handoffIdentities: new Map(),
+      primaryRestoring: false,
+      primaryRestoreFile: null,
       push: (msg) => frames.push(msg),
       refreshTrayMenu: noop,
       requestPiPackageActivationTick: noop,

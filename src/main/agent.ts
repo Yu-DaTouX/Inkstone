@@ -1224,19 +1224,30 @@ export class AgentController extends EventEmitter {
       this.hydrateDeferred = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
       return true
     }
-    const matchesExpected = (): boolean => {
+    const matches = (sessionId: string | undefined, sessionFile: string | undefined): boolean => {
       if (!expected) return true
-      if (expected.sessionId !== undefined && this.state?.sessionId !== expected.sessionId) return false
-      if (expected.sessionFile !== undefined && !sameSessionPath(this.state?.sessionFile, expected.sessionFile)) return false
-      if (expected.notSessionId !== undefined && this.state?.sessionId === expected.notSessionId) return false
-      if (expected.notSessionFile !== undefined && sameSessionPath(this.state?.sessionFile, expected.notSessionFile)) return false
+      if (expected.sessionId !== undefined && sessionId !== expected.sessionId) return false
+      if (expected.sessionFile !== undefined && !sameSessionPath(sessionFile, expected.sessionFile)) return false
+      if (expected.notSessionId !== undefined && sessionId === expected.notSessionId) return false
+      if (expected.notSessionFile !== undefined && sameSessionPath(sessionFile, expected.notSessionFile)) return false
       return true
     }
+    const matchesExpected = (): boolean => matches(this.state?.sessionId, this.state?.sessionFile)
     const superseded = (): HydrateResult => ({ ok: false, changed: true })
     const outsideExpected = (): boolean => !!expected && !matchesExpected()
     const state = await this.requireRpc().command('get_state').catch(() => null)
     if (expected && !state?.success) {
       return { ok: false, error: pick('读不到会话状态，没能确认当前会话；请重新打开这个会话', 'Could not read the session state, so the current session is unconfirmed. Reopen this session') }
+    }
+    if (expected && state?.success) {
+      const data = state.data as Record<string, unknown>
+      const sessionId = data.sessionId === undefined ? this.state?.sessionId : String(data.sessionId)
+      const idMismatch =
+        (expected.sessionId !== undefined && sessionId !== expected.sessionId) ||
+        (expected.notSessionId !== undefined && sessionId === expected.notSessionId)
+      if (idMismatch) {
+        return { ok: false, changed: true, error: pick('会话状态与预期不一致，请重新打开这个会话', 'Session state does not match what was expected; reopen this session') }
+      }
     }
     if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
     if (outsideExpected()) {

@@ -1,5 +1,5 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: b34a43f3f64caad65129f27f67a5107dcaf1b510fc6caa08d6a0d30cb8c7d2e7 */
+/* source-sha256: 56c6e87ecc12c6b4af3ea5e19292b90c81c9d71e8778836ec207b06401f63c74 */
 var active = "zh-CN";
 var resolver = null;
 function uiLang() {
@@ -142,6 +142,7 @@ function validateBaseUrl(value) {
     return pick("Base URL \u4E0D\u662F\u5408\u6CD5\u5730\u5740", "Base URL is not a valid address");
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return pick("Base URL \u53EA\u652F\u6301 http / https", "Base URL must be http / https");
+  if (url.username || url.password) return pick("Base URL \u4E0D\u8981\u5185\u5D4C\u8D26\u53F7\u5BC6\u7801\uFF0C\u8BF7\u628A\u5BC6\u94A5\u586B\u5728 API Key \u680F", "Base URL must not embed credentials; put the key in the API Key field");
   return null;
 }
 function validateCustomProvider(input) {

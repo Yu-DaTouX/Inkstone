@@ -1,3 +1,9 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  runQueueItemsTests(ok, await compile('src/main/queue-items.ts'))
+})
+
 function eq(ok, actual, expected, label) {
   const a = JSON.stringify(actual)
   const b = JSON.stringify(expected)

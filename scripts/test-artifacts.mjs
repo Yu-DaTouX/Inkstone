@@ -98,7 +98,7 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   const codexCall = codex.calls[0]
   assert(codexCall.init.headers.originator === 'pi' && codexCall.init.headers['chatgpt-account-id'] === 'acc-1', 'Codex should use the in-app login headers')
   assert(codexCall.body.model === 'gpt-6-luna' && /verbatim/.test(codexCall.body.instructions), 'gpt-image-* must not be sent as the chat model; the cheap relay passes the prompt verbatim')
-  assert(codexCall.body.reasoning.effort === 'low', 'the relay model should run with low reasoning')
+  assert(!('reasoning' in codexCall.body), 'the relay request must not send reasoning effort the server rejects')
   assert(codexCall.body.tools[0].model === 'gpt-image-2.5-sunburst', 'Codex should pin the requested image model on the tool')
   assert(codex.result.revisedPrompt === 'revised' && codex.result.model === 'gpt-image-2.5-sunburst', 'Codex result should keep the revised prompt and image model label')
 
@@ -109,7 +109,7 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
     { prompt: '印章', provider: 'codex' },
     ctx({ credentials: credentials({}, codexAuth), availability: { ...NO_PROVIDERS, codex: true } })
   ))
-  assert(codexFallback.calls[0].body.tools[0].model === 'gpt-image-2.5-flare', 'Codex should default to GPT Image 2.5 Flare')
+  assert(codexFallback.calls[0].body.tools[0].model === 'gpt-image-2-codex', 'Codex should default to the built-in GPT Image model')
   assert(codexFallback.calls.length === 2 && !('model' in codexFallback.calls[1].body.tools[0]), 'Codex should retry without a pinned image model')
   assert(codexFallback.result.model === 'chatgpt-default', 'fallback images should not claim a specific image model')
 
@@ -120,8 +120,8 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
     { prompt: '印章', provider: 'codex' },
     ctx({ credentials: credentials({}, codexAuth), availability: { ...NO_PROVIDERS, codex: true } })
   ))
-  assert(relayFallback.calls[1].body.model === 'gpt-5.5' && relayFallback.calls[1].body.tools[0].model === 'gpt-image-2.5-flare', 'an unavailable relay model should fall back to gpt-5.5')
-  assert(relayFallback.result.model === 'gpt-image-2.5-flare', 'relay fallback keeps the pinned image model label')
+  assert(relayFallback.calls[1].body.model === 'gpt-5.6-sol' && relayFallback.calls[1].body.tools[0].model === 'gpt-image-2-codex', 'an unavailable relay model should fall back to gpt-5.6-sol')
+  assert(relayFallback.result.model === 'gpt-image-2-codex', 'relay fallback keeps the pinned image model label')
 
   await withFetch([['/codex/responses', async () => sse([{ type: 'response.failed', response: { error: { message: 'quota' } } }])]], () => expectCode(
     () => generateImage({ prompt: 'x', provider: 'codex' }, ctx({ credentials: credentials({}, codexAuth), availability: { ...NO_PROVIDERS, codex: true } })),
@@ -137,7 +137,7 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
     { prompt: '印章', provider: 'codex' },
     ctx({ credentials: credentials({}, codexAuth), availability: { ...NO_PROVIDERS, codex: true } })
   ))
-  assert(completedOnly.result.model === 'gpt-image-2.5-flare', 'an image carried only in response.completed output should still be used')
+  assert(completedOnly.result.model === 'gpt-image-2-codex', 'an image carried only in response.completed output should still be used')
   await withFetch([['/codex/responses', async () => new Response('{"error":{"message":"expired"}}', { status: 401 })]], () => expectCode(
     () => generateImage({ prompt: 'x', provider: 'codex' }, ctx({ credentials: credentials({}, codexAuth), availability: { ...NO_PROVIDERS, codex: true } })),
     'codex_auth_rejected',
