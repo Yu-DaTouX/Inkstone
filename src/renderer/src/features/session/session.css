@@ -215,6 +215,7 @@
   .v3-step-deny { flex: none; color: var(--fg3); }
   .v3-step-target { flex: 0 1 auto; }
   .v3-step-line > .v3-step-label { flex-shrink: 1; max-width: 100%; }
+  .v3-think-step .v3-step-line > .v3-step-label { flex-shrink: 0; }
   .v3-process:not([data-headless]) .v3-step-group > .v3-step-panel > .v3-step-nest { border-left: 0; }
   .v3-step-sec { min-width: 0; }
   .v3-step-sec + .v3-step-sec { margin-top: var(--s-6); padding-top: var(--s-6); border-top: var(--hair, 1px) solid var(--line); }
