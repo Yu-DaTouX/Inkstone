@@ -30,6 +30,7 @@ import {
   type LandscapeLayerSpec,
   type LandscapeLayout
 } from './usage-landscape-model'
+import { landscapeSky, traceMoon } from './landscape-sky'
 import './ambient.css'
 
 const LEVELS = 20
@@ -249,6 +250,7 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
   let layout: LandscapeLayout | null = null
   let layers: LayerArt[] = []
   let palette = readPalette(host)
+  let sky = landscapeSky(Date.now())
   let mono = readMonoStack()
   let atlas: HTMLCanvasElement | null = null
   let atlasKey = ''
@@ -277,7 +279,6 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
   let hoverX = 0
   let hoverGoal = 0
   let pulses: Pulse[] = []
-  let glowX = 0
   let stir = 0
   let lastPointerX = 0
   let lastPointerY = 0
@@ -320,10 +321,8 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
     const source = data
     const plan = layout
     const washGain = palette.dark ? 0.7 : 1
-    const summitX = peakX(plan, mainDay(source.near.values))
     const center = farCenter(plan, mainDay(source.near.values))
     layers = plan.visible ? LANDSCAPE_LAYERS.map((spec) => buildLayer(plan, spec, source[spec.window].values, dpr, palette, washGain, center)) : []
-    glowX = summitX + (center - summitX) * 0.55
   }
 
   const ensureAtlas = (): void => {
@@ -386,18 +385,31 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
 
     stir = reduced ? 0 : stir * Math.exp(-dt * 1.6)
     const veil = clamp01(since / 1.6)
-    const discR = plan.rise * 0.15 * dpr
-    const glowR = discR * 3.4
-    const glowCx = (glowX - parallax * PARALLAX_PX * 0.1) * dpr
-    const glowCy = (plan.base - plan.rise * 1.04) * dpr
-    const glow = ctx.createRadialGradient(glowCx, glowCy, 0, glowCx, glowCy, glowR)
-    const glowAlpha = (palette.dark ? 0.15 : 0.1) * veil
-    glow.addColorStop(0, css(palette.ink, glowAlpha))
-    glow.addColorStop(0.27, css(palette.ink, glowAlpha))
-    glow.addColorStop(0.31, css(palette.ink, glowAlpha * 0.38))
-    glow.addColorStop(1, css(palette.ink, 0))
-    ctx.fillStyle = glow
-    ctx.fillRect(glowCx - glowR, glowCy - glowR, glowR * 2, glowR * 2)
+    if (sky) {
+      const discR = plan.rise * 0.12 * dpr
+      const glowR = discR * 3.4
+      const glowCx = (width * (0.16 + sky.progress * 0.68) - parallax * PARALLAX_PX * 0.1) * dpr
+      const glowCy = (plan.base - plan.rise * (0.62 + 0.58 * Math.sin(Math.PI * sky.progress))) * dpr
+      const visible = veil * smoothstep(Math.min(sky.progress, 1 - sky.progress) / 0.04)
+      const glow = ctx.createRadialGradient(glowCx, glowCy, 0, glowCx, glowCy, glowR)
+      const glowAlpha = (palette.dark ? 0.07 : 0.04) * visible * (sky.moon?.illumination ?? 1)
+      glow.addColorStop(0, css(palette.ink, glowAlpha))
+      glow.addColorStop(0.4, css(palette.ink, glowAlpha * 0.3))
+      glow.addColorStop(1, css(palette.ink, 0))
+      ctx.fillStyle = glow
+      ctx.fillRect(glowCx - glowR, glowCy - glowR, glowR * 2, glowR * 2)
+      ctx.save()
+      ctx.fillStyle = css(palette.ink, (palette.dark ? 0.3 : 0.2) * visible)
+      ctx.shadowColor = css(palette.ink, 0.15 * visible)
+      ctx.shadowBlur = discR * 0.08
+      if (sky.moon) traceMoon(ctx, glowCx, glowCy, discR, sky.moon)
+      else {
+        ctx.beginPath()
+        ctx.arc(glowCx, glowCy, discR, 0, Math.PI * 2)
+      }
+      ctx.fill()
+      ctx.restore()
+    }
 
     const band = (center: number, tall: number, speed: number, strength: number): void => {
       if (reduced) return
@@ -662,12 +674,20 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
   const onScroll = (): void => {
     hostRect = host.getBoundingClientRect()
   }
+  const onClock = (): void => {
+    sky = landscapeSky(Date.now())
+    if (!pageVisible || !inViewport) return
+    wake()
+    if (!running && !reduced) draw(0)
+  }
   const onVisibility = (): void => {
     pageVisible = document.visibilityState !== 'hidden'
+    if (pageVisible) onClock()
     apply()
   }
   const onFocus = (): void => {
     focused = true
+    onClock()
     apply()
   }
   const onBlur = (): void => {
@@ -716,6 +736,7 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
     if (measure()) rebuild()
     if (!running) draw(0)
   }, MEASURE_MS)
+  const clock = window.setInterval(onClock, 60_000)
   apply()
 
   return {
@@ -737,6 +758,7 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
     dispose: () => {
       stop()
       window.clearTimeout(settle)
+      window.clearInterval(clock)
       ro.disconnect()
       io.disconnect()
       themeObserver.disconnect()
