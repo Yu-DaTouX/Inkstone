@@ -9,6 +9,7 @@ import type { SubagentRun } from '../shared/ipc'
 import { forkContextError, type SubagentForkSource } from './subagent-fork'
 import { normalizeSubagentId } from '../shared/subagent-id'
 import { writtenPaths } from '../shared/subagent-brief'
+import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { markSubagentResultRead } from './subagent-notify'
 
 const PROGRESS_NOTES = 3
@@ -49,7 +50,6 @@ function patchPathInside(path: string): boolean {
   return !!normalized && !normalized.startsWith('/') && !/^[A-Za-z]:/.test(normalized) && !normalized.split('/').includes('..')
 }
 
-const SUBAGENT_THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const SUMMARY_TASK_CHARS = 80
 
 function startSummary(run: SubagentRun, note?: string): { data: SubagentRun; summary: Record<string, unknown> } {
@@ -231,8 +231,8 @@ export class SubagentService {
       const briefInput = title && (!params.brief || typeof params.brief === 'object') ? { ...(params.brief as Record<string, unknown> | undefined), title } : params.brief
       const thinkingParam = params.thinkingLevel ?? params.thinking
       const thinkingLevel = typeof thinkingParam === 'string' && thinkingParam.trim() ? thinkingParam.trim().toLowerCase() : undefined
-      if (thinkingParam !== undefined && (!thinkingLevel || !SUBAGENT_THINKING_LEVELS.includes(thinkingLevel))) {
-        throw new CapabilityCommandError('subagent_thinking_invalid', `thinking 只能是 ${SUBAGENT_THINKING_LEVELS.join(' / ')}`)
+      if (thinkingParam !== undefined && (!thinkingLevel || !THINKING_LEVELS.includes(thinkingLevel))) {
+        throw new CapabilityCommandError('subagent_thinking_invalid', `thinking 只能是 ${THINKING_LEVELS.join(' / ')}`)
       }
       if (params.fork === true && thinkingLevel) {
         throw new CapabilityCommandError('subagent_fork_thinking', 'fork 子代理沿用当前会话的思考档，不能再传 --thinking；需要别的档位时改派普通子代理')

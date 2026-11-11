@@ -52,6 +52,20 @@ try {
   }
   await assert.rejects(service.run('subagent.start', { task: 'x', isolation: 'worktre', fork: true }, context), { code: 'subagent_isolation_invalid' })
   assert.equal(starts.length, 3, '写错 isolation 时不启动子代理，也不退回共享目录')
+  const levels = []
+  service.get = async () => ({
+    setContext() {},
+    hasActiveWriter: () => false,
+    start: async (_task, _model, _isolation, _brief, _resume, startContext) => { levels.push(startContext.thinkingLevel); return { ok: true, run: { id: 'sub-a1b2c3d4', status: 'running', transcript: [], task: 't' } } }
+  })
+  for (const thinking of ['off', 'xhigh', 'max', ' MAX ']) await service.run('subagent.start', { task: 'x', thinking, isolation: 'none' }, context)
+  await service.run('subagent.start', { task: 'x', thinkingLevel: 'max', isolation: 'none' }, context)
+  assert.deepEqual(levels, ['off', 'xhigh', 'max', 'max', 'max'], '子代理入口接受与主会话相同的思考档，含 max')
+  for (const thinking of ['ultra', '', 5]) {
+    await assert.rejects(service.run('subagent.start', { task: 'x', thinking, isolation: 'none' }, context), { code: 'subagent_thinking_invalid' }, `写错的思考档报错：${JSON.stringify(thinking)}`)
+  }
+  await assert.rejects(service.run('subagent.start', { task: 'x', thinking: 'max', fork: true }, context), { code: 'subagent_fork_thinking' })
+  assert.equal(levels.length, 5, '写错思考档时不启动子代理')
   const autoStarts = []
   let activeWriter = false
   const gitDir = await mkdtemp(join(tmpdir(), 'yan-auto-worktree-'))

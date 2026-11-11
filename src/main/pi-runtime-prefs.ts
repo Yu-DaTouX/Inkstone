@@ -10,6 +10,7 @@ import type {
   PiShareDestination,
   QueueMode
 } from '../shared/ipc'
+import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { PI_AGENT_DIR } from './paths'
 import { modifyPiSettings, readJson, withPiSettingsLock } from './native-compaction-line'
 
@@ -18,7 +19,6 @@ type Json = Record<string, unknown>
 const CACHE_WARMING: readonly PiCacheWarming[] = ['off', 'streaming', 'idle']
 const PROJECT_TRUST: readonly PiProjectTrustDefault[] = ['ask', 'always', 'never']
 const SHARE_DESTINATIONS: readonly PiShareDestination[] = ['auto', 'gist', 'radius']
-const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 const DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300_000
 const MAX_TIMEOUT_MS = 3_600_000
 

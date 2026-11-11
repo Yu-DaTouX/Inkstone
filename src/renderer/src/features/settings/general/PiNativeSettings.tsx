@@ -5,6 +5,7 @@ import type {
   PiProjectTrustDefault,
   PiShareDestination
 } from '../../../../../shared/ipc'
+import { THINKING_LEVELS } from '../../../../../shared/thinking-levels'
 import { useI18n, useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { levelLabel } from '../../../patterns/ThinkingBadge'
@@ -15,7 +16,6 @@ import { piNativeText, type PiNativeText } from './pi-native-text'
 const RETRY_COUNTS = [1, 3, 5, 10]
 const RETRY_DELAYS = [1000, 2000, 5000, 10_000]
 const IDLE_TIMEOUTS = [30_000, 60_000, 120_000, 300_000, 0]
-const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 export interface PiNativeSettingsState {
   settings: PiNativeSettings | null
