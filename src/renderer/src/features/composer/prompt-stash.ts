@@ -202,19 +202,6 @@ export function swapPromptStashInStore(id: string, current: PromptStashInput, no
   return entry
 }
 
-function emitRequest(eventName: string): void {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new Event(eventName))
-}
-
-export function requestPromptStashOpen(): void {
-  emitRequest(PROMPT_STASH_OPEN_EVENT)
-}
-
-export function requestPromptStashSave(): void {
-  emitRequest(PROMPT_STASH_SAVE_EVENT)
-}
-
 export function isPromptStashShortcut(event: {
   key: string
   ctrlKey?: boolean

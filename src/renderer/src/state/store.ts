@@ -456,11 +456,6 @@ export function streamingMessageId(state: Pick<Store, 'session' | 'messages' | '
   return tail && tail.sessionId === state.session?.sessionId && tail.id === id ? undefined : id
 }
 
-export function identityForAwait(state: Pick<Store, 'session' | 'activeRunnerId' | 'runners'>): string {
-  const runtime = runtimeForState(state)
-  return runtime ? `${runtime.runId}|${runtime.sessionId}|${runtime.generation}` : ''
-}
-
 function runtimeForState(
   state: Pick<Store, 'session' | 'activeRunnerId' | 'runners'>
 ): RuntimeEnvelope | null {

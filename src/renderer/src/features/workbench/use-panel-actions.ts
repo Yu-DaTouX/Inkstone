@@ -40,12 +40,6 @@ export function panelToolLabel(kind: PanelToolKind, text: WorkbenchText): string
   return text.tabs[kind]
 }
 
-export function launcherEntryForEvent(event: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean }): LauncherEntry | null {
-  if (event.ctrlKey || event.metaKey || event.altKey) return null
-  const key = event.key.toLowerCase()
-  return LAUNCHER.find((entry) => entry.shortcut.toLowerCase() === key) ?? null
-}
-
 export function usePanelTexts(): { workbench: WorkbenchText; panel: RightPanelText } {
   const { lang } = useI18n()
   return useMemo(() => ({ workbench: workbenchText(lang), panel: rightPanelText(lang) }), [lang])

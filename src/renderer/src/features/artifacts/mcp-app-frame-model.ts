@@ -1,5 +1,5 @@
 import { BRIDGE_SIZE_MAX, BRIDGE_SIZE_MIN } from './model'
-import { MCP_APP_SANDBOX, parseMcpAppUrl, type McpAppUrl } from '../../../../shared/mcp-app-preview'
+import { MCP_APP_SANDBOX, parseMcpAppUrl } from '../../../../shared/mcp-app-preview'
 
 export const MCP_APP_FRAME_SANDBOX = MCP_APP_SANDBOX
 
@@ -8,30 +8,8 @@ export const MCP_APP_FRAME_ALLOW =
 
 export const MCP_APP_FRAME_REFERRER_POLICY = 'no-referrer' as const
 
-export function isSafeMcpAppSandbox(sandbox: string): boolean {
-  return sandbox === MCP_APP_SANDBOX && !sandbox.includes('allow-same-origin')
-}
-
-export function isSafeMcpAppAllow(allow: string): boolean {
-  return allow === MCP_APP_FRAME_ALLOW
-}
-
 export function isMcpAppFrameUrl(src: string): boolean {
   return parseMcpAppUrl(src) !== null
-}
-
-export function parseMcpAppFrameUrl(src: string): McpAppUrl | null {
-  return parseMcpAppUrl(src)
-}
-
-export const MCP_APP_OPAQUE_ORIGIN = 'null'
-
-export function isExpectedMcpAppOrigin(origin: string): boolean {
-  return origin === MCP_APP_OPAQUE_ORIGIN
-}
-
-export function mcpAppFrameKey(instanceId: string, generation: number): string {
-  return `${instanceId}#${generation}`
 }
 
 export type McpAppChannelPhase = 'idle' | 'initializing' | 'ready' | 'closed'

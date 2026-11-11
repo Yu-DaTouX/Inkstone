@@ -16,7 +16,6 @@ import {
 export const SPLIT_COLUMN_PX = 360
 export const SPLIT_MAX_COLUMNS = 5
 export const SPLIT_MIN_PANE_PX = 320
-export const SPLIT_CONSTRAINED_QUERY = '(max-width: 700px)'
 export const SPLIT_CONSTRAINED_WIDTH = 700
 export const DROP_INSET_PX = 8
 export const LEFT_EDGE_PX = 16

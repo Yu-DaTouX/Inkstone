@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { GitChangeEntry, GitChangesResult, GitPathScreen } from '../../../../shared/git'
+import type { GitPathScreen } from '../../../../shared/git'
 import type { UIMessage, UIToolCall } from '../../../../shared/ipc'
 import { callPath, collectTurnChanges, isInsideCwd, readFileDiff } from '../session/turn-changes'
 import { groupIntoTurns } from '../../../../shared/turns'
@@ -53,44 +53,6 @@ export function sessionLineTotals(messages: readonly UIMessage[], cwd?: string):
     files: entries.length,
     entries: countable ? entries : entries.map((file) => ({ ...file, added: null, removed: null }))
   }
-}
-
-function changedFile(entry: GitChangeEntry): RailChangedFile {
-  return {
-    path: entry.path,
-    added: typeof entry.added === 'number' ? entry.added : null,
-    removed: typeof entry.removed === 'number' ? entry.removed : null,
-    untracked: entry.untracked
-  }
-}
-
-export function useGitLineTotals(cwd: string | null, enabled: boolean, refreshKey: string): RailLineTotals | null {
-  const [totals, setTotals] = useState<RailLineTotals | null>(null)
-  useEffect(() => {
-    const git = window.yan?.git
-    if (!cwd || !enabled || !git) {
-      setTotals(null)
-      return undefined
-    }
-    let alive = true
-    git
-      .changes(cwd)
-      .then((result: GitChangesResult) => {
-        if (!alive) return
-        if (!result.ok || typeof result.added !== 'number' || typeof result.removed !== 'number') {
-          setTotals(null)
-          return
-        }
-        setTotals({ added: result.added, removed: result.removed, files: result.files.length, entries: result.files.map(changedFile) })
-      })
-      .catch(() => {
-        if (alive) setTotals(null)
-      })
-    return () => {
-      alive = false
-    }
-  }, [cwd, enabled, refreshKey])
-  return totals
 }
 
 export interface RailOutput {

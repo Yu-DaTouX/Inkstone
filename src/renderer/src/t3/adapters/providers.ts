@@ -1,5 +1,5 @@
 import type { AuthProviderInfo, ModelInfo } from "../../../../shared/ipc";
-import type { ProviderInstanceEntry, ProviderInstanceId } from "./contracts";
+import type { ProviderInstanceEntry } from "./contracts";
 
 const EMPTY_ENTRIES: ReadonlyArray<ProviderInstanceEntry> = [];
 
@@ -71,12 +71,5 @@ export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): b
 }
 
 export function shouldShowInstanceBadge(): boolean {
-  return false;
-}
-
-export function isProviderInstancePickerDisabled(
-  _entry: ProviderInstanceEntry,
-  _instanceId: ProviderInstanceId,
-): boolean {
   return false;
 }

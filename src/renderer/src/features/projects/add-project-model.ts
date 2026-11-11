@@ -21,10 +21,6 @@ export function filterSources(items: readonly AddProjectSourceItem[], query: str
   return items.filter((item) => `${label(item.title)} ${label(item.description)}`.toLowerCase().includes(needle))
 }
 
-export function repoNameOf(nameWithOwner: string): string {
-  return nameWithOwner.split('/').pop() ?? nameWithOwner
-}
-
 export function urlNameOf(url: string): string {
   const last = url.trim().replace(/\/+$/, '').replace(/\.git$/, '').split(/[/:]/).pop() ?? ''
   return last || url

@@ -10,10 +10,6 @@ export type TranslateResult =
   | { ok: true; text: string; service: TranslateService; cached: boolean }
   | { ok: false; error: string }
 
-export function isTranslateService(value: unknown): value is TranslateService {
-  return typeof value === 'string' && (TRANSLATE_SERVICES as readonly string[]).includes(value)
-}
-
 export function isTranslateTarget(value: unknown): value is TranslateTarget {
   return typeof value === 'string' && (TRANSLATE_TARGETS as readonly string[]).includes(value)
 }

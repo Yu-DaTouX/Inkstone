@@ -89,7 +89,6 @@ export function mergeDiscoveredModels<T extends { id: string }>(
   return [...kept, ...discovered.filter((entry) => !ids.has(entry.id))]
 }
 
-export const RECENT_STORAGE_KEY = 'inkstone.v3.modelPicker.recent'
 export const MAX_RECENT = 5
 
 export function shortWindow(tokens: number): string {

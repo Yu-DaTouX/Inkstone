@@ -237,7 +237,6 @@
   "src/shared/host-notice-text.ts": 22,
   "src/shared/mcp-approval.ts": 1,
   "src/shared/mcp-native-import.ts": 2,
-  "src/shared/mcp-registration.ts": 9,
   "src/shared/mcp.ts": 3,
   "src/shared/model-errors.ts": 42,
   "src/shared/question-form.ts": 16,
@@ -256,6 +255,5 @@
   "src/shared/title-samples.ts": 1,
   "src/shared/tool-consent.ts": 13,
   "src/shared/user-skill.ts": 18,
-  "src/shared/visual-blocks.ts": 24,
-  "src/shared/web-search.ts": 3
+  "src/shared/visual-blocks.ts": 24
 }

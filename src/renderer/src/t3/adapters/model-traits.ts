@@ -14,15 +14,6 @@ export type SelectDescriptor = {
   promptInjectedValues?: readonly string[]
 }
 
-export type BooleanDescriptor = {
-  id: string
-  label: string
-  type: 'boolean'
-  currentValue: boolean
-}
-
-export type ProviderOptionDescriptor = SelectDescriptor | BooleanDescriptor
-
 export const REASONING_SELECT_DESCRIPTOR_ID = 'reasoningEffort'
 
 export const ULTRACODE_OPTION_ID = 'ultracode'
@@ -31,12 +22,6 @@ export type TraitsTriggerDisplay = {
   label: string
   speedLabel: null
   otherLabels: readonly string[]
-}
-
-export function isSelectDescriptor(
-  descriptor: ProviderOptionDescriptor | null | undefined
-): descriptor is SelectDescriptor {
-  return descriptor?.type === 'select'
 }
 
 export function descriptorCurrentLabel(descriptor: SelectDescriptor | null): string | null {

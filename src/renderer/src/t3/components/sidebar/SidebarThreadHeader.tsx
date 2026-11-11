@@ -147,15 +147,6 @@ export function SidebarHeaderIconButton({
   );
 }
 
-export function SidebarThreadSearchStatus({ pending }: { pending: boolean }) {
-  const t = useT();
-  return (
-    <p role="status" className="t3-sidebar-search-status">
-      {pending ? t("sidebar.t3.searching") : t("sidebar.t3.noResults")}
-    </p>
-  );
-}
-
 export interface SidebarSearchContentMatchesProps {
   query: string;
   matches: readonly ContentMatch[];

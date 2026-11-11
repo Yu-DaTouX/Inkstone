@@ -29,23 +29,6 @@ export const useTerminalTabs = create<TerminalTabsState>((set) => ({
     })
 }))
 
-export function publishTerminalTabs(key: string, labels: readonly string[], activeIndex: number): void {
-  if (!key) return
-  const clean = labels.map((label) => label.trim()).filter((label) => label.length > 0)
-  useTerminalTabs.getState().publish(key, clean.length ? { labels: clean, activeIndex: Math.max(0, Math.min(clean.length - 1, Math.trunc(activeIndex))) } : null)
-}
-
-export function terminalTabsOf(key: string | null | undefined): TerminalTabsSnapshot | null {
-  if (!key) return null
-  return useTerminalTabs.getState().byKey[key] ?? null
-}
-
-export function terminalTabTitle(key: string | null | undefined): string | null {
-  const snapshot = terminalTabsOf(key)
-  if (!snapshot) return null
-  return snapshot.labels[snapshot.activeIndex] ?? snapshot.labels[0] ?? null
-}
-
 export function useTerminalTabTitle(key: string | null | undefined): string | null {
   const snapshot = useTerminalTabs((state) => (key ? state.byKey[key] : undefined))
   if (!snapshot) return null

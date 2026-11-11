@@ -8,10 +8,6 @@ import { useSessionNav } from './session-nav-store'
 export const SESSION_JUMP_ROW = '[data-sidebar-row][data-session-path]'
 const JUMP_VIEWPORTS = '[data-slot="sidebar-content"], .v3-side-list, .v3-flat-shelves, .v3-side'
 
-export function sessionJumpKeysText(index: number, mac = isMacPlatform()): string {
-  return `${mac ? 'Cmd' : 'Ctrl'}+${index}`
-}
-
 function jumpRows(aside: HTMLElement | null): string[] {
   if (!aside || aside.getClientRects().length === 0) return []
   const boxes: JumpRowBox[] = []

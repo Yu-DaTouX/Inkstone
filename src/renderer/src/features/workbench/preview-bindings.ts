@@ -7,7 +7,6 @@ import {
   keepAllPreviewTabs,
   keepPreviewTab,
   openPreviewTab,
-  previewPathFor,
   previewTabsFor,
   readPreviewBindings,
   selectPreviewTab,
@@ -64,10 +63,6 @@ usePreviewBindings.subscribe((state) => {
 
 export function usePreviewTabs(ownerKey: string | null): PreviewTabs | undefined {
   return usePreviewBindings((s) => previewTabsFor(s.bindings, ownerKey))
-}
-
-export function usePreviewPath(ownerKey: string | null): string | undefined {
-  return usePreviewBindings((s) => previewPathFor(s.bindings, ownerKey))
 }
 
 export function showPreview(ownerKey: string | null, path: string, options?: PreviewOpenOptions): void {

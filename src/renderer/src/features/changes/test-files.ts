@@ -17,10 +17,6 @@ export function isTestFilePath(path: string): boolean {
   return TEST_NAME.test(name) || CLASS_TEST_NAME.test(name)
 }
 
-export function testFilePaths(paths: readonly string[]): string[] {
-  return paths.filter((path) => isTestFilePath(path))
-}
-
 export function countTestFiles(paths: readonly string[]): number {
   let count = 0
   for (const path of paths) if (isTestFilePath(path)) count += 1

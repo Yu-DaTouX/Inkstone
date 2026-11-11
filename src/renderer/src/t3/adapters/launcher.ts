@@ -35,25 +35,3 @@ export function useLauncherActions(owner: WorkspaceOwner | null, onPick: (kind: 
   const reason = useCallback((code: PanelUnavailableReason) => texts.panel.unavailable[code], [texts])
   return useMemo(() => launcherActions({ entries: LAUNCHER, availability, label, reason, onPick }), [availability, label, reason, onPick])
 }
-
-export interface PanelShortcutEvent {
-  key: string
-  altKey?: boolean
-  ctrlKey?: boolean
-  metaKey?: boolean
-  defaultPrevented?: boolean
-  isComposing?: boolean
-}
-
-export function launcherActionForKey(actions: readonly LauncherAction[], event: PanelShortcutEvent): LauncherAction | null {
-  if (event.defaultPrevented || event.isComposing) return null
-  if (event.metaKey || event.ctrlKey || event.altKey) return null
-  const key = event.key.toLowerCase()
-  return actions.find((action) => action.available && action.shortcut.toLowerCase() === key) ?? null
-}
-
-export function launcherShortcutTargetsTyping(target: { closest(selectors: string): unknown } | null): boolean {
-  return target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') != null
-}
-
-export const LAUNCHER_BLOCKING_LAYER_SELECTOR = '[role="dialog"],[role="menu"],[role="listbox"],[role="alertdialog"]'

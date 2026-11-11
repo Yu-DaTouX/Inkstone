@@ -38,12 +38,6 @@ export function mergeSubagentRun(prev: SubagentRun | undefined, next: SubagentRu
   return next
 }
 
-export function dedupeSubagentRuns(runs: readonly SubagentRun[]): SubagentRun[] {
-  const byId = new Map<string, SubagentRun>()
-  for (const run of runs) byId.set(run.id, mergeSubagentRun(byId.get(run.id), run))
-  return [...byId.values()]
-}
-
 export function subagentRunTokens(run: Pick<SubagentRun, 'usage'>): number | null {
   const usage = run.usage
   if (!usage) return null

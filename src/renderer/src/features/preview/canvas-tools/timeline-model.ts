@@ -1,7 +1,6 @@
 import type { CanvasComposition, CanvasCompositionClip } from '../../../../../shared/html-canvas-bridge'
 
 export const TIMELINE_FPS = 30
-export const TIMELINE_SCRUB_STEP = 0.01
 export const TIMELINE_MIN_CLIP_RATIO = 0.006
 
 export interface TimelineTrack {

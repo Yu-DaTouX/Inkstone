@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRunsV3 } from '../../../state/runs-v3'
 import { useStore } from '../../../state/store'
-import { sessionActivityAt } from '../../../features/sidebar/sidebar-model'
 import type { RunSnapshot } from '../../../../../shared/runs'
 import type { SessionSummary, SubagentRun } from '../../../../../shared/ipc'
 import { scopedKeyOf, type SidebarThreadView, type ThreadRef } from './types'
@@ -173,12 +172,4 @@ export function useThreadView(ref: ThreadRef): SidebarThreadView | null {
 export function useActiveThreadKey(): string | null {
   const sessionId = useStore((s) => s.session?.sessionId)
   return sessionId ? scopedKeyOf(sessionId) : null
-}
-
-export function useThreadsActivitySignature(): string {
-  const sessions = useStore((s) => s.sessions)
-  return useMemo(
-    () => sessions.map((session) => `${session.id}:${sessionActivityAt(session)}:${session.archivedAt ?? ''}:${session.pinned ? 1 : 0}:${session.snoozedUntil ?? ''}`).join('|'),
-    [sessions]
-  )
 }

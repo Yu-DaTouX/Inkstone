@@ -41,7 +41,6 @@ export const SESSION_PANEL_PREFIX = 's:'
 export const PANEL_WIDTH_MIN = 360
 export const PANEL_WIDTH_DEFAULT = 720
 export const PANEL_WIDTH_MAX_FRACTION = 0.7
-export const PANEL_WIDTH_STEP = 16
 export const PANEL_GROUPS_MAX = 3
 export const PANEL_GROUP_MIN_WIDTH = 280
 export const PANEL_TOOL_KINDS: readonly PanelToolKind[] = WORKBENCH_TABS.filter(

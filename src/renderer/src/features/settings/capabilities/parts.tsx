@@ -138,10 +138,6 @@ export function Item({
   )
 }
 
-export function ItemHead({ children }: { children: ReactNode }): ReactElement {
-  return <div className="caps-item-head">{children}</div>
-}
-
 export function Actions({ children }: { children: ReactNode }): ReactElement {
   return <div className="caps-actions">{children}</div>
 }

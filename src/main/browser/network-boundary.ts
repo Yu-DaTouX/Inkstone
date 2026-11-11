@@ -43,14 +43,6 @@ export async function shouldBlockHiddenPageRequest(
   return resolves(host)
 }
 
-export function isLoopbackOrigin(value: string): boolean {
-  try {
-    return isPrivateHost(new URL(value).hostname)
-  } catch {
-    return false
-  }
-}
-
 function isLoopbackHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
   return h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^127\./.test(h)

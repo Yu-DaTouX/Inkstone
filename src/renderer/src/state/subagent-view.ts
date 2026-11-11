@@ -163,11 +163,6 @@ export function activeSubagentRuns(runs: SubagentRun[], scope: SubagentScope): S
   })
 }
 
-export function hasVisibleSubagents(s: { subagents: SubagentRun[]; session?: { sessionId?: string; conversationId?: string } | null }): boolean {
-  const sessionIds = [s.session?.sessionId, s.session?.conversationId].filter((v): v is string => !!v)
-  return visibleSubagentRuns(s.subagents, { sessionIds }).length > 0
-}
-
 export function subagentCost(runs: readonly SubagentRun[]): number {
   return dedupeRuns([...runs]).reduce((sum, run) => {
     const cost = run.usage?.cost

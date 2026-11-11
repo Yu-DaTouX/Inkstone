@@ -83,13 +83,6 @@ export function editArgLines(args: unknown): CallDiffLine[] | null {
   return lines.length ? lines : null
 }
 
-export function callLineStats(call: Pick<UIToolCall, 'details'>): { added: number; removed: number } | null {
-  const diff = readFileDiff(call.details)
-  if (diff) return diff.added >= 0 && diff.removed >= 0 ? { added: diff.added, removed: diff.removed } : null
-  const pi = readPiDiff(call.details)
-  return pi ? { added: pi.added, removed: pi.removed } : null
-}
-
 export function callPath(call: UIToolCall): string {
   const a = (call.args ?? {}) as Record<string, unknown>
   for (const key of ['path', 'file_path', 'filePath']) {

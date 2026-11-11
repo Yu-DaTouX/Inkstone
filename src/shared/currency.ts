@@ -12,8 +12,6 @@ export interface UsageCurrencySettings {
   rates?: Partial<Record<FiatCurrency, number>>
 }
 
-export const DEFAULT_USAGE_CURRENCY: UsageCurrencySettings = { currency: 'USD' }
-
 const SYMBOL: Record<FiatCurrency, string> = { USD: '$', CNY: '¥', EUR: '€', JPY: 'JP¥', HKD: 'HK$', GBP: '£' }
 
 function validRate(value: unknown): value is number {

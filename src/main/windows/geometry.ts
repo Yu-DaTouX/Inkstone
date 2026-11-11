@@ -11,7 +11,6 @@ export interface Size {
 }
 
 export const QUICK_ASK_SIZE: Size = { width: 560, height: 160 }
-export const AUX_MARGIN = 12
 
 export function clampToArea(bounds: Rect, area: Rect): Rect {
   const width = Math.min(bounds.width, area.width)

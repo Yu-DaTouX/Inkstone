@@ -702,18 +702,6 @@ const mcpToolService = await import('../node_modules/esbuild/lib/main.js').then(
 )
 const { runMcpTests } = await import('./test-mcp.mjs')
 
-const mcpRegistrationShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/mcp-registration.ts'],
-    outfile: 'out/test/mcp-registration.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/mcp-registration.mjs'))
-)
-const { runMcpRegistrationTests } = await import('./test-mcp-registration.mjs')
-
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/extensions-inventory.ts'],
@@ -1557,7 +1545,6 @@ await runMcpTests(ok, {
   manager: mcpManager,
   toolService: mcpToolService
 })
-await guarded("runMcpRegistrationTests(ok, { shared: mcpRegistrationShared ", () => runMcpRegistrationTests(ok, { shared: mcpRegistrationShared }))
 await guarded("runExtensionInventoryTests(ok)", () => runExtensionInventoryTests(ok))
 
 await guarded("runSubagentIsolationTests(ok, subagentIsolation)", () => runSubagentIsolationTests(ok, subagentIsolation))
@@ -1790,19 +1777,6 @@ const ipcError = await import('../node_modules/esbuild/lib/main.js').then(({ bui
 )
 const { runIpcErrorTests } = await import('./test-ipc-error.mjs')
 await guarded("runIpcErrorTests(ok, ipcError)", () => runIpcErrorTests(ok, ipcError))
-
-const webSearch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/web-search.ts'],
-    outfile: 'out/test/web-search.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/web-search.mjs'))
-)
-const { runWebSearchTests } = await import('./test-web-search.mjs')
-await guarded("runWebSearchTests(ok, webSearch)", () => runWebSearchTests(ok, webSearch))
 
 const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({

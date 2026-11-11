@@ -24,16 +24,6 @@ export function shortProject(path: string): string {
   return parts[parts.length - 1] || path
 }
 
-export function compactCwd(cwd: string): string {
-  const sep = cwd.includes('\\') ? '\\' : '/'
-  const home = /^(?:[A-Za-z]:[\\/]Users[\\/][^\\/]+|\/(?:home|Users)\/[^/]+)(?=[\\/]|$)/.exec(cwd)
-  const parts = (home ? cwd.slice(home[0].length) : cwd).split(/[\\/]+/).filter(Boolean)
-  const head = home ? ['~'] : cwd.startsWith('/') ? [''] : []
-  const full = [...head, ...parts]
-  if (full.length <= 3) return full.join(sep) || cwd
-  return [full[0], '\u2026', ...parts.slice(-2)].join(sep)
-}
-
 function activityOf(session: SessionSummary): number {
   return session.lastActivityAt ?? session.updatedAt
 }
@@ -159,51 +149,6 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
   return [{ key: 'pinned', slot: 'pinned', label: options.pinnedLabel, cwd: '', current: false, list: pinned }, ...rest]
 }
 
-export function withIdleProjects(
-  groups: readonly SidebarGroup[],
-  projects: readonly ProjectRecord[],
-  projectNames: Record<string, string>
-): SidebarGroup[] {
-  const idle = projects
-    .filter((project) => !project.archived && !groups.some((group) => group.projectId === project.id || (!!group.cwd && sameCwd(group.cwd, project.cwd))))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map((project) => ({
-      key: `project:${project.id}`,
-      slot: `cwd:${project.cwd.toLowerCase()}`,
-      label: project.name || projectNames[project.cwd] || shortProject(project.cwd),
-      projectId: project.id,
-      cwd: project.cwd,
-      current: false,
-      list: []
-    }))
-  return [...groups, ...idle]
-}
-
-export interface FlatEntry {
-  session: SessionSummary
-  group: SidebarGroup
-}
-
-export interface FlatSidebar {
-  pinned: FlatEntry[]
-  rows: FlatEntry[]
-}
-
-export const FLAT_PAGE_SIZE = 30
-
-export function buildFlatSidebar(groups: readonly SidebarGroup[], scopeKey: string | null): FlatSidebar {
-  const entries: FlatEntry[] = []
-  for (const group of groups) {
-    if (scopeKey && group.key !== scopeKey) continue
-    for (const session of group.list) entries.push({ session, group })
-  }
-  entries.sort((a, b) => activityOf(b.session) - activityOf(a.session))
-  return {
-    pinned: entries.filter((entry) => entry.session.pinned),
-    rows: entries.filter((entry) => !entry.session.pinned)
-  }
-}
-
 export function isGlobalGroup(group: SidebarGroup): boolean {
   return !group.projectId && group.list.length > 0 && group.list.every((session) => session.scope === 'global')
 }
@@ -216,14 +161,6 @@ export function projectMonogram(label: string): string {
   const digit = first.slice(1).find((char) => /\d/.test(char))
   const second = digit ?? (words.length > 1 ? [...words[words.length - 1]][0] : first[1] ?? '')
   return (first[0] + second).toUpperCase()
-}
-
-export const PROJECT_TONES = 7
-
-export function projectTone(label: string): number {
-  let hash = 0
-  for (const char of label.toLowerCase()) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0
-  return (hash % PROJECT_TONES) + 1
 }
 
 export function compactAgo(at: number, now: number, lang: 'zh-CN' | 'en-US'): string {
@@ -248,58 +185,4 @@ export function sessionProjectLabel(session: SessionSummary, projects: readonly 
   if (record) return { label: record.name || projectNames[record.cwd] || shortProject(record.cwd), cwd: record.cwd }
   const cwd = session.cwd || ''
   return { label: (cwd && projectNames[cwd]) || (cwd ? shortProject(cwd) : ''), cwd }
-}
-
-export interface ArchivedProject {
-  record: ProjectRecord
-  label: string
-  sessionCount: number
-}
-
-export interface ArchivedView {
-  projects: ArchivedProject[]
-  sessions: SessionSummary[]
-}
-
-export function buildArchivedView(options: {
-  sessions: readonly SessionSummary[]
-  projects: readonly ProjectRecord[]
-  projectNames: Record<string, string>
-  titles: Record<string, string>
-  manualTitles: Record<string, string>
-  query: string
-}): ArchivedView {
-  const query = options.query.trim().toLowerCase()
-  const archivedProjects = options.projects.filter((project) => project.archived)
-  const idCounts = new Map<string, number>()
-  const cwdCounts = new Map<string, number>()
-  for (const session of options.sessions) {
-    if (session.archivedAt) continue
-    if (session.projectId) idCounts.set(session.projectId, (idCounts.get(session.projectId) ?? 0) + 1)
-    else if (session.cwd) {
-      const key = session.cwd.toLowerCase()
-      cwdCounts.set(key, (cwdCounts.get(key) ?? 0) + 1)
-    }
-  }
-  const labelOf = (record: ProjectRecord): string => record.name || options.projectNames[record.cwd] || shortProject(record.cwd)
-  const titleOf = (session: SessionSummary): string =>
-    options.manualTitles[session.id] ?? options.titles[session.id] ?? session.title
-
-  const projects = archivedProjects
-    .map((record) => ({
-      record,
-      label: labelOf(record),
-      sessionCount: (idCounts.get(record.id) ?? 0) + (cwdCounts.get(record.cwd.toLowerCase()) ?? 0)
-    }))
-    .filter((item) => !query || item.label.toLowerCase().includes(query) || item.record.cwd.toLowerCase().includes(query))
-    .sort((a, b) => b.record.updatedAt - a.record.updatedAt)
-
-  const sessions = options.sessions
-    .filter((session) => !!session.archivedAt)
-    .filter((session) => {
-      if (!query) return true
-      return [titleOf(session), session.cwd, session.path].some((value) => value.toLowerCase().includes(query))
-    })
-    .sort((a, b) => activityOf(b) - activityOf(a))
-  return { projects, sessions }
 }

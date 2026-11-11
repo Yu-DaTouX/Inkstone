@@ -1,9 +1,9 @@
 import { pick } from '../../shared/ui-lang'
 import type { McpServerStatus } from '../../shared/mcp'
 import type { McpConnectionManager } from './connection-manager'
-import { loadMcpServers, mcpServersForProject, type McpConfigLoadResult } from './config'
+import { mcpServersForProject, type McpConfigLoadResult } from './config'
 import { isInkstoneManaged, type McpAppServerConfig } from './app-spec'
-import { mcpAppHost, type McpAppHost, type McpAppToolDescriptor } from './app-host'
+import type { McpAppHost, McpAppToolDescriptor } from './app-host'
 
 export interface SettingsSafeAccess {
   loadServers(): McpConfigLoadResult
@@ -134,12 +134,4 @@ export async function probeManagedServer(
   await host.reconcile(serverId)
   const tools: McpAppToolDescriptor[] = await host.listToolsWithMeta(serverId, { projectId: callerProjectId })
   return { tools: tools.map((tool) => tool.name) }
-}
-
-export function createDefaultSettingsSafeAccess(): SettingsSafeAccess {
-  return {
-    loadServers: () => loadMcpServers(),
-    legacyManagers: () => [],
-    host: () => mcpAppHost()
-  }
 }

@@ -72,10 +72,6 @@ function cloneRow(row: HTMLElement): HTMLElement {
 
 let cancelActive: (() => void) | null = null
 
-export function cancelPointerDrag(): void {
-  cancelActive?.()
-}
-
 export function trackPointerDrag(start: DragStart, begin: (point: DragPoint) => DragSession | null, onStarted?: () => void): void {
   if (start.button !== 0 || cancelActive) return
   const pointerId = start.pointerId

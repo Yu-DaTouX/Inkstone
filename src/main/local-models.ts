@@ -1,7 +1,6 @@
 import { pick } from '../shared/ui-lang'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile, rename, unlink } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { LocalModelServer } from '../shared/custom-provider'
@@ -34,33 +33,6 @@ export async function readLocalModelUrls(): Promise<string[]> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw new Error(pick(`本地模型地址配置损坏；为保护原配置，已拒绝继续：${error instanceof Error ? error.message : String(error)}`, `The local model address config is corrupt; refusing to continue to protect it: ${error instanceof Error ? error.message : String(error)}`))
   }
-}
-
-export function normalizeLocalModelUrls(urls: unknown[]): string[] {
-  const out: string[] = []
-  for (const raw of urls) {
-    if (typeof raw !== 'string' || !raw.trim()) continue
-    const hasScheme = /^[a-z]+:\/\//i.test(raw.trim())
-    if (hasScheme && !/^https?:\/\//i.test(raw.trim())) continue
-    const base = localServiceBase(raw, 80)
-    if (!out.includes(base)) out.push(base)
-  }
-  return out.slice(0, 16)
-}
-
-export async function saveLocalModelUrls(urls: unknown[]): Promise<string[]> {
-  const clean = normalizeLocalModelUrls(urls)
-  await mkdir(YAN_DIR, { recursive: true })
-  const temp = `${CONFIG_FILE}.${process.pid}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temp, `${JSON.stringify({ urls: clean }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
-    await rename(temp, CONFIG_FILE)
-  } catch (error) {
-    await unlink(temp).catch(() => undefined)
-    throw error
-  }
-  resetLocalImageCache()
-  return clean
 }
 
 interface ChatTarget {

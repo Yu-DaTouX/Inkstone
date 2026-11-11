@@ -109,10 +109,6 @@ export function rememberClosed(key: string, surface: RightPanelSurface): void {
   useClosedPanels.getState().remember(key, surface)
 }
 
-export function forgetClosed(key: string, surfaceId: string): void {
-  useClosedPanels.getState().forget(key, surfaceId)
-}
-
 export function reopenLast(key: string): RightPanelSurface | null {
   return useClosedPanels.getState().take(key)
 }
@@ -121,12 +117,6 @@ export function reopenLastClosed(): RightPanelSurface | null {
   const surface = reopenLast(useRightPanel.getState().key)
   if (surface) useRightPanel.getState().open(surface)
   return surface
-}
-
-const EMPTY_ENTRIES: readonly ClosedPanelEntry[] = []
-
-export function useClosedPanelsFor(key: string): readonly ClosedPanelEntry[] {
-  return useClosedPanels((state) => state.byKey[key]) ?? EMPTY_ENTRIES
 }
 
 let tracked = false

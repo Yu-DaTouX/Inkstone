@@ -52,22 +52,8 @@ export function patchFiles(patch: string, fallbackName: string, scope = 'diff'):
   return { kind: 'raw', text }
 }
 
-export function fileDiffPath(file: FileDiffMetadata): string {
-  return file.name || file.prevName || ''
-}
-
 export function fileDiffId(file: FileDiffMetadata, index: number): string {
   return `${index}:${file.prevName ?? ''}:${file.name}`
-}
-
-export function fileDiffStat(file: FileDiffMetadata): { added: number; removed: number } {
-  let added = 0
-  let removed = 0
-  for (const hunk of file.hunks) {
-    added += hunk.additionLines
-    removed += hunk.deletionLines
-  }
-  return { added, removed }
 }
 
 function stripEol(line: string | undefined): string {

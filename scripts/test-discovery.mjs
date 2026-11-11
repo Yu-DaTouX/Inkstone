@@ -154,6 +154,16 @@ export async function runDiscoveryTests(ok, modules) {
       'MCP 适配器：把「无需本地安装」如实写进运行要求'
     )
 
+    const remoteOf = (url) => discover.mcpCandidateOf({ server: { name: 'io.example/remote', version: '1.0.0', remotes: [{ type: 'streamable-http', url }] } }, now)
+    const credsMcp = remoteOf('https://u:p@mcp.acme.test/mcp')
+    ok(!credsMcp?.remoteUrl && credsMcp?.installKind !== 'remote', 'MCP 适配器：端点 URL 带用户名或密码时不登记成远程端点', String(credsMcp?.remoteUrl))
+    ok(!credsMcp?.sourceUrls.some((url) => url.includes('u:p@')), 'MCP 适配器：带凭证的端点不进来源列表')
+    const plainMcp = remoteOf('http://mcp.acme.test/mcp')
+    ok(!plainMcp?.remoteUrl && plainMcp?.installKind !== 'remote', 'MCP 适配器：非本机的明文 http 端点不登记', String(plainMcp?.remoteUrl))
+    ok(remoteOf('ftp://mcp.acme.test/mcp')?.remoteUrl === undefined, 'MCP 适配器：非 http(s) 端点不算端点')
+    const loopbackMcp = remoteOf('http://127.0.0.1:39331/mcp')
+    ok(loopbackMcp?.remoteUrl === 'http://127.0.0.1:39331/mcp' && loopbackMcp.installKind === 'remote', 'MCP 适配器：本机回环上的明文 http 端点放行', String(loopbackMcp?.remoteUrl))
+
     const localMcp = discover.mcpCandidateOf({
       server: {
         name: 'io.example/math',

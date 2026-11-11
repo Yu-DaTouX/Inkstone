@@ -13,13 +13,3 @@ export function resolveComposerDispatchMode(input: {
   if (input.alternateModifier) return defaultAction === 'queue' ? 'steer' : 'queue'
   return defaultAction
 }
-
-export function alternateComposerDispatchAction(
-  activeTurnDefault?: ActiveTurnComposerAction
-): ActiveTurnComposerAction {
-  return resolveComposerDispatchMode({
-    running: true,
-    alternateModifier: true,
-    ...(activeTurnDefault === undefined ? {} : { activeTurnDefault })
-  }) as ActiveTurnComposerAction
-}

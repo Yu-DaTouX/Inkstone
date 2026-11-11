@@ -1,9 +1,6 @@
 export type FontUiPreset = 'maple' | 'sans' | 'serif' | 'custom'
 export type FontCodePreset = 'maple' | 'mono' | 'custom'
 
-export const FONT_UI_PRESETS: readonly FontUiPreset[] = ['maple', 'sans', 'serif', 'custom']
-export const FONT_CODE_PRESETS: readonly FontCodePreset[] = ['maple', 'mono', 'custom']
-
 const MAPLE = "'Maple Mono CN', ui-monospace, Consolas, monospace"
 const SANS = "'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Segoe UI', system-ui, sans-serif"
 const SERIF = "'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Songti SC', SimSun, Georgia, 'Times New Roman', serif"
@@ -53,8 +50,6 @@ export function sanitizeFontSize(value: unknown, min: number, max: number, fallb
 }
 
 export type UiDensity = 'compact' | 'comfortable'
-
-export const UI_DENSITIES: readonly UiDensity[] = ['compact', 'comfortable']
 
 const LEGACY_COMFORTABLE_FONT_SIZE = 14
 

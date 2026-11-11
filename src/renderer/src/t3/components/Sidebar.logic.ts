@@ -3,10 +3,6 @@ import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from '@dnd-kit
 export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
   args.isSorting ? defaultAnimateLayoutChanges(args) : false
 
-export function isTrailingDoubleClick(detail: number): boolean {
-  return detail > 1
-}
-
 export function resolveSidebarRowAccessibility(input: {
   readonly title: string
   readonly statusLabel: string | null
@@ -20,27 +16,6 @@ export function resolveSidebarRowAccessibility(input: {
 }
 
 export type SidebarSection = 'pinned' | 'active' | 'working' | 'snoozed' | 'settled'
-
-export const SIDEBAR_SECTIONS: readonly SidebarSection[] = [
-  'pinned',
-  'active',
-  'working',
-  'snoozed',
-  'settled'
-]
-
-export function resolveSidebarThreadSection(input: {
-  readonly snoozed: boolean
-  readonly settled: boolean
-  readonly pinned: boolean
-  readonly working?: boolean
-}): SidebarSection {
-  if (input.working) return 'working'
-  if (input.snoozed) return 'snoozed'
-  if (input.settled) return 'settled'
-  if (input.pinned) return 'pinned'
-  return 'active'
-}
 
 const SIDEBAR_MARKER_PREFIX = 'sidebar-marker-'
 
@@ -208,15 +183,4 @@ export function buildSidebarListItems(input: {
     items.push(...rows(input.settled, 'settled'))
   }
   return items
-}
-
-export function sidebarThreadKeyAtY(list: HTMLElement, y: number): string | null {
-  const viewport = list.closest('[data-slot="scroll-area-viewport"]')?.getBoundingClientRect()
-  const visibleY = viewport ? Math.min(Math.max(y, viewport.top), viewport.bottom - 1) : y
-  let key: string | null = null
-  for (const row of list.querySelectorAll<HTMLElement>('li[data-thread-item]')) {
-    if (key !== null && row.getBoundingClientRect().top > visibleY) break
-    key = row.dataset.threadItem ?? null
-  }
-  return key
 }

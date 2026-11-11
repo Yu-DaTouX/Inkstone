@@ -45,11 +45,6 @@ export function threadRuntimeIsActive(runtime: ThreadStructureRuntime | null | u
   return runtime !== null && runtime !== undefined && ACTIVE_RUN_STATUSES.has(runtime.status)
 }
 
-export function threadRuntimeCanArchive(runtime: ThreadRuntimeSummary | null | undefined): boolean {
-  if (runtime?.status === 'queued') return runtime.activeRunId === null
-  return runtime?.status !== 'preparing' && runtime?.status !== 'starting' && runtime?.status !== 'running'
-}
-
 export interface EnvironmentThreadShell {
   readonly environmentId: EnvironmentId
   readonly id: string
@@ -102,16 +97,6 @@ export interface EnvironmentThreadShell {
   readonly titleRegeneration: null
   readonly deletedAt: null
   readonly source: null
-}
-
-export function resolveThreadWorkingStartedAt(input: {
-  readonly runtime: Pick<ThreadRuntimeSummary, 'status' | 'activityStartedAt'> | null
-  readonly latestRun: Pick<ThreadRunSummary, 'startedAt'> | null
-}): string | null {
-  if (input.runtime !== null && ACTIVE_RUN_STATUSES.has(input.runtime.status)) {
-    return input.runtime.activityStartedAt ?? input.latestRun?.startedAt ?? null
-  }
-  return input.latestRun?.startedAt ?? null
 }
 
 export function formatWorkingDurationLabel(elapsedMs: number): string {

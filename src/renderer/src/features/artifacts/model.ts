@@ -169,7 +169,6 @@ export async function ownerScopedRead<T>(options: {
   }
 }
 
-export const BRIDGE_MESSAGE_LIMIT_BYTES = 1024 * 1024
 export const BRIDGE_MESSAGE_RATE = 50
 export const BRIDGE_UI_MESSAGE_CHARS = 32_000
 export const BRIDGE_CONTEXT_CHARS = 16_000
@@ -288,10 +287,6 @@ export function decodeBridgeMessage(raw: unknown, ctx: BridgeContext): BridgeDec
   if (method === 'x-inkstone/state-restore') return { ok: true, action: { kind: 'state-restore' } }
 
   return { ok: false, error: 'unsupported' }
-}
-
-export function bridgeMessageWithinLimit(raw: string): boolean {
-  return textBytes(raw) <= BRIDGE_MESSAGE_LIMIT_BYTES
 }
 
 export class BridgeRateLimiter {
