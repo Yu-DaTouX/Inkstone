@@ -58,7 +58,10 @@ export function ContextWindowMeter(props: {
 }) {
   const t = useT();
   const { usage, onCompact, compactDisabled, compactDisabledReason } = props;
-  const usedPercentage = formatPercentage(usage.usedPercentage);
+  const estimatePrefix = usage.estimated ? "≈" : "";
+  const percentage = formatPercentage(usage.usedPercentage);
+  const usedPercentage = percentage === null ? null : `${estimatePrefix}${percentage}`;
+  const usedTokens = `${estimatePrefix}${formatContextWindowTokens(usage.usedTokens)}`;
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
@@ -78,7 +81,7 @@ export function ContextWindowMeter(props: {
               usage.maxTokens !== null && usedPercentage
                 ? t("composer.t3.contextUsageAria", { pct: usedPercentage })
                 : t("composer.t3.contextTokensAria", {
-                    n: formatContextWindowTokens(usage.usedTokens),
+                    n: usedTokens,
                   })
             }>
             <span className="t3-ctx-meter__ring">
@@ -129,13 +132,13 @@ export function ContextWindowMeter(props: {
                 <span>{usedPercentage}</span>
                 <span className="t3-ctx-popover__dot">·</span>
                 <span>
-                  {formatContextWindowTokens(usage.usedTokens)}/
+                  {usedTokens}/
                   {formatContextWindowTokens(usage.maxTokens ?? null)}
                 </span>
               </div>
             ) : (
               <div className="t3-ctx-popover__usage">
-                {formatContextWindowTokens(usage.usedTokens)}
+                {usedTokens}
               </div>
             )}
           </div>

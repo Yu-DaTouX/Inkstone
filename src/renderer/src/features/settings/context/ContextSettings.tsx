@@ -28,6 +28,7 @@ interface UsageMarker {
 
 function ContextUsageMeter({
   tokens,
+  estimated,
   windowSize,
   windowText,
   usedLabel,
@@ -36,6 +37,7 @@ function ContextUsageMeter({
   warnAt
 }: {
   tokens: number | null
+  estimated: boolean
   windowSize: number
   windowText: string
   usedLabel: string
@@ -52,12 +54,12 @@ function ContextUsageMeter({
     <div className="settings-usage" data-level={level}>
       <div className="settings-usage__head">
         <span className="settings-usage__value" data-testid="v3-ctx-used">
-          {tokens !== null ? kTokens(shown) : unknownText}
+          {tokens !== null ? `${estimated ? '≈' : ''}${kTokens(shown)}` : unknownText}
         </span>
         <span className="settings-usage__window" data-testid="v3-ctx-window">
           / {windowText}
         </span>
-        {measurable ? <span className="settings-usage__pct">{percent.toFixed(1)}%</span> : null}
+        {measurable ? <span className="settings-usage__pct">{estimated ? '≈' : ''}{percent.toFixed(1)}%</span> : null}
       </div>
       {windowSize > 0 ? (
         <div
@@ -67,7 +69,7 @@ function ContextUsageMeter({
           aria-valuemin={0}
           aria-valuemax={windowSize}
           aria-valuenow={tokens ?? 0}
-          aria-valuetext={tokens !== null ? `${kTokens(tokens)} / ${windowText}` : unknownText}
+          aria-valuetext={tokens !== null ? `${estimated ? '≈' : ''}${kTokens(tokens)} / ${windowText}` : unknownText}
         >
           <span className="settings-usage__fill" style={{ width: `${percent}%` }} />
           {markers.map((marker) => (
@@ -132,6 +134,7 @@ export function ContextSettings({ piNative, lede }: { piNative: PiNativeSettings
       <SettingsRow block settingId="session-compact-now" label={text.contextUsed}>
         <ContextUsageMeter
           tokens={contextTokens}
+          estimated={usage.estimated}
           windowSize={contextWindow}
           windowText={windowText}
           usedLabel={text.contextUsed}

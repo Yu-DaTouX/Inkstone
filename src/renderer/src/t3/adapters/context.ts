@@ -8,6 +8,7 @@ export interface ContextWindowCost {
 }
 
 export interface ContextWindowSnapshot {
+  readonly estimated: boolean
   readonly usedTokens: number
   readonly maxTokens: number | null
   readonly usedPercentage: number | null
@@ -34,6 +35,7 @@ export function useContextWindowSnapshot(): ContextWindowSnapshot | null {
   const total = stats?.tokens.total ?? null
   const cost = stats && typeof stats.cost === 'number' && stats.cost > 0 ? stats.cost : null
   return {
+    estimated: summary.estimated,
     usedTokens: tokens,
     maxTokens: windowSize > 0 ? windowSize : null,
     usedPercentage: percent,

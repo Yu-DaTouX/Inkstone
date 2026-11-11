@@ -226,16 +226,16 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
           {modelName ? <span className="wb-ctxw-model" title={modelName}>{modelName}</span> : null}
         </div>
         <div className="wb-ctxw-figure" title={limitNote}>
-          <span className="wb-ctxw-number" aria-hidden>{usage.known ? shortTokens(focusRow ? focusRow.tokens : usage.tokens) : text.unknown}</span>
+          <span className="wb-ctxw-number" aria-hidden>{usage.known ? `${usage.estimated ? '≈' : ''}${shortTokens(focusRow ? focusRow.tokens : usage.tokens)}` : text.unknown}</span>
           <span className="wb-ctxw-figure-label" aria-hidden>{focusRow ? rowLabel(focusRow.id) : text.used}</span>
           <span className="v3-visually-hidden" data-testid="v3-wb-ctx-tokens">
             {usage.known
-              ? `${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)} (${Math.round(usage.percent!)}%)`
+              ? `${usage.estimated ? '≈' : ''}${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)} (${Math.round(usage.percent!)}%)`
               : text.unknown}
           </span>
           {usage.known ? (
             <span className="wb-ctxw-pct ui-num" data-tone={usage.tone} aria-hidden>
-              {`${Math.round(focusRow ? share(focusRow.tokens) : usage.percent!)}%`}
+              {`${usage.estimated ? '≈' : ''}${Math.round(focusRow ? share(focusRow.tokens) : usage.percent!)}%`}
             </span>
           ) : null}
         </div>
@@ -276,9 +276,9 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
               : usage.afterCompactUnknown
                 ? text.afterCompact
                 : distance
-                  ? text.distance(distance.kind, shortTokens(distance.remaining))
+                  ? text.distance(distance.kind, `${usage.estimated ? '≈' : ''}${shortTokens(distance.remaining)}`)
                   : usage.known
-                    ? text.left(shortTokens(Math.max(0, usage.windowSize - usage.tokens)))
+                    ? text.left(`${usage.estimated ? '≈' : ''}${shortTokens(Math.max(0, usage.windowSize - usage.tokens))}`)
                     : ''}
           </span>
           <Button
