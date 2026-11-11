@@ -1,12 +1,12 @@
 @layer features {
   .ws-entry { display: flex; flex-direction: column; min-width: 0; }
-  .ws-cap-chevron { margin-inline-start: calc(-1 * var(--s-2)); }
   .ws-cap {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--s-6);
     width: fit-content;
-    max-width: 100%;
+    max-width: min(100%, 560px);
     min-height: var(--d-row);
     padding: 0 var(--s-8);
     border: 0;
@@ -18,45 +18,66 @@
     font: inherit;
     font-size: var(--t-body);
     line-height: var(--t-body-lh);
-    cursor: pointer;
     text-align: left;
     transition: color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
   }
-  .ws-cap:hover { color: var(--fg); box-shadow: var(--ring-line2); }
-  .ws-cap:active { color: var(--fg); background: var(--surface-0); }
-  .ws-cap:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+  button.ws-cap { cursor: pointer; }
+  button.ws-cap:hover { color: var(--fg); box-shadow: var(--ring-line2); }
+  button.ws-cap:active { color: var(--fg); background: var(--surface-0); }
+  button.ws-cap:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+  .ws-cap[data-empty] { color: var(--fg3); }
+  .ws-cap-chevron { flex: none; margin-inline-end: calc(-1 * var(--s-2)); color: var(--fg3); }
   .ws-cap-icon { position: relative; display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; color: var(--fg3); }
-  .ws-cap-icon[data-done] { color: var(--fg2); }
-  .ws-cap-icon > svg:not(.ws-ring) { position: relative; z-index: 1; }
-  .ws-ring { position: absolute; inset: -2px; width: 22px; height: 22px; max-width: none; overflow: visible; }
-  .ws-ring-track { fill: none; stroke: var(--line2); stroke-width: 2; }
-  .ws-cap-icon[data-done] .ws-ring-track { stroke: color-mix(in srgb, var(--ok) 55%, transparent); }
-  .ws-cap[data-tone='warn'] .ws-cap-icon { color: var(--ask-t); }
-  .ws-cap[data-tone='warn'] .ws-ring-track { stroke: color-mix(in srgb, var(--ask) 70%, transparent); }
-  .ws-cap[data-tone='warn'] .ws-cap-label { color: var(--ask-t); }
-  .ws-cap-sites { width: calc(18px * 3 - 10px); min-height: 18px; box-sizing: content-box; }
-  .ws-ring-arc {
-    fill: none;
-    stroke: var(--run);
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-dasharray: 14 62.8;
-    transform-origin: 12px 12px;
-    animation: ws-ring-spin var(--dur-spin) linear infinite;
+  .ws-cap[data-tone='warn'] :is(.ws-cap-icon, .ws-cap-target) { color: var(--ask-t); }
+  .ws-cap[data-state='running'] .ws-cap-icon { color: var(--run-t); }
+  .ws-cap[data-state='running'] .ws-cap-icon > svg { animation: ws-globe var(--dur-breathe) var(--ease-inout) infinite; }
+  .ws-orbit { position: absolute; inset: -2px; animation: ws-spin var(--dur-shimmer) linear infinite; }
+  .ws-orbit > span {
+    position: absolute;
+    top: -1px;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    margin-left: -2.5px;
+    border-radius: var(--r-full);
+    corner-shape: round;
+    background: var(--run);
+    box-shadow: 0 0 0 2px var(--surface), 0 0 6px 1px color-mix(in srgb, var(--run) 60%, transparent);
   }
-  @keyframes ws-ring-spin { to { transform: rotate(360deg); } }
-  .ws-cap-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ws-cap-target {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
+  .ws-cap[data-state='running']::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    padding: 1.5px;
+    border-radius: inherit;
+    corner-shape: round;
+    background: conic-gradient(from var(--ws-beam), transparent 0 58%, color-mix(in srgb, var(--run) 30%, transparent) 76%, var(--run) 94%, transparent 100%);
+    mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0);
+    pointer-events: none;
+    animation: ws-beam var(--dur-breathe) linear infinite;
   }
-  .ws-cap-count { flex: none; white-space: nowrap; color: var(--fg3); font-size: var(--t-footnote); }
+  .ws-cap-target { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--fg); }
+  .ws-cap[data-empty] .ws-cap-target { color: inherit; }
+  .ws-tick { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-tick[data-cycling] { animation: ws-tick var(--dur-slow) var(--ease-glide) both; }
+  .ws-cap-more, .ws-cap-count { flex: none; white-space: nowrap; color: var(--fg3); font-size: var(--t-footnote); font-variant-numeric: tabular-nums; }
   .ws-cap-count::before { content: '\00b7'; margin-inline-end: var(--s-6); }
+  .ws-cap-sites { min-height: 18px; margin-inline-start: var(--s-2); }
+  .ws-cap[data-fresh] .ws-cap-count { animation: ws-pop var(--dur-sheet) var(--ease-spring) both; }
+  .ws-cap[data-fresh] .ws-cap-sites > .ui-site-icon { animation: ws-pop var(--dur-slow) var(--ease-spring) both; }
+  .ws-cap[data-fresh] .ws-cap-sites > .ui-site-icon:nth-child(2) { animation-delay: 70ms; }
+  .ws-cap[data-fresh] .ws-cap-sites > .ui-site-icon:nth-child(3) { animation-delay: 140ms; }
+  @keyframes ws-spin { to { transform: rotate(360deg); } }
+  @keyframes ws-beam { to { --ws-beam: 360deg; } }
+  @keyframes ws-globe { 50% { transform: scale(0.86); opacity: 0.7; } }
+  @keyframes ws-tick {
+    from { opacity: 0; transform: translateY(70%); filter: blur(3px); }
+    to { opacity: 1; transform: none; filter: none; }
+  }
+  @keyframes ws-pop {
+    from { opacity: 0; transform: scale(0.4); }
+    to { opacity: 1; transform: none; }
+  }
   .ws-tone-0 { --ws-tone: var(--accent); }
   .ws-tone-1 { --ws-tone: var(--ok); }
   .ws-tone-2 { --ws-tone: var(--stall); }
@@ -73,7 +94,35 @@
   }
   .ws-op[data-single] { grid-template-columns: minmax(0, 1fr); max-width: 240px; align-items: start; }
   .ws-less { align-self: center; justify-self: start; gap: var(--s-4); }
-  .ws-empty { color: var(--fg3); font-size: var(--t-footnote); }
+  .ws-ghost {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-10);
+    min-width: 0;
+    padding: var(--s-12);
+    overflow: hidden;
+    border-radius: var(--r-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-ring);
+    animation: ui-source-arrive var(--dur-slow) var(--ease) both;
+    animation-delay: calc(var(--source-index, 0) * 90ms);
+  }
+  .ws-ghost :is(i, b) { display: block; height: 9px; border-radius: var(--r-xs); background: var(--alpha-2); }
+  .ws-ghost__head { display: flex; align-items: center; gap: var(--s-8); height: 18px; }
+  .ws-ghost__head > i { flex: none; width: 18px; height: 18px; border-radius: var(--r-full); corner-shape: round; }
+  .ws-ghost__head > b { width: 42%; }
+  .ws-ghost > b[data-short] { width: 62%; margin-bottom: var(--s-4); }
+  .ws-ghost::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 32%, var(--alpha-2) 50%, transparent 68%);
+    translate: -100% 0;
+    animation: ws-ghost-sweep var(--dur-flash) var(--ease-inout) infinite;
+    animation-delay: calc(var(--source-index, 0) * 180ms);
+  }
+  @keyframes ws-ghost-sweep { to { translate: 100% 0; } }
 
   .ws-cite {
     display: inline-flex;
@@ -112,16 +161,22 @@
   .ws-cite-card-open { margin-top: var(--s-4); color: var(--fg3); font-size: var(--t-caption); }
 
   @media (prefers-reduced-motion: reduce) {
-    .ws-ring-arc { animation: none; }
+    .ws-cap::before, .ws-orbit, .ws-cap-icon > svg, .ws-tick, .ws-ghost, .ws-ghost::after, .ws-cap-count, .ws-cap-sites > .ui-site-icon { animation: none; }
     .ws-cap, .ws-cite { transition: none; }
     .ws-cap-chevron > svg { transition: none; }
   }
-  :root[data-reduce-motion='true'] .ws-ring-arc { animation: none; }
+  :root[data-reduce-motion='true'] :is(.ws-orbit, .ws-cap-icon > svg, .ws-tick, .ws-ghost, .ws-cap-count, .ws-cap-sites > .ui-site-icon) { animation: none; }
+  :root[data-reduce-motion='true'] :is(.ws-cap, .ws-ghost)::before, :root[data-reduce-motion='true'] .ws-ghost::after { animation: none; }
   :root[data-reduce-motion='true'] :is(.ws-cap, .ws-cite) { transition: none; }
   :root[data-reduce-motion='true'] .ws-cap-chevron > svg { transition: none; }
 
   @media (max-width: 720px) {
-    .ws-cap-target { display: none; }
     .ws-op:not([data-single]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
+}
+
+@property --ws-beam {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
 }
