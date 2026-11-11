@@ -328,10 +328,147 @@ function loadHeadless(): typeof import('@xterm/headless') | null {
   }
 }
 
+export const TERMINAL_FALLBACK_NOTICE = '[终端渲染降级：原始文本]'
+const FALLBACK_MAX_COLUMN = 5000
+const FALLBACK_MAX_MOVE = 1000
+
+interface FallbackCell {
+  ch: string
+  raw: boolean
+}
+
+export function fallbackTerminalText(raw: string, context = ''): string {
+  const contextLength = Array.from(context).length
+  const chars = Array.from(context + raw)
+  const total = chars.length
+  let lines: FallbackCell[][] = [[]]
+  let row = 0
+  let col = 0
+  let boundary = 0
+  let inRaw = false
+  const cell = (ch: string): FallbackCell => ({ ch, raw: inRaw })
+  const put = (ch: string): void => {
+    const line = lines[row]
+    while (line.length < col) line.push(cell(' '))
+    line[col] = cell(ch)
+    col += 1
+  }
+  const amount = (params: string, fallback: number): number => {
+    const value = Number.parseInt(params.split(';')[0] || '', 10)
+    return Math.min(FALLBACK_MAX_MOVE, Number.isFinite(value) && value > 0 ? value : fallback)
+  }
+  const csi = (rawParams: string, final: string): void => {
+    if (/^[<=>?]/.test(rawParams)) return
+    const line = lines[row]
+    const mode = Number.parseInt(rawParams.split(';')[0] || '0', 10) || 0
+    switch (final) {
+      case 'K':
+        if (mode === 0) line.splice(col)
+        else if (mode === 1) for (let k = 0; k <= col && k < line.length; k++) line[k] = cell(' ')
+        else lines[row] = []
+        break
+      case 'J':
+        if (mode === 2 || mode === 3) {
+          lines = [[]]
+          row = 0
+          boundary = 0
+        } else if (mode === 0) line.splice(col)
+        break
+      case 'C':
+        col = Math.min(FALLBACK_MAX_COLUMN, col + amount(rawParams, 1))
+        break
+      case 'D':
+        col = Math.max(0, col - amount(rawParams, 1))
+        break
+      case 'G':
+        col = Math.min(FALLBACK_MAX_COLUMN, amount(rawParams, 1) - 1)
+        break
+      case 'P':
+        line.splice(col, amount(rawParams, 1))
+        break
+      case 'X': {
+        const count = amount(rawParams, 1)
+        for (let k = col; k < col + count && k < line.length; k++) line[k] = cell(' ')
+        break
+      }
+      case '@':
+        if (col < line.length) line.splice(col, 0, ...Array.from({ length: amount(rawParams, 1) }, () => cell(' ')))
+        break
+      default:
+    }
+  }
+  let i = 0
+  while (i < total) {
+    if (!inRaw && i >= contextLength) {
+      inRaw = true
+      boundary = row
+    }
+    const ch = chars[i]
+    if (ch === '\x1b') {
+      const next = chars[i + 1]
+      if (next === undefined) break
+      if (next === '[') {
+        let j = i + 2
+        while (j < total && chars[j] >= '0' && chars[j] <= '?') j++
+        const paramsEnd = j
+        while (j < total && chars[j] >= ' ' && chars[j] <= '/') j++
+        if (j >= total) break
+        const final = chars[j]
+        if (final >= '@' && final <= '~') {
+          csi(chars.slice(i + 2, paramsEnd).join(''), final)
+          i = j + 1
+        } else i = j
+        continue
+      }
+      if (next === ']' || next === 'P' || next === 'X' || next === '^' || next === '_') {
+        let j = i + 2
+        while (j < total) {
+          if (next === ']' && chars[j] === '\x07') {
+            j += 1
+            break
+          }
+          if (chars[j] === '\x1b' && chars[j + 1] === '\\') {
+            j += 2
+            break
+          }
+          j += 1
+        }
+        i = j
+        continue
+      }
+      i += '()*+-./#%'.includes(next) ? 3 : 2
+      continue
+    }
+    i += 1
+    if (ch === '\r') col = 0
+    else if (ch === '\n') {
+      row += 1
+      lines[row] = []
+      col = 0
+    } else if (ch === '\b') col = Math.max(0, col - 1)
+    else if (ch === '\t') col = Math.min(FALLBACK_MAX_COLUMN, (Math.floor(col / 8) + 1) * 8)
+    else if (ch >= ' ' && ch !== '\x7f') put(ch)
+  }
+  if (!inRaw) boundary = row
+  const out: string[] = []
+  for (let r = boundary; r < lines.length; r++) {
+    out.push(
+      lines[r]
+        .filter((item) => item.raw)
+        .map((item) => item.ch)
+        .join('')
+        .replace(/\s+$/, '')
+    )
+  }
+  while (out.length > 0 && !out[out.length - 1]) out.pop()
+  while (out.length > 0 && !out[0]) out.shift()
+  return out.length > 0 ? `${TERMINAL_FALLBACK_NOTICE}\n${out.join('\n')}` : TERMINAL_FALLBACK_NOTICE
+}
+
 export async function renderTerminalText(raw: string, cols: number, context = ''): Promise<string> {
   if (!raw) return ''
   const headless = loadHeadless()
-  if (!headless) return stripTerminalControls(raw)
+  if (!headless) return fallbackTerminalText(raw, context)
   const term = new headless.Terminal({ cols: Math.max(20, Math.min(cols, 1000)), rows: 50, scrollback: 20_000, allowProposedApi: true })
   try {
     let first = 0
@@ -722,13 +859,28 @@ export class TerminalAgentCommands {
     }
   }
 
+  private ensureOpen(id: string): void {
+    if (this.host.stream(id)) return
+    forgetTerminalAgentState(id)
+    throw new CapabilityCommandError('terminal_closed', '终端已关闭')
+  }
+
+  private writeOrFail(id: string, data: string): void {
+    if (this.host.write(id, data)) return
+    this.ensureOpen(id)
+    throw new CapabilityCommandError('terminal_write_failed', '写入终端失败（终端可能已退出）')
+  }
+
   private async guard(stream: TerminalStream, data: string): Promise<void> {
     await pendingTerminalUserInput(stream.info.id)
+    this.ensureOpen(stream.info.id)
     const plan = planSubmission(typedLines.get(stream.info.id) ?? '', data)
     if (plan.submitted.length > 0) {
       const prefs = await this.host.prefs()
+      this.ensureOpen(stream.info.id)
       const command = plan.submitted.join('\n')
       const rules = await this.host.rules()
+      this.ensureOpen(stream.info.id)
       const root = this.ctx.cwd()
       const tracked = terminalLocations.get(stream.info.id)
       const base = tracked === undefined ? stream.info.cwd || root : tracked
@@ -739,6 +891,7 @@ export class TerminalAgentCommands {
         const reasons = [...new Set([...rules.detectDanger(tool, { command }, root, { base }), ...outside.map((target) => `写入项目之外的路径：${target}`)])]
         if (reasons.length > 0) {
           const answer = await this.ctx.confirm({ detail: command, reasons, outsideDirs: outside })
+          this.ensureOpen(stream.info.id)
           if (!answer.allowed) {
             const why = answer.feedback ? `The user declined this operation and said: ${answer.feedback}` : 'The user declined this operation'
             throw new CapabilityCommandError(
@@ -855,12 +1008,13 @@ export class TerminalAgentCommands {
     const { stream, created } = await this.pickForRun(params)
     const id = stream.info.id
     await this.guard(stream, `${command}\r`)
+    this.ensureOpen(id)
     const owner = this.ownerKey()
     lastUsed.set(owner, id)
     return this.withAnnounce(id, 'run', async () => {
       if (created || stream.total === 0) await this.waitReady(id, signal, created ? NEW_TERMINAL_SETTLE_MS : 0)
       const from = this.host.stream(id)?.total ?? stream.total
-      if (!this.host.write(id, `${command}\r`)) throw new CapabilityCommandError('terminal_write_failed', '写入终端失败（终端可能已退出）')
+      this.writeOrFail(id, `${command}\r`)
       if (background) {
         const startedAt = this.host.now()
         const first = await this.waitFor(id, from, { mode: 'command', timeoutMs: TERMINAL_BACKGROUND_SETTLE_MS, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until }, signal)
@@ -960,7 +1114,7 @@ export class TerminalAgentCommands {
     const waitMs = numberParam(params, 'wait', TERMINAL_WRITE_WAIT_MS, 0, TERMINAL_WRITE_WAIT_MAX_MS)
     return this.withAnnounce(id, action, async () => {
       const from = this.host.stream(id)?.total ?? stream.total
-      if (!this.host.write(id, data)) throw new CapabilityCommandError('terminal_write_failed', '写入终端失败（终端可能已退出）')
+      this.writeOrFail(id, data)
       if (data.includes('\x03') && backgroundJobs.has(id)) agentInterrupts.set(id, this.host.now())
       const state = waitMs > 0 ? await this.waitFor(id, from, { mode: 'settle', timeoutMs: waitMs, quietMs: waitMs, idleMs: WRITE_IDLE_MS, until: null }, signal) : 'settled'
       const output = await this.outputSince(id, from)
@@ -974,6 +1128,7 @@ export class TerminalAgentCommands {
     lastUsed.set(this.ownerKey(), id)
     return this.withAnnounce(id, 'start', async () => {
       await this.waitReady(id, signal)
+      this.ensureOpen(id)
       const latest = this.host.stream(id)
       const text = latest ? await this.host.render(latest.buffer, latest.info.cols) : ''
       return this.result('start', latest?.info ?? stream.info, { text, truncated: false, cursor: latest?.total ?? 0 }, {})

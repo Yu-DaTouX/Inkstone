@@ -92,7 +92,7 @@ try {
   const mod = await bundle(entry, 'terminal-agent.mjs')
   const { noteTerminalUserInput } = mod
   const { listTerminalJobs, requestTerminalJobStop, markTerminalJobsStopping, clearFinishedTerminalJobs, resetTerminalJobs, terminalNoticeStep } = mod
-  const { createUntilMatcher, forgetTerminalAgentState, terminalAgentStateOf, keySequence, keysToSequence, planSubmission, stripTerminalControls, looksLikePrompt, lastNonEmptyLine, sliceSince, tailText, renderTerminalText, loadDangerRules, TerminalAgentCommands, resetTerminalAgentState } = mod
+  const { createUntilMatcher, forgetTerminalAgentState, terminalAgentStateOf, keySequence, keysToSequence, planSubmission, stripTerminalControls, looksLikePrompt, lastNonEmptyLine, sliceSince, tailText, renderTerminalText, loadDangerRules, TerminalAgentCommands, resetTerminalAgentState, fallbackTerminalText, TERMINAL_FALLBACK_NOTICE } = mod
 
   const setup = (options = {}) => {
     resetTerminalAgentState()
@@ -107,6 +107,7 @@ try {
       cwd: () => process.cwd(),
       confirm: async (request) => {
         confirms.push(request)
+        if (options.confirmGate) await options.confirmGate
         return { allowed: options.allow ?? false, ...(options.feedback ? { feedback: options.feedback } : {}) }
       }
     }
@@ -601,14 +602,105 @@ try {
     const originalWarn = console.warn
     console.warn = (...args) => warnings.push(args.map(String).join(' '))
     try {
-      assert.equal(await broken.renderTerminalText('\x1b[31mred\x1b[0m text\r\nnext', 80), 'red text\nnext')
-      assert.equal(await broken.renderTerminalText('again', 80, 'ctx'), 'again')
+      assert.equal(await broken.renderTerminalText('\x1b[31mred\x1b[0m text\r\nnext', 80), `${TERMINAL_FALLBACK_NOTICE}\nred text\nnext`)
+      assert.equal(await broken.renderTerminalText('again', 80, 'ctx'), `${TERMINAL_FALLBACK_NOTICE}\nagain`)
       assert.equal(await broken.renderTerminalText('', 80), '')
     } finally {
       console.warn = originalWarn
     }
     assert.equal(warnings.length, 1)
     assert.match(warnings[0], /@xterm\/headless/)
+  })
+
+  await check('W2：降级渲染把 context+raw 一起过滤，起于 context 终于 raw 的 OSC/DCS/APC/PM 载荷整段丢弃', async () => {
+    const body = (text) => (text ? `${TERMINAL_FALLBACK_NOTICE}\n${text}` : TERMINAL_FALLBACK_NOTICE)
+    assert.equal(fallbackTerminalText('SECRET\x07visible', 'PS> \x1b]0;'), body('visible'))
+    assert.equal(fallbackTerminalText('SECRET\x1b\\after', 'x\x1b]8;;http://h'), body('after'))
+    assert.equal(fallbackTerminalText('PAYLOAD\x07still', 'a\x1bPq'), body(''), 'DCS 不能被 BEL 结束')
+    assert.equal(fallbackTerminalText('PAYLOAD\x1b\\ok', 'a\x1bPq'), body('ok'))
+    assert.equal(fallbackTerminalText('PAYLOAD\x1b\\ok', 'a\x1b_G'), body('ok'))
+    assert.equal(fallbackTerminalText('PAYLOAD\x1b\\ok', 'a\x1b^'), body('ok'))
+    assert.equal(fallbackTerminalText('line1\nSECRET-NO-TERMINATOR', '\x1b]52;c;'), body(''))
+    assert.equal(fallbackTerminalText('abc \x1b]0;SECRET'), body('abc'))
+    assert.equal(fallbackTerminalText('abc \x1bPSECRET'), body('abc'))
+    assert.equal(fallbackTerminalText('abc \x1b[3'), body('abc'))
+    assert.equal(fallbackTerminalText('abc\x1b'), body('abc'))
+    assert.equal(fallbackTerminalText('\x1b]0;title\x07done\x1b[31m!\x1b[0m'), body('done!'))
+    assert.equal(fallbackTerminalText('new line', 'PS C:\\work> '), body('new line'), 'context 里的提示符不属于 raw')
+  })
+
+  await check('W2：降级渲染处理 \\r 覆盖、退格与 ESC[K 擦行，不输出被擦掉的内容', async () => {
+    const body = (text) => (text ? `${TERMINAL_FALLBACK_NOTICE}\n${text}` : TERMINAL_FALLBACK_NOTICE)
+    assert.equal(fallbackTerminalText('10%\r50%\r100%'), body('100%'))
+    assert.equal(fallbackTerminalText('long-secret-text\r\x1b[Kok'), body('ok'))
+    assert.equal(fallbackTerminalText('long-secret-text\r\x1b[2Kok'), body('ok'))
+    assert.equal(fallbackTerminalText('secret\x1b[3D\x1b[K'), body('sec'))
+    assert.equal(fallbackTerminalText('abc\b\b\x1b[Kx'), body('ax'))
+    assert.equal(fallbackTerminalText('abc\b \bd'), body('abd'))
+    assert.equal(fallbackTerminalText('abcdef\b\b\b\x1b[K'), body('abc'))
+    assert.equal(fallbackTerminalText('XYZ', 'password: hunter2\r'), body('XYZ'))
+    assert.equal(fallbackTerminalText('\x1b[K', 'password: hunter2'), body(''))
+    assert.equal(fallbackTerminalText('\x1b[2Jfresh\nnext', 'old\n'), body('fresh\nnext'))
+    assert.equal(fallbackTerminalText('ok\r\nnext\r\n'), body('ok\nnext'))
+  })
+
+  await check('W2：终端关闭后审批才通过，agent 操作不写回状态并返回终端已关闭', async () => {
+    let release
+    const confirmGate = new Promise((done) => {
+      release = done
+    })
+    const { host, confirms, commands } = setup({ allow: true, confirmGate })
+    host.adopt({ id: 'mine', owner: 'sid-a' })
+    const running = commands.run('run', { id: 'mine', command: 'Remove-Item -Recurse -Force C:\\InkstoneProbe' })
+    const settled = running.then(
+      () => ({ ok: true }),
+      (error) => ({ ok: false, error })
+    )
+    for (let i = 0; i < 50 && confirms.length === 0; i++) await new Promise((done) => setTimeout(done, 2))
+    assert.equal(confirms.length, 1)
+    host.kill('mine')
+    forgetTerminalAgentState('mine')
+    release()
+    const outcome = await settled
+    assert.equal(outcome.ok, false)
+    assert.equal(outcome.error.code, 'terminal_closed')
+    assert.match(outcome.error.message, /已关闭/)
+    await new Promise((done) => setTimeout(done, 5))
+    assert.deepEqual(terminalAgentStateOf('mine'), { agentOpened: false, typedLine: false, location: false, lastUsed: false, plain: false, truncatedPlain: false, interrupt: false })
+    assert.deepEqual(host.terms.get('mine'), undefined)
+  })
+
+  await check('W2：终端在 prefs / rules 等待期间关闭，guard 同样不写回；写入失败时清理状态', async () => {
+    const slow = setup()
+    slow.host.adopt({ id: 'mine', owner: 'sid-a' })
+    let releasePrefs
+    slow.host.prefs = () =>
+      new Promise((done) => {
+        releasePrefs = () => done({ mode: 'danger', outsideWrites: false, allowRoots: [] })
+      })
+    const pending = slow.commands.run('write', { id: 'mine', text: 'echo hi', enter: true }).then(
+      () => ({ ok: true }),
+      (error) => ({ ok: false, error })
+    )
+    for (let i = 0; i < 50 && !releasePrefs; i++) await new Promise((done) => setTimeout(done, 2))
+    slow.host.kill('mine')
+    forgetTerminalAgentState('mine')
+    releasePrefs()
+    const outcome = await pending
+    assert.equal(outcome.error?.code, 'terminal_closed')
+    assert.equal(terminalAgentStateOf('mine').location, false)
+    assert.equal(terminalAgentStateOf('mine').typedLine, false)
+    assert.equal(terminalAgentStateOf('mine').lastUsed, false)
+
+    const lost = setup()
+    lost.host.adopt({ id: 'gone', owner: 'sid-a' })
+    const original = lost.host.write
+    lost.host.write = (id, data) => {
+      lost.host.kill(id)
+      return original(id, data)
+    }
+    await failsWith(lost.commands.run('run', { id: 'gone', command: 'echo hi' }), 'terminal_closed')
+    assert.deepEqual(terminalAgentStateOf('gone'), { agentOpened: false, typedLine: false, location: false, lastUsed: false, plain: false, truncatedPlain: false, interrupt: false })
   })
 
   console.log(`test-terminal-agent: ${pass} 项全部通过`)
