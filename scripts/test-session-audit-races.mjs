@@ -26,17 +26,18 @@ const evaluate = (source, bindings) => {
   return new Function(...Object.keys(all), js)(...Object.values(all))
 }
 const deleteSource = await parse('src/main/session-delete.ts')
-let deleteCallback, friendlyDelete
+let deleteCallback, friendlyDelete, pathKeySource
 function visit(node) {
   if (ts.isFunctionDeclaration(node) && node.name?.text === 'friendlyDeleteError') friendlyDelete = node.getText(deleteSource)
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'pathKey') pathKeySource = node.getText(deleteSource)
   if (ts.isFunctionDeclaration(node) && node.name?.text === 'deleteSessionChain') deleteCallback = node.getText(deleteSource).replace('export ', '')
   ts.forEachChild(node, visit)
 }
 visit(deleteSource)
-assert.ok(deleteCallback && friendlyDelete)
+assert.ok(deleteCallback && friendlyDelete && pathKeySource)
 function deletionFixture({ current, failAt, restoreFailures = [] } = {}) {
   const files = ['a', 'b', 'c'].map(name => resolve(output, `${name}.jsonl`))
-  const calls = { stopped: [], deleted: [], restored: [], forgotten: 0, terminals: [] }
+  const calls = { stopped: [], deleted: [], restored: [], forgotten: 0, terminals: [], browsers: [] }
   const trashed = new Set()
   const host = {
     ac: () => ({ getState: () => ({ sessionFile: current?.(files) }) }),
@@ -49,6 +50,7 @@ function deletionFixture({ current, failAt, restoreFailures = [] } = {}) {
     }
   }
   const run = evaluate(`${friendlyDelete}
+${pathKeySource}
 return (${deleteCallback})`, {
     host, resolve,
     planHistoryRead: chain => chain.segments.map(segment => segment.sessionFile),
@@ -65,7 +67,8 @@ return (${deleteCallback})`, {
       if (restoreFailures.includes(token)) throw new Error('injected restore failure')
       assert.ok(trashed.delete(token))
     },
-    closeTerminalsForOwner: path => calls.terminals.push(path)
+    closeTerminalsForOwner: path => calls.terminals.push(path),
+    closeBrowserForSessions: async ids => { calls.browsers.push(...ids); return [] }
   })
   return { run: () => run(host, files[0]), calls, trashed }
 }
@@ -85,6 +88,7 @@ await check('chain failure restores tokens in reverse order and keeps chain meta
   assert.equal(f.trashed.size, 0)
   assert.equal(f.calls.forgotten, 0)
   assert.deepEqual(f.calls.terminals, [])
+  assert.deepEqual(f.calls.browsers, [])
 })
 await check('failed rollback preserves only outstanding recovery tokens', async () => {
   const f = deletionFixture({ failAt: 2, restoreFailures: ['token-1'] })
