@@ -8,7 +8,7 @@ import { build } from 'esbuild'
 import { parseHTML } from 'linkedom'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const dir = await mkdtemp(join(tmpdir(), 'yan-run-clock-'))
+const dir = await mkdtemp(join(ROOT, 'node_modules', '.test-run-clock-'))
 const outfile = join(dir, 'run-clock.mjs')
 await build({
   entryPoints: [join(ROOT, 'src/renderer/src/features/session/run-clock.ts')],

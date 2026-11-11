@@ -21,16 +21,28 @@ export async function resolvesToPrivateAddress(hostname: string): Promise<boolea
   try {
     return await resolvesToPrivateAddressStrict(hostname)
   } catch {
-    return false
+    return true
   }
 }
 
 export async function resolvesToPrivateAddressStrict(hostname: string): Promise<boolean> {
   const value = hostname.trim().replace(/^\[|\]$/g, '').replace(/\.$/, '')
   if (isPrivateAddress(value)) return true
-  if (!value || isIP(value)) return false
-  const records = await lookup(value, { all: true, verbatim: true })
-  return records.some((record) => isPrivateAddress(record.address))
+  if (!value) throw new Error('Empty DNS hostname')
+  if (isIP(value)) return false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const records = await Promise.race([
+      lookup(value, { all: true, verbatim: true }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('DNS lookup timed out')), 3000)
+      })
+    ])
+    if (!records.length || records.some((record) => !isIP(record.address))) throw new Error('No valid DNS addresses')
+    return records.some((record) => isPrivateAddress(record.address))
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export class PrivateDnsGuard {
@@ -49,8 +61,8 @@ export class PrivateDnsGuard {
     if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.private)
     const inFlight = this.pending.get(key)
     if (inFlight) return inFlight
-    const lookupOnce = this.resolve(key)
-      .catch(() => false)
+    const lookupOnce = (async () => this.resolve(key))()
+      .catch(() => true)
       .then((isPrivate) => {
         this.remember(key, isPrivate)
         return isPrivate

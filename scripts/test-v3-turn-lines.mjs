@@ -470,7 +470,7 @@ async function main() {
     ok(row.props['data-state'] === 'done', '行状态取自任务行（subagent-task-rows）', row.props['data-state'])
     const stateIcon = collect(row, kind('SubagentStateIcon'))[0]
     ok(stateIcon?.props.state === 'done', '状态用小图标表示', stateIcon?.props.state)
-    const task = textOf(byTestId(row, 'v3-subagent-task')[0])
+    const task = flattenText(byTestId(row, 'v3-subagent-task')[0])
     ok(task.includes('PKCE') && !task.startsWith('已完成'), '完成后标题只写任务，状态交给图标', task)
     ok(textOf(byTestId(row, 'v3-subagent-usage')[0]) === '4 个工具 · 12k token', '上下文未知时，完成后用量列是「N 个工具 · tokens」', textOf(byTestId(row, 'v3-subagent-usage')[0]))
     ok(textOf(byTestId(row, 'v3-subagent-time')[0]) === '4s', '用时单独一列', textOf(byTestId(row, 'v3-subagent-time')[0]))

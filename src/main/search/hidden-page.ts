@@ -58,6 +58,7 @@ export async function withHiddenPage<T>(
   const cancelled = new Promise<never>((_resolve, reject) => {
     rejectCancelled = reject
   })
+  void cancelled.catch(() => undefined)
   const cancel = (): void => {
     controller.abort()
     rejectCancelled(new HiddenPageCancelled())

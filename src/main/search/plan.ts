@@ -142,6 +142,7 @@ export class TtlCache<T> {
       if (--pending.users === 0) {
         pending.controller.abort()
         if (this.pending.get(key) === pending) this.pending.delete(key)
+        void pending.promise.catch(() => undefined)
       }
     }
   }

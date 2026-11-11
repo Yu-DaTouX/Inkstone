@@ -714,6 +714,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 {draftIndicator}
                 {title}
                 {pinIndicator}
+                {variant === "folder-multiline" ? null : (
+                  <ThreadWorktreeIndicator worktreePath={view.worktreePath} branch={view.branch} />
+                )}
                 {isDragging ? (
                   dragDestination
                 ) : (

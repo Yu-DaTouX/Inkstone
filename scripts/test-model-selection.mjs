@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 const root=await mkdtemp(join(tmpdir(),'inkstone-model-preferences-'))
 try {
- const load=async(entry,name)=>{const file=join(root,name+'.mjs');await build({entryPoints:[entry],outfile:file,bundle:true,platform:'neutral',format:'esm',logLevel:'silent'});return import(pathToFileURL(file).href)}
+ const load=async(entry,name)=>{const file=join(root,name+'.mjs');await build({entryPoints:[entry],outfile:file,bundle:true,platform:'node',format:'esm',logLevel:'silent'});return import(pathToFileURL(file).href)}
  const {cleanModelChoice,cleanModelFavorites,modelKey}=await load('src/shared/model-selection.ts','preferences')
  const a={provider:'one',id:'same',name:'First'},b={provider:'two',id:'same'}
  assert.notEqual(modelKey(a),modelKey(b),'Same model id from different providers must remain distinct')

@@ -1,7 +1,38 @@
-export const meta = { description: '同一目录里两个已打开的会话可以同时运行：第一个在流式输出时，第二个发送不会被拒绝，并改用 Inkstone/ 开头的隔离分支；不调用真实模型' }
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
-export default async function run({ cdp, check, waitFor, sleep, shot }) {
+export const meta = { description: '同一项目里两个会话共用目录同时运行，不再自动搬进工作树；输入框下方的「工作树」开关把新会话开进 Inkstone/ 分支的工作树，改动只落在工作树里；不调用真实模型' }
+
+const WORKTREE_DIR = /Inkstone-\d{8}-\d+/
+
+const VIEW = `(() => {
+  const s = window.__yanStore.getState()
+  const runner = s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
+  const toggle = document.querySelector('[data-testid="composer-worktree"]')
+  return {
+    cwd: s.session?.cwd ?? runner?.cwd ?? '',
+    branch: runner?.isolationBranch ?? '',
+    running: !!(s.session?.isStreaming || s.session?.isAgentRunning),
+    messages: s.messages.length,
+    toggle: toggle ? { selected: toggle.hasAttribute('data-selected'), disabled: toggle.hasAttribute('data-disabled') || toggle.disabled === true } : null,
+    draft: document.querySelector('[data-testid="composer-input"]')?.textContent ?? '',
+    drafts: Object.values(s.sessionRuntimes).filter((entry) => entry.draft?.trim()).length,
+    warned: (document.body.innerText.match(/后写的会覆盖先写的/g) ?? []).length,
+    marks: document.querySelectorAll('.t3-worktree-mark').length
+  }
+})()`
+
+export default async function run({ cdp, box, check, report, waitFor, sleep, shot, log }) {
   const ev = (expr) => cdp.evaluate(expr)
+  const until = async (label, test, timeout = 30000) => {
+    const end = Date.now() + timeout
+    for (;;) {
+      const view = await ev(VIEW)
+      if (test(view)) return view
+      if (Date.now() > end) throw new Error(`等待超时：${label} ${JSON.stringify(view)}`)
+      await sleep(150)
+    }
+  }
   await waitFor('s.conn === "ready"')
   await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false })
   await ev(`window.__yanStore.getState().patchSettings({ theme: 'dark', lang: 'zh-CN', permissionMode: 'all' })`)
@@ -20,28 +51,84 @@ export default async function run({ cdp, check, waitFor, sleep, shot }) {
   await waitFor(`s.session?.isStreaming || s.session?.isAgentRunning`, 20000, 50)
   await ev(`window.__yanStore.getState().switchSession(${JSON.stringify(firstFile)})`)
   await sleep(1500)
-  const before = await ev(`window.__yanStore.getState().messages.length`)
-  const cwdBefore = await ev(`window.__yanStore.getState().session?.cwd ?? window.__yanStore.getState().cwd ?? ''`)
-  console.log('发送前目录', cwdBefore)
-  check('发送前还在原项目目录（隔离发生在发送时）', !/Inkstone-\d{8}-\d+/.test(String(cwdBefore)), String(cwdBefore))
+  const before = await ev(VIEW)
   await ev(`window.__yanStore.getState().send('第一个会话在对方运行时发送')`)
   await sleep(2500)
-  const after = await ev(`window.__yanStore.getState().messages.length`)
-  const toasts = await ev(`JSON.stringify(document.body.innerText.match(/同一工作目录还有另一个会话[^\\n]*/g) ?? [])`)
-  const branch = await ev(`document.body.innerText.match(/Inkstone\\/\\d{8}-\\d+/)?.[0] ?? ''`)
-  check('没有出现“同一工作目录还有另一个会话正在运行”', toasts === '[]', toasts)
-  check('第一个会话的消息真的发出去了', after > before, `${before} -> ${after}`)
-  check('隔离分支以 Inkstone/ 开头', branch.startsWith('Inkstone/'), branch)
-  const cwd = await ev(`window.__yanStore.getState().session?.cwd ?? window.__yanStore.getState().cwd ?? ''`)
-  console.log('当前会话目录', cwd)
-  check('这个会话改在 Inkstone- 开头的隔离目录里运行', /Inkstone-\d{8}-\d+/.test(String(cwd)), String(cwd))
+  const shared = await ev(VIEW)
+  const rejected = await ev(`JSON.stringify(document.body.innerText.match(/同一工作目录还有[^\\n]*/g) ?? [])`)
+  report.shared = { before, shared, rejected }
+  log('shared', report.shared)
+  check('对方在跑时发送没有被拒绝', rejected === '[]' && shared.messages > before.messages, { rejected, before: before.messages, after: shared.messages })
+  check('两个会话共用项目目录，没有被搬进工作树', !WORKTREE_DIR.test(shared.cwd) && shared.branch === '', shared.cwd)
+  check('第一次并发时提示一次会互相覆盖', shared.warned === 1, shared.warned)
+  await shot('shared-cwd-running')
   await waitFor(`!(s.session?.isStreaming || s.session?.isAgentRunning)`, 60000, 100)
-  const history = await ev(`JSON.stringify(window.__yanStore.getState().messages.map((m) => m.role + ':' + String(m.text ?? m.content ?? '').slice(0, 12)))`)
-  check('迁移后之前的历史还在', history.includes('先开第一个会话'), history)
-  const n1 = await ev(`window.__yanStore.getState().messages.length`)
-  await ev(`window.__yanStore.getState().send('迁移后的第二条消息')`)
-  await sleep(3000)
-  const n2 = await ev(`window.__yanStore.getState().messages.length`)
-  check('迁移后继续发送正常', n2 > n1, `${n1} -> ${n2}`)
-  await shot('same-cwd-concurrent')
+
+  await ev(`window.__yanStore.getState().newSession({ cwd: ${JSON.stringify(box.project)} })`)
+  const offered = await until('新会话出现工作树开关', (view) => !!view.toggle && view.messages === 0)
+  check('新会话的输入框下方有工作树开关，默认关', offered.toggle?.selected === false && !WORKTREE_DIR.test(offered.cwd), offered)
+  await ev(`window.__yanStore.getState().insertIntoComposer('草稿跟着走')`)
+  await until('草稿进了输入框', (view) => view.draft.includes('草稿跟着走'))
+  await ev(`document.querySelector('[data-testid="composer-worktree"]').click()`)
+  const entered = await until('会话进了工作树', (view) => WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === true && !view.toggle.disabled, 60000)
+  report.entered = entered
+  log('entered', entered)
+  check('打开开关后会话开在 Inkstone- 工作树目录里', WORKTREE_DIR.test(entered.cwd), entered.cwd)
+  check('分支以 Inkstone/ 开头', entered.branch.startsWith('Inkstone/'), entered.branch)
+  check('已经打的字跟到了新会话，旧的空会话不留草稿', entered.draft.includes('草稿跟着走') && entered.drafts <= 1, { draft: entered.draft, drafts: entered.drafts })
+  await shot('worktree-toggle-on')
+
+  await ev(`document.querySelector('[data-testid="composer-worktree"]').click()`)
+  const left = await until('关掉开关回到项目目录', (view) => !WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === false && !view.toggle.disabled, 60000)
+  check('关掉开关回到项目目录', !WORKTREE_DIR.test(left.cwd) && left.branch === '', left)
+
+  await ev(`document.querySelector('[data-testid="composer-worktree"]').click()`)
+  const again = await until('再次进工作树', (view) => WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === true && !view.toggle.disabled, 60000)
+  await ev(`window.__yanStore.getState().send('WRITES 在工作树里写文件')`)
+  await waitFor(`s.session?.isStreaming || s.session?.isAgentRunning`, 20000, 50)
+  await waitFor(`!(s.session?.isStreaming || s.session?.isAgentRunning) && s.messages.length >= 2`, 90000, 100)
+  const done = await ev(VIEW)
+  const inWorktree = existsSync(join(again.cwd, 'notes', 'a.md'))
+  const inProject = existsSync(join(box.project, 'notes', 'a.md'))
+  report.wrote = { cwd: again.cwd, inWorktree, inProject, done }
+  log('wrote', report.wrote)
+  check('模型写的文件落在工作树里', inWorktree, again.cwd)
+  check('项目目录里没有这些文件', !inProject)
+  check('发过消息后开关保持打开且不能再切', done.toggle?.selected === true && done.toggle?.disabled === true, done.toggle)
+  await ev(`window.__yanStore.getState().refreshSessions()`)
+  await sleep(800)
+  const listed = await ev(`(async () => {
+    const id = window.__yanStore.getState().session?.sessionId
+    const item = (await window.yan.listSessions()).find((entry) => entry.id === id)
+    const mark = document.querySelector('.t3-worktree-mark')?.getBoundingClientRect()
+    return { branch: item?.worktreeBranch ?? '', marks: document.querySelectorAll('.t3-worktree-mark').length, markSize: mark ? [Math.round(mark.width), Math.round(mark.height)] : null, drafts: Object.values(window.__yanStore.getState().sessionRuntimes).filter((entry) => entry.draft?.trim()).length }
+  })()`)
+  report.listed = listed
+  log('listed', listed)
+  check('会话列表带上工作树分支，侧栏行有工作树标记', listed.branch.startsWith('Inkstone/') && listed.marks >= 1, listed)
+  check('来回切换没有留下多余的草稿行', listed.drafts <= 1, listed.drafts)
+  await shot('worktree-session-done')
+
+  const opened = await ev(`(() => {
+    const s = window.__yanStore.getState()
+    const project = s.settings?.projects.find((item) => item.cwd === ${JSON.stringify(box.project)})
+    const row = project ? document.querySelector('[data-sidebar-row="folder:' + project.id + '"]') : null
+    if (!row) return false
+    const rect = row.getBoundingClientRect()
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 10 }))
+    return true
+  })()`)
+  let item = false
+  for (let i = 0; opened && i < 40 && !item; i++) {
+    await sleep(150)
+    item = await ev(`!!document.querySelector('[data-testid="v3-project-new-worktree"]')`)
+  }
+  check('侧栏项目菜单里有「在工作树中新建会话」', item, { opened })
+  if (item) {
+    await shot('project-menu-worktree')
+    const priorCwd = (await ev(VIEW)).cwd
+    await ev(`document.querySelector('[data-testid="v3-project-new-worktree"]').click()`)
+    const fromMenu = await until('菜单开出工作树会话', (view) => WORKTREE_DIR.test(view.cwd) && view.cwd !== priorCwd && view.messages === 0 && view.toggle?.selected === true, 60000)
+    check('从菜单新建的会话直接开在新的工作树里', fromMenu.branch.startsWith('Inkstone/'), { cwd: fromMenu.cwd, branch: fromMenu.branch })
+  }
 }

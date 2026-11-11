@@ -10,7 +10,7 @@ export async function runAppUpdateTests(ok) {
     const { build } = await import('esbuild')
     await build({ entryPoints: ['src/main/app-update.ts'], outfile: 'out/test/app-update.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{ name: 'updater-test-host', setup(builder) {
       builder.onResolve({ filter: /^(electron|electron-updater)$/ }, ({ path }) => ({ path, namespace: 'update-host' }))
-      builder.onLoad({ filter: /.*/, namespace: 'update-host' }, ({ path }) => ({ contents: path === 'electron' ? `const m=globalThis.__inkstoneUpdateTest;export const app={getVersion:()=> '0.3.2',getPath:()=>m.directory,get isPackaged(){return m.packaged}};export const net={fetch:async()=>{m.calls++;await new Promise(r=>setTimeout(r,10));return {ok:true,json:async()=>m.release}}}` : `import {EventEmitter} from 'node:events';const m=globalThis.__inkstoneUpdateTest;export const autoUpdater=new EventEmitter();autoUpdater.setFeedURL=()=>{};autoUpdater.checkForUpdates=async()=>({updateInfo:{version:m.release.tag_name.slice(1)}});autoUpdater.downloadUpdate=async()=>{autoUpdater.emit('download-progress',{percent:50});autoUpdater.emit('update-downloaded')};autoUpdater.quitAndInstall=()=>m.installs++;globalThis.__inkstoneTestUpdater=autoUpdater;` }))
+      builder.onLoad({ filter: /.*/, namespace: 'update-host' }, ({ path }) => ({ contents: path === 'electron' ? `const m=globalThis.__inkstoneUpdateTest;export const app={getVersion:()=> '0.3.2',getPath:()=>m.directory,get isPackaged(){return m.packaged}};export const net={fetch:async()=>{m.calls++;await new Promise(r=>setTimeout(r,10));return {ok:true,json:async()=>m.release}}};export class BrowserWindow{static getAllWindows(){return []}};export const dialog={showMessageBox:async()=>({response:1}),showErrorBox(){}}` : `import {EventEmitter} from 'node:events';const m=globalThis.__inkstoneUpdateTest;export const autoUpdater=new EventEmitter();autoUpdater.setFeedURL=()=>{};autoUpdater.checkForUpdates=async()=>({updateInfo:{version:m.release.tag_name.slice(1)}});autoUpdater.downloadUpdate=async()=>{autoUpdater.emit('download-progress',{percent:50});autoUpdater.emit('update-downloaded')};autoUpdater.quitAndInstall=()=>m.installs++;globalThis.__inkstoneTestUpdater=autoUpdater;` }))
     } }] })
     const { registerAppUpdate } = await import('../out/test/app-update.mjs')
     const handlers = new Map(); let busy = false
@@ -26,11 +26,11 @@ export async function runAppUpdateTests(ok) {
     ok((await run('check')).phase === 'manual', '缺少 latest.yml 的发布提供手动安装')
     model.release.assets = [{ name: 'latest.yml' }]
     ok((await run('check')).phase === 'available', '安装版和更新元数据齐备时允许下载')
-    ok(run('install').ok === false, '未下载完成时拒绝安装')
+    ok((await run('install')).ok === false, '未下载完成时拒绝安装')
     await run('download')
     ok((await run('status')).phase === 'downloaded', '下载完成进入待重启状态')
     busy = true
-    ok(run('install').ok === false && model.installs === 0, '运行任务时拒绝重启安装')
+    ok((await run('install')).ok === false && model.installs === 0, '运行任务时拒绝重启安装')
     ok(JSON.parse(await readFile(join(directory, 'update-preferences.json'), 'utf8')).automatic === false, '启动检查偏好写入独立用户目录')
     const prefsFile = join(directory, 'update-preferences.json')
     const current = (await run('status')).current

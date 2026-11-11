@@ -451,8 +451,9 @@ GROUP_USAGE.terminal = `yan terminal <动作> [选项]
                                   timeout 超过 --timeout 秒（默认 120，最多 900）；exited 终端退出。
                                   常驻进程（dev server、watch）用 --until 等到就绪，例如 --until "ready|Local:"
                                   --background：长命令（构建、测试、下载）约 3 秒后就返回 state=background，
-                                  命令结束、命中 --until 或超过 --timeout（默认 3 小时，最多 24 小时）时，
-                                  砚会在你空闲时发来「后台终端命令」通知；期间可以做别的事，不要轮询或 sleep 等待
+                                  命令自己结束、命中 --until 或到了你给的 --timeout（最多 24 小时）时，
+                                  砚会发来「后台终端命令」通知，你空闲时也会叫醒你；期间可以做别的事，不要轮询或 sleep 等待。
+                                  你自己停掉的不再通知；用户停掉的不会叫醒你，通知随下一回合送达
   read  --id <终端> [--lines 80] [--since <cursor>]
                                   读终端内容；--since 填上次结果里的 cursor，只取之后的新输出
   write --id <终端> --text "<文本>" [--enter] [--wait <毫秒>]

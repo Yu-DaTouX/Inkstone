@@ -208,11 +208,11 @@ export async function isolateCwdForConflict(
   const dir = resolve(cwd)
   const repo = await resolveRepo(dir)
   if (!repo) {
-    return { ok: false, reason: pick('这个目录不是 Git 仓库，没有安全的隔离与合并基线', 'This folder is not a Git repository, so there is no safe isolation and merge baseline') }
+    return { ok: false, reason: pick('这个文件夹不是 Git 仓库，开不了工作树', 'This folder is not a Git repository, so a worktree cannot be opened') }
   }
   const baseBranch = await currentBranch(repo.root)
   if (!baseBranch) {
-    return { ok: false, reason: pick('主工作树处于 detached HEAD，无法确定该合回哪个分支', 'The main worktree is on a detached HEAD, so the branch to merge back to is unknown') }
+    return { ok: false, reason: pick('项目当前在 detached HEAD 上，先切到一个分支再开工作树', 'The project is on a detached HEAD; switch to a branch before opening a worktree') }
   }
 
   const branch = autoIsolationBranch(options.now ?? new Date())

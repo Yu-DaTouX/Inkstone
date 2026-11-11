@@ -1,5 +1,6 @@
 export interface SidebarText {
   projectMenu: string
+  newInWorktree: string
   iconColor: string
   iconColorAuto: string
   iconColorOption: string
@@ -62,6 +63,7 @@ export interface SidebarText {
 
 const zh: SidebarText = {
   projectMenu: '项目操作',
+  newInWorktree: '在工作树中新建会话',
   iconColor: '图标颜色',
   iconColorAuto: '自动',
   iconColorOption: '颜色 {n}',
@@ -124,6 +126,7 @@ const zh: SidebarText = {
 
 const en: SidebarText = {
   projectMenu: 'Project actions',
+  newInWorktree: 'New session in a worktree',
   iconColor: 'Icon color',
   iconColorAuto: 'Automatic',
   iconColorOption: 'Color {n}',

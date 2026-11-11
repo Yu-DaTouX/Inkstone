@@ -699,7 +699,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
         originalTarget.queue = { steering: ['先处理 A'], followUp: ['之后处理 B'] }
 
         const sameCwdBusy = await reg.restartOne(target.id)
-        ok(!sameCwdBusy.ok && /同一工作目录/.test(sameCwdBusy.error ?? ''), '同 cwd 的其它 runner 忙时拒绝重载')
+        ok(!sameCwdBusy.ok && /工作目录重叠/.test(sameCwdBusy.error ?? ''), '同 cwd 的其它 runner 忙时拒绝重载', sameCwdBusy.error)
         ok(agents.length === 3 && originalTarget.calls.stop === 0, '拒绝期间没有创建替代进程或停止旧实例')
 
         otherAgent.state = { ...otherAgent.state, isAgentRunning: false }

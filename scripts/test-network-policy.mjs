@@ -58,5 +58,7 @@ export async function runNetworkPolicyTests(ok, policy) {
   const failing = new PrivateDnsGuard(async () => {
     throw new Error('dns 挂了')
   })
-  ok((await failing.resolves('broken.test')) === false, '解析失败的域名当作公网（不阻断正常浏览）')
+  ok((await failing.resolves('broken.test')) === true, '解析失败的域名拒绝放行')
+  const syncFailing = new PrivateDnsGuard(() => { throw new Error('sync DNS failure') })
+  ok(await syncFailing.resolves('broken.test'), '解析器同步抛错也拒绝放行')
 }

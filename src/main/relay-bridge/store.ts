@@ -243,14 +243,10 @@ export class RelayBridgeStore {
   revoke(id: string): Promise<boolean> {
     return this.mutate(async () => {
       const state = await this.load()
-      if (!state.clients.some((c) => c.id === id && c.revokedAt === null)) return false
-      const next = state.clients.map((c) => (c.id === id ? { ...c, revokedAt: this.now() } : c))
-      try {
-        await this.save({ ...state, clients: next })
-      } catch {
-        return false
-      }
-      state.clients = next
+      const client = state.clients.find((c) => c.id === id && c.revokedAt === null)
+      if (!client) return false
+      client.revokedAt = this.now()
+      await this.save()
       return true
     })
   }

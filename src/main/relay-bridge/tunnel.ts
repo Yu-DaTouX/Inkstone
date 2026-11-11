@@ -51,7 +51,7 @@ type Pending = { req: ClientRequest; stream: boolean; finish?(error?: string): v
 
 const UPLOAD_CHUNK_MAX = 2 * 1024 * 1024
 const HANDSHAKE_FRAME_MAX = 4096
-const SEALED_FRAME_MAX = 16 * 1024 * 1024
+const SEALED_FRAME_MAX = 24 * 1024 * 1024
 
 function declaredKind(value: unknown): RelayClientKind | undefined {
   return value === 'phone' || value === 'peer' || value === 'agent' ? value : undefined

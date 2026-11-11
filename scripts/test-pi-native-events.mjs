@@ -252,11 +252,13 @@ try {
     const pushes = []
     const ctl = new AgentController({ push: (m) => pushes.push({ ...m, sid: ctl.state?.sessionId }), cwd: process.cwd() })
     let switchTo = 's-new'
+    let switchedFile = undefined
     let cancel = false
     const ui = (req) => ctl.ui.handleUi(req)
     ctl.rpc = {
-      command: async (type) => {
+      command: async (type, payload) => {
         if (type === 'switch_session') {
+          switchedFile = payload?.sessionPath
           ui({ method: 'setWidget', widgetKey: 'old-only', widgetLines: undefined })
           if (cancel) {
             ui({ method: 'setStatus', statusKey: 'build', statusText: '取消后仍更新' })
@@ -266,7 +268,7 @@ try {
           ui({ method: 'setStatus', statusKey: 'build', statusText: '新会话构建中' })
           return { success: true, data: {} }
         }
-        if (type === 'get_state') return { success: true, data: { sessionId: switchTo, thinkingLevel: 'off', isStreaming: false, messageCount: 0 } }
+        if (type === 'get_state') return { success: true, data: { sessionId: switchTo, sessionFile: switchedFile, thinkingLevel: 'off', isStreaming: false, messageCount: 0 } }
         if (type === 'get_messages') return { success: true, data: { messages: [] } }
         return { success: true, data: {} }
       },

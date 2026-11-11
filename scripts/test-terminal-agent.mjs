@@ -88,9 +88,9 @@ function fakeHost(options = {}) {
 try {
   const entry = join(dir, 'entry.ts')
   const src = (path) => JSON.stringify(join(process.cwd(), path).replace(/\\/g, '/'))
-  await writeFile(entry, `export * from ${src('src/main/terminal-agent.ts')}\nexport * from ${src('src/main/terminal-jobs.ts')}\n`)
+  await writeFile(entry, `export * from ${src('src/main/terminal-agent.ts')}\nexport * from ${src('src/main/terminal-jobs.ts')}\nexport * from ${src('src/main/terminal-notice-step.ts')}\n`)
   const mod = await bundle(entry, 'terminal-agent.mjs')
-  const { listTerminalJobs, requestTerminalJobStop, clearFinishedTerminalJobs, resetTerminalJobs } = mod
+  const { listTerminalJobs, requestTerminalJobStop, markTerminalJobsStopping, clearFinishedTerminalJobs, resetTerminalJobs, terminalNoticeStep } = mod
   const { keySequence, keysToSequence, planSubmission, stripTerminalControls, looksLikePrompt, lastNonEmptyLine, sliceSince, tailText, renderTerminalText, loadDangerRules, TerminalAgentCommands, resetTerminalAgentState } = mod
 
   const setup = (options = {}) => {
@@ -101,7 +101,7 @@ try {
     const confirms = []
     const notices = []
     const ctx = {
-      notify: (text, stillOwner) => notices.push({ text, owned: stillOwner() }),
+      notify: (text, stillOwner, wake) => notices.push({ text, owned: stillOwner(), wake }),
       ownerKeys: () => ['E:/sessions/A.jsonl', 'sid-a'],
       cwd: () => process.cwd(),
       confirm: async (request) => {
@@ -360,6 +360,7 @@ try {
     await settle(notices)
     assert.equal(notices.length, 1)
     assert.equal(notices[0].owned, true)
+    assert.equal(notices[0].wake, true)
     assert.match(notices[0].text, /done ```/)
     assert.match(notices[0].text, /\n````\n/)
     assert.match(notices[0].text, new RegExp(`--id ${started.summary.id} --since \\d+`))
@@ -377,6 +378,7 @@ try {
     await slow.commands.run('run', { command: 'sleep 9999', background: true, timeout: 5 })
     await settle(slow.notices)
     assert.equal(parseHostTextNotice(slow.notices[0]?.text)?.state, 'timeout')
+    assert.equal(slow.notices[0].wake, true)
 
     const stopped = setup({ respond: (_term, _command, emit) => emit('waiting\r\n') })
     const job = await stopped.commands.run('run', { command: 'sleep 9999', background: true, timeout: 600 })
@@ -405,8 +407,101 @@ try {
     assert.equal(listTerminalJobs()[0].state, 'stopped')
     assert.ok(listTerminalJobs()[0].endedAt)
     assert.equal(parseHostTextNotice(notices[0]?.text)?.state, 'stopped')
+    assert.equal(notices[0].wake, false)
     clearFinishedTerminalJobs([job.id])
     assert.equal(listTerminalJobs().length, 0)
+  })
+
+  const idle = async () => {
+    for (let i = 0; i < 400; i++) await new Promise((done) => setImmediate(done))
+  }
+  const running = (job) => listTerminalJobs().find((item) => item.id === job)?.state
+
+  await check('后台命令：没给 --timeout 时监视到时限只改任务状态，不发通知', async () => {
+    resetTerminalJobs()
+    const { commands, notices } = setup({ respond: (_term, _command, emit) => emit('serving\r\n') })
+    const started = await commands.run('run', { command: 'npm run dev', background: true })
+    await idle()
+    assert.equal(running(started.summary.jobId), 'timeout')
+    assert.equal(notices.length, 0)
+  })
+
+  await check('后台命令：模型自己 ctrl+c 停掉的记为 stopped，不发通知；write 回答提示后跑完的照常通知', async () => {
+    resetTerminalJobs()
+    const own = setup({ respond: (_term, command, emit) => emit(command ? 'serving\r\n' : '') })
+    const started = await own.commands.run('run', { command: 'npm run dev', background: true, timeout: 600 })
+    const term = own.host.terms.get(started.summary.id)
+    const write = own.host.write
+    own.host.write = (id, data) => {
+      const ok = write(id, data)
+      if (data === '\x03') {
+        const tail = '^C\r\nPS C:\\work> '
+        term.buffer += tail
+        term.total += tail.length
+      }
+      return ok
+    }
+    await own.commands.run('keys', { id: started.summary.id, keys: 'ctrl+c' })
+    await idle()
+    assert.equal(running(started.summary.jobId), 'stopped')
+    assert.equal(own.notices.length, 0)
+
+    resetTerminalJobs()
+    let finish = () => {}
+    const answered = setup({
+      respond: (_term, command, emit) => {
+        if (command === 'y') finish = () => emit('installed\r\nPS C:\\work> ')
+        else emit('Proceed? (y/n) ')
+      }
+    })
+    const install = await answered.commands.run('run', { command: 'npm install', background: true, timeout: 600 })
+    await answered.commands.run('write', { id: install.summary.id, text: 'y', enter: true, wait: 0 })
+    finish()
+    await settle(answered.notices)
+    assert.equal(parseHostTextNotice(answered.notices[0]?.text)?.state, 'completed')
+    assert.equal(answered.notices[0].wake, true)
+  })
+
+  await check('后台命令：用户在终端里按 ctrl+c 或关掉终端，记为 stopped，通知不叫醒', async () => {
+    resetTerminalJobs()
+    const typed = setup({ respond: (_term, command, emit) => emit(command ? 'serving\r\n' : '^C\r\nPS C:\\work> ') })
+    const started = await typed.commands.run('run', { command: 'npm run dev', background: true, timeout: 600 })
+    markTerminalJobsStopping(started.summary.id)
+    assert.equal(running(started.summary.jobId), 'stopping')
+    typed.host.write(started.summary.id, '\r')
+    await settle(typed.notices)
+    assert.equal(parseHostTextNotice(typed.notices[0]?.text)?.state, 'stopped')
+    assert.match(typed.notices[0].text, /用户停止了这条命令/)
+    assert.equal(typed.notices[0].wake, false)
+
+    resetTerminalJobs()
+    const closed = setup({ respond: (_term, _command, emit) => emit('serving\r\n') })
+    const job = await closed.commands.run('run', { command: 'npm run dev', background: true, timeout: 600 })
+    markTerminalJobsStopping(job.summary.id)
+    closed.host.terms.delete(job.summary.id)
+    await settle(closed.notices)
+    assert.equal(parseHostTextNotice(closed.notices[0]?.text)?.state, 'stopped')
+    assert.equal(closed.notices[0].wake, false)
+
+    resetTerminalJobs()
+    const died = setup({ respond: (_term, _command, emit) => emit('serving\r\n') })
+    const gone = await died.commands.run('run', { command: 'npm run dev', background: true, timeout: 600 })
+    died.host.terms.delete(gone.summary.id)
+    await settle(died.notices)
+    assert.equal(parseHostTextNotice(died.notices[0]?.text)?.state, 'exited')
+    assert.equal(died.notices[0].wake, true)
+  })
+
+  await check('通知投递：回合在跑就插进当前回合，空闲时只有该叫醒的才起回合，其余留到下一回合', () => {
+    const at = (patch) => terminalNoticeStep({ stopping: false, owned: true, ready: true, running: false, wake: true, ...patch })
+    assert.equal(at({ running: true }), 'steer')
+    assert.equal(at({ running: true, wake: false }), 'steer')
+    assert.equal(at({}), 'wake')
+    assert.equal(at({ wake: false }), 'hold')
+    assert.equal(at({ ready: false }), 'wait')
+    assert.equal(at({ ready: false, wake: false }), 'wait')
+    assert.equal(at({ owned: false }), 'drop')
+    assert.equal(at({ stopping: true, running: true }), 'drop')
   })
 
   await check('start --cwd 不存在时报错，终端上限时报错', async () => {

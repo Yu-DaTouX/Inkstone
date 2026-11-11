@@ -19,7 +19,7 @@ export function useAsideFit(): boolean {
 
 export function useToolExpansion(id: string): [boolean | undefined, (open: boolean) => void] {
   const scope = useContext(ToolExpansionScope)
-  const stored = useSyncExternalStore(toolExpansion.subscribe, () => toolExpansion.get(scope, id))
+  const stored = useSyncExternalStore(toolExpansion.subscribe, () => toolExpansion.get(scope, id), () => toolExpansion.get(scope, id))
   return [stored, (open: boolean) => toolExpansion.set(scope, id, open)]
 }
 

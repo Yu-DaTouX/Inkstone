@@ -19,7 +19,7 @@ export async function runSearchLookupTests(ok) {
     './search/context7': `export class DocsError extends Error {}; export const queryDocs = () => { throw Error('unexpected docs') }`
   }
   for (const [module, name] of [['brave', 'Brave'], ['tavily', 'Tavily'], ['ddg', 'Ddg']]) stubs[`./search/${module}`] = `export const run${name}Search = () => { throw Error('unexpected provider') }`
-  const electron = `export class BrowserWindow { constructor() { this.dead = false; this.listeners = {}; this.webContents = { on: (name, cb) => { this.listeners[name] = cb }, setWindowOpenHandler() {}, executeJavaScript: async () => { const s = globalThis.__lookupFixture; return { title: s.title, finalUrl: 'https://example.com/a', text: s.text, state: 'complete' } } } } loadURL(url) { const s = globalThis.__lookupFixture; s.calls.push(['local', url]); s.advance(s.localCost); this.listeners['did-navigate']?.({}, url, 200); return Promise.resolve() } isDestroyed() { return this.dead } destroy() { this.dead = true } }; export const session = { fromPartition: () => ({ webRequest: { onBeforeRequest() {} } }) }`
+  const electron = `export class BrowserWindow { constructor() { this.dead = false; this.listeners = {}; this.webContents = { on: (name, cb) => { this.listeners[name] = cb }, setWindowOpenHandler() {}, executeJavaScript: async () => { const s = globalThis.__lookupFixture; return { title: s.title, finalUrl: 'https://example.com/a', text: s.text, state: 'complete' } } } } loadURL(url) { const s = globalThis.__lookupFixture; s.calls.push(['local', url]); s.advance(s.localCost); this.listeners['did-navigate']?.({}, url, 200); return Promise.resolve() } isDestroyed() { return this.dead } destroy() { this.dead = true } }; const __sessions = new Map(); export const session = { fromPartition: (name) => { if (!__sessions.has(name)) { const s = { name, rules: '', webRequest: { onBeforeRequest() {}, onHeadersReceived() {} }, setProxy: async (config) => { s.rules = config.proxyRules ?? '' }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, on() {}, resolveProxy: async () => s.name === 'yan-pinned-probe' ? 'DIRECT' : (s.rules ? 'PROXY ' + s.rules.split(';')[0].replace('http=', '') : 'DIRECT'), closeAllConnections: async () => {} }; __sessions.set(name, s) } return __sessions.get(name) } }`
   const originalNow = Date.now
   const originalFetch = globalThis.fetch
   const originalSetTimeout = globalThis.setTimeout
@@ -29,9 +29,10 @@ export async function runSearchLookupTests(ok) {
   Date.now = () => now
   state.advance = ms => { now += ms }
   globalThis.fetch = () => { throw Error('real network forbidden') }
+  let shutdownPinnedNetworkGuard = async () => {}
   try {
     const outfile = join(temp, 'fixture.mjs')
-    await build({ stdin: { contents: `export { LookupCommands } from './src/main/lookup-commands'; export { TtlCache } from './src/main/search/plan'`, resolveDir: process.cwd() }, outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{ name: 'offline', setup(b) {
+    await build({ stdin: { contents: `export { LookupCommands } from './src/main/lookup-commands'; export { TtlCache } from './src/main/search/plan'; export { shutdownPinnedNetworkGuard } from './src/main/net/pinned-network'`, resolveDir: process.cwd() }, outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{ name: 'offline', setup(b) {
       b.onResolve({ filter: /.*/ }, args => {
         if (args.path === 'electron') return { path: 'electron', namespace: 'fixture' }
         if (args.path === 'node:dns/promises') return { path: 'dns', namespace: 'fixture' }
@@ -39,7 +40,9 @@ export async function runSearchLookupTests(ok) {
       })
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ contents: args.path === 'electron' ? electron : args.path === 'dns' ? `export const lookup = async () => { throw Error('real DNS forbidden') }` : stubs[args.path], loader: 'js' }))
     } }] })
-    const { LookupCommands, TtlCache } = await import(pathToFileURL(outfile).href)
+    const loaded = await import(pathToFileURL(outfile).href)
+    const { LookupCommands, TtlCache } = loaded
+    shutdownPinnedNetworkGuard = loaded.shutdownPinnedNetworkGuard
     const eq = (actual, expected, label) => ok(JSON.stringify(actual) === JSON.stringify(expected), label, JSON.stringify({ actual, expected }))
     let loads = 0
     const cache = new TtlCache(100, 2, () => now)
@@ -110,6 +113,7 @@ export async function runSearchLookupTests(ok) {
     globalThis.fetch = originalFetch
     globalThis.setTimeout = originalSetTimeout
     delete globalThis.__lookupFixture
+    await shutdownPinnedNetworkGuard()
     await rm(temp, { recursive: true, force: true })
   }
 }

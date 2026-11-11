@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { runSuite } from './lib/test-suite.mjs'
 
 const MAX_LINES = 100
 const TRACKED_ROOTS = /^(src|scripts|resources|debug|integrations|mobile|assets|build)\//
@@ -84,3 +85,5 @@ export function runAgentsDocTests(ok) {
   ok(agentsDocProblems(map('`agent`', '`session`', '`gone`'), mapped).some((item) => item.includes('场景 gone')), '能发现不存在的场景')
   ok(agentsDocProblems(map('—', '—', '—'), mapped).length === 0, '空格子不报')
 }
+
+await runSuite(import.meta.url, runAgentsDocTests)

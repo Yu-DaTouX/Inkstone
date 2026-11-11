@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, FolderOpen, Link, Palette, Pencil, Plus, Replace, Trash2, Type } from 'lucide-react'
+import { Archive, ArchiveRestore, FolderGit2, FolderOpen, Link, Palette, Pencil, Plus, Replace, Trash2, Type } from 'lucide-react'
 import { useEffect, useState, type ReactElement, type RefObject } from 'react'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
@@ -10,6 +10,7 @@ import { ArchiveConfirm, ProjectDirectoryDialog, setProjectArchived } from './Pr
 import { ProjectDeleteDialog } from './ProjectDeleteDialog'
 import { shortProject } from './sidebar-model'
 import { sidebarText } from './sidebar-text'
+import { useGitFolder } from '../../lib/git-folder'
 import './ProjectMenu.css'
 
 interface Props {
@@ -18,9 +19,10 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   onNew: () => void
+  onNewWorktree: () => void
 }
 
-export function ProjectMenu({ project, anchor, open, onOpenChange, onNew }: Props): ReactElement {
+export function ProjectMenu({ project, anchor, open, onOpenChange, onNew, onNewWorktree }: Props): ReactElement {
   const t = useT()
   const { lang } = useI18n()
   const text = v3Text(lang)
@@ -32,6 +34,7 @@ export function ProjectMenu({ project, anchor, open, onOpenChange, onNew }: Prop
   const [error, setError] = useState('')
   const label = project.name || useStore.getState().settings?.projectNames[project.cwd] || shortProject(project.cwd)
   const projects = useStore((s) => s.settings?.projects)
+  const git = useGitFolder(project.cwd, open && !project.archived)
   const autoLook = projectIconLook((projects ?? []).map((item) => item.id === project.id ? { ...item, iconColor: undefined } : item), project.id, label)
 
   const saveIcon = async (patch: Pick<ProjectRecord, 'iconColor' | 'iconText'>): Promise<boolean> => {
@@ -100,6 +103,7 @@ export function ProjectMenu({ project, anchor, open, onOpenChange, onNew }: Prop
         onOpenChange(false)
         setError('')
         if (key === 'new') onNew()
+        else if (key === 'new-worktree') onNewWorktree()
         else if (key === 'rename') { setName(label); setDialog('rename') }
         else if (key === 'icon-text') { setName(project.iconText ?? ''); setDialog('icon-text') }
         else if (key === 'directory') setDialog('directory')
@@ -110,6 +114,7 @@ export function ProjectMenu({ project, anchor, open, onOpenChange, onNew }: Prop
         else if (key === 'copy') void navigator.clipboard.writeText(project.cwd).catch((cause) => useStore.getState().notify('error', String(cause)))
       }} data-testid="v3-project-menu">
         {!project.archived ? <MenuItem id="new" icon={<Plus size={14} />}>{text.newInProject}</MenuItem> : null}
+        {git ? <MenuItem id="new-worktree" icon={<FolderGit2 size={14} />} data-testid="v3-project-new-worktree">{own.newInWorktree}</MenuItem> : null}
         <MenuItem id="rename" icon={<Pencil size={14} />}>{t('rail.renameProject')}</MenuItem>
         <SubmenuTrigger>
           <MenuItem id="icon-color" textValue={own.iconColor} icon={<Palette size={14} />} data-testid="v3-project-icon-color">{own.iconColor}</MenuItem>

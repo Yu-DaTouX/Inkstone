@@ -173,7 +173,11 @@ console.log('▌C2 提问答复：结果与失败保留')
 console.log('▌A2 主会话额度等待：推送不自动武装，手动开启可用')
 {
   const blocked = [{ label: '5h', total: 100, used: 100, exceeded: true, resetAt: Date.now() + 3_600_000 }]
-  reset({ session: { sessionId: 's1', model: { provider: 'p', id: 'm' } } })
+  reset({
+    session: { sessionId: 's1', model: { provider: 'p', id: 'm' } },
+    activeRunnerId: 'r1',
+    runners: [{ id: 'r1', runId: 'r1', sessionId: 's1', sessionFile: 'C:/s/s1.jsonl', generation: 1, running: false }]
+  })
   host.windows = blocked
   calls.quota = 0
   calls.abortRetry = 0
