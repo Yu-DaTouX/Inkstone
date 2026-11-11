@@ -1,6 +1,6 @@
 import type { Usage, UIMessage, UIMessageImage, UIToolCall } from '../shared/ipc'
 import { isDangerDenial } from '../shared/danger-block'
-import { modelErrorNotice } from '../shared/model-errors'
+import { modelErrorNotice, TRUNCATED_OUTPUT_NOTICE } from '../shared/model-errors'
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { estimateCost } from '../shared/model-pricing'
 import { serverSearchCalls } from './server-search-calls'
@@ -47,6 +47,7 @@ export interface PiMessage {
 }
 
 export function assistantError(m: PiMessage): string | undefined {
+  if (m.stopReason === 'length') return TRUNCATED_OUTPUT_NOTICE
   return m.stopReason === 'error' ? modelErrorNotice(m.errorMessage) : undefined
 }
 

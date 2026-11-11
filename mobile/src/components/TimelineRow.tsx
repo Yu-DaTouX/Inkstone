@@ -39,6 +39,7 @@ export function errorTitle(kind: ModelErrorKind): string {
   if (kind === 'request') return pick('模型或请求配置不受支持', 'Model or request not supported')
   if (kind === 'refused') return pick('被服务商安全审核拦截', 'Blocked by the provider\'s safety filter')
   if (kind === 'aborted') return pick('本轮已取消', 'This turn was cancelled')
+  if (kind === 'truncated') return pick('输出被截断', 'Output cut off')
   return pick('模型请求出错', 'Model request failed')
 }
 
@@ -157,9 +158,9 @@ export const TimelineRow = memo(function TimelineRow({ item, live, expandedTools
       {failure ? <View accessibilityRole="alert" style={[styles.errorCard, { borderColor: p.err }]}>
         <Text style={{ color: p.err, fontSize: font.sm, fontWeight: '600' }}>{errorTitle(failure.kind)}</Text>
         <Text selectable numberOfLines={4} style={{ color: p.fgDim, fontSize: font.xs, fontFamily: mono }}>{message.error}</Text>
-        {onRetry || (onCompact && failure.kind === 'context') ? <View style={styles.errorActions}>
+        {(onRetry && failure.kind !== 'truncated') || (onCompact && failure.kind === 'context') ? <View style={styles.errorActions}>
           {onCompact && failure.kind === 'context' ? <Pressable accessibilityRole="button" onPress={onCompact} style={styles.errorButton}><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('压缩上下文', 'Compact context')}</Text></Pressable> : null}
-          {onRetry && failure.kind !== 'aborted' ? <Pressable accessibilityRole="button" onPress={onRetry} style={styles.errorButton}><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('重试', 'Retry')}</Text></Pressable> : null}
+          {onRetry && failure.kind !== 'aborted' && failure.kind !== 'truncated' ? <Pressable accessibilityRole="button" onPress={onRetry} style={styles.errorButton}><Text style={{ color: p.accent, fontSize: font.sm }}>{pick('重试', 'Retry')}</Text></Pressable> : null}
         </View> : null}
       </View> : null}
       {(message.artifacts ?? []).map((artifact) => (

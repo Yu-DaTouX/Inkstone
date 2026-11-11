@@ -107,4 +107,11 @@ export async function runModelErrorTests(ok) {
   ok(/未返回具体原因/.test(failedAssistant().error), '旧历史没有原文时明确缺失原因')
   ok(normalizeMessage({ role: 'assistant', content: [], stopReason: 'stop' }, 0).error === undefined, '正常结束没有错误行')
 
+  const cut = normalizeMessage({ role: 'assistant', content: [{ type: 'text', text: '写到一半' }], stopReason: 'length' }, 0)
+  ok(cut.error === shared.TRUNCATED_OUTPUT_NOTICE && cut.text === '写到一半', '输出被截断的消息保留正文并带截断说明', cut.error)
+  ok(shared.classifyModelError(cut.error).kind === 'truncated' && shared.modelErrorCause(cut.error) === 'truncated', '截断说明归入截断类，不当成模型侧错误')
+  ok(shared.modelErrorNotice(cut.error) === shared.TRUNCATED_OUTPUT_NOTICE, '截断说明再过一遍通知文案不变')
+  ok(!shared.isTransientModelError(cut.error) && !shared.isAuthRejected(cut.error), '截断不触发临时错误续跑或认证闪断续跑')
+  ok(shared.classifyModelError('finish_reason: length').kind !== 'truncated', '服务商原文里的 length 字样不误判成截断')
+
 }

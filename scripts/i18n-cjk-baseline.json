@@ -239,7 +239,7 @@
   "src/shared/mcp-native-import.ts": 2,
   "src/shared/mcp-registration.ts": 9,
   "src/shared/mcp.ts": 3,
-  "src/shared/model-errors.ts": 40,
+  "src/shared/model-errors.ts": 42,
   "src/shared/question-form.ts": 16,
   "src/shared/quota-forecast.ts": 3,
   "src/shared/quota-mini.ts": 5,

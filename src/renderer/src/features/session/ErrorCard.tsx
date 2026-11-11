@@ -3,7 +3,7 @@ import { useI18n } from '../../i18n'
 import { pushNotice, useStore } from '../../state/store'
 import { refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { blockedQuotaWindows } from '../../../../shared/quota-resume'
-import { EMPTY_MODEL_ERROR_NOTICE, modelErrorCause, modelErrorResetTime, type ModelErrorCause } from '../../../../shared/model-errors'
+import { EMPTY_MODEL_ERROR_NOTICE, modelErrorCause, modelErrorResetTime, TRUNCATED_OUTPUT_NOTICE, type ModelErrorCause } from '../../../../shared/model-errors'
 import { viewMatchesProjectedSession, sessionViewIdentity } from './view-state'
 import { Button } from '../../ui'
 import { Card, CardActions, CardBody, CardCode, CardHead, CardStatus, CardSummary, CardTitle } from '../../ui/Card'
@@ -27,6 +27,7 @@ const CAUSE_HINT: Record<ModelErrorCause, SessionTextKey> = {
   context: 'errHintContext',
   aborted: 'errHintAborted',
   request: 'errHintRequest',
+  truncated: 'errHintTruncated',
   restart: 'errHintRestart',
   stream: 'errHintStream',
   timeout: 'errHintTimeout',
@@ -36,7 +37,7 @@ const CAUSE_HINT: Record<ModelErrorCause, SessionTextKey> = {
 }
 
 function splitErrorBody(body: string): { explanation: string; raw: string } {
-  if (body === EMPTY_MODEL_ERROR_NOTICE) return { explanation: body, raw: '' }
+  if (body === EMPTY_MODEL_ERROR_NOTICE || body === TRUNCATED_OUTPUT_NOTICE) return { explanation: body, raw: '' }
   const at = body.lastIndexOf(RAW_MARK)
   if (at < 0) return { explanation: '', raw: body }
   return { explanation: body.slice(0, at).trim(), raw: body.slice(at + RAW_MARK.length).trim() }
@@ -148,7 +149,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
 
   const title = tt(errorTitleKey(model))
   const bodyParts = splitErrorBody(model.body)
-  const hint = windowFull ? tt('errorQuotaWindowFull') : errorHint(bodyParts.raw, tt)
+  const hint = windowFull ? tt('errorQuotaWindowFull') : model.kind === 'truncated' ? tt(CAUSE_HINT.truncated) : errorHint(bodyParts.raw, tt)
   const hintTip = zh && bodyParts.explanation ? bodyParts.explanation : undefined
   const explanation = <p className="v3-errorcard-body" data-testid="v3-error-explanation" title={hintTip}>{hint}</p>
   const rawBlock = bodyParts.raw ? <CardCode tone="fail" className="v3-errorcard-raw" data-testid="v3-error-raw">{bodyParts.raw}</CardCode> : null

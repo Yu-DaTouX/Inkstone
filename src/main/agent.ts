@@ -683,6 +683,7 @@ export class AgentController extends EventEmitter {
   private loopGuardHit?: { rule: LoopHit['rule']; stream: 'thinking' | 'text' }
   private retrySeenThisRun = false
   private pendingModelError?: { text: string; retried: boolean }
+  private pendingTruncated = false
   private quotaExhausted = false
 
   private readonly turn = new TurnTimingTracker()
@@ -2632,6 +2633,7 @@ export class AgentController extends EventEmitter {
         })
         if (m.stopReason === 'error' || m.stopReason === 'aborted') this.sessionMoveFailureVersion += 1
         this.pendingModelError = m.stopReason === 'error' ? { text: modelErrorText(m.errorMessage), retried: this.retrySeenThisRun } : undefined
+        this.pendingTruncated = m.stopReason === 'length'
         if (m.stopReason !== 'aborted') this.quotaExhausted = m.stopReason === 'error' && isQuotaWaitError(modelErrorText(m.errorMessage))
         if (m.stopReason === 'error') {
           this.push({
@@ -2726,7 +2728,7 @@ export class AgentController extends EventEmitter {
           : null
         const modelError = this.pendingModelError
         const settledSessionId = this.state?.sessionId
-        const outcome = settledTurnOutcome({ aborted: evt.aborted === true, terminal: this.turn.terminal, modelError: !!modelError })
+        const outcome = settledTurnOutcome({ aborted: evt.aborted === true, terminal: this.turn.terminal, modelError: !!modelError || this.pendingTruncated })
         if (evt.aborted === true || this.turn.terminal === 'stopped') {
           for (const call of this.items.cancelUnfinishedTools(Date.now())) this.pushTool(call)
         }
@@ -2746,6 +2748,7 @@ export class AgentController extends EventEmitter {
             runId: this.turn.runId, version: this.loopGuardContinuationVersion, reason: 'key-failover' as const } }
           : null
         this.pendingModelError = undefined
+        this.pendingTruncated = false
         this.retrySeenThisRun = false
         if (this.loopGuardHit) this.logStreamLoopGuard('settled', { rule: this.loopGuardHit.rule, stream: this.loopGuardHit.stream, outcome: 'agent-settled' })
         this.streamLoopDetector = null

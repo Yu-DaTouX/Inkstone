@@ -57,6 +57,7 @@ export type SessionTextKey =
   | 'errorTitleAborted'
   | 'errorTitleRefused'
   | 'errorTitleRequest'
+  | 'errorTitleTruncated'
   | 'errHintEmpty'
   | 'errHintRefused'
   | 'errHintQuotaRate'
@@ -67,6 +68,7 @@ export type SessionTextKey =
   | 'errHintContext'
   | 'errHintAborted'
   | 'errHintRequest'
+  | 'errHintTruncated'
   | 'errHintRestart'
   | 'errHintStream'
   | 'errHintTimeout'
@@ -341,6 +343,7 @@ const ZH: Record<SessionTextKey, string> = {
   errorTitleAborted: '本轮已取消',
   errorTitleRefused: '服务商拦截',
   errorTitleRequest: '模型或参数不受支持',
+  errorTitleTruncated: '输出被截断',
   errHintEmpty: '服务商没有返回原因，可稍后重试',
   errHintRefused: '被安全审核拦截，可换个模型',
   errHintQuotaRate: '请求太快或额度窗口已满',
@@ -351,6 +354,7 @@ const ZH: Record<SessionTextKey, string> = {
   errHintContext: '压缩会话或换长上下文模型',
   errHintAborted: '已执行的工具操作可能保留',
   errHintRequest: '核对模型 ID、接口地址与参数',
+  errHintTruncated: '达到单次输出上限，可让它接着写',
   errHintRestart: '服务重启（1012），可稍后重试',
   errHintStream: '连接或响应流中断，可重试',
   errHintTimeout: '等待响应超时，检查网络与代理',
@@ -626,6 +630,7 @@ const EN: Record<SessionTextKey, string> = {
   errorTitleAborted: 'Turn cancelled',
   errorTitleRefused: 'Blocked by provider',
   errorTitleRequest: 'Model or request unsupported',
+  errorTitleTruncated: 'Output cut off',
   errHintEmpty: 'The provider gave no reason; retry later',
   errHintRefused: 'Blocked by safety review; try another model',
   errHintQuotaRate: 'Too fast, or the quota window is full',
@@ -636,6 +641,7 @@ const EN: Record<SessionTextKey, string> = {
   errHintContext: 'Compact the session or use a longer-context model',
   errHintAborted: 'Tool actions already run may remain',
   errHintRequest: 'Check the model ID, endpoint and parameters',
+  errHintTruncated: 'Hit the output limit; ask it to continue',
   errHintRestart: 'Service restarted (1012); retry later',
   errHintStream: 'Connection or stream dropped; retry',
   errHintTimeout: 'Response timed out; check network and proxy',

@@ -6,6 +6,7 @@ export type ModelErrorKind =
   | 'aborted'
   | 'refused'
   | 'request'
+  | 'truncated'
 
 export type ModelErrorQuotaScope = 'usage' | 'rate'
 
@@ -108,6 +109,7 @@ export function isAuthRejected(text: unknown): boolean {
 
 export function classifyModelError(text: unknown): ModelErrorInfo {
   const raw = modelErrorText(text)
+  if (raw === TRUNCATED_OUTPUT_NOTICE) return { kind: 'truncated', text: raw, label: '输出被截断' }
   for (const item of PATTERNS) {
     if (item.re.test(raw)) {
       return item.kind === 'quota'
@@ -133,6 +135,8 @@ export function isTransientModelError(errorText: unknown): boolean {
 
 export const EMPTY_MODEL_ERROR_NOTICE = '模型请求失败：服务商未返回具体原因，无法判断是网络、额度还是请求问题。请查看运行日志，或稍后重试。'
 
+export const TRUNCATED_OUTPUT_NOTICE = '模型输出达到单次长度上限，这条回复不完整。'
+
 export type ModelErrorCause =
   | 'empty'
   | 'refused'
@@ -143,6 +147,7 @@ export type ModelErrorCause =
   | 'context'
   | 'aborted'
   | 'request'
+  | 'truncated'
   | 'restart'
   | 'stream'
   | 'timeout'
@@ -179,6 +184,7 @@ export function modelErrorResetTime(errorText: unknown): string {
 export function modelErrorNotice(errorText: unknown): string {
   const info = classifyModelError(errorText)
   if (!info.text) return EMPTY_MODEL_ERROR_NOTICE
+  if (info.kind === 'truncated') return info.text
   let explanation: string
   switch (info.kind) {
     case 'refused': explanation = '服务商安全审核拦截了这轮请求。请检查请求内容与服务商政策；可换个模型继续，直接重发相同内容可能仍被拦截。'; break

@@ -207,7 +207,7 @@ async function buildBundle(outdir) {
     `export { ErrorCard } from '${posix(abs('src/renderer/src/features/session/ErrorCard.tsx'))}'`,
     `export { CompactionMarker, CompactCommandEcho } from '${posix(abs('src/renderer/src/features/session/CompactionMarker.tsx'))}'`,
     `export { BranchSummary } from '${posix(abs('src/renderer/src/features/session/BranchSummary.tsx'))}'`,
-    `export { modelErrorNotice } from '${posix(abs('src/shared/model-errors.ts'))}'`,
+    `export { modelErrorNotice, TRUNCATED_OUTPUT_NOTICE } from '${posix(abs('src/shared/model-errors.ts'))}'`,
     `export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'`,
     `export { useRunsV3 } from '${posix(abs('src/renderer/src/state/runs-v3.ts'))}'`,
     `export { useUiV3 } from '${posix(abs('src/renderer/src/state/ui-v3.ts'))}'`,
@@ -309,6 +309,10 @@ async function main() {
 
     const generic = lib.errorCardModel(notice('fetch failed ECONNRESET'))
     ok(generic && generic.kind === 'retryable' && generic.actions.includes('retry') && generic.actions.includes('model'), '网络类给重试 + 换模型', generic && generic.actions)
+
+    const cut = lib.errorCardModel(lib.TRUNCATED_OUTPUT_NOTICE)
+    ok(cut && cut.kind === 'truncated' && cut.actions.length === 0, '输出被截断单独成类，不给重试或换模型', cut && [cut.kind, cut.actions])
+    ok(cut && lib.errorTitleKey(cut) === 'errorTitleTruncated', '截断用自己的标题', cut && lib.errorTitleKey(cut))
 
     ok(lib.errorCardModel('') === null && lib.errorCardModel(undefined) === null, '没有错误文本就不出卡片')
     ok(lib.errorTitleKey(usage) === 'errorTitleQuotaUsage' && lib.errorTitleKey(rate) === 'errorTitleQuotaRate', '额度标题按细分走不同文案')

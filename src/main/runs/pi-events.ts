@@ -1,4 +1,4 @@
-import { classifyModelError, modelErrorNotice, modelErrorText } from '../../shared/model-errors'
+import { classifyModelError, modelErrorNotice, modelErrorText, TRUNCATED_OUTPUT_NOTICE } from '../../shared/model-errors'
 import { isWriteTool, writePathOf } from '../snapshots'
 import type { RunRequestType, RunSignal } from '../../shared/runs'
 
@@ -43,7 +43,12 @@ export function signalsFromPiEvent(evt: Record<string, unknown>, now: number = D
 
     case 'message_end': {
       const message = evt.message as Record<string, unknown> | undefined
-      if (message?.stopReason !== 'error') return []
+      if (message?.role === 'assistant' && message.stopReason === 'length') {
+        return [{ type: 'error-observed', message: TRUNCATED_OUTPUT_NOTICE, errorKind: 'truncated' }]
+      }
+      if (message?.stopReason !== 'error') {
+        return message?.role === 'assistant' && message.stopReason !== 'aborted' ? [{ type: 'error-cleared' }] : []
+      }
       const text = modelErrorText(message.errorMessage)
       return [{ type: 'error-observed', message: modelErrorNotice(text), errorKind: classifyModelError(text).kind }]
     }

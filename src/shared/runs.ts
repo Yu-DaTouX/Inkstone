@@ -112,6 +112,7 @@ export type RunSignal =
   | { type: 'request-answered'; requestId?: string }
   | { type: 'model-error'; message: string; errorKind?: string; retrying?: boolean }
   | { type: 'error-observed'; message: string; errorKind?: string }
+  | { type: 'error-cleared' }
   | { type: 'tool-fatal'; message: string }
   | { type: 'host-fail'; message: string }
   | { type: 'agent-end'; willRetry?: boolean }
@@ -380,6 +381,9 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
 
     case 'error-observed':
       return touch(state, now, { pendingError: { message: signal.message, ...(signal.errorKind ? { errorKind: signal.errorKind } : {}) } })
+
+    case 'error-cleared':
+      return state.pendingError ? touch(state, now, { pendingError: undefined }) : state
 
     case 'tool-fatal':
       return fail(state, now, 'tool-fatal', signal.message)

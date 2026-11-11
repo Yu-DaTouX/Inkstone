@@ -116,6 +116,20 @@ function runSharedReducerTests(shared) {
   assert.equal(err.phase.kind, 'failed')
   assert.equal(err.phase.cause, 'model-error')
 
+  let cleared = baseState(shared, 1000)
+  cleared = reduceRun(cleared, { type: 'error-observed', message: 'cut', errorKind: 'truncated' }, 1100)
+  cleared = reduceRun(cleared, { type: 'error-cleared' }, 1200)
+  assert.equal(cleared.pendingError, undefined)
+  assert.equal(reduceRun(cleared, { type: 'error-cleared' }, 1250), cleared)
+  cleared = reduceRun(cleared, { type: 'agent-settled', aborted: false }, 1300)
+  assert.equal(cleared.phase.kind, 'done')
+
+  let cut = baseState(shared, 1000)
+  cut = reduceRun(cut, { type: 'error-observed', message: 'cut', errorKind: 'truncated' }, 1100)
+  cut = reduceRun(cut, { type: 'agent-settled', aborted: false }, 1200)
+  assert.equal(cut.phase.kind, 'failed')
+  assert.equal(cut.phase.errorKind, 'truncated')
+
   let retried = baseState(shared, 1000)
   retried = reduceRun(retried, { type: 'error-observed', message: 'transient', errorKind: 'retryable' }, 1100)
   retried = reduceRun(retried, { type: 'retry-start', attempt: 1, max: 3 }, 1200)
@@ -263,6 +277,15 @@ function runSignalMappingTests(main) {
 
   const observed = sig({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'boom' } })
   assert.equal(observed[0].type, 'error-observed')
+
+  const truncated = sig({ type: 'message_end', message: { role: 'assistant', stopReason: 'length' } })
+  assert.equal(truncated[0].type, 'error-observed')
+  assert.equal(truncated[0].errorKind, 'truncated')
+  assert.deepEqual(sig({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } }), [{ type: 'error-cleared' }])
+  assert.deepEqual(sig({ type: 'message_end', message: { role: 'assistant', stopReason: 'toolUse' } }), [{ type: 'error-cleared' }])
+  assert.deepEqual(sig({ type: 'message_end', message: { role: 'assistant', stopReason: 'aborted' } }), [])
+  assert.deepEqual(sig({ type: 'message_end', message: { role: 'toolResult' } }), [])
+  assert.deepEqual(sig({ type: 'message_end', message: { role: 'user', stopReason: 'length' } }), [])
 
   const ui = main.runSignalFromUiRequest({ id: 'q1', method: 'confirm', title: '删除文件?' })
   assert.equal(ui.type, 'needs-you')
