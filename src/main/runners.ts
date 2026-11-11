@@ -114,11 +114,21 @@ export interface SelectResult {
   generation?: number
   via?: 'hit' | 'reuse' | 'new'
   deferred?: boolean
-  deferredReason?: 'cwd-busy' | 'limit'
+  deferredReason?: 'cwd-busy' | 'limit' | 'pending-work'
   error?: string
 }
 
+export interface RefreshOutcome {
+  restarted: string[]
+  deferred: string[]
+  failed: Array<{ id: string; error: string }>
+}
+
+const STALE_REFRESH_ATTEMPTS = 3
+
 export class RunnerRegistry {
+  private staleRefresh = new Map<string, { generation: number; attempts: number }>()
+  private staleFlushing = false
   private runners = new Map<string, Runner>()
   private stopping = new Set<StoppingRunner>()
   private activeId: string | null = null
@@ -233,6 +243,8 @@ export class RunnerRegistry {
       launchSignature?: () => string
       prepareNewSession?: (agent: AgentController) => Promise<{ ok: boolean; error?: string }>
       onChanged?: () => void
+      onRefreshed?: (id: string) => void
+      onRefreshFailed?: (id: string, error: string) => void
       resolveCwdConflict?: (target: SelectTarget) => Promise<{ cwd: string } | { reason: string } | null>
       isolationOf?: (cwd: string) => { state: 'waiting' | 'ready' | 'blocked'; branch: string } | undefined
       sharesCwd?: (cwd: string) => boolean
@@ -263,6 +275,7 @@ export class RunnerRegistry {
   startIdleReclaim(): void {
     if (this.disposed || this.reclaimTimer) return
     this.reclaimTimer = setInterval(() => {
+      void this.refreshStale().catch((error) => console.error('[runner-refresh]', error))
       void this.reclaimIdle().catch((error) => console.error('[runner-reclaim]', error))
     }, IDLE_RECLAIM_SCAN_MS)
     this.reclaimTimer.unref?.()
@@ -798,10 +811,80 @@ export class RunnerRegistry {
     return this.select({ cwd, sessionFile, projectId, scope: 'project' })
   }
 
-  restartOne(id: string): Promise<SelectResult> {
+  private refreshBlocked(runner: Runner): boolean {
+    return this.runnerHasPendingWork(runner) || this.hasBusyWorkspace(runner.cwd, runner.id)
+  }
+
+  pendingRefreshIds(): string[] {
+    return [...this.staleRefresh.keys()]
+  }
+
+  async refreshInstances(): Promise<RefreshOutcome> {
+    const outcome: RefreshOutcome = { restarted: [], deferred: [], failed: [] }
+    for (const runner of [...this.runners.values()]) {
+      if (this.disposed) break
+      if (this.runners.get(runner.id) !== runner) continue
+      if (this.refreshBlocked(runner)) {
+        this.markStale(runner)
+        outcome.deferred.push(runner.id)
+        continue
+      }
+      const result = await this.restartOne(runner.id, { refresh: true })
+      if (result.ok) {
+        this.staleRefresh.delete(runner.id)
+        outcome.restarted.push(runner.id)
+      } else if (result.deferred) {
+        this.markStale(runner)
+        outcome.deferred.push(runner.id)
+      } else {
+        outcome.failed.push({ id: runner.id, error: result.error ?? pick('未知原因', 'unknown reason') })
+      }
+    }
+    return outcome
+  }
+
+  private markStale(runner: Runner): void {
+    const existing = this.staleRefresh.get(runner.id)
+    if (existing && existing.generation === runner.generation) return
+    this.staleRefresh.set(runner.id, { generation: runner.generation, attempts: 0 })
+  }
+
+  noteStateChange(id: string): void {
+    if (this.staleRefresh.has(id)) void this.refreshStale().catch((error) => console.error('[runner-refresh]', error))
+  }
+
+  async refreshStale(): Promise<void> {
+    if (this.disposed || this.staleFlushing || this.staleRefresh.size === 0) return
+    this.staleFlushing = true
+    try {
+      for (const [id, mark] of [...this.staleRefresh]) {
+        const runner = this.runners.get(id)
+        if (!runner || runner.generation !== mark.generation) {
+          this.staleRefresh.delete(id)
+          continue
+        }
+        if (this.refreshBlocked(runner)) continue
+        const result = await this.restartOne(id, { refresh: true })
+        if (result.ok) {
+          this.staleRefresh.delete(id)
+          this.opts.onRefreshed?.(id)
+        } else if (!result.deferred) {
+          mark.attempts += 1
+          if (mark.attempts >= STALE_REFRESH_ATTEMPTS) {
+            this.staleRefresh.delete(id)
+            this.opts.onRefreshFailed?.(id, result.error ?? pick('未知原因', 'unknown reason'))
+          }
+        }
+      }
+    } finally {
+      this.staleFlushing = false
+    }
+  }
+
+  restartOne(id: string, opts: { refresh?: boolean } = {}): Promise<SelectResult> {
     const current = this.restartOperations.get(id)
     if (current) return current
-    const operation = this.serialize(() => this.restartOneNow(id))
+    const operation = this.serialize(() => this.restartOneNow(id, opts))
     this.restartOperations.set(id, operation)
     void operation.finally(() => {
       if (this.restartOperations.get(id) === operation) this.restartOperations.delete(id)
@@ -809,9 +892,15 @@ export class RunnerRegistry {
     return operation
   }
 
-  private async restartOneNow(id: string): Promise<SelectResult> {
+  private async restartOneNow(id: string, opts: { refresh?: boolean } = {}): Promise<SelectResult> {
     const runner = this.runners.get(id)
     if (!runner) return { ok: false, error: pick(`运行实例不存在：${id}`, `Runtime not found: ${id}`) }
+    if (opts.refresh) {
+      if (this.refreshBlocked(runner)) return { ok: false, deferred: true, deferredReason: 'pending-work', error: pick('目标运行实例还有待办，等空闲后再刷新', 'Target runtime still has pending work; refresh after it is idle') }
+      if (!runner.agent.getState()?.sessionFile) {
+        return this.relaunch(runner, { cwd: runner.cwd, projectId: runner.projectId, activate: this.activeId === runner.id })
+      }
+    }
     if (this.busy(runner)) return { ok: false, error: pick('目标运行实例仍忙，拒绝重载', 'Target runtime is busy; reload refused') }
     if (this.hasBusyWorkspace(runner.cwd, id)) {
       return { ok: false, error: pick('工作目录重叠的其它运行实例还在工作，拒绝重载', 'Another runtime working in an overlapping folder; reload refused') }
@@ -916,6 +1005,7 @@ export class RunnerRegistry {
 
   async stopAll(): Promise<void> {
     this.disposed = true
+    this.staleRefresh.clear()
     if (this.reclaimTimer) clearInterval(this.reclaimTimer)
     this.reclaimTimer = undefined
     const all = [...this.runners.values()].map((runner) => ({ runner, entry: this.beginStop(runner) }))

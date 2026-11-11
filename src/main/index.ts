@@ -1051,6 +1051,7 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
   }
   if (expectedRuntime && !sameRuntimeEnvelope(runtime, expectedRuntime)) return
   runners?.noteActivity(runnerId)
+  if (msg.ch === 'state') runners?.noteStateChange(runnerId)
   push({
     ...msg,
     ...(runtime ? { runtime } : {}),
@@ -1325,8 +1326,6 @@ function shutdown(): Promise<void> {
 async function runShutdown(): Promise<void> {
   shuttingDown = true
   syncController?.stop()
-  if (agentRestartTimer) clearTimeout(agentRestartTimer)
-  agentRestartTimer = null
   disposeKeepAwake()
   bundledPlugins.close()
   attention?.dispose()
@@ -1944,6 +1943,16 @@ async function rememberRunnerSession(
 
 let starting: Promise<{ ok: boolean; error?: string }> | null = null
 let agentResponseDetail: 'brief' | 'standard' | 'detailed' = 'standard'
+let launchSettings: Awaited<ReturnType<typeof getSettings>> | null = null
+
+async function refreshLaunchContext(): Promise<Awaited<ReturnType<typeof getSettings>>> {
+  const settings = await getSettings()
+  await refreshManagedGit().catch(() => undefined)
+  applyBundledSearchTools()
+  agentResponseDetail = settings.responseDetail
+  launchSettings = settings
+  return settings
+}
 
 interface SessionRestore {
   sessionFile: string
@@ -2081,10 +2090,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   }
   await runners?.stopAll()
 
-  const settings = await getSettings()
-  await refreshManagedGit().catch(() => undefined)
-  applyBundledSearchTools()
-  agentResponseDetail = settings.responseDetail
+  const settings = await refreshLaunchContext()
 
   runners = new RunnerRegistry({
     sharesCwd: allowsConcurrentSessions,
@@ -2112,7 +2118,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         },
         observeRun: runsHost?.observerFor({ generation }) ?? undefined,
         cwd,
-        piBin: settings.piBin,
+        piBin: (launchSettings ?? settings).piBin,
         ...yanThinExtensions(),
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
@@ -2126,7 +2132,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         capability: {
           sessionId: id ?? 'primary',
           runnerGeneration: generation ?? 1,
-          projectId: capabilityProjectId(settings, cwd),
+          projectId: capabilityProjectId(launchSettings ?? settings, cwd),
           opsDir: join(YAN_DIR, 'ops'),
           preserveResult: (command: string, operationId: string, data: unknown) => preserveSearchOp(join(YAN_DIR, 'ops'), command, operationId, data),
           binDir: join(YAN_DIR, 'bin'),
@@ -2322,7 +2328,11 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       pushRunners()
       scheduleEpochSnapshots()
       requestPiPackageActivationTick()
-    }
+    },
+    onRefreshed: (id) => {
+      push({ ch: 'log', payload: { text: `[运行实例刷新] ${id} 已空闲，按最新配置重启` } })
+    },
+    onRefreshFailed: (id, error) => reportMainError('刷新运行实例', new Error(`${id}：${error}`))
   })
 
   runners.startIdleReclaim()
@@ -2395,10 +2405,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
 
 let agentRestarting = false
 let agentRestartQueued: string | null = null
-let agentRestartTimer: ReturnType<typeof setTimeout> | null = null
 
 let hotkeyGuardPaused = false
-async function restartAgent(reason: string, retries = 150): Promise<void> {
+async function restartAgent(reason: string): Promise<void> {
   if (shuttingDown) return
   if (agentRestarting) {
     agentRestartQueued = reason
@@ -2410,33 +2419,31 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
     agentRestartQueued = reason
     return
   }
-  if (runners.hasBusy()) {
-    if (retries <= 0) {
-      agentRestartQueued = null
-      reportMainError('刷新运行实例', new Error(`${reason}：等待空闲超时，配置已保存但未刷新运行实例，请稍后重试`))
-      return
-    }
-    agentRestartTimer = setTimeout(() => {
-      agentRestartTimer = null
-      void restartAgent(reason, retries - 1).catch((error) => reportMainError('刷新运行实例', error))
-    }, 2000)
-    agentRestartTimer.unref?.()
-    return
-  }
   agentRestarting = true
   const file = ac()?.getState()?.sessionFile
   try {
-    await runners.stopAll()
-    const res = await startAgent(file ? { sessionFile: file } : undefined)
-    if (!res.ok) {
-      reportMainError('refresh-runners', new Error(res.error ?? 'pi did not start'))
+    await refreshLaunchContext()
+    const registry = runners
+    if (shuttingDown || !registry) return
+    if (registry.size === 0) {
+      await registry.stopAll()
+      const res = await startAgent(file ? { sessionFile: file } : undefined)
+      if (!res.ok) reportMainError('refresh-runners', new Error(res.error ?? 'pi did not start'))
       return
     }
-    if (file && ac()?.getState()?.sessionFile !== file) {
-      const sw = await ac()?.switchSession(file)
-      if (sw && !sw.ok) {
-        push({ ch: 'log', payload: { text: `[会话] 重建 pi 后没能接回原会话：${sw.error ?? '未知原因'}` } })
-      }
+    const outcome = await registry.refreshInstances()
+    for (const failure of outcome.failed) reportMainError('refresh-runners', new Error(`${failure.id}：${failure.error}`))
+    if (outcome.deferred.length > 0) {
+      const count = outcome.deferred.length
+      push({
+        ch: 'notify',
+        payload: {
+          id: 'runners-refresh-deferred',
+          method: 'notify',
+          notifyType: 'info',
+          message: pick(`配置已保存，${count} 个运行中的会话将在空闲后刷新`, `Settings saved. ${count} running session${count === 1 ? '' : 's'} will refresh once idle`)
+        }
+      })
     }
   } catch (error) {
     reportMainError(reason, error)

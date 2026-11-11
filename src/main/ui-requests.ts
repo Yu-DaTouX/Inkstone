@@ -251,7 +251,17 @@ export class UiRequests {
       clearTimeout(pending.hardTimer)
       this.pendingHostUi.delete(id)
       this.pending.delete(id)
+      this.payloads.delete(id)
+      this.host.push({ ch: 'ui-resolved', payload: { id, by: 'timeout' } })
       pending.reject(error)
     }
+  }
+
+  discardPending(): void {
+    for (const id of [...this.pending]) {
+      this.payloads.delete(id)
+      this.host.push({ ch: 'ui-resolved', payload: { id, by: 'timeout' } })
+    }
+    this.pending.clear()
   }
 }

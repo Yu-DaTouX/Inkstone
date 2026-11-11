@@ -33,9 +33,10 @@ export interface RunsHostOptions {
 
 const MAX_PENDING_SIGNALS = 2_000
 const CODE_RETRY_DELAYS_MS = [1_000, 5_000, 30_000]
+const CODE_FAILED_RETRY_MS = 60_000
 const TERMINAL_SIGNALS: ReadonlySet<RunSignal['type']> = new Set<RunSignal['type']>(['agent-settled', 'stopped', 'host-fail', 'pi-exit'])
 
-type CodeState = { state: 'pending' | 'ready' | 'failed'; attempts: number; timer?: NodeJS.Timeout }
+type CodeState = { state: 'pending' | 'ready' | 'failed'; attempts: number; timer?: NodeJS.Timeout; failedAt?: number }
 
 function isUsableSessionId(sessionId: string): boolean {
   return sessionId.length > 0 && !sessionId.startsWith('pending:')
@@ -122,7 +123,7 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
           log(`会话编号分配失败，${Math.round(delay / 1000)} 秒后重试：${sessionId}（${reason}）`)
           return
         }
-        codeState.set(sessionId, { state: 'failed', attempts })
+        codeState.set(sessionId, { state: 'failed', attempts, failedAt: clock() })
         buffered.delete(sessionId)
         log(`会话编号分配连续失败，运行不会登记：${sessionId}（${reason}）`)
         options.push({
@@ -149,8 +150,12 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
       observe(ctx, signal)
       return
     }
-    if (entry?.state === 'failed') return
-    if (!entry) ensureCode(key)
+    if (entry?.state === 'failed') {
+      const expired = clock() - (entry.failedAt ?? 0) >= CODE_FAILED_RETRY_MS
+      if (!expired && signal.type !== 'agent-start') return
+      codeState.delete(key)
+    }
+    if (!codeState.has(key)) ensureCode(key)
     const queue = buffered.get(key)
     if (!queue) {
       buffered.set(key, [{ ctx, signal }])

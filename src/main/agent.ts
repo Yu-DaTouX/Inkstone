@@ -1136,7 +1136,7 @@ export class AgentController extends EventEmitter {
       this.contextFrom = undefined
       this.nativeRuntime?.dispose()
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
-      this.ui.pending.clear()
+      this.ui.discardPending()
       this.cancelApprovals?.(this.approvalOwner())
       this.retireApprovals?.(this.approvalOwner())
       if (this.state) {
@@ -1229,6 +1229,14 @@ export class AgentController extends EventEmitter {
     return false
   }
 
+  private asyncOwner(): { rpc: PiRpc | null; generation: number | undefined } {
+    return { rpc: this.rpc, generation: this.capabilityOpts?.runnerGeneration }
+  }
+
+  private ownerCurrent(owner: { rpc: PiRpc | null; generation: number | undefined }): boolean {
+    return !this.stopping && this.rpc === owner.rpc && this.capabilityOpts?.runnerGeneration === owner.generation
+  }
+
   private async hydrate(expected?: HydrateExpectation): Promise<HydrateResult> {
     const syncedBefore = this.messages
     const scopeBefore = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
@@ -1249,7 +1257,10 @@ export class AgentController extends EventEmitter {
     const matchesExpected = (): boolean => matches(this.state?.sessionId, this.state?.sessionFile)
     const superseded = (): HydrateResult => ({ ok: false, changed: true })
     const outsideExpected = (): boolean => !!expected && !matchesExpected()
-    const state = await this.requireRpc().command('get_state').catch(() => null)
+    const rpc = this.requireRpc()
+    const owner = this.asyncOwner()
+    const state = await rpc.command('get_state').catch(() => null)
+    if (!this.ownerCurrent(owner)) return superseded()
     if (expected && !state?.success) {
       return { ok: false, error: pick('读不到会话状态，没能确认当前会话；请重新打开这个会话', 'Could not read the session state, so the current session is unconfirmed. Reopen this session') }
     }
@@ -1269,14 +1280,20 @@ export class AgentController extends EventEmitter {
     }
     if (this.state?.sessionId && this.state.sessionId !== scopeBefore.sessionId) await this.reclaimSavedQueue().catch(() => undefined)
     const sessionFile = this.state?.sessionFile
+    const hydrateSessionId = this.state?.sessionId
+    const stillOwned = (): boolean => this.ownerCurrent(owner) && this.state?.sessionId === hydrateSessionId
+    if (!stillOwned()) return superseded()
 
     const fromFile = sessionFile ? await this.readHistoryOf(sessionFile) : null
+    if (!stillOwned()) return superseded()
     let presentationReady = false
+    let nextMessages: UIMessage[] = this.messages
+    let nextContext: { value: ContextFrom | undefined } | null = null
     if (!this.nativeBranchView && outsideExpected()) return superseded()
     if (supersededByLive()) return superseded()
     if (this.nativeBranchView) {
       const snapshot = await this.sessionEntries()
-      if (outsideExpected()) return superseded()
+      if (outsideExpected() || !stillOwned()) return superseded()
       if (!snapshot.ok) throw new Error(snapshot.error ?? pick('无法读取当前原生分支', 'Cannot read the current native branch'))
       const path = nativeActiveBranch(snapshot.entries ?? [], snapshot.leafId ?? null)
       const messageEntries = path.flatMap(entry => {
@@ -1284,48 +1301,53 @@ export class AgentController extends EventEmitter {
         return message ? [{ id: entry.id, message }] : []
       })
       const compactionEntry = path.findLast(entry => entry.type === 'compaction')
-      this.setContextFrom(compactionEntry ? contextFromEntry(compactionEntry) : undefined)
+      nextContext = { value: compactionEntry ? contextFromEntry(compactionEntry) : undefined }
       const previousSegments = fromFile?.messages.filter(message => message.id.startsWith('history:')) ?? []
-      this.messages = [...previousSegments, ...projectHistory(messageEntries.map(entry => entry.message),
+      nextMessages = [...previousSegments, ...projectHistory(messageEntries.map(entry => entry.message),
         this.localizeHistoryImage,
         messageEntries.map(entry => typeof entry.id === 'string' ? entry.id : undefined))]
     } else if (fromFile?.messages.length) {
-      this.messages = fromFile.messages
-      this.setContextFrom(fromFile.contextFrom ?? contextFromRun(this.compactionState.last))
+      nextMessages = fromFile.messages
+      nextContext = { value: fromFile.contextFrom ?? contextFromRun(this.compactionState.last) }
       presentationReady = this.readHistory !== undefined
     } else {
-      const msgs = await this.requireRpc().command('get_messages').catch(() => null)
-      if (outsideExpected()) return superseded()
+      const msgs = await rpc.command('get_messages').catch(() => null)
+      if (outsideExpected() || !stillOwned()) return superseded()
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
-      this.messages = Array.isArray(raw)
+      nextMessages = Array.isArray(raw)
         ? projectHistory(raw, this.localizeHistoryImage)
         : []
     }
     if (sessionFile && !presentationReady) {
       const hydrated = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
-        .hydrateMessages(sessionFile, this.messages)
-      if (outsideExpected() || supersededByLive()) return superseded()
-      this.messages = hydrated
+        .hydrateMessages(sessionFile, nextMessages)
+      if (outsideExpected() || !stillOwned() || supersededByLive()) return superseded()
+      nextMessages = hydrated
     }
 
-    const timingBucket = presentationReady ? undefined : timingKey(this.state?.sessionFile)
+    const timingBucket = presentationReady ? undefined : timingKey(sessionFile)
     if (timingBucket) {
       const records = await readTurnTimings(YAN_DIR, timingBucket, this.liveTimingRunId()).catch(() => [])
-      if (records.length) this.messages = applyTurnTimings(this.messages, records)
+      if (records.length) nextMessages = applyTurnTimings(nextMessages, records)
     }
 
+    if (outsideExpected() || !stillOwned() || supersededByLive()) return superseded()
+    if (nextContext) this.setContextFrom(nextContext.value)
+    this.messages = nextMessages
     this.pushedOut.clear()
     this.pushedOutText.clear()
 
     this.pushSessionSync(scopeBefore, syncedBefore)
     this.pushQuestionLog()
     this.pushApprovalLog()
-    const stats = await this.requireRpc().command('get_session_stats').catch(() => null)
-    if (stats?.success) {
+    const stats = await rpc.command('get_session_stats').catch(() => null)
+    if (stats?.success && stillOwned()) {
       const counted = this.statsForCurrentModel(stats.data as SessionStats)
-      this.push({ ch: 'stats', payload: await this.withOverheadUsage(counted) })
+      const withOverhead = await this.withOverheadUsage(counted)
+      if (stillOwned()) this.push({ ch: 'stats', payload: withOverhead })
     }
 
+    if (!stillOwned()) return superseded()
     void this.refreshTodos()
 
     this.titleTried.clear()
@@ -4694,11 +4716,16 @@ export class AgentController extends EventEmitter {
   private async refreshStateWithThinkingLevels(): Promise<void> {
     const rpc = this.rpc
     if (!rpc) return
+    const owner = this.asyncOwner()
+    const sessionId = this.state?.sessionId
+    const current = (): boolean => this.ownerCurrent(owner) && (sessionId === undefined || this.state?.sessionId === sessionId)
     try {
       const before = await rpc.command('get_state')
+      if (!current()) return
       const levels = await rpc.command<{ levels?: string[] }>('get_available_thinking_levels')
+      if (!current()) return
       const state = await rpc.command('get_state')
-      if (!state.success) return
+      if (!current() || !state.success) return
       const data = { ...(state.data as Record<string, unknown>) }
       const sameModel = before.success && stateModelKey(before.data) === stateModelKey(state.data)
       if (levels.success && sameModel && !Object.prototype.hasOwnProperty.call(data, 'availableThinkingLevels')) {
@@ -4993,7 +5020,7 @@ export class AgentController extends EventEmitter {
     const sessionId = this.state?.sessionId
     try {
       const res = await rpc?.command('get_state')
-      if (res?.success && this.rpc === rpc && this.capabilityOpts?.runnerGeneration === generation && this.state?.sessionId === sessionId) this.setStateFrom(res.data as Record<string, unknown>)
+      if (res?.success && !this.stopping && this.rpc === rpc && this.capabilityOpts?.runnerGeneration === generation && this.state?.sessionId === sessionId) this.setStateFrom(res.data as Record<string, unknown>)
     } catch {
     }
     return this.state
@@ -5269,9 +5296,12 @@ export class AgentController extends EventEmitter {
     this.pushedOut.clear()
     this.pushedOutText.clear()
     this.ui.rejectPendingHostUi('会话已关闭，问题请求已取消')
-    this.ui.pending.clear()
+    this.ui.discardPending()
     await settleWithin(mcpClosing, stopRemaining())
     await this.rpc?.close()
+    const runSink = this.runObserver
+    const runCtx = this.runObserverContext()
+    if (runSink && runCtx) runSink(runCtx, { type: 'stopped', by: 'host' })
     this.rpc = null
     await this.queueWrite.catch(() => undefined)
     await this.persistQueue().catch(() => undefined)
