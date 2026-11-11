@@ -83,7 +83,7 @@ export function piNativeSettingsOf(raw: unknown): PiNativeSettings {
     retryMaxRetries: intIn(retry.maxRetries, 0, 100, 3),
     retryBaseDelayMs: intIn(retry.baseDelayMs, 0, MAX_TIMEOUT_MS, 2000),
     httpIdleTimeoutMs: idleTimeoutOf(settings.httpIdleTimeoutMs),
-    cacheWarming: oneOf(CACHE_WARMING, settings.cacheWarming, 'streaming'),
+    cacheWarming: oneOf(CACHE_WARMING, settings.cacheWarming, 'idle'),
     imagesAutoResize: images.autoResize !== false,
     imagesBlockImages: images.blockImages === true,
     defaultProjectTrust: oneOf(PROJECT_TRUST, settings.defaultProjectTrust, 'ask'),

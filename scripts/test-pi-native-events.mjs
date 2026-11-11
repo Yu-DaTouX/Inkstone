@@ -385,7 +385,10 @@ try {
   {
     const { piNativeSettingsOf, validatePiNativePatch, readPiNativeSettings, writePiNativeSettings } = await bundle('src/main/pi-runtime-prefs.ts', 'pi-native-prefs-5.mjs', 'node', [electronStub])
     const defaults = piNativeSettingsOf({})
-    ok(defaults.compactionEnabled && defaults.retryMaxRetries === 3 && defaults.retryBaseDelayMs === 2000 && defaults.httpIdleTimeoutMs === 300000 && defaults.cacheWarming === 'streaming' && defaults.imagesAutoResize && !defaults.imagesBlockImages && defaults.defaultProjectTrust === 'ask' && defaults.sessionShareDestination === 'auto', '缺省值与 pi 1.3 一致', defaults)
+    ok(defaults.compactionEnabled && defaults.retryMaxRetries === 3 && defaults.retryBaseDelayMs === 2000 && defaults.httpIdleTimeoutMs === 300000 && defaults.cacheWarming === 'idle' && defaults.imagesAutoResize && !defaults.imagesBlockImages && defaults.defaultProjectTrust === 'ask' && defaults.sessionShareDestination === 'auto', '缺省值与 pi 1.5.2 一致', defaults)
+    for (const cacheWarming of ['off', 'streaming', 'idle']) {
+      ok(piNativeSettingsOf({ cacheWarming }).cacheWarming === cacheWarming, `保留已设置的缓存预热模式 ${cacheWarming}`)
+    }
     ok(piNativeSettingsOf({ httpIdleTimeoutMs: 'disabled' }).httpIdleTimeoutMs === 0, '空闲超时 disabled 读作 0')
     ok(piNativeSettingsOf({ compaction: { enabled: false } }).compactionEnabled === false, '读取全局自动压缩开关')
     ok(Object.keys(piNativeSettingsOf({ modelThinkingLevels: { 'p/m': 'high', bad: 'high', 'p/x': 'turbo' } }).modelThinkingLevels).join() === 'p/m', '丢弃无效的模型思考档位')
@@ -401,7 +404,7 @@ try {
     const refused = await writePiNativeSettings({ cacheWarming: 'off' }, file)
     ok(!refused.ok && (await readFile(file, 'utf8')) === '{ broken', '设置文件损坏时拒绝写入、不覆盖')
     const unread = await readPiNativeSettings(file)
-    ok(!unread.ok && unread.settings?.cacheWarming === 'streaming', '设置文件损坏时读取报错并给出缺省值')
+    ok(!unread.ok && unread.settings?.cacheWarming === 'idle', '设置文件损坏时读取报错并给出缺省值')
   }
 
 } finally {

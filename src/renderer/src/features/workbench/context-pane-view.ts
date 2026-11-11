@@ -16,6 +16,7 @@ const TOP_TOOL_CALLS = 8
 
 export interface ContextUsageSummary {
   known: boolean
+  estimated: boolean
   tokens: number
   windowSize: number
   percent: number | null
@@ -78,19 +79,28 @@ export function contextUsageSummary(
       : session?.model?.contextWindow ?? 0
   const cappedByLimit = !!autoCompactLimit && modelWindow > 0 && autoCompactLimit < modelWindow
   const windowSize = cappedByLimit ? autoCompactAt(autoCompactLimit, modelWindow) : modelWindow
-  const known = matchesModel && typeof usage?.tokens === 'number' && windowSize > 0
-  const tokens = known ? (usage!.tokens as number) : 0
+  const measuredTokens = matchesModel && typeof usage?.tokens === 'number' ? usage.tokens : undefined
+  const last = session?.lastCompaction
+  const afterTokens = matchesModel && usage?.tokens === null && last?.status === 'completed' && !last.afterMeasured
+    ? last.afterTokens
+    : undefined
+  const estimate = typeof afterTokens === 'number' && Number.isFinite(afterTokens) && afterTokens >= 0 ? afterTokens : undefined
+  const value = measuredTokens ?? estimate
+  const known = value !== undefined && windowSize > 0
+  const tokens = known ? value : 0
+  const estimated = known && (measuredTokens === undefined || usage?.estimated === true)
   const percent = known ? (tokens / windowSize) * 100 : null
   const tone: 'ok' | 'ask' | 'fail' =
     percent !== null && percent >= 95 ? 'fail' : percent !== null && percent >= 80 ? 'ask' : 'ok'
   return {
     known,
+    estimated,
     tokens,
     windowSize,
     percent,
     tone,
     matchesModel,
-    afterCompactUnknown: matchesModel && usage?.tokens === null,
+    afterCompactUnknown: matchesModel && usage?.tokens === null && !known,
     windowAssumed: !cappedByLimit && !!session?.model?.contextWindowAssumed && windowSize === session.model.contextWindow,
     modelWindow,
     cappedByLimit

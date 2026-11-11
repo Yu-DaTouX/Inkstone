@@ -17,6 +17,25 @@ export default async function run({ cdp, fake, box, check, report, log, state, u
   const settingsPath = join(box.piDir, 'settings.json')
   const linesPath = join(box.dataDir, 'compaction-lines.json')
   const reserve = () => readJson(settingsPath)?.compaction?.modelOverrides?.['fake/fake-model']?.reserveTokens
+  const waitReserve = async (value) => {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (reserve() === value) return true
+      await sleep(100)
+    }
+    return false
+  }
+  const contextUi = () => cdp.evaluate(`(() => {
+    const meter = document.querySelector('[data-testid="composer-context-meter"]')
+    const rail = document.querySelector('[data-testid="wb-rail-context"] .wb-tile-summary')
+    const rect = meter?.getBoundingClientRect()
+    return {
+      meterVisible: !!rect && rect.width > 0 && rect.height > 0,
+      meterLabel: meter?.getAttribute('aria-label') ?? '',
+      railText: rail?.textContent ?? '',
+      x: rect ? rect.x + rect.width / 2 : 0,
+      y: rect ? rect.y + rect.height / 2 : 0
+    }
+  })()`)
   const summaryRequests = (list) =>
     list.filter((item) => {
       const text = item.text ?? ''
@@ -44,20 +63,22 @@ export default async function run({ cdp, fake, box, check, report, log, state, u
   await newSession(box.project)
   await waitFor('!!s.session?.sessionFile')
   check('会话已建立并拿到会话文件', !!(await state('s.session?.sessionFile')))
+  await cdp.evaluate(`window.__yanStore.getState().patchSettings({ theme: 'light', lang: 'zh-CN', rightPanelOpen: true })`)
 
-  const defaultReserve = await until(() => reserve() === 40_000, 20000)
+  const defaultReserve = await waitReserve(40_000)
   report.data.defaultReserve = reserve()
   report.data.compactionLines = readJson(linesPath)
   check('砚按默认 400k 上限写入 pi 的压缩线（400k − min(400k, 0.9×400k) = 40k reserve）', defaultReserve, reserve())
 
   await cdp.evaluate(`window.__yanStore.getState().patchSettings({ autoCompactTokens: 100000 })`)
-  const patched = await until(() => reserve() === 300_000, 20000)
+  const patched = await waitReserve(300_000)
   report.data.patchedReserve = reserve()
   check('把自动压缩上限改成 100k 后压缩线随之变成 300k reserve（阈值 100k）', patched, reserve())
   check('pi 原生自动压缩是开着的', (await state('s.session?.autoCompactionEnabled')) === true)
 
   await turn('第一轮：先打个招呼。', { timeout: 60000 })
   check('小幅上下文第一轮不触发压缩', (await state('s.session?.lastCompaction ?? null')) === null)
+  await waitFor('!!document.querySelector(\'[data-testid="wb-rail-context"]\')')
 
   const padding = '填充上下文，无关内容。'.repeat(16000)
   const beforeSecond = fake.requests.length
@@ -91,12 +112,28 @@ export default async function run({ cdp, fake, box, check, report, log, state, u
   check('压缩摘要引用被压缩原文的快照文件', /\.history\.txt/.test(String(entries[0]?.summary ?? '')), String(entries[0]?.summary ?? '').slice(0, 160))
   check('被压缩原文写进了 <会话>.history.txt', history !== null && history.includes('=== compaction 1 '), history === null ? 'missing' : history.slice(0, 80))
   check('摘要里带砚追加的用户原文块与快照指针', /<user-messages>/.test(String(entries[0]?.summary ?? '')) && /<history-snapshot>/.test(String(entries[0]?.summary ?? '')), String(entries[0]?.summary ?? '').slice(0, 80))
-  await shot('auto-compacted')
+  const pendingUsage = await until('s.stats?.contextUsage?.tokens === null', 10000)
+  const estimatedUi = await contextUi()
+  report.data.estimatedUi = estimatedUi
+  check('自动压缩后原生统计确实处于待回报状态', pendingUsage, await state('s.stats?.contextUsage ?? null'))
+  check('待回报时输入框上下文控件仍可见并标记估算', estimatedUi.meterVisible && estimatedUi.meterLabel.includes('≈'), estimatedUi)
+  check('待回报时侧栏上下文显示估算百分比而不是空值', /≈[0-9.]+%/.test(estimatedUi.railText), estimatedUi.railText)
+  await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: estimatedUi.x, y: estimatedUi.y })
+  await waitFor('!!document.querySelector(\'[data-testid="composer-context-popover"]\')')
+  const popover = await cdp.evaluate(`document.querySelector('[data-testid="composer-context-popover"]')?.textContent ?? ''`)
+  check('输入框浮层也显示压缩后估算值', popover.includes('≈'), popover)
+  await shot('auto-compacted-estimate-light')
+  await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
 
   await turn('压缩后再回一句。', { timeout: 120000 })
   await sleep(600)
   const replyAfter = await state('s.messages.filter((m) => m.role === "assistant").at(-1)?.text ?? ""')
   check('压缩后会话还能继续对话', /好的，收到/.test(replyAfter), replyAfter.slice(0, 80))
+  await waitFor('typeof s.stats?.contextUsage?.tokens === "number"')
+  const measuredUi = await contextUi()
+  report.data.measuredUi = measuredUi
+  check('实际用量回报后两个位置都自动去掉估算标记', measuredUi.meterVisible && !measuredUi.meterLabel.includes('≈') && /[0-9.]+%/.test(measuredUi.railText) && !measuredUi.railText.includes('≈'), measuredUi)
+  await shot('after-usage-reported-light')
 
   const extra = `继续补充细节。${'补充说明。'.repeat(12000)}`
   await turn(extra, { timeout: 120000 })
@@ -114,4 +151,11 @@ export default async function run({ cdp, fake, box, check, report, log, state, u
   check('显式压缩完成并记为 manual', afterExplicit?.status === 'completed' && afterExplicit?.reason === 'manual', afterExplicit)
   check('第二次压缩又追加了一段原文快照', (historyAfter ?? '').includes('=== compaction 2 '), (historyAfter ?? '').slice(0, 80))
   check('会话文件里出现两条 compaction 条目', entriesAfter.length >= 2, entriesAfter.length)
+  await waitFor('s.stats?.contextUsage?.tokens === null')
+  const manualUi = await contextUi()
+  report.data.manualUi = manualUi
+  check('手动压缩后输入框与侧栏同样保留上下文估算', manualUi.meterVisible && manualUi.meterLabel.includes('≈') && manualUi.railText.includes('≈'), manualUi)
+  await cdp.evaluate(`window.__yanStore.getState().patchSettings({ theme: 'dark' })`)
+  await sleep(500)
+  await shot('manual-compacted-estimate-dark')
 }

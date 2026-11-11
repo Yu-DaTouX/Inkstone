@@ -376,13 +376,13 @@ function ContextDetail({ data, text }: { data: ContextPaneData; last: Compaction
   return (
     <div className="wb-ov-ctx" data-testid="wb-ov-ctx">
       <div className="wb-ov-ctx-head" title={limitNote || undefined}>
-        <span className="wb-ov-ctx-used">{`${text.contextUsed} ${Math.round(usage.percent ?? share(usage.tokens))}%`}</span>
-        <span className="wb-ov-ctx-total">{`${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}`}</span>
+        <span className="wb-ov-ctx-used">{`${text.contextUsed} ${usage.estimated ? '≈' : ''}${Math.round(usage.percent ?? share(usage.tokens))}%`}</span>
+        <span className="wb-ov-ctx-total">{`${usage.estimated ? '≈' : ''}${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}`}</span>
       </div>
       <div
         className="wb-ctx-bar"
         role="img"
-        aria-label={t('ctx.tip', { used: shortTokens(usage.tokens), win: shortTokens(usage.windowSize), pct: Math.round(usage.percent ?? 0) })}
+        aria-label={t('ctx.tip', { used: `${usage.estimated ? '≈' : ''}${shortTokens(usage.tokens)}`, win: shortTokens(usage.windowSize), pct: Math.round(usage.percent ?? 0) })}
       >
         {slices.map((s) => (s.tokens > 0 ? <i key={s.id} className={`wb-ctx-seg c-${s.id}`} style={{ width: `${share(s.tokens)}%` }} /> : null))}
       </div>
@@ -628,8 +628,8 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
     <RailValue
       glyph={{ kind: 'ring', percent: contextKnown ? usage.percent : null, label: rail.sections.context }}
       tone={contextKnown ? glyphTone(usage.tone) : undefined}
-      value={contextKnown ? `${Math.round(usage.percent ?? 0)}%` : '—'}
-      digits={4}
+      value={contextKnown ? `${usage.estimated ? '≈' : ''}${Math.round(usage.percent ?? 0)}%` : '—'}
+      digits={usage.estimated ? 5 : 4}
     />
   )
 
