@@ -32,7 +32,16 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .ui-source-card__number { color: var(--fg3); font-size: var(--t-caption); font-variant-numeric: tabular-nums; }
+  .ui-source-card__mark { display: inline-grid; flex: none; place-items: center end; min-width: 14px; }
+  .ui-source-card__mark > * { grid-area: 1 / 1; }
+  .ui-source-card__number { color: var(--fg3); font-size: var(--t-caption); font-variant-numeric: tabular-nums; transition: opacity var(--dur-base) var(--ease); }
+  .ui-source-card__mark > .ui-source-card__arrow { opacity: 0; transition: translate var(--dur-sheet) var(--ease-spring), color var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease); }
+  .ui-source-card:focus-within .ui-source-card__mark > .ui-source-card__number { opacity: 0; }
+  .ui-source-card:focus-within .ui-source-card__mark > .ui-source-card__arrow { opacity: 1; }
+  @media (hover: hover) {
+    .ui-source-card:hover .ui-source-card__mark > .ui-source-card__number { opacity: 0; }
+    .ui-source-card:hover .ui-source-card__mark > .ui-source-card__arrow { opacity: 1; }
+  }
   .ui-source-card__title {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -46,18 +55,6 @@
     overflow-wrap: anywhere;
     transition: color var(--dur-base) var(--ease);
   }
-  .ui-source-card__snippet {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    margin-top: calc(-1 * var(--s-4));
-    overflow: hidden;
-    color: var(--fg3);
-    font-size: var(--t-caption);
-    line-height: 1.45;
-    overflow-wrap: anywhere;
-  }
-  .ui-source-card__title:has(+ .ui-source-card__snippet) { min-height: 0; }
   .ui-source-card__foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-6); min-width: 0; margin-top: auto; }
   .ui-source-card__foot > .ui-card__status { flex: none; min-width: 0; font-size: var(--t-caption); }
   .ui-source-card__foot > .ui-source-card__meta { flex: none; font-variant-numeric: tabular-nums; }
@@ -83,40 +80,6 @@
   }
   .ui-source-reveal[data-open='true'] { grid-template-rows: minmax(0, 1fr); opacity: 1; visibility: visible; }
   .ui-source-reveal__inner { min-height: 0; overflow: clip; padding-inline: var(--s-4); margin-inline: calc(-1 * var(--s-4)); }
-  .ui-source-progress {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    min-height: var(--d-row);
-    margin-block: var(--s-8) var(--s-10);
-    padding: 0 var(--s-10);
-    border-radius: var(--r-md);
-    background: var(--alpha-1);
-    color: var(--fg3);
-  }
-  .ui-source-progress__icon { display: inline-flex; flex: none; }
-  .ui-source-progress__track {
-    position: relative;
-    flex: 1;
-    min-width: 0;
-    height: 3px;
-    overflow: hidden;
-    border-radius: var(--r-full);
-    background: var(--line);
-  }
-  .ui-source-progress__track > span {
-    position: absolute;
-    inset-block: 0;
-    left: 0;
-    width: 38%;
-    border-radius: inherit;
-    background: var(--fg3);
-    animation: ui-source-progress-sweep var(--dur-shimmer) var(--ease-inout) infinite;
-  }
-  @keyframes ui-source-progress-sweep {
-    from { transform: translateX(-120%); }
-    to { transform: translateX(340%); }
-  }
   .ui-source-reveal[data-open='true'] .ui-source-card {
     animation: ui-source-arrive var(--dur-slow) var(--ease) both;
     animation-delay: calc(var(--source-index, 0) * 45ms);
@@ -140,10 +103,8 @@
     .ui-source-card.ui-card:is(:hover, :focus-within), .ui-source-card.ui-card:has(.ui-source-card__link:active), .ui-source-card__arrow, .ui-source-stack > .ui-site-icon { translate: none; scale: none; }
     .ui-source-reveal[data-open='true'] .ui-source-card { animation: none; }
     .ui-source-reveal { transition: none; }
-    .ui-source-progress__track > span { animation: none; transform: none; }
   }
   :root[data-reduce-motion='true'] :is(.ui-source-card.ui-card, .ui-source-card__arrow, .ui-source-stack > .ui-site-icon) { translate: none; scale: none; }
   :root[data-reduce-motion='true'] .ui-source-reveal[data-open='true'] .ui-source-card { animation: none; }
   :root[data-reduce-motion='true'] .ui-source-reveal { transition: none; }
-  :root[data-reduce-motion='true'] .ui-source-progress__track > span { animation: none; transform: none; }
 }

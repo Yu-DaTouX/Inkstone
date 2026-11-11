@@ -14,7 +14,6 @@ export type WebSearchTextKey =
   | 'citationAria'
   | 'citationOpenHint'
   | 'openSource'
-  | 'empty'
   | 'moreSources'
   | 'showLess'
   | 'read'
@@ -37,7 +36,6 @@ const ZH: Record<WebSearchTextKey, string> = {
   citationAria: '引用来源：{site} 第 {n} 条',
   citationOpenHint: '单击在砚里打开，双击用系统浏览器打开',
   openSource: '打开来源：{title}',
-  empty: '没有可显示的来源',
   moreSources: '{n} 个更多来源',
   showLess: '显示更少',
   read: '已取原文',
@@ -61,7 +59,6 @@ const EN: Record<WebSearchTextKey, string> = {
   citationAria: 'Citation {n} from {site}',
   citationOpenHint: 'Click to open in Inkstone, double-click for the system browser',
   openSource: 'Open source: {title}',
-  empty: 'No sources to show',
   moreSources: '{n} more sources',
   showLess: 'Show less',
   read: 'Text fetched',

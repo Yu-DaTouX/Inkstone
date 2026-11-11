@@ -483,10 +483,10 @@ async function run() {
     ok(runningHtml.includes('data-state="running"'), '胶囊标记为搜索中状态')
     ok(runningHtml.includes('ui-shimmer'), '搜索中标签带闪烁效果')
     ok(runningHtml.includes('electron WebContentsView'), '胶囊显示查询词')
-    ok(runningHtml.includes('ws-ring-arc'), '运行中地球图标外圈有进度环')
+    ok(runningHtml.includes('ws-orbit'), '运行中地球图标带轨道点')
     ok(!runningHtml.includes('id="plain"'), '有胶囊时不再渲染普通步骤')
     ok(runningHtml.includes('data-open="true"') && runningHtml.includes('ws-sources-pending'), '搜索中自动展开并显示骨架占位', runningHtml.slice(-160))
-    ok(runningHtml.includes('ws-cap-sites'), '运行中也预留站点图标位，完成时胶囊不变宽')
+    ok(!runningHtml.includes('ws-cap-sites') && !runningHtml.includes('ws-capsule-count'), '没有来源时不预留站点图标位，也不显示数量')
 
     const fallbackHtml = renderWith(createElement(view.SearchStepView, { call: call({ status: 'ok', output: 'no json here' }), step }, createElement('span', { id: 'plain' }, 'plain')))
     ok(fallbackHtml.includes('id="plain"') && !fallbackHtml.includes('data-testid="ws-capsule"'), '拿不到 operationId 时退回普通步骤')
@@ -498,13 +498,13 @@ async function run() {
     ok(directHtml.includes('data-state="done"'), '完成的子代理搜索胶囊标记为完成')
     ok(directHtml.includes('aria-expanded="true"') && directHtml.includes('data-open="true"'), '完成及历史来源卡片默认展开')
     ok(directHtml.includes('aria-label="搜索 “electron 窗口” · 2 条结果"'), '胶囊标签写成「搜索 “q” · N 条结果」', directHtml.slice(0, 400))
-    ok(directHtml.includes('data-testid="ws-capsule-count"') && directHtml.includes('>2 条结果<'), '结果数单独成段，不再写「个网站」', directHtml.slice(0, 900))
+    ok(directHtml.includes('data-testid="ws-capsule-count"') && /data-testid="ws-capsule-count"[^>]*>2</.test(directHtml) && !directHtml.includes('>2 条结果<'), '结果数只显示数字', directHtml.slice(0, 900))
     ok(!directHtml.includes('搜索命中'), '只是搜索命中的来源不挂状态标签')
-    ok(directHtml.includes('ui-source-card__snippet') && directHtml.includes('摘要 1'), '来源卡片带摘要')
+    ok(!directHtml.includes('ui-source-card__snippet') && directHtml.includes('摘要 1'), '摘要只留在悬停提示里，卡片不再渲染摘要行')
     const readCall = { id: 'w1r', name: 'web_search', args: { query: 'electron 窗口' }, status: 'ok', details: { search: { action: 'query', query: 'electron 窗口', items: [item(1, { readState: 'read' }), item(2, { readState: 'partial', snippet: '' })] } } }
     const readHtml = renderWith(createElement(view.SearchStepView, { call: readCall, step: m.searchStepOf(readCall) }, plain))
     ok(readHtml.includes('已取原文') && readHtml.includes('部分原文'), '已取原文与部分原文仍显示状态标签', readHtml.slice(0, 300))
-    ok((readHtml.match(/ui-source-card__snippet/g) ?? []).length === 1, '没有摘要的卡片不渲染摘要行', (readHtml.match(/ui-source-card__snippet/g) ?? []).length)
+    ok((readHtml.match(/ui-source-card__foot/g) ?? []).length === 2 && (directHtml.match(/ui-source-card__foot/g) ?? []).length === 0, '只有带状态的卡片渲染状态行', (readHtml.match(/ui-source-card__foot/g) ?? []).length)
     ok(view.webSearchText('en-US', 'searched') === 'Searched' && view.webSearchText('en-US', 'results', { n: 2 }) === '2 results', '英文胶囊文案同步', [view.webSearchText('en-US', 'searched'), view.webSearchText('en-US', 'results', { n: 2 })])
     ok(directHtml.includes('electron 窗口'), '胶囊显示查询词')
     ok(directHtml.includes('ws-cap-sites'), '胶囊显示来源站点头像')
@@ -524,7 +524,7 @@ async function run() {
     ok((groupedHtml.match(/ui-source-card ws-source/g) ?? []).length === 2 && groupedHtml.includes('部分原文') && groupedHtml.includes('摘要 1') && groupedHtml.includes('缓存'), '搜索组来源去重并合并读取状态和原摘要', groupedHtml.slice(-1800))
     ok(groupedHtml.includes('aria-expanded="true"') && groupedHtml.includes('data-open="true"'), '合并来源默认展开')
     const activeHtml = renderWith(createElement(view.WebGroupView, { calls: [searchCall, { ...groupedFetch, status: 'running' }], renderFallback: () => plain }))
-    ok(activeHtml.includes('data-state="running"') && activeHtml.includes('ws-sources-pending') && activeHtml.includes('摘要 1'), '读取运行中，已取得来源仍可见且保留进度')
+    ok(activeHtml.includes('data-state="running"') && activeHtml.includes('ws-orbit') && !activeHtml.includes('ws-sources-pending') && activeHtml.includes('摘要 1'), '读取运行中，已取得来源仍可见，进度只在胶囊上')
     const fallbackGroup = renderWith(createElement(view.WebGroupView, { calls: [searchCall, call({ id: 'legacy-shell', status: 'ok' })], renderFallback: () => plain }))
     ok(fallbackGroup.includes('id="plain"') && fallbackGroup.includes('摘要 1'), '合并组中旧CLI无法读取结果时保留原工具行，不吞输出')
 
@@ -532,8 +532,12 @@ async function run() {
     const botHtml = renderWith(createElement(view.SearchStepView, { call: botCall, step: m.searchStepOf(botCall) }, plain))
     ok(botHtml.includes('data-tone="warn"') && botHtml.includes('网页被拦截'), '抓到验证页时胶囊用警告色并写「网页被拦截」', botHtml.slice(0, 400))
     ok(botHtml.includes('被拦截') && !botHtml.includes('已取原文'), '验证页的来源卡写「被拦截」，不写「已取原文」', botHtml.slice(0, 1600))
-    ok(botHtml.includes('ws-cap-target">Making sure you&#x27;re not a bot!<'), '折叠行显示页面标题而不是只有地址', botHtml.slice(0, 900))
-    ok(fetchHtml.includes('ws-cap-target">示例<') && fetchHtml.includes('https://example.com/a'), '正常网页折叠行也显示页面标题，地址留在提示里', fetchHtml.slice(0, 600))
+    ok(botHtml.includes('class="ws-tick">网页被拦截 · raybyte.example<'), '被拦截的折叠行写拦截和域名', botHtml.slice(0, 900))
+    ok(fetchHtml.includes('class="ws-tick">示例<') && fetchHtml.includes('https://example.com/a'), '正常网页折叠行也显示页面标题，地址留在提示里', fetchHtml.slice(0, 600))
+    const emptyCall = { id: 'w0', name: 'web_search', args: { queries: ['甲', '乙'] }, status: 'ok', details: { search: { action: 'query', query: '甲', items: [] } } }
+    const emptyHtml = renderWith(createElement(view.SearchStepView, { call: emptyCall, step: m.searchStepOf(emptyCall) }, plain))
+    ok(emptyHtml.includes('data-empty="true"') && !emptyHtml.includes('aria-expanded') && !emptyHtml.includes('ui-source-reveal') && !emptyHtml.includes('没有可显示的来源'), '没有来源时胶囊不可展开，也不写空提示', emptyHtml.slice(0, 600))
+    ok(emptyHtml.includes('class="ws-tick">甲<') && emptyHtml.includes('>+1<') && !emptyHtml.includes('甲 · 乙<'), '多个查询只显示第一个和 +N', emptyHtml.slice(0, 600))
     ok(m.isBlockedPage({ title: 'Just a moment...', snippet: '' }) && m.isBlockedPage({ title: 'x', snippet: 'Please complete the security check to access' }) && !m.isBlockedPage({ title: 'Electron 文档', snippet: '窗口' }), '验证页识别只认典型拦截文案')
 
     const citation = { n: 2, title: 'Milvus 3.0 发布', url: 'https://milvus.io/blog/announcing-milvus-3', domain: 'milvus.io', site: 'milvus', snippet: '向量检索引擎的新版本' }
