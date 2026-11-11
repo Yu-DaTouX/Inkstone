@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export const PROGRESS_UPDATES_BETA = 'thinking-display-updates-2026-08-18'
-export const PROGRESS_UPDATE_MODEL = /claude-(?:(?:opus|sonnet)-5[-.]5|(?:fable|mythos)-5[-.]1|fable-5(?![-.][0-9]{1,2}(?![0-9])))/i
+export const PROGRESS_UPDATE_MODEL = /claude-(?:(?:opus|sonnet)-5[-.]5|(?:fable|mythos)-5[-.][12](?![0-9])|fable-5(?![-.][0-9]{1,2}(?![0-9])))/i
 export const DISPLAY_REJECTED_RETRY_HINT = 'Inkstone: this endpoint rejected thinking display "updates"; you can retry your request with summarized thinking.'
 
 const BAD_REQUEST = /\b(?:400|422)\b|invalid_request|bad request|unsupported|unknown|unrecognized|not permitted|extra inputs/i

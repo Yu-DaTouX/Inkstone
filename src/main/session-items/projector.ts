@@ -17,7 +17,7 @@ import { thinkingDisplayMode } from '../../shared/thinking-display'
 
 export type LocalizeImage = (mimeType: string, data: string) => string
 
-const PROGRESS_UPDATE_MODEL = /claude-(?:(?:opus|sonnet)-5[-.]5|(?:fable|mythos)-5[-.]1|fable-5(?![-.][0-9]{1,2}(?![0-9])))/i
+const PROGRESS_UPDATE_MODEL = /claude-(?:(?:opus|sonnet)-5[-.]5|(?:fable|mythos)-5[-.][12](?![0-9])|fable-5(?![-.][0-9]{1,2}(?![0-9])))/i
 
 export function writesProgressUpdates(model: unknown): boolean {
   return thinkingDisplayMode() === 'updates' && typeof model === 'string' && PROGRESS_UPDATE_MODEL.test(model)

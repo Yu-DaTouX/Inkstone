@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,16 +7,20 @@ const dataDir = mkdtempSync(join(tmpdir(), 'yan-progress-'))
 process.env.YAN_DATA_DIR = dataDir
 const setDisplay = (value) => writeFileSync(join(dataDir, 'desktop.json'), JSON.stringify(value ? { thinkingDisplay: value } : {}))
 setDisplay('updates')
-import extension, { DISPLAY_REJECTED_RETRY_HINT, PROGRESS_UPDATES_BETA, isProgressUpdateModel } from '../resources/pi-extensions/anthropic-progress-updates.js'
+import extension, { DISPLAY_REJECTED_RETRY_HINT, PROGRESS_UPDATES_BETA, PROGRESS_UPDATE_MODEL, isProgressUpdateModel } from '../resources/pi-extensions/anthropic-progress-updates.js'
 
 const model = (id, extra = {}) => ({ api: 'anthropic-messages', provider: 'anthropic', baseUrl: 'https://api.anthropic.com', id, ...extra })
 
-for (const id of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-mythos-5-1', 'claude-fable-5', 'claude-fable-5-20261001', 'anthropic/claude-opus-5.5']) {
+for (const id of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-mythos-5-1', 'claude-fable-5-2', 'claude-mythos-5-2', 'claude-fable-5-2-20261001', 'claude-fable-5', 'claude-fable-5-20261001', 'anthropic/claude-opus-5.5', 'anthropic/claude-fable-5.2']) {
   assert.equal(isProgressUpdateModel(model(id)), true, id)
 }
-for (const id of ['claude-opus-4-6', 'claude-sonnet-4-5', 'claude-fable-5-2', 'deepseek-v4']) {
+for (const id of ['claude-opus-4-6', 'claude-sonnet-4-5', 'claude-fable-5-3', 'claude-mythos-5-3', 'claude-mythos-5-20261001', 'deepseek-v4']) {
   assert.equal(isProgressUpdateModel(model(id)), false, id)
 }
+assert.ok(
+  readFileSync(new URL('../src/main/session-items/projector.ts', import.meta.url), 'utf8').includes(`const PROGRESS_UPDATE_MODEL = ${PROGRESS_UPDATE_MODEL}\n`),
+  '消息投影与扩展用同一条模型正则'
+)
 assert.equal(isProgressUpdateModel(model('claude-opus-5-5', { api: 'bedrock-converse-stream' })), false, 'Bedrock 不走 Messages beta')
 
 function load() {
