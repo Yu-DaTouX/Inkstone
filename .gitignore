@@ -30,6 +30,7 @@ release/
 *.otf
 *.woff
 *.woff2
+!website/fonts/*.woff2
 *.tgz
 
 # ---- 临时 / 日志 ----
