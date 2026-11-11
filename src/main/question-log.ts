@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { QuestionLogEntry } from '../shared/ipc'
@@ -6,6 +6,14 @@ import { isSafeSessionId } from './session-id'
 import { YAN_DIR } from './paths'
 
 const PER_SESSION_LIMIT = 50
+const QUARANTINE_LIMIT = 32
+
+interface CacheEntry {
+  file: string
+  mtimeMs: number
+  size: number
+  doc: QuestionLogDocument
+}
 
 interface QuestionLogDocument {
   version: 1
@@ -49,11 +57,19 @@ function sanitizeDocument(raw: unknown): QuestionLogDocument {
 }
 
 export class QuestionLogStore {
+  private cache: CacheEntry | null = null
+  private readonly quarantined = new Set<string>()
+
   constructor(private readonly file: () => string = questionLogPath) {}
 
   list(sessionId: string | undefined | null): QuestionLogEntry[] {
     if (!isSafeSessionId(sessionId)) return []
-    return this.read().sessions[sessionId] ?? []
+    try {
+      return this.read().sessions[sessionId] ?? []
+    } catch (error) {
+      console.warn('[question-log] 读取失败，本次按无记录处理：', error instanceof Error ? error.message : error)
+      return []
+    }
   }
 
   append(
@@ -61,26 +77,65 @@ export class QuestionLogStore {
     entry: Omit<QuestionLogEntry, 'id'> & { id?: string }
   ): QuestionLogEntry[] | null {
     if (!isSafeSessionId(sessionId)) return null
-    const doc = this.read()
+    let doc: QuestionLogDocument
+    try {
+      doc = this.read()
+    } catch (error) {
+      console.warn('[question-log] 读取失败，本条记录未保存：', error instanceof Error ? error.message : error)
+      return null
+    }
     const list = doc.sessions[sessionId] ?? []
     const next = [...list, { ...entry, id: entry.id ?? randomUUID() }].slice(-PER_SESSION_LIMIT)
-    doc.sessions[sessionId] = next
-    this.write(doc)
+    this.write({ version: 1, sessions: { ...doc.sessions, [sessionId]: next } })
     return next
   }
 
   private read(): QuestionLogDocument {
-    let text: string
-    try { text = readFileSync(this.file(), 'utf8') }
-    catch (error) {
+    const file = this.file()
+    let stamp: { mtimeMs: number; size: number }
+    try {
+      const info = statSync(file)
+      stamp = { mtimeMs: info.mtimeMs, size: info.size }
+    } catch (error) {
+      this.cache = null
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, sessions: {} }
       throw error
     }
+    const cached = this.cache
+    if (cached && cached.file === file && cached.mtimeMs === stamp.mtimeMs && cached.size === stamp.size) return cached.doc
+    let text: string
     try {
-      return sanitizeDocument(JSON.parse(text))
+      text = readFileSync(file, 'utf8')
+    } catch (error) {
+      this.cache = null
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, sessions: {} }
+      throw error
+    }
+    let doc: QuestionLogDocument
+    try {
+      doc = sanitizeDocument(JSON.parse(text))
     } catch {
-      copyFileSync(this.file(), `${this.file()}.corrupt-${Date.now()}`)
-      return { version: 1, sessions: {} }
+      this.quarantine(file, stamp)
+      doc = { version: 1, sessions: {} }
+    }
+    this.cache = { file, ...stamp, doc }
+    return doc
+  }
+
+  private quarantine(file: string, stamp: { mtimeMs: number; size: number }): void {
+    const signature = `${file}|${stamp.mtimeMs}|${stamp.size}`
+    if (this.quarantined.has(signature)) return
+    this.quarantined.add(signature)
+    if (this.quarantined.size > QUARANTINE_LIMIT) {
+      const oldest = this.quarantined.values().next().value
+      if (typeof oldest === 'string') this.quarantined.delete(oldest)
+    }
+    const target = `${file}.corrupt-${Math.round(stamp.mtimeMs)}-${stamp.size}`
+    if (existsSync(target)) return
+    try {
+      copyFileSync(file, target)
+    } catch (error) {
+      console.warn('[question-log] 损坏文件备份失败：', error instanceof Error ? error.message : error)
     }
   }
 
@@ -96,7 +151,10 @@ export class QuestionLogStore {
         rmSync(temp, { force: true })
         throw error
       }
+      const info = statSync(path)
+      this.cache = { file: path, mtimeMs: info.mtimeMs, size: info.size, doc }
     } catch (error) {
+      this.cache = null
       console.warn('[question-log] 写入失败：', error instanceof Error ? error.message : error)
     }
   }

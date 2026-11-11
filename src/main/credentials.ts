@@ -98,7 +98,7 @@ export async function readAuth(): Promise<Record<string, unknown>> {
 }
 
 async function writeAuthAtomic(data: Record<string, unknown>): Promise<void> {
-  await atomicWriteFile(AUTH_FILE, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 })
+  await atomicWriteFile(AUTH_FILE, JSON.stringify(data, null, 2) + '\n', { mode: 0o600, durable: true })
 }
 
 export async function readAuthEntry(provider: string): Promise<unknown> {

@@ -10,6 +10,7 @@ const RENAME_BACKOFF_MS = 25
 export interface AtomicWriteOptions {
   mode?: number
   syncDir?: boolean
+  durable?: boolean
 }
 
 async function syncDirectory(file: string): Promise<void> {
@@ -20,6 +21,20 @@ async function syncDirectory(file: string): Promise<void> {
   } catch {
   } finally {
     await dir.close().catch(() => undefined)
+  }
+}
+
+async function writeTemp(temp: string, content: string, options: AtomicWriteOptions): Promise<void> {
+  if (!options.durable) {
+    await writeFile(temp, content, { encoding: 'utf8', flag: 'wx', mode: options.mode })
+    return
+  }
+  const handle = await open(temp, 'wx', options.mode)
+  try {
+    await handle.writeFile(content, 'utf8')
+    await handle.sync()
+  } finally {
+    await handle.close()
   }
 }
 
@@ -44,7 +59,7 @@ export async function atomicWriteFile(file: string, content: string, options: At
   await mkdir(dirname(file), { recursive: true })
   const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
   try {
-    await writeFile(temp, content, { encoding: 'utf8', flag: 'wx', mode: options.mode })
+    await writeTemp(temp, content, options)
   } catch (error) {
     await rm(temp, { force: true }).catch(() => undefined)
     throw error

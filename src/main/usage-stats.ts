@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, open, readFile, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { open, readFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { aggregateUsageSources, localDay, type FileUsage, type UsageRange, type UsageStatsView } from '../shared/usage-stats'
 import {
@@ -13,6 +12,7 @@ import {
 } from './usage-sources'
 import { estimateCost } from '../shared/model-pricing'
 import { loadModelPricing } from './model-pricing'
+import { atomicWriteFile } from './sync/atomic'
 
 const CACHE_VERSION = 6
 const FINGERPRINT_BYTES = 4096
@@ -189,8 +189,7 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
 
   async function saveCache(map: Map<string, FileEntry>): Promise<void> {
     try {
-      await mkdir(dirname(cacheFile), { recursive: true })
-      await writeFile(cacheFile, JSON.stringify({ version: CACHE_VERSION, files: Object.fromEntries(map) }))
+      await atomicWriteFile(cacheFile, JSON.stringify({ version: CACHE_VERSION, files: Object.fromEntries(map) }))
     } catch {
     }
   }

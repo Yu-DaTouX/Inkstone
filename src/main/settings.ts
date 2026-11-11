@@ -328,8 +328,20 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   return settings
 }
 
+let loading: Promise<AppSettings> | null = null
+
 export async function getSettings(): Promise<AppSettings> {
   if (cached) return structuredClone(cached)
+  if (!loading) {
+    const task = loadSettings().finally(() => {
+      if (loading === task) loading = null
+    })
+    loading = task
+  }
+  return structuredClone(await loading)
+}
+
+async function loadSettings(): Promise<AppSettings> {
   const generation = cacheGeneration
   let parsed: Partial<AppSettings>
   let text: string | undefined
@@ -367,11 +379,11 @@ export async function getSettings(): Promise<AppSettings> {
   setUiLang(sanitized.lang)
   const loaded = await enforceGuardSeal(sanitized, healedBackup !== null)
   if (healedBackup) noticeGuardSettings(pick(`设置文件损坏，已备份为 ${basename(healedBackup)}，这次用默认设置启动（权限档按加密记录恢复）。`, `The settings file is corrupt. Backed up as ${basename(healedBackup)}. Started with defaults (permission level restored from the sealed record).`), `heal:${healedBackup}`)
-  if (generation !== cacheGeneration) return getSettings()
+  if (generation !== cacheGeneration) return cached ?? loadSettings()
   cached = loaded
   setUiLang(loaded.lang)
   setThinkingDisplayMode(loaded.thinkingDisplay)
-  return structuredClone(loaded)
+  return loaded
 }
 
 function sanitizeRemoteAccess(value: unknown): AppSettings['remoteAccess'] {
@@ -529,7 +541,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
       await sealStore.write(guardFieldsOf(next))
       sealWritten = true
     }
-    await atomicWriteFile(FILE, JSON.stringify(next, null, 2), { syncDir: true })
+    await atomicWriteFile(FILE, JSON.stringify(next, null, 2), { syncDir: true, durable: true })
   } catch (e) {
     if (sealStore && sealWritten) await sealStore.write(guardFieldsOf(cur)).catch(() => undefined)
     invalidate()

@@ -9,12 +9,18 @@ import { readUsageStats } from './usage-stats'
 type UsageReply = UsageStatsView & { userName: string }
 
 const IDLE_EXIT_MS = 30_000
+const FALLBACK_MIN_INTERVAL_MS = 15_000
 
-const pending = new Map<string, { settle: (value: UsageReply) => void; fail: (error: Error) => void }>()
+class WorkerExitError extends Error {}
+
+const pending = new Map<string, { owner: UtilityProcess; settle: (value: UsageReply) => void; fail: (error: Error) => void }>()
 let child: UtilityProcess | null = null
 let starting: Promise<UtilityProcess> | null = null
 let generation = 0
 let idleTimer: ReturnType<typeof setTimeout> | undefined
+const lastGood = new Map<UsageRange, UsageReply>()
+const fallbackFlights = new Map<UsageRange, Promise<UsageReply>>()
+const fallbackFinishedAt = new Map<UsageRange, number>()
 
 function workerPath(): string {
   return join(dirname(fileURLToPath(import.meta.url)), 'usage-stats-worker.js')
@@ -63,9 +69,12 @@ async function ensureChild(): Promise<UtilityProcess> {
       armIdle()
     })
     spawned.once('exit', () => {
-      if (child !== spawned) return
-      child = null
-      failAll(pick('用量统计进程已退出', 'Usage stats process exited'))
+      if (child === spawned) child = null
+      for (const [id, entry] of [...pending]) {
+        if (entry.owner !== spawned) continue
+        pending.delete(id)
+        entry.fail(new WorkerExitError(pick('用量统计进程已退出', 'Usage stats process exited')))
+      }
     })
     child = spawned
     return spawned
@@ -78,20 +87,61 @@ async function ensureChild(): Promise<UtilityProcess> {
   }
 }
 
-function readInWorker(range: UsageRange): Promise<UsageReply> {
-  return ensureChild().then(
-    (proc) =>
-      new Promise<UsageReply>((resolve, reject) => {
-        const id = randomUUID()
-        clearTimeout(idleTimer)
-        pending.set(id, { settle: resolve, fail: reject })
-        proc.postMessage({ id, range })
-      })
-  )
+function requestFromWorker(proc: UtilityProcess, range: UsageRange): Promise<UsageReply> {
+  return new Promise<UsageReply>((resolve, reject) => {
+    const id = randomUUID()
+    clearTimeout(idleTimer)
+    pending.set(id, { owner: proc, settle: resolve, fail: reject })
+    try {
+      proc.postMessage({ id, range })
+    } catch (error) {
+      pending.delete(id)
+      armIdle()
+      reject(new WorkerExitError(error instanceof Error ? error.message : String(error)))
+    }
+  })
 }
 
-export function readUsageStatsOffThread(range: UsageRange): Promise<UsageReply> {
-  return readInWorker(range).catch(() => readUsageStats(range))
+function scanInMainProcess(range: UsageRange): Promise<UsageReply> {
+  const flight = fallbackFlights.get(range)
+  if (flight) return flight
+  const recent = lastGood.get(range)
+  const finished = fallbackFinishedAt.get(range)
+  if (recent && finished !== undefined && Date.now() - finished < FALLBACK_MIN_INTERVAL_MS) return Promise.resolve(recent)
+  const task = readUsageStats(range)
+    .then((value) => {
+      lastGood.set(range, value)
+      return value
+    })
+    .finally(() => {
+      fallbackFinishedAt.set(range, Date.now())
+      if (fallbackFlights.get(range) === task) fallbackFlights.delete(range)
+    })
+  fallbackFlights.set(range, task)
+  return task
+}
+
+export async function readUsageStatsOffThread(range: UsageRange): Promise<UsageReply> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let proc: UtilityProcess
+    try {
+      proc = await ensureChild()
+    } catch {
+      return scanInMainProcess(range)
+    }
+    try {
+      const value = await requestFromWorker(proc, range)
+      lastGood.set(range, value)
+      return value
+    } catch (error) {
+      lastError = error
+      if (!(error instanceof WorkerExitError)) break
+    }
+  }
+  const previous = lastGood.get(range)
+  if (previous) return previous
+  throw lastError
 }
 
 export function disposeUsageStatsWorker(): void {

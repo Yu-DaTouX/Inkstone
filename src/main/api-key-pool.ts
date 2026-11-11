@@ -55,7 +55,7 @@ async function readStore(): Promise<Store> {
 }
 
 async function writeStore(store: Store): Promise<void> {
-  await atomicWriteFile(STORE_FILE, JSON.stringify(store, null, 2) + '\n', { mode: 0o600 })
+  await atomicWriteFile(STORE_FILE, JSON.stringify(store, null, 2) + '\n', { mode: 0o600, durable: true })
 }
 
 function apiKeyOf(entry: unknown): string | undefined {
