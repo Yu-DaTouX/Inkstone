@@ -67,7 +67,7 @@ export function createWebTools(call = callHostTool) {
   return [
     {
       name: 'web_search', label: 'Web search',
-      description: 'Search public web pages. Returns candidate links, snippets, dates and source states; use web_fetch for original text. Configured paid sources may charge. Identical requests are cached for 10 minutes.',
+      description: 'Search public web pages. Returns candidate links, snippets, dates and source states; use web_fetch for original text. Configured paid sources may charge.',
       parameters: {
         type: 'object',
         properties: {

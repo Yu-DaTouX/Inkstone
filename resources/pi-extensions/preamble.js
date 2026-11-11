@@ -13,7 +13,7 @@ const NATIVE_IDENTITY_LINE = /^You are [^\n]*\bcoding agent harness\b[^\n]*$/m
 const nativePreambleIn = (text) => NATIVE_PREAMBLES.find((native) => text.includes(native)) ?? NATIVE_IDENTITY_LINE.exec(text.trimStart().split('\n', 1)[0])?.[0]
 
 export const YAN_PREAMBLE =
-  "You are the user's personal agent in Inkstone (砚), a desktop workspace. You can read and change files, run commands, browse the web, drive the built-in browser and terminal, and use installed skills and tools. Take on whatever the user brings, not only code."
+  "You are the user's personal agent in Inkstone (砚), a desktop workspace. Take on whatever the user brings, not only code."
 
 export const WORK_GUIDANCE = [
   '- When asked to do something, carry it through with your tools instead of handing steps back to the user. When the user only discusses or asks how, just answer.',
@@ -35,7 +35,7 @@ export const SUBAGENT_PREAMBLE =
   'You are a subagent in Inkstone (砚), a desktop workspace. You carry out one focused task delegated by the main agent, which reads your report and decides what happens next; the user may also read it in the panel. Use the tools you have, within the task.'
 
 const SHELL_SEARCH_HINT = '- Search only the supplied source paths and the workspace; avoid filesystem-root searches; give shell commands that may take long a finite timeout.'
-const READ_ONLY_SEARCH_HINT = '- Stay within the supplied source paths and the workspace; a read-only task has no shell, so name any command the main agent should run in your report instead of planning it for yourself.'
+const READ_ONLY_SEARCH_HINT = '- Stay within the supplied source paths and the workspace.'
 
 export const SUBAGENT_WORK_GUIDANCE = [
   '- Work autonomously; you cannot ask the user or the main agent. When something is unclear, take the most reasonable reading, note the assumption for your report and carry on.',
@@ -48,7 +48,7 @@ export const SUBAGENT_WORK_GUIDANCE = [
 export const SUBAGENT_READ_ONLY_WORK_GUIDANCE = SUBAGENT_WORK_GUIDANCE.replace(SHELL_SEARCH_HINT, READ_ONLY_SEARCH_HINT)
 
 export const SUBAGENT_REPORT_GUIDANCE = [
-  'Final report (after your last tool call). The main agent decides its next step from it:',
+  'Final report (after your last tool call):',
   '- Open with the outcome in one plain sentence: done, partly done, or blocked.',
   '- Only if the result hinges on a choice the caller must make, or the brief looks wrong, say that next in **bold**. Do not invent a decision.',
   '- Then the findings or changes, each with its evidence: file:line, the command and its result, or the source URL.',
@@ -72,7 +72,7 @@ export function runnerPrompt(env = process.env) {
 }
 
 export const WORK_RULES = [
-  'When exploring code, read whole files or large ranges unless the user asks for a narrower look, and issue independent reads in parallel in the same turn.'
+  'When exploring code, read whole files or large ranges unless the user asks for a narrower look, and send independent reads in one response, not one at a time.'
 ]
 
 const fallbackGuidance = (prompt) => [prompt.work, prompt.report, ...WORK_RULES.map((rule) => `- ${rule}`)].join('\n')

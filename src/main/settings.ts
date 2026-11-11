@@ -62,7 +62,7 @@ const DEFAULTS: AppSettings = {
   alwaysOnTop: false,
   uiScale: 0,
   profile: defaultProfile(),
-  codemodeEnabled: true,
+  codemode: 'auto',
   guardOutsideWrites: true,
   permissionMode: DEFAULT_PERMISSION_MODE,
   guardAllowRoots: [],
@@ -234,8 +234,12 @@ async function defaultWorkFolder(): Promise<string> {
   }
 }
 
+function normalizeCodemode(value: unknown): NonNullable<AppSettings['codemode']> {
+  return value === 'auto' || value === 'on' || value === 'off' ? value : 'auto'
+}
+
 function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
-  const { contextTrim: _contextTrim, contextTrimTokens: _contextTrimTokens, ...remaining } = parsed as Partial<AppSettings> & { contextTrim?: unknown; contextTrimTokens?: unknown }
+  const { contextTrim: _contextTrim, contextTrimTokens: _contextTrimTokens, codemodeEnabled: _codemodeEnabled, ...remaining } = parsed as Partial<AppSettings> & { contextTrim?: unknown; contextTrimTokens?: unknown; codemodeEnabled?: unknown }
   const current = Object.fromEntries(Object.entries(remaining).filter(([key]) => !/^(desktopPet|comfy)/i.test(key)))
   const settings = { ...DEFAULTS, ...current } as AppSettings
   if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark'
@@ -247,7 +251,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.alwaysOnTop = settings.alwaysOnTop === true
   settings.uiScale = clampScale(settings.uiScale)
   settings.profile = sanitizeProfile(settings.profile)
-  settings.codemodeEnabled = settings.codemodeEnabled !== false
+  settings.codemode = normalizeCodemode(current.codemode)
   settings.guardOutsideWrites = !isLegacyPermissionMode(settings.permissionMode) && settings.guardOutsideWrites === true
   settings.permissionMode = normalizePermissionMode(settings.permissionMode)
   settings.lastMainModel = cleanModelChoice(settings.lastMainModel)
@@ -425,7 +429,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('设置补丁必须是对象', 'The settings patch must be an object'))
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(pick(`不允许修改设置项：${key}`, `Changing this setting is not allowed: ${key}`))
@@ -449,7 +453,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   const cur = await getSettings()
   let next: AppSettings = { ...cur, ...patch }
   if (typeof next.cwd !== 'string' || !next.cwd.trim() || !isAbsolute(next.cwd)) next.cwd = cur.cwd
-  next.codemodeEnabled = next.codemodeEnabled !== false
+  next.codemode = normalizeCodemode(next.codemode)
   next.guardOutsideWrites = next.guardOutsideWrites === true
   next.permissionMode = normalizePermissionMode(next.permissionMode)
   next.lastMainModel = cleanModelChoice(next.lastMainModel)

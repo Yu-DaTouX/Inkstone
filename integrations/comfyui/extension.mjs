@@ -93,7 +93,8 @@ async function finishVideoJob(pi, job, signal) {
 }
 
 export default function comfyui(pi) {
-  pi.registerTool({
+  const register = tool => pi.registerTool({ ...tool, exposure: 'deferred' })
+  register({
     name: 'comfyui_service', label: 'ComfyUI 服务',
     description: '查询、启动或关闭本机 ComfyUI；只关闭此插件启动的实例。status 会列出已保存工作流及其类型（text-to-image、image-to-image、text-to-video、image-to-video、video-to-video），服务未运行时从安装目录读取。启动直接执行，关闭由宿主向用户确认。',
     parameters: { type: 'object', properties: { action: { type: 'string', enum: ['status', 'start', 'stop'] } }, required: ['action'], additionalProperties: false },
@@ -102,7 +103,7 @@ export default function comfyui(pi) {
       return textResult(await callPlugin(params.action, {}, id, ctx, signal))
     }
   })
-  pi.registerTool({
+  register({
     name: 'comfyui_generate', label: 'ComfyUI 出图',
     description: '用 ComfyUI 已保存的文生图或图生图工作流生成图片，支持 UI/API 工作流和子图。保留模型、LoRA 等设置；workflow 可选。sourcePaths 只允许项目内或插件成果目录内图片。需要时自动启动本机 ComfyUI；外部请求和云端节点由宿主向用户确认。',
     parameters: {
@@ -126,7 +127,7 @@ export default function comfyui(pi) {
       }
     }
   })
-  pi.registerTool({
+  register({
     name: 'comfyui_video', label: 'ComfyUI 生视频',
     description: '用 ComfyUI 已保存的视频工作流生成视频：给 videoPath 走 video-to-video，给 sourcePaths 走 image-to-video，都不给走 text-to-video。保留工作流里的模型、LoRA 等设置，支持 MiniMax H3 Director（i2v 给 1 张首帧，fl2v 给 1-2 张首尾帧，r2v 给参考图并在提示词里用 <Picture 1> 指代）。workflow 可选，先用 comfyui_service status 看可用工作流。size 如 672x384，不给时 Director 按源视频比例保持工作流像素量；seconds 限制生成时长（Director 默认 10 秒）。路径只允许项目内或插件成果目录内的文件。生成在后台任务里跑，卡片实时显示进度；最多等 waitSeconds（默认 240，0 为立即返回），到时没完成就返回进度和 jobId，再用 comfyui_job 继续等待或取消。需要时自动启动本机 ComfyUI；外部请求和云端节点由宿主向用户确认。',
     parameters: {
@@ -147,13 +148,13 @@ export default function comfyui(pi) {
       } finally { release() }
     }
   })
-  pi.registerTool({
+  register({
     name: 'comfyui_nodes', label: 'ComfyUI 节点目录',
     description: '查询这台 ComfyUI 实际安装的节点（object_info）。不传参数返回分类概览；search 按空格分隔的关键词匹配名称、显示名、分类和说明，category 限定分类；types 按节点类型名取完整定义（必填/可选输入、取值范围、下拉选项、输出序号与类型）。拼装或改写工作流前用它确认节点存在及输入名，不要凭记忆写。需要时自动启动本机 ComfyUI。',
     parameters: { type: 'object', properties: { search: { type: 'string' }, category: { type: 'string' }, types: { type: 'array', items: { type: 'string' }, maxItems: 20 } }, additionalProperties: false },
     async execute(id, params, signal, _update, ctx) { return textResult(await callPlugin('nodes', params, id, ctx, signal)) }
   })
-  pi.registerTool({
+  register({
     name: 'comfyui_workflow', label: 'ComfyUI 工作流',
     description: '读取或校验工作流。来源三选一：name（ComfyUI 已保存工作流，界面格式会转成 API 格式）、path（项目内 JSON 文件，API 或界面格式）、prompt（API 格式对象）。mode 为 read（默认）返回 API 格式 JSON（{节点编号: {class_type, inputs}}，输入里 ["节点编号", 输出序号] 是连线）；JSON 太长时不内联，传 outPath（项目内 .json，已存在需 overwrite: true）保存后用文件工具修改。mode 为 validate 用 object_info 检查节点是否存在、必填输入、连线节点与输出序号、类型是否匹配、数值范围、下拉值、是否有输出节点、是否成环，返回逐条问题（节点、输入、原因和可选值）及云端 API 节点列表；校验通过再用 comfyui_run 运行。',
     parameters: {
@@ -164,13 +165,13 @@ export default function comfyui(pi) {
     },
     async execute(id, params, signal, _update, ctx) { return textResult(await callPlugin('workflow', params, id, ctx, signal)) }
   })
-  pi.registerTool({
+  register({
     name: 'comfyui_upload', label: 'ComfyUI 上传素材',
     description: '把项目内或插件成果目录内的图片（PNG/JPEG/WebP）、视频（MP4/MOV/WebM/MKV）上传到 ComfyUI 的 input 目录，返回可填入 LoadImage 的 image、LoadVideo 的 file 等输入的文件名。',
     parameters: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4 } }, required: ['paths'], additionalProperties: false },
     async execute(id, params, signal, _update, ctx) { return textResult(await callPlugin('upload', params, id, ctx, signal)) }
   })
-  pi.registerTool({
+  register({
     name: 'comfyui_run', label: 'ComfyUI 运行工作流',
     description: '运行你拼装或改写的工作流（API 格式），来源 path（项目内 JSON）或 prompt（对象）二选一，提交前自动校验，不通过则返回问题清单且不提交；ComfyUI 拒绝或节点执行失败时返回节点编号、类型和原因，据此修改再运行。所有输出图片和视频（最多 8 个）保存并挂到回复，文本输出一并返回。后台任务，卡片显示进度，最多等 waitSeconds（默认 240，0 为立即返回），到时没完成返回 jobId，用 comfyui_job 继续。含云端 API 节点（可能付费）时每次运行都由宿主向用户确认。',
     parameters: {
@@ -186,9 +187,9 @@ export default function comfyui(pi) {
       } finally { release() }
     }
   })
-  pi.registerTool({
+  register({
     name: 'comfyui_job', label: 'ComfyUI 任务',
-    description: '查看、继续等待或取消 comfyui_video 的后台任务。传 jobId 等到完成或 waitSeconds（默认 240，最多 900）到期，返回阶段、排队位置、当前节点、步数和已用时间，完成时返回视频路径并挂到回复；cancel: true 取消任务；不传 jobId 列出最近的任务。',
+    description: '查看、继续等待或取消 comfyui_video、comfyui_run 的后台任务。传 jobId 等到完成或 waitSeconds（默认 240，最多 900）到期，返回阶段、排队位置、当前节点、步数和已用时间，完成时返回结果路径并挂到回复；cancel: true 取消任务；不传 jobId 列出最近的任务。',
     parameters: {
       type: 'object', properties: {
         jobId: { type: 'string' }, waitSeconds: { type: 'number', minimum: 0, maximum: 900 }, cancel: { type: 'boolean' }

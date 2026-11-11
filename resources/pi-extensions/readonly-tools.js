@@ -94,7 +94,7 @@ async function callHost(command, params, signal, env = process.env) {
 export const GIT_INSPECT_TOOL = {
   name: 'git_inspect',
   label: 'Git (read-only)',
-  description: 'Read-only git in the working directory: diff, log, show, status or blame. args are passed as separate argv entries (no shell); options that write files or run external programs are rejected. Use paths after "--" to narrow output.',
+  description: 'Read-only git in the working directory. args are passed as separate argv entries (no shell); options that write files or run external programs are rejected. Use paths after "--" to narrow output.',
   parameters: {
     type: 'object',
     properties: {

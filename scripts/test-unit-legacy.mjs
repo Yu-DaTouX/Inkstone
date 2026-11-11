@@ -1062,13 +1062,17 @@ await guarded("runGitRepoTests(ok)", () => runGitRepoTests(ok))
     ok(!hooks.before_provider_request && !hooks.message_end && !hooks.tool_result, '能力扩展只写系统提示分区，不在请求末尾追加待办或收尾提醒')
   }
   const visual = mod.VISUAL_ANSWER_GUIDE
+  const grammarModel = { model: { compat: { supportsOpenAIGrammarTools: true } } }
   {
     const probeHandlers = {}
     mod.default({ on: (name, fn) => { probeHandlers[name] = fn } })
     const options = { sections: { preamble: 'x' } }
-    const result = probeHandlers.before_agent_start({ systemPrompt: 'base', systemPromptOptions: options })
+    const result = probeHandlers.before_agent_start({ systemPrompt: 'base', systemPromptOptions: options }, grammarModel)
     ok(options.sections.inkstone_visual_answer === visual && options.sections.inkstone_capabilities === mod.CAPABILITY_GUIDE && result === undefined,
       '能力说明：有具名分区时只写分区、不返回整段提示（否则 pi 会固定整段提示，其他扩展的分区失效）')
+    const plain = { sections: {} }
+    probeHandlers.before_agent_start({ systemPrompt: 'base', systemPromptOptions: plain }, { model: { compat: {} } })
+    ok(plain.sections.inkstone_capabilities === mod.capabilityGuide(false, { codemode: false }), '能力说明：自动模式下不支持语法工具的模型不提 codemode')
   }
 
   const handlers = {}
@@ -1079,12 +1083,12 @@ await guarded("runGitRepoTests(ok)", () => runGitRepoTests(ok))
   })
   ok(typeof handlers.before_agent_start === 'function', '能力说明：注册在 before_agent_start')
 
-  const first = handlers.before_agent_start({ systemPrompt: 'base' })
+  const first = handlers.before_agent_start({ systemPrompt: 'base' }, grammarModel)
   ok(
     !!first && first.systemPrompt.startsWith('base') && first.systemPrompt.includes(mod.CAPABILITY_GUIDE),
     '能力说明：追加在系统提示末尾（不篡改原有内容）'
   )
-  const second = handlers.before_agent_start({ systemPrompt: first.systemPrompt })
+  const second = handlers.before_agent_start({ systemPrompt: first.systemPrompt }, grammarModel)
   ok(second === undefined, '能力说明：幂等，已注入后不再重复追加')
 }
 

@@ -173,7 +173,8 @@ try {
   const statusFail = guide.todosResult({ ok: false, error: 'index out of range', data: { todos: [{ text: 'run', done: false, status: 'running' }] } })
   assert.match(statusFail.content[0].text, /\[>\] 1\. run \(in progress\)/, '失败回执也保留 running')
   const todoFail = guide.todosResult({ ok: false, error: 'index out of range', data: { todos: [{ text: 'x', done: false }] } })
-  assert.match(todos.description, /action: "set" \(the default when only items are given\) replaces the whole list with items; "add" appends items; "complete"\/"uncomplete"\/"remove" take a 1-based index; "clear" empties it\..*At most 20 items.*80 characters/)
+  assert.match(todos.description, /action "set" \(the default when items are given\) replaces the list; "add" appends; "complete"\/"uncomplete"\/"remove" take a 1-based index; "clear" empties it\..*Each text is a short title\.$/)
+  assert.doesNotMatch(todos.description, /At most 20|80 characters/, '数量与长度上限只写在 schema 里，不在描述里重复')
   assert.equal(todos.parameters.properties.items.maxItems, 20)
   assert.equal(todos.parameters.properties.items.items.properties.text.maxLength, 80)
   assert.equal(todoFail.isError, true)
@@ -182,8 +183,11 @@ try {
   assert.equal(guide.CAPABILITY_GUIDE, guide.capabilityGuide(false))
   const withTools = guide.capabilityGuide(true)
   assert.match(withTools, /the `todos` tool/)
-  assert.doesNotMatch(withTools, /yan tasks apply|- question: |- tasks: /)
+  assert.doesNotMatch(withTools, /yan tasks apply|- question: |- tasks: |web search, page text/, '已有对应工具的命令组不在清单里重复')
+  assert.match(withTools, /^- search: library docs \(`yan search docs --library <name> --query-text "\.\.\."`\)$/m, '文档查询只走命令行，清单里留一行指路')
   assert.match(guide.CAPABILITY_GUIDE, /yan tasks apply/)
+  assert.match(guide.CAPABILITY_GUIDE, /- search: web search, page text, library docs/, '没有联网工具时清单保留 search 组')
+  assert.doesNotMatch(guide.CAPABILITY_GUIDE, /SKILL\.md once|sleep-poll|skill artifact\)|skill capabilities covers/, '技能清单已说明的内容不在能力清单里重复')
   assert.match(guide.environmentGuide(new Date(2026, 9, 26), 'win32', undefined), /Git Bash.*edit\/write tools; Python text-mode writes on Windows turn \\n into \\r\\n\./)
   assert.match(question.TOOL_GUIDANCE, /`question` tool/)
   assert.match(question.CLI_GUIDANCE, /yan question ask/)
@@ -200,7 +204,7 @@ try {
     for (const key of Object.keys(env)) if (!(key in saved)) delete process.env[key]
     Object.assign(process.env, saved)
   }
-  assert.deepEqual(registered.map((definition) => definition.name), ['question', 'todos', 'web_search', 'web_fetch', 'web_docs'])
+  assert.deepEqual(registered.map((definition) => definition.name), ['question', 'todos', 'web_search', 'web_fetch'], '主会话不注册 web_docs，文档查询走 yan search docs')
   for (const definition of registered) {
     assert.equal(typeof definition.execute, 'function')
     assert.equal(definition.parameters.type, 'object')

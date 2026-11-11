@@ -95,5 +95,5 @@ export function findLegacyPowerShell(command) {
 }
 
 export function legacyPowerShellReason() {
-  return 'Not run: PowerShell 7 is installed here, so replace `powershell` / `powershell.exe` with `pwsh` and keep the other arguments. The built-in 5.1 reads BOM-less .ps1 files in the system code page, so scripts with non-ASCII text get garbled or fail to parse; pwsh reads UTF-8 by default.'
+  return 'Not run: PowerShell 7 is installed here, so replace `powershell` / `powershell.exe` with `pwsh` and keep the other arguments. The built-in 5.1 garbles BOM-less scripts with non-ASCII text.'
 }

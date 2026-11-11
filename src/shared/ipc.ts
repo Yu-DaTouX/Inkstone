@@ -798,7 +798,7 @@ export interface AppSettings {
   theme: 'dark' | 'light'
   lang: 'zh-CN' | 'en-US'
   piBin?: string
-  codemodeEnabled?: boolean
+  codemode?: 'auto' | 'on' | 'off'
   asciiBackground?: boolean
   autoArchiveDays?: number
   keepAwakeWhileWorking?: boolean

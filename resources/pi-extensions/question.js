@@ -3,7 +3,7 @@ import { reserveInkstoneSections } from './prompt-sections.js'
 
 const WHEN_TO_ASK = 'Ask the user only when you cannot tell what they want, or when reasonable readings of the request differ materially. Check the files, the conversation and the environment first; never ask what you can find out yourself. If the user says to ask more or less, follow that; asking or not never changes approvals or high-risk confirmations.'
 
-export const TOOL_GUIDANCE = `${WHEN_TO_ASK} Ask with the \`question\` tool, one focused question at a time, and wait for the answer.`
+export const TOOL_GUIDANCE = `${WHEN_TO_ASK} Ask with the \`question\` tool, one focused question at a time.`
 
 export const CLI_GUIDANCE = `${WHEN_TO_ASK} Ask with \`yan question ask\` (at most 3 concrete options), one focused question at a time, and wait for the answer.`
 
@@ -58,7 +58,7 @@ const QUESTION_TOOL = {
       options: { type: 'array', items: { type: 'string' }, maxItems: 3 },
       fields: {
         type: 'array',
-        description: 'A 1-5 field form instead of options. Use kind secret for passwords, tokens and keys: the user types it privately, you never see the value, and later shell commands get it as $YAN_SECRET_<NAME>.',
+        description: 'Use kind secret for passwords, tokens and keys: the user types it privately, you never see the value, and later shell commands get it as $YAN_SECRET_<NAME>.',
         maxItems: 5,
         items: {
           type: 'object',

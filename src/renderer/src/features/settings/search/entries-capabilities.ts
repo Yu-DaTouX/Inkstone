@@ -99,7 +99,7 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     tab: 'tools',
     zh: 'Codemode',
     en: 'Codemode',
-    keywords: ['codemode', '批量调用', '脚本', 'JavaScript', 'batch tools']
+    keywords: ['codemode', '批量调用', '脚本', 'JavaScript', 'batch tools', '自动', 'auto']
   },
   {
     id: 'caps-tools-visual-answers',

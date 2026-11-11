@@ -110,6 +110,7 @@ try {
   const attachedPaths = []
   extension({ registerTool: tool => tools.set(tool.name, tool), exec: async (_cmd, args) => { attachedPaths.push(args.at(-1)); return { code: 0 } } })
   ok(tools.has('comfyui_generate') && tools.has('comfyui_service') && tools.has('comfyui_video') && tools.has('comfyui_job') && ['comfyui_nodes', 'comfyui_workflow', 'comfyui_upload', 'comfyui_run'].every(name => tools.has(name)), 'pi extension registers all plugin tools')
+  ok(tools.size === 8 && [...tools.values()].every(tool => tool.exposure === 'deferred'), 'plugin tools are deferred: loaded through tool_search instead of being declared on every request')
   const videoFile = join(root, 'video.mp4')
   await writeFile(videoFile, 'video')
   const requests = []

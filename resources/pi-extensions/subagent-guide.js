@@ -20,21 +20,14 @@ export function isReadOnlySubagent(env = process.env) {
 }
 
 export function subagentCapabilityGuide(commands, { readOnly = false } = {}) {
-  const allowed = new Set(commands)
-  const lines = GROUPS.filter((group) => group.commands.some((command) => allowed.has(command))).map((group) => group.line)
   if (readOnly) {
     return [
-      'This task is read-only: there is no shell and no write or edit tool. Work with the read tools in your tool list (read, grep, find, ls, and when present git_inspect and the web tools).',
-      ...(lines.length
-        ? [
-            'Some Inkstone capabilities come through the `yan` CLI (on PATH); in this subagent only these groups work:',
-            ...lines,
-            'Run `yan <group> --help` before first use. stdout holds a short summary and a `resultFile` path; read only the parts you need.'
-          ]
-        : []),
-      'Do not plan shell commands for yourself: if a command is needed, say in your report that the main agent should run it.'
+      'This task is read-only: there is no shell and no write or edit tool; work with the read tools in your tool list.',
+      'If a command needs running, say in your report that the main agent should run it.'
     ].join('\n')
   }
+  const allowed = new Set(commands)
+  const lines = GROUPS.filter((group) => group.commands.some((command) => allowed.has(command))).map((group) => group.line)
   if (lines.length === 0) return ''
   return [
     'The `yan` CLI is on PATH. In this subagent only these groups work; the others listed in `yan --help` (browser, subagent, office and so on) are not available here:',

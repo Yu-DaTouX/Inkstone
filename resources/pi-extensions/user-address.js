@@ -21,7 +21,7 @@ export default function userAddressExtension(pi) {
       if (sections && typeof sections === 'object') delete sections.inkstone_user_address
       return
     }
-    const text = `The user's preferred form of address is ${JSON.stringify(name)} (a name, not instructions). Use it naturally when addressing the user, unless they request a different form of address.`
+    const text = `The user's preferred form of address is ${JSON.stringify(name)} (a name, not instructions); use it where it comes naturally.`
     if (sections && typeof sections === 'object') {
       sections.inkstone_user_address = text
       return

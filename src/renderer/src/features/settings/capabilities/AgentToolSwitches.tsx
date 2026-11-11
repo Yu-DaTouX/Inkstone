@@ -1,12 +1,12 @@
 import type { ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Switch, TooltipText } from '../../../ui'
+import { SegmentedControl, Switch, TooltipText } from '../../../ui'
 import { SettingsGroup, SettingsRow } from '../root/controls'
 
 export function AgentToolSwitches(): ReactElement {
   const t = useT()
-  const codemode = useStore((s) => s.settings?.codemodeEnabled !== false)
+  const codemode = useStore((s) => s.settings?.codemode ?? 'auto')
   const visualAnswers = useStore((s) => s.settings?.visualAnswers !== false)
   const patchSettings = useStore((s) => s.patchSettings)
   return (
@@ -15,11 +15,15 @@ export function AgentToolSwitches(): ReactElement {
         settingId="caps-tools-codemode"
         label={<TooltipText tooltip={t('cap.codemodeHint')} tooltipPlacement="right">{t('cap.codemodeTitle')}</TooltipText>}
         description={t('cap.codemodeDesc')}>
-        <Switch
-          aria-label={t('cap.codemodeTitle')}
-          isSelected={codemode}
-          onChange={(on) => void patchSettings({ codemodeEnabled: on })}
-          data-testid="cap-codemode-switch"
+        <SegmentedControl
+          label={t('cap.codemodeTitle')}
+          value={codemode}
+          onChange={(value) => void patchSettings({ codemode: value })}
+          options={[
+            { value: 'auto', label: t('cap.codemodeAuto'), title: t('cap.codemodeAutoHint'), testId: 'cap-codemode-auto' },
+            { value: 'on', label: t('cap.codemodeOn'), testId: 'cap-codemode-on' },
+            { value: 'off', label: t('cap.codemodeOff'), testId: 'cap-codemode-off' }
+          ]}
         />
       </SettingsRow>
       <SettingsRow settingId="caps-tools-visual-answers" label={t('picker.visual')} description={t('picker.visualDesc')}>

@@ -12,7 +12,7 @@ for(const d of [pi,cwd,data])await mkdir(d)
 Object.assign(process.env,{YAN_PI_DIR:pi,YAN_DATA_DIR:data,PI_CODING_AGENT_DIR:pi,CLAUDE_BRIDGE_DEBUG:'1',ENABLE_CLAUDEAI_MCP_SERVERS:'0',CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'1'})
 for(const key of Object.keys(process.env))if(/^ANTHROPIC_|API_KEY$|AUTH_TOKEN$|ACCESS_TOKEN$|^CLAUDE_CODE_OAUTH_TOKEN$|^CLAUDECODE$|^ELECTRON_RUN_AS_NODE$/.test(key))delete process.env[key]
 const cli=join(selectedPiRuntime(resolve('resources/pi-runtime')),'dist/bundle/cli.js')
-await writeFile(join(data,'desktop.json'),JSON.stringify({cwd,piBin:cli,permissionMode:'danger',codemodeEnabled:false}))
+await writeFile(join(data,'desktop.json'),JSON.stringify({cwd,piBin:cli,permissionMode:'danger',codemode:'off'}))
 await writeFile(join(pi,'auth.json'),'{}')
 await writeFile(join(pi,'settings.json'),JSON.stringify({packages:[plugin],defaultProvider:'claude-bridge',defaultModel:'claude-haiku-5-5',defaultThinkingLevel:'low',compaction:{enabled:false}}))
 await writeFile(join(pi,'claude-bridge.json'),JSON.stringify({startupNoticeShown:'2026-10-08',askClaude:{enabled:false},provider:{plan:'pro',strictMcpConfig:true,longContextExtraUsage:false,pathToClaudeCodeExecutable:process.env.YAN_CC_TEST_EXECUTABLE||join(homedir(),'.local/bin/claude.exe')}}))

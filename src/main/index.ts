@@ -430,7 +430,6 @@ const subagentQuotaWatch = createSubagentQuotaWatch({
 const subagentSearch = new Map<string, LookupCommands>()
 const subagentService: SubagentService = new SubagentService({
   preambleExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.preambleExtension),
-  userAddressExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.userAddressExtension),
   codemodeExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.codemodeExtension),
   providerExtensions: providerExtensionPaths,
   guardExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.dangerGuardExtension),

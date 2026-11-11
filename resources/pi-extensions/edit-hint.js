@@ -67,7 +67,7 @@ export function lineEndingNote(content) {
   if (content.charCodeAt(0) === 0xfeff) features.push('a UTF-8 BOM')
   if (content.includes('\r\n')) features.push('CRLF line endings')
   if (features.length === 0) return ''
-  return `Note: this file has ${features.join(' and ')}. edit matches oldText independent of line endings (write plain newlines) and keeps the file's original line endings and BOM, so that is not why the match failed.`
+  return `Note: this file has ${features.join(' and ')}. edit ignores those when matching (write plain newlines) and keeps them on save, so that is not why the match failed.`
 }
 
 export function editMismatchHint(event, cwd) {

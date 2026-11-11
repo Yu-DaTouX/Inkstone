@@ -51,6 +51,7 @@ export function isolatedEnv({ baseDir, extra = {}, pathDirs = [] } = {}) {
   const cwd = join(baseDir, 'cwd')
   const sessions = join(baseDir, 'sessions')
   for (const d of [agent, data, home, appdata, localappdata, tmp, cwd, sessions]) mkdirSync(d, { recursive: true })
+  writeFileSync(join(data, 'desktop.json'), JSON.stringify({ codemode: 'on' }))
   const systemRoot = process.env.SystemRoot || 'C:/Windows'
   const env = {
     SystemRoot: systemRoot,

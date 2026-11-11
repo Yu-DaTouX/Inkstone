@@ -78,18 +78,18 @@ ok(isHostContinuation('[额度换号 · 自动继续 1/1]\n…') && !isHostConti
   const commands = ['danger.confirm', 'danger.prefs', 'search.query', 'search.fetch', 'search.docs', 'artifact.preview']
   const readOnly = subagentCapabilityGuide(commands, { readOnly: true })
   ok(/read-only/i.test(readOnly) && !/Git Bash|\bbash\b/.test(readOnly), '只读子代理指南不教 bash / Git Bash', readOnly)
-  ok(/read tools in your tool list/.test(readOnly) && /git_inspect/.test(readOnly), '只读指南只描述可直接使用的工具', readOnly)
-  ok(/yan search query/.test(readOnly) && /artifact preview/.test(readOnly), '只读指南保留宿主开放的命令', readOnly)
-  ok(/Do not plan shell commands/.test(readOnly), '只读指南要求把需要的命令写进报告', readOnly)
+  ok(/read tools in your tool list/.test(readOnly) && !/git_inspect|grep, find/.test(readOnly), '只读指南指向工具列表，不重复列工具名', readOnly)
+  ok(!/\byan\b/.test(readOnly), '只读子代理没有 shell，指南不列用不了的 yan 命令', readOnly)
+  ok(/main agent should run it/.test(readOnly) && readOnly.match(/no shell/g)?.length === 1, '只读指南要求把需要的命令写进报告，没有 shell 只说一次', readOnly)
   const normal = subagentCapabilityGuide(commands, { readOnly: false })
   ok(/The `yan` CLI is on PATH/.test(normal) && !/read-only/i.test(normal), '普通子代理指南不变', normal)
 
   const readOnlyEnv = environmentGuide(new Date(2026, 10, 10), 'win32', undefined, true, { readOnly: true })
-  ok(/There is no shell/.test(readOnlyEnv) && !/Git Bash|pwsh/.test(readOnlyEnv), '只读环境说明不提 shell 与 Git Bash', readOnlyEnv)
+  ok(readOnlyEnv === 'Today: 2026-11-10 (local date).', '只读环境说明是一行字符串，只给日期，不提 shell 与 Git Bash', readOnlyEnv)
   ok(/Git Bash/.test(environmentGuide(new Date(2026, 10, 10), 'win32', undefined, true)), '普通子代理环境说明不变')
 
   const readOnlyPrompt = runnerPrompt({ YAN_RUNNER_KIND: 'subagent', YAN_READ_ONLY_SUBAGENT: '1' })
-  ok(readOnlyPrompt.work === SUBAGENT_READ_ONLY_WORK_GUIDANCE && !/shell commands that may take/.test(readOnlyPrompt.work), '只读子代理工作说明不给 shell 指令', readOnlyPrompt.work)
+  ok(readOnlyPrompt.work === SUBAGENT_READ_ONLY_WORK_GUIDANCE && !/shell/.test(readOnlyPrompt.work), '只读子代理工作说明不提 shell（只在能力段说一次）', readOnlyPrompt.work)
   ok(readOnlyPrompt.work !== SUBAGENT_WORK_GUIDANCE, '只读与可写子代理的工作说明分开')
   const normalPrompt = runnerPrompt({ YAN_RUNNER_KIND: 'subagent' })
   ok(/shell commands that may take long/.test(normalPrompt.work), '普通子代理工作说明不变', normalPrompt.work)
@@ -104,7 +104,7 @@ ok(isHostContinuation('[额度换号 · 自动继续 1/1]\n…') && !isHostConti
     subagentGuideExtension({ on: (name, fn) => { handlers[name] = fn } })
     const sections = {}
     handlers.before_agent_start({ systemPrompt: 'base', systemPromptOptions: { sections } })
-    ok(/read-only/i.test(sections.inkstone_capabilities) && /There is no shell/.test(sections.inkstone_environment), '只读子代理的段落注入只读指南与环境', sections.inkstone_environment)
+    ok(/read-only/i.test(sections.inkstone_capabilities) && /^Today: \d{4}-\d{2}-\d{2} \(local date\)\.$/.test(sections.inkstone_environment), '只读子代理的段落注入只读指南与环境', sections.inkstone_environment)
     ok(!/Git Bash/.test(`${sections.inkstone_capabilities}${sections.inkstone_environment}`), '只读子代理的段落里没有 Git Bash 指引')
   } finally {
     if (saved === undefined) delete process.env.YAN_READ_ONLY_SUBAGENT

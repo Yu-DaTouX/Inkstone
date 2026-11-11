@@ -109,6 +109,10 @@ try {
     process.env.YAN_DATA_DIR = join(root, 'yan')
     process.env.YAN_SESSIONS_DIR = join(root, 'sessions')
     process.env.YAN_SESSION_ID = 'native-fixture'
+    if (desktopCodemode) {
+      await mkdir(join(root, 'yan'), { recursive: true })
+      await writeFile(join(root, 'yan', 'desktop.json'), JSON.stringify({ codemode: 'on' }))
+    }
     const { build } = await import('esbuild')
     await build({ entryPoints: ['src/main/agent.ts'], outfile: 'out/test/native-context-controller.mjs', bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{ name: 'unused-electron-search', setup(build) {
       build.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'fixture' }))
@@ -189,8 +193,8 @@ try {
     if (desktopCodemode) {
       const originalSettings = await readFile(join(piDir, 'settings.json'))
       const desktop = join(root, 'yan', 'desktop.json')
-      for (const [enabled, expected] of [[false, false], [true, true], [false, false], [true, true]]) {
-        await writeFile(desktop, JSON.stringify({ codemodeEnabled: enabled }))
+      for (const [enabled, expected] of [['off', false], ['on', true], ['auto', false], ['on', true]]) {
+        await writeFile(desktop, JSON.stringify({ codemode: enabled }))
         const after = frames.length
         assert.equal((await command('prompt', { message: 'Confirm the tool preference for this turn.' })).success, true)
         await settled(after)

@@ -157,7 +157,7 @@ export default function repeatGuard(pi) {
         block: true,
         reason:
           'Do not poll subagents with sleep. The host notifies this session when a subagent finishes, ' +
-          'so waiting here only wastes time and lets the prompt cache expire. Either keep working on something ' +
+          'so waiting here only wastes time. Either keep working on something ' +
           'that does not depend on it, or end this turn and tell the user the subagent is running and you will be notified.'
       }
     }

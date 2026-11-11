@@ -26,8 +26,7 @@ const BRIEF = [
 
 const DETAILED = [
   'Response detail: DETAILED. The user chose this; it overrides the general "be concise" rule.',
-  '- Keep the final-reply layers. After the main line, give fuller supporting detail (still in *single asterisks*): the trade-offs behind key choices,',
-  '  the steps that mattered, a concrete example where it helps, and where the approach applies or does not.',
+  '- Keep the final-reply layers. After the main line, give fuller supporting detail (still in *single asterisks*): the trade-offs behind key choices, the steps that mattered, a concrete example where it helps, and where the approach applies or does not.',
   '- Still report errors, blockers and anything the user must decide.',
   '- Do not change the scope of the task; detail is about explanation, not about doing more.'
 ].join('\n')

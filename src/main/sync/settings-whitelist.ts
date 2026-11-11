@@ -6,7 +6,7 @@ export const SYNC_SETTINGS_WHITELIST = [
   'modelFavorites',
   'modelHidden',
   'modelProviderOrder',
-  'codemodeEnabled',
+  'codemode',
   'autoArchiveDays',
   'keepAwakeWhileWorking',
   'keepAwakeOnBattery',

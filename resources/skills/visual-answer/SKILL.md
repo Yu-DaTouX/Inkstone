@@ -1,6 +1,6 @@
 ---
 name: visual-answer
-description: 写 yan-chart、yan-stats、yan-cards 等回答块、mermaid 图或 yan-widget 小部件前读取，含各块字段格式、多种场景范例与小部件写法。
+description: 写 yan-chart、yan-stats、yan-cards 等回答块、mermaid 图或 yan-widget 小部件前读取。
 ---
 
 # 结构化回答块
