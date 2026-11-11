@@ -591,9 +591,27 @@
     box-shadow: var(--shadow-sm), var(--ring-line);
     transition: translate var(--dur-base) var(--ease);
   }
+  .ui-seg__icon {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    margin-right: var(--s-6);
+  }
+  .ui-seg[data-variant='plain'] {
+    gap: var(--s-2);
+    padding: var(--s-2);
+    background: transparent;
+    box-shadow: none;
+  }
+  .ui-seg[data-variant='plain'] .ui-seg__item {
+    padding: 0 var(--s-10);
+  }
   @media (hover: hover) {
     .ui-seg__item:hover:not([data-selected]):not([data-disabled]) {
       color: var(--fg);
+    }
+    .ui-seg[data-variant='plain'] .ui-seg__item:hover:not([data-selected]):not([data-disabled]) {
+      background: var(--hover);
     }
   }
 

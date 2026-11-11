@@ -24,11 +24,12 @@ interface Props {
   onOpenChange: (open: boolean) => void
   onProject: (project: ProjectRecord) => void
   onStarted: () => void
+  placement?: 'bottom start' | 'top end'
 }
 
-export function NewSessionPicker({ anchor, open, onOpenChange, onProject, onStarted }: Props): ReactElement {
+export function NewSessionPicker({ anchor, open, onOpenChange, onProject, onStarted, placement = 'bottom start' }: Props): ReactElement {
   return (
-    <Popover variant="panel" className="new-session-picker" triggerRef={anchor} isOpen={open} onOpenChange={onOpenChange} placement="bottom start" offset={6}>
+    <Popover variant="panel" className="new-session-picker" triggerRef={anchor} isOpen={open} onOpenChange={onOpenChange} placement={placement} offset={6}>
       <Dialog aria-label={useT()('sidebar.t3.newPicker.label')} showClose={false} body="flush">
         {() => <PickerBody close={() => onOpenChange(false)} onProject={onProject} onStarted={onStarted} />}
       </Dialog>

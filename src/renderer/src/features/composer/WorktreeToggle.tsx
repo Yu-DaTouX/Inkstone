@@ -1,9 +1,8 @@
-import { FolderGit2 } from 'lucide-react'
 import { useState, type ReactElement } from 'react'
 import { useT } from '../../i18n'
 import { useGitFolder } from '../../lib/git-folder'
 import { useStore } from '../../state/store'
-import { Toggle } from '../../ui'
+import { Switch } from '../../ui'
 import { composerDraftKey } from '../../state/composer-recovery'
 import { saveDraft } from './draft-store'
 
@@ -21,7 +20,7 @@ export function WorktreeToggle({ text }: { text: string }): ReactElement | null 
   })
   const branch = runner?.isolationBranch
   const git = useGitFolder(branch ? undefined : runner?.cwd, fresh)
-  if (!runner || (!branch && !(fresh && git))) return null
+  if (!runner || !fresh || (!branch && !git)) return null
 
   const change = async (on: boolean): Promise<void> => {
     if (busy || !fresh || !home) return
@@ -43,18 +42,16 @@ export function WorktreeToggle({ text }: { text: string }): ReactElement | null 
   }
 
   return (
-    <Toggle
-      size="md"
-      isSelected={!!branch}
-      isDisabled={busy || !fresh || !home}
-      onChange={(on) => void change(on)}
-      tooltip={branch ? t('composer.worktree.on', { branch }) : t('composer.worktree.off')}
-      aria-label={t('composer.worktree.label')}
-      data-testid="composer-worktree"
-      data-busy={busy || undefined}
-    >
-      <FolderGit2 size={14} aria-hidden />
-      <span>{t('composer.worktree.label')}</span>
-    </Toggle>
+    <span title={branch ? t('composer.worktree.on', { branch }) : t('composer.worktree.off')}>
+      <Switch
+        isSelected={!!branch}
+        isDisabled={busy || !home}
+        onChange={(on) => void change(on)}
+        data-testid="composer-worktree"
+        data-busy={busy || undefined}
+      >
+        {t('composer.worktree.label')}
+      </Switch>
+    </span>
   )
 }

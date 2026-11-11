@@ -24,6 +24,12 @@ const VIEW = `(() => {
 
 export default async function run({ cdp, box, check, report, waitFor, sleep, shot, log }) {
   const ev = (expr) => cdp.evaluate(expr)
+  const flip = async () => {
+    const [x, y] = await ev(`(() => { const r = document.querySelector('[data-testid="composer-worktree"] .ui-switch__track').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] })()`)
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
+  }
   const until = async (label, test, timeout = 30000) => {
     const end = Date.now() + timeout
     for (;;) {
@@ -69,7 +75,7 @@ export default async function run({ cdp, box, check, report, waitFor, sleep, sho
   check('新会话的输入框下方有工作树开关，默认关', offered.toggle?.selected === false && !WORKTREE_DIR.test(offered.cwd), offered)
   await ev(`window.__yanStore.getState().insertIntoComposer('草稿跟着走')`)
   await until('草稿进了输入框', (view) => view.draft.includes('草稿跟着走'))
-  await ev(`document.querySelector('[data-testid="composer-worktree"]').click()`)
+  await flip()
   const entered = await until('会话进了工作树', (view) => WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === true && !view.toggle.disabled, 60000)
   report.entered = entered
   log('entered', entered)
@@ -78,11 +84,11 @@ export default async function run({ cdp, box, check, report, waitFor, sleep, sho
   check('已经打的字跟到了新会话，旧的空会话不留草稿', entered.draft.includes('草稿跟着走') && entered.drafts <= 1, { draft: entered.draft, drafts: entered.drafts })
   await shot('worktree-toggle-on')
 
-  await ev(`document.querySelector('[data-testid="composer-worktree"]').click()`)
+  await flip()
   const left = await until('关掉开关回到项目目录', (view) => !WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === false && !view.toggle.disabled, 60000)
   check('关掉开关回到项目目录', !WORKTREE_DIR.test(left.cwd) && left.branch === '', left)
 
-  await ev(`document.querySelector('[data-testid="composer-worktree"]').click()`)
+  await flip()
   const again = await until('再次进工作树', (view) => WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === true && !view.toggle.disabled, 60000)
   await ev(`window.__yanStore.getState().send('WRITES 在工作树里写文件')`)
   await waitFor(`s.session?.isStreaming || s.session?.isAgentRunning`, 20000, 50)
@@ -94,7 +100,7 @@ export default async function run({ cdp, box, check, report, waitFor, sleep, sho
   log('wrote', report.wrote)
   check('模型写的文件落在工作树里', inWorktree, again.cwd)
   check('项目目录里没有这些文件', !inProject)
-  check('发过消息后开关保持打开且不能再切', done.toggle?.selected === true && done.toggle?.disabled === true, done.toggle)
+  check('发过消息后开关收起，会话仍在工作树里', done.toggle === null && WORKTREE_DIR.test(done.cwd), done)
   await ev(`window.__yanStore.getState().refreshSessions()`)
   await sleep(800)
   const listed = await ev(`(async () => {

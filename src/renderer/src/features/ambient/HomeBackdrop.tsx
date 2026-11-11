@@ -1,5 +1,5 @@
 import type { CSSProperties, JSX } from 'react'
-import { AsciiField } from './AsciiField'
+import { UsageLandscape } from './UsageLandscape'
 import { homeBackgroundMode, useHomeBackground, type HomeMaskTone } from './home-background'
 
 const MASK_COLOR: Record<HomeMaskTone, string> = { page: 'var(--bg)', dark: 'black', light: 'white' }
@@ -15,7 +15,7 @@ export function HomeBackdrop({ active, asciiEnabled }: { active: boolean; asciiE
   const mode = homeBackgroundMode(background, asciiEnabled)
   return (
     <>
-      <AsciiField active={active} enabled={mode === 'ascii'} />
+      <UsageLandscape active={active} enabled={mode === 'ascii'} />
       {mode === 'image' && background.image ? (
         <div
           className="v3-home-image"
