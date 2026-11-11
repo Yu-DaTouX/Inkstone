@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { prefersReducedMotion } from '../../lib/reduced-motion'
 
 export const REVEAL_DRAIN_MS = 160
+export const MAX_DRAIN_MS = 700
+const DRAIN_SPEED = 1.2
+const SLOW_TAU_MS = 4000
+const SURGE_RATIO = 2
+const MAX_LAG_MS = 2000
+const MIN_WEIGHT = 0.25
 export const LIVE_TAIL_GRACE_MS = 200
 const RATE_TAU_MS = 1000
 const CHUNK_WEIGHT = 0.3
@@ -19,6 +25,8 @@ export interface RevealState {
   shown: number
   seen: number
   rate: number
+  slow: number
+  weight: number
   chunk: number
   drain: number
   at: number
@@ -29,7 +37,11 @@ function isHighSurrogate(code: number): boolean {
 }
 
 export function startReveal(length: number, now: number): RevealState {
-  return { shown: length, seen: length, rate: 0, chunk: 0, drain: 0, at: now }
+  return { shown: length, seen: length, rate: 0, slow: 0, weight: 0, chunk: 0, drain: 0, at: now }
+}
+
+export function drainMs(backlog: number): number {
+  return Math.min(MAX_DRAIN_MS, Math.max(REVEAL_DRAIN_MS, backlog / DRAIN_SPEED))
 }
 
 export function stepReveal(state: RevealState, length: number, now: number, live: boolean): RevealState {
@@ -37,16 +49,20 @@ export function stepReveal(state: RevealState, length: number, now: number, live
   const dt = Math.min(FRAME_CAP_MS, elapsed)
   const arrived = Math.max(0, length - state.seen)
   const rate = state.rate * Math.exp(-elapsed / RATE_TAU_MS) + arrived / RATE_TAU_MS
+  const decay = Math.exp(-elapsed / SLOW_TAU_MS)
+  const slow = state.slow * decay + arrived / SLOW_TAU_MS
+  const weight = state.weight * decay + 1 - decay
   const chunk = arrived > 0 ? (state.chunk > 0 ? state.chunk + (arrived - state.chunk) * CHUNK_WEIGHT : arrived) : state.chunk
   const seen = length
   const shown = Math.min(state.shown, length)
   const backlog = length - shown
-  if (backlog <= 0) return { shown: length, seen, rate, chunk, drain: 0, at: now }
-  const drain = live ? 0 : state.drain || backlog / REVEAL_DRAIN_MS
+  if (backlog <= 0) return { shown: length, seen, rate, slow, weight, chunk, drain: 0, at: now }
+  const drain = live ? 0 : state.drain || backlog / drainMs(backlog)
   const buffer = Math.min(BUFFER_MAX_CHARS, Math.max(BUFFER_MIN_CHARS, chunk * BUFFER_CHUNKS, rate * BUFFER_MS))
   const paced = backlog < buffer ? rate * (EASE_OFF + (1 - EASE_OFF) * (backlog / buffer)) : rate + (backlog - buffer) / CATCH_MS
-  const speed = Math.max(paced, FLOOR_RATE, drain)
-  return { shown: Math.min(length, shown + speed * dt), seen, rate, chunk, drain, at: now }
+  const limit = Math.max((slow / Math.max(weight, MIN_WEIGHT)) * SURGE_RATIO, backlog / MAX_LAG_MS)
+  const speed = Math.max(Math.min(paced, limit), FLOOR_RATE, drain)
+  return { shown: Math.min(length, shown + speed * dt), seen, rate, slow, weight, chunk, drain, at: now }
 }
 
 function isWordChar(code: number): boolean {
