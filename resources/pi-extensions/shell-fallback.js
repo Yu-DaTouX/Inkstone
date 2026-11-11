@@ -318,6 +318,6 @@ export default async function shellFallback(pi) {
     if (token) return { block: true, reason: powerShellConflictReason(token) }
     const cmdlet = findPowerShellInBash(command)
     if (cmdlet) return { block: true, reason: powerShellInBashReason(cmdlet, hasPwsh() ? 'pwsh' : 'powershell') }
-    return findLegacyPowerShell(command) && hasPwsh() ? { block: true, reason: legacyPowerShellReason() } : undefined
+    return findLegacyPowerShell(command) && hasPwsh() && hasPwsh(process.env, { fresh: true }) ? { block: true, reason: legacyPowerShellReason() } : undefined
   })
 }

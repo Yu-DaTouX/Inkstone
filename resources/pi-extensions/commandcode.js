@@ -86,8 +86,8 @@ export default async function commandcodeExtension(pi) {
   const refresh = async () => {
     const entries = await fetchModels(catalog)
     if (!entries.length) return false
-    register(entries)
     writeCache(cachePath, entries)
+    register(entries)
     return true
   }
 

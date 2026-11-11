@@ -115,8 +115,8 @@ export function requestSlice(branch) {
   return { prompt: '', entries: [] }
 }
 
-export function needsReviewGate(branch) {
-  const { prompt, entries } = requestSlice(branch)
+export function needsReviewGate(branch, slice = requestSlice(branch)) {
+  const { prompt, entries } = slice
   let edited = false
   let reviewed = false
   let gates = 0
@@ -199,10 +199,9 @@ export default function ultracodeExtension(pi) {
   })
   pi.on('agent_before_settle', (event, ctx) => {
     if (event?.outcome && event.outcome !== 'completed') return
-    const branch = ctx?.sessionManager?.getBranch?.()
-    const gate = needsReviewGate(branch)
-    if (!gate.needed) return
-    if (!readEnabled(file, ctx?.sessionManager?.getSessionId?.()) && !hasKeyword(gate.prompt)) return
+    const slice = requestSlice(ctx?.sessionManager?.getBranch?.())
+    if (!hasKeyword(slice.prompt) && !readEnabled(file, ctx?.sessionManager?.getSessionId?.())) return
+    if (!needsReviewGate(undefined, slice).needed) return
     pi.sendMessage({ customType: ULTRACODE_GATE_TYPE, content: GATE, display: false }, { deliverAs: 'followUp' })
   })
 }

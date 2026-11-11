@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -101,12 +102,13 @@ export function fingerprint(toolName, input) {
 }
 
 export function resultFingerprint(event) {
-  return stableJson({
+  const serialized = stableJson({
     content: event?.content,
     details: event?.details,
     structuredContent: event?.structuredContent,
     isError: event?.isError
   })
+  return `${serialized.length}:${createHash('sha256').update(serialized).digest('hex')}`
 }
 
 export function isSubagentPollLoop(toolName, input) {

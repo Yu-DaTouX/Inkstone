@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const STALE_COMMAND_MS = 60 * 60 * 1000
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000
 const COMMAND_FILE = /^yan-bash-(\d+)-[0-9a-f]+\.(?:sh|log)$/
 
 export function bashQuotedPath(path) {
@@ -42,11 +43,20 @@ function sweepStaleCommands(dir) {
   }
 }
 
-export function fileTransportOperations(base, { dir = tmpdir(), preamble = '' } = {}) {
-  sweepStaleCommands(dir)
+const lastSweepAt = new Map()
+
+function sweepThrottled(dir, sweep, now) {
+  const last = lastSweepAt.get(dir)
+  if (last !== undefined && now - last < SWEEP_INTERVAL_MS) return
+  lastSweepAt.set(dir, now)
+  sweep(dir)
+}
+
+export function fileTransportOperations(base, { dir = tmpdir(), preamble = '', sweep = sweepStaleCommands, now = Date.now } = {}) {
   return {
     ...base,
     async exec(command, cwd, options) {
+      sweepThrottled(dir, sweep, now())
       const file = join(dir, `yan-bash-${process.pid}-${randomBytes(8).toString('hex')}.sh`)
       await writeFile(file, command, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
       try {

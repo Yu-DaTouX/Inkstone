@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { findLegacyPowerShell, findPowerShellInBash, findPowerShellQuotingConflict as find, powerShellConflictReason, powerShellInBashReason } from '../resources/pi-extensions/windows-powershell.js'
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { hasPwsh, findLegacyPowerShell, findPowerShellInBash, findPowerShellQuotingConflict as find, powerShellConflictReason, powerShellInBashReason } from '../resources/pi-extensions/windows-powershell.js'
 
 const blocked = [
   ['powershell -NoProfile -Command "Get-Process | Where-Object { $_.ProcessName -match \'electron\' }"', '$_'],
@@ -63,5 +66,38 @@ for (const command of ['pwsh -File a.ps1', 'echo "powershell"', "git commit -m '
 
 assert.match(powerShellConflictReason('$_'), /`\$_`/)
 assert.match(powerShellConflictReason('`'), /backtick \(as command substitution\)/)
+
+{
+  const withPwsh = mkdtempSync(join(tmpdir(), 'yan-pwsh-a-'))
+  const without = mkdtempSync(join(tmpdir(), 'yan-pwsh-b-'))
+  try {
+    writeFileSync(join(withPwsh, 'pwsh.exe'), '')
+    assert.equal(hasPwsh({ PATH: withPwsh }), true, 'PATH 里有 pwsh.exe')
+    unlinkSync(join(withPwsh, 'pwsh.exe'))
+    assert.equal(hasPwsh({ PATH: withPwsh }), true, 'PATH 不变时沿用记忆结果，不再扫描')
+    assert.equal(hasPwsh({ Path: withPwsh }), true, 'Path 与 PATH 同值同样命中记忆')
+    assert.equal(hasPwsh({ PATH: without }), false, 'PATH 变化后重新探测')
+    writeFileSync(join(without, 'pwsh.exe'), '')
+    assert.equal(hasPwsh({ PATH: without }), false, 'PATH 不变时负结果同样沿用')
+    let clock = 5_000_000
+    const timed = { now: () => clock }
+    assert.equal(hasPwsh({ PATH: without }, timed), true, '时钟早于缓存时间视为缓存失效，重新探测到刚放入的 pwsh.exe')
+    unlinkSync(join(without, 'pwsh.exe'))
+    clock += 30 * 1000
+    assert.equal(hasPwsh({ PATH: without }, timed), true, 'TTL 内沿用缓存')
+    clock += 31 * 1000
+    assert.equal(hasPwsh({ PATH: without }, timed), false, 'TTL 过期后重新探测')
+    writeFileSync(join(without, 'pwsh.exe'), '')
+    assert.equal(hasPwsh({ PATH: without }, timed), false, '新结果重新计时')
+    assert.equal(hasPwsh({ PATH: without }, { ...timed, fresh: true }), true, 'fresh 不走缓存')
+    unlinkSync(join(without, 'pwsh.exe'))
+    assert.equal(hasPwsh({ PATH: without }, timed), true, 'fresh 的结果写回缓存')
+    clock -= 10 * 1000
+    assert.equal(hasPwsh({ PATH: without }, timed), false, '时钟回退视为缓存失效')
+  } finally {
+    rmSync(withPwsh, { recursive: true, force: true })
+    rmSync(without, { recursive: true, force: true })
+  }
+}
 
 console.log('windows-powershell: ok')

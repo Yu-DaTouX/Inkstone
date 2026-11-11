@@ -152,6 +152,52 @@ try {
   await rm(sweepDir, { recursive: true, force: true })
 }
 
+{
+  const throttleDir = await mkdtemp(join(tmpdir(), 'yan-bash-transport-throttle-'))
+  try {
+    let sweeps = 0
+    let clock = 1_000_000
+    const options = { dir: throttleDir, sweep: () => { sweeps += 1 }, now: () => clock }
+    const base = { async exec() { return 'ok' } }
+    const first = fileTransportOperations(base, options)
+    assert.equal(sweeps, 0, '构造时不再同步扫描')
+    await first.exec('echo 1', tmpdir())
+    await first.exec('echo 2', tmpdir())
+    await fileTransportOperations(base, options).exec('echo 3', tmpdir())
+    await fileTransportOperations(base, options).exec('echo 4', tmpdir())
+    assert.equal(sweeps, 1, '多次执行（含每次重建 operations）只扫描一次')
+    clock += 9 * 60 * 1000
+    await first.exec('echo 5', tmpdir())
+    assert.equal(sweeps, 1, '十分钟内不再扫描')
+    clock += 2 * 60 * 1000
+    await first.exec('echo 6', tmpdir())
+    assert.equal(sweeps, 2, '超过十分钟后再扫描一次')
+    await first.exec('echo 7', tmpdir())
+    assert.equal(sweeps, 2)
+    assert.deepEqual(await readdir(throttleDir), [], '临时文件已删除')
+
+    const otherDir = await mkdtemp(join(tmpdir(), 'yan-bash-transport-throttle-b-'))
+    try {
+      const swept = []
+      const multi = { sweep: (dir) => swept.push(dir), now: () => clock }
+      const a = fileTransportOperations(base, { ...multi, dir: throttleDir })
+      const b = fileTransportOperations(base, { ...multi, dir: otherDir })
+      await a.exec('echo a', tmpdir())
+      await b.exec('echo b', tmpdir())
+      await b.exec('echo b2', tmpdir())
+      assert.deepEqual(swept, [otherDir], '不同目录各自限频：已扫过的目录不重复，新目录扫一次')
+      clock -= 60 * 60 * 1000
+      await a.exec('echo a2', tmpdir())
+      await b.exec('echo b3', tmpdir())
+      assert.deepEqual(swept, [otherDir], '时钟回退时不会反复扫描')
+    } finally {
+      await rm(otherDir, { recursive: true, force: true })
+    }
+  } finally {
+    await rm(throttleDir, { recursive: true, force: true })
+  }
+}
+
 if (process.platform !== 'win32') {
   console.log('bash-transport: ok (non-Windows, pure checks only)')
   process.exit(0)

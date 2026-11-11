@@ -1,10 +1,18 @@
 import { lstatSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
-export function hasPwsh(env = process.env) {
-  return (env.PATH ?? env.Path ?? '').split(delimiter).some((dir) => {
+const PWSH_TTL_MS = 60 * 1000
+let pwshProbe
+
+export function hasPwsh(env = process.env, { fresh = false, now = Date.now, ttlMs = PWSH_TTL_MS } = {}) {
+  const searchPath = env.PATH ?? env.Path ?? ''
+  const at = now()
+  if (!fresh && pwshProbe?.searchPath === searchPath && at >= pwshProbe.at && at - pwshProbe.at < ttlMs) return pwshProbe.found
+  const found = searchPath.split(delimiter).some((dir) => {
     try { return !!dir && !!lstatSync(join(dir, 'pwsh.exe')) } catch { return false }
   })
+  pwshProbe = { searchPath, found, at }
+  return found
 }
 
 const POWERSHELL = /\b(?:powershell|pwsh)(?:\.exe)?\b/gi

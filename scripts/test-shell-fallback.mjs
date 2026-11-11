@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import shellFallback, { registerPowerShellEnvFix } from '../resources/pi-extensions/shell-fallback.js'
 
@@ -51,4 +54,23 @@ assert.equal(spawned[0].cwd, 'C:/work')
 assert.equal(spawned[0].env.FIXED, '1')
 
 delete process.env.YAN_SHELL
+if (process.platform === 'win32') {
+  const dir = mkdtempSync(join(tmpdir(), 'yan-shell-fallback-pwsh-'))
+  const previousPath = process.env.PATH
+  try {
+    process.env.PATH = dir
+    writeFileSync(join(dir, 'pwsh.exe'), '')
+    const guarded = fakePi([])
+    guarded.on = (event, fn) => { guarded[event] = fn }
+    await shellFallback(guarded)
+    const legacy = { toolName: 'bash', input: { command: 'powershell -NoProfile -File a.ps1' } }
+    assert.equal(guarded.tool_call(legacy)?.block, true, 'pwsh 存在时拦截 PowerShell 5.1')
+    unlinkSync(join(dir, 'pwsh.exe'))
+    assert.equal(guarded.tool_call(legacy), undefined, '缓存仍说有 pwsh，但硬拒绝前强制重查发现已不存在，不再误拦')
+  } finally {
+    process.env.PATH = previousPath
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 console.log('shell-fallback: ok')

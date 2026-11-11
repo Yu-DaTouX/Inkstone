@@ -100,6 +100,16 @@ export async function runUltracodeExtensionTests(ok, mod) {
     handlers.agent_before_settle({ outcome: 'aborted' }, ctx('s1', [user('改'), edit]))
     ok(sent.length === 2, '中止或出错时不拦')
 
+    let scans = 0
+    const watched = { type: 'message', message: { role: 'assistant', get content() { scans += 1; return [{ type: 'toolCall', name: 'edit', arguments: { path: 'a.ts' } }] } } }
+    handlers.agent_before_settle({ outcome: 'completed' }, ctx('s2', [user('改'), watched]))
+    ok(scans === 0 && sent.length === 2, '未开启且无关键词时不计算复核闸门')
+    handlers.agent_before_settle({ outcome: 'completed' }, ctx('s2', [user('/ultracode 改'), watched]))
+    ok(scans > 0 && sent.length === 3, '仅凭关键词也会计算并触发闸门')
+    scans = 0
+    handlers.agent_before_settle({ outcome: 'completed' }, ctx('s1', [user('改'), watched]))
+    ok(scans > 0 && sent.length === 4, '开关开启时会计算并触发闸门')
+
     process.env.YAN_RUNNER_ID = 'sub-1'
     process.env.YAN_SESSION_ID = 's1'
     const forkHandlers = {}
