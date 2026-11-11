@@ -94,6 +94,96 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 60))
   assert.equal(runs, 2, 'cancel 之后不再 flush')
 
+  const realRaf = globalThis.requestAnimationFrame
+  const realCancel = globalThis.cancelAnimationFrame
+  try {
+    const frames = new Map()
+    let nextFrame = 1
+    globalThis.requestAnimationFrame = (fn) => {
+      const id = nextFrame++
+      frames.set(id, fn)
+      return id
+    }
+    globalThis.cancelAnimationFrame = (id) => {
+      frames.delete(id)
+    }
+
+    let hiddenRuns = 0
+    const hidden = createFrameFlush(() => {
+      hiddenRuns += 1
+    })
+    hidden.schedule()
+    hidden.schedule()
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    assert.equal(hiddenRuns, 0, '兜底定时器到期前不提前刷新')
+    await new Promise((resolve) => setTimeout(resolve, 220))
+    assert.equal(hiddenRuns, 1, 'rAF 永不触发时 250ms 定时器兜底刷新一次')
+    assert.equal(frames.size, 0, '定时器先刷新后取消挂起的 rAF')
+    hidden.schedule()
+    assert.equal(frames.size, 1, '刷新之后可以重新排程')
+    hidden.cancel()
+    assert.equal(frames.size, 0, 'cancel 同时取消 rAF')
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    assert.equal(hiddenRuns, 1, 'cancel 同时取消兜底定时器')
+
+    let frameRuns = 0
+    const visible = createFrameFlush(() => {
+      frameRuns += 1
+    })
+    visible.schedule()
+    const [[, callback]] = [...frames]
+    callback(0)
+    assert.equal(frameRuns, 1, 'rAF 先到时立即刷新')
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    assert.equal(frameRuns, 1, 'rAF 刷新后兜底定时器已取消，不重复刷新')
+    assert.equal(frames.size, 0, '没有残留或额外排入的 rAF')
+
+    let syncRuns = 0
+    globalThis.requestAnimationFrame = (fn) => {
+      fn(0)
+      return 0
+    }
+    const immediate = createFrameFlush(() => {
+      syncRuns += 1
+    })
+    immediate.schedule()
+    assert.equal(syncRuns, 1, 'rAF 同步触发时刷新一次')
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    assert.equal(syncRuns, 1, 'rAF 同步触发后不遗留兜底定时器')
+
+    const queued = []
+    let reentrantRuns = 0
+    let flushHandle
+    globalThis.requestAnimationFrame = (fn) => {
+      if (queued.length === 0 && reentrantRuns === 0) {
+        fn(0)
+        return 0
+      }
+      queued.push(fn)
+      return queued.length
+    }
+    const cancelled = []
+    globalThis.cancelAnimationFrame = (id) => {
+      cancelled.push(id)
+    }
+    flushHandle = createFrameFlush(() => {
+      reentrantRuns += 1
+      if (reentrantRuns === 1) flushHandle.schedule()
+    })
+    flushHandle.schedule()
+    assert.equal(reentrantRuns, 1, '同步 rAF 的 drain 先跑一次')
+    assert.equal(queued.length, 1, 'drain 内再次 schedule 排入新 rAF')
+    flushHandle.schedule()
+    assert.equal(queued.length, 1, '已排程时重复 schedule 不再排入')
+    flushHandle.cancel()
+    assert.deepEqual(cancelled, [1], 'cancel 取消的是 drain 内排入的新句柄，没有被外层覆盖丢失')
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    assert.equal(reentrantRuns, 1, '重入排程的兜底定时器也一并取消')
+  } finally {
+    globalThis.requestAnimationFrame = realRaf
+    globalThis.cancelAnimationFrame = realCancel
+  }
+
   console.log('test-push-coalesce: 全部通过')
 } finally {
   await rm(dir, { recursive: true, force: true })

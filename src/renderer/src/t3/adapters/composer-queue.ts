@@ -108,13 +108,14 @@ export function useQueueAdapter(): QueueAdapter {
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
   const session = useStore((s) => s.session)
+  const activeRunnerId = useStore((s) => s.activeRunnerId)
   const running = useStore(
     (s) => s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running === true
   )
 
   const pending = useMemo(
-    () => pendingSendsForView({ pendingSends: allPending, peekedSessionId, peekedPath, session }),
-    [allPending, peekedSessionId, peekedPath, session]
+    () => pendingSendsForView({ pendingSends: allPending, peekedSessionId, peekedPath, session, activeRunnerId }),
+    [allPending, peekedSessionId, peekedPath, session, activeRunnerId]
   )
 
   const rows = useMemo(() => buildQueueRows(queue, pending), [queue, pending])

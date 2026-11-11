@@ -425,6 +425,8 @@ export type QuotaResumeWait = {
 export type PendingSend = {
   id: string
   sessionId: string | null
+  ownerKey?: string
+  navSeq?: number
   text: string
   images?: { data: string; mimeType: string }[]
 }
@@ -434,9 +436,18 @@ export function currentThinkingLevels(state: Pick<Store, 'session' | 'thinkingLe
   return state.session?.thinkingLevelsStatus === 'known' && Array.isArray(own) ? own : state.thinkingLevels
 }
 
-export function pendingSendsForView(s: Pick<Store, 'pendingSends' | 'peekedSessionId' | 'peekedPath' | 'session'>): PendingSend[] {
-  const sessionId = viewIdentityOf(s).sessionId
-  return s.pendingSends.filter((item) => item.sessionId === sessionId)
+export function blankViewKey(s: { activeRunnerId?: string | null }): string {
+  return s.activeRunnerId ? `run:${s.activeRunnerId}` : ''
+}
+
+export function pendingSendsForView(
+  s: Pick<Store, 'pendingSends' | 'peekedSessionId' | 'peekedPath' | 'session'> & { activeRunnerId?: string | null }
+): PendingSend[] {
+  const identity = viewIdentityOf(s)
+  if (identity.sessionId) return s.pendingSends.filter((item) => item.sessionId === identity.sessionId)
+  if (identity.peeked) return []
+  const key = blankViewKey(s)
+  return s.pendingSends.filter((item) => item.sessionId === null && (item.ownerKey ?? '') === key)
 }
 
 function runtimeFromRunner(runner: RunnerStatus): RuntimeEnvelope {
@@ -971,6 +982,7 @@ function currentViewOwnerKey(view: Store): string {
 }
 
 let sessionSwitchGate = 0
+let navigationSeq = 0
 
 interface DeletedTitles {
   manualTitles: Record<string, string>
@@ -1344,7 +1356,16 @@ export const useStore = create<Store>((rawSet, get) => {
     performance.mark('yan:bootstrap-start')
     const pushed = { state: false, messages: false }
     bootPushes = pushed
-    const [loadedSettings, session, messages, stats, todos, titles, manualTitles, browserState] =
+    let loadedSettings: Awaited<ReturnType<typeof api.getSettings>>
+    let session: Awaited<ReturnType<typeof api.getState>>
+    let messages: Awaited<ReturnType<typeof api.getMessages>>
+    let stats: Awaited<ReturnType<typeof api.getStats>>
+    let todos: SessionTodo[]
+    let titles: Record<string, string>
+    let manualTitles: Record<string, string>
+    let browserState: BrowserState
+    try {
+      ;[loadedSettings, session, messages, stats, todos, titles, manualTitles, browserState] =
       await Promise.all([
         timedBoot('settings', api.getSettings()),
         timedBoot('getState', api.getState()),
@@ -1355,10 +1376,12 @@ export const useStore = create<Store>((rawSet, get) => {
         timedBoot('manualTitles', api.manualTitles().catch(() => ({}) as Record<string, string>)),
         api.browser.getState().catch(() => ({ open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false } as BrowserState))
       ])
+    } finally {
+      if (bootPushes === pushed) bootPushes = null
+    }
 
     performance.mark('yan:bootstrap-fetched')
     const settings = loadedSettings
-    if (bootPushes === pushed) bootPushes = null
     const fetchedIds = new Set(messages.map((item) => item.id))
 
     set({
@@ -1589,6 +1612,7 @@ export const useStore = create<Store>((rawSet, get) => {
           void get().switchSession(target.sessionFile)
           break
         }
+        navigationSeq += 1
         const gate = ++sessionSwitchGate
         if (get().switchLoading) set({ switchLoading: false })
         void (async () => {
@@ -1965,7 +1989,13 @@ export const useStore = create<Store>((rawSet, get) => {
     set({
       pendingSends: [
         ...list,
-        { id: `ps-${Date.now().toString(36)}-${list.length}`, sessionId, text, images }
+        {
+          id: `ps-${Date.now().toString(36)}-${list.length}`,
+          sessionId,
+          ...(sessionId ? {} : { ownerKey: blankViewKey(get()), navSeq: navigationSeq }),
+          text,
+          images
+        }
       ]
     })
   },
@@ -2120,6 +2150,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   newSession: async (target) => {
+    navigationSeq += 1
     discardPendingMessagePatches()
     const gate = ++sessionSwitchGate
     const finishNewSession = beginNewSession()
@@ -2143,7 +2174,6 @@ export const useStore = create<Store>((rawSet, get) => {
       res.generation
     )
     set({
-      pendingSends: [],
       ...(res.id || res.runId ? { activeRunnerId: res.runId ?? res.id } : {}),
       ...(arrived
         ? switchToRuntimeSnapshot(arrived)
@@ -2180,6 +2210,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   switchSession: async (path) => {
+    navigationSeq += 1
     const gate = ++sessionSwitchGate
     const finishSwitch = beginSessionSwitch(gate)
     try {
@@ -2512,6 +2543,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   fork: async (entryId) => {
+    navigationSeq += 1
     ++sessionSwitchGate
     if (get().switchLoading) set({ switchLoading: false })
     const target = await sessionActionTarget(get)
@@ -2538,7 +2570,6 @@ export const useStore = create<Store>((rawSet, get) => {
     if (branchState) set({ session: branchState, messages: branchMessages, pendingActivation: null, peekedPath: null, peekedSessionId: null, peekNote: null })
     set({
       queue: EMPTY_QUEUE,
-      pendingSends: [],
       notices: pushNotice(
         get().notices,
         'info',
@@ -2553,6 +2584,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   clone: async () => {
+    navigationSeq += 1
     ++sessionSwitchGate
     if (get().switchLoading) set({ switchLoading: false })
     const target = await sessionActionTarget(get)
@@ -2563,7 +2595,7 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.cloneFailed')) })
       return
     }
-    set({ queue: EMPTY_QUEUE, pendingSends: [], notices: pushNotice(get().notices, 'info', uiText('state.clone.done')) })
+    set({ queue: EMPTY_QUEUE, notices: pushNotice(get().notices, 'info', uiText('state.clone.done')) })
     await get().refreshSessions()
   },
 
@@ -3278,6 +3310,19 @@ export const useStore = create<Store>((rawSet, get) => {
   },
   log: (line) => set({ logs: [...get().logs, line].slice(-200) })
   }
+})
+
+useStore.subscribe((state, previous) => {
+  if (state.pendingSends === previous.pendingSends && state.session === previous.session && state.activeRunnerId === previous.activeRunnerId) return
+  const identity = viewIdentityOf(state)
+  if (!identity.sessionId || identity.peeked) return
+  const key = blankViewKey(state)
+  if (!key) return
+  if (!state.pendingSends.some((item) => item.sessionId === null && item.ownerKey === key && item.navSeq === navigationSeq)) return
+  const sessionId = identity.sessionId
+  useStore.setState({
+    pendingSends: state.pendingSends.map((item) => (item.sessionId === null && item.ownerKey === key && item.navSeq === navigationSeq ? { ...item, sessionId, ownerKey: undefined, navSeq: undefined } : item))
+  })
 })
 
 useStore.subscribe((state, previous) => {

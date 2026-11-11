@@ -54,28 +54,41 @@ export interface FrameFlush {
   cancel(): void
 }
 
+export const FRAME_FLUSH_FALLBACK_MS = 250
+
 export function createFrameFlush(drain: () => void): FrameFlush {
-  let handle: number | ReturnType<typeof setTimeout> | null = null
+  let frame: number | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null
   let scheduled = false
+  let generation = 0
   const animated = typeof requestAnimationFrame === 'function'
   const clear = (): void => {
     if (!scheduled) return
     scheduled = false
-    if (handle === null) return
-    if (animated) cancelAnimationFrame(handle as number)
-    else clearTimeout(handle as ReturnType<typeof setTimeout>)
-    handle = null
+    generation += 1
+    if (frame !== null) cancelAnimationFrame(frame)
+    if (timer !== null) clearTimeout(timer)
+    frame = null
+    timer = null
   }
   return {
     schedule() {
       if (scheduled) return
       scheduled = true
+      const token = ++generation
       const run = (): void => {
-        scheduled = false
-        handle = null
+        if (!scheduled || token !== generation) return
+        clear()
         drain()
       }
-      handle = animated ? requestAnimationFrame(run) : setTimeout(run, 16)
+      if (animated) {
+        const id = requestAnimationFrame(run)
+        if (!scheduled || token !== generation) return
+        frame = id
+        timer = setTimeout(run, FRAME_FLUSH_FALLBACK_MS)
+      } else {
+        timer = setTimeout(run, 16)
+      }
     },
     cancel: clear
   }
