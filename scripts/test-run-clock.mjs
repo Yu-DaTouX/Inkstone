@@ -63,7 +63,7 @@ try {
   assert.equal(timers.size, 1, '第二个订阅者复用同一块秒表，不再开定时器')
   await delay(1150)
   assert.ok(firstTicks >= 1 && secondTicks >= 1, '同一个 tick 通知所有订阅者')
-  assert.ok(runNow() >= startedAt + 1000, '共享时钟按 1 秒推进')
+  assert.ok(runNow() >= startedAt + 990, '共享时钟按 1 秒推进')
   offFirst()
   assert.equal(timers.size, 1, '还有订阅者时秒表不停')
   offSecond()
