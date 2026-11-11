@@ -9,7 +9,8 @@ import { AnimatedHeight, Button, Collapsible, CollapsibleHeader, DiffStat, Expan
 import { CirclePause } from 'lucide-react'
 import { formatDuration } from '../../../../shared/duration'
 import { useSessionText } from './text'
-import { conciseSegment, hasSegmentContent, mergeQuietSegments, splitAtCompaction, type CompactionCut, pickLiveSegments, processPreview, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
+import { conciseSegment, hasSegmentContent, mergeQuietSegments, splitAtCompaction, type CompactionCut, pickLiveSegments, processSummary, segmentSteps, spreadProcess, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
+import type { StripPart } from './process-strip'
 import { ToolExpansionScope, useToolExpansion } from './use-tool-run'
 import { toolExpansion } from './tool-expansion'
 import { useRunProgress, useWorkingLine } from './run-status'
@@ -22,6 +23,7 @@ import { TurnApprovalLine } from './ApprovalReceipt'
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 const NO_RECEIPTS: readonly ApprovalReceipt[] = []
 const HISTORY_SEGMENTS = 12
+const SPREAD_HISTORY_ITEMS = 40
 const STEADY_HOLD_MS = 30000
 const SHRINK_HOLD_MS = 1200
 const USER_TOGGLE_MS = 500
@@ -150,7 +152,7 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
   return { ref, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
-export function TurnProcess({ process, live, openByDefault = false, alertFailures, showFailures = true, liveStartedAt = null, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false, compactionAfter = null, approvals = NO_RECEIPTS }: {
+export function TurnProcess({ process, live, openByDefault = false, alertFailures, showFailures = true, liveStartedAt = null, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, compactionAfter = null }: {
   process: TurnSegment[]
   live: boolean
   openByDefault?: boolean
@@ -162,45 +164,105 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   turnId?: string
   approvalIds?: ReadonlySet<string>
   glowId?: string | null
-  elapsedMs?: number
-  filesShownBelow?: boolean
   compactionAfter?: CompactionCut | null
-  approvals?: readonly ApprovalReceipt[]
+}): JSX.Element {
+  const t = useT()
+  const tt = useSessionText()
+  const [showAll, setShowAll] = useToolExpansion(`spread:${turnId ?? process[0]?.id ?? ''}`)
+  const items = spreadProcess(process, { foldThinking: !live && view !== 'thinking' })
+  const overflow = live ? 0 : Math.max(0, items.length - SPREAD_HISTORY_ITEMS)
+  const skipped = overflow && showAll !== true ? overflow : 0
+  const lastGroup = items.findLastIndex((item) => item.kind === 'group')
+  const cutAt = compactionAfter ? items.findLastIndex((item) => item.kind === 'group' && !!splitAtCompaction(item.segments, compactionAfter)) : -1
+
+  return (
+    <div className="v3-spread" data-live={live || undefined} data-testid="v3-spread">
+      {overflow ? (
+        <Button size="sm" variant="ghost" className="v3-process-more" aria-expanded={showAll === true} onPress={() => setShowAll(showAll !== true)} data-testid="v3-spread-more">
+          {showAll === true ? t('proc.showRecent') : tt('moreItems', { n: overflow })}
+        </Button>
+      ) : null}
+      {compactionAfter && cutAt >= 0 && cutAt < skipped ? <CompactionMarker /> : null}
+      {items.slice(skipped).map((item, offset) => {
+        const index = skipped + offset
+        return item.kind === 'notes'
+          ? (
+              <div key={item.key} className="v3-process-notes" data-testid="v3-process-notes">
+                {item.notes.map((part) => (
+                  <div key={part.id} className="v3-para">
+                    <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
+                  </div>
+                ))}
+              </div>
+            )
+          : (
+              <ProcessGroup
+                key={item.key}
+                groupKey={item.key}
+                segments={item.segments}
+                live={live && index === items.length - 1}
+                openByDefault={openByDefault && index === lastGroup}
+                alertFailures={alertFailures}
+                showFailures={showFailures}
+                liveStartedAt={liveStartedAt}
+                view={view}
+                approvalIds={approvalIds}
+                glowId={glowId}
+                compactionAfter={index === cutAt ? compactionAfter : null}
+              />
+            )
+      })}
+      {compactionAfter && cutAt < 0 ? <CompactionMarker /> : null}
+    </div>
+  )
+}
+
+function ProcessGroup({ segments, groupKey, live, openByDefault, alertFailures, showFailures, liveStartedAt, view, approvalIds, glowId, compactionAfter }: {
+  segments: TurnSegment[]
+  groupKey: string
+  live: boolean
+  openByDefault: boolean
+  alertFailures: boolean
+  showFailures: boolean
+  liveStartedAt: number | null
+  view: TranscriptView
+  approvalIds: ReadonlySet<string>
+  glowId?: string | null
+  compactionAfter: CompactionCut | null
 }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
   const panelId = useId()
-  const key = `process:${turnId ?? process[0]?.id ?? ''}`
+  const key = `process:${groupKey}`
   const [manual, setManual] = useToolExpansion(key)
   const [showAll, setShowAll] = useToolExpansion(`${key}:all`)
-  const summary = useMemo(() => processSummary(process), [process])
+  const summary = useMemo(() => processSummary(segments), [segments])
   const headless = !summary.thinking && !summary.actions
   const open = headless || (manual ?? (view === 'thinking' || (openByDefault && !live)))
   const stage = !open && live && manual !== false
   const visible = open || stage
   const steady = useSteadyHeight(live)
-  const source = stage ? process.map(view === 'side' ? withoutThinking : conciseSegment).filter(hasSegmentContent) : process
+  const source = stage ? segments.map(view === 'side' ? withoutThinking : conciseSegment).filter(hasSegmentContent) : segments
   const halves = compactionAfter ? splitAtCompaction(source, compactionAfter) : null
   const before = halves ? mergeQuietSegments(halves.before) : null
   const merged = halves && before ? [...before, ...mergeQuietSegments(halves.after)] : mergeQuietSegments(source)
   const markerAfter = before?.at(-1)?.id ?? null
   const markerFirst = !!compactionAfter && (!halves || !before?.length)
   const expansionScope = useContext(ToolExpansionScope)
-  const tracksOpened = live || process.length > HISTORY_SEGMENTS
-  useSyncExternalStore(toolExpansion.subscribe, () => (tracksOpened ? openedCalls(process, expansionScope) : ''))
+  const tracksOpened = live || segments.length > HISTORY_SEGMENTS
+  useSyncExternalStore(toolExpansion.subscribe, () => (tracksOpened ? openedCalls(segments, expansionScope) : ''), () => '')
   const userOpened = (segment: TurnSegment): boolean => segment.tools.some((call) => callOpened(expansionScope, call.id))
   const picked = stage
     ? pickLiveSegments(merged, stageSegmentCount(merged), userOpened)
     : showAll !== true && (live || (open && merged.length > HISTORY_SEGMENTS)) ? pickLiveSegments(merged, live ? undefined : HISTORY_SEGMENTS, userOpened) : { shown: merged, hidden: 0 }
   const single = summary.thinking === 1 && !summary.actions
-  const elapsed = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
-  const preview = live ? '' : processPreview(process)
-  const tip = [preview, processBreakdown(summary, tt), live && summary.failed ? t('tool.wsFailed', { n: summary.failed }) : ''].filter(Boolean).join('\n')
-  const foldedQuestions = open || live ? [] : process.flatMap((segment) => segment.tools).filter((call) => !call.parentToolCallId && isHistoryQuestionCall(call) && call.status !== 'running' && call.status !== 'pending')
+  const lines = live ? null : totalLines([...summary.edits, ...summary.creates])
+  const foldedQuestions = open || live ? [] : segments.flatMap((segment) => segment.tools).filter((call) => !call.parentToolCallId && isHistoryQuestionCall(call) && call.status !== 'running' && call.status !== 'pending')
+  const approvals = open || live ? NO_RECEIPTS : segments.flatMap((segment) => segment.tools.flatMap((call) => (call.approval ? [call.approval] : [])))
 
   const body = (
     <div ref={steady.ref} className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body" style={steady.minHeight ? { minHeight: steady.minHeight } : undefined}>
-      {stage || picked.hidden > 0 || showAll === true ? (
+      {picked.hidden > 0 || showAll === true ? (
         <Button size="sm" variant="ghost" className="v3-process-more" aria-expanded={showAll === true} onPress={() => { if (stage) setManual(true); setShowAll(showAll !== true) }} data-testid="v3-process-more">
           {stage ? t('proc.showAll') : showAll === true ? t('proc.showRecent') : tt('moreItems', { n: picked.hidden })}
         </Button>
@@ -209,7 +271,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
         {markerFirst || markerAfter && !picked.shown.some((segment) => segment.id === markerAfter) && merged.findIndex((segment) => segment.id === markerAfter) < merged.indexOf(picked.shown[0]) ? <CompactionMarker /> : null}
         {picked.shown.map((segment) => (
           <Fragment key={segment.id}>
-            <ProcessSegment segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} staged={stage} />
+            <ProcessSegment segment={segment} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} staged={stage} />
             {segment.id === markerAfter ? <CompactionMarker /> : null}
           </Fragment>
         ))}
@@ -224,26 +286,19 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
         <CollapsibleHeader
           className="v3-process-head"
           size="compact"
-          chevron="start"
-          rowHover
+          chevron="end"
           aria-controls={panelId}
           icon={live ? <LiveProcessIcon /> : undefined}
-          tone="emphasized"
           data-testid="v3-process-toggle"
         >
-          <span className="v3-process-line" title={tip || undefined} data-testid="v3-process-line">
-            {processParts(summary, tt, filesShownBelow && !live, live).map((part) => (
-              <span key={part.key} className="v3-process-count" data-kind={part.kind}>
-                {part.text}
-                {part.file && part.file.added !== null && part.file.removed !== null && part.file.added + part.file.removed > 0 ? <DiffStat className="v3-process-diff" added={part.file.added} removed={part.file.removed} /> : null}
-              </span>
-            ))}
-            {live ? <LiveElapsed startedAt={liveStartedAt} /> : elapsed ? <span className="v3-process-count ui-num" data-kind="elapsed">{elapsed}</span> : null}
+          <span className="v3-process-line" data-testid="v3-process-line">
+            <span className="v3-process-count" data-kind={summary.actions ? 'actions' : 'thinking'}>{groupLabel(summary, tt)}</span>
+            {lines ? <DiffStat className="v3-process-diff" added={lines.added} removed={lines.removed} /> : null}
+            {live ? <LiveElapsed startedAt={liveStartedAt} /> : null}
             {summary.failed && showFailures && !live ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
           </span>
         </CollapsibleHeader>
       )}
-      {preview && !open ? <div className="v3-process-preview" data-testid="v3-process-preview">{preview}</div> : null}
       <Expand id={panelId} className="v3-step-panel" open={visible} role="group" aria-label={t('proc.title')} aria-hidden={!visible || undefined}>
         {visible ? <AnimatedHeight>{body}</AnimatedHeight> : null}
       </Expand>
@@ -254,21 +309,9 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
         {foldedQuestions.map((call) => <QuestionHistory key={call.id} call={call} />)}
       </div>
     ) : null}
-    {approvals.length && !open ? <TurnApprovalLine approvals={approvals} /> : null}
+    {approvals.length ? <TurnApprovalLine approvals={approvals} /> : null}
     </>
   )
-}
-
-interface ProcessPart {
-  key: string
-  kind: string
-  text: string
-  file?: Pick<ProcessFileChange, 'added' | 'removed'>
-}
-
-function totalLines(files: readonly ProcessFileChange[]): Pick<ProcessFileChange, 'added' | 'removed'> {
-  if (files.some((file) => file.added === null || file.removed === null)) return { added: null, removed: null }
-  return { added: files.reduce((sum, file) => sum + (file.added ?? 0), 0), removed: files.reduce((sum, file) => sum + (file.removed ?? 0), 0) }
 }
 
 type SessionText = ReturnType<typeof useSessionText>
@@ -282,7 +325,16 @@ function fileText(tt: SessionText, list: readonly ProcessFileChange[], single: T
   return list.length === 1 ? tt(single, { file: list[0].base }) : tt(many, { n: list.length })
 }
 
-const LEAD_ACTIVITIES = 2
+function totalLines(list: readonly ProcessFileChange[]): { added: number; removed: number } | null {
+  let added = 0
+  let removed = 0
+  for (const file of list) {
+    if (file.added === null || file.removed === null) return null
+    added += file.added
+    removed += file.removed
+  }
+  return added + removed > 0 ? { added, removed } : null
+}
 
 function LiveProcessIcon(): JSX.Element {
   const line = useWorkingLine()
@@ -300,25 +352,12 @@ function joinActivities(phrases: readonly string[], join: string): string {
   return phrases.map((phrase, index) => index && /^[A-Z][a-z]/.test(phrase) ? phrase.charAt(0).toLowerCase() + phrase.slice(1) : phrase).join(join)
 }
 
-function activityText(summary: ProcessSummary, tt: SessionText): string {
-  const kinds = activityCounts(summary).filter(([n]) => n > 0)
-  const named = kinds.filter(([, one]) => one !== 'processOther1')
-  const lead = [...(named.length ? named : kinds)].sort((a, b) => b[0] - a[0]).slice(0, LEAD_ACTIVITIES)
-  const shown = kinds.filter((kind) => lead.includes(kind)).map(([n, one, many]) => countText(tt, n, one, many))
-  const text = joinActivities(shown, tt('processKindJoin'))
-  return kinds.length > lead.length ? `${text}${tt('processMoreSteps', { n: summary.actions })}` : text
-}
-
-function processParts(summary: ProcessSummary, tt: SessionText, filesShownBelow = false, live = false): ProcessPart[] {
-  const parts: ProcessPart[] = []
-  if (!summary.actions && summary.thinking) parts.push({ key: 'thinking', kind: 'thinking', text: countText(tt, summary.thinking, 'processThinking1', 'processThinking') })
-  const activity = activityText(summary, tt)
-  if (activity) parts.push({ key: 'activity', kind: 'activity', text: activity })
-  if (live) return parts.length ? parts : summary.actions ? [{ key: 'actions', kind: 'actions', text: countText(tt, summary.actions, 'processActions1', 'processActions') }] : parts
-  if (summary.edits.length) parts.push({ key: 'edits', kind: 'edits', text: countText(tt, summary.edits.length, 'processEdits1', 'processEdits'), file: filesShownBelow ? undefined : totalLines(summary.edits) })
-  if (summary.creates.length) parts.push({ key: 'creates', kind: 'creates', text: countText(tt, summary.creates.length, 'processCreates1', 'processCreates'), file: filesShownBelow ? undefined : totalLines(summary.creates) })
-  if (!parts.length && summary.actions) parts.push({ key: 'actions', kind: 'actions', text: countText(tt, summary.actions, 'processActions1', 'processActions') })
-  return parts
+export function ProcessStrip({ parts }: { parts: readonly StripPart[] }): JSX.Element {
+  return (
+    <span className="v3-process-strip" aria-hidden="true" data-testid="v3-process-strip">
+      {parts.map((part, index) => <i key={index} data-kind={part.kind} style={{ flexGrow: part.ms }} />)}
+    </span>
+  )
 }
 
 function activityCounts(summary: ProcessSummary): [number, TextKey, TextKey][] {
@@ -335,16 +374,18 @@ function activityCounts(summary: ProcessSummary): [number, TextKey, TextKey][] {
   ]
 }
 
-function processBreakdown(summary: ProcessSummary, tt: SessionText): string {
-  const phrases = activityCounts(summary).filter(([n]) => n > 0).map(([n, one, many]) => countText(tt, n, one, many))
+function groupLabel(summary: ProcessSummary, tt: SessionText): string {
+  const phrases: string[] = []
   if (summary.edits.length) phrases.push(fileText(tt, summary.edits, 'processEditFile', 'processEdits'))
   if (summary.creates.length) phrases.push(fileText(tt, summary.creates, 'processCreateFile', 'processCreates'))
-  return joinActivities(phrases, tt('processKindJoin'))
+  const counts = activityCounts(summary).filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
+  phrases.push(...counts.map(([n, one, many]) => countText(tt, n, one, many)))
+  if (phrases.length) return joinActivities(phrases, tt('processKindJoin'))
+  return summary.actions ? countText(tt, summary.actions, 'processActions1', 'processActions') : countText(tt, summary.thinking, 'processThinking1', 'processThinking')
 }
 
-function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking, alertFailures, staged }: {
+function ProcessSegment({ segment, approvalIds, glowId, openThinking, alertFailures, staged }: {
   segment: TurnSegment
-  sessionId: string | null
   approvalIds: ReadonlySet<string>
   glowId?: string | null
   openThinking: boolean
@@ -356,17 +397,9 @@ function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking,
     <div className="v3-process-seg" data-lead={steps[0]?.kind} data-tail={steps.at(-1)?.kind}>
       {steps.map((step) => step.kind === 'tools'
         ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} glowId={glowId} alertFailures={alertFailures} staged={staged} />
-        : step.kind === 'notes'
-          ? (
-              <div key={step.key} className="v3-process-notes">
-                {step.notes.map((part) => (
-                  <div key={part.id} className="v3-para dim">
-                    <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
-                  </div>
-                ))}
-              </div>
-            )
-          : <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} startedAt={step.thinking.startedAt} step defaultOpen={openThinking} expansionId={`${segment.id}:${step.key}`} />)}
+        : step.kind === 'thinking'
+          ? <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} startedAt={step.thinking.startedAt} step defaultOpen={openThinking} expansionId={`${segment.id}:${step.key}`} />
+          : null)}
     </div>
   )
 }

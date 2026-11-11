@@ -62,7 +62,7 @@ function seg(id, { commentary = [], tools = [], response = null, thinking = '', 
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, processPreview, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert, lineDelta, estimateCallLines } = mod
+const { splitTurnProcess, spreadProcess, spreadEndsInGroup, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert, lineDelta, estimateCallLines } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -263,13 +263,39 @@ group('回合结束后进度叙述收进过程：最终答复始终露出')
   ok(folded.reply?.response?.id === 'final', '最终答复始终露出', folded.reply?.response?.id)
   ok(folded.process.map((s) => s.id).join() === 'f0:narration,f1,f1:narration,f2,f2:narration,f3', '计划说明排在过程最前，叙述与工具按时间交错', folded.process.map((s) => s.id))
   ok(folded.process[2].commentary[0]?.id === 'n1' && folded.process[1].response === null, '叙述作为过程旁白，原段去掉回复', folded.process.slice(0, 3))
-  ok(processPreview(folded.process) === '还有一处残留。', '摘要预览取最后一句进度说明', processPreview(folded.process))
-  ok(processPreview([seg('np', { tools: [tool('np1', 'bash')] })]) === '', '没有进度说明时没有预览')
   const replyFirst = splitTurnProcess([seg('q0', { response: text('q-lead', '先回答。', false) }), seg('q1', { tools: [tool('qt', 'bash')] })], { foldReplies: true })
   ok(replyFirst.leadReplies.length === 0 && replyFirst.reply?.response?.id === 'q-lead', '答复先于工具时答复不被收起', replyFirst)
   const noTools = splitTurnProcess([seg('m0', { response: text('m-lead', '说明', false) }), seg('m1', { response: text('m-final', '结论', false) })], { foldReplies: true })
   ok(noTools.leadReplies.map((s) => s.id).join() === 'm0' && noTools.process.length === 0, '没有工具的回合：前面的正文照常露出', noTools)
   ok(processSummary(folded.process).actions === 3, '折叠不改变操作计数', processSummary(folded.process))
+}
+
+group('汇报摊开：过程按汇报切成「汇报 / 工具组」交替')
+{
+  const shape = (items) => items.map((item) => item.kind === 'notes'
+    ? 'n(' + item.notes.map((note) => note.id).join('+') + ')'
+    : 'g(' + item.segments.map((segment) => [segment.thinking ? 'T' : '', ...segment.tools.map((call) => call.id)].filter(Boolean).join('+')).join('|') + ')').join(' ')
+  const process = [
+    seg('a', { commentary: [text('n1', '先读文档')], tools: [tool('r1', 'read'), tool('r2', 'read')] }),
+    seg('b', { tools: [tool('g1', 'grep')] }),
+    seg('c', { thinking: '想清楚了', commentary: [text('n2', '两处要改')], tools: [tool('e1', 'edit')] }),
+    seg('d', { tools: [tool('b1', 'bash')] })
+  ]
+  const items = spreadProcess(process)
+  ok(shape(items) === 'n(n1) g(r1+r2|g1|T) n(n2) g(e1|b1)', '汇报之间的全部步骤归成一组，汇报前的思考留在前一组', shape(items))
+  ok(items[1].segments[1] === process[1], '没有汇报的段原样进组，不复制')
+  ok(items[1].key === 'group:a~1' && items[3].key === 'group:c~1', '组的键取首段，后续追加步骤不变', items.map((item) => item.key))
+  ok(spreadProcess(process)[1].segments[0] === items[1].segments[0], '同一段重复切分拿到同一份结果')
+  const mid = spreadProcess([{ ...seg('m', { commentary: [{ ...text('k', '改到一半'), at: 1 }], tools: [tool('x', 'bash'), tool('y', 'bash')] }), thinking: '甲\n\n乙', thinkingParts: [{ text: '甲', at: 0, ms: 400 }, { text: '乙', at: 2, ms: 600 }] }])
+  ok(shape(mid) === 'g(T+x) n(k) g(T+y)', '段内的汇报按工具位置把这一段切开', shape(mid))
+  ok(mid[0].segments[0].thinkingMs === 400 && mid[2].segments[0].thinkingParts[0].at === 1, '切开后思考用时与位置跟着各自那一半', [mid[0].segments[0].thinkingMs, mid[2].segments[0].thinkingParts])
+  const lead = [seg('t', { thinking: '先想', commentary: [text('n0', '开始')], tools: [tool('z', 'read')] })]
+  ok(shape(spreadProcess(lead)) === 'g(T) n(n0) g(z)', '运行中：开头的思考单独成组', shape(spreadProcess(lead)))
+  ok(shape(spreadProcess(lead, { foldThinking: true })) === 'n(n0) g(T|z)', '结束后：开头只有思考的组并进后面的工具组', shape(spreadProcess(lead, { foldThinking: true })))
+  const onlyThought = [seg('o', { thinking: '只想了想' })]
+  ok(shape(spreadProcess(onlyThought, { foldThinking: true })) === 'g(T)', '整轮只有思考时仍留一组', shape(spreadProcess(onlyThought, { foldThinking: true })))
+  ok(shape(spreadProcess([seg('q', { commentary: [text('only', '只有汇报')] })])) === 'n(only)', '只有汇报的段不产生空组')
+  ok(spreadEndsInGroup(process) === true && spreadEndsInGroup([seg('e', { commentary: [{ ...text('tail', '收尾说明'), at: 1 }], tools: [tool('w', 'bash')] })]) === false, '末尾是工具组还是汇报可以分辨')
 }
 
 group('过程摘要：按工具类型归类并带改动行数')

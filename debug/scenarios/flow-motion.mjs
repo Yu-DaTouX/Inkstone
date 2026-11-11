@@ -166,7 +166,7 @@ export default async function run({ cdp, newSession, check, sleep, shot, report,
     if (snap.think && !shotThinking && snap.tools >= 1) { shotThinking = true; await shot(`${tag}-02-thinking-live`) }
     if (!snap.think && shotThinking && !shotThinkEnd && snap.tools >= 1) { shotThinkEnd = true; await shot(`${tag}-03-thinking-ended`) }
     if (!liveOrder && snap.tools >= 3) {
-      liveOrder = await ev(`(() => { const t = document.querySelector('.v3-process')?.innerText ?? ''; return { a: t.indexOf('读取 README'), b: t.indexOf('开始修复金额精度') } })()`)
+      liveOrder = await ev(`(() => { const t = document.querySelector('.v3-spread')?.innerText ?? ''; return { a: t.indexOf('读取 README'), b: t.indexOf('开始修复金额精度') } })()`)
     }
     if (scrolled && snap.mid && !scrolledUp) {
       scrolledUp = await ev(`(() => { const el = document.querySelector('.v3-stream'); el.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, bubbles: true })); el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - 60); window.__flow.marks.push({ t: Math.round(performance.now() - window.__flow.t0), kind: 'scroll-up', top: el.scrollTop }); return Math.round(el.scrollHeight - el.clientHeight - el.scrollTop) })()`)
@@ -224,7 +224,7 @@ export default async function run({ cdp, newSession, check, sleep, shot, report,
   await sleep(500)
   await ev(`document.querySelector('[data-testid=v3-process]')?.scrollIntoView({ block: 'start' })`)
   await sleep(300)
-  const doneOrder = await ev(`(() => { const t = document.querySelector('.v3-process')?.innerText ?? ''; return { a: t.indexOf('读取 README'), b: t.indexOf('开始修复金额精度') } })()`)
+  const doneOrder = await ev(`(() => { const t = document.querySelector('.v3-spread')?.innerText ?? ''; return { a: t.indexOf('读取 README'), b: t.indexOf('开始修复金额精度') } })()`)
   report.doneOrder = doneOrder
   await shot(`${tag}-05-expanded-dark`)
   await ev(`window.__yanStore.getState().patchSettings({ theme: 'light' })`)

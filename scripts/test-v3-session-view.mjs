@@ -602,18 +602,24 @@ async function main() {
 
     const tree = renderTurn(turn, { sessionId: 'sess-a', streaming: false })
     const proc = byTypeName(tree, 'TurnProcess')[0]
-    ok(!!proc, '带工具的回合把解说收进 TurnProcess')
+    ok(!!proc, '带工具的回合把解说与工具交给 TurnProcess 摊开')
     const isToggle = (el) => el.props?.['data-testid'] === 'v3-process-toggle'
-    const folded = proc ? rt.render(proc.type, proc.props) : null
+    const spread = proc ? rt.render(proc.type, proc.props) : null
+    const groupOf = () => {
+      const el = proc ? byTypeName(rt.render(proc.type, proc.props), 'ProcessGroup')[0] : null
+      return el ? rt.render(el.type, el.props) : null
+    }
+    const folded = groupOf()
     const toggle = folded ? collect(folded, isToggle)[0] : null
-    ok(!!toggle && toggle.props['aria-expanded'] === false, '完成后过程在原位收成一行入口（简洁视图默认收起）', toggle?.props['aria-expanded'])
-    ok(folded ? byTypeName(folded, 'ProcessSegment').length === 0 : false, '收起时不铺开过程内容')
+    ok(!!toggle && toggle.props['aria-expanded'] === false, '完成后工具步骤收成一行摘要（简洁视图默认收起）', toggle?.props['aria-expanded'])
+    ok(folded ? byTypeName(folded, 'ProcessSegment').length === 0 : false, '收起时不铺开步骤')
     toggle?.props.onClick()
-    const expanded = proc ? rt.render(proc.type, proc.props) : null
-    ok(expanded ? collect(expanded, isToggle)[0]?.props['aria-expanded'] === true : false, '点开入口后展开，阅读状态存在展开存储里')
-    const segments = expanded ? byTypeName(expanded, 'ProcessSegment').map((el) => rt.render(el.type, el.props)) : []
-    ok(segments.some((seg) => byStub(seg, 'markdown').length > 0), '展开后解说在工具组旁按原顺序铺开')
-    const mds = [...byStub(tree, 'markdown'), ...segments.flatMap((seg) => byStub(seg, 'markdown'))]
+    const expanded = groupOf()
+    ok(expanded ? collect(expanded, isToggle)[0]?.props['aria-expanded'] === true : false, '点开摘要后展开，阅读状态存在展开存储里')
+    ok(expanded ? byTypeName(expanded, 'ProcessSegment').length > 0 : false, '展开后铺开这一组的步骤')
+    const spreadKinds = spread ? [].concat(spread.props.children).flat(Infinity).filter((child) => child && typeof child === 'object').map((child) => child.type?.name ?? child.props?.className) : []
+    ok(spreadKinds.join() === 'v3-process-notes,ProcessGroup', '解说直接排在正文里，后面跟它那一组工具', spreadKinds)
+    const mds = [...byStub(tree, 'markdown'), ...(spread ? byStub(spread, 'markdown') : [])]
     const commentary = mds.find((el) => el.props.messageId === turn.commentary[0].id)
     const response = mds.find((el) => el.props.messageId === turn.response.id)
     ok(!!commentary, '解说段落拿到自己的消息身份', mds.map((el) => el.props.messageId))
@@ -697,16 +703,25 @@ async function main() {
     const processOf = (turn, streaming = false) => {
       const tree = renderTurn(turn, { sessionId: 'sess-a', streaming, tail: true })
       const el = byTypeName(tree, 'TurnProcess')[0]
-      const body = el ? rt.render(el.type, el.props) : null
+      const spread = el ? rt.render(el.type, el.props) : null
+      const groupEl = spread ? byTypeName(spread, 'ProcessGroup')[0] : null
+      const body = groupEl ? rt.render(groupEl.type, groupEl.props) : null
       const failed = body ? collect(body, (node) => node.props?.['data-testid'] === 'v3-process-failed')[0] : null
       const toggle = body ? collect(body, (node) => node.props?.['data-testid'] === 'v3-process-toggle')[0] : null
-      return { el, body, failed, toggle }
+      const metaEl = byTypeName(tree, 'TurnMeta')[0]
+      const meta = metaEl ? rt.render(metaEl.type, metaEl.props) : null
+      return { el, body, failed, toggle, meta }
     }
     const done = processOf({ ...base, terminalReason: 'completed' })
     ok(!!done.toggle && collect(done.toggle, (node) => String(node.props?.className ?? '').includes('v3-process-label')).length === 0, '过程入口不再带「过程」前缀')
     const partsLine = done.toggle ? collect(done.toggle, (node) => node.props?.className === 'v3-process-line')[0] : null
-    const firstPart = partsLine ? [].concat(partsLine.props.children).flat().find((child) => child && typeof child === 'object') : null
-    ok(firstPart?.props?.className === 'v3-process-count', '入口第一项就是计数', firstPart?.props?.className)
+    const lineParts = partsLine ? [].concat(partsLine.props.children).flat().filter((child) => child && typeof child === 'object') : []
+    ok(lineParts[0]?.props?.className === 'v3-process-count' && !lineParts.some((part) => part.type?.name === 'ProcessStrip'), '分组摘要行先是做了什么，不带时间条', lineParts.map((part) => part.type?.name ?? part.props?.className))
+    const metaParts = done.meta ? [done.meta.props.children].flat(Infinity).filter((child) => child && typeof child === 'object') : []
+    ok(metaParts[0]?.type?.name === 'ProcessStrip' && metaParts[1]?.props?.['data-testid'] === 'v3-turn-actions', '时间条与操作数排在轮尾元信息行最前', metaParts.map((part) => part.type?.name ?? part.props?.['data-testid'] ?? part.props?.className))
+    const metaFailed = (meta) => (meta ? [meta.props.children].flat(Infinity).find((child) => child?.props?.['data-testid'] === 'v3-turn-failed') : null)
+    ok(!!metaFailed(done.meta) && metaFailed(done.meta).props['data-alert'] === undefined, '轮尾失败数：正常收尾不标红', metaFailed(done.meta)?.props)
+    ok(metaFailed(processOf({ ...base, terminalReason: 'failed' }).meta)?.props['data-alert'] === true, '轮尾失败数：以失败结束时标红')
     ok(done.el?.props.alertFailures === false && !!done.failed && !String(done.failed.props.className).includes('err'), '正常收尾：失败计数用次级文字色，不标红', done.failed?.props.className)
     const failed = processOf({ ...base, terminalReason: 'failed' })
     ok(failed.el?.props.alertFailures === true && String(failed.failed?.props.className).includes('err'), '以失败结束：失败计数标红', failed.failed?.props.className)

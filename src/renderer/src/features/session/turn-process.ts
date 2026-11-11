@@ -96,23 +96,6 @@ export function splitTurnProcess(segments: readonly TurnSegment[], options: { ke
   return { process, reply, leadReplies, earlierReplies, tail: segments.slice(at + 1) }
 }
 
-export function processPreview(process: readonly TurnSegment[]): string {
-  for (let i = process.length - 1; i >= 0; i -= 1) {
-    const notes = process[i].commentary
-    for (let j = notes.length - 1; j >= 0; j -= 1) {
-      const plain = notes[j].text
-        .replace(/```[\s\S]*?```/g, ' ')
-        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .replace(/[`*_~#>|]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-      if (!plain) continue
-      return plain.split(/(?<=[。！？!?；;]|\.\s)/).map((part) => part.trim()).filter(Boolean).at(-1) ?? plain
-    }
-  }
-  return ''
-}
-
 function rawThinkingParts(segment: TurnSegment): TurnThinking[] {
   if (segment.thinkingParts) return segment.thinkingParts
   if (!hasThinking(segment)) return []
@@ -168,6 +151,99 @@ export function segmentSteps(segment: TurnSegment): ProcessStep[] {
   }
   if (from < total) steps.push({ kind: 'tools', key: `tools:${from}`, tools: segment.tools.slice(from) })
   return steps
+}
+
+export type SpreadItem =
+  | { kind: 'notes'; key: string; notes: ProcessNote[] }
+  | { kind: 'group'; key: string; segments: TurnSegment[] }
+
+interface SegmentPiece {
+  work: TurnSegment
+  notes: ProcessNote[]
+}
+
+const segmentPieceCache = new WeakMap<TurnSegment, SegmentPiece[]>()
+
+function cutSegmentAtNotes(segment: TurnSegment): SegmentPiece[] {
+  if (!segment.commentary.length) return [{ work: segment, notes: [] }]
+  const total = segment.tools.length
+  const parts = rawThinkingParts(segment).map((part) => ({ ...part, at: Math.max(0, Math.min(part.at, total)) }))
+  const liveThought = segment.thinkingLive ? parts.findLast((part) => part.text.trim()) : undefined
+  const cuts = [...new Set(segment.commentary.map((note) => noteAt(note, total)))].sort((a, b) => a - b)
+  const pieces: SegmentPiece[] = []
+  let from = 0
+  let after = -1
+  const workUntil = (to: number): TurnSegment => {
+    const own = parts.filter((part) => part.at > after && part.at <= to)
+    const thinkingMs = own.reduce((sum, part) => sum + (part.ms ?? 0), 0)
+    return {
+      ...segment,
+      id: pieces.length ? `${segment.id}~${pieces.length}` : segment.id,
+      tools: segment.tools.slice(from, to),
+      thinking: own.map((part) => part.text).filter((text) => text.trim()).join('\n\n'),
+      thinkingMs: thinkingMs || undefined,
+      thinkingLive: !!liveThought && own.includes(liveThought),
+      thinkingParts: own.map((part) => ({ ...part, at: part.at - from })),
+      texts: [],
+      commentary: []
+    }
+  }
+  for (const cut of cuts) {
+    pieces.push({ work: workUntil(cut), notes: segment.commentary.filter((note) => noteAt(note, total) === cut) })
+    from = cut
+    after = cut
+  }
+  pieces.push({ work: workUntil(total), notes: [] })
+  return pieces
+}
+
+function segmentPieces(segment: TurnSegment): SegmentPiece[] {
+  const cached = segmentPieceCache.get(segment)
+  if (cached) return cached
+  const pieces = cutSegmentAtNotes(segment)
+  segmentPieceCache.set(segment, pieces)
+  return pieces
+}
+
+function quietThinkingGroup(item: SpreadItem): boolean {
+  return item.kind === 'group' && item.segments.every((segment) => !segment.tools.length && !segment.thinkingLive)
+}
+
+export function spreadProcess(process: readonly TurnSegment[], options: { foldThinking?: boolean } = {}): SpreadItem[] {
+  const items: SpreadItem[] = []
+  for (const segment of process) {
+    for (const piece of segmentPieces(segment)) {
+      if (hasSegmentContent(piece.work)) {
+        const last = items[items.length - 1]
+        if (last?.kind === 'group') last.segments.push(piece.work)
+        else items.push({ kind: 'group', key: `group:${piece.work.id}`, segments: [piece.work] })
+      }
+      if (piece.notes.length) {
+        const last = items[items.length - 1]
+        if (last?.kind === 'notes') last.notes.push(...piece.notes)
+        else items.push({ kind: 'notes', key: `notes:${piece.notes[0].id}`, notes: [...piece.notes] })
+      }
+    }
+  }
+  if (!options.foldThinking) return items
+  const lastGroup = items.findLastIndex((item) => item.kind === 'group')
+  const folded: SpreadItem[] = []
+  let carried: TurnSegment[] = []
+  items.forEach((item, index) => {
+    if (item.kind !== 'group') {
+      folded.push(item)
+    } else if (index < lastGroup && quietThinkingGroup(item)) {
+      carried.push(...item.segments)
+    } else {
+      folded.push(carried.length ? { ...item, segments: [...carried, ...item.segments] } : item)
+      carried = []
+    }
+  })
+  return folded
+}
+
+export function spreadEndsInGroup(process: readonly TurnSegment[]): boolean {
+  return spreadProcess(process).at(-1)?.kind === 'group'
 }
 
 export function conciseSegment(segment: TurnSegment): TurnSegment {

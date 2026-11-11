@@ -8,8 +8,9 @@ import { useAppearDelay } from './reply-appear'
 import { TurnArtifacts } from './MessageParts'
 import { ThinkingAside, ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
-import { TurnProcess } from './TurnProcess'
-import { conciseSegment, processFailuresAlert, splitAtCompaction, splitTurnProcess, withoutThinking } from './turn-process'
+import { ProcessStrip, TurnProcess } from './TurnProcess'
+import { conciseSegment, processFailuresAlert, processSummary, splitAtCompaction, splitTurnProcess, spreadEndsInGroup, withoutThinking } from './turn-process'
+import { processStripParts } from './process-strip'
 import { liveToolGlowId } from './tool-run-model'
 import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
 import { TranscriptViewScope, useAsideFit } from './use-tool-run'
@@ -317,7 +318,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const compactionCut = compactionSpot !== null && compactionSpot !== COMPACTION_AT_END ? { messageId: compactionSpot, toolId: compactionToolId } : null
   const compactionInProcess = compactionCut && splitAtCompaction(processSegs, compactionCut) ? compactionCut : null
   const showCompaction = compactionSpot !== null && !compactionInProcess
-  const processApprovals = streaming ? [] : processSegs.flatMap((segment) => segment.tools.flatMap((call) => (call.approval ? [call.approval] : [])))
+  const failuresAlert = processFailuresAlert(sourceTurn, !!streaming)
+  const turnElapsedMs = runPlace.startedAt !== null ? spanMs : sourceTurn.elapsedMs ?? spanMs
   const decision = !streaming && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
   const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
@@ -349,7 +351,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   process={processSegs}
                   live={!!streaming}
                   openByDefault={!split.reply && !split.tail.length && !!tail}
-                  alertFailures={processFailuresAlert(sourceTurn, !!streaming)}
+                  alertFailures={failuresAlert}
                   showFailures={!runPlace.continues}
                   liveStartedAt={runPlace.startedAt}
                   view={view}
@@ -357,10 +359,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   turnId={turn.id}
                   approvalIds={approvalIds}
                   glowId={glowId}
-                  elapsedMs={runPlace.startedAt !== null ? spanMs : sourceTurn.elapsedMs ?? spanMs}
-                  filesShownBelow={!!changes}
                   compactionAfter={compactionInProcess}
-                  approvals={processApprovals}
                 />
               ) : null}
               {split.earlierReplies.filter((segment) => replyReady(segment.id)).map((segment) => (
@@ -433,7 +432,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           <SubagentLine turn={turn} scope={subagentScope} />
   
           {streaming ? errorCard : null}
-          {streaming ? <LiveRunNotice hasProcess={processSegs.length > 0} /> : null}
+          {streaming ? <LiveRunNotice hasProcess={spreadEndsInGroup(processSegs)} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
           <AnimatedHeight className="v3-result-shell">
             {runEnded ? <TurnResult turn={runTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} arrive={arrived} /> : null}
@@ -441,7 +440,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {decision && split?.reply && answer !== undefined ? <DecisionBlock arrive={arrived} question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} outcome={outcome} /> : null}
           {streaming ? null : errorCard}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
-          {runEnded ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
+          {runEnded ? <TurnMeta turn={sourceTurn} readOnly={readOnly} segments={runTurn.segments} elapsedMs={turnElapsedMs} alertFailures={failuresAlert} /> : null}
           {compactionSpot !== null ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
@@ -502,21 +501,32 @@ function useCopyState(): [CopyState, (next: CopyState) => void] {
   return [copyState, setCopyState]
 }
 
-function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }): JSX.Element | null {
+const FOOT_STRIP_PARTS = 32
+
+function TurnMeta({ turn, readOnly, segments, elapsedMs, alertFailures }: { turn: AssistantTurn; readOnly: boolean; segments: readonly TurnSegment[]; elapsedMs?: number; alertFailures: boolean }): JSX.Element | null {
   const t = useT()
+  const tt = useSessionText()
   const models = useStore((s) => s.models)
   const [copyState, setCopyState] = useCopyState()
   const reply = replyText(turn)
-  const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
+  const summary = useMemo(() => processSummary(segments), [segments])
+  const strip = useMemo(() => (summary.actions ? processStripParts(segments, FOOT_STRIP_PARTS) : []), [segments, summary.actions])
+  const worked = summary.actions > 0
+  const spentMs = worked ? elapsedMs ?? turn.elapsedMs : turn.elapsedMs
+  const elapsed = spentMs && spentMs > 0 ? formatDuration(spentMs) : null
   const modelDisplay = turn.model ? turnModelLabel(turn.model, models) : null
   const stopLabel = turn.terminalReason === 'stopped' ? t('act.stopped') : turn.terminalReason === 'interrupted' ? t('act.interrupted') : null
-  if (!reply && !turn.timestamp && !turn.model && !stopLabel) return null
+  if (!reply && !turn.timestamp && !turn.model && !stopLabel && !worked) return null
   const elapsedTip = elapsed ? `${elapsed} \u00b7 ${turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}` : undefined
   return (
     <div className="v3-msg-meta v3-turn-meta" data-testid="v3-turn-meta">
+      {worked && strip.length ? <ProcessStrip parts={strip} /> : null}
+      {worked ? <span className="v3-turn-sum" data-sum="" data-testid="v3-turn-actions">{summary.actions === 1 ? tt('processActions1') : tt('processActions', { n: summary.actions })}</span> : null}
+      {stopLabel || elapsed ? <span className={stopLabel ? 'v3-msg-meta-stop v3-turn-receipt' : 'v3-turn-receipt'} data-sum={worked ? '' : undefined} title={elapsedTip} data-testid="v3-turn-receipt">{stopLabel ? <Icon name="stop" size={12} /> : turn.terminalReason === 'completed' && !turn.error && !turn.tools.some((call) => call.cancelled) ? <Icon name="check" size={12} /> : null}{stopLabel ?? elapsed}</span> : null}
+      {worked && summary.failed ? <span className="v3-turn-sum" data-sum="" data-alert={alertFailures || undefined} data-testid="v3-turn-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
+      {worked ? <i className="v3-turn-meta-gap" aria-hidden="true" /> : null}
       {turn.timestamp ? <span className="v3-msg-meta-part" title={elapsedTip}><TurnClock timestamp={turn.timestamp} /></span> : null}
       {modelDisplay ? <span className="v3-act-model" title={elapsedTip ? `${modelDisplay.identity}\n${elapsedTip}` : modelDisplay.identity}>{modelDisplay.label}</span> : null}
-      {stopLabel || elapsed ? <span className={stopLabel ? 'v3-msg-meta-stop v3-turn-receipt' : 'v3-turn-receipt'} data-testid="v3-turn-receipt">{stopLabel ? <Icon name="stop" size={12} /> : turn.terminalReason === 'completed' && !turn.error && !turn.tools.some((call) => call.cancelled) ? <Icon name="check" size={12} /> : null}{stopLabel ?? elapsed}</span> : null}
       {reply && !readOnly ? (
         <IconButton
           className="v3-msg-meta-copy"

@@ -240,7 +240,6 @@ export type SessionTextKey =
   | 'tallyTodo'
   | 'processEdits1'
   | 'processCreates1'
-  | 'processMoreSteps'
   | 'decisionReplied'
   | 'decisionOutcome'
   | 'decisionFailed'
@@ -526,7 +525,6 @@ const ZH: Record<SessionTextKey, string> = {
   tallyTodo: '待办',
   processEdits1: '编辑 1 个文件',
   processCreates1: '新建 1 个文件',
-  processMoreSteps: '等 {n} 步',
   decisionReplied: '已回复',
   decisionOutcome: '结果',
   decisionFailed: '没有完成',
@@ -813,7 +811,6 @@ const EN: Record<SessionTextKey, string> = {
   tallyTodo: 'to-do',
   processEdits1: 'Edited 1 file',
   processCreates1: 'Created 1 file',
-  processMoreSteps: ' and more ({n} steps)',
   decisionReplied: 'Replied',
   decisionOutcome: 'Outcome',
   decisionFailed: 'Not completed',
