@@ -159,7 +159,7 @@ async function ensureProxy(options: PinnedGuardOptions = {}): Promise<PinnedProx
 
 export function attachPinnedNetworkGuard(ses: Session, probeUrl = 'https://example.com/', options: PinnedGuardOptions = {}): Promise<PinnedGuardAttachResult> {
   const existing = sessionStates.get(ses)
-  if (existing) return existing.promise
+  if (existing && existing.status !== 'failed') return existing.promise
   const state: SessionGuardState = { status: 'starting', reason: '', promise: Promise.resolve({ status: 'failed', message: 'guard not started' }) }
   sessionStates.set(ses, state)
   state.promise = (async (): Promise<PinnedGuardAttachResult> => {

@@ -73,6 +73,7 @@ import { createIpcRegistrar } from './ipc/registrar'
 import { sessionActionAgent, sessionActionChanged } from './ipc/session-action-target'
 import { abortBashFor, lastAssistantTextFor } from './ipc/session-command-target'
 import { registerBrowserIpc } from './ipc/browser-ipc'
+import { setSessionBrowserCloser } from './session-browser-cleanup'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { onTerminalJobs } from './terminal-jobs'
@@ -3710,6 +3711,7 @@ app.whenReady().then(async () => {
   watchPowerSource()
   browser = new BrowserController(() => win, push, askProfileSyncApproval, askLargeDownloadApproval)
   setUserHandoffRelease((sessionId) => browser?.releaseUserControlFor(sessionId))
+  setSessionBrowserCloser((sessionId) => browser?.closeSession(sessionId, { keepExternal: true }) ?? Promise.resolve())
   onTerminalJobs((jobs) => push({ ch: 'terminal-jobs', payload: jobs }))
   setTerminalSink((event) => {
     if (event.kind === 'exit') {

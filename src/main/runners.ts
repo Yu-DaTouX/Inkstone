@@ -823,13 +823,18 @@ export class RunnerRegistry {
     return [...this.runners.values()].some((r) => this.busy(r))
   }
 
+  private runnerHasPendingWork(runner: Runner): boolean {
+    if (this.busy(runner) || this.awaitingTerminal(runner) || this.awaitingSubagents(runner)) return true
+    const queue = runner.agent.queueSnapshot()
+    return queue.steering.length > 0 || queue.followUp.length > 0
+  }
+
+  sessionHasPendingWork(sessionId: string): boolean {
+    return [...this.runners.values()].some((runner) => runner.agent.getState()?.sessionId === sessionId && this.runnerHasPendingWork(runner))
+  }
+
   hasPendingWorkExcept(exceptRunId?: string): boolean {
-    return [...this.runners.values()].some((runner) => {
-      if (runner.id === exceptRunId) return false
-      if (this.busy(runner) || this.awaitingTerminal(runner) || this.awaitingSubagents(runner)) return true
-      const queue = runner.agent.queueSnapshot()
-      return queue.steering.length > 0 || queue.followUp.length > 0
-    })
+    return [...this.runners.values()].some((runner) => runner.id !== exceptRunId && this.runnerHasPendingWork(runner))
   }
 
   hasBusyCwd(cwd: string, exceptRunId?: string): boolean {

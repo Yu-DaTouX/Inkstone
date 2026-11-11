@@ -20,6 +20,7 @@ export const VIDEO_EXPORT_INSTALL_HINT =
   'winget install Gyan.FFmpeg（或用环境变量 YAN_FFMPEG 指定 ffmpeg 可执行文件）'
 
 const LOAD_TIMEOUT_MS = 30_000
+const CHILD_EXIT_WAIT_MS = 1_500
 const STEP_TIMEOUT_MS = 20_000
 const SETTLE_MS = 200
 const TIMELINE_POLL_MS = 100
@@ -271,6 +272,10 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
     throw new VideoExportError('load-failed', '读不了这个 HTML 文件')
   }
   const url = prepared.url
+  if (input.signal?.aborted) {
+    htmlArtifactPreviews.release(url)
+    throw new VideoExportError('cancelled', '导出已取消')
+  }
   const tempPath = join(dirname(target), `.yan-export-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.mp4`)
 
   const win = new BrowserWindow({
@@ -297,6 +302,7 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
   })
 
   let child: ReturnType<typeof spawn> | null = null
+  let childExited: Promise<unknown> | null = null
   const killChild = (): void => {
     if (!child) return
     try {
@@ -305,19 +311,30 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
       child = null
     }
   }
-  const onAbort = (): void => killChild()
+  let rejectCancelled: (reason: VideoExportError) => void = () => undefined
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    rejectCancelled = reject
+  })
+  void cancelled.catch(() => undefined)
+  const unlessCancelled = <T>(work: Promise<T>): Promise<T> => Promise.race([work, cancelled])
+  const bounded = <T>(work: Promise<T>, code: VideoExportErrorCode, label: string, ms: number): Promise<T> =>
+    unlessCancelled(within(work, code, label, ms))
+  const onAbort = (): void => {
+    killChild()
+    rejectCancelled(new VideoExportError('cancelled', '导出已取消'))
+  }
   input.signal?.addEventListener('abort', onAbort)
 
   try {
-    await within(win.loadURL(url), 'load-failed', 'load', LOAD_TIMEOUT_MS)
+    await bounded(win.loadURL(url), 'load-failed', 'load', LOAD_TIMEOUT_MS)
     throwIfCancelled()
-    await within(
+    await bounded(
       win.webContents.executeJavaScript('(document.fonts ? document.fonts.ready.then(() => true) : Promise.resolve(true))', true),
       'capture-failed',
       'fonts',
       STEP_TIMEOUT_MS
     ).catch(() => true)
-    const composition = await waitForComposition(win)
+    const composition = await unlessCancelled(waitForComposition(win))
     throwIfCancelled()
     const frames = exportFrameCount(composition.duration, fps)
     if (!exportWithinLimits(frames, fps)) {
@@ -337,7 +354,7 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
       scale: 1
     })
     win.webContents.setZoomFactor(size.zoom)
-    await delay(SETTLE_MS)
+    await unlessCancelled(delay(SETTLE_MS))
     throwIfCancelled()
 
     child = spawn(ffmpeg, ffmpegEncodeArgs({ fps, outPath: tempPath }), { stdio: ['pipe', 'ignore', 'pipe'], windowsHide: true })
@@ -351,6 +368,7 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
       child?.once('error', (error: Error) => resolve({ code: null, error }))
       child?.once('close', (code: number | null) => resolve({ code }))
     })
+    childExited = exited
 
     const writeFrame = (png: Buffer): Promise<void> =>
       new Promise<void>((resolve, reject) => {
@@ -372,13 +390,13 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
     input.onProgress?.({ frame: 0, total: frames })
     for (let index = 0; index < frames; index++) {
       throwIfCancelled()
-      await within(
+      await bounded(
         win.webContents.executeJavaScript(videoSeekScript(composition.id, index / fps), true),
         'capture-failed',
         'seek',
         STEP_TIMEOUT_MS
       )
-      const image = await within(
+      const image = await bounded(
         win.webContents.capturePage({ x: 0, y: 0, width: size.width, height: size.height }),
         'capture-failed',
         'capture',
@@ -391,12 +409,13 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
           ? image.toPNG()
           : image.resize({ width: size.width, height: size.height, quality: 'best' }).toPNG()
       if (!png.length) throw new VideoExportError('capture-failed', `第 ${index + 1} 帧截图为空`)
-      await writeFrame(png)
+      await unlessCancelled(writeFrame(png))
       input.onProgress?.({ frame: index + 1, total: frames })
     }
     throwIfCancelled()
     stdin?.end()
-    const exit = await exited
+    const exit = await unlessCancelled(exited)
+    throwIfCancelled()
     if (exit.error) throw new VideoExportError('encode-failed', `FFmpeg 启动失败：${exit.error.message}`)
     if (exit.code !== 0) {
       const tail = stderr.trim().split('\n').slice(-2).join(' ')
@@ -405,6 +424,7 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
     child = null
     const written = await stat(tempPath).catch(() => null)
     if (!written || written.size <= 0) throw new VideoExportError('output-failed', 'FFmpeg 没有写出文件')
+    throwIfCancelled()
     const finalPath = uniqueVideoPath(target, existsSync)
     await rename(tempPath, finalPath)
     const bytes = (await stat(finalPath).catch(() => null))?.size ?? written.size
@@ -430,6 +450,7 @@ async function runVideoExport(input: VideoExportInput): Promise<VideoExportOutpu
     killChild()
     htmlArtifactPreviews.release(url)
     if (!win.isDestroyed()) win.destroy()
+    if (childExited) await Promise.race([childExited, delay(CHILD_EXIT_WAIT_MS)])
     await unlink(tempPath).catch(() => undefined)
   }
 }

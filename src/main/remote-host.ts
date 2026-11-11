@@ -26,6 +26,7 @@ import { readChanges } from './git-inspect'
 import { listRefs, readRepoSnapshot, resolveRepo } from './git-service'
 import { runGitAction } from './git-actions'
 import { setSessionFlags } from './session-layout'
+import { closeBrowserForSessions } from './session-browser-cleanup'
 import { searchSessionText } from './session-search'
 import { deleteSessionChain } from './session-delete'
 import { randomUUID } from 'node:crypto'
@@ -903,6 +904,7 @@ export async function remoteSetSessionFlag(sessionId: string, flags: { pinned?: 
   }
   try {
     await setSessionFlags({ sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd }, flags)
+    if (flags.archived === true) await closeBrowserForSessions([summary.id], { skip: (id) => host.runners()?.sessionHasPendingWork(id) ?? false })
   } catch (error) {
     return { ok: false, status: 500, error: error instanceof Error ? error.message : String(error) }
   }

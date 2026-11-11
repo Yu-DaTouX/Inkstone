@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, writeFile, symlink } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { EventEmitter } from 'node:events'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import ts from 'typescript'
@@ -32,7 +33,7 @@ async function check(name, fn) {
   try { await fn(); passed++; console.log(`PASS ${name}`) }
   catch (error) { failures.push({ name, error: String(error.stack ?? error) }); console.error(`FAIL ${name}: ${error.message}`) }
 }
-function harness({ fetchFails = false, dnsFails = false, fetchGate } = {}) {
+function harness({ fetchFails = false, dnsFails = false, fetchGate, spawnError } = {}) {
   const calls = []
   const channels = []
   class RawCdp {
@@ -48,12 +49,12 @@ function harness({ fetchFails = false, dnsFails = false, fetchGate } = {}) {
     }
   }
   class Stub { async start() {} dispose() {} }
-  const chrome = { once() {} }
+  const chrome = new EventEmitter()
   const deps = {
     pick: zh => zh, safeUrl: value => value, INITIAL_URL: 'about:blank', pickFreePort: async () => 1234,
     defaultProfileDir: () => join(dir, 'profile'), YAN_DIR: dir, mkdir,
-    launchChrome: opts => { calls.push(['launch', opts]); return chrome },
-    waitForCdp: async () => {}, listTargets: async () => [{ id: 'p1', url: 'about:blank', title: '', webSocketDebuggerUrl: 'ws://fake' }],
+    launchChrome: opts => { calls.push(['launch', opts]); if (spawnError) setTimeout(() => chrome.emit('error', spawnError), 5); return chrome },
+    waitForCdp: () => spawnError ? new Promise(() => {}) : Promise.resolve(), listTargets: async () => [{ id: 'p1', url: 'about:blank', title: '', webSocketDebuggerUrl: 'ws://fake' }],
     pickPageTarget: targets => targets[0], RawCdp, ElementRegistry: Stub, Observer: Stub, InputController: Stub, NetworkTracker: Stub,
     stopChrome: value => calls.push(['stop', value]), runBrowserScript, ScriptError,
     decideExternalRequest: () => 'check-dns'
@@ -143,6 +144,23 @@ await check('Chrome guard failure closes process and never navigates', async () 
   assert.ok(!calls.some(c => c[0] === 'Page.navigate'))
   assert.equal(host.external, null)
   assert.notEqual(host.externalBoundaryCdp, channels[0])
+})
+await check('Chrome spawn error returns a failure instead of an uncaught exception', async () => {
+  const uncaught = []
+  const onUncaught = error => uncaught.push(error)
+  process.on('uncaughtException', onUncaught)
+  try {
+    const spawnError = Object.assign(new Error('spawn chrome ENOENT'), { code: 'ENOENT' })
+    const { host, calls } = harness({ spawnError })
+    const result = await host.openExternalChromeImpl('https://example.com/')
+    assert.equal(result.ok, false)
+    assert.match(result.error, /ENOENT/)
+    assert.ok(calls.some(c => c[0] === 'stop'))
+    assert.equal(host.external, null)
+    assert.ok(!calls.some(c => c[0] === 'Page.navigate'))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.deepEqual(uncaught, [])
+  } finally { process.off('uncaughtException', onUncaught) }
 })
 await check('Chrome guard failure can retry same channel', async () => {
   const { host, calls, RawCdp } = harness({ fetchFails: true })

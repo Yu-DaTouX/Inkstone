@@ -25,6 +25,7 @@ import { translateText } from '../translate'
 import { archivedCompressionStatus, compressArchivedSessions, COMPRESS_SWEEP_INTERVAL_MS } from '../session-compress'
 import { readUsageStatsOffThread } from '../usage-stats-host'
 import { deleteSessionChain } from '../session-delete'
+import { closeBrowserForSessions } from '../session-browser-cleanup'
 import { isolationCwdKey } from '../session-isolation'
 import { pick } from '../../shared/ui-lang'
 
@@ -349,6 +350,8 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     return summary ? { path: summary.path, cwd: summary.cwd } : undefined
   }
 
+  const sessionBusy = (sessionId: string): boolean => host.runners()?.sessionHasPendingWork(sessionId) ?? false
+
   function scheduleAutoArchiveSweep(): void {
     const sweep = async (): Promise<void> => {
       try {
@@ -359,7 +362,11 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
           sessions: await filterChainRepresentatives(await listSessions(Number.MAX_SAFE_INTEGER, settings.projects)),
           days,
           busyFiles: (host.runners()?.statuses() ?? []).map((runner) => runner.sessionFile),
-          archive: (ids) => archiveSessionsBatch(ids)
+          archive: async (ids) => {
+            const changed = await archiveSessionsBatch(ids)
+            await closeBrowserForSessions(ids, { skip: sessionBusy })
+            return changed
+          }
         })
       } catch {
         return
@@ -394,6 +401,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     if (!target) return { ok: false, error: pick('找不到这条会话', 'Session not found') }
     try {
       await setSessionFlags({ sessionId, sessionFile: target.path, cwd: target.cwd }, flags)
+      if (flags.archived === true) await closeBrowserForSessions([sessionId], { skip: sessionBusy })
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

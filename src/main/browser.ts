@@ -44,6 +44,8 @@ import { SCRIPT_GUIDE, ScriptError, runBrowserScript, type ScriptResult } from '
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { PrivateDnsGuard } from './browser/network-policy'
+import { closeAllLocalFileServers } from './browser/local-file-server'
+import { MAX_TABS_PER_SESSION, POPUP_NOTICE_INTERVAL_MS, SessionClosedError, TabQuotaError } from './browser/tab-quota'
 import { isForbiddenOrigin, normalizeSiteOrigin } from './preview-site-access'
 import { decideRequestBoundary } from './browser/network-boundary'
 import { decideExternalRequest } from './browser/external-boundary'
@@ -210,6 +212,7 @@ export interface BrowserHostTransferResult {
   transfer?: BrowserHostTransfer
 }
 
+
 export class BrowserController {
   private readonly tabs = new Map<string, BrowserTab>()
   private readonly hostTransfers = new Map<
@@ -222,6 +225,8 @@ export class BrowserController {
     }
   >()
   private readonly sessionScope = new SessionScope()
+  private readonly popupNoticeAt = new Map<string, number>()
+  private readonly sessionEpochs = new Map<string, number>()
   private ambientFocusSessionId = 'workspace'
   private get focusSessionId(): string {
     return this.sessionScope.current() ?? this.ambientFocusSessionId
@@ -310,15 +315,18 @@ export class BrowserController {
 
   private ensureNetworkGuard(): Promise<void> {
     if (!this.networkGuard) {
-      this.networkGuard = attachPinnedNetworkGuard(session.fromPartition('persist:yan-browser'), 'https://example.com/')
+      const attempt: Promise<void> = attachPinnedNetworkGuard(session.fromPartition('persist:yan-browser'), 'https://example.com/')
         .then((result) => {
           if (result.status === 'attached') return
+          if (this.networkGuard === attempt) this.networkGuard = null
           const detail = result.status === 'failed' ? result.message : result.status
           this.pushError(pick(`内置浏览器连接防护未启用：${detail}`, `Embedded browser connection guard unavailable: ${detail}`))
         })
         .catch((error) => {
+          if (this.networkGuard === attempt) this.networkGuard = null
           this.pushError(pick(`内置浏览器连接防护未启用：${error instanceof Error ? error.message : String(error)}`, `Embedded browser connection guard unavailable: ${error instanceof Error ? error.message : String(error)}`))
         })
+      this.networkGuard = attempt
     }
     return this.networkGuard
   }
@@ -432,7 +440,49 @@ export class BrowserController {
     return tab ? { cdp: tab.cdp, registry: tab.registry, observer: tab.observer, input: tab.input, network: tab.network } : null
   }
 
+  private assertTabQuota(sessionId: string): void {
+    let count = 0
+    for (const tab of this.tabs.values()) if (tab.sessionId === sessionId) count += 1
+    if (count >= MAX_TABS_PER_SESSION) throw new TabQuotaError()
+  }
+
+  private sessionEpoch(sessionId: string): number {
+    return this.sessionEpochs.get(sessionId) ?? 0
+  }
+
+  private assertSessionEpoch(sessionId: string, epoch: number): void {
+    if (this.sessionEpoch(sessionId) !== epoch) throw new SessionClosedError()
+  }
+
+  private reportBackgroundTabFailure(sessionId: string, error: unknown): void {
+    if (error instanceof SessionClosedError) return
+    if (error instanceof TabQuotaError) {
+      const now = Date.now()
+      const last = this.popupNoticeAt.get(sessionId)
+      if (last !== undefined && now - last < POPUP_NOTICE_INTERVAL_MS) return
+      this.popupNoticeAt.set(sessionId, now)
+    }
+    this.pushError(pick(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`, `Cannot open background tab: ${error instanceof Error ? error.message : String(error)}`))
+  }
+
+  private handleWindowOpen(tab: BrowserTab, rawUrl: string): { action: 'deny' } {
+    const target = safeUrl(rawUrl)
+    if (target) {
+      try {
+        this.assertTabQuota(tab.sessionId)
+      } catch (error) {
+        this.reportBackgroundTabFailure(tab.sessionId, error)
+        return { action: 'deny' }
+      }
+      void this.openBackgroundTab(target, tab.committedUrl || tab.openerUrl, tab.sessionId).catch((error) =>
+        this.reportBackgroundTabFailure(tab.sessionId, error)
+      )
+    }
+    return { action: 'deny' }
+  }
+
   private createTab(sessionId: string = this.focusSessionId): BrowserTab {
+    this.assertTabQuota(sessionId)
     const view = new WebContentsView({
       webPreferences: {
         contextIsolation: true,
@@ -529,15 +579,7 @@ export class BrowserController {
       }
       this.updateState()
     })
-    view.webContents.setWindowOpenHandler(({ url }) => {
-      const target = safeUrl(url)
-      if (target) {
-        void this.openBackgroundTab(target, tab.committedUrl || tab.openerUrl, tab.sessionId).catch((error) =>
-          this.pushError(pick(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`, `Cannot open background tab: ${error instanceof Error ? error.message : String(error)}`))
-        )
-      }
-      return { action: 'deny' }
-    })
+    view.webContents.setWindowOpenHandler(({ url }) => this.handleWindowOpen(tab, url))
     view.webContents.on('will-navigate', (event, url) => this.guardNavigation(event, url))
     view.webContents.on('will-redirect', (event, url) => this.guardNavigation(event, url))
     view.webContents.debugger.on('message', (_event, method) => {
@@ -685,7 +727,10 @@ export class BrowserController {
   async open(url = INITIAL_URL, waitForLoad = true): Promise<BrowserState> {
     const next = safeUrl(url)
     if (!next) throw new Error(pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened'))
+    const sessionId = this.focusSessionId
+    const epoch = this.sessionEpoch(sessionId)
     await this.ensureNetworkGuard()
+    this.assertSessionEpoch(sessionId, epoch)
     this.activeMode = 'embedded'
     let tab = this.activeTab()
     if (!tab) {
@@ -719,7 +764,9 @@ export class BrowserController {
   private async openBackgroundTab(rawUrl: string, openerUrl: string, sessionId: string): Promise<void> {
     const url = safeUrl(rawUrl)
     if (!url) return
+    const epoch = this.sessionEpoch(sessionId)
     await this.ensureNetworkGuard()
+    this.assertSessionEpoch(sessionId, epoch)
     const tab = this.createTab(sessionId)
     const win = this.getWindow()
     if (win) {
@@ -749,7 +796,10 @@ export class BrowserController {
       else await this.navigateExternal(url)
       return this.getState()
     }
+    const sessionId = this.focusSessionId
+    const epoch = this.sessionEpoch(sessionId)
     await this.ensureNetworkGuard()
+    this.assertSessionEpoch(sessionId, epoch)
     const tab = this.createTab()
     this.activeTabId = tab.id
     const win = this.getWindow()
@@ -840,11 +890,13 @@ export class BrowserController {
     return this.getState()
   }
 
-  async closeSession(sessionId: string): Promise<BrowserState> {
+  async closeSession(sessionId: string, options: { keepExternal?: boolean } = {}): Promise<BrowserState> {
+    this.sessionEpochs.set(sessionId, this.sessionEpoch(sessionId) + 1)
     const ids = [...this.tabs.values()].filter((tab) => tab.sessionId === sessionId).map((tab) => tab.id)
     for (const id of ids) await this.closeTab(id, { silent: true })
     this.activeBySession.delete(sessionId)
-    if (this.focusSessionId === sessionId) await this.closeExternalChrome()
+    this.popupNoticeAt.delete(sessionId)
+    if (!options.keepExternal && this.focusSessionId === sessionId) await this.closeExternalChrome()
     this.updateState()
     return this.getState(sessionId)
   }
@@ -1066,7 +1118,15 @@ export class BrowserController {
         url: INITIAL_URL,
         headless: process.env.YAN_CHROME_HEADLESS === '1'
       })
-      await waitForCdp(port, 20_000)
+      const launched = chrome
+      let failLaunch: (error: Error) => void = () => undefined
+      const launchFailure = new Promise<never>((_resolve, reject) => { failLaunch = reject })
+      void launchFailure.catch(() => undefined)
+      launched.on('error', (error) => {
+        if (this.external?.chrome === launched) void this.closeExternalChrome()
+        failLaunch(error)
+      })
+      await Promise.race([waitForCdp(port, 20_000), launchFailure])
       const page = pickPageTarget(await listTargets(port))
       if (!page?.webSocketDebuggerUrl) throw new Error(pick('Chrome 已启动，但没有可调试的页面目标', 'Chrome started, but there is no debuggable page target'))
 
@@ -1500,7 +1560,11 @@ export class BrowserController {
   }
 
   async dispose(): Promise<void> {
-    await this.close()
+    try {
+      await this.close()
+    } finally {
+      await closeAllLocalFileServers()
+    }
   }
 
   async observe(): Promise<BrowserObservation> {

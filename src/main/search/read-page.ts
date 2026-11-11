@@ -4,6 +4,7 @@ import { HiddenPageCancelled, HiddenPageTimeout, sleepUnlessAborted, withHiddenP
 import { fetchPublicPage } from './public-page'
 import { parseWebContent } from './web-content'
 
+const PROBE = `(() => ({ textLength: document.body?.innerText.length || 0, state: document.readyState, finalUrl: location.href }))()`
 const EXTRACT = `(() => ({ title: document.title || '', finalUrl: location.href, html: document.documentElement.outerHTML.slice(0, 2000001), text: document.body?.innerText || '', state: document.readyState }))()`
 
 export async function readPage(
@@ -50,7 +51,8 @@ export async function readPage(
         if (!/ERR_ABORTED/.test(e.message)) loadError = e.message
       })
       type Snapshot = { title: string; finalUrl: string; text: string; html?: string; state: string }
-      let last = null as Snapshot | null
+      type Probe = { textLength: number; finalUrl: string; state: string }
+      let last = null as Probe | null
       let stable = 0
       let prevLen = -1
       for (;;) {
@@ -58,17 +60,18 @@ export async function readPage(
         if (loadError) throw new ReadPageError('network_error', loadError)
         if (status >= 400) throw new ReadPageError('http_error', `网页返回 HTTP ${status}，未取得正文`)
         try {
-          last = (await win.webContents.executeJavaScript(EXTRACT)) as Snapshot
+          last = (await win.webContents.executeJavaScript(PROBE)) as Probe
         } catch {
         }
-        if (last && last.text.length > 0 && last.finalUrl !== 'about:blank') {
-          stable = last.text.length === prevLen ? stable + 1 : 0
-          prevLen = last.text.length
+        if (last && last.textLength > 0 && last.finalUrl !== 'about:blank') {
+          stable = last.textLength === prevLen ? stable + 1 : 0
+          prevLen = last.textLength
           if (last.state === 'complete' || stable >= 4) break
         }
         await sleepUnlessAborted(400, browserSignal)
       }
-      const done = last as Snapshot
+      if (browserSignal.aborted) throw new HiddenPageTimeout(timeoutMs)
+      const done = (await win.webContents.executeJavaScript(EXTRACT)) as Snapshot
       const extracted = done.html ? await parseWebContent({ kind: 'html', html: done.html, url: done.finalUrl }, signal) : { title: done.title, text: done.text }
       if (staticPage && staticPage.text.length > extracted.text.length) return staticPage
       return finish({

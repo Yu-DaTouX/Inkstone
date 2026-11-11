@@ -4,6 +4,12 @@ import type { SessionHost } from './session-host'
 import { deleteSession, restoreSession, sessionsToDelete } from './sessions'
 import { planHistoryRead } from '../shared/session-chain'
 import { closeTerminalsForOwner } from './terminal'
+import { closeBrowserForSessions } from './session-browser-cleanup'
+
+function pathKey(file: string): string {
+  const resolved = resolve(file)
+  return process.platform === 'win32' ? resolved.replace(/\\/g, '/').toLowerCase() : resolved
+}
 
 function friendlyDeleteError(error: unknown): string {
   const code = (error as { code?: string } | null)?.code ?? (error instanceof Error && error.cause ? (error.cause as { code?: string }).code : undefined)
@@ -20,7 +26,17 @@ export async function deleteSessionChain(host: SessionHost, path: string): Promi
     const chain = host.sessionChains.chainOf(path)
     const targets = chain && chain.segments.length > 1 ? planHistoryRead(chain) : [path]
     const affected = new Set<string>(targets.map((target) => resolve(target)))
-    for (const item of await sessionsToDelete(resolve(path)).catch(() => [])) affected.add(item.path)
+    const sessionIds = new Set<string>()
+    for (const target of new Set([resolve(path), ...targets.map((item) => resolve(item))])) {
+      for (const item of await sessionsToDelete(target).catch(() => [])) {
+        affected.add(item.path)
+        if (item.sessionId) sessionIds.add(item.sessionId)
+      }
+    }
+    const affectedKeys = new Set([...affected].map(pathKey))
+    for (const status of host.runners()?.statuses?.() ?? []) {
+      if (status.sessionId && status.sessionFile && affectedKeys.has(pathKey(status.sessionFile))) sessionIds.add(status.sessionId)
+    }
     const current = host.ac()?.getState()?.sessionFile
     if (current && affected.has(resolve(current))) {
       return { ok: false, error: pick('不能删除当前正在使用的会话', 'Cannot delete the session in use') }
@@ -30,6 +46,7 @@ export async function deleteSessionChain(host: SessionHost, path: string): Promi
       tokens.push(await deleteSession(target, host.ac()?.getState()?.sessionFile))
     }
     for (const target of targets) closeTerminalsForOwner(target)
+    await closeBrowserForSessions(sessionIds)
     await host.sessionChains.forget(path).catch(() => false)
     host.pushRunners()
     return { ok: true, undoToken: tokens.join('|') }

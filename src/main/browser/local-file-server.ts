@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { closeSync, createReadStream, openSync, readSync, realpathSync, statSync } from 'node:fs'
+import { pipeline } from 'node:stream'
 import { declaredHtmlCharset } from '../html-charset'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
@@ -127,7 +128,7 @@ function startRoot(root: string): Promise<LocalRoot> {
         'cache-control': 'no-store'
       })
       if (req.method === 'HEAD') res.end()
-      else createReadStream(target).pipe(res)
+      else pipeline(createReadStream(target), res, () => undefined)
     } catch {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('not found')
     }
@@ -182,4 +183,19 @@ export async function serveLocalFile(path: string, cwd?: string): Promise<string
   const served = await pending
   const segments = relative(served.root, entry).split(sep).map(encodeURIComponent).join('/')
   return `${served.origin}${served.prefix}/${segments}`
+}
+
+export async function closeAllLocalFileServers(): Promise<void> {
+  const pending = [...roots.values()]
+  roots.clear()
+  await Promise.all(pending.map(async (entry) => {
+    try {
+      const { server } = await entry
+      await new Promise<void>((done) => {
+        server.close(() => done())
+        server.closeAllConnections()
+      })
+    } catch {
+    }
+  }))
 }

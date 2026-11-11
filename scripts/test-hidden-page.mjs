@@ -11,9 +11,15 @@ export class BrowserWindow {
       id: 1,
       on: (event, listener) => { this.listeners[event] = listener },
       setWindowOpenHandler() {},
-      executeJavaScript: async () => {
+      executeJavaScript: async (script) => {
         globalThis.__hiddenJsCalls = (globalThis.__hiddenJsCalls ?? 0) + 1
-        return globalThis.__hiddenResult ?? { title: '', finalUrl: 'about:blank', text: '', state: 'loading' }
+        const result = globalThis.__hiddenResult ?? { title: '', finalUrl: 'about:blank', text: '', state: 'loading' }
+        if (String(script).includes('textLength')) {
+          globalThis.__hiddenProbeCalls = (globalThis.__hiddenProbeCalls ?? 0) + 1
+          return { textLength: result.text.length, state: result.state, finalUrl: result.finalUrl }
+        }
+        globalThis.__hiddenExtractCalls = (globalThis.__hiddenExtractCalls ?? 0) + 1
+        return result
       }
     }
   }
@@ -237,13 +243,42 @@ export async function runHiddenPageTests(ok) {
   }
 
     ok(globalThis.__hiddenGuardCalls >= 1 && globalThis.__hiddenGuardCalls <= 2, '隐藏页反复开关不重复 attach 分区 guard')
+    {
+      globalThis.__hiddenProbeCalls = 0
+      globalThis.__hiddenExtractCalls = 0
+      globalThis.__hiddenResult = { title: 'T', finalUrl: 'https://example.com/poll', text: 'x'.repeat(300), state: 'loading' }
+      const stableRead = await reader.readPage('https://example.com/poll', { timeoutMs: 8_000 })
+      ok(stableRead.text.length > 0, '文本长度稳定后读取成功')
+      ok(globalThis.__hiddenProbeCalls >= 5, '轮询用轻量探测直到稳定', String(globalThis.__hiddenProbeCalls))
+      ok(globalThis.__hiddenExtractCalls === 1, '完整 html/text 只在稳定后提取一次', String(globalThis.__hiddenExtractCalls))
+    }
+    {
+      globalThis.__hiddenGuardFail = true
+      const retrying = await bundle('src/main/search/hidden-page.ts', 'hidden-page-guard-retry.mjs')
+      const before = globalThis.__hiddenGuardCalls
+      const external = new AbortController()
+      let added = 0
+      let removed = 0
+      const signal = external.signal
+      const addListener = signal.addEventListener.bind(signal)
+      const removeListener = signal.removeEventListener.bind(signal)
+      signal.addEventListener = (...args) => { added++; return addListener(...args) }
+      signal.removeEventListener = (...args) => { removed++; return removeListener(...args) }
+      const first = await retrying.withHiddenPage(100, async () => 'x', signal).catch((error) => error)
+      ok(String(first?.message).includes('隐藏页连接防护未启用'), '防护失败第一次 fail closed')
+      ok(added > 0 && removed >= added, 'ensure 失败时摘掉外部 abort 监听', `${added}/${removed}`)
+      globalThis.__hiddenGuardFail = false
+      const second = await retrying.withHiddenPage(100, async () => 'again')
+      ok(second === 'again', '防护失败不被永久缓存：下一次调用重新附着并成功')
+      ok(globalThis.__hiddenGuardCalls >= before + 2, '失败后重新尝试附着', `${before} → ${globalThis.__hiddenGuardCalls}`)
+    }
     globalThis.__hiddenGuardFail = true
     const failingGuard = await bundle('src/main/search/hidden-page.ts', 'hidden-page-guard-fail.mjs')
     const guardError = await failingGuard.withHiddenPage(100, async () => 'x').catch((error) => error)
     ok(String(guardError?.message).includes('隐藏页连接防护未启用'), '隐藏页 guard 初始化失败时 fail closed 并报可见原因')
     globalThis.__hiddenGuardFail = false
   } finally {
-    for (const key of ['__hiddenResult', '__hiddenJsCalls', '__hiddenBeforeRequest', '__hiddenPartitions', '__hiddenStatus', '__hiddenBoundaryError', '__hiddenPermissionRequest', '__hiddenPermissionCheck', '__hiddenDnsFail', '__hiddenGuardCalls', '__hiddenGuardFail']) delete globalThis[key]
+    for (const key of ['__hiddenResult', '__hiddenJsCalls', '__hiddenBeforeRequest', '__hiddenPartitions', '__hiddenStatus', '__hiddenBoundaryError', '__hiddenPermissionRequest', '__hiddenPermissionCheck', '__hiddenDnsFail', '__hiddenGuardCalls', '__hiddenGuardFail', '__hiddenProbeCalls', '__hiddenExtractCalls']) delete globalThis[key]
     await rm(temp, { recursive: true, force: true })
   }
 }

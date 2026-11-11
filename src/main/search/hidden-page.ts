@@ -38,11 +38,17 @@ let hiddenNetworkGuard: Promise<void> | null = null
 
 function ensureHiddenNetworkGuard(): Promise<void> {
   if (!hiddenNetworkGuard) {
-    hiddenNetworkGuard = attachPinnedNetworkGuard(session.fromPartition(HIDDEN_PARTITION), 'https://example.com/').then((result) => {
-      if (result.status === 'attached') return
-      const detail = result.status === 'failed' ? result.message : result.status
-      throw new Error(pick(`隐藏页连接防护未启用：${detail}`, `Hidden page connection guard is not enabled: ${detail}`))
-    })
+    const attempt: Promise<void> = attachPinnedNetworkGuard(session.fromPartition(HIDDEN_PARTITION), 'https://example.com/')
+      .then((result) => {
+        if (result.status === 'attached') return
+        const detail = result.status === 'failed' ? result.message : result.status
+        throw new Error(pick(`隐藏页连接防护未启用：${detail}`, `Hidden page connection guard is not enabled: ${detail}`))
+      })
+      .catch((error) => {
+        if (hiddenNetworkGuard === attempt) hiddenNetworkGuard = null
+        throw error
+      })
+    hiddenNetworkGuard = attempt
   }
   return hiddenNetworkGuard
 }
@@ -65,7 +71,12 @@ export async function withHiddenPage<T>(
   }
   if (external?.aborted) cancel()
   else external?.addEventListener('abort', cancel, { once: true })
-  await ensureHiddenNetworkGuard()
+  try {
+    await ensureHiddenNetworkGuard()
+  } catch (error) {
+    external?.removeEventListener('abort', cancel)
+    throw error
+  }
   const win = new BrowserWindow({
     show: false,
     width: 1100,

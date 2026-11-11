@@ -63,6 +63,9 @@ export function registerVideoExportIpc(ipc: IpcRegistrar, deps: VideoExportIpcDe
     const controller = new AbortController()
     jobs.set(id, controller)
     const sender = event.sender
+    const onSenderDestroyed = (): void => controller.abort()
+    if (sender.isDestroyed()) controller.abort()
+    else sender.once('destroyed', onSenderDestroyed)
     try {
       const result = await exportVideo({
         htmlPath: target,
@@ -92,6 +95,7 @@ export function registerVideoExportIpc(ipc: IpcRegistrar, deps: VideoExportIpcDe
       const detail = error instanceof Error ? error.message : String(error)
       return failure(id, ERROR_CODES.includes(code) ? code : 'failed', detail)
     } finally {
+      if (!sender.isDestroyed()) sender.removeListener('destroyed', onSenderDestroyed)
       jobs.delete(id)
     }
   })
