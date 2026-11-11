@@ -61,6 +61,17 @@ function readLegacyMcpServices(agent: AgentController): Array<{ serverId: string
   }
 }
 
+interface StoppingRunner {
+  id: string
+  cwd: string
+  sessionId?: string
+  sessionFile?: string
+  done: Promise<void>
+  finish: () => void
+}
+
+const STOP_WAIT_MS = 20_000
+
 interface Runner {
   id: string
   agent: AgentController
@@ -109,6 +120,7 @@ export interface SelectResult {
 
 export class RunnerRegistry {
   private runners = new Map<string, Runner>()
+  private stopping = new Set<StoppingRunner>()
   private activeId: string | null = null
   private seq = 0
   private selectTail: Promise<void> = Promise.resolve()
@@ -224,6 +236,7 @@ export class RunnerRegistry {
       resolveCwdConflict?: (target: SelectTarget) => Promise<{ cwd: string } | { reason: string } | null>
       isolationOf?: (cwd: string) => { state: 'waiting' | 'ready' | 'blocked'; branch: string } | undefined
       sharesCwd?: (cwd: string) => boolean
+      stopWaitMs?: number
     }
   ) {}
 
@@ -269,6 +282,7 @@ export class RunnerRegistry {
           busy: this.busy(runner) || this.awaitingTerminal(runner),
           busyCwd: this.hasBusyCwd(runner.cwd, runner.id),
           ready: runner.agent.getConn().state === 'ready',
+          dead: !agentAlive(runner.agent),
           saved: !!state?.sessionFile,
           queued: queue.steering.length > 0 || queue.followUp.length > 0,
           visible: this.opts.isSessionVisible?.(state) ?? true,
@@ -276,7 +290,7 @@ export class RunnerRegistry {
           restarting: this.restartOperations.has(runner.id),
           lastActiveAt: runner.lastActiveAt
         }
-        if (facts.active || facts.busy || facts.busyCwd || facts.queued || facts.visible || facts.parentProtected || facts.restarting || !facts.ready) {
+        if (facts.active || facts.busy || facts.busyCwd || facts.queued || facts.visible || facts.parentProtected || facts.restarting || (!facts.ready && !facts.dead)) {
           runner.lastActiveAt = now
         }
         if (!canReclaimIdle(facts, now)) continue
@@ -393,10 +407,80 @@ export class RunnerRegistry {
   }
 
   private findBySessionFile(sessionFile: string): Runner | undefined {
+    const key = canonicalCwd(sessionFile)
     for (const r of this.runners.values()) {
-      if (r.agent.getState()?.sessionFile === sessionFile) return r
+      const file = r.agent.getState()?.sessionFile
+      if (file && canonicalCwd(file) === key) return r
     }
     return undefined
+  }
+
+  private findStoppingBySessionFile(sessionFile: string): StoppingRunner | undefined {
+    const key = canonicalCwd(sessionFile)
+    for (const entry of this.stopping) {
+      if (entry.sessionFile && canonicalCwd(entry.sessionFile) === key) return entry
+    }
+    return undefined
+  }
+
+  private beginStop(runner: Runner): StoppingRunner {
+    const state = runner.agent.getState()
+    let finish: () => void = () => undefined
+    const done = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const entry: StoppingRunner = {
+      id: runner.id,
+      cwd: runner.cwd,
+      sessionId: state?.sessionId,
+      sessionFile: state?.sessionFile,
+      done,
+      finish
+    }
+    this.stopping.add(entry)
+    return entry
+  }
+
+  private async runStop(runner: Runner, entry: StoppingRunner): Promise<void> {
+    try {
+      await runner.agent.stop()
+    } catch {
+    } finally {
+      this.stopping.delete(entry)
+      entry.finish()
+    }
+  }
+
+  private stoppingFor(target: SelectTarget): StoppingRunner[] {
+    const file = target.sessionFile ? canonicalCwd(target.sessionFile) : undefined
+    const key = canonicalCwd(target.cwd)
+    const shared = this.sharesCwd(target.cwd)
+    return [...this.stopping].filter(
+      (entry) =>
+        (!!target.sessionId && entry.sessionId === target.sessionId) ||
+        (!!file && !!entry.sessionFile && canonicalCwd(entry.sessionFile) === file) ||
+        (!shared && canonicalCwd(entry.cwd) === key)
+    )
+  }
+
+  private async waitForStopping(target: SelectTarget): Promise<boolean> {
+    const deadline = Date.now() + (this.opts.stopWaitMs ?? STOP_WAIT_MS)
+    for (;;) {
+      const pending = this.stoppingFor(target)
+      if (pending.length === 0) return true
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) return false
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const timeout = new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), remaining)
+      })
+      try {
+        const settled = await Promise.race([Promise.all(pending.map((entry) => entry.done)).then(() => true as const), timeout])
+        if (!settled) return false
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
+    }
   }
 
   private findBySessionId(sessionId: string): Runner | undefined {
@@ -419,6 +503,11 @@ export class RunnerRegistry {
 
   async select(target: SelectTarget): Promise<SelectResult> {
     return this.serialize(() => this.selectNow(target))
+  }
+
+  private hasAdmission(runnerId: string): boolean {
+    this.pruneAdmissions()
+    return [...this.admissions.values()].some((claim) => claim.runId === runnerId)
   }
 
   private async relaunch(idle: Runner, target: SelectTarget): Promise<SelectResult> {
@@ -504,9 +593,20 @@ export class RunnerRegistry {
   }
 
   private async selectNow(target: SelectTarget): Promise<SelectResult> {
+    if (this.stoppingFor(target).length > 0) {
+      if (target.preview) return { ok: true, deferred: true, deferredReason: 'cwd-busy', sessionId: target.sessionId }
+      if (!(await this.waitForStopping(target))) {
+        return { ok: false, error: pick('该会话或同一工作目录的运行实例仍在停止中，请稍后再试', 'A runtime for this session or working folder is still stopping; try again shortly') }
+      }
+    }
+
     if (target.sessionId || target.sessionFile) {
       const hit = (target.sessionId && this.findBySessionId(target.sessionId)) ||
         (target.sessionFile ? this.findBySessionFile(target.sessionFile) : undefined)
+      if (hit && !agentAlive(hit.agent) && !this.busy(hit) && !this.hasAdmission(hit.id)) {
+        const sessionFile = target.sessionFile ?? hit.agent.getState()?.sessionFile
+        if (sessionFile) return this.relaunch(hit, { ...target, cwd: hit.cwd, sessionFile })
+      }
       if (hit) {
         hit.lastActiveAt = this.now()
         if (target.activate !== false) this.activateRunner(hit.id)
@@ -553,7 +653,7 @@ export class RunnerRegistry {
           !target.hidden &&
           !runner.hidden &&
           !this.busy(runner) &&
-          ![...this.admissions.values()].some((claim) => claim.runId === runner.id) &&
+          !this.hasAdmission(runner.id) &&
           !this.awaitingSubagents(runner) &&
           !this.awaitingTerminal(runner) &&
           (target.activate !== false || runner.id !== this.activeId)
@@ -584,6 +684,9 @@ export class RunnerRegistry {
         res = { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
       if (res.ok && !target.sessionFile && this.opts.prepareNewSession) res = await this.opts.prepareNewSession(idle.agent)
+      if (this.disposed || this.runners.get(idle.id) !== idle) {
+        return { ok: false, error: pick('运行实例在切换会话过程中被停止', 'Runtime was stopped while switching sessions') }
+      }
       if (!res.ok) {
         const currentFile = idle.agent.getState()?.sessionFile
         const stillOld = !!oldSessionFile && currentFile === oldSessionFile
@@ -775,21 +878,29 @@ export class RunnerRegistry {
 
   async stopOne(id: string, preserveSelection = false): Promise<boolean> {
     const r = this.runners.get(id)
-    if (!r) return false
+    if (!r) {
+      for (const entry of [...this.stopping]) {
+        if (entry.id === id) await entry.done
+      }
+      return false
+    }
+    const entry = this.beginStop(r)
     this.runners.delete(id)
     this.pruneAdmissions()
     if (this.activeId === id && !preserveSelection) this.activeId = null
-    try {
-      await r.agent.stop()
-    } catch {
-    }
+    await this.runStop(r, entry)
     this.opts.onChanged?.()
     return true
   }
 
   async stopBySessionFile(sessionFile: string): Promise<boolean> {
     const hit = this.findBySessionFile(sessionFile)
-    if (!hit) return false
+    if (!hit) {
+      const pending = this.findStoppingBySessionFile(sessionFile)
+      if (!pending) return false
+      await pending.done
+      return true
+    }
     return this.stopOne(hit.id)
   }
 
@@ -799,6 +910,7 @@ export class RunnerRegistry {
       .filter((r) => canonicalCwd(r.cwd) === normalized)
       .map((r) => r.id)
     for (const id of ids) await this.stopOne(id)
+    await Promise.all([...this.stopping].filter((entry) => canonicalCwd(entry.cwd) === normalized).map((entry) => entry.done))
     return ids.length
   }
 
@@ -806,16 +918,13 @@ export class RunnerRegistry {
     this.disposed = true
     if (this.reclaimTimer) clearInterval(this.reclaimTimer)
     this.reclaimTimer = undefined
-    const all = [...this.runners.values()]
+    const all = [...this.runners.values()].map((runner) => ({ runner, entry: this.beginStop(runner) }))
+    const earlier = [...this.stopping].filter((entry) => !all.some((item) => item.entry === entry))
     this.runners.clear()
     this.admissions.clear()
     this.activeId = null
-    for (const r of all) {
-      try {
-        await r.agent.stop()
-      } catch {
-      }
-    }
+    for (const { runner, entry } of all) await this.runStop(runner, entry)
+    await Promise.all(earlier.map((entry) => entry.done))
     this.opts.onChanged?.()
   }
 
@@ -841,7 +950,7 @@ export class RunnerRegistry {
     const key = canonicalCwd(cwd)
     return [...this.runners.values()].some(
       (runner) => runner.id !== exceptRunId && canonicalCwd(runner.cwd) === key && this.busy(runner)
-    )
+    ) || [...this.stopping].some((entry) => entry.id !== exceptRunId && canonicalCwd(entry.cwd) === key)
   }
 
   hasBusyWorkspace(cwd: string, exceptRunId?: string): boolean {

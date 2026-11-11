@@ -354,4 +354,31 @@ console.log('\n--- 12. 流式阶段：streaming.id 尚未进 messageIds，也要
   }
 }
 
+console.log('\n--- 9. MCP 关闭永不返回，stop 仍在总截止时间内关闭 rpc ---')
+{
+  const { ctl } = controller()
+  const { rpc, calls } = fakeRpc()
+  ctl.rpc = rpc
+  ctl.mcpManager = { close: () => new Promise(() => {}) }
+  const startedAt = Date.now()
+  await ctl.stop()
+  const elapsed = Date.now() - startedAt
+  check(calls.at(-1) === 'close', 'MCP 关闭挂起时 rpc.close 仍被调用', JSON.stringify(calls))
+  check(elapsed >= 9_000 && elapsed < 15_000, 'MCP 关闭只被有界等待（共享总截止时间）', `${elapsed}ms`)
+  check(ctl.mcpManager === undefined && ctl.rpc === null, '挂起的 MCP 与 rpc 引用都已释放')
+}
+
+console.log('\n--- 10. MCP 关闭正常时不额外等待 ---')
+{
+  const { ctl } = controller()
+  const { rpc, calls } = fakeRpc()
+  ctl.rpc = rpc
+  let closed = 0
+  ctl.mcpManager = { close: async () => { closed += 1 } }
+  const startedAt = Date.now()
+  await ctl.stop()
+  check(closed === 1 && calls.at(-1) === 'close', 'MCP 先关闭再关闭 rpc', JSON.stringify(calls))
+  check(Date.now() - startedAt < 1000, 'MCP 正常关闭时 stop 即刻返回', `${Date.now() - startedAt}ms`)
+}
+
 console.log(`\n退出落盘与排队恢复：${checks} 项通过`)

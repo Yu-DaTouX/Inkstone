@@ -9,6 +9,7 @@ export interface IdleReclaimFacts {
   busy: boolean
   busyCwd: boolean
   ready: boolean
+  dead?: boolean
   saved: boolean
   queued: boolean
   visible: boolean
@@ -18,7 +19,7 @@ export interface IdleReclaimFacts {
 }
 
 export function canReclaimIdle(facts: IdleReclaimFacts, now: number, afterMs = IDLE_RECLAIM_AFTER_MS): boolean {
-  return !facts.active && !facts.hidden && !facts.busy && !facts.busyCwd && facts.ready && facts.saved &&
+  return !facts.active && !facts.hidden && !facts.busy && !facts.busyCwd && (facts.ready || facts.dead === true) && facts.saved &&
     !facts.queued && !facts.visible && !facts.parentProtected && !facts.restarting &&
     Number.isFinite(facts.lastActiveAt) && now - facts.lastActiveAt >= afterMs
 }

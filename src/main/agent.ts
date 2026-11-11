@@ -181,6 +181,19 @@ const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
 const STOP_ABORT_TIMEOUT_MS = 5_000
 const STOP_ABORT_BASH_TIMEOUT_MS = 2_000
+const STOP_TOTAL_BUDGET_MS = 12_000
+
+async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, Math.max(0, ms))
+  })
+  try {
+    await Promise.race([work.then(() => undefined, () => undefined), timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
 type Push = (msg: MainPush) => void
 type ExtUiPush = Extract<MainPush, { ch: 'status' | 'widget' }>
@@ -5218,6 +5231,8 @@ export class AgentController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    const stopDeadline = Date.now() + STOP_TOTAL_BUDGET_MS
+    const stopRemaining = (): number => Math.max(0, stopDeadline - Date.now())
     this.stopping = true
     this.releaseExecutionAdmission()
     this.loopGuardContinuationVersion += 1
@@ -5226,8 +5241,8 @@ export class AgentController extends EventEmitter {
     const liveRpc = this.rpc
     if (liveRpc?.running && (this.agentRunning || this.state?.isStreaming || this.bash)) {
       if (this.turn.terminal === 'completed') this.turn.terminal = 'stopped'
-      await liveRpc.command('abort', {}, { timeoutMs: STOP_ABORT_TIMEOUT_MS }).catch(() => null)
-      await liveRpc.command('abort_bash', {}, { timeoutMs: STOP_ABORT_BASH_TIMEOUT_MS }).catch(() => null)
+      await liveRpc.command('abort', {}, { timeoutMs: Math.max(1, Math.min(STOP_ABORT_TIMEOUT_MS, stopRemaining())) }).catch(() => null)
+      await liveRpc.command('abort_bash', {}, { timeoutMs: Math.max(1, Math.min(STOP_ABORT_BASH_TIMEOUT_MS, stopRemaining())) }).catch(() => null)
     }
     this.nativeRuntime?.dispose()
     this.nativeRuntime = null
@@ -5239,9 +5254,12 @@ export class AgentController extends EventEmitter {
     this.mcpAppToolsSnapshot = undefined
     this.nativeWitness = null
     this.nativeWitnessPending = null
-    await this.mcpManager?.close().catch(() => undefined)
+    const closingMcp = this.mcpManager
     this.mcpManager = undefined
-    await this.closeRetiredMcpManagers()
+    const mcpClosing = (async (): Promise<void> => {
+      await closingMcp?.close().catch(() => undefined)
+      await this.closeRetiredMcpManagers()
+    })()
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
     this.streaming = null
@@ -5252,6 +5270,7 @@ export class AgentController extends EventEmitter {
     this.pushedOutText.clear()
     this.ui.rejectPendingHostUi('会话已关闭，问题请求已取消')
     this.ui.pending.clear()
+    await settleWithin(mcpClosing, stopRemaining())
     await this.rpc?.close()
     this.rpc = null
     await this.queueWrite.catch(() => undefined)
