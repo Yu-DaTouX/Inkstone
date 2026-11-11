@@ -28,7 +28,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     env:
-      PI_VERSION: '1.5.0'
+      PI_VERSION: '1.5.2'
     defaults:
       run:
         shell: bash
