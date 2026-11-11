@@ -14,7 +14,7 @@ import {
 } from '../terminal'
 import { noteTerminalUserInput } from '../terminal-agent'
 import { listProcessTree } from '../terminal-processes'
-import { clearFinishedTerminalJobs, listTerminalJobs, requestTerminalJobStop } from '../terminal-jobs'
+import { clearFinishedTerminalJobs, listTerminalJobs, markTerminalJobsStopping, requestTerminalJobStop } from '../terminal-jobs'
 import type { IpcRegistrar } from './registrar'
 
 export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string | undefined): void {
@@ -35,6 +35,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string
     const terminalId = String(id ?? '')
     const text = String(data ?? '')
     const cwd = readTerminal(terminalId)?.cwd
+    if (text.includes('\x03')) markTerminalJobsStopping(terminalId)
     const written = writeTerminal(terminalId, text)
     if (written) void noteTerminalUserInput(terminalId, text, cwd ?? '').catch(() => undefined)
     return written
@@ -42,7 +43,10 @@ export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string
   rawHandle('yan:terminal:resize', (_e, id: string, cols: number, rows: number) =>
     resizeTerminal(String(id ?? ''), Number(cols), Number(rows))
   )
-  rawHandle('yan:terminal:kill', (_e, id: string) => killTerminal(String(id ?? '')))
+  rawHandle('yan:terminal:kill', (_e, id: string) => {
+    markTerminalJobsStopping(String(id ?? ''))
+    return killTerminal(String(id ?? ''))
+  })
   rawHandle('yan:terminal:attach', (_e, id: string) => attachTerminal(String(id ?? '')))
   rawHandle('yan:terminal:clear', (_e, id: string) => clearTerminal(String(id ?? '')))
   rawHandle('yan:terminal:processes', (_e, id: string) => listProcessTree(terminalProcessId(String(id ?? ''))))

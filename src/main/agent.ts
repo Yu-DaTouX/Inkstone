@@ -88,6 +88,7 @@ import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 import { BrowserCommands } from './browser-commands'
 import { TerminalAgentCommands } from './terminal-agent'
 import { listTerminalJobs } from './terminal-jobs'
+import { HELD_TERMINAL_NOTICES_MAX, terminalNoticeStep } from './terminal-notice-step'
 import { isLiveTerminalJob, terminalJobOwnedBy } from '../shared/terminal-jobs'
 import { PhoneAgentCommands } from './phone-agent'
 import { terminalAgentHost } from './terminal-agent-host'
@@ -564,22 +565,34 @@ export class AgentController extends EventEmitter {
       const feedback = result.summary.feedback
       return { allowed: result.summary.allowed === true, ...(typeof feedback === 'string' && feedback ? { feedback } : {}) }
     },
-    notify: (text, stillOwner) => {
-      void this.deliverTerminalNotice(text, stillOwner)
+    notify: (text, stillOwner, wake) => {
+      void this.deliverTerminalNotice(text, stillOwner, wake)
     }
   })
 
   private pendingTerminalNotices = 0
+  private heldTerminalNotices: { text: string; stillOwner: () => boolean }[] = []
 
-  private async deliverTerminalNotice(text: string, stillOwner: () => boolean): Promise<void> {
+  private async deliverTerminalNotice(text: string, stillOwner: () => boolean, wake: boolean): Promise<void> {
     this.pendingTerminalNotices += 1
     try {
       let failures = 0
       for (let waited = 0; waited < 2 * 3600_000 && failures < 5; waited += 3000) {
-        if (this.stopping || !stillOwner()) return
         const state = this.state
-        if (this.rpc?.running && state && !state.isAgentRunning && !state.isStreaming && !state.isCompacting && !this.holdsNotices()) {
-          const result = await this.send(text, undefined, 'followUp').catch(() => ({ ok: false }))
+        const step = terminalNoticeStep({
+          stopping: this.stopping,
+          owned: stillOwner(),
+          ready: !!this.rpc?.running && !!state && !state.isCompacting && !this.holdsNotices(),
+          running: !!state && (state.isAgentRunning || state.isStreaming),
+          wake
+        })
+        if (step === 'drop') return
+        if (step === 'hold') {
+          this.heldTerminalNotices = [...this.heldTerminalNotices, { text, stillOwner }].slice(-HELD_TERMINAL_NOTICES_MAX)
+          return
+        }
+        if (step !== 'wait') {
+          const result = await (step === 'steer' ? this.steer(text) : this.send(text, undefined, 'followUp')).catch(() => ({ ok: false }))
           if (result.ok) return
           failures += 1
         }
@@ -588,6 +601,15 @@ export class AgentController extends EventEmitter {
       console.warn('[agent] 后台终端通知未能投递')
     } finally {
       this.pendingTerminalNotices -= 1
+    }
+  }
+
+  private async flushHeldTerminalNotices(): Promise<void> {
+    const held = this.heldTerminalNotices
+    this.heldTerminalNotices = []
+    for (const item of held) {
+      if (!item.stillOwner()) continue
+      await this.submitQueueCommand('steer', item.text, undefined, 'steering', this.queuePayload({ text: item.text })).catch(() => undefined)
     }
   }
 
@@ -3854,6 +3876,7 @@ export class AgentController extends EventEmitter {
             message: pick('已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。', 'Loop aborted safely; continuing in the same session (1/1). Withdrawn queued drafts will not run.') } })
         }
       }
+      await this.flushHeldTerminalNotices()
       const res = await this.submitQueueCommand('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，发送结果未应用到当前会话', 'Session changed; the send result was not applied to the current session') }

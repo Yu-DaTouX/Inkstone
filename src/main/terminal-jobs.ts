@@ -52,6 +52,16 @@ export function requestTerminalJobStop(id: string): string | null {
   return job.terminalId
 }
 
+export function markTerminalJobsStopping(terminalId: string): void {
+  let changed = false
+  for (const job of jobs.values()) {
+    if (job.terminalId !== terminalId || job.state !== 'running') continue
+    job.state = 'stopping'
+    changed = true
+  }
+  if (changed) emit()
+}
+
 export function clearFinishedTerminalJobs(ids?: readonly string[]): void {
   const wanted = ids ? new Set(ids) : null
   let changed = false

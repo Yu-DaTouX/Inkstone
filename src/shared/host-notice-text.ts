@@ -18,7 +18,7 @@ const TERMINAL_STATE_TEXT: Record<TerminalNoticeState, string> = {
   matched: '输出命中 --until，程序仍在运行',
   exited: '终端已退出',
   timeout: '超过 --timeout 仍未结束，程序仍在运行',
-  stopped: '用户在后台任务里停止了这条命令'
+  stopped: '用户停止了这条命令'
 }
 
 export interface TerminalNoticeInput {

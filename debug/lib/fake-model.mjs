@@ -119,7 +119,7 @@ export const FAKE_TRIGGERS = {
   MOBILEDEMO: '先用 read 读一张仓库里的 PNG，再发一个多字段表单提问，最后流出带长行代码块的答复，用来看手机端看图、表单与代码',
   BROWSERLOOP: '用 yan browser 连续导航（BROWSERURL1=<地址> BROWSERURL2=<地址> 轮流，BROWSERSTEPS<n> 步，默认 8），中间夹慢命令，用来看标签按会话归属与 agent 一轮内保持焦点',
   DEVSERVER: '在会话终端里起一个本地 http 服务（DEVSCRIPT=<脚本路径> DEVPORT=<端口>），再用 yan browser open 打开它，用来看本地服务发现与停止',
-  BGTERMINAL: '用 yan terminal run --background 在后台跑一条 12 秒的命令，看后台任务面板与结束后的宿主通知',
+  BGTERMINAL: '用 yan terminal run --background 在后台跑一条 12 秒的命令（BGSECONDS<n> 改秒数；含 BGBUSY 时接着跑 11 步各 2 秒的 bash），看后台任务面板与结束后的宿主通知',
   TERMINAL: '用 yan terminal run 在会话终端里跑一条快命令、一条慢命令，再 list 一次，看终端面板自动打开与 agent 提示（含 DANGER 时改为一条要审批的删除注册表命令）',
   FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序',
   'STORM-<名字>': '压测：60 步（含 STEPS<n> 时为 n 步；含 ASK 时跑完先提一次两选项问题；含 SLOW 时每步慢速思考约 6 秒），每步快速思考、叙述、一次改项目文件（storm/）并输出 120 行的 bash，每 15 步一段表格与代码，最后流出约 20KB 长文',
@@ -303,7 +303,11 @@ async function respond(res, text, done, requestNo) {
     } else if (text.includes('BGTERMINAL')) {
       if (done < 1) {
         await streamText('把长命令放到后台。', 20, 0)
-        await callTool('bash', { command: `yan terminal run --command 'Write-Output "bg-start"; Start-Sleep -Seconds 12; Write-Output "bg-done"' --background`, description: '后台跑长命令' })
+        const seconds = /BGSECONDS(\d+)/.exec(text)?.[1] ?? '12'
+        await callTool('bash', { command: `yan terminal run --command 'Write-Output "bg-start"; Start-Sleep -Seconds ${seconds}; Write-Output "bg-done"' --background`, description: '后台跑长命令' })
+      } else if (text.includes('BGBUSY') && done < 12) {
+        await streamText(`接着做第 ${done} 件事。`, 20, 0)
+        await callTool('bash', { command: 'sleep 2', description: '后台命令运行期间继续干活' })
       } else await streamText('已在后台运行，结束后会收到通知。', 20, 10)
     } else if (text.includes('TERMINAL')) {
       const steps = text.includes('DANGER')
