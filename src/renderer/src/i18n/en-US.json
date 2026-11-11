@@ -941,6 +941,7 @@
   "quota.expiredTip": "Login expired; it refreshes automatically when you chat with this provider after switching",
   "quota.expiredBadge": "Expired",
   "quota.settings": "Account settings",
+  "quota.price.peak": "Peak",
   "quota.resetDue": "reset",
   "quota.resetAtTip": "Resets at {time}",
   "quota.durDH": "{d}d {h}h",

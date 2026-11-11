@@ -941,6 +941,7 @@
   "quota.expiredTip": "登录已过期，切换后用该服务商模型对话时会自动刷新",
   "quota.expiredBadge": "已过期",
   "quota.settings": "账号设置",
+  "quota.price.peak": "峰价",
   "quota.resetDue": "已重置",
   "quota.resetAtTip": "重置于 {time}",
   "quota.durDH": "{d}天{h}时",

@@ -14,6 +14,8 @@ import { sessionViewIdentity } from '../session/view-state'
 import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import { money } from '../../../../shared/quota-mini'
+import { modelBrand } from '../../../../shared/model-brand'
+import { deepseekPricePeriod } from '../../../../shared/deepseek-pricing'
 import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
 import type { GitRepoState } from '../../../../shared/git'
 import { rememberRepo, rememberedRepo } from './repo-memory'
@@ -212,7 +214,10 @@ function useQuotaTile(provider: string, running: boolean, t: TFunc, text: Overvi
       setNow(Date.now())
       refreshIfDue(LIVE_QUOTA_MIN_GAP_MS)
     }, QUOTA_TICK_MS)
-    const onFocus = (): void => refreshIfDue(LIVE_QUOTA_MIN_GAP_MS)
+    const onFocus = (): void => {
+      setNow(Date.now())
+      refreshIfDue(LIVE_QUOTA_MIN_GAP_MS)
+    }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onFocus)
     return () => {
@@ -653,6 +658,8 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const mcp = useMcpConnections(owner, agentRunning)
 
   const quota = useQuotaTile(provider, agentRunning, t, text)
+  const deepseek = modelBrand({ id: session?.model?.id }) === 'deepseek' || modelBrand(session?.model) === 'deepseek'
+  const peakPrice = deepseek && deepseekPricePeriod(quota.now) === 'peak'
   const quotaModel = quota.model
   const quotaStale = quotaModel ? quotaReadingStale(quotaModel.checkedAt, quota.now, !!quotaModel.staleError) : false
   const quotaWindows = quotaModel?.windows ?? []
@@ -768,13 +775,13 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
         <Meter aria-label={rail.sections.context} className="wb-ov-meter" value={0} minValue={0} maxValue={100} />
       )
     },
-    ...(quotaModel
+    ...(quotaModel || peakPrice
       ? {
           usage: {
             summary: quotaSummary,
-            tone: quotaModel.problem?.tone ?? glyphTone(bindingTone),
+            tone: quotaModel?.problem?.tone ?? glyphTone(bindingTone),
             onOpenView: () => onOpenView('quota'),
-            body: <QuotaDetail model={quotaModel} now={quota.now} />
+            body: quotaModel ? <QuotaDetail model={quotaModel} now={quota.now} /> : null
           }
         }
       : {}),
@@ -860,7 +867,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
             <RailCard
               key={id}
               id={id}
-              title={rail.sections[id]}
+              title={id === 'usage' && peakPrice ? `${rail.sections[id]} ${t('quota.price.peak')}` : rail.sections[id]}
               summary={section.summary}
               summaryWhenOpen={section.summaryWhenOpen}
               open={isOpen(id)}
