@@ -12,6 +12,9 @@ export interface Pipe {
   close(code?: number, reason?: string): void
   onmessage?: (text: string) => void
   onclose?: () => void
+  buffered?(): number
+  pause?(): void
+  resume?(): void
 }
 
 export interface TunnelTarget {
@@ -38,6 +41,12 @@ const MAX_REQUESTS = 16
 const MAX_STREAMS = 4
 const COALESCE_MS = 50
 const REQUEST_TIMEOUT_MS = 120_000
+const SEND_HIGH_BYTES = 8 * 1024 * 1024
+const SEND_LOW_BYTES = 2 * 1024 * 1024
+const STREAM_BACKLOG_BYTES = 12 * 1024 * 1024
+const INBOUND_HIGH_BYTES = 8 * 1024 * 1024
+const INBOUND_LOW_BYTES = 2 * 1024 * 1024
+const DRAIN_POLL_MS = 20
 const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, PEER_CONNECTION_HEADER, 'last-event-id', 'accept']
 const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair'])
 const TEXT_PROTOCOL = 2
@@ -47,11 +56,14 @@ function textual(contentType: string | undefined): boolean {
   return type.startsWith('text/') || type.includes('json') || type.includes('javascript') || type.includes('xml')
 }
 
+const STREAM_BROKEN = (): string => pick('电脑上的事件流异常断开', 'The event stream on the computer was interrupted')
+const BODY_BROKEN = (): string => pick('电脑上的响应传输中断', 'The response transfer from the computer was interrupted')
+
 type Pending = { req: ClientRequest; stream: boolean; finish?(error?: string): void; upload?: { limit: number; received: number } }
 
 const UPLOAD_CHUNK_MAX = 2 * 1024 * 1024
 const HANDSHAKE_FRAME_MAX = 4096
-const SEALED_FRAME_MAX = 24 * 1024 * 1024
+export const SEALED_FRAME_MAX = 24 * 1024 * 1024
 
 function declaredKind(value: unknown): RelayClientKind | undefined {
   return value === 'phone' || value === 'peer' || value === 'agent' ? value : undefined
@@ -69,11 +81,25 @@ export class TunnelSession {
   private chain: Promise<void> = Promise.resolve()
   private readonly timer: ReturnType<typeof setTimeout>
   private readonly pending = new Map<string, Pending>()
+  private sealing = 0
+  private inbound = 0
+  private inboundPaused = false
   client: RelayClient | null = null
 
   constructor(readonly pipe: Pipe, private readonly hooks: TunnelHooks) {
     pipe.onmessage = (text) => {
-      this.chain = this.chain.then(() => this.handle(text)).catch((error: unknown) => this.abort(error instanceof Error ? error.message : String(error)))
+      this.inbound += text.length
+      if (!this.inboundPaused && this.inbound > INBOUND_HIGH_BYTES) {
+        this.inboundPaused = true
+        pipe.pause?.()
+      }
+      this.chain = this.chain.then(() => this.handle(text)).catch((error: unknown) => this.abort(error instanceof Error ? error.message : String(error))).finally(() => {
+        this.inbound -= text.length
+        if (this.inboundPaused && this.inbound <= INBOUND_LOW_BYTES) {
+          this.inboundPaused = false
+          if (this.state !== 'closed') pipe.resume?.()
+        }
+      })
     }
     pipe.onclose = () => this.closed()
     this.timer = setTimeout(() => {
@@ -91,10 +117,31 @@ export class TunnelSession {
     this.closed()
   }
 
-  private post(msg: Record<string, unknown>): void {
+  private load(): number {
+    return this.sealing + (this.pipe.buffered?.() ?? 0)
+  }
+
+  private drained(): Promise<void> {
+    return new Promise((resolve) => {
+      const tick = (): void => {
+        if (this.state === 'closed' || this.load() <= SEND_LOW_BYTES) return resolve()
+        setTimeout(tick, DRAIN_POLL_MS).unref?.()
+      }
+      tick()
+    })
+  }
+
+  private post(msg: Record<string, unknown>, size = 0): void {
     const channel = this.channel
     if (!channel || (this.state !== 'open' && msg.t !== 'welcome' && msg.t !== 'denied')) return
-    void channel.seal(msg).then((frame) => this.pipe.send(frame), () => this.abort('加密失败'))
+    this.sealing += size
+    void channel.seal(msg).then((frame) => {
+      this.sealing -= size
+      this.pipe.send(frame)
+    }, () => {
+      this.sealing -= size
+      this.abort('加密失败')
+    })
   }
 
   private abort(reason: string): void {
@@ -124,7 +171,7 @@ export class TunnelSession {
     const msg = (await this.channel!.open(text)) as Record<string, unknown>
     if (!msg || typeof msg !== 'object' || Array.isArray(msg)) throw new Error('消息格式不对')
     if (this.state === 'auth') return this.auth(msg)
-    this.frame(msg)
+    await this.frame(msg)
   }
 
   private async hello(text: string): Promise<void> {
@@ -157,7 +204,7 @@ export class TunnelSession {
     this.hooks.onOpen?.(this)
   }
 
-  private frame(msg: Record<string, unknown>): void {
+  private frame(msg: Record<string, unknown>): void | Promise<void> {
     if (msg.t === 'ping') return this.post({ t: 'pong' })
     if (msg.t === 'abort' && typeof msg.id === 'string') {
       const pending = this.pending.get(msg.id)
@@ -167,7 +214,7 @@ export class TunnelSession {
       return
     }
     if (msg.t === 'req') return void this.request(msg)
-    if (msg.t === 'up') return void this.uploadChunk(msg)
+    if (msg.t === 'up') return this.uploadChunk(msg)
     if (msg.t === 'up-end' && typeof msg.id === 'string') {
       const pending = this.pending.get(msg.id)
       if (!pending?.upload) return
@@ -286,11 +333,11 @@ export class TunnelSession {
       const decoder = asText ? new StringDecoder('utf8') : null
       const chunk = (bytes: Buffer, last = false): void => {
         if (!decoder) {
-          if (bytes.length) this.post({ t: 'chunk', id, data: bytes.toString('base64') })
+          if (bytes.length) this.post({ t: 'chunk', id, data: bytes.toString('base64') }, bytes.length)
           return
         }
         const text = decoder.write(bytes) + (last ? decoder.end() : '')
-        if (text) this.post({ t: 'chunk', id, text })
+        if (text) this.post({ t: 'chunk', id, text }, bytes.length)
       }
       entry.stream = streaming
       if (streaming && [...this.pending.values()].filter((p) => p.stream).length > MAX_STREAMS) {
@@ -302,57 +349,130 @@ export class TunnelSession {
         this.post({ t: 'res', id, status, headers: resHeaders, stream: true })
         let buf: Buffer[] = []
         let timer: ReturnType<typeof setTimeout> | undefined
-        const flush = () => {
-          timer = undefined
-          if (!buf.length) return
-          chunk(Buffer.concat(buf))
-          buf = []
-        }
         let finished = false
-        const finish = (error?: string) => {
+        const finish = (error?: string, discard = false) => {
           if (finished) return
           finished = true
           if (timer) clearTimeout(timer)
           if (this.pending.get(id) === entry) {
-            flush()
-            if (decoder) chunk(Buffer.alloc(0), true)
+            if (!discard) {
+              flush()
+              if (decoder) chunk(Buffer.alloc(0), true)
+            }
             this.pending.delete(id)
             this.post({ t: 'end', id, ...(error ? { error } : {}) })
           }
+          buf = []
+        }
+        const overflow = () => {
+          finish(pick('事件流发送积压，请重新连接并用 last-event-id 续传', 'Event stream backlog; reconnect and resume with last-event-id'), true)
+          req.destroy()
+        }
+        const flush = () => {
+          timer = undefined
+          if (!buf.length || finished) return
+          if (this.load() > STREAM_BACKLOG_BYTES) return overflow()
+          chunk(Buffer.concat(buf))
           buf = []
         }
         entry.finish = finish
         res.on('data', (c: Buffer) => {
           if (finished) return
           buf.push(c)
+          if (this.load() > STREAM_BACKLOG_BYTES) return overflow()
           timer ??= setTimeout(flush, COALESCE_MS)
         })
         res.on('end', () => finish())
-        res.on('error', () => finish('电脑上的事件流异常断开'))
-        res.on('aborted', () => finish('电脑上的事件流异常断开'))
-        res.on('close', () => finish('电脑上的事件流异常断开'))
+        res.on('error', () => finish(STREAM_BROKEN()))
+        res.on('aborted', () => finish(STREAM_BROKEN()))
+        res.on('close', () => finish(STREAM_BROKEN()))
         return
       }
-      const parts: Buffer[] = []
-      res.on('data', (c: Buffer) => parts.push(c))
-      res.on('end', () => {
-        this.pending.delete(id)
-        const all = Buffer.concat(parts)
-        if (all.length <= INLINE_RESPONSE) {
-          this.post({ t: 'res', id, status, headers: resHeaders, ...(!all.length ? {} : asText ? { text: all.toString('utf8') } : { body: all.toString('base64') }) })
+      let held: Buffer[] = []
+      let heldBytes = 0
+      let started = false
+      let finished = false
+      let paused = false
+      const declared = Number(res.headers['content-length'])
+      const begin = (): void => {
+        started = true
+        this.post({ t: 'res', id, status, headers: resHeaders, stream: true })
+      }
+      const sendHeld = (final: boolean): void => {
+        if (!heldBytes && !final) return
+        const all = held.length === 1 ? held[0] : Buffer.concat(held)
+        let off = 0
+        while (all.length - off >= CHUNK) {
+          chunk(all.subarray(off, off + CHUNK))
+          off += CHUNK
+        }
+        const tail = all.subarray(off)
+        if (final) {
+          chunk(tail, true)
+          held = []
+          heldBytes = 0
+        } else {
+          held = tail.length ? [tail] : []
+          heldBytes = tail.length
+        }
+      }
+      const finishBody = (error?: string): void => {
+        if (finished) return
+        finished = true
+        if (this.pending.get(id) !== entry) {
+          held = []
           return
         }
-        this.post({ t: 'res', id, status, headers: resHeaders, stream: true })
-        for (let off = 0; off < all.length; off += CHUNK) chunk(all.subarray(off, off + CHUNK), off + CHUNK >= all.length)
-        this.post({ t: 'end', id })
+        this.pending.delete(id)
+        if (!started) {
+          if (error) {
+            held = []
+            return this.fail(id, 502, pick('电脑上的远程服务没有响应', 'The remote service on the computer is not responding'))
+          }
+          const all = held.length === 1 ? held[0] : Buffer.concat(held)
+          held = []
+          this.post({ t: 'res', id, status, headers: resHeaders, ...(!all.length ? {} : asText ? { text: all.toString('utf8') } : { body: all.toString('base64') }) }, all.length)
+          return
+        }
+        if (!error) sendHeld(true)
+        held = []
+        this.post({ t: 'end', id, ...(error ? { error } : {}) })
+      }
+      entry.finish = (error) => {
+        if (error) finishBody(error)
+        else {
+          finished = true
+          held = []
+        }
+      }
+      if (Number.isFinite(declared) && declared > INLINE_RESPONSE) begin()
+      res.on('data', (c: Buffer) => {
+        if (finished) return
+        held.push(c)
+        heldBytes += c.length
+        if (!started) {
+          if (heldBytes <= INLINE_RESPONSE) return
+          begin()
+        }
+        if (heldBytes >= CHUNK) sendHeld(false)
+        if (paused || this.load() <= SEND_HIGH_BYTES) return
+        paused = true
+        res.pause()
+        void this.drained().then(() => {
+          paused = false
+          if (!finished) res.resume()
+        })
       })
-      res.on('error', () => this.pending.delete(id))
+      res.on('end', () => finishBody())
+      res.on('error', () => finishBody(BODY_BROKEN()))
+      res.on('aborted', () => finishBody(BODY_BROKEN()))
+      res.on('close', () => finishBody(BODY_BROKEN()))
     })
     req.on('timeout', () => req.destroy(new Error('timeout')))
     req.on('error', () => {
       const entry = this.pending.get(id)
       if (!entry || entry.req !== req) return
-      if (entry.finish) return entry.finish('电脑上的事件流异常断开')
+      if (entry.finish) return entry.finish(entry.stream ? STREAM_BROKEN() : BODY_BROKEN())
       this.pending.delete(id)
       this.fail(id, 502, pick('电脑上的远程服务没有响应', 'The remote service on the computer is not responding'))
     })

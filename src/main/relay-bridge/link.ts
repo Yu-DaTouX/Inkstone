@@ -1,11 +1,15 @@
 import { pick } from '../../shared/ui-lang'
-import type { Pipe } from './tunnel'
+import { SEALED_FRAME_MAX, type Pipe } from './tunnel'
 
 const PING_MS = 25_000
 const DEAD_MS = 75_000
+const CONNECT_TIMEOUT_MS = 15_000
+const MAX_PIPES = 32
+const RELAY_MESSAGE_MAX = SEALED_FRAME_MAX + 4096
 
 export interface WsLike {
   readonly readyState: number
+  readonly bufferedAmount?: number
   send(data: string): void
   close(code?: number, reason?: string): void
   addEventListener(type: 'open' | 'message' | 'close' | 'error', fn: (ev: { data?: unknown; code?: number }) => void): void
@@ -28,6 +32,9 @@ class VirtualPipe implements Pipe {
     if (!this.open) return
     this.link.kick(this.id)
     this.ended()
+  }
+  buffered(): number {
+    return this.link.buffered()
   }
   ended(): void {
     if (!this.open) return
@@ -53,6 +60,7 @@ export class RelayLink {
   private lastPong = 0
   private pinger: ReturnType<typeof setInterval> | undefined
   private retry: ReturnType<typeof setTimeout> | undefined
+  private connectTimer: ReturnType<typeof setTimeout> | undefined
   connected = false
 
   constructor(private readonly opts: RelayLinkOptions) {}
@@ -71,6 +79,11 @@ export class RelayLink {
 
   forward(id: number, text: string): void {
     this.raw(JSON.stringify({ t: 'msg', c: id, d: text }))
+  }
+
+  buffered(): number {
+    const amount = this.ws?.bufferedAmount
+    return typeof amount === 'number' && Number.isFinite(amount) ? amount : 0
   }
 
   kick(id: number): void {
@@ -97,7 +110,18 @@ export class RelayLink {
       return
     }
     this.ws = ws
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = undefined
+      if (this.ws !== ws || this.connected) return
+      this.opts.log?.('中继连接超时，重连')
+      this.opts.onState?.(false, pick('连接中继超时', 'Timed out connecting to the relay'))
+      this.teardown(true)
+      this.schedule()
+    }, CONNECT_TIMEOUT_MS)
+    this.connectTimer.unref?.()
     ws.addEventListener('open', () => {
+      if (this.ws !== ws) return
+      this.clearConnectTimer()
       this.connected = true
       this.delayMs = 2_000
       this.lastPong = Date.now()
@@ -117,8 +141,8 @@ export class RelayLink {
     ws.addEventListener('close', (ev) => {
       if (this.ws !== ws) return
       const detail = ev.code === 4001 ? pick('另一个程序用同一个房间连上了中继，本机被顶替', 'Another program joined the relay with the same room and replaced this computer') : pick(`连接断开（${ev.code ?? '?'}）`, `Disconnected (${ev.code ?? '?'})`)
+      this.teardown(true)
       this.opts.onState?.(false, detail)
-      this.teardown()
       if (ev.code !== 4001) this.schedule()
     })
     ws.addEventListener('error', () => {
@@ -136,9 +160,15 @@ export class RelayLink {
     this.retry.unref?.()
   }
 
-  private teardown(): void {
+  private clearConnectTimer(): void {
+    if (this.connectTimer) clearTimeout(this.connectTimer)
+    this.connectTimer = undefined
+  }
+
+  private teardown(silent = false): void {
     const was = this.connected
     this.connected = false
+    this.clearConnectTimer()
     if (this.pinger) clearInterval(this.pinger)
     this.pinger = undefined
     const ws = this.ws
@@ -149,12 +179,16 @@ export class RelayLink {
     }
     for (const p of this.pipes.values()) p.ended()
     this.pipes.clear()
-    if (was) this.opts.onState?.(false)
+    if (was && !silent) this.opts.onState?.(false)
   }
 
   private onRelayMessage(text: string): void {
     if (text === 'pong') {
       this.lastPong = Date.now()
+      return
+    }
+    if (text.length > RELAY_MESSAGE_MAX) {
+      this.opts.log?.('中继消息过大，已丢弃')
       return
     }
     let msg: { t?: unknown; c?: unknown; d?: unknown }
@@ -166,6 +200,12 @@ export class RelayLink {
     const id = Number(msg.c)
     if (!Number.isInteger(id)) return
     if (msg.t === 'open') {
+      if (this.pipes.has(id)) return
+      if (this.pipes.size >= MAX_PIPES) {
+        this.opts.log?.('中继并发连接过多，已拒绝新连接')
+        this.raw(JSON.stringify({ t: 'kick', c: id }))
+        return
+      }
       const pipe = new VirtualPipe(this, id)
       this.pipes.set(id, pipe)
       this.opts.onPipe(pipe)

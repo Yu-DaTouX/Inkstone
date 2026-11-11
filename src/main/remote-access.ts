@@ -79,6 +79,7 @@ export class RemoteAccess {
   private settings: RemoteAccessSettings = DEFAULT_REMOTE_ACCESS_SETTINGS
   private lastError: string | null = null
   private applying: Promise<void> = Promise.resolve()
+  private stopped = false
   readonly relay: RelayBridge
   private relayServer: RemoteServer | null = null
   private relayToken = ''
@@ -113,6 +114,7 @@ export class RemoteAccess {
   }
 
   apply(settings: RemoteAccessSettings | undefined): Promise<void> {
+    if (this.stopped) return this.applying
     this.settings = settings ?? DEFAULT_REMOTE_ACCESS_SETTINGS
     this.applying = this.applying.then(() => this.applyNow()).catch((error: unknown) => {
       this.lastError = error instanceof Error ? error.message : String(error)
@@ -122,9 +124,12 @@ export class RemoteAccess {
   }
 
   private async applyNow(): Promise<void> {
+    if (this.stopped) return
     const env = this.envOverride()
     const wanted = env ?? (this.settings.enabled ? { host: await resolveBindHost(this.settings.bind), port: this.settings.port } : null)
+    if (this.stopped) return
     await this.applyRelay(!!wanted?.host)
+    if (this.stopped) return
     if (wanted && !wanted.host) {
       await this.stopServer()
       this.lastError = this.settings.bind === 'radmin'
@@ -135,9 +140,11 @@ export class RemoteAccess {
     const current = this.server?.info
     if (wanted && current && current.host === wanted.host && current.port === wanted.port) return
     await this.stopServer()
+    if (this.stopped) return
     this.lastError = null
     if (!wanted?.host) return
     await this.relay.prepare()
+    if (this.stopped) return
     const server = new RemoteServer({
       host: wanted.host,
       port: wanted.port,
@@ -155,6 +162,10 @@ export class RemoteAccess {
       onLog: this.log
     })
     await server.start()
+    if (this.stopped) {
+      await server.stop().catch(() => undefined)
+      return
+    }
     this.server = server
     if (env && server.info.token) this.log('旧版单令牌模式已启用')
   }
@@ -162,6 +173,7 @@ export class RemoteAccess {
   private async applyRelay(direct: boolean): Promise<void> {
     const relay = this.settings.relay
     if (direct || (relay?.enabled && relay.url.trim())) {
+      if (this.stopped) return
       if (!this.relayServer) {
         this.relayToken = randomBytes(24).toString('base64url')
         const server = new RemoteServer({
@@ -176,6 +188,10 @@ export class RemoteAccess {
           onLog: this.log
         })
         await server.start()
+        if (this.stopped) {
+          await server.stop().catch(() => undefined)
+          return
+        }
         this.relayServer = server
       }
     } else if (this.relayServer) {
@@ -183,6 +199,7 @@ export class RemoteAccess {
       this.relayServer = null
       await server.stop().catch(() => undefined)
     }
+    if (this.stopped) return
     await this.relay.apply(relay)
   }
 
@@ -223,6 +240,8 @@ export class RemoteAccess {
   }
 
   async stop(): Promise<void> {
+    this.stopped = true
+    await this.applying.catch(() => undefined)
     this.outgoing.dispose()
     this.relay.stop()
     this.direct.dispose()

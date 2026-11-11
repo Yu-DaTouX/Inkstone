@@ -132,6 +132,7 @@ export class PeerClient implements PeerTransport {
   private readonly reconnects = new Map<string, { timer: ReturnType<typeof setTimeout>; wake: () => void }>()
   private readonly generations = new Map<string, number>()
   private readonly tunnels = new Map<string, PeerTunnel>()
+  private readonly connecting = new Map<string, Promise<PeerTunnel>>()
 
   private load(): Promise<StoredPeer[]> {
     if (this.peers) return Promise.resolve(this.peers)
@@ -305,9 +306,19 @@ export class PeerClient implements PeerTransport {
     return peer && token ? { peer, token } : null
   }
 
-  private async tunnelOf(peer: StoredPeer): Promise<PeerTunnel> {
+  private tunnelOf(peer: StoredPeer): Promise<PeerTunnel> {
     const existing = this.tunnels.get(peer.id)
-    if (existing?.connected) return existing
+    if (existing?.connected) return Promise.resolve(existing)
+    const inflight = this.connecting.get(peer.id)
+    if (inflight) return inflight
+    const opening = this.openTunnel(peer).finally(() => {
+      if (this.connecting.get(peer.id) === opening) this.connecting.delete(peer.id)
+    })
+    this.connecting.set(peer.id, opening)
+    return opening
+  }
+
+  private async openTunnel(peer: StoredPeer): Promise<PeerTunnel> {
     const keys = openKeys(peer.keys)
     if (!peer.hostKey || !keys) throw new Error('This computer was paired before encrypted transfer; pair it again')
     const tunnel = new PeerTunnel({ url: tunnelUrlFor(peer.address), hostKey: peer.hostKey, keys, deviceName: hostname().slice(0, 60) })
@@ -316,7 +327,7 @@ export class PeerClient implements PeerTransport {
       await tunnel.connect()
       return tunnel
     } catch (error) {
-      this.tunnels.delete(peer.id)
+      if (this.tunnels.get(peer.id) === tunnel) this.tunnels.delete(peer.id)
       tunnel.close()
       throw error
     }
@@ -325,6 +336,7 @@ export class PeerClient implements PeerTransport {
   private dropTunnel(peerId: string): void {
     const tunnel = this.tunnels.get(peerId)
     this.tunnels.delete(peerId)
+    this.connecting.delete(peerId)
     tunnel?.close()
   }
 

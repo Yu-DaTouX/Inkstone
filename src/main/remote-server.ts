@@ -207,6 +207,16 @@ function validQuestionId(value: string): boolean {
   return /^[A-Za-z0-9._:-]{1,200}$/.test(value)
 }
 
+export class RemoteRequestError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message)
+  }
+}
+
+function requestErrorStatus(error: unknown): number | null {
+  return error instanceof RemoteRequestError ? error.status : null
+}
+
 function writeJson(res: ServerResponse, status: number, value: unknown): void {
   const body = JSON.stringify(value)
   res.writeHead(status, {
@@ -293,6 +303,12 @@ export class RemoteServer {
 
     const server = createServer((req, res) => {
       void this.handle(req, res).catch((error: unknown) => {
+        const status = requestErrorStatus(error)
+        if (status !== null && error instanceof Error) {
+          if (!res.headersSent) writeError(res, status, error.message)
+          else res.destroy()
+          return
+        }
         this.log(`请求处理失败：${error instanceof Error ? error.message : String(error)}`, 'error')
         if (!res.headersSent) writeError(res, 500, pick('远程请求处理失败', 'Remote request failed'))
         else res.destroy()
@@ -520,18 +536,26 @@ export class RemoteServer {
   }
 
   private async readJson(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
+    const tooLarge = (): RemoteRequestError => new RemoteRequestError(413, pick('请求体超过大小限制', 'Request body is too large'))
+    const declared = Number(req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge()
     const chunks: Buffer[] = []
     let size = 0
     for await (const chunk of req) {
       const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       size += part.length
-      if (size > maxBytes) throw new Error(pick('请求体超过大小限制', 'Request body is too large'))
+      if (size > maxBytes) throw tooLarge()
       chunks.push(part)
     }
     const raw = Buffer.concat(chunks).toString('utf8')
     if (!raw.trim()) return {}
-    const parsed: unknown = JSON.parse(raw)
-    if (!isRecord(parsed)) throw new Error(pick('请求体必须是 JSON 对象', 'Request body must be a JSON object'))
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      throw new RemoteRequestError(400, pick('请求体不是有效的 JSON', 'Request body is not valid JSON'))
+    }
+    if (!isRecord(parsed)) throw new RemoteRequestError(400, pick('请求体必须是 JSON 对象', 'Request body must be a JSON object'))
     return parsed
   }
 
@@ -575,6 +599,8 @@ export class RemoteServer {
       return
     }
     const result = run().catch((error: unknown): RemoteOperationResult => {
+      const status = requestErrorStatus(error)
+      if (status !== null && error instanceof Error) return { ok: false, status, error: error.message }
       this.log(`远程操作失败：${error instanceof Error ? error.message : String(error)}`, 'error')
       return { ok: false, status: 500, error: pick('远程操作失败', 'Remote operation failed') }
     })

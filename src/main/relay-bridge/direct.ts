@@ -10,12 +10,13 @@ const PING_MS = 25_000
 export class DirectTunnelEndpoint {
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES, perMessageDeflate: false })
   private readonly alive = new WeakMap<WebSocket, boolean>()
+  private readonly held = new WeakSet<WebSocket>()
   private readonly timer: ReturnType<typeof setInterval>
 
   constructor(private readonly onPipe: (pipe: Pipe) => void) {
     this.timer = setInterval(() => {
       for (const ws of this.wss.clients) {
-        if (this.alive.get(ws) === false) {
+        if (this.alive.get(ws) === false && !this.held.has(ws)) {
           ws.terminate()
           continue
         }
@@ -40,7 +41,17 @@ export class DirectTunnelEndpoint {
       send: (text) => {
         if (ws.readyState === ws.OPEN) ws.send(text)
       },
-      close: (code, reason) => ws.close(code ?? 1000, reason)
+      close: (code, reason) => ws.close(code ?? 1000, reason),
+      buffered: () => ws.bufferedAmount,
+      pause: () => {
+        this.held.add(ws)
+        ws.pause()
+      },
+      resume: () => {
+        this.held.delete(ws)
+        this.alive.set(ws, true)
+        ws.resume()
+      }
     }
     ws.on('pong', () => this.alive.set(ws, true))
     ws.on('message', (data, binary) => {
