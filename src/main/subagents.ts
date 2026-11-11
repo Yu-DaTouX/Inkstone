@@ -27,6 +27,7 @@ import { nativePiToolsSupported } from '../shared/agent-context'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
+import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { confirmRegisteredModel } from './subagents/registered-model'
 import { forkPiArgs, forkPrompt, writeForkSession, type SubagentForkSource } from './subagent-fork'
 import { runArtifactPreview, type PreviewHtml } from './artifact-preview-command'
@@ -2038,7 +2039,8 @@ function modelLabel(raw: unknown): string | undefined {
 }
 
 function modelMismatch(requested: string, actual: string): boolean {
-  const want = requested.replace(/:(off|minimal|low|medium|high|xhigh)$/i, '').trim()
+  const cut = requested.lastIndexOf(':')
+  const want = (cut > 0 && THINKING_LEVELS.includes(requested.slice(cut + 1).trim().toLowerCase()) ? requested.slice(0, cut) : requested).trim()
   if (!want.includes('/') || want.includes('*')) return false
   return want.toLowerCase() !== actual.toLowerCase()
 }
