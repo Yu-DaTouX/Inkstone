@@ -207,7 +207,7 @@
   "src/renderer/src/features/settings/shortcuts/shortcuts-text.ts": 19,
   "src/renderer/src/features/settings/sync/text.ts": 72,
   "src/renderer/src/features/sidebar/BrandMark.tsx": 1,
-  "src/renderer/src/features/sidebar/sidebar-text.ts": 59,
+  "src/renderer/src/features/sidebar/sidebar-text.ts": 60,
   "src/renderer/src/features/split/split-text.ts": 19,
   "src/renderer/src/features/terminal/terminal-session.ts": 3,
   "src/renderer/src/features/terminal/terminal-text.ts": 47,

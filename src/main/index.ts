@@ -954,15 +954,8 @@ function piDown(): string {
 }
 
 function pushIsolationStatus(): void {
-  const items = [...isolationView.values()]
-  const ready = items.filter((x) => x.state === 'ready').length
-  const blocked = items.filter((x) => x.state === 'blocked').length
-  const text =
-    ready + blocked === 0
-      ? undefined
-      : blocked > 0
-        ? pick(`隔离工作树：${blocked} 个合入被挡，${ready} 个改动待确认合入`, `Isolated worktrees: ${blocked} merges blocked, ${ready} changes awaiting merge`)
-        : pick(`隔离工作树：${ready} 个改动待确认合入`, `Isolated worktrees: ${ready} changes awaiting merge`)
+  const pending = [...isolationView.values()].filter((x) => x.state !== 'waiting').length
+  const text = pending === 0 ? undefined : pick(`工作树：${pending} 个有未合并的改动`, `Worktrees: ${pending} with unmerged changes`)
   push({ ch: 'status', payload: { key: 'isolation', text } })
 }
 
@@ -1027,21 +1020,7 @@ async function refreshIsolationViews(): Promise<void> {
       continue
     }
     const state: IsolationViewState = isolationBlockedReason.has(record.worktree) ? 'blocked' : 'ready'
-    const wasPending = isolationOf(isolatedSessionCwd(record))?.state
     setIsolationView(isolatedSessionCwd(record), { state, branch: record.branch })
-    if (wasPending === 'ready' || wasPending === 'blocked') continue
-    push({
-      ch: 'notify',
-      payload: {
-        id: `iso-ready-${Date.now()}`,
-        method: 'notify',
-        notifyType: 'info',
-        message: pick(
-          `隔离工作树 ${record.branch} 里有改动等你确认：打开那个会话，在输入框上方选「合入主干」。`,
-          `Isolated worktree ${record.branch} has changes to confirm: open that session and choose "Merge to main" above the input.`
-        )
-      }
-    })
   }
   const alive = new Set(records.map((record) => isolationCwdKey(isolatedSessionCwd(record))))
   for (const key of [...isolationView.keys()]) {
@@ -1056,7 +1035,7 @@ function warnSharedCwdOnce(runnerId: string, cwd: string, registry: RunnerRegist
   sharedCwdWarned.add(runnerId)
   push({
     ch: 'notify',
-    payload: { id: `shared-cwd-${runnerId}`, method: 'notify', notifyType: 'warning', message: sharedCwdNotice() }
+    payload: { id: `shared-cwd-${runnerId}`, method: 'notify', notifyType: 'warning', message: sharedCwdNotice(cwd) }
   })
 }
 
@@ -1930,6 +1909,19 @@ async function resolveFileContext(
   return { ok: true, context: { ...provisional, cwd: checked.cwd } }
 }
 
+async function openSessionWorktree(cwd: string): Promise<{ ok: true; cwd: string; branch: string } | { ok: false; error: string }> {
+  const outcome = await isolateCwdForConflict(cwd)
+  if (!outcome.ok) return { ok: false, error: outcome.reason }
+  await autoIsolations.add(outcome.record).catch(() => undefined)
+  const target = isolatedSessionCwd(outcome.record)
+  setIsolationView(target, { state: 'waiting', branch: outcome.record.branch })
+  return { ok: true, cwd: target, branch: outcome.record.branch }
+}
+
+async function sessionWorktrees(): Promise<{ cwd: string; branch: string }[]> {
+  return (await autoIsolations.all()).map((record) => ({ cwd: isolatedSessionCwd(record), branch: record.branch }))
+}
+
 async function rememberRunnerSession(
   result: { ok: boolean; id?: string; sessionId?: string },
   target: { sessionFile?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; cwd: string }
@@ -2110,26 +2102,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       return applyRememberedModel(agent, (await getSettings()).lastMainModel)
     },
     isolationOf,
-    resolveCwdConflict: async (target) => {
-      if (target.activate === false || target.hidden) return null
-      if (runners && runners.size >= runners.limit) return null
-      const existing = target.sessionId ? await autoIsolations.bySession(target.sessionId).catch(() => null) : null
-      if (existing) return { cwd: isolatedSessionCwd(existing) }
-      const outcome = await isolateCwdForConflict(target.cwd, { sessionId: target.sessionId })
-      if (!outcome.ok) return { reason: outcome.reason }
-      await autoIsolations.add(outcome.record).catch(() => undefined)
-      setIsolationView(isolatedSessionCwd(outcome.record), { state: 'waiting', branch: outcome.record.branch })
-      push({
-        ch: 'notify',
-        payload: {
-          id: `iso-created-${Date.now()}`,
-          method: 'notify',
-          notifyType: 'info',
-          message: pick(`同一目录已有会话在运行，本会话改用隔离工作树 ${outcome.record.worktree}（分支 ${outcome.record.branch}）。改动留在隔离分支，会话停下后由你确认再合入主干。`, `Another session is running in this folder, so this session uses isolated worktree ${outcome.record.worktree} (branch ${outcome.record.branch}). Changes stay on that branch and merge to main after you confirm once the session stops.`)
-        }
-      })
-      return { cwd: isolatedSessionCwd(outcome.record) }
-    },
     launchSignature: () => JSON.stringify([...providerExtensionPaths(), ...bundledSkillPaths(), ...bundledPlugins.skillPaths()].map((path) => {
       try { return `${path}@${statSync(path).mtimeMs}` } catch { return path }
     })),
@@ -2531,15 +2503,6 @@ function registerIpc(): void {
       return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
     }
     const id = targetId
-    if (id && runners?.needsIsolation(id)) {
-      const isolated = await runners.isolateIfConflicting(id)
-      if (isolated.error) return { ok: false, error: isolated.error }
-      if (isolated.moved) {
-        const runtime = runners.runtimeOf(id)
-        if (expected && runtime) expected.generation = runtime.generation
-        pin = pinSendTarget(id)
-      }
-    }
     if (id) {
       const guard = runners?.guardExecute(id)
       if (guard && !guard.ok) return guard
@@ -3671,6 +3634,8 @@ const sessionHost: SessionHost = {
   relocateMissingCwd,
   startAgent,
   rememberRunnerSession,
+  openSessionWorktree,
+  sessionWorktrees,
   readHistoryWithArtifacts,
   projectIdForCwd
 }

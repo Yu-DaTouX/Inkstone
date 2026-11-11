@@ -321,7 +321,7 @@ export interface Store {
   abort: () => Promise<void>
   runBash: (command: string, options?: { excludeFromContext?: boolean }) => Promise<{ ok: boolean; error?: string }>
   abortBash: () => Promise<void>
-  newSession: (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending' }) => Promise<{
+  newSession: (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; worktree?: boolean }) => Promise<{
     ok: boolean
     sessionId?: string
     runId?: string

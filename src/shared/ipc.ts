@@ -624,6 +624,7 @@ export interface SessionSummary {
   snoozedUntil?: number
   markedUnread?: boolean
   projectCandidates?: string[]
+  worktreeBranch?: string
 }
 
 export type SessionScope = 'global' | 'project' | 'pending'
@@ -1773,7 +1774,7 @@ export interface YanBridge {
   removeQueued(queueId: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
   queueEdit(arg: QueueState | QueueEditOp, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
   abort(expectedRuntime?: ExpectedRuntimeOwner): Promise<QueueSnapshot & { error?: string }>
-  newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope }): Promise<{
+  newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope; worktree?: boolean }): Promise<{
     ok: boolean
     error?: string
     id?: string

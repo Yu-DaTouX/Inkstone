@@ -25,6 +25,7 @@ import { translateText } from '../translate'
 import { archivedCompressionStatus, compressArchivedSessions, COMPRESS_SWEEP_INTERVAL_MS } from '../session-compress'
 import { readUsageStatsOffThread } from '../usage-stats-host'
 import { deleteSessionChain } from '../session-delete'
+import { isolationCwdKey } from '../session-isolation'
 import { pick } from '../../shared/ui-lang'
 
 export interface SelectedSessionTarget {
@@ -193,7 +194,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     }
   })
 
-  handle('yan:newSession', async (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending' }) => {
+  handle('yan:newSession', async (target?: { cwd?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; worktree?: boolean }) => {
     const settings = await getSettings()
     const cwdResult = await host.validateCwd(target?.cwd ?? settings.cwd)
     if (!cwdResult.ok) return cwdResult
@@ -204,11 +205,16 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     if (target?.projectId && !settings.projects.some((project) => project.id === target.projectId)) {
       return { ok: false, error: pick('目标项目不存在或已被移除', 'Target project does not exist or was removed') }
     }
-    const cwd = cwdResult.cwd
     const projectId = target?.scope === 'global'
       ? undefined
-      : (target?.projectId ?? (target?.scope === 'pending' ? undefined : host.projectIdForCwd(settings, cwd)))
+      : (target?.projectId ?? (target?.scope === 'pending' ? undefined : host.projectIdForCwd(settings, cwdResult.cwd)))
     const scope = target?.scope ?? (projectId ? 'project' : 'global')
+    let cwd = cwdResult.cwd
+    if (target?.worktree === true) {
+      const opened = await host.openSessionWorktree(cwd)
+      if (!opened.ok) return opened
+      cwd = opened.cwd
+    }
     const res = await host.runners()!.select({ cwd, projectId, scope })
     await host.rememberRunnerSession(res, { cwd, projectId, scope })
     if (res.ok && res.id) void host.pushRunnerSnapshot(res.id)
@@ -322,7 +328,16 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     const settings = await getSettings()
     const requested = Number(process.env.YAN_TEST_SESSION_LIST_LIMIT)
     const limit = Number.isInteger(requested) && requested > 200 && requested <= 1000 ? requested : 200
-    return filterChainRepresentatives(await listSessions(limit, settings.projects))
+    const [sessions, worktrees] = await Promise.all([
+      filterChainRepresentatives(await listSessions(limit, settings.projects)),
+      host.sessionWorktrees?.().catch(() => []) ?? []
+    ])
+    if (!worktrees.length) return sessions
+    const branches = new Map(worktrees.map((item) => [isolationCwdKey(item.cwd), item.branch]))
+    return sessions.map((session) => {
+      const worktreeBranch = branches.get(isolationCwdKey(session.cwd))
+      return worktreeBranch ? { ...session, worktreeBranch } : session
+    })
   })
 
   async function locateSession(sessionId: string): Promise<{ path: string; cwd: string } | undefined> {

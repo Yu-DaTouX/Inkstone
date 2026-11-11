@@ -19,6 +19,8 @@ export interface SessionHost {
     result: { ok: boolean; id?: string; sessionId?: string },
     target: { sessionFile?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; cwd: string }
   ): Promise<void>
+  openSessionWorktree(cwd: string): Promise<{ ok: true; cwd: string; branch: string } | { ok: false; error: string }>
+  sessionWorktrees?(): Promise<{ cwd: string; branch: string }[]>
   readHistoryWithArtifacts(sessionFile: string, liveRunId?: string): ReturnType<typeof readChainMessages>
   projectIdForCwd(settings: Awaited<ReturnType<typeof getSettings>>, cwd: string): string | undefined
 }

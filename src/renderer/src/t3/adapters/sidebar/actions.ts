@@ -45,7 +45,7 @@ export interface SidebarActions {
   archiveProject(project: ProjectRecord): Promise<boolean>
   restoreProject(project: ProjectRecord): Promise<boolean>
   ensureProject(cwd: string): Promise<ProjectRecord | undefined>
-  newThreadIn(project: ProjectRecord): Promise<void>
+  newThreadIn(project: ProjectRecord, worktree?: boolean): Promise<void>
 }
 
 export const sidebarActions: SidebarActions = {
@@ -123,8 +123,8 @@ export const sidebarActions: SidebarActions = {
   async ensureProject(cwd) {
     return ensureProjectForCwd(cwd)
   },
-  async newThreadIn(project) {
-    const created = await useStore.getState().newSession({ cwd: project.cwd, projectId: project.id, scope: 'project' })
+  async newThreadIn(project, worktree) {
+    const created = await useStore.getState().newSession({ cwd: project.cwd, projectId: project.id, scope: 'project', ...(worktree ? { worktree: true } : {}) })
     if (created.ok) await useStore.getState().refreshSessions()
   }
 }

@@ -225,14 +225,14 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   )
 
   const newThreadInProject = useCallback(
-    (projectId: string | undefined): void => {
+    (projectId: string | undefined, worktree?: boolean): void => {
       const record = projectRecord(projectId)
       if (!record) {
         createGlobal()
         return
       }
       useUiV3.getState().navigate({ name: 'chat' })
-      void sidebarActions.newThreadIn(record)
+      void sidebarActions.newThreadIn(record, worktree)
     },
     [createGlobal, projectRecord]
   )
@@ -377,8 +377,8 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         title: view.title,
         project: view.projectId === NO_PROJECT_ID ? null : { projectId: view.projectId, displayName: view.projectDisplayName ?? '' },
         projectDisplayName: view.projectDisplayName,
-        branch: null,
-        worktreePath: null,
+        branch: view.branch,
+        worktreePath: view.worktreePath,
         status,
         workingStartedAt: Number.isNaN(startedAt) ? null : startedAt,
         timeLabel: compactAgo(view.activityAt, now, lang === 'en-US' ? 'en-US' : 'zh-CN'),
@@ -740,7 +740,7 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
         />
       </div>
 
-      {menuProject ? <ProjectMenu key={menuProject.id} project={menuProject} anchor={projectMenuAnchorRef} open={projectMenu?.open === true} onOpenChange={(open) => setProjectMenu((previous) => previous ? { ...previous, open } : previous)} onNew={() => newThreadInProject(menuProject.id)} /> : null}
+      {menuProject ? <ProjectMenu key={menuProject.id} project={menuProject} anchor={projectMenuAnchorRef} open={projectMenu?.open === true} onOpenChange={(open) => setProjectMenu((previous) => previous ? { ...previous, open } : previous)} onNew={() => newThreadInProject(menuProject.id)} onNewWorktree={() => newThreadInProject(menuProject.id, true)} /> : null}
       <NewSessionPicker
         anchor={newPickerAnchorRef}
         open={newPickerOpen}

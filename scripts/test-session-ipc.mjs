@@ -192,6 +192,44 @@ try {
     assert.equal(actions.length, 2)
     assert.equal(await readFile(join(root, 'existing.html'), 'utf8'), 'sentinel')
   })
+
+  process.stdout.write('\n▌工作树：手动打开才建，会话列表带上分支\n')
+  const selected = []
+  const opened = []
+  let worktree = { ok: true, cwd: 'C:/proj-worktrees/Inkstone-1', branch: 'Inkstone/1' }
+  host.runners = () => ({ select: async (target) => { selected.push(target); return { ok: true, id: 'r9', runId: 'r9', sessionId: 'W', generation: 1 } } })
+  host.openSessionWorktree = async (cwd) => { opened.push(cwd); return worktree }
+  await check('不带 worktree 的新会话直接开在原目录，不建工作树', async () => {
+    const res = await handlers.get('yan:newSession')({ cwd: 'C:/proj' })
+    assert.equal(res.ok, true, res.error)
+    assert.deepEqual(opened, [])
+    assert.equal(selected.at(-1).cwd, 'C:/proj')
+  })
+  await check('带 worktree 的新会话先建工作树，再把会话开在工作树目录', async () => {
+    const res = await handlers.get('yan:newSession')({ cwd: 'C:/proj', worktree: true })
+    assert.equal(res.ok, true, res.error)
+    assert.deepEqual(opened, ['C:/proj'])
+    assert.equal(selected.at(-1).cwd, 'C:/proj-worktrees/Inkstone-1')
+  })
+  await check('建不成工作树时报出原因，不开会话', async () => {
+    worktree = { ok: false, error: '这个文件夹不是 Git 仓库，开不了工作树' }
+    const before = selected.length
+    const res = await handlers.get('yan:newSession')({ cwd: 'C:/plain', worktree: true })
+    assert.equal(res.ok, false)
+    assert.match(res.error, /不是 Git 仓库/)
+    assert.equal(selected.length, before)
+  })
+  await check('会话列表给工作树里的会话带上分支，目录写法不同也认得；没有工作树时不带', async () => {
+    host.sessionWorktrees = async () => [{ cwd: 'C:\\Layout-CWD\\', branch: 'Inkstone/1' }]
+    const marked = await handlers.get('yan:listSessions')()
+    assert.equal(marked.find((item) => item.id === 'old-2').worktreeBranch, 'Inkstone/1')
+    host.sessionWorktrees = async () => []
+    const plain = await handlers.get('yan:listSessions')()
+    assert.ok(plain.every((item) => item.worktreeBranch === undefined))
+    host.sessionWorktrees = async () => { throw new Error('fixture') }
+    const failed = await handlers.get('yan:listSessions')()
+    assert.ok(failed.some((item) => item.id === 'old-2') && failed.every((item) => item.worktreeBranch === undefined), '读工作树记录失败时列表照常返回')
+  })
 } finally {
   for (const key of keys) {
     if (previous[key] === undefined) delete process.env[key]
