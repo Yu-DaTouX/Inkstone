@@ -68,7 +68,7 @@ function run(file: string, args: string[]): Promise<string> {
   })
 }
 
-export async function readProcessTable(platform: NodeJS.Platform): Promise<ProcessRow[]> {
+async function queryProcessTable(platform: NodeJS.Platform): Promise<ProcessRow[]> {
   if (platform === 'win32') {
     const shell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
     const output = await run(shell, [
@@ -80,6 +80,37 @@ export async function readProcessTable(platform: NodeJS.Platform): Promise<Proce
     return parseWindowsProcessCsv(output)
   }
   return parsePsOutput(await run('ps', ['-A', '-o', 'pid=,ppid=,comm=']))
+}
+
+interface TableQueue {
+  running: Promise<ProcessRow[]> | null
+  queued: Promise<ProcessRow[]> | null
+}
+
+const tableQueues = new Map<NodeJS.Platform, TableQueue>()
+
+function beginTableQuery(queue: TableQueue, platform: NodeJS.Platform): Promise<ProcessRow[]> {
+  queue.queued = null
+  const query = queryProcessTable(platform)
+  queue.running = query
+  const done = (): void => {
+    if (queue.running === query && !queue.queued) queue.running = null
+  }
+  query.then(done, done)
+  return query
+}
+
+export function readProcessTable(platform: NodeJS.Platform): Promise<ProcessRow[]> {
+  let queue = tableQueues.get(platform)
+  if (!queue) {
+    queue = { running: null, queued: null }
+    tableQueues.set(platform, queue)
+  }
+  const running = queue.running
+  if (!running) return beginTableQuery(queue, platform)
+  const current = queue
+  current.queued ??= running.then(() => undefined, () => undefined).then(() => beginTableQuery(current, platform))
+  return current.queued
 }
 
 export async function listProcessTree(rootPid: number | null, platform: NodeJS.Platform = process.platform): Promise<TerminalProcessList> {

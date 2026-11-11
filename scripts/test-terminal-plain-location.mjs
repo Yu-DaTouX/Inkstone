@@ -168,7 +168,7 @@ try {
     available: () => true,
     list: () => [snapshot()],
     stream: () => stream,
-    start: () => null,
+    start: () => ({ ok: false, reason: 'spawn', message: 'unused' }),
     write: () => true,
     kill: () => true,
     announce: () => {},

@@ -24,6 +24,7 @@ files:
   - package.json
   - '!node_modules/**'
   - 'node_modules/node-pty/**'
+  - 'node_modules/@xterm/headless/**'
   - 'node_modules/@ff-labs/fff-node/**'
   - 'node_modules/@ff-labs/fff-bin-*/**'
   - 'node_modules/ffi-rs/**'

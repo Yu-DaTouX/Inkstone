@@ -2,13 +2,13 @@ import { createRequire } from 'node:module'
 import { existsSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { runInNewContext } from 'node:vm'
+import { Script, createContext } from 'node:vm'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
 import { safeTerminalCut } from './terminal-registry'
 import { buildTerminalNotice, type TerminalNoticeState } from '../shared/host-notice-text'
 import type { TerminalJob } from '../shared/terminal-jobs'
 import { addTerminalJob, terminalJob, updateTerminalJob } from './terminal-jobs'
-import type { TerminalSessionInfo, TerminalSnapshot, TerminalStartOptions, TerminalStream, TerminalAgentPhase } from './terminal'
+import type { TerminalSessionInfo, TerminalSnapshot, TerminalStartOptions, TerminalStartResult, TerminalStream, TerminalAgentPhase } from './terminal'
 import type { TerminalProgramStatus } from '../shared/ipc'
 
 const requireModule = createRequire(import.meta.url)
@@ -313,11 +313,26 @@ export function sliceSince(stream: Pick<TerminalStream, 'buffer' | 'total'>, fro
 }
 
 let headlessModule: typeof import('@xterm/headless') | null = null
+let headlessFailed = false
+
+function loadHeadless(): typeof import('@xterm/headless') | null {
+  if (headlessModule) return headlessModule
+  if (headlessFailed) return null
+  try {
+    headlessModule = requireModule('@xterm/headless') as typeof import('@xterm/headless')
+    return headlessModule
+  } catch (error) {
+    headlessFailed = true
+    console.warn('[terminal-agent] @xterm/headless 加载失败，终端输出改用去控制序列的原文：', error)
+    return null
+  }
+}
 
 export async function renderTerminalText(raw: string, cols: number, context = ''): Promise<string> {
   if (!raw) return ''
-  headlessModule ??= requireModule('@xterm/headless') as typeof import('@xterm/headless')
-  const term = new headlessModule.Terminal({ cols: Math.max(20, Math.min(cols, 1000)), rows: 50, scrollback: 20_000, allowProposedApi: true })
+  const headless = loadHeadless()
+  if (!headless) return stripTerminalControls(raw)
+  const term = new headless.Terminal({ cols: Math.max(20, Math.min(cols, 1000)), rows: 50, scrollback: 20_000, allowProposedApi: true })
   try {
     let first = 0
     if (context) {
@@ -389,7 +404,7 @@ export interface TerminalAgentHost {
   available(): boolean
   list(): TerminalSnapshot[]
   stream(id: string): TerminalStream | null
-  start(options: TerminalStartOptions): TerminalSnapshot | null
+  start(options: TerminalStartOptions): TerminalStartResult
   write(id: string, data: string): boolean
   kill(id: string): boolean
   announce(id: string, phase: TerminalAgentPhase, action: string): void
@@ -422,6 +437,35 @@ const lastUsed = new Map<string, string>()
 const backgroundJobs = new Map<string, AbortController>()
 const agentInterrupts = new Map<string, number>()
 const userInputChains = new Map<string, Promise<void>>()
+
+export function forgetTerminalAgentState(id: string): void {
+  agentTerminals.delete(id)
+  typedLines.delete(id)
+  terminalLocations.delete(id)
+  plainStreams.delete(id)
+  truncatedPlains.delete(id)
+  for (const [owner, last] of [...lastUsed]) if (last === id) lastUsed.delete(owner)
+  if (!backgroundJobs.has(id)) agentInterrupts.delete(id)
+  const pending = userInputChains.get(id)
+  if (pending) {
+    void pending.then(() => {
+      typedLines.delete(id)
+      terminalLocations.delete(id)
+    })
+  }
+}
+
+export function terminalAgentStateOf(id: string): { agentOpened: boolean; typedLine: boolean; location: boolean; lastUsed: boolean; plain: boolean; truncatedPlain: boolean; interrupt: boolean } {
+  return {
+    agentOpened: agentTerminals.has(id),
+    typedLine: typedLines.has(id),
+    location: terminalLocations.has(id),
+    lastUsed: [...lastUsed.values()].includes(id),
+    plain: plainStreams.has(id),
+    truncatedPlain: truncatedPlains.has(id),
+    interrupt: agentInterrupts.has(id)
+  }
+}
 
 export function resetTerminalAgentState(): void {
   for (const job of backgroundJobs.values()) job.abort()
@@ -521,11 +565,16 @@ function secondsParam(params: Record<string, unknown>, key: string, fallbackMs: 
   return Math.min(maxMs, Math.round(seconds * 1000))
 }
 
-function untilMatches(pattern: RegExp, text: string): boolean {
-  try {
-    return runInNewContext('pattern.test(text)', { pattern, text }, { timeout: UNTIL_MATCH_TIMEOUT_MS }) === true
-  } catch {
-    throw new CapabilityCommandError('terminal_bad_until', `--until pattern timed out; use a simpler one: ${pattern.source}`)
+export function createUntilMatcher(pattern: RegExp): (text: string) => boolean {
+  const script = new Script('pattern.test(text)')
+  const context = createContext({ pattern, text: '' })
+  return (text) => {
+    context.text = text
+    try {
+      return script.runInContext(context, { timeout: UNTIL_MATCH_TIMEOUT_MS }) === true
+    } catch {
+      throw new CapabilityCommandError('terminal_bad_until', `--until pattern timed out; use a simpler one: ${pattern.source}`)
+    }
   }
 }
 
@@ -649,8 +698,12 @@ export class TerminalAgentCommands {
       if (!isDir) throw new CapabilityCommandError('terminal_bad_cwd', `目录不存在：${cwd}`)
     }
     const title = stringParam(params, 'title').trim().slice(0, 60)
-    const snapshot = this.host.start({ cwd, fallbackCwd: base, cols: AGENT_TERMINAL_COLS, rows: AGENT_TERMINAL_ROWS, owner, ...(title ? { title } : {}) })
-    if (!snapshot) throw new CapabilityCommandError('terminal_start_failed', '没能新开终端（可能已达到本会话的终端上限）')
+    const started = this.host.start({ cwd, fallbackCwd: base, cols: AGENT_TERMINAL_COLS, rows: AGENT_TERMINAL_ROWS, owner, ...(title ? { title } : {}) })
+    if (!started.ok) {
+      const why = started.reason === 'limit' ? '已达到本会话的终端上限' : started.message
+      throw new CapabilityCommandError('terminal_start_failed', `没能新开终端：${why}`)
+    }
+    const snapshot = started.snapshot
     agentTerminals.add(snapshot.id)
     const stream = this.host.stream(snapshot.id)
     if (!stream) throw new CapabilityCommandError('terminal_start_failed', '新开的终端已经退出')
@@ -707,14 +760,22 @@ export class TerminalAgentCommands {
     signal?: AbortSignal
   ): Promise<WaitState> {
     const started = this.host.now()
+    const matcher = options.until ? createUntilMatcher(options.until) : null
+    const needsPlain = matcher !== null || options.mode === 'command'
     let nextProcessCheck = 0
+    let plain = ''
+    let plainKey = ''
     while (true) {
       if (signal?.aborted) return 'cancelled'
       const stream = this.host.stream(id)
       if (!stream || !stream.info.alive) return 'exited'
       const now = this.host.now()
-      const plain = options.until || options.mode === 'command' ? plainSince(id, stream, from) : ''
-      if (options.until && untilMatches(options.until, plain)) return 'matched'
+      const key = `${stream.total}:${stream.buffer.length}`
+      if (needsPlain && key !== plainKey) {
+        plainKey = key
+        plain = plainSince(id, stream, from)
+        if (matcher?.(plain)) return 'matched'
+      }
       const quietFor = now - Math.max(stream.lastOutputAt, started)
       const sawOutput = stream.total > from
       if (options.mode === 'settle') {
@@ -927,12 +988,7 @@ export class TerminalAgentCommands {
     backgroundJobs.get(stream.info.id)?.abort()
     backgroundJobs.delete(stream.info.id)
     this.host.kill(stream.info.id)
-    agentTerminals.delete(stream.info.id)
-    typedLines.delete(stream.info.id)
-    terminalLocations.delete(stream.info.id)
-    userInputChains.delete(stream.info.id)
-    plainStreams.delete(stream.info.id)
-    truncatedPlains.delete(stream.info.id)
+    forgetTerminalAgentState(stream.info.id)
     return { summary: { kind: 'terminal', action: 'stop', id: stream.info.id, stopped: true } }
   }
 }

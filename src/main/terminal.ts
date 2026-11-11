@@ -70,6 +70,12 @@ export interface TerminalStream {
 
 export type TerminalAgentPhase = 'start' | 'end'
 
+export type TerminalStartFailure = 'unavailable' | 'limit' | 'spawn'
+
+export type TerminalStartResult =
+  | { ok: true; snapshot: TerminalSnapshot }
+  | { ok: false; reason: TerminalStartFailure; message: string }
+
 export type TerminalSink = (event:
   | { kind: 'data'; id: string; data: string; seq: number }
   | { kind: 'status'; id: string; status?: TerminalProgramStatus }
@@ -111,6 +117,15 @@ const batcher = new OutputBatcher((id, data) => {
 
 export function setTerminalSink(next: TerminalSink | null): void {
   sink = next
+}
+
+const removedListeners = new Set<(id: string) => void>()
+
+export function onTerminalRemoved(listener: (id: string) => void): () => void {
+  removedListeners.add(listener)
+  return () => {
+    removedListeners.delete(listener)
+  }
 }
 
 function findExe(name: string): string | null {
@@ -184,7 +199,6 @@ function emitBuffered(id: string): void {
   batcher.flush(id)
   const entry = sessions.get(id)
   if (!entry || !sink) return
-  if (entry.buffer) sink({ kind: 'data', id, data: entry.buffer, seq: entry.seq })
   if (entry.info.status) sink({ kind: 'status', id, status: entry.info.status })
   if (!entry.info.alive) sink({ kind: 'exit', id, exitCode: entry.info.exitCode ?? null })
 }
@@ -198,8 +212,13 @@ export function terminalEnvironment(env: NodeJS.ProcessEnv, platform: NodeJS.Pla
 }
 
 export function startTerminal(options: TerminalStartOptions = {}): TerminalSnapshot | null {
+  const result = startTerminalDetailed(options)
+  return result.ok ? result.snapshot : null
+}
+
+export function startTerminalDetailed(options: TerminalStartOptions = {}): TerminalStartResult {
   const pty = ptyOrNull()
-  if (!pty) return null
+  if (!pty) return { ok: false, reason: 'unavailable', message: loadError ?? 'node-pty is not loaded' }
 
   const cwd = validDir(options.cwd) ?? validDir(options.fallbackCwd) ?? process.cwd()
   const cols = clampDimension(options.cols, 80)
@@ -208,12 +227,13 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
   const shell = resolved.shell
   const id = randomUUID()
   const owner = normalizeOwner(options.owner)
+  let evict: string[] = []
   if (owner) {
     const slot = planOwnerSlot([...sessions.values()].map((entry) => entry.info), owner)
-    if (!slot.allowed) return null
-    for (const evicted of slot.evict) killTerminal(evicted)
+    if (!slot.allowed) return { ok: false, reason: 'limit', message: 'terminal limit reached for this session' }
+    evict = slot.evict
   } else if (sessions.size >= MAX_UNOWNED_TERMINALS) {
-    return null
+    return { ok: false, reason: 'limit', message: 'terminal limit reached' }
   }
 
   let child: IPty
@@ -225,9 +245,10 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
       cwd,
       env: terminalEnvironment(withoutExeSearchGuard({ ...process.env, ...options.env }))
     })
-  } catch {
-    return null
+  } catch (error) {
+    return { ok: false, reason: 'spawn', message: error instanceof Error ? error.message : String(error) }
   }
+  for (const evicted of evict) killTerminal(evicted)
 
   const info: TerminalSessionInfo = {
     id,
@@ -266,7 +287,7 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     sink?.({ kind: 'exit', id, exitCode: exitCode ?? null })
   })
 
-  return snapshotOf(entry)
+  return { ok: true, snapshot: snapshotOf(entry) }
 }
 
 export function writeTerminal(id: string, data: string): boolean {
@@ -304,6 +325,12 @@ export function killTerminal(id: string): boolean {
   }
   sessions.delete(id)
   if (entry.info.status) sink?.({ kind: 'status', id, status: undefined })
+  for (const listener of [...removedListeners]) {
+    try {
+      listener(id)
+    } catch {
+    }
+  }
   return true
 }
 

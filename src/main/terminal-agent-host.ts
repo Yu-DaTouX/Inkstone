@@ -2,22 +2,25 @@ import {
   announceTerminalAgent,
   killTerminal,
   listTerminals,
+  onTerminalRemoved,
   sameTerminalOwner,
-  startTerminal,
+  startTerminalDetailed,
   terminalAvailable,
   terminalStream,
   writeTerminal
 } from './terminal'
 import { listProcessTree } from './terminal-processes'
 import { dangerGuardPrefs } from './settings'
-import { loadDangerRules, renderTerminalText, type TerminalAgentHost } from './terminal-agent'
+import { forgetTerminalAgentState, loadDangerRules, renderTerminalText, type TerminalAgentHost } from './terminal-agent'
+
+onTerminalRemoved(forgetTerminalAgentState)
 
 export function terminalAgentHost(): TerminalAgentHost {
   return {
     available: terminalAvailable,
     list: listTerminals,
     stream: terminalStream,
-    start: startTerminal,
+    start: startTerminalDetailed,
     write: writeTerminal,
     kill: killTerminal,
     announce: announceTerminalAgent,

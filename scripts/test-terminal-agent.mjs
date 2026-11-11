@@ -14,9 +14,9 @@ async function check(label, fn) {
   process.stdout.write(`  ✓ ${label}\n`)
 }
 
-async function bundle(entry, name) {
+async function bundle(entry, name, plugins = []) {
   const file = join(dir, name)
-  await build({ entryPoints: [entry], outfile: file, bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent' })
+  await build({ entryPoints: [entry], outfile: file, bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent', plugins })
   return import(pathToFileURL(file).href)
 }
 
@@ -50,12 +50,12 @@ function fakeHost(options = {}) {
       return term ? { info: { ...term.info }, buffer: term.buffer, total: term.total, lastOutputAt: term.lastOutputAt, pid: term.info.alive ? 4242 : null } : null
     },
     start: (opts) => {
-      if (options.startFails) return null
+      if (options.startFails) return { ok: false, reason: options.startFails === 'spawn' ? 'spawn' : 'limit', message: options.startFails === 'spawn' ? 'spawn ENOENT pwsh.exe' : 'limit' }
       const id = `t${++seq}`
       const term = { info: { id, title: opts.title ?? 'pwsh · work', shell: 'C:/Program Files/PowerShell/7/pwsh.exe', cwd: opts.cwd, cols: 120, rows: 30, alive: true, exitCode: null, owner: opts.owner }, buffer: '', total: 0, lastOutputAt: clock, writes: [] }
       terms.set(id, term)
       emit(term, 'PS C:\\work> ')
-      return { ...term.info, buffer: term.buffer, seq: 0 }
+      return { ok: true, snapshot: { ...term.info, buffer: term.buffer, seq: 0 } }
     },
     adopt: (info, buffer = 'PS C:\\work> ') => {
       const term = { info: { shell: 'C:/pwsh.exe', cols: 120, rows: 30, alive: true, exitCode: null, title: 'user', cwd: 'C:/work', ...info }, buffer: '', total: 0, lastOutputAt: clock, writes: [] }
@@ -90,8 +90,9 @@ try {
   const src = (path) => JSON.stringify(join(process.cwd(), path).replace(/\\/g, '/'))
   await writeFile(entry, `export * from ${src('src/main/terminal-agent.ts')}\nexport * from ${src('src/main/terminal-jobs.ts')}\nexport * from ${src('src/main/terminal-notice-step.ts')}\n`)
   const mod = await bundle(entry, 'terminal-agent.mjs')
+  const { noteTerminalUserInput } = mod
   const { listTerminalJobs, requestTerminalJobStop, markTerminalJobsStopping, clearFinishedTerminalJobs, resetTerminalJobs, terminalNoticeStep } = mod
-  const { keySequence, keysToSequence, planSubmission, stripTerminalControls, looksLikePrompt, lastNonEmptyLine, sliceSince, tailText, renderTerminalText, loadDangerRules, TerminalAgentCommands, resetTerminalAgentState } = mod
+  const { createUntilMatcher, forgetTerminalAgentState, terminalAgentStateOf, keySequence, keysToSequence, planSubmission, stripTerminalControls, looksLikePrompt, lastNonEmptyLine, sliceSince, tailText, renderTerminalText, loadDangerRules, TerminalAgentCommands, resetTerminalAgentState } = mod
 
   const setup = (options = {}) => {
     resetTerminalAgentState()
@@ -509,6 +510,105 @@ try {
     await failsWith(commands.run('start', { cwd: 'no/such/dir' }), 'terminal_bad_cwd')
     const full = setup({ startFails: true })
     await failsWith(full.commands.run('start', {}), 'terminal_start_failed')
+    await assert.rejects(full.commands.run('start', {}), /终端上限/)
+  })
+
+  await check('D-11：spawn 失败把真实原因带进报错，不再一律说达到上限', async () => {
+    const broken = setup({ startFails: 'spawn' })
+    await assert.rejects(broken.commands.run('start', {}), (error) => {
+      assert.equal(error.code, 'terminal_start_failed')
+      assert.match(error.message, /spawn ENOENT pwsh\.exe/)
+      assert.doesNotMatch(error.message, /上限/)
+      return true
+    })
+    await assert.rejects(broken.commands.run('run', { command: 'echo hi' }), /spawn ENOENT pwsh\.exe/)
+  })
+
+  await check('D-10：终端被关闭后清掉 agent 侧的每终端状态（含 lastUsed、输入行、位置、plain 缓存）', async () => {
+    const { host, commands } = setup()
+    const first = await commands.run('run', { command: 'echo one' })
+    const id = first.summary.id
+    await commands.run('write', { id, text: 'typing' })
+    const live = terminalAgentStateOf(id)
+    assert.equal(live.agentOpened, true)
+    assert.equal(live.typedLine, true)
+    assert.equal(live.lastUsed, true)
+    host.kill(id)
+    forgetTerminalAgentState(id)
+    const gone = terminalAgentStateOf(id)
+    assert.deepEqual(gone, { agentOpened: false, typedLine: false, location: false, lastUsed: false, plain: false, truncatedPlain: false, interrupt: false })
+    const second = await commands.run('run', { command: 'echo two' })
+    assert.notEqual(second.summary.id, id)
+    await commands.run('stop', { id: second.summary.id })
+    assert.equal(terminalAgentStateOf(second.summary.id).lastUsed, false)
+    assert.equal(terminalAgentStateOf(second.summary.id).typedLine, false)
+  })
+
+  await check('D-10：关闭终端时用户输入链还在跑也不会把状态写回来', async () => {
+    const { host, commands } = setup()
+    const started = await commands.run('start', {})
+    const id = started.summary.id
+    const pending = noteTerminalUserInput(id, 'cd C:/work\r', 'C:/work')
+    host.kill(id)
+    forgetTerminalAgentState(id)
+    await pending.catch(() => undefined)
+    await new Promise((done) => setTimeout(done, 5))
+    assert.equal(terminalAgentStateOf(id).location, false)
+    assert.equal(terminalAgentStateOf(id).typedLine, false)
+  })
+
+  await check('D-06：--until 匹配器复用同一个 vm 脚本和上下文，仍能匹配并保留超时保护', async () => {
+    const matcher = createUntilMatcher(/ready/m)
+    assert.equal(matcher('booting'), false)
+    assert.equal(matcher('server ready'), true)
+    assert.equal(matcher('booting again'), false)
+    const slow = createUntilMatcher(/^(a+)+$/)
+    assert.throws(() => slow('a'.repeat(40) + '!'), (error) => error.code === 'terminal_bad_until')
+  })
+
+  await check('D-06：等待期间输出总量没变就不重新匹配 --until', async () => {
+    const { commands } = setup({ respond: (term, command, emit) => emit(term, `${command}\r\nbooting\r\n`) })
+    const original = RegExp.prototype.test
+    let calls = 0
+    RegExp.prototype.test = function (text) {
+      if (this.source === 'NEVER-APPEARS') calls += 1
+      return original.call(this, text)
+    }
+    try {
+      const result = await commands.run('run', { command: 'serve', until: 'NEVER-APPEARS', timeout: 20, quiet: 600 })
+      assert.equal(result.summary.state, 'timeout')
+    } finally {
+      RegExp.prototype.test = original
+    }
+    assert.ok(calls >= 1 && calls <= 3, `无新输出时匹配次数应很少，实际 ${calls}`)
+  })
+
+  await check('F-04：@xterm/headless 加载失败时 renderTerminalText 退回去控制序列的原文，只记一次日志', async () => {
+    const plugin = {
+      name: 'broken-require',
+      setup(builder) {
+        builder.onResolve({ filter: /^node:module$/ }, () => ({ path: 'broken-require', namespace: 'fixture' }))
+        builder.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
+          contents: "export const createRequire = () => () => { throw new Error(\"Cannot find module '@xterm/headless'\") }",
+          loader: 'js'
+        }))
+      }
+    }
+    const brokenEntry = join(dir, 'broken-entry.ts')
+    await writeFile(brokenEntry, `export { renderTerminalText } from ${src('src/main/terminal-agent.ts')}\n`)
+    const broken = await bundle(brokenEntry, 'terminal-agent-broken.mjs', [plugin])
+    const warnings = []
+    const originalWarn = console.warn
+    console.warn = (...args) => warnings.push(args.map(String).join(' '))
+    try {
+      assert.equal(await broken.renderTerminalText('\x1b[31mred\x1b[0m text\r\nnext', 80), 'red text\nnext')
+      assert.equal(await broken.renderTerminalText('again', 80, 'ctx'), 'again')
+      assert.equal(await broken.renderTerminalText('', 80), '')
+    } finally {
+      console.warn = originalWarn
+    }
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /@xterm\/headless/)
   })
 
   console.log(`test-terminal-agent: ${pass} 项全部通过`)

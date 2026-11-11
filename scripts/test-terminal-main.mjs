@@ -518,6 +518,73 @@ async function runTerminalSessions() {
 
     eq(children.every((child) => child.killed > 0), true, 'dispose 关闭所有 PTY')
 
+    {
+      const events = []
+      mod.setTerminalSink((event) => events.push(event))
+      const started = start(mod, { owner: 'attach-owner' }, 'attach 测试终端可建')
+      const child = children.at(-1)
+      child.emitData('x'.repeat(50 * 1024))
+      const before = mod.readTerminal(started.id)
+      events.length = 0
+      const snapshot = mod.attachTerminal(started.id)
+      eq(snapshot.buffer, before.buffer, 'D-07：attach 返回的 snapshot 仍含完整缓冲')
+      eq(snapshot.seq, before.seq, 'D-07：attach 的 seq 与缓冲对应')
+      eq(events.filter((event) => event.kind === 'data'), [], 'D-07：attach 不再把整份缓冲再推一遍')
+      child.emitExit(0)
+      events.length = 0
+      mod.attachTerminal(started.id)
+      eq(events.map((event) => event.kind), ['exit'], 'D-07：已退出终端 attach 仍补发 exit 事件')
+      mod.setTerminalSink(null)
+      mod.disposeTerminals()
+    }
+
+    {
+      const removed = []
+      const stop = mod.onTerminalRemoved((id) => removed.push(id))
+      const first = start(mod, { owner: 'rm-owner' }, 'D-10 终端可建')
+      eq(mod.killTerminal(first.id), true, 'D-10 kill 成功')
+      eq(removed, [first.id], 'D-10：UI 关闭终端会通知移除监听')
+      const second = start(mod, { owner: 'rm-owner' }, 'D-10 第二个终端可建')
+      const third = start(mod, { owner: 'rm-other' }, 'D-10 其他 owner 终端可建')
+      removed.length = 0
+      mod.closeTerminalsForOwner('rm-owner')
+      eq(removed, [second.id], 'D-10：随会话删除关闭终端也通知移除监听')
+      mod.disposeTerminals()
+      eq(removed, [second.id, third.id], 'D-10：dispose 同样通知')
+      stop()
+      const again = start(mod, { owner: 'rm-owner' }, 'D-10 取消订阅后终端可建')
+      mod.killTerminal(again.id)
+      eq(removed.length, 2, 'D-10：取消订阅后不再通知')
+      mod.onTerminalRemoved(() => {
+        throw new Error('listener failure')
+      })
+      const guarded = start(mod, { owner: 'rm-owner' }, 'D-10 监听抛错时终端可建')
+      eq(mod.killTerminal(guarded.id), true, 'D-10：监听抛错不影响 kill')
+    }
+
+    {
+      spawnFailure = new Error('spawn ENOENT pwsh.exe')
+      const failed = mod.startTerminalDetailed({ owner: 'detail-owner' })
+      eq(failed, { ok: false, reason: 'spawn', message: 'spawn ENOENT pwsh.exe' }, 'D-11：spawn 失败把原因交给调用方')
+      eq(mod.startTerminalDetailed({ owner: 'detail-owner' }).ok, true, 'D-11：失败不留下污染状态，下一次可正常启动')
+      mod.disposeTerminals()
+
+      for (let i = 0; i < 12; i += 1) start(mod, { owner: 'evict-owner' }, `D-11 同 owner 第 ${i + 1} 个终端可建`)
+      const full = mod.startTerminalDetailed({ owner: 'evict-owner' })
+      eq(full.ok === false && full.reason, 'limit', 'D-11：存活终端占满时返回 limit')
+      children[children.length - 12].emitExit(0)
+      const exitedId = mod.listTerminals().find((terminal) => !terminal.alive).id
+      spawnFailure = new Error('spawn EACCES')
+      const failedAfterExit = mod.startTerminalDetailed({ owner: 'evict-owner' })
+      eq(failedAfterExit.ok === false && failedAfterExit.reason, 'spawn', 'D-11：占满且有已退出终端时 spawn 失败仍报 spawn')
+      ok(mod.listTerminals().some((terminal) => terminal.id === exitedId), 'D-11：spawn 失败时不驱逐旧终端')
+      const replaced = mod.startTerminalDetailed({ owner: 'evict-owner' })
+      ok(replaced.ok, 'D-11：spawn 成功后启动成功')
+      ok(!mod.listTerminals().some((terminal) => terminal.id === exitedId), 'D-11：spawn 成功后才驱逐已退出的旧终端')
+      eq(mod.listTerminals().length, 12, 'D-11：驱逐后仍是 12 个终端')
+      mod.disposeTerminals()
+    }
+
     console.log(`test-terminal-sessions: ${checks.length} 项断言通过`)
   } finally {
     delete globalThis.__terminalFakePty
