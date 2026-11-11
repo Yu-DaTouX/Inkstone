@@ -20,4 +20,13 @@
     font-size: 0.625rem;
     font-variant-numeric: tabular-nums;
   }
+  .t3-frame__leading:has(> .composer-v3__worktree) {
+    display: flex;
+    align-items: center;
+  }
+  .composer-v3__worktree {
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: var(--s-6);
+  }
 }

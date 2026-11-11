@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const meta = { description: '同一项目里两个会话共用目录同时运行，不再自动搬进工作树；输入框下方的「工作树」开关把新会话开进 Inkstone/ 分支的工作树，改动只落在工作树里；不调用真实模型' }
+export const meta = { description: '同一项目里两个会话共用目录同时运行，不再自动搬进工作树；输入框下方的「工作树」开关只记意向，发第一条消息时才把会话开进 Inkstone/ 分支的工作树并提示，改动只落在工作树里；不调用真实模型' }
 
 const WORKTREE_DIR = /Inkstone-\d{8}-\d+/
 
@@ -18,14 +18,17 @@ const VIEW = `(() => {
     draft: document.querySelector('[data-testid="composer-input"]')?.textContent ?? '',
     drafts: Object.values(s.sessionRuntimes).filter((entry) => entry.draft?.trim()).length,
     warned: (document.body.innerText.match(/后写的会覆盖先写的/g) ?? []).length,
+    created: (document.body.innerText.match(/已创建工作树[^\\n]*/) ?? [''])[0],
+    sent: s.messages.map((message) => typeof message.text === 'string' ? message.text : JSON.stringify(message.content ?? '')).join(' '),
     marks: document.querySelectorAll('.t3-worktree-mark').length
   }
 })()`
 
 export default async function run({ cdp, box, check, report, waitFor, sleep, shot, log }) {
   const ev = (expr) => cdp.evaluate(expr)
-  const flip = async () => {
-    const [x, y] = await ev(`(() => { const r = document.querySelector('[data-testid="composer-worktree"] .ui-switch__track').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] })()`)
+  const flip = () => click('[data-testid="composer-worktree"] .ui-switch__track')
+  const click = async (selector) => {
+    const [x, y] = await ev(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] })()`)
     await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
     await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
     await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
@@ -75,25 +78,33 @@ export default async function run({ cdp, box, check, report, waitFor, sleep, sho
   check('新会话的输入框下方有工作树开关，默认关', offered.toggle?.selected === false && !WORKTREE_DIR.test(offered.cwd), offered)
   await ev(`window.__yanStore.getState().insertIntoComposer('草稿跟着走')`)
   await until('草稿进了输入框', (view) => view.draft.includes('草稿跟着走'))
+  const worktreesDir = `${box.project}-worktrees`
   await flip()
-  const entered = await until('会话进了工作树', (view) => WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === true && !view.toggle.disabled, 60000)
-  report.entered = entered
-  log('entered', entered)
-  check('打开开关后会话开在 Inkstone- 工作树目录里', WORKTREE_DIR.test(entered.cwd), entered.cwd)
-  check('分支以 Inkstone/ 开头', entered.branch.startsWith('Inkstone/'), entered.branch)
-  check('已经打的字跟到了新会话，旧的空会话不留草稿', entered.draft.includes('草稿跟着走') && entered.drafts <= 1, { draft: entered.draft, drafts: entered.drafts })
+  const armed = await until('开关记下意向', (view) => view.toggle?.selected === true)
+  check('打开开关只记意向，还没有创建工作树', !WORKTREE_DIR.test(armed.cwd) && armed.branch === '' && !existsSync(worktreesDir), armed)
+  check('已经打的字留在输入框里', armed.draft.includes('草稿跟着走'), armed.draft)
   await shot('worktree-toggle-on')
 
   await flip()
-  const left = await until('关掉开关回到项目目录', (view) => !WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === false && !view.toggle.disabled, 60000)
-  check('关掉开关回到项目目录', !WORKTREE_DIR.test(left.cwd) && left.branch === '', left)
+  const left = await until('关掉开关', (view) => view.toggle?.selected === false)
+  check('关掉开关仍在项目目录，没有留下工作树', !WORKTREE_DIR.test(left.cwd) && left.branch === '' && !existsSync(worktreesDir), left)
 
   await flip()
-  const again = await until('再次进工作树', (view) => WORKTREE_DIR.test(view.cwd) && view.toggle?.selected === true && !view.toggle.disabled, 60000)
-  await ev(`window.__yanStore.getState().send('WRITES 在工作树里写文件')`)
+  await until('再次打开开关', (view) => view.toggle?.selected === true)
+  await ev(`window.__yanStore.getState().insertIntoComposer(' WRITES 在工作树里写文件')`)
+  await until('要发的字进了输入框', (view) => view.draft.includes('WRITES'))
+  await click('.t3-send')
+  const again = await until('发第一条消息时进了工作树', (view) => WORKTREE_DIR.test(view.cwd) && view.branch.startsWith('Inkstone/'), 60000)
+  report.entered = again
+  log('entered', again)
+  check('发第一条消息时会话开进 Inkstone- 工作树，分支以 Inkstone/ 开头', WORKTREE_DIR.test(again.cwd) && again.branch.startsWith('Inkstone/'), again)
+  const told = await until('出现创建提示', (view) => view.created || view.messages >= 4, 30000)
+  check('创建工作树时有提示，写明分支', told.created.includes('Inkstone/'), told.created)
+  await shot('worktree-created-notice')
   await waitFor(`s.session?.isStreaming || s.session?.isAgentRunning`, 20000, 50)
   await waitFor(`!(s.session?.isStreaming || s.session?.isAgentRunning) && s.messages.length >= 2`, 90000, 100)
   const done = await ev(VIEW)
+  check('打的字作为第一条消息发进了工作树会话', done.sent.includes('草稿跟着走') && done.drafts <= 1, { sent: done.sent, drafts: done.drafts })
   const inWorktree = existsSync(join(again.cwd, 'notes', 'a.md'))
   const inProject = existsSync(join(box.project, 'notes', 'a.md'))
   report.wrote = { cwd: again.cwd, inWorktree, inProject, done }

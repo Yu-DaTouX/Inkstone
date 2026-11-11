@@ -5,6 +5,7 @@ import { useStore } from '../../state/store'
 import { Switch } from '../../ui'
 import { composerDraftKey } from '../../state/composer-recovery'
 import { saveDraft } from './draft-store'
+import { setWorktreeIntent, useWorktreeIntended } from './worktree-intent'
 
 export function WorktreeToggle({ text }: { text: string }): ReactElement | null {
   const t = useT()
@@ -20,10 +21,16 @@ export function WorktreeToggle({ text }: { text: string }): ReactElement | null 
   })
   const branch = runner?.isolationBranch
   const git = useGitFolder(branch ? undefined : runner?.cwd, fresh)
+  const runKey = runner ? runner.runId ?? runner.id : undefined
+  const intended = useWorktreeIntended(runKey)
   if (!runner || !fresh || (!branch && !git)) return null
 
   const change = async (on: boolean): Promise<void> => {
     if (busy || !fresh || !home) return
+    if (!branch) {
+      setWorktreeIntent(on && runKey ? runKey : null)
+      return
+    }
     const before = useStore.getState()
     const key = composerDraftKey(before)
     const attachments = before.attachments
@@ -42,9 +49,9 @@ export function WorktreeToggle({ text }: { text: string }): ReactElement | null 
   }
 
   return (
-    <span title={branch ? t('composer.worktree.on', { branch }) : t('composer.worktree.off')}>
+    <span className="composer-v3__worktree" title={branch ? t('composer.worktree.on', { branch }) : intended ? t('composer.worktree.pending') : t('composer.worktree.off')}>
       <Switch
-        isSelected={!!branch}
+        isSelected={!!branch || intended}
         isDisabled={busy || !home}
         onChange={(on) => void change(on)}
         data-testid="composer-worktree"

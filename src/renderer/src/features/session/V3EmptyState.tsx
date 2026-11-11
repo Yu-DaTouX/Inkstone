@@ -35,6 +35,11 @@ const HOME_TEXT: Record<'zh-CN' | 'en-US', HomeText> = {
 
 const normPath = (path: string): string => path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
 
+function worktreeHome(cwd: string | undefined): string | undefined {
+  const at = cwd ? cwd.replace(/\\/g, '/').lastIndexOf('-worktrees/') : -1
+  return cwd && at > 0 ? cwd.slice(0, at) : undefined
+}
+
 interface WaitingText {
   waiting: string
   question: string
@@ -62,7 +67,11 @@ function awaitingRuns(runs: readonly RunSnapshot[]): RunSnapshot[] {
 function ProjectRow({ text, fresh }: { text: HomeText; fresh: boolean }): JSX.Element {
   const projects = useStore((s) => s.settings?.projects)
   const projectNames = useStore((s) => s.settings?.projectNames)
-  const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
+  const cwd = useStore((s) => {
+    const runner = s.peekedSessionId ? undefined : s.runners.find((item) => (item.runId ?? item.id) === s.activeRunnerId)
+    if (runner?.isolationBranch) return (runner.projectId ? s.settings?.projects.find((project) => project.id === runner.projectId)?.cwd : undefined) ?? worktreeHome(runner.cwd) ?? s.settings?.cwd ?? ''
+    return s.session?.cwd ?? s.settings?.cwd ?? ''
+  })
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)

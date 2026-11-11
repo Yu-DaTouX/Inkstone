@@ -13,6 +13,7 @@ import { hasComposerText } from '../../features/composer/composer-text'
 import { fileReferencePath } from '../../features/composer/file-refs'
 import { imageRefPrefix, withImageLegend } from '../../features/composer/image-refs'
 import { loadDraft, saveDraft } from '../../features/composer/draft-store'
+import { materializeWorktreeIntent } from '../../features/composer/worktree-intent'
 import { answerComposerForm, composerQuestion, setComposerTextPort } from '../../features/session/question-composer'
 
 export type ComposerSubmitMode = 'steer' | 'followUp'
@@ -113,7 +114,7 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
       if (submittingRef.current) return
       submittingRef.current = true
       setBusy(true)
-      const identity = composerSubmitIdentity(useStore.getState())
+      let identity = composerSubmitIdentity(useStore.getState())
       let cleared = false
       try {
         if (composerLocalCommand(value, useStore.getState().commands)) {
@@ -125,6 +126,9 @@ export function useComposerSubmitAdapter(ports: ComposerSubmitPorts): ComposerSu
           })
           return
         }
+        const moved = roundRunning ? 'none' : await materializeWorktreeIntent(t)
+        if (moved === 'failed') return
+        if (moved === 'created') identity = composerSubmitIdentity(useStore.getState())
         const sentIds = attachments.map((a) => a.id)
         const sentFrom = runtimeKeyOf(useStore.getState())
         const images = attachments
