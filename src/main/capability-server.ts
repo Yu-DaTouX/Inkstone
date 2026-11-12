@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { asModelText } from './model-text'
+import { pick } from '../shared/ui-lang'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -228,13 +229,13 @@ export class CapabilityServer {
   }
 
   async start(ctx: CapabilityContext): Promise<{ url: string; token: string }> {
-    if (this.server || this.ctx) throw new Error('一个能力服务实例只服务一个会话')
+    if (this.server || this.ctx) throw new Error(pick('一个能力服务实例只服务一个会话', 'A capability server instance serves only one session'))
 
     this.ctx = ctx
     this.token = randomUUID()
     await mkdir(this.opsDir, { recursive: true })
     await this.pruneOps()
-    if (this.ctx !== ctx || this.server) throw new Error('能力服务启动期间已停止')
+    if (this.ctx !== ctx || this.server) throw new Error(pick('能力服务启动期间已停止', 'Capability server stopped during startup'))
 
     const generation = ++this.generation
     this.server = createServer((req, res) => {
