@@ -30,7 +30,7 @@ import {
   type LandscapeLayerSpec,
   type LandscapeLayout
 } from './usage-landscape-model'
-import { landscapeSky, traceMoon, type MoonBody, type SkyBody } from './landscape-sky'
+import { landscapeSky, type SkyBody } from './landscape-sky'
 import './ambient.css'
 
 const LEVELS = 20
@@ -142,29 +142,6 @@ function drawSun(ctx: CanvasRenderingContext2D, x: number, y: number, radius: nu
   ctx.shadowBlur = radius * 0.35
   ctx.beginPath()
   ctx.arc(x, y, radius, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.restore()
-}
-
-function drawMoon(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number, moon: MoonBody, palette: Palette): void {
-  if (alpha <= 0) return
-  const lit = (palette.dark ? 0.36 : 0.24) * alpha
-  halo(ctx, x, y, radius * 3, (palette.dark ? 0.07 : 0.04) * alpha * moon.illumination, palette)
-  ctx.save()
-  ctx.fillStyle = css(palette.ink, (palette.dark ? 0.03 : 0) * alpha * (1 - moon.illumination) ** 2)
-  ctx.beginPath()
-  ctx.arc(x, y, radius, 0, Math.PI * 2)
-  ctx.fill()
-  const sx = x + Math.cos(moon.tilt) * radius * 0.45
-  const sy = y + Math.sin(moon.tilt) * radius * 0.45
-  const face = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 1.45)
-  face.addColorStop(0, css(palette.ink, lit))
-  face.addColorStop(0.6, css(palette.ink, lit * 0.88))
-  face.addColorStop(1, css(palette.ink, lit * 0.6))
-  ctx.fillStyle = face
-  ctx.shadowColor = css(palette.ink, lit * 0.6)
-  ctx.shadowBlur = radius * 0.18
-  traceMoon(ctx, x, y, radius, moon, moon.tilt)
   ctx.fill()
   ctx.restore()
 }
@@ -441,10 +418,6 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
         y: (plan.base - plan.rise * (0.88 + 0.32 * body.height)) * dpr,
         alpha: veil * body.fade
       })
-      if (sky.moon) {
-        const at = place(sky.moon)
-        drawMoon(ctx, at.x, at.y, discR, at.alpha, sky.moon, palette)
-      }
       if (sky.sun) {
         const at = place(sky.sun)
         drawSun(ctx, at.x, at.y, discR * (1 + 0.1 * (1 - sky.sun.height)), at.alpha, palette)
