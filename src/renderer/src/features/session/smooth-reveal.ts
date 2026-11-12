@@ -19,7 +19,31 @@ const CATCH_MS = 500
 const EASE_OFF = 0.35
 const FLOOR_RATE = 0.04
 const FRAME_CAP_MS = 50
-const WORD_SNAP_CHARS = 12
+export const FRESH_TYPE_CHARS = 240
+const PROGRESS_LIMIT = 400
+const HEAD_CHARS = 24
+
+const progress = new Map<string, { shown: number; head: string }>()
+
+function remember(id: string | null | undefined, text: string, shown: number): void {
+  if (!id) return
+  progress.delete(id)
+  progress.set(id, { shown, head: text.slice(0, HEAD_CHARS) })
+  if (progress.size > PROGRESS_LIMIT) progress.delete(progress.keys().next().value as string)
+}
+
+function savedShown(id: string | null | undefined, text: string): number | undefined {
+  const saved = id ? progress.get(id) : undefined
+  if (!saved) return undefined
+  const length = Math.min(saved.head.length, text.length)
+  return saved.head.slice(0, length) === text.slice(0, length) ? saved.shown : undefined
+}
+
+export function initialShown(length: number, fresh: boolean, saved: number | undefined, reduced: boolean): number {
+  if (reduced) return length
+  if (saved !== undefined) return Math.min(saved, length)
+  return fresh && length <= FRESH_TYPE_CHARS ? 0 : length
+}
 
 export interface RevealState {
   shown: number
@@ -65,10 +89,6 @@ export function stepReveal(state: RevealState, length: number, now: number, live
   return { shown: Math.min(length, shown + speed * dt), seen, rate, slow, weight, chunk, drain, at: now }
 }
 
-function isWordChar(code: number): boolean {
-  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95
-}
-
 export function revealActive(live: boolean, liveUntil: number, now: number, clamped: number, length: number, reduced: boolean): boolean {
   return !reduced && (live || (liveUntil > now && clamped < length))
 }
@@ -81,26 +101,24 @@ export function revealLength(text: string, shown: number): number {
   let length = Math.min(text.length, Math.max(0, Math.floor(shown)))
   if (length <= 0 || length >= text.length) return length
   if (isHighSurrogate(text.charCodeAt(length - 1))) return length + 1
-  if (!isWordChar(text.charCodeAt(length - 1))) return length
-  const limit = Math.min(text.length, length + WORD_SNAP_CHARS)
-  while (length < limit && isWordChar(text.charCodeAt(length))) length += 1
   return length
 }
 
-export function useSmoothReveal(text: string, live: boolean): string {
-  const [shown, setShown] = useState(text.length)
+export function useSmoothReveal(text: string, live: boolean, id?: string | null, fresh = live): string {
+  const reduced = prefersReducedMotion()
+  const [start] = useState(() => initialShown(text.length, fresh, savedShown(id, text), reduced))
+  const [shown, setShown] = useState(start)
   const shownRef = useRef(shown)
   const stateRef = useRef<RevealState | null>(null)
   const textRef = useRef(text)
   const liveRef = useRef(live)
   const liveUntil = useRef(0)
   const wasLiveProp = useRef(live)
-  const drainRef = useRef(false)
-  const baseRef = useRef(text.length)
+  const drainRef = useRef(start < text.length)
+  const baseRef = useRef(start)
   textRef.current = text
   liveRef.current = live
 
-  const reduced = prefersReducedMotion()
   const now = performance.now()
   if (live || wasLiveProp.current) liveUntil.current = now + LIVE_TAIL_GRACE_MS
   wasLiveProp.current = live
@@ -130,16 +148,18 @@ export function useSmoothReveal(text: string, live: boolean): string {
       const next = revealLength(current, step.shown)
       if (next !== shownRef.current) {
         shownRef.current = next
+        remember(id, current, next)
         setShown(next)
       }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [animate])
+  }, [animate, id])
 
   if (!animate) {
     shownRef.current = text.length
+    if (id && progress.get(id)?.shown !== text.length) remember(id, text, text.length)
     return text
   }
   shownRef.current = clamped

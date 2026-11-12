@@ -174,6 +174,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
   const overflow = live ? 0 : Math.max(0, items.length - SPREAD_HISTORY_ITEMS)
   const skipped = overflow && showAll !== true ? overflow : 0
   const lastGroup = items.findLastIndex((item) => item.kind === 'group')
+  const lastNotes = live ? items.findLastIndex((item) => item.kind === 'notes') : -1
   const cutAt = compactionAfter ? items.findLastIndex((item) => item.kind === 'group' && !!splitAtCompaction(item.segments, compactionAfter)) : -1
 
   return (
@@ -191,7 +192,7 @@ export function TurnProcess({ process, live, openByDefault = false, alertFailure
               <div key={item.key} className="v3-process-notes" data-testid="v3-process-notes">
                 {item.notes.map((part) => (
                   <div key={part.id} className="v3-para">
-                    <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
+                    <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} fresh={index === lastNotes} sessionId={sessionId} messageId={part.id} />
                   </div>
                 ))}
               </div>

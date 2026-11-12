@@ -260,7 +260,6 @@ export type SessionTextKey =
   | 'translateGlyph'
   | 'translateOriginalGlyph'
   | 'detailArgs'
-  | 'stepRunningMark'
   | 'stepDoneMark'
   | 'testSummary'
   | 'stepOverwrote'
@@ -548,7 +547,6 @@ const ZH: Record<SessionTextKey, string> = {
   translateGlyph: '译',
   translateOriginalGlyph: '原',
   detailArgs: '参数',
-  stepRunningMark: '运行中',
   stepDoneMark: '完成',
   testSummary: '{p} 通过 / {f} 失败',
   stepOverwrote: '覆盖',
@@ -837,7 +835,6 @@ const EN: Record<SessionTextKey, string> = {
   translateGlyph: 'Tr',
   translateOriginalGlyph: 'Orig',
   detailArgs: 'Arguments',
-  stepRunningMark: 'Running',
   stepDoneMark: 'Done',
   testSummary: '{p} passed / {f} failed',
   stepOverwrote: 'Overwrote',

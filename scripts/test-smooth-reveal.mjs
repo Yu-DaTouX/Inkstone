@@ -9,7 +9,7 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dir = await mkdtemp(resolve('node_modules/.inkstone-smooth-reveal-'))
 const outfile = join(dir, 'smooth-reveal.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/smooth-reveal.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error', external: ['react'] })
-const { startReveal, stepReveal, revealLength, revealActive, revealDraining, drainMs, REVEAL_DRAIN_MS, MAX_DRAIN_MS, LIVE_TAIL_GRACE_MS } = await import(pathToFileURL(outfile).href)
+const { startReveal, stepReveal, revealLength, revealActive, revealDraining, drainMs, initialShown, REVEAL_DRAIN_MS, MAX_DRAIN_MS, LIVE_TAIL_GRACE_MS, FRESH_TYPE_CHARS } = await import(pathToFileURL(outfile).href)
 await rm(dir, { recursive: true, force: true })
 
 let pass = 0
@@ -85,7 +85,7 @@ check('结束后在排空时限内显示完', () => {
   for (const pattern of [{ chunk: 4, everyMs: 20 }, { chunk: 120, everyMs: 400 }, { chunk: 500, everyMs: 1000 }]) {
     const run = simulate({ ...pattern, totalMs: 4000 })
     assert.equal(run.shown, run.length)
-    assert.ok(run.doneAt !== null && run.doneAt <= REVEAL_DRAIN_MS + FRAME * 2, `排空用时 ${run.doneAt}`)
+    assert.ok(run.doneAt !== null && run.doneAt <= MAX_DRAIN_MS + FRAME * 2, `排空用时 ${run.doneAt}`)
   }
 })
 
@@ -122,7 +122,7 @@ check('最后一段整块到达后结束：排空按积压伸缩且有上限', (
   assert.ok(run.done)
   assert.ok(run.maxStep <= 24, `单帧 ${run.maxStep}`)
   assert.ok(run.doneAt <= MAX_DRAIN_MS + FRAME * 2, `排空用时 ${run.doneAt}`)
-  assert.equal(drainMs(50), REVEAL_DRAIN_MS)
+  assert.equal(drainMs(10), REVEAL_DRAIN_MS)
   assert.equal(drainMs(100000), MAX_DRAIN_MS)
 })
 
@@ -153,13 +153,11 @@ check('不把代理对切成两半', () => {
   assert.equal(revealLength('abc', 9), 3)
 })
 
-check('中文逐字，英文与数字按整词出现', () => {
+check('中英文都逐字出现，像打字', () => {
   assert.equal(revealLength('你好世界', 1.9), 1)
-  assert.equal(revealLength('abc', 1.9), 3)
-  assert.equal(revealLength('run npm install', 5.2), 7)
-  assert.equal(revealLength('run npm install', 3.5), 3)
-  assert.equal(revealLength('用 useEffect 订阅', 4), 11)
-  assert.equal(revealLength('x'.repeat(100), 3), 15)
+  assert.equal(revealLength('abc', 1.9), 1)
+  assert.equal(revealLength('run npm install', 5.2), 5)
+  assert.equal(revealLength('x'.repeat(100), 3), 3)
   let previous = 0
   const text = '先运行 npm run build，再看 out/main/index.js 是否更新。'
   for (let shown = 0; shown <= text.length; shown += 0.37) {
@@ -193,9 +191,31 @@ check('宽限只限制接纳，已开始的排空不因宽限过期强弹', () =
   assert.equal(revealDraining(true, state.shown, 300, false), true)
   assert.equal(revealDraining(false, state.shown, 300, false), false)
   assert.equal(revealDraining(true, state.shown, 300, true), false)
-  for (let now = 316; now < 1000 && state.shown < 300; now += 16) state = stepReveal(state, 300, now, false)
+  for (let now = 316; now < 316 + MAX_DRAIN_MS + 100 && state.shown < 300; now += 16) state = stepReveal(state, 300, now, false)
   assert.equal(state.shown, 300)
   assert.equal(revealDraining(true, state.shown, 300, false), false)
+})
+
+check('新出现的短文字从头打出，重新挂载接着上次进度，历史与长文不重放', () => {
+  assert.equal(initialShown(30, true, undefined, false), 0)
+  assert.equal(initialShown(FRESH_TYPE_CHARS + 1, true, undefined, false), FRESH_TYPE_CHARS + 1)
+  assert.equal(initialShown(30, false, undefined, false), 30)
+  assert.equal(initialShown(30, false, 12, false), 12)
+  assert.equal(initialShown(30, true, 50, false), 30)
+  assert.equal(initialShown(30, true, undefined, true), 30)
+})
+
+check('整段已到的短句按打字速度排空，不一下弹出', () => {
+  let state = startReveal(0, 0)
+  let firstFrame = 0
+  let doneAt = null
+  for (let now = FRAME; now < 2000 && doneAt === null; now += FRAME) {
+    state = stepReveal(state, 40, now, false)
+    if (!firstFrame) firstFrame = state.shown
+    if (state.shown >= 40) doneAt = now
+  }
+  assert.ok(firstFrame <= 5, `首帧 ${firstFrame}`)
+  assert.ok(doneAt >= REVEAL_DRAIN_MS - FRAME && doneAt <= MAX_DRAIN_MS + FRAME * 2, `用时 ${doneAt}`)
 })
 
 process.stdout.write(`smooth-reveal: ${pass} 项通过\n`)

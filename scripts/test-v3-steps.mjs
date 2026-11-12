@@ -870,7 +870,7 @@ async function main() {
     const head = (call) => byTestId(renderStepNode(renderSteps([call]).tree, call.id).tree, 'v3-step')
     const running = head(tool({ id: 'st-run', name: 'bash', args: { command: 'sleep 3', description: '等待' }, status: 'running' }))
     const spin = collect(running, (el) => typeof el.type === 'function' && el.type.name === 'Spinner')
-    ok(spin.length === 1 && spin[0].props.label === '运行中', '运行中的命令带转圈与读屏文字', spin.map((el) => el.props))
+    ok(spin.length === 0, '运行中的命令不带转圈', spin.map((el) => el.props))
     const done = head(tool({ id: 'st-ok', name: 'bash', args: { command: 'ls' }, output: 'a' }))
     ok(byTestId(done, 'v3-step-done') !== null && byTestId(done, 'v3-step-failed') === null, '完成的命令带完成标记')
     const failedHead = head(tool({ id: 'st-err', name: 'bash', args: { command: 'npm run build' }, status: 'error', output: 'boom\n\nCommand exited with code 2' }))

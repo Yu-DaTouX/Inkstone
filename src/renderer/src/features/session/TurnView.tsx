@@ -326,6 +326,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const thinkingNote = tail && !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0
   const glowId = liveToolGlowId(turn.tools)
+  const lastSource = turn.sourceIds.at(-1)
+  const liveText = (id: string | undefined): boolean => !!streaming && !!id && id.startsWith(`${lastSource}#`)
   const errorCard = turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} readOnly={readOnly} recovered={!!turn.errorRecovered} /> : null
 
   return (
@@ -374,7 +376,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                 <div className="v3-seg" data-testid="v3-seg">
                   {decision?.body !== '' ? (
                     <div className="v3-para">
-                      <Markdown text={decision ? decision.body : split.reply.response?.text ?? ''} sourceCwd={split.reply.response?.sourceCwd} live={!!streaming && split.reply.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} />
+                      <Markdown text={decision ? decision.body : split.reply.response?.text ?? ''} sourceCwd={split.reply.response?.sourceCwd} live={liveText(split.reply.response?.id)} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} />
                     </div>
                   ) : null}
                 </div>
@@ -396,7 +398,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                     <ToolSteps tools={seg.tools} approvalIds={approvalIds} glowId={glowId} />
                     {seg.response && replyReady(seg.id) ? (
                       <div className="v3-para">
-                        <Markdown text={seg.response.text} sourceCwd={seg.response.sourceCwd} live={!!streaming && seg.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={seg.response.id} />
+                        <Markdown text={seg.response.text} sourceCwd={seg.response.sourceCwd} live={liveText(seg.response.id)} sessionId={sessionId} messageId={seg.response.id} />
                       </div>
                     ) : null}
                   </div>
@@ -417,7 +419,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
               {turn.segments.length
                 ? turn.segments.map((segment) => segment.response ? (
                     <div key={segment.id} className="v3-para">
-                      <Markdown text={segment.response.text} sourceCwd={segment.response.sourceCwd} live={!!streaming && segment.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={segment.response.id} />
+                      <Markdown text={segment.response.text} sourceCwd={segment.response.sourceCwd} live={liveText(segment.response.id)} sessionId={sessionId} messageId={segment.response.id} />
                     </div>
                   ) : null)
                 : turn.response && !turn.response.hasTools

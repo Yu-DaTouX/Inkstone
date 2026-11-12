@@ -13,7 +13,6 @@ import { classifyLink, type LinkTarget } from '../../../../shared/links'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
 import { isVisualBlockLang } from '../../../../shared/visual-blocks'
 import { rehypeMessageHighlight, rehypeMarkOversizedCode } from '../../lib/code-highlight'
-import { prefersReducedMotion } from '../../lib/reduced-motion'
 import { MessageImage } from './Image'
 import { RemoteImage, useInRemoteImageGroup } from './RemoteImage'
 import { Icon } from './Icon'
@@ -27,7 +26,7 @@ import { throttleTail, type TailHold } from './markdown-tail-throttle'
 import { rehypeKbd } from './markdown-kbd'
 import { useSmoothReveal } from './smooth-reveal'
 import { mathLoadState, mathPlugins, needsMath, requestMath, subscribeMath, type MathPlugins } from './markdown-math'
-import { fadeSpans, rehypeRevealFade, spansForBlock, trackReveal, type FadeSpan, type FadeTrack } from './reveal-fade'
+import { rehypeTypingCaret } from './typing-caret'
 import { openMessageMenu, type MessageMenuItem } from './message-menu'
 import { useSessionText } from './text'
 import { CitationLink, useCitation } from './web-search/citations'
@@ -42,8 +41,6 @@ const MD_REHYPE: PluginList = [rehypeKbd, rehypeMarkOversizedCode, rehypeMessage
 const MD_REHYPE_PLAIN: PluginList = [rehypeKbd]
 const MD_HTML_SCHEMA = { ...defaultSchema, tagNames: (defaultSchema.tagNames ?? []).filter((tag) => tag !== 'source') }
 const MD_REHYPE_HTML: PluginList = [rehypeRaw, [rehypeSanitize, MD_HTML_SCHEMA]]
-const NO_FADE: readonly FadeSpan[] = []
-const FADE_FRAME_MS = 16
 
 const pluginCache = new Map<string, { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList }>()
 
@@ -578,9 +575,9 @@ const FENCE_LINE = /^\s*(```|~~~)/m
 const CLOSED_HIGHLIGHT_CHARS = 4000
 const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
 
-const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
+const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, caret }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; caret: boolean }): JSX.Element {
   const plugins = pluginsFor(highlight, math, useContext(MarkdownHtml))
-  const rehype = fade.length ? [...plugins.rehype, [rehypeRevealFade, { spans: fade }]] as PluginList : plugins.rehype
+  const rehype = caret ? [...plugins.rehype, rehypeTypingCaret] as PluginList : plugins.rehype
   const live = useContext(MarkdownLive)
   return (
     <MarkdownOffset.Provider value={offset}>
@@ -591,7 +588,7 @@ const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highli
   )
 })
 
-function LiveMarkdown({ text, settled = false, math = null, fade = NO_FADE, throttle = false }: { text: string; settled?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[]; throttle?: boolean }): JSX.Element {
+function LiveMarkdown({ text, settled = false, math = null, caret = false, throttle = false }: { text: string; settled?: boolean; math?: MathPlugins | null; caret?: boolean; throttle?: boolean }): JSX.Element {
   const split = useMemo(() => splitMarkdownBlocks(text), [text])
   const hold = useRef<TailHold | null>(null)
   const [, retry] = useState(0)
@@ -613,49 +610,18 @@ function LiveMarkdown({ text, settled = false, math = null, fade = NO_FADE, thro
   }, [wait, text])
   return (
     <div className="v3-prose">
-      {blocks.map((block) => {
-        const spans = fade.length ? spansForBlock(fade, block.offset, block.text.length) : NO_FADE
-        return (
-          <LiveMarkdownBlock
-            key={block.offset}
-            text={block.text}
-            offset={block.offset}
-            highlight={FENCE_LINE.test(block.text) && !hasUnclosedFence(block.text) && (settled || block.text.length <= CLOSED_HIGHLIGHT_CHARS)}
-            math={math}
-            fade={spans.length ? spans : NO_FADE}
-          />
-        )
-      })}
+      {blocks.map((block, index) => (
+        <LiveMarkdownBlock
+          key={block.offset}
+          text={block.text}
+          offset={block.offset}
+          highlight={FENCE_LINE.test(block.text) && !hasUnclosedFence(block.text) && (settled || block.text.length <= CLOSED_HIGHLIGHT_CHARS)}
+          math={math}
+          caret={caret && index === blocks.length - 1}
+        />
+      ))}
     </div>
   )
-}
-
-function useRevealFade(text: string, live: boolean): readonly FadeSpan[] {
-  const track = useRef<FadeTrack | null>(null)
-  const [, repaint] = useState(0)
-  let spans: readonly FadeSpan[] = NO_FADE
-  if (live && !prefersReducedMotion()) {
-    const now = performance.now()
-    track.current = trackReveal(track.current, text, now)
-    const fading = fadeSpans(track.current, now)
-    if (fading.length) spans = fading
-  } else track.current = null
-  const fading = spans.length > 0
-  useEffect(() => {
-    if (!fading) return undefined
-    let raf = 0
-    let last = 0
-    const tick = (now: number): void => {
-      if (now - last >= FADE_FRAME_MS) {
-        last = now
-        repaint((n) => n + 1)
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [fading])
-  return spans
 }
 
 function whenIdle(callback: () => void): () => void {
@@ -676,6 +642,7 @@ export const Markdown = memo(function Markdown({
   text,
   sourceCwd,
   live = false,
+  fresh = live,
   sessionId,
   messageId,
   allowHtml = false
@@ -683,6 +650,7 @@ export const Markdown = memo(function Markdown({
   text: string
   sourceCwd?: string
   live?: boolean
+  fresh?: boolean
   sessionId?: string | null
   messageId?: string | null
   allowHtml?: boolean
@@ -691,13 +659,12 @@ export const Markdown = memo(function Markdown({
     ? s.sessionRuntimes[sessionId]?.session?.cwd ?? s.sessions.find((item) => item.id === sessionId)?.cwd ?? (s.session?.sessionId === sessionId ? s.session.cwd : undefined)
     : s.session?.cwd)
   sourceCwd = sourceCwd || sessionCwd
-  const revealedText = useSmoothReveal(text, live)
+  const revealedText = useSmoothReveal(text, live, messageId ? `${sessionId ?? ''}|${messageId}` : null, fresh)
   const draining = !live && revealedText.length < text.length
   const running = live || draining
   const renderedText = prepareStreamingMarkdown(running ? revealedText : text, running)
   const { lang } = useI18n()
   const footnoteOptions = useFootnoteOptions()
-  const fade = useRevealFade(renderedText, running)
   const math = useMathFor(renderedText)
   const identity = useMarkdownIdentity(sessionId, messageId)
   const wasLive = useRef(false)
@@ -734,7 +701,7 @@ export const Markdown = memo(function Markdown({
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value>
             <MarkdownHtml.Provider value={allowHtml}>
-              <LiveMarkdown text={renderedText} math={math.plugins} fade={fade} throttle={running} />
+              <LiveMarkdown text={renderedText} math={math.plugins} caret={running} throttle={running} />
             </MarkdownHtml.Provider>
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>

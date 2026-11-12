@@ -165,7 +165,7 @@ export default async function run({ cdp, newSession, check, sleep, shot, report,
     const snap = await state(`(() => { const r = !!(s.session?.isStreaming || s.session?.isAgentRunning); const last = s.messages.at(-1); return { r, think: !!last?.thinkingLive, tools: s.messages.reduce((a, m) => a + (m.toolCalls?.length ?? 0), 0), answer: (last?.text ?? '').includes('修复结果'), mid: (last?.text ?? '').includes('第 22 项') } })()`)
     if (snap.think && !shotThinking && snap.tools >= 1) { shotThinking = true; await shot(`${tag}-02-thinking-live`) }
     if (!snap.think && shotThinking && !shotThinkEnd && snap.tools >= 1) { shotThinkEnd = true; await shot(`${tag}-03-thinking-ended`) }
-    if (!liveOrder && snap.tools >= 3) {
+    if ((!liveOrder || liveOrder.b < 0) && snap.r && snap.tools >= 3) {
       liveOrder = await ev(`(() => { const t = document.querySelector('.v3-spread')?.innerText ?? ''; return { a: t.indexOf('读取 README'), b: t.indexOf('开始修复金额精度') } })()`)
     }
     if (scrolled && snap.mid && !scrolledUp) {

@@ -23,7 +23,7 @@ import { toolExpansion } from './tool-expansion'
 import { useRunNow } from './run-clock'
 import { formatDuration } from '../../../../shared/duration'
 import { Icon, type SessionIconName } from './Icon'
-import { AnimatedHeight, Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, DiffStat, Expand, IconButton, ShimmerText, Spinner } from '../../ui'
+import { AnimatedHeight, Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, DiffStat, Expand, IconButton, ShimmerText } from '../../ui'
 import { SearchStepView, WebGroupView } from './web-search/SearchStep'
 import { searchStepsOf } from './web-search/model'
 
@@ -172,7 +172,7 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
               {parts.map((part, index) => <span key={index} data-failed={(part.failed && alertFailures) || undefined}>{part.text}</span>)}
             </span>
           )}
-          {running ? <>{summary.state !== 'blocked' ? <Spinner size="xs" className="v3-step-state" label={tt('stepRunningMark')} /> : null}<StepElapsed call={running} paused={summary.state === 'blocked'} /></> : <ToolRunStats summary={summary} alertFailures={alertFailures} />}
+          {running ? <StepElapsed call={running} paused={summary.state === 'blocked'} /> : <ToolRunStats summary={summary} alertFailures={alertFailures} />}
           {summary.state === 'cancelled' ? <Badge className="v3-steps-badge" data-testid="v3-step-group-cancelled">{t('run.cancelled')}</Badge> : null}
           {summary.needsApproval && !asking ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
         </span>
@@ -232,7 +232,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
           ) : null}
           {lines ? <DiffStat className="v3-step-diff" added={lines.added} removed={lines.removed} data-testid="v3-step-diff-stat" /> : null}
           {tests ? <Badge tone={tests.failed ? 'fail' : 'ok'} className="v3-steps-badge" data-testid="v3-step-tests">{tt('testSummary', { p: tests.passed, f: tests.failed })}</Badge> : null}
-          {running && !blocked ? <><Spinner size="xs" className="v3-step-state" label={tt('stepRunningMark')} /><StepElapsed call={call} /></> : null}
+          {running && !blocked ? <StepElapsed call={call} /> : null}
           {kind === 'command' && call.status === 'ok' && !call.cancelled ? <span className="v3-step-state" role="img" aria-label={tt('stepDoneMark')} data-testid="v3-step-done"><Icon name="check" size={13} /></span> : null}
           {failed ? <span className="v3-step-fail" role="img" aria-label={tt('stepFailedMark')} data-testid="v3-step-failed"><Icon name="close" size={13} /></span> : null}
           {exitCode !== null ? <span className="v3-step-time" data-testid="v3-step-exit-code">{tt('exitCode', { n: exitCode })}</span> : null}

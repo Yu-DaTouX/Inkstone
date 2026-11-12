@@ -15,7 +15,7 @@ async function load(name, entry, external = []) {
   return import(pathToFileURL(outfile).href)
 }
 
-const fade = await load('reveal-fade', 'src/renderer/src/features/session/reveal-fade.ts')
+const caret = await load('typing-caret', 'src/renderer/src/features/session/typing-caret.ts')
 const follow = await load('scroll-follow', 'src/renderer/src/features/session/scroll-follow.ts')
 const position = await load('scroll-position', 'src/renderer/src/features/session/scroll-position.ts')
 const disclosure = await load('disclosure-scroll', 'src/renderer/src/ui/disclosure-scroll.ts')
@@ -79,59 +79,33 @@ check('历史代码块复用高亮处理器后语言别名、纯文本与超限�
   assert.equal(tree.children[0].children[0].children[0].type, 'text')
 })
 
-check('渐显：短首段整体淡入，长首段不动画', () => {
-  const short = fade.trackReveal(null, 'hello', 0)
-  assert.deepEqual(short.marks, [{ from: 0, at: 0 }])
-  const long = fade.trackReveal(null, 'x'.repeat(fade.FADE_SKIP_INITIAL_CHARS + 1), 0)
-  assert.equal(long.marks.length, 0)
+const el = (tagName, children = [], properties = {}) => ({ type: 'element', tagName, properties, children })
+const text = (value) => ({ type: 'text', value })
+const hasCaret = (node) => node.children?.at(-1)?.properties?.className?.includes('v3-caret') === true
+
+check('打字光标：跟在最后一段文字末尾，进入列表与行内元素', () => {
+  const p = el('p', [text('abc'), el('strong', [text('de')]), text('\n')])
+  const tree = { type: 'root', children: [el('p', [text('first')]), p, text('\n')] }
+  caret.rehypeTypingCaret()(tree)
+  assert.ok(hasCaret(p.children[1]))
+  assert.ok(!hasCaret(tree.children[0]))
+  const li = el('li', [text('item')])
+  const list = { type: 'root', children: [el('ul', [text('\n'), li, text('\n')])] }
+  caret.rehypeTypingCaret()(list)
+  assert.ok(hasCaret(li))
+  assert.equal(li.children.at(-1).children[0].value, '\u258d')
 })
 
-check('渐显：追加只标记新增部分，过期标记被清掉', () => {
-  let track = fade.trackReveal(null, 'ab', 0)
-  track = fade.trackReveal(track, 'abcd', 50)
-  assert.deepEqual(fade.fadeSpans(track, 60), [{ from: 0, to: 2, age: 60 }, { from: 2, to: 4, age: 10 }])
-  track = fade.trackReveal(track, 'abcdef', fade.FADE_MS + 10)
-  assert.deepEqual(track.marks.map((mark) => mark.from), [2, 4])
-  assert.deepEqual(fade.fadeSpans(track, fade.FADE_MS + 60).map((span) => [span.from, span.to]), [[4, 6]])
-})
-
-check('渐显：非前缀改写时重置', () => {
-  const track = fade.trackReveal(fade.trackReveal(null, 'abc', 0), 'xyz', 10)
-  assert.equal(track.text, 'xyz')
-  assert.equal(track.marks.length, 0)
-})
-
-check('渐显：只有末尾几个字被改写（补收尾符号）时保留前面的标记', () => {
-  let track = fade.trackReveal(null, '**ab**', 0)
-  track = fade.trackReveal(track, '**abc**', 50)
-  assert.deepEqual(track.marks.map((mark) => mark.from), [0, 4])
-  const rewritten = fade.trackReveal(fade.trackReveal(null, 'a'.repeat(40), 0), 'a'.repeat(10) + 'b'.repeat(40), 10)
-  assert.equal(rewritten.marks.length, 0)
-})
-
-check('渐显：分块换算到块内偏移', () => {
-  const spans = [{ from: 5, to: 15, age: 20 }]
-  assert.deepEqual(fade.spansForBlock(spans, 10, 10), [{ from: 0, to: 5, age: 20 }])
-  assert.deepEqual(fade.spansForBlock(spans, 20, 5), [])
-})
-
-check('渐显：rehype 只包正文文本，跳过代码', () => {
-  const tree = {
-    type: 'root',
-    children: [
-      { type: 'element', tagName: 'p', properties: {}, children: [{ type: 'text', value: 'abcdef', position: { start: { offset: 0 }, end: { offset: 6 } } }] },
-      { type: 'element', tagName: 'pre', properties: {}, children: [{ type: 'element', tagName: 'code', properties: {}, children: [{ type: 'text', value: 'zz', position: { start: { offset: 7 }, end: { offset: 9 } } }] }] }
-    ]
+check('打字光标：末尾是代码块、表格或公式时不加', () => {
+  for (const last of [el('pre', [el('code', [text('x')])]), el('table', [el('tr', [el('td', [text('a')])])]), el('span', [text('x')], { className: ['katex'] })]) {
+    const tree = { type: 'root', children: [el('p', [last])] }
+    const before = JSON.stringify(tree)
+    caret.rehypeTypingCaret()(tree)
+    assert.equal(JSON.stringify(tree), before)
   }
-  fade.rehypeRevealFade({ spans: [{ from: 3, to: 9, age: 40 }] })(tree)
-  const p = tree.children[0]
-  assert.equal(p.children.length, 2)
-  assert.equal(p.children[0].value, 'abc')
-  assert.equal(p.children[1].tagName, 'span')
-  assert.deepEqual(p.children[1].properties.className, ['v3-fade'])
-  assert.equal(p.children[1].properties.style, `opacity:${fade.fadeOpacity(40).toFixed(3)}`)
-  assert.ok(fade.fadeOpacity(0) > 0 && fade.fadeOpacity(0) < 0.1 && fade.fadeOpacity(fade.FADE_MS) === 1 && fade.fadeOpacity(fade.FADE_MS / 2) > 0.7)
-  assert.equal(tree.children[1].children[0].children[0].type, 'text')
+  const empty = { type: 'root', children: [text('\n')] }
+  caret.rehypeTypingCaret()(empty)
+  assert.equal(empty.children.length, 1)
 })
 
 check('尾部观察器：尺寸通知只排队，合并到下一帧写入，清理取消待处理帧', () => {
