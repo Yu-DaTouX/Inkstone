@@ -4,6 +4,45 @@ import type { SubagentRun } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
 
 const SUBAGENT_LIST_SHOWN = 5
+const ANCHOR_SLACK_MS = 2_000
+
+interface AnchorMessage {
+  id: string
+  role: string
+  timestamp?: number
+}
+
+export function subagentAnchorIds(messages: readonly AnchorMessage[], runs: readonly Pick<SubagentRun, 'id' | 'parentMessageId' | 'startedAt'>[]): Map<string, string> {
+  const index = new Map<string, number>()
+  messages.forEach((message, at) => index.set(message.id, at))
+  const anchors = new Map<string, string>()
+  for (const run of runs) {
+    if (!run.parentMessageId) continue
+    const claimed = index.get(run.parentMessageId)
+    let fallback = -1
+    for (let at = messages.length - 1; at >= 0; at -= 1) {
+      const time = messages[at].timestamp
+      if (messages[at].role === 'assistant' && typeof time === 'number' && time <= run.startedAt + ANCHOR_SLACK_MS) {
+        fallback = at
+        break
+      }
+    }
+    if (fallback < 0) {
+      anchors.set(run.id, run.parentMessageId)
+      continue
+    }
+    const sameTurn = claimed !== undefined && !messages.slice(Math.min(claimed, fallback) + 1, Math.max(claimed, fallback) + 1).some((message) => message.role === 'user')
+    anchors.set(run.id, sameTurn ? run.parentMessageId : messages[fallback].id)
+  }
+  return anchors
+}
+
+let anchorCache: { messages: readonly AnchorMessage[]; runs: readonly SubagentRun[]; anchors: Map<string, string> } | null = null
+
+export function cachedSubagentAnchors(messages: readonly AnchorMessage[], runs: readonly SubagentRun[]): Map<string, string> {
+  if (anchorCache?.messages !== messages || anchorCache.runs !== runs) anchorCache = { messages, runs, anchors: subagentAnchorIds(messages, runs) }
+  return anchorCache.anchors
+}
 
 type SubagentListRank = 0 | 1 | 2 | 3
 

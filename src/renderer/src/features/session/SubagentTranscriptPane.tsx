@@ -153,7 +153,9 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const [dismissError, setDismissError] = useState('')
 
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
-  const role = run.fork
+  const role = run.sideQuestion
+    ? null
+    : run.fork
     ? tt('subagentScopeFork')
     : model.isolation === 'controlled-cwd'
     ? tt('subagentScopeReadOnly')
@@ -211,7 +213,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
             <SubagentBot run={run} snapshot={snapshot} model={model} size={SUBAGENT_CARD_BOT} />
           </span>
           <span className="sa-pane-name" title={model.task}>{subagentPaneName(run)}</span>
-          <span className="sa-pane-role">{`· ${role}`}</span>
+          {role ? <span className="sa-pane-role">{`· ${role}`}</span> : null}
           {modelName ? <span className="sa-pane-model" title={run.model}>{modelName}</span> : null}
           <span className="sa-pane-state" aria-label={statusWord} title={statusWord} data-testid="v3-subagent-pane-status">
             <SubagentStateIcon state={row.state} />

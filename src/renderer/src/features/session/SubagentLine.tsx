@@ -21,6 +21,7 @@ import { SubagentStateIcon } from './SubagentState'
 import { useSessionText, type SessionTextKey } from './text'
 import { openSubagentPane, rowLang, useFocusedSubagentRun, useSubagentPaneOpen, useSubagentRow } from './subagent-actions'
 import {
+  cachedSubagentAnchors,
   orderSubagentRuns,
   subagentListOpen,
   subagentListSlice,
@@ -198,9 +199,11 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
     const ids = new Set([turn.id, ...turn.sourceIds])
     const identity = viewIdentityOf(s)
     const sessionIds = identity.sessionId ? [identity.sessionId] : []
-    return (scope ? subagentRunsForTurnScope(s.subagents, scope) : selectSubagentRuns(s.subagents, { sessionIds }).all).filter(
-      (run) => run.parentMessageId && ids.has(run.parentMessageId) && run.review !== 'merged' && run.review !== 'discarded'
-    )
+    const anchors = scope ? null : cachedSubagentAnchors(s.messages, s.subagents)
+    return (scope ? subagentRunsForTurnScope(s.subagents, scope) : selectSubagentRuns(s.subagents, { sessionIds }).all).filter((run) => {
+      const anchor = anchors?.get(run.id) ?? run.parentMessageId
+      return !!anchor && ids.has(anchor) && run.review !== 'merged' && run.review !== 'discarded'
+    })
   }))
   const snapshots = useRunsV3(useShallow((s): Record<string, RunSnapshot | undefined> => {
     const found: Record<string, RunSnapshot | undefined> = {}
