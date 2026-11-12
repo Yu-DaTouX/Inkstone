@@ -332,7 +332,7 @@ function BranchRow({
       icon={<GitBranch size={14} aria-hidden />}
       value={
         repo && repo.changedCount > 0 ? (
-          <RailValue glyph={{ kind: 'dot', status: 'awaiting' }} value={rail.dirtyCount(repo.changedCount)} aria-label={rail.dirty} />
+          <RailValue glyph={{ kind: 'dot', status: 'awaiting' }} value={repo.changedCount} aria-label={rail.dirtyCount(repo.changedCount)} />
         ) : undefined
       }
       onPress={() => setOpen(true)}
@@ -736,7 +736,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
               cwd={cwd}
               branch={branch}
               repo={repo}
-              title={[`${text.branchLabel} ${branch}`, repo && repo.changedCount > 0 ? rail.dirty : ''].filter(Boolean).join('\n')}
+              title={[`${text.branchLabel} ${branch}`, repo && repo.changedCount > 0 ? `${rail.dirty} · ${rail.dirtyCount(repo.changedCount)}` : ''].filter(Boolean).join('\n')}
               rail={rail}
               onAction={runRowAction}
               onChanged={() => setGitTick((n) => n + 1)}
