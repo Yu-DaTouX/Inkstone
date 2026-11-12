@@ -46,9 +46,13 @@ export interface TerminalText {
   closeConfirmList: string
   closeConfirmUnknown: string
   closeConfirmMore: (n: number) => string
+  closeConfirmJobs: string
   closeConfirmAction: string
   cancel: string
   agentActive: string
+  agentTab: string
+  backgroundRunning: (n: number) => string
+  needsConfirm: string
 }
 
 const ZH: TerminalText = {
@@ -96,9 +100,13 @@ const ZH: TerminalText = {
   closeConfirmList: '关闭后，下列进程会被结束：',
   closeConfirmUnknown: '终端里还有命令在运行，关闭会结束它。',
   closeConfirmMore: (n) => `另有 ${n} 个`,
+  closeConfirmJobs: '关闭后，Agent 的后台命令会被结束：',
   closeConfirmAction: '关闭并结束',
   cancel: '取消',
-  agentActive: 'Agent 正在操作'
+  agentActive: 'Agent 正在操作',
+  agentTab: 'Agent 用过的终端',
+  backgroundRunning: (n) => (n > 1 ? `后台运行中 ${n}` : '后台运行中'),
+  needsConfirm: '等你确认'
 }
 
 const EN: TerminalText = {
@@ -146,9 +154,13 @@ const EN: TerminalText = {
   closeConfirmList: 'Closing will end these processes:',
   closeConfirmUnknown: 'A command is still running in this terminal. Closing will end it.',
   closeConfirmMore: (n) => `${n} more`,
+  closeConfirmJobs: 'Closing will end these agent background commands:',
   closeConfirmAction: 'Close and end',
   cancel: 'Cancel',
-  agentActive: 'Agent at work'
+  agentActive: 'Agent at work',
+  agentTab: 'Terminal used by the agent',
+  backgroundRunning: (n) => (n > 1 ? `${n} in background` : 'Running in background'),
+  needsConfirm: 'Needs you'
 }
 
 export function terminalText(lang: Lang): TerminalText {

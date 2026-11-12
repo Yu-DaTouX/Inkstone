@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRunsV3 } from '../../../state/runs-v3'
 import { useStore } from '../../../state/store'
+import { useTerminalJobs } from '../../../state/terminal-jobs'
+import { isLiveTerminalJob, type TerminalJob } from '../../../../../shared/terminal-jobs'
 import type { RunSnapshot } from '../../../../../shared/runs'
 import type { SessionSummary, SubagentRun } from '../../../../../shared/ipc'
 import { scopedKeyOf, type SidebarThreadView, type ThreadRef } from './types'
@@ -75,11 +77,37 @@ function liveSubagentSignature(runs: readonly SubagentRun[]): string {
   return [...since].sort(([a], [b]) => a.localeCompare(b)).map(([id, at]) => `${id}\t${at}`).join('\n')
 }
 
+function liveJobSignature(jobs: readonly TerminalJob[]): string {
+  const since = new Map<string, number>()
+  for (const job of jobs) {
+    if (!isLiveTerminalJob(job)) continue
+    for (const owner of job.owners) {
+      const key = owner.replace(/\\/g, '/').toLowerCase()
+      const previous = since.get(key)
+      if (key && (previous === undefined || job.startedAt < previous)) since.set(key, job.startedAt)
+    }
+  }
+  return [...since].sort(([a], [b]) => a.localeCompare(b)).map(([id, at]) => `${id}\t${at}`).join('\n')
+}
+
 function subagentsSinceOf(signature: string): ReadonlyMap<string, number> {
   const since = new Map<string, number>()
   for (const line of signature ? signature.split('\n') : []) {
     const [id, at] = line.split('\t')
     since.set(id, Number(at))
+  }
+  return since
+}
+
+export function backgroundSinceOf(sessions: readonly SessionSummary[], subagentSignature: string, jobSignature: string): ReadonlyMap<string, number> {
+  const since = new Map(subagentsSinceOf(subagentSignature))
+  const jobs = subagentsSinceOf(jobSignature)
+  if (jobs.size === 0) return since
+  for (const session of sessions) {
+    const at = [session.id, session.path].map((key) => (key ? jobs.get(key.replace(/\\/g, '/').toLowerCase()) : undefined)).find((value) => value !== undefined)
+    if (at === undefined) continue
+    const previous = since.get(session.id)
+    if (previous === undefined || at < previous) since.set(session.id, at)
   }
   return since
 }
@@ -130,21 +158,24 @@ export function useSidebarSections(): SidebarSections {
   const currentName = useStore((s) => s.session?.sessionName || firstUserLine(s.messages))
   const currentCwd = useStore((s) => s.session?.cwd)
   const subagentSignature = useStore((s) => liveSubagentSignature(s.subagents))
+  const jobSignature = useTerminalJobs((s) => liveJobSignature(s.jobs))
   const now = useMinuteClock()
-  return useMemo(
-    () =>
-      buildSidebarSections({
-        sessions: withUnlistedRuns(sessions, runs, currentId && currentName ? { sessionId: currentId, name: currentName, cwd: currentCwd } : undefined),
-        runs,
-        projects: projects ?? [],
-        projectNames: projectNames ?? {},
-        titles,
-        manualTitles,
-        now,
-        subagentsSince: subagentsSinceOf(subagentSignature)
-      }),
-    [sessions, runs, currentId, currentName, currentCwd, projects, projectNames, titles, manualTitles, now, subagentSignature]
-  )
+  useEffect(() => {
+    void useTerminalJobs.getState().load()
+  }, [])
+  return useMemo(() => {
+    const listed = withUnlistedRuns(sessions, runs, currentId && currentName ? { sessionId: currentId, name: currentName, cwd: currentCwd } : undefined)
+    return buildSidebarSections({
+      sessions: listed,
+      runs,
+      projects: projects ?? [],
+      projectNames: projectNames ?? {},
+      titles,
+      manualTitles,
+      now,
+      subagentsSince: backgroundSinceOf(listed, subagentSignature, jobSignature)
+    })
+  }, [sessions, runs, currentId, currentName, currentCwd, projects, projectNames, titles, manualTitles, now, subagentSignature, jobSignature])
 }
 
 export function useThreadView(ref: ThreadRef): SidebarThreadView | null {

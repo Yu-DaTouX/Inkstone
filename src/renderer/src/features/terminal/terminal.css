@@ -185,4 +185,11 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
+
+  .term-close-command {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+  }
 }

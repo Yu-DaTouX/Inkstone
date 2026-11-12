@@ -3,7 +3,7 @@ import { useStore } from '../../state/store'
 import { BrowserBoundsSync } from './bounds'
 import { BrowserSurfaceClaim } from './ownership'
 import { rectOf, findClipElement } from './layout'
-import { BLOCKING_OVERLAY_SELECTOR, hasBlockingOverlay } from './overlay'
+import { BLOCKING_OVERLAY_SELECTOR, blocksSurface } from './overlay'
 import { createOverlayBlockerLifecycle } from './overlay-lifecycle'
 
 const OVERLAY_TOKEN = 'browser-overlay'
@@ -92,12 +92,16 @@ export function useBrowserBoundsSync(
   return inView
 }
 
-export function useBrowserOverlayBlocker(enabled: boolean): void {
+function shownOverlays(): Element[] {
+  return [...document.querySelectorAll(BLOCKING_OVERLAY_SELECTOR)].filter((el) => !el.closest('[aria-hidden="true"]') && el.getClientRects().length > 0)
+}
+
+export function useBrowserOverlayBlocker(enabled: boolean, surfaceRef?: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     if (!enabled) return
 
     const lifecycle = createOverlayBlockerLifecycle({
-      hasOverlay: () => hasBlockingOverlay((selector) => document.querySelector(selector) !== null),
+      hasOverlay: () => blocksSurface<Element>(shownOverlays(), surfaceRef?.current ?? null),
       acquire: () => useStore.getState().acquireOverlayBlocker(OVERLAY_TOKEN)
     })
 
@@ -128,7 +132,7 @@ export function useBrowserOverlayBlocker(enabled: boolean): void {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['class', 'data-open', 'data-entering', 'data-exiting', 'role', 'aria-modal', 'hidden']
+      attributeFilter: ['class', 'data-open', 'data-entering', 'data-exiting', 'role', 'aria-modal', 'aria-hidden', 'hidden']
     })
     lifecycle.evaluate()
 
@@ -136,5 +140,5 @@ export function useBrowserOverlayBlocker(enabled: boolean): void {
       observer.disconnect()
       lifecycle.dispose()
     }
-  }, [enabled])
+  }, [enabled, surfaceRef])
 }

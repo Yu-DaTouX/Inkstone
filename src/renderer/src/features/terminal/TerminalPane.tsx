@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
 import { Plus, RefreshCw, SquareTerminal } from 'lucide-react'
-import { Badge, Button, ConfirmDialog, EmptyState, KbdGroup, Menu, MenuItem, MenuSeparator, Notice, PaneHeader, Popover, type BadgeTone } from '../../ui'
+import { Badge, Button, Dialog, DialogFooter, EmptyState, KbdGroup, Menu, MenuItem, MenuSeparator, MiddleTruncate, Modal, ModalOverlay, Notice, PaneHeader, Popover, type BadgeTone } from '../../ui'
 import { PaneTitle, PaneTools, usePaneChrome } from '../workbench/pane-chrome'
 import { useI18n, useT } from '../../i18n'
 import { resourceOwner } from '../../state/resource-owners'
 import { useStore } from '../../state/store'
+import { useTerminalJobs } from '../../state/terminal-jobs'
+import { isLiveTerminalJob, type TerminalJob } from '../../../../shared/terminal-jobs'
 import { showPreview } from '../workbench/preview-bindings'
 import { isMacPlatform, resolveTerminalPath, terminalSelectionBlock, type TerminalFileLink, type TerminalLinkMatch } from './terminal-links'
 import { terminalText } from './terminal-text'
@@ -14,7 +16,7 @@ import {
   canAddTerminalTab,
   othersThan,
   pickActiveAfterClose,
-  terminalTabLabel
+  terminalTabNames
 } from './terminal-tabs'
 import { terminalViewStore, type TerminalViewSettings } from './terminal-view'
 import { TerminalTabView, type TerminalTabHandle } from './TerminalTabView'
@@ -24,7 +26,7 @@ import { TerminalViewMenu } from './TerminalViewMenu'
 import type { TerminalFindDirection } from './terminal-find'
 import { onActivateTerminal } from './terminal-activate'
 import { onTerminalTabRequest } from './terminal-requests'
-import { useTerminalAgentActivity } from './terminal-agent-activity'
+import { useTerminalAgentActivity, useTerminalAgentSeen } from './terminal-agent-activity'
 import type { TerminalPaneProps } from '../workbench/types'
 import type { TerminalAvailability, TerminalProcessEntry, TerminalProcessList, TerminalProgramStatus, TerminalSnapshot } from '../../../../shared/ipc'
 import './terminal.css'
@@ -70,6 +72,7 @@ interface CloseRequest {
   keep: string | null
   processes: TerminalProcessEntry[]
   more: number
+  jobs: string[]
 }
 
 const BELL_FLASH_MS = 1200
@@ -77,6 +80,18 @@ const FIND_DELAY = 120
 const LINK_CACHE_MS = 15000
 const LINK_CACHE_MAX = 200
 const NO_PROCESSES: TerminalProcessList = { ok: false, processes: [] }
+const PROCESS_POLL_MS = 4000
+
+function liveAgentJobs(jobs: readonly TerminalJob[]): TerminalJob[] {
+  return jobs.filter((job) => job.kind !== 'bash' && isLiveTerminalJob(job))
+}
+
+function processLabel(list: TerminalProcessList): string | null {
+  if (!list.ok) return null
+  const first = list.processes[0]
+  if (!first) return (list.more ?? 0) > 0 ? '' : null
+  return first.name.replace(/\.exe$/i, '')
+}
 
 function commandRunning(state: TerminalViewState | undefined): boolean {
   return state?.status?.state === 'working' || state?.status?.state === 'blocked'
@@ -125,7 +140,50 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const labelsRef = useRef(new Map<string, string>())
   const mac = useMemo(() => isMacPlatform(), [])
   const agentActivity = useTerminalAgentActivity()
+  const agentSeen = useTerminalAgentSeen()
   const agentOn = (key: string): boolean => agentActivity.has(states[key]?.terminalId ?? key)
+  const allJobs = useTerminalJobs((s) => s.jobs)
+  const liveJobs = useMemo(() => liveAgentJobs(allJobs), [allJobs])
+  const [childProcs, setChildProcs] = useState<Record<string, string | null>>({})
+  const approvals = useStore((s) => s.approvals)
+  const awaitingConfirm = approvals.some(
+    (request) => request.tool === 'terminal' && !request.subagentId && request.phase !== 'resolved' && (!request.sessionId || !owner.sessionId || request.sessionId === owner.sessionId)
+  )
+
+  useEffect(() => {
+    void useTerminalJobs.getState().load()
+  }, [])
+
+  const pollIds = tabs
+    .map((tab) => states[tab.key])
+    .filter((state): state is TerminalViewState => !!state?.terminalId && state.phase === 'ready' && !state.status)
+    .map((state) => state.terminalId as string)
+  const pollKey = visible ? pollIds.join('|') : ''
+
+  useEffect(() => {
+    if (!pollKey) {
+      setChildProcs((previous) => (Object.keys(previous).length ? {} : previous))
+      return
+    }
+    const ids = pollKey.split('|')
+    let alive = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const poll = async (): Promise<void> => {
+      const lists = await Promise.all(ids.map((id) => window.yan.terminal.processes(id).catch(() => NO_PROCESSES)))
+      if (!alive) return
+      const next: Record<string, string | null> = {}
+      ids.forEach((id, index) => {
+        next[id] = processLabel(lists[index])
+      })
+      setChildProcs((previous) => (ids.every((id) => previous[id] === next[id]) && Object.keys(previous).length === ids.length ? previous : next))
+      timer = setTimeout(() => void poll(), PROCESS_POLL_MS)
+    }
+    void poll()
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [pollKey])
 
   useEffect(() => terminalViewStore().subscribe(() => setView(terminalViewStore().get())), [])
 
@@ -338,18 +396,23 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         commitClose({ keys, keep })
         return
       }
-      const lists = await Promise.all(
-        targets.map((state) => window.yan.terminal.processes(state.terminalId as string).catch(() => NO_PROCESSES))
-      )
+      const ids = new Set(targets.map((state) => state.terminalId as string))
+      const [lists] = await Promise.all([
+        Promise.all(targets.map((state) => window.yan.terminal.processes(state.terminalId as string).catch(() => NO_PROCESSES))),
+        useTerminalJobs.getState().load().catch(() => undefined)
+      ])
       if (seq !== closeSeq.current) return
+      const jobs = liveAgentJobs(useTerminalJobs.getState().jobs)
+        .filter((job) => ids.has(job.terminalId))
+        .map((job) => job.command)
       const processes = lists.flatMap((list) => list.processes)
       const more = lists.reduce((sum, list) => sum + (list.more ?? 0), 0)
       const unknown = lists.some((list, index) => !list.ok && commandRunning(targets[index]))
-      if (processes.length === 0 && more === 0 && !unknown) {
+      if (processes.length === 0 && more === 0 && !unknown && jobs.length === 0) {
         commitClose({ keys, keep })
         return
       }
-      setClosing({ keys, keep, processes, more })
+      setClosing({ keys, keep, processes, more, jobs })
     },
     [commitClose]
   )
@@ -518,12 +581,27 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
   const title = activeState?.title || ''
   const cwd = activeState?.cwd || owner.cwd
-  const badge = statusOf(activeState)
+  const activeTerminal = activeState?.terminalId ?? null
+  const activeChild = activeTerminal && activeState?.phase === 'ready' && !activeState.status ? childProcs[activeTerminal] : undefined
+  const badge = statusOf(activeState) ?? (typeof activeChild === 'string' ? { key: 'term.running' as const, tone: 'accent' as BadgeTone } : null)
+  const paneTerminals = new Set(tabs.map((tab) => states[tab.key]?.terminalId).filter((id): id is string => !!id))
+  const paneJobs = liveJobs.filter((job) => paneTerminals.has(job.terminalId))
+  const jobOf = (terminalId: string | null | undefined): TerminalJob | undefined => (terminalId ? paneJobs.find((job) => job.terminalId === terminalId) : undefined)
   const chrome = usePaneChrome()
   const barTitle = <span className="term-pane-title" title={cwd || title}>{title || cwd || text.tabTitle}</span>
   const barActions = <TerminalViewMenu view={view} text={text} onChange={(patch) => terminalViewStore().update(patch)} />
   const barStatus = (
     <>
+      {awaitingConfirm ? (
+        <Badge tone="ask" className="term-pane-badge" data-testid="terminal-needs-confirm">
+          {text.needsConfirm}
+        </Badge>
+      ) : null}
+      {paneJobs.length > 0 ? (
+        <Badge tone="accent" className="term-pane-badge" data-testid="terminal-background-running">
+          {text.backgroundRunning(paneJobs.length)}
+        </Badge>
+      ) : null}
       {active && agentOn(active) ? (
         <Badge tone="accent" className="term-pane-badge" data-testid="terminal-agent-active">
           {text.agentActive}
@@ -543,16 +621,29 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     </>
   )
 
+  const tabNames = terminalTabNames(
+    tabs.map((tab) => {
+      const state = states[tab.key]
+      const terminalId = state?.terminalId
+      const child = terminalId && state?.phase === 'ready' && !state.status ? childProcs[terminalId] : null
+      return { command: jobOf(terminalId)?.command || child || (state?.status?.state === 'working' ? state.status.title ?? '' : ''), cwd: state?.cwd || '', title: state?.title || '' }
+    }),
+    text.tabNumber,
+    text.tabTitle
+  )
   const items: TerminalTabItem[] = tabs.map((tab, index) => {
     const state = states[tab.key]
-    const info = terminalTabLabel(tabs.length > 1 ? '' : state?.title ?? '', index, tabs.length)
+    const terminalId = state?.terminalId
+    const job = jobOf(terminalId)
+    const child = terminalId && state?.phase === 'ready' && !state.status ? childProcs[terminalId] : null
     return {
       key: tab.key,
-      label: info.kind === 'title' ? info.text : info.kind === 'numbered' ? text.tabNumber(info.number) : text.tabTitle,
-      detail: state?.title || state?.cwd || '',
-      busy: state?.status?.state === 'working' && state.phase !== 'exited',
+      label: tabNames[index] ?? text.tabTitle,
+      detail: [job?.command, state?.title, state?.cwd].filter(Boolean).join('\n'),
+      busy: state?.phase !== 'exited' && (state?.status?.state === 'working' || !!job || typeof child === 'string'),
       exited: state?.phase === 'exited',
-      agent: agentOn(tab.key)
+      agent: agentOn(tab.key),
+      agentOwned: !!job || (!!terminalId && agentSeen.has(terminalId))
     }
   })
   labelsRef.current = new Map(items.map((item) => [item.key, item.label]))
@@ -577,7 +668,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     <div className="term-pane" data-phase={activeState?.phase ?? (inactive ? 'inactive' : 'idle')} data-visible={visible ? '1' : '0'} data-testid="terminal-pane">
       {chrome ? (
         <>
-          {strip || badge || exited ? (
+          {strip || badge || exited || awaitingConfirm || paneJobs.length > 0 ? (
             <PaneTitle>
               <span className="term-pane-chrome-title">
                 {strip}
@@ -796,23 +887,27 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         ) : null}
       </div>
 
-      <ConfirmDialog
+      <ModalOverlay
         isOpen={!!closing}
+        isDismissable
         onOpenChange={(open) => {
           if (!open) setClosing(null)
         }}
-        title={text.closeConfirmTitle}
-        description={closing && (closing.processes.length > 0 || closing.more > 0) ? text.closeConfirmList : text.closeConfirmUnknown}
-        tone="danger"
-        confirmLabel={text.closeConfirmAction}
-        cancelLabel={text.cancel}
-        onConfirm={() => {
-          if (closing) commitClose(closing)
-          setClosing(null)
-        }}
-        confirmTestId="terminal-close-confirm"
-        data-testid="terminal-close-dialog"
       >
+        <Modal data-dialog-size="sm">
+          <Dialog alert title={text.closeConfirmTitle} className="ui-confirm" data-testid="terminal-close-dialog">
+        <p className="ui-confirm__desc">
+          {closing && (closing.processes.length > 0 || closing.more > 0) ? text.closeConfirmList : closing && closing.jobs.length > 0 ? text.closeConfirmJobs : text.closeConfirmUnknown}
+        </p>
+        {closing && closing.jobs.length > 0 ? (
+          <ul className="term-close-list" data-testid="terminal-close-jobs">
+            {closing.jobs.map((command, index) => (
+              <li key={index} className="term-close-item">
+                <MiddleTruncate className="term-close-command" value={command} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {closing && closing.processes.length > 0 ? (
           <ul className="term-close-list" data-testid="terminal-close-processes">
             {closing.processes.map((process) => (
@@ -824,7 +919,24 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
             {closing.more > 0 ? <li className="term-close-item ui-meta-num">{text.closeConfirmMore(closing.more)}</li> : null}
           </ul>
         ) : null}
-      </ConfirmDialog>
+            <DialogFooter>
+              <Button variant="ghost" autoFocus data-testid="terminal-close-cancel" onPress={() => setClosing(null)}>
+                {text.cancel}
+              </Button>
+              <Button
+                variant="danger"
+                data-testid="terminal-close-confirm"
+                onPress={() => {
+                  if (closing) commitClose(closing)
+                  setClosing(null)
+                }}
+              >
+                {text.closeConfirmAction}
+              </Button>
+            </DialogFooter>
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
     </div>
   )
 }

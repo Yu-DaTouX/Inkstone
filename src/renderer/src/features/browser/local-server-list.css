@@ -53,6 +53,27 @@
     list-style: none;
   }
 
+  .v3-local-servers__mark {
+    width: var(--size-icon);
+    height: var(--size-icon);
+  }
+
+  .v3-local-servers__other {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .v3-local-servers__other-toggle {
+    align-self: flex-start;
+  }
+
+  .v3-local-servers__other > .v3-local-servers__list {
+    max-height: none;
+    overflow: visible;
+  }
+
   .v3-local-servers__favicon {
     width: var(--size-icon);
     height: var(--size-icon);

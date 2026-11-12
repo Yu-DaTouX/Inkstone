@@ -14,7 +14,7 @@ export const TERMINAL_FONT_SIZES: readonly number[] = [11, 12, 13, 14, 16]
 export const TERMINAL_LINE_HEIGHTS: readonly number[] = [1, 1.15, 1.3]
 export const TERMINAL_CURSOR_STYLES: readonly TerminalCursorStyle[] = ['block', 'bar', 'underline']
 export const TERMINAL_SCROLLBACKS: readonly number[] = [1000, 5000, 10000]
-export const TERMINAL_MINIMUM_CONTRAST_RATIO = 3
+export const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5
 export const TERMINAL_VIEW_STORAGE_KEY = 'inkstone.terminal.view.v1'
 
 export const DEFAULT_TERMINAL_VIEW: TerminalViewSettings = Object.freeze({

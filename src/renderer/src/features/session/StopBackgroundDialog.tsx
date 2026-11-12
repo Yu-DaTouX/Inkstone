@@ -29,12 +29,11 @@ export function StopBackgroundDialog(): ReactElement | null {
             ))}
             {summary.more > 0 ? <p className="ui-confirm__desc">{t('stopBg.more', { count: summary.more })}</p> : null}
           </div>
-          <p className="ui-confirm__desc">{t('stopBg.hint')}</p>
           <DialogFooter>
-            <Button data-testid="stop-background-turn-only" onPress={() => answerStopConfirm('turn')}>
+            <Button autoFocus data-testid="stop-background-turn-only" onPress={() => answerStopConfirm('turn')}>
               {t('stopBg.turnOnly')}
             </Button>
-            <Button variant="primary" autoFocus data-testid="stop-background-together" onPress={() => answerStopConfirm('together')}>
+            <Button variant="danger" data-testid="stop-background-together" onPress={() => answerStopConfirm('together')}>
               {t('stopBg.together')}
             </Button>
           </DialogFooter>

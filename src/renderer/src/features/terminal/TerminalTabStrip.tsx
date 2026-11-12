@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { Plus, SquareTerminal } from 'lucide-react'
+import { Bot, Plus, SquareTerminal } from 'lucide-react'
 import { IconButton, Menu, MenuItem, PanelTab, PanelTabList, Popover } from '../../ui'
 import { nextTerminalTabIndex } from './terminal-tabs'
 import type { TerminalText } from './terminal-text'
@@ -11,6 +11,7 @@ export interface TerminalTabItem {
   busy: boolean
   exited: boolean
   agent?: boolean
+  agentOwned?: boolean
 }
 
 export interface TerminalTabStripProps {
@@ -90,8 +91,10 @@ export function TerminalTabStrip({
               key={tab.key}
               id={tab.key}
               label={tab.label}
-              title={tab.detail || tab.label}
-              icon={<SquareTerminal aria-hidden />}
+              title={[tab.agentOwned ? text.agentTab : '', tab.detail || tab.label].filter(Boolean).join('\n')}
+              icon={tab.agentOwned ? <Bot aria-hidden /> : <SquareTerminal aria-hidden />}
+              description={tab.agentOwned ? text.agentTab : undefined}
+              data-agent={tab.agentOwned ? '1' : undefined}
               active={tab.key === active}
               pending={tab.busy || !!tab.agent}
               muted={tab.exited}

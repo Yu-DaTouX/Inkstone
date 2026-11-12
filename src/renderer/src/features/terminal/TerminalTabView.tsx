@@ -119,6 +119,7 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       if (host.clientWidth < 24 || host.clientHeight < 24) return
       try {
         fit.fit()
+        term.refresh(0, term.rows - 1)
       } catch {
       }
       sessionRef.current?.resize(term.cols, term.rows)
@@ -304,6 +305,12 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
 
       const observer = new ResizeObserver(() => scheduleFit())
       observer.observe(host)
+      const onSettled = (event: Event): void => {
+        const target = event.target
+        if (target instanceof Element && target !== host && target.contains(host)) scheduleFit(0)
+      }
+      window.addEventListener('transitionend', onSettled, true)
+      window.addEventListener('animationend', onSettled, true)
 
       const releaseEnv = observeTerminalEnvironment((change) => {
         if (change !== 'resize') {
@@ -320,6 +327,8 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
         host.removeAttribute('title')
         unsubscribe()
         observer.disconnect()
+        window.removeEventListener('transitionend', onSettled, true)
+        window.removeEventListener('animationend', onSettled, true)
         releaseEnv()
         controller.setSink(null)
         controller.dispose()

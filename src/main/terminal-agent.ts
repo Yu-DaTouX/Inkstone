@@ -559,6 +559,7 @@ export interface TerminalAgentContext {
   cwd(): string
   confirm(request: TerminalConfirmRequest): Promise<{ allowed: boolean; feedback?: string }>
   notify?(text: string, stillOwner: () => boolean, wake: boolean): void
+  turnSignal?(): AbortSignal | undefined
 }
 
 type WaitState = 'completed' | 'matched' | 'quiet' | 'timeout' | 'exited' | 'cancelled' | 'settled'
@@ -745,8 +746,10 @@ function shellToolName(info: TerminalSessionInfo): string {
 export class TerminalAgentCommands {
   constructor(private readonly host: TerminalAgentHost, private readonly ctx: TerminalAgentContext) {}
 
-  async run(action: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<CapabilityCommandResult> {
+  async run(action: string, params: Record<string, unknown>, requestSignal?: AbortSignal): Promise<CapabilityCommandResult> {
     if (!this.host.available()) throw new CapabilityCommandError('terminal_unavailable', '终端组件不可用（node-pty 未加载）')
+    const turn = this.ctx.turnSignal?.()
+    const signal = turn && requestSignal ? AbortSignal.any([requestSignal, turn]) : turn ?? requestSignal
     switch (action) {
       case 'list':
         return this.list()
@@ -1013,11 +1016,19 @@ export class TerminalAgentCommands {
     lastUsed.set(owner, id)
     return this.withAnnounce(id, 'run', async () => {
       if (created || stream.total === 0) await this.waitReady(id, signal, created ? NEW_TERMINAL_SETTLE_MS : 0)
+      if (signal?.aborted) {
+        return this.result('run', this.host.stream(id)?.info ?? stream.info, { text: '', truncated: false, cursor: this.host.stream(id)?.total ?? stream.total }, { command, state: 'cancelled', created })
+      }
       const from = this.host.stream(id)?.total ?? stream.total
       this.writeOrFail(id, `${command}\r`)
       if (background) {
         const startedAt = this.host.now()
         const first = await this.waitFor(id, from, { mode: 'command', timeoutMs: TERMINAL_BACKGROUND_SETTLE_MS, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until }, signal)
+        if (first === 'cancelled') {
+          if (this.host.stream(id)?.info.alive) this.host.write(id, '\x03')
+          const stopped = await this.outputSince(id, from)
+          return this.result('run', stopped.info ?? stream.info, stopped, { command, state: 'cancelled', created })
+        }
         const early = await this.outputSince(id, from)
         if (first === 'completed' || first === 'matched' || first === 'exited') {
           return this.result('run', early.info ?? stream.info, early, { command, state: first, created })
@@ -1064,7 +1075,9 @@ export class TerminalAgentCommands {
       agentInterrupts.delete(job.id)
       const byAgent = waited !== 'timeout' && waited !== 'matched' && interruptedAt !== undefined && this.host.now() - interruptedAt <= AGENT_INTERRUPT_GRACE_MS
       const state: TerminalNoticeState = (stopping || byAgent) && waited !== 'timeout' ? 'stopped' : waited
-      updateTerminalJob(record.id, { state, endedAt: this.host.now() })
+      const keepWatching = waited === 'timeout' && job.timeoutAsked && !stopping && !controller.signal.aborted
+      updateTerminalJob(record.id, keepWatching ? { state } : { state, endedAt: this.host.now() })
+      if (keepWatching) void this.watchAfterTimeout(job.id, job.from, record.id, controller)
       if (byAgent || (waited === 'timeout' && !job.timeoutAsked)) return
       const output = await this.outputSince(job.id, job.from)
       const tail = tailText(output.text, BACKGROUND_NOTICE_LINES, BACKGROUND_NOTICE_CHARS)
@@ -1085,6 +1098,21 @@ export class TerminalAgentCommands {
       console.warn('[terminal-agent] 后台命令监视失败：', error)
     })
     return record
+  }
+
+  private async watchAfterTimeout(id: string, from: number, jobId: string, controller: AbortController): Promise<void> {
+    backgroundJobs.set(id, controller)
+    try {
+      const waited = await this.waitFor(id, from, { mode: 'command', timeoutMs: TERMINAL_BACKGROUND_TIMEOUT_MS, quietMs: Number.POSITIVE_INFINITY, idleMs: SETTLE_IDLE_MS, until: null }, controller.signal)
+      const stopping = terminalJob(jobId)?.state === 'stopping' || agentInterrupts.has(id)
+      const state: TerminalNoticeState = stopping || (waited !== 'completed' && waited !== 'exited' && waited !== 'timeout') ? 'stopped' : waited
+      updateTerminalJob(jobId, { state, endedAt: this.host.now() })
+    } catch {
+      if (terminalJob(jobId)?.endedAt === undefined) updateTerminalJob(jobId, { state: 'stopped', endedAt: this.host.now() })
+    } finally {
+      if (backgroundJobs.get(id) === controller) backgroundJobs.delete(id)
+      agentInterrupts.delete(id)
+    }
   }
 
   private async write(params: Record<string, unknown>, signal?: AbortSignal): Promise<CapabilityCommandResult> {

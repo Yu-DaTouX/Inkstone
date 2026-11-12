@@ -40,6 +40,10 @@ export interface BrowserText {
   viewport: string
   viewportNames: Record<'responsive' | 'mobile' | 'tablet' | 'desktop', string>
   expandTabs: string
+  viewMenu: string
+  tabsLayout: string
+  tabsLayoutNames: Record<'vertical' | 'horizontal', string>
+  localServersOther: (n: number) => string
   searchEngine: string
   searchEngineCustom: string
   searchEngineCustomLabel: string
@@ -100,6 +104,10 @@ const ZH: BrowserText = {
   viewport: '视口尺寸',
   viewportNames: { responsive: '自适应面板', mobile: '手机 375×812', tablet: '平板 768×1024', desktop: '桌面 1280×800' },
   expandTabs: '固定展开标签栏',
+  viewMenu: '视图',
+  tabsLayout: '标签布局',
+  tabsLayoutNames: { vertical: '竖排标签', horizontal: '横排标签' },
+  localServersOther: (n) => `其他 ${n}`,
   searchEngine: '搜索引擎',
   searchEngineCustom: '自定义…',
   searchEngineCustomLabel: '搜索网址（%s 代表关键词）',
@@ -162,6 +170,10 @@ const EN: BrowserText = {
   viewport: 'Viewport size',
   viewportNames: { responsive: 'Fit panel', mobile: 'Mobile 375×812', tablet: 'Tablet 768×1024', desktop: 'Desktop 1280×800' },
   expandTabs: 'Pin tabs open',
+  viewMenu: 'View',
+  tabsLayout: 'Tab layout',
+  tabsLayoutNames: { vertical: 'Vertical tabs', horizontal: 'Horizontal tabs' },
+  localServersOther: (n) => `Other ${n}`,
   searchEngine: 'Search engine',
   searchEngineCustom: 'Custom…',
   searchEngineCustomLabel: 'Search URL (%s is the query)',

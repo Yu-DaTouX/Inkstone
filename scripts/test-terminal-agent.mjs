@@ -105,6 +105,7 @@ try {
       notify: (text, stillOwner, wake) => notices.push({ text, owned: stillOwner(), wake }),
       ownerKeys: () => ['E:/sessions/A.jsonl', 'sid-a'],
       cwd: () => process.cwd(),
+      ...(options.turnSignal ? { turnSignal: options.turnSignal } : {}),
       confirm: async (request) => {
         confirms.push(request)
         if (options.confirmGate) await options.confirmGate
@@ -389,6 +390,43 @@ try {
     assert.equal(stopped.notices.length, 0)
   })
 
+  await check('--background：登记前回合已停止，不登记后台任务并立即 ctrl+c；写入前已停止则不写命令', async () => {
+    resetTerminalJobs()
+    const abort = new AbortController()
+    const late = setup({
+      respond: (_term, command, emit) => {
+        emit(command ? 'working\r\n' : '^C\r\nPS C:\\work> ')
+        if (command) abort.abort()
+      }
+    })
+    const result = await late.commands.run('run', { command: 'npm run dev', background: true, timeout: 600 }, abort.signal)
+    assert.equal(result.summary.state, 'cancelled')
+    assert.equal(listTerminalJobs().length, 0)
+    const term = [...late.host.terms.values()][0]
+    assert.deepEqual(term.writes, ['npm run dev\r', '\x03'])
+
+    const early = new AbortController()
+    early.abort()
+    const before = setup()
+    const skipped = await before.commands.run('run', { command: 'npm run dev', background: true }, early.signal)
+    assert.equal(skipped.summary.state, 'cancelled')
+    assert.equal(listTerminalJobs().length, 0)
+    assert.deepEqual([...before.host.terms.values()][0].writes, [])
+
+    const turn = new AbortController()
+    const viaTurn = setup({
+      turnSignal: () => turn.signal,
+      respond: (_term, command, emit) => {
+        emit(command ? 'working\r\n' : '^C\r\nPS C:\\work> ')
+        if (command) turn.abort()
+      }
+    })
+    const stopped = await viaTurn.commands.run('run', { command: 'npm run dev', background: true, timeout: 600 })
+    assert.equal(stopped.summary.state, 'cancelled')
+    assert.equal(listTerminalJobs().length, 0)
+    assert.deepEqual([...viaTurn.host.terms.values()][0].writes, ['npm run dev\r', '\x03'])
+  })
+
   await check('后台命令登记为后台任务；从面板停止会发 ctrl+c，结束后记为 stopped 并通知；清除只删已结束的', async () => {
     resetTerminalJobs()
     const { host, commands, notices } = setup({
@@ -412,6 +450,33 @@ try {
     assert.equal(notices[0].wake, false)
     clearFinishedTerminalJobs([job.id])
     assert.equal(listTerminalJobs().length, 0)
+  })
+
+  await check('后台命令：给了 --timeout 到点后仍算运行中，可从面板停止，停止后记为 stopped', async () => {
+    resetTerminalJobs()
+    const { host, commands, notices } = setup({
+      respond: (_term, command, emit) => emit(command ? 'working\r\n' : '^C\r\nPS C:\\work> ')
+    })
+    const instant = host.sleep
+    host.sleep = async (ms) => {
+      await new Promise((done) => setImmediate(done))
+      return instant(ms)
+    }
+    const until = async (ready) => {
+      for (let i = 0; i < 5000 && !ready(); i++) await new Promise((done) => setImmediate(done))
+    }
+    const started = await commands.run('run', { command: 'npm run long', background: true, timeout: 5 })
+    await until(() => notices.length > 0)
+    const [job] = listTerminalJobs()
+    assert.equal(parseHostTextNotice(notices[0]?.text)?.state, 'timeout')
+    assert.equal(job.state, 'timeout')
+    assert.equal(job.endedAt, undefined)
+    assert.equal(requestTerminalJobStop(job.id), started.summary.id)
+    host.write(started.summary.id, '\r')
+    await until(() => listTerminalJobs()[0].endedAt !== undefined)
+    assert.equal(listTerminalJobs()[0].state, 'stopped')
+    assert.equal(notices.length, 1)
+    host.sleep = instant
   })
 
   const idle = async () => {

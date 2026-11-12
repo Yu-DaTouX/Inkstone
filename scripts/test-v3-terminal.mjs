@@ -795,9 +795,12 @@ async function runTerminalTabs() {
   assert.equal(tabs.canAddTerminalTab(11), true)
   assert.equal(tabs.canAddTerminalTab(12), false)
 
-  assert.deepEqual(tabs.terminalTabLabel('pwsh · proj', 0, 2), { kind: 'title', text: 'pwsh · proj', number: 1 })
-  assert.deepEqual(tabs.terminalTabLabel('  ', 1, 3), { kind: 'numbered', text: '', number: 2 })
-  assert.deepEqual(tabs.terminalTabLabel('', 0, 1), { kind: 'single', text: '', number: 1 })
+  const num = (n) => `T${n}`
+  assert.deepEqual(tabs.terminalTabNames([{ cwd: 'C:\\work\\proj\\' }, { cwd: 'C:/work/proj' }, { cwd: '', title: '  ' }], num, 'T'), ['proj', 'proj 2', 'T3'])
+  assert.deepEqual(tabs.terminalTabNames([{ cwd: 'C:/a/web', command: 'npm run dev\nnext' }, { cwd: 'C:/a/api' }], num, 'T'), ['npm run dev', 'api'])
+  assert.deepEqual(tabs.terminalTabNames([{ title: 'pwsh · proj' }], num, 'T'), ['pwsh · proj'])
+  assert.deepEqual(tabs.terminalTabNames([{}], num, 'T'), ['T'])
+  assert.equal(tabs.terminalTabName({ command: 'x'.repeat(40) }).length, 32)
 
   assert.equal(tabs.nextTerminalTabIndex(0, 3, 'ArrowRight'), 1)
   assert.equal(tabs.nextTerminalTabIndex(2, 3, 'ArrowRight'), 0)
@@ -867,7 +870,7 @@ async function runTerminalTabs() {
   assert.equal(options.cursorStyle, 'block')
   assert.equal(options.cursorBlink, true)
   assert.equal(options.scrollback, 10000)
-  assert.equal(options.minimumContrastRatio, 3)
+  assert.equal(options.minimumContrastRatio, 4.5)
 
   const saved = new Map()
   const storage = {

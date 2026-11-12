@@ -1,20 +1,38 @@
 export const MAX_TERMINAL_TABS = 12
 
-export interface TerminalTabLabel {
-  kind: 'title' | 'numbered' | 'single'
-  text: string
-  number: number
+export interface TerminalTabNameInput {
+  command?: string
+  cwd?: string
+  title?: string
 }
+
+const TAB_COMMAND_CHARS = 32
 
 export function canAddTerminalTab(count: number): boolean {
   return count < MAX_TERMINAL_TABS
 }
 
-export function terminalTabLabel(title: string, index: number, count: number): TerminalTabLabel {
-  const trimmed = title.trim()
-  if (trimmed) return { kind: 'title', text: trimmed, number: index + 1 }
-  if (count > 1) return { kind: 'numbered', text: '', number: index + 1 }
-  return { kind: 'single', text: '', number: 1 }
+function commandName(command: string): string {
+  const line = command.trim().split(/\r?\n/)[0]?.trim() ?? ''
+  return line.length > TAB_COMMAND_CHARS ? `${line.slice(0, TAB_COMMAND_CHARS - 1)}…` : line
+}
+
+function cwdName(cwd: string): string {
+  return cwd.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).pop() ?? ''
+}
+
+export function terminalTabName(input: TerminalTabNameInput): string {
+  return commandName(input.command ?? '') || cwdName(input.cwd ?? '') || (input.title ?? '').trim()
+}
+
+export function terminalTabNames(inputs: readonly TerminalTabNameInput[], fallback: (n: number) => string, single: string): string[] {
+  const names = inputs.map((input, index) => terminalTabName(input) || (inputs.length > 1 ? fallback(index + 1) : single))
+  const seen = new Map<string, number>()
+  return names.map((name) => {
+    const count = (seen.get(name) ?? 0) + 1
+    seen.set(name, count)
+    return count > 1 ? `${name} ${count}` : name
+  })
 }
 
 export function nextTerminalTabIndex(index: number, count: number, key: string): number | null {
