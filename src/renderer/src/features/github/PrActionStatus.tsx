@@ -1,10 +1,11 @@
-import { useCallback, useReducer, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactElement } from 'react'
 import { RefreshCw, RotateCcw } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { Button, CloseButton, Collapsible, CollapsibleHeader, CollapsiblePanel, Notice, Spinner } from '../../ui'
 import type { GhPrActionRequest, GhPrActionResult } from '../../../../shared/github'
 import { canStartAction, failureCause, reduceAction, type PrActionPhase } from './pr-actions-model'
 import type { PrActionText } from './pr-action-text'
+import { readPrMemory, restorableAction, writePrMemory } from './pr-detail-memory'
 
 export interface PrActionController {
   state: PrActionPhase
@@ -14,9 +15,12 @@ export interface PrActionController {
   reset: () => void
 }
 
-export function usePrAction(cwd: string, onDone?: (request: GhPrActionRequest, result: GhPrActionResult) => void): PrActionController {
-  const [state, dispatch] = useReducer(reduceAction, { phase: 'idle' } as PrActionPhase)
+export function usePrAction(cwd: string, onDone?: (request: GhPrActionRequest, result: GhPrActionResult) => void, memoryKey?: string): PrActionController {
+  const [state, dispatch] = useReducer(reduceAction, memoryKey, (key): PrActionPhase => (key ? restorableAction(readPrMemory(key).action) : { phase: 'idle' }))
   const inflight = useRef(false)
+  useEffect(() => {
+    if (memoryKey && state.phase !== 'running') writePrMemory(memoryKey, { action: state })
+  }, [memoryKey, state])
   const last = useRef<GhPrActionRequest | null>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
@@ -31,6 +35,7 @@ export function usePrAction(cwd: string, onDone?: (request: GhPrActionRequest, r
       dispatch({ type: 'start', kind: request.kind })
       try {
         const result = await github.action(cwd, request)
+        if (memoryKey) writePrMemory(memoryKey, { action: reduceAction({ phase: 'running', kind: request.kind }, { type: 'result', result }) })
         dispatch({ type: 'result', result })
         if (result.ok) doneRef.current?.(request, result)
         return result
@@ -41,7 +46,7 @@ export function usePrAction(cwd: string, onDone?: (request: GhPrActionRequest, r
         inflight.current = false
       }
     },
-    [cwd, state]
+    [cwd, state, memoryKey]
   )
 
   const retry = useCallback(() => {
@@ -95,6 +100,7 @@ export function PrActionStatus({ controller, text, onRefresh, className }: PrAct
   const { failure, recovery } = state
   const unknown = failure.code === 'timeout' || recovery === 'refresh'
   const line = failure.code === 'timeout' ? `${text.codes.timeout} · ${text.unknown}` : `${text.failed} · ${text.codes[failure.code] ?? failure.code}`
+  const cause = failureCause(failure, lang === 'en-US' ? 'en-US' : 'zh-CN')
   return (
     <Notice
       tone={unknown ? 'ask' : 'fail'}
@@ -133,7 +139,14 @@ export function PrActionStatus({ controller, text, onRefresh, className }: PrAct
           <CollapsibleHeader tone="muted" aria-label={causeOpen ? text.hideCause : text.cause} data-testid="gh-pr-action-cause">
             {causeOpen ? text.hideCause : text.cause}
           </CollapsibleHeader>
-          <CollapsiblePanel>{causeOpen ? <pre className="gh-pr-act__cause ui-meta-num">{failureCause(failure, lang === 'en-US' ? 'en-US' : 'zh-CN')}</pre> : null}</CollapsiblePanel>
+          <CollapsiblePanel>
+            {causeOpen ? (
+              <span className="gh-pr-act__cause" data-testid="gh-pr-action-cause-body">
+                <code className="gh-pr-act__cause-code">{cause.code}</code>
+                {cause.detail ? <span className="gh-pr-act__cause-detail">{cause.detail}</span> : null}
+              </span>
+            ) : null}
+          </CollapsiblePanel>
         </Collapsible>
       </span>
     </Notice>

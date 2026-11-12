@@ -6,7 +6,7 @@
     transition: background-color var(--dur-fast) var(--ease);
   }
 
-  .v3-files-crumb:hover {
+  button.v3-files-crumb:hover {
     background: var(--hover);
     color: var(--fg);
   }

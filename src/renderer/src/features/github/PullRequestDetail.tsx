@@ -54,6 +54,7 @@ import { PrActionBar } from './PrDetailActions'
 import { EditFooter } from './PrEditors'
 import { ChecksList, CommentCard, FloatingComment, PrSummaryTab } from './PrSummaryTab'
 import { FileNotes } from './PrThreads'
+import { prMemoryKey, readPrMemory, writePrMemory } from './pr-detail-memory'
 import './pull-requests.css'
 import './pr-actions.css'
 
@@ -172,17 +173,19 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
   const { lang } = useI18n()
   const text = prDetailText(lang)
   const actText = prActionText(lang)
-  const [repo, setRepo] = useState<{ name: string; url: string } | null>(null)
-  const [detail, setDetail] = useState<PrDetail | null>(null)
+  const memoryKey = prMemoryKey(cwd, number)
+  const [remembered] = useState(() => readPrMemory(memoryKey))
+  const [repo, setRepo] = useState<{ name: string; url: string } | null>(remembered.snapshot?.repo ?? null)
+  const [detail, setDetail] = useState<PrDetail | null>(remembered.snapshot?.detail ?? null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
-  const [diffNote, setDiffNote] = useState<{ kind: 'truncated' | 'error'; message?: string } | null>(null)
+  const [diffNote, setDiffNote] = useState<{ kind: 'truncated' | 'error'; message?: string } | null>(remembered.snapshot?.diffNote ?? null)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [viewed, setViewed] = useState<string[]>(() => parseViewed(readViewedRaw()))
   const [notice, setNotice] = useState('')
-  const diffPatch = useRef('')
-  const [commentOpen, setCommentOpen] = useState(false)
+  const diffPatch = useRef(remembered.snapshot?.diffPatch ?? '')
+  const [commentOpen, setCommentOpen] = useState(remembered.commentOpen === true)
   const action = usePrAction(cwd, (_request, result) => {
     if (result.pr && repo) {
       const next = normalizePrDetail(result.pr, { repo: repo.name, diff: diffPatch.current })
@@ -190,7 +193,11 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
       onState?.(next.state, next.title)
     }
     setReload((value) => value + 1)
-  })
+  }, memoryKey)
+
+  useEffect(() => {
+    if (detail) writePrMemory(memoryKey, { snapshot: { repo, detail, diffPatch: diffPatch.current, diffNote } })
+  }, [memoryKey, repo, detail, diffNote])
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const [target, setTarget] = useState<CommentTarget>('review')
@@ -291,7 +298,6 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
     let alive = true
     setLoading(true)
     setError('')
-    setDiffNote(null)
     const github = window.yan?.github
     if (!github) {
       setError(t('github.pr.bridgeMissing'))
@@ -318,8 +324,7 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
         const next = normalizePrDetail(detailRes.pr, { repo: name, diff: diffPatch.current })
         setDetail(next)
         onState?.(next.state, next.title)
-        if (!diffRes.ok) setDiffNote({ kind: 'error', message: diffRes.error ?? '' })
-        else if (diffRes.truncated) setDiffNote({ kind: 'truncated' })
+        setDiffNote(!diffRes.ok ? { kind: 'error', message: diffRes.error ?? '' } : diffRes.truncated ? { kind: 'truncated' } : null)
       } catch (cause) {
         if (alive) setError(cause instanceof Error ? cause.message : String(cause))
       } finally {
@@ -767,7 +772,19 @@ export function PullRequestDetail({ cwd, number, seedTitle, tab, onTabChange, on
               </div>
             ))
           : null}
-        {detail && tab !== 'code' ? <FloatingComment number={number} action={action} text={actText} onRefresh={() => setReload((value) => value + 1)} onOpenChange={setCommentOpen} /> : null}
+        {detail && tab !== 'code' ? (
+          <FloatingComment
+            number={number}
+            action={action}
+            text={actText}
+            memoryKey={memoryKey}
+            onRefresh={() => setReload((value) => value + 1)}
+            onOpenChange={(open) => {
+              writePrMemory(memoryKey, { commentOpen: open })
+              setCommentOpen(open)
+            }}
+          />
+        ) : null}
       </div>
     </div>
   )

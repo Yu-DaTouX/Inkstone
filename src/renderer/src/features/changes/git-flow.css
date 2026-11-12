@@ -34,7 +34,8 @@
   }
 
   @container changes-head (max-width: 340px) {
-    .changes-pane__count {
+    .changes-pane__viewed-head,
+    .changes-pane__scope .changes-pane__clip {
       display: none;
     }
   }
@@ -79,6 +80,10 @@
 
   .gitflow-commit__message {
     flex: none;
+  }
+
+  .gitflow-commit[data-idle]:empty {
+    display: none;
   }
 
   .gitflow-commit__bar {

@@ -8,6 +8,7 @@ export const TREE_WIDTH_MIN = 160
 export const TREE_WIDTH_MAX = 640
 export const PREVIEW_MIN_WIDTH = 160
 export const TREE_MAX_SHARE = 0.35
+export const SEARCH_TREE_SHARE = 0.5
 export const SPLIT_FIT_WIDTH = 400
 const KEY_STEP = 16
 
@@ -17,6 +18,12 @@ export function clampTreeWidth(width: number, paneWidth: number): number {
       ? Math.max(TREE_WIDTH_MIN, Math.min(TREE_WIDTH_MAX, paneWidth - PREVIEW_MIN_WIDTH, Math.floor(paneWidth * TREE_MAX_SHARE)))
       : TREE_WIDTH_MAX
   return Math.round(Math.min(limit, Math.max(TREE_WIDTH_MIN, width)))
+}
+
+export function searchTreeWidth(treeWidth: number, paneWidth: number): number {
+  if (paneWidth <= 0) return treeWidth
+  const wide = Math.min(TREE_WIDTH_MAX, Math.floor(paneWidth * SEARCH_TREE_SHARE), paneWidth - PREVIEW_MIN_WIDTH)
+  return Math.max(treeWidth, wide)
 }
 
 export function readTreeWidth(raw: string | null): number {
@@ -49,6 +56,7 @@ export function filesSplitLayout(input: {
 }): FilesSplitLayout {
   if (!input.hasPreview) return { split: false, narrow: false, showTree: true, showPreview: false, treePressed: true }
   const narrow = input.paneWidth > 0 && input.paneWidth < SPLIT_FIT_WIDTH
+  if (!input.hasFile) return { split: false, narrow, showTree: true, showPreview: false, treePressed: true }
   if (!narrow) {
     return { split: input.treeShown, narrow, showTree: input.treeShown, showPreview: true, treePressed: input.treeShown }
   }

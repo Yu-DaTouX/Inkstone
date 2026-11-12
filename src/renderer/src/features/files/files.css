@@ -314,13 +314,17 @@
   }
 
   .v3-files-result-name-head {
+    flex: 0 9999 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .v3-files-result-name-tail {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .v3-files-result-path {

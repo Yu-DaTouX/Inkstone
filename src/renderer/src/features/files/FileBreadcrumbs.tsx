@@ -34,7 +34,7 @@ export interface FileBreadcrumbsProps {
   browse?: boolean
   entries?: (path: string) => readonly DirEntry[] | null | undefined
   onBrowse?: (path: string) => void
-  onNavigate: (path: string) => void
+  onNavigate?: (path: string) => void
   className?: string
 }
 
@@ -93,7 +93,7 @@ export function FileBreadcrumbs({
   const navigate = useCallback(
     (next: string): void => {
       restoreFocus.current = browse
-      onNavigate(next)
+      onNavigate?.(next)
     },
     [browse, onNavigate]
   )
@@ -138,7 +138,17 @@ export function FileBreadcrumbs({
     }
   }
 
-  const crumbButton = (crumb: BreadcrumbCrumb, last: boolean): ReactElement => (
+  const crumbButton = (crumb: BreadcrumbCrumb, last: boolean): ReactElement => !onNavigate ? (
+    <span
+      className="v3-files-crumb"
+      title={crumb.path || rootLabel}
+      aria-current={last && !tail ? 'page' : undefined}
+      data-crumb-path={crumb.path}
+      data-testid={`v3-files-crumb-${crumb.path || 'root'}`}
+    >
+      {crumb.label}
+    </span>
+  ) : (
     <button
       type="button"
       className="v3-files-crumb"
@@ -165,7 +175,14 @@ export function FileBreadcrumbs({
   }
 
   folded.visible.forEach((crumb, index) => {
-    if (index === 1 && folded.hidden.length) {
+    if (index === 1 && folded.hidden.length && !onNavigate) {
+      pushItem(
+        'fold',
+        <span className="v3-files-crumb v3-files-crumb--fold" title={folded.hidden.map((item) => item.label).join(' / ')} data-testid="v3-files-crumb-fold">
+          <span aria-hidden>…</span>
+        </span>
+      )
+    } else if (index === 1 && folded.hidden.length) {
       pushItem(
         'fold',
         <button

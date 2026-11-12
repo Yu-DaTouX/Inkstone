@@ -94,7 +94,8 @@ export function PrActionBar({ cwd, detail, text, action, pending, onPendingChang
           variant="primary"
           icon={<GitMerge size={14} aria-hidden />}
           isDisabled={!mergeAllowed || busy}
-          tooltip={reasons.length ? reasons.join('；') : undefined}
+          tooltip={mergeAllowed && !busy && reasons.length ? reasons.join('；') : undefined}
+          title={!mergeAllowed && reasons.length ? reasons.join('；') : undefined}
           onPress={() => {
             setAutoMergeChoice(!verdict.canMerge)
             setConfirm('merge')

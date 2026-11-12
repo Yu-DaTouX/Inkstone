@@ -54,7 +54,7 @@ import {
 } from './files-search'
 import { FilesSearchResults } from './FilesSearchResults'
 import { useFilesTree } from './use-files-tree'
-import { filesSplitLayout, shouldHandOffTreeFocus, useFilesSplit } from './use-files-split'
+import { filesSplitLayout, searchTreeWidth, shouldHandOffTreeFocus, useFilesSplit } from './use-files-split'
 import { canOpenTerminal, openFolderInTerminal } from './files-terminal'
 import type { FilesMenuTarget } from './files-menu'
 import type { FilesPaneProps } from '../workbench/types'
@@ -106,6 +106,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
   const split = useFilesSplit(!!previewPath)
   const [narrowTree, setNarrowTree] = useState(false)
   const hasPreview = !!Preview
+  const canToggleTree = hasPreview && !!previewPath
   const layout = filesSplitLayout({
     hasPreview,
     hasFile: !!previewPath,
@@ -316,7 +317,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
 
   usePaneMenu('files', [
     ...(layout.showPreview ? [{ id: 'files:search', label: text.goToFile, icon: <Search size={14} aria-hidden />, onAction: focusFilter }] : []),
-    ...(hasPreview ? [{ id: 'files:tree', label: layout.treePressed ? text.hideTree : text.showTree, icon: <List size={14} aria-hidden />, onAction: toggleTree }] : []),
+    ...(canToggleTree ? [{ id: 'files:tree', label: layout.treePressed ? text.hideTree : text.showTree, icon: <List size={14} aria-hidden />, onAction: toggleTree }] : []),
     ...(layout.showTree
       ? [
           { id: 'files:collapse', label: text.collapseAll, icon: <ChevronsDownUp size={14} aria-hidden />, onAction: collapseAll },
@@ -333,7 +334,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
   const onSectionKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.defaultPrevented || event.nativeEvent.isComposing) return
     const mod = event.ctrlKey || event.metaKey
-    if (mod && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'y' && hasPreview) {
+    if (mod && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'y' && canToggleTree) {
       event.preventDefault()
       toggleTree()
     }
@@ -342,6 +343,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
   const tabbable = tabbablePath(rows, state.focusPath)
   const visible = rows.slice(viewWindow.start, viewWindow.end)
   const searching = query.trim().length > 0
+  const treeWidth = searching && layout.split ? searchTreeWidth(split.treeWidth, split.paneWidth) : split.treeWidth
   const treeShortcut = 'Ctrl+Shift+Y'
   const treeLabel = layout.treePressed ? text.hideTree : text.showTree
   const refreshing = status === 'ready' && Object.keys(state.loading).length > 0
@@ -357,7 +359,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
       data-tree={layout.showTree ? '1' : '0'}
       data-preview={layout.showPreview ? '1' : '0'}
       data-dragging={split.dragging ? '1' : undefined}
-      style={{ '--files-tree-w': `${split.treeWidth}px` } as CSSProperties}
+      style={{ '--files-tree-w': `${treeWidth}px` } as CSSProperties}
       onKeyDown={onSectionKeyDown}
       data-files-quickopen=""
     >
@@ -381,7 +383,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
             <Search size={14} />
           </IconButton>
         )}
-        {hasPreview ? (
+        {canToggleTree ? (
           <IconButton
             size="sm"
             aria-label={treeLabel}
@@ -584,7 +586,7 @@ export function FilesPane({ owner, visible: paneVisible = true, onPreview, path:
           role="separator"
           aria-orientation="vertical"
           aria-label={text.resizeTree}
-          aria-valuenow={split.treeWidth}
+          aria-valuenow={treeWidth}
           aria-valuemin={160}
           aria-valuemax={640}
           tabIndex={0}

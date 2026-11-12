@@ -41,11 +41,7 @@ export interface PreviewText {
   reload: string
   discard: string
   closeEditor: string
-  emptyTitle: string
-  emptyTree: string
-  emptyNoTree: string
   noSelection: string
-  noSelectionHint: string
   missing: string
   missingHint: string
   missingCreatable: string
@@ -235,11 +231,7 @@ const ZH: PreviewText = {
   reload: '重新加载',
   discard: '放弃改动',
   closeEditor: '关闭编辑',
-  emptyTitle: '打开的文件会显示在这里',
-  emptyTree: '从文件树中选择一个文件，或点击对话中的文件路径。',
-  emptyNoTree: '点击对话中的文件路径即可打开。',
   noSelection: '未选择文件',
-  noSelectionHint: '从上方选择一个已打开的文件，或点击对话中的文件路径。',
   missing: '文件不存在',
   missingHint: '它可能已被移动或删除。',
   missingCreatable: '所在文件夹存在，这个文件还没有创建。',
@@ -429,11 +421,7 @@ const EN: PreviewText = {
   reload: 'Reload',
   discard: 'Discard changes',
   closeEditor: 'Close editor',
-  emptyTitle: 'Open files appear here',
-  emptyTree: 'Pick a file in the tree, or click a file path in the conversation.',
-  emptyNoTree: 'Click a file path in the conversation to open it.',
   noSelection: 'No file selected',
-  noSelectionHint: 'Pick an open file above, or click a file path in the conversation.',
   missing: 'File not found',
   missingHint: 'It may have been moved or deleted.',
   missingCreatable: 'The folder exists; this file has not been created yet.',

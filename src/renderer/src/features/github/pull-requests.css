@@ -436,6 +436,16 @@
     color: var(--fg2);
   }
 
+  :is(.gh-prd__markdown, .gh-pr-event__body) .v3-prose {
+    font-size: var(--t-prose);
+    line-height: var(--t-prose-lh);
+  }
+
+  :is(.gh-prd__markdown, .gh-pr-event__body) .v3-prose h1 {
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+  }
+
   .gh-prd__commit {
     margin: 0;
     font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);

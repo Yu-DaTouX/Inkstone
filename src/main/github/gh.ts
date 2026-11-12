@@ -42,17 +42,14 @@ function isPrNumber(value: unknown): value is number {
 
 export async function readGithubStatus(cwd: string, run = runGh): Promise<GithubStatus> {
   const version = await run(cwd, ['--version'])
-  if (!version.ok) {
-    if (version.missingCwd) return { installed: false, authed: false, repo: null, error: pick(`项目目录不存在：${cwd}`, `Project folder does not exist: ${cwd}`) }
-    return {
-      installed: false,
-      authed: false,
-      repo: null,
-      ...(version.missing ? {} : { error: failureText(version) })
-    }
-  }
+  if (!version.ok && version.missingCwd) return { installed: false, authed: false, repo: null, error: pick(`项目目录不存在：${cwd}`, `Project folder does not exist: ${cwd}`) }
+  if (!version.ok && version.missing) return { installed: false, authed: false, repo: null }
   const auth = await run(cwd, ['auth', 'status'])
-  if (!auth.ok) return { installed: true, authed: false, repo: null }
+  if (!auth.ok) {
+    if (auth.missing) return { installed: false, authed: false, repo: null }
+    const failure = classifyGhFailure(auth)
+    return { installed: true, authed: false, repo: null, ...(failure.code === 'not-authenticated' ? {} : { error: failure.message }) }
+  }
   const [repo, viewer] = await Promise.all([
     run(cwd, ['repo', 'view', '--json', 'nameWithOwner,url,defaultBranchRef']),
     run(cwd, ['api', 'user'])

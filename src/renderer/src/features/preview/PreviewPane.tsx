@@ -97,7 +97,7 @@ type PreviewView =
   | { kind: 'problem'; name: string; problem: PreviewProblem }
   | { kind: 'error'; name: string; message: string }
 
-export function PreviewPane({ owner, visible = true, path, treeShown = true, onRevealInTree, standalone = false }: PreviewPaneProps): ReactElement {
+export function PreviewPane({ owner, visible = true, path, onRevealInTree, standalone = false }: PreviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = previewText(lang)
   const [viewSlot, setViewSlot] = useState<{ key: string; view: PreviewView } | null>(null)
@@ -270,6 +270,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
         ? { kind: 'loading', name: previewBaseName(activePath) }
         : { kind: 'empty' }
   const activeAbs = 'abs' in view ? view.abs : view.kind === 'problem' ? activePath ?? '' : ''
+  const reloadLabel = view.kind === 'problem' || view.kind === 'error' ? text.retry : text.reload
   const artifactName = managedArtifactName(activeAbs || activePath || '')
   const name = artifactName ?? ('name' in view ? view.name : '')
   const draft = activeAbs ? drafts.get(activeAbs) ?? null : null
@@ -524,7 +525,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
           ...(onRevealInTree && crumbs.length
             ? [{ id: 'preview:revealInTree', label: text.revealInTree, icon: <ListTree size={14} aria-hidden />, onAction: () => onRevealInTree(activeAbs) }]
             : []),
-          { id: 'preview:reload', label: text.retry, icon: <RefreshCw size={14} aria-hidden />, onAction: () => setReload((value) => value + 1) },
+          { id: 'preview:reload', label: reloadLabel, icon: <RefreshCw size={14} aria-hidden />, onAction: () => setReload((value) => value + 1) },
           ...(tabList.length > 1
             ? [{ id: 'preview:closeAll', label: text.closeAllTabs, icon: <X size={14} aria-hidden />, onAction: closeAllTabs }]
             : tabList.length === 1 && chrome
@@ -550,7 +551,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
   }, [activeAbs, crumbs])
 
   const crumbNav =
-    onRevealInTree && crumbPath !== null ? (
+    crumbPath !== null ? (
       <FileBreadcrumbs
         rootLabel={rootLabel(owner.cwd)}
         path={crumbPath}
@@ -558,7 +559,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
         label={text.crumbsLabel}
         tail={mergedHead && !singleTab ? undefined : name}
         className="v3-preview-breadcrumbs"
-        onNavigate={(dir) => onRevealInTree(toAbsolutePath(owner.cwd, dir))}
+        onNavigate={onRevealInTree ? (dir) => onRevealInTree(toAbsolutePath(owner.cwd, dir)) : undefined}
       />
     ) : null
   const chromePathLabel = ((): { dir: string; name: string } => {
@@ -598,7 +599,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
             <span className="v3-preview-pathstack" title={activeAbs}>
               {chromePathLabel.dir ? (
                 <>
-                  <span className="v3-preview-pathdir ui-meta-path">{chromePathLabel.dir}</span>
+                  <span className="v3-preview-pathdir">{chromePathLabel.dir}</span>
                   <span className="v3-files-crumb-sep" aria-hidden>
                     ›
                   </span>
@@ -666,7 +667,7 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
                     {toolButtons}
                   </>
                 ) : null}
-                <IconButton size="sm" aria-label={text.retry} tooltip={text.retry} onPress={() => setReload((value) => value + 1)}>
+                <IconButton size="sm" aria-label={reloadLabel} tooltip={reloadLabel} onPress={() => setReload((value) => value + 1)}>
                   <RefreshCw size={14} />
                 </IconButton>
               </>
@@ -725,7 +726,6 @@ export function PreviewPane({ owner, visible = true, path, treeShown = true, onR
           settings={viewSettings}
           target={codeTarget}
           hasTabs={tabList.length > 0}
-          treeShown={treeShown}
           cwd={owner.cwd}
           revision={reload}
           canvas={canvas}
@@ -781,7 +781,6 @@ function PreviewBody({
   settings,
   target,
   hasTabs,
-  treeShown,
   cwd,
   revision,
   canvas,
@@ -806,7 +805,6 @@ function PreviewBody({
   settings: FileViewSettings
   target: CodeViewTarget | null
   hasTabs: boolean
-  treeShown: boolean
   cwd: string
   revision: number
   canvas: boolean
@@ -821,8 +819,7 @@ function PreviewBody({
   onRetry: () => void
   onViewSource: () => void
 }): ReactElement {
-  const emptyTitle = hasTabs ? text.noSelection : text.emptyTitle
-  const emptyHint = hasTabs ? text.noSelectionHint : treeShown ? text.emptyTree : text.emptyNoTree
+  const emptyTitle = hasTabs ? text.noSelection : text.empty
   const htmlView = (abs: string, name: string): ReactElement =>
     canvas ? (
       <HtmlCanvas abs={abs} name={name} cwd={cwd} labels={text} revision={revision} generating={generating} draft={draft} focus={focus} onOpen={onOpen} onViewSource={onViewSource} />
@@ -844,7 +841,6 @@ function PreviewBody({
           data-testid="v3-preview-empty"
           icon={<Folder size={20} />}
           title={emptyTitle}
-          description={emptyHint}
           action={
             <ul className="v3-preview-manifest" data-testid="v3-preview-manifest">
               {artifacts.map((artifact) => (
@@ -867,7 +863,7 @@ function PreviewBody({
           data-testid="v3-preview-empty"
           icon={<Folder size={20} />}
           title={emptyTitle}
-          description={ownsCurrent ? emptyHint : text.notOwner}
+          description={ownsCurrent ? undefined : text.notOwner}
         />
       )
     case 'loading':

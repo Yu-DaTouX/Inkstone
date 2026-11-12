@@ -429,7 +429,7 @@ const ZH: PrActionText = {
     hideCause: '收起原因',
     retry: '重试',
     refreshConfirm: '刷新确认',
-    unknown: '结果未知，先刷新确认',
+    unknown: '结果未知',
     dismiss: '知道了',
     codes: {
       'gh-missing': '未安装 GitHub CLI',
@@ -678,7 +678,7 @@ const EN: PrActionText = {
     hideCause: 'Hide cause',
     retry: 'Retry',
     refreshConfirm: 'Refresh to confirm',
-    unknown: 'Outcome unknown — refresh to confirm',
+    unknown: 'Outcome unknown',
     dismiss: 'Dismiss',
     codes: {
       'gh-missing': 'GitHub CLI missing',

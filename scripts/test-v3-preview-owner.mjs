@@ -535,7 +535,7 @@ async function main() {
     await flush()
     tree = render({ owner: OWNER_B, path: undefined })
     ok(!treeText(tree).includes('content:C:/proj/a/a.md'), '迟到 A 回包后 B 仍不显示 A 内容')
-    ok(treeText(tree).includes('打开的文件会显示在这里'), 'B 保持空视图')
+    ok(treeText(tree).includes('没有打开的预览'), 'B 保持空视图')
   }
 
   group('B 点自己的成果：走 B 的路径与 cwd')

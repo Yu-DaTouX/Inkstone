@@ -1,4 +1,4 @@
-import { useMemo, type JSX } from 'react'
+import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { Undo2 } from 'lucide-react'
 import { Button, DiffStat } from '../../ui'
@@ -22,6 +22,9 @@ interface ChangesText {
   more: (n: number) => string
   view: string
   undo: string
+  ignoredAll: string
+  ignoredAllHint: string
+  ignoredSome: (n: number) => string
 }
 
 const ZH: ChangesText = {
@@ -34,7 +37,10 @@ const ZH: ChangesText = {
   deliverables: (n) => `${n} 个交付文件`,
   more: (n) => `还有 ${n} 个文件`,
   view: '查看更改',
-  undo: '撤销'
+  undo: '撤销',
+  ignoredAll: 'Git 已忽略',
+  ignoredAllHint: '这些文件被 Git 忽略，改动面板不列出；点文件名可预览',
+  ignoredSome: (n) => `${n} 个文件被 Git 忽略，改动面板不列出`
 }
 const EN: ChangesText = {
   title: 'Changes this turn',
@@ -46,7 +52,10 @@ const EN: ChangesText = {
   deliverables: (n) => `${n} ${n === 1 ? 'deliverable' : 'deliverables'}`,
   more: (n) => `${n} more ${n === 1 ? 'file' : 'files'}`,
   view: 'View changes',
-  undo: 'Undo'
+  undo: 'Undo',
+  ignoredAll: 'Ignored by Git',
+  ignoredAllHint: 'Git ignores these files, so the Changes panel does not list them. Click a file name to preview it.',
+  ignoredSome: (n) => `${n} ${n === 1 ? 'file is' : 'files are'} ignored by Git and not listed in the Changes panel`
 }
 
 function changesText(lang: Lang): ChangesText {
@@ -63,6 +72,30 @@ function promptBefore(messages: readonly UIMessage[], sourceIds: readonly string
 }
 
 const NO_DELIVERABLES: readonly ReplyFileLink[] = []
+
+function useIgnoredCount(cwd: string | undefined, paths: readonly string[]): number {
+  const key = cwd && paths.length ? `${cwd}\n${paths.join('\n')}` : ''
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!key || !cwd) {
+      setCount(0)
+      return undefined
+    }
+    const git = typeof window === 'undefined' ? undefined : window.yan?.git
+    if (typeof git?.screenPaths !== 'function') return undefined
+    let alive = true
+    git
+      .screenPaths(cwd, key.split('\n').slice(1))
+      .then((result) => {
+        if (alive) setCount(result?.ignored?.length ?? 0)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [key, cwd])
+  return count
+}
 
 export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd, previewCwd, readOnly, rewindOwner }: {
   turn: AssistantTurn
@@ -88,7 +121,10 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
     return matchCheckpoint(owned, anchor.text, anchor.timestamp)?.id ?? null
   }, [anchor, owned])
   const rows = useMemo(() => (changes ? changeRows(changes.files, cwd) : []), [changes, cwd])
+  const changedPaths = useMemo(() => rows.map((row) => row.file.path), [rows])
+  const ignored = useIgnoredCount(cwd || previewCwd, changedPaths)
   if (!rows.length && !deliverables.length) return null
+  const allIgnored = ignored > 0 && ignored >= changedPaths.length
 
   const text = changesText(lang)
   const prompt = checkpointId ? anchor : null
@@ -119,8 +155,12 @@ export function TurnChanges({ turn, changes, deliverables = NO_DELIVERABLES, cwd
               <Undo2 size={13} aria-hidden />
             </Button>
           ) : null}
-          {changes ? (
-            <Button size="sm" variant="ghost" onPress={() => openPanelTool('changes')} data-testid="v3-turn-changes-view">
+          {changes && allIgnored ? (
+            <span className="v3-chg-summary" title={text.ignoredAllHint} data-testid="v3-turn-changes-ignored">
+              {text.ignoredAll}
+            </span>
+          ) : changes ? (
+            <Button size="sm" variant="ghost" title={ignored > 0 ? text.ignoredSome(ignored) : undefined} onPress={() => openPanelTool('changes')} data-testid="v3-turn-changes-view">
               {text.view}
             </Button>
           ) : null}

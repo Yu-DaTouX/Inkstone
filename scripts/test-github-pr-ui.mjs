@@ -172,13 +172,21 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.equal(m.reduceAction(s, { type: 'result', result: { ok: true, refreshFailure: { code: 'other' } } }).refreshFailed, true)
   assert.deepEqual(m.reduceAction({ phase: 'idle' }, { type: 'result', result: { ok: true } }), { phase: 'idle' })
   assert.deepEqual(m.reduceAction(timeout, { type: 'reset' }), { phase: 'idle' })
-  assert.equal(
+  assert.deepEqual(
     m.failureCause({ code: 'git-failed', message: 'x', hint: '', retrySafe: true, gitFailure: { code: 'dirty-blocks-switch', message: '冲突', detail: 'a.ts', retrySafe: true } }),
-    'code: git-failed\nx\ngit: dirty-blocks-switch\n冲突\na.ts'
+    { code: 'code: git-failed · git: dirty-blocks-switch', detail: '冲突\na.ts' }
   )
-  assert.equal(
+  assert.deepEqual(
     m.failureCause({ code: 'git-failed', message: '推送失败', hint: '检查网络', retrySafe: true, gitFailure: { code: 'network', message: 'fatal: unable to access', detail: '冲突', retrySafe: true } }, 'en-US'),
-    'code: git-failed\ngit: network\nfatal: unable to access'
+    { code: 'code: git-failed · git: network', detail: 'fatal: unable to access' }
+  )
+  assert.deepEqual(
+    m.failureCause({ code: 'forbidden', message: 'No permission for this operation', hint: 'Check repository permissions and organization policy', retrySafe: true }, 'en-US'),
+    { code: 'code: forbidden', detail: 'Check repository permissions and organization policy' }
+  )
+  assert.deepEqual(
+    m.failureCause({ code: 'timeout', message: '请求超时，结果未知，请刷新确认', hint: '请刷新确认远端状态，不要直接重复写操作', retrySafe: false }),
+    { code: 'code: timeout', detail: '请刷新确认远端状态，不要直接重复写操作' }
   )
 }
 

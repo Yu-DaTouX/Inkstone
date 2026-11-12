@@ -50,7 +50,7 @@ function ResultName({ name, parts }: { name: string; parts: readonly HighlightPa
     if (part.hit) break
     firstHit += part.text.length
   }
-  const cut = firstHit < name.length ? Math.min(split.head.length, firstHit) : split.head.length
+  const cut = firstHit > 0 && firstHit < split.head.length ? firstHit : split.head.length
   return (
     <>
       <span className="v3-files-result-name-head">

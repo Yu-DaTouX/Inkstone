@@ -49,6 +49,7 @@ import { CreatePullRequestButton } from '../github/CreatePullRequest'
 import { ChangesBinaryGroup } from './ChangesBinaryGroup'
 import { buildFileTree, createLimitedQueue, distinctChangeDirs, flattenFileTree, isCompactPane, isLargeDiff, sortChangeItems } from './file-list'
 import { useChangesFileList } from './use-file-list'
+import { useChangesAutoRefresh } from './use-changes-autorefresh'
 import { patchLineCounts } from './patch-line-counts'
 import { isTestFilePath, readHideTestFiles, writeHideTestFiles } from './test-files'
 import {
@@ -77,6 +78,7 @@ export interface ChangesPaneProps {
   loadPatch?: PatchLoader
   lang?: string
   className?: string
+  visible?: boolean
 }
 
 type YanGitBridge = NonNullable<Window['yan']['git']>
@@ -293,7 +295,7 @@ function onlyFirst(path: string | null): Set<string> {
   return new Set(path ? [path] : [])
 }
 
-export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: ChangesPaneProps): ReactElement {
+export function ChangesPane({ owner, gitSource, loadPatch, lang, className, visible = true }: ChangesPaneProps): ReactElement {
   const { lang: uiLang, t } = useI18n()
   const resolvedLang = lang ?? uiLang
   const text = useMemo(() => changesText(resolvedLang), [resolvedLang])
@@ -592,6 +594,15 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     setTick((n) => n + 1)
   }, [clearRunner])
 
+  const autoRefreshState = useRef({ busy: false, failed: false })
+  autoRefreshState.current = { busy: runner.busy !== null, failed: runner.failure !== null }
+  const autoRefresh = useCallback((): void => {
+    if (autoRefreshState.current.busy) return
+    if (!autoRefreshState.current.failed) clearRunner()
+    setTick((n) => n + 1)
+  }, [clearRunner])
+  useChangesAutoRefresh(visible, autoRefresh)
+
   useEffect(() => {
     const git = bridge()
     if (!git?.remotes) {
@@ -797,12 +808,12 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
 
   const displayMenu: PaneMenuItem[] = [
     ...(fileList.canFit
-      ? [{ id: 'changes:files', label: fileList.shown ? text.hideFileList : text.showFileList, checked: fileList.shown, onAction: fileList.toggle }]
+      ? [{ id: 'changes:files', label: text.showFileList, checked: fileList.shown === true, onAction: fileList.toggle }]
       : []),
     {
       id: 'changes:tests',
-      label: hideTests ? t('changes.showTests') : t('changes.hideTests'),
-      checked: hideTests,
+      label: t('changes.hideTests'),
+      checked: hideTests === true,
       disabled: testPaths.size === 0,
       onAction: toggleHideTests
     },
@@ -826,7 +837,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     {
       id: 'changes:split',
       label: narrow ? `${text.layoutSplit} · ${text.splitNeedsWidth}` : text.layoutSplit,
-      checked: layout === 'split',
+      checked: layout === 'split' && !narrow,
+      disabled: narrow,
       onAction: () => {
         const next: DiffViewMode = layout === 'split' ? 'unified' : 'split'
         setLayout(next)
@@ -919,7 +931,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               </span>
             ) : null}
             {!fileList.shown && shownItems.length > 0 ? (
-              <span className="changes-pane__count" data-testid="changes-viewed-head">
+              <span className="changes-pane__count changes-pane__viewed-head" data-testid="changes-viewed-head">
                 {t('changes.viewedOf', { viewed: viewedPaths.size, total: shownItems.length })}
               </span>
             ) : null}

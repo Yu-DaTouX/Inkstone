@@ -25,6 +25,7 @@ import type { PrDetailText } from './pr-detail-text'
 import { PrActionStatus, type PrActionController } from './PrActionStatus'
 import { CandidatePicker, EditFooter, MarkdownEditor } from './PrEditors'
 import { ThreadsSection } from './PrThreads'
+import { readPrMemory, writePrMemory, type PrDetailMemoryEntry } from './pr-detail-memory'
 
 type BadgeTone = 'neutral' | 'accent' | 'ok' | 'run' | 'ask' | 'stall' | 'fail'
 
@@ -101,19 +102,26 @@ export function FloatingComment({
   number,
   action,
   text,
+  memoryKey,
   onRefresh,
   onOpenChange
 }: {
   number: number
   action: PrActionController
   text: PrActionText
+  memoryKey?: string
   onRefresh: () => void
   onOpenChange: (open: boolean) => void
 }): ReactElement {
-  const [draft, setDraft] = useState('')
+  const [remembered] = useState<PrDetailMemoryEntry>(() => (memoryKey ? readPrMemory(memoryKey) : {}))
+  const [draft, setDraftState] = useState(remembered.commentDraft ?? '')
+  const setDraft = (value: string): void => {
+    setDraftState(value)
+    if (memoryKey) writePrMemory(memoryKey, { commentDraft: value })
+  }
   return (
     <div className="gh-pr-float">
-      <DialogTrigger onOpenChange={onOpenChange}>
+      <DialogTrigger defaultOpen={remembered.commentOpen === true} onOpenChange={onOpenChange}>
         <Button size="sm" variant="primary" icon={<MessageSquarePlus size={14} aria-hidden />} isDisabled={action.busy} data-testid="gh-pr-comment-open">
           {text.summary.comment}
         </Button>

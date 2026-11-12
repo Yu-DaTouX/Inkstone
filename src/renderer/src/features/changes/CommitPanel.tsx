@@ -159,10 +159,29 @@ export function CommitPanel(props: CommitPanelProps): ReactElement {
     )
   }
 
-  const idle = primary.kind === 'up-to-date' && items.length === 0 && repo.changedCount === 0 && stagedCount === 0 && !message.trim()
+  const idle = items.length === 0 && repo.changedCount === 0 && stagedCount === 0 && !message.trim()
   if (idle) {
+    const syncAction = (primary.kind === 'push' || primary.kind === 'publish') && (!primaryDisabled || pending)
     return (
       <section className="gitflow-commit" aria-label={t('gitflow.commitArea')} data-testid="git-commit-panel" data-idle="">
+        {syncAction ? (
+          <div className="gitflow-commit__bar">
+            <span className="gitflow-commit__summary" />
+            <span className="gitflow-commit__actions">
+              <Button
+                variant="primary"
+                size="sm"
+                isDisabled={primaryDisabled}
+                isPending={pending}
+                onPress={runPrimary}
+                data-testid="git-primary"
+                data-kind={primary.kind}
+              >
+                {t(PRIMARY_LABEL[primary.kind], { behind: repo.behind })}
+              </Button>
+            </span>
+          </div>
+        ) : null}
         {reasonText ? (
           <Notice variant="hint" className="gitflow-commit__reason" data-testid="git-primary-reason">
             {reasonText}

@@ -302,6 +302,22 @@
     padding-block: var(--s-6);
   }
 
+  .v3-preview-pathdir {
+    flex: 0 999 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v3-preview-pathstack > .v3-preview-pathname {
+    flex: 0 0 auto;
+    max-width: 70%;
+  }
+
   .v3-preview-pathname {
     flex: 1;
     min-width: 0;
