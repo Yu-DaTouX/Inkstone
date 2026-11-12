@@ -126,6 +126,8 @@ import { SubagentService } from './subagent-service'
 import { LookupCommands } from './lookup-commands'
 import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
+import { WorkflowService } from './workflows/service'
+import { registerWorkflowsIpc } from './ipc/workflows-ipc'
 import { createSubagentNoticeStore } from './subagent-notice-store'
 import { buildSubagentOvertimeNotice } from '../shared/subagent-notice'
 import { createSubagentQuotaWatch } from './subagent-quota-watch'
@@ -411,7 +413,8 @@ const notifySubagentFinished = createSubagentNotifier({
   store: createSubagentNoticeStore(join(YAN_DIR, 'subagent-notices.json')),
   enabled: async () => (await getSettings()).subagentNotify !== false,
   find: (run) => (runners ? findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners) : null),
-  runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
+  runningSiblings: (run) => (subagentService.current()?.list() ?? []).filter((other) => (other.status === 'running' || other.status === 'starting') && !workflowService.owns(other) &&
+    ((!!run.parentSessionId && other.parentSessionId === run.parentSessionId) || (!!run.parentRunId && other.parentRunId === run.parentRunId))).length
 })
 const subagentQuotaWatch = createSubagentQuotaWatch({
   switchAccount: switchToSpareAccount,
@@ -424,7 +427,7 @@ const subagentQuotaWatch = createSubagentQuotaWatch({
   },
   notifyParent: (run, text) => {
     void (async () => {
-      if ((await getSettings()).subagentNotify === false || !runners) return
+      if ((await getSettings()).subagentNotify === false || !runners || workflowService.owns(run)) return
       const target = findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners)
       if (!target || target.holdsNotices()) return
       await target.send(text, undefined, 'followUp')
@@ -507,6 +510,7 @@ const subagentService: SubagentService = new SubagentService({
     }
     queueSubagentRun(run)
     refreshTaskbar()
+    workflowService.onSubagentChange()
   },
   onPatch: ({ id, run, transcriptFrom }) => {
     flushSubagentRuns()
@@ -524,7 +528,7 @@ const subagentService: SubagentService = new SubagentService({
   },
   onOvertime: (run, minutes) => {
     void (async () => {
-      if ((await getSettings()).subagentNotify === false || !runners) return
+      if ((await getSettings()).subagentNotify === false || !runners || workflowService.owns(run)) return
       const target = findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners)
       if (!target || target.holdsNotices()) return
       await target.send(buildSubagentOvertimeNotice(run, minutes), undefined, 'followUp')
@@ -532,8 +536,18 @@ const subagentService: SubagentService = new SubagentService({
   },
   onFinished: (run) => {
     runsHost?.settleSubagent(run, run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed', run.error)
-    if (!run.launchFailed && !run.sideQuestion) notifySubagentFinished(run)
+    if (workflowService.owns(run)) workflowService.onSubagentFinished(run)
+    else if (!run.launchFailed && !run.sideQuestion) notifySubagentFinished(run)
   }
+})
+const workflowService: WorkflowService = new WorkflowService({
+  root: join(YAN_DIR, 'workflows', 'runs'),
+  workerPath: join(__dirname_, 'workflow-worker.js'),
+  subagentCommand: (command, params, context) => subagentService.capabilityHost.run(command, params, context),
+  getSubagent: async (id) => (await subagentService.get()).getFull(id),
+  runningSubagents: () => subagentService.current()?.runningCount ?? 0,
+  findTarget: (run) => (runners ? findNoticeTarget({ parentSessionId: run.sessionId, parentRunId: run.parentRunId, parentGeneration: run.parentGeneration }, runners) : null),
+  push: (view) => push({ ch: 'workflow', payload: view })
 })
 let remoteAccess: RemoteAccess | null = null
 
@@ -1185,6 +1199,8 @@ function pushRunners(): void {
   void syncKeepAwake(statuses.some((r) => r.running))
   adoptSubagentParentSessions(statuses)
   notifySubagentFinished.retry()
+  workflowService.adoptSessions(statuses)
+  workflowService.retryNotices()
 }
 
 const publishedRunnerGenerations = new Map<string, number>()
@@ -2177,7 +2193,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         ...yanThinExtensions(),
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
-        subagentHost: subagentService.capabilityHost,
+        subagentHost: { run: (command, params, context) => command.startsWith('workflow.') ? workflowService.run(command, params, context) : subagentService.capabilityHost.run(command, params, context) },
         switchSpareAccount: switchToSpareAccount,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
         providerExtensions: launchResources().providers,
@@ -3312,6 +3328,8 @@ function registerIpc(): void {
   registerWorkspaceIpc(ipc)
 
 
+
+  registerWorkflowsIpc(ipc, workflowService)
 
   registerSubagentsIpc(ipc, {
     service: subagentService,

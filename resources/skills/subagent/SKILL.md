@@ -11,5 +11,5 @@ description: 用户指定另一个模型完成任务，或需要独立上下文�
 2. 任务说明写清目标、必要上下文、输入文件和期望结果。只传有用材料，普通子 Agent 不自动获得完整主会话历史。任务靠对话里已有的讨论、决定或读过的文件才能做、又不想让自己的上下文被过程刷满时加 `--fork`（继承当前会话的全部历史）；能用几句话讲清时用普通子 Agent。
 3. 启动：`yan subagent start --task "任务" --title "短标题"`。一次派多个独立子 Agent 时，在同一条消息里并行发出。默认在当前文件夹执行，可能直接修改文件；只分析时加 `--read-only`，代码修改需要隔离时加 `--isolation worktree`。
 4. 派出后不用 sleep 轮询，结束时宿主会通知；要看进度用 `yan subagent list` / `get --id <ID>`，停止用 `stop --id <ID>`。补充资料、纠正方向或追问已结束的子 Agent 用 `yan subagent send --id <ID> --message "信息"`：它记得之前的工作，优先续接而不是重派。
-5. 不让多个写入任务同时修改相同文件；需要用户选择的问题留给主会话。子 Agent（包括 fork）不再派出子 Agent。
+5. 不让多个写入任务同时修改相同文件；需要用户选择的问题留给主会话。子 Agent（包括 fork）不再派出子 Agent。要按清单派几十个子 Agent、或要多轮对抗复核时，改写工作流脚本交给宿主后台编排，见同目录 `workflow.md`。
 6. 汇报时以启动结果或查询结果的实际 `model` 为准，标明子 Agent 的模型、结论和未验证项；出错或部分完成不能称为任务成功。worktree 的改动由你审阅处置，不交给用户：看过补丁和结论后用 `yan subagent merge --id <ID>` 合并，或 `yan subagent discard --id <ID>` 放弃。工作树随后删除，里面被 .gitignore 忽略的产物先另存，位置看回执或 `get` 的 `savedOutputs`。当前文件夹任务已经直接写入，不假装有待合并补丁。

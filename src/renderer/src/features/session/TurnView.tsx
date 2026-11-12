@@ -35,6 +35,7 @@ import { QuotaResumeNotice } from './QuotaResumeNotice'
 import { CompactCommandEcho, CompactionMarker } from './CompactionMarker'
 import { BranchSummary } from './BranchSummary'
 import { SubagentLine } from './SubagentLine'
+import { WorkflowCards } from './WorkflowCard'
 import type { TurnSubagentScope } from '../../state/subagent-view'
 import { WebSearchTurnProvider } from './web-search/citations'
 import { compactionAnchorId, viewEdge } from './turn-lines'
@@ -429,6 +430,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {turn.artifacts.length ? <TurnArtifacts artifacts={turn.artifacts} sessionId={sessionId} messageId={turn.id} /> : null}
           {liveImageProgress.length ? <ImageProgressFallbackNote /> : null}
   
+          <WorkflowCards turn={turn} scope={subagentScope} />
           <SubagentLine turn={turn} scope={subagentScope} />
   
           {streaming ? errorCard : null}

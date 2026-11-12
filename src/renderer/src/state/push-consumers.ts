@@ -5,6 +5,7 @@ import { releaseResource } from './resource-owners'
 import { isNativeMcpActionResult, isNativeMcpSignInPrompt, isNativeMcpStatus } from '../lib/native-mcp-status'
 import { noteTerminalAgent } from '../features/terminal/terminal-agent-activity'
 import { useTerminalJobs } from './terminal-jobs'
+import { useWorkflows } from './workflows'
 
 export interface PushContext {
   get(): Store
@@ -280,6 +281,9 @@ export function consumeSubagentPush(m: MainPush, s: Store, ctx: PushContext): bo
     }
     case 'subagent-remove':
       set({ subagents: s.subagents.filter((r) => r.id !== m.payload) })
+      break
+    case 'workflow':
+      useWorkflows.getState().upsert(m.payload)
       break
     default:
       return false

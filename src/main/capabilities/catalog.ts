@@ -79,6 +79,13 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     'yan subagent stop --id <id>'
   ),
   builtin(
+    'workflow',
+    '工作流编排',
+    '把一段 JS 编排脚本交给宿主在后台运行，脚本里的每个 agent() 是一个子代理；结束时只把最终答案作为通知发回主会话，支持暂停、停止和按运行记录续跑。写法见 subagent 技能目录里的 workflow.md。',
+    'external-action',
+    'yan workflow --help'
+  ),
+  builtin(
     'browser',
     '内置浏览器自动化',
     '在内置浏览器里导航 / 观察页面 / 点击 / 输入 / 截图等（含标签页、下载与接入本机 Chrome）；\n' +

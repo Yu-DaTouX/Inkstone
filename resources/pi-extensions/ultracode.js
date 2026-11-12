@@ -11,6 +11,7 @@ export const GATE_LIMIT = 2
 
 const EDIT_TOOLS = new Set(['edit', 'write', 'multi_edit', 'apply_patch'])
 const SUBAGENT_START = /\bsubagent\b["'\s,]+start\b([^;&|\n]*)/g
+const WORKFLOW_RUN = /\bworkflow\b["'\s,]+run\b([^;&|\n]*)/g
 const CODEMODE_EDIT = /\btools\s*\.\s*(?:edit|write|multi_edit|apply_patch)\s*\(/g
 const HELP_FLAG = /(?:^|["'`\s,])(?:-h|--help)(?=$|["'`\s,=\\])/
 const QUOTED = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g
@@ -18,29 +19,29 @@ const QUOTED = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g
 const KEYWORD = /^\s*\/ultracode(?=$|\s)/i
 
 const FULL = `<yan-reminder>
-Ultracode is on for this conversation. This is a standing request: the user wants the most complete and correct result and accepts the extra time and tokens. Token usage is not limited and cost is not a concern: never cut subagents, review rounds or coverage to save tokens. Before the first substantive task, read \`ultracode.md\` in the subagent skill's directory (next to its SKILL.md); it is the playbook.
+Ultracode is on for this conversation. This is a standing request: the user wants the most complete and correct result and accepts the extra time and tokens. Token usage is not limited and cost is not a concern: never cut agents, review rounds or coverage to save tokens. Before the first substantive task, read \`workflow.md\` in the subagent skill's directory (next to its SKILL.md); it documents the workflow script API, its limits and the quality patterns.
 
 For every substantive task:
-- Scout the scope yourself first (list the files, the call sites, the diff) so you have a concrete work list, then fan the list out to subagents.
-- Go phase by phase: understand → plan → implement → review. Read each phase's results before you decide the next one.
-- Start all parallel subagents of a phase in one tool call, each with a narrow brief (goal, deliverables with file:line evidence, sources, boundary, timeoutMinutes). Do not sleep or poll; the host notifies you.
-- Review adversarially: reviewers try to refute, a claim that is not clearly confirmed counts as refuted, and different reviewers take different angles. Keep finding and fixing until two rounds in a row turn up nothing new.
+- Scout the scope yourself first (list the files, the call sites, the diff) so the script works from a concrete list.
+- Write a workflow script and start it with \`yan workflow run --file <script.js>\`. It runs in the background and the host sends you its final answer; do not sleep or poll. A task can take several workflows in a row (understand, change, verify): read each result before you write the next.
+- Build the quality pattern into the script: one agent per item, adversarial reviewers that try to refute each finding (a claim that is not clearly confirmed counts as refuted), search rounds until two in a row find nothing new, several angles compared before committing to a plan, fix and recheck until the checks pass.
+- The script does not merge worktree agents: when the run ends, review their patches and merge or discard them.
 - End with a completeness check: dropped requirements, unread sources, unverified claims. If you cap coverage anywhere, say what was left out.
-- Size the team to the user's wording: a quick check needs a few subagents, "thorough" or "audit" needs a larger team and several reviewers per claim. Stay within 24 concurrent subagents.
+- Size the run to the user's wording: a quick check needs a few agents, "thorough" or "audit" needs dozens and several reviewers per claim.
 
-Casual questions and trivial edits: do them yourself. In the report, say which parts were verified and which were not.
+Casual questions and trivial edits: do them yourself, without a workflow. In the report, say which parts were verified and which were not.
 </yan-reminder>`
 
 const SPARSE = `<yan-reminder>
-Ultracode is still on: scout, then fan out by phase, review adversarially until two rounds find nothing new, and finish with a completeness check (\`ultracode.md\` next to the subagent skill). Token usage is not limited; do not trade coverage for cost.
+Ultracode is still on: scout, then write a workflow script (\`workflow.md\` next to the subagent skill) and run it with \`yan workflow run\`; build adversarial review and two-rounds-with-nothing-new into the script, and finish with a completeness check. Token usage is not limited; do not trade coverage for cost.
 </yan-reminder>`
 
 const EXIT = `<yan-reminder>
-Ultracode is now off. Go back to normal behaviour: do the work yourself and use subagents only when the task or the user calls for them.
+Ultracode is now off. Go back to normal behaviour: do the work yourself and use subagents or workflows only when the task or the user calls for them.
 </yan-reminder>`
 
 const KEYWORD_ONLY = `<yan-reminder>
-The user asked for Ultracode on this request only (/ultracode). Follow \`ultracode.md\` in the subagent skill's directory for this request: scout the scope, fan out by phase to parallel subagents, review adversarially until two rounds find nothing new, and finish with a completeness check. Token usage is not limited and cost is not a concern for this request.
+The user asked for Ultracode on this request only (/ultracode). Write a workflow for this request: read \`workflow.md\` in the subagent skill's directory, scout the scope, write the script with adversarial review built in, and start it with \`yan workflow run --file <script.js>\`; the host sends you the final answer when it ends. Finish with a completeness check. Token usage is not limited and cost is not a concern for this request.
 </yan-reminder>`
 
 export function dataDir(env = process.env) {
@@ -91,7 +92,7 @@ export function chooseReminder({ enabled, keyword, last }) {
 }
 
 const GATE = `<yan-reminder>
-Ultracode check: you changed files in this request but no subagent has reviewed the changes since the last edit. Before you report, start at least one independent read-only reviewer (preferably on a different model) to refute the changes and check for gaps, then act on its findings. If the change is genuinely trivial, say so in one line and finish.
+Ultracode check: you changed files in this request but no subagent or workflow has reviewed the changes since the last edit. Before you report, start at least one independent read-only reviewer (a subagent, or a review workflow; preferably on a different model) to refute the changes and check for gaps, then act on its findings. If the change is genuinely trivial, say so in one line and finish.
 </yan-reminder>`
 
 function messageText(message) {
@@ -130,7 +131,7 @@ export function needsReviewGate(branch, slice = requestSlice(branch)) {
         continue
       }
       const editAt = codemodeEditAt(call)
-      const startAt = subagentStartAt(call.arguments)
+      const startAt = Math.max(commandAt(call.arguments, SUBAGENT_START), commandAt(call.arguments, WORKFLOW_RUN))
       if (editAt >= 0) {
         edited = true
         reviewed = startAt > editAt
@@ -170,11 +171,11 @@ function commandCandidates(text) {
   return candidates
 }
 
-function subagentStartAt(args) {
+function commandAt(args, pattern) {
   let at = -1
   for (const raw of argumentStrings(args)) {
     for (const { text, offset } of commandCandidates(raw)) {
-      for (const match of blankQuoted(text).matchAll(SUBAGENT_START)) {
+      for (const match of blankQuoted(text).matchAll(pattern)) {
         const options = match[1].replace(/(?:^|\s)#.*$/, '')
         if (!HELP_FLAG.test(options)) at = Math.max(at, offset + match.index)
       }

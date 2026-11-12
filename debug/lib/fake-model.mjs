@@ -129,6 +129,10 @@ export const FAKE_TRIGGERS = {
   SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM；写成 SUBAGENTS<n> 时派 n 个；含 SUBBAD 时子代理的模型请求断网），再按 STORM 跑 60 步；含 THENREST 时派完只回一句话就结束本轮',
   'SUBSTORM-<名字>': '子代理压测：40 步，每步叙述加一次改文件（sub/）并输出 60 行的 bash',
   '<subagent-notification': '子代理完成回传只回一句，避免再次触发',
+  WFDEMO: '用 yan workflow run 跑项目里的 wf-demo.js（场景预先放好；WFCONC<n> 改并发，默认 4），再回一句，用来看工作流运行卡',
+  'WFRESUME=<运行 id>': '用 yan workflow resume 续跑指定工作流，再回一句',
+  WFAGENT: '工作流里的子代理：等 WFDELAY<毫秒>（默认 2500）后回一句；含 WFJSON 时最后交一个 ```json 代码块',
+  '[砚宿主通知：工作流': '工作流完成或失败通知只回一句，避免再次触发',
   '<pending-action>': '守卫超时后的模型审阅请求：含 REVIEWALLOW 时回放行 JSON，否则回拦下 JSON',
   [SUGGESTION_MARKER]: '砚的「预测下一句」请求，固定回「继续下一步」'
 }
@@ -230,7 +234,20 @@ async function respond(res, text, done, requestNo) {
   try {
     if (text.includes('<pending-action>')) await streamText(text.includes('REVIEWALLOW') ? '{"decision":"allow","reason":"用户明确要求了这个操作"}' : '{"decision":"deny","reason":"用户没有要求删除注册表项"}', 20, 5)
     else if (text.includes(SUGGESTION_MARKER)) await streamText('继续下一步', 20, 5)
+    else if (text.includes('[砚宿主通知：工作流')) await streamText('工作流的结果收到了。', 20, 10)
     else if (text.includes('<subagent-notification')) await streamText('好的，收到。', 20, 10)
+    else if (text.includes('WFAGENT')) {
+      await sleep(Number(/WFDELAY(\d+)/.exec(text)?.[1] ?? 2500))
+      const item = /WFITEM=(\S+)/.exec(text)?.[1] ?? 'x'
+      if (text.includes('WFJSON')) await streamText(`看完了 ${item}。\n\n\`\`\`json\n${JSON.stringify({ item, ok: true, notes: [`${item} 没有问题`] })}\n\`\`\``, 24, 10)
+      else await streamText(`${item} 处理完成。`, 20, 10)
+    } else if (text.includes('WFDEMO')) {
+      if (done < 1) await callTool('bash', { command: `yan workflow run --file wf-demo.js --concurrency ${/WFCONC(\d+)/.exec(text)?.[1] ?? 4}`, description: '运行工作流' })
+      else await streamText('工作流已在后台运行，结束时宿主会发来通知。', 20, 10)
+    } else if (/WFRESUME=wf-[0-9a-f]{8}/.test(text)) {
+      if (done < 1) await callTool('bash', { command: `yan workflow resume --id ${/WFRESUME=(wf-[0-9a-f]{8})/.exec(text)[1]}`, description: '续跑工作流' })
+      else await streamText('已续跑。', 20, 10)
+    }
     else if (/SUBRESUME=sub-[0-9a-f]+/.test(text)) {
       if (done < 1) await callTool('bash', { command: `yan subagent send --id ${/SUBRESUME=(sub-[0-9a-f]+)/.exec(text)[1]} --message "请继续补充一句结论"`, description: 'resume subagent' })
       else await streamText('已续派。', 20, 10)

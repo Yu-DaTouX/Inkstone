@@ -157,7 +157,6 @@ export const legacyScripts = new Set([
   'test-turn-timing',
   'test-turns',
   'test-ui-timeout',
-  'test-ultracode-extension',
   'test-usage-stats',
   'test-user-address',
   'test-user-skill',

@@ -1,0 +1,27 @@
+@layer features {
+  .v3-wf-head { min-width: 0; }
+  .v3-wf-large { flex: none; }
+  .v3-wf-body { display: grid; gap: var(--s-4); min-width: 0; padding: 0 var(--s-10) var(--s-6); }
+  .v3-wf-phases {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
+    gap: var(--s-4) var(--s-8);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .v3-wf-phase { display: grid; gap: var(--s-2); min-width: 0; }
+  .v3-wf-phase-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-4); min-width: 0; font-size: var(--t-footnote); line-height: var(--t-footnote-lh); }
+  .v3-wf-phase-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
+  .v3-wf-phase[data-state='running'] .v3-wf-phase-name { color: var(--fg); }
+  .v3-wf-phase-count { flex: none; color: var(--fg3); font-variant-numeric: tabular-nums; }
+  .v3-wf-note { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); }
+  .v3-wf-note[data-tone='fail'] { color: var(--fail-t); }
+  .v3-wf-actions { display: flex; flex-wrap: wrap; gap: var(--s-4); }
+  .v3-wf-groups { display: grid; gap: var(--s-6); min-width: 0; padding: var(--s-4) var(--s-2) var(--s-4); border-top: var(--hair, 1px) solid var(--line); }
+  .v3-wf-group { display: grid; gap: var(--s-2); min-width: 0; }
+  .v3-wf-group-title { margin: 0; padding: 0 var(--s-4); color: var(--fg3); font-size: var(--t-footnote); font-weight: inherit; line-height: var(--t-footnote-lh); }
+  .v3-wf-waiting { margin: 0; padding: 0 var(--s-4); color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); }
+  .v3-wf-more { justify-self: start; }
+}

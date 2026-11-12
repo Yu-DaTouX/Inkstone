@@ -54,6 +54,7 @@ export default defineConfig({
           'file-search-worker': resolve('src/main/file-search-worker.ts'),
           'usage-stats-worker': resolve('src/main/usage-stats-worker.ts'),
           'web-content-worker': resolve('src/main/web-content-worker.ts'),
+          'workflow-worker': resolve('src/main/workflows/worker.ts'),
           'zoom-math': resolve('src/main/zoom-math.ts')
         }
       }

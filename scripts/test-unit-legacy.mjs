@@ -819,10 +819,6 @@ const languageExtension = await import('../resources/pi-extensions/language.js')
 const { runLanguageExtensionTests } = await import('./test-language-extension.mjs')
 await guarded("runLanguageExtensionTests(ok, languageExtension)", () => runLanguageExtensionTests(ok, languageExtension))
 
-const ultracodeExtension = await import('../resources/pi-extensions/ultracode.js')
-const { runUltracodeExtensionTests } = await import('./test-ultracode-extension.mjs')
-await guarded("runUltracodeExtensionTests(ok, ultracodeExtension)", () => runUltracodeExtensionTests(ok, ultracodeExtension))
-
 const preambleExtension = await import('../resources/pi-extensions/preamble.js')
 const { runPreambleExtensionTests } = await import('./test-preamble-extension.mjs')
 await guarded("runPreambleExtensionTests(ok, preambleExtension)", () => runPreambleExtensionTests(ok, preambleExtension))

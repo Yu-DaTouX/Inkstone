@@ -37,6 +37,7 @@ import { turnModelLabel } from './turn-model-label'
 import { Badge, Button, ProgressBar, ShimmerText } from '../../ui'
 import { Card, CardStatus, CardSummary, CardTitle, type CardStatusTone } from '../../ui/Card'
 import { ContextGauge } from '../../patterns/ContextGauge'
+import { workflowIdOfAnchor } from '../../../../shared/workflows'
 
 const OUTCOME_KEY: Record<SubagentOutcomeKey, MessageKey> = {
   starting: 'sa.state.starting',
@@ -201,6 +202,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
     const sessionIds = identity.sessionId ? [identity.sessionId] : []
     const anchors = scope ? null : cachedSubagentAnchors(s.messages, s.subagents)
     return (scope ? subagentRunsForTurnScope(s.subagents, scope) : selectSubagentRuns(s.subagents, { sessionIds }).all).filter((run) => {
+      if (workflowIdOfAnchor(run.parentMessageId)) return false
       const anchor = anchors?.get(run.id) ?? run.parentMessageId
       return !!anchor && ids.has(anchor) && run.review !== 'merged' && run.review !== 'discarded'
     })
@@ -374,7 +376,7 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
   )
 }
 
-function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?: RunSnapshot; index?: number }): JSX.Element {
+export function SubagentTile({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?: RunSnapshot; index?: number }): JSX.Element {
   const tt = useSessionText()
   const t = useT()
   const { lang } = useI18n()

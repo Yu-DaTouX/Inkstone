@@ -341,9 +341,13 @@ export async function runSubagentParentOwnershipTests(ok) {
         let noticeRetries = 0
         context.notifySubagentFinished = { retry: () => { noticeRetries += 1 } }
         context.subagentService = { current: () => controller }
+        const workflowAdopted = []
+        let workflowRetries = 0
+        context.workflowService = { adoptSessions: (statuses) => { workflowAdopted.push(statuses) }, retryNotices: () => { workflowRetries += 1 } }
         context.pushRunners()
         check(controller.runs.get('sub-hook').parentSessionId === 'A-real', '生产 pushRunners 钩子在真实 SID 落定时通知 producer 完成迁移')
         check(noticeRetries === 1, 'pushRunners 顺带重投未送达的子代理完成通知')
+        check(workflowAdopted.length === 1 && workflowAdopted[0][0]?.sessionId === 'A-real' && workflowRetries === 1, 'pushRunners 同样把真实 SID 交给工作流收养，并重投工作流通知')
         check(emitted.length === hookBefore + 1 && emitted.at(-1).parentSessionId === 'A-real', '钩子只推一次 updated 快照')
         const indexSource = await fs.readFile(fileURLToPath(new URL('../src/main/index.ts', import.meta.url)), 'utf8')
         check(/if \(msg\.ch === 'state'\) pushRunners\(\)/.test(indexSource), '生产调用链：pushFrom 的 state 分支会通知 pushRunners（钩子可达）')

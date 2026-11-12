@@ -1410,7 +1410,7 @@ export class AgentController extends EventEmitter {
     if (command.startsWith('phone.')) {
       return this.phoneCommands.run(command.slice('phone.'.length), params, signal)
     }
-    if (command.startsWith('subagent.')) {
+    if (command.startsWith('subagent.') || command.startsWith('workflow.')) {
       if (!this.subagentHost) {
         throw new CapabilityCommandError('subagent_unavailable', '子代理宿主入口当前不可用')
       }

@@ -1285,6 +1285,13 @@ export interface SubagentBridge {
   discard(id: string): Promise<{ ok: boolean; error?: string }>
 }
 
+export interface WorkflowBridge {
+  list(): Promise<import('./workflows').WorkflowRunView[]>
+  pause(id: string): Promise<{ ok: boolean; error?: string }>
+  resume(id: string): Promise<{ ok: boolean; error?: string }>
+  stop(id: string): Promise<{ ok: boolean; error?: string }>
+}
+
 export type BrowserSiteAddResult = 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'
 
 export interface SessionSyncDelta {
@@ -1305,6 +1312,7 @@ export type MainPushBody =
   | { ch: 'subagent'; payload: SubagentRun }
   | { ch: 'subagent-patch'; payload: { id: string; run: SubagentRun; transcriptFrom: number } }
   | { ch: 'subagent-remove'; payload: string }
+  | { ch: 'workflow'; payload: import('./workflows').WorkflowRunView }
   | { ch: 'state'; payload: SessionState }
   | { ch: 'stats'; payload: SessionStats }
   | { ch: 'queue'; payload: QueueState }
@@ -2005,6 +2013,7 @@ export interface YanBridge {
   videoExport: VideoExportBridge
 
   subagents: SubagentBridge
+  workflows: WorkflowBridge
 
   sources: SourcesBridge
   searchOps: SearchOpsBridge

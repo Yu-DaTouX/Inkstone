@@ -42,6 +42,8 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan subagent get --id <子代理ID>
   yan subagent send --id <子代理ID> --message "追加信息"
   yan subagent stop --id <子代理ID>
+  yan workflow run --file <脚本.js> [--args <JSON>]   后台运行编排脚本，每个 agent() 是一个子代理（yan workflow --help）
+  yan workflow get --id <运行ID> [--final]
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
   yan terminal <动作> [选项]    本会话的终端（用户可见）：查看、运行命令、交互（yan terminal --help）
   yan phone <动作> [选项]       经 adb 操控连着的安卓手机：读界面、截图、点按、滑动、输入（yan phone --help）
@@ -334,6 +336,34 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · 启动后对话里以卡组显示子代理进度，用户点开后在右侧工作区查看转录、工具活动、耗时与变更；
   · 子代理的 worktree 变更不会自动合并：由你（主会话）审阅后 merge 或 discard，界面上也可以由用户操作。
 `,
+  workflow: `yan workflow <动作> [选项]
+
+把一段 JS 编排脚本交给宿主在后台运行；脚本里每个 agent() 是一个子代理（和 yan subagent start 派出的一样）。
+脚本写法、限制和常用模式见 subagent 技能目录里的 workflow.md。
+
+动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
+  run    --file <脚本.js> [--args <JSON>] [--concurrency <1–24>]
+         校验 meta 和语法后在后台启动，立刻返回运行 ID；也可 --request-file run.json
+         run.json：{"file":"audit.js","args":{"dir":"src/routes"},"concurrency":8}
+         结束时宿主把最终答案（脚本 return 的值）作为通知发给你，附运行目录和待处置的 worktree 子代理；不要 sleep 轮询
+  list                          本会话的工作流：id / 名称 / 状态 / 子代理数
+  get    --id <运行ID> [--final] 状态、各阶段进度、最新 log 与错误；摘要里的结果只取前 400 字，
+                               --final 直接把最终结果全文打到 stdout
+  pause  --id <运行ID>           不再派新的子代理，已在跑的照常跑完
+  resume --id <运行ID> [--file <新脚本>] [--args <JSON>]
+                               暂停的：继续派；停止、失败、中断（应用重启）或已完成的：按运行记录重放续跑——
+                               序号和提示词都没变的已完成调用直接返回保存的结果，从第一个变化、失败或被停的调用起全部重跑
+  stop   --id <运行ID>           停掉这次运行的全部子代理并结束运行（不发完成通知）
+
+说明：
+  · 运行记录在 <数据目录>/workflows/runs/<会话ID>/<运行ID>/：script.js、journal.jsonl（每次 agent() 的序号、提示词哈希、
+    子代理 ID、状态、结果）、result.json；可以改 script.js 后 resume，或用 --file 换成新脚本；
+  · 单次运行默认同时 8 个子代理（--concurrency 最多 24），和其他子代理共用全应用 24 个名额，满了自动排队；
+    单次运行最多 200 个 agent() 调用，单次 parallel() / pipeline() 最多 1000 项，超限报错、不悄悄截断；
+  · 子代理的工具调用照常过权限检查；运行中不能向用户提问，需要中途签字时拆成几个工作流分别跑；
+  · worktree 子代理的改动脚本里不合并，运行结束后由你审阅 yan subagent merge / discard；
+  · 应用重启后运行停在原地（状态 interrupted），不自动续跑；用户点停止或你 stop 的也一样用 resume 续跑。
+`,
   search: `yan search <动作> [选项]
 
 动作：
@@ -540,6 +570,16 @@ const GROUP_SPECS = {
       stop: ['id']
     }
   },
+  workflow: {
+    actions: ['run', 'list', 'get', 'pause', 'resume', 'stop'],
+    required: {
+      run: ['file'],
+      get: ['id'],
+      pause: ['id'],
+      resume: ['id'],
+      stop: ['id']
+    }
+  },
   artifact: {
     actions: ['attach', 'preview', 'export-video', 'export-image', 'style'],
     required: { attach: ['path'], preview: ['path'], 'export-video': ['path'], 'export-image': ['path'] }
@@ -734,6 +774,12 @@ if (positional[0] === 'browser' && positional[1] === 'run' && typeof params.file
   params.file = resolvePath(process.cwd(), params.file.trim())
 }
 
+if (positional[0] === 'workflow' && (positional[1] === 'run' || positional[1] === 'resume') && typeof params.file === 'string' && params.file.trim()) {
+  let scriptPath = params.file.trim()
+  if (process.platform === 'win32') scriptPath = scriptPath.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:')
+  params.file = resolvePath(process.cwd(), scriptPath)
+}
+
 if (positional[0] === 'browser' && ['navigate', 'open', 'new-tab'].includes(positional[1])) {
   const rawUrl = typeof params.url === 'string' ? params.url.trim() : ''
   let localPath = typeof params.file === 'string' && params.file.trim() ? params.file.trim() : ''
@@ -845,6 +891,22 @@ if (payload?.ok && command === 'subagent.get' && flags.final === true && typeof 
       process.exit(EXIT.ok)
     }
   } catch {
+  }
+}
+
+if (payload?.ok && command === 'workflow.get' && flags.final === true) {
+  const { readFileSync } = await import('node:fs')
+  const sources = [typeof payload.summary?.dir === 'string' ? resolvePath(payload.summary.dir, 'result.json') : null, typeof payload.resultFile === 'string' ? payload.resultFile : null].filter(Boolean)
+  for (const source of sources) {
+    try {
+      const saved = JSON.parse(readFileSync(source, 'utf8'))
+      if (saved && Object.hasOwn(saved, 'result')) {
+        const text = typeof saved.result === 'string' ? saved.result : JSON.stringify(saved.result, null, 2)
+        process.stdout.write(text.endsWith('\n') ? text : `${text}\n`)
+        process.exit(EXIT.ok)
+      }
+    } catch {
+    }
   }
 }
 

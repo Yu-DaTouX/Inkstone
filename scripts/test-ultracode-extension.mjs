@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSuite } from './lib/test-suite.mjs'
 
 const userEntry = () => ({ type: 'message', message: { role: 'user', content: 'hi' } })
 const marker = (mode) => ({ type: 'custom_message', customType: 'yan-ultracode', details: { mode } })
@@ -37,6 +38,15 @@ export async function runUltracodeExtensionTests(ok, mod) {
   ok(pick(true, true, { mode: 'on', turnsSince: 1 }) === undefined, '已开启时关键词不额外提醒')
   const exitWithKeyword = chooseReminder({ enabled: false, keyword: true, last: { mode: 'on', turnsSince: 1 } })
   ok(exitWithKeyword?.mode === 'off' && /ultracode/.test(exitWithKeyword.text), '关闭当轮带关键词时同时说明本轮仍按深度处理')
+  const full = chooseReminder({ enabled: true, keyword: false, last: { mode: 'off', turnsSince: 0 } })?.text ?? ''
+  const sparse = chooseReminder({ enabled: true, keyword: false, last: { mode: 'sparse', turnsSince: SPARSE_EVERY } })?.text ?? ''
+  const keywordOnly = chooseReminder({ enabled: false, keyword: true, last: { mode: 'off', turnsSince: 0 } })?.text ?? ''
+  ok([full, sparse, keywordOnly].every((text) => text.includes('workflow.md') && text.includes('yan workflow run')), '完整、简短与单轮提醒都引导写工作流并用 yan workflow run 运行')
+  ok(!/ultracode\.md/.test(full + sparse + keywordOnly), '提醒不再把 ultracode.md 当作做法入口')
+  ok(/\/ultracode/.test(keywordOnly), '单轮提醒仍说明来自 /ultracode')
+  ok(/do not sleep or poll/.test(full), '完整提醒说明不要轮询工作流')
+  const exitText = chooseReminder({ enabled: false, keyword: false, last: { mode: 'on', turnsSince: 3 } })?.text ?? ''
+  ok(/off/.test(exitText) && !/yan workflow run/.test(exitText), '退出提醒不再引导写工作流')
 
   const user = (text) => ({ type: 'message', message: { role: 'user', content: [{ type: 'text', text }] } })
   const call = (name, args) => ({ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', name, arguments: args }] } })
@@ -54,6 +64,11 @@ export async function runUltracodeExtensionTests(ok, mod) {
   ok(needsReviewGate([user('改'), edit, call('bash', { command: 'yan subagent start --help' })]).needed, '只看 subagent start --help 不算派复核')
   ok(['yan subagent start -h', 'yan subagent start --task x -h', 'yan subagent start --task x --help'].every((command) => needsReviewGate([user('改'), edit, call('bash', { command })]).needed), '-h 与写在后面的 --help 也不算派复核')
   ok(!needsReviewGate([user('改'), edit, call('bash', { command: 'yan subagent start --help; yan subagent start --request-file r.json' })]).needed, '看过帮助后真正派出复核要放行')
+  ok(!needsReviewGate([user('改'), edit, call('bash', { command: 'yan workflow run --file .tmp/review.js' })]).needed, '改完跑了 yan workflow run 也算派了复核')
+  ok(!needsReviewGate([user('改'), edit, call('codemode', { code: 'await tools.bash({ command: "yan workflow run --request-file run.json" })' })]).needed, 'codemode 里跑工作流也算')
+  ok(needsReviewGate([user('改'), call('bash', { command: 'yan workflow run --file .tmp/review.js' }), edit]).needed, '工作流之后又改了文件要再拦')
+  ok(['yan workflow run --help', 'yan workflow run -h', 'yan workflow --help', 'yan workflow list', 'yan workflow get --id wf-1a2b3c4d'].every((command) => needsReviewGate([user('改'), edit, call('bash', { command })]).needed), '只看工作流帮助或查询不算派复核')
+  ok(!needsReviewGate([user('改'), edit, call('bash', { command: 'yan workflow run --help; yan workflow run --file r.js' })]).needed, '看过工作流帮助后真正运行要放行')
   ok(needsReviewGate([user('改'), call('codemode', { code: 'await tools.edit({ path: "a.ts", edits: [] })' })]).needed, 'codemode 里改文件也算改过')
   ok(!needsReviewGate([user('改'), call('codemode', { code: 'await tools.write({ path: "a.ts", content: "x" })\nawait tools.bash({ command: "yan subagent start --request-file r.json" })' })]).needed, '同一段 codemode 里改完再派复核要放行')
   ok(needsReviewGate([user('改'), call('codemode', { code: 'await tools.bash({ command: "yan subagent start --request-file r.json" })\nawait tools.edit({ path: "a.ts", edits: [] })' })]).needed, '同一段 codemode 里先派复核再改文件仍要拦')
@@ -132,4 +147,14 @@ export async function runUltracodeExtensionTests(ok, mod) {
     else process.env.YAN_SESSION_ID = prevSession
     rmSync(dir, { recursive: true, force: true })
   }
+
+  const skill = readFileSync(new URL('../resources/skills/subagent/ultracode.md', import.meta.url), 'utf8')
+  const playbook = readFileSync(new URL('../resources/skills/subagent/workflow.md', import.meta.url), 'utf8')
+  ok(skill.includes('workflow.md') && skill.includes('yan workflow run'), 'ultracode.md 指向 workflow.md 并说明用 yan workflow run')
+  ok(['一项一代理', '对抗复核投票', '连续两轮没有新发现', '多角度出方案', '改到检查通过', '完整性检查'].every((word) => playbook.includes(word)), 'workflow.md 写了常用模式')
+  ok(['200', '1000', 'Date.now()', 'Math.random()', 'import()', 'additionalProperties', 'A、B、C、D'].every((word) => playbook.includes(word)), 'workflow.md 写了限制、schema 和续跑例子')
 }
+
+await runSuite(import.meta.url, async (ok) => {
+  await runUltracodeExtensionTests(ok, await import('../resources/pi-extensions/ultracode.js'))
+})

@@ -402,6 +402,13 @@ const api: YanBridge = {
     discard: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:discard', id)
   },
 
+  workflows: {
+    list: () => invoke<import('../shared/workflows').WorkflowRunView[]>('yan:workflows:list'),
+    pause: (id) => invoke<{ ok: boolean; error?: string }>('yan:workflows:pause', id),
+    resume: (id) => invoke<{ ok: boolean; error?: string }>('yan:workflows:resume', id),
+    stop: (id) => invoke<{ ok: boolean; error?: string }>('yan:workflows:stop', id)
+  },
+
   sources: {
     list: (sessionId) => invoke<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>('yan:sources:list', sessionId),
     addImage: (req) => invoke<SourceRefView | null>('yan:sources:addImage', req),
