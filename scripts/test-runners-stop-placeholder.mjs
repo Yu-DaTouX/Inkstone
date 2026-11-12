@@ -86,10 +86,9 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ok(preview.ok && preview.deferred === true && agents.length === 1, '预览选择在停止期间延后而不开实例', JSON.stringify(preview))
     const other = registry.select({ cwd: 'c:\\P\\A', sessionFile: 'C:/s/two.jsonl' })
     await new Promise((resolve) => setTimeout(resolve, 30))
-    ok(agents.length === 1, '同目录的另一会话也等待停止完成')
+    ok(agents.length === 2 && (await other).ok, '同目录的另一会话共用目录，不等停止完成')
     agents[0].stopGate.open()
     await stopping
-    ok((await other).ok && agents.length === 2, '停止完成后继续')
     await registry.stopAll()
   }
 

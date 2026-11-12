@@ -154,10 +154,6 @@ export class RunnerRegistry {
     return current !== undefined && this.launchSignatures.get(agent) !== current
   }
 
-  private sharesCwd(cwd: string): boolean {
-    return this.opts.sharesCwd?.(cwd) === true
-  }
-
   private admissionKey(runner: Runner): string {
     return `${canonicalCwd(runner.cwd)}#${runner.id}`
   }
@@ -245,9 +241,7 @@ export class RunnerRegistry {
       onChanged?: () => void
       onRefreshed?: (id: string) => void
       onRefreshFailed?: (id: string, error: string) => void
-      resolveCwdConflict?: (target: SelectTarget) => Promise<{ cwd: string } | { reason: string } | null>
       isolationOf?: (cwd: string) => { state: 'waiting' | 'ready' | 'blocked'; branch: string } | undefined
-      sharesCwd?: (cwd: string) => boolean
       stopWaitMs?: number
     }
   ) {}
@@ -466,13 +460,10 @@ export class RunnerRegistry {
 
   private stoppingFor(target: SelectTarget): StoppingRunner[] {
     const file = target.sessionFile ? canonicalCwd(target.sessionFile) : undefined
-    const key = canonicalCwd(target.cwd)
-    const shared = this.sharesCwd(target.cwd)
     return [...this.stopping].filter(
       (entry) =>
         (!!target.sessionId && entry.sessionId === target.sessionId) ||
-        (!!file && !!entry.sessionFile && canonicalCwd(entry.sessionFile) === file) ||
-        (!shared && canonicalCwd(entry.cwd) === key)
+        (!!file && !!entry.sessionFile && canonicalCwd(entry.sessionFile) === file)
     )
   }
 
@@ -573,38 +564,6 @@ export class RunnerRegistry {
     return this.result(idle, 'reuse')
   }
 
-  needsIsolation(id: string): boolean {
-    const runner = this.runners.get(id)
-    return !!runner && !this.busy(runner) && !this.sharesCwd(runner.cwd) && this.hasBusyCwd(runner.cwd, id)
-  }
-
-  async isolateIfConflicting(id: string): Promise<{ moved: boolean; error?: string }> {
-    const runner = this.runners.get(id)
-    if (!runner || !this.needsIsolation(id)) return { moved: false }
-    const state = runner.agent.getState()
-    const escalated = await this.opts.resolveCwdConflict?.({
-      cwd: runner.cwd,
-      sessionId: state?.sessionId,
-      sessionFile: state?.sessionFile,
-      projectId: runner.projectId
-    })
-    if (!escalated || !('cwd' in escalated) || canonicalCwd(escalated.cwd) === canonicalCwd(runner.cwd)) return { moved: false }
-    if (this.hasBusyCwd(escalated.cwd, id)) return { moved: false }
-    const result = await this.relocate(id, escalated.cwd)
-    return result.ok ? { moved: true } : { moved: false, error: result.error }
-  }
-
-  async relocate(id: string, cwd: string): Promise<SelectResult> {
-    return this.serialize(async () => {
-      const runner = this.runners.get(id)
-      if (!runner) return { ok: false, error: pick('运行实例不存在', 'Runtime not found') }
-      if (this.busy(runner)) return { ok: false, error: pick('会话正在运行，不能迁移目录', 'The session is running; its folder cannot be changed') }
-      const sessionFile = runner.agent.getState()?.sessionFile
-      if (!sessionFile) return { ok: false, error: pick('会话还没有记录文件，不能迁移目录', 'The session has no record file yet; its folder cannot be changed') }
-      return this.relaunch(runner, { cwd, sessionFile, projectId: runner.projectId, activate: this.activeId === runner.id })
-    })
-  }
-
   private async selectNow(target: SelectTarget): Promise<SelectResult> {
     if (this.stoppingFor(target).length > 0) {
       if (target.preview) return { ok: true, deferred: true, deferredReason: 'cwd-busy', sessionId: target.sessionId }
@@ -625,37 +584,6 @@ export class RunnerRegistry {
         if (target.activate !== false) this.activateRunner(hit.id)
         this.opts.onChanged?.()
         return this.result(hit, 'hit')
-      }
-    }
-
-    const conflict = !this.sharesCwd(target.cwd) && [...this.runners.values()].find(
-      (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
-    )
-    if (conflict) {
-      if (target.preview) return { ok: true, deferred: true, deferredReason: 'cwd-busy', sessionId: target.sessionId }
-      const escalated = await this.opts.resolveCwdConflict?.(target)
-      if (escalated && 'cwd' in escalated && canonicalCwd(escalated.cwd) !== canonicalCwd(target.cwd)) {
-        target = { ...target, cwd: escalated.cwd }
-        if (this.hasBusyCwd(target.cwd)) {
-          return {
-            ok: false,
-            error:
-              pick(
-                '隔离目标目录里还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。请等它跑完或停止它。',
-                'A session is still running in the isolated target folder; two turns writing files at once would overwrite each other. Wait for it to finish or stop it.'
-              )
-          }
-        }
-      } else {
-        const reason = escalated && 'reason' in escalated && escalated.reason ? pick(`（${escalated.reason}）`, ` (${escalated.reason})`) : ''
-        return {
-          ok: false,
-          error:
-            pick(
-              `同一工作目录还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。${reason}请等它跑完或停止它。`,
-              `A session is still running in this working folder; two turns writing files at once would overwrite each other${reason}. Wait for it to finish or stop it.`
-            )
-        }
       }
     }
 

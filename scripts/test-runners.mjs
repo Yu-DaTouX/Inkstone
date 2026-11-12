@@ -112,7 +112,7 @@ export function runRunnerTests(ok, RunnerRegistry) {
 
       made[1].state = { ...made[1].state, isAgentRunning: true }
       const rConflict = await reg.select({ cwd: 'C:/a/', sessionFile: 'C:/s-conflict.jsonl' })
-      ok(rConflict.ok === false && /同一工作目录/.test(rConflict.error ?? ''), '同一工作目录有忙碌会话时明确拒绝', JSON.stringify(rConflict))
+      ok(rConflict.ok === false && /上限/.test(rConflict.error ?? ''), '同目录共用并行，但实例都忙且到上限时拒绝', JSON.stringify(rConflict))
       ok(first.calls.stop === 0, '拒绝时没有停止原会话')
       ok(reg.size === 2, '拒绝后实例数量不变')
 
@@ -132,141 +132,10 @@ export function runRunnerTests(ok, RunnerRegistry) {
         madeB[0].bashRunning = true
         ok(regB.hasBusyCwd('c:/z/') === true, 'cwd 忙碌查询也包含直执行 bash')
         const b2 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
-        ok(b2.ok === false && /同一工作目录/.test(b2.error ?? ''), '直执行 shell 在跑时，同 cwd 的切换被拒绝', JSON.stringify(b2))
+        ok(b2.ok === true && b2.id !== b1.id && madeB[0].calls.switchSession.length === 1, '直执行 shell 在跑时不复用该实例，同目录另开一个', JSON.stringify(b2))
         madeB[0].bashRunning = false
         const b3 = await regB.select({ cwd: 'C:/z', sessionFile: 'C:/z2.jsonl' })
         ok(b3.ok, 'shell 跑完后同 cwd 又能正常切换/复用', JSON.stringify(b3))
-      }
-
-      {
-        const seen = []
-        const cwds = []
-        const regC = new RunnerRegistry({
-          limit: 3,
-          createAgent: (id, cwd) => {
-            const a = mkAgent()
-            a.id = id
-            cwds.push(cwd)
-            return a
-          },
-          resolveCwdConflict: async (target) => {
-            seen.push({ cwd: target.cwd, activate: target.activate, hidden: target.hidden })
-            return { cwd: 'C:/iso/wt' }
-          }
-        })
-        const c1 = await regC.select({ cwd: 'C:/iso', sessionFile: 'C:/iso1.jsonl' })
-        ok(c1.ok, '隔离用例：先建一个实例')
-        const busyC = regC.agentOf(c1.id)
-        busyC.state = { ...busyC.state, isAgentRunning: true }
-        const c2 = await regC.select({ cwd: 'c:/iso/', sessionFile: 'C:/iso2.jsonl' })
-        ok(c2.ok === true, '冲突时采纳宿主给的隔离目录，选择成功', JSON.stringify(c2))
-        ok(seen.length === 1 && seen[0].cwd === 'c:/iso/', '宿主收到的是原 cwd 与完整目标', JSON.stringify(seen))
-        ok(cwds.includes('C:/iso/wt'), '新实例起在隔离目录里', cwds.join(','))
-        ok(regC.size === 2, '隔离后是另一个实例')
-        ok(busyC.calls.stop === 0, '隔离没有停掉原本那个会话')
-
-        const regD = new RunnerRegistry({
-          limit: 3,
-          createAgent: (id) => {
-            const a = mkAgent()
-            a.id = id
-            return a
-          },
-          resolveCwdConflict: async () => ({ cwd: 'C:/same/' })
-        })
-        const d1 = await regD.select({ cwd: 'C:/same', sessionFile: 'C:/same1.jsonl' })
-        const agentD = regD.agentOf(d1.id)
-        agentD.state = { ...agentD.state, isAgentRunning: true }
-        const d2 = await regD.select({ cwd: 'C:/same', sessionFile: 'C:/same2.jsonl' })
-        ok(d2.ok === false && regD.size === 1, '隔离结果与原 cwd 相同 = 没隔离成：仍然拒绝', JSON.stringify(d2))
-
-        const regE = new RunnerRegistry({
-          limit: 3,
-          createAgent: (id) => {
-            const a = mkAgent()
-            a.id = id
-            return a
-          },
-          resolveCwdConflict: async () => ({ reason: '不是 Git 仓库' })
-        })
-        const e1 = await regE.select({ cwd: 'C:/nr', sessionFile: 'C:/nr1.jsonl' })
-        const agentE = regE.agentOf(e1.id)
-        agentE.state = { ...agentE.state, isAgentRunning: true }
-        const e2 = await regE.select({ cwd: 'C:/nr', sessionFile: 'C:/nr2.jsonl' })
-        ok(e2.ok === false && /不是 Git 仓库/.test(e2.error ?? ''), '隔离失败（不是 Git 仓库）时拒绝，并带上原因', JSON.stringify(e2))
-
-        const seenF = []
-        const regF = new RunnerRegistry({
-          limit: 3,
-          createAgent: (id) => Object.assign(mkAgent(), { id }),
-          resolveCwdConflict: async (t) => { seenF.push(t.cwd); return null }
-        })
-        const f1 = await regF.select({ cwd: 'C:/chat', sessionFile: 'C:/chat1.jsonl' })
-        const agentF = regF.agentOf(f1.id)
-        agentF.state = { ...agentF.state, isAgentRunning: true }
-        agentF.wrote = false
-        const f2 = await regF.select({ cwd: 'C:/chat', sessionFile: 'C:/chat2.jsonl' })
-        ok(f2.ok === false && /同一工作目录/.test(f2.error ?? ''), '本回合没写过文件的忙碌会话同样被拒绝', JSON.stringify(f2))
-        ok(seenF.length === 1, '没写过文件也会走一次冲突回调（不再跳过隔离）', JSON.stringify(seenF))
-        ok(regF.size === 1, '拒绝后没有新建实例')
-      }
-
-      {
-        const seenP = []
-        const madeP = []
-        const regP = new RunnerRegistry({
-          limit: 3,
-          createAgent: (id) => {
-            const a = mkAgent()
-            a.id = id
-            madeP.push(a)
-            return a
-          },
-          resolveCwdConflict: async (target) => {
-            seenP.push(target.cwd)
-            return { cwd: 'C:/iso/never' }
-          }
-        })
-        const p1 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p1.jsonl' })
-        ok(p1.ok && p1.via === 'new', 'preview 用例：先建一个实例')
-        regP.agentOf(p1.id).state = { ...regP.agentOf(p1.id).state, isAgentRunning: true }
-
-        const p2 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p2.jsonl', preview: true })
-        ok(p2.ok === true && p2.deferred === true, 'preview：只是查看 → deferred（不报错、也不切换）', JSON.stringify(p2))
-        ok(seenP.length === 0, 'preview 不触发冲突隔离（不建隔离工作树）')
-        ok(regP.size === 1 && madeP.length === 1, 'preview 不新建实例')
-        ok(madeP[0].calls.switchSession.length === 1, 'preview 没有把忙碌实例切走')
-
-        const p3 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p1.jsonl', preview: true })
-        ok(p3.ok && p3.via === 'hit' && !p3.deferred, 'preview 命中已有实例时正常切视图', JSON.stringify(p3))
-
-        const p4 = await regP.select({ cwd: 'C:/p1', sessionFile: 'C:/p2.jsonl' })
-        ok(p4.ok && seenP.length === 1, '不带 preview 时冲突仍走自动隔离', JSON.stringify(p4))
-
-        const seenQ = []
-        const madeQ = []
-        const regQ = new RunnerRegistry({
-          limit: 3,
-          createAgent: (id) => {
-            const a = mkAgent()
-            a.id = id
-            madeQ.push(a)
-            return a
-          },
-          resolveCwdConflict: async () => {
-            seenQ.push(1)
-            return { cwd: 'C:/iso/never' }
-          }
-        })
-        const q1 = await regQ.select({ cwd: 'C:/q', sessionFile: 'C:/q1.jsonl', preview: true })
-        ok(
-          q1.ok && q1.via === 'new' && !q1.deferred,
-          '一个实例都没有时 preview 照常新建并激活（不 defer）',
-          JSON.stringify(q1)
-        )
-        ok(seenQ.length === 0, '无冲突 → 不碰隔离')
-        const q2 = await regQ.select({ cwd: 'C:/q', sessionFile: 'C:/q2.jsonl', preview: true })
-        ok(q2.ok && q2.via === 'reuse' && !q2.deferred, '同 cwd 但没有忙碌实例 → preview 复用，不 defer', JSON.stringify(q2))
       }
 
       const second = made[1]

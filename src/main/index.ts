@@ -144,7 +144,7 @@ import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
-import { allowsConcurrentSessions, sharedCwdNotice } from './cwd-sharing'
+import { sharedCwdNotice } from './cwd-sharing'
 import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolatedSessionCwd, isolationCwdKey, pendingIsolationChanges } from './session-isolation'
 import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
 import { localCommandDescriptors } from './command-registry'
@@ -2110,7 +2110,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   const settings = await refreshLaunchContext()
 
   runners = new RunnerRegistry({
-    sharesCwd: allowsConcurrentSessions,
     isSessionVisible: (state) => runnerVisibility.includes(state),
     isParentProtected: (sessionId, runId) => subagentService.current()?.hasParentRun(sessionId, runId) ?? false,
     hasRunningSubagents: (sessionId) => (subagentService.current()?.runningSiblings({ parentSessionId: sessionId }) ?? 0) > 0,

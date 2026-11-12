@@ -210,7 +210,7 @@ export async function runExecutionAdmissionTests(ok) {
     const agent = reg.agentOf(a.id)
     agent.state = { ...agent.state, pendingMessageCount: 1 }
     const other = await reg.select({ cwd: 'C:/waiting', sessionFile: 'C:/waiting/b.jsonl' })
-    ok(other.ok === false, '还有待处理消息的实例算忙碌：同 cwd 不再开第二个', JSON.stringify(other))
+    ok(other.ok === true && other.id !== a.id, '还有待处理消息的实例算忙碌：不被复用，同目录另开一个', JSON.stringify(other))
   }
 
   {
@@ -245,8 +245,7 @@ export async function runExecutionAdmissionTests(ok) {
   }
 
   {
-    const shared = (cwd) => cwd.toLowerCase().startsWith('c:/docs')
-    const { reg } = make({ sharesCwd: shared })
+    const { reg } = make()
     const a = await reg.select({ cwd: 'C:/docs', sessionFile: 'C:/docs/a.jsonl' })
     busy(reg, a.id)
     const b = await reg.select({ cwd: 'C:/docs', sessionFile: 'C:/docs/b.jsonl' })
@@ -261,11 +260,6 @@ export async function runExecutionAdmissionTests(ok) {
     reg.releaseExecute(a.id, ca.token)
     reg.releaseExecute(b.id, cb.token)
     ok(reg.hasExecutionAdmission('C:/docs') === false, '共用目录：释放后不再有入场')
-
-    const g = await reg.select({ cwd: 'C:/repo', sessionFile: 'C:/repo/a.jsonl' })
-    busy(reg, g.id)
-    const h = await reg.select({ cwd: 'C:/repo', sessionFile: 'C:/repo/b.jsonl' })
-    ok(h.ok === false, '非共用目录仍然拦住第二个会话', JSON.stringify(h))
   }
 }
 
