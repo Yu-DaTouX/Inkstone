@@ -1224,6 +1224,7 @@ export interface SubagentRun {
   projectId?: string
   isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd'
   fork?: boolean
+  sideQuestion?: boolean
   resultPath?: string
   savedOutputsPath?: string
   model?: string
@@ -1273,6 +1274,7 @@ export interface SubagentBridge {
     isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd',
     expectedRuntime?: ExpectedRuntimeOwner
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
+  askSideQuestion(question: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
   stop(id: string): Promise<SubagentStopResult>
   send(id: string, message: string): Promise<{ ok: boolean; error?: string; delivery?: 'queued' | 'started' | 'resumed' }>
   dismiss(id: string): Promise<{ ok: boolean; error?: string }>

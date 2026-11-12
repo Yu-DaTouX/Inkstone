@@ -12,6 +12,7 @@ export interface SubagentForkSource {
   thinkingLevel?: string
   contextTokens?: number
   contextWindow?: number
+  sideQuestion?: boolean
 }
 
 export const FORK_CONTEXT_LIMIT = 0.6
@@ -139,6 +140,28 @@ export async function writeForkSession(
   const lines = [{ ...header, timestamp, parentSession: sourceFile }, ...body, ...placeholders].map((entry) => JSON.stringify(entry))
   await writeFile(file, `${lines.join('\n')}\n`, { encoding: 'utf8', flag: 'wx' })
   return { file, sessionId: header.id, placeholders: placeholders.length }
+}
+
+export function sideQuestionForkSource(source: SubagentForkSource, extension: string): SubagentForkSource {
+  return {
+    ...source,
+    sideQuestion: true,
+    args: ['--extension', extension, ...source.args],
+    env: { ...source.env, YAN_SIDE_QUESTION: '1' }
+  }
+}
+
+export function sideQuestionPrompt(question: string): string {
+  return [
+    '<side-question>',
+    'The user is asking a quick side question about the conversation above while it continues on its own. The main conversation will not see this exchange.',
+    '- Tools are disabled: answer only from what is already in the conversation, and ignore the placeholder tool result above.',
+    '- If the answer needs something the conversation does not contain, say what is missing instead of guessing.',
+    '- Answer directly and concisely.',
+    '',
+    question,
+    '</side-question>'
+  ].join('\n')
 }
 
 export function forkPrompt(task: string): string {

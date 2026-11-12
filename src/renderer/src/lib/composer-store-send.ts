@@ -20,6 +20,7 @@ export function composerStoreActions(): ComposerSendActions {
     setManualTitle: (id, title) => state().setManualTitle(id, title),
     setThinking: (level) => state().setThinking(level),
     nativeSession: (action, args) => state().nativeSession(action, args),
+    askSideQuestion: (question) => state().askSideQuestion(question),
     notify: (level, text) => state().notify(level, text)
   }
 }

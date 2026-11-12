@@ -6,7 +6,8 @@ import { CapabilityCommandError, type CapabilityCommandResult } from './capabili
 import type { SubagentCommandContext, SubagentCommandHost } from './agent'
 import type { ModelLabelResolution } from './subagents/model-label'
 import type { SubagentRun } from '../shared/ipc'
-import { forkContextError, type SubagentForkSource } from './subagent-fork'
+import { forkContextError, sideQuestionForkSource, type SubagentForkSource } from './subagent-fork'
+import { pick } from '../shared/ui-lang'
 import { normalizeSubagentId } from '../shared/subagent-id'
 import { writtenPaths } from '../shared/subagent-brief'
 import { THINKING_LEVELS } from '../shared/thinking-levels'
@@ -82,6 +83,7 @@ export interface SubagentServiceDeps {
   guideExtension?(): string | undefined
   contextCompactExtension?(): string | undefined
   readOnlyExtension?(): string | undefined
+  sideQuestionExtension?(): string | undefined
   runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
   previewHtml?(htmlPath: string, root: string, options?: { at?: number[] }): Promise<unknown>
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
@@ -196,6 +198,19 @@ export class SubagentService {
     const result = await ctrl.start(task, source.model, 'shared-cwd', briefInput, source, context)
     if (!result.ok || !result.run) throw new CapabilityCommandError('subagent_start_failed', result.error ?? '子代理启动失败')
     return startSummary(result.run)
+  }
+
+  async askSideQuestion(question: string, context: SubagentCommandContext): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
+    const text = question.trim()
+    if (!text) return { ok: false, error: pick('在 /btw 后写上问题', 'Write a question after /btw') }
+    if (text.length > 12_000) return { ok: false, error: pick('问题不能超过 12000 个字符', 'The question cannot exceed 12000 characters') }
+    const extension = this.deps.sideQuestionExtension?.()
+    if (!extension) return { ok: false, error: pick('旁路快问暂不可用', 'Side questions are unavailable') }
+    const source = this.deps.forkSource?.(context) ?? pick('找不到当前会话，不能旁路快问', 'No current session for a side question')
+    if (typeof source === 'string') return { ok: false, error: source }
+    const ctrl = await this.get()
+    ctrl.setContext(context)
+    return ctrl.start(text, source.model, 'shared-cwd', { title: pick('旁路快问', 'Side question') }, sideQuestionForkSource(source, extension), context)
   }
 
   readonly capabilityHost: SubagentCommandHost = {

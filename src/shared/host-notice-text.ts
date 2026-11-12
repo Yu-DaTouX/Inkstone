@@ -96,5 +96,6 @@ export function isHostTextNotice(text: string | undefined): boolean {
 
 export function isForkDirective(text: string | undefined): boolean {
   const body = (text ?? '').trim()
-  return body.startsWith('<fork-directive>\n') && body.endsWith('\n</fork-directive>')
+  return (body.startsWith('<fork-directive>\n') && body.endsWith('\n</fork-directive>')) ||
+    (body.startsWith('<side-question>\n') && body.endsWith('\n</side-question>'))
 }

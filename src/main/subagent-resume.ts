@@ -18,6 +18,7 @@ export interface PersistedForkLaunch {
   thinkingLevel?: string
   contextTokens?: number
   contextWindow?: number
+  sideQuestion?: boolean
 }
 
 export interface ResumeMeta {
@@ -89,7 +90,8 @@ export function persistableForkLaunch(source: SubagentForkSource): PersistedFork
     model: source.model,
     ...(source.thinkingLevel ? { thinkingLevel: source.thinkingLevel } : {}),
     ...(source.contextTokens !== undefined ? { contextTokens: source.contextTokens } : {}),
-    ...(source.contextWindow !== undefined ? { contextWindow: source.contextWindow } : {})
+    ...(source.contextWindow !== undefined ? { contextWindow: source.contextWindow } : {}),
+    ...(source.sideQuestion ? { sideQuestion: true } : {})
   }
 }
 

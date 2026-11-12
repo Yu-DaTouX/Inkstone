@@ -1514,7 +1514,7 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private latestAssistantMessageId(): string {
+  latestAssistantMessageId(): string {
     if (this.streaming?.id) return this.streaming.id
     const messages = this.messages
     for (let i = messages.length - 1; i >= 0; i -= 1) {

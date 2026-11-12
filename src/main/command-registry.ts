@@ -50,6 +50,7 @@ const localCommands = (): readonly CommandDescriptor[] => [
   },
   { name: 'settings', description: pick('打开设置', 'Open settings'), source: 'yan', executable: true, usage: '/settings' },
   { name: 'ultracode', description: pick('本条消息用 Ultracode：分阶段并行派子 Agent 并复核（耗额度、耗时）', 'Use Ultracode for this message: phased parallel subagents with review (uses quota and time)'), source: 'yan', executable: true, usage: pick('/ultracode <任务>', '/ultracode <task>') },
+  { name: 'btw', description: pick('旁路快问：继承当前上下文，只凭已有内容回答，不执行工具，不进入主会话', 'Side question: inherits the context, answers from it without running tools, stays out of the main conversation'), source: 'yan', executable: true, usage: pick('/btw <问题>', '/btw <question>') },
   {
     name: 'thinking',
     description: pick('查看或设置思考档位', 'View or set the thinking level'),

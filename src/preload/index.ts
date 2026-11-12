@@ -390,6 +390,8 @@ const api: YanBridge = {
     get: (id) => invoke<SubagentRun | null>('yan:subagents:get', id),
     start: (task, model, isolation, expectedRuntime) =>
       invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model, isolation, expectedRuntime),
+    askSideQuestion: (question, expectedRuntime) =>
+      invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:askSideQuestion', question, expectedRuntime),
     stop: (id) => invoke<SubagentStopResult>('yan:subagents:stop', id),
     send: (id, message) => invoke<{ ok: boolean; error?: string; delivery?: 'queued' | 'started' | 'resumed' }>('yan:subagents:send', id, message),
     dismiss: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:dismiss', id),

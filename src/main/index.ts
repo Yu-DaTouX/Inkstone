@@ -440,6 +440,7 @@ const subagentService: SubagentService = new SubagentService({
   shellExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.shellFallbackExtension),
   guideExtension: () => yanThinResourcePath('subagent-guide.js'),
   readOnlyExtension: () => yanThinResourcePath('readonly-tools.js'),
+  sideQuestionExtension: () => yanThinResourcePath('side-question.js'),
   runReadOnlyCommand: (command, params, cwd, signal, ownerId) => {
     const key = ownerId ?? cwd
     let lookup = subagentSearch.get(key)
@@ -527,7 +528,7 @@ const subagentService: SubagentService = new SubagentService({
   },
   onFinished: (run) => {
     runsHost?.settleSubagent(run, run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed', run.error)
-    if (!run.launchFailed) notifySubagentFinished(run)
+    if (!run.launchFailed && !run.sideQuestion) notifySubagentFinished(run)
   }
 })
 let remoteAccess: RemoteAccess | null = null
@@ -3269,6 +3270,7 @@ function registerIpc(): void {
 
   registerSubagentsIpc(ipc, {
     service: subagentService,
+    latestMessageId: (parentRunId) => runners?.agentOf(parentRunId)?.latestAssistantMessageId(),
     parentContext: async (owner) => {
       const captured = captureDefaultParent()
       const settings = await getSettings()

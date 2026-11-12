@@ -17,6 +17,7 @@ export interface SubagentParentContext {
 export interface SubagentsIpcDeps {
   service: SubagentService
   parentContext(owner?: ExpectedRuntimeOwner): Promise<SubagentParentContext>
+  latestMessageId?(parentRunId: string): string | undefined
 }
 
 export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps): void {
@@ -42,6 +43,17 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
     ctrl.setContext(settled.value)
     const mode = isolation === 'controlled-cwd' ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd'
     return ctrl.start(String(task ?? ''), typeof model === 'string' ? model : undefined, mode)
+  })
+  handle('yan:subagents:askSideQuestion', async (question: unknown, expectedRuntime?: unknown) => {
+    let context: SubagentParentContext
+    try {
+      context = await parentContext(expectedRuntime as ExpectedRuntimeOwner | undefined)
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : pick('当前会话已不可用', 'The current session is unavailable') }
+    }
+    if (!context.parentRunId) return { ok: false, error: pick('当前会话还没有启动，不能旁路快问', 'The session has not started; side questions need one') }
+    const parentMessageId = deps.latestMessageId?.(context.parentRunId)
+    return service.askSideQuestion(String(question ?? ''), { ...context, ...(parentMessageId ? { parentMessageId } : {}) })
   })
   handle('yan:subagents:stop', async (id: string) => {
     const runId = normalizeSubagentId(id)

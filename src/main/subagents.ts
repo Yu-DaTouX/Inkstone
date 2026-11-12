@@ -29,7 +29,7 @@ import { redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { confirmRegisteredModel } from './subagents/registered-model'
-import { forkPiArgs, forkPrompt, writeForkSession, type SubagentForkSource } from './subagent-fork'
+import { forkPiArgs, forkPrompt, sideQuestionPrompt, writeForkSession, type SubagentForkSource } from './subagent-fork'
 import { runArtifactPreview, type PreviewHtml } from './artifact-preview-command'
 import {
   applyPatch,
@@ -440,6 +440,7 @@ export class SubagentController {
       projectId: run.projectId,
       isolation: run.isolation,
       ...(run.fork ? { fork: true } : {}),
+      ...(run.forkSource?.sideQuestion ? { sideQuestion: true } : {}),
       resultPath: run.resultPath,
       ...(run.savedOutputsPath ? { savedOutputsPath: run.savedOutputsPath } : {}),
       model: run.model,
@@ -837,7 +838,7 @@ export class SubagentController {
       if (run.status !== 'running') return this.startupAbort(run)
       this.emit(run)
 
-      const res = await rpc.command('prompt', { message: fork ? forkPrompt(briefPrompt(brief, text)) : briefPrompt(brief, text) })
+      const res = await rpc.command('prompt', { message: fork?.sideQuestion ? sideQuestionPrompt(text) : fork ? forkPrompt(briefPrompt(brief, text)) : briefPrompt(brief, text) })
       if (!res.success) {
         await this.fail(id, res.error ?? pick('启动任务失败', 'Could not start the task'))
         return { ok: false, error: res.error ?? pick('启动任务失败', 'Could not start the task') }

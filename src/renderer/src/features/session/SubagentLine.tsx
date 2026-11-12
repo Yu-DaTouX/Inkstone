@@ -179,7 +179,7 @@ function useSubagentModelParts(run: SubagentRun): { name: string | null; think: 
   const name = run.model && !sameModel ? turnModelLabel(run.model, models).label : null
   const level = run.thinkingLevel?.trim()
   const think = level ? (THINK_LABEL[level] ? t(THINK_LABEL[level]) : level) : null
-  return { name, think: [think, run.fork ? 'fork' : null].filter(Boolean).join(' · ') || null }
+  return { name, think: [think, run.sideQuestion ? t('sa.sideQuestion') : run.fork ? 'fork' : null].filter(Boolean).join(' · ') || null }
 }
 
 function useAwaitingApproval(runId: string): boolean {

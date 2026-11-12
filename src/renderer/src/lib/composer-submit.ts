@@ -50,6 +50,7 @@ export interface ComposerSendActions {
   setManualTitle(id: string, title: string): void | Promise<void>
   setThinking(level: string): void | Promise<void>
   nativeSession?(action: NativeSessionAction, args?: string): Promise<ComposerCommandResult>
+  askSideQuestion?(question: string): Promise<ComposerCommandResult>
   notify(level: 'info' | 'error', text: string): void
 }
 
@@ -213,6 +214,16 @@ async function runLocalCommand(port: ComposerSubmitPort, name: string, args: str
     a.notify('info', port.t('composer.cmdBusy', { name }))
     port.focusComposer()
     return 'handled'
+  }
+
+  if (name === 'btw') {
+    const ask = a.askSideQuestion
+    if (!args || !ask) {
+      a.notify('info', port.t(ask ? 'composer.btwUsage' : 'composer.cmdNotWired', { name }))
+      port.focusComposer()
+      return 'handled'
+    }
+    return runResultCommand(port, () => ask(args), name)
   }
 
   if (name === 'new' && args) return runNativeSessionCommand(port, 'new-session', args, name)

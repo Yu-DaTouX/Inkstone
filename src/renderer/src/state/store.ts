@@ -367,6 +367,7 @@ export interface Store {
   previewFile: (path: string, line?: number, cwd?: string, lineEnd?: number) => Promise<void>
   loadSubagents: () => Promise<void>
   startSubagent: (task: string, model?: string, isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<void>
+  askSideQuestion: (question: string) => Promise<{ ok: boolean; error?: string }>
   stopSubagent: (id: string) => Promise<void>
   openExternalChrome: (url?: string) => Promise<void>
   closeExternalChrome: () => Promise<void>
@@ -2881,6 +2882,19 @@ export const useStore = create<Store>((rawSet, get) => {
         subagents: idx >= 0 ? get().subagents.map((r) => (r.id === run.id ? run : r)) : [...get().subagents, run]
       })
     }
+  },
+
+  askSideQuestion: async (question) => {
+    const target = await sessionActionTarget(get)
+    if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
+    const res = await window.yan.subagents.askSideQuestion(question, target.expected)
+    if (!res.ok) return { ok: false, error: res.error ?? uiText('state.error.subagentStartFailed') }
+    if (res.run) {
+      const run = res.run
+      const idx = get().subagents.findIndex((r) => r.id === run.id)
+      set({ subagents: idx >= 0 ? get().subagents.map((r) => (r.id === run.id ? run : r)) : [...get().subagents, run] })
+    }
+    return { ok: true }
   },
 
   stopSubagent: async (id) => {
