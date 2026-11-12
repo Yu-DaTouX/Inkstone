@@ -48,6 +48,12 @@ export function flightPhase(plan: FlightPlan, elapsed: number): FlightPhase {
   return elapsed < plan.leadMs + plan.cruiseMs ? 'cruise' : 'land'
 }
 
+export function skipCruise(plan: FlightPlan, elapsed: number, landingReady: boolean): number {
+  if (!plan.far || !landingReady) return elapsed
+  const landAt = plan.leadMs + plan.cruiseMs
+  return elapsed >= plan.leadMs && elapsed < landAt ? landAt : elapsed
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
 }

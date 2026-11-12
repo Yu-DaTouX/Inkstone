@@ -43,7 +43,7 @@ import { turnFindText, type TurnFindText } from './session-find'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, SCROLL_INTENT_EVENT, userScrollActive, wheelReachesBottom, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import { holdStreamTail } from './stream-tail-hold'
 import { domAnchor, domMetrics, domReadingAnchors, glideSettle, keepSettleAnchor, resolveAnchorPoint, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
-import { FLIGHT_FRAME_CAP_MS, FLIGHT_INSET_PX, FLIGHT_SETTLE_FRAMES, FLIGHT_SETTLE_STILL, flightPhase, flightTravel, landingIndices, planFlight } from './timeline-flight'
+import { FLIGHT_FRAME_CAP_MS, FLIGHT_INSET_PX, FLIGHT_SETTLE_FRAMES, FLIGHT_SETTLE_STILL, flightPhase, flightTravel, landingIndices, planFlight, skipCruise } from './timeline-flight'
 import './session.css'
 import { readVirtualCache, saveVirtualCache, virtualizeSession } from './virtual-cache'
 import { withSubmittingMessages } from '../../state/submitting-messages'
@@ -967,6 +967,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
       last = now
       const drift = box.scrollTop - written
       if (Math.abs(drift) > 0.5) origin += drift
+      if (virtual && flightPhase(plan, elapsed) === 'cruise') elapsed = skipCruise(plan, elapsed, request.exact?.() != null)
       const phase = flightPhase(plan, elapsed)
       if (phase !== 'lead' && plan.far && landing.length && !flight.skim) {
         flight.skim = true

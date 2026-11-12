@@ -10,7 +10,7 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dir = await mkdtemp(join(tmpdir(), 'yan-timeline-flight-'))
 const outfile = join(dir, 'timeline-flight.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/timeline-flight.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error' })
-const { planFlight, flightTravel, flightPhase, landingIndices, FLIGHT_INSET_PX } = await import(pathToFileURL(outfile).href)
+const { planFlight, flightTravel, flightPhase, landingIndices, skipCruise, FLIGHT_INSET_PX } = await import(pathToFileURL(outfile).href)
 
 let pass = 0
 function check(label, fn) {
@@ -23,6 +23,20 @@ const VIEW = 900
 
 try {
   check('落点留白是 24px', () => assert.equal(FLIGHT_INSET_PX, 24))
+
+  check('落点已挂载时跳过巡航，不穿过未挂载区', () => {
+    const plan = planFlight(VIEW * 40, VIEW)
+    const cruiseAt = plan.leadMs + 10
+    const landAt = plan.leadMs + plan.cruiseMs
+    assert.equal(flightPhase(plan, cruiseAt), 'cruise')
+    assert.equal(skipCruise(plan, cruiseAt, true), landAt)
+    assert.equal(flightPhase(plan, skipCruise(plan, cruiseAt, true)), 'land')
+    assert.equal(skipCruise(plan, cruiseAt, false), cruiseAt)
+    assert.equal(skipCruise(plan, plan.leadMs - 1, true), plan.leadMs - 1)
+    assert.equal(skipCruise(plan, landAt + 5, true), landAt + 5)
+    const near = planFlight(300, VIEW)
+    assert.equal(skipCruise(near, 50, true), 50)
+  })
 
   check('零距离不动', () => {
     const plan = planFlight(0, VIEW)
