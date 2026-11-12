@@ -215,8 +215,8 @@ export function RailStatsBody({ model, breakdownLabel, running = false }: { mode
             <span className="wb-rs-num wb-rs-strong">
               {cell.value}
               {cell.unit ? <> <span className="wb-rs-unit">{cell.unit}</span></> : null}
-              {cell.extra ? <> <span className="wb-rs-unit" title={cell.extraTitle}>{cell.extra}</span></> : null}
             </span>
+            {cell.extra ? <span className="wb-rs-num wb-rs-extra" title={cell.extraTitle} data-testid="wb-rail-stats-subagents">{t('sm.subagentsExtra', { n: cell.extra })}</span> : null}
           </li>
         ))}
       </ul>

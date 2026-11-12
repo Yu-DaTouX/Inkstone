@@ -126,6 +126,28 @@
     line-height: var(--t-body-lh);
   }
 
+  .wb-rs-extra {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    color: var(--fg3);
+  }
+
+  .wb-rail-headline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .wb-rail-headline > .wb-rail-headline-cost {
+    flex: none;
+  }
+
   .wb-rs-cell[data-empty='1'] > .wb-rs-strong {
     color: var(--fg3);
   }

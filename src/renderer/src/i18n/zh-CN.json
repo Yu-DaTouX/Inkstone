@@ -910,6 +910,7 @@
   "sm.hitRate": "累计命中率",
   "sm.hitRateLatest": "最近命中率",
   "sm.withSubagents": "含子 Agent",
+  "sm.subagentsExtra": "子 Agent {n}",
   "sm.cacheRead": "缓存读取",
   "sm.cacheWrite": "缓存写入",
   "sm.output": "输出",

@@ -910,6 +910,7 @@
   "sm.hitRate": "Overall hit rate",
   "sm.hitRateLatest": "Latest hit rate",
   "sm.withSubagents": "Incl. subagents",
+  "sm.subagentsExtra": "Subagents {n}",
   "sm.cacheRead": "Cache read",
   "sm.cacheWrite": "Cache write",
   "sm.output": "Output",

@@ -864,7 +864,10 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
           summary: !statsModel ? (
             <RailValue value="—" />
           ) : isOpen('stats') ? (
-            <RailValue data-testid="wb-rail-stats-headline" value={statsCost ? `${statsModel.headline} · ${statsCost}` : statsModel.headline} title={[statsModel.headline, statsModel.headlineTitle, statsCostTitle].filter(Boolean).join('\n')} />
+            <span className="wb-rail-headline" data-testid="wb-rail-stats-headline" title={[statsModel.headline, statsModel.headlineTitle, statsCostTitle].filter(Boolean).join('\n')}>
+              <RailValue value={statsModel.headline} />
+              {statsCost ? <RailValue className="wb-rail-headline-cost" value={statsCost} joined /> : null}
+            </span>
           ) : (
             <StatsGlance model={statsModel} text={rail} />
           ),

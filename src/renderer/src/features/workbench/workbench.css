@@ -935,8 +935,13 @@
 
   @container (max-width: 300px) {
     .wb-rail-glance .ui-rail-value__bars,
-    .wb-rail-hit-label {
+    .wb-rail-hit-label,
+    .wb-tile[data-tile='stats'] .wb-tile-leader {
       display: none;
+    }
+
+    .wb-tile[data-tile='stats'] .wb-tile-tail {
+      max-width: calc(100% - 6em);
     }
   }
 
