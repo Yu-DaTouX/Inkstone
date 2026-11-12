@@ -43,6 +43,7 @@ const format = (sourceNote) => `## Goal
 - [Anything else needed to continue, or "(none)"]
 
 How to fill it:
+- Write the summary in the language the user writes in (the main language of their own messages), not the language of tool outputs or this request; keep the section headings above, code, commands, paths, identifiers and quoted text as they are.
 - Priorities, highest first, when space is short: (1) the current goal, constraints, permissions and user corrections; (2) changes made and their verification results; (3) evidence behind conclusions, open questions and next steps; (4) where source material can be found again (anchors, source tags); (5) other details.
 - Mark how each fact is known: [user] the user said it, [observed] seen in a tool output, [verified] confirmed by a check or test, [inferred] your own reasoning, [ruled out] checked and rejected. Exploratory guesses in the assistant's reasoning are [inferred] at most, never [observed] or [verified].
 - Exact positions: copy line numbers and other positions only as they appeared in a tool output; if only a range was seen, give the range; otherwise write "(position unverified)". Never estimate a line number.
@@ -323,7 +324,35 @@ export async function currentFilesBlock(paths, cwd, ratio, totalTokens = REINJEC
 }
 
 export function stripAppendices(summary) {
-  return summary ? summary.replace(/\n*<(read-files|modified-files|history-snapshot|user-messages|current-files)>[\s\S]*?<\/\1>/g, '').trim() : summary
+  return summary ? summary.replace(/\n*<(read-files|modified-files|history-snapshot|user-messages|current-files|user-language)>[\s\S]*?<\/\1>/g, '').trim() : summary
+}
+
+const SCRIPT_NAMES = [['Japanese', /[\u3040-\u30ff]/g], ['Korean', /[\uac00-\ud7af]/g], ['Chinese', /[\u3400-\u9fff]/g]]
+
+export function userLanguageOf(texts) {
+  const body = texts.join('\n').replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '').replace(/https?:\/\/\S+/g, '')
+  const latin = (body.match(/[A-Za-z]/g) ?? []).length / 4
+  for (const [name, pattern] of SCRIPT_NAMES) {
+    const count = (body.match(pattern) ?? []).length
+    if (count >= 2 && count >= latin) return name
+  }
+  return null
+}
+
+export function userLanguageBlock(previousSummary, messages) {
+  const previous = previousSummary?.match(/<user-messages>\n[^\n]*\n([\s\S]*?)\n<\/user-messages>/)?.[1] ?? ''
+  const texts = previous ? [previous.replace(/^\[#\d+\.\d+\] /gm, '')] : []
+  for (const m of messages) {
+    if (m?.role !== 'user') continue
+    const text = textOf(m.content).trim()
+    if (text && !isHostAutomatedMessage(text)) texts.push(text)
+  }
+  if (!texts.length) return ''
+  const language = userLanguageOf(texts)
+  const rule = language
+    ? `The user writes in ${language}. Keep progress lines and replies to the user in ${language}`
+    : "Keep progress lines and replies to the user in the language of the user's own messages"
+  return `\n\n<user-language>\n${rule}, even though tool outputs and parts of this summary are in English; code, commands, paths and identifiers stay as they are.\n</user-language>`
 }
 
 const USER_ENTRY = /^\[#\d+\.\d+\] /
@@ -709,7 +738,7 @@ export default function contextCompactExtension(pi) {
       }
       return {
         compaction: {
-          summary: summary + (budgets.userTokens ? userMessagesBlock(preparation.previousSummary, messages, compactionNo, Math.floor(budgets.userTokens / ratio)) : '')
+          summary: summary + (budgets.userTokens ? userMessagesBlock(preparation.previousSummary, messages, compactionNo, Math.floor(budgets.userTokens / ratio)) : '') + userLanguageBlock(preparation.previousSummary, messages)
             + formatFileLists(files) + current.block + (snapshot ? snapshotPointer(snapshot) : ''),
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,

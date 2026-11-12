@@ -217,6 +217,9 @@ assert.equal(
   const prompt = h.calls[0].context.messages[0].content[0].text
   assert.ok(/priorities, highest first/i.test(prompt) && /\[ruled out\]/.test(prompt) && /Never estimate a line number/.test(prompt) && /\[external\]/.test(prompt), '提示词按优先级保留、区分状态、只照抄观测到的位置、外部内容标来源')
   assert.ok(!/Be exhaustive/.test(prompt), '不再要求穷举')
+  assert.ok(/Write the summary in the language the user writes in/.test(prompt) && /keep the section headings above/.test(prompt), '摘要正文用用户的语言写，标题与代码、路径保持原样')
+  assert.ok(result.compaction.summary.includes('<user-language>\nThe user writes in Chinese. Keep progress lines and replies to the user in Chinese'), '摘要附录注明一次用户语言')
+  assert.equal(result.compaction.summary.match(/<user-language>/g).length, 1, '用户语言只注明一次')
   assert.ok(/under about 16000 tokens/.test(prompt), '给出篇幅目标（输出上限的一半）')
 }
 {
@@ -237,7 +240,18 @@ assert.equal(
   ]
   const block = mod.userMessagesBlock(undefined, hostMessages, 3, 10_000)
   assert.ok(block.includes('[#3.6] 真正的用户消息：继续改'), '真实用户输入仍保留')
+  const englishHost = [{ role: 'user', content: '<subagent-notification id="a2" status="done">\nFinal report: everything was fixed in English words here and there\n</subagent-notification>' }, { role: 'user', content: '好' }, { role: 'user', content: '提交' }]
+  assert.ok(mod.userLanguageBlock(undefined, englishHost).includes('The user writes in Chinese'), '判断语言时排除宿主自动消息')
   assert.ok(!/subagent-notification|循环恢复|模型错误恢复|砚宿主通知|额度已恢复/.test(block), '子代理通知、循环与模型错误自动续跑、会话移动续跑、额度恢复续跑都不计入用户原话附录')
+}
+{
+  assert.equal(mod.userLanguageOf(['把上下文的详细补充一下', 'Claude有一张重置卡为什么不显示']), 'Chinese', '中文夹少量英文仍判为中文')
+  assert.equal(mod.userLanguageOf(['このファイルを直してください']), 'Japanese', '有假名判为日文')
+  assert.equal(mod.userLanguageOf(['이 파일을 고쳐 주세요']), 'Korean', '韩文')
+  assert.equal(mod.userLanguageOf(['please fix the build `构建脚本`']), null, '英文句子里的代码不算中文')
+  assert.ok(mod.userLanguageBlock(undefined, [{ role: 'user', content: 'please fix the build' }]).includes("in the language of the user's own messages"), '认不出具体语言时跟随用户原话')
+  assert.equal(mod.userLanguageBlock(undefined, [{ role: 'assistant', content: [] }]), '', '没有用户消息时不加')
+  assert.equal(mod.stripAppendices('摘要\n\n<user-language>\nThe user writes in Chinese.\n</user-language>'), '摘要', '滚动更新前去掉上次的语言注明，不重复累积')
 }
 {
   let n = 0
