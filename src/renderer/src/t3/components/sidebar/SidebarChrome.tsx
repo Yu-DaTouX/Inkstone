@@ -214,7 +214,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
             </IconButton>
           </li>
         ) : null}
-        {connection ? (
+        {connection && connection.state !== "ready" ? (
           <li className="t3-sidebar-footer__item" data-footer-fixed>
             <TooltipTrigger>
               <Focusable>
