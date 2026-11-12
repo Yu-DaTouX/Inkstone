@@ -199,6 +199,19 @@ export function runDangerGuardTests(ok, mod) {
   ok(outside('bash', { command: 'echo hi >> out.log' }).length === 0, 'shell 重定向写到项目内不问')
   const unknownHit = outside('bash', { command: 'echo hi > "$UNSET_DIR/a   b"' })
   ok(unknownHit.length === 1 && unknownHit[0].includes('无法静态确定') && !/\s{2,}|\n/.test(unknownHit[0]), '写入目标含未知变量时提示一行说明，不原样倾倒空白')
+  ok(outside('bash', { command: 'for i in 1 2 3; do printf x >> "sub/x-$(( (1 + i) % 12 )).txt"; done' }).length === 0, '项目内相对路径里的算术展开不再当作未知位置')
+  ok(outside('bash', { command: 'for i in 1 2 3; do echo x > "out-$(( $i * 2 )).txt"; done' }).length === 0, '算术里用已知循环变量也视为整数')
+  ok(outside('bash', { command: 'echo x > "D:/other/x-$(( 1 + 2 )).txt"' }).length === 1, '算术展开不影响项目外判定')
+  ok(outside('bash', { command: 'echo x > "$(( 1 + 2 ))/../../other/a.txt"' }).length === 1, '算术展开后的 .. 仍按位置判定')
+  for (const [command, label] of [
+    ['echo x > "$(($env:TEMP))/a.txt"', 'PowerShell 子表达式取环境变量'],
+    ['echo x > "$(($UNSET_DIR + 1))/a.txt"', '未知变量参与的表达式'],
+    ['echo x > "$((pwd))/a.txt"', '没有运算符的括号内容'],
+    ["echo x > \"$(('D:/x' + 1))/a.txt\"", '括号内带引号的字符串']
+  ]) {
+    const hit = outside('bash', { command })
+    ok(hit.length === 1 && hit[0].includes('无法静态确定'), `${label}仍按未知位置询问`, JSON.stringify(hit))
+  }
   const longHit = outside('bash', { command: `echo hi > "$UNSET_DIR/${'x'.repeat(200)}"` })
   ok(longHit.length === 1 && longHit[0].length < 140, '过长的未知写入目标被截断')
   const heredocBody = 'cat > .tmp/x.mjs <<\'EOF\'\nconst t = `<${TAG} id=\\"${id}\\">\\n${lines}\\n</${TAG}>`\nEOF'

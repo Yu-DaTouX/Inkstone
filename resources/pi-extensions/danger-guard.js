@@ -711,9 +711,49 @@ function substituteVariables(text, base, vars, depth = 0) {
   return replaced
 }
 
+const ARITHMETIC_BODY = /^[\w\s+\-*/%<>=!&|^~?()]*$/
+const ARITHMETIC_OPERATOR = /[+\-*/%<>=!&|^~]/
+
+function integerVariable(name, vars) {
+  const value = vars.get(name)
+  return value === LOOP_ITEM || (typeof value === 'string' && /^-?\d+$/.test(value))
+}
+
+function arithmeticBody(body, vars) {
+  const bare = body.replace(/\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))/g, (all, braced, plain) => (integerVariable(braced ?? plain, vars) ? 'n' : all))
+  return ARITHMETIC_BODY.test(bare) && ARITHMETIC_OPERATOR.test(bare)
+}
+
+function replaceArithmetic(text, vars) {
+  let out = ''
+  let index = 0
+  while (index < text.length) {
+    if (!text.startsWith('$((', index)) {
+      out += text[index++]
+      continue
+    }
+    let depth = 2
+    let end = index + 3
+    while (end < text.length && depth > 0) {
+      if (text[end] === '(') depth++
+      else if (text[end] === ')') depth--
+      end++
+    }
+    const body = text.slice(index + 3, end - 2)
+    if (depth !== 0 || text.slice(end - 2, end) !== '))' || !arithmeticBody(body, vars)) {
+      out += text[index++]
+      continue
+    }
+    out += '0'
+    index = end
+  }
+  return out
+}
+
 function resolveFrom(raw, base, vars = new Map()) {
   let cleaned = expandHome(expandEnv(unquote(raw)))
   if (!cleaned) return ''
+  if (cleaned.includes('$((')) cleaned = replaceArithmetic(cleaned, vars)
   if (/[$`]|%[A-Za-z_]\w*%/.test(cleaned)) {
     const substituted = substituteVariables(cleaned, base, vars)
     if (substituted === null) return undefined
