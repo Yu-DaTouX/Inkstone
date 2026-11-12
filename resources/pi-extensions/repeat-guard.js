@@ -170,7 +170,7 @@ export default function repeatGuard(pi) {
       return {
         block: true,
         reason:
-          `Blocked by the repeat guard: \`${toolName}\` was called ${streak + 1} times in a row with identical arguments and identical results. ` +
+          `Blocked by the repeat guard: \`${toolName}\` already ran ${streak} times in a row with identical arguments and identical results, so this call was not run. ` +
           'Do not retry it. Either change the arguments, or report that you are blocked.'
       }
     }

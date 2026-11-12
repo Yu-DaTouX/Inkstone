@@ -3,6 +3,7 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number]
 
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'danger'
 export const APPROVAL_DETAIL_MAX = 20000
+export const APPROVAL_TARGETS_MAX = 64
 
 export function normalizePermissionMode(value: unknown): PermissionMode {
   return value === 'all' ? 'all' : 'danger'

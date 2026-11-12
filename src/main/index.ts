@@ -2274,7 +2274,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         getPermissionMode: async () => (await getSettings()).permissionMode ?? 'danger',
         confirmDanger: async (request): Promise<ApprovalDecision | null> => {
           const outsideDirs = [...new Set((request.outsideDirs ?? []).filter((p) => typeof p === 'string' && isAbsolute(p)).map((p) => dirname(resolve(p))))]
-          const rememberDirs = outsideDirs.filter((dir) => !isBroadAllowRoot(dir))
+          const rememberDirs = request.outsideTruncated ? [] : outsideDirs.filter((dir) => !isBroadAllowRoot(dir))
           const isPermission = request.kind === 'permission'
           const isDelete = request.kind === 'delete'
           const isShell = request.tool === 'bash' || request.tool === 'powershell'

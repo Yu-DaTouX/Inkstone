@@ -85,6 +85,7 @@ export async function runRepeatGuardTests(ok) {
     const blocked = call()
     ok(blocked?.block === true, '第 3 次相同调用、同样的结果被拦下')
     ok(typeof blocked.reason === 'string' && blocked.reason.includes('repeat guard'), '拦下带 reason（模型要能看懂为什么）')
+    ok(blocked.reason.includes('already ran 2 times') && blocked.reason.includes('this call was not run'), '拦截理由说清已执行次数，并说明这次没执行', blocked.reason)
     ok((await readCounter())?.blocks === 1, '拦下时累计计数 +1（宿主读这个文件）')
     ok((await readCounter())?.tool === 'bash', '计数文件里带上工具名（排障用）')
     ok(typeof handlers.session_start === 'function', '会话开始时要清理本会话的拦截计数')

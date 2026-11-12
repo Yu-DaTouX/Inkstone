@@ -23,6 +23,7 @@ function operationClass(request: GrantFields): string {
 
 export function sessionGrantKey(request: GrantFields): string | null {
   if (request.kind === 'move') return null
+  if (request.kind === 'outside' && !request.rememberDirs?.length) return null
   const dirs = [...(request.rememberDirs ?? [])].sort().join('\n')
   return `${request.kind}\u0000${request.tool}\u0000${dirs}\u0000${operationClass(request)}`
 }

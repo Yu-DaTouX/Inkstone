@@ -778,7 +778,7 @@ export function outsideWrites(toolName, input, cwd, prefs = {}) {
     else if (target === undefined) hits.push(`${shownTarget(raw)}${UNKNOWN_VARIABLE_NOTE}`)
     else if (target && !isInside(target, roots)) hits.push(target)
   }
-  return [...new Set(hits)].slice(0, 6)
+  return [...new Set(hits)]
 }
 
 const STRICT_PREFS = { mode: 'danger', outsideWrites: true, allowRoots: [] }
