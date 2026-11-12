@@ -54,7 +54,7 @@ const FOG_W = 160
 const FOG_H = 40
 const FOG_SPAN = 960
 const SKY_FALLBACK = 96
-const FLOOR_FALLBACK = 190
+const FLOOR_INSET = 190
 const INTERACTIVE = 'button, a, input, textarea, label, [role="dialog"], [role="menu"], [role="listbox"], [contenteditable="true"]'
 
 type Rgba = [number, number, number, number]
@@ -301,10 +301,9 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
   const measure = (): boolean => {
     const empty = host.parentElement?.querySelector<HTMLElement>('[data-testid="v3-empty"]') ?? null
     const sky = empty?.querySelector<HTMLElement>('[data-landscape-sky]')?.getBoundingClientRect()
-    const ground = empty?.querySelector<HTMLElement>('[data-landscape-floor]')?.getBoundingClientRect()
     hostRect = host.getBoundingClientRect()
     const nextSky = sky && sky.height > 0 ? Math.round(sky.bottom - hostRect.top + 12) : SKY_FALLBACK
-    const nextFloor = ground && ground.height > 0 ? Math.round(ground.top - hostRect.top) : height - FLOOR_FALLBACK
+    const nextFloor = height - FLOOR_INSET
     if (nextSky === skyTop && nextFloor === floor) return false
     skyTop = nextSky
     floor = nextFloor

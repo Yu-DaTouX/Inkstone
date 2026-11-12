@@ -7,7 +7,7 @@ export const meta = { description: '新会话山水日月：本地时钟位置�
 
 export default async function run({ cdp, newSession, box, runDir, fake, check, waitFor, sleep }) {
   assert.ok(resolve(box.sessionsDir).startsWith(resolve(runDir)))
-  const output = evidenceDir('2026-11-11-landscape-sky')
+  const output = evidenceDir('2026-11-12-landscape-composer')
   mkdirSync(output, { recursive: true })
   const prefix = String(Date.now())
   const rows = [{ type: 'session', version: 3, id: 'sky-usage-fixture', timestamp: new Date().toISOString(), cwd: box.project }]
@@ -28,9 +28,11 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
   await cdp.call('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Shanghai' })
   await ev(`(() => {
     const p=CanvasRenderingContext2D.prototype
-    const f=window.__skyFixture={now:Date.parse('2026-11-11T01:00:00Z'),realNow:Date.now,arc:p.arc,ellipse:p.ellipse,fill:p.fill,setInterval:window.setInterval,clearInterval:window.clearInterval,timers:[],draws:0,last:null}
+    const f=window.__skyFixture={now:Date.parse('2026-11-11T01:00:00Z'),realNow:Date.now,arc:p.arc,ellipse:p.ellipse,fill:p.fill,clearRect:p.clearRect,drawImage:p.drawImage,layers:[],setInterval:window.setInterval,clearInterval:window.clearInterval,timers:[],draws:0,last:null}
     Date.now=()=>f.now
     const isSky=ctx=>ctx.canvas===document.querySelector('[data-testid="v3-ascii-field"] canvas')
+    p.clearRect=function(...args){if(isSky(this)&&args[0]===0&&args[1]===0)f.layers=[];return f.clearRect.apply(this,args)}
+    p.drawImage=function(...args){if(isSky(this)&&args.length===3)f.layers.push([args[1],args[2],args[0].width,args[0].height]);return f.drawImage.apply(this,args)}
     p.arc=function(...args){if(isSky(this))f.last={arc:args,ellipse:null};return f.arc.apply(this,args)}
     p.ellipse=function(...args){if(isSky(this)&&f.last)f.last.ellipse=args;return f.ellipse.apply(this,args)}
     p.fill=function(...args){const result=f.fill.apply(this,args);if(isSky(this)&&f.last){f.draws++;const [x,y,r]=f.last.arc;f.last.leftLit=this.isPointInPath(x-r*0.9,y);f.last.rightLit=this.isPointInPath(x+r*0.9,y)}return result}
@@ -51,6 +53,49 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
       await sleep(100)
       return snapshot()
     }
+    const background = () => ev(`(() => {const host=document.querySelector('[data-testid="v3-ascii-field"]'),canvas=host.querySelector('canvas'),rect=host.getBoundingClientRect(),editor=document.querySelector('.ProseMirror'),ground=document.querySelector('[data-landscape-floor]');return {layers:window.__skyFixture.layers,height:rect.height,editor:editor.getBoundingClientRect().height,ground:ground.getBoundingClientRect().top,disc:window.__skyFixture.last.arc.slice(0,3)}})()`)
+    const sameBackground = (a,b) => a.layers.length===6&&JSON.stringify(a.layers)===JSON.stringify(b.layers)&&JSON.stringify(a.disc)===JSON.stringify(b.disc)&&a.height===b.height
+    const settleBackground = async () => {
+      await ev(`window.__yanStore.getState().patchSettings({reduceMotion:false});window.dispatchEvent(new Event('focus'))`)
+      await sleep(2400)
+      await ev(`window.__yanStore.getState().patchSettings({reduceMotion:true})`)
+      await sleep(100)
+    }
+    const clearEditor = async () => {
+      await ev(`document.querySelector('.ProseMirror').focus()`)
+      await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65})
+      await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65})
+      await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Backspace',code:'Backspace',windowsVirtualKeyCode:8})
+      await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Backspace',code:'Backspace',windowsVirtualKeyCode:8})
+      await sleep(650)
+    }
+    for (const theme of ['dark','light']) {
+      await ev(`window.__yanStore.getState().patchSettings({theme:${JSON.stringify(theme)}})`)
+      await settleBackground()
+      const short = await background()
+      await shot(`composer-short-${theme}`)
+      await ev(`document.querySelector('.ProseMirror').focus()`)
+      await cdp.call('Input.insertText',{text:Array.from({length:18},(_,i)=>`第${i+1}行：输入框增高时背景不应移动`).join('\n')})
+      await settleBackground()
+      const tall = await background()
+      check(`${theme} 多行输入确实增高输入框并抬起项目栏`,tall.editor>short.editor+80&&tall.ground<short.ground-80,{short:short.editor,tall:tall.editor,groundShift:tall.ground-short.ground})
+      check(`${theme} 输入框增高不改变山水层位置尺寸和日月坐标`,sameBackground(short,tall),{short:short.disc,tall:tall.disc})
+      await shot(`composer-tall-${theme}`)
+      await clearEditor()
+      await settleBackground()
+      check(`${theme} 清空输入恢复高度且背景保持原位`,sameBackground(short,await background())&&Math.abs((await background()).editor-short.editor)<2)
+      await ev(`window.__yanStore.getState().patchSettings({composerHeight:320})`)
+      await settleBackground()
+      check(`${theme} 手动加高输入框也不推动背景`,sameBackground(short,await background())&&(await background()).editor>short.editor+80)
+      await mode('none')
+      await waitFor(`!document.querySelector('[data-testid="v3-ascii-field"]')`)
+      await mode('ascii')
+      await settleBackground()
+      check(`${theme} 高输入框下重开背景仍使用同一页面锚点`,sameBackground(short,await background()))
+      await ev(`window.__yanStore.getState().patchSettings({composerHeight:undefined})`)
+      await settleBackground()
+    }
+    await ev(`window.__yanStore.getState().patchSettings({theme:'dark'})`)
     const morning = await time('2026-11-11T01:00:00Z')
     const noon = await time('2026-11-11T04:00:00Z')
     const afternoon = await time('2026-11-11T07:00:00Z')
@@ -91,11 +136,23 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
       }
     }
     await time('2026-11-17T15:00:00Z')
+    const wide = await snapshot()
     await cdp.call('Emulation.setDeviceMetricsOverride', {width:900,height:800,deviceScaleFactor:1,mobile:false})
     await sleep(250)
     const narrow = await snapshot()
     check('窄窗日月仍在背景边界内，不产生横向溢出', narrow.arc[0]-narrow.arc[2]>0&&narrow.arc[0]+narrow.arc[2]<narrow.width&&await ev('document.documentElement.scrollWidth<=innerWidth+1'))
+    check('实际窗口缩小时背景仍随页面尺寸自适应',narrow.width<wide.width&&narrow.height<wide.height)
     await shot('moon-narrow-dark')
+    const narrowShort = await background()
+    await ev(`document.querySelector('.ProseMirror').focus()`)
+    await cdp.call('Input.insertText',{text:Array.from({length:18},(_,i)=>`窄窗第${i+1}行`).join('\n')})
+    await settleBackground()
+    const narrowTall = await background()
+    check('窄窗输入框增高仍不推动山水和月亮',narrowTall.editor>narrowShort.editor+80&&sameBackground(narrowShort,narrowTall))
+    await shot('composer-tall-narrow-dark')
+    await clearEditor()
+    await settleBackground()
+    check('窄窗清空输入后背景不跳动',sameBackground(narrowShort,await background()))
     await cdp.call('Emulation.clearDeviceMetricsOverride')
 
     await time('2026-11-11T01:00:00Z')
@@ -127,7 +184,7 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
     check('重新打开背景不累积分钟时钟', (await snapshot()).timers===baselineTimers)
     check('未向真实或假模型发起请求', fake.requests.length===0)
   } finally {
-    await ev(`(() => {const f=window.__skyFixture;if(!f)return;Date.now=f.realNow;CanvasRenderingContext2D.prototype.arc=f.arc;CanvasRenderingContext2D.prototype.ellipse=f.ellipse;CanvasRenderingContext2D.prototype.fill=f.fill;window.setInterval=f.setInterval;window.clearInterval=f.clearInterval;delete document.visibilityState;delete window.__skyFixture})()`)
+    await ev(`(() => {const f=window.__skyFixture;if(!f)return;Date.now=f.realNow;CanvasRenderingContext2D.prototype.arc=f.arc;CanvasRenderingContext2D.prototype.ellipse=f.ellipse;CanvasRenderingContext2D.prototype.fill=f.fill;CanvasRenderingContext2D.prototype.clearRect=f.clearRect;CanvasRenderingContext2D.prototype.drawImage=f.drawImage;window.setInterval=f.setInterval;window.clearInterval=f.clearInterval;delete document.visibilityState;delete window.__skyFixture})()`)
     await cdp.call('Emulation.setTimezoneOverride', {timezoneId:''})
     await cdp.call('Emulation.clearDeviceMetricsOverride')
   }
