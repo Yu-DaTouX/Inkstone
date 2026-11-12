@@ -10,13 +10,14 @@ import { importUserData } from './lib/user-data.mjs'
 import { demoEnv, initializeDemo, prepareDemo } from './lib/demo.mjs'
 import { initializeCards, prepareCards } from './lib/card-gallery.mjs'
 import { scenarioContext } from './lib/scenario-context.mjs'
+import { applyNarrowPanels } from './lib/narrow-panels.mjs'
 
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(`--${name}`)
 const value = (name, fallback) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : fallback }
 const [scriptArg, outArg] = args.filter((arg, i) => !arg.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && ['timeout-min', 'days', 'real-model', 'include-sessions', 'env'].includes(args[i - 1].slice(2))))
 if (!scriptArg || !outArg) {
-  console.log('用法：node debug/review.mjs <审查脚本.mjs> <截图目录> [--demo] [--cards] [--no-user-data] [--days 7] [--include-sessions 片段,片段] [--timeout-min 8] [--real-model commandcode/deepseek/deepseek-v4.1-flash]')
+  console.log('用法：node debug/review.mjs <审查脚本.mjs> <截图目录> [--demo] [--cards] [--no-user-data] [--days 7] [--include-sessions 片段,片段] [--timeout-min 8] [--real-model commandcode/deepseek/deepseek-v4.1-flash] [--default-widths]（默认左栏、右栏、会话栏都用最窄宽度）')
   process.exit(1)
 }
 const script = resolve(scriptArg)
@@ -82,6 +83,10 @@ try {
   if (!(await ctx.until('true', 30000))) throw new Error('渲染端没有暴露 __yanStore')
   if (!(await ctx.until('s.conn === "ready"', 60000))) at('警告：60 秒内 conn 未 ready')
   at('store 就绪')
+  if (!flag('default-widths')) {
+    report.panelWidths = await applyNarrowPanels(cdp, ctx.until)
+    at('左右栏最窄 ' + JSON.stringify(report.panelWidths.applied))
+  }
   cdp.evaluate('window.yan.win.maximize()').catch(() => {})
   await ctx.until('innerWidth >= screen.availWidth - 40', 5000)
   let last = ''

@@ -7,6 +7,7 @@ import { FAKE_TRIGGERS, startFakeModel } from './lib/fake-model.mjs'
 import { createSandbox, sandboxEnv } from './lib/sandbox.mjs'
 import { importUserData } from './lib/user-data.mjs'
 import { demoEnv, initializeDemo, prepareDemo } from './lib/demo.mjs'
+import { applyNarrowPanels } from './lib/narrow-panels.mjs'
 import { initializeCards, prepareCards } from './lib/card-gallery.mjs'
 import { scenarioContext } from './lib/scenario-context.mjs'
 import { describeSamples, pickSamples, samplePaths } from './lib/sessions.mjs'
@@ -17,8 +18,8 @@ const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bu
 const HELP = `砚调试工具：npm run debug -- <命令> [参数]
 
 隔离实例（数据全在 debug/runs/<时间>-<名字>/，不碰真实数据、不抢单实例锁）
-  up [--demo] [--cards] [--dev] [--build] [--no-fake] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N]
-      起一个隔离实例并保持前台运行，Ctrl+C 或 down 结束
+  up [--demo] [--cards] [--dev] [--build] [--no-fake] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N] [--default-widths]
+      起一个隔离实例并保持前台运行，Ctrl+C 或 down 结束；左栏、右栏、会话栏默认都用最窄宽度
       --dev       用 electron-vite dev（渲染端热更新），默认跑 out/ 构建版
       --build     先 electron-vite build
       --no-fake   不配置假模型（在实例里自己登录模型）
@@ -123,6 +124,14 @@ async function cmdUp(flags) {
   if (current) throw new Error(`已有实例在跑（pid ${current.pid}，${current.runDir}），先 down`)
   const samples = samplePaths(flags.samples)
   const instance = await startInstance({ label: flags.demo ? `up-demo-${Date.now()}` : flags.cards ? 'up-cards' : flags.dev ? 'up-dev' : 'up', flags, samples })
+  if (!flags['default-widths']) {
+    const cdp = await connectCdp(instance.cdpPort, { shotDir: instance.runDir })
+    try {
+      await waitStore(cdp)
+      const { applied } = await applyNarrowPanels(cdp, storeHelpers(cdp).until)
+      console.log('左右栏最窄 ' + JSON.stringify(applied))
+    } finally { cdp.close() }
+  }
   const info = { pid: instance.app.child.pid, cdpPort: instance.cdpPort, fakePort: instance.fake?.port ?? null, runDir: instance.runDir, project: instance.box.project, dev: !!flags.dev, ...(instance.box.demo ? { demo: { project: instance.box.demo.project, secondProject: instance.box.demo.second, origin: instance.box.demo.origin, ghState: instance.box.demo.stateFile, coverage: join(instance.box.demo.dir, 'coverage.json'), reset: 'down 后再次 up --demo 会创建全新演示目录；旧目录保留' } } : {}), startedAt: new Date().toISOString() }
   writeFileSync(currentFile, JSON.stringify(info, null, 2))
   console.log(JSON.stringify(info, null, 2))
