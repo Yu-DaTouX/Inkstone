@@ -11,6 +11,7 @@ import {
   type ContextSlice
 } from '../../state/context-breakdown'
 import { redactCommandSecrets, stepDescription, toolTarget } from '../session/tool-title'
+import { splitSystem, sourcesTotal, type ContextSources, type SystemPartId } from '../../state/context-sources'
 
 const TOP_TOOL_CALLS = 8
 
@@ -26,6 +27,7 @@ export interface ContextUsageSummary {
   windowAssumed: boolean
   modelWindow: number
   cappedByLimit: boolean
+  compactAt: number | null
 }
 
 export interface ContextToolCall {
@@ -43,10 +45,15 @@ export interface AutoCompactDistance {
   remaining: number
 }
 
+export type ContextPartId = ContextSlice['id'] | SystemPartId | 'summary'
+export interface ContextPart { id: ContextPartId; tokens: number; approx?: boolean }
+
 export interface ContextPaneData {
   usage: ContextUsageSummary
   slices: ContextSlice[]
+  parts: ContextPart[]
   compacted: boolean
+  sources: ContextSources | null
 }
 
 interface ContextPaneInput {
@@ -55,6 +62,7 @@ interface ContextPaneInput {
   messages: readonly UIMessage[]
   autoCompactLimit?: number
   summaryTokens?: number
+  sources?: ContextSources | null
 }
 
 export function autoCompactLimitOf(
@@ -103,7 +111,8 @@ export function contextUsageSummary(
     afterCompactUnknown: matchesModel && usage?.tokens === null && !known,
     windowAssumed: !cappedByLimit && !!session?.model?.contextWindowAssumed && windowSize === session.model.contextWindow,
     modelWindow,
-    cappedByLimit
+    cappedByLimit,
+    compactAt: autoCompactLimit && modelWindow > 0 ? autoCompactAt(autoCompactLimit, modelWindow) : null
   }
 }
 
@@ -119,8 +128,8 @@ export function autoCompactDistance(
 ): AutoCompactDistance | null {
   if (!usage.known || autoCompactionEnabled === undefined) return null
   if (!autoCompactionEnabled) return { kind: 'off', remaining: Math.max(0, usage.modelWindow - usage.tokens) }
-  const remaining = Math.max(0, usage.windowSize - usage.tokens)
-  if (!usage.cappedByLimit) return { kind: 'window', remaining }
+  if (usage.compactAt === null) return { kind: 'window', remaining: Math.max(0, usage.windowSize - usage.tokens) }
+  const remaining = Math.max(0, usage.compactAt - usage.tokens)
   return { kind: remaining > 0 ? 'limit' : 'reached', remaining }
 }
 
@@ -191,10 +200,32 @@ export function contextPaneData(input: ContextPaneInput): ContextPaneData {
   const usage = contextUsageSummary(input.session, input.stats, input.autoCompactLimit)
   const compacted = !!contextFromOf(input.session)
   const range = contextRange(input, usage)
-  if (!range) return { usage, slices: [], compacted }
-  const system = measuredSystemTokens(range.settled)
+  const sources = input.sources ?? null
+  if (!range) return { usage, slices: [], parts: [], compacted, sources }
+  const measured = measuredSystemTokens(range.settled)
+  const system = measured > 0 ? measured : sourcesTotal(sources)
   const floor = system > 0 && compacted ? system + Math.max(0, input.summaryTokens ?? 0) : system
-  return { usage, slices: contextBreakdown(range.inContext, usage.tokens, floor), compacted }
+  const slices = contextBreakdown(range.inContext, usage.tokens, floor)
+  return { usage, slices, parts: contextParts(slices, sources, compacted, usage.estimated || measured <= 0), compacted, sources }
+}
+
+export function contextParts(slices: readonly ContextSlice[], sources: ContextSources | null, compacted: boolean, approx: boolean): ContextPart[] {
+  return slices.flatMap((slice): ContextPart[] => {
+    if (slice.id !== 'system') return [slice]
+    const split = splitSystem(slice.tokens, sources, compacted)
+    return split ? split.map((part) => (approx ? { ...part, approx } : part)) : [slice]
+  })
+}
+
+export interface ContextReserve { buffer: number | null; free: number }
+
+export function contextReserve(usage: ContextUsageSummary): ContextReserve {
+  if (usage.compactAt === null) return { buffer: null, free: Math.max(0, usage.windowSize - usage.tokens) }
+  const line = Math.min(usage.compactAt, usage.windowSize)
+  return {
+    buffer: Math.max(0, usage.windowSize - Math.max(line, usage.tokens)),
+    free: Math.max(0, line - usage.tokens)
+  }
 }
 
 export function contextPaneToolCalls(input: ContextPaneInput, limit = TOP_TOOL_CALLS): ContextToolCall[] {

@@ -1,12 +1,12 @@
-import type { ContextSlice } from '../../state/context-breakdown'
+import type { ContextPartId } from './context-pane-view'
 
 export const CELL_COLUMNS = 36
 export const CELL_ROWS = 6
 export const CELL_COUNT = CELL_COLUMNS * CELL_ROWS
 
-export type CellKind = ContextSlice['id'] | 'free'
+export type CellKind = ContextPartId | 'free'
 
-export function contextCells(slices: readonly Pick<ContextSlice, 'id' | 'tokens'>[], windowSize: number, count = CELL_COUNT): CellKind[] {
+export function contextCells(slices: readonly { id: ContextPartId; tokens: number }[], windowSize: number, count = CELL_COUNT): CellKind[] {
   if (windowSize <= 0 || count <= 0) return []
   const used = slices.filter((slice) => slice.tokens > 0)
   const exact = used.map((slice) => (slice.tokens / windowSize) * count)

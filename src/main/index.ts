@@ -668,6 +668,7 @@ const YAN_THIN_EXTENSION_FILES = {
   mcpAppProxyExtension: 'mcp-app-proxy.js',
   autoCompactExtension: 'auto-compact.js',
   contextCompactExtension: 'context-compact.js',
+  contextUsageExtension: 'context-usage.js',
   imageLabelsExtension: 'image-labels.js',
   nativeSessionExtension: 'native-session-bridge.js',
   repeatGuardExtension: 'repeat-guard.js',

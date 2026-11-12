@@ -59,7 +59,7 @@ import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { snapshotQueue } from './queue-items'
 import type { QueueRewriteResult } from './queue-edit'
 import { contextWindowAssumed } from './custom-providers'
-import { clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_STATE, measuredAfterCompaction, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
+import { attributeCompaction, clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_ORIGIN, EMPTY_COMPACTION_STATE, measuredAfterCompaction, projectTrustedFrom, reduceCompaction, type CompactionOrigin, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { androidAgentEnv } from './android/android-paths'
 import { projectPackageDirs } from './packages'
@@ -485,6 +485,7 @@ export class AgentController extends EventEmitter {
   private nativeConfigReader?: McpNativeConfigReader
   private autoCompactExtension?: string
   private contextCompactExtension?: string
+  private contextUsageExtension?: string
   private imageLabelsExtension?: string
   private repeatGuardExtension?: string
   private bundledSkills: string[] = []
@@ -548,9 +549,12 @@ export class AgentController extends EventEmitter {
     cwd: () => this.cwd
   })
 
+  private terminalTurnStop = new AbortController()
+
   private readonly terminalCommands = new TerminalAgentCommands(terminalAgentHost(), {
     ownerKeys: () => [this.state?.sessionFile, this.state?.sessionId].filter((key): key is string => typeof key === 'string' && key.length > 0),
     cwd: () => this.cwd,
+    turnSignal: () => this.terminalTurnStop.signal,
     confirm: async (request) => {
       const result = await this.runDangerConfirmCommand({ tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs })
       const feedback = result.summary.feedback
@@ -719,6 +723,7 @@ export class AgentController extends EventEmitter {
 
   private state: SessionState | null = null
   private compactionState: CompactionState = EMPTY_COMPACTION_STATE
+  private compactionOrigin: CompactionOrigin = EMPTY_COMPACTION_ORIGIN
   private retryRun: RetryRun | null = null
   private contextFrom: ContextFrom | undefined
   private timingContinues = false
@@ -792,6 +797,7 @@ export class AgentController extends EventEmitter {
     nativeConfigReader?: McpNativeConfigReader
     autoCompactExtension?: string
     contextCompactExtension?: string
+    contextUsageExtension?: string
     imageLabelsExtension?: string
     nativeSessionExtension?: string
     repeatGuardExtension?: string
@@ -872,6 +878,7 @@ export class AgentController extends EventEmitter {
     this.nativeConfigReader = opts.nativeConfigReader
     this.autoCompactExtension = opts.autoCompactExtension
     this.contextCompactExtension = opts.contextCompactExtension
+    this.contextUsageExtension = opts.contextUsageExtension
     this.imageLabelsExtension = opts.imageLabelsExtension
     this.nativeSessionExtension = opts.nativeSessionExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
@@ -1045,6 +1052,7 @@ export class AgentController extends EventEmitter {
         // 预测下一句和压缩扩展都要截取最终发出的请求体，必须排在所有 before_provider_request 改写者之后
         ...(this.promptSuggestionExtension ? ['--extension', this.promptSuggestionExtension] : []),
         ...(this.contextCompactExtension ? ['--extension', this.contextCompactExtension] : []),
+        ...(this.contextUsageExtension ? ['--extension', this.contextUsageExtension] : []),
         ...this.bundledSkills.flatMap((skill) => ['--skill', skill]),
         ...userSkillArgs.flatMap((skill) => ['--skill', skill]),
         ...projectPackageArgs,
@@ -3335,8 +3343,10 @@ export class AgentController extends EventEmitter {
     this.push({ ch: 'state', payload: this.state })
   }
 
-  private setCompaction(cur: CompactionState, evt: Record<string, unknown>): void {
-    const next = reduceCompaction(cur, evt)
+  private setCompaction(cur: CompactionState, raw: Record<string, unknown>): void {
+    const attributed = attributeCompaction(this.compactionOrigin, raw)
+    this.compactionOrigin = attributed.origin
+    const next = reduceCompaction(cur, attributed.evt)
     if (!next) return
     this.compactionState = next
     if (next.last !== cur.last) this.contextFrom = contextFromRun(next.last) ?? this.contextFrom
@@ -3816,6 +3826,8 @@ export class AgentController extends EventEmitter {
     }
     this.cancelImages()
     this.cancelApprovals?.(this.approvalOwner())
+    this.terminalTurnStop.abort()
+    this.terminalTurnStop = new AbortController()
     this.turn.terminal = 'stopped'
     const stoppingActive = this.streaming !== null || this.agentRunning || this.turn.startedMono !== undefined
     const stoppedAt = Date.now()
@@ -4291,12 +4303,14 @@ export class AgentController extends EventEmitter {
       return execution
     }
     let res: Awaited<ReturnType<PiRpc['command']>>
+    this.compactionOrigin = { ...this.compactionOrigin, manualRequests: this.compactionOrigin.manualRequests + 1 }
     try {
       res = await this.requireRpc().command('compact', payload, { timeoutMs: COMPACT_REQUEST_TIMEOUT_MS })
     } catch (err) {
       if (this.rpc?.running) this.operations.markUnknown(admission.lease)
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
+      this.compactionOrigin = { ...this.compactionOrigin, manualRequests: Math.max(0, this.compactionOrigin.manualRequests - 1) }
       this.operations.release(admission.lease)
       this.settleExecutionAdmission()
     }

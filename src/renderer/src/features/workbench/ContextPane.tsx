@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from 'react'
-import { useI18n, useT, type Lang, type MessageKey } from '../../i18n'
+import { useI18n, useT, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { UIMessage } from '../../../../shared/ipc'
-import type { ContextCategory } from '../../state/context-breakdown'
+import { CONTEXT_USAGE_STATUS_KEY, parseContextSources } from '../../state/context-sources'
+import { contextPartHint, contextPartLabel } from './context-parts'
 import {
+  compactionErrorTip,
   compactionGrowthText,
   compactionReclaimText,
   compactionSummary,
@@ -16,22 +18,14 @@ import {
   contextPaneData,
   contextPaneToolCalls,
   shortTokens,
+  type ContextPartId,
   type ContextToolCall
 } from './context-pane-view'
-import { CELL_COLUMNS, contextCells, type CellKind } from './context-cells'
-import { compactionReclaim, loadCompactionHistory, type CompactionHistoryItem, type CompactionHistoryLoad } from './context-compactions'
+import { CELL_COLUMNS, CELL_COUNT, contextCells, type CellKind } from './context-cells'
+import { compactionReclaim, loadCompactionHistory, withLastCompactionAfter, type CompactionHistoryItem, type CompactionHistoryLoad } from './context-compactions'
 import { contextPaneText, type ContextPaneText } from './context-pane-text'
 import type { ContextPaneProps } from './types'
 import './workbench.css'
-
-const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
-  system: 'ctx.cat.system',
-  user: 'ctx.cat.user',
-  assistant: 'ctx.cat.assistant',
-  thinking: 'ctx.cat.thinking',
-  tools: 'ctx.cat.tools',
-  free: 'ctx.cat.free'
-}
 
 const NO_MESSAGES: UIMessage[] = []
 const HISTORY_PREVIEW = 3
@@ -50,7 +44,11 @@ function historyDetail(item: CompactionHistoryItem, text: ContextPaneText): stri
     ? null
     : item.tokensAfter === undefined
       ? text.compactionBefore(shortTokens(item.tokensBefore))
-      : text.compactionTokens(shortTokens(item.tokensBefore), shortTokens(item.tokensAfter), compactionReclaim(item))
+      : text.compactionTokens(
+          shortTokens(item.tokensBefore),
+          `${item.afterEstimated ? '≈' : ''}${shortTokens(item.tokensAfter)}`,
+          item.afterEstimated ? null : compactionReclaim(item)
+        )
   const summary = item.summaryTokens > 0 ? text.compactionSummary(shortTokens(item.summaryTokens)) : null
   return [tokens, summary].filter(Boolean).join(' · ')
 }
@@ -88,7 +86,7 @@ function useCompactionHistory(visible: boolean, sessionId: string | null, reload
   return historyCache.get(sessionId) ?? null
 }
 
-function ContextCells({ cells, focus, compacting }: { cells: CellKind[]; focus: CellKind | null; compacting: boolean }): ReactElement {
+function ContextCells({ cells, focus, compacting, reserveFrom }: { cells: CellKind[]; focus: CellKind | null; compacting: boolean; reserveFrom: number | null }): ReactElement {
   return (
     <div
       className="wb-ctxw-field"
@@ -103,6 +101,7 @@ function ContextCells({ cells, focus, compacting }: { cells: CellKind[]; focus: 
           key={index}
           className={`wb-ctxw-cell c-${kind}`}
           data-lit={focus === kind ? '1' : undefined}
+          data-reserve={reserveFrom !== null && index >= reserveFrom ? '1' : undefined}
           style={{ '--cell-step': (index % CELL_COLUMNS) + Math.floor(index / CELL_COLUMNS) * 2 } as CSSProperties}
         />
       ))}
@@ -159,27 +158,36 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const messages = useStore((s) => (visible ? s.messages : NO_MESSAGES))
   const autoCompactTokens = useStore((s) => s.settings?.autoCompactTokens)
   const autoCompactLimit = autoCompactLimitOf(session, { autoCompactTokens })
+  const sourcesText = useStore((s) => (visible ? s.statuses[CONTEXT_USAGE_STATUS_KEY] : undefined))
+  const sources = useMemo(() => parseContextSources(sourcesText), [sourcesText])
 
   const sessionId = session?.sessionId ?? null
   const last = session?.lastCompaction
-  const historyKey = [last?.status ?? '', last?.endedAt ?? last?.startedAt ?? '', last?.entryId ?? '', session?.contextFrom?.firstKeptEntryId ?? ''].join(':')
+  const historyKey = [
+    last?.status ?? '',
+    last?.endedAt ?? last?.startedAt ?? '',
+    last?.entryId ?? '',
+    last?.afterTokens ?? '',
+    last?.afterMeasured ? 'm' : '',
+    session?.contextFrom?.firstKeptEntryId ?? ''
+  ].join(':')
   const history = useCompactionHistory(visible, sessionId, historyKey)
   const summaryTokens = history?.ok ? history.items[0]?.summaryTokens ?? 0 : 0
 
   const data = useMemo(
-    () => contextPaneData({ session, stats, messages, autoCompactLimit, summaryTokens }),
-    [session, stats, messages, autoCompactLimit, summaryTokens]
+    () => contextPaneData({ session, stats, messages, autoCompactLimit, summaryTokens, sources }),
+    [session, stats, messages, autoCompactLimit, summaryTokens, sources]
   )
   const toolCalls = useMemo(
     () => contextPaneToolCalls({ session, stats, messages, autoCompactLimit }),
     [session, stats, messages, autoCompactLimit]
   )
-  const { usage, slices, compacted } = data
+  const { usage, parts, compacted } = data
 
   const [showAllHistory, setShowAllHistory] = useState(false)
   const [focusKind, setFocusKind] = useState<CellKind | null>(null)
 
-  const [compactRun, setCompactRun] = useState<{ sessionId: string; pending: boolean; error: string } | null>(null)
+  const [compactRun, setCompactRun] = useState<{ sessionId: string; pending: boolean } | null>(null)
   const ownRun = compactRun && compactRun.sessionId === sessionId ? compactRun : null
   const running = !!(session?.isStreaming || session?.isAgentRunning)
   const compacting = !!session?.isCompacting || !!ownRun?.pending
@@ -187,33 +195,43 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
 
   const compactNow = (): void => {
     if (!sessionId || compactDisabled) return
-    setCompactRun({ sessionId, pending: true, error: '' })
-    void useStore.getState().compact().then(
-      (result) => setCompactRun({ sessionId, pending: false, error: result.ok ? '' : result.error || text.compactFailed }),
-      (error: unknown) => setCompactRun({ sessionId, pending: false, error: error instanceof Error ? error.message : text.compactFailed })
-    )
+    setCompactRun({ sessionId, pending: true })
+    const settle = (): void => setCompactRun({ sessionId, pending: false })
+    void useStore.getState().compact().then(settle, settle)
   }
 
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
-  const rows = usage.known ? slices.filter((s) => s.tokens > 0) : []
+  const rows = usage.known ? parts.filter((s) => s.tokens > 0) : []
   const focusRow = rows.find((row) => row.id === focusKind) ?? null
-  const rowLabel = (id: ContextCategory): string => t(id === 'system' && compacted ? 'ctx.cat.systemSummary' : CATEGORY_LABEL[id])
+  const rowLabel = (id: ContextPartId): string => t(contextPartLabel(id, compacted))
+  const rowHint = (id: ContextPartId, approx: boolean | undefined): string | undefined => {
+    const hint = contextPartHint(id)
+    return [hint ? t(hint) : '', approx ? t('ctx.hint.approx') : ''].filter(Boolean).join(' · ') || undefined
+  }
   const modelName = session?.model?.name || session?.model?.id || ''
 
-  const cells = useMemo(() => (usage.known ? contextCells(slices, usage.windowSize) : []), [usage.known, slices, usage.windowSize])
+  const cells = useMemo(() => (usage.known ? contextCells(parts, usage.windowSize) : []), [usage.known, parts, usage.windowSize])
   const limitNote = usage.cappedByLimit
     ? t('ctx.limitNote', { model: shortTokens(usage.modelWindow), limit: shortTokens(usage.windowSize) })
     : undefined
+  const reserveFrom = usage.known && usage.compactAt !== null && usage.compactAt < usage.windowSize
+    ? Math.round((usage.compactAt / usage.windowSize) * CELL_COUNT)
+    : null
+  const lineNote = reserveFrom !== null && usage.compactAt !== null ? text.lineHint(shortTokens(usage.compactAt)) : undefined
   const distance = autoCompactDistance(usage, session?.autoCompactionEnabled)
   const lastLine = last
-    ? [
-        compactionSummary(t, last),
-        compactionTokensText(last),
-        compactionReclaimText(t, last),
-        compactionGrowthText(t, last, usage.known ? usage.tokens : undefined)
-      ].filter(Boolean).join(' · ')
+    ? (last.status === 'completed'
+        ? [
+            compactionSummary(t, last),
+            compactionTokensText(last),
+            compactionReclaimText(t, last),
+            compactionGrowthText(t, last, usage.known ? usage.tokens : undefined)
+          ]
+        : [compactionSummary(t, last)]
+      ).filter(Boolean).join(' · ')
     : null
-  const historyItems = history?.ok ? history.items : null
+  const lastTip = last?.status === 'failed' ? compactionErrorTip(t, last.error) : undefined
+  const historyItems = useMemo(() => (history?.ok ? withLastCompactionAfter(history.items, last) : null), [history, last])
   const historyPending = visible && !!sessionId && !history
   const shownHistory = historyItems ? (showAllHistory ? historyItems : historyItems.slice(0, HISTORY_PREVIEW)) : []
   const unsettledLast = last && last.status !== 'completed' ? lastLine : null
@@ -226,7 +244,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
           {modelName ? <span className="wb-ctxw-model" title={modelName}>{modelName}</span> : null}
         </div>
         <div className="wb-ctxw-figure" title={limitNote}>
-          <span className="wb-ctxw-number" aria-hidden>{usage.known ? `${usage.estimated ? '≈' : ''}${shortTokens(focusRow ? focusRow.tokens : usage.tokens)}` : text.unknown}</span>
+          <span className="wb-ctxw-number" aria-hidden>{usage.known ? `${usage.estimated || focusRow?.approx ? '≈' : ''}${shortTokens(focusRow ? focusRow.tokens : usage.tokens)}` : text.unknown}</span>
           <span className="wb-ctxw-figure-label" aria-hidden>{focusRow ? rowLabel(focusRow.id) : text.used}</span>
           <span className="v3-visually-hidden" data-testid="v3-wb-ctx-tokens">
             {usage.known
@@ -242,13 +260,14 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
 
         {usage.known ? (
           <>
-            <ContextCells cells={cells} focus={focusKind} compacting={compacting} />
+            <ContextCells cells={cells} focus={focusKind} compacting={compacting} reserveFrom={reserveFrom} />
             <ul className="wb-ctxw-parts" data-testid="v3-wb-ctx-breakdown">
               {rows.map((r) => (
                 <li
                   key={r.id}
                   className="wb-ctxw-part"
-                  aria-label={`${rowLabel(r.id)} ${shortTokens(r.tokens)} (${Math.round(share(r.tokens))}%)`}
+                  aria-label={`${rowLabel(r.id)} ${r.approx ? '≈' : ''}${shortTokens(r.tokens)} (${Math.round(share(r.tokens))}%)`}
+                  title={rowHint(r.id, r.approx)}
                   data-active={focusKind === r.id ? '1' : undefined}
                   tabIndex={0}
                   onMouseEnter={() => setFocusKind(r.id)}
@@ -258,7 +277,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
                 >
                   <i className={`wb-ctxw-swatch c-${r.id}`} aria-hidden />
                   <span className="wb-ctxw-part-name">{rowLabel(r.id)}</span>
-                  <span className="wb-ctxw-part-num ui-num">{shortTokens(r.tokens)}</span>
+                  <span className="wb-ctxw-part-num ui-num">{`${r.approx ? '≈' : ''}${shortTokens(r.tokens)}`}</span>
                 </li>
               ))}
             </ul>
@@ -270,7 +289,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
         )}
 
         <div className="wb-ctxw-tray">
-          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitNote || text.distanceHint} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind}>
+          <span className="wb-ctxw-tray-text" role="status" aria-live="polite" title={limitNote || lineNote || text.distanceHint} data-testid="v3-wb-ctx-distance" data-kind={distance?.kind}>
             {compacting
               ? text.compacting
               : usage.afterCompactUnknown
@@ -298,11 +317,6 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
             {t('ctx.windowAssumed', { win: shortTokens(usage.windowSize) })}
           </p>
         ) : null}
-        {ownRun?.error ? (
-          <Notice tone="fail" compact title={text.compactFailed} data-testid="v3-wb-ctx-compact-error">
-            {ownRun.error === text.compactFailed ? null : ownRun.error}
-          </Notice>
-        ) : null}
       </div>
 
       {toolCalls.length ? (
@@ -315,7 +329,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
       <div className="wb-ctx-block">
         <h4 className="wb-ctx-subtitle">{text.compaction}</h4>
         {unsettledLast ? (
-          <p className="wb-ctx-record" data-testid="v3-wb-ctx-compaction">
+          <p className="wb-ctx-record" title={lastTip} data-status={last?.status} data-testid="v3-wb-ctx-compaction">
             {unsettledLast}
           </p>
         ) : null}
@@ -343,7 +357,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
             ) : null}
           </>
         ) : historyItems || unsettledLast || historyPending ? null : lastLine ? (
-          <p className="wb-ctx-record" data-testid="v3-wb-ctx-compaction">
+          <p className="wb-ctx-record" title={lastTip} data-testid="v3-wb-ctx-compaction">
             {lastLine}
           </p>
         ) : null}

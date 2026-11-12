@@ -3,6 +3,7 @@ import { Copy, Search } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PROMPT_SUGGESTION_STATUS_KEY } from '../composer/prompt-suggestion'
+import { CONTEXT_USAGE_STATUS_KEY } from '../../state/context-sources'
 import { CloseButton, EmptyState, IconButton, InputGroup, InputGroupAddon, InputGroupInput } from '../../ui'
 import { workbenchPaneText } from './pane-text'
 import type { LogsPaneProps } from './types'
@@ -18,7 +19,7 @@ export function LogsPane(_props: LogsPaneProps): ReactElement {
   const [filter, setFilter] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const statusEntries = Object.entries(statuses).filter(([key]) => key !== PROMPT_SUGGESTION_STATUS_KEY)
+  const statusEntries = Object.entries(statuses).filter(([key]) => key !== PROMPT_SUGGESTION_STATUS_KEY && key !== CONTEXT_USAGE_STATUS_KEY)
   const needle = filter.trim().toLowerCase()
   const visible = useMemo(() => {
     const tail = logs.slice(-TAIL)
