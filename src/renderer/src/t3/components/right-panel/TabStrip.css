@@ -2,19 +2,20 @@
   .t3-tab-strip {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--s-4);
     flex: 1;
     min-width: 0;
     height: 100%;
   }
   .t3-tab-strip__scroll {
-    flex: 1;
+    flex: 0 1 auto;
+    width: auto;
     min-width: 0;
   }
   .t3-tab-strip__track {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--s-4);
     width: max-content;
     min-width: 100%;
     height: 100%;
@@ -22,10 +23,17 @@
   .t3-tab-strip__tabs {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--s-4);
   }
-  .t3-tab-strip__add {
+  .t3-tab-strip__add,
+  .t3-tab-strip__all {
     flex-shrink: 0;
+  }
+  .t3-tab-strip__all {
+    gap: var(--s-2);
+    padding-inline: var(--s-6);
+    color: var(--fg2);
+    font-variant-numeric: tabular-nums;
   }
   .t3-tab-strip__menu {
     max-height: none;

@@ -273,6 +273,10 @@ export function moveSurface(entry: RightPanelEntry, id: string, toIndex: number)
   }, panelFocus(entry))
 }
 
+function evenGroups(groups: readonly RightPanelGroup[]): RightPanelGroup[] {
+  return groups.map((group) => (group.size === 1 ? group : { ...group, size: 1 }))
+}
+
 export function moveSurfaceToGroup(entry: RightPanelEntry, id: string, target: number, toIndex = Number.POSITIVE_INFINITY): RightPanelEntry {
   const groups = panelGroups(entry)
   const from = groupIndexOf(groups, id)
@@ -294,10 +298,8 @@ export function moveSurfaceToGroup(entry: RightPanelEntry, id: string, target: n
   )
   if (creating) {
     const insertAt = target < 0 ? 0 : groups.length
-    const size = groups[from].size / 2
-    next[from] = { ...next[from], size }
-    next.splice(insertAt, 0, { active: id, surfaces: [surface], size })
-    return withGroups(entry, next, insertAt, true)
+    next.splice(insertAt, 0, { active: id, surfaces: [surface], size: 1 })
+    return withGroups(entry, evenGroups(next), insertAt, true)
   }
   const dest = next[target]
   const surfaces = dest.surfaces.slice()
@@ -314,12 +316,11 @@ export function splitSurface(entry: RightPanelEntry, id: string): RightPanelEntr
   if (groups.length < PANEL_GROUPS_MAX && groups[from].surfaces.length > 1) {
     const gone = new Set([id])
     const surface = groups[from].surfaces.find((item) => item.id === id)!
-    const size = groups[from].size / 2
     const next = groups.map((group, at) =>
-      at === from ? { ...group, size, surfaces: group.surfaces.filter((item) => item.id !== id), active: neighborActive(group.surfaces, group.active, gone) } : group
+      at === from ? { ...group, surfaces: group.surfaces.filter((item) => item.id !== id), active: neighborActive(group.surfaces, group.active, gone) } : group
     )
-    next.splice(from + 1, 0, { active: id, surfaces: [surface], size })
-    return withGroups(entry, next, from + 1, true)
+    next.splice(from + 1, 0, { active: id, surfaces: [surface], size: 1 })
+    return withGroups(entry, evenGroups(next), from + 1, true)
   }
   if (from + 1 < groups.length) return moveSurfaceToGroup(entry, id, from + 1)
   return entry

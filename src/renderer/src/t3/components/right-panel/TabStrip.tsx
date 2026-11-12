@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react'
+import { ChevronDown, Plus } from 'lucide-react'
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -9,13 +9,13 @@ import {
   useState
 } from 'react'
 import { useOptionalT } from '@/i18n'
-import { IconButton, Kbd, Menu, MenuItem, MenuTrigger, Popover, ScrollArea } from '../../../ui'
+import { Button, Header, IconButton, Kbd, Menu, MenuItem, MenuSection, MenuTrigger, Popover, ScrollArea } from '../../../ui'
 import { cx } from '@/ui/cx'
 import {
   type LauncherAction,
   surfaceShortcutActionForKey
 } from './Launcher'
-import { TabChip, type TabSurface } from './TabChip'
+import { SurfaceIcon, TabChip, type TabSurface } from './TabChip'
 import './TabStrip.css'
 
 const TAB_SCROLL_EDGE_TOLERANCE = 1
@@ -27,6 +27,11 @@ function tabScrollViewport(root: HTMLDivElement | null): HTMLDivElement | null {
 
 function chipsOf(root: HTMLDivElement | null): HTMLElement[] {
   return [...(root?.querySelectorAll<HTMLElement>('[data-tab-id]') ?? [])]
+}
+
+function revealActiveChip(viewport: HTMLDivElement | null): void {
+  const active = viewport?.querySelector<HTMLElement>('[data-tab-id][data-active-tab="true"]')
+  active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 
 function labelButtonOf(chip: HTMLElement | null | undefined): HTMLButtonElement | null {
@@ -60,6 +65,21 @@ export interface TabStripProps {
 
 const TAB_DRAG_OUT_PX = 12
 
+function addMenuSections(actions: readonly LauncherAction[]): { reason: string | null; actions: LauncherAction[] }[] {
+  const sections: { reason: string | null; actions: LauncherAction[] }[] = [{ reason: null, actions: [] }]
+  for (const action of actions) {
+    if (action.available) {
+      sections[0].actions.push(action)
+      continue
+    }
+    const reason = action.disabledReason ?? ''
+    const section = sections.find((entry) => entry.reason === reason)
+    if (section) section.actions.push(action)
+    else sections.push({ reason, actions: [action] })
+  }
+  return sections.filter((section) => section.actions.length)
+}
+
 function AddSurfaceMenuAction(props: { action: LauncherAction }) {
   const { action } = props
   return (
@@ -68,7 +88,6 @@ function AddSurfaceMenuAction(props: { action: LauncherAction }) {
       textValue={action.label}
       icon={action.icon}
       isDisabled={!action.available}
-      disabledReason={action.disabledReason}
       shortcut={<Kbd>{action.shortcut}</Kbd>}
       aria-keyshortcuts={action.shortcut}
       onAction={action.onPick}
@@ -81,6 +100,7 @@ function AddSurfaceMenuAction(props: { action: LauncherAction }) {
 export function TabStrip(props: TabStripProps) {
   const t = useOptionalT()
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const stripRef = useRef<HTMLDivElement | null>(null)
   const [scroll, setScroll] = useState<TabScrollState>(NO_OVERFLOW)
   const [addMenuInternalOpen, setAddMenuInternalOpen] = useState(false)
   const addMenuOpen = props.addMenuOpen ?? addMenuInternalOpen
@@ -126,7 +146,13 @@ export function TabStrip(props: TabStripProps) {
       }
 
       const content = viewport.firstElementChild
-      const observer = new ResizeObserver(update)
+      let width = viewport.clientWidth
+      const observer = new ResizeObserver(() => {
+        update()
+        if (viewport.clientWidth === width) return
+        width = viewport.clientWidth
+        revealActiveChip(viewport)
+      })
       observer.observe(viewport)
       if (content) observer.observe(content)
       viewport.addEventListener('scroll', update, { passive: true })
@@ -145,8 +171,7 @@ export function TabStrip(props: TabStripProps) {
 
   useEffect(() => {
     if (!props.activeId || !scroll.hasOverflow) return
-    const active = chipsOf(rootRef.current).find((chip) => chip.dataset.activeTab === 'true')
-    active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    revealActiveChip(tabScrollViewport(rootRef.current))
   }, [props.activeId, scroll.hasOverflow, props.tabs.length])
 
   const focusTabAt = (index: number) => {
@@ -204,7 +229,7 @@ export function TabStrip(props: TabStripProps) {
     const startX = event.clientX
     let moved = false
 
-    const strip = rootRef.current?.getBoundingClientRect() ?? null
+    const strip = (stripRef.current ?? rootRef.current)?.getBoundingClientRect() ?? null
     const handleMove = (moveEvent: globalThis.PointerEvent) => {
       if (
         props.onDragOut &&
@@ -277,7 +302,7 @@ export function TabStrip(props: TabStripProps) {
   }, [addMenuOpen])
 
   return (
-    <div className={cx('t3-tab-strip', props.className)}>
+    <div ref={stripRef} className={cx('t3-tab-strip', props.className)}>
       <ScrollArea
         ref={attachTabList}
         hideScrollbars
@@ -309,22 +334,62 @@ export function TabStrip(props: TabStripProps) {
               />
             ))}
           </div>
-          {props.showAdd === false ? null : (
-            <MenuTrigger isOpen={addMenuOpen} onOpenChange={setAddMenuOpen}>
-              <IconButton data-t3-btn variant="ghost" size="md" aria-label={props.addLabel ?? t('panel.t3.addSurface')} className="t3-tab-strip__add" data-testid="rp-new-tab">
-                <Plus className="t3-icon--sm" />
-              </IconButton>
-              <Popover placement="bottom start" offset={6}>
-                <Menu autoFocus="first" className="t3-tab-strip__menu" aria-label={props.addLabel ?? t('panel.t3.addSurface')}>
-                  {props.actions.map((action) => (
-                    <AddSurfaceMenuAction key={action.kind} action={action} />
-                  ))}
-                </Menu>
-              </Popover>
-            </MenuTrigger>
-          )}
         </div>
       </ScrollArea>
+      {scroll.hasOverflow ? (
+        <MenuTrigger>
+          <Button
+            data-t3-btn
+            variant="ghost"
+            size="sm"
+            aria-label={t('panel.t3.allTabs', { count: props.tabs.length })}
+            tooltip={t('panel.t3.allTabs', { count: props.tabs.length })}
+            trailingIcon={<ChevronDown className="t3-icon--xs" />}
+            className="t3-tab-strip__all"
+            data-testid="rp-all-tabs"
+          >
+            {props.tabs.length}
+          </Button>
+          <Popover placement="bottom end" offset={6}>
+            <Menu
+              autoFocus
+              aria-label={t('panel.t3.allTabs', { count: props.tabs.length })}
+              selectionMode="single"
+              disallowEmptySelection
+              selectedKeys={props.activeId ? [props.activeId] : []}
+              onAction={(key) => props.onActivate(String(key))}
+              className="t3-tab-strip__all-menu"
+            >
+              {props.tabs.map((surface) => (
+                <MenuItem key={surface.id} id={surface.id} textValue={surface.label} checked="selection" icon={<SurfaceIcon surface={surface} />}>
+                  {surface.label}
+                </MenuItem>
+              ))}
+            </Menu>
+          </Popover>
+        </MenuTrigger>
+      ) : null}
+      {props.showAdd === false ? null : (
+        <MenuTrigger isOpen={addMenuOpen} onOpenChange={setAddMenuOpen}>
+          <IconButton data-t3-btn variant="ghost" size="md" aria-label={props.addLabel ?? t('panel.t3.addSurface')} className="t3-tab-strip__add" data-testid="rp-new-tab">
+            <Plus className="t3-icon--sm" />
+          </IconButton>
+          <Popover placement="bottom start" offset={6}>
+            <Menu autoFocus="first" className="t3-tab-strip__menu" aria-label={props.addLabel ?? t('panel.t3.addSurface')}>
+              {addMenuSections(props.actions).map((section, index) =>
+                section.reason === null ? (
+                  section.actions.map((action) => <AddSurfaceMenuAction key={action.kind} action={action} />)
+                ) : (
+                  <MenuSection key={`off:${index}`} id={`off:${index}`} className="t3-tab-strip__off">
+                    {section.reason ? <Header>{section.reason}</Header> : null}
+                    {section.actions.map((action) => <AddSurfaceMenuAction key={action.kind} action={action} />)}
+                  </MenuSection>
+                )
+              )}
+            </Menu>
+          </Popover>
+        </MenuTrigger>
+      )}
     </div>
   )
 }

@@ -121,7 +121,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         label: item.label,
         disabled: item.disabled,
         danger: item.danger,
-        separatorBefore: item.id === 'close-all',
+        separatorBefore: item.id === 'close-column' || (item.id === 'close-all' && !adapter.menu?.items.some((entry) => entry.id === 'close-column')),
         onSelect: () => {
           item.onSelect()
           closePanelMenu()
@@ -161,7 +161,7 @@ export function RightPanelT3({ owner, mode, room, dock, span, panes, windowContr
         />
         <span className="rp-tabbar-actions">
           {groups.length > 1 ? (
-            <IconButton data-t3-btn size="sm" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
+            <IconButton data-t3-btn size="sm" className="rp-close-column" aria-label={panel.closeColumn} tooltip={panel.closeColumn} data-testid={`rp-close-column-${index}`} onPress={() => useRightPanel.getState().closeGroup(index)}>
               <SquareX size={14} />
             </IconButton>
           ) : null}
@@ -316,9 +316,11 @@ function ColumnSplitter({ index, share, pairGrow, label }: { index: number; shar
     const right = root?.querySelector<HTMLElement>(`:scope > [data-rp-column="${index}"]`)
     return left && right ? [left, right] : null
   }
-  const clampShare = (leftPx: number, pair: number): number => {
+  const clampShare = (leftPx: number, pair: number, fromPx: number): number => {
     const min = Math.min(pair / 2, PANEL_GROUP_MIN_WIDTH)
-    return Math.min(pair - min, Math.max(min, leftPx)) / pair
+    const low = Math.min(min, fromPx)
+    const high = Math.max(pair - min, fromPx)
+    return Math.min(high, Math.max(low, leftPx)) / pair
   }
   const commit = (next: number): void => useRightPanel.getState().resizeGroups(index - 1, next)
   useEffect(() => () => cancelAnimationFrame(frame.current), [])
@@ -354,7 +356,7 @@ function ColumnSplitter({ index, share, pairGrow, label }: { index: number; shar
       onPointerMove={(event) => {
         const session = drag.current
         if (!session || session.pointerId !== event.pointerId) return
-        session.share = clampShare(session.startLeft + event.clientX - session.startX, session.pair)
+        session.share = clampShare(session.startLeft + event.clientX - session.startX, session.pair, session.startLeft)
         if (frame.current) return
         frame.current = requestAnimationFrame(() => {
           frame.current = 0
@@ -387,7 +389,7 @@ function ColumnSplitter({ index, share, pairGrow, label }: { index: number; shar
         event.preventDefault()
         const leftPx = pairEls[0].getBoundingClientRect().width
         const pair = leftPx + pairEls[1].getBoundingClientRect().width
-        commit(clampShare(leftPx + (event.key === 'ArrowLeft' ? -COLUMN_KEY_STEP_PX : COLUMN_KEY_STEP_PX), pair))
+        commit(clampShare(leftPx + (event.key === 'ArrowLeft' ? -COLUMN_KEY_STEP_PX : COLUMN_KEY_STEP_PX), pair, leftPx))
       }}
       onDoubleClick={() => commit(0.5)}
     />

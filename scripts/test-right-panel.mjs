@@ -202,6 +202,16 @@ export async function runRightPanelTests(ok) {
     ok(layout() === 'files|logs|browser' && rp.currentPanelEntry().focus === 0, '分列：多标签列的标签拖到左边缘新开一列', layout())
     const total = rp.panelGroups(rp.currentPanelEntry()).reduce((sum, g) => sum + g.size, 0)
     ok(Math.abs(total - 3) < 1e-6, '分列：列权重归一为列数，不会越拆越小', total)
+    ok(rp.panelGroups(rp.currentPanelEntry()).every((g) => Math.abs(g.size - 1) < 1e-6), '分列：新建列后各列均分，不把来源列对半切', rp.panelGroups(rp.currentPanelEntry()).map((g) => g.size))
+    store.getState().load('even')
+    store.getState().open(rp.toolSurface('browser'))
+    store.getState().open(rp.toolSurface('files'))
+    store.getState().open(rp.toolSurface('logs'))
+    store.getState().split('logs')
+    store.getState().resizeGroups(0, 0.8)
+    store.getState().activate('files')
+    store.getState().split('files')
+    ok(rp.panelGroups(rp.currentPanelEntry()).map((g) => g.size.toFixed(3)).join() === '1.000,1.000,1.000', '分列：已调过宽度后再拆，三列重新均分', rp.panelGroups(rp.currentPanelEntry()).map((g) => g.size))
     const dup = rp.sanitizeRightPanel({ version: 1, width: 900, byKey: { x: { open: true, focus: 5, groups: [{ active: 'files', surfaces: [{ kind: 'files' }], size: -1 }, { active: 'files', surfaces: [{ kind: 'files' }], size: 2 }] } }, order: ['x'] }).byKey.x
     ok(rp.panelGroups(dup).length === 1 && rp.panelGroups(dup)[0].size === 1 && dup.focus === 0, '存档：跨列重复标签与异常列宽被清理', dup)
   } finally {
