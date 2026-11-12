@@ -22,6 +22,7 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
   let frame = 0
   let pausedUntil = 0
   let resume = 0
+  let width = scroller.clientWidth
   const release = (): void => {
     if (target) target.style.minHeight = ''
     target = null
@@ -38,6 +39,12 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
     if (performance.now() < pausedUntil) {
       release()
       return
+    }
+    const scrollerWidth = scroller.clientWidth
+    if (Math.abs(scrollerWidth - width) > 0.5) {
+      width = scrollerWidth
+      target.style.minHeight = ''
+      written = ''
     }
     observer.observe(target)
     if (target.lastElementChild) observer.observe(target.lastElementChild)
