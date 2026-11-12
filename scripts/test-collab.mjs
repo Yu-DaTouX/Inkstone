@@ -188,8 +188,21 @@ const collabHost = createCollabHost({
   tempDir: hostTemp
 })
 
+const STALE_SOCKET_CODES = new Set(['ECONNRESET', 'UND_ERR_SOCKET', 'EPIPE'])
+async function localFetch(url, init) {
+  try {
+    return await fetch(url, init)
+  } catch (error) {
+    const code = error?.cause?.code
+    if (error instanceof Error) error.message = `${error.message}${code || error?.cause?.message ? `（${code ?? error.cause.message}）` : ''}`
+    if (!STALE_SOCKET_CODES.has(code) || init?.signal?.aborted) throw error
+    console.log(`  · 本机保活连接被对端关闭（${code}），重试一次：${new URL(url).pathname}`)
+    return fetch(url, init)
+  }
+}
+
 async function call(path, { token = peerToken, connection, method = 'GET', json, raw, headers = {} } = {}) {
-  const response = await fetch(base + path, {
+  const response = await localFetch(base + path, {
     method,
     headers: {
       ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -216,7 +229,7 @@ const collabCall = (connection, path, options = {}) => call(`/remote/v1/peer/col
 
 async function openStream(token, connection) {
   const controller = new AbortController()
-  const response = await fetch(`${base}/remote/v1/peer/events`, {
+  const response = await localFetch(`${base}/remote/v1/peer/events`, {
     headers: { authorization: `Bearer ${token}`, 'x-yan-connection': connection },
     signal: controller.signal
   })
@@ -976,7 +989,7 @@ try {
     async call(_peerId, path, init = {}) {
       transportLog.push({ kind: 'call', path, method: init.method ?? 'GET' })
       if (failRequests && path.endsWith('/requests')) return { ok: false, error: '模拟的网络故障' }
-      const response = await fetch(base + path, {
+      const response = await localFetch(base + path, {
         method: init.method ?? 'GET',
         headers: { ...authHeaders(), ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}) },
         body: init.body === undefined ? undefined : JSON.stringify(init.body)
@@ -987,7 +1000,7 @@ try {
     },
     async download(_peerId, path, body, file) {
       transportLog.push({ kind: 'download', path })
-      const response = await fetch(base + path, {
+      const response = await localFetch(base + path, {
         method: 'POST',
         headers: { ...authHeaders(), 'content-type': 'application/json' },
         body: JSON.stringify(body)
@@ -1004,7 +1017,7 @@ try {
     async upload(_peerId, path, file) {
       transportLog.push({ kind: 'upload', path, hadFile: file !== null })
       const body = file ? await readFile(file) : undefined
-      const response = await fetch(base + path, {
+      const response = await localFetch(base + path, {
         method: 'POST',
         headers: { ...authHeaders(), 'content-type': 'application/octet-stream' },
         body

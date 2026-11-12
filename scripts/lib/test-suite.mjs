@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
@@ -19,7 +18,7 @@ export async function runSuite(url, run) {
     console.log(`  ✓ ${label}`)
   }
   const compile = async (entry, options) => {
-    const dir = await mkdtemp(join(tmpdir(), 'inkstone-test-build-'))
+    const dir = await mkdtemp(resolve('node_modules/.inkstone-test-build-'))
     dirs.push(dir)
     const outfile = join(dir, 'module.mjs')
     await buildTest(entry, outfile, options)
