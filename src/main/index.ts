@@ -154,6 +154,7 @@ import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { smoothTextEnabledSync } from './early-switches'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
+import { fillNativeMcpDescriptions } from './mcp/native-describe'
 import { armProbeRun, armProbeShots } from './probe-hooks'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { extensionDiagnostics } from './extensions-inventory'
@@ -3773,6 +3774,7 @@ app.whenReady().then(async () => {
   installDefaultSessionPermissions()
   void primeCachedTitles().catch(() => undefined)
   void bundledPlugins.startInstalled().catch((error) => reportMainError('plugins-startup', error))
+  void fillNativeMcpDescriptions(join(PI_AGENT_DIR, 'mcp.json')).catch((error) => reportMainError('mcp-describe', error))
   trayLanguage = (await getSettings()).lang
   ensureTrayAssets()
   attention?.ensureTray()
