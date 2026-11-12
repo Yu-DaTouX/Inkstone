@@ -106,6 +106,7 @@ export const FAKE_TRIGGERS = {
   REPORTDEMO: '一段三层字色的汇报（主体、*附带说明*、**需要注意**），用来看汇报字色',
   MANYTOOLS: '连续 40 步，每步一句话加一次 bash 工具调用',
   BIGOUT: '一次 bash 输出 6000 行，期间分段停顿',
+  'READFILE=<路径>': '用 read 工具读指定文件的 40 行（READOFFSET=<n> 从第 n 行读），用来看读取结果的显示与高亮',
   WRITES: '用 write 工具新建两个文件（notes/a.md、notes/b.md），再流出一句答复，用来看运行结束时的改动卡',
   FAIL: '返回 502，用来看模型错误与重试；FAILQUOTA 429 额度用完，FAILAUTH 401，FAILHTML 503 网关错页，FAILNET 断开连接，FAILHANG 不响应，FAILFLAKY 前两次 502 之后成功，FAILMID 流到一半断开',
   APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
@@ -273,6 +274,11 @@ async function respond(res, text, done, requestNo) {
         if (step.text) await streamText(step.text, 6, 30)
         await callTool('bash', { command: step.command, description: step.description }, step.slowArgs ? 300 : 5)
       } else await streamText(flowAnswer(text.includes('SHORT')), 16, 25)
+    } else if (/READFILE=\S+/.test(text)) {
+      const path = /READFILE=(\S+)/.exec(text)[1]
+      const offset = Number(/READOFFSET=(\d+)/.exec(text)?.[1] ?? 0)
+      if (done < 1) await callTool('read', offset ? { path, offset, limit: 40 } : { path, limit: 40 })
+      else await streamText('读完了。', 6, 30)
     } else if (text.includes('WRITES')) {
       if (done < 2) await callTool('write', { path: `notes/${done ? 'b' : 'a'}.md`, content: Array.from({ length: 6 + done * 4 }, (_, i) => `第 ${i + 1} 行`).join('\n') + '\n' })
       else await streamText('两个文件都写好了。', 6, 30)

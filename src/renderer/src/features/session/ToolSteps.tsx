@@ -383,7 +383,7 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
             <section className="v3-step-sec" data-sec="output">
               {argsShown ? <div className="v3-step-sec-head">{tt('detailOutput')}</div> : null}
               {yan ? <YanSummaryList summaries={yan.summaries} /> : null}
-              {body ? <StepOutput text={body} error={failed || !!call.cancelled} tail={kind !== 'result' || failed} /> : null}
+              {body ? <StepOutput text={body} error={failed || !!call.cancelled} tail={kind !== 'result' || failed} lang={readPath && !failed ? languageOf(readPath) : null} /> : null}
               <OutputNotes view={view} />
             </section>
           ) : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}
@@ -455,7 +455,7 @@ function YanSummaryList({ summaries }: { summaries: readonly YanSummary[] }): JS
   )
 }
 
-function StepOutput({ text, error = false, tail = false }: { text: string; error?: boolean; tail?: boolean }): JSX.Element {
+function StepOutput({ text, error = false, tail = false, lang = null }: { text: string; error?: boolean; tail?: boolean; lang?: string | null }): JSX.Element {
   const tt = useSessionText()
   const [expanded, setExpanded] = useState(false)
   const preRef = useRef<HTMLPreElement>(null)
@@ -488,7 +488,7 @@ function StepOutput({ text, error = false, tail = false }: { text: string; error
             <span className="v3-step-out-lead">{cut < 0 ? shown : shown.slice(0, cut)}</span>
             {cut < 0 ? null : shown.slice(cut)}
           </>
-        ) : shown}
+        ) : lang ? <HighlightedCode code={shown} lang={lang} /> : shown}
       </pre></AnimatedHeight>
     </>
   )

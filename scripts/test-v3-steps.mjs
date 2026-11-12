@@ -814,6 +814,12 @@ async function main() {
     const path = byTestId(detail.tree, 'v3-step-read-path')
     ok(textOf(path).includes('r3.md') && textOf(path).includes('105–199 行'), '路径行带行范围', textOf(path))
     ok(!textOf(detail.tree).includes('"path"'), '不再显示 JSON 参数')
+    const readOut = renderSub(detail.tree, 'StepOutput')
+    const readHl = byTypeName(readOut.tree, 'HighlightedCode')[0]
+    ok(readOut.el.props.lang === 'md' && readHl && readHl.props.code === 'x' && readHl.props.lang === 'md', '读取内容按扩展名高亮', readOut.el.props)
+    const { detail: failedRead } = openDetail(tool({ id: 'rf', name: 'read', args: { path: 'a.ts' }, output: 'ENOENT: no such file', status: 'error' }))
+    const failedOut = renderSub(failedRead.tree, 'StepOutput')
+    ok(!failedOut.el.props.lang && byTypeName(failedOut.tree, 'HighlightedCode').length === 0, '读取失败的报错不高亮', failedOut.el.props)
   }
 
   group('#9 写文件：没有 diff 时显示内容前 40 行与总行数，可展开')
