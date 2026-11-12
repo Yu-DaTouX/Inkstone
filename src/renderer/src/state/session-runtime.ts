@@ -187,12 +187,13 @@ export function patchArtifact(list: UIMessage[], messageId: string, artifact: No
   return out
 }
 
-function patchTool(list: UIMessage[], msgId: string, call: UIToolCall, outputDelta?: string): UIMessage[] {
+function patchTool(list: UIMessage[], msgId: string, call: UIToolCall, outputDelta?: string, sameArgs?: boolean): UIMessage[] {
   const index = list.findIndex((message) => message.id === msgId)
   if (index < 0) return list
   const current = list[index]
+  const callIndex = (current.toolCalls ?? []).findIndex((item) => item.id === call.id)
+  if (callIndex < 0 && sameArgs) return list
   const calls = (current.toolCalls ?? []).slice()
-  const callIndex = calls.findIndex((item) => item.id === call.id)
   if (callIndex < 0) {
     calls.push(outputDelta === undefined ? call : { ...call, output: outputDelta })
   } else {
@@ -244,7 +245,7 @@ export function reduceSessionRuntime(
     case 'tool':
       next = {
         ...next,
-        messages: patchTool(next.messages, message.payload.msgId, message.payload.call, message.payload.outputDelta)
+        messages: patchTool(next.messages, message.payload.msgId, message.payload.call, message.payload.outputDelta, message.payload.sameArgs)
       }
       break
     case 'state':

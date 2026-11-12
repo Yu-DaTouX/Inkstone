@@ -1671,6 +1671,9 @@ export const useStore = create<Store>((rawSet, get) => {
           const merged: UIToolCall = { ...base, ...call }
           if (outputDelta) merged.output = (base.output ?? '') + outputDelta
           calls[i] = merged
+        } else if (m.payload.sameArgs) {
+          requestViewResync('tool-target-missing')
+          break
         } else {
           calls.push(outputDelta ? { ...call, output: outputDelta } : call)
         }

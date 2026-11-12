@@ -1169,6 +1169,7 @@ export interface ToolPatch {
   msgId: string
   call: UIToolCall
   outputDelta?: string
+  sameArgs?: boolean
 }
 
 export type MessagePatch = Partial<UIMessage> & {

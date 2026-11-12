@@ -738,6 +738,7 @@ export class AgentController extends EventEmitter {
   private dirtyTools = new Set<string>()
   private pushedOut = new Map<string, number>()
   private pushedOutText = new Map<string, string>()
+  private pushedArgs = new Map<string, unknown>()
   private htmlArgsPushedAt = new Map<string, number>()
 
   private state: SessionState | null = null
@@ -1349,6 +1350,7 @@ export class AgentController extends EventEmitter {
     this.messages = nextMessages
     this.pushedOut.clear()
     this.pushedOutText.clear()
+    this.pushedArgs.clear()
 
     this.pushSessionSync(scopeBefore, syncedBefore)
     this.pushQuestionLog()
@@ -3139,6 +3141,7 @@ export class AgentController extends EventEmitter {
       if (!call) {
         this.pushedOut.delete(id)
         this.pushedOutText.delete(id)
+        this.pushedArgs.delete(id)
         continue
       }
       const pushed = this.pushedOut.get(id) ?? 0
@@ -3150,16 +3153,20 @@ export class AgentController extends EventEmitter {
       if (!msgId) continue
       this.pushedOut.set(id, out.length)
       this.pushedOutText.set(id, out)
+      const sameArgs = this.pushedArgs.has(id) && this.pushedArgs.get(id) === call.args
+      this.pushedArgs.set(id, call.args)
       if (mode === 'replace') {
         this.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
         continue
       }
+      const { args: _args, output: _output, ...rest } = call
       this.push({
         ch: 'tool',
         payload: {
           msgId,
-          call: { ...call, output: undefined },
-          outputDelta: out.slice(pushed)
+          call: sameArgs ? (rest as UIToolCall) : { ...call, output: undefined },
+          outputDelta: out.slice(pushed),
+          ...(sameArgs ? { sameArgs: true } : {})
         }
       })
     }
@@ -4195,6 +4202,7 @@ export class AgentController extends EventEmitter {
       for (const c of msg.toolCalls ?? []) {
         this.pushedOut.set(c.id, c.output?.length ?? 0)
         this.pushedOutText.delete(c.id)
+        this.pushedArgs.delete(c.id)
         this.dirtyTools.delete(c.id)
       }
       this.push({ ch: 'msg-update', payload: { id: s.id, patch: msg } })
@@ -5313,6 +5321,7 @@ export class AgentController extends EventEmitter {
     this.dirtyTools.clear()
     this.pushedOut.clear()
     this.pushedOutText.clear()
+    this.pushedArgs.clear()
     this.ui.rejectPendingHostUi('会话已关闭，问题请求已取消')
     this.ui.discardPending()
     await settleWithin(mcpClosing, stopRemaining())
