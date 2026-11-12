@@ -1,4 +1,4 @@
-import { readFile, rename, rm } from 'node:fs/promises'
+import { readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { atomicWriteFile } from './sync/atomic'
@@ -146,6 +146,21 @@ export function loadQueue(sessionId: string): Promise<PersistedQueue | null> {
 export function clearQueueFile(sessionId: string): Promise<void> {
   if (!sessionId) return Promise.resolve()
   return serialize(sessionId, () => rm(queueFile(sessionId), { force: true }))
+}
+
+export const RECLAIMED_QUEUE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
+export async function pruneReclaimedQueues(now = Date.now()): Promise<number> {
+  const names = await readdir(QUEUE_RECOVERY_DIR).catch(() => [] as string[])
+  let removed = 0
+  for (const name of names) {
+    if (!name.endsWith('.json.reclaimed')) continue
+    const path = join(QUEUE_RECOVERY_DIR, name)
+    const info = await stat(path).catch(() => null)
+    if (!info?.isFile() || now - info.mtimeMs < RECLAIMED_QUEUE_MAX_AGE_MS) continue
+    await rm(path, { force: true }).then(() => { removed++ }, () => undefined)
+  }
+  return removed
 }
 
 export function keepReclaimedQueue(sessionId: string): Promise<void> {

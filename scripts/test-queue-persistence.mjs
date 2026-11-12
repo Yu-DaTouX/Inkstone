@@ -36,7 +36,7 @@ await build({
   logLevel: 'silent'
 })
 const queue = await import(pathToFileURL(outfile).href)
-const { QUEUE_RECOVERY_DIR, saveQueue, loadQueue, clearQueueFile, keepReclaimedQueue } = queue
+const { QUEUE_RECOVERY_DIR, saveQueue, loadQueue, clearQueueFile, keepReclaimedQueue, pruneReclaimedQueues, RECLAIMED_QUEUE_MAX_AGE_MS } = queue
 const fileOf = (sessionId) => join(QUEUE_RECOVERY_DIR, `${sessionId}.json`)
 
 process.stdout.write('▌排队消息落盘与读回\n')
@@ -175,6 +175,22 @@ await check('保存与清除交替时按调用顺序生效', async () => {
   await saveQueue({ sessionId: 'session-order', followUp: ['再新'] })
   await clearQueueFile('session-order')
   assert.equal(await loadQueue('session-order'), null)
+})
+
+await check('回填过的 .reclaimed 备份 30 天后清掉，新的与待恢复文件不动', async () => {
+  const { utimes } = await import('node:fs/promises')
+  await mkdir(QUEUE_RECOVERY_DIR, { recursive: true })
+  const old = join(QUEUE_RECOVERY_DIR, 'old.json.reclaimed')
+  const fresh = join(QUEUE_RECOVERY_DIR, 'fresh.json.reclaimed')
+  const live = join(QUEUE_RECOVERY_DIR, 'live.json')
+  for (const file of [old, fresh, live]) await writeFile(file, '{}')
+  const past = new Date(Date.now() - RECLAIMED_QUEUE_MAX_AGE_MS - 60_000)
+  await utimes(old, past, past)
+  await utimes(live, past, past)
+  assert.equal(await pruneReclaimedQueues(), 1)
+  assert.equal(existsSync(old), false)
+  assert.equal(existsSync(fresh), true)
+  assert.equal(existsSync(live), true)
 })
 
 process.stdout.write(`\n排队消息持久化：${report.pass} 通过 / ${report.fail} 失败\n`)

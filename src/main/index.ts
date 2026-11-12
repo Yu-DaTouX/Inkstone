@@ -149,7 +149,7 @@ import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isol
 import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
 import { localCommandDescriptors } from './command-registry'
 import { clearExitSnapshot, pickRestoreRunner, readExitSnapshot, writeExitSnapshot } from './exit-snapshot'
-import { QUEUE_RECOVERY_DIR } from './queue-persistence'
+import { QUEUE_RECOVERY_DIR, pruneReclaimedQueues } from './queue-persistence'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { smoothTextEnabledSync } from './early-switches'
@@ -2055,6 +2055,7 @@ function queueSubagentRun(run: Extract<MainPush, { ch: 'subagent' }>['payload'])
 }
 
 async function reclaimQueuedMessages(): Promise<void> {
+  void pruneReclaimedQueues().catch(() => undefined)
   const pending = await readdir(QUEUE_RECOVERY_DIR).catch(() => [] as string[])
   if (!pending.some((name) => name.endsWith('.json'))) return
   for (let attempt = 0; attempt < 20; attempt += 1) {

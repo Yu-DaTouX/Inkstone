@@ -71,6 +71,7 @@ function wrapUpMessage(text: string): string {
   return `【宿主提示】${text}。不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。`
 }
 const MAX_TRANSCRIPT = 200
+const MAX_FINISHED_IN_MEMORY = 200
 const ABORT_TIMEOUT_MS = 5_000
 
 async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<{ ok: boolean; errors: string[] }> {
@@ -1357,6 +1358,22 @@ export class SubagentController {
         this.opts.onFinished?.(this.snapshot(run))
       } catch {
       }
+    }
+    this.trimFinished()
+  }
+
+  private trimFinished(): void {
+    const finished = [...this.runs.values()].filter((run) =>
+      run.status !== 'running' && run.status !== 'starting' && run.notified &&
+      run.reviewDecided && run.worktreeDone && run.review !== 'pending' && run.review !== 'conflict' &&
+      !this.resuming.has(run.id) && !this.reviewing.has(run.id) && !!this.history.get(run.id))
+    let excess = finished.length - MAX_FINISHED_IN_MEMORY
+    if (excess <= 0) return
+    for (const run of finished.sort((a, b) => (a.endedAt ?? a.startedAt) - (b.endedAt ?? b.startedAt))) {
+      if (excess-- <= 0) break
+      clearTimeout(run.pushTimer)
+      this.runs.delete(run.id)
+      this.pushedTranscript.delete(run.id)
     }
   }
 

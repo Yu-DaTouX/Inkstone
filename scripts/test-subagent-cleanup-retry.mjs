@@ -54,6 +54,7 @@ try {
   controller.opts = {}
   controller.emit = () => {}
   controller.writeMetadata = async () => {}
+  controller.runs = new Map()
   globalThis.cleanupCalls = 0
   const run = { id: 'fixture', status: 'done', workspace: { rootCwd: root }, isolation: 'worktree', review: 'none' }
   await controller.finalizeOnce(run, false)
