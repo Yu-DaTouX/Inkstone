@@ -41,8 +41,6 @@ import { paramNumber, paramString } from '../command-params'
 export interface CapabilityAcquisitionHost {
   capabilityOpts(): CapabilityRunOptions | undefined
   cwd(): string
-  mcpManager(): McpConnectionManager | undefined
-  resetMcpManager(): void
   mcpConfigError(): string | undefined
   mcpConnectionManager(): McpConnectionManager
   rawCommands(): Promise<RawSkillCommand[]>

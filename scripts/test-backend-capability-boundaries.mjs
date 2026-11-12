@@ -150,7 +150,7 @@ function agentWith(manager, permissionMode = 'all') {
   agent.rpcInstanceId = 'fixture-owner'
   agent.capabilityOpts = { runnerGeneration: 1 }
   agent.getPermissionMode = async () => permissionMode
-  agent.mcpConnectionManager = () => manager
+  agent.mcp = { connectionManager: () => manager, configError: () => undefined }
   return agent
 }
 function managerWith(callTool, readOnly = true) {
@@ -224,37 +224,38 @@ await test('回收站对目录外批量操作先审批，拒绝或无通道均�
   const moved = []
   const agent = agentWith(null, 'danger')
   agent.capabilityOpts.trashItem = async path => { moved.push(path) }
-  await assert.rejects(agent.runFileTrashCommand({ paths: ['file.txt', outside] }), { code: 'trash_outside_denied' })
+  const trash = (params, signal) => agent.runCapabilityCommand('file.trash', params, signal)
+  await assert.rejects(trash({ paths: ['file.txt', outside] }), { code: 'trash_outside_denied' })
   assert.deepEqual(moved, [])
   let asked = 0
   agent.confirmDanger = async request => { asked++; assert.deepEqual(request.outsideDirs, [outside]); return { decision: 'deny' } }
-  await assert.rejects(agent.runFileTrashCommand({ path: outside }), { code: 'trash_outside_denied' })
+  await assert.rejects(trash({ path: outside }), { code: 'trash_outside_denied' })
   assert.equal(asked, 1)
   assert.deepEqual(moved, [])
   agent.confirmDanger = async () => ({ decision: 'allow' })
-  await agent.runFileTrashCommand({ path: outside })
+  await trash({ path: outside })
   assert.deepEqual(moved, [outside])
   agent.confirmDanger = async () => assert.fail('项目内文件不应审批')
-  await agent.runFileTrashCommand({ path: 'file.txt' })
+  await trash({ path: 'file.txt' })
   await mod.patchSettings({ guardAllowRoots: [join(root, 'outside')] })
-  await agent.runFileTrashCommand({ path: outside })
+  await trash({ path: outside })
   await mod.patchSettings({ guardAllowRoots: [] })
   agent.getPermissionMode = async () => 'all'
-  await agent.runFileTrashCommand({ path: outside })
+  await trash({ path: outside })
 })
 await test('回收站识别项目内目录链接指向的目录外文件', async () => {
   const link = join(project, 'linked-outside')
   await symlink(join(root, 'outside'), link, process.platform === 'win32' ? 'junction' : 'dir')
   const agent = agentWith(null, 'danger')
   agent.capabilityOpts.trashItem = async () => assert.fail('目录链接不能绕过目录外保护')
-  await assert.rejects(agent.runFileTrashCommand({ path: join(link, 'file.txt') }), { code: 'trash_outside_denied' })
+  await assert.rejects(agent.runCapabilityCommand('file.trash', { path: join(link, 'file.txt') }), { code: 'trash_outside_denied' })
 })
 await test('取消回收站审批后不会移动文件', async () => {
   const agent = agentWith(null, 'danger')
   agent.capabilityOpts.trashItem = async () => assert.fail('已取消操作不能移动文件')
   const cancel = new AbortController()
   agent.confirmDanger = async () => { cancel.abort(); return { decision: 'allow' } }
-  await assert.rejects(agent.runFileTrashCommand({ path: outside }, cancel.signal), error => error.name === 'AbortError')
+  await assert.rejects(agent.runCapabilityCommand('file.trash', { path: outside }, cancel.signal), error => error.name === 'AbortError')
 })
 
 const skillRoot = join(root, 'skills')

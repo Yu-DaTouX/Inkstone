@@ -41,7 +41,7 @@ try {
     const { agent, pushes, calls } = makeAgent()
     const title = deferred(), closing = deferred()
     globalThis.__titleFixture = title
-    agent.mcpManager = { close: () => closing.promise }
+    agent.mcp.manager = { close: () => closing.promise }
     const pendingTitle = agent.maybeGenerateTitle({ force: true })
     const pendingStop = agent.stop()
     assert.ok(agent.rpc, 'stop仍在等待资源关闭，不能只靠rpc是否为空守卫')

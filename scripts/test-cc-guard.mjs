@@ -44,9 +44,9 @@ try {
   const {AgentController}=await import(pathToFileURL(resolve('out/test/cc-guard-host.mjs')))
   const reviewed=[];const host=new AgentController({cwd:root,push:()=>{},getPermissionMode:async()=> 'danger',confirmDanger:async input=>{reviewed.push(input);return {decision:'allow'}}})
   const detail=JSON.stringify({prompt:'x'.repeat(3000),model:'haiku',mode:'full'})
-  assert.equal((await host.runDangerConfirmCommand({tool:'AskClaude',detail,reasons:['Opaque delegation']})).summary.allowed,true)
+  assert.equal((await host.runCapabilityCommand('danger.confirm',{tool:'AskClaude',detail,reasons:['Opaque delegation']})).summary.allowed,true)
   assert.equal(reviewed[0].detail,detail,'host preserves the entire delegation, including model and mode')
-  assert.equal((await host.runDangerConfirmCommand({tool:'AskClaude',detail:'x'.repeat(21000)})).summary.allowed,false)
+  assert.equal((await host.runCapabilityCommand('danger.confirm',{tool:'AskClaude',detail:'x'.repeat(21000)})).summary.allowed,false)
   assert.equal(reviewed.length,1,'host must not ask for approval of truncated content')
   console.log('PASS: CC native delegation denied/allowed, full prompt and scope shown, global/project aliases, native bypass, ordinary read, missing host fails closed')
 } finally {

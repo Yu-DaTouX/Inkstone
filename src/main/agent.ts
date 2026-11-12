@@ -5,9 +5,7 @@ import { dangerGuardPrefs, getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
 import { runPluginCommand } from './plugin-commands'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
-import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { saveUserSkill } from './user-skills'
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
 import { runArtifactPreview } from './artifact-preview-command'
@@ -15,6 +13,11 @@ import { runConsentRequestCommand } from './agent-commands/consent-request'
 import { runMcpCommand } from './agent-commands/mcp-command'
 import { runOfficeReadCommand } from './agent-commands/office-read'
 import { runSkillRead } from './agent-commands/skill-read'
+import { runSkillSave } from './agent-commands/skill-save'
+import { runDangerConfirmCommand } from './agent-commands/danger-confirm'
+import { runFileTrashCommand } from './agent-commands/file-trash'
+import { runSessionMoveCommand } from './agent-commands/session-move'
+import { runArtifactExportImageCommand, runArtifactExportVideoCommand } from './agent-commands/artifact-export'
 import { PiRpc, resolvePi } from './protocol'
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { continuationPrompt } from '../shared/continuation-prompt'
@@ -40,7 +43,7 @@ import { isSubagentNotice } from '../shared/subagent-notice'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
-import { APPROVAL_DETAIL_MAX, APPROVAL_TARGETS_MAX, type ApprovalDecision } from '../shared/approval'
+import type { ApprovalDecision } from '../shared/approval'
 import {
   type ConsentAnswer,
   type ConsentKeyParts,
@@ -79,7 +82,7 @@ import { questionLog } from './question-log'
 import { approvalLog } from './approval-log'
 import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, separateSecrets, summarizeAnswers, type QuestionField } from '../shared/question-form'
 
-import { requestedTimeout, UI_TIMEOUT_APPROVAL } from '../shared/ui-timeout'
+import { requestedTimeout } from '../shared/ui-timeout'
 import { createStreamLoopDetector, type LoopHit, type StreamLoopDetector } from '../shared/stream-loop-detector'
 import { skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
 import { CapabilityAcquisition } from './capabilities/acquisition-commands'
@@ -87,9 +90,7 @@ import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 import { BrowserCommands } from './browser-commands'
 import { TerminalAgentCommands } from './terminal-agent'
 import { BackgroundBashCommands } from './background-bash'
-import { listTerminalJobs } from './terminal-jobs'
-import { HELD_TERMINAL_NOTICES_MAX, terminalNoticeStep } from './terminal-notice-step'
-import { isLiveTerminalJob, terminalJobOwnedBy } from '../shared/terminal-jobs'
+import { TerminalNoticeDelivery } from './terminal-notice-delivery'
 import { PhoneAgentCommands } from './phone-agent'
 import { terminalAgentHost } from './terminal-agent-host'
 import { LookupCommands } from './lookup-commands'
@@ -97,8 +98,7 @@ import { TurnTimingTracker } from './turn-timing-tracker'
 import { UiRequests, questionToolCallId, type HostUiResponse, type UiAnswerResult } from './ui-requests'
 import { runSignalFromUiRequest, runSignalFromUiResolved, signalFromQueueUpdate, signalsFromPiEvent } from './runs/pi-events'
 import type { RunModel, RunSignal } from '../shared/runs'
-import { McpConnectionManager } from './mcp/connection-manager'
-import { loadMcpServers, mcpServersForProject } from './mcp/config'
+import { RunnerMcpConnections } from './mcp/runner-connections'
 import {
   captureNativeStartupWitness,
   newBootId,
@@ -107,19 +107,7 @@ import {
   type McpNativeConfigReader
 } from './mcp/app-native-witness'
 import { runMcpAppProxyCommand } from './mcp/app-proxy-service'
-import { mcpAppHost } from './mcp/app-host'
-import { isInkstoneManaged } from './mcp/app-spec'
-import {
-  disconnectManagedServer,
-  managedRuntimeFacts,
-  reconcileLegacyManaged,
-  verifyManagedServer,
-  SettingsSafeAccessError,
-  type LegacyReconcileResult,
-  type SettingsSafeAccess
-} from './mcp/settings-safe-access'
 import type { McpServerStatus } from '../shared/mcp'
-import type { CapabilityMcpServerSettingView } from '../shared/ipc'
 import type { ApprovalOwner } from '../shared/approval'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples, titleSampleText, type TitleSampleMessage } from '../shared/title-samples'
@@ -197,23 +185,6 @@ async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
 
 type Push = (msg: MainPush) => void
 type ExtUiPush = Extract<MainPush, { ch: 'status' | 'widget' }>
-
-async function realPathWithin(root: string, target: string): Promise<boolean> {
-  const rootReal = await realpath(root).catch(() => resolve(root))
-  let probe = target
-  let tail = ''
-  for (;;) {
-    try {
-      const rel = relative(rootReal, join(await realpath(probe), tail))
-      return Boolean(rel) && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
-    } catch {
-      const parent = dirname(probe)
-      if (parent === probe) return false
-      tail = join(basename(probe), tail)
-      probe = parent
-    }
-  }
-}
 
 function extUiKey(msg: ExtUiPush): string {
   return `${msg.ch}:${msg.payload.key}`
@@ -520,11 +491,7 @@ export class AgentController extends EventEmitter {
   private runObserver?: RunObserver
 
   private capabilityChangeTail: Promise<void> = Promise.resolve()
-  private mcpManager?: McpConnectionManager
-  private retiredMcpManagers: McpConnectionManager[] = []
-  private mcpReleasing = new Map<string, Promise<{ confirmed: boolean; unknown: number }>>()
-  private retiredCloseTail: Promise<void> = Promise.resolve()
-  private mcpConfigError?: string
+  private readonly mcp = new RunnerMcpConnections({ projectId: () => this.capabilityOpts?.projectId })
   private readonly lookup = new LookupCommands({
     capabilityOpts: () => this.capabilityOpts,
     cwd: () => this.cwd,
@@ -534,12 +501,17 @@ export class AgentController extends EventEmitter {
     return {
       cwd: () => this.cwd,
       rawCommands: () => this.rawCommands(),
-      mcpConnectionManager: () => this.mcpConnectionManager(),
-      mcpConfigError: () => this.mcpConfigError,
+      mcpConnectionManager: () => this.mcp.connectionManager(),
+      mcpConfigError: () => this.mcp.configError(),
       permissionMode: async () => this.getPermissionMode?.(),
       confirmToolConsent: async (request: ToolConsentPrompt) => (this.confirmToolConsent ? this.confirmToolConsent(request) : null),
       confirmDanger: async (request: DangerConfirmPrompt) => (this.confirmDanger ? this.confirmDanger(request) : null),
-      approvalOwner: () => this.approvalOwner()
+      approvalOwner: () => this.approvalOwner(),
+      trashItem: () => this.capabilityOpts?.trashItem,
+      session: () => ({ sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }),
+      sessionMover: () => this.requestSessionMove,
+      bundledSkills: () => this.bundledSkills,
+      requestApproval: (request: { title: string; message: string; options: string[]; placeholder: string; timeout: number }) => this.requestApprovalChoice(request)
     }
   }
   private readonly browserCommands = new BrowserCommands({
@@ -552,75 +524,48 @@ export class AgentController extends EventEmitter {
   private terminalTurnStop = new AbortController()
 
   private readonly terminalCommands = new TerminalAgentCommands(terminalAgentHost(), {
-    ownerKeys: () => [this.state?.sessionFile, this.state?.sessionId].filter((key): key is string => typeof key === 'string' && key.length > 0),
+    ownerKeys: () => this.terminalOwnerKeys(),
     cwd: () => this.cwd,
     turnSignal: () => this.terminalTurnStop.signal,
     confirm: async (request) => {
-      const result = await this.runDangerConfirmCommand({ tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs })
+      const result = await runDangerConfirmCommand(this.commandHost, { tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs })
       const feedback = result.summary.feedback
       return { allowed: result.summary.allowed === true, ...(typeof feedback === 'string' && feedback ? { feedback } : {}) }
     },
     notify: (text, stillOwner, wake) => {
-      void this.deliverTerminalNotice(text, stillOwner, wake)
+      void this.terminalNotices.deliver(text, stillOwner, wake)
     }
   })
 
   private readonly backgroundBash = new BackgroundBashCommands({
-    ownerKeys: () => [this.state?.sessionFile, this.state?.sessionId].filter((key): key is string => typeof key === 'string' && key.length > 0),
+    ownerKeys: () => this.terminalOwnerKeys(),
     now: () => Date.now(),
     notify: (text, stillOwner, wake) => {
-      void this.deliverTerminalNotice(text, stillOwner, wake)
+      void this.terminalNotices.deliver(text, stillOwner, wake)
     }
   })
 
-  private pendingTerminalNotices = 0
-  private heldTerminalNotices: { text: string; stillOwner: () => boolean }[] = []
-
-  private async deliverTerminalNotice(text: string, stillOwner: () => boolean, wake: boolean): Promise<void> {
-    this.pendingTerminalNotices += 1
-    try {
-      let failures = 0
-      for (let waited = 0; waited < 2 * 3600_000 && failures < 5; waited += 3000) {
-        const state = this.state
-        const step = terminalNoticeStep({
-          stopping: this.stopping,
-          owned: stillOwner(),
-          ready: !!this.rpc?.running && !!state && !state.isCompacting && !this.holdsNotices(),
-          running: !!state && (state.isAgentRunning || state.isStreaming),
-          wake
-        })
-        if (step === 'drop') return
-        if (step === 'hold') {
-          this.heldTerminalNotices = [...this.heldTerminalNotices, { text, stillOwner }].slice(-HELD_TERMINAL_NOTICES_MAX)
-          return
-        }
-        if (step !== 'wait') {
-          const result = await (step === 'steer' ? this.steer(text) : this.send(text, undefined, 'followUp')).catch(() => ({ ok: false }))
-          if (result.ok) return
-          failures += 1
-        }
-        await new Promise((done) => setTimeout(done, 3000))
+  private readonly terminalNotices = new TerminalNoticeDelivery({
+    session: () => {
+      const state = this.state
+      return {
+        stopping: this.stopping,
+        ready: !!this.rpc?.running && !!state && !state.isCompacting && !this.holdsNotices(),
+        running: !!state && (state.isAgentRunning || state.isStreaming)
       }
-      console.warn('[agent] 后台终端通知未能投递')
-    } finally {
-      this.pendingTerminalNotices -= 1
-    }
-  }
+    },
+    ownerKeys: () => this.terminalOwnerKeys(),
+    steer: (text) => this.steer(text),
+    followUp: (text) => this.send(text, undefined, 'followUp'),
+    submitHeld: (text) => this.queue.submit('steer', text, undefined, 'steering', this.queue.payload({ text }))
+  })
 
-  private async flushHeldTerminalNotices(): Promise<void> {
-    const held = this.heldTerminalNotices
-    this.heldTerminalNotices = []
-    for (const item of held) {
-      if (!item.stillOwner()) continue
-      await this.queue.submit('steer', item.text, undefined, 'steering', this.queue.payload({ text: item.text })).catch(() => undefined)
-    }
+  private terminalOwnerKeys(): string[] {
+    return [this.state?.sessionFile, this.state?.sessionId].filter((key): key is string => typeof key === 'string' && key.length > 0)
   }
 
   hasPendingTerminalWork(): boolean {
-    if (this.pendingTerminalNotices > 0) return true
-    const keys = [this.state?.sessionFile, this.state?.sessionId].filter((key): key is string => typeof key === 'string' && key.length > 0)
-    if (!keys.length) return false
-    return listTerminalJobs().some((job) => isLiveTerminalJob(job) && keys.some((key) => terminalJobOwnedBy(job, key)))
+    return this.terminalNotices.hasPendingWork()
   }
 
   private readonly phoneCommands = new PhoneAgentCommands({ opsDir: () => this.capabilityOpts?.opsDir ?? join(YAN_DIR, 'ops') })
@@ -628,12 +573,8 @@ export class AgentController extends EventEmitter {
   private readonly acquisition = new CapabilityAcquisition({
     capabilityOpts: () => this.capabilityOpts,
     cwd: () => this.cwd,
-    mcpManager: () => this.mcpManager,
-    resetMcpManager: () => {
-      this.mcpManager = undefined
-    },
-    mcpConfigError: () => this.mcpConfigError,
-    mcpConnectionManager: () => this.mcpConnectionManager(),
+    mcpConfigError: () => this.mcp.configError(),
+    mcpConnectionManager: () => this.mcp.connectionManager(),
     rawCommands: () => this.rawCommands(),
     push: (msg) => this.push(msg),
     getState: () => this.getState(),
@@ -1491,7 +1432,7 @@ export class AgentController extends EventEmitter {
       return runSkillRead(this.commandHost, params)
     }
     if (command === 'skill.save') {
-      return this.runSkillSave(params)
+      return runSkillSave(this.commandHost, params)
     }
     if (command.startsWith('mcp.app.')) {
       return this.runMcpAppCommand(command, params, signal)
@@ -1505,15 +1446,15 @@ export class AgentController extends EventEmitter {
     if (command === 'image.generate') return this.runImageCommand(params)
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'artifact.preview') return runArtifactPreview(this.capabilityOpts?.previewHtml, params.path, this.cwd, params.at)
-    if (command === 'artifact.exportVideo') return this.runArtifactExportVideoCommand(params)
-    if (command === 'artifact.exportImage') return this.runArtifactExportImageCommand(params)
+    if (command === 'artifact.exportVideo') return runArtifactExportVideoCommand(this.cwd, this.capabilityOpts?.exportVideo, params)
+    if (command === 'artifact.exportImage') return runArtifactExportImageCommand(this.cwd, this.capabilityOpts?.exportImage, params)
     if (command === 'question.ask') return this.runQuestionCommand(params, signal)
     if (command === 'office.read') return runOfficeReadCommand(this.cwd, params)
-    if (command === 'file.trash') return this.runFileTrashCommand(params, signal)
+    if (command === 'file.trash') return runFileTrashCommand(this.commandHost, params, signal)
     if (command === 'consent.request') return runConsentRequestCommand(this.commandHost, params)
-    if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
+    if (command === 'danger.confirm') return runDangerConfirmCommand(this.commandHost, params)
     if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await dangerGuardPrefs()) } }
-    if (command === 'session.move') return this.runSessionMoveCommand(params)
+    if (command === 'session.move') return runSessionMoveCommand(this.commandHost, params)
     switch (command) {
       case 'tasks.apply':
         return this.applyTaskPlan(params)
@@ -1653,118 +1594,6 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async runDangerConfirmCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
-    if ((await this.getPermissionMode?.()) === 'all') return { summary: { kind: 'danger-confirm', allowed: true, decision: 'auto' } }
-    const tool = typeof params.tool === 'string' ? params.tool.slice(0, 40) : 'tool'
-    const detail = typeof params.detail === 'string' ? params.detail : ''
-    if (detail.length > APPROVAL_DETAIL_MAX) return { summary: { kind: 'danger-confirm', allowed: false, decision: 'no-answer', reason: `审批内容有 ${detail.length} 字，超过 ${APPROVAL_DETAIL_MAX} 字，无法完整展示给用户确认。请缩短内容或分步执行` } }
-    const allReasons = Array.isArray(params.reasons) ? params.reasons.filter((r): r is string => typeof r === 'string').map((r) => r.slice(0, 200)) : []
-    const reasons = allReasons.length > APPROVAL_TARGETS_MAX
-      ? [...allReasons.slice(0, APPROVAL_TARGETS_MAX - 1), pick(`另有 ${allReasons.length - APPROVAL_TARGETS_MAX + 1} 项未列出`, `${allReasons.length - APPROVAL_TARGETS_MAX + 1} more not listed`)]
-      : allReasons
-    const rawOutside = Array.isArray(params.outsideDirs) ? params.outsideDirs.filter((d): d is string => typeof d === 'string') : []
-    const outsideDirs = rawOutside.map((d) => d.slice(0, 500)).slice(0, APPROVAL_TARGETS_MAX)
-    const outsideTruncated = rawOutside.length > APPROVAL_TARGETS_MAX || rawOutside.some((d) => d.length > 500) || params.outsideTruncated === true
-    const kind = params.kind === 'permission' || params.kind === 'delete' ? params.kind : undefined
-    const toolCallId = typeof params.toolCallId === 'string' && params.toolCallId ? params.toolCallId.slice(0, 200) : undefined
-    const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd, owner: this.approvalOwner(), ...(toolCallId ? { toolCallId } : {}), ...(kind ? { kind } : {}), ...(outsideDirs.length ? { outsideDirs } : {}), ...(outsideTruncated ? { outsideTruncated } : {}) }) : null
-    const decision = answer?.decision ?? 'no-answer'
-    return {
-      data: { decision },
-      summary: { kind: 'danger-confirm', tool, decision, allowed: answer?.decision === 'allow', ...(answer?.feedback ? { feedback: answer.feedback } : {}) }
-    }
-  }
-
-  private async runSessionMoveCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
-    const dir = typeof params.dir === 'string' ? params.dir.trim().slice(0, 1000) : ''
-    if (!dir) throw new CapabilityCommandError('session_move_dir_required', '缺少 --dir（要移到的文件夹）')
-    const reason = typeof params.reason === 'string' ? params.reason.trim().slice(0, 300) : ''
-    if (!this.requestSessionMove) throw new CapabilityCommandError('session_move_unavailable', '移动会话当前不可用（宿主未注入）')
-    const sessionId = this.state?.sessionId
-    const sessionFile = this.state?.sessionFile
-    if (!sessionId || !sessionFile) {
-      throw new CapabilityCommandError('session_move_unsaved', '会话还没有保存到文件，暂时不能移动；先完成这一轮再试')
-    }
-    const answer = await this.requestSessionMove({ dir, reason, cwd: this.cwd, sessionId, sessionFile })
-    return {
-      data: answer,
-      summary: {
-        kind: 'session-move',
-        decision: answer.decision,
-        target: answer.target ?? dir,
-        allowed: answer.decision === 'approved',
-        ...(answer.feedback ? { feedback: answer.feedback, message: answer.message } : {})
-      }
-    }
-  }
-
-  private async runFileTrashCommand(params: Record<string, unknown>, signal?: AbortSignal): Promise<CapabilityCommandResult> {
-    const trash = this.capabilityOpts?.trashItem
-    if (!trash) throw new CapabilityCommandError('trash_unavailable', '回收站当前不可用（宿主未注入）')
-    const raw = [
-      ...(typeof params.path === 'string' ? [params.path] : []),
-      ...(Array.isArray(params.paths) ? params.paths.filter((p): p is string => typeof p === 'string') : [])
-    ].map((p) => p.trim()).filter(Boolean)
-    if (!raw.length) throw new CapabilityCommandError('trash_path_required', '缺少 --path（或请求文件里的 paths）')
-    if (raw.length > 200) throw new CapabilityCommandError('trash_too_many', '一次最多移动 200 个路径')
-    signal?.throwIfAborted()
-    const paths = raw.map((item) => isAbsolute(item) ? resolve(item) : resolve(this.cwd, item))
-    const settings = await getSettings()
-    if (settings.guardOutsideWrites && (await this.getPermissionMode?.()) !== 'all') {
-      const roots = await Promise.all([
-        this.cwd, tmpdir(), '/tmp', '/var/tmp', join(YAN_DIR, 'tmp'), join(YAN_DIR, 'artifacts'),
-        ...(settings.guardAllowRoots ?? [])
-      ].map((root) => realpath(root).catch(() => resolve(root))))
-      const outside: string[] = []
-      for (const path of paths) {
-        const actual = join(await realpath(dirname(path)).catch(() => dirname(path)), basename(path))
-        if (!roots.some((root) => {
-          const rel = relative(root, actual)
-          return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
-        })) outside.push(path)
-      }
-      if (outside.length) {
-        const answer = this.confirmDanger ? await this.confirmDanger({
-          tool: 'yan file trash',
-          detail: outside.join('\n').slice(0, 20_000),
-          reasons: ['要移动当前项目和已允许目录之外的文件到回收站'],
-          cwd: this.cwd,
-          owner: this.approvalOwner(),
-          outsideDirs: outside,
-          signal
-        }) : null
-        if (answer?.decision !== 'allow') {
-          throw new CapabilityCommandError('trash_outside_denied', answer?.feedback ?? '没有得到目录外操作的确认，未移动到回收站')
-        }
-      }
-    }
-    signal?.throwIfAborted()
-    const home = resolve(homedir()).toLowerCase()
-    const trashed: string[] = []
-    const failed: { path: string; error: string }[] = []
-    for (const abs of paths) {
-      signal?.throwIfAborted()
-      const key = abs.toLowerCase().replace(/[\\/]+$/, '')
-      if (dirname(abs) === abs || key === home) {
-        failed.push({ path: abs, error: '拒绝把盘符根目录或家目录整体移到回收站' })
-        continue
-      }
-      try {
-        await stat(abs)
-        signal?.throwIfAborted()
-        await trash(abs)
-        trashed.push(abs)
-      } catch (error) {
-        if (signal?.aborted) throw error
-        failed.push({ path: abs, error: error instanceof Error ? error.message : String(error) })
-      }
-    }
-    return {
-      data: { trashed, failed },
-      summary: { kind: 'file-trash', trashed: trashed.length, failed: failed.length }
-    }
-  }
-
   startHostUiTimer(id: string): { ok: boolean; timeout?: number; deadline?: number; error?: string } {
     return this.ui.startHostUiTimer(id)
   }
@@ -1815,122 +1644,6 @@ export class AgentController extends EventEmitter {
     return {
       data: { artifact },
       summary: { artifactId: artifact.id, filename: artifact.filename, kind: artifact.kind, bytes: artifact.bytes }
-    }
-  }
-
-  private async runArtifactExportVideoCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
-    const raw = typeof params.path === 'string' ? params.path.trim() : ''
-    if (!raw) throw new CapabilityCommandError('artifact_path_missing', 'artifact.exportVideo 需要 path')
-    if (!/\.html?$/i.test(raw)) throw new CapabilityCommandError('artifact_export_type', 'artifact.exportVideo 只支持 .html / .htm 文件')
-    const exporter = this.capabilityOpts?.exportVideo
-    if (!exporter) throw new CapabilityCommandError('artifact_export_unavailable', '当前环境不能导出视频')
-    const fps = params.fps === undefined || params.fps === true ? undefined : Number(params.fps)
-    if (fps !== undefined && (!Number.isFinite(fps) || fps <= 0)) throw new CapabilityCommandError('artifact_export_fps', '--fps 需要大于 0 的数字')
-    const scale = params.scale === undefined || params.scale === true ? undefined : Number(params.scale)
-    if (scale !== undefined && (!Number.isFinite(scale) || scale <= 0)) throw new CapabilityCommandError('artifact_export_scale', '--scale 需要大于 0 的数字')
-    const outRaw = typeof params.out === 'string' ? params.out.trim() : typeof params.outPath === 'string' ? params.outPath.trim() : ''
-    const cwd = this.cwd
-    const htmlPath = isAbsolute(raw) ? raw : resolve(cwd, raw)
-    const outResolved = outRaw ? (isAbsolute(outRaw) ? resolve(outRaw) : resolve(cwd, outRaw)) : undefined
-    const outPath = outResolved && extname(outResolved).toLowerCase() !== '.mp4' ? `${outResolved}.mp4` : outResolved
-    if (outPath && !(await realPathWithin(cwd, outPath))) {
-      throw new CapabilityCommandError('artifact_export_out', '--out 只能写到当前项目目录里')
-    }
-    try {
-      const result = (await exporter(htmlPath, cwd, {
-        ...(fps !== undefined ? { fps } : {}),
-        ...(scale !== undefined ? { scale } : {}),
-        ...(outPath ? { outPath } : {})
-      })) as {
-        path: string
-        frames: number
-        fps: number
-        width: number
-        height: number
-        duration: number
-        bytes: number
-        elapsedMs: number
-        consoleErrors?: string[]
-      }
-      return {
-        data: result,
-        summary: {
-          path: result.path,
-          frames: result.frames,
-          fps: result.fps,
-          size: `${result.width}x${result.height}`,
-          durationSeconds: result.duration,
-          bytes: result.bytes,
-          elapsedMs: result.elapsedMs,
-          ...(result.consoleErrors?.length ? { consoleErrors: result.consoleErrors.length } : {}),
-          note: 'MP4 只包含画面：合成里的 <audio>/<video> 本次不混音；输出是 H.264（yuv420p，CRF 18），可直接在系统播放器里打开。'
-        }
-      }
-    } catch (error) {
-      const code = (error as { code?: string } | null)?.code
-      const message = error instanceof Error ? error.message : String(error)
-      if (code === 'ffmpeg-missing') throw new CapabilityCommandError('artifact_export_ffmpeg_missing', message)
-      if (code === 'export-busy') throw new CapabilityCommandError('artifact_export_busy', message)
-      if (code === 'no-timeline') throw new CapabilityCommandError('artifact_export_no_timeline', message)
-      if (code === 'too-long') throw new CapabilityCommandError('artifact_export_too_long', message)
-      if (code === 'bad-request') throw new CapabilityCommandError('artifact_path_outside', message)
-      if (code === 'cancelled') throw new CapabilityCommandError('artifact_export_cancelled', message)
-      throw new CapabilityCommandError('artifact_export_failed', `导出失败：${message}`)
-    }
-  }
-
-  private async runArtifactExportImageCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
-    const raw = typeof params.path === 'string' ? params.path.trim() : ''
-    if (!raw) throw new CapabilityCommandError('artifact_path_missing', 'artifact.exportImage 需要 path')
-    if (!/\.html?$/i.test(raw)) throw new CapabilityCommandError('artifact_export_type', 'artifact.exportImage 只支持 .html / .htm 文件')
-    const exporter = this.capabilityOpts?.exportImage
-    if (!exporter) throw new CapabilityCommandError('artifact_export_unavailable', '当前环境不能导出图片')
-    const number = (key: string, flag: string): number | undefined => {
-      const value = params[key]
-      if (value === undefined || value === true) return undefined
-      const parsed = Number(value)
-      if (!Number.isFinite(parsed) || parsed <= 0) throw new CapabilityCommandError('artifact_export_size', `--${flag} 需要大于 0 的数字`)
-      return parsed
-    }
-    const width = number('width', 'width')
-    const height = number('height', 'height')
-    const scale = number('scale', 'scale')
-    const selector = typeof params.selector === 'string' && params.selector.trim() ? params.selector.trim() : undefined
-    const outRaw = typeof params.out === 'string' ? params.out.trim() : typeof params.outPath === 'string' ? params.outPath.trim() : ''
-    const cwd = this.cwd
-    const htmlPath = isAbsolute(raw) ? raw : resolve(cwd, raw)
-    const outResolved = outRaw ? (isAbsolute(outRaw) ? resolve(outRaw) : resolve(cwd, outRaw)) : undefined
-    const outPath = outResolved && extname(outResolved).toLowerCase() !== '.png' ? `${outResolved}.png` : outResolved
-    if (outPath && !(await realPathWithin(cwd, outPath))) {
-      throw new CapabilityCommandError('artifact_export_out', '--out 只能写到当前项目目录里')
-    }
-    try {
-      const result = (await exporter(htmlPath, cwd, {
-        ...(width !== undefined ? { width } : {}),
-        ...(height !== undefined ? { height } : {}),
-        ...(scale !== undefined ? { scale } : {}),
-        ...(selector ? { selector } : {}),
-        ...(outPath ? { outPath } : {})
-      })) as { path: string; width: number; height: number; scale: number; pixelWidth: number; pixelHeight: number; target: string; bytes: number; consoleErrors?: string[] }
-      return {
-        data: result,
-        summary: {
-          path: result.path,
-          size: `${result.width}x${result.height}`,
-          pixels: `${result.pixelWidth}x${result.pixelHeight}`,
-          target: result.target,
-          bytes: result.bytes,
-          ...(result.consoleErrors?.length ? { consoleErrors: result.consoleErrors.length } : {}),
-          note: result.target === 'poster' ? '自动识别为页面中央的单个画面并只截它；要整页或指定区域用 --width / --selector。' : result.target === 'page' ? '截的是整页。' : '截的是 --selector 指定的元素。'
-        }
-      }
-    } catch (error) {
-      const code = (error as { code?: string } | null)?.code
-      const message = error instanceof Error ? error.message : String(error)
-      if (code === 'export-busy') throw new CapabilityCommandError('artifact_export_busy', message)
-      if (code === 'bad-request') throw new CapabilityCommandError('artifact_path_outside', message)
-      if (code === 'selector-missing') throw new CapabilityCommandError('artifact_export_selector', message)
-      throw new CapabilityCommandError('artifact_export_failed', `导出失败：${message}`)
     }
   }
 
@@ -2013,138 +1726,8 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async runSkillSave(params: Record<string, unknown>) {
-    const reservedNames = this.bundledSkills.map((file) => basename(dirname(file)))
-    const res = await saveUserSkill(
-      {
-        name: typeof params.name === 'string' ? params.name : '',
-        description: typeof params.description === 'string' ? params.description : '',
-        body: typeof params.body === 'string' ? params.body : '',
-        replace: params.replace === true || params.replace === 'true'
-      },
-      {
-        reservedNames,
-        confirm: async ({ name, description, body, replaced }) => {
-          const option = replaced ? pick('覆盖', 'Overwrite') : pick('保存到我的技能', 'Save to My skills')
-          try {
-            const answer = await this.requestApprovalChoice({
-              title: replaced ? pick(`覆盖技能「${name}」`, `Overwrite skill "${name}"`) : pick(`保存技能「${name}」`, `Save skill "${name}"`),
-              message: [description, body.length > 4000 ? `${body.slice(0, 4000)}\n…` : body].join('\n\n'),
-              options: [option],
-              placeholder: pick('或告诉 Agent 换个做法（不保存）', 'Or tell the Agent to do it another way (no save)'),
-              timeout: UI_TIMEOUT_APPROVAL
-            })
-            if (answer.value === option) return { ok: true }
-            const reply = answer.cancelled ? undefined : answer.value?.trim() || undefined
-            return { ok: false, ...(reply ? { reply } : {}) }
-          } catch (error) {
-            if (!(error instanceof CapabilityCommandError) || error.code !== 'question_timeout') throw error
-            return { ok: false, timedOut: true }
-          }
-        }
-      }
-    )
-    if (!res.ok) throw new CapabilityCommandError(`skill_${res.code.replace(/-/g, '_')}`, res.error)
-    return {
-      data: { name: res.name, path: res.path, replaced: res.replaced },
-      summary: {
-        kind: 'skill',
-        action: 'save',
-        name: res.name,
-        replaced: res.replaced,
-        note: '已保存；新会话启动时加载，之后可用 yan skill read --id skill:' + res.name + ' 读取'
-      }
-    }
-  }
-
-  private mcpConnectionManager(): McpConnectionManager {
-    const loaded = loadMcpServers()
-    this.mcpConfigError = loaded.error
-    const visible = mcpServersForProject(loaded.servers, this.capabilityOpts?.projectId)
-    const legacyConfigs = visible.filter((server) => !isInkstoneManaged(server))
-    if (!this.mcpManager) {
-      this.mcpManager = new McpConnectionManager(legacyConfigs)
-      return this.mcpManager
-    }
-    const releases = this.mcpManager.syncServers(legacyConfigs)
-    for (const { serverId, release } of releases) {
-      this.mcpReleasing.set(serverId, release)
-      void release.then(
-        (outcome) => {
-          if (outcome.confirmed && this.mcpReleasing.get(serverId) === release) this.mcpReleasing.delete(serverId)
-        },
-        () => {
-        }
-      )
-    }
-    return this.mcpManager
-  }
-
-  private settingsSafeAccess(): SettingsSafeAccess {
-    return {
-      loadServers: () => loadMcpServers(),
-      legacyManagers: () =>
-        [this.mcpManager, ...this.retiredMcpManagers].filter(
-          (manager): manager is McpConnectionManager => Boolean(manager)
-        ),
-      host: () => mcpAppHost()
-    }
-  }
-
-  private closeRetiredMcpManagers(): Promise<void> {
-    const run = this.retiredCloseTail.then(() => this.closeRetiredNow(), () => this.closeRetiredNow())
-    this.retiredCloseTail = run.then(() => undefined, () => undefined)
-    return run
-  }
-
-  private async closeRetiredNow(): Promise<void> {
-    if (this.retiredMcpManagers.length === 0) return
-    const remaining: McpConnectionManager[] = []
-    for (const manager of this.retiredMcpManagers) {
-      const outcome = await manager.closeConfirmed().catch(() => ({ confirmed: false, unknown: 1 }))
-      if (!outcome.confirmed) remaining.push(manager)
-    }
-    this.retiredMcpManagers = remaining
-  }
-
-  private async reconcileLegacyForManaged(serverId: string): Promise<LegacyReconcileResult> {
-    const result = await reconcileLegacyManaged(
-      this.settingsSafeAccess(),
-      serverId,
-      this.capabilityOpts?.projectId
-    )
-    const releasing = this.mcpReleasing.get(serverId)
-    if (releasing) {
-      const outcome = await releasing
-      if (!outcome.confirmed) {
-        throw new SettingsSafeAccessError(
-          'legacy-holder-unresolved',
-          `旧 MCP 连接 ${serverId} 的关闭未能确认，不交给砚宿主，避免双连接`
-        )
-      }
-      if (this.mcpReleasing.get(serverId) === releasing) this.mcpReleasing.delete(serverId)
-      result.legacyReleased = true
-    }
-    await this.closeRetiredMcpManagers()
-    return result
-  }
-
   getLegacyMcpHolderSnapshot(): { services: Array<{ serverId: string; status: McpServerStatus }> } {
-    const managers = [this.mcpManager, ...this.retiredMcpManagers].filter(
-      (manager): manager is McpConnectionManager => Boolean(manager)
-    )
-    const services: Array<{ serverId: string; status: McpServerStatus }> = []
-    for (const manager of managers) {
-      for (const serverId of manager.listServerIds()) {
-        if (services.some((service) => service.serverId === serverId)) continue
-        services.push({ serverId, status: manager.statusOf(serverId).status })
-      }
-    }
-    for (const serverId of this.mcpReleasing.keys()) {
-      if (services.some((service) => service.serverId === serverId)) continue
-      services.push({ serverId, status: 'connecting' })
-    }
-    return { services }
+    return this.mcp.holderSnapshot()
   }
 
   async capabilitySettingsSnapshot() {
@@ -2194,60 +1777,10 @@ export class AgentController extends EventEmitter {
         }))
       : []
     const skills = [...sessionSkills, ...loaded]
-    const endpointOriginOf = (server: { transport: string; url?: string }): string | undefined => {
-      if (server.transport !== 'http' || !server.url) return undefined
-      try {
-        const origin = new URL(server.url).origin
-        return origin === 'null' ? undefined : origin
-      } catch {
-        return undefined
-      }
-    }
-    const loadedForSettings = loadMcpServers()
-    this.mcpConfigError = loadedForSettings.error
-    const projectId = this.capabilityOpts?.projectId
-    const visible = mcpServersForProject(loadedForSettings.servers, projectId)
-    const managedConfigs = visible.filter((server) => isInkstoneManaged(server))
-    for (const managed of managedConfigs) await this.reconcileLegacyForManaged(managed.id)
-    const access = this.settingsSafeAccess()
-    const manager = this.mcpConnectionManager()
-    await this.closeRetiredMcpManagers()
-    const servers: CapabilityMcpServerSettingView[] = []
-    for (const server of manager.list()) {
-      const endpointOrigin = endpointOriginOf(server)
-      servers.push({
-        id: server.id,
-        title: server.title ?? server.id,
-        transport: server.transport,
-        enabled: server.enabled !== false,
-        effect: server.effect ?? 'unknown',
-        projectScoped: Boolean(server.projectScope),
-        ...(endpointOrigin ? { endpointOrigin } : {}),
-        status: manager.statusOf(server.id).status,
-        toolCount: manager.toolCountOf(server.id),
-        ownedBy: 'pi',
-        ...(server.migratedToNative ? { migratedToNative: server.migratedToNative } : {})
-      })
-    }
-    for (const config of managedConfigs) {
-      const facts = managedRuntimeFacts(access, config.id)
-      const endpointOrigin = endpointOriginOf(config)
-      servers.push({
-        id: config.id,
-        title: config.title ?? config.id,
-        transport: config.transport,
-        enabled: config.enabled !== false,
-        effect: config.effect ?? 'unknown',
-        projectScoped: Boolean(config.projectScope),
-        ...(endpointOrigin ? { endpointOrigin } : {}),
-        status: facts.status,
-        toolCount: facts.toolCount,
-        ownedBy: 'inkstone'
-      })
-    }
+    const servers = await this.mcp.settingsServers()
     const probe = resolvePi({ override: this.piBin })
     const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
-    return { skills, servers, nativeMcpAvailable: nativePiToolsSupported(version) && commands.some(command => command.name === 'mcp'), configWarning: Boolean(this.mcpConfigError) }
+    return { skills, servers, nativeMcpAvailable: nativePiToolsSupported(version) && commands.some(command => command.name === 'mcp'), configWarning: Boolean(this.mcp.configError()) }
   }
 
   async sessionSkillAction(action: 'promote' | 'remove', name: string): Promise<{ ok: boolean; error?: string }> {
@@ -2263,23 +1796,11 @@ export class AgentController extends EventEmitter {
   }
 
   async verifyCapabilityMcp(serverId: string) {
-    const access = this.settingsSafeAccess()
-    const managed = await this.reconcileLegacyForManaged(serverId)
-    if (managed.managed) {
-      return verifyManagedServer(access, serverId, this.capabilityOpts?.projectId)
-    }
-    const manager = this.mcpConnectionManager()
-    await this.closeRetiredMcpManagers()
-    if (!manager.listServerIds().includes(serverId)) throw new Error(pick('当前 runner 没有这个 MCP 服务', 'This runner has no such MCP server'))
-    const tools = await manager.listToolsCached(serverId, { refresh: true })
-    return { status: manager.statusOf(serverId).status, toolCount: tools.length }
+    return this.mcp.verify(serverId)
   }
 
   async disconnectCapabilityMcp(serverId: string): Promise<boolean> {
-    const access = this.settingsSafeAccess()
-    const managed = await this.reconcileLegacyForManaged(serverId)
-    if (managed.managed) return disconnectManagedServer(access, serverId, this.capabilityOpts?.projectId)
-    return this.mcpConnectionManager().disconnect(serverId)
+    return this.mcp.disconnect(serverId)
   }
 
   async discoverCapabilitiesForSettings(queryText: string) {
@@ -3733,7 +3254,7 @@ export class AgentController extends EventEmitter {
             message: pick('已安全中止循环，正在同一会话自动继续（1/1）；不会执行收回的排队草稿。', 'Loop aborted safely; continuing in the same session (1/1). Withdrawn queued drafts will not run.') } })
         }
       }
-      await this.flushHeldTerminalNotices()
+      await this.terminalNotices.flushHeld()
       const res = await this.queue.submit('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，发送结果未应用到当前会话', 'Session changed; the send result was not applied to the current session') }
@@ -4962,12 +4483,10 @@ export class AgentController extends EventEmitter {
   }
 
   async reloadMcpServers(): Promise<void> {
-    const old = this.mcpManager
-    this.mcpManager = undefined
-    await old?.close().catch(() => undefined)
+    await this.mcp.closeCurrent()
     this.nativeWitness = null
     this.nativeWitnessPending = null
-    await this.closeRetiredMcpManagers()
+    await this.mcp.closeRetired()
   }
 
   processId(): number | undefined {
@@ -4999,12 +4518,7 @@ export class AgentController extends EventEmitter {
     this.mcpAppToolsSnapshot = undefined
     this.nativeWitness = null
     this.nativeWitnessPending = null
-    const closingMcp = this.mcpManager
-    this.mcpManager = undefined
-    const mcpClosing = (async (): Promise<void> => {
-      await closingMcp?.close().catch(() => undefined)
-      await this.closeRetiredMcpManagers()
-    })()
+    const mcpClosing = this.mcp.close()
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
     this.streaming = null
