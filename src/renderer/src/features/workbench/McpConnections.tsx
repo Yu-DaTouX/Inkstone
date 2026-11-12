@@ -44,7 +44,7 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
   }, [sessionKey, owner?.key, active, refresh])
   useEffect(() => {
     if (active) void refresh()
-  }, [active, running, sessionBusy, refresh])
+  }, [active, running, sessionBusy, lang, refresh])
   useEffect(() => {
     const changed = (): void => { if (active) void refresh() }
     window.addEventListener(MCP_SETTINGS_CHANGED, changed)
@@ -95,14 +95,17 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
     }
   }
   const enabled = services.filter((service) => service.enabled).length
-  const summary = services.length ? <RailValue value={en ? `${enabled} / ${services.length} enabled` : `${enabled} / ${services.length} 已启用`} /> : error ? <RailValue value={en ? 'Read failed' : '读取失败'} error /> : undefined
+  const problems = snapshot?.errors ?? []
+  const problemTip = problems.join('\n')
+  const problemMark = problems.length ? <RailValue value={`⚠ ${problems.length}`} error joined={services.length > 0} title={problemTip} aria-label={en ? `${problems.length} config problems` : `${problems.length} 个配置问题`} /> : null
+  const summary = services.length ? <><RailValue value={en ? `${enabled} / ${services.length} enabled` : `${enabled} / ${services.length} 已启用`} />{problemMark}</> : error ? <RailValue value={en ? 'Read failed' : '读取失败'} error title={error} /> : problemMark ?? undefined
   const body = <>
     {!active ? <p className="wb-ov-note">{en ? 'Open this conversation to manage MCP.' : '进入此会话后可管理 MCP。'}</p> : <>
       <p className="wb-ov-note" data-testid="rail-mcp-scope">{scopeLabel}</p>
       {sessionBusy ? <Notice variant="hint" tone="ask">{busyText}</Notice> : null}
-      {error ? <Notice tone="fail" compact>{error}</Notice> : null}
+      {error ? <p className="wb-ov-note wb-ov-problem" title={error}>{error}</p> : null}
       {notice ? <Notice variant="hint" tone="ok">{notice}</Notice> : null}
-      {snapshot?.errors.map((problem) => <Notice key={problem} tone="fail" compact>{problem}</Notice>)}
+      {problems.length ? <p className="wb-ov-note wb-ov-problem" title={problemTip} data-testid="rail-mcp-problems">{en ? `⚠ ${problems.length === 1 ? '1 config problem' : `${problems.length} config problems`}` : `⚠ ${problems.length} 个配置问题`}</p> : null}
       <ul className="wb-ov-items" data-testid="rail-mcp-services">
         {services.map((service) => {
           const actual = runtime?.servers.find((item) => item.id === service.name && !item.migratedToNative)
@@ -115,7 +118,7 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
         })}
       </ul>
       {snapshot?.nativeConfigChanged !== false && services.some((service) => service.backend === 'native') ? <Button size="sm" isDisabled={pending || sessionBusy || !runtime?.nativeMcpAvailable} onPress={() => void apply()}>{en ? 'Apply to this conversation' : '应用到当前会话'}</Button> : null}
-      <Button variant="ghost" size="sm" onPress={() => useStore.getState().openSettings('mcp')}>{en ? 'Manage MCP services' : '管理 MCP 服务'}</Button>
+      <Button variant="ghost" size="sm" tooltip={problemTip || undefined} onPress={() => useStore.getState().openSettings('mcp')}>{en ? 'Manage MCP services' : '管理 MCP 服务'}</Button>
     </>}
   </>
   const settled = !!snapshot || !!error

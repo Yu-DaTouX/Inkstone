@@ -16,7 +16,7 @@ import {
   stepSpeed
 } from '../../../../shared/session-metrics'
 import type { UIMessage } from '../../../../shared/ipc'
-import { buildRailStats, railTimeText, retainRailSpeed, type RailSpeedHold, type RailSegment, type RailStatsModel } from './rail-stats'
+import { buildRailStats, railTimeText, retainRailSpeed, type RailFact, type RailSpeedHold, type RailSegment, type RailStatsModel } from './rail-stats'
 import { railOperationCounts, useToolStructureMessages } from './rail-data'
 import { sessionViewIdentity } from '../session/view-state'
 import './rail-stats.css'
@@ -124,12 +124,51 @@ function barLabel(label: string, segments: readonly RailSegment[]): string {
   return `${label}: ${segments.map((s) => `${s.label} ${s.text}`).join(', ')}`
 }
 
-export function RailStatsBody({ model, breakdownLabel }: { model: RailStatsModel; breakdownLabel: string }): ReactElement {
-  const live = model.liveSince !== null
+interface StatCell {
+  key: 'total' | 'hit' | 'time' | 'speed'
+  label: string
+  value: string
+  unit?: string
+  extra?: string
+  extraTitle?: string
+  title?: string
+}
+
+export function RailStatsBody({ model, breakdownLabel, running = false }: { model: RailStatsModel | null; breakdownLabel: string; running?: boolean }): ReactElement {
+  const t = useT()
+  const liveSince = model?.liveSince ?? null
+  const live = liveSince !== null
   const now = useLiveClock(live)
-  const liveMs = model.liveSince !== null ? Math.max(0, now - model.liveSince) : 0
+  const liveMs = liveSince !== null ? Math.max(0, now - liveSince) : 0
   const [breakdownOpen, setBreakdownOpen] = useBreakdownOpen()
-  const { tokens, time, speed } = model
+  const tokens = model?.tokens ?? null
+  const time = model?.time ?? null
+  const speed = model?.speed ?? null
+  const fact = (key: RailFact['key']): RailFact | undefined => model?.facts.find((item) => item.key === key)
+  const total = fact('total')
+  const hit = fact('hit')
+  const subagents = fact('subagents')
+  const timed = running || live || time !== null || speed !== null
+  const allCells: StatCell[] = [
+    {
+      key: 'total',
+      label: total?.label ?? t('sm.total'),
+      value: total?.value ?? '—',
+      unit: total?.unit,
+      extra: subagents?.value,
+      extraTitle: subagents?.title ?? undefined,
+      title: [total?.title, subagents?.title].filter(Boolean).join('\n') || undefined
+    },
+    { key: 'hit', label: hit?.label ?? t('sm.hitRate'), value: hit?.value ?? '—', title: hit?.title ?? undefined },
+    {
+      key: 'time',
+      label: time?.label ?? t('sm.elapsed'),
+      value: time ? railTimeText(time, liveMs) : live || running ? railTimeText({ baseMs: 0 }, liveMs) : '—',
+      title: time?.title ?? undefined
+    },
+    { key: 'speed', label: speed?.label ?? t('sm.tps'), value: speed?.value ?? '—', unit: speed ? speed.unit : undefined, title: speed?.title ?? undefined }
+  ]
+  const cells = timed ? allCells : allCells.filter((cell) => cell.key === 'total' || cell.key === 'hit')
   const breakdown: ReactElement[] = []
   if (tokens && tokens.segments.length) {
     const fresh = tokens.segments.filter((seg) => seg.key !== 'cacheRead')
@@ -169,48 +208,30 @@ export function RailStatsBody({ model, breakdownLabel }: { model: RailStatsModel
   }
   return (
     <div className="wb-rail-stats" data-testid="wb-rail-stats" data-live={live ? '1' : undefined} data-breakdown={breakdownOpen ? '1' : undefined}>
-      {model.facts.length || time || speed ? (
-        <ul className="wb-rs-rows">
-          {model.facts.map((fact) => (
-            <li key={fact.key} className="wb-rs-line" data-row={fact.key} title={fact.title ?? undefined} data-testid={`wb-rail-stats-${fact.key}`}>
-              <span className="wb-rs-label">{fact.label}</span>
-              <span className="wb-rs-num wb-rs-strong">
-                {fact.value}
-                {fact.unit ? <> <span className="wb-rs-unit">{fact.unit}</span></> : null}
-              </span>
-            </li>
-          ))}
-          {time ? (
-            <li className="wb-rs-line" data-row="time" title={time.title ?? undefined}>
-              <span className="wb-rs-label">{time.label}</span>
-              <span className="wb-rs-num wb-rs-strong" data-testid="wb-rail-stats-time">
-                {railTimeText(time, liveMs)}
-              </span>
-            </li>
-          ) : null}
-          {speed ? (
-            <li className="wb-rs-line" data-row="speed" title={speed.title ?? undefined}>
-              <span className="wb-rs-label">{speed.label}</span>
-              <span className="wb-rs-num wb-rs-strong">
-                {speed.value} <span className="wb-rs-unit">{speed.unit}</span>
-              </span>
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
-      {breakdown.length ? (
-        <Button
-          variant="plain"
-          size="sm"
-          className="wb-rs-toggle"
-          aria-expanded={breakdownOpen}
-          onPress={() => setBreakdownOpen(!breakdownOpen)}
-          data-testid="wb-rail-stats-breakdown-toggle"
-        >
-          <span>{breakdownLabel}</span>
-          <CollapsibleChevron expanded={breakdownOpen} />
-        </Button>
-      ) : null}
+      <ul className="wb-rs-grid">
+        {cells.map((cell) => (
+          <li key={cell.key} className="wb-rs-cell" data-row={cell.key} data-empty={cell.value === '—' ? '1' : undefined} title={cell.title} data-testid={`wb-rail-stats-${cell.key}`}>
+            <span className="wb-rs-label">{cell.label}</span>
+            <span className="wb-rs-num wb-rs-strong">
+              {cell.value}
+              {cell.unit ? <> <span className="wb-rs-unit">{cell.unit}</span></> : null}
+              {cell.extra ? <> <span className="wb-rs-unit" title={cell.extraTitle}>{cell.extra}</span></> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <Button
+        variant="plain"
+        size="sm"
+        className="wb-rs-toggle"
+        aria-expanded={breakdown.length ? breakdownOpen : undefined}
+        isDisabled={!breakdown.length}
+        onPress={() => setBreakdownOpen(!breakdownOpen)}
+        data-testid="wb-rail-stats-breakdown-toggle"
+      >
+        <span>{breakdownLabel}</span>
+        <CollapsibleChevron expanded={breakdownOpen && breakdown.length > 0} />
+      </Button>
       {breakdownOpen && breakdown.length ? (
         <div className="wb-rs-breakdown" data-testid="wb-rail-stats-breakdown">
           {breakdown}

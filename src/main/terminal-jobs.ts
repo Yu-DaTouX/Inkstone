@@ -1,4 +1,4 @@
-import { isLiveTerminalJob, type TerminalJob } from '../shared/terminal-jobs'
+import { isLiveTerminalJob, terminalJobStoppable, type TerminalJob } from '../shared/terminal-jobs'
 
 const FINISHED_KEEP = 50
 
@@ -46,7 +46,7 @@ export function updateTerminalJob(id: string, patch: Partial<Pick<TerminalJob, '
 
 export function requestTerminalJobStop(id: string): string | null {
   const job = jobs.get(id)
-  if (!job || job.state !== 'running') return null
+  if (!job || !terminalJobStoppable(job)) return null
   job.state = 'stopping'
   emit()
   return job.terminalId
@@ -55,7 +55,7 @@ export function requestTerminalJobStop(id: string): string | null {
 export function markTerminalJobsStopping(terminalId: string): void {
   let changed = false
   for (const job of jobs.values()) {
-    if (job.kind === 'bash' || job.terminalId !== terminalId || job.state !== 'running') continue
+    if (job.kind === 'bash' || job.terminalId !== terminalId || !terminalJobStoppable(job)) continue
     job.state = 'stopping'
     changed = true
   }

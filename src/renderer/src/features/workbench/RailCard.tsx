@@ -15,6 +15,7 @@ export interface RailGrip {
 export interface RailCardProps {
   id: RailSectionId
   title: string
+  badge?: ReactNode
   summary?: ReactNode
   summaryWhenOpen?: boolean
   open: boolean
@@ -31,6 +32,7 @@ export interface RailCardProps {
 export function RailCard({
   id,
   title,
+  badge,
   summary,
   summaryWhenOpen,
   open,
@@ -76,30 +78,39 @@ export function RailCard({
       >
         <Button variant="plain" size="sm" justify="start" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
           <span className="wb-tile-title">{title}</span>
+          {badge}
           <CollapsibleChevron expanded={open} className="wb-tile-chevron" />
           <AsciiRule leader className="wb-tile-leader" />
-          {showSummary ? <span className="wb-tile-summary">{summary}</span> : null}
         </Button>
-        <span className="wb-rail-grip" data-with-open={onOpenView ? '1' : undefined} onPointerDownCapture={grip.onPointerDown}>
-          <IconButton
-            variant="plain"
-            size="sm"
-            aria-label={grip.label}
-            tooltip={grip.label}
-            aria-pressed={grip.picked}
-            onPress={grip.onPress}
-            onKeyDown={grip.onKeyDown}
-            onBlur={grip.onBlur}
-            data-testid={`wb-rail-grip-${id}`}
-          >
-            <GripVertical size={12} aria-hidden />
-          </IconButton>
+        <span className="wb-tile-tail">
+          <span className="wb-tile-tools">
+            <span className="wb-rail-grip" onPointerDownCapture={grip.onPointerDown}>
+              <IconButton
+                variant="plain"
+                size="sm"
+                aria-label={grip.label}
+                tooltip={grip.label}
+                aria-pressed={grip.picked}
+                onPress={grip.onPress}
+                onKeyDown={grip.onKeyDown}
+                onBlur={grip.onBlur}
+                data-testid={`wb-rail-grip-${id}`}
+              >
+                <GripVertical size={12} aria-hidden />
+              </IconButton>
+            </span>
+            {onOpenView ? (
+              <IconButton variant="plain" size="sm" aria-label={openLabel ?? title} tooltip={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
+                <ArrowUpRight size={12} aria-hidden />
+              </IconButton>
+            ) : null}
+          </span>
+          {showSummary ? (
+            <span className="wb-tile-summary" onClick={() => onOpenChange(!open)}>
+              {summary}
+            </span>
+          ) : null}
         </span>
-        {onOpenView ? (
-          <IconButton variant="plain" size="sm" aria-label={openLabel ?? title} tooltip={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
-            <ArrowUpRight size={12} aria-hidden />
-          </IconButton>
-        ) : null}
       </div>
       {hasBody ? (
         <Expand open={open} className="wb-tile-expand">

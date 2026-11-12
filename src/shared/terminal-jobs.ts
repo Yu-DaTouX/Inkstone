@@ -14,8 +14,12 @@ export interface TerminalJob {
   state: TerminalJobState
 }
 
-export function isLiveTerminalJob(job: Pick<TerminalJob, 'state'>): boolean {
-  return job.state === 'running' || job.state === 'stopping'
+export function isLiveTerminalJob(job: Pick<TerminalJob, 'state' | 'endedAt'>): boolean {
+  return job.state === 'running' || job.state === 'stopping' || (job.state === 'timeout' && job.endedAt === undefined)
+}
+
+export function terminalJobStoppable(job: Pick<TerminalJob, 'state' | 'endedAt'>): boolean {
+  return job.state === 'running' || (job.state === 'timeout' && job.endedAt === undefined)
 }
 
 export function terminalJobOwnedBy(job: Pick<TerminalJob, 'owners'>, key: string): boolean {

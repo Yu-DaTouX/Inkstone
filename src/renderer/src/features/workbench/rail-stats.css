@@ -100,37 +100,34 @@
 }
 
 @layer features {
-  .wb-rs-rows {
+  .wb-rs-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--s-2);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-8) var(--s-12);
     min-width: 0;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
-  .wb-rs-rows .wb-rs-strong {
+  .wb-rs-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .wb-rs-cell > .wb-rs-strong {
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
     font-weight: var(--w-medium);
+    line-height: var(--t-body-lh);
   }
 
-  .wb-rs-rows .wb-rs-line {
-    align-items: center;
-    min-height: var(--size-btn-sm);
-  }
-
-  .wb-rs-rows .wb-rs-label {
-    font-size: var(--t-body);
-  }
-
-  @media (hover: hover) {
-    .wb-overview .wb-tile-open {
-      opacity: 0;
-      transition: opacity var(--dur-fast) ease;
-    }
-    .wb-overview .wb-tile-head:is(:hover, :focus-within) .wb-tile-open {
-      opacity: 1;
-    }
+  .wb-rs-cell[data-empty='1'] > .wb-rs-strong {
+    color: var(--fg3);
   }
 
   .wb-overview .wb-tile-title {

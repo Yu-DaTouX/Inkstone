@@ -38,6 +38,9 @@ export interface RailText {
   showLess: string
   removeOutput: (name: string) => string
   dirty: string
+  branchUnknown: string
+  gitReadFailed: string
+  peakTip: string
   dirtyCount: (n: number) => string
   cacheHit: string
   hitShort: string
@@ -91,6 +94,9 @@ const ZH: RailText = {
   showLess: '收起',
   removeOutput: (name) => `从列表移除「${name}」`,
   dirty: '工作区有未提交的改动',
+  branchUnknown: '分支未知',
+  gitReadFailed: 'Git 状态读取失败，稍后自动重试',
+  peakTip: 'DeepSeek 高峰时段，按峰价计费',
   dirtyCount: (n) => `${n} 处改动`,
   cacheHit: '缓存命中率',
   hitShort: '命中',
@@ -144,6 +150,9 @@ const EN: RailText = {
   showLess: 'Show less',
   removeOutput: (name) => `Remove ${name} from the list`,
   dirty: 'Uncommitted changes in the working tree',
+  branchUnknown: 'Branch unknown',
+  gitReadFailed: 'Could not read Git status; retrying shortly',
+  peakTip: 'DeepSeek peak hours: billed at peak rates',
   dirtyCount: (n) => (n === 1 ? '1 change' : `${n} changes`),
   cacheHit: 'Cache hit rate',
   hitShort: 'Hit',

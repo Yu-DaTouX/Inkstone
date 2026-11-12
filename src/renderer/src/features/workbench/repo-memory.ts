@@ -3,8 +3,8 @@ import type { GitRepoState } from '../../../../shared/git'
 const REPO_MEMORY_MAX = 24
 const memory = new Map<string, GitRepoState | null>()
 
-export function rememberedRepo(cwd: string): GitRepoState | null {
-  return memory.get(cwd) ?? null
+export function knownRepo(cwd: string): GitRepoState | null | undefined {
+  return memory.get(cwd)
 }
 
 export function rememberRepo(cwd: string, repo: GitRepoState | null): void {

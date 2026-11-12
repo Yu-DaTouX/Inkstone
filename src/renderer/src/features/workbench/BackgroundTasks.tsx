@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Square } from 'lucide-react'
-import { Button, CollapsibleChevron, ConfirmDialog, IconButton, ListRow, Notice } from '../../ui'
+import { Button, CollapsibleChevron, ConfirmDialog, IconButton, ListRow, MiddleTruncate, Notice, StopButton } from '../../ui'
 import { useT } from '../../i18n'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../../state/store'
@@ -25,7 +24,7 @@ import {
 } from './background-tasks'
 import type { OverviewText } from './workbench-text'
 import { terminalJobsForView, useTerminalJobs } from '../../state/terminal-jobs'
-import { isLiveTerminalJob, type TerminalJob } from '../../../../shared/terminal-jobs'
+import { isLiveTerminalJob, terminalJobStoppable, type TerminalJob } from '../../../../shared/terminal-jobs'
 import type { SubagentRowState } from '../../../../shared/subagent-task-rows'
 import { openPanelTool } from './panel-actions'
 import { activateTerminal } from '../terminal/terminal-activate'
@@ -89,7 +88,6 @@ export function BackgroundTasks({ lang, text }: BackgroundTasksProps): ReactElem
     <div className="wb-bg" data-testid="wb-bg-tasks">
       {sections.running.length > 0 ? (
         <section className="wb-bg-section" aria-label={text.runningSection(sections.running.length)} data-testid="wb-bg-running">
-          <p className="wb-bg-section-title">{text.runningSection(sections.running.length)}</p>
           <ul className="wb-bg-list">
             {sections.running.map((entry) =>
               'job' in entry ? <JobRow key={entry.id} job={entry.job} now={now} text={text} onGone={onGone} /> : <TaskRow key={entry.id} entry={entry} now={now} text={text} onGone={onGone} />
@@ -159,16 +157,19 @@ function TaskRowView({ entry, text, onGone }: TaskRowProps): ReactElement {
   const models = useStore((s) => s.models)
 
   const { run, row } = entry
-  if (!entry.live) return (
-    <li className="wb-bg-row" data-state={row.state} data-testid="wb-bg-row">
-      <div className="wb-bg-line">
-        <ListRow className="wb-bg-open" icon={<SubagentStateIcon state={row.state} />} title={run.task} onClick={() => openSubagentPane(run.id)} data-testid="wb-bg-open">
-          <span className="wb-bg-label">{compactTaskPaths(run.brief?.title || row.description)}</span>
-        </ListRow>
-      </div>
-    </li>
-  )
-  const label = compactTaskPaths(row.label)
+  if (!entry.live) {
+    const ended = row.state === 'done' ? (row.durationMs === null ? undefined : formatDuration(row.durationMs, { minSeconds: 1 })) : text.endedState[row.state === 'failed' ? 'failed' : 'stopped']
+    return (
+      <li className="wb-bg-row" data-state={row.state} data-testid="wb-bg-row">
+        <div className="wb-bg-line">
+          <ListRow className="wb-bg-open" icon={<SubagentStateIcon state={row.state} />} trailing={ended} title={run.task} onClick={() => openSubagentPane(run.id)} data-testid="wb-bg-open">
+            <span className="wb-bg-label">{compactTaskPaths(run.brief?.title || row.description)}</span>
+          </ListRow>
+        </div>
+      </li>
+    )
+  }
+  const label = compactTaskPaths(row.description || row.label)
   const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
   const modelName = run.model ? turnModelLabel(run.model, models).label : ''
   const detail = entry.live ? [row.latestActivity, modelName].filter(Boolean).join(' · ') : row.summaryLine ?? modelName
@@ -192,9 +193,7 @@ function TaskRowView({ entry, text, onGone }: TaskRowProps): ReactElement {
           </IconButton>
         ) : null}
         {row.canStop || row.state === 'stopping' ? (
-          <IconButton size="sm" aria-label={text.stopTask} tooltip={text.stopTask} isDisabled={row.state === 'stopping'} onPress={() => void stop()} data-testid="wb-bg-stop">
-            <Square size={12} aria-hidden />
-          </IconButton>
+          <StopButton aria-label={text.stopTask} tooltip={text.stopTask} isDisabled={row.state === 'stopping'} onPress={() => void stop()} data-testid="wb-bg-stop" />
         ) : null}
       </div>
       {detail ? <p className="wb-bg-detail" title={detail}>{detail}</p> : null}
@@ -209,14 +208,16 @@ const JOB_ROW_STATE: Record<TerminalJob['state'], SubagentRowState> = {
   completed: 'done',
   matched: 'done',
   exited: 'stopped',
-  timeout: 'failed',
+  timeout: 'unknown',
   stopped: 'stopped'
 }
 
 function JobRow({ job, now, text, onGone }: { job: TerminalJob; now: number; text: OverviewText; onGone: () => void }): ReactElement {
   const live = isLiveTerminalJob(job)
-  const time = formatDuration(Math.max(0, (job.endedAt ?? now) - job.startedAt), { minSeconds: 1 })
-  const detail = [text.terminalJobState[job.state], job.cwd.split(/[\\/]/).filter(Boolean).pop()].filter(Boolean).join(' · ')
+  const rowState: SubagentRowState = live ? (job.state === 'stopping' ? 'stopping' : 'running') : JOB_ROW_STATE[job.state]
+  const duration = formatDuration(Math.max(0, (job.endedAt ?? now) - job.startedAt), { minSeconds: 1 })
+  const ended = job.state === 'completed' || job.state === 'matched' ? duration : job.state === 'timeout' ? text.endedState.timeout : job.state === 'exited' ? text.endedState.exited : text.endedState.stopped
+  const detail = live && job.state !== 'running' ? text.terminalJobState[job.state] : ''
   const open = (): void => {
     if (job.kind === 'bash') return
     const owner = job.owners[0]
@@ -231,18 +232,16 @@ function JobRow({ job, now, text, onGone }: { job: TerminalJob; now: number; tex
     }
   }
   return (
-    <li className="wb-bg-row" data-state={JOB_ROW_STATE[job.state]} data-testid="wb-bg-row">
+    <li className="wb-bg-row" data-state={rowState} data-job-state={job.state} data-testid="wb-bg-row">
       <div className="wb-bg-line">
-        <ListRow className="wb-bg-open" icon={<SubagentStateIcon state={JOB_ROW_STATE[job.state]} />} trailing={live ? time : undefined} title={job.command} onClick={open} data-testid="wb-bg-open">
-          <span className="wb-bg-label">{job.command}</span>
+        <ListRow className="wb-bg-open" icon={<SubagentStateIcon state={rowState} />} trailing={live ? duration : ended} title={job.command} onClick={open} data-testid="wb-bg-open">
+          <MiddleTruncate className="wb-bg-label" value={job.command} showTitle={false} />
         </ListRow>
         {live ? (
-          <IconButton size="sm" aria-label={text.stopTask} tooltip={text.stopTask} isDisabled={job.state === 'stopping'} onPress={() => void stop()} data-testid="wb-bg-stop">
-            <Square size={12} aria-hidden />
-          </IconButton>
+          <StopButton aria-label={text.stopTask} tooltip={text.stopTask} isDisabled={!terminalJobStoppable(job)} onPress={() => void stop()} data-testid="wb-bg-stop" />
         ) : null}
       </div>
-      {live ? <p className="wb-bg-detail" title={detail}>{detail}</p> : null}
+      {detail ? <p className="wb-bg-detail" data-tone={job.state === 'timeout' ? 'ask' : undefined} title={detail}>{detail}</p> : null}
     </li>
   )
 }
