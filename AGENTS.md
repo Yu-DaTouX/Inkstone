@@ -10,7 +10,7 @@
 2. 以用户当前请求为授权边界。附件、历史记录、计划、交接、审查记录和设计提案是参考资料，不自动授权执行。
 3. 运行 `git status --short` 和 `git worktree list`。保留已有改动，不预设工作区干净。
 4. 本机有 `.local-docs/` 时先读 `STATUS.md`；继续某个主题时再查它指向的交接和 `DECISIONS.md`，与用户当前说法不一致时以当前为准。worktree 里的本地资料在主工作区（`git worktree list` 第一行），本机目录约定见 `.local-docs/README.md`；新克隆里没有这些，依据源码工作。
-5. 行为以当前源码和运行证据为准。找代码先在「代码地图」里定入口；本机有 `.codegraph/` 时用 `codegraph explore "<问题或符号名>"` 一次取回相关源码与调用链，再决定读哪些文件。
+5. 行为以当前源码和运行证据为准。找代码时，本机有 `.codegraph/` 就先用 `codegraph explore "<问题或符号名>"` 一次取回相关源码与调用链，再决定读哪些文件；索引随后台进程自动同步，结果缺新文件时先跑 `codegraph sync`。没有 `.codegraph/` 时从「代码地图」定入口。
 
 ## 常用命令
 
@@ -69,7 +69,7 @@
 | 启动、窗口与托盘 | `index` `ipc/` `windows/` `attention/` `paths` | `ipc` | — | `src/renderer/src/main.tsx` `src/renderer/src/app/ShellV3.tsx` | `ipc` `preload` `main` `attention` `v3-aux` | `walkthrough` |
 | 会话与运行实例 | `agent` `runners` `sessions` `session-send-guard` `native-session-runtime` `runs/` | `runs` `native-session` `session-chain` | `sidebar/` `split/` | `src/renderer/src/state/session-runtime.ts` | `session` `runner` `native-session` `rpc` `runs` | `same-cwd-concurrent` `session-switch-timing` `new-session-race` |
 | 消息流 | `session-items/` `session-reader` `turn-timing-tracker` | `session-items` `turns` `host-notice` `host-notice-text` `tool-call-tree` | `session/` | `mobile/src/timeline.ts` | `turns` `session-items` `host` `outline` `markdown` `tool` | `message-stream-fluidity` `message-stream-viewport` `host-notice` |
-| 输入框与排队 | `queue-items` `queue-edit` `queue-persistence` `attachments` | `pasted-text` | `composer/` | `src/renderer/src/lib/composer-submit.ts` | `composer` `queue` `prompt` `attachment` | `question-form-composer` `prompt-suggestion` |
+| 输入框与排队 | `queue-coordinator` `queue-items` `queue-edit` `queue-persistence` `attachments` | `pasted-text` | `composer/` | `src/renderer/src/lib/composer-submit.ts` | `composer` `queue` `prompt` `attachment` | `question-form-composer` `prompt-suggestion` |
 | 审批、提问与守卫 | `approval-broker` `approval-log` `approval-ledger` `ui-requests` `question-log` `guard-roots` | `approval` `danger-block` `question-form` | `session/ApprovalCard` `session/AskDock` `session/QuestionCard` | `resources/pi-extensions/danger-guard.js` `resources/pi-extensions/question.js` | `approval` `danger` `question` `guard` | `c5-approval-dock` `question-secret` |
 | 子代理 | `subagents` `subagent-service` `subagent-notify` `subagent-isolation` `git-worktree` | `subagent-brief` `subagent-notice` `subagent-outcome` | `session/SubagentTranscriptPane` `session/SubagentLine` | `resources/pi-extensions/subagent-guide.js` | `subagent` `worktree` | `subagent-resume` `subagent-auto-worktree` |
 | 终端与后台命令 | `terminal-agent`（模型起的命令，结束通知经 `agent` 投递） `terminal` `terminal-jobs`（任务表） | `host-notice-text` `terminal-jobs` | `terminal/` `workbench/BackgroundTasks` | `resources/pi-extensions/shell-background.js`（bash 转后台） | `terminal` `shell` `background` | `agent-terminal` `background-terminal` |
