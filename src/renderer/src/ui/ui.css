@@ -228,6 +228,10 @@
     flex: none;
     color: var(--fg3);
   }
+  .ui-stop-btn {
+    flex: none;
+    color: var(--fg2);
+  }
   .ui-icon-btn svg {
     display: block;
   }
@@ -242,6 +246,10 @@
     .ui-btn--ghost:hover:not([data-disabled]):not([data-pending]) {
       background: var(--hover);
       color: var(--fg);
+    }
+    .ui-stop-btn.ui-btn--ghost:hover:not([data-disabled]):not([data-pending]) {
+      background: var(--fail-bg);
+      color: var(--fail-t);
     }
     .ui-btn--glass:hover:not([data-disabled]):not([data-pending]) {
       border-color: var(--line2);
@@ -741,9 +749,13 @@
     cursor: default;
     outline: none;
   }
-  .ui-menu__item[data-focused]:not([data-disabled]),
-  .ui-listbox__item[data-focused]:not([data-disabled]) {
+  .ui-menu__item[data-focused]:not([data-disabled]):not([data-selected]),
+  .ui-listbox__item[data-focused]:not([data-disabled]):not([data-selected]),
+  .ui-menu__item--checkable[data-selected][data-focused]:not([data-disabled]) {
     background: var(--hover);
+  }
+  .ui-listbox__item[data-focus-visible]:not(.ui-popover *) {
+    box-shadow: var(--ring-focus-inset);
   }
   .ui-menu__item[data-selected],
   .ui-listbox__item[data-selected] {
@@ -768,6 +780,10 @@
   .ui-menu__item--checkable[data-selected] {
     background: transparent;
     color: inherit;
+  }
+  .ui-menu:has(.ui-menu__item--checkable) > .ui-menu__item:not(.ui-menu__item--checkable),
+  .ui-menu:has(.ui-menu__item--checkable) > .ui-menu__section > .ui-menu__item:not(.ui-menu__item--checkable) {
+    padding-inline-start: calc(var(--s-8) * 2 + var(--size-icon));
   }
   .ui-menu__check,
   .ui-menu__icon {
@@ -820,6 +836,8 @@
     padding-inline-start: var(--s-8);
   }
   .ui-menu__shortcut {
+    display: inline-flex;
+    align-items: center;
     flex: none;
     align-self: center;
     margin-inline-start: auto;
@@ -1108,6 +1126,11 @@
   }
   .ui-tooltip-text:focus-visible {
     box-shadow: var(--ring-focus);
+  }
+  .ui-tooltip-text[data-underline] {
+    text-decoration: underline dashed var(--line-ctl);
+    text-decoration-thickness: var(--hair, 1px);
+    text-underline-offset: 3px;
   }
   .ui-tooltip {
     max-width: 320px;

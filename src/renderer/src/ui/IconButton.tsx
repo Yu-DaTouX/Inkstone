@@ -60,3 +60,24 @@ export const CloseButton = forwardRef<HTMLButtonElement, CloseButtonProps>(funct
     </IconButton>
   )
 })
+
+export type StopButtonProps = Omit<IconButtonProps, 'children' | 'variant'>
+
+export const StopButton = forwardRef<HTMLButtonElement, StopButtonProps>(function StopButton(
+  { size = 'sm', className, ...props },
+  ref
+) {
+  return (
+    <IconButton
+      {...props}
+      ref={ref}
+      size={size}
+      variant="ghost"
+      className={composeRenderProps(className, (cn) => cx('ui-stop-btn', cn))}
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+        <rect x="2" y="2" width="8" height="8" rx="1.5" />
+      </svg>
+    </IconButton>
+  )
+})

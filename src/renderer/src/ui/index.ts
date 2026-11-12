@@ -5,7 +5,7 @@ export { useScrollbarReveal } from './scrollbar-reveal'
 export { revealCollapsedHeader } from './disclosure-scroll'
 
 export { BareButton, Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button'
-export { CloseButton, IconButton, type CloseButtonProps, type IconButtonProps } from './IconButton'
+export { CloseButton, IconButton, StopButton, type CloseButtonProps, type IconButtonProps, type StopButtonProps } from './IconButton'
 export {
   InputGroup,
   InputGroupAddon,

@@ -67,6 +67,15 @@
     flex: none;
   }
 
+  .ui-rail-value__dirty {
+    flex: none;
+    width: var(--size-dot-unread);
+    height: var(--size-dot-unread);
+    border-radius: var(--r-full);
+    corner-shape: round;
+    box-shadow: inset 0 0 0 1.5px var(--git-mod);
+  }
+
   .ui-rail-value__delta {
     display: inline-flex;
     gap: var(--s-4);

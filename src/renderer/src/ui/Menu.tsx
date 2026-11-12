@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useCallback, type ReactNode } from 'react'
 import {
   Keyboard,
   Menu as RACMenu,
@@ -48,11 +48,23 @@ export function MenuItem<T extends object = object>({
   textValue,
   ...props
 }: MenuItemProps<T>) {
+  const toggle = typeof checked === 'boolean' ? checked : null
+  const itemRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node || toggle === null) return
+      const role = node.getAttribute('role')
+      if (role !== 'menuitem' && role !== 'menuitemcheckbox') return
+      node.setAttribute('role', 'menuitemcheckbox')
+      node.setAttribute('aria-checked', toggle ? 'true' : 'false')
+    },
+    [toggle]
+  )
   const slotted = icon != null || description != null || disabledReason != null || shortcut != null || trailingValue != null || checked !== undefined
   const resolvedTextValue = textValue ?? (typeof children === 'string' ? children : undefined)
   return (
     <RACMenuItem
       {...props}
+      ref={itemRef}
       textValue={resolvedTextValue}
       data-tone={tone === 'danger' ? 'danger' : undefined}
       className={composeRenderProps(className, (cn) =>

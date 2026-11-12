@@ -15,6 +15,7 @@ export type RailGlyph =
   | { kind: 'bars'; values: readonly number[]; pending?: number | null; slots?: number }
   | { kind: 'dot'; status: StatusDotKind }
   | { kind: 'delta'; added: number; removed: number; quiet?: boolean }
+  | { kind: 'dirty' }
 
 export interface RailValueProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'children'> {
   glyph?: RailGlyph
@@ -66,11 +67,13 @@ function RailGlyphMark({ glyph }: { glyph: RailGlyph }) {
       return <MiniBars className="ui-rail-value__bars" values={glyph.values} pending={glyph.pending} slots={glyph.slots} />
     case 'dot':
       return <StatusDot className="ui-rail-value__dot" kind={glyph.status} />
+    case 'dirty':
+      return <span className="ui-rail-value__dirty" aria-hidden="true" />
     case 'delta':
       return (
         <span className="ui-rail-value__delta" data-quiet={glyph.quiet ? '' : undefined}>
-          <span data-sign="add">+{glyph.added}</span>
-          <span data-sign="del">−{glyph.removed}</span>
+          {glyph.added > 0 || glyph.removed === 0 ? <span data-sign="add">+{glyph.added}</span> : null}
+          {glyph.removed > 0 ? <span data-sign="del">−{glyph.removed}</span> : null}
         </span>
       )
   }

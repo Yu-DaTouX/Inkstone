@@ -17,7 +17,19 @@ export interface SheetProps {
   children: ReactNode
 }
 
-const AUTOFOCUS_SELECTOR = '[data-autofocus], [role="tab"][aria-selected="true"], button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+const AUTOFOCUS_SELECTORS = [
+  '[data-autofocus]',
+  '[role="tab"][aria-selected="true"]',
+  'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
+]
+
+function autofocusTarget(root: HTMLElement): HTMLElement | null {
+  for (const selector of AUTOFOCUS_SELECTORS) {
+    const found = root.querySelector<HTMLElement>(selector)
+    if (found) return found
+  }
+  return null
+}
 
 function SheetModalToken() {
   const token = useRef(Symbol('ui-sheet'))
@@ -53,8 +65,7 @@ function RetainedSheet({ isOpen, onOpenChange, label, className, overlayClassNam
     const frame = requestAnimationFrame(() => {
       const root = ref.current
       if (!root || root.contains(document.activeElement)) return
-      const first = root.querySelector<HTMLElement>(AUTOFOCUS_SELECTOR)
-      ;(first ?? root).focus({ preventScroll: true })
+      ;(autofocusTarget(root) ?? root).focus({ preventScroll: true })
     })
     return () => {
       cancelAnimationFrame(frame)

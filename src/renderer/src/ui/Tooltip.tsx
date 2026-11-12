@@ -39,6 +39,7 @@ export interface TooltipTextProps {
   tooltipDetail?: ReactNode
   tooltipPlacement?: RACTooltipProps['placement']
   className?: string
+  underline?: boolean
   children: ReactNode
   'data-testid'?: string
 }
@@ -49,13 +50,14 @@ export function TooltipText({
   tooltipDetail,
   tooltipPlacement,
   className,
+  underline,
   children,
   'data-testid': testId
 }: TooltipTextProps) {
   return (
     <TooltipTrigger>
       <Focusable>
-        <span tabIndex={0} className={cx('ui-tooltip-text', className)} data-testid={testId}>
+        <span tabIndex={0} className={cx('ui-tooltip-text', className)} data-underline={underline ? '' : undefined} data-testid={testId}>
           {children}
         </span>
       </Focusable>

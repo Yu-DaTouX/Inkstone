@@ -144,9 +144,9 @@ export const v3Dark = {
   "btnPrimary": "#D9D9D6",
   "btnPrimaryHover": "#E8E8E5",
   "onBtnPrimary": "#000000",
-  "btnPrimaryOff": "transparent",
-  "btnPrimaryOffEdge": "rgba(255,255,255,.4)",
-  "onBtnPrimaryOff": "#999892",
+  "btnPrimaryOff": "rgba(217,217,214,.3)",
+  "btnPrimaryOffEdge": "transparent",
+  "onBtnPrimaryOff": "rgba(0,0,0,.7)",
   "accent": "#2875D2",
   "accentT": "#6DA7EC",
   "onAccent": "#FFFFFF",
@@ -205,4 +205,4 @@ export const v3Dark = {
 
 export const v3Radius = {"2xs":2,"xs":4,"sm":6,"md":8,"lg":10,"bubble":12,"side":12,"xl":14,"2xl":16,"full":999} as const
 
-export const v3Data = {"light":["#2A78D6","#0F9D9A","#8257E5","#D14D8B","#6F8F1F","#EB6834","#B5651D","#5B6577"],"dark":["#3987E5","#3FC9C4","#AE90FF","#F07AB0","#A6C94A","#F07A48","#E39A57","#98A2B3"]} as const
+export const v3Data = {"light":["#2A78D6","#0F9D9A","#8257E5","#D14D8B","#6F8F1F","#EB6834","#B5651D","#5B6577","#B08A00","#4C5BD4","#C2453D"],"dark":["#3987E5","#3FC9C4","#AE90FF","#F07AB0","#A6C94A","#F07A48","#E39A57","#98A2B3","#DDBB45","#8F9BF5","#EF7A70"]} as const

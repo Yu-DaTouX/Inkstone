@@ -44,9 +44,9 @@
     --btn-primary: light-dark(#0B0B0B, #D9D9D6);
     --btn-primary-hover: light-dark(#2B2B29, #E8E8E5);
     --on-btn-primary: light-dark(#FFFFFF, #000000);
-    --btn-primary-off: light-dark(rgba(11,11,11,.4), transparent);
-    --btn-primary-off-edge: light-dark(transparent, rgba(255,255,255,.4));
-    --on-btn-primary-off: light-dark(rgba(255,255,255,.9), #999892);
+    --btn-primary-off: light-dark(rgba(11,11,11,.4), rgba(217,217,214,.3));
+    --btn-primary-off-edge: transparent;
+    --on-btn-primary-off: light-dark(rgba(255,255,255,.9), rgba(0,0,0,.7));
     --accent: #2875D2;
     --accent-t: light-dark(#184F95, #6DA7EC);
     --on-accent: #FFFFFF;
@@ -129,6 +129,9 @@
     --data-6: light-dark(#EB6834, #F07A48);
     --data-7: light-dark(#B5651D, #E39A57);
     --data-8: light-dark(#5B6577, #98A2B3);
+    --data-9: light-dark(#B08A00, #DDBB45);
+    --data-10: light-dark(#4C5BD4, #8F9BF5);
+    --data-11: light-dark(#C2453D, #EF7A70);
     --shadow-ring: inset 0 0 0 var(--hair, 1px) rgba(11,11,11,.1);
     --shadow-sm: 0 1px 2px rgba(0,0,0,.05), 0 1px 1px rgba(0,0,0,.03);
     --shadow-md: 0 2px 6px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
