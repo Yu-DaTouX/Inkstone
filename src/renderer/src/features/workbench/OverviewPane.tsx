@@ -41,6 +41,7 @@ import {
   useDismissedOutputs,
   sessionLineTotals,
   useOutputScreen,
+  useToolStructureMessages,
   visibleOutputs,
   type RailChangedFile,
   type RailOutput
@@ -595,7 +596,8 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const [gitTick, setGitTick] = useState(0)
   const gitRefresh = `${gitMessageCount}:${agentRunning ? 1 : 0}:${gitTick}`
   const repo = useGitRepo(cwd || null, gitRefresh)
-  const sessionChanges = useMemo(() => sessionLineTotals(messages, cwd || undefined), [messages, cwd])
+  const toolMessages = useToolStructureMessages(messages)
+  const sessionChanges = useMemo(() => sessionLineTotals(toolMessages, cwd || undefined), [toolMessages, cwd])
   const changesCount = sessionChanges.files
   const lineTotals = sessionChanges
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
@@ -638,7 +640,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
     />
   )
 
-  const outputPool = useMemo(() => outputCandidates(messages, cwd || undefined), [messages, cwd])
+  const outputPool = useMemo(() => outputCandidates(toolMessages, cwd || undefined), [toolMessages, cwd])
   const outputPaths = useMemo(() => outputPool.map((output) => output.path), [outputPool])
   const outputScreen = useOutputScreen(cwd || null, outputPaths, gitRefresh)
   const [dismissedOutputs, dismissOutput] = useDismissedOutputs(view.sessionId || view.key || '')

@@ -32,6 +32,7 @@ export interface RunsHostOptions {
 }
 
 const MAX_PENDING_SIGNALS = 2_000
+const MAX_OPENED_SUBAGENTS = 500
 const CODE_RETRY_DELAYS_MS = [1_000, 5_000, 30_000]
 const CODE_FAILED_RETRY_MS = 60_000
 const TERMINAL_SIGNALS: ReadonlySet<RunSignal['type']> = new Set<RunSignal['type']>(['agent-settled', 'stopped', 'host-fail', 'pi-exit'])
@@ -179,7 +180,9 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
       if (!ctx) return
       const activation = run.activeSince ?? 0
       if (openedSubagents.get(run.id) !== activation) {
+        openedSubagents.delete(run.id)
         openedSubagents.set(run.id, activation)
+        if (openedSubagents.size > MAX_OPENED_SUBAGENTS) openedSubagents.delete(openedSubagents.keys().next().value!)
         feed(ctx, { type: 'agent-start' })
       }
       const signals = signalsFromPiEvent(evt, options.now?.() ?? Date.now())

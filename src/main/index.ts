@@ -27,6 +27,7 @@ import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from 
 import { createRunsHost, type RunsHost } from './runs-host'
 import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
 import { createAuxWindows, quickAskSessionTarget, registerAuxIpc, submitQuickAsk, type AuxWindows } from './windows'
+import { createRendererRecovery } from './windows/renderer-recovery'
 import { registerDeepLinkProtocol, windowDeepLinkRouter, type DeepLink } from './deeplink'
 import { approvalNoticeTitle, createAttentionNotices, noticeLang, terminalNoticeText } from './attention-notice'
 import { RunnerVisibility } from './runner-reclaim'
@@ -359,6 +360,7 @@ try {
 }
 
 let win: BrowserWindow | null = null
+const rendererMayReload = createRendererRecovery()
 let pendingPinnedGuardNotice: PinnedGuardNotice | null = null
 let primaryRestoring = false
 let primaryRestoreFile: string | null = null
@@ -677,8 +679,22 @@ function yanThinExtensions(): { -readonly [K in keyof typeof YAN_THIN_EXTENSION_
   return Object.fromEntries(entries) as { -readonly [K in keyof typeof YAN_THIN_EXTENSION_FILES]: string | undefined }
 }
 
+let launchResourceCache: { at: number; providers: string[]; skills: string[]; signature: string } | null = null
+
+function launchResources(): { providers: string[]; skills: string[]; signature: string } {
+  if (launchResourceCache && Date.now() - launchResourceCache.at < 2000) return launchResourceCache
+  const pluginExtensions = bundledPlugins.extensionPaths()
+  const providers = [...PROVIDER_EXTENSION_FILES.map(yanThinResourcePath).filter((p): p is string => !!p), ...pluginExtensions]
+  const skills = [...bundledSkillPaths(), ...bundledPlugins.skillPaths(pluginExtensions)]
+  const signature = JSON.stringify([...providers, ...skills].map((path) => {
+    try { return `${path}@${statSync(path).mtimeMs}` } catch { return path }
+  }))
+  launchResourceCache = { at: Date.now(), providers, skills, signature }
+  return launchResourceCache
+}
+
 function providerExtensionPaths(): string[] {
-  return [...PROVIDER_EXTENSION_FILES.map(yanThinResourcePath).filter((p): p is string => !!p), ...bundledPlugins.extensionPaths()]
+  return launchResources().providers
 }
 
 function yanThinExtensionPaths(): string[] {
@@ -1333,6 +1349,7 @@ async function runShutdown(): Promise<void> {
   const outcomes = await runShutdownSteps(
     [
       { name: 'remote-access', run: async () => { try { await remoteAccess?.stop() } finally { remoteAccess = null } } },
+      { name: 'terminals', run: () => disposeTerminals() },
       { name: 'runners', run: () => runners?.stopAll() },
       {
         name: 'mcp-app-view',
@@ -1344,7 +1361,6 @@ async function runShutdown(): Promise<void> {
       { name: 'subagents', run: () => subagentService.current()?.stopAll() },
       { name: 'runs-host', run: async () => { try { await runsHost?.dispose() } finally { runsHost = null } } },
       { name: 'browser', run: () => browser?.dispose() },
-      { name: 'terminals', run: () => disposeTerminals() },
       { name: 'pinned-network', run: () => shutdownPinnedNetworkGuard() },
       { name: 'file-name-search', run: () => disposeFileNameSearch() },
       { name: 'usage-stats-worker', run: () => disposeUsageStatsWorker() },
@@ -2108,9 +2124,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       return applyRememberedModel(agent, (await getSettings()).lastMainModel)
     },
     isolationOf,
-    launchSignature: () => JSON.stringify([...providerExtensionPaths(), ...bundledSkillPaths(), ...bundledPlugins.skillPaths()].map((path) => {
-      try { return `${path}@${statSync(path).mtimeMs}` } catch { return path }
-    })),
+    launchSignature: () => launchResources().signature,
     createAgent: (id, cwd, generation) => {
       const agent: AgentController = new AgentController({
         push: (m) => {
@@ -2125,8 +2139,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         subagentHost: subagentService.capabilityHost,
         switchSpareAccount: switchToSpareAccount,
         mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
-        providerExtensions: providerExtensionPaths(),
-        bundledSkills: [...bundledSkillPaths(), ...bundledPlugins.skillPaths()],
+        providerExtensions: launchResources().providers,
+        bundledSkills: launchResources().skills,
         userSkills: () => userSkillPaths(),
         readHistory: (sessionFile) => readHistoryWithArtifacts(sessionFile),
         capability: {
@@ -3145,14 +3159,19 @@ function registerIpc(): void {
     let skippedForSize = false
     for (const file of r.filePaths) {
       try {
-        const buf = await readFile(file)
-        if (buf.byteLength > 12 * 1024 * 1024) {
+        const size = (await stat(file)).size
+        if (size > 12 * 1024 * 1024) {
           skippedForSize = true
           continue
         }
-        if (total + buf.byteLength > PICK_IMAGES_TOTAL_BYTES) {
+        if (total + size > PICK_IMAGES_TOTAL_BYTES) {
           skippedForSize = true
           break
+        }
+        const buf = await readFile(file)
+        if (buf.byteLength > 12 * 1024 * 1024 || total + buf.byteLength > PICK_IMAGES_TOTAL_BYTES) {
+          skippedForSize = true
+          continue
         }
         total += buf.byteLength
         const ext = extname(file).slice(1).toLowerCase()
@@ -3170,6 +3189,7 @@ function registerIpc(): void {
           data,
           preview
         })
+        await new Promise<void>((resolve) => setImmediate(resolve))
       } catch (e) {
         console.error('[yan] 读图失败：', file, e)
       }
@@ -3281,7 +3301,8 @@ function registerIpc(): void {
   refreshMinecraftPluginOnStartup()
   ipc.handle('yan:plugins:action', async (id: unknown, action: unknown) => {
     if (typeof id !== 'string' || !['status', 'install', 'remove'].includes(String(action))) return { ok: false, error: pick('无效插件操作', 'Invalid plugin action') }
-    return bundledPlugins.action(id, String(action))
+    launchResourceCache = null
+    return bundledPlugins.action(id, String(action)).finally(() => { launchResourceCache = null })
   })
   ipc.handle('yan:plugins:invoke', async (id: unknown, action: unknown, params: unknown) => {
     if (typeof id !== 'string' || typeof action !== 'string') throw new Error(pick('无效插件请求', 'Invalid plugin request'))
@@ -3607,6 +3628,12 @@ function createWindow(): void {
     trayMotionAllowed = false
     refreshTaskbar()
     reportMainError('render-process-gone', new Error(`${details.reason} code=${details.exitCode}`))
+    const crashed = win
+    if (isQuitting || shuttingDown || !crashed || !rendererMayReload(details.reason)) return
+    setTimeout(() => {
+      if (win !== crashed || crashed.isDestroyed() || isQuitting || shuttingDown) return
+      crashed.webContents.reload()
+    }, 1000)
   })
   win.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (!isMainFrame || isInPlace) return

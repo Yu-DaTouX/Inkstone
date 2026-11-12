@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync, statSync } from 'node:fs'
 import { basename, delimiter, join } from 'node:path'
@@ -315,14 +316,31 @@ export function resizeTerminal(id: string, cols: number, rows: number): boolean 
   }
 }
 
-export function killTerminal(id: string): boolean {
-  const entry = sessions.get(id)
-  if (!entry) return false
-  batcher.drop(id)
-  try {
-    entry.pty.kill()
-  } catch {
+function killPty(entry: TerminalEntry): Promise<void> {
+  const kill = (): void => {
+    try {
+      entry.pty.kill()
+    } catch {
+    }
   }
+  const pid = entry.info.alive ? entry.pty.pid : undefined
+  if (process.platform !== 'win32' || !pid) {
+    kill()
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 5_000 }, () => {
+      kill()
+      resolve()
+    })
+  })
+}
+
+function removeTerminal(id: string): Promise<void> | null {
+  const entry = sessions.get(id)
+  if (!entry) return null
+  batcher.drop(id)
+  const killed = killPty(entry)
   sessions.delete(id)
   if (entry.info.status) sink?.({ kind: 'status', id, status: undefined })
   for (const listener of [...removedListeners]) {
@@ -331,7 +349,11 @@ export function killTerminal(id: string): boolean {
     } catch {
     }
   }
-  return true
+  return killed
+}
+
+export function killTerminal(id: string): boolean {
+  return removeTerminal(id) !== null
 }
 
 export function terminalProcessId(id: string): number | null {
@@ -413,6 +435,7 @@ export function closeTerminalsForOwner(owner: string): number {
   return closed
 }
 
-export function disposeTerminals(): void {
-  for (const id of [...sessions.keys()]) killTerminal(id)
+export function disposeTerminals(): Promise<void> {
+  const pending = [...sessions.keys()].map((id) => removeTerminal(id))
+  return Promise.all(pending).then(() => undefined)
 }

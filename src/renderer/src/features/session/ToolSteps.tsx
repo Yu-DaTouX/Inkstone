@@ -10,7 +10,7 @@ import { generatingArgs, summarize, toolRunningLabel } from './tool-summary'
 import { isDeniedCall, stepCategory, stepDescription, toolStepTitle, type ToolStepTitle } from './tool-title'
 import { approvalCallIds, cachedToolRows, coalesceNodes, formatToolRun, groupTally, liveToolGlowId, mcpDisplayName, summarizeToolRun, toolCategory, toolNodesEqual, toolRunParts, toolTally, toolTallyText, type ToolRow, type ToolRowsCache, type ToolTallyPart } from './tool-run-model'
 import { estimateCallLines } from './turn-process'
-import { argEntries, isCodemodeTool, isTestCommand, isYanJsonCommand, parseTestSummary, parseYanSummaries, previewOutput, readLineRange, relativePath, toolOutputView, writeArgContent, type OutputNotice, type ToolOutputView, type YanSummary } from './tool-output'
+import { argEntries, isCodemodeTool, isTestCommand, isYanJsonCommand, lastOutputLine, parseTestSummary, parseYanSummaries, previewOutput, readLineRange, relativePath, toolOutputView, writeArgContent, type OutputNotice, type ToolOutputView, type YanSummary } from './tool-output'
 import { HighlightedCode } from '../../patterns/HighlightedCode'
 import { useStore } from '../../state/store'
 import { AskPill } from './AskDock'
@@ -242,7 +242,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
         </span>
       </CollapsibleHeader>
       {asking ? <AskPill kind="approval" /> : call.approval ? <ApprovalReceipt approval={call.approval} /> : null}
-      {running && !blocked && !open && call.output ? <div className="v3-step-live-output" data-testid="v3-step-live-output">{call.output.trimEnd().split('\n').at(-1)?.slice(-180)}</div> : null}
+      {running && !blocked && !open && call.output ? <div className="v3-step-live-output" data-testid="v3-step-live-output">{lastOutputLine(call.output)}</div> : null}
       <CollapsiblePanel animated className="v3-step-panel">{open ? <StepDetail call={call} /> : null}</CollapsiblePanel>
       <Expand open={open || running} aria-hidden={!open && !running || undefined}>
       {nested.shown.length ? (

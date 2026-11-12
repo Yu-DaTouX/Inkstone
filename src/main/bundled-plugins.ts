@@ -111,8 +111,8 @@ export class BundledPlugins {
     return paths
   }
 
-  skillPaths(): string[] {
-    return this.extensionPaths().flatMap(path => {
+  skillPaths(extensionPaths = this.extensionPaths()): string[] {
+    return extensionPaths.flatMap(path => {
       const root = join(path, '..')
       try {
         const manifest = JSON.parse(readFileSync(join(root, 'inkstone-plugin.json'), 'utf8')) as PluginManifest

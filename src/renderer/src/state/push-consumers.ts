@@ -17,6 +17,22 @@ export interface PushContext {
   t(key: MessageKey, vars?: TVars): string
 }
 
+const MAX_BROWSER_STATES = 50
+
+export function withBrowserState(states: Store['browserStates'], sessionId: string, state: Store['browserState']): Store['browserStates'] {
+  const next: Store['browserStates'] = { ...states }
+  delete next[sessionId]
+  next[sessionId] = state
+  let excess = Object.keys(next).length - MAX_BROWSER_STATES
+  for (const key of Object.keys(next)) {
+    if (excess <= 0) break
+    if (key === sessionId || next[key].open) continue
+    delete next[key]
+    excess--
+  }
+  return next
+}
+
 const RESTORE_NOTICE_PREFIX = 'session-restore'
 
 function isRestoreNoticeId(id?: string): boolean {
@@ -56,7 +72,7 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       })
       break
     case 'browser-state': {
-      const browserStates = m.payload.sessionId ? { ...s.browserStates, [m.payload.sessionId]: m.payload } : s.browserStates
+      const browserStates = m.payload.sessionId ? withBrowserState(s.browserStates, m.payload.sessionId, m.payload) : s.browserStates
       if (m.payload.sessionId && m.payload.sessionId !== (s.peekedSessionId ?? s.session?.sessionId ?? 'workspace')) { set({ browserStates }); break }
       if (!m.payload.open) releaseResource('browser')
       const viewSessionId = s.peekedSessionId ?? s.session?.sessionId

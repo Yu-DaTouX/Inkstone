@@ -35,6 +35,7 @@ export interface QueueToPersist {
 }
 
 const chains = new Map<string, Promise<unknown>>()
+const pendingSaves = new Map<string, { record: PersistedQueue; done: Promise<void> }>()
 
 function queueFile(sessionId: string): string {
   return join(QUEUE_RECOVERY_DIR, `${sessionId.replace(/[^A-Za-z0-9_-]/g, '_')}.json`)
@@ -65,10 +66,15 @@ function cleanItems(value: unknown): PersistedQueueItem[] {
 const textsOf = (items: PersistedQueueItem[]): string[] => items.map((item) => item.text).filter((text) => text.trim().length > 0)
 const hasContent = (items: PersistedQueueItem[]): boolean => items.length > 0
 
-function serialize<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
+function serialize<T>(sessionId: string, task: () => Promise<T>, coalescing = false): Promise<T> {
+  if (!coalescing) pendingSaves.delete(sessionId)
   const previous = chains.get(sessionId) ?? Promise.resolve()
   const next = previous.then(task, task)
-  chains.set(sessionId, next.catch(() => undefined))
+  const tail = next.then(() => undefined, () => undefined)
+  chains.set(sessionId, tail)
+  void tail.then(() => {
+    if (chains.get(sessionId) === tail) chains.delete(sessionId)
+  })
   return next
 }
 
@@ -85,9 +91,18 @@ export function saveQueue(input: QueueToPersist): Promise<void> {
     followUp: textsOf(followUp),
     items: { steering, followUp }
   }
-  return serialize(sessionId, async () => {
-    await atomicWriteFile(queueFile(sessionId), `${JSON.stringify(record)}\n`)
-  })
+  const waiting = pendingSaves.get(sessionId)
+  if (waiting) {
+    waiting.record = record
+    return waiting.done
+  }
+  const entry: { record: PersistedQueue; done: Promise<void> } = { record, done: Promise.resolve() }
+  pendingSaves.set(sessionId, entry)
+  entry.done = serialize(sessionId, async () => {
+    if (pendingSaves.get(sessionId) === entry) pendingSaves.delete(sessionId)
+    await atomicWriteFile(queueFile(sessionId), `${JSON.stringify(entry.record)}\n`)
+  }, true)
+  return entry.done
 }
 
 export function loadQueue(sessionId: string): Promise<PersistedQueue | null> {

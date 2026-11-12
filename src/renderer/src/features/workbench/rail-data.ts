@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GitPathScreen } from '../../../../shared/git'
 import type { UIMessage, UIToolCall } from '../../../../shared/ipc'
 import { callPath, collectTurnChanges, isInsideCwd, readFileDiff } from '../session/turn-changes'
@@ -18,6 +18,30 @@ export interface RailLineTotals {
   removed: number
   files: number
   entries: RailChangedFile[]
+}
+
+export function sameToolStructure(previous: readonly UIMessage[], next: readonly UIMessage[]): boolean {
+  if (previous === next) return true
+  if (previous.length !== next.length) return false
+  for (let index = 0; index < next.length; index++) {
+    const a = previous[index]
+    const b = next[index]
+    if (a === b) continue
+    if (!!a.text?.trim() !== !!b.text?.trim()) return false
+    const left = a as unknown as Record<string, unknown>
+    const right = b as unknown as Record<string, unknown>
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+    for (const key of keys) {
+      if (key !== 'text' && key !== 'thinking' && left[key] !== right[key]) return false
+    }
+  }
+  return true
+}
+
+export function useToolStructureMessages(messages: readonly UIMessage[]): readonly UIMessage[] {
+  const ref = useRef(messages)
+  if (!sameToolStructure(ref.current, messages)) ref.current = messages
+  return ref.current
 }
 
 export function railOperationCounts(messages: readonly UIMessage[]): { turns: number; steps: number } {

@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export interface LauncherOptions {
@@ -18,6 +18,21 @@ export function resolveYanCli(opts: LauncherOptions): string | null {
   return null
 }
 
+function writeIfChanged(path: string, text: string): void {
+  try {
+    if (readFileSync(path, 'utf8') === text) return
+  } catch {
+  }
+  const temp = `${path}.${process.pid}.${Date.now()}.tmp`
+  try {
+    writeFileSync(temp, text, 'utf8')
+    renameSync(temp, path)
+  } catch (error) {
+    rmSync(temp, { force: true })
+    throw error
+  }
+}
+
 export function ensureYanLauncher(
   opts: LauncherOptions
 ): { binDir: string; launcher: string; cliPath: string } | null {
@@ -27,22 +42,20 @@ export function ensureYanLauncher(
   mkdirSync(opts.binDir, { recursive: true })
 
   const cmdPath = join(opts.binDir, 'yan.cmd')
-  writeFileSync(
+  writeIfChanged(
     cmdPath,
     [
       '@echo off',
       'set "ELECTRON_RUN_AS_NODE=1"',
       `"${opts.execPath}" "${cliPath}" %*`,
       ''
-    ].join('\r\n'),
-    'utf8'
+    ].join('\r\n')
   )
 
   const shPath = join(opts.binDir, 'yan')
-  writeFileSync(
+  writeIfChanged(
     shPath,
-    ['#!/bin/sh', `ELECTRON_RUN_AS_NODE=1 exec "${opts.execPath}" "${cliPath}" "$@"`, ''].join('\n'),
-    'utf8'
+    ['#!/bin/sh', `ELECTRON_RUN_AS_NODE=1 exec "${opts.execPath}" "${cliPath}" "$@"`, ''].join('\n')
   )
   try {
     chmodSync(shPath, 0o755)

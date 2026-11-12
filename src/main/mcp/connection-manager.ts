@@ -1,6 +1,7 @@
 import { pick } from '../../shared/ui-lang'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StdioTreeClientTransport } from './stdio-tree-transport'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { type ClientCapabilities } from '@modelcontextprotocol/sdk/types.js'
 import type { McpServerConfig, McpServerStatus, McpToolDescriptor } from '../../shared/mcp'
@@ -202,7 +203,7 @@ export class McpConnectionManager {
         }
         env[key] = value
       }
-      return new StdioClientTransport({
+      return new StdioTreeClientTransport({
         command: config.command,
         args: config.args ?? [],
         env,

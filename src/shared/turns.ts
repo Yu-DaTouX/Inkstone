@@ -103,6 +103,16 @@ function haveSameSourceCwd(parts: readonly TurnText[]): boolean {
   return parts.length < 2 || parts.every((part) => part.sourceCwd === parts[0].sourceCwd)
 }
 
+const paragraphCache = new WeakMap<object, { text: string; parts: readonly string[] }>()
+
+function paragraphsOf(message: object, text: string): readonly string[] {
+  const cached = paragraphCache.get(message)
+  if (cached?.text === text) return cached.parts
+  const parts = splitParagraphs(text)
+  paragraphCache.set(message, { text, parts })
+  return parts
+}
+
 export function splitParagraphs(text: string): string[] {
   const out: string[] = []
   let buf: string[] = []
@@ -400,7 +410,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       const hasTools = ownCalls > 0
       const target = seg()
       const at = Math.max(0, target.tools.length - ownCalls)
-      for (const p of splitParagraphs(m.text)) {
+      for (const p of paragraphsOf(m, m.text)) {
         const item = {
           id: `${m.id}#${cur.texts.length}`,
           text: p,

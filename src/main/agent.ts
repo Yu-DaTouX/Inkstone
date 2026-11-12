@@ -925,11 +925,12 @@ export class AgentController extends EventEmitter {
   private async ensureCapability(): Promise<void> {
     const opts = this.capabilityOpts
     if (!opts || this.capabilityServer || this.yanCliEnv) return
+    let server: CapabilityServer | undefined
     try {
       const handlers: CapabilityHandlers = {
         run: (command, params, _ctx, signal) => this.runCapabilityCommand(command, params, signal)
       }
-      const server = new CapabilityServer({
+      server = new CapabilityServer({
         opsDir: opts.opsDir,
         handlers,
         ...(opts.preserveResult ? { preserveResult: opts.preserveResult } : {})
@@ -958,6 +959,7 @@ export class AgentController extends EventEmitter {
         binDir: launcher.binDir
       }
     } catch (err) {
+      if (server && this.capabilityServer !== server) server.stop()
       this.noteCapabilityProblem(`能力服务启动失败：${err instanceof Error ? err.message : String(err)}`)
     }
   }

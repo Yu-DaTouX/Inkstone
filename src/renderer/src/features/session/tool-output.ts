@@ -101,6 +101,11 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text
 }
 
+export function lastOutputLine(text: string, max = 180): string {
+  const trimmed = text.trimEnd()
+  return trimmed.slice(trimmed.lastIndexOf('\n') + 1).slice(-max)
+}
+
 export function firstLinePreview(text: string, max = 60): string {
   const lines = text.split('\n').map((line) => line.trim()).filter(Boolean)
   if (!lines.length) return ''

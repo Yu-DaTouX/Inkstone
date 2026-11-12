@@ -17,7 +17,7 @@ import {
 } from '../../../../shared/session-metrics'
 import type { UIMessage } from '../../../../shared/ipc'
 import { buildRailStats, railTimeText, retainRailSpeed, type RailSpeedHold, type RailSegment, type RailStatsModel } from './rail-stats'
-import { railOperationCounts } from './rail-data'
+import { railOperationCounts, useToolStructureMessages } from './rail-data'
 import { sessionViewIdentity } from '../session/view-state'
 import './rail-stats.css'
 
@@ -67,6 +67,8 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
   const childCost = useStore((s) => (enabled ? subagentCost(viewSubagentRuns(s)) : 0))
   const historyPartial = (peekNote?.truncated ?? 0) > 0
   const speedHold = useRef<RailSpeedHold | null>(null)
+  const countSource = useToolStructureMessages(snapshot.messages)
+  const counts = useMemo(() => (enabled ? railOperationCounts(countSource) : null), [enabled, countSource])
   const history = useMemo(() => {
     if (!enabled) return null
     const { messages, liveId, running } = snapshot
@@ -79,13 +81,13 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
     const heldReading = speedHold.current.sample
     return {
       metrics: projectSessionMetrics(settled, stats, { historyPartial }),
-      counts: railOperationCounts(messages),
+      counts: counts ?? railOperationCounts(messages),
       speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
       heldReading,
       running,
       liveSince: liveActivitySince(messages, live, running)
     }
-  }, [enabled, snapshot, stats, historyPartial, view])
+  }, [enabled, snapshot, stats, historyPartial, view, counts])
   return useMemo(() => {
     if (!history) return null
     const { metrics, counts, speeds, heldReading, running, liveSince } = history

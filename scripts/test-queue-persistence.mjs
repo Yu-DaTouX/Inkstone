@@ -152,5 +152,30 @@ await check('读回内容与磁盘文件一致', async () => {
   assert.equal(raw.version, 2)
 })
 
+process.stdout.write('\n▌连续写入合并\n')
+await check('连续保存只写最后一版，等待中的写入共用一次落盘', async () => {
+  const slow = loadQueue('session-merge')
+  const first = saveQueue({ sessionId: 'session-merge', followUp: ['一'] })
+  const second = saveQueue({ sessionId: 'session-merge', followUp: ['一', '二'] })
+  const third = saveQueue({ sessionId: 'session-merge', followUp: ['一', '二', '三'] })
+  assert.equal(second, first)
+  assert.equal(third, first)
+  await slow
+  await third
+  assert.deepEqual((await loadQueue('session-merge')).followUp, ['一', '二', '三'])
+})
+
+await check('保存与清除交替时按调用顺序生效', async () => {
+  const a = saveQueue({ sessionId: 'session-order', followUp: ['旧'] })
+  const b = clearQueueFile('session-order')
+  const c = saveQueue({ sessionId: 'session-order', followUp: ['新'] })
+  assert.notEqual(c, a)
+  await Promise.all([a, b, c])
+  assert.deepEqual((await loadQueue('session-order')).followUp, ['新'])
+  await saveQueue({ sessionId: 'session-order', followUp: ['再新'] })
+  await clearQueueFile('session-order')
+  assert.equal(await loadQueue('session-order'), null)
+})
+
 process.stdout.write(`\n排队消息持久化：${report.pass} 通过 / ${report.fail} 失败\n`)
 if (report.fail || report.pass === 0) process.exitCode = 1

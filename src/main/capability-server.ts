@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { asModelText } from './model-text'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
-import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 export const CAPABILITY_API_VERSION = 1
@@ -11,6 +11,7 @@ export const CAPABILITY_RESULT_MAX_BYTES = 4 * 1024 * 1024
 export const CAPABILITY_OPS_MAX_FILES = 500
 
 export const CAPABILITY_OPS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const CAPABILITY_OPS_PRUNE_INTERVAL_MS = 10 * 60 * 1000
 
 export interface YanCliEnv {
   url: string
@@ -212,6 +213,8 @@ export class CapabilityServer {
   private readonly preserveResult?: (command: string, operationId: string, data: unknown) => void
   private readonly handlers: CapabilityHandlers
   private readonly allowCommands: Set<string>
+  private lastPruneAt = 0
+  private writesSincePrune = 0
 
   constructor(opts: CapabilityServerOptions) {
     this.opsDir = opts.opsDir
@@ -225,12 +228,13 @@ export class CapabilityServer {
   }
 
   async start(ctx: CapabilityContext): Promise<{ url: string; token: string }> {
-    if (this.server) throw new Error('一个能力服务实例只服务一个会话')
+    if (this.server || this.ctx) throw new Error('一个能力服务实例只服务一个会话')
 
     this.ctx = ctx
     this.token = randomUUID()
-    mkdirSync(this.opsDir, { recursive: true })
-    this.pruneOps()
+    await mkdir(this.opsDir, { recursive: true })
+    await this.pruneOps()
+    if (this.ctx !== ctx || this.server) throw new Error('能力服务启动期间已停止')
 
     const generation = ++this.generation
     this.server = createServer((req, res) => {
@@ -393,7 +397,8 @@ export class CapabilityServer {
           ? this.describeOps(params)
           : await asModelText(() => this.handlers.run(command, params, bound, cancel.signal))
       if (cancel.signal.aborted || generation !== this.generation) return
-      const file = this.writeResult(opId, out)
+      const file = await this.writeResult(opId, out)
+      if (cancel.signal.aborted || generation !== this.generation) return
       if (file && out.data !== undefined) {
         try {
           this.preserveResult?.(command, opId, out.data)
@@ -415,7 +420,8 @@ export class CapabilityServer {
       const message = err instanceof Error ? err.message : String(err)
       const code = err instanceof CapabilityCommandError ? normalizeErrorCode(err.code) : undefined
       const data = err instanceof CapabilityCommandError ? err.data : undefined
-      const file = data === undefined ? null : this.writeResult(opId, { data })
+      const file = data === undefined ? null : await this.writeResult(opId, { data })
+      if (cancel.signal.aborted || generation !== this.generation) return
       this.remember({ id: opId, command, at: Date.now(), ok: false, error: message, ...(file ? { resultFile: file.path, resultBytes: file.bytes } : {}) })
       reply(200, {
         ok: false,
@@ -427,16 +433,18 @@ export class CapabilityServer {
     }
   }
 
-  private pruneOps(): void {
+  private async pruneOps(): Promise<void> {
+    this.lastPruneAt = Date.now()
+    this.writesSincePrune = 0
     const cutoff = Date.now() - CAPABILITY_OPS_MAX_AGE_MS
     let kept = 0
     const files: Array<{ path: string; at: number }> = []
     try {
-      for (const name of readdirSync(this.opsDir)) {
+      for (const name of await readdir(this.opsDir)) {
         if (!/\.(?:json|txt)$/.test(name)) continue
         const path = join(this.opsDir, name)
         try {
-          const info = statSync(path)
+          const info = await stat(path)
           if (!info.isFile()) continue
           files.push({ path, at: info.mtimeMs })
         } catch {
@@ -449,7 +457,7 @@ export class CapabilityServer {
     for (const file of files) {
       if (file.at < cutoff || kept >= CAPABILITY_OPS_MAX_FILES) {
         try {
-          unlinkSync(file.path)
+          await unlink(file.path)
         } catch {
         }
         continue
@@ -467,24 +475,32 @@ export class CapabilityServer {
     return timingSafeEqual(got, want)
   }
 
-  private writeResult(opId: string, out: Pick<CapabilityCommandResult, 'data'>): { path: string; bytes: number } | null {
+  private async writeResult(opId: string, out: Pick<CapabilityCommandResult, 'data'>): Promise<{ path: string; bytes: number } | null> {
     if (out.data === undefined) return null
     let text: string
     try {
-      text = JSON.stringify(out.data, null, 2)
+      text = JSON.stringify(out.data) ?? 'null'
     } catch {
       text = JSON.stringify({ error: 'result_not_serializable' })
     }
-    if (Buffer.byteLength(text) > CAPABILITY_RESULT_MAX_BYTES) {
-      const bytes = Buffer.byteLength(text)
-      text = JSON.stringify({ truncated: true, bytes, shape: shapeOf(out.data), head: text.slice(0, 2000) })
+    const compactBytes = Buffer.byteLength(text)
+    if (compactBytes > CAPABILITY_RESULT_MAX_BYTES) {
+      text = JSON.stringify({ truncated: true, bytes: compactBytes, shape: shapeOf(out.data), head: text.slice(0, 2000) })
+    } else {
+      try {
+        const pretty = JSON.stringify(out.data, null, 2) ?? 'null'
+        if (Buffer.byteLength(pretty) <= CAPABILITY_RESULT_MAX_BYTES) text = pretty
+      } catch {
+      }
     }
     const path = join(this.opsDir, `${opId}.json`)
     try {
-      writeFileSync(path, text, 'utf8')
+      await writeFile(path, text, 'utf8')
     } catch {
       return null
     }
+    this.writesSincePrune++
+    if (this.writesSincePrune >= 50 && Date.now() - this.lastPruneAt >= CAPABILITY_OPS_PRUNE_INTERVAL_MS) void this.pruneOps()
     return { path, bytes: Buffer.byteLength(text) }
   }
 
