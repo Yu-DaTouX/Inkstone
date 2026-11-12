@@ -374,7 +374,7 @@ try {
   scoped.state = { sessionId: 'original-session' }
   scoped.streaming = { id: 'original-message' }
   scoped.turn.runId = 'original-run'
-  scoped.queueState = { steering: [], followUp: [{ id: 'q-old', text: 'ORIGINAL-DRAFT' }] }
+  scoped.queue.state = { steering: [], followUp: [{ id: 'q-old', text: 'ORIGINAL-DRAFT' }] }
   let releaseScope, clearStarted = false, staleAborts = 0
   const scopeDelay = new Promise(done => { releaseScope = done })
   scoped.rpc = { command: async command => {
@@ -388,12 +388,12 @@ try {
   scoped.state = { sessionId: 'replacement-session' }
   scoped.turn.runId = 'replacement-run'
   scoped.streaming = { id: 'replacement-message' }
-  scoped.queueState = { steering: [], followUp: [{ id: 'q-new', text: 'NEW-DRAFT' }] }
+  scoped.queue.state = { steering: [], followUp: [{ id: 'q-new', text: 'NEW-DRAFT' }] }
   scoped.loopGuardStopping = false
   releaseScope()
   await oldStop
   equal(staleAborts, 0, 'late clear response does not abort replacement run')
-  equal(scoped.queueState.followUp[0].id, 'q-new', 'late response does not reset replacement queue')
+  equal(scoped.queue.state.followUp[0].id, 'q-new', 'late response does not reset replacement queue')
   const oldRecovery = pushes.slice(scopeOffset).find(e => e.ch === 'queue-reclaimed')
   equal(oldRecovery.payload.sessionId, 'original-session', 'late recovery still belongs to original session')
   check(logs(scopeOffset).every(e => e.sessionId === 'original-session' && e.runId === 'original-run'), 'async guard logs retain captured origin')

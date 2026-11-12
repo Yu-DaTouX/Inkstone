@@ -28,7 +28,7 @@ import { SessionItemProjector, projectHistory } from './session-items/projector'
 import { planSessionSync, planSessionSyncAgainst } from './session-sync-plan'
 import { rememberSyncBaseline, takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
-import { clearQueueFile, keepReclaimedQueue, loadQueue, saveQueue, type PersistedQueueItem } from './queue-persistence'
+import { QueueCoordinator } from './queue-coordinator'
 import { mergeToolDetails, streamsHtmlWriteArgs, toolOutputPushMode, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { apiKeyLooksUnusable, isAuthRejected, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
@@ -37,7 +37,6 @@ import { failoverApiKey } from './api-key-pool'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
-import { isHostTextNotice } from '../shared/host-notice-text'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
@@ -57,8 +56,8 @@ import {
 } from './normalize'
 import { serverSearchCalls } from './server-search-calls'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
-import { consumeQueuedItem, reconcileQueueItems, sameQueueImages, snapshotQueue } from './queue-items'
-import { applyQueueRewrite, type QueueRewritePort, type QueueRewriteResult } from './queue-edit'
+import { snapshotQueue } from './queue-items'
+import type { QueueRewriteResult } from './queue-edit'
 import { contextWindowAssumed } from './custom-providers'
 import { clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_STATE, measuredAfterCompaction, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
@@ -455,29 +454,6 @@ function sessionSwitchUnconfirmed(): string {
   return pick('没能确认已经切到目标会话，请重新打开这个会话', 'Could not confirm the switch to the target session; reopen this session')
 }
 
-function planQueueEditOp(state: QueueState, op: QueueEditOp): { next: QueueState } | { error: string } {
-  if (op.op === 'clear') return { next: { steering: [], followUp: [] } }
-  const steering = state.steering.findIndex((item) => item.id === op.id)
-  const kind = steering >= 0 ? 'steering' : state.followUp.some((item) => item.id === op.id) ? 'followUp' : undefined
-  if (!kind) return { error: pick('这条排队消息已被接收或撤回', 'This queued message was already accepted or withdrawn') }
-  const list = state[kind]
-  const index = steering >= 0 ? steering : list.findIndex((item) => item.id === op.id)
-  if (op.op === 'remove') return { next: { ...state, [kind]: list.filter((item) => item.id !== op.id) } }
-  if (op.op === 'edit') {
-    const text = op.text.trim()
-    if (!text) return { error: pick('消息内容为空', 'Message is empty') }
-    const items = [...list]
-    items[index] = { ...items[index], text }
-    return { next: { ...state, [kind]: items } }
-  }
-  const target = index + (op.direction === 'up' ? -1 : 1)
-  if (target < 0 || target >= list.length) return { next: state }
-  const items = [...list]
-  const [moved] = items.splice(index, 1)
-  items.splice(target, 0, moved)
-  return { next: { ...state, [kind]: items } }
-}
-
 export class AgentController extends EventEmitter {
   private rpc: PiRpc | null = null
   private nativeRuntime: NativeSessionRuntime | null = null
@@ -632,7 +608,7 @@ export class AgentController extends EventEmitter {
     this.heldTerminalNotices = []
     for (const item of held) {
       if (!item.stillOwner()) continue
-      await this.submitQueueCommand('steer', item.text, undefined, 'steering', this.queuePayload({ text: item.text })).catch(() => undefined)
+      await this.queue.submit('steer', item.text, undefined, 'steering', this.queue.payload({ text: item.text })).catch(() => undefined)
     }
   }
 
@@ -990,15 +966,16 @@ export class AgentController extends EventEmitter {
 
   private lastTitle: string | undefined
 
-  private queueState: QueueState = { steering: [], followUp: [] }
-  private queueSequence = 0
-  private queueConsumed = new Set<string>()
-  private queueRemoved: QueueItem[] = []
-  private consumedEmptyQueue = { steering: 0, followUp: 0 }
-  private queueScope?: { rpc: PiRpc | null; sessionId?: string; generation?: number }
-  private queueBusy = false
-  private queueWrite: Promise<void> = Promise.resolve()
-  private queueOperations: Promise<void> = Promise.resolve()
+  private readonly queue = new QueueCoordinator({
+    owner: () => ({ rpc: this.rpc, sessionId: this.state?.sessionId, generation: this.capabilityOpts?.runnerGeneration }),
+    push: (message) => this.push(message),
+    pushAfterScope: (emit) => {
+      if (this.suppressPush) this.afterScope.push(emit)
+      else emit()
+    },
+    loopStopping: () => this.loopGuardStopping || this.loopGuardAbortSent,
+    confirmAdmission: () => this.confirmExecutionAdmission()
+  })
   private titleLifecycle = 0
   private stopping = false
   private spawnFailure: string | undefined
@@ -1019,7 +996,7 @@ export class AgentController extends EventEmitter {
     if (this.rpc?.running) return { ok: true }
 
     this.stopping = false
-    this.resetQueue()
+    this.queue.reset()
     this.streamLoopDetector = null
     this.loopGuardTripped = false
     this.loopGuardAbortSent = false
@@ -1675,7 +1652,7 @@ export class AgentController extends EventEmitter {
     if (detail.length > APPROVAL_DETAIL_MAX) return { summary: { kind: 'danger-confirm', allowed: false, decision: 'no-answer', reason: `审批内容有 ${detail.length} 字，超过 ${APPROVAL_DETAIL_MAX} 字，无法完整展示给用户确认。请缩短内容或分步执行` } }
     const allReasons = Array.isArray(params.reasons) ? params.reasons.filter((r): r is string => typeof r === 'string').map((r) => r.slice(0, 200)) : []
     const reasons = allReasons.length > APPROVAL_TARGETS_MAX
-      ? [...allReasons.slice(0, APPROVAL_TARGETS_MAX - 1), `另有 ${allReasons.length - APPROVAL_TARGETS_MAX + 1} 项未列出`]
+      ? [...allReasons.slice(0, APPROVAL_TARGETS_MAX - 1), pick(`另有 ${allReasons.length - APPROVAL_TARGETS_MAX + 1} 项未列出`, `${allReasons.length - APPROVAL_TARGETS_MAX + 1} more not listed`)]
       : allReasons
     const rawOutside = Array.isArray(params.outsideDirs) ? params.outsideDirs.filter((d): d is string => typeof d === 'string') : []
     const outsideDirs = rawOutside.map((d) => d.slice(0, 500)).slice(0, APPROVAL_TARGETS_MAX)
@@ -2581,7 +2558,7 @@ export class AgentController extends EventEmitter {
             }
             const added = this.items.commitLive(norm, m)
             this.push({ ch: 'msg-add', payload: added })
-            this.consumeQueued(added.text, imagesOf(m.content) ?? [])
+            this.queue.consume(added.text, imagesOf(m.content) ?? [])
           }
           this.syncDeferredModelSwitch()
         } else if (m?.role === 'custom') {
@@ -2922,8 +2899,7 @@ export class AgentController extends EventEmitter {
           sessionId: this.state?.sessionId,
           generation: this.capabilityOpts?.runnerGeneration
         }
-        if (this.queueBusy) this.pendingQueueUpdate = update
-        else this.publishQueue(update.steering, update.followUp)
+        this.queue.applyUpdate(update)
         break
 
       case 'bash_execution_update': {
@@ -3297,7 +3273,7 @@ export class AgentController extends EventEmitter {
     this.state = { ...this.state, isAgentRunning: v }
     this.push({ ch: 'state', payload: this.state })
     if (!v && this.pendingAborts === 0 && this.state.isStreaming !== true && this.state.isCompacting !== true &&
-      !this.queueState.steering.length && !this.queueState.followUp.length) {
+      this.queue.isEmpty()) {
       this.releaseExecutionAdmission()
     }
   }
@@ -3340,7 +3316,7 @@ export class AgentController extends EventEmitter {
   private settleExecutionAdmission(): void {
     if (this.executionAdmissionToken === undefined) return
     if (this.executionActive()) return
-    if (this.executionRunObserved && !this.queueState.steering.length && !this.queueState.followUp.length) {
+    if (this.executionRunObserved && this.queue.isEmpty()) {
       this.releaseExecutionAdmission()
       return
     }
@@ -3448,9 +3424,9 @@ export class AgentController extends EventEmitter {
     const canStop = () => ownsRun() && this.streaming === target && this.turn.terminal !== 'stopped'
     this.loopGuardStopping = true
     try {
-      await this.queueRun(async () => {
+      await this.queue.run(async () => {
         if (!canStop()) return
-        const original = this.queueState
+        const original = this.queue.state
         const queuedImages = [...original.steering, ...original.followUp].some(item => item.images?.length)
         if (queuedImages) {
           record('queue-kept', { rule: hit.rule, stream, messageId, outcome: 'kept-with-images' })
@@ -3460,12 +3436,12 @@ export class AgentController extends EventEmitter {
             throw new Error(result.error || 'clear_queue 未返回可确认的队列快照')
           }
           const reclaimed = snapshotQueue({
-            steering: this.queueItems(result.data.steering, original.steering),
-            followUp: this.queueItems(result.data.followUp, original.followUp)
+            steering: this.queue.reconcile(result.data.steering, original.steering),
+            followUp: this.queue.reconcile(result.data.followUp, original.followUp)
           })
           if (ownsRun()) {
-            this.resetQueue(true)
-            this.clearSavedQueue()
+            this.queue.reset(true)
+            this.queue.clearSaved()
           }
           if (reclaimed.steering.length || reclaimed.followUp.length) {
             this.push({ ch: 'queue-reclaimed', payload: { ...reclaimed, sessionId } })
@@ -3514,7 +3490,7 @@ export class AgentController extends EventEmitter {
       this.capabilityOpts?.runnerGeneration === scope.generation && this.turn.runId === scope.runId &&
       this.loopGuardContinuationVersion === scope.version && !this.agentRunning && !this.streaming &&
       !this.state?.isCompacting && !this.loopGuardStopping && !this.loopGuardAbortSent &&
-      !this.queueState.steering.length && !this.queueState.followUp.length
+      this.queue.isEmpty()
   }
 
   private async continueAfterLoopGuard(scope: {
@@ -3656,214 +3632,12 @@ export class AgentController extends EventEmitter {
     return await this.ui.respondUi(res, by)
   }
 
-  private queueItems(raw: string[], previous: QueueItem[]): QueueItem[] {
-    return reconcileQueueItems(raw, previous, text => this.newQueueItem(text))
-  }
-
-  private newQueueItem(text: string, images?: QueueItem['images']): QueueItem {
-    return { id: `q-${(++this.queueSequence).toString(36)}`, text,
-      ...(images?.length ? { images: images.map(image => ({ ...image })) } : {}) }
-  }
-
-  private liveQueueTexts(raw: string[], kind: 'steering' | 'followUp'): string[] {
-    let skip = this.consumedEmptyQueue[kind]
-    return raw.filter(text => text || skip-- <= 0)
-  }
-
-  private publishQueue(steering: string[], followUp: string[], clearing = false): QueueState {
-    const next: QueueState = {
-      steering: this.queueItems(this.liveQueueTexts(steering, 'steering'), this.queueState.steering),
-      followUp: this.queueItems(this.liveQueueTexts(followUp, 'followUp'), this.queueState.followUp)
-    }
-    if (!clearing) {
-      const retained = new Set([...next.steering, ...next.followUp].map(item => item.id))
-      this.queueRemoved.push(...[...this.queueState.steering, ...this.queueState.followUp]
-        .filter(item => !retained.has(item.id) && !this.queueConsumed.has(item.id)))
-    } else this.consumedEmptyQueue = { steering: 0, followUp: 0 }
-    return this.publishQueueItems(next)
-  }
-
-  private publishQueueItems(next: QueueState): QueueState {
-    next = {
-      steering: next.steering.filter(item => !this.queueConsumed.has(item.id)),
-      followUp: next.followUp.filter(item => !this.queueConsumed.has(item.id))
-    }
-    this.queueState = next
-    this.push({ ch: 'queue', payload: {
-      steering: next.steering.filter(item => !isSubagentNotice(item.text) && !isHostTextNotice(item.text)),
-      followUp: next.followUp.filter(item => !isSubagentNotice(item.text) && !isHostTextNotice(item.text))
-    } })
-    this.queueWrite = this.persistQueue().catch(() => undefined)
-    return next
-  }
-
-  private clearSavedQueue(): void {
-    this.queueWrite = this.queueWrite.then(() => this.persistQueue()).catch(() => undefined)
-  }
-
-  private persistQueue(): Promise<void> {
-    const sessionId = this.state?.sessionId
-    if (!sessionId) return Promise.resolve()
-    const persisted = (items: QueueItem[]): PersistedQueueItem[] => items
-      .filter(item => !isSubagentNotice(item.text) && (item.text.trim() || item.images?.length))
-      .map(item => item.images?.length ? { text: item.text, images: item.images.map(({ data, mimeType }) => ({ data, mimeType })) } : { text: item.text })
-    const steering = persisted(this.queueState.steering)
-    const followUp = persisted(this.queueState.followUp)
-    if (!steering.length && !followUp.length) return clearQueueFile(sessionId)
-    return saveQueue({ sessionId, items: { steering, followUp } })
-  }
-
   async reclaimSavedQueue(): Promise<void> {
-    const sessionId = this.state?.sessionId
-    if (!sessionId) return
-    if (this.queueState.steering.length || this.queueState.followUp.length) return
-    const saved = await loadQueue(sessionId).catch(() => null)
-    if (!saved) return
-    const items: QueueState = {
-      steering: saved.items.steering.map(item => this.newQueueItem(item.text, item.images)),
-      followUp: saved.items.followUp.map(item => this.newQueueItem(item.text, item.images))
-    }
-    if (items.steering.length || items.followUp.length) {
-      const emit = (): void => this.push({ ch: 'queue-reclaimed', payload: { steering: saved.steering, followUp: saved.followUp, items, sessionId } })
-      if (this.suppressPush) this.afterScope.push(emit)
-      else emit()
-    }
-    if (saved.lostImages) {
-      this.push({ ch: 'notify', payload: { id: `queue-lost-images-${Date.now()}`, method: 'notify', notifyType: 'warning', message: pick(`旧版本保存的排队消息里有 ${saved.lostImages} 张图片没能保存，需要重新添加。`, `${saved.lostImages} image(s) in queued messages saved by an older version could not be kept. Add them again.`) } })
-    }
-    await keepReclaimedQueue(sessionId).catch(() => undefined)
-  }
-
-  private consumeQueued(text: string, images: NonNullable<QueueItem['images']>): void {
-    const removed = this.queueRemoved.findIndex(item => item.text.trim() === text.trim() && sameQueueImages(item.images, images))
-    if (removed >= 0) {
-      const [item] = this.queueRemoved.splice(removed, 1)
-      if (this.queueBusy) this.queueConsumed.add(item.id)
-      return
-    }
-    const next = consumeQueuedItem(this.queueState, text, images)
-    if (!next) return
-    const retained = new Set([...next.steering, ...next.followUp].map(item => item.id))
-    for (const kind of ['steering', 'followUp'] as const) {
-      for (const item of this.queueState[kind]) {
-        if (retained.has(item.id)) continue
-        if (this.queueBusy) this.queueConsumed.add(item.id)
-        if (!item.text) this.consumedEmptyQueue[kind]++
-      }
-    }
-    this.publishQueueItems(next)
-    if (this.pendingQueueUpdate && text) {
-      for (const kind of ['steering', 'followUp'] as const) {
-        const index = this.pendingQueueUpdate[kind].indexOf(text)
-        const count = this.pendingQueueUpdate[kind].filter(value => value === text).length
-        if (index >= 0 && count > next[kind].filter(item => item.text === text).length) {
-          this.pendingQueueUpdate[kind].splice(index, 1)
-          break
-        }
-      }
-    }
-  }
-
-  private resetQueue(emit = false): void {
-    this.queueRemoved = []
-    this.queueConsumed.clear()
-    this.consumedEmptyQueue = { steering: 0, followUp: 0 }
-    this.pendingQueueUpdate = undefined
-    this.queueState = { steering: [], followUp: [] }
-    if (emit) this.push({ ch: 'queue', payload: this.queueState })
-  }
-
-  private queueItemOf(id: string): { kind: 'steering' | 'followUp'; item: QueueItem } | undefined {
-    if (!id) return undefined
-    const steering = this.queueState.steering.find((item) => item.id === id)
-    if (steering) return { kind: 'steering', item: steering }
-    const followUp = this.queueState.followUp.find((item) => item.id === id)
-    return followUp ? { kind: 'followUp', item: followUp } : undefined
+    await this.queue.reclaimSaved()
   }
 
   private requireRpc(): PiRpc {
-    if (!this.rpc) throw new Error(pick('pi 尚未就绪或已经停止', 'pi is not ready or has stopped'))
-    if (this.queueScope && (this.queueScope.rpc !== this.rpc || this.queueScope.sessionId !== this.state?.sessionId || this.queueScope.generation !== this.capabilityOpts?.runnerGeneration)) throw new Error(pick('会话已切换，队列操作已停止', 'Session changed; queue operation stopped'))
-    return this.rpc
-  }
-
-  private queueRun<T>(work: () => Promise<T>, allowLoopStop = false): Promise<T> {
-    const owner = { rpc: this.rpc, sessionId: this.state?.sessionId, generation: this.capabilityOpts?.runnerGeneration }
-    const guarded = async (): Promise<T> => {
-      if (!allowLoopStop && (this.loopGuardStopping || this.loopGuardAbortSent)) throw new Error(pick('正在按流式防护终止生成，暂不接受队列修改', 'Stream guard is stopping generation; queue changes are not accepted now'))
-      if (owner.rpc !== this.rpc || owner.sessionId !== this.state?.sessionId || owner.generation !== this.capabilityOpts?.runnerGeneration) throw new Error(pick('会话已切换，队列操作已停止', 'Session changed; queue operation stopped'))
-      if (!this.confirmExecutionAdmission()) throw new Error(pick('同一工作目录的执行入场已失效，本次操作未开始', 'Execution admission for this working folder expired; the action did not start'))
-      this.queueBusy = true
-      const sessionId = this.state?.sessionId
-      const generation = this.capabilityOpts?.runnerGeneration
-      this.queueScope = { rpc: this.rpc, sessionId, generation }
-      try {
-        return await work()
-      } finally {
-        this.queueScope = undefined
-        this.queueBusy = false
-        const pending = this.pendingQueueUpdate
-        this.pendingQueueUpdate = undefined
-        if (pending && pending.sessionId === this.state?.sessionId && pending.generation === this.capabilityOpts?.runnerGeneration && sessionId === pending.sessionId && generation === pending.generation) this.publishQueue(pending.steering, pending.followUp)
-        this.queueConsumed.clear()
-      }
-    }
-    const previous = this.queueOperations
-    const current = previous.then(guarded, guarded)
-    this.queueOperations = current.then(() => undefined, () => undefined)
-    return current
-  }
-
-  private pendingQueueUpdate?: { steering: string[]; followUp: string[]; sessionId?: string; generation?: number }
-
-  private queuePayload(item: Pick<QueueItem, 'text' | 'images'>): Record<string, unknown> {
-    return { message: item.text, ...(item.images?.length ? {
-      images: item.images.map(image => ({ type: 'image', data: image.data, mimeType: image.mimeType }))
-    } : {}) }
-  }
-
-  private async submitQueueCommand(command: 'prompt' | 'steer' | 'follow_up', text: string,
-    images: QueueItem['images'], kind: 'steering' | 'followUp', payload: Record<string, unknown>) {
-    const item = this.newQueueItem(text, images)
-    const rpc = this.requireRpc()
-    this.queueState = { ...this.queueState, [kind]: [...this.queueState[kind], item] }
-    let queued = false
-    try {
-      const res = await rpc.command<{ disposition?: string }>(command, payload)
-      this.requireRpc()
-      queued = res.success && (!res.data?.disposition || res.data.disposition === 'queued')
-      return res
-    } finally {
-      if (!queued && this.queueScope?.rpc === this.rpc && this.queueScope.sessionId === this.state?.sessionId) {
-        this.queueState = { ...this.queueState, [kind]: this.queueState[kind].filter(value => value.id !== item.id) }
-      }
-    }
-  }
-
-  private async refillQueue(steering: QueueItem[], followUp: QueueItem[]): Promise<void> {
-    for (const [command, items] of [['steer', steering], ['follow_up', followUp]] as const) {
-      for (const item of items) {
-        if (this.queueConsumed.has(item.id)) continue
-        const res = await this.requireRpc().command(command, this.queuePayload(item))
-        this.requireRpc()
-        if (!res.success) throw new Error(res.error || pick('恢复队列失败', 'Failed to restore the queue'))
-      }
-    }
-  }
-
-  private async restoreQueue(raw: QueueState): Promise<string | undefined> {
-    if (!this.rpc) return pick('pi 尚未就绪，无法恢复排队消息', 'pi is not ready; cannot restore queued messages')
-    try {
-      const cleared = await this.requireRpc().command('clear_queue')
-      this.requireRpc()
-      if (!cleared.success) return cleared.error || pick('清空队列失败，无法恢复原顺序', 'Failed to clear the queue; cannot restore the original order')
-      this.consumedEmptyQueue = { steering: 0, followUp: 0 }
-      const live = this.publishQueueItems(raw)
-      await this.refillQueue(live.steering, live.followUp)
-      return undefined
-    } catch (error) {
-      return error instanceof Error ? error.message : String(error)
-    }
+    return this.queue.requireRpc()
   }
 
   private async withOperation<T extends { ok: boolean; error?: string }>(
@@ -3917,7 +3691,7 @@ export class AgentController extends EventEmitter {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
     }
 
-    return this.queueRun(async () => {
+    return this.queue.run(async () => {
       if (autoContinue && ((autoContinue.reason !== 'account-switch' && !(await this.readStreamLoopAutoContinue())) || !this.canContinueAfterLoopGuard(autoContinue) || this.loopGuardAutoContinueCount >= 1)) {
         return { ok: false, error: pick('自动继续已取消或运行归属改变', 'Auto-continue was cancelled or the run owner changed') }
       }
@@ -3950,7 +3724,7 @@ export class AgentController extends EventEmitter {
         }
       }
       await this.flushHeldTerminalNotices()
-      const res = await this.submitQueueCommand('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
+      const res = await this.queue.submit('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，发送结果未应用到当前会话', 'Session changed; the send result was not applied to the current session') }
       if (titleOnSend) void this.maybeGenerateTitle({ prompt: { text, images } })
@@ -3967,11 +3741,11 @@ export class AgentController extends EventEmitter {
     this.loopGuardContinuationVersion += 1
     this.loopGuardAutoContinueCount = 0
     if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再插话', 'Stream guard is stopping generation. Try interjecting again shortly') }
-    return this.queueRun(async () => {
+    return this.queue.run(async () => {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后插话', 'The project is reverting code. Try interjecting again shortly') }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
-      const res = await this.submitQueueCommand('steer', text, images, 'steering', this.queuePayload({ text, images }))
+      const res = await this.queue.submit('steer', text, images, 'steering', this.queue.payload({ text, images }))
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，插话结果未应用到当前会话', 'Session changed; the interjection was not applied to the current session') }
       await this.refreshState()
@@ -3987,11 +3761,11 @@ export class AgentController extends EventEmitter {
     this.loopGuardContinuationVersion += 1
     this.loopGuardAutoContinueCount = 0
     if (this.loopGuardStopping || this.loopGuardAbortSent) return { ok: false, error: pick('正在按流式防护终止本次生成，请稍候再排队', 'Stream guard is stopping generation. Try queueing again shortly') }
-    return this.queueRun(async () => {
+    return this.queue.run(async () => {
       if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: pick('项目正在回退代码，请稍后排队', 'The project is reverting code. Try queueing again shortly') }
       const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
-      const res = await this.submitQueueCommand('follow_up', text, images, 'followUp', this.queuePayload({ text, images }))
+      const res = await this.queue.submit('follow_up', text, images, 'followUp', this.queue.payload({ text, images }))
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: pick('会话已切换，排队结果未应用到当前会话', 'Session changed; the queued message was not applied to the current session') }
       await this.refreshState()
@@ -4000,113 +3774,27 @@ export class AgentController extends EventEmitter {
   }
 
   queueSnapshot(): QueueSnapshot {
-    return snapshotQueue(this.queueState)
+    return this.queue.snapshot()
   }
 
   async restoreQueueSnapshot(snapshot: QueueSnapshot): Promise<{ ok: boolean; error?: string }> {
-    const restore = (kind: 'steering' | 'followUp') => snapshot[kind].map((text, index) =>
-      this.newQueueItem(text, snapshot.items?.[kind][index]?.text === text ? snapshot.items[kind][index].images : undefined))
-      .filter(item => item.text.length > 0 || item.images?.length)
-    const steering = restore('steering')
-    const followUp = restore('followUp')
-    if (steering.length === 0 && followUp.length === 0) return { ok: true }
-    if (!this.rpc?.running) return { ok: false, error: pick('pi 尚未就绪，无法恢复排队消息', 'pi is not ready; cannot restore queued messages') }
-    if (this.queueState.steering.length > 0 || this.queueState.followUp.length > 0) {
-      const existing = {
-        steering: this.queueState.steering.map((item) => item.text),
-        followUp: this.queueState.followUp.map((item) => item.text)
-      }
-      if (JSON.stringify(existing) === JSON.stringify({ steering: snapshot.steering, followUp: snapshot.followUp }) &&
-        (['steering', 'followUp'] as const).every(kind => this.queueState[kind].every((item, index) =>
-          sameQueueImages(item.images, snapshot.items?.[kind][index]?.images)))) return { ok: true }
-      return { ok: false, error: pick('新实例已有不同的排队消息；为避免丢失或重复，拒绝覆盖', 'The new instance already has different queued messages; overwrite refused to avoid loss or duplication') }
-    }
-    try {
-      return await this.queueRun(async () => {
-        this.publishQueueItems({ steering, followUp })
-        await this.refillQueue(steering, followUp)
-        return { ok: true }
-      })
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
+    return this.queue.restoreSnapshot(snapshot)
   }
 
   async steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }> {
-    return this.editQueued(queueId, true)
+    return this.queue.editItem(queueId, true)
   }
 
   async removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
-    return this.editQueued(queueId, false)
+    return this.queue.editItem(queueId, false)
   }
 
   async rewriteQueue(next: QueueState): Promise<QueueRewriteResult> {
-    return this.queueRun(async () => {
-      if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready'), dropped: [...next.steering, ...next.followUp] }
-      const original: QueueState = { steering: [...this.queueState.steering], followUp: [...this.queueState.followUp] }
-      return applyQueueRewrite(this.queueRewritePort(), original, next)
-    })
+    return this.queue.rewrite(next)
   }
 
   async editQueue(op: QueueEditOp): Promise<QueueRewriteResult> {
-    return this.queueRun(async () => {
-      if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
-      const original: QueueState = { steering: [...this.queueState.steering], followUp: [...this.queueState.followUp] }
-      const plan = planQueueEditOp(original, op)
-      if ('error' in plan) return { ok: false, error: plan.error }
-      return applyQueueRewrite(this.queueRewritePort(), original, plan.next)
-    })
-  }
-
-  private queueRewritePort(): QueueRewritePort {
-    return {
-      clearQueue: async () => {
-        const res = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
-        this.requireRpc()
-        return { success: res.success, error: res.error, steering: res.data?.steering ?? [], followUp: res.data?.followUp ?? [] }
-      },
-      adoptCleared: (steering, followUp) => this.publishQueue(steering, followUp, true),
-      publish: (queue) => { this.publishQueueItems(queue) },
-      refill: (steering, followUp) => this.refillQueue(steering, followUp)
-    }
-  }
-
-  private async editQueued(queueId: string, promote: boolean): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
-    return this.queueRun(async () => {
-      if (!this.rpc) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
-      const target = this.queueItemOf(queueId)
-      if (!target) return { ok: false, error: pick('这条排队消息已被接收或撤回', 'This queued message was already accepted or withdrawn') }
-      try {
-        const res = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
-        this.requireRpc()
-        if (!res.success) return { ok: false, error: res.error }
-        const original = this.publishQueue(res.data?.steering ?? [], res.data?.followUp ?? [], true)
-        const liveTarget = original[target.kind].find(item => item.id === queueId)
-        if (!liveTarget) {
-          const recovery = await this.restoreQueue(original)
-          return { ok: false, error: recovery
-            ? pick(`消息已被接收；恢复队列失败：${recovery}`, `Message was accepted; failed to restore the queue: ${recovery}`)
-            : pick('消息已被 pi 接收（已进入本轮对话），无法再操作', 'pi already accepted this message (now in the turn); it can no longer be changed') }
-        }
-        const restSteer = original.steering.filter(item => item.id !== queueId)
-        const restFollow = original.followUp.filter(item => item.id !== queueId)
-        try {
-          this.publishQueueItems({ steering: promote ? [...restSteer, liveTarget] : restSteer, followUp: restFollow })
-          await this.refillQueue(restSteer, restFollow)
-          if (promote) await this.refillQueue([liveTarget], [])
-          return promote ? { ok: true } : {
-            ok: true, text: liveTarget.text, ...(liveTarget.images?.length ? { images: liveTarget.images } : {})
-          }
-        } catch (error) {
-          const recovery = await this.restoreQueue(original)
-          return { ok: false, error: recovery
-            ? pick(`队列操作失败，且恢复原队列失败：${recovery}`, `Queue operation failed, and restoring the original queue failed: ${recovery}`)
-            : pick(`队列操作失败，未消费内容已恢复：${error instanceof Error ? error.message : String(error)}`, `Queue operation failed; unconsumed content restored: ${error instanceof Error ? error.message : String(error)}`) }
-        }
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) }
-      }
-    })
+    return this.queue.edit(op)
   }
 
   async abort(expectGeneration?: number): Promise<QueueSnapshot & { error?: string }> {
@@ -4148,17 +3836,7 @@ export class AgentController extends EventEmitter {
     const current = () => this.rpc === rpc && this.capabilityOpts?.runnerGeneration === generation && this.state?.sessionId === sessionId
     let cleared: QueueSnapshot = { steering: [], followUp: [] }
     try {
-      await this.queueRun(async () => {
-        if (!this.rpc) return undefined
-        const result = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
-        this.requireRpc()
-        if (result.success && result.data) {
-          cleared = snapshotQueue(this.publishQueue(result.data.steering ?? [], result.data.followUp ?? [], true))
-          this.resetQueue(true)
-          this.clearSavedQueue()
-        }
-        return result
-      })
+      cleared = await this.queue.clearForStop()
     } catch {
     }
 
@@ -4385,7 +4063,7 @@ export class AgentController extends EventEmitter {
     this.items.discardStreaming()
     this.markStreaming(false)
     this.setAgentRunning(false)
-    this.resetQueue()
+    this.queue.reset()
     this.compactionState = EMPTY_COMPACTION_STATE
     this.contextFrom = undefined
     this.nativeBranchView = false
@@ -4642,7 +4320,7 @@ export class AgentController extends EventEmitter {
       const result = await this.nativeRuntime.navigateTree(entryId, options)
       if (!result.cancelled) {
         this.nativeBranchView = true
-        this.resetQueue()
+        this.queue.reset()
         this.ui.cancelPending()
         await this.hydrate()
       }
@@ -5193,7 +4871,7 @@ export class AgentController extends EventEmitter {
       ready: this.conn === 'ready' && this.rpc?.running === true,
       stopped: this.stopping,
       idle: !this.agentRunning && !this.streaming && !this.bash && !this.state?.isCompacting &&
-        this.ui.pending.size === 0 && this.queueState.steering.length === 0 && this.queueState.followUp.length === 0
+        this.ui.pending.size === 0 && this.queue.isEmpty()
     }))
   }
 
@@ -5330,11 +5008,10 @@ export class AgentController extends EventEmitter {
     const runCtx = this.runObserverContext()
     if (runSink && runCtx) runSink(runCtx, { type: 'stopped', by: 'host' })
     this.rpc = null
-    await this.queueWrite.catch(() => undefined)
-    await this.persistQueue().catch(() => undefined)
+    await this.queue.flush()
     await this.turn.writeTail.catch(() => undefined)
     this.items.reset()
-    this.resetQueue()
+    this.queue.reset()
   }
 }
 

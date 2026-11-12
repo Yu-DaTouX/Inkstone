@@ -60,24 +60,24 @@ try {
   const offline = new AgentController({ cwd: root, push: () => {} })
   const imageA = { data: 'YQ==', mimeType: 'image/png' }
   const imageB = { data: 'Yg==', mimeType: 'image/png' }
-  offline.queueState = { steering: [], followUp: [{ id: 'same-1', text: 'same', images: [imageA] }, { id: 'same-2', text: 'same', images: [imageB] }] }
-  offline.publishQueue([], ['same'])
-  equal(offline.queueState.followUp.map(item => item.id), ['same-2'], 'shrinking native duplicate mirror retains later image identity')
-  offline.consumeQueued('same', [imageA])
-  equal(offline.queueState.followUp.map(item => item.id), ['same-2'], 'user event after native shrink does not consume second image')
-  offline.publishQueue([], [])
-  offline.consumeQueued('same', [imageB])
-  equal(offline.queueRemoved, [], 'consumption acknowledgements are drained')
-  offline.queueState = { steering: [], followUp: [{ id: 'equal-1', text: 'same', images: [imageA] }, { id: 'equal-2', text: 'same', images: [imageA] }] }
-  offline.publishQueue([], ['same'])
-  offline.consumeQueued('same', [imageA])
-  equal(offline.queueState.followUp.map(item => item.id), ['equal-2'], 'even identical images are not double consumed')
-  offline.resetQueue()
+  offline.queue.state = { steering: [], followUp: [{ id: 'same-1', text: 'same', images: [imageA] }, { id: 'same-2', text: 'same', images: [imageB] }] }
+  offline.queue.publish([], ['same'])
+  equal(offline.queue.state.followUp.map(item => item.id), ['same-2'], 'shrinking native duplicate mirror retains later image identity')
+  offline.queue.consume('same', [imageA])
+  equal(offline.queue.state.followUp.map(item => item.id), ['same-2'], 'user event after native shrink does not consume second image')
+  offline.queue.publish([], [])
+  offline.queue.consume('same', [imageB])
+  equal(offline.queue.removed, [], 'consumption acknowledgements are drained')
+  offline.queue.state = { steering: [], followUp: [{ id: 'equal-1', text: 'same', images: [imageA] }, { id: 'equal-2', text: 'same', images: [imageA] }] }
+  offline.queue.publish([], ['same'])
+  offline.queue.consume('same', [imageA])
+  equal(offline.queue.state.followUp.map(item => item.id), ['equal-2'], 'even identical images are not double consumed')
+  offline.queue.reset()
   let unblock
-  const firstOperation = offline.queueRun(() => new Promise(resolve => { unblock = resolve }))
+  const firstOperation = offline.queue.run(() => new Promise(resolve => { unblock = resolve }))
   await Promise.resolve()
   let lateRan = false
-  const lateOperation = offline.queueRun(async () => { lateRan = true }).catch(error => error.message)
+  const lateOperation = offline.queue.run(async () => { lateRan = true }).catch(error => error.message)
   offline.state = { sessionId: 'changed-session' }
   unblock()
   await firstOperation

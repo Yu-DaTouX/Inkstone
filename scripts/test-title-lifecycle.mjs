@@ -111,11 +111,11 @@ try {
   const firstSend = () => {
     const { agent, pushes, calls } = makeAgent()
     agent.messages = []
-    agent.queueRun = work => work()
+    agent.queue.run = work => work()
     agent.claimExecutionAdmission = () => ({ ok: true })
     agent.settleExecutionAdmission = () => {}
     agent.releaseExecutionAdmission = () => {}
-    agent.submitQueueCommand = async () => { calls.push('prompt'); return { success: true } }
+    agent.queue.submit = async () => { calls.push('prompt'); return { success: true } }
     agent.refreshState = async () => {}
     agent.rpc.command = async command => { calls.push(command); return command === 'get_state' ? { success: true, data: {} } : { success: true } }
     globalThis.__titleCalls = []

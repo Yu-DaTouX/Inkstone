@@ -46,7 +46,7 @@ try {
     state: { sessionId, sessionFile, cwd, isAgentRunning: false, isStreaming: false, isCompacting: false },
     capabilityOpts: { runnerGeneration: generation }, loopGuardContinuationVersion: 0, sessionMoveFailureVersion: 0,
     rpc: { running: true }, conn: 'ready', stopping: false, agentRunning: false, streaming: null, bash: null,
-    ui: { pending: new Map() }, queueState: { steering: [], followUp: [] }
+    ui: { pending: new Map() }, queue: { state: { steering: [], followUp: [] }, isEmpty() { return !this.state.steering.length && !this.state.followUp.length } }
   })
   const original = agent('sid', '/saved.jsonl', work, 1)
   const guard = original.captureSessionMoveContinuation()
@@ -57,7 +57,7 @@ try {
   original.capabilityOpts.runnerGeneration++; ok(!guard(), 'generation change invalidates'); original.capabilityOpts.runnerGeneration--
   original.state.sessionId = 'other'; ok(!guard(), 'session reuse invalidates'); original.state.sessionId = 'sid'
   original.ui.pending.set('question', {}); ok(!guard(), 'pending human input blocks'); original.ui.pending.clear()
-  original.queueState.followUp.push('queued'); ok(!guard(), 'pending follow-up blocks'); original.queueState.followUp = []
+  original.queue.state.followUp.push('queued'); ok(!guard(), 'pending follow-up blocks'); original.queue.state.followUp = []
   original.stopping = true; original.rpc = null; original.loopGuardContinuationVersion++
   ok(guard(true), 'exactly one host close allowed')
   original.loopGuardContinuationVersion++; ok(!guard(true), 'additional stop after close cancels')
@@ -156,7 +156,7 @@ try {
     ['registry replacement', { rewrite: context => { context.runners = {} } }, true],
     ['stale restored SID', { select: (_, a) => { a.state.sessionId = 'other' } }, true],
     ['stop during restore', { remember: (_, a) => { a.loopGuardContinuationVersion++ } }, true],
-    ['pending follow-up', { select: (_, a) => { a.queueState.followUp.push('new input') } }, true],
+    ['pending follow-up', { select: (_, a) => { a.queue.state.followUp.push('new input') } }, true],
     ['busy target cwd', { busy: true }, true],
     ['shutdown', { approval: context => { context.shuttingDown = true } }, false]
   ]) {

@@ -141,7 +141,7 @@ try {
 
   {
     const host = newHost()
-    host.queueState = {
+    host.queue.state = {
       steering: [],
       followUp: [
         { id: 'same-red', text: 'same', images: [red] },
@@ -149,19 +149,19 @@ try {
         { id: 'same-blue', text: 'same', images: [blue] }
       ]
     }
-    host.consumeQueued('same', [blue])
-    equal(host.queueState.followUp.map((item) => item.id), ['same-red', 'same-plain'],
+    host.queue.consume('same', [blue])
+    equal(host.queue.state.followUp.map((item) => item.id), ['same-red', 'same-plain'],
       '先消费带 blue 的重复文本项，只摘蓝图那条')
-    host.consumeQueued('same', [])
-    equal(host.queueState.followUp.map((item) => item.id), ['same-red'],
+    host.queue.consume('same', [])
+    equal(host.queue.state.followUp.map((item) => item.id), ['same-red'],
       '无图消息只摘无图项，不碰同文本的图项')
-    host.consumeQueued('same', [red])
-    equal(host.queueState.followUp, [], '最后一条 red 才被摘掉，图片顺序未错配')
+    host.queue.consume('same', [red])
+    equal(host.queue.state.followUp, [], '最后一条 red 才被摘掉，图片顺序未错配')
   }
 
   {
     const host = newHost()
-    host.queueState = {
+    host.queue.state = {
       steering: [],
       followUp: [
         { id: 'h-red', text: 'same', images: [red] },
@@ -169,35 +169,35 @@ try {
         { id: 'h-blue', text: 'same', images: [blue] }
       ]
     }
-    host.publishQueue([], ['same', 'same'])
-    equal(host.queueState.followUp.map((item) => item.id), ['h-plain', 'h-blue'],
+    host.queue.publish([], ['same', 'same'])
+    equal(host.queue.state.followUp.map((item) => item.id), ['h-plain', 'h-blue'],
       '缩短快照摘掉队首 red，保留中间无图与队尾 blue 身份')
-    equal(host.queueState.followUp.map((item) => item.images ?? null), [null, [blue]],
+    equal(host.queue.state.followUp.map((item) => item.images ?? null), [null, [blue]],
       '缩短快照保留队尾图片，无图项仍无图')
-    host.consumeQueued('same', [red])
-    equal(host.queueState.followUp.map((item) => item.id), ['h-plain', 'h-blue'],
+    host.queue.consume('same', [red])
+    equal(host.queue.state.followUp.map((item) => item.id), ['h-plain', 'h-blue'],
       '队首已被缩短时到达的 red 消息不会误摘后面的同文本项')
-    host.consumeQueued('same', [])
-    equal(host.queueState.followUp.map((item) => item.id), ['h-blue'], '无图项按自身身份被消费')
-    host.consumeQueued('same', [blue])
-    equal(host.queueState.followUp, [], '三张同文本项各自消费一次，无重复消费')
+    host.queue.consume('same', [])
+    equal(host.queue.state.followUp.map((item) => item.id), ['h-blue'], '无图项按自身身份被消费')
+    host.queue.consume('same', [blue])
+    equal(host.queue.state.followUp, [], '三张同文本项各自消费一次，无重复消费')
   }
 
   {
     const host = newHost()
-    host.queueState = {
+    host.queue.state = {
       steering: [],
       followUp: [
         { id: 'twice-1', text: 'same', images: [red] },
         { id: 'twice-2', text: 'same', images: [red] }
       ]
     }
-    host.publishQueue([], ['same'])
-    host.consumeQueued('same', [red])
-    equal(host.queueState.followUp.map((item) => item.id), ['twice-2'],
+    host.queue.publish([], ['same'])
+    host.queue.consume('same', [red])
+    equal(host.queue.state.followUp.map((item) => item.id), ['twice-2'],
       '图片也相同的重复项不会被一条消息双消费')
-    host.consumeQueued('same', [red])
-    equal(host.queueState.followUp, [], '第二条同样的消息再消费第二条')
+    host.queue.consume('same', [red])
+    equal(host.queue.state.followUp, [], '第二条同样的消息再消费第二条')
   }
 
   console.log('2) 缩短快照/消费竞态与纯图片幽灵（宿主侧，离线）')
@@ -205,7 +205,7 @@ try {
   {
     const host = newHost()
     host.state = { sessionId: 's2a' }
-    host.queueState = {
+    host.queue.state = {
       steering: [],
       followUp: [
         { id: 'gate-1', text: 'dup' },
@@ -213,24 +213,24 @@ try {
       ]
     }
     let release
-    const gate = host.queueRun(() => new Promise((done) => { release = done }))
+    const gate = host.queue.run(() => new Promise((done) => { release = done }))
     await waitTick(() => typeof release === 'function', 'gate owner acquired')
-    host.pendingQueueUpdate = { steering: [], followUp: ['dup', 'dup'], sessionId: 's2a', generation: undefined }
-    host.consumeQueued('dup', [])
-    equal(host.queueState.followUp.map((item) => item.id), ['gate-2'],
+    host.queue.pendingUpdate = { steering: [], followUp: ['dup', 'dup'], sessionId: 's2a', generation: undefined }
+    host.queue.consume('dup', [])
+    equal(host.queue.state.followUp.map((item) => item.id), ['gate-2'],
       '闸门内 user 消息摘掉队首 dup')
     release()
     await gate
-    equal(host.queueState.followUp.map((item) => item.id), ['gate-2'],
+    equal(host.queue.state.followUp.map((item) => item.id), ['gate-2'],
       '闸门收尾应用旧镜像后不重复消费、不复活第一条 dup')
-    host.consumeQueued('dup', [])
-    equal(host.queueState.followUp, [], '第二条 dup 仍可正常消费')
+    host.queue.consume('dup', [])
+    equal(host.queue.state.followUp, [], '第二条 dup 仍可正常消费')
   }
 
   {
     const host = newHost()
     host.state = { sessionId: 's2b' }
-    host.queueState = {
+    host.queue.state = {
       steering: [],
       followUp: [
         { id: 'shrink-1', text: 'dup' },
@@ -238,40 +238,40 @@ try {
       ]
     }
     let release
-    const gate = host.queueRun(() => new Promise((done) => { release = done }))
+    const gate = host.queue.run(() => new Promise((done) => { release = done }))
     await waitTick(() => typeof release === 'function', 'gate owner acquired')
-    host.pendingQueueUpdate = { steering: [], followUp: ['dup'], sessionId: 's2b', generation: undefined }
-    host.consumeQueued('dup', [])
+    host.queue.pendingUpdate = { steering: [], followUp: ['dup'], sessionId: 's2b', generation: undefined }
+    host.queue.consume('dup', [])
     release()
     await gate
-    equal(host.queueState.followUp.map((item) => item.id), ['shrink-2'],
+    equal(host.queue.state.followUp.map((item) => item.id), ['shrink-2'],
       '缩短帧后到达的 user 消息只消费一条，剩余同文本项保留')
-    host.consumeQueued('dup', [])
-    equal(host.queueState.followUp, [], '剩余 dup 之后可被消费')
+    host.queue.consume('dup', [])
+    equal(host.queue.state.followUp, [], '剩余 dup 之后可被消费')
   }
 
   {
     const host = newHost()
-    host.consumedEmptyQueue = { steering: 0, followUp: 1 }
-    host.queueState = { steering: [], followUp: [{ id: 'fresh-empty', text: '', images: [blue] }] }
-    host.publishQueue([], ['', ''])
-    equal(host.queueState.followUp.map((item) => item.id), ['fresh-empty'],
+    host.queue.consumedEmpty = { steering: 0, followUp: 1 }
+    host.queue.state = { steering: [], followUp: [{ id: 'fresh-empty', text: '', images: [blue] }] }
+    host.queue.publish([], ['', ''])
+    equal(host.queue.state.followUp.map((item) => item.id), ['fresh-empty'],
       '旧空文本镜像被跳过，新纯图片项既不被复活也不被吞掉')
-    equal(host.queueState.followUp.map((item) => item.images), [[blue]], '新的纯图片项保留自身图片')
+    equal(host.queue.state.followUp.map((item) => item.images), [[blue]], '新的纯图片项保留自身图片')
   }
 
   {
     const host = newHost()
     host.state = { sessionId: 's2c' }
-    host.queueState = { steering: [], followUp: [{ id: 'gate-empty', text: '', images: [red] }] }
+    host.queue.state = { steering: [], followUp: [{ id: 'gate-empty', text: '', images: [red] }] }
     let release
-    const gate = host.queueRun(() => new Promise((done) => { release = done }))
+    const gate = host.queue.run(() => new Promise((done) => { release = done }))
     await waitTick(() => typeof release === 'function', 'gate owner acquired')
-    host.pendingQueueUpdate = { steering: [], followUp: [''], sessionId: 's2c', generation: undefined }
-    host.consumeQueued('', [red])
+    host.queue.pendingUpdate = { steering: [], followUp: [''], sessionId: 's2c', generation: undefined }
+    host.queue.consume('', [red])
     release()
     await gate
-    equal(host.queueState.followUp, [], '闸门内消费纯图片后旧空镜像不复活幽灵项')
+    equal(host.queue.state.followUp, [], '闸门内消费纯图片后旧空镜像不复活幽灵项')
   }
 
   console.log('3) 闸门跨会话/代次（宿主侧，离线）')
@@ -281,10 +281,10 @@ try {
     host.state = { sessionId: 'old-session' }
     host.capabilityOpts = { runnerGeneration: 1 }
     let unblock
-    const first = host.queueRun(() => new Promise((done) => { unblock = done }))
+    const first = host.queue.run(() => new Promise((done) => { unblock = done }))
     await waitTick(() => typeof unblock === 'function', 'first gate owner acquired')
     let lateRan = false
-    const late = host.queueRun(async () => { lateRan = true }).catch((error) => error.message)
+    const late = host.queue.run(async () => { lateRan = true }).catch((error) => error.message)
     host.capabilityOpts = { runnerGeneration: 2 }
     unblock()
     await first
@@ -297,13 +297,13 @@ try {
     host.state = { sessionId: 'old-session' }
     host.capabilityOpts = { runnerGeneration: 1 }
     let release
-    const gate = host.queueRun(() => new Promise((done) => { release = done }))
+    const gate = host.queue.run(() => new Promise((done) => { release = done }))
     await waitTick(() => typeof release === 'function', 'gate owner acquired')
-    host.pendingQueueUpdate = { steering: [], followUp: ['old-queued'], sessionId: 'old-session', generation: 1 }
+    host.queue.pendingUpdate = { steering: [], followUp: ['old-queued'], sessionId: 'old-session', generation: 1 }
     host.state = { sessionId: 'new-session' }
     release()
     await gate
-    equal(host.queueState, { steering: [], followUp: [] },
+    equal(host.queue.state, { steering: [], followUp: [] },
       '旧会话的 pending 队列帧不会落到新会话')
   }
 
@@ -345,7 +345,7 @@ try {
         return { success: true, data: {} }
       }
     }
-    host.queueState = {
+    host.queue.state = {
       steering: [],
       followUp: [
         { id: 'fc-1', text: 'keep', images: [red] },
@@ -354,9 +354,9 @@ try {
     }
     const result = await host.removeQueued('fc-1')
     check(!result.ok && result.error.includes('clear_queue 失败'), 'clear_queue 失败如实返回错误')
-    equal(host.queueState.followUp.map((item) => item.id), ['fc-1', 'fc-2'],
+    equal(host.queue.state.followUp.map((item) => item.id), ['fc-1', 'fc-2'],
       'clear_queue 失败后队列身份完全不变')
-    equal(host.queueState.followUp.map((item) => item.images), [[red], [blue]],
+    equal(host.queue.state.followUp.map((item) => item.images), [[red], [blue]],
       'clear_queue 失败后图片完全保留（无半丢）')
     equal(calls, ['clear_queue'], 'clear_queue 失败后不会盲目重排队列')
   }
@@ -373,8 +373,8 @@ try {
       command: async (command, payload) => {
         if (command === 'clear_queue') {
           const cleared = {
-            steering: host.queueState.steering.map((item) => item.text),
-            followUp: host.queueState.followUp.map((item) => item.text)
+            steering: host.queue.state.steering.map((item) => item.text),
+            followUp: host.queue.state.followUp.map((item) => item.text)
           }
           calls.push({ command, ok: true })
           return { success: true, data: cleared }
@@ -393,13 +393,13 @@ try {
         { id: 'fr-3', text: '', images: [blue] }
       ]
     }
-    host.queueState = structuredClone(original)
+    host.queue.state = structuredClone(original)
     const result = await host.removeQueued('fr-1')
     check(!result.ok && result.error.includes('未消费内容已恢复'), 'refill 失败被报告为「已恢复原队列」')
-    equal(host.queueState.steering.map((item) => item.id), ['fr-s'], 'refill 失败恢复 steering 的图片项')
-    equal(host.queueState.followUp.map((item) => item.id), ['fr-1', 'fr-2', 'fr-3'],
+    equal(host.queue.state.steering.map((item) => item.id), ['fr-s'], 'refill 失败恢复 steering 的图片项')
+    equal(host.queue.state.followUp.map((item) => item.id), ['fr-1', 'fr-2', 'fr-3'],
       'refill 中途失败后 followUp 顺序与身份完整恢复')
-    equal(host.queueState.followUp.map((item) => item.images ?? null), [[red], null, [blue]],
+    equal(host.queue.state.followUp.map((item) => item.images ?? null), [[red], null, [blue]],
       '恢复的 followUp 保留每条自己的图片与无图状态')
     const recovered = calls.filter((call) => call.command === 'follow_up' && call.ok)
     equal(recovered.map((call) => call.message), ['keep', 'keep', ''],
@@ -436,7 +436,7 @@ try {
     check(restored.ok, `空闲恢复成功：${restored.error ?? ''}`)
     equal(shape(host.queueSnapshot()), shape(snapshot),
       '恢复后的快照与源快照文字、顺序、图片逐项一致（含纯图片项）')
-    check(new Set(host.queueState.followUp.map((item) => item.id)).size === 3,
+    check(new Set(host.queue.state.followUp.map((item) => item.id)).size === 3,
       '恢复时三条同/空文本项各获得独立身份，不合并')
     equal(refilled.map((call) => call.command), ['steer', 'follow_up', 'follow_up', 'follow_up'],
       '恢复按 steering 先、followUp 后重排，顺序不颠倒')
@@ -452,12 +452,12 @@ try {
     host.state = { sessionId: 'snap-guard' }
     host.capabilityOpts = { runnerGeneration: 1 }
     host.rpc = { running: true, command: async () => ({ success: true, data: {} }) }
-    host.queueState = { steering: [], followUp: [{ id: 'existing', text: 'other' }] }
+    host.queue.state = { steering: [], followUp: [{ id: 'existing', text: 'other' }] }
     const refused = await host.restoreQueueSnapshot({
       steering: [], followUp: ['lead'], items: { steering: [], followUp: [{ id: 'x', text: 'lead', images: [green] }] }
     })
     check(!refused.ok && refused.error.includes('拒绝覆盖'), '新实例已有不同队列时拒绝覆盖')
-    equal(host.queueState.followUp.map((item) => item.text), ['other'], '拒绝覆盖时原队列保持不变')
+    equal(host.queue.state.followUp.map((item) => item.text), ['other'], '拒绝覆盖时原队列保持不变')
   }
 
   console.log('live) 真实 pi + loopback 夹具')

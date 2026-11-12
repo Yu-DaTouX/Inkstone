@@ -1,4 +1,4 @@
-import type { QueueItem, QueueState } from '../shared/ipc'
+import type { QueueEditOp, QueueItem, QueueState } from '../shared/ipc'
 import { isSubagentNotice } from '../shared/subagent-notice'
 import { isHostTextNotice } from '../shared/host-notice-text'
 import { pick } from '../shared/ui-lang'
@@ -136,4 +136,27 @@ export async function applyQueueRewrite(
       }
     }
   }
+}
+
+export function planQueueEditOp(state: QueueState, op: QueueEditOp): { next: QueueState } | { error: string } {
+  if (op.op === 'clear') return { next: { steering: [], followUp: [] } }
+  const steering = state.steering.findIndex((item) => item.id === op.id)
+  const kind = steering >= 0 ? 'steering' : state.followUp.some((item) => item.id === op.id) ? 'followUp' : undefined
+  if (!kind) return { error: pick('这条排队消息已被接收或撤回', 'This queued message was already accepted or withdrawn') }
+  const list = state[kind]
+  const index = steering >= 0 ? steering : list.findIndex((item) => item.id === op.id)
+  if (op.op === 'remove') return { next: { ...state, [kind]: list.filter((item) => item.id !== op.id) } }
+  if (op.op === 'edit') {
+    const text = op.text.trim()
+    if (!text) return { error: pick('消息内容为空', 'Message is empty') }
+    const items = [...list]
+    items[index] = { ...items[index], text }
+    return { next: { ...state, [kind]: items } }
+  }
+  const target = index + (op.direction === 'up' ? -1 : 1)
+  if (target < 0 || target >= list.length) return { next: state }
+  const items = [...list]
+  const [moved] = items.splice(index, 1)
+  items.splice(target, 0, moved)
+  return { next: { ...state, [kind]: items } }
 }

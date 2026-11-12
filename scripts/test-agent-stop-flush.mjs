@@ -142,8 +142,8 @@ console.log('\n--- 4. abort 不回执也不会卡住退出 ---')
 console.log('\n--- 5. 排队消息随退出落盘 ---')
 {
   const { ctl } = controller()
-  ctl.publishQueue(['补充要求：先跑类型检查'], ['再说下一步'])
-  await ctl.queueWrite
+  ctl.queue.publish(['补充要求：先跑类型检查'], ['再说下一步'])
+  await ctl.queue.written
   check(existsSync(queueFile), '队列变化即落盘（不依赖退出钩子）')
   const saved = JSON.parse(await readFile(queueFile, 'utf8'))
   check(saved.version === 2 && saved.sessionId === 'session-flush', '落盘记录带版本与会话 id', JSON.stringify(saved))
@@ -176,11 +176,11 @@ console.log('\n--- 6. 重启后回填到输入框并清掉文件 ---')
 console.log('\n--- 7. 队列为空时清掉恢复文件 ---')
 {
   const { ctl } = controller()
-  ctl.publishQueue(['临时一条'], [])
-  await ctl.queueWrite
+  ctl.queue.publish(['临时一条'], [])
+  await ctl.queue.written
   check(existsSync(queueFile), '先有队列文件')
-  ctl.publishQueue([], [])
-  await ctl.queueWrite
+  ctl.queue.publish([], [])
+  await ctl.queue.written
   check(!existsSync(queueFile), '队列清空后恢复文件被删除')
   const names = await readdir(QUEUE_RECOVERY_DIR).catch(() => [])
   check(!names.some((name) => name.includes('session-flush') && !name.endsWith('.reclaimed')), '恢复目录不留临时残留文件', JSON.stringify(names))
@@ -197,18 +197,18 @@ console.log('\n--- 8. 子代理完成通知不进恢复队列 ---')
     model: 'gpt-x',
     result: { summary: '完成' }
   })
-  ctl.publishQueue([notice], [])
-  await ctl.queueWrite
+  ctl.queue.publish([notice], [])
+  await ctl.queue.written
   check(!existsSync(queueFile), '内部通知不落盘（重启后不该回填成用户输入）')
 }
 
 console.log('\n--- 9. 强杀后重启：只回填最新一次队列快照 ---')
 {
   const { ctl } = controller()
-  ctl.publishQueue(['第一条'], [])
-  await ctl.queueWrite
-  ctl.publishQueue(['第一条', '第二条'], [])
-  await ctl.queueWrite
+  ctl.queue.publish(['第一条'], [])
+  await ctl.queue.written
+  ctl.queue.publish(['第一条', '第二条'], [])
+  await ctl.queue.written
 
   const { ctl: restarted, pushes } = controller()
   await restarted.reclaimSavedQueue()
