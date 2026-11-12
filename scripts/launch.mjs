@@ -3,6 +3,7 @@ import { existsSync, statSync, readdirSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -30,15 +31,37 @@ if (!existsSync(join(root, 'package.json'))) {
   process.exit(1)
 }
 
-if (!existsSync(join(root, 'node_modules', 'electron'))) {
-  say(C.warn('  缺 node_modules，开始安装依赖（首次需要几分钟）…'))
-  const r = spawnSync('npm', ['install'], { cwd: root, stdio: 'inherit', shell: true })
+const missingDependencies = () => [
+  'electron/package.json',
+  'electron/index.js',
+  'electron-vite/package.json',
+  process.platform === 'win32' ? '.bin/electron-vite.cmd' : '.bin/electron-vite'
+].filter((path) => !existsSync(join(root, 'node_modules', path)))
+
+if (missingDependencies().length) {
+  say(C.warn('  开发依赖不完整，开始安装（首次需要几分钟）…'))
+  const r = spawnSync('npm', ['install', '--include=dev'], { cwd: root, stdio: 'inherit', shell: true })
   if (r.status !== 0) {
-    say(C.err('  npm install 失败，请手动跑一次看看报错'))
+    say(C.err('  npm install --include=dev 失败，请手动跑一次看看报错'))
+    process.exit(1)
+  }
+  const missing = missingDependencies()
+  if (missing.length) {
+    say(C.err(`  安装后依赖仍不完整：${missing.join('、')}`))
     process.exit(1)
   }
 }
 say(`  ${C.ok('✓')} node_modules`)
+
+let electron
+try {
+  electron = createRequire(import.meta.url)('electron')
+  if (typeof electron !== 'string' || !existsSync(electron)) throw new Error('找不到 Electron 可执行文件')
+} catch (error) {
+  say(C.err(`  Electron 运行文件准备失败：${error.message}`))
+  process.exit(1)
+}
+say(`  ${C.ok('✓')} Electron 运行文件`)
 
 const { selectedPiRuntime } = await import('./lib/pi-runtime-location.mjs')
 const piRuntime = join(selectedPiRuntime(join(root, 'resources', 'pi-runtime')), 'dist', 'bundle', 'cli.js')
@@ -117,14 +140,10 @@ if (has('--dev') || has('-d')) {
   }
 
   step('启动')
-  const electron = join(root, 'node_modules', 'electron', 'dist', 'electron.exe')
-  const bin = existsSync(electron) ? electron : 'npx'
-
-  const child = spawn(bin, existsSync(electron) ? ['.'] : ['electron', '.'], {
+  const child = spawn(electron, ['.'], {
     cwd: root,
     detached: true,
     stdio: 'ignore',
-    shell: !existsSync(electron),
     env: launchEnv
   })
   child.unref()
