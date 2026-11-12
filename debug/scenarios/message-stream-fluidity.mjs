@@ -75,7 +75,22 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
   check('尾部增量确实进入消息流渲染', (streaming.turns['stream-live'] ?? 0) >= 20)
   check('尾部增量不再触发未变化的历史回答重渲染', streaming.historyRenders === 0, streaming.historyRenders)
   const bottom = () => cdp.evaluate(`(() => { const el = document.querySelector('.v3-stream'); return el.scrollHeight - el.clientHeight - el.scrollTop })()`)
-  await sleep(700)
+  const settle = async (last, limitMs = 4000) => {
+    const start = Date.now()
+    let previous = null
+    let still = 0
+    while (Date.now() - start < limitMs) {
+      const gap = await bottom()
+      const shown = await cdp.evaluate(`!!document.querySelector('[data-turn-id="stream-live"]')?.textContent.includes(${JSON.stringify(last)})`)
+      still = shown && previous !== null && Math.abs(gap - previous) < 0.01 ? still + 1 : 0
+      if (still >= 3) return Date.now() - start
+      previous = gap
+      await sleep(50)
+    }
+    return null
+  }
+  report.timings.streamSettleMs = await settle('第 29 段输出')
+  check('流式输出在 2.5 秒内收住', report.timings.streamSettleMs !== null && report.timings.streamSettleMs <= 2500, report.timings.streamSettleMs)
   check('流式输出时保持贴底', (await bottom()) <= 2, await bottom())
   await cdp.evaluate(`(() => {
     const el = document.querySelector('.v3-stream');
@@ -124,7 +139,8 @@ export default async function run({ cdp, waitFor, check, report, sleep, shot }) 
   await measure('virtualStream', async () => {
     for (let i = 0; i < 15; i++) { await append(i); await sleep(30) }
   })
-  await sleep(500)
+  report.timings.virtualSettleMs = await settle('第 14 段输出')
+  check('虚拟列表流式输出在 2.5 秒内收住', report.timings.virtualSettleMs !== null && report.timings.virtualSettleMs <= 2500, report.timings.virtualSettleMs)
   check('虚拟列表流式输出保持贴底', (await bottom()) <= 2, await bottom())
   await cdp.evaluate(`(() => {
     window.__virtualResizeGaps = [];

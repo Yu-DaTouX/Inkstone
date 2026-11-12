@@ -22,7 +22,7 @@ await runSuite(import.meta.url, async (ok) => {
   try {
     const catalog = await discoverTests()
     const queue = selectTests(catalog, ['queue'])
-    ok(queue.length === 6 && queue.every((test) => test.kind === 'standalone'), '六个队列套件都能按域执行，包括本机假服务 RPC')
+    ok(queue.length >= 6 && queue.every((test) => test.kind === 'standalone' && test.name.startsWith('test-queue')) && queue.some((test) => test.name === 'test-queue-rpc-live'), '队列套件都能按域执行，包括本机假服务 RPC')
     ok(selectTests(catalog, ['queue', 'queue-items', 'test-queue']).length === queue.length, '重复和重叠选择只执行一次')
     ok(selectTests(catalog, ['agents-doc']).length === 1, '完整名称精确选择文档测试')
     assert.throws(() => selectTests(catalog, ['no-such-suite']), /没有匹配/)
@@ -117,7 +117,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const cli = pathToFileURL(resolve('scripts/test-unit.mjs')).href
     const cliFixture = (name, args) => fixture(name, `process.argv = [process.execPath, ${JSON.stringify(fileURLToPath(cli))}, ...${JSON.stringify(args)}]\nawait import(${JSON.stringify(cli)})\n`)
     const listed = await run(await cliFixture('list', ['queue', '--list']))
-    ok(listed.ok && listed.tail.includes('共 6 项') && !listed.tail.includes('个脚本通过'), '--list 只列清单，不执行')
+    ok(listed.ok && listed.tail.includes(`共 ${queue.length} 项`) && !listed.tail.includes('个脚本通过'), '--list 只列清单，不执行')
     const noMatch = await run(await cliFixture('no-match', ['missing-test-prefix']))
     ok(!noMatch.ok && noMatch.tail.includes('没有匹配'), 'CLI 零匹配返回非零退出码')
     const badOption = await run(await cliFixture('bad-option', ['--wat']))
