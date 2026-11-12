@@ -49,7 +49,10 @@ export function holdStreamTail(scroller: HTMLElement, findTail: () => HTMLElemen
     paddingBottom = padding
     const rect = target.getBoundingClientRect()
     const natural = naturalHeight(target, rect.top)
-    const held = heldTailHeight(rect.height, natural, scroller.getBoundingClientRect().bottom - rect.top, scroller.clientHeight)
+    const inner = scroller.firstElementChild
+    const reserve = inner ? parseFloat(getComputedStyle(inner).paddingBottom) || 0 : 0
+    const visible = Math.max(0, scroller.clientHeight - reserve)
+    const held = heldTailHeight(rect.height, natural, scroller.getBoundingClientRect().bottom - rect.top, visible)
     const value = `${Math.ceil(held)}px`
     if (value === written) return
     written = value

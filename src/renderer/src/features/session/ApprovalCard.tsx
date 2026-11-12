@@ -29,6 +29,7 @@ import {
 } from './approval-keys'
 import { cardFocusKeysText, useTypingDeferredFocus } from './typing-guard'
 import { isMacPlatform } from '../../app/shortcuts'
+import { useTicker } from './subagent-actions'
 import './approval.css'
 
 function approvalFocusTarget(card: HTMLElement): HTMLElement {
@@ -90,6 +91,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const visibleDetail = revealHiddenChars(current?.detail ?? '')
   const batchable = current ? approvals.filter((item) => item.id === current.id || !requiresApprovalReadGate(item)) : []
   const deferred = useTypingDeferredFocus(cardRef, active ? current?.id : null, approvalFocusTarget, false)
+  const now = useTicker(active && !!current?.createdAt)
 
   const answer = useCallback(
     (choice: ApprovalChoice, reason?: string): void => {
@@ -231,7 +233,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
 
   const risky = current.kind === 'danger' || current.kind === 'outside' || current.kind === 'delete'
   const rememberLabel = current.kind === 'outside' ? t('approval.rememberDirs') : ''
-  const waited = current.createdAt ? formatCountdown(Math.max(0, Date.now() - current.createdAt)) : ''
+  const waited = current.createdAt ? formatCountdown(Math.max(0, now - current.createdAt)) : ''
   const showSource = !isCurrent || !!current.subagentId
   const lang = zh ? 'zh-CN' : 'en-US'
   const headline = localizeApprovalText(approvalHeadline(current), lang)
