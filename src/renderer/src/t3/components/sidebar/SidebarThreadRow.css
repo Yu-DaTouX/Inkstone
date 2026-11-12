@@ -413,7 +413,7 @@
   .t3-thread-row__branch-name {
     min-width: 0;
     overflow: hidden;
-    font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);
+    font: 10px / var(--t-caption-lh) var(--font-mono);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
