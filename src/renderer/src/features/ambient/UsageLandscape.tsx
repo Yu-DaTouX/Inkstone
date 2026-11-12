@@ -30,7 +30,7 @@ import {
   type LandscapeLayerSpec,
   type LandscapeLayout
 } from './usage-landscape-model'
-import { landscapeSky, traceMoon } from './landscape-sky'
+import { landscapeSky, traceMoon, type MoonBody, type SkyBody } from './landscape-sky'
 import './ambient.css'
 
 const LEVELS = 20
@@ -117,6 +117,56 @@ function readPalette(host: HTMLElement): Palette {
     bg,
     dark: bg[0] * 0.299 + bg[1] * 0.587 + bg[2] * 0.114 < 128
   }
+}
+
+function halo(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number, palette: Palette): void {
+  const glow = ctx.createRadialGradient(x, y, 0, x, y, radius)
+  glow.addColorStop(0, css(palette.ink, alpha))
+  glow.addColorStop(0.35, css(palette.ink, alpha * 0.35))
+  glow.addColorStop(1, css(palette.ink, 0))
+  ctx.fillStyle = glow
+  ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
+}
+
+function drawSun(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number, palette: Palette): void {
+  if (alpha <= 0) return
+  const core = (palette.dark ? 0.34 : 0.24) * alpha
+  halo(ctx, x, y, radius * 3.6, (palette.dark ? 0.08 : 0.05) * alpha, palette)
+  const disc = ctx.createRadialGradient(x, y, 0, x, y, radius)
+  disc.addColorStop(0, css(palette.ink, core))
+  disc.addColorStop(0.72, css(palette.ink, core * 0.9))
+  disc.addColorStop(1, css(palette.ink, core * 0.45))
+  ctx.save()
+  ctx.fillStyle = disc
+  ctx.shadowColor = css(palette.ink, core * 0.8)
+  ctx.shadowBlur = radius * 0.35
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawMoon(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number, moon: MoonBody, palette: Palette): void {
+  if (alpha <= 0) return
+  const lit = (palette.dark ? 0.36 : 0.24) * alpha
+  halo(ctx, x, y, radius * 3, (palette.dark ? 0.07 : 0.04) * alpha * moon.illumination, palette)
+  ctx.save()
+  ctx.fillStyle = css(palette.ink, (palette.dark ? 0.03 : 0) * alpha * (1 - moon.illumination) ** 2)
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, Math.PI * 2)
+  ctx.fill()
+  const sx = x + Math.cos(moon.tilt) * radius * 0.45
+  const sy = y + Math.sin(moon.tilt) * radius * 0.45
+  const face = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 1.45)
+  face.addColorStop(0, css(palette.ink, lit))
+  face.addColorStop(0.6, css(palette.ink, lit * 0.88))
+  face.addColorStop(1, css(palette.ink, lit * 0.6))
+  ctx.fillStyle = face
+  ctx.shadowColor = css(palette.ink, lit * 0.6)
+  ctx.shadowBlur = radius * 0.18
+  traceMoon(ctx, x, y, radius, moon, moon.tilt)
+  ctx.fill()
+  ctx.restore()
 }
 
 function css(color: Rgba, alpha = 1): string {
@@ -386,28 +436,19 @@ function startLandscape(host: HTMLElement, canvas: HTMLCanvasElement): Landscape
     const veil = clamp01(since / 1.6)
     if (sky) {
       const discR = plan.rise * 0.12 * dpr
-      const glowR = discR * 3.4
-      const glowCx = (width * (0.16 + sky.progress * 0.68) - parallax * PARALLAX_PX * 0.1) * dpr
-      const glowCy = (plan.base - plan.rise * (0.62 + 0.58 * Math.sin(Math.PI * sky.progress))) * dpr
-      const visible = veil * smoothstep(Math.min(sky.progress, 1 - sky.progress) / 0.04)
-      const glow = ctx.createRadialGradient(glowCx, glowCy, 0, glowCx, glowCy, glowR)
-      const glowAlpha = (palette.dark ? 0.07 : 0.04) * visible * (sky.moon?.illumination ?? 1)
-      glow.addColorStop(0, css(palette.ink, glowAlpha))
-      glow.addColorStop(0.4, css(palette.ink, glowAlpha * 0.3))
-      glow.addColorStop(1, css(palette.ink, 0))
-      ctx.fillStyle = glow
-      ctx.fillRect(glowCx - glowR, glowCy - glowR, glowR * 2, glowR * 2)
-      ctx.save()
-      ctx.fillStyle = css(palette.ink, (palette.dark ? 0.3 : 0.2) * visible)
-      ctx.shadowColor = css(palette.ink, 0.15 * visible)
-      ctx.shadowBlur = discR * 0.08
-      if (sky.moon) traceMoon(ctx, glowCx, glowCy, discR, sky.moon)
-      else {
-        ctx.beginPath()
-        ctx.arc(glowCx, glowCy, discR, 0, Math.PI * 2)
+      const place = (body: SkyBody): { x: number; y: number; alpha: number } => ({
+        x: (width * (0.16 + body.x * 0.68) - parallax * PARALLAX_PX * 0.1) * dpr,
+        y: (plan.base - plan.rise * (0.88 + 0.32 * body.height)) * dpr,
+        alpha: veil * body.fade
+      })
+      if (sky.moon) {
+        const at = place(sky.moon)
+        drawMoon(ctx, at.x, at.y, discR, at.alpha, sky.moon, palette)
       }
-      ctx.fill()
-      ctx.restore()
+      if (sky.sun) {
+        const at = place(sky.sun)
+        drawSun(ctx, at.x, at.y, discR * (1 + 0.1 * (1 - sky.sun.height)), at.alpha, palette)
+      }
     }
 
     const band = (center: number, tall: number, speed: number, strength: number): void => {

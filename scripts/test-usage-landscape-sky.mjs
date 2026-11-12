@@ -1,24 +1,64 @@
 import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
-  const { moonPhase, landscapeSky, traceMoon } = await compile('src/renderer/src/features/ambient/landscape-sky.ts')
-  const local = (hour, minute = 0, second = 0) => new Date(2026, 10, 11, hour, minute, second).getTime()
-  for (const [hour, minute, second, kind] of [
-    [0, 0, 0, 'moon'], [5, 59, 59, 'moon'], [6, 0, 0, 'sun'],
-    [12, 0, 0, 'sun'], [17, 59, 59, 'sun'], [18, 0, 0, 'moon'], [23, 59, 59, 'moon']
-  ]) {
-    const sky = landscapeSky(local(hour, minute, second))
-    ok(sky.kind === kind, `本地 ${hour}:${minute}:${second} 显示${kind === 'sun' ? '太阳' : '月亮'}`)
-    ok(sky.progress >= 0 && sky.progress < 1 && (kind === 'moon' ? sky.moon !== null : sky.moon === null), '轨迹有界，只有夜晚计算月相')
+  const { moonPhase, landscapeSky, traceMoon, sunPosition, moonPosition, observerFor } = await compile('src/renderer/src/features/ambient/landscape-sky.ts')
+  const sydney = observerFor('Australia/Sydney', 0)
+  const shanghai = observerFor('Asia/Shanghai', 0)
+  const at = (local, offset) => Date.parse(`${local}:00${offset}`)
+  const syd = (local) => at(local, '+11:00')
+  const sha = (local) => at(local, '+08:00')
+  const crossing = (fn, observer, from, horizon, kind) => {
+    let prev = fn(from, observer).altitude - horizon
+    for (let minute = 1; minute <= 1440; minute += 1) {
+      const time = from + minute * 60_000
+      const now = fn(time, observer).altitude - horizon
+      if (kind === 'rise' ? prev <= 0 && now > 0 : prev > 0 && now <= 0) return time
+      prev = now
+    }
+    return NaN
   }
-  ok(landscapeSky(local(6)).progress === 0 && landscapeSky(local(18)).progress === 0, '日出和入夜各从轨迹起点开始')
-  ok(landscapeSky(local(12)).progress === 0.5 && landscapeSky(local(0)).progress === 0.5, '正午与午夜到达各自轨迹中央')
-  ok(landscapeSky(local(9)).progress < landscapeSky(local(12)).progress && landscapeSky(local(12)).progress < landscapeSky(local(15)).progress, '太阳从早到晚向前移动')
-  ok(landscapeSky(local(21)).progress < landscapeSky(local(0)).progress && landscapeSky(local(0)).progress < landscapeSky(local(3)).progress, '月亮跨午夜继续向前移动')
-  ok(Math.abs(landscapeSky(local(0)).progress - landscapeSky(local(23, 59, 59)).progress) < 0.00003, '午夜不重置月亮轨迹')
-  ok(landscapeSky(local(9, 30, 30)).progress > landscapeSky(local(9, 30)).progress, '轨迹包含分钟和秒，不只按整点跳动')
-  for (const at of [NaN, Infinity, -Infinity, 8.65e15]) {
-    ok(moonPhase(at) === null && landscapeSky(at) === null, '非法时间不生成 NaN 月相或轨迹')
+  const near = (time, expected, minutes) => Math.abs(time - expected) <= minutes * 60_000
+
+  ok(sydney.latitude < -33 && sydney.longitude > 151 && shanghai.latitude > 31, '常用时区带城市坐标')
+  ok(observerFor('Etc/Unknown', Date.UTC(2026, 0, 1)).latitude === 35 && observerFor('America/Argentina/Buenos_Aires', 0).latitude < 0, '未知时区按时区偏移估经度，南半球时区取南纬')
+
+  const day = syd('2026-11-12T00:00')
+  ok(near(crossing(sunPosition, sydney, day, -0.833, 'rise'), syd('2026-11-12T05:45'), 3), '悉尼 11/12 日出与 timeanddate 5:45 相差 3 分钟内')
+  ok(near(crossing(sunPosition, sydney, day, -0.833, 'set'), syd('2026-11-12T19:33'), 3), '悉尼 11/12 日落与 timeanddate 19:33 相差 3 分钟内')
+  const evening = sunPosition(syd('2026-11-12T19:05'), sydney)
+  ok(Math.abs(evening.azimuth - 251.7) < 0.5 && Math.abs(evening.altitude - 4.75) < 0.5, '悉尼 19:05 太阳方位与高度对照 timeanddate', evening)
+  const shaDay = sha('2026-11-12T00:00')
+  ok(near(crossing(sunPosition, shanghai, shaDay, -0.833, 'rise'), sha('2026-11-12T06:20'), 10) && near(crossing(sunPosition, shanghai, shaDay, -0.833, 'set'), sha('2026-11-12T17:00'), 10), '上海冬季约 6:20 日出、17:00 日落')
+  const summer = sha('2026-06-21T00:00')
+  ok(near(crossing(sunPosition, shanghai, summer, -0.833, 'rise'), sha('2026-06-21T04:51'), 10) && near(crossing(sunPosition, shanghai, summer, -0.833, 'set'), sha('2026-06-21T19:01'), 10), '上海夏至约 4:51 日出、19:01 日落，昼长随季节变化')
+  const fullRise = crossing(moonPosition, shanghai, sha('2026-11-24T12:00'), -0.3, 'rise')
+  ok(near(fullRise, sha('2026-11-24T16:40'), 45), '满月前后黄昏月出', new Date(fullRise).toISOString())
+
+  const dusk = landscapeSky(syd('2026-11-12T19:05'), sydney)
+  ok(dusk.sun && dusk.sun.x > 0.9 && dusk.sun.altitude < 6, '用户截图时刻：悉尼 19:05 太阳仍在、低悬画面右侧', dusk.sun)
+  ok(dusk.moon && dusk.moon.waxing && dusk.moon.illumination < 0.15 && dusk.moon.fade < 0.6, '同一时刻娥眉月已升起，日间显示为淡月', dusk.moon)
+  ok(Math.cos(dusk.moon.tilt) > 0 && Math.sin(dusk.moon.tilt) > 0.5, '傍晚娥眉月亮面朝向右下方太阳，南半球呈仰月', dusk.moon.tilt)
+  const night = landscapeSky(syd('2026-11-12T21:00'), sydney)
+  ok(!night.sun && night.moon && night.moon.fade === 1 && night.moon.x > dusk.moon.x, '日落后只剩月亮，月亮继续向右移动')
+  ok(!landscapeSky(syd('2026-11-12T23:30'), sydney).moon && !landscapeSky(syd('2026-11-12T23:30'), sydney).sun, '月落后夜空没有日月')
+  const morning = landscapeSky(syd('2026-11-12T07:00'), sydney)
+  const noon = landscapeSky(syd('2026-11-12T13:00'), sydney)
+  ok(morning.sun.x < noon.sun.x && noon.sun.x < dusk.sun.x && noon.sun.height > morning.sun.height && noon.sun.height > dusk.sun.height, '太阳从左升起、正午最高、向右落下（南半球同样左升右落）')
+  ok(Math.abs(landscapeSky(sha('2026-11-12T11:38'), shanghai).sun.x - 0.5) < 0.03, '当地太阳正午位于画面中央')
+  ok(!landscapeSky(sha('2026-11-12T05:30'), shanghai).sun && landscapeSky(sha('2026-11-12T06:40'), shanghai).sun, '上海冬季 5:30 还没日出，6:40 已出太阳')
+  const winter = landscapeSky(sha('2026-12-21T11:50'), shanghai).sun
+  const june = landscapeSky(sha('2026-06-21T11:50'), shanghai).sun
+  ok(winter.height < june.height, '冬季正午太阳比夏季低')
+  const full = landscapeSky(sha('2026-11-24T00:00'), shanghai).moon
+  ok(full && full.illumination > 0.95 && Math.abs(full.x - 0.5) < 0.15 && full.height > 0.9, '满月午夜高悬中天附近', full)
+  const lastQuarter = landscapeSky(sha('2026-12-01T06:00'), shanghai).moon
+  ok(lastQuarter && !lastQuarter.waxing && Math.cos(lastQuarter.tilt) < 0, '凌晨下弦月亮面朝左侧（东方）将升的太阳')
+  ok(!landscapeSky(sha('2026-11-09T23:00'), shanghai).moon, '新月夜里月亮在地平线下，不画')
+  const later = landscapeSky(sha('2026-11-24T00:00') + 30_000, shanghai).moon
+  ok(later.x > full.x && later.x - full.x < 0.001, '位置随秒连续变化，不按整点跳动')
+
+  for (const invalid of [NaN, Infinity, -Infinity, 8.65e15]) {
+    ok(moonPhase(invalid) === null && landscapeSky(invalid, shanghai) === null, '非法时间不生成 NaN 月相或轨迹')
   }
 
   const phases = [
@@ -38,8 +78,8 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const lit = (1 - Math.cos(expected * 2 * Math.PI)) / 2
     ok(Math.abs(moon.illumination - lit) < 0.025, '朔望弦亮面比例符合近似显示范围', moon.illumination)
   }
-  ok(moonPhase(Date.parse('2026-11-13T12:00:00Z')).waxing, '朔后为盈月，亮面在右')
-  ok(!moonPhase(Date.parse('2026-12-05T12:00:00Z')).waxing, '望后为亏月，亮面在左')
+  ok(moonPhase(Date.parse('2026-11-13T12:00:00Z')).waxing, '朔后为盈月')
+  ok(!moonPhase(Date.parse('2026-12-05T12:00:00Z')).waxing, '望后为亏月')
   for (const year of [1900, 1970, 1999, 2000, 2026, 2027, 2050, 2100]) {
     const moon = moonPhase(Date.UTC(year, 0, 1))
     ok(moon.phase >= 0 && moon.phase < 1 && moon.illumination >= 0 && moon.illumination <= 1, `${year} 年月相归一化，无未来年份表限制`)
@@ -48,34 +88,33 @@ await runSuite(import.meta.url, async (ok, compile) => {
   ok(Math.abs(moonPhase(midnight).illumination - moonPhase(midnight + 60_000).illumination) < 0.001, '月相跨年连续，不在零点跳变')
 
   const timezone = process.env.TZ
-  const at = Date.parse('2026-11-11T02:00:00Z')
-  const moon = JSON.stringify(moonPhase(at))
+  const instant = Date.parse('2026-11-11T02:00:00Z')
   try {
-    for (const [zone, kind, progress] of [
-      ['UTC', 'moon', 8 / 12], ['Asia/Shanghai', 'sun', 4 / 12],
-      ['America/New_York', 'moon', 3 / 12], ['Australia/Sydney', 'sun', 7 / 12]
-    ]) {
+    for (const [zone, sunUp] of [['Asia/Shanghai', true], ['Australia/Sydney', true], ['America/New_York', false], ['Europe/London', false]]) {
       process.env.TZ = zone
-      const sky = landscapeSky(at)
-      ok(sky.kind === kind && Math.abs(sky.progress - progress) < 1e-9, `${zone} 昼夜与轨迹使用电脑当地时间`, sky)
-      ok(JSON.stringify(moonPhase(at)) === moon, '同一时刻的月相不因时区变化而改变')
+      const sky = landscapeSky(instant)
+      ok(!!sky.sun === sunUp, `${zone} 按电脑时区所在地判断昼夜`, sky.sun)
     }
   } finally {
     if (timezone === undefined) delete process.env.TZ
     else process.env.TZ = timezone
   }
 
-  for (const waxing of [true, false]) {
+  for (const tilt of [0, Math.PI / 3, Math.PI, -Math.PI / 2]) {
     for (const illumination of [0, 0.05, 0.25, 0.5, 0.75, 0.95, 1]) {
       const calls = []
       const ctx = Object.fromEntries(['beginPath', 'moveTo', 'arc', 'ellipse', 'lineTo', 'closePath'].map((name) => [name, (...args) => calls.push({ name, args })]))
-      traceMoon(ctx, 100, 200, 40, { phase: 0, illumination, waxing })
+      traceMoon(ctx, 100, 200, 40, { phase: 0, illumination, waxing: true }, tilt)
       const limb = calls.find(({ name }) => name === 'arc')
       const terminator = calls.find(({ name }) => name === 'ellipse')
-      ok(limb.args.at(-1) === !waxing, `${waxing ? '盈' : '亏'}月 ${illumination} 外缘位于正确侧`)
+      ok(Math.abs(limb.args[3] + Math.PI / 2 - tilt) < 1e-9 && Math.abs(limb.args[4] - Math.PI / 2 - tilt) < 1e-9 && limb.args[5] === false, `亮缘半圆朝向 ${tilt.toFixed(2)} 的太阳方向`)
       if (illumination === 0.5) ok(!terminator && calls.some(({ name }) => name === 'lineTo'), '上下弦使用直线终止界，不传退化椭圆')
-      else ok(terminator.args[2] >= 0 && terminator.args[2] <= 40 && terminator.args.at(-1) === (waxing === (illumination < 0.5)), '新月、蛾眉、凸月、满月终止界方向正确')
+      else ok(terminator.args[2] >= 0 && terminator.args[2] <= 40 && terminator.args[4] === tilt && terminator.args.at(-1) === (illumination < 0.5), '终止界随亮面一起旋转，蛾眉与凸月方向正确')
       ok(calls[0].name === 'beginPath' && calls.at(-1).name === 'closePath', '月相路径独立闭合，不擦除山水或绘制不透明遮罩')
     }
   }
+  const defaults = []
+  const recorder = Object.fromEntries(['beginPath', 'moveTo', 'arc', 'ellipse', 'lineTo', 'closePath'].map((name) => [name, (...args) => defaults.push({ name, args })]))
+  traceMoon(recorder, 0, 0, 10, { phase: 0.8, illumination: 0.3, waxing: false })
+  ok(Math.abs(defaults.find(({ name }) => name === 'arc').args[3] - Math.PI / 2) < 1e-9, '未给方向时亏月亮面默认在左')
 })

@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { evidenceDir } from '../lib/env.mjs'
 
-export const meta = { description: '新会话山水日月：本地时钟位置、真实日期月相、跨午夜、唤醒、减少动态、主题与窄窗；仅隔离数据' }
+export const meta = { description: '新会话山水日月：按电脑时区所在地的真实日月出没与位置、月相与亮面朝向、跨午夜、唤醒、减少动态、主题与窄窗；仅隔离数据' }
 
 export default async function run({ cdp, newSession, box, runDir, fake, check, waitFor, sleep }) {
   assert.ok(resolve(box.sessionsDir).startsWith(resolve(runDir)))
@@ -35,7 +35,7 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
     p.drawImage=function(...args){if(isSky(this)&&args.length===3)f.layers.push([args[1],args[2],args[0].width,args[0].height]);return f.drawImage.apply(this,args)}
     p.arc=function(...args){if(isSky(this))f.last={arc:args,ellipse:null};return f.arc.apply(this,args)}
     p.ellipse=function(...args){if(isSky(this)&&f.last)f.last.ellipse=args;return f.ellipse.apply(this,args)}
-    p.fill=function(...args){const result=f.fill.apply(this,args);if(isSky(this)&&f.last){f.draws++;const [x,y,r]=f.last.arc;f.last.leftLit=this.isPointInPath(x-r*0.9,y);f.last.rightLit=this.isPointInPath(x+r*0.9,y)}return result}
+    p.fill=function(...args){const result=f.fill.apply(this,args);if(isSky(this)&&f.last){f.draws++;const [x,y,r,a0]=f.last.arc;const tilt=a0+Math.PI/2;f.last.tilt=tilt;f.last.toward=this.isPointInPath(x+r*0.9*Math.cos(tilt),y+r*0.9*Math.sin(tilt));f.last.away=this.isPointInPath(x-r*0.9*Math.cos(tilt),y-r*0.9*Math.sin(tilt))}return result}
     window.setInterval=function(fn,ms,...args){const id=f.setInterval.call(window,fn,ms,...args);if(ms===60000)f.timers.push({id,fn,active:true});return id}
     window.clearInterval=function(id){for(const timer of f.timers)if(timer.id===id)timer.active=false;return f.clearInterval.call(window,id)}
     window.__yanStore.getState().patchSettings({theme:'dark',lang:'zh-CN',asciiBackground:true,reduceMotion:true,promptSuggestions:false,workspaceTiles:false})
@@ -49,7 +49,7 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
     await sleep(500)
     const snapshot = () => ev(`(() => {const f=window.__skyFixture,c=document.querySelector('[data-testid="v3-ascii-field"] canvas');return {...f.last,draws:f.draws,width:c?.width,height:c?.height,timers:f.timers.filter(t=>t.active).length,kind:f.last?.arc[4]-f.last?.arc[3]>6?'sun':'moon'}})()`)
     const time = async (value, trigger = 'focus') => {
-      await ev(`window.__skyFixture.now=Date.parse(${JSON.stringify(value)});${trigger === 'timer' ? 'window.__skyFixture.timers.filter(t=>t.active).forEach(t=>t.fn())' : "window.dispatchEvent(new Event('focus'))"}`)
+      await ev(`window.__skyFixture.last=null;window.__skyFixture.now=Date.parse(${JSON.stringify(value)});${trigger === 'timer' ? 'window.__skyFixture.timers.filter(t=>t.active).forEach(t=>t.fn())' : "window.dispatchEvent(new Event('focus'))"}`)
       await sleep(100)
       return snapshot()
     }
@@ -101,7 +101,8 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
     const afternoon = await time('2026-11-11T07:00:00Z')
     check('本地早、午、晚均显示太阳，减少动态不影响时钟更新', [morning,noon,afternoon].every(s=>s.kind==='sun'&&!s.ellipse))
     check('太阳位置随时间向右移动，正午最高，不跟山峰固定', morning.arc[0]<noon.arc[0]&&noon.arc[0]<afternoon.arc[0]&&noon.arc[1]<morning.arc[1]&&noon.arc[1]<afternoon.arc[1], {morning:morning.arc.slice(0,2),noon:noon.arc.slice(0,2),afternoon:afternoon.arc.slice(0,2)})
-    check('正午位于轨迹中央', Math.abs(noon.arc[0]-noon.width*0.5)<1)
+    const solarNoon = await time('2026-11-11T03:38:00Z')
+    check('当地太阳正午（上海约 11:38）位于轨迹中央', Math.abs(solarNoon.arc[0]-solarNoon.width*0.5)<solarNoon.width*0.03, solarNoon.arc.slice(0,2))
     await shot('sun-afternoon-dark')
     await time('2026-11-11T04:00:00Z')
     await shot('sun-noon-dark')
@@ -109,40 +110,42 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
     await sleep(200)
     check('浅色主题不会把白天太阳换成月亮', (await snapshot()).kind==='sun')
     await shot('sun-noon-light')
-    const dusk = await time('2026-11-11T09:59:59Z')
-    const night = await time('2026-11-11T10:00:00Z')
-    const dawn = await time('2026-11-11T22:00:00Z')
-    check('本地18点切月亮，次日6点切太阳', dusk.kind==='sun'&&night.kind==='moon'&&dawn.kind==='sun')
-    const beforeMidnight = await time('2026-11-11T15:59:59Z')
-    const midnight = await time('2026-11-11T16:00:00Z')
-    check('月亮跨午夜连续移动，不回到起点', beforeMidnight.kind==='moon'&&midnight.kind==='moon'&&Math.abs(beforeMidnight.arc[0]-midnight.arc[0])<0.1)
-    const evening = await time('2026-11-11T13:00:00Z')
-    const late = await time('2026-11-11T19:00:00Z')
+    const dusk = await time('2026-11-11T08:30:00Z')
+    const night = await time('2026-11-11T09:30:00Z')
+    const predawn = await time('2026-11-11T21:30:00Z')
+    const dawn = await time('2026-11-11T23:00:00Z')
+    check('按上海真实日出日落：16:30 有太阳，17:30 日落后只剩娥眉月，次日 5:30 日月都不在，7:00 太阳已升', dusk.kind==='sun'&&night.arc&&night.kind==='moon'&&!predawn.arc&&dawn.kind==='sun', {dusk:dusk.kind,night:night.kind,predawn:!!predawn.arc,dawn:dawn.kind})
+    const beforeMidnight = await time('2026-11-23T15:59:59Z')
+    const midnight = await time('2026-11-23T16:00:00Z')
+    check('满月跨午夜连续移动，不回到起点', beforeMidnight.kind==='moon'&&midnight.kind==='moon'&&Math.abs(beforeMidnight.arc[0]-midnight.arc[0])<1)
+    const evening = await time('2026-11-23T13:00:00Z')
+    const late = await time('2026-11-23T19:00:00Z')
     check('月亮晚间、午夜、凌晨位置随时间前进且午夜最高', evening.arc[0]<midnight.arc[0]&&midnight.arc[0]<late.arc[0]&&midnight.arc[1]<evening.arc[1]&&midnight.arc[1]<late.arc[1])
 
     for (const theme of ['light','dark']) {
       await ev(`window.__yanStore.getState().patchSettings({theme:${JSON.stringify(theme)}})`)
+      check(`${theme}/新月夜里月亮在地平线下，不画`, !(await time('2026-11-09T15:00:00Z')).arc)
       for (const [label, date, side] of [
-        ['new','2026-11-09T15:00:00Z','none'],
-        ['crescent','2026-11-13T15:00:00Z','right'],
-        ['first-quarter','2026-11-17T15:00:00Z','right'],
-        ['full','2026-11-24T15:00:00Z','both'],
-        ['last-quarter','2026-12-01T15:00:00Z','left']
+        ['crescent','2026-11-13T10:30:00Z','right'],
+        ['first-quarter','2026-11-17T12:00:00Z','right'],
+        ['full','2026-11-24T16:00:00Z','both'],
+        ['last-quarter','2026-11-30T21:30:00Z','left']
       ]) {
         const s = await time(date)
-        const lit = side==='none' ? !s.leftLit&&!s.rightLit : side==='both' ? s.leftLit&&s.rightLit : side==='right' ? !s.leftLit&&s.rightLit : s.leftLit&&!s.rightLit
-        check(`${theme}/${label} 夜间月相的实际绘制路径亮面正确`, s.kind==='moon'&&!!s.ellipse&&lit, {left:s.leftLit,right:s.rightLit,terminator:s.ellipse?.[2]/s.arc[2]})
-        await shot(`moon-${label}-${theme}`)
+        const facing = side==='both' || (side==='right' ? Math.cos(s.tilt)>0 : Math.cos(s.tilt)<0)
+        const lit = side==='both' ? s.toward&&s.away : s.toward&&!s.away
+        check(`${theme}/${label} 夜间月相的实际绘制路径亮面正确并朝向太阳一侧`, s.kind==='moon'&&!!s.ellipse&&lit&&facing, {toward:s.toward,away:s.away,tilt:s.tilt,terminator:s.ellipse?.[2]/s.arc[2]})
+        await shot(`moon2-${label}-${theme}`)
       }
     }
-    await time('2026-11-17T15:00:00Z')
+    await time('2026-11-17T12:00:00Z')
     const wide = await snapshot()
     await cdp.call('Emulation.setDeviceMetricsOverride', {width:900,height:800,deviceScaleFactor:1,mobile:false})
     await sleep(250)
     const narrow = await snapshot()
     check('窄窗日月仍在背景边界内，不产生横向溢出', narrow.arc[0]-narrow.arc[2]>0&&narrow.arc[0]+narrow.arc[2]<narrow.width&&await ev('document.documentElement.scrollWidth<=innerWidth+1'))
     check('实际窗口缩小时背景仍随页面尺寸自适应',narrow.width<wide.width&&narrow.height<wide.height)
-    await shot('moon-narrow-dark')
+    await shot('moon2-narrow-dark')
     const narrowShort = await background()
     await ev(`document.querySelector('.ProseMirror').focus()`)
     await cdp.call('Input.insertText',{text:Array.from({length:18},(_,i)=>`窄窗第${i+1}行`).join('\n')})
@@ -156,19 +159,30 @@ export default async function run({ cdp, newSession, box, runDir, fake, check, w
     await cdp.call('Emulation.clearDeviceMetricsOverride')
 
     await time('2026-11-11T01:00:00Z')
-    const tick = await time('2026-11-11T04:00:00Z','timer')
-    check('分钟定时刷新会更新位置，无需重开标签或切焦点', tick.kind==='sun'&&Math.abs(tick.arc[0]-tick.width*0.5)<1)
+    const tick = await time('2026-11-11T03:38:00Z','timer')
+    check('分钟定时刷新会更新位置，无需重开标签或切焦点', tick.kind==='sun'&&Math.abs(tick.arc[0]-tick.width*0.5)<tick.width*0.03)
     await ev(`Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'))`)
     const hidden = await snapshot()
-    await time('2026-11-17T15:00:00Z','timer')
+    await time('2026-11-17T12:00:00Z','timer')
     check('隐藏页面的时钟更新不额外绘制背景', (await snapshot()).draws===hidden.draws)
     await ev(`delete document.visibilityState;document.dispatchEvent(new Event('visibilitychange'))`)
     check('恢复可见后立即读取当前时间和月相', (await snapshot()).kind==='moon')
     await time('2026-11-11T02:00:00Z')
     check('同一时刻在上海是白天', (await snapshot()).kind==='sun')
     await cdp.call('Emulation.setTimezoneOverride', {timezoneId:'UTC'})
-    await ev(`window.dispatchEvent(new Event('focus'))`)
-    check('电脑时区改变后按新的本地时刻显示月亮', (await snapshot()).kind==='moon')
+    await ev(`window.__skyFixture.last=null;window.dispatchEvent(new Event('focus'))`)
+    await sleep(100)
+    const utc = await snapshot()
+    check('电脑时区改为 UTC 后按新的所在地判断：同一时刻已是夜里，不再画太阳', !utc.arc||utc.kind==='moon')
+    await cdp.call('Emulation.setTimezoneOverride', {timezoneId:'Australia/Sydney'})
+    await ev(`window.__yanStore.getState().patchSettings({theme:'light'})`)
+    const sydneyDusk = await time('2026-11-12T08:05:20Z')
+    check('悉尼 11/12 19:05（日落 19:33 前）仍显示低悬右侧的太阳', sydneyDusk.kind==='sun'&&sydneyDusk.arc[0]>sydneyDusk.width*0.7, sydneyDusk.arc?.slice(0,2))
+    await shot('sydney-1905-light')
+    const sydneyNight = await time('2026-11-12T10:00:00Z')
+    check('悉尼 21:00 日落后只剩娥眉月，亮面朝右下方落下的太阳', sydneyNight.kind==='moon'&&sydneyNight.toward&&!sydneyNight.away&&Math.cos(sydneyNight.tilt)>0&&Math.sin(sydneyNight.tilt)>0, {tilt:sydneyNight.tilt})
+    await shot('sydney-2100-light')
+    await ev(`window.__yanStore.getState().patchSettings({theme:'dark'})`)
     await cdp.call('Emulation.setTimezoneOverride', {timezoneId:'Asia/Shanghai'})
     await ev(`window.__yanStore.getState().patchSettings({reduceMotion:false})`)
     await time('2026-11-11T04:00:00Z')
