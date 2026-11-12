@@ -1,3 +1,10 @@
+import { runSuite } from './lib/test-suite.mjs'
+
+await runSuite(import.meta.url, async (ok, compile) => {
+  const runtime = await compile('src/renderer/src/state/session-runtime.ts', { platform: 'neutral' })
+  runSessionRuntimeTests(ok, runtime.reduceSessionRuntime, runtime.sessionRuntimeKey, runtime.updateSessionRuntime, runtime.migrateSessionRuntime)
+})
+
 export function runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime) {
   const runtimeA = { sessionId: 'session-a', runId: 'r1', projectId: 'project-a', generation: 1 }
   const runtimeB = { sessionId: 'session-b', runId: 'r2', projectId: 'project-b', generation: 1 }

@@ -211,10 +211,6 @@ const { runProjectIdTests } = await import('./test-project-id.mjs')
 const projectSession = await buildTest('src/renderer/src/state/project-session.ts', 'out/test/project-session.mjs', { platform: 'neutral' }).then(() => import('../out/test/project-session.mjs'))
 const { runProjectSessionTests } = await import('./test-project-session.mjs')
 
-const { RunnerRegistry } = await buildTest('src/main/runners.ts', 'out/test/runners.mjs').then(() => import('../out/test/runners.mjs'))
-
-const { migrateSessionRuntime, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime } = await buildTest('src/renderer/src/state/session-runtime.ts', 'out/test/session-runtime.mjs', { platform: 'neutral' }).then(() => import('../out/test/session-runtime.mjs'))
-
 const pushRouting = await buildTest('src/renderer/src/state/push-routing.ts', 'out/test/push-routing.mjs', { platform: 'neutral' }).then(() => import('../out/test/push-routing.mjs'))
 
 const sessionLayout = await buildTest('src/main/session-layout.ts', 'out/test/session-layout.mjs').then(() => import('../out/test/session-layout.mjs'))
@@ -670,18 +666,6 @@ const workspaceChanges = await buildTest('src/main/snapshots.ts', 'out/test/snap
 const { runWorkspaceChangesTests, runGitWorkspaceChangesTests } = await import('./test-workspace-changes.mjs')
 await guarded("runWorkspaceChangesTests(ok, workspaceChanges)", () => runWorkspaceChangesTests(ok, workspaceChanges))
 await guarded("runGitWorkspaceChangesTests(ok, workspaceChanges)", () => runGitWorkspaceChangesTests(ok, workspaceChanges))
-
-{
-  const { runRunnerTests } = await import('./test-runners.mjs')
-  await runRunnerTests(ok, RunnerRegistry)
-  const { runRunnerReclaimTests } = await import('./test-runner-reclaim.mjs')
-  await runRunnerReclaimTests(ok)
-}
-
-{
-  const { runSessionRuntimeTests } = await import('./test-session-runtime.mjs')
-  runSessionRuntimeTests(ok, reduceSessionRuntime, sessionRuntimeKey, updateSessionRuntime, migrateSessionRuntime)
-}
 
 {
   const { runPushRoutingTests } = await import('./test-push-routing.mjs')
