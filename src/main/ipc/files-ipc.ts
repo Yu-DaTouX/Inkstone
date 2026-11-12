@@ -1,6 +1,6 @@
 import { pick } from '../../shared/ui-lang'
 import type { IpcRegistrar } from './registrar'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { getSettings } from '../settings'
@@ -127,9 +127,14 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   })
   handle('yan:prepareHtmlWidget', (html: unknown) => htmlArtifactPreviews.prepareInline(html))
   handle('yan:releaseHtmlArtifact', (url: string) => htmlArtifactPreviews.release(String(url ?? '')))
-  handle('yan:readPreview', async (p: string, line?: number, requestedCwd?: string, lineEnd?: number) => {
+  const previewContext = async (p: unknown, requestedCwd?: string): Promise<FileContextResult> => {
     const s = await getSettings()
     const resolved = await resolveFileContext(s, s.cwd, { cwd: requestedCwd ?? s.cwd })
+    if (resolved.ok || requestedCwd !== undefined || typeof p !== 'string' || !isAbsolute(p)) return resolved
+    return { ok: true, context: resolved.context }
+  }
+  handle('yan:readPreview', async (p: string, line?: number, requestedCwd?: string, lineEnd?: number) => {
+    const resolved = await previewContext(p, requestedCwd)
     if (!resolved.ok) {
       return { ok: false, path: String(p ?? ''), abs: '', name: '', size: 0, kind: 'other' as const, error: resolved.error }
     }
@@ -141,16 +146,14 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     )
   })
   handle('yan:readPreviewBytes', async (p: string, requestedCwd?: string) => {
-    const s = await getSettings()
-    const resolved = await resolveFileContext(s, s.cwd, { cwd: requestedCwd ?? s.cwd })
+    const resolved = await previewContext(p, requestedCwd)
     if (!resolved.ok) {
       return { ok: false, abs: '', name: '', size: 0, error: resolved.error, issue: 'invalid' as const }
     }
     return readPreviewBytes(String(p ?? ''), resolved.context.cwd)
   })
   handle('yan:statPreview', async (p: string, requestedCwd?: string) => {
-    const s = await getSettings()
-    const resolved = await resolveFileContext(s, s.cwd, { cwd: requestedCwd ?? s.cwd })
+    const resolved = await previewContext(p, requestedCwd)
     if (!resolved.ok) return { ok: false, abs: '', mtimeMs: 0, size: 0, error: resolved.error }
     return statPreview(String(p ?? ''), resolved.context.cwd)
   })
