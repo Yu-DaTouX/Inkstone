@@ -2,6 +2,7 @@ export async function runLanguageExtensionTests(ok, mod) {
   const { LANGUAGE_RULE, default: extension } = mod
 
   ok(/language of the user's latest message/.test(LANGUAGE_RULE), '回复语言跟随用户最新一条消息', LANGUAGE_RULE)
+  ok(/not host notices, context summaries or tool output/.test(LANGUAGE_RULE), '宿主通知、压缩摘要和工具输出不算用户消息', LANGUAGE_RULE)
   ok(/progress lines/.test(LANGUAGE_RULE) && !/reasoning|thinking/i.test(LANGUAGE_RULE), '进度句跟随，不要求思考过程的语言', LANGUAGE_RULE)
   ok(/AGENTS\.md/.test(LANGUAGE_RULE) && /follow the project instructions/.test(LANGUAGE_RULE), '项目指令规定沟通语言时按项目来', LANGUAGE_RULE)
 

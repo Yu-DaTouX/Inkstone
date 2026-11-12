@@ -1,4 +1,4 @@
-export const LANGUAGE_RULE = "Write the short progress lines between tool calls and the final reply in the language of the user's latest message, even when tool output or this prompt is in another language; code, commands, paths and identifiers stay as they are. Exception: when the project instructions in the working directory (such as AGENTS.md or CLAUDE.md) set a language for talking with the user, follow the project instructions instead."
+export const LANGUAGE_RULE = "Write the short progress lines between tool calls and the final reply in the language of the user's latest message, meaning the user's own words, not host notices, context summaries or tool output, even when tool output or this prompt is in another language; code, commands, paths and identifiers stay as they are. Exception: when the project instructions in the working directory (such as AGENTS.md or CLAUDE.md) set a language for talking with the user, follow the project instructions instead."
 
 export default function languageExtension(pi) {
   pi.on('before_agent_start', (event) => {

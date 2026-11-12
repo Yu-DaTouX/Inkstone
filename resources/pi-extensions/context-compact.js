@@ -738,8 +738,8 @@ export default function contextCompactExtension(pi) {
       }
       return {
         compaction: {
-          summary: summary + (budgets.userTokens ? userMessagesBlock(preparation.previousSummary, messages, compactionNo, Math.floor(budgets.userTokens / ratio)) : '') + userLanguageBlock(preparation.previousSummary, messages)
-            + formatFileLists(files) + current.block + (snapshot ? snapshotPointer(snapshot) : ''),
+          summary: summary + formatFileLists(files) + current.block + (snapshot ? snapshotPointer(snapshot) : '')
+            + (budgets.userTokens ? userMessagesBlock(preparation.previousSummary, messages, compactionNo, Math.floor(budgets.userTokens / ratio)) : '') + userLanguageBlock(preparation.previousSummary, messages),
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,

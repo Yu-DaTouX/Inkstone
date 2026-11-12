@@ -164,7 +164,8 @@ const ok = (text, usage) => ({ stopReason: 'stop', content: [{ type: 'text', tex
   assert.ok(history.includes('### [#1.4 tool_result bash call=c9 error]'), '失败的工具结果锚点标 error')
   assert.ok(!history.includes('sk-abcdefghijklmnop') && !history.includes('Bearer abcdefghijklmnop') && history.includes('[REDACTED]'), '写盘时替换常见密钥格式')
   assert.ok(prompts[0].includes('### [#1.3 tool_result read call=c1 ok]'), '摘要模型看到的原文也带锚点')
-  assert.ok(first.compaction.summary.includes(`<history-snapshot>\nThe full text of the conversation compacted so far, tool outputs included, is saved at ${sessionFile}.history.txt (${Buffer.byteLength(history)} bytes)`), '摘要末尾给出快照路径和字符数')
+  assert.ok(first.compaction.summary.includes(`<history-snapshot>\nThe full text of the conversation compacted so far, tool outputs included, is saved at ${sessionFile}.history.txt (${Buffer.byteLength(history)} bytes)`), '摘要附录给出快照路径和字符数')
+  assert.ok(first.compaction.summary.endsWith('</user-language>') && first.compaction.summary.indexOf('<history-snapshot>') < first.compaction.summary.indexOf('<user-language>'), '快照等英文附录在前，摘要以用户原话与语言注明收尾')
   assert.equal(first.compaction.details.snapshot, `${sessionFile}.history.txt`)
   assert.equal(first.compaction.details.compactionNo, 1)
   const second = await handlers.session_before_compact(event, ctx)
@@ -220,6 +221,7 @@ assert.equal(
   assert.ok(/Write the summary in the language the user writes in/.test(prompt) && /keep the section headings above/.test(prompt), '摘要正文用用户的语言写，标题与代码、路径保持原样')
   assert.ok(result.compaction.summary.includes('<user-language>\nThe user writes in Chinese. Keep progress lines and replies to the user in Chinese'), '摘要附录注明一次用户语言')
   assert.equal(result.compaction.summary.match(/<user-language>/g).length, 1, '用户语言只注明一次')
+  assert.ok(result.compaction.summary.endsWith('</user-messages>\n\n<user-language>\nThe user writes in Chinese. Keep progress lines and replies to the user in Chinese, even though tool outputs and parts of this summary are in English; code, commands, paths and identifiers stay as they are.\n</user-language>'), '摘要末尾是用户原话，再是语言注明')
   assert.ok(/under about 16000 tokens/.test(prompt), '给出篇幅目标（输出上限的一半）')
 }
 {
