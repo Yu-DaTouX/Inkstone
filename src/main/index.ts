@@ -1939,6 +1939,15 @@ async function sessionWorktrees(): Promise<{ cwd: string; branch: string }[]> {
   return (await autoIsolations.all()).map((record) => ({ cwd: isolatedSessionCwd(record), branch: record.branch }))
 }
 
+async function isolatedSessionOwner(cwd: string, sessionId: string): Promise<{ projectId?: string; scope: 'global' | 'project' | 'pending' } | undefined> {
+  const record = await autoIsolations.byWorktree(cwd).catch(() => null)
+  if (!record) return undefined
+  const previous = (await getSessionLayout()).entries.find((entry) => entry.sessionId === sessionId)
+  if (previous) return { ...(previous.projectId ? { projectId: previous.projectId } : {}), scope: previous.scope }
+  const projectId = projectIdForCwd(await getSettings(), record.mainCwd)
+  return projectId ? { projectId, scope: 'project' } : undefined
+}
+
 async function rememberRunnerSession(
   result: { ok: boolean; id?: string; sessionId?: string },
   target: { sessionFile?: string; projectId?: string; scope?: 'global' | 'project' | 'pending'; cwd: string }
@@ -1948,12 +1957,16 @@ async function rememberRunnerSession(
   if (result.sessionId) {
     void autoIsolations.bindSession(state?.cwd ?? target.cwd, result.sessionId).catch(() => undefined)
   }
+  const cwd = state?.cwd ?? target.cwd
+  const owner = target.projectId ? undefined : await isolatedSessionOwner(cwd, result.sessionId)
+  const projectId = owner ? owner.projectId : target.projectId
+  const scope = owner ? owner.scope : target.scope
   await rememberSession({
     sessionId: result.sessionId,
     sessionFile: state?.sessionFile ?? target.sessionFile,
-    cwd: state?.cwd ?? target.cwd,
-    ...(target.projectId ? { projectId: target.projectId } : {}),
-    ...(target.scope ? { scope: target.scope } : {})
+    cwd,
+    ...(projectId ? { projectId } : {}),
+    ...(scope ? { scope } : {})
   }).catch((error) => {
     console.error('[session-layout] 记录会话归属失败：', error)
   })
