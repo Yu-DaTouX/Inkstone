@@ -172,6 +172,20 @@
     text-overflow: ellipsis;
   }
 
+  .sa-composer-ended {
+    margin: 0;
+    overflow: hidden;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sa-pane-time {
+    color: var(--fg3);
+    font-variant-numeric: tabular-nums;
+  }
+
   .sa-composer-hint {
     margin: 0;
     color: var(--fg3);

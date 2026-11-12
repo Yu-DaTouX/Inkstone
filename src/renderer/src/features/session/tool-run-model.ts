@@ -98,8 +98,12 @@ export function isStandaloneTool(call: Pick<UIToolCall, 'name'>): boolean {
 
 const SUBAGENT_COMMAND_ALL = new RegExp(SUBAGENT_COMMAND.source, 'g')
 
-export function subagentStartCount(call: Pick<UIToolCall, 'name' | 'args' | 'details'>): number {
-  return Math.max(1, commandOf(call).match(SUBAGENT_COMMAND_ALL)?.length ?? 0)
+const SUBAGENT_STARTED_ALL = /"kind":"subagent","action":"start"/g
+
+export function subagentStartCount(call: Pick<UIToolCall, 'name' | 'args' | 'details'> & { output?: string }): number {
+  const written = commandOf(call).match(SUBAGENT_COMMAND_ALL)?.length ?? 0
+  const started = typeof call.output === 'string' ? call.output.match(SUBAGENT_STARTED_ALL)?.length ?? 0 : 0
+  return Math.max(1, written, started)
 }
 
 export function toolCategory(call: Pick<UIToolCall, 'name' | 'args' | 'details'>): ToolCategory {
@@ -245,7 +249,7 @@ function buildSegments(calls: readonly UIToolCall[], failedIds: ReadonlySet<stri
       order.push(bucketKey)
     }
     bucket.keys.add(memberKey(call, category))
-    bucket.calls += 1
+    bucket.calls += category === 'agent' ? subagentStartCount(call) : 1
     if (failedIds.has(call.id)) bucket.failed += 1
   }
   return order.map((key) => {
@@ -353,7 +357,7 @@ export function toolTally(calls: readonly UIToolCall[]): ToolTallyPart[] {
     const category = toolCategory(call)
     const key = category === 'other' ? `other:${call.name}` : category
     const part = parts.get(key) ?? { key, category, name: mcpDisplayName(call.name), count: 0, failed: 0 }
-    part.count += 1
+    part.count += category === 'agent' ? subagentStartCount(call) : 1
     if (failedIds.has(call.id)) part.failed += 1
     parts.set(key, part)
   }

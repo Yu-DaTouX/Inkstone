@@ -6,7 +6,28 @@ export interface CompactionHistoryItem {
   at?: number
   tokensBefore?: number
   tokensAfter?: number
+  afterEstimated?: boolean
   summaryTokens: number
+}
+
+export interface LastCompactionAfter {
+  status: string
+  entryId?: string
+  beforeTokens?: number
+  afterTokens?: number
+  afterMeasured?: boolean
+}
+
+export function withLastCompactionAfter(items: readonly CompactionHistoryItem[], last: LastCompactionAfter | null | undefined): CompactionHistoryItem[] {
+  const head = items[0]
+  const after = last?.afterTokens
+  if (!head || head.tokensAfter !== undefined || last?.status !== 'completed') return [...items]
+  if (typeof after !== 'number' || !Number.isFinite(after) || after < 0) return [...items]
+  const same = last.entryId
+    ? head.id === last.entryId
+    : last.beforeTokens === undefined || head.tokensBefore === undefined || Math.abs(head.tokensBefore - last.beforeTokens) <= 1
+  if (!same) return [...items]
+  return [{ ...head, tokensAfter: Math.round(after), ...(last.afterMeasured ? {} : { afterEstimated: true }) }, ...items.slice(1)]
 }
 
 export type CompactionHistoryLoad =

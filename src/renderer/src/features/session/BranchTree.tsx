@@ -46,6 +46,7 @@ interface BranchText {
   leaf: string
   steps: (count: number) => string
   kind: Record<NativeEntryKind, string>
+  host: Record<NonNullable<BranchLaneRow['host']>, string>
 }
 
 const ZH: BranchText = {
@@ -91,6 +92,16 @@ const ZH: BranchText = {
     custom: '自定义',
     usage: '用量',
     unknown: '其它'
+  },
+  host: {
+    subagent: '子代理回传',
+    terminal: '后台命令通知',
+    'session-moved': '会话已移动',
+    'auto-continue': '自动继续',
+    'quota-resume': '额度恢复后继续',
+    'account-switch': '换号后继续',
+    'wrap-up': '收尾提示',
+    generic: '宿主通知'
   }
 }
 
@@ -137,6 +148,16 @@ const EN: BranchText = {
     custom: 'Custom',
     usage: 'Usage',
     unknown: 'Other'
+  },
+  host: {
+    subagent: 'Subagent report',
+    terminal: 'Background command notice',
+    'session-moved': 'Session moved',
+    'auto-continue': 'Auto-continue',
+    'quota-resume': 'Resumed after quota',
+    'account-switch': 'Resumed on another account',
+    'wrap-up': 'Wrap-up prompt',
+    generic: 'Host notice'
   }
 }
 
@@ -208,8 +229,15 @@ async function labelBranch(
 }
 
 function rowTitle(row: BranchLaneRow, text: BranchText): string {
+  if (row.host) return text.host[row.host]
   if (row.kind === 'user') return row.text || text.kind.user
+  if (row.kind === 'summary' || row.kind === 'branch') return text.kind[row.kind]
   return row.text ? `${text.kind[row.kind]} · ${row.text}` : text.kind[row.kind]
+}
+
+function rowHover(row: BranchLaneRow, text: BranchText): string {
+  const title = rowTitle(row, text)
+  return row.text && title !== row.text ? `${title}\n${row.text}` : title
 }
 
 function BranchBookmark({ row, text, blocked, onLabel }: { row: BranchLaneRow; text: BranchText; blocked: boolean; onLabel: (entryId: string, label: string) => Promise<boolean> }): JSX.Element {
@@ -315,12 +343,12 @@ export function BranchGraph({
           <circle
             key={row.entryId}
             className="branch-graph__dot"
-            data-kind={row.kind === 'user' ? 'user' : row.kind === 'branch' || row.kind === 'summary' ? 'summary' : 'step'}
+            data-kind={row.host ? 'step' : row.kind === 'user' ? 'user' : row.kind === 'branch' || row.kind === 'summary' ? 'summary' : 'step'}
             data-active={row.active ? '1' : undefined}
             data-leaf={row.leaf ? '1' : undefined}
             cx={laneX(row.lane)}
             cy={rowY(index)}
-            r={row.leaf ? 5 : row.kind === 'user' ? 4 : 3}
+            r={row.leaf ? 5 : row.kind === 'user' && !row.host ? 4 : 3}
           />
         ))}
       </svg>
@@ -347,9 +375,10 @@ export function BranchGraph({
               className="branch-graph__row"
               data-entry-id={row.entryId}
               data-kind={row.kind}
+              data-host={row.host}
               data-active={row.active ? '1' : undefined}
             >
-              <span className="branch-graph__text" title={title}>{title}</span>
+              <span className="branch-graph__text" title={rowHover(row, text)}>{title}</span>
               {row.label ? <Badge className="branch-label" title={row.label}>{row.label}</Badge> : null}
               {row.steps ? <span className="branch-graph__steps">{text.steps(row.steps)}</span> : null}
               {row.leaf ? <Badge tone="run" className="branch-leaf">{text.leaf}</Badge> : null}
@@ -495,19 +524,48 @@ export function BranchTree({
     return () => cancelAnimationFrame(frame)
   }, [leafRowId, state])
 
+  const focusMemo = useRef<string | null>(null)
+  const captureFocus = useCallback((): void => {
+    if (typeof document === 'undefined') return
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const row = active?.closest<HTMLElement>('[data-entry-id]')
+    focusMemo.current = row && listRef.current?.contains(row) ? row.dataset.entryId ?? null : null
+  }, [])
+
+  useEffect(() => {
+    const wanted = focusMemo.current
+    if (!wanted || typeof requestAnimationFrame !== 'function') return
+    const frame = requestAnimationFrame(() => {
+      focusMemo.current = null
+      const list = listRef.current
+      const active = document.activeElement
+      if (!list || (active && active !== document.body && list.contains(active))) return
+      if (active && active !== document.body && !list.contains(active) && active.isConnected) return
+      const items = Array.from(list.querySelectorAll<HTMLElement>('[data-entry-id]'))
+      const target =
+        items.find((item) => item.dataset.entryId === wanted) ??
+        items.find((item) => item.dataset.entryId === selected) ??
+        items.find((item) => item.dataset.entryId === leafRowId)
+      target?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [lanes, selected, leafRowId])
+
   const refreshInPlace = useCallback(async (keepSelected?: string): Promise<void> => {
     if (!expectedSessionId) return
+    captureFocus()
     const run = ++runRef.current
     const result = await loadBranchTree(transportRef.current, expectedSessionId, text.loadFailed)
     if (!aliveRef.current || run !== runRef.current) return
     if (!result.ok) {
+      focusMemo.current = null
       setActionError(result.error)
       return
     }
     rememberTree(expectedSessionId, result.tree, result.leafId)
     setState({ phase: 'ready', tree: result.tree, leafId: result.leafId })
     setOverrideId(keepSelected ?? null)
-  }, [expectedSessionId, text.loadFailed])
+  }, [expectedSessionId, text.loadFailed, captureFocus])
 
   const wasBusy = useRef(busy)
   useEffect(() => {

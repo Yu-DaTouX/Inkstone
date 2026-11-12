@@ -97,6 +97,7 @@ import { claimResource, releaseResource, resourceOwner } from './resource-owners
 import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
 import type { SubmittingMessage } from './submitting-messages'
 import { useSubagentStopping } from './subagent-stopping'
+import { compactionErrorText } from './compaction-view'
 
 function uiText(key: MessageKey, vars?: TVars): string {
   return translate(currentLang(), key, vars)
@@ -1711,7 +1712,7 @@ export const useStore = create<Store>((rawSet, get) => {
         if (endedRun?.status === 'completed') {
           set({ notices: pushNotice(get().notices, 'info', uiText('state.compact.done')) })
         } else if (endedRun?.status === 'failed') {
-          set({ notices: pushNotice(get().notices, 'error', uiText('state.compact.failed', { error: endedRun.error ?? uiText('state.error.unknownReason') })) })
+          set({ notices: pushNotice(get().notices, 'error', uiText('state.compact.failed', { error: compactionErrorText(uiText, endedRun.error) })) })
         }
         if (endedRun) {
           for (const item of pendingSendsForView(get())) void get().releaseSend(item.id, 'followUp')

@@ -27,7 +27,7 @@ export default async function run({ cdp, waitFor, check, sleep, shot }) {
   check('审阅前的 worktree 子代理显示续派输入框', await ev(`!!document.querySelector('[data-testid="v3-subagent-composer"][data-mode="resume"]')`))
   await shot('subagent-resume-worktree')
   await open('sub-00000a03')
-  const blockedInfo = await ev(`(() => { const c = document.querySelector('[data-testid="rp-surface-subagent:sub-00000a03"] [data-testid="v3-subagent-composer"]'); const i = c?.querySelector('textarea'); return { mode: c?.dataset.mode, aria: i?.getAttribute('aria-label'), ph: i?.getAttribute('placeholder'), title: c?.querySelector('.sa-composer-box')?.title } })()`)
-  check('不可续派时说明原因而不是隐藏', blockedInfo.mode === 'blocked' && (blockedInfo.aria ?? '').includes('不能继续：worktree 已合并'), blockedInfo)
+  const blockedInfo = await ev(`(() => { const c = document.querySelector('[data-testid="rp-surface-subagent:sub-00000a03"] [data-testid="v3-subagent-composer"]'); const line = c?.querySelector('[data-testid="v3-subagent-composer-ended"]'); return { mode: c?.dataset.mode, textarea: !!c?.querySelector('textarea'), title: line?.title, text: line?.innerText, height: c?.getBoundingClientRect().height } })()`)
+  check('不可续派时收成一行，原因放悬停', blockedInfo.mode === 'blocked' && !blockedInfo.textarea && (blockedInfo.title ?? '').includes('不能继续：worktree 已合并'), blockedInfo)
   await shot('subagent-resume-blocked')
 }

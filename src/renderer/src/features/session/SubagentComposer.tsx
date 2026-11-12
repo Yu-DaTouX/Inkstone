@@ -38,16 +38,24 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
     void send()
   }
 
-  const placeholder = mode === 'blocked'
-    ? t('sa.composer.blocked', { reason: run.resumable?.reason ?? '' })
-    : mode === 'resume'
-      ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktree' : 'sa.composer.resume')
-      : t('sa.composer.steer')
-  const shortPlaceholder = mode === 'blocked'
-    ? placeholder
-    : mode === 'resume'
-      ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktreeShort' : 'sa.composer.resumeShort')
-      : t('sa.composer.steerShort')
+  if (mode === 'blocked') {
+    const why = t('sa.composer.blocked', { reason: run.resumable?.reason ?? '' })
+    return (
+      <div className="sa-composer" data-mode={mode} data-testid="v3-subagent-composer">
+        <p className="sa-composer-ended" title={why} data-testid="v3-subagent-composer-ended">
+          <span aria-hidden="true">{t('sa.composer.ended')}</span>
+          <span className="v3-visually-hidden">{why}</span>
+        </p>
+      </div>
+    )
+  }
+
+  const placeholder = mode === 'resume'
+    ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktree' : 'sa.composer.resume')
+    : t('sa.composer.steer')
+  const shortPlaceholder = mode === 'resume'
+    ? t(run.isolation === 'worktree' ? 'sa.composer.resumeWorktreeShort' : 'sa.composer.resumeShort')
+    : t('sa.composer.steerShort')
   return (
     <div className="sa-composer" data-mode={mode} data-testid="v3-subagent-composer">
       <div className="sa-composer-box" title={text ? undefined : placeholder} onKeyDown={onKeyDown}>
@@ -57,14 +65,13 @@ export function SubagentComposer({ run }: { run: SubagentRun }): JSX.Element | n
           rows={1}
           value={text}
           maxLength={MAX_CHARS}
-          isDisabled={sending || mode === 'blocked'}
+          isDisabled={sending}
           onChange={setText}
           className="sa-composer-field"
           textAreaClassName="sa-composer-input"
           data-testid="v3-subagent-composer-input"
         />
         <IconButton
-          title={mode === 'blocked' ? placeholder : undefined}
           size="sm"
           variant="secondary"
           aria-label={mode === 'resume' ? t('sa.composer.continue') : t('sa.composer.send')}

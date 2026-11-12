@@ -141,7 +141,8 @@
     color: var(--fg2);
   }
 
-  .branch-graph__row:not([data-active]):not([data-selected]):not([data-kind='user']) .branch-graph__text {
+  .branch-graph__row:not([data-active]):not([data-selected]):not([data-kind='user']) .branch-graph__text,
+  .branch-graph__row[data-host]:not([data-selected]) .branch-graph__text {
     color: var(--fg3);
   }
 

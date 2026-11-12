@@ -18,6 +18,7 @@ export interface ContextWindowSnapshot {
   readonly autoCompactThreshold: number | null
   readonly modelWindow: number | null
   readonly cappedByAutoCompact: boolean
+  readonly compactAt: number | null
 }
 
 export function formatContextWindowTokens(value: number | null): string {
@@ -44,7 +45,8 @@ export function useContextWindowSnapshot(): ContextWindowSnapshot | null {
     compactsAutomatically: session?.autoCompactionEnabled !== false,
     autoCompactThreshold: autoCompactLimit ?? null,
     modelWindow: summary.modelWindow > 0 ? summary.modelWindow : null,
-    cappedByAutoCompact: summary.cappedByLimit
+    cappedByAutoCompact: summary.cappedByLimit,
+    compactAt: summary.compactAt
   }
 }
 

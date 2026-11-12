@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { Check, RotateCcw, Square } from 'lucide-react'
+import { Check, FolderOpen, RotateCcw, Square } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -13,6 +13,7 @@ import { isForkDirective } from '../../../../shared/host-notice-text'
 import { subagentRowLabel } from '../../../../shared/subagent-task-rows'
 import { isDismissed } from '../../../../shared/subagent-outcome'
 import type { SubagentRun } from '../../../../shared/ipc'
+import { formatDuration } from '../../../../shared/duration'
 import type { TurnSubagentScope } from '../../state/subagent-view'
 import { PaneTitle, PaneTools } from '../workbench/pane-chrome'
 import { isNearBottom } from '../workbench/background-tasks'
@@ -66,6 +67,7 @@ export function subagentPaneName(run: Pick<SubagentRun, 'task' | 'brief'>): stri
 }
 
 const FOCUS_TRIES = 12
+const USER_SCROLL_MS = 800
 
 type PaneStep = 'prev' | 'next'
 
@@ -151,6 +153,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const [gone, setGone] = useState(false)
   const [dismissing, setDismissing] = useState(false)
   const [dismissError, setDismissError] = useState('')
+  const [openOutputsError, setOpenOutputsError] = useState('')
 
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
   const role = run.sideQuestion
@@ -172,11 +175,28 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const scope = useMemo<TurnSubagentScope>(() => ({ sessionIds: [], parentRunIds: [run.id] }), [run.id])
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const streamRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
+  const userScrollAt = useRef(0)
+  const markUserScroll = (): void => {
+    userScrollAt.current = Date.now()
+  }
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el && followRef.current) el.scrollTop = el.scrollHeight
-  }, [turns])
+  }, [turns, model.live])
+  useEffect(() => {
+    const el = scrollRef.current
+    const stream = streamRef.current
+    if (!el || !stream || typeof ResizeObserver !== 'function') return undefined
+    const stick = (): void => {
+      if (followRef.current && el.clientHeight > 0) el.scrollTop = el.scrollHeight
+    }
+    const observer = new ResizeObserver(stick)
+    observer.observe(stream)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   const stop = async (): Promise<void> => {
     setGone(false)
@@ -188,6 +208,17 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
       await retrySubagent(run)
     } finally {
       setRetrying(false)
+    }
+  }
+
+  const savedOutputs = run.savedOutputsPath
+  const openSavedOutputs = async (path: string): Promise<void> => {
+    setOpenOutputsError('')
+    try {
+      const result = await window.yan.openPath(path)
+      if (!result.ok) setOpenOutputsError(t('sa.savedOutputsFailed', { error: result.error ?? '' }))
+    } catch (failure) {
+      setOpenOutputsError(t('sa.savedOutputsFailed', { error: failure instanceof Error ? failure.message : String(failure) }))
     }
   }
 
@@ -218,6 +249,11 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
           <span className="sa-pane-state" aria-label={statusWord} title={statusWord} data-testid="v3-subagent-pane-status">
             <SubagentStateIcon state={row.state} />
             <span className="sa-pane-state-label">{statusWord}</span>
+            {row.durationMs !== null ? (
+              <span className="sa-pane-time" title={tt('subagentElapsed')} data-testid="v3-subagent-pane-time">
+                {formatDuration(row.durationMs, { minSeconds: 1 })}
+              </span>
+            ) : null}
             {isDismissed(run) ? <span className="sa-pane-state-label" data-testid="v3-subagent-pane-dismissed">{`· ${t('sa.state.dismissed')}`}</span> : null}
           </span>
         </span>
@@ -241,6 +277,18 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
             {t('sa.retry')}
           </Button>
         ) : null}
+        {savedOutputs ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<FolderOpen size={12} aria-hidden />}
+            tooltip={t('sa.savedOutputsHint', { path: savedOutputs })}
+            onPress={() => void openSavedOutputs(savedOutputs)}
+            data-testid="v3-subagent-saved-outputs"
+          >
+            {t('sa.savedOutputs')}
+          </Button>
+        ) : null}
         {canDismiss ? (
           <Button
             size="sm"
@@ -259,10 +307,18 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
         className="sa-pane-scroll"
         ref={scrollRef}
         onScroll={(event) => {
-          followRef.current = isNearBottom(event.currentTarget)
+          const el = event.currentTarget
+          if (el.clientHeight <= 0) return
+          if (isNearBottom(el)) followRef.current = true
+          else if (Date.now() - userScrollAt.current < USER_SCROLL_MS) followRef.current = false
+          else if (followRef.current) el.scrollTop = el.scrollHeight
         }}
+        onWheel={markUserScroll}
+        onPointerDown={markUserScroll}
+        onTouchMove={markUserScroll}
+        onKeyDown={markUserScroll}
       >
-        <div className="sa-pane-stream">
+        <div className="sa-pane-stream" ref={streamRef}>
           <article className="v3-msg user sa-pane-brief" aria-label={tt('subagentBrief')} data-testid="v3-subagent-brief">
             <div className="v3-user-body">
               <div className="v3-bubble">
@@ -286,6 +342,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
           ) : null}
           {gone ? <Notice tone="info" compact data-testid="v3-subagent-gone">{tt('subagentGone')}</Notice> : null}
           {dismissError ? <Notice tone="fail" compact data-testid="v3-subagent-dismiss-error">{dismissError}</Notice> : null}
+          {openOutputsError ? <Notice tone="fail" compact data-testid="v3-subagent-saved-outputs-error">{openOutputsError}</Notice> : null}
         </div>
       </div>
       <footer className="sa-pane-foot" data-testid="v3-subagent-pane-foot">

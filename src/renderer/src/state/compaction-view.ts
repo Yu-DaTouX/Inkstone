@@ -63,6 +63,25 @@ export function compactionGrowthText(
   return t('ctx.growthAfter', { tokens: formatTokens(growth) })
 }
 
+const ERROR_PREFIX = /^(?:Compaction failed|Auto-compaction failed|Context overflow recovery failed):\s*/i
+
+export function compactionErrorText(t: TFunc, error: string | undefined): string {
+  const raw = (error ?? '').trim()
+  const body = raw.replace(ERROR_PREFIX, '')
+  if (/^Nothing to compact/i.test(body)) return t('ctx.err.nothing')
+  if (/^Already compacted/i.test(body)) return t('ctx.err.already')
+  if (/cancel/i.test(body)) return t('ctx.err.cancelled')
+  if (/^No model/i.test(body)) return t('ctx.err.noModel')
+  if (/recovery failed after one/i.test(body)) return t('ctx.err.overflow')
+  return t('ctx.err.other')
+}
+
+export function compactionErrorTip(t: TFunc, error: string | undefined): string {
+  const phrase = compactionErrorText(t, error)
+  const raw = (error ?? '').trim()
+  return phrase === t('ctx.err.other') && raw ? `${phrase}\n${raw}` : phrase
+}
+
 export function compactionRunningText(t: TFunc, run: CompactionRun | undefined): string {
   const reason = run ? compactionReasonText(t, run) : null
   return reason ? t('ctx.compactingReason', { reason }) : t('status.compacting')
@@ -76,7 +95,7 @@ export function compactionElapsedText(t: TFunc, run: CompactionRun | undefined, 
 }
 
 export function formatTokens(n: number): string {
-  if (n < 1000) return String(n)
-  const k = n / 1000
-  return `${k >= 10 ? Math.round(k) : k.toFixed(1)}k`
+  if (n < 1000) return String(Math.round(n))
+  if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(1)}M`
+  return `${+(n / 1000).toFixed(1)}k`
 }

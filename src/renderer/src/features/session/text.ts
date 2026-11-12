@@ -44,6 +44,7 @@ export type SessionTextKey =
   | 'subagentInterjectClose'
   | 'subagentBrief'
   | 'subagentGone'
+  | 'subagentElapsed'
   | 'compactionTitle'
   | 'compactionFailedTitle'
   | 'branchFrom'
@@ -329,6 +330,7 @@ const ZH: Record<SessionTextKey, string> = {
   subagentInterjectClose: '收起',
   subagentBrief: '简报',
   subagentGone: '任务已经结束，无需停止',
+  subagentElapsed: '耗时',
   compactionTitle: '上下文已压缩',
   compactionFailedTitle: '上下文压缩失败',
   branchFrom: '从「{text}」分出去',
@@ -615,6 +617,7 @@ const EN: Record<SessionTextKey, string> = {
   subagentInterjectClose: 'Close',
   subagentBrief: 'Brief',
   subagentGone: 'The task already ended; nothing to stop',
+  subagentElapsed: 'Elapsed',
   compactionTitle: 'Context compacted',
   compactionFailedTitle: 'Compaction failed',
   branchFrom: 'Branched from “{text}”',

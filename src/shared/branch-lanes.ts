@@ -1,4 +1,4 @@
-import { describeEntry, type NativeEntryKind, type NativeTreeNode } from './native-session'
+import { describeEntry, type NativeEntryDescription, type NativeEntryKind, type NativeTreeNode } from './native-session'
 
 export interface BranchLaneRow {
   entryId: string
@@ -8,6 +8,7 @@ export interface BranchLaneRow {
   kind: NativeEntryKind
   text: string
   label?: string
+  host?: NonNullable<NativeEntryDescription['hostNotice']>
   steps: number
   leaf: boolean
   active: boolean
@@ -94,8 +95,10 @@ export function buildBranchLanes(tree: readonly NativeTreeNode[], leafId: string
     if (kidsOf(parent).length > 1) return true
     if (parent.entry.id === leafId) return true
     if (node.label) return true
-    return ANCHOR_KINDS.has(describeEntry(node.entry).kind)
+    const description = describeEntry(node.entry)
+    return ANCHOR_KINDS.has(description.kind) && !description.hostNotice
   }
+  const isStep = (description: NativeEntryDescription): boolean => STEP_KINDS.has(description.kind) || !!description.hostNotice
 
   const rows: BranchLaneRow[] = []
   const visited = new Set<string>()
@@ -120,7 +123,7 @@ export function buildBranchLanes(tree: readonly NativeTreeNode[], leafId: string
       if (visited.has(next.entry.id) || isAnchor(next, end)) break
       visited.add(next.entry.id)
       end = next
-      if (STEP_KINDS.has(describeEntry(next.entry).kind)) steps += 1
+      if (isStep(describeEntry(next.entry))) steps += 1
       if (next.entry.id === leafId) leaf = true
       label ??= next.label
     }
@@ -135,6 +138,7 @@ export function buildBranchLanes(tree: readonly NativeTreeNode[], leafId: string
       kind: description.kind,
       text: description.text,
       ...(label ? { label } : {}),
+      ...(description.hostNotice ? { host: description.hostNotice } : {}),
       steps,
       leaf,
       active: activePath.has(node.entry.id),

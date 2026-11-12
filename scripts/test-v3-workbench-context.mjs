@@ -161,7 +161,7 @@ async function main() {
     const off = autoCompactDistance(contextUsageSummary({ model, lastCompaction: null }, stats), false)
     ok(off.kind === 'off' && off.remaining === 425_200, '自动压缩关闭时按模型窗口算剩余', off)
     const open = autoCompactDistance(contextUsageSummary({ model, lastCompaction: null }, stats, 600_000), true)
-    ok(open.kind === 'window', '上限不小于窗口时由模型窗口决定', open)
+    ok(open.kind === 'limit' && open.remaining === 450_000 - 74_800, '上限不小于窗口时按 0.9 窗口的实际触发线计算', open)
     ok(autoCompactDistance(contextUsageSummary({ model, lastCompaction: null }, null, 400_000), true) === null, '没有可信总量时不写剩余')
     ok(autoCompactDistance(capped, undefined) === null, '不知道开关状态时不写剩余')
   }

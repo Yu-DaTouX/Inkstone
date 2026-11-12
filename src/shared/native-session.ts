@@ -1,3 +1,5 @@
+import { parseHostNotice, type HostNotice } from './host-notice'
+
 export type NativeSessionMode = 'tree' | 'scoped-models' | 'trust'
 
 export const NATIVE_TREE_MAX_DEPTH = 64
@@ -44,6 +46,7 @@ export interface NativeEntryDescription {
   kind: NativeEntryKind
   text: string
   entryType: string
+  hostNotice?: HostNotice['kind']
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,6 +58,15 @@ export function nativeOneLine(value: unknown, max = NATIVE_TREE_PREVIEW_MAX): st
   const text = value.replace(/\s+/g, ' ').trim()
   if (text.length <= max) return text
   return `${text.slice(0, Math.max(0, max - 1))}…`
+}
+
+function fullText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((block): block is { type: 'text'; text: string } => isRecord(block) && block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n')
 }
 
 function contentText(content: unknown): string {
@@ -80,8 +92,10 @@ export function describeEntry(entry: unknown): NativeEntryDescription {
 
   if (entryType === 'message') {
     switch (role) {
-      case 'user':
-        return { kind: 'user', text: contentText(message?.content), entryType }
+      case 'user': {
+        const hostNotice = typeof message?.hostNotice === 'string' ? (message.hostNotice as HostNotice['kind']) : undefined
+        return { kind: 'user', text: contentText(message?.content), entryType, ...(hostNotice ? { hostNotice } : {}) }
+      }
       case 'assistant':
         return { kind: 'assistant', text: contentText(message?.content), entryType }
       case 'toolResult': {
@@ -157,6 +171,10 @@ export function slimNativeEntry(raw: Record<string, unknown>): NativeTreeEntry {
       if (typeof message[key] === 'string') slim[key] = nativeOneLine(message[key])
     }
     if ('content' in message) slim.content = contentText(message.content)
+    if (message.role === 'user') {
+      const notice = parseHostNotice(fullText(message.content))
+      if (notice) slim.hostNotice = notice.kind
+    }
     out.message = slim
   }
   return out as NativeTreeEntry

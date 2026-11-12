@@ -3,7 +3,7 @@ import { useCompactionInfo } from './use-compaction-info'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Button, Switch } from '../../../ui'
-import { contextUsageSummary } from '../../workbench/context-pane-view'
+import { contextUsageSummary, shortTokens } from '../../workbench/context-pane-view'
 import { AUTO_COMPACT_STEPS, autoCompactAt, DEFAULT_AUTO_COMPACT_TOKENS } from '../../../../../shared/context-limits'
 import { settingsText } from '../settings-text'
 import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
@@ -54,12 +54,12 @@ function ContextUsageMeter({
     <div className="settings-usage" data-level={level}>
       <div className="settings-usage__head">
         <span className="settings-usage__value" data-testid="v3-ctx-used">
-          {tokens !== null ? `${estimated ? '≈' : ''}${kTokens(shown)}` : unknownText}
+          {tokens !== null ? `${estimated ? '≈' : ''}${shortTokens(Math.round(shown))}` : unknownText}
         </span>
         <span className="settings-usage__window" data-testid="v3-ctx-window">
           / {windowText}
         </span>
-        {measurable ? <span className="settings-usage__pct">{estimated ? '≈' : ''}{percent.toFixed(1)}%</span> : null}
+        {measurable ? <span className="settings-usage__pct">{estimated ? '≈' : ''}{Math.round(percent)}%</span> : null}
       </div>
       {windowSize > 0 ? (
         <div
@@ -69,7 +69,7 @@ function ContextUsageMeter({
           aria-valuemin={0}
           aria-valuemax={windowSize}
           aria-valuenow={tokens ?? 0}
-          aria-valuetext={tokens !== null ? `${estimated ? '≈' : ''}${kTokens(tokens)} / ${windowText}` : unknownText}
+          aria-valuetext={tokens !== null ? `${estimated ? '≈' : ''}${shortTokens(tokens)} / ${windowText}` : unknownText}
         >
           <span className="settings-usage__fill" style={{ width: `${percent}%` }} />
           {markers.map((marker) => (

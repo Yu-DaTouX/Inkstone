@@ -266,7 +266,7 @@ async function runQuotaCardTests() {
     ok(mod.quotaWindowName(t, { id: 'seven_day_overage_included', label: 'Fable', durationMs: 7 * 86400_000 }) === 'Fable', '兼容模型周窗口保留名称')
     const card = { key: 'fixture', source: 'yan', provider: 'anthropic', name: 'Claude', status: 'ok', windows: [{ id: 'weekly_scoped:Fable', label: 'Fable', used: 99, total: 100, durationMs: 7 * 86400_000, resetAt: now + 86400_000 }], checkedAt: now, resetCredits: { count: 3, groups: [{ kind: 'fable', count: 1, nextId: 'fable' }, { kind: 'full', count: 2 }] } }
     const html = renderToStaticMarkup(createElement(mod.I18nProvider, null, createElement(mod.QuotaCard, { card, busy: false, locked: false, onSwitch() {}, async onRedeem() {} })))
-    ok(html.includes('Fable 重置卡 ×1') && html.includes('普通重置卡 ×2'), '两类重置卡各自显示名称和次数')
+    ok(html.includes('Fable 重置卡 <span class="ui-num">×1</span>') && html.includes('普通重置卡 <span class="ui-num">×2</span>'), '两类重置卡各自显示名称和次数，等宽数字只包次数')
     ok(html.includes('暂不可用') && html.includes('disabled'), '未提供使用目标的卡仍可见但按钮禁用')
     ok(html.includes('99%') && html.includes('Fable'), '右栏保留 Fable 用量百分比')
     console.log(`\nv3-quota-card: ${checks} checks passed`)

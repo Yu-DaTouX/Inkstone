@@ -9,6 +9,7 @@ export interface ContextPaneText {
   afterCompact: string
   distance: (kind: AutoCompactDistance['kind'], remaining: string) => string
   distanceHint: string
+  lineHint: (at: string) => string
   topTools: string
   jumpTo: (name: string) => string
   scriptLines: (lines: number) => string
@@ -46,6 +47,7 @@ const ZH: ContextPaneText = {
           ? `再用 ${remaining} 触发自动压缩。`
           : `剩余 ${remaining}`,
   distanceHint: '接近用满时自动压缩。',
+  lineHint: (at) => `用到 ${at} 时自动压缩；空心格是压缩线之后的窗口`,
   topTools: '占用最多的工具结果',
   jumpTo: (name) => `在对话中定位 ${name}`,
   scriptLines: (lines) => `脚本 · ${lines} 行`,
@@ -83,6 +85,7 @@ const EN: ContextPaneText = {
           ? `${remaining} more until auto-compaction.`
           : `${remaining} left`,
   distanceHint: 'Auto-compaction runs when the window is nearly full.',
+  lineHint: (at) => `Auto-compaction runs at ${at}; hollow cells are the window past that line`,
   topTools: 'Largest tool results',
   jumpTo: (name) => `Show ${name} in the conversation`,
   scriptLines: (lines) => `script · ${lines} ${lines === 1 ? 'line' : 'lines'}`,

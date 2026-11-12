@@ -218,6 +218,30 @@ export function reduceCompaction(
   return { running: null, last: run }
 }
 
+export interface CompactionOrigin {
+  manualRequests: number
+  extensionRun: boolean
+}
+
+export const EMPTY_COMPACTION_ORIGIN: CompactionOrigin = { manualRequests: 0, extensionRun: false }
+
+const NOTHING_TO_COMPACT = /Nothing to compact|Already compacted/i
+
+export function attributeCompaction(
+  origin: CompactionOrigin,
+  evt: Record<string, unknown>
+): { origin: CompactionOrigin; evt: Record<string, unknown> } {
+  const type = evt.type
+  if (evt.reason !== 'manual' || (type !== 'compaction_start' && type !== 'compaction_end')) return { origin, evt }
+  const starting = type === 'compaction_start'
+  const extensionRun = starting ? origin.manualRequests <= 0 : origin.extensionRun
+  const next = { ...origin, extensionRun: starting ? extensionRun : false }
+  if (!extensionRun) return { origin: next, evt }
+  const error = typeof evt.errorMessage === 'string' ? evt.errorMessage : ''
+  const declined = !starting && !evt.result && evt.aborted !== true && NOTHING_TO_COMPACT.test(error)
+  return { origin: next, evt: { ...evt, reason: 'threshold', ...(declined ? { status: 'declined' } : {}) } }
+}
+
 export function clearStaleRunning(
   state: CompactionState,
   isCompacting: boolean

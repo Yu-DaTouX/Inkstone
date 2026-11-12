@@ -152,10 +152,17 @@ export function subagentSiblings(runs: readonly SubagentRun[], run: SubagentRun)
   )
 }
 
+function sameDispatch(item: SubagentRun, run: SubagentRun): boolean {
+  if (run.parentRunId) return item.parentRunId === run.parentRunId
+  return !!run.parentMessageId && item.parentMessageId === run.parentMessageId
+}
+
 export function subagentSessionPeers(runs: readonly SubagentRun[], run: SubagentRun): SubagentRun[] {
   return orderSubagentRuns(runs.filter((item) => {
     if (item.id === run.id) return true
-    return !!run.parentSessionId && item.parentSessionId === run.parentSessionId && isLiveSubagentRun(item) && item.review !== 'merged' && item.review !== 'discarded'
+    if (!run.parentSessionId || item.parentSessionId !== run.parentSessionId) return false
+    if (item.review === 'merged' || item.review === 'discarded') return false
+    return isLiveSubagentRun(item) || sameDispatch(item, run)
   }))
 }
 

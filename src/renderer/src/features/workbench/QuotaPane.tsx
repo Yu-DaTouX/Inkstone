@@ -207,7 +207,16 @@ export function QuotaPane({ visible = true }: QuotaPaneProps): ReactElement {
         )
       })}
       {report && cards.length === 0 ? (
-        <EmptyState className="wb-note-block" data-testid="v3-wb-quota-empty" title={t('acct.emptyTitle')} />
+        <EmptyState
+          className="wb-note-block"
+          data-testid="v3-wb-quota-empty"
+          title={t('acct.emptyTitle')}
+          action={
+            <Button size="sm" variant="secondary" onPress={() => useStore.getState().openSettings('models')} data-testid="v3-wb-quota-empty-settings">
+              {t('quota.emptyAction')}
+            </Button>
+          }
+        />
       ) : null}
     </div>
   )
@@ -337,7 +346,7 @@ export function QuotaCard({
         return (
           <div key={group.kind ?? 'default'} className="wb-quota-credits" data-testid="v3-wb-quota-credits" data-credit-kind={group.kind ?? 'default'} title={[name, expiry, available ? '' : t('quota.credit.unavailable')].filter(Boolean).join(' · ')}>
             <Ticket size={13} aria-hidden="true" />
-            <span className="wb-quota-credits-count ui-num">{name} ×{group.count}</span>
+            <span className="wb-quota-credits-count">{name} <span className="ui-num">×{group.count}</span></span>
             <span className="wb-quota-credits-exp ui-meta-num">{expiry}</span>
             <Button className="wb-quota-credits-use" size="sm" variant="secondary" isDisabled={locked || !available} icon={busy && confirming?.kind === group.kind ? <Spinner size="xs" /> : undefined} onPress={() => setConfirming({ ...group })} data-testid="v3-wb-quota-credit-use" aria-label={t('quota.credit.useKind', { kind: name })}>
               {available ? t('quota.credit.use') : t('quota.credit.unavailable')}

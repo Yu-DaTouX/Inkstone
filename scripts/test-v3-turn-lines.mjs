@@ -677,12 +677,14 @@ async function main() {
       subagentRun({ id: 'one', status: 'running', parentSessionId: 'chat', parentMessageId: 'm1', startedAt: 1 }),
       subagentRun({ id: 'two', status: 'running', parentSessionId: 'chat', parentMessageId: 'm2', startedAt: 2 }),
       subagentRun({ id: 'starting', status: 'starting', parentSessionId: 'chat', parentMessageId: 'm3', startedAt: 3 }),
-      subagentRun({ id: 'finished', status: 'done', parentSessionId: 'chat', startedAt: 0 }),
+      subagentRun({ id: 'finished', status: 'done', parentSessionId: 'chat', parentRunId: 'run-old', startedAt: 0 }),
       subagentRun({ id: 'foreign', status: 'running', parentSessionId: 'other' })
     ]
     ok(bundle.subagentSessionPeers(sessionRuns, sessionRuns[0]).map((run) => run.id).join() === 'one,two,starting', '转录窗格跨消息切换本会话全部运行与启动中的子代理')
     ok(bundle.subagentSessionPeers(sessionRuns, sessionRuns[3]).map((run) => run.id).includes('finished'), '正在查看的代理结束后仍保留当前位置')
     ok(bundle.subagentSessionPeers([subagentRun({id:'unknown',parentSessionId:undefined}),...sessionRuns], subagentRun({id:'unknown',parentSessionId:undefined})).length === 1, '归属不明时不串到其他会话')
+    const batch = ['b1', 'b2', 'b3'].map((id, at) => subagentRun({ id, status: 'done', parentSessionId: 'chat', parentRunId: 'run-b', startedAt: at }))
+    ok(bundle.subagentSessionPeers([...batch, ...sessionRuns], batch[0]).map((run) => run.id).join() === 'one,two,starting,b1,b2,b3', '同一轮派出的子代理都结束后仍可上下切换', bundle.subagentSessionPeers([...batch, ...sessionRuns], batch[0]).map((run) => run.id).join())
 
     setPanel(['files', 'subagent:s1', 'context'], 'subagent:s1')
     bundle.switchSubagentPane('s1', 's2')

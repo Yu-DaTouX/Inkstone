@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { compactionElapsedText, compactionReasonText, compactionRunningText, compactionSummary, compactionTokensText, compactionTone } from '../../state/compaction-view'
+import { compactionElapsedText, compactionErrorTip, compactionReasonText, compactionRunningText, compactionSummary, compactionTokensText, compactionTone } from '../../state/compaction-view'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { compactionLineModel } from './turn-lines'
@@ -35,7 +35,7 @@ export function CompactionMarker(): JSX.Element | null {
       data-tone={TONE[compactionTone(model.run)]}
       data-running={model.running ? '1' : '0'}
       data-testid="v3-compaction-marker"
-      title={model.run.error || undefined}
+      title={model.run.error ? compactionErrorTip(t, model.run.error) : undefined}
       role={failed ? 'alert' : undefined}
     >
       <Icon name="layers" size={13} />

@@ -43,9 +43,6 @@ function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
     return null;
   }
-  if (value < 10) {
-    return `${value.toFixed(1).replace(/\.0$/, "")}%`;
-  }
   return `${Math.round(value)}%`;
 }
 
@@ -162,6 +159,14 @@ export function ContextWindowMeter(props: {
               <span>{t("ctx.window")}</span>
               <span className="t3-ctx-popover__value">
                 {formatContextWindowTokens(usage.modelWindow)}
+              </span>
+            </div>
+          ) : null}
+          {!usage.cappedByAutoCompact && usage.compactAt !== null && usage.maxTokens !== null && usage.compactAt < usage.maxTokens ? (
+            <div className="t3-ctx-popover__row" data-testid="composer-context-to-compact">
+              <span>{t("ctx.toAutoCompact")}</span>
+              <span className="t3-ctx-popover__value">
+                {`${estimatePrefix}${formatContextWindowTokens(Math.max(0, usage.compactAt - usage.usedTokens))}`}
               </span>
             </div>
           ) : null}
