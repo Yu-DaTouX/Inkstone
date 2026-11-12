@@ -926,14 +926,26 @@ onSessionPurged(async (sessionId) => {
 const localizeHistoryImage = (mimeType: string, data: string): string =>
   localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
 
+function liveTimingRunIdOf(sessionFile: string): string | undefined {
+  const key = timingKey(sessionFile)
+  if (!key) return undefined
+  for (const status of runners?.statuses() ?? []) {
+    if (!status.sessionFile || timingKey(status.sessionFile) !== key) continue
+    const live = runners?.agentOf(status.id)?.liveTimingRunId()
+    if (live) return live
+  }
+  return undefined
+}
+
 function readHistoryWithArtifacts(sessionFile: string, liveRunId?: string) {
+  const liveRun = liveRunId ?? liveTimingRunIdOf(sessionFile)
   return readChainMessages(sessionFile, sessionChains, (file, messages) =>
     artifactStore.hydrateMessages(file, messages), localizeHistoryImage
   ).then(async (result) => {
     if (!result) return result
     const bucket = timingKey(sessionFile)
     if (!bucket) return result
-    const records = await readTurnTimings(YAN_DIR, bucket, liveRunId).catch(() => [])
+    const records = await readTurnTimings(YAN_DIR, bucket, liveRun).catch(() => [])
     if (!records.length) return result
     return { ...result, messages: applyTurnTimings(result.messages, records) }
   })
@@ -2157,7 +2169,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         providerExtensions: launchResources().providers,
         bundledSkills: launchResources().skills,
         userSkills: () => userSkillPaths(),
-        readHistory: (sessionFile) => readHistoryWithArtifacts(sessionFile),
+        readHistory: (sessionFile, liveRunId) => readHistoryWithArtifacts(sessionFile, liveRunId),
         capability: {
           sessionId: id ?? 'primary',
           runnerGeneration: generation ?? 1,

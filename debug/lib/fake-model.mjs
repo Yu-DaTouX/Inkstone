@@ -370,7 +370,7 @@ export function startFakeModel(port = 0) {
   const server = createServer((req, res) => {
     let body = ''
     req.on('data', (chunk) => { body += chunk })
-    req.on('end', () => {
+    req.on('end', async () => {
       if (body.includes(SECRET_TEST_MARKER)) secretMarkerSeen = true
       let json = {}
       try { json = JSON.parse(body) } catch {}
@@ -379,6 +379,9 @@ export function startFakeModel(port = 0) {
       const done = toolOutputsSinceUser(input)
       const images = JSON.stringify(input).split('"input_image"').length - 1
       requests.push({ at: Date.now(), text: text.slice(0, 40), usage: usageFromText(text), done, tools: (json.tools ?? []).length, images, unpairedCalls: input.filter((item) => item?.type === 'function_call' && !input.some((o) => o?.type === 'function_call_output' && o.call_id === item.call_id)).length, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
+      const summaryDelay = Number(process.env.YAN_FAKE_SUMMARY_DELAY_MS)
+      const requestDelay = Number(process.env.YAN_FAKE_REQUEST_DELAY_MS)
+      if (text.startsWith('Stop here. Do not call any tool')) { if (summaryDelay > 0) await sleep(summaryDelay) } else if (requestDelay > 0) await sleep(requestDelay)
       const failTag = /FAIL[A-Z0-9]+/.exec(text)?.[0]
       const flakyKey = text.slice(0, 40)
       if (failTag === 'FAILQUOTA') {
