@@ -30,11 +30,33 @@ export function codemodeMode() {
   }
 }
 
+function readMcpServers(file) {
+  try {
+    const servers = JSON.parse(readFileSync(file, 'utf8'))?.mcpServers
+    return servers && typeof servers === 'object' && !Array.isArray(servers) ? servers : {}
+  } catch {
+    return {}
+  }
+}
+
+export function configuredIndirectMcp(cwd, env = process.env) {
+  const agentDir = env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
+  const global = readMcpServers(join(agentDir, 'mcp.json'))
+  const project = typeof cwd === 'string' && cwd ? readMcpServers(join(cwd, '.pi', 'mcp.json')) : {}
+  for (const name of new Set([...Object.keys(global), ...Object.keys(project)])) {
+    const entry = { ...(global[name] ?? {}), ...(project[name] ?? {}) }
+    if (entry.enabled === false || (entry.command === undefined && entry.url === undefined)) continue
+    const exposures = [entry.exposure ?? 'codemode', ...Object.values(entry.toolExposure ?? {})]
+    if (exposures.some(exposure => exposure === 'codemode' || exposure === 'deferred')) return true
+  }
+  return false
+}
+
 export function codemodeWanted(model, mode = codemodeMode()) {
   return mode === 'on' || (mode === 'auto' && model?.compat?.supportsOpenAIGrammarTools === true)
 }
 
-function applyCodemodePreference(pi, names, searchTools, model) {
+function applyCodemodePreference(pi, names, searchTools, model, cwd) {
   const all = pi.getAllTools?.() ?? []
   const available = name => all.some(tool => (typeof tool === 'string' ? tool : tool.name) === name)
   if (!searchTools.decided) {
@@ -47,7 +69,7 @@ function applyCodemodePreference(pi, names, searchTools, model) {
   const extra = kept.includes('read') ? searchTools.add.filter(name => !skipped.includes(name) && !kept.includes(name)) : []
   const without = [...kept, ...extra].filter(name => name !== 'codemode')
   const target = codemode ? (kept.includes('codemode') ? [...kept, ...extra] : [...without, 'codemode']) : without
-  const hasDeferred = all.some(tool => typeof tool === 'object' && tool?.exposure === 'deferred')
+  const hasDeferred = all.some(tool => typeof tool === 'object' && tool?.exposure === 'deferred') || configuredIndirectMcp(cwd)
   return hasDeferred && available('tool_search') && !target.includes('tool_search') ? [...target, 'tool_search'] : target
 }
 
@@ -55,7 +77,7 @@ export default function codemodePolicy(pi) {
   const searchTools = { decided: false, add: [] }
   pi.on('before_agent_start', (_event, ctx) => {
     const active = (pi.getActiveTools?.() ?? []).map(tool => typeof tool === 'string' ? tool : tool.name)
-    const target = applyCodemodePreference(pi, active, searchTools, ctx?.model)
+    const target = applyCodemodePreference(pi, active, searchTools, ctx?.model, ctx?.cwd)
     if (active.length !== target.length || active.some((name, index) => name !== target[index])) {
       pi.setActiveTools(target)
     }

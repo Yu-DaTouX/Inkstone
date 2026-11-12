@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import codemodePolicy, { binaryAvailable, codemodeMode, codemodeWanted, searchToolsToAdd } from '../resources/pi-extensions/codemode-policy.js'
+import codemodePolicy, { binaryAvailable, codemodeMode, codemodeWanted, configuredIndirectMcp, searchToolsToAdd } from '../resources/pi-extensions/codemode-policy.js'
 
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-codemode-policy-'))
 process.env.YAN_DATA_DIR = dir
 process.env.YAN_SESSION_ID = 'fixture'
+process.env.PI_CODING_AGENT_DIR = join(dir, 'empty-agent')
 const desktop = join(dir, 'desktop.json')
 const GRAMMAR = { compat: { supportsOpenAIGrammarTools: true } }
 const PLAIN = { compat: {} }
@@ -99,6 +100,37 @@ active = active.filter(name => name !== 'tool_search')
 before()
 assert(!active.includes('tool_search'), 'a replaced tool-search extension is not activated')
 deferred = []
+
+{
+  const agent = join(dir, 'mcp-agent')
+  const project = join(dir, 'mcp-project')
+  await mkdir(agent, { recursive: true })
+  await mkdir(join(project, '.pi'), { recursive: true })
+  const env = { PI_CODING_AGENT_DIR: agent }
+  assert.equal(configuredIndirectMcp(project, env), false, 'no mcp.json means no indirect MCP tools')
+  await writeFile(join(agent, 'mcp.json'), JSON.stringify({ mcpServers: { graph: { command: 'graph' } } }))
+  assert.equal(configuredIndirectMcp(project, env), true, 'a default codemode server counts before it connects')
+  await writeFile(join(project, '.pi', 'mcp.json'), JSON.stringify({ mcpServers: { graph: { enabled: false } } }))
+  assert.equal(configuredIndirectMcp(project, env), false, 'a project override that disables the server wins')
+  assert.equal(configuredIndirectMcp(undefined, env), true, 'without a cwd only the global file counts')
+  await writeFile(join(agent, 'mcp.json'), JSON.stringify({ mcpServers: { graph: { command: 'graph', exposure: 'direct' }, only: { exposure: 'codemode' } } }))
+  assert.equal(configuredIndirectMcp(undefined, env), false, 'direct servers and override-only entries do not count')
+  await writeFile(join(agent, 'mcp.json'), JSON.stringify({ mcpServers: { graph: { url: 'https://example.com', exposure: 'direct', toolExposure: { a: 'deferred' } } } }))
+  assert.equal(configuredIndirectMcp(undefined, env), true, 'a single deferred tool counts')
+  await writeFile(join(agent, 'mcp.json'), '{broken')
+  assert.equal(configuredIndirectMcp(undefined, env), false, 'an unreadable mcp.json counts as none')
+
+  process.env.PI_CODING_AGENT_DIR = agent
+  await writeFile(join(agent, 'mcp.json'), JSON.stringify({ mcpServers: { graph: { command: 'graph' } } }))
+  await save({ codemode: 'off' })
+  available.push('tool_search')
+  active = active.filter(name => name !== 'tool_search')
+  before()
+  assert(active.includes('tool_search'), 'tool_search is active on the first turn, before the MCP server connects, so the tool list does not change later')
+  process.env.PI_CODING_AGENT_DIR = join(dir, 'empty-agent')
+  available = available.filter(name => name !== 'tool_search')
+  active = active.filter(name => name !== 'tool_search')
+}
 
 {
   const has = (...names) => (name) => names.includes(name)
