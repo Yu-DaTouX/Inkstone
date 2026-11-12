@@ -1227,6 +1227,7 @@ export interface SubagentRun {
   sideQuestion?: boolean
   resultPath?: string
   savedOutputsPath?: string
+  pendingOutputs?: { path: string; files: string[] }
   model?: string
   modelPinned?: boolean
   thinkingLevel?: string

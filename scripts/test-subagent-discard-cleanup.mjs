@@ -110,7 +110,7 @@ try {
     const after = ctrl.get(id)
     ok(failed.ok === false, '清理工作树失败时放弃不能报成功', JSON.stringify(failed))
     ok(after.review === 'pending', '清理失败仍保持待审阅，不会假装已放弃', after.review)
-    ok(/移除 worktree 失败/.test(after.error ?? ''), '失败原因写进运行记录', after.error)
+    ok(/移除 worktree 失败|没能另存/.test(after.error ?? ''), '失败原因写进运行记录', after.error)
     ok(existsSync(live.cwd), '清理失败时工作树保留', live.cwd)
 
     await rename(join(repo, '.git-away'), join(repo, '.git'))

@@ -307,6 +307,8 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                                没启动成功、或 worktree 已合并/放弃/归档清理的，不能续接；完成通知和 get 会标明能否续接
   merge  --id <子代理ID>        worktree 子代理的改动由你审阅处置：把补丁应用到当前项目目录；有冲突时报错、工作树保留，可 send 让它继续解决
   discard --id <子代理ID>       放弃 worktree 子代理尚未合并的改动并清理工作树
+                               merge / discard 删工作树前，把里面被 .gitignore 忽略的产物（报告、截图等）按原相对路径另存，
+                               位置见摘要 savedOutputs（通常是 <数据目录>/subagents/<ID>-outputs）；超出 200MB 时先保说明文件和图片，没存的列在 savedOutputsSkipped
   stop   --id <子代理ID>        停止一个仍在运行的子代理
 
 说明：

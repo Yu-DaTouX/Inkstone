@@ -38,8 +38,12 @@ import {
   prepareWorkspace,
   preserveIgnoredOutputs,
   recoverWorktree,
-  type PreparedWorkspace
+  savedOutputsDir,
+  type PreparedWorkspace,
+  type PreservedOutputs
 } from './subagent-isolation'
+
+export type SubagentReviewResult = { ok: boolean; error?: string; outputs?: PreservedOutputs }
 
 const MAX_CONCURRENT = 24
 const STALL_TIMEOUT_MS = 10 * 60 * 1000
@@ -291,7 +295,7 @@ export const QUOTA_GIVE_UP_AFTER_MS = 30 * 60_000
 const ignoredOnlyNote = () => pick('子 Agent只写了被 .gitignore 忽略的文件', 'Subagent only wrote files ignored by .gitignore')
 const skippedOutputsNote = (skipped: readonly string[]) => {
   const list = `${skipped.slice(0, 5).join(pick('、', ', '))}${skipped.length > 5 ? pick(' 等', ' and more') : ''}`
-  return pick(`被忽略的产物太大，没有另存，已随工作区清理：${list}`, `Ignored outputs were too large to save and were removed with the workspace: ${list}`)
+  return pick(`被忽略的产物超出 200MB 另存上限，这些路径下有文件没有另存（说明文件与图片优先保留），已随工作区清理：${list}`, `Ignored outputs exceeded the 200MB save limit; some files under these paths were not saved (notes and images are kept first) and were removed with the workspace: ${list}`)
 }
 
 export interface SubagentHostCommands {
@@ -377,6 +381,7 @@ export class SubagentController {
           diff: collected.summary,
           resultPath: keepWorkspace ? workspace.worktreePath : collected.patchPath ?? (saved.ok && saved.path ? saved.path : workspace.worktreePath),
           ...(saved.ok && saved.path ? { savedOutputsPath: saved.path } : {}),
+          ...(keepWorkspace && collected.ignoredOutputs?.length ? { pendingOutputs: { path: savedOutputsDir(archiveDir, run.id), files: collected.ignoredOutputs } } : {}),
           error: [note, ...cleaned.errors].join(String.fromCharCode(10))
         }
         await this.history.save(next, record.rootCwd, { patchPath: collected.patchPath, ...(keepWorkspace ? { resume: { ...record.resume, workspace } } : {}) })
@@ -443,6 +448,7 @@ export class SubagentController {
       ...(run.forkSource?.sideQuestion ? { sideQuestion: true } : {}),
       resultPath: run.resultPath,
       ...(run.savedOutputsPath ? { savedOutputsPath: run.savedOutputsPath } : {}),
+      ...(run.pendingOutputs ? { pendingOutputs: run.pendingOutputs } : {}),
       model: run.model,
       ...(run.modelPinned ? { modelPinned: true } : {}),
       thinkingLevel: run.thinkingLevel,
@@ -1323,6 +1329,7 @@ export class SubagentController {
       const collected = await collectDiff(run.workspace, archiveDir, run.id)
       run.diff = collected.summary
       const changed = collected.summary.files > 0
+      run.pendingOutputs = run.isolation === 'worktree' && collected.ignoredOutputs?.length ? { path: savedOutputsDir(archiveDir, run.id), files: collected.ignoredOutputs } : undefined
 
       if (run.isolation === 'worktree' && changed) {
         if (cleanupReview) {
@@ -1378,14 +1385,17 @@ export class SubagentController {
     }
   }
 
-  private async cleanupRunWorkspace(run: Run, keepIgnored = true): Promise<void> {
-    if (keepIgnored && run.isolation === 'worktree') {
+  private async cleanupRunWorkspace(run: Run): Promise<PreservedOutputs | undefined> {
+    let outputs: PreservedOutputs | undefined
+    if (run.isolation === 'worktree') {
       const saved = await preserveIgnoredOutputs(run.workspace, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id)
+      outputs = saved
       if (!saved.ok) {
         run.worktreeDone = false
         run.error = [run.error, pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${run.workspace.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${run.workspace.worktreePath}`)].filter(Boolean).join('\n')
-        return
+        return outputs
       }
+      run.pendingOutputs = undefined
       if (saved.path) {
         run.savedOutputsPath = saved.path
         if (run.error?.startsWith(ignoredOnlyNote())) run.error = pick(`${ignoredOnlyNote()}，已另存到 ${saved.path}`, `${ignoredOnlyNote()}; saved to ${saved.path}`)
@@ -1396,6 +1406,7 @@ export class SubagentController {
     const result = await cleanupWorkspace(run.workspace)
     run.worktreeDone = result.ok
     if (!result.ok) run.error = [run.error, ...result.errors].filter(Boolean).join('\n')
+    return outputs
   }
 
   private async archiveOnExit(run: Run): Promise<void> {
@@ -1439,7 +1450,7 @@ export class SubagentController {
     if (run.finalizing) { try { await run.finalizing } catch { } }
   }
 
-  private async exclusiveReview(id: string, work: () => Promise<{ ok: boolean; error?: string }>): Promise<{ ok: boolean; error?: string }> {
+  private async exclusiveReview(id: string, work: () => Promise<SubagentReviewResult>): Promise<SubagentReviewResult> {
     if (this.resuming.has(id)) return { ok: false, error: pick('子 Agent正在续接，等它结束后再合并或放弃', 'Subagent is resuming; merge or discard after it finishes') }
     if (this.reviewing.has(id)) return { ok: false, error: pick('这个子 Agent的改动正在合并或放弃，请稍候', 'This subagent\'s changes are being merged or discarded; wait a moment') }
     this.reviewing.add(id)
@@ -1450,25 +1461,25 @@ export class SubagentController {
     }
   }
 
-  merge(id: string): Promise<{ ok: boolean; error?: string }> {
+  merge(id: string): Promise<SubagentReviewResult> {
     return this.exclusiveReview(id, () => this.mergeOnce(id))
   }
 
-  discard(id: string): Promise<{ ok: boolean; error?: string }> {
+  discard(id: string): Promise<SubagentReviewResult> {
     return this.exclusiveReview(id, () => this.discardOnce(id))
   }
 
-  private async mergeOnce(id: string): Promise<{ ok: boolean; error?: string }> {
+  private async mergeOnce(id: string): Promise<SubagentReviewResult> {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'merged')
     await this.awaitSettled(run)
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子 Agent仍在运行，结束后才能合并', 'Subagent is still running; merge after it finishes') }
     if (run.review === 'merged') {
       if (run.worktreeDone) return { ok: true }
-      await this.cleanupRunWorkspace(run)
+      const outputs = await this.cleanupRunWorkspace(run)
       await this.writeMetadata(run, run.diff?.patchPath)
       this.emit(run)
-      return run.worktreeDone ? { ok: true } : { ok: false, error: mergeCleanupPending(run) }
+      return run.worktreeDone ? { ok: true, ...(outputs ? { outputs } : {}) } : { ok: false, error: mergeCleanupPending(run) }
     }
     if (run.review !== 'pending' && run.review !== 'conflict' && run.review !== 'archived') {
       return { ok: false, error: pick('该任务没有待合并的改动', 'This task has no changes to merge') }
@@ -1492,23 +1503,23 @@ export class SubagentController {
       run.review = 'merged'
       run.resultPath = patchPath
       run.error = undefined
-      if (!run.worktreeDone) await this.cleanupRunWorkspace(run)
+      const outputs = run.worktreeDone ? undefined : await this.cleanupRunWorkspace(run)
       await this.writeMetadata(run, patchPath)
       this.emit(run)
-      return run.worktreeDone ? { ok: true } : { ok: false, error: mergeCleanupPending(run) }
+      return run.worktreeDone ? { ok: true, ...(outputs ? { outputs } : {}) } : { ok: false, error: mergeCleanupPending(run) }
     } catch (error) {
       return { ok: false, error: pick(`合并失败：${error instanceof Error ? error.message : String(error)}`, `Merge failed: ${error instanceof Error ? error.message : String(error)}`) }
     }
   }
 
-  private async discardOnce(id: string): Promise<{ ok: boolean; error?: string }> {
+  private async discardOnce(id: string): Promise<SubagentReviewResult> {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'discarded')
     await this.awaitSettled(run)
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: pick('子 Agent仍在运行，先停止它', 'Subagent is still running; stop it first') }
     const previousReview = run.review
     try {
-      if (!run.worktreeDone) await this.cleanupRunWorkspace(run, false)
+      const outputs = run.worktreeDone ? undefined : await this.cleanupRunWorkspace(run)
       if (!run.worktreeDone) {
         const error = run.error ?? pick('清理工作树失败，改动仍未放弃；工作树已保留', 'Could not clean up the worktree; the changes were not discarded and the workspace was kept')
         await this.writeMetadata(run, run.diff?.patchPath)
@@ -1516,17 +1527,17 @@ export class SubagentController {
         return { ok: false, error }
       }
       run.review = 'discarded'
-      run.resultPath = run.diff?.patchPath
+      run.resultPath = run.diff?.patchPath ?? run.savedOutputsPath
       await this.writeMetadata(run, run.diff?.patchPath)
       this.emit(run)
-      return { ok: true }
+      return { ok: true, ...(outputs ? { outputs } : {}) }
     } catch (error) {
       run.review = previousReview
       return { ok: false, error: pick(`放弃改动失败：${error instanceof Error ? error.message : String(error)}`, `Could not discard changes: ${error instanceof Error ? error.message : String(error)}`) }
     }
   }
 
-  private async reviewHistory(id: string, review: 'merged' | 'discarded'): Promise<{ ok: boolean; error?: string }> {
+  private async reviewHistory(id: string, review: 'merged' | 'discarded'): Promise<SubagentReviewResult> {
     const record = this.history.get(id)
     if (!record) return { ok: false, error: pick('找不到这个子 Agent', 'Subagent not found') }
     const run = { ...record.run }
@@ -1544,12 +1555,15 @@ export class SubagentController {
       await this.history.save(run, record.rootCwd)
       this.opts.onChange(run)
     }
+    let outputs: PreservedOutputs | undefined
     if (kept && run.isolation === 'worktree') {
-      const saved = review === 'merged' ? await preserveIgnoredOutputs(kept, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id) : { ok: true as const, path: undefined }
-      if (!saved.ok) return { ok: false, error: pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${kept.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${kept.worktreePath}`) }
+      const saved = await preserveIgnoredOutputs(kept, this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), run.id)
+      if (!saved.ok) return { ok: false, error: pick(`被 .gitignore 忽略的产物没能另存（${saved.error}），已保留工作区：${kept.worktreePath}`, `Outputs ignored by .gitignore could not be saved (${saved.error}); workspace kept: ${kept.worktreePath}`), outputs: saved }
+      outputs = saved
       const cleaned = await cleanupWorkspace(kept)
+      delete run.pendingOutputs
       if (saved.path) run.savedOutputsPath = saved.path
-      if ('skipped' in saved && saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join(String.fromCharCode(10))
+      if (saved.skipped?.length) run.error = [run.error, skippedOutputsNote(saved.skipped)].filter(Boolean).join(String.fromCharCode(10))
       if (!cleaned.ok) {
         run.error = [run.error, ...cleaned.errors].filter(Boolean).join(String.fromCharCode(10))
         if (review === 'merged') run.review = 'merged'
@@ -1563,7 +1577,7 @@ export class SubagentController {
     run.review = review
     await this.history.save(run, record.rootCwd)
     this.opts.onChange(run)
-    return { ok: true }
+    return { ok: true, ...(outputs ? { outputs } : {}) }
   }
 
   private stallLimit(run: Run): number {

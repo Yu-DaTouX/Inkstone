@@ -6,6 +6,7 @@ import { CapabilityCommandError, type CapabilityCommandResult } from './capabili
 import type { SubagentCommandContext, SubagentCommandHost } from './agent'
 import type { ModelLabelResolution } from './subagents/model-label'
 import type { SubagentRun } from '../shared/ipc'
+import type { PreservedOutputs } from './subagent-isolation'
 import { forkContextError, sideQuestionForkSource, type SubagentForkSource } from './subagent-fork'
 import { pick } from '../shared/ui-lang'
 import { normalizeSubagentId } from '../shared/subagent-id'
@@ -52,6 +53,23 @@ function patchPathInside(path: string): boolean {
 }
 
 const SUMMARY_TASK_CHARS = 80
+const SUMMARY_OUTPUT_PATHS = 10
+
+function listPaths(paths: readonly string[]): string[] {
+  return paths.length > SUMMARY_OUTPUT_PATHS ? [...paths.slice(0, SUMMARY_OUTPUT_PATHS), `… +${paths.length - SUMMARY_OUTPUT_PATHS}`] : [...paths]
+}
+
+export function subagentOutputsSummary(run: Pick<SubagentRun, 'savedOutputsPath' | 'pendingOutputs'> | undefined, outputs?: PreservedOutputs): Record<string, unknown> {
+  if (outputs && !outputs.ok) return { savedOutputsError: pick(`被 .gitignore 忽略的产物没能另存：${outputs.error}`, `Outputs ignored by .gitignore could not be saved: ${outputs.error}`) }
+  const path = outputs?.path ?? run?.savedOutputsPath
+  const skipped = outputs?.skipped?.length
+    ? { savedOutputsSkipped: listPaths(outputs.skipped), savedOutputsSkippedNote: pick('这些路径下超出 200MB 另存上限的文件没有另存，已随工作区清理；说明文件与图片优先保留', 'Files under these paths beyond the 200MB save limit were not saved and were removed with the workspace; notes and images are kept first') }
+    : {}
+  if (path) return { savedOutputs: path, ...(outputs?.files.length ? { savedOutputsFiles: listPaths(outputs.files) } : {}), ...skipped }
+  if (run?.pendingOutputs) return { ignoredOutputs: listPaths(run.pendingOutputs.files), ignoredOutputsSaveTo: run.pendingOutputs.path, ignoredOutputsNote: pick('合并或放弃时按原相对路径另存到 ignoredOutputsSaveTo', 'Saved with their relative paths to ignoredOutputsSaveTo on merge or discard') }
+  if (outputs) return { savedOutputs: pick('无：工作树里没有需要另存的被忽略产物', 'none: the worktree had no ignored outputs to save'), ...skipped }
+  return {}
+}
 
 function startSummary(run: SubagentRun, note?: string): { data: SubagentRun; summary: Record<string, unknown> } {
   return {
@@ -332,6 +350,7 @@ export class SubagentService {
           ...(live ? { recentNotes: recentNotes(run) } : { finalMessage: String(compact.finalMessage ?? '').slice(0, 400) }),
           ...(!live && String(compact.finalMessage ?? '').length > 400 ? { finalMessageTruncated: true, finalMessageFull: `全文在 resultFile 的 finalMessage；也可用 yan subagent get --id ${run.id} --final 直接输出` } : {}),
           review: run.review,
+          ...subagentOutputsSummary(run),
           ...(run.resumable ? { resumable: run.resumable.ok, ...(run.resumable.reason ? { resumeBlockedBy: run.resumable.reason } : {}) } : {})
         }
       }
@@ -388,7 +407,11 @@ export class SubagentService {
         )
       }
       const run = ctrl.get(id)
-      return { data: run, summary: { kind: 'subagent', action: merging ? 'merge' : 'discard', id, review: run?.review } }
+      const outputs = subagentOutputsSummary(run, result.outputs)
+      return {
+        data: run ? { ...run, ...(result.outputs ? { savedOutputs: result.outputs } : {}) } : run,
+        summary: { kind: 'subagent', action: merging ? 'merge' : 'discard', id, review: run?.review, ...outputs }
+      }
     }
 
     if (command === 'subagent.stop') {

@@ -1,5 +1,5 @@
 import type { SubagentRun } from './ipc'
-import { toModelText } from './ui-lang'
+import { pick, toModelText } from './ui-lang'
 import { subagentOutcome, type SubagentOutcomeKey } from './subagent-outcome'
 
 export const SUBAGENT_NOTICE_TAG = 'subagent-notification'
@@ -49,7 +49,7 @@ function headlineWord(key: SubagentOutcomeKey, status: string): string {
 
 export function buildSubagentNotice(
   run: Pick<SubagentRun, 'id' | 'task' | 'status' | 'isolation' | 'model' | 'diff' | 'review' | 'error' | 'result'> &
-    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable' | 'followUp'>>
+    Partial<Pick<SubagentRun, 'endReason' | 'resultPath' | 'resumable' | 'followUp' | 'savedOutputsPath' | 'pendingOutputs'>>
 ): string {
   const status = run.status === 'done' || run.status === 'error' || run.status === 'cancelled' ? run.status : 'done'
   const mode = run.isolation === 'controlled-cwd' ? '只读' : '可修改'
@@ -81,12 +81,25 @@ export function buildSubagentNotice(
     if ((run.review === 'pending' || run.review === 'conflict') && run.resultPath) lines.push(`工作区：${run.resultPath}`)
     if (run.review === 'pending' || run.review === 'conflict') lines.push(`处置：合并 yan subagent merge --id ${run.id}；放弃 yan subagent discard --id ${run.id}；要它继续改或解决冲突用 yan subagent send --id ${run.id}`)
   }
+  const outputsLine = ignoredOutputsLine(run)
+  if (outputsLine) lines.push(outputsLine)
   if (outcome.partial || status === 'error') lines.push(`完整过程：yan subagent get --id ${run.id}`)
   if (run.resumable?.ok) lines.push(`可续派：yan subagent send --id ${run.id} --message <追加任务>（保留它之前的全部上下文，比重新派更省）`)
   else if (run.resumable?.reason) lines.push(`不可续派：${clip(toModelText(run.resumable.reason), 120)}`)
   lines.push(NOT_AUTHORIZATION)
   lines.push('这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。')
   return `<${SUBAGENT_NOTICE_TAG} id="${run.id}" status="${status}">\n${safeNoticeBody(lines)}\n</${SUBAGENT_NOTICE_TAG}>`
+}
+
+function ignoredOutputsLine(run: Pick<SubagentRun, 'id' | 'diff' | 'review'> & Partial<Pick<SubagentRun, 'savedOutputsPath' | 'pendingOutputs'>>): string {
+  const saved = run.savedOutputsPath
+  if (saved) return toModelText(pick(`被 .gitignore 忽略的产物已按原相对路径另存，报告里指向工作树的文件到这里找：${saved}`, `Outputs ignored by .gitignore were saved with their relative paths; look here for files the report placed in the worktree: ${saved}`))
+  const pending = run.pendingOutputs
+  if (!pending?.files.length || (run.review !== 'pending' && run.review !== 'conflict')) return ''
+  const files = `${pending.files.slice(0, 5).join(', ')}${pending.files.length > 5 ? ', …' : ''}`
+  const path = pending.path
+  if (run.diff && run.diff.files > 0) return toModelText(pick(`工作树里被 .gitignore 忽略的文件（${files}）在合并或放弃时按原相对路径另存到 ${path}，工作树随后删除`, `Files ignored by .gitignore in the worktree (${files}) are saved with their relative paths to ${path} on merge or discard; the worktree is then removed`))
+  return toModelText(pick(`工作树里只有被 .gitignore 忽略的文件（${files}），没有补丁可合并；yan subagent discard --id ${run.id} 会先把它们另存到 ${path} 再清理工作树`, `The worktree only has files ignored by .gitignore (${files}), so there is no patch to merge; yan subagent discard --id ${run.id} saves them to ${path} first, then removes the worktree`))
 }
 
 export function buildSubagentQuotaNotice(run: Pick<SubagentRun, 'id' | 'task' | 'model' | 'quotaWait'> & Partial<Pick<SubagentRun, 'followUp'>>): string {

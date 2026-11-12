@@ -1,6 +1,6 @@
 import { pick } from '../shared/ui-lang'
 import { execFile } from 'node:child_process'
-import { cp, lstat, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -65,7 +65,7 @@ export interface CollectedDiff {
   ignoredOutputs?: string[]
 }
 
-const REBUILDABLE_DIRS = new Set(['node_modules', 'dist', 'out', 'build', 'target', '.gradle', '.cache', '.venv', 'venv', '__pycache__', '.next', '.turbo', 'coverage', '.pytest_cache'])
+const REBUILDABLE_DIRS = new Set(['node_modules', 'dist', 'out', 'build', 'target', '.gradle', '.cache', '.venv', 'venv', '__pycache__', '.next', '.turbo', 'coverage', '.pytest_cache', '.pnpm-store', '.parcel-cache', '.mypy_cache', '.ruff_cache'])
 
 export function ignoredOutputsOf(listing: string): string[] {
   return listing
@@ -285,29 +285,64 @@ export async function collectDiff(workspace: PreparedWorkspace, archiveDir: stri
   ])
 
   const summary = summarizeGitDiff(nameStatus, numstat)
-  if (patch.length === 0) {
-    const listing = await git(workspace.cwd, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory']).then((r) => r.stdout, () => '')
-    const ignoredOutputs = ignoredOutputsOf(listing)
-    return ignoredOutputs.length ? { summary, ignoredOutputs } : { summary }
-  }
+  const listing = await git(workspace.cwd, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory']).then((r) => r.stdout, () => '')
+  const ignoredOutputs = ignoredOutputsOf(listing)
+  const ignored = ignoredOutputs.length ? { ignoredOutputs } : {}
+  if (patch.length === 0) return { summary, ...ignored }
 
   const patchPath = join(archiveDir, `${id}.patch`)
   await writeFile(patchPath, patch)
-  return { summary: { ...summary, patchPath }, patchPath }
+  return { summary: { ...summary, patchPath }, patchPath, ...ignored }
 }
 
-const IGNORED_OUTPUT_COPY_LIMIT = 200 * 1024 * 1024
+export const IGNORED_OUTPUT_COPY_LIMIT = 200 * 1024 * 1024
+const IGNORED_OUTPUT_FILE_LIMIT = 20_000
+const NOTE_FILE = /\.(md|markdown|txt|rst|json|ya?ml|toml|csv|tsv|html?|xml|log|pdf|patch|diff)$/i
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i
 
-async function sizeWithin(path: string, budget: number): Promise<number> {
-  const info = await lstat(path)
-  if (info.isSymbolicLink()) return 0
-  if (!info.isDirectory()) return info.size
-  let total = 0
-  for (const entry of await readdir(path)) {
-    total += await sizeWithin(join(path, entry), budget - total)
-    if (total > budget) return total
+export function ignoredOutputRank(path: string): number {
+  if (NOTE_FILE.test(path)) return 0
+  if (IMAGE_FILE.test(path)) return 1
+  return 2
+}
+
+interface OutputFile { rel: string; top: string; size: number; rank: number }
+
+async function listOutputFiles(root: string, rel: string, top: string, found: OutputFile[], overflow: Set<string>): Promise<void> {
+  if (found.length >= IGNORED_OUTPUT_FILE_LIMIT) {
+    overflow.add(top)
+    return
   }
-  return total
+  const info = await lstat(join(root, rel))
+  if (info.isSymbolicLink()) return
+  if (!info.isDirectory()) {
+    found.push({ rel, top, size: info.size, rank: ignoredOutputRank(rel) })
+    return
+  }
+  for (const entry of await readdir(join(root, rel))) {
+    if (REBUILDABLE_DIRS.has(entry)) continue
+    await listOutputFiles(root, `${rel}/${entry}`, top, found, overflow)
+  }
+}
+
+export function pickIgnoredOutputs<T extends { size: number; rank: number }>(files: readonly T[], limit: number): { kept: T[]; dropped: T[] } {
+  const ordered = [...files].sort((a, b) => a.rank - b.rank || a.size - b.size)
+  let total = 0
+  const kept: T[] = []
+  const dropped: T[] = []
+  for (const file of ordered) {
+    if (total + file.size > limit) {
+      dropped.push(file)
+      continue
+    }
+    total += file.size
+    kept.push(file)
+  }
+  return { kept, dropped }
+}
+
+export function savedOutputsDir(archiveDir: string, id: string): string {
+  return join(archiveDir, `${id}-outputs`)
 }
 
 export type PreservedOutputs = { ok: true; path?: string; files: string[]; skipped?: string[] } | { ok: false; error: string }
@@ -323,23 +358,21 @@ export async function preserveIgnoredOutputs(workspace: PreparedWorkspace, archi
   }
   if (outputs.length === 0) return { ok: true, files: [] }
   try {
-    const sized: Array<{ rel: string; size: number }> = []
-    for (const rel of outputs) sized.push({ rel, size: await sizeWithin(join(workspace.cwd, rel), limit + 1) })
-    sized.sort((a, b) => a.size - b.size)
-    let total = 0
-    const files: string[] = []
-    const skipped: string[] = []
-    for (const item of sized) {
-      if (total + item.size > limit) {
-        skipped.push(item.rel)
-        continue
-      }
-      total += item.size
-      files.push(item.rel)
+    const found: OutputFile[] = []
+    const overflow = new Set<string>()
+    for (const rel of outputs) await listOutputFiles(workspace.cwd, rel, rel, found, overflow)
+    const { kept, dropped } = pickIgnoredOutputs(found, limit)
+    const keptTops = new Set(kept.map((file) => file.top))
+    const droppedTops = new Set([...dropped.map((file) => file.top), ...overflow])
+    const files = outputs.filter((rel) => keptTops.has(rel))
+    const skipped = outputs.filter((rel) => droppedTops.has(rel))
+    if (!files.length) return { ok: true, files, ...(skipped.length ? { skipped } : {}) }
+    const target = savedOutputsDir(archiveDir, id)
+    for (const file of kept) {
+      const to = join(target, file.rel)
+      await mkdir(dirname(to), { recursive: true })
+      await copyFile(join(workspace.cwd, file.rel), to)
     }
-    if (!files.length) return { ok: true, files, skipped }
-    const target = join(archiveDir, `${id}-outputs`)
-    for (const rel of files) await cp(join(workspace.cwd, rel), join(target, rel), { recursive: true, force: true, verbatimSymlinks: true })
     return { ok: true, path: target, files, ...(skipped.length ? { skipped } : {}) }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }

@@ -31,6 +31,7 @@ const RUN_FIELDS: readonly (keyof SubagentRun)[] = [
   'modelPinned',
   'resultPath',
   'savedOutputsPath',
+  'pendingOutputs',
   'thinkingLevel',
   'contextUsage',
   'latestActivity',
