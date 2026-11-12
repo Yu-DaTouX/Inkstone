@@ -38,6 +38,10 @@ await runSuite(import.meta.url, async (ok, compile) => {
   }
   ok(read([{ ...normal, ends_at: null }]).count === 2, '无到期时间不当作过期')
   ok(read([normal], { eligible: false }) === undefined, '不符合资格不伪造重置卡')
+  const monthly = { id: 'full-reset-2611', resets_total: 1, resets_left: 1, starts_at: new Date(now - 1000).toISOString(), ends_at: new Date(now + 86_400_000).toISOString(), clears: ['five_hour', 'seven_day', 'seven_day_overage_included'], paused: false, usable_now: true, blocking: [], type: 'full', unavailable_reason: null, gives_back_weekly: false }
+  const spentFable = { ...monthly, id: 'launch-2610-fable', resets_left: 0, usable_now: false, clears: ['five_hour', 'seven_day_overage_included'], unavailable_reason: 'unavailable', gives_back_weekly: true }
+  const live = read([monthly, spentFable], { next_grant_id: 'full-reset-2611', cooldown_until: null })
+  ok(live.count === 1 && live.groups.length === 1 && live.groups[0].kind === 'full' && live.groups[0].nextId === 'full-reset-2611', '实际返回形状：月度完整重置可用，已用完的 Fable 卡不显示', live)
   const earlier = { ...normal, id: 'earlier', ends_at: new Date(now + 1000).toISOString() }
   const ordered = read([normal, earlier], { next_grant_id: null })
   ok(ordered.groups[0].nextId === 'earlier', '同种卡优先最早到期，除非服务端指定下一张')
@@ -77,7 +81,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
     const report = await main.accountQuotaReport()
     ok(report.cards[0].windows.some((window) => window.label === 'Fable' && window.used === 99), '宿主报告贯通 Fable 真实解析路径')
     ok(report.cards[0].resetCredits.groups.length === 2, '宿主报告保留两种重置卡')
-    ok(requests[0].url.includes('cedar_ember=1') && requests[0].headers['User-Agent'] === 'claude-code/2.1.322', '查询携带重置卡参数及已核对的客户端版本')
+    ok(requests[0].url.includes('cedar_ember=1') && requests[0].headers['User-Agent'] === 'claude-cli/2.1.322 (external, cli)', '查询携带重置卡参数，并用 Claude Code 的 UA 格式通过来源端资格判定')
     for (const grantId of ['fable-grant', 'normal-grant']) {
       const result = await main.consumeResetCredit('anthropic', 'fixture-account', grantId)
       const request = requests.findLast((request) => request.method === 'POST')

@@ -65,7 +65,7 @@ export interface CodexAccountView {
 export const CLAUDE_OAUTH_HEADERS: Readonly<Record<string, string>> = {
   'anthropic-beta': 'oauth-2025-04-20',
   Accept: 'application/json',
-  'User-Agent': 'claude-code/2.1.322'
+  'User-Agent': 'claude-cli/2.1.322 (external, cli)'
 }
 
 export function accountCardTitle(card: Pick<AccountQuotaCard, 'label' | 'email' | 'name'>): string {

@@ -199,7 +199,7 @@ async function runMainReportScenarios(check, main, piDir) {
       oauthTargets: { anthropic: [{ key: 'claude-429', email: 'r@example.com', active: true, credential: { access: 'r', expires: Date.now() + 10000 } }] },
       fetch: async (url, init) => {
         claudeCalls++
-        check(init.headers['User-Agent']?.startsWith('claude-code/'), 'Claude：带 Claude Code 的 User-Agent，避免 429')
+        check(/^claude-cli\/\S+ \(external, cli\)$/.test(init.headers['User-Agent'] ?? ''), 'Claude：带 Claude Code 格式的 User-Agent，避免 429 并拿到重置卡')
         return { ok: false, status: 429, headers: { get: (name) => (name === 'retry-after' ? '120' : null) }, json: async () => ({}) }
       }
     })
