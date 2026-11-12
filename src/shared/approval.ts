@@ -4,6 +4,8 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number]
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'danger'
 export const APPROVAL_DETAIL_MAX = 20000
 export const APPROVAL_TARGETS_MAX = 64
+export const DANGER_CONFIRM_TIMEOUT_MS = 60_000
+export const APPROVAL_HOLD_MAX_MS = 30 * 60_000
 
 export function normalizePermissionMode(value: unknown): PermissionMode {
   return value === 'all' ? 'all' : 'danger'
@@ -41,7 +43,7 @@ export interface ApprovalAnswer {
 }
 
 export interface ApprovalDecision {
-  decision: 'allow' | 'deny'
+  decision: 'allow' | 'deny' | 'timeout'
   feedback?: string
 }
 
@@ -81,6 +83,9 @@ export interface ApprovalRequest {
   rememberDirs?: string[]
   canRemember: boolean
   createdAt: number
+  expiresAt?: number
+  held?: boolean
+  onTimeout?: 'review' | 'deny'
 }
 
 export interface ApprovalReceipt {
@@ -92,6 +97,7 @@ export interface ApprovalReceipt {
   title: string
   choice: ApprovalChoice
   feedback?: string
+  reviewer?: 'model'
   askedAt: number
   at: number
 }

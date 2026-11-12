@@ -80,6 +80,14 @@ export class ApprovalLedger {
     return { ok: true, request: entry.request }
   }
 
+  hold(id: string, expiresAt: number): ApprovalRequest | null {
+    const entry = this.entries.get(id)
+    if (!entry || entry.phase !== 'pending' || entry.request.held || entry.request.expiresAt === undefined) return null
+    entry.request = { ...entry.request, held: true, expiresAt }
+    this.bump()
+    return entry.request
+  }
+
   finish(id: string): ApprovalRequest | null {
     const entry = this.entries.get(id)
     if (!entry) return null

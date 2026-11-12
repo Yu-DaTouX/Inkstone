@@ -14,7 +14,8 @@ import { runMcpCommand } from './agent-commands/mcp-command'
 import { runOfficeReadCommand } from './agent-commands/office-read'
 import { runSkillRead } from './agent-commands/skill-read'
 import { runSkillSave } from './agent-commands/skill-save'
-import { runDangerConfirmCommand } from './agent-commands/danger-confirm'
+import { runDangerConfirmCommand, runDangerReviewCommand } from './agent-commands/danger-confirm'
+import type { ModelReviewReceiptInput } from './approval-log'
 import { runFileTrashCommand } from './agent-commands/file-trash'
 import { runSessionMoveCommand } from './agent-commands/session-move'
 import { runArtifactExportImageCommand, runArtifactExportVideoCommand } from './agent-commands/artifact-export'
@@ -247,6 +248,7 @@ export interface SubagentCommandContext {
   model?: string
   cwd: string
   parentSessionId?: string
+  parentSessionFile?: string
   parentRunId?: string
   parentGeneration?: number
   parentMessageId?: string
@@ -282,6 +284,8 @@ export interface DangerConfirmPrompt {
   owner?: ApprovalOwner
   toolCallId?: string
   signal?: AbortSignal
+  timeoutMs?: number
+  onTimeout?: 'review' | 'deny'
 }
 
 export interface ToolConsentPrompt {
@@ -472,6 +476,7 @@ export class AgentController extends EventEmitter {
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentAnswer | null>
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ApprovalDecision | null>
+  private recordDangerReview?: (sessionId: string | undefined, review: ModelReviewReceiptInput) => void
   private cancelApprovals?: (owner: ApprovalOwner) => void
   private activateApprovals?: (owner: ApprovalOwner) => void
   private retireApprovals?: (owner: ApprovalOwner) => void
@@ -507,6 +512,7 @@ export class AgentController extends EventEmitter {
       confirmToolConsent: async (request: ToolConsentPrompt) => (this.confirmToolConsent ? this.confirmToolConsent(request) : null),
       confirmDanger: async (request: DangerConfirmPrompt) => (this.confirmDanger ? this.confirmDanger(request) : null),
       approvalOwner: () => this.approvalOwner(),
+      recordDangerReview: (review: ModelReviewReceiptInput) => this.recordDangerReview?.(this.state?.sessionId, review),
       trashItem: () => this.capabilityOpts?.trashItem,
       session: () => ({ sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }),
       sessionMover: () => this.requestSessionMove,
@@ -528,7 +534,7 @@ export class AgentController extends EventEmitter {
     cwd: () => this.cwd,
     turnSignal: () => this.terminalTurnStop.signal,
     confirm: async (request) => {
-      const result = await runDangerConfirmCommand(this.commandHost, { tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs })
+      const result = await runDangerConfirmCommand(this.commandHost, { tool: 'terminal', detail: request.detail, reasons: request.reasons, outsideDirs: request.outsideDirs, ...(request.critical ? { critical: true } : {}) })
       const feedback = result.summary.feedback
       return { allowed: result.summary.allowed === true, ...(typeof feedback === 'string' && feedback ? { feedback } : {}) }
     },
@@ -754,6 +760,7 @@ export class AgentController extends EventEmitter {
     confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
     confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentAnswer | null>
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ApprovalDecision | null>
+    recordDangerReview?: (sessionId: string | undefined, review: ModelReviewReceiptInput) => void
     cancelApprovals?: (owner: ApprovalOwner) => void
     activateApprovals?: (owner: ApprovalOwner) => void
     retireApprovals?: (owner: ApprovalOwner) => void
@@ -833,6 +840,7 @@ export class AgentController extends EventEmitter {
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
     this.confirmDanger = opts.confirmDanger
+    this.recordDangerReview = opts.recordDangerReview
     this.cancelApprovals = opts.cancelApprovals
     this.activateApprovals = opts.activateApprovals
     this.retireApprovals = opts.retireApprovals
@@ -1410,6 +1418,7 @@ export class AgentController extends EventEmitter {
         cwd: this.cwd,
         model: this.state?.model ? `${this.state.model.provider}/${this.state.model.id}` : undefined,
         parentSessionId: this.state?.sessionId || (this.capabilityOpts?.sessionId ? `pending:${this.capabilityOpts.sessionId}` : undefined),
+        ...(this.state?.sessionFile ? { parentSessionFile: this.state.sessionFile } : {}),
         parentRunId: this.capabilityOpts?.sessionId,
         parentGeneration: this.capabilityOpts?.runnerGeneration,
         parentMessageId: this.latestAssistantMessageId(),
@@ -1453,6 +1462,7 @@ export class AgentController extends EventEmitter {
     if (command === 'file.trash') return runFileTrashCommand(this.commandHost, params, signal)
     if (command === 'consent.request') return runConsentRequestCommand(this.commandHost, params)
     if (command === 'danger.confirm') return runDangerConfirmCommand(this.commandHost, params)
+    if (command === 'danger.review') return runDangerReviewCommand(this.commandHost, params)
     if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await dangerGuardPrefs()) } }
     if (command === 'session.move') return runSessionMoveCommand(this.commandHost, params)
     switch (command) {

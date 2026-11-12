@@ -186,7 +186,7 @@
   "src/renderer/src/features/session/approval-reason-text.ts": 25,
   "src/renderer/src/features/session/native/native-surfaces-model.ts": 54,
   "src/renderer/src/features/session/subagent-composer.ts": 1,
-  "src/renderer/src/features/session/text.ts": 278,
+  "src/renderer/src/features/session/text.ts": 280,
   "src/renderer/src/features/session/transcript-view-text.ts": 9,
   "src/renderer/src/features/session/turn-lines.ts": 1,
   "src/renderer/src/features/session/web-search/model.ts": 1,

@@ -3,8 +3,10 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { isHostAutomatedMessage } from './host-message.js'
+import { REVIEW_STREAK_LIMIT, REVIEW_STOP_NOTE, parentUserMessages, reviewDeniedReason, reviewFailedReason, reviewPrompt, reviewTranscript, runReview } from './danger-review.js'
 
-const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
+const CONFIRM_TIMEOUT_MS = 35 * 60 * 1000
 const PREFS_TIMEOUT_MS = 5000
 const APPROVAL_DETAIL_MAX = 20000
 const CHANGE_PREVIEW_MAX = 12000
@@ -270,7 +272,7 @@ const COMMAND_RULES = [
   { re: gitRule(String.raw`(?:checkout|restore)\b[^;&|\n]*(?:\s--\s+\.|\s\.)(?:\s|$)`), label: '还原整个工作区，会丢弃未提交的改动' },
   { re: gitRule(String.raw`stash\s+(?:clear|drop)\b`), label: '删除 Git stash 里暂存的改动' },
   { re: /\b(?:drop\s+(?:database|schema|table)|truncate\s+table)\b/i, label: '删除数据库或数据表' },
-  { re: /\b(?:mkfs(?:\.\w+)?|diskpart|fdisk|shred)\b|\bdd\s+[^;&|\n]*\bof=\/dev\/|\bformat\s+[a-z]:/i, label: '格式化或直接写磁盘' },
+  { re: /\b(?:mkfs(?:\.\w+)?|diskpart|fdisk|shred|format-volume|clear-disk|initialize-disk|remove-partition)\b|\bdd\s+[^;&|\n]*\bof=\/dev\/|\bformat\s+[a-z]:/i, label: '格式化或直接写磁盘' },
   { re: /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*(?:sudo\s+)?(?:\S*[\\/])?(?:sh|bash|zsh|iex|invoke-expression|powershell|pwsh)\b/i, label: '把网络内容直接交给 shell 执行' },
   { re: /\bchmod\s+-R\b[^;&|\n]*\s\/(?:\s|$)|\bchown\s+-R\b[^;&|\n]*\s\/(?:\s|$)/i, label: '递归修改根目录的权限或属主' },
   { re: /\breg(?:\.exe)?\s+delete\b/i, label: '删除注册表项' },
@@ -364,6 +366,265 @@ function scanCommand(command, reasons, depth = 0, cwd = '', base = cwd) {
   }
   const ruleSource = ruleText(command)
   for (const rule of COMMAND_RULES) if (rule.re.test(ruleSource)) reasons.push(rule.label)
+}
+
+const DELETE_HEADS = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'remove-item', 'ri'])
+const SHALLOW_SAFE_DELETES = new Set(['rm', 'rmdir', 'rd'])
+const PS_DELETE_PATH = new Set(['-path', '-literalpath', '-lp', '-pspath'])
+const PS_DELETE_VALUED = new Set(['-include', '-exclude', '-filter', '-credential', '-stream'])
+const COMMON_TOP_DIRS = new Set(['bin', 'boot', 'data', 'dev', 'etc', 'home', 'lib', 'media', 'mnt', 'opt', 'proc', 'program files', 'program files (x86)', 'programdata', 'root', 'run', 'sbin', 'srv', 'sys', 'tmp', 'users', 'usr', 'var', 'volumes', 'windows'])
+const DISK_WIPE = /\b(?:mkfs(?:\.\w+)?|diskpart|format-volume|clear-disk|initialize-disk|remove-partition)\b|\bdd\s+[^;&|\n]*\bof=\/dev\/|\bformat(?:\.com)?\s+[a-z]:/i
+const TARGET_TOKEN = /\$\((?:[^()]|\([^()]*\))*\)|`[^`]*`|\$\{([^}]*)\}|\$env:([A-Za-z_]\w*)|\$([A-Za-z_]\w*|\d|[@*?#])|%([A-Za-z_]\w*)%/gi
+const DIRECTORY_PRINTERS = /^\s*(?:pwd|git\s+rev-parse\s+--show-toplevel|get-location|\(get-location\)\.path)\s*$/i
+const CRITICAL_TOO_DEEP = '命令嵌套层数过多，无法排除删除关键位置'
+const BASE_VALUE = Symbol('base')
+
+function shellWords(segment) {
+  const words = []
+  let word = ''
+  let quote = null
+  let has = false
+  for (let i = 0; i < segment.length; i++) {
+    const ch = segment[i]
+    if (quote) {
+      word += ch
+      if (ch === '\\' && quote === '"' && i + 1 < segment.length) { word += segment[++i]; continue }
+      if (ch === quote) quote = null
+      continue
+    }
+    if (ch === "'" || ch === '"') { quote = ch; word += ch; has = true; continue }
+    if (/\s/.test(ch)) {
+      if (has) words.push(word)
+      word = ''
+      has = false
+      continue
+    }
+    word += ch
+    has = true
+  }
+  if (has) words.push(word)
+  return words
+}
+
+function deleteCommand(segment) {
+  const parts = shellWords(stripGrouping(segment))
+  const { start, stdinArgs } = commandStart(parts)
+  return { head: bareName(parts[start]), args: parts.slice(start + 1), stdinArgs }
+}
+
+function deleteTargets({ head, args }) {
+  const plain = args.filter((arg) => !/^\d?[<>]/.test(arg))
+  if (head === 'remove-item' || head === 'ri') {
+    const out = []
+    for (let i = 0; i < plain.length; i++) {
+      const lower = plain[i].toLowerCase()
+      if (PS_DELETE_PATH.has(lower)) { if (plain[i + 1] !== undefined) out.push(plain[++i]); continue }
+      if (PS_DELETE_VALUED.has(lower)) { i += 1; continue }
+      if (/^-/.test(plain[i])) continue
+      out.push(...plain[i].split(',').filter(Boolean))
+    }
+    return out
+  }
+  const flag = head === 'rm' ? /^-/ : /^(?:-|\/[a-z]$)/i
+  let rest = false
+  return plain.filter((arg) => {
+    if (arg === '--') { rest = true; return false }
+    return rest || !flag.test(arg)
+  })
+}
+
+function assignedVariables(command) {
+  const vars = new Map()
+  const text = String(command ?? '')
+  for (const match of text.matchAll(/(?:^|[\s;&|(])\$?([A-Za-z_]\w*)\s*=\s*["']?(\$\(([^()]*)\)|`([^`]*)`|\$\{?pwd\}?\b|\(get-location\)(?:\.path)?)/gi)) {
+    const body = match[3] ?? match[4]
+    if (body === undefined || DIRECTORY_PRINTERS.test(body)) vars.set(match[1].toLowerCase(), BASE_VALUE)
+  }
+  for (const match of text.matchAll(/(?:^|[\s;&|(])\$?([A-Za-z_]\w*)\s*=\s*(?:"([^"$`]*)"|'([^']*)'|([^\s;&|$`'"()]+))/g)) {
+    const name = match[1].toLowerCase()
+    if (!vars.has(name)) vars.set(name, match[2] ?? match[3] ?? match[4] ?? '')
+  }
+  return vars
+}
+
+function variableText(name, base, vars) {
+  const lower = String(name).toLowerCase()
+  if (lower === 'pwd') return base ?? undefined
+  if (vars.has(lower)) {
+    const value = vars.get(lower)
+    return value === BASE_VALUE ? base ?? undefined : value
+  }
+  if (lower === 'home' || lower === 'userprofile') return homedir()
+  if (/^\d$|^[@*?#]$/.test(lower)) return undefined
+  const key = Object.keys(process.env).find((k) => k.toLowerCase() === lower)
+  return key ? process.env[key] : undefined
+}
+
+function expandTarget(raw, base, vars) {
+  const unquoted = String(raw ?? '').replace(/["']/g, '')
+  if (/^\\+$/.test(unquoted)) return { path: '/', unknown: false }
+  const text = unquoted.replace(/^~(?=[\\/]|$)/, homedir())
+  let unknown = false
+  let subst = false
+  let tail = null
+  const path = text.replace(TARGET_TOKEN, (match, braced, psName, plain, cmdName, offset) => {
+    let value
+    if (match.startsWith('$(') || match.startsWith('`')) {
+      const body = match.startsWith('`') ? match.slice(1, -1) : match.slice(2, -1)
+      value = DIRECTORY_PRINTERS.test(body) ? base ?? undefined : undefined
+      if (value === undefined) subst = true
+    } else if (braced !== undefined) {
+      const parts = /^([A-Za-z_]\w*|\d|[@*])(:?[?+\-=])?(.*)$/.exec(braced)
+      value = variableText(parts?.[1] ?? braced, base, vars)
+      if (value === undefined && parts?.[2]?.includes('?')) value = 'guarded'
+      else if (value === undefined && parts?.[2] && /[-=]/.test(parts[2]) && parts[3]) value = parts[3]
+    } else {
+      value = variableText(psName ?? plain ?? cmdName, base, vars)
+    }
+    if (value !== undefined) return String(value)
+    if (!unknown) {
+      const before = text.slice(0, offset)
+      const after = text.slice(offset + match.length).replace(TARGET_TOKEN, '')
+      tail = /(?:[\\/]|^[a-z]:)$/i.test(before) && /^[\\/]*\*?$/.test(after) ? before : null
+    }
+    unknown = true
+    return ''
+  })
+  return { path, unknown, subst, tail, onlySubst: subst && !text.replace(TARGET_TOKEN, '').trim() }
+}
+
+function normalizeCritical(raw) {
+  let text = String(raw ?? '').replace(/\\/g, '/').trim()
+  if (/^\/\/[?.]\/volume\{/i.test(text)) return { volume: true }
+  text = text.replace(/^\/\/(?:localhost|127\.0\.0\.1|\.)\/([a-z])\$(?=\/|$)/i, '$1:')
+  text = normalizePath(text)
+  if (/^[a-z]:$/.test(text)) text += '/'
+  return { path: text }
+}
+
+function splitGlob(path) {
+  const segments = path.split('/')
+  const at = segments.findIndex((segment) => /[*?[]/.test(segment))
+  if (at < 0) return { folder: path, glob: false }
+  const folder = segments.slice(0, at).join('/')
+  return { folder: folder || (path.startsWith('/') ? '/' : '.'), glob: true }
+}
+
+function absoluteFrom(folder, base) {
+  if (isAbsolutePath(folder)) return folder
+  if (base === null || base === undefined) return null
+  return `${String(base).replace(/\\/g, '/').replace(/\/+$/, '')}/${folder}`
+}
+
+function comparable(path) {
+  const normalized = normalizePath(path)
+  const physical = physicalPath(normalized)
+  return [...new Set([normalized, physical].map((p) => (p.length > 1 && !/^[a-z]:\/$/.test(p) ? p.replace(/\/+$/, '') : p)))]
+}
+
+function ancestorOrEqual(parent, child) {
+  if (!parent || !child) return false
+  if (parent === child) return true
+  const prefix = parent.endsWith('/') ? parent : `${parent}/`
+  return child.startsWith(prefix)
+}
+
+function isRootPath(path) {
+  return path === '/' || path === '' || /^[a-z]:\/?$/.test(path)
+}
+
+function topLevelName(path) {
+  const match = /^(?:[a-z]:)?\/([^/]+)$/.exec(path)
+  return match ? match[1] : null
+}
+
+function criticalKind(abs, cwd, restricted, shallow) {
+  const forms = comparable(abs)
+  if (forms.some(isRootPath)) return '盘根或文件系统根'
+  const top = shallow ? null : forms.map(topLevelName).find(Boolean)
+  if (restricted) return top && COMMON_TOP_DIRS.has(top) ? '顶层目录' : null
+  if (top) return '顶层目录'
+  if (forms.some((p) => /^[a-z]:\/users\/[^/]*~\d+$/.test(p))) return '用户目录'
+  const homes = comparable(homedir())
+  if (forms.some((p) => homes.some((home) => ancestorOrEqual(p, home)))) return '用户目录'
+  const cwds = cwd ? comparable(cwd) : []
+  if (forms.some((p) => cwds.some((dir) => ancestorOrEqual(p, dir)))) return '工作目录或其上级'
+  const agentDir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
+  const dataDir = process.env.YAN_DATA_DIR?.trim() || join(agentDir, 'yan')
+  const data = [agentDir, dataDir].flatMap(comparable)
+  if (forms.some((p) => data.some((dir) => ancestorOrEqual(p, dir)))) return '砚与 pi 的数据目录'
+  return null
+}
+
+function criticalTarget(raw, { base, cwd, vars, recursive, head }) {
+  const shown = shownTarget(String(raw).replace(/["']/g, '')) || String(raw)
+  const expanded = expandTarget(raw, base, vars)
+  if (expanded.onlySubst) return recursive ? `删除的目标只来自命令替换，无法检查：${shown}` : null
+  const checks = []
+  if (expanded.unknown && expanded.tail) checks.push({ text: expanded.tail, restricted: false, glob: true })
+  checks.push({ text: expanded.path, restricted: expanded.unknown, glob: false })
+  for (const check of checks) {
+    if (!check.text.trim()) continue
+    const normalized = normalizeCritical(check.text)
+    if (normalized.volume) return `删除用卷 GUID 表示的路径，无法确定在哪个盘：${shown}`
+    const { folder, glob } = splitGlob(normalized.path)
+    const shallow = !recursive && !glob && !check.glob
+    if (shallow && SHALLOW_SAFE_DELETES.has(head)) continue
+    const abs = absoluteFrom(folder, base)
+    if (abs === null) {
+      if (!shallow && (folder === '.' || folder === '')) return `切换目录后清空当前目录，无法确定位置：${shown}`
+      continue
+    }
+    const kind = criticalKind(abs, cwd, check.restricted, shallow)
+    if (kind) return `删除关键位置（${kind}）：${shown}`
+  }
+  return null
+}
+
+function scanCritical(command, reasons, depth, cwd, start) {
+  if (depth < MAX_SHELL_DEPTH) {
+    for (const inner of substitutions(command)) scanCritical(inner, reasons, depth + 1, cwd, start)
+  }
+  const vars = assignedVariables(command)
+  let base = start
+  for (const segment of command.split(SEGMENT_SPLIT)) {
+    const cmd = deleteCommand(segment)
+    if (DELETE_HEADS.has(cmd.head)) {
+      const recursive = isRecursiveDelete(cmd)
+      for (const raw of deleteTargets(cmd)) {
+        const hit = criticalTarget(raw, { base, cwd, vars, recursive, head: cmd.head })
+        if (hit) reasons.push(hit)
+      }
+      if (cmd.stdinArgs && recursive) reasons.push('递归删除的目标来自管道输入，无法排除删到关键位置')
+    }
+    const plain = commandOf(segment)
+    const encoded = encodedPowerShell(plain)
+    if (encoded === '') reasons.push('PowerShell 编码命令无法解读，无法排除删除关键位置')
+    else if (encoded !== null) {
+      if (depth < MAX_SHELL_DEPTH) scanCritical(encoded, reasons, depth + 1, cwd, base)
+      else reasons.push(CRITICAL_TOO_DEEP)
+    }
+    const wrapped = shellBody(segment)
+    if (wrapped && depth < MAX_SHELL_DEPTH) scanCritical(unwrapShellBody(wrapped), reasons, depth + 1, cwd, base)
+    else if (wrapped) reasons.push(CRITICAL_TOO_DEEP)
+    if (LOCATION_COMMANDS.has(plain.head)) base = nextLocation(plain, base)
+  }
+  if (DISK_WIPE.test(ruleText(command))) reasons.push('格式化或擦除磁盘')
+}
+
+export function criticalDanger(toolName, input, cwd, options = {}) {
+  const name = String(toolName ?? '')
+  if (name !== 'bash' && name !== 'powershell') return []
+  const command = String(input?.command ?? '')
+  if (!command.trim() || hostScansTerminalInput(command)) return []
+  const root = cwd || process.cwd()
+  const reasons = []
+  scanCritical(command, reasons, 0, root, options.base === undefined ? canonicalRoot(root) : options.base)
+  return [...new Set(reasons)]
+}
+
+export function criticalBlockReason(reasons, why) {
+  return `Blocked: ${reasons.join('; ')}. This deletes a critical location (a drive root, a top-level folder, the home folder, the working folder or one of its parents, or Inkstone's data folder) or wipes a disk. ${why}. Do not retry it and do not reach the same result another way. If you meant something narrower, rewrite the command so it names the exact path to delete; otherwise stop and ask the user.`
 }
 
 const SEARCH_COMMANDS = new Set(['rg', 'grep', 'egrep', 'fgrep', 'ag', 'ack', 'findstr', 'select-string', 'sls'])
@@ -888,7 +1149,7 @@ export function approvalDetail(toolName, input) {
     (typeof input?.code === 'string' ? input.code : JSON.stringify(input ?? {}))
 }
 
-async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = '') {
+async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = '', options = {}) {
   const url = process.env.YAN_CLI_URL
   const token = process.env.YAN_CLI_TOKEN
   const sessionId = process.env.YAN_SESSION_ID
@@ -903,7 +1164,7 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
       body: JSON.stringify({
         apiVersion: 1,
         command: 'danger.confirm',
-        params: { tool: toolName, detail, reasons, ...(outsideDirs.length ? { outsideDirs } : {}), ...(toolCallId ? { toolCallId } : {}) },
+        params: { tool: toolName, detail, reasons, ...(outsideDirs.length ? { outsideDirs } : {}), ...(toolCallId ? { toolCallId } : {}), ...(options.critical ? { critical: true } : {}) },
         sessionId,
         projectId
       }),
@@ -911,6 +1172,7 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
     })
     const payload = await response.json()
     if (payload?.ok && payload?.summary?.allowed === true) return { allowed: true }
+    if (payload?.summary?.decision === 'timeout') return { allowed: false, timedOut: true, why: 'The user did not answer within 1 minute' }
     const feedback = typeof payload?.summary?.feedback === 'string' ? payload.summary.feedback.trim() : ''
     if (feedback) return { allowed: false, why: `The user declined this operation and said: ${feedback}. Honour the refusal: do not retry this operation and do not reach the same result through another tool or route; tell the user what you would need, or ask which alternative they want` }
     const reason = typeof payload?.summary?.reason === 'string' ? payload.summary.reason.trim() : ''
@@ -921,13 +1183,70 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
   }
 }
 
+async function reportReview(review) {
+  const url = process.env.YAN_CLI_URL
+  const token = process.env.YAN_CLI_TOKEN
+  const sessionId = process.env.YAN_SESSION_ID
+  const projectId = process.env.YAN_PROJECT_ID
+  if (!url || !token || !sessionId || !projectId || !review.toolCallId) return
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ apiVersion: 1, command: 'danger.review', params: review, sessionId, projectId }),
+      signal: AbortSignal.timeout(PREFS_TIMEOUT_MS)
+    })
+  } catch {}
+}
+
+async function reviewAction(ctx, toolName, input, reasons) {
+  const subagent = process.env.YAN_RUNNER_KIND === 'subagent'
+  const entries = typeof ctx?.sessionManager?.getBranch === 'function' ? ctx.sessionManager.getBranch() : []
+  const prompt = reviewPrompt({
+    transcript: reviewTranscript(entries),
+    parent: subagent ? parentUserMessages(process.env.YAN_PARENT_SESSION_FILE) : undefined,
+    subagent,
+    toolName,
+    detail: approvalDetail(toolName, input),
+    reasons,
+    cwd: ctx?.cwd
+  })
+  return runReview(ctx, prompt)
+}
+
+function stopRun(ctx) {
+  try { ctx?.abort?.() } catch {}
+}
+
 export default function dangerGuardExtension(pi) {
+  let criticalTimeouts = 0
+  let reviewStreak = 0
+
+  pi.on('before_agent_start', (event) => {
+    if (event?.messageType === 'custom') return undefined
+    if (isHostAutomatedMessage(String(event?.prompt ?? ''))) return undefined
+    criticalTimeouts = 0
+    reviewStreak = 0
+    return undefined
+  })
+
   pi.on('tool_call', async (event, ctx) => {
     if (process.env.YAN_DANGER_GUARD === '0') return undefined
     const name = String(event?.toolName ?? '')
     if (!name) return undefined
+    const input = event?.input ?? {}
+    const toolCallId = typeof event?.toolCallId === 'string' ? event.toolCallId : ''
     const prefs = await hostPrefs()
-    if (prefs.mode === 'all') return undefined
+    if (prefs.mode === 'all') {
+      const critical = criticalDanger(name, input, ctx?.cwd)
+      if (critical.length === 0) return undefined
+      if (criticalTimeouts >= REVIEW_STREAK_LIMIT) return { block: true, reason: criticalBlockReason(critical, 'The user has left several of these requests unanswered, so it was declined without asking') }
+      const digest = inputDigest(input)
+      const answer = await askHost(name, input, critical, [], toolCallId, { critical: true })
+      if (answer.allowed) return inputDigest(input) === digest ? undefined : { block: true, reason: CHANGED_AFTER_APPROVAL }
+      if (answer.timedOut) criticalTimeouts += 1
+      return { block: true, reason: criticalBlockReason(critical, answer.why) }
+    }
     const delegation = claudeDelegationDanger(name, event?.input ?? {}, ctx?.cwd)
     if (delegation.length && JSON.stringify(event?.input ?? {}).length > 20000) return { block: true, reason: 'The Claude Code delegation is too long to show in full for approval. Shorten the task, or use an Inkstone subagent.' }
     const mcpReasons = name.startsWith('mcp__') ? mcpCallDanger(name, toolAnnotations(pi, name)) : []
@@ -939,12 +1258,27 @@ export default function dangerGuardExtension(pi) {
       ...outside.map((target) => `写入项目之外的路径：${target}`)
     ]
     if (reasons.length === 0) return undefined
-    const approvedDigest = inputDigest(event?.input ?? {})
-    const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)], outside, typeof event?.toolCallId === 'string' ? event.toolCallId : '')
+    const unique = [...new Set(reasons)]
+    const approvedDigest = inputDigest(input)
+    const askedAt = Date.now()
+    const answer = await askHost(name, input, unique, outside, toolCallId)
     if (answer.allowed) {
-      if (inputDigest(event?.input ?? {}) === approvedDigest) return undefined
-      return { block: true, reason: CHANGED_AFTER_APPROVAL }
+      reviewStreak = 0
+      return inputDigest(input) === approvedDigest ? undefined : { block: true, reason: CHANGED_AFTER_APPROVAL }
     }
-    return { block: true, reason: `High-risk operation not confirmed by the user: ${reasons.join('; ')}. ${answer.why}. Do not retry it and do not work around the refusal by another route; tell the user why this one is needed, or ask which alternative they want.` }
+    if (!answer.timedOut) return { block: true, reason: `High-risk operation not confirmed by the user: ${unique.join('; ')}. ${answer.why}. Do not retry it and do not work around the refusal by another route; tell the user why this one is needed, or ask which alternative they want.` }
+    const verdict = await reviewAction(ctx, name, input, unique)
+    const allowed = verdict.decision === 'allow'
+    await reportReview({ toolCallId, tool: name, reasons: unique, allowed, reason: verdict.reason, askedAt })
+    if (allowed) {
+      reviewStreak = 0
+      return inputDigest(input) === approvedDigest ? undefined : { block: true, reason: CHANGED_AFTER_APPROVAL }
+    }
+    reviewStreak += 1
+    const reason = verdict.decision === 'deny' ? reviewDeniedReason(unique, verdict.reason) : reviewFailedReason(unique, verdict.reason)
+    if (reviewStreak < REVIEW_STREAK_LIMIT) return { block: true, reason }
+    reviewStreak = 0
+    stopRun(ctx)
+    return { block: true, reason: `${reason} ${REVIEW_STOP_NOTE}` }
   })
 }

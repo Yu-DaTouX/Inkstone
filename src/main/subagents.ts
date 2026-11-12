@@ -31,6 +31,8 @@ import { THINKING_LEVELS } from '../shared/thinking-levels'
 import { confirmRegisteredModel } from './subagents/registered-model'
 import { forkPiArgs, forkPrompt, sideQuestionPrompt, writeForkSession, type SubagentForkSource } from './subagent-fork'
 import { runArtifactPreview, type PreviewHtml } from './artifact-preview-command'
+import { dangerReviewOf } from './agent-commands/danger-confirm'
+import type { ModelReviewReceiptInput } from './approval-log'
 import {
   applyPatch,
   cleanupWorkspace as removeWorkspace,
@@ -188,7 +190,7 @@ interface Run extends SubagentRun {
 export interface SubagentApprovalOrigin { sessionId?: string; runId?: string; subagentId?: string }
 const READ_ONLY_HOST_COMMANDS = ['search.query', 'search.fetch', 'search.docs']
 
-export interface SubagentDangerAnswer { decision: 'allow' | 'deny' | 'no-answer'; feedback?: string }
+export interface SubagentDangerAnswer { decision: 'allow' | 'deny' | 'no-answer' | 'timeout'; feedback?: string }
 
 const NO_APPROVAL_ANSWER: SubagentDangerAnswer = { decision: 'no-answer' }
 
@@ -234,6 +236,7 @@ export function awaitApprovalAnswer(
 export interface SubagentContext {
   cwd: string
   parentSessionId?: string
+  parentSessionFile?: string
   parentRunId?: string
   parentGeneration?: number
   parentMessageId?: string
@@ -253,6 +256,7 @@ export interface SubagentOptions {
   thinkingLevel?: string
   modelPinned?: boolean
   parentSessionId?: string
+  parentSessionFile?: string
   parentRunId?: string
   parentGeneration?: number
   parentMessageId?: string
@@ -266,6 +270,7 @@ export interface SubagentOptions {
     signal?: AbortSignal
   ): Promise<boolean | SubagentDangerAnswer>
   dangerPrefs?(): Promise<{ mode: 'danger' | 'all'; outsideWrites: boolean; allowRoots: string[] }>
+  recordDangerReview?(review: ModelReviewReceiptInput, origin?: SubagentApprovalOrigin): void
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   pruneHistory?(): boolean | Promise<boolean>
   extensions?: string[]
@@ -307,7 +312,7 @@ export function subagentHostCommands(opts: {
   readOnlyHost?: SubagentOptions['runReadOnlyCommand']
   previewHtml?: PreviewHtml
 }): SubagentHostCommands {
-  const onlyCommands = ['danger.confirm', 'danger.prefs', ...(opts.readOnlyHost ? READ_ONLY_HOST_COMMANDS : []), ...(opts.previewHtml ? ['artifact.preview'] : [])]
+  const onlyCommands = ['danger.confirm', 'danger.prefs', 'danger.review', ...(opts.readOnlyHost ? READ_ONLY_HOST_COMMANDS : []), ...(opts.previewHtml ? ['artifact.preview'] : [])]
   return {
     onlyCommands,
     handle: async (command, params, cwd, signal, ownerId) => {
@@ -403,8 +408,8 @@ export class SubagentController {
   }
 
   setContext(context: SubagentContext): void {
-    const { cwd, parentSessionId, parentRunId, parentGeneration, parentMessageId, projectId } = context
-    this.opts = { ...this.opts, cwd, parentSessionId, parentRunId, parentGeneration, parentMessageId, projectId }
+    const { cwd, parentSessionId, parentSessionFile, parentRunId, parentGeneration, parentMessageId, projectId } = context
+    this.opts = { ...this.opts, cwd, parentSessionId, parentSessionFile, parentRunId, parentGeneration, parentMessageId, projectId }
   }
 
   adoptParentSession(input: {
@@ -899,7 +904,7 @@ export class SubagentController {
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
     const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension, thinkingLevel: ctx.thinkingLevel })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
-    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR, YAN_RUNNER_KIND: 'subagent', ...(isolation === 'controlled-cwd' ? { YAN_READ_ONLY_SUBAGENT: '1' } : {}) }, ctx.runReadOnlyCommand)
+    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR, YAN_RUNNER_KIND: 'subagent', ...(ctx.parentSessionFile ? { YAN_PARENT_SESSION_FILE: ctx.parentSessionFile } : {}), ...(isolation === 'controlled-cwd' ? { YAN_READ_ONLY_SUBAGENT: '1' } : {}) }, ctx.runReadOnlyCommand)
   }
 
   private async createForkRpc(ctx: SubagentOptions, id: string, fork: SubagentForkSource, sessionFile?: string): Promise<SubagentRpc> {
@@ -931,6 +936,11 @@ export class SubagentController {
           if (handled) return handled
           if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await ctx.dangerPrefs?.() ?? { mode: 'danger', outsideWrites: true, allowRoots: [] }) } }
           const origin = approvalOriginFor(this.runs.get(id), ctx, id)
+          if (command === 'danger.review') {
+            const review = dangerReviewOf(params)
+            if (review) ctx.recordDangerReview?.({ ...review, subagentId: id }, origin)
+            return { summary: { kind: 'danger-review', recorded: !!review } }
+          }
           const answer = ctx.confirmDanger && !signal?.aborted && !stopApprovals.signal.aborted
             ? await awaitApprovalAnswer(ctx.confirmDanger(params, cwd, origin, signal), [signal, stopApprovals.signal])
             : undefined

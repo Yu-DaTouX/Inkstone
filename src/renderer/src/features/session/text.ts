@@ -198,6 +198,8 @@ export type SessionTextKey =
   | 'approvalAllowedRemember'
   | 'approvalDenied'
   | 'approvalDeniedReason'
+  | 'approvalReviewAllowed'
+  | 'approvalReviewDenied'
   | 'approvalSummary'
   | 'processThinking1'
   | 'processThinking'
@@ -484,6 +486,8 @@ const ZH: Record<SessionTextKey, string> = {
   approvalAllowedRemember: '已允许并记住目录',
   approvalDenied: '已拒绝',
   approvalDeniedReason: '理由：{reason}',
+  approvalReviewAllowed: '你没回应，模型审阅后放行',
+  approvalReviewDenied: '你没回应，模型审阅后拦下',
   approvalSummary: '审批 {n} 次：允许 {ok} · 拒绝 {no}',
   processThinking1: '1 段思考',
   processThinking: '{n} 段思考',
@@ -771,6 +775,8 @@ const EN: Record<SessionTextKey, string> = {
   approvalAllowedRemember: 'Allowed, folder remembered',
   approvalDenied: 'Denied',
   approvalDeniedReason: 'Reason: {reason}',
+  approvalReviewAllowed: 'No answer; allowed after model review',
+  approvalReviewDenied: 'No answer; blocked after model review',
   approvalSummary: '{n} approvals: {ok} allowed · {no} denied',
   processThinking1: '1 thought',
   processThinking: '{n} thoughts',

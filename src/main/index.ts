@@ -132,7 +132,7 @@ import { createSubagentQuotaWatch } from './subagent-quota-watch'
 import { switchToSpareAccount } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
-import { APPROVAL_DETAIL_MAX, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
+import { APPROVAL_DETAIL_MAX, DANGER_CONFIRM_TIMEOUT_MS, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
 import { configureRemoteHost, cwdWithin, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, remoteInsight, remoteStopSubagent, remoteSetSessionFlag, remoteDeleteSession, remoteCompact, remoteBranches, remoteSwitchBranch, remoteSearch, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc, voiceTranscriber } from './ipc/voice-ipc'
 import { registerAndroidIpc } from './ipc/android-ipc'
@@ -160,7 +160,7 @@ import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { ApprovalBroker } from './approval-broker'
-import { approvalLog } from './approval-log'
+import { approvalLog, type ModelReviewReceiptInput } from './approval-log'
 import { approvalIdentityFrom } from './approval-ledger'
 import { refreshManagedGit } from './git-runtime'
 import { applyBundledSearchTools } from './search-tools'
@@ -473,24 +473,27 @@ const subagentService: SubagentService = new SubagentService({
     })
   },
   confirmDanger: async (params, cwd, origin) => {
-    if ((await getSettings()).permissionMode === 'all') return true
+    if ((await getSettings()).permissionMode === 'all' && params.critical !== true) return true
     const detail = String(params.detail ?? '')
     if (detail.length > APPROVAL_DETAIL_MAX) return false
-    const answer = await approvals.ask({
+    const answer = await approvals.askTimed({
       ...(origin?.sessionId ? { sessionId: origin.sessionId } : {}),
       ...(origin?.runId ? { runId: origin.runId } : {}),
       ...(origin?.subagentId ? { subagentId: origin.subagentId } : {}),
       ...(typeof params.toolCallId === 'string' && params.toolCallId ? { toolCallId: params.toolCallId.slice(0, 200) } : {}),
       kind: 'danger', tool: String(params.tool ?? 'tool').slice(0, 40),
+      onTimeout: params.critical === true ? 'deny' : 'review',
       title: '子 Agent 想执行一个难以撤销的操作',
       detail,
       reasons: Array.isArray(params.reasons) ? params.reasons.filter((item): item is string => typeof item === 'string').slice(0, 6).map(item => item.slice(0, 200)) : [],
       cwd, canRemember: false
-    })
+    }, DANGER_CONFIRM_TIMEOUT_MS)
+    if (answer === 'timeout') return { decision: 'timeout' as const }
     if (answer?.choice === 'once') return { decision: 'allow' as const }
     if (answer?.choice === 'deny') return { decision: 'deny' as const, ...(answer.feedback ? { feedback: answer.feedback } : {}) }
     return { decision: 'no-answer' as const }
   },
+  recordDangerReview: (review, origin) => recordDangerReview(origin?.sessionId, review),
   forkSource: (context) => {
     const parent = (context.parentRunId ? runners?.agentOf(context.parentRunId) : null) ??
       (context.parentSessionId ? runners?.agentForSession(context.parentSessionId) : null) ?? null
@@ -794,12 +797,22 @@ const approvals = new ApprovalBroker({
     push({ ch: 'approval-close', payload: { id } })
     refreshTaskbar()
   },
+  update: (request) => push({ ch: 'approval', payload: request }),
   publish: (snapshot) => push({ ch: 'approval-snapshot', payload: snapshot }),
   record: (request, answer) => {
     const update = approvalLog.record(request, answer)
     if (update) push({ ch: 'approval-log', payload: update })
   }
 })
+
+function recordDangerReview(sessionId: string | undefined, review: ModelReviewReceiptInput): void {
+  try {
+    const update = approvalLog.recordReview(sessionId, review)
+    if (update) push({ ch: 'approval-log', payload: update })
+  } catch (error) {
+    reportMainError('danger-review-record', error)
+  }
+}
 
 async function askLargeDownloadApproval(download: LargeDownload): Promise<boolean> {
   const settings = await getSettings()
@@ -2305,7 +2318,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           const isPermission = request.kind === 'permission'
           const isDelete = request.kind === 'delete'
           const isShell = request.tool === 'bash' || request.tool === 'powershell'
-          const choice = await approvals.ask({
+          const ask = (input: Parameters<typeof approvals.ask>[0]) => request.timeoutMs ? approvals.askTimed(input, request.timeoutMs, request.signal) : approvals.ask(input, request.signal)
+          const choice = await ask({
             runId: id, sessionId: runners?.agentOf(id)?.getState()?.sessionId,
             ...(request.owner ? { owner: request.owner } : {}),
             ...(request.toolCallId ? { toolCallId: request.toolCallId } : {}),
@@ -2320,8 +2334,10 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             reasons: request.reasons,
             cwd: request.cwd,
             ...(rememberDirs.length ? { rememberDirs } : {}),
-            canRemember: rememberDirs.length > 0
-          }, request.signal)
+            canRemember: rememberDirs.length > 0,
+            ...(request.timeoutMs && request.onTimeout ? { onTimeout: request.onTimeout } : {})
+          })
+          if (choice === 'timeout') return { decision: 'timeout' }
           if (choice?.choice === 'remember') {
             if (rememberDirs.length) {
               const current = await getSettings()
@@ -2332,6 +2348,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           const allowed = choice.choice === 'once' || choice.choice === 'remember'
           return choice.feedback ? { decision: allowed ? 'allow' : 'deny', feedback: choice.feedback } : { decision: allowed ? 'allow' : 'deny' }
         },
+        recordDangerReview: (sessionId, review) => recordDangerReview(sessionId, review),
         cancelApprovals: (owner) => {
           approvals.cancelRun(id, owner)
         },
@@ -2773,6 +2790,7 @@ function registerIpc(): void {
   handle('yan:lastAssistantText', async (expected?: ExpectedRuntimeOwner) => lastAssistantTextFor({ ac, runners: () => runners }, expected))
 
   handle('yan:approvalAnswer', async (id: string, choice: unknown, identity?: unknown, feedback?: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice, approvalIdentityFrom(identity), feedback) }))
+  handle('yan:approvalHold', async (id: string, identity?: unknown) => ({ ok: approvals.hold(String(id ?? ''), approvalIdentityFrom(identity)) }))
   handle('yan:approvalPending', async () => approvals.list())
   handle('yan:pendingUiRequests', async () => pendingUiReplay())
   handle('yan:resyncView', async (reason?: unknown) => resyncActiveView(reason))
@@ -3755,7 +3773,6 @@ function isKnownPackageProject(cwd: string): boolean {
 app.whenReady().then(async () => {
   await storageMoveReady
   try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { exitReason = 'data-root-lock'; reportMainError('data-root-writer', error); dialog.showErrorBox(pick('砚无法启动', 'Inkstone failed to start'), error instanceof Error ? error.message : String(error)); app.exit(1); return }
-  await (async () => { if ((await getSettings()).permissionMode === 'all') await patchSettings({ permissionMode: 'danger' }) })().catch((error) => reportMainError('permission-reset', error))
   refreshPackageProjectRoots(await getSettings())
   registerDeepLinkProtocol(app, { isPackaged: app.isPackaged, execPath: process.execPath, appPath: process.argv[1] })
   registerHtmlArtifactProtocol()

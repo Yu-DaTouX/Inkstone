@@ -247,6 +247,7 @@ const api: YanBridge = {
   setPiNativeSettings: (patch) => invoke<PiNativeSettingsResult>('yan:setPiNativeSettings', patch),
 
   answerApproval: (id, choice, identity, feedback) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice, identity, feedback),
+  holdApproval: (id, identity) => invoke<{ ok: boolean }>('yan:approvalHold', id, identity),
   pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
   pendingUiRequests: () => invoke<MainPush[]>('yan:pendingUiRequests'),
   resyncView: (reason) => invoke<{ ok: boolean }>('yan:resyncView', reason),

@@ -129,6 +129,7 @@ export const FAKE_TRIGGERS = {
   SUBAGENTS: '先用 yan subagent start 派 4 个假模型子代理（SUBSTORM；写成 SUBAGENTS<n> 时派 n 个；含 SUBBAD 时子代理的模型请求断网），再按 STORM 跑 60 步；含 THENREST 时派完只回一句话就结束本轮',
   'SUBSTORM-<名字>': '子代理压测：40 步，每步叙述加一次改文件（sub/）并输出 60 行的 bash',
   '<subagent-notification': '子代理完成回传只回一句，避免再次触发',
+  '<pending-action>': '守卫超时后的模型审阅请求：含 REVIEWALLOW 时回放行 JSON，否则回拦下 JSON',
   [SUGGESTION_MARKER]: '砚的「预测下一句」请求，固定回「继续下一步」'
 }
 
@@ -227,7 +228,8 @@ async function respond(res, text, done, requestNo) {
     await callTool('bash', { command: stormCommand(dir, tag, step + 1, lines), description: `storm ${tag} ${step + 1}` })
   }
   try {
-    if (text.includes(SUGGESTION_MARKER)) await streamText('继续下一步', 20, 5)
+    if (text.includes('<pending-action>')) await streamText(text.includes('REVIEWALLOW') ? '{"decision":"allow","reason":"用户明确要求了这个操作"}' : '{"decision":"deny","reason":"用户没有要求删除注册表项"}', 20, 5)
+    else if (text.includes(SUGGESTION_MARKER)) await streamText('继续下一步', 20, 5)
     else if (text.includes('<subagent-notification')) await streamText('好的，收到。', 20, 10)
     else if (/SUBRESUME=sub-[0-9a-f]+/.test(text)) {
       if (done < 1) await callTool('bash', { command: `yan subagent send --id ${/SUBRESUME=(sub-[0-9a-f]+)/.exec(text)[1]} --message "请继续补充一句结论"`, description: 'resume subagent' })

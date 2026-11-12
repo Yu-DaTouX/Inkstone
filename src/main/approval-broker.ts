@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  APPROVAL_HOLD_MAX_MS,
   isApprovalChoice,
   normalizeApprovalFeedback,
   type ApprovalAnswer,
@@ -12,8 +13,10 @@ import { ApprovalSessionGrants } from './approval-session-grants'
 
 export const APPROVAL_TIMEOUT_MS = 4 * 60 * 1000
 
+export type ApprovalOutcome = ApprovalAnswer | 'timeout' | null
+
 interface Waiter {
-  resolve: (answer: ApprovalAnswer | null) => void
+  resolve: (answer: ApprovalOutcome) => void
   timer: ReturnType<typeof setTimeout>
   signal?: AbortSignal
   onAbort?: () => void
@@ -23,6 +26,7 @@ export interface ApprovalBrokerDeps {
   canAsk(): boolean
   open(request: ApprovalRequest): void
   close(id: string): void
+  update?(request: ApprovalRequest): void
   publish?(snapshot: ApprovalSnapshot): void
   record?(request: ApprovalRequest, answer: ApprovalAnswer): void
 }
@@ -41,14 +45,40 @@ export class ApprovalBroker {
 
   constructor(private readonly deps: ApprovalBrokerDeps) {}
 
-  ask(input: ApprovalAskInput, signal?: AbortSignal): Promise<ApprovalAnswer | null> {
+  async ask(input: ApprovalAskInput, signal?: AbortSignal): Promise<ApprovalAnswer | null> {
+    const outcome = await this.open(input, signal)
+    return outcome === 'timeout' ? null : outcome
+  }
+
+  askTimed(input: ApprovalAskInput, timeoutMs: number, signal?: AbortSignal): Promise<ApprovalOutcome> {
+    return this.open(input, signal, timeoutMs)
+  }
+
+  hold(id: string, identity?: ApprovalAnswerIdentity): boolean {
+    const waiter = this.waiters.get(id)
+    const pending = this.ledger.get(id)
+    if (!waiter || !pending) return false
+    if (identity?.owner && !sameOwner(identity.owner, pending.owner)) return false
+    const held = this.ledger.hold(id, Date.now() + APPROVAL_HOLD_MAX_MS)
+    if (!held) return false
+    clearTimeout(waiter.timer)
+    waiter.timer = setTimeout(() => this.settle(id, 'timeout'), APPROVAL_HOLD_MAX_MS)
+    this.deps.update?.(held)
+    this.publish()
+    return true
+  }
+
+  private open(input: ApprovalAskInput, signal?: AbortSignal, timeoutMs?: number): Promise<ApprovalOutcome> {
     if (signal?.aborted || !this.deps.canAsk()) return Promise.resolve(null)
     const scope = scopeOf(input)
     if (this.ledger.isCurrent(scope, input.owner) && this.grants.allows(scope, input)) return Promise.resolve({ choice: 'once' })
-    const request = this.ledger.add({ ...input, id: randomUUID(), createdAt: Date.now() }, scope)
+    const createdAt = Date.now()
+    const request = this.ledger.add({ ...input, id: randomUUID(), createdAt, ...(timeoutMs ? { expiresAt: createdAt + timeoutMs } : {}) }, scope)
     if (!request) return Promise.resolve(null)
     return new Promise((resolve) => {
-      const timer = setTimeout(() => this.settle(request.id, null), APPROVAL_TIMEOUT_MS)
+      const timer = timeoutMs
+        ? setTimeout(() => this.settle(request.id, 'timeout'), timeoutMs)
+        : setTimeout(() => this.settle(request.id, null), APPROVAL_TIMEOUT_MS)
       const onAbort = signal ? () => { this.settle(request.id, null) } : undefined
       this.waiters.set(request.id, { resolve, timer, signal, onAbort })
       if (onAbort) signal?.addEventListener('abort', onAbort, { once: true })
@@ -109,7 +139,7 @@ export class ApprovalBroker {
     return settled
   }
 
-  private settle(id: string, answer: ApprovalAnswer | null): boolean {
+  private settle(id: string, answer: ApprovalOutcome): boolean {
     const waiter = this.waiters.get(id)
     if (!this.ledger.finish(id) || !waiter) return false
     this.waiters.delete(id)

@@ -54,11 +54,13 @@ try {
   check(!readonlyTools.gitInspectArgs('show', ['HEAD', '--', '--output=名字.ts']).error, '-- 之后的路径不按选项拦截')
   const { CapabilityServer } = await load('server', 'src/main/capability-server.ts')
   let confirmed = 0
+  let lastConfirm = null
   const prefs = { mode: 'danger', outsideWrites: true, allowRoots: [] }
   const server = new CapabilityServer({ opsDir: join(root, 'ops'), onlyCommands: ['danger.confirm', 'danger.prefs'], handlers: {
-    run: async (command) => {
+    run: async (command, params) => {
       if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...prefs } }
       confirmed++
+      lastConfirm = params
       return { summary: { allowed: true } }
     }
   } })
@@ -78,9 +80,10 @@ try {
     check((await invoke('git reset --hard HEAD'))?.block === true && confirmed === 1, '无效令牌不能绕过审批')
     process.env.YAN_CLI_TOKEN = endpoint.token
     prefs.mode = 'all'
-    check(await invoke('rm -rf /') === undefined && confirmed === 1, '原生档不拦截删除，也不请求审批；测试仅调用钩子，不执行命令')
+    check(await invoke('git reset --hard HEAD') === undefined && confirmed === 1, '不受限制档普通危险命令不拦截，也不请求审批')
+    check(await invoke('rm -rf /') === undefined && confirmed === 2 && lastConfirm?.critical === true, '不受限制档删除盘根仍请求审批并标为关键位置；测试仅调用钩子，不执行命令')
     const response = await fetch(endpoint.url, { method: 'POST', headers: { authorization: `Bearer ${endpoint.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ apiVersion: 1, command: 'subagent.start', params: {}, sessionId: 'child-1', projectId: 'project-1' }) })
-    check((await response.json()).ok === false && confirmed === 1, '子审批令牌不能调用派活等其他宿主能力')
+    check((await response.json()).ok === false && confirmed === 2, '子审批令牌不能调用派活等其他宿主能力')
   } finally { server.stop() }
   console.log(`PASS: light client ${checks} checks; no credentials or model calls`)
 } finally {

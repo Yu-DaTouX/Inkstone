@@ -63,7 +63,7 @@ try {
     {
       const host = dangerHost({ mode: 'all' })
       const result = await mod.runDangerConfirmCommand(host, { tool: 'bash', detail: 'rm -rf x' })
-      ok(result.summary.allowed === true && result.summary.decision === 'auto' && host.asked.length === 0, '「不受限制」档不弹审批')
+      ok(result.summary.allowed === true && result.summary.decision === 'auto' && host.asked.length === 0, '「不受限制」档普通危险操作不弹审批')
     }
 
     {
@@ -88,6 +88,28 @@ try {
       const host = dangerHost({ answer: null })
       const result = await mod.runDangerConfirmCommand(host, { detail: 'write' })
       ok(result.summary.tool === 'tool' && result.summary.decision === 'no-answer' && result.summary.allowed === false, '没有审批通道时按未回答处理')
+    }
+
+    {
+      const host = dangerHost({ mode: 'all', answer: { decision: 'timeout' } })
+      const result = await mod.runDangerConfirmCommand(host, { tool: 'bash', detail: 'rm -rf ~', reasons: ['删除关键位置'], critical: true })
+      const request = host.asked[0]
+      ok(request?.timeoutMs === 60_000 && request.onTimeout === 'deny', '「不受限制」档关键位置仍弹审批，1 分钟超时后拦下')
+      ok(result.summary.allowed === false && result.summary.decision === 'timeout', '超时结果原样带回')
+    }
+
+    {
+      const host = dangerHost()
+      await mod.runDangerConfirmCommand(host, { tool: 'bash', detail: 'git push -f' })
+      await mod.runDangerConfirmCommand(host, { tool: 'terminal', detail: 'git push -f' })
+      ok(host.asked[0].onTimeout === 'review' && host.asked[1].onTimeout === 'deny', '审批档守卫超时交模型审阅，终端超时直接拦下')
+    }
+
+    {
+      const recorded = []
+      const result = mod.runDangerReviewCommand({ recordDangerReview: (review) => recorded.push(review) }, { toolCallId: 'call-9', tool: 'bash', reasons: ['Git 强制推送'], allowed: true, reason: ' 用户要求强推 ', askedAt: 5 })
+      ok(result.summary.recorded === true && recorded[0]?.title === 'Git 强制推送' && recorded[0].allowed === true && recorded[0].reason === '用户要求强推' && recorded[0].askedAt === 5, '模型审阅结果交宿主留痕')
+      ok(mod.runDangerReviewCommand({ recordDangerReview: (review) => recorded.push(review) }, { allowed: true }).summary.recorded === false && recorded.length === 1, '缺少工具调用 id 时不留痕')
     }
 
     {

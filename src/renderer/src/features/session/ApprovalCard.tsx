@@ -92,6 +92,14 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const batchable = current ? approvals.filter((item) => item.id === current.id || !requiresApprovalReadGate(item)) : []
   const deferred = useTypingDeferredFocus(cardRef, active ? current?.id : null, approvalFocusTarget, false)
   const now = useTicker(active && !!current?.createdAt)
+  const heldRef = useRef<string | null>(null)
+
+  const holdClock = useCallback((): void => {
+    const request = current
+    if (!request || request.expiresAt === undefined || request.held || heldRef.current === request.id) return
+    heldRef.current = request.id
+    void window.yan.holdApproval(request.id, request.owner ? { owner: request.owner } : undefined).catch(() => undefined)
+  }, [current])
 
   const answer = useCallback(
     (choice: ApprovalChoice, reason?: string): void => {
@@ -166,6 +174,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   }, [active, answer])
 
   const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    holdClock()
     const native = event.nativeEvent
     if (event.ctrlKey || event.metaKey) return
     if (isEditableElement(event.target as Element)) return
@@ -233,7 +242,11 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
 
   const risky = current.kind === 'danger' || current.kind === 'outside' || current.kind === 'delete'
   const rememberLabel = current.kind === 'outside' ? t('approval.rememberDirs') : ''
-  const waited = current.createdAt ? formatCountdown(Math.max(0, now - current.createdAt)) : ''
+  const timed = current.expiresAt !== undefined && !current.held
+  const waited = !timed && !current.held && current.createdAt ? formatCountdown(Math.max(0, now - current.createdAt)) : ''
+  const clock = current.held
+    ? t('approval.held')
+    : timed ? t(current.onTimeout === 'deny' ? 'approval.countdownDeny' : 'approval.countdownReview', { time: formatCountdown(Math.max(0, (current.expiresAt ?? now) - now)) }) : ''
   const showSource = !isCurrent || !!current.subagentId
   const lang = zh ? 'zh-CN' : 'en-US'
   const headline = localizeApprovalText(approvalHeadline(current), lang)
@@ -260,12 +273,19 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
       data-armed={armed ? '1' : '0'}
       data-read={allowBlocked ? '0' : '1'}
       onKeyDownCapture={onKeyDownCapture}
+      onPointerDownCapture={holdClock}
+      onWheelCapture={holdClock}
     >
       <CardHead className="v3-approval-head">
         <CardStatus tone="ask" icon={<Icon name={risky ? 'alert' : 'shield'} size={14} />}>{tt('awaitApproval')}</CardStatus>
         <CardTitle className="v3-approval-title" title={headline === current.title ? undefined : `${current.title}\n${current.reasons[0]}`}>{headline}</CardTitle>
-        {waited || approvals.length > 1 ? (
+        {waited || clock || approvals.length > 1 ? (
           <CardMeta>
+            {clock ? (
+              <span className="v3-approval-wait" data-testid="v3-approval-countdown" data-held={current.held ? '1' : undefined} title={timed ? t('approval.countdownTip') : undefined}>
+                <Icon name="clock" size={12} /><span className="ui-num">{clock}</span>
+              </span>
+            ) : null}
             {waited ? <span className="v3-approval-wait"><Icon name="clock" size={12} /><span className="ui-num">{waited}</span></span> : null}
             {approvals.length > 1 ? <span data-testid="v3-approval-count">{t('approval.more', { n: approvals.length - 1 })}</span> : null}
           </CardMeta>

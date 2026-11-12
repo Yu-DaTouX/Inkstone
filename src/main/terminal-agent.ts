@@ -498,6 +498,8 @@ export interface DangerRules {
   detectDanger(toolName: string, input: { command: string }, cwd: string, options?: { base?: string | null }): string[]
   outsideWrites(toolName: string, input: { command: string }, cwd: string, prefs: unknown): string[]
   shellLocationAfter(command: string, base: string | null): string | null
+  criticalDanger?(toolName: string, input: { command: string }, cwd: string, options?: { base?: string | null }): string[]
+  criticalBlockReason?(reasons: string[], why: string): string
 }
 
 let dangerRules: Promise<DangerRules | null> | null = null
@@ -535,6 +537,7 @@ export interface TerminalConfirmRequest {
   detail: string
   reasons: string[]
   outsideDirs: string[]
+  critical?: boolean
 }
 
 export interface TerminalAgentHost {
@@ -887,6 +890,18 @@ export class TerminalAgentCommands {
       const root = this.ctx.cwd()
       const tracked = terminalLocations.get(stream.info.id)
       const base = tracked === undefined ? stream.info.cwd || root : tracked
+      if (prefs.mode === 'all' && rules?.criticalDanger) {
+        const tool = shellToolName(stream.info)
+        const reasons = rules.criticalDanger(tool, { command }, root, { base })
+        if (reasons.length > 0) {
+          const answer = await this.ctx.confirm({ detail: command, reasons, outsideDirs: [], critical: true })
+          this.ensureOpen(stream.info.id)
+          if (!answer.allowed) {
+            const why = answer.feedback ? `The user declined this operation and said: ${answer.feedback}` : 'The user did not approve it'
+            throw new CapabilityCommandError('terminal_blocked', rules.criticalBlockReason?.(reasons, why) ?? `Blocked: ${reasons.join('; ')}. ${why}.`)
+          }
+        }
+      }
       if (prefs.mode !== 'all') {
         if (!rules) throw new CapabilityCommandError('terminal_guard_unavailable', '危险命令检查不可用，暂不执行写入终端的命令')
         const tool = shellToolName(stream.info)

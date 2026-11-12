@@ -1830,6 +1830,7 @@ export interface YanBridge {
   setPiNativeSettings(patch: Partial<PiNativeSettings>): Promise<PiNativeSettingsResult>
 
   answerApproval(id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity, feedback?: string): Promise<{ ok: boolean }>
+  holdApproval(id: string, identity?: ApprovalAnswerIdentity): Promise<{ ok: boolean }>
   pendingApprovals(): Promise<ApprovalRequest[]>
   pendingUiRequests(): Promise<MainPush[]>
   resyncView(reason: string): Promise<{ ok: boolean }>

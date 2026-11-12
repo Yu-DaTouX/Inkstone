@@ -15,6 +15,16 @@ interface ApprovalLogDocument {
   sessions: Record<string, ApprovalReceipt[]>
 }
 
+export interface ModelReviewReceiptInput {
+  toolCallId: string
+  subagentId?: string
+  tool: string
+  title: string
+  allowed: boolean
+  reason?: string
+  askedAt?: number
+}
+
 export interface ApprovalLogUpdate {
   sessionId: string
   entries: ApprovalReceipt[]
@@ -49,7 +59,8 @@ function sanitizeEntry(raw: unknown): ApprovalReceipt | null {
   const kind = KINDS.find((item) => item === value.kind)
   if (!id || !toolCallId || at === null || !kind || !isApprovalChoice(value.choice)) return null
   const subagentId = text(value.subagentId)
-  const feedback = value.choice === 'deny' ? normalizeApprovalFeedback(value.feedback) : undefined
+  const reviewer = value.reviewer === 'model' ? 'model' : undefined
+  const feedback = value.choice === 'deny' || reviewer ? normalizeApprovalFeedback(value.feedback) : undefined
   return {
     id,
     toolCallId,
@@ -59,6 +70,7 @@ function sanitizeEntry(raw: unknown): ApprovalReceipt | null {
     title: text(value.title),
     choice: value.choice,
     ...(feedback ? { feedback } : {}),
+    ...(reviewer ? { reviewer } : {}),
     askedAt: time(value.askedAt) ?? at,
     at
   }
@@ -105,10 +117,29 @@ export class ApprovalLogStore {
   }
 
   record(request: ApprovalRequest, answer: ApprovalAnswer, at = Date.now()): ApprovalLogUpdate | null {
-    const sessionId = request.sessionId
-    if (!isSafeSessionId(sessionId)) return null
     const entry = approvalReceiptOf(request, answer, at)
-    if (!entry) return null
+    return entry ? this.append(request.sessionId, entry) : null
+  }
+
+  recordReview(sessionId: string | undefined, review: ModelReviewReceiptInput, at = Date.now()): ApprovalLogUpdate | null {
+    const entry = sanitizeEntry({
+      id: randomUUID(),
+      toolCallId: review.toolCallId,
+      subagentId: review.subagentId,
+      kind: 'danger',
+      tool: review.tool,
+      title: review.title,
+      choice: review.allowed ? 'once' : 'deny',
+      feedback: review.reason,
+      reviewer: 'model',
+      askedAt: review.askedAt ?? at,
+      at
+    })
+    return entry ? this.append(sessionId, entry) : null
+  }
+
+  private append(sessionId: string | undefined, entry: ApprovalReceipt): ApprovalLogUpdate | null {
+    if (!isSafeSessionId(sessionId)) return null
     const doc = this.read()
     const list = (doc.sessions[sessionId] ?? []).filter((item) => item.id !== entry.id)
     const entries = [...list, entry].slice(-PER_SESSION_LIMIT)

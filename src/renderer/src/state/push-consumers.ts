@@ -298,6 +298,7 @@ export function consumeTaskStatePush(m: MainPush, _s: Store, ctx: PushContext): 
       break
     case 'approval':
       if (!_s.approvals.some((item) => item.id === m.payload.id)) set({ approvals: [..._s.approvals, m.payload] })
+      else set({ approvals: _s.approvals.map((item) => (item.id === m.payload.id ? m.payload : item)) })
       break
     case 'git-install':
       set({ gitInstall: m.payload })

@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 import { GUARD_TOOLS } from './fixtures/mcp-guard-server.mjs'
 
@@ -176,7 +177,7 @@ await writeFile(join(PI_DIR, 'mcp.json'), JSON.stringify({
   }
 }))
 await copyFile(resolve('scripts/fixtures/mcp-guard-probe.mjs'), join(EXT_DIR, '0-mcp-guard-probe.js'))
-await copyFile(resolve('resources/pi-extensions/danger-guard.js'), join(EXT_DIR, '9-danger-guard.js'))
+await writeFile(join(EXT_DIR, '9-danger-guard.js'), `export { default } from ${JSON.stringify(pathToFileURL(resolve('resources/pi-extensions/danger-guard.js')).href)}\n`)
 
 function startPi() {
   const child = spawn(process.execPath, [CLI, '--mode', 'rpc', '--session-dir', SESSIONS_DIR], {

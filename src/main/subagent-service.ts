@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { findGitRoot, hasGitCommit } from './subagent-isolation'
 import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer, type SubagentQuotaWatch } from './subagents'
+import type { ModelReviewReceiptInput } from './approval-log'
 import { dangerGuardPrefs, getSettings } from './settings'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
 import type { SubagentCommandContext, SubagentCommandHost } from './agent'
@@ -112,6 +113,7 @@ export interface SubagentServiceDeps {
     origin?: SubagentApprovalOrigin,
     signal?: AbortSignal
   ): Promise<boolean | SubagentDangerAnswer>
+  recordDangerReview?(review: ModelReviewReceiptInput, origin?: SubagentApprovalOrigin): void
   forkSource?(context: SubagentCommandContext): SubagentForkSource | string
   quotaWatch?: SubagentQuotaWatch
   onChange(run: SubagentRun): void
@@ -178,6 +180,7 @@ export class SubagentService {
       ...(this.deps.previewHtml ? { previewHtml: this.deps.previewHtml } : {}),
       confirmDanger: (params, cwd, origin, signal) => this.deps.confirmDanger?.(params, cwd, origin, signal) ?? Promise.resolve(false),
       dangerPrefs: () => dangerGuardPrefs(),
+      recordDangerReview: (review, origin) => this.deps.recordDangerReview?.(review, origin),
       ...(this.deps.resolveModelApi ? { resolveModelApi: (label, origin) => this.deps.resolveModelApi!(label, origin) } : {}),
       ...(this.deps.quotaWatch ? { quotaWatch: this.deps.quotaWatch } : {}),
       onChange: (run) => this.deps.onChange(run),
