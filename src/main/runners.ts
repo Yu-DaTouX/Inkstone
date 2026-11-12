@@ -141,6 +141,10 @@ export class RunnerRegistry {
   private admissionCounter = 0
   private admissions = new Map<string, ExecuteAdmissionClaim>()
   private launchSignatures = new WeakMap<AgentController, string>()
+  private mutating = new Map<string, number>()
+  private selectSeq = 0
+  private runningSelectSeq: number | undefined
+  private activationFloor = 0
 
   private spawnAgent(id: string, cwd: string, generation: number): AgentController {
     const signature = this.opts.launchSignature?.()
@@ -261,7 +265,8 @@ export class RunnerRegistry {
     }
   }
 
-  private activateRunner(id: string): void {
+  private activateRunner(id: string, latest = false): void {
+    if (!latest && this.runningSelectSeq !== undefined && this.runningSelectSeq < this.activationFloor) return
     if (this.activeId && this.activeId !== id) this.noteActivity(this.activeId)
     this.activeId = id
   }
@@ -506,7 +511,43 @@ export class RunnerRegistry {
   }
 
   async select(target: SelectTarget): Promise<SelectResult> {
-    return this.serialize(() => this.selectNow(target))
+    const seq = ++this.selectSeq
+    const fast = this.selectReadyHit(target, seq)
+    if (fast) return fast
+    return this.serialize(async () => {
+      this.runningSelectSeq = seq
+      try {
+        return await this.selectNow(target)
+      } finally {
+        this.runningSelectSeq = undefined
+      }
+    })
+  }
+
+  private selectReadyHit(target: SelectTarget, seq: number): SelectResult | null {
+    if (this.disposed || (!target.sessionId && !target.sessionFile)) return null
+    if (this.stoppingFor(target).length > 0) return null
+    const hit = (target.sessionId && this.findBySessionId(target.sessionId)) ||
+      (target.sessionFile ? this.findBySessionFile(target.sessionFile) : undefined)
+    if (!hit || this.mutating.has(hit.id) || hit.agent.getConn().state !== 'ready') return null
+    hit.lastActiveAt = this.now()
+    if (target.activate !== false) {
+      this.activationFloor = seq
+      this.activateRunner(hit.id, true)
+    }
+    this.opts.onChanged?.()
+    return this.result(hit, 'hit')
+  }
+
+  private async mutatingRunner<T>(id: string, work: () => Promise<T>): Promise<T> {
+    this.mutating.set(id, (this.mutating.get(id) ?? 0) + 1)
+    try {
+      return await work()
+    } finally {
+      const left = (this.mutating.get(id) ?? 1) - 1
+      if (left > 0) this.mutating.set(id, left)
+      else this.mutating.delete(id)
+    }
   }
 
   private hasAdmission(runnerId: string): boolean {
@@ -514,7 +555,11 @@ export class RunnerRegistry {
     return [...this.admissions.values()].some((claim) => claim.runId === runnerId)
   }
 
-  private async relaunch(idle: Runner, target: SelectTarget): Promise<SelectResult> {
+  private relaunch(idle: Runner, target: SelectTarget): Promise<SelectResult> {
+    return this.mutatingRunner(idle.id, () => this.relaunchNow(idle, target))
+  }
+
+  private async relaunchNow(idle: Runner, target: SelectTarget): Promise<SelectResult> {
     const previous = idle.agent
     const generation = nextGeneration()
     let replacement: AgentController | undefined
@@ -607,7 +652,14 @@ export class RunnerRegistry {
       if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd) || !agentAlive(idle.agent) || this.launchedWithStaleResources(idle.agent)) {
         return this.relaunch(idle, target)
       }
+      return this.mutatingRunner(idle.id, () => this.reuseIdle(idle, target))
+    }
 
+    return this.spawnRunner(target)
+  }
+
+  private async reuseIdle(idle: Runner, target: SelectTarget): Promise<SelectResult> {
+    {
       const oldProjectId = idle.projectId
       const oldSessionFile = idle.agent.getState()?.sessionFile
       const oldQueue = idle.agent.queueSnapshot?.() ?? { steering: [], followUp: [] }
@@ -656,7 +708,9 @@ export class RunnerRegistry {
       this.opts.onChanged?.()
       return this.result(idle, 'reuse')
     }
+  }
 
+  private async spawnRunner(target: SelectTarget): Promise<SelectResult> {
     if (this.runners.size >= this.limit) {
       if (target.preview) return { ok: true, deferred: true, deferredReason: 'limit', sessionId: target.sessionId }
       return {
@@ -686,7 +740,11 @@ export class RunnerRegistry {
     const previousActive = this.activeId
     this.runners.set(id, runner)
     if (target.activate !== false) this.activateRunner(id)
+    return this.mutatingRunner(id, () => this.startNewRunner(id, runner, target, previousActive))
+  }
 
+  private async startNewRunner(id: string, runner: Runner, target: SelectTarget, previousActive: string | null): Promise<SelectResult> {
+    const agent = runner.agent
     let failure: string | undefined
     try {
       const started = await agent.start()
@@ -721,7 +779,7 @@ export class RunnerRegistry {
 
   private async discardNewRunner(id: string, runner: Runner, previousActive: string | null): Promise<void> {
     this.runners.delete(id)
-    this.activeId = previousActive
+    if (this.activeId === id) this.activeId = previousActive
     try {
       await runner.agent.stop()
     } catch {
@@ -812,7 +870,7 @@ export class RunnerRegistry {
   restartOne(id: string, opts: { refresh?: boolean } = {}): Promise<SelectResult> {
     const current = this.restartOperations.get(id)
     if (current) return current
-    const operation = this.serialize(() => this.restartOneNow(id, opts))
+    const operation = this.serialize(() => this.mutatingRunner(id, () => this.restartOneNow(id, opts)))
     this.restartOperations.set(id, operation)
     void operation.finally(() => {
       if (this.restartOperations.get(id) === operation) this.restartOperations.delete(id)
