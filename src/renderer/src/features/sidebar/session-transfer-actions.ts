@@ -26,19 +26,3 @@ export async function exportSessionFromMenu(path: string, format: SessionExportF
     store.notify('error', describe(error))
   }
 }
-
-export async function importSessionFromMenu(t: TFunc): Promise<void> {
-  const store = useStore.getState()
-  try {
-    const result = await window.yan.sessionTransfer.importSession()
-    if (!result.ok || !result.path) {
-      if (!result.cancelled) store.notify('error', result.error || t('rail.transferFailed'))
-      return
-    }
-    await store.refreshSessions()
-    store.notify('info', t('rail.importDone'))
-    await store.switchSession(result.path)
-  } catch (error) {
-    store.notify('error', describe(error))
-  }
-}

@@ -43,6 +43,6 @@ export interface SessionImportResult {
 
 export interface SessionTransferBridge {
   exportSession(sessionPath?: string, options?: SessionExportOptions): Promise<SessionExportResult>
-  importSession(): Promise<SessionImportResult>
+  importSession(filePath?: string): Promise<SessionImportResult>
   sessionMarkdown(sessionPath: string, title?: string): Promise<SessionMarkdownResult>
 }

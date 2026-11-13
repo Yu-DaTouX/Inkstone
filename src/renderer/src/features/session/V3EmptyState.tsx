@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type JSX, type WheelEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type JSX, type WheelEvent } from 'react'
 import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -10,6 +10,7 @@ import { BareButton, Button, ListRow, MiniBars, SegmentedControl, type Segmented
 import { ProjectFavicon } from '../../t3/components/ProjectFavicon'
 import { compactNumber, useUsageStats } from '../usage/UsageOverview'
 import { NewSessionPicker } from '../sidebar/NewSessionPicker'
+import { importSessionBundles } from '../sidebar/session-import'
 import { shortProject } from '../sidebar/sidebar-model'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { homeBackgroundMode, useHomeBackground } from '../ambient/home-background'
@@ -26,11 +27,12 @@ interface HomeText {
   usage: string
   recentTokens: string
   meta: (sessions: string, days: string) => string
+  dropImport: string
 }
 
 const HOME_TEXT: Record<'zh-CN' | 'en-US', HomeText> = {
-  'zh-CN': { project: '在哪个项目里开始', allProjects: '全部项目', usage: '本机用量', recentTokens: '近 14 天', meta: (sessions, days) => `${sessions} 个会话 · 活跃 ${days} 天` },
-  'en-US': { project: 'Start in', allProjects: 'All projects', usage: 'Usage on this device', recentTokens: 'last 14 days', meta: (sessions, days) => `${sessions} sessions · ${days} active days` }
+  'zh-CN': { project: '在哪个项目里开始', allProjects: '全部项目', usage: '本机用量', recentTokens: '近 14 天', meta: (sessions, days) => `${sessions} 个会话 · 活跃 ${days} 天`, dropImport: '松开即可导入会话包' },
+  'en-US': { project: 'Start in', allProjects: 'All projects', usage: 'Usage on this device', recentTokens: 'last 14 days', meta: (sessions, days) => `${sessions} sessions · ${days} active days`, dropImport: 'Drop to import a session bundle' }
 }
 
 const normPath = (path: string): string => path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
@@ -210,6 +212,7 @@ export function V3EmptyState(): JSX.Element {
   const landscape = homeBackgroundMode(background, asciiBackgroundEnabled(settings)) === 'ascii'
   const awaiting = useMemo(() => awaitingRuns(runs), [runs])
   const [fresh] = useState(() => !homeSeen)
+  const [dropping, setDropping] = useState(false)
 
   useEffect(() => {
     homeSeen = true
@@ -220,13 +223,36 @@ export function V3EmptyState(): JSX.Element {
     return known || run.title || t('rail.untitled')
   }
 
+  const bundleDrag = (event: DragEvent<HTMLElement>): boolean =>
+    event.dataTransfer.types.includes('Files') && [...event.dataTransfer.items].some((item) => item.kind === 'file' && (item.type === 'application/json' || item.type === ''))
+  const onDragOver = (event: DragEvent<HTMLElement>): void => {
+    if (!bundleDrag(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setDropping(true)
+  }
+  const onDragLeave = (event: DragEvent<HTMLElement>): void => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false)
+  }
+  const onDrop = (event: DragEvent<HTMLElement>): void => {
+    setDropping(false)
+    const paths = [...event.dataTransfer.files]
+      .filter((file) => /\.json$/i.test(file.name))
+      .map((file) => window.yan.pathForFile(file))
+      .filter(Boolean)
+    if (!paths.length) return
+    event.preventDefault()
+    void importSessionBundles(t, paths)
+  }
+
   const openAwaiting = (run: RunSnapshot): void => {
     if (!run.sessionPath) return
     void useStore.getState().switchSession(run.sessionPath)
   }
 
   return (
-    <div className="v3-empty v3-empty-page" data-testid="v3-empty">
+    <div className="v3-empty v3-empty-page" data-testid="v3-empty" data-dropping={dropping || undefined} onDragEnter={onDragOver} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+      {dropping ? <div className="v3-empty-drop" role="status" data-testid="v3-empty-drop">{home.dropImport}</div> : null}
       <UsageTitle text={home} bars={!landscape} fresh={fresh} />
       <div className="v3-home-gap" aria-hidden="true" />
       {awaiting.length > 0 ? (

@@ -197,6 +197,17 @@ try {
     const content = await readFile(result.path, 'utf8')
     assert.match(content, new RegExp(`"type":"session","id":"${result.sessionId}"`))
   })
+  await check('拖入文件时按给定路径导入、不弹选择框；非 .json 一律拒绝', async () => {
+    let asked = 0
+    const dropped = await register({ pickImportFile: async () => (asked += 1, null) }).invoke('yan:sessionTransfer:import', exportedPath)
+    assert.equal(dropped.ok, true, dropped.error)
+    assert.equal(asked, 0)
+    assert.ok(dropped.path.startsWith(sessionsDir))
+    const rejected = await register({ pickImportFile: async () => (asked += 1, null) }).invoke('yan:sessionTransfer:import', sessionFile)
+    assert.equal(rejected.ok, false)
+    assert.ok(rejected.error.length > 0)
+    assert.equal(asked, 0)
+  })
   await check('导入取消时不抛异常', async () => {
     const result = await register({ pickImportFile: async () => null }).invoke('yan:sessionTransfer:import')
     assert.deepEqual(result, { ok: false, cancelled: true })

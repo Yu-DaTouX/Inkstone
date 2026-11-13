@@ -98,9 +98,12 @@ export function registerSessionTransferIpc(ipc: IpcRegistrar, deps: SessionTrans
     }
   })
 
-  handle('yan:sessionTransfer:import', async (): Promise<SessionImportResult> => {
+  handle('yan:sessionTransfer:import', async (filePath?: unknown): Promise<SessionImportResult> => {
     try {
-      const bundle = await deps.pickImportFile()
+      if (filePath !== undefined && (typeof filePath !== 'string' || !/\.json$/i.test(filePath))) {
+        return { ok: false, error: importFailed(pick('只能导入 .json 会话包', 'Only .json session bundles can be imported')) }
+      }
+      const bundle = typeof filePath === 'string' ? filePath : await deps.pickImportFile()
       if (!bundle) return { ok: false, cancelled: true }
       const result = await importSession(bundle, deps.sessionsDir)
       return result.ok ? { ok: true, path: result.path, sessionId: result.sessionId } : { ok: false, error: importFailed(result.error) }

@@ -7,15 +7,11 @@ import { deleteSessionWithUndo } from './session-undo-toast'
 import { v3Text } from '../../app/v3-text'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
-import { indexOfSession, useSplitView } from '../../state/split-view'
-import { closeSplitPane, openSessionInSplit } from '../split/split-actions'
-import { pickSnoozeOption } from './session-snooze'
-import { CustomSnoozeDialog } from './CustomSnoozeDialog'
 import { SessionMenuContent } from './SessionMenuContent'
-import { exportSessionFromMenu, importSessionFromMenu } from './session-transfer-actions'
+import { exportSessionFromMenu } from './session-transfer-actions'
 import { isSessionExportFormat } from '../../../../shared/session-transfer'
 
-export type MenuKey = `move:${string}` | `snooze:${string}` | `export:${string}` | 'import' | 'split' | 'split-below' | 'split-close' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
+export type MenuKey = `move:${string}` | `export:${string}` | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'unread'
 
 export interface SessionMenuProps {
   item: SessionSummary
@@ -33,8 +29,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, pointAnchor, open,
   const text = v3Text(lang)
   const t = useT()
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [customSnooze, setCustomSnooze] = useState(false)
-  const dialogOpen = confirmDelete || customSnooze
+  const dialogOpen = confirmDelete
   const [dialogReady, setDialogReady] = useState(false)
   useEffect(() => {
     setDialogReady(false)
@@ -78,40 +73,12 @@ export function SessionMenu({ item, title, isCurrent, anchor, pointAnchor, open,
       void store.moveSession(item.id, target === 'global' ? null : target)
       return
     }
-    if (key.startsWith('snooze:')) {
-      const preset = key.slice('snooze:'.length)
-      if (preset === 'custom') {
-        setCustomSnooze(true)
-        return
-      }
-      const option = pickSnoozeOption(preset, Date.now())
-      if (option) void leaveSessionAfter(item.path, () => store.setSessionSnoozed(item.id, option.until))
-      return
-    }
     if (key.startsWith('export:')) {
       const format = key.slice('export:'.length)
       if (isSessionExportFormat(format)) void exportSessionFromMenu(item.path, format, title, lang, t)
       return
     }
     switch (key) {
-      case 'import':
-        void importSessionFromMenu(t)
-        return
-      case 'split':
-        openSessionInSplit(item)
-        return
-      case 'split-below':
-        openSessionInSplit(item, 'below')
-        return
-      case 'split-close': {
-        const split = useSplitView.getState().split
-        const index = split ? indexOfSession(split.tiles, { sessionId: item.id, path: item.path }) : -1
-        if (index >= 0) closeSplitPane(index)
-        return
-      }
-      case 'wake':
-        void store.setSessionSnoozed(item.id, null)
-        return
       case 'unread':
         if (item.markedUnread) {
           markSessionRunsSeen({ id: item.id, path: item.path })
@@ -146,12 +113,6 @@ export function SessionMenu({ item, title, isCurrent, anchor, pointAnchor, open,
       <Popover triggerRef={pointAnchor ?? anchor} isOpen={open} onOpenChange={onOpenChange} placement={pointAnchor ? 'bottom start' : 'bottom end'} offset={pointAnchor ? 0 : 4}>
         {open ? <SessionMenuContent item={item} title={title} isCurrent={isCurrent} anchor={anchor} pointAnchor={pointAnchor} open={open} onOpenChange={onOpenChange} onRename={onRename} onAction={run} /> : null}
       </Popover>
-
-      <CustomSnoozeDialog
-        open={customSnooze && dialogReady}
-        onOpenChange={setCustomSnooze}
-        onSubmit={(until) => void leaveSessionAfter(item.path, () => useStore.getState().setSessionSnoozed(item.id, until))}
-      />
 
       <ModalOverlay isDismissable isOpen={confirmDelete && dialogReady} onOpenChange={setConfirmDelete}>
         <Modal>
