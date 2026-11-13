@@ -107,9 +107,9 @@ export async function runQueueImageTests(ok, { queueImagesToAttachments, mergeQu
   }
 
   {
-    const source = await import('node:fs/promises').then((fs) =>
-      fs.readFile(new URL('../src/renderer/src/state/store.ts', import.meta.url), 'utf8')
-    )
-    ok(source.includes("from './queue-images'") && !source.includes('function mergeQueueImages'), 'store 复用共享回填逻辑，没有第二份实现')
+    const fs = await import('node:fs/promises')
+    const source = await fs.readFile(new URL('../src/renderer/src/state/slices/queue-recovery.ts', import.meta.url), 'utf8')
+    const storeSource = await fs.readFile(new URL('../src/renderer/src/state/store.ts', import.meta.url), 'utf8')
+    ok(source.includes("from '../queue-images'") && !source.includes('function mergeQueueImages') && !storeSource.includes('function mergeQueueImages'), 'store 复用共享回填逻辑，没有第二份实现')
   }
 }

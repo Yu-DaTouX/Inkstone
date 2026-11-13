@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { registerProviderRequestStage } from './provider-request.js'
 
 export const FAST_SERVICE_TIER = 'priority'
 
@@ -28,10 +29,12 @@ export function withFastServiceTier(payload) {
   return { ...payload, service_tier: FAST_SERVICE_TIER }
 }
 
+export function fastModeRequest(payload, ctx) {
+  if (!fastModeSupported(ctx?.model)) return
+  if (!fastModeEnabled(readJson(join(yanDir(), 'desktop.json')))) return
+  return withFastServiceTier(payload)
+}
+
 export default function fastMode(pi) {
-  pi.on('before_provider_request', (event, ctx) => {
-    if (!fastModeSupported(ctx?.model)) return
-    if (!fastModeEnabled(readJson(join(yanDir(), 'desktop.json')))) return
-    return withFastServiceTier(event?.payload)
-  })
+  registerProviderRequestStage(pi, 'fast-mode', fastModeRequest)
 }

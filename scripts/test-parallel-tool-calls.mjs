@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { fakePiEvents } from './lib/fake-pi-events.mjs'
 import extension, { PARALLEL_REJECTED_RETRY_HINT, isParallelRejection } from '../resources/pi-extensions/parallel-tool-calls.js'
 
 const model = (extra = {}) => ({ api: 'openai-responses', provider: 'commandcode', baseUrl: 'https://api.commandcode.ai/provider/v1', id: 'deepseek/deepseek-v4.1-flash', ...extra })
@@ -6,7 +7,7 @@ const payload = (extra = {}) => ({ model: 'x', stream: true, input: [], tools: [
 
 function load() {
   const handlers = {}
-  extension({ on: (name, fn) => { handlers[name] = fn } })
+  extension({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents() })
   return {
     request: (ctxModel, body) => handlers.before_provider_request({ type: 'before_provider_request', payload: body }, { model: ctxModel }),
     end: (message) => handlers.message_end({ type: 'message_end', message })

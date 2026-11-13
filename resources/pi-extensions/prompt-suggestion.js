@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { appendInstruction } from './context-compact.js'
 import { isHostAutomatedMessage } from './host-message.js'
+import { registerProviderRequestStage } from './provider-request.js'
 
 export const SUGGESTION_STATUS_KEY = 'inkstone_prompt_suggestion'
 export const SUGGESTION_MARKER = '[Inkstone: predict the user\'s next message]'
@@ -283,7 +284,7 @@ export function createPromptSuggestion({ enabled = suggestionsEnabled } = {}) {
 
 export default function promptSuggestionExtension(pi) {
   const suggestion = createPromptSuggestion()
-  pi.on('before_provider_request', suggestion.onRequest)
+  registerProviderRequestStage(pi, 'prompt-suggestion', (payload, ctx) => suggestion.onRequest({ payload }, ctx))
   pi.on('before_agent_start', suggestion.onAgentStart)
   pi.on('agent_end', suggestion.onAgentEnd)
   for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree', 'session_shutdown']) {

@@ -64,144 +64,8 @@ export interface RpcResponse {
   error?: string
 }
 
-export interface Usage {
-  input: number
-  output: number
-  cacheRead: number
-  cacheWrite: number
-  totalTokens: number
-  cost: number
-  costEstimated?: boolean
-  costCatalog?: boolean
-  reasoning?: number
-}
-
-export type ResponseDetail = 'brief' | 'standard' | 'detailed' | 'unknown'
-
-export interface QuestionLogEntry {
-  id: string
-  question: string
-  options: string[]
-  answer: string | null
-  cancelled: boolean
-  at: number
-}
-
-export interface UIMessageImage {
-  mimeType: string
-  data: string
-  url?: string
-}
-
-export interface UIToolCall {
-  parentToolCallId?: string
-  historySummary?: boolean
-  incomplete?: boolean
-  nestedCallsIncomplete?: boolean
-  id: string
-  name: string
-  args: unknown
-  argsRaw?: string
-  status: 'pending' | 'running' | 'ok' | 'error'
-  cancelled?: boolean
-  denied?: boolean
-  approval?: ApprovalReceipt
-  serverSide?: boolean
-  output?: string
-  images?: UIMessageImage[]
-  details?: unknown
-  startedAt?: number
-  endedAt?: number
-}
-
-export type TurnTerminalReason = 'completed' | 'stopped' | 'failed' | 'interrupted'
-
-export interface TurnTimingMeta {
-  logicalTurnId: string
-  startedAt: number
-  endedAt: number
-  elapsedMs: number
-  terminalReason: TurnTerminalReason
-}
-
-export interface GenerationTiming {
-  durationMs: number
-  ttftMs?: number
-  decodeMs?: number
-  outputDecodeMs?: number
-  startEvent?: 'turn_start'
-}
-
-export interface UIMessage {
-  id: string
-  entryId?: string
-  role: 'user' | 'assistant' | 'bash' | 'note'
-  note?: { kind: 'custom' | 'branchSummary'; customType?: string }
-  question?: boolean
-  qa?: { question: string; answer?: string }[]
-  sourceCwd?: string
-  text: string
-  images?: UIMessageImage[]
-  thinking?: string
-  thinkingStartedAt?: number
-  thinkingMs?: number
-  thinkingLive?: boolean
-  thinkingEmpty?: boolean
-  toolCalls?: UIToolCall[]
-  artifacts?: AssistantArtifact[]
-  imageProgress?: ImageGenerationProgress[]
-  usage?: Usage
-  speed?: number
-  elapsedMs?: number
-  generationTiming?: GenerationTiming
-  turnTiming?: TurnTimingMeta
-  responseDetail?: ResponseDetail
-  model?: string
-  timestamp?: number
-  bash?: { command: string; exitCode: number | null; cancelled: boolean }
-  error?: string
-}
-
-export type ImageGenerationStage =
-  | 'queued'
-  | 'preparing'
-  | 'confirming'
-  | 'requesting'
-  | 'generating'
-  | 'saving'
-  | 'done'
-  | 'error'
-
-export interface ImageGenerationProgress {
-  id: string
-  stage: ImageGenerationStage
-  startedAt: number
-  updatedAt: number
-  endedAt?: number
-  provider?: string
-  model?: string
-  detail?: string
-}
-
-export interface AssistantArtifact {
-  id: string
-  sourceId: string
-  version?: number
-  sha256?: string
-  filename: string
-  path: string
-  sourcePath?: string
-  mediaType: string
-  kind: 'image' | 'svg' | 'code' | 'document' | 'binary'
-  bytes: number
-  createdAt: number
-  previewable: boolean
-  unavailable?: boolean
-  error?: string
-  provider?: string
-  model?: string
-  description?: string
-}
+export type { CapabilityStatus, SessionContextUsage, Usage, ResponseDetail, QuestionLogEntry, UIMessageImage, UIToolCall, TurnTerminalReason, TurnTimingMeta, GenerationTiming, UIMessage, ImageGenerationStage, ImageGenerationProgress, AssistantArtifact } from './ui-message'
+import type { CapabilityStatus, SessionContextUsage, QuestionLogEntry, UIToolCall, UIMessage, AssistantArtifact } from './ui-message'
 
 export type QueueMode = 'all' | 'one-at-a-time'
 
@@ -478,7 +342,6 @@ export interface ModelInfo {
   cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
 }
 
-export type CapabilityStatus = 'known' | 'unsupported' | 'unknown'
 
 export interface ModelCapabilitySnapshot {
   modelKey: string
@@ -520,14 +383,7 @@ export interface SessionStats {
   costEstimated?: number
   overheadUsage?: TokenCounts
   countedUntil?: number | null
-  contextUsage?: {
-    tokens: number | null
-    contextWindow: number
-    percent: number | null
-    modelKey?: string
-    availability?: CapabilityStatus
-    estimated?: boolean
-  }
+  contextUsage?: SessionContextUsage
   toolCalls: number
   userMessages: number
   assistantMessages: number
@@ -1163,94 +1019,9 @@ export type MessagePatch = Partial<UIMessage> & {
   thinkingDelta?: string
 }
 
-export type SubagentReviewState = 'none' | 'pending' | 'conflict' | 'merged' | 'discarded' | 'archived'
-
-export interface SubagentDiffSummary {
-  files: number
-  additions: number
-  deletions: number
-  paths: string[]
-  truncated: boolean
-  patchPath?: string
-}
-
-export interface SubagentUsageTotals {
-  input: number | null
-  output: number | null
-  cacheRead: number | null
-  cacheWrite: number | null
-  totalTokens: number | null
-  cost: number | null
-  reportedMessages: number
-}
-
-export type SubagentEndReason = 'completed' | 'timeout' | 'budget' | 'model-error' | 'startup' | 'exited' | 'failed' | 'stopped'
-
 export type { SubagentBrief, SubagentResult } from './subagent-brief'
-import type { SubagentBrief, SubagentResult } from './subagent-brief'
-
-export interface SubagentStopResult {
-  ok: boolean
-  error?: string
-  noop?: boolean
-  before?: SubagentRun['status']
-}
-
-export interface SubagentRun {
-  id: string
-  task: string
-  followUp?: string
-  quotaWait?: SubagentQuotaWait
-  cwd: string
-  parentSessionId?: string
-  parentRunId?: string
-  parentGeneration?: number
-  parentMessageId?: string
-  parentMessageIds?: string[]
-  projectId?: string
-  isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd'
-  fork?: boolean
-  sideQuestion?: boolean
-  resultPath?: string
-  savedOutputsPath?: string
-  pendingOutputs?: { path: string; files: string[] }
-  model?: string
-  modelPinned?: boolean
-  thinkingLevel?: string
-  contextUsage?: SessionStats['contextUsage']
-  status: 'starting' | 'running' | 'done' | 'error' | 'cancelled'
-  startedAt: number
-  endedAt?: number
-  latestActivity?: string
-  progressWarning?: string
-  transcript: UIMessage[]
-  transcriptOmitted?: boolean
-  diff?: SubagentDiffSummary
-  review: SubagentReviewState
-  error?: string
-  endReason?: SubagentEndReason
-  launchFailed?: boolean
-  dismissedAt?: number
-  toolCalls?: number
-  wrapUp?: { reason: 'timeout' | 'budget'; since: number }
-  recovery?: SubagentRecovery
-  usage?: SubagentUsageTotals
-  brief?: SubagentBrief
-  result?: SubagentResult
-  resumable?: { ok: boolean; reason?: string }
-}
-
-export interface SubagentQuotaWait {
-  since: number
-  resetAt?: number
-  accounts: number
-}
-
-export interface SubagentRecovery {
-  piRetries?: number
-  piMaxRetries?: number
-  resumed?: boolean
-}
+export type { SubagentReviewState, SubagentDiffSummary, SubagentUsageTotals, SubagentEndReason, SubagentStopResult, SubagentRun, SubagentQuotaWait, SubagentRecovery } from './subagent-run'
+import type { SubagentStopResult, SubagentRun } from './subagent-run'
 
 export interface SubagentBridge {
   list(): Promise<SubagentRun[]>
@@ -1503,7 +1274,7 @@ export interface CapabilitySearchCandidateView {
 
 export interface CapabilitySearchResultView {
   query: string
-  reason: 'unavailable' | 'no-candidates' | null
+  reason: 'unavailable' | 'no-candidates' | (string & {}) | null
   sources: CapabilitySearchSourceView[]
   candidates: CapabilitySearchCandidateView[]
 }
@@ -1568,7 +1339,7 @@ export interface SourceLinkView {
 }
 
 export interface SourcesBridge {
-  list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>
+  list(sessionId: string): Promise<{ ok: boolean; images: SourceRefView[]; dir: string; links?: SourceLinkView[]; error?: string }>
   addImage(req: { sessionId: string; name: string; mimeType: string; base64: string }): Promise<SourceRefView | null>
   verifyFiles(req: { sessionId: string; entries: { path: string; name?: string; addedAt?: number }[] }): Promise<SourceRefView[]>
   link(req: { sessionId: string; sourceIds: string[]; messageId: string }): Promise<{ ok: boolean; added: number; skipped: number; error?: string }>
@@ -2012,10 +1783,10 @@ export interface YanBridge {
     open(url?: string, sessionId?: string): Promise<BrowserState>
     observe(): Promise<BrowserObservation>
     network(): Promise<BrowserNetworkSnapshot>
-    newTab(url?: string, sessionId?: string): Promise<BrowserState>
-    switchTab(id: string, sessionId?: string): Promise<BrowserState>
-    closeTab(id?: string, sessionId?: string): Promise<BrowserState>
-    close(sessionId?: string): Promise<BrowserState>
+    newTab(url?: string, sessionId?: string): Promise<BrowserState | undefined>
+    switchTab(id: string, sessionId?: string): Promise<BrowserState | undefined>
+    closeTab(id?: string, sessionId?: string): Promise<BrowserState | undefined>
+    close(sessionId?: string): Promise<BrowserState | undefined>
     navigate(url: string, sessionId?: string): Promise<{ ok: boolean; error?: string }>
     siteAccess(sessionId: string, url: string): Promise<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>
     remoteImage(sessionId: string, url: string, prompt: boolean): Promise<RemoteImageResult>
@@ -2030,7 +1801,7 @@ export interface YanBridge {
     openExternal(url?: string, sessionId?: string): Promise<{ ok: boolean; error?: string }>
     releaseUserControl(sessionId?: string): Promise<BrowserState>
     openExternalChrome(url?: string): Promise<{ ok: boolean; error?: string }>
-    closeExternalChrome(): Promise<BrowserState>
+    closeExternalChrome(): Promise<BrowserState | undefined>
     syncLocalProfile(): Promise<ChromeSyncReport>
     syncPageStorage(): Promise<ChromeSyncReport>
     startLoginImport(): Promise<{ id: string }>

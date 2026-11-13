@@ -4,7 +4,7 @@ import type { HostTextNotice, TerminalNoticeState } from '../../src/shared/host-
 import { redactCommandSecrets } from '../../src/shared/command-redact'
 import { createTurnProjector } from '../../src/shared/turns'
 import { parseHostNotice } from '../../src/shared/host-notice'
-import type { UIMessage } from '../../src/shared/ipc'
+import type { UIMessage } from '../../src/shared/ui-message'
 
 export type ImageRef = { messageId: string; index: number }
 export type ToolStep = { id: string; name: string; failed: boolean; denied: boolean; running: boolean; awaiting: boolean; summary: string; output: string; nested: boolean; images: ImageRef[] }

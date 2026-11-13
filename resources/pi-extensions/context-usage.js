@@ -1,3 +1,5 @@
+import { registerProviderRequestStage } from './provider-request.js'
+
 export const CONTEXT_USAGE_STATUS_KEY = 'inkstone_context_usage'
 
 const MEMORY_SECTIONS = new Set(['project_context'])
@@ -212,8 +214,8 @@ export default function contextUsageExtension(pi) {
       return fallback
     }
   }
-  pi.on('before_provider_request', (event, ctx) => {
-    usage.onRequest(event?.payload, {
+  registerProviderRequestStage(pi, 'context-usage', (payload, ctx) => {
+    usage.onRequest(payload, {
       ui: read(() => ctx.ui, undefined),
       systemPrompt: read(() => ctx.getSystemPrompt(), ''),
       tools: read(() => pi.getAllTools(), [])

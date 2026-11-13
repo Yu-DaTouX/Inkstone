@@ -1,4 +1,4 @@
-import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, UIToolCall, Usage } from './ipc'
+import type { ImageGenerationProgress, ResponseDetail, TurnTerminalReason, TurnTimingMeta, UIMessage, UIToolCall, Usage } from './ui-message'
 import { parseHostNotice, type HostNotice } from './host-notice'
 
 export interface TurnSegment {

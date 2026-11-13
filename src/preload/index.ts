@@ -1,5 +1,3 @@
-import type { FileNameSearchResult } from '../shared/file-name-search'
-import type { GitRemoteIdentity } from '../shared/git'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { stripIpcErrorPrefix } from '../shared/ipc-error'
 import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
@@ -13,118 +11,24 @@ import {
   VIDEO_EXPORT_PROGRESS_CHANNEL,
   VIDEO_EXPORT_START_CHANNEL
 } from '../shared/ipc'
-import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
-import type { ArtifactLibraryResult, SaveInlineArtifactResult } from '../shared/artifact-library'
-import type { NativeMcpServerListView } from '../shared/mcp-native'
 import type {
-  McpAppViewAuditEntry,
-  McpAppViewDescriptor,
-  McpAppViewRefreshResult,
-  McpAppViewSnapshot
-} from '../shared/mcp-app-view'
-import type {
-  AppSettings,
   OAuthLoginEvent,
-  OAuthLoginResult,
-  ComputerUseStatusView,
-  ComputerUseActionResult,
-  StorageInfoView,
-  AttachmentPruneResult,
-  AttachmentUsage,
-  BuiltinCapabilityView,
-  CapabilitySettingsSnapshot,
-  PromptTemplateDirectories,
   ManagedSkillAction,
-  CapabilitySearchResultView,
-  CapabilityVerificationStatus,
-  PackageActionResultView,
-  PackageListingView,
-  SourceRefView,
-  SourceLinkView,
-  WebSearchOpView,
-  Attachment,
   AttentionNotify,
   BrowserBounds,
   BrowserViewport,
-  BrowserObservation,
-  BrowserNetworkSnapshot,
-  BrowserState,
-  TerminalAvailability,
-  TerminalProcessList,
-  TerminalSnapshot,
-  ChromeSyncReport,
-  BrowserLoginImportStatus,
-  AuthProviderInfo,
-  CustomProviderResult,
-  CustomProviderView,
-  ToolchainStatus,
-  GitRuntimeStatus,
-  CustomProviderDiscoverResult,
-  CodexLoginResult,
-  DirListing,
-  EditableFileView,
-  EditableFileWriteResult,
-  FileContentSearchResult,
   FileRequestContext,
-  FileSearchResult,
-  FilePreview,
-  PreviewBytes,
-  FileRefInfo,
-  FileTextResult,
-  ForkPoint,
-  GitActionExpected,
-  GitActionResult,
-  GitChangesResult,
-  GitDiffResult,
-  GitRefOption,
-  GitRepoState,
   MainPush,
-  ModelInfo,
-  WorktreeListing,
-  PeekResult,
-  PiInfo,
-  PathCompletionResult,
-  ProviderQuota,
-  RunnerStatus,
-  SessionLayoutEntry,
-  SessionState,
-  SessionStats,
-  SessionSearchResult,
-  UsageStatsResult,
-  SessionSummary,
-  SessionTodo,
-  SubagentRun,
-  SubagentStopResult,
-  SlashCommand,
-  UIMessage,
-  ApprovalRequest,
   YanBridge,
-  ZoomState,
-  CustomProviderTestResult,
-  LocalModelServer,
-  PiRuntimePrefs,
-  PiNativeSettingsResult,
-  RemoteImageResult,
   VideoExportProgress
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
-import type { ApiKeyPools } from '../shared/api-keys'
 import type { DesktopPetResult, DesktopPetStatus } from '../shared/desktop-pet'
-import type { RunSnapshot } from '../shared/runs'
-import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../shared/checkpoints'
-import type { RemoteAccessStatus } from '../shared/remote-protocol'
-import type { OfficeDocumentView } from '../shared/office'
-import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
-import type { AndroidDevice, AndroidFrame, AndroidSdkStatus } from '../shared/android-sdk'
-import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
-import type { ImageConfigView } from '../shared/image-config'
-import type { TranslateResult } from '../shared/translate'
-import type { AccountQuotaReport, CodexAccountView, ResetCreditResult } from '../shared/account-quota'
-import type { OAuthAccountPools } from '../shared/oauth-accounts'
+import type { AndroidFrame } from '../shared/android-sdk'
 import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
-import type { LocalServerSnapshot, LocalServerStopResult } from '../shared/local-servers'
-const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
-  (ipcRenderer.invoke(ch, ...args) as Promise<T>).catch((error: unknown) => {
+import type { IpcArgs, IpcChannel, IpcResult } from '../shared/ipc-channels'
+const invokeUnmapped = (ch: string, ...args: unknown[]): Promise<unknown> =>
+  ipcRenderer.invoke(ch, ...args).catch((error: unknown) => {
     if (error instanceof Error) {
       const message = stripIpcErrorPrefix(error.message)
       if (message !== error.message) throw new Error(message)
@@ -132,9 +36,10 @@ const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
     throw error
   })
 
-let rendererReadySent = false
+const invoke = <C extends IpcChannel>(ch: C, ...args: IpcArgs<C>): Promise<IpcResult<C>> =>
+  invokeUnmapped(ch, ...args) as Promise<IpcResult<C>>
 
-type Ok = { ok: boolean; error?: string }
+let rendererReadySent = false
 
 const api: YanBridge = {
   probeMode: process.argv.includes('--yan-isolated-probe'),
@@ -154,130 +59,113 @@ const api: YanBridge = {
   },
   isProbe: !!process.env.YAN_PROBE,
 
-  start: () =>
-    invoke<{ ok: boolean; error?: string; state?: SessionState }>('yan:start'),
-  send: (text, images, mode, expectedRuntime) => invoke<Ok>('yan:send', text, images, mode, expectedRuntime),
-  steer: (text, expectedRuntime) => invoke<Ok>('yan:steer', text, expectedRuntime),
-  followUp: (text, expectedRuntime) => invoke<Ok>('yan:followUp', text, expectedRuntime),
-  steerQueued: (queueId, expectedRuntime) => invoke<Ok>('yan:steerQueued', queueId, expectedRuntime),
-  removeQueued: (queueId, expectedRuntime) => invoke<Awaited<ReturnType<YanBridge['removeQueued']>>>('yan:removeQueued', queueId, expectedRuntime),
-  queueEdit: (next, expectedRuntime) => invoke<Awaited<ReturnType<YanBridge['queueEdit']>>>('yan:queueEdit', next, expectedRuntime),
-  abort: (expectedRuntime) => invoke<Awaited<ReturnType<YanBridge['abort']>>>('yan:abort', expectedRuntime),
-  newSession: (target) =>
-    invoke<Ok & { id?: string; runId?: string; sessionId?: string; generation?: number }>('yan:newSession', target),
-  switchSession: (path) => invoke<Ok>('yan:switchSession', path),
-  selectSession: (target) =>
-    invoke<{
-      ok: boolean
-      id?: string
-      runId?: string
-      sessionId?: string
-      generation?: number
-      via?: 'hit' | 'reuse' | 'new'
-      error?: string
-    }>(
-      'yan:selectSession',
-      target
-    ),
-  moveSession: (sessionId, projectId, cwd) =>
-    invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry; cwdChanged?: boolean }>('yan:moveSession', sessionId, projectId, cwd),
-  setSessionArchived: (sessionId, archived) => invoke<{ ok: boolean; error?: string }>('yan:setSessionArchived', sessionId, archived),
-  translateText: (text) => invoke<TranslateResult>('yan:translateText', text),
-  archivedCompression: (run) => invoke<{ supported: boolean; files: number; savedBytes: number }>('yan:archivedCompression', run),
-  setSessionPinned: (sessionId, pinned) => invoke<{ ok: boolean; error?: string }>('yan:setSessionPinned', sessionId, pinned),
-  setSessionSnoozed: (sessionId, until) => invoke<{ ok: boolean; error?: string }>('yan:setSessionSnoozed', sessionId, until),
-  setSessionMarkedUnread: (sessionId, marked) => invoke<{ ok: boolean; error?: string }>('yan:setSessionMarkedUnread', sessionId, marked),
-  setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),
-  nativeSession: (request) => invoke<Awaited<ReturnType<YanBridge['nativeSession']>>>('yan:nativeSession', request),
-  runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
-  stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
+  start: () => invoke('yan:start'),
+  send: (text, images, mode, expectedRuntime) => invoke('yan:send', text, images, mode, expectedRuntime),
+  steer: (text, expectedRuntime) => invoke('yan:steer', text, expectedRuntime),
+  followUp: (text, expectedRuntime) => invoke('yan:followUp', text, expectedRuntime),
+  steerQueued: (queueId, expectedRuntime) => invoke('yan:steerQueued', queueId, expectedRuntime),
+  removeQueued: (queueId, expectedRuntime) => invoke('yan:removeQueued', queueId, expectedRuntime),
+  queueEdit: (next, expectedRuntime) => invoke('yan:queueEdit', next, expectedRuntime),
+  abort: (expectedRuntime) => invoke('yan:abort', expectedRuntime),
+  newSession: (target) => invoke('yan:newSession', target),
+  switchSession: (path) => invoke('yan:switchSession', path),
+  selectSession: (target) => invoke('yan:selectSession', target),
+  moveSession: (sessionId, projectId, cwd) => invoke('yan:moveSession', sessionId, projectId, cwd),
+  setSessionArchived: (sessionId, archived) => invoke('yan:setSessionArchived', sessionId, archived),
+  translateText: (text) => invoke('yan:translateText', text),
+  archivedCompression: (run) => invoke('yan:archivedCompression', run),
+  setSessionPinned: (sessionId, pinned) => invoke('yan:setSessionPinned', sessionId, pinned),
+  setSessionSnoozed: (sessionId, until) => invoke('yan:setSessionSnoozed', sessionId, until),
+  setSessionMarkedUnread: (sessionId, marked) => invoke('yan:setSessionMarkedUnread', sessionId, marked),
+  setVisibleRunnerSessions: (sessions) => invoke('yan:setVisibleRunnerSessions', sessions),
+  nativeSession: (request) => invoke('yan:nativeSession', request),
+  runnerStatuses: () => invoke('yan:runnerStatuses'),
+  stopRunner: (id) => invoke('yan:stopRunner', id),
   runs: {
-    snapshot: () => invoke<{ revision: number; runs: RunSnapshot[] }>('yan:runs:snapshot'),
-    markSeen: (runId) => invoke<{ ok: boolean }>('yan:runs:markSeen', runId),
-    history: (query) => invoke<Awaited<ReturnType<YanBridge['runs']['history']>>>('yan:runs:history', query),
-    stop: (runId) => invoke<Awaited<ReturnType<YanBridge['runs']['stop']>>>('yan:runs:stop', runId)
+    snapshot: () => invoke('yan:runs:snapshot'),
+    markSeen: (runId) => invoke('yan:runs:markSeen', runId),
+    history: (query) => invoke('yan:runs:history', query),
+    stop: (runId) => invoke('yan:runs:stop', runId)
   },
   sessionTransfer: {
-    exportSession: (sessionPath) =>
-      invoke<Awaited<ReturnType<YanBridge['sessionTransfer']['exportSession']>>>('yan:sessionTransfer:export', sessionPath),
-    importSession: () => invoke<Awaited<ReturnType<YanBridge['sessionTransfer']['importSession']>>>('yan:sessionTransfer:import')
+    exportSession: (sessionPath) => invoke('yan:sessionTransfer:export', sessionPath),
+    importSession: () => invoke('yan:sessionTransfer:import')
   },
-  compact: (customInstructions, expected) => invoke<Ok>('yan:compact', customInstructions, expected),
-  compactionInfo: (cwd, contextWindow) => invoke<Awaited<ReturnType<YanBridge['compactionInfo']>>>('yan:compactionInfo', cwd, contextWindow),
-  renameSession: (name, expected) => invoke<Ok>('yan:renameSession', name, expected),
-  fork: (entryId, expected) => invoke<{ ok: boolean; error?: string; text?: string }>('yan:fork', entryId, expected),
-  clone: (expected) => invoke<Ok>('yan:clone', expected),
-  forkPoints: () => invoke<ForkPoint[]>('yan:forkPoints'),
-  exportHtml: (outputPath, expected) => invoke<{ ok: boolean; path?: string; error?: string }>('yan:exportHtml', outputPath, expected),
-  deleteSession: (path) => invoke<{ ok: boolean; undoToken?: string; error?: string }>('yan:deleteSession', path),
-  restoreSession: (undoToken) => invoke<Ok>('yan:restoreSession', undoToken),
-  listArtifactLibrary: () => invoke<ArtifactLibraryResult>('yan:listArtifactLibrary'),
-  saveInlineArtifact: (input) => invoke<SaveInlineArtifactResult>('yan:saveInlineArtifact', input),
+  compact: (customInstructions, expected) => invoke('yan:compact', customInstructions, expected),
+  compactionInfo: (cwd, contextWindow) => invoke('yan:compactionInfo', cwd, contextWindow),
+  renameSession: (name, expected) => invoke('yan:renameSession', name, expected),
+  fork: (entryId, expected) => invoke('yan:fork', entryId, expected),
+  clone: (expected) => invoke('yan:clone', expected),
+  forkPoints: () => invoke('yan:forkPoints'),
+  exportHtml: (outputPath, expected) => invoke('yan:exportHtml', outputPath, expected),
+  deleteSession: (path) => invoke('yan:deleteSession', path),
+  restoreSession: (undoToken) => invoke('yan:restoreSession', undoToken),
+  listArtifactLibrary: () => invoke('yan:listArtifactLibrary'),
+  saveInlineArtifact: (input) => invoke('yan:saveInlineArtifact', input),
 
-  runBash: (command, options, expectedRuntime) => invoke<Ok>('yan:runBash', command, options, expectedRuntime),
-  abortBash: (expected) => invoke<void>('yan:abortBash', expected),
+  runBash: (command, options, expectedRuntime) => invoke('yan:runBash', command, options, expectedRuntime),
+  abortBash: (expected) => invoke('yan:abortBash', expected),
 
-  listModels: () => invoke<ModelInfo[]>('yan:listModels'),
-  setModel: (provider, modelId, expected) => invoke<Ok>('yan:setModel', provider, modelId, expected),
-  setThinking: (level, expected) => invoke<Ok>('yan:setThinking', level, expected),
-  setUltracode: (on, expected) => invoke<Ok>('yan:setUltracode', on, expected),
-  setSessionMode: (change, expected) => invoke<Ok>('yan:setSessionMode', change, expected),
-  listThinkingLevels: () => invoke<string[]>('yan:listThinkingLevels'),
-  listCommands: () => invoke<SlashCommand[]>('yan:listCommands'),
+  listModels: () => invoke('yan:listModels'),
+  setModel: (provider, modelId, expected) => invoke('yan:setModel', provider, modelId, expected),
+  setThinking: (level, expected) => invoke('yan:setThinking', level, expected),
+  setUltracode: (on, expected) => invoke('yan:setUltracode', on, expected),
+  setSessionMode: (change, expected) => invoke('yan:setSessionMode', change, expected),
+  listThinkingLevels: () => invoke('yan:listThinkingLevels'),
+  listCommands: () => invoke('yan:listCommands'),
 
-  setAutoCompaction: (enabled) => invoke<Ok>('yan:setAutoCompaction', enabled),
-  setAutoRetry: (enabled) => invoke<Ok>('yan:setAutoRetry', enabled),
-  piRuntimePrefs: () => invoke<PiRuntimePrefs>('yan:piRuntimePrefs'),
-  piNativeSettings: () => invoke<PiNativeSettingsResult>('yan:piNativeSettings'),
-  setPiNativeSettings: (patch) => invoke<PiNativeSettingsResult>('yan:setPiNativeSettings', patch),
+  setAutoCompaction: (enabled) => invoke('yan:setAutoCompaction', enabled),
+  setAutoRetry: (enabled) => invoke('yan:setAutoRetry', enabled),
+  piRuntimePrefs: () => invoke('yan:piRuntimePrefs'),
+  piNativeSettings: () => invoke('yan:piNativeSettings'),
+  setPiNativeSettings: (patch) => invoke('yan:setPiNativeSettings', patch),
 
-  answerApproval: (id, choice, identity, feedback) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice, identity, feedback),
-  holdApproval: (id, identity) => invoke<{ ok: boolean }>('yan:approvalHold', id, identity),
-  pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
-  pendingUiRequests: () => invoke<MainPush[]>('yan:pendingUiRequests'),
-  resyncView: (reason) => invoke<{ ok: boolean }>('yan:resyncView', reason),
-  setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
-  setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
-  abortRetry: (expected) => invoke<Ok>('yan:abortRetry', expected),
-  cycleModel: (expected) => invoke<Ok>('yan:cycleModel', expected),
-  cycleModelBack: (expected) => invoke<Ok>('yan:cycleModelBack', expected),
-  cycleThinking: (expected) => invoke<Ok>('yan:cycleThinking', expected),
-  lastAssistantText: (expected) => invoke<string | null>('yan:lastAssistantText', expected),
-  piInfo: () => invoke<PiInfo>('yan:piInfo'),
-  redetectPi: () => invoke<PiInfo>('yan:redetectPi'),
+  answerApproval: (id, choice, identity, feedback) => invoke('yan:approvalAnswer', id, choice, identity, feedback),
+  holdApproval: (id, identity) => invoke('yan:approvalHold', id, identity),
+  pendingApprovals: () => invoke('yan:approvalPending'),
+  pendingUiRequests: () => invoke('yan:pendingUiRequests'),
+  resyncView: (reason) => invoke('yan:resyncView', reason),
+  setSteeringMode: (mode) => invoke('yan:setSteeringMode', mode),
+  setFollowUpMode: (mode) => invoke('yan:setFollowUpMode', mode),
+  abortRetry: (expected) => invoke('yan:abortRetry', expected),
+  cycleModel: (expected) => invoke('yan:cycleModel', expected),
+  cycleModelBack: (expected) => invoke('yan:cycleModelBack', expected),
+  cycleThinking: (expected) => invoke('yan:cycleThinking', expected),
+  lastAssistantText: (expected) => invoke('yan:lastAssistantText', expected),
+  piInfo: () => invoke('yan:piInfo'),
+  redetectPi: () => invoke('yan:redetectPi'),
 
-  getState: () => invoke<SessionState | null>('yan:getState'),
-  agentStatus: () =>
-    invoke<{ state: 'starting' | 'ready' | 'exited' | 'error'; detail: string }>('yan:agentStatus'),
-  getMessages: () => invoke<UIMessage[]>('yan:getMessages'),
-  getStats: () => invoke<SessionStats | null>('yan:getStats'),
-  cachedTitles: () => invoke<Record<string, string>>('yan:cachedTitles'),
-  manualTitles: () => invoke<Record<string, string>>('yan:manualTitles'),
-  setManualTitle: (sessionId, name) => invoke<{ ok: boolean; error?: string }>('yan:setManualTitle', sessionId, name),
-  regenerateTitle: (sessionId) => invoke<{ ok: boolean; title?: string; error?: string }>('yan:regenerateTitle', sessionId),
-  refreshTodos: () => invoke<SessionTodo[]>('yan:refreshTodos'),
-  listSessions: () => invoke<SessionSummary[]>('yan:listSessions'),
+  getState: () => invoke('yan:getState'),
+  agentStatus: () => invoke('yan:agentStatus'),
+  getMessages: () => invoke('yan:getMessages'),
+  getStats: () => invoke('yan:getStats'),
+  cachedTitles: () => invoke('yan:cachedTitles'),
+  manualTitles: () => invoke('yan:manualTitles'),
+  setManualTitle: (sessionId, name) => invoke('yan:setManualTitle', sessionId, name),
+  regenerateTitle: (sessionId) => invoke('yan:regenerateTitle', sessionId),
+  refreshTodos: () => invoke('yan:refreshTodos'),
+  listSessions: () => invoke('yan:listSessions'),
   checkpoints: {
-    list: () => invoke<CheckpointRecord[]>('yan:checkpoints:list'),
-    preview: (recordId) => invoke<CheckpointPreview>('yan:checkpoints:preview', recordId),
-    restore: (recordId) => invoke<CheckpointRestoreResult>('yan:checkpoints:restore', recordId),
-    undo: (undoId) => invoke<CheckpointRestoreResult>('yan:checkpoints:undo', undoId),
-    assess: (cwd) => invoke<WorkspaceFit | null>('yan:checkpoints:assess', cwd)
+    list: () => invoke('yan:checkpoints:list'),
+    preview: (recordId) => invoke('yan:checkpoints:preview', recordId),
+    restore: (recordId) => invoke('yan:checkpoints:restore', recordId),
+    undo: (undoId) => invoke('yan:checkpoints:undo', undoId),
+    assess: (cwd) => invoke('yan:checkpoints:assess', cwd)
   },
-  searchSessions: (query, limit) => invoke<SessionSearchResult>('yan:searchSessions', query, limit),
-  usageStats: (range) => invoke<UsageStatsResult>('yan:usageStats', range),
-  peekSession: (path, opts) => invoke<PeekResult | null>('yan:peekSession', path, opts),
+  searchSessions: (query, limit) => invoke('yan:searchSessions', query, limit),
+  usageStats: (range) => invoke('yan:usageStats', range),
+  peekSession: (path, opts) => invoke('yan:peekSession', path, opts),
 
-  authProviders: (deep) => invoke<AuthProviderInfo[]>('yan:authProviders', deep),
-  codexLogin: () => invoke<CodexLoginResult>('yan:codexLogin'),
-  codexLoginCancel: () => invoke<void>('yan:codexLoginCancel'),
-  oauthAccounts: () => invoke<OAuthAccountPools>('yan:oauthAccounts'),
-  oauthAccountSwitch: (provider, key) => invoke<Ok>('yan:oauthAccountSwitch', provider, key),
-  oauthAccountRemove: (provider, key) => invoke<Ok & { wasActive: boolean }>('yan:oauthAccountRemove', provider, key),
-  oauthAccountRename: (provider, key, label) => invoke<Ok>('yan:oauthAccountRename', provider, key, label),
-  oauthLogin: (provider) => invoke<OAuthLoginResult>('yan:oauthLogin', provider),
-  oauthLoginAnswer: (provider, promptId, value) => invoke<boolean>('yan:oauthLoginAnswer', provider, promptId, value),
-  oauthLoginCancel: (provider) => invoke<void>('yan:oauthLoginCancel', provider),
+  authProviders: (deep) => invoke('yan:authProviders', deep),
+  codexLogin: () => invoke('yan:codexLogin'),
+  codexLoginCancel: () => invoke('yan:codexLoginCancel'),
+  oauthAccounts: () => invoke('yan:oauthAccounts'),
+  oauthAccountSwitch: (provider, key) => invoke('yan:oauthAccountSwitch', provider, key),
+  oauthAccountRemove: (provider, key) => invoke('yan:oauthAccountRemove', provider, key),
+  oauthAccountRename: (provider, key, label) => invoke('yan:oauthAccountRename', provider, key, label),
+  oauthLogin: (provider) => invoke('yan:oauthLogin', provider),
+  oauthLoginAnswer: (provider, promptId, value) => invoke('yan:oauthLoginAnswer', provider, promptId, value),
+  oauthLoginCancel: (provider) => invoke('yan:oauthLoginCancel', provider),
   onOAuthEvent: (cb) => {
     const listener = (_e: Electron.IpcRendererEvent, ev: OAuthLoginEvent): void => cb(ev)
     ipcRenderer.on('yan:oauth', listener)
@@ -285,64 +173,63 @@ const api: YanBridge = {
       ipcRenderer.removeListener('yan:oauth', listener)
     }
   },
-  setApiKey: (provider, key) => invoke<Ok>('yan:setApiKey', provider, key),
-  clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
-  apiKeys: () => invoke<ApiKeyPools>('yan:apiKeys'),
-  addApiKey: (provider, key, label) => invoke<Ok>('yan:addApiKey', provider, key, label),
-  switchApiKey: (provider, id) => invoke<Ok>('yan:switchApiKey', provider, id),
-  renameApiKey: (provider, id, label) => invoke<Ok>('yan:renameApiKey', provider, id, label),
-  removeApiKey: (provider, id) => invoke<Ok & { wasActive: boolean }>('yan:removeApiKey', provider, id),
-  authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
-  accountQuota: () => invoke<AccountQuotaReport>('yan:accountQuota'),
-  accountResetCredit: (provider, key, creditId) => invoke<ResetCreditResult>('yan:accountResetCredit', provider, key, creditId),
-  codexAccounts: () => invoke<CodexAccountView[]>('yan:codexAccounts'),
-  codexAccountSwitch: (key) => invoke<Ok>('yan:codexAccountSwitch', key),
-  codexAccountRemove: (key) => invoke<Ok & { wasActive: boolean }>('yan:codexAccountRemove', key),
-  toolchainStatus: () => invoke<ToolchainStatus>('yan:toolchainStatus'),
-  gitRuntimeStatus: () => invoke<GitRuntimeStatus>('yan:gitRuntimeStatus'),
-  gitRuntimeInstall: () => invoke<{ ok: boolean; error?: string }>('yan:gitRuntimeInstall'),
-  gitRuntimeCancel: () => invoke<void>('yan:gitRuntimeCancel'),
-  gitRuntimeRemove: () => invoke<void>('yan:gitRuntimeRemove'),
-  customProviders: () => invoke<CustomProviderView[]>('yan:customProviders'),
+  setApiKey: (provider, key) => invoke('yan:setApiKey', provider, key),
+  clearAuth: (provider) => invoke('yan:clearAuth', provider),
+  apiKeys: () => invoke('yan:apiKeys'),
+  addApiKey: (provider, key, label) => invoke('yan:addApiKey', provider, key, label),
+  switchApiKey: (provider, id) => invoke('yan:switchApiKey', provider, id),
+  renameApiKey: (provider, id, label) => invoke('yan:renameApiKey', provider, id, label),
+  removeApiKey: (provider, id) => invoke('yan:removeApiKey', provider, id),
+  authFileInfo: () => invoke('yan:authFileInfo'),
+  accountQuota: () => invoke('yan:accountQuota'),
+  accountResetCredit: (provider, key, creditId) => invoke('yan:accountResetCredit', provider, key, creditId),
+  codexAccounts: () => invoke('yan:codexAccounts'),
+  codexAccountSwitch: (key) => invoke('yan:codexAccountSwitch', key),
+  codexAccountRemove: (key) => invoke('yan:codexAccountRemove', key),
+  toolchainStatus: () => invoke('yan:toolchainStatus'),
+  gitRuntimeStatus: () => invoke('yan:gitRuntimeStatus'),
+  gitRuntimeInstall: () => invoke('yan:gitRuntimeInstall'),
+  gitRuntimeCancel: () => invoke('yan:gitRuntimeCancel'),
+  gitRuntimeRemove: () => invoke('yan:gitRuntimeRemove'),
+  customProviders: () => invoke('yan:customProviders'),
   plugins: {
     action: (id, action) => invoke('yan:plugins:action', id, action),
     invoke: (id, action, params) => invoke('yan:plugins:invoke', id, action, params)
   },
   desktopPet: {
     status: async () => {
-      const result = await invoke<{ status?: DesktopPetStatus }>('yan:plugins:action', 'desktop-pet', 'status')
-      return result.status ?? { installed: false, running: false, version: '', autoStart: false, model: null, installDir: '', edges: { state: 'idle', done: 0, total: 0 }, log: [] }
+      const result = await invoke('yan:plugins:action', 'desktop-pet', 'status')
+      return (result.status as DesktopPetStatus | undefined) ?? { installed: false, running: false, version: '', autoStart: false, model: null, installDir: '', edges: { state: 'idle', done: 0, total: 0 }, log: [] }
     },
-    install: () => invoke<DesktopPetResult>('yan:plugins:action', 'desktop-pet', 'install'),
-    start: () => invoke<DesktopPetResult>('yan:plugins:invoke', 'desktop-pet', 'start'),
-    stop: () => invoke<DesktopPetResult>('yan:plugins:invoke', 'desktop-pet', 'stop'),
-    uninstall: () => invoke<DesktopPetResult>('yan:plugins:action', 'desktop-pet', 'remove'),
-    autoStart: (enabled) => invoke<DesktopPetResult>('yan:plugins:invoke', 'desktop-pet', 'autoStart', enabled),
-    setModel: (model) => invoke<DesktopPetResult>('yan:plugins:invoke', 'desktop-pet', 'setModel', model)
+    install: () => invoke('yan:plugins:action', 'desktop-pet', 'install') as Promise<DesktopPetResult>,
+    start: () => invoke('yan:plugins:invoke', 'desktop-pet', 'start') as Promise<DesktopPetResult>,
+    stop: () => invoke('yan:plugins:invoke', 'desktop-pet', 'stop') as Promise<DesktopPetResult>,
+    uninstall: () => invoke('yan:plugins:action', 'desktop-pet', 'remove') as Promise<DesktopPetResult>,
+    autoStart: (enabled) => invoke('yan:plugins:invoke', 'desktop-pet', 'autoStart', enabled) as Promise<DesktopPetResult>,
+    setModel: (model) => invoke('yan:plugins:invoke', 'desktop-pet', 'setModel', model) as Promise<DesktopPetResult>
   },
-  saveCustomProvider: (input) => invoke<CustomProviderResult>('yan:saveCustomProvider', input),
-  discoverCustomModels: (input) => invoke<CustomProviderDiscoverResult>('yan:discoverCustomModels', input),
-  detectLocalModels: () => invoke<LocalModelServer[]>('yan:detectLocalModels'),
-  removeCustomProvider: (id) => invoke<CustomProviderResult>('yan:removeCustomProvider', id),
-  testCustomProvider: (id, mode, modelId) =>
-    invoke<CustomProviderTestResult>('yan:testCustomProvider', id, mode, modelId),
-  completePath: (prefix, cwd, context) => invoke<PathCompletionResult>('yan:completePath', prefix, cwd, context),
+  saveCustomProvider: (input) => invoke('yan:saveCustomProvider', input),
+  discoverCustomModels: (input) => invoke('yan:discoverCustomModels', input),
+  detectLocalModels: () => invoke('yan:detectLocalModels'),
+  removeCustomProvider: (id) => invoke('yan:removeCustomProvider', id),
+  testCustomProvider: (id, mode, modelId) => invoke('yan:testCustomProvider', id, mode, modelId),
+  completePath: (prefix, cwd, context) => invoke('yan:completePath', prefix, cwd, context),
 
-  pickImages: () => invoke<Attachment[]>('yan:pickImages'),
-  pickFilePaths: () => invoke<string[]>('yan:pickFiles'),
+  pickImages: () => invoke('yan:pickImages'),
+  pickFilePaths: () => invoke('yan:pickFiles'),
 
   canvas: {
-    capture: (rect, scope) => invoke<Awaited<ReturnType<YanBridge['canvas']['capture']>>>(CANVAS_CAPTURE_CHANNEL, rect, scope)
+    capture: (rect, scope) => invoke(CANVAS_CAPTURE_CHANNEL, rect, scope)
   },
 
   htmlEdit: {
-    apply: (request) => invoke<Awaited<ReturnType<YanBridge['htmlEdit']['apply']>>>(HTML_EDIT_APPLY_CHANNEL, request),
-    undo: (request) => invoke<Awaited<ReturnType<YanBridge['htmlEdit']['undo']>>>(HTML_EDIT_UNDO_CHANNEL, request)
+    apply: (request) => invoke(HTML_EDIT_APPLY_CHANNEL, request),
+    undo: (request) => invoke(HTML_EDIT_UNDO_CHANNEL, request)
   },
 
   videoExport: {
-    start: (request) => invoke<Awaited<ReturnType<YanBridge['videoExport']['start']>>>(VIDEO_EXPORT_START_CHANNEL, request),
-    cancel: (id) => invoke<boolean>(VIDEO_EXPORT_CANCEL_CHANNEL, id),
+    start: (request) => invoke(VIDEO_EXPORT_START_CHANNEL, request),
+    cancel: (id) => invoke(VIDEO_EXPORT_CANCEL_CHANNEL, id),
     onProgress: (cb): (() => void) => {
       const listener = (_e: Electron.IpcRendererEvent, payload: VideoExportProgress): void => {
         if (payload) cb(payload)
@@ -355,55 +242,48 @@ const api: YanBridge = {
   },
 
   pathForFile: (file) => webUtils.getPathForFile(file),
-  describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
-  savePastedText: (text, name) => invoke<import('../shared/pasted-text').SavedPastedText>('yan:savePastedText', text, name),
-  quoteSession: (path, title) => invoke<import('../shared/ipc').SessionQuoteResult>('yan:quoteSession', path, title),
-  readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
-  readPreview: (p, line, cwd, lineEnd) => invoke<FilePreview>('yan:readPreview', p, line, cwd, lineEnd),
-  readPreviewBytes: (p, cwd) => invoke<PreviewBytes>('yan:readPreviewBytes', p, cwd),
-  prepareHtmlArtifact: (p, cwd) => invoke<HtmlArtifactPreviewResult>('yan:prepareHtmlArtifact', p, cwd),
-  releaseHtmlArtifact: (url) => invoke<void>('yan:releaseHtmlArtifact', url),
-  prepareHtmlWidget: (html) => invoke<HtmlArtifactPreviewResult>('yan:prepareHtmlWidget', html),
-  statPreview: (p, cwd) =>
-    invoke<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string; directory?: boolean }>(
-      'yan:statPreview',
-      p,
-      cwd
-    ),
+  describeFiles: (paths) => invoke('yan:describeFiles', paths),
+  savePastedText: (text, name) => invoke('yan:savePastedText', text, name),
+  quoteSession: (path, title) => invoke('yan:quoteSession', path, title),
+  readFileText: (p) => invoke('yan:readFileText', p),
+  readPreview: (p, line, cwd, lineEnd) => invoke('yan:readPreview', p, line, cwd, lineEnd),
+  readPreviewBytes: (p, cwd) => invoke('yan:readPreviewBytes', p, cwd),
+  prepareHtmlArtifact: (p, cwd) => invoke('yan:prepareHtmlArtifact', p, cwd),
+  releaseHtmlArtifact: (url) => invoke('yan:releaseHtmlArtifact', url),
+  prepareHtmlWidget: (html) => invoke('yan:prepareHtmlWidget', html),
+  statPreview: (p, cwd) => invoke('yan:statPreview', p, cwd),
 
   subagents: {
-    list: () => invoke<SubagentRun[]>('yan:subagents:list'),
-    get: (id) => invoke<SubagentRun | null>('yan:subagents:get', id),
-    start: (task, model, isolation, expectedRuntime) =>
-      invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model, isolation, expectedRuntime),
-    askSideQuestion: (question, expectedRuntime) =>
-      invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:askSideQuestion', question, expectedRuntime),
-    stop: (id) => invoke<SubagentStopResult>('yan:subagents:stop', id),
-    send: (id, message) => invoke<{ ok: boolean; error?: string; delivery?: 'queued' | 'started' | 'resumed' }>('yan:subagents:send', id, message),
-    dismiss: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:dismiss', id),
-    stopAll: () => invoke<void>('yan:subagents:stopAll'),
-    clearFinished: (ids) => invoke<void>('yan:subagents:clear', ids),
-    merge: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:merge', id),
-    discard: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:discard', id)
+    list: () => invoke('yan:subagents:list'),
+    get: (id) => invoke('yan:subagents:get', id),
+    start: (task, model, isolation, expectedRuntime) => invoke('yan:subagents:start', task, model, isolation, expectedRuntime),
+    askSideQuestion: (question, expectedRuntime) => invoke('yan:subagents:askSideQuestion', question, expectedRuntime),
+    stop: (id) => invoke('yan:subagents:stop', id),
+    send: (id, message) => invoke('yan:subagents:send', id, message),
+    dismiss: (id) => invoke('yan:subagents:dismiss', id),
+    stopAll: () => invoke('yan:subagents:stopAll'),
+    clearFinished: (ids) => invoke('yan:subagents:clear', ids),
+    merge: (id) => invoke('yan:subagents:merge', id),
+    discard: (id) => invoke('yan:subagents:discard', id)
   },
 
   workflows: {
-    list: () => invoke<import('../shared/workflows').WorkflowRunView[]>('yan:workflows:list'),
-    pause: (id) => invoke<{ ok: boolean; error?: string }>('yan:workflows:pause', id),
-    resume: (id) => invoke<{ ok: boolean; error?: string }>('yan:workflows:resume', id),
-    stop: (id) => invoke<{ ok: boolean; error?: string }>('yan:workflows:stop', id)
+    list: () => invoke('yan:workflows:list'),
+    pause: (id) => invoke('yan:workflows:pause', id),
+    resume: (id) => invoke('yan:workflows:resume', id),
+    stop: (id) => invoke('yan:workflows:stop', id)
   },
 
   sources: {
-    list: (sessionId) => invoke<{ ok: boolean; images: SourceRefView[]; dir: string; links: SourceLinkView[]; error?: string }>('yan:sources:list', sessionId),
-    addImage: (req) => invoke<SourceRefView | null>('yan:sources:addImage', req),
-    verifyFiles: (req) => invoke<SourceRefView[]>('yan:sources:verifyFiles', req),
+    list: (sessionId) => invoke('yan:sources:list', sessionId),
+    addImage: (req) => invoke('yan:sources:addImage', req),
+    verifyFiles: (req) => invoke('yan:sources:verifyFiles', req),
     link: (req) => invoke('yan:sources:link', req),
     removeImage: (req) => invoke('yan:sources:removeImage', req)
   },
   searchOps: {
-    read: (operationId) => invoke<WebSearchOpView>(SEARCH_OPS_READ_CHANNEL, operationId),
-    siteIcon: (url) => invoke<string | null>(SEARCH_SITE_ICON_CHANNEL, url)
+    read: (operationId) => invoke(SEARCH_OPS_READ_CHANNEL, operationId),
+    siteIcon: (url) => invoke(SEARCH_SITE_ICON_CHANNEL, url)
   },
   packages: {
     search: (query, offset) => invoke('yan:packages:search', query, offset),
@@ -413,216 +293,200 @@ const api: YanBridge = {
     minecraft: (action) => invoke('yan:packages:minecraft', action),
     codegraphStatus: (cwd) => invoke('yan:packages:codegraphStatus', cwd),
     codegraphIndex: (cwd) => invoke('yan:packages:codegraphIndex', cwd),
-    anthropicEnv: () => invoke<string[]>('yan:packages:anthropicEnv'),
-    list: (cwd) => invoke<PackageListingView>('yan:packages:list', cwd),
-    action: (req) => invoke<PackageActionResultView>('yan:packages:action', req)
+    anthropicEnv: () => invoke('yan:packages:anthropicEnv'),
+    list: (cwd) => invoke('yan:packages:list', cwd),
+    action: (req) => invoke('yan:packages:action', req)
   },
   builtinCapabilities: {
-    list: () => invoke<BuiltinCapabilityView[]>('yan:capabilities:builtin')
+    list: () => invoke('yan:capabilities:builtin')
   },
   image: {
-    config: () => invoke<ImageConfigView>('yan:image:config'),
-    update: (patch) => invoke<{ ok: boolean; error?: string }>('yan:image:update', patch),
-    setKey: (service, key) => invoke<{ ok: boolean; error?: string }>('yan:image:setKey', service, key),
-    clearKey: (service) => invoke<{ ok: boolean; error?: string }>('yan:image:clearKey', service)
+    config: () => invoke('yan:image:config'),
+    update: (patch) => invoke('yan:image:update', patch),
+    setKey: (service, key) => invoke('yan:image:setKey', service, key),
+    clearKey: (service) => invoke('yan:image:clearKey', service)
   },
   search: {
-    doctor: () => invoke<SearchBackendStatus>('yan:search:doctor'),
-    apiConfig: () => invoke<SearchApiConfigView>('yan:search:apiConfig'),
-    setApiKey: (provider, key) => invoke<{ ok: boolean; error?: string }>('yan:search:setApiKey', provider, key),
-    clearApiKey: (provider) => invoke<{ ok: boolean; error?: string }>('yan:search:clearApiKey', provider),
-    setApiHintDismissed: (dismissed) => invoke<void>('yan:search:setApiHintDismissed', dismissed)
+    doctor: () => invoke('yan:search:doctor'),
+    apiConfig: () => invoke('yan:search:apiConfig'),
+    setApiKey: (provider, key) => invoke('yan:search:setApiKey', provider, key),
+    clearApiKey: (provider) => invoke('yan:search:clearApiKey', provider),
+    setApiHintDismissed: (dismissed) => invoke('yan:search:setApiHintDismissed', dismissed)
   },
   computerUse: {
-    status: () => invoke<ComputerUseStatusView>('yan:computerUse:status'),
-    installUv: () => invoke<ComputerUseActionResult>('yan:computerUse:installUv'),
-    resolveInteraction: () => invoke<ComputerUseStatusView>('yan:computerUse:resolveInteraction'),
-    set: (enabled: boolean) => invoke<ComputerUseActionResult>('yan:computerUse:set', enabled)
+    status: () => invoke('yan:computerUse:status'),
+    installUv: () => invoke('yan:computerUse:installUv'),
+    resolveInteraction: () => invoke('yan:computerUse:resolveInteraction'),
+    set: (enabled: boolean) => invoke('yan:computerUse:set', enabled)
   },
   capabilities: {
-    snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),
-    promptDirectories: () => invoke<PromptTemplateDirectories>('yan:capabilities:promptDirectories'),
-    openPromptDirectory: (path: string) => invoke<{ ok: boolean; error?: string }>('yan:capabilities:openPromptDirectory', path),
-    createPromptTemplate: (input: { name: string; content: string }) =>
-      invoke<{ ok: boolean; path?: string; error?: string }>('yan:capabilities:createPromptTemplate', input),
-    discover: (queryText: string) => invoke<CapabilitySearchResultView>('yan:capabilities:discover', queryText),
-    sessionSkill: (action: 'promote' | 'remove', name: string) =>
-      invoke<{ ok: boolean; error?: string }>('yan:capabilities:sessionSkill', { action, name }),
-    manageSkill: (action: ManagedSkillAction, scope: 'yan' | 'pi', dir: string) =>
-      invoke<{ ok: boolean; error?: string }>('yan:capabilities:manageSkill', { action, scope, dir }),
-    revealSkill: (location: string) => invoke<{ ok: boolean; error?: string }>('yan:capabilities:revealSkill', location),
-    verify: (serverId: string) => invoke<{ ok: boolean; operationId?: string; error?: string }>('yan:capabilities:verify', serverId),
-    verification: (operationId: string) =>
-      invoke<CapabilityVerificationStatus | null>('yan:capabilities:verification', operationId),
-    cancelVerification: (operationId: string) =>
-      invoke<{ ok: boolean; error?: string }>('yan:capabilities:cancelVerification', operationId),
-    nativeServers: () => invoke<NativeMcpServerListView>('yan:capabilities:nativeMcpServers'),
+    snapshot: () => invoke('yan:capabilities:settings'),
+    promptDirectories: () => invoke('yan:capabilities:promptDirectories'),
+    openPromptDirectory: (path: string) => invoke('yan:capabilities:openPromptDirectory', path),
+    createPromptTemplate: (input: { name: string; content: string }) => invoke('yan:capabilities:createPromptTemplate', input),
+    discover: (queryText: string) => invoke('yan:capabilities:discover', queryText),
+    sessionSkill: (action: 'promote' | 'remove', name: string) => invoke('yan:capabilities:sessionSkill', { action, name }),
+    manageSkill: (action: ManagedSkillAction, scope: 'yan' | 'pi', dir: string) => invoke('yan:capabilities:manageSkill', { action, scope, dir }),
+    revealSkill: (location: string) => invoke('yan:capabilities:revealSkill', location),
+    verify: (serverId: string) => invoke('yan:capabilities:verify', serverId),
+    verification: (operationId: string) => invoke('yan:capabilities:verification', operationId),
+    cancelVerification: (operationId: string) => invoke('yan:capabilities:cancelVerification', operationId),
+    nativeServers: () => invoke('yan:capabilities:nativeMcpServers'),
     mcpServices: () => invoke('yan:capabilities:mcpServices'),
     changeMcpService: (input) => invoke('yan:capabilities:changeMcpService', input),
     applyMcpServices: (input) => invoke('yan:capabilities:applyMcpServices', input),
-    manageNativeServer: (action: 'enable' | 'disable' | 'remove', name: string) =>
-      invoke<{ ok: boolean; error?: string }>('yan:capabilities:manageNativeMcpServer', { action, name })
+    manageNativeServer: (action: 'enable' | 'disable' | 'remove', name: string) => invoke('yan:capabilities:manageNativeMcpServer', { action, name })
   },
   mcpApps: {
-    prepare: (callId: string) => invoke<McpAppViewDescriptor>(MCP_APP_VIEW_CHANNELS.prepare, callId),
-    dispatch: (instanceId: string, message: unknown) =>
-      invoke<unknown>(MCP_APP_VIEW_CHANNELS.dispatch, instanceId, message),
-    release: (instanceId: string) => invoke<{ ok: boolean }>(MCP_APP_VIEW_CHANNELS.release, instanceId),
-    audit: (callId: string) => invoke<McpAppViewAuditEntry[]>(MCP_APP_VIEW_CHANNELS.audit, callId),
-    snapshot: () => invoke<McpAppViewSnapshot>(MCP_APP_VIEW_CHANNELS.snapshot),
-    refresh: () => invoke<McpAppViewRefreshResult>(MCP_APP_VIEW_CHANNELS.refresh),
-    hostContext: (instanceId: string) => invoke<unknown | null>(MCP_APP_VIEW_CHANNELS.hostContext, instanceId)
+    prepare: (callId: string) => invoke(MCP_APP_VIEW_CHANNELS.prepare, callId),
+    dispatch: (instanceId: string, message: unknown) => invoke(MCP_APP_VIEW_CHANNELS.dispatch, instanceId, message),
+    release: (instanceId: string) => invoke(MCP_APP_VIEW_CHANNELS.release, instanceId),
+    audit: (callId: string) => invoke(MCP_APP_VIEW_CHANNELS.audit, callId),
+    snapshot: () => invoke(MCP_APP_VIEW_CHANNELS.snapshot),
+    refresh: () => invoke(MCP_APP_VIEW_CHANNELS.refresh),
+    hostContext: (instanceId: string) => invoke(MCP_APP_VIEW_CHANNELS.hostContext, instanceId)
   },
   git: {
-    state: (cwd, options) =>
-      invoke<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>('yan:git:state', cwd, options),
-    refs: (cwd) =>
-      invoke<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>('yan:git:refs', cwd),
-    action: (req) => invoke<GitActionResult>('yan:git:action', req),
-    remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
-    untracked: (cwd) => invoke<string[]>('yan:git:untracked', cwd),
-    changes: (cwd, options) => invoke<GitChangesResult>('yan:git:changes', cwd, options),
-    screenPaths: (cwd, paths) => invoke<import('../shared/git').GitPathScreen>('yan:git:screenPaths', cwd, paths),
-    identity: (cwd, refresh) => invoke<GitRemoteIdentity | null>('yan:git:identity', cwd, refresh === true),
-    diff: (req) => invoke<GitDiffResult>('yan:git:diff', req),
-    worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd)
+    state: (cwd, options) => invoke('yan:git:state', cwd, options),
+    refs: (cwd) => invoke('yan:git:refs', cwd),
+    action: (req) => invoke('yan:git:action', req),
+    remotes: (cwd) => invoke('yan:git:remotes', cwd),
+    untracked: (cwd) => invoke('yan:git:untracked', cwd),
+    changes: (cwd, options) => invoke('yan:git:changes', cwd, options),
+    screenPaths: (cwd, paths) => invoke('yan:git:screenPaths', cwd, paths),
+    identity: (cwd, refresh) => invoke('yan:git:identity', cwd, refresh === true),
+    diff: (req) => invoke('yan:git:diff', req),
+    worktrees: (cwd) => invoke('yan:git:worktrees', cwd)
   },
   github: {
-    status: (cwd) => invoke<import('../shared/github').GithubStatus>('yan:github:status', cwd),
-    createDefaults: (cwd) => invoke<import('../shared/github').GhPrCreateDefaultsResult>('yan:github:createDefaults', cwd),
-    list: (cwd, options) => invoke<import('../shared/github').GhPrListResult>('yan:github:list', cwd, options),
-    action: (cwd, request) => invoke<import('../shared/github').GhPrActionResult>('yan:github:action', cwd, request),
-    candidates: (cwd, request) => invoke<import('../shared/github').GhPrCandidatesResult>('yan:github:candidates', cwd, request),
-    detail: (cwd, number) => invoke<import('../shared/github').GhPrDetailResult>('yan:github:detail', cwd, number),
-    diff: (cwd, number) => invoke<import('../shared/github').GhPrDiffResult>('yan:github:diff', cwd, number),
-    openUrl: (url) => invoke<{ ok: boolean; error?: string }>('yan:github:openUrl', url),
-    account: () => invoke<import('../shared/github').GithubAccountStatus>('yan:github:account'),
-    repos: (request) => invoke<import('../shared/github').GithubRepoListResult>('yan:github:repos', request),
-    searchRepos: (query) => invoke<import('../shared/github').GithubRepoListResult>('yan:github:searchRepos', query),
-    clone: (request) => invoke<import('../shared/github').GithubCloneResult>('yan:github:clone', request),
-    cancelClone: (id) => invoke<{ ok: boolean }>('yan:github:cancelClone', id),
-    createProject: (name, parentDir) => invoke<import('../shared/github').GithubCreateProjectResult>('yan:github:createProject', name, parentDir),
-    branches: (cwd) => invoke<import('../shared/github').GithubBranchListResult>('yan:github:branches', cwd),
-    defaultCloneDir: () => invoke<string>('yan:github:defaultCloneDir')
+    status: (cwd) => invoke('yan:github:status', cwd),
+    createDefaults: (cwd) => invoke('yan:github:createDefaults', cwd),
+    list: (cwd, options) => invoke('yan:github:list', cwd, options),
+    action: (cwd, request) => invoke('yan:github:action', cwd, request),
+    candidates: (cwd, request) => invoke('yan:github:candidates', cwd, request),
+    detail: (cwd, number) => invoke('yan:github:detail', cwd, number),
+    diff: (cwd, number) => invoke('yan:github:diff', cwd, number),
+    openUrl: (url) => invoke('yan:github:openUrl', url),
+    account: () => invoke('yan:github:account'),
+    repos: (request) => invoke('yan:github:repos', request),
+    searchRepos: (query) => invoke('yan:github:searchRepos', query),
+    clone: (request) => invoke('yan:github:clone', request),
+    cancelClone: (id) => invoke('yan:github:cancelClone', id),
+    createProject: (name, parentDir) => invoke('yan:github:createProject', name, parentDir),
+    branches: (cwd) => invoke('yan:github:branches', cwd),
+    defaultCloneDir: () => invoke('yan:github:defaultCloneDir')
   },
 
-  getSettings: () => invoke<AppSettings>('yan:getSettings'),
-  patchSettings: (patch) => invoke<AppSettings>('yan:patchSettings', patch),
-  removeGuardAllowRoot: (path) => invoke<AppSettings>('yan:removeGuardAllowRoot', path),
-  changeProjectDirectory: (request) => invoke<import('../shared/ipc').ProjectDirectoryResult>('yan:project:changeDirectory', request),
-  pickCwd: () => invoke<string | null>('yan:pickCwd'),
-  setCwd: (cwd) => invoke<Ok>('yan:setCwd', cwd),
+  getSettings: () => invoke('yan:getSettings'),
+  patchSettings: (patch) => invoke('yan:patchSettings', patch),
+  removeGuardAllowRoot: (path) => invoke('yan:removeGuardAllowRoot', path),
+  changeProjectDirectory: (request) => invoke('yan:project:changeDirectory', request),
+  pickCwd: () => invoke('yan:pickCwd'),
+  setCwd: (cwd) => invoke('yan:setCwd', cwd),
 
-  respondUi: (res) => invoke<{ ok: boolean; error?: string; code?: 'not_pending' | 'pi_down' | 'invalid' }>('yan:respondUi', res),
+  respondUi: (res) => invoke('yan:respondUi', res),
   extendUi: (id, extraMs) => invoke('yan:extendUi', id, extraMs),
   startUiTimer: (id) => invoke('yan:startUiTimer', id),
 
-  notifyAttention: (n: AttentionNotify) =>
-    invoke<{ shown: boolean; simulated?: boolean; error?: string }>('yan:notifyAttention', n),
+  notifyAttention: (n: AttentionNotify) => invoke('yan:notifyAttention', n),
 
-  openPath: (p) => invoke<{ ok: boolean; error?: string }>('yan:openPath', p),
-  backup: (action) => invoke<import('../shared/data-backup').BackupResult>('yan:backup', action),
+  openPath: (p) => invoke('yan:openPath', p),
+  backup: (action) => invoke('yan:backup', action),
   storage: {
-    info: () => invoke<StorageInfoView>('yan:storage:info'),
-    pick: () => invoke<string | null>('yan:storage:pick'),
-    schedule: (target, relaunch) => invoke<{ ok: boolean; error?: string }>('yan:storage:schedule', target, relaunch),
-    cancel: () => invoke<void>('yan:storage:cancel')
+    info: () => invoke('yan:storage:info'),
+    pick: () => invoke('yan:storage:pick'),
+    schedule: (target, relaunch) => invoke('yan:storage:schedule', target, relaunch),
+    cancel: () => invoke('yan:storage:cancel')
   },
-  revealPath: (p) => invoke<{ ok: boolean }>('yan:revealPath', p),
-  exportHtmlImage: (p) => invoke<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>('yan:exportHtmlImage', p),
-  stashImages: (images) => invoke<string[]>('yan:image:stash', images),
-  copyImage: (dataUrl) => invoke<{ ok: boolean; error?: string }>('yan:image:copy', dataUrl),
-  saveImage: (dataUrl, suggestedName) => invoke<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>('yan:image:save', dataUrl, suggestedName),
+  revealPath: (p) => invoke('yan:revealPath', p),
+  exportHtmlImage: (p) => invoke('yan:exportHtmlImage', p),
+  stashImages: (images) => invoke('yan:image:stash', images),
+  copyImage: (dataUrl) => invoke('yan:image:copy', dataUrl),
+  saveImage: (dataUrl, suggestedName) => invoke('yan:image:save', dataUrl, suggestedName),
 
-  getZoom: () => invoke<ZoomState>('yan:getZoom'),
-  setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
+  getZoom: () => invoke('yan:getZoom'),
+  setUiScale: (v) => invoke('yan:setUiScale', v),
 
-  listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
-  watchDirs: (watchId, dirs, context) => invoke<{ dirs: string[]; dropped: string[] }>('yan:files:watch', watchId, dirs, context),
-  searchFiles: (request) => invoke<FileSearchResult>('yan:searchFiles', request),
-  searchFileContents: (request) => invoke<FileContentSearchResult>('yan:searchFileContents', request),
-  readEditableFile: (path, cwd) => invoke<EditableFileView>('yan:readEditableFile', path, cwd),
-  writeEditableFile: (path, text, expectedHash, cwd) =>
-    invoke<EditableFileWriteResult>('yan:writeEditableFile', path, text, expectedHash, cwd),
-  reportUnsavedFiles: (paths) => invoke<number>('yan:files:unsaved', paths),
-  searchFileNames: (request) => invoke<FileNameSearchResult>('yan:files:searchNames', request),
-  providerQuota: (provider, monthlyBudget) => invoke<ProviderQuota>('yan:providerQuota', provider, monthlyBudget),
+  listDir: (rel, showHidden, context?: FileRequestContext) => invoke('yan:listDir', rel, showHidden === true, context),
+  watchDirs: (watchId, dirs, context) => invoke('yan:files:watch', watchId, dirs, context),
+  searchFiles: (request) => invoke('yan:searchFiles', request),
+  searchFileContents: (request) => invoke('yan:searchFileContents', request),
+  readEditableFile: (path, cwd) => invoke('yan:readEditableFile', path, cwd),
+  writeEditableFile: (path, text, expectedHash, cwd) => invoke('yan:writeEditableFile', path, text, expectedHash, cwd),
+  reportUnsavedFiles: (paths) => invoke('yan:files:unsaved', paths),
+  searchFileNames: (request) => invoke('yan:files:searchNames', request),
+  providerQuota: (provider, monthlyBudget) => invoke('yan:providerQuota', provider, monthlyBudget),
 
   attachments: {
-    usage: () => invoke<AttachmentUsage>('yan:attachments:usage'),
-    read: (url) => invoke<{ ok: boolean; data?: string; mimeType?: string }>('yan:attachments:read', url),
-    prune: () => invoke<AttachmentPruneResult>('yan:attachments:prune')
+    usage: () => invoke('yan:attachments:usage'),
+    read: (url) => invoke('yan:attachments:read', url),
+    prune: () => invoke('yan:attachments:prune')
   },
 
   browser: {
-    activateSession: (sessionId) => invoke<BrowserState>('yan:browser:activateSession', sessionId),
-    install: () => invoke<void>('yan:browser:install'),
-    getState: (sessionId) => invoke<BrowserState>('yan:browser:getState', sessionId),
-    open: (url, sessionId) => invoke<BrowserState>('yan:browser:open', url, sessionId),
-    observe: () => invoke<BrowserObservation>('yan:browser:observe'),
-    network: () => invoke<BrowserNetworkSnapshot>('yan:browser:network'),
-    newTab: (url, sessionId) => invoke<BrowserState>('yan:browser:newTab', url, sessionId),
-    switchTab: (id, sessionId) => invoke<BrowserState>('yan:browser:switchTab', id, sessionId),
-    closeTab: (id, sessionId) => invoke<BrowserState>('yan:browser:closeTab', id, sessionId),
-    close: (sessionId) => invoke<BrowserState>('yan:browser:close', sessionId),
-    navigate: (url, sessionId) => invoke<Ok>('yan:browser:navigate', url, sessionId),
-    siteAccess: (sessionId, url) => invoke<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>('yan:browser:siteAccess', sessionId, url),
-    remoteImage: (sessionId, url, prompt) => invoke<RemoteImageResult>('yan:browser:remoteImage', sessionId, url, prompt),
-    allowedSites: () => invoke<string[]>('yan:browser:allowedSites'),
-    addAllowedSite: (value) =>
-      invoke<{ result: 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'; list: string[]; origin?: string }>(
-        'yan:browser:addAllowedSite',
-        value
-      ),
-    removeAllowedSite: (value) => invoke<{ removed: boolean; list: string[] }>('yan:browser:removeAllowedSite', value),
-    clearAllowedSites: () => invoke<string[]>('yan:browser:clearAllowedSites'),
-    siteAskAnswer: (id, allowed) => invoke<void>('yan:browser:siteAskAnswer', id, allowed),
-    back: (sessionId) => invoke<Ok>('yan:browser:back', sessionId),
-    forward: (sessionId) => invoke<Ok>('yan:browser:forward', sessionId),
-    reload: (sessionId) => invoke<Ok>('yan:browser:reload', sessionId),
-    openExternal: (url, sessionId) => invoke<Ok>('yan:browser:openExternal', url, sessionId),
-    releaseUserControl: (sessionId) => invoke<BrowserState>('yan:browser:releaseUserControl', sessionId),
-    openExternalChrome: (url) => invoke<Ok>('yan:browser:openExternalChrome', url),
-    closeExternalChrome: () => invoke<BrowserState>('yan:browser:closeExternalChrome'),
-    syncLocalProfile: () => invoke<ChromeSyncReport>('yan:browser:syncLocalProfile'),
-    syncPageStorage: () => invoke<ChromeSyncReport>('yan:browser:syncPageStorage'),
-    startLoginImport: () => invoke<{ id: string }>('yan:browser:startLoginImport'),
-    loginImportStatus: (id) => invoke<BrowserLoginImportStatus>('yan:browser:loginImportStatus', id),
-    cancelLoginImport: (id) => invoke<BrowserLoginImportStatus>('yan:browser:cancelLoginImport', id),
-    setPermission: (permission, origin, allowed) =>
-      invoke<{ ok: boolean; error?: string }>('yan:browser:setPermission', permission, origin, allowed),
-    setBounds: (bounds: BrowserBounds) => invoke<void>('yan:browser:setBounds', bounds),
-    setVisible: (visible: boolean) => invoke<void>('yan:browser:setVisible', visible),
-    snapshot: () => invoke<string | null>('yan:browser:snapshot'),
-    setViewport: (viewport: BrowserViewport) => invoke<void>('yan:browser:setViewport', viewport),
-    localServers: () => invoke<LocalServerSnapshot>('yan:browser:localServers'),
-    stopLocalServer: (port) => invoke<LocalServerStopResult>('yan:browser:stopLocalServer', port)
+    activateSession: (sessionId) => invoke('yan:browser:activateSession', sessionId),
+    install: () => invoke('yan:browser:install'),
+    getState: (sessionId) => invoke('yan:browser:getState', sessionId),
+    open: (url, sessionId) => invoke('yan:browser:open', url, sessionId),
+    observe: () => invoke('yan:browser:observe'),
+    network: () => invoke('yan:browser:network'),
+    newTab: (url, sessionId) => invoke('yan:browser:newTab', url, sessionId),
+    switchTab: (id, sessionId) => invoke('yan:browser:switchTab', id, sessionId),
+    closeTab: (id, sessionId) => invoke('yan:browser:closeTab', id, sessionId),
+    close: (sessionId) => invoke('yan:browser:close', sessionId),
+    navigate: (url, sessionId) => invoke('yan:browser:navigate', url, sessionId),
+    siteAccess: (sessionId, url) => invoke('yan:browser:siteAccess', sessionId, url),
+    remoteImage: (sessionId, url, prompt) => invoke('yan:browser:remoteImage', sessionId, url, prompt),
+    allowedSites: () => invoke('yan:browser:allowedSites'),
+    addAllowedSite: (value) => invoke('yan:browser:addAllowedSite', value),
+    removeAllowedSite: (value) => invoke('yan:browser:removeAllowedSite', value),
+    clearAllowedSites: () => invoke('yan:browser:clearAllowedSites'),
+    siteAskAnswer: (id, allowed) => invoke('yan:browser:siteAskAnswer', id, allowed),
+    back: (sessionId) => invoke('yan:browser:back', sessionId),
+    forward: (sessionId) => invoke('yan:browser:forward', sessionId),
+    reload: (sessionId) => invoke('yan:browser:reload', sessionId),
+    openExternal: (url, sessionId) => invoke('yan:browser:openExternal', url, sessionId),
+    releaseUserControl: (sessionId) => invoke('yan:browser:releaseUserControl', sessionId),
+    openExternalChrome: (url) => invoke('yan:browser:openExternalChrome', url),
+    closeExternalChrome: () => invoke('yan:browser:closeExternalChrome'),
+    syncLocalProfile: () => invoke('yan:browser:syncLocalProfile'),
+    syncPageStorage: () => invoke('yan:browser:syncPageStorage'),
+    startLoginImport: () => invoke('yan:browser:startLoginImport'),
+    loginImportStatus: (id) => invoke('yan:browser:loginImportStatus', id),
+    cancelLoginImport: (id) => invoke('yan:browser:cancelLoginImport', id),
+    setPermission: (permission, origin, allowed) => invoke('yan:browser:setPermission', permission, origin, allowed),
+    setBounds: (bounds: BrowserBounds) => invoke('yan:browser:setBounds', bounds),
+    setVisible: (visible: boolean) => invoke('yan:browser:setVisible', visible),
+    snapshot: () => invoke('yan:browser:snapshot'),
+    setViewport: (viewport: BrowserViewport) => invoke('yan:browser:setViewport', viewport),
+    localServers: () => invoke('yan:browser:localServers'),
+    stopLocalServer: (port) => invoke('yan:browser:stopLocalServer', port)
   },
 
   office: {
-    preview: (path, cwd) => invoke<OfficeDocumentView>('yan:office:preview', path, cwd)
+    preview: (path, cwd) => invoke('yan:office:preview', path, cwd)
   },
 
   voice: {
-    available: () => invoke<boolean>('yan:voice:available'),
+    available: () => invoke('yan:voice:available'),
     prepare: () => invoke('yan:voice:prepare'),
-    status: () => invoke<VoiceInputStatus | null>('yan:voice:status'),
-    plan: (target) => invoke<{ ok: true; plan: VoiceDownloadPlan } | { ok: false; error: string }>('yan:voice:plan', target),
-    download: (planId) => invoke<Ok>('yan:voice:download', planId),
-    cancel: () => invoke<void>('yan:voice:cancel'),
-    pick: (kind) => invoke<VoiceInputStatus | null>('yan:voice:pick', kind),
-    transcribe: (wav, language) => invoke<VoiceTranscribeResult>('yan:voice:transcribe', wav, language)
+    status: () => invoke('yan:voice:status'),
+    plan: (target) => invoke('yan:voice:plan', target),
+    download: (planId) => invoke('yan:voice:download', planId),
+    cancel: () => invoke('yan:voice:cancel'),
+    pick: (kind) => invoke('yan:voice:pick', kind),
+    transcribe: (wav, language) => invoke('yan:voice:transcribe', wav, language)
   },
 
   android: {
-    status: () => invoke<AndroidSdkStatus>('yan:android:status'),
-    install: (ids) => invoke<Ok>('yan:android:install', ids),
-    cancel: () => invoke<void>('yan:android:cancel'),
-    openSdkDir: () => invoke<string>('yan:android:openSdkDir'),
-    devices: () => invoke<AndroidDevice[]>('yan:android:devices'),
-    boot: (avd) => invoke<void>('yan:android:boot', avd),
-    watch: (serial) => invoke<void>('yan:android:watch', serial),
-    control: (serial, action) => invoke<void>('yan:android:control', serial, action),
+    status: () => invoke('yan:android:status'),
+    install: (ids) => invoke('yan:android:install', ids),
+    cancel: () => invoke('yan:android:cancel'),
+    openSdkDir: () => invoke('yan:android:openSdkDir'),
+    devices: () => invoke('yan:android:devices'),
+    boot: (avd) => invoke('yan:android:boot', avd),
+    watch: (serial) => invoke('yan:android:watch', serial),
+    control: (serial, action) => invoke('yan:android:control', serial, action),
     onFrame: (cb) => {
       const listener = (_e: Electron.IpcRendererEvent, frame: AndroidFrame): void => cb(frame)
       ipcRenderer.on('yan:android-frame', listener)
@@ -633,41 +497,41 @@ const api: YanBridge = {
   },
 
   remote: {
-    status: () => invoke<RemoteAccessStatus | null>('yan:remote:status'),
-    configure: (settings) => invoke<RemoteAccessStatus | null>('yan:remote:configure', settings),
-    pair: () => invoke<RemoteAccessStatus | null>('yan:remote:pair'),
-    cancelPairing: () => invoke<RemoteAccessStatus | null>('yan:remote:cancelPairing'),
-    revoke: (deviceId) => invoke<RemoteAccessStatus | null>('yan:remote:revoke', deviceId),
-    forget: (deviceId) => invoke<RemoteAccessStatus | null>('yan:remote:forget', deviceId),
-    relayPair: (kind) => invoke<RemoteAccessStatus | null>('yan:remote:relayPair', kind),
-    relayCancel: () => invoke<RemoteAccessStatus | null>('yan:remote:relayCancel'),
-    relayRevoke: (id) => invoke<RemoteAccessStatus | null>('yan:remote:relayRevoke', id),
-    relayForget: (id) => invoke<RemoteAccessStatus | null>('yan:remote:relayForget', id),
-    resetIdentity: () => invoke<{ ok: boolean; revokedDevices?: number; hostFingerprint?: string; error?: string }>('yan:remote:resetIdentity')
+    status: () => invoke('yan:remote:status'),
+    configure: (settings) => invoke('yan:remote:configure', settings),
+    pair: () => invoke('yan:remote:pair'),
+    cancelPairing: () => invoke('yan:remote:cancelPairing'),
+    revoke: (deviceId) => invoke('yan:remote:revoke', deviceId),
+    forget: (deviceId) => invoke('yan:remote:forget', deviceId),
+    relayPair: (kind) => invoke('yan:remote:relayPair', kind),
+    relayCancel: () => invoke('yan:remote:relayCancel'),
+    relayRevoke: (id) => invoke('yan:remote:relayRevoke', id),
+    relayForget: (id) => invoke('yan:remote:relayForget', id),
+    resetIdentity: () => invoke('yan:remote:resetIdentity')
   },
 
   terminal: {
-    available: () => invoke<TerminalAvailability>('yan:terminal:available'),
-    list: () => invoke<TerminalSnapshot[]>('yan:terminal:list'),
-    start: (request) => invoke<TerminalSnapshot | null>('yan:terminal:start', request),
-    write: (id, data) => invoke<boolean>('yan:terminal:write', id, data),
-    resize: (id, cols, rows) => invoke<boolean>('yan:terminal:resize', id, cols, rows),
-    kill: (id) => invoke<boolean>('yan:terminal:kill', id),
-    attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id),
-    clear: (id) => invoke<boolean>('yan:terminal:clear', id),
-    processes: (id) => invoke<TerminalProcessList>('yan:terminal:processes', id),
-    jobs: () => invoke<import('../shared/terminal-jobs').TerminalJob[]>('yan:terminal:jobs'),
-    stopJob: (id) => invoke<boolean>('yan:terminal:jobStop', id),
-    clearJobs: (ids) => invoke<boolean>('yan:terminal:jobsClear', ids)
+    available: () => invoke('yan:terminal:available'),
+    list: () => invoke('yan:terminal:list'),
+    start: (request) => invoke('yan:terminal:start', request),
+    write: (id, data) => invoke('yan:terminal:write', id, data),
+    resize: (id, cols, rows) => invoke('yan:terminal:resize', id, cols, rows),
+    kill: (id) => invoke('yan:terminal:kill', id),
+    attach: (id) => invoke('yan:terminal:attach', id),
+    clear: (id) => invoke('yan:terminal:clear', id),
+    processes: (id) => invoke('yan:terminal:processes', id),
+    jobs: () => invoke('yan:terminal:jobs'),
+    stopJob: (id) => invoke('yan:terminal:jobStop', id),
+    clearJobs: (ids) => invoke('yan:terminal:jobsClear', ids)
   },
 
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),
     maximize: () => ipcRenderer.send('win:maximize'),
     close: () => ipcRenderer.send('win:close'),
-    setAlwaysOnTop: (v) => invoke<boolean>('win:setAlwaysOnTop', v),
-    requestExit: () => invoke<{ action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting' }>('win:requestExit'),
-    lifecycle: () => invoke<{ tray: boolean; visible: boolean; quitting: boolean }>('win:lifecycle')
+    setAlwaysOnTop: (v) => invoke('win:setAlwaysOnTop', v),
+    requestExit: () => invoke('win:requestExit'),
+    lifecycle: () => invoke('win:lifecycle')
   },
 
   onPush: (cb: (msg: MainPush) => void): (() => void) => {
@@ -728,8 +592,8 @@ const api: YanBridge = {
 
 const auxApi = {
   quickAsk: {
-    state: (): Promise<unknown> => invoke('yan:aux:quick-ask:state'),
-    submit: (payload: QuickAskSubmit): Promise<unknown> => invoke('yan:aux:quick-ask:submit', payload),
+    state: (): Promise<unknown> => invokeUnmapped('yan:aux:quick-ask:state'),
+    submit: (payload: QuickAskSubmit): Promise<unknown> => invokeUnmapped('yan:aux:quick-ask:submit', payload),
     close: (): void => ipcRenderer.send('yan:aux:quick-ask:close')
   },
   onPush: (cb: (msg: AuxPush) => void): (() => void) => {

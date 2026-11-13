@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { registerProviderRequestStage } from './provider-request.js'
 
 export const PROGRESS_UPDATES_BETA = 'thinking-display-updates-2026-08-18'
 export const PROGRESS_UPDATE_MODEL = /claude-(?:(?:opus|sonnet)-5[-.]5|(?:fable|mythos)-5[-.][12](?![0-9])|fable-5(?![-.][0-9]{1,2}(?![0-9])))/i
@@ -26,6 +27,15 @@ export const isDisplayRejection = (message) =>
   message?.role === 'assistant' && message.stopReason === 'error' &&
   BAD_REQUEST.test(String(message.errorMessage ?? '')) && DISPLAY_FIELD.test(String(message.errorMessage ?? ''))
 
+export function withProgressUpdates(payload) {
+  const betas = Array.isArray(payload.betas) ? payload.betas : []
+  return {
+    ...payload,
+    thinking: { ...payload.thinking, display: 'updates' },
+    betas: betas.includes(PROGRESS_UPDATES_BETA) ? betas : [...betas, PROGRESS_UPDATES_BETA]
+  }
+}
+
 export default function anthropicProgressUpdates(pi) {
   const rejections = new Map()
   const disabled = new Set()
@@ -33,22 +43,16 @@ export default function anthropicProgressUpdates(pi) {
   let pending = null
   const endpointKey = (model) => `${model.provider ?? ''}|${model.baseUrl ?? ''}|${model.id}`
 
-  pi.on('before_provider_request', (event, ctx) => {
+  registerProviderRequestStage(pi, 'anthropic-progress-updates', (payload, ctx) => {
     pending = null
     const model = ctx?.model
-    const payload = event?.payload
     if (!isProgressUpdateModel(model) || !payload || typeof payload !== 'object' || !wantsProgressUpdates()) return
     const thinking = payload.thinking
     if (!thinking || typeof thinking !== 'object' || !('display' in thinking)) return
     const key = endpointKey(model)
     if (disabled.has(key) || summarizeNext.delete(key)) return
-    const betas = Array.isArray(payload.betas) ? payload.betas : []
     pending = key
-    return {
-      ...payload,
-      thinking: { ...thinking, display: 'updates' },
-      betas: betas.includes(PROGRESS_UPDATES_BETA) ? betas : [...betas, PROGRESS_UPDATES_BETA]
-    }
+    return withProgressUpdates(payload)
   })
 
   pi.on('message_end', (event) => {

@@ -1,4 +1,4 @@
-import type { SubagentRun } from './ipc'
+import type { SubagentRun } from './subagent-run'
 import { pick, toModelText } from './ui-lang'
 import { subagentOutcome, type SubagentOutcomeKey } from './subagent-outcome'
 

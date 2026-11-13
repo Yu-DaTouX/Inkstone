@@ -1,3 +1,5 @@
+import { registerProviderRequestStage } from './provider-request.js'
+
 const identifier = value => typeof value === 'string' && value.length <= 160 &&
   /^[a-zA-Z0-9_.:/-]+$/.test(value) && !/^(sk-|bearer|eyJ)/i.test(value) ? value : undefined
 const statusCode = value => typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined
@@ -23,7 +25,7 @@ export default function providerDiagnostics(pi) {
     try { pi.appendEntry('inkstone-provider-error', JSON.parse(json)) } catch { }
     try { console.error(`[Inkstone/provider-error] ${json}`) } catch { }
   }
-  pi.on('before_provider_request', () => { response = {}; last = '' })
+  registerProviderRequestStage(pi, 'provider-diagnostics', () => { response = {}; last = '' })
   pi.on('after_provider_response', (event, ctx) => {
     try {
       response = {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-const source = await readFile(new URL('../resources/pi-extensions/provider-diagnostics.js', import.meta.url), 'utf8')
-const { default: install } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))
+import { fakePiEvents } from './lib/fake-pi-events.mjs'
+const { default: install } = await import(new URL('../resources/pi-extensions/provider-diagnostics.js', import.meta.url).href)
 const handlers = {}, entries = [], logs = []
 const originalError = console.error
 let checks = 0
@@ -9,7 +9,7 @@ const check = (condition, label) => { assert.ok(condition, label); checks++ }
 const ctx = { model: { provider: 'openai-codex', api: 'openai-codex-responses', id: 'gpt-6-astra' } }
 try {
   console.error = value => logs.push(value)
-  install({ on: (name, fn) => { handlers[name] = fn }, appendEntry: (type, data) => entries.push({ type, data }) })
+  install({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: (type, data) => entries.push({ type, data }) })
   const payload = { secret: 'private prompt', temperature: 1 }
   check(handlers.before_provider_request({ payload }, ctx) === undefined, 'diagnostics does not replace request payload')
   handlers.after_provider_response({ status: 200, headers: { 'X-Request-ID': 'req_test-1', authorization: 'Bearer secret', 'set-cookie': 'private' } }, ctx)
@@ -33,7 +33,7 @@ try {
   handlers.provider_stream_event({ data: { type: 'error', code: 'Bearer secret', response_id: 'sk-secret' } }, ctx)
   check(!entries.at(-1).data.code && !entries.at(-1).data.responseId, 'non-identifier and credential-shaped fields rejected')
   const throwing = {}
-  install({ on: (name, fn) => { throwing[name] = fn }, appendEntry: () => { throw new Error('disk failure') } })
+  install({ on: (name, fn) => { throwing[name] = fn }, events: fakePiEvents(), appendEntry: () => { throw new Error('disk failure') } })
   check(throwing.provider_stream_event(error, ctx) === undefined, 'diagnostic write failure does not interrupt the model request')
   const host = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8')
   check(/PROVIDER_EXTENSION_FILES = \[[^\]]*'provider-diagnostics\.js'/.test(host), 'shared provider extension list loads diagnostics for main and child agents')

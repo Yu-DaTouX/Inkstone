@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { fakePiEvents } from './lib/fake-pi-events.mjs'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,7 +28,7 @@ ok(withFastServiceTier(null) === undefined && withFastServiceTier([]) === undefi
 const dir = mkdtempSync(join(tmpdir(), 'yan-fast-'))
 process.env.YAN_DATA_DIR = dir
 const handlers = {}
-fastMode({ on: (name, fn) => { handlers[name] = fn } })
+fastMode({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents() })
 const run = (model) => handlers.before_provider_request({ payload }, { model })
 writeFileSync(join(dir, 'desktop.json'), JSON.stringify({}))
 ok(run(codex('gpt-6-luna')) === undefined, '设置关闭时不改')

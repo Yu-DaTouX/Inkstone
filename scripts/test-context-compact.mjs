@@ -1,5 +1,6 @@
 // context-compact.js：不截断工具结果、放不下才分段、超长单段切片、出错退回 pi 默认压缩并留记录
 import assert from 'node:assert/strict'
+import { fakePiEvents } from './lib/fake-pi-events.mjs'
 import { mkdirSync as mkdirAppendix, mkdtempSync as mkdtempAppendix, writeFileSync as writeAppendix } from 'node:fs'
 import { tmpdir as tmpdirAppendix } from 'node:os'
 import { join as joinAppendix } from 'node:path'
@@ -51,7 +52,7 @@ assert.deepEqual(
 function harness(complete, { window = 400_000, previousSummary } = {}) {
   const handlers = {}
   const entries = []
-  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: (type, data) => entries.push({ type, data }) })
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: (type, data) => entries.push({ type, data }) })
   const calls = []
   const ctx = { model: { contextWindow: window, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async (model, context, options) => { calls.push({ context, options }); return complete(calls.length, context) } } }
   const event = { preparation: { messagesToSummarize: messages, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, previousSummary, settings: { reserveTokens: 40_000, keepRecentTokens: 2_000 }, fileOps: { read: new Set(['book/ch01.md']), written: new Set(), edited: new Set() } }, signal: new AbortController().signal }
@@ -149,7 +150,7 @@ const ok = (text, usage) => ({ stopReason: 'stop', content: [{ type: 'text', tex
   const sessionFile = join(dir, 's1.jsonl')
   const secretMessages = [...messages, { role: 'toolResult', toolCallId: 'c9', toolName: 'bash', isError: true, content: [{ type: 'text', text: 'export OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz0123' }] }]
   const handlers = {}
-  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: () => {} })
   const prompts = []
   const ctx = {
     model: { contextWindow: 400_000, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off',
@@ -317,7 +318,7 @@ const sentResult = { ...messages[2], timestamp: 3 }
 const tailMessage = { role: 'assistant', content: [{ type: 'text', text: '最后的回复 ZZ-9' }], timestamp: 4 }
 function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, sentLast = sentResult, modelAtRequest = 'm', withContext = true } = {}) {
   const handlers = {}
-  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: () => {} })
   const calls = []
   const model = { provider: 'p', id: 'm', api: 'openai-responses', contextWindow: 400_000, maxTokens: 64_000, reasoning: false }
   const ctx = {
@@ -430,7 +431,7 @@ for (const [label, opts, expected] of [
   assert.equal(mod.stripAppendices(`摘要${block}`), '摘要', '下次压缩前去掉上次补回的文件')
 
   const handlers = {}
-  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: () => {} })
   const ctx = { cwd: dir, model: { contextWindow: 400_000, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async () => ok('摘要') } }
   const summarized = [...messages, { role: 'assistant', content: [{ type: 'toolCall', id: 'c5', name: 'read', arguments: { path: 'src/a.js' } }] }]
   const event = { preparation: { messagesToSummarize: summarized, turnPrefixMessages: [], firstKeptEntryId: 'k1', tokensBefore: 30_000, settings: { reserveTokens: 40_000 }, fileOps: {} }, branchEntries: [{ id: 'k1', type: 'message', message: { role: 'user', content: '继续' } }], signal: new AbortController().signal }
@@ -444,7 +445,7 @@ for (const [label, opts, expected] of [
 }
 {
   const handlers = {}
-  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: () => {} })
   const seen = []
   const ctx = { model: { contextWindow: 400_000, maxTokens: 384_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async (m, c, options) => { seen.push(options.maxTokens); return ok('摘要') } } }
   const event = { preparation: { messagesToSummarize: messages, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, settings: { reserveTokens: 300_000 } , fileOps: {} }, signal: new AbortController().signal }
@@ -467,7 +468,7 @@ for (const [label, opts, expected] of [
   mkdirAppendix(joinAppendix(appendixDir, 'book'))
   writeAppendix(joinAppendix(appendixDir, 'book', 'ch01.md'), 'chapter one')
   const handlers = {}
-  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents(), appendEntry: () => {} })
   const userMessages = Array.from({ length: 30 }, (_, i) => ({ role: 'user', content: `第 ${i} 条用户原话 ${'字'.repeat(2_000)}` }))
   const run = async (contextWindow) => {
     const ctx = { cwd: appendixDir, model: { contextWindow, maxTokens: 16_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async () => ok('摘要') } }

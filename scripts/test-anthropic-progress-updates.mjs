@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { fakePiEvents } from './lib/fake-pi-events.mjs'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +26,7 @@ assert.equal(isProgressUpdateModel(model('claude-opus-5-5', { api: 'bedrock-conv
 
 function load() {
   const handlers = {}
-  extension({ on: (name, fn) => { handlers[name] = fn } })
+  extension({ on: (name, fn) => { handlers[name] = fn }, events: fakePiEvents() })
   return {
     request: (ctxModel, payload) => handlers.before_provider_request({ type: 'before_provider_request', payload }, { model: ctxModel }),
     end: (message) => handlers.message_end({ type: 'message_end', message })

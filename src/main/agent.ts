@@ -1001,7 +1001,6 @@ export class AgentController extends EventEmitter {
         ...(this.phoneToolsExtension ? ['--extension', this.phoneToolsExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         ...this.providerExtensions.flatMap((path) => ['--extension', path]),
-        // 预测下一句和压缩扩展都要截取最终发出的请求体，必须排在所有 before_provider_request 改写者之后
         ...(this.promptSuggestionExtension ? ['--extension', this.promptSuggestionExtension] : []),
         ...(this.contextCompactExtension ? ['--extension', this.contextCompactExtension] : []),
         ...(this.contextUsageExtension ? ['--extension', this.contextUsageExtension] : []),

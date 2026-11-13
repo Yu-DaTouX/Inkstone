@@ -41,7 +41,7 @@
 - 不写代码注释（工具指令如 `@ts-expect-error`、`eslint-disable`、许可声明除外），不维护设计、架构或使用文档；仓库里的说明只有根 `README.md`、`THIRD-PARTY.md` 与本文。
 - 新测试写成可直接执行的 `scripts/test-*.mjs`，自动发现，不再加进兼容套件；纯逻辑套件复用 `scripts/lib/test-suite.mjs`，迁移旧套件时从 `scripts/lib/test-legacy-scripts.mjs` 移除登记。真实模型、打包等需单独环境的入口在 `scripts/lib/test-catalog.mjs` 显式排除。
 - 渲染端通过 preload 和 `src/shared/ipc.ts` 调用宿主能力，不直接导入 pi 内部模块。
-- 上下文、恢复、技能、MCP、压缩触发与会话记录交给 pi 原生管理。砚只自己生成压缩摘要（`resources/pi-extensions/context-compact.js`，须排在所有 `before_provider_request` 改写者之后加载，见 `src/main/agent.ts`），并在到达「自动压缩上限」时调用原生 `compact()`（`resources/pi-extensions/auto-compact.js`）。
+- 上下文、恢复、技能、MCP、压缩触发与会话记录交给 pi 原生管理。砚只自己生成压缩摘要（`resources/pi-extensions/context-compact.js`，须排在所有改上下文的扩展之后加载，见 `src/main/agent.ts`；改请求体的扩展都经 `resources/pi-extensions/provider-request.js` 注册阶段，先后由 `PROVIDER_REQUEST_STAGES` 决定），并在到达「自动压缩上限」时调用原生 `compact()`（`resources/pi-extensions/auto-compact.js`）。
 - 不裁剪或删改发给模型的历史消息；不恢复旧的预算、召回与目标自动续跑，现有续跑范围以 `DECISIONS.md`「续跑」为准。pi 新增且与砚重复的能力优先适配原生，随包 pi 扩展保持必要且薄。
 - 放松对模型的限制，默认对齐 pi 原生。模型行为不对时，先找并去掉砚自己造成它的原因，不靠加规则、请求末尾提醒或催办。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。WebContentsView 属于原生层，浮层、焦点、窗口位置与缩放要与主进程协调。

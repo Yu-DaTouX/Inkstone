@@ -37,7 +37,8 @@ export const serialScripts = {
   'test-video-export-cancel': 'wall-clock-upper-bound',
   'test-generation-timing': 'real-timer-race',
   'test-branch-lanes': 'wall-clock-upper-bound',
-  'test-subagents': 'real-timer-race'
+  'test-subagents': 'real-timer-race',
+  'test-provider-request-pipeline': 'real-timer-race'
 }
 
 export async function discoverTests(directory = 'scripts') {

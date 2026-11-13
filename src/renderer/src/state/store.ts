@@ -1,22 +1,17 @@
 import { create } from 'zustand'
-import { THINK_LABEL } from './think-label'
-import { toolMissingText } from '../lib/toolchain-text'
 import type {
   AppSettings,
   Attachment,
   AuthProviderInfo,
   BrowserState,
   ChromeSyncReport,
-  ExpectedRuntimeOwner,
   ExtensionUiRequest,
   QuestionLogEntry,
   ApprovalReceipt,
-  FilePreview,
   MainPush,
   MessagePatch,
   ModelInfo,
   PiInfo,
-  QueueItem,
   QueueMode,
   QueueState,
   RuntimeEnvelope,
@@ -27,7 +22,6 @@ import type {
   SessionTodo,
   SessionTodoSnapshot,
   SlashCommand,
-  SoundEvent,
   SubagentRun,
   TerminalSessionInfo,
   UIMessage,
@@ -36,41 +30,20 @@ import type {
   ApprovalChoice,
   ApprovalRequest,
   GitInstallProgress,
-  ZoomState,
-  QuotaWindow
+  ZoomState
 } from '../../../shared/ipc'
 import type { CheckpointRecord } from '../../../shared/checkpoints'
 import type { SessionModeChange } from '../../../shared/session-mode'
-import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { attentionForOutcome } from '../../../shared/turn-outcome'
 import { playSound } from '../lib/sound'
-import { pickProjectSession as pickProjectSessionTarget } from './project-session'
-import { isCapabilityResponseStale } from './capability-request'
-import { fileResourceKey } from '../../../shared/file-resource'
-import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
-import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/browser-open'
-import { toolSurface, useRightPanel } from './right-panel'
-import { useUiV3 } from './ui-v3'
-import { markStopRequested } from '../features/session/stop-intent'
-import { requestStopConfirm, runStopFlow } from '../features/session/stop-with-background'
-import { terminalJobsForView, useTerminalJobs } from './terminal-jobs'
-import { requestTerminalTab } from '../features/terminal/terminal-requests'
+import type { BrowserOpenTarget } from '../features/browser/browser-open'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
-import { reuseSessionSummaries } from './session-list'
 import { cssQuoted, highlightMessageElement, locateMessageInView } from './message-locator'
-import { planQueueRecovery, mergeQueueAttachments, type QueueImageRef } from './queue-images'
 import {
-  composerDraftForView,
-  composerDraftKey,
-  composerSubmitIdentity,
-  planComposerRecovery,
-  recoveryRuntimeFor,
-  sameComposerView,
   type ComposerSubmitIdentity
 } from './composer-recovery'
 import type { QueueOp } from '../features/composer/queue-plan'
-import { blockedQuotaWindows, decideQuotaResume, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../../../shared/quota-resume'
 import { reuseIfSame } from './same-messages'
 import { keepRef } from './stable-ref'
 import {
@@ -80,104 +53,47 @@ import {
   reduceSessionRuntime,
   patchArtifact,
   seedRuntimeHistory,
-  sessionRuntimeKey,
-  updateSessionRuntime,
-  updateSessionRuntimeAt,
-  type SessionRuntimeDataPatch,
-  type SessionRuntimeMap,
-  type SessionRuntimeSnapshot
+  type SessionRuntimeMap
 } from './session-runtime'
 import { routePush, viewingSessionId } from './push-routing'
 import { useSplitView } from './split-view'
-import { beginSessionSwitch as markSessionSwitch, endSessionSwitch as unmarkSessionSwitch } from './session-activation'
-import { pushBelongsToView, sameSessionFile, viewIdentityOf, viewKeyRef } from './view-identity'
+import { pushBelongsToView, viewIdentityOf } from './view-identity'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
-import { claimResource, releaseResource, resourceOwner } from './resource-owners'
-import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
+import { releaseResource } from './resource-owners'
 import type { SubmittingMessage } from './submitting-messages'
-import { useSubagentStopping } from './subagent-stopping'
 import { compactionErrorText } from './compaction-view'
 import { uiText } from '../i18n/ui-text'
+import { piCall, pushNotice, type SliceContext } from './slices/shared'
+import { applyBrowserVisibility, createBrowserSlice, revealBrowserPane, revealTerminalPane } from './slices/browser'
+import { createSettingsSlice } from './slices/settings'
+import {
+  EMPTY_QUEUE,
+  findRuntimeSnapshot,
+  nav,
+  projectSnapshotKeepingHistory,
+  runtimeFromRunner,
+  sessionActionTarget,
+  snapshotForView,
+  switchToRuntimeSnapshot,
+  viewedActiveRunner
+} from './slices/runtime'
+import { createSessionListSlice } from './slices/session-list'
+import { createComposerSlice } from './slices/composer'
+import { blankViewKey, createSendSlice, pendingSendsForView, type PendingSend } from './slices/send'
+import { applyQueueRecovery, heldQueueReclaims, holdQueueReclaim, takeHeldQueueReclaim, type QueueReclaim } from './slices/queue-recovery'
+import { createUiRequestsSlice } from './slices/ui-requests'
+import { alertAttention, alertTurnSettled } from './slices/attention'
+import { createSessionNavSlice } from './slices/session-nav'
+import { createNoticesSlice } from './slices/notices'
+import { createCheckpointsSlice } from './slices/checkpoints'
+import { createPreviewSlice, type FilePreviewState } from './slices/preview'
+import { createSubagentsSlice } from './slices/subagents'
+import { createModelSlice } from './slices/model'
+import { createQuotaResumeSlice, stopRetryWhenQuotaWindowFull } from './slices/quota-resume'
 
-function attentionTitle(event: SoundEvent): string {
-  switch (event) {
-    case 'done':
-      return uiText('state.attention.done')
-    case 'question':
-      return uiText('state.attention.question')
-    case 'error':
-      return uiText('state.attention.error')
-  }
-}
-
-const QUESTION_REMIND_MS = 120_000
-
-function questionPending(requestId: string): boolean {
-  const state = useStore.getState()
-  if (state.uiRequests.some((request) => request.id === requestId)) return true
-  return Object.values(state.sessionRuntimes).some((runtime) => runtime?.uiRequests.some((request) => request.id === requestId))
-}
-
-function remindQuestionLater(requestId: string, body: string | undefined, sessionId: string | undefined): void {
-  window.setTimeout(() => {
-    if (!questionPending(requestId) || document.hasFocus()) return
-    if (useStore.getState().settings?.sound?.notifications === false) return
-    void window.yan
-      .notifyAttention({ kind: 'question', title: attentionTitle('question'), body, ...(sessionId ? { sessionId } : {}) })
-      .catch(() => {
-      })
-  }, QUESTION_REMIND_MS)
-}
-
-function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string, source?: ModelInfo | null, sessionId?: string, requestId?: string): void {
-  if (event === 'question' && requestId) remindQuestionLater(requestId, body, sessionId)
-  const model = source === undefined ? useStore.getState().session?.model : source
-  const sound = settings?.sound
-  const audible = !!sound?.enabled && !!sound.events?.[event]
-  if (audible) playSound(event, sound.volume)
-  const notify = event === 'question' ? sound?.notifications !== false : audible && !!sound?.notifications
-  if (notify && typeof document !== 'undefined' && !document.hasFocus()) {
-    void window.yan
-      .notifyAttention({
-        kind: event,
-        title: title || attentionTitle(event),
-        body,
-        ...(model ? { model: { provider: model.provider, id: model.id } } : {}),
-        ...(sessionId ? { sessionId } : {})
-      })
-      .catch(() => {
-      })
-  }
-}
-
-function alertTurnSettled(
-  settings: AppSettings | null,
-  event: SoundEvent,
-  sessionId: string,
-  label: string,
-  messages: readonly UIMessage[],
-  source?: ModelInfo | null
-): void {
-  const reply = [...messages].reverse().find((msg) => msg.role === 'assistant' && msg.text.trim())?.text ?? ''
-  const excerpt = reply.replace(/[#>*_`|]+/g, ' ').replace(/\s+/g, ' ').trim()
-  const body = excerpt.length > 120 ? `${excerpt.slice(0, 119)}…` : excerpt
-  alertAttention(settings, event, body || undefined, label ? `${attentionTitle(event)} · ${label}` : undefined, source, sessionId)
-}
-
-function readCommandUse(): Record<string, number> {
-  try {
-    const raw = localStorage.getItem('yan.cmdUse')
-    const j = raw ? (JSON.parse(raw) as unknown) : null
-    if (!j || typeof j !== 'object') return {}
-    const out: Record<string, number> = {}
-    for (const [k, v] of Object.entries(j as Record<string, unknown>)) {
-      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
-    }
-    return out
-  } catch {
-    return {}
-  }
-}
+export { pushNotice }
+export { blankViewKey, pendingSendsForView }
+export type { PendingSend, FilePreviewState }
 
 export type ConnState = 'starting' | 'ready' | 'exited' | 'error'
 
@@ -414,8 +330,6 @@ export interface Store {
   dismissRequest: (id: string) => void
 }
 
-const EMPTY_QUEUE: QueueState = { steering: [], followUp: [] }
-
 export type QuotaResumeWait = {
   sessionId: string
   sessionFile?: string
@@ -424,41 +338,9 @@ export type QuotaResumeWait = {
   resetAt?: number
 }
 
-export type PendingSend = {
-  id: string
-  sessionId: string | null
-  ownerKey?: string
-  navSeq?: number
-  text: string
-  images?: { data: string; mimeType: string }[]
-}
-
 export function currentThinkingLevels(state: Pick<Store, 'session' | 'thinkingLevels'>): string[] {
   const own = state.session?.availableThinkingLevels
   return state.session?.thinkingLevelsStatus === 'known' && Array.isArray(own) ? own : state.thinkingLevels
-}
-
-export function blankViewKey(s: { activeRunnerId?: string | null }): string {
-  return s.activeRunnerId ? `run:${s.activeRunnerId}` : ''
-}
-
-export function pendingSendsForView(
-  s: Pick<Store, 'pendingSends' | 'peekedSessionId' | 'peekedPath' | 'session'> & { activeRunnerId?: string | null }
-): PendingSend[] {
-  const identity = viewIdentityOf(s)
-  if (identity.sessionId) return s.pendingSends.filter((item) => item.sessionId === identity.sessionId)
-  if (identity.peeked) return []
-  const key = blankViewKey(s)
-  return s.pendingSends.filter((item) => item.sessionId === null && (item.ownerKey ?? '') === key)
-}
-
-function runtimeFromRunner(runner: RunnerStatus): RuntimeEnvelope {
-  return {
-    sessionId: runner.sessionId ?? '',
-    runId: runner.runId ?? runner.id,
-    projectId: runner.projectId,
-    generation: runner.generation
-  }
 }
 
 export function streamingMessageId(state: Pick<Store, 'session' | 'messages' | 'runTail'>, includeAgentRunning = true): string | undefined {
@@ -467,20 +349,6 @@ export function streamingMessageId(state: Pick<Store, 'session' | 'messages' | '
   if (!id) return undefined
   const tail = state.runTail
   return tail && tail.sessionId === state.session?.sessionId && tail.id === id ? undefined : id
-}
-
-function runtimeForState(
-  state: Pick<Store, 'session' | 'activeRunnerId' | 'runners'>
-): RuntimeEnvelope | null {
-  const runner = state.runners.find((item) => (item.runId ?? item.id) === state.activeRunnerId)
-  const runId = runner?.runId ?? runner?.id ?? state.activeRunnerId
-  if (!runId) return null
-  return {
-    sessionId: state.session?.sessionId ?? runner?.sessionId ?? '',
-    runId,
-    projectId: runner?.projectId,
-    generation: runner?.generation ?? 0
-  }
 }
 
 function syncProtectedTail(state: Store, runtime: RuntimeEnvelope | undefined): string | undefined {
@@ -492,10 +360,6 @@ function syncProtectedTail(state: Store, runtime: RuntimeEnvelope | undefined): 
   return streamingMessageId(state)
 }
 
-function hasComposerIdentity(id: ComposerSubmitIdentity): boolean {
-  return !!(id.sessionId || id.path || id.runId)
-}
-
 function lastAssistantTextOf(messages: readonly UIMessage[]): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
@@ -504,377 +368,9 @@ function lastAssistantTextOf(messages: readonly UIMessage[]): string {
   return ''
 }
 
-function expectedRuntimeFor(state: Store, id: ComposerSubmitIdentity): ExpectedRuntimeOwner | undefined {
-  const norm = (p?: string): string => (p ?? '').replace(/\\/g, '/').toLowerCase()
-  const byRun = id.runId ? state.runners.find((item) => (item.runId ?? item.id) === id.runId) : undefined
-  const bySession = id.sessionId && !id.sessionId.startsWith('pending:')
-    ? state.runners.find((item) => item.sessionId === id.sessionId)
-    : undefined
-  const byPath = id.path ? state.runners.find((item) => norm(item.sessionFile) === norm(id.path)) : undefined
-  let runner = byRun ?? bySession ?? byPath
-  if (runner && id.sessionId && !id.sessionId.startsWith('pending:') && runner.sessionId && runner.sessionId !== id.sessionId) {
-    runner = undefined
-  }
-  if (runner && id.path && runner.sessionFile && norm(runner.sessionFile) !== norm(id.path)) {
-    runner = undefined
-  }
-  if (!runner && !id.sessionId && !id.path && !id.runId && state.activeRunnerId) {
-    runner = state.runners.find((item) => (item.runId ?? item.id) === state.activeRunnerId)
-  }
-  if (!runner) return undefined
-  const runId = runner.runId ?? runner.id
-  if (!runId) return undefined
-  return {
-    ...(runner.sessionId ? { sessionId: runner.sessionId } : {}),
-    runId,
-    ...(runner.projectId ? { projectId: runner.projectId } : {}),
-    ...(runner.generation !== undefined ? { generation: runner.generation } : {})
-  }
-}
-
-async function submitRuntimeFor(get: () => Store, id: ComposerSubmitIdentity): Promise<ExpectedRuntimeOwner | null | undefined> {
-  const found = expectedRuntimeFor(get(), id)
-  const saved = (!!id.sessionId && !id.sessionId.startsWith('pending:')) || !!id.path
-  if (found || !saved) return found
-  await get().syncRunners()
-  return expectedRuntimeFor(get(), id) ?? (get().runners.length ? null : undefined)
-}
-
-async function sessionActionTarget(get: () => Store) {
-  for (let i = 0; i < 8 && newSessionInFlight; i += 1) {
-    await newSessionInFlight
-  }
-  if (newSessionInFlight) return null
-  const identity = composerSubmitIdentity(get())
-  const gate = sessionSwitchGate
-  if (!(await get().ensureActivated(identity))) return null
-  await get().syncRunners()
-  const current = () => gate === sessionSwitchGate && sameComposerView(get(), identity)
-  if (!current()) return null
-  const expected = expectedRuntimeFor(get(), composerSubmitIdentity(get()))
-  if (!expected || expected.generation === undefined) return null
-  return { expected, current }
-}
-
-function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store> {
-  const projection: Partial<Store> = {
-    messages: snapshot.messages,
-    stats: snapshot.stats,
-    queue: snapshot.queue,
-    todos: snapshot.todos,
-    todoHistory: snapshot.todoHistory,
-    uiRequests: snapshot.uiRequests,
-    statuses: snapshot.statuses,
-    widgets: snapshot.widgets,
-    widgetPlacements: snapshot.widgetPlacements ?? {},
-    models: snapshot.models,
-    thinkingLevels: snapshot.thinkingLevels,
-    commands: snapshot.commands,
-    commandsAt: snapshot.commands.length ? Date.now() : 0
-  }
-  if (snapshot.session) projection.session = snapshot.session
-  return projection
-}
-
-function switchToRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store> {
-  return { ...projectRuntimeSnapshot(snapshot), session: snapshot.session }
-}
-
-function projectSnapshotKeepingHistory(state: Store, snapshot: SessionRuntimeSnapshot): Partial<Store> {
-  const projection = projectRuntimeSnapshot(snapshot)
-  if (projection.messages) projection.messages = reuseIfSame(state.messages, projection.messages) as typeof state.messages
-  if (snapshot.messagesLoaded === false && state.messages.length > 0) {
-    delete projection.messages
-  }
-  if (snapshot.models.length === 0 && state.models.length > 0) delete projection.models
-  if (snapshot.thinkingLevels.length === 0 && state.thinkingLevels.length > 0) delete projection.thinkingLevels
-  return projection
-}
-
-function findRuntimeSnapshot(
-  map: SessionRuntimeMap,
-  sessionId?: string,
-  runId?: string
-): SessionRuntimeSnapshot | undefined {
-  if (sessionId && map[sessionId]) return map[sessionId]
-  if (runId) {
-    const byRun = map[`run:${runId}`]
-    if (byRun && (!sessionId || byRun.runtime.sessionId === sessionId)) return byRun
-  }
-  return undefined
-}
-
-function sameSessionPath(a: string, b: string): boolean {
-  return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
-}
-
-function findSnapshotByPath(map: SessionRuntimeMap, path: string): SessionRuntimeSnapshot | undefined {
-  for (const snapshot of Object.values(map)) {
-    const file = snapshot.session?.sessionFile
-    if (file && sameSessionPath(file, path)) return snapshot
-  }
-  return undefined
-}
-
-function findNewSessionSnapshot(
-  map: SessionRuntimeMap,
-  sessionId: string | undefined,
-  runId: string | undefined,
-  generation: number | undefined
-): SessionRuntimeSnapshot | undefined {
-  const all = Object.values(map)
-  if (sessionId) {
-    const exact = all.find(
-      (snapshot) =>
-        snapshot.runtime.sessionId === sessionId &&
-        (generation === undefined || snapshot.runtime.generation === generation)
-    )
-    if (exact) return exact
-  }
-  if (generation === undefined || !runId) return undefined
-  return all.find(
-    (snapshot) =>
-      snapshot.runtime.runId === runId &&
-      snapshot.runtime.generation === generation &&
-      (!sessionId ||
-        !snapshot.runtime.sessionId ||
-        snapshot.runtime.sessionId === sessionId ||
-        snapshot.runtime.sessionId.startsWith('pending:'))
-  )
-}
-
 export { mergePeekedHistory }
 
-
-function viewedActiveRunner(s: Store, list: RunnerStatus[]): RunnerStatus | undefined {
-  const active = list.find((runner) => runner.isActive)
-  if (!active) return undefined
-  const viewing = viewingSessionId(s)
-  return !viewing || !active.sessionId || active.sessionId === viewing ? active : undefined
-}
-
-function snapshotForView(s: Store, snapshot?: SessionRuntimeSnapshot): SessionRuntimeSnapshot | undefined {
-  if (!snapshot) return undefined
-  const viewing = viewingSessionId(s)
-  return !viewing || snapshot.runtime.sessionId === viewing ? snapshot : undefined
-}
-
-
-export interface FilePreviewState {
-  path: string
-  cwd?: string
-  line?: number
-  lineEnd?: number
-  loading: boolean
-  data: FilePreview | null
-  key?: string
-  stale?: boolean
-}
-
-const MAX_ATTACHMENTS = 20
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024
-
-const QUEUE_ATTACHMENT_LIMITS = { maxCount: MAX_ATTACHMENTS, maxImageBytes: MAX_IMAGE_BYTES }
-
-function draftSeedRuntime(state: Store, key: string): RuntimeEnvelope {
-  const cached = state.sessionRuntimes[key]
-  if (cached) return cached.runtime
-  const runner = state.runners.find(
-    (item) =>
-      item.sessionId === key ||
-      `run:${item.runId ?? item.id}` === key ||
-      (item.sessionFile ? `file:${item.sessionFile.replace(/\\/g, '/').toLowerCase()}` === key : false)
-  )
-  return {
-    sessionId: key.startsWith('file:') ? '' : key,
-    runId: runner?.runId ?? runner?.id ?? key,
-    projectId: runner?.projectId,
-    generation: runner?.generation ?? 0
-  }
-}
-
-function writeDraftAttachments(
-  state: Store,
-  key: string,
-  attachments: Attachment[]
-): SessionRuntimeMap {
-  if (!key) return state.sessionRuntimes
-  return updateSessionRuntimeAt(state.sessionRuntimes, key, { draftAttachments: attachments }, draftSeedRuntime(state, key))
-}
-
-function applyQueueRecovery(
-  current: Store,
-  input: {
-    sessionId?: string
-    text: string
-    images?: QueueImageRef[]
-    attachments?: Attachment[]
-    idPrefix: string
-    notice?: string
-    sameSession?: boolean
-    draftRuntime?: RuntimeEnvelope
-    draftKey?: string
-  }
-): Partial<Store> {
-  const sameSession = input.sameSession ?? current.session?.sessionId === input.sessionId
-  let recovery: { queueRestore: string | null; attachments: Attachment[]; cacheAttachments?: Attachment[] }
-  let restoredCount: number
-  let droppedCount: number
-  if (input.attachments) {
-    const plan = planComposerRecovery({
-      sameView: sameSession,
-      text: input.text,
-      attachments: input.attachments,
-      existing: current.attachments,
-      limits: QUEUE_ATTACHMENT_LIMITS
-    })
-    recovery = plan
-    restoredCount = plan.restoredAttachments
-    droppedCount = plan.droppedAttachments
-  } else {
-    const plan = planQueueRecovery({
-      sameSession,
-      text: input.text,
-      images: input.images,
-      existing: current.attachments,
-      limits: QUEUE_ATTACHMENT_LIMITS,
-      idPrefix: input.idPrefix
-    })
-    recovery = plan
-    restoredCount = plan.restoredImages
-    droppedCount = plan.droppedImages
-  }
-
-  const crossKey = sameSession
-    ? ''
-    : input.draftKey || (input.draftRuntime ? sessionRuntimeKey(input.draftRuntime) : input.sessionId || '')
-  let crossRuntimes: SessionRuntimeMap | undefined
-  if (crossKey) {
-    const cached = current.sessionRuntimes[crossKey]
-    const seed = cached?.runtime ?? input.draftRuntime ?? draftSeedRuntime(current, crossKey)
-    const dataPatch: SessionRuntimeDataPatch = {}
-    if (recovery.queueRestore) {
-      dataPatch.draft = [recovery.queueRestore, cached?.draft].filter(Boolean).join('\n')
-    }
-    if (recovery.cacheAttachments?.length) {
-      const merged = mergeQueueAttachments(cached?.draftAttachments ?? [], recovery.cacheAttachments, QUEUE_ATTACHMENT_LIMITS)
-      dataPatch.draftAttachments = merged.attachments
-      droppedCount += merged.skipped
-    }
-    if (Object.keys(dataPatch).length) {
-      crossRuntimes = updateSessionRuntimeAt(current.sessionRuntimes, crossKey, dataPatch, seed)
-    }
-  }
-
-  let notices = current.notices
-  if (droppedCount > 0) {
-    notices = input.attachments
-      ? pushNotice(notices, 'error', uiText('state.recover.attachmentsDropped', { count: droppedCount }))
-      : pushNotice(notices, 'error', uiText('state.recover.imagesDropped', { count: droppedCount }))
-  } else if (sameSession && input.notice && (recovery.queueRestore || restoredCount > 0)) {
-    notices = pushNotice(notices, 'info', input.notice)
-  }
-
-  if (sameSession) {
-    const patch: Partial<Store> = {}
-    if (recovery.queueRestore) {
-      patch.queueRestore = current.queueRestore ? `${recovery.queueRestore}\n${current.queueRestore}` : recovery.queueRestore
-    }
-    if (recovery.attachments !== current.attachments) {
-      patch.attachments = recovery.attachments
-      const key = composerDraftKey(current)
-      if (key) patch.sessionRuntimes = writeDraftAttachments(current, key, recovery.attachments)
-    }
-    if (notices !== current.notices) patch.notices = notices
-    return patch
-  }
-
-  const patch: Partial<Store> = {}
-  if (crossRuntimes) patch.sessionRuntimes = crossRuntimes
-  if (notices !== current.notices) patch.notices = notices
-  return patch
-}
-
-interface QueueReclaim {
-  text: string
-  images: QueueImageRef[]
-  idPrefix: string
-  notice: string
-}
-
-const heldQueueReclaims = new Map<string, QueueReclaim>()
-
-function holdQueueReclaim(sessionId: string, recovery: QueueReclaim): void {
-  const held = heldQueueReclaims.get(sessionId)
-  heldQueueReclaims.set(
-    sessionId,
-    held
-      ? { ...recovery, text: [held.text, recovery.text].filter(Boolean).join('\n'), images: [...held.images, ...recovery.images] }
-      : recovery
-  )
-}
-
-function takeHeldQueueReclaim(state: Store): Partial<Store> | null {
-  const viewing = viewingSessionId(state)
-  if (!viewing) return null
-  const held = heldQueueReclaims.get(viewing)
-  if (!held) return null
-  heldQueueReclaims.delete(viewing)
-  return applyQueueRecovery(state, { ...held, sessionId: viewing, sameSession: true, notice: undefined })
-}
-
-async function imageFingerprint(base64: string): Promise<string | null> {
-  try {
-    const at = globalThis.atob
-    if (typeof at !== 'function') return null
-    const bin = at(String(base64 ?? ''))
-    const bytes = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i)
-    const digest = await crypto.subtle.digest('SHA-256', bytes)
-    return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-      .slice(0, 32)
-  } catch {
-    return null
-  }
-}
-
-async function collectSourceIds(attachments: Attachment[], sessionId: string): Promise<string[]> {
-  const files: string[] = []
-  const prints: Promise<string | null>[] = []
-  for (const a of attachments) {
-    if (a.kind === 'file') {
-      if (a.path && !a.isDirectory) files.push(a.path)
-      continue
-    }
-    if (!a.data) continue
-    prints.push(imageFingerprint(a.data))
-  }
-  const out: string[] = []
-  for (const fp of await Promise.all(prints)) if (fp) out.push(`image:${fp}`)
-  if (files.length) {
-    try {
-      const refs = await window.yan.sources.verifyFiles({
-        sessionId,
-        entries: files.map((path) => ({ path }))
-      })
-      for (const r of refs) if (r?.sourceId) out.push(r.sourceId)
-    } catch {
-    }
-  }
-  return [...new Set(out)]
-}
-
 let connWatchActive = false
-let capabilityRequestSeq = 0
-let commandRequestSeq = 0
-
-
-function thinkLabelOf(level: string): string {
-  const key = THINK_LABEL[level]
-  return key ? uiText(key) : level
-}
 
 function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMessage[] {
   const i = list.findLastIndex((m) => m.id === id)
@@ -898,201 +394,10 @@ function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMes
   return next
 }
 
-const MAX_NOTICES = 3
-async function piCall<T extends { ok: boolean; error?: string }>(
-  fn: () => Promise<T>
-): Promise<T> {
-  try {
-    return await fn()
-  } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e)
-    const error = stripIpcErrorPrefix(raw)
-    return { ok: false, error } as T
-  }
-}
-
-export function pushNotice(
-  list: Notice[],
-  type: Notice['type'],
-  text: string,
-  id?: string
-): Notice[] {
-  if (!text.trim()) return list
-  if (list.some((n) => n.text === text && Date.now() - (n.at ?? 0) < 8000)) return list
-  const next = [...list, { id: id ?? `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type, text, at: Date.now() }]
-  return next.slice(-MAX_NOTICES)
-}
-
-let browserSurfaceActive = false
-const overlayBlockers = new OverlayBlockers()
-let settingsBlockerRelease: (() => void) | null = null
-
-function browserVisibilityFor(state: Store): boolean {
-  return shouldShowBrowser({
-    browserOpen: state.browserState.open,
-    rightPanelOpen: true,
-    activeBrowserSurface: browserSurfaceActive,
-    overlayBlockers: overlayBlockers.size
-  })
-}
-
-let teardown = false
-if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  window.addEventListener('pagehide', () => { teardown = true })
-}
-
-let browserVisibilitySeq = 0
-
-function applyBrowserVisibility(get: () => Store): void {
-  if (teardown) return
-  const desired = browserVisibilityFor(get())
-  const seq = ++browserVisibilitySeq
-  if (!desired && get().browserNativeVisible && browserSurfaceActive && typeof window.yan.browser.snapshot === 'function') {
-    void window.yan.browser.snapshot().catch(() => null).then(async (cover) => {
-      if (cover && typeof Image === 'function') {
-        const image = new Image()
-        image.src = cover
-        await image.decode().catch(() => undefined)
-      }
-      if (seq !== browserVisibilitySeq) return
-      useStore.setState({ browserCover: cover, browserNativeVisible: false })
-      requestAnimationFrame(() => {
-        if (seq === browserVisibilitySeq) void window.yan.browser.setVisible(false)
-      })
-    })
-    return
-  }
-  if (get().browserNativeVisible !== desired) useStore.setState({ browserNativeVisible: desired })
-  void window.yan.browser.setVisible(desired)
-}
-
-function currentViewOwnerKey(view: Store): string {
-  return workspaceKeyFor(viewKeyRef(view))
-}
-
-let sessionSwitchGate = 0
-let navigationSeq = 0
-
-interface DeletedTitles {
-  manualTitles: Record<string, string>
-  titles: Record<string, string>
-}
-
-const DELETED_TITLES_MAX = 50
-const deletedTitles = new Map<string, DeletedTitles>()
-
-function rememberDeletedTitles(token: string, kept: DeletedTitles): void {
-  deletedTitles.set(token, kept)
-  while (deletedTitles.size > DELETED_TITLES_MAX) {
-    const oldest = deletedTitles.keys().next().value
-    if (oldest === undefined) break
-    deletedTitles.delete(oldest)
-  }
-}
-
-let sessionSwitchInFlight: { gate: number; done: Promise<void> } | null = null
-
-function beginSessionSwitch(gate: number): () => void {
-  discardPendingMessagePatches()
-  let resolve!: () => void
-  const done = new Promise<void>((r) => { resolve = r })
-  sessionSwitchInFlight = { gate, done }
-  markSessionSwitch(gate)
-  return () => {
-    if (sessionSwitchInFlight?.gate === gate) sessionSwitchInFlight = null
-    unmarkSessionSwitch(gate)
-    resolve()
-  }
-}
-
-let newSessionInFlight: Promise<void> | null = null
-
-function beginNewSession(): () => void {
-  let resolve!: () => void
-  const done = new Promise<void>((r) => { resolve = r })
-  newSessionInFlight = done
-  return () => {
-    if (newSessionInFlight === done) newSessionInFlight = null
-    resolve()
-  }
-}
-
-let quotaResumeGen = 0
-let quotaResumeTimer: ReturnType<typeof setTimeout> | undefined
-
-async function stopRetryWhenQuotaWindowFull(): Promise<void> {
-  const state = useStore.getState()
-  const provider = state.session?.model?.provider
-  if (!provider) return
-  const snapshot = await window.yan
-    .providerQuota(provider, state.settings?.providerBudgets?.[provider])
-    .catch(() => null)
-  if (!snapshot?.windows?.length || snapshot.staleError) return
-  if (!blockedQuotaWindows(snapshot.windows).length) return
-  if (useStore.getState().session?.sessionId !== state.session?.sessionId) return
-  await useStore.getState().abortRetry()
-}
-
-async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<void> {
-  const wait = useStore.getState().quotaResume
-  if (gen !== quotaResumeGen || !wait) return
-  let windows = known
-  if (!windows) {
-    try {
-      const next = await window.yan.providerQuota(wait.provider, useStore.getState().settings?.providerBudgets?.[wait.provider])
-      if (gen !== quotaResumeGen) return
-      if (!next.supported) {
-        quotaResumeGen++
-        useStore.setState((s) => ({ quotaResume: null, notices: pushNotice(s.notices, 'info', uiText('state.quota.noWindows')) }))
-        return
-      }
-      windows = next.staleError ? undefined : next.windows
-    } catch {
-      windows = undefined
-    }
-  }
-  if (!windows?.length) {
-    quotaResumeTimer = setTimeout(() => void runQuotaResumeCheck(gen), QUOTA_RESUME_POLL_MS)
-    return
-  }
-  const decision = decideQuotaResume(windows, Date.now())
-  if (!decision.ready) {
-    useStore.setState({ quotaResume: { ...wait, resetAt: decision.resetAt } })
-    quotaResumeTimer = setTimeout(() => void runQuotaResumeCheck(gen), Math.max(1000, decision.nextCheckAt - Date.now()))
-    return
-  }
-  quotaResumeGen++
-  useStore.setState({ quotaResume: null })
-  if (useStore.getState().session?.sessionId !== wait.sessionId) {
-    if (!wait.sessionFile) return
-    await useStore.getState().switchSession(wait.sessionFile)
-    if (useStore.getState().session?.sessionId !== wait.sessionId) return
-  }
-  if (useStore.getState().session?.isAgentRunning || useStore.getState().session?.isStreaming) return
-  await useStore.getState().send(QUOTA_RESUME_PROMPT)
-}
 let approvalBootstrapSeq = 0
 let bootPushes: { state: boolean; messages: boolean } | null = null
 let approvalsBootstrapped = false
 let approvalChanges = new Map<string, ApprovalRequest | null>()
-let settingsPatchQueue: Promise<unknown> = Promise.resolve()
-let rightPanelPatchSeq = 0
-async function persistSettingsPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
-  const operation = settingsPatchQueue.then(async () => {
-    const next = await window.yan.patchSettings(patch)
-    useStore.setState({ settings: next })
-    return useStore.getState().settings ?? next
-  })
-  settingsPatchQueue = operation.catch(() => undefined)
-  return operation
-}
-
-type QueueEditArg = QueueState | QueueOp
-type QueueEditResult = { ok: boolean; error?: string; dropped?: QueueItem[] }
-
-function queueEditRequest(arg: QueueEditArg, expected: ExpectedRuntimeOwner): Promise<QueueEditResult> {
-  return (window.yan.queueEdit as unknown as (arg: QueueEditArg, expected: ExpectedRuntimeOwner) => Promise<QueueEditResult>)(arg, expected)
-}
 
 const pendingMessagePatches = new MessagePatchBatch()
 const pendingRuntimePushes: MainPush[] = []
@@ -1133,7 +438,7 @@ function flushPendingMessagePatches(): void {
   if (missing) requestViewResync('patch-target-missing')
 }
 
-function discardPendingMessagePatches(): void {
+export function discardPendingMessagePatches(): void {
   pendingMessagePatches.drain()
   messagePatchFlush.cancel()
   const runtimePushes = pendingRuntimePushes.splice(0)
@@ -1169,7 +474,6 @@ function restoreMissingUiRequests(runners: readonly RunnerStatus[]): void {
 }
 
 export const useStore = create<Store>((rawSet, get) => {
-  const releasingSends = new Set<PendingSend>()
   const set = (partial: Partial<Store>): void => {
     rawSet((state) => {
       const notices = partial.notices
@@ -1187,91 +491,31 @@ export const useStore = create<Store>((rawSet, get) => {
       return partial
     })
   }
-  const revealTerminalPane = (owner: string, terminalId: string): void => {
-    const viewOwner = currentViewOwnerKey(get())
-    const sameOwner = (a: string, b: string): boolean => a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
-    if (!sameOwner(owner, viewOwner)) return
-    if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
-    useRightPanel.getState().open(toolSurface('terminal'))
-    requestTerminalTab({ ownerKey: viewOwner, terminalId })
-  }
-  const revealBrowserPane = (navigate: boolean): void => {
-    if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
-    const ui = useUiV3.getState()
-    if (navigate) ui.navigate({ name: 'chat' })
-    useRightPanel.getState().open(toolSurface('browser'))
-    applyBrowserVisibility(get)
-  }
-  const browserOpener = new BrowserOpener({
-    open: (url) => window.yan.browser.open(url, get().peekedSessionId ?? get().session?.sessionId ?? 'workspace'),
-    currentOwnerKey: () => currentViewOwnerKey(get()),
-    resourceOwner: () => resourceOwner('browser'),
-    claimResource: (owner) => claimResource('browser', owner),
-    releaseResource: () => releaseResource('browser'),
-    isBrowserOpen: () => get().browserState.open,
-    setBrowserState: (browserState) => {
-      if (browserState.sessionId && browserState.sessionId !== (get().peekedSessionId ?? get().session?.sessionId ?? 'workspace')) return
-      set({ browserState })
-    },
-    reveal: () => revealBrowserPane(true),
-    blocked: (reason) => {
-      const text =
-        reason === 'foreign-owner'
-          ? uiText('state.browser.foreignOwner')
-          : uiText('state.browser.busy')
-      set({ notices: pushNotice(get().notices, 'warning', text) })
-    },
-    failed: (message) => {
-      set({ notices: pushNotice(get().notices, 'error', stripIpcErrorPrefix(message)) })
-    }
-  })
-  const settleQueueEdit = async (sessionId: string | undefined, res: QueueEditResult): Promise<void> => {
-    if (res.ok) return
-    const dropped = res.dropped ?? []
-    if (dropped.length) {
-      const current = get()
-      set(applyQueueRecovery(current, {
-        sessionId,
-        text: dropped.map((item) => item.text ?? '').filter((text) => text).join('\n'),
-        images: dropped.flatMap((item) => item.images ?? []),
-        idPrefix: 'queue-image',
-        notice: uiText('state.queue.editFailedRestored')
-      }))
-    }
-    set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.queueEditFailed')) })
-  }
+  const sliceCtx: SliceContext = { set, get }
   return {
   conn: 'starting',
   connDetail: '',
-  logs: [],
+  ...createNoticesSlice(sliceCtx),
   startupPhase: true,
 
   session: null,
   stats: null,
-  queue: EMPTY_QUEUE,
-  pendingSends: [],
-  compactCommand: null,
-  quotaResume: null,
+  ...createSendSlice(sliceCtx),
+  ...createSessionNavSlice(sliceCtx),
+  ...createQuotaResumeSlice(sliceCtx),
   runTail: null,
   messages: [],
-  sessions: [],
+  ...createSessionListSlice(sliceCtx),
   todos: [],
   todoHistory: [],
   activeRunnerId: null,
   runners: [],
   sessionRuntimes: {},
-  approvals: [],
-  gitInstall: { phase: 'idle' },
+  ...createUiRequestsSlice(sliceCtx),
 
-  models: [],
-  thinkingLevels: [],
-  commands: [],
-  commandsAt: 0,
-  authProviders: [],
-  commandUse: readCommandUse(),
+  ...createModelSlice(sliceCtx),
 
-  settings: null,
-  settingsOpen: false,
+  ...createSettingsSlice(sliceCtx),
   nativeSessionPanel: null,
   closeNativeSessionPanel: () => set({ nativeSessionPanel: null }),
   nativeSession: async (action, args) => {
@@ -1295,46 +539,16 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     return result
   },
-  settingsTab: 'appearance',
-  settingsRequestRevision: 0,
-  checkpoints: [],
-  rewind: null,
-  titles: {},
-  manualTitles: {},
-  autoRetryEnabled: true,
-  maximized: false,
-  alwaysOnTop: false,
-  browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
-  browserStates: {},
-  browserNativeVisible: false,
-  browserCover: null,
+  ...createCheckpointsSlice(sliceCtx),
+  ...createBrowserSlice(sliceCtx),
   terminals: [],
-  filePreview: null,
-  subagents: [],
-  zoom: null,
-  uiRequests: [],
-  questionLogs: {},
-  approvalLogs: {},
-  uiCollapsed: false,
-  uiDrafts: {},
-  composerInsert: null,
-  notices: [],
-  nativeMcpStatus: null,
+  ...createPreviewSlice(sliceCtx),
+  ...createSubagentsSlice(sliceCtx),
+  ...createComposerSlice(sliceCtx),
   statuses: {},
   widgets: {},
   widgetPlacements: {},
   piInfo: null,
-  editorInject: null,
-  composerFocus: { tick: 0, at: 0 },
-  queueRestore: null,
-  attachments: [],
-  pendingSourceLinks: [],
-  submittingMessages: [],
-  peekedPath: null,
-  peekedSessionId: null,
-  peekNote: null,
-  switchLoading: false,
-  pendingActivation: null,
 
   bootstrap: async () => {
     const bootstrapApprovals = ++approvalBootstrapSeq
@@ -1520,7 +734,7 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
 
-    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), revealBrowser: () => revealBrowserPane(false), revealTerminal: revealTerminalPane, t: uiText }
+    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), revealBrowser: () => revealBrowserPane(get, false), revealTerminal: (owner: string, terminalId: string) => revealTerminalPane(get, owner, terminalId), t: uiText }
     if (consumeShellPush(m, s, ctx) || consumeQuestionPush(m, s, ctx) || consumeSubagentPush(m, s, ctx) || consumeTaskStatePush(m, s, ctx)) return
 
     switch (m.ch) {
@@ -1601,12 +815,12 @@ export const useStore = create<Store>((rawSet, get) => {
           void get().switchSession(target.sessionFile)
           break
         }
-        navigationSeq += 1
-        const gate = ++sessionSwitchGate
+        nav.seq += 1
+        const gate = ++nav.gate
         if (get().switchLoading) set({ switchLoading: false })
         void (async () => {
           const res = await piCall(() => window.yan.selectSession(target))
-          if (gate !== sessionSwitchGate) return
+          if (gate !== nav.gate) return
           if (!res.ok) {
             set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.selectRunningFailed')) })
             return
@@ -1740,228 +954,12 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  refreshSessions: async () => {
-    try {
-      const listed = await window.yan.listSessions()
-      const sessions = reuseSessionSummaries(get().sessions, Array.isArray(listed) ? listed : [])
-      if (sessions !== get().sessions) set({ sessions })
-    } catch {
-    }
-  },
-
-  loadAuthProviders: async () => {
-    try {
-      const list = await window.yan.authProviders()
-      set({ authProviders: Array.isArray(list) ? list : [] })
-    } catch {
-    }
-  },
-
-
-  reloadModels: async () => {
-    const request = ++capabilityRequestSeq
-    const initial = get()
-    const runnerId = initial.activeRunnerId
-    const sessionId = initial.session?.sessionId
-    const runtime = runtimeForState(initial)
-    try {
-      const [models, thinkingLevels] = await Promise.all([
-        window.yan.listModels(),
-        window.yan.listThinkingLevels()
-      ])
-      const current = get()
-      if (request !== capabilityRequestSeq) return
-      if (
-        isCapabilityResponseStale(
-          { runnerId, sessionId },
-          { runnerId: current.activeRunnerId, sessionId: current.session?.sessionId }
-        )
-      ) {
-        return
-      }
-      const currentRuntime = runtimeForState(current) ?? runtime
-      const nextModels = keepRef(current.models, models)
-      const nextLevels = keepRef(current.thinkingLevels, thinkingLevels)
-      const runtimeEntry = currentRuntime ? current.sessionRuntimes[sessionRuntimeKey(currentRuntime)] : undefined
-      const stableModels = runtimeEntry ? keepRef(runtimeEntry.models, nextModels) : nextModels
-      const stableLevels = runtimeEntry ? keepRef(runtimeEntry.thinkingLevels, nextLevels) : nextLevels
-      const runtimeUnchanged =
-        !!runtimeEntry &&
-        runtimeEntry.models === stableModels &&
-        runtimeEntry.thinkingLevels === stableLevels &&
-        runtimeEntry.runtime.generation === currentRuntime?.generation
-      set({
-        models: nextModels,
-        thinkingLevels: nextLevels,
-        ...(currentRuntime && !runtimeUnchanged
-          ? {
-              sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, currentRuntime, {
-                models: stableModels,
-                thinkingLevels: stableLevels
-              })
-            }
-          : {})
-      })
-    } catch {
-    }
-  },
-
-  reloadCommands: async () => {
-    const request = ++commandRequestSeq
-    const initial = get()
-    const runnerId = initial.activeRunnerId
-    const sessionId = initial.session?.sessionId
-    const runtime = runtimeForState(initial)
-    try {
-      const commands = await window.yan.listCommands()
-      const current = get()
-      if (request !== commandRequestSeq) return
-      if (
-        isCapabilityResponseStale(
-          { runnerId, sessionId },
-          { runnerId: current.activeRunnerId, sessionId: current.session?.sessionId }
-        )
-      ) {
-        return
-      }
-      const currentRuntime = runtimeForState(current) ?? runtime
-      const nextCommands = keepRef(current.commands, commands)
-      const runtimeEntry = currentRuntime ? current.sessionRuntimes[sessionRuntimeKey(currentRuntime)] : undefined
-      const stableCommands = runtimeEntry ? keepRef(runtimeEntry.commands, nextCommands) : nextCommands
-      set({
-        commands: nextCommands,
-        commandsAt: Date.now(),
-        ...(currentRuntime && !(runtimeEntry && runtimeEntry.commands === stableCommands && runtimeEntry.runtime.generation === currentRuntime.generation)
-          ? {
-              sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, currentRuntime, {
-                commands: stableCommands
-              })
-            }
-          : {})
-      })
-    } catch {
-    }
-  },
-
-  setSessionDraft: (value, key) => {
-    const current = get()
-    key = key ?? composerDraftKey(current)
-    if (!key) return
-    const entry = current.sessionRuntimes[key]
-    if (entry?.draftInitialized && entry.draft === value) return
-    set({
-      sessionRuntimes: updateSessionRuntimeAt(current.sessionRuntimes, key, { draft: value }, draftSeedRuntime(current, key))
-    })
-  },
-
-  hydrateComposerDraft: (key) => {
-    const snapshot = composerDraftForView(get(), key)
-    set({ attachments: snapshot.attachments })
-  },
-
-  injectComposerText: (text) => set({ editorInject: { text, mode: 'append' } }),
-
   redetectPi: async () => {
     const info = await window.yan.redetectPi().catch(() => null)
     if (info) set({ piInfo: info })
     const status = await window.yan.agentStatus().catch(() => null)
     if (status) set({ conn: status.state, connDetail: status.detail })
     void get().reloadModels()
-  },
-
-  markCommandUsed: (name) => {
-    const next = { ...get().commandUse, [name]: (get().commandUse[name] ?? 0) + 1 }
-    set({ commandUse: next })
-    try {
-      localStorage.setItem('yan.cmdUse', JSON.stringify(next))
-    } catch {
-    }
-  },
-
-  send: async (text, images, mode) => {
-    const target = composerSubmitIdentity(get())
-    const attachments = get().attachments
-    const submission: SubmittingMessage = {
-      identity: target,
-      message: { id: `submitting-${crypto.randomUUID()}`, role: 'user', text, images, timestamp: Date.now(), sourceCwd: get().session?.cwd },
-      previousIds: get().messages.map((message) => message.id)
-    }
-    set({ submittingMessages: [...get().submittingMessages, submission] })
-    try {
-      const guardView = hasComposerIdentity(target)
-      const earlySessionId = attachments.length && !get().pendingActivation ? get().session?.sessionId : undefined
-      const earlySourceIds = earlySessionId ? collectSourceIds(attachments, earlySessionId) : null
-      if (!(await get().ensureActivated(target))) return false
-      if (guardView && !sameComposerView(get(), target)) return false
-      const sessionId = get().session?.sessionId
-      const sourceIds = !sessionId
-        ? []
-        : earlySourceIds && sessionId === earlySessionId
-          ? await earlySourceIds
-          : await collectSourceIds(attachments, sessionId)
-      if (guardView && !sameComposerView(get(), target)) return false
-      if (sourceIds.length) {
-        set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
-      }
-      const expected = await submitRuntimeFor(get, target)
-      if (guardView && !sameComposerView(get(), target)) return false
-      const res = expected === null
-        ? { ok: false, error: uiText('state.error.sessionNotActivated') }
-        : await piCall(() => window.yan.send(text, images, mode, expected))
-      if (!res.ok) {
-        if (sourceIds.length) {
-          set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x.sourceIds !== sourceIds) })
-        }
-        set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.sendFailed')) })
-        return false
-      }
-      return true
-    } finally {
-      set({ submittingMessages: get().submittingMessages.filter((item) => item !== submission) })
-    }
-  },
-
-  armQuotaResume: async (ifWindowFull = false) => {
-    const session = get().session
-    const provider = session?.model?.provider
-    if (!session || !provider) return false
-    if (get().quotaResume) return true
-    const armGen = quotaResumeGen
-    const snapshot = await window.yan
-      .providerQuota(provider, get().settings?.providerBudgets?.[provider])
-      .catch(() => null)
-    if (armGen !== quotaResumeGen) return !!get().quotaResume
-    if (ifWindowFull) {
-      if (!snapshot?.windows?.length || snapshot.staleError || !blockedQuotaWindows(snapshot.windows).length) return false
-      if (get().quotaResume) return true
-      await get().abortRetry()
-    }
-    if (!snapshot) {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.unknownError')) })
-      return false
-    }
-    if (!snapshot.windows?.length || snapshot.staleError) {
-      set({ notices: pushNotice(get().notices, 'error', snapshot.staleError ?? snapshot.error ?? uiText('state.quota.noWindows')) })
-      return false
-    }
-    const gen = ++quotaResumeGen
-    set({
-      quotaResume: {
-        sessionId: session.sessionId,
-        sessionFile: session.sessionFile,
-        provider,
-        armedAt: Date.now(),
-        resetAt: decideQuotaResume(snapshot.windows, Date.now()).resetAt
-      }
-    })
-    void runQuotaResumeCheck(gen, snapshot.windows)
-    return true
-  },
-
-  cancelQuotaResume: () => {
-    quotaResumeGen++
-    clearTimeout(quotaResumeTimer)
-    set({ quotaResume: null })
   },
 
   locateMessage: async (messageId) => {
@@ -1973,788 +971,6 @@ export const useStore = create<Store>((rawSet, get) => {
     if (!el) return false
     highlightMessageElement(el)
     return true
-  },
-
-  holdSend: (text, images) => {
-    const list = get().pendingSends
-    const sessionId = viewIdentityOf(get()).sessionId
-    set({
-      pendingSends: [
-        ...list,
-        {
-          id: `ps-${Date.now().toString(36)}-${list.length}`,
-          sessionId,
-          ...(sessionId ? {} : { ownerKey: blankViewKey(get()), navSeq: navigationSeq }),
-          text,
-          images
-        }
-      ]
-    })
-  },
-
-  releaseSend: async (id, mode) => {
-    const item = pendingSendsForView(get()).find((p) => p.id === id)
-    if (!item) return
-    if (releasingSends.has(item)) return
-    releasingSends.add(item)
-    try {
-      const ok = await get().send(item.text, item.images, mode)
-      if (ok) set({ pendingSends: get().pendingSends.filter((p) => p !== item) })
-    } finally {
-      releasingSends.delete(item)
-    }
-  },
-
-  discardSend: (id) => {
-    set({ pendingSends: get().pendingSends.filter((p) => p.id !== id) })
-  },
-
-  restoreSend: (id) => {
-    const item = pendingSendsForView(get()).find((p) => p.id === id)
-    if (!item || releasingSends.has(item)) return
-    const sessionId = get().session?.sessionId
-    const current = get()
-    set({
-      pendingSends: current.pendingSends.filter((p) => p.id !== id),
-      ...applyQueueRecovery(current, {
-        sessionId,
-        text: item.text,
-        images: item.images,
-        idPrefix: 'pending-image'
-      })
-    })
-  },
-
-  steerQueued: async (queueId) => {
-    const target = await sessionActionTarget(get)
-    if (!target) {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.sessionNotActivated')) })
-      return
-    }
-    const res = await piCall(() => window.yan.steerQueued(queueId, target.expected))
-    if (!res.ok) {
-      set({
-        notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.steerFailed'))
-      })
-    }
-  },
-
-  removeQueued: async (queueId) => {
-    const sessionId = get().session?.sessionId
-    const target = await sessionActionTarget(get)
-    if (!target) {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.sessionNotActivated')) })
-      return
-    }
-    const res = await piCall(() => window.yan.removeQueued(queueId, target.expected))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.removeQueuedFailed')) })
-      return
-    }
-    const current = get()
-    set(applyQueueRecovery(current, {
-      sessionId,
-      text: res.text ?? '',
-      images: res.images,
-      idPrefix: 'queue-image',
-      notice: uiText('state.queue.withdrawn')
-    }))
-  },
-
-  recoverComposerInput: (input) => {
-    const current = get()
-    const sameView = sameComposerView(current, input.identity)
-    const draftRuntime = sameView ? undefined : recoveryRuntimeFor(current, input.identity) ?? undefined
-    const draftKey = sameView ? undefined : draftRuntime ? undefined : input.identity.draftKey
-    set(applyQueueRecovery(current, {
-      sessionId: input.identity.sessionId,
-      text: input.text,
-      attachments: input.attachments,
-      idPrefix: input.idPrefix ?? 'composer-recover',
-      notice: input.notice,
-      sameSession: sameView,
-      draftRuntime,
-      draftKey
-    }))
-  },
-
-  applyQueueOrder: async (next) => {
-    const sessionId = get().session?.sessionId
-    const target = await sessionActionTarget(get)
-    if (!target) return settleQueueEdit(sessionId, { ok: false, error: uiText('state.error.sessionNotActivated') })
-    await settleQueueEdit(sessionId, await piCall(() => window.yan.queueEdit(next, target.expected)))
-  },
-
-  applyQueueOp: async (op) => {
-    const sessionId = get().session?.sessionId
-    const target = await sessionActionTarget(get)
-    if (!target) return settleQueueEdit(sessionId, { ok: false, error: uiText('state.error.sessionNotActivated') })
-    await settleQueueEdit(sessionId, await piCall(() => queueEditRequest(op, target.expected)))
-  },
-
-  abort: async () => {
-    await runStopFlow({
-      jobs: async () => {
-        await useTerminalJobs.getState().load().catch(() => undefined)
-        const { peekedSessionId, peekedPath, session } = get()
-        return terminalJobsForView(useTerminalJobs.getState().jobs, { peekedSessionId, peekedPath, session })
-      },
-      confirm: requestStopConfirm,
-      abortTurn: () => get().abortTurn(),
-      stopJob: (id) => window.yan.terminal.stopJob(id)
-    })
-  },
-
-  abortTurn: async () => {
-    const sessionId = get().session?.sessionId
-    markStopRequested(sessionId)
-    try {
-      const expected = await submitRuntimeFor(get, composerSubmitIdentity(get()))
-      if (expected === null) return
-      const cleared = await window.yan.abort(expected)
-      if (cleared.error) set({ notices: pushNotice(get().notices, 'error', cleared.error) })
-      const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)
-      const items = [...(cleared.items?.steering ?? []), ...(cleared.items?.followUp ?? [])]
-      const current = get()
-      const texts = items.length ? items.map((item) => item.text ?? '').filter((text) => text) : back
-      if (texts.length || items.some((item) => item.images?.length)) {
-        set(applyQueueRecovery(current, {
-          sessionId,
-          text: texts.join('\n'),
-          images: items.flatMap((item) => item.images ?? []),
-          idPrefix: 'queue-image',
-          notice: uiText('state.queue.restored', { count: texts.length })
-        }))
-      }
-    } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error && error.message ? stripIpcErrorPrefix(error.message) : uiText('state.error.unknownError')) })
-    }
-  },
-
-  runBash: async (command, options) => {
-    const target = composerSubmitIdentity(get())
-    const guardView = hasComposerIdentity(target)
-    if (!(await get().ensureActivated(target))) return { ok: false, error: uiText('state.error.sessionNotActivated') }
-    if (guardView && !sameComposerView(get(), target)) return { ok: false, error: uiText('state.error.sessionSwitchedCommandSkipped') }
-    const expected = await submitRuntimeFor(get, target)
-    if (guardView && !sameComposerView(get(), target)) return { ok: false, error: uiText('state.error.sessionSwitchedCommandSkipped') }
-    const res = expected === null
-      ? { ok: false, error: uiText('state.error.sessionNotActivated') }
-      : await piCall(() => window.yan.runBash(command, options, expected))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.commandFailed')) })
-    }
-    return res
-  },
-
-  abortBash: async () => {
-    const target = await sessionActionTarget(get)
-    if (!target) return
-    await window.yan.abortBash(target.expected)
-    if (!target.current()) return
-  },
-
-  newSession: async (target) => {
-    navigationSeq += 1
-    discardPendingMessagePatches()
-    const gate = ++sessionSwitchGate
-    const finishNewSession = beginNewSession()
-    try {
-    if (get().switchLoading) set({ switchLoading: false })
-    const res = await piCall(() => window.yan.newSession(target))
-    if (gate !== sessionSwitchGate) {
-      return res.ok
-        ? { ok: true, sessionId: res.sessionId ?? undefined, runId: res.runId ?? res.id }
-        : { ok: false, error: res.error }
-    }
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.newSessionFailed')) })
-      return { ok: false, error: res.error }
-    }
-    const before = get()
-    const arrived = findNewSessionSnapshot(
-      before.sessionRuntimes,
-      res.sessionId ?? undefined,
-      res.runId ?? res.id,
-      res.generation
-    )
-    set({
-      ...(res.id || res.runId ? { activeRunnerId: res.runId ?? res.id } : {}),
-      ...(arrived
-        ? switchToRuntimeSnapshot(arrived)
-        : {
-            messages: [],
-            session: null,
-            todos: [],
-            todoHistory: [],
-            uiRequests: [],
-            statuses: {},
-            widgets: {},
-            widgetPlacements: {},
-            stats: null
-          }),
-      queue: arrived?.queue ?? EMPTY_QUEUE,
-      pendingActivation: null,
-      peekedPath: null,
-      peekedSessionId: null,
-      peekNote: null
-    })
-    void get().syncRunners()
-    void get().reloadModels()
-    void get().reloadCommands()
-    await get().refreshSessions()
-    return { ok: true, sessionId: res.sessionId ?? undefined, runId: res.runId ?? res.id }
-    } finally {
-      finishNewSession()
-    }
-  },
-
-  pickProjectSession: (cwd, projectId) => {
-    const s = get()
-    return pickProjectSessionTarget({ cwd, projectId, runners: s.runners, sessions: s.sessions })
-  },
-
-  switchSession: async (path) => {
-    navigationSeq += 1
-    const gate = ++sessionSwitchGate
-    const finishSwitch = beginSessionSwitch(gate)
-    try {
-    const findSummary = () => get().sessions.find((x) => x.path === path) ?? get().sessions.find((x) => sameSessionPath(x.path, path))
-    let sum = findSummary()
-    const cachedSnapshot = (sum?.id ? get().sessionRuntimes[sum.id] : undefined) ??
-      findSnapshotByPath(get().sessionRuntimes, path)
-    const cachedMessages = cachedSnapshot?.messages
-    const left = get()
-    const leftView = {
-      peekedPath: left.peekedPath,
-      peekedSessionId: left.peekedSessionId,
-      peekNote: left.peekNote,
-      messages: left.messages,
-      session: left.session,
-      stats: left.stats,
-      queue: left.queue,
-      todos: left.todos,
-      todoHistory: left.todoHistory,
-      uiRequests: left.uiRequests,
-      statuses: left.statuses,
-      widgets: left.widgets,
-      widgetPlacements: left.widgetPlacements,
-      pendingActivation: left.pendingActivation
-    }
-    set({
-      peekedPath: path,
-      peekedSessionId: sum?.id ?? cachedSnapshot?.runtime.sessionId ?? null,
-      peekNote: null,
-      switchLoading: !cachedMessages?.length,
-      messages: cachedMessages ?? [],
-      session: cachedSnapshot?.session ?? null,
-      stats: cachedSnapshot?.stats ?? null,
-      queue: cachedSnapshot?.queue ?? EMPTY_QUEUE,
-      todos: cachedSnapshot?.todos ?? [],
-      todoHistory: cachedSnapshot?.todoHistory ?? [],
-      uiRequests: cachedSnapshot?.uiRequests ?? [],
-      statuses: cachedSnapshot?.statuses ?? {},
-      widgets: cachedSnapshot?.widgets ?? {},
-      widgetPlacements: cachedSnapshot?.widgetPlacements ?? {}
-    })
-
-    performance.mark('yan:switch-start')
-    try {
-      const peek = await window.yan.peekSession(path, { trackSync: !cachedMessages?.length })
-      if (gate !== sessionSwitchGate) return
-      performance.mark('yan:switch-peeked')
-      if (peek) {
-        const stableId = peek.sessionId ?? sum?.id
-        const before = get()
-        const migrated = migratePathDraft(before.sessionRuntimes, path, stableId)
-        if (peek.messages.length) {
-          set({
-            messages: mergePeekedHistory(peek.messages, before.messages),
-            peekedPath: path,
-            peekedSessionId: stableId ?? null,
-            peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null,
-            switchLoading: false,
-            ...(migrated !== before.sessionRuntimes ? { sessionRuntimes: migrated } : {})
-          })
-        } else if (migrated !== before.sessionRuntimes) {
-          set({ sessionRuntimes: migrated })
-        }
-        requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('yan:switch-painted')))
-      }
-    } catch {
-      if (gate !== sessionSwitchGate) return
-    }
-    if (get().switchLoading) set({ switchLoading: false })
-
-    if (!sum && !cachedSnapshot?.session?.cwd) {
-      await get().refreshSessions().catch(() => undefined)
-      if (gate !== sessionSwitchGate) return
-      sum = findSummary()
-    }
-    const cwd = sum?.cwd || cachedSnapshot?.session?.cwd || get().session?.cwd || get().settings?.cwd || ''
-    const settings = get().settings
-    const projectId = sum?.scope === 'global'
-      ? undefined
-      : (sum?.projectId ?? settings?.projects.find((project) => project.cwd.toLowerCase() === cwd.toLowerCase())?.id)
-    const scope = sum?.scope ?? (projectId ? 'project' : 'global')
-    const res = await piCall(() =>
-      window.yan.selectSession({ sessionFile: sum?.path ?? path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
-    )
-    performance.mark('yan:switch-selected')
-    if (gate !== sessionSwitchGate) return
-    if (!res.ok) {
-      const leftId = viewIdentityOf(leftView).sessionId
-      const leftCache = leftId ? get().sessionRuntimes[leftId] : undefined
-      set({
-        ...leftView,
-        ...(leftCache?.messages?.length ? { messages: leftCache.messages } : {}),
-        ...(leftCache?.session ? { session: leftCache.session } : {}),
-        ...(leftCache?.queue ? { queue: leftCache.queue } : {}),
-        notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.switchFailed'))
-      })
-      return
-    }
-    if (res.sessionId && !get().peekedSessionId && get().peekedPath) {
-      set({ peekedSessionId: res.sessionId })
-    }
-    if (res.deferred) {
-      set({
-        pendingActivation: { sessionFile: sum?.path ?? path, sessionId: res.sessionId ?? sum?.id, projectId, scope, cwd },
-        peekedPath: path,
-        peekedSessionId: res.sessionId ?? sum?.id ?? null,
-        ...(res.deferredReason === 'limit' ? {} : {
-          notices: pushNotice(
-            get().notices,
-            'info',
-            uiText('state.session.readOnlyNotice')
-          )
-        })
-      })
-      void get().syncRunners()
-      return
-    }
-    const runId = res.runId ?? res.id
-    const snapshot = findRuntimeSnapshot(
-      get().sessionRuntimes,
-      res.sessionId ?? sum?.id,
-      runId
-    )
-    const usable = snapshotForView(get(), snapshot)
-    set({
-      ...(usable ? projectSnapshotKeepingHistory(get(), usable) : {}),
-      queue: usable?.queue ?? EMPTY_QUEUE,
-      ...(runId ? { activeRunnerId: runId } : {}),
-      pendingActivation: null
-    })
-    void get().syncRunners()
-    void get().reloadModels()
-    void get().reloadCommands()
-    } finally {
-      if (gate === sessionSwitchGate && get().switchLoading) set({ switchLoading: false })
-      finishSwitch()
-    }
-  },
-
-  ensureActivated: async (expected?: ComposerSubmitIdentity): Promise<boolean> => {
-    for (let i = 0; i < 8 && sessionSwitchInFlight; i += 1) {
-      await sessionSwitchInFlight.done
-    }
-    if (sessionSwitchInFlight) return false
-    const pending = get().pendingActivation
-    if (!pending) return true
-    if (expected && hasComposerIdentity(expected) && !sameComposerView(get(), expected)) return false
-    const gate = sessionSwitchGate
-    const res = await piCall(() => window.yan.selectSession(pending))
-    if (gate !== sessionSwitchGate || get().pendingActivation !== pending) return false
-    if (expected && hasComposerIdentity(expected) && !sameComposerView(get(), expected)) return false
-    if (!res.ok || res.deferred) {
-      set({
-        notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.switchFailedMessageNotSent'))
-      })
-      return false
-    }
-    const activated = get()
-    set({
-      pendingActivation: null,
-      ...(res.runId ?? res.id ? { activeRunnerId: res.runId ?? res.id } : {}),
-      ...(res.sessionId && !activated.peekedSessionId && sameSessionFile(activated.peekedPath, pending.sessionFile)
-        ? { peekedSessionId: res.sessionId }
-        : {})
-    })
-    const activatedCache = get().sessionRuntimes
-    const migrated = migratePathDraft(activatedCache, pending.sessionFile, res.sessionId)
-    if (migrated !== activatedCache) set({ sessionRuntimes: migrated })
-    void get().syncRunners()
-    void get().reloadModels()
-    void get().reloadCommands()
-    return true
-  },
-
-  moveSession: async (sessionId, projectId, cwd) => {
-    const before = get()
-    const showing = before.session?.sessionId === sessionId
-    const showingPath = showing ? before.session?.sessionFile : undefined
-    const res = await window.yan.moveSession(sessionId, projectId, cwd)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.moveFailed')) })
-      return false
-    }
-    await get().refreshSessions()
-    if (res.cwdChanged && showingPath && get().session?.sessionId === sessionId) await get().switchSession(showingPath)
-    return true
-  },
-
-  setSessionArchived: async (sessionId, archived) => {
-    const res = await window.yan.setSessionArchived(sessionId, archived)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.archiveFailed')) })
-      return false
-    }
-    await get().refreshSessions()
-    return true
-  },
-
-  setSessionPinned: async (sessionId, pinned) => {
-    const res = await window.yan.setSessionPinned(sessionId, pinned)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.pinFailed')) })
-      return false
-    }
-    await get().refreshSessions()
-    return true
-  },
-
-  setSessionSnoozed: async (sessionId, until) => {
-    const res = await window.yan.setSessionSnoozed(sessionId, until)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.snoozeFailed')) })
-      return false
-    }
-    await get().refreshSessions()
-    return true
-  },
-
-  setSessionMarkedUnread: async (sessionId, marked) => {
-    const res = await window.yan.setSessionMarkedUnread(sessionId, marked)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.markUnreadFailed')) })
-      return false
-    }
-    await get().refreshSessions()
-    return true
-  },
-
-  renameSession: async (name) => {
-    const expected = expectedRuntimeFor(get(), composerSubmitIdentity(get()))
-    const res = expected
-      ? await piCall(() => window.yan.renameSession(name, expected))
-      : { ok: false, error: uiText('state.error.sessionNotActivated') }
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.renameFailed')) })
-      return
-    }
-    await get().refreshSessions()
-  },
-
-  setManualTitle: async (sessionId, name) => {
-    const trimmed = name.trim()
-    if (!trimmed) return
-    const state = get()
-    const sid = sessionId || state.session?.sessionId || ''
-    if (!sid) return
-    const previous = state.manualTitles[sid]
-    set({ manualTitles: { ...state.manualTitles, [sid]: trimmed } })
-    if (sid === state.session?.sessionId) {
-      const expected = expectedRuntimeFor(state, composerSubmitIdentity(state))
-      if (expected) await piCall(() => window.yan.renameSession(trimmed, expected))
-    }
-    const res = await piCall(() => window.yan.setManualTitle(sid, trimmed))
-    if (!res.ok) {
-      const rolled = { ...get().manualTitles }
-      if (previous === undefined) delete rolled[sid]
-      else rolled[sid] = previous
-      set({
-        manualTitles: rolled,
-        notices: pushNotice(get().notices, 'error', uiText('state.error.renameSaveFailed', { error: res.error ?? uiText('state.error.writeFailed') }))
-      })
-    }
-    await get().refreshSessions()
-  },
-
-  regenerateTitle: async (sessionId) => {
-    const sid = sessionId || get().session?.sessionId || ''
-    if (!sid) {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.noSessionForTitle')) })
-      return
-    }
-    let res: { ok: boolean; title?: string; error?: string }
-    try {
-      res = await window.yan.regenerateTitle(sid)
-    } catch (error) {
-      res = { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-    if (!res.ok || !res.title) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.titleFailedKept')) })
-      return
-    }
-    if (get().manualTitles[sid]) await get().setManualTitle(sid, res.title)
-    set({ notices: pushNotice(get().notices, 'info', uiText('state.title.changed', { title: res.title })) })
-  },
-
-  deleteSession: async (path) => {
-    const res = await piCall(() => window.yan.deleteSession(path))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.deleteFailed')) })
-      return { ok: false }
-    }
-    const cache = { ...get().sessionRuntimes }
-    const normalize = (value: string): string => value.replace(/\\/g, '/').toLowerCase()
-    const removedIds = new Set(get().sessions.filter((item) => normalize(item.path) === normalize(path)).map((item) => item.id))
-    for (const [key, snapshot] of Object.entries(cache)) {
-      if (snapshot.session?.sessionFile && normalize(snapshot.session.sessionFile) === normalize(path)) {
-        delete cache[key]
-        removedIds.add(snapshot.session.sessionId)
-      }
-    }
-    const manualTitles = { ...get().manualTitles }
-    const titles = { ...get().titles }
-    const kept: DeletedTitles = { manualTitles: {}, titles: {} }
-    for (const id of removedIds) {
-      if (manualTitles[id] !== undefined) kept.manualTitles[id] = manualTitles[id]
-      if (titles[id] !== undefined) kept.titles[id] = titles[id]
-      delete manualTitles[id]
-      delete titles[id]
-    }
-    if (res.undoToken) rememberDeletedTitles(res.undoToken, kept)
-    set({ sessionRuntimes: cache, manualTitles, titles })
-    await get().refreshSessions()
-    return { ok: true, undoToken: res.undoToken }
-  },
-
-  restoreDeletedSession: async (undoToken) => {
-    let res: { ok: boolean; error?: string }
-    try {
-      res = await window.yan.restoreSession(undoToken)
-    } catch (error) {
-      res = { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-    if (!res.ok) return { ok: false, error: res.error ?? uiText('state.error.restoreFailed') }
-    const kept = deletedTitles.get(undoToken)
-    deletedTitles.delete(undoToken)
-    if (kept) {
-      set({
-        manualTitles: { ...kept.manualTitles, ...get().manualTitles },
-        titles: { ...kept.titles, ...get().titles }
-      })
-    }
-    await get().refreshSessions()
-    return { ok: true }
-  },
-
-  fork: async (entryId) => {
-    navigationSeq += 1
-    ++sessionSwitchGate
-    if (get().switchLoading) set({ switchLoading: false })
-    const target = await sessionActionTarget(get)
-    if (!target) return false
-    const sourceRunner = get().activeRunnerId
-    const res = await piCall(() => window.yan.fork(entryId, target.expected))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.forkFailed')) })
-      return false
-    }
-    let branchState: SessionState | null
-    let branchMessages: UIMessage[]
-    try { [branchState, branchMessages] = await Promise.all([window.yan.getState(), window.yan.getMessages()]) }
-    catch (error) {
-      set({ notices: pushNotice(get().notices, 'warning', uiText('state.fork.createdNotActivated', { error: String(error) })) })
-      await get().refreshSessions()
-      return true
-    }
-    if (get().activeRunnerId !== sourceRunner || !target.current()) {
-      set({ notices: pushNotice(get().notices, 'warning', uiText('state.fork.createdSessionChanged')) })
-      await get().refreshSessions()
-      return true
-    }
-    if (branchState) set({ session: branchState, messages: branchMessages, pendingActivation: null, peekedPath: null, peekedSessionId: null, peekNote: null })
-    set({
-      queue: EMPTY_QUEUE,
-      notices: pushNotice(
-        get().notices,
-        'info',
-        res.text
-          ? uiText('state.fork.beforeMessage', { text: res.text.slice(0, 30) })
-          : uiText('state.fork.done')
-      )
-    })
-    if (res.text) get().injectComposerText(res.text)
-    await get().refreshSessions()
-    return true
-  },
-
-  clone: async () => {
-    navigationSeq += 1
-    ++sessionSwitchGate
-    if (get().switchLoading) set({ switchLoading: false })
-    const target = await sessionActionTarget(get)
-    const res = target
-      ? await piCall(() => window.yan.clone(target.expected))
-      : { ok: false, error: uiText('state.error.sessionNotActivated') }
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.cloneFailed')) })
-      return
-    }
-    set({ queue: EMPTY_QUEUE, notices: pushNotice(get().notices, 'info', uiText('state.clone.done')) })
-    await get().refreshSessions()
-  },
-
-  exportHtml: async (outputPath) => {
-    const target = await sessionActionTarget(get)
-    if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
-    const res = await piCall(() => window.yan.exportHtml(outputPath, target.expected))
-    if (res.ok && target.current()) get().notify('info', uiText('state.export.done', { path: res.path ?? '' }))
-    return res
-  },
-
-  compact: async (customInstructions) => {
-    const target = await sessionActionTarget(get)
-    if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
-    const sessionId = get().session?.sessionId
-    if (sessionId) set({ compactCommand: { sessionId, text: customInstructions ? `/compact ${customInstructions}` : '/compact' } })
-    return piCall(() => window.yan.compact(customInstructions, target.expected))
-  },
-
-  stop: async () => {
-    try {
-      await window.yan.abort()
-    } catch {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.commandFailed')) })
-    }
-  },
-
-  setModel: async (provider, id, quiet = false) => {
-    const target = await sessionActionTarget(get)
-    if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
-    const res = await piCall(() => window.yan.setModel(provider, id, target.expected))
-    if (!res.ok) {
-      if (!quiet) set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.setModelFailed')) })
-      return res
-    }
-    if (!target.current()) return { ok: false, error: uiText('state.error.sessionSwitchedCommandSkipped') }
-    const selected = get().models.find(m => m.provider === provider && m.id === id)
-    try { await get().patchSettings({ lastMainModel: { provider, id, name: selected?.name } }) }
-    catch (error) { return { ok: false, error: uiText('state.error.modelPrefSaveFailed', { error: String(error) }) } }
-    return res
-  },
-
-  setThinking: async (level) => {
-    try {
-      const target = await sessionActionTarget(get)
-      if (!target) return
-      const res = await window.yan.setThinking(level, target.expected)
-      if (!res.ok && target.current()) get().notify('error', res.error ?? uiText('state.error.cannotSwitchThinking'))
-    } catch {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.cannotSwitchThinking')) })
-    }
-  },
-
-  setUltracode: async (on) => {
-    const target = await sessionActionTarget(get)
-    if (!target) return
-    const res = await piCall(() => window.yan.setUltracode(on, target.expected))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
-    }
-  },
-
-  setSessionMode: async (change) => {
-    const target = await sessionActionTarget(get)
-    if (!target) return false
-    const res = await piCall(() => window.yan.setSessionMode(change, target.expected))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
-      return false
-    }
-    if (change === 'approve' && target.current()) return get().send(uiText('composer.mode.approveMessage'))
-    return true
-  },
-
-  setAutoCompaction: async (on) => {
-    const res = await piCall(() => window.yan.setAutoCompaction(on))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
-    }
-  },
-
-  setAutoRetry: async (on) => {
-    const res = await piCall(() => window.yan.setAutoRetry(on))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
-    } else {
-      set({ autoRetryEnabled: on })
-    }
-  },
-
-  setSteeringMode: async (mode) => {
-    const res = await piCall(() => window.yan.setSteeringMode(mode))
-    if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
-  },
-
-  setFollowUpMode: async (mode) => {
-    const res = await piCall(() => window.yan.setFollowUpMode(mode))
-    if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
-  },
-
-  abortRetry: async () => {
-    const target = await sessionActionTarget(get)
-    if (!target) return
-    try {
-      await window.yan.abortRetry(target.expected)
-    } catch {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.commandFailed')) })
-    }
-  },
-
-  cycleModel: async () => {
-    const target = await sessionActionTarget(get)
-    if (!target) return
-    const res = await piCall(() => window.yan.cycleModel(target.expected))
-    if (!target.current()) return
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchModel')) })
-      return
-    }
-    if (res.to) {
-      set({ notices: pushNotice(get().notices, 'info', uiText('state.model.switched', { model: res.to })) })
-    }
-  },
-
-  cycleModelBack: async () => {
-    const target = await sessionActionTarget(get)
-    if (!target) return
-    const res = await piCall(() => window.yan.cycleModelBack(target.expected))
-    if (!target.current()) return
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchModel')) })
-      return
-    }
-    if (res.to) {
-      set({ notices: pushNotice(get().notices, 'info', uiText('state.model.switched', { model: res.to })) })
-    }
-  },
-
-  cycleThinking: async () => {
-    const target = await sessionActionTarget(get)
-    if (!target) return
-    const res = await piCall(() => window.yan.cycleThinking(target.expected))
-    if (!target.current()) return
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchThinking')) })
-      return
-    }
-    if (res.to) {
-      set({ notices: pushNotice(get().notices, 'info', uiText('state.thinking.switched', { level: thinkLabelOf(res.to) })) })
-    }
   },
 
   copyLastReply: async () => {
@@ -2780,471 +996,6 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
-  setUiScale: async (v) => {
-    set({ zoom: await window.yan.setUiScale(v) })
-    set({ settings: await window.yan.getSettings() })
-  },
-
-  loadZoom: async () => {
-    try {
-      set({ zoom: await window.yan.getZoom() })
-    } catch {
-    }
-  },
-
-  openBrowser: async (url, target) => {
-    const view = get()
-    const owner = target?.key ?? (view.peekedPath || view.peekedSessionId
-      ? workspaceKeyFor(viewKeyRef(view))
-      : conversationKeyOf(view.session))
-    await browserOpener.open({ owner, url, guard: true, takeover: target?.takeover ?? target === undefined })
-  },
-
-  openLink: async (url) => {
-    const view = get()
-    const sessionId = view.session?.sessionId ?? view.session?.conversationId ?? ''
-    const owner = currentViewOwnerKey(view)
-    let decision: string
-    try {
-      decision = (await window.yan.browser.siteAccess(sessionId, url)).decision
-    } catch {
-      return
-    }
-    if (decision === 'deny' || decision === 'forbidden') {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.siteBlocked', { url })) })
-      return
-    }
-    if (currentViewOwnerKey(get()) !== owner) return
-    await get().openBrowser(url, { key: owner, takeover: true })
-  },
-
-  previewFile: async (path, line, cwd, lineEnd) => {
-    set({ filePreview: { path, cwd, line, lineEnd, loading: true, data: null } })
-    let data: Awaited<ReturnType<typeof window.yan.readPreview>>
-    try { data = await window.yan.readPreview(path, line, cwd, lineEnd) }
-    catch (error) {
-      const cur = get().filePreview
-      if (cur?.path === path && cur.cwd === cwd && cur.line === line && cur.lineEnd === lineEnd) {
-        const failed = { ...cur, loading: false, data: null }
-        set({ filePreview: failed, notices: pushNotice(get().notices, 'error', uiText('state.error.previewFailed', { error: String(error) })) })
-      }
-      return
-    }
-    const cur = get().filePreview
-    if (!cur || cur.path !== path || cur.cwd !== cwd || cur.line !== line || cur.lineEnd !== lineEnd) return
-    const settings = get().settings
-    const workspaceRoot = cwd || get().session?.cwd || settings?.cwd || ''
-    const projectId =
-      settings?.projects.find(
-        (project) => project.cwd.toLowerCase() === String(workspaceRoot).toLowerCase()
-      )?.id ?? null
-    const canonical = data?.abs || path
-    const key = canonical
-      ? fileResourceKey({ projectId: projectId ?? null, workspaceRoot, canonicalPath: canonical })
-      : undefined
-    const next: FilePreviewState = {
-      path,
-      cwd,
-      line,
-      lineEnd,
-      loading: false,
-      data,
-      ...(key ? { key } : {})
-    }
-    set({ filePreview: next })
-  },
-
-  loadSubagents: async () => {
-    try {
-      const runs = await window.yan.subagents.list()
-      set({ subagents: runs })
-      useSubagentStopping.getState().prune(runs.filter((r) => r.status === 'starting' || r.status === 'running').map((r) => r.id))
-    } catch {
-    }
-  },
-
-  startSubagent: async (task, model, isolation) => {
-    const target = await sessionActionTarget(get)
-    if (!target) {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.sessionNotActivated')) })
-      return
-    }
-    const res = await window.yan.subagents.start(task, model, isolation, target.expected)
-    if (!res.ok) {
-      set({
-        notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.subagentStartFailed'))
-      })
-      return
-    }
-    if (res.run) {
-      const run = res.run
-      const idx = get().subagents.findIndex((r) => r.id === run.id)
-      set({
-        subagents: idx >= 0 ? get().subagents.map((r) => (r.id === run.id ? run : r)) : [...get().subagents, run]
-      })
-    }
-  },
-
-  askSideQuestion: async (question) => {
-    const target = await sessionActionTarget(get)
-    if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
-    const res = await window.yan.subagents.askSideQuestion(question, target.expected)
-    if (!res.ok) return { ok: false, error: res.error ?? uiText('state.error.subagentStartFailed') }
-    if (res.run) {
-      const run = res.run
-      const idx = get().subagents.findIndex((r) => r.id === run.id)
-      set({ subagents: idx >= 0 ? get().subagents.map((r) => (r.id === run.id ? run : r)) : [...get().subagents, run] })
-    }
-    return { ok: true }
-  },
-
-  stopSubagent: async (id) => {
-    useSubagentStopping.getState().mark(id)
-    const res = await window.yan.subagents.stop(id).catch((): { ok: false; error?: string } => ({ ok: false }))
-    if (!res.ok) {
-      useSubagentStopping.getState().clear(id)
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.subagentStopFailed')) })
-    }
-  },
-
-  openExternalChrome: async (url) => {
-    const res = await window.yan.browser.openExternalChrome(url)
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.chromeConnectFailed')) })
-      return
-    }
-    set({ browserState: await window.yan.browser.getState() })
-  },
-
-  closeExternalChrome: async () => {
-    set({ browserState: await window.yan.browser.closeExternalChrome() })
-  },
-
-  syncLocalProfile: async () => {
-    const report = await window.yan.browser.syncLocalProfile()
-    set({ browserState: await window.yan.browser.getState() })
-    return report
-  },
-  syncPageStorage: async () => {
-    const report = await window.yan.browser.syncPageStorage()
-    set({ browserState: await window.yan.browser.getState() })
-    return report
-  },
-
-  patchSettings: async (p) => {
-    try {
-      set({ settings: await persistSettingsPatch(p) })
-    } catch (cause) {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.settingsSaveFailed')) })
-      throw cause
-    }
-  },
-
-  removeGuardAllowRoot: async (path) => {
-    try {
-      set({ settings: await window.yan.removeGuardAllowRoot(path) })
-    } catch (error) {
-      set({ notices: pushNotice(get().notices, 'error', error instanceof Error ? error.message : String(error)) })
-    }
-  },
-
-  installGit: async () => {
-    set({ gitInstall: { phase: 'downloading', received: 0, message: '' } })
-    try {
-      const res = await window.yan.gitRuntimeInstall()
-      if (!res.ok) set({ gitInstall: { phase: 'error', message: res.error ?? uiText('state.error.installFailed') } })
-    } catch (error) {
-      set({ gitInstall: { phase: 'error', message: error instanceof Error ? error.message : String(error) } })
-    }
-  },
-  cancelGitInstall: async () => {
-    await window.yan.gitRuntimeCancel().catch(() => undefined)
-  },
-
-  answerApproval: async (id, choice, identity, feedback) => {
-    if (!get().approvals.some((item) => item.id === id)) return false
-    set({ approvals: get().approvals.filter((item) => item.id !== id) })
-    const reconcile = async (): Promise<boolean> => {
-      try {
-        const pending = await window.yan.pendingApprovals()
-        const have = new Set(get().approvals.map((item) => item.id))
-        const back = pending.filter((item) => !have.has(item.id))
-        if (back.length) set({ approvals: [...get().approvals, ...back].sort((a, b) => a.createdAt - b.createdAt) })
-        return pending.some((item) => item.id === id)
-      } catch {
-        return false
-      }
-    }
-    const failed = async (): Promise<boolean> => {
-      const stillPending = await reconcile()
-      if (stillPending) set({ notices: pushNotice(get().notices, 'error', uiText('state.error.approvalAnswerFailed')) })
-      return false
-    }
-    try {
-      const res = await window.yan.answerApproval(id, choice, identity, feedback)
-      if (!res || res.ok !== true) return await failed()
-      return true
-    } catch {
-      return await failed()
-    }
-  },
-
-  addAttachments: (a, identity = composerSubmitIdentity(get())) => {
-    if (!a.length || !identity.draftKey) return
-    const current = get()
-    const sameView = sameComposerView(current, identity)
-    const runtime = recoveryRuntimeFor(current, identity)
-    const draftKey = runtime ? sessionRuntimeKey(runtime) : identity.draftKey
-    const existing = sameView ? current.attachments : current.sessionRuntimes[draftKey]?.draftAttachments ?? []
-    const seen = new Set(existing.map((e) => `${e.name}|${e.size}|${e.path ?? ''}`))
-    const fresh: Attachment[] = []
-    for (const x of a) {
-      const k = `${x.name}|${x.size}|${x.path ?? ''}`
-      if (seen.has(k)) continue
-      seen.add(k)
-      fresh.push(x)
-    }
-    if (fresh.length === 0) return
-
-    let next = [...existing, ...fresh].slice(0, MAX_ATTACHMENTS)
-
-    const imgBytes = next.filter((x) => x.kind !== 'file').reduce((n, x) => n + x.size, 0)
-    if (imgBytes > MAX_IMAGE_BYTES) {
-      const kept: Attachment[] = []
-      let acc = 0
-      for (const x of next) {
-        if (x.kind === 'file') {
-          kept.push(x)
-          continue
-        }
-        if (acc + x.size > MAX_IMAGE_BYTES) continue
-        acc += x.size
-        kept.push(x)
-      }
-      next = kept
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.attach.imagesTooLarge')) })
-    }
-
-    const after: Partial<Store> = sameView ? { attachments: next } : {}
-    if (draftKey) after.sessionRuntimes = writeDraftAttachments(get(), draftKey, next)
-    set(after)
-
-    const sessionId = runtime?.sessionId || identity.sessionId
-    if (sessionId && !sessionId.startsWith('pending:')) {
-      for (const x of fresh.filter((item) => next.includes(item))) {
-        if (x.kind === 'file' || !x.data) continue
-        void window.yan.sources
-          .addImage({ sessionId, name: x.name, mimeType: x.mimeType, base64: x.data })
-          .catch(() =>
-            set({ notices: pushNotice(get().notices, 'error', uiText('state.attach.imageSaveFailed')) })
-          )
-      }
-    }
-  },
-
-  addFileRefs: async (files, identity = composerSubmitIdentity(get())) => {
-    if (!files.length) return
-    const paths: string[] = []
-    for (const f of files) {
-      try {
-        const p = window.yan.pathForFile(f)
-        if (p) paths.push(p)
-      } catch {
-      }
-    }
-    if (!paths.length) {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.attach.noFilePath')) })
-      return
-    }
-
-    await get().addFileRefPaths(paths, identity)
-  },
-
-  addFileRefPaths: async (paths, identity = composerSubmitIdentity(get())) => {
-    const unique = [...new Set(paths.filter(Boolean))]
-    if (!unique.length) return
-
-    let infos: Awaited<ReturnType<typeof window.yan.describeFiles>>
-    try {
-      infos = await window.yan.describeFiles(unique)
-    } catch {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.cannotReference')) })
-      return
-    }
-
-    const refs: Attachment[] = []
-    const errors: string[] = []
-    for (const info of infos) {
-      if (!info.ok) {
-        errors.push(uiText('state.attach.refEntry', { name: info.name, error: info.error ?? uiText('state.error.cannotReference') }))
-        continue
-      }
-      refs.push({
-        id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        name: info.name,
-        mimeType: info.mimeType,
-        size: info.size,
-        data: '',
-        preview: '',
-        kind: 'file',
-        path: info.path,
-        isDirectory: info.isDirectory
-      })
-    }
-    if (refs.length) get().addAttachments(refs, identity)
-    if (errors.length) set({ notices: pushNotice(get().notices, 'error', errors.join(uiText('state.attach.refErrorsJoin'))) })
-  },
-
-  removeAttachment: (id) => {
-    const current = get()
-    const next = current.attachments.filter((a) => a.id !== id)
-    const draftKey = composerDraftKey(current)
-    set({
-      attachments: next,
-      ...(draftKey ? { sessionRuntimes: writeDraftAttachments(current, draftKey, next) } : {})
-    })
-  },
-
-  dropSentAttachments: (sentIds, draftKeys) => {
-    if (!sentIds.length) return
-    const sent = new Set(sentIds)
-    const current = get()
-    let state: Store = current
-    for (const key of new Set([...draftKeys, composerDraftKey(current)])) {
-      const cached = key ? state.sessionRuntimes[key]?.draftAttachments ?? [] : []
-      if (!cached.some((item) => sent.has(item.id))) continue
-      state = { ...state, sessionRuntimes: writeDraftAttachments(state, key, cached.filter((item) => !sent.has(item.id))) }
-    }
-    const attachments = current.attachments.filter((item) => !sent.has(item.id))
-    set({
-      ...(attachments.length !== current.attachments.length ? { attachments } : {}),
-      ...(state.sessionRuntimes !== current.sessionRuntimes ? { sessionRuntimes: state.sessionRuntimes } : {})
-    })
-  },
-
-  clearAttachments: () => {
-    const current = get()
-    const draftKey = composerDraftKey(current)
-    set({
-      attachments: [],
-      ...(draftKey ? { sessionRuntimes: writeDraftAttachments(current, draftKey, []) } : {})
-    })
-  },
-
-  pickImages: async () => {
-    const identity = composerSubmitIdentity(get())
-    try {
-      get().addAttachments(await window.yan.pickImages(), identity)
-    } catch {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.pickFailed')) })
-    }
-  },
-
-  pickFiles: async () => {
-    const identity = composerSubmitIdentity(get())
-    try {
-      const paths = await window.yan.pickFilePaths()
-      if (paths.length) await get().addFileRefPaths(paths, identity)
-    } catch {
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.pickFailed')) })
-    }
-  },
-
-  answerUi: async (res) => {
-    const result = await window.yan.respondUi(res).catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
-    if (!result || result.ok !== true) {
-      set({ notices: pushNotice(get().notices, 'error', result?.error || uiText('state.error.answerFailed')) })
-      return false
-    }
-    const drafts = { ...get().uiDrafts }
-    delete drafts[res.id]
-    const next = get().uiRequests.filter((r) => r.id !== res.id)
-    const runtime = runtimeForState(get())
-    set({
-      uiRequests: next,
-      uiDrafts: drafts,
-      ...(runtime
-        ? { sessionRuntimes: updateSessionRuntime(get().sessionRuntimes, runtime, { uiRequests: next }) }
-        : {})
-    })
-    return true
-  },
-
-  setUiCollapsed: (v) => set({ uiCollapsed: v }),
-
-  setUiDraft: (id, value) => set({ uiDrafts: { ...get().uiDrafts, [id]: value } }),
-  insertIntoComposer: (text) => set({ composerInsert: text }),
-  clearComposerInsert: () => set({ composerInsert: null }),
-
-  extendUi: async (id, extraMs) => {
-    const res = await window.yan.extendUi(id, extraMs)
-    if (!res.ok) return false
-    if (res.deadline) {
-      set({
-        uiRequests: get().uiRequests.map((r) =>
-          r.id === id ? { ...r, timeout: res.timeout ?? r.timeout, deadline: res.deadline } : r
-        )
-      })
-    }
-    return true
-  },
-
-  startUiTimer: async (id) => {
-    const res = await window.yan.startUiTimer(id).catch(() => null)
-    if (!res?.ok || !res.deadline) return false
-    set({
-      uiRequests: get().uiRequests.map((r) =>
-        r.id === id ? { ...r, timeout: res.timeout ?? r.timeout, deadline: res.deadline } : r
-      )
-    })
-    return true
-  },
-
-  dismissRequest: (id) => {
-    const drafts = { ...get().uiDrafts }
-    delete drafts[id]
-    const next = get().uiRequests.filter((r) => r.id !== id)
-    const runtime = runtimeForState(get())
-    set({
-      uiRequests: next,
-      uiDrafts: drafts,
-      ...(runtime
-        ? { sessionRuntimes: updateSessionRuntime(get().sessionRuntimes, runtime, { uiRequests: next }) }
-        : {})
-    })
-  },
-
-  dismissNotice: (id) => set({ notices: get().notices.filter((n) => n.id !== id) }),
-  notify: (type, text) => set({ notices: pushNotice(get().notices, type, text) }),
-  checkToolchainNotice: () => {
-    void window.yan
-      .toolchainStatus()
-      .then((tools) => {
-        const missing = [tools.bash, tools.git].filter((tool) => !tool.ok && tool.reason)
-        if (!missing.length) return
-        if (tools.platform === 'win32') {
-          set({
-            notices: [
-              ...get().notices.filter((n) => n.id !== 'git-install'),
-              { id: 'git-install', type: 'warning', text: uiText('notice.toolsMissing'), at: Date.now(), action: 'git-install' }
-            ]
-          })
-        } else {
-          for (const tool of missing) get().notify('warning', toolMissingText(tool.reason, uiText))
-        }
-      })
-      .catch(() => undefined)
-  },
-  consumeEditorInject: () => set({ editorInject: null }),
-  requestComposerFocus: (target) => set({ composerFocus: { tick: get().composerFocus.tick + 1, at: Date.now(), sessionId: target.sessionId, path: target.path } }),
-  consumeQueueRestore: () => set({ queueRestore: null }),
-  setSettings: (s) => set({ settings: s }),
-  applyServerSettings: (s) => {
-    const operation = settingsPatchQueue.then(async () => {
-      useStore.setState({ settings: s })
-    })
-    settingsPatchQueue = operation.catch(() => undefined)
-  },
   startConnWatch: () => {
     if (connWatchActive) return
     connWatchActive = true
@@ -3270,79 +1021,6 @@ export const useStore = create<Store>((rawSet, get) => {
     void tick()
   },
 
-  openSettings: (tab) => {
-    if (!settingsBlockerRelease) settingsBlockerRelease = get().acquireOverlayBlocker('settings')
-    set({
-      settingsOpen: true,
-      settingsTab: tab ?? 'appearance',
-      settingsRequestRevision: get().settingsRequestRevision + 1
-    })
-  },
-  closeSettings: () => {
-    set({ settingsOpen: false })
-    settingsBlockerRelease?.()
-    settingsBlockerRelease = null
-  },
-  refreshCheckpoints: async () => {
-    try {
-      const list = await window.yan.checkpoints.list()
-      const prev = get().checkpoints
-      if (prev.length === list.length && prev.every((r, i) => r.id === list[i].id)) return
-      set({ checkpoints: list })
-    } catch {
-    }
-  },
-  openRewind: (recordId, preview) => set({ rewind: { recordId, preview } }),
-  closeRewind: () => set({ rewind: null }),
-  toggleAlwaysOnTop: async () => {
-    const next = !get().alwaysOnTop
-    const previous = !next
-    set({ alwaysOnTop: next })
-    try {
-      const real = await window.yan.win.setAlwaysOnTop(next)
-      if (get().alwaysOnTop !== next) return
-      set({ alwaysOnTop: real })
-    } catch (error) {
-      if (get().alwaysOnTop === next) set({ alwaysOnTop: previous })
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.alwaysOnTopFailed', { error: String(error) })) })
-      return
-    }
-    set({
-      notices: pushNotice(
-        get().notices,
-        'info',
-        get().alwaysOnTop ? uiText('state.alwaysOnTop.on') : uiText('state.alwaysOnTop.off')
-      )
-    })
-  },
-  setRightPanelOpen: async (v) => {
-    const request = ++rightPanelPatchSeq
-    const s = get().settings
-    const previous = s?.rightPanelOpen ?? true
-    if (s) set({ settings: { ...s, rightPanelOpen: v } })
-    applyBrowserVisibility(get)
-    try {
-      const next = await persistSettingsPatch({ rightPanelOpen: v })
-      if (request === rightPanelPatchSeq) set({ settings: next })
-    } catch (error) {
-      if (request === rightPanelPatchSeq) set({ settings: get().settings ? { ...get().settings!, rightPanelOpen: previous } : get().settings })
-      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.savePanelVisibilityFailed', { error: String(error) })) })
-    }
-    applyBrowserVisibility(get)
-  },
-  setBrowserSurfaceActive: (active) => {
-    browserSurfaceActive = active
-    applyBrowserVisibility(get)
-  },
-  acquireOverlayBlocker: (token) => {
-    overlayBlockers.acquire(token)
-    applyBrowserVisibility(get)
-    return () => {
-      overlayBlockers.release(token)
-      applyBrowserVisibility(get)
-    }
-  },
-  log: (line) => set({ logs: [...get().logs, line].slice(-200) })
   }
 })
 
@@ -3352,10 +1030,10 @@ useStore.subscribe((state, previous) => {
   if (!identity.sessionId || identity.peeked) return
   const key = blankViewKey(state)
   if (!key) return
-  if (!state.pendingSends.some((item) => item.sessionId === null && item.ownerKey === key && item.navSeq === navigationSeq)) return
+  if (!state.pendingSends.some((item) => item.sessionId === null && item.ownerKey === key && item.navSeq === nav.seq)) return
   const sessionId = identity.sessionId
   useStore.setState({
-    pendingSends: state.pendingSends.map((item) => (item.sessionId === null && item.ownerKey === key && item.navSeq === navigationSeq ? { ...item, sessionId, ownerKey: undefined, navSeq: undefined } : item))
+    pendingSends: state.pendingSends.map((item) => (item.sessionId === null && item.ownerKey === key && item.navSeq === nav.seq ? { ...item, sessionId, ownerKey: undefined, navSeq: undefined } : item))
   })
 })
 

@@ -30,7 +30,7 @@ import { isolationCwdKey } from '../session-isolation'
 import { pick } from '../../shared/ui-lang'
 
 export interface SelectedSessionTarget {
-  sessionFile: string
+  sessionFile?: string
   projectId?: string
   scope?: 'global' | 'project' | 'pending'
   cwd: string

@@ -1,4 +1,4 @@
-import type { SubagentRun } from './ipc'
+import type { SubagentRun } from './subagent-run'
 
 export type SubagentOutcomeKey =
   | 'starting'

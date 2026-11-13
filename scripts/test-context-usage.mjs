@@ -1,4 +1,5 @@
 import { runSuite } from './lib/test-suite.mjs'
+import { fakePiEvents } from './lib/fake-pi-events.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
   const ext = await import('../resources/pi-extensions/context-usage.js')
@@ -104,7 +105,7 @@ await runSuite(import.meta.url, async (ok, compile) => {
 
   const pushed = []
   const handlers = new Map()
-  const fakePi = { on: (name, fn) => handlers.set(name, fn), getAllTools: () => registered }
+  const fakePi = { on: (name, fn) => handlers.set(name, fn), events: fakePiEvents(), getAllTools: () => registered }
   ext.default(fakePi)
   const ctx = { ui: { setStatus: (key, text) => pushed.push([key, text]) }, getSystemPrompt: () => '' }
   const handler = handlers.get('before_provider_request')

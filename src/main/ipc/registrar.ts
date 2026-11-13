@@ -1,10 +1,15 @@
 import { pick } from '../../shared/ui-lang'
 import { ipcMain } from 'electron'
 import { humanizeSystemError } from '../../shared/system-error'
+import type { IpcArgs, IpcChannel, IpcResult } from '../../shared/ipc-channels'
+
+export type IpcHandler<C extends IpcChannel> = (...args: IpcArgs<C>) => IpcResult<C> | Promise<IpcResult<C>>
+
+export type IpcRawHandler<C extends IpcChannel> = (event: Electron.IpcMainInvokeEvent, ...args: IpcArgs<C>) => IpcResult<C> | Promise<IpcResult<C>>
 
 export interface IpcRegistrar {
-  handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): void
-  rawHandle(channel: string, fn: (event: Electron.IpcMainInvokeEvent, ...args: never[]) => unknown): void
+  handle<C extends IpcChannel>(channel: C, fn: NoInfer<IpcHandler<C>>): void
+  rawHandle<C extends IpcChannel>(channel: C, fn: NoInfer<IpcRawHandler<C>>): void
 }
 
 function humanized(error: unknown): unknown {
@@ -19,20 +24,22 @@ export function createIpcRegistrar(isTrusted: (event: Electron.IpcMainInvokeEven
   }
   return {
     handle(channel, fn) {
+      const call = fn as (...args: unknown[]) => unknown
       ipcMain.handle(channel, async (event, ...args) => {
         guard(event)
         try {
-          return await fn(...(args as never[]))
+          return await call(...args)
         } catch (error) {
           throw humanized(error)
         }
       })
     },
     rawHandle(channel, fn) {
+      const call = fn as (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown
       ipcMain.handle(channel, async (event, ...args) => {
         guard(event)
         try {
-          return await fn(event, ...(args as never[]))
+          return await call(event, ...args)
         } catch (error) {
           throw humanized(error)
         }

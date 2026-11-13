@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { registerProviderRequestStage } from './provider-request.js'
 
 const LOCAL_TOOL = 'web_search'
 export const ANTHROPIC_SEARCH_TOOL = { type: 'web_search_20250305', name: 'web_search', max_uses: 5 }
@@ -211,13 +212,13 @@ export function withSearchRecords(messages) {
 export default function nativeWebSearch(pi) {
   let anthropicSearch = false
   let collector = null
-  pi.on('before_provider_request', (event, ctx) => {
+  registerProviderRequestStage(pi, 'native-web-search', (payload, ctx) => {
     anthropicSearch = false
     collector = null
     if (!nativeSearchEnabled(readJson(join(yanDir(), 'desktop.json')))) return
     const kind = nativeSearchKind(ctx?.model, readJson(join(piDir(), 'auth.json')))
-    const next = withNativeSearch(event?.payload, kind)
-    const active = !!next || (kind === 'anthropic' && (event?.payload?.tools ?? []).some((tool) => tool?.type === ANTHROPIC_SEARCH_TOOL.type))
+    const next = withNativeSearch(payload, kind)
+    const active = !!next || (kind === 'anthropic' && (payload?.tools ?? []).some((tool) => tool?.type === ANTHROPIC_SEARCH_TOOL.type))
     anthropicSearch = kind === 'anthropic' && active
     if (active) collector = createSearchCollector()
     return next

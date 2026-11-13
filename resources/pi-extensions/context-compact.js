@@ -7,6 +7,7 @@
 import { appendFile, open, readFile, rm, stat, truncate } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { isHostAutomatedMessage } from './host-message.js'
+import { registerProviderRequestStage } from './provider-request.js'
 
 const SYSTEM_PROMPT = `You are a context summarization assistant. Read a conversation between a user and an AI assistant and output only a structured summary in the format the request gives. Do not continue the conversation or answer anything in it.`
 
@@ -592,12 +593,11 @@ export default function contextCompactExtension(pi) {
   let lastRequest = null
   let pendingMark = null
 
-  // 这个扩展排在所有改上下文、改请求体的扩展之后加载，看到的就是最终发出去的消息和请求体
+  // 这个扩展排在所有改上下文的扩展之后加载，看到的就是最终发出去的消息
   pi.on('context', (event) => {
     pendingMark = messageMark(event?.messages?.at?.(-1))
   })
-  pi.on('before_provider_request', (event, ctx) => {
-    const payload = event?.payload
+  registerProviderRequestStage(pi, 'context-compact', (payload, ctx) => {
     const model = ctx?.model
     lastRequest = payload && typeof payload === 'object' && model && pendingMark
       ? { payload, provider: model.provider, id: model.id, mark: pendingMark }

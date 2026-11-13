@@ -1,3 +1,5 @@
+import { registerProviderRequestStage } from './provider-request.js'
+
 export const PARALLEL_APIS = new Set(['openai-responses', 'azure-openai-responses', 'openai-completions'])
 export const PARALLEL_REJECTED_RETRY_HINT = 'Inkstone: this endpoint rejected parallel_tool_calls; you can retry your request without it.'
 
@@ -10,21 +12,26 @@ export const isParallelRejection = (message) => {
   return /parallel/i.test(text) || (BAD_REQUEST.test(text) && UNKNOWN_FIELD.test(text))
 }
 
+export function withParallelToolCalls(payload, model) {
+  if (!model || !PARALLEL_APIS.has(model.api) || !payload || typeof payload !== 'object') return undefined
+  if (!Array.isArray(payload.tools) || payload.tools.length === 0 || 'parallel_tool_calls' in payload) return undefined
+  return { ...payload, parallel_tool_calls: true }
+}
+
 export default function parallelToolCalls(pi) {
   const disabled = new Set()
   let pending = null
   const endpointKey = (model) => `${model.provider ?? ''}|${model.baseUrl ?? ''}|${model.id}`
 
-  pi.on('before_provider_request', (event, ctx) => {
+  registerProviderRequestStage(pi, 'parallel-tool-calls', (payload, ctx) => {
     pending = null
     const model = ctx?.model
-    const payload = event?.payload
-    if (!model || !PARALLEL_APIS.has(model.api) || !payload || typeof payload !== 'object') return
-    if (!Array.isArray(payload.tools) || payload.tools.length === 0 || 'parallel_tool_calls' in payload) return
+    const next = withParallelToolCalls(payload, model)
+    if (!next) return
     const key = endpointKey(model)
     if (disabled.has(key)) return
     pending = key
-    return { ...payload, parallel_tool_calls: true }
+    return next
   })
 
   pi.on('message_end', (event) => {
