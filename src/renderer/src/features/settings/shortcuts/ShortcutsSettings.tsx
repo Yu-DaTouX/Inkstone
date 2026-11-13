@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
-import { RotateCcw } from 'lucide-react'
+import { RotateCcw } from '../../../ui/icons'
 import { useI18n, useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import {

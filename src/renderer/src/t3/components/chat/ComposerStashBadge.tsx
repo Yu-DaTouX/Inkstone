@@ -1,4 +1,4 @@
-import { BookmarkIcon } from "lucide-react";
+import { BookmarkIcon } from "../../../ui/icons";
 import { memo } from "react";
 
 import { cx } from "../../../ui/cx";

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
-import { Folder, FolderGit2, FolderPlus, GitBranch, Link2, Lock, Search, X } from 'lucide-react'
+import { Folder, FolderGit2, FolderPlus, GitBranch, Link2, Lock, Search, X } from '../../ui/icons'
 import type { GithubAccountStatus, GithubCloneProgress, GithubCloneRequest, GithubCreateProjectResult, GithubRepoSummary } from '../../../../shared/github'
 import { useI18n, type MessageKey } from '../../i18n'
 import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'

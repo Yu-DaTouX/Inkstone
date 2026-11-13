@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp } from '../../../ui/icons'
 import { IconButton } from '../../../ui'
 import type { PreviewText } from '../preview-text'
 import './dock.css'

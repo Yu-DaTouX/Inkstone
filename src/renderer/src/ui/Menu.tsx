@@ -12,7 +12,7 @@ import {
   type MenuSectionProps as RACMenuSectionProps,
   type SeparatorProps as RACSeparatorProps
 } from 'react-aria-components'
-import { Check } from 'lucide-react'
+import { Check } from './icons'
 import { cx } from './cx'
 import { CONTROL_ICON_SIZE } from './sizes'
 

@@ -1,4 +1,4 @@
-import { PaperclipIcon, XIcon } from "lucide-react";
+import { PaperclipIcon, XIcon } from "../../../ui/icons";
 import { useRef } from "react";
 
 import { useT } from "../../../i18n";

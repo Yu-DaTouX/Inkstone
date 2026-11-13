@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactElement, type RefObject } from 'react'
 import { Autocomplete, Dialog } from 'react-aria-components'
-import { ArrowLeft, GitBranch, Plus } from 'lucide-react'
+import { ArrowLeft, GitBranch, Plus } from '../../ui/icons'
 import {
   Button,
   Header,

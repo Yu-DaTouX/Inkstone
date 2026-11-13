@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX } from 'react'
-import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, ShieldAlert, X } from 'lucide-react'
+import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, ShieldAlert, X } from '../../ui/icons'
 import { currentLang, useI18n } from '../../i18n'
 import { Button, IconButton, Notice } from '../../ui'
 import type { McpAppViewApi, McpAppViewAuditEntry, McpAppViewDescriptor } from '../../../../shared/mcp-app-view'

@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, FolderGit2, FolderOpen, Link, Palette, Pencil, Plus, Replace, Trash2, Type } from 'lucide-react'
+import { Archive, ArchiveRestore, FolderGit2, FolderOpen, Link, Palette, Pencil, Plus, Replace, Trash2, Type } from '../../ui/icons'
 import { useEffect, useState, type ReactElement, type RefObject } from 'react'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'

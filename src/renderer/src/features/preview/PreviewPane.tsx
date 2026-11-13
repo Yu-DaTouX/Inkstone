@@ -1,6 +1,6 @@
 import { formatBytes } from '../diff/limits'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from 'react'
-import { BookOpen, Code2, Copy, Download, File as FileIcon, FileArchive, FileText, Folder, FolderOpen, ImageOff, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
+import { BookOpen, Code2, Copy, Download, File as FileIcon, FileArchive, FileText, Folder, FolderOpen, ImageOff, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, PaneHeader, Skeleton, Spinner, StatusDot } from '../../ui'

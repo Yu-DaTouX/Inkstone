@@ -7,7 +7,7 @@ import {
   PencilIcon,
   Undo2Icon,
   XIcon
-} from 'lucide-react'
+} from '../../../ui/icons'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useT } from '@/i18n'
 import { useQueueAdapter, type QueueRow } from '@/t3/adapters/composer-queue'

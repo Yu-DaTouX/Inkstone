@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { RotateCcw } from 'lucide-react'
+import { RotateCcw } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import type { AppSettings } from '../../../../../shared/ipc'
 import {

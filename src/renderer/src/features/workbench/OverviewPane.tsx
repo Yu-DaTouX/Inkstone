@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from 'lucide-react'
+import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from '../../ui/icons'
 import { Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, IconButton, ListRow, ListRowStatic, Menu, MenuItem, MenuTrigger, Meter, Notice, Popover, RailRow, RailValue, Separator, TooltipText, type RailTone } from '../../ui'
 import { BranchPicker } from '../changes/BranchPicker'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'

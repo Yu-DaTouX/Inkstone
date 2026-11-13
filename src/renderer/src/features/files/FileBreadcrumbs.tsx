@@ -10,7 +10,7 @@ import {
   type ReactElement,
   type ReactNode
 } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, Folder } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Folder } from '../../ui/icons'
 import { IconButton, Menu, MenuItem, Popover, Separator } from '../../ui'
 import type { DirEntry } from '../../../../shared/ipc'
 import {

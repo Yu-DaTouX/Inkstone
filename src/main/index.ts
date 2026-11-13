@@ -104,6 +104,7 @@ import { registerRunsIpc } from './ipc/runs-ipc'
 import { registerSessionTransferIpc } from './ipc/session-transfer-ipc'
 import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
 import { registerCanvasCaptureIpc } from './ipc/canvas-capture-ipc'
+import { registerFrictionIpc } from './ipc/friction-ipc'
 import { registerHtmlEditIpc } from './ipc/html-edit-ipc'
 import { registerVideoExportIpc } from './ipc/video-export-ipc'
 import { pruneCheckpoints } from './checkpoints'
@@ -2758,6 +2759,7 @@ function registerIpc(): void {
     return bundledPlugins.invoke(id, action, params)
   })
   registerCanvasCaptureIpc(ipc)
+  registerFrictionIpc(ipc)
   registerHtmlEditIpc(ipc, { resolveFileContext })
   registerVideoExportIpc(ipc, { resolveFileContext })
   registerSourcesIpc(ipc)

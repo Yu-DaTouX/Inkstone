@@ -201,25 +201,18 @@
     height: var(--size-btn);
     padding: 0 var(--s-8);
     border-radius: var(--r-sm);
-    background: var(--field);
-    box-shadow: var(--ring-line);
+    background: var(--hover);
     color: var(--fg3);
     cursor: text;
-    transition: box-shadow var(--dur-fast) var(--ease);
-  }
-
-  @media (hover: hover) {
-    .ui-settings-search:hover:not(:focus-within) {
-      box-shadow: var(--ring-line2);
-    }
+    transition: background-color var(--dur-fast) var(--ease);
   }
 
   .ui-settings-search:focus-within {
-    box-shadow: var(--ring-ctl);
+    background: var(--press);
   }
 
   .ui-settings-search:has(.ui-settings-search__input:focus-visible) {
-    box-shadow: var(--ring-focus), var(--ring-ctl);
+    box-shadow: var(--ring-focus);
   }
 
   .ui-settings-search[data-disabled='1'] {

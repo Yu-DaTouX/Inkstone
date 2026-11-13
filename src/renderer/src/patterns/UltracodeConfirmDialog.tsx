@@ -1,4 +1,4 @@
-import { Gauge, Hourglass } from 'lucide-react'
+import { Gauge, Hourglass } from '../ui/icons'
 import { useT } from '../i18n'
 import { Button, Dialog, DialogFooter, Modal, ModalOverlay } from '../ui'
 import './ultracode.css'

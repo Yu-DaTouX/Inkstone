@@ -1,4 +1,4 @@
-import { ChevronDownIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, XIcon } from "../../../ui/icons";
 import type { ComponentProps, ReactNode } from "react";
 
 import { cx } from "../../../ui/cx";

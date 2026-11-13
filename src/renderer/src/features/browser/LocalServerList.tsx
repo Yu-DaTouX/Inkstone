@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { Globe, RotateCw } from 'lucide-react'
+import { Globe, RotateCw } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { Button, CollapsibleChevron, IconButton, Notice, RailRow, SiteIcon, StopButton } from '../../ui'
 import type { LocalServerInfo } from '../../../../shared/local-servers'

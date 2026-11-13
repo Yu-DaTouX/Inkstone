@@ -15,6 +15,7 @@ import { installHairline } from './lib/hairline'
 import { installDeepLinkNavigation } from './features/deeplink/navigation'
 import { installBrowserPreloadRecovery } from './lib/preload-recovery'
 import { installIdlePrefetch } from './lib/idle-prefetch'
+import { installFrictionRecorder } from './features/friction/install'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('找不到 #root')
@@ -77,6 +78,8 @@ async function mount(): Promise<void> {
 }
 
 installIdlePrefetch()
+
+installFrictionRecorder()
 
 void mount().catch((error: unknown) => {
   console.error('界面外壳加载失败', error)

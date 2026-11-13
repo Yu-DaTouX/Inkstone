@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode } from 'react'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight } from './icons'
 import { Card, CardStatus, type CardStatusTone } from './Card'
 import './SourceCard.css'
 

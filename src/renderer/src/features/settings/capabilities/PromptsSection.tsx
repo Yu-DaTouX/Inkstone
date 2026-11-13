@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import type { PromptTemplateDirectories } from '../../../../../shared/ipc'
 import { useStore } from '../../../state/store'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen } from '../../../ui/icons'
 import { Button, IconButton, MiddleTruncate } from '../../../ui'
 import { useCapsText } from './text'
 import { Empty, Entry, Group, Meta, Panel, Warn } from './parts'

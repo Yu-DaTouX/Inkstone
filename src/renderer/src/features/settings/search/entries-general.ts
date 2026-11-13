@@ -69,6 +69,7 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'about-update-check', section: 'about', zh: '应用更新', en: 'App updates', keywords: ['检查更新', 'check for updates', '升级', '下载', 'update', 'upgrade'] },
   { id: 'about-update-auto', section: 'about', zh: '启动时检查更新', en: 'Check for updates on start', keywords: ['自动更新', 'auto update'] },
   { id: 'about-repository', section: 'about', zh: '开源与仓库', en: 'Open source & repository', keywords: ['GitHub', '主页', '源码', 'repository'], more: true },
+  { id: 'about-friction', section: 'about', zh: '记录界面问题', en: 'Record UI friction', keywords: ['录制', '回放', '反馈', 'bug', 'rrweb', 'replay', 'Ctrl+Alt+F'] },
   { id: 'about-pi-redetect', section: 'about', zh: 'Agent 内核（pi）', en: 'Agent runtime (pi)', keywords: ['重新检测', 're-detect', 'pi', '内核', 'runtime'], more: true },
   { id: 'about-onboarding', section: 'about', zh: '重新查看引导', en: 'Replay setup', keywords: ['首次引导', '新手引导', 'onboarding'], more: true }
 ]

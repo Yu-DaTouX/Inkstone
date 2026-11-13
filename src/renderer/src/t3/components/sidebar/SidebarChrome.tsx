@@ -1,4 +1,4 @@
-import { MoreHorizontal, PanelLeft, Unplug } from "lucide-react";
+import { MoreHorizontal, PanelLeft, Unplug } from "../../../ui/icons";
 import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { useT } from "../../../i18n";

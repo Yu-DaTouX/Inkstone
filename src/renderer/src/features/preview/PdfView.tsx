@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
-import { ChevronLeft, ChevronRight, FileWarning, FolderOpen, Lock, Minus, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileWarning, FolderOpen, Lock, Minus, Plus } from '../../ui/icons'
 import {
   getDocument,
   GlobalWorkerOptions,

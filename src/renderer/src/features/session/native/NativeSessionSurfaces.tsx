@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
-import { AlertCircle, ArrowLeft, RotateCw } from 'lucide-react'
+import { AlertCircle, ArrowLeft, RotateCw } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { viewIdentityOf } from '../../../state/view-identity'

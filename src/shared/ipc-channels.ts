@@ -323,6 +323,8 @@ export interface IpcChannelMap {
   'yan:plugins:action': Contract<B['plugins']['action']>
   'yan:plugins:invoke': Contract<B['plugins']['invoke']>
   'yan:canvas:capture': Contract<B['canvas']['capture']>
+  'yan:friction:capture': Contract<B['friction']['capture']>
+  'yan:friction:openFolder': Contract<B['friction']['openFolder']>
   'yan:htmlEdit:apply': Contract<B['htmlEdit']['apply']>
   'yan:htmlEdit:undo': Contract<B['htmlEdit']['undo']>
   'yan:videoExport:start': Contract<B['videoExport']['start']>

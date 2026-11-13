@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { ShieldOffIcon, ZapIcon } from 'lucide-react'
+import { ShieldOffIcon, ZapIcon } from '../../../ui/icons'
 import type { PermissionMode } from '../../../../../shared/approval'
 import { useT } from '../../../i18n'
 import { FluidEffortSlider } from '../../../ui/FluidEffortSlider'
@@ -36,7 +36,7 @@ export function FastBolt(props: { className?: string; label?: string }) {
       aria-label={props.label}
       aria-hidden={props.label ? undefined : true}
     >
-      <ZapIcon className="composer-fast-bolt__icon" aria-hidden="true" />
+      <ZapIcon weight="fill" className="composer-fast-bolt__icon" aria-hidden="true" />
       <span className="composer-fast-bolt__flash" aria-hidden="true" />
     </span>
   )

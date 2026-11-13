@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from "react";
-import { StarIcon } from "lucide-react";
+import { StarIcon } from "../../../ui/icons";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { BareButton, Focusable, Toolbar, Tooltip, TooltipHint, TooltipTrigger } from "../../../ui";
 import { cx } from "../../../ui/cx";
@@ -125,10 +125,6 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   isDisabled && "t3-model-sidebar__item--disabled",
                 )}
                 onPress={() => !isDisabled && handleSelect(entry.instanceId)}
-                onHoverStart={() => setHoveredInstanceId(entry.instanceId)}
-                onHoverEnd={() =>
-                  setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
-                }
                 onFocus={() => setHoveredInstanceId(entry.instanceId)}
                 onBlur={() =>
                   setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))

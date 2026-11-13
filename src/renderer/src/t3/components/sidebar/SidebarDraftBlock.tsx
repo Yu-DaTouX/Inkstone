@@ -1,4 +1,4 @@
-import { SquarePenIcon, XIcon } from 'lucide-react'
+import { SquarePenIcon, XIcon } from '../../../ui/icons'
 import { memo, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { cx } from '../../../ui/cx'
 import { resolveSidebarRowAccessibility } from '../Sidebar.logic'

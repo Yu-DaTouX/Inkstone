@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
-import { EllipsisVertical, Eye, Minimize2, PanelRightClose, SquareX } from 'lucide-react'
+import { EllipsisVertical, Eye, Minimize2, PanelRightClose, SquareX } from '../../ui/icons'
 import { create } from 'zustand'
 import { Button, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, Spinner, SubmenuTrigger, motionAllowed, useReducedMotion } from '../../ui'
 import { useI18n } from '../../i18n'

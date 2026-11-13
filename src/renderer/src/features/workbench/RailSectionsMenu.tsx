@@ -1,5 +1,5 @@
 import type { ReactElement, RefObject } from 'react'
-import { RotateCcw } from 'lucide-react'
+import { RotateCcw } from '../../ui/icons'
 import { Header, Menu, MenuItem, MenuSection, Popover, Separator } from '../../ui'
 import {
   canHideRailSection,

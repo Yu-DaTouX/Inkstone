@@ -13,7 +13,7 @@ import {
   type ReactNode,
   type Ref
 } from 'react'
-import { X } from 'lucide-react'
+import { X } from './icons'
 import { cx } from './cx'
 import { inkGeometry } from './motion-model'
 import './PanelTabs.css'

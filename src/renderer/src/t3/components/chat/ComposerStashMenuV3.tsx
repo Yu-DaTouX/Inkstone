@@ -1,4 +1,4 @@
-import { BookmarkIcon, FileIcon, FileTextIcon } from 'lucide-react'
+import { BookmarkIcon, FileIcon, FileTextIcon } from '../../../ui/icons'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { Attachment } from '../../../../../shared/ipc'
 import { useI18n, useT, type Lang, type TFunc } from '@/i18n'

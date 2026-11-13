@@ -1,5 +1,5 @@
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { ChevronDown, ChevronUp, CircleCheck } from 'lucide-react'
+import { ChevronDown, ChevronUp, CircleCheck } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { CloseButton, Meter } from '../../ui'

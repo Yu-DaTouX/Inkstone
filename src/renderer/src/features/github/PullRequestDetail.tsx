@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type UIEvent } from 'react'
-import { ArrowLeft, Check, Copy, ExternalLink, FileDiff, Pencil, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Check, Copy, ExternalLink, FileDiff, Pencil, RefreshCw } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { serializeLineComment } from '../preview/code-line-comment'

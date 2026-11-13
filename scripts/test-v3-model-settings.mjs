@@ -81,7 +81,7 @@ await build({
   },
   outfile: 'out/test/codex-account-list.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', jsx: 'automatic',
   loader: { '.css': 'empty' },
-  external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', 'lucide-react']
+  external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', '@phosphor-icons/react']
 })
 const ui = await import(pathToFileURL(resolve('out/test/codex-account-list.mjs')).href)
 const accounts = [

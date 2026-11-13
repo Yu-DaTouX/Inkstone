@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
-import { ArrowUpRight, Globe } from 'lucide-react'
+import { ArrowUpRight, Globe } from '../../../ui/icons'
 import { useStore } from '../../../state/store'
 import { Button, Card, CollapsibleChevron, revealCollapsedHeader, ShimmerText, SourceCard as SourceCardFrame } from '../../../ui'
 import type { UIToolCall, WebSearchSourceView } from '../../../../../shared/ipc'

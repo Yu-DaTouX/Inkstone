@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { FolderOpen, ImageOff } from 'lucide-react'
+import { FolderOpen, ImageOff } from '../../ui/icons'
 import { Button, EmptyState } from '../../ui'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import type { PreviewFormat } from './preview-format'

@@ -1,4 +1,4 @@
-import { Folder } from "lucide-react";
+import { Folder } from "../../../ui/icons";
 import { memo, useLayoutEffect, useRef } from "react";
 
 import type { SlashCommand } from "../../../../../shared/ipc";

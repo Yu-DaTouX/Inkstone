@@ -7,7 +7,7 @@ import {
   Link2Icon,
   TriangleAlertIcon,
   Unlink2Icon
-} from 'lucide-react'
+} from '../../../ui/icons'
 import { cx } from '@/ui/cx'
 
 export const PullRequestGlyph = {

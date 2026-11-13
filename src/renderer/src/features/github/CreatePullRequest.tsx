@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { GitPullRequestCreate } from 'lucide-react'
+import { GitPullRequestCreate } from '../../ui/icons'
 import { Button, Checkbox, Dialog, DialogFooter, IconButton, Modal, ModalOverlay, Notice, Spinner, Switch, TextField } from '../../ui'
 import { useI18n } from '../../i18n'
 import type { Lang } from '../../i18n'

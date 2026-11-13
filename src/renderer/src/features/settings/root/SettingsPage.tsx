@@ -27,7 +27,7 @@ import {
   Smartphone,
   Sparkles,
   Wrench
-} from 'lucide-react'
+} from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { useVoicePluginInstalled } from '../../../state/installed-plugins'

@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { Eye, FileCode, FileText, FolderInput, FolderOpen, Globe, Mail, MailOpen, Package, Pencil, Pin, PinOff, Archive, ArchiveRestore, Sparkles, Trash2, Upload } from 'lucide-react'
+import { Eye, FileCode, FileText, FolderInput, FolderOpen, Globe, Mail, MailOpen, Package, Pencil, Pin, PinOff, Archive, ArchiveRestore, Sparkles, Trash2, Upload } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Menu, MenuItem, MenuSeparator, Popover, SubmenuTrigger } from '../../ui'

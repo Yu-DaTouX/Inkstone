@@ -11,7 +11,7 @@ import {
   type MouseEvent,
   type ReactElement
 } from 'react'
-import { ArrowUpRight, ChevronsDownUp, Folder, FolderOpen, List, RefreshCw, Search, X } from 'lucide-react'
+import { ArrowUpRight, ChevronsDownUp, Folder, FolderOpen, List, RefreshCw, Search, X } from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'

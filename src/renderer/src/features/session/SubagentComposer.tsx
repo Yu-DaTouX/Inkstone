@@ -1,5 +1,5 @@
 import { useState, type JSX, type KeyboardEvent } from 'react'
-import { ArrowUp } from 'lucide-react'
+import { ArrowUp } from '../../ui/icons'
 import { useT } from '../../i18n'
 import { IconButton, Notice, TextArea } from '../../ui'
 import type { SubagentRun } from '../../../../shared/ipc'

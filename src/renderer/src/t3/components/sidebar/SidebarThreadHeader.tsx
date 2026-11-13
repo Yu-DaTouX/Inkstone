@@ -1,4 +1,4 @@
-import { SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { SearchIcon, SquarePenIcon, XIcon } from "../../../ui/icons";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,

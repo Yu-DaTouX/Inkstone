@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { ExternalLink, MessageSquareReply, Trash2 } from 'lucide-react'
+import { ExternalLink, MessageSquareReply, Trash2 } from '../../ui/icons'
 import { Avatar, Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, IconButton, MiddleTruncate, Notice, TextArea } from '../../ui'
 import { Markdown } from '../session/Markdown'
 import type { PrThread } from './pr-model'

@@ -1,6 +1,6 @@
 import { forwardRef, type ReactNode } from 'react'
 import { composeRenderProps } from 'react-aria-components'
-import { X } from 'lucide-react'
+import { X } from './icons'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { Button, type ButtonProps, type ButtonSize } from './Button'

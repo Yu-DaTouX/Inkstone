@@ -12,7 +12,7 @@ import {
   type TextFieldProps as RACTextFieldProps,
   type ValidationResult
 } from 'react-aria-components'
-import { Search } from 'lucide-react'
+import { Search } from './icons'
 import { cx } from './cx'
 
 export type FieldErrorContent = ReactNode | ((validation: ValidationResult) => ReactNode)

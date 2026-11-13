@@ -1,6 +1,6 @@
 import { memo, type ReactNode } from 'react'
 import { Dialog, DialogTrigger } from 'react-aria-components'
-import { EllipsisIcon } from 'lucide-react'
+import { EllipsisIcon } from '../../../ui/icons'
 import type { PermissionMode } from '../../../../../shared/approval'
 import type { RuntimeModeOption } from '../../adapters/composer-permissions'
 import { useT } from '../../../i18n'

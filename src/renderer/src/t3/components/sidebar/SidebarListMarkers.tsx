@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronDownIcon } from 'lucide-react'
+import { ChevronDownIcon } from '../../../ui/icons'
 import { type ReactNode, useLayoutEffect } from 'react'
 import { cx } from '../../../ui/cx'
 import {

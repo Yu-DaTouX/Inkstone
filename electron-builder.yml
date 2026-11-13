@@ -66,6 +66,12 @@ extraResources:
   - from: resources/bot-icons
     to: bot-icons
     filter: ['*.png']
+  - from: node_modules/rrweb-player/dist
+    to: friction-player
+    filter: ['rrweb-player.umd.min.cjs', 'style.min.css']
+  - from: resources/friction-player
+    to: friction-player
+    filter: ['LICENSE-rrweb']
   - from: integrations/desktop-pet
     to: integrations/desktop-pet
     filter: ['**/*.mjs', 'inkstone-plugin.json']

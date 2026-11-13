@@ -70,7 +70,7 @@ try {
     logLevel: 'silent',
     jsx: 'automatic',
     loader: { '.json': 'json', '.css': 'empty' },
-    external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', 'lucide-react']
+    external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', '@phosphor-icons/react']
   })
   const mod = await import(pathToFileURL(file).href)
 

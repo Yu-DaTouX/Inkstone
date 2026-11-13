@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, Dialog, DialogFooter, EmptyState, IconButton, Input, Modal, ModalOverlay, Notice, TextField } from '../../ui'

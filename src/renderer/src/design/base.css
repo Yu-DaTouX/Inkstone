@@ -60,10 +60,6 @@
     text-align: center;
   }
 
-  svg.lucide {
-    stroke-width: 1.5;
-  }
-
   .sr-only,
   .v3-visually-hidden {
     position: absolute;

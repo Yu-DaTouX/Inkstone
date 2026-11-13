@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react'
-import { ArrowUpRight, GripVertical } from 'lucide-react'
+import { ArrowUpRight, GripVertical } from '../../ui/icons'
 import { AsciiRule, Button, CollapsibleChevron, Expand, IconButton } from '../../ui'
 import type { RailSectionId } from './rail-sections'
 

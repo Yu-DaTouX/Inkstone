@@ -1,5 +1,5 @@
 import { useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, Minus, Plus } from 'lucide-react'
+import { ChevronDown, Minus, Plus } from '../../ui/icons'
 import {
   Button,
   Collapsible,

@@ -23,7 +23,7 @@ import {
   TextSearch,
   X,
   type LucideIcon
-} from 'lucide-react'
+} from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import type { UIMessage } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'

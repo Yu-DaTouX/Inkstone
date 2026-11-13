@@ -1,4 +1,4 @@
-import { Check, ChevronRight, FolderCog, FolderMinus, FolderPlus, Layers, MoreHorizontal, Search } from 'lucide-react'
+import { Check, ChevronRight, FolderCog, FolderMinus, FolderPlus, Layers, MoreHorizontal, Search } from '../../ui/icons'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react'
 import { useT } from '../../i18n'
 import { Dialog, InputGroup, InputGroupAddon, InputGroupInput, isImeComposing, ListRow, Popover } from '../../ui'
@@ -150,7 +150,7 @@ function FilterBody({ value, projects, onPick, onManage, onAdd, counts }: {
 
   return (
     <div className="nsp" data-testid="v3-project-filter-panel">
-      <InputGroup className="nsp__search">
+      <InputGroup variant="bare" className="nsp__search">
         <InputGroupAddon align="start">
           <Search size={14} aria-hidden="true" />
         </InputGroupAddon>

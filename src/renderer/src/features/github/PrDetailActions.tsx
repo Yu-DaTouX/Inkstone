@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { Bot, ChevronDown, GitMerge, MessageSquareText, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { Bot, ChevronDown, GitMerge, MessageSquareText, MoreHorizontal, Pencil, Trash2 } from '../../ui/icons'
 import {
   Badge,
   Button,

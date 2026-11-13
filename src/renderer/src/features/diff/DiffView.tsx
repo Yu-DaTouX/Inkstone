@@ -20,7 +20,7 @@ import type {
 } from '@pierre/diffs'
 import { DIFFS_TAG_NAME } from '@pierre/diffs'
 import { CodeView, FileDiff, type CodeViewHandle } from '@pierre/diffs/react'
-import { ChevronDown, ChevronUp, Columns2, Rows3 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Columns2, Rows3 } from '../../ui/icons'
 import { Button, EmptyState, IconButton, Notice, Toggle, ToggleGroup, cx } from '../../ui'
 import { DiffAnnotationEditor, type DiffAnnotate } from './DiffAnnotation'
 import { isComposingKey } from './annotation-keys'

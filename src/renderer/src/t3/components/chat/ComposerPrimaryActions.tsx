@@ -1,5 +1,5 @@
 import { memo, type PointerEventHandler } from "react";
-import { CornerUpRight, ListPlus } from "lucide-react";
+import { CornerUpRight, ListPlus } from "../../../ui/icons";
 import { MorphIcon } from "../MorphIcon";
 import { useT } from "../../../i18n";
 import { useShortcutModifierState } from "../../adapters/shortcut-modifier";

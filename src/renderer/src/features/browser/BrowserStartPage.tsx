@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { ChevronDown, Search } from 'lucide-react'
+import { ChevronDown, Search } from '../../ui/icons'
 import {
   Button,
   Dialog,

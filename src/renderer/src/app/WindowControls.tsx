@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from 'react'
 import { Focusable } from 'react-aria-components'
-import { Copy, Minus, Square, X } from 'lucide-react'
+import { Copy, Minus, Square, X } from '../ui/icons'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import { Tooltip, TooltipTrigger } from '../ui'

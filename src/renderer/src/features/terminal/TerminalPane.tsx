@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
-import { Plus, RefreshCw, SquareTerminal } from 'lucide-react'
+import { Plus, RefreshCw, SquareTerminal } from '../../ui/icons'
 import { Badge, Button, Dialog, DialogFooter, EmptyState, KbdGroup, Menu, MenuItem, MenuSeparator, MiddleTruncate, Modal, ModalOverlay, Notice, PaneHeader, Popover, type BadgeTone } from '../../ui'
 import { PaneTitle, PaneTools, usePaneChrome } from '../workbench/pane-chrome'
 import { useI18n, useT } from '../../i18n'

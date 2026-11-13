@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus } from '../../ui/icons'
 import { Avatar, Button, Dialog, DialogTrigger, IconButton, ListBox, ListBoxItem, Notice, Popover, SearchField, SegmentedControl, Skeleton, TextArea } from '../../ui'
 import { Markdown } from '../session/Markdown'
 import type { PrActionText } from './pr-action-text'

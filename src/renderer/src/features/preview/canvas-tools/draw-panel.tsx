@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
-import { ArrowUpRight, Circle, Pencil, Redo2, SendHorizontal, Square, Trash2, Type, Undo2 } from 'lucide-react'
+import { ArrowUpRight, Circle, Pencil, Redo2, SendHorizontal, Square, Trash2, Type, Undo2 } from '../../../ui/icons'
 import { Button, IconButton, Notice, Separator } from '../../../ui'
 import { DockToggle } from './dock'
 import { DRAW_PALETTE, DRAW_PENS, type DrawPen } from './draw-model'

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactElement } from 'react'
-import { Copy, Search } from 'lucide-react'
+import { Copy, Search } from '../../ui/icons'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PROMPT_SUGGESTION_STATUS_KEY } from '../composer/prompt-suggestion'

@@ -9,7 +9,7 @@ import {
   type ReactElement,
   type RefObject
 } from 'react'
-import { Check, Crosshair, MessageSquarePlus, Pencil, Trash2 } from 'lucide-react'
+import { Check, Crosshair, MessageSquarePlus, Pencil, Trash2 } from '../../../ui/icons'
 import { Badge, Button, Checkbox, EmptyState, IconButton, TextArea } from '../../../ui'
 import { HTML_PREVIEW_CHANNEL } from '../../../../../shared/html-artifact-preview'
 import { stageRect, type CanvasFrameBox, type CanvasView } from '../html-canvas-model'

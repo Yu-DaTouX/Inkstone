@@ -6,7 +6,7 @@ import {
   UNSTABLE_ToastRegion as RACToastRegion,
   composeRenderProps
 } from 'react-aria-components'
-import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
+import { CircleAlert, CircleCheck, Info, TriangleAlert } from './icons'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { Button } from './Button'

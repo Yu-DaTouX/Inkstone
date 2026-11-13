@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import type { LucideIcon } from 'lucide-react'
+import type { LucideIcon } from '../../../ui/icons'
 import type { CanvasComposition, CanvasElementInfoPayload, CanvasElementRect, CanvasResolveTarget } from '../../../../../shared/html-canvas-bridge'
 import type { CanvasFrameBox, CanvasView } from '../html-canvas-model'
 import type { PreviewText } from '../preview-text'

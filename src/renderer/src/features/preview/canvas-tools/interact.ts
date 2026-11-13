@@ -1,4 +1,4 @@
-import { MousePointerClick } from 'lucide-react'
+import { MousePointerClick } from '../../../ui/icons'
 import type { CanvasTool } from './types'
 
 export const interactTool: CanvasTool = {

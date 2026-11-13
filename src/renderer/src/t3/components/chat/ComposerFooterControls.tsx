@@ -1,5 +1,5 @@
 import { Dialog } from 'react-aria-components'
-import { ShieldCheckIcon, ShieldOffIcon } from 'lucide-react'
+import { ShieldCheckIcon, ShieldOffIcon } from '../../../ui/icons'
 import { memo, useId, useRef, useState } from 'react'
 import type { PermissionMode } from '../../../../../shared/approval'
 import type { RuntimeModeOption } from '../../adapters/composer-permissions'
@@ -119,8 +119,6 @@ export function ComposerPermissionsSection(props: {
               id={option.mode}
               aria-label={option.label}
               aria-describedby={`${descriptionId}-${option.mode}`}
-              onHoverStart={() => setPreviewMode(option.mode)}
-              onHoverEnd={() => setPreviewMode(null)}
               onFocus={() => setPreviewMode(option.mode)}
               onBlur={() => setPreviewMode(null)}
               className="t3-permissions__option"

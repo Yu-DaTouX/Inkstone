@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { FileDiff, FolderOpen, Gauge, GitBranch, GitPullRequest, Globe, ScrollText, Smartphone, SquareStack, Terminal, type LucideIcon } from 'lucide-react'
+import { FileDiff, FolderOpen, Gauge, GitBranch, GitPullRequest, Globe, ScrollText, Smartphone, SquareStack, Terminal, type LucideIcon } from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import type { PanelToolKind } from '../../state/right-panel'
 import { rightPanelText, type RightPanelText } from './right-panel-text'

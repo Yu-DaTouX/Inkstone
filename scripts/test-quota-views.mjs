@@ -254,7 +254,7 @@ async function runQuotaCardTests() {
       jsx: 'automatic',
       loader: { '.json': 'json', '.css': 'empty' },
       plugins: [viteGlobShim()],
-      external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', 'lucide-react']
+      external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', '@phosphor-icons/react']
     })
     const mod = await import(pathToFileURL(out).href)
     const now = Date.now()

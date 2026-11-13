@@ -1,5 +1,5 @@
 import { Fragment, type KeyboardEvent, type ReactElement, type RefObject } from 'react'
-import { Folder } from 'lucide-react'
+import { Folder } from '../../ui/icons'
 import { Button, EmptyState, ListRow, Notice, Spinner } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { splitForMiddleTruncate } from '../../ui/MiddleTruncate'

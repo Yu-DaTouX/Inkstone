@@ -1,4 +1,4 @@
-import { Globe2 } from 'lucide-react'
+import { Globe2 } from '../../../ui/icons'
 import { type ReactNode, useState } from 'react'
 import { cx } from '@/ui/cx'
 import './PreviewFaviconIcon.css'

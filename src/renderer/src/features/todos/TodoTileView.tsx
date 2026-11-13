@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { CircleAlert, CircleCheck, CircleDashed, CircleEllipsis } from 'lucide-react'
+import { CircleAlert, CircleCheck, CircleDashed, CircleEllipsis } from '../../ui/icons'
 import type { Lang } from '../../i18n'
 import type { TodoRowKind, TodoTileModel } from './todo-tile-model'
 import './todo-tile.css'

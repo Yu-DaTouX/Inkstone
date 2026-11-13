@@ -1,5 +1,5 @@
 import type { HTMLAttributes, ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, Info, OctagonAlert } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Info, OctagonAlert } from './icons'
 import { cx } from './cx'
 import { CONTROL_ICON_SIZE } from './sizes'
 import { Spinner } from './Progress'

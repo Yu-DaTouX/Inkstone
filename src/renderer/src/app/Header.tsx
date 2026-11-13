@@ -1,12 +1,11 @@
 import { memo, useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Columns3, PanelLeft, PanelRight, Pin, SquarePen } from 'lucide-react'
+import { ArrowLeft, Columns3, PanelLeft, PanelRight, Pin, SquarePen } from '../ui/icons'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings } from './shortcuts'
 import { IconButton, Separator, TooltipText } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
-import { useHoverDelay } from '../lib/use-hover-delay'
 import { rightPanelText } from '../features/workbench/right-panel-text'
 import { WindowControls } from './WindowControls'
 import { v3Text, withShortcutKeys } from './v3-text'
@@ -19,7 +18,6 @@ interface Props {
   sidebarOpen: boolean
   route: V3RouteName
   onToggleSidebar: () => void
-  onPreviewSidebar?: () => void
   onSettings: () => void
   onBack: () => void
   sessionBarOpen: boolean
@@ -37,7 +35,7 @@ interface Props {
   onTogglePane: (tab: WorkbenchTabId) => void
 }
 
-export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, rightPanelOpen, onToggleRightPanel, windowControls, splitActive = false }: Props): ReactElement {
+export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen, route, onToggleSidebar, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, rightPanelOpen, onToggleRightPanel, windowControls, splitActive = false }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -61,7 +59,6 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
   const shortcutOverrides = shortcutOverridesFromSettings(useStore((s) => s.settings))
   const panelText = rightPanelText(lang)
 
-  const preview = useHoverDelay(280, () => onPreviewSidebar?.())
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverrides))
 
   const title = useMemo(() => {
@@ -78,7 +75,7 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
       <div className="v3-head-left">
         {route === 'chat' ? (
           !sidebarOpen || sidebarOverlay ? (
-            <IconButton tooltip={text.toggleSidebar} aria-label={text.toggleSidebar} onPress={onToggleSidebar} onHoverStart={sidebarOpen ? undefined : preview.start} onHoverEnd={preview.cancel} onPressStart={preview.cancel} data-testid="v3-rail-toggle">
+            <IconButton tooltip={text.toggleSidebar} aria-label={text.toggleSidebar} onPress={onToggleSidebar} data-testid="v3-rail-toggle">
               <PanelLeft size={16} />
             </IconButton>
           ) : null

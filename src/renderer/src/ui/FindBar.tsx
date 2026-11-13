@@ -1,6 +1,6 @@
 import { forwardRef, type ReactNode, type Ref } from 'react'
 import { TextField as RACTextField } from 'react-aria-components'
-import { ChevronDown, ChevronUp, Search } from 'lucide-react'
+import { ChevronDown, ChevronUp, Search } from './icons'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { CloseButton, IconButton } from './IconButton'

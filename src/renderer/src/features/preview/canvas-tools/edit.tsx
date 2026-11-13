@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { SlidersHorizontal } from 'lucide-react'
+import { SlidersHorizontal } from '../../../ui/icons'
 import { Button, EmptyState, ListBoxItem, Select, TextArea, TextField } from '../../../ui'
 import { HTML_CANVAS_CHANNEL } from '../../../../../shared/html-canvas-bridge'
 import { htmlElementSpan, type HtmlEditPatch, type HtmlPatchStyle } from '../../../../../shared/html-edit-patch'

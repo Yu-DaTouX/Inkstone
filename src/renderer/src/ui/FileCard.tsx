@@ -1,4 +1,4 @@
-import { FileText, Folder } from 'lucide-react'
+import { FileText, Folder } from './icons'
 import { Button, type ButtonProps } from './Button'
 import { cx } from './cx'
 

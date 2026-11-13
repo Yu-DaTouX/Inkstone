@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { Info } from 'lucide-react'
+import { Info } from '../../ui/icons'
 import { Collapsible, CollapsibleHeader, CollapsiblePanel, EmptyState, Notice, Tab, TabList, Tabs } from '../../ui'
 import { useT } from '../../i18n'
 import {

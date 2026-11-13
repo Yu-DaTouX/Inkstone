@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useEffectEvent, useRef, type RefObject } from "react";
-import { ChevronRightIcon, StarIcon } from "lucide-react";
+import { ChevronRightIcon, StarIcon } from "../../../ui/icons";
 import { ModelListRow } from "./ModelListRow";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { legacyModelSlugs, modelVendor } from "./modelPickerGroups";

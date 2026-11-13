@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { Bot, Plus, SquareTerminal } from 'lucide-react'
+import { Bot, Plus, SquareTerminal } from '../../ui/icons'
 import { IconButton, Menu, MenuItem, PanelTab, PanelTabList, Popover } from '../../ui'
 import { nextTerminalTabIndex } from './terminal-tabs'
 import type { TerminalText } from './terminal-text'

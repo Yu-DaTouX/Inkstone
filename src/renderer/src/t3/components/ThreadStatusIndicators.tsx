@@ -1,4 +1,4 @@
-import { FolderGit2Icon } from "lucide-react";
+import { FolderGit2Icon } from "../../ui/icons";
 
 import { useT } from "../../i18n";
 import { cx } from "../../ui/cx";

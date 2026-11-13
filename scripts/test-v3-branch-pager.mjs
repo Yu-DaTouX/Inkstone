@@ -162,7 +162,7 @@ async function bundle(outdir, name, entrySource, stubMap, shims) {
     jsx: 'automatic',
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
     loader: { '.css': 'empty' },
-    external: ['lucide-react'],
+    external: ['@phosphor-icons/react'],
     plugins: [
       {
         name: `v3-pager-stubs-${name}`,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactElement } from 'react'
-import { ChevronLeft, ChevronRight, Clapperboard, Film, Pause, Play, SkipBack, SkipForward } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clapperboard, Film, Pause, Play, SkipBack, SkipForward } from '../../../ui/icons'
 import { Button, CloseButton, IconButton, Slider } from '../../../ui'
 import type { CanvasTool, CanvasToolPanelProps } from './types'
 import {

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactElement } from 'react'
-import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronsUpDown } from '../../ui/icons'
 import { EmptyState, IconButton, SearchField } from '../../ui'
 import { useI18n } from '../../i18n'
 import type { PreviewText } from './preview-text'

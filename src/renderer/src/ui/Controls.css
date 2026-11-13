@@ -45,6 +45,12 @@
     border-color: var(--line-ctl);
     background: var(--surface);
   }
+  .ui-input-group--bare,
+  .ui-input-group--bare[data-hovered],
+  .ui-input-group--bare[data-focus-within] {
+    border-color: transparent;
+    background: transparent;
+  }
   .ui-input-group[data-invalid],
   .ui-input-group[data-empty='true'] {
     border-color: var(--fail);

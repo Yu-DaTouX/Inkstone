@@ -52,7 +52,7 @@ async function loadView() {
     logLevel: 'silent',
     jsx: 'automatic',
     loader: { '.json': 'json', '.css': 'empty', '.woff': 'empty', '.woff2': 'empty', '.ttf': 'empty' },
-    external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', 'lucide-react']
+    external: ['react', 'react-dom', 'react-dom/server', 'react-aria-components', 'react-aria', 'react-stately', '@react-aria/*', '@react-stately/*', '@react-types/*', '@phosphor-icons/react']
   })
   return import(`${pathToFileURL(outfile).href}?v=${Date.now()}`)
 }

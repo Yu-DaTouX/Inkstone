@@ -1,0 +1,40 @@
+@layer reset, tokens, base, primitives, patterns, features, utilities;
+
+@layer primitives {
+  .ui-icon {
+    flex: none;
+    transition: rotate var(--dur-quick) var(--ease-spring), translate var(--dur-quick) var(--ease), scale var(--dur-quick) var(--ease-spring);
+  }
+
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    :root:not([data-reduce-motion='true']) :is(button, a, [role='button'], [role='menuitem'], [role='option'], [role='tab'], [role='link']):is(:hover, [data-hovered]):not(:disabled, [data-disabled], [aria-disabled='true']) .ui-icon {
+      &:is([data-icon='Settings'], [data-icon='Settings2']) { rotate: 60deg; }
+      &:is([data-icon='RefreshCw'], [data-icon='RotateCw']) { rotate: 180deg; }
+      &[data-icon='RotateCcw'] { rotate: -180deg; }
+      &:is([data-icon='Plus'], [data-icon='X'], [data-icon='XIcon']) { rotate: 90deg; }
+      &:is([data-icon='ArrowUp'], [data-icon='ArrowUpIcon'], [data-icon='Upload'], [data-icon='CloudUpload']) { translate: 0 -1.5px; }
+      &:is([data-icon='Download'], [data-icon='CloudDownload'], [data-icon='ImageDown'], [data-icon='ArrowDown']) { translate: 0 1.5px; }
+      &[data-icon='ArrowRight'] { translate: 1.5px 0; }
+      &:is([data-icon='ArrowLeft'], [data-icon='Undo2'], [data-icon='Undo2Icon']) { translate: -1.5px 0; }
+      &[data-icon='Redo2'] { translate: 1.5px 0; }
+      &:is([data-icon='ExternalLink'], [data-icon='ArrowUpRight'], [data-icon='SendHorizontal']) { translate: 1.5px -1.5px; }
+      &:is([data-icon='Copy'], [data-icon='Search'], [data-icon='SearchIcon'], [data-icon='Star'], [data-icon='StarIcon'], [data-icon='Maximize2'], [data-icon='Maximize'], [data-icon='ZoomIn']) { scale: 1.12; }
+      &:is([data-icon='Minimize2'], [data-icon='Minimize2Icon'], [data-icon='ZoomOut']) { scale: .88; }
+      &:is([data-icon='Trash2'], [data-icon='SquarePen'], [data-icon='SquarePenIcon'], [data-icon='Pencil'], [data-icon='PencilLine'], [data-icon='PenLine']) { rotate: -10deg; }
+      &:is([data-icon='Pin'], [data-icon='PaperclipIcon']) { rotate: -15deg; }
+      &:is([data-icon='Sparkles'], [data-icon='SparklesIcon']) { rotate: 15deg; scale: 1.1; }
+      &[data-icon='Bell'] { animation: ui-icon-ring var(--dur-slow) var(--ease) 1; }
+    }
+  }
+
+  @keyframes ui-icon-ring {
+    25% { rotate: 14deg; }
+    50% { rotate: -10deg; }
+    75% { rotate: 6deg; }
+  }
+
+  :root[data-reduce-motion='true'] .ui-icon {
+    transition: none;
+    animation: none;
+  }
+}

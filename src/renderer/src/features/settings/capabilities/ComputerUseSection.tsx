@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import type { ComputerUseStatusView } from '../../../../../shared/ipc'
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal } from '../../../ui/icons'
 import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Switch } from '../../../ui'
 import { SettingsGroup, SettingsRow } from '../root/controls'
 import { Actions, Meta, Warn } from './parts'

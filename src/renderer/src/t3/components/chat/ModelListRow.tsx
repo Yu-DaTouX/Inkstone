@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { CheckIcon, StarIcon } from "lucide-react";
+import { CheckIcon, StarIcon } from "../../../ui/icons";
 import { getDisplayModelName, getProviderRowLabel } from "./providerIconUtils";
 import { Badge, ComboboxItem, Focusable, IconButton, Tooltip, TooltipHint, TooltipTrigger } from "../../../ui";
 import { cx } from "../../../ui/cx";

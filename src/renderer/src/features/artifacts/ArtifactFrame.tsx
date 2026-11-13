@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX, type ReactNode } from 'react'
-import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, X } from 'lucide-react'
+import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, X } from '../../ui/icons'
 import { useT, type MessageKey } from '../../i18n'
 import { Button, IconButton, Notice } from '../../ui'
 import { HTML_ARTIFACT_SCHEME, HTML_PREVIEW_CHANNEL } from '../../../../shared/html-artifact-preview'

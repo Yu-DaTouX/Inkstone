@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactElement } from 'react'
-import { Star } from 'lucide-react'
+import { Star } from '../../../ui/icons'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Button, CollapsibleChevron, EmptyState, IconButton, SearchField, Switch } from '../../../ui'

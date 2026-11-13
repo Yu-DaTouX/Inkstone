@@ -1,4 +1,4 @@
-import { PenLine } from 'lucide-react'
+import { PenLine } from '../../../ui/icons'
 import { DrawOverlay } from './draw-overlay'
 import { DrawPanel } from './draw-panel'
 import { drawText } from './draw-text'

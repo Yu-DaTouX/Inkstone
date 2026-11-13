@@ -23,7 +23,7 @@ import {
   SquarePen,
   Undo2,
   X,
-} from "lucide-react";
+} from "../../../ui/icons";
 
 import { useT, type MessageKey, type TFunc } from "../../../i18n";
 import { cx } from "../../../ui/cx";

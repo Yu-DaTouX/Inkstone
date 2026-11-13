@@ -1,4 +1,4 @@
-import { Layers, PanelLeftClose, Settings } from 'lucide-react'
+import { Layers, PanelLeftClose, Settings } from '../../ui/icons'
 import {
   memo,
   useCallback,
@@ -75,8 +75,6 @@ const SHELF_PAGE_SIZE = 10
 const PROJECT_FILTER_KEY = 'inkstone.v3.sidebarProjectFilter'
 
 export interface T3SidebarShellProps {
-  preview?: boolean
-  onPin?: () => void
   onClose?: () => void
   onArtifacts?: () => void
   onSettings?: () => void
@@ -97,7 +95,7 @@ function SidebarLooseDrafts({ ids, ...props }: { ids: readonly string[] } & Omit
 }
 
 export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShellProps): ReactElement {
-  const { onArtifacts, onClose, onPin, onSettings, preview } = props
+  const { onArtifacts, onClose, onSettings } = props
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -512,27 +510,27 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   if (onSettings) utilities.push({ key: 'settings', label: text.settingsEntryHint, icon: <Settings />, onSelect: onSettings })
   if (onArtifacts) utilities.push({ key: 'artifacts', label: t('artifactLibrary.title'), icon: <Layers />, onSelect: onArtifacts })
 
-  const closeLabel = preview ? own.pin : text.toggleSidebar
+  const closeLabel = text.toggleSidebar
 
   return (
     <aside ref={asideRef} className="v3-side" aria-label={text.sidebarLabel} data-testid="v3-sidebar" data-density-scope="comfortable">
       <div
         data-slot="sidebar-wrapper"
-        data-sidebar-state={preview ? 'preview' : 'open'}
+        data-sidebar-state="open"
         className="t3-sidebar-shell"
         style={{ '--workspace-topbar-height': 'var(--size-head)' } as CSSProperties}
       >
         <SidebarChromeHeader
           toggleLabel={closeLabel}
           leading={
-            onClose || onPin ? (
+            onClose ? (
               <IconButton
                 data-t3-btn
                 variant="ghost"
                 size="md"
                 aria-label={closeLabel}
                 title={closeLabel}
-                onPress={preview ? onPin : onClose}
+                onPress={onClose}
                 className="t3-sidebar-shell__close"
                 data-testid="v3-side-close"
               >

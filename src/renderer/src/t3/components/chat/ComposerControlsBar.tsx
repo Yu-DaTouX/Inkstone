@@ -1,4 +1,4 @@
-import { CircleAlertIcon } from 'lucide-react'
+import { CircleAlertIcon } from '../../../ui/icons'
 import { useT } from '../../../i18n'
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { useComposerTraits } from '../../adapters/composer-thinking'

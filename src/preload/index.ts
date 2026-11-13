@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { stripIpcErrorPrefix } from '../shared/ipc-error'
 import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
+import { FRICTION_CAPTURE_CHANNEL, FRICTION_OPEN_CHANNEL } from '../shared/friction'
 import {
   CANVAS_CAPTURE_CHANNEL,
   HTML_EDIT_APPLY_CHANNEL,
@@ -220,6 +221,11 @@ const api: YanBridge = {
 
   canvas: {
     capture: (rect, scope) => invoke(CANVAS_CAPTURE_CHANNEL, rect, scope)
+  },
+
+  friction: {
+    capture: (request) => invoke(FRICTION_CAPTURE_CHANNEL, request),
+    openFolder: () => invoke(FRICTION_OPEN_CHANNEL)
   },
 
   htmlEdit: {

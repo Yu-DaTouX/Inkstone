@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowRightLeft } from 'lucide-react'
+import { ArrowRight, ArrowRightLeft } from './icons'
 import './ModelChangeNotice.css'
 
 export function ModelChangeNotice(props: { label: string; previous: string; next: string }) {

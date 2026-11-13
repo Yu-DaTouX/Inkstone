@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Mic, Square, X } from 'lucide-react'
+import { Mic, Square, X } from '../../../ui/icons'
 import { encodeWav16k, VOICE_MAX_SECONDS } from '../../../../../shared/voice-input'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'

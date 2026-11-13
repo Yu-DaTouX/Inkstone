@@ -60,9 +60,8 @@
     color: var(--fg);
   }
   .t3-sidebar-search:focus-within {
-    background: var(--hover);
+    background: var(--press);
     color: var(--fg);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 70%, transparent);
   }
   .t3-sidebar-search > svg {
     color: var(--root-fg3);

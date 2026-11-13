@@ -11,7 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode
 } from 'react'
-import { Check, ChevronDown, ChevronRight, Hash, Plus } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Hash, Plus } from '../../ui/icons'
 import { VList, type VListHandle } from 'virtua'
 import { CloseButton, FindBar, IconButton, InputGroup, InputGroupAddon, InputGroupInput, InputGroupText, TextArea, TextField } from '../../ui'
 import { exceedsHighlightLimits, FILE_HIGHLIGHT_LIMITS, highlightLanguage, highlightTree } from '../../lib/code-highlight'

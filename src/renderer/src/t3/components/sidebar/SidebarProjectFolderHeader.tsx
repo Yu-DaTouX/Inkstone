@@ -1,4 +1,4 @@
-import { ChevronDownIcon, EllipsisIcon, SquarePenIcon } from 'lucide-react'
+import { ChevronDownIcon, EllipsisIcon, SquarePenIcon } from '../../../ui/icons'
 import { memo, type ReactNode } from 'react'
 import { useI18n } from '../../../i18n'
 import { v3Text } from '../../../app/v3-text'

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
-import { Maximize2 } from 'lucide-react'
+import { Maximize2 } from '../../ui/icons'
 import { Badge } from '../../ui'
 import { HTML_ARTIFACT_SANDBOX, HTML_PREVIEW_CHANNEL, readProbeReply } from '../../../../shared/html-artifact-preview'
 

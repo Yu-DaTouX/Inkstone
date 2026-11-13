@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactElement } from 'react'
-import { RefreshCw, RotateCcw } from 'lucide-react'
+import { RefreshCw, RotateCcw } from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import { Button, CloseButton, Collapsible, CollapsibleHeader, CollapsiblePanel, Notice, Spinner } from '../../ui'
 import type { GhPrActionRequest, GhPrActionResult } from '../../../../shared/github'

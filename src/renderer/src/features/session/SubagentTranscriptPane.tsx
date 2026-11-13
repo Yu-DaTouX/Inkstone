@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { Check, FolderOpen, RotateCcw, Square } from 'lucide-react'
+import { Check, FolderOpen, RotateCcw, Square } from '../../ui/icons'
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'

@@ -1,5 +1,4 @@
-import { Minimize2Icon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Minimize2Icon } from "../../../ui/icons";
 import { DialogTrigger } from "react-aria-components";
 
 import { useT } from "../../../i18n";
@@ -8,36 +7,6 @@ import { Button, IconButton, Popover } from "../../../ui";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import { formatContextWindowCost } from "./ContextWindowMeter.logic";
 import "./ContextWindowMeter.css";
-
-const HOVER_OPEN_DELAY_MS = 150;
-
-function useHoverPopover(closeDelay: number) {
-  const [open, setOpen] = useState(false);
-  const timer = useRef<number | null>(null);
-  const clear = () => {
-    if (timer.current !== null) window.clearTimeout(timer.current);
-    timer.current = null;
-  };
-  useEffect(() => clear, []);
-  const schedule = (next: boolean, delay: number) => {
-    clear();
-    if (delay <= 0) {
-      setOpen(next);
-      return;
-    }
-    timer.current = window.setTimeout(() => setOpen(next), delay);
-  };
-  return {
-    open,
-    setOpen: (next: boolean) => {
-      clear();
-      setOpen(next);
-    },
-    hoverEnter: () => schedule(true, HOVER_OPEN_DELAY_MS),
-    hoverLeave: () => schedule(false, closeDelay),
-    keepOpen: clear,
-  };
-}
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -70,11 +39,9 @@ export function ContextWindowMeter(props: {
     ? "var(--fail)"
     : "color-mix(in oklab, var(--fg3) 72%, transparent)";
 
-  const hover = useHoverPopover(onCompact ? 150 : 0);
-
   return (
-    <DialogTrigger isOpen={hover.open} onOpenChange={hover.setOpen}>
-          <IconButton data-t3-btn variant="ghost" size="md" onHoverStart={hover.hoverEnter} onHoverEnd={hover.hoverLeave} className="t3-ctx-meter" data-testid="composer-context-meter" aria-label={
+    <DialogTrigger>
+          <IconButton data-t3-btn variant="ghost" size="md" className="t3-ctx-meter" data-testid="composer-context-meter" aria-label={
               usage.maxTokens !== null && usedPercentage
                 ? t("composer.t3.contextUsageAria", { pct: usedPercentage })
                 : t("composer.t3.contextTokensAria", {
@@ -113,13 +80,12 @@ export function ContextWindowMeter(props: {
       <Popover
         {...composerFloatingLayerProps}
         variant="panel"
-        isNonModal
         placement="top end"
         offset={4}
         className="t3-ctx-popover"
         data-testid="composer-context-popover"
       >
-        <div className="t3-ctx-popover__body" onPointerEnter={hover.keepOpen} onPointerLeave={hover.hoverLeave}>
+        <div className="t3-ctx-popover__body">
           <div className="t3-ctx-popover__head">
             <div className="t3-ctx-popover__title">
               {usage.cappedByAutoCompact ? t("ctx.toAutoCompact") : t("ctx.window")}

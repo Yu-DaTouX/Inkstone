@@ -10,7 +10,7 @@ import {
   Settings as SettingsIcon,
   Smartphone,
   Terminal
-} from 'lucide-react'
+} from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import { isLang } from '../../i18n/lang'
 import { useStore } from '../../state/store'

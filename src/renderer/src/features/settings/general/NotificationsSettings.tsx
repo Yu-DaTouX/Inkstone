@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { Volume2 } from 'lucide-react'
+import { Volume2 } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import type { SoundEvent, SoundSettings } from '../../../../../shared/ipc'
 import { useStore } from '../../../state/store'

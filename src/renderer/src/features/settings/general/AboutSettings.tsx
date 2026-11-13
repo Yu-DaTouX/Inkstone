@@ -8,6 +8,7 @@ import { settingsText } from '../settings-text'
 import { generalText, type GeneralText } from './general-text'
 import { piSourceLabel, updatePercent, updateStatusDetail } from './general-model'
 import { SettingsGroup, SettingsRow } from '../root/controls'
+import { FrictionSetting } from '../../friction/FrictionSetting'
 
 const PHASE_TEXT: Record<AppUpdateStatus['phase'], keyof GeneralText> = {
   idle: 'aboutPhaseIdle',
@@ -223,6 +224,7 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
             </Button>
           </SettingsRow>
         ) : null}
+        <FrictionSetting />
       </SettingsGroup>
 
       <ConfirmDialog

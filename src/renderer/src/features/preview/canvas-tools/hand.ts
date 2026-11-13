@@ -1,4 +1,4 @@
-import { Hand } from 'lucide-react'
+import { Hand } from '../../../ui/icons'
 import type { CanvasTool } from './types'
 
 export const handTool: CanvasTool = {

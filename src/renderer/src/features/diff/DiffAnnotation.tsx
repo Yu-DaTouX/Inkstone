@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react'
+import { Check, X } from '../../ui/icons'
 import { useId, type ReactElement } from 'react'
 import { IconButton, TextArea } from '../../ui'
 import { annotationKeyAction } from './annotation-keys'

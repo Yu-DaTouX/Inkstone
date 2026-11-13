@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, CircleCheck, CircleDashed, CircleX, ListFilter, RefreshCw, UserRound } from 'lucide-react'
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, CircleCheck, CircleDashed, CircleX, ListFilter, RefreshCw, UserRound } from '../../ui/icons'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import {
   Badge,

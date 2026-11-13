@@ -119,6 +119,8 @@ export default async function run({ cdp, fake, box, check, report, log, state, u
   check('待回报时输入框上下文控件仍可见并标记估算', estimatedUi.meterVisible && estimatedUi.meterLabel.includes('≈'), estimatedUi)
   check('待回报时侧栏上下文显示估算百分比而不是空值', /≈[0-9.]+%/.test(estimatedUi.railText), estimatedUi.railText)
   await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: estimatedUi.x, y: estimatedUi.y })
+  await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: estimatedUi.x, y: estimatedUi.y, button: 'left', clickCount: 1 })
+  await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: estimatedUi.x, y: estimatedUi.y, button: 'left', clickCount: 1 })
   await waitFor('!!document.querySelector(\'[data-testid="composer-context-popover"]\')')
   const popover = await cdp.evaluate(`document.querySelector('[data-testid="composer-context-popover"]')?.textContent ?? ''`)
   check('输入框浮层也显示压缩后估算值', popover.includes('≈'), popover)

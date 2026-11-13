@@ -9,7 +9,7 @@ import {
   type ReactNode
 } from 'react'
 import { Dialog as RACDialog, Heading, Modal as RACModal } from 'react-aria-components'
-import { Search, SearchX, X } from 'lucide-react'
+import { Search, SearchX, X } from './icons'
 import { popModal, pushModal, useModalCount } from '../lib/modalLayer'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
@@ -406,7 +406,7 @@ export const SettingsSearch = forwardRef<HTMLInputElement, SettingsSearchProps>(
         event.currentTarget.querySelector('input')?.focus()
       }}
     >
-      <Search className="ui-settings-search__icon" size={20} aria-hidden="true" />
+      <Search className="ui-settings-search__icon" size={14} aria-hidden="true" />
       <input
         ref={ref}
         className="ui-settings-search__input"

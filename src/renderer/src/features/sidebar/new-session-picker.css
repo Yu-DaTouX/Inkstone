@@ -11,6 +11,19 @@
     min-width: 0;
   }
 
+  .nsp__search {
+    width: auto;
+    height: var(--size-bar);
+    margin: calc(var(--s-6) * -1) calc(var(--s-6) * -1) 0;
+    padding-inline: var(--s-4);
+    border-width: 0 0 var(--hair, 1px);
+    border-radius: 0;
+  }
+
+  .ui-input-group--bare.nsp__search {
+    border-bottom-color: var(--line);
+  }
+
   .nsp__list {
     display: flex;
     flex-direction: column;

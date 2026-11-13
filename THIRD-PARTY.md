@@ -4,9 +4,9 @@
 
 ## 图标
 
-- 桌面端界面图标使用 [Lucide](https://lucide.dev)（ISC，npm 包 `lucide-react`）。
+- 桌面端界面图标使用 [Phosphor Icons](https://phosphoricons.com)（MIT，npm 包 `@phosphor-icons/react`），经 `src/renderer/src/ui/icons.tsx` 统一引用。
 - Android 应用的图标是本仓库自绘的「砚线」，随砚以 MIT 发布，不含第三方几何。几何写在 [`scripts/design/icons/inkline.json`](scripts/design/icons/inkline.json)，语义写在 [`catalog.json`](scripts/design/icons/catalog.json)，由 `npm run icons` 生成 `src/renderer/src/icons/sprite.ts`，由 `mobile/src/icons.tsx` 引用。
-- 更早的版本使用过 `lucide-static`（ISC）与 [reicon](https://reicon.dev)。分发这些旧版本时，其许可声明仍随对应版本保留。
+- 更早的版本使用过 [Lucide](https://lucide.dev)（ISC，`lucide-react`、`lucide-static`）与 [reicon](https://reicon.dev)。分发这些旧版本时，其许可声明仍随对应版本保留。
 - 文件类型图标在 [`src/renderer/src/assets/file-icons/`](src/renderer/src/assets/file-icons/)。语言、工具与品牌类的标志取自 [Simple Icons](https://simpleicons.org) 16.35.0（项目整体 CC0-1.0，未作为依赖安装），只缩放到 16 网格并按深浅主题调整品牌色；文档类（文本、PDF、Word、幻灯片、表格、字体、图片、音视频、压缩包、数据库、锁文件等）以及 Vue、VS Code、PostCSS、Java、C#、PowerShell、Sass 为本仓库自绘，随砚以 MIT 发布。以下标志在 Simple Icons 中另有单独许可，对应 SVG 文件继续适用该许可：
   - CC0-1.0：TypeScript、React、Python、Go、HTML5、CSS、Swift、Svelte、Astro、GraphQL、WebAssembly、Terraform、Docker、npm、Bun、Vite、ESLint、Prettier、Biome、Oxc、Babel、stylelint、Tailwind CSS、SVGO、Model Context Protocol、Claude、C、C++、Kotlin、Lua、Dart、TOML、YAML、pnpm、Node.js、Gradle、CMake、.ENV、GitHub Actions、NGINX、Prisma、Jest、Vitest、Elixir、Erlang、Haskell、Scala、Perl、Julia、Jupyter、Electron、Next.js、Turborepo、Vercel、Netlify、Cypress、esbuild、Nx、Markdown
   - MIT：JavaScript（logo.js）、Bootstrap、Deno、Storybook
@@ -71,6 +71,7 @@
 | 内置 pi 运行时（`resources/pi-runtime/`） | 见上游项目声明 |
 | electron-updater | MIT（见包内声明） |
 | ws（手机直连加密通道的 WebSocket 服务端） | MIT |
+| [rrweb](https://github.com/rrweb-io/rrweb)（`@rrweb/record` 打进渲染端；`rrweb-player` 的打包文件随包放在 `friction-player/`，用于「记录界面问题」的录制与回放） | MIT，许可原文见 [`resources/friction-player/LICENSE-rrweb`](resources/friction-player/LICENSE-rrweb) |
 | [ego-lite](https://github.com/citrolabs/ego-lite)（`package/ego-browser/src` 的 `driver/keyboard`、`driver/page-keyboard`、`driver/scroll-motion`，提交 `aecc583`） | MIT，内置浏览器驱动 [`src/main/browser/driver/`](src/main/browser/driver/) 移植自这些文件，许可原文见 [`LICENSE-ego-lite`](src/main/browser/driver/LICENSE-ego-lite)；ego lite 浏览器本体不随砚分发 |
 
 [Browser Cookie Bridge](https://github.com/apoorvdarshan/browser-cookie-bridge) 的 `extension-template/background.js`（来源 Cookie 采集与字段映射）及 `src/broker.js`（Bearer 认证、本地 HTTP 桥接）以 MIT 许可适配到 `resources/browser-cookie-bridge/` 和 `src/main/browser/cookie-bridge.ts`。Copyright (c) 2026 Apoorv Darshan。许可原文见 [`resources/browser-cookie-bridge/LICENSE`](resources/browser-cookie-bridge/LICENSE)。砚移除了定时同步、历史记录和目标扩展通道，仅保留用户触发的一次性本机导入。

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactElement } from 'react'
-import { BookOpen, Code2 } from 'lucide-react'
+import { BookOpen, Code2 } from '../../ui/icons'
 import { Button, EmptyState, IconButton } from '../../ui'
 import { useT } from '../../i18n'
 import { Markdown } from '../session/Markdown'

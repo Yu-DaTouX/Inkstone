@@ -14,7 +14,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode
 } from 'react'
-import { Search } from 'lucide-react'
+import { Search } from './icons'
 import { cx } from './cx'
 import { StaticListBox, StaticListBoxItem } from './ListBox'
 import { ScrollArea } from './ScrollArea'

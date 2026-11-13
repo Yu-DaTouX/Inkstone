@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactElement } from 'react'
-import { ExternalLink, Maximize, Monitor, MousePointer2, Play, RotateCw, Square, ZoomIn, ZoomOut } from 'lucide-react'
+import { ExternalLink, Maximize, Monitor, MousePointer2, Play, RotateCw, Square, ZoomIn, ZoomOut } from '../../ui/icons'
 import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator, TextField, Toggle, ToggleGroup } from '../../ui'
 import type { PreviewText } from './preview-text'
 import { HtmlPreviewFrame, type PreviewFocus } from './HtmlPreviewFrame'

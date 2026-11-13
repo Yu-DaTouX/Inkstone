@@ -10,7 +10,7 @@ import { cx } from './cx'
 
 export interface InputGroupProps extends RACGroupProps {
   size?: 'sm' | 'md'
-  variant?: 'default' | 'ghost'
+  variant?: 'default' | 'ghost' | 'bare'
 }
 
 export const InputGroup = forwardRef<HTMLDivElement, InputGroupProps>(function InputGroup(
@@ -22,7 +22,7 @@ export const InputGroup = forwardRef<HTMLDivElement, InputGroupProps>(function I
       {...props}
       ref={ref}
       className={composeRenderProps(className, (cn) =>
-        cx('ui-input-group', size === 'sm' && 'ui-input-group--sm', variant === 'ghost' && 'ui-input-group--ghost', cn)
+        cx('ui-input-group', size === 'sm' && 'ui-input-group--sm', variant === 'ghost' && 'ui-input-group--ghost', variant === 'bare' && 'ui-input-group--bare', cn)
       )}
     />
   )

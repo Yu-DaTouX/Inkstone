@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement, type ReactNode } from 'react'
-import { Check, Copy, SquareDashedMousePointer } from 'lucide-react'
+import { Check, Copy, SquareDashedMousePointer } from '../../../ui/icons'
 import { EmptyState, IconButton } from '../../../ui'
 import { stageRect, type CanvasFrameBox, type CanvasView } from '../html-canvas-model'
 import { DockToggle } from './dock'

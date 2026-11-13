@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { ImageOff } from 'lucide-react'
+import { ImageOff } from '../../ui/icons'
 import { Button, EmptyState } from '../../ui'
 import type { PreviewText } from './preview-text'
 

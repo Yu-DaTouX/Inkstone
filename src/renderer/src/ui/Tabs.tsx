@@ -12,7 +12,7 @@ import {
   type TabProps as RACTabProps,
   type TabsProps as RACTabsProps
 } from 'react-aria-components'
-import { X } from 'lucide-react'
+import { X } from './icons'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { CLOSE_ICON_SIZE } from './sizes'

@@ -7,7 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactElement
 } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown } from '../../ui/icons'
 import { IconButton, Menu, MenuItem, MenuSection, PanelTab, PanelTabList, Popover, Separator, SubmenuTrigger } from '../../ui'
 import { previewTabDirectory, previewTabLabel as pathTabLabel } from '../workbench/preview-state'
 import { managedArtifactName } from '../artifacts/model'

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type JSX, type ReactNode } from 'react'
-import { ImageDown } from 'lucide-react'
+import { ImageDown } from '../../ui/icons'
 import { useT } from '../../i18n'
 import { Button } from '../../ui'
 import { MessageImage } from './Image'

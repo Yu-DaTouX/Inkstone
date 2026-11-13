@@ -8,7 +8,7 @@ import {
   type LucideIcon,
   Settings2,
   SquareTerminal
-} from 'lucide-react'
+} from '../../../ui/icons'
 import { memo } from 'react'
 import { cx } from '@/ui/cx'
 import './FileEntryIcon.css'

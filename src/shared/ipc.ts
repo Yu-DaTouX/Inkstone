@@ -689,6 +689,7 @@ export interface AppSettings {
   promptSuggestions?: boolean
   workspaceTiles?: boolean
   smoothText?: boolean
+  frictionRecorder?: boolean
   usageCurrency?: import('./currency').UsageCurrencySettings
   remoteAccess?: import('./remote-protocol').RemoteAccessSettings
   voiceInput?: import('./voice-input').VoiceInputSettings
@@ -1733,6 +1734,11 @@ export interface YanBridge {
 
   canvas: {
     capture(rect: CanvasCaptureRect, scope?: CanvasCaptureRect): Promise<CanvasCaptureResult>
+  }
+
+  friction: {
+    capture(request: import('./friction').FrictionCaptureRequest): Promise<import('./friction').FrictionCaptureResult>
+    openFolder(): Promise<string>
   }
 
   htmlEdit: {

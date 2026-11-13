@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ReactElement } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw } from '../../ui/icons'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { IconButton, Switch } from '../../ui'

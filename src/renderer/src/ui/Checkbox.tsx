@@ -9,7 +9,7 @@ import {
   type CheckboxGroupProps as RACCheckboxGroupProps,
   type CheckboxProps as RACCheckboxProps
 } from 'react-aria-components'
-import { Check, Minus } from 'lucide-react'
+import { Check, Minus } from './icons'
 import { cx } from './cx'
 import type { FieldErrorContent } from './TextField'
 

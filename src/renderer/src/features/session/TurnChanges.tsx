@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { Undo2 } from 'lucide-react'
+import { Undo2 } from '../../ui/icons'
 import { Button, DiffStat } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, type Lang } from '../../i18n'

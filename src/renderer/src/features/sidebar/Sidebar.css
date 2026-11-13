@@ -49,7 +49,7 @@
       background-color: var(--bg);
       transition: width 0s linear var(--panel-dur, var(--dur-base)), left 0s linear var(--panel-dur, var(--dur-base)), background-color var(--panel-dur, var(--dur-base)) var(--ease);
     }
-    :root[data-material] .v3-root[data-narrow='0']:not([data-sidebar-preview='1'], [data-sidebar-preview='leaving']) > .v3-side {
+    :root[data-material] .v3-root[data-narrow='0'] > .v3-side {
       background: var(--side-tint);
       --fg2: var(--side-fg2);
       --fg3: var(--side-fg3);
@@ -70,17 +70,15 @@
     pointer-events: none;
     transition: border-right-width 0s linear var(--panel-dur, var(--dur-base)), visibility 0s linear var(--panel-dur, var(--dur-base));
   }
-  .v3-root[data-narrow='0'][data-side='closed']:not([data-sidebar-preview]) .v3-side > * { transform: translateX(-100%); }
+  .v3-root[data-narrow='0'][data-side='closed'] .v3-side > * { transform: translateX(-100%); }
   .v3-root[data-narrow='1'][data-side='closed'] .v3-side {
     width: var(--side-panel-w);
     opacity: 0;
     transform: translateX(-100%);
     transition: opacity var(--panel-dur, var(--dur-base)) var(--ease), transform var(--panel-dur, var(--dur-base)) var(--ease), visibility 0s linear var(--panel-dur, var(--dur-base));
   }
-  @keyframes v3-side-in { from { opacity: 0; transform: translateX(-12px); } }
   @media (prefers-reduced-motion: reduce) {
     .v3-side, .v3-side > *, .v3-root[data-side='closed'] .v3-side { transition: none; }
-    .v3-root[data-sidebar-preview='1'] .v3-side { animation: none; }
   }
   .v3-root[data-narrow='1'] .v3-side {
     position: absolute;
@@ -89,48 +87,11 @@
     box-shadow: var(--shadow-pop);
   }
 
-  .v3-root[data-sidebar-preview='1'] .v3-side,
   .v3-root[data-narrow='1'] .v3-side,
-  .v3-root[data-sidebar-preview='1'] .v3-side *,
   .v3-root[data-narrow='1'] .v3-side * { -webkit-app-region: no-drag; }
-  .v3-root[data-sidebar-preview='1'] .v3-side,
-  .v3-root[data-side='closed'][data-sidebar-preview='leaving'] .v3-side {
-    position: absolute;
-    inset: var(--size-head) auto 0 0;
-    z-index: var(--z-drawer);
-    width: var(--side-panel-w);
-    box-shadow: var(--shadow-pop);
-    background: var(--glass-noise-image), color-mix(in srgb, var(--side) var(--glass-opacity), transparent);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-    box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-pop);
-  }
-  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    .v3-root[data-sidebar-preview='1'] .v3-side,
-    .v3-root[data-side='closed'][data-sidebar-preview='leaving'] .v3-side { background: var(--side); }
-  }
-  .v3-root[data-sidebar-preview='1'] .v3-side { opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition: none; animation: v3-side-in var(--dur-base) var(--ease); }
-  .v3-root[data-narrow='1'][data-side='closed'][data-sidebar-preview='1'] .v3-side { transform: none; }
-  .v3-root[data-side='closed'][data-sidebar-preview='leaving'] .v3-side,
-  .v3-root[data-narrow='1'][data-side='closed'][data-sidebar-preview='leaving'] .v3-side { opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(-12px); transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease), visibility 0s linear var(--dur-base); }
-  .v3-root[data-sidebar-preview='reset'] .v3-side,
-  .v3-root[data-sidebar-preview='reset'] .v3-side > * { transition: none; }
-  @media (prefers-reduced-motion: reduce) {
-    .v3-root[data-side='closed'][data-sidebar-preview='leaving'] .v3-side,
-    .v3-root[data-narrow='1'][data-side='closed'][data-sidebar-preview='leaving'] .v3-side { transition: none; }
-  }
-  @media (prefers-reduced-transparency: reduce) {
-    .v3-root[data-sidebar-preview='1'] .v3-side,
-    .v3-root[data-side='closed'][data-sidebar-preview='leaving'] .v3-side {
-      background: var(--side);
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-  }
   @media (forced-colors: active) {
     .v3-side { outline: 1px solid CanvasText; outline-offset: -1px; }
   }
-  .v3-root[data-sidebar-preview='1'] .v3-head { -webkit-app-region: no-drag; }
   .v3-root[data-narrow='1'] .v3-side-close,
 .v3-root[data-narrow='1'] .v3-side [data-slot='sidebar-chrome-header'] { display: none; }
   .v3-side-menu-point { position: fixed; width: 0; height: 0; pointer-events: none; }

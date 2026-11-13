@@ -10,7 +10,7 @@ import {
   TerminalSquare,
   X,
   type LucideIcon
-} from 'lucide-react'
+} from '../../../ui/icons'
 import { useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { motionAllowed, motionMs } from '../../../ui/motion-hooks'
 import { Focusable, TooltipTrigger, Tooltip, TooltipHint } from '../../../ui'

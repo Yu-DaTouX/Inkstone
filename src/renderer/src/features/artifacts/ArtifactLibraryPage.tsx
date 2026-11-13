@@ -1,6 +1,6 @@
 import { formatBytes } from '../diff/limits'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { ExternalLink, FolderOpen, Layers, MessageSquare, Pin, PinOff } from 'lucide-react'
+import { ExternalLink, FolderOpen, Layers, MessageSquare, Pin, PinOff } from '../../ui/icons'
 import type { ArtifactLibraryItem as ArtifactLibraryEntry } from '../../../../shared/artifact-library'
 import { isHtmlArtifact } from '../../../../shared/html-artifact-preview'
 import { useI18n, useT } from '../../i18n'

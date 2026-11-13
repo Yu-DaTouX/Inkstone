@@ -39,7 +39,7 @@ import {
   Undo2,
   Wrench,
   X
-} from 'lucide-react'
+} from '../../ui/icons'
 
 const ICONS = {
   alert: AlertCircle,

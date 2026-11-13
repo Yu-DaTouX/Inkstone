@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from 'react'
-import { GaugeIcon } from 'lucide-react'
+import { GaugeIcon } from '../../../ui/icons'
 import type { ComposerTraitsAdapter } from '../../adapters/composer-thinking'
 import { cx } from '../../../ui/cx'
 import { Dialog, DialogTrigger } from 'react-aria-components'

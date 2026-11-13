@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { SlidersHorizontal } from 'lucide-react'
+import { SlidersHorizontal } from '../../ui/icons'
 import { IconButton, Menu, MenuItem, MenuTrigger, Popover, SubmenuTrigger } from '../../ui'
 import {
   TERMINAL_CURSOR_STYLES,

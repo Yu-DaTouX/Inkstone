@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type JSX } from 'react'
-import { CornerDownRight, Tag } from 'lucide-react'
+import { CornerDownRight, Tag } from '../../ui/icons'
 import type { Lang } from '../../i18n'
 import { useI18n } from '../../i18n'
 import {

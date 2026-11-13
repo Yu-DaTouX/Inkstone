@@ -9,7 +9,7 @@ import {
   type DisclosurePanelProps as RACDisclosurePanelProps,
   type DisclosureProps as RACDisclosureProps
 } from 'react-aria-components'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight } from './icons'
 import { cx } from './cx'
 import { CHEVRON_ICON_SIZE } from './sizes'
 import { motionAllowed, motionMs } from './motion-hooks'

@@ -1,6 +1,6 @@
 import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, CloudDownload, CloudUpload, Eye, FlaskConical, GitBranch, List, RefreshCw } from 'lucide-react'
+import { ChevronDown, CloudDownload, CloudUpload, Eye, FlaskConical, GitBranch, List, RefreshCw } from '../../ui/icons'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitChangesScope, GitStatusEntry } from '../../../../shared/git'
 import {

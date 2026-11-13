@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Files, Folder, Image } from 'lucide-react'
+import { Files, Folder, Image } from '../../ui/icons'
 import { useT } from '../../i18n'
 
 export type FileDropKind = 'image' | 'file' | 'mixed'

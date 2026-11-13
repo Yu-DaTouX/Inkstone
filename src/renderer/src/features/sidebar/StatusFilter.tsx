@@ -1,4 +1,4 @@
-import { AlertCircle, Check, CircleDot, Inbox, ListFilter, Loader, MailOpen } from 'lucide-react'
+import { AlertCircle, Check, CircleDot, Inbox, ListFilter, Loader, MailOpen } from '../../ui/icons'
 import { useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { Dialog, ListRow, Popover } from '../../ui'

@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { ImagePlus, Trash2 } from 'lucide-react'
+import { ImagePlus, Trash2 } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Button, Slider } from '../../../ui'

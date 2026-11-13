@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactElement, type WheelEvent } from 'react'
-import { ArrowLeft, Circle, Power, RefreshCw, Square } from 'lucide-react'
+import { ArrowLeft, Circle, Power, RefreshCw, Square } from '../../ui/icons'
 import { useT } from '../../i18n'
 import { Button, EmptyState, IconButton, ListBoxItem, Notice, Select, Spinner, TextField } from '../../ui'
 import type { AndroidControl, AndroidDevice } from '../../../../shared/android-sdk'

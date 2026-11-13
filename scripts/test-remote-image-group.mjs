@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const source = fileURLToPath(new URL('../src/renderer/src/features/session/RemoteImage.tsx', import.meta.url))
 const stubs = {
-  'lucide-react': 'export const ImageDown = () => null',
+  '../../ui/icons': 'export const ImageDown = () => null',
   '../../i18n': 'export const useT = () => (key) => key',
   '../../state/store': 'export const useStore = () => ""',
   '../../ui': 'export const Button = () => null',

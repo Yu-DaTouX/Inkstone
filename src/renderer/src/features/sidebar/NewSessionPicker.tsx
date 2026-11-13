@@ -1,4 +1,4 @@
-import { FolderOpen, FolderPlus, Search } from 'lucide-react'
+import { FolderOpen, FolderPlus, Search } from '../../ui/icons'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactElement, type RefObject } from 'react'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
@@ -96,7 +96,7 @@ function PickerBody({ close, onProject, onStarted }: { close: () => void; onProj
 
   return (
     <div className="nsp" data-testid="v3-new-session-picker">
-      <InputGroup className="nsp__search">
+      <InputGroup variant="bare" className="nsp__search">
         <InputGroupAddon align="start">
           <Search size={14} aria-hidden="true" />
         </InputGroupAddon>

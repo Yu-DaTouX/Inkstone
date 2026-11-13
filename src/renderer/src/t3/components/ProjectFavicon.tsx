@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { Globe, FolderCodeIcon } from "lucide-react";
+import { Globe, FolderCodeIcon } from "../../ui/icons";
 
 import { cx } from "../../ui/cx";
 import { useProjectIconLook } from "../../patterns/project-icon";

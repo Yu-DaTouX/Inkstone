@@ -409,6 +409,15 @@
   }
   .ui-search__input {
     padding-left: calc(var(--s-6) + var(--size-icon) + var(--s-4));
+    border-color: transparent;
+    background: var(--hover);
+  }
+  .ui-search__input[data-hovered] {
+    border-color: transparent;
+  }
+  .ui-search__input:focus {
+    border-color: transparent;
+    background: var(--press);
   }
 
   .ui-checkbox,

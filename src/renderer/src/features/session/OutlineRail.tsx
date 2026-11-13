@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp } from '../../ui/icons'
 import { useT } from '../../i18n'
 import { CONTROL_ICON_SIZE, IconButton } from '../../ui'
 import type { UIMessage } from '../../../../shared/ipc'

@@ -9,7 +9,7 @@ import {
   composeRenderProps,
   type SelectProps as RACSelectProps
 } from 'react-aria-components'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown } from './icons'
 import { cx } from './cx'
 import { ListBox } from './ListBox'
 import { Popover } from './Popover'
