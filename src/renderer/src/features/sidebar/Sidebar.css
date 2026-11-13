@@ -50,12 +50,30 @@
       transition: width 0s linear var(--panel-dur, var(--dur-base)), left 0s linear var(--panel-dur, var(--dur-base)), background-color var(--panel-dur, var(--dur-base)) var(--ease);
     }
     :root[data-material] .v3-root[data-narrow='0'] > .v3-side {
-      background: var(--side-tint);
+      background: color-mix(in srgb, var(--glass-side) min(100%, calc(var(--window-glass, 60%) + 10%)), transparent);
       --fg2: var(--side-fg2);
       --fg3: var(--side-fg3);
       --accent-t: var(--side-accent-t);
       --color-muted-foreground: var(--side-fg2);
       --color-sidebar-muted-foreground: var(--side-fg2);
+    }
+    :root[data-material][data-glass='off'] .v3-root[data-narrow='0'] > .v3-side {
+      background: var(--side);
+    }
+    :root[data-material][data-glass='full'] {
+      --bg: color-mix(in srgb, var(--glass-main) var(--window-glass, 60%), transparent);
+    }
+    :root[data-material][data-glass='full'] .v3-root[data-narrow='0']::after {
+      content: none;
+    }
+    :root[data-material][data-glass='full'] .v3-stream-host::after {
+      content: none;
+    }
+    :root[data-material][data-glass='full'] .v3-stream-host > .v3-stream {
+      mask-image: linear-gradient(to top, transparent calc(var(--composer-h, 0px) + var(--s-24)), #000 calc(var(--composer-h, 0px) + var(--s-24) + var(--s-32)));
+    }
+    :root[data-material][data-glass='full'] .v3-root[data-narrow='0'] > .v3-side {
+      border-right-color: color-mix(in srgb, var(--line) 60%, transparent);
     }
     :root[data-material][data-splitter-dragging] .v3-root::after { transition: none; }
     :root[data-material][data-splitter-dragging] .v3-root[data-narrow='0']:not([data-side='closed'])::after { width: calc(100vw - 48px); }

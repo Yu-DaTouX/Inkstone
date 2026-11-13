@@ -1127,7 +1127,7 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
 
   return (
     <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-empty={empty && !readOnly ? '' : undefined}>
-      <HomeBackdrop active={!readOnly && turns.length === 0 && !switchLoading} asciiEnabled={asciiBackgroundEnabled(settings)} />
+      <HomeBackdrop active={!readOnly && turns.length === 0 && !switchLoading} asciiEnabled={asciiBackgroundEnabled(settings)} lift={!pane} />
       <ToolExpansionScope.Provider value={expansionScope}>
       <TurnScopeContext.Provider value={source.turnScope}>
       <AsideFitScope.Provider value={asideFits}>

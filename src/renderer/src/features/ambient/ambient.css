@@ -17,6 +17,31 @@
     isolation: isolate;
   }
 
+  .v3-main:has(> .v3-home-layer) {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .v3-home-layer {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .v3-home-layer::after {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: calc(var(--size-head) * 1.75);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 72%, transparent), transparent);
+  }
+
+  .v3-main:has(> .v3-home-layer) .v3-chat::before {
+    content: none;
+  }
+
   .v3-home-image {
     position: absolute;
     inset: 0;
@@ -36,6 +61,18 @@
   .v3-home-image[data-blur]::before {
     inset: calc(-2 * var(--home-blur, 0px));
     filter: blur(var(--home-blur, 0px));
+  }
+
+  .v3-home-image[data-effect]::before {
+    content: none;
+  }
+
+  .v3-home-image[data-kind='dither'] > .v3-home-shader {
+    opacity: var(--home-strength, .42);
+  }
+
+  :root[data-theme='light'] .v3-home-image[data-kind='dither'] > .v3-home-shader {
+    opacity: calc(var(--home-strength, .42) * .72);
   }
 
   .v3-home-image::after {

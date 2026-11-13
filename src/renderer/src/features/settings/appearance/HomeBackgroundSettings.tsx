@@ -1,11 +1,12 @@
 import { useState, type ReactElement } from 'react'
-import { ImagePlus, Trash2 } from '../../../ui/icons'
+import { ImagePlus, Palette, Trash2 } from '../../../ui/icons'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Button, Slider } from '../../../ui'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
-import { HOME_BLUR_MAX, homeBackgroundMode, shrinkImage, updateHomeBackground, useHomeBackground, type HomeBackgroundMode } from '../../ambient/home-background'
+import { BUILTIN_PAINTING, HOME_BLUR_MAX, homeBackgroundMode, homeImageSource, shrinkImage, updateHomeBackground, useHomeBackground, type HomeBackgroundMode } from '../../ambient/home-background'
 import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
+import { HomeEffectSettings } from './HomeEffectSettings'
 import './home-background-settings.css'
 
 interface HomeBackgroundText {
@@ -13,6 +14,7 @@ interface HomeBackgroundText {
   mode: string
   modeDesc: string
   ascii: string
+  dither: string
   image: string
   none: string
   picture: string
@@ -20,6 +22,7 @@ interface HomeBackgroundText {
   choose: string
   replace: string
   remove: string
+  painting: string
   fade: string
   fadeDesc: string
   blur: string
@@ -29,6 +32,11 @@ interface HomeBackgroundText {
   tonePage: string
   toneDark: string
   toneLight: string
+  effect: string
+  effectDesc: string
+  effectNone: string
+  effectDither: string
+  effectHalftone: string
   failed: string
 }
 
@@ -38,6 +46,7 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     mode: '背景',
     modeDesc: '图片只留在这台电脑上，会话里会再淡一些。',
     ascii: '动态字符',
+    dither: '动态网点',
     image: '图片',
     none: '无',
     picture: '背景图片',
@@ -45,6 +54,7 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     choose: '选择图片…',
     replace: '更换图片…',
     remove: '移除',
+    painting: '用内置画作',
     fade: '遮罩强度',
     fadeDesc: '越大文字越清楚；会话里会再深一半。',
     blur: '虚化',
@@ -54,6 +64,11 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     tonePage: '跟随底色',
     toneDark: '黑',
     toneLight: '白',
+    effect: '效果',
+    effectDesc: '抖动把图片变成像素网点，网点按明暗换成大小不一的圆点。',
+    effectNone: '原图',
+    effectDither: '抖动',
+    effectHalftone: '网点',
     failed: '图片读取失败'
   },
   'en-US': {
@@ -61,6 +76,7 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     mode: 'Background',
     modeDesc: 'Stored locally; fainter in sessions.',
     ascii: 'Drifting characters',
+    dither: 'Dither',
     image: 'Image',
     none: 'None',
     picture: 'Background image',
@@ -68,6 +84,7 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     choose: 'Choose image…',
     replace: 'Replace image…',
     remove: 'Remove',
+    painting: 'Use built-in painting',
     fade: 'Mask strength',
     fadeDesc: 'Higher keeps text clearer; sessions deepen it halfway.',
     blur: 'Blur',
@@ -77,6 +94,11 @@ const TEXT: Record<'zh-CN' | 'en-US', HomeBackgroundText> = {
     tonePage: 'Page color',
     toneDark: 'Black',
     toneLight: 'White',
+    effect: 'Effect',
+    effectDesc: 'Dither turns the image into pixel dots; halftone sizes round dots by brightness.',
+    effectNone: 'Original',
+    effectDither: 'Dither',
+    effectHalftone: 'Halftone',
     failed: 'Could not read the image'
   }
 }
@@ -114,6 +136,12 @@ export function HomeBackgroundSettings(): ReactElement {
     }
   }
 
+  const usePainting = (): void => {
+    updateHomeBackground({ mode: 'image', image: BUILTIN_PAINTING, effect: 'dither', fade: 0.2, tone: 'page' })
+    setPicked(null)
+    if (asciiOn) void patchSettings(asciiBackgroundPatch(false)).catch(() => undefined)
+  }
+
   const removeImage = (): void => {
     updateHomeBackground({ image: null, mode: 'none' })
     setPicked(null)
@@ -127,19 +155,26 @@ export function HomeBackgroundSettings(): ReactElement {
           value={mode}
           options={[
             { value: 'ascii', label: text.ascii, testId: 'v3-home-bg-ascii' },
+            { value: 'dither', label: text.dither, testId: 'v3-home-bg-dither' },
             { value: 'image', label: text.image, testId: 'v3-home-bg-image' },
             { value: 'none', label: text.none, testId: 'v3-home-bg-none' }
           ]}
           onChange={choose}
         />
       </SettingsRow>
+      {mode === 'dither' ? <HomeEffectSettings target="dither" params={background.params} /> : null}
       {mode === 'image' ? (
         <SettingsRow settingId="appearance-home-image" label={text.picture} description={text.pictureDesc}>
           <div className="home-bg-picker">
-            {background.image ? <img className="home-bg-thumb" src={background.image} alt="" data-testid="v3-home-bg-thumb" /> : null}
+            {background.image ? <img className="home-bg-thumb" src={homeImageSource(background.image)} alt="" data-testid="v3-home-bg-thumb" /> : null}
             <Button size="sm" variant="secondary" icon={<ImagePlus size={14} aria-hidden />} isPending={busy} onPress={() => void pickImage()} data-testid="v3-home-bg-choose">
               {background.image ? text.replace : text.choose}
             </Button>
+            {background.image !== BUILTIN_PAINTING ? (
+              <Button size="sm" variant="ghost" icon={<Palette size={14} aria-hidden />} onPress={usePainting} data-testid="v3-home-bg-painting">
+                {text.painting}
+              </Button>
+            ) : null}
             {background.image ? (
               <Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} onPress={removeImage} data-testid="v3-home-bg-remove">
                 {text.remove}
@@ -150,7 +185,20 @@ export function HomeBackgroundSettings(): ReactElement {
       ) : null}
       {mode === 'image' && background.image ? (
         <>
-          <SettingsRow settingId="appearance-home-image-blur" label={text.blur} description={text.blurDesc}>
+          <SettingsRow settingId="appearance-home-image-effect" label={text.effect} description={text.effectDesc}>
+            <Segmented
+              label={text.effect}
+              value={background.effect}
+              options={[
+                { value: 'none', label: text.effectNone, testId: 'v3-home-bg-effect-none' },
+                { value: 'dither', label: text.effectDither, testId: 'v3-home-bg-effect-dither' },
+                { value: 'halftone', label: text.effectHalftone, testId: 'v3-home-bg-effect-halftone' }
+              ]}
+              onChange={(effect) => updateHomeBackground({ effect })}
+            />
+          </SettingsRow>
+          {background.effect !== 'none' ? <HomeEffectSettings target={background.effect === 'dither' ? 'image-dither' : 'image-halftone'} params={background.params} /> : null}
+          {background.effect === 'none' ? <SettingsRow settingId="appearance-home-image-blur" label={text.blur} description={text.blurDesc}>
             <div className="home-bg-slider">
               <Slider
                 className="home-bg-range"
@@ -164,7 +212,7 @@ export function HomeBackgroundSettings(): ReactElement {
               />
               <output className="home-bg-value ui-num" aria-hidden>{`${background.blur}px`}</output>
             </div>
-          </SettingsRow>
+          </SettingsRow> : null}
           <SettingsRow settingId="appearance-home-image-tone" label={text.tone} description={text.toneDesc}>
             <Segmented
               label={text.tone}

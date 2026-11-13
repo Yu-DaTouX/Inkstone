@@ -1,4 +1,4 @@
-import { CONTRAST_DEFAULT, CONTRAST_MAX, FONT_STACKS, resolveUiDensity, sanitizeContrast, sanitizeFontName, sanitizeGlassOpacity, sanitizePanelMotion, sanitizeStreamWidth } from '../../../shared/appearance'
+import { CONTRAST_DEFAULT, CONTRAST_MAX, FONT_STACKS, resolveUiDensity, sanitizeContrast, sanitizeFontName, sanitizeGlassOpacity, sanitizePanelMotion, sanitizeStreamWidth, sanitizeWindowGlass, sanitizeWindowGlassOpacity } from '../../../shared/appearance'
 import tokens from '../design/tokens.json'
 import { APPEARANCE_EVENT } from './appearance'
 import { setAppReducedMotion } from './reduced-motion'
@@ -13,13 +13,15 @@ export interface AppearanceV3Settings {
   fontCodeCustom?: string
   reduceMotion?: boolean
   glassOpacity?: number
+  windowGlass?: string
+  windowGlassOpacity?: number
   contrast?: number
   panelMotionMs?: number
 }
 
 export type CodeFontChoice = 'mono' | 'maple' | 'custom'
 
-const OVERRIDE_VARS = ['--font-ui', '--font-mono', '--size-chat', '--glass-opacity', '--panel-dur', '--line', '--line2', '--fg2', '--fg3'] as const
+const OVERRIDE_VARS = ['--font-ui', '--font-mono', '--size-chat', '--glass-opacity', '--window-glass', '--panel-dur', '--line', '--line2', '--fg2', '--fg3'] as const
 const LINE_TOKENS = ['line', 'line2'] as const
 const TEXT_TOKENS = ['fg2', 'fg3'] as const
 
@@ -66,6 +68,8 @@ function overrides(s: AppearanceV3Settings, base: (name: string) => string): Rec
   if (width !== undefined) out['--size-chat'] = `${width}px`
   const glass = sanitizeGlassOpacity(s.glassOpacity)
   if (glass !== undefined && !reducedTransparency()) out['--glass-opacity'] = `${glass}%`
+  const windowGlass = sanitizeWindowGlassOpacity(s.windowGlassOpacity)
+  if (windowGlass !== undefined) out['--window-glass'] = `${windowGlass}%`
   const panel = sanitizePanelMotion(s.panelMotionMs)
   if (panel !== undefined) out['--panel-dur'] = `${panel}ms`
   Object.assign(out, contrastOverrides(sanitizeContrast(s.contrast)))
@@ -117,6 +121,8 @@ export function applyAppearanceV3(root: HTMLElement, s: AppearanceV3Settings): v
   const density = resolveUiDensity(s.density, s.fontSizeUi)
   if (root.dataset.density !== density) root.dataset.density = density
   setAppReducedMotion(root, s.reduceMotion === true)
+  const glass = sanitizeWindowGlass(s.windowGlass) ?? 'side'
+  if (root.dataset.glass !== glass) root.dataset.glass = glass
   const next = overrides(s, (name) => baseValue(root, name))
   for (const name of OVERRIDE_VARS) {
     const value = next[name]
@@ -126,7 +132,7 @@ export function applyAppearanceV3(root: HTMLElement, s: AppearanceV3Settings): v
   }
   appliedOverrides = next
   if (s.fontUi === 'maple' || codeFontChoice(s.fontCode) === 'maple') void loadMaple()
-  const key = JSON.stringify([density, next])
+  const key = JSON.stringify([density, glass, next])
   if (key === appliedKey) return
   appliedKey = key
   window.dispatchEvent(new Event(APPEARANCE_EVENT))

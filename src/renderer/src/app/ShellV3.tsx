@@ -232,7 +232,7 @@ export default function ShellV3(): ReactElement {
   }, [settings])
 
   const appearanceKey = settings
-    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom, settings.reduceMotion, settings.streamWidth, settings.glassOpacity, settings.contrast, settings.panelMotionMs])
+    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom, settings.reduceMotion, settings.streamWidth, settings.glassOpacity, settings.windowGlass, settings.windowGlassOpacity, settings.contrast, settings.panelMotionMs])
     : null
   useEffect(() => {
     const current = useStore.getState().settings

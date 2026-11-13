@@ -25,7 +25,7 @@ import { isTranslateTarget } from '../shared/translate'
 import { AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, pickTokenStep } from '../shared/context-limits'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
-import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeComposerHeight, sanitizeStreamWidth, sanitizeGlassOpacity, sanitizeContrast, sanitizePanelMotion } from '../shared/appearance'
+import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeComposerHeight, sanitizeStreamWidth, sanitizeGlassOpacity, sanitizeWindowGlass, sanitizeWindowGlassOpacity, sanitizeContrast, sanitizePanelMotion } from '../shared/appearance'
 import { allowedSiteList } from './preview-site-access'
 import { normalizeSearchEngine } from '../shared/browser-navigation'
 import { electronGuardSealStore, guardFieldsOf, sameGuardFields, trustedGuardFields, type GuardFields } from './settings-guard-seal'
@@ -309,6 +309,8 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.composerHeight = sanitizeComposerHeight(settings.composerHeight)
   settings.reduceMotion = settings.reduceMotion === true ? true : undefined
   settings.glassOpacity = sanitizeGlassOpacity(settings.glassOpacity)
+  settings.windowGlass = sanitizeWindowGlass(settings.windowGlass)
+  settings.windowGlassOpacity = sanitizeWindowGlassOpacity(settings.windowGlassOpacity)
   settings.contrast = sanitizeContrast(settings.contrast)
   settings.codeWrap = settings.codeWrap === false ? false : undefined
   settings.panelMotionMs = sanitizePanelMotion(settings.panelMotionMs)
@@ -441,7 +443,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','frictionRecorder','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','frictionRecorder','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','windowGlass','windowGlassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('设置补丁必须是对象', 'The settings patch must be an object'))
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(pick(`不允许修改设置项：${key}`, `Changing this setting is not allowed: ${key}`))

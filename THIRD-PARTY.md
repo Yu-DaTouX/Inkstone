@@ -17,6 +17,11 @@
   - webpack：按 [OpenJS 商标政策](https://js.foundation/about/governance/trademark-policy) 使用
 - 上述标志的商标归各自所有者，砚仅用它们标识文件类型，不表示任何关联或认可。
 
+## 首页背景
+
+- 动态网点与图片的抖动、网点效果使用 [Paper Shaders](https://github.com/paper-design/shaders)（Apache-2.0，npm 包 `@paper-design/shaders-react`）。其 NOTICE：「Paper Shaders / Copyright 2026 Paper」。
+- 内置画作 [`twilight-in-the-wilderness.webp`](src/renderer/src/assets/wallpapers/twilight-in-the-wilderness.webp) 取自 Frederic Edwin Church《Twilight in the Wilderness》（1860），克利夫兰美术馆藏品 1965.233，馆方以 CC0 开放，本仓库只做缩放与格式转换。
+
 ## 子代理模型 Bot
 
 | 组件 | 许可 | 说明 |

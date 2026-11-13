@@ -227,6 +227,10 @@ export function AppearanceSettings(): ReactElement {
         <FontRow kind="code" />
       </SettingsGroup>
 
+      <InterfaceTuningSettings />
+
+      <HomeBackgroundSettings />
+
       <SettingsGroup title={text.groupAppearanceInput}>
         <SettingsRow settingId="appearance-language" label={text.language}>
           <Segmented
@@ -261,10 +265,6 @@ export function AppearanceSettings(): ReactElement {
       </SettingsGroup>
 
       <SettingsAdvanced label={text.advanced} testId="v3-appearance-advanced">
-        <InterfaceTuningSettings />
-
-        <HomeBackgroundSettings />
-
         <SettingsGroup title={text.groupAppearanceFiles}>
           <SwitchRow
             settingId="appearance-files-show-hidden"

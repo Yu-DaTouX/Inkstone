@@ -63,6 +63,11 @@ export const GLASS_OPACITY_MIN = 30
 export const GLASS_OPACITY_MAX = 100
 export const GLASS_OPACITY_DEFAULT = 65
 
+export type WindowGlass = 'side' | 'full' | 'off'
+export const WINDOW_GLASS_OPACITY_MIN = 40
+export const WINDOW_GLASS_OPACITY_MAX = 95
+export const WINDOW_GLASS_OPACITY_DEFAULT = 60
+
 export const CONTRAST_MIN = 0
 export const CONTRAST_MAX = 100
 export const CONTRAST_DEFAULT = 50
@@ -79,6 +84,14 @@ function steppedNumber(value: unknown, min: number, max: number, fallback: numbe
 
 export function sanitizeGlassOpacity(value: unknown): number | undefined {
   return steppedNumber(value, GLASS_OPACITY_MIN, GLASS_OPACITY_MAX, Number.NaN, 5)
+}
+
+export function sanitizeWindowGlass(value: unknown): WindowGlass | undefined {
+  return value === 'full' || value === 'off' ? value : undefined
+}
+
+export function sanitizeWindowGlassOpacity(value: unknown): number | undefined {
+  return steppedNumber(value, WINDOW_GLASS_OPACITY_MIN, WINDOW_GLASS_OPACITY_MAX, WINDOW_GLASS_OPACITY_DEFAULT, 5)
 }
 
 export function sanitizeContrast(value: unknown): number | undefined {

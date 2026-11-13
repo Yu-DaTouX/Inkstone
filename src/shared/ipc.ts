@@ -654,6 +654,8 @@ export interface AppSettings {
   composerHeight?: number
   reduceMotion?: boolean
   glassOpacity?: number
+  windowGlass?: 'side' | 'full' | 'off'
+  windowGlassOpacity?: number
   contrast?: number
   codeWrap?: boolean
   panelMotionMs?: number
