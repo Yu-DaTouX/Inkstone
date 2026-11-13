@@ -81,10 +81,15 @@ await runSuite(import.meta.url, async (ok, compile) => {
     ], 9)
     ok(sessionCopy.kept[0]?.rel === '.tmp/shots/b.png' && sessionCopy.dropped[0]?.rel.endsWith('.jsonl'), '会话副本等 jsonl 数据排在截图之后，不挤掉证据', JSON.stringify(sessionCopy))
 
+    const disposable = ['node_modules', 'tsconfig.web.tsbuildinfo', 'debug/runs/r1/yan', 'debug/runs/r1/electron/Cache/x', 'debug/runs/r1/pi-agent/sessions/s.jsonl']
+    const kept = ['.tmp', 'debug/runs', 'debug/runs/r1/report.json', 'debug/runs/r1/shot.png', 'debug/yan/a.md']
+    ok(disposable.every(isolation.isDisposableOutput) && !kept.some(isolation.isDisposableOutput), '调试实例数据和 tsbuildinfo 不算产物，run 根目录的报告与截图算')
+    ok(isolation.ignoredOutputsOf('.tmp/\ntsconfig.node.tsbuildinfo\ndebug/runs/r1/yan/\ndebug/runs/\n').join(',') === '.tmp,debug/runs', '可丢弃的顶层路径不进待另存清单')
+
     const repo = join(root, 'repo')
     await mkdir(repo, { recursive: true })
     const git = initRepo(repo)
-    await writeFile(join(repo, '.gitignore'), '.tmp/\nnode_modules/\n', 'utf8')
+    await writeFile(join(repo, '.gitignore'), '.tmp/\nnode_modules/\ndebug/runs/\n*.tsbuildinfo\n', 'utf8')
     await writeFile(join(repo, 'base.txt'), 'base\n', 'utf8')
     git(['add', '-A'])
     git(['commit', '-q', '-m', 'base'])
@@ -97,12 +102,18 @@ await runSuite(import.meta.url, async (ok, compile) => {
     await writeFile(join(work.cwd, '.tmp', 'task', 'shots', 'a.png'), Buffer.alloc(40, 1))
     await writeFile(join(work.cwd, '.tmp', 'task', 'runs', 'huge.bin'), Buffer.alloc(30, 2))
     await writeFile(join(work.cwd, 'base.txt'), 'changed\n', 'utf8')
+    await mkdir(join(work.cwd, 'debug', 'runs', 'r1', 'yan', 'attachments'), { recursive: true })
+    await writeFile(join(work.cwd, 'debug', 'runs', 'r1', 'report.json'), '{}', 'utf8')
+    await writeFile(join(work.cwd, 'debug', 'runs', 'r1', 'yan', 'attachments', 'big.png'), Buffer.alloc(5, 3))
+    await writeFile(join(work.cwd, 'tsconfig.web.tsbuildinfo'), Buffer.alloc(5, 4))
     const collected = await isolation.collectDiff(work, join(root, 'archive-pick'), 'pick')
     ok(!!collected.patchPath && collected.ignoredOutputs?.includes('.tmp'), '有补丁时也列出被忽略的产物，供完成通知提示', JSON.stringify(collected))
     const saved = await isolation.preserveIgnoredOutputs(work, join(root, 'archive-pick'), 'pick', 60)
     ok(saved.ok && saved.path && saved.files.includes('.tmp') && saved.skipped?.includes('.tmp'), '目录超限时逐个文件挑选，部分另存也如实列出', JSON.stringify(saved))
     ok(saved.ok && existsSync(join(saved.path, '.tmp', 'task', 'result.md')) && existsSync(join(saved.path, '.tmp', 'task', 'shots', 'a.png')), '说明文件和截图保住了')
     ok(saved.ok && !existsSync(join(saved.path, '.tmp', 'task', 'runs', 'huge.bin')), '超限的大运行文件没有另存')
+    ok(saved.ok && existsSync(join(saved.path, 'debug', 'runs', 'r1', 'report.json')) && !existsSync(join(saved.path, 'debug', 'runs', 'r1', 'yan')), '调试报告另存，实例数据目录不另存', JSON.stringify(saved))
+    ok(saved.ok && !saved.files.some((rel) => rel.endsWith('.tsbuildinfo')) && !saved.skipped?.some((rel) => rel.endsWith('.tsbuildinfo') || rel.startsWith('debug')), 'tsbuildinfo 与实例数据不进另存清单，也不报超限', JSON.stringify(saved))
     await isolation.cleanupWorkspace(work)
 
     const pendingText = notice.buildSubagentNotice({

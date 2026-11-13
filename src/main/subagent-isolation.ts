@@ -67,11 +67,20 @@ export interface CollectedDiff {
 
 const REBUILDABLE_DIRS = new Set(['node_modules', 'dist', 'out', 'build', 'target', '.gradle', '.cache', '.venv', 'venv', '__pycache__', '.next', '.turbo', 'coverage', '.pytest_cache', '.pnpm-store', '.parcel-cache', '.mypy_cache', '.ruff_cache'])
 
+const DEBUG_SANDBOX_DIRS = new Set(['pi-agent', 'yan', 'electron', 'downloads', 'android-sdk', 'project', 'projects', 'demo'])
+
+export function isDisposableOutput(path: string): boolean {
+  const parts = path.split('/')
+  if (parts.some((part) => REBUILDABLE_DIRS.has(part))) return true
+  if (parts[parts.length - 1].endsWith('.tsbuildinfo')) return true
+  return parts[0] === 'debug' && parts[1] === 'runs' && parts.length >= 4 && DEBUG_SANDBOX_DIRS.has(parts[3])
+}
+
 export function ignoredOutputsOf(listing: string): string[] {
   return listing
     .split(/\r?\n/)
     .map((line) => line.trim().replace(/\/$/, ''))
-    .filter((path) => path && !path.split('/').some((part) => REBUILDABLE_DIRS.has(part)))
+    .filter((path) => path && !isDisposableOutput(path))
 }
 
 interface GitOutput {
@@ -320,7 +329,7 @@ async function listOutputFiles(root: string, rel: string, top: string, found: Ou
     return
   }
   for (const entry of await readdir(join(root, rel))) {
-    if (REBUILDABLE_DIRS.has(entry)) continue
+    if (isDisposableOutput(`${rel}/${entry}`)) continue
     await listOutputFiles(root, `${rel}/${entry}`, top, found, overflow)
   }
 }
