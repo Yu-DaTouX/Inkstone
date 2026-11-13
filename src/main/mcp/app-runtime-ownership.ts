@@ -1,5 +1,5 @@
 import { loadMcpServers } from './config'
-import { nativeMcpServerName } from '../../shared/mcp-native-import'
+import { nativeMcpServerName } from '../../shared/mcp-native'
 import type { McpAppServerConfig } from './app-spec'
 import type {
   McpAppOwnershipFacts,

@@ -21,16 +21,13 @@ import {
 import type { RemoteHumanApproval } from '../shared/remote-protocol'
 import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
-import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerGrantView, type PeerOperation, type PeerProjectRef } from '../shared/peer-protocol'
-import type { PeerGrantRegistry } from './peer-grants'
-import type { PeerCollabHost, PeerCollabReply } from './collab/host'
 
 export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 
 export type RemoteCommand =
   | { action: 'select'; sessionId: string }
   | { action: 'new'; projectId?: string }
-  | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[]; mode?: 'steer' | 'followUp'; authorize?: (targetSessionId?: string) => Promise<RemoteOperationResult | null> }
+  | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[]; mode?: 'steer' | 'followUp' }
   | { action: 'model'; sessionId: string; provider: string; modelId: string }
   | { action: 'thinking'; sessionId: string; level: string }
   | { action: 'abort'; runId: string }
@@ -75,26 +72,14 @@ export interface RemoteServerHandlers {
 
 const VOICE_MAX_BODY_BYTES = 6 * 1024 * 1024
 
-export interface PeerHostHandlers {
-  projects(): Promise<PeerProjectRef[]>
-  sessions(projectIds: string[]): Promise<unknown[]>
-  projectOfSession(sessionId: string): Promise<string | null>
-  projectOfRun(runId: string): Promise<string | null>
-  exportSession(sessionId: string): Promise<RemoteOperationResult>
-  startSession(projectId: string, text: string): Promise<RemoteOperationResult>
-  collab?: PeerCollabHost
-}
-
 export interface RemoteServerOptions {
   host: string
   port: number
   token?: string
   devices?: RemoteDeviceStore
   handlers: RemoteServerHandlers
-  peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
   onLog?: (text: string, level?: 'info' | 'error') => void
   relayToken?: string
-  peerGraceMs?: number
   tunnel?: RemoteTunnelHooks
   relayClientPaired?: (clientId: string) => void | Promise<void>
   relayClientRevoked?: (clientId: string) => void | Promise<void>
@@ -124,7 +109,6 @@ const SESSION_ID_MAX = 200
 const PAIR_RATE_WINDOW_MS = 60_000
 const PAIR_RATE_LIMIT = 10
 const INVITE_RATE_LIMIT = 20
-const PEER_STREAM_GRACE_MS = 60_000
 const RELAY_HANDOFF_HEADER = 'x-yan-relay-client'
 const CORS_HEADERS = {
   'access-control-allow-headers': `authorization, content-type, x-yan-remote-token, ${REMOTE_IDEMPOTENCY_HEADER}`,
@@ -265,8 +249,6 @@ export class RemoteServer {
   private server: Server | null = null
   private heartbeat: NodeJS.Timeout | null = null
   private readonly clients = new Set<ServerResponse>()
-  private readonly peerClients = new Map<string, ServerResponse>()
-  private readonly peerGraceTimers = new Map<string, NodeJS.Timeout>()
   private readonly openStreams = new Set<Readable>()
   private readonly token: string | null
   private boundPort: number
@@ -347,7 +329,7 @@ export class RemoteServer {
     const address = server.address()
     if (address && typeof address === 'object') this.boundPort = address.port
     this.heartbeat = setInterval(() => {
-      for (const client of [...this.clients, ...this.peerClients.values()]) {
+      for (const client of this.clients) {
         this.writeSse(client, ': heartbeat\n\n')
       }
       this.pruneIdempotency()
@@ -362,8 +344,6 @@ export class RemoteServer {
     this.heartbeat = null
     this.inviteCache = null
     this.inviteAttempts.clear()
-    for (const timer of this.peerGraceTimers.values()) clearTimeout(timer)
-    this.peerGraceTimers.clear()
     for (const stream of this.openStreams) stream.destroy()
     this.openStreams.clear()
     for (const client of this.clients) {
@@ -373,10 +353,6 @@ export class RemoteServer {
       }
     }
     this.clients.clear()
-    for (const client of this.peerClients.values()) {
-      try { client.end() } catch { }
-    }
-    this.peerClients.clear()
     this.options.tunnel?.stop?.()
     const server = this.server
     this.server = null
@@ -407,16 +383,6 @@ export class RemoteServer {
     stream.pipe(res)
   }
 
-  disconnectConnection(connectionId: string): void {
-    const timer = this.peerGraceTimers.get(connectionId)
-    if (timer) clearTimeout(timer)
-    this.peerGraceTimers.delete(connectionId)
-    const client = this.peerClients.get(connectionId)
-    if (!client) return
-    this.peerClients.delete(connectionId)
-    try { client.end() } catch { }
-  }
-
   private allowInvite(source: string): boolean {
     const now = Date.now()
     for (const [key, attempts] of this.inviteAttempts) {
@@ -430,43 +396,14 @@ export class RemoteServer {
     return true
   }
 
-  private peerGrace(): number {
-    return this.options.peerGraceMs ?? PEER_STREAM_GRACE_MS
-  }
-
-  private resumePeerStream(connectionId: string, deviceId: string): PeerGrantView | null {
-    const timer = this.peerGraceTimers.get(connectionId)
-    if (!timer) return null
-    clearTimeout(timer)
-    this.peerGraceTimers.delete(connectionId)
-    return this.options.peers?.grants.list().find((item) => item.connectionId === connectionId && item.deviceId === deviceId && item.activatedAt !== null) ?? null
-  }
-
-  private schedulePeerRevoke(connectionId: string): void {
-    if (this.peerGraceTimers.has(connectionId)) return
-    const timer = setTimeout(() => {
-      this.peerGraceTimers.delete(connectionId)
-      this.options.peers?.grants.revoke(connectionId)
-    }, this.peerGrace())
-    timer.unref?.()
-    this.peerGraceTimers.set(connectionId, timer)
-  }
-
   disconnectAll(): void {
     for (const client of this.clients) {
       try { client.end() } catch { }
     }
     this.clients.clear()
-    for (const [id, client] of this.peerClients) {
-      this.peerClients.delete(id)
-      try { client.end() } catch { }
-    }
-    for (const timer of this.peerGraceTimers.values()) clearTimeout(timer)
-    this.peerGraceTimers.clear()
   }
 
   disconnectDevice(deviceId: string): void {
-    this.options.peers?.grants.revokeDevice(deviceId)
     for (const client of this.clients) {
       if ((client as ServerResponse & { yanDeviceId?: string }).yanDeviceId === deviceId) {
         try { client.end() } catch { }
@@ -506,11 +443,6 @@ export class RemoteServer {
       return true
     } catch {
       this.clients.delete(client)
-      for (const [id, response] of this.peerClients) {
-        if (response !== client) continue
-        this.peerClients.delete(id)
-        this.schedulePeerRevoke(id)
-      }
       client.destroy()
       return false
     }
@@ -706,13 +638,8 @@ export class RemoteServer {
     }
 
     const isPeer = caller.device?.kind === 'peer'
-    if (url.pathname.startsWith('/remote/v1/peer/')) {
-      if (!isPeer || !caller.device) return writeError(res, 403, pick('只有配对为「另一台砚」的设备可以使用这个接口', 'Only devices paired as another Inkstone can use this endpoint'), 'peer_only')
-      await this.handlePeer(req, res, url, caller.device)
-      return
-    }
     if (isPeer && url.pathname !== '/remote/v1/info') {
-      writeError(res, 403, pick('另一台砚需要先申请本次连接，并只能访问开放的项目', 'Another Inkstone must request this connection first and can only access open projects'), 'peer_scope')
+      writeError(res, 403, pick('砚对砚互通已移除，这台设备不能再操作这台电脑', 'Inkstone-to-Inkstone links were removed; this device can no longer control this computer'), 'peer_scope')
       return
     }
 
@@ -1009,196 +936,6 @@ export class RemoteServer {
     writeError(res, 404, pick('远程 API 路径不存在', 'Remote API path not found'))
   }
 
-  private async handlePeer(req: IncomingMessage, res: ServerResponse, url: URL, device: RemoteDeviceSummary): Promise<void> {
-    const peers = this.options.peers
-    if (!peers) return writeError(res, 404, pick('这台电脑没有开启砚对砚互通', 'Inkstone-to-Inkstone is not enabled on this computer'), 'peer_disabled')
-    const { grants, handlers } = peers
-    const parts = url.pathname.split('/').filter(Boolean).slice(3)
-    const header = req.headers[PEER_CONNECTION_HEADER]
-    const connectionId = typeof header === 'string' ? header.trim() : (url.searchParams.get('connection') ?? undefined)
-    const gate = (operation: PeerOperation, projectId?: string) => {
-      const result = grants.check(connectionId, device.id, operation, projectId)
-      if (!result.ok) writeError(res, result.status, result.error, result.code)
-      return result.ok ? result.grant : null
-    }
-
-    if (req.method === 'POST' && parts.length === 1 && parts[0] === 'connect') {
-      const body = await this.readJson(req)
-      const operations = Array.isArray(body.operations)
-        ? PEER_OPERATIONS.filter((op) => (body.operations as unknown[]).includes(op))
-        : []
-      if (!operations.length) return writeError(res, 400, pick(`需要至少申请一种操作：${PEER_OPERATIONS.join(' / ')}`, `Request at least one operation: ${PEER_OPERATIONS.join(' / ')}`))
-      const note = typeof body.note === 'string' ? body.note : ''
-      const grant = await grants.request(device, operations, note, await handlers.projects())
-      if (!grant) return writeError(res, 403, pick('所有者拒绝了这次连接，或没有及时处理', 'The owner declined this connection or did not respond in time'), 'peer_denied')
-      this.log(`已批准另一台砚的连接：${device.name}`)
-      writeJson(res, 200, { ok: true, data: { grant } })
-      return
-    }
-
-    if (req.method === 'POST' && parts.length === 1 && parts[0] === 'disconnect') {
-      let body: Record<string, unknown>
-      try {
-        body = await this.readJson(req)
-      } catch {
-        return writeError(res, 413, pick('请求超过大小限制或格式无效', 'Request is too large or malformed'))
-      }
-      const target = typeof body.connectionId === 'string' ? body.connectionId.trim() : ''
-      const grant = target && target.length <= 200 ? grants.list().find((item) => item.connectionId === target) : undefined
-      if (grant && grant.deviceId === device.id) {
-        grants.revoke(target)
-        this.disconnectConnection(target)
-        this.log(`另一台砚结束了本次连接：${device.name}`)
-      }
-      writeJson(res, 200, { ok: true })
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 1 && parts[0] === 'events') {
-      if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, pick('事件连接过多，请关闭其他连接后重试', 'Too many event connections. Close others and retry'))
-      const grant = connectionId ? (this.resumePeerStream(connectionId, device.id) ?? grants.activate(connectionId, device.id)) : null
-      if (!grant || !connectionId) return writeError(res, 401, pick('本次连接未获批准、已使用过或已失效，请重新申请', 'This connection was not approved, was already used or expired. Request again'), 'peer_connection_required')
-      res.writeHead(200, {
-        'content-type': 'text/event-stream; charset=utf-8',
-        'cache-control': 'no-cache, no-store',
-        connection: 'keep-alive',
-        'x-accel-buffering': 'no'
-      })
-      this.peerClients.set(connectionId, res)
-      res.on('close', () => {
-        this.peerClients.delete(connectionId)
-        this.schedulePeerRevoke(connectionId)
-      })
-      this.writeSse(res, `event: grant\ndata: ${JSON.stringify(grant)}\n\n`)
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 1 && parts[0] === 'grant') {
-      const grant = grants.list().find((item) => item.connectionId === connectionId && item.deviceId === device.id)
-      if (!grant) return writeError(res, 401, pick('本次连接已失效', 'This connection has expired'), 'peer_connection_required')
-      writeJson(res, 200, { ok: true, data: { grant } })
-      return
-    }
-
-    if (req.method === 'GET' && parts.length === 1 && parts[0] === 'sessions') {
-      const grant = gate('read')
-      if (!grant) return
-      writeJson(res, 200, { ok: true, data: { projects: grant.projects, sessions: await handlers.sessions(grant.projects.map((p) => p.id)) } })
-      return
-    }
-
-    if (parts[0] === 'sessions' && parts.length >= 2) {
-      const sessionId = decodeURIComponent(parts[1])
-      if (!validSessionId(sessionId)) return writeError(res, 400, pick('会话 id 无效', 'Invalid session id'))
-      const projectId = await handlers.projectOfSession(sessionId)
-      if (!projectId) return writeError(res, 404, pick('找不到这个会话，或它不属于任何开放的项目', 'Session not found, or it is not in any open project'))
-
-      if (req.method === 'GET' && parts.length === 2) {
-        if (!gate('read', projectId)) return
-        const before = url.searchParams.get('before') ?? undefined
-        if (before !== undefined && (!before || before.length > 2000 || /[\r\n]/.test(before))) return writeError(res, 400, pick('历史游标无效', 'Invalid history cursor'))
-        this.writeOperation(res, await this.options.handlers.history(sessionId, clampHistoryLimit(url.searchParams.get('limit')), before))
-        return
-      }
-      if (req.method === 'GET' && parts.length === 3 && parts[2] === 'export') {
-        if (!gate('transfer', projectId)) return
-        this.writeOperation(res, await handlers.exportSession(sessionId))
-        return
-      }
-      if (req.method === 'GET' && parts.length === 4 && parts[2] === 'artifacts') {
-        const viewing = grants.check(connectionId, device.id, 'read', projectId)
-        const copying = viewing.ok ? viewing : grants.check(connectionId, device.id, 'transfer', projectId)
-        const allowed = copying.ok ? copying : grants.check(connectionId, device.id, 'pull', projectId)
-        if (!allowed.ok) return writeError(res, allowed.status, allowed.error, allowed.code)
-        await this.artifact(res, sessionId, decodeURIComponent(parts[3]))
-        return
-      }
-      if (req.method === 'POST' && parts.length === 3 && parts[2] === 'messages') {
-        if (!gate('send', projectId)) return
-        let body: Record<string, unknown>
-        try {
-          body = await this.readJson(req)
-        } catch {
-          return writeError(res, 413, pick('消息超过大小限制或格式无效', 'Message is too large or malformed'))
-        }
-        if (!validText(body.text, MAX_MESSAGE_CHARS)) return writeError(res, 400, pick('消息不能为空且不得超过 20,000 个字符', 'Message must not be empty or exceed 20,000 characters'))
-        const text = body.text
-        const authorize = async (targetSessionId = sessionId): Promise<RemoteOperationResult | null> => {
-          const [latestProjectId, targetProjectId] = await Promise.all([
-            handlers.projectOfSession(sessionId),
-            handlers.projectOfSession(targetSessionId)
-          ])
-          if (!latestProjectId || latestProjectId !== projectId || targetProjectId !== projectId) return { ok: false, status: 403, error: pick('会话项目归属已变化，请重新打开', 'The session\'s project changed. Reopen it'), code: 'peer_project_denied' }
-          const checked = grants.check(connectionId, device.id, 'send', latestProjectId)
-          return checked.ok ? null : { ok: false, status: checked.status, error: checked.error, code: checked.code }
-        }
-        await this.idempotent(req, res, { device }, true, async () => {
-          const denied = await authorize()
-          return denied ?? this.options.handlers.command({ action: 'send', sessionId, text, authorize })
-        })
-        return
-      }
-    }
-
-    if (req.method === 'POST' && parts.length === 2 && parts[0] === 'runs' && parts[1] === 'abort') {
-      const body = await this.readJson(req)
-      if (!validRunId(body.runId)) return writeError(res, 400, pick('中止操作必须提供有效的目标 runId', 'Abort requires a valid target runId'))
-      const runId = body.runId
-      const projectId = await handlers.projectOfRun(runId)
-      if (!projectId) return writeError(res, 404, pick('找不到这个运行实例，或它不属于开放的项目', 'Runtime not found, or it is not in an open project'))
-      if (!gate('send', projectId)) return
-      await this.idempotent(req, res, { device }, false, () => this.options.handlers.command({ action: 'abort', runId }))
-      return
-    }
-
-    if (req.method === 'POST' && parts.length === 3 && parts[0] === 'projects' && parts[2] === 'sessions') {
-      const projectId = decodeURIComponent(parts[1])
-      if (!gate('send', projectId)) return
-      let body: Record<string, unknown>
-      try {
-        body = await this.readJson(req)
-      } catch {
-        return writeError(res, 413, pick('消息超过大小限制或格式无效', 'Message is too large or malformed'))
-      }
-      if (!validText(body.text, MAX_MESSAGE_CHARS)) return writeError(res, 400, pick('消息不能为空且不得超过 20,000 个字符', 'Message must not be empty or exceed 20,000 characters'))
-      const text = body.text
-      this.log(`另一台砚申请在开放项目里新开任务：${device.name}`)
-      await this.idempotent(req, res, { device }, true, () => handlers.startSession(projectId, text))
-      return
-    }
-
-    if (parts[0] === 'collab' && handlers.collab) {
-      const reply = await handlers.collab.handle(req, parts.slice(1), {
-        device,
-        allow: (operations, projectId) => {
-          let denied: RemoteOperationResult | null = null
-          for (const operation of operations) {
-            const result = grants.check(connectionId, device.id, operation, projectId)
-            if (result.ok) return null
-            if (!denied || result.code === 'peer_project_denied') denied = { ok: false, status: result.status, error: result.error, code: result.code }
-          }
-          return denied ?? { ok: false, status: 403, error: pick('这个操作不在本次连接的授权范围内', 'This operation is outside the scope of this connection') }
-        }
-      })
-      if (reply) return this.writeCollab(res, reply)
-    }
-
-    writeError(res, 404, pick('远程 API 路径不存在', 'Remote API path not found'))
-  }
-
-  private writeCollab(res: ServerResponse, reply: PeerCollabReply): void {
-    if (reply.kind === 'json') return this.writeOperation(res, reply.result)
-    res.writeHead(200, {
-      'content-type': 'application/octet-stream',
-      'content-length': reply.bytes,
-      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(reply.filename)}`,
-      'cache-control': 'no-store'
-    })
-    const stream = createReadStream(reply.path)
-    res.on('close', () => reply.done())
-    this.pipeStream(stream, res)
-  }
-
   private async pair(req: IncomingMessage, res: ServerResponse, plaintext = false): Promise<void> {
     if (!this.options.devices) {
       writeError(res, 404, pick('这台电脑没有开启手机配对', 'Phone pairing is not enabled on this computer'), 'pairing_disabled')
@@ -1227,7 +964,11 @@ export class RemoteServer {
       writeError(res, 403, pick('Agent Hub 已退役，不再接受礁石配对', 'Agent Hub is retired and no longer accepts reef pairing'), 'agent_retired')
       return
     }
-    if (plaintext && body.kind !== 'peer') {
+    if (body.kind === 'peer') {
+      writeError(res, 403, pick('砚对砚互通已移除，不再接受另一台砚配对', 'Inkstone-to-Inkstone links were removed; another Inkstone can no longer pair'), 'peer_retired')
+      return
+    }
+    if (plaintext) {
       writeError(res, 426, pick('请把手机上的砚更新到最新版再配对：新版经加密通道连接电脑', 'Update Inkstone on your phone and pair again: the new version connects through an encrypted tunnel'), 'tunnel_required')
       return
     }
@@ -1315,7 +1056,7 @@ export class RemoteServer {
       }
     }
 
-    if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, pick('事件连接过多，请关闭其他连接后重试', 'Too many event connections. Close others and retry'))
+    if (this.clients.size >= 32) return writeError(res, 429, pick('事件连接过多，请关闭其他连接后重试', 'Too many event connections. Close others and retry'))
     this.clients.add(res)
     res.on('close', () => this.clients.delete(res))
     res.writeHead(200, {

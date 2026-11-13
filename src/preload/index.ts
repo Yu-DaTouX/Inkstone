@@ -15,16 +15,7 @@ import {
 } from '../shared/ipc'
 import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
 import type { ArtifactLibraryResult, SaveInlineArtifactResult } from '../shared/artifact-library'
-import type {
-  NativeMcpImportCommitResponse,
-  NativeMcpImportPrepareResponse,
-  NativeMcpServerListView
-} from '../shared/mcp-native-import'
-import type {
-  McpAppOwnershipResponse,
-  McpAppSwitchCommitResponse,
-  McpAppSwitchPrepareResponse
-} from '../shared/mcp-app-switch'
+import type { NativeMcpServerListView } from '../shared/mcp-native'
 import type {
   McpAppViewAuditEntry,
   McpAppViewDescriptor,
@@ -206,17 +197,10 @@ const api: YanBridge = {
     history: (query) => invoke<Awaited<ReturnType<YanBridge['runs']['history']>>>('yan:runs:history', query),
     stop: (runId) => invoke<Awaited<ReturnType<YanBridge['runs']['stop']>>>('yan:runs:stop', runId)
   },
-  sync: {
-    status: () => invoke<Awaited<ReturnType<YanBridge['sync']['status']>>>('yan:sync:status'),
-    configure: (root) => invoke<Awaited<ReturnType<YanBridge['sync']['configure']>>>('yan:sync:configure', root),
-    setMode: (mode) => invoke<Awaited<ReturnType<YanBridge['sync']['setMode']>>>('yan:sync:setMode', mode),
-    now: () => invoke<Awaited<ReturnType<YanBridge['sync']['now']>>>('yan:sync:now'),
-    conflicts: () => invoke<Awaited<ReturnType<YanBridge['sync']['conflicts']>>>('yan:sync:conflicts'),
-    resolve: (id, resolution) =>
-      invoke<Awaited<ReturnType<YanBridge['sync']['resolve']>>>('yan:sync:resolve', id, resolution),
+  sessionTransfer: {
     exportSession: (sessionPath) =>
-      invoke<Awaited<ReturnType<YanBridge['sync']['exportSession']>>>('yan:sync:exportSession', sessionPath),
-    importSession: () => invoke<Awaited<ReturnType<YanBridge['sync']['importSession']>>>('yan:sync:importSession')
+      invoke<Awaited<ReturnType<YanBridge['sessionTransfer']['exportSession']>>>('yan:sessionTransfer:export', sessionPath),
+    importSession: () => invoke<Awaited<ReturnType<YanBridge['sessionTransfer']['importSession']>>>('yan:sessionTransfer:import')
   },
   compact: (customInstructions, expected) => invoke<Ok>('yan:compact', customInstructions, expected),
   compactionInfo: (cwd, contextWindow) => invoke<Awaited<ReturnType<YanBridge['compactionInfo']>>>('yan:compactionInfo', cwd, contextWindow),
@@ -471,22 +455,12 @@ const api: YanBridge = {
       invoke<CapabilityVerificationStatus | null>('yan:capabilities:verification', operationId),
     cancelVerification: (operationId: string) =>
       invoke<{ ok: boolean; error?: string }>('yan:capabilities:cancelVerification', operationId),
-    prepareNativeImport: (serverId: string) =>
-      invoke<NativeMcpImportPrepareResponse>('yan:capabilities:prepareNativeImport', serverId),
-    commitNativeImport: (token: string) =>
-      invoke<NativeMcpImportCommitResponse>('yan:capabilities:commitNativeImport', token),
     nativeServers: () => invoke<NativeMcpServerListView>('yan:capabilities:nativeMcpServers'),
     mcpServices: () => invoke('yan:capabilities:mcpServices'),
     changeMcpService: (input) => invoke('yan:capabilities:changeMcpService', input),
     applyMcpServices: (input) => invoke('yan:capabilities:applyMcpServices', input),
     manageNativeServer: (action: 'enable' | 'disable' | 'remove', name: string) =>
       invoke<{ ok: boolean; error?: string }>('yan:capabilities:manageNativeMcpServer', { action, name })
-  },
-  mcpApp: {
-    ownership: () => invoke<McpAppOwnershipResponse>('yan:mcpApp:ownership'),
-    prepareSwitch: (serverId: string) =>
-      invoke<McpAppSwitchPrepareResponse>('yan:mcpApp:prepareSwitch', serverId),
-    commitSwitch: (token: string) => invoke<McpAppSwitchCommitResponse>('yan:mcpApp:commitSwitch', token)
   },
   mcpApps: {
     prepare: (callId: string) => invoke<McpAppViewDescriptor>(MCP_APP_VIEW_CHANNELS.prepare, callId),
@@ -528,7 +502,6 @@ const api: YanBridge = {
     cancelClone: (id) => invoke<{ ok: boolean }>('yan:github:cancelClone', id),
     createProject: (name, parentDir) => invoke<import('../shared/github').GithubCreateProjectResult>('yan:github:createProject', name, parentDir),
     branches: (cwd) => invoke<import('../shared/github').GithubBranchListResult>('yan:github:branches', cwd),
-    publishPeerBranch: (cwd, request) => invoke<import('../shared/github').GhPrActionResult>('yan:github:publishPeerBranch', cwd, request),
     defaultCloneDir: () => invoke<string>('yan:github:defaultCloneDir')
   },
 
@@ -628,37 +601,6 @@ const api: YanBridge = {
   office: {
     preview: (path, cwd) => invoke<OfficeDocumentView>('yan:office:preview', path, cwd)
   },
-
-  peer: {
-    hostPending: () => invoke('yan:peer-host:pending'),
-    hostDecide: (decision) => invoke('yan:peer-host:decide', decision),
-    hostRevoke: (connectionId) => invoke('yan:peer-host:revoke', connectionId),
-    status: () => invoke('yan:peer:status'),
-    pair: (address, code) => invoke('yan:peer:pair', address, code),
-    remove: (peerId) => invoke('yan:peer:remove', peerId),
-    connect: (peerId, operations, note) => invoke('yan:peer:connect', peerId, operations, note),
-    disconnect: (peerId) => invoke('yan:peer:disconnect', peerId),
-    sessions: (peerId) => invoke('yan:peer:sessions', peerId),
-    history: (peerId, sessionId, before) => invoke('yan:peer:history', peerId, sessionId, before),
-    send: (peerId, sessionId, text) => invoke('yan:peer:send', peerId, sessionId, text),
-    startSession: (peerId, projectId, text) => invoke('yan:peer:startSession', peerId, projectId, text),
-    abort: (peerId, runId) => invoke('yan:peer:abort', peerId, runId),
-    importSession: (peerId, sessionId) => invoke('yan:peer:importSession', peerId, sessionId)
-  } as YanBridge['peer'],
-
-  collab: {
-    overview: () => invoke('yan:collab:overview'),
-    remoteProject: (peerId, projectId) => invoke('yan:collab:remoteProject', peerId, projectId),
-    link: (peerId, projectId, localProjectId) => invoke('yan:collab:link', peerId, projectId, localProjectId),
-    fetch: (peerId, projectId, branch) => invoke('yan:collab:fetch', peerId, projectId, branch),
-    compare: (localProjectId, ref) => invoke('yan:collab:compare', localProjectId, ref),
-    fileDiff: (localProjectId, ref, path) => invoke('yan:collab:fileDiff', localProjectId, ref, path),
-    merge: (localProjectId, ref, requestId) => invoke('yan:collab:merge', localProjectId, ref, requestId),
-    abortMerge: (localProjectId) => invoke('yan:collab:abortMerge', localProjectId),
-    push: (input) => invoke('yan:collab:push', input),
-    closeRequest: (requestId) => invoke('yan:collab:closeRequest', requestId),
-    continueFrom: (localProjectId, ref, importId) => invoke('yan:collab:continueFrom', localProjectId, ref, importId)
-  } as YanBridge['collab'],
 
   voice: {
     available: () => invoke<boolean>('yan:voice:available'),

@@ -2,7 +2,7 @@ import { pick } from '../../shared/ui-lang'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from '../paths'
-import { atomicWriteFile } from '../sync/atomic'
+import { atomicWriteFile } from '../atomic-write'
 import { resolveQuotaProviderSecret } from '../quota-credentials'
 import {
   SEARCH_PROVIDERS,

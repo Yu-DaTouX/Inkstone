@@ -3,12 +3,7 @@ import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-se
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
 import type { HtmlEditPatch } from './html-edit-patch'
 import type { ArtifactLibraryResult, SaveInlineArtifactInput, SaveInlineArtifactResult } from './artifact-library'
-import type {
-  NativeMcpImportCommitResponse,
-  NativeMcpImportPrepareResponse,
-  NativeMcpServerListView
-} from './mcp-native-import'
-import type { McpAppBridge } from './mcp-app-switch'
+import type { NativeMcpServerListView } from './mcp-native'
 import type { McpSettingsMutation, McpSettingsResult, McpSettingsSnapshot } from './mcp-settings'
 import type { McpAppViewApi } from './mcp-app-view'
 
@@ -808,7 +803,6 @@ export interface AppSettings {
   panelMotionMs?: number
   sidebarLayout?: 'projects' | 'flat'
   cloneDir?: string
-  peerGithubLogins?: Record<string, string>
   keepAwakeOnBattery?: boolean
   checkpointsEnabled?: boolean
   guardOutsideWrites?: boolean
@@ -1341,8 +1335,6 @@ export type MainPushBody =
   | { ch: 'runs'; payload: { revision: number; upsert: import('./runs').RunSnapshot[]; remove: string[] } }
   | { ch: 'tray-new-session'; payload: null }
   | { ch: 'github-clone'; payload: import('./github').GithubCloneProgress }
-  | { ch: 'peer-request'; payload: import('./peer-protocol').PeerApprovalRequest }
-  | { ch: 'peer-request-closed'; payload: { requestId: string } }
   | { ch: 'session-moved'; payload: { sessionId: string; sessionFile: string; cwd: string; ok: boolean; error?: string; continued?: boolean; continuationError?: string } }
   | {
       ch: 'tray-select-session'
@@ -1443,25 +1435,6 @@ export interface PackagesBridge {
   action(req: PackageActionView): Promise<PackageActionResultView>
 }
 
-export type PeerResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }
-
-export interface PeerSessionRow {
-  id: string
-  title: string
-  projectId?: string
-  cwdName?: string
-  updatedAt: number
-  messageCount: number
-}
-
-export interface PeerHistoryMessage {
-  id: string
-  role: string
-  text?: string
-  createdAt?: number
-  artifacts?: Array<{ id: string; filename: string }>
-}
-
 export interface BuiltinCapabilityView {
   id: string
   file?: string
@@ -1496,7 +1469,6 @@ export interface CapabilityMcpServerSettingView {
   status: 'ready' | 'connecting' | 'disconnected' | 'needs-auth' | 'error'
   toolCount: number | null
   ownedBy?: 'pi' | 'inkstone'
-  migratedToNative?: import('./mcp').McpMigratedToNativeMark
 }
 
 export interface CapabilitySettingsSnapshot {
@@ -1557,8 +1529,6 @@ export interface CapabilitiesBridge {
   verify(serverId: string): Promise<{ ok: boolean; operationId?: string; error?: string }>
   verification(operationId: string): Promise<CapabilityVerificationStatus | null>
   cancelVerification(operationId: string): Promise<{ ok: boolean; error?: string }>
-  prepareNativeImport(serverId: string): Promise<NativeMcpImportPrepareResponse>
-  commitNativeImport(token: string): Promise<NativeMcpImportCommitResponse>
   nativeServers(): Promise<NativeMcpServerListView>
   mcpServices(): Promise<McpSettingsSnapshot>
   changeMcpService(input: McpSettingsMutation): Promise<McpSettingsResult>
@@ -1717,7 +1687,6 @@ export type DeepLinkIntent =
   | { action: 'session'; sessionId: string; entryId?: string }
   | { action: 'new-session'; text?: string }
   | { action: 'settings'; section: string }
-  | { action: 'pair'; address: string; code: string }
 
 export interface PinnedNetworkStatus {
   guard: { status: 'idle' | 'starting' | 'ready' | 'system-proxy' | 'failed'; reason: string }
@@ -1767,7 +1736,7 @@ export interface YanBridge {
     history(query: RunsHistoryQuery): Promise<RunsHistoryResult>
     stop(runId: string): Promise<RunsStopResult>
   }
-  sync: import('./sync').SyncBridge
+  sessionTransfer: import('./session-transfer').SessionTransferBridge
   start(): Promise<{ ok: boolean; error?: string; state?: SessionState }>
   send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   steer(text: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
@@ -2029,7 +1998,6 @@ export interface YanBridge {
     set(enabled: boolean): Promise<ComputerUseActionResult>
   }
   capabilities: CapabilitiesBridge
-  mcpApp: McpAppBridge
   mcpApps: McpAppViewApi
   git: GitBridge
   github: GithubBridge
@@ -2076,24 +2044,6 @@ export interface YanBridge {
   office: {
     preview(path: string, cwd?: string): Promise<import('./office').OfficeDocumentView>
   }
-  collab: import('./collab').CollabBridge
-  peer: {
-    hostPending(): Promise<import('./peer-protocol').PeerApprovalRequest[]>
-    hostDecide(decision: import('./peer-protocol').PeerApprovalDecision): Promise<boolean>
-    hostRevoke(connectionId: string): Promise<boolean>
-    status(): Promise<import('./peer-protocol').PeerStatusView>
-    pair(address: string, code: string): Promise<PeerResult<import('./peer-protocol').PeerRecordView>>
-    remove(peerId: string): Promise<boolean>
-    connect(peerId: string, operations: import('./peer-protocol').PeerOperation[], note: string): Promise<PeerResult<import('./peer-protocol').PeerGrantView>>
-    disconnect(peerId: string): Promise<void>
-    sessions(peerId: string): Promise<PeerResult<{ projects: import('./peer-protocol').PeerProjectRef[]; sessions: PeerSessionRow[] }>>
-    history(peerId: string, sessionId: string, before?: string): Promise<PeerResult<{ messages: PeerHistoryMessage[]; hasMore?: boolean; nextBefore?: string }>>
-    send(peerId: string, sessionId: string, text: string): Promise<PeerResult<unknown>>
-    startSession(peerId: string, projectId: string, text: string): Promise<PeerResult<{ sessionId: string | null; runId: string; projectId: string }>>
-    abort(peerId: string, runId: string): Promise<PeerResult<unknown>>
-    importSession(peerId: string, sessionId: string): Promise<PeerResult<import('./peer-protocol').PeerImportView>>
-  }
-
   voice: {
     available(): Promise<boolean>
     prepare(): Promise<{ ok: boolean; error?: string }>

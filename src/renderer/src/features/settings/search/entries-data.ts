@@ -33,14 +33,6 @@ export const DATA_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     more: true
   },
   { id: 'devices-relay-url', section: 'devices', zh: '中继地址', en: 'Relay URL', keywords: ['relay url', '中继服务器'], more: true },
-  {
-    id: 'devices-peer',
-    section: 'devices',
-    zh: '砚对砚授权',
-    en: 'Peer links',
-    keywords: ['peer', '其他砚', '断开', 'disconnect'],
-    more: true
-  },
   { id: 'data-backup-create', section: 'data', zh: '创建备份', en: 'Create backup', keywords: ['备份', 'backup'] },
   { id: 'data-backup-restore', section: 'data', zh: '恢复备份', en: 'Restore backup', keywords: ['恢复', '还原', 'restore', 'recovery'] },
   {
@@ -49,16 +41,6 @@ export const DATA_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     zh: '数据位置',
     en: 'Data location',
     keywords: ['数据目录', '打开位置', '占用', 'data folder', 'storage']
-  },
-  { id: 'data-sync-folder', section: 'data', zh: '同步文件夹', en: 'Sync folder', keywords: ['同步', '云盘', 'sync', 'cloud drive'] },
-  { id: 'data-sync-mode', section: 'data', zh: '同步方式', en: 'Sync mode', keywords: ['自动同步', '手动同步', 'auto sync', 'manual'] },
-  { id: 'data-sync-now', section: 'data', zh: '立即同步', en: 'Sync now', keywords: ['同步状态', '上次同步', 'last sync', 'sync status'] },
-  {
-    id: 'data-sync-scope',
-    section: 'data',
-    zh: '同步哪些内容',
-    en: 'What gets synced',
-    keywords: ['同步范围', '同步内容', 'sync scope', 'credentials']
   },
   {
     id: 'data-move',
@@ -77,14 +59,6 @@ export const DATA_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     more: true
   },
   { id: 'data-backup-verify', section: 'data', zh: '校验备份', en: 'Verify backup', keywords: ['备份校验', 'verify', 'check backup'], more: true },
-  {
-    id: 'data-sync-conflicts',
-    section: 'data',
-    zh: '同步冲突',
-    en: 'Sync conflicts',
-    keywords: ['冲突', '保留本机', '保留他端', 'conflict', 'resolve'],
-    more: true
-  },
   {
     id: 'data-session-export',
     section: 'data',

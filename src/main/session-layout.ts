@@ -11,7 +11,7 @@ import type {
   SessionSummary
 } from '../shared/ipc'
 import { YAN_DIR } from './paths'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 import { normalizeLayoutPath } from '../shared/session-path'
 import { pick } from '../shared/ui-lang'
 

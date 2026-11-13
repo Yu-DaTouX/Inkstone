@@ -19,8 +19,6 @@ import type { AgentController } from '../agent'
 import type { RunnerRegistry } from '../runners'
 import { PI_AGENT_DIR } from '../paths'
 import { mergeCommandDescriptors } from '../command-registry'
-import { loadMcpServers, mcpServersForProject } from '../mcp/config'
-import { createNativeMcpVerifier } from '../mcp/native-verify'
 import { listNativeMcpServers } from '../mcp/native-list'
 import { manageNativeMcpServer } from '../mcp/native-manage'
 import { changeMcpServiceSettings, listMcpServiceSettings, type McpSettingsHost } from '../mcp/service-settings'
@@ -28,15 +26,7 @@ import { verifyNativeStartupWitness } from '../mcp/app-native-witness'
 import { mcpAppProxyService } from '../mcp/app-proxy-service'
 import { validateNativeSessionRequest } from '../native-session-guard'
 import type { McpSettingsMutation } from '../../shared/mcp-settings'
-import type { NativeMcpServerListView } from '../../shared/mcp-native-import'
-import {
-  commitNativeMcpImport,
-  NativeMcpImportError,
-  prepareNativeMcpImport,
-  sameNativeMcpImportRuntime
-} from '../mcp/native-import'
-import type { NativeMcpImportRuntimeIdentity } from '../mcp/native-import'
-import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native-import'
+import type { NativeMcpServerListView } from '../../shared/mcp-native'
 
 type CapabilityVerification = {
   operationId: string
@@ -63,28 +53,6 @@ export interface CapabilitiesIpcDeps {
   thinExtensionPaths(): string[]
   settings(): Promise<AppSettings>
   isProjectTrusted(cwd: string): Promise<boolean>
-}
-
-interface NativeImportBinding {
-  identity: NativeMcpImportRuntimeIdentity
-  agent: AgentController
-  ownerId: string
-  serverId: string
-  createdAt: number
-}
-const nativeImportBindings = new Map<string, NativeImportBinding>()
-const NATIVE_IMPORT_BINDING_TTL_MS = 5 * 60_000
-
-function pruneNativeImportBindings(): void {
-  const cutoff = Date.now() - NATIVE_IMPORT_BINDING_TTL_MS
-  for (const [token, binding] of nativeImportBindings) {
-    if (binding.createdAt < cutoff) nativeImportBindings.delete(token)
-  }
-}
-
-function nativeImportErrorResponse(error: unknown): { ok: false; code: string; error: string } {
-  if (error instanceof NativeMcpImportError) return { ok: false, code: error.code, error: error.message }
-  return { ok: false, code: 'native_import_failed', error: error instanceof Error ? error.message : String(error) }
 }
 
 export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpcDeps): void {
@@ -373,117 +341,5 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     operation.state = disconnected ? 'cancelled' : 'stale'
     operation.updatedAt = Date.now()
     return { ok: disconnected, ...(disconnected ? {} : { error: pick('MCP 服务已不存在', 'MCP service no longer exists') }) }
-  })
-
-  const nativeImportHost = async (runnerCwd: string) => {
-    const current = await settings()
-    return {
-      agentDir: PI_AGENT_DIR,
-      projects: current.projects.map((project) => ({ id: project.id, cwd: project.cwd })),
-      verify: createNativeMcpVerifier({
-        ...(current.piBin ? { piBin: current.piBin } : {}),
-        runnerCwd,
-        isProjectTrusted
-      })
-    }
-  }
-
-  handle('yan:capabilities:prepareNativeImport', async (value: unknown) => {
-    const serverId = typeof value === 'string' ? value.trim() : ''
-    if (!serverId) return { ok: false, code: 'server_required', error: pick('缺少 MCP 服务 ID', 'Missing MCP service ID') }
-    const agent = currentAgent()
-    const runner = registry()?.activeRunner()
-    const runtime = runner ? registry()?.runtimeOf(runner.id) : null
-    if (!agent || !runner || !runtime) return { ok: false, code: 'no_runner', error: pick('当前没有可用的运行实例', 'No runtime available') }
-    if (serverId === WINDOWS_MCP_SERVER_ID) {
-      return { ok: false, code: 'windows_mcp_preserved', error: pick('windows-mcp 保留在砚的连接里（电脑操作），不导入 pi 原生', 'windows-mcp stays in Inkstone’s connections (computer use) and is not imported into native pi') }
-    }
-    const loaded = loadMcpServers()
-    if (loaded.error) return { ok: false, code: 'host_config_invalid', error: pick(`砚的 MCP 配置存在解析问题：${loaded.error}`, `Inkstone’s MCP config has a parse problem: ${loaded.error}`) }
-    const projectId = agent.capabilityProjectId
-    const visible = mcpServersForProject(loaded.servers, projectId ?? undefined).some((server) => server.id === serverId)
-    if (!visible) {
-      return { ok: false, code: 'server_not_visible', error: pick('该服务不在当前运行实例可见的 MCP 配置里，不能从本实例导入', 'This service is not in the MCP config visible to this runtime and cannot be imported from it') }
-    }
-    const ownerId = `${runner.id}#${runtime.generation}`
-    try {
-      const host = await nativeImportHost(runner.cwd)
-      const preview = await prepareNativeMcpImport({ host, serverId, owner: { id: ownerId } })
-      pruneNativeImportBindings()
-      nativeImportBindings.set(preview.token, {
-        identity: { runnerId: runner.id, generation: runtime.generation, cwd: runner.cwd, projectId },
-        agent,
-        ownerId,
-        serverId,
-        createdAt: Date.now()
-      })
-      return { ok: true, preview }
-    } catch (error) {
-      return nativeImportErrorResponse(error)
-    }
-  })
-
-  handle('yan:capabilities:commitNativeImport', async (value: unknown) => {
-    const token = typeof value === 'string' ? value.trim() : ''
-    if (!token) return { ok: false, code: 'token_required', error: pick('缺少导入令牌', 'Missing import token') }
-    pruneNativeImportBindings()
-    const binding = nativeImportBindings.get(token)
-    if (!binding) return { ok: false, code: 'token_invalid', error: pick('导入令牌无效或已被使用，请重新预览', 'Import token is invalid or already used; preview again') }
-    const runner = registry()?.activeRunner()
-    const runtime = runner ? registry()?.runtimeOf(runner.id) : null
-    const agent = registry()?.agentOf(binding.identity.runnerId)
-    if (!runner || !runtime || !agent || agent !== binding.agent) {
-      nativeImportBindings.delete(token)
-      return { ok: false, code: 'runner_changed', error: pick('运行实例或项目已切换，导入令牌作废，请重新预览', 'Runtime or project changed; import token expired, preview again') }
-    }
-    const after: NativeMcpImportRuntimeIdentity = {
-      runnerId: runner.id,
-      generation: runtime.generation,
-      cwd: runner.cwd,
-      projectId: agent.capabilityProjectId ?? null
-    }
-    if (!sameNativeMcpImportRuntime(binding.identity, after)) {
-      nativeImportBindings.delete(token)
-      return { ok: false, code: 'runner_changed', error: pick('运行实例或项目已切换，导入令牌作废，请重新预览', 'Runtime or project changed; import token expired, preview again') }
-    }
-    nativeImportBindings.delete(token)
-    try {
-      const host = await nativeImportHost(binding.identity.cwd)
-      const runnerNow = registry()?.activeRunner()
-      const runtimeNow = runnerNow ? registry()?.runtimeOf(runnerNow.id) : null
-      const agentNow = registry()?.agentOf(binding.identity.runnerId)
-      if (!runnerNow || !runtimeNow || !agentNow || agentNow !== binding.agent) {
-        return { ok: false, code: 'runner_changed', error: pick('运行实例或项目已切换，导入令牌作废，请重新预览', 'Runtime or project changed; import token expired, preview again') }
-      }
-      const afterHost: NativeMcpImportRuntimeIdentity = {
-        runnerId: runnerNow.id,
-        generation: runtimeNow.generation,
-        cwd: runnerNow.cwd,
-        projectId: agentNow.capabilityProjectId ?? null
-      }
-      if (!sameNativeMcpImportRuntime(binding.identity, afterHost)) {
-        return { ok: false, code: 'runner_changed', error: pick('运行实例或项目已切换，导入令牌作废，请重新预览', 'Runtime or project changed; import token expired, preview again') }
-      }
-      const result = await commitNativeMcpImport({ host, token, owner: { id: binding.ownerId } })
-      if (result.ok) {
-        try {
-          await registry()?.reloadMcpServers()
-        } catch (error) {
-          return {
-            ok: true,
-            result: {
-              ...result,
-              warnings: [
-                ...result.warnings,
-                pick(`服务已导入原生并停用旧条目，但旧连接刷新失败：${error instanceof Error ? error.message : String(error)}；不会自动重启 runner，需下次实例加载时才生效`, `Service imported to native and the old entry disabled, but refreshing the old connection failed: ${error instanceof Error ? error.message : String(error)}; the runner is not restarted and the change applies on next runtime load`)
-              ]
-            }
-          }
-        }
-      }
-      return { ok: true, result }
-    } catch (error) {
-      return nativeImportErrorResponse(error)
-    }
   })
 }

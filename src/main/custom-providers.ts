@@ -2,7 +2,7 @@ import { pick } from '../shared/ui-lang'
 import { copyFile, mkdir, readdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 import {
   describeDiscoveredModels,
   mergeCustomProviders,

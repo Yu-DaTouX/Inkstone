@@ -55,7 +55,6 @@ export interface SettingsText {
   groupDevicesAccess: string
   groupDataBackup: string
   groupDataStorage: string
-  groupDataSync: string
   groupDataShare: string
   groupUsageBreakdown: string
   groupShortcutsApp: string
@@ -158,7 +157,7 @@ const ZH: SettingsText = {
   sectionCapabilities: '能力',
   sectionSecurity: '权限',
   sectionDevices: '手机与远程',
-  sectionData: '数据与同步',
+  sectionData: '数据',
   sectionUsage: '用量',
   sectionShortcuts: '快捷键',
   sectionAbout: '关于',
@@ -197,7 +196,6 @@ const ZH: SettingsText = {
   groupDevicesAccess: '远程连接',
   groupDataBackup: '备份',
   groupDataStorage: '存储位置',
-  groupDataSync: '同步',
   groupDataShare: '分享',
   groupUsageBreakdown: '明细',
   groupShortcutsApp: '应用快捷键',
@@ -300,7 +298,7 @@ const EN: SettingsText = {
   sectionCapabilities: 'Capabilities',
   sectionSecurity: 'Permissions',
   sectionDevices: 'Phone & remote',
-  sectionData: 'Data & sync',
+  sectionData: 'Data',
   sectionUsage: 'Usage',
   sectionShortcuts: 'Shortcuts',
   sectionAbout: 'About',
@@ -339,7 +337,6 @@ const EN: SettingsText = {
   groupDevicesAccess: 'Remote access',
   groupDataBackup: 'Backup',
   groupDataStorage: 'Storage',
-  groupDataSync: 'Sync',
   groupDataShare: 'Sharing',
   groupUsageBreakdown: 'Breakdown',
   groupShortcutsApp: 'App shortcuts',

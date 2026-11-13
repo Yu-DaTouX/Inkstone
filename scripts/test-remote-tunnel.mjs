@@ -76,13 +76,14 @@ try {
     assert.ok(got.some((e) => e.channel === 'notify'), JSON.stringify(got).slice(0, 200))
   })
 
-  await check('旧版手机明文配对被拒并提示更新；另一台砚（peer）仍可明文配对', async () => {
+  await check('旧版手机明文配对被拒并提示更新；另一台砚（peer）配对已停用', async () => {
     access.startPairing()
     const phone = await plain('/remote/v1/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: '000000', deviceName: '旧手机' }) })
     assert.equal(phone.status, 426)
     assert.equal(phone.json.code, 'tunnel_required')
     const peer = await plain('/remote/v1/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: '000000', deviceName: '另一台', kind: 'peer' }) })
-    assert.notEqual(peer.json.code, 'tunnel_required')
+    assert.equal(peer.status, 403)
+    assert.equal(peer.json.code, 'peer_retired')
     access.cancelPairing()
   })
 

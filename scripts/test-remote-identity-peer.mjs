@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import { WebSocketServer } from 'ws'
 
 const lan = Object.values(networkInterfaces()).flat().find((item) => item && item.family === 'IPv4' && !item.internal)?.address
 if (!lan) {
@@ -14,7 +13,7 @@ if (!lan) {
 }
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-remote-identity-'))
-process.env.YAN_DATA_DIR = join(root, 'peer-data')
+process.env.YAN_DATA_DIR = join(root, 'host-data')
 
 const requireBanner = { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" }
 const electronStub = {
@@ -52,14 +51,7 @@ async function bundle(contents, name, options = {}) {
   return import(pathToFileURL(outfile).href)
 }
 
-const D = await bundle(
-  `export { RemoteAccess } from './src/main/remote-access'
-   export { PeerGrantRegistry } from './src/main/peer-grants'`,
-  'desk',
-  { banner: requireBanner }
-)
-const P = await bundle(`export { PeerClient } from './src/main/peer-client'`, 'peer', { banner: requireBanner })
-const PT = await bundle(`export { PeerTunnel, newPeerTunnelKeys } from './src/main/peer-tunnel'`, 'peertunnel', { banner: requireBanner })
+const D = await bundle(`export { RemoteAccess } from './src/main/remote-access'`, 'desk', { banner: requireBanner })
 const C = await bundle(`export * from './src/main/relay-bridge/crypto'`, 'crypto', { banner: requireBanner })
 const Mobile = await bundle(
   `export * from './src/api/relay'; export * as Client from './src/api/client'; export { pairingPrefillFor, parsePairingLink } from './src/pairLink'`,
@@ -94,58 +86,12 @@ const handlers = {
     return { ok: true, data: { action: command.action } }
   }
 }
-const bundleFile = join(root, 'bundle.bin')
-await writeFile(bundleFile, Buffer.alloc(1024 * 1024, 7))
-const uploads = []
-const collab = {
-  async handle(req, parts) {
-    const path = parts.join('/')
-    if (path.endsWith('/bundle')) return { kind: 'file', path: bundleFile, bytes: 1024 * 1024, filename: 'bundle.bin', done: () => undefined }
-    if (path.endsWith('/push')) {
-      let bytes = 0
-      for await (const chunk of req) bytes += chunk.length
-      uploads.push(bytes)
-      return { kind: 'json', result: { ok: true, data: { bytes } } }
-    }
-    return null
-  }
-}
-const peerHandlers = {
-  async projects() {
-    return [{ id: 'p1', name: '项目一' }]
-  },
-  async sessions() {
-    return [{ id: 's1', projectId: 'p1' }]
-  },
-  async projectOfSession() {
-    return 'p1'
-  },
-  async projectOfRun() {
-    return 'p1'
-  },
-  async exportSession() {
-    return { ok: true, data: { version: 1, source: { sessionId: 's1' }, messages: [], artifacts: [] } }
-  },
-  async startSession(projectId) {
-    return { ok: true, data: { sessionId: 's-new', runId: 'r1', projectId } }
-  },
-  collab
-}
-let grants
-grants = new D.PeerGrantRegistry({
-  ask: (request) => {
-    setTimeout(() => grants.decide({ requestId: request.requestId, approve: true, projectIds: request.projects.map((item) => item.id), operations: request.operations }), 5)
-  },
-  closed: () => undefined,
-  changed: () => undefined
-})
-const access = new D.RemoteAccess(dataDir, handlers, () => undefined, { grants, handlers: peerHandlers })
+const access = new D.RemoteAccess(dataDir, handlers, () => undefined)
 await access.apply({ enabled: true, bind: lan, port: 0 })
 const started = await access.status()
 assert.ok(started.running, started.error ?? 'remote server did not start')
 const base = `http://${lan}:${started.port}`
 const tunnelUrl = `ws://${lan}:${started.port}/remote/v1/tunnel`
-const peer = new P.PeerClient()
 
 async function inviteNow() {
   const response = await fetch(`${base}/remote/v1/tunnel/invite`)
@@ -166,12 +112,6 @@ try {
     assert.equal(seen.fingerprint, identity)
     const info = await new Mobile.Client.RemoteClient(connection).info()
     assert.ok(info.capabilities.includes('sessions'))
-  })
-
-  await check('另一台砚配对不传身份确认回调会被拒绝', async () => {
-    const denied = await peer.pair(`${lan}:${started.port}`, '123456')
-    assert.equal(denied.ok, false)
-    assert.equal(denied.code, 'pair-identity-required')
   })
 
   await check('手输配对不传身份确认回调会直接拒绝', async () => {
@@ -248,62 +188,6 @@ try {
     access.cancelPairing()
   })
 
-  let peerId = null
-  let peerDevice = null
-  await check('另一台砚经加密隧道配对，设备标记 peer + encrypted + 通道客户端', async () => {
-    const identity = await access.hostIdentity()
-    const { code } = access.startPairing()
-    let seen = null
-    const paired = await peer.pair(`${lan}:${started.port}`, code, async (shown) => {
-      seen = shown
-      return true
-    })
-    assert.ok(paired.ok, paired.error)
-    assert.equal(seen?.fingerprint, identity)
-    peerId = paired.data.id
-    const status = await access.status()
-    peerDevice = status.devices.find((item) => item.kind === 'peer')
-    assert.ok(peerDevice, 'peer 设备记录缺失')
-    assert.equal(peerDevice.encrypted, true)
-    const relayClient = (await access.relay.store.list()).find((client) => client.id === peerDevice.tunnelClientId)
-    assert.ok(relayClient, '通道身份缺失')
-    assert.equal(relayClient.kind, 'peer')
-    assert.ok(relayClient.pairedAt, '完成设备配对后通道身份标记为已配对')
-  })
-
-  await check('peer 常规请求全部走加密隧道（禁掉 fetch 仍可用）', async () => {
-    const connected = await peer.connect(peerId, ['read', 'send', 'transfer'], '测试连接')
-    assert.ok(connected.ok, connected.error)
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = () => {
-      throw new Error('peer must not use plain HTTP for regular transport')
-    }
-    try {
-      const sessions = await peer.sessions(peerId)
-      assert.ok(sessions.ok, sessions.error)
-      assert.equal(sessions.data.projects.length, 1)
-      console.log('  · sessions ok')
-      const sent = await peer.send(peerId, 's1', '你好')
-      assert.ok(sent.ok, sent.error)
-      console.log('  · send ok')
-      const downloaded = await peer.download(peerId, '/remote/v1/peer/collab/projects/p1/bundle', {}, join(root, 'fetched.bin'))
-      assert.ok(downloaded.ok, downloaded.error)
-      assert.equal(downloaded.data.kind, 'file')
-      console.log('  · download ok')
-      const fetched = await readFile(join(root, 'fetched.bin'))
-      assert.equal(fetched.length, 1024 * 1024)
-      assert.equal(fetched[0], 7)
-      const uploadFile = join(root, 'push.bin')
-      await writeFile(uploadFile, Buffer.alloc(3 * 1024 * 1024, 9))
-      const uploaded = await peer.upload(peerId, '/remote/v1/peer/collab/projects/p1/push', uploadFile)
-      assert.ok(uploaded.ok, uploaded.error)
-      assert.equal(uploads.at(-1), 3 * 1024 * 1024)
-      console.log('  · upload ok')
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  })
-
   await check('手机自撤销同时清掉它的隧道身份，旧通道身份不能再连', async () => {
     const { code } = access.startPairing()
     const connection = await Mobile.Client.pair(base, code, '自撤销手机', async () => true)
@@ -319,9 +203,8 @@ try {
   await check('先由列表触发过期后，运行清理仍会断开仍在连的未配对隧道', async () => {
     access.startPairing()
     const invite = await inviteNow()
-    const keys = await PT.newPeerTunnelKeys()
-    const tunnel = new PT.PeerTunnel({ url: tunnelUrl, hostKey: invite.hostKey, keys, deviceName: '未配对设备', pairingCode: invite.code })
-    await tunnel.connect()
+    const tunnel = new Mobile.RelayTunnel({ direct: [tunnelUrl], hostKey: invite.hostKey, clientKey: Mobile.newClientKey() }, '未配对设备')
+    await tunnel.connect(invite.code)
     const health = await tunnel.request('GET', '/remote/v1/health')
     assert.equal(health.status, 200)
     const store = access.relay.store
@@ -354,97 +237,6 @@ try {
     assert.equal(result, true, '超大握手帧应被直接断开')
   })
 
-  await check('隧道客户端对超限响应在读取中中止（单帧与分块）', async () => {
-    const hostPair = await C.generateKeyPair()
-    const state = { sent: 0, aborts: 0 }
-    const server = new WebSocketServer({ port: 0 })
-    server.on('connection', (ws) => {
-      const eph = undefined
-      let channel = null
-      const send = (value) => {
-        if (ws.readyState === 1) ws.send(typeof value === 'string' ? value : JSON.stringify(value))
-      }
-      const sealed = async (value) => {
-        if (ws.readyState !== 1 || !channel) return
-        ws.send(await channel.seal(value))
-      }
-      ws.on('message', (data) => {
-        void (async () => {
-          const text = String(data)
-          if (!channel) {
-            const hi = JSON.parse(text)
-            const serverEph = await C.generateKeyPair()
-            channel = await C.serverSession({ serverStatic: hostPair, serverEph, clientStaticRaw: C.fromB64u(hi.c), clientEphRaw: C.fromB64u(hi.e) })
-            send({ t: 'hi', v: 2, e: C.toB64u(serverEph.raw) })
-            return
-          }
-          const msg = await channel.open(text)
-          if (msg.t === 'auth') return sealed({ t: 'welcome', kind: 'peer' })
-          if (msg.t === 'abort') {
-            state.aborts += 1
-            return
-          }
-          if (msg.t !== 'req') return
-          if (msg.path === '/json') {
-            await sealed({ t: 'res', id: msg.id, status: 200, headers: { 'content-type': 'application/json' }, text: 'x'.repeat(1024 * 1024) })
-            return
-          }
-          if (msg.path === '/stream') {
-            await sealed({ t: 'res', id: msg.id, status: 200, headers: { 'content-type': 'application/octet-stream' }, stream: true })
-            while (state.aborts === 0 && state.sent < 500) {
-              state.sent += 1
-              await sealed({ t: 'chunk', id: msg.id, data: Buffer.alloc(64 * 1024, 1).toString('base64') })
-              await new Promise((resolve) => setTimeout(resolve, 2))
-            }
-            return
-          }
-          if (msg.path === '/garbage') return send('x.this-is-not-a-frame')
-          if (msg.path === '/empty') return send('')
-        })().catch(() => undefined)
-      })
-      void eph
-    })
-    await new Promise((resolve) => server.once('listening', resolve))
-    const url = `ws://127.0.0.1:${server.address().port}`
-    const make = async () => new PT.PeerTunnel({ url, hostKey: C.toB64u(hostPair.raw), keys: await PT.newPeerTunnelKeys(), deviceName: '边界测试' })
-    try {
-      const one = await make()
-      await one.connect()
-      await assert.rejects(() => one.request('GET', '/json', { maxBytes: 64 * 1024 }), /超过|more than|too large/)
-      one.close()
-
-      const two = await make()
-      await two.connect()
-      await assert.rejects(() => two.download('/stream', {}, join(root, 'stream.bin'), 256 * 1024), /超过|more than|too large/)
-      const deadline = Date.now() + 2000
-      while (state.aborts === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
-      assert.ok(state.aborts >= 1, '客户端应发出中止')
-      const sentAtStop = state.sent
-      await new Promise((resolve) => setTimeout(resolve, 150))
-      assert.equal(state.sent, sentAtStop, '中止后服务端不应继续被读取')
-      two.close()
-
-      const three = await make()
-      await three.connect()
-      const invalid = await Promise.race([
-        three.request('GET', '/garbage', { timeoutMs: 30_000 }).then(() => 'resolved', (error) => `rejected:${error?.code ?? error?.message}`),
-        new Promise((resolve) => setTimeout(() => resolve('timeout'), 2000))
-      ])
-      assert.equal(invalid, 'rejected:tunnel-protocol')
-      const empty = await Promise.race([
-        make().then(async (tunnel) => {
-          await tunnel.connect()
-          return tunnel.request('GET', '/empty', { timeoutMs: 30_000 }).then(() => 'resolved', (error) => `rejected:${error?.code ?? error?.message}`)
-        }),
-        new Promise((resolve) => setTimeout(() => resolve('timeout'), 2000))
-      ])
-      assert.equal(empty, 'rejected:tunnel-protocol')
-    } finally {
-      for (const client of server.clients) client.terminate()
-      await new Promise((resolve) => server.close(resolve))
-    }
-  })
-
   await check('远程选择会话不切换到电脑的活动实例', async () => {
     const remoteHost = await bundle(
       `export { configureRemoteHost, remoteSelectSession, remoteAnswer } from './src/main/remote-host'`,
@@ -462,8 +254,6 @@ try {
                 './title': 'export const setManualTitle = async () => ({ ok: true }); export const manualTitles = async () => ({}); export const cachedTitles = async () => ({})',
                 './settings': 'export const getSettings = async () => globalThis.__remoteHostFixture.settings',
                 './sessions': 'export const listSessions = async () => globalThis.__remoteHostFixture.sessions.map((item) => ({ ...item })); export const deleteSession = async () => undefined; export const restoreSession = async () => undefined; export const sessionsToDelete = async () => []; export const SESSIONS_DIR = ""',
-                './peer-grants': 'export class PeerGrantRegistry {}',
-                './peer-client': 'export class PeerClient {}',
                 './paths': 'export const YAN_DIR = "/fixture"'
               }
               b.onResolve({ filter: /.*/ }, (args) => (Object.hasOwn(stubs, args.path) ? { path: args.path, namespace: 'fixture' } : undefined))
@@ -569,14 +359,13 @@ try {
     assert.equal(status.relay.clients.length, 0)
     Mobile.RelayTunnel.for(connection.relay).close()
     await assert.rejects(() => Mobile.RelayTunnel.for(connection.relay).connect(), /撤销|revoke|配对|pair|断开|closed/)
-    const stale = new PT.PeerTunnel({ url: tunnelUrl, hostKey: oldHostKey, keys: await PT.newPeerTunnelKeys(), deviceName: '旧主机密钥' })
+    const stale = new Mobile.RelayTunnel({ direct: [tunnelUrl], hostKey: oldHostKey, clientKey: Mobile.newClientKey() }, '旧主机密钥')
     await assert.rejects(() => stale.connect(), /断开|closed|拒绝|refused|denied/)
   })
 } finally {
-  peer.closeAll()
   await access.stop().catch(() => undefined)
 }
 
-if (failures) console.log(`\n✖ 身份与协作传输检查：${failures} / ${checks} 项失败`)
-else console.log(`\n身份与协作传输检查全部通过（${checks} 项）。`)
+if (failures) console.log(`\n✖ 身份与隧道检查：${failures} / ${checks} 项失败`)
+else console.log(`\n身份与隧道检查全部通过（${checks} 项）。`)
 process.stdout.write('', () => process.exit(failures ? 1 : 0))

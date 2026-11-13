@@ -20,8 +20,6 @@ const stubModules = {
   './settings': 'export const getSettings = (...args) => globalThis.__rh.getSettings(...args)',
   './sessions': 'export const listSessions = (...args) => globalThis.__rh.listSessions(...args); export const deleteSession = async (file) => { globalThis.__rh.deleted.push(file); return "tok" }; export const restoreSession = async () => undefined; export const sessionsToDelete = async () => []; export const SESSIONS_DIR = ""',
   './session-search': 'export const searchSessionText = (...args) => globalThis.__rh.search(...args)',
-  './peer-grants': 'export class PeerGrantRegistry { constructor() {} }',
-  './peer-client': 'export class PeerClient { constructor() {} }',
   './paths': `export const YAN_DIR = ${JSON.stringify(join(scratch, 'yan'))}`
 }
 const stubPlugin = {

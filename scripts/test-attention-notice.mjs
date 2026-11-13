@@ -64,9 +64,6 @@ try {
   assert.deepEqual(notices.terminalNoticeText('en', 'permission', ''), { title: 'Terminal needs approval', body: 'Switch to the terminal to continue' }, '审批类终端通知跟随英文界面')
   assert.equal(notices.terminalNoticeText('zh', undefined, 'npm login').title, '终端在等你')
   assert.equal(notices.terminalNoticeText('zh', 'auth', 'npm login').body, 'npm login')
-  const collab = notices.collabNoticeText('en', '砚 · 另一台电脑', 'Fix', 'feat/x')
-  assert.equal(collab.title, 'Collaboration · Merge request')
-  assert.equal(collab.body, '另一台电脑: Fix (feat/x)', '对端名去掉产品前缀')
   console.log('attention-notice: 同会话替换、静音、点击直达与中英文案通过')
 } finally {
   await rm(root, { recursive: true, force: true })

@@ -56,23 +56,6 @@ try {
   assert.equal(readdirSync(relayDir).filter((name) => name.endsWith('.corrupt')).length, 1)
   console.log('✓ 中继存储损坏时只留一份备份')
 
-  const { YAN_DIR } = await bundle('src/main/paths.ts', 'paths')
-  const { PeerClient } = await bundle('src/main/peer-client.ts', 'peer-client')
-  mkdirSync(YAN_DIR, { recursive: true })
-  const peersFile = join(YAN_DIR, 'peers.json')
-  mkdirSync(peersFile)
-  const peerClient = new PeerClient()
-  await peerClient.status().then(() => assert.fail('读取出错不该当成空表'), (error) => assert.notEqual(error.code, 'ERR_ASSERTION'))
-  rmSync(peersFile, { recursive: true })
-  const stored = { version: 1, peers: [{ id: 'p1', computer: 'pc', address: 'http://x', token: 't', pairedAt: 1 }] }
-  writeFileSync(peersFile, JSON.stringify(stored))
-  assert.equal((await peerClient.status()).peers.length, 1)
-  console.log('✓ peers.json 读取出错时不当成空表，恢复后能读到原配对')
-  writeFileSync(peersFile, '{broken')
-  assert.equal((await new PeerClient().status()).peers.length, 0)
-  assert.equal(readdirSync(YAN_DIR).filter((name) => name.startsWith('peers.json.') && name.endsWith('.corrupt')).length, 1)
-  console.log('✓ peers.json 真正损坏时留备份后按空表启动')
-
   const { createDataBackup } = await bundle('src/main/data-backup.ts', 'data-backup')
   const sessions = join(root, 'data-sessions')
   const yan = join(root, 'data-yan')

@@ -1135,17 +1135,6 @@ export class RunnerRegistry {
     }))
   }
 
-  mcpRuntimeEpoch(): string {
-    return this.mcpHolderSnapshots()
-      .map(
-        (snapshot) =>
-          `${snapshot.runnerId}#${snapshot.generation}#${snapshot.projectId ?? '-'}#${snapshot.conn}#${
-            snapshot.processRunning ? 1 : 0
-          }`
-      )
-      .join('|')
-  }
-
   get size(): number {
     return this.runners.size
   }

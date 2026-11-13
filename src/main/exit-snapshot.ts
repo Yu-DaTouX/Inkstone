@@ -2,7 +2,7 @@ import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunnerStatus } from '../shared/ipc'
 import { YAN_DIR } from './paths'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 
 export const EXIT_SNAPSHOT_FILE = join(YAN_DIR, 'exit-snapshot.json')
 

@@ -109,8 +109,7 @@ export class RunnerMcpConnections {
         ...(endpointOrigin ? { endpointOrigin } : {}),
         status: manager.statusOf(server.id).status,
         toolCount: manager.toolCountOf(server.id),
-        ownedBy: 'pi',
-        ...(server.migratedToNative ? { migratedToNative: server.migratedToNative } : {})
+        ownedBy: 'pi'
       })
     }
     for (const config of managedConfigs) {

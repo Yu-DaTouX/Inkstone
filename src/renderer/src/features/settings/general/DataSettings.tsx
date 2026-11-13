@@ -10,8 +10,6 @@ import { bytesText } from './general-model'
 import { SettingsAdvanced, SettingsGroup, SettingsRow } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { PiShareDestinationGroup } from './PiNativeSettings'
-import { SyncConflictsGroup, SyncGroup, fillTemplate, useSyncPanel } from '../sync/SyncSettings'
-import { syncNoteText, syncText } from '../sync/text'
 import './devices-data.css'
 
 export interface StorageFactsProps {
@@ -149,9 +147,6 @@ export function DataSettings(): ReactElement {
   const text = generalText(lang)
   const labels = settingsText(lang)
   const local = devicesDataText(lang)
-  const sync = syncText(lang)
-  const panel = useSyncPanel()
-  const bridge = panel.bridge
   const session = useStore((s) => s.session)
   const [info, setInfo] = useState<StorageInfoView | null>(null)
   const [target, setTarget] = useState<string | null>(null)
@@ -226,9 +221,9 @@ export function DataSettings(): ReactElement {
     setMessage(null)
     try {
       const path = session?.conversationFile ?? session?.sessionFile
-      const result = await window.yan.sync.exportSession(path)
-      if (result.ok && result.path) setMessage({ scope: 'session', tone: 'info', text: fillTemplate(sync.exportDone, { path: result.path }) })
-      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: syncNoteText(sync, result.error) || sync.syncFailed })
+      const result = await window.yan.sessionTransfer.exportSession(path)
+      if (result.ok && result.path) setMessage({ scope: 'session', tone: 'info', text: local.exportDone.replace('{path}', result.path) })
+      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: result.error || local.transferFailed })
     } catch (cause) {
       setMessage({ scope: 'session', tone: 'fail', text: describe(cause) })
     } finally {
@@ -237,13 +232,12 @@ export function DataSettings(): ReactElement {
   }
 
   const importSession = async (): Promise<void> => {
-    if (!bridge) return
     setBusy('import')
     setMessage(null)
     try {
-      const result = await bridge.importSession()
-      if (result.ok && result.sessionId) setMessage({ scope: 'session', tone: 'info', text: fillTemplate(sync.importDone, { id: result.sessionId }) })
-      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: syncNoteText(sync, result.error) || sync.syncFailed })
+      const result = await window.yan.sessionTransfer.importSession()
+      if (result.ok && result.sessionId) setMessage({ scope: 'session', tone: 'info', text: local.importDone.replace('{id}', result.sessionId) })
+      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: result.error || local.transferFailed })
     } catch (cause) {
       setMessage({ scope: 'session', tone: 'fail', text: describe(cause) })
     } finally {
@@ -327,10 +321,6 @@ export function DataSettings(): ReactElement {
         <DataMessageLine message={message} scope="restore" />
       </SettingsGroup>
 
-      <SyncGroup panel={panel} title={labels.groupDataSync} />
-
-      <SyncConflictsGroup panel={panel} />
-
       <SettingsAdvanced label={labels.advanced} testId="v3-data-advanced">
         <SettingsGroup title={labels.groupDataStorage}>
           <SettingsRow
@@ -388,23 +378,21 @@ export function DataSettings(): ReactElement {
         </SettingsGroup>
 
         <SettingsGroup title={local.sessionTransfer}>
-          <SettingsRow settingId="data-session-export" label={sync.exportSession} description={local.dataExportDesc}>
+          <SettingsRow settingId="data-session-export" label={local.exportSession} description={local.dataExportDesc}>
             <Button
               variant="secondary"
               isDisabled={busy !== null || !session?.sessionId}
               data-testid="v3-data-export"
               onPress={() => void exportSession()}
             >
-              {busy === 'session' ? sync.exporting : text.dataSessionExportAction}
+              {busy === 'session' ? local.exporting : text.dataSessionExportAction}
             </Button>
           </SettingsRow>
-          {bridge ? (
-            <SettingsRow settingId="data-session-import" label={sync.importSession} description={local.dataImportDesc}>
-              <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-import" onPress={() => void importSession()}>
-                {busy === 'import' ? sync.importing : text.dataSessionImportAction}
-              </Button>
-            </SettingsRow>
-          ) : null}
+          <SettingsRow settingId="data-session-import" label={local.importSession} description={local.dataImportDesc}>
+            <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-import" onPress={() => void importSession()}>
+              {busy === 'import' ? local.importing : text.dataSessionImportAction}
+            </Button>
+          </SettingsRow>
           <DataMessageLine message={message} scope="session" />
         </SettingsGroup>
 

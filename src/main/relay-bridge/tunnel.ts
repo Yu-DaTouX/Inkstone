@@ -1,9 +1,7 @@
 import { request as httpRequest, type ClientRequest } from 'node:http'
 import { StringDecoder } from 'node:string_decoder'
-import { COLLAB_BUNDLE_MAX_BYTES } from '../../shared/collab'
 import { fromB64u, generateKeyPair, RELAY_PROTOCOL_VERSION, serverSession, toB64u, type KeyPair, type SecureChannel } from './crypto'
 import type { RelayClient, RelayClientKind } from './store'
-import { PEER_CONNECTION_HEADER } from '../../shared/peer-protocol'
 import { REMOTE_IDEMPOTENCY_HEADER, REMOTE_MESSAGE_MAX_BYTES } from '../../shared/remote-protocol'
 import { pick } from '../../shared/ui-lang'
 
@@ -47,7 +45,7 @@ const STREAM_BACKLOG_BYTES = 12 * 1024 * 1024
 const INBOUND_HIGH_BYTES = 8 * 1024 * 1024
 const INBOUND_LOW_BYTES = 2 * 1024 * 1024
 const DRAIN_POLL_MS = 20
-const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, PEER_CONNECTION_HEADER, 'last-event-id', 'accept']
+const FORWARD_HEADERS = ['authorization', 'content-type', 'x-yan-remote-token', REMOTE_IDEMPOTENCY_HEADER, 'last-event-id', 'accept']
 const AGENT_PATHS = new Set(['/remote/v1/health', '/remote/v1/info', '/remote/v1/pair'])
 const TEXT_PROTOCOL = 2
 
@@ -59,18 +57,13 @@ function textual(contentType: string | undefined): boolean {
 const STREAM_BROKEN = (): string => pick('电脑上的事件流异常断开', 'The event stream on the computer was interrupted')
 const BODY_BROKEN = (): string => pick('电脑上的响应传输中断', 'The response transfer from the computer was interrupted')
 
-type Pending = { req: ClientRequest; stream: boolean; finish?(error?: string): void; upload?: { limit: number; received: number } }
+type Pending = { req: ClientRequest; stream: boolean; finish?(error?: string): void }
 
-const UPLOAD_CHUNK_MAX = 2 * 1024 * 1024
 const HANDSHAKE_FRAME_MAX = 4096
 export const SEALED_FRAME_MAX = 24 * 1024 * 1024
 
 function declaredKind(value: unknown): RelayClientKind | undefined {
   return value === 'phone' || value === 'peer' || value === 'agent' ? value : undefined
-}
-
-function uploadLimit(path: string): number | null {
-  return path.startsWith('/remote/v1/peer/collab/') ? COLLAB_BUNDLE_MAX_BYTES : null
 }
 
 export class TunnelSession {
@@ -214,43 +207,6 @@ export class TunnelSession {
       return
     }
     if (msg.t === 'req') return void this.request(msg)
-    if (msg.t === 'up') return this.uploadChunk(msg)
-    if (msg.t === 'up-end' && typeof msg.id === 'string') {
-      const pending = this.pending.get(msg.id)
-      if (!pending?.upload) return
-      pending.upload = undefined
-      pending.req.end()
-    }
-  }
-
-  private async uploadChunk(msg: Record<string, unknown>): Promise<void> {
-    const id = typeof msg.id === 'string' ? msg.id : ''
-    const pending = this.pending.get(id)
-    if (!pending?.upload) return
-    const raw = typeof msg.text === 'string' ? Buffer.from(msg.text, 'utf8')
-      : typeof msg.data === 'string' ? Buffer.from(msg.data, 'base64') : Buffer.alloc(0)
-    if (!raw.length) return
-    if (raw.length > UPLOAD_CHUNK_MAX) {
-      this.pending.delete(id)
-      pending.req.destroy()
-      return this.fail(id, 413, pick('上传分片太大', 'Upload chunk too large'))
-    }
-    pending.upload.received += raw.length
-    if (pending.upload.received > pending.upload.limit) {
-      this.pending.delete(id)
-      pending.req.destroy()
-      return this.fail(id, 413, pick('上传超过大小限制', 'Upload is over the size limit'))
-    }
-    if (pending.req.write(raw)) return
-    await new Promise<void>((resolve) => {
-      const done = (): void => {
-        pending.req.off('drain', done)
-        pending.req.off('close', done)
-        resolve()
-      }
-      pending.req.on('drain', done)
-      pending.req.on('close', done)
-    })
   }
 
   private fail(id: string, status: number, error: string): void {
@@ -275,9 +231,7 @@ export class TunnelSession {
     }
     const kind = this.client?.kind ?? 'phone'
     if (kind === 'agent' && !AGENT_PATHS.has(url.pathname)) return this.fail(id, 403, pick('Agent Hub 已退役，礁石不能再使用远程接口', 'Agent Hub is retired; the remote API is no longer available'))
-    const uploadStream = msg.stream === 'in'
-    const uploadMax = uploadStream ? uploadLimit(url.pathname) : null
-    if (uploadStream && uploadMax === null) return this.fail(id, 400, pick('这个请求不支持流式上传', 'This request does not accept a streamed upload'))
+    if (msg.stream === 'in') return this.fail(id, 400, pick('这个请求不支持流式上传', 'This request does not accept a streamed upload'))
     if (this.pending.size >= MAX_REQUESTS) return this.fail(id, 429, pick('同时进行的请求太多', 'Too many concurrent requests'))
     const target = this.hooks.target()
     if (!target) return this.fail(id, 503, pick('电脑上的远程服务没有运行', 'The remote service on the computer is not running'))
@@ -311,10 +265,6 @@ export class TunnelSession {
     headers['x-yan-relay-kind'] = kind
     if (this.client) headers['x-yan-relay-client'] = this.client.id
     if (payload.length) headers['content-length'] = String(payload.length)
-    if (uploadStream && uploadMax !== null) {
-      const declared = Number(given['content-length'])
-      if (Number.isFinite(declared) && declared >= 0 && declared <= uploadMax) headers['content-length'] = String(declared)
-    }
 
     const req = httpRequest({ host: target.host, port: target.port, method, path: `${url.pathname}${url.search}`, headers, timeout: REQUEST_TIMEOUT_MS }, (res) => {
       const entry = this.pending.get(id)
@@ -476,8 +426,7 @@ export class TunnelSession {
       this.pending.delete(id)
       this.fail(id, 502, pick('电脑上的远程服务没有响应', 'The remote service on the computer is not responding'))
     })
-    this.pending.set(id, { req, stream: false, ...(uploadStream && uploadMax !== null ? { upload: { limit: uploadMax, received: 0 } } : {}) })
-    if (uploadStream) return
+    this.pending.set(id, { req, stream: false })
     req.end(payload)
   }
 }

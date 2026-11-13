@@ -12,10 +12,9 @@ import { RemoteDeviceStore } from './remote-devices'
 import { randomBytes } from 'node:crypto'
 import { RelayBridge } from './relay-bridge'
 import { DirectTunnelEndpoint } from './relay-bridge/direct'
-import { REMOTE_TUNNEL_PATH, RemoteServer, type PeerHostHandlers, type RemoteServerHandlers } from './remote-server'
+import { REMOTE_TUNNEL_PATH, RemoteServer, type RemoteServerHandlers } from './remote-server'
 import { RemotePushCoalescer } from './remote-push-coalesce'
 import { remotePushPayload } from './remote-host'
-import type { PeerGrantRegistry } from './peer-grants'
 
 type AddressKind = RemoteAccessStatus['addresses'][number]['kind']
 
@@ -90,8 +89,7 @@ export class RemoteAccess {
   constructor(
     dataDir: string,
     private readonly handlers: RemoteServerHandlers,
-    private readonly log: (text: string, level?: 'info' | 'error') => void = () => undefined,
-    private readonly peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
+    private readonly log: (text: string, level?: 'info' | 'error') => void = () => undefined
   ) {
     this.devices = new RemoteDeviceStore(dataDir)
     this.outgoing = new RemotePushCoalescer((message) => this.deliver(message))
@@ -151,7 +149,6 @@ export class RemoteAccess {
       token: env?.token,
       devices: this.devices,
       handlers: this.handlers,
-      ...(this.peers ? { peers: this.peers } : {}),
       tunnel: {
         upgrade: (req, socket, head) => this.direct.upgrade(req, socket, head),
         invite: () => this.relay.invite(),
@@ -182,7 +179,6 @@ export class RemoteAccess {
           devices: this.devices,
           handlers: this.handlers,
           relayToken: this.relayToken,
-          ...(this.peers ? { peers: this.peers } : {}),
           relayClientPaired: (clientId) => this.relay.store.markPaired(clientId).then(() => undefined),
           relayClientRevoked: (clientId) => this.relay.revoke(clientId).then(() => undefined),
           onLog: this.log
@@ -226,13 +222,7 @@ export class RemoteAccess {
   private async stopServer(): Promise<void> {
     const server = this.server
     this.server = null
-    this.peers?.grants.revokeAll()
     if (server) await server.stop().catch(() => undefined)
-  }
-
-  disconnectConnection(connectionId: string): void {
-    this.server?.disconnectConnection(connectionId)
-    this.relayServer?.disconnectConnection(connectionId)
   }
 
   async stop(): Promise<void> {
@@ -298,7 +288,6 @@ export class RemoteAccess {
       if (device.revokedAt !== null) continue
       if (await this.devices.revoke(device.id)) revokedDevices += 1
     }
-    this.peers?.grants.revokeAll()
     this.server?.disconnectAll()
     this.relayServer?.disconnectAll()
     const hostFingerprint = await this.relay.resetIdentity()
@@ -317,7 +306,6 @@ export class RemoteAccess {
       addresses: candidateAddresses(),
       pairing: this.devices.currentPairing(),
       devices: await this.devices.list(),
-      grants: this.peers?.grants.list() ?? [],
       error: this.lastError,
       relay: {
         ...(await this.relay.status()),

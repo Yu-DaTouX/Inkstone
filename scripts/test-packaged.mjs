@@ -363,7 +363,6 @@ if (!exeFromArg) {
     const asar = readFileSync(asarPath)
     for (const [needle, label] of [
       ['session-chains.json', '会话链文件名'],
-      ['worktree-links.json', '工作树来源关系表（实施-07 S2a）'],
       ['/remote/v1/health', '远程管理路由（实施-08 第一阶段）']
     ]) {
       runChecks.push([asar.includes(needle), `包内含 ${label}（${needle}）`])

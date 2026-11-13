@@ -62,6 +62,7 @@ export interface CapabilityServerOptions {
   opsDir: string
   allowCommands?: string[]
   onlyCommands?: string[]
+  toolBacked?: Record<string, string>
   preserveResult?: (command: string, operationId: string, data: unknown) => void
 }
 
@@ -161,6 +162,11 @@ export const KNOWN_COMMANDS = new Set([
   'search.doctor'
 ])
 
+function isToolCall(params: Record<string, unknown>): boolean {
+  const call = params.toolCall
+  return !!call && typeof call === 'object' && typeof (call as { id?: unknown }).id === 'string' && (call as { id: string }).id !== ''
+}
+
 function shapeOf(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) {
     return {
@@ -221,6 +227,7 @@ export class CapabilityServer {
   private readonly preserveResult?: (command: string, operationId: string, data: unknown) => void
   private readonly handlers: CapabilityHandlers
   private readonly allowCommands: Set<string>
+  private readonly toolBacked: Record<string, string>
   private lastPruneAt = 0
   private writesSincePrune = 0
 
@@ -228,6 +235,7 @@ export class CapabilityServer {
     this.opsDir = opts.opsDir
     this.preserveResult = opts.preserveResult
     this.handlers = opts.handlers ?? NOT_IMPLEMENTED
+    this.toolBacked = opts.toolBacked ?? {}
     this.allowCommands = new Set(opts.onlyCommands ?? [...KNOWN_COMMANDS, ...(opts.allowCommands ?? [])])
   }
 
@@ -397,6 +405,12 @@ export class CapabilityServer {
       body.params && typeof body.params === 'object'
         ? (body.params as Record<string, unknown>)
         : {}
+
+    const toolHint = this.toolBacked[command]
+    if (toolHint && !isToolCall(params)) {
+      reply(400, { ok: false, error: 'unknown_command', code: 'command_use_tool', detail: command, hint: toolHint })
+      return
+    }
 
     const opId = randomUUID()
     try {

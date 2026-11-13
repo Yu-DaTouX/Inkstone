@@ -64,16 +64,7 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     tab: 'mcp',
     zh: '砚连接的旧服务',
     en: 'Legacy Inkstone servers',
-    keywords: ['导入到 pi', 'import to pi', '迁移', 'migration'],
-    more: true
-  },
-  {
-    id: 'caps-mcp-ownership',
-    section: 'capabilities',
-    tab: 'mcp',
-    zh: '归属与迁移',
-    en: 'Ownership & migration',
-    keywords: ['切换到 pi', '切换到砚', 'switch', 'ownership'],
+    keywords: ['mcp-servers.json', 'legacy'],
     more: true
   },
   {

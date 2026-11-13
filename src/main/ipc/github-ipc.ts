@@ -7,12 +7,9 @@ import { githubPrBackend } from '../github/actions'
 import { readPrCreateDefaults } from '../github/defaults'
 import { prFailure } from '../github/command'
 import { cancelClone, cloneRepository, createLocalProject, defaultCloneDir, ghBranchesAndPulls, listGithubRepos, readGithubAccount, searchGithubRepos } from '../github/repos'
-import { publishPeerBranch } from '../collab/github-publish'
-import { repoRootOf, resolveCommit } from '../collab/git'
-import { gitRun } from '../git-service'
 import { getSettings, patchSettings } from '../settings'
 import { trustStatus } from '../project-trust'
-import type { GhPrCreateDefaultsResult, GhPrActionRequest, GhPrActionResult, GhPrCandidatesRequest, GhPrCandidatesResult, GhPrDetailResult, GhPrDiffResult, GhPrListOptions, GhPrListResult, GhPrListState, GithubStatus, GithubAccountStatus, GithubBranchListResult, GithubCloneProgress, GithubCloneRequest, GithubCloneResult, GithubCreateProjectResult, GithubRepoListRequest, GithubRepoListResult, GithubPeerPublishRequest } from '../../shared/github'
+import type { GhPrCreateDefaultsResult, GhPrActionRequest, GhPrActionResult, GhPrCandidatesRequest, GhPrCandidatesResult, GhPrDetailResult, GhPrDiffResult, GhPrListOptions, GhPrListResult, GhPrListState, GithubStatus, GithubAccountStatus, GithubBranchListResult, GithubCloneProgress, GithubCloneRequest, GithubCloneResult, GithubCreateProjectResult, GithubRepoListRequest, GithubRepoListResult } from '../../shared/github'
 
 export interface GithubIpcDeps {
   authorizeReadCwd: AuthorizeReadCwd
@@ -112,26 +109,6 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
       return await createLocalProject(name, await cloneParent(parentDir), { addProject })
     } catch (error) {
       return { ok: false, error: message(error) }
-    }
-  })
-
-  handle('yan:github:publishPeerBranch', async (cwd: string, request: GithubPeerPublishRequest): Promise<GhPrActionResult> => {
-    try {
-      const auth = await authorizeReadCwd(String(cwd ?? ''))
-      if (!auth.ok) return { ok: false, failure: prFailure('cwd-rejected', pick('此项目目录未获授权', 'This project folder is not authorized')) }
-      const root = await repoRootOf(auth.cwd)
-      if (!root) return { ok: false, failure: prFailure('invalid-input', pick('此项目不是 git 仓库', 'This project is not a git repository')) }
-      return await publishPeerBranch(request, {
-        login: async () => (await readGithubAccount()).login ?? null,
-        resolve: (ref) => resolveCommit(root, ref),
-        push: async (trackingRef, branch, remote) => {
-          const pushed = await gitRun(root, ['push', '--', remote, `${trackingRef}:refs/heads/${branch}`], { allowFailure: true, timeout: 120_000 })
-          return { ok: pushed.ok, error: pushed.ok ? undefined : (pushed.error ?? pushed.stderr ?? '').trim().split(/\r?\n/).pop() }
-        },
-        createPr: (input) => githubPrBackend.action(auth.cwd, { kind: 'create', ...input })
-      })
-    } catch {
-      return { ok: false, failure: prFailure('other', pick('发布到 GitHub 未得到确认，请刷新确认', 'Publishing to GitHub was not confirmed. Refresh to check'), false) }
     }
   })
 

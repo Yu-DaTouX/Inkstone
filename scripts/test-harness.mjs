@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
-import { discoverTests, selectTests, executionPlan, excludedScripts } from './lib/test-catalog.mjs'
+import { discoverTests, selectTests, executionPlan, excludedScripts, serialScripts } from './lib/test-catalog.mjs'
 import { legacyScripts } from './lib/test-legacy-scripts.mjs'
 import { createTestSandbox } from './lib/test-env.mjs'
 import { runTestProcess, runTestPool } from './lib/test-process.mjs'
@@ -40,9 +40,16 @@ await runSuite(import.meta.url, async (ok) => {
     const plan = executionPlan(catalog, false)
     ok(plan.legacy && plan.parallel.length > 0, '完整入口保留一次兼容套件')
     ok(!plan.parallel.some((name) => legacyScripts.has(name) || Object.hasOwn(excludedScripts, name)), '完整扫描不重复运行兼容项和有门槛的测试')
+    ok(plan.serial.length > 0 && plan.serial.every((name) => Object.hasOwn(serialScripts, name) && !plan.parallel.includes(name)), '串行名单里的独立脚本只进串行道，不进并行池')
+    ok(!plan.serial.some((name) => legacyScripts.has(name) || Object.hasOwn(excludedScripts, name)), '串行道不含兼容项和有门槛的测试')
+    ok(catalog.filter((test) => test.serial).every((test) => Object.hasOwn(serialScripts, test.name)) && catalog.some((test) => test.serial && test.kind === 'standalone'), '目录标出串行脚本')
+    const timing = executionPlan(selectTests(catalog, ['stream-loop-detector']), true)
+    ok(timing.parallel.length === 0 && timing.serial.join() === 'test-stream-loop-detector' && !timing.legacy, '定向运行串行脚本只走串行道')
+    assert.throws(() => executionPlan([], true), /没有可运行/)
+    ok(Object.keys(serialScripts).every((name) => catalog.some((test) => test.name === name)), '串行名单都指向存在的测试')
     const source = await readFile('scripts/test-unit-legacy.mjs', 'utf8')
     const referenced = new Set([...source.matchAll(/\.\/(test-[a-z0-9-]+)\.mjs/g)].map((match) => match[1]))
-    const inProcess = source.match(/const inProcessScripts = \[([\s\S]*?)\n\]/)?.[1]
+    const inProcess = source.match(/const inProcessScripts = \[([\s\S]*?)\]/)?.[1]
     assert.ok(inProcess)
     for (const match of inProcess.matchAll(/'(test-[a-z0-9-]+)'/g)) referenced.add(match[1])
     assert.deepEqual([...referenced].sort(), [...legacyScripts].sort())

@@ -6,10 +6,8 @@ import type { CapabilityMcpServerSettingView, CapabilitySettingsSnapshot, Capabi
 import { Badge, Button } from '../../../ui'
 import { useCapsText } from './text'
 import { Entry, Group, Meta, Panel, StatusBadge, Warn } from './parts'
-import { WINDOWS_MCP_SERVER_ID, canImportMcp, verificationTone } from './model'
-import { McpAppOwnership } from './McpAppOwnership'
+import { WINDOWS_MCP_SERVER_ID, verificationTone } from './model'
 import { McpAppRefresh } from './McpAppRefresh'
-import { McpImportControl } from './McpImportControl'
 import { McpServices } from './McpServices'
 
 type NativeMcpAction = 'login' | 'logout' | 'reconnect'
@@ -32,14 +30,13 @@ function McpAdvancedSettings(): ReactElement {
   }, [])
   useEffect(() => { mounted.current = true; void refresh(); return () => { mounted.current = false } }, [refresh, sessionId])
   const commands = useNativeMcpCommands(snapshot?.nativeMcpAvailable === true)
-  const legacy = snapshot?.servers.filter((server) => server.id !== WINDOWS_MCP_SERVER_ID && !server.migratedToNative) ?? []
+  const legacy = snapshot?.servers.filter((server) => server.id !== WINDOWS_MCP_SERVER_ID) ?? []
   return <Panel label={text('mcpLegacyTitle')}>
     {error ? <Warn>{error}</Warn> : null}
     {legacy.length ? <Group title={text('mcpLegacyTitle')} desc={text('mcpLegacyDesc')}>
       {legacy.map((server) => <McpServerRow key={server.id} server={server} onChanged={refresh} />)}
     </Group> : null}
     <NativeMcpStatusControl commands={commands} ready={snapshot !== null} />
-    <McpAppOwnership />
     <McpAppRefresh />
   </Panel>
 }
@@ -105,14 +102,12 @@ function McpServerRow({
   }
 
   const connecting = operation?.state === 'connecting'
-  const imported = server?.migratedToNative
 
   const metaParts = [
     direct ? text('mcpDirectBadge') : null,
     server ? t(`cap.status.${server.status}` as 'cap.status.ready') : text('mcpDirectOff'),
     server?.projectScoped ? t('cap.projectScoped') : null,
     server && !server.enabled ? t('cap.disabled') : null,
-    imported ? t('cap.importMigratedBadge') : null,
     server?.endpointOrigin,
     server ? t(`cap.effect.${server.effect}` as 'cap.effect.unknown') : null,
     server && server.toolCount !== null ? t('cap.toolCount', { count: server.toolCount }) : null,
@@ -152,14 +147,6 @@ function McpServerRow({
           <StatusBadge tone={verificationTone(operation.state)}>{t(`cap.operation.${operation.state}` as 'cap.operation.ready')}</StatusBadge>
           {operation.toolCount !== undefined ? <span> · {t('cap.toolCount', { count: operation.toolCount })}</span> : null}
         </p>
-      ) : null}
-
-      {imported ? (
-        <div className="caps-import" data-testid="caps-mcp-migrated">
-          <Meta>{t('cap.importMigratedNotice')}</Meta>
-        </div>
-      ) : server && !direct && canImportMcp(server) ? (
-        <McpImportControl server={server} onChanged={onChanged} />
       ) : null}
     </Entry>
   )

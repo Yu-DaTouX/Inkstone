@@ -85,7 +85,6 @@ import { registerGithubIpc } from './ipc/github-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
 import { preserveSearchOp, registerSearchOpsIpc } from './ipc/search-ops-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
-import { registerMcpAppIpc } from './ipc/mcp-app-ipc'
 import { registerMcpAppViewIpc } from './ipc/mcp-app-view-ipc'
 import { McpAppViewService, createMcpAppViewRuntime, type McpAppViewRunnerFacts } from './mcp/app-view-service'
 import { McpAppViewAuditStore } from './mcp/app-view-audit'
@@ -100,13 +99,11 @@ import { BundledPlugins } from './bundled-plugins'
 import { completePluginText } from './plugin-completion'
 import { configurePluginCommands } from './plugin-commands'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
-import { SyncService } from './sync'
 import { isSessionFileInSessionsDir, onSessionPurged, SESSIONS_DIR } from './sessions'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
 import { registerRunsIpc } from './ipc/runs-ipc'
-import { registerSyncIpc } from './ipc/sync-ipc'
-import type { SyncImportConfirm } from './sync/local-store'
+import { registerSessionTransferIpc } from './ipc/session-transfer-ipc'
 import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
 import { registerCanvasCaptureIpc } from './ipc/canvas-capture-ipc'
 import { registerHtmlEditIpc } from './ipc/html-edit-ipc'
@@ -121,7 +118,6 @@ import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { lockDataRoot } from '../core/data-root-lock'
 import { executionBusy, sameRuntimeEnvelope } from '../core/run-state'
 import { isWithin } from './file-path-gate'
-import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { SubagentService } from './subagent-service'
 import { LookupCommands } from './lookup-commands'
 import { resolveSubagentModelPick } from './subagents/model-label'
@@ -135,17 +131,14 @@ import { switchToSpareAccount } from './account-autoswitch'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, DANGER_CONFIRM_TIMEOUT_MS, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
-import { configureRemoteHost, cwdWithin, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, remoteInsight, remoteStopSubagent, remoteSetSessionFlag, remoteDeleteSession, remoteCompact, remoteBranches, remoteSwitchBranch, remoteSearch, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
+import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, remoteSubagents, remoteInsight, remoteStopSubagent, remoteSetSessionFlag, remoteDeleteSession, remoteCompact, remoteBranches, remoteSwitchBranch, remoteSearch, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage } from './remote-host'
 import { registerVoiceIpc, voiceTranscriber } from './ipc/voice-ipc'
 import { registerAndroidIpc } from './ipc/android-ipc'
 import { registerAppUpdate } from './app-update'
-import { registerPeerIpc } from './ipc/peer-ipc'
 import { prepareUpdateAfterWriters } from './shutdown-update'
-import { registerCollabIpc } from './ipc/collab-ipc'
 import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
-import { WorktreeLinkStore } from './worktree-links'
 import { sharedCwdNotice } from './cwd-sharing'
 import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolatedSessionCwd, isolationCwdKey, pendingIsolationChanges } from './session-isolation'
 import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
@@ -400,7 +393,6 @@ function pinnedTargetMatches(pin: PinnedSendTarget): boolean {
 let runsHost: RunsHost | null = null
 let mcpAppViewService: McpAppViewService | null = null
 let appViewForeground: { runnerId: string; sessionId: string; sessionFile: string; generation: number } | null = null
-let syncController: ReturnType<typeof registerSyncIpc> | null = null
 let updateControl: ReturnType<typeof registerAppUpdate> | null = null
 const runnerVisibility = new RunnerVisibility()
 let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
@@ -683,6 +675,7 @@ const YAN_THIN_EXTENSION_FILES = {
   turnModelSwitchExtension: 'turn-model-switch.js',
   capabilityGuideExtension: 'capability-guide.js',
   mcpAppProxyExtension: 'mcp-app-proxy.js',
+  phoneToolsExtension: 'phone-tools.js',
   autoCompactExtension: 'auto-compact.js',
   contextCompactExtension: 'context-compact.js',
   contextUsageExtension: 'context-usage.js',
@@ -978,7 +971,6 @@ function readHistoryWithArtifacts(sessionFile: string, liveRunId?: string) {
     return { ...result, messages: applyTurnTimings(result.messages, records) }
   })
 }
-const worktreeOrigins = new WorktreeLinkStore()
 
 const autoIsolations = new AutoIsolationStore()
 
@@ -1385,7 +1377,6 @@ function shutdown(): Promise<void> {
 
 async function runShutdown(): Promise<void> {
   shuttingDown = true
-  syncController?.stop()
   disposeKeepAwake()
   bundledPlugins.close()
   attention?.dispose()
@@ -1535,8 +1526,7 @@ async function startRemoteServer(): Promise<void> {
       (text, level) => {
         if (level === 'error') console.error(`[remote] ${text}`)
         else console.log(`[remote] ${text}`)
-      },
-      { grants: peerGrants, handlers: peerHostHandlers }
+      }
     )
   }
   try {
@@ -2864,47 +2854,8 @@ function registerIpc(): void {
     return ac()?.refreshStats() ?? null
   })
 
-  const confirmSyncImport: SyncImportConfirm = async (candidate) => {
-    const label = candidate.kind === 'skill' ? pick('技能', 'skill') : pick('提示词模板', 'prompt template')
-    const message = candidate.previous === undefined
-      ? pick(`同步文件夹里有新的${label}「${candidate.name}」，要写入本机吗？`, `A new ${label} "${candidate.name}" arrived from the sync folder. Write it here?`)
-      : pick(`同步文件夹里的${label}「${candidate.name}」有改动，要用它覆盖本机版本吗？`, `The ${label} "${candidate.name}" changed in the sync folder. Overwrite the local copy?`)
-    const detail = `${candidate.key}\n\n${candidate.payload.slice(0, 4000)}`
-    const options = {
-      type: 'question' as const,
-      buttons: [pick('写入', 'Write'), pick('跳过', 'Skip')],
-      defaultId: 0,
-      cancelId: 1,
-      title: pick('同步确认', 'Sync confirmation'),
-      message,
-      detail
-    }
-    const result = win && !win.isDestroyed() ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
-    return result.response === 0
-  }
-
-  syncController = registerSyncIpc(ipc, {
-    dataDir: YAN_DIR,
+  registerSessionTransferIpc(ipc, {
     sessionsDir: SESSIONS_DIR,
-    makeService: (root) =>
-      new SyncService({
-        dataDir: YAN_DIR,
-        syncRoot: root,
-        piAgentDir: PI_AGENT_DIR,
-        confirmImport: confirmSyncImport,
-        settingsApplier: async (patch) => {
-          const next = await patchSettings(patch)
-          if (typeof patch.theme === 'string') syncNativeThemeSource(next.theme)
-        }
-      }),
-    pickSyncFolder: async () => {
-      if (!win) return null
-      const r = await dialog.showOpenDialog(win, {
-        title: pick('选择同步文件夹（建议放在 OneDrive / 坚果云 / Syncthing 管理的目录）', 'Choose sync folder (preferably one managed by OneDrive / Syncthing)'),
-        properties: ['openDirectory', 'createDirectory']
-      })
-      return r.canceled ? null : r.filePaths[0] ?? null
-    },
     pickExportPath: async (suggested) => {
       if (!win) return null
       const r = await dialog.showSaveDialog(win, {
@@ -3387,13 +3338,6 @@ function registerIpc(): void {
     isProjectTrusted: async (cwd) => (await trustStatus(cwd)).trusted
   })
 
-  registerMcpAppIpc(ipc, {
-    currentAgent: () => ac() ?? undefined,
-    registry: () => runners,
-    settings: () => getSettings(),
-    isProjectTrusted: async (cwd) => (await trustStatus(cwd)).trusted
-  })
-
   registerMcpAppViewIpc(ipc, { service: () => mcpAppViewService })
 
   configureMcpAppHostOwnership(
@@ -3419,22 +3363,6 @@ function registerIpc(): void {
     ...agentTerminalIds().map(terminalProcessId)
   ].filter((pid): pid is number => typeof pid === 'number'))
   registerBrowserIpc(ipc, () => browser, previewSites, answerBrowserSiteApproval, localServerControl)
-
-  registerPeerIpc(ipc, peerClient, { window: () => win })
-
-  registerPeerHostIpc(ipc, { grants: peerGrants })
-
-  registerCollabIpc(ipc, {
-    peerClient,
-    peerHost: peerHostHandlers,
-    worktreeLinks: worktreeOrigins,
-    win: () => win,
-    notice: (input) => {
-      attentionNotices.show({ ...input, icon: shellIconPath() })
-      push({ ch: 'attention-sound', payload: { event: 'question' } })
-    }
-  })
-
 
   registerOfficeIpc(ipc, async (requestedCwd) => {
     const settings = await getSettings()
@@ -3743,14 +3671,7 @@ configureRemoteHost({
   ...sessionHost,
   approvals,
   win: () => win,
-  remoteAccess: () => remoteAccess,
-  worktreeOriginOf: async (sessionId, cwd) => {
-    await worktreeOrigins.load()
-    const link = worktreeOrigins.forSession(sessionId)
-    if (link?.fromCwd && cwdWithin(cwd, link.worktree)) return link.fromCwd
-    const isolation = await autoIsolations.bySession(sessionId)
-    return isolation && cwdWithin(cwd, isolation.worktree) ? isolation.mainCwd : null
-  }
+  remoteAccess: () => remoteAccess
 })
 
 function rendererPageOrigin(): string {
@@ -3935,7 +3856,6 @@ app.whenReady().then(async () => {
   registerAuxIpc(auxWindows)
   auxWindows.registerShortcut()
 
-  if (!isRestoredReadonly()) syncController?.start()
   const deliverStartupDeepLinks = (): void => {
     deepLinkRouter.flush()
     deepLinkRouter.handleArgv(process.argv)

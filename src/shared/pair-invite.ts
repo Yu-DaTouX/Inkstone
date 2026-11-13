@@ -1,7 +1,5 @@
 import type { RemoteAccessStatus, RemoteAddressKind } from './remote-protocol'
 
-export const PAIR_CODE_LENGTH = 6
-
 export interface PairInvite {
   address: string
   code: string
@@ -34,24 +32,4 @@ export function pairInviteAddress(status: Pick<RemoteAccessStatus, 'running' | '
 
 export function pairInviteLink(invite: PairInvite): string {
   return `inkstone://pair?address=${encodeURIComponent(invite.address)}&code=${invite.code}`
-}
-
-export function normalizePairCode(raw: string): string {
-  return raw.replace(/\D/g, '').slice(0, PAIR_CODE_LENGTH)
-}
-
-export function validPairAddress(raw: string): string | null {
-  const text = raw.trim()
-  if (!text || text.length > 300 || /[\u0000-\u001f\u007f\s]/.test(text)) return null
-  const withScheme = /^https?:\/\//i.test(text) ? text : `http://${text}`
-  let url: URL
-  try {
-    url = new URL(withScheme)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-  if (url.username || url.password || url.search || url.hash) return null
-  if (url.pathname !== '/' && url.pathname !== '') return null
-  return `${url.protocol}//${url.host}`
 }

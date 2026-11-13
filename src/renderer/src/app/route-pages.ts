@@ -3,11 +3,9 @@ import { prefetchUsageStats } from '../features/usage/UsageOverview'
 import { preloadPreviewPane, preloadTerminalPane } from '../features/workbench/panes'
 
 const usagePage = preloadable<Record<string, never>>(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
-const collabPage = preloadable<Record<string, never>>(() => import('../features/collab').then((m) => ({ default: m.CollabPage })))
 const artifactLibraryPage = preloadable<Record<string, never>>(() => import('../features/artifacts/ArtifactLibraryPage').then((m) => ({ default: m.ArtifactLibraryPage })))
 
 export const UsagePage = usagePage.Component
-export const CollabPage = collabPage.Component
 export const ArtifactLibraryPage = artifactLibraryPage.Component
 
 const IDLE_PRELOADS: ReadonlyArray<() => Promise<unknown>> = [
@@ -15,8 +13,7 @@ const IDLE_PRELOADS: ReadonlyArray<() => Promise<unknown>> = [
   () => Promise.resolve(prefetchUsageStats()),
   preloadPreviewPane,
   preloadTerminalPane,
-  artifactLibraryPage.preload,
-  collabPage.preload
+  artifactLibraryPage.preload
 ]
 
 export function scheduleIdlePreloads(): () => void {

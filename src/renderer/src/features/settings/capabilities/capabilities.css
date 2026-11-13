@@ -154,15 +154,6 @@
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
-  .caps-import {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-6);
-    margin-top: var(--s-4);
-    padding-top: var(--s-8);
-    border-top: var(--hair, 1px) dashed var(--line);
-  }
-
   .caps-detail {
     display: flex;
     flex-direction: column;

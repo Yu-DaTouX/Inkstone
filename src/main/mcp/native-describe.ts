@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StdioTreeClientTransport } from './stdio-tree-transport'
-import { atomicWrite, nativeMcpTextFingerprint } from './native-import'
+import { atomicWrite, nativeMcpTextFingerprint } from './config-write'
 
 export interface StdioProbeConfig {
   command: string

@@ -12,7 +12,7 @@ import {
 } from './usage-sources'
 import { estimateCost } from '../shared/model-pricing'
 import { loadModelPricing } from './model-pricing'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 
 const CACHE_VERSION = 6
 const FINGERPRINT_BYTES = 4096

@@ -41,7 +41,7 @@ const matchesPattern = (offset, bytes) => {
   return true
 }
 
-const upstream = { bigServed: 0, bigTotal: 0, sseClosed: false, sseSent: 0, uploaded: 0, uploadGate: null }
+const upstream = { bigServed: 0, bigTotal: 0, sseClosed: false, sseSent: 0 }
 const http = createServer((req, res) => {
   if (req.url.startsWith('/remote/v1/big')) {
     const total = Number(new URL(req.url, 'http://x').searchParams.get('mb')) * MB
@@ -80,16 +80,6 @@ const http = createServer((req, res) => {
       clearInterval(timer)
       upstream.sseClosed = true
     })
-    return
-  }
-  if (req.url.startsWith('/remote/v1/peer/collab/')) {
-    req.pause()
-    upstream.uploaded = 0
-    upstream.uploadGate = () => {
-      req.on('data', (c) => { upstream.uploaded += c.length })
-      req.on('end', () => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}') })
-      req.resume()
-    }
     return
   }
   res.writeHead(404).end()
@@ -261,28 +251,13 @@ await check('慢接收端下 SSE 积压超限：以带错误的 end 结束该流
   client.session.close()
 })
 
-await check('上传链：本地不读时接收端暂停入站，放行后全部按序到达并恢复', async () => {
-  const client = await openSession({ kind: 'peer' })
-  const req = client.request('POST', '/remote/v1/peer/collab/bundle', { stream: 'in' })
+await check('流式上传一律拒绝，不转发到电脑', async () => {
+  const client = await openSession()
+  const req = client.request('POST', '/remote/v1/sessions/s/messages', { stream: 'in' })
   await req.send()
-  const frames = []
-  for (let i = 0; i < 24; i++) {
-    const data = Buffer.alloc(1 * MB, i + 1).toString('base64')
-    frames.push(await client.channel.seal({ t: 'up', id: req.id, data }))
-  }
-  for (const frame of frames) client.pipe.onmessage(frame)
-  await until(() => upstream.uploadGate !== null, 5000, '上传请求到达上游')
-  await sleep(500)
-  assert.ok(client.pipe.paused >= 1, '积压超过预算后暂停入站读取')
-  upstream.uploadGate()
-  await until(() => upstream.uploaded >= 24 * MB, 15_000, '上传完成')
-  assert.equal(upstream.uploaded, 24 * MB)
-  await client.send({ t: 'up-end', id: req.id })
   const res = await client.next()
   assert.equal(res.t, 'res')
-  assert.equal(res.status, 200)
-  assert.ok(client.pipe.resumed >= 1, '放行后恢复入站读取')
-  upstream.uploadGate = null
+  assert.equal(res.status, 400)
   client.session.close()
 })
 
@@ -388,5 +363,5 @@ if (failures) {
   console.log(`\n${failures} 项失败`)
   process.exit(1)
 }
-console.log('\n中继传输预算检查全部通过：流式分片、背压、SSE 积压结束、上传暂停入站、4001 说明、连接超时、pipe 上限、超长消息。')
+console.log('\n中继传输预算检查全部通过：流式分片、背压、SSE 积压结束、拒绝流式上传、4001 说明、连接超时、pipe 上限、超长消息。')
 process.exit(0)

@@ -35,7 +35,7 @@ export type McpSettingsMutation = {
   revision: string
   scope: McpSettingsScope
 } & (
-  | { action: 'add'; name: string; config: { command?: string; args?: string[]; url?: string; env?: Record<string, string> } }
+  | { action: 'add'; name: string; owner?: 'pi' | 'inkstone'; config: { command?: string; args?: string[]; url?: string; env?: Record<string, string> } }
   | { action: 'enable' | 'disable' | 'inherit' | 'remove' | 'move'; key: string }
 )
 

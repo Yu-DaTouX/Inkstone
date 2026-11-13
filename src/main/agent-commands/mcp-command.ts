@@ -6,7 +6,6 @@ import type { McpConnectionManager } from '../mcp/connection-manager'
 import { callMcpTool, describeMcpTool, McpToolError } from '../mcp/tool-service'
 import { assertLegacyMcpAccessBlocked } from '../mcp/app-proxy-service'
 import { mcpApprovalNeeded, mcpCallDanger } from '../../shared/mcp-approval'
-import { migratedMcpCommandNotice } from '../../shared/mcp-native-import'
 import { APPROVAL_DETAIL_MAX, type ApprovalDecision, type ApprovalOwner } from '../../shared/approval'
 import type { DangerConfirmPrompt } from '../agent'
 
@@ -22,7 +21,7 @@ export interface McpCommandHost {
 async function runMcpList(host: McpCommandHost, signal?: AbortSignal) {
   signal?.throwIfAborted()
   const manager = host.mcpConnectionManager()
-  const usable = manager.list().filter((server) => server.enabled !== false && !server.migratedToNative)
+  const usable = manager.list().filter((server) => server.enabled !== false)
   const servers = await Promise.all(
     usable.map(async (server) => {
       try {
@@ -123,10 +122,6 @@ export async function runMcpCommand(host: McpCommandHost, action: string, params
 
   assertLegacyMcpAccessBlocked({ serverId, toolName, action })
   const manager = host.mcpConnectionManager()
-  const migratedToNative = manager.list().find((entry) => entry.id === serverId)?.migratedToNative
-  if (migratedToNative) {
-    throw new CapabilityCommandError('mcp_migrated_to_native', migratedMcpCommandNotice(serverId, migratedToNative))
-  }
   try {
     if (action === 'describe') {
       const described = await describeMcpTool(manager, serverId, toolName, signal)

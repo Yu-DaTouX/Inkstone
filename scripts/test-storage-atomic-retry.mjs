@@ -41,7 +41,7 @@ export async function rename(from, to) {
 `
 
 const buildResult = await build({
-  entryPoints: ['src/main/sync/atomic.ts'],
+  entryPoints: ['src/main/atomic-write.ts'],
   bundle: true,
   write: false,
   platform: 'node',

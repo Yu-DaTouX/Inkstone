@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { pick } from '../shared/ui-lang'
 import { IMAGE_COMPLEXITIES, IMAGE_KEY_SERVICES, IMAGE_MODEL_SERVICES, isImageChoice, type ImageConfigFile, type ImageConfigPatch, type ImageKeyService } from '../shared/image-config'
 import { YAN_DIR } from './paths'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 
 const CONFIG_FILE = (): string => join(YAN_DIR, 'image-config.json')
 

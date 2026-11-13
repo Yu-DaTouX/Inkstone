@@ -13,8 +13,6 @@ const stubs = {
   './title': 'export const setManualTitle = async () => ({ok:true}); export const manualTitles = async () => ({}); export const cachedTitles = async () => ({})',
   './settings': 'export const getSettings = async () => globalThis.__boundary.settings',
   './sessions': 'export const listSessions = async () => globalThis.__boundary.sessions.map(x => ({...x})); export const deleteSession = async () => ""; export const restoreSession = async () => undefined; export const sessionsToDelete = async () => []; export const SESSIONS_DIR = ""',
-  './peer-grants': 'export class PeerGrantRegistry {}',
-  './peer-client': 'export class PeerClient {}',
   './paths': 'export const YAN_DIR = "/fixture"'
 }
 const plugin = {
@@ -29,13 +27,9 @@ const deferred = () => {
   const promise = new Promise(done => { resolve = done })
   return { promise, resolve }
 }
-let server
 try {
-  for (const name of ['remote-host', 'remote-server']) {
-    await build({ entryPoints: [`src/main/${name}.ts`], outfile: join(root, `${name}.mjs`), bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [plugin] })
-  }
+  await build({ entryPoints: ['src/main/remote-host.ts'], outfile: join(root, 'remote-host.mjs'), bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [plugin] })
   const remote = await import(pathToFileURL(join(root, 'remote-host.mjs')).href)
-  const { RemoteServer } = await import(pathToFileURL(join(root, 'remote-server.mjs')).href)
   const summary = (id, projectId = 'P') => ({ id, path: `/fixture/${id}.jsonl`, cwd: `/fixture/${projectId}`, projectId, scope: projectId ? 'project' : 'global', title: id, createdAt: 1, updatedAt: 1, messageCount: 1 })
   const state = globalThis.__boundary = { settings: { projects: [{ id: 'P', cwd: '/fixture/P' }, { id: 'Q', cwd: '/fixture/Q' }] }, sessions: [summary('A'), summary('B', 'Q')] }
   let generation = 1
@@ -61,7 +55,7 @@ try {
       return { ok: true }
     }
   }
-  let activeAgent = agent
+  const activeAgent = agent
   const registry = {
     select: async target => {
       sessionId = target.sessionId ?? 'new'
@@ -99,25 +93,9 @@ try {
   assert.equal((await send()).status, 409)
   onSelect = undefined
 
-  for (const replacement of [false, true]) {
-    const reached = deferred()
-    const release = deferred()
-    const pending = send({ authorize: async () => { reached.resolve(); await release.promise; return null } })
-    await reached.promise
-    sessionId = 'B'
-    generation++
-    if (replacement) activeAgent = { ...agent }
-    release.resolve()
-    assert.equal((await pending).status, 409)
-    activeAgent = agent
-  }
-  const reached = deferred()
-  const release = deferred()
-  const aba = send({ authorize: async () => { reached.resolve(); await release.promise; return null } })
-  await reached.promise
-  generation += 2
-  release.resolve()
-  assert.equal((await aba).status, 409)
+  onSelect = async () => { generation += 2 }
+  assert.equal((await send()).status, 409)
+  onSelect = undefined
   assert.equal(sends.length, 1)
   assert.equal(remembered, 0)
 
@@ -138,80 +116,8 @@ try {
   }
   assert.equal(modelWrites + thinkingWrites, 0)
 
-  let moveAfterGate = false
-  const grants = {
-    check: (_connection, _device, _operation, projectId) => {
-      if (projectId !== 'P') return { ok: false, status: 403, error: 'denied', code: 'peer_project_denied' }
-      if (moveAfterGate) { moveAfterGate = false; state.sessions[0] = summary('A', 'Q') }
-      return { ok: true, grant: { projects: [{ id: 'P', name: 'P' }] } }
-    }
-  }
-  server = new RemoteServer({
-    host: '127.0.0.1', port: 0,
-    devices: { authenticate: async () => ({ id: 'peer', name: 'peer', kind: 'peer' }) },
-    peers: { grants, handlers: remote.peerHostHandlers },
-    handlers: { snapshot: async () => ({}), history: remote.remoteHistory, command: remote.executeRemoteCommand }
-  })
-  const info = await server.start()
-  let requestId = 0
-  const request = async (path, body) => {
-    const response = await fetch(`http://127.0.0.1:${info.port}/remote/v1/peer/${path}`, {
-      method: body ? 'POST' : 'GET', headers: { authorization: 'Bearer fixture-token', 'content-type': 'application/json', 'idempotency-key': `boundary-${++requestId}` }, body: body ? JSON.stringify(body) : undefined
-    })
-    return { status: response.status, body: await response.json() }
-  }
-  sessionId = 'A'
-  for (const projectId of ['Q', undefined]) {
-    state.sessions[0] = summary('A')
-    assert.equal((await request('sessions/A')).status, 200)
-    state.sessions[0] = summary('A', projectId ?? null)
-    assert.equal(await remote.peerHostHandlers.projectOfSession('A'), projectId ?? null)
-    assert.equal(await remote.peerHostHandlers.projectOfRun('r1'), projectId ?? null)
-    assert.ok([403, 404].includes((await request('sessions/A')).status))
-    assert.ok([403, 404].includes((await request('sessions/A/messages', { text: 'denied' })).status))
-    assert.equal(state.sessions[0].projectId, projectId ?? null)
-  }
-  state.sessions[0] = summary('A')
-  assert.equal((await request('sessions/A/messages', { text: 'authorized-A' })).status, 200)
-  assert.equal(sends.at(-1).sessionId, 'A')
-  const sentBeforeMoves = sends.length
-  moveAfterGate = true
-  assert.equal((await request('sessions/A/messages', { text: 'moved-during-body' })).status, 403)
-  state.sessions[0] = summary('A')
-  onSelect = async () => { state.sessions[0] = summary('A', 'Q') }
-  assert.equal((await request('sessions/A/messages', { text: 'moved-during-select' })).status, 403)
-  onSelect = undefined
-  assert.equal(sends.length, sentBeforeMoves)
-  assert.equal(remembered, 0)
-  assert.equal(state.sessions[0].projectId, 'Q')
-
-  const misplaced = { ...summary('A'), cwd: '/fixture/Q' }
-  state.sessions[0] = misplaced
-  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), null)
-  assert.equal(await remote.peerHostHandlers.projectOfRun('r1'), null)
-  assert.ok([403, 404].includes((await request('sessions/A')).status))
-  assert.ok([403, 404].includes((await request('sessions/A/messages', { text: 'label-only' })).status))
-  assert.ok(!(await remote.peerHostHandlers.sessions(['P'])).some((item) => item.id === 'A'))
-  assert.equal((await remote.peerHostHandlers.exportSession('A')).ok, false)
-  assert.equal(sends.length, sentBeforeMoves)
-  state.sessions[0] = { ...summary('A'), cwd: '/fixture/P/packages/app' }
-  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), 'P')
-  state.sessions[0] = { ...summary('A'), cwd: '/worktrees/P-feature' }
-  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), null)
-  remote.configureRemoteHost({ ...hostPorts, worktreeOriginOf: async (id, cwd) => (id === 'A' && cwd === '/worktrees/P-feature' ? '/fixture/P' : null) })
-  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), 'P')
-  remote.configureRemoteHost({ ...hostPorts, worktreeOriginOf: async () => '/fixture/Q' })
-  assert.equal(await remote.peerHostHandlers.projectOfSession('A'), null)
-  remote.configureRemoteHost(hostPorts)
-  state.sessions[0] = summary('A')
-
-  remember = async () => { remembered++; sessionId = 'B'; generation++ }
-  const started = await remote.peerHostHandlers.startSession('P', 'new-task')
-  assert.equal(started.status, 409)
-  assert.equal(sends.length, sentBeforeMoves)
-  console.log('远程会话边界隔离回归通过：错投/替换/ABA、模型与思考调用、热缓存移动、请求体与选择期间移动、新任务记账竞态')
+  console.log('远程会话边界隔离回归通过：错投/ABA、模型与思考调用、热缓存移动')
 } finally {
-  await server?.stop()
   delete globalThis.__boundary
   await rm(root, { recursive: true, force: true })
 }

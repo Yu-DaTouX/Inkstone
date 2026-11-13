@@ -3,7 +3,7 @@ import { useI18n } from '../../../i18n'
 import { Button, SegmentedControl, TextArea, TextField } from '../../../ui'
 import type { McpSettingsMutation, McpSettingsScope, McpSettingsSnapshot } from '../../../../../shared/mcp-settings'
 import { mcpServicesText } from './mcp-services-text'
-import { Actions, Warn } from './parts'
+import { Actions, Meta, Warn } from './parts'
 
 export function McpServiceForm({ snapshot, initialScope, onSave, onCancel, busy }: { snapshot: McpSettingsSnapshot; initialScope: McpSettingsScope; onSave(input: McpSettingsMutation): Promise<void>; onCancel(): void; busy: boolean }) {
   const { lang } = useI18n()
@@ -11,6 +11,7 @@ export function McpServiceForm({ snapshot, initialScope, onSave, onCancel, busy 
   const [name, setName] = useState('')
   const [scope, setScope] = useState<McpSettingsScope>(snapshot.project && snapshot.projectTrusted ? initialScope : 'global')
   const [transport, setTransport] = useState<'local' | 'remote'>('local')
+  const [owner, setOwner] = useState<'pi' | 'inkstone'>('pi')
   const [command, setCommand] = useState('')
   const [args, setArgs] = useState('')
   const [url, setUrl] = useState('')
@@ -26,7 +27,7 @@ export function McpServiceForm({ snapshot, initialScope, onSave, onCancel, busy 
         variables = parsed as Record<string, string>
       } catch { setError(text.envInvalid); return }
     }
-    await onSave({ action: 'add', scope, context: snapshot.context, revision: snapshot.revision, name: name.trim(), config: {
+    await onSave({ action: 'add', scope, context: snapshot.context, revision: snapshot.revision, name: name.trim(), owner, config: {
       ...(transport === 'local' ? { command: command.trim(), args: args.split(/\r?\n/).filter((arg) => arg.length > 0) } : { url: url.trim() }),
       ...(variables ? { env: variables } : {})
     } })
@@ -37,6 +38,8 @@ export function McpServiceForm({ snapshot, initialScope, onSave, onCancel, busy 
       { value: 'global', label: text.allSessions },
       ...(snapshot.project && snapshot.projectTrusted ? [{ value: 'project' as const, label: `${text.projectOnly}：${snapshot.project.name}` }] : [])
     ]} />
+    <SegmentedControl label={text.owner} value={owner} onChange={setOwner} isDisabled={busy} options={[{ value: 'pi', label: text.ownerPi, testId: 'mcp-owner-pi' }, { value: 'inkstone', label: text.ownerHost, testId: 'mcp-owner-inkstone' }]} />
+    <Meta>{text.ownerHint}</Meta>
     <SegmentedControl label={text.transport} value={transport} onChange={setTransport} isDisabled={busy} options={[{ value: 'local', label: text.local }, { value: 'remote', label: text.remote }]} />
     {transport === 'local' ? <>
       <TextField label={text.command} value={command} onChange={setCommand} isDisabled={busy} />

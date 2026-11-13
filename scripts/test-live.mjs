@@ -117,10 +117,6 @@ const CASES = {
   },
   'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000 },
   'v3-devices-bind': { probe: 'scripts/probe/v3-devices-bind.js', delay: 9000, cost: 0, budget: 90000, freeRemotePort: true },
-  'v3-collab-invite': {
-    probe: 'scripts/probe/v3-collab-invite.js', delay: 9000, cost: 0, budget: 60000,
-    args: ['inkstone://pair?address=http%3A%2F%2F100.64.0.7%3A37892&code=246810']
-  },
   'v3-sendkey': { probe: 'scripts/probe/v3-sendkey.js', delay: 9000, cost: 0 },
   'v3-completion': { probe: 'scripts/probe/v3-completion.js', delay: 9000, cost: 0 },
   'v3-projectmenu': { probe: 'scripts/probe/v3-projectmenu.js', delay: 9000, cost: 0 },

@@ -6,7 +6,6 @@ import { shortcutKeysText, shortcutOverridesFromSettings } from './shortcuts'
 import { IconButton, Separator, TooltipText } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
-import { collabText } from '../features/collab/collab-text'
 import { useHoverDelay } from '../lib/use-hover-delay'
 import { rightPanelText } from '../features/workbench/right-panel-text'
 import { WindowControls } from './WindowControls'
@@ -67,7 +66,6 @@ export const Header = memo(function Header({ sidebarOverlay = false, sidebarOpen
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
-    if (route === 'collab') return collabText(lang).nav
     if (route === 'artifacts') return t('artifactLibrary.title')
     if (namedTitle) return namedTitle
     if (!peekedSessionId && sessionName) return sessionName

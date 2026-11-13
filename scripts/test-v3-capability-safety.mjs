@@ -29,9 +29,6 @@ function deferred() {
 const { createOperationTracker, runGuardedOperation, runConfirmedOperation } = await loadTs(
   '../src/renderer/src/features/settings/capabilities/operation-state.ts'
 )
-const { formatImportPreviewDetail, httpOriginOf, summarizeNativeEntry } = await loadTs(
-  '../src/renderer/src/features/settings/capabilities/native-preview.ts'
-)
 const { capsText } = await loadTs('../src/renderer/src/features/settings/capabilities/text.ts')
 
 {
@@ -213,88 +210,6 @@ const { capsText } = await loadTs('../src/renderer/src/features/settings/capabil
   assert.equal(outcome.phase, 'scope-changed')
   assert.equal(runCalls, 0, '确认期间卸载则不执行')
 }
-
-assert.equal(httpOriginOf('https://user:pass@example.com:8443/a/b?token=x#h'), 'https://example.com:8443')
-assert.equal(httpOriginOf('http://example.com/x'), 'http://example.com')
-assert.equal(httpOriginOf('ws://example.com/x'), null, '非 http(s) 不给 origin')
-assert.equal(httpOriginOf('file:///etc/passwd'), null)
-assert.equal(httpOriginOf('not a url'), null)
-assert.equal(httpOriginOf(42), null)
-
-const entry = {
-  description: 'demo server',
-  command: 'npx',
-  args: ['--token', 'ARG-SECRET-456', '--api-key=KEY-SECRET-789'],
-  env: {
-    PATH: '/usr/bin',
-    API_TOKEN: 'ENV-SECRET-ABC',
-    NESTED: { deep: 'NESTED-SECRET' }
-  },
-  url: 'https://user:pass@example.com:8443/private/path?token=URL-SECRET&x=1',
-  headers: { Authorization: 'Bearer HEADER-SECRET', nested: { cookie: 'COOKIE-SECRET' } }
-}
-
-const summary = summarizeNativeEntry(entry)
-assert.deepEqual(summary.envKeys, ['API_TOKEN', 'NESTED', 'PATH'], 'env 只留排序后的键名')
-assert.equal(summary.argCount, 3, 'args 只留个数')
-assert.equal(summary.urlOrigin, 'https://example.com:8443')
-
-const labels = {
-  sourceTitle: '来源服务',
-  nativeName: 'pi 服务名',
-  scope: '范围：全局（用户级）',
-  targetPath: '目标文件',
-  entry: '将写入的原生条目',
-  warnings: '提醒',
-  description: '说明',
-  transport: '传输方式',
-  command: '命令',
-  args: '参数个数',
-  envKeys: '环境变量（仅键名）',
-  url: '服务地址（仅来源）'
-}
-const preview = {
-  token: 'TOKEN-SECRET-000',
-  expiresAt: '2026-01-01T00:00:00.000Z',
-  serverId: 'srv',
-  nativeName: 'srv',
-  scope: 'project',
-  targetPath: '/home/u/.pi/mcp.json',
-  content: '{"mcpServers":{"other":{"env":{"SECRET":"FILE-SECRET"}}}}',
-  serverEntry: entry,
-  warnings: ['authRef「ref-name」凭证不迁移'],
-  requiresReauth: true,
-  reauthNotice: 'authRef 凭证不迁移；导入后请在 pi 里重新登录服务 srv'
-}
-
-const entrySnapshot = JSON.stringify(entry)
-const detail = formatImportPreviewDetail(preview, 'Demo', labels)
-
-for (const secret of [
-  'ARG-SECRET-456',
-  'KEY-SECRET-789',
-  'ENV-SECRET-ABC',
-  'NESTED-SECRET',
-  'URL-SECRET',
-  'HEADER-SECRET',
-  'COOKIE-SECRET',
-  'user:pass',
-  'pass@example.com',
-  '/private/path',
-  'TOKEN-SECRET-000',
-  'FILE-SECRET'
-]) {
-  assert.ok(!detail.includes(secret), `展示文本不得含敏感值：${secret}`)
-}
-assert.ok(!detail.includes('"headers"'), '未知字段 headers 不展示')
-assert.ok(!detail.includes('"env"'), '不把 serverEntry 原样 JSON 出来（无 JSON.stringify 兜底）')
-assert.ok(detail.includes('API_TOKEN'), 'env 键名可显示')
-assert.ok(detail.includes('PATH'), 'env 键名可显示')
-assert.ok(detail.includes('https://example.com:8443'), 'URL 只显示 http(s) origin')
-assert.ok(detail.includes('/home/u/.pi/mcp.json'), '目标路径可显示')
-assert.ok(/参数个数[:：]\s*3/.test(detail), 'args 只显示个数')
-assert.equal(JSON.stringify(entry), entrySnapshot, '脱敏只影响展示，不改写 preview.serverEntry')
-assert.equal(preview.token, 'TOKEN-SECRET-000', '不改写 preview.token（commit 仍用原令牌）')
 
 {
   const zhHidden = capsText('zh-CN', 'promptHiddenTag')

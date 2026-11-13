@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto'
 import { reviewSkillFiles, type SkillSecurityFinding, type SkillSecurityReview } from '../../shared/skill-security'
 import { USER_SKILL_NAME_PATTERN } from '../../shared/user-skill'
 import { userSkillsDir } from '../user-skills'
-import { atomicWriteFile } from '../sync/atomic'
+import { atomicWriteFile } from '../atomic-write'
 import { isWindowsDeviceName } from '../win-file-names'
 
 export type AcquiredSkillScope = 'session' | 'user'

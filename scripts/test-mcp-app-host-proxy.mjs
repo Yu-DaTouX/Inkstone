@@ -1289,20 +1289,10 @@ async function bundle(contents, name) {
   return import(pathToFileURL(outfile).href)
 }
 
-const ipcMod = await bundle(
-  "export { registerMcpAppIpc } from './src/main/ipc/mcp-app-ipc';",
-  'main-ipc.mjs'
-)
 const helper = await bundle(
-  "export * from './src/main/mcp/settings-safe-access';\nexport * from './src/shared/mcp-app-switch';",
+  "export * from './src/main/mcp/settings-safe-access';",
   'settings-safe-access.mjs'
 )
-const renderer = await bundle(
-  "export * from './src/renderer/src/features/settings/capabilities/mcp-app-ownership';",
-  'renderer-ownership.mjs'
-)
-
-const { registerMcpAppIpc } = ipcMod
 const {
   disconnectManagedServer,
   managedConfigOf,
@@ -1310,63 +1300,6 @@ const {
   reconcileLegacyManaged,
   verifyManagedServer
 } = helper
-const { parseMcpAppOwnershipResponse } = renderer
-
-function captureIpc() {
-  const handlers = new Map()
-  return {
-    handlers,
-    handle(channel, fn) {
-      handlers.set(channel, fn)
-    },
-    rawHandle(channel, fn) {
-      handlers.set(channel, fn)
-    }
-  }
-}
-
-function registerWithDeps({ agent = { capabilityProjectId: null }, registry = () => null } = {}) {
-  const ipc = captureIpc()
-  registerMcpAppIpc(ipc, {
-    currentAgent: () => agent,
-    registry,
-    settings: async () => ({ projects: [] }),
-    isProjectTrusted: async () => true
-  })
-  return ipc.handlers.get('yan:mcpApp:ownership')
-}
-
-await writeFile(
-  configFile,
-  JSON.stringify([{ id: 'svc-a', transport: 'stdio', command: 'node', args: ['x.js'] }])
-)
-const realHandler = registerWithDeps()
-const handlerOutput = await realHandler()
-ok(handlerOutput && !Array.isArray(handlerOutput) && Array.isArray(handlerOutput.servers), 'ownership handler 返回 { servers } 对象，不是数组')
-eq(handlerOutput.servers.length, 1, 'ownership handler 从真实砚配置产出 1 条视图')
-const parsedReal = parseMcpAppOwnershipResponse(handlerOutput)
-ok(parsedReal.ok === true, '真实 handler 输出经解析 helper 解包成功')
-eq(parsedReal.views.map((view) => view.serverId), ['svc-a'], '解析得到视图数组（serverId）')
-
-await writeFile(configFile, '{ not json')
-const brokenOutput = await registerWithDeps()()
-ok(typeof brokenOutput.error === 'string' && brokenOutput.error.length > 0, '配置损坏时 handler 返回可展示的 error')
-const parsedBroken = parseMcpAppOwnershipResponse(brokenOutput)
-ok(parsedBroken.ok === false && parsedBroken.code === 'backend_error', '后端 error 被解析为失败（backend_error）')
-
-for (const [label, payload] of [
-  ['null', null],
-  ['数组', [managedConfig('a')]],
-  ['缺 servers', { error: '' }],
-  ['servers 非数组', { servers: { 0: managedConfig('a') } }],
-  ['条目缺 serverId', { servers: [{ ownedBy: 'pi', managed: false }] }],
-  ['条目缺 ownedBy', { servers: [{ serverId: 'a', managed: false }] }]
-]) {
-  const parsed = parseMcpAppOwnershipResponse(payload)
-  ok(parsed.ok === false && parsed.code === 'ownership_response_invalid', `拒绝畸形响应：${label}`)
-}
-const parsedEmpty = parseMcpAppOwnershipResponse({ servers: [] })
-ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 error 是正常空状态')
 
 {
   const log = []

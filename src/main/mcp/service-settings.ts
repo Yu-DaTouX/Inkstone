@@ -2,10 +2,10 @@ import { pick } from '../../shared/ui-lang'
 import { readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { McpSettingsMutation, McpSettingsResult, McpSettingsService, McpSettingsSnapshot } from '../../shared/mcp-settings'
-import { atomicWrite, nativeMcpTextFingerprint } from './native-import'
+import { atomicWrite, nativeMcpTextFingerprint } from './config-write'
 import { mcpServersFile, parseMcpServersDocument } from './config'
 import { serializedWrite } from './write-queue'
-import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native-import'
+import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native'
 
 type ObjectValue = Record<string, unknown>
 type Document = { path: string; text: string | null; value: ObjectValue; servers: ObjectValue }
@@ -96,10 +96,9 @@ export async function listMcpServiceSettings(host: McpSettingsHost): Promise<Mcp
   }
   for (const config of data.loaded.servers) {
     if (config.projectScope && config.projectScope !== host.project?.id) continue
-    const name = config.migratedToNative?.nativeName ?? config.id
+    const name = config.id
     const nativeGlobal = global.find((item) => item.name === name)
     const nativeProject = projectServices.find((item) => item.name === name)
-    if (config.migratedToNative && (nativeGlobal || nativeProject)) continue
     const service: McpSettingsService = {
       key: `host:${config.id}`, name: config.id, title: config.title ?? config.id, backend: 'host', owner: 'inkstone',
       scope: config.projectScope ? 'project' : 'global', enabled: config.enabled !== false,
@@ -108,7 +107,7 @@ export async function listMcpServiceSettings(host: McpSettingsHost): Promise<Mcp
     }
     const matching = config.projectScope ? nativeProject : nativeGlobal
     if (matching) {
-      if (config.enabled !== false) { matching.conflict = true; errors.push(pick(`服务 ${name} 存在两份连接配置，请在高级设置中处理归属`, `Service ${name} has two connection configs. Resolve ownership in advanced settings`)) }
+      if (config.enabled !== false) { matching.conflict = true; errors.push(pick(`服务 ${name} 同时出现在 pi 与砚的配置里，请在配置文件中删除其中一份`, `Service ${name} is configured in both pi and Inkstone. Remove one of them from its config file`)) }
       continue
     }
     if (!config.projectScope) global.push(service)
@@ -185,7 +184,24 @@ export function changeMcpServiceSettings(host: McpSettingsHost, input: McpSettin
         if (!/^[A-Za-z0-9_-]{1,100}$/.test(name) || ['__proto__', 'constructor', 'prototype', WINDOWS_MCP_SERVER_ID].includes(name)) throw new Error(pick('服务名称无效，只能包含字母、数字、下划线和连字符，电脑操作请在本机工具中配置', 'Invalid service name. Use letters, digits, underscores and hyphens only. Configure computer use in local tools'))
         const target = input.scope === 'global' ? data.global : data.project!
         if (data.global.servers[name] || data.project?.servers[name] || data.loaded.servers.some((server) => server.id === name)) throw new Error(pick('已有同名服务，请使用现有条目或更换名称', 'A service with this name exists. Use it or pick another name'))
-        target.servers[name] = validateConfig(input.config)
+        const config = validateConfig(input.config)
+        if (input.owner === 'inkstone') {
+          const document = data.loaded.document ?? []
+          const list = Array.isArray(document) ? document : object(document)?.servers
+          if (!Array.isArray(list)) throw new Error(pick('砚的 MCP 配置格式有误', 'Invalid Inkstone MCP config format'))
+          list.push({
+            id: name,
+            transport: config.url ? 'http' : 'stdio',
+            ...config,
+            ...(input.scope === 'project' ? { projectScope: host.project!.id } : {}),
+            ownedBy: 'inkstone',
+            appHost: { at: new Date().toISOString(), natives: [] }
+          })
+          host.assertContext?.()
+          await atomicWrite(data.hostPath, `${JSON.stringify(document, null, 2)}\n`, nativeMcpTextFingerprint(data.hostText))
+          return { ok: true, takesEffect: 'new-session' }
+        }
+        target.servers[name] = config
         await writeDocuments(host, [target])
         return { ok: true, takesEffect: 'new-session' }
       }
@@ -199,7 +215,7 @@ export function changeMcpServiceSettings(host: McpSettingsHost, input: McpSettin
         const list = Array.isArray(document) ? document : object(document)?.servers
         if (!Array.isArray(list)) throw new Error(pick('旧服务配置格式有误', 'Invalid legacy service config format'))
         const entry = list.find((item) => object(item)?.id === service.name) as ObjectValue | undefined
-        if (!entry || entry.migratedToNative) throw new Error(pick('服务已迁移，请重新读取列表', 'Service was migrated. Reload the list'))
+        if (!entry) throw new Error(pick('服务已不存在，请重新读取列表', 'Service no longer exists. Reload the list'))
         if (input.action === 'move') {
           if (input.scope === 'project') entry.projectScope = host.project!.id
           else delete entry.projectScope

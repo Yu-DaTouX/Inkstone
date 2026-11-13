@@ -7,7 +7,7 @@ import {
   type PackageExecutionGrant
 } from '../../shared/package-authorization'
 import { acquisitionRoot } from './acquisition-service'
-import { atomicWriteFile } from '../sync/atomic'
+import { atomicWriteFile } from '../atomic-write'
 
 const MAX_GRANTS = 1000
 const MAX_STORE_BYTES = 512 * 1024

@@ -290,7 +290,7 @@ export class CapabilityAcquisition {
           state: 'mcp-native-only',
           notice:
             '通用 MCP 服务的登记已收口到 pi 原生：砚不再写入宿主 MCP 配置。' +
-            '已登记的服务请用设置页的「导入到 pi」迁到 pi 原生 mcp.json；此获取分支不会下载或登记。'
+            '需要时请在设置页「MCP 服务」里添加；此获取分支不会下载或登记。'
         },
         summary: {
           kind: 'capabilities',

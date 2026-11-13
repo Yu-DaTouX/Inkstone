@@ -56,6 +56,8 @@ export function codemodeWanted(model, mode = codemodeMode()) {
   return mode === 'on' || (mode === 'auto' && model?.compat?.supportsOpenAIGrammarTools === true)
 }
 
+const PIGGYBACK_TOOLS = /^phone_/
+
 function applyCodemodePreference(pi, names, searchTools, model, cwd) {
   const all = pi.getAllTools?.() ?? []
   const available = name => all.some(tool => (typeof tool === 'string' ? tool : tool.name) === name)
@@ -69,7 +71,7 @@ function applyCodemodePreference(pi, names, searchTools, model, cwd) {
   const extra = kept.includes('read') ? searchTools.add.filter(name => !skipped.includes(name) && !kept.includes(name)) : []
   const without = [...kept, ...extra].filter(name => name !== 'codemode')
   const target = codemode ? (kept.includes('codemode') ? [...kept, ...extra] : [...without, 'codemode']) : without
-  const hasDeferred = all.some(tool => typeof tool === 'object' && tool?.exposure === 'deferred') || configuredIndirectMcp(cwd)
+  const hasDeferred = all.some(tool => typeof tool === 'object' && tool?.exposure === 'deferred' && !PIGGYBACK_TOOLS.test(tool.name)) || configuredIndirectMcp(cwd)
   return hasDeferred && available('tool_search') && !target.includes('tool_search') ? [...target, 'tool_search'] : target
 }
 

@@ -1,9 +1,9 @@
-import { pick } from '../../shared/ui-lang'
+import { pick } from '../shared/ui-lang'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { atomicWriteFile } from './atomic'
+import { atomicWriteFile } from './atomic-write'
 
 export const SESSION_BUNDLE_KIND = 'inkstone-session'
 export const SESSION_BUNDLE_VERSION = 1

@@ -1,5 +1,4 @@
 import type {
-  CapabilityMcpServerSettingView,
   CapabilitySkillSettingView,
   CapabilityVerificationStatus,
   SlashCommand
@@ -39,15 +38,6 @@ export function promptCommands(commands: readonly SlashCommand[]): SlashCommand[
 }
 
 export const WINDOWS_MCP_SERVER_ID = 'windows-mcp'
-
-export function canImportMcp(server: CapabilityMcpServerSettingView): boolean {
-  return (
-    !server.migratedToNative &&
-    server.enabled &&
-    server.ownedBy !== 'inkstone' &&
-    server.id !== WINDOWS_MCP_SERVER_ID
-  )
-}
 
 export type StatusTone = 'neutral' | 'accent' | 'run' | 'ask' | 'fail'
 

@@ -115,9 +115,6 @@ await runSuite(import.meta.url, async (ok, compile) => {
       electron: 'export const shell = { openExternal: async () => {} }',
       '../settings': 'export const getSettings = async () => ({}), patchSettings = async () => ({})',
       '../project-trust': 'export const trustStatus = async () => ({ trusted: false })',
-      '../collab/git': 'export const repoRootOf = async () => null, resolveCommit = async () => null',
-      '../git-service': 'export const gitRun = async () => ({ ok: true })',
-      '../collab/github-publish': 'export const publishPeerBranch = async () => ({ ok: false })',
       '../github/defaults': 'export const readPrCreateDefaults = async () => ({ ok: false })',
       '../github/gh': 'export const readGithubStatus = (cwd) => globalThis.__ghStatus(cwd), ghPrDetail = async () => ({}), ghPrDiff = async () => ({}), ghPrList = async () => ({})'
     })]

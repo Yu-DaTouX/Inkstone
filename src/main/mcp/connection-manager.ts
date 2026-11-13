@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { type ClientCapabilities } from '@modelcontextprotocol/sdk/types.js'
 import type { McpServerConfig, McpServerStatus, McpToolDescriptor } from '../../shared/mcp'
 import { sharedResources, INTERACTIVE_RESOURCE } from '../interactive-resources'
-import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native-import'
+import { WINDOWS_MCP_SERVER_ID } from '../../shared/mcp-native'
 
 const WINDOWS_MCP_CONNECT_TIMEOUT_MS = 60_000
 const WINDOWS_MCP_OBSERVE_TOOLS = new Set(['Snapshot', 'Screenshot', 'DisplayInventory', 'Wait', 'WaitFor'])

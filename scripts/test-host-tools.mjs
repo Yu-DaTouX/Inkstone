@@ -6,6 +6,7 @@ import { join } from 'node:path'
 const hostTools = await import(new URL('../resources/pi-extensions/host-tool-call.js', import.meta.url))
 const question = await import(new URL('../resources/pi-extensions/question.js', import.meta.url))
 const guide = await import(new URL('../resources/pi-extensions/capability-guide.js', import.meta.url))
+const phone = await import(new URL('../resources/pi-extensions/phone-tools.js', import.meta.url))
 
 const env = { YAN_RUNNER_ID: 'primary', YAN_CLI_URL: 'http://127.0.0.1:1/', YAN_CLI_TOKEN: 't', YAN_SESSION_ID: 's1', YAN_PROJECT_ID: 'p1' }
 assert.equal(hostTools.hostToolsAvailable(env), true)
@@ -209,6 +210,39 @@ try {
     assert.equal(typeof definition.execute, 'function')
     assert.equal(definition.parameters.type, 'object')
   }
+
+  const phoneRegistered = []
+  const savedEnv = { ...process.env }
+  Object.assign(process.env, env)
+  try {
+    phone.default({ registerTool: (definition) => phoneRegistered.push(definition) })
+  } finally {
+    for (const key of Object.keys(env)) if (!(key in savedEnv)) delete process.env[key]
+    Object.assign(process.env, savedEnv)
+  }
+  assert.deepEqual(phoneRegistered.map((definition) => definition.name), ['phone_devices', 'phone_ui', 'phone_screen', 'phone_apps', 'phone_launch', 'phone_tap', 'phone_swipe', 'phone_type', 'phone_key'])
+  assert.ok(phoneRegistered.every((definition) => definition.exposure === 'deferred'), 'phone 工具全部按需加载，不进固定前缀')
+  const noHost = []
+  const hostKeys = ['YAN_RUNNER_ID', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']
+  const hostEnv = Object.fromEntries(hostKeys.filter((key) => key in process.env).map((key) => [key, process.env[key]]))
+  for (const key of hostKeys) delete process.env[key]
+  try {
+    phone.default({ registerTool: (definition) => noHost.push(definition) })
+  } finally {
+    Object.assign(process.env, hostEnv)
+  }
+  assert.equal(noHost.length, 0, '没有宿主入口（如子代理）不注册 phone 工具')
+  const phoneCalls = []
+  const phoneTap = phone.createPhoneTools(async (input) => { phoneCalls.push(input); return { ok: true, summary: { kind: 'phone', action: 'tap', elements: 'e1 ...' } } }).find((definition) => definition.name === 'phone_tap')
+  const tapped = await phoneTap.execute('tc-p', { ref: 'e12', quiet: true }, signal, undefined, { cwd: 'C:/w' })
+  assert.deepEqual([phoneCalls[0].command, phoneCalls[0].params, phoneCalls[0].toolCallId], ['phone.tap', { ref: 'e12', quiet: true }, 'tc-p'], '工具直接走主进程现有的 phone.* 命令')
+  assert.match(tapped.content[0].text, /"action":"tap"/)
+  assert.equal(phone.phoneResult({ ok: false, error: 'adb 没找到设备' }).isError, true)
+  const withPhoneTools = guide.capabilityGuide(true, { phoneTools: true })
+  assert.match(withPhoneTools, /^- phone: Android phone; `tool_search` "phone" first$/m)
+  assert.doesNotMatch(withPhoneTools, /over adb/)
+  assert.match(guide.capabilityGuide(true), /- phone: read and operate the user's Android phone over adb/, '没有 tool_search 时保留 yan phone 的说明')
+  assert.match(guide.CAPABILITY_GUIDE, /over adb/)
 
   // 催办和收尾提醒都已去掉：提问与能力指引不再往请求里追加任何提醒
   assert.equal(hooks.before_provider_request, undefined, '提问与能力指引不注册 before_provider_request')

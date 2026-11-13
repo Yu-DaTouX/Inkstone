@@ -41,7 +41,7 @@
 - **预测下一句**：回复结束后，输入框用灰字预测你可能要说的话，Tab 填入、Esc 关闭。
 - **手机端**：Android 客户端配对电脑后，可看进度、回复和审批，切换模型与思考档位，重命名、置顶、归档、压缩、切分支或删除会话，按内容搜索会话，查看用量与更改，停止子代理；折叠屏自动切换双栏，界面跟随系统语言，也可在设置里切换。
 - **中文与英文界面**：电脑端和手机端都可在设置里切换界面语言。
-- **更多工作方式**：同步文件夹，以及两台电脑之间的代码分支拉取、对比与合并。语音输入、桌宠、ComfyUI 等在插件市场按需安装；ComfyUI 插件可让模型查询节点、自行拼装并运行工作流，支持出图与视频生成；另有 [Minecraft 模组开发](https://github.com/Yu-DaTouX/inkstone-minecraft-plugin)（独立仓库，按需从 GitHub 下载安装）。
+- **更多工作方式**：语音输入、桌宠、ComfyUI 等在插件市场按需安装；ComfyUI 插件可让模型查询节点、自行拼装并运行工作流，支持出图与视频生成；另有 [Minecraft 模组开发](https://github.com/Yu-DaTouX/inkstone-minecraft-plugin)（独立仓库，按需从 GitHub 下载安装）。
 
 ## 平台
 
@@ -110,7 +110,7 @@ npm run launch
 
 | 位置 | 内容 |
 | --- | --- |
-| `src/main/` | Electron 主进程：pi 进程管理、审批、文件、Git、终端、同步、远程连接 |
+| `src/main/` | Electron 主进程：pi 进程管理、审批、文件、Git、终端、远程连接 |
 | `src/preload/` | 渲染端可调用的宿主接口 |
 | `src/renderer/src/` | 界面：`app/` 外壳，`features/` 各功能，`ui/` 基础控件，`design/tokens.json` 设计令牌 |
 | `src/shared/` | 主进程与渲染端共用的类型和纯逻辑 |

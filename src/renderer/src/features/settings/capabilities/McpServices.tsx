@@ -190,7 +190,7 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
   const [details, setDetails] = useState(false)
   const sessionBusy = useStore((s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming || !!s.session?.isCompacting)
   const pendingStatus = useStore((s) => !!s.nativeMcpStatus?.pending)
-  const actual = runtime?.servers.find((item) => item.id === service.name && !item.migratedToNative)
+  const actual = runtime?.servers.find((item) => item.id === service.name)
   const status = service.backend === 'native'
     ? service.scope === 'project' && !snapshot.projectTrusted ? text.untrusted : snapshot.nativeConfigChanged === true ? text.configChanged : snapshot.nativeConfigChanged === false ? text.configRead : text.configUnknown
     : actual ? t(`cap.status.${actual.status}` as 'cap.status.ready') : text.configUnknown
@@ -198,7 +198,7 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
   const checkDisabled = busy || !!service.conflict || !service.enabled || sessionBusy || (service.scope === 'project' && !snapshot.projectTrusted) || (service.backend === 'native' && (!runtime?.nativeMcpAvailable || pendingStatus))
   return <Entry testId="mcp-service" name={service.special ? text.computer : service.title} badge={<Badge>{service.scope === 'project' ? text.projectOnly : service.inherited ? text.inherited : text.allSessions}</Badge>}
     control={service.special ? undefined : <Switch aria-label={`${service.title} · ${scope === 'global' ? text.allSessions : text.projectOnly}`} isSelected={service.enabled} isDisabled={locked} onChange={(value) => void onMutate(service, value ? 'enable' : 'disable')} data-testid="mcp-service-toggle" />}
-    meta={[service.enabled ? text.enabled : text.disabled, service.overridden ? service.enabled ? text.projectOn : text.projectOff : null]}
+    meta={[service.owner === 'pi' ? text.piNote : text.hostNote, service.enabled ? text.enabled : text.disabled, service.overridden ? service.enabled ? text.projectOn : text.projectOff : null]}
     actions={service.special ? <Button onPress={() => useStore.getState().openSettings('tools')}>{text.openTools}</Button> : <>
       <Button isDisabled={checkDisabled} tooltip={text.loaded} onPress={() => void onCheck(service)}>{service.backend === 'native' ? text.checkSession : text.check}</Button>
       {scope === 'project' && service.inherited && service.overridden ? <Button isDisabled={locked} onPress={() => void onMutate(service, 'inherit')}>{text.inherit}</Button> : null}
@@ -208,7 +208,6 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
     {service.backend === 'host' && snapshot.busy && !service.special ? <Meta>{text.busy}</Meta> : null}
     {service.name === 'codegraph' ? <CodegraphDetails revision={snapshot.revision} /> : null}
     {details ? <div className="mcp-service-details">
-      <Meta>{service.owner === 'pi' ? text.piNote : text.hostNote}</Meta>
       <Meta>{text.source}：{service.source}</Meta>
       <Meta>{text.connection}：{service.connection || service.transport}</Meta>
       <div className="caps-actions">

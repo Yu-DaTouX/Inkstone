@@ -137,10 +137,6 @@ export interface GeneralText {
   devicesRevoke: string
   devicesRevokedAt: string
   devicesForget: string
-  devicesPeer: string
-  devicesPeerDesc: string
-  devicesPeerNone: string
-  devicesPeerRevoke: string
   devicesSyncConfigured: string
 
   dataLocation: string
@@ -331,10 +327,6 @@ const ZH: GeneralText = {
   devicesRevoke: '撤销',
   devicesRevokedAt: '已撤销 · {time}',
   devicesForget: '移除记录',
-  devicesPeer: '砚对砚授权',
-  devicesPeerDesc: '已连到这台电脑的其他砚；断开即失效。',
-  devicesPeerNone: '当前没有其他砚连接。',
-  devicesPeerRevoke: '断开',
   devicesSyncConfigured: '已配置：{path}',
 
   dataLocation: '数据位置',
@@ -525,10 +517,6 @@ const EN: GeneralText = {
   devicesRevoke: 'Revoke',
   devicesRevokedAt: 'revoked · {time}',
   devicesForget: 'Forget',
-  devicesPeer: 'Peer links',
-  devicesPeerDesc: 'Other Inkstones linked here; disconnect to revoke.',
-  devicesPeerNone: 'No other Inkstone machine is connected.',
-  devicesPeerRevoke: 'Disconnect',
   devicesSyncConfigured: 'Configured: {path}',
 
   dataLocation: 'Data location',

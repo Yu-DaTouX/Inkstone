@@ -70,10 +70,3 @@ export function terminalNoticeText(lang: NoticeLang, kind: string | undefined, t
   const body = title?.trim() || (lang === 'en' ? 'Switch to the terminal to continue' : '切到该终端查看')
   return { title: event, body }
 }
-
-export function collabNoticeText(lang: NoticeLang, peer: string, title: string, branch: string): { title: string; body: string } {
-  const name = peer.replace(/^(?:砚|Inkstone)\s*·\s*/, '')
-  return lang === 'en'
-    ? { title: withSubject('Collaboration', 'Merge request'), body: `${name}: ${title} (${branch})` }
-    : { title: withSubject('多人协作', '合并请求'), body: `${name}：${title}（${branch}）` }
-}

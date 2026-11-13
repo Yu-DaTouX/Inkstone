@@ -68,7 +68,6 @@ export interface RemoteAccessStatus {
   addresses: Array<{ kind: RemoteAddressKind; address: string }>
   pairing: { code: string; expiresAt: number } | null
   devices: RemoteDeviceRecord[]
-  grants: import('./peer-protocol').PeerGrantView[]
   error: string | null
   relay?: RemoteRelayStatus
 }

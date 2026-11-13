@@ -35,7 +35,6 @@ import { SessionSwitcher, useSessionSwitcher } from '../features/commands/Sessio
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
 import { useA11yAnnouncements } from './a11y-announcements'
-import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { BrowserSiteAskDialog } from '../features/browser/SiteAskDialog'
 import { StopBackgroundDialog } from '../features/session/StopBackgroundDialog'
 import { SettingsPanelV3 } from './SettingsPanelV3'
@@ -66,7 +65,7 @@ import { reopenLastClosed } from '../state/right-panel-reopen'
 import { railText } from '../features/workbench/rail-text'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import { createFrameBatch } from './frame-batch'
-import { ArtifactLibraryPage, CollabPage, UsagePage, scheduleIdlePreloads } from './route-pages'
+import { ArtifactLibraryPage, UsagePage, scheduleIdlePreloads } from './route-pages'
 import './ShellV3.css'
 
 let bootstrapStarted = false
@@ -633,7 +632,6 @@ export default function ShellV3(): ReactElement {
   const sidebarActions = useMemo(() => ({
     onClose: () => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) },
     onPin: () => useUiV3.getState().setSidebarOpen(true),
-    onCollab: () => useUiV3.getState().navigate({ name: 'collab' }),
     onArtifacts: () => useUiV3.getState().navigate({ name: 'artifacts' }),
     onSettings: () => openSettingsDialog(),
     onSearch: () => setPaletteOpen(true)
@@ -688,11 +686,7 @@ export default function ShellV3(): ReactElement {
             ref={bodyRef}
             data-panel={panelMaximized ? 'maximized' : panelOpen ? panelMode : 'closed'}
           >
-            {route.name === 'collab' ? (
-              <Suspense fallback={null}>
-                <CollabPage />
-              </Suspense>
-            ) : route.name === 'usage' ? (
+            {route.name === 'usage' ? (
               <Suspense fallback={null}>
                 <UsagePage />
               </Suspense>
@@ -751,7 +745,6 @@ export default function ShellV3(): ReactElement {
       <SessionDragLayer />
       <SplitDropLayer />
       <NoticeBridge />
-      <PeerApprovalDialog />
       <BrowserSiteAskDialog />
       <StopBackgroundDialog />
     </V3ErrorBoundary>

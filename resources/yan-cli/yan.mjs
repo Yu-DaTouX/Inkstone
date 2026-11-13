@@ -721,14 +721,27 @@ function readJsonFile(path, label) {
   }
 }
 
+const TOOL_BACKED = { tasks: 'todos', question: 'question' }
+const toolBacked = new Set((process.env.YAN_TOOL_BACKED ?? '').split(',').filter((name) => TOOL_BACKED[name]))
+const TOOL_BACKED_LINES = /^(  yan (tasks apply|question ask) |  「tasks apply」|  （同一个 operationId)/
+
+function usageText() {
+  if (!toolBacked.size) return USAGE
+  return USAGE.split('\n').filter((line) => !(TOOL_BACKED_LINES.test(line) && (line.includes('question ask') ? toolBacked.has('question') : toolBacked.has('tasks')))).join('\n')
+}
+
+function groupUsage(group) {
+  return toolBacked.has(group) ? `本会话已有 ${TOOL_BACKED[group]} 工具，直接调用工具；yan ${group} 不对本会话开放。\n` : GROUP_USAGE[group]
+}
+
 const { flags, positional } = parseArgs(process.argv.slice(2))
 
 if (flags.help || positional.length === 0) {
   if (flags.help && positional.length >= 1 && GROUP_USAGE[positional[0]]) {
-    process.stdout.write(GROUP_USAGE[positional[0]])
+    process.stdout.write(groupUsage(positional[0]))
     process.exit(EXIT.ok)
   }
-  process.stdout.write(USAGE)
+  process.stdout.write(usageText())
   process.exit(positional.length === 0 && !flags.help ? EXIT.usage : EXIT.ok)
 }
 

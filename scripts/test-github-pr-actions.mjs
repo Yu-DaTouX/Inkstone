@@ -306,7 +306,7 @@ assert.ok(!local.state.commands.some(args => args[0] === 'push'))
 result = await local.pushCurrentBranchForPr('/project', 'feat/pr', { setUpstream: true })
 assert.equal(result.ok, true)
 assert.deepEqual(local.state.commands.find(args => args[0] === 'push'), ['push', '--set-upstream', '--', 'origin', 'refs/heads/feat/pr:refs/heads/feat/pr'])
-const ipcModule = await load('src/main/ipc/github-ipc.ts', { electron: 'export const shell={openExternal:async()=>{}}', '../settings': 'export const getSettings=async()=>({}), patchSettings=async()=>({})', '../project-trust': 'export const trustStatus=async()=>({trusted:false})', '../collab/git': 'export const repoRootOf=async()=>null, resolveCommit=async()=>null', '../git-service': 'export const gitRun=async()=>({ok:true})', '../collab/github-publish': 'export const publishPeerBranch=async()=>({ok:false})', '../github/actions': 'export const githubPrBackend={action:async(cwd,request)=>({ok:true,cwd,request}),candidates:async(cwd,request)=>({ok:true,cwd,request})}' })
+const ipcModule = await load('src/main/ipc/github-ipc.ts', { electron: 'export const shell={openExternal:async()=>{}}', '../settings': 'export const getSettings=async()=>({}), patchSettings=async()=>({})', '../project-trust': 'export const trustStatus=async()=>({trusted:false})', '../github/actions': 'export const githubPrBackend={action:async(cwd,request)=>({ok:true,cwd,request}),candidates:async(cwd,request)=>({ok:true,cwd,request})}' })
 const handlers = new Map()
 let authorized = false
 ipcModule.registerGithubIpc({ handle: (channel, handler) => handlers.set(channel, handler) }, { authorizeReadCwd: async () => authorized ? { ok: true, cwd: '/authorized' } : { ok: false, error: 'denied' } })

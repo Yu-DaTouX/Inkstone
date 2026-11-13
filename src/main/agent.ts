@@ -455,6 +455,7 @@ export class AgentController extends EventEmitter {
   }
   private capabilityGuideExtension?: string
   private mcpAppProxyExtension?: string
+  private phoneToolsExtension?: string
   private mcpAppToolsSnapshot?: string
   private nativeConfigReader?: McpNativeConfigReader
   private autoCompactExtension?: string
@@ -739,6 +740,7 @@ export class AgentController extends EventEmitter {
     turnModelSwitchExtension?: string
     capabilityGuideExtension?: string
     mcpAppProxyExtension?: string
+    phoneToolsExtension?: string
     mcpAppToolsSnapshot?: string
     nativeConfigReader?: McpNativeConfigReader
     autoCompactExtension?: string
@@ -821,6 +823,7 @@ export class AgentController extends EventEmitter {
     this.turnModelSwitchExtension = opts.turnModelSwitchExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
+    this.phoneToolsExtension = opts.phoneToolsExtension
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
     this.nativeConfigReader = opts.nativeConfigReader
     this.autoCompactExtension = opts.autoCompactExtension
@@ -866,6 +869,7 @@ export class AgentController extends EventEmitter {
       server = new CapabilityServer({
         opsDir: opts.opsDir,
         handlers,
+        toolBacked: this.toolBackedCommands(),
         ...(opts.preserveResult ? { preserveResult: opts.preserveResult } : {})
       })
       const { url, token } = await server.start({
@@ -894,6 +898,13 @@ export class AgentController extends EventEmitter {
     } catch (err) {
       if (server && this.capabilityServer !== server) server.stop()
       this.noteCapabilityProblem(`能力服务启动失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  private toolBackedCommands(): Record<string, string> {
+    return {
+      ...(this.capabilityGuideExtension ? { 'tasks.apply': 'This session has the todos tool: call it to update the to-do list instead of yan tasks.' } : {}),
+      ...(this.questionExtension ? { 'question.ask': 'This session has the question tool: call it to ask the user instead of yan question.' } : {})
     }
   }
 
@@ -995,6 +1006,7 @@ export class AgentController extends EventEmitter {
         ...(this.imageLabelsExtension ? ['--extension', this.imageLabelsExtension] : []),
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
+        ...(this.phoneToolsExtension ? ['--extension', this.phoneToolsExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         ...this.providerExtensions.flatMap((path) => ['--extension', path]),
         // 预测下一句和压缩扩展都要截取最终发出的请求体，必须排在所有 before_provider_request 改写者之后
@@ -1030,6 +1042,9 @@ export class AgentController extends EventEmitter {
           ? { YAN_PROJECT_ID: this.capabilityOpts.projectId }
           : {}),
         ...androidEnv,
+        ...(this.yanCliEnv && Object.keys(this.toolBackedCommands()).length
+          ? { YAN_TOOL_BACKED: Object.keys(this.toolBackedCommands()).map((name) => name.split('.')[0]).join(',') }
+          : {}),
         ...(this.yanCliEnv
           ? {
               YAN_CLI_URL: this.yanCliEnv.url,

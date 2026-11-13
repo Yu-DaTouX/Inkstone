@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { net } from 'electron'
 import { YAN_DIR } from './paths'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 import {
   BUILTIN_PLUGIN_CATALOG,
   PLUGIN_CATALOG_URL,

@@ -8,7 +8,7 @@ import { build } from 'esbuild'
 
 const outfile = join(tmpdir(), `yan-sync-atomic-${process.pid}.mjs`)
 await build({
-  entryPoints: [fileURLToPath(new URL('../src/main/sync/atomic.ts', import.meta.url))],
+  entryPoints: [fileURLToPath(new URL('../src/main/atomic-write.ts', import.meta.url))],
   outfile,
   bundle: true,
   platform: 'node',

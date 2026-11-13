@@ -18,6 +18,13 @@ export interface DevicesDataText {
   dataExportDesc: string
   dataImportDesc: string
   sessionTransfer: string
+  exportSession: string
+  importSession: string
+  exporting: string
+  importing: string
+  exportDone: string
+  importDone: string
+  transferFailed: string
 }
 
 const ZH: DevicesDataText = {
@@ -35,9 +42,16 @@ const ZH: DevicesDataText = {
   dataBackupRestored: '已恢复 {files} 个文件 · {size}',
   dataBackupOpenRestored: '打开恢复的数据',
   dataMoveDesc: '移到其它盘，完成后自动重启。',
-  dataExportDesc: '会话不随文件夹同步；导出为会话包，在另一台电脑导入。',
+  dataExportDesc: '导出为会话包，在另一台电脑导入。',
   dataImportDesc: '选择一个会话包，导入为新会话。',
-  sessionTransfer: '会话导入导出'
+  sessionTransfer: '会话导入导出',
+  exportSession: '导出当前会话',
+  importSession: '导入会话包',
+  exporting: '正在导出…',
+  importing: '正在导入…',
+  exportDone: '已导出到 {path}',
+  importDone: '已导入为新会话 {id}',
+  transferFailed: '操作失败'
 }
 
 const EN: DevicesDataText = {
@@ -55,9 +69,16 @@ const EN: DevicesDataText = {
   dataBackupRestored: 'Restored {files} files · {size}',
   dataBackupOpenRestored: 'Open restored data',
   dataMoveDesc: 'Move to another drive; restarts when done.',
-  dataExportDesc: 'Sessions are not synced; export a bundle and import it elsewhere.',
+  dataExportDesc: 'Export a session bundle and import it on another computer.',
   dataImportDesc: 'Pick a session bundle and import it as a new session.',
-  sessionTransfer: 'Session export and import'
+  sessionTransfer: 'Session export and import',
+  exportSession: 'Export current session',
+  importSession: 'Import session bundle',
+  exporting: 'Exporting…',
+  importing: 'Importing…',
+  exportDone: 'Exported to {path}',
+  importDone: 'Imported as new session {id}',
+  transferFailed: 'Operation failed'
 }
 
 export function devicesDataText(lang: Lang): DevicesDataText {

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { NativeMcpServerListView, NativeMcpServerView } from '../../shared/mcp-native-import'
+import type { NativeMcpServerListView, NativeMcpServerView } from '../../shared/mcp-native'
 import { pick } from '../../shared/ui-lang'
 
 const OVERRIDE_KEYS = new Set(['enabled', 'exposure', 'toolExposure'])

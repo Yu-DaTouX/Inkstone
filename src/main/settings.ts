@@ -1,5 +1,4 @@
 import { pick, setUiLang } from '../shared/ui-lang'
-import { sanitizePeerLogins } from '../shared/collab-github'
 import { readFile, mkdir, copyFile, rename } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -30,7 +29,7 @@ import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sani
 import { allowedSiteList } from './preview-site-access'
 import { normalizeSearchEngine } from '../shared/browser-navigation'
 import { electronGuardSealStore, guardFieldsOf, sameGuardFields, trustedGuardFields, type GuardFields } from './settings-guard-seal'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 
 const DIR = YAN_DIR
 const FILE = join(DIR, 'desktop.json')
@@ -314,7 +313,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.panelMotionMs = sanitizePanelMotion(settings.panelMotionMs)
   settings.sidebarLayout = settings.sidebarLayout === 'flat' ? 'flat' : undefined
   settings.cloneDir = cleanCloneDir(settings.cloneDir)
-  settings.peerGithubLogins = sanitizePeerLogins(settings.peerGithubLogins)
+  delete (settings as { peerGithubLogins?: unknown }).peerGithubLogins
   settings.autoArchiveDays = typeof settings.autoArchiveDays === 'number' ? normalizeAutoArchiveDays(settings.autoArchiveDays) : undefined
   settings.voiceInput = sanitizeVoiceInput(settings.voiceInput)
   settings.theme = settings.theme === 'light' ? 'light' : 'dark'
@@ -441,7 +440,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','peerGithubLogins','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['apiKeyFailover','accountFailover','lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemode','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','subagentNotify','streamLoopAutoContinue','subagentHistoryPrune','promptSuggestions','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','composerHeight','reduceMotion','glassOpacity','contrast','codeWrap','panelMotionMs','sidebarLayout','cloneDir','autoArchiveDays','voiceInput','shortcutOverrides','browserSearchEngine','nativeWebSearch','fastMode','compressArchivedSessions','thinkingDisplay','translateService','translateTarget','translateModel'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(pick('设置补丁必须是对象', 'The settings patch must be an object'))
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(pick(`不允许修改设置项：${key}`, `Changing this setting is not allowed: ${key}`))
@@ -489,7 +488,6 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.usageCurrency = normalizeUsageCurrency(next.usageCurrency)
   next.sidebarLayout = next.sidebarLayout === 'flat' ? 'flat' : undefined
   next.cloneDir = cleanCloneDir(next.cloneDir)
-  next.peerGithubLogins = sanitizePeerLogins(next.peerGithubLogins)
 
   if (Array.isArray(patch.recentCwds)) {
     next.recentCwds = [...new Set(patch.recentCwds.filter((path): path is string => typeof path === 'string' && isAbsolute(path)))].slice(0, 8)

@@ -24,8 +24,6 @@ const stubModules = {
   './title': 'export const setManualTitle = (...args) => globalThis.__rh.setManualTitle(...args); export const manualTitles = async () => ({}); export const cachedTitles = async () => ({})',
   './settings': 'export const getSettings = (...args) => globalThis.__rh.getSettings(...args)',
   './sessions': 'export const listSessions = (...args) => globalThis.__rh.listSessions(...args); export const deleteSession = async () => ""; export const restoreSession = async () => undefined; export const sessionsToDelete = async () => []; export const SESSIONS_DIR = ""',
-  './peer-grants': 'export class PeerGrantRegistry { constructor() {} }',
-  './peer-client': 'export class PeerClient { constructor() {} }',
   './paths': 'export const YAN_DIR = \'/tmp/yan-remote-chain-fixture\''
 }
 
@@ -223,7 +221,7 @@ try {
   mod = await import(`${pathToFileURL(bundlePath).href}?t=${Date.now()}`)
   mod.configureRemoteHost(fakeHost)
 
-  console.log('--- F09 远程 / peer 会话链代表段归一化 ---')
+  console.log('--- F09 远程会话链代表段归一化 ---')
 
   const snapshot = await mod.remoteSnapshot()
   const snapshotIds = snapshot.sessions.map((session) => session.id)
@@ -231,13 +229,6 @@ try {
   ok(snapshotIds.includes('s-lonely'), '远程列表包含孤立会话')
   ok(!snapshotIds.includes('s-old'), '远程列表隐藏链旧段')
   ok(snapshot.sessions.find((session) => session.id === 's-new')?.title === '第一条', '代表段空标题回填链首标题')
-
-  const peerSessions = await mod.peerHostHandlers.sessions(['p1'])
-  const peerIds = peerSessions.map((session) => session.id)
-  ok(peerIds.includes('s-new') && peerIds.includes('s-lonely'), 'peer 列表含已授权项目的代表段与孤立会话')
-  ok(!peerIds.includes('s-old'), 'peer 列表隐藏已授权项目的链旧段')
-  ok(!peerIds.includes('s-cross-new'), 'peer 列表不返回未授权项目 p2 的代表段')
-  ok(await mod.peerHostHandlers.projectOfSession('s-cross-old') === 'p1', 'peer 授权按请求段项目判定，不跨项目归一')
 
   const settingsBefore = globalThis.__rh.getSettings
   globalThis.__rh.getSettings = async () => ({
@@ -251,9 +242,9 @@ try {
       { id: 'gone', name: '已归档', cwd: 'C:/fixture/gone', archived: true }
     ]
   })
-  const peerProjects = await mod.peerHostHandlers.projects()
+  const snapshotProjects = (await mod.remoteSnapshot()).projects
   globalThis.__rh.getSettings = settingsBefore
-  ok(JSON.stringify(peerProjects.map((project) => [project.id, project.name])) === JSON.stringify([['named', '手动命名'], ['aliased', '别名项目'], ['unnamed', 'pi-desktop']]), 'peer 申请弹窗的项目名回退到别名或文件夹名，不留空白')
+  ok(JSON.stringify(snapshotProjects.map((project) => [project.id, project.name])) === JSON.stringify([['named', '手动命名'], ['aliased', '别名项目'], ['unnamed', 'pi-desktop']]), '远程项目名回退到别名或文件夹名，不留空白')
 
   selectCalls.length = 0
   const selected = await mod.remoteSelectSession('s-old')

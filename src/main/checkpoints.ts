@@ -4,7 +4,7 @@ import { copyFile, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from '
 import { homedir } from 'node:os'
 import { dirname, join, parse, resolve } from 'node:path'
 import { YAN_DIR } from './paths'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 import { gitRun } from './git-service'
 import { createGitDeadline, type GitDeadline } from './git-run-policy'
 import {

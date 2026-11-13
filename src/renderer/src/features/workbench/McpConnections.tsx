@@ -108,7 +108,7 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
       {problems.length ? <p className="wb-ov-note wb-ov-problem" title={problemTip} data-testid="rail-mcp-problems">{en ? `⚠ ${problems.length === 1 ? '1 config problem' : `${problems.length} config problems`}` : `⚠ ${problems.length} 个配置问题`}</p> : null}
       <ul className="wb-ov-items" data-testid="rail-mcp-services">
         {services.map((service) => {
-          const actual = runtime?.servers.find((item) => item.id === service.name && !item.migratedToNative)
+          const actual = runtime?.servers.find((item) => item.id === service.name)
           const loaded = snapshot?.nativeConfigChanged === false
           const untrusted = service.scope === 'project' && !snapshot?.projectTrusted
           const status = untrusted ? en ? 'Not trusted' : '项目未信任' : !service.enabled ? en ? 'Disabled' : '已关闭' : service.backend === 'native' ? loaded ? en ? 'Config loaded' : '配置已加载' : en ? 'Needs reload' : '待应用' : actual ? t(`cap.status.${actual.status}` as 'cap.status.ready') : en ? 'Not connected' : '未连接'

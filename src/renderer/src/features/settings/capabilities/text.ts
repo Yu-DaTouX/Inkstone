@@ -5,7 +5,6 @@ type CapsTextKey =
   | 'prompts'
   | 'sectionReload'
   | 'mcpNativeUnavailable'
-  | 'mcpRunningBlock'
   | 'tabSkills'
   | 'tabMcp'
   | 'tabTools'
@@ -43,12 +42,6 @@ type CapsTextKey =
   | 'skillRemoveConfirm'
   | 'skillRemoveScopeChanged'
   | 'pkgStaleResult'
-  | 'importFieldDescription'
-  | 'importFieldTransport'
-  | 'importFieldCommand'
-  | 'importFieldArgs'
-  | 'importFieldEnvKeys'
-  | 'importFieldUrl'
   | 'installedNotLoaded'
   | 'loadFailed'
   | 'reloaded'
@@ -75,7 +68,6 @@ const ZH: Record<CapsTextKey, string> = {
   sectionReload: '重新读取',
   mcpNativeUnavailable:
     '当前无法读取 pi 原生 MCP 状态。',
-  mcpRunningBlock: '有任务在运行，导入会断开旧连接，请空闲后再试。',
   tabSkills: '技能与扩展',
   tabMcp: 'MCP',
   tabTools: '本机工具',
@@ -115,12 +107,6 @@ const ZH: Record<CapsTextKey, string> = {
     '会话已变化，未执行移除，请重新确认。',
   pkgStaleResult:
     '项目已切换，结果未应用，请核对新项目。',
-  importFieldDescription: '说明',
-  importFieldTransport: '传输方式',
-  importFieldCommand: '命令',
-  importFieldArgs: '参数个数',
-  importFieldEnvKeys: '环境变量（仅键名）',
-  importFieldUrl: '服务地址（仅来源）',
   installedNotLoaded: '已安装，尚未加载',
   loadFailed: '读取失败',
   reloaded: '已重新读取',
@@ -135,7 +121,7 @@ const ZH: Record<CapsTextKey, string> = {
   mcpRemoveBody: '从 {path} 移除，不能撤销；新会话生效。',
   mcpSaved: '已写入 {path}，新会话生效。',
   mcpLegacyTitle: '砚连接的旧服务',
-  mcpLegacyDesc: '可导入到 pi 原生配置，之后由 pi 连接。',
+  mcpLegacyDesc: '写在砚的 mcp-servers.json 里，由砚连接。',
   codegraphTitle: 'CodeGraph',
   codegraphGuide: '尚未加入 pi MCP；加入后可为项目建代码索引。',
   voiceSetupTitle: '转写程序与模型',
@@ -148,8 +134,6 @@ const EN: Record<CapsTextKey, string> = {
   sectionReload: 'Reload',
   mcpNativeUnavailable:
     'Native MCP status is unavailable.',
-  mcpRunningBlock:
-    'A task is running; importing drops connections. Retry when idle.',
   tabSkills: 'Skills & extensions',
   tabMcp: 'MCP',
   tabTools: 'Local tools',
@@ -189,12 +173,6 @@ const EN: Record<CapsTextKey, string> = {
     'Session changed; nothing removed. Confirm again.',
   pkgStaleResult:
     'Project changed; result not applied. Check the new project.',
-  importFieldDescription: 'Description',
-  importFieldTransport: 'Transport',
-  importFieldCommand: 'Command',
-  importFieldArgs: 'Argument count',
-  importFieldEnvKeys: 'Environment keys (names only)',
-  importFieldUrl: 'Server URL (origin only)',
   installedNotLoaded: 'Installed, not loaded',
   loadFailed: 'Load failed',
   reloaded: 'Reloaded',
@@ -209,7 +187,7 @@ const EN: Record<CapsTextKey, string> = {
   mcpRemoveBody: 'Removed from {path}; cannot be undone.',
   mcpSaved: 'Written to {path}; applies to new sessions.',
   mcpLegacyTitle: 'Legacy Inkstone servers',
-  mcpLegacyDesc: 'Import into native pi config; pi then connects.',
+  mcpLegacyDesc: 'Listed in Inkstone mcp-servers.json; Inkstone connects.',
   codegraphTitle: 'CodeGraph',
   codegraphGuide: 'Not in pi MCP yet; add it to index projects.',
   voiceSetupTitle: 'Program & models',

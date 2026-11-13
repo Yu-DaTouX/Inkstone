@@ -329,17 +329,6 @@ export interface GithubBranchListResult {
   failure?: GhPrFailure
 }
 
-export interface GithubPeerPublishRequest {
-  trackingRef: string
-  branch: string
-  base: string
-  title: string
-  body: string
-  draft?: boolean
-  remote?: string
-  confirmed: true
-}
-
 export interface GithubBridge {
   status(cwd: string): Promise<GithubStatus>
   createDefaults(cwd: string): Promise<GhPrCreateDefaultsResult>
@@ -356,6 +345,5 @@ export interface GithubBridge {
   cancelClone(id: string): Promise<{ ok: boolean }>
   createProject(name: string, parentDir?: string): Promise<GithubCreateProjectResult>
   branches(cwd: string): Promise<GithubBranchListResult>
-  publishPeerBranch(cwd: string, request: GithubPeerPublishRequest): Promise<GhPrActionResult>
   defaultCloneDir(): Promise<string>
 }

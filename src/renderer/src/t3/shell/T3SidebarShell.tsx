@@ -1,4 +1,4 @@
-import { Layers, PanelLeftClose, Settings, Users } from 'lucide-react'
+import { Layers, PanelLeftClose, Settings } from 'lucide-react'
 import {
   memo,
   useCallback,
@@ -17,8 +17,6 @@ import { v3Text } from '../../app/v3-text'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { collabText } from '../../features/collab/collab-text'
-import { usePendingPairInvite } from '../../features/collab/pending-invite'
 import { openSidebarSession } from '../../features/sidebar/session-advance'
 import { sameSessionPathLoose } from '../../features/sidebar/session-nav'
 import { setSessionOrder, useSessionNav } from '../../features/sidebar/session-nav-store'
@@ -80,7 +78,6 @@ export interface T3SidebarShellProps {
   preview?: boolean
   onPin?: () => void
   onClose?: () => void
-  onCollab?: () => void
   onArtifacts?: () => void
   onSettings?: () => void
   onSearch?: () => void
@@ -100,7 +97,7 @@ function SidebarLooseDrafts({ ids, ...props }: { ids: readonly string[] } & Omit
 }
 
 export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShellProps): ReactElement {
-  const { onArtifacts, onClose, onCollab, onPin, onSettings, preview } = props
+  const { onArtifacts, onClose, onPin, onSettings, preview } = props
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -167,7 +164,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
   const searching = query.trim().length > 0
   const search = useSidebarSearch(query, sections)
   const snoozePresets = useSnoozePresets(true, now)
-  const invitePending = usePendingPairInvite((s) => s.invite !== null)
 
   const sessions = useStore((s) => s.sessions)
   const settings = useStore((s) => s.settings)
@@ -514,15 +510,6 @@ export const T3SidebarShell = memo(function T3SidebarShell(props: T3SidebarShell
 
   const utilities: SidebarUtilityEntry[] = []
   if (onSettings) utilities.push({ key: 'settings', label: text.settingsEntryHint, icon: <Settings />, onSelect: onSettings })
-  if (onCollab) {
-    utilities.push({
-      key: 'collab',
-      label: collabText(lang).nav,
-      icon: <Users />,
-      attention: invitePending ? 'awaiting' : null,
-      onSelect: onCollab
-    })
-  }
   if (onArtifacts) utilities.push({ key: 'artifacts', label: t('artifactLibrary.title'), icon: <Layers />, onSelect: onArtifacts })
 
   const closeLabel = preview ? own.pin : text.toggleSidebar

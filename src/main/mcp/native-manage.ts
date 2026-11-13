@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
-import type { NativeMcpServerListView } from '../../shared/mcp-native-import'
+import type { NativeMcpServerListView } from '../../shared/mcp-native'
 import type { NativeMcpManageAction, NativeMcpManageResult } from '../../shared/ipc'
-import { atomicWrite, nativeMcpTextFingerprint } from './native-import'
+import { atomicWrite, nativeMcpTextFingerprint } from './config-write'
 import { pick } from '../../shared/ui-lang'
 
 const MANAGE_ACTIONS = new Set<NativeMcpManageAction>(['enable', 'disable', 'remove'])

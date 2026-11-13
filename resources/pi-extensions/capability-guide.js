@@ -11,6 +11,8 @@ import { codemodeWanted } from './codemode-policy.js'
 const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with `yan tasks apply` before the first change and tick them off as they finish; chain each update into a command you are running anyway, never a step of its own.'
 const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with the `todos` tool before the first change and tick them off as they finish; send each update alongside other tool calls in the same response, never in a response of its own.'
 const CODEMODE_WRITES = '- When direct tools are available, use `write`/`edit` directly for large file content: inside a codemode script string it needs escaping and is easy to get wrong.'
+const PHONE_GROUP = '- phone: read and operate the user\'s Android phone over adb'
+const PHONE_TOOL_GROUP = '- phone: Android phone; `tool_search` "phone" first'
 const SEARCH_GROUP = '- search: web search, page text, library docs'
 const SEARCH_DOCS_GROUP = '- search: library docs (`yan search docs --library <name> --query-text "..."`)'
 const CLI_ONLY_GROUPS = [
@@ -27,7 +29,7 @@ const GUIDE_LINES = [
   'Command groups:',
   '- browser: open or operate pages in the built-in browser; `browser run --file` runs multi-step scripts',
   '- terminal: the session terminal the user sees; read it, run commands the user should watch, long-running servers or interactive programs',
-  '- phone: read and operate the user\'s Android phone over adb',
+  PHONE_GROUP,
   SEARCH_GROUP,
   '- subagent: delegate work to other agents; read skill subagent first',
   '- image: generate images; artifact: attach an existing file to this reply',
@@ -39,10 +41,10 @@ const GUIDE_LINES = [
   'Prefer, in order: existing local tools or scripts → a fitting skill → the publisher\'s CLI or API → MCP only when needed.'
 ]
 
-export function capabilityGuide(tools = false, { codemode = true } = {}) {
+export function capabilityGuide(tools = false, { codemode = true, phoneTools = false } = {}) {
   return GUIDE_LINES
     .filter((line) => (codemode || line !== CODEMODE_WRITES) && (!tools || !CLI_ONLY_GROUPS.includes(line)))
-    .map((line) => (!tools ? line : line === PLAN_WITH_CLI ? PLAN_WITH_TOOL : line === SEARCH_GROUP ? SEARCH_DOCS_GROUP : line))
+    .map((line) => (!tools ? line : line === PLAN_WITH_CLI ? PLAN_WITH_TOOL : line === SEARCH_GROUP ? SEARCH_DOCS_GROUP : line === PHONE_GROUP && phoneTools ? PHONE_TOOL_GROUP : line))
     .join('\n')
 }
 
@@ -107,7 +109,7 @@ function computerUseEnabled() {
     const file = process.env.YAN_MCP_SERVERS_FILE?.trim() || join(dir, 'mcp-servers.json')
     const raw = JSON.parse(readFileSync(file, 'utf8'))
     const list = Array.isArray(raw) ? raw : Array.isArray(raw?.servers) ? raw.servers : []
-    return list.some((server) => server?.id === 'windows-mcp' && server.enabled !== false && !server.migratedToNative)
+    return list.some((server) => server?.id === 'windows-mcp' && server.enabled !== false)
   } catch {
     return false
   }
@@ -196,6 +198,11 @@ export function createTodosTool(call = callHostTool) {
   }
 }
 
+function phoneToolsSearchable(pi) {
+  const names = (key) => (pi[key]?.() ?? []).map((tool) => (typeof tool === 'string' ? tool : tool?.name))
+  return names('getActiveTools').includes('tool_search') && names('getAllTools').includes('phone_ui')
+}
+
 const MARKER = 'Capabilities beyond your tools come through the `yan` CLI'
 
 export default function capabilityGuideExtension(pi) {
@@ -207,7 +214,7 @@ export default function capabilityGuideExtension(pi) {
   registerWriteLineEndings(pi)
   pi.on('before_agent_start', (event, ctx) => {
     const base = String(event?.systemPrompt ?? '')
-    const guideText = capabilityGuide(tools, { codemode: codemodeWanted(ctx?.model) })
+    const guideText = capabilityGuide(tools, { codemode: codemodeWanted(ctx?.model), phoneTools: tools && phoneToolsSearchable(pi) })
     const visual = visualAnswersEnabled()
     let sessionSkills = ''
     try {

@@ -2,7 +2,7 @@ const ZH = {
   title: 'MCP 服务', global: '全局服务', project: '当前项目',
   globalHint: '所有会话的默认值，项目可单独覆盖。', projectHint: '只影响当前项目。',
   noProject: '当前会话没有所属项目，可先管理全局服务。', noServices: '还没有服务，添加一个即可使用。',
-  add: '添加服务', refresh: '重新读取', advanced: '高级设置与旧服务迁移', details: '详情',
+  add: '添加服务', refresh: '重新读取', advanced: '高级设置', details: '详情',
   inherited: '来自全局', projectOnly: '仅当前项目', allSessions: '所有会话', enabled: '已启用', disabled: '已关闭',
   projectOn: '本项目已开启', projectOff: '本项目已关闭', inherit: '恢复全局设置',
   name: '服务名称', command: '启动命令', args: '启动参数（每行一个）', url: '服务地址',
@@ -16,8 +16,9 @@ const ZH = {
   check: '检查连接', checkSession: '检查当前会话', checking: '检查中…', checkResult: '当前会话检查结果',
   hostNote: '由砚连接', piNote: '由 pi 连接', source: '配置位置', connection: '连接信息',
   busy: '有任务正在运行，结束后可调整此服务。', untrusted: '当前项目尚未受信任，项目配置暂不生效，也不能修改。可在「权限」里调整项目信任策略。',
-  conflict: '存在重复连接配置，请在高级设置中处理归属。', computer: '电脑操作', computerHint: '在本机工具中管理。', openTools: '前往本机工具',
+  conflict: '存在重复连接配置，请在配置文件中删除其中一份。', computer: '电脑操作', computerHint: '在本机工具中管理。', openTools: '前往本机工具',
   failed: '操作失败，请重试。', envInvalid: '环境变量需要填写 JSON 字符串键值对象。', scopeLabel: '管理范围',
+  owner: '由谁连接', ownerPi: 'pi 原生', ownerHost: '砚托管（MCP App 界面）', ownerHint: '添加后不能改由另一方连接。带界面的 MCP App 选砚托管，其余选 pi 原生。',
   showAdvanced: '显示高级选项', loaded: '连接状态以实际检查结果为准，启用开关不代表已经连接。'
 }
 type Labels = typeof ZH
@@ -25,7 +26,7 @@ const EN: Labels = {
   title: 'MCP services', global: 'Global services', project: 'Current project',
   globalHint: 'Defaults for all sessions; projects can override.', projectHint: 'Affects only this project.',
   noProject: 'This session has no project. You can manage global services.', noServices: 'No services yet. Add one to get started.',
-  add: 'Add service', refresh: 'Refresh', advanced: 'Advanced settings and migration', details: 'Details',
+  add: 'Add service', refresh: 'Refresh', advanced: 'Advanced settings', details: 'Details',
   inherited: 'From global', projectOnly: 'This project only', allSessions: 'All sessions', enabled: 'Enabled', disabled: 'Disabled',
   projectOn: 'Enabled for this project', projectOff: 'Disabled for this project', inherit: 'Restore global default',
   name: 'Service name', command: 'Command', args: 'Arguments (one per line)', url: 'Service URL',
@@ -39,8 +40,9 @@ const EN: Labels = {
   check: 'Check connection', checkSession: 'Check this session', checking: 'Checking…', checkResult: 'Current session status',
   hostNote: 'Connected by Inkstone', piNote: 'Connected by pi', source: 'Configuration file', connection: 'Connection details',
   busy: 'A task is running. Adjust this service after it finishes.', untrusted: 'This project is not trusted. Its configuration is inactive and cannot be edited. Adjust project trust in Permissions.',
-  conflict: 'Duplicate connection definitions. Resolve ownership in advanced settings.', computer: 'Computer use', computerHint: 'Managed in Local tools.', openTools: 'Open local tools',
+  conflict: 'Duplicate connection definitions. Remove one of them from its config file.', computer: 'Computer use', computerHint: 'Managed in Local tools.', openTools: 'Open local tools',
   failed: 'Operation failed. Please retry.', envInvalid: 'Enter environment variables as a JSON object with string values.', scopeLabel: 'Management scope',
+  owner: 'Connected by', ownerPi: 'pi native', ownerHost: 'Inkstone-hosted (MCP App UI)', ownerHint: 'Cannot be moved to the other side later. Choose Inkstone-hosted for MCP Apps with a UI; otherwise pi native.',
   showAdvanced: 'Advanced options', loaded: 'Connection status comes from actual checks. An enabled switch does not mean connected.'
 }
 export const mcpServicesText = (lang: string): Labels => lang === 'en-US' ? EN : ZH

@@ -78,7 +78,6 @@ function normalize(raw: unknown): McpAppServerConfig | { problem: string } {
       args.push(normalized)
     }
   }
-  const migratedToNative = parseMigratedMark(r.migratedToNative)
   if (r.projectEnabled !== undefined && (!r.projectEnabled || typeof r.projectEnabled !== 'object' || Array.isArray(r.projectEnabled) || Object.values(r.projectEnabled).some((value) => typeof value !== 'boolean'))) {
     return { problem: pick(`${id}: projectEnabled 必须是项目 ID 到布尔值的对象`, `${id}: projectEnabled must map project IDs to booleans`) }
   }
@@ -103,7 +102,6 @@ function normalize(raw: unknown): McpAppServerConfig | { problem: string } {
     ...(r.projectEnabled ? { projectEnabled: { ...r.projectEnabled as Record<string, boolean> } } : {}),
     ...(effect ? { effect } : {}),
     ...(r.enabled === false ? { enabled: false } : {}),
-    ...(migratedToNative ? { migratedToNative } : {}),
     ...(ownedBy ? { ownedBy } : {}),
     ...(appHost ? { appHost } : {})
   }
@@ -142,17 +140,6 @@ function parseAppHost(raw: unknown): McpAppHostConfig | undefined {
     if (key !== 'at' && key !== 'natives') extras[key] = value
   }
   return { ...extras, at: r.at, natives }
-}
-
-function parseMigratedMark(raw: unknown): McpServerConfig['migratedToNative'] {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
-  const r = raw as Record<string, unknown>
-  if (typeof r.at !== 'string' || !r.at.trim() || typeof r.targetPath !== 'string' || !r.targetPath.trim()) return undefined
-  return {
-    at: r.at,
-    targetPath: r.targetPath,
-    ...(typeof r.nativeName === 'string' && r.nativeName.trim() ? { nativeName: r.nativeName.trim() } : {})
-  }
 }
 
 export function loadMcpServers(env: NodeJS.ProcessEnv = process.env): McpConfigLoadResult {

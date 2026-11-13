@@ -13,13 +13,6 @@ export interface McpServerConfig {
   projectEnabled?: Record<string, boolean>
   effect?: 'read' | 'write' | 'external-action' | 'unknown'
   enabled?: boolean
-  migratedToNative?: McpMigratedToNativeMark
-}
-
-export interface McpMigratedToNativeMark {
-  at: string
-  targetPath: string
-  nativeName?: string
 }
 
 export interface McpToolDescriptor {

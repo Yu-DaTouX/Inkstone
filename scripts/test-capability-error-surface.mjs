@@ -132,6 +132,40 @@ try {
     server.stop()
   }
 
+  const backed = new CapabilityServer({
+    opsDir: join(work, 'ops-backed'),
+    toolBacked: { 'tasks.apply': 'This session has the todos tool: call it' },
+    handlers: { async run() { return { summary: { ran: true } } } }
+  })
+  const backedEndpoint = await backed.start({ sessionId: 's', projectId: 'p' })
+  const backedRpc = async (command, params) => (await fetch(backedEndpoint.url, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${backedEndpoint.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ apiVersion: CAPABILITY_API_VERSION, sessionId: 's', projectId: 'p', command, params })
+  })).json()
+  try {
+    const viaCli = await backedRpc('tasks.apply', { items: [] })
+    assert.equal(viaCli.ok, false)
+    assert.equal(viaCli.code, 'command_use_tool', '有工具的会话里命令行入口返回指向工具的提示')
+    assert.match(viaCli.hint, /todos tool/)
+    const viaTool = await backedRpc('tasks.apply', { items: [], toolCall: { id: 'tc-1', cwd: '', subagent: false } })
+    assert.equal(viaTool.ok, true, '工具自己的调用照常放行')
+    assert.equal((await backedRpc('search.query', {})).ok, true, '未登记的命令不受影响')
+  } finally {
+    backed.stop()
+  }
+
+  const helpEnv = { ...process.env }
+  delete helpEnv.YAN_TOOL_BACKED
+  const plainHelp = await runCli(['--help'], helpEnv)
+  assert.match(plainHelp.stdout, /yan tasks apply/)
+  assert.match(plainHelp.stdout, /yan question ask/)
+  const backedHelp = await runCli(['--help'], { ...helpEnv, YAN_TOOL_BACKED: 'tasks,question' })
+  assert.doesNotMatch(backedHelp.stdout, /yan tasks apply|yan question ask|operationId/, '有工具的会话 yan --help 不再列这两组')
+  const backedGroup = await runCli(['tasks', '--help'], { ...helpEnv, YAN_TOOL_BACKED: 'tasks' })
+  assert.match(backedGroup.stdout, /todos 工具/)
+  assert.match((await runCli(['question', '--help'], { ...helpEnv, YAN_TOOL_BACKED: 'tasks' })).stdout, /yan question <动作>/, '只有对应工具存在时才收起该组帮助')
+
   const html = join(work, 'page.html')
   const preview = (path) => runArtifactPreview(async () => { throw new Error('preview_read') }, path, work)
   await assert.rejects(preview('nope.html'), (error) => {

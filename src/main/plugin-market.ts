@@ -1,5 +1,5 @@
 import type { CodegraphStatus, MarketSearchResult, PluginExportResult } from '../shared/plugin-market'
-import { buildNativeMcpDocument } from '../shared/mcp-native-import'
+import { buildNativeMcpDocument } from '../shared/mcp-native'
 import { execFile, spawn } from 'node:child_process'
 import { killProcessTree } from './git-service'
 import { randomBytes } from 'node:crypto'

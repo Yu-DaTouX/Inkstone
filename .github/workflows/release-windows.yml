@@ -68,10 +68,14 @@ jobs:
 
       - run: npm run typecheck
 
-      - run: npm run dist
+      - name: Build
+        run: npm run build
 
       - name: Unit tests (release gate)
         run: npm run test:unit
+
+      - name: Package
+        run: npx electron-builder --win --publish never
 
       - name: Packaged acceptance
         if: github.event_name == 'push' || inputs.packaged_test

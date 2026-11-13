@@ -4,8 +4,8 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
-await build({ stdin: { contents: "export * from './src/main/mcp/service-settings.ts';export {mcpServersForProject,parseMcpServersDocument} from './src/main/mcp/config.ts';export {McpAppHost} from './src/main/mcp/app-host.ts';export {McpAppProxyService} from './src/main/mcp/app-proxy-service.ts'", resolveDir: process.cwd() }, outfile: '.tmp/mcp-unification/services.mjs', bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent' })
-const { listMcpServiceSettings: list, changeMcpServiceSettings: change, mcpServersForProject, parseMcpServersDocument, McpAppHost, McpAppProxyService } = await import(pathToFileURL(resolve('.tmp/mcp-unification/services.mjs')).href)
+await build({ stdin: { contents: "export * from './src/main/mcp/service-settings.ts';export {mcpServersForProject,parseMcpServersDocument} from './src/main/mcp/config.ts';export {McpAppHost} from './src/main/mcp/app-host.ts';export {isInkstoneManaged} from './src/main/mcp/app-spec.ts';export {McpAppProxyService} from './src/main/mcp/app-proxy-service.ts'", resolveDir: process.cwd() }, outfile: '.tmp/mcp-unification/services.mjs', bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent' })
+const { listMcpServiceSettings: list, changeMcpServiceSettings: change, mcpServersForProject, parseMcpServersDocument, McpAppHost, McpAppProxyService, isInkstoneManaged } = await import(pathToFileURL(resolve('.tmp/mcp-unification/services.mjs')).href)
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-mcp-settings-'))
 const agentDir = join(dir, 'agent')
 const projectDir = join(dir, 'project')
@@ -17,7 +17,7 @@ const hostFile = join(dir, 'host.json')
 const host = { agentDir, hostFile, context: 'runner-A', project: { id: 'A', name: 'Minecraft', cwd: projectDir }, projects: [{ id: 'A', cwd: projectDir }], projectTrusted: true, busy: false, nativeConfigChanged: null }
 await writeFile(globalPath, JSON.stringify({ keepRoot: 1, mcpServers: { codegraph: { command: 'node', args: ['fixture'], env: { PRIVATE: 'preserved' }, extra: 'untouched' }, moved: { command: 'node' }, shadow: { command: 'global' } } }))
 await writeFile(projectPath, JSON.stringify({ keepProject: 1, mcpServers: { codegraph: { exposure: 'deferred' }, local: { command: 'local-fixture' }, shadow: { command: 'project' } } }))
-await writeFile(hostFile, JSON.stringify({ custom: 1, servers: [{ id: 'minecraft', title: 'Minecraft mod 开发', transport: 'stdio', command: 'node', env: { KEEP: 'value' }, extra: 12 }, { id: 'old-codegraph', transport: 'stdio', command: 'node', enabled: false, migratedToNative: { at: 'now', targetPath: globalPath, nativeName: 'codegraph' } }] }))
+await writeFile(hostFile, JSON.stringify({ custom: 1, servers: [{ id: 'minecraft', title: 'Minecraft mod 开发', transport: 'stdio', command: 'node', env: { KEEP: 'value' }, extra: 12 }, { id: 'codegraph', transport: 'stdio', command: 'node', enabled: false, migratedToNative: { at: 'now', targetPath: globalPath, nativeName: 'codegraph' }, appHost: { at: 'old', natives: [{ path: globalPath, name: 'codegraph', entry: {}, fingerprint: 'x' }] } }] }))
 let checks = 0
 const ok = (value, label) => { assert.ok(value, label); checks++ }
 const invoke = async (input, customHost = host) => {
@@ -28,7 +28,7 @@ let snapshot = await list(host)
 ok(snapshot.global.find((s) => s.name === 'codegraph').enabled, 'global definition kept independently')
 ok(snapshot.projectServices.find((s) => s.name === 'codegraph').inherited, 'project view shows inherited global')
 ok(snapshot.projectServices.filter((s) => s.name === 'shadow').length === 1 && snapshot.projectServices.find((s) => s.name === 'shadow').scope === 'project', 'project definition overrides matching global without duplicate row')
-ok(!snapshot.global.some((s) => s.name === 'old-codegraph'), 'migrated host shadow removed from unified list')
+ok(!snapshot.global.some((s) => s.backend === 'host' && s.name === 'codegraph') && !snapshot.errors.some((e) => e.includes('codegraph')), 'old switch fields read quietly; disabled host shadow stays out of the list')
 ok((await invoke({ key: 'native:global:codegraph', action: 'disable' })).ok, 'project disable saves only local override')
 let globalDoc = JSON.parse(await readFile(globalPath, 'utf8'))
 let projectDoc = JSON.parse(await readFile(projectPath, 'utf8'))
@@ -53,6 +53,14 @@ ok((await invoke({ scope: 'global', key: 'native:global:codegraph', action: 'dis
 ok(!(await invoke({ action: 'add', name: 'new', config: { command: 'node' } }, { ...host, projectTrusted: false })).ok, 'untrusted project writes rejected')
 ok((await invoke({ action: 'add', name: 'added', config: { url: 'https://example.invalid/mcp' } })).ok, 'new network service respects selected project scope')
 ok((await list(host)).projectServices.some((s) => s.name === 'added' && s.scope === 'project'), 'added service appears only in project list')
+ok((await invoke({ action: 'add', name: 'app-ui', owner: 'inkstone', config: { command: 'node', args: ['app.js'] } })).ok, 'Inkstone-hosted service is fixed at add time')
+legacy = JSON.parse(await readFile(hostFile, 'utf8'))
+const hosted = legacy.servers.find((s) => s.id === 'app-ui')
+ok(legacy.custom === 1 && hosted?.ownedBy === 'inkstone' && hosted.transport === 'stdio' && hosted.command === 'node' && hosted.args[0] === 'app.js' && hosted.projectScope === 'A' && Array.isArray(hosted.appHost?.natives), 'hosted entry carries ownership declaration and project scope')
+ok(!JSON.parse(await readFile(globalPath, 'utf8')).mcpServers['app-ui'] && !JSON.parse(await readFile(projectPath, 'utf8')).mcpServers['app-ui'], 'hosted entry never written to pi native config')
+ok(isInkstoneManaged(parseMcpServersDocument(JSON.stringify(legacy), hostFile).servers.find((s) => s.id === 'app-ui')), 'hosted entry parses as Inkstone-managed')
+ok((await list(host)).projectServices.some((s) => s.name === 'app-ui' && s.owner === 'inkstone' && s.backend === 'host'), 'list shows Inkstone ownership')
+ok(!(await invoke({ action: 'add', name: 'app-ui', config: { command: 'node' } })).ok, 'same name cannot be added on the pi side')
 ok(!(await invoke({ action: 'add', name: '__proto__', config: { command: 'node' } })).ok, 'reserved object keys rejected')
 ok(!(await invoke({ action: 'add', name: 'bad', config: { url: 'file:///private' } })).ok, 'invalid protocol rejected')
 ok(!(await invoke({ action: 'add', name: 'codegraph', config: { command: 'node' } })).ok, 'duplicate names never overwrite credentials')

@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import type { AuthProviderInfo, AuthStatus, FileListingStatus, FileRequestContext, PathCompletionResult } from '../shared/ipc'
 import { PI_AGENT_DIR } from './paths'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 
 const PI_DIR = PI_AGENT_DIR
 const AUTH_FILE = join(PI_DIR, 'auth.json')

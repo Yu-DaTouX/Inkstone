@@ -1,9 +1,8 @@
 import { userMessageSent } from './browser/user-handoff'
 import type { BrowserWindow } from 'electron'
 import { nativeImage } from 'electron'
-import { join, basename, resolve } from 'node:path'
+import { join, basename } from 'node:path'
 import { stat } from 'node:fs/promises'
-import { hostname } from 'node:os'
 import { pick } from '../shared/ui-lang'
 import { remoteHistoryPage, remoteToolCall } from '../shared/remote-history-page'
 import { approvalDigest, applyHumanApproval, remoteApprovalQuestion } from './remote-approval'
@@ -12,11 +11,7 @@ import { localizeImage } from './image-store'
 import { cachedTitles, manualTitles, setManualTitle } from './title'
 import { getSettings } from './settings'
 import { listSessions } from './sessions'
-import { PeerGrantRegistry } from './peer-grants'
-import { PeerClient } from './peer-client'
-import type { PeerHostHandlers, RemoteArtifactFile, RemoteCommand, RemoteOperationResult } from './remote-server'
-import { PEER_ARTIFACT_MAX_BYTES } from '../shared/peer-protocol'
-import type { PeerExportedArtifact, PeerSessionExport } from '../shared/peer-protocol'
+import type { RemoteArtifactFile, RemoteCommand, RemoteOperationResult } from './remote-server'
 import { REMOTE_ARTIFACT_MAX_BYTES, REMOTE_INSIGHT_MAX_FILES } from '../shared/remote-protocol'
 import type { RemoteChangedFile, RemoteInsight, RemoteSessionChanges, RemoteSessionStats, RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
@@ -44,7 +39,6 @@ export interface RemoteHost extends SessionHost {
   win(): BrowserWindow | null
   remoteAccess(): RemoteAccess | null
   approvals?: Pick<ApprovalBroker, 'list' | 'answer'>
-  worktreeOriginOf?(sessionId: string, cwd: string): Promise<string | null>
 }
 
 let host: RemoteHost
@@ -291,7 +285,7 @@ export async function remoteSnapshot(): Promise<Record<string, unknown>> {
     apiVersion: 1,
     projects: settings.projects
       .filter((project) => !project.archived)
-      .map((project) => ({ id: project.id, name: peerProjectName(project, settings.projectNames), cwd: project.cwd })),
+      .map((project) => ({ id: project.id, name: projectDisplayName(project, settings.projectNames), cwd: project.cwd })),
     currentProjectId: host.projectIdForCwd(settings, settings.cwd) ?? null,
     generatedAt: Date.now(),
     desktop: {
@@ -500,7 +494,7 @@ export async function remoteNewSession(requestedProjectId?: string): Promise<Rem
   return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
 }
 
-export async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string, summary: SessionSummary, generation: number, current: () => boolean) => Promise<RemoteOperationResult>, authorize?: (targetSessionId?: string) => Promise<RemoteOperationResult | null>, reserve = false): Promise<RemoteOperationResult> {
+export async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string, summary: SessionSummary, generation: number, current: () => boolean) => Promise<RemoteOperationResult>, reserve = false): Promise<RemoteOperationResult> {
   const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
   if (!resolved.ok) return resolved
   const summary = resolved.summary
@@ -537,11 +531,6 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
     agent?.getState()?.sessionId === summary.id && selected.sessionId === summary.id
   const changed = { ok: false, status: 409, error: pick('目标会话运行实例已变化，请刷新后重试', 'The session\'s runtime changed. Refresh and retry') }
   if (!agent || !current() || generation === undefined) return changed
-  if (authorize) {
-    const denied = await authorize(summary.id)
-    if (denied) return denied
-    if (!current()) return changed
-  }
   const admission = reserve ? registry.admitExecute(selected.id) : null
   if (admission && !admission.ok) return { ok: false, status: 409, error: admission.error }
   try {
@@ -584,7 +573,7 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
       userMessageSent(agent.getState()?.sessionId)
       const result = await agent.send(command.text, command.images, command.mode, undefined, generation)
       return result.ok ? { ok: true, data: { ...result, runId, sessionId: summary.id } } : { ok: false, status: 409, error: result.error ?? pick('目标会话未能接收消息', 'The session could not accept the message') }
-    }, command.authorize)
+    })
   }
   if (command.action === 'model') {
     return withRemoteSession(command.sessionId, async (agent, _runId, _summary, _generation, current) => {
@@ -594,7 +583,7 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
       const result = await agent.setModel(model.provider, model.id)
       host.pushRunners()
       return result.ok ? { ok: true, data: { current: { id: model.id, provider: model.provider, name: model.name, input: model.input }, pending: !!agent.getState()?.pendingModelChange } } : { ok: false, status: 409, error: result.error }
-    }, undefined, !sessionBusy(command.sessionId))
+    }, !sessionBusy(command.sessionId))
   }
 
   if (command.action === 'thinking') {
@@ -605,7 +594,7 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
       const result = await agent.setThinking(command.level)
       host.pushRunners()
       return result.ok ? { ok: true, data: { level: command.level, levels, pending: !!agent.getState()?.pendingModelChange } } : { ok: false, status: 409, error: result.error }
-    }, undefined, !sessionBusy(command.sessionId))
+    }, !sessionBusy(command.sessionId))
   }
 
   if (command.action === 'abort') {
@@ -766,133 +755,8 @@ export async function remoteMessageImage(sessionId: string, messageId: string, i
   return { path: file.path, mediaType: image!.mimeType, bytes: file.size, filename: file.name }
 }
 
-export const peerClient = new PeerClient()
-
-export const peerGrants = new PeerGrantRegistry({
-  ask: (request) => {
-    host.push({ ch: 'peer-request', payload: request })
-    const win = host.win()
-    if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true)
-  },
-  closed: (requestId) => host.push({ ch: 'peer-request-closed', payload: { requestId } }),
-  changed: (_grants, revoked) => {
-    if (revoked) host.remoteAccess()?.disconnectConnection(revoked)
-  }
-})
-
-export async function peerSummaryOf(sessionId: string): Promise<SessionSummary | undefined> {
-  return (await remoteSessions(Number.MAX_SAFE_INTEGER, true)).find((item) => item.id === sessionId)
-}
-
-function cwdKey(value: string): string {
-  return resolve(value).replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
-}
-
-export function cwdWithin(child: string | undefined, parent: string | undefined): boolean {
-  if (!child || !parent) return false
-  const inner = cwdKey(child)
-  const outer = cwdKey(parent)
-  return inner === outer || inner.startsWith(`${outer}/`)
-}
-
-async function peerProjectOf(summary: SessionSummary | undefined): Promise<string | null> {
-  if (!summary?.projectId) return null
-  const project = (await getSettings()).projects.find((item) => item.id === summary.projectId && !item.archived)
-  if (!project) return null
-  if (cwdWithin(summary.cwd, project.cwd)) return project.id
-  const origin = await host.worktreeOriginOf?.(summary.id, summary.cwd).catch(() => null)
-  return origin && cwdWithin(origin, project.cwd) ? project.id : null
-}
-
-export function peerProjectName(project: { name?: string; cwd: string }, projectNames: Record<string, string> = {}): string {
+function projectDisplayName(project: { name?: string; cwd: string }, projectNames: Record<string, string> = {}): string {
   return project.name?.trim() || projectNames[project.cwd]?.trim() || basename(project.cwd) || project.cwd
-}
-
-export const peerHostHandlers: PeerHostHandlers = {
-  async projects() {
-    const settings = await getSettings()
-    return settings.projects
-      .filter((project) => !project.archived)
-      .map((project) => ({ id: project.id, name: peerProjectName(project, settings.projectNames) }))
-  },
-  async sessions(projectIds) {
-    const candidates = (await remoteSessions(500, true))
-      .filter((summary) => !!summary.projectId && projectIds.includes(summary.projectId))
-    const scoped = await Promise.all(candidates.map(async (summary) => ((await peerProjectOf(summary)) === summary.projectId ? summary : null)))
-    const list = scoped.filter((summary): summary is SessionSummary => summary !== null)
-    return (await filterChainRepresentatives(list)).map(remoteSessionSummary)
-  },
-  async projectOfSession(sessionId) {
-    return await peerProjectOf(await peerSummaryOf(sessionId))
-  },
-  async projectOfRun(runId) {
-    const sessionId = host.runners()?.agentOf(runId)?.getState()?.sessionId
-    return sessionId ? await peerProjectOf(await peerSummaryOf(sessionId)) : null
-  },
-  async exportSession(sessionId) {
-    const summary = await peerSummaryOf(sessionId)
-    if (!summary?.projectId || !(await peerProjectOf(summary))) return { ok: false, status: 404, error: pick('找不到目标会话', 'Session not found') }
-    const history = await host.readHistoryWithArtifacts(summary.path)
-    if (!history) return { ok: false, status: 502, error: pick('无法读取该会话历史', 'Cannot read this session\'s history') }
-    const settings = await getSettings()
-    const project = settings.projects.find((item) => item.id === summary.projectId)
-    const artifacts: PeerExportedArtifact[] = []
-    for (const artifact of history.messages.flatMap((message) => message.artifacts ?? [])) {
-      let available = !artifact.unavailable
-      if (available) {
-        available = await stat(artifact.path).then((info) => info.isFile() && info.size <= PEER_ARTIFACT_MAX_BYTES).catch(() => false)
-      }
-      artifacts.push({ id: artifact.id, filename: artifact.filename, mediaType: artifact.mediaType, bytes: artifact.bytes, available })
-    }
-    const exported: PeerSessionExport = {
-      version: 1,
-      source: {
-        computer: hostname(),
-        sessionId: summary.id,
-        projectId: summary.projectId,
-        projectName: peerProjectName(project ?? { cwd: summary.cwd }, settings.projectNames),
-        title: summary.title,
-        exportedAt: Date.now(),
-        updatedAt: summary.updatedAt,
-        messageCount: summary.messageCount
-      },
-      messages: history.messages.map((message) => ({
-        ...message,
-        ...(message.images ? { images: message.images.map((image) => ({ mimeType: image.mimeType, data: '' })) } : {}),
-        ...(message.toolCalls ? { toolCalls: message.toolCalls.map((tool) => ({ ...tool, images: undefined })) } : {}),
-        ...(message.artifacts ? { artifacts: message.artifacts.map(remoteArtifactOf) } : {})
-      })),
-      artifacts,
-      truncated: history.truncated > 0
-    }
-    return { ok: true, data: exported }
-  },
-  async startSession(projectId, text) {
-    const project = (await getSettings()).projects.find((item) => item.id === projectId && !item.archived)
-    if (!project) return { ok: false, status: 404, error: pick('找不到这个项目', 'Project not found') }
-    if (!host.runners()) {
-      const started = await host.startAgent()
-      if (!started.ok) return { ok: false, status: 503, error: started.error ?? pick('pi 未运行', 'pi is not running') }
-    }
-    const cwdResult = await host.validateCwd(project.cwd)
-    if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
-    const registry = host.runners()!
-    const selected = await registry.select({ cwd: cwdResult.cwd, projectId: project.id, scope: 'project', activate: false })
-    if (!selected.ok || !selected.id) return { ok: false, status: 409, error: selected.error ?? pick('无法为新任务准备运行实例', 'Cannot prepare a runtime for the new task') }
-    const agent = registry.agentOf(selected.id)
-    const generation = selected.generation
-    const sessionId = selected.sessionId
-    const current = () => host.runners() === registry && registry.agentOf(selected.id!) === agent &&
-      generation !== undefined && registry.runtimeOf(selected.id!)?.generation === generation &&
-      agent?.getState()?.sessionId === sessionId
-    if (!agent || !sessionId || generation === undefined || !current()) return { ok: false, status: 409, error: pick('新任务运行实例已变化', 'The new task\'s runtime changed') }
-    await host.rememberRunnerSession(selected, { cwd: cwdResult.cwd, projectId: project.id, scope: 'project' })
-    if (!current()) return { ok: false, status: 409, error: pick('新任务运行实例已变化', 'The new task\'s runtime changed') }
-    const sent = await agent.send(text, undefined, undefined, undefined, generation)
-    host.pushRunners()
-    if (!sent.ok) return { ok: false, status: 409, error: sent.error ?? pick('新任务未能接收消息', 'The new task could not accept the message') }
-    return { ok: true, data: { sessionId: sessionId ?? null, runId: selected.runId ?? selected.id, projectId: project.id } }
-  }
 }
 
 export async function remoteSetSessionFlag(sessionId: string, flags: { pinned?: boolean; archived?: boolean }): Promise<RemoteOperationResult> {

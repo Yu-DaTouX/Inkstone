@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { atomicWriteFile } from '../sync/atomic'
+import { atomicWriteFile } from '../atomic-write'
 import { join, dirname, isAbsolute, resolve, sep } from 'node:path'
 import {
   ARTIFACT_LIMITS,

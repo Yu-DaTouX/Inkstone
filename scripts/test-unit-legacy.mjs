@@ -37,29 +37,10 @@ async function guarded(label, run) {
   }
 }
 
-await guarded("import('./test-live-synthetic-isolation.mjs')", () => import('./test-live-synthetic-isolation.mjs'))
-await guarded("import('./test-light-client.mjs')", () => import('./test-light-client.mjs'))
-await guarded("import('./test-light-hotpaths.mjs')", () => import('./test-light-hotpaths.mjs'))
-await guarded("import('./test-main-runtime-imports.mjs')", () => import('./test-main-runtime-imports.mjs'))
-await guarded("import('./test-i18n-consistency.mjs')", () => import('./test-i18n-consistency.mjs'))
-await guarded("import('./test-i18n-compare.mjs')", () => import('./test-i18n-compare.mjs'))
-await guarded("import('./test-model-selection.mjs')", () => import('./test-model-selection.mjs'))
-await guarded("import('./test-cc-guard.mjs')", () => import('./test-cc-guard.mjs'))
 await guarded("runHtmlArtifactPreviewTests()", () => runHtmlArtifactPreviewTests())
 await guarded("runRunStateTests()", () => runRunStateTests())
 await guarded("runCapabilityNegotiationTests()", () => runCapabilityNegotiationTests())
-await guarded("import('./test-security-performance-fixes.mjs')", () => import('./test-security-performance-fixes.mjs'))
-await guarded("import('./test-browser-frame-origin.mjs')", () => import('./test-browser-frame-origin.mjs'))
-await guarded("import('./test-v3-deeplink.mjs')", () => import('./test-v3-deeplink.mjs'))
-const inProcessScripts = [
-  'test-attachment-prune-race', 'test-files-root-boundary',
-  'test-mobile-model-url', 'test-mobile-window-layout', 'test-mobile-timeline', 'test-mobile-event-stream', 'test-mobile-image-cache', 'test-mobile-preview-plan', 'test-open-path-boundary',
-  'test-package-timeout-fallback',
-  'test-session-restore-rollback', 'test-subagent-stop-intent',
-  'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory',
-  'test-user-address',
-  'test-pi-settings-eperm-retry'
-]
+const inProcessScripts = ['test-mobile-event-stream']
 for (const script of inProcessScripts) {
   if (script === 'test-mobile-event-stream' && !existsSync(join('mobile', 'node_modules', '@noble', 'curves'))) {
     console.log(`- ${script}（跳过：worktree 未安装 mobile 依赖）`)
@@ -115,9 +96,6 @@ await buildTest('src/main/session-reader.ts', 'out/test/session-reader.mjs')
 const { runSessionImageTests } = await import('./test-session-images.mjs')
 const { runArtifactTests } = await import('./test-artifacts.mjs')
 await guarded("runArtifactTests()", () => runArtifactTests())
-await guarded("import('./test-image-generation-boundaries.mjs')", () => import('./test-image-generation-boundaries.mjs'))
-await guarded("import('./test-bundled-plugins.mjs')", () => import('./test-bundled-plugins.mjs'))
-await guarded("import('./test-comfyui-plugin.mjs')", () => import('./test-comfyui-plugin.mjs'))
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runTurnTimingTests } = await import('./test-turn-timing.mjs')
 const { runDurationTests } = await import('./test-duration.mjs')
@@ -266,15 +244,14 @@ const stdioGuard = await buildTest('src/main/stdio-guard.ts', 'out/test/stdio-gu
 
 const remoteServer = await buildTest('src/main/remote-server.ts', 'out/test/remote-server.mjs').then(() => import('../out/test/remote-server.mjs'))
 const { runRemoteServerTests } = await import('./test-remote.mjs')
-const peerDeps = await import('../node_modules/esbuild/lib/main.js').then(async ({ build }) => {
+const deviceDeps = await import('../node_modules/esbuild/lib/main.js').then(async ({ build }) => {
   const out = {}
-  for (const [entry, name] of [['src/main/remote-devices.ts', 'remote-devices'], ['src/main/peer-grants.ts', 'peer-grants']]) {
+  for (const [entry, name] of [['src/main/remote-devices.ts', 'remote-devices']]) {
     await buildTest(entry, `out/test/${name}.mjs`)
     Object.assign(out, await import(`../out/test/${name}.mjs`))
   }
   return out
 })
-const { runPeerTests } = await import('./test-peer.mjs')
 
 const quotaCommandCode = await buildTest('src/main/quota-commandcode.ts', 'out/test/quota-commandcode.mjs', { platform: 'neutral' }).then(() => import('../out/test/quota-commandcode.mjs'))
 
@@ -811,9 +788,8 @@ const { runStdioGuardTests } = await import('./test-stdio-guard.mjs')
 runStdioGuardTests(ok, stdioGuard)
 
 await guarded("runRemoteServerTests(ok, remoteServer)", () => runRemoteServerTests(ok, remoteServer))
-await guarded("runPeerTests(ok, { ...remoteServer, ...peerDeps })", () => runPeerTests(ok, { ...remoteServer, ...peerDeps }))
 const { runRemoteDeviceTests } = await import('./test-remote-devices.mjs')
-await guarded("runRemoteDeviceTests(ok, peerDeps)", () => runRemoteDeviceTests(ok, peerDeps))
+await guarded("runRemoteDeviceTests(ok, deviceDeps)", () => runRemoteDeviceTests(ok, deviceDeps))
 
 const languageExtension = await import('../resources/pi-extensions/language.js')
 const { runLanguageExtensionTests } = await import('./test-language-extension.mjs')
@@ -863,7 +839,6 @@ await Promise.all([
     buildTest('src/main/git-actions.ts', 'out/test/git-actions-main.mjs', { logLevel: 'warning' }),
     buildTest('src/main/git-worktree.ts', 'out/test/git-worktree.mjs', { logLevel: 'warning' }),
     buildTest('src/main/sources.ts', 'out/test/sources.mjs', { logLevel: 'warning' }),
-    buildTest('src/main/worktree-links.ts', 'out/test/worktree-links.mjs', { logLevel: 'warning' }),
     buildTest('src/main/session-isolation.ts', 'out/test/session-isolation.mjs', { logLevel: 'warning' }),
     buildTest('src/main/question-log.ts', 'out/test/question-log-store.mjs', { logLevel: 'warning' }),
     buildTest('src/shared/question-log.ts', 'out/test/question-log.mjs', { platform: 'neutral', logLevel: 'warning' }),
@@ -872,7 +847,6 @@ await Promise.all([
 const { runGitRepoTests } = await import('./test-git-lib.mjs')
 const { runPackagesTests } = await import('./test-packages.mjs')
 const { runSourcesTests } = await import('./test-sources.mjs')
-const { runWorktreeLinkTests } = await import('./test-worktree-links.mjs')
 const { runSessionIsolationTests } = await import('./test-session-isolation.mjs')
 const { runQuestionLogTests } = await import('./test-question-log.mjs')
 console.log('\n--- 宿主提问：回放合并 + 按会话落盘 ---')
@@ -893,8 +867,6 @@ console.log('\n--- 启动页用量概览：按行计数与范围聚合 ---')
 await guarded("runUsageStatsTests(ok)", () => runUsageStatsTests(ok))
 console.log('\n--- S1. 会话来源的持久化引用 ---')
 await guarded("runSourcesTests(ok)", () => runSourcesTests(ok))
-console.log('\n--- S2. 会话↔工作树来源关系（实施-07）---')
-await guarded("runWorktreeLinkTests(ok)", () => runWorktreeLinkTests(ok))
 console.log('\n--- S2b. 同一工作目录冲突 → 自动隔离与自动合回 ---')
 await guarded("runSessionIsolationTests(ok)", () => runSessionIsolationTests(ok))
 await guarded("runGitRepoTests(ok)", () => runGitRepoTests(ok))

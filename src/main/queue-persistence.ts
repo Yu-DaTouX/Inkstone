@@ -1,7 +1,7 @@
 import { readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
-import { atomicWriteFile } from './sync/atomic'
+import { atomicWriteFile } from './atomic-write'
 
 export const QUEUE_RECOVERY_DIR = join(YAN_DIR, 'queue-recovery')
 

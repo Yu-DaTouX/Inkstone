@@ -86,6 +86,9 @@ await save({ codemode: 'off' })
 available.push('tool_search')
 before()
 assert(!active.includes('tool_search'), 'tool_search stays inactive without deferred tools')
+deferred = [{ name: 'phone_ui', exposure: 'deferred' }, { name: 'phone_tap', exposure: 'deferred' }]
+before()
+assert(!active.includes('tool_search'), 'phone tools alone do not activate tool_search, so the fixed prefix does not grow')
 deferred = [{ name: 'mcp__hosted__note', exposure: 'deferred' }]
 before()
 assert(active.includes('tool_search') && !active.includes('codemode') && !active.includes('mcp__hosted__note'), 'deferred tools stay reachable through tool_search when codemode is off')

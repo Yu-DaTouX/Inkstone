@@ -7,7 +7,6 @@ import {
   type RemoteDeviceRecord,
   type RemoteRelayClient
 } from '../../../../../shared/remote-protocol'
-import type { PeerGrantView } from '../../../../../shared/peer-protocol'
 import { pairInviteAddress, pairInviteLink } from '../../../../../shared/pair-invite'
 import { useStore } from '../../../state/store'
 import { Badge, Button, EmptyState, ListBoxItem, Notice, QrCode, Select, Switch } from '../../../ui'
@@ -282,7 +281,6 @@ function DevicesSettingsInner(): ReactElement {
   const directPairing = status?.pairing && directSeconds > 0 && !activeRelayPairing ? status.pairing : null
   const directReady = !!status?.running && !loopbackOnly
   const canPair = directReady || (relay.enabled && relayConnected)
-  const grants: readonly PeerGrantView[] = status?.grants ?? []
 
   const pairing = Boolean(directPairing || activeRelayPairing)
   const pairHints = [
@@ -523,36 +521,6 @@ function DevicesSettingsInner(): ReactElement {
         </SettingsRow>
 
         <RelayRows saved={saved} status={status} busy={busy} configure={configure} />
-      </SettingsGroup>
-
-      <SettingsGroup title={text.devicesPeer} description={text.devicesPeerDesc} settingId="devices-peer" plain>
-        {grants.length === 0 ? (
-          <EmptyState size="sm" align="start" inset="none" className="settings-list-empty" title={text.devicesPeerNone} data-testid="v3-devices-peer-empty" />
-        ) : (
-          <ul className="settings-devices" data-testid="v3-devices-peer">
-            {grants.map((grant) => (
-              <li className="settings-device" key={grant.connectionId}>
-                <div className="settings-device__main">
-                  <span className="settings-device__name">{grant.deviceName}</span>
-                  <span className="settings-row__desc">
-                    {grant.projects.map((project) => project.name).join('、')} · {grant.operations.join(', ')}
-                  </span>
-                </div>
-                <Button
-                  variant="danger"
-                  isDisabled={busy}
-                  onPress={() =>
-                    void window.yan.peer
-                      .hostRevoke(grant.connectionId)
-                      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
-                  }
-                >
-                  {text.devicesPeerRevoke}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
       </SettingsGroup>
     </section>
   )

@@ -26,16 +26,35 @@ export const excludedScripts = {
   'test-comfyui-idle': 'helper-module-of-test-comfyui-plugin'
 }
 
+export const serialScripts = {
+  'test-mcp-stdio-tree': 'wall-clock-upper-bound',
+  'test-search-providers': 'wall-clock-upper-bound',
+  'test-hidden-page': 'wall-clock-upper-bound',
+  'test-stream-loop-detector': 'wall-clock-upper-bound',
+  'test-agent-stop-flush': 'wall-clock-upper-bound',
+  'test-storage-atomic-retry': 'wall-clock-upper-bound',
+  'test-subagent-diagnostics': 'wall-clock-upper-bound',
+  'test-video-export-cancel': 'wall-clock-upper-bound',
+  'test-generation-timing': 'real-timer-race',
+  'test-branch-lanes': 'wall-clock-upper-bound',
+  'test-subagents': 'real-timer-race'
+}
+
 export async function discoverTests(directory = 'scripts') {
   const names = (await readdir(directory)).filter((name) => /^test-.*\.mjs$/.test(name)).map((name) => name.slice(0, -4)).sort()
   for (const name of legacyScripts) {
     if (!names.includes(name)) throw new Error(`兼容清单指向不存在的测试：${name}`)
     if (Object.hasOwn(excludedScripts, name)) throw new Error(`测试重复分类：${name}`)
   }
+  for (const name of Object.keys(serialScripts)) {
+    if (!names.includes(name)) throw new Error(`串行名单指向不存在的测试：${name}`)
+    if (Object.hasOwn(excludedScripts, name)) throw new Error(`测试重复分类：${name}`)
+  }
   return names.map((name) => ({
     name,
     kind: legacyScripts.has(name) ? 'legacy' : Object.hasOwn(excludedScripts, name) ? 'excluded' : 'standalone',
-    reason: excludedScripts[name]
+    reason: excludedScripts[name],
+    serial: Object.hasOwn(serialScripts, name)
   }))
 }
 
@@ -57,7 +76,9 @@ export function executionPlan(selected, filtered) {
     const blocked = selected.filter((test) => test.kind !== 'standalone')
     if (blocked.length) throw new Error(blocked.map((test) => `${test.name}: ${test.reason ?? '尚未独立，仍由完整 test:unit 执行'}`).join('\n'))
   }
-  const parallel = selected.filter((test) => test.kind === 'standalone').map((test) => test.name)
-  if (!parallel.length) throw new Error('没有可运行的独立测试')
-  return { parallel, legacy: !filtered }
+  const standalone = selected.filter((test) => test.kind === 'standalone')
+  const parallel = standalone.filter((test) => !test.serial).map((test) => test.name)
+  const serial = standalone.filter((test) => test.serial).map((test) => test.name)
+  if (!parallel.length && !serial.length) throw new Error('没有可运行的独立测试')
+  return { parallel, serial, legacy: !filtered }
 }
