@@ -23,6 +23,7 @@ import {
 } from '../shared/subagent-brief'
 import { PiRpc, resolvePi } from './protocol'
 import { CapabilityServer, type CapabilityCommandResult } from './capability-server'
+import { BackgroundBashCommands } from './background-bash'
 import { nativePiToolsSupported } from '../shared/agent-context'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { redactDiagnosticText } from '../shared/redact-diagnostic'
@@ -49,6 +50,7 @@ export type SubagentReviewResult = { ok: boolean; error?: string; outputs?: Pres
 
 const MAX_CONCURRENT = 24
 const STALL_TIMEOUT_MS = 10 * 60 * 1000
+const BACKGROUND_NOTICE_GRACE_MS = 15_000
 const GRACE_MS = 75 * 1000
 const TOOL_RUNNING_STALL_FACTOR = 6
 const DIALOG_UI_METHODS = new Set(['select', 'confirm', 'input', 'editor'])
@@ -144,6 +146,7 @@ export interface SubagentRpc {
     opts?: { timeoutMs?: number }
   ): Promise<{ success: boolean; error?: string; data?: unknown }>
   close(): Promise<void>
+  hasBackgroundWork?(): boolean
 }
 
 interface Run extends SubagentRun {
@@ -185,6 +188,7 @@ interface Run extends SubagentRun {
   forkSource?: SubagentForkSource
   launch?: ResumeLaunch
   exitInfo?: { code: number | null; signal: string | null; spawnError?: string }
+  awaitingBackground?: boolean
 }
 
 export interface SubagentApprovalOrigin { sessionId?: string; runId?: string; subagentId?: string }
@@ -927,11 +931,19 @@ export class SubagentController {
   ): Promise<SubagentRpc> {
     const stopApprovals = new AbortController()
     const host = subagentHostCommands({ readOnlyHost, previewHtml: ctx.previewHtml })
+    let live: PiRpc | null = null
+    const background = new BackgroundBashCommands({
+      ownerKeys: () => [id],
+      now: () => Date.now(),
+      notify: (text) => { void live?.command('prompt', { message: text, streamingBehavior: 'steer' }, { timeoutMs: 10_000 }).catch(() => undefined) },
+      onIdle: () => this.backgroundIdle(id)
+    })
     const approval = new CapabilityServer({
       opsDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'approvals', id),
-      onlyCommands: host.onlyCommands,
+      onlyCommands: [...host.onlyCommands, 'shell.background'],
       handlers: {
         run: async (command, params, _context, signal) => {
+          if (command === 'shell.background') return background.run(params, signal)
           const handled = await host.handle(command, params, cwd, signal, id)
           if (handled) return handled
           if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await ctx.dangerPrefs?.() ?? { mode: 'danger', outsideWrites: true, allowRoots: [] }) } }
@@ -951,6 +963,7 @@ export class SubagentController {
     const halt = (): void => {
       if (!stopApprovals.signal.aborted) stopApprovals.abort()
       approval.stop()
+      background.dispose()
     }
     try {
       const endpoint = await approval.start({ sessionId: id, projectId: ctx.projectId ?? id })
@@ -969,7 +982,8 @@ export class SubagentController {
       })
       const close = rpc.close.bind(rpc)
       rpc.close = async () => { halt(); await close() }
-      return rpc
+      live = rpc
+      return Object.assign(rpc, { hasBackgroundWork: () => background.busy() })
     } catch (error) {
       halt()
       throw error
@@ -1591,7 +1605,27 @@ export class SubagentController {
   }
 
   private stallLimit(run: Run): number {
-    return run.runningTools.size ? run.idleMs * TOOL_RUNNING_STALL_FACTOR : run.idleMs
+    return run.runningTools.size || run.rpc.hasBackgroundWork?.() ? run.idleMs * TOOL_RUNNING_STALL_FACTOR : run.idleMs
+  }
+
+  private awaitBackground(run: Run): boolean {
+    if (run.status !== 'running' || run.wrapUp || run.stopReason === 'error' || !run.rpc.hasBackgroundWork?.()) return false
+    run.awaitingBackground = true
+    run.latestActivity = pick('等待后台命令结束', 'Waiting for background commands to finish')
+    this.armWatch(run)
+    this.emit(run)
+    return true
+  }
+
+  private backgroundIdle(id: string): void {
+    const run = this.runs.get(id)
+    if (!run?.awaitingBackground) return
+    const since = run.lastProgressAt
+    setTimeout(() => {
+      if (this.runs.get(id) !== run || !run.awaitingBackground || run.settled || run.lastProgressAt !== since) return
+      run.awaitingBackground = false
+      this.settle(run)
+    }, BACKGROUND_NOTICE_GRACE_MS).unref?.()
   }
 
   private armWatch(run: Run): void {
@@ -1695,6 +1729,7 @@ export class SubagentController {
     const type = String(evt.type ?? '')
     if (PROGRESS_EVENTS.has(type)) {
       run.lastProgressAt = Date.now()
+      run.awaitingBackground = false
     }
     if (process.env.YAN_DEBUG_SUBAGENT) {
       try {
@@ -1834,6 +1869,7 @@ export class SubagentController {
         void this.resumeAfterModelError(run)
         return
       }
+      if (this.awaitBackground(run)) return
       this.settle(run)
     }
   }
