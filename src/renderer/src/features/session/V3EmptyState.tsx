@@ -228,6 +228,7 @@ export function V3EmptyState(): JSX.Element {
   const onDragOver = (event: DragEvent<HTMLElement>): void => {
     if (!bundleDrag(event)) return
     event.preventDefault()
+    event.stopPropagation()
     event.dataTransfer.dropEffect = 'copy'
     setDropping(true)
   }
@@ -242,6 +243,7 @@ export function V3EmptyState(): JSX.Element {
       .filter(Boolean)
     if (!paths.length) return
     event.preventDefault()
+    event.stopPropagation()
     void importSessionBundles(t, paths)
   }
 
@@ -251,7 +253,7 @@ export function V3EmptyState(): JSX.Element {
   }
 
   return (
-    <div className="v3-empty v3-empty-page" data-testid="v3-empty" data-dropping={dropping || undefined} onDragEnter={onDragOver} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+    <div className="v3-empty v3-empty-page" data-testid="v3-empty" data-dropping={dropping || undefined} onDragEnterCapture={onDragOver} onDragOverCapture={onDragOver} onDragLeaveCapture={onDragLeave} onDropCapture={onDrop}>
       {dropping ? <div className="v3-empty-drop" role="status" data-testid="v3-empty-drop">{home.dropImport}</div> : null}
       <UsageTitle text={home} bars={!landscape} fresh={fresh} />
       <div className="v3-home-gap" aria-hidden="true" />

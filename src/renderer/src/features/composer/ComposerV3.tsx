@@ -26,7 +26,10 @@ import { usePastedTextAttach } from './use-pasted-text'
 import { PROMPT_SUGGESTION_STATUS_KEY, suggestionKeyAction, visibleSuggestion } from './prompt-suggestion'
 import { ComposerVoiceButton } from '../../t3/components/chat/ComposerVoiceButton'
 import { setComposerEditorHandle } from '../../t3/components/chat/composerEventScope'
-import { useAttachmentAdapter, useComposerDropTarget } from '../../t3/adapters/composer-attachments'
+import { useAttachmentAdapter } from '../../t3/adapters/composer-attachments'
+import { FileDropOverlay, useFileDropZone } from './FileDropZone'
+import { attachDroppedFiles, captureDroppedFiles } from './drop-attach'
+import { composerSubmitIdentity } from '../../state/composer-recovery'
 import { useComposerSubmitAdapter } from '../../t3/adapters/composer-submit'
 import { useContextCompactAdapter, useContextWindowSnapshot } from '../../t3/adapters/context'
 import { useComposerModelAdapter } from '../../t3/adapters/composer-model'
@@ -158,9 +161,15 @@ export function ComposerV3(): JSX.Element {
   const [previewId, setPreviewId] = useState<string | null>(null)
   const editorRef = useRef<ComposerEditorHandle>(null)
   const attachments = useAttachmentAdapter()
-  const drop = useComposerDropTarget()
   const notice = useComposerNotice(value)
   const rootRef = useRef<HTMLDivElement>(null)
+  const dropZone = useFileDropZone(rootRef, (data) => {
+    const dropped = captureDroppedFiles(data)
+    if (!dropped) return
+    attachDroppedFiles(dropped, composerSubmitIdentity(useStore.getState()), (names) =>
+      useStore.getState().notify('error', t('attachment.skipped', { names: names.join(', ') }))
+    )
+  })
   useSessionQuoteDrop(rootRef)
   const attachPastedText = usePastedTextAttach(rootRef)
   const stash = usePromptStashAdapter({
@@ -735,9 +744,9 @@ export function ComposerV3(): JSX.Element {
           </>
         }
         stash={stashFrame}
-        dropActive={drop.active}
-        dropProps={drop.handlers}
+        dropActive={dropZone !== null && !dropZone.dropped}
       />
+      <FileDropOverlay state={dropZone} />
       <ImageViewer
         isOpen={!!preview}
         src={preview ? preview.previewUrl : null}

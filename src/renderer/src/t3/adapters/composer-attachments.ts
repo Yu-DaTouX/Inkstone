@@ -1,11 +1,9 @@
-import { useCallback, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { Attachment } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { composerSubmitIdentity } from '../../state/composer-recovery'
 import { readFiles } from '../../features/composer/attachment-files'
-import { attachDroppedFiles, captureDroppedFiles } from '../../features/composer/drop-attach'
-import { acceptsFileDrop } from '../../features/composer/FileDropZone'
 
 export interface ComposerImageAttachment {
   readonly type: 'image'
@@ -55,58 +53,6 @@ export function composerFileFrom(attachment: Attachment): ComposerFileAttachment
     path: attachment.path ?? null,
     isDirectory: !!attachment.isDirectory
   }
-}
-
-export interface ComposerDropTarget {
-  readonly active: boolean
-  readonly handlers: {
-    readonly onDragEnter: (event: DragEvent<HTMLElement>) => void
-    readonly onDragOver: (event: DragEvent<HTMLElement>) => void
-    readonly onDragLeave: (event: DragEvent<HTMLElement>) => void
-    readonly onDrop: (event: DragEvent<HTMLElement>) => void
-  }
-}
-
-export function useComposerDropTarget(): ComposerDropTarget {
-  const t = useT()
-  const notify = useStore((s) => s.notify)
-  const [active, setActive] = useState(false)
-  const depth = useRef(0)
-
-  const onDragEnter = useCallback((event: DragEvent<HTMLElement>) => {
-    if (!acceptsFileDrop(event.dataTransfer)) return
-    depth.current += 1
-    setActive(true)
-  }, [])
-
-  const onDragOver = useCallback((event: DragEvent<HTMLElement>) => {
-    if (!acceptsFileDrop(event.dataTransfer)) return
-    event.preventDefault()
-  }, [])
-
-  const onDragLeave = useCallback(() => {
-    depth.current = Math.max(0, depth.current - 1)
-    if (depth.current === 0) setActive(false)
-  }, [])
-
-  const onDrop = useCallback(
-    (event: DragEvent<HTMLElement>) => {
-      depth.current = 0
-      setActive(false)
-      const dropped = captureDroppedFiles(event.dataTransfer)
-      if (!dropped) return
-      event.preventDefault()
-      attachDroppedFiles(dropped, composerSubmitIdentity(useStore.getState()), (names) =>
-        notify('error', t('attachment.skipped', { names: names.join(', ') }))
-      )
-    },
-    [notify, t]
-  )
-
-  return useMemo(
-    () => ({ active, handlers: { onDragEnter, onDragOver, onDragLeave, onDrop } }),
-    [active, onDragEnter, onDragOver, onDragLeave, onDrop]
-  )
 }
 
 export interface AttachmentAdapter {
