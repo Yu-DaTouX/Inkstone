@@ -25,7 +25,7 @@ import { continuationPrompt } from '../shared/continuation-prompt'
 import { NativeSessionRuntime, type NavigateTreeResult, type ScopedModelsSnapshot, type ProjectTrustSnapshot } from './native-session-runtime'
 import { nativeActiveBranch } from './native-session-history'
 import { flattenNativeTree, type NativeTreeFlatNode } from '../shared/native-session'
-import { allowTrust, revokeTrust } from './project-trust'
+import { allowTrust, revokeTrust, trustStatus } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
 import { SessionItemProjector, projectHistory } from './session-items/projector'
@@ -64,7 +64,7 @@ import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { snapshotQueue } from './queue-items'
 import type { QueueRewriteResult } from './queue-edit'
 import { contextWindowAssumed } from './custom-providers'
-import { attributeCompaction, clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_ORIGIN, EMPTY_COMPACTION_STATE, measuredAfterCompaction, projectTrustedFrom, reduceCompaction, type CompactionOrigin, type CompactionState } from './compaction'
+import { attributeCompaction, clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_ORIGIN, EMPTY_COMPACTION_STATE, measuredAfterCompaction, reduceCompaction, type CompactionOrigin, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { androidAgentEnv } from './android/android-paths'
 import { projectPackageDirs } from './packages'
@@ -379,13 +379,7 @@ export interface CapabilityRunOptions {
 }
 
 async function projectPiPackageArgs(cwd: string): Promise<string[]> {
-  let trusted = false
-  try {
-    const raw = JSON.parse(await readFile(join(PI_AGENT_DIR, 'trust.json'), 'utf8')) as unknown
-    trusted = projectTrustedFrom(raw, cwd)
-  } catch {
-    trusted = false
-  }
+  const trusted = await trustStatus(cwd).then((status) => status.trusted, () => false)
   if (!trusted) return []
   return projectPackageDirs(cwd, PI_AGENT_DIR).flatMap((dir) => ['--extension', dir])
 }

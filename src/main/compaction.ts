@@ -31,8 +31,8 @@ async function readJson(p: string): Promise<unknown> {
   }
 }
 
-export function projectTrustedFrom(trustRaw: unknown, cwd: string): boolean {
-  if (!trustRaw || typeof trustRaw !== 'object' || Array.isArray(trustRaw)) return false
+export function explicitProjectTrust(trustRaw: unknown, cwd: string): boolean | null {
+  if (!trustRaw || typeof trustRaw !== 'object' || Array.isArray(trustRaw)) return null
   const table = trustRaw as Record<string, unknown>
   const norm = (p: string): string => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
   let cur = norm(cwd)
@@ -41,9 +41,13 @@ export function projectTrustedFrom(trustRaw: unknown, cwd: string): boolean {
       if (norm(key) === cur) return value === true
     }
     const idx = cur.lastIndexOf('/')
-    if (idx <= 0) return false
+    if (idx <= 0) return null
     cur = cur.slice(0, idx)
   }
+}
+
+export function projectTrustedFrom(trustRaw: unknown, cwd: string, defaultTrust?: unknown): boolean {
+  return explicitProjectTrust(trustRaw, cwd) ?? defaultTrust === 'always'
 }
 
 export async function compactionInfo(cwd: string, contextWindow: number, inkstoneCap?: number): Promise<CompactionInfo> {
@@ -61,7 +65,7 @@ export async function compactionInfo(cwd: string, contextWindow: number, inkston
   const projCompaction = (projRaw as { compaction?: unknown } | null)?.compaction
   const hasProjCompaction =
     !!projCompaction && typeof projCompaction === 'object' && Object.keys(projCompaction).length > 0
-  const trusted = hasProjCompaction ? projectTrustedFrom(trustRaw, cwd) : false
+  const trusted = hasProjCompaction ? projectTrustedFrom(trustRaw, cwd, (userRaw as { defaultProjectTrust?: unknown } | null)?.defaultProjectTrust) : false
   const honored = hasProjCompaction && trusted
 
   const effective = honored ? pick(projCompaction, fromUser) : fromUser

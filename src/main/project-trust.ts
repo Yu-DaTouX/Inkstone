@@ -29,28 +29,26 @@ const norm = (p: string): string => {
   return process.platform === 'win32' ? path.toLowerCase() : path
 }
 
+async function readDefaultTrust(): Promise<unknown> {
+  try {
+    return (JSON.parse((await readFile(join(PI_AGENT_DIR, 'settings.json'), 'utf8')).replace(/^\uFEFF/, '')) as { defaultProjectTrust?: unknown })?.defaultProjectTrust
+  } catch {
+    return undefined
+  }
+}
+
 export async function trustStatus(cwd: string): Promise<TrustStatus> {
   const abs = resolve(cwd)
   const table = await readTable()
-  if (!projectTrustedFrom(table, abs)) {
-    let cur = norm(abs)
-    for (;;) {
-      const hit = Object.keys(table).find((k) => norm(k) === cur)
-      if (hit) return { cwd: abs, trusted: false, entry: hit }
-      const idx = cur.lastIndexOf('/')
-      if (idx <= 0) break
-      cur = cur.slice(0, idx)
-    }
-    return { cwd: abs, trusted: false, entry: null }
-  }
   let cur = norm(abs)
   for (;;) {
     const hit = Object.keys(table).find((k) => norm(k) === cur)
-    if (hit) return { cwd: abs, trusted: true, entry: hit }
+    if (hit) return { cwd: abs, trusted: table[hit] === true, entry: hit }
     const idx = cur.lastIndexOf('/')
-    if (idx <= 0) return { cwd: abs, trusted: true, entry: null }
+    if (idx <= 0) break
     cur = cur.slice(0, idx)
   }
+  return { cwd: abs, trusted: projectTrustedFrom(table, abs, await readDefaultTrust()), entry: null }
 }
 
 let writeTail: Promise<unknown> = Promise.resolve()

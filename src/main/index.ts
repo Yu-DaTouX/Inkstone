@@ -2215,7 +2215,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
                       'Disabling npm lifecycle scripts only turns off install-time scripts; it does not stop extension code from running or isolate its runtime permissions.'
                     ),
                     ...(trust?.trusted
-                      ? [pick('此项目已经在 trust.json 中显式信任；本次不会改写信任设置。', 'This project is already trusted in trust.json; trust settings will not be changed.')]
+                      ? [trust.entry
+                          ? pick('此项目已经在 trust.json 中显式信任；本次不会改写信任设置。', 'This project is already trusted in trust.json; trust settings will not be changed.')
+                          : pick('此项目按「项目默认信任：总是信任」视为已信任；本次不会改写信任设置。', 'This project is trusted by the default project trust setting (always); trust settings will not be changed.')]
                       : [
                           pick(
                             '此项目尚未信任。允许后会把当前目录写入 Pi 的 trust.json；该项目现有及未来的 .pi 设置、扩展、技能等资源都将允许加载，不只限于本候选。请仅对你信任的项目允许。',
