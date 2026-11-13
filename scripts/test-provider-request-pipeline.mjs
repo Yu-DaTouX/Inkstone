@@ -268,6 +268,7 @@ function stable(records, root) {
     let raw = canonicalIds(record.raw, ids)
     for (const form of rootForms(root)) raw = raw.split(form).join('<root>')
     for (const form of rootForms(REPO)) raw = raw.split(form).join('<repo>')
+    if (record.kind === 'status') raw = raw.replace(/\\"prompt\\":\d+/, '\\"prompt\\":<n>')
     raw = raw.replace(/\b\d{4}-\d{2}-\d{2}\b/g, '<date>')
     return { ...record, raw }
   })
