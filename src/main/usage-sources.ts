@@ -26,29 +26,27 @@ export function subagentSessionsRoot(archiveDir = subagentArchiveDir()): string 
 }
 
 export async function listRawSessionFiles(root: string, maxDepth = 1): Promise<UsageFileRef[]> {
-  const files: UsageFileRef[] = []
-  const walk = async (dir: string, depth: number): Promise<void> => {
+  const walk = async (dir: string, depth: number): Promise<UsageFileRef[]> => {
     let entries
     try {
       entries = await readdir(dir, { withFileTypes: true })
     } catch {
-      return
+      return []
     }
-    for (const entry of entries) {
+    const found = await Promise.all(entries.map(async (entry): Promise<UsageFileRef[]> => {
       const path = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        if (depth < maxDepth) await walk(path, depth + 1)
-      } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-        try {
-          const info = await stat(path)
-          if (info.isFile()) files.push({ path, size: info.size, mtimeMs: info.mtimeMs })
-        } catch {
-        }
+      if (entry.isDirectory()) return depth < maxDepth ? walk(path, depth + 1) : []
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) return []
+      try {
+        const info = await stat(path)
+        return info.isFile() ? [{ path, size: info.size, mtimeMs: info.mtimeMs }] : []
+      } catch {
+        return []
       }
-    }
+    }))
+    return found.flat()
   }
-  await walk(root, 0)
-  return files
+  return walk(root, 0)
 }
 
 export async function listMainUsageFiles(): Promise<UsageFileRef[]> {

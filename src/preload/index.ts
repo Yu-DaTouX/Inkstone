@@ -499,8 +499,8 @@ const api: YanBridge = {
     hostContext: (instanceId: string) => invoke<unknown | null>(MCP_APP_VIEW_CHANNELS.hostContext, instanceId)
   },
   git: {
-    state: (cwd) =>
-      invoke<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>('yan:git:state', cwd),
+    state: (cwd, options) =>
+      invoke<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>('yan:git:state', cwd, options),
     refs: (cwd) =>
       invoke<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>('yan:git:refs', cwd),
     action: (req) => invoke<GitActionResult>('yan:git:action', req),

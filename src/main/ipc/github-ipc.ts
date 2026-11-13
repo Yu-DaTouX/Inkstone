@@ -54,6 +54,14 @@ function externalUrl(raw: string): string | null {
 export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void {
   const { handle } = ipc
   const { authorizeReadCwd } = deps
+  const statusInFlight = new Map<string, Promise<GithubStatus>>()
+  const sharedGithubStatus = (cwd: string): Promise<GithubStatus> => {
+    const running = statusInFlight.get(cwd)
+    if (running) return running
+    const task = readGithubStatus(cwd).finally(() => statusInFlight.delete(cwd))
+    statusInFlight.set(cwd, task)
+    return task
+  }
 
   handle('yan:github:account', async (): Promise<GithubAccountStatus> => {
     try {
@@ -141,7 +149,7 @@ export function registerGithubIpc(ipc: IpcRegistrar, deps: GithubIpcDeps): void 
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
       if (!auth.ok) return { installed: false, authed: false, repo: null, error: auth.error }
-      return await readGithubStatus(auth.cwd)
+      return await sharedGithubStatus(auth.cwd)
     } catch (error) {
       return { installed: false, authed: false, repo: null, error: message(error) }
     }

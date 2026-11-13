@@ -385,6 +385,20 @@ export function readRepoSnapshot(repo: RepoIdentity): Promise<{ repo: GitRepoSta
   return task
 }
 
+const statesInFlight = new Map<string, Promise<GitRepoState>>()
+
+export function readRepoStatusState(repo: RepoIdentity): Promise<GitRepoState> {
+  const full = snapshotsInFlight.get(repo.root)
+  if (full) return full.then((snapshot) => snapshot.repo)
+  const running = statesInFlight.get(repo.root)
+  if (running) return running
+  const task = readStatusSnapshot(repo.root)
+    .then((snapshot) => repoStateFrom(repo, snapshot.status, null))
+    .finally(() => statesInFlight.delete(repo.root))
+  statesInFlight.set(repo.root, task)
+  return task
+}
+
 function repoStateFrom(repo: RepoIdentity, status: GitStatusParse, refs: RefListing | null): GitRepoState {
   let stagedCount = 0
   let unstagedCount = 0

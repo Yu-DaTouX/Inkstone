@@ -1363,7 +1363,7 @@ export type MainPush = MainPushBody & {
 
 
 export interface GitBridge {
-  state(cwd: string): Promise<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>
+  state(cwd: string, options?: { light?: boolean }): Promise<{ repo: GitRepoState | null; expected?: GitActionExpected; error?: string }>
   refs(cwd: string): Promise<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>
   action(req: GitActionRequest): Promise<GitActionResult>
   remotes(cwd: string): Promise<string[]>

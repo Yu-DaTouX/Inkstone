@@ -31,7 +31,7 @@ function read(cwd: string, poller: Poller): void {
   poller.inFlight = true
   poller.lastReadAt = Date.now()
   git
-    .state(cwd)
+    .state(cwd, { light: true })
     .then((state) => ({ branch: state.repo?.branch ?? null, dirty: (state.repo?.changedCount ?? 0) > 0 }))
     .catch(() => EMPTY)
     .then((snapshot) => {

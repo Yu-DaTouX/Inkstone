@@ -1,6 +1,6 @@
 import { pick } from '../../shared/ui-lang'
 import type { IpcRegistrar } from './registrar'
-import { readRepoSnapshot, readRepoState, listRefs, resolveRepo } from '../git-service'
+import { readRepoSnapshot, readRepoState, readRepoStatusState, listRefs, resolveRepo } from '../git-service'
 import { listRemotes, runGitAction } from '../git-actions'
 import { listUntracked, listWorktrees } from '../git-worktree'
 import { readChanges, readFileDiff } from '../git-inspect'
@@ -16,12 +16,13 @@ export interface GitIpcDeps {
 export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   const { handle } = ipc
   const { authorizeReadCwd } = deps
-  handle('yan:git:state', async (cwd: string) => {
+  handle('yan:git:state', async (cwd: string, rawOptions?: unknown) => {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
       if (!auth.ok) return { repo: null, error: auth.error }
       const repo = await resolveRepo(auth.cwd)
       if (!repo) return { repo: null }
+      if ((rawOptions as { light?: unknown } | null | undefined)?.light === true) return { repo: await readRepoStatusState(repo) }
       return await readRepoSnapshot(repo)
     } catch (error) {
       return { repo: null, error: error instanceof Error ? error.message : String(error) }

@@ -57,33 +57,35 @@ let knownFiles: Array<{ path: string; mtimeMs: number; size: number }> = []
 let livePaths = new Set<string>()
 
 export async function listSessionFiles(): Promise<Array<{ path: string; mtimeMs: number; size: number }>> {
-  const files: Array<{ path: string; mtimeMs: number; size: number }> = []
+  type SessionFile = { path: string; mtimeMs: number; size: number }
   const dirs = [SESSIONS_DIR]
   try {
     for (const entry of await readdir(SESSIONS_DIR, { withFileTypes: true })) {
       if (entry.isDirectory()) dirs.push(join(SESSIONS_DIR, entry.name))
     }
   } catch {
-    return files
+    return []
   }
-  for (const dir of dirs) {
+  const perDir = await Promise.all(dirs.map(async (dir): Promise<SessionFile[]> => {
     let names: string[]
     try {
       names = await readdir(dir)
     } catch {
-      continue
+      return []
     }
-    for (const name of names) {
-      if (!name.endsWith('.jsonl')) continue
+    const found = await Promise.all(names.map(async (name): Promise<SessionFile[]> => {
+      if (!name.endsWith('.jsonl')) return []
       const path = join(dir, name)
       try {
         const st = await stat(path)
-        if (st.isFile()) files.push({ path, mtimeMs: st.mtimeMs, size: st.size })
+        return st.isFile() ? [{ path, mtimeMs: st.mtimeMs, size: st.size }] : []
       } catch {
+        return []
       }
-    }
-  }
-  return files
+    }))
+    return found.flat()
+  }))
+  return perDir.flat()
 }
 
 async function refreshIndex(): Promise<void> {

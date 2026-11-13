@@ -355,9 +355,6 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
   renderTurnsRef.current = renderTurns
   const measurementRun = useMemo(() => ({ items: renderTurns }), [identity, virtual])
   measurementRun.items = renderTurns
-  const measurementIds = renderTurns.map((item) => item.id)
-  const measurementWidth = hostRef.current?.querySelector<HTMLElement>('.v3-stream')?.clientWidth ?? hostRef.current?.clientWidth ?? 0
-  const measurementCache = virtual ? readVirtualCache(identity, measurementIds, measurementWidth) : undefined
   const userIndices = useMemo(() => {
     let userIndex = -1
     return renderTurns.map((turn) => {
@@ -385,6 +382,11 @@ export function SessionView({ pane }: { pane?: SessionPaneBinding } = {}): JSX.E
     return { first: Math.max(0, indices[top] ?? 0), last: Math.max(0, indices[bottom] ?? 0) }
   }, [])
   const [remountKey, setRemountKey] = useState(0)
+  const measurementCache = useMemo(() => {
+    if (!virtual) return undefined
+    const width = hostRef.current?.querySelector<HTMLElement>('.v3-stream')?.clientWidth ?? hostRef.current?.clientWidth ?? 0
+    return readVirtualCache(identity, measurementRun.items.map((item) => item.id), width)
+  }, [identity, virtual, remountKey])
   useLayoutEffect(() => {
     const handle = vlistRef.current
     const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')

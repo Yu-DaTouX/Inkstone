@@ -107,7 +107,7 @@ function probe(cwd: string, force = false): void {
   if (!yan) return
   startedAt.set(cwd, now)
   inFlight.add(cwd)
-  const git = yan.git ? yan.git.state(cwd).then((state) => (state.repo ? true : state.error ? null : false), () => null) : Promise.resolve<boolean | null>(null)
+  const git = yan.git ? yan.git.state(cwd, { light: true }).then((state) => (state.repo ? true : state.error ? null : false), () => null) : Promise.resolve<boolean | null>(null)
   const github = yan.github ? yan.github.status(cwd).then((status) => githubProbeOf(status), () => 'no-cli' as GithubProbe) : Promise.resolve<GithubProbe | null>(null)
   Promise.all([git, github])
     .then(([repo, gh]) => useProbeStore.getState().patch(cwd, { git: repo, github: gh }))
