@@ -1,16 +1,7 @@
 import type { NativeMcpImportPreview } from '../../../../../shared/mcp-native-import'
+import { mcpAppHttpOriginOf as httpOriginOf } from '../../../../../shared/mcp-app-switch'
 
-export function httpOriginOf(raw: unknown): string | null {
-  if (typeof raw !== 'string' || raw.trim() === '') return null
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-  return url.origin
-}
+export { httpOriginOf }
 
 interface NativeEntrySummary {
   description: string | null

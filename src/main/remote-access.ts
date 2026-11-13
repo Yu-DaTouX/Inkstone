@@ -230,10 +230,6 @@ export class RemoteAccess {
     if (server) await server.stop().catch(() => undefined)
   }
 
-  revokeConnection(connectionId: string): boolean {
-    return this.peers?.grants.revoke(connectionId) ?? false
-  }
-
   disconnectConnection(connectionId: string): void {
     this.server?.disconnectConnection(connectionId)
     this.relayServer?.disconnectConnection(connectionId)

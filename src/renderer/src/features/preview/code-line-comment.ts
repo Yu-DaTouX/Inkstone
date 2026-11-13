@@ -39,11 +39,6 @@ export function commentQuoteLines(
   return [...lines.slice(0, maxLines - 1), '…']
 }
 
-export function lineCommentLabel(range: LineCommentRange, lang: CommentLang): string {
-  if (range.start === range.end) return lang === 'en-US' ? `Line ${range.start}` : `第 ${range.start} 行`
-  return lang === 'en-US' ? `Lines ${range.start}–${range.end}` : `第 ${range.start}–${range.end} 行`
-}
-
 function quote(code: string): string {
   return code
     .replace(/\r\n?/g, '\n')

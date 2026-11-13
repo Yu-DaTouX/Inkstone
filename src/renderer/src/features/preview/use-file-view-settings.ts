@@ -3,7 +3,7 @@ import { createFileViewSettings, type FileViewSettings, type FileViewSettingsSto
 
 let shared: FileViewSettingsStore | null = null
 
-function browserStorage(): StorageLike | null {
+export function browserStorage(): StorageLike | null {
   try {
     return typeof window === 'undefined' ? null : window.localStorage
   } catch {

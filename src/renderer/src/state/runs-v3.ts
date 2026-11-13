@@ -358,11 +358,6 @@ export function activityWord(lang: RunLang, activity: RunActivity): string {
   return pick(lang, ACTIVITY_WORD[activity])
 }
 
-export function isUnreadRun(run: RunSnapshot): boolean {
-  const phase = run.phase
-  return (phase.kind === 'done' || phase.kind === 'failed') && !phase.seen
-}
-
 export interface RunUiText {
   untitled: string
   openSession: string

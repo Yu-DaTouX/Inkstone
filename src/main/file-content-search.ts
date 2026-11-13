@@ -13,10 +13,8 @@ import type {
   FileContentTruncation
 } from '../shared/ipc'
 
-export { compileContentMatcher, matchContentLines, splitContentLines } from './file-content-match'
+export { compileContentMatcher } from './file-content-match'
 export type {
-  ContentLineMatch,
-  ContentMatchOutcome,
   ContentMatcher,
   ContentSearchOptions
 } from './file-content-match'

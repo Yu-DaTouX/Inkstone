@@ -1,5 +1,5 @@
 import { canonicalJson, shortHash } from './canonical'
-import type { ConflictRecord, SyncRecord, SyncRecordKind } from './types'
+import type { ConflictRecord, SyncRecord } from './types'
 
 function deviceTag(name: string): string {
   const clean = name.replace(/[^\w\u4e00-\u9fa5.-]+/g, ' ').trim()
@@ -67,8 +67,4 @@ export function buildConflictCopy(conflict: ConflictRecord): SyncRecord | null {
       return null
     }
   }
-}
-
-export function supportsConflictCopy(kind: SyncRecordKind): boolean {
-  return kind !== 'settings'
 }

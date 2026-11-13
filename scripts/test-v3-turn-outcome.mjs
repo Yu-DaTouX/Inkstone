@@ -31,7 +31,7 @@ await build({
   outfile,
   logLevel: 'silent'
 })
-const { splitDecision, decisionTitle, replyFileLinks, outcomeFiles, turnAnswers, userTurnOrdinals, decisionOutcomes, leadSentence } = await import(pathToFileURL(posix(outfile)).href)
+const { splitDecision, decisionTitle, replyFileLinks, outcomeFiles, turnAnswers, decisionOutcomes, leadSentence } = await import(pathToFileURL(posix(outfile)).href)
 await rm(outdir, { recursive: true, force: true })
 
 process.stdout.write('\n▌待决策：只取答复末段的提问\n')
@@ -93,19 +93,6 @@ process.stdout.write('\n▌回答归属：下一条用户消息\n')
   ok(answers.get('a1') === '公开发布\n顺便更新说明', '后面紧跟用户消息：记为已回答', answers.get('a1'))
   ok(!answers.has('a2'), '后面不是用户消息：不判断', answers.get('a2'))
   ok(answers.get('a3') === null, '最后一轮：仍待回答', answers.get('a3'))
-}
-
-process.stdout.write('\n▌回合序号：只数用户回合\n')
-{
-  const turns = [
-    { kind: 'user', id: 'u1', msg: { text: '第一条' } },
-    { kind: 'assistant', id: 'a1' },
-    { kind: 'note', id: 'n1' },
-    { kind: 'user', id: 'u2', msg: { text: '第二条' } },
-    { kind: 'assistant', id: 'a2' }
-  ]
-  const ordinals = userTurnOrdinals(turns)
-  ok(ordinals.get('u1') === 1 && ordinals.get('u2') === 2 && !ordinals.has('a1') && !ordinals.has('n1'), '用户回合按出现顺序编号', [...ordinals])
 }
 
 process.stdout.write('\n▌决策卡结局：取下一轮结论首句或状态\n')

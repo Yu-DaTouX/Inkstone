@@ -161,9 +161,6 @@ try {
   assert.equal(patch.mergeInlineStyle('', []), null, '没有声明时返回 null')
   assert.equal(patch.mergeInlineStyle('color: red', [{ property: 'color', value: null }]), null, '删光后返回 null')
 
-  assert.equal(patch.isHtmlTextLeaf('<p>a</p>', 0, 'p'), true)
-  assert.equal(patch.isHtmlTextLeaf('<p><b>a</b></p>', 0, 'p'), false)
-  assert.equal(patch.isHtmlTextLeaf('<p>a', 0, 'p'), false, '没有结束标签不算文本叶子')
   assert.deepEqual(
     patch.htmlElementSpan('<p>a</p>', 0, 'p'),
     { name: 'p', tagStart: 0, tagEnd: 3, contentStart: 3, contentEnd: 4, closeStart: 4, closeEnd: 8 },

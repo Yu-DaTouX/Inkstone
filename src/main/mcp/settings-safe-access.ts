@@ -3,7 +3,7 @@ import type { McpServerStatus } from '../../shared/mcp'
 import type { McpConnectionManager } from './connection-manager'
 import { mcpServersForProject, type McpConfigLoadResult } from './config'
 import { isInkstoneManaged, type McpAppServerConfig } from './app-spec'
-import type { McpAppHost, McpAppToolDescriptor } from './app-host'
+import type { McpAppHost } from './app-host'
 
 export interface SettingsSafeAccess {
   loadServers(): McpConfigLoadResult
@@ -32,14 +32,6 @@ export function managedConfigOf(
   projectId?: string
 ): McpAppServerConfig | null {
   const config = visibleServers(access, projectId).find((server) => server.id === serverId)
-  return config && isInkstoneManaged(config) ? config : null
-}
-
-export function managedConfigById(
-  access: SettingsSafeAccess,
-  serverId: string
-): McpAppServerConfig | null {
-  const config = access.loadServers().servers.find((server) => server.id === serverId)
   return config && isInkstoneManaged(config) ? config : null
 }
 
@@ -112,26 +104,4 @@ export async function disconnectManagedServer(
 ): Promise<boolean> {
   await reconcileLegacyManaged(access, serverId, projectId)
   return access.host().disconnect(serverId)
-}
-
-export async function probeManagedServer(
-  access: SettingsSafeAccess,
-  serverId: string,
-  callerProjectId: string | undefined
-): Promise<{ tools: string[] }> {
-  const config = managedConfigById(access, serverId)
-  if (!config) {
-    throw new SettingsSafeAccessError('not-managed', pick(`服务 ${serverId} 当前不由砚托管，不能走托管 probe 路径`, `Service ${serverId} is not managed by Inkstone, so the managed probe path is unavailable`))
-  }
-  if (!callerProjectId || !callerProjectId.trim()) {
-    throw new SettingsSafeAccessError(
-      'managed-project-required',
-      pick(`服务 ${serverId} 由砚托管，但没有调用者项目身份，拒绝用服务声明的项目代替调用者`, `Service ${serverId} is managed by Inkstone but the caller has no project identity; the service's declared project is not used instead`)
-    )
-  }
-  await reconcileLegacyManaged(access, serverId, callerProjectId)
-  const host = access.host()
-  await host.reconcile(serverId)
-  const tools: McpAppToolDescriptor[] = await host.listToolsWithMeta(serverId, { projectId: callerProjectId })
-  return { tools: tools.map((tool) => tool.name) }
 }

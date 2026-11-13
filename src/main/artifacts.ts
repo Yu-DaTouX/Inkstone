@@ -183,7 +183,7 @@ function rebind(dir: string, item: ArtifactManifestItem): ArtifactManifestItem {
   return path === item.artifact.path ? item : { ...item, artifact: { ...item.artifact, path } }
 }
 
-async function isUsableFile(path: string): Promise<boolean> {
+export async function isUsableFile(path: string): Promise<boolean> {
   try {
     const info = await stat(path)
     return info.isFile() && info.size > 0

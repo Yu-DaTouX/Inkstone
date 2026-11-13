@@ -42,7 +42,6 @@ const {
   tabbablePath,
   toAbsolutePath,
   toRelativePath,
-  treeIndent,
   ancestorPaths
 } = mod
 
@@ -185,9 +184,6 @@ assert.equal(revealState.open['src/lib'], true)
 assert.equal(revealState.open['src/lib/a.ts'], undefined, '不展开目标本身')
 assert.equal(revealState.focusPath, 'src/lib/a.ts', '焦点落到目标')
 assert.deepEqual(ancestorPaths('src/lib/a.ts'), ['', 'src', 'src/lib'])
-
-assert.equal(treeIndent(0), 8, '缩进 = 8 + 层级 × 10')
-assert.equal(treeIndent(3), 38)
 
 const treeRows = flattenRows({
   ...freshTreeState('A', '/a', 1, false),

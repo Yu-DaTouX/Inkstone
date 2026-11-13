@@ -1307,7 +1307,6 @@ const {
   disconnectManagedServer,
   managedConfigOf,
   managedRuntimeFacts,
-  probeManagedServer,
   reconcileLegacyManaged,
   verifyManagedServer
 } = helper
@@ -1440,34 +1439,6 @@ ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 er
   const decision = await reconcileLegacyManaged(access, 'A', 'proj-1')
   ok(decision.managed === false && decision.legacyHeld === false, '非托管对账不动 legacy')
   ok(log.length === 0, '非托管对账不产生任何连接 / 断开调用')
-  await rejectsCode(() => probeManagedServer(access, 'A', 'proj-1'), 'not-managed', '非托管 probe 不走托管路径')
-}
-
-{
-  const log = []
-  const host = createFakeAppHost(log)
-  const access = createAccess({ servers: [managedConfig('A', { projectScope: 'proj-1' })], managers: [], host, log })
-  await rejectsCode(
-    () => probeManagedServer(access, 'A', undefined),
-    'managed-project-required',
-    '托管 probe 无调用者项目身份时明确拒绝'
-  )
-  const result = await probeManagedServer(access, 'A', 'proj-2')
-  eq(result.tools, ['toolA', 'toolB'], '跨项目 probe 仍从 host 拿工具表')
-  ok(
-    log.includes('host.listToolsWithMeta:A:proj-2') && !log.includes('host.listToolsWithMeta:A:proj-1'),
-    'probe 传真实 caller 身份（proj-2），不拿 config.projectScope（proj-1）冒充'
-  )
-}
-
-{
-  const log = []
-  const legacy = createFakeLegacyManager(['A'], log)
-  const host = createFakeAppHost(log)
-  const access = createAccess({ servers: [managedConfig('A')], managers: [legacy], host, log })
-  const result = await probeManagedServer(access, 'A', 'proj-1')
-  eq(result.tools, ['toolA', 'toolB'], '登记 probe 从 host 单例拿工具表')
-  ok(log.includes('legacy.disconnect:A') && !log.some((line) => line.startsWith('legacy.listToolsCached')), '登记 probe 不经旧 client 连接')
 }
 
 await rm(root, { recursive: true, force: true })

@@ -149,11 +149,6 @@ export function closeOtherPreviewTabs(bindings: PreviewBindings, ownerKey: strin
   return withBinding(bindings, ownerKey, compose([keep], keep, current.preview, current.target))
 }
 
-export function previewTabsToRight(tabs: readonly string[], path: string): string[] {
-  const index = tabs.indexOf(path)
-  return index < 0 ? [] : tabs.slice(index + 1)
-}
-
 export function closePreviewTabsToRight(bindings: PreviewBindings, ownerKey: string | null, path: string): PreviewBindings {
   if (!ownerKey) return bindings
   const current = bindings.get(ownerKey)

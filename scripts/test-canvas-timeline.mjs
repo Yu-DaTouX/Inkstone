@@ -158,7 +158,6 @@ try {
   assert.equal(timeline.sameComposition(parsed, { ...parsed }), true, '相同合成消息判等')
   assert.equal(timeline.sameComposition(parsed, { ...parsed, clips: [] }), false, '片段变化不算相同')
   assert.equal(timeline.sameComposition(parsed, null), false, '合成与空值不同')
-  ok(timeline.compositionSignature(parsed) !== timeline.compositionSignature({ ...parsed, duration: 9 }), '签名随时长变化')
 
   assert.deepEqual(canvas.compositionSize({ width: 1920, height: 1080 }), { width: 1920, height: 1080 }, '合成画幅照抄页面画幅')
   assert.deepEqual(canvas.compositionSize({ width: 10, height: 20000 }), {

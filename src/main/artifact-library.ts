@@ -1,16 +1,6 @@
-import { stat } from 'node:fs/promises'
 import type { SessionSummary } from '../shared/ipc'
 import type { ArtifactLibraryItem } from '../shared/artifact-library'
-import { ArtifactStore, legacySessionKey } from './artifacts'
-
-async function usable(path: string): Promise<boolean> {
-  try {
-    const info = await stat(path)
-    return info.isFile() && info.size > 0
-  } catch {
-    return false
-  }
-}
+import { ArtifactStore, legacySessionKey, isUsableFile as usable } from './artifacts'
 
 export async function listArtifactLibrary(rootDir: string, sessions: SessionSummary[]): Promise<ArtifactLibraryItem[]> {
   const groups = await new ArtifactStore(rootDir).listAll()

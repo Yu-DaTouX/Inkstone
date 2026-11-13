@@ -196,14 +196,3 @@ export function landscapeSky(at: number, observer: Observer = localObserver(at))
     : null
   return { sun, moon }
 }
-
-export function traceMoon(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, moon: MoonPhase, tilt = moon.waxing ? 0 : Math.PI): void {
-  const start = tilt - Math.PI / 2
-  ctx.beginPath()
-  ctx.moveTo(x + radius * Math.cos(start), y + radius * Math.sin(start))
-  ctx.arc(x, y, radius, start, tilt + Math.PI / 2, false)
-  const terminator = 1 - 2 * moon.illumination
-  if (Math.abs(terminator) < 1e-6) ctx.lineTo(x + radius * Math.cos(start), y + radius * Math.sin(start))
-  else ctx.ellipse(x, y, Math.abs(terminator) * radius, radius, tilt, Math.PI / 2, -Math.PI / 2, terminator > 0)
-  ctx.closePath()
-}

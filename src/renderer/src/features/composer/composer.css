@@ -673,10 +673,6 @@
     color: var(--fg3);
   }
 
-  .composer-line-end > .composer-send {
-    margin-inline-start: var(--s-4);
-  }
-
   .composer-plus,
   .composer-permission {
     flex: none;
@@ -687,11 +683,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .composer-plus-menu,
-  .composer-permission-menu {
-    max-height: none;
   }
 
   .cmp-name {
@@ -723,23 +714,6 @@
     box-shadow: var(--shadow-md);
     overflow-wrap: anywhere;
     pointer-events: none;
-  }
-
-  .v3-delegate {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-12);
-    min-width: 0;
-  }
-
-  .v3-delegate-target {
-    margin: 0;
-    font-size: var(--t-footnote);
-    overflow-wrap: anywhere;
-  }
-
-  .v3-delegate-target {
-    color: var(--fg3);
   }
 
   @container (max-width: 600px) {

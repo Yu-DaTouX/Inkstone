@@ -32,63 +32,13 @@ export async function runSubagentActiveVisibilityTests(ok) {
       platform: 'neutral',
       logLevel: 'silent'
     })
-    const { activeSubagentRuns, selectSubagentRuns, subagentScopeForView } = await import(pathToFileURL(selectorOut).href)
+    const { selectSubagentRuns, subagentScopeForView } = await import(pathToFileURL(selectorOut).href)
 
-    const now = Date.now()
-    const fixture = [
-      run('live', { parentSessionId: 'S' }),
-      run('starting', { parentSessionId: 'S', status: 'starting' }),
-      run('wrapping', { parentSessionId: 'S', wrapUp: { reason: 'timeout', since: now } }),
-      run('failed', { parentSessionId: 'S', status: 'error', review: 'none' }),
-      run('timeout', { parentSessionId: 'S', status: 'error', endReason: 'timeout' }),
-      run('budget', { parentSessionId: 'S', status: 'done', endReason: 'budget' }),
-      run('review', { parentSessionId: 'S', status: 'done', review: 'pending', endedAt: now }),
-      run('conflict', { parentSessionId: 'S', status: 'done', review: 'conflict', endedAt: now }),
-      run('finished', { parentSessionId: 'S', status: 'done', review: 'none', endedAt: now }),
-      run('merged', { parentSessionId: 'S', status: 'done', review: 'merged', endedAt: now }),
-      run('discarded', { parentSessionId: 'S', status: 'done', review: 'discarded', endedAt: now }),
-      run('cancelled', { parentSessionId: 'S', status: 'cancelled', review: 'none', endedAt: now }),
-      run('foreign', { parentSessionId: 'OTHER' }),
-      run('orphan')
-    ]
-    const ids = activeSubagentRuns(fixture, { sessionIds: ['S'] }).map((r) => r.id)
-    const has = (id) => ids.includes(id)
-
-    check(has('live') && has('starting') && has('wrapping'), '运行中 / 启动中 / 收尾中的常驻')
-    check(has('failed') && has('timeout') && has('budget'), '出错 / 超时 / 调用用完的常驻')
-    check(!has('review') && !has('conflict'), '待主会话处置的 worktree 改动不再常驻打扰用户')
-    check(!has('finished') && !has('merged') && !has('discarded') && !has('cancelled'), '完成无需处理 / 已合并 / 已放弃 / 被停止的撤下')
-    check(!has('foreign'), '别的会话的子代理不串进当前会话')
-    check(!has('orphan'), '没有归属字段且不属于当前视图的旧记录不猜当前会话')
-
-    const fallback = activeSubagentRuns(
-      [run('legacy', { parentRunId: 'R1' }), run('other-run', { parentRunId: 'R2' })],
-      { sessionIds: ['S'], runIds: ['R1'] }
-    ).map((r) => r.id)
-    check(fallback.includes('legacy'), '没有 parentSessionId 但 parentRunId 命中当前视图的运行实例 → 仍留下')
-    check(!fallback.includes('other-run'), '挂在别的运行实例下的旧记录仍不猜当前视图')
     const sessionWins = selectSubagentRuns(
       [run('contradict', { parentSessionId: 'OTHER', parentRunId: 'R1' })],
       { sessionIds: ['S'], runIds: ['R1'] }
     )
     check(sessionWins.foreign.length === 1 && sessionWins.all.length === 0, '有 parentSessionId 时以它为准，parentRunId 兜底不改判')
-
-    const deduped = activeSubagentRuns([
-      run('dup', { parentSessionId: 'S', status: 'running' }),
-      run('dup', { parentSessionId: 'S', status: 'done', review: 'none', endedAt: now })
-    ], { sessionIds: ['S'] })
-    check(deduped.length === 0, '同一 runId 重复推送时以最后一次为准（已完成无需处理就撤下）')
-    const revived = activeSubagentRuns([
-      run('dup', { parentSessionId: 'S', status: 'done', review: 'none', endedAt: now }),
-      run('dup', { parentSessionId: 'S', status: 'running' })
-    ], { sessionIds: ['S'] })
-    check(revived.length === 1 && revived[0].status === 'running', '同一 runId 以最后一次（运行中）为准')
-
-    const empty = activeSubagentRuns([], { sessionIds: ['S'] })
-    check(empty.length === 0, '没有任务时选择器返回空数组')
-
-    const chain = activeSubagentRuns([run('child', { parentSessionId: 'CHILD' })], { sessionIds: ['S', 'CHILD'] })
-    check(chain.length === 1, '显式会话链里的任务算当前会话')
 
     const runnersAB = [
       { id: 'rA', runId: 'rA', sessionId: 'A', sessionFile: 'C:\\proj\\a.jsonl' },

@@ -155,22 +155,3 @@ export function turnOutputTokens(
   }
   return counted ? total : null
 }
-
-const TOKEN_UNITS = ['', 'k', 'M', 'B'] as const
-
-export function formatTokenCount(n: number): string {
-  if (!Number.isFinite(n) || n < 1000) return String(Math.max(0, Math.round(Number.isFinite(n) ? n : 0)))
-  let unit = 0
-  let value = n
-  while (value >= 1000 && unit < TOKEN_UNITS.length - 1) {
-    value /= 1000
-    unit += 1
-  }
-  let rounded = Math.round(value * 10) / 10
-  if (rounded >= 1000 && unit < TOKEN_UNITS.length - 1) {
-    rounded = Math.round(rounded / 100) / 10
-    unit += 1
-  }
-  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
-  return `${text}${TOKEN_UNITS[unit]}`
-}

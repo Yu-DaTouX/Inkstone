@@ -19,7 +19,6 @@ export const SPLIT_MIN_PANE_PX = 320
 export const SPLIT_CONSTRAINED_WIDTH = 700
 export const DROP_INSET_PX = 8
 export const LEFT_EDGE_PX = 16
-export const SESSION_DRAG_THRESHOLD = 4
 
 export type SplitDropTarget =
   | { kind: 'left' }

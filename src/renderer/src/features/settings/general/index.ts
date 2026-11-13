@@ -12,7 +12,6 @@ export {
   bytesText,
   formatWhen,
   mergeSound,
-  removeAllowRoot,
   permissionNeedsConfirm,
   piSourceLabel,
   type GeneralSectionId

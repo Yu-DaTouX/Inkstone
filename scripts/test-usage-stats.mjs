@@ -88,8 +88,6 @@ export async function runUsageStatsTests(ok) {
   ok(month.tokens === 2000 && month.models[0].key === 'deepseek-v4.1-flash' && month.models[0].sources[0] === 'commandcode/deepseek/deepseek-v4.1-flash', '30 天：范围与模型排序')
   ok(all.heat.length >= (s.HEAT_WEEKS - 1) * 7 + 1 && all.heat.at(-1).date === today && new Date(all.heat[0].date + 'T00:00:00').getDay() === 1, '热力图从周一开始到今天')
   ok(s.aggregateUsageSources(mainOnly([]), 'all', now).peakHour === null, '没有数据时高峰时段为空')
-  const lv = s.heatLevels([0, 1, 2, 3, 4, 100])
-  ok(lv[0] === 0 && lv[5] === 4 && lv[1] >= 1, '热力图分级：零为 0，最大为 4')
 
   const paid = (ts, total, cost) => Buffer.from(JSON.stringify({ type: 'message', timestamp: ts, message: { role: 'assistant', provider: 'p', model: 'q', usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: total, cost: { input: cost / 2, output: cost / 2, cacheRead: 0, cacheWrite: 0, total: cost } }, stopReason: 'stop' } }))
   const c = {}

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { readFile, unlink, writeFile } from 'node:fs/promises'
+import { unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isInkstoneManaged, type McpAppNativeEntry, type McpAppServerConfig } from './app-spec'
 import { atomicWrite, nativeMcpTextFingerprint } from './native-import'
@@ -18,6 +18,7 @@ import type {
 } from '../../shared/mcp-app-switch'
 import { summarizeMcpAppNativeEntry } from '../../shared/mcp-app-switch'
 import { pick } from '../../shared/ui-lang'
+import { defaultNativeConfigReader as readTextOrNull } from './app-native-witness'
 
 export class McpAppSwitchError extends Error {
   constructor(
@@ -101,15 +102,6 @@ function hostConfigPathOf(host: McpAppSwitchHost): string {
 
 function serializeDocument(document: unknown): string {
   return `${JSON.stringify(document, null, 2)}\n`
-}
-
-async function readTextOrNull(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
 }
 
 function defaultToken(): string {

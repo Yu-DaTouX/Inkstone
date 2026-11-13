@@ -1,6 +1,3 @@
-import { pick } from './ui-lang'
-import type { QuotaWindow } from './ipc'
-
 export const CURRENCY_SYMBOL: Record<string, string> = {
   USD: '$',
   CNY: '¥',
@@ -14,33 +11,4 @@ export function money(v: number, cur?: string): string {
   if (code === 'PERCENT') return `${v.toFixed(1)}%`
   const sym = CURRENCY_SYMBOL[code]
   return sym ? `${sym}${v.toFixed(2)}` : `${v.toFixed(2)} ${code}`
-}
-
-export interface CompactQuotaWindow {
-  window: QuotaWindow
-  label: string
-}
-
-export function quotaCompactWindows(windows: QuotaWindow[]): CompactQuotaWindow[] {
-  const hour = windows.find(
-    (w) => /小时|\bhours?\b|\b\d+\s*h\b/i.test(w.label) || w.id === 'fiveHour' || w.id === 'primary'
-  )
-  const week = windows.find(
-    (w) => w.id === 'weekly' || w.id === 'secondary' || /每周|本周|weekly|\bweek\b/i.test(w.label)
-  )
-  const month = windows.find(
-    (w) => w.id === 'monthly' || /本月|月度|monthly|\bmonth\b/i.test(w.label)
-  )
-  if (hour) {
-    const match = hour.label.match(/(\d+)\s*(?:小时|hours?|h)/i)
-    const digits =
-      match?.[1] ??
-      (hour.label.includes('五') || hour.id === 'fiveHour' || hour.id === 'primary' ? '5' : undefined)
-    const hourLabel = digits ? `${digits}h` : hour.label
-    return [{ window: hour, label: hourLabel }, ...(week ? [{ window: week, label: pick('周', 'W') }] : [])]
-  }
-  return [
-    ...(week ? [{ window: week, label: pick('周', 'W') }] : []),
-    ...(month ? [{ window: month, label: pick('月', 'M') }] : [])
-  ]
 }

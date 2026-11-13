@@ -23,8 +23,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   const identity = { sessionId: 's1', messageId: 'm1', partIndex: 2, toolCallId: 't1' }
   assert.equal(model.identityKey(identity), model.identityKey({ ...identity }), '同身份得到同一个键')
   assert.notEqual(model.identityKey(identity), model.identityKey({ ...identity, partIndex: 3 }), 'partIndex 参与身份')
-  assert.equal(model.sameIdentity(identity, { ...identity }), true)
-  assert.equal(model.sameIdentity(identity, { ...identity, toolCallId: 'other' }), false)
 }
 
 {
@@ -33,9 +31,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.deepEqual(model.selectFrameEvictions(slots(4)), [], '上限内不淘汰')
   assert.deepEqual(model.selectFrameEvictions(slots(5)), ['f0'], '超过上限先淘汰最久未见')
   assert.deepEqual(model.selectFrameEvictions(slots(6)), ['f0', 'f1'])
-  assert.deepEqual(model.framesToFreeFor(slots(4), 'f1'), [], '已存在的键不腾位')
-  assert.deepEqual(model.framesToFreeFor(slots(4), 'new'), ['f0'], '新键满员时腾一个位置')
-  assert.deepEqual(model.framesToFreeFor(slots(3), 'new'), [], '未满员不腾位')
 
   const mixed = [
     { key: 'on', generation: 1, visible: true, lastSeenAt: 100 },
@@ -57,8 +52,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
 
 {
   const owner = { key: 'k', sessionId: 's1', cwd: '/p', active: false }
-  assert.equal(model.ownerAllowsInteractive(owner), false)
-  assert.equal(model.ownerAllowsInteractive({ ...owner, active: true }), true)
   assert.equal(model.ownerOwnsSession(owner, 's1'), true)
   assert.equal(model.ownerOwnsSession(owner, 's2'), false)
   assert.equal(model.ownerOwnsSession({ ...owner, sessionId: null }, 's1'), false)
@@ -187,8 +180,6 @@ const html = await loadTs('../src/shared/html-artifact-preview.ts')
   assert.equal(model.previewKindOf('slides.pptx'), 'office')
   assert.equal(model.previewKindOf('main.ts'), 'text')
   assert.equal(model.previewKindOf('README'), 'binary')
-  assert.equal(model.previewNeedsOfficeIpc('office'), true)
-  assert.equal(model.previewNeedsOfficeIpc('text'), false)
 }
 
 {

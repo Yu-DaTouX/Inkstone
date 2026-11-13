@@ -23,7 +23,7 @@ const CATEGORY_NAMES: Record<string, StepCategory> = {
   webfetch: 'web', browse: 'web'
 }
 
-function bareName(name: string): string {
+export function bareName(name: string): string {
   const tail = name.split(/__|[./:]/).filter(Boolean).pop() ?? name
   return tail.toLowerCase().replace(/-/g, '_')
 }

@@ -228,26 +228,6 @@ export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
   return windows
 }
 
-export function geminiQuotaWindows(payload: unknown): QuotaWindow[] {
-  const buckets = obj(payload)?.buckets
-  if (!Array.isArray(buckets)) return []
-  const seen = new Set<string>()
-  const windows: QuotaWindow[] = []
-  for (const raw of buckets) {
-    const b = obj(raw)
-    const model = str(b?.modelId)
-    if (!b || !model || typeof b.remainingFraction !== 'number') continue
-    const type = str(b.tokenType)
-    const label = type && type !== 'REQUESTS' ? `${model} (${type})` : model
-    if (seen.has(label)) continue
-    seen.add(label)
-    const resetAt = typeof b.resetTime === 'string' ? Date.parse(b.resetTime) : NaN
-    const used = Math.round((1 - b.remainingFraction) * 1000) / 10
-    windows.push({ id: label, label, used, total: 100, resetAt: Number.isFinite(resetAt) ? resetAt : undefined, exceeded: b.remainingFraction <= 0 })
-  }
-  return windows.sort((a, b) => a.label.localeCompare(b.label))
-}
-
 export function codexResetCredits(payload: unknown, now: number): ResetCredits | undefined {
   const list = obj(payload)?.credits
   if (!Array.isArray(list)) return undefined

@@ -14,7 +14,6 @@ const model = await import(pathToFileURL(outfile).href)
 const {
   collectFindText,
   matchFind,
-  findStatusText,
   clampActiveIndex,
   centeringOffset,
   findStepQuery,
@@ -101,9 +100,6 @@ check('大小写不敏感，多处命中按文档顺序', () => {
 check('空查询与无匹配', () => {
   const root = rootOf([element('P', [text('alpha')])])
   assert.deepEqual(matchFind(root, ''), [])
-  assert.equal(findStatusText('', 0, 0), '')
-  assert.equal(findStatusText('zzz', 0, 0), '0/0')
-  assert.equal(findStatusText('al', 2, 4), '2/4')
 })
 
 check('跳过 aria-hidden、hidden 与 sr-only 子树', () => {

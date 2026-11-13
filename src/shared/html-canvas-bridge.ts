@@ -782,10 +782,6 @@ export function canvasBridgeRuntime(nonce?: string): string {
   return `<script ${HTML_CANVAS_BRIDGE_MARKER}>(function(){${detach}${scope}${CANVAS_BRIDGE_PARTS.join('\n')}})();</script>`
 }
 
-export function isCanvasBridgeTool(value: unknown): value is CanvasBridgeTool {
-  return typeof value === 'string' && (CANVAS_BRIDGE_TOOLS as readonly string[]).includes(value)
-}
-
 export function canvasToolMessage(tool: CanvasBridgeTool | string | null): Record<string, unknown> {
   return { [HTML_CANVAS_CHANNEL]: HTML_CANVAS_TOOL_KIND, tool: tool ?? '' }
 }

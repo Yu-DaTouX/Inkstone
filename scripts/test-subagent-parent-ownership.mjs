@@ -47,7 +47,7 @@ export async function runSubagentParentOwnershipTests(ok) {
   const dir = await mkdtemp(join(tmpdir(), 'yan-subagent-parent-'))
   try {
     {
-      const { subagentOwnerForView, subagentScopeForView } = await loadBundle(
+      const { subagentScopeForView } = await loadBundle(
         fileURLToPath(new URL('../src/renderer/src/state/subagent-view.ts', import.meta.url)),
         dir,
         'subagent-view'
@@ -57,29 +57,8 @@ export async function runSubagentParentOwnershipTests(ok) {
         { id: 'rB', runId: 'rB', sessionId: 'B', sessionFile: 'c:/PROJ/b.jsonl', projectId: 'pB', generation: 7 }
       ]
       const viewB = { peekedSessionId: 'B', peekedPath: null, session: { sessionId: 'A', sessionFile: 'C:/proj/a.jsonl', conversationId: 'A-conv' }, runners }
-      const ownerB = subagentOwnerForView(viewB)
-      check(ownerB.expectedRuntime?.runId === 'rB', 'B 视图派活归属取 B 的实例（不是 active 的 A）')
-      check(ownerB.expectedRuntime?.sessionId === 'B' && ownerB.expectedRuntime?.generation === 7, 'owner 带 B 的稳定 sessionId 与代次')
-      check(ownerB.expectedRuntime?.projectId === 'pB', 'owner 带 B 的 projectId')
-      check(ownerB.needsRunner === false, 'B 视图有实例时不阻止派活')
-
       const scopeB = subagentScopeForView(viewB)
-      check(scopeB.runIds?.[0] === 'rB' && scopeB.sessionIds.join(',') === 'B', '派活归属与列表归属指向同一视图实例')
-
-      const ownerA = subagentOwnerForView({ peekedSessionId: null, peekedPath: null, session: { sessionId: 'A', sessionFile: 'C:/proj/a.jsonl' }, runners })
-      check(ownerA.expectedRuntime?.runId === 'rA' && ownerA.expectedRuntime?.sessionId === 'A', '当前会话 A 派活归属取 A 的实例')
-
-      const noRunner = subagentOwnerForView({ peekedSessionId: 'B', peekedPath: null, session: { sessionId: 'A' }, runners: [runners[0]] })
-      check(noRunner.needsRunner === true && noRunner.expectedRuntime === undefined, '有稳定 SID 但无运行实例 → needsRunner（明确不派）')
-
-      const noRunnerPath = subagentOwnerForView({ peekedSessionId: null, peekedPath: 'C:/gone/x.jsonl', session: null, runners })
-      check(noRunnerPath.needsRunner === true, '按路径预览找不到实例 → needsRunner')
-
-      const startup = subagentOwnerForView({ peekedSessionId: null, peekedPath: null, session: { sessionId: '' }, runners })
-      check(startup.needsRunner === false && startup.expectedRuntime === undefined, '启动早期无身份 → 不带 owner（宿主钉当前父）')
-
-      const pending = subagentOwnerForView({ peekedSessionId: 'pending:rB', peekedPath: null, session: null, runners })
-      check(pending.expectedRuntime?.runId === 'rB', 'pending:<runId> 视图按 runId 找到实例')
+      check(scopeB.runIds?.[0] === 'rB' && scopeB.sessionIds.join(',') === 'B', '列表归属指向视图所看的实例')
     }
 
     {

@@ -46,7 +46,8 @@ import {
   useToolStructureMessages,
   visibleOutputs,
   type RailChangedFile,
-  type RailOutput
+  type RailOutput,
+  outputName as lastSegment
 } from './rail-data'
 import { railText, type RailText } from './rail-text'
 import { useRailReorder } from './use-rail-reorder'
@@ -64,11 +65,6 @@ export interface OverviewPaneProps {
 
 const QUOTA_TICK_MS = 30_000
 const GIT_REFRESH_WHILE_RUNNING_MS = 4_000
-
-function lastSegment(path: string): string {
-  const parts = path.split(/[\\/]+/).filter(Boolean)
-  return parts[parts.length - 1] ?? path
-}
 
 type GitReadStatus = 'pending' | 'repo' | 'none' | 'error'
 

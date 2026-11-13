@@ -57,13 +57,3 @@ export function pickActiveAfterClose(keys: readonly string[], removed: string, a
 export function othersThan<T extends { key: string }>(tabs: readonly T[], keep: string): T[] {
   return tabs.filter((tab) => tab.key !== keep)
 }
-
-export function isTerminalTabCloseKey(event: {
-  key: string
-  ctrlKey?: boolean
-  metaKey?: boolean
-  altKey?: boolean
-}): boolean {
-  if (event.key !== 'Delete' && event.key !== 'Backspace') return false
-  return !event.ctrlKey && !event.metaKey && !event.altKey
-}

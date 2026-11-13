@@ -1,8 +1,6 @@
 import { useRef, useSyncExternalStore } from 'react'
-import type { TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { deriveRunProgress, resolveRunClock, type RunClock, type RunProgress } from '../../../../shared/run-progress'
-import { compactionRunningText } from '../../state/compaction-view'
 import { isStopRequested, stopIntent, subscribeStopIntent } from './stop-intent'
 import { trackThinking, turnOutputTokens, workingLine, type ThinkingClock, type WorkingLine } from './working-line-model'
 import { useTurnScope } from './turn-scope'
@@ -133,20 +131,4 @@ function runLabel(call: { name: string; args?: unknown }): string {
   if (typeof a.command === 'string' && a.command.trim()) return `$ ${a.command.trim().split(/\r?\n/)[0]}`
   const target = [a.path, a.file_path, a.pattern, a.query, a.url].find((v) => typeof v === 'string' && v)
   return target ? `${call.name} ${String(target)}` : call.name
-}
-
-
-export function runPhaseText(t: TFunc, progress: RunProgress | null, compaction: Parameters<typeof compactionRunningText>[1]): string {
-  if (!progress) return ''
-  switch (progress.phase) {
-    case 'compacting': return compactionRunningText(t, compaction)
-    case 'tool': return t('run.tool', { name: progress.detail ?? '' })
-    case 'thinking': return t('run.thinking')
-    case 'responding': return t('run.responding')
-    case 'requesting': return t('run.requesting')
-    case 'preparing': return t('run.preparing')
-    case 'failed': return t('run.failed')
-    case 'cancelled': return t('run.cancelled')
-    default: return t('chat.working')
-  }
 }

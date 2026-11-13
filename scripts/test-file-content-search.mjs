@@ -23,7 +23,7 @@ function fakeGrep(corpus) {
   }
 }
 
-export async function runFileContentSearchTests(ok, { searchFileContents, compileContentMatcher, matchContentLines }) {
+export async function runFileContentSearchTests(ok, { searchFileContents, compileContentMatcher }) {
   const root = await mkdtemp(join(tmpdir(), 'yan-content-search-'))
   try {
     await mkdir(join(root, 'src'), { recursive: true })
@@ -139,8 +139,6 @@ export async function runFileContentSearchTests(ok, { searchFileContents, compil
 
     const matcher = compileContentMatcher('ab', { wholeWord: true })
     ok(JSON.stringify(matcher.match('ab abc xab')) === JSON.stringify([[0, 2]]), '共享的行匹配器仍然可用')
-    const outcome = matchContentLines(compileContentMatcher('ab'), ['ab\nab'], 1)
-    ok(outcome.limitReached && outcome.matches.length === 1, '共享的行匹配器仍然按上限停止')
   } finally {
     await rm(root, { recursive: true, force: true })
   }

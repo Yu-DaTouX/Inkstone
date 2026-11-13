@@ -146,11 +146,3 @@ export function tokenBreakdownOf(stats: Pick<UsageStatsView, 'tokens' | 'tokenBr
   if (breakdown && Number.isFinite(breakdown.main) && Number.isFinite(breakdown.subagents)) return breakdown
   return { main: stats.tokens, subagents: 0 }
 }
-
-export function heatLevels(values: number[]): number[] {
-  const nonzero = values.filter((v) => v > 0).sort((a, b) => a - b)
-  if (!nonzero.length) return values.map(() => 0)
-  const q = (p: number): number => nonzero[Math.min(nonzero.length - 1, Math.floor(p * nonzero.length))]
-  const [q1, q2, q3] = [q(0.25), q(0.5), q(0.75)]
-  return values.map((v) => (v <= 0 ? 0 : v <= q1 ? 1 : v <= q2 ? 2 : v <= q3 ? 3 : 4))
-}

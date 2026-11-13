@@ -10,7 +10,7 @@ function eq(ok, actual, expected, label) {
   ok(a === b, label, a === b ? '' : `实际 ${a} ≠ 期望 ${b}`)
 }
 
-export function runQueueItemsTests(ok, { consumeQueuedItem, reclaimedTexts }) {
+export function runQueueItemsTests(ok, { consumeQueuedItem }) {
   const item = (id, text) => ({ id, text })
   const state = (steering, followUp) => ({ steering, followUp })
 
@@ -60,9 +60,4 @@ export function runQueueItemsTests(ok, { consumeQueuedItem, reclaimedTexts }) {
     consumeQueuedItem(before, 'x')
     eq(ok, before.steering.length, 1, '原快照保持不变（避免渲染端拿到同一个引用）')
   }
-
-  eq(ok, reclaimedTexts({ steering: ['a'], followUp: ['b'] }), ['a', 'b'], 'steering 排在 followUp 前面')
-  eq(ok, reclaimedTexts({ followUp: ['b'] }), ['b'], '只有 followUp 时也能回收')
-  eq(ok, reclaimedTexts({ steering: ['a', '', '   '] }), ['a'], '空/纯空白文本不进草稿')
-  eq(ok, reclaimedTexts({}), [], 'pi 说队列空时不凭空造文本')
 }

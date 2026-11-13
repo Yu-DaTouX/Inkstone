@@ -1,5 +1,4 @@
 import {
-  effectiveShortcutKeys,
   EMPTY_SHORTCUT_OVERRIDES,
   SHORTCUTS,
   shortcutSignature,
@@ -11,8 +10,6 @@ import {
 export { applyShortcutOverrides, sanitizeShortcutOverrides } from '../../../app/shortcuts'
 export { EMPTY_SHORTCUT_OVERRIDES } from '../../../app/shortcuts'
 export type { ShortcutOverrides } from '../../../app/shortcuts'
-
-export const effectiveKeys = effectiveShortcutKeys
 
 export interface KeyStroke {
   key: string

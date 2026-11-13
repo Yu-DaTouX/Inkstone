@@ -143,15 +143,6 @@ export function subagentRowFocusTarget(key: string, index: number, count: number
   return null
 }
 
-export function subagentSiblings(runs: readonly SubagentRun[], run: SubagentRun): SubagentRun[] {
-  return runs.filter((item) =>
-    item.parentSessionId === run.parentSessionId &&
-    item.review !== 'merged' &&
-    item.review !== 'discarded' &&
-    (run.parentRunId ? item.parentRunId === run.parentRunId : !!run.parentMessageId && item.parentMessageId === run.parentMessageId)
-  )
-}
-
 function sameDispatch(item: SubagentRun, run: SubagentRun): boolean {
   if (run.parentRunId) return item.parentRunId === run.parentRunId
   return !!run.parentMessageId && item.parentMessageId === run.parentMessageId

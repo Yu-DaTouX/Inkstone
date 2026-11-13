@@ -93,9 +93,8 @@ assert.equal(isSettingsSectionId('auth'), false)
 
 const usage = await loadTs('../src/renderer/src/features/settings/usage/usage-model.ts')
 const fmt = await loadTs('../src/renderer/src/features/usage/usage-format.ts')
-const { modelShare, peakHourText, USAGE_RANGES } = usage
+const { modelShare, peakHourText } = usage
 const { compactNumber, shareText } = fmt
-assert.deepEqual([...USAGE_RANGES], ['all', '30d', '7d'], '范围取值与后端一致')
 assert.equal(compactNumber(0), '0')
 assert.equal(compactNumber(-5), '0')
 assert.equal(compactNumber(Number.NaN), '0', 'NaN 不显示成字面量')

@@ -124,11 +124,6 @@ export function limitCommands(items: readonly CommandItem[], sessionLimit: numbe
   return limitCommandGroup(items, 'session', sessionLimit)
 }
 
-export function commandsInGroups(items: readonly CommandItem[], groups: readonly CommandGroupId[]): CommandItem[] {
-  const wanted = new Set(groups)
-  return items.filter((item) => wanted.has(item.group))
-}
-
 export function limitCommandGroup(
   items: readonly CommandItem[],
   group: CommandGroupId,

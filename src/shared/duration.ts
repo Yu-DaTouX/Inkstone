@@ -7,9 +7,3 @@ export function formatDuration(ms: number, options: { minSeconds?: number } = {}
   const minutes = Math.floor(seconds / 60)
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
-
-export function formatShortDuration(ms: number): string {
-  const raw = Number.isFinite(ms) ? Math.max(0, ms) : 0
-  if (raw < 999.5) return `${Math.round(raw)}ms`
-  return formatDuration(raw)
-}

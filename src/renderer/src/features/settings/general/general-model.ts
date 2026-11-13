@@ -43,10 +43,6 @@ export function mergeSound(base: SoundSettings, patch: Partial<SoundSettings>): 
   }
 }
 
-export function removeAllowRoot(roots: readonly string[], path: string): string[] {
-  return roots.filter((item) => item !== path)
-}
-
 export function permissionNeedsConfirm(next: PermissionMode): boolean {
   return next === 'all'
 }

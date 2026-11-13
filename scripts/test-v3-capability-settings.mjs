@@ -24,7 +24,6 @@ const {
   canImportMcp,
   groupSkills,
   marketRange,
-  mcpStatusTone,
   promptCommands,
   skillOriginOf,
   verificationTone
@@ -86,12 +85,6 @@ assert.equal(canImportMcp(server({ id: WINDOWS_MCP_SERVER_ID })), false, 'window
 assert.equal(canImportMcp(server({ ownedBy: 'inkstone' })), false, '砚托管服务改用「切换」流程，不直接导入')
 assert.equal(canImportMcp(server({ ownedBy: 'pi' })), true, 'pi 原生服务仍可导入')
 assert.equal(WINDOWS_MCP_SERVER_ID, 'windows-mcp')
-
-assert.equal(mcpStatusTone('ready'), 'run')
-assert.equal(mcpStatusTone('connecting'), 'accent')
-assert.equal(mcpStatusTone('needs-auth'), 'ask')
-assert.equal(mcpStatusTone('error'), 'fail')
-assert.equal(mcpStatusTone('disconnected'), 'neutral', '未连接不是失败')
 
 assert.equal(verificationTone('ready'), 'run')
 assert.equal(verificationTone('connecting'), 'accent')

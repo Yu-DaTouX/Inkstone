@@ -23,10 +23,9 @@ const {
   applyShortcutOverrides,
   bindingFromKeyStroke,
   clearShortcutOverrides,
-  effectiveKeys,
   rebindShortcut
 } = bindings
-const { SHORTCUTS, findShortcutConflicts, sanitizeShortcutOverrides, shortcutOverridesFromSettings } = shortcuts
+const { SHORTCUTS, effectiveShortcutKeys: effectiveKeys, findShortcutConflicts, sanitizeShortcutOverrides, shortcutOverridesFromSettings } = shortcuts
 
 const stroke = (over = {}) => ({ key: 'a', ctrl: false, meta: false, alt: false, shift: false, ...over })
 

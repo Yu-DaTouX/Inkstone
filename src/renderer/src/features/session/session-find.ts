@@ -252,11 +252,6 @@ export function turnMatchPosition(counts: ReadonlyArray<number>, active: TurnMat
   return { current: active && total ? before + Math.min(active.k, Math.max(0, counts[active.turn] - 1)) + 1 : 0, total }
 }
 
-export function findStatusText(query: string, current: number, total: number): string {
-  if (!query) return ''
-  return total > 0 ? `${current}/${total}` : '0/0'
-}
-
 export function clampActiveIndex(index: number, total: number): number {
   if (total === 0) return -1
   return Math.min(Math.max(index, 0), total - 1)

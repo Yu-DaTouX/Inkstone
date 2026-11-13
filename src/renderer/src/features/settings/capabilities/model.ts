@@ -51,21 +51,6 @@ export function canImportMcp(server: CapabilityMcpServerSettingView): boolean {
 
 export type StatusTone = 'neutral' | 'accent' | 'run' | 'ask' | 'fail'
 
-export function mcpStatusTone(status: CapabilityMcpServerSettingView['status']): StatusTone {
-  switch (status) {
-    case 'ready':
-      return 'run'
-    case 'connecting':
-      return 'accent'
-    case 'needs-auth':
-      return 'ask'
-    case 'error':
-      return 'fail'
-    default:
-      return 'neutral'
-  }
-}
-
 export function verificationTone(state: CapabilityVerificationStatus['state']): StatusTone {
   switch (state) {
     case 'ready':

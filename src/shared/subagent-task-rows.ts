@@ -27,17 +27,6 @@ export function isLiveSubagentRun(run: Pick<SubagentRun, 'status'>): boolean {
   return run.status === 'starting' || run.status === 'running'
 }
 
-export function mergeSubagentRun(prev: SubagentRun | undefined, next: SubagentRun): SubagentRun {
-  if (!prev) return next
-  const prevLive = isLiveSubagentRun(prev)
-  const nextLive = isLiveSubagentRun(next)
-  if (!prevLive && nextLive) return prev
-  if (prevLive && !nextLive) return next
-  if (!prevLive && !nextLive) return (next.endedAt ?? 0) >= (prev.endedAt ?? 0) ? next : prev
-  if (prev.status === 'running' && next.status === 'starting') return prev
-  return next
-}
-
 export function subagentRunTokens(run: Pick<SubagentRun, 'usage'>): number | null {
   const usage = run.usage
   if (!usage) return null

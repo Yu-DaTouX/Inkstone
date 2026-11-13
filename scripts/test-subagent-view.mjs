@@ -1,5 +1,5 @@
 export async function runSubagentViewTests(ok) {
-  const { dedupeRuns, selectSubagentRuns, subagentCost, subagentRunsForTurnScope, subagentTabId, visibleSubagentRuns } = await import('../out/test/subagent-view.mjs')
+  const { dedupeRuns, selectSubagentRuns, subagentCost, subagentRunsForTurnScope } = await import('../out/test/subagent-view.mjs')
 
   console.log('\n--- H-10a 子代理运行归属 ---')
   const run = (id, extra = {}) => ({
@@ -35,7 +35,6 @@ export async function runSubagentViewTests(ok) {
   const chainGroups = selectSubagentRuns([run('e', { parentSessionId: 'CHILD' })], { sessionIds: ['S', 'CHILD'] })
   ok(chainGroups.detached.length === 1, '显式会话链里的任务算当前会话')
 
-  ok(subagentTabId('run-7') === 'subagent:run-7', '子代理资源标签身份带 runId')
   const empty = selectSubagentRuns([], { sessionIds: ['S'] })
   ok(empty.all.length === 0 && empty.running === 0, '没有任务时为空且不报错')
 
@@ -58,23 +57,6 @@ export async function runSubagentViewTests(ok) {
   ok(Math.abs(subagentCost(costs) - 0.7) < 1e-9, '费用只合计当前会话子代理并去重，未知费用不污染结果')
   ok(subagentCost([run('same', { usage: { cost: 3 } }), run('same', { usage: { cost: 4 } })]) === 4, '同一子代理只计最后一次费用快照')
   ok(subagentCost([]) === 0 && subagentCost([run('bad', { usage: { cost: -1 } })]) === 0, '空集合与无效费用均为零')
-
-  const now = 1_000_000
-  const finished = (id, review) => run(id, { parentSessionId: 'S', status: 'done', endedAt: now - 1000, review })
-  const visible = visibleSubagentRuns(
-    [
-      finished('fresh', 'none'),
-      finished('pend', 'pending'),
-      finished('merged', 'merged'),
-      finished('dropped', 'discarded'),
-      finished('filed', 'archived'),
-      run('live', { parentSessionId: 'S' })
-    ],
-    { sessionIds: ['S'] },
-    now
-  ).map((r) => r.id)
-  ok(visible.includes('fresh') && visible.includes('pend') && visible.includes('live'), '刚完成 / 待审阅 / 运行中的继续露面')
-  ok(!visible.includes('merged') && !visible.includes('dropped') && !visible.includes('filed'), '已合并 / 已放弃 / 已归档的不再占位')
 
   const scoped = [
     run('main-1', { parentSessionId: 'S', parentMessageId: 'm1' }),

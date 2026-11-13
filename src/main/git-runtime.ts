@@ -53,7 +53,7 @@ function findOnPath(name: string): string | undefined {
   return undefined
 }
 
-async function configuredShellPath(): Promise<string | undefined> {
+export async function configuredShellPath(): Promise<string | undefined> {
   try {
     const raw = JSON.parse(await readFile(join(PI_AGENT_DIR, 'settings.json'), 'utf8')) as { shellPath?: unknown }
     return typeof raw.shellPath === 'string' && raw.shellPath.trim() ? raw.shellPath.trim() : undefined

@@ -140,7 +140,7 @@ export async function runQuotaResumeTests(report) {
 }
 
 export async function runQuotaMiniTests(ok, mod) {
-  const { money, quotaCompactWindows, CURRENCY_SYMBOL } = mod
+  const { money, CURRENCY_SYMBOL } = mod
 
   ok(money(9.92, 'USD') === '$9.92', 'money：美元用 $ 前缀')
   ok(money(9.92, 'CNY') === '¥9.92', 'money：人民币用 ¥（DeepSeek 余额的真实场景）')
@@ -148,28 +148,6 @@ export async function runQuotaMiniTests(ok, mod) {
   ok(money(12.5, 'XYZ') === '12.50 XYZ', 'money：未知币种退回「数字 + 代码」，不猜符号')
   ok(money(3) === '$3.00', 'money：缺省币种按美元')
   ok(Object.keys(CURRENCY_SYMBOL).includes('JPY'), 'money：符号表含 JPY')
-
-  const w = (id, label, used, total) => ({ id, label, used, total })
-  const five = w('fiveHour', '5 小时', 25, 100)
-  const week = w('weekly', '每周', 40, 100)
-  const month = w('monthly', '本月', 100, 1000)
-
-  const fiveWeek = quotaCompactWindows([five, week, month])
-  ok(fiveWeek.length === 2, '紧凑栏：有小时窗口时只显示「小时 + 周」，不塞进来月')
-  ok(fiveWeek[0].label === '5h', '紧凑栏：小时窗口标签缩成 5h')
-  ok(fiveWeek[1].label === '周', '紧凑栏：周窗口标签为 周')
-  ok(fiveWeek[0].window.id === 'fiveHour', '紧凑栏：标签是显示用的，window 仍是原对象')
-
-  const weekMonth = quotaCompactWindows([week, month])
-  ok(
-    weekMonth.length === 2 && weekMonth[0].label === '周' && weekMonth[1].label === '月',
-    '紧凑栏：没有小时窗口时退成「周 + 月」'
-  )
-  ok(quotaCompactWindows([]).length === 0, '紧凑栏：没有窗口就是空（不推算缺失窗口）')
-  ok(
-    quotaCompactWindows([w('primary', '已用', 1, 10)])[0].label === '5h',
-    '紧凑栏：primary 无数字标签时仍给出 5h'
-  )
 }
 
 export default runQuotaMiniTests

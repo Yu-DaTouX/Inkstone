@@ -77,8 +77,6 @@ check(projectHistory([parent, { ...result, nestedCalls: { calls: many } }])[0].t
 const forest = modules.tree.toolCallForest(calls)
 check(forest.length === 1 && forest[0].children.map(node => node.call.id).join(',') === 'code/1,code/2', 'nested calls sit under their parent in execution order')
 check(forest[0].children[1].children[0]?.call.id === 'code/2/1', 'grandchild stays under its own caller')
-check(!modules.tree.isSettledToolNode(forest[0]), 'a failed or unfinished child keeps the whole step visible')
-check(modules.tree.summarizeNestedCalls(forest[0].children) === 'read ×2 · powershell', 'parent target summarizes the tools it used')
 const cycle = [{ id: 'a', parentToolCallId: 'b', name: 'read' }, { id: 'b', parentToolCallId: 'a', name: 'read' }]
 check(modules.tree.toolCallForest(cycle).length === 2, 'cyclic history cannot hang the renderer')
 check(modules.tree.toolCallForest([{ id: 'x', parentToolCallId: 'gone', name: 'read' }]).length === 1, 'orphan child stays inspectable at the top level')

@@ -151,15 +151,3 @@ export function sameComposition(a: CanvasComposition | null, b: CanvasCompositio
   }
   return true
 }
-
-export function compositionSignature(composition: CanvasComposition | null): string {
-  if (!composition) return ''
-  return [
-    composition.id,
-    composition.width,
-    composition.height,
-    composition.duration,
-    composition.hasTimeline ? 1 : 0,
-    composition.clips.map((clip) => `${clip.track}:${clip.start}:${clip.duration}:${clip.label}`).join(',')
-  ].join('|')
-}

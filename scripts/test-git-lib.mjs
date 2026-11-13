@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 export async function runGitStateTests(ok) {
-  const { parseStatusV2, remoteWebUrl, compareWebUrl } = await import('../out/test/git.mjs')
+  const { parseStatusV2 } = await import('../out/test/git.mjs')
   const NUL = '\0'
   const j = (...parts) => JSON.stringify(parts)
 
@@ -75,32 +75,6 @@ export async function runGitStateTests(ok) {
     const u = p.entries[0]
     ok(u.unmerged === true, 'u 条目标记为未合并')
     ok(u.path === 'src/冲突 文件.ts', '冲突条目的路径（含空格）正确', u.path)
-  }
-
-  {
-    ok(remoteWebUrl('https://github.com/o/r.git') === 'https://github.com/o/r', 'https + .git 去掉后缀')
-    ok(remoteWebUrl('git@github.com:o/r.git') === 'https://github.com/o/r', 'scp 写法（ssh 最常见）')
-    ok(remoteWebUrl('ssh://git@github.com/o/r.git') === 'https://github.com/o/r', 'ssh:// 写法')
-    ok(remoteWebUrl('ssh://git@github.com:2222/o/r') === 'https://github.com/o/r', '带端口的 ssh 写法')
-    ok(remoteWebUrl('https://gitlab.com/g/s') === 'https://gitlab.com/g/s', 'gitlab')
-    ok(remoteWebUrl('git@bitbucket.org:t/p.git') === 'https://bitbucket.org/t/p', 'bitbucket')
-    ok(remoteWebUrl('C:\work\repo') === null, 'Windows 盘符不当成 scp 写法')
-    ok(remoteWebUrl('/Users/x/repo') === null, '本地路径没有网页地址')
-    ok(remoteWebUrl('https://git.example.com/o/r.git') === null, '自建服务不猜（认不出就 null）')
-    ok(remoteWebUrl('') === null, '空字符串给 null')
-
-    const gh = 'https://github.com/o/r'
-    ok(compareWebUrl(gh, 'main', 'feat/x') === 'https://github.com/o/r/compare/main...feat%2Fx', 'GitHub 的 compare 路径')
-    ok(
-      compareWebUrl('https://gitlab.com/g/s', 'main', 'dev') === 'https://gitlab.com/g/s/-/compare/main...dev',
-      'GitLab 用 /-/compare'
-    )
-    ok(
-      compareWebUrl('https://bitbucket.org/t/p', 'main', 'dev') === 'https://bitbucket.org/t/p/branches/compare/dev..main',
-      'Bitbucket 的顺序与我们相反（新..旧）'
-    )
-    ok(compareWebUrl(gh, 'main', 'main') === null, '两侧相同就不给链接（那是空比较）')
-    ok(compareWebUrl(gh, '', 'main') === null, '缺一侧就不给链接')
   }
 
 }
@@ -707,7 +681,7 @@ export async function runGitRepoTests(ok) {
   console.log('\n--- G10. 用户工作树（真实 git worktree）---')
 
   {
-    const { listWorktrees, createWorktree, removeWorktree, slugBranch, parseWorktreeList, defaultWorktreeContainer } =
+    const { listWorktrees, createWorktree, slugBranch, parseWorktreeList, defaultWorktreeContainer } =
       await import('../out/test/git-worktree.mjs')
 
     ok(slugBranch('feat/git-review') === 'feat-git-review', '分支名里的 / 变成 -（不多出一层目录）', slugBranch('feat/git-review'))
@@ -826,62 +800,6 @@ export async function runGitRepoTests(ok) {
       JSON.stringify(stageBusy.state?.busyBranches)
     )
     ok(stageBusy.state?.stagedCount === 1, '暂存结果仍带状态计数', String(stageBusy.state?.stagedCount))
-
-    const mainBlocked = await removeWorktree({ cwd: wt, path: wt })
-    ok(mainBlocked.ok === false, '主工作树不能删')
-    ok(
-      (mainBlocked.blockers ?? []).some((b) => b.kind === 'main'),
-      '原因是「这是主工作树」',
-      JSON.stringify(mainBlocked.blockers)
-    )
-
-    const notMine = await removeWorktree({ cwd: wt, path: root })
-    ok(notMine.ok === false && notMine.failure?.code === 'path-rejected', '不在工作树列表里的路径 → 拒绝', notMine.failure?.code)
-
-    await writeFile(join(created.path, 'dirty.txt'), 'x\n')
-    const dirtyBlocked = await removeWorktree({ cwd: wt, path: created.path })
-    ok(dirtyBlocked.ok === false, '有未提交改动 → 拒绝删除')
-    ok(
-      (dirtyBlocked.blockers ?? []).some((b) => b.kind === 'dirty' && (b.count ?? 0) >= 1),
-      '原因里带未提交的文件数',
-      JSON.stringify(dirtyBlocked.blockers)
-    )
-    ok(existsSync(created.path), '被拒之后目录还在（没有偷偷删）')
-    ok((await readFile(join(created.path, 'dirty.txt'), 'utf8')) === 'x\n', '被拒之后未提交的内容也还在')
-
-    await rm(join(created.path, 'dirty.txt'), { force: true })
-    git(created.path, ['commit', '-q', '--allow-empty', '-m', '工作树里的提交'])
-    const unpushedBlocked = await removeWorktree({ cwd: wt, path: created.path })
-    ok(unpushedBlocked.ok === false, '有未推送提交（或没有上游）→ 拒绝删除')
-    ok(
-      (unpushedBlocked.blockers ?? []).some((b) => b.kind === 'unpushed'),
-      '原因是未推送 / 无法判断',
-      JSON.stringify(unpushedBlocked.blockers)
-    )
-
-    const bare2 = join(root, 'wt-remote.git')
-    git(root, ['init', '-q', '--bare', bare2])
-    git(created.path, ['remote', 'add', 'origin', bare2])
-    git(created.path, ['push', '-q', '-u', 'origin', 'feat/one'])
-    const removed = await removeWorktree({ cwd: wt, path: created.path, deleteBranch: false })
-    ok(removed.ok === true, '干净且已推送之后可以删除', JSON.stringify(removed.failure ?? removed.blockers))
-    ok(!existsSync(created.path), '目录真的没了')
-    ok(
-      (await listWorktrees(wt)).worktrees.length === 2,
-      '工作树列表少了一条',
-      String((await listWorktrees(wt)).worktrees.length)
-    )
-    ok(git(wt, ['branch', '--list', 'feat/one']).trim().length > 0, 'deleteBranch 为假时分支保留')
-    ok(existsSync(join(wt, 'base.txt')), '主工作树始终没被碰')
-
-    try {
-      git(created2.path, ['push', '-q', '-u', 'origin', 'feat/two'])
-    } catch (e) {
-      console.log('  ⓘ feat/two 推送失败：' + String(e.stderr || e.message).split(String.fromCharCode(10))[0])
-    }
-    const removed2 = await removeWorktree({ cwd: wt, path: created2.path, deleteBranch: true })
-    ok(removed2.ok === true, '第二条也能正常删除', JSON.stringify(removed2.failure ?? removed2.blockers))
-    ok(git(wt, ['branch', '--list', 'feat/two']).trim().length === 0, 'deleteBranch 为真时分支被删掉（已合并/已推送）')
   }
 
   {

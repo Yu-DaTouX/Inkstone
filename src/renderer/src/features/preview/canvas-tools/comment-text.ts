@@ -19,7 +19,6 @@ export interface CanvasCommentText {
   sent: string
   invalid: string
   invalidHint: string
-  orphanHint: string
   locate: string
   edit: string
   remove: string
@@ -55,7 +54,6 @@ const ZH: CanvasCommentText = {
   sent: '已发送',
   invalid: '已失效',
   invalidHint: '页面上已找不到这个元素，定位可能不准',
-  orphanHint: '这个元素所在的画框当前没有显示',
   locate: '定位到元素',
   edit: '编辑评论',
   remove: '删除评论',
@@ -92,7 +90,6 @@ const EN: CanvasCommentText = {
   sent: 'Sent',
   invalid: 'Stale',
   invalidHint: 'This element is gone from the page; the pin may be off',
-  orphanHint: 'The frame holding this element is hidden right now',
   locate: 'Locate element',
   edit: 'Edit comment',
   remove: 'Delete comment',

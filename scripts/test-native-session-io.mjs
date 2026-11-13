@@ -63,7 +63,7 @@ io.configureNativeSessionIo({
   newId: () => 'deadbeef'
 })
 
-console.log('\n--- JSONL 逐行校验（parseSessionJsonl / inspectSessionJsonl）---')
+console.log('\n--- JSONL 逐行校验（parseSessionJsonl）---')
 {
   const good = io.parseSessionJsonl(sessionText)
   ok(good.ok && good.value.header.id === 'sess-1' && good.value.entries.length === 4, '合法文件解析出头与 4 条条目')
@@ -78,13 +78,6 @@ console.log('\n--- JSONL 逐行校验（parseSessionJsonl / inspectSessionJsonl�
   eq(badType.code, 'invalid_line', '缺少 type 字段 → invalid_line')
   const headerNoId = io.parseSessionJsonl(JSON.stringify({ type: 'session' }) + '\n')
   eq(headerNoId.code, 'invalid_header', '会话头缺 id → invalid_header')
-  eq((await io.inspectSessionJsonl(join(work, 'missing.jsonl'))).code, 'not_found', '文件不存在 → not_found')
-
-  const tooBig = join(work, 'too-big.jsonl')
-  writeFileSync(tooBig, sessionText, 'utf8')
-  eq((await io.inspectSessionJsonl(tooBig, 10)).code, 'too_large', '超过大小上限 → too_large')
-  const info = await io.inspectSessionJsonl(sessionPath)
-  ok(info.ok && info.entryCount === 4 && info.version === 3, 'inspect 返回条目数与版本')
 }
 
 console.log('\n--- 活动分支（buildActiveBranch / serializeSessionBranch）---')

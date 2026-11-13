@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
+import { mkdir, open, rename, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { McpMigratedToNativeMark } from '../../shared/mcp'
 import type {
@@ -20,6 +20,7 @@ import {
 import { mcpServersFile, parseMcpServersDocument } from './config'
 import { serializedWrite } from './write-queue'
 import { pick } from '../../shared/ui-lang'
+import { defaultNativeConfigReader as readTextOrNull } from './app-native-witness'
 
 export class NativeMcpImportError extends Error {
   constructor(readonly code: string, message: string) {
@@ -101,15 +102,6 @@ function hostConfigPathOf(host: NativeMcpImportHost): string {
 
 export function nativeMcpTextFingerprint(text: string | null): string {
   return createHash('sha256').update(text === null ? '\u0000absent' : text).digest('hex')
-}
-
-async function readTextOrNull(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
 }
 
 export async function atomicWrite(path: string, text: string, expectedFingerprint?: string): Promise<void> {

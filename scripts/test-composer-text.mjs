@@ -9,7 +9,6 @@ const {
   caretSelection,
   hasComposerText,
   replaceTextRange,
-  insertTextAt,
   appendBlock,
   prependBlock,
   composerSchema,
@@ -18,7 +17,6 @@ const {
   inlineNodesForText,
   positionForTextOffset,
   textOffsetForPosition,
-  resolveTextSelection
 } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 
 assert.deepEqual(clampSelection('abc', { start: -3, end: 9 }), { start: 0, end: 3 }, '范围夹到文本内')
@@ -45,13 +43,6 @@ assert.deepEqual(outside, { text: 'abcZ', cursor: 4 }, '越界区间按末尾处
 
 const insertNothing = replaceTextRange('a\nb', { start: 1, end: 1 }, '')
 assert.deepEqual(insertNothing, { text: 'a\nb', cursor: 1 }, '插入空串不改文本')
-
-assert.deepEqual(insertTextAt('abcd', 1, 'Q'), { text: 'aQbcd', cursor: 2 }, '按光标位置插入')
-assert.deepEqual(insertTextAt('abcd', { start: 1, end: 3 }, 'Q'), { text: 'aQd', cursor: 2 }, '按区间插入即替换')
-
-const emoji = insertTextAt('a😀b', 3, '!')
-assert.equal(emoji.text, 'a😀!b', '按 UTF-16 偏移插入，与 textarea 光标一致')
-assert.equal(emoji.cursor, 4, '插入后光标按 UTF-16 前进')
 
 assert.equal(appendBlock('', '新增'), '新增', '空文本追加不加换行')
 assert.equal(appendBlock('原文', '新增'), '原文\n新增', '追加一行保留原文本')
@@ -129,15 +120,6 @@ const withBreak = composerSchema.node('doc', null, [
 ])
 assert.equal(docToText(withBreak), 'a\nb\nc', '段落内的 hard_break 也投影为换行')
 assert.equal(textOffsetForPosition(withBreak, positionForTextOffset(withBreak, 2)), 2, 'hard_break 两侧的偏移可往返')
-
-const selectionDoc = textToDoc('第一行\n\n第三行')
-assert.deepEqual(resolveTextSelection(selectionDoc, { start: 0, end: 0 }), { start: 1, end: 1 }, '文首偏移落在首段内容起点')
-const forward = resolveTextSelection(selectionDoc, { start: 2, end: 6 })
-assert.ok(forward.start < forward.end, '跨行选区映射为正向文档区间')
-assert.equal(textOffsetForPosition(selectionDoc, forward.start), 2, '选区起点可回读')
-assert.equal(textOffsetForPosition(selectionDoc, forward.end), 6, '选区终点可回读')
-const reversed = resolveTextSelection(selectionDoc, { start: 7, end: 6 })
-assert.deepEqual(reversed, resolveTextSelection(selectionDoc, { start: 6, end: 7 }), '反向区间归一后与正向区间相同')
 
 console.log('输入框纯文本层：范围夹取、插入、替换、整块前后拼接、空内容判据与文档投影往返检查通过')
 

@@ -50,10 +50,3 @@ export function snapshotQueue(state: QueueState): QueueSnapshot {
   }
   return snapshot
 }
-
-export function reclaimedTexts(cleared: {
-  steering?: string[]
-  followUp?: string[]
-}): string[] {
-  return [...(cleared.steering ?? []), ...(cleared.followUp ?? [])].filter((t) => !!t && t.trim().length > 0)
-}

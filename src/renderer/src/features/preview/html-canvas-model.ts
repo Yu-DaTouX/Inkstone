@@ -101,13 +101,6 @@ export function visibleViewports(
   return devices.map((id) => viewportFor(id, state.customWidth, state.customHeight))
 }
 
-export function toggleCanvasDevice(state: CanvasFrameState, id: CanvasDeviceId): CanvasFrameState {
-  if (state.devices.includes(id)) {
-    return state.devices.length <= 1 ? state : setCanvasDevices(state, state.devices.filter((device) => device !== id))
-  }
-  return setCanvasDevices(state, [...state.devices, id])
-}
-
 export function setCanvasDevices(state: CanvasFrameState, devices: readonly CanvasDeviceId[]): CanvasFrameState {
   const next = CANVAS_DEVICE_ORDER.filter((id) => devices.includes(id))
   return next.length ? { ...state, devices: next } : state

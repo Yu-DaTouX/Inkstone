@@ -170,12 +170,6 @@ export function htmlElementSpan(html: string, offset: number, tagName: string): 
   }
 }
 
-export function isHtmlTextLeaf(html: string, offset: number, tagName: string): boolean {
-  const span = htmlElementSpan(html, offset, tagName)
-  if (!span) return false
-  return !html.slice(span.contentStart, span.contentEnd).includes('<')
-}
-
 function escapeHtmlText(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }

@@ -389,14 +389,6 @@ export function textOffsetForPosition(doc: ProseNode, position: number): number 
   return offset
 }
 
-export function resolveTextSelection(doc: ProseNode, selection: TextSelection): TextSelection {
-  const { start, end } = clampSelection(docToText(doc), selection)
-  return {
-    start: positionForTextOffset(doc, start),
-    end: positionForTextOffset(doc, end)
-  }
-}
-
 export interface ComposerTextEdit {
   text: string
   cursor: number
@@ -424,10 +416,6 @@ export function replaceTextRange(text: string, range: TextSelection, insert: str
     text: `${text.slice(0, start)}${insert}${text.slice(end)}`,
     cursor: start + insert.length
   }
-}
-
-export function insertTextAt(text: string, at: number | TextSelection, insert: string): ComposerTextEdit {
-  return replaceTextRange(text, typeof at === 'number' ? caretSelection(text, at) : at, insert)
 }
 
 export function appendBlock(text: string, block: string): string {

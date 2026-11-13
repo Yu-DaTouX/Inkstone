@@ -318,9 +318,6 @@ assert.deepEqual(P.pairInviteAddress(null), { ok: false, reason: 'stopped' })
 
 const invite = { address: 'http://100.64.0.7:37892', code: '123456' }
 const inviteLink = P.pairInviteLink(invite)
-assert.deepEqual(P.parsePairInvite(inviteLink), invite, '生成的邀请链接可被解析回原值')
 assert.deepEqual(parseDeepLink(inviteLink).link, { action: 'pair', ...invite }, '生成的邀请链接能走深链')
-assert.equal(P.parsePairInvite('inkstone://pairing?address=1.2.3.4:1&code=123456'), null)
-assert.equal(P.parsePairInvite('inkstone://pair?address=1.2.3.4:1&code=12'), null)
 
 process.stdout.write('\n✓ WP-20c DeepLink 纯逻辑回归全部通过\n')

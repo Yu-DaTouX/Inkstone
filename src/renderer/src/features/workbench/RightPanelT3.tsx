@@ -22,6 +22,7 @@ import { TabContextMenu, type TabContextMenuItem } from '../../t3/components/rig
 import { closePanelMenu, useRightPanelAdapter } from '../../t3/adapters/right-panel'
 import { startPanelTabDrag } from './panel-tab-drag'
 import './right-panel.css'
+import { baseName } from '../../t3/adapters/surfaces'
 
 export type RightPanelMode = 'inline' | 'sheet'
 
@@ -55,11 +56,6 @@ const useNewPanelRequest = create<NewPanelRequest>((set, get) => ({
 
 export function requestNewPanelMenu(): void {
   useNewPanelRequest.getState().request()
-}
-
-function baseName(path: string): string {
-  const parts = path.split(/[\\/]/)
-  return parts[parts.length - 1] || path
 }
 
 export function RightPanelT3({ owner, mode, room, dock, span, panes, windowControls, onOpenTool, onRequestActivation }: RightPanelProps): ReactElement | null {

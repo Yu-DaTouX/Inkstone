@@ -19,14 +19,6 @@ export const ACQUISITION_BRANCH_STATES = [
 export type AcquisitionMainState = (typeof ACQUISITION_MAIN_PATH)[number]
 export type AcquisitionState = AcquisitionMainState | (typeof ACQUISITION_BRANCH_STATES)[number]
 
-export const ACQUISITION_TERMINAL_STATES: readonly AcquisitionState[] = [
-  'resumed',
-  'failed',
-  'cancelled',
-  'needs-auth',
-  'needs-authorization'
-]
-
 const MAIN_TRANSITIONS: Record<AcquisitionMainState, readonly AcquisitionState[]> = {
   discovered: ['inspected', 'failed', 'cancelled'],
   inspected: ['prepared', 'failed', 'cancelled'],
@@ -43,10 +35,6 @@ const BRANCH_TRANSITIONS: Partial<Record<AcquisitionState, readonly AcquisitionS
   'pending-boundary': ['acquiring', 'failed', 'cancelled'],
   failed: ['prepared', 'cancelled'],
   cancelled: []
-}
-
-export function isTerminalAcquisitionState(state: AcquisitionState): boolean {
-  return ACQUISITION_TERMINAL_STATES.includes(state)
 }
 
 export function allowedAcquisitionTransitions(state: AcquisitionState): readonly AcquisitionState[] {

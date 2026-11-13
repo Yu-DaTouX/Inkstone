@@ -16,19 +16,6 @@ export interface ContentMatcher {
   match(line: string): Array<[number, number]>
 }
 
-export interface ContentLineMatch {
-  file: number
-  line: number
-  ranges: Array<[number, number]>
-}
-
-export interface ContentMatchOutcome {
-  matches: ContentLineMatch[]
-  longLines: number
-  limitReached: boolean
-  cancelled?: boolean
-}
-
 export function compileContentMatcher(query: string, options: ContentSearchOptions = {}): ContentMatcher | null {
   if (!query) return null
   if (!options.regexp && query.includes('\n')) return null
@@ -61,39 +48,4 @@ export function compileContentMatcher(query: string, options: ContentSearchOptio
       return ranges
     }
   }
-}
-
-export function splitContentLines(text: string): string[] {
-  return text.split(/\r\n?|\n/)
-}
-
-export function matchContentLines(
-  matcher: ContentMatcher,
-  texts: string[],
-  limit: number,
-  shouldStop: () => boolean = () => false
-): ContentMatchOutcome {
-  const matches: ContentLineMatch[] = []
-  let longLines = 0
-  let limitReached = false
-  for (let file = 0; file < texts.length; file += 1) {
-    if (shouldStop()) return { matches, longLines, limitReached, cancelled: true }
-    const lines = splitContentLines(texts[file])
-    for (let index = 0; index < lines.length; index += 1) {
-      if (shouldStop()) return { matches, longLines, limitReached, cancelled: true }
-      const line = lines[index]
-      if (matcher.skips(line)) {
-        longLines += 1
-        continue
-      }
-      const ranges = matcher.match(line)
-      if (!ranges.length) continue
-      matches.push({ file, line: index + 1, ranges })
-      if (matches.length >= limit) {
-        limitReached = true
-        return { matches, longLines, limitReached }
-      }
-    }
-  }
-  return { matches, longLines, limitReached }
 }

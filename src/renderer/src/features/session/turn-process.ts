@@ -6,6 +6,7 @@ import { isHistoryQuestionCall } from './question-receipt'
 import { searchStepOf } from './web-search/model'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import { messageIndex } from './message-index'
+import { fileBaseName as baseOf } from './tool-title'
 
 const LIVE_SEGMENTS = 3
 
@@ -407,10 +408,6 @@ export function estimateCallLines(call: Pick<UIToolCall, 'args' | 'details'>): {
   if (seen) return { added, removed }
   const content = stringField(args, ['content', 'contents', 'text'])
   return content === null ? null : { added: textLines(content).length, removed: 0 }
-}
-
-function baseOf(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path
 }
 
 function isCodeTool(call: Pick<UIToolCall, 'name'>): boolean {

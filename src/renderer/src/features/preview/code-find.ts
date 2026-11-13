@@ -161,12 +161,6 @@ export function findShortcut(state: FindKeyState, mac: boolean): 'open' | null {
   return state.key.toLowerCase() === 'f' ? 'open' : null
 }
 
-export function findStepKey(key: string, shift: boolean): -1 | 1 | null {
-  if (key === 'Enter') return shift ? -1 : 1
-  if (key === 'F3') return shift ? -1 : 1
-  return null
-}
-
 export interface FindWorkerLike {
   postMessage(data: unknown): void
   terminate(): void

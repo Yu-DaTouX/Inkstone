@@ -30,14 +30,6 @@ export function toolCallForest(tools: UIToolCall[]): ToolCallNode[] {
   return roots
 }
 
-export function isSettledToolCall(call: UIToolCall): boolean {
-  return call.status !== 'running' && call.status !== 'pending' && call.status !== 'error' && !call.incomplete
-}
-
-export function isSettledToolNode(node: ToolCallNode): boolean {
-  return isSettledToolCall(node.call) && node.children.every(isSettledToolNode)
-}
-
 export function flattenToolNodes(nodes: ToolCallNode[]): ToolCallNode[] {
   const out: ToolCallNode[] = []
   const walk = (list: ToolCallNode[]): void => {
@@ -48,11 +40,4 @@ export function flattenToolNodes(nodes: ToolCallNode[]): ToolCallNode[] {
   }
   walk(nodes)
   return out
-}
-
-export function summarizeNestedCalls(nodes: ToolCallNode[], limit = 3): string {
-  const counts = new Map<string, number>()
-  for (const { call } of flattenToolNodes(nodes)) counts.set(call.name, (counts.get(call.name) ?? 0) + 1)
-  const parts = [...counts].slice(0, limit).map(([name, n]) => (n > 1 ? `${name} ×${n}` : name))
-  return counts.size > limit ? `${parts.join(' · ')} …` : parts.join(' · ')
 }

@@ -1,7 +1,7 @@
 import { runSuite } from './lib/test-suite.mjs'
 
 await runSuite(import.meta.url, async (ok, compile) => {
-  const { moonPhase, landscapeSky, traceMoon, sunPosition, moonPosition, observerFor } = await compile('src/renderer/src/features/ambient/landscape-sky.ts')
+  const { moonPhase, landscapeSky, sunPosition, moonPosition, observerFor } = await compile('src/renderer/src/features/ambient/landscape-sky.ts')
   const sydney = observerFor('Australia/Sydney', 0)
   const shanghai = observerFor('Asia/Shanghai', 0)
   const at = (local, offset) => Date.parse(`${local}:00${offset}`)
@@ -99,22 +99,4 @@ await runSuite(import.meta.url, async (ok, compile) => {
     if (timezone === undefined) delete process.env.TZ
     else process.env.TZ = timezone
   }
-
-  for (const tilt of [0, Math.PI / 3, Math.PI, -Math.PI / 2]) {
-    for (const illumination of [0, 0.05, 0.25, 0.5, 0.75, 0.95, 1]) {
-      const calls = []
-      const ctx = Object.fromEntries(['beginPath', 'moveTo', 'arc', 'ellipse', 'lineTo', 'closePath'].map((name) => [name, (...args) => calls.push({ name, args })]))
-      traceMoon(ctx, 100, 200, 40, { phase: 0, illumination, waxing: true }, tilt)
-      const limb = calls.find(({ name }) => name === 'arc')
-      const terminator = calls.find(({ name }) => name === 'ellipse')
-      ok(Math.abs(limb.args[3] + Math.PI / 2 - tilt) < 1e-9 && Math.abs(limb.args[4] - Math.PI / 2 - tilt) < 1e-9 && limb.args[5] === false, `亮缘半圆朝向 ${tilt.toFixed(2)} 的太阳方向`)
-      if (illumination === 0.5) ok(!terminator && calls.some(({ name }) => name === 'lineTo'), '上下弦使用直线终止界，不传退化椭圆')
-      else ok(terminator.args[2] >= 0 && terminator.args[2] <= 40 && terminator.args[4] === tilt && terminator.args.at(-1) === (illumination < 0.5), '终止界随亮面一起旋转，蛾眉与凸月方向正确')
-      ok(calls[0].name === 'beginPath' && calls.at(-1).name === 'closePath', '月相路径独立闭合，不擦除山水或绘制不透明遮罩')
-    }
-  }
-  const defaults = []
-  const recorder = Object.fromEntries(['beginPath', 'moveTo', 'arc', 'ellipse', 'lineTo', 'closePath'].map((name) => [name, (...args) => defaults.push({ name, args })]))
-  traceMoon(recorder, 0, 0, 10, { phase: 0.8, illumination: 0.3, waxing: false })
-  ok(Math.abs(defaults.find(({ name }) => name === 'arc').args[3] - Math.PI / 2) < 1e-9, '未给方向时亏月亮面默认在左')
 })

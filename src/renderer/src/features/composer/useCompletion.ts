@@ -62,12 +62,6 @@ function sameFileCwd(a: string, b: string): boolean {
   return foldCase(a) === foldCase(b)
 }
 
-export function toAbsoluteFilePath(cwd: string, rel: string): string {
-  const root = cwd.replace(/[\\/]+$/, '')
-  const sep = root.includes('\\') ? '\\' : '/'
-  return rel ? `${root}${sep}${rel.replace(/[\\/]/g, sep)}` : root
-}
-
 export function firstClause(text?: string): string {
   if (!text) return ''
   const cut = text.search(/[。；;（(]|\.\s/)

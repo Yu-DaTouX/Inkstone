@@ -1,8 +1,6 @@
 import { existsSync, lstatSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
-import { PI_AGENT_DIR } from './paths'
-import { MANAGED_GIT_ROOT, findSystemBash, findSystemGit } from './git-runtime'
+import { MANAGED_GIT_ROOT, findSystemBash, findSystemGit, configuredShellPath } from './git-runtime'
 import type { ToolchainStatus, ToolStatus } from '../shared/ipc'
 
 function hasPowerShell7(): boolean {
@@ -16,15 +14,6 @@ function hasPowerShell7(): boolean {
       return false
     }
   })
-}
-
-async function configuredShellPath(): Promise<string | undefined> {
-  try {
-    const raw = JSON.parse(await readFile(join(PI_AGENT_DIR, 'settings.json'), 'utf8')) as { shellPath?: unknown }
-    return typeof raw.shellPath === 'string' && raw.shellPath.trim() ? raw.shellPath.trim() : undefined
-  } catch {
-    return undefined
-  }
 }
 
 function isManaged(path: string): boolean {

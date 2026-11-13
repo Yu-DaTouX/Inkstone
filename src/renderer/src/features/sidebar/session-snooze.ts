@@ -16,9 +16,6 @@ const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
 const EVENING_HOUR = 18
 const MORNING_HOUR = 9
-const TIMER_MARGIN_MS = 1000
-
-export const MAX_SNOOZE_TIMER_MS = 2_147_000_000
 
 export function startOfLocalDay(at: number): Date {
   const day = new Date(at)
@@ -66,35 +63,6 @@ export function pickSnoozeOption(id: string, now: number): SnoozeOption | undefi
 
 export function isSnoozed(session: Snoozable, now: number): boolean {
   return typeof session.snoozedUntil === 'number' && session.snoozedUntil > now
-}
-
-export function wakingSessions<T extends Snoozable>(sessions: readonly T[], now: number): T[] {
-  return sessions.filter((session) => typeof session.snoozedUntil === 'number' && session.snoozedUntil <= now)
-}
-
-export function activeSessions<T extends Snoozable>(sessions: readonly T[], now: number): T[] {
-  return sessions.filter((session) => !isSnoozed(session, now))
-}
-
-export function snoozedSessions<T extends Snoozable>(sessions: readonly T[], now: number): T[] {
-  return sessions
-    .filter((session) => isSnoozed(session, now))
-    .sort((a, b) => (a.snoozedUntil ?? 0) - (b.snoozedUntil ?? 0))
-}
-
-export function nextSnoozeWake(sessions: readonly Snoozable[], now: number): number | null {
-  let next: number | null = null
-  for (const session of sessions) {
-    if (!isSnoozed(session, now)) continue
-    const until = session.snoozedUntil ?? 0
-    if (next === null || until < next) next = until
-  }
-  return next
-}
-
-export function snoozeTimerDelay(wake: number | null, now: number): number | null {
-  if (wake === null) return null
-  return Math.min(Math.max(wake - now, 0) + TIMER_MARGIN_MS, MAX_SNOOZE_TIMER_MS)
 }
 
 export function localDateValue(at: number): string {

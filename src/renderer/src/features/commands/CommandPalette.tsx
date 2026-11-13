@@ -77,6 +77,7 @@ import { settingsText } from '../settings/settings-text'
 import { settingsNavEntries } from '../settings/types'
 import { settingsNavLabel } from '../settings/root/nav-label'
 import './command-palette.css'
+import { shortProject as shortPath } from '../sidebar/sidebar-model'
 
 const SESSION_LIMIT = 8
 const MESSAGE_LIMIT = 12
@@ -103,11 +104,6 @@ interface RunResult {
 
 const SETTINGS_COMMAND_PREFIX = 'settings:'
 const SETTINGS_NAV = settingsNavEntries()
-
-function shortPath(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean)
-  return parts[parts.length - 1] || path
-}
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
   [COMMAND_ACTION_IDS.newSession]: SquarePen,

@@ -24,11 +24,6 @@ export interface RailText {
   copyBranch: string
   openChanges: string
   resizeTiles: string
-  outputsEmpty: string
-  outputCreated: string
-  outputModified: string
-  outputDeleted: string
-  connected: (ready: number, total: number) => string
   outputFiles: (n: number) => string
   changesNone: string
   tasksRunning: (n: number) => string
@@ -80,11 +75,6 @@ const ZH: RailText = {
   copyBranch: '复制分支名',
   openChanges: '在变更面板打开',
   resizeTiles: '调整会话栏宽度',
-  outputsEmpty: '本会话还没有写入文件',
-  outputCreated: '新建',
-  outputModified: '修改',
-  outputDeleted: '删除',
-  connected: (ready, total) => `${ready} / ${total} 已连接`,
   outputFiles: (n) => `${n} 个文件`,
   changesNone: '无更改',
   tasksRunning: (n) => `${n} 运行中`,
@@ -136,11 +126,6 @@ const EN: RailText = {
   copyBranch: 'Copy branch name',
   openChanges: 'Open in Changes',
   resizeTiles: 'Resize session bar',
-  outputsEmpty: 'No files written in this session yet',
-  outputCreated: 'Created',
-  outputModified: 'Modified',
-  outputDeleted: 'Deleted',
-  connected: (ready, total) => `${ready} / ${total} connected`,
   outputFiles: (n) => (n === 1 ? '1 file' : `${n} files`),
   changesNone: 'No changes',
   tasksRunning: (n) => `${n} running`,

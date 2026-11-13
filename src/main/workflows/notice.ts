@@ -1,6 +1,7 @@
 import type { SubagentRun } from '../../shared/ipc'
 import { workflowTotals, type WorkflowRunView } from '../../shared/workflows'
 import type { NoticeTarget } from '../subagent-notify'
+import { clip } from '../../shared/subagent-notice'
 
 export const WORKFLOW_NOTICE_RESULT_MAX = 16_000
 export const WORKFLOW_NOTICE_BUSY_POLL_MS = 3_000
@@ -27,11 +28,6 @@ function resultText(result: unknown): string {
 
 function fence(text: string): string {
   return text.replace(new RegExp(`<(/?)${RESULT_TAG}`, 'gi'), `＜$1${RESULT_TAG}`)
-}
-
-function clip(text: string, max: number): string {
-  const points = [...text.replace(/\s+/g, ' ').trim()]
-  return points.length > max ? `${points.slice(0, max).join('')}…` : points.join('')
 }
 
 export function buildWorkflowNotice(input: WorkflowNoticeInput): string {

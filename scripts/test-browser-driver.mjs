@@ -82,7 +82,6 @@ await check('键盘：Control+Shift+A 解析为主键 A 加 Ctrl|Shift 掩码', 
   assert.deepEqual(chord.modifierKeys, ['Control', 'Shift'])
   assert.equal(keyboard.parseKeyChord('alt+arrowdown').spec.code, 'ArrowDown')
   assert.equal(keyboard.parseKeyChord('Enter').modifiers, 0)
-  assert.equal(keyboard.formatChord('shift+control+a'), 'Shift+Control+a')
 })
 
 await check('键盘：ControlOrMeta 按平台解析，+ 号可作按键', () => {

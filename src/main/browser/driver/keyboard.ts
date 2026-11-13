@@ -148,11 +148,6 @@ export function parseKeyChord(chord: string, platform: string = process.platform
   return { key, spec, modifiers, modifierKeys }
 }
 
-export function formatChord(chord: string | KeyChord): string {
-  const parsed = typeof chord === 'string' ? parseKeyChord(chord) : chord
-  return [...parsed.modifierKeys, parsed.key].join('+')
-}
-
 function isModifierName(name: string): name is ModifierName {
   return Object.prototype.hasOwnProperty.call(MODIFIER_BITS, name)
 }

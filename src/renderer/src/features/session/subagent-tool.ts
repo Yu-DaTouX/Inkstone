@@ -2,17 +2,13 @@ import type { SubagentRun, UIToolCall } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
 import type { BotActivity, BotTool } from '../../patterns/model-bot/draw'
 import { toolKind } from './tool-summary'
+import { bareName as bareToolName } from './tool-title'
 
 const COMMAND_NAMES = /^(bash|sh|zsh|cmd|pwsh|powershell|shell|terminal|exec|execute|run|codemode)(_|$)|_(command|cmd|shell|terminal)$/
 const READ_NAMES = /^(read|view|cat|open|ls|list_dir|list_directory|list_files)(_|$)/
 const SEARCH_NAMES = /^(grep|rg|ripgrep|glob|find|search|fetch|web_fetch|webfetch|web_search|websearch|browse)(_|$)|_(search|fetch)$/
 const SEARCH_COMMAND = /(^|[\s;&|(])yan(\.cmd|\.exe)?\s+(search|fetch|web)\b/
 const EDIT_NAMES = /^(edit|write|multi_edit|multiedit|str_replace|apply_patch|patch|notebook_edit|create_file|delete_file|move_file|rename_file)(_|$)/
-
-function bareToolName(name: string): string {
-  const tail = name.split(/__|[./:]/).filter(Boolean).pop() ?? name
-  return tail.toLowerCase().replace(/-/g, '_')
-}
 
 function commandText(args: unknown): string {
   if (typeof args === 'string') return args

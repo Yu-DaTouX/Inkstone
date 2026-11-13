@@ -8,7 +8,6 @@ export interface TerminalText {
   startFailed: string
   attachFailed: string
   bufferOverflow: string
-  empty: string
   tabTitle: string
   tabNumber: (n: number) => string
   tabs: string
@@ -62,7 +61,6 @@ const ZH: TerminalText = {
   startFailed: '终端启动失败，可重试',
   attachFailed: '终端连接失败，可重试',
   bufferOverflow: '终端连接缓冲超限，请重新连接',
-  empty: '没有打开的终端',
   tabTitle: '终端',
   tabNumber: (n) => `终端 ${n}`,
   tabs: '终端标签',
@@ -116,7 +114,6 @@ const EN: TerminalText = {
   startFailed: 'Could not start the terminal. You can retry.',
   attachFailed: 'Could not connect to the terminal. You can retry.',
   bufferOverflow: 'Terminal connection buffer exceeded; reconnect.',
-  empty: 'No terminal open',
   tabTitle: 'Terminal',
   tabNumber: (n) => `Terminal ${n}`,
   tabs: 'Terminal tabs',

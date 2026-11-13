@@ -17,10 +17,6 @@ export function identityKey(id: ArtifactIdentity): string {
   return [id.sessionId ?? '', id.messageId, String(id.partIndex), id.toolCallId ?? ''].join('\u0000')
 }
 
-export function sameIdentity(a: ArtifactIdentity, b: ArtifactIdentity): boolean {
-  return identityKey(a) === identityKey(b)
-}
-
 export type ArtifactForm = 'inline' | 'panel' | 'fullscreen' | 'pip'
 
 export const ARTIFACT_FORMS: readonly ArtifactForm[] = ['inline', 'panel', 'fullscreen', 'pip']
@@ -130,12 +126,6 @@ export function selectFrameEvictions(slots: readonly FrameSlot[], limit = MAX_AC
   return ranked.slice(0, slots.length - limit).map((slot) => slot.key)
 }
 
-export function framesToFreeFor(slots: readonly FrameSlot[], key: string, limit = MAX_ACTIVE_FRAMES): string[] {
-  if (slots.some((slot) => slot.key === key)) return []
-  if (slots.length < limit) return []
-  return selectFrameEvictions(slots, Math.max(0, limit - 1))
-}
-
 export interface OwnerLike {
   readonly key: string
   readonly sessionId: string | null
@@ -143,10 +133,6 @@ export interface OwnerLike {
   readonly cwd: string
   readonly active: boolean
   readonly generation?: number
-}
-
-export function ownerAllowsInteractive(owner: OwnerLike): boolean {
-  return owner.active === true
 }
 
 export function ownerOwnsSession(owner: OwnerLike, sessionId: string | null): boolean {
@@ -322,10 +308,6 @@ export function previewKindOf(nameOrPath: string): PreviewKind {
   if (OFFICE_EXT.test(nameOrPath)) return 'office'
   if (TEXT_EXT.test(nameOrPath)) return 'text'
   return 'binary'
-}
-
-export function previewNeedsOfficeIpc(kind: PreviewKind): boolean {
-  return kind === 'office'
 }
 
 export interface VersionedArtifact {

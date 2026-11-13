@@ -201,9 +201,6 @@ check('当前匹配定位到页，越界夹住', () => {
   assert.equal(find.pdfMatchPage(matches, 99), 2)
   assert.equal(find.pdfMatchPage(matches, -5), 0)
   assert.equal(find.pdfMatchPage([], 0), -1)
-  const byPage = find.pdfMatchPages(matches)
-  assert.deepEqual([...byPage.keys()], [0, 2])
-  assert.equal(byPage.get(2).length, 2)
 })
 
 process.stdout.write(`\n${passed} 组 PDF 预览逻辑测试通过\n`)

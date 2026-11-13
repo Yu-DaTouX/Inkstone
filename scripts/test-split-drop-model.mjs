@@ -126,7 +126,6 @@ console.log('松手后的布局')
 
 console.log('分屏块拖动（与参考 dropZone / paneDrop 一致）')
 {
-  ok(drop.SESSION_DRAG_THRESHOLD === 4, '起拖阈值 4px（侧栏会话、分屏块、工作区面板共用）')
   const two = [s('a'), s('b')]
   const cols2 = [
     { left: 300, top: 50, width: 500, height: 800 },

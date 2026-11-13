@@ -37,25 +37,4 @@ export async function runFileResourceTests(ok) {
   )
 
   ok(key({ canonicalPath: 'C:/x.ts' }) === '-|-|C%3A%2Fx.ts', '缺项目/工作树时用占位符')
-
-  ok(
-    fr.sameResourcePath('C:/work/app/a.ts', 'C:\\work\\app\\a.ts'),
-    '反斜杠与正斜杠视为同一路径'
-  )
-  ok(
-    !fr.sameResourcePath('C:/work/app/a.ts', 'C:/work/app/A.ts'),
-    '大小写不同不擅自当作同一路径（canonicalPath 已由 realpath 归一）'
-  )
-
-  const rr = fr.resolveRelativePath
-  ok(rr('C:/work/app/docs', '../README.md') === 'C:/work/app/README.md', '../ 相对文档目录解析')
-  ok(rr('C:/work/app/docs', './guide/x.md') === 'C:/work/app/docs/guide/x.md', './ 与子目录正常拼接')
-  ok(rr('C:/work/app/docs', 'x.md') === 'C:/work/app/docs/x.md', '同目录相对链接')
-  ok(
-    rr('C:/work/app/docs', '../../../etc/passwd') === 'C:/etc/passwd',
-    '上溯到盘符根就停（不造出越界的 `..` 前缀）'
-  )
-  ok(rr('C:/work/app/docs', 'a\\b\\..\\c.md') === 'C:/work/app/docs/a/c.md', '反斜杠与 . 都归一')
-  ok(rr('/home/me/docs', '../x.md') === '/home/me/x.md', 'POSIX 路径同样处理')
-  ok(rr('C:/work/app/docs', '../docs2/./y.md') === 'C:/work/app/docs2/y.md', '多个相对段一起算')
 }

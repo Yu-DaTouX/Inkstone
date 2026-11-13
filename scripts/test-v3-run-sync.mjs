@@ -93,7 +93,6 @@ async function main() {
     sortRuns,
     phaseWord,
     phaseDetail,
-    isUnreadRun,
     useRunsV3,
     startRunSync
   } = mod
@@ -194,7 +193,6 @@ async function main() {
     const running = snapshot('c', { kind: 'running', since: 1, activity: 'thinking' })
     const next = markSeenInRuns([done, failed, running], 'a')
     assert.equal(next.find((r) => r.runId === 'a').phase.seen, true)
-    assert.equal(isUnreadRun(next.find((r) => r.runId === 'a')), false)
     assert.equal(next.find((r) => r.runId === 'b').phase.seen, false)
     const arr = [running]
     assert.equal(markSeenInRuns(arr, 'c'), arr, '运行中已读不产生新引用')

@@ -13,7 +13,6 @@ export async function runSourcesTests(ok) {
     listLinks,
     linkSources,
     removeImage,
-    readImage,
     dropSession
   } = await import('../out/test/sources.mjs')
 
@@ -45,10 +44,6 @@ export async function runSourcesTests(ok) {
     ok(listed.ok === true && listed.dir === sourcesDir(session), '列表回报的目录是会话目录', listed.dir)
     ok(listed.images[0]?.available === true, '列出来的每一份都标着 available')
 
-    const back = readImage(session, ref.sourceId)
-    ok(back.ok === true && back.mime === 'image/png', '读回来带对了 mime', String(back.mime))
-    ok(Buffer.compare(Buffer.from(back.base64 ?? '', 'base64'), pngBytes) === 0, '读回来的字节与原来一致')
-
     const other = saveImage({ sessionId: session, name: 'shot2.png', mimeType: 'image/png', base64: Buffer.from([9, 9, 9]).toString('base64') })
     ok(other?.sourceId !== ref?.sourceId, '内容不同 → sourceId 不同')
     ok(listImagesForSession(session).images.length === 2, '现在有两份', String(listImagesForSession(session).images.length))
@@ -73,7 +68,6 @@ export async function runSourcesTests(ok) {
     const evil = saveImage({ sessionId: '../../evil', name: 'e.png', mimeType: 'image/png', base64: pngB64 })
     ok((evil?.ref ?? '').startsWith(join(root, 'sources')), '穿越写的文件也被关在 sources 目录里', String(evil?.ref))
 
-    ok(readImage(session, '../../secret').ok === false, '读的时候 id 形状不对 → 拒绝')
     ok(removeImage(session, '../x').ok === false, '删的时候 id 形状不对 → 拒绝')
     ok(removeImage(session, 'file:abc').ok === false, '文件引用的 id 拿来删 → 拒绝（我们从不删用户原文件）')
   }

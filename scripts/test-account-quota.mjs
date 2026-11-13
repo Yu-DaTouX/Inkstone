@@ -167,19 +167,6 @@ export async function runAccountQuotaTests(ok) {
   ok(paidClaude[0].allowsOverage === true, '明确开启额外付费用量时不把五小时额度视为强制暂停')
   ok(!s.claudeUsageWindows({ five_hour: { utilization: 100 }, extra_usage: { is_enabled: true, utilization: 100 } })[0].allowsOverage, '额外付费用量本身已用尽时仍按硬限额考虑')
 
-  const gemini = s.geminiQuotaWindows({
-    buckets: [
-      { modelId: 'gemini-2.5-pro', remainingFraction: 0.25, resetTime: '2026-10-08T00:00:00Z', tokenType: 'REQUESTS' },
-      { modelId: 'gemini-2.5-flash', remainingFraction: 1 },
-      { modelId: 'gemini-2.5-pro', remainingFraction: 0.1, tokenType: 'REQUESTS' },
-      { modelId: 'gemini-x', remainingFraction: 0.5, tokenType: 'INPUT_TOKENS' },
-      { remainingFraction: 0.5 }
-    ]
-  })
-  ok(gemini.map((w) => w.label).join('|') === 'gemini-2.5-flash|gemini-2.5-pro|gemini-x (INPUT_TOKENS)', 'Gemini：按模型去重、排序，非请求数的桶标出类型')
-  ok(gemini.find((w) => w.label === 'gemini-2.5-pro').used === 75, 'Gemini：剩余比例换成已用百分比')
-  ok(s.geminiQuotaWindows({}).length === 0, 'Gemini：没有 buckets 时为空')
-
   const card = (key, source, extra = {}) => ({ key, source, provider: 'openai-codex', name: 'ChatGPT', status: 'ok', windows: [], checkedAt: 0, ...extra })
   const merged = s.mergeDuplicateCards([card('k', 'yan', { active: true }), card('k', 'codex-cli'), card('other', 'codex-cli')])
   ok(merged.length === 2 && merged[0].source === 'yan' && merged[0].alsoIn?.[0] === 'codex-cli', '去重：同一账号只留砚的卡，记下也在 Codex CLI 登录')

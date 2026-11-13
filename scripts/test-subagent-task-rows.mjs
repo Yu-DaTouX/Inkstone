@@ -80,16 +80,10 @@ try {
   const offlineDone = rows.buildSubagentTaskRow({ ...base, status: 'done', endedAt: 2000 }, { now: NOW, connection: 'disconnected' })
   assert.equal(offlineDone.state, 'done', '断连只影响运行中的任务')
 
-  const lateStart = { ...base, status: 'starting', endedAt: undefined }
   const finished = { ...base, status: 'done', endedAt: 9_000 }
-  assert.equal(rows.mergeSubagentRun(finished, lateStart).status, 'done', '迟到的启动确认不覆盖终态')
-  assert.equal(rows.mergeSubagentRun(lateStart, finished).status, 'done')
-  assert.equal(rows.mergeSubagentRun({ ...base, status: 'running' }, lateStart).status, 'running', '启动确认不把运行中退回启动中')
-  assert.equal(rows.mergeSubagentRun(lateStart, { ...base, status: 'running' }).status, 'running')
-  assert.equal(rows.mergeSubagentRun({ ...base, status: 'error', endedAt: 9_000 }, { ...base, status: 'done', endedAt: 5_000 }).status, 'error', '终态之间以较晚结束者为准')
 
   const merged = [
-    rows.buildSubagentTaskRow(rows.mergeSubagentRun(lateStart, finished), { now: NOW }),
+    rows.buildSubagentTaskRow(finished, { now: NOW }),
     rows.buildSubagentTaskRow({ ...base, id: 'sub-b2', startedAt: 5_000 }, { now: NOW }),
     rows.buildSubagentTaskRow({ ...base, id: 'sub-c3', startedAt: 3_000, status: 'running' }, { now: NOW, stopping: true })
   ]

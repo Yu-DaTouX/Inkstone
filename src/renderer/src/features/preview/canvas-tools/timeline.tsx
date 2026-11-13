@@ -15,6 +15,7 @@ import {
 } from './timeline-model'
 import { timelineText } from './timeline-text'
 import './timeline.css'
+import { baseName as fileNameOf } from '../../../t3/adapters/surfaces'
 
 const EDITABLE_TARGET = 'input, textarea, select, [role="textbox"], [contenteditable="true"]'
 
@@ -26,11 +27,6 @@ type VideoExportPhase =
 
 function newExportId(): string {
   return `export-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function fileNameOf(path: string): string {
-  const parts = path.split(/[\\/]/)
-  return parts[parts.length - 1] || path
 }
 
 const IDLE_EXPORT: VideoExportPhase = { kind: 'idle' }

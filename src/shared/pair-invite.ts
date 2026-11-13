@@ -55,15 +55,3 @@ export function validPairAddress(raw: string): string | null {
   if (url.pathname !== '/' && url.pathname !== '') return null
   return `${url.protocol}//${url.host}`
 }
-
-export function parsePairInvite(raw: string): PairInvite | null {
-  const text = raw.trim()
-  if (!/^inkstone:\/\/pair(?:[/?]|$)/i.test(text)) return null
-  const query = text.indexOf('?')
-  if (query < 0) return null
-  const params = new URLSearchParams(text.slice(query + 1))
-  const address = validPairAddress(params.get('address') ?? '')
-  const code = normalizePairCode(params.get('code') ?? '')
-  if (!address || code.length !== PAIR_CODE_LENGTH) return null
-  return { address, code }
-}

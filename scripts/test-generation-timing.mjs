@@ -24,7 +24,7 @@ try {
   await build({
     stdin: {
       contents: `
-        export { generationTiming, decodeTokensPerSecond } from './src/shared/turn-timing'
+        export { generationTiming } from './src/shared/turn-timing'
         export { toolWaitSpans, waitSpansMs } from './src/shared/turns'
         export * as store from './src/main/turn-timing-store'
         export { TurnTimingTracker } from './src/main/turn-timing-tracker'
@@ -59,7 +59,7 @@ try {
   })
 
   const mod = await import(pathToFileURL(outfile).href)
-  const { generationTiming, decodeTokensPerSecond, store, TurnTimingTracker, AgentController, toolWaitSpans, waitSpansMs, buildSubagentNotice, isSubagentNotice } = mod
+  const { generationTiming, store, TurnTimingTracker, AgentController, toolWaitSpans, waitSpansMs, buildSubagentNotice, isSubagentNotice } = mod
   const noticeText = buildSubagentNotice({
     id: 'sub-1',
     task: '检查登录流程',
@@ -96,12 +96,6 @@ try {
       reversed.durationMs === 1 && reversed.ttftMs === 1 && reversed.decodeMs === 1,
       '时间倒挂钳到 ≥ 1ms，不出现 0 / 负数'
     )
-
-    check(near(decodeTokensPerSecond(100, 2000), 50), 'TPS 用真实 usage 输出 ÷ 解码时长（100tok/2s=50）')
-    check(decodeTokensPerSecond(undefined, 2000) === undefined, '没有真实用量输出 → 不给 TPS')
-    check(decodeTokensPerSecond(0, 2000) === undefined, '输出为 0 → 不给 TPS')
-    check(decodeTokensPerSecond(100, undefined) === undefined, '没有解码时长（无首 token）→ 不给 TPS')
-    check(decodeTokensPerSecond(100, 0) === undefined, '解码时长为 0 → 不给 TPS')
   }
 
   console.log('\n--- 2. 生成计时落盘与按次序恢复（store）---')

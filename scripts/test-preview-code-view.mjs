@@ -289,7 +289,6 @@ check('关闭右侧、关闭其他、关闭预览标签时清理预览标记', (
   assert.equal(right.get('o').active, 'b')
   assert.equal(right.get('o').preview, undefined)
   assert.equal(state.closePreviewTabsToRight(b, 'o', 'e'), b)
-  assert.deepEqual(state.previewTabsToRight(['a', 'b', 'c'], 'a'), ['b', 'c'])
   const others = state.closeOtherPreviewTabs(b, 'o', 'e')
   assert.deepEqual(others.get('o').tabs, ['e'])
   assert.equal(others.get('o').preview, 'e')
@@ -469,11 +468,6 @@ check('查找：快捷键只接管 Ctrl/⌘+F，Enter/Shift+Enter 与 F3 步进'
   assert.equal(find.findShortcut({ ...none, key: 'f', ctrl: true, shift: true }, false), null)
   assert.equal(find.findShortcut({ ...none, key: 'f', ctrl: true, alt: true }, false), null)
   assert.equal(find.findShortcut({ ...none, key: 'g', ctrl: true }, false), null)
-  assert.equal(find.findStepKey('Enter', false), 1)
-  assert.equal(find.findStepKey('Enter', true), -1)
-  assert.equal(find.findStepKey('F3', false), 1)
-  assert.equal(find.findStepKey('F3', true), -1)
-  assert.equal(find.findStepKey('a', false), null)
 })
 
 check('跳行：解析行号与行列，越界拒绝，Ctrl+G 触发', () => {
@@ -525,8 +519,6 @@ check('行评论：中文与英文序列化，空评论不入输入框', () => {
   const single = lineComment.serializeLineComment({ path: 'a.ts', start: 2, end: 2, code: '', text: 'note', lang: 'en-US' })
   assert.equal(single, 'In a.ts, line 2:\nnote')
   assert.equal(lineComment.serializeLineComment({ path: 'a.ts', start: 2, end: 3, code: 'x', text: '   ', lang: 'en-US' }), '')
-  assert.equal(lineComment.lineCommentLabel({ start: 2, end: 2 }, 'en-US'), 'Line 2')
-  assert.equal(lineComment.lineCommentLabel({ start: 2, end: 5 }, 'zh-CN'), '第 2–5 行')
 })
 
 check('预览标签拖动：重排保留活动/预览/跳转，落点与插入位置换算', () => {
@@ -543,7 +535,6 @@ check('预览标签拖动：重排保留活动/预览/跳转，落点与插入�
   assert.equal(state.movePreviewTab(b, 'o', 'nope', 1), b)
   assert.equal(state.movePreviewTab(b, null, 'a', 1), b)
   assert.equal(state.movePreviewTab(b, 'o', 'a', 99).get('o').tabs[3], 'a')
-  assert.deepEqual(tabReorder.moveToIndex(['a', 'b', 'c'], 0, 2), ['b', 'c', 'a'])
   assert.deepEqual(tabReorder.dropIndexFor([10, 30, 50], 31), 2)
   assert.equal(tabReorder.dropIndexFor([], 5), 0)
   assert.equal(tabReorder.dropGapIndex(2, 0), 3)

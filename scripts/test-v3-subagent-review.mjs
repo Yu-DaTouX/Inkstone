@@ -185,7 +185,7 @@ async function buildBundle(outdir) {
   const entry = join(outdir, 'entry.ts')
   await writeFile(entry, [
     `export { SubagentReview } from '${posix(abs('src/renderer/src/features/session/SubagentReview.tsx'))}'`,
-    `export { subagentReviewGate, loadSubagentPatch, mergeSubagentResult, discardSubagentResult } from '${posix(abs('src/renderer/src/features/session/subagent-review.ts'))}'`
+    `export { subagentReviewGate, loadSubagentPatch } from '${posix(abs('src/renderer/src/features/session/subagent-review.ts'))}'`
   ].join('\n'))
   const out = join(outdir, 'bundle.mjs')
   await build({
@@ -384,39 +384,6 @@ async function main() {
     resetHooks()
     const tree = render({ run: run(), ...callbacks() })
     ok(byTestId(tree, 'v3-subagent-review-dialog').length === 0 && byTestId(tree, 'v3-subagent-review-confirm').length === 0, '不再弹确认框', tree)
-  }
-
-  group('窄结果适配器：{ ok:false } 转成明确失败，成功 / 传输拒绝不改变语义')
-  {
-    const mergeCalls = []
-    await lib.mergeSubagentResult('sub-42', {
-      merge: async (id) => { mergeCalls.push(id); return { ok: true } },
-      discard: async () => ({ ok: true })
-    })
-    ok(mergeCalls.length === 1 && mergeCalls[0] === 'sub-42', '{ ok:true } 成功 resolve，只动这条 run', mergeCalls)
-
-    await assert.rejects(
-      lib.mergeSubagentResult('sub-42', { merge: async () => ({ ok: false, error: '合并冲突或补丁已失效' }), discard: async () => ({ ok: true }) }),
-      /合并冲突或补丁已失效/,
-      'Promise.resolve({ ok:false, error }) 抛出后端原因'
-    )
-    await assert.rejects(
-      lib.mergeSubagentResult('sub-42', { merge: async () => ({ ok: false }), discard: async () => ({ ok: true }) }),
-      /state.error.subagentMergeFailed/,
-      '无 error 字段时给出缺省失败文案'
-    )
-    await assert.rejects(
-      lib.mergeSubagentResult('sub-42', { merge: async () => { throw new Error('IPC 断开') }, discard: async () => ({ ok: true }) }),
-      /IPC 断开/,
-      '传输层 reject 原样向上抛'
-    )
-
-    await lib.discardSubagentResult('sub-42', { merge: async () => ({ ok: true }), discard: async () => ({ ok: true }) })
-    await assert.rejects(
-      lib.discardSubagentResult('sub-42', { merge: async () => ({ ok: true }), discard: async () => ({ ok: false, error: '工作树已清理' }) }),
-      /工作树已清理/,
-      '放弃同样把 { ok:false } 转成明确失败'
-    )
   }
 
   process.stdout.write(`\n${fail === 0 ? '全部通过' : '有失败'}：${pass} 通过 / ${fail} 失败\n`)

@@ -34,10 +34,8 @@ try {
   assert.deepEqual(m.parseCanvasFrameState(JSON.stringify({ devices: ['nope'] })).devices, ['desktop', 'phone'], '未知设备被丢弃')
 
   const onlyPhone = m.parseCanvasFrameState(JSON.stringify({ devices: ['phone'] }))
-  assert.deepEqual(m.toggleCanvasDevice(onlyPhone, 'phone'), onlyPhone, '至少保留一个画框')
-  const withTablet = m.toggleCanvasDevice(onlyPhone, 'tablet')
+  const withTablet = m.setCanvasDevices(onlyPhone, ['phone', 'tablet'])
   assert.deepEqual(withTablet.devices, ['tablet', 'phone'], '新勾选的画框按固定顺序插入')
-  assert.deepEqual(m.toggleCanvasDevice(withTablet, 'tablet').devices, ['phone'], '取消勾选移除画框')
   assert.deepEqual(m.setCanvasDevices(onlyPhone, ['phone', 'laptop', 'desktop']).devices, ['desktop', 'laptop', 'phone'], '整组选择按固定顺序排列')
   assert.deepEqual(m.setCanvasDevices(onlyPhone, []), onlyPhone, '整组选择为空时不生效')
   assert.deepEqual(m.setCanvasCustomWidth(onlyPhone, 800).customWidth, 800)

@@ -71,16 +71,6 @@ export function pdfMatchPage(matches: readonly PdfFindMatch[], index: number): n
   return matches[at].page
 }
 
-export function pdfMatchPages(matches: readonly PdfFindMatch[]): Map<number, PdfFindMatch[]> {
-  const byPage = new Map<number, PdfFindMatch[]>()
-  for (const match of matches) {
-    const list = byPage.get(match.page)
-    if (list) list.push(match)
-    else byPage.set(match.page, [match])
-  }
-  return byPage
-}
-
 export interface PdfFindRequest {
   kind: 'pdf'
   pages: readonly (readonly string[])[]

@@ -27,8 +27,7 @@ assert.equal(pickTokenStep(250_000, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOK
 assert.equal(pickTokenStep(400_000, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS), undefined, '等于缺省值不写入设置')
 
 const usage = await loadTs('../src/renderer/src/features/settings/usage/usage-model.ts')
-const { USAGE_DIMENSIONS, DAILY_MAX_DAYS, usageBars, dailyEntries } = usage
-assert.deepEqual([...USAGE_DIMENSIONS], ['day', 'model'], '两个分组维度：按日 / 按模型')
+const { DAILY_MAX_DAYS, usageBars, dailyEntries } = usage
 assert.equal(DAILY_MAX_DAYS, 30, '按日最多 30 天')
 
 const bars = usageBars([

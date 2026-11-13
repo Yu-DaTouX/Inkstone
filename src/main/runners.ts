@@ -16,6 +16,7 @@ import {
   type ExecuteGuardResult
 } from './session-send-guard'
 import { workspacePathsOverlap } from './workspace-mutation'
+import { normalizeLayoutPath as canonicalCwd } from '../shared/session-path'
 
 export const RUNNER_LIMIT = 3
 
@@ -23,10 +24,6 @@ let lastGeneration = 0
 function nextGeneration(): number {
   lastGeneration += 1
   return lastGeneration
-}
-
-function canonicalCwd(value: string): string {
-  return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
 function agentAlive(agent: AgentController): boolean {

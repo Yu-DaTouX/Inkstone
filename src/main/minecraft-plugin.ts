@@ -29,13 +29,11 @@ export function minecraftArchiveUrl(version: string): string {
 }
 
 export const MINECRAFT_PLUGIN_ARCHIVE = minecraftArchiveUrl(MINECRAFT_PLUGIN_PIN.version)
-export const MINECRAFT_PLUGIN_LATEST = `https://api.github.com/repos/${MINECRAFT_PLUGIN_REPO}/releases/latest`
 const PLUGIN_PARTS = ['package.json', 'mcp', 'src', 'skills', 'templates', 'companion-mod']
 const SKIPPED_DIRS = new Set(['.gradle', 'run', '.inkstone', 'node_modules', 'out'])
 const SKILL_STAMP = '.installed-by-inkstone'
 const ARCHIVE_LIMIT = 200 * 1024 * 1024
 const DOWNLOAD_TIMEOUT = 5 * 60_000
-const VERSION_TIMEOUT = 8000
 
 export type FetchLike = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<Response>
 
@@ -77,18 +75,6 @@ async function installedVersion(pluginDir: string): Promise<string | undefined> 
   try {
     const pkg = JSON.parse(await readFile(join(pluginDir, 'package.json'), 'utf8')) as { version?: unknown }
     return typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : undefined
-  } catch {
-    return undefined
-  }
-}
-
-export async function latestMinecraftPluginVersion(request: FetchLike): Promise<string | undefined> {
-  try {
-    const response = await request(MINECRAFT_PLUGIN_LATEST, { signal: AbortSignal.timeout(VERSION_TIMEOUT), headers: { accept: 'application/vnd.github+json' } })
-    if (!response.ok) return undefined
-    const body = JSON.parse(await response.text()) as { tag_name?: unknown }
-    const tag = typeof body.tag_name === 'string' ? body.tag_name.trim() : ''
-    return /^v?\d[\w.+-]*$/.test(tag) ? tag.replace(/^v/, '') : undefined
   } catch {
     return undefined
   }

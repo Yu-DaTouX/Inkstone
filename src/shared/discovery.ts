@@ -65,8 +65,6 @@ export type AcquisitionPlan = {
   needsRestart: boolean
   policyResult: 'automatic' | 'needs-auth' | 'needs-authorization' | 'unsupported'
 }
-
-export const MAX_QUERY_REWRITES = 2
 export const MAX_PAGES_PER_SOURCE = 2
 export const MAX_CANDIDATES = 8
 export const MAX_QUERY_CHARS = 120

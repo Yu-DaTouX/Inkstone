@@ -146,7 +146,6 @@ export class NativeSessionRuntime {
   private readonly pending = new Map<string, PendingRequest>()
   private ready = false
   private capabilities: readonly string[] = []
-  private helloInfo: { reason?: string } | null = null
   private readonly readyWaiters = new Set<{
     resolve: () => void
     reject: (error: NativeBridgeError) => void
@@ -166,19 +165,12 @@ export class NativeSessionRuntime {
     return this.capabilities
   }
 
-  get lastHello(): { reason?: string } | null {
-    return this.helloInfo
-  }
-
   handleNotify(message: unknown): boolean {
     const receipt = parseReceipt(message)
     if (!receipt) return false
 
     if (receipt.op === 'hello') {
       this.ready = true
-      this.helloInfo = {
-        ...(typeof receipt.result?.reason === 'string' ? { reason: receipt.result.reason } : {})
-      }
       const list = receipt.result?.capabilities
       this.capabilities = Array.isArray(list)
         ? list.filter((item): item is string => typeof item === 'string')
@@ -242,7 +234,6 @@ export class NativeSessionRuntime {
     this.pending.clear()
     this.ready = false
     this.capabilities = []
-    this.helloInfo = null
     for (const waiter of this.readyWaiters) waiter.reject(new NativeBridgeError(reason, 'rpc_failed'))
     this.readyWaiters.clear()
   }

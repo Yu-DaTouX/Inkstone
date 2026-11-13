@@ -5,7 +5,7 @@ export { LocalStore, defaultSyncPaths, forbiddenFieldsInRecord } from './local-s
 export type { LocalStoreAppliers } from './local-store'
 export { SyncConfigStore, SYNC_CONFIG_FILE } from './config'
 export type { SyncConfig, SyncRunSummary } from './config'
-export { buildConflictCopy, supportsConflictCopy } from './resolve'
+export { buildConflictCopy } from './resolve'
 export { SYNC_SETTINGS_WHITELIST, pickSyncSettings, findForbiddenFields } from './settings-whitelist'
 export {
   exportSession,

@@ -295,24 +295,6 @@ export function removeImage(sessionId: string, sourceId: string): { ok: boolean;
   return removed ? { ok: true } : { ok: false, error: pick('没有这份副本', 'No such copy') }
 }
 
-export function readImage(sessionId: string, sourceId: string): { ok: boolean; base64?: string; mime?: string; error?: string } {
-  const dir = resolve(sourcesDir(sessionId))
-  const fingerprint = String(sourceId ?? '').replace(/^image:/, '')
-  if (!/^[a-f0-9]{8,64}$/i.test(fingerprint)) return { ok: false, error: pick('来源 id 形状不对', 'Invalid source id') }
-  try {
-    const hit = readdirSync(dir).find((f) => f.startsWith(fingerprint))
-    if (!hit) return { ok: false, error: pick('没有这份副本', 'No such copy') }
-    const full = resolve(join(dir, hit))
-    if (!full.startsWith(dir)) return { ok: false, error: pick('路径越界', 'Path is out of bounds') }
-    const ext = extname(hit).toLowerCase()
-    const mime =
-      ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : ext === '.bmp' ? 'image/bmp' : 'application/octet-stream'
-    return { ok: true, base64: readFileSync(full).toString('base64'), mime }
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
-  }
-}
-
 export function dropSession(sessionId: string): void {
   try {
     const root = resolve(baseDir ?? YAN_DIR, 'sources')

@@ -124,9 +124,6 @@ const m = await load('src/renderer/src/ui/motion-model.ts')
 {
   assert.deepEqual(m.inkGeometry({ left: 140, width: 80 }, { left: 100, width: 400 }, 30), { x: 70, width: 80 }, '指示条位置含滚动偏移')
   assert.deepEqual(m.inkGeometry({ left: 0, width: 10 }, { left: 0, width: 10 }, 0, 6), { x: 6, width: 0 }, '内缩不出负宽度')
-  assert.equal(m.staggerDelay(0, 20), 0)
-  assert.equal(m.staggerDelay(3, 20), 60)
-  assert.equal(m.staggerDelay(30, 20), 120, '错峰封顶 6 级')
 }
 
 console.log('ui-motion: 通过（滞回与补偿、FLIP 位移、抑制窗口、出场保留、令牌与减少动效契约）')

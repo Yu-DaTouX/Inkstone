@@ -201,7 +201,7 @@ async function buildBundle(outdir) {
   await writeFile(entry, [
     `export * from '${posix(abs('src/renderer/src/features/session/turn-lines.ts'))}'`,
     `export { SubagentLine, subagentTitle } from '${posix(abs('src/renderer/src/features/session/SubagentLine.tsx'))}'`,
-    `export { orderSubagentRuns, subagentListRank, subagentListSlice, subagentNeighbor, subagentRowFocusTarget, subagentSiblings, subagentSessionPeers, useSubagentGroups } from '${posix(abs('src/renderer/src/features/session/subagent-list.ts'))}'`,
+    `export { orderSubagentRuns, subagentListRank, subagentListSlice, subagentNeighbor, subagentRowFocusTarget, subagentSessionPeers, useSubagentGroups } from '${posix(abs('src/renderer/src/features/session/subagent-list.ts'))}'`,
     `export { switchSubagentPane } from '${posix(abs('src/renderer/src/features/session/subagent-actions.ts'))}'`,
     `export { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'`,
     `export { ErrorCard } from '${posix(abs('src/renderer/src/features/session/ErrorCard.tsx'))}'`,
@@ -666,13 +666,6 @@ async function main() {
     ok(bundle.subagentRowFocusTarget('ArrowDown', 0, 3) === 1 && bundle.subagentRowFocusTarget('ArrowUp', 2, 3) === 1 && bundle.subagentRowFocusTarget('Home', 2, 3) === 0 && bundle.subagentRowFocusTarget('End', 0, 3) === 2, '↑↓ / Home / End 在行间移动焦点')
     ok(bundle.subagentRowFocusTarget('ArrowUp', 0, 3) === null && bundle.subagentRowFocusTarget('ArrowDown', 2, 3) === null && bundle.subagentRowFocusTarget('Enter', 1, 3) === null && bundle.subagentRowFocusTarget('Tab', 1, 3) === null, '边界与 Enter / Tab 不拦截')
     ok(bundle.subagentNeighbor(['a', 'b', 'c'], 'b', -1) === 'a' && bundle.subagentNeighbor(['a', 'b', 'c'], 'b', 1) === 'c' && bundle.subagentNeighbor(['a', 'b'], 'a', -1) === null && bundle.subagentNeighbor(['a'], 'x', 1) === null, '上一个 / 下一个按列表顺序，到头为空')
-    const sib = [
-      subagentRun({ id: 's1', parentRunId: 'r1', parentMessageId: 'm1' }),
-      subagentRun({ id: 's2', parentRunId: 'r1', parentMessageId: 'm2' }),
-      subagentRun({ id: 's3', parentRunId: 'r2', parentMessageId: 'm1' }),
-      subagentRun({ id: 's4', parentRunId: 'r1', review: 'merged' })
-    ]
-    ok(bundle.subagentSiblings(sib, sib[0]).map((run) => run.id).join() === 's1,s2', '列表没挂载时按同一次父运行找同组子 Agent', bundle.subagentSiblings(sib, sib[0]).map((run) => run.id).join())
     const sessionRuns = [
       subagentRun({ id: 'one', status: 'running', parentSessionId: 'chat', parentMessageId: 'm1', startedAt: 1 }),
       subagentRun({ id: 'two', status: 'running', parentSessionId: 'chat', parentMessageId: 'm2', startedAt: 2 }),

@@ -21,8 +21,6 @@ export async function runAcquisitionTests(ok, modules) {
     )
     ok(shared.canTransitionAcquisition('verifying', 'pending-boundary'), '状态机：staging 校验完成后可等安全安装边界')
     ok(shared.canTransitionAcquisition('needs-auth', 'prepared'), '状态机：认证补齐后可以回到主路径')
-    ok(!shared.isTerminalAcquisitionState('pending-boundary'), '状态机：pending-boundary 不算终态')
-    ok(shared.isTerminalAcquisitionState('cancelled'), '状态机：cancelled 是终态')
   }
 
   {

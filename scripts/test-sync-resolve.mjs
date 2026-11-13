@@ -29,13 +29,8 @@ function conflict(extra) {
 async function run() {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-sync-resolve-'))
   try {
-    const { buildConflictCopy, supportsConflictCopy } = await compile('src/main/sync/resolve.ts', join(dir, 'resolve.mjs'))
+    const { buildConflictCopy } = await compile('src/main/sync/resolve.ts', join(dir, 'resolve.mjs'))
     const { canonicalJson, shortHash } = await compile('src/main/sync/canonical.ts', join(dir, 'canonical.mjs'))
-
-    for (const kind of ['prompt', 'skill', 'bookmark']) {
-      assert.equal(supportsConflictCopy(kind), true, `${kind} 支持冲突副本`)
-    }
-    assert.equal(supportsConflictCopy('settings'), false)
 
     const prompt = buildConflictCopy(
       conflict({ kind: 'prompt', key: 'prompt:周报', remoteDeviceName: 'MacBook-Pro', remotePayload: 'P1', remoteModifiedAt: 111 })

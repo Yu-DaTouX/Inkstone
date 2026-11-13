@@ -21,7 +21,6 @@ export interface CommandText {
   fileFailed: string
   contentPattern: string
   contentTruncated: string
-  fileOpenFailed: string
   newSession: string
   focusSearch: string
   toggleSidebar: string
@@ -75,7 +74,6 @@ const ZH: CommandText = {
   fileFailed: '文件搜索失败，可稍后重试',
   contentPattern: '搜索词无效',
   contentTruncated: '结果较多，只显示前面一部分',
-  fileOpenFailed: '文件没有打开',
   newSession: '新建会话',
   focusSearch: '搜索侧栏',
   toggleSidebar: '展开或收起侧栏',
@@ -136,7 +134,6 @@ const EN: CommandText = {
   fileFailed: 'File search failed. Try again later.',
   contentPattern: 'Invalid search text',
   contentTruncated: 'Many results; showing the first ones',
-  fileOpenFailed: 'The file did not open',
   newSession: 'New session',
   focusSearch: 'Search sidebar',
   toggleSidebar: 'Show or hide the sidebar',

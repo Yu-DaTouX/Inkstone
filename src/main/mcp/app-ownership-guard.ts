@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { McpAppServerConfig } from './app-spec'
+import { defaultNativeConfigReader as defaultReadNativeConfig } from './app-native-witness'
 
 export interface McpAppOwnershipProject {
   id: string
@@ -80,15 +80,6 @@ function messageOf(error: unknown): string {
 
 function reject(code: McpAppOwnershipCode, message: string): McpAppOwnershipRejection {
   return { ok: false, code, message }
-}
-
-async function defaultReadNativeConfig(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
 }
 
 function nativeNamesOf(serverId: string, config: McpAppServerConfig): Set<string> {

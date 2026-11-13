@@ -116,7 +116,6 @@ interface BrowserTab {
   committedUrl: string
   pendingMainFrameUrl: string | null
   openerUrl: string
-  borrowedBy?: string
   dialogs: BrowserDialogRecord[]
   dialogPolicy?: BrowserActionOptions
   acting?: boolean
@@ -183,47 +182,8 @@ interface TargetParts {
   network: NetworkTracker
 }
 
-type BrowserTransferRevokeReason = 'tab-closed' | 'controller-disposed'
-type BrowserTransferView = WebContentsView
-type BrowserTransferWindow = BrowserWindow
-
-export interface BrowserHostTransfer {
-  readonly tabId: string
-  readonly ownerKey: string
-  readonly generation: number
-  readonly webContentsId: number
-  readonly view: BrowserTransferView
-  readonly sourceWindow: BrowserTransferWindow | null
-  navigate(url: string): Promise<BrowserActionResult>
-  closeTab(): Promise<void>
-}
-
-export interface BrowserHostTransferRequest {
-  tabId: string
-  ownerKey: string
-  generation: number
-  onRevoke(reason: BrowserTransferRevokeReason): void
-}
-
-export interface BrowserHostTransferResult {
-  ok: boolean
-  code: 'ok' | 'not-found' | 'destroyed' | 'owner-conflict'
-  message?: string
-  transfer?: BrowserHostTransfer
-}
-
-
 export class BrowserController {
   private readonly tabs = new Map<string, BrowserTab>()
-  private readonly hostTransfers = new Map<
-    string,
-    {
-      ownerKey: string
-      generation: number
-      transfer: BrowserHostTransfer
-      revoke: (reason: BrowserTransferRevokeReason) => void
-    }
-  >()
   private readonly sessionScope = new SessionScope()
   private readonly popupNoticeAt = new Map<string, number>()
   private readonly sessionEpochs = new Map<string, number>()
@@ -710,7 +670,6 @@ export class BrowserController {
 
   async openFromUser(url?: string, sessionId = 'workspace'): Promise<BrowserState> {
     const open = async (): Promise<BrowserState> => {
-      if (this.activeTab()?.borrowedBy) throw new Error(pick('浏览器正在独立窗口中使用，请先归还后重试', 'The browser is in a separate window; return it first'))
       await this.open(url, false)
       this.agentSessionId = undefined
       this.updateState()
@@ -741,7 +700,7 @@ export class BrowserController {
     if (!win) return this.getState()
     this.removeForeignBrowserViews(win)
     this.showOnlyOwnedView(tab.id)
-    if (!tab.borrowedBy && !win.contentView.children.includes(tab.view)) win.contentView.addChildView(tab.view)
+    if (!win.contentView.children.includes(tab.view)) win.contentView.addChildView(tab.view)
     if (next !== tab.view.webContents.getURL()) {
       tab.state.url = next
       tab.state.title = ''
@@ -864,15 +823,6 @@ export class BrowserController {
     }
     const tab = this.tabs.get(id)
     if (!tab) return this.getState()
-    const transfer = this.hostTransfers.get(id)
-    if (transfer) {
-      this.hostTransfers.delete(id)
-      tab.borrowedBy = undefined
-      try {
-        transfer.revoke('tab-closed')
-      } catch {
-      }
-    }
     this.detachViewFromAllWindows(tab.view)
     tab.observer.dispose()
     await tab.cdp.detach().catch(() => undefined)
@@ -913,82 +863,9 @@ export class BrowserController {
     return this.getState()
   }
 
-  beginHostTransfer(request: BrowserHostTransferRequest): BrowserHostTransferResult {
-    const tab = this.tabs.get(request.tabId)
-    if (!tab) return { ok: false, code: 'not-found', message: pick('找不到浏览器标签页', 'Browser tab not found') }
-    if (tab.view.webContents.isDestroyed()) return { ok: false, code: 'destroyed', message: pick('浏览器标签页已销毁', 'Browser tab was destroyed') }
-    const existing = this.hostTransfers.get(tab.id)
-    if (existing && existing.ownerKey !== request.ownerKey) {
-      return { ok: false, code: 'owner-conflict', message: pick('该标签页已借给其它归属，不能抢占', 'This tab is lent to another owner and cannot be taken') }
-    }
-    if (tab.borrowedBy !== request.ownerKey) tab.view.setVisible(false)
-    tab.borrowedBy = request.ownerKey
-    const transfer: BrowserHostTransfer = {
-      tabId: tab.id,
-      ownerKey: request.ownerKey,
-      generation: request.generation,
-      webContentsId: tab.view.webContents.id,
-      view: tab.view,
-      sourceWindow: this.getWindow(),
-      navigate: (url) => this.navigateTransferredTab(tab.id, request.ownerKey, request.generation, url),
-      closeTab: async () => {
-        await this.closeTab(tab.id)
-      }
-    }
-    this.hostTransfers.set(tab.id, {
-      ownerKey: request.ownerKey,
-      generation: request.generation,
-      transfer,
-      revoke: request.onRevoke
-    })
-    return { ok: true, code: 'ok', transfer }
-  }
-
-  endHostTransfer(tabId: string, ownerKey: string): boolean {
-    const record = this.hostTransfers.get(tabId)
-    if (!record || record.ownerKey !== ownerKey) return false
-    this.hostTransfers.delete(tabId)
-    const tab = this.tabs.get(tabId)
-    if (tab) {
-      tab.borrowedBy = undefined
-      this.parkTransferredView(tab)
-    }
-    return true
-  }
-
-  private async navigateTransferredTab(
-    tabId: string,
-    ownerKey: string,
-    generation: number,
-    raw: string
-  ): Promise<BrowserActionResult> {
-    const record = this.hostTransfers.get(tabId)
-    const tab = this.tabs.get(tabId)
-    if (!record || record.ownerKey !== ownerKey || record.generation !== generation || !tab) {
-      return { ok: false, error: pick('标签页已归还主窗口', 'Tab was returned to the main window') }
-    }
-    if (tab.view.webContents.isDestroyed()) return { ok: false, error: pick('标签页已关闭', 'Tab is closed') }
-    const url = safeUrl(raw)
-    if (!url) return { ok: false, error: pick('只允许打开 http(s) 网页', 'Only http(s) pages can be opened') }
-    await this.ensureNetworkGuard()
-    if (url !== tab.view.webContents.getURL()) {
-      tab.state.url = url
-      tab.state.title = ''
-      tab.state.loading = true
-      tab.pendingMainFrameUrl = url
-      this.updateState()
-      await tab.view.webContents.loadURL(url).catch(() => undefined)
-    }
-    if (tab.view.webContents.isDestroyed()) return { ok: false, error: pick('标签页已关闭', 'Tab is closed') }
-    this.syncTabNavigation(tab)
-    this.updateState()
-    return { ok: true }
-  }
-
   private showOnlyOwnedView(activeId: string | null): void {
     const shownId = this.viewerSessionId === this.focusSessionId ? activeId : this.activeBySession.get(this.viewerSessionId) ?? null
     for (const tab of this.tabs.values()) {
-      if (tab.borrowedBy) continue
       const visible = ownedViewVisible(shownId, tab.id, this.viewVisibleRequested)
       if (visible) void this.placeTab(tab)
       tab.view.setVisible(visible)
@@ -997,7 +874,6 @@ export class BrowserController {
 
   private hideOwnedViews(): void {
     for (const tab of this.tabs.values()) {
-      if (tab.borrowedBy) continue
       tab.view.setVisible(false)
     }
   }
@@ -1007,16 +883,6 @@ export class BrowserController {
       if (candidate.isDestroyed()) continue
       if (candidate.contentView.children.includes(view)) candidate.contentView.removeChildView(view)
     }
-  }
-
-  private parkTransferredView(tab: BrowserTab): void {
-    if (tab.view.webContents.isDestroyed()) return
-    this.detachViewFromAllWindows(tab.view)
-    const win = this.getWindow()
-    if (win && !win.isDestroyed() && !win.contentView.children.includes(tab.view)) {
-      win.contentView.addChildView(tab.view)
-    }
-    tab.view.setVisible(false)
   }
 
   async navigate(raw: string): Promise<BrowserActionResult> {
@@ -1448,7 +1314,6 @@ export class BrowserController {
     const viewerActive = this.activeBySession.get(this.viewerSessionId) ?? null
     const tab = viewerActive ? this.tabs.get(viewerActive) ?? null : null
     if (!tab) return
-    if (tab.borrowedBy) return
     const win = this.getWindow()
     const zoom = win && !win.isDestroyed() ? win.webContents.getZoomFactor() || 1 : 1
     if (![bounds.x, bounds.y, bounds.width, bounds.height].every((value) => typeof value === 'number' && Number.isFinite(value))) return
@@ -1467,7 +1332,7 @@ export class BrowserController {
   private placeTab(tab: BrowserTab): Promise<void> {
     const pane = this.pane
     const viewport = tab.state.viewport ?? 'responsive'
-    if (!pane || tab.borrowedBy || tab.view.webContents.isDestroyed()) return Promise.resolve()
+    if (!pane || tab.view.webContents.isDestroyed()) return Promise.resolve()
     const fitted = viewportRect(pane, viewport)
     tab.view.setBounds({ x: fitted.x, y: fitted.y, width: fitted.width, height: fitted.height })
     const mobileUa = viewport === 'mobile'
@@ -1522,7 +1387,7 @@ export class BrowserController {
     if (this.external && this.activeMode === 'external') return null
     const viewerActive = this.activeBySession.get(this.viewerSessionId) ?? null
     const tab = viewerActive ? this.tabs.get(viewerActive) ?? null : null
-    if (!tab || tab.borrowedBy || tab.view.webContents.isDestroyed()) return null
+    if (!tab || tab.view.webContents.isDestroyed()) return null
     const image = await tab.view.webContents.capturePage().catch(() => null)
     if (!image || image.isEmpty()) return null
     return `data:image/jpeg;base64,${image.toJPEG(82).toString('base64')}`
@@ -1597,7 +1462,7 @@ export class BrowserController {
   private async layoutHiddenTab(tab: BrowserTab, repaint = false): Promise<void> {
     const win = this.getWindow()
     const contents = tab.view.webContents
-    if (!win || win.isDestroyed() || tab.borrowedBy || contents.isDestroyed() || tab.view.getVisible()) return
+    if (!win || win.isDestroyed() || contents.isDestroyed() || tab.view.getVisible()) return
     const viewport = async (): Promise<[number, number]> => {
       const size = await contents.executeJavaScript('[innerWidth, innerHeight]', true).catch(() => [0, 0])
       return Array.isArray(size) ? [Number(size[0]) || 0, Number(size[1]) || 0] : [0, 0]
@@ -1625,7 +1490,7 @@ export class BrowserController {
     } finally {
       if (!win.isDestroyed()) {
         tab.view.setVisible(false)
-        if (this.tabs.get(tab.id) === tab && !tab.borrowedBy) win.contentView.addChildView(tab.view)
+        if (this.tabs.get(tab.id) === tab) win.contentView.addChildView(tab.view)
         else parking.removeChildView(tab.view)
         win.contentView.removeChildView(parking)
         if (this.activeTabId === tab.id && this.viewVisibleRequested && this.activeMode === 'embedded') this.showOnlyOwnedView(tab.id)
@@ -1708,7 +1573,7 @@ export class BrowserController {
   }
 
   private answerDialog(tab: BrowserTab, params: Record<string, unknown>): void {
-    if (!tab.acting && tab.view.getVisible() && !tab.borrowedBy) return
+    if (!tab.acting && tab.view.getVisible()) return
     const type = String(params.type ?? 'alert')
     const policy = tab.dialogPolicy
     const accepted = type === 'alert' || type === 'beforeunload' || policy?.dialog === 'accept'

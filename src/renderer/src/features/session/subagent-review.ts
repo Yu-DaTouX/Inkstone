@@ -58,30 +58,3 @@ export async function loadSubagentPatch(patchPath: string, io?: SubagentPatchIo)
   if (!res.ok || typeof res.text !== 'string') throw new Error(res.error ?? uiText('state.error.patchReadFailed'))
   return { patch: res.text, truncated: res.truncated === true }
 }
-
-interface SubagentActionResult {
-  ok: boolean
-  error?: string
-}
-
-interface SubagentActionIo {
-  merge(id: string): Promise<SubagentActionResult>
-  discard(id: string): Promise<SubagentActionResult>
-}
-
-function subagentActionIo(io?: SubagentActionIo): SubagentActionIo {
-  if (io) return io
-  const api = typeof window !== 'undefined' ? window.yan?.subagents : undefined
-  if (!api?.merge || !api?.discard) throw new Error(uiText('state.error.subagentActionUnavailable'))
-  return { merge: (id) => api.merge(id), discard: (id) => api.discard(id) }
-}
-
-export async function mergeSubagentResult(id: string, io?: SubagentActionIo): Promise<void> {
-  const res = await subagentActionIo(io).merge(id)
-  if (!res?.ok) throw new Error(res?.error ?? uiText('state.error.subagentMergeFailed'))
-}
-
-export async function discardSubagentResult(id: string, io?: SubagentActionIo): Promise<void> {
-  const res = await subagentActionIo(io).discard(id)
-  if (!res?.ok) throw new Error(res?.error ?? uiText('state.error.subagentDiscardFailed'))
-}

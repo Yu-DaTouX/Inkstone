@@ -100,14 +100,6 @@ async function run() {
     assert.equal(m.turnOutputTokens([{ id: 'u1', role: 'user' }, { id: 'a1', role: 'assistant', text: 'x'.repeat(40), toolCalls: [{ argsRaw: 'y'.repeat(400) }] }], 'u1'), 110, '还没有 usage 的消息按字符数估算，长参数生成期间数字也在走')
     assert.equal(m.turnOutputTokens([...messages, { id: 'a1', role: 'assistant', usage: { output: 1200 } }], 'u1'), 1500, '同一条消息的快照不重复累加')
 
-    assert.equal(m.formatTokenCount(0), '0')
-    assert.equal(m.formatTokenCount(999), '999')
-    assert.equal(m.formatTokenCount(1000), '1k')
-    assert.equal(m.formatTokenCount(1234), '1.2k')
-    assert.equal(m.formatTokenCount(999_950), '1M')
-    assert.equal(m.formatTokenCount(2_345_678), '2.3M')
-    assert.equal(m.formatTokenCount(3_000_000_000), '3B')
-
     stop.markStopRequested('s1', 5000)
     const intent = stop.stopIntent()
     assert.equal(stop.isStopRequested(intent, 's1', 4000), true)

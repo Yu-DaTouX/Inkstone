@@ -1,6 +1,7 @@
 import type { FileContentSearchResult } from '../../../../shared/ipc'
 import type { FileNameSearchResult } from '../../../../shared/file-name-search'
 import type { CommandItem } from './command-items'
+import { splitTreePath as splitPath } from '../files/files-search'
 
 export const FILE_RESULT_LIMIT = 50
 export const CONTENT_RESULT_LIMIT = 80
@@ -9,12 +10,6 @@ export const FILE_QUERY_DELAY = 120
 export const CONTENT_QUERY_DELAY = 250
 
 export type FileSearchIssue = 'failed' | 'pattern' | null
-
-function splitPath(path: string): { parent: string; name: string } {
-  const clean = path.replace(/\\/g, '/').replace(/\/+$/, '')
-  const at = clean.lastIndexOf('/')
-  return at < 0 ? { parent: '', name: clean } : { parent: clean.slice(0, at), name: clean.slice(at + 1) }
-}
 
 export function contentSnippetText(text: string, ranges: ReadonlyArray<readonly [number, number]> = [], max = CONTENT_SNIPPET_MAX): string {
   const first = ranges[0]

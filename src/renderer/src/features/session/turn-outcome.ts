@@ -1,6 +1,6 @@
 import { classifyLink } from '../../../../shared/links'
 import type { AssistantTurn, Turn } from '../../../../shared/turns'
-import { isSubagentNotice } from '../../../../shared/subagent-notice'
+import { fileBaseName as baseOf } from './tool-title'
 
 const DECISION_MAX_CHARS = 320
 const NOT_PROSE = /^\s*(?:[-*+]\s|\d+[.)]\s|\||#|>|```|~~~|<)/
@@ -84,10 +84,6 @@ export function decisionTitle(question: string): DecisionTitle {
   return { title, rest }
 }
 
-function baseOf(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path
-}
-
 function pathKey(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()
 }
@@ -164,15 +160,6 @@ export function decisionOutcomes(turns: readonly Turn[]): Map<string, DecisionOu
     if (outcome) outcomes.set(turn.id, outcome)
   })
   return outcomes
-}
-
-export function userTurnOrdinals(turns: readonly Turn[]): Map<string, number> {
-  const ordinals = new Map<string, number>()
-  for (const turn of turns) {
-    if (turn.kind !== 'user' || isSubagentNotice(turn.msg.text)) continue
-    ordinals.set(turn.id, ordinals.size + 1)
-  }
-  return ordinals
 }
 
 function samePath(a: string, b: string): boolean {

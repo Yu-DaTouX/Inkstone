@@ -3591,10 +3591,6 @@ export class AgentController extends EventEmitter {
     return this.bash !== null
   }
 
-  getPendingMessageCount(): number {
-    return this.state?.pendingMessageCount ?? 0
-  }
-
   private resetSessionScope(): void {
     this.clearPendingModelChange()
     this.loopGuardContinuationVersion += 1

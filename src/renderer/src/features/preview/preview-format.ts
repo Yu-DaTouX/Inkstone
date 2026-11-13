@@ -41,10 +41,6 @@ export function previewFormatUsesText(format: PreviewFormat | null): boolean {
   return format !== null && TEXT_FORMATS.has(format)
 }
 
-export function previewFormatIsMedia(format: PreviewFormat | null): boolean {
-  return format === 'image' || format === 'audio' || format === 'video' || format === 'pdf'
-}
-
 export function previewFormatIsFont(format: PreviewFormat | null): boolean {
   return format === 'font'
 }

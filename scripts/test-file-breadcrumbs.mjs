@@ -45,12 +45,6 @@ assert.equal(crumbs.breadcrumbParent('src/main/ipc'), 'src/main')
 assert.equal(crumbs.breadcrumbParent('src\\main\\'), 'src', '尾部斜杠不影响上级')
 assert.equal(crumbs.breadcrumbParent('/'), null)
 
-assert.equal(crumbs.breadcrumbDirectory('', false), '', '未聚焦时停在根')
-assert.equal(crumbs.breadcrumbDirectory('src/main.ts', false), 'src', '聚焦文件时面包屑停在所在目录')
-assert.equal(crumbs.breadcrumbDirectory('src/main', true), 'src/main', '聚焦目录时面包屑就是该目录')
-assert.equal(crumbs.breadcrumbDirectory('src/renderer/', true), 'src/renderer', '目录路径去掉尾部分隔符')
-assert.equal(crumbs.breadcrumbDirectory('README.md', false), '', '根下文件的目录是根')
-
 const short = crumbs.foldBreadcrumbs(
   crumbs.breadcrumbCrumbs('inkstone', 'src/main')
 )

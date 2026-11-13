@@ -89,7 +89,7 @@ export function stateTone(state: PrState): BadgeTone {
   return 'ok'
 }
 
-function checksDot(checks: PrChecks): 'ok' | 'pending' | 'fail' | 'idle' {
+export function checksDot(checks: PrChecks): 'ok' | 'pending' | 'fail' | 'idle' {
   if (checks.state === 'pass') return 'ok'
   if (checks.state === 'fail') return 'fail'
   if (checks.state === 'pending') return 'pending'

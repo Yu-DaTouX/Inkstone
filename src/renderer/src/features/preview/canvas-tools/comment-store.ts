@@ -133,19 +133,6 @@ export function snapshotElement(info: CanvasElementInfo): CanvasElementInfo {
   }
 }
 
-export function parseDomPath(path: string): number[] {
-  const trimmed = path.trim()
-  if (!trimmed) return []
-  const steps: number[] = []
-  for (const part of trimmed.split('.')) {
-    if (!/^\d+$/.test(part)) return []
-    const value = Number(part)
-    if (!Number.isSafeInteger(value) || value < 0) return []
-    steps.push(value)
-  }
-  return steps
-}
-
 export function isPlainTextHtml(outerHtml: string | undefined): boolean {
   const html = (outerHtml ?? '').trim()
   if (!html) return false

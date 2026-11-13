@@ -214,7 +214,6 @@ const textMod = await load('../src/renderer/src/features/github/pr-action-text.t
   assert.equal(m.createProblem({ ...draft, base: '' }), 'base')
   assert.equal(m.createProblem({ ...draft, head: '' }), 'head')
   assert.equal(m.createProblem({ ...draft, base: 'x' }), 'same')
-  assert.deepEqual(m.diffNames(['a', 'b'], ['b', 'c']), { add: ['c'], remove: ['a'] })
   assert.equal(m.quoteReply, undefined)
 }
 

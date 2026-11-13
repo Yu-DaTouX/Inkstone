@@ -47,8 +47,6 @@ check('六类格式都按扩展名识别，HTML 默认先看源码', () => {
   assert.equal(format.previewFormatIsFont('notebook'), false)
   assert.equal(format.previewFormatOf('a.txt'), null)
   assert.equal(format.previewFormatOf('a.mkv'), null)
-  assert.equal(format.previewFormatIsMedia('pdf'), true)
-  assert.equal(format.previewFormatIsMedia('csv'), false)
   assert.equal(format.previewFormatUsesText('csv'), true)
   assert.equal(format.previewFormatUsesText('pdf'), false)
 })

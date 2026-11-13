@@ -817,11 +817,6 @@ async function runTerminalTabs() {
   assert.equal(tabs.pickActiveAfterClose(['a', 'b'], 'a', 'b'), 'b')
   assert.deepEqual(tabs.othersThan([{ key: 'a' }, { key: 'b' }], 'a'), [{ key: 'b' }])
 
-  assert.equal(tabs.isTerminalTabCloseKey({ key: 'Delete' }), true)
-  assert.equal(tabs.isTerminalTabCloseKey({ key: 'Backspace' }), true)
-  assert.equal(tabs.isTerminalTabCloseKey({ key: 'Delete', ctrlKey: true }), false)
-  assert.equal(tabs.isTerminalTabCloseKey({ key: 'd' }), false)
-
   const lines = ['$ npm run build', 'Build OK', 'build again: build', '', 'error: BUILD failed']
   const matches = find.findTerminalMatches(lines, 'build')
   assert.deepEqual(

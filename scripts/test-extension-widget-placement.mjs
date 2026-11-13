@@ -91,35 +91,9 @@ try {
   globalThis.window = { yan: {} }
   globalThis.document = { documentElement: { lang: 'zh-CN' }, hasFocus: () => true }
   globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
-  const { widgetsByPlacement, useStore } = await import(pathToFileURL(storeFile).href)
+  const { useStore } = await import(pathToFileURL(storeFile).href)
 
   eq(useStore.getState().widgetPlacements, {}, 'store 初始 widgetPlacements 为空')
-
-  const groups = widgetsByPlacement(
-    { a: ['A1'], b: ['B1', 'B2'], c: ['C1'] },
-    { b: 'belowEditor' }
-  )
-  eq(groups.aboveEditor.map(([key]) => key), ['a', 'c'], '未标位置的组件归上方')
-  eq(groups.belowEditor.map(([key]) => key), ['b'], 'belowEditor 的组件归下方')
-  eq(groups.belowEditor[0][1], ['B1', 'B2'], '分组保留原始文本行')
-
-  eq(
-    widgetsByPlacement({ x: ['X'] }, { x: 'sideways' }).aboveEditor.map(([key]) => key),
-    ['x'],
-    '未知位置回退上方'
-  )
-  eq(widgetsByPlacement({}, {}).belowEditor, [], '没有组件时下方为空')
-  eq(widgetsByPlacement({}, {}).aboveEditor, [], '没有组件时上方为空')
-  eq(
-    widgetsByPlacement({ a: ['A'] }, { a: 'belowEditor' }).aboveEditor,
-    [],
-    '位置绑定在 key 上：归下方后不出现在上方'
-  )
-  eq(
-    widgetsByPlacement({ b: ['B'] }, { a: 'belowEditor' }).belowEditor.map(([key]) => key),
-    [],
-    '清空后的 key 不再按旧位置显示'
-  )
 
   const runtimeFile = join(dir, 'runtime.mjs')
   await build({ entryPoints:['src/renderer/src/state/session-runtime.ts'],outfile:runtimeFile,bundle:true,platform:'node',format:'esm',logLevel:'silent' })

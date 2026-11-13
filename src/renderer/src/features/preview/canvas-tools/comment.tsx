@@ -29,14 +29,14 @@ import {
   type CanvasComment,
   type CommentResolution,
   type CommentStore,
-  type CommentStoreSnapshot,
-  type StorageLike
+  type CommentStoreSnapshot
 } from './comment-store'
 import { canvasCommentText, type CanvasCommentText } from './comment-text'
 import { DockToggle } from './dock'
 import { dockPopover } from './dock-model'
 import { formatSeconds, formatTimecode } from './timeline-model'
 import './comment.css'
+import { browserStorage } from '../use-file-view-settings'
 
 const CAPTURE_MARGIN = 6
 const PROBE_TIMEOUT_MS = 600
@@ -48,14 +48,6 @@ const COMPOSER_NARROW_HEIGHT = 168
 type CapturedImage = Awaited<ReturnType<typeof captureElementRegion>>
 
 const clients = new Map<string, CommentStore>()
-
-function browserStorage(): StorageLike | null {
-  try {
-    return typeof window === 'undefined' ? null : window.localStorage
-  } catch {
-    return null
-  }
-}
 
 function commentStoreFor(abs: string): CommentStore {
   let store = clients.get(abs)

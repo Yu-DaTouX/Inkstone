@@ -18,12 +18,10 @@ export interface CollabText {
   refresh: string
   loading: string
   loadFailed: string
-  dismiss: string
   cancel: string
   local: string
   remote: string
   peersTitle: string
-  peersHint: string
   peersEmpty: string
   peerMissing: string
   pairTitle: string
@@ -134,7 +132,6 @@ export interface CollabText {
   continue: string
   continueHint: string
   continueFailed: string
-  continueDone: string
   sessionFailed: string
   noPull: string
   pushTitle: string
@@ -173,10 +170,8 @@ export interface CollabText {
   abortBody: string
   aborted: string
   abortFailed: string
-  agentStarted: string
   hostTitle: string
   hostGrantLine: string
-  hostHint: string
   hostEmpty: string
   hostActive: string
   hostPending: string
@@ -261,12 +256,10 @@ const ZH: CollabText = {
   refresh: '刷新',
   loading: '正在读取…',
   loadFailed: '读取协作状态失败：{error}',
-  dismiss: '关闭提示',
   cancel: '取消',
   local: '本机',
   remote: '远端 · {computer}',
   peersTitle: '协作者',
-  peersHint: '已配对的砚。申请连接后，需要对方在自己的电脑上批准。',
   peersEmpty: '还没有配对的协作者。',
   peerMissing: '当前构建还没有接入砚互联，不能配对或连接。',
   pairTitle: '配对新的协作者',
@@ -386,7 +379,6 @@ const ZH: CollabText = {
   continue: '接着做',
   continueHint: '在本机基于这个分支新建 worktree，并以对方的会话副本为上下文开新会话。',
   continueFailed: '没能接着做：{error}',
-  continueDone: '已在 {worktree} 开了新会话，提示词已填好。',
   sessionFailed: '新建会话失败：{error}',
   noPull: '这次连接没有「拉取」权限，需要重新申请连接并勾选「拉取」。',
   pushTitle: '推送到 {computer}',
@@ -429,10 +421,8 @@ const ZH: CollabText = {
   abortBody: '放弃后，本机「{project}」回到合并前的状态，已经手动解决的冲突也会丢掉。',
   aborted: '已放弃合并，本机「{project}」回到合并前的状态。',
   abortFailed: '放弃合并失败：{error}',
-  agentStarted: '已在本机「{project}」开了新会话，解决冲突的提示词已填好。',
   hostTitle: '连着本机的协作者',
   hostGrantLine: '你开放：{projects} · 允许：{ops}',
-  hostHint: '你批准过的连接。撤销后对方需要重新申请，你再批准才能继续访问。',
   hostEmpty: '目前没有协作者连着本机。',
   hostActive: '已连接',
   hostPending: '已批准，等待对方接入',
@@ -529,12 +519,10 @@ const EN: CollabText = {
   refresh: 'Refresh',
   loading: 'Loading…',
   loadFailed: 'Could not read collaboration status: {error}',
-  dismiss: 'Dismiss',
   cancel: 'Cancel',
   local: 'This computer',
   remote: 'Remote · {computer}',
   peersTitle: 'Collaborators',
-  peersHint: 'Paired Inkstone computers. After you request a connection, the other person approves it on their computer.',
   peersEmpty: 'No paired collaborators yet.',
   peerMissing: 'Peer connections are not wired into this build, so pairing is unavailable.',
   pairTitle: 'Pair a new collaborator',
@@ -654,7 +642,6 @@ const EN: CollabText = {
   continue: 'Continue here',
   continueHint: 'Creates a local worktree from this branch and starts a new session with their session copy as context.',
   continueFailed: 'Could not continue: {error}',
-  continueDone: 'Started a new session in {worktree} with the prompt filled in.',
   sessionFailed: 'Could not start a session: {error}',
   noPull: 'This connection does not allow pulling. Request a new connection with “Pull” checked.',
   pushTitle: 'Push to {computer}',
@@ -697,10 +684,8 @@ const EN: CollabText = {
   abortBody: 'Local “{project}” goes back to its state before the merge, and any conflicts you already resolved are lost.',
   aborted: 'Aborted the merge; local “{project}” is back to its state before the merge.',
   abortFailed: 'Could not abort the merge: {error}',
-  agentStarted: 'Started a new session in local “{project}” with a conflict-resolution prompt filled in.',
   hostTitle: 'Connected to this computer',
   hostGrantLine: 'You shared: {projects} · Allowed: {ops}',
-  hostHint: 'Connections you approved. After you revoke one, they have to request again and you approve again before they can continue.',
   hostEmpty: 'No collaborators are connected to this computer.',
   hostActive: 'Connected',
   hostPending: 'Approved, waiting for them to connect',

@@ -90,7 +90,6 @@ export async function runDiscoveryTests(ok, modules) {
     }))
     ok(shared.selectCandidates(shared.rankCandidates(many), shared.MAX_CANDIDATES).length === 8, '截断：候选最多八项')
     ok(shared.MAX_PAGES_PER_SOURCE === 2, '上限：每源最多两页')
-    ok(shared.MAX_QUERY_REWRITES === 2, '上限：每轮最多两次查询改写')
   }
 
   {

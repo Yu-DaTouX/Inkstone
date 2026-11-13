@@ -245,11 +245,6 @@
   .v3-step-verb { color: var(--fg2); font-family: var(--font-mono); font-size: var(--t-footnote); flex: none; }
   .v3-step-target { min-width: 0; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-step-time { color: var(--fg3); font-size: var(--t-footnote); flex: none; }
-  .v3-dot { width: var(--size-dot); height: var(--size-dot); border-radius: var(--r-full); corner-shape: round; flex: none; background: var(--fg3); }
-  .v3-dot.run { background: var(--run); }
-  .v3-dot.ok { background: var(--fg3); }
-  .v3-dot.err { background: var(--fail); }
-  .v3-dot.warn { background: var(--stall); }
   .v3-step-nest { margin-left: var(--s-16); padding-left: var(--s-10); border-left: var(--hair, 1px) solid var(--line); }
   .v3-step-group > .v3-step-panel > .v3-step-nest { margin: var(--s-2) 0 var(--s-4) var(--s-4); padding-left: var(--s-10); border-left: var(--hair, 1px) solid var(--line); }
   .v3-step-group > .v3-step-panel > .v3-step-nest > .v3-step > .v3-step-panel > .v3-step-detail { margin: var(--s-2) 0 var(--s-6); }

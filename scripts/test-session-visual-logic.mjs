@@ -228,8 +228,6 @@ check('跟随：没有用户操作时高度不变的上移也重新贴底（拖�
   const dragged = follow.decideFollow(true, { offset: 300, size: 1500, viewport: 500 }, 4800, 5000)
   assert.deepEqual(dragged, { stick: false, showJump: true, repin: false })
   assert.equal(follow.SCROLL_INTENT_EVENT, 'yan-scroll-intent')
-  assert.equal(follow.isLayoutShift(null, { offset: 0, size: 1, viewport: 1 }), true)
-  assert.equal(follow.isLayoutShift({ offset: 10, size: 100, viewport: 50 }, { offset: 20, size: 100, viewport: 50 }), true)
 })
 
 check('跟随：用户上滚解除跟随，超过 200px 才显示回到底部', () => {
@@ -249,10 +247,7 @@ check('跟随：向下滚轮越过当前底部时明确恢复，不靠接近底�
   assert.equal(follow.wheelReachesBottom({ ...metrics, offset: 1000 }, 1, 1), true)
 })
 
-check('跟随：阅读锚点取视口顶部所在的回合', () => {
-  const rows = [{ id: 'a', top: -300, bottom: -10 }, { id: 'b', top: -10, bottom: 400 }, { id: 'c', top: 400, bottom: 900 }]
-  assert.deepEqual(follow.pickReadingAnchor(rows, 0), { turnId: 'b', offset: 10 })
-  assert.equal(follow.pickReadingAnchor([], 0), null)
+check('跟随：翻页键算滚动意图', () => {
   assert.equal(follow.isScrollIntentKey('PageUp'), true)
   assert.equal(follow.isScrollIntentKey('a'), false)
 })

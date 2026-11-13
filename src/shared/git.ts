@@ -1,45 +1,5 @@
 export type GitFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'unmerged'
 
-export function remoteWebUrl(remote: string): string | null {
-  const raw = String(remote ?? '').trim()
-  if (!raw) return null
-  let host = ''
-  let path = ''
-  const ssh = /^ssh:\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.+)$/.exec(raw)
-  const scp = /^(?:[^@/]+@)?([^/:]+):(.+)$/.exec(raw)
-  const http = /^https?:\/\/([^/]+)\/(.+)$/.exec(raw)
-  if (http) {
-    host = http[1]
-    path = http[2]
-  } else if (ssh) {
-    host = ssh[1]
-    path = ssh[2]
-  } else if (scp && !/^[a-zA-Z]:[\\/]/.test(raw)) {
-    host = scp[1]
-    path = scp[2]
-  } else {
-    return null
-  }
-  const clean = path.replace(/\.git$/, '').replace(/\/+$/, '')
-  if (!clean) return null
-  const known = ['github.com', 'gitlab.com', 'bitbucket.org']
-  if (!known.some((h) => host === h || host.endsWith('.' + h))) return null
-  return `https://${host}/${clean}`
-}
-
-export function compareWebUrl(webUrl: string, base: string, target: string): string | null {
-  const b = String(base ?? '').trim()
-  const t = String(target ?? '').trim()
-  if (!webUrl || !b || !t || b === t) return null
-  if (/bitbucket\.org$/.test(new URL(webUrl).host)) {
-    return `${webUrl}/branches/compare/${encodeURIComponent(t)}..${encodeURIComponent(b)}`
-  }
-  if (/gitlab\.com$/.test(new URL(webUrl).host)) {
-    return `${webUrl}/-/compare/${encodeURIComponent(b)}...${encodeURIComponent(t)}`
-  }
-  return `${webUrl}/compare/${encodeURIComponent(b)}...${encodeURIComponent(t)}`
-}
-
 export interface GitRefOption {
   ref: string
   label: string

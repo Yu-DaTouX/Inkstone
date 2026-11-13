@@ -13,8 +13,6 @@ export interface FilesOwner {
 
 export const DEFAULT_ROW_HEIGHT = 24
 export const OVERSCAN = 6
-export const TREE_INDENT_BASE = 8
-export const TREE_INDENT_STEP = 10
 export const CHAIN_EXPAND_LIMIT = 16
 export const REVEAL_FLASH_MS = 1200
 
@@ -272,10 +270,6 @@ function appendChildren(rows: FileTreeRow[], state: FilesTreeState, parent: stri
   if (listing.truncated) {
     rows.push({ path: parent, name: '', dir: false, depth, kind: 'state', focusable: false, state: 'partial' })
   }
-}
-
-export function treeIndent(depth: number): number {
-  return TREE_INDENT_BASE + depth * TREE_INDENT_STEP
 }
 
 export function focusablePaths(rows: FileTreeRow[]): string[] {

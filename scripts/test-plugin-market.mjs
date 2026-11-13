@@ -166,14 +166,6 @@ export async function runPluginMarketTests(ok) {
     ok(await has('templates/java/write-argfile.ps1'), 'Minecraft 插件：带上 Windows Java 参数文件编码助手')
     ok(!(await has('companion-mod/build/classes/A.class')) && !(await has('companion-mod/.gradle/cache.bin')) && !(await has('companion-mod/mc26/run/options.txt')) && !(await has('node_modules/x/index.js')), 'Minecraft 插件：不复制构建中间产物、运行目录与依赖')
     ok((await readdir(paths.tempDir)).length === 0, 'Minecraft 插件：装完清理临时目录')
-    const latestSeen = []
-    const latest = await mc.latestMinecraftPluginVersion(async (url) => {
-      latestSeen.push(url)
-      return Response.json({ tag_name: 'v0.2.0' })
-    })
-    ok(latest === '0.2.0' && latestSeen[0] === 'https://api.github.com/repos/Yu-DaTouX/inkstone-minecraft-plugin/releases/latest', 'Minecraft 插件：最新版本取自 GitHub Release 标签')
-    ok((await mc.latestMinecraftPluginVersion(async () => { throw new Error('offline') })) === undefined, 'Minecraft 插件：查不到最新版本时不报错')
-    ok((await mc.latestMinecraftPluginVersion(async () => new Response('', { status: 403 }))) === undefined, 'Minecraft 插件：GitHub API 拒绝时忽略')
     doc.mcpServers['inkstone-minecraft'].enabled = false
     await writeFile(join(agentDir, 'mcp.json'), JSON.stringify(doc))
     const next = zipArchive(Object.entries({ ...pluginFiles(), 'package.json': JSON.stringify({ version: '0.2.0' }), 'mcp/server.ts': 'export const changed = 1\n' }))

@@ -108,8 +108,6 @@ async function main() {
     assert.equal(merged.volume, 0.4, '未给的事件与音量保持原值')
     assert.deepEqual(merged.events, { done: false, question: true, error: false }, '事件开关逐项合并')
 
-    assert.deepEqual(Model.removeAllowRoot(['a', 'b', 'c'], 'b'), ['a', 'c'])
-    assert.deepEqual(Model.removeAllowRoot([], 'x'), [])
     assert.equal(Model.permissionNeedsConfirm('all'), true)
     assert.equal(Model.permissionNeedsConfirm('danger'), false)
     assert.equal(Model.piSourceLabel('bundled'), 'bundled')

@@ -42,7 +42,6 @@ export class McpAppChannel {
   constructor(private readonly options: McpAppChannelOptions) {}
 
   getPhase(): McpAppChannelPhase { return this.phase }
-  getGeneration(): number { return this.generation }
 
   subscribe(listener: (phase: McpAppChannelPhase) => void): () => void {
     this.listeners.add(listener)

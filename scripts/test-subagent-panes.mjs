@@ -24,22 +24,6 @@ async function run() {
     assert.equal(panes.subagentRunOfPane('files'), null)
     assert.equal(panes.subagentRunOfPane(null), null)
 
-    assert.equal(panes.isSubagentPaneId('subagent:sub-2'), true)
-    assert.equal(panes.isSubagentPaneId('terminal'), false)
-    assert.equal(panes.isSubagentPaneId(42), false)
-    assert.equal(panes.isToolPane('files'), true)
-    assert.equal(panes.isToolPane('subagent:sub-2'), false)
-    assert.equal(panes.isWorkspacePaneId('terminal'), true)
-    assert.equal(panes.isWorkspacePaneId('subagent:sub-2'), true)
-    assert.equal(panes.isWorkspacePaneId('subagent:'), false)
-    assert.equal(panes.isWorkspacePaneId('nope'), false)
-    assert.deepEqual(panes.toolPanes(['files', 'subagent:sub-2', 'terminal']), ['files', 'terminal'])
-
-    assert.deepEqual(
-      panes.staleSubagentPanes(['files', 'subagent:sub-1', 'subagent:sub-2', 'terminal'], new Set(['sub-2'])),
-      ['subagent:sub-1']
-    )
-    assert.deepEqual(panes.staleSubagentPanes(['files', 'terminal'], new Set()), [])
     assert.deepEqual(panes.removedRunIds([{ id: 'a' }, { id: 'b' }, { id: 'c' }], [{ id: 'b' }]), ['a', 'c'])
     assert.deepEqual(panes.removedRunIds([{ id: 'a' }], [{ id: 'a' }, { id: 'n' }]), [])
 

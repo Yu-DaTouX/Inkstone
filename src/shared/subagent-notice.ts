@@ -25,7 +25,7 @@ export interface ParsedSubagentNotice {
   body: string
 }
 
-function clip(text: string, max: number): string {
+export function clip(text: string, max: number): string {
   const points = [...text.replace(/\s+/g, ' ').trim()]
   return points.length > max ? `${points.slice(0, max).join('')}…` : points.join('')
 }

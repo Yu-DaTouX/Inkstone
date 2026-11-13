@@ -83,36 +83,9 @@ check('分组：snooze 中的会话不在正常列表，到点的会话算醒来
     { id: 'c', snoozedUntil: now - 1 },
     { id: 'd', snoozedUntil: now }
   ]
-  assert.deepEqual(snooze.activeSessions(sessions, now).map((s) => s.id), ['a', 'c', 'd'])
-  assert.deepEqual(snooze.snoozedSessions(sessions, now).map((s) => s.id), ['b'])
-  assert.deepEqual(snooze.wakingSessions(sessions, now).map((s) => s.id), ['c', 'd'], '到点（含正好到点）的会话醒来')
   assert.equal(snooze.isSnoozed(sessions[3], now), false, '只看未来，到点就不再算 snooze')
 })
 
-check('分组：稍后列表按唤醒时间由近到远', () => {
-  const now = local(2026, 3, 5, 12)
-  const sessions = [
-    { id: 'late', snoozedUntil: now + 5 * HOUR },
-    { id: 'soon', snoozedUntil: now + HOUR },
-    { id: 'mid', snoozedUntil: now + 2 * HOUR }
-  ]
-  assert.deepEqual(snooze.snoozedSessions(sessions, now).map((s) => s.id), ['soon', 'mid', 'late'])
-})
-
-check('定时器：只在最近的唤醒时间排一次，没有 snooze 就不排', () => {
-  const now = local(2026, 3, 5, 12)
-  const sessions = [
-    { id: 'late', snoozedUntil: now + 5 * HOUR },
-    { id: 'soon', snoozedUntil: now + HOUR }
-  ]
-  assert.equal(snooze.nextSnoozeWake(sessions, now), now + HOUR)
-  assert.equal(snooze.nextSnoozeWake([{ id: 'plain' }], now), null)
-  assert.equal(snooze.nextSnoozeWake([{ id: 'past', snoozedUntil: now - 1 }], now), null)
-  assert.equal(snooze.snoozeTimerDelay(null, now), null)
-  const delay = snooze.snoozeTimerDelay(now + HOUR, now)
-  assert.ok(delay > HOUR - 2000 && delay < HOUR + 2000, '在唤醒时间附近触发，不是每秒轮询')
-  assert.equal(snooze.snoozeTimerDelay(now + 999 * 24 * HOUR, now), snooze.MAX_SNOOZE_TIMER_MS, '超长延迟夹到定时器上限')
-})
 
 check('自定义：解析本地日期时间，过去的与格式不对的都不接受', () => {
   const now = local(2026, 3, 5, 12)

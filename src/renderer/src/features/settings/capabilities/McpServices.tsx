@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useI18n, useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { MCP_SETTINGS_CHANGED, notifyMcpSettingsChanged, reloadCurrentMcp } from '../../../state/mcp-settings'
+import { MCP_SETTINGS_CHANGED, notifyMcpSettingsChanged, reloadCurrentMcp, mcpViewKey as viewKey } from '../../../state/mcp-settings'
 import { Badge, Button, SegmentedControl, Switch } from '../../../ui'
 import type { CapabilitySettingsSnapshot } from '../../../../../shared/ipc'
 import type { McpSettingsMutation, McpSettingsScope, McpSettingsService, McpSettingsSnapshot } from '../../../../../shared/mcp-settings'
@@ -11,11 +11,6 @@ import { McpServiceForm } from './McpServiceForm'
 import { mcpServicesText } from './mcp-services-text'
 import { useCodegraphStatus } from './CodegraphStatusRow'
 import { SettingsAdvanced } from '../root/controls'
-
-function viewKey(): string {
-  const state = useStore.getState()
-  return JSON.stringify([state.activeRunnerId, state.session?.sessionId, state.session?.cwd, state.peekedSessionId, state.peekedPath])
-}
 
 export function McpServices({ advanced }: { advanced: ReactNode }) {
   const { lang } = useI18n()

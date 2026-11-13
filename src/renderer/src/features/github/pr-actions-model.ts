@@ -357,12 +357,6 @@ export function createProblem(draft: CreateDraft): 'title' | 'base' | 'head' | '
   return null
 }
 
-export function diffNames(current: readonly string[], next: readonly string[]): { add: string[]; remove: string[] } {
-  const before = new Set(current)
-  const after = new Set(next)
-  return { add: [...after].filter((name) => !before.has(name)), remove: [...before].filter((name) => !after.has(name)) }
-}
-
 export type AgentTask = 'explain' | 'fix-checks' | 'respond-reviews'
 
 export interface AgentPromptLabels {

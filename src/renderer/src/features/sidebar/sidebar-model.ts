@@ -1,12 +1,9 @@
 import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
+import { normalizeLayoutPath as normalizeCwd } from '../../../../shared/session-path'
 
 export function sameCwd(a: string, b: string): boolean {
   return normalizeCwd(a) === normalizeCwd(b)
-}
-
-function normalizeCwd(value: string): string {
-  return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
 export function shortProject(path: string): string {

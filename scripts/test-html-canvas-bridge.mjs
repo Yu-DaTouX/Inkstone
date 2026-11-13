@@ -39,8 +39,6 @@ try {
 
   assert.deepEqual(bridge.canvasToolMessage('inspect'), { 'yan-canvas': 'tool', tool: 'inspect' }, '父页面工具消息带频道与工具名')
   assert.deepEqual(bridge.canvasToolMessage(null), { 'yan-canvas': 'tool', tool: '' }, '关闭时发空工具名')
-  assert.ok(bridge.isCanvasBridgeTool('inspect') && bridge.isCanvasBridgeTool('comment') && bridge.isCanvasBridgeTool('edit'))
-  assert.ok(!bridge.isCanvasBridgeTool('hand') && !bridge.isCanvasBridgeTool('') && !bridge.isCanvasBridgeTool(7), '只有检查/评论/编辑接管指针')
 
   const element = {
     path: '0.2.1',

@@ -4,6 +4,7 @@ import { shortProject } from '../../../features/sidebar/sidebar-model'
 import { isThreadWorking } from '../../internal/thread-inbox'
 import { effectiveSnoozed } from '../../internal/thread-settled'
 import { NO_PROJECT_ID, toThreadView, type SidebarThreadView } from './types'
+import { normalizeLayoutPath as normalize } from '../../../../../shared/session-path'
 
 export interface SidebarSections {
   pinned: SidebarThreadView[]
@@ -11,10 +12,6 @@ export interface SidebarSections {
   working: SidebarThreadView[]
   snoozed: SidebarThreadView[]
   settled: SidebarThreadView[]
-}
-
-function normalize(value: string): string {
-  return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
 function projectLookups(projects: readonly ProjectRecord[]): {

@@ -146,7 +146,3 @@ export function inkGeometry(tab: InkBox, list: InkBox, scrollLeft: number, inset
   const width = Math.max(0, tab.width - inset * 2)
   return { x: tab.left - list.left + scrollLeft + inset, width }
 }
-
-export function staggerDelay(index: number, step: number, cap = 6): number {
-  return Math.min(Math.max(0, index), cap) * step
-}

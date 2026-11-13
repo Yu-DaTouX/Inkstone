@@ -1,5 +1,4 @@
-import { subagentOutcome } from '../../../shared/subagent-outcome'
-import type { ExpectedRuntimeOwner, SubagentRun } from '../../../shared/ipc'
+import type { SubagentRun } from '../../../shared/ipc'
 
 export interface SubagentScope {
   sessionIds: string[]
@@ -65,34 +64,6 @@ function findViewRunner(
   )
 }
 
-export interface SubagentViewOwnership {
-  expectedRuntime?: ExpectedRuntimeOwner
-  needsRunner: boolean
-}
-
-export function subagentOwnerForView(input: SubagentViewInput): SubagentViewOwnership {
-  const peeking = !!(input.peekedSessionId || input.peekedPath)
-  const sessionId = peeking ? input.peekedSessionId ?? undefined : input.session?.sessionId ?? undefined
-  const path = peeking ? input.peekedPath ?? undefined : input.session?.sessionFile ?? undefined
-  const conversationId = peeking ? undefined : input.session?.conversationId
-  const runner = findViewRunner(input, sessionId, path)
-  if (runner) {
-    const runId = runner.runId ?? runner.id
-    if (runId) {
-      return {
-        expectedRuntime: {
-          ...(runner.sessionId ? { sessionId: runner.sessionId } : {}),
-          runId,
-          ...(runner.projectId ? { projectId: runner.projectId } : {}),
-          ...(runner.generation !== undefined ? { generation: runner.generation } : {})
-        },
-        needsRunner: false
-      }
-    }
-  }
-  return { needsRunner: !!(sessionId || path || conversationId) }
-}
-
 function belongsToScope(run: SubagentRun, ids: Set<string>, runIds: Set<string>): boolean | null {
   if (run.parentSessionId) return ids.has(run.parentSessionId)
   if (run.parentRunId && runIds.has(run.parentRunId)) return true
@@ -139,28 +110,6 @@ export function subagentRunsForTurnScope(runs: SubagentRun[], scope: TurnSubagen
   return dedupeRuns(runs).filter(
     (run) => (!!run.parentSessionId && ids.has(run.parentSessionId)) || (!!run.parentRunId && parents.has(run.parentRunId))
   )
-}
-
-export function subagentTabId(runId: string): string {
-  return `subagent:${runId}`
-}
-
-export const RECENT_DONE_MS = 5 * 60_000
-
-export function visibleSubagentRuns(runs: SubagentRun[], scope: SubagentScope, now = Date.now()): SubagentRun[] {
-  return selectSubagentRuns(runs, scope).all.filter((run) => {
-    if (run.status === 'starting' || run.status === 'running' || run.status === 'error') return true
-    if (run.review === 'pending' || run.review === 'conflict') return true
-    if (run.review === 'merged' || run.review === 'discarded' || run.review === 'archived') return false
-    return run.status === 'done' && !!run.endedAt && now - run.endedAt < RECENT_DONE_MS
-  })
-}
-
-export function activeSubagentRuns(runs: SubagentRun[], scope: SubagentScope): SubagentRun[] {
-  return selectSubagentRuns(runs, scope).all.filter((run) => {
-    const outcome = subagentOutcome(run)
-    return outcome.live || outcome.attention
-  })
 }
 
 export function subagentCost(runs: readonly SubagentRun[]): number {

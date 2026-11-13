@@ -34,12 +34,6 @@ export function breadcrumbParent(path: string): string | null {
   return parts.join('/')
 }
 
-export function breadcrumbDirectory(focusPath: string, focusIsDir: boolean): string {
-  if (!focusPath) return ''
-  if (focusIsDir) return breadcrumbParts(focusPath).join('/')
-  return breadcrumbParent(focusPath) ?? ''
-}
-
 export function foldBreadcrumbs(crumbs: readonly BreadcrumbCrumb[], limit = BREADCRUMB_FOLD_AT): FoldedCrumbs {
   const all = [...crumbs]
   if (all.length <= 2) return { visible: all, hidden: [] }

@@ -26,7 +26,6 @@ async function runShortcutsAndPalette() {
     COMMAND_GROUP_ORDER,
     COMMAND_PREFIXES,
     PALETTE_GROUP_ORDER,
-    commandsInGroups,
     limitCommandGroup,
     messageSnippet,
     parsePaletteQuery
@@ -159,11 +158,6 @@ async function runShortcutsAndPalette() {
     limitCommandGroup(pool, 'message', 2).map((entry) => entry.id),
     ['a1', 'm1', 'm2', 's1'],
     '只截消息组，其它组原样保留'
-  )
-  assert.deepEqual(
-    commandsInGroups(pool, ['message']).map((entry) => entry.id),
-    ['m1', 'm2', 'm3'],
-    '前缀模式只取自己那组'
   )
   assert.equal(limitCommandGroup(pool, 'message', -1).length, pool.length, '负数上限表示不限')
 

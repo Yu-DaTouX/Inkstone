@@ -37,7 +37,7 @@ import {
   type PrSortKey
 } from './pr-actions-model'
 import { prActionText, type PrActionText } from './pr-action-text'
-import { stateTone } from './PullRequestDetail'
+import { stateTone, checksDot as checkDot } from './PullRequestDetail'
 import { CreatePullRequestButton } from './CreatePullRequest'
 import { openPanelSurface } from '../workbench/panel-actions'
 import { pullRequestSurface } from '../../state/right-panel'
@@ -59,13 +59,6 @@ function CheckGlyph({ state }: { state: ReturnType<typeof checkDot> }): ReactEle
   return <CircleDashed size={12} aria-hidden />
 }
 const ALL_AUTHORS = '*'
-
-function checkDot(checks: PrChecks): 'ok' | 'pending' | 'fail' | 'idle' {
-  if (checks.state === 'pass') return 'ok'
-  if (checks.state === 'fail') return 'fail'
-  if (checks.state === 'pending') return 'pending'
-  return 'idle'
-}
 
 function reviewBadge(decision: string, text: PrActionText['list']): { label: string; tone: 'ok' | 'fail' | 'ask' } | null {
   const value = decision.toUpperCase()

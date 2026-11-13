@@ -53,12 +53,3 @@ export function generationTiming(input: GenerationTimingInput): GenerationTiming
   }
   return result
 }
-
-export function decodeTokensPerSecond(
-  outputTokens: number | undefined,
-  decodeMs: number | undefined
-): number | undefined {
-  if (typeof outputTokens !== 'number' || !Number.isFinite(outputTokens) || outputTokens <= 0) return undefined
-  if (typeof decodeMs !== 'number' || !Number.isFinite(decodeMs) || decodeMs <= 0) return undefined
-  return outputTokens / (decodeMs / 1000)
-}

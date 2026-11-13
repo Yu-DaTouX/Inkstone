@@ -1,7 +1,5 @@
 import { create } from 'zustand'
 import { THINK_LABEL } from './think-label'
-import { translate, type MessageKey, type TVars } from '../i18n'
-import { currentLang } from '../i18n/lang'
 import { toolMissingText } from '../lib/toolchain-text'
 import type {
   AppSettings,
@@ -98,10 +96,7 @@ import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
 import type { SubmittingMessage } from './submitting-messages'
 import { useSubagentStopping } from './subagent-stopping'
 import { compactionErrorText } from './compaction-view'
-
-function uiText(key: MessageKey, vars?: TVars): string {
-  return translate(currentLang(), key, vars)
-}
+import { uiText } from '../i18n/ui-text'
 
 function attentionTitle(event: SoundEvent): string {
   switch (event) {
@@ -557,19 +552,6 @@ async function sessionActionTarget(get: () => Store) {
   const expected = expectedRuntimeFor(get(), composerSubmitIdentity(get()))
   if (!expected || expected.generation === undefined) return null
   return { expected, current }
-}
-
-export function widgetsByPlacement(
-  widgets: Record<string, string[]>,
-  placements: Record<string, WidgetPlacement | undefined>
-): { aboveEditor: Array<[string, string[]]>; belowEditor: Array<[string, string[]]> } {
-  const aboveEditor: Array<[string, string[]]> = []
-  const belowEditor: Array<[string, string[]]> = []
-  for (const [key, lines] of Object.entries(widgets)) {
-    if (placements[key] === 'belowEditor') belowEditor.push([key, lines])
-    else aboveEditor.push([key, lines])
-  }
-  return { aboveEditor, belowEditor }
 }
 
 function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store> {

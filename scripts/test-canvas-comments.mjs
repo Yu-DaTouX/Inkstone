@@ -71,13 +71,6 @@ try {
   assert.equal(store.parseRect({ x: 1, y: 2, w: Number.NaN, h: 4 }), null, '非有限数值的矩形被拒绝')
   assert.equal(store.parseRect(null), null)
 
-  assert.deepEqual(store.parseDomPath('0.2.1'), [0, 2, 1])
-  assert.deepEqual(store.parseDomPath(''), [], '空路径解析为空数组')
-  assert.deepEqual(store.parseDomPath('1.a'), [], '非数字路径段被拒绝')
-  assert.deepEqual(store.parseDomPath('-1'), [], '负数路径段被拒绝')
-  assert.deepEqual(store.parseDomPath('1.2.'), [], '尾部空段落被拒绝')
-  ok(true, 'path/selector 重新查询用的路径解析安全')
-
   assert.equal(store.isPlainTextHtml('<h2 class="title">标题</h2>'), true, '单一文本节点识别为纯文本元素')
   assert.equal(store.isPlainTextHtml('<p>Hello <b>world</b></p>'), false, '含子元素的 HTML 不算纯文本')
   assert.equal(store.isPlainTextHtml('<img src="a.png">'), false, '空元素不算纯文本')

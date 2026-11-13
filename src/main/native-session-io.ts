@@ -276,37 +276,6 @@ export async function readSessionFile(
   return { ok: true, value: parsed.value, sizeBytes: stats.size }
 }
 
-export async function inspectSessionJsonl(
-  path: string,
-  maxBytes?: number
-): Promise<
-  | {
-      ok: true
-      path: string
-      sizeBytes: number
-      sessionId: string
-      version: number
-      cwd?: string
-      entryCount: number
-      leafId: string | null
-    }
-  | SessionIoFailure
-> {
-  const read = await readSessionFile(path, maxBytes)
-  if (!read.ok) return read
-  const { header, entries, leafId } = read.value
-  return {
-    ok: true,
-    path: resolve(String(path)),
-    sizeBytes: read.sizeBytes,
-    sessionId: header.id,
-    version: header.version ?? 1,
-    ...(typeof header.cwd === 'string' ? { cwd: header.cwd } : {}),
-    entryCount: entries.length,
-    leafId
-  }
-}
-
 export function buildActiveBranch(
   entries: LiteSessionEntry[],
   leafId?: string | null
