@@ -22,6 +22,8 @@ await runSuite(import.meta.url, async (ok) => {
       ['bash', 'rm -rf C:', '只写盘符'],
       ['bash', 'rm -rf /c/', 'MSYS 盘根'],
       ['powershell', 'Remove-Item -Recurse -Force \\\\?\\C:\\', '长路径前缀盘根'],
+      ['bash', 'pwsh -Command "Remove-Item -Recurse -Force \'\\\\\\\\?\\\\C:\\\\\'"', '双层反斜杠写法的长路径前缀盘根'],
+      ['bash', 'pwsh -Command "Remove-Item -Recurse \'\\\\\\\\?\\\\Volume{0b2d6c8e-0000-0000-0000-100000000000}\\\\\'"', '双层反斜杠写法的卷 GUID'],
       ['bash', 'rm -rf \\\\localhost\\C$', '管理共享盘根'],
       ['bash', 'rm -rf ~', '~'],
       ['bash', 'rm -rf $HOME', '$HOME'],
@@ -63,6 +65,8 @@ await runSuite(import.meta.url, async (ok) => {
 
     const misses = [
       ['bash', 'rm -rf dist', '项目内目录'],
+      ['powershell', 'Remove-Item -Recurse -Force \'\\\\?\\C:\\work\\build\\old\'', '长路径前缀下的深层子目录'],
+      ['bash', 'pwsh -Command "Remove-Item -Recurse -Force \'\\\\\\\\?\\\\C:\\\\work\\\\build\\\\old\'"', '双层反斜杠写法的长路径前缀深层子目录'],
       ['bash', 'rm -rf "$DIR/build"', '未赋值变量拼出非系统顶层名'],
       ['powershell', 'Remove-Item dist\\*', '项目内通配'],
       ['bash', 'rm -rf ${DIR:?}/*', '带 :? 保护的变量'],

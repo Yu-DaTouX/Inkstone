@@ -184,12 +184,22 @@ function commandOf(segment) {
   return { head: bareName(parts[start]), args: parts.slice(start + 1), stdinArgs }
 }
 
+function deleteRoots(cwd) {
+  return [cwd || process.cwd(), tmpdir(), '/tmp', '/var/tmp'].map((p) => physicalPath(normalizePath(p)).replace(/\/$/, ''))
+}
+
 function deletesOutsideProject(raw, cwd, base = cwd) {
   if (base === null && !isAbsolutePath(expandHome(expandEnv(unquote(raw))))) return true
   const target = resolveTarget(raw, base ?? cwd)
   if (!target) return false
-  const roots = [cwd || process.cwd(), tmpdir(), '/tmp', '/var/tmp'].map((p) => physicalPath(normalizePath(p)).replace(/\/$/, ''))
-  return !isInside(target, roots)
+  return !isInside(target, deleteRoots(cwd))
+}
+
+function deletesInsideAllowedFolder(raw, cwd, base = cwd) {
+  if (base === null && !isAbsolutePath(expandHome(expandEnv(unquote(raw))))) return false
+  const target = resolveTarget(raw, base ?? cwd)
+  if (!target) return false
+  return deleteRoots(cwd).some((root) => /^(?:[a-z]:)?\/[^/]/.test(root) && target.replace(/\/+$/, '').startsWith(root + '/'))
 }
 
 const PS_RECURSE = /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?(?::\$?true)?$/i
@@ -205,7 +215,7 @@ function recursiveDeleteTarget(cmd, cwd, base = cwd) {
   if (!isRecursiveDelete(cmd)) return null
   const cmdFlag = cmd.head === 'rm' ? /^-/ : /^(-|\/[a-z]$)/i
   const targets = cmd.args.filter((a) => !cmdFlag.test(a) && !/^-{1,2}\w/.test(a))
-  return targets.find((target) => isBroadTarget(target) || deletesOutsideProject(target, cwd, base)) ?? null
+  return targets.find((target) => (isBroadTarget(target) && !deletesInsideAllowedFolder(target, cwd, base)) || deletesOutsideProject(target, cwd, base)) ?? null
 }
 
 const POWER_COMMANDS = new Set(['shutdown', 'reboot', 'halt', 'poweroff', 'stop-computer', 'restart-computer'])
@@ -269,7 +279,8 @@ const COMMAND_RULES = [
   { re: gitRule(String.raw`push\b[^;&|\n]*\s(?:--force(?!-with-lease)\b|-f\b|--mirror\b)`), label: 'Git 强制推送，会覆盖远端历史' },
   { re: gitRule(String.raw`reset\b[^;&|\n]*--hard\b`), label: 'git reset --hard，会丢弃未提交的改动' },
   { re: gitRule(String.raw`clean\b[^;&|\n]*\s(?:-[a-z]*f|--force\b)`), label: 'git clean -f，会永久删除未跟踪的文件' },
-  { re: gitRule(String.raw`(?:checkout|restore)\b[^;&|\n]*(?:\s--\s+\.|\s\.)(?:\s|$)`), label: '还原整个工作区，会丢弃未提交的改动' },
+  { re: gitRule(String.raw`checkout\b[^;&|\n]*(?:\s--\s+\.|\s\.)(?:\s|$)`), label: '还原整个工作区，会丢弃未提交的改动' },
+  { re: gitRule(String.raw`restore\b(?:(?![^;&|\n]*\s(?:--staged|-S)\b)|(?=[^;&|\n]*\s(?:--worktree|-W)\b))[^;&|\n]*(?:\s--\s+\.|\s\.)(?:\s|$)`), label: '还原整个工作区，会丢弃未提交的改动' },
   { re: gitRule(String.raw`stash\s+(?:clear|drop)\b`), label: '删除 Git stash 里暂存的改动' },
   { re: /\b(?:drop\s+(?:database|schema|table)|truncate\s+table)\b/i, label: '删除数据库或数据表' },
   { re: /\b(?:mkfs(?:\.\w+)?|diskpart|fdisk|shred|format-volume|clear-disk|initialize-disk|remove-partition)\b|\bdd\s+[^;&|\n]*\bof=\/dev\/|\bformat\s+[a-z]:/i, label: '格式化或直接写磁盘' },
@@ -289,7 +300,7 @@ function msysDrivePath(text) {
 }
 
 function normalizePath(p) {
-  const text = msysDrivePath(String(p ?? '').replace(/\\/g, '/').toLowerCase().replace(/^\/\/[?.]\/unc\//, '//').replace(/^\/\/[?.]\//, ''))
+  const text = msysDrivePath(String(p ?? '').replace(/\\/g, '/').toLowerCase().replace(/^\/{2,}[?.]\/+unc\//, '//').replace(/^\/{2,}[?.]\/+/, ''))
   const match = /^([a-z]:)?(.*)$/.exec(text)
   const drive = match?.[1] ?? ''
   const rest = match?.[2] ?? ''
@@ -495,7 +506,7 @@ function expandTarget(raw, base, vars) {
 
 function normalizeCritical(raw) {
   let text = String(raw ?? '').replace(/\\/g, '/').trim()
-  if (/^\/\/[?.]\/volume\{/i.test(text)) return { volume: true }
+  if (/^\/{2,}[?.]\/+volume\{/i.test(text)) return { volume: true }
   text = text.replace(/^\/\/(?:localhost|127\.0\.0\.1|\.)\/([a-z])\$(?=\/|$)/i, '$1:')
   text = normalizePath(text)
   if (/^[a-z]:$/.test(text)) text += '/'
