@@ -61,6 +61,7 @@ try {
         hit.call.output = first.output
         hit.call.cancelled = first.cancelled
         hit.call.details = first.details
+        if (hit.call.endedAt === undefined && typeof message.timestamp === 'number') hit.call.endedAt = message.timestamp
         if (first.images?.length) hit.call.images = first.images
         m.restoreNestedCalls(message, hit.msg, hit.call, index)
         return
@@ -82,6 +83,7 @@ try {
   history.forEach((raw, index) => projector.appendPersisted(structuredClone(raw), entryIds[index]))
   assert.deepStrictEqual(projector.uiMessages(), projected, '逐条追加与整段回放得到相同的 UIMessage')
   assert.equal(projected.find((msg) => msg.role === 'user').id, 'm1')
+  assert.deepEqual(projected.flatMap((msg) => msg.toolCalls ?? []).filter((call) => ['call_a', 'call_b'].includes(call.id)).map((call) => call.endedAt), [4, 5], '历史里的工具调用以结果时间作为结束时间，重载后仍能判断插入的通知属于同一轮')
 
   const legacyStart = (call, now) => { call.status = 'running'; call.startedAt = now }
   const legacyUpdate = (call, partial) => {

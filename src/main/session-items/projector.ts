@@ -113,6 +113,7 @@ export class SessionItemProjector {
         hit.call.output = result.output
         hit.call.cancelled = result.cancelled
         hit.call.details = result.details
+        if (hit.call.endedAt === undefined && typeof m.timestamp === 'number') hit.call.endedAt = m.timestamp
         if (result.images?.length) hit.call.images = result.images
         this.syncCall(hit.call)
         this.restoreNested(m, hit)
