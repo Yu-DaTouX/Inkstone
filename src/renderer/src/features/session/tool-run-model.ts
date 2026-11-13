@@ -106,7 +106,19 @@ export function subagentStartCount(call: Pick<UIToolCall, 'name' | 'args' | 'det
   return Math.max(1, written, started)
 }
 
-export function toolCategory(call: Pick<UIToolCall, 'name' | 'args' | 'details'>): ToolCategory {
+type CategorySource = Pick<UIToolCall, 'name' | 'args' | 'details'>
+
+const categories = new WeakMap<CategorySource, { name: string; args: unknown; details: unknown; category: ToolCategory }>()
+
+export function toolCategory(call: CategorySource): ToolCategory {
+  const known = categories.get(call)
+  if (known && known.name === call.name && known.args === call.args && known.details === call.details) return known.category
+  const category = categoryOf(call)
+  categories.set(call, { name: call.name, args: call.args, details: call.details, category })
+  return category
+}
+
+function categoryOf(call: CategorySource): ToolCategory {
   if (call.name.startsWith('mcp__')) return 'other'
   const bare = bareName(call.name)
   if (READ.has(bare)) return 'read'

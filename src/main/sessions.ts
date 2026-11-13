@@ -314,31 +314,31 @@ async function readSessionSummary(f: { path: string; mtimeMs: number; size: numb
 export async function listSessions(limit = 200, projects?: ProjectRecord[]): Promise<SessionSummary[]> {
   if (!existsSync(SESSIONS_DIR)) return []
 
-  const files: { path: string; mtimeMs: number; size: number }[] = []
+  type SessionFile = { path: string; mtimeMs: number; size: number }
 
-  async function walk(dir: string, depth: number): Promise<void> {
-    if (depth > 3) return
+  async function walk(dir: string, depth: number): Promise<SessionFile[]> {
+    if (depth > 3) return []
     let entries
     try {
       entries = await readdir(dir, { withFileTypes: true })
     } catch {
-      return
+      return []
     }
-    for (const e of entries) {
+    const found = await Promise.all(entries.map(async (e): Promise<SessionFile[]> => {
       const p = join(dir, e.name)
-      if (e.isDirectory()) {
-        await walk(p, depth + 1)
-      } else if (e.name.endsWith('.jsonl')) {
-        try {
-          const s = await stat(p)
-          files.push({ path: p, mtimeMs: s.mtimeMs, size: s.size })
-        } catch {
-        }
+      if (e.isDirectory()) return walk(p, depth + 1)
+      if (!e.name.endsWith('.jsonl')) return []
+      try {
+        const s = await stat(p)
+        return [{ path: p, mtimeMs: s.mtimeMs, size: s.size }]
+      } catch {
+        return []
       }
-    }
+    }))
+    return found.flat()
   }
 
-  await walk(SESSIONS_DIR, 0)
+  const files = await walk(SESSIONS_DIR, 0)
 
   const present = new Set(files.map((f) => f.path))
   for (const path of cache.keys()) if (!present.has(path)) cache.delete(path)

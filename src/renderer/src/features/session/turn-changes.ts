@@ -50,10 +50,17 @@ export function parsePiDiff(diff: string): PiDiff | null {
   return lines.length ? { lines, added, removed } : null
 }
 
+const piDiffs = new WeakMap<object, { diff: string; parsed: PiDiff | null }>()
+
 export function readPiDiff(details: unknown): PiDiff | null {
   if (!details || typeof details !== 'object') return null
   const diff = (details as { diff?: unknown }).diff
-  return typeof diff === 'string' && diff.trim() ? parsePiDiff(diff) : null
+  if (typeof diff !== 'string' || !diff.trim()) return null
+  const known = piDiffs.get(details)
+  if (known && known.diff === diff) return known.parsed
+  const parsed = parsePiDiff(diff)
+  piDiffs.set(details, { diff, parsed })
+  return parsed
 }
 
 function stringArg(source: Record<string, unknown>, keys: readonly string[]): string | null {
