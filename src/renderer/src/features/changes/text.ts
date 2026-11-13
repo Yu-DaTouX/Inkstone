@@ -17,7 +17,6 @@ export interface ChangesText {
   entriesLimited: string
   entriesFailed: (message: string) => string
   noDiffChannel: string
-  selectFile: string
   back: string
   patchLoading: string
   patchError: (message: string) => string
@@ -49,7 +48,6 @@ export interface ChangesText {
   resizeFileList: string
   collapseAll: string
   expandAll: string
-  layoutUnified: string
   layoutSplit: string
   splitNeedsWidth: string
   largeDiffBanner: string
@@ -79,7 +77,6 @@ export function changesText(lang: string): ChangesText {
       entriesLimited: 'Per-file status is not exposed by the host yet; only untracked files are listed.',
       entriesFailed: (message) => `Failed to read the changed-file list: ${message}`,
       noDiffChannel: 'Diff content is not wired to the host yet.',
-      selectFile: 'Select a file to view its diff.',
       back: 'Back to list',
       patchLoading: 'Loading diff…',
       patchError: (message) => `Failed to load diff: ${message}`,
@@ -111,7 +108,6 @@ export function changesText(lang: string): ChangesText {
       resizeFileList: 'Resize file list',
       collapseAll: 'Collapse all files',
       expandAll: 'Expand all files',
-      layoutUnified: 'Unified',
       layoutSplit: 'Side by side',
       splitNeedsWidth: 'Needs a wider pane',
       largeDiffBanner: 'Files are collapsed for large diffs. Select a file to expand it.',
@@ -139,7 +135,6 @@ export function changesText(lang: string): ChangesText {
     entriesLimited: '宿主还没有暴露逐文件状态，这里只列出未跟踪文件。',
     entriesFailed: (message) => `逐文件改动读取失败：${message}`,
     noDiffChannel: '宿主尚未接入 diff 内容通道。',
-    selectFile: '选择一个文件查看 diff。',
     back: '返回列表',
     patchLoading: '正在加载 diff…',
     patchError: (message) => `diff 加载失败：${message}`,
@@ -171,7 +166,6 @@ export function changesText(lang: string): ChangesText {
     resizeFileList: '调整文件列表宽度',
     collapseAll: '折叠全部文件',
     expandAll: '展开全部文件',
-    layoutUnified: '统一',
     layoutSplit: '并排',
     splitNeedsWidth: '面板更宽才能并排',
     largeDiffBanner: '改动较大，文件已全部折叠。选择文件展开查看。',

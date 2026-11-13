@@ -49,7 +49,6 @@ interface McpAppSwitchLabels {
   stepDisconnect: string
   remediation: string
   unsupported: string
-  missingRecord: string
   scopeChanged: string
   failed: string
 }
@@ -97,7 +96,6 @@ const ZH: McpAppSwitchLabels = {
   stepDisconnect: '断开砚连接',
   remediation: '补救',
   unsupported: '首版不支持托管',
-  missingRecord: '缺少 appHost 回退记录',
   scopeChanged: '运行实例在确认前后发生了变化，本次切换未执行；请重新预览。',
   failed: '切换失败'
 }
@@ -145,7 +143,6 @@ const EN: McpAppSwitchLabels = {
   stepDisconnect: 'Inkstone connection',
   remediation: 'Remediation',
   unsupported: 'Not supported in v1',
-  missingRecord: 'Missing appHost fallback record',
   scopeChanged: 'The runner changed during confirmation; nothing was written. Preview again.',
   failed: 'Switch failed'
 }

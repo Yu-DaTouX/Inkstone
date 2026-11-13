@@ -3,8 +3,6 @@ import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../../../state/store'
 import { composerDraftKey } from '../../../state/composer-recovery'
 import { shortProject } from '../../../features/sidebar/sidebar-model'
-import type { SidebarThreadView } from './types'
-import { useSidebarSections } from './threads'
 
 export interface SidebarDraft {
   draftId: string
@@ -56,17 +54,4 @@ export function useSidebarDrafts(only?: readonly string[]): SidebarDraft[] {
     }
     return out
   }, [entries, sessions, projectNames, currentDraftKey])
-}
-
-export function useSidebarDraftViews(): Array<SidebarDraft & { thread: SidebarThreadView | null }> {
-  const drafts = useSidebarDrafts()
-  const sections = useSidebarSections()
-  const byId = useMemo(() => {
-    const map = new Map<string, SidebarThreadView>()
-    for (const view of [...sections.pinned, ...sections.active, ...sections.working, ...sections.snoozed, ...sections.settled]) {
-      map.set(view.id, view)
-    }
-    return map
-  }, [sections])
-  return drafts.map((draft) => ({ ...draft, thread: byId.get(draft.draftId) ?? null }))
 }

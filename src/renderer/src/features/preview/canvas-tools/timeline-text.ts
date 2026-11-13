@@ -1,7 +1,6 @@
 import type { Lang } from '../../../i18n'
 
 export interface CanvasTimelineText {
-  lang: Lang
   tool: string
   panelTitle: string
   play: string
@@ -11,7 +10,6 @@ export interface CanvasTimelineText {
   start: string
   end: string
   scrub: string
-  tracks: string
   trackLabel: (index: number) => string
   clipHint: (label: string, start: string, end: string) => string
   clipCount: (count: number) => string
@@ -31,7 +29,6 @@ export interface CanvasTimelineText {
 }
 
 const ZH: CanvasTimelineText = {
-  lang: 'zh-CN',
   tool: '时间轴',
   panelTitle: '视频时间轴',
   play: '播放（空格）',
@@ -41,7 +38,6 @@ const ZH: CanvasTimelineText = {
   start: '回到开头（Home）',
   end: '跳到结尾（End）',
   scrub: '播放进度',
-  tracks: '片段轨道',
   trackLabel: (index) => `轨道 ${index}`,
   clipHint: (label, start, end) => `${label}\n${start} → ${end}（点击跳到片段开头）`,
   clipCount: (count) => `${count} 个片段`,
@@ -61,7 +57,6 @@ const ZH: CanvasTimelineText = {
 }
 
 const EN: CanvasTimelineText = {
-  lang: 'en-US',
   tool: 'Timeline',
   panelTitle: 'Video timeline',
   play: 'Play (Space)',
@@ -71,7 +66,6 @@ const EN: CanvasTimelineText = {
   start: 'Back to start (Home)',
   end: 'Jump to end (End)',
   scrub: 'Playback position',
-  tracks: 'Clip tracks',
   trackLabel: (index) => `Track ${index}`,
   clipHint: (label, start, end) => `${label}\n${start} → ${end} (click to jump to the clip start)`,
   clipCount: (count) => (count === 1 ? '1 clip' : `${count} clips`),

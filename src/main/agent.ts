@@ -127,7 +127,6 @@ import {
 } from '../shared/model-capabilities'
 import { attachModelPrice } from './models/price'
 import type {
-  BashRun,
   ContextFrom,
   BrowserObservation,
   BrowserNetworkSnapshot,
@@ -4553,4 +4552,4 @@ export class AgentController extends EventEmitter {
   }
 }
 
-export type { BashRun, ForkPoint, SlashCommand }
+export type { ForkPoint, SlashCommand }

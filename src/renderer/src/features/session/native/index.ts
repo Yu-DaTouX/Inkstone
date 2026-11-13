@@ -1,6 +1,5 @@
 export {
   NativeSessionSurfaces,
-  NativeSessionEntriesPanel,
   ScopeModelsSurface,
   ScopeModelsView,
   TrustSurface,

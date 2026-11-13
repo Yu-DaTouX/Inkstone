@@ -86,10 +86,6 @@ export function isLargeWorkflow(run: Pick<WorkflowRunView, 'agents'>): boolean {
   return run.agents.length > WORKFLOW_LIMITS.largeAgents
 }
 
-export function agentFinished(status: WorkflowAgentStatus): boolean {
-  return status === 'done' || status === 'cached' || status === 'failed' || status === 'stopped'
-}
-
 export function workflowPhaseStats(run: Pick<WorkflowRunView, 'agents' | 'declaredPhases'>): WorkflowPhaseStat[] {
   const order: string[] = []
   const stats = new Map<string, WorkflowPhaseStat>()

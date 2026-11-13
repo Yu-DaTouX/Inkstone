@@ -243,24 +243,11 @@ export function nativeModelKey(model: Pick<NativeScopedModel, 'provider' | 'id'>
   return `${model.provider}/${model.id}`
 }
 
-export type NativeSessionActionName = 'navigate' | 'set-scoped-models' | 'set-trust'
-
-export interface NativeSessionActionArgs {
-  navigate: { entryId: string }
-  'set-scoped-models': { modelIds: string[] }
-  'set-trust': { trusted: boolean }
-}
-
 export interface NativeActionResult {
   ok: boolean
   error?: string
   message?: string
 }
-
-export type NativeSessionAction = <K extends NativeSessionActionName>(
-  action: K,
-  args: NativeSessionActionArgs[K]
-) => Promise<NativeActionResult>
 
 export function parseTreePayload(raw: unknown): { tree: NativeTreeNode[]; leafId: string | null } {
   const record = isRecord(raw) ? raw : {}

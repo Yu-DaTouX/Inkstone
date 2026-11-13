@@ -54,17 +54,6 @@ export function resolveSnoozePresets(now: number, lang: AppLang): SnoozePreset[]
   }))
 }
 
-export function pickSnoozePreset(
-  shown: readonly SnoozePreset[],
-  id: string,
-  now: number,
-  lang: AppLang
-): SnoozePreset | undefined {
-  const original = shown.find((preset) => preset.id === id)
-  if (original && Date.parse(original.snoozedUntil) > now) return original
-  return resolveSnoozePresets(now, lang).find((preset) => preset.id === id)
-}
-
 export function snoozeWakeLabel(snoozedUntil: string, now: number, lang: AppLang): string {
   const wakeAt = Date.parse(snoozedUntil)
   if (!Number.isFinite(wakeAt) || wakeAt <= now) return translate(lang, 'rail.justNow')

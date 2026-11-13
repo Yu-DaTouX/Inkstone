@@ -76,8 +76,6 @@ const PRELUDE = `(function install(host) {
   return { agent, parallel, pipeline, phase, log }
 })`
 
-export class WorkflowFatal extends Error {}
-
 function describeError(error: unknown): string {
   if (!error || typeof error !== 'object') return String(error)
   const message = String((error as { message?: unknown }).message ?? error)

@@ -13,14 +13,6 @@
     min-width: 0;
   }
 
-  .wb-rs-line {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--s-8);
-    min-width: 0;
-  }
-
   .wb-rs-num {
     font-variant-numeric: tabular-nums;
   }
@@ -57,12 +49,6 @@
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
     color: var(--fg3);
-  }
-
-  .wb-rs-line > .wb-rs-note {
-    flex: none;
-    text-align: right;
-    white-space: nowrap;
   }
 
   .wb-rs-legend {

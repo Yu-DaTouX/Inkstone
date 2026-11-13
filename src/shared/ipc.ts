@@ -536,16 +536,6 @@ export interface SessionStats {
   assistantMessages: number
 }
 
-export interface BashRun {
-  id: string
-  command: string
-  output: string
-  running: boolean
-  exitCode: number | null
-  truncated?: boolean
-  fullOutputPath?: string
-}
-
 export interface QueueItem {
   id: string
   text: string

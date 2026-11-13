@@ -38,10 +38,6 @@ export interface SearchPolicy {
 
 const byId = new Map<string, SearchSource>(SEARCH_SOURCES.map((s) => [s.id, s]))
 
-export function findSource(id: string): SearchSource | undefined {
-  return byId.get(id)
-}
-
 export function normalizeQuery(input: SearchQuery):
   | {
       ok: true

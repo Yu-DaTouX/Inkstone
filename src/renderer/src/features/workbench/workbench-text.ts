@@ -52,68 +52,25 @@ export interface OverviewText {
 }
 
 export interface WorkbenchText {
-  title: string
-  close: string
-  open: string
   activateHint: string
   activate: string
   activateFailed: string
   notWired: string
   notWiredHint: string
-  inactiveTitle: string
-  chatName: string
-  split: string
-  unsplit: string
-  focus: string
-  unfocus: string
-  popout: string
-  unmigrated: string
-  secondaryPane: string
-  expand: string
-  collapse: string
-  closePane: string
   paneMenu: (name: string) => string
-  moveBesideChat: string
-  viewOptions: string
-  move: string
-  moveInstructions: string
-  movedTo: (name: string, position: number, count: number) => string
-  moveCancelled: (name: string) => string
   moveSide: Record<'left' | 'right' | 'up' | 'down', string>
   moveSideHint: Record<'left' | 'right' | 'up' | 'down', string>
-  resize: (before: string, after: string) => string
   tabs: Record<WorkbenchTabId, string>
   overview: OverviewText
 }
 
 const ZH: WorkbenchText = {
-  title: '工作区',
-  close: '收起工作区',
-  open: '打开工作区',
   activateHint: '这个页签需要先在当前会话激活。',
   activate: '激活会话',
   activateFailed: '激活会话失败',
   notWired: '尚未接入',
   notWiredHint: '这个页签的界面还在接入中。',
-  inactiveTitle: '会话未激活',
-  chatName: '聊天',
-  split: '上下拆分',
-  unsplit: '取消拆分',
-  focus: '专注',
-  unfocus: '退出专注',
-  popout: '弹出为独立窗口',
-  unmigrated: '未迁移',
-  secondaryPane: '下半格页签',
-  expand: '展开',
-  collapse: '收起',
-  closePane: '关闭面板',
   paneMenu: (name) => `${name}设置`,
-  moveBesideChat: '移到对话旁',
-  viewOptions: '视图选项',
-  move: '移动',
-  moveInstructions: '用方向键调整面板位置：沿排列方向换位，垂直方向先预览再按回车移过去，Esc 取消。拖动时拖出面板左侧可移到对话旁，按 Esc 还原。',
-  movedTo: (name, position, count) => `「${name}」移到第 ${position} / ${count} 个位置`,
-  moveCancelled: (name) => `已取消移动「${name}」`,
   moveSide: { left: '移到左侧', right: '移到右侧', up: '移到上方', down: '移到下方' },
   moveSideHint: {
     left: '按回车移到左侧，Esc 取消。',
@@ -121,7 +78,6 @@ const ZH: WorkbenchText = {
     up: '按回车移到上方，Esc 取消。',
     down: '按回车移到下方，Esc 取消。'
   },
-  resize: (before, after) => `调整「${before}」和「${after}」的大小`,
   tabs: {
     changes: '更改',
     terminal: '终端',
@@ -186,33 +142,12 @@ const ZH: WorkbenchText = {
 }
 
 const EN: WorkbenchText = {
-  title: 'Workspace',
-  close: 'Close workspace',
-  open: 'Open workspace',
   activateHint: 'This tab requires the session to be active first.',
   activate: 'Activate session',
   activateFailed: 'Could not activate the session',
   notWired: 'Not wired yet',
   notWiredHint: 'This tab is still being integrated.',
-  inactiveTitle: 'Session not active',
-  chatName: 'Chat',
-  split: 'Split top and bottom',
-  unsplit: 'Remove split',
-  focus: 'Focus',
-  unfocus: 'Exit focus',
-  popout: 'Pop out into a window',
-  unmigrated: 'Not migrated',
-  secondaryPane: 'Lower pane tab',
-  expand: 'Expand',
-  collapse: 'Collapse',
-  closePane: 'Close panel',
   paneMenu: (name) => `${name} settings`,
-  moveBesideChat: 'Move beside chat',
-  viewOptions: 'View options',
-  move: 'Move',
-  moveInstructions: 'Use the arrow keys to move the panel: along its row or column to reorder, across it to preview a move, then Enter. Escape cancels. While dragging, drop left of the panel to move it beside the chat; Escape restores it.',
-  movedTo: (name, position, count) => `${name} is now in position ${position} of ${count}.`,
-  moveCancelled: (name) => `Moving ${name} was cancelled.`,
   moveSide: { left: 'Move left', right: 'Move right', up: 'Move up', down: 'Move down' },
   moveSideHint: {
     left: 'Press Enter to move left, or Escape to cancel.',
@@ -220,7 +155,6 @@ const EN: WorkbenchText = {
     up: 'Press Enter to move up, or Escape to cancel.',
     down: 'Press Enter to move down, or Escape to cancel.'
   },
-  resize: (before, after) => `Resize ${before} and ${after}`,
   tabs: {
     changes: 'Changes',
     terminal: 'Terminal',

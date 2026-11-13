@@ -1,16 +1,6 @@
 import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
 
-export interface SidebarGroup {
-  key: string
-  slot: string
-  label: string
-  projectId?: string
-  cwd: string
-  current: boolean
-  list: SessionSummary[]
-}
-
 export function sameCwd(a: string, b: string): boolean {
   return normalizeCwd(a) === normalizeCwd(b)
 }
@@ -37,120 +27,6 @@ export function unreadRunIdsForSession(
     .filter((run) => (!!session.id && run.sessionId === session.id) || (!!session.path && run.sessionPath === session.path))
     .filter((run) => (run.phase.kind === 'done' || run.phase.kind === 'failed') && !run.phase.seen)
     .map((run) => run.runId)
-}
-
-interface BuildOptions {
-  sessions: readonly SessionSummary[]
-  query: string
-  projects: readonly ProjectRecord[]
-  projectNames: Record<string, string>
-  currentProjectId?: string
-  currentCwd?: string
-  titles: Record<string, string>
-  manualTitles: Record<string, string>
-  pinnedLabel?: string
-}
-
-export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
-  const { sessions, projects, projectNames, currentProjectId, currentCwd, titles, manualTitles } = options
-  const query = options.query.trim().toLowerCase()
-  const recordById = new Map(projects.map((project) => [project.id, project]))
-  const recordByCwd = new Map<string, ProjectRecord>()
-  for (const project of projects) {
-    const key = normalizeCwd(project.cwd)
-    if (!recordByCwd.has(key)) recordByCwd.set(key, project)
-  }
-
-  const labelFor = (session: SessionSummary): { key: string; slot: string; label: string; projectId?: string; cwd: string } => {
-    const record =
-      (session.projectId ? recordById.get(session.projectId) : undefined) ??
-      (session.cwd ? recordByCwd.get(normalizeCwd(session.cwd)) : undefined)
-    if (record) {
-      return {
-        key: `project:${record.id}`,
-        slot: `cwd:${record.cwd.toLowerCase()}`,
-        projectId: record.id,
-        cwd: record.cwd,
-        label: record.name || projectNames[record.cwd] || shortProject(record.cwd)
-      }
-    }
-    const cwd = session.cwd || ''
-    const label = (cwd && projectNames[cwd]) || (cwd ? shortProject(cwd) : '')
-    return { key: `cwd:${cwd}`, slot: `cwd:${cwd.toLowerCase()}`, cwd, label }
-  }
-
-  const archivedIds = new Set(projects.filter((project) => project.archived).map((project) => project.id))
-  const archivedCwds = new Set(projects.filter((project) => project.archived).map((project) => project.cwd.toLowerCase()))
-  const inArchivedProject = (session: SessionSummary): boolean =>
-    session.projectId ? archivedIds.has(session.projectId) : !!session.cwd && archivedCwds.has(session.cwd.toLowerCase())
-  const active = sessions.filter((session) => !session.archivedAt && !inArchivedProject(session))
-  const decorated = active.map((session) => {
-    const group = labelFor(session)
-    const title = manualTitles[session.id] ?? titles[session.id] ?? session.title
-    return { session, group, title }
-  })
-
-  const matches = (item: (typeof decorated)[number]): boolean => {
-    if (!query) return true
-    const haystack = [item.title, item.session.cwd, item.group.label, item.session.path]
-    return haystack.some((value) => value.toLowerCase().includes(query))
-  }
-  const groupLabels = new Map<string, string>()
-  for (const item of decorated) {
-    if (!groupLabels.has(item.group.key)) groupLabels.set(item.group.key, item.group.label)
-  }
-  const groupHit = (key: string): boolean => {
-    if (!query) return false
-    const label = groupLabels.get(key)
-    return label ? label.toLowerCase().includes(query) : false
-  }
-
-  const byKey = new Map<string, SidebarGroup>()
-  for (const item of decorated) {
-    if (!matches(item) && !groupHit(item.group.key)) continue
-    const existing = byKey.get(item.group.key)
-    if (existing) existing.list.push(item.session)
-    else
-      byKey.set(item.group.key, {
-        key: item.group.key,
-        slot: item.group.slot,
-        label: item.group.label,
-        projectId: item.group.projectId,
-        cwd: item.group.cwd,
-        current: false,
-        list: [item.session]
-      })
-  }
-
-  const groups = [...byKey.values()]
-  for (const group of groups) {
-    group.list.sort((a, b) => activityOf(b) - activityOf(a))
-    group.current =
-      (!!group.projectId && group.projectId === currentProjectId) ||
-      (!currentProjectId && !!currentCwd && group.cwd.toLowerCase() === currentCwd.toLowerCase())
-  }
-  groups.sort((a, b) => {
-    const at = a.list[0] ? activityOf(a.list[0]) : 0
-    const bt = b.list[0] ? activityOf(b.list[0]) : 0
-    return bt - at
-  })
-  if (!options.pinnedLabel) return groups
-  const pinned: SessionSummary[] = []
-  for (const group of groups) {
-    group.list = group.list.filter((session) => {
-      if (!session.pinned) return true
-      pinned.push(session)
-      return false
-    })
-  }
-  const rest = groups.filter((group) => group.list.length > 0)
-  if (!pinned.length) return rest
-  pinned.sort((a, b) => activityOf(b) - activityOf(a))
-  return [{ key: 'pinned', slot: 'pinned', label: options.pinnedLabel, cwd: '', current: false, list: pinned }, ...rest]
-}
-
-export function isGlobalGroup(group: SidebarGroup): boolean {
-  return !group.projectId && group.list.length > 0 && group.list.every((session) => session.scope === 'global')
 }
 
 export function projectMonogram(label: string): string {

@@ -32,20 +32,4 @@
   .start-cell[data-level='2'] { background: color-mix(in srgb, var(--accent) 52%, var(--cell-0)); }
   .start-cell[data-level='3'] { background: color-mix(in srgb, var(--accent) 76%, var(--cell-0)); }
   .start-cell[data-level='4'] { background: var(--accent); }
-
-  .start-models {
-    display: flex;
-    flex-direction: column;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .start-model {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 7ch 5ch;
-    grid-template-areas: 'name num share' 'bar bar bar';
-    align-items: center;
-    gap: var(--s-6);
-    font: var(--t-prose) / var(--t-body-lh) var(--font-ui);
-  }
 }

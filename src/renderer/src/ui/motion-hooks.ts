@@ -48,14 +48,6 @@ export function useReducedMotion(): boolean {
   return useSyncExternalStore(subscribeReducedMotion, reducedSnapshot, () => false)
 }
 
-export function useMotionHeld(): boolean {
-  return useSyncExternalStore(
-    (listener) => hold.subscribe(() => listener()),
-    hold.held,
-    () => false
-  )
-}
-
 export function useArrival(busy: boolean): boolean {
   const [seenBusy, setSeenBusy] = useState(busy)
   const [arrived, setArrived] = useState(false)

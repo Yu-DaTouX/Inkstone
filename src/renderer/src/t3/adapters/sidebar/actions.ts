@@ -128,7 +128,3 @@ export const sidebarActions: SidebarActions = {
     if (created.ok) await useStore.getState().refreshSessions()
   }
 }
-
-export function useSidebarActions(): SidebarActions {
-  return sidebarActions
-}

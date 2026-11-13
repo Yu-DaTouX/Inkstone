@@ -1,6 +1,6 @@
 import type { AuthProviderInfo, ModelInfo } from '../../../../../shared/ipc'
 import { cleanModelCost, type ModelCost } from '../../../../../shared/custom-provider'
-import { cleanModelFavorites, modelKey, type ModelChoice } from '../../../../../shared/model-selection'
+import { modelKey, type ModelChoice } from '../../../../../shared/model-selection'
 
 export type ServiceState = 'ready' | 'loginable' | 'missing' | 'unknown'
 
@@ -89,15 +89,6 @@ export function mergeDiscoveredModels<T extends { id: string }>(
   return [...kept, ...discovered.filter((entry) => !ids.has(entry.id))]
 }
 
-export const MAX_RECENT = 5
-
-export function shortWindow(tokens: number): string {
-  if (!Number.isFinite(tokens) || tokens <= 0) return ''
-  if (tokens >= 1_000_000) return `${+(tokens / 1_000_000).toFixed(tokens % 1_000_000 ? 1 : 0)}M`
-  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`
-  return String(Math.round(tokens))
-}
-
 export function modelCostOf(model: Pick<ModelInfo, 'id'> & { cost?: unknown }): ModelCost | undefined {
   return cleanModelCost(model.cost)
 }
@@ -108,87 +99,9 @@ export function priceLabel(cost: ModelCost | undefined): string {
   return `${fmt(cost.input)} / ${fmt(cost.output)}`
 }
 
-export function parseRecentModels(raw: string | null | undefined): ModelChoice[] {
-  if (!raw) return []
-  try {
-    return cleanModelFavorites(JSON.parse(raw)).slice(0, MAX_RECENT)
-  } catch {
-    return []
-  }
-}
-
-export function recentModelsAfterPick(
-  recent: readonly ModelChoice[],
-  picked: Pick<ModelChoice, 'provider' | 'id' | 'name'>,
-  max = MAX_RECENT
-): ModelChoice[] {
-  const choice: ModelChoice = {
-    provider: picked.provider,
-    id: picked.id,
-    ...(picked.name ? { name: picked.name } : {})
-  }
-  const key = modelKey(choice)
-  return [choice, ...recent.filter((m) => modelKey(m) !== key)].slice(0, max)
-}
-
-export type PickerSectionKind = 'favorites' | 'recent' | 'provider' | 'hidden'
-
-export interface PickerSection {
-  id: string
-  kind: PickerSectionKind
-  models: ModelInfo[]
-}
-
 export function sortByProviderThenNewest(models: readonly ModelInfo[], providerOrder: readonly string[]): ModelInfo[] {
   return [...models].sort(
     (a, b) =>
       providerRank(a.provider, providerOrder) - providerRank(b.provider, providerOrder) || newestFirst(a, b)
   )
-}
-
-export function buildPickerSections(input: {
-  models: readonly ModelInfo[]
-  favorites: readonly ModelChoice[]
-  recent: readonly ModelChoice[]
-  query: string
-  providerOrder: readonly string[]
-  hidden?: readonly ModelChoice[]
-}): PickerSection[] {
-  const q = input.query.trim().toLowerCase()
-  const matches = (m: ModelInfo): boolean => !q || `${m.name} ${m.id} ${m.provider}`.toLowerCase().includes(q)
-  const shown = input.models.filter(matches)
-  const byKey = new Map(shown.map((m) => [modelKey(m), m]))
-  const favoriteKeys = new Set(input.favorites.map(modelKey))
-  const hiddenKeys = new Set((input.hidden ?? []).filter((m) => !favoriteKeys.has(modelKey(m))).map(modelKey))
-
-  const favorites = sortByProviderThenNewest(
-    input.models.filter((m) => favoriteKeys.has(modelKey(m)) && matches(m)),
-    input.providerOrder
-  )
-  const pinned = new Set(favorites.map(modelKey))
-  const recent = input.recent
-    .map((choice) => byKey.get(modelKey(choice)))
-    .filter((m): m is ModelInfo => !!m && !pinned.has(modelKey(m)) && !hiddenKeys.has(modelKey(m)))
-
-  const used = new Set([...pinned, ...recent.map(modelKey), ...hiddenKeys])
-  const groups = new Map<string, ModelInfo[]>()
-  for (const m of shown) {
-    if (used.has(modelKey(m))) continue
-    const list = groups.get(m.provider) ?? []
-    list.push(m)
-    groups.set(m.provider, list)
-  }
-  const providerSections: PickerSection[] = [...groups.entries()]
-    .sort(
-      ([a], [b]) =>
-        providerRank(a, input.providerOrder) - providerRank(b, input.providerOrder) || a.localeCompare(b)
-    )
-    .map(([provider, list]) => ({ id: provider, kind: 'provider', models: [...list].sort(newestFirst) }))
-
-  const sections: PickerSection[] = []
-  if (favorites.length) sections.push({ id: 'favorites', kind: 'favorites', models: favorites })
-  if (recent.length) sections.push({ id: 'recent', kind: 'recent', models: recent })
-  const hiddenModels = sortByProviderThenNewest(shown.filter((m) => hiddenKeys.has(modelKey(m))), input.providerOrder)
-  const tail: PickerSection[] = hiddenModels.length ? [{ id: 'hidden', kind: 'hidden', models: hiddenModels }] : []
-  return [...sections, ...providerSections, ...tail]
 }

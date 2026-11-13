@@ -112,14 +112,6 @@
     fill: var(--fti-knock);
   }
 
-  .ui-file-icon .fti-knock {
-    stroke: var(--fti-knock);
-  }
-
-  .ui-file-icon .fti-knock-fill {
-    fill: var(--fti-knock);
-  }
-
   .ui-file-icon .fti-brand {
     fill: currentColor;
   }

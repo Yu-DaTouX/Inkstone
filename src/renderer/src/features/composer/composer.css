@@ -373,18 +373,6 @@
     margin-top: calc(-1 * (var(--s-6) + var(--s-2)));
   }
 
-  .cq-row {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-    min-width: 0;
-    min-height: calc(var(--t-footnote-lh) + 2 * var(--s-6));
-    padding: 0 var(--s-4) 0 var(--s-8);
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-  }
-
   .composer-attachments {
     display: flex;
     flex-wrap: wrap;
@@ -393,38 +381,10 @@
     padding: var(--s-4) var(--s-4) var(--s-10) calc(var(--size-btn) + var(--s-4));
   }
 
-  .ca-tile {
-    position: relative;
-    flex: none;
-    width: 40px;
-    height: 40px;
-  }
-
-  .ca-tile[data-kind='file'] {
-    width: auto;
-    max-width: min(240px, 100%);
-  }
-
-  .ca-ref {
-    position: absolute;
-    right: 2px;
-    bottom: 2px;
-    z-index: 1;
-    transform: scale(.72);
-    transform-origin: 100% 100%;
-    pointer-events: none;
-  }
-
   .composer-input {
     display: flex;
     flex-direction: column;
     gap: var(--s-6);
-  }
-
-  .composer-history {
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    font-variant-numeric: tabular-nums;
   }
 
   .composer-line {
@@ -732,32 +692,6 @@
   .composer-plus-menu,
   .composer-permission-menu {
     max-height: none;
-  }
-
-  .cmp-item {
-    display: grid;
-    grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--s-8);
-    min-width: 0;
-    min-height: calc(var(--size-btn) + var(--s-4));
-    padding: 0 var(--s-8);
-    border: 0;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--fg);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .cmp-item[data-selected] {
-    background: var(--hover);
-  }
-
-  .cmp-item:disabled {
-    cursor: default;
-    opacity: 0.55;
   }
 
   .cmp-name {

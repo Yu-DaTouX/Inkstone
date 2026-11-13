@@ -1,4 +1,3 @@
-import { formatWorkingDurationLabel } from '../../internal/models'
 import { effectiveSnoozed } from '../../internal/thread-settled'
 import type { SidebarThreadView } from './types'
 
@@ -17,23 +16,6 @@ export function resolveRowStatus(view: SidebarThreadView, now: number): RowStatu
     return view.blockedOnThreadWait ? 'waiting' : 'working'
   }
   return view.unread ? 'done' : null
-}
-
-const TONES: Record<Exclude<RowStatus, null>, string> = {
-  working: 't3-status--working',
-  waiting: 't3-status--waiting',
-  approval: 't3-status--approval',
-  input: 't3-status--approval',
-  failed: 't3-status--failed',
-  done: 't3-status--done'
-}
-
-export function resolveStatusTone(status: RowStatus): string {
-  return status === null ? 't3-status--waiting' : TONES[status]
-}
-
-export function formatWorkingDuration(ms: number): string {
-  return formatWorkingDurationLabel(ms)
 }
 
 export function rowIsReceded(status: RowStatus, unread: boolean, active: boolean): boolean {

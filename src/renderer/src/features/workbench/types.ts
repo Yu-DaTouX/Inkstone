@@ -5,13 +5,9 @@ export type WorkbenchTabId = 'changes' | 'terminal' | 'files' | 'browser' | 'pre
 
 export const WORKBENCH_TABS: readonly WorkbenchTabId[] = ['changes', 'terminal', 'files', 'browser', 'preview', 'context', 'branch', 'logs', 'quota', 'device', 'pullRequests']
 
-export type WorkbenchView = WorkbenchTabId | 'overview'
-
 export type SubagentPaneId = `subagent:${string}`
 
 export type WorkspacePaneId = WorkbenchTabId | SubagentPaneId
-
-export type WorkspaceView = WorkbenchView | SubagentPaneId
 
 export const WORKBENCH_ACTIVE_TABS: ReadonlySet<string> = new Set<string>(['terminal', 'browser'])
 

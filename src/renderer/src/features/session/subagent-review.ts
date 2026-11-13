@@ -1,8 +1,6 @@
 import { uiText } from '../../i18n/ui-text'
 import type { SubagentRun } from '../../../../shared/ipc'
 
-export type SubagentReviewAction = 'merge' | 'discard'
-
 type SubagentReviewBlock =
   | 'not-worktree'
   | 'running'

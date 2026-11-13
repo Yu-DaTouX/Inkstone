@@ -5,8 +5,6 @@ export interface WorkbenchPaneText {
   copyLogs: string
   copied: string
   copyFailed: string
-  quotaHint: string
-  quotaManage: string
 }
 
 const zh: WorkbenchPaneText = {
@@ -15,9 +13,7 @@ const zh: WorkbenchPaneText = {
   clearFilter: '清除过滤',
   copyLogs: '复制当前日志',
   copied: '已复制',
-  copyFailed: '复制日志失败',
-  quotaHint: '这里显示服务商给出的 5 小时 / 周窗口额度，不是本机的 Token 用量；推算值会标明来源。',
-  quotaManage: '添加账号、改备注与 CLI 来源仍在设置里管理。'
+  copyFailed: '复制日志失败'
 }
 
 const en: WorkbenchPaneText = {
@@ -26,9 +22,7 @@ const en: WorkbenchPaneText = {
   clearFilter: 'Clear filter',
   copyLogs: 'Copy visible logs',
   copied: 'Copied',
-  copyFailed: 'Could not copy the logs',
-  quotaHint: 'Shows the provider’s 5-hour and weekly window quota, not local token usage. Estimated values are labelled.',
-  quotaManage: 'Adding accounts, labels and CLI sources are still managed in Settings.'
+  copyFailed: 'Could not copy the logs'
 }
 
 export function workbenchPaneText(lang: string): WorkbenchPaneText {

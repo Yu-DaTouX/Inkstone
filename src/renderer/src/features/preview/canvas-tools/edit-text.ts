@@ -2,7 +2,6 @@ import type { Lang } from '../../../i18n'
 import type { HtmlEditError } from '../../../../../shared/ipc'
 
 export interface EditText {
-  lang: Lang
   tool: string
   panel: string
   empty: string
@@ -52,7 +51,6 @@ export interface EditText {
 }
 
 const ZH: EditText = {
-  lang: 'zh-CN',
   tool: '微调',
   panel: '元素微调',
   empty: '把指针移到画框里的元素上，点击即可微调文字与样式。',
@@ -102,7 +100,6 @@ const ZH: EditText = {
 }
 
 const EN: EditText = {
-  lang: 'en-US',
   tool: 'Fine-tune',
   panel: 'Fine-tune element',
   empty: 'Hover an element inside a frame and click to fine-tune its text and styles.',

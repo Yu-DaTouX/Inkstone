@@ -16,7 +16,6 @@ import type {
 export { compileContentMatcher, matchContentLines, splitContentLines } from './file-content-match'
 export type {
   ContentLineMatch,
-  ContentMatchJob,
   ContentMatchOutcome,
   ContentMatcher,
   ContentSearchOptions

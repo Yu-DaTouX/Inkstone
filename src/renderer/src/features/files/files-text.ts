@@ -63,7 +63,6 @@ export interface FilesText {
   linkDangling: string
   linkCycle: string
   linkExternal: string
-  crumbsLabel: string
   breadcrumbMore: string
   browseFolders: string
   subfoldersEmpty: string
@@ -134,7 +133,6 @@ const ZH: FilesText = {
   linkDangling: '链接目标不存在',
   linkCycle: '循环链接，无法展开',
   linkExternal: '链接到工作目录之外：{target}',
-  crumbsLabel: '文件路径',
   breadcrumbMore: '显示折叠的层级',
   browseFolders: '浏览子文件夹',
   subfoldersEmpty: '此文件夹没有子文件夹',
@@ -205,7 +203,6 @@ const EN: FilesText = {
   linkDangling: 'Link target is missing',
   linkCycle: 'Circular link; cannot expand',
   linkExternal: 'Links outside the working directory: {target}',
-  crumbsLabel: 'File path',
   breadcrumbMore: 'Show folded levels',
   browseFolders: 'Browse subfolders',
   subfoldersEmpty: 'This folder has no subfolders',

@@ -40,13 +40,6 @@
     margin-top: calc(var(--s-16) * -1);
   }
 
-  .settings-h2 {
-    margin: 0;
-    font-size: var(--t-heading);
-    line-height: var(--t-heading-lh);
-    font-weight: var(--t-heading-w);
-  }
-
   .settings-row__desc {
     color: var(--fg3);
     font-size: var(--t-body);

@@ -3,7 +3,6 @@ import type { AutoCompactDistance } from './context-pane-view'
 
 export interface ContextPaneText {
   title: string
-  usage: string
   unknown: string
   unknownHint: string
   afterCompact: string
@@ -25,7 +24,6 @@ export interface ContextPaneText {
   compactNow: string
   compacting: string
   compactBusy: string
-  compactFailed: string
   openSettings: string
   windowTitle: string
   used: string
@@ -34,7 +32,6 @@ export interface ContextPaneText {
 
 const ZH: ContextPaneText = {
   title: '上下文用量',
-  usage: '当前会话',
   unknown: '—',
   unknownHint: '还没有可信的上下文总量；连上模型并收到一次回复后才显示占用。',
   afterCompact: '刚压缩过，等下一次用量回报。',
@@ -63,7 +60,6 @@ const ZH: ContextPaneText = {
   compactNow: '立即压缩',
   compacting: '正在压缩…',
   compactBusy: '会话运行中，结束后再压缩。',
-  compactFailed: '压缩失败',
   openSettings: '打开裁剪与压缩设置',
   windowTitle: '上下文窗口',
   used: '已用',
@@ -72,7 +68,6 @@ const ZH: ContextPaneText = {
 
 const EN: ContextPaneText = {
   title: 'Context usage',
-  usage: 'This session',
   unknown: '—',
   unknownHint: 'No trusted context total yet; it appears once a model reply reports usage.',
   afterCompact: 'Compacted recently; waiting for the next usage report.',
@@ -101,7 +96,6 @@ const EN: ContextPaneText = {
   compactNow: 'Compact now',
   compacting: 'Compacting…',
   compactBusy: 'The session is running; compact after it finishes.',
-  compactFailed: 'Compaction failed',
   openSettings: 'Open trim and compaction settings',
   windowTitle: 'Context window',
   used: 'Used',

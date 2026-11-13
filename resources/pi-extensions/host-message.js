@@ -1,5 +1,3 @@
-export const HOST_MESSAGE_TAG = 'subagent-notification'
-
 const SUBAGENT_NOTICE = /^\s*<subagent-notification\b/
 const CONTINUATION = /^\s*\[(?:循环恢复|模型错误恢复|额度换号) · 自动继续|^\s*\[Auto-continue 1\/1\]/
 const QUOTA_RESUME = /^\s*额度已恢复，请从上一轮中断的地方继续完成任务。\s*$/

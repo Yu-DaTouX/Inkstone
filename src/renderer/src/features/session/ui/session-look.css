@@ -231,7 +231,6 @@
   .v3-steps-stats[data-kind='failed'] { flex: none; font-family: inherit; white-space: nowrap; }
   .v3-steps-stats[data-kind='failed']::before { content: '·'; margin-inline-end: var(--s-6); }
   .v3-step-line > .v3-steps-stats:is([data-kind='files'], [data-kind='failed'])::before { margin-inline-start: var(--s-4); }
-  .v3-process-note { color: var(--fg3); font-size: var(--t-footnote); }
   .v3-steps-list { display: flex; flex-direction: column; min-width: 0; }
   .v3-step-head { position: relative; width: 100%; max-width: 100%; border-radius: var(--r-xs); }
   :is(.v3-step-head, .v3-process-head) .ui-collapsible__trigger { cursor: pointer; }

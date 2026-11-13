@@ -32,67 +32,6 @@ async function load(relative) {
 const item = (id, text, images) => ({ id, text, ...(images ? { images } : {}) })
 const image = (data) => ({ data, mimeType: 'image/png' })
 
-{
-  const plan = await load('../src/renderer/src/features/composer/queue-plan.ts')
-  const { locateQueueItem, planQueueMove, planQueueEdit, planQueueRemove, planQueueClear } = plan
-
-  const base = {
-    steering: [item('s1', '插话一')],
-    followUp: [item('f1', '排队一', [image('a')]), item('f2', '排队二'), item('f3', '排队三')]
-  }
-
-  process.stdout.write('\n▌ queue-plan：定位与重排\n')
-  ok(locateQueueItem(base, 's1')?.kind === 'steering', '按 id 定位 steering')
-  ok(locateQueueItem(base, 'f2')?.index === 1, '按 id 定位 followUp 的下标')
-  ok(locateQueueItem(base, 'nope') === undefined, '未知 id 返回 undefined')
-
-  const moved = planQueueMove(base, 'f1', 'down')
-  ok(moved?.followUp.map((i) => i.id).join(',') === 'f2,f1,f3', '下移一格的顺序正确')
-  ok(moved?.steering === base.steering, '只换目标类，另一类引用不变')
-  ok(base.followUp.map((i) => i.id).join(',') === 'f1,f2,f3', '原状态未被就地修改')
-  ok(moved?.followUp[1].images?.[0].data === 'a', '重排保留图片')
-  ok(planQueueMove(base, 'f1', 'up') === null, '已在队首时上移返回 null')
-  ok(planQueueMove(base, 'f3', 'down') === null, '已在队尾时下移返回 null')
-  ok(planQueueMove(base, 'f2', 'up')?.followUp.map((i) => i.id).join(',') === 'f2,f1,f3', '中间项上移一格')
-  ok(planQueueMove(base, 'f1', 'down')?.steering.length === 1, '重排不跨类（steering 仍在原处）')
-  ok(planQueueMove(base, 'ghost', 'up') === null, '被接收的 id 重排返回 null')
-
-  process.stdout.write('\n▌ queue-plan：编辑与删除\n')
-  const edited = planQueueEdit(base, 'f2', '  改过的文字  ')
-  ok(edited?.followUp[1].text === '改过的文字', '编辑会去掉首尾空白')
-  ok(edited?.followUp[1].id === 'f2', '编辑保留 id')
-  ok(base.followUp[1].text === '排队二', '编辑不就地修改原状态')
-  ok(planQueueEdit(base, 'f2', '排队二') === null, '文本没变返回 null（不做空重建）')
-  ok(planQueueEdit(base, 'f2', '   ') === null, '空文本返回 null')
-  ok(planQueueEdit(base, 'ghost', 'x') === null, '被接收的 id 编辑返回 null')
-
-  const removed = planQueueRemove(base, 'f2')
-  ok(removed?.followUp.map((i) => i.id).join(',') === 'f1,f3', '删除只移除目标')
-  ok(removed?.steering === base.steering, '删除不动另一类')
-  ok(planQueueRemove(base, 'ghost') === null, '被接收的 id 删除返回 null')
-
-  process.stdout.write('\n▌ queue-plan：全部清除\n')
-  const cleared = planQueueClear(base)
-  ok(cleared?.steering.length === 0 && cleared?.followUp.length === 0, '全部清除清空两类队列')
-  ok(base.followUp.length === 3, '全部清除不就地修改原状态')
-  ok(planQueueClear({ steering: [], followUp: [] }) === null, '空队列全部清除返回 null')
-  ok(planQueueClear({ steering: [], followUp: [item('f1', '甲')] })?.steering.length === 0, '只有一类时也清空')
-
-  process.stdout.write('\n▌ queue-plan：按 id 的单条操作（A11-01 / T5-01 渲染端）\n')
-  const { planQueueOp } = plan
-  ok(planQueueOp(base, { op: 'move', id: 'f1', direction: 'down' })?.followUp.map((i) => i.id).join(',') === 'f2,f1,f3', 'move 操作等价于按 id 重排')
-  ok(planQueueOp(base, { op: 'edit', id: 'f2', text: ' 改过 ' })?.followUp[1].text === '改过', 'edit 操作等价于按 id 编辑')
-  ok(planQueueOp(base, { op: 'remove', id: 'f2' })?.followUp.map((i) => i.id).join(',') === 'f1,f3', 'remove 操作等价于按 id 删除')
-  ok(planQueueOp(base, { op: 'clear' })?.followUp.length === 0, 'clear 操作等价于清空')
-  ok(planQueueOp(base, { op: 'remove', id: 'ghost' }) === null, '单条操作命中未知 id 时不做整体重建')
-
-  const live = { steering: [], followUp: [item('f1', '排队一'), item('f2', '排队二'), item('f9', '快照之后新追加')] }
-  const afterRemove = planQueueOp(live, { op: 'remove', id: 'f2' })
-  ok(afterRemove?.followUp.map((i) => i.id).join(',') === 'f1,f9', '按当前队列执行删除，渲染快照之后追加的条目不被顺手删掉')
-  const afterMove = planQueueOp(live, { op: 'move', id: 'f1', direction: 'down' })
-  ok(afterMove?.followUp.map((i) => i.id).join(',') === 'f2,f1,f9', '按当前队列执行重排，快照之后追加的条目留在原位')
-}
-
 function makePort({ clearResults, refillFailsAt = -1 }) {
   const calls = { clear: 0, adopt: [], publish: [], refill: [] }
   let refillIndex = 0

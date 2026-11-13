@@ -5,7 +5,6 @@ import type { EnvironmentThreadShell, ThreadRunSummary, ThreadRuntimeSummary } f
 import { shortProject } from '../../../features/sidebar/sidebar-model'
 
 export type ThreadRef = { environmentId: 'local'; threadId: string }
-export type RowVariant = 'card' | 'slim' | 'folder' | 'folder-multiline'
 
 export const NO_PROJECT_ID = '__none'
 

@@ -1,9 +1,7 @@
 import type { Lang } from '../../i18n'
 
 export interface SplitText {
-  dragLabel: string
   openHere: string
-  splitView: string
   swap: string
   moveHere: string
   splitLeft: string
@@ -23,9 +21,7 @@ export interface SplitText {
 }
 
 const zh: SplitText = {
-  dragLabel: '在分屏中打开',
   openHere: '在此打开',
-  splitView: '分屏',
   swap: '交换',
   moveHere: '移到这里',
   splitLeft: '在左侧分屏',
@@ -45,9 +41,7 @@ const zh: SplitText = {
 }
 
 const en: SplitText = {
-  dragLabel: 'Open in split view',
   openHere: 'Open here',
-  splitView: 'Split view',
   swap: 'Swap',
   moveHere: 'Move here',
   splitLeft: 'Split on the left',

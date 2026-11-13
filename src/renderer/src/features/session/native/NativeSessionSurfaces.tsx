@@ -734,19 +734,3 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
     )
   })
 }
-
-export function NativeSessionEntriesPanel({
-  transport,
-  sessionId
-}: {
-  transport?: NativeSurfaceTransport
-  sessionId: string
-}): JSX.Element {
-  const { lang } = useI18n()
-  const text = useMemo(() => nativeSurfaceText(lang), [lang])
-  const bridge = useMemo<NativeSurfaceTransport>(
-    () => transport ?? { request: (request: NativeSessionHostRequest) => window.yan.nativeSession(request) },
-    [transport]
-  )
-  return <EntriesSurface transport={bridge} sessionId={sessionId} text={text} />
-}

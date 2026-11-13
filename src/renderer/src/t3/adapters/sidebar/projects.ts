@@ -20,8 +20,3 @@ export function useSidebarProjects(): SidebarProjectCollection {
     }
   }, [projects, projectNames])
 }
-
-export function useSidebarProject(projectId: string | null): SidebarProjectView | null {
-  const projects = useSidebarProjects()
-  return projectId ? (projects.byId.get(projectId) ?? null) : null
-}

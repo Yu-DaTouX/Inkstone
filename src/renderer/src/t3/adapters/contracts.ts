@@ -2,11 +2,6 @@ export type ProviderInstanceId = string;
 
 export type ProviderDriverKind = string;
 
-export interface ModelSelection {
-  instanceId: ProviderInstanceId;
-  model: string;
-}
-
 export interface ProviderInstanceSnapshot {
   message?: string | undefined;
 }

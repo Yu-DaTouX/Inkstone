@@ -22,13 +22,6 @@ export interface ContentLineMatch {
   ranges: Array<[number, number]>
 }
 
-export interface ContentMatchJob {
-  query: string
-  options: ContentSearchOptions
-  texts: string[]
-  limit: number
-}
-
 export interface ContentMatchOutcome {
   matches: ContentLineMatch[]
   longLines: number

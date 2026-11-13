@@ -152,11 +152,6 @@ export function resolveLegacyView(view: string | null | undefined): LegacyViewRe
   return { kind: 'unknown', view: name }
 }
 
-export interface SettingsNavGroup {
-  readonly group: SettingsNavGroupId
-  readonly sections: readonly SettingsSectionDef[]
-}
-
 export function settingsViewFromHash(hash: string): string | null {
   const path = hash.replace(/^#\/?/, '').split('?')[0]
   const [head, view, ...rest] = path.split('/')

@@ -33,7 +33,6 @@ export interface PanelShortcutText {
   maximize: string
   newPanel: string
   reopenPanel: string
-  closeTab: (label: string) => string
 }
 
 export interface RightPanelAdapterProps {
@@ -92,10 +91,6 @@ export function closePanelMenu(): void {
   usePanelMenuStore.getState().close()
 }
 
-function withKeys(label: string, keys: string): string {
-  return keys ? `${label} · ${keys}` : label
-}
-
 function copyPathOf(surface: RightPanelSurface, done: string): void {
   if (surface.kind !== 'file') return
   void navigator.clipboard.writeText(surface.path).then(
@@ -146,8 +141,7 @@ export function useRightPanelAdapter(input: RightPanelAdapterInput): RightPanelA
       closePane,
       maximize: shortcutKeysText('workspaceToggleMaximize', overrides),
       newPanel: shortcutText?.newPanel ?? '',
-      reopenPanel: shortcutText?.reopenPanel ?? '',
-      closeTab: (label: string) => withKeys(texts.panel.closeTab(label), closePane)
+      reopenPanel: shortcutText?.reopenPanel ?? ''
     }
   }, [overrides, texts, shortcutText])
 

@@ -2,7 +2,6 @@ import type { Lang } from '../../../i18n'
 
 export interface PiNativeText {
   effectNote: string
-  sessionEffectNote: string
   loadFailed: string
   saveFailed: string
   retryCount: string
@@ -48,7 +47,6 @@ export interface PiNativeText {
 
 const ZH: PiNativeText = {
   effectNote: '新会话生效。',
-  sessionEffectNote: '重试、超时、缓存预热与图片选项对新会话生效。',
   loadFailed: '读取 pi 设置失败。',
   saveFailed: '保存 pi 设置失败。',
   retryCount: '最多重试',
@@ -94,7 +92,6 @@ const ZH: PiNativeText = {
 
 const EN: PiNativeText = {
   effectNote: 'Applies to new sessions.',
-  sessionEffectNote: 'Retry, timeout, cache and image options apply to new sessions.',
   loadFailed: 'Could not read pi settings.',
   saveFailed: 'Could not save pi settings.',
   retryCount: 'Max retries',

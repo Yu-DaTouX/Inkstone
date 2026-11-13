@@ -5,7 +5,7 @@ import { useTerminalJobs } from '../../../state/terminal-jobs'
 import { isLiveTerminalJob, type TerminalJob } from '../../../../../shared/terminal-jobs'
 import type { RunSnapshot } from '../../../../../shared/runs'
 import type { SessionSummary, SubagentRun } from '../../../../../shared/ipc'
-import { scopedKeyOf, type SidebarThreadView, type ThreadRef } from './types'
+import { scopedKeyOf } from './types'
 import { buildSidebarSections, type SidebarSections } from './sections'
 
 let clockMounts = 0
@@ -176,28 +176,6 @@ export function useSidebarSections(): SidebarSections {
       subagentsSince: backgroundSinceOf(listed, subagentSignature, jobSignature)
     })
   }, [sessions, runs, currentId, currentName, currentCwd, projects, projectNames, titles, manualTitles, now, subagentSignature, jobSignature])
-}
-
-export function useThreadView(ref: ThreadRef): SidebarThreadView | null {
-  const session = useStore((s) => s.sessions.find((item) => item.id === ref.threadId) ?? null)
-  const title = useStore((s) => (session ? (s.manualTitles[session.id] ?? s.titles[session.id] ?? session.title) : ''))
-  const projects = useStore((s) => s.settings?.projects)
-  const projectNames = useStore((s) => s.settings?.projectNames)
-  const now = useMinuteClock()
-  return useMemo(() => {
-    if (!session) return null
-    const sections = buildSidebarSections({
-      sessions: [session],
-      runs: useRunsV3.getState().runs,
-      projects: projects ?? [],
-      projectNames: projectNames ?? {},
-      titles: {},
-      manualTitles: {},
-      now
-    })
-    const view = [...sections.pinned, ...sections.active, ...sections.working, ...sections.snoozed, ...sections.settled][0]
-    return view ? { ...view, title } : null
-  }, [session, projects, projectNames, now, title])
 }
 
 export function useActiveThreadKey(): string | null {

@@ -681,12 +681,6 @@
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     box-shadow: var(--ring-line), var(--shadow-md);
   }
-  .ui-menu-row {
-    min-height: var(--size-menu-row);
-    padding: 0 var(--s-8);
-    border-radius: var(--r-sm);
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
-  }
   .ui-popover {
     min-width: 128px;
     max-width: 320px;
@@ -1716,15 +1710,6 @@
   .ui-meta-text {
     color: var(--fg3);
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-  }
-
-  .ui-meta-path {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--fg3);
-    font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .ui-notice {

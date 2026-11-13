@@ -11,9 +11,7 @@ export interface PrDetailText {
   files: (n: number) => string
   receives: string
   reviewers: string
-  noReviewers: string
   labels: string
-  noLabels: string
   description: string
   showDescription: string
   hideDescription: string
@@ -38,9 +36,7 @@ const ZH: PrDetailText = {
   files: (n) => `${n} 个文件`,
   receives: '接收来自',
   reviewers: '审阅者',
-  noReviewers: '没有审阅者',
   labels: '标签',
-  noLabels: '没有标签',
   description: '描述',
   showDescription: '展开描述',
   hideDescription: '收起描述',
@@ -65,9 +61,7 @@ const EN: PrDetailText = {
   files: (n) => `${n} ${n === 1 ? 'file' : 'files'}`,
   receives: 'receives changes from',
   reviewers: 'Reviewers',
-  noReviewers: 'No reviewers',
   labels: 'Labels',
-  noLabels: 'No labels',
   description: 'Description',
   showDescription: 'Show description',
   hideDescription: 'Hide description',

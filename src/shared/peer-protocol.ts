@@ -6,11 +6,6 @@ export const PEER_ACTIVATION_TIMEOUT_MS = 30_000
 export const PEER_CONNECTION_HEADER = 'x-yan-connection'
 export const PEER_ARTIFACT_MAX_BYTES = 10 * 1024 * 1024
 
-export interface PeerConnectRequest {
-  operations: PeerOperation[]
-  note?: string
-}
-
 export interface PeerProjectRef {
   id: string
   name: string

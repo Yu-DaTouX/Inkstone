@@ -21,8 +21,6 @@ export const COMMAND_ACTION_IDS = {
   settingsUsage: 'settingsUsage'
 } as const
 
-export type CommandActionId = (typeof COMMAND_ACTION_IDS)[keyof typeof COMMAND_ACTION_IDS]
-
 export type CommandPrefix = '>' | '@' | '#' | '/' | '%' | '?'
 
 export const COMMAND_PREFIXES: readonly CommandPrefix[] = ['>', '@', '#', '/', '%', '?']

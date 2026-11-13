@@ -7,7 +7,7 @@ const catalogDir = join(root, 'src', 'renderer', 'src', 'i18n')
 const baselinePath = join(root, 'scripts', 'i18n-cjk-baseline.json')
 const update = process.argv.includes('--update')
 const CJK = /[一-鿿]/
-const ENGLISH_VALUES_WITH_CJK = new Set(['set.font.sampleUi', 'voice.lang.zh', 'preview.font.sample'])
+const ENGLISH_VALUES_WITH_CJK = new Set(['voice.lang.zh', 'preview.font.sample'])
 const SCAN_ROOTS = ['src/renderer/src', 'src/main', 'src/shared', 'mobile/src']
 const SKIP = /(\.stories\.tsx$|[\\/]i18n[\\/]|\.generated\.ts$|[\\/]node_modules[\\/])/
 
