@@ -279,7 +279,10 @@ export function SidebarThreadList(props: SidebarThreadListProps) {
   }, [dragState, items])
 
   const restrictBelowPins: Modifier = (args) =>
-    restrictBelowSidebarLabel(args, dragLabelOffsetRef.current)
+    restrictBelowSidebarLabel(
+      { ...args, containerNodeRect: threadListRef.current?.getBoundingClientRect() ?? args.containerNodeRect },
+      dragLabelOffsetRef.current
+    )
 
   const dndModifiers = [
     restrictToVerticalAxis,
