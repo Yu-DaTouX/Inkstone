@@ -132,10 +132,38 @@ function withBackgroundSubagents(runtime: ThreadRuntimeSummary | null, since: nu
   }
 }
 
+const HELD_CONTINUE_MS = 30_000
+const heldStarts = new Map<string, { startedAt: string | null; runId: string | null; background: boolean; releasedAt: number | null }>()
+
+function continuedRuntime(sessionId: string, run: RunSnapshot | null, own: ThreadRuntimeSummary | null, runtime: ThreadRuntimeSummary | null, since: number | undefined, now: number): ThreadRuntimeSummary | null {
+  const held = heldStarts.get(sessionId)
+  const runId = run?.runId ?? null
+  if (since !== undefined && (own === null || own.status === 'idle')) {
+    const startedAt = held && held.runId === runId ? held.startedAt : runtime?.activityStartedAt ?? null
+    heldStarts.set(sessionId, { startedAt, runId, background: true, releasedAt: null })
+    return runtime
+  }
+  if (!held) return runtime
+  if (own === null || own.status === 'idle' || own.status === 'failed') {
+    if (!held.background || (held.releasedAt !== null && now - held.releasedAt > HELD_CONTINUE_MS)) heldStarts.delete(sessionId)
+    else if (held.releasedAt === null) held.releasedAt = now
+    return runtime
+  }
+  if (runId !== held.runId) {
+    const continues = held.background && run !== null && (held.releasedAt === null || run.startedAt - held.releasedAt <= HELD_CONTINUE_MS)
+    if (!continues) {
+      heldStarts.delete(sessionId)
+      return runtime
+    }
+    heldStarts.set(sessionId, { startedAt: held.startedAt, runId, background: false, releasedAt: null })
+  }
+  return held.startedAt && runtime ? { ...runtime, activityStartedAt: held.startedAt } : runtime
+}
+
 export function toThreadView(item: SessionSummary, ctx: ThreadViewContext): SidebarThreadView {
   const phase = ctx.run?.phase ?? null
   const { latestRun, runtime: ownRuntime } = runView(ctx.run)
-  const runtime = withBackgroundSubagents(ownRuntime, ctx.subagentsSince)
+  const runtime = continuedRuntime(item.id, ctx.run, ownRuntime, withBackgroundSubagents(ownRuntime, ctx.subagentsSince), ctx.subagentsSince, Date.now())
   const requests = requestKind(phase)
   const activityAt = item.lastActivityAt ?? item.updatedAt
   const unreadRun = phase !== null && (phase.kind === 'done' || phase.kind === 'failed') && !phase.seen

@@ -13,6 +13,7 @@ export interface BackgroundBashContext {
   ownerKeys(): string[]
   now(): number
   notify(text: string, stillOwner: () => boolean, wake: boolean): void
+  onIdle?(): void
 }
 
 interface Entry {
@@ -51,6 +52,10 @@ export class BackgroundBashCommands {
     throw new CapabilityCommandError('bash_background_action', 'action must be watch or end')
   }
 
+  busy(): boolean {
+    return this.entries.size > 0
+  }
+
   dispose(): void {
     for (const entry of [...this.entries.values()]) this.finish(entry, 'stopped')
   }
@@ -82,6 +87,7 @@ export class BackgroundBashCommands {
     stoppers.delete(entry.jobId)
     updateTerminalJob(entry.jobId, { state, endedAt: this.ctx.now() })
     for (const wake of [...entry.wakeWatchers]) wake()
+    if (!this.entries.size) this.ctx.onIdle?.()
   }
 
   private async watch(params: Record<string, unknown>, signal?: AbortSignal): Promise<CapabilityCommandResult> {

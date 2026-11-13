@@ -14,7 +14,7 @@
     gap: 0 var(--s-6);
     min-width: 0;
   }
-  .v3-sa-row { height: auto; display: grid; grid-column: bot / end; grid-template-columns: subgrid; align-items: center; gap: 0 var(--s-6); width: auto; padding: 0 var(--s-6) 0 var(--s-4); }
+  .v3-sa-row { height: auto; display: grid; grid-column: bot / end; grid-template-columns: subgrid; align-items: center; gap: 0 var(--s-6); width: auto; min-height: var(--d-row); padding: var(--s-2) var(--s-6) var(--s-2) var(--s-4); }
   .v3-sa-bot { grid-column: bot; display: grid; place-items: center; width: var(--size-avatar); height: var(--size-avatar); }
   .v3-sa-bot .v3-subagent-bot { display: block; }
   .v3-sa-state { grid-column: state; display: grid; place-items: center; }
