@@ -267,6 +267,7 @@ function stable(records, root) {
   return records.map((record) => {
     let raw = canonicalIds(record.raw, ids)
     for (const form of rootForms(root)) raw = raw.split(form).join('<root>')
+    for (const form of rootForms(REPO)) raw = raw.split(form).join('<repo>')
     raw = raw.replace(/\b\d{4}-\d{2}-\d{2}\b/g, '<date>')
     return { ...record, raw }
   })
