@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import twilightPainting from '../../assets/wallpapers/twilight-in-the-wilderness.webp?url'
+const twilightPainting = new URL('../../assets/wallpapers/twilight-in-the-wilderness.webp', import.meta.url).href
 
 export type HomeBackgroundMode = 'ascii' | 'dither' | 'image' | 'none'
 export type HomeImageEffect = 'none' | 'dither' | 'halftone'

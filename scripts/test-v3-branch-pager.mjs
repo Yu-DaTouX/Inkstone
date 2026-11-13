@@ -285,6 +285,7 @@ async function main() {
         'src/renderer/src/features/session/V3EmptyState.tsx': 'export function V3EmptyState(){ return null }',
         'src/renderer/src/features/session/RewindDialogV3.tsx': 'export function RewindDialogV3(){ return null }',
         'src/renderer/src/features/session/MessageMenu.tsx': 'export function MessageMenuHost(){ return null }',
+        'src/renderer/src/features/ambient/HomeBackdrop.tsx': 'export function HomeBackdrop(){ return null }',
         'src/renderer/src/features/ambient/UsageLandscape.tsx': 'export function UsageLandscape(){ return null }',
         'src/renderer/src/features/ambient/ascii-field-model.ts': 'export function asciiBackgroundEnabled(){ return false }',
         'src/renderer/src/i18n/index.tsx': I18N_STUB,

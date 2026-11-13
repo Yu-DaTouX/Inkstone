@@ -232,6 +232,7 @@ export { sessionViewIdentity, viewMatchesProjectedSession, approvalMatchesView }
       'src/renderer/src/features/session/BrowserHandoffCard.tsx': `export function BrowserHandoffCard(){ return null }
 BrowserHandoffCard.__stub='handoff'`,
       'src/renderer/src/t3/components/chat/ComposerBanner.tsx': `export const ComposerBanner = { Root: function ComposerBannerRoot(p){ return p.children ?? null } }`,
+      'src/renderer/src/features/ambient/HomeBackdrop.tsx': 'export function HomeBackdrop(){ return null }',
       'src/renderer/src/features/session/MessageMenu.tsx': `export function MessageMenuHost(){ return null }`,
       'src/renderer/src/features/sidebar/NewSessionPicker.tsx': `export function NewSessionPicker(){ return null }`,
       'src/renderer/src/features/session/Icon.tsx': `export function Icon(){ return null }\nIcon.__stub='icon'`,
