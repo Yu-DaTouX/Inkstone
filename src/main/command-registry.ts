@@ -50,6 +50,8 @@ const localCommands = (): readonly CommandDescriptor[] => [
   },
   { name: 'settings', description: pick('打开设置', 'Open settings'), source: 'yan', executable: true, usage: '/settings' },
   { name: 'ultracode', description: pick('本条消息用 Ultracode：分阶段并行派子 Agent 并复核（耗额度、耗时）', 'Use Ultracode for this message: phased parallel subagents with review (uses quota and time)'), source: 'yan', executable: true, usage: pick('/ultracode <任务>', '/ultracode <task>') },
+  { name: 'ask', description: pick('只读问答模式：只运行读取类工具，改动与命令会被拦下；再发一次退出', 'Read-only mode: only read tools run, edits and commands are blocked; send again to leave'), source: 'yan', executable: true, usage: pick('/ask [问题]', '/ask [question]') },
+  { name: 'plan', description: pick('计划模式：先调查并给出分步计划，批准后再执行；再发一次退出', 'Plan mode: investigate and propose a step-by-step plan, run it after approval; send again to leave'), source: 'yan', executable: true, usage: pick('/plan [任务]', '/plan [task]') },
   { name: 'btw', description: pick('旁路快问：继承当前上下文，只凭已有内容回答，不执行工具，不进入主会话', 'Side question: inherits the context, answers from it without running tools, stays out of the main conversation'), source: 'yan', executable: true, usage: pick('/btw <问题>', '/btw <question>') },
   {
     name: 'thinking',

@@ -64,7 +64,7 @@ try {
 
   const main = await readFile('src/main/index.ts', 'utf8')
   const hostFunctions = functionTexts(main, ['requestSessionMove', 'moveSessionWhenIdle', 'continueMovedSession', 'pinSendTarget', 'pinnedTargetMatches', 'normalizeCwdForIdentity'])
-  const { sameRuntimeEnvelope } = await (async () => { const file = join(work, 'identity.mjs'); await build({ entryPoints: ['src/core/run-state.ts'], outfile: file, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' }); return import(pathToFileURL(file).href) })()
+  const { RuntimeRef } = await (async () => { const file = join(work, 'identity.mjs'); await build({ entryPoints: ['src/shared/runs.ts'], outfile: file, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' }); return import(pathToFileURL(file).href) })()
   const hostCode = transpile('const pendingSessionMoves = new Map(); globalThis.pending = pendingSessionMoves;\n' + hostFunctions)
   const target = join(work, 'target')
   const file = join(work, 'source.jsonl')
@@ -98,7 +98,7 @@ try {
       },
       guardExecute: () => hooks.busy ? { ok: false, error: 'fixture busy' } : { ok: true }
     }
-    context = { runners: registry, shuttingDown: false, sameRuntimeEnvelope, movedSessionContinuationPrompt, withDenyFeedback, resolve, isAbsolute,
+    context = { runners: registry, shuttingDown: false, RuntimeRef, movedSessionContinuationPrompt, withDenyFeedback, resolve, isAbsolute,
       pick: (zh) => zh,
       beginSessionMove: () => ({ release() {} }),
       restoreSessionHeaderCwd: async () => true,

@@ -5,6 +5,7 @@ import {
   Columns2,
   Eye,
   FileDiff,
+  ListChecks,
   FileText,
   Folder,
   Globe,
@@ -118,7 +119,9 @@ const ACTION_ICONS: Record<string, LucideIcon> = {
   [COMMAND_ACTION_IDS.workspaceBrowser]: Globe,
   [COMMAND_ACTION_IDS.workspacePreview]: Eye,
   [COMMAND_ACTION_IDS.settingsUsage]: BarChart3,
-  [COMMAND_ACTION_IDS.stopSession]: Square
+  [COMMAND_ACTION_IDS.stopSession]: Square,
+  [COMMAND_ACTION_IDS.sessionModeAsk]: Eye,
+  [COMMAND_ACTION_IDS.sessionModePlan]: ListChecks
 }
 
 function commandIcon(item: CommandItem, theme: string): LucideIcon {
@@ -144,7 +147,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement | null 
 const NO_MESSAGES: readonly UIMessage[] = []
 
 function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPaletteProps): ReactElement | null {
-  const { lang } = useI18n()
+  const { lang, t } = useI18n()
   const text = commandText(lang)
   const settingsCopy = settingsText(lang)
 
@@ -160,6 +163,8 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
+  const sessionModeReady = !peekedSessionId && !!session?.sessionId
+  const sessionMode = session?.sessionMode
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
@@ -286,6 +291,22 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         keywords: 'usage tokens cost 用量 费用'
       }
     ]
+    if (sessionModeReady) {
+      items.push(
+        {
+          id: COMMAND_ACTION_IDS.sessionModeAsk,
+          group: 'action',
+          label: t(sessionMode === 'ask' ? 'composer.mode.exitAsk' : 'composer.mode.enterAsk'),
+          keywords: `ask read only readonly mode /ask ${t('composer.mode.ask')}`
+        },
+        {
+          id: COMMAND_ACTION_IDS.sessionModePlan,
+          group: 'action',
+          label: t(sessionMode === 'plan' ? 'composer.mode.exitPlan' : 'composer.mode.enterPlan'),
+          keywords: `plan mode approve /plan ${t('composer.mode.plan')}`
+        }
+      )
+    }
     if (running) {
       items.push({
         id: COMMAND_ACTION_IDS.stopSession,
@@ -296,7 +317,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       })
     }
     return items
-  }, [text, settingsCopy, theme, running])
+  }, [text, settingsCopy, theme, running, sessionModeReady, sessionMode, t])
 
   const sessionItemsOf = useCallback(
     (archived: boolean): CommandItem[] =>
@@ -493,6 +514,12 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       case COMMAND_ACTION_IDS.stopSession:
         await store.abort()
         return { ok: true }
+      case COMMAND_ACTION_IDS.sessionModeAsk:
+      case COMMAND_ACTION_IDS.sessionModePlan: {
+        const target = item.id === COMMAND_ACTION_IDS.sessionModeAsk ? 'ask' : 'plan'
+        onNavigate?.('chat')
+        return (await store.setSessionMode(store.session?.sessionMode === target ? 'off' : target)) ? { ok: true } : { ok: false, error: text.failed }
+      }
       default: {
         if (item.messageId) {
           const messageId = item.messageId

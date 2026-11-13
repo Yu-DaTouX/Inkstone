@@ -23,6 +23,7 @@ interface ComposerSessionInfo {
   messageCount?: number
   sessionFile?: string
   thinkingLevel?: string
+  sessionMode?: 'ask' | 'plan'
 }
 
 type ComposerCommandResult = { ok: boolean; error?: string } | void
@@ -51,6 +52,7 @@ export interface ComposerSendActions {
   setThinking(level: string): void | Promise<void>
   nativeSession?(action: NativeSessionAction, args?: string): Promise<ComposerCommandResult>
   askSideQuestion?(question: string): Promise<ComposerCommandResult>
+  setSessionMode?(change: 'ask' | 'plan' | 'off'): Promise<boolean>
   notify(level: 'info' | 'error', text: string): void
 }
 
@@ -210,6 +212,8 @@ async function runLocalCommand(port: ComposerSubmitPort, name: string, args: str
     return 'handled'
   }
 
+  if (name === 'ask' || name === 'plan') return runSessionModeCommand(port, name, args)
+
   if (port.roundRunning && SESSION_MUTATING_COMMANDS.has(name)) {
     a.notify('info', port.t('composer.cmdBusy', { name }))
     port.focusComposer()
@@ -243,6 +247,28 @@ async function runLocalCommand(port: ComposerSubmitPort, name: string, args: str
   else if (name === 'browser') await a.openBrowser(args || undefined)
   else await runYanBuiltin(port, name, args)
   return 'handled'
+}
+
+async function runSessionModeCommand(port: ComposerSubmitPort, name: 'ask' | 'plan', args: string): Promise<ComposerSubmitOutcome> {
+  const setMode = port.actions.setSessionMode
+  if (!setMode) {
+    port.actions.notify('info', port.t('composer.cmdNotWired', { name }))
+    port.focusComposer()
+    return 'handled'
+  }
+  const active = port.session?.sessionMode === name
+  if (!args) {
+    const raw = port.text.trim()
+    port.clearText()
+    if (!(await setMode(active ? 'off' : name))) port.restoreText(raw)
+    port.focusComposer()
+    return 'handled'
+  }
+  if (!active && !(await setMode(name))) {
+    port.focusComposer()
+    return 'handled'
+  }
+  return submitComposerInput({ ...port, text: args })
 }
 
 async function runResultCommand(

@@ -60,7 +60,8 @@
     )
     ok(!!selectedA, 'renderer store.switchSession 选择 A，并投影到 A 的 sessionFile')
     if (!selectedA) return out.join('\n')
-    const modelA = await window.yan.setModel(provider, modelId)
+    const activeA = (await runnersNow()).find((r) => r.isActive)
+    const modelA = await window.yan.setModel(provider, modelId, activeA ? { runId: activeA.runId, generation: activeA.generation } : undefined)
     ok(modelA?.ok === true, 'A 已切到成本为零的本机模型')
     if (modelA?.ok !== true) return out.join('\n')
 
@@ -85,7 +86,7 @@
     ok(!!activeB, 'B 作为独立 runner 成为主进程活动会话')
     const activeBId = activeB?.runId ?? activeB?.id
     ok(state().activeRunnerId === activeBId, `renderer store 活动实例与 B 对齐（${state().activeRunnerId ?? '缺失'}）`)
-    const modelB = await window.yan.setModel(provider, modelId)
+    const modelB = await window.yan.setModel(provider, modelId, activeB ? { runId: activeB.runId, generation: activeB.generation } : undefined)
     ok(modelB?.ok === true, 'B 已切到成本为零的本机模型')
     if (modelB?.ok !== true) return out.join('\n')
 

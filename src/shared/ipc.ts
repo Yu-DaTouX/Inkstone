@@ -2,6 +2,7 @@ import type { ApiKeyPools } from './api-keys'
 import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-search'
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
 import type { HtmlEditPatch } from './html-edit-patch'
+import type { SessionMode, SessionModeChange } from './session-mode'
 import type { ArtifactLibraryResult, SaveInlineArtifactInput, SaveInlineArtifactResult } from './artifact-library'
 import type { NativeMcpServerListView } from './mcp-native'
 import type { McpSettingsMutation, McpSettingsResult, McpSettingsSnapshot } from './mcp-settings'
@@ -262,6 +263,7 @@ export interface SessionState {
     previousThinkingLevel: string
   }
   ultracode?: boolean
+  sessionMode?: SessionMode
   availableThinkingLevels: string[]
   thinkingLevelsStatus?: CapabilityStatus
   capabilities?: ModelCapabilitySnapshot
@@ -1739,11 +1741,11 @@ export interface YanBridge {
   sessionTransfer: import('./session-transfer').SessionTransferBridge
   start(): Promise<{ ok: boolean; error?: string; state?: SessionState }>
   send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  steer(text: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  followUp(text: string): Promise<{ ok: boolean; error?: string }>
-  steerQueued(queueId: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  removeQueued(queueId: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
-  queueEdit(arg: QueueState | QueueEditOp, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
+  steer(text: string, expectedRuntime: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  followUp(text: string, expectedRuntime: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  steerQueued(queueId: string, expectedRuntime: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  removeQueued(queueId: string, expectedRuntime: ExpectedRuntimeOwner): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
+  queueEdit(arg: QueueState | QueueEditOp, expectedRuntime: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
   abort(expectedRuntime?: ExpectedRuntimeOwner): Promise<QueueSnapshot & { error?: string }>
   newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope; worktree?: boolean }): Promise<{
     ok: boolean
@@ -1768,26 +1770,27 @@ export interface YanBridge {
   setSessionSnoozed(sessionId: string, until: number | null): Promise<{ ok: boolean; error?: string }>
   setSessionMarkedUnread(sessionId: string, marked: boolean): Promise<{ ok: boolean; error?: string }>
   nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
-  compact(customInstructions?: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  compact(customInstructions: string | undefined, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   compactionInfo(cwd: string, contextWindow: number): Promise<CompactionInfo | null>
-  renameSession(name: string, sessionId?: string): Promise<{ ok: boolean; error?: string }>
+  renameSession(name: string, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
 
-  fork(entryId: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; text?: string }>
-  clone(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  fork(entryId: string, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; text?: string }>
+  clone(expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   forkPoints(): Promise<ForkPoint[]>
-  exportHtml(outputPath?: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; path?: string; error?: string }>
+  exportHtml(outputPath: string | undefined, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; path?: string; error?: string }>
   deleteSession(path: string): Promise<{ ok: boolean; undoToken?: string; error?: string }>
   restoreSession(undoToken: string): Promise<{ ok: boolean; error?: string }>
   listArtifactLibrary(): Promise<ArtifactLibraryResult>
   saveInlineArtifact(input: SaveInlineArtifactInput): Promise<SaveInlineArtifactResult>
 
   runBash(command: string, options?: { excludeFromContext?: boolean }, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  abortBash(expected?: ExpectedRuntimeOwner): Promise<void>
+  abortBash(expected: ExpectedRuntimeOwner): Promise<void>
 
   listModels(): Promise<ModelInfo[]>
-  setModel(provider: string, modelId: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  setThinking(level: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  setUltracode(on: boolean, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  setModel(provider: string, modelId: string, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  setThinking(level: string, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  setUltracode(on: boolean, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  setSessionMode(change: SessionModeChange, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   listThinkingLevels(): Promise<string[]>
 
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>
@@ -1804,10 +1807,10 @@ export interface YanBridge {
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
 
-  abortRetry(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  cycleModel(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
-  cycleModelBack(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
-  cycleThinking(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
+  abortRetry(expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  cycleModel(expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
+  cycleModelBack(expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
+  cycleThinking(expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
   lastAssistantText(expected?: ExpectedRuntimeOwner): Promise<string | null>
 
   piInfo(): Promise<PiInfo>

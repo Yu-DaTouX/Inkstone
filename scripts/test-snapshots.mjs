@@ -48,6 +48,11 @@ export async function runSnapshotTests(ok) {
     ok(unchanged.status === 'unchanged', '内容没变时如实标 unchanged')
     ok(unchanged.added === 0 && unchanged.removed === 0, 'unchanged 时增删都是 0')
 
+    snapshotBefore('c4b', join(dir, 'never-written.txt'))
+    const blocked = snapshotAfter('c4b')
+    ok(blocked.status === 'unchanged', `写入被拦、前后都不存在时标 unchanged（实际 ${blocked.status}）`)
+    ok(blocked.added === 0 && blocked.removed === 0, '前后都不存在时增删都是 0')
+
     const big = join(dir, 'big.txt')
     await writeFile(big, 'x'.repeat(3 * 1024 * 1024), 'utf8')
     const side = captureSide(big)

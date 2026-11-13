@@ -29,13 +29,13 @@ export async function runSnapshotIdentityTests(ok) {
     `data:text/javascript;base64,${Buffer.from(runnersBundle.outputFiles[0].text).toString('base64')}`
   )
   const runState = await build({
-    entryPoints: [fileURLToPath(new URL('../src/core/run-state.ts', import.meta.url))],
+    entryPoints: [fileURLToPath(new URL('../src/shared/runs.ts', import.meta.url))],
     bundle: true,
     platform: 'node',
     format: 'esm',
     write: false
   })
-  const { sameRuntimeEnvelope } = await import(
+  const { RuntimeRef } = await import(
     `data:text/javascript;base64,${Buffer.from(runState.outputFiles[0].text).toString('base64')}`
   )
 
@@ -114,7 +114,7 @@ export async function runSnapshotIdentityTests(ok) {
         return opts.chain ?? null
       },
       emptyGoal: () => ({}),
-      sameRuntimeEnvelope,
+      RuntimeRef,
       planSessionSyncAgainst,
       takeSyncBaseline,
       messageSyncSignature

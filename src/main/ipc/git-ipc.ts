@@ -1,9 +1,8 @@
 import { pick } from '../../shared/ui-lang'
 import type { IpcRegistrar } from './registrar'
-import { readRepoSnapshot, readRepoState, readRepoStatusState, listRefs, resolveRepo } from '../git-service'
-import { listRemotes, runGitAction } from '../git-actions'
+import { runGitAction } from '../git-actions'
 import { listUntracked, listWorktrees } from '../git-worktree'
-import { readChanges, readFileDiff } from '../git-inspect'
+import { runGitRead } from '../git-read-host'
 import { readRemoteIdentity } from '../git-remote-identity'
 import { screenPaths } from '../git-path-screen'
 import type { AuthorizeReadCwd } from '../git-inspect'
@@ -20,10 +19,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
       if (!auth.ok) return { repo: null, error: auth.error }
-      const repo = await resolveRepo(auth.cwd)
-      if (!repo) return { repo: null }
-      if ((rawOptions as { light?: unknown } | null | undefined)?.light === true) return { repo: await readRepoStatusState(repo) }
-      return await readRepoSnapshot(repo)
+      return await runGitRead({ op: 'state', cwd: auth.cwd, light: (rawOptions as { light?: unknown } | null | undefined)?.light === true }, authorizeReadCwd)
     } catch (error) {
       return { repo: null, error: error instanceof Error ? error.message : String(error) }
     }
@@ -32,10 +28,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
       if (!auth.ok) return { ok: false, refs: [], busyBranches: [], error: auth.error }
-      const repo = await readRepoState(auth.cwd, { withRefs: false })
-      if (!repo) return { ok: false, refs: [], busyBranches: [], error: pick('这个目录不在 Git 仓库里', 'This folder is not in a Git repository') }
-      const listing = await listRefs(repo.root)
-      return { ok: true, refs: listing.refs, busyBranches: listing.busyBranches }
+      return await runGitRead({ op: 'refs', cwd: auth.cwd }, authorizeReadCwd)
     } catch (error) {
       return {
         ok: false,
@@ -49,10 +42,17 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   handle('yan:git:changes', async (cwd: string, rawOptions?: unknown) => {
     try {
       const options = (rawOptions ?? {}) as Record<string, unknown>
-      return await readChanges(String(cwd ?? ''), authorizeReadCwd, {
-        ...(options.scope !== undefined ? { scope: options.scope as GitChangesScope } : {}),
-        patches: options.patches === true
-      })
+      return await runGitRead(
+        {
+          op: 'changes',
+          cwd: String(cwd ?? ''),
+          options: {
+            ...(options.scope !== undefined ? { scope: options.scope as GitChangesScope } : {}),
+            patches: options.patches === true
+          }
+        },
+        authorizeReadCwd
+      )
     } catch (error) {
       return {
         ok: false,
@@ -73,7 +73,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     const cwd = String(raw.cwd ?? '')
     const path = String(raw.path ?? '')
     try {
-      return await readFileDiff(cwd, path, authorizeReadCwd, { scope: raw.scope, images: raw.images === true, contents: raw.contents === true })
+      return await runGitRead({ op: 'diff', cwd, path, options: { scope: raw.scope, images: raw.images === true, contents: raw.contents === true } }, authorizeReadCwd)
     } catch (error) {
       return {
         ok: false,
@@ -209,8 +209,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     try {
       const auth = await authorizeReadCwd(String(cwd ?? ''))
       if (!auth.ok) return []
-      const repo = await resolveRepo(auth.cwd)
-      return repo ? await listRemotes(repo.root) : []
+      return await runGitRead({ op: 'remotes', cwd: auth.cwd }, authorizeReadCwd)
     } catch {
       return []
     }

@@ -69,6 +69,7 @@ import { PendingModelChange } from './PendingModelChange'
 import { ComposerWidthHandles } from './ComposerWidthHandles'
 import { loadDraft, restoreDraft, saveDraft } from './draft-store'
 import { WorktreeToggle } from './WorktreeToggle'
+import { SessionModeBanner, SessionModeMenu } from './SessionModeControl'
 import './composer.css'
 import './ComposerV3.css'
 
@@ -686,6 +687,7 @@ export function ComposerV3(): JSX.Element {
         banners={
           <>
             <AskDock />
+            <SessionModeBanner />
             <PlanCard />
             {stash.isOpen ? (
               <ComposerStashMenuV3
@@ -709,6 +711,7 @@ export function ComposerV3(): JSX.Element {
           <>
             <ComposerAttachButton onFiles={attachments.addFiles} />
             <ComposerVoiceButton onText={appendVoiceText} scope={sessionId ?? undefined} />
+            <SessionModeMenu />
             <WorktreeToggle text={value} />
           </>
         }

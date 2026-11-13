@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { transform } from 'esbuild'
 
-const source = await readFile('src/main/index.ts', 'utf8')
+const source = await readFile('src/main/ipc/shell-ipc.ts', 'utf8')
 const start = source.indexOf("  handle('yan:openPath',")
 const end = source.indexOf('\n  })', start)
 assert.ok(start >= 0 && end > start)

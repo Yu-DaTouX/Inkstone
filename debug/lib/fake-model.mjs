@@ -22,6 +22,10 @@ export function usageFromText(text) {
   }
 }
 
+function allUserText(input) {
+  return input.filter((item) => item.role === 'user').map((item) => typeof item.content === 'string' ? item.content : (item.content ?? []).map((part) => part.text ?? '').join('')).join('\n')
+}
+
 function toolOutputsSinceUser(input) {
   let count = 0
   for (let i = input.length - 1; i >= 0; i--) {
@@ -134,7 +138,9 @@ export const FAKE_TRIGGERS = {
   WFAGENT: '工作流里的子代理：等 WFDELAY<毫秒>（默认 2500）后回一句；含 WFJSON 时最后交一个 ```json 代码块',
   '[砚宿主通知：工作流': '工作流完成或失败通知只回一句，避免再次触发',
   '<pending-action>': '守卫超时后的模型审阅请求：含 REVIEWALLOW 时回放行 JSON，否则回拦下 JSON',
-  [SUGGESTION_MARKER]: '砚的「预测下一句」请求，固定回「继续下一步」'
+  [SUGGESTION_MARKER]: '砚的「预测下一句」请求，固定回「继续下一步」',
+  MODEASK: '只读问答模式：先用 write 写 notes/ask-blocked.md（应被拦），再用 read 读 README.md，最后回一句；触发词在任一用户消息里即可（模式通告会排在用户消息之后）',
+  MODEPLAN: '计划模式：读 README.md、试写 notes/too-early.md（应被拦）、用 todos 写两步计划并停下；批准后写 notes/plan-done.md、把待办标为完成并回一句'
 }
 
 function stormTag(text, word) {
@@ -173,7 +179,7 @@ const FLOW_STEPS = [
   { text: '', command: 'echo run tests', description: '运行测试', slowArgs: true }
 ]
 
-async function respond(res, text, done, requestNo) {
+async function respond(res, text, done, requestNo, conversation = '') {
   const usage = usageFromText(text)
   const send = (event) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
   const id = `resp_${requestNo}`
@@ -234,7 +240,20 @@ async function respond(res, text, done, requestNo) {
   try {
     if (text.includes('<pending-action>')) await streamText(text.includes('REVIEWALLOW') ? '{"decision":"allow","reason":"用户明确要求了这个操作"}' : '{"decision":"deny","reason":"用户没有要求删除注册表项"}', 20, 5)
     else if (text.includes(SUGGESTION_MARKER)) await streamText('继续下一步', 20, 5)
-    else if (text.includes('[砚宿主通知：工作流')) await streamText('工作流的结果收到了。', 20, 10)
+    else if (conversation.includes('MODEASK')) {
+      if (done < 1) await callTool('write', { path: 'notes/ask-blocked.md', content: '不该写出来\n' })
+      else if (done < 2) await callTool('read', { path: 'README.md', limit: 5 })
+      else await streamText('只读模式下写入被拦下，读取正常。', 6, 20)
+    } else if (conversation.includes('MODEPLAN') && conversation.includes('The user approved the plan')) {
+      if (done < 1) await callTool('write', { path: 'notes/plan-done.md', content: '按计划写出\n' })
+      else if (done < 2) await callTool('todos', { action: 'set', items: [{ text: '读 README.md', status: 'done' }, { text: '写入 notes/plan-done.md', status: 'done' }] })
+      else await streamText('已按计划执行完毕。', 6, 20)
+    } else if (conversation.includes('MODEPLAN')) {
+      if (done < 1) await callTool('read', { path: 'README.md', limit: 5 })
+      else if (done < 2) await callTool('write', { path: 'notes/too-early.md', content: '批准前不该写出来\n' })
+      else if (done < 3) await callTool('todos', { action: 'set', items: [{ text: '读 README.md', status: 'pending' }, { text: '写入 notes/plan-done.md', status: 'pending' }] })
+      else await streamText('计划：\n\n1. 读 README.md 确认项目说明。\n2. 写入 notes/plan-done.md。\n\n请批准后执行。', 6, 20)
+    } else if (text.includes('[砚宿主通知：工作流')) await streamText('工作流的结果收到了。', 20, 10)
     else if (text.includes('<subagent-notification')) await streamText('好的，收到。', 20, 10)
     else if (text.includes('WFAGENT')) {
       await sleep(Number(/WFDELAY(\d+)/.exec(text)?.[1] ?? 2500))
@@ -403,7 +422,7 @@ export function startFakeModel(port = 0) {
       const text = lastUserText(input)
       const done = toolOutputsSinceUser(input)
       const images = JSON.stringify(input).split('"input_image"').length - 1
-      requests.push({ at: Date.now(), text: text.slice(0, 40), usage: usageFromText(text), done, tools: (json.tools ?? []).length, images, unpairedCalls: input.filter((item) => item?.type === 'function_call' && !input.some((o) => o?.type === 'function_call_output' && o.call_id === item.call_id)).length, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
+      requests.push({ at: Date.now(), text: text.slice(0, 40), usage: usageFromText(text), done, tools: (json.tools ?? []).length, images, unpairedCalls: input.filter((item) => item?.type === 'function_call' && !input.some((o) => o?.type === 'function_call_output' && o.call_id === item.call_id)).length, toolsChars: JSON.stringify(json.tools ?? []).length, instructions: String(json.instructions ?? '') + JSON.stringify(input.filter((item) => item?.role === 'system' || item?.role === 'developer')) })
       const summaryDelay = Number(process.env.YAN_FAKE_SUMMARY_DELAY_MS)
       const requestDelay = Number(process.env.YAN_FAKE_REQUEST_DELAY_MS)
       if (text.startsWith('Stop here. Do not call any tool')) { if (summaryDelay > 0) await sleep(summaryDelay) } else if (requestDelay > 0) await sleep(requestDelay)
@@ -459,7 +478,7 @@ export function startFakeModel(port = 0) {
         return
       }
       res.writeHead(200, { 'content-type': 'text/event-stream' })
-      void respond(res, text, done, requests.length)
+      void respond(res, text, done, requests.length, allUserText(input))
     })
   })
   return new Promise((done) => server.listen(port, '127.0.0.1', () => done({ server, port: server.address().port, requests })))

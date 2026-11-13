@@ -122,7 +122,7 @@ try {
   const main = source('src/main/index.ts')
   assert.match(main, /'data-root-writer', error\); dialog\.showErrorBox/)
   assert.ok(main.includes('registerAppUpdate(ipc, () => quitReasons(quitActivity()).length > 0)'))
-  assert.match(main, /yan:revealPath[\s\S]{0,160}\[\\\\\/\]\{2\}/)
+  assert.match(source('src/main/ipc/shell-ipc.ts'), /yan:revealPath[\s\S]{0,160}\[\\\\\/\]\{2\}/)
   console.log('✓ 停止结果、崩溃后的忙状态、排队文件、启动失败提示、安装前检查和 UNC 拦截都已接上')
 } finally {
   rmSync(root, { recursive: true, force: true })

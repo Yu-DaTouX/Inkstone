@@ -1,7 +1,7 @@
 import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
 import type { ExpectedRuntimeOwner } from '../../shared/ipc'
-import { sessionActionAgent, sessionActionChanged } from './session-action-target'
+import { requiredSessionActionAgent, sessionActionChanged } from './session-action-target'
 import { shell } from 'electron'
 import { rememberSyncBaseline, takeSyncBaseline } from '../sync-baseline'
 import { existsSync } from 'node:fs'
@@ -82,12 +82,12 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
 export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
   handle('yan:usageStats', async (range: 'all' | '30d' | '7d') => readUsageStatsOffThread(range))
-  handle('yan:fork', async (entryId: string, expected?: ExpectedRuntimeOwner) => sessionActionAgent(host, expected)?.fork(entryId) ?? { ok: false, error: sessionActionChanged() })
-  handle('yan:clone', async (expected?: ExpectedRuntimeOwner) => sessionActionAgent(host, expected)?.clone() ?? { ok: false, error: expected === undefined ? pick('pi 未运行', 'pi is not running') : sessionActionChanged() })
+  handle('yan:fork', async (entryId: string, expected: ExpectedRuntimeOwner) => requiredSessionActionAgent(host, expected)?.fork(entryId) ?? { ok: false, error: sessionActionChanged() })
+  handle('yan:clone', async (expected: ExpectedRuntimeOwner) => requiredSessionActionAgent(host, expected)?.clone() ?? { ok: false, error: sessionActionChanged() })
   handle('yan:forkPoints', async () => host.ac()?.forkPoints() ?? [])
-  handle('yan:exportHtml', async (outputPath?: string, expected?: ExpectedRuntimeOwner) => {
+  handle('yan:exportHtml', async (outputPath: string | undefined, expected: ExpectedRuntimeOwner) => {
     if (outputPath !== undefined && (typeof outputPath !== 'string' || !outputPath.trim())) return { ok: false, error: pick('导出路径无效', 'Invalid export path') }
-    const agent = sessionActionAgent(host, expected)
+    const agent = requiredSessionActionAgent(host, expected)
     if (!agent) return { ok: false, error: sessionActionChanged() }
     const path = outputPath === undefined ? undefined : resolve(agent.workingDirectory, outputPath)
     const sessionId = agent.getState()?.sessionId
@@ -95,7 +95,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     if (path && existsSync(path)) {
       const confirmed = await agent.confirmNativeOperation({ title: pick('覆盖 HTML 导出文件？', 'Overwrite HTML export file?'), message: pick(`将覆盖 ${path}。`, `${path} will be overwritten.`), acceptLabel: pick('覆盖', 'Overwrite') })
       if (!confirmed) return { ok: false, cancelled: true }
-      if (sessionActionAgent(host, expected) !== agent || agent.getState()?.sessionId !== sessionId) return { ok: false, error: pick('会话已切换，导出已取消', 'Session changed; export cancelled') }
+      if (requiredSessionActionAgent(host, expected) !== agent || agent.getState()?.sessionId !== sessionId) return { ok: false, error: pick('会话已切换，导出已取消', 'Session changed; export cancelled') }
     }
     const res = await agent.exportHtml(path)
     if (res.ok && res.path) await shell.openPath(res.path)
@@ -272,9 +272,9 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     host.pushRunners()
     return res.ok ? { ok: true } : { ok: false, error: res.error }
   })
-  handle('yan:compact', async (customInstructions?: string, expected?: ExpectedRuntimeOwner) => {
+  handle('yan:compact', async (customInstructions: string | undefined, expected: ExpectedRuntimeOwner) => {
     if (customInstructions !== undefined && typeof customInstructions !== 'string') return { ok: false, error: pick('压缩要求必须是文本', 'Compaction instructions must be text') }
-    return sessionActionAgent(host, expected)?.compact(customInstructions) ?? { ok: false, error: expected === undefined ? pick('pi 未运行', 'pi is not running') : sessionActionChanged() }
+    return requiredSessionActionAgent(host, expected)?.compact(customInstructions) ?? { ok: false, error: sessionActionChanged() }
   })
 
   handle('yan:compactionInfo', async (cwd: unknown, contextWindow: unknown) => {
@@ -288,7 +288,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     return translateText(text, { service: settings.translateService ?? 'bing', target: settings.translateTarget, model: settings.translateModel, piBin: settings.piBin })
   })
   handle('yan:cachedTitles', async () => cachedTitles())
-  handle('yan:renameSession', async (name: string, sessionId?: string) => host.ac()?.renameSession(name, typeof sessionId === 'string' ? sessionId : undefined) ?? { ok: false, error: pick('pi 未运行', 'pi is not running') })
+  handle('yan:renameSession', async (name: string, expected: ExpectedRuntimeOwner) => requiredSessionActionAgent(host, expected)?.renameSession(name, expected.sessionId) ?? { ok: false, error: sessionActionChanged() })
   handle('yan:manualTitles', async () => manualTitles())
   handle('yan:setManualTitle', async (sessionId: string, name: string) =>
     setManualTitle(String(sessionId ?? ''), String(name ?? ''))

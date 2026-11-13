@@ -8,6 +8,7 @@ import { build } from 'esbuild'
 import ts from 'typescript'
 
 const source = await readFile('src/main/index.ts', 'utf8')
+const agentIpcSource = await readFile('src/main/ipc/agent-ipc.ts', 'utf8')
 const temp = await mkdtemp(join(tmpdir(), 'inkstone-hotpaths-'))
 const previous = process.env.YAN_DATA_DIR
 process.env.YAN_DATA_DIR = temp
@@ -21,19 +22,18 @@ try {
     assert(node, `Missing production helper: ${name}`)
     return node.getText(sourceTree)
   }).join('\n')
-  const runStateSource = await readFile('src/core/run-state.ts', 'utf8')
-  const runStateTree = ts.createSourceFile('run-state.ts', runStateSource, ts.ScriptTarget.Latest, true)
-  const sameEnvelopeNode = runStateTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'sameRuntimeEnvelope')
-  assert(sameEnvelopeNode, 'Missing production helper: sameRuntimeEnvelope')
-  const ownershipDeps = ownershipHelpers + '\n' + sameEnvelopeNode.getText(runStateTree).replace(/^export /, '')
+  const runsBundle = await build({ entryPoints: [resolve('src/shared/runs.ts')], bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent' })
+  const { RuntimeRef } = await import(`data:text/javascript;base64,${Buffer.from(runsBundle.outputFiles[0].text).toString('base64')}`)
+  assert(RuntimeRef?.matches, 'Missing production helper: RuntimeRef.matches')
+  const ownershipDeps = ownershipHelpers
   const compileHandler = async (name, end, ports, prelude = '') => {
-    const start = source.indexOf(`  handle('yan:${name}',`)
+    const start = agentIpcSource.indexOf(`  handle('yan:${name}',`)
     assert(start >= 0)
-    const text = source.slice(start, source.indexOf(end, start))
+    const text = agentIpcSource.slice(start, agentIpcSource.indexOf(end, start))
     const { transform } = await import('esbuild')
     const js = await transform(ownershipDeps + '\n' + prelude + '\n' + text, { loader: 'ts', target: 'es2022' })
     let callback
-    vm.runInNewContext(js.code, { ...ports, handle: (_channel, handler) => { callback = handler } })
+    vm.runInNewContext(js.code, { RuntimeRef, ...ports, handle: (_channel, handler) => { callback = handler } })
     return callback
   }
 
@@ -64,7 +64,7 @@ try {
     admitExecute: () => ({ ok: true, token: 1 }),
     releaseExecute: () => {}
   }
-  const ports = { runners, reserveWorkspaceMutation: () => () => {}, warnSharedCwdOnce: () => {}, userMessageSent: () => {},
+  const ports = { runners, deps: { runners: () => runners }, reserveWorkspaceMutation: () => () => {}, warnSharedCwdOnce: () => {}, userMessageSent: () => {},
     getSettings: async () => ({ checkpointsEnabled: true }), captureCheckpoint: async () => { captured++ }, ac: () => agent,
     startAgent: async () => { throw Error('unexpected restart') } }
   const send = await compileHandler('send', "  handle('yan:steer'", ports)

@@ -74,7 +74,9 @@ export function snapshotAfter(callId: string): FileDiff | null {
       ? 'created'
       : entry.before.exists && !after.exists
         ? 'deleted'
-        : entry.before.content !== undefined && after.content !== undefined
+        : !entry.before.exists && !after.exists
+          ? 'unchanged'
+          : entry.before.content !== undefined && after.content !== undefined
           ? entry.before.content === after.content
             ? 'unchanged'
             : 'modified'
@@ -85,7 +87,9 @@ export function snapshotAfter(callId: string): FileDiff | null {
       ? createdStats(after.content)
       : status === 'deleted'
         ? deletedStats(entry.before.content)
-        : diffStats(entry.before.content, after.content)
+        : !entry.before.exists && !after.exists
+          ? { added: 0, removed: 0, patch: '' }
+          : diffStats(entry.before.content, after.content)
   const beforeMeta = { ...entry.before, content: undefined }
   const afterMeta = { ...after, content: undefined }
   return {

@@ -133,13 +133,13 @@ export async function runSubagentParentOwnershipTests(ok) {
       })
       const settings = { cwd: 'C:/fallback', projects: [{ id: 'pB', cwd: 'C:/other' }] }
       const runState = await loadBundle(
-        fileURLToPath(new URL('../src/core/run-state.ts', import.meta.url)),
+        fileURLToPath(new URL('../src/shared/runs.ts', import.meta.url)),
         dir,
         'run-state'
       )
       const context = {
         runners: registry,
-        sameRuntimeEnvelope: runState.sameRuntimeEnvelope,
+        RuntimeRef: runState.RuntimeRef,
         projectIdForCwd: (s, cwd) => s.projects.find((p) => p.cwd === cwd)?.id
       }
       vm.createContext(context)

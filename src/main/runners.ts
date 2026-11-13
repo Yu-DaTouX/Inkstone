@@ -5,6 +5,7 @@ import type { UiAnswerResult } from './ui-requests'
 import type { McpNativeBootWitness } from './mcp/app-native-witness'
 import type { McpServerStatus } from '../shared/mcp'
 import { executionBusy, runEnvelope, runStatus } from '../core/run-state'
+import { RuntimeRef } from '../shared/runs'
 import { canReclaimIdle, IDLE_RECLAIM_SCAN_MS } from './runner-reclaim'
 import {
   admissionClaimedBy,
@@ -224,7 +225,7 @@ export class RunnerRegistry {
       runner = this.runners.get(expected.sessionId.slice('pending:'.length))
     }
     if (!runner) return null
-    if (expected.generation !== undefined && runner.generation !== expected.generation) return null
+    if (!RuntimeRef.matches({ generation: runner.generation }, { generation: expected.generation }, 'expected')) return null
     return runner.id
   }
 

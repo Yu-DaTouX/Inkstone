@@ -21,6 +21,7 @@ export function composerStoreActions(): ComposerSendActions {
     setThinking: (level) => state().setThinking(level),
     nativeSession: (action, args) => state().nativeSession(action, args),
     askSideQuestion: (question) => state().askSideQuestion(question),
+    setSessionMode: (change) => state().setSessionMode(change),
     notify: (level, text) => state().notify(level, text)
   }
 }

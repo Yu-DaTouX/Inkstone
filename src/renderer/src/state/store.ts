@@ -40,6 +40,7 @@ import type {
   QuotaWindow
 } from '../../../shared/ipc'
 import type { CheckpointRecord } from '../../../shared/checkpoints'
+import type { SessionModeChange } from '../../../shared/session-mode'
 import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { attentionForOutcome } from '../../../shared/turn-outcome'
 import { playSound } from '../lib/sound'
@@ -348,6 +349,7 @@ export interface Store {
   setModel: (provider: string, id: string, quiet?: boolean) => Promise<{ ok: boolean; error?: string }>
   setThinking: (level: string) => Promise<void>
   setUltracode: (on: boolean) => Promise<void>
+  setSessionMode: (change: SessionModeChange) => Promise<boolean>
   setAutoCompaction: (on: boolean) => Promise<void>
   setAutoRetry: (on: boolean) => Promise<void>
   setSteeringMode: (mode: QueueMode) => Promise<void>
@@ -2443,7 +2445,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   renameSession: async (name) => {
-    const res = await piCall(() => window.yan.renameSession(name, get().session?.sessionId))
+    const expected = expectedRuntimeFor(get(), composerSubmitIdentity(get()))
+    const res = expected
+      ? await piCall(() => window.yan.renameSession(name, expected))
+      : { ok: false, error: uiText('state.error.sessionNotActivated') }
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.renameFailed')) })
       return
@@ -2460,7 +2465,8 @@ export const useStore = create<Store>((rawSet, get) => {
     const previous = state.manualTitles[sid]
     set({ manualTitles: { ...state.manualTitles, [sid]: trimmed } })
     if (sid === state.session?.sessionId) {
-      await piCall(() => window.yan.renameSession(trimmed, sid))
+      const expected = expectedRuntimeFor(state, composerSubmitIdentity(state))
+      if (expected) await piCall(() => window.yan.renameSession(trimmed, expected))
     }
     const res = await piCall(() => window.yan.setManualTitle(sid, trimmed))
     if (!res.ok) {
@@ -2659,6 +2665,18 @@ export const useStore = create<Store>((rawSet, get) => {
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
     }
+  },
+
+  setSessionMode: async (change) => {
+    const target = await sessionActionTarget(get)
+    if (!target) return false
+    const res = await piCall(() => window.yan.setSessionMode(change, target.expected))
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
+      return false
+    }
+    if (change === 'approve' && target.current()) return get().send(uiText('composer.mode.approveMessage'))
+    return true
   },
 
   setAutoCompaction: async (on) => {

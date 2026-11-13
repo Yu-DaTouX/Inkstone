@@ -50,10 +50,11 @@ const deferred = () => {
 }
 const flush = () => new Promise((done) => setImmediate(done))
 const index = await readFile('src/main/index.ts', 'utf8')
-const sendStart = index.indexOf("  handle('yan:send',")
-const sendEnd = index.indexOf("  handle('yan:steer',", sendStart)
+const agentIpc = await readFile('src/main/ipc/agent-ipc.ts', 'utf8')
+const sendStart = agentIpc.indexOf("  handle('yan:send',")
+const sendEnd = agentIpc.indexOf("  handle('yan:steer',", sendStart)
 assert.ok(sendStart >= 0 && sendEnd > sendStart)
-const sendCode = ts.transpileModule(index.slice(sendStart, sendEnd), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
+const sendCode = ts.transpileModule(agentIpc.slice(sendStart, sendEnd), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
 
 for (const changed of [false, true]) {
   const captured = deferred()
@@ -87,7 +88,7 @@ for (const changed of [false, true]) {
   }
   vm.runInNewContext(sendCode, {
     pick: zh => zh,
-    handle: (_channel, fn) => { handler = fn }, runners: registry,
+    handle: (_channel, fn) => { handler = fn }, deps: { runners: () => registry },
     normalizeExpectedRuntime: (input) => input, resolveExpectedTarget: () => 'r1', targetMatchesExpected: () => current,
     pinSendTarget: () => ({ ...target, agent }), pinnedTargetMatches: () => current,
     getSettings: async () => ({ checkpointsEnabled: true }), reserveWorkspaceMutation, warnSharedCwdOnce: () => {}, userMessageSent: () => {},

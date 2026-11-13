@@ -216,7 +216,8 @@
     )
     if (btn) {
       const noticesBefore = noticeLog.length
-      const direct = await window.yan.removeQueued(dups[0].id)
+      const active = (await window.yan.runnerStatuses()).find((r) => r.isActive)
+      const direct = await window.yan.removeQueued(dups[0].id, active ? { runId: active.runId, generation: active.generation } : undefined)
       log('  直连 removeQueued(' + dups[0].id + ') = ' + JSON.stringify(direct))
       await sleep(1200)
       const left = snapItems().filter((i) => i.text === DUP).length

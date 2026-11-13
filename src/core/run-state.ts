@@ -32,17 +32,6 @@ export function executionBusy(state: ExecutionState | null, hasRunningBash: () =
   return pendingUiCount() > 0
 }
 
-export function sameRuntimeEnvelope(
-  a: { sessionId?: string; runId?: string; generation?: number } | null | undefined,
-  b: { sessionId?: string; runId?: string; generation?: number } | null | undefined
-): boolean {
-  if (!a || !b) return false
-  if (a.runId !== b.runId || a.generation !== b.generation) return false
-  if (a.sessionId === b.sessionId) return true
-  const pending = (value?: string) => !value || value.startsWith('pending:')
-  return pending(a.sessionId) || pending(b.sessionId)
-}
-
 export function runEnvelope(run: RunIdentity, state: ExecutionState | null) {
   return {
     sessionId: state?.sessionId || `pending:${run.id}`,

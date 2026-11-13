@@ -1,19 +1,18 @@
 import './exe-search-guard'
-import { isRestoredReadonly, restoredReadonlyMessage } from './restored-readonly'
-import { setUserHandoffRelease, userMessageSent } from './browser/user-handoff'
+import { setUserHandoffRelease } from './browser/user-handoff'
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import { storageMoveReady } from './storage-move-boot'
 import { pick } from '../shared/ui-lang'
-import { app, shell, BrowserWindow, clipboard, ClipboardItem, crashReporter, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme, session } from 'electron'
-import { openBlockedByName } from './open-guard'
+import { app, shell, BrowserWindow, crashReporter, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme, session } from 'electron'
 import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
 import { disposeUsageStatsWorker } from './usage-stats-host'
+import { disposeGitReadHost } from './git-read-host'
 import { disposeContentSearch } from './file-content-search'
-import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
+import { join, dirname, isAbsolute, resolve } from 'node:path'
 import { release as osRelease } from 'node:os'
 import { constants as fsConstants, appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { access, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { loadModelPricing } from './model-pricing'
@@ -23,7 +22,6 @@ import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, effectiveTerminalReason, readTurnTimings, timingKey } from './turn-timing-store'
 import { readSessionTail, tailTurnInterrupted } from './session-tail'
 import { RunnerRegistry } from './runners'
-import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from './pi-runtime-prefs'
 import { createRunsHost, type RunsHost } from './runs-host'
 import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
 import { createAuxWindows, quickAskSessionTarget, registerAuxIpc, submitQuickAsk, type AuxWindows } from './windows'
@@ -32,20 +30,19 @@ import { registerDeepLinkProtocol, windowDeepLinkRouter, type DeepLink } from '.
 import { approvalNoticeTitle, createAttentionNotices, noticeLang, terminalNoticeText } from './attention-notice'
 import { RunnerVisibility } from './runner-reclaim'
 import { isBroadAllowRoot } from './guard-roots'
-import { getSettings, patchSettings, setGuardSettingsNoticeSink, updateSettings, validateRendererSettingsPatch } from './settings'
+import { getSettings, patchSettings } from './settings'
 import { syncNativeCompactionLines, type LineModel } from './native-compaction-line'
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../shared/context-limits'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
-import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize, syncFolderService } from './storage-move'
 import { getSessionLayout, moveSessionLayout, rememberSession } from './session-layout'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
 import { rewriteSessionCwd, movedSessionContinuationPrompt, beginSessionMove, restoreSessionHeaderCwd, type SessionMoveAnswer, type SessionMovePrompt, type SessionMoveLease } from './session-move'
 import { resolveSessionOpenTarget } from './session-open-target'
 import { readChainMessages } from './session-history'
-import { imageFile, localizeImage } from './image-store'
+import { localizeImage } from './image-store'
 import { ArtifactStore, sessionArtifactDir } from './artifacts'
 import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames, htmlArtifactPreviews } from './html-artifact-preview'
-import { attachPinnedNetworkGuard, pinnedGuardStatus, pinnedRoutingStatus, shutdownPinnedNetworkGuard } from './net/pinned-network'
+import { attachPinnedNetworkGuard, shutdownPinnedNetworkGuard } from './net/pinned-network'
 import { pinnedGuardNotice, type PinnedGuardNotice } from './pinned-guard-notice'
 import { captureHtmlPreviewShots } from './artifact-preview-shots'
 import { exportVideo } from './video-export'
@@ -60,7 +57,7 @@ import { createPiPackageActivationHostPorts } from './capabilities/pi-package-ac
 import { PiPackageActivationScheduler } from './capabilities/pi-package-scheduler'
 import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
 import { allowTrust, trustStatus } from './project-trust'
-import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
+import { resolvePi } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController, DOWNLOAD_CONFIRM_BYTES, type LargeDownload } from './browser'
 import { openableExternalUrl } from './external-url'
@@ -71,9 +68,10 @@ import { installSessionPermissionBoundary, trustedFrameTrust } from './browser/p
 import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
-import { sessionActionAgent, sessionActionChanged } from './ipc/session-action-target'
-import { abortBashFor, lastAssistantTextFor } from './ipc/session-command-target'
 import { registerBrowserIpc } from './ipc/browser-ipc'
+import { registerAgentIpc, type PinnedSendTarget } from './ipc/agent-ipc'
+import { registerSettingsIpc } from './ipc/settings-ipc'
+import { registerShellIpc } from './ipc/shell-ipc'
 import { setSessionBrowserCloser } from './session-browser-cleanup'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
@@ -108,15 +106,15 @@ import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
 import { registerCanvasCaptureIpc } from './ipc/canvas-capture-ipc'
 import { registerHtmlEditIpc } from './ipc/html-edit-ipc'
 import { registerVideoExportIpc } from './ipc/video-export-ipc'
-import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
-import { reserveWorkspaceMutation } from './workspace-mutation'
+import { pruneCheckpoints } from './checkpoints'
 import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerWorkspaceIpc } from './ipc/workspace-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { lockDataRoot } from '../core/data-root-lock'
-import { executionBusy, sameRuntimeEnvelope } from '../core/run-state'
+import { executionBusy } from '../core/run-state'
+import { RuntimeRef } from '../shared/runs'
 import { isWithin } from './file-path-gate'
 import { SubagentService } from './subagent-service'
 import { LookupCommands } from './lookup-commands'
@@ -142,7 +140,6 @@ import { SessionChainStore } from './session-chain-service'
 import { sharedCwdNotice } from './cwd-sharing'
 import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolatedSessionCwd, isolationCwdKey, pendingIsolationChanges } from './session-isolation'
 import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
-import { localCommandDescriptors } from './command-registry'
 import { clearExitSnapshot, pickRestoreRunner, readExitSnapshot, writeExitSnapshot } from './exit-snapshot'
 import { QUEUE_RECOVERY_DIR, pruneReclaimedQueues } from './queue-persistence'
 import { installStdioGuard } from './stdio-guard'
@@ -156,7 +153,6 @@ import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { ApprovalBroker } from './approval-broker'
 import { approvalLog, type ModelReviewReceiptInput } from './approval-log'
-import { approvalIdentityFrom } from './approval-ledger'
 import { refreshManagedGit } from './git-runtime'
 import { applyBundledSearchTools } from './search-tools'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
@@ -164,7 +160,7 @@ import { cachedTitlesSync, primeCachedTitles } from './title'
 import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
-import type { Attachment, AttentionNotify, ExpectedRuntimeOwner, FileRequestContext, MainPush, QueueEditOp, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
+import type { FileRequestContext, MainPush, QueueSnapshot, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -266,28 +262,6 @@ process.on('uncaughtException', (error) => {
 })
 process.on('unhandledRejection', (reason) => reportMainError('unhandledRejection', reason))
 
-const IMAGE_DATA_URL = /^data:image\/([a-z0-9.+-]+);base64,/i
-const PICK_IMAGES_TOTAL_BYTES = 24 * 1024 * 1024
-const PICK_IMAGES_PREVIEW_WIDTH = 160
-const PICK_IMAGES_PREVIEW_MIN_BYTES = 256 * 1024
-const IMAGE_EXTENSIONS: Record<string, string> = { png: 'png', jpeg: 'jpg', jpg: 'jpg', gif: 'gif', webp: 'webp', bmp: 'bmp' }
-
-function imageSaveBytes(dataUrl: unknown): { data: Buffer; ext: string } | null {
-  if (typeof dataUrl !== 'string') return null
-  const head = IMAGE_DATA_URL.exec(dataUrl)
-  if (!head) return null
-  const ext = IMAGE_EXTENSIONS[head[1].toLowerCase()]
-  if (!ext) return null
-  const data = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')
-  return data.length ? { data, ext } : null
-}
-
-function imageFileName(suggested: unknown, ext: string): string {
-  const raw = typeof suggested === 'string' ? basename(suggested).replace(/[:*?"<>|]+/g, '').trim() : ''
-  const stem = raw ? raw.replace(/\.[a-z0-9]{1,5}$/i, '') : ''
-  return `${stem.slice(0, 80) || 'image'}.${ext}`
-}
-
 if (ELECTRON_USER_DATA_DIR) {
   app.setPath('userData', ELECTRON_USER_DATA_DIR)
 }
@@ -371,13 +345,6 @@ let exitRequestInFlight: Promise<{
 }> | null = null
 let runners: RunnerRegistry | null = null
 
-interface PinnedSendTarget {
-  runId: string
-  generation: number
-  sessionId?: string
-  agent: AgentController
-}
-
 function pinSendTarget(id: string): PinnedSendTarget | null {
   const agent = runners?.agentOf(id)
   const runtime = runners?.runtimeOf(id)
@@ -387,7 +354,7 @@ function pinSendTarget(id: string): PinnedSendTarget | null {
 
 function pinnedTargetMatches(pin: PinnedSendTarget): boolean {
   if (runners?.agentOf(pin.runId) !== pin.agent) return false
-  return sameRuntimeEnvelope(runners?.runtimeOf(pin.runId), pin)
+  return RuntimeRef.matches(runners?.runtimeOf(pin.runId), pin, 'envelope')
 }
 
 let runsHost: RunsHost | null = null
@@ -672,6 +639,7 @@ const YAN_THIN_EXTENSION_FILES = {
   languageExtension: 'language.js',
   userAddressExtension: 'user-address.js',
   ultracodeExtension: 'ultracode.js',
+  sessionModeExtension: 'session-mode.js',
   turnModelSwitchExtension: 'turn-model-switch.js',
   capabilityGuideExtension: 'capability-guide.js',
   mcpAppProxyExtension: 'mcp-app-proxy.js',
@@ -1099,7 +1067,7 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
     if (msg.ch === 'ui-request') console.warn(`[ui-request] 实例 ${runnerId} 已摘登记，问题推送被丢弃：${msg.payload.id}`)
     return
   }
-  if (expectedRuntime && !sameRuntimeEnvelope(runtime, expectedRuntime)) return
+  if (expectedRuntime && !RuntimeRef.matches(runtime, expectedRuntime, 'envelope')) return
   runners?.noteActivity(runnerId)
   if (msg.ch === 'state') runners?.noteStateChange(runnerId)
   push({
@@ -1218,7 +1186,7 @@ function scheduleEpochSnapshots(): void {
   })
 }
 
-type ExpectedRuntimeInput = { sessionId?: string; runId?: string; generation?: number }
+type ExpectedRuntimeInput = RuntimeRef
 
 function normalizeExpectedRuntime(input: unknown): ExpectedRuntimeInput | null | 'invalid' {
   if (input === undefined || input === null) return null
@@ -1233,14 +1201,7 @@ function normalizeExpectedRuntime(input: unknown): ExpectedRuntimeInput | null |
 
 function targetMatchesExpected(id: string, expected: ExpectedRuntimeInput | null): boolean {
   if (!expected) return true
-  const runtime = runners?.runtimeOf(id)
-  if (!runtime) return false
-  if (expected.runId !== undefined && runtime.runId !== expected.runId) return false
-  if (expected.generation !== undefined && runtime.generation !== expected.generation) return false
-  if (expected.sessionId !== undefined && runtime.sessionId !== expected.sessionId) {
-    if (!expected.sessionId.startsWith('pending:')) return false
-  }
-  return true
+  return RuntimeRef.matches(runners?.runtimeOf(id), expected, 'expected')
 }
 
 function runnerForExpected(expected: ExpectedRuntimeInput): AgentController | null {
@@ -1301,7 +1262,7 @@ function parentContextFromCapture(captured: CapturedParent | null, settings: Awa
   if (!captured) return { cwd: settings.cwd }
   if (runners?.agentOf(captured.runId) !== captured.agent) throw new Error('子代理父会话已不可用，未派发')
   const runtime = runners?.runtimeOf(captured.runId)
-  if (!runtime || !sameRuntimeEnvelope(runtime, captured)) throw new Error('子代理父会话已不可用，未派发')
+  if (!runtime || !RuntimeRef.matches(runtime, captured, 'envelope')) throw new Error('子代理父会话已不可用，未派发')
   const state = captured.agent.getState()
   return {
     cwd: captured.cwd ?? state?.cwd ?? settings.cwd,
@@ -1339,10 +1300,10 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
   if (st) pushFrom(id, { ch: 'state', payload: st }, expected)
   try {
     let payload = await ag.getMessages({ includeStreaming: true })
-    if (runners?.agentOf(id) !== ag || !sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) return
+    if (runners?.agentOf(id) !== ag || !RuntimeRef.matches(runners?.runtimeOf(id), expected, 'envelope')) return
     if (opts.chainHistory && st?.sessionFile) {
       const chain = await readHistoryWithArtifacts(st.sessionFile, ag.liveTimingRunId()).catch(() => null)
-      if (runners?.agentOf(id) !== ag || !sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) return
+      if (runners?.agentOf(id) !== ag || !RuntimeRef.matches(runners?.runtimeOf(id), expected, 'envelope')) return
       if (chain?.messages?.length && chain.messages.length >= payload.length) payload = chain.messages
     }
     const plan = planSessionSyncAgainst(takeSyncBaseline(st?.sessionFile), payload)
@@ -1399,6 +1360,7 @@ async function runShutdown(): Promise<void> {
       { name: 'pinned-network', run: () => shutdownPinnedNetworkGuard() },
       { name: 'file-name-search', run: () => disposeFileNameSearch() },
       { name: 'usage-stats-worker', run: () => disposeUsageStatsWorker() },
+      { name: 'git-read-host', run: () => disposeGitReadHost() },
       { name: 'content-search', run: () => disposeContentSearch() }
     ],
     (outcome) => reportMainError(`shutdown-${outcome.name}`, outcome.timedOut ? new Error('退出步骤超时') : outcome.error)
@@ -1821,7 +1783,7 @@ async function continueMovedSession(job: SessionMoveJob, projectId?: string): Pr
     const fresh = pin?.agent.captureSessionMoveContinuation()
     const selectedRuntime = { runId: selected.runId ?? selected.id, generation: selected.generation, sessionId: selected.sessionId }
     const current = () => !shuttingDown && runners === job.registry && !!pin && pinnedTargetMatches(pin) &&
-      sameRuntimeEnvelope(pin, selectedRuntime) && pin.sessionId === job.sessionId &&
+      RuntimeRef.matches(pin, selectedRuntime, 'envelope') && pin.sessionId === job.sessionId &&
       normalizeCwdForIdentity(pin.agent.getState()?.cwd ?? '') === normalizeCwdForIdentity(job.target) &&
       job.continuation(true) && fresh?.() === true
     if (!pin || !current()) throw new Error('恢复目标已变化，未自动继续')
@@ -2542,132 +2504,34 @@ function registerIpc(): void {
 
   const isTrustedIpc = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean => !!win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
   const ipc = createIpcRegistrar(isTrustedIpc)
-  const { handle, rawHandle } = ipc
 
-  handle('yan:start', async () => {
-    const active = runners?.active()
-    const crashedFile = active && !active.running ? active.getState()?.sessionFile : undefined
-    const res = await startAgent(crashedFile ? { sessionFile: crashedFile } : undefined)
-    return { ...res, state: ac()?.getState() ?? undefined }
-  })
-
-  handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedInput?: unknown) => {
-    const preparationStartedAt = Date.now()
-    let checkpointMs = 0
-    let checkpointSaved: boolean | undefined
-    const expected = normalizeExpectedRuntime(expectedInput)
-    if (expected === 'invalid') return { ok: false, error: pick('发送目标身份无效，消息未发送', 'Invalid send target; message not sent') }
-    let targetId = expected ? resolveExpectedTarget(expected) ?? undefined : runners?.activeRunnerId
-    if (expected && !targetId) return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
-    let pin = targetId ? pinSendTarget(targetId) : null
-    const sendOwnershipChanged = (id: string | null | undefined): boolean =>
-      (!!expected && (!id || !targetMatchesExpected(id, expected))) || (!!id && !!pin && !pinnedTargetMatches(pin))
-    if (sendOwnershipChanged(targetId)) {
-      return { ok: false, error: pick('目标会话在等待时已变化，消息未发送；草稿已保留', 'Target session changed while waiting; message not sent, draft kept') }
-    }
-    if (!expected && (!targetId || !runners?.agentOf(targetId)?.running)) {
-      const r = await startAgent()
-      if (!r.ok) return r
-      targetId = runners?.activeRunnerId
-      pin = targetId ? pinSendTarget(targetId) : null
-    }
-    if (sendOwnershipChanged(targetId)) {
-      return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
-    }
-    const id = targetId
-    if (id) {
-      const guard = runners?.guardExecute(id)
-      if (guard && !guard.ok) return guard
-    }
-    const registry = runners
-    const agent = id ? registry?.agentOf(id) : null
-    if (!id || !registry || !agent) return { ok: false, error: piDown() }
-    await userMessageSent(agent.getState()?.sessionId)
-    let admissionToken: number | undefined
-    let handedOff = false
-    const idleForTurn = (): boolean => {
-      const state = agent.getState()
-      return !!state && !state.isAgentRunning && !state.isStreaming && !state.isCompacting && !state.pendingMessageCount && !agent.hasRunningBash()
-    }
-    if (!mode && text.trim() && idleForTurn()) {
-      const admission = registry.admitExecute(id)
-      if (!admission.ok) return admission
-      admissionToken = admission.token
-      warnSharedCwdOnce(id, agent.workingDirectory, registry)
-    }
-    try {
-      if (admissionToken !== undefined && (await getSettings()).checkpointsEnabled !== false) {
-        if (sendOwnershipChanged(id) || runners !== registry) {
-          return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
-        }
-        const state = agent.getState()
-        if (state && idleForTurn()) {
-          const release = reserveWorkspaceMutation(agent.workingDirectory)
-          if (!release) return { ok: false, error: pick('项目正在保存或回退代码，请稍后发送；草稿已保留', 'Project is saving or reverting code; try again shortly, draft kept') }
-          const checkpointStartedAt = Date.now()
-          try {
-            checkpointSaved = !!(await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text))
-          } finally {
-            checkpointMs = Math.max(0, Date.now() - checkpointStartedAt)
-            release()
-          }
-        }
-      }
-      if (sendOwnershipChanged(id) || runners !== registry) {
-        return { ok: false, error: pick('目标会话已不在或已切换，消息未发送；草稿已保留', 'Target session is gone or changed; message not sent, draft kept') }
-      }
-      console.log(`[发送准备] ${JSON.stringify({ runnerId: id, elapsedMs: Math.max(0, Date.now() - preparationStartedAt), checkpointMs, checkpointSaved })}`)
-      const result = await agent.send(text, images, mode, undefined, pin?.generation)
-      handedOff = result.ok
-      return result
-    } finally {
-      if (admissionToken !== undefined && !handedOff) registry.releaseExecute(id, admissionToken)
-    }
-  })
-
-  handle('yan:steer', async (text: string, expectedInput?: unknown) => {
-    const expected = normalizeExpectedRuntime(expectedInput)
-    if (expected === 'invalid') return { ok: false, error: pick('插话目标身份无效', 'Invalid steer target') }
-    const agent = expected ? runnerForExpected(expected) : ac()
-    if (expected && !agent) return { ok: false, error: pick('目标会话已不在或运行实例已更换，插话未发送', 'Target session is gone or its runtime changed; steer not sent') }
-    return agent?.steer(text, undefined, expected?.generation) ?? { ok: false, error: piDown() }
-  })
-  handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: piDown() })
-  const queueAgent = (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)
-  const queueMissing = (expected?: unknown) => ({ ok: false, error: expected === undefined ? piDown() : sessionActionChanged() })
-  handle('yan:steerQueued', async (queueId: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => queueAgent(expected)?.steerQueued(queueId) ?? queueMissing(expected))
-  handle('yan:removeQueued', async (queueId: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => queueAgent(expected)?.removeQueued(queueId) ?? queueMissing(expected))
-  handle('yan:queueEdit', async (arg: QueueState | QueueEditOp, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => {
-    const agent = queueAgent(expected)
-    if (!agent) return queueMissing(expected)
-    return 'op' in arg ? agent.editQueue(arg) : agent.rewriteQueue(arg)
-  })
-  handle('yan:abort', async (expectedInput?: unknown) => {
-    const expected = normalizeExpectedRuntime(expectedInput)
-    if (expected === 'invalid') return { steering: [], followUp: [], error: pick('停止目标身份无效', 'Invalid stop target') }
-    if (!expected) return stopRunner(ac())
-    const agent = runnerForExpected(expected)
-    if (!agent) return { steering: [], followUp: [], error: pick('目标会话已不在或运行实例已更换，未停止', 'Target session is gone or its runtime changed; not stopped') }
-    return (await agent.abort(expected.generation))
-  })
-
-  handle('yan:runBash', async (command: string, options?: { excludeFromContext?: boolean }, expectedInput?: unknown) => {
-    if (typeof command !== 'string' || !command.trim() || (options !== undefined && (!options || typeof options !== 'object' || (options.excludeFromContext !== undefined && typeof options.excludeFromContext !== 'boolean')))) return { ok: false, error: pick('命令参数无效', 'Invalid command arguments') }
-    const expected = normalizeExpectedRuntime(expectedInput)
-    if (expected === 'invalid') return { ok: false, error: pick('执行目标身份无效', 'Invalid run target') }
-    const id = expected ? resolveExpectedTarget(expected) ?? undefined : runners?.activeRunner()?.id
-    if (expected && !id) return { ok: false, error: pick('目标会话已不在或已切换，命令未执行', 'Target session is gone or changed; command not run') }
-    if (id) {
-      const guard = runners?.guardExecute(id)
-      if (guard && !guard.ok) return guard
-    }
-    return (id ? runners?.agentOf(id)?.runBash(command, options) : undefined) ?? { ok: false, error: piDown() }
-  })
-  handle('yan:abortBash', async (expected?: ExpectedRuntimeOwner) => abortBashFor({ ac, runners: () => runners }, expected))
-
-  handle('yan:setVisibleRunnerSessions', (sessions: unknown) => {
-    runners?.noteVisibleActivity()
-    return runnerVisibility.update(sessions)
+  const syncCompactionLines = async (models: LineModel[]): Promise<void> => {
+    const cap = (await getSettings()).autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
+    await syncNativeCompactionLines(models, cap).catch((e) => reportMainError('压缩线', e))
+  }
+  registerAgentIpc(ipc, {
+    runners: () => runners,
+    ac,
+    startAgent,
+    whenAgentStarted,
+    flushRestoreNotice,
+    piDown,
+    push,
+    isObject,
+    normalizeExpectedRuntime,
+    resolveExpectedTarget,
+    targetMatchesExpected,
+    runnerForExpected,
+    pinSendTarget,
+    pinnedTargetMatches,
+    warnSharedCwdOnce,
+    stopRunner,
+    applyToAllAgents,
+    syncCompactionLines,
+    runnerVisibility,
+    approvals,
+    pendingUiReplay,
+    resyncActiveView
   })
   registerSessionIpc(ipc, sessionHost)
   registerNativeSessionIpc(ipc, sessionHost, {
@@ -2738,94 +2602,6 @@ function registerIpc(): void {
   )
   setTimeout(() => void pruneCheckpoints().catch(() => undefined), 60_000).unref?.()
 
-  const syncCompactionLines = async (models: LineModel[]): Promise<void> => {
-    const cap = (await getSettings()).autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
-    await syncNativeCompactionLines(models, cap).catch((e) => reportMainError('压缩线', e))
-  }
-  handle('yan:listModels', async () => {
-    const models = (await ac()?.listModels()) ?? []
-    void syncCompactionLines(models)
-    return models
-  })
-  handle(
-    'yan:setModel',
-    async (provider: string, modelId: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setModel(provider, modelId) ?? { ok: false, error: sessionActionChanged() }
-  )
-  handle('yan:setThinking', async (level: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setThinking(level) ?? { ok: false, error: sessionActionChanged() })
-  handle('yan:listThinkingLevels', async () => ac()?.listThinkingLevels() ?? [])
-  handle('yan:setUltracode', async (on: boolean, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setUltracode(!!on) ?? { ok: false, error: sessionActionChanged() })
-  handle('yan:listCommands', async () => ac()?.listCommands() ?? localCommandDescriptors())
-
-  handle(
-    'yan:setAutoCompaction',
-    async (enabled: boolean) => applyToAllAgents((agent) => agent.setAutoCompaction(enabled))
-  )
-  handle(
-    'yan:setAutoRetry',
-    async (enabled: boolean) => applyToAllAgents((agent) => agent.setAutoRetry(enabled))
-  )
-  handle('yan:piRuntimePrefs', async () => readPiRuntimePrefs())
-  handle('yan:piNativeSettings', async () => readPiNativeSettings())
-  handle('yan:setPiNativeSettings', async (patch: unknown) => writePiNativeSettings(patch))
-
-
-  handle(
-    'yan:setSteeringMode',
-    async (mode: string) => applyToAllAgents((agent) => agent.setSteeringMode(mode))
-  )
-  handle(
-    'yan:setFollowUpMode',
-    async (mode: string) => applyToAllAgents((agent) => agent.setFollowUpMode(mode))
-  )
-  handle(
-    'yan:abortRetry',
-    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.abortRetry() ?? { ok: false, error: expected === undefined ? piDown() : sessionActionChanged() }
-  )
-  handle(
-    'yan:cycleModel',
-    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleModel() ?? { ok: false, error: sessionActionChanged() }
-  )
-  handle(
-    'yan:cycleModelBack',
-    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleModelBack() ?? { ok: false, error: sessionActionChanged() }
-  )
-  handle(
-    'yan:cycleThinking',
-    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleThinking() ?? { ok: false, error: sessionActionChanged() }
-  )
-  handle('yan:lastAssistantText', async (expected?: ExpectedRuntimeOwner) => lastAssistantTextFor({ ac, runners: () => runners }, expected))
-
-  handle('yan:approvalAnswer', async (id: string, choice: unknown, identity?: unknown, feedback?: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice, approvalIdentityFrom(identity), feedback) }))
-  handle('yan:approvalHold', async (id: string, identity?: unknown) => ({ ok: approvals.hold(String(id ?? ''), approvalIdentityFrom(identity)) }))
-  handle('yan:approvalPending', async () => approvals.list())
-  handle('yan:pendingUiRequests', async () => pendingUiReplay())
-  handle('yan:resyncView', async (reason?: unknown) => resyncActiveView(reason))
-  handle('yan:pinnedNetworkStatus', () => ({
-    guard: pinnedGuardStatus(session.defaultSession),
-    routing: pinnedRoutingStatus()
-  }))
-
-  handle('yan:piInfo', async () => {
-    const s = await getSettings()
-    return piInfo(s.piBin)
-  })
-
-  handle('yan:redetectPi', async () => {
-    const s = await getSettings()
-    resetPiVersionCache()
-    const info = await piInfo(s.piBin, { fresh: true })
-    push({ ch: 'pi-info', payload: info })
-    if (info.version && !ac()?.running) {
-      await startAgent()
-    }
-    return info
-  })
-
-  handle('yan:getState', async () => {
-    await whenAgentStarted()
-    flushRestoreNotice()
-    return ac()?.getState() ?? null
-  })
   registerRunsIpc(ipc, {
     snapshot: () => runsHost?.snapshot() ?? { revision: 0, runs: [] },
     markSeen: (runId) => runsHost?.markSeen(runId) ?? { ok: false },
@@ -2841,17 +2617,6 @@ function registerIpc(): void {
       const result = await service.stop(runId)
       return result.ok ? { ok: true } : { ok: false, ...(result.error ? { error: result.error } : {}) }
     }
-  })
-  handle('yan:agentStatus', async () =>
-    ac()?.getConn() ?? { state: 'starting' as const, detail: '' }
-  )
-  handle('yan:getMessages', async () => {
-    await whenAgentStarted()
-    return ac()?.getMessages() ?? []
-  })
-  handle('yan:getStats', async () => {
-    await whenAgentStarted()
-    return ac()?.refreshStats() ?? null
   })
 
   registerSessionTransferIpc(ipc, {
@@ -2892,389 +2657,51 @@ function registerIpc(): void {
 
   registerFilesIpc(ipc, { resolveFileContext, isSessionBusy: () => !runners || runners.statuses().some((runner) => runner.running || runner.waiting) })
 
-  handle('yan:getSettings', async () => {
-    const s = await getSettings()
-    return { ...s, lang: s.lang, theme: s.theme }
-  })
-  handle('yan:removeGuardAllowRoot', async (path: unknown) => {
-    if (typeof path !== 'string' || !path) throw new Error(pick('目录无效', 'Invalid folder'))
-    const current = await getSettings()
-    const roots = current.guardAllowRoots ?? []
-    const next = roots.filter((root) => root !== path)
-    if (next.length === roots.length) return current
-    return patchSettings({ guardAllowRoots: next })
-  })
-  handle('yan:patchSettings', async (rawPatch: unknown) => {
-    const patch = validateRendererSettingsPatch(rawPatch)
-    const before = await getSettings()
-    if ('cwd' in patch) {
-      const checked = await validateCwd(patch.cwd)
-      if (!checked.ok) throw new Error(checked.error)
-      patch.cwd = checked.cwd
-    }
-    if ('projects' in patch) {
-      if (!Array.isArray(patch.projects)) throw new Error(pick('项目列表格式无效', 'Invalid project list'))
-      const ids = new Set<string>()
-      for (const project of patch.projects) {
-        if (!isObject(project) || typeof project.id !== 'string' || !project.id || typeof project.cwd !== 'string' || !isAbsolute(project.cwd) || ids.has(project.id)) throw new Error(pick('项目标识或目录格式无效', 'Invalid project id or folder'))
-        ids.add(project.id)
-        const previous = before.projects.find((item) => item.id === project.id)
-        if (previous && normalizeCwdForIdentity(previous.cwd) !== normalizeCwdForIdentity(project.cwd)) throw new Error(pick('不能将已有项目标识重新绑定到其他目录', 'Cannot rebind an existing project id to another folder'))
-        if (!previous) {
-          const checked = await validateCwd(project.cwd)
-          if (!checked.ok) throw new Error(checked.error)
-          project.cwd = checked.cwd
-        }
-      }
-    }
-    let next: Awaited<ReturnType<typeof patchSettings>>
-    try {
-      next = await updateSettings((current) => {
-        for (const project of patch.projects ?? []) {
-          const previous = current.projects.find((item) => item.id === project.id)
-          if (previous && normalizeCwdForIdentity(previous.cwd) !== normalizeCwdForIdentity(project.cwd)) {
-            throw new Error(pick('项目文件夹已变化，请刷新后重试', 'Project folder changed; refresh and retry'))
-          }
-        }
-        return patch as never
-      })
-    } catch (e) {
-      reportMainError('设置', e)
-      throw e
-    }
-    refreshPackageProjectRoots(next)
-    if (typeof patch.theme === 'string' && patch.theme !== before.theme) {
-      syncNativeThemeSource(next.theme)
-    }
-    if (typeof patch.lang === 'string' && patch.lang !== before.lang) {
-      trayLanguage = next.lang
-      refreshTrayMenu()
-      push({
-        ch: 'log',
-        payload: {
-          text: `[语言] 已切换为 ${next.lang}；下一轮开始，推理与回复都跟随新语言（不重建实例、不中断会话）。`
-        }
-      })
-    }
-    if (patch.responseDetail !== undefined) agentResponseDetail = next.responseDetail
-    if ('autoCompactTokens' in patch) void ac()?.listModels().then(syncCompactionLines)
-    if ('keepAwakeWhileWorking' in patch || 'keepAwakeOnBattery' in patch) void syncKeepAwake((runners?.statuses() ?? []).some((r) => r.running))
-    return next
+  registerSettingsIpc(ipc, {
+    win: () => win,
+    runners: () => runners,
+    ac,
+    starting: () => starting,
+    push,
+    isObject,
+    validateCwd,
+    normalizeCwdForIdentity,
+    reportMainError,
+    refreshPackageProjectRoots,
+    syncNativeThemeSource,
+    setTrayLanguage: (lang) => { trayLanguage = lang },
+    refreshTrayMenu,
+    setResponseDetail: (detail) => { agentResponseDetail = detail },
+    syncCompactionLines,
+    syncKeepAwake,
+    requestExit
   })
 
-  handle('yan:respondUi', async (res: unknown) => {
-    if (!isObject(res) || typeof res.id !== 'string' || !res.id) {
-      return { ok: false, code: 'invalid' as const, error: pick('无效的答复', 'Invalid answer') }
-    }
-    const result = await (runners ? runners.respondUiResult(res as never) : ac()?.respondUiResult(res as never))
-    if (!result) {
-      return { ok: false, code: 'not_pending' as const, error: pick('这个问题已经结束或不属于当前会话，答案没有送达', 'This question already ended or belongs to another session; the answer was not delivered') }
-    }
-    if (!result.ok) {
-      return {
-        ok: false,
-        code: result.code,
-        error: result.code === 'pi_down'
-          ? piDown()
-          : pick('这个问题已经结束，答案没有送达', 'This question already ended; the answer was not delivered')
-      }
-    }
-    return { ok: true }
-  })
-
-  handle('yan:extendUi', async (id: string, extraMs?: number) =>
-    runners?.extendHostUi(String(id ?? ''), extraMs) ?? { ok: false, error: piDown() }
-  )
-
-  handle('yan:startUiTimer', async (id: string) =>
-    runners?.startHostUiTimer(String(id ?? '')) ?? { ok: false, error: piDown() }
-  )
-
-  ipcMain.on('yan:hotkey-guard', (event, v) => {
-    if (!isTrustedIpc(event) || typeof v !== 'boolean') return
-    hotkeyGuardPaused = v
-  })
-
-  ipcMain.on('yan:motion-preference', (event, reduced) => {
-    if (!isTrustedIpc(event) || typeof reduced !== 'boolean') return
-    trayMotionAllowed = !reduced
-    refreshTaskbar()
-  })
-
-  handle('yan:notifyAttention', async (n: AttentionNotify) => {
-    const kind = n?.kind ?? 'done'
-    const title = typeof n?.title === 'string' && n.title.trim() ? n.title : '砚'
-    const body = typeof n?.body === 'string' && n.body.trim() ? n.body : undefined
-
-    const icon = botNotificationIcon(
-      typeof n?.model?.provider === 'string' || typeof n?.model?.id === 'string' ? n.model : undefined,
-      kind
-    )
-    const sessionId = typeof n?.sessionId === 'string' && n.sessionId ? n.sessionId : undefined
-
-    if (process.env.YAN_PROBE) {
-      push({ ch: 'log', payload: { text: `[通知] ${kind} | ${title} | ${body ?? ''}${icon ? ` | icon=${basename(icon)}` : ''}${sessionId ? ` | session=${sessionId}` : ''}` } })
-      return { shown: true, simulated: true }
-    }
-
-    if (!Notification.isSupported()) return { shown: false, error: pick('系统不支持通知', 'System notifications are not supported') }
-    try {
-      attentionNotices.show({ key: sessionId ? `session:${sessionId}` : `attention:${kind}`, title, body, icon, link: sessionNoticeLink(sessionId) })
-      return { shown: true }
-    } catch (error) {
-      return { shown: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-  ipcMain.on('yan:renderer-ready', (event) => {
-    if (!isTrustedIpc(event)) return
-    mcpAppViewService?.resetForReload()
-    hotkeyGuardPaused = false
-    const rid = runners?.activeRunnerId
-    const c = ac()?.getConn()
-    if (c) push({ ch: 'proc', payload: { state: c.state, detail: c.detail } })
-    if (rid) void pushRunnerSnapshot(rid)
-    else {
-      const st = ac()?.getState()
-      if (st) push({ ch: 'state', payload: st })
-      void ac()?.refreshStats()
-      void ac()?.refreshTodos()
-    }
-    if (browser) push({ ch: 'browser-state', payload: browser.getState() })
-    pushRunners()
-    void reclaimQueuedMessages()
-    setGuardSettingsNoticeSink((message) => push({ ch: 'notify', payload: { id: `guard-settings-${Date.now()}-${message.length}`, method: 'notify', notifyType: 'warning', message } }))
-    if (isRestoredReadonly()) push({ ch: 'notify', payload: { id: 'restored-readonly', method: 'notify', notifyType: 'info', message: restoredReadonlyMessage() } })
-  })
-
-  handle('yan:openPath', async (p: string) => {
-    if (typeof p !== 'string' || !p.trim()) return { ok: false, error: 'empty path' }
-    if (/^[\\/]{2}/.test(p.trim())) return { ok: false, error: 'network path' }
-    if (!existsSync(p)) return { ok: false, error: 'missing' }
-    let directory = false
-    try {
-      directory = statSync(p).isDirectory()
-    } catch {
-      return { ok: false, error: 'missing' }
-    }
-    if (!directory && openBlockedByName(p)) return { ok: false, error: 'blocked' }
-    const err = await shell.openPath(p)
-    return err ? { ok: false, error: err } : { ok: true }
+  registerShellIpc(ipc, {
+    isTrustedIpc,
+    win: () => win,
+    runners: () => runners,
+    ac,
+    browser: () => browser,
+    mcpAppViewService: () => mcpAppViewService,
+    attention: () => attention,
+    isQuitting: () => isQuitting,
+    setHotkeyGuardPaused: (paused) => { hotkeyGuardPaused = paused },
+    setTrayMotionAllowed: (allowed) => { trayMotionAllowed = allowed },
+    refreshTaskbar,
+    push,
+    attentionNotices,
+    botNotificationIcon,
+    sessionNoticeLink,
+    pushRunnerSnapshot,
+    pushRunners,
+    reclaimQueuedMessages,
+    requestExit,
+    pushWinState,
+    setUiScale
   })
 
   registerWorkspaceDataIpc(ipc, () => win)
-
-  handle('yan:storage:info', async () => {
-    const info = storageInfo()
-    return { ...info, bytes: await storageSize(info.realDir) }
-  })
-  handle('yan:storage:pick', async () => {
-    if (!win) return null
-    const r = await dialog.showOpenDialog(win, { title: pick('选择新的数据位置（建议非系统盘上的空文件夹）', 'Choose new data location (an empty folder off the system drive)'), properties: ['openDirectory', 'createDirectory'] })
-    const picked = r.canceled ? null : r.filePaths[0] ?? null
-    const service = picked ? syncFolderService(picked) : null
-    if (!picked || !service) return picked
-    const answer = await dialog.showMessageBox(win, {
-      type: 'warning',
-      title: pick('这是同步盘文件夹', 'This is a synced folder'),
-      message: pick(`选中的文件夹由 ${service} 同步`, `The selected folder is synced by ${service}`),
-      detail: pick('数据目录里有模型 API Key 与登录凭证（auth.json），放在同步盘会被上传到云端或其他设备。建议换一个不同步的文件夹。', 'The data folder holds model API keys and login credentials (auth.json); on a synced drive they would be uploaded to the cloud or other devices. Choose a folder that is not synced.'),
-      buttons: [pick('重新选择', 'Choose again'), pick('仍然使用', 'Use anyway')],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true
-    })
-    return answer.response === 1 ? picked : null
-  })
-  handle('yan:storage:schedule', async (target: string, relaunch?: boolean) => {
-    const r = await scheduleStorageMove(String(target ?? ''))
-    if (!r.ok || !relaunch) return r
-    const exit = await requestExit({ relaunch: true, source: 'storage-relaunch' })
-    if (exit.action === 'cancelled') {
-      cancelStorageMove()
-      return { ok: false, error: pick('仍有会话在运行，已取消迁移', 'Sessions are still running; move canceled') }
-    }
-    return r
-  })
-  handle('yan:storage:cancel', async () => {
-    cancelStorageMove()
-  })
-
-  handle('yan:revealPath', async (p: string) => {
-    if (typeof p !== 'string' || !p.trim() || /^[\\/]{2}/.test(p.trim()) || !existsSync(p)) return { ok: false }
-    shell.showItemInFolder(p)
-    return { ok: true }
-  })
-
-  handle('yan:exportHtmlImage', async (htmlPath: unknown) => {
-    if (!win) return { ok: false, error: 'window:missing' }
-    if (typeof htmlPath !== 'string' || !/\.html?$/i.test(htmlPath) || !existsSync(htmlPath)) return { ok: false, error: 'export:path' }
-    const r = await dialog.showSaveDialog(win, {
-      title: pick('导出 PNG', 'Export PNG'),
-      defaultPath: join(dirname(htmlPath), `${basename(htmlPath).replace(/\.html?$/i, '')}.png`),
-      filters: [{ name: 'PNG', extensions: ['png'] }]
-    })
-    if (r.canceled || !r.filePath) return { ok: true, canceled: true }
-    try {
-      const result = await exportHtmlImage({ previews: htmlArtifactPreviews, htmlPath, root: dirname(htmlPath), outPath: r.filePath })
-      shell.showItemInFolder(result.path)
-      return { ok: true, path: result.path }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  handle('yan:image:stash', async (images: unknown) => {
-    if (!Array.isArray(images) || images.length > 16) return []
-    const dir = join(YAN_DIR, 'attachments')
-    const paths: string[] = []
-    for (const item of images as Array<{ data?: unknown; mimeType?: unknown }>) {
-      if (typeof item?.data !== 'string' || typeof item.mimeType !== 'string') continue
-      const file = imageFile(dir, item.mimeType, item.data)
-      if (!file || !localizeImage(dir, item.mimeType, item.data)) continue
-      paths.push(file)
-    }
-    return paths
-  })
-
-  handle('yan:image:copy', async (dataUrl: unknown) => {
-    const bytes = imageSaveBytes(dataUrl)
-    if (!bytes) return { ok: false, error: 'image:invalid' }
-    const mime = `image/${bytes.ext === 'jpg' ? 'jpeg' : bytes.ext}`
-    await clipboard.write([new ClipboardItem({ [mime]: new Blob([bytes.data], { type: mime }) })])
-    return { ok: true }
-  })
-
-  handle('yan:image:save', async (dataUrl: unknown, suggestedName?: unknown) => {
-    if (!win) return { ok: false, error: 'window:missing' }
-    const bytes = imageSaveBytes(dataUrl)
-    if (!bytes) return { ok: false, error: 'image:invalid' }
-    const r = await dialog.showSaveDialog(win, {
-      title: pick('保存图片', 'Save image'),
-      defaultPath: join(app.getPath('pictures'), imageFileName(suggestedName, bytes.ext)),
-      filters: [{ name: pick('图片', 'Images'), extensions: [bytes.ext] }]
-    })
-    if (r.canceled || !r.filePath) return { ok: true, canceled: true }
-    await writeFile(r.filePath, bytes.data)
-    return { ok: true, path: r.filePath }
-  })
-
-  handle('yan:pickImages', async (): Promise<Attachment[]> => {
-    if (!win) return []
-    const r = await dialog.showOpenDialog(win, {
-      title: pick('选择图片', 'Choose images'),
-      properties: ['openFile', 'multiSelections'],
-      filters: [{ name: pick('图片', 'Images'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }]
-    })
-    if (r.canceled) return []
-
-    const out: Attachment[] = []
-    let total = 0
-    let skippedForSize = false
-    for (const file of r.filePaths) {
-      try {
-        const size = (await stat(file)).size
-        if (size > 12 * 1024 * 1024) {
-          skippedForSize = true
-          continue
-        }
-        if (total + size > PICK_IMAGES_TOTAL_BYTES) {
-          skippedForSize = true
-          break
-        }
-        const buf = await readFile(file)
-        if (buf.byteLength > 12 * 1024 * 1024 || total + buf.byteLength > PICK_IMAGES_TOTAL_BYTES) {
-          skippedForSize = true
-          continue
-        }
-        total += buf.byteLength
-        const ext = extname(file).slice(1).toLowerCase()
-        const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext || 'png'}`
-        const data = buf.toString('base64')
-        const thumb = buf.byteLength > PICK_IMAGES_PREVIEW_MIN_BYTES
-          ? nativeImage.createFromBuffer(buf).resize({ width: PICK_IMAGES_PREVIEW_WIDTH }).toDataURL().replace(/^data:[^;]+;base64,/, '')
-          : ''
-        const preview = thumb || data
-        out.push({
-          id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          name: basename(file),
-          mimeType,
-          size: buf.byteLength,
-          data,
-          preview
-        })
-        await new Promise<void>((resolve) => setImmediate(resolve))
-      } catch (e) {
-        console.error('[yan] 读图失败：', file, e)
-      }
-    }
-    if (skippedForSize) {
-      push({
-        ch: 'notify',
-        payload: {
-          id: `pick-images-${Date.now()}`,
-          method: 'notify',
-          notifyType: 'warning',
-          message: pick(`有图片没能加入：单张超过 12 MB 或合计超过 ${Math.round(PICK_IMAGES_TOTAL_BYTES / (1024 * 1024))} MB。`, `Some images were not added: over 12 MB each or ${Math.round(PICK_IMAGES_TOTAL_BYTES / (1024 * 1024))} MB total.`)
-        }
-      })
-    }
-    return out
-  })
-
-  handle('yan:pickFiles', async (): Promise<string[]> => {
-    if (!win) return []
-    const r = await dialog.showOpenDialog(win, {
-      title: pick('选择文件或文件夹', 'Choose files or folders'),
-      properties: ['openFile', 'openDirectory', 'multiSelections']
-    })
-    return r.canceled ? [] : r.filePaths
-  })
-
-  handle('yan:pickCwd', async () => {
-    if (!win) return null
-    const lastCwd = (await getSettings()).cwd
-    const r = await dialog.showOpenDialog(win, {
-      properties: ['openDirectory'],
-      title: pick('选择工作目录', 'Choose working folder'),
-      ...(lastCwd && existsSync(lastCwd) ? { defaultPath: lastCwd } : {})
-    })
-    if (r.canceled || !r.filePaths[0]) return null
-    return r.filePaths[0]
-  })
-
-  handle('yan:setCwd', async (cwd: string) => {
-    const cwdResult = await validateCwd(cwd)
-    if (!cwdResult.ok) return cwdResult
-    await patchSettings({ cwd: cwdResult.cwd })
-    if (starting) await starting
-    return { ok: true, cwd: cwdResult.cwd }
-  })
-
-  ipcMain.on('win:minimize', (event) => { if (isTrustedIpc(event)) win?.minimize() })
-  ipcMain.on('win:maximize', (event) => {
-    if (!isTrustedIpc(event) || !win) return
-    win.isMaximized() ? win.unmaximize() : win.maximize()
-  })
-  ipcMain.on('win:close', (event) => { if (isTrustedIpc(event)) win?.close() })
-  rawHandle('win:requestExit', async () => requestExit({ source: 'ipc' }))
-  rawHandle('win:lifecycle', () => ({
-    tray: attention?.hasTray() ?? false,
-    visible: !!win && !win.isDestroyed() && win.isVisible(),
-    quitting: isQuitting
-  }))
-
-  rawHandle('win:setAlwaysOnTop', async (_e, v: boolean) => {
-    const on = !!v
-    win?.setAlwaysOnTop(on)
-    await patchSettings({ alwaysOnTop: on })
-    pushWinState()
-    return on
-  })
-
-  rawHandle('yan:getZoom', async () => zoomState(win, peekUiScale()))
-
-  rawHandle('yan:setUiScale', async (_e, v: unknown) => setUiScale(v))
-
 
   registerWorkspaceIpc(ipc)
 

@@ -33,7 +33,8 @@ import { planSessionSync, planSessionSyncAgainst } from './session-sync-plan'
 import { rememberSyncBaseline, takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
 import { QueueCoordinator } from './queue-coordinator'
-import { mergeToolDetails, streamsHtmlWriteArgs, toolOutputPushMode, type ToolResultPayload } from './session-items/tool-events'
+import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-events'
+import { StreamProjection, streamGenerationTiming, streamSpeed, type StreamingState } from './stream-projection'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { apiKeyLooksUnusable, isAuthRejected, isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { readAuthEntry } from './credentials'
@@ -67,7 +68,6 @@ import { attributeCompaction, clearStaleRunning, contextFromEntry, contextFromRu
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { androidAgentEnv } from './android/android-paths'
 import { projectPackageDirs } from './packages'
-import { generationTiming, turnTiming } from '../shared/turn-timing'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { mergeCommandDescriptors } from './command-registry'
 import { cachedTitles, fallbackTitle, generateTitle, manualTitleOf, setManualTitle } from './title'
@@ -134,7 +134,6 @@ import type {
   CustomEntry,
   ExtensionUiRequest,
   ForkPoint,
-  GenerationTiming,
   MainPush,
   AssistantArtifact,
   ImageGenerationProgress,
@@ -151,19 +150,17 @@ import type {
   SlashCommand,
   ResponseDetail,
   UIMessage,
-  UIToolCall,
-  Usage
+  UIToolCall
 } from '../shared/ipc'
 import { hasUsageNumbers } from '../shared/turns'
 import type { SubagentForkSource } from './subagent-fork'
 import { isUltracodeOn, setUltracodeOn } from './ultracode-sessions'
+import { sessionModes } from './session-modes'
+import { nextStoredMode, sessionModeState, type SessionModeChange } from '../shared/session-mode'
 import { readPendingModelSwitch, takePendingModelSwitch, writePendingModelSwitch } from './pending-model-switch'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 
-const FLUSH_MS = 16
 const AUTH_BLIP_RETRY_MS = 5000
-const MAX_FLUSH_MS = 120
-const HTML_ARGS_PUSH_MS = 600
 
 const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
@@ -445,6 +442,7 @@ export class AgentController extends EventEmitter {
   private languageExtension?: string
   private userAddressExtension?: string
   private ultracodeExtension?: string
+  private sessionModeExtension?: string
   private turnModelSwitchExtension?: string
   private deferredModelSwitch?: {
     sessionId: string
@@ -620,23 +618,20 @@ export class AgentController extends EventEmitter {
   private scopeChanged = false
   private extUi = new Map<string, ExtUiPush>()
   private extUiPending: Map<string, ExtUiPush> | null = null
-  private streaming: {
-    id: string
-    thinkingMs?: number
-    thinkingStartedAt?: number
-    thinkingLive?: boolean
-    responseDetail: ResponseDetail
-    startedAt?: number
-    firstTokenAt?: number
-    generationStartedMono?: number
-    requestStartEvent?: 'turn_start'
-    firstContentMono?: number
-    firstOutputMono?: number
-    usage?: Usage
-    pushedText: number
-    pushedThinking: number
-    toolOpen?: boolean
-  } | null = null
+  private readonly stream = new StreamProjection({
+    items: this.items,
+    push: (message) => this.push(message),
+    modelId: () => this.state?.model?.id,
+    turnStartedAt: () => this.turn.startedAt,
+    idleBacklog: () => this.bash?.output.length ?? 0,
+    checkDelta: (kind, delta) => this.checkStreamLoop(kind, delta)
+  })
+  private get streaming(): StreamingState | null {
+    return this.stream.streaming
+  }
+  private set streaming(next: StreamingState | null) {
+    this.stream.streaming = next
+  }
   private agentRunning = false
   private liveItemEdits = 0
   private hydrateDeferred: { sessionId?: string; sessionFile?: string } | null = null
@@ -660,13 +655,6 @@ export class AgentController extends EventEmitter {
 
   private readonly turn = new TurnTimingTracker()
   private pendingRequestMono?: number
-  private dirty = false
-  private flushTimer: ReturnType<typeof setTimeout> | null = null
-  private dirtyTools = new Set<string>()
-  private pushedOut = new Map<string, number>()
-  private pushedOutText = new Map<string, string>()
-  private pushedArgs = new Map<string, unknown>()
-  private htmlArgsPushedAt = new Map<string, number>()
 
   private state: SessionState | null = null
   private compactionState: CompactionState = EMPTY_COMPACTION_STATE
@@ -737,6 +725,7 @@ export class AgentController extends EventEmitter {
     languageExtension?: string
     userAddressExtension?: string
     ultracodeExtension?: string
+    sessionModeExtension?: string
     turnModelSwitchExtension?: string
     capabilityGuideExtension?: string
     mcpAppProxyExtension?: string
@@ -820,6 +809,7 @@ export class AgentController extends EventEmitter {
     this.languageExtension = opts.languageExtension
     this.userAddressExtension = opts.userAddressExtension
     this.ultracodeExtension = opts.ultracodeExtension
+    this.sessionModeExtension = opts.sessionModeExtension
     this.turnModelSwitchExtension = opts.turnModelSwitchExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
@@ -962,6 +952,7 @@ export class AgentController extends EventEmitter {
     if (this.rpc?.running) return { ok: true }
 
     this.stopping = false
+    if (this.sessionModeExtension) sessionModes.clearStale()
     this.queue.reset()
     this.streamLoopDetector = null
     this.loopGuardTripped = false
@@ -998,6 +989,7 @@ export class AgentController extends EventEmitter {
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
         ...(this.userAddressExtension ? ['--extension', this.userAddressExtension] : []),
         ...(this.ultracodeExtension ? ['--extension', this.ultracodeExtension] : []),
+        ...(this.sessionModeExtension ? ['--extension', this.sessionModeExtension] : []),
         ...(this.turnModelSwitchExtension ? ['--extension', this.turnModelSwitchExtension] : []),
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
@@ -1081,14 +1073,14 @@ export class AgentController extends EventEmitter {
     rpc.on('exit', (code) => {
       if (this.rpc !== rpc) return
       this.operations.reset()
-      this.flushNow()
+      this.stream.flushNow()
       const interrupted = this.streaming
       if (interrupted?.thinkingLive) {
         interrupted.thinkingLive = false
         this.push({ ch: 'msg-update', payload: { id: interrupted.id, patch: { thinkingLive: false } } })
       }
       this.streaming = null
-      for (const call of this.items.cancelUnfinishedTools(Date.now())) this.pushTool(call)
+      for (const call of this.items.cancelUnfinishedTools(Date.now())) this.stream.pushTool(call)
       this.items.discardStreaming()
       this.bash = null
       this.backgroundBash.dispose()
@@ -1296,9 +1288,7 @@ export class AgentController extends EventEmitter {
     if (outsideExpected() || !stillOwned() || supersededByLive()) return superseded()
     if (nextContext) this.setContextFrom(nextContext.value)
     this.messages = nextMessages
-    this.pushedOut.clear()
-    this.pushedOutText.clear()
-    this.pushedArgs.clear()
+    this.stream.forgetPushed()
 
     this.pushSessionSync(scopeBefore, syncedBefore)
     this.pushQuestionLog()
@@ -2016,6 +2006,7 @@ export class AgentController extends EventEmitter {
         ? { pendingModelChange: { previousModel: model ?? undefined, previousThinkingLevel: actualThinkingLevel } }
         : {}),
       ultracode: isUltracodeOn(String(data.sessionId ?? '')),
+      ...sessionModeState(sessionModes.get(String(data.sessionId ?? ''))),
       availableThinkingLevels,
       thinkingLevelsStatus: levels.status,
       capabilities: capabilitySnapshot(model, availableThinkingLevels, levels.status),
@@ -2141,70 +2132,9 @@ export class AgentController extends EventEmitter {
         break
       }
 
-      case 'message_update': {
-        const ev = evt.assistantMessageEvent as Record<string, unknown> | undefined
-        if (!ev || !this.streaming) break
-        const kind = String(ev.type ?? '')
-
-        const u = toUsage(evt.usage as PiMessage['usage'], this.state?.model?.id)
-        if (u && (this.streaming.usage?.output !== u.output || this.streaming.usage?.input !== u.input)) this.streaming.usage = u
-
-        if (
-          !this.streaming.firstTokenAt &&
-          (kind === 'text_delta' || kind === 'thinking_delta' || kind === 'toolcall_start')
-        ) {
-          this.streaming.firstTokenAt = Date.now()
-        }
-        if (!this.streaming.firstContentMono) {
-          const delta = String(ev.delta ?? '')
-          const realContent =
-            kind === 'toolcall_start' ||
-            ((kind === 'text_delta' || kind === 'thinking_delta') && delta.length > 0)
-          if (realContent) this.streaming.firstContentMono = performance.now()
-        }
-        if (this.streaming.firstOutputMono === undefined &&
-          (kind === 'toolcall_start' || (kind === 'text_delta' && String(ev.delta ?? '').length > 0))) {
-          this.streaming.firstOutputMono = performance.now()
-        }
-
-        const call = this.items.liveAssistantDelta(ev, Date.now())
-        if (kind === 'thinking_start') {
-          this.streaming.thinkingStartedAt = Date.now()
-          this.streaming.thinkingLive = true
-        } else if (kind === 'thinking_delta') {
-          this.checkStreamLoop('thinking', String(ev.delta ?? ''))
-          this.markDirty()
-        } else if (kind === 'thinking_end') {
-          const started = this.streaming.thinkingStartedAt
-          if (started) this.streaming.thinkingMs = Date.now() - started
-          this.streaming.thinkingLive = false
-          this.markDirty()
-        } else if (kind === 'text_delta') {
-          this.checkStreamLoop('text', String(ev.delta ?? ''))
-          this.markDirty()
-        } else if (kind === 'toolcall_start') {
-          this.streaming.toolOpen = true
-          this.dirty = true
-          this.flushNow()
-          if (call) this.pushTool(call)
-        } else if (kind === 'toolcall_delta') {
-          if (call && streamsHtmlWriteArgs(call)) {
-            const now = Date.now()
-            if (now - (this.htmlArgsPushedAt.get(call.id) ?? 0) >= HTML_ARGS_PUSH_MS) {
-              this.htmlArgsPushedAt.set(call.id, now)
-              this.pushTool(call)
-            }
-          }
-        } else if (kind === 'toolcall_end') {
-          this.streaming.toolOpen = false
-          this.flushNow()
-          if (call) {
-            this.htmlArgsPushedAt.delete(call.id)
-            this.pushTool(call)
-          }
-        }
+      case 'message_update':
+        this.stream.messageUpdate(evt)
         break
-      }
 
       case 'message_end': {
         const m = evt.message as PiMessage | undefined
@@ -2213,16 +2143,15 @@ export class AgentController extends EventEmitter {
         const s = this.streaming
         const id = s.id
         const endedMono = performance.now()
-        this.streaming = null
+        this.stream.finishMessage()
         this.streamLoopDetector = null
-        this.htmlArgsPushedAt.clear()
 
         const finalUsage = toUsage(m.usage, m.model ?? this.state?.model?.id) ?? s.usage
         if (typeof finalUsage?.output === 'number' && finalUsage.output > 0) {
           this.turn.outputTokens = (this.turn.outputTokens ?? 0) + finalUsage.output
         }
-        const sp = this.speedOf({ ...s, usage: finalUsage }, Date.now(), this.turn.startedAt)
-        const genTiming = this.generationTimingOf(s, endedMono)
+        const sp = streamSpeed({ ...s, usage: finalUsage }, Date.now(), this.turn.startedAt)
+        const genTiming = streamGenerationTiming(s, endedMono)
         const msg = this.settleStreaming(id, {
           thinkingMs: s.thinkingMs,
           thinkingLive: false,
@@ -2295,14 +2224,14 @@ export class AgentController extends EventEmitter {
         } else if (isShellTool(call.name)) {
           void beginTreeSnapshot(call.id, this.cwd, this.state?.sessionId)
         }
-        this.pushTool(call)
+        this.stream.pushTool(call)
         break
       }
 
       case 'tool_execution_update': {
         const call = this.items.liveToolUpdate(String(evt.toolCallId ?? ''), evt.partialResult as ToolResultPayload | undefined)
         if (!call) break
-        this.markToolOutput(call.id)
+        this.stream.markToolOutput(call.id)
         break
       }
 
@@ -2317,7 +2246,7 @@ export class AgentController extends EventEmitter {
           const diff = snapshotAfter(call.id)
           if (diff) mergeToolDetails(call, { fileDiff: diff })
         }
-        this.pushTool(call)
+        this.stream.pushTool(call)
         if (isShellTool(call.name)) this.attachWorkspaceChanges(call)
         break
       }
@@ -2347,7 +2276,7 @@ export class AgentController extends EventEmitter {
         const settledSessionId = this.state?.sessionId
         const outcome = settledTurnOutcome({ aborted: evt.aborted === true, terminal: this.turn.terminal, modelError: !!modelError || this.pendingTruncated })
         if (evt.aborted === true || this.turn.terminal === 'stopped') {
-          for (const call of this.items.cancelUnfinishedTools(Date.now())) this.pushTool(call)
+          for (const call of this.items.cancelUnfinishedTools(Date.now())) this.stream.pushTool(call)
         }
         const errorContinuation = !continuation && modelError && !modelError.retried && isTransientModelError(modelError.text) &&
           this.rpc && this.state?.sessionId
@@ -2463,7 +2392,7 @@ export class AgentController extends EventEmitter {
         this.bash.output += String(evt.delta ?? '')
         const call = this.items.call(this.bash.msgId)
         if (call) call.output = this.bash.output
-        this.markToolOutput(this.bash.msgId)
+        this.stream.markToolOutput(this.bash.msgId)
         break
       }
 
@@ -2615,25 +2544,12 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private ownerOf(call: UIToolCall): string | undefined {
-    return this.items.ownerOf(call.id) ?? this.streaming?.id
-  }
-
   private settleStreaming(id: string, meta: Partial<UIMessage>, extraCalls: UIToolCall[] = []): UIMessage {
     return this.items.liveMessageEnd(meta, extraCalls) ?? this.items.appendMessage({ id, role: 'assistant', text: '', ...meta, ...(extraCalls.length ? { toolCalls: extraCalls } : {}) })
   }
 
-  private pushTool(call: UIToolCall): void {
-    const msgId = this.ownerOf(call)
-    if (!msgId) return
-    this.pushedOut.set(call.id, call.output?.length ?? 0)
-    this.pushedOutText.set(call.id, call.output ?? '')
-    this.dirtyTools.delete(call.id)
-    this.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
-  }
-
   private attachWorkspaceChanges(call: UIToolCall): void {
-    const msgId = this.ownerOf(call)
+    const msgId = this.stream.ownerOf(call)
     const rpc = this.rpc
     const generation = this.capabilityOpts?.runnerGeneration
     const sessionId = this.state?.sessionId
@@ -2644,119 +2560,13 @@ export class AgentController extends EventEmitter {
         if (!changes || (!changes.files.length && !changes.unknown)) return
         if (!ownsCall()) return
         mergeToolDetails(call, { workspaceChanges: changes })
-        const owner = this.ownerOf(call) ?? msgId
+        const owner = this.stream.ownerOf(call) ?? msgId
         if (!owner) return
-        this.pushedOut.set(call.id, call.output?.length ?? 0)
-        this.pushedOutText.set(call.id, call.output ?? '')
-        this.dirtyTools.delete(call.id)
-        this.push({ ch: 'tool', payload: { msgId: owner, call: { ...call } } })
+        this.stream.pushToolTo(owner, call)
       })
       .catch(() => null)
   }
 
-  private markToolOutput(callId: string): void {
-    if (!callId) return
-    this.dirtyTools.add(callId)
-    this.scheduleFlush()
-  }
-
-  private flushTools(): void {
-    if (!this.dirtyTools.size) return
-    const ids = [...this.dirtyTools]
-    this.dirtyTools.clear()
-
-    for (const id of ids) {
-      const call = this.items.call(id)
-      if (!call) {
-        this.pushedOut.delete(id)
-        this.pushedOutText.delete(id)
-        this.pushedArgs.delete(id)
-        continue
-      }
-      const pushed = this.pushedOut.get(id) ?? 0
-      const out = call.output ?? ''
-      const previous = this.pushedOutText.get(id)
-      const mode = toolOutputPushMode(previous, pushed, out)
-      if (mode === 'skip') continue
-      const msgId = this.ownerOf(call)
-      if (!msgId) continue
-      this.pushedOut.set(id, out.length)
-      this.pushedOutText.set(id, out)
-      const sameArgs = this.pushedArgs.has(id) && this.pushedArgs.get(id) === call.args
-      this.pushedArgs.set(id, call.args)
-      if (mode === 'replace') {
-        this.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
-        continue
-      }
-      const { args: _args, output: _output, ...rest } = call
-      this.push({
-        ch: 'tool',
-        payload: {
-          msgId,
-          call: sameArgs ? (rest as UIToolCall) : { ...call, output: undefined },
-          outputDelta: out.slice(pushed),
-          ...(sameArgs ? { sameArgs: true } : {})
-        }
-      })
-    }
-  }
-
-  private markDirty(): void {
-    this.dirty = true
-    this.scheduleFlush()
-  }
-
-  private scheduleFlush(): void {
-    if (this.flushTimer) return
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = null
-      this.flushNow()
-      this.flushTools()
-    }, this.flushDelay())
-  }
-
-  private flushDelay(): number {
-    if (this.streaming) return FLUSH_MS
-    const len = this.bash?.output.length ?? 0
-    return Math.min(MAX_FLUSH_MS, Math.max(FLUSH_MS, Math.round(len / 2000)))
-  }
-
-  private flushNow(): void {
-    if (!this.dirty || !this.streaming) return
-    this.dirty = false
-    const s = this.streaming
-    const content = this.items.streamingContent()
-    const text = content?.text ?? ''
-    const thinking = content?.thinking ?? ''
-
-    const textDelta = text.length > s.pushedText ? text.slice(s.pushedText) : ''
-    const thinkingDelta =
-      thinking.length > s.pushedThinking ? thinking.slice(s.pushedThinking) : ''
-    const thinkingShrank = thinking.length < s.pushedThinking
-    s.pushedText = text.length
-    s.pushedThinking = thinking.length
-
-    const sp = this.speedOf(s, Date.now(), this.turn.startedAt)
-    const genTiming = this.generationTimingOf(s)
-    this.push({
-      ch: 'msg-update',
-      payload: {
-        id: s.id,
-        patch: {
-          ...(textDelta ? { textDelta } : null),
-          ...(thinkingDelta ? { thinkingDelta } : null),
-          ...(thinkingShrank ? { thinking } : null),
-          thinkingMs: s.thinkingMs,
-          thinkingStartedAt: s.thinkingStartedAt,
-          thinkingLive: s.thinkingLive,
-          usage: s.usage,
-          speed: sp.speed,
-          elapsedMs: sp.elapsedMs,
-          ...(genTiming ? { generationTiming: genTiming } : null)
-        }
-      }
-    })
-  }
 
   private startTimingSegment(): void {
     this.turn.startedAt = Date.now()
@@ -2777,45 +2587,6 @@ export class AgentController extends EventEmitter {
 
   private async persistTurnTiming(final = true): Promise<void> {
     await this.turn.persist(final, this.state?.sessionFile, this.messages)
-  }
-
-  private speedOf(
-    s: {
-      usage?: Usage
-      firstTokenAt?: number
-      startedAt?: number
-    },
-    endedAt = Date.now(),
-    turnStartedAt?: number
-  ): { speed?: number; elapsedMs?: number } {
-    return turnTiming({
-      usage: s.usage,
-      firstTokenAt: s.firstTokenAt,
-      startedAt: s.startedAt,
-      turnStartedAt,
-      endedAt
-    })
-  }
-
-  private generationTimingOf(
-    s: { generationStartedMono?: number; firstContentMono?: number; firstOutputMono?: number; requestStartEvent?: 'turn_start' },
-    endedMono = performance.now()
-  ): GenerationTiming | undefined {
-    if (s.generationStartedMono === undefined) return undefined
-    const g = generationTiming({
-      startedMono: s.generationStartedMono,
-      endedMono,
-      firstContentMono: s.firstContentMono,
-      firstOutputMono: s.firstOutputMono,
-      ...(s.requestStartEvent ? { startEvent: s.requestStartEvent } : {})
-    })
-    if (!g) return undefined
-    if (g.startEvent === 'turn_start') return g
-    return {
-      durationMs: g.durationMs,
-      ...(g.decodeMs !== undefined ? { decodeMs: g.decodeMs } : {}),
-      ...(g.outputDecodeMs !== undefined ? { outputDecodeMs: g.outputDecodeMs } : {})
-    }
   }
 
   private setAgentRunning(v: boolean): void {
@@ -3414,7 +3185,7 @@ export class AgentController extends EventEmitter {
     }
 
     const stoppedTime = Date.now()
-    for (const call of this.items.cancelUnfinishedTools(stoppedTime)) this.pushTool(call)
+    for (const call of this.items.cancelUnfinishedTools(stoppedTime)) this.stream.pushTool(call)
     const settledId = this.streaming ? null : stoppedMessageId ?? (this.agentRunning ? this.turn.messageIds.at(-1) : undefined)
     if (settledId) {
       const settled = this.messages.find((m) => m.id === settledId)
@@ -3434,12 +3205,7 @@ export class AgentController extends EventEmitter {
         timestamp: stoppedAt,
         ...stoppedMeta(s.id)
       })
-      for (const c of msg.toolCalls ?? []) {
-        this.pushedOut.set(c.id, c.output?.length ?? 0)
-        this.pushedOutText.delete(c.id)
-        this.pushedArgs.delete(c.id)
-        this.dirtyTools.delete(c.id)
-      }
+      this.stream.settledCalls(msg.toolCalls ?? [])
       this.push({ ch: 'msg-update', payload: { id: s.id, patch: msg } })
     }
 
@@ -3568,8 +3334,7 @@ export class AgentController extends EventEmitter {
       details.fullOutputPath = fullOutputPath
     }
     if (changes && (changes.files.length > 0 || changes.unknown)) details.workspaceChanges = changes
-    this.pushedOut.set(msgId, output.length)
-    this.dirtyTools.delete(msgId)
+    this.stream.settledOutput(msgId, output.length)
     const endedAt = Date.now()
     const detailsPatch = Object.keys(details).length ? details : undefined
     this.items.settleBash(msgId, { text: command, bash: { command, exitCode, cancelled }, error }, { status: failed ? 'error' : 'ok', output, details: detailsPatch, endedAt })
@@ -4117,6 +3882,24 @@ export class AgentController extends EventEmitter {
     return { ok: true }
   }
 
+  async setSessionMode(change: SessionModeChange): Promise<{ ok: boolean; error?: string }> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
+    const next = nextStoredMode(sessionModes.get(sessionId), change)
+    if (next === null) return { ok: false, error: pick('当前不在计划模式', 'Plan mode is not on') }
+    try {
+      sessionModes.set(sessionId, next)
+    } catch (error) {
+      return { ok: false, error: String(error) }
+    }
+    if (this.state?.sessionId === sessionId) {
+      const { sessionMode: _previous, ...rest } = this.state
+      this.state = { ...rest, ...sessionModeState(next) }
+      this.push({ ch: 'state', payload: this.state })
+    }
+    return { ok: true }
+  }
+
   async listThinkingLevels(): Promise<string[]> {
     if (!this.rpc) return []
     const rpc = this.rpc
@@ -4539,15 +4322,8 @@ export class AgentController extends EventEmitter {
     this.nativeWitness = null
     this.nativeWitnessPending = null
     const mcpClosing = this.mcp.close()
-    if (this.flushTimer) clearTimeout(this.flushTimer)
-    this.flushTimer = null
-    this.streaming = null
+    this.stream.reset()
     this.bash = null
-    this.dirty = false
-    this.dirtyTools.clear()
-    this.pushedOut.clear()
-    this.pushedOutText.clear()
-    this.pushedArgs.clear()
     this.ui.rejectPendingHostUi('会话已关闭，问题请求已取消')
     this.ui.discardPending()
     await settleWithin(mcpClosing, stopRemaining())

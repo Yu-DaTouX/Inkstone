@@ -1,5 +1,6 @@
 import type { MainPush, QueueEditOp, QueueItem, QueueSnapshot, QueueState } from '../shared/ipc'
 import { pick } from '../shared/ui-lang'
+import { RuntimeRef } from '../shared/runs'
 import { isSubagentNotice } from '../shared/subagent-notice'
 import { isHostTextNotice } from '../shared/host-notice-text'
 import type { PiRpc } from './protocol'
@@ -35,7 +36,7 @@ type EditResult = { ok: boolean; text?: string; images?: QueueImages; error?: st
 const KINDS = ['steering', 'followUp'] as const
 
 function sameOwner(left: QueueOwner, right: QueueOwner): boolean {
-  return left.rpc === right.rpc && left.sessionId === right.sessionId && left.generation === right.generation
+  return left.rpc === right.rpc && RuntimeRef.matches(left, right, 'exact')
 }
 
 function sessionChanged(): Error {
@@ -96,7 +97,7 @@ export class QueueCoordinator {
         const pending = this.pendingUpdate
         this.pendingUpdate = undefined
         const now = this.deps.owner()
-        if (pending && pending.sessionId === now.sessionId && pending.generation === now.generation && scope.sessionId === pending.sessionId && scope.generation === pending.generation) {
+        if (pending && RuntimeRef.matches(pending, now, 'exact') && RuntimeRef.matches(scope, pending, 'exact')) {
           this.publish(pending.steering, pending.followUp)
         }
         this.consumed.clear()

@@ -140,7 +140,7 @@ export default async function run({ cdp, fake, box, check, report, log, state, u
   await turn(`再补一段。${'补充说明。'.repeat(12000)}`, { timeout: 120000 })
   await sleep(800)
 
-  const explicit = await cdp.evaluate('window.yan.compact()')
+  const explicit = await cdp.evaluate('window.yan.runnerStatuses().then((rs) => rs.find((r) => r.isActive)).then((r) => window.yan.compact(undefined, r ? { runId: r.runId, generation: r.generation } : undefined))')
   const secondDone = await until('(s.session?.lastCompaction?.startedAt ?? 0) > 0 && !s.session?.isCompacting', 60000)
   await sleep(800)
   const afterExplicit = await state('s.session?.lastCompaction ?? null')

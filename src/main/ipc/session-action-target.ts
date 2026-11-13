@@ -14,3 +14,7 @@ export function sessionActionAgent(host: Pick<SessionHost, 'ac' | 'runners'>, ex
   if (!agent || (expected.sessionId && agent.getState()?.sessionId !== expected.sessionId)) return null
   return agent
 }
+
+export function requiredSessionActionAgent(host: Pick<SessionHost, 'ac' | 'runners'>, expected: ExpectedRuntimeOwner) {
+  return expected === undefined ? null : sessionActionAgent(host, expected)
+}

@@ -474,3 +474,36 @@ export function compareRuns(a: RunSnapshot, b: RunSnapshot): number {
       return a.startedAt - b.startedAt
   }
 }
+
+export interface RuntimeRef {
+  readonly runId?: string
+  readonly sessionId?: string
+  readonly generation?: number
+}
+
+export type RuntimeRefMatch = 'exact' | 'envelope' | 'expected'
+
+const PENDING_SESSION_PREFIX = 'pending:'
+
+function isPendingSessionId(sessionId: string | undefined): boolean {
+  return !!sessionId && sessionId.startsWith(PENDING_SESSION_PREFIX)
+}
+
+export const RuntimeRef = {
+  isPendingSessionId,
+  matches(actual: RuntimeRef | null | undefined, expected: RuntimeRef | null | undefined, how: RuntimeRefMatch): boolean {
+    if (!actual || !expected) return false
+    if (how === 'exact') {
+      return actual.runId === expected.runId && actual.sessionId === expected.sessionId && actual.generation === expected.generation
+    }
+    if (how === 'envelope') {
+      if (actual.runId !== expected.runId || actual.generation !== expected.generation) return false
+      if (actual.sessionId === expected.sessionId) return true
+      return !actual.sessionId || isPendingSessionId(actual.sessionId) || !expected.sessionId || isPendingSessionId(expected.sessionId)
+    }
+    if (expected.runId !== undefined && actual.runId !== expected.runId) return false
+    if (expected.generation !== undefined && actual.generation !== expected.generation) return false
+    if (expected.sessionId !== undefined && actual.sessionId !== expected.sessionId && !isPendingSessionId(expected.sessionId)) return false
+    return true
+  }
+}

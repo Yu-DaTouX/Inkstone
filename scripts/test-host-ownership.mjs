@@ -23,9 +23,11 @@ export async function runHostOwnershipTests(ok) {
     if (ts.isCallExpression(node) && node.arguments[0]?.text === 'yan:send') sendHandlerNode = node.arguments[1]
     ts.forEachChild(node, findSendHandler)
   }
-  findSendHandler(sf)
+  const agentIpcFile = fileURLToPath(new URL('../src/main/ipc/agent-ipc.ts', import.meta.url))
+  const agentIpcSf = ts.createSourceFile('agent-ipc.ts', await fs.readFile(agentIpcFile, 'utf8'), ts.ScriptTarget.Latest, true)
+  findSendHandler(agentIpcSf)
   if (!sendHandlerNode) throw new Error('Missing production yan:send handler')
-  const sendCode = ts.transpileModule(`${extracted}\nconst sendUser = ${sendHandlerNode.getText(sf)}`, {
+  const sendCode = ts.transpileModule(`${extracted}\nconst sendUser = ${sendHandlerNode.getText(agentIpcSf)}`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None }
   }).outputText
 
@@ -40,13 +42,13 @@ export async function runHostOwnershipTests(ok) {
     `data:text/javascript;base64,${Buffer.from(runnersBundle.outputFiles[0].text).toString('base64')}`
   )
   const runState = await build({
-    entryPoints: [fileURLToPath(new URL('../src/core/run-state.ts', import.meta.url))],
+    entryPoints: [fileURLToPath(new URL('../src/shared/runs.ts', import.meta.url))],
     bundle: true,
     platform: 'node',
     format: 'esm',
     write: false
   })
-  const { sameRuntimeEnvelope } = await import(
+  const { RuntimeRef } = await import(
     `data:text/javascript;base64,${Buffer.from(runState.outputFiles[0].text).toString('base64')}`
   )
 
@@ -74,7 +76,7 @@ export async function runHostOwnershipTests(ok) {
       return agent
     }
   })
-  const context = { runners: registry, sameRuntimeEnvelope }
+  const context = { runners: registry, RuntimeRef }
   vm.createContext(context)
   vm.runInContext(code, context)
   const { normalizeExpectedRuntime, targetMatchesExpected, resolveExpectedTarget } = context
@@ -173,13 +175,14 @@ export async function runHostOwnershipTests(ok) {
     const context = vm.createContext({
       pick: (zh) => zh,
       runners: registry,
+      deps: { runners: () => registry },
       startAgent: async () => ({ ok: true }),
       getSettings: () => gate.promise,
       captureCheckpoint: (...args) => { checkpoints.push(args) },
       reserveWorkspaceMutation: () => () => {},
       warnSharedCwdOnce: () => {},
       userMessageSent: () => {},
-      sameRuntimeEnvelope
+      RuntimeRef
     })
     vm.runInContext(sendCode, context)
     return { ctx: context, registry, deliveries, checkpoints, gate, sendUser: vm.runInContext('sendUser', context) }
@@ -279,13 +282,14 @@ export async function runHostOwnershipTests(ok) {
     const context = vm.createContext({
       pick: (zh) => zh,
       runners: registry,
+      deps: { runners: () => registry },
       startAgent: async () => ({ ok: true }),
       getSettings: () => Promise.resolve({ checkpointsEnabled: true }),
       captureCheckpoint: () => {},
       reserveWorkspaceMutation: () => () => {},
       warnSharedCwdOnce: () => {},
       userMessageSent: () => {},
-      sameRuntimeEnvelope
+      RuntimeRef
     })
     vm.runInContext(sendCode, context)
     const sendUser = vm.runInContext('sendUser', context)

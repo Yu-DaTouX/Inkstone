@@ -29,7 +29,8 @@
     if (created?.ok !== true) return out.join('\n')
 
     await state().reloadModels?.()
-    const model = await window.yan.setModel('yantimingfixture', 'turn-timing-isolation-fixture')
+    const active = (await window.yan.runnerStatuses()).find((r) => r.isActive)
+    const model = await window.yan.setModel('yantimingfixture', 'turn-timing-isolation-fixture', active ? { runId: active.runId, generation: active.generation } : undefined)
     ok(model?.ok === true, '选择本机 cost 0 fixture provider')
     if (model?.ok !== true) return out.join('\n')
 

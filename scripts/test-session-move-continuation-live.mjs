@@ -95,7 +95,7 @@ try {
   }
   const { AgentController } = await bundle('src/main/agent.ts', 'agent.mjs')
   const { RunnerRegistry } = await bundle('src/main/runners.ts', 'runners.mjs')
-  const { sameRuntimeEnvelope } = await bundle('src/core/run-state.ts', 'run-state.mjs')
+  const { RuntimeRef } = await bundle('src/shared/runs.ts', 'runs.mjs')
   const { rewriteSessionCwd, movedSessionContinuationPrompt, beginSessionMove, restoreSessionHeaderCwd } = await bundle('src/main/session-move.ts', 'session-move.mjs')
 
   const hostCode = functionsOf(await readFile('src/main/index.ts', 'utf8'),
@@ -122,7 +122,7 @@ try {
     const context = {
       runners: registry,
       shuttingDown: false,
-      sameRuntimeEnvelope,
+      RuntimeRef,
       movedSessionContinuationPrompt,
       resolve, isAbsolute,
       validateCwd: async cwd => ({ ok: true, cwd }),
