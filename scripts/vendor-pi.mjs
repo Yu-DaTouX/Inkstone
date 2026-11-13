@@ -151,7 +151,7 @@ function copyDist(piRoot) {
     if (rel.includes(`${'bundle'}`)) return true
     if (rel.endsWith('.map')) return false
     if (rel.endsWith('.d.ts') || rel.endsWith('.ts')) return false
-    if (rel.endsWith('.js')) return false
+    if (rel.endsWith('.js')) return /^core[\\/]export-html[\\/]/.test(rel)
     return true
   }
 
@@ -303,6 +303,14 @@ mkdirSync(DEST, { recursive: true })
 
 const dist = copyDist(piRoot)
 ok(`dist（bundle + 资产）：${dist.files} 个文件，${mb(dist.bytes)}`)
+
+for (const rel of ['template.js', join('vendor', 'marked.min.js')]) {
+  const from = join(piRoot, 'dist', 'core', 'export-html', rel)
+  if (existsSync(from) && !existsSync(join(DEST, 'dist', 'core', 'export-html', rel))) {
+    bad(`HTML 导出缺文件：dist/core/export-html/${rel}`)
+    process.exit(1)
+  }
+}
 
 const codemodeDoc = join(piRoot, 'docs', 'codemode.md')
 if (existsSync(codemodeDoc)) {
