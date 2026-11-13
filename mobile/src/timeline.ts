@@ -1,7 +1,10 @@
 import { pick } from '../../src/shared/ui-lang'
 import type { HistoryMessage } from './api/client'
-import { parseHostTextNotice, type HostTextNotice, type TerminalNoticeState } from '../../src/shared/host-notice-text'
+import type { HostTextNotice, TerminalNoticeState } from '../../src/shared/host-notice-text'
 import { redactCommandSecrets } from '../../src/shared/command-redact'
+import { createTurnProjector } from '../../src/shared/turns'
+import { parseHostNotice } from '../../src/shared/host-notice'
+import type { UIMessage } from '../../src/shared/ipc'
 
 export type ImageRef = { messageId: string; index: number }
 export type ToolStep = { id: string; name: string; failed: boolean; denied: boolean; running: boolean; awaiting: boolean; summary: string; output: string; nested: boolean; images: ImageRef[] }
@@ -53,71 +56,72 @@ export function argSummary(args: unknown): string {
   return redactCommandSecrets(text.split('\n')[0]).slice(0, 160)
 }
 
-export const SUBAGENT_NOTICE_RE = /^<subagent-notification id="[^"]+" status="[^"]+">/
-export const isSubagentNotice = (message: HistoryMessage) => message.role === 'user' && SUBAGENT_NOTICE_RE.test(message.text?.trimStart() ?? '')
-
 export const hasReply = (message: HistoryMessage) => !!(message.text?.trim() || message.error || message.artifacts?.length)
+
+const projectTurns = createTurnProjector()
+
+const isHiddenSubagentNotice = (message: HistoryMessage) => message.role === 'user' && parseHostNotice(message.text)?.kind === 'subagent'
+
+function processEntry(turn: HistoryMessage[], entries: TimelineEntry[]): void {
+  let replyIndex = -1
+  turn.forEach((message, index) => { if (hasReply(message)) replyIndex = index })
+  const steps: ProcessStep[] = []
+  const tools = new Map<string, ToolStep>()
+  let first = Infinity
+  let last = 0
+  turn.forEach((message, index) => {
+    if (message.thinking?.trim()) steps.push({ kind: 'thinking', key: `thinking-${message.id}`, text: message.thinking.trim(), ms: message.thinkingMs })
+    if (index !== replyIndex && hasReply(message)) steps.push({ kind: 'text', key: `text-${message.id}`, message })
+    for (const [toolIndex, tool] of (message.toolCalls ?? []).entries()) {
+      if (tool.startedAt) first = Math.min(first, tool.startedAt)
+      if (tool.endedAt) last = Math.max(last, tool.endedAt)
+      const key = tool.id || `${message.id}:${toolIndex}`
+      const old = tools.get(key)
+      const denied = tool.denied === true || !!old?.denied
+      const next: ToolStep = {
+        id: key,
+        name: tool.name || old?.name || pick('工具', 'Tool'),
+        failed: (tool.status === 'error' && !denied) || !!old?.failed,
+        denied,
+        running: tool.status === 'running' || tool.status === 'pending',
+        awaiting: tool.output === undefined && old?.output === undefined,
+        summary: argSummary(tool.args) || old?.summary || '',
+        output: tool.output ?? old?.output ?? '',
+        nested: !!tool.parentToolCallId,
+        images: tool.imageIndexes?.length ? tool.imageIndexes.map((index) => ({ messageId: message.id, index })) : old?.images ?? []
+      }
+      if (old) Object.assign(old, next)
+      else {
+        tools.set(key, next)
+        steps.push({ kind: 'tool', key: `tool-${key}`, tool: next })
+      }
+    }
+  })
+  const counted = [...tools.values()].filter((tool) => !tool.nested && !(UNCOUNTED_TOOLS.has(tool.name) && !tool.failed))
+  const thinking = steps.filter((step) => step.kind === 'thinking').length
+  if (counted.length || thinking) {
+    entries.push({ kind: 'process', key: `process-${turn[0].id}`, sources: turn, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length, images: [...tools.values()].reduce((sum, tool) => sum + tool.images.length, 0), ms: last > first ? last - first : undefined })
+  } else {
+    for (const step of steps) if (step.kind === 'text') entries.push({ kind: 'message', key: step.message.id, message: step.message, sources: [step.message] })
+  }
+  if (replyIndex >= 0) entries.push({ kind: 'message', key: turn[replyIndex].id, message: turn[replyIndex], sources: [turn[replyIndex]] })
+}
 
 export function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
   const entries: TimelineEntry[] = []
-  let turn: HistoryMessage[] = []
-  const flushTurn = () => {
-    if (!turn.length) return
-    let replyIndex = -1
-    turn.forEach((message, index) => { if (hasReply(message)) replyIndex = index })
-    const steps: ProcessStep[] = []
-    const tools = new Map<string, ToolStep>()
-    let first = Infinity
-    let last = 0
-    turn.forEach((message, index) => {
-      if (message.thinking?.trim()) steps.push({ kind: 'thinking', key: `thinking-${message.id}`, text: message.thinking.trim(), ms: message.thinkingMs })
-      if (index !== replyIndex && hasReply(message)) steps.push({ kind: 'text', key: `text-${message.id}`, message })
-      for (const [toolIndex, tool] of (message.toolCalls ?? []).entries()) {
-        if (tool.startedAt) first = Math.min(first, tool.startedAt)
-        if (tool.endedAt) last = Math.max(last, tool.endedAt)
-        const key = tool.id || `${message.id}:${toolIndex}`
-        const old = tools.get(key)
-        const denied = tool.denied === true || !!old?.denied
-        const next: ToolStep = {
-          id: key,
-          name: tool.name || old?.name || pick('工具', 'Tool'),
-          failed: (tool.status === 'error' && !denied) || !!old?.failed,
-          denied,
-          running: tool.status === 'running' || tool.status === 'pending',
-          awaiting: tool.output === undefined && old?.output === undefined,
-          summary: argSummary(tool.args) || old?.summary || '',
-          output: tool.output ?? old?.output ?? '',
-          nested: !!tool.parentToolCallId,
-          images: tool.imageIndexes?.length ? tool.imageIndexes.map((index) => ({ messageId: message.id, index })) : old?.images ?? []
-        }
-        if (old) Object.assign(old, next)
-        else {
-          tools.set(key, next)
-          steps.push({ kind: 'tool', key: `tool-${key}`, tool: next })
-        }
-      }
-    })
-    const counted = [...tools.values()].filter((tool) => !tool.nested && !(UNCOUNTED_TOOLS.has(tool.name) && !tool.failed))
-    const thinking = steps.filter((step) => step.kind === 'thinking').length
-    if (counted.length || thinking) {
-      entries.push({ kind: 'process', key: `process-${turn[0].id}`, sources: turn, steps, actions: counted.length, thinking, failed: counted.filter((tool) => tool.failed).length, images: [...tools.values()].reduce((sum, tool) => sum + tool.images.length, 0), ms: last > first ? last - first : undefined })
-    } else {
-      for (const step of steps) if (step.kind === 'text') entries.push({ kind: 'message', key: step.message.id, message: step.message, sources: [step.message] })
+  let at = 0
+  for (const turn of projectTurns(messages as UIMessage[])) {
+    while (at < messages.length && isHiddenSubagentNotice(messages[at])) at++
+    if (turn.kind === 'assistant') {
+      processEntry(messages.slice(at, at + turn.sourceIds.length), entries)
+      at += turn.sourceIds.length
+      continue
     }
-    if (replyIndex >= 0) entries.push({ kind: 'message', key: turn[replyIndex].id, message: turn[replyIndex], sources: [turn[replyIndex]] })
-    turn = []
+    const message = messages[at++]
+    if (turn.kind === 'note') entries.push(noteEntry(message))
+    else if (turn.kind === 'host') entries.push({ kind: 'notice', key: message.id, message, sources: [message], label: hostNoticeLabel(turn.notice), icon: turn.notice.kind === 'session-moved' ? 'folder' : turn.notice.kind === 'terminal' ? 'terminal' : 'refresh' })
+    else entries.push({ kind: 'message', key: message.id, message, sources: [message] })
   }
-  for (const message of messages) {
-    if (message.role === 'user' || message.role === 'bash' || message.role === 'note') {
-      flushTurn()
-      if (message.role === 'note') { entries.push(noteEntry(message)); continue }
-      if (isSubagentNotice(message)) continue
-      const notice = message.role === 'user' ? parseHostTextNotice(message.text) : null
-      if (notice) entries.push({ kind: 'notice', key: message.id, message, sources: [message], label: hostNoticeLabel(notice), icon: notice.kind === 'session-moved' ? 'folder' : notice.kind === 'terminal' ? 'terminal' : 'refresh' })
-      else entries.push({ kind: 'message', key: message.id, message, sources: [message] })
-    } else turn.push(message)
-  }
-  flushTurn()
   return entries
 }
 
