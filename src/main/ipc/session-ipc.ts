@@ -31,6 +31,7 @@ import { pick } from '../../shared/ui-lang'
 
 export interface SelectedSessionTarget {
   sessionFile?: string
+  sessionId?: string
   projectId?: string
   scope?: 'global' | 'project' | 'pending'
   cwd: string
@@ -58,20 +59,33 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
     if (!r.ok) return r
   }
   const settings = await getSettings()
-  const projectId = target.scope === 'global'
+  const recorded = target.sessionFile || target.sessionId
+    ? await resolveSessionOpenTarget({
+        ...(target.sessionFile ? { sessionFile: target.sessionFile } : {}),
+        ...(target.sessionId ? { sessionId: target.sessionId } : {}),
+        fallbackCwd: cwdResult.cwd,
+        usable: (cwd) => host.validateCwd(cwd),
+        projectIdForCwd: (cwd) => host.projectIdForCwd(settings, cwd)
+      })
+    : null
+  const owned = recorded?.fromSession === true && !recorded.missingCwd ? recorded : null
+  const cwd = owned?.cwd ?? cwdResult.cwd
+  const scope = owned?.scope ?? target.scope
+  const projectId = scope === 'global'
     ? undefined
-    : (target.projectId ?? (target.scope === 'pending' ? undefined : host.projectIdForCwd(settings, cwdResult.cwd)))
+    : (owned ? owned.projectId : (target.projectId ?? (scope === 'pending' ? undefined : host.projectIdForCwd(settings, cwd))))
   const res = await host.runners()!.select({
     ...target,
-    cwd: cwdResult.cwd,
-    projectId
+    cwd,
+    projectId,
+    ...(scope ? { scope } : {})
   })
   if (!res.deferred) {
     await host.rememberRunnerSession(res, {
       ...target,
-      cwd: cwdResult.cwd,
+      cwd,
       projectId,
-      scope: target.scope ?? (projectId ? 'project' : 'global')
+      scope: scope ?? (projectId ? 'project' : 'global')
     })
   }
   if (res.ok && res.id) void host.pushRunnerSnapshot(res.id)

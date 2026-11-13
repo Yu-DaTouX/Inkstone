@@ -296,6 +296,40 @@ await check('layout 没有条目时按会话文件头目录派生项目，不落
   assert.equal(target.scope, 'project')
 })
 
+process.stdout.write('\n▌yan:selectSession 不信任渲染端带来的目录和项目\n')
+
+const selectSession = (target) => handlers.get('yan:selectSession')(target)
+
+await check('渲染端把会话 B 报成 A 的目录和项目：运行实例与归属仍是 B，moveHistory 不新增', async () => {
+  const before = await entryOf('sess-b')
+  const result = await selectSession({ sessionFile: files.belongsToB, sessionId: 'sess-b', cwd: dirA, projectId: 'project-a', scope: 'project' })
+  assert.equal(result.ok, true, result.error)
+  const last = selections.at(-1)
+  assert.equal(norm(last.cwd), norm(dirB), `运行实例 cwd 实际 ${last.cwd}`)
+  assert.equal(last.projectId, 'project-b')
+  const entry = await entryOf('sess-b')
+  assert.equal(entry.projectId, 'project-b')
+  assert.equal(norm(entry.cwd), norm(dirB))
+  assert.equal(entry.moveHistory.length, before.moveHistory.length, JSON.stringify(entry.moveHistory))
+})
+
+await check('渲染端把全局会话报成项目会话：仍是全局', async () => {
+  const result = await selectSession({ sessionFile: files.global, sessionId: 'sess-global', cwd: dirA, projectId: 'project-a', scope: 'project' })
+  assert.equal(result.ok, true, result.error)
+  const entry = await entryOf('sess-global')
+  assert.equal(entry.projectId, undefined)
+  assert.equal(entry.scope, 'global')
+  assert.equal(entry.moveHistory.length, 0)
+})
+
+await check('没有会话文件的新会话选择仍按渲染端目标处理', async () => {
+  const result = await selectSession({ sessionId: 'sess-fresh', cwd: dirA, projectId: 'project-a', scope: 'project' })
+  assert.equal(result.ok, true, result.error)
+  const last = selections.at(-1)
+  assert.equal(norm(last.cwd), norm(dirA))
+  assert.equal(last.projectId, 'project-a')
+})
+
 for (const key of keys) {
   if (previous[key] === undefined) delete process.env[key]
   else process.env[key] = previous[key]
