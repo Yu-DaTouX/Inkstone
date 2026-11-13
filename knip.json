@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main/index.ts!",
+    "src/main/protocol.ts!",
+    "src/main/sessions.ts!",
+    "src/main/office/worker.ts!",
+    "src/main/file-search-worker.ts!",
+    "src/main/usage-stats-worker.ts!",
+    "src/main/git-read-worker.ts!",
+    "src/main/web-content-worker.ts!",
+    "src/main/workflows/worker.ts!",
+    "src/main/zoom-math.ts!",
+    "src/preload/index.ts!",
+    "src/renderer/src/main.tsx!",
+    "src/renderer/auxwin/quick-ask.tsx!"
+  ],
+  "project": ["src/**/*.{ts,tsx}!"],
+  "ignore": ["src/**/*.stories.tsx", "src/**/*.d.ts", "src/renderer/src/icons/sprite.ts"],
+  "paths": { "@/*": ["./src/renderer/src/*"] }
+}

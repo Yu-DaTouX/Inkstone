@@ -16,7 +16,7 @@
 
 | 命令 | 用途 |
 | --- | --- |
-| `npm run typecheck` | 类型、CSS 与分层检查 |
+| `npm run typecheck` | 类型、CSS、分层检查，以及未使用的源文件与依赖（knip，入口在 `knip.json`） |
 | `npm run build` | 构建到 `out/`；完整 `test:unit` 依赖它，`test:live` 不自动构建 |
 | `npm run test:unit -- <前缀> [<前缀> ...]` | 定向运行，如 `queue agents-doc`；加 `--list` 只看独立/兼容/排除清单，选中未迁移或排除项会拒绝执行 |
 | `npm run test:unit` / `npm run test:live -- <场景>` | 全部单元测试 / 单个 Electron 场景；独立套件也可直接 `node scripts/test-<名>.mjs` |
