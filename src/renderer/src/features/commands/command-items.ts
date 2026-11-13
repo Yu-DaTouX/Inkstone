@@ -13,8 +13,6 @@ export const COMMAND_ACTION_IDS = {
   openSettings: 'openSettings',
   openSideBySide: 'openSideBySide',
   stopSession: 'stopSession',
-  sessionModeAsk: 'sessionModeAsk',
-  sessionModePlan: 'sessionModePlan',
   workspaceChanges: 'workspaceChanges',
   workspaceTerminal: 'workspaceTerminal',
   workspaceFiles: 'workspaceFiles',

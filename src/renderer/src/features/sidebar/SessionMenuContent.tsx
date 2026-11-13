@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { AlarmClock, Clock, Columns2, Eye, FolderInput, FolderOpen, Globe, Mail, MailOpen, Pencil, Pin, PinOff, Archive, ArchiveRestore, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
+import { AlarmClock, Clock, Columns2, Download, Eye, FileCode, FileText, FolderInput, FolderOpen, Globe, Mail, MailOpen, Package, Pencil, Pin, PinOff, Archive, ArchiveRestore, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, Upload, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { indexOfSession, useSplitView } from '../../state/split-view'
@@ -98,6 +98,35 @@ export function SessionMenuContent({ item, isCurrent, pointAnchor, onOpenChange,
                 {split.openBelow}
               </MenuItem>
             ) : null}
+          </Menu>
+        </Popover>
+      </SubmenuTrigger>
+      <SubmenuTrigger>
+        <MenuItem id="transfer" textValue={t('rail.transfer')} data-testid="v3-session-transfer" icon={<Upload size={14} />}>
+          {t('rail.transfer')}
+        </MenuItem>
+        <Popover placement="end top" offset={2}>
+          <Menu
+            aria-label={t('rail.transfer')}
+            onAction={(key) => {
+              onOpenChange(false)
+              onAction(key as MenuKey)
+            }}
+            data-testid="v3-session-transfer-menu"
+          >
+            <MenuItem id="export:markdown" textValue={t('rail.exportMarkdown')} icon={<FileText size={14} />}>
+              {t('rail.exportMarkdown')}
+            </MenuItem>
+            <MenuItem id="export:html" textValue={t('rail.exportHtml')} icon={<FileCode size={14} />}>
+              {t('rail.exportHtml')}
+            </MenuItem>
+            <MenuItem id="export:bundle" textValue={t('rail.exportBundle')} icon={<Package size={14} />}>
+              {t('rail.exportBundle')}
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem id="import" textValue={t('rail.importBundle')} data-testid="v3-session-import" icon={<Download size={14} />}>
+              {t('rail.importBundle')}
+            </MenuItem>
           </Menu>
         </Popover>
       </SubmenuTrigger>

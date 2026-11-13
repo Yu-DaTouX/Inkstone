@@ -32,9 +32,9 @@ const electronStub = {
     b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ loader: 'js', contents: 'export const ipcMain = { handle() {} }' }))
   }
 }
-async function bundle(entry, name) {
+async function bundle(entry, name, extra = {}) {
   const outfile = join(root, `${name}.mjs`)
-  await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [electronStub] })
+  await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [electronStub], ...extra })
   return import(pathToFileURL(outfile).href)
 }
 
@@ -204,6 +204,77 @@ try {
   await check('导出取消时不抛异常', async () => {
     const result = await register({ pickExportPath: async () => null }).invoke('yan:sessionTransfer:export')
     assert.deepEqual(result, { ok: false, cancelled: true })
+  })
+  section('多格式导出')
+  const { sessionMarkdown } = await bundle('src/shared/session-markdown.ts', 'markdown')
+  const history = [
+    { id: 'u1', role: 'user', text: '帮我看看 README', images: [{ mimeType: 'image/png', data: 'x' }] },
+    { id: 'n1', role: 'user', text: '<subagent-notification id="sub-1" status="done">\n完成\n</subagent-notification>' },
+    { id: 'a1', role: 'assistant', text: '', toolCalls: [{ id: 't1', name: 'read', args: { path: 'README.md' }, status: 'ok', output: '不该出现的工具输出' }, { id: 't2', name: 'bash', args: { command: 'echo `hi`' }, status: 'error' }, { id: 't3', name: 'read', args: { path: 'nested.md' }, status: 'ok', parentToolCallId: 't1' }] },
+    { id: 'a2', role: 'assistant', text: '这是项目说明。', thinking: '不该出现的思考' },
+    { id: 'x1', role: 'note', text: '不该出现的备注' },
+    { id: 'b1', role: 'bash', text: 'ok\n', bash: { command: 'npm test', exitCode: 0, cancelled: false } }
+  ]
+  await check('Markdown：按说话人分段，工具只列名称与要点，不含思考、工具输出、宿主通知与备注', async () => {
+    const text = sessionMarkdown(history, { title: '读文档', cwd: 'E:/demo', exportedAt: new Date(2026, 10, 13, 12, 5).getTime() })
+    assert.ok(text.startsWith('# 读文档\n\n> 导出自 Inkstone · 2026-11-13 12:05 · `E:/demo`\n\n---\n\n**用户**\n\n帮我看看 README\n\n'), text)
+    assert.equal(text.match(/^\*\*助手\*\*$/gm)?.length, 1, '连续的助手消息只出一个标签')
+    assert.ok(!/^## /m.test(text), '说话人标签不占用标题层级')
+    assert.ok(text.includes('- `read` `README.md`\n- `bash` `` echo `hi` ``（失败）'), text)
+    assert.ok(text.includes('这是项目说明。'))
+    assert.ok(text.includes('图片 1 张'))
+    assert.ok(text.includes('```\n$ npm test\nok\n```'))
+    for (const absent of ['不该出现', 'subagent-notification', 'nested.md']) assert.ok(!text.includes(absent), absent)
+  })
+  await check('按 Markdown 导出：用标题做文件名，写出 .md 并在文件管理器里定位', async () => {
+    const picked = []
+    const revealed = []
+    const result = await register({
+      pickExportPath: async (name, format) => (picked.push([name, format]), join(exportDir, name)),
+      readMessages: async (path) => (path === sessionFile ? { messages: history, cwd: 'E:/demo' } : null),
+      reveal: (path) => revealed.push(path)
+    }).invoke('yan:sessionTransfer:export', sessionFile, { format: 'markdown', title: '读文档: a/b?', reveal: true })
+    assert.equal(result.ok, true, result.error)
+    assert.deepEqual(picked, [['读文档 a b.md', 'markdown']])
+    assert.ok(result.path.endsWith('.md'))
+    assert.deepEqual(revealed, [result.path])
+    assert.ok((await readFile(result.path, 'utf8')).startsWith('# 读文档: a/b?\n'))
+  })
+  await check('取 Markdown 文本的通道：读得到返回文本，读不到返回可读错误', async () => {
+    const readMessages = async (path) => (path === sessionFile ? { messages: history } : null)
+    const found = await register({ readMessages }).invoke('yan:sessionTransfer:markdown', sessionFile, '读文档')
+    assert.equal(found.ok, true, found.error)
+    assert.ok(found.markdown.startsWith('# 读文档\n'))
+    const missing = await register({ readMessages }).invoke('yan:sessionTransfer:markdown', join(ipcRoot, 'nope.jsonl'))
+    assert.equal(missing.ok, false)
+    assert.ok(missing.error.length > 0)
+  })
+  await check('按 HTML 导出：保存界面渲染好的页面；没有页面内容时不弹保存框', async () => {
+    const saved = await register().invoke('yan:sessionTransfer:export', sessionFile, { format: 'html', html: '<!doctype html><p>hi</p>' })
+    assert.equal(saved.ok, true, saved.error)
+    assert.ok(saved.path.endsWith('sess-original.html'), saved.path)
+    assert.equal(await readFile(saved.path, 'utf8'), '<!doctype html><p>hi</p>')
+    let asked = 0
+    const empty = await register({ pickExportPath: async () => (asked += 1, null) }).invoke('yan:sessionTransfer:export', sessionFile, { format: 'html' })
+    assert.equal(empty.ok, false)
+    assert.equal(asked, 0)
+  })
+  await check('HTML 页面：Markdown 渲染成标签，原始 HTML 与图片不进页面，标题转义', async () => {
+    const { sessionHtmlDocument } = await bundle('src/renderer/src/features/sidebar/session-export-html.ts', 'export-html', { banner: { js: "import { createRequire as __createRequire } from 'node:module'\nconst require = __createRequire(import.meta.url)" } })
+    const page = await sessionHtmlDocument('# 标题\n\n## 用户\n\n**粗体** <script>alert(1)</script> ![x](https://example.com/a.png)\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n```js\nlet a = 1 < 2\n```\n', '标题 <b>', 'zh-CN')
+    assert.ok(page.startsWith('<!doctype html>\n<html lang="zh-CN">'))
+    assert.ok(page.includes('<title>标题 &lt;b&gt;</title>'))
+    assert.ok(page.includes('<h1>标题</h1>') && page.includes('<h2>用户</h2>') && page.includes('<strong>粗体</strong>'))
+    assert.ok(page.includes('<table>') && page.includes('<pre><code class="language-js">let a = 1 &lt; 2'))
+    assert.ok(!page.includes('<script') && !page.includes('<img'), page)
+  })
+  await check('读不到会话或格式不认识时不写文件；不认识的格式按会话包导出', async () => {
+    const missing = await register({ readMessages: async () => null }).invoke('yan:sessionTransfer:export', sessionFile, { format: 'markdown', title: 'none' })
+    assert.equal(missing.ok, false)
+    assert.equal(existsSync(join(exportDir, 'none.md')), false)
+    const fallback = await register().invoke('yan:sessionTransfer:export', sessionFile, { format: 'pdf', title: 'odd' })
+    assert.equal(fallback.ok, true, fallback.error)
+    assert.ok(fallback.path.endsWith('odd.inkstone-session.json'), fallback.path)
   })
   await check('导入损坏的会话包返回可读错误', async () => {
     const broken = join(ipcRoot, 'broken.json')

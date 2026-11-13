@@ -12,8 +12,10 @@ import { closeSplitPane, openSessionInSplit } from '../split/split-actions'
 import { pickSnoozeOption } from './session-snooze'
 import { CustomSnoozeDialog } from './CustomSnoozeDialog'
 import { SessionMenuContent } from './SessionMenuContent'
+import { exportSessionFromMenu, importSessionFromMenu } from './session-transfer-actions'
+import { isSessionExportFormat } from '../../../../shared/session-transfer'
 
-export type MenuKey = `move:${string}` | `snooze:${string}` | 'split' | 'split-below' | 'split-close' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
+export type MenuKey = `move:${string}` | `snooze:${string}` | `export:${string}` | 'import' | 'split' | 'split-below' | 'split-close' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
 
 export interface SessionMenuProps {
   item: SessionSummary
@@ -86,7 +88,15 @@ export function SessionMenu({ item, title, isCurrent, anchor, pointAnchor, open,
       if (option) void leaveSessionAfter(item.path, () => store.setSessionSnoozed(item.id, option.until))
       return
     }
+    if (key.startsWith('export:')) {
+      const format = key.slice('export:'.length)
+      if (isSessionExportFormat(format)) void exportSessionFromMenu(item.path, format, title, lang, t)
+      return
+    }
     switch (key) {
+      case 'import':
+        void importSessionFromMenu(t)
+        return
       case 'split':
         openSessionInSplit(item)
         return

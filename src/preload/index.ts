@@ -88,8 +88,9 @@ const api: YanBridge = {
     stop: (runId) => invoke('yan:runs:stop', runId)
   },
   sessionTransfer: {
-    exportSession: (sessionPath) => invoke('yan:sessionTransfer:export', sessionPath),
-    importSession: () => invoke('yan:sessionTransfer:import')
+    exportSession: (sessionPath, options) => invoke('yan:sessionTransfer:export', sessionPath, options),
+    importSession: () => invoke('yan:sessionTransfer:import'),
+    sessionMarkdown: (sessionPath, title) => invoke('yan:sessionTransfer:markdown', sessionPath, title)
   },
   compact: (customInstructions, expected) => invoke('yan:compact', customInstructions, expected),
   compactionInfo: (cwd, contextWindow) => invoke('yan:compactionInfo', cwd, contextWindow),
@@ -110,7 +111,6 @@ const api: YanBridge = {
   setModel: (provider, modelId, expected) => invoke('yan:setModel', provider, modelId, expected),
   setThinking: (level, expected) => invoke('yan:setThinking', level, expected),
   setUltracode: (on, expected) => invoke('yan:setUltracode', on, expected),
-  setSessionMode: (change, expected) => invoke('yan:setSessionMode', change, expected),
   listThinkingLevels: () => invoke('yan:listThinkingLevels'),
   listCommands: () => invoke('yan:listCommands'),
 

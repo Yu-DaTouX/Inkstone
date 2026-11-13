@@ -23,6 +23,7 @@ export interface IpcChannelMap {
 
   'yan:sessionTransfer:export': Contract<B['sessionTransfer']['exportSession']>
   'yan:sessionTransfer:import': Contract<B['sessionTransfer']['importSession']>
+  'yan:sessionTransfer:markdown': Contract<B['sessionTransfer']['sessionMarkdown']>
 
   'yan:checkpoints:list': Contract<B['checkpoints']['list']>
   'yan:checkpoints:preview': Contract<B['checkpoints']['preview']>
@@ -237,7 +238,6 @@ export interface IpcChannelMap {
   'yan:setModel': Contract<B['setModel']>
   'yan:setThinking': Contract<B['setThinking']>
   'yan:setUltracode': Contract<B['setUltracode']>
-  'yan:setSessionMode': Contract<B['setSessionMode']>
   'yan:listThinkingLevels': Contract<B['listThinkingLevels']>
   'yan:listCommands': Contract<B['listCommands']>
   'yan:setAutoCompaction': Contract<B['setAutoCompaction']>

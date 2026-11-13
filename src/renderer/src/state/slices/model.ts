@@ -31,7 +31,7 @@ function thinkLabelOf(level: string): string {
   return key ? uiText(key) : level
 }
 
-export type ModelSlice = Pick<Store, 'models' | 'thinkingLevels' | 'commands' | 'commandsAt' | 'authProviders' | 'commandUse' | 'autoRetryEnabled' | 'loadAuthProviders' | 'reloadModels' | 'reloadCommands' | 'markCommandUsed' | 'setModel' | 'setThinking' | 'setUltracode' | 'setSessionMode' | 'setAutoCompaction' | 'setAutoRetry' | 'setSteeringMode' | 'setFollowUpMode' | 'abortRetry' | 'cycleModel' | 'cycleModelBack' | 'cycleThinking'>
+export type ModelSlice = Pick<Store, 'models' | 'thinkingLevels' | 'commands' | 'commandsAt' | 'authProviders' | 'commandUse' | 'autoRetryEnabled' | 'loadAuthProviders' | 'reloadModels' | 'reloadCommands' | 'markCommandUsed' | 'setModel' | 'setThinking' | 'setUltracode' | 'setAutoCompaction' | 'setAutoRetry' | 'setSteeringMode' | 'setFollowUpMode' | 'abortRetry' | 'cycleModel' | 'cycleModelBack' | 'cycleThinking'>
 
 export function createModelSlice({ set, get }: SliceContext): ModelSlice {
   return {
@@ -171,17 +171,6 @@ export function createModelSlice({ set, get }: SliceContext): ModelSlice {
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
     }
-  },
-  setSessionMode: async (change) => {
-    const target = await sessionActionTarget(get)
-    if (!target) return false
-    const res = await piCall(() => window.yan.setSessionMode(change, target.expected))
-    if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
-      return false
-    }
-    if (change === 'approve' && target.current()) return get().send(uiText('composer.mode.approveMessage'))
-    return true
   },
   setAutoCompaction: async (on) => {
     const res = await piCall(() => window.yan.setAutoCompaction(on))

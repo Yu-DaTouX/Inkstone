@@ -155,8 +155,6 @@ import type {
 import { hasUsageNumbers } from '../shared/turns'
 import type { SubagentForkSource } from './subagent-fork'
 import { isUltracodeOn, setUltracodeOn } from './ultracode-sessions'
-import { sessionModes } from './session-modes'
-import { nextStoredMode, sessionModeState, type SessionModeChange } from '../shared/session-mode'
 import { readPendingModelSwitch, takePendingModelSwitch, writePendingModelSwitch } from './pending-model-switch'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 
@@ -442,7 +440,6 @@ export class AgentController extends EventEmitter {
   private languageExtension?: string
   private userAddressExtension?: string
   private ultracodeExtension?: string
-  private sessionModeExtension?: string
   private turnModelSwitchExtension?: string
   private deferredModelSwitch?: {
     sessionId: string
@@ -725,7 +722,6 @@ export class AgentController extends EventEmitter {
     languageExtension?: string
     userAddressExtension?: string
     ultracodeExtension?: string
-    sessionModeExtension?: string
     turnModelSwitchExtension?: string
     capabilityGuideExtension?: string
     mcpAppProxyExtension?: string
@@ -809,7 +805,6 @@ export class AgentController extends EventEmitter {
     this.languageExtension = opts.languageExtension
     this.userAddressExtension = opts.userAddressExtension
     this.ultracodeExtension = opts.ultracodeExtension
-    this.sessionModeExtension = opts.sessionModeExtension
     this.turnModelSwitchExtension = opts.turnModelSwitchExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
@@ -952,7 +947,6 @@ export class AgentController extends EventEmitter {
     if (this.rpc?.running) return { ok: true }
 
     this.stopping = false
-    if (this.sessionModeExtension) sessionModes.clearStale()
     this.queue.reset()
     this.streamLoopDetector = null
     this.loopGuardTripped = false
@@ -989,7 +983,6 @@ export class AgentController extends EventEmitter {
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
         ...(this.userAddressExtension ? ['--extension', this.userAddressExtension] : []),
         ...(this.ultracodeExtension ? ['--extension', this.ultracodeExtension] : []),
-        ...(this.sessionModeExtension ? ['--extension', this.sessionModeExtension] : []),
         ...(this.turnModelSwitchExtension ? ['--extension', this.turnModelSwitchExtension] : []),
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
@@ -2005,7 +1998,6 @@ export class AgentController extends EventEmitter {
         ? { pendingModelChange: { previousModel: model ?? undefined, previousThinkingLevel: actualThinkingLevel } }
         : {}),
       ultracode: isUltracodeOn(String(data.sessionId ?? '')),
-      ...sessionModeState(sessionModes.get(String(data.sessionId ?? ''))),
       availableThinkingLevels,
       thinkingLevelsStatus: levels.status,
       capabilities: capabilitySnapshot(model, availableThinkingLevels, levels.status),
@@ -3876,24 +3868,6 @@ export class AgentController extends EventEmitter {
     }
     if (this.state?.sessionId === sessionId) {
       this.state = { ...this.state, ultracode: on }
-      this.push({ ch: 'state', payload: this.state })
-    }
-    return { ok: true }
-  }
-
-  async setSessionMode(change: SessionModeChange): Promise<{ ok: boolean; error?: string }> {
-    const sessionId = this.state?.sessionId
-    if (!sessionId) return { ok: false, error: pick('pi 尚未就绪', 'pi is not ready') }
-    const next = nextStoredMode(sessionModes.get(sessionId), change)
-    if (next === null) return { ok: false, error: pick('当前不在计划模式', 'Plan mode is not on') }
-    try {
-      sessionModes.set(sessionId, next)
-    } catch (error) {
-      return { ok: false, error: String(error) }
-    }
-    if (this.state?.sessionId === sessionId) {
-      const { sessionMode: _previous, ...rest } = this.state
-      this.state = { ...rest, ...sessionModeState(next) }
       this.push({ ch: 'state', payload: this.state })
     }
     return { ok: true }

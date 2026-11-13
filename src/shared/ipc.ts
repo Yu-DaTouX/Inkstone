@@ -2,7 +2,6 @@ import type { ApiKeyPools } from './api-keys'
 import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-search'
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
 import type { HtmlEditPatch } from './html-edit-patch'
-import type { SessionMode, SessionModeChange } from './session-mode'
 import type { ArtifactLibraryResult, SaveInlineArtifactInput, SaveInlineArtifactResult } from './artifact-library'
 import type { NativeMcpServerListView } from './mcp-native'
 import type { McpSettingsMutation, McpSettingsResult, McpSettingsSnapshot } from './mcp-settings'
@@ -127,7 +126,6 @@ export interface SessionState {
     previousThinkingLevel: string
   }
   ultracode?: boolean
-  sessionMode?: SessionMode
   availableThinkingLevels: string[]
   thinkingLevelsStatus?: CapabilityStatus
   capabilities?: ModelCapabilitySnapshot
@@ -1561,7 +1559,6 @@ export interface YanBridge {
   setModel(provider: string, modelId: string, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   setThinking(level: string, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   setUltracode(on: boolean, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  setSessionMode(change: SessionModeChange, expected: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   listThinkingLevels(): Promise<string[]>
 
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>

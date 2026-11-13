@@ -639,7 +639,6 @@ const YAN_THIN_EXTENSION_FILES = {
   languageExtension: 'language.js',
   userAddressExtension: 'user-address.js',
   ultracodeExtension: 'ultracode.js',
-  sessionModeExtension: 'session-mode.js',
   turnModelSwitchExtension: 'turn-model-switch.js',
   capabilityGuideExtension: 'capability-guide.js',
   mcpAppProxyExtension: 'mcp-app-proxy.js',
@@ -2621,12 +2620,17 @@ function registerIpc(): void {
 
   registerSessionTransferIpc(ipc, {
     sessionsDir: SESSIONS_DIR,
-    pickExportPath: async (suggested) => {
+    readMessages: async (sessionPath) => {
+      const history = await readHistoryWithArtifacts(sessionPath)
+      return history ? { messages: history.messages, ...(history.sourceCwd ? { cwd: history.sourceCwd } : {}) } : null
+    },
+    reveal: (path) => shell.showItemInFolder(path),
+    pickExportPath: async (suggested, format) => {
       if (!win) return null
       const r = await dialog.showSaveDialog(win, {
         title: pick('导出会话', 'Export session'),
         defaultPath: join(app.getPath('documents'), suggested),
-        filters: [{ name: pick('砚会话包', 'Inkstone session bundle'), extensions: ['json'] }]
+        filters: format === 'markdown' ? [{ name: 'Markdown', extensions: ['md'] }] : format === 'html' ? [{ name: 'HTML', extensions: ['html'] }] : [{ name: pick('砚会话包', 'Inkstone session bundle'), extensions: ['json'] }]
       })
       return r.canceled ? null : r.filePath ?? null
     },

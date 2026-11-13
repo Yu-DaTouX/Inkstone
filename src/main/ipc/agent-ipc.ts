@@ -7,7 +7,6 @@ import type { LineModel } from '../native-compaction-line'
 import type { ExpectedRuntimeOwner, MainPush, QueueEditOp, QueueSnapshot, QueueState } from '../../shared/ipc'
 import type { RuntimeRef } from '../../shared/runs'
 import { pick } from '../../shared/ui-lang'
-import { isSessionModeChange } from '../../shared/session-mode'
 import { getSettings } from '../settings'
 import { userMessageSent } from '../browser/user-handoff'
 import { reserveWorkspaceMutation } from '../workspace-mutation'
@@ -204,7 +203,6 @@ export function registerAgentIpc(ipc: IpcRegistrar, deps: AgentIpcDeps): void {
   handle('yan:setThinking', async (level: string, expected: ExpectedRuntimeOwner) => requiredSessionActionAgent({ ac, runners: () => deps.runners() }, expected)?.setThinking(level) ?? { ok: false, error: sessionActionChanged() })
   handle('yan:listThinkingLevels', async () => ac()?.listThinkingLevels() ?? [])
   handle('yan:setUltracode', async (on: boolean, expected: ExpectedRuntimeOwner) => requiredSessionActionAgent({ ac, runners: () => deps.runners() }, expected)?.setUltracode(!!on) ?? { ok: false, error: sessionActionChanged() })
-  handle('yan:setSessionMode', async (change: unknown, expected: ExpectedRuntimeOwner) => isSessionModeChange(change) ? requiredSessionActionAgent({ ac, runners: () => deps.runners() }, expected)?.setSessionMode(change) ?? { ok: false, error: sessionActionChanged() } : { ok: false, error: 'invalid session mode' })
   handle('yan:listCommands', async () => ac()?.listCommands() ?? localCommandDescriptors())
 
   handle(

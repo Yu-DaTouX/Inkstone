@@ -33,7 +33,6 @@ import type {
   ZoomState
 } from '../../../shared/ipc'
 import type { CheckpointRecord } from '../../../shared/checkpoints'
-import type { SessionModeChange } from '../../../shared/session-mode'
 import { attentionForOutcome } from '../../../shared/turn-outcome'
 import { playSound } from '../lib/sound'
 import type { BrowserOpenTarget } from '../features/browser/browser-open'
@@ -265,7 +264,6 @@ export interface Store {
   setModel: (provider: string, id: string, quiet?: boolean) => Promise<{ ok: boolean; error?: string }>
   setThinking: (level: string) => Promise<void>
   setUltracode: (on: boolean) => Promise<void>
-  setSessionMode: (change: SessionModeChange) => Promise<boolean>
   setAutoCompaction: (on: boolean) => Promise<void>
   setAutoRetry: (on: boolean) => Promise<void>
   setSteeringMode: (mode: QueueMode) => Promise<void>
