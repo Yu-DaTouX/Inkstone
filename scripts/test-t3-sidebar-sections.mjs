@@ -63,4 +63,22 @@ for (const item of manySessions) {
   }, null)
   assert.equal(manyViews.get(item.id).latestRun?.runId ?? null, expected?.runId ?? null, item.id)
 }
+{
+  const held = session('held')
+  const startOf = (runs, since) => Date.parse(all(buildSidebarSections(input([held], runs, since === undefined ? {} : { subagentsSince: new Map([['held', since]]) }))).find((view) => view.id === 'held').runtime?.activityStartedAt ?? '')
+  const first = run('r1', 'held', now - 600_000, { phase: { kind: 'done', at: now - 500_000, seen: true } })
+  assert.equal(startOf([first], now - 550_000), now - 600_000, '等子代理时从上一轮起点计时')
+  startOf([first])
+  const notice = run('r2', 'held', Date.now(), { phase: { kind: 'running', since: Date.now(), activity: 'waiting-model' } })
+  assert.equal(startOf([first, notice]), now - 600_000, '子代理结束后紧接着的通知续跑不重置计时')
+  const ended = { ...notice, phase: { kind: 'done', at: Date.now(), seen: true } }
+  startOf([first, ended])
+  const later = run('r3', 'held', Date.now(), { phase: { kind: 'running', since: Date.now(), activity: 'waiting-model' } })
+  assert.equal(startOf([first, ended, later]), later.startedAt, '续跑结束后用户再发的新一轮从零计时')
+  const own = session('own')
+  const plainFirst = run('p1', 'own', now - 600_000)
+  all(buildSidebarSections(input([own], [plainFirst])))
+  const plainNext = run('p2', 'own', Date.now(), { phase: { kind: 'running', since: Date.now(), activity: 'waiting-model' } })
+  assert.equal(Date.parse(all(buildSidebarSections(input([own], [plainFirst, plainNext]))).find((view) => view.id === 'own').runtime.activityStartedAt), plainNext.startedAt, '没有后台工作时每轮各自计时')
+}
 console.log('PASS T3 sidebar sections: latest run identity/path/ties, shelves, archived projects, titles, 200 mixed identity comparisons')
