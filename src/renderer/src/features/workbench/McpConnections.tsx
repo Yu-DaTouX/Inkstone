@@ -111,8 +111,9 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
           const actual = runtime?.servers.find((item) => item.id === service.name)
           const loaded = snapshot?.nativeConfigChanged === false
           const untrusted = service.scope === 'project' && !snapshot?.projectTrusted
-          const status = untrusted ? en ? 'Not trusted' : '项目未信任' : !service.enabled ? en ? 'Disabled' : '已关闭' : service.backend === 'native' ? loaded ? en ? 'Config loaded' : '配置已加载' : en ? 'Needs reload' : '待应用' : actual ? t(`cap.status.${actual.status}` as 'cap.status.ready') : en ? 'Not connected' : '未连接'
-          const dot: StatusDotKind = !service.enabled ? 'idle' : service.backend === 'native' ? 'idle' : actual?.status === 'ready' ? 'ok' : actual?.status === 'error' ? 'fail' : actual?.status === 'connecting' ? 'running' : actual?.status === 'needs-auth' ? 'awaiting' : 'idle'
+          const connected = service.enabled && (service.backend === 'native' ? loaded : actual?.status === 'ready')
+          const status = untrusted ? en ? 'Not trusted' : '项目未信任' : !service.enabled ? en ? 'Disabled' : '已关闭' : connected ? en ? 'Connected' : '已连接' : service.backend === 'native' ? en ? 'Needs reload' : '待应用' : actual ? t(`cap.status.${actual.status}` as 'cap.status.ready') : en ? 'Not connected' : '未连接'
+          const dot: StatusDotKind = !service.enabled ? 'idle' : connected ? 'ok' : service.backend === 'native' ? 'idle' : actual?.status === 'ready' ? 'ok' : actual?.status === 'error' ? 'fail' : actual?.status === 'connecting' ? 'running' : actual?.status === 'needs-auth' ? 'awaiting' : 'idle'
           const disabled = pending || sessionBusy || !!service.conflict || !!snapshot?.project && !snapshot.projectTrusted || service.backend === 'host' && !!snapshot?.busy || service.backend === 'native' && !runtime?.nativeMcpAvailable
           return <RailRow key={service.key} label={service.title} title={`${service.title} · ${scopeLabel} · ${status}`} dot={dot} value={status} action={<Switch aria-label={`${service.title} · ${scopeLabel}`} isSelected={service.enabled} isDisabled={disabled} onChange={(value) => void toggle(service, value)} data-testid="rail-mcp-toggle" />} />
         })}

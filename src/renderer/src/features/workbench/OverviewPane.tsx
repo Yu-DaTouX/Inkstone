@@ -1,18 +1,18 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from '../../ui/icons'
-import { Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, IconButton, ListRow, ListRowStatic, Menu, MenuItem, MenuTrigger, Meter, Notice, Popover, RailRow, RailValue, Separator, TooltipText, type RailTone } from '../../ui'
+import { Copy, FileDiff, Files, Folder, FolderGit2, FolderOpen, GitBranch, Monitor, MoreHorizontal, X } from '../../ui/icons'
+import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Notice, Popover, RailRow, RailValue, Separator, TooltipText, type RailTone } from '../../ui'
 import { BranchPicker } from '../changes/BranchPicker'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
-import { useI18n, useT, type TFunc } from '../../i18n'
+import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useStreamingThrottledStore, useThrottledValue } from '../../state/streaming-throttle'
-import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, type ContextSourceItem } from '../../state/context-sources'
+import { CONTEXT_USAGE_STATUS_KEY, parseContextSources } from '../../state/context-sources'
 import { contextPartHint, contextPartLabel, type ContextRowId } from './context-parts'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, publishAccountQuotaReport, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { viewSubagentRuns } from '../../state/subagent-view'
 import { isLiveSubagentRun } from '../../../../shared/subagent-task-rows'
 import { sessionViewIdentity } from '../session/view-state'
-import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
+import { quotaForecastLine, quotaPace, quotaReadAgo, quotaResetLine, quotaShortLabel, quotaWindowName, quotaWindowTone } from '../../patterns/QuotaWindowRow'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import { money } from '../../../../shared/quota-mini'
 import { modelBrand } from '../../../../shared/model-brand'
@@ -21,7 +21,7 @@ import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedP
 import type { GitRepoState } from '../../../../shared/git'
 import { knownRepo, rememberRepo } from './repo-memory'
 import { PROBE_TTL_MS } from '../../t3/adapters/availability'
-import type { CompactionRun, ProviderQuota, QuotaWindow } from '../../../../shared/ipc'
+import type { ProviderQuota, QuotaWindow } from '../../../../shared/ipc'
 import { autoCompactLimitOf, contextPaneData, contextReserve, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
 import { workbenchText, type OverviewText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
@@ -40,6 +40,7 @@ import {
   outputCandidates,
   outputFolder,
   outputName,
+  sameNameHints,
   useDismissedOutputs,
   sessionLineTotals,
   useOutputScreen,
@@ -121,6 +122,7 @@ function useGitRepo(cwd: string | null, refreshKey: string): GitRead {
 interface QuotaTileModel {
   windows: QuotaWindow[]
   balance?: { label: string; amount: number; currency: string }
+  plan?: string
   checkedAt: number
   staleError?: string
   problem?: { tone: 'ask' | 'fail'; text: string }
@@ -207,7 +209,7 @@ function cardQuotaModel(card: AccountQuotaCard, t: TFunc, text: OverviewText): Q
         ? { tone: 'ask' as const, text: card.hint || text.quotaExpired }
         : undefined
   if (!card.windows.length && !card.balance && !problem) return null
-  return { windows: card.windows, balance: card.balance, checkedAt: card.checkedAt, staleError: card.staleError, problem }
+  return { windows: card.windows, balance: card.balance, plan: card.plan, checkedAt: card.checkedAt, staleError: card.staleError, problem }
 }
 
 function useQuotaTile(provider: string, running: boolean, t: TFunc, text: OverviewText): { model: QuotaTileModel | null; now: number } {
@@ -320,6 +322,14 @@ function RailRowMenu({
   )
 }
 
+function syncText(repo: GitRepoState | null, rail: RailText, t: TFunc): { text: string; title: string } | null {
+  if (!repo || repo.detached || !repo.hasCommit) return null
+  if (!repo.upstream) return { text: rail.localOnly, title: rail.localOnly }
+  const title = [rail.upstream(repo.upstream), repo.ahead || repo.behind ? t('gitflow.aheadBehind', { ahead: repo.ahead, behind: repo.behind }) : rail.synced].join('\n')
+  if (!repo.ahead && !repo.behind) return { text: rail.synced, title }
+  return { text: [repo.ahead ? `↑${repo.ahead}` : '', repo.behind ? `↓${repo.behind}` : ''].filter(Boolean).join(' '), title }
+}
+
 function BranchRow({
   cwd,
   branch,
@@ -340,16 +350,13 @@ function BranchRow({
   const t = useT()
   const anchor = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
+  const sync = syncText(repo, rail, t)
   return (
     <RailRow
       label={branch}
-      title={title}
+      title={[title, sync?.title].filter(Boolean).join('\n')}
       icon={<GitBranch size={14} aria-hidden />}
-      value={
-        repo && repo.changedCount > 0 ? (
-          <RailValue glyph={{ kind: 'dirty' }} value={repo.changedCount} aria-label={rail.dirtyCount(repo.changedCount)} />
-        ) : undefined
-      }
+      value={sync ? <RailValue value={sync.text} /> : undefined}
       onPress={() => setOpen(true)}
       buttonProps={{
         ref: anchor,
@@ -386,10 +393,6 @@ function BranchRow({
   )
 }
 
-function shortPath(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).slice(-2).join('/') || path
-}
-
 function ContextName({ label, hint }: { label: string; hint?: string }): ReactElement {
   return hint ? (
     <TooltipText className="wb-ctx-legend-name" tooltip={hint} tooltipPlacement="left" underline>
@@ -400,45 +403,21 @@ function ContextName({ label, hint }: { label: string; hint?: string }): ReactEl
   )
 }
 
-function ContextList({ id, label, items, onOpen, t }: { id: string; label: string; items: ContextSourceItem[]; onOpen?: (path: string) => void; t: TFunc }): ReactElement {
-  return (
-    <Collapsible className="wb-ov-ctx-list" data-testid={`wb-ov-ctx-list-${id}`}>
-      <CollapsibleHeader size="compact" accessory={<span className="ui-num">{items.length}</span>}>{label}</CollapsibleHeader>
-      <CollapsiblePanel>
-        <ul className="wb-ov-ctx-items">
-          {items.map((item) => {
-            const trailing = `${item.deferred ? `${t('ctx.list.deferred')} ` : ''}${shortTokens(item.tokens)}`
-            return (
-              <li key={item.name}>
-                {onOpen ? (
-                  <ListRow title={item.name} aria-label={t('ctx.list.open', { path: item.name })} trailing={trailing} onClick={() => onOpen(item.name)}>
-                    {shortPath(item.name)}
-                  </ListRow>
-                ) : (
-                  <ListRowStatic title={item.name} trailing={trailing} muted={item.deferred}>
-                    {item.name}
-                  </ListRowStatic>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      </CollapsiblePanel>
-    </Collapsible>
-  )
-}
-
-function ContextDetail({ data, text, onOpenFile }: { data: ContextPaneData; last: CompactionRun | undefined; text: OverviewText; onOpenFile?: (path: string) => void }): ReactElement {
+function ContextDetail({ data, rail }: { data: ContextPaneData; rail: RailText }): ReactElement {
   const t = useT()
   const { usage, parts, compacted, sources } = data
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
-  const reserve = contextReserve(usage)
   const used = parts.filter((s) => s.tokens > 0)
+  const reserve = contextReserve(usage)
   const rows: Array<{ id: ContextRowId; tokens: number; approx?: boolean }> = [
     ...used,
     ...(reserve.buffer ? [{ id: 'buffer' as const, tokens: reserve.buffer }] : []),
     { id: 'free' as const, tokens: reserve.free }
   ]
+  const line = usage.compactAt !== null ? Math.min(usage.compactAt, usage.windowSize) : null
+  const linePct = line !== null && usage.windowSize > 0 ? (line / usage.windowSize) * 100 : null
+  const left = Math.max(0, (line ?? usage.windowSize) - usage.tokens)
+  const room = line !== null && left === 0 ? rail.compactReached : `${line !== null ? rail.compactLeft : rail.windowLeft} ${shortTokens(left)}`
   const hintOf = (id: ContextRowId, approx?: boolean): string | undefined => {
     const key = id === 'free' ? (usage.compactAt !== null ? 'ctx.hint.free' : undefined) : contextPartHint(id)
     return [key ? t(key) : '', approx ? t('ctx.hint.approx') : ''].filter(Boolean).join(' · ') || undefined
@@ -452,7 +431,7 @@ function ContextDetail({ data, text, onOpenFile }: { data: ContextPaneData; last
   const lists = sources
     ? [
         { id: 'mcp', label: t('ctx.cat.mcp'), items: sources.mcpTools },
-        { id: 'memory', label: t('ctx.cat.memory'), items: sources.memoryFiles, onOpen: onOpenFile },
+        { id: 'memory', label: t('ctx.cat.memory'), items: sources.memoryFiles },
         { id: 'skills', label: t('ctx.cat.skills'), items: sources.skills }
       ].filter((list) => list.items.length > 0)
     : []
@@ -461,71 +440,139 @@ function ContextDetail({ data, text, onOpenFile }: { data: ContextPaneData; last
     : ''
   return (
     <div className="wb-ov-ctx" data-testid="wb-ov-ctx">
-      <div className="wb-ov-ctx-head" title={limitNote || undefined}>
-        <span className="wb-ov-ctx-used">{`${text.contextUsed} ${usage.estimated ? '≈' : ''}${Math.round(usage.percent ?? share(usage.tokens))}%`}</span>
-        <span className="wb-ov-ctx-total">{`${usage.estimated ? '≈' : ''}${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}`}</span>
+      <div className="wb-ov-ctx-meter">
+        <div
+          className="wb-ctx-bar"
+          role="img"
+          aria-label={[t('ctx.tip', { used: `${usage.estimated ? '≈' : ''}${shortTokens(usage.tokens)}`, win: shortTokens(usage.windowSize), pct: Math.round(usage.percent ?? 0) }), linePct !== null ? rail.compactAt(Math.round(linePct)) : ''].filter(Boolean).join('，')}
+        >
+          {used.map((s) => <i key={s.id} className={`wb-ctx-seg c-${s.id}`} style={{ width: `${share(s.tokens)}%` }} />)}
+        </div>
+        {linePct !== null && linePct < 100 ? (
+          <span className="wb-ov-ctx-mark" style={{ left: `${linePct}%` }} title={rail.compactAt(Math.round(linePct))} aria-hidden="true" data-testid="wb-ov-ctx-mark" />
+        ) : null}
       </div>
-      <div
-        className="wb-ctx-bar"
-        role="img"
-        aria-label={t('ctx.tip', { used: `${usage.estimated ? '≈' : ''}${shortTokens(usage.tokens)}`, win: shortTokens(usage.windowSize), pct: Math.round(usage.percent ?? 0) })}
-      >
-        {used.map((s) => <i key={s.id} className={`wb-ctx-seg c-${s.id}`} style={{ width: `${share(s.tokens)}%` }} />)}
-        {reserve.free > 0 ? <i className="wb-ctx-seg c-free" style={{ width: `${share(reserve.free)}%` }} /> : null}
-        {reserve.buffer ? <i className="wb-ctx-seg c-buffer" style={{ width: `${share(reserve.buffer)}%` }} /> : null}
+      <div className="wb-ov-ctx-head" title={limitNote || undefined}>
+        <span className="wb-ov-ctx-total">{`${usage.estimated ? '≈' : ''}${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}`}</span>
+        <span className="wb-ov-ctx-room" data-tone={glyphTone(usage.tone)} data-testid="wb-ov-ctx-room">{room}</span>
       </div>
       <ul className="wb-ctx-legend" data-testid="wb-ov-ctx-breakdown">
-        {rows.map((row) => {
-          const name = t(contextPartLabel(row.id, compacted))
-          return (
-            <li key={row.id} className={row.id === 'free' || row.id === 'buffer' ? 'free' : undefined} data-part={row.id}>
-              <i className={`wb-ctx-swatch c-${row.id}`} aria-hidden />
-              <ContextName label={name} hint={hintOf(row.id, row.approx)} />
-              <span className="wb-ctx-legend-num">{`${row.approx ? '≈' : ''}${shortTokens(row.tokens)}`}</span>
-              <span className="wb-ctx-legend-num">{`${share(row.tokens).toFixed(1)}%`}</span>
-            </li>
-          )
-        })}
-        {deferred.length ? <li className="wb-ov-ctx-sep" role="presentation"><Separator /></li> : null}
+        {rows.map((row) => (
+          <li key={row.id} className={row.id === 'free' || row.id === 'buffer' ? 'free' : undefined} data-part={row.id}>
+            <i className={`wb-ctx-swatch c-${row.id}`} aria-hidden />
+            <ContextName label={t(contextPartLabel(row.id, compacted))} hint={hintOf(row.id, row.approx)} />
+            <span className="wb-ctx-legend-num">{`${row.approx ? '≈' : ''}${shortTokens(row.tokens)}`}</span>
+            <span className="wb-ctx-legend-pct">{`${share(row.tokens).toFixed(1)}%`}</span>
+          </li>
+        ))}
+        {deferred.length || lists.length ? <li className="wb-ov-ctx-sep" role="presentation"><Separator /></li> : null}
         {deferred.map((row) => (
-          <li key={row.id} className="free" data-part={row.id}>
+          <li key={row.id} className="free" data-wide="1" data-part={row.id}>
             <i className="wb-ctx-swatch c-deferred" aria-hidden />
             <ContextName label={row.label} hint={t('ctx.hint.deferred')} />
             <span className="wb-ctx-legend-num">{shortTokens(row.tokens)}</span>
-            <span className="wb-ctx-legend-num">—</span>
+          </li>
+        ))}
+        {lists.map((list) => (
+          <li key={list.id} className="free" data-wide="1" data-part={list.id} title={list.items.map((item) => item.name).join('\n')} data-testid={`wb-ov-ctx-list-${list.id}`}>
+            <i aria-hidden />
+            <span className="wb-ctx-legend-name">{list.label}</span>
+            <span className="wb-ctx-legend-num">{list.items.length}</span>
           </li>
         ))}
       </ul>
-      {lists.length ? (
-        <div className="wb-ov-ctx-lists">
-          {lists.map((list) => <ContextList key={list.id} id={list.id} label={list.label} items={list.items} onOpen={list.onOpen} t={t} />)}
-        </div>
-      ) : null}
     </div>
   )
 }
 
-function QuotaDetail({ model, now }: { model: QuotaTileModel; now: number }): ReactElement {
+function RailBar({ label, used, tick, tickTitle }: { label: string; used: number; tick?: number | null; tickTitle?: string }): ReactElement {
+  return (
+    <div className="wb-ov-ctx-meter">
+      <div className="wb-ctx-bar" role="img" aria-label={`${label} ${used}%`}>
+        {used > 0 ? <i className="wb-ov-qfill" style={{ width: `${used}%` }} /> : null}
+      </div>
+      {tick != null ? <span className="wb-ov-ctx-mark" style={{ left: `${tick}%` }} title={tickTitle} aria-hidden="true" /> : null}
+    </div>
+  )
+}
+
+function QuotaMain({ window, stale, now, plan, rail }: { window: QuotaWindow; stale: boolean; now: number; plan?: string; rail: RailText }): ReactElement {
+  const t = useT()
+  const awaiting = windowAwaitingReset(window, now)
+  const tone = quotaWindowTone(window, stale, now)
+  const used = Math.round(Math.min(100, Math.max(0, windowUsedPct(window) ?? 0)))
+  const pace = stale || awaiting ? null : quotaPace(window, now)
+  const reset = quotaResetLine(t, window, now)
+  const forecast = stale || awaiting ? null : quotaForecastLine(t, window, now)
+  const exhaust = forecast?.kind === 'exhaust' ? forecast : null
+  const steady = forecast?.kind === 'steady' ? forecast : null
+  const elapsedPct = pace ? Math.min(99, Math.max(1, 100 - pace.timeLeftPct)) : null
+  const paceTitle = pace ? [rail.quotaTimeLeft(pace.timeLeftPct), steady?.text ?? '', t('quota.paceTip')].filter(Boolean).join('\n') : undefined
+  return (
+    <div className="wb-ov-qmain" data-tone={tone} data-testid={`wb-ov-quota-win-${window.id}`}>
+      <div className="wb-ov-ctx-head">
+        <span className="wb-ov-qmain-name">
+          <span className="wb-ov-qmain-label">{quotaWindowName(t, window)}</span>
+          {plan ? <Badge className="wb-ov-qmain-plan">{plan.charAt(0).toUpperCase() + plan.slice(1)}</Badge> : null}
+        </span>
+        {!awaiting && reset.text ? (
+          <span className="wb-ov-qmain-side" title={reset.tip || undefined}>
+            {reset.text}
+          </span>
+        ) : null}
+      </div>
+      <RailBar label={window.label} used={awaiting ? 0 : used} tick={elapsedPct} tickTitle={paceTitle} />
+      <div className="wb-ov-ctx-head">
+        <span className="wb-ov-qmain-used">{awaiting ? t('quota.resetDue') : `${used}% ${rail.quotaUsed}`}</span>
+        {exhaust ? (
+          <span className="wb-ov-qmain-side" data-kind="exhaust" title={exhaust.tip || undefined} data-testid={`wb-ov-quota-win-${window.id}-forecast`}>
+            {exhaust.text}
+          </span>
+        ) : pace ? (
+          <span className="wb-ov-qmain-side" data-pace={pace.pace} title={paceTitle}>
+            {t(`quota.pace.${pace.pace}` as MessageKey)}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function QuotaMini({ window, stale, now }: { window: QuotaWindow; stale: boolean; now: number }): ReactElement {
+  const t = useT()
+  const awaiting = windowAwaitingReset(window, now)
+  const tone = quotaWindowTone(window, stale, now)
+  const used = Math.round(Math.min(100, Math.max(0, windowUsedPct(window) ?? 0)))
+  const reset = quotaResetLine(t, window, now)
+  return (
+    <li className="wb-ov-qmini" data-tone={tone} title={[window.label, reset.text, reset.tip].filter(Boolean).join('\n')} data-testid={`wb-ov-quota-win-${window.id}`}>
+      <span className="wb-ov-qmini-name">{quotaWindowName(t, window)}</span>
+      <RailBar label={window.label} used={awaiting ? 0 : used} />
+      <span className="wb-ov-qmini-num">{awaiting ? t('quota.resetDue') : `${used}%`}</span>
+    </li>
+  )
+}
+
+function QuotaDetail({ model, now, mainId, rail }: { model: QuotaTileModel; now: number; mainId: string | null; rail: RailText }): ReactElement {
   const t = useT()
   const stale = quotaReadingStale(model.checkedAt, now, !!model.staleError)
   const hasData = model.windows.length > 0 || !!model.balance
+  const main = model.windows.find((window) => window.id === mainId) ?? model.windows[0] ?? null
+  const others = model.windows.filter((window) => window !== main)
   return (
     <div className="wb-ov-quota" data-testid="wb-ov-quota">
+      {main ? <QuotaMain window={main} stale={stale} now={now} plan={model.plan} rail={rail} /> : null}
+      {others.length ? <ul className="wb-ov-qminis">{others.map((window) => <QuotaMini key={window.id} window={window} stale={stale} now={now} />)}</ul> : null}
+      {model.balance ? (
+        <div className="wb-ov-qbalance" data-tone={stale ? 'stale' : 'ok'} data-testid="wb-ov-quota-balance">
+          <span className="wb-ov-qmini-name">{model.balance.label}</span>
+          <span className="wb-ov-qmini-num">{money(model.balance.amount, model.balance.currency)}</span>
+        </div>
+      ) : null}
       {stale && hasData ? (
         <p className="wb-quota-stale" title={t('quota.staleTip')} data-testid="wb-ov-quota-stale">
           {[quotaReadAgo(t, model.checkedAt, now), model.staleError ? t('quota.readFailed', { msg: model.staleError }) : ''].filter(Boolean).join(' · ')}
         </p>
-      ) : null}
-      {model.windows.map((window) => (
-        <QuotaWindowRow key={window.id} window={window} stale={stale} now={now} testId={`wb-ov-quota-win-${window.id}`} compact />
-      ))}
-      {model.balance ? (
-        <div className="quota-win" data-tone={stale ? 'stale' : 'ok'} data-testid="wb-ov-quota-balance">
-          <div className="quota-win-top">
-            <span className="quota-win-label">{model.balance.label}</span>
-            <span className="quota-win-value ui-meta-num">{money(model.balance.amount, model.balance.currency)}</span>
-          </div>
-        </div>
       ) : null}
       {model.problem ? <Notice tone={model.problem.tone} compact>{model.problem.text}</Notice> : null}
     </div>
@@ -536,11 +583,13 @@ function RailList<T>({
   items,
   text,
   testId,
+  bare,
   render
 }: {
   items: readonly T[]
   text: RailText
   testId?: string
+  bare?: boolean
   render: (item: T) => ReactElement
 }): ReactElement {
   const [expanded, setExpanded] = useState(false)
@@ -548,7 +597,7 @@ function RailList<T>({
   const hiddenCount = items.length - RAIL_LIST_LIMIT
   return (
     <>
-      <ul className="wb-ov-items" data-testid={testId}>
+      <ul className="wb-ov-items" data-testid={testId} data-bare={bare ? '1' : undefined}>
         {shown.map(render)}
       </ul>
       {hiddenCount > 0 ? (
@@ -600,11 +649,13 @@ function OutputRows({
 }
 
 function ChangedRows({ files, text, onOpen }: { files: readonly RailChangedFile[]; text: RailText; onOpen: (path: string) => void }): ReactElement {
+  const hints = useMemo(() => sameNameHints(files.map((file) => file.path)), [files])
   return (
     <RailList
       items={files}
       text={text}
       testId="wb-rail-changed-files"
+      bare
       render={(file) => {
         const name = outputName(file.path)
         const counted = file.added !== null && file.removed !== null
@@ -613,8 +664,8 @@ function ChangedRows({ files, text, onOpen }: { files: readonly RailChangedFile[
           <RailRow
             key={file.path}
             label={name}
+            hint={hints.get(file.path)}
             title={counted ? `${file.path}\n${text.linesChanged(file.added ?? 0, file.removed ?? 0)}` : file.path}
-            icon={<FileTypeIcon name={name} size={16} mono />}
             value={unchangedLines ? undefined : counted ? <RailValue glyph={{ kind: 'delta', added: file.added ?? 0, removed: file.removed ?? 0, quiet: true }} /> : outputFolder(file.path) || undefined}
             onPress={() => onOpen(file.path)}
           />
@@ -701,28 +752,36 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
   const changesSummary = !repo ? undefined : changesCount === 0 ? (
     <RailValue value={rail.changesNone} />
   ) : lineTotals.added >= 0 && lineTotals.removed >= 0 ? (
-    <RailValue
-      glyph={{ kind: 'delta', added: lineTotals.added, removed: lineTotals.removed }}
-      title={rail.linesChanged(lineTotals.added, lineTotals.removed)}
-      aria-label={rail.linesChanged(lineTotals.added, lineTotals.removed)}
-    />
+    <span className="wb-rail-headline" data-testid="wb-rail-changes-total" title={`${text.changesFiles(changesCount)}\n${rail.linesChanged(lineTotals.added, lineTotals.removed)}`}>
+      <RailValue
+        glyph={{ kind: 'delta', added: lineTotals.added, removed: lineTotals.removed }}
+        aria-label={rail.linesChanged(lineTotals.added, lineTotals.removed)}
+      />
+    </span>
   ) : (
     <RailValue value={text.changesFiles(changesCount)} />
   )
+  const dirtyCount = repo?.changedCount ?? 0
+  const worktree = !!repo && repo.repoId !== repo.worktreeId
   const environmentSummary = cwd ? (
-    <RailValue
-      glyph={repo && repo.changedCount > 0 ? { kind: 'dirty' } : undefined}
-      value={branch ? `${projectName} · ${branch}` : projectName}
-      title={[`${rail.local} · ${cwd}`, branch ? `${text.branchLabel} ${branch}` : '', repo && repo.changedCount > 0 ? rail.dirtyCount(repo.changedCount) : '', gitRead.status === 'error' ? rail.gitReadFailed : ''].filter(Boolean).join('\n')}
-    />
+    <span
+      className="wb-env-sum"
+      data-testid="wb-rail-env-summary"
+      title={[`${rail.local} · ${cwd}`, branch ? `${text.branchLabel} ${branch}` : '', dirtyCount > 0 ? rail.uncommittedFiles(dirtyCount) : '', gitRead.status === 'error' ? rail.gitReadFailed : ''].filter(Boolean).join('\n')}
+    >
+      {branch ? <GitBranch size={12} aria-hidden className="wb-env-sum-icon" /> : null}
+      <span className="wb-env-sum-name">{branch ?? projectName}</span>
+      {dirtyCount > 0 ? (
+        <Badge tone="ask" className="wb-env-dirty">
+          {rail.uncommitted(dirtyCount)}
+        </Badge>
+      ) : null}
+    </span>
   ) : (
     <RailValue value={rail.local} />
   )
 
   const statsModel = useRailStats(!isRailSectionHidden({ hidden }, 'stats'))
-  const statsCostFact = statsModel?.facts.find((fact) => fact.key === 'cost')
-  const statsCost = statsCostFact?.value ?? null
-  const statsCostTitle = statsCostFact ? [`${statsCostFact.label} ${statsCostFact.value}`, statsCostFact.title].filter(Boolean).join('\n') : null
   const contextOpen = isOpen('context')
   const autoCompactLimit = autoCompactLimitOf(session, settings)
   const sourcesText = useStore((s) => (contextOpen ? s.statuses[CONTEXT_USAGE_STATUS_KEY] : undefined))
@@ -834,12 +893,31 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
               cwd={cwd}
               branch={branch}
               repo={repo}
-              title={[`${text.branchLabel} ${branch}`, repo && repo.changedCount > 0 ? `${rail.dirty} · ${rail.dirtyCount(repo.changedCount)}` : ''].filter(Boolean).join('\n')}
+              title={`${text.branchLabel} ${branch}`}
               rail={rail}
               onAction={runRowAction}
               onChanged={() => setGitTick((n) => n + 1)}
             />
-          ) : gitRead.status === 'pending' || gitRead.status === 'error' ? (
+          ) : null}
+          {repo && dirtyCount > 0 ? (
+            <RailRow
+              label={rail.uncommittedFiles(dirtyCount)}
+              title={[
+                rail.uncommittedFiles(dirtyCount),
+                repo.stagedCount ? `${text.changesStaged} ${repo.stagedCount}` : '',
+                repo.unstagedCount ? `${text.changesUnstaged} ${repo.unstagedCount}` : '',
+                repo.untrackedCount ? `${text.changesUntracked} ${repo.untrackedCount}` : ''
+              ].filter(Boolean).join('\n')}
+              icon={<FileDiff size={14} aria-hidden />}
+              value={repo.stagedCount > 0 ? rail.staged(repo.stagedCount) : undefined}
+              onPress={() => onOpenView('changes')}
+              data-testid="wb-rail-uncommitted"
+            />
+          ) : null}
+          {repo && worktree ? (
+            <RailRow label={rail.worktree} title={`${rail.worktreeTip}\n${repo.root}`} icon={<FolderGit2 size={14} aria-hidden />} data-testid="wb-rail-worktree" />
+          ) : null}
+          {!branch && (gitRead.status === 'pending' || gitRead.status === 'error') ? (
             <RailRow
               label={gitRead.status === 'error' ? rail.branchUnknown : '—'}
               title={gitRead.status === 'error' ? rail.gitReadFailed : undefined}
@@ -860,25 +938,27 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
           summary: !statsModel ? (
             <RailValue value="—" />
           ) : isOpen('stats') ? (
-            <span className="wb-rail-headline" data-testid="wb-rail-stats-headline" title={[statsModel.headline, statsModel.headlineTitle, statsCostTitle].filter(Boolean).join('\n')}>
+            <span className="wb-rail-headline" data-testid="wb-rail-stats-headline" title={[statsModel.headline, statsModel.headlineTitle].filter(Boolean).join('\n')}>
               <RailValue value={statsModel.headline} />
-              {statsCost ? <RailValue className="wb-rail-headline-cost" value={statsCost} joined /> : null}
             </span>
           ) : (
             <StatsGlance model={statsModel} text={rail} />
           ),
           summaryWhenOpen: true,
-          body: <RailStatsBody model={statsModel} breakdownLabel={rail.statsBreakdown} running={agentRunning} />
+          body: <RailStatsBody model={statsModel} running={agentRunning} />
         }
       : undefined,
     context: {
-      summary: !contextOpen || !contextData || !usage.known ? contextSummary : undefined,
+      summary: contextOpen && contextData && usage.known ? (
+        <RailValue tone={contextKnown ? glyphTone(usage.tone) : undefined} value={contextKnown ? `${usage.estimated ? '≈' : ''}${Math.round(usage.percent ?? 0)}%` : '—'} />
+      ) : contextSummary,
+      summaryWhenOpen: true,
       tone: contextKnown ? glyphTone(usage.tone) : undefined,
       onOpenView: () => onOpenView('context'),
       body: contextData && usage.known ? (
-        <ContextDetail data={contextData} last={session?.lastCompaction} text={text} onOpenFile={owner ? openOutput : undefined} />
+        <ContextDetail data={contextData} rail={rail} />
       ) : (
-        <Meter aria-label={rail.sections.context} className="wb-ov-meter" value={0} minValue={0} maxValue={100} />
+        <div className="wb-ov-ctx"><RailBar label={rail.sections.context} used={0} /></div>
       )
     },
     ...(quotaModel || peakPrice
@@ -887,7 +967,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
             summary: quotaSummary,
             tone: quotaModel?.problem?.tone ?? glyphTone(bindingTone),
             onOpenView: () => onOpenView('quota'),
-            body: quotaModel ? <QuotaDetail model={quotaModel} now={quota.now} /> : null
+            body: quotaModel ? <QuotaDetail model={quotaModel} now={quota.now} mainId={binding?.id ?? null} rail={rail} /> : null
           }
         }
       : {}),
@@ -911,6 +991,7 @@ export const OverviewPane = memo(function OverviewPane({ owner, onOpenView }: Ov
       ? {
           changes: {
             summary: changesSummary,
+            summaryWhenOpen: true,
             body:
               changesCount === 0 ? null : lineTotals && lineTotals.entries.length > 0 ? (
                 <ChangedRows files={lineTotals.entries} text={rail} onOpen={(path) => openOutput(/^(?:[a-zA-Z]:[\\/]|[\\/])/.test(path) || !cwd ? path : `${cwd.replace(/[\\/]+$/, '')}/${path}`)} />

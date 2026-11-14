@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactEle
 import { useI18n, useT, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { UIMessage } from '../../../../shared/ipc'
-import { CONTEXT_USAGE_STATUS_KEY, parseContextSources } from '../../state/context-sources'
-import { contextPartHint, contextPartLabel } from './context-parts'
+import { CONTEXT_USAGE_STATUS_KEY, parseContextSources, type ContextSourceItem } from '../../state/context-sources'
+import { contextPartHint, contextPartLabel, type ContextRowId } from './context-parts'
 import {
   compactionErrorTip,
   compactionGrowthText,
@@ -17,6 +17,7 @@ import {
   autoCompactLimitOf,
   contextPaneData,
   contextPaneToolCalls,
+  contextReserve,
   shortTokens,
   type ContextPartId,
   type ContextToolCall
@@ -148,6 +149,36 @@ function ToolCallRows({ rows, text }: { rows: ContextToolCall[]; text: ContextPa
   )
 }
 
+const SOURCE_PREVIEW = 5
+
+function SourceList({ id, label, items, text, deferredLabel }: { id: string; label: string; items: ContextSourceItem[]; text: ContextPaneText; deferredLabel: string }): ReactElement {
+  const [all, setAll] = useState(false)
+  const total = items.reduce((sum, item) => sum + (item.deferred ? 0 : item.tokens), 0)
+  const shown = all ? items : items.slice(0, SOURCE_PREVIEW)
+  return (
+    <div className="wb-ctx-source" data-testid={`v3-wb-ctx-source-${id}`}>
+      <div className="wb-ctx-source-head">
+        <span className="wb-ctx-source-name">{label}</span>
+        <span className="wb-ctx-source-count">{items.length}</span>
+        <span className="wb-ctx-table-num">{shortTokens(total)}</span>
+      </div>
+      <ul className="wb-ctx-table">
+        {shown.map((item) => (
+          <li key={item.name} title={item.name} data-deferred={item.deferred ? '1' : undefined}>
+            <span className="wb-ctx-table-name">{item.name.split(/[\\/]/).filter(Boolean).slice(-2).join('/') || item.name}</span>
+            <span className="wb-ctx-table-num">{`${item.deferred ? `${deferredLabel} ` : ''}${shortTokens(item.tokens)}`}</span>
+          </li>
+        ))}
+      </ul>
+      {items.length > SOURCE_PREVIEW ? (
+        <Button variant="plain" size="sm" className="wb-ctx-more" aria-expanded={all} onPress={() => setAll((value) => !value)}>
+          {all ? text.less : text.more(items.length - SOURCE_PREVIEW)}
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 export function ContextPane({ visible = true }: ContextPaneProps): ReactElement {
   const { lang } = useI18n()
   const t = useT()
@@ -235,6 +266,23 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
   const historyPending = visible && !!sessionId && !history
   const shownHistory = historyItems ? (showAllHistory ? historyItems : historyItems.slice(0, HISTORY_PREVIEW)) : []
   const unsettledLast = last && last.status !== 'completed' ? lastLine : null
+  const reserve = usage.known ? contextReserve(usage) : null
+  const reserveRows: Array<{ id: ContextRowId; tokens: number }> = reserve
+    ? [...(reserve.buffer ? [{ id: 'buffer' as const, tokens: reserve.buffer }] : []), { id: 'free' as const, tokens: reserve.free }]
+    : []
+  const sourceLists = sources
+    ? [
+        { id: 'mcp', label: t('ctx.cat.mcp'), items: sources.mcpTools },
+        { id: 'memory', label: t('ctx.cat.memory'), items: sources.memoryFiles },
+        { id: 'skills', label: t('ctx.cat.skills'), items: sources.skills }
+      ].filter((list) => list.items.length > 0)
+    : []
+  const deferredRows = sources
+    ? [
+        { id: 'deferredMcp', label: t('ctx.cat.deferredMcp'), tokens: sources.deferred.mcp },
+        { id: 'deferredBuiltin', label: t('ctx.cat.deferredBuiltin'), tokens: sources.deferred.builtin }
+      ].filter((row) => row.tokens > 0)
+    : []
 
   return (
     <section className="wb-ctx" aria-label={text.title} data-testid="v3-wb-context">
@@ -245,14 +293,16 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
         </div>
         <div className="wb-ctxw-figure" title={limitNote}>
           <span className="wb-ctxw-number" aria-hidden>{usage.known ? `${usage.estimated || focusRow?.approx ? '≈' : ''}${shortTokens(focusRow ? focusRow.tokens : usage.tokens)}` : text.unknown}</span>
-          <span className="wb-ctxw-figure-label" aria-hidden>{focusRow ? rowLabel(focusRow.id) : text.used}</span>
+          <span className="wb-ctxw-figure-label" aria-hidden>
+            {focusRow ? rowLabel(focusRow.id) : usage.known ? `/ ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}` : text.used}
+          </span>
           <span className="v3-visually-hidden" data-testid="v3-wb-ctx-tokens">
             {usage.known
               ? `${usage.estimated ? '≈' : ''}${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)} (${Math.round(usage.percent!)}%)`
               : text.unknown}
           </span>
           {usage.known ? (
-            <span className="wb-ctxw-pct ui-num" data-tone={usage.tone} aria-hidden>
+            <span className="wb-ctxw-pct" data-tone={usage.tone} aria-hidden>
               {`${usage.estimated ? '≈' : ''}${Math.round(focusRow ? share(focusRow.tokens) : usage.percent!)}%`}
             </span>
           ) : null}
@@ -277,7 +327,16 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
                 >
                   <i className={`wb-ctxw-swatch c-${r.id}`} aria-hidden />
                   <span className="wb-ctxw-part-name">{rowLabel(r.id)}</span>
-                  <span className="wb-ctxw-part-num ui-num">{`${r.approx ? '≈' : ''}${shortTokens(r.tokens)}`}</span>
+                  <span className="wb-ctxw-part-num">{`${r.approx ? '≈' : ''}${shortTokens(r.tokens)}`}</span>
+                  <span className="wb-ctxw-part-pct">{`${share(r.tokens).toFixed(1)}%`}</span>
+                </li>
+              ))}
+              {reserveRows.map((r) => (
+                <li key={r.id} className="wb-ctxw-part" data-rest="1" title={r.id === 'free' && usage.compactAt !== null ? t('ctx.hint.free') : undefined}>
+                  <i className={`wb-ctxw-swatch c-${r.id}`} aria-hidden />
+                  <span className="wb-ctxw-part-name">{t(contextPartLabel(r.id, compacted))}</span>
+                  <span className="wb-ctxw-part-num">{shortTokens(r.tokens)}</span>
+                  <span className="wb-ctxw-part-pct">{`${share(r.tokens).toFixed(1)}%`}</span>
                 </li>
               ))}
             </ul>
@@ -319,6 +378,25 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
         ) : null}
       </div>
 
+      {sourceLists.length || deferredRows.length ? (
+        <div className="wb-ctx-block" data-testid="v3-wb-ctx-sources">
+          <h4 className="wb-ctx-subtitle">{text.loaded}</h4>
+          {sourceLists.map((list) => (
+            <SourceList key={list.id} id={list.id} label={list.label} items={list.items} text={text} deferredLabel={t('ctx.list.deferred')} />
+          ))}
+          {deferredRows.length ? (
+            <ul className="wb-ctx-table" data-testid="v3-wb-ctx-deferred">
+              {deferredRows.map((row) => (
+                <li key={row.id} title={t('ctx.hint.deferred')}>
+                  <span className="wb-ctx-table-name">{row.label}</span>
+                  <span className="wb-ctx-table-num">{shortTokens(row.tokens)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
       {toolCalls.length ? (
         <div className="wb-ctx-block">
           <h4 className="wb-ctx-subtitle" title={text.estimateNote}>{text.topTools}</h4>
@@ -335,13 +413,24 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
         ) : null}
         {historyItems?.length ? (
           <>
-            <ul className="wb-ctx-rows" data-testid="v3-wb-ctx-history">
-              {shownHistory.map((item) => (
-                <li key={item.id}>
-                  <span className="ui-meta-num">{compactionTime(item.at, lang)}</span>
-                  <span className="wb-ctx-history-detail ui-meta-num">{historyDetail(item, text)}</span>
-                </li>
-              ))}
+            <ul className="wb-ctx-history" data-testid="v3-wb-ctx-history">
+              {shownHistory.map((item) => {
+                const reclaim = item.afterEstimated ? null : compactionReclaim(item)
+                return (
+                  <li key={item.id} title={historyDetail(item, text)}>
+                    <span className="wb-ctx-history-time">{compactionTime(item.at, lang)}</span>
+                    <span className="wb-ctx-history-flow">
+                      {item.tokensBefore === undefined
+                        ? '—'
+                        : item.tokensAfter === undefined
+                          ? text.compactionBefore(shortTokens(item.tokensBefore))
+                          : `${shortTokens(item.tokensBefore)} → ${item.afterEstimated ? '≈' : ''}${shortTokens(item.tokensAfter)}`}
+                    </span>
+                    <span className="wb-ctx-history-num">{reclaim === null ? '' : text.reclaim(reclaim)}</span>
+                    <span className="wb-ctx-history-num">{item.summaryTokens > 0 ? text.compactionSummary(shortTokens(item.summaryTokens)) : ''}</span>
+                  </li>
+                )
+              })}
             </ul>
             {historyItems.length > HISTORY_PREVIEW ? (
               <Button

@@ -333,6 +333,28 @@ export function outputName(path: string): string {
   return parts[parts.length - 1] ?? path
 }
 
+export function sameNameHints(paths: readonly string[]): Map<string, string> {
+  const split = paths.map((path) => ({ path, parts: path.split(/[\\/]+/).filter(Boolean) }))
+  const groups = new Map<string, typeof split>()
+  for (const item of split) {
+    const name = (item.parts.at(-1) ?? item.path).toLowerCase()
+    groups.set(name, [...(groups.get(name) ?? []), item])
+  }
+  const hints = new Map<string, string>()
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+    const deepest = Math.max(...group.map((item) => item.parts.length - 1))
+    const hintAt = (item: (typeof split)[number], depth: number): string => item.parts.slice(Math.max(0, item.parts.length - 1 - depth), -1).join('/')
+    let depth = 1
+    while (depth < deepest && new Set(group.map((item) => hintAt(item, depth).toLowerCase())).size < group.length) depth++
+    for (const item of group) {
+      const hint = hintAt(item, depth)
+      if (hint) hints.set(item.path, hint)
+    }
+  }
+  return hints
+}
+
 export function outputFolder(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean)
   return parts.length > 1 ? parts[parts.length - 2] : ''

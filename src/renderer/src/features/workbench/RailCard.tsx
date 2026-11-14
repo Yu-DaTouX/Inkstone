@@ -1,6 +1,6 @@
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react'
 import { ArrowUpRight, GripVertical } from '../../ui/icons'
-import { AsciiRule, Button, CollapsibleChevron, Expand, IconButton } from '../../ui'
+import { Button, CollapsibleChevron, Expand, IconButton } from '../../ui'
 import type { RailSectionId } from './rail-sections'
 
 export interface RailGrip {
@@ -76,38 +76,42 @@ export function RailCard({
           }
         }}
       >
-        <Button variant="plain" size="sm" justify="start" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
-          <span className="wb-tile-title">{title}</span>
-          {badge}
-          <CollapsibleChevron expanded={open} className="wb-tile-chevron" />
-          <AsciiRule leader className="wb-tile-leader" />
-        </Button>
+        <span className="wb-rail-grip" onPointerDownCapture={grip.onPointerDown}>
+          <IconButton
+            variant="plain"
+            size="sm"
+            aria-label={grip.label}
+            tooltip={grip.label}
+            aria-pressed={grip.picked}
+            onPress={grip.onPress}
+            onKeyDown={grip.onKeyDown}
+            onBlur={grip.onBlur}
+            data-testid={`wb-rail-grip-${id}`}
+          >
+            <GripVertical size={12} aria-hidden />
+          </IconButton>
+        </span>
+        <span className="wb-tile-lead">
+          <Button variant="plain" size="sm" justify="start" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
+            <span className="wb-tile-title">{title}</span>
+            {badge}
+          </Button>
+          {onOpenView ? (
+            <IconButton variant="plain" size="sm" aria-label={openLabel ?? title} tooltip={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
+              <ArrowUpRight size={12} aria-hidden />
+            </IconButton>
+          ) : null}
+        </span>
+        <span className="wb-tile-fill" aria-hidden="true" onClick={() => onOpenChange(!open)} />
         <span className="wb-tile-tail">
-          <span className="wb-tile-tools">
-            <span className="wb-rail-grip" onPointerDownCapture={grip.onPointerDown}>
-              <IconButton
-                variant="plain"
-                size="sm"
-                aria-label={grip.label}
-                tooltip={grip.label}
-                aria-pressed={grip.picked}
-                onPress={grip.onPress}
-                onKeyDown={grip.onKeyDown}
-                onBlur={grip.onBlur}
-                data-testid={`wb-rail-grip-${id}`}
-              >
-                <GripVertical size={12} aria-hidden />
-              </IconButton>
-            </span>
-            {onOpenView ? (
-              <IconButton variant="plain" size="sm" aria-label={openLabel ?? title} tooltip={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
-                <ArrowUpRight size={12} aria-hidden />
-              </IconButton>
-            ) : null}
-          </span>
           {showSummary ? (
             <span className="wb-tile-summary" onClick={() => onOpenChange(!open)}>
               {summary}
+            </span>
+          ) : null}
+          {hasBody ? (
+            <span className="wb-tile-fold" aria-hidden="true" onClick={() => onOpenChange(!open)}>
+              <CollapsibleChevron expanded={open} className="wb-tile-chevron" />
             </span>
           ) : null}
         </span>

@@ -73,6 +73,17 @@ export function createSandbox(runDir, { fakePort, samples = [], demo = false } =
   return box
 }
 
+export function writeQuotaFixture(box, runDir) {
+  const HOUR = 3600_000
+  const now = Date.now()
+  const win = (id, label, used, durationMs, leftMs) => ({ id, label, used, total: 100, durationMs, resetAt: now + leftMs })
+  box.quotaFixture = join(runDir, 'quota-fixture.json')
+  writeFileSync(box.quotaFixture, JSON.stringify([{
+    key: 'debug:fake', source: 'yan', provider: 'fake', name: 'Fake', email: 'demo@example.com', plan: 'max', active: true, status: 'ok', checkedAt: now,
+    windows: [win('five_hour', '5 小时', 62, 5 * HOUR, 2 * HOUR + 10 * 60_000), win('seven_day', '本周', 38, 168 * HOUR, 76 * HOUR), win('weekly_scoped:fable', 'Fable 本周', 9, 168 * HOUR, 76 * HOUR)]
+  }]))
+}
+
 export function sandboxEnv(box, { fake = false, cdpPort, probe } = {}) {
   return {
     YAN_PI_DIR: box.piDir,
@@ -82,6 +93,7 @@ export function sandboxEnv(box, { fake = false, cdpPort, probe } = {}) {
     ...(process.env.YAN_DEBUG_REAL_DEVICES === '1' ? {} : { ANDROID_HOME: box.androidSdk, ANDROID_SDK_ROOT: box.androidSdk }),
     ...(fake ? { YAN_TEST_MODEL: 'fake/fake-model' } : {}),
     ...(probe ? { YAN_PROBE: probe, YAN_PROBE_DELAY: '500' } : {}),
-    ...(probe && cdpPort ? { YAN_PROBE_DEBUG_PORT: String(cdpPort) } : {})
+    ...(probe && cdpPort ? { YAN_PROBE_DEBUG_PORT: String(cdpPort) } : {}),
+    ...(box.quotaFixture ? { YAN_DEBUG_QUOTA_FIXTURE: box.quotaFixture } : {})
   }
 }

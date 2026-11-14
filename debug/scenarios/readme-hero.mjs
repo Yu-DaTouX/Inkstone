@@ -9,7 +9,7 @@ export default async function run({ cdp, check, waitFor, sleep, runDir }) {
   mkdirSync(dir, { recursive: true })
   await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 2, mobile: false })
   await cdp.evaluate(`window.__yanStore.getState().patchSettings({ rightPanelOpen: true })`)
-  await waitFor(`!!document.querySelector('[data-testid=wb-rail-branch]') && window.__yanStore.getState().messages.length >= 4`, 20000)
+  await waitFor(`!!document.querySelector('[data-testid=wb-rail-env-summary]') && window.__yanStore.getState().messages.length >= 4`, 20000)
   await cdp.evaluate(`window.__yanStore.getState().patchSettings({ lang: 'zh-CN' })`)
   await cdp.evaluate(`window.__yanRightPanel.getState().open({ id: 'changes', kind: 'changes' })`)
   await sleep(1200)

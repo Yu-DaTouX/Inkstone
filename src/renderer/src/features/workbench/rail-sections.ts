@@ -2,8 +2,8 @@ import { create } from 'zustand'
 
 export const RAIL_SECTION_IDS = [
   'environment',
-  'stats',
   'context',
+  'stats',
   'usage',
   'connectors',
   'outputs',
@@ -14,7 +14,7 @@ export const RAIL_SECTION_IDS = [
 
 export type RailSectionId = (typeof RAIL_SECTION_IDS)[number]
 
-const COLLAPSED_BY_DEFAULT: readonly RailSectionId[] = ['connectors', 'context', 'usage', 'backgroundTasks']
+const COLLAPSED_BY_DEFAULT: readonly RailSectionId[] = ['environment', 'connectors', 'backgroundTasks']
 const MAX_REMEMBERED_SESSIONS = 100
 const STORAGE_KEY = 'inkstone.v3.rail.sections'
 

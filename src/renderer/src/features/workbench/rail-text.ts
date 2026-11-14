@@ -32,15 +32,26 @@ export interface RailText {
   more: (n: number) => string
   showLess: string
   removeOutput: (name: string) => string
-  dirty: string
   branchUnknown: string
   gitReadFailed: string
   peakTip: string
-  dirtyCount: (n: number) => string
   cacheHit: string
   hitShort: string
-  statsBreakdown: string
   linesChanged: (added: number, removed: number) => string
+  uncommitted: (n: number) => string
+  uncommittedFiles: (n: number) => string
+  staged: (n: number) => string
+  synced: string
+  localOnly: string
+  upstream: (name: string) => string
+  worktree: string
+  worktreeTip: string
+  compactLeft: string
+  windowLeft: string
+  compactReached: string
+  compactAt: (pct: number) => string
+  quotaTimeLeft: (pct: number) => string
+  quotaUsed: string
 }
 
 const ZH: RailText = {
@@ -50,7 +61,7 @@ const ZH: RailText = {
     stats: '会话统计',
     context: '上下文',
     usage: '用量',
-    connectors: '连接器',
+    connectors: 'MCP',
     outputs: '产出',
     changes: '本会话改动',
     backgroundTasks: '后台任务',
@@ -83,15 +94,26 @@ const ZH: RailText = {
   more: (n) => `更多（${n}）`,
   showLess: '收起',
   removeOutput: (name) => `从列表移除「${name}」`,
-  dirty: '工作区有未提交的改动',
   branchUnknown: '分支未知',
   gitReadFailed: 'Git 状态读取失败，稍后自动重试',
   peakTip: 'DeepSeek 高峰时段，按峰价计费',
-  dirtyCount: (n) => `${n} 处改动`,
   cacheHit: '缓存命中率',
   hitShort: '命中',
-  statsBreakdown: '分布',
-  linesChanged: (added, removed) => `新增 ${added} 行，删除 ${removed} 行`
+  linesChanged: (added, removed) => `新增 ${added} 行，删除 ${removed} 行`,
+  uncommitted: (n) => `${n} 未提交`,
+  uncommittedFiles: (n) => `${n} 个文件未提交`,
+  staged: (n) => `已暂存 ${n}`,
+  synced: '已同步',
+  localOnly: '仅本地',
+  upstream: (name) => `上游 ${name}`,
+  worktree: '工作树',
+  worktreeTip: '这个文件夹是主仓库的一个工作树',
+  compactLeft: '离自动压缩',
+  windowLeft: '剩余',
+  compactReached: '已到自动压缩线',
+  compactAt: (pct) => `自动压缩在 ${pct}%`,
+  quotaTimeLeft: (pct) => `窗口时间还剩 ${pct}%`,
+  quotaUsed: '已用'
 }
 
 const EN: RailText = {
@@ -101,7 +123,7 @@ const EN: RailText = {
     stats: 'Session stats',
     context: 'Context',
     usage: 'Usage',
-    connectors: 'Connectors',
+    connectors: 'MCP',
     outputs: 'Outputs',
     changes: 'Session edits',
     backgroundTasks: 'Background tasks',
@@ -134,15 +156,26 @@ const EN: RailText = {
   more: (n) => `${n} more`,
   showLess: 'Show less',
   removeOutput: (name) => `Remove ${name} from the list`,
-  dirty: 'Uncommitted changes in the working tree',
   branchUnknown: 'Branch unknown',
   gitReadFailed: 'Could not read Git status; retrying shortly',
   peakTip: 'DeepSeek peak hours: billed at peak rates',
-  dirtyCount: (n) => (n === 1 ? '1 change' : `${n} changes`),
   cacheHit: 'Cache hit rate',
   hitShort: 'Hit',
-  statsBreakdown: 'Breakdown',
-  linesChanged: (added, removed) => singularizeOne(`${added} lines added, ${removed} lines removed`)
+  linesChanged: (added, removed) => singularizeOne(`${added} lines added, ${removed} lines removed`),
+  uncommitted: (n) => `${n} uncommitted`,
+  uncommittedFiles: (n) => (n === 1 ? '1 uncommitted file' : `${n} uncommitted files`),
+  staged: (n) => `${n} staged`,
+  synced: 'Up to date',
+  localOnly: 'Local only',
+  upstream: (name) => `Upstream ${name}`,
+  worktree: 'Worktree',
+  worktreeTip: 'This folder is a worktree of the main repository',
+  compactLeft: 'Until auto-compact',
+  windowLeft: 'Free',
+  compactReached: 'At auto-compact line',
+  compactAt: (pct) => `Auto-compacts at ${pct}%`,
+  quotaTimeLeft: (pct) => `${pct}% of the window left`,
+  quotaUsed: 'used'
 }
 
 export function railText(lang: Lang): RailText {

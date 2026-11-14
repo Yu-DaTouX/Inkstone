@@ -113,6 +113,7 @@ export interface RailRowButtonProps {
 
 export interface RailRowProps {
   label: string
+  hint?: string
   truncate?: 'start'
   title?: string
   icon?: ReactNode
@@ -133,6 +134,7 @@ export interface RailRowProps {
 
 export function RailRow({
   label,
+  hint,
   truncate,
   title,
   icon,
@@ -156,7 +158,12 @@ export function RailRow({
       <span className="ui-rail-row__lead" aria-hidden="true">
         {dot ? <StatusDot kind={dot} /> : icon}
       </span>
-      {iconOnly ? null : <span className="ui-rail-row__label">{truncate === 'start' ? <bdi>{label}</bdi> : label}</span>}
+      {iconOnly ? null : (
+        <span className="ui-rail-row__label">
+          {truncate === 'start' ? <bdi>{label}</bdi> : label}
+          {hint ? <span className="ui-rail-row__hint">{hint}</span> : null}
+        </span>
+      )}
       {!iconOnly && value != null ? <span className="ui-rail-row__value">{value}</span> : null}
     </>
   )

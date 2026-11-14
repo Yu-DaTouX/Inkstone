@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Button, CollapsibleChevron, MiniBars, SegmentBar, Swatch } from '../../ui'
+import { MiniBars, SegmentBar, Swatch } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore, type Store } from '../../state/store'
 import { useStreamingThrottledStore } from '../../state/streaming-throttle'
@@ -22,16 +22,6 @@ import { sessionViewIdentity } from '../session/view-state'
 import './rail-stats.css'
 
 const SPEED_BARS = 12
-
-let breakdownRemembered = false
-
-function useBreakdownOpen(): [boolean, (open: boolean) => void] {
-  const [open, setOpen] = useState(breakdownRemembered)
-  return [open, (next) => {
-    breakdownRemembered = next
-    setOpen(next)
-  }]
-}
 
 interface RailSnapshot {
   messages: UIMessage[]
@@ -125,7 +115,7 @@ function barLabel(label: string, segments: readonly RailSegment[]): string {
 }
 
 interface StatCell {
-  key: 'total' | 'hit' | 'time' | 'speed'
+  key: 'total' | 'cost' | 'hit' | 'time' | 'speed'
   label: string
   value: string
   unit?: string
@@ -134,31 +124,35 @@ interface StatCell {
   title?: string
 }
 
-export function RailStatsBody({ model, breakdownLabel, running = false }: { model: RailStatsModel | null; breakdownLabel: string; running?: boolean }): ReactElement {
+export function RailStatsBody({ model, running = false }: { model: RailStatsModel | null; running?: boolean }): ReactElement {
   const t = useT()
   const liveSince = model?.liveSince ?? null
   const live = liveSince !== null
   const now = useLiveClock(live)
   const liveMs = liveSince !== null ? Math.max(0, now - liveSince) : 0
-  const [breakdownOpen, setBreakdownOpen] = useBreakdownOpen()
   const tokens = model?.tokens ?? null
   const time = model?.time ?? null
   const speed = model?.speed ?? null
   const fact = (key: RailFact['key']): RailFact | undefined => model?.facts.find((item) => item.key === key)
   const total = fact('total')
   const hit = fact('hit')
+  const cost = fact('cost')
   const subagents = fact('subagents')
   const timed = running || live || time !== null || speed !== null
+  const lead: StatCell = cost
+    ? { key: 'cost', label: cost.label, value: cost.value, extra: subagents?.value, extraTitle: subagents?.title ?? undefined, title: cost.title ?? undefined }
+    : {
+        key: 'total',
+        label: total?.label ?? t('sm.total'),
+        value: total?.value ?? '—',
+        unit: total?.unit,
+        extra: subagents?.value,
+        extraTitle: subagents?.title ?? undefined,
+        title: [total?.title, subagents?.title].filter(Boolean).join('\n') || undefined
+      }
+  const tokenTitle = tokens ? [tokens.title, ...tokens.segments.map((seg) => seg.title), subagents?.title].filter(Boolean).join('\n') : undefined
   const allCells: StatCell[] = [
-    {
-      key: 'total',
-      label: total?.label ?? t('sm.total'),
-      value: total?.value ?? '—',
-      unit: total?.unit,
-      extra: subagents?.value,
-      extraTitle: subagents?.title ?? undefined,
-      title: [total?.title, subagents?.title].filter(Boolean).join('\n') || undefined
-    },
+    lead,
     { key: 'hit', label: hit?.label ?? t('sm.hitRate'), value: hit?.value ?? '—', title: hit?.title ?? undefined },
     {
       key: 'time',
@@ -168,13 +162,14 @@ export function RailStatsBody({ model, breakdownLabel, running = false }: { mode
     },
     { key: 'speed', label: speed?.label ?? t('sm.tps'), value: speed?.value ?? '—', unit: speed ? speed.unit : undefined, title: speed?.title ?? undefined }
   ]
-  const cells = timed ? allCells : allCells.filter((cell) => cell.key === 'total' || cell.key === 'hit')
+  const cells = timed ? allCells : allCells.filter((cell) => cell.key === 'total' || cell.key === 'cost' || cell.key === 'hit')
   const breakdown: ReactElement[] = []
   if (tokens && tokens.segments.length) {
     const fresh = tokens.segments.filter((seg) => seg.key !== 'cacheRead')
     const barSegments = fresh.some((seg) => seg.value > 0) ? fresh : tokens.segments
     breakdown.push(
-      <section key="tokens" className="wb-rs-block" data-block="tokens">
+      <section key="tokens" className="wb-rs-block" data-block="tokens" title={tokenTitle}>
+        <span className="wb-rs-label wb-rs-num">{`${t('sm.total')} ${tokens.total} ${tokens.unit}`}</span>
         <SegmentBar aria-label={barLabel(tokens.ariaLabel, tokens.segments)} segments={barSegments} />
         <ul className="wb-rs-legend">
           {tokens.segments.map((seg) => (
@@ -207,7 +202,7 @@ export function RailStatsBody({ model, breakdownLabel, running = false }: { mode
     )
   }
   return (
-    <div className="wb-rail-stats" data-testid="wb-rail-stats" data-live={live ? '1' : undefined} data-breakdown={breakdownOpen ? '1' : undefined}>
+    <div className="wb-rail-stats" data-testid="wb-rail-stats" data-live={live ? '1' : undefined}>
       <ul className="wb-rs-grid">
         {cells.map((cell) => (
           <li key={cell.key} className="wb-rs-cell" data-row={cell.key} data-empty={cell.value === '—' ? '1' : undefined} title={cell.title} data-testid={`wb-rail-stats-${cell.key}`}>
@@ -220,19 +215,7 @@ export function RailStatsBody({ model, breakdownLabel, running = false }: { mode
           </li>
         ))}
       </ul>
-      <Button
-        variant="plain"
-        size="sm"
-        className="wb-rs-toggle"
-        aria-expanded={breakdown.length ? breakdownOpen : undefined}
-        isDisabled={!breakdown.length}
-        onPress={() => setBreakdownOpen(!breakdownOpen)}
-        data-testid="wb-rail-stats-breakdown-toggle"
-      >
-        <span>{breakdownLabel}</span>
-        <CollapsibleChevron expanded={breakdownOpen && breakdown.length > 0} />
-      </Button>
-      {breakdownOpen && breakdown.length ? (
+      {breakdown.length ? (
         <div className="wb-rs-breakdown" data-testid="wb-rail-stats-breakdown">
           {breakdown}
         </div>

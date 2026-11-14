@@ -108,6 +108,14 @@
     stroke: var(--fail);
   }
 
+  .ui-rail-value[data-tone='ask'] .ui-rail-value__num {
+    color: var(--ask-t);
+  }
+
+  .ui-rail-value[data-tone='fail'] .ui-rail-value__num {
+    color: var(--fail-t);
+  }
+
   .ui-rail-value[data-tone='ok'] .ui-segbar__seg {
     background: var(--ok);
   }
@@ -203,6 +211,12 @@
     direction: rtl;
     text-align: left;
     color: var(--fg2);
+  }
+
+  .ui-rail-row__hint {
+    margin-inline-start: var(--s-6);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
   }
 
   .ui-rail-row__value {

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { buildApp, builtAppAge, connectCdp, holdProbe, isAlive, killTree, launchApp, storeHelpers } from './lib/app.mjs'
 import { currentFile, debugDir, freePort, newRunDir, parseArgs, runsDir, sleep } from './lib/env.mjs'
 import { FAKE_TRIGGERS, startFakeModel } from './lib/fake-model.mjs'
-import { createSandbox, sandboxEnv } from './lib/sandbox.mjs'
+import { createSandbox, sandboxEnv, writeQuotaFixture } from './lib/sandbox.mjs'
 import { importUserData } from './lib/user-data.mjs'
 import { demoEnv, initializeDemo, prepareDemo } from './lib/demo.mjs'
 import { applyNarrowPanels } from './lib/narrow-panels.mjs'
@@ -18,11 +18,12 @@ const VALUE_FLAGS = new Set(['port', 'samples', 'repeat', 'count', 'min-mb', 'bu
 const HELP = `砚调试工具：npm run debug -- <命令> [参数]
 
 隔离实例（数据全在 debug/runs/<时间>-<名字>/，不碰真实数据、不抢单实例锁）
-  up [--demo] [--cards] [--dev] [--build] [--no-fake] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N] [--default-widths]
+  up [--demo] [--cards] [--dev] [--build] [--no-fake] [--no-quota] [--samples 1,2|all] [--user-data [--user-days 7]] [--port N] [--default-widths]
       起一个隔离实例并保持前台运行，Ctrl+C 或 down 结束；左栏、右栏、会话栏默认都用最窄宽度
       --dev       用 electron-vite dev（渲染端热更新），默认跑 out/ 构建版
       --build     先 electron-vite build
       --no-fake   不配置假模型（在实例里自己登录模型）
+      --no-quota  不给假模型配演示额度（默认配一张 Max 额度卡）
       --user-data 拷贝真实数据副本：最近 N 天会话、项目与标题等小文件、去密钥的模型列表；不拷凭据，关远程访问
       --samples   把 debug/data 里的大会话样本拷进实例
       --cards     预置三个会话「卡片·少字 / 正常 / 多字」，按顺序包含消息流里全部可静态注入的卡片
@@ -81,6 +82,7 @@ async function startInstance({ label, flags, samples = [], probe = holdProbe }) 
   if (flags['user-data']) console.log('导入真实数据副本：' + JSON.stringify(importUserData(box, { days: flags['user-days'] ? Number(flags['user-days']) : 7 })))
   if (flags.demo) prepareDemo(box)
   if (flags.cards) prepareCards(box)
+  if (fake && label.startsWith('up') && !flags['no-quota']) writeQuotaFixture(box, runDir)
   const cdpPort = flags.port ? Number(flags.port) : await freePort()
   const app = launchApp({ ...sandboxEnv(box, { fake: !!fake, cdpPort, probe }), ...demoEnv(box) }, { dev: !!flags.dev })
   if (box.cards) {

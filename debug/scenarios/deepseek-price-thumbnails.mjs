@@ -38,6 +38,8 @@ export default async function run(ctx) {
   try {
     await setCase('2026-11-11T01:00:00Z')
     await waitFor(`document.querySelector('[data-testid="wb-rail-usage"] .wb-tile-title')?.textContent === '用量 峰价'`)
+    await ev(`document.querySelector('[data-testid="wb-rail-usage"][data-folded="0"] .wb-tile-toggle')?.click()`)
+    await sleep(150)
     check('DeepSeek 放在其他供应商下也只显示简短峰价', (await title()) === '用量 峰价')
     check('峰价提示不替换原用量数字', await ev(`document.querySelector('[data-testid="wb-rail-usage"] .wb-tile-summary')?.textContent.includes('56%')`))
     for (const theme of ['light', 'dark']) {

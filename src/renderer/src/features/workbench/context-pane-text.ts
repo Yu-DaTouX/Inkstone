@@ -28,6 +28,8 @@ export interface ContextPaneText {
   windowTitle: string
   used: string
   left: (remaining: string) => string
+  loaded: string
+  reclaim: (percent: number) => string
 }
 
 const ZH: ContextPaneText = {
@@ -63,7 +65,9 @@ const ZH: ContextPaneText = {
   openSettings: '打开裁剪与压缩设置',
   windowTitle: '上下文窗口',
   used: '已用',
-  left: (remaining) => `剩余 ${remaining}`
+  left: (remaining) => `剩余 ${remaining}`,
+  loaded: '已加载',
+  reclaim: (percent) => `回收 ${percent}%`
 }
 
 const EN: ContextPaneText = {
@@ -99,7 +103,9 @@ const EN: ContextPaneText = {
   openSettings: 'Open trim and compaction settings',
   windowTitle: 'Context window',
   used: 'Used',
-  left: (remaining) => `${remaining} left`
+  left: (remaining) => `${remaining} left`,
+  loaded: 'Loaded',
+  reclaim: (percent) => `reclaimed ${percent}%`
 }
 
 export function contextPaneText(lang: Lang): ContextPaneText {

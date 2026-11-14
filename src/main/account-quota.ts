@@ -1,6 +1,7 @@
 import { pick } from '../shared/ui-lang'
 import { net } from 'electron'
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { customCommandCodeQuotaProviders, resolveQuotaProviderCredential } from './quota-credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
 import { claudeUsage, forgetClaudeUsage } from './claude-usage'
@@ -228,9 +229,29 @@ async function buildReport(): Promise<AccountQuotaReport> {
   ]
   const jobs: Array<Promise<AccountQuotaCard | null>> = [...targets.map(yanCodexCard), ...claude.map(yanClaudeCard), ...openrouter.map(yanOpenRouterCard), ...keyProviders.map(yanKeyCard)]
   const settled = await Promise.all(jobs.map((job) => job.catch(() => null)))
-  const merged = mergeDuplicateCards(settled.filter((c): c is AccountQuotaCard => !!c))
+  const merged = mergeDuplicateCards([...settled.filter((c): c is AccountQuotaCard => !!c), ...(await debugQuotaCards())])
   const cards = await Promise.all(merged.map(withLastGood))
   return { cards, checkedAt: Date.now() }
+}
+
+async function debugQuotaCards(): Promise<AccountQuotaCard[]> {
+  const file = process.env.YAN_PROBE && process.env.YAN_USER_DATA ? process.env.YAN_DEBUG_QUOTA_FIXTURE : undefined
+  if (!file) return []
+  try {
+    const now = Date.now()
+    const cards = JSON.parse(await readFile(file, 'utf8')) as AccountQuotaCard[]
+    return cards.map((card) => ({
+      ...card,
+      checkedAt: now,
+      windows: card.windows.map((window) => {
+        if (!window.resetAt || !window.durationMs) return window
+        const behind = Math.max(0, Math.ceil((now - window.resetAt) / window.durationMs))
+        return { ...window, resetAt: window.resetAt + behind * window.durationMs }
+      })
+    }))
+  } catch {
+    return []
+  }
 }
 
 const CARD_LAST_GOOD_MAX_AGE_MS = 24 * 60 * 60_000
