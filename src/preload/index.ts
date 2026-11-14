@@ -215,6 +215,7 @@ const api: YanBridge = {
   localLaunchers: () => invoke('yan:localLaunchers'),
   saveLocalLauncher: (provider, command) => invoke('yan:saveLocalLauncher', provider, command),
   renameLocalModel: (provider, modelId, name) => invoke('yan:renameLocalModel', provider, modelId, name),
+  pickLocalLauncher: (current) => invoke('yan:pickLocalLauncher', current),
   detectLocalLauncher: (provider) => invoke('yan:detectLocalLauncher', provider),
   removeCustomProvider: (id) => invoke('yan:removeCustomProvider', id),
   testCustomProvider: (id, mode, modelId) => invoke('yan:testCustomProvider', id, mode, modelId),
