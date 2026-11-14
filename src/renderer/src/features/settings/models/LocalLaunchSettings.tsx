@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type { LocalLauncherView } from '../../../../../shared/ipc'
 import { useT } from '../../../i18n'
+import { refreshModelsAfterRestart } from '../../../state/refresh-models'
 import { SettingsGroup } from '../root/controls'
 import { Badge, Button, Notice, TextField } from '../../../ui'
 import './models-settings.css'
@@ -13,6 +14,7 @@ export function LocalLaunchSettings(): ReactElement | null {
   const t = useT()
   const [list, setList] = useState<LocalLauncherView[] | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [names, setNames] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState('')
   const [msg, setMsg] = useState<{ kind: 'ok' | 'fail'; text: string } | null>(null)
   const alive = useRef(true)
@@ -34,6 +36,27 @@ export function LocalLaunchSettings(): ReactElement | null {
   if (!list?.length && !msg) return null
 
   const valueOf = (item: LocalLauncherView): string => drafts[item.provider] ?? item.command
+  const nameKey = (provider: string, id: string): string => `${provider}\u0000${id}`
+  const nameOf = (provider: string, model: { id: string; name?: string }): string => names[nameKey(provider, model.id)] ?? model.name ?? ''
+
+  const rename = async (item: LocalLauncherView, model: { id: string; name?: string }): Promise<void> => {
+    const key = nameKey(item.provider, model.id)
+    setBusy(`${key}:rename`)
+    setMsg(null)
+    try {
+      const name = nameOf(item.provider, model).trim()
+      const next = await window.yan.renameLocalModel(item.provider, model.id, name)
+      if (!alive.current) return
+      setList(next)
+      setNames(({ [key]: _, ...rest }) => rest)
+      setMsg({ kind: 'ok', text: t('localLaunch.renamed', { model: name || model.id }) })
+      refreshModelsAfterRestart()
+    } catch (error) {
+      if (alive.current) setMsg({ kind: 'fail', text: errorText(error) })
+    } finally {
+      if (alive.current) setBusy('')
+    }
+  }
 
   const save = async (item: LocalLauncherView): Promise<void> => {
     setBusy(`${item.provider}:save`)
@@ -98,6 +121,31 @@ export function LocalLaunchSettings(): ReactElement | null {
                   onChange={(value) => setDrafts((current) => ({ ...current, [item.provider]: value }))}
                   inputClassName="ms-custom-input"
                 />
+                {item.models.length ? <p className="ms-note">{t('localLaunch.modelsHint')}</p> : null}
+                {item.models.map((model) => {
+                  const key = nameKey(item.provider, model.id)
+                  const value = nameOf(item.provider, model)
+                  return (
+                    <div className="ms-local-model" key={model.id} data-testid={`ms-local-model-${model.id}`}>
+                      <TextField
+                        aria-label={t('localLaunch.modelName', { id: model.id })}
+                        placeholder={model.id}
+                        value={value}
+                        isDisabled={!!busy}
+                        onChange={(next) => setNames((current) => ({ ...current, [key]: next }))}
+                        inputClassName="ms-custom-input"
+                      />
+                      <Button
+                        variant="secondary"
+                        isDisabled={!!busy || value.trim() === (model.name ?? '')}
+                        data-testid={`ms-local-model-rename-${model.id}`}
+                        onPress={() => void rename(item, model)}
+                      >
+                        {t('localLaunch.rename')}
+                      </Button>
+                    </div>
+                  )
+                })}
               </div>
               <div className="ms-custom-actions">
                 <Button

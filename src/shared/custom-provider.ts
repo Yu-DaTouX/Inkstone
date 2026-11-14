@@ -432,6 +432,7 @@ export interface LocalLauncherView {
   name: string
   baseUrl: string
   command: string
+  models: Array<{ id: string; name?: string }>
 }
 
 export interface LocalLauncherDetectResult {

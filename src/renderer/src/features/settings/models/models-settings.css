@@ -641,6 +641,13 @@
     align-items: center;
   }
 
+  .ms-local-model {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--s-8);
+    align-items: center;
+  }
+
   .ms-custom-test {
     flex-basis: 100%;
     display: flex;

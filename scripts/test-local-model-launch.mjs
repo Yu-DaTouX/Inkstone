@@ -60,6 +60,24 @@ await runSuite(import.meta.url, async (ok, compile) => {
     }
     ok(refused, '云端服务商不能设置启动命令')
 
+    const renamed = await api.renameLocalModel('ninfer', 'qwen', '  Qwen   本地  ')
+    let models = JSON.parse(await readFile(join(dir, 'models.json'), 'utf8'))
+    ok(models.providers.ninfer.models[0].name === 'Qwen 本地', '改名写回 models.json 并压缩空白')
+    ok(models.providers.ninfer.api === 'openai-completions' && models.providers.cloud.models[0].id === 'gpt', '改名不动其他字段和其他服务商')
+    ok(renamed.find((item) => item.provider === 'ninfer')?.models[0]?.name === 'Qwen 本地', '改名后返回的列表带新名称')
+    await api.renameLocalModel('ninfer', 'qwen', '')
+    models = JSON.parse(await readFile(join(dir, 'models.json'), 'utf8'))
+    ok(!('name' in models.providers.ninfer.models[0]), '名称留空时去掉 name，恢复显示模型 ID')
+    let renameRefused = 0
+    for (const args of [['cloud', 'gpt', 'x'], ['ninfer', 'missing', 'x'], ['ninfer', 'qwen', 'x'.repeat(121)]]) {
+      try {
+        await api.renameLocalModel(...args)
+      } catch {
+        renameRefused++
+      }
+    }
+    ok(renameRefused === 3, '云端服务商、不存在的模型、超长名称都拒绝改名')
+
     const none = await api.ensureLocalModelReady('cloud', 'gpt', { run: () => { throw new Error('不该运行') } })
     ok(none.ok && !none.started, '没配启动命令的服务商直接放行')
 
